@@ -1290,7 +1290,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p35"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m123"' in SRC["padmap"],
+check('local CV = "p36"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m123"' in SRC["padmap"],
       "the versions: PadMap m107, PadTabCtl p40, Book b49")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
@@ -1797,6 +1797,18 @@ c = ctlDoc(WT)
 check(c['note'] == 'dpad-bar' and c.get('chooser') is None, "p34: A on the toolbar's own button: refused (dpad-bar), no chooser", c)
 WT.execute('pp("PAD3")')
 check(ctlDoc(WT)['note'] == 'dpad-bar' and ctlDoc(WT).get('carry') is None, "p34: X there: refused too", ctlDoc(WT))
+# p36 (the user 2026-11-10: "i should still be able to assign combat keys with it on"): In combat's bare D-pad is the player's
+WT.execute('pp("PADRSHOULDER")')
+c = ctlDoc(WT)
+check(c['view'] == 'combat' and c['pos'] == 1 and c['shown'] == 1, "p36: RB to In combat, still the bare D-pad Left", c)
+WT.execute('pp("PAD1")')
+c = ctlDoc(WT)
+check(c.get('note') != 'dpad-bar' and c.get('chooser'), "p36: toolbar on, In combat: A on the D-pad opens the chooser", c)
+WT.execute('pp("PAD2")')
+check(not ctlDoc(WT).get('chooser'), "p36: B closes it", ctlDoc(WT).get('chooser'))
+WT.execute('pp("PADLSHOULDER")')
+c = ctlDoc(WT)
+check(c['view'] == 'normal' and c['pos'] == 1 and c['shown'] == 1, "p36: LB back to WoW Defaults' D-pad Left", c)
 # the toolbar off: the button is the player's again, and the chooser has the DS tab
 WT.execute('WowCompanion.padMap.dpadBar(false); pp("PAD1")')
 c = ctlDoc(WT)

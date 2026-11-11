@@ -186,7 +186,9 @@ class PadTabPage(
 
     // ---------------------------------------------------------------- p34 THE DS WOW TOOLBAR ON THE BARE D-PAD
     // (the user 2026-11-10: "when its selected replace those buttons with the DS WoW toolbar buttons, when uncheck it goes back to the
-    // normal D-pad skills"): while the toolbar is on, WoW Defaults' (and In combat's) bare D-pad shows what the toolbar does there; the
+    // normal D-pad skills"): while the toolbar is on, WoW Defaults' bare D-pad shows what the toolbar does there (p36, the user 2026-11-10:
+    // "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on": In combat's
+    // D-pad stays the player's fight spells, which win in a fight as PadMap m44 always did; an empty one does the toolbar's action); the
     // player's own buttons stay underneath and come back when it is off. Nothing goes on them meanwhile (PadTabCtl p34 / PadMap refuse it).
     private class Tool(val word: String, val art: String?, val what: String, val wheel: Boolean = false)
     private val tools = listOf(
@@ -198,7 +200,7 @@ class PadTabPage(
     private fun toolbarOn(): Boolean = toolbarShown?.invoke() ?: (map?.dpad?.want == true)
     /** the toolbar's place on button [p] of set [s] in the tab on show, or null (the player's own button) */
     private fun toolAt(s: Int, p: Int): Tool? =
-        if (s == 1 && p in 1..4 && (view == "normal" || view == "combat") && toolbarOn()) tools[p - 1] else null
+        if (s == 1 && p in 1..4 && view == "normal" && toolbarOn()) tools[p - 1] else null      // p36: never In combat's (its own spells)
     private fun toolArt(t: Tool) = t.art?.let { UiKit.tex(it) }
     private fun drawTool(c: Canvas, t: Tool, l: Float, tp: Float, size: Float) {
         UiKit.spell(c, toolArt(t), l, tp, size, UiKit.Spell.KNOWN)
