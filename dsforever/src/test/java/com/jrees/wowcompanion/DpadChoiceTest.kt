@@ -55,7 +55,24 @@ class DpadChoiceTest {
         assertEquals(DpadChoice.Act.Ask, decide(want = null, stored = null, first = true))
         // b139: our own default ON tap is not an answer while the prompt is owed
         assertEquals(DpadChoice.Act.Ask, decide(want = true, stored = null, owed = true))
-        assertEquals(DpadChoice.Act.Ask, decide(want = true, stored = true, owed = true, first = true))
+    }
+
+    @Test fun aPreUpdateSettingsOffIsThePlayersChoice() {
+        // review of issue #136 (2026-11-11): the old Settings row kept the Off and left owed set (the bug); after the update that state
+        // (no pend_ flag) must be re-sent as the player's choice, never the prompt and its default ON tap
+        val s = decide(want = true, stored = false, owed = true)
+        assertTrue(s is DpadChoice.Act.Send && !s.on)
+        val f = decide(want = true, stored = false, owed = true, first = true)
+        assertTrue(f is DpadChoice.Act.Send && !f.on)
+        assertTrue(decide(want = null, stored = false, owed = true) is DpadChoice.Act.Send)
+        // the game already says it: confirmed (the host clears pend_ and owed_), never asked
+        assertEquals(DpadChoice.Act.Confirm, decide(want = true, stored = true, owed = true, first = true))
+        assertEquals(DpadChoice.Act.Confirm, decide(want = false, stored = false, owed = true))
+        // never in a fight, nor twice inside the resend gap
+        assertEquals(DpadChoice.Act.Wait, decide(want = true, stored = false, owed = true, fight = true))
+        assertEquals(DpadChoice.Act.Wait, decide(want = true, stored = false, owed = true, since = 1_000L))
+        // the Settings row shows the Off at once
+        assertEquals(false, DpadChoice.shown(addonWant = true, stored = false, pending = false, owed = true))
     }
 
     @Test fun theSettingsRowShowsThePendingChoice() {

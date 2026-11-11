@@ -3375,7 +3375,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         when (act) {
             DpadChoice.Act.None, DpadChoice.Act.Wait -> return
             DpadChoice.Act.Confirm -> {
-                prefs.edit().remove("pend_$key").apply(); dpadSentAt.remove(key)
+                // issue #136 review (2026-11-11): also a pre-update Settings switch's owed flag (DpadChoice.held)
+                prefs.edit().remove("pend_$key").remove("owed_$key").apply(); dpadSentAt.remove(key)
                 Log.i(HomeView.TAG, "dpad: the game has the choice $stored for $key"); return
             }
             is DpadChoice.Act.Adopt -> { prefs.edit().putBoolean(key, act.want).apply(); Log.i(HomeView.TAG, "dpad: the game's choice ${act.want} kept for $key"); return }
@@ -3522,7 +3523,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun dpadShown(d: PadMapModel.Dpad): PadMapModel.Dpad {
         val key = dpadKey(d) ?: return d
         val prefs = getSharedPreferences("dpad", MODE_PRIVATE)
-        val w = DpadChoice.shown(d.want, if (prefs.contains(key)) prefs.getBoolean(key, false) else null, prefs.getBoolean("pend_$key", false))
+        val w = DpadChoice.shown(d.want, if (prefs.contains(key)) prefs.getBoolean(key, false) else null, prefs.getBoolean("pend_$key", false),
+            prefs.getBoolean("owed_$key", false))
         return if (w == d.want) d else d.copy(want = w)
     }
 

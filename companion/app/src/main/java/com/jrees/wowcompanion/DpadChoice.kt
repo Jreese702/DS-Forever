@@ -25,7 +25,7 @@ object DpadChoice {
         object None : Act()
         /** wait for a later padmap (a fight, or a send just went) */
         object Wait : Act()
-        /** the add-on has the pending choice now: no longer pending */
+        /** the add-on has the pending choice now: no longer pending (nor the prompt owed) */
         object Confirm : Act()
         /** keep the add-on's word as the choice (changed in the game or in the Controller room) */
         data class Adopt(val want: Boolean) : Act()
@@ -42,7 +42,10 @@ object DpadChoice {
      */
     fun decide(addonWant: Boolean?, stored: Boolean?, pending: Boolean, owed: Boolean, firstOfRun: Boolean, inFight: Boolean,
                sinceSendMs: Long?): Act {
-        if (pending && stored != null) {
+        // issue #136 review (2026-11-11): a kept choice with the prompt still owed and nothing pending is a PRE-UPDATE Settings switch
+        // (the old Settings row wrote the choice and never cleared owed - the bug itself; the prompt's Yes / No cleared it, adopt and
+        // apply needed !owed): the player's explicit choice, held like a pending one, never the prompt (its default ON tap)
+        if (stored != null && held(stored, pending, owed)) {
             if (addonWant == stored) return Act.Confirm
             if (inFight || (sinceSendMs != null && sinceSendMs < RESEND_MS)) return Act.Wait
             return Act.Send(stored, "your choice is not in the game yet (the game says ${addonWant ?: "nothing"})")
@@ -59,6 +62,10 @@ object DpadChoice {
         return Act.Ask
     }
 
-    /** what the Settings row shows: the player's pending choice over the add-on's word (the switch shows what was picked at once) */
-    fun shown(addonWant: Boolean?, stored: Boolean?, pending: Boolean): Boolean? = if (pending && stored != null) stored else addonWant
+    /** the app's choice is the player's and still to be said by the game: [pending], or a pre-update Settings switch (kept + [owed]) */
+    fun held(stored: Boolean?, pending: Boolean, owed: Boolean): Boolean = stored != null && (pending || owed)
+
+    /** what the Settings row shows: the player's held choice over the add-on's word (the switch shows what was picked at once) */
+    fun shown(addonWant: Boolean?, stored: Boolean?, pending: Boolean, owed: Boolean = false): Boolean? =
+        if (held(stored, pending, owed)) stored else addonWant
 }
