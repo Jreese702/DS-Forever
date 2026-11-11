@@ -150,6 +150,15 @@ def main():
     chk("hub28: the game refuses the write in a fight: no error, the doc says so (shotfk %s, option %s)" % (ds2.sw.shotfk, cv()),
         ds2.sw.shotfk is False and cv() == "0")
     G.FIGHT = False; G.REFUSE = False; G.FIRE("PLAYER_REGEN_ENABLED")
+    # hub29: THE PULL - the opening shot is cast out of the fight: the option goes on right then (and the game refusing in-fight
+    # writes no longer matters)
+    G.REFUSE = True
+    G.FIRE("UNIT_SPELLCAST_SENT")
+    chk("hub29: a spell cast out of a fight (the pull) turns the option on before the fight (%s)" % cv(), cv() == "1")
+    G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED")
+    chk("hub29: ... and it stays on into the fight even when the game refuses in-fight writes (%s)" % cv(), cv() == "1")
+    G.FIGHT = False; G.REFUSE = False; G.FIRE("PLAYER_REGEN_ENABLED")
+    chk("hub29: the fight's end turns it off (%s)" % cv(), cv() == "0")
     sw(None, SW.SHOTF_OFF); sw(None, SW.SHOT_ON)
     G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); G.FIGHT = False; G.FIRE("PLAYER_REGEN_ENABLED")
     ds3 = doc()
