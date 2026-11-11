@@ -196,6 +196,9 @@ class ControllerView(
     /** p34: the add-on's tab number (PadTabCtl's TABS, 1-based, the DS tab still counted) as a place in the shown row */
     private fun shownTcur(tcur: Int): Int = shownTab(PadMapModel.TABS.getOrElse(tcur - 1) { "normal" })
 
+    /** issue #136 (2026-11-11): the DS WoW toolbar switch flipped here (the new choice, the tap sent): the host keeps it as the player's */
+    var onDpadPick: ((Boolean, Boolean) -> Unit)? = null
+
     /** a switch: label, state as SHOWN (null = this addon cannot switch it yet), the column that sets the OTHER state, its key */
     private class Sw(val label: String, val on: Boolean?, val col: Int?, val key: String,
                      /** greyed out on purpose (not an older add-on): what a tap says */
@@ -405,6 +408,8 @@ class ControllerView(
                     val sent = onPadCells(listOf("spells" to t.col))
                     Log.i(TAG, "switch '${t.label}' -> ${if (t.on == true) "off" else "on"}: spells ${t.col} ${if (sent) "tapped" else "not sent"}")
                     if (sent && t.on != null && map?.combat == false) { swWant[t.key] = !t.on to SystemClock.uptimeMillis() + ECHO_MS; invalidate() }
+                    // issue #136 (2026-11-11): the toolbar's flip is the player's choice in the app too (kept, re-sent until the game says it)
+                    if (t.key == "dpad" && t.on != null) onDpadPick?.invoke(!t.on, sent)
                 } else say(t.held ?: "Update the game's add-on to switch this here")
             }
             downSw = -1; return true
