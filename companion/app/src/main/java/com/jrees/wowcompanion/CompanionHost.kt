@@ -744,7 +744,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.onReport = { openReport() }
         // m62 Smart buffs: the Settings section reads the latest padmap, edits by taps, names a spell by the book's two taps
         settingsView.smartDoc = { lastPadMap?.smartBuffs }
-        settingsView.smartTaps = { cells -> TapBridge.taps(this, spellsPad ?: questsPad, cells) }
+        settingsView.smartTaps = { cells -> TapBridge.tapsSpaced(this, spellsPad ?: questsPad, cells, 120L) }   // the user 11-11: Pick added nothing - a repeated cell inside 0.25 s was swallowed (as Polestar's digits)
         settingsView.smartSpellCells = { name ->
             lastBook?.let { b -> SpellsModel.tabSpells(b).firstOrNull { it.name == name }?.let { SpellsModel.bindCells(b, it) } }
         }
