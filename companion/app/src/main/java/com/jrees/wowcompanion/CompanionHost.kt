@@ -3525,7 +3525,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val cols = mapView.polestar.tick(mapView.polestarGoal(), SystemClock.elapsedRealtime())
         if (cols.isEmpty()) return
         Log.i("WCMAP", "polestar: tap $cols")
-        TapBridge.taps(this, pad, cols.map { PolestarNav.ROW to it }) { why -> Log.i("WCMAP", "polestar: tap failed: $why") }
+        // spaced (the user, 2026-11-11: the Polestar path never showed): a cell swallows a second press within 0.25 s, so a target like
+        // "1, 34, 1" lost its second digit, the add-on never had all seven and never asked Polestar (RouteWaypoint spaces its digits too)
+        TapBridge.tapsSpaced(this, pad, cols.map { PolestarNav.ROW to it }, 120L) { why -> Log.i("WCMAP", "polestar: tap failed: $why") }
     }
 
     private fun cleanExit(why: String, done: (Boolean) -> Unit) {

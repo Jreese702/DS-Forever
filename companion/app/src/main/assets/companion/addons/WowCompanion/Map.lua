@@ -2851,7 +2851,7 @@ function WC.pnav.api()
 end
 function WC.pnav.say(op, ok, why)
     pcall(function()
-        WC.send(WC.encode({ type = "pnav", v = "pn1", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
+        WC.send(WC.encode({ type = "pnav", v = "pn2", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
         WC.push()
     end)
 end
@@ -2881,6 +2881,9 @@ function WC.pnav.route()
     end
     local okG, legs = pcall(P.Nav.GetRouteGeometry)
     if not okG or type(legs) ~= "table" then return nil end
+    -- pn2 (the user, 2026-11-11: "the polestar option in quest tracking in home should also show the path on the bottom map"): Polestar
+    -- answers { legs = { ... } } (Nav/Walk.lua), not the legs themselves - read as a list it gave no route at all
+    if type(legs.legs) == "table" then legs = legs.legs end
     local n = 0
     for _, leg in ipairs(legs) do if type(leg) == "table" and type(leg.pts) == "table" then n = n + #leg.pts end end
     local step = math.max(1, math.ceil(n / WC.pnav.PTS))
@@ -2942,7 +2945,7 @@ do
         if not okR or not legs then return end
         if sig ~= P.sig or GetTime() - P.sentAt > 10 then
             P.sig, P.sentAt = sig, GetTime()
-            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn1", legs = legs })); WC.push() end)
+            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn2", legs = legs })); WC.push() end)
         end
     end)
 end
