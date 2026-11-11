@@ -91,6 +91,62 @@ object WowSwitch {
         return lines.joinToString(nl) + if (trailing) nl else ""
     }
 
+    /**
+     * REPAIR .build.info BEFORE PLAY (the user, 2026-11-11: updates on slow links; jklock/wolkaraforever 3feaf68, YoruDev-Ryland
+     * 84f0cbf, jaredgei 522355c): a failed CDN lookup on a flaky network can leave the running row's "CDN Hosts" or "CDN Servers" empty,
+     * and the client then has no patch-index server and crashes at start. [text] with ONLY those empty cells of [product]'s Active
+     * row(s) filled from [hosts] / [servers] (blank [servers]: [serversFor] the hosts); a header without a CDN Servers column gets one
+     * after CDN Hosts (every other row an empty cell there). Every other cell, row and the line ending stay as they were. null = nothing
+     * to repair (or nothing to fill it with).
+     */
+    fun repairCdn(text: String, product: String, hosts: List<String>, servers: String?): String? {
+        val nl = if (text.contains("\r\n")) "\r\n" else "\n"
+        val lines = text.split(nl).toMutableList()
+        val trailing = lines.isNotEmpty() && lines.last().isEmpty()
+        if (trailing) lines.removeAt(lines.size - 1)
+        val headIdx = lines.indexOfFirst { it.isNotBlank() && !it.startsWith("#") }
+        if (headIdx < 0) return null
+        val headRaw = lines[headIdx].split('|').toMutableList()
+        fun names() = headRaw.map { it.substringBefore('!') }
+        val productIdx = names().indexOf("Product")
+        val activeIdx = names().indexOf("Active")
+        val hostsIdx = names().indexOf("CDN Hosts")
+        if (productIdx < 0 || hostsIdx < 0) return null
+        val hostsText = hosts.filter { it.isNotBlank() }.joinToString(" ")
+        val serversText = servers?.trim()?.takeIf { it.isNotEmpty() } ?: serversFor(hosts)
+        val rows = lines.indices.filter { it > headIdx && lines[it].isNotBlank() && !lines[it].startsWith("#") }
+        val width = headRaw.size                       // the header's width as read (the column below may add one)
+        fun cols(line: String) = line.split('|').toMutableList().also { while (it.size < width) it += "" }
+        val ours = rows.filter { i -> cols(lines[i]).let { it[productIdx] == product && (activeIdx < 0 || it[activeIdx] == "1") } }
+        if (ours.isEmpty()) return null
+        var serversIdx = names().indexOf("CDN Servers")
+        val out = lines.toMutableList()
+        if (serversIdx < 0) {
+            if (serversText.isEmpty()) return null
+            serversIdx = hostsIdx + 1
+            headRaw.add(serversIdx, "CDN Servers!STRING:0")
+            out[headIdx] = headRaw.joinToString("|")
+            rows.forEach { i -> out[i] = cols(lines[i]).also { it.add(serversIdx, "") }.joinToString("|") }
+        }
+        var changed = out != lines
+        for (i in ours) {
+            val c = out[i].split('|').toMutableList().also { while (it.size < headRaw.size) it += "" }
+            var rowChanged = false
+            if (c[hostsIdx].isBlank() && hostsText.isNotEmpty()) { c[hostsIdx] = hostsText; rowChanged = true }
+            if (c[serversIdx].isBlank() && serversText.isNotEmpty()) { c[serversIdx] = serversText; rowChanged = true }
+            if (rowChanged) { out[i] = c.joinToString("|"); changed = true }
+        }
+        if (!changed) return null
+        return out.joinToString(nl) + if (trailing) nl else ""
+    }
+
+    /** [repairCdn]'s CDN Servers when no cdns row gave them: the Battle.net app's form, http first, then https as the fallback */
+    fun serversFor(hosts: List<String>): String {
+        val h = hosts.filter { it.isNotBlank() }
+        return (h.map { "http://$it/?maxhosts=4" } +
+            h.map { "https://${if (it == "level3.blizzard.com") "level3.ssl.blizzard.com" else it}/?maxhosts=4&fallback=1" }).joinToString(" ")
+    }
+
     /** a new folder's .build.info: the launch client's row alone, the columns and Tags the Battle.net app writes (a direct install) */
     fun freshBuildInfo(remote: Remote, branch: String): String {
         val head = listOf("Branch!STRING:0", "Active!DEC:1", "Build Key!HEX:16", "CDN Key!HEX:16", "Install Key!HEX:16", "IM Size!DEC:4",

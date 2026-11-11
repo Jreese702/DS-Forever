@@ -309,6 +309,9 @@ fun WoWForeverScreen(
                         com.jrees.wowcompanion.ThirdPartyAddons.applyAtStart(WowClientDownloader.flavorDir(File(gamePath)),
                             fetchSmall = false, by = "launch by $by")
                     }.onFailure { android.util.Log.w("WCSETUP", "add-ons at launch: ${it.message}") }
+                    // .build.info's empty CDN Hosts / Servers refilled before EVERY launch (the user, 2026-11-11: updates on slow
+                    // links; the client crashes at start without them). Never stops the launch
+                    WowClientDownloader.repairBuildInfo(File(gamePath), versionStatus)
                 }
                 com.jrees.wowcompanion.LauncherHooks.launchEvent("preparing the container (${gpu.label}, by $by)")
                 val containerId = withContext(Dispatchers.IO) {

@@ -189,6 +189,38 @@ object WowClientDownloader {
         Switch.Done(target.remoteVersion)
     }
 
+    /**
+     * REPAIR .build.info BEFORE PLAY (the user, 2026-11-11: updates on slow links; [WowSwitch.repairCdn]): the running row's empty
+     * "CDN Hosts" / "CDN Servers" (a failed CDN lookup on a flaky network; the client crashes at start without them) are filled from,
+     * in order: [known] (this screen's last check, when its cdns row answered), the patch server's cdns row now, another row of the
+     * same file that has them (the last good values), the built-in hosts. Only those cells change. Never throws; true = repaired.
+     */
+    fun repairBuildInfo(gameRoot: File, known: VersionCheckResult? = null): Boolean = runCatching {
+        val choice = activeBuild(gameRoot)
+        val product = choice.product ?: return false
+        val row = choice.row
+        if (!row["CDN Hosts"].isNullOrBlank() && !row["CDN Servers"].isNullOrBlank()) return false
+        val buildInfo = File(gameRoot, BUILD_INFO)
+        val text = buildInfo.readText()
+        val other = WowProduct.parse(text).firstOrNull { !it["CDN Hosts"].isNullOrBlank() && !it["CDN Servers"].isNullOrBlank() }
+        val (hosts, servers, from) = when {
+            known != null && known.product == product && known.remoteCdnServers != null ->
+                Triple(known.remoteCdnHosts, known.remoteCdnServers, "the last check's cdns")
+            else -> runCatching { fetchText("${patchUrlFor(product)}/cdns") }.getOrNull()?.let(::parsePsv)
+                ?.let { remoteRow(it, "Name", row["Branch"]) }?.takeIf { !it["Hosts"].isNullOrBlank() }
+                ?.let { Triple(splitHosts(it.getValue("Hosts")), it["Servers"], "the patch server's cdns") }
+                ?: other?.let { Triple(splitHosts(it.getValue("CDN Hosts")), it["CDN Servers"], "another .build.info row") }
+                ?: Triple(DEFAULT_CDN_HOSTS, null, "the built-in hosts")
+        }
+        // the row's own hosts stay when only Servers is empty (its servers then follow those hosts)
+        val useHosts = row["CDN Hosts"]?.takeIf { it.isNotBlank() }?.let(::splitHosts) ?: hosts
+        val fixed = WowSwitch.repairCdn(text, product.code, useHosts, servers) ?: return false
+        WowSwitch.replace(buildInfo, fixed.toByteArray())
+        Timber.i("repairBuildInfo: ${product.code}'s empty CDN Hosts/Servers filled from $from")
+        runCatching { android.util.Log.i("WCSETUP", "build info: empty CDN Hosts/Servers filled from $from before Play") }
+        true
+    }.getOrElse { Timber.w(it, "repairBuildInfo: not repaired"); false }
+
     /** the patch server's row for the install's region ([key] = its region column; .build.info's Branch), else us's, else the first */
     internal fun remoteRow(rows: List<Map<String, String>>, key: String, region: String?): Map<String, String>? =
         rows.firstOrNull { !region.isNullOrBlank() && it[key].equals(region, ignoreCase = true) } ?: rows.firstOrNull { it[key] == "us" }
@@ -352,6 +384,8 @@ object WowClientDownloader {
             "Build Key" to target.remoteBuildConfig,
             "CDN Key" to target.remoteCdnConfig,
             "CDN Hosts" to target.remoteCdnHosts.joinToString(" "),
+            // the cdns row's Servers too (the user, 2026-11-11: updates on slow links): an update no longer leaves an empty one as it was
+            "CDN Servers" to target.remoteCdnServers.orEmpty(),
             "CDN Path" to target.remoteCdnPath,
             "Install Key" to buildConfig["install"]?.getOrNull(1).orEmpty(),
             "IM Size" to buildConfig["install-size"]?.getOrNull(1).orEmpty(),
