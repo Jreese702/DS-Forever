@@ -260,6 +260,10 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         return TOP_PAD + (if (tab == SettingsTabs.Tab.HOME) MODULES_HEAD else 0f) + blocks.sumOf { blockHeight(it).toDouble() }.toFloat() + SECTION_GAP * (blocks.size - 1) + BOTTOM_PAD
     }
 
+    /** hub31: the "Polestar on the top screen" row shows (Polestar installed, the add-on has the switch) - the draw and the height agree */
+    private fun psTopRow(): Boolean =
+        ThirdPartyAddons.status(ThirdPartyAddons.POLESTAR, "core").kind == ThirdPartyAddons.Kind.INSTALLED && GameUi.swNow(GameUi.SW_PS) != null
+
     /** a block's height from its heading's y to its last row's bottom, laid out exactly as its draw function lays it out */
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.LANGUAGE -> 16f + ROW_H
@@ -267,7 +271,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
         SettingsTabs.Block.STREAMING -> 16f + ROW_H
-        SettingsTabs.Block.MAP -> 16f + 5 * ROW_H + 4 * 10f     // zoom out, zoom in, Quest tracking, World map, SafePath network
+        // zoom out, zoom in, Quest tracking, (Polestar on the top screen,) World map, SafePath network
+        SettingsTabs.Block.MAP -> 16f + 5 * ROW_H + 4 * 10f + (if (psTopRow()) ROW_H + 10f else 0f)
         SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
         SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
@@ -646,7 +651,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         }
         // POLESTAR ON THE TOP SCREEN (hub31; the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): only while
         // Polestar is installed and the add-on has the switch; per character, off by default
-        if (ThirdPartyAddons.status(ThirdPartyAddons.POLESTAR, "core").kind == ThirdPartyAddons.Kind.INSTALLED && GameUi.swNow(GameUi.SW_PS) != null) {
+        if (psTopRow()) {
             y += ROW_H + 10f
             val hide = GameUi.swWant(GameUi.SW_PS)
             val sent = GameUi.swNow(GameUi.SW_PS) != hide
