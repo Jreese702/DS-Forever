@@ -39,7 +39,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             if (attempt == 0) { if (!streamed) DataStaleness.count(root, buildKey, local = false); missWindow.note(true) }
             if (attempt == 4 || status == CascNative.ENCRYPTED) break
             if (!fetch(root, cache, File(need))) {
-                lastReadWhy = "$label: not on this device, and downloading it failed (${File(need).name}: ${lastFetchWhy ?: "no answer"})"
+                lastReadWhy = "$label: not on this device, and ${KitBuild.FETCH_FAILED} (${File(need).name}: ${lastFetchWhy ?: "no answer"})"
                 return@synchronized null
             }
         }

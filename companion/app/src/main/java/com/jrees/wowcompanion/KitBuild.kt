@@ -28,9 +28,48 @@ class KitBuild(
     private val log: (String) -> Unit = {},
     /** why the last [read] came back null (GameFiles.lastReadWhy), shown in the error so a player can see the cause */
     private val why: () -> String? = { null },
+    /** why [read] of one fid came back null, kept per fid (the icons read on several threads: [why] is the last read's, any thread's) */
+    private val whyFor: (Int) -> String? = { null },
 ) {
     /** Missing recipe outputs; required steps call [requireComplete] before accepting their stamp. */
     val missing = ArrayList<String>()
+
+    /**
+     * ONE UNREADABLE TEXTURE NO LONGER LOCKS PLAY (issues #35 #36 #38 #42, 2026-11-11: "could not build kit: kit has 5 missing or
+     * unreadable pictures", all five on one atlas sheet, fid 7960142; #35/#36: fid 4631337, the paladin talent backgrounds, "read
+     * failed (status 4) (CascLib error 95)" after the 70840 update, then Art FAILED and Play locked). The kit was all-or-nothing; now a
+     * picture outside [CORE] that does not read is left out and listed here (and in ui/kit/manifest.json "degraded"), with a WCHARVEST
+     * line naming its fid and the reader's reason ([why] = GameFiles.lastReadWhy). Its placeholder is the app's own stand-in: UiKit.tex()
+     * answers null for it and every caller already draws without it (`tex(x) ?: ...`), as before the art was harvested; no transparent
+     * file is written, it would hide those stand-ins. The step then stamps degraded and Play goes on; only a [CORE] piece, or so many
+     * losses that the game's files are plainly broken ([TOO_MANY]), still fails it.
+     */
+    val degraded = ArrayList<String>()
+
+    /** an output [name] the kit could not make: [what] it is; [fid] the game file whose read failed (its reason from [why]) */
+    internal fun lost(name: String, what: String, fid: Int? = null) {
+        val reason = if (fid == null) "" else " (fid $fid: ${why() ?: "read, but not a picture the kit can decode"})"
+        if (name in CORE) { missing.add("$what$reason"); log("CORE piece $name missing: $what$reason") }
+        else {
+            degraded.add("$what$reason"); log("placeholder for $name: $what$reason")
+            if (transient("$what$reason")) fetchLost++
+        }
+    }
+
+    /**
+     * A LOST DOWNLOAD IS NOT A LOST PICTURE (review of #35 #36 #38, 2026-11-11: a few seconds of network trouble on a streamed or half
+     * copied Data folder must not leave the stand-ins until the next game patch): of [degraded], how many failed only because the
+     * game file could not be downloaded ([FETCH_FAILED] in GameFiles.lastReadWhy). The steps try again in the same launch
+     * (HarvestRetry) while any are left, and a degraded stamp with such losses is due again in the background (KitSteps.retryDue).
+     */
+    var fetchLost = 0
+        private set
+
+    /** after a build of [outputs] pictures: too many lost is a broken game folder, not one bad texture (the step fails as before) */
+    internal fun judge(outputs: Int) {
+        if (degraded.isNotEmpty() && degraded.size > outputs * TOO_MANY)
+            missing.add("${degraded.size} of $outputs pictures did not read: the game's files look damaged")
+    }
     var written = 0
         private set
 
@@ -99,12 +138,15 @@ class KitBuild(
      * Cuts many atlas pieces with each game sheet decoded once and let go before the next (the sheets are up to 2048 px: kept all at
      * once they would not fit the app's memory). [jobs]: (piece, what to do with the cut).
      */
-    private fun cutAll(jobs: List<Pair<Rect, (KitImage) -> Unit>>, what: String, done: () -> Unit) {
-        for ((fid, group) in jobs.groupBy { it.first.fid }.toSortedMap()) {
+    internal class Cut(val r: Rect, val name: String, val use: (KitImage) -> Unit)
+
+    internal fun cutAll(jobs: List<Cut>, what: String, done: () -> Unit) {
+        for ((fid, group) in jobs.groupBy { it.r.fid }.toSortedMap()) {
             val sheet = texture(fid)
-            for ((r, use) in group) {
-                if (sheet == null) missing.add("$what: atlas texture $fid (${r.member})")
-                else use(sheet.crop(r.l, r.t, r.r, r.b))
+            for (j in group) {
+                // #35/#36/#38: an unreadable sheet costs its pieces, each named with the reader's reason
+                if (sheet == null) lost(j.name, "$what: atlas texture $fid (${j.r.member})", fid)
+                else j.use(sheet.crop(j.r.l, j.r.t, j.r.r, j.r.b))
                 done()
             }
         }
@@ -149,12 +191,12 @@ class KitBuild(
 
         fonts.forEach { fid, name ->
             val b = read(fid.toInt())
-            if (b == null) missing.add("font $fid $name") else { write("fonts/$name", b); written++ }
+            if (b == null) lost(name as String, "font $fid $name", fid.toInt()) else { write("fonts/$name", b); written++ }
             step("the fonts")
         }
         fun whole(src: JSONObject, kind: String, dir: String, keep: Boolean) = src.forEach { fid, name ->
             val im = texture(fid.toInt())
-            if (im == null) missing.add("$kind $fid $name")
+            if (im == null) lost(name as String, "$kind $fid $name", fid.toInt())
             else { png("$dir/$name.png", im); if (keep) files.put(name as String, JSONArray().put(im.w).put(im.h)) }
             step("the game's pictures")
         }
@@ -163,12 +205,12 @@ class KitBuild(
         crops.forEach { name, v ->
             val c = v as JSONArray
             val im = texture(c.optInt(0))?.crop(c.optInt(1), c.optInt(2), c.optInt(3), c.optInt(4))
-            if (im == null) missing.add("crop ${c.optInt(0)} $name") else { png("ui/kit/$name.png", im); files.put(name, size(im)) }
+            if (im == null) lost(name, "crop ${c.optInt(0)} $name", c.optInt(0)) else { png("ui/kit/$name.png", im); files.put(name, size(im)) }
             step("the game's pictures")
         }
         scenes.forEach { fid, focus ->
             val im0 = texture(fid.toInt())
-            if (im0 == null) missing.add("scene $fid") else {
+            if (im0 == null) lost("scene_$fid", "scene $fid", fid.toInt()) else {
                 val painting = im0.opaque().crop(0, 272, im0.w, 1412)
                 val sc = painting.resize((painting.w * 1080.0 / painting.h).toInt(), 1080)
                 val x = ((sc.w - 1240) * (focus as Number).toDouble()).toInt()
@@ -179,17 +221,17 @@ class KitBuild(
         }
         byId.forEach { fid, what ->
             val im = texture(fid.toInt())
-            if (im == null) missing.add("by id $fid $what") else { png("ui/kit/fid_$fid.png", im); files.put("fid_$fid", size(im)) }
+            if (im == null) lost("fid_$fid", "by id $fid $what", fid.toInt()) else { png("ui/kit/fid_$fid.png", im); files.put("fid_$fid", size(im)) }
             step("the game's pictures")
         }
 
         // atlas members, cut, scaled, kept
         val cuts = recipe.obj("cuts"); val scale = recipe.obj("scale")
-        val jobs = ArrayList<Pair<Rect, (KitImage) -> Unit>>()
+        val jobs = ArrayList<Cut>()
         for ((member, name) in wanted) {
             val r = atlas.members[member.lowercase()]
-            if (r == null) { missing.add("atlas member $member"); step("the frames"); continue }
-            jobs.add(r to { cut: KitImage ->
+            if (r == null) { lost(name, "atlas member $member: not in this client's atlas tables"); step("the frames"); continue }
+            jobs.add(Cut(r, name) { cut: KitImage ->
                 var im = cut
                 cuts.optJSONArray(name)?.let { c ->
                     val cr = c.optInt(2); val cb = c.optInt(3)
@@ -209,18 +251,18 @@ class KitBuild(
             val f = files.optJSONArray(src as String)
             val b = keep[src]
             if (f != null && b != null) { write("ui/kit/$also.png", b); written++; files.put(also, JSONArray().put(f.optInt(0)).put(f.optInt(1))) }
-            else missing.add("copy $also from $src")
+            else lost(also, "copy $also from $src")
         }
         keep.clear()
 
         // the map pins (minimap_kit.py)
         val size = mm.optInt("size", 64)
         val trim = (0 until (mm.optJSONArray("trim")?.length() ?: 0)).map { mm.optJSONArray("trim")!!.optString(it) }.toSet()
-        val mmJobs = ArrayList<Pair<Rect, (KitImage) -> Unit>>()
+        val mmJobs = ArrayList<Cut>()
         for ((name, m) in mmWanted) {
             val r = atlas.members[m.lowercase()]
-            if (r == null) { missing.add("map pin $m"); step("the map pins"); continue }
-            mmJobs.add(r to { cut: KitImage ->
+            if (r == null) { lost(name, "map pin $m: not in this client's atlas tables"); step("the map pins"); continue }
+            mmJobs.add(Cut(r, name) { cut: KitImage ->
                 var im = cut
                 if (name in trim) im.alphaBox(24)?.let { b -> im = im.crop(b[0], b[1], b[2], b[3]) }
                 png("ui/kit/$name.png", im)
@@ -229,22 +271,25 @@ class KitBuild(
         cutAll(mmJobs, "map pins") { step("the map pins") }
         val ringRect = atlas.members[mm.optString("ringFrom").lowercase()]
         val ring = ringRect?.let { r -> texture(r.fid)?.crop(r.l, r.t, r.r, r.b) }
-        if (ring == null) missing.add("the gold ring ${mm.optString("ringFrom")}: no round pins")
+        if (ring == null) lost("ring", "the gold ring ${mm.optString("ringFrom")}: no round pins", ringRect?.fid)
         mmRound.forEach { name, m ->
             val r = atlas.members[(m as String).lowercase()]
             val im = r?.let { texture(it.fid)?.crop(it.l, it.t, it.r, it.b) }
-            if (im == null || ring == null) missing.add("map pin $m") else png("ui/kit/$name.png", ringCut(im, ring, size))
+            if (im == null || ring == null) lost(name, "map pin $m" + (if (ring == null) ": no gold ring" else ""), if (im == null) r?.fid else null)
+            else png("ui/kit/$name.png", ringCut(im, ring, size))
             step("the map pins")
         }
         mmTex.forEach { name, fid ->
             val im = texture((fid as Number).toInt())
-            if (im == null) missing.add("map pin $fid") else png("ui/kit/$name.png", im)
+            if (im == null) lost(name, "map pin $fid", (fid as Number).toInt()) else png("ui/kit/$name.png", im)
             step("the map pins")
         }
-        val oi = texture(mm.optInt("objectIconsFid", 136435))
+        val oiFid = mm.optInt("objectIconsFid", 136435)
+        val oi = texture(oiFid)
+        val oiWhy = if (oi == null) why() else null
         mmObj.forEach { name, rc ->
             val c = rc as JSONArray
-            if (oi == null) missing.add("ObjectIcons for $name") else {
+            if (oi == null) lost(name, "ObjectIcons for $name (fid $oiFid: ${oiWhy ?: "not a picture"})") else {
                 val cw = oi.w / 8; val row = c.optInt(0); val col = c.optInt(1)
                 png("ui/kit/$name.png", oi.crop(col * cw, row * cw, (col + 1) * cw, (row + 1) * cw))
             }
@@ -252,7 +297,8 @@ class KitBuild(
         }
         mmRoundIcons.forEach { name, fid ->
             val im = texture((fid as Number).toInt())
-            if (im == null || ring == null) missing.add("map pin icon $fid") else png("ui/kit/$name.png", ringCut(im, ring, size))
+            if (im == null || ring == null) lost(name, "map pin icon $fid" + (if (ring == null) ": no gold ring" else ""), if (im == null) (fid as Number).toInt() else null)
+            else png("ui/kit/$name.png", ringCut(im, ring, size))
             step("the map pins")
         }
 
@@ -261,7 +307,7 @@ class KitBuild(
         uiCrops.forEach { name, v ->
             val c = v as JSONArray
             val im = texture(c.optInt(0))?.crop(c.optInt(1), c.optInt(2), c.optInt(3), c.optInt(4))
-            if (im == null) missing.add("bags crop $name") else png("ui/$name.png", im)
+            if (im == null) lost(name, "bags crop $name", c.optInt(0)) else png("ui/$name.png", im)
             step("the bags")
         }
 
@@ -273,11 +319,11 @@ class KitBuild(
         if (gz == null) {
             for (name in OWN_STONE) {
                 val bytes = asset("harvest/own/$name.png")
-                if (bytes == null) missing.add("own picture $name")
+                if (bytes == null) lost(name, "own picture $name")
                 else { write("ui/kit/$name.png", bytes); written++ }
             }
         }
-        else if (tile == null || cracked == null) missing.add("the Home stone (game textures)")
+        else if (tile == null || cracked == null) lost("home_stone", "the Home stone (game textures ${tileR?.fid} / ${crackR?.fid})")
         else {
             progress(done, total, "the Home button")
             for ((name, pic) in HomeStone.pieces(home, HomeStone.layers(gz, home), tile, cracked)) png("ui/kit/$name.png", pic.first, pic.second)
@@ -288,14 +334,16 @@ class KitBuild(
         for (i in 0 until orig.length()) {
             val name = orig.optString(i)
             val b = asset("harvest/orig/$name.png")
-            if (b == null) missing.add("own picture $name") else { write("ui/kit/$name.png", b); written++ }
+            if (b == null) lost(name, "own picture $name") else { write("ui/kit/$name.png", b); written++ }
             step("the Home button")
         }
 
+        judge(total)
         val man = JSONObject().put("v", 1).put("files", files)
-        if (missing.isNotEmpty()) man.put("missing", JSONArray(missing))
+        if (missing.isNotEmpty() || degraded.isNotEmpty()) man.put("missing", JSONArray(missing + degraded))
+        if (degraded.isNotEmpty()) man.put("degraded", JSONArray(degraded))
         write("ui/kit/manifest.json", man.toString().toByteArray())
-        log("kit: $written files, ${missing.size} missing" + if (missing.isEmpty()) "" else ": " + missing.joinToString("; "))
+        log(summary("kit"))
     }
 
     /** minimap_kit.py's ring_cut: [icon] cut round and set inside the bag filters' gold ring, [size] px */
@@ -326,7 +374,7 @@ class KitBuild(
         val atlas = atlas(db)
         val wanted = recipe.obj("wanted")
         val man = JSONObject()
-        val jobs = ArrayList<Pair<Rect, (KitImage) -> Unit>>()
+        val jobs = ArrayList<Cut>()
         val total = wanted.length(); var done = 0
         wanted.forEach { fn, v ->
             val o = v as JSONObject
@@ -340,7 +388,7 @@ class KitBuild(
                 done++; return@forEach
             }
             val r: Rect = hit
-            jobs.add(r to { piece: KitImage ->
+            jobs.add(Cut(r, fn) { piece: KitImage ->
                 png("ui/cast/$fn.png", piece)
                 val ink = piece.alphaBox(24)
                 val e = JSONObject().put("atlas", r.element).put("w", r.r - r.l).put("h", r.b - r.t).put("purpose", o.optString("purpose"))
@@ -350,9 +398,16 @@ class KitBuild(
             })
         }
         cutAll(jobs, "cast") { done++; if (done % 8 == 0 || done == total) progress(done, total, "the controller's pieces") }
+        judge(total)
         write("ui/cast/manifest.json", man.toString().toByteArray())
-        log("cast: $written files, ${missing.size} missing" + if (missing.isEmpty()) "" else ": " + missing.joinToString("; "))
+        log(summary("cast"))
     }
+
+    /** the step's closing WCHARVEST line: what was written, what fails it, what the app stands in for */
+    internal fun summary(step: String): String =
+        "$step: $written files, ${missing.size} missing, ${degraded.size} left to the app's stand-ins" +
+            (if (missing.isEmpty()) "" else "; missing: " + missing.joinToString("; ")) +
+            (if (degraded.isEmpty()) "" else "; stand-ins: " + degraded.joinToString("; "))
 
     // ------------------------------------------------------------------------------------------------ icons
 
@@ -360,7 +415,7 @@ class KitBuild(
      * build_pak.py: every icon in the recipe, at [tile] px, through [encode] (WebP on the phone), into [out] (icons.pak, WCI1), written
      * to out.part first and renamed when whole. Returns the number of icons packed.
      */
-    fun icons(recipe: JSONObject, out: File, lenient: Boolean = false, encode: (KitImage, Int) -> ByteArray?): Int {
+    fun icons(recipe: JSONObject, out: File, lenient: Boolean = false, tolerant: Boolean = false, encode: (KitImage, Int) -> ByteArray?): Int {
         val tile = recipe.optInt("tile", 64); val q = recipe.optInt("quality", 80)
         val arr = recipe.optJSONArray("fids") ?: JSONArray()
         val fids = IntArray(arr.length()) { arr.optInt(it) }.sorted()
@@ -383,7 +438,12 @@ class KitBuild(
                     }
                     for ((k, j) in jobs.withIndex()) {
                         when (val r = j.get()) {
-                            null -> { miss++; missing.add("icon ${chunk[k]} not readable") }
+                            null -> {
+                                miss++
+                                val why = whyFor(chunk[k])
+                                missing.add("icon ${chunk[k]} not readable" + (why?.let { " ($it)" } ?: ""))
+                                if (why != null && transient(why)) fetchLost++
+                            }
                             is ByteArray -> { o.write(r); ids.add(chunk[k]); lens.add(r.size) }
                             else -> { bad++; missing.add("icon ${chunk[k]} undecodable") }
                         }
@@ -398,6 +458,14 @@ class KitBuild(
             if (missing.isEmpty()) "" else ": ${missing.joinToString("; ")}")
         // [lenient] (Track C, the background all-icons step): an icon the game lacks or cannot decode is left out, never a failure
         if (missing.isNotEmpty() && lenient) missing.clear()
+        // [tolerant] (#35 #36 #38 review, 2026-11-11: the before-Play icons step on a first install failed for ONE unreadable icon, the
+        // same CascLib 95 that locked Play through the kit): the icons that did not read are left out (the app falls back to the
+        // all-icons packs, then the game's question mark) and listed in [degraded]; only an empty pack or more than [TOO_MANY] of the
+        // icons lost (a broken game folder) still fails
+        if (missing.isNotEmpty() && tolerant && count > 0 && missing.size <= fids.size * TOO_MANY) {
+            for (m in missing) log("placeholder for $m")
+            degraded.addAll(missing); missing.clear()
+        }
         if (missing.isNotEmpty()) {
             blobs.delete()
             requireComplete("icons")
@@ -424,6 +492,22 @@ class KitBuild(
     }
 
     companion object {
+        /**
+         * THE CORE (#35 #36 #38, 2026-11-11): the pieces without which the kit is not the kit, so a build that lacks one still fails:
+         * the game's main font and the red button UiKit.ready() asks for (every room's buttons and labels). Neither reported loss (the
+         * micro-button sheet 7960142, the talent backgrounds on 4631337) is here; everything else gets the app's stand-in.
+         */
+        val CORE: Set<String> = setOf("frizqt__.ttf", "button_up_left", "button_up_center", "button_up_right")
+
+        /** more than this share of the pictures lost = the game's files are broken (a wrong or half-copied Data folder), not one texture */
+        const val TOO_MANY = 0.5
+
+        /** GameFiles.lastReadWhy's words for a game file that is not on the device and could not be downloaded (a temporary loss) */
+        const val FETCH_FAILED = "downloading it failed"
+
+        /** a lost picture's reason says the download failed: the network, not the game's files (worth trying again) */
+        fun transient(reason: String): Boolean = reason.contains(FETCH_FAILED)
+
         fun withHolidays(recipe: JSONObject, table: Db2): JSONObject {
             check(table.layoutHash == 0x432931C0 && table.fieldCount == 12) { "unsupported Holidays table layout" }
             val rows = table.rows(arrays = setOf(11))

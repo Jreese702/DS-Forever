@@ -166,6 +166,7 @@ object MapHarvestSteps {
             val strip = Bitmap.createBitmap(cellPx * cells.size, cellPx, Bitmap.Config.ARGB_8888)
             val cv = Canvas(strip)
             val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+            val lost = ArrayList<String>()
             for ((i, cell) in cells.withIndex()) {
                 job.progress(i, cells.size, cell.name)
                 val src: Bitmap? = when (cell.src) {
@@ -175,13 +176,20 @@ object MapHarvestSteps {
                     "blp" -> job.game.blpName("${cell.name}.blp")
                     else -> null
                 }
-                src ?: error("POI cell ${cell.src} ${cell.name} unreadable")
-                cv.drawBitmap(src, null, android.graphics.RectF(i * cellPx.toFloat(), 0f, (i + 1) * cellPx.toFloat(), cellPx.toFloat()), paint)
-                if (src !== sheet) src.recycle()
+                // #35 #36 #38 review (2026-11-11): this before-Play step failed, and locked Play, for ONE unreadable cell; now the cell
+                // gets the gold dot (as the NPC icons do: never an empty pin), logged with the reader's reason, and the step stamps degraded
+                val pic = src ?: Bitmap.createBitmap(sheet, 3 * cw, 0, cw, cw).also {
+                    val why = job.game.lastReadWhy ?: "read, but not a picture"
+                    lost.add(why); android.util.Log.w("WCHARVEST", "placeholder for POI cell ${cell.src} ${cell.name}: $why")
+                }
+                cv.drawBitmap(pic, null, android.graphics.RectF(i * cellPx.toFloat(), 0f, (i + 1) * cellPx.toFloat(), cellPx.toFloat()), paint)
+                if (pic !== sheet) pic.recycle()
             }
             sheet.recycle()
+            if (lost.size > cells.size * KitBuild.TOO_MANY) error("${lost.size} of ${cells.size} POI cells did not read: the game's files look damaged")
             job.writePng("ui/poi_icons.png", strip)
             strip.recycle()
+            job.inputKey = KitSteps.degradedInputs(job, id, lost.size, lost.count { KitBuild.transient(it) })
         }
 
         /** a cursor icon with its pointer tip cut away (the top-left triangle) */
