@@ -28,4 +28,10 @@ object LauncherHooks {
      *  (issues #104 / #108 cluster, 2026-11-11: the game's processes grow while the container boots, before the game screen is up) */
     @Volatile var launchAtMs = 0L
     fun launchEvent(what: String) { launchState = what; launchAtMs = System.currentTimeMillis(); StartupTrace.mark("launch: ${what.take(60)}", what) }
+    /**
+     * No launch is under way any more (review of the #108-cluster fix, 2026-11-11): the launcher's screen is back in front (the game
+     * screen went, or never came up: the container failed, the player backed out) or Play starts a new launch. Ends [PlayGate]'s launch
+     * window; [launchState] stays for the problem report
+     */
+    fun endLaunchWindow() { launchAtMs = 0L }
 }

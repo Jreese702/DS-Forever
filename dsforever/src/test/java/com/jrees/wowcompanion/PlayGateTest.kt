@@ -1,5 +1,6 @@
 package com.jrees.wowcompanion
 
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -13,6 +14,11 @@ import java.nio.file.Files
  * bake, the background art) while the game is up or launching, on ANY Thor; it goes on once the game has closed.
  */
 class PlayGateTest {
+    @After fun reset() {
+        InputSink.sink = null; LauncherHooks.gameUp = { false }; LauncherHooks.launchState = ""; LauncherHooks.launchAtMs = 0L
+        LauncherHooks.gameStartSec = 0L
+    }
+
     // ------------------------------------------------------------------ the game up / launching
 
     @Test fun theGameUpIsActive() {
@@ -50,8 +56,61 @@ class PlayGateTest {
         assertFalse(PlayGate.artMustPause(backgroundPhase = true, gameActive = false))
         // the art before Play (Play waits for it) is never paused by this
         assertFalse(PlayGate.artMustPause(backgroundPhase = false, gameActive = true))
-        assertFalse(PlayGate.artMayOpen(gameActive = true))
-        assertTrue(PlayGate.artMayOpen(gameActive = false))
+        assertFalse(PlayGate.artMayOpen(gameUp = true, launching = false, beforePlayDue = false))
+        assertFalse(PlayGate.artMayOpen(gameUp = true, launching = false, beforePlayDue = true))     // a required icon asked for in game
+        assertTrue(PlayGate.artMayOpen(gameUp = false, launching = false, beforePlayDue = false))
+    }
+
+    // ------------------------------------------------------------------ review of this fix (2026-11-11)
+
+    private class Sink(override val route: String) : TapSink {
+        override fun key(xKeycode: Int, down: Boolean) {}
+        override fun tap(fx: Float, fy: Float) {}
+    }
+
+    /** the stream's attach (DsForeverScreen.attachStream): "game up" + the stream's sink - the game is on the PC, nothing waits */
+    @Test fun streamingIsNotALocalGameThroughTheRealHooks() {
+        LauncherHooks.gameUp = { true }
+        TapSinks.wire(PlayMode.STREAM, null, Sink("stream"))
+        assertTrue(PlayGate.streamingNow())
+        assertFalse(PlayGate.gameActiveNow())
+        assertFalse(PlayGate.artMustPause(backgroundPhase = true, gameActive = PlayGate.gameActiveNow()))
+        assertNull(PlayGate.indoorWait(PlayGate.streamingNow(), artRunning = false, gameActive = PlayGate.gameActiveNow(),
+            playedThisRun = true, quiet = false))
+        // the local game's attach (attachGame): the same "game up" is a game on this Thor
+        TapSinks.wire(PlayMode.LOCAL, Sink("container"), null)
+        assertFalse(PlayGate.streamingNow())
+        assertTrue(PlayGate.gameActiveNow())
+        assertFalse(PlayGate.localGameActive(streaming = true, gameUp = true, launchState = "", launchAtMs = 0, gameStartSec = 0, nowMs = 1))
+    }
+
+    /** a step's report from GameFiles.prefetch's pool threads never throws there (#138); the worker's own report pauses */
+    @Test fun thePauseIsOnlyThrownOnTheWorkerThread() {
+        assertFalse(PlayGate.artMustPause(backgroundPhase = true, gameActive = true, onWorker = false))
+        assertTrue(PlayGate.artMustPause(backgroundPhase = true, gameActive = true, onWorker = true))
+    }
+
+    /** a launch that reached "booting" and never brought the game screen up, then Play again: its art before Play is not held back */
+    @Test fun aLaunchWindowNeverHoldsBackTheArtBeforePlay() {
+        assertTrue(PlayGate.artMayOpen(gameUp = false, launching = true, beforePlayDue = true))
+        // only the background art waits out a launch
+        assertFalse(PlayGate.artMayOpen(gameUp = false, launching = true, beforePlayDue = false))
+        // and the launcher's screen back in front / a new Play ends the window outright
+        LauncherHooks.launchState = "booting the game (container 3)"; LauncherHooks.launchAtMs = System.currentTimeMillis() - 1_000
+        assertTrue(PlayGate.launchingNow())
+        assertTrue(PlayGate.gameActiveNow())
+        LauncherHooks.endLaunchWindow()
+        assertFalse(PlayGate.launchingNow())
+        assertFalse(PlayGate.gameActiveNow())
+        assertEquals("the last step stays for the problem report", "booting the game (container 3)", LauncherHooks.launchState)
+    }
+
+    /** after a game the launcher screen is the one the user called sluggish (2026-11-07): it bakes only while nobody looks at it */
+    @Test fun afterAGameIndoorBuildsOnlyWhileTheLauncherScreenIsQuiet() {
+        assertEquals(PlayGate.GAME_BUSY, PlayGate.indoorWait(false, artRunning = false, gameActive = false, playedThisRun = true, quiet = false))
+        assertNull(PlayGate.indoorWait(false, artRunning = false, gameActive = false, playedThisRun = true, quiet = true))
+        // before the first game it still waits, quiet or not
+        assertEquals(PlayGate.GAME_BUSY, PlayGate.indoorWait(false, artRunning = false, gameActive = false, playedThisRun = false, quiet = true))
     }
 
     // ------------------------------------------------------------------ the indoor maps

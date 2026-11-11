@@ -269,10 +269,17 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             return p
         }
 
-        private fun streaming() = (InputSink.sink as? TapSink)?.route == "stream"
+        private fun streaming() = PlayGate.streamingNow()
 
         /** the game up or launching (never while streaming: the game is on the PC): the run lets the game files go at once */
-        override fun gameRunning(): Boolean = !streaming() && PlayGate.gameActiveNow()
+        override fun gameRunning(): Boolean = PlayGate.gameActiveNow()
+
+        /**
+         * Review of this fix (2026-11-11): after a game, nobody is looking at DS Forever's launcher screen - the device screen is off, or
+         * the launcher is not the window in front (the user went to the home screen). The 2026-11-07 ruling's sluggishness was on that
+         * very screen, so the bake builds there only then
+         */
+        private fun quiet(): Boolean = power?.isInteractive == false || !LauncherHooks.inFront()
 
         override fun busy(): Boolean {
             // 2026-11-07 (the user: the app "is sluggish as fuck before I ever press update"; the Thor's CPU: interiors-bake 74 % on the
@@ -281,9 +288,10 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             // on the PC and the Thor only shows video, so it builds then too; an art run first
             // 2026-11-11 (issues #108 #109 #100 #92 #128: CascNative.open and the bake beside the game on the 16 GB Thor Max, +630 MB native
             // in 5 s, then Android's kill): never while the game is up or launching on ANY model (it was only the 8 / 12 GB ones, 1.0.17's
-            // "Pause while playing, always"); it builds once the game has closed. An art run (icons too) still goes first
-            return PlayGate.indoorWait(streaming(), ArtHarvest.state is ArtHarvest.State.Running, PlayGate.gameActiveNow(),
-                playedThisRun = LauncherHooks.gameStartSec != 0L) != null
+            // "Pause while playing, always"); it builds once the game has closed, while nobody looks at the launcher screen ([quiet]).
+            // An art run (icons too) still goes first - one that really works, not one parked for the game ([ArtHarvest.workingNow])
+            return PlayGate.indoorWait(streaming(), ArtHarvest.workingNow(), PlayGate.gameActiveNow(),
+                playedThisRun = LauncherHooks.gameStartSec != 0L, quiet = quiet()) != null
         }
 
         /** the player moved in the last few seconds while the game runs (before Play there is no player: never "moving") */

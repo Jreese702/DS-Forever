@@ -284,8 +284,20 @@ object ArtHarvest {
         // exactly the Thors that run out of memory): it leaves the run (the files close) and the worker waits outside them
         // 2026-11-11 (issues #94 / #86 / #104 / #63: safepathzones and allicons ran beside the game on the 16 GB Thor Max too, java
         // 250-550 MB on top of a 3-4 GB game): EVERY tier, and the launch's own window ([PlayGate])
-        if (PlayGate.artMustPause(bgPhase, PlayGate.gameActiveNow())) throw PausedForGame()
+        // review of this fix, 2026-11-11: only on the worker thread (a step's report from GameFiles.prefetch's pool threads must not throw
+        // there: #138's uncaught PausedForGame) - the worker's next report pauses it
+        if (PlayGate.artMustPause(bgPhase, PlayGate.gameActiveNow(), onWorker = Thread.currentThread() === worker)) throw PausedForGame()
     }
+
+    /**
+     * The worker waits outside the game files for the game to close ([PausedForGame]); [state] still says Running then (the launcher's
+     * progress line), so the indoor maps' "an art run first" asks [workingNow] instead (review of this fix, 2026-11-11: a parked run
+     * held the indoor maps back for the whole session)
+     */
+    @Volatile var parkedForGame = false
+        private set
+    /** an art run that is really working now (not parked for the game) */
+    fun workingNow(): Boolean = state is State.Running && !parkedForGame
 
     /** the background art not finished yet (the notice before Play on the 8 / 12 GB models) */
     fun backgroundLeft(ctx: Context): Boolean =
@@ -330,7 +342,10 @@ object ArtHarvest {
                     } catch (e: PausedForGame) {
                         Log.i(TAG, "harvest: paused while the game runs (${DeviceTier.model()}), the game files let go")
                         bgPhase = false; currentStep = null
-                        while (PlayGate.gameActiveNow() && !stopping && !yieldBg) Thread.sleep(3_000)
+                        parkedForGame = true
+                        try {
+                            while (PlayGate.gameActiveNow() && !stopping && !yieldBg) Thread.sleep(3_000)
+                        } finally { parkedForGame = false }
                         Log.i(TAG, "harvest: the game is closed, the background art goes on")
                         if (stopping) { stopping = false; set(State.Idle); break }
                         yieldBg = false
@@ -397,7 +412,9 @@ object ArtHarvest {
         }
         // 2026-11-11 (issue #108 cluster): a run that would open the game files while the game is up or launching (a required icon asked
         // for in game, the worker's next pass) waits outside them for the game to close; the art before Play never meets this (Play waits)
-        if (!PlayGate.artMayOpen(PlayGate.gameActiveNow())) throw PausedForGame()
+        // review of this fix (2026-11-11): the launch window alone never holds back a run with before-Play steps (Play waits for it)
+        if (!PlayGate.artMayOpen(gameUp = !PlayGate.streamingNow() && LauncherHooks.gameUp(), launching = PlayGate.launchingNow(),
+                beforePlayDue = first.isNotEmpty())) throw PausedForGame()
         // a CDN hiccup while it fetches the build's tables passes: tried again (HarvestRetry) before the art says it failed
         // after a game update the open downloads the build's tables (about 180 MB): the launcher shows how far (b-art-progress)
         GameFiles.onTables = { line -> checkStop(); set(State.Running(first.isNotEmpty(), 0f, line)) }
