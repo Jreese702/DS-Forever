@@ -29,7 +29,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S = WC.S
 
-local HV = "hub30"          -- hub30: the third choice's RULES (the user, 2026-11-10: "it would be better if it stay on out of combat incase someone else pulls me into combat, and it should turn off when I target something out of combat AND start attack and then swap back when an ability is used before that ability fires" ... "make sure hunters mark does not trigger it to swap back on"): on by default and after every fight; OFF when an attack starts out of a fight with a target (PLAYER_ENTER_COMBAT); back ON at an ability's send (UNIT_SPELLCAST_SENT, before it fires) - never for Hunter's Mark, Auto Shot or Attack; hub29 (replaced by hub30): "In combat" turns the option on AT THE PULL (the user, 2026-11-10: "I pull with arcane shot and then when they get close, my auto attack melee is not on"): a spell you cast, Auto Shot or a melee swing starting out of a fight writes 1 right then (allowed: no lockdown yet), and 0 again 8 s later if no fight came of it; hub28: COMBAT AUTO SHOT "In combat" (the user, 2026-11-10: "add a third toggle to the hunter option to basically only turn it on during combat"): "uisw" 28 / 29 - while on, the game's autoRangedCombat is written 1 as a fight starts and 0 when it ends (and 0 at once out of a fight); the doc's sw.shotf, sw.shotfk = whether the fight's write took; hub27: the Party mode switch also starts / stops the combat log (PadMap m112); hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub31"          -- hub31: HIDE POLESTAR ON THE TOP SCREEN (the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): "uisw" 30 / 31 - every top-level frame Polestar names (PolestarGuideFrame, its arrow, its pad hints, toasts ...) at alpha 0 while on, and kept there when it shows again; off gives each its alpha 1 back; alpha only, nothing of Polestar changed; the doc's sw.ps; hub30: the third choice's RULES (the user, 2026-11-10: "it would be better if it stay on out of combat incase someone else pulls me into combat, and it should turn off when I target something out of combat AND start attack and then swap back when an ability is used before that ability fires" ... "make sure hunters mark does not trigger it to swap back on"): on by default and after every fight; OFF when an attack starts out of a fight with a target (PLAYER_ENTER_COMBAT); back ON at an ability's send (UNIT_SPELLCAST_SENT, before it fires) - never for Hunter's Mark, Auto Shot or Attack; hub29 (replaced by hub30): "In combat" turns the option on AT THE PULL (the user, 2026-11-10: "I pull with arcane shot and then when they get close, my auto attack melee is not on"): a spell you cast, Auto Shot or a melee swing starting out of a fight writes 1 right then (allowed: no lockdown yet), and 0 again 8 s later if no fight came of it; hub28: COMBAT AUTO SHOT "In combat" (the user, 2026-11-10: "add a third toggle to the hunter option to basically only turn it on during combat"): "uisw" 28 / 29 - while on, the game's autoRangedCombat is written 1 as a fight starts and 0 when it ends (and 0 at once out of a fight); the doc's sw.shotf, sw.shotfk = whether the fight's write took; hub27: the Party mode switch also starts / stops the combat log (PadMap m112); hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -329,7 +329,9 @@ local SW = { PLAYER_SHOW = 0, PLAYER_HIDE = 1, TARGET_SHOW = 2, TARGET_HIDE = 3,
              -- blank as the default"): the bar's text - Total wins over Percent, neither = blank
              UFHPP_OFF = 24, UFHPP_ON = 25, UFHPT_OFF = 26, UFHPT_ON = 27,
              -- hub28: Combat Auto Shot only in fights
-             SHOTF_OFF = 28, SHOTF_ON = 29 }
+             SHOTF_OFF = 28, SHOTF_ON = 29,
+             -- hub31: Polestar's own windows on the top screen
+             PS_SHOW = 30, PS_HIDE = 31 }
 -- hub22 (the user, 2026-11-07: "a QOL setting for Start attack on Hostile targeting, so that when I press RB to target a hostile target it
 -- starts the attack, and then under that ... for hunters ... the 'Combat Auto Shot'"):
 --   ATK: a NEW hostile target starts the auto attack. The game lets no add-on start it on an event (StartAttack is protected), so the
@@ -506,6 +508,8 @@ function hub.swTap(col)
             WC.uf.chosen = WC.uf.chosen or {}
             WC.uf.chosen[part] = true
         end
+    elseif col == SW.PS_SHOW or col == SW.PS_HIDE then
+        hub.psSet(col == SW.PS_HIDE)
     elseif col == SW.PMODE_OFF or col == SW.PMODE_ON then
         -- hub25: Party mode allowed (PadMap's PM.allowed); turned off, PadMap ends a Party mode that is on (out of combat)
         WC.partyOk = (col == SW.PMODE_ON)
@@ -517,6 +521,42 @@ function hub.swTap(col)
     return true
 end
 hub.hmSet = hmSet               -- for the harness
+-- hub31: Polestar's top-level frames (every global frame named Polestar..., parented to UIParent or nothing), alpha 0 while hidden; frames
+-- Polestar makes later are found by the next look (every 5 s while hidden). Read only: alpha, an OnShow hook that keeps it 0.
+hub.ps = { hidden = nil, hooked = {}, seen = {} }
+function hub.psFrames()
+    local out = {}
+    for name, fr in pairs(_G) do
+        if type(name) == "string" and name:sub(1, 8) == "Polestar" and type(fr) == "table" and type(fr.GetObjectType) == "function"
+            and type(fr.SetAlpha) == "function" then
+            local okP, parent = pcall(fr.GetParent, fr)
+            if okP and (parent == nil or parent == UIParent) then out[#out + 1] = { name, fr } end
+        end
+    end
+    return out
+end
+function hub.psApply()
+    local P = hub.ps
+    for _, nf in ipairs(hub.psFrames()) do
+        local name, fr = nf[1], nf[2]
+        if P.hidden then
+            P.seen[name] = true
+            if not P.hooked[name] and type(fr.HookScript) == "function" then
+                P.hooked[name] = true
+                pcall(fr.HookScript, fr, "OnShow", function(self) if hub.ps.hidden then pcall(self.SetAlpha, self, 0) end end)
+            end
+            pcall(fr.SetAlpha, fr, 0)
+        elseif P.seen[name] then
+            pcall(fr.SetAlpha, fr, 1)
+        end
+    end
+    if not P.hidden then P.seen = {} end
+end
+function hub.psSet(hide)
+    hub.ps.hidden = hide == true
+    hub.psApply()
+end
+if type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then C_Timer.NewTicker(5, function() if hub.ps.hidden then pcall(hub.psApply) end end) end
 local function hmCheck()
     for _, name in ipairs(HUD_FRAMES) do
         local fr = groupHidden(name) and riderFrame(name)
@@ -570,11 +610,12 @@ local function swDoc()
              np = either(np.np, np.hud), prd = either(np.prd, np.hud), wm = np.wm == true,
              atk = atkv, shot = shotNow(), pmode = WC.partyOk == true,
              shotf = hubAtk.shotFight == true, shotfk = hubAtk.shotFightOk,
+             ps = hub.ps.hidden == true,
              -- hub26: our own party frames / target bar on
              ufp = hub.ufFlag("party"), uft = hub.ufFlag("target"), uftot = hub.ufFlag("tot"), ufhpp = hub.ufFlag("hpp"), ufhpt = hub.ufFlag("hpt"),
              set = { player = hm.g.player ~= nil or nil, target = hm.g.target ~= nil or nil, party = hm.g.party ~= nil or nil, np = np.np ~= nil or nil, prd = np.prd ~= nil or nil, wm = np.wm ~= nil or nil,
                      atk = hubAtk.on ~= nil or nil, shot = hubAtk.shotSet or nil, pmode = WC.partyOk ~= nil or nil,
-                     shotf = hubAtk.shotFight ~= nil or nil,
+                     shotf = hubAtk.shotFight ~= nil or nil, ps = hub.ps.hidden ~= nil or nil,
                      ufp = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.party) or nil,
                      uft = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.target) or nil,
                      uftot = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.tot) or nil,

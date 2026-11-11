@@ -21,10 +21,13 @@ import kotlin.math.abs
 object MapList {
     const val ME = -1
     private const val SECTION = -2
+    /** Polestar's own objective (ps1; the user, 2026-11-11: "a light blue objective to select from the tracker list"): below every tab's key */
+    const val POLESTAR = -2_000_000_000
 
     sealed class Item {
         abstract val key: Int
         object Me : Item() { override val key = ME }
+        object Polestar : Item() { override val key = POLESTAR }
         data class Tracked(val id: Int) : Item() { override val key get() = id }
         data class Section(val count: Int) : Item() { override val key get() = SECTION }
         data class Group(val zone: String, val count: Int, val open: Boolean) : Item() { override val key get() = groupKey(zone) }
@@ -38,7 +41,7 @@ object MapList {
     fun groupKey(zone: String): Int = -(3 + (zone.hashCode() and 0x3fffffff))
 
     /** a key that is a tab's */
-    fun isGroup(key: Int): Boolean = key <= -3
+    fun isGroup(key: Int): Boolean = key <= -3 && key != POLESTAR
 
     private fun gap(e: Entry, plv: Int?): Int = if (e.level == null || plv == null) Int.MAX_VALUE else abs(e.level - plv)
 
@@ -64,9 +67,11 @@ object MapList {
     }
 
     /** the whole list; [isOpen] says which tabs the player opened (none is, until then) */
-    fun items(me: Boolean, tracked: List<Int>, groups: List<Pair<String, List<Int>>>, isOpen: (String) -> Boolean): List<Item> {
+    fun items(me: Boolean, tracked: List<Int>, groups: List<Pair<String, List<Int>>>, polestar: Boolean = false,
+              isOpen: (String) -> Boolean): List<Item> {
         val out = ArrayList<Item>()
         if (me) out.add(Item.Me)
+        if (polestar) out.add(Item.Polestar)            // above the tracked quests: Polestar's objective, the light blue row
         for (id in tracked) out.add(Item.Tracked(id))
         if (groups.isNotEmpty()) {
             out.add(Item.Section(groups.sumOf { it.second.size }))

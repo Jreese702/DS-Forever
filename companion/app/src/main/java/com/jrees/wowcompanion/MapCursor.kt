@@ -35,6 +35,8 @@ class MapCursor {
         data class ShowOnMap(val id: Int) : Do()
         /** A on the portrait: the game's own player menu */
         object PlayerMenu : Do()
+        /** A on Polestar's objective (ps1): follow it / stop following it */
+        object Polestar : Do()
         /** A on an untracked tab: open / close it */
         data class Toggle(val key: Int) : Do()
         /** A on an untracked quest: the game's tracker takes it, and the game's focus (the user, 2026-10-16: "A to track and Focus") */
@@ -138,6 +140,7 @@ class MapCursor {
             "PAD1" -> return when {
                 !shown || !valid -> Do.Nothing
                 sel == MapList.ME -> Do.PlayerMenu
+                sel == MapList.POLESTAR -> Do.Polestar
                 MapList.isGroup(sel) -> Do.Toggle(sel)
                 sel in untracked -> Do.Track(sel)
                 sel == focusId -> Do.Unfocus(sel)

@@ -2950,6 +2950,47 @@ do
     end)
 end
 
+-- ---------------------------------------------------------------- POLESTAR'S OWN OBJECTIVE, READ (ps1)
+-- The user (2026-11-11): "rather than syncing the tracked quest to polestar maybe we add a light blue objective to select from the
+-- tracker list that has the polestar objective". Read only: Polestar's live guide step (Engine.GetLiveStep / GetStepView: the step's
+-- title) and its waypoint (Engine.GetWaypoint: the goal the arrow leads to, its words, kind, map and point on Polestar's 0-100 scale)
+-- go to the app as {"type":"pstep", t, g, k, q, m, x, y} (x / y 0..1), or {"type":"pstep", none = true} when Polestar has no step;
+-- sent when it changes and every 15 s. Nothing of Polestar or the game is changed.
+WC.pstep = { sig = nil, sentAt = 0 }
+function WC.pstep.read()
+    local P = _G.Polestar
+    local E = type(P) == "table" and type(P.Engine) == "table" and P.Engine or nil
+    if not (E and type(E.GetWaypoint) == "function") then return nil end
+    local okW, wp = pcall(E.GetWaypoint)
+    if not okW or type(wp) ~= "table" or type(wp.map) ~= "number" or type(wp.x) ~= "number" or type(wp.y) ~= "number" then
+        return { none = true }
+    end
+    local title, quest
+    if type(E.GetStepView) == "function" and type(wp.stepIndex) == "number" then
+        local okV, v = pcall(E.GetStepView, wp.stepIndex)
+        if okV and type(v) == "table" then
+            title = type(v.title) == "string" and v.title or nil
+            local gv = type(v.goals) == "table" and type(wp.goalIndex) == "number" and v.goals[wp.goalIndex] or nil
+            if type(gv) == "table" and type(gv.quest) == "number" then quest = gv.quest end
+        end
+    end
+    return {
+        t = title, g = type(wp.label) == "string" and wp.label or nil, k = type(wp.kind) == "string" and wp.kind or nil, q = quest,
+        m = wp.map, x = math.floor(wp.x * 100 + 0.5) / 10000, y = math.floor(wp.y * 100 + 0.5) / 10000,
+    }
+end
+C_Timer.NewTicker(1, function()
+    local P = WC.pstep
+    local okR, d = pcall(P.read)
+    if not okR or not d then return end
+    local sig = d.none and "none" or table.concat({ d.t or "", d.g or "", d.k or "", tostring(d.q or 0), d.m, d.x, d.y }, "|")
+    if sig ~= P.sig or GetTime() - P.sentAt > 15 then
+        P.sig, P.sentAt = sig, GetTime()
+        d.type, d.v = "pstep", "ps1"
+        pcall(function() WC.send(WC.encode(d)); WC.push() end)
+    end
+end)
+
 -- ---------------------------------------------------------------- QUESTTRAIL'S ARROW, READ (b-route-questtrail)
 -- The user (2026-10-17): "(a) + (b)" - with Settings' "Quest tracking: QuestTrail" the map's line and arrow follow QuestTrail's own
 -- guidance arrow (QuestTrail by Krom, MIT; player-chosen). QuestTrail has no public API (3.1.0: everything in its private

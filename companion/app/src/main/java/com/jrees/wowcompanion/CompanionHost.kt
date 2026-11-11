@@ -1949,6 +1949,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 mapView.invalidate()
             }
             "pnavroute" -> if (current) { mapView.polestar.onRoute(msg, SystemClock.elapsedRealtime()); mapView.invalidate() }
+            "pstep" -> if (current) mapView.onPolestarStep(msg)          // ps1: Polestar's own objective, the light blue row
             "routewp" -> if (current) {
                 routeWp.onAnswer(msg.optString("op"), msg.optBoolean("ok"), SystemClock.elapsedRealtime())
                 Log.i("WCMAP", "route pin: ${msg.optString("op")} ${if (msg.optBoolean("ok")) "ok" else "refused"} ${msg.optString("why", "")}")

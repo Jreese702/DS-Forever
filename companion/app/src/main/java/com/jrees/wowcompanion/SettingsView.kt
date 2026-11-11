@@ -75,6 +75,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segQt = Array(4) { RectF() }
     private val segDanger = Array(3) { RectF() }
     private val segFog = Array(2) { RectF() }
+    private val segPsTop = Array(2) { RectF() }          // hub31: Polestar on the top screen, Show / Hide
     private val segLang = Array(Tr.LANGS.size) { RectF() }          // 2026-11-07: Settings > System > Language
     private val segLight = Array(2) { RectF() }
     private val segLowGfx = Array(2) { RectF() }                      // 2026-11-08: Settings > System > Low-memory graphics                       // 1.0.17: Settings > Performance > Lighter mode
@@ -208,7 +209,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      */
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
-            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segDanger.toList() + segFog.toList() + segChat.toList() +
+            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPsTop.toList() + segDanger.toList() + segFog.toList() + segChat.toList() +
             segLang.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
@@ -243,7 +244,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segDanger, segFog, segLang, segLight,
+                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segDanger, segFog, segLang, segLight,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -394,6 +395,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 val qi = segQt.indexOfFirst { it.contains(x, y) }
                 val di = segDanger.indexOfFirst { it.contains(x, y) }
                 val fi = segFog.indexOfFirst { it.contains(x, y) }
+                val psi = segPsTop.indexOfFirst { it.contains(x, y) }
+                if (psi >= 0) { GameUi.setSwitch(GameUi.SW_PS, psi == 1); invalidate(); return }
                 val lti = segLight.indexOfFirst { it.contains(x, y) }
                 if (lti >= 0) { Settings.lighterMode = lti == 0; invalidate(); return }
                 val lgx = segLowGfx.indexOfFirst { it.contains(x, y) }
@@ -640,6 +643,19 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             qtSegmented(c, b, Settings.QUEST_TRACKING.indexOf(Settings.questTracking))
             b
+        }
+        // POLESTAR ON THE TOP SCREEN (hub31; the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): only while
+        // Polestar is installed and the add-on has the switch; per character, off by default
+        if (ThirdPartyAddons.status(ThirdPartyAddons.POLESTAR, "core").kind == ThirdPartyAddons.Kind.INSTALLED && GameUi.swNow(GameUi.SW_PS) != null) {
+            y += ROW_H + 10f
+            val hide = GameUi.swWant(GameUi.SW_PS)
+            val sent = GameUi.swNow(GameUi.SW_PS) != hide
+            row(c, y, "Polestar on the top screen", if (sent) "Sent" else if (hide) "Hidden" else "Shown", enabled = true) { box ->
+                val bw = minOf(segW() * 2.6f, box.width() * 0.5f)
+                val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                segmented(c, b, listOf("Show", "Hide"), if (hide) 1 else 0, segPsTop)
+                b
+            }
         }
         // AVOID DANGEROUS AREAS moved to QOL > Navigation (the housekeeping pass; GameUiSection's QOL part, the same Settings.avoidDanger)
         y += ROW_H + 10f

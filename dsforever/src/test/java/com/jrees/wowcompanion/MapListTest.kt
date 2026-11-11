@@ -40,6 +40,23 @@ class MapListTest {
         assertEquals(setOf(11), MapList.untracked(open))
     }
 
+    /** ps1 (the user, 2026-11-11): Polestar's objective is a light blue row under the portrait, above the tracked quests; A follows it */
+    @Test fun polestarsRowSitsAboveTheTrackedQuestsAndAFollowsIt() {
+        val g = MapList.groups(listOf(e(10, "A", 5)), 5, emptyList(), emptyList())
+        val items = MapList.items(true, listOf(1, 2), g, polestar = true) { false }
+        assertEquals(listOf(MapList.Item.Me, MapList.Item.Polestar, MapList.Item.Tracked(1)), items.take(3))
+        assertFalse(MapList.isGroup(MapList.POLESTAR))
+        assertTrue(MapList.isGroup(MapList.groupKey("A")))
+        val stops = MapList.stops(items)
+        assertEquals(listOf(MapList.ME, MapList.POLESTAR, 1, 2, MapList.groupKey("A")), stops)
+        val c = MapCursor()
+        c.touched(MapList.POLESTAR, stops)
+        assertEquals(MapCursor.Do.Polestar, c.key("PAD1", stops, 0, false))
+        assertEquals(MapCursor.Do.Nothing, c.key("PAD3", stops, 0, false))      // X: nothing to track
+        assertEquals(MapCursor.Do.Nothing, c.key("PAD4", stops, 0, false))      // Y: no quest box
+        assertFalse(MapList.items(true, listOf(1), g) { false }.contains(MapList.Item.Polestar))
+    }
+
     @Test fun theCursorOpensOnTheFocusedQuestNotThePortrait() {
         val stops = listOf(MapList.ME, 7, 8, MapList.groupKey("A"))
         val c = MapCursor()
