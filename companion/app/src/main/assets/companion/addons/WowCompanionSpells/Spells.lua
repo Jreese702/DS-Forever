@@ -30,7 +30,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local SV = "s6"     -- bump on every change; the app shows it, so a stale build is visible
+local SV = "s7"     -- bump on every change; s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
 
 local MAX_LINES = 24        -- skill lines read (the game has General + class + a few)
 local MAX_ITEMS = 400       -- book entries read, all lines together
@@ -431,7 +431,9 @@ function WC.collectSpells()
         local ids = {}
         for pass = 1, 2 do
             for _, it in ipairs(doc.items) do
-                if it.t == T_SPELL and not it.pas and not it.fm and it.a and (it.low and 2 or 1) == pass then ids[#ids + 1] = it.a end
+                -- s7 (the user, 2026-11-11: "Smart Y ... doesn't actually pick them"): the loose fly-out members (the Hunter aspects) get
+                -- numbers too - Book b48 already lists them, so Smart buffs offered them with no tap way and Pick sent nothing
+                if it.t == T_SPELL and not it.pas and it.a and (it.low and 2 or 1) == pass then ids[#ids + 1] = it.a end
             end
         end
         local okc, nums = pcall(WC.spellsPadNumbers, ids)
