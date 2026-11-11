@@ -2888,7 +2888,10 @@ end
 -- into a show turns round where it is. The slide is an offset on the player's height, never written to it.
 -- prd9 (the user's new defaults, for anyone who never changed them - a saved value stays): the height Y_DEF -350 (was -300), the
 -- width W_DEF 280 (was 260); the scale 100 % as before
-WC.prd = { V = "prd9", TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
+-- prd10 (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"; 2026-11-11): a Rogue's (and a cat's)
+-- combo points as a thin pip strip right under the power bar (CPH high, CP_GAP below it, inside the aura rows' ROW_GAP), the read fed
+-- straight to the bar like every value here; on the player's power events (UNIT_POWER_FREQUENT too) at the next frame
+WC.prd = { V = "prd10", CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
            ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.25, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
            alpha = 0, shown = false, why = "off" }
@@ -3171,6 +3174,12 @@ do
         P.pw:SetPoint("TOP", P.hp, "BOTTOM", 0, -u(P.BAR_GAP))
         P.extras(f)
         P.hpFrame, P.pwFrame = P.frameFor(P.hp), P.frameFor(P.pw)
+        -- prd10: the combo pips under the power bar (shown for a Rogue / a cat only: P.combo)
+        P.cp = bar(f, P.CPH)
+        P.cp:SetPoint("TOP", P.pw, "BOTTOM", 0, -u(P.CP_GAP))
+        P.paint(P.cp, P.POWER.COMBO_POINTS[1], P.POWER.COMBO_POINTS[2], P.POWER.COMBO_POINTS[3])
+        P.cp.gaps = {}
+        P.cp:Hide()
         -- the lip over every bar and overlay (the extras' clip frames are the bars' children)
         if P.lip then pcall(function() P.lip:SetFrameLevel(P.hp:GetFrameLevel() + 20) end) end
         P.buffs, P.debuffs = {}, {}
@@ -3186,7 +3195,8 @@ do
         if not P.f then return end
         P.f:SetSize(u(P.W), u(P.HH + P.BAR_GAP + P.PH))
         pcall(function() P.f:SetScale(P.sc / 100) end)
-        for _, b in ipairs({ P.hp, P.pw, P.lag }) do if b then b:SetWidth(u(P.W)) end end
+        for _, b in ipairs({ P.hp, P.pw, P.lag, P.cp }) do if b then b:SetWidth(u(P.W)) end end
+        if P.cp then P.cp.max = nil end                                  -- prd10: the pips' gaps laid out again at the new width
         for _, b in ipairs({ P.heal, P.shield }) do if b then b:SetWidth(u(P.W)) end end
         if P.lag then P.lag:SetAllPoints(P.hp) end
         P.cache = nil
@@ -3332,6 +3342,36 @@ do
         if P.pw.rgb then pcall(function() P.pw.fill:SetVertexColor(P.pw.rgb[1], P.pw.rgb[2], P.pw.rgb[3]) end) end
         pcall(function() P.pw:SetMinMaxValues(0, UnitPowerMax("player", pt)) end)
         pcall(function() P.pw:SetValue(UnitPower("player", pt)) end)
+        pcall(P.combo, pt)
+    end
+    -- prd10 (issue #120): a Rogue's / a cat's combo points into the pip strip; nothing read back (a secret goes straight to the setter)
+    function P.combo(pt)
+        local cp = P.cp
+        if not cp then return end
+        local okC, _, cls = pcall(UnitClass, "player")
+        local energy = (Enum and Enum.PowerType and Enum.PowerType.Energy) or 3
+        if not (okC and (cls == "ROGUE" or (cls == "DRUID" and pt == energy))) then cp:Hide(); P.ex.cp = nil; return end
+        local CP = (Enum and Enum.PowerType and Enum.PowerType.ComboPoints) or 4
+        local okM, max = pcall(UnitPowerMax, "player", CP)
+        max = (okM and num(max) and max > 0) and max or 5
+        if cp.max ~= max then
+            cp.max = max
+            for _, g in ipairs(cp.gaps) do g:Hide() end
+            for k = 1, max - 1 do
+                local g = cp.gaps[k] or cp:CreateTexture(nil, "OVERLAY")
+                cp.gaps[k] = g
+                g:SetColorTexture(0, 0, 0, 1); g:SetSize(u(2), u(P.CPH))
+                g:ClearAllPoints(); g:SetPoint("LEFT", cp, "LEFT", u(P.W) * k / max - u(1), 0); g:Show()
+            end
+        end
+        pcall(function() cp:SetMinMaxValues(0, max) end)
+        local v = nil
+        if type(GetComboPoints) == "function" then local okG, g = pcall(GetComboPoints, "player", "target"); if okG then v = g end end
+        if type(v) == "nil" then local okP, p = pcall(UnitPower, "player", CP); if okP then v = p end end
+        if type(v) == "nil" then v = 0 end
+        if not pcall(cp.SetValue, cp, v) then pcall(cp.SetValue, cp, 0) end
+        cp:Show()
+        P.ex.cp = max
     end
 
     -- ---------------------------------------------------------------- the auras
@@ -3583,7 +3623,7 @@ do
 
     local ev = CreateFrame("Frame")
     for _, e in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD" }) do pcall(function() ev:RegisterEvent(e) end) end
-    for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER", "UNIT_AURA",
+    for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_POWER_FREQUENT", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER", "UNIT_AURA",
                          "UNIT_HEAL_PREDICTION", "UNIT_ABSORB_AMOUNT_CHANGED", "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START",
                          "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_CHANNEL_STOP" }) do
         pcall(function() ev:RegisterUnitEvent(e, "player") end)

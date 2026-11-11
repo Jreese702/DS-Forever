@@ -113,9 +113,13 @@ local function start()
         -- does change how the map should be framed, and without it that emit is deduped away.
         -- the soft-interact target too (Map.lua collectSoft): a new node in front of the player,
         -- or stepping into its range, must reach the map while standing still.
-        local key = string.format("%.4f|%.4f|%.2f|%s|%s", pos.x or 0, pos.y or 0,
+        -- (issue #30, 2026-11-11) the group's read too (Map.lua grpRead's seq, once a second while grouped and for 5 s after it goes):
+        -- standing still the members' dots still move, and the "no group" read is never built and dropped. The seq is in the key on
+        -- EVERY tick (review 2026-11-11): only on the read's tick, the key went seq -> "" -> same, three sends a second standing still
+        local key = string.format("%.4f|%.4f|%.2f|%s|%s|%s", pos.x or 0, pos.y or 0,
                                   pos.facing or 0, tostring(pos.indoors),
-                                  WC.softKey and WC.softKey(pos.soft) or "")
+                                  WC.softKey and WC.softKey(pos.soft) or "",
+                                  type(WC.grp) == "table" and tostring(WC.grp.seq) or "")
         -- Unchanged means stopped. Two things are owed to the app at that moment:
         --  * ONE MORE UPDATE whose trail shows the stop. The app projects the arrow ahead
         --    along the current velocity to hide latency, and a stop otherwise reaches it only

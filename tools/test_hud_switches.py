@@ -187,6 +187,35 @@ def main():
     G3.ROWS.ui(None, 35)
     chk("a switch once set wins over the bundle: the target shown (%s) while HUD mode hides the player (%s)"
         % (G3.TargetFrame.alpha, G3.PlayerFrame.alpha), G3.TargetFrame.alpha == 1 and G3.PlayerFrame.alpha == 0)
+    # hub32 (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"): the game's combo points sit on a
+    # child of TargetFrame (Classic's ComboFrame); a child's alpha is its parent's times its own, so HUD mode hiding the target frame hid
+    # them. While the host is hidden by us and our target bar (its own pips) is off, the combo frame ignores its parent's alpha.
+    L3.execute(r'''
+        local CF = {}
+        CF.__index = CF
+        function CF:SetIgnoreParentAlpha(v) self.ipa = v; self.n = (self.n or 0) + 1 end
+        function CF:SetAlpha(a) error("hub32: the combo frame's own alpha is never written") end
+        ComboFrame = setmetatable({}, CF)
+        ComboPointPlayerFrame = setmetatable({}, CF)
+    ''')
+    SW3 = G3.WowCompanion.hub.SW
+    G3.ROWS.uisw(None, SW3.TARGET_HIDE)            # our bar still off (UFT_OFF above): the game's target frame hidden by HUD mode
+    G3.ROWS.uisw(None, SW3.PLAYER_SHOW)
+    chk("hub32: the target frame hidden (%s), our bar off: the game's combo points lifted out of its alpha (%s)"
+        % (G3.TargetFrame.alpha, G3.ComboFrame.ipa), G3.TargetFrame.alpha == 0 and G3.ComboFrame.ipa is True)
+    chk("hub32: the player frame shown: its combo frame follows its parent (%s)" % G3.ComboPointPlayerFrame.ipa,
+        G3.ComboPointPlayerFrame.ipa is False)
+    G3.ROWS.uisw(None, SW3.TARGET_SHOW)
+    chk("hub32: the target frame shown again: the combo frame follows its parent again (%s)" % G3.ComboFrame.ipa,
+        G3.TargetFrame.alpha == 1 and G3.ComboFrame.ipa is False)
+    G3.ROWS.uisw(None, SW3.TARGET_HIDE)
+    G3.ROWS.uisw(None, SW3.UFT_ON)                 # our bar on: it has the pips, the game's stay hidden with their frame
+    chk("hub32: our target bar on: the game's combo points stay hidden with the target frame (%s)" % G3.ComboFrame.ipa,
+        G3.ComboFrame.ipa is False)
+    G3.ROWS.uisw(None, SW3.UFT_OFF)
+    chk("hub32: our bar off again: lifted again (%s)" % G3.ComboFrame.ipa, G3.ComboFrame.ipa is True)
+    hubsrc = open(HUB, encoding="utf-8").read()
+    chk("hub32: the version tag", 'local HV = "hub32"' in hubsrc)
     # TRAIL.LUA's consumers: the nameplate wish and the personal bar follow their own switches, else the bundle
     LT = tc.run()
     T = LT.globals()

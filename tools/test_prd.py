@@ -451,6 +451,27 @@ def main():
     P.wd, P.sc = None, None; P.loadSize()
     chk("prd8: read back at log in: 300 wide, 100 %%", P.wd == 300 and P.sc == 100)
     P.select(); P.nudge(0); P.sel = "y"
+    # prd10 (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"): the pips under the power bar
+    chk("prd10: the version tag", P.V == "prd10")
+    chk("prd10: the player's UNIT_POWER_FREQUENT is heard (combo points at the next frame)", ev.events.UNIT_POWER_FREQUENT == "player")
+    L.execute('''
+        local upm = UnitPowerMax
+        function UnitPowerMax(u, t) if t == ((Enum.PowerType or {}).ComboPoints or 4) then return 5 end return upm(u, t) end
+        CLASS = "MAGE"; function UnitClass() return CLASS:lower(), CLASS end
+        CPOINTS = 3; function GetComboPoints() return setmetatable({ n = CPOINTS }, { secret = true }) end
+    ''')
+    P["values"]()
+    chk("prd10: not a Rogue / a cat: no pips", P.cp is not None and P.cp.shown is False)
+    Lg.CLASS = "ROGUE"
+    P["values"]()
+    gaps = [P.cp.gaps[i] for i in range(1, 5)]
+    chk("prd10: a Rogue: the pips shown, 5 of them (4 gaps), the SECRET read fed straight to the bar (%s)" % (P.cp.value,),
+        P.cp.shown is True and P.cp.max == 5 and P.cp.value is not None and getattr(P.cp.value, "n", None) == 3
+        and all(g.shown for g in gaps) and P.cp.gaps[5] is None)
+    L.execute('function GetComboPoints() return nil end; function UnitPower() return nil end')
+    P["values"]()
+    chk("prd10: nothing to read: an empty strip (0), no error", P.cp.shown is True and P.cp.value == 0)
+    Lg.CLASS = "MAGE"; P["values"]()
     # tt1, HIDE THE GAME'S TOOLTIPS (the user: "I need a setting to hide top screen tooltips"): alpha only, held by hooks
     TT = Lg.WowCompanion.tips
     tip = Lg.GameTooltip

@@ -2322,7 +2322,11 @@ class MapView(context: Context) : View(context) {
         noteMapChange(m.optInt("mapID", 0))
         staleMs = 0
         // the group (Map.lua grpRead, b-group-map): once a second; grpN = 0 when the group went
-        if (pos.has("grpN")) group = GroupMembers.parse(pos.optJSONArray("grp"))
+        if (pos.has("grpN")) {
+            group = GroupMembers.parse(pos.optJSONArray("grp")); groupAt = android.os.SystemClock.uptimeMillis()
+            // (issue #30, 2026-11-11) a redraw just after the members would age out, so a group nobody re-sends leaves the map
+            if (group.isNotEmpty()) postInvalidateDelayed(GroupMembers.STALE_MS + 100L)
+        }
         // QuestTrail's arrow (Map.lua qtrailRead): every tick says it, absent = not showing (b-route-questtrail)
         qtrail = pos.optJSONObject("qtrail"); qtrailAt = android.os.SystemClock.elapsedRealtime()
         // why QuestTrail's golden path is not read (Map.lua gpWhy; test58: never any gp on the device), logged when it changes
@@ -5002,6 +5006,7 @@ class MapView(context: Context) : View(context) {
     private var cameFrom = 0
     private val routeKeep = HashMap<Int, String>()
     private val farKeep = HashMap<Int, DoubleArray>()
+    private var groupAt = 0L                                             // when [group] came (uptimeMillis; issue #30: aged out)
     /** the group's members (b-group-map) */
     private var group: List<GroupMembers.Member> = emptyList()          // each quest's spot chosen last (its hysteresis)
     private val SPOT_STICK = 1.25
@@ -7068,7 +7073,7 @@ class MapView(context: Context) : View(context) {
         rect?.takeIf { it.valid }?.let { r ->
             val nb = top + (if (compact) compactTop() else 0f)
             val l0 = left + 14f; val r0 = left + fw - 14f; val t0 = nb + 14f; val b0 = top + fh - 14f - (if (hintsOn() && !compact) HINT_BAND else 0f)
-            for (gm in group) {
+            for (gm in GroupMembers.live(group, groupAt, android.os.SystemClock.uptimeMillis())) {      // issue #30: stale members gone
                 if (gm.cont != null && gm.cont != r.continent) continue
                 val gx = sx(r.nx(gm.wy)); val gy = sy(r.ny(gm.wx))
                 if (gx in l0..r0 && gy in t0..b0) GroupMembers.draw(c, gm, gx, gy, named = !compact)

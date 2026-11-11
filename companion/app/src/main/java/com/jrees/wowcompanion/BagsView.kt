@@ -325,8 +325,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                     // a finger on a row of "Choose an item": that item, at once (its secure cell: the pick's target)
                     val e = st.ctl?.optJSONObject("target")?.optJSONArray("list")?.optJSONObject(KIT_ROW - what) ?: return
                     if (!e.optBoolean("ok")) return
-                    if (e.optString("src") == "inv") GameInput.tap(context, st.pad, "binv", e.optInt("slot") - 1)
-                    else GameInput.tap(context, st.pad, "bag${e.optInt("bag")}", e.optInt("s") - 1)
+                    // (issue #126, 2026-11-11) bag gear through its own /use cell (binv 20..39), never the bag cell that equips it
+                    KitTarget.ofRow(e)?.let { (row, col) -> GameInput.tap(context, st.pad, row, col) }
                 } else GameInput.tap(context, st.pad, "bmvq", what)
             }
         }
@@ -1242,10 +1242,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         if (!on || u == null || key == useSeen) return
         useSeen = key
         // "Choose an item" (an armor kit / stone / enchant picking its target): worn gear is the secure row binv (the game's /use <slot>)
-        val inv = u.optInt("inv", 0)
-        if (inv >= 1) { GameInput.tap(context, state.pad, "binv", inv - 1); return }
-        // B in "Choose an item": the game's own cancel (binv 19 = /stopspelltarget; SpellStopTargeting is forbidden to add-ons)
-        if (u.optBoolean("stop")) { GameInput.tap(context, state.pad, "binv", CtlLayer.KIT_STOP_COL); return }
+        // B in "Choose an item": the game's own cancel (binv 19 = /stopspelltarget; SpellStopTargeting is forbidden to add-ons); a bag
+        // gear target its own /use cell, binv 20..39 (issue #126, 2026-11-11: the bag cell equipped it instead of disenchanting)
+        KitTarget.ofUse(u)?.let { (row, col) -> GameInput.tap(context, state.pad, row, col); return }
         val bag = u.optInt("bag", -1); val slot = u.optInt("slot", 0)
         if (bag >= 0 && slot >= 1) GameInput.tap(context, state.pad, "bag$bag", slot - 1)
     }
