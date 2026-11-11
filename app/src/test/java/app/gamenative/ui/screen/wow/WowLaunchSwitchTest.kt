@@ -46,9 +46,15 @@ class WowLaunchSwitchTest {
     private val installEkey = md5("e-install")
     private val encoding = blteChunked(encodingTable(sortedMapOf(md5(exe) to exeEkey, md5(dll) to dllEkey)))
     private val encodingEkey = md5("e-encoding")
-    private val archive = md5("archive")
-    private val buildConfig = "2582289d81e380163c7a13472df4cb81"
-    private val cdnConfig = "6bff2e685995b214c2ff5d08f3344542"
+    // the CDN's names are its files' hashes (checked since 2026-11-11, the user: updates on slow links): a config is named by its
+    // MD5, an archive index by its footer's MD5
+    private val archiveIndex = index("archive"); private val archive = md5(archiveIndex.copyOfRange(4096, 4124))
+    private val groupIndex = index("group"); private val group = md5(groupIndex.copyOfRange(4096, 4124))
+    private val buildConfigText = "# Build Configuration\n\ninstall = ${md5("install")} $installEkey\ninstall-size = 100 ${install.size}\n" +
+        "encoding = ${md5("encoding")} $encodingEkey\nbuild-name = WOW-70532patch1.60.1_Forever\n"
+    private val buildConfig = md5(buildConfigText)
+    private val cdnConfigText = "# CDN Configuration\n\narchives = $archive\narchive-group = $group\n"
+    private val cdnConfig = md5(cdnConfigText)
 
     @Before fun setUp() {
         root = Files.createTempDirectory("dsf-launch-switch").toFile()
@@ -86,15 +92,14 @@ class WowLaunchSwitchTest {
         File(root, "_classic_beta_/shared.dll").writeBytes(dll)
         File(root, "Data/indices").mkdirs()
 
-        serve("config", buildConfig, "# Build Configuration\n\ninstall = ${md5("install")} $installEkey\ninstall-size = 100 ${install.size}\n" +
-            "encoding = ${md5("encoding")} $encodingEkey\nbuild-name = WOW-70532patch1.60.1_Forever\n")
-        serve("config", cdnConfig, "# CDN Configuration\n\narchives = $archive\narchive-group = ${md5("group")}\n")
+        serve("config", buildConfig, buildConfigText)
+        serve("config", cdnConfig, cdnConfigText)
         serve("data", installEkey, install)
         serve("data", encodingEkey, encoding)
         serve("data", exeEkey, blte(exe))
         serve("data", dllEkey, blte(dll))
-        serve("data", "$archive.index", ByteArray(4096))
-        serve("data", "${md5("group")}.index", ByteArray(4096))
+        serve("data", "$archive.index", archiveIndex)
+        serve("data", "$group.index", groupIndex)
     }
 
     @After fun tearDown() {
@@ -131,7 +136,7 @@ class WowLaunchSwitchTest {
         assertEquals("a shared dll", File(root, "_forever_/shared.dll").readText())
         assertFalse(cdnPath("data", dllEkey) in requests.map { it.removePrefix("/tpr/wow/") })   // copied from the beta, not downloaded
         assertTrue(File(root, "Data/indices/$archive.index").isFile)
-        assertTrue(File(root, "Data/config/25/82/$buildConfig").isFile)
+        assertTrue(File(root, "Data/config/${buildConfig.substring(0, 2)}/${buildConfig.substring(2, 4)}/$buildConfig").isFile)
         assertEquals("the beta exe", File(root, "_classic_beta_/WowB-ARM64.exe").readText())
         assertTrue(status.all { it.startsWith("Moving to World of Warcraft: Forever…") })
         assertTrue(status.any { it.contains("Downloading Wow-arm64.exe") })
@@ -198,6 +203,8 @@ class WowLaunchSwitchTest {
     // ---------------------------------------------------------------- made-up CASC files
 
     private fun md5(s: String) = md5(s.toByteArray())
+    /** a made-up archive index: a 4 KB block and the 28-byte footer (checksum size 8) */
+    private fun index(seed: String) = ByteArray(4096) + unhex(md5(seed)).copyOf(8) + byteArrayOf(1, 0, 0, 4, 4, 4, 16, 8, 0, 0, 0, 0) + ByteArray(8)
     private fun md5(b: ByteArray) = MessageDigest.getInstance("MD5").digest(b).joinToString("") { "%02x".format(it) }
     private fun unhex(h: String) = ByteArray(h.length / 2) { h.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
 

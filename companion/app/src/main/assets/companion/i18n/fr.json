@@ -1508,6 +1508,7 @@
 "templates": {
 "Put the Spell Radial command on a button (WoW Defaults: Change, DS). %s": "Placez la commande Radial de sorts sur un bouton (WoW Defaults : Changer, DS). %s",
 "Abandon \"%s\"?": "Abandonner « %s » ?",
+"The update download stopped (%s). Update resumes it.": "Le téléchargement de la mise à jour s'est arrêté (%s). Mettre à jour le reprend.",
 "Add-ons: %s": "Add-ons : %s",
 "Aim with the stick, %s": "Visez avec le stick, %s",
 "All %s Character Macros are in use.": "Les %s macros de personnage sont utilisées.",

@@ -157,7 +157,7 @@ fun WoWForeverScreen(
 
     suspend fun fetchAppUpdate() {
         AppUpdater.clearCacheOnce(context)
-        appCheck = AppUpdater.check()
+        appCheck = AppUpdater.check(context)
     }
 
     fun checkAppUpdate() {
@@ -201,6 +201,14 @@ fun WoWForeverScreen(
                 // not ours (another app, another certificate, not newer): refused and deleted, said plainly
                 Timber.e(e, "App update refused")
                 errorMessage = "The update was refused: ${e.message}"
+                downloadedApk = null
+                isDownloadingAppUpdate = false
+            } catch (e: java.io.IOException) {
+                // a stall / offline keeps the partial file (the user, 2026-11-11: updates on slow links): the next Update resumes it;
+                // a bad file (wrong checksum, not an APK) was deleted and says so
+                Timber.e(e, "App update download stopped")
+                errorMessage = if (e.message == com.jrees.wowcompanion.AppUpdate.BAD_CHECKSUM || e.message?.contains("APK") == true)
+                    "The update download failed: ${e.message}" else "The update download stopped (${e.message}). Update resumes it."
                 downloadedApk = null
                 isDownloadingAppUpdate = false
             } catch (e: Exception) {
@@ -303,6 +311,9 @@ fun WoWForeverScreen(
                         com.jrees.wowcompanion.ThirdPartyAddons.applyAtStart(WowClientDownloader.flavorDir(File(gamePath)),
                             fetchSmall = false, by = "launch by $by")
                     }.onFailure { android.util.Log.w("WCSETUP", "add-ons at launch: ${it.message}") }
+                    // .build.info's empty CDN Hosts / Servers refilled before EVERY launch (the user, 2026-11-11: updates on slow
+                    // links; the client crashes at start without them). Never stops the launch
+                    WowClientDownloader.repairBuildInfo(File(gamePath), versionStatus)
                 }
                 com.jrees.wowcompanion.LauncherHooks.launchEvent("preparing the container (${gpu.label}, by $by)")
                 val containerId = withContext(Dispatchers.IO) {
