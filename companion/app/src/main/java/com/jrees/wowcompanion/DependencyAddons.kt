@@ -51,7 +51,14 @@ object DependencyAddons {
     /** where the API lives (the tests point it at a local server) */
     @Volatile var api = "https://api.github.com"
     /** the game is running: nothing is moved into AddOns now */
-    @Volatile var gameRunning: () -> Boolean = { LauncherHooks.gameUp() }
+    @Volatile var gameRunning: () -> Boolean = { gameUpNow(LauncherHooks.gameUp(), LauncherHooks.gameStartSec, GameLife.endedAt) }
+    /**
+     * Issue #139 (2026-11-11): the start step ran 145 ms after "game: ended: closed normally" and every add-on said "not applied: the
+     * game is running": the launcher's game screen ([up]) goes only when its view detaches. The game is down once it ended AFTER the
+     * game screen last came up ([startSec], epoch s; [endedAtMs], GameLife's, epoch ms; 0 = never). A stream attached later (its own
+     * start, no GameLife end) stays up.
+     */
+    fun gameUpNow(up: Boolean, startSec: Long, endedAtMs: Long): Boolean = up && !(endedAtMs > 0 && endedAtMs >= startSec * 1000)
 
     data class Result(val dep: Dep, val line: String, val changed: Boolean = false)
 

@@ -13,6 +13,10 @@ object GameLife {
     @Volatile private var startedAt = 0L
     @Volatile private var worldSeen = false
     @Volatile private var ended = false
+    /** when the guest program last ended (epoch ms), 0 = not in this process. Issue #139 (2026-11-11): the launcher's game screen
+     *  (LauncherHooks.gameUp) stays "up" until its view detaches, after the program has ended; DependencyAddons.gameUpNow reads both */
+    @Volatile var endedAt = 0L
+        private set
     /** the launcher's note after an abnormal end; null = none */
     @Volatile var note: String? = null
         private set
@@ -66,6 +70,7 @@ object GameLife {
     fun ended(status: Int, now: Long = System.currentTimeMillis()) {
         if (ended) return
         ended = true
+        endedAt = now
         LastRun.gameEnded()
         val ran = if (startedAt == 0L) 0L else now - startedAt
         val mem = memAvailableMiB()?.let { "$it MiB" } ?: "unknown"

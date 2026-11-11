@@ -176,7 +176,7 @@ object ThirdPartyAddons {
 
     /** the core is wanted: Install pressed (and not Uninstall since) */
     fun coreWanted(a: Addon): Boolean = prefs?.get("${a.id}.core", false) ?: false
-    fun setCore(a: Addon, on: Boolean) { prefs?.put("${a.id}.core", on); changed(); resume() }
+    fun setCore(a: Addon, on: Boolean) { prefs?.put("${a.id}.core", on); if (on) clearFailed(a, "core"); changed(); resume() }
     /** MAP'S HOOK (its Quest tracking picker): choosing an add-on that is not installed starts its install, as Install here does */
     fun install(a: Addon) { if (!coreWanted(a)) setCore(a, true) }
     /** an installed package goes out at the next start: its Install undone (Uninstall), or its module switched off */
@@ -185,7 +185,7 @@ object ThirdPartyAddons {
     fun present(a: Addon, key: String): Boolean = state(a, key).optString("in").isNotEmpty()
 
     fun moduleOn(a: Addon, m: Module): Boolean = prefs?.get("${a.id}.${m.id}", false) ?: false
-    fun setModule(a: Addon, m: Module, on: Boolean) { prefs?.put("${a.id}.${m.id}", on); changed(); resume() }
+    fun setModule(a: Addon, m: Module, on: Boolean) { prefs?.put("${a.id}.${m.id}", on); if (on) clearFailed(a, m.id); changed(); resume() }
     fun option(a: Addon, o: Option): Boolean = prefs?.get("${a.id}.opt.${o.id}", o.default) ?: o.default
     fun setOption(a: Addon, o: Option, on: Boolean) { prefs?.put("${a.id}.opt.${o.id}", on); changed() }
 
@@ -195,6 +195,29 @@ object ThirdPartyAddons {
     fun installed(a: Addon, key: String): Boolean = state(a, key).optString("in") == pkgOf(a, key)?.tag
     fun coreInstalled(a: Addon): Boolean = installed(a, "core")
     private fun pkgOf(a: Addon, key: String): Pkg? = a.pkgs().firstOrNull { it.first == key }?.second
+
+    // ---------------------------------------------------------------- a move that failed (issues #135 #83 #117 #139, 2026-11-11)
+    /**
+     * A package whose move into AddOns failed at a start is NOT tried again on every Play (#135: the 1.54 GB Spoken Quests pack was
+     * unpacked again and failed again under "Preparing your game art..." on each of five Plays). It is recorded against the package's
+     * own content ([sig]: tag, size, sha256) and tried again only when the pin changes or from Settings > Add-ons ([retry]: the add-on's
+     * Try again, or the module switched off and on).
+     */
+    internal fun sig(p: Pkg): String = "${p.tag}|${p.bytes}|${p.sha256}"
+    /** why package [key] of [a] did not go in at an earlier start, while that is still the pinned content; null = not failed */
+    fun failedWhy(a: Addon, key: String): String? {
+        val p = pkgOf(a, key) ?: return null
+        val st = state(a, key)
+        return if (st.optString("failed") == sig(p)) st.optString("why").ifEmpty { "it could not be moved in" } else null
+    }
+    /** any package of [a] that failed to go in (its row's Try again) */
+    fun anyFailed(a: Addon): Boolean = a.pkgs().any { (k, _) -> wanted(a, k) && !installed(a, k) && failedWhy(a, k) != null }
+    /** Settings > Add-ons' Try again: every failed package of [a] goes in again at the next start */
+    fun retry(a: Addon) { for ((k, _) in a.pkgs()) clearFailed(a, k); changed() }
+    private fun clearFailed(a: Addon, key: String) {
+        val st = state(a, key)
+        if (st.has("failed")) { st.remove("failed"); st.remove("why"); putState(a, key, st) }
+    }
 
     // ---------------------------------------------------------------- what each package is doing (for its row)
     enum class Kind { NONE, WAITING_WIFI, NO_SPACE, DOWNLOADING, DOWNLOADED, INSTALLED, REMOVING, FAILED }
@@ -232,6 +255,10 @@ object ThirdPartyAddons {
         // what the worker is doing, while it is wanted and not in yet (an installed package is installed, whatever it did before)
         // an older version still in (the pin moved on): the row says it is the update
         val older = state(a, key).optString("in").takeIf { it.isNotEmpty() && !inst }
+        // #135 (2026-11-11): a move that failed waits for the player's Try again; the row says why and where
+        if (want && !inst) failedWhy(a, key)?.let { why ->
+            return Status(Kind.FAILED, "Could not go in ($why): ${if (key == "core") "Try again" else "Try again on the ${a.title} row"}")
+        }
         synchronized(live) { live["${a.id}/$key"] }?.let { if (want && !inst) return if (older != null) it.copy(line = "Update to ${a.version}: ${it.line}") else it }
         return when {
             (inst || older != null) && !want -> Status(Kind.REMOVING, "Moves out when the game next starts (kept in a backup)")
@@ -361,17 +388,41 @@ object ThirdPartyAddons {
     /**
      * The launcher's dependency step (the game closed): every wanted package downloaded goes in, a small one not downloaded yet is
      * fetched first (Polestar, as DependencyAddons did), every installed package no longer wanted goes out to the backup. One line.
+     * [onStep] = the launcher's status text for each step (#117 #135, 2026-11-11: the whole step showed as "Preparing your game
+     * art..."). One run at a time (a second Play while the first is still moving waits for it, then finds the package in).
      */
-    fun applyAtStart(flavorRoot: File, fetchSmall: Boolean = true, by: String = "the start step"): String {
+    fun applyAtStart(flavorRoot: File, fetchSmall: Boolean = true, by: String = "the start step", onStep: (String) -> Unit = {}): String {
         if (dir == null) { log("add-ons ($by): not started (no folder)"); return "" }
+        synchronized(applyLock) { return applyLocked(flavorRoot, fetchSmall, by, onStep) }
+    }
+    private val applyLock = Any()
+
+    /** #139 (2026-11-11): the game just ended, its screen not gone yet: up to this long for the game-up state to settle */
+    @Volatile internal var settleMs = 5_000L
+
+    private fun applyLocked(flavorRoot: File, fetchSmall: Boolean, by: String, onStep: (String) -> Unit): String {
         val lines = ArrayList<String>()
+        if (DependencyAddons.gameRunning()) {
+            val until = System.currentTimeMillis() + settleMs
+            while (DependencyAddons.gameRunning() && System.currentTimeMillis() < until) Thread.sleep(100)
+        }
+        sweepStaging(flavorRoot)
         for (a in ALL) for ((key, p) in a.pkgs()) {
             val name = if (key == "core") a.title else "${a.title} ${key.replaceFirstChar { it.uppercase() }}"
             try {
                 val want = wanted(a, key); val inst = installed(a, key)
-                if (goesOut(a, key)) { moveOut(a, key, flavorRoot); lines.add("$name moved to the backup"); log("add-ons: removed $name (to the backup)"); continue }
+                if (goesOut(a, key)) {
+                    onStep("Removing add-ons: $name...")
+                    moveOut(a, key, flavorRoot); lines.add("$name moved to the backup"); log("add-ons: removed $name (to the backup)"); continue
+                }
                 if (!want || inst) continue
-                if (state(a, key).optString("zip") != p.tag && p.bytes <= SMALL && fetchSmall) fetch(a, key, p)
+                val failed = failedWhy(a, key)
+                if (failed != null) {
+                    lines.add("$name not installed ($failed): Try again in Settings > Add-ons")
+                    log("add-ons: $name not applied: it failed at an earlier start ($failed); not tried again until Settings > Add-ons' Try again or a new version")
+                    continue
+                }
+                if (state(a, key).optString("zip") != p.tag && p.bytes <= SMALL && fetchSmall) { onStep("Downloading add-ons: $name..."); fetch(a, key, p) }
                 if (state(a, key).optString("zip") != p.tag || zipOf(p).length() != p.bytes) {
                     resume(); lines.add("$name downloading")
                     log("add-ons: $name not applied: not downloaded yet (${if (zipOf(p).isFile) "${zipOf(p).length()} of ${p.bytes} bytes" else "nothing yet"})")
@@ -380,18 +431,44 @@ object ThirdPartyAddons {
                 if (DependencyAddons.gameRunning()) {
                     lines.add("$name goes in at the next start with the game closed"); log("add-ons: $name not applied: the game is running"); continue
                 }
+                onStep("Installing add-ons: $name...")
                 moveIn(a, key, p, flavorRoot)
                 val ver = a.version.takeIf { key == "core" } ?: p.tag.substringAfterLast('v')
                 lines.add("$name $ver installed")
                 log("add-ons: applied $name $ver")
             } catch (t: Throwable) {
-                lines.add("$name skipped (${DependencyAddons.reasonOf(t)})")
+                val why = DependencyAddons.reasonOf(t)
+                lines.add("$name skipped ($why)")
                 log("add-ons: $name not applied: ${t.javaClass.simpleName}: ${t.message}")
+                // a move that failed: not again on every Play (#135); a "later" (the game started, no room) is tried at the next start
+                if (t !is Later && wanted(a, key) && !installed(a, key)) putState(a, key, state(a, key).put("failed", sig(p)).put("why", why))
             }
         }
         log("add-ons ($by): " + lines.joinToString("; ").ifEmpty { "nothing to do" })
         changed()
         return lines.joinToString("; ")
+    }
+
+    /** not a failure of the package: it goes in at the next start (the game started meanwhile, not enough room) */
+    private class Later(msg: String) : IOException(msg)
+
+    /** the staged copy's mark: written once the unpack is complete, the package's [sig] */
+    private const val STAGED = ".dsf-staged"
+    private fun stagingOf(flavorRoot: File, a: Addon, key: String) = File(flavorRoot, "Interface/${DependencyAddons.STAGING}/${a.id}-$key")
+
+    /**
+     * #139 (2026-11-11, "addons not moving from staging"): our own staging leftovers go, every start: any of our packages' staging
+     * folder that is not a complete copy of a package still wanted, not in and not failed. Only our own names ("<addon>-<key>").
+     */
+    private fun sweepStaging(flavorRoot: File) {
+        for (a in ALL) for ((key, p) in a.pkgs()) {
+            val st = stagingOf(flavorRoot, a, key)
+            if (!st.exists()) continue
+            val keep = wanted(a, key) && !installed(a, key) && failedWhy(a, key) == null &&
+                runCatching { File(st, STAGED).readText() }.getOrNull() == sig(p)
+            if (!keep) { st.deleteRecursively(); log("add-ons: cleared the leftover staging copy of ${a.id}-$key") }
+        }
+        File(flavorRoot, "Interface/${DependencyAddons.STAGING}").delete()            // only when empty
     }
 
     /** one WCSETUP line (the off-device tests have no android.util.Log: ignored there) */
@@ -400,27 +477,40 @@ object ThirdPartyAddons {
     private fun moveIn(a: Addon, key: String, p: Pkg, flavorRoot: File) {
         val iface = File(flavorRoot, "Interface")
         val addons = File(iface, "AddOns").apply { mkdirs() }
-        val free = flavorRoot.usableSpace
-        if (free < p.bytes + SPACE_MARGIN) throw IOException("needs ${size(((p.bytes + SPACE_MARGIN) / 1_000_000).toInt())} free for the game")
-        val staging = File(iface, "${DependencyAddons.STAGING}/${a.id}-$key")
-        if (staging.exists()) staging.deleteRecursively()                 // our own leftover only
-        DependencyAddons.unpack(zipOf(p), staging, "", maxFiles = 40_000, maxBytes = p.bytes * 3 / 2 + 50_000_000)
-        val folders = staging.listFiles()?.filter { d -> d.isDirectory && DependencyAddons.installedVersion(d) != null } ?: emptyList()
-        require(folders.isNotEmpty()) { "the package has no add-on in it" }
-        if (DependencyAddons.gameRunning()) { staging.deleteRecursively(); throw IOException("the game started: at the next start") }
-        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
-        for (d in folders) {
-            val target = File(addons, d.name)
-            if (target.exists()) backup(iface, target, stamp)
-            if (!d.renameTo(target)) throw IOException("the new ${d.name} could not be moved in")
+        val staging = stagingOf(flavorRoot, a, key)
+        val mark = File(staging, STAGED)
+        // #135 (2026-11-11): a complete staged copy of this very package (the game started last time, after the unpack) is used as it
+        // is: a 1.54 GB pack is never unpacked twice for the same content
+        val staged = runCatching { mark.readText() }.getOrNull() == sig(p)
+        if (!staged && flavorRoot.usableSpace < p.bytes + SPACE_MARGIN)
+            throw Later("needs ${size(((p.bytes + SPACE_MARGIN) / 1_000_000).toInt())} free for the game")
+        var keep = false
+        try {
+            if (!staged) {
+                if (staging.exists()) staging.deleteRecursively()             // our own leftover only
+                DependencyAddons.unpack(zipOf(p), staging, "", maxFiles = 40_000, maxBytes = p.bytes * 3 / 2 + 50_000_000)
+                mark.writeText(sig(p))
+            } else log("add-ons: ${a.id}-$key: the staged copy is complete, not unpacked again")
+            val folders = staging.listFiles()?.filter { d -> d.isDirectory && DependencyAddons.installedVersion(d) != null } ?: emptyList()
+            require(folders.isNotEmpty()) { "the package has no add-on in it" }
+            if (DependencyAddons.gameRunning()) { keep = true; throw Later("the game started: at the next start") }
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+            for (d in folders) {
+                val target = File(addons, d.name)
+                if (target.exists()) backup(iface, target, stamp)
+                moveDir(d, target, "the new ${d.name} could not be moved in")
+            }
+            putState(a, key, JSONObject().put("in", p.tag).put("folders", JSONArray(folders.map { it.name })))
+            zipOf(p).delete()                                              // in: the download's room back
+        } finally {
+            // #139: never a staging copy left behind by a failure (only the complete copy the game's start interrupted is kept)
+            if (!keep) staging.deleteRecursively()
+            File(iface, DependencyAddons.STAGING).delete()                // only when empty
         }
-        staging.deleteRecursively()
-        putState(a, key, JSONObject().put("in", p.tag).put("folders", JSONArray(folders.map { it.name })))
-        zipOf(p).delete()                                                  // in: the download's room back
     }
 
     private fun moveOut(a: Addon, key: String, flavorRoot: File) {
-        if (DependencyAddons.gameRunning()) throw IOException("the game is running: at the next start")
+        if (DependencyAddons.gameRunning()) throw Later("the game is running: at the next start")
         val iface = File(flavorRoot, "Interface")
         val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
         val st = state(a, key).optJSONArray("folders") ?: JSONArray()
@@ -434,8 +524,46 @@ object ThirdPartyAddons {
     }
 
     private fun backup(iface: File, target: File, stamp: String) {
-        val b = File(iface, "${DependencyAddons.BACKUP}/${target.name}-${DependencyAddons.installedVersion(target) ?: "unknown"}-$stamp")
+        val base = "${target.name}-${DependencyAddons.installedVersion(target) ?: "unknown"}-$stamp"
+        var b = File(iface, "${DependencyAddons.BACKUP}/$base")
+        var n = 2
+        while (b.exists()) b = File(b.parentFile, "$base~${n++}")         // #135: never into an older backup of the same second
         b.parentFile?.mkdirs()
-        if (!target.renameTo(b)) throw IOException("the old ${target.name} could not be moved to the backup")
+        moveDir(target, b, "the old ${target.name} could not be moved to the backup")
+    }
+
+    /**
+     * ONE FOLDER MOVED (#135 #83 #139, 2026-11-11). The reports: "the new SpokenQuestsAudioAlliance could not be moved in" (#83), then
+     * "the old SpokenQuestsAudioAlliance could not be moved to the backup" (#135), on every Play, while Spoken Zones and Books (one
+     * folder each) moved in fine in the same step. The game folder is /storage/emulated/0/WoW Forever, behind Android's FUSE (the media
+     * provider), which renames a folder as one update of every file under it in its database and can refuse it as a whole; File.renameTo
+     * only says false (no reason was ever logged). So: the folder's own rename first ([renameDir], its reason now logged), else FILE BY
+     * FILE (each file's own rename, else a copy checked for its length and the original then deleted), folders made as needed. Both ends
+     * are on the same volume: no room is needed beyond one file's copy.
+     */
+    internal fun moveDir(src: File, dst: File, what: String) {
+        val why = (if (dst.exists()) "${dst.name} is already there" else renameDir(src, dst)) ?: return
+        log("add-ons: ${src.name}: the folder's rename was refused ($why): moving it file by file")
+        try { moveByFiles(src, dst) } catch (t: IOException) { throw IOException("$what (${t.message})", t) }
+    }
+
+    /** a folder's own rename: null = done, else the reason (the off-device test makes it fail) */
+    @Volatile internal var renameDir: (File, File) -> String? = { s, d ->
+        runCatching { java.nio.file.Files.move(s.toPath(), d.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE); null }
+            .getOrElse { it.message ?: it.javaClass.simpleName }
+    }
+
+    private fun moveByFiles(src: File, dst: File) {
+        if (!dst.isDirectory && !dst.mkdirs()) throw IOException("${dst.name} could not be made")
+        for (c in src.listFiles() ?: throw IOException("${src.name} could not be read")) {
+            val t = File(dst, c.name)
+            if (c.isDirectory) { moveByFiles(c, t); continue }
+            if (t.exists()) throw IOException("${c.name} is already in ${dst.name}")
+            if (c.renameTo(t)) continue
+            c.copyTo(t)
+            if (t.length() != c.length()) { t.delete(); throw IOException("${c.name} could not be copied") }
+            if (!c.delete()) throw IOException("${c.name} could not be removed after its copy")
+        }
+        if (!src.delete()) throw IOException("${src.name} could not be removed once empty")
     }
 }

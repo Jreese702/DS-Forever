@@ -46,7 +46,7 @@ import com.jrees.wowcompanion.RootPolicy
 class DsForeverScreen(private val context: Context) {
     /** the launcher's X server as DS Forever's input, while the game screen is up */
     private var input: InputSink.Sink? = null
-    private var gameOn = false
+    @Volatile private var gameOn = false                 // issue #139 (2026-11-11): read off the main thread (the add-ons step)
     private val dm = context.getSystemService(DisplayManager::class.java)
     private var shown: HostPresentation? = null
     private val main = Handler(Looper.getMainLooper())
