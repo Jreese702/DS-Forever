@@ -864,8 +864,9 @@ fun WoWForeverScreen(
             }
             com.jrees.wowcompanion.SetupFlow.Action.PLAY -> {
                 com.jrees.wowcompanion.DeviceTier.init(context)
-                if (!artNoticeSeen && com.jrees.wowcompanion.DeviceTier.lowMemory() &&
-                    com.jrees.wowcompanion.ArtHarvest.backgroundLeft(context)) artNotice = true
+                // 2026-11-11 (issue #108 cluster): the background art waits for the game to close on EVERY model now (PlayGate),
+                // so the notice is for every model too
+                if (!artNoticeSeen && com.jrees.wowcompanion.ArtHarvest.backgroundLeft(context)) artNotice = true
                 else launchGame()
             }
             com.jrees.wowcompanion.SetupFlow.Action.ART_NOTICE_PLAY -> { artNotice = false; artNoticeSeen = true; launchGame() }

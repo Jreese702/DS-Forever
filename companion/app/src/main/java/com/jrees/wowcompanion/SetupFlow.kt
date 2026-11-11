@@ -76,7 +76,7 @@ object SetupFlow {
         val gameRunning: Boolean = false,
         /** a "Restart the game to sign in" is between the close and the new game (no Play meanwhile: one launch path only) */
         val restarting: Boolean = false,
-        /** the 8 / 12 GB notice is up (Play was pressed with background art left) */
+        /** the background-art notice is up (Play was pressed with background art left; every model since 2026-11-11, PlayGate) */
         val artNotice: Boolean = false,
         /** the last session ended badly (LastRun.pending): what ended it, in words; null = it did not */
         val lastCrash: String? = null,

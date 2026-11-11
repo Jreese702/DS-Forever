@@ -24,5 +24,8 @@ object LauncherHooks {
     /** the launch's last step and its result ("preparing the container", "booting", "launch failed: ..."), "" = no launch yet */
     @Volatile var launchState: String = ""
     /** a launch step (the launcher's): kept as [launchState] and as a start-up stage ([StartupTrace]) */
-    fun launchEvent(what: String) { launchState = what; StartupTrace.mark("launch: ${what.take(60)}", what) }
+    /** when [launchState] last changed (epoch ms), 0 = no launch yet: the launch window [PlayGate] holds the heavy work back in
+     *  (issues #104 / #108 cluster, 2026-11-11: the game's processes grow while the container boots, before the game screen is up) */
+    @Volatile var launchAtMs = 0L
+    fun launchEvent(what: String) { launchState = what; launchAtMs = System.currentTimeMillis(); StartupTrace.mark("launch: ${what.take(60)}", what) }
 }

@@ -282,7 +282,9 @@ object ArtHarvest {
         // 1.0.17 (the user's pick for the 8 / 12 GB Thors: "Pause while playing, always"): the background art waits while the game runs
         // 2026-11-08 (the native heap profile: the open game files are ~500 MB, and this wait held them through the whole session on
         // exactly the Thors that run out of memory): it leaves the run (the files close) and the worker waits outside them
-        if (bgPhase && DeviceTier.lowMemory() && LauncherHooks.gameUp()) throw PausedForGame()
+        // 2026-11-11 (issues #94 / #86 / #104 / #63: safepathzones and allicons ran beside the game on the 16 GB Thor Max too, java
+        // 250-550 MB on top of a 3-4 GB game): EVERY tier, and the launch's own window ([PlayGate])
+        if (PlayGate.artMustPause(bgPhase, PlayGate.gameActiveNow())) throw PausedForGame()
     }
 
     /** the background art not finished yet (the notice before Play on the 8 / 12 GB models) */
@@ -328,7 +330,7 @@ object ArtHarvest {
                     } catch (e: PausedForGame) {
                         Log.i(TAG, "harvest: paused while the game runs (${DeviceTier.model()}), the game files let go")
                         bgPhase = false; currentStep = null
-                        while (DeviceTier.lowMemory() && LauncherHooks.gameUp() && !stopping && !yieldBg) Thread.sleep(3_000)
+                        while (PlayGate.gameActiveNow() && !stopping && !yieldBg) Thread.sleep(3_000)
                         Log.i(TAG, "harvest: the game is closed, the background art goes on")
                         if (stopping) { stopping = false; set(State.Idle); break }
                         yieldBg = false
@@ -393,6 +395,9 @@ object ArtHarvest {
         if (first.isEmpty() && later.isEmpty()) {
             set(State.Ready); onBeforePlayDone(true); startDetached(ctx, detached); return
         }
+        // 2026-11-11 (issue #108 cluster): a run that would open the game files while the game is up or launching (a required icon asked
+        // for in game, the worker's next pass) waits outside them for the game to close; the art before Play never meets this (Play waits)
+        if (!PlayGate.artMayOpen(PlayGate.gameActiveNow())) throw PausedForGame()
         // a CDN hiccup while it fetches the build's tables passes: tried again (HarvestRetry) before the art says it failed
         // after a game update the open downloads the build's tables (about 180 MB): the launcher shows how far (b-art-progress)
         GameFiles.onTables = { line -> checkStop(); set(State.Running(first.isNotEmpty(), 0f, line)) }
