@@ -308,14 +308,19 @@ fun WoWForeverScreen(
                 // downloaded packages never went in; the start step runs once per launcher screen): what is downloaded goes in HERE, right
                 // before the game starts, on EVERY launch route (Play, the restart's Play, the auto-launch). Nothing is fetched here, and a
                 // failure never stops the launch (WCSETUP "add-ons: applied ..." / "... not applied: ...")
+                // Issues #117 #135 #83 (2026-11-11): each step after the art says what it does ("Installing add-ons: Spoken Quests...",
+                // "Checking game files..."); before, all of it sat under "Preparing your game art..." for minutes
+                statusText = "Checking add-ons..."
+                val step: (String) -> Unit = { msg -> scope.launch(Dispatchers.Main) { statusText = msg } }
                 withContext(Dispatchers.IO) {
                     runCatching {
                         com.jrees.wowcompanion.ThirdPartyAddons.init(context)
                         com.jrees.wowcompanion.ThirdPartyAddons.applyAtStart(WowClientDownloader.flavorDir(File(gamePath)),
-                            fetchSmall = false, by = "launch by $by")
+                            fetchSmall = false, by = "launch by $by", onStep = step)
                     }.onFailure { android.util.Log.w("WCSETUP", "add-ons at launch: ${it.message}") }
                     // .build.info's empty CDN Hosts / Servers refilled before EVERY launch (the user, 2026-11-11: updates on slow
                     // links; the client crashes at start without them). Never stops the launch
+                    step("Checking game files...")
                     WowClientDownloader.repairBuildInfo(File(gamePath), versionStatus)
                 }
                 com.jrees.wowcompanion.LauncherHooks.launchEvent("preparing the container (${gpu.label}, by $by)")

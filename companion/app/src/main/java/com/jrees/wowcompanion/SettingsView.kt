@@ -1203,6 +1203,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                     if (!going) addonRestart = r else postInvalidateDelayed(1000)
                     RectF(r.left, r.top, r.left, r.top)
                 }
+                // #135 (2026-11-11): a move that failed at a start is not tried again on every Play; here it is, at the next start
+                wanted && ThirdPartyAddons.anyFailed(a) -> { UiKit.button(c, r, "Try again", UiKit.Button.UP); r }
                 core.kind == ThirdPartyAddons.Kind.DOWNLOADING -> { if (core.pct >= 0) progressBar(c, r, core.pct); RectF(r.left, r.top, r.left, r.top) }
                 installed && wanted -> { UiKit.button(c, r, if (armedOut) "Tap again" else "Uninstall", if (armedOut) UiKit.Button.DOWN else UiKit.Button.UP); r }
                 installed -> { UiKit.button(c, r, "Keep it", UiKit.Button.UP); r }                 // moving out at the next start
@@ -1279,6 +1281,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             addonCoreBtn[a.id]?.takeIf { !it.isEmpty && it.contains(x, y) }?.let {
                 val installed = ThirdPartyAddons.coreInstalled(a)
                 val wanted = ThirdPartyAddons.coreWanted(a)
+                if (wanted && ThirdPartyAddons.anyFailed(a)) { ThirdPartyAddons.retry(a); return true }      // its Try again (#135)
                 if (installed && wanted) {
                     // Uninstall: twice, as Reload (its folders go to the backup at the next start, never deleted)
                     val now = SystemClock.elapsedRealtime()
