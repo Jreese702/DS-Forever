@@ -45,9 +45,22 @@ class IMEInputReceiver(
             ')', '!', '@', '#', '$', '%', '^', '&', '*', '(',
             '_', '+', '{', '}', '|', ':', '"', '<', '>', '?', '~',
         )
+
+        /** a key held this long (two of the game's frames at 60 fps), Shift leads / trails the key by [SHIFT_LEAD_MS], [KEY_GAP_MS] between keys */
+        const val KEY_HOLD_MS = 35L
+        const val SHIFT_LEAD_MS = 20L
+        const val KEY_GAP_MS = 25L
     }
 
     private var imeSessionActive = false
+
+    /**
+     * DS FOREVER (the user, 2026-11-11: "when using the login keyboard symbols do not work", all of them): every shifted character
+     * went Shift down, key down, SHIFT UP, key up, all in the same instant, so the game read the key with Shift already up. Now
+     * each character is a real key stroke in order (Shift held over the key's press AND release) with a gap the game's frame can
+     * see, on one worker thread so the order of characters and backspaces is kept and the keyboard's thread never sleeps.
+     */
+    private val typer = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "ime-typer").apply { isDaemon = true } }
 
     init {
         isFocusable = false
@@ -86,21 +99,13 @@ class IMEInputReceiver(
 
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
                 Timber.d("IMEInputReceiver: deleteSurroundingText called")
-                if (beforeLength > 0) {
-                    repeat(beforeLength) {
-                        xServer.injectKeyPress(com.winlator.xserver.XKeycode.KEY_BKSP, 0)
-                        xServer.injectKeyRelease(com.winlator.xserver.XKeycode.KEY_BKSP)
-                    }
-                    Timber.v("IMEInputReceiver: Sent backspace x$beforeLength")
-                }
+                if (beforeLength > 0) typer.execute { repeat(beforeLength) { backspace() } }
                 return true
             }
 
             override fun sendKeyEvent(event: KeyEvent): Boolean {
                 if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DEL) {
-                    xServer.injectKeyPress(com.winlator.xserver.XKeycode.KEY_BKSP, 0)
-                    xServer.injectKeyRelease(com.winlator.xserver.XKeycode.KEY_BKSP)
-                    Timber.v("IMEInputReceiver: Sent backspace from sendKeyEvent")
+                    typer.execute { backspace() }
                     return true
                 }
                 return super.sendKeyEvent(event)
@@ -122,39 +127,43 @@ class IMEInputReceiver(
     )
 
     fun typeText(text: CharSequence) {
-        text.forEach(::sendCharacterToGame)
+        val chars = text.toString()
+        typer.execute { chars.forEach(::sendCharacterToGame) }
     }
+
+    private fun backspace() {
+        xServer.injectKeyPress(com.winlator.xserver.XKeycode.KEY_BKSP, 0)
+        pause(KEY_HOLD_MS)
+        xServer.injectKeyRelease(com.winlator.xserver.XKeycode.KEY_BKSP)
+        pause(KEY_GAP_MS)
+    }
+
+    private fun pause(ms: Long) = try { Thread.sleep(ms) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+
+    private fun keyEvent(action: Int, keyCode: Int, meta: Int) = KeyEvent(0L, 0L, action, keyCode, 0, meta)
 
     private fun sendCharacterToGame(char: Char) {
         val keyDispatch = charToKeyDispatch(char)
-        if (keyDispatch != null) {
-            val metaState = if (keyDispatch.requiresShift) KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON else 0
-            val downEvent = KeyEvent(
-                0L,
-                0L,
-                KeyEvent.ACTION_DOWN,
-                keyDispatch.keyCode,
-                0,
-                metaState,
-            )
-            xServer.keyboard.onKeyEvent(downEvent)
-
-            val upEvent = KeyEvent(
-                0L,
-                0L,
-                KeyEvent.ACTION_UP,
-                keyDispatch.keyCode,
-                0,
-                metaState,
-            )
-            xServer.keyboard.onKeyEvent(upEvent)
-
-            Timber.v(
-                "IMEInputReceiver: Sent char '$char' as keyCode ${keyDispatch.keyCode} (shift=${keyDispatch.requiresShift})",
-            )
-        } else {
-            Timber.w("IMEInputReceiver: Could not map character '$char' to keyCode")
+        if (keyDispatch == null) {
+            Timber.w("IMEInputReceiver: a character with no key was skipped")    // never the character itself: it may be a password's
+            return
         }
+        val kb = xServer.keyboard
+        if (keyDispatch.requiresShift) {
+            val shiftMeta = KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+            kb.onKeyEvent(keyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_SHIFT_LEFT, 0))   // Shift down first (meta 0: no synthetic Shift on top)
+            pause(SHIFT_LEAD_MS)
+            kb.onKeyEvent(keyEvent(KeyEvent.ACTION_DOWN, keyDispatch.keyCode, shiftMeta))
+            pause(KEY_HOLD_MS)
+            kb.onKeyEvent(keyEvent(KeyEvent.ACTION_UP, keyDispatch.keyCode, shiftMeta))
+            pause(SHIFT_LEAD_MS)
+            kb.onKeyEvent(keyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_SHIFT_LEFT, 0))           // ...and up only after the key
+        } else {
+            kb.onKeyEvent(keyEvent(KeyEvent.ACTION_DOWN, keyDispatch.keyCode, 0))
+            pause(KEY_HOLD_MS)
+            kb.onKeyEvent(keyEvent(KeyEvent.ACTION_UP, keyDispatch.keyCode, 0))
+        }
+        pause(KEY_GAP_MS)
     }
 
     private fun charToKeyDispatch(char: Char): KeyDispatch? {
