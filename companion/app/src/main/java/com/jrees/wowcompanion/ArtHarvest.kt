@@ -231,6 +231,8 @@ object ArtHarvest {
         val st = stamp(ctx).optJSONObject(s.id) ?: return false
         if (st.optInt("v") != s.version || st.optString("build") == g.buildKey) return false
         if (s.id == "icons" && st.optString("inputs") != IconRequirements.inputKey(ctx, g.buildKey)) return false
+        // issues #35/#36/#38 (2026-11-11): a step stamped degraded (pictures that did not read) is built again for a new build, never re-stamped
+        if (st.optString("inputs").startsWith(KitSteps.DEGRADED)) return false
         val rec = fpFile(ctx, s).takeIf { it.isFile }?.let { ArtFingerprint.fromJson(it.readText()) } ?: return false
         if (rec.fids.isEmpty() && rec.names.isEmpty()) return false
         val prev = g.log; g.log = null                                 // the check's own reads are not a step's

@@ -39,8 +39,26 @@ object KitSteps {
             Log.i(TAG, "kit: holiday recipe resolved from this build's Holidays table (${holidays.recordCount} rows)")
             kit.kit(recipe)
             kit.requireComplete(id)
+            degraded(job, kit)
         }
     }
+
+    /**
+     * ART IN A DEGRADED STATE (issues #35 #36 #38 #42, 2026-11-11): the step is whole but for pictures outside KitBuild.CORE that did not
+     * read; Play goes on with the app's stand-ins. The stamp's inputs say so ([DEGRADED]), so the next game build rebuilds the step
+     * instead of re-stamping it as unchanged (ArtHarvest.unchanged).
+     */
+    internal fun degraded(job: ArtHarvest.Job, b: KitBuild) {
+        if (b.degraded.isEmpty()) return
+        job.inputKey = degradedKey(b)
+        Log.w(TAG, "art in a degraded state: ${b.degraded.size} pictures left to the app's stand-ins, Play goes on")
+    }
+
+    /** the stamp's inputs for a build that finished degraded, or null for a whole one */
+    internal fun degradedKey(b: KitBuild): String? = if (b.degraded.isEmpty()) null else "$DEGRADED${b.degraded.size}"
+
+    /** the stamp's inputs prefix of a step that finished in a degraded state */
+    const val DEGRADED = "degraded:"
 
     /** the controller HUD's pieces (extract_cast_art.py) */
     object Cast : ArtHarvest.Step {
@@ -53,6 +71,7 @@ object KitSteps {
             val cast = build(job)
             cast.cast(r, r.optJSONObject("db2") ?: JSONObject())
             cast.requireComplete(id)
+            degraded(job, cast)
         }
     }
 
