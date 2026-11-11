@@ -833,6 +833,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             val sent = guestTap(GuestPad.cells(questsPad, "class", hold))
             Log.i("WCLOG", "class radial: ${if (hold) "hold" else "free"} ${if (sent) "sent" else "not sent (no qact row)"}")
             if (!hold) { val mine = classFreeTry; ui.postDelayed({ classFreeCheck(mine, 1) }, CLASS_FREE_CHECK_MS) }
+            // b-game-wheel-shut (the user: "do what we need to do so that it works how I want"): the same chord opened the GAME's own wheel
+            // (a toggle that keeps the right stick until pressed again): its secure cell hides it, at our open and again at our close
+            castView.gameWheelShutCol()?.let { col ->
+                val shut = TapBridge.tap(this, questsPad, "classr", col) { why -> Log.i("WCLOG", "class radial: game wheel shut refused ($why)") }
+                Log.i("WCLOG", "class radial: game wheel shut ${if (shut) "sent" else "not sent"} (${if (hold) "open" else "close"})")
+            }
         }
         castView.onClassPick = { col -> TapBridge.tap(this, questsPad, "classr", col) { why -> Log.i("WCLOG", "class radial: cast refused ($why)") } }
         castView.onClassChordLog = { what ->

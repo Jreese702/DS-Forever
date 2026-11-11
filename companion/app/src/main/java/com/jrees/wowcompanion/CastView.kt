@@ -130,6 +130,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val ov = arrayOfNulls<String>(STATE_LAYERS)
         /** the class-only radials (hud.ca): left = LB+LT, right = RB+RT; null for classes without one */
         var caL: Radial? = null; var caR: Radial? = null
+        /** b-game-wheel-shut: the "classr" cell whose tap hides the GAME's own gamepad wheels (hud.ca.gf); null = not built */
+        var caGf: Int? = null
     }
 
     /** one class radial: its 8 PLACES as the game lays them out (0 = top, clockwise; f-class-radial: a pet command keeps its fixed
@@ -891,7 +893,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             }
         }
         o.optJSONObject("ov")?.let { ov -> for (li in 0 until STATE_LAYERS) h.ov[li] = str(ov.opt(LAYER_KEYS[li])) }
-        o.optJSONObject("ca")?.let { ca -> h.caL = parseRadial(ca.optJSONObject("l")); h.caR = parseRadial(ca.optJSONObject("r")) }
+        o.optJSONObject("ca")?.let { ca -> h.caL = parseRadial(ca.optJSONObject("l")); h.caR = parseRadial(ca.optJSONObject("r"))
+            h.caGf = if (ca.has("gf")) ca.optInt("gf", -1).takeIf { it >= 0 } else null }
         // f-class-radial: the game's stance / pet bar placement, read only (Settings > Home shows it)
         o.optJSONObject("bars")?.let { b -> GameBars.note(b.optJSONObject("st"), b.optJSONObject("ps")) }
 
@@ -2574,6 +2577,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (wait > 0) { removeCallbacks(freeLater); postDelayed(freeLater, wait); return }
         classHeld = false; onClassHold?.invoke(false)
     }
+    /** b-game-wheel-shut: the cell that hides the game's own wheel (null = the add-on has none built) */
+    fun gameWheelShutCol(): Int? = hud?.caGf
     /** the app holds the controller for a class wheel now (its free not sent yet) */
     fun classHolding(): Boolean = classHeld
     private fun tapOf(side: Int) = if (side == ClassChord.LEFT) HomeSettings.classTapL else HomeSettings.classTapR
