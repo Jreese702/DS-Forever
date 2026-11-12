@@ -1086,5 +1086,133 @@ r = press(W, "PAD2")
 check(holder(W) is None and idoc(W).get('fightMode') == 'game' and stopattack(r) and clean(W) == {},
       "%s Home's LEAVE gives the fight back; the next B is the stop attack; #VIOL == 0" % tag, (holder(W), clean(W)))
 
+# ================================================================ ROUTER HEAL (Interact i152; the user, 2026-11-12: "I died and then my jump
+# input just stopped working", "its not just a, inputs work like I can see the button pushing but its not actually doing anything in game").
+# The log: the player died flagged in combat, the app's ENTER for the DEATH pop-up landed just AFTER PLAYER_REGEN_ENABLED, its FLIP set
+# wc-mode "room" on all 8 router buttons and nothing out of a fight ever cleared it: every routed press went to our empty sink.
+FACE8 = 'BIND.PAD1 = "CLICK WowCompanionCombatFace8:LeftButton"'      # A routed to the router out of combat (PadMap's routerBind)
+
+
+def heal_state(L):
+    d = idoc(L)
+    return {"modes": modes(L), "holder": holder(L), "routerMode": d.get('routerMode'), "modeFix": d.get('modeFix'),
+            "routerLeave": d.get('routerLeave'), "fightMode": d.get('fightMode')}
+
+
+def force_room(L):
+    for n in ROUTER.values():
+        L.execute('rawget(_G, "%s"):SetAttribute("wc-mode", "room")' % n)
+
+
+# L1: the bug's own order - the pull (nothing held: the ENTER cell published), death ends the fight (REGEN_ENABLED first), THEN the ENTER
+W = world()
+pull(W)
+d = idoc(W)
+enter = d.get('fightEnter')
+check(enter is not None and d.get('fightMode') == 'game', "L1 the pull: fightMode \"game\", the ENTER cell published", (d.get('fightMode'), enter))
+W.execute('UNITS.player.alive = false; fire("PLAYER_DEAD"); COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.05)')
+ok, log = tap(W, enter)
+s = heal_state(W)
+check(ok and 'WowCompanionRoomEnter+' in log and s['modes'] == [None] * 8 and s['holder'] is None,
+      "L1 the late ENTER (after PLAYER_REGEN_ENABLED): wc-mode nil on all 8 router buttons, no holder", (log, s))
+check(s['modeFix'] == 1 and s['routerMode'] is None and s['fightMode'] is None and idoc(W).get('dead') is True,
+      "L1 ... healed once (doc.modeFix 1), doc.routerMode nil, no fightMode, doc.dead", s)
+W.execute(FACE8)
+r = press(W, "PAD1")
+check(r['clicks'][:1] == ['WowCompanionCombatFace8+'] and not any(c.startswith('WowCompanionInteractPad') for c in r['clicks'])
+      and W.eval('WowCompanionCombatFace8.a["wc-at"]') != 'WowCompanionInteractPad',
+      "L1 ... A reaches the Forever bar's CLICK chain (the router's own button), never our sink", (r['clicks'], W.eval('WowCompanionCombatFace8.a["wc-at"]')))
+check(clean(W) == {}, "L1 no lockdown breach (VIOL), no spied call, no handle / snippet error (SNIPERR)", clean(W))
+
+# L2: the pull's pre-lockdown window (PLAYER_REGEN_DISABLED fired, no lockdown yet) - a room holding keeps its room mode; neither a
+# stray ENTER there, a document nor the watchdog clears it; the lockdown then finds the fight as before
+W = world()
+qtap(W, QACT["map"])
+check(holder(W) == 'pad:map', "L2 a room holds out of combat", holder(W))
+W.execute('fire("PLAYER_REGEN_DISABLED")')
+check(modes(W) == ['room'] * 8 and W.eval('__IN.N.fight') == 'router', "L2 the pull, before the lockdown: room mode, the fight hold on",
+      (modes(W), W.eval('__IN.N.fight')))
+ra = W.eval('__IN.N.ra')
+tap(W, {'row': ra.erow, 'col': ra.ecol})
+W.execute('tick(1); WowCompanion.interactPoke(); advance(0.05)')
+check(modes(W) == ['room'] * 8 and holder(W) == 'pad:map' and W.eval('__IN.N.modeFixN') == 0,
+      "L2 ... a stray ENTER, a document and the watchdog there keep it (no heal: N.fight)", (modes(W), holder(W), W.eval('__IN.N.modeFixN')))
+W.execute('COMBAT = true; advance(0.5); WowCompanion.interactPoke(); advance(0.05)')
+d = idoc(W)
+check(d.get('fightMode') == 'room' and holder(W) == 'pad:map', "L2 ... the lockdown: fightMode \"room\", the room still holds", (d.get('fightMode'), holder(W)))
+r = press(W, "PADDUP")
+check(pad_keys(r) == ['PADDUP'], "L2 ... and the D-pad reaches it", r['pads'])
+fight_end(W)
+check(modes(W) == [None] * 8 and clean(W) == {}, "L2 the fight's end: wc-mode nil; no VIOL / SNIPERR", (modes(W), clean(W)))
+
+# L3: a forced out-of-fight room mode is healed by each path: the 1 s watchdog, a document, PLAYER_ALIVE, PLAYER_UNGHOST, PLAYER_DEAD,
+# PLAYER_ENTERING_WORLD - once each (modeFix 1), routerMode nil
+for how in ('watchdog', 'doc', 'PLAYER_ALIVE', 'PLAYER_UNGHOST', 'PLAYER_DEAD', 'PLAYER_ENTERING_WORLD'):
+    W = world()
+    W.execute('advance(1)')
+    force_room(W)
+    check(modes(W) == ['room'] * 8, "L3[%s] forced: room mode out of a fight, nobody holding" % how, modes(W))
+    if how == 'watchdog':
+        W.execute('tick(1)')
+    elif how == 'doc':
+        W.execute('WowCompanion.interactPoke()')
+    else:
+        W.execute('fire("%s")' % how)
+    W.execute('advance(0.3)')
+    s = heal_state(W)
+    check(s['modes'] == [None] * 8 and s['modeFix'] == 1 and s['routerMode'] is None and s['holder'] is None,
+          "L3[%s] healed: wc-mode nil on all 8, doc.modeFix 1, doc.routerMode nil" % how, s)
+    W.execute(FACE8)
+    r = press(W, "PAD1")
+    check(not any(c.startswith('WowCompanionInteractPad') for c in r['clicks']) and clean(W) == {},
+          "L3[%s] ... A never reaches our sink; no VIOL / SNIPERR" % how, (r['clicks'], clean(W)))
+
+# L4: the document reports the router's mode: "room" in the pre-lockdown window (N.fight: no leave for the app), and out of a fight with
+# nobody holding (read before the heal) the generic leave's cell, whose tap flips the mode back and sends a document
+W = world()
+qtap(W, QACT["map"])
+W.execute('fire("PLAYER_REGEN_DISABLED"); WowCompanion.interactPoke(); advance(0.05)')
+d = idoc(W)
+check(d.get('routerMode') == 'room' and d.get('routerLeave') is None and d.get('fightMode') is None,
+      "L4 the pre-lockdown window: doc.routerMode \"room\", no routerLeave (the fight's own), no fightMode yet", (d.get('routerMode'), d.get('routerLeave')))
+W.execute('COMBAT = true; advance(0.5)')
+fight_end(W)
+W = world()
+W.execute('advance(1)')
+force_room(W)
+W.execute('RD = {}; __IN.N.routerDoc(RD)')
+rl = W.eval('RD.routerLeave')
+check(W.eval('RD.routerMode') == 'room' and rl is not None and rl.row == 'idlg' and W.eval('__IN.F.leave.a["type"]') is None,
+      "L4 out of a fight, nobody holding: routerMode \"room\" and routerLeave (the generic leave, aimed at nothing)",
+      (W.eval('RD.routerMode'), rl and (rl.row, rl.col)))
+ok, log = tap(W, {'row': rl.row, 'col': rl.col})
+check(ok and modes(W) == [None] * 8 and W.eval('__IN.N.lastRouterRoom') is False and holder(W) is None and not W.eval('#ACTIONS > 0 and ACTIONS[#ACTIONS].kind == "close"'),
+      "L4 ... the app's LEAVE tap there: wc-mode nil on all 8, a document asked for, nothing closed", (log, modes(W)))
+check(clean(W) == {}, "L4 no VIOL / SNIPERR", clean(W))
+
+# L5: the existing in-fight stray ENTER - its "app" holder still goes at PLAYER_REGEN_ENABLED, the router back to nil (no heal needed)
+W = world()
+pull(W)
+tap(W, idoc(W).get('fightEnter'))
+check(holder(W) == 'app' and modes(W) == ['room'] * 8, "L5 a stray ENTER in the fight: the \"app\" holder, room mode", (holder(W), modes(W)))
+fight_end(W)
+s = heal_state(W)
+check(s['holder'] is None and s['modes'] == [None] * 8 and s['routerMode'] is None and s['modeFix'] == 0,
+      "L5 ... PLAYER_REGEN_ENABLED releases it and clears the mode itself (doc.modeFix 0)", s)
+check(clean(W) == {}, "L5 no VIOL / SNIPERR", clean(W))
+
+# L6 (review): out of a fight the document offers the app NO routerLeave while anything holds (an "npc" hold has no G.holder) or waits
+# to hold (N.pend) - a stale LEAVE crossing into the next pull would drop that fight's hold
+for what, setup in (('holding', '__IN.N.holding = true'), ('pend', '__IN.N.pend = { id = "npc", n = 0 }')):
+    W = world()
+    W.execute('advance(1)')
+    force_room(W)
+    W.execute(setup)
+    W.execute('RD = {}; __IN.N.routerDoc(RD)')
+    check(W.eval('RD.routerMode') == 'room' and W.eval('RD.routerLeave') is None,
+          "L6[%s] room mode out of a fight but something holds / waits: routerMode \"room\", no routerLeave" % what,
+          (W.eval('RD.routerMode'), W.eval('RD.routerLeave')))
+    check(clean(W) == {}, "L6[%s] no VIOL / SNIPERR" % what, clean(W))
+
 print('%s (%d pass, %d xfail, %d fail, %d xpass)' % ('ALL PASS' if fails == 0 and xpasses == 0 else 'FAILED', passes, xfails, fails, xpasses))
 sys.exit(1 if (fails or xpasses) else 0)

@@ -1262,13 +1262,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * combat_nav Step 3 (PadOwnerSync): does the bottom screen want the pad now - a room, a Home module (map, chat, an aura list, the
      * tool), the bar cursor, a radial, the pause or target radial, InteractView or DialogView. Never while the game menu has it.
      */
-    private fun bottomWantsPad(): Boolean =
+    private fun bottomWantsPad(): Boolean = bottomWantsPadBesidesDialogs() || dialogWantsPad()
+
+    /** everything but DialogView (Interact i152: a dead player's DEATH pop-up alone never asks for an ENTER) */
+    private fun bottomWantsPadBesidesDialogs(): Boolean =
         room != Room.HOME || homeView.homeGuestWanted() || tradOpen() || radialView.isOpen || barSelect.open ||
             (::pauseView.isInitialized && pauseView.isOpen) || spellsOverlay.visibility == View.VISIBLE ||
-            // a pop-up as the box, or the rolls open - never the folded rolls pill (DialogView.wantsPad; the review of 2026-11-11)
-            (::dialogView.isInitialized && dialogView.wantsPad()) ||
             // a loot / NPC window left with B in this fight wants the pad no more (its LEAVE went out; Step 4)
             (::interactView.isInitialized && interactView.visibility == View.VISIBLE && !padOwner.npcLeft)
+
+    // a pop-up as the box, or the rolls open - never the folded rolls pill (DialogView.wantsPad; the review of 2026-11-11)
+    private fun dialogWantsPad(): Boolean = ::dialogView.isInitialized && dialogView.wantsPad()
 
     /** one look of the reconciler: from every current interact document, show(), and a tick while a fight lasts */
     private fun padOwnerStep() {
@@ -1291,7 +1295,20 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             Log.i("WCHOME", "pad owner: B let $who go in the fight, not the room on screen (${room.name}): stays")
         }
-        val st = padOwner.step(bottomWantsPad(), now)
+        val others = bottomWantsPadBesidesDialogs()
+        val dlg = dialogWantsPad()
+        val deathOnly = !others && dlg && dialogView.wantsPadForDeathOnly()
+        val outOfFight = padOwner.mode == null
+        val st = padOwner.step(others || dlg, now, deathOnly)
+        if (outOfFight && st.act == PadOwnerSync.Act.LEAVE) {
+            // Interact i152 (the user, 2026-11-12: "I died and then my jump input just stopped working"): the router stuck in room mode
+            // out of a fight with nobody holding - every routed press went to the add-on's empty sink; its own LEAVE flips it back
+            st.cell?.let { (row, col) ->
+                val sent = TapBridge.tap(this, questsPad, row, col) { }
+                Log.i("WCHOME", "pad owner: OUT-OF-FIGHT room mode -> LEAVE ${if (sent) "sent" else "not sent"} ($row $col)")
+            }
+            return
+        }
         when (st.act) {
             PadOwnerSync.Act.NONE -> {}
             PadOwnerSync.Act.ENTER, PadOwnerSync.Act.LEAVE -> st.cell?.let { (row, col) ->
@@ -1301,7 +1318,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 Log.i("WCHOME", "pad owner: ${st.act} $row $col ${if (sent) "sent" else "not sent"} (room $room, mode ${padOwner.mode})")
             }
             PadOwnerSync.Act.STUCK -> {
-                Log.w("WCLOG", "pad owner: STUCK - ${PadOwnerSync.TRIES} taps and the mode is still ${padOwner.mode} (room $room, " +
+                Log.w("WCLOG", "pad owner: STUCK - ${PadOwnerSync.TRIES} taps and the mode is still ${padOwner.mode ?: "room (out of a fight)"} (room $room, " +
                     "holder ${padOwner.holder ?: "-"})")
                 if (::roomCue.isInitialized) roomCue.stuck()
             }
