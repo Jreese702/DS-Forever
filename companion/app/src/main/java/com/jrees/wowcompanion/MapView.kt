@@ -3412,9 +3412,16 @@ class MapView(context: Context) : View(context) {
         if (a.m == map?.optInt("mapID", Int.MIN_VALUE)) { deriveQuestAreas(map); invalidate() }
     }
     private val qdbAreas = LinkedHashMap<Int, QdbAreas.Areas>()
-    /** whether quest [qid]'s areas are drawn, [st] the shown focus: tracked quests, and the SHOWN focus tracked or not - the merged
-     *  light blue row's quest included (the user, 2026-11-11: "isn't showing the questie quest areas for the focused quest"; FocusAreas) */
-    private fun areaQuest(qid: Int, st: Int): Boolean = FocusAreas.shown(qid, st, trackedKnown, trackedNo.containsKey(qid))
+    /** Home's area pick's inputs, [st] the shown focus (FocusAreas: tracked quests as 1427, plus the merged Polestar quest tracked
+     *  or not - the user, 2026-11-11: "isn't showing the questie quest areas for the focused quest") */
+    private fun areaIn(st: Int): FocusAreas.In {
+        val rd = { e: JSONObject -> e.optBoolean("ready") || e.optBoolean("done") }
+        val tRD = HashMap<Int, Boolean>(); for (e in tracked) e.optInt("id", 0).takeIf { it != 0 }?.let { if (it !in tRD) tRD[it] = rd(e) }
+        val merged = psMerged()
+        return FocusAreas.In(trackedKnown, trackedNo.keys.toSet(), st, merged, tRD,
+            questById[merged]?.let { mapOf(merged to rd(it)) } ?: emptyMap())
+    }
+    private var areaSaid = ""
 
     private fun deriveQuestAreas(m: JSONObject?) {
         qAreas.clear(); qCircles.clear()
@@ -3424,23 +3431,22 @@ class MapView(context: Context) : View(context) {
         val st = shownFocus()   // the game's focus, else the default (refreshDefault); merged: psFocus() = the merged quest
         val r = rect
         val placed = HashSet<Int>()
+        val ai = areaIn(st)
+        val qs0 = m.optJSONArray("quests")
+        val mapQs = if (qs0 == null) emptyList() else (0 until qs0.length()).map { i ->
+            qs0.optJSONObject(i)?.let { it.optInt("questID", 0) to it.optBoolean("done", false) } ?: (0 to true) }
         // a tracked quest the GAME places no point for on this map but QuestieDB has spawns for here still gets its areas
-        qdbAreas[m.optInt("mapID", Int.MIN_VALUE)]?.let { a ->
-            val onMap = HashSet<Int>()
-            m.optJSONArray("quests")?.let { qs -> for (i in 0 until qs.length()) qs.optJSONObject(i)?.let { onMap.add(it.optInt("questID", 0)) } }
-            for (o in a.objs.map { it.qid }.distinct()) {
-                if (o in onMap || !areaQuest(o, st)) continue
-                if ((tracked.firstOrNull { it.optInt("id", 0) == o } ?: questById[o])?.let { it.optBoolean("ready") || it.optBoolean("done") } == true) continue
-                if (qdbAreasFor(m, o, o == st)) placed.add(o)
-            }
+        val qdbQids = qdbAreas[m.optInt("mapID", Int.MIN_VALUE)]?.objs?.map { it.qid } ?: emptyList()
+        for (p in FocusAreas.qdbOnly(ai, qdbQids, mapQs.map { it.first }.toSet())) if (qdbAreasFor(m, p.qid, p.focused)) placed.add(p.qid)
+        val picks = FocusAreas.onMap(ai, mapQs)        // done: the "?" at the hand-in, no area; untracked: no area (merged: FocusAreas)
+        "areas: st=$st merged=${ai.merged} tracked=${ai.tracked.sorted()} qdb=${qdbQids.distinct()} placed=${placed.sorted()} map=${picks.map { it.qid }}".let {
+            if (it != areaSaid) { areaSaid = it; android.util.Log.i("WCMAP", it) }   // the device check: which quests Home draws
         }
-        val qs = m.optJSONArray("quests") ?: run { qAreas.sortBy { if (it.focused) 1 else 0 }; return }
-        for (i in 0 until qs.length()) {
-            val q = qs.optJSONObject(i) ?: continue
-            if (q.optBoolean("done", false)) continue      // ready: the "?" at the hand-in, no area
-            val id = q.optInt("questID", 0)
-            if (!areaQuest(id, st)) continue               // untracked: no area (the shown focus always has one: FocusAreas)
-            val focused = id != 0 && id == st
+        val qs = qs0 ?: run { qAreas.sortBy { if (it.focused) 1 else 0 }; return }
+        for (p in picks) {
+            val q = qs.optJSONObject(p.index) ?: continue
+            val id = p.qid
+            val focused = p.focused
             // QuestieDB's areas first (the user's pick), then the shape traced from the user's play, the circle. (The baked
             // AzerothCore shapes, assets/quest_areas.json, left the app with the art harvest, the user 2026-10-09.)
             var any = id in placed || qdbAreasFor(m, id, focused)
