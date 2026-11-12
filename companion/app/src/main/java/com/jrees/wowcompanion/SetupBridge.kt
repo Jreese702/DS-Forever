@@ -100,7 +100,7 @@ object SetupBridge {
             reportSaved = ReportFlow.pending?.let { ReportFlow.noteTitle(it) },
             staleData = DataStaleness.current()?.takeIf { !staleOk },
             lowSpace = i.lowSpace?.takeIf { !spaceOk },
-            gameClosed = GameLife.note, lastCrash = LastRun.pending))
+            gameClosed = GameLife.note, lastCrash = LastRun.pending, polestarAsk = PolestarGuide.ask(Settings.polestarGuide)))
     }
 
     /** the start-up checks have passed (the chooser may show); false while the launcher hasn't published them */
@@ -130,6 +130,9 @@ object SetupBridge {
             SetupFlow.Action.STALE_OK -> { staleOk = true; changed() }
             SetupFlow.Action.SPACE_OK -> { spaceOk = true; changed() }
             SetupFlow.Action.REPORT_DISMISS -> { ReportFlow.clearPending(); changed() }
+            // 2026-11-12: the Polestar quest guide's answer (Settings > Add-ons changes it later); the add-on moves at the next start
+            SetupFlow.Action.POLESTAR_YES -> { PolestarGuide.set(true); log?.invoke("polestar guide: yes"); changed() }
+            SetupFlow.Action.POLESTAR_NO -> { PolestarGuide.set(false); log?.invoke("polestar guide: no"); changed() }
             else -> launcherActions?.invoke(a)
         }
     }

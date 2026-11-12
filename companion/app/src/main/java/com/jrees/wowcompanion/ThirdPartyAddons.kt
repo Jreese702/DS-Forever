@@ -22,7 +22,8 @@ import java.util.concurrent.Executors
  * project's own GitHub releases.
  *
  * THE WAY IN, the same rules as [DependencyAddons]:
- *  - Install (or a module switched on) DOWNLOADS at once, in the background, only on an unmetered network (Wi-Fi) and only with the
+ *  - Install (or a module switched on) DOWNLOADS at once, in the background, only on an unmetered network (Wi-Fi; a base add-on the
+ *    player said Yes to, on any network, as QuestieDB; a base add-on not asked about yet is fetched ahead on Wi-Fi only) and only with the
  *    room for it (the package + [SPACE_MARGIN] free in the app's private storage); resumed where it stopped (HTTP Range); checked for
  *    its exact size and its pinned sha256; kept in the app's private storage until it is in;
  *  - it is MOVED IN only at a start with the game closed ([applyAtStart], from the launcher's dependency step): unpacked (each entry's
@@ -49,11 +50,14 @@ object ThirdPartyAddons {
     /**
      * [inUse] set: an add-on another setting USES (Map's Quest tracking for Polestar / QuestTrail; [usedIn] names it). Display only:
      * it is installed from Add-ons like any (the user, test40: "Install from Add-ons"), and kept until its Uninstall. [version] = the
-     * pinned release's version.
+     * pinned release's version. [base] = PART OF THE BASE INSTALL (Polestar, the user 2026-11-12: "including this addon to the base
+     * install like questie"): wanted by its own choice ([baseChoice], not Install / Uninstall), downloaded on any network like
+     * QuestieDB, fetched ahead while the player has not answered yet, and its zip freed on a No.
      */
     data class Addon(val id: String, val title: String, val what: String, val by: String, val license: String, val repo: String,
                      val version: String, val core: Pkg, val modules: List<Module> = emptyList(), val options: List<Option> = emptyList(),
-                     val inUse: (() -> Boolean)? = null, val usedIn: String? = null, val settings: String? = null) {
+                     val inUse: (() -> Boolean)? = null, val usedIn: String? = null, val settings: String? = null,
+                     val base: Boolean = false) {
         /** the rows' words, as the Settings tabs count them (SettingsTabs.Block.rows) */
         fun rowWords(): List<String> = listOf(title) + modules.map { "$title: ${it.title}" } + options.map { it.title } + listOfNotNull(settings)
         fun pkgs(): List<Pair<String, Pkg>> = listOf("core" to core) + modules.map { it.id to it.pkg }
@@ -87,16 +91,20 @@ object ThirdPartyAddons {
                 "Accepting a quest lets its line finish.", default = false)))
 
     /**
-     * POLESTAR (fitzforge/polestar, GPL-3.0; Map's "Quest tracking: Polestar", moved here from DependencyAddons on Map's word): walking
-     * routes to the quest goals (Shortest Path Forever's router). One package with Polestar and Polestar_Nav side by side (the recorder
-     * zip is not taken). v0.2.5, read 2026-10-17; untested on the Thor until the user's first run.
+     * POLESTAR (fitzforge/polestar, GPL-3.0-only; Polestar_Nav's .toc GPL-3.0-or-later; Map's "Quest tracking: Polestar"): walking
+     * routes to the quest goals (Shortest Path Forever's router). One package, every folder with a .toc at its top level in (Polestar,
+     * Polestar_Nav, the guides, the databases, the names); the recorder zip is not taken. v0.2.5, read 2026-10-17.
+     * BASE INSTALL since 2026-11-12 (the user: "Lets start including this addon to the base install like questie and give a prompt"):
+     * [Addon.base], switched by [PolestarGuide] (the launcher's prompt, Settings > Add-ons, Quest tracking). Still downloaded from the
+     * project's own release (pinned tag, size and sha256), NEVER inside our APK (GPL-3.0: we do not redistribute it); its licence and
+     * notices go in with its folders ([keepNotices]).
      */
     val POLESTAR = Addon(
         id = "polestar", title = "Polestar", what = "Walking routes to your quest goals (Shortest Path Forever's router)", by = "fitzforge",
-        license = "GPL-3.0", repo = "fitzforge/polestar", version = "0.2.5",
+        license = "GPL-3.0-only", repo = "fitzforge/polestar", version = "0.2.5",
         core = Pkg("v0.2.5", "Polestar-0.2.5.zip", 38_112_129L, "ff3ea16e3d83e7e3071416c6a89d14be557b7f56f1733caa6d3067248594ff60",
             listOf("Polestar", "Polestar_Nav")),
-        inUse = { Settings.questTracking == "polestar" }, usedIn = "Map › Quest tracking")
+        inUse = { Settings.questTracking == "polestar" }, usedIn = "Map › Quest tracking", base = true)
 
     /**
      * QUESTTRAIL (Krom, MIT; CurseForge project 1725624; Map's "Quest tracking: QuestTrail", the user: "Download it
@@ -112,10 +120,10 @@ object ThirdPartyAddons {
         by = "Krom", license = "MIT", repo = "", version = "3.2.1",
         core = Pkg("3.2.1", "QuestTrail-3.2.1.zip", 7_656_314L, "3e1c72b7a159d2d895d8bee46c059d49c02fe0d54e3098b4abe5342fd98ad8b2",
             listOf("QuestTrail"), url = "https://mediafilez.forgecdn.net/files/9234/965/QuestTrail-3.2.1.zip"),
-        inUse = { Settings.questTracking == "questtrail" }, usedIn = "Map › Quest tracking",
-        // test51 (the user: "a default setting set ... then just expose the other settings in the addons menu"): its own options pages,
-        // mirrored on the bottom screen (Interact's QuestTrail mirror, browsable by its steps)
-        settings = "QuestTrail settings")
+        // RETIRED AS A QUEST-TRACKING MODE (the user, 2026-11-12: "We need to remove safe path and quest trail from the options"): no
+        // longer used by Map, no options mirror (DS Forever no longer reads it). A copy a player installed stays until its Uninstall
+        // (its block shows only while it is there: SettingsTabs.shown); it is never offered to a new player
+        inUse = null, usedIn = null, settings = null)
 
     /**
      * MANNERS (Sacha / fpsacha, MIT; CurseForge project 1705364; the user: "add this addon to the default smart Y stack ... one of
@@ -152,6 +160,7 @@ object ThirdPartyAddons {
     @Volatile private var app: Context? = null
     fun init(c: Context) {
         if (prefs != null) return
+        Settings.init(c)                                        // the base add-ons' choice (PolestarGuide) lives in Settings
         app = c.applicationContext
         val sp: SharedPreferences = c.applicationContext.getSharedPreferences("addons", Context.MODE_PRIVATE)
         start(object : Store {
@@ -167,19 +176,42 @@ object ThirdPartyAddons {
         loadState()
         // test40: Polestar / QuestTrail installed while Map's setting switched them in (no Install of their own then): their Install
         // stands now, so they stay until their Uninstall (once, flagged)
-        for (a in ALL) if (installed(a, "core") && prefs?.get("${a.id}.migrated", false) != true) {
+        for (a in ALL) if (!a.base && installed(a, "core") && prefs?.get("${a.id}.migrated", false) != true) {
             prefs?.put("${a.id}.migrated", true); if (!coreWanted(a)) prefs?.put("${a.id}.core", true)
         }
+        // review of 2026-11-12: a QuestTrail player moved to Polestar (Settings' one-time move) would run both quest guides: QuestTrail's
+        // Install is undone once, so it goes out to the backup at the next start with the game closed (never deleted)
+        if (takeQuestTrailRetire()) { prefs?.put("${QUESTTRAIL.id}.migrated", true); prefs?.put("${QUESTTRAIL.id}.core", false) }
         // anything asked for and not here yet carries on downloading (a 1.5 GB pack outlives the app being closed)
         resume()
     }
+    /** Settings' one-time QuestTrail mark ([Settings.takeQuestTrailRetire]); the off-device tests set their own */
+    @Volatile internal var takeQuestTrailRetire: () -> Boolean = { Settings.takeQuestTrailRetire() }
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     fun onChange(l: () -> Unit) { listeners.add(l) }
     private fun changed() { for (l in listeners) runCatching { l() } }
 
-    /** the core is wanted: Install pressed (and not Uninstall since) */
-    fun coreWanted(a: Addon): Boolean = prefs?.get("${a.id}.core", false) ?: false
-    fun setCore(a: Addon, on: Boolean) { prefs?.put("${a.id}.core", on); if (on) clearFailed(a, "core"); changed(); resume() }
+    /**
+     * A BASE ADD-ON'S CHOICE (the user, 2026-11-12; Polestar: [PolestarGuide]): true / false, null = not asked yet. The off-device
+     * tests set their own
+     */
+    @Volatile var baseChoice: (Addon) -> Boolean? = { a -> if (a.id == POLESTAR.id) PolestarGuide.wanted(Settings.polestarGuide) else null }
+    /** a base add-on's Install / Uninstall is its choice (Polestar: [PolestarGuide.set]) */
+    @Volatile var setBaseChoice: (Addon, Boolean) -> Unit = { a, on -> if (a.id == POLESTAR.id) PolestarGuide.set(on) }
+
+    /** the core is wanted: Install pressed (and not Uninstall since); a base add-on: its choice, and not asked yet = as it is now */
+    fun coreWanted(a: Addon): Boolean =
+        if (a.base) baseChoice(a) ?: present(a, "core") else prefs?.get("${a.id}.core", false) ?: false
+    fun setCore(a: Addon, on: Boolean) {
+        if (a.base) { setBaseChoice(a, on); return }
+        prefs?.put("${a.id}.core", on); if (on) clearFailed(a, "core"); changed(); resume()
+    }
+    /** a base add-on's choice changed ([PolestarGuide.set]): its download starts (or stops) now, its move waits for the next start */
+    fun choiceChanged(a: Addon) { if (coreWanted(a)) clearFailed(a, "core"); changed(); resume() }
+    /** a base add-on not asked about yet: its package is fetched ahead (a Yes then goes in at once), never moved in */
+    fun prefetch(a: Addon, key: String): Boolean = a.base && key == "core" && baseChoice(a) == null
+    /** the package is downloaded: wanted, or fetched ahead */
+    private fun fetchWanted(a: Addon, key: String): Boolean = wanted(a, key) || prefetch(a, key)
     /** MAP'S HOOK (its Quest tracking picker): choosing an add-on that is not installed starts its install, as Install here does */
     fun install(a: Addon) { if (!coreWanted(a)) setCore(a, true) }
     /** an installed package goes out at the next start: its Install undone (Uninstall), or its module switched off */
@@ -293,12 +325,12 @@ object ThirdPartyAddons {
     fun resume() {
         if (dir == null || noFetch) return
         for (a in ALL) for ((key, p) in a.pkgs()) {
-            if (!wanted(a, key) || installed(a, key) || state(a, key).optString("zip") == p.tag) continue
+            if (!fetchWanted(a, key) || installed(a, key) || state(a, key).optString("zip") == p.tag) continue
             val id = "${a.id}/$key"
             val fresh = synchronized(queued) { queued.add(id) }
             if (!fresh) continue
             worker.execute {
-                try { if (wanted(a, key)) fetch(a, key, p) }
+                try { if (fetchWanted(a, key)) fetch(a, key, p) }
                 finally { synchronized(queued) { queued.remove(id) } }
             }
         }
@@ -316,8 +348,28 @@ object ThirdPartyAddons {
         caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
     }.getOrDefault(true)
 
-    /** one package: room, Wi-Fi, the download (resumed), its size and pinned sha256; then it waits for a start with the game closed */
-    private fun fetch(a: Addon, key: String, p: Pkg) {
+    /** the packages being downloaded right now (the worker or the start step): one writer per .part file */
+    private val fetching = HashSet<String>()
+
+    /**
+     * one package: room, Wi-Fi, the download (resumed), its size and pinned sha256; then it waits for a start with the game closed.
+     * ONE AT A TIME PER PACKAGE (review of 2026-11-12: the worker queued by [start] and the start step both wrote the same .part, which
+     * then failed its size / sha256 check): a second caller while one runs returns at once (that download carries on, its status
+     * shown); a package already downloaded is never downloaded again. false = another caller has it
+     */
+    private fun fetch(a: Addon, key: String, p: Pkg): Boolean {
+        val id = "${a.id}/$key"
+        if (!synchronized(fetching) { fetching.add(id) }) return false
+        try {
+            if (state(a, key).optString("zip") == p.tag && zipOf(p).length() == p.bytes) return true
+            fetchOne(a, key, p)
+        } finally { synchronized(fetching) { fetching.remove(id) } }
+        return true
+    }
+    /** a download of this package is running now */
+    internal fun fetchingNow(a: Addon, key: String): Boolean = synchronized(fetching) { "${a.id}/$key" in fetching }
+
+    private fun fetchOne(a: Addon, key: String, p: Pkg) {
         val zip = zipOf(p)
         val part = File(zip.path + ".part")
         try {
@@ -328,12 +380,14 @@ object ThirdPartyAddons {
                 setLive(a, key, Status(Kind.NO_SPACE, "Needs ${size(((p.bytes - have + SPACE_MARGIN) / 1_000_000).toInt())} free on this device"))
                 return
             }
-            if (!unmetered()) { setLive(a, key, Status(Kind.WAITING_WIFI, "Waiting for Wi-Fi to download ${size(p.mb)}")); return }
+            // a base add-on the player said Yes to downloads on any network, as QuestieDB does (the user, 2026-11-12: "like questie";
+            // 38 MB); fetched AHEAD (not asked yet) only on Wi-Fi (review of 2026-11-12: no mobile data spent before the answer)
+            if ((!a.base || prefetch(a, key)) && !unmetered()) { setLive(a, key, Status(Kind.WAITING_WIFI, "Waiting for Wi-Fi to download ${size(p.mb)}")); return }
             setLive(a, key, Status(Kind.DOWNLOADING, "Downloading ${size(p.mb)}", (have * 100 / p.bytes).toInt()))
             download(a.repo, p, part) { got ->
                 setLive(a, key, Status(Kind.DOWNLOADING, "Downloading: ${size((got / 1_000_000).toInt())} of ${size(p.mb)}",
                     (got * 100 / p.bytes).toInt()))
-                wanted(a, key)                               // switched off meanwhile: stop (the part is kept)
+                fetchWanted(a, key)                          // switched off meanwhile: stop (the part is kept)
             } ?: return setLive(a, key, null)
             if (part.length() != p.bytes) throw IOException("the download is incomplete")
             if (DependencyAddons.sha256(part) != p.sha256) { part.delete(); throw IOException("the download's checksum is wrong") }
@@ -430,6 +484,18 @@ object ThirdPartyAddons {
                     onStep("Removing add-ons: $name...")
                     moveOut(a, key, flavorRoot); lines.add("$name moved to the backup"); log("add-ons: removed $name (to the backup)"); continue
                 }
+                if (!want && !inst && prefetch(a, key)) {
+                    // not asked yet (the launcher's Polestar prompt): fetched ahead by the BACKGROUND worker only (Wi-Fi), never in this
+                    // step (review of 2026-11-12: a 38 MB download here held Play, which waits on this step's lock), moved in only on a Yes
+                    if (state(a, key).optString("zip") != p.tag) resume()
+                    lines.add(if (state(a, key).optString("zip") == p.tag) "$name ready (not in use)" else "$name downloading")
+                    continue
+                }
+                if (!want && a.base && key == "core" && state(a, key).optString("zip").isNotEmpty()) {
+                    // a No (the user, 2026-11-12: the prompt's No / the toggle off): the fetched-ahead package's room back
+                    zipOf(p).delete(); File(zipOf(p).path + ".part").delete(); putState(a, key, state(a, key).apply { remove("zip") })
+                    log("add-ons: $name not wanted: its download freed")
+                }
                 if (!want || inst) continue
                 val failed = failedWhy(a, key)
                 if (failed != null) {
@@ -437,7 +503,11 @@ object ThirdPartyAddons {
                     log("add-ons: $name not applied: it failed at an earlier start ($failed); not tried again until Settings > Add-ons' Try again or a new version")
                     continue
                 }
-                if (state(a, key).optString("zip") != p.tag && p.bytes <= SMALL && fetchSmall) { onStep("Downloading add-ons: $name..."); fetch(a, key, p) }
+                // a small one is fetched here, unless the worker is downloading it now (then it goes in when that is done: here at Play,
+                // or the next start), never a second writer on the same file
+                if (state(a, key).optString("zip") != p.tag && p.bytes <= SMALL && fetchSmall && !fetchingNow(a, key)) {
+                    onStep("Downloading add-ons: $name..."); fetch(a, key, p)
+                }
                 if (state(a, key).optString("zip") != p.tag || zipOf(p).length() != p.bytes) {
                     resume(); lines.add("$name downloading")
                     log("add-ons: $name not applied: not downloaded yet (${if (zipOf(p).isFile) "${zipOf(p).length()} of ${p.bytes} bytes" else "nothing yet"})")
@@ -506,6 +576,7 @@ object ThirdPartyAddons {
             if (!staged) {
                 if (staging.exists()) staging.deleteRecursively()             // our own leftover only
                 DependencyAddons.unpack(zipOf(p), staging, "", maxFiles = 40_000, maxBytes = p.bytes * 3 / 2 + 50_000_000)
+                keepNotices(staging)
                 mark.writeText(sig(p))
             } else log("add-ons: ${a.id}-$key: the staged copy is complete, not unpacked again")
             val folders = staging.listFiles()?.filter { d -> d.isDirectory && DependencyAddons.installedVersion(d) != null } ?: emptyList()
@@ -531,6 +602,22 @@ object ThirdPartyAddons {
             if (!keep) staging.deleteRecursively()
             File(iface, DependencyAddons.STAGING).delete()                // only when empty
         }
+    }
+
+    /** the zip's own licence and notice files (LICENSE, COPYING, THIRD_PARTY*, NOTICE*, CREDITS*) */
+    internal fun isNotice(name: String): Boolean =
+        Regex("""(?i)^(LICEN[CS]E|COPYING|THIRD[_-]?PARTY|NOTICES?|CREDITS)([._-].*)?$""").matches(name)
+
+    /**
+     * LICENCE FILES KEPT (the user, 2026-11-12, Polestar in the base install; GPL-3.0): only folders go into AddOns, so the zip's
+     * top-level LICENSE / THIRD_PARTY.md (and the like) are copied into every add-on folder of the package that has no file of that name
+     * (a folder's own LICENSE stays as it is). Nothing else at the top level is taken.
+     */
+    internal fun keepNotices(staging: File) {
+        val notices = staging.listFiles()?.filter { it.isFile && isNotice(it.name) } ?: return
+        if (notices.isEmpty()) return
+        for (d in staging.listFiles()?.filter { it.isDirectory && DependencyAddons.installedVersion(it) != null } ?: emptyList())
+            for (n in notices) File(d, n.name).let { t -> if (!t.exists()) runCatching { n.copyTo(t) } }
     }
 
     private fun moveOut(a: Addon, key: String, flavorRoot: File) {

@@ -8,7 +8,7 @@ copyright/licence notices are retained.
 Unofficial community project, not affiliated with or endorsed by Blizzard,
 WoW Forever's maintainers or GameNative. World of Warcraft and Battle.net are
 their owners' marks. Supply your own authorised game installation/account.
-No Blizzard client files, extracted art or QuestieDB are bundled.
+No Blizzard client files, extracted art, QuestieDB or Polestar are bundled.
 
 ## Tested Scope
 
@@ -32,7 +32,11 @@ comes from the chosen root, not a hard-coded old `/sdcard` folder.
 
 Two-screen setup checks environment readiness and automatically prepares art
 from your installed game. Seven required steps gate Play; required failures
-offer **Try again**. QuestieDB downloads after the art check. Optional interiors
+offer **Try again**. QuestieDB downloads after the art check. Polestar
+(fitzforge/polestar, GPL-3.0-only; Polestar_Nav GPL-3.0-or-later) downloads from
+its project's own pinned release, never bundled; its licence and notice files go
+in with its folders. Before Play the bottom screen asks once whether to use the
+Polestar quest guide; Settings > Add-ons switches it On/Off. Optional interiors
 and all-icons background work never gate Play. No extracted PC/server pictures
 are used as a fallback.
 

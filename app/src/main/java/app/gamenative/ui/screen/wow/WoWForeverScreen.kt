@@ -581,9 +581,10 @@ fun WoWForeverScreen(
         try {
             dependencies = withContext(Dispatchers.IO) {
                 runCatching {
-                    // the opt-in dependencies (Polestar) follow the companion's own setting: read it here too
+                    // Polestar (base install since 2026-11-12, the user: "like questie") follows the player's answer (PolestarGuide,
+                    // the companion's own Settings): read it here too
                     com.jrees.wowcompanion.Settings.init(context)
-                    // the third-party add-ons the player opted into (Settings > Add-ons; Polestar), applied by the same step
+                    // the third-party add-ons (Settings > Add-ons; Polestar, fetched here and moved in on a Yes), applied by the same step
                     com.jrees.wowcompanion.ThirdPartyAddons.init(context)
                     com.jrees.wowcompanion.DependencyAddons.run(WowClientDownloader.flavorDir(File(gamePath)),
                         File(context.cacheDir, "dsforever"), File(context.filesDir, "dsforever/dependencies.json"))

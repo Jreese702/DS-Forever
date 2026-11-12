@@ -45,7 +45,8 @@ object SettingsTabs {
         SMART_Y(Tab.QOL, "Smart Y (out of combat, nothing targeted)", listOf("Smart Y")),
         // QOL's quality-of-life groups (GameUiSection's QOL part draws them, the same rows, ids, taps and channels as before)
         QOL_HUD(Tab.QOL, "HUD", listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale")),
-        QOL_NAV(Tab.QOL, "Navigation", listOf("Compass bar", "World markers", "Compass follows the camera", "Avoid dangerous areas")),
+        // 2026-11-12 (the user: "remove safe path and quest trail from the options"): SafePath's "Avoid dangerous areas" is gone
+        QOL_NAV(Tab.QOL, "Navigation", listOf("Compass bar", "World markers", "Compass follows the camera")),
         QOL_COMBAT(Tab.QOL, "Combat", listOf("Aggro tint")),
         // Top screen: the game's own windows only
         GAME_UI(Tab.TOP, "Game UI on the top screen", listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window",
@@ -89,7 +90,14 @@ object SettingsTabs {
 
     /** 1.0.9 (the user: "Disable the safe path, quest trail and polestar buttons for now"): with the route modes held back, the
      *  Polestar and QuestTrail blocks are not shown (Spoken stays) */
-    fun shown(b: Block): Boolean = Settings.ROUTE_MODES_ON || (b != Block.ADDON_POLESTAR && b != Block.ADDON_QUESTTRAIL)
+    fun shown(b: Block): Boolean = when {
+        !Settings.ROUTE_MODES_ON -> b != Block.ADDON_POLESTAR && b != Block.ADDON_QUESTTRAIL
+        // 2026-11-12 (the user: "remove ... quest trail from the options"): QuestTrail is never offered; a copy a player installed keeps
+        // its block (its Uninstall) while it is there or on its way in
+        b == Block.ADDON_QUESTTRAIL -> ThirdPartyAddons.present(ThirdPartyAddons.QUESTTRAIL, "core") ||
+            ThirdPartyAddons.coreWanted(ThirdPartyAddons.QUESTTRAIL)
+        else -> true
+    }
     fun viewBlocks(tab: Tab): List<Block> = blocks(tab).filter { it in VIEW_BLOCKS }
 
     /** the tab [dir] (-1 / +1) steps from [tab] among the VISIBLE tabs, wrapping (L on the first goes to the last) */

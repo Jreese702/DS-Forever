@@ -72,6 +72,8 @@ class ThirdPartyAddonsTest {
         DependencyAddons.gameRunning = { false }
         ThirdPartyAddons.settleMs = 200
         ThirdPartyAddons.renameDir = realRename; ThirdPartyAddons.fileRename = realFileRename
+        // the real registry's base add-on (Polestar) is never fetched ahead by these tests' start (its worker would call this server)
+        ThirdPartyAddons.baseChoice = { false }
         ThirdPartyAddons.start(object : ThirdPartyAddons.Store {
             override fun get(k: String, d: Boolean) = choices[k] ?: d
             override fun put(k: String, v: Boolean) { choices[k] = v }
@@ -82,7 +84,11 @@ class ThirdPartyAddonsTest {
         server.close(); tmp.deleteRecursively(); DependencyAddons.api = "https://api.github.com"
         ThirdPartyAddons.ALL = listOf(ThirdPartyAddons.SPOKEN, ThirdPartyAddons.POLESTAR, ThirdPartyAddons.QUESTTRAIL, ThirdPartyAddons.MANNERS)
         ThirdPartyAddons.renameDir = realRename; ThirdPartyAddons.fileRename = realFileRename; ThirdPartyAddons.settleMs = 5_000L
+        ThirdPartyAddons.baseChoice = realBaseChoice; ThirdPartyAddons.setBaseChoice = realSetBaseChoice
+        ThirdPartyAddons.noFetch = false
     }
+    private val realBaseChoice = ThirdPartyAddons.baseChoice
+    private val realSetBaseChoice = ThirdPartyAddons.setBaseChoice
 
     private val realRename = ThirdPartyAddons.renameDir
     private val realFileRename = ThirdPartyAddons.fileRename
@@ -439,5 +445,124 @@ class ThirdPartyAddonsTest {
         release.countDown(); first.join(5_000); second.join(5_000)
         assertEquals(listOf("Installing add-ons: Test..."), steps.toList())
         assertEquals(null, ThirdPartyAddons.currentStep)
+    }
+
+    // ------------------------------------------------------------------ a BASE add-on (Polestar since 2026-11-12, PolestarGuide)
+    /** the user, 2026-11-12: "including this addon to the base install like questie and give a prompt asking players": a base add-on
+     *  follows its choice (null = not asked yet), its zip carrying the project's own LICENSE / THIRD_PARTY.md at its top level */
+    private var choice: Boolean? = null
+    private fun baseAddon(): ThirdPartyAddons.Addon {
+        zipBytes = zipOf("TestA/TestA.toc" to "## Version: 1.0\n", "TestA/a.lua" to "x=1", "TestA/LICENSE" to "TestA's own",
+            "TestB/TestB.toc" to "## Version: 1.0\n", "LICENSE" to "GPL-3.0 text", "THIRD_PARTY.md" to "credits", "README.md" to "no")
+        val a = addon(zipBytes).copy(base = true)
+        ThirdPartyAddons.ALL = listOf(a)
+        ThirdPartyAddons.noFetch = true                                     // no background worker: fetchNow is the worker's download
+        ThirdPartyAddons.baseChoice = { choice }
+        ThirdPartyAddons.setBaseChoice = { _, on -> choice = on; ThirdPartyAddons.choiceChanged(a) }
+        return a
+    }
+
+    @Test fun notAskedYetIsFetchedAheadNeverMovedIn() {
+        val a = baseAddon(); choice = null
+        assertFalse(ThirdPartyAddons.coreWanted(a))
+        assertTrue(ThirdPartyAddons.prefetch(a, "core"))
+        // review of 2026-11-12: never downloaded inside the start step (it held Play): the background worker fetches it ahead
+        val first = ThirdPartyAddons.applyAtStart(game)
+        assertTrue(first, first.contains("Test downloading"))
+        ThirdPartyAddons.fetchNow(a, "core")                                // the worker's own download
+        val line = ThirdPartyAddons.applyAtStart(game)
+        assertTrue(line, line.contains("Test ready (not in use)"))
+        assertTrue("fetched ahead", served > 0)
+        assertFalse("never moved in before the answer", File(addons, "TestA").exists())
+        // a Yes: in at the next start, with no second download
+        val before = served
+        ThirdPartyAddons.setCore(a, true)                                   // the Add-ons word on a base add-on = its choice
+        assertEquals(true, choice)
+        assertTrue(ThirdPartyAddons.applyAtStart(game, fetchSmall = false).contains("Test 1.0 installed"))
+        assertEquals(before, served)
+        assertTrue(ThirdPartyAddons.coreInstalled(a))
+    }
+
+    @Test fun theLicenceFilesGoInWithTheFolders() {
+        val a = baseAddon(); choice = true
+        ThirdPartyAddons.applyAtStart(game)
+        assertEquals("GPL-3.0 text", File(addons, "TestB/LICENSE").readText())
+        assertEquals("credits", File(addons, "TestB/THIRD_PARTY.md").readText())
+        assertEquals("credits", File(addons, "TestA/THIRD_PARTY.md").readText())
+        assertEquals("a folder's own licence stays", "TestA's own", File(addons, "TestA/LICENSE").readText())
+        assertFalse("nothing else at the top level", File(addons, "TestA/README.md").exists() || File(addons, "README.md").exists())
+        assertTrue(ThirdPartyAddons.coreInstalled(a))
+        for (n in listOf("LICENSE", "LICENSE.txt", "license.md", "COPYING", "THIRD_PARTY.md", "THIRD-PARTY-NOTICES", "NOTICE", "CREDITS.md"))
+            assertTrue(n, ThirdPartyAddons.isNotice(n))
+        for (n in listOf("README.md", "Polestar.toc", "LICENSEE", "x.lua")) assertFalse(n, ThirdPartyAddons.isNotice(n))
+    }
+
+    @Test fun aNoMovesItOutAndFreesTheDownload() {
+        val a = baseAddon(); choice = true
+        ThirdPartyAddons.applyAtStart(game)
+        assertTrue(File(addons, "TestA").exists())
+        ThirdPartyAddons.setCore(a, false)
+        assertEquals(false, choice)
+        assertEquals(ThirdPartyAddons.Kind.REMOVING, ThirdPartyAddons.status(a, "core").kind)
+        ThirdPartyAddons.applyAtStart(game)
+        assertFalse(File(addons, "TestA").exists()); assertFalse(File(addons, "TestB").exists())
+        val backup = File(game, "Interface/AddOns-backup-dsforever")
+        assertTrue("kept in the backup, never deleted", backup.listFiles()!!.any { it.name.startsWith("TestA-1.0-") })
+        // fetched ahead, then a No: its room back
+        File(tmp, "private").deleteRecursively(); choice = null
+        ThirdPartyAddons.start(object : ThirdPartyAddons.Store {
+            override fun get(k: String, d: Boolean) = choices[k] ?: d
+            override fun put(k: String, v: Boolean) { choices[k] = v }
+        }, File(tmp, "private"))
+        ThirdPartyAddons.fetchNow(a, "core")                                // fetched ahead by the worker
+        assertTrue(File(tmp, "private/dl/Test-1.0.zip").isFile)
+        choice = false
+        ThirdPartyAddons.applyAtStart(game)
+        assertFalse("the No frees the download", File(tmp, "private/dl/Test-1.0.zip").exists())
+        assertFalse(File(addons, "TestA").exists())
+    }
+
+    @Test fun notAskedYetKeepsAnInstalledCopy() {
+        val a = baseAddon(); choice = true
+        ThirdPartyAddons.applyAtStart(game)
+        choice = null                                                       // e.g. a Vanilla player who had installed it from Add-ons
+        assertTrue(ThirdPartyAddons.coreWanted(a))
+        ThirdPartyAddons.applyAtStart(game)
+        assertTrue("never moved out before the answer", File(addons, "TestA").exists())
+    }
+
+    /** review of 2026-11-12: the worker and the start step wrote the same .part at once; one writer per package, never twice */
+    @Test fun aDownloadedPackageIsNeverFetchedAgain() {
+        val a = baseAddon(); choice = true
+        ThirdPartyAddons.fetchNow(a, "core")
+        val once = served
+        assertTrue(once > 0)
+        ThirdPartyAddons.fetchNow(a, "core")
+        assertTrue(ThirdPartyAddons.applyAtStart(game).contains("Test 1.0 installed"))
+        assertEquals("no second download", once, served)
+        assertFalse(ThirdPartyAddons.fetchingNow(a, "core"))
+    }
+
+    /** review of 2026-11-12: a QuestTrail player moved to Polestar: QuestTrail out to the backup at the next start, never deleted */
+    @Test fun aMovedQuestTrailPlayerLosesQuestTrailOnce() {
+        val a = addon(zipBytes).copy(id = "questtrail")
+        ThirdPartyAddons.ALL = listOf(a)
+        ThirdPartyAddons.noFetch = true
+        ThirdPartyAddons.setCore(a, true)
+        ThirdPartyAddons.fetchNow(a, "core")
+        ThirdPartyAddons.applyAtStart(game)
+        assertTrue(File(addons, "TestA").exists())
+        var mark = true
+        ThirdPartyAddons.takeQuestTrailRetire = { val m = mark; mark = false; m }
+        try {
+            ThirdPartyAddons.start(object : ThirdPartyAddons.Store {
+                override fun get(k: String, d: Boolean) = choices[k] ?: d
+                override fun put(k: String, v: Boolean) { choices[k] = v }
+            }, File(tmp, "private"))
+        } finally { ThirdPartyAddons.takeQuestTrailRetire = { Settings.takeQuestTrailRetire() } }
+        assertFalse(ThirdPartyAddons.coreWanted(a))
+        ThirdPartyAddons.applyAtStart(game)
+        assertFalse(File(addons, "TestA").exists())
+        assertTrue(File(game, "Interface/AddOns-backup-dsforever").listFiles()!!.any { it.name.startsWith("TestA-1.0-") })
     }
 }

@@ -32,12 +32,13 @@ object DependencyAddons {
 
     val DEPS = listOf(
         Dep("QuestieDB", "Questie/QuestieDB", "QuestieDB-Forever.zip"),
-        // POLESTAR moved to ThirdPartyAddons (Map's word, 1.0.9): pinned there (v0.2.5, its size and sha256), switched by Map's
-        // "Quest tracking: Polestar", installed by the same start step (ThirdPartyAddons.applyAtStart, from run below)
+        // POLESTAR is part of the base install too (the user, 2026-11-12: "including this addon to the base install like questie"),
+        // but PINNED (v0.2.5, its size and sha256) and switched by the player's answer (PolestarGuide): ThirdPartyAddons.POLESTAR,
+        // installed by the same start step (ThirdPartyAddons.applyAtStart, from run below), never a second path here
     )
 
-    /** which dependencies are wanted now: the always-on ones, and an opt-in one only while the user has chosen it */
-    @Volatile var wanted: (Dep) -> Boolean = { !it.optIn || Settings.questTracking == "polestar" }
+    /** which dependencies are wanted now: every one (no entry is opt-in since Polestar moved to ThirdPartyAddons) */
+    @Volatile var wanted: (Dep) -> Boolean = { !it.optIn }
 
     const val RECHECK_MS = 6 * 60 * 60_000L
     /** a whole download's deadline: a server that trickles bytes (each read inside the read timeout) still ends (Track D's note) */

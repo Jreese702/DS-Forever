@@ -77,7 +77,8 @@ what ships.
 
 The Blizzard promotional banners and Wine wallpaper were replaced with existing
 DS-owned launcher icon/stone assets in this release snapshot. wf_logo, generated
-game art/geometry, QuestieDB, PC fixtures/review pictures, credentials, captures
+game art/geometry, QuestieDB, Polestar (downloaded at setup from its own
+GPL-3.0 release, never in the APK), PC fixtures/review pictures, credentials, captures
 and old private Git history are absent. Extracted notices/profile metadata are
 not game-derived pictures/data. Source and APK zero-art checks are necessary,
 but they do not clear the remaining proprietary/source/asset rights listed above.

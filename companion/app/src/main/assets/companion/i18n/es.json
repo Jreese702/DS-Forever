@@ -1,5 +1,11 @@
 {
 "plain": {
+"Use the Polestar quest guide?": "¿Usar la guía de misiones Polestar?",
+"Polestar quest guide": "Guía de misiones Polestar",
+"Polestar loads when the game starts again": "Polestar se carga cuando el juego vuelva a iniciarse",
+"Polestar unloads when the game starts again": "Polestar se quita cuando el juego vuelva a iniciarse",
+"Polestar did not go in": "Polestar no se pudo instalar",
+"The game's own way: the line points straight at the quest": "A la manera del juego: la línea apunta directa a la misión",
 "Training points": "Puntos de adiestramiento",
 "Training points ": "Puntos de adiestramiento ",
 "Not enough training points": "No hay suficientes puntos de adiestramiento",
