@@ -1,4 +1,4 @@
-"""The FIGHT-ONLY LAYER (PadMap m132, PadTabCtl p41), off-device: the REAL add-on files under test_party.py's stubbed game.
+"""The FIGHT-ONLY LAYER (PadMap m132 / m133, PadTabCtl p41), off-device: the REAL add-on files under test_party.py's stubbed game.
 
     python tools/test_fight_layer.py
 
@@ -12,6 +12,8 @@ Defaults assignment (its out-of-combat spell / command) stays exactly as it is o
   5 an item / mount on the fight layer (their fight texts);
   6 a binding on the fight layer and a WoW Defaults binding under a fight command: the CHORD flips at the fight's start (before the
     lockdown, and in the header's own [combat] state snippet) and back at its end, with no forbidden write in combat;
+  7 m133 (review): the chord follows the LIVE slot (page 2 with no entry: the WoW Defaults Jump) and B's give-back / the re-arm;
+  8 m133: Party mode switched on mid-fight gives the chord to the router (its pad reads it), off again gives it back;
 plus the documents (the combat view's `c.t` / `c.key`, no id) and no spied call. Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -149,9 +151,12 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m132"' in SRC["padmap"] and 'local CV = "p41"' in SRC["padtabctl"], "the versions: PadMap m132, PadTabCtl p41")
+check('local PV = "m133"' in SRC["padmap"] and 'local CV = "p41"' in SRC["padtabctl"], "the versions: PadMap m133, PadTabCtl p41")
 ONF = re.search(r'local ONFIGHT = \[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
 check(not re.search(r'\bfunction\b', ONF), "the header's ONFIGHT snippet holds no 'function' (the game refuses it)")
+FBS = re.search(r'function OV\.fbSnip\(fbf\)\n    return .*?\[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
+check(not re.search(r'\bfunction\b', FBS) and 'h:SetBinding(true' in FBS,
+      "the chord flip body (OV.fbSnip) holds no 'function'; the header's own bindings")
 
 # ================================================================ 1. a command on In combat over a WoW Defaults spell
 W = boot()
@@ -294,8 +299,10 @@ ok = W.eval('WowCompanion.padMap.putFight(1, 1, 2, "bind", "JUMP")')
 check(ok is True and ft(W, 2).get('t') == 'bind' and W.eval('HDR("wc-ft-2")') is None, "Jump on D-pad Up's fight layer (no fight text: a chord)", ft(W, 2))
 out0 = W.eval('BIND["PADDUP"]')
 check(out0 != "JUMP", "out of combat D-pad Up is not Jump (Lightning Shield's button / the game's)", out0)
-check(W.eval('HDR("wc-fb-n")') >= 1 and W.eval('HDR("wc-fb-k-1")') == "PADDUP" and W.eval('HDR("wc-fb-ib-1")') == "JUMP",
-      "armed out of combat on the header: chord PADDUP, fight side JUMP", (W.eval('HDR("wc-fb-n")'), W.eval('HDR("wc-fb-k-1")')))
+check(W.eval('HDR("wc-fb-n")') >= 1 and W.eval('HDR("wc-fb-k-1")') == "PADDUP" and W.eval('HDR("wc-fbs-2")') == "JUMP"
+      and W.eval('HDR("wc-fb-pc-1")') == "WowCompanionFaceD2",
+      "armed out of combat on the header: chord PADDUP (router D2), slot 2's fight-layer binding JUMP",
+      (W.eval('HDR("wc-fb-n")'), W.eval('HDR("wc-fb-k-1")'), W.eval('HDR("wc-fbs-2")')))
 W.execute('fire("PLAYER_REGEN_DISABLED")')
 check(W.eval('BIND["PADDUP"]') == "JUMP", "the fight's start (before the lockdown): D-pad Up is Jump", W.eval('BIND["PADDUP"]'))
 W.execute('COMBAT = true; driveAll()')
@@ -336,6 +343,75 @@ a, kind, mt = W.eval('key("SHIFT-PADDLEFT")')
 check(kind == "slotfight" and mt == "/cast Lightning Bolt", "... and cast in fights on ZL + Left", (kind, mt))
 W.execute('trig(false, false); fightOff()')
 clean(W, "6")
+
+# ================================================================ 7. m133 (review of m132): the live page, B's give-back
+# ZL + Left: WoW Defaults Jump, Lightning Bolt on page 1's slot 13 fight layer (above). Page 2 (slot 61) holds no fight-layer entry
+LBTN = 'rawget(_G, "WowCompanionFaceD1").refs["wc-btn-left-1"]'
+check(W.eval(LBTN + '._id') == 13, "router D1's left bar button: slot 13 (page 1)", W.eval(LBTN + '._id'))
+W.execute(LBTN + '._id = 61')                                             # the player pages to page 2
+W.execute('fightOn(); trig(true, false)')
+check(W.eval('BIND["SHIFT-PADDLEFT"]') == "JUMP" and W.eval('#VIOL') == 0,
+      "page 2 in a fight (no fight-layer entry there): ZL + Left is the WoW Defaults Jump, never the action button it hides",
+      W.eval('BIND["SHIFT-PADDLEFT"]'))
+W.execute(LBTN + '._id = 13; trig(false, false); hit(3)')                 # back to page 1; any router press re-checks
+check(W.eval('BIND["SHIFT-PADDLEFT"]') == "CLICK WowCompanionFaceD1:LeftButton",
+      "paged back to page 1 (the next router press re-checks): ZL + Left is the router's (Lightning Bolt)", W.eval('BIND["SHIFT-PADDLEFT"]'))
+W.execute('trig(true, false)')
+a, kind, mt = W.eval('key("SHIFT-PADDLEFT")')
+check(kind == "slotfight" and mt == "/cast Lightning Bolt", "... and casts the fight spell", (kind, mt))
+W.execute(LBTN + '._id = 61; trig(false, false); hit(3); trig(true, false)')
+a, kind, mt = W.eval('key("SHIFT-PADDLEFT")')
+check(a == "JUMP" and W.eval('#VIOL') == 0, "page 2 again mid-fight (after a router press): ZL + Left is Jump", (a, kind, mt))
+W.execute(LBTN + '._id = 13; trig(false, false); hit(3)')
+# B's give-back in the fight: the chord goes back to the binding; an attack's re-arm takes the fight layer back
+W.execute('hit(7)')
+check(W.eval('router(1).a["wc-given"]') is True and W.eval('BIND["SHIFT-PADDLEFT"]') == "JUMP" and W.eval('#VIOL') == 0,
+      "B pressed in a fight (given back): ZL + Left is the WoW Defaults Jump (secure, no breach)", W.eval('BIND["SHIFT-PADDLEFT"]'))
+W.execute('clickName("WowCompanionFaceRearm", true); clickName("WowCompanionFaceRearm", false)')
+check(W.eval('router(1).a["wc-given"]') is None and W.eval('BIND["SHIFT-PADDLEFT"]') == "CLICK WowCompanionFaceD1:LeftButton",
+      "re-armed (an attack): ZL + Left is the router's fight spell again", W.eval('BIND["SHIFT-PADDLEFT"]'))
+W.execute('clickName("WowCompanionFaceGiveBack", true); clickName("WowCompanionFaceGiveBack", false)')
+check(W.eval('BIND["SHIFT-PADDLEFT"]') == "JUMP", "the give-back button (Book's cell) too: ZL + Left is Jump", W.eval('BIND["SHIFT-PADDLEFT"]'))
+W.execute('fightOff()')
+check(W.eval('BIND["SHIFT-PADDLEFT"]') == "JUMP", "after the fight: ZL + Left is Jump", W.eval('BIND["SHIFT-PADDLEFT"]'))
+# a fight-layer binding knows its page now: Jump on page 1's D-pad Up only
+W.execute('WowCompanion.padMap.putFight(1, 1, 2, "bind", "JUMP")')
+UBTN = 'rawget(_G, "WowCompanionFaceD2").refs["wc-btn-top-1"]'
+W.execute(UBTN + '._id = 50; fightOn()')                                 # page 2's D-pad Up (slot 50): nothing on its fight layer
+check(W.eval('BIND["PADDUP"]') == "CLICK WowCompanionFaceD2:LeftButton",
+      "page 2 in a fight: D-pad Up is the router's (its own button), not page 1's fight-layer Jump", W.eval('BIND["PADDUP"]'))
+W.execute(UBTN + '._id = 2; hit(3)')
+check(W.eval('BIND["PADDUP"]') == "JUMP", "page 1: D-pad Up is the fight layer's Jump", W.eval('BIND["PADDUP"]'))
+W.execute('hit(7)')
+check(W.eval('BIND["PADDUP"]') == "CLICK WowCompanionFaceD2:LeftButton", "B's give-back: D-pad Up is the router's again (Lightning Shield's button)",
+      W.eval('BIND["PADDUP"]'))
+W.execute('fightOff(); WowCompanion.padMap.clearCombat(1, 1, 2)')
+clean(W, "7")
+
+# ================================================================ 8. m133: Party mode switched on mid-fight (the m77 rule: its pad reads the router)
+W3 = boot('WowCompanion = WowCompanion or {}; WowCompanion.partyOk = true')
+W3.execute('UNITS.party1 = { name = "Ana", cls = "PRIEST", alive = true }')
+ok = W3.eval('WowCompanion.padMap.putFight(1, 1, 2, "bind", "JUMP")')
+check(ok is True, "Jump on D-pad Up's fight layer (a Party-mode world)")
+W3.execute('fightOn()')
+check(W3.eval('BIND["PADDUP"]') == "JUMP", "in the fight, Party mode off: D-pad Up is Jump", W3.eval('BIND["PADDUP"]'))
+W3.execute('clickName("WowCompanionPartyOn", true); clickName("WowCompanionPartyOn", false)')
+check(W3.eval('PADA("wc-party")') is True and W3.eval('BIND["PADDUP"]') == "CLICK WowCompanionFaceD2:LeftButton" and W3.eval('#VIOL') == 0,
+      "Party mode switched on mid-fight: D-pad Up goes to the router (its pad reads it), from secure code, no breach",
+      (W3.eval('PADA("wc-party")'), W3.eval('BIND["PADDUP"]'), W3.eval('VIOL[1]')))
+a, kind, mt = W3.eval('key("PADDUP")')
+check(a == "CLICK WowCompanionFaceD2:LeftButton" and "WowCompanionPartyPad" in (mt or ""),
+      "... the press reaches the party pad (the pick can move)", (a, kind, mt))
+W3.execute('clickName("WowCompanionPartyOff", true); clickName("WowCompanionPartyOff", false)')
+check(W3.eval('PADA("wc-party")') is None and W3.eval('BIND["PADDUP"]') == "JUMP", "Party mode off again mid-fight: D-pad Up is Jump again",
+      W3.eval('BIND["PADDUP"]'))
+W3.execute('clickName("WowCompanionPartyOn", true); clickName("WowCompanionPartyOn", false); fightOff()')
+check(W3.eval('BIND["PADDUP"]') != "JUMP", "after the fight (Party mode on): D-pad Up is not Jump", W3.eval('BIND["PADDUP"]'))
+W3.execute('fightOn()')
+check(W3.eval('BIND["PADDUP"]') == "CLICK WowCompanionFaceD2:LeftButton", "a fight that starts in Party mode: D-pad Up is the router's",
+      W3.eval('BIND["PADDUP"]'))
+W3.execute('fightOff()')
+clean(W3, "8")
 
 print('ALL PASS (%d checks)' % passes if fails == 0 else '%d FAILED (of %d)' % (fails, fails + passes))
 sys.exit(1 if fails else 0)

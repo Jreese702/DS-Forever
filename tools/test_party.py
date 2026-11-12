@@ -29,6 +29,15 @@ fails = 0
 passes = 0
 
 
+# m133: PRE with the chord flip's body (OV.fbSnip("nil")) spliced in at its mark: the router's whole snippet, as the add-on builds it
+def full_pre(src):
+    pre = re.search(r'local PRE = \[=\[(.*?)\]=\]', src, re.S).group(1)
+    body = re.search(r'function OV\.fbSnip\(fbf\)\n    return .*?\[=\[(.*?)\]=\]', src, re.S).group(1)
+    mark = "-- m133 FBSNIP: the chord flip (OV.fbSnip) is put here, below"
+    assert pre.count(mark) == 1
+    return pre.replace(mark, "\n    do\n    local fbf = nil\n" + body)
+
+
 def check(ok, name, got=''):
     global fails, passes
     print(('PASS ' if ok else 'FAIL ') + name + ((' -> ' + str(got)) if got != '' else ''))
@@ -186,6 +195,8 @@ function SecureHandlerWrapScript(frame, script, header, pre, post)
     return true
 end
 function SecureHandlerSetFrameRef(frame, name, ref) blocked("SetFrameRef"); frame.refs[name] = ref end
+-- the header's Execute (insecure code, out of combat only): the body runs in the restricted environment with self = the header
+function SecureHandlerExecute(frame, body) blocked("Execute"); runSecure(compileSnippet(body, "self"), frame) end
 DRIVERS = {}
 function RegisterStateDriver(f, st, cond) blocked("RegisterStateDriver"); DRIVERS[#DRIVERS + 1] = { f = f, st = st, cond = cond } end
 -- the game's state drivers (they run in fights too): the first clause whose conditions hold; a change runs the frame's _onstate-<st>
@@ -456,7 +467,7 @@ hidden = L10.eval('(function() local r = WowCompanion.pad.rows["r54"]; local s =
 check(hidden is True, "rows 54-55 are hidden at the smallest scale (never inside a dialog)", hidden)
 
 # ================================================================ 1. PRE + Party mode (the router's real snippet, restricted)
-PRE = re.search(r'local PRE = \[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
+PRE = full_pre(SRC["padmap"])
 # m94 (test9, 2026-11-07: every A / X / Y / B / D-pad press dead): the game's secure checker refuses the word "function" ANYWHERE in a
 # snippet, comments included ("The function keyword is not permitted"); no secure snippet of any add-on may hold it
 _snip_bad = []
@@ -1337,7 +1348,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "lv", "rng"}   # m129: plain facts only (no hp / full / hs / g / hit counts)
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm132' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm133' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1537,8 +1548,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p41"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m132"' in SRC["padmap"],
-      "the versions: PadMap m132, PadTabCtl p41, Book b48")
+check('local CV = "p41"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m133"' in SRC["padmap"],
+      "the versions: PadMap m133, PadTabCtl p41, Book b48")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
@@ -1976,8 +1987,9 @@ except Exception as e:                                                    # no g
 added = [ln[1:] for ln in diff.splitlines() if ln.startswith('+') and not ln.startswith('+++')]
 code = [re.sub(r'--.*$', '', ln) for ln in added]
 # m132 (the user, 2026-11-11: "Build a fight-only layer"): `self:SetBinding(` inside the header's own secure state snippet is the
-# restricted handle's OVERRIDE binding on that header (never saved, cleared with it), not the game's saved SetBinding
-BAD = [r'(?<!self:)\bSetBinding\s*\(', r'\bSaveBindings\b', r'\bCreateMacro\b', r'\bEditMacro\b', r'\bSetCVar\b', r'\bPlaceAction\b',
+# restricted handle's OVERRIDE binding on that header (never saved, cleared with it), not the game's saved SetBinding; m133: the same
+# header handle reached as `h` (OV.fbSnip: the caller's "wc-hdr" ref, or the header itself)
+BAD = [r'(?<!self:)(?<!h:)\bSetBinding\s*\(', r'\bSaveBindings\b', r'\bCreateMacro\b', r'\bEditMacro\b', r'\bSetCVar\b', r'\bPlaceAction\b',
        r'\bPickupAction\b', r'\bPickupMacro\b', r'\bShowUIPanel\b', r'\bHideUIPanel\b', r'\bToggleFrame\b', r'\bInspectUnit\b',
        r'\bUnitPopup_OpenMenu\b', r'\bTargetFrame_OpenMenu\b', r'\bToggleGameMenu\b', r'\bCloseAllBags\b', r'\bOpenAllBags\b',
        r'\bSetOverrideBinding\s*\(']
