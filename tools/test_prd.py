@@ -8,7 +8,11 @@ starting one, not full by Controller's model; out of combat and full: held, then
 row (in combat only; buffs of 5 min or less up to 6, debuffs with a duration up to 4, the swipe, the seconds gold under 5, a second
 row when they do not fit); the height (the app's steps, per character in our saved data, its range); our own frames, nothing written;
 prd11: the pet's strip (its own layer beside the player's, gold health, the pet's power colour, the PRD frame at the player's texel scale,
-the aura row moved by it, plain presence / happiness / death only, its own curve flag, the pet's casts never the player's).
+the aura row moved by it, plain presence / happiness / death only, its own curve flag, the pet's casts never the player's);
+prd12: the user's device look - the player's green, ONE frame round both pet bars (1 px apart), a 36 px round portrait centred on them,
+a 20 px happiness face off the portrait, no name, the strip lower and centred under the player's bars;
+prd13: the shade over the pet's health in the player's proportion (45 % of the health bar, not of the unit), the portrait clear of
+the player's power-bar lip, the happiness face inside the HUD frame at the minimum width.
 Needs lupa. Exit code 1 on any failure."""
 import os
 import sys
@@ -469,7 +473,7 @@ def main():
     chk("prd8: read back at log in: 300 wide, 100 %%", P.wd == 300 and P.sc == 100)
     P.select(); P.nudge(0); P.sel = "y"
     # prd10 (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"): the pips under the power bar
-    chk("prd11: the version tag", P.V == "prd11")
+    chk("prd13: the version tag", P.V == "prd13")
     chk("prd10: the player's UNIT_POWER_FREQUENT is heard (combo points at the next frame)", ev.events.UNIT_POWER_FREQUENT == "player")
     L.execute('''
         local upm = UnitPowerMax
@@ -514,44 +518,81 @@ def main():
         P.petL.shown is True and P.pex.has is True and P.pex.src == "exists")
     chk("prd11: the pet's health FED: its secret straight to SetValue, the plain max to SetMinMaxValues",
         Lg.issecretvalue(o.hp.value) and o.hp.value.n == 300 and o.hp.max == 500 and o.hp.min == 0)
-    chk("prd11: the pet's health in GOLD %s, never the player's green" % list(o.hp.color.values()),
-        list(o.hp.color.values()) == [1, 0.78, 0.1] and list(o.hp.color.values()) != list(P.hp.color.values()))
+    chk("prd12: the pet's health in the PLAYER's green %s (the user: \"Same green as mine\")" % list(o.hp.color.values()),
+        list(o.hp.color.values()) == list(P.hp.color.values()) == [0.12, 0.86, 0.12] and P.PET_RGB is None)
     chk("prd11: a hunter's pet's FOCUS colour %s, its power secret fed the same way (max %s)" % (list(o.pw.color.values()), o.pw.max),
         list(o.pw.color.values()) == [1, 0.5, 0.25] and Lg.issecretvalue(o.pw.value) and o.pw.max == 100)
     chk("prd11: thinner and shorter: %.1f x %.1f health, %.1f power, %d %% of the player's width" % (o.hp.w / sk, o.hp.h / sk, o.pw.h / sk, round(o.hp.w / P.hp.w * 100)),
         near(o.hp.w, 0.6 * 280 * sk) and near(o.hp.h, 8 * sk) and near(o.pw.h, 4 * sk) and near(o.pw.w, o.hp.w))
-    chk("prd11: the PRD frame round both pet bars at the PLAYER's texel scale: the rims one thickness (top %.2f = %.2f, bottom %.2f = %.2f)"
-        % (o.hpFrame.top.h, P.hpFrame.top.h, o.pwFrame.bot.h, P.hpFrame.bot.h),
-        o.hpFrame.top is not None and near(o.hpFrame.top.h, P.hpFrame.top.h) and near(o.pwFrame.top.h, P.pwFrame.top.h)
-        and near(o.hpFrame.bot.h, P.hpFrame.bot.h) and near(o.hpFrame.left.w, P.hpFrame.left.w) and near(o.k, 15 / 8 * sk))
+    chk("prd12: ONE PRD frame round both pet bars (the unit), at the PLAYER's texel scale: the rim one thickness (top %.2f = %.2f, bottom %.2f = %.2f)"
+        % (o.frame.top.h, P.hpFrame.top.h, o.frame.bot.h, P.hpFrame.bot.h),
+        o.frame.top is not None and near(o.frame.top.h, P.hpFrame.top.h) and near(o.frame.bot.h, P.hpFrame.bot.h)
+        and near(o.frame.left.w, P.hpFrame.left.w) and near(o.frame.right.w, P.hpFrame.right.w) and near(o.k, 15 / 8 * sk)
+        and o.hpFrame is None and o.pwFrame is None)
+    chk("prd12: the unit spans the health's top to the power's bottom (%.1f x %.1f spec px): no lip between the two bars"
+        % (o.unit.w / sk, o.unit.h / sk), L.eval("rawequal(WowCompanion.prd.pet.unit.point[2], WowCompanion.prd.pet.hp)")
+        and o.unit.point[1] == "TOPLEFT" and o.unit.point[3] == "TOPLEFT" and near(o.unit.w, o.hp.w) and near(o.unit.h, (8 + 1 + 4) * sk)
+        and L.eval("rawequal(WowCompanion.prd.pet.frame.bot.l.point[2], WowCompanion.prd.pet.unit)"))
+    # prd13 (the user's "Same green as mine", 2026-11-11): the shade over the pet's health 45 % of ITS height, as the player's over theirs
+    P.hp.hh = P.hp.h
+    ps = P.frameFor(P.hp).shade.h
+    P.hp.hh = None
+    chk("prd13: the shade over the pet's health %.2f spec px = 45 %% of its 8 (was 45 %% of the 13 px unit); the player's %.2f of 15 (the same share)"
+        % (o.frame.shade.h / sk, ps / sk), near(o.frame.shade.h, 0.45 * 8 * sk) and near(o.frame.shade.h / o.hp.h, ps / P.hp.h)
+        and near(ps, 0.45 * 15 * sk) and o.frame.shade.h < o.hp.h)
+    chk("prd12: the power right under the health: a %.1f spec px gap (<= 2)" % (-o.pw.point[5] / sk),
+        o.pw.point[1] == "TOPLEFT" and o.pw.point[3] == "BOTTOMLEFT" and -o.pw.point[5] <= 2 * sk and -o.pw.point[5] > 0)
     chk("prd11: the strip's own lip over its bars (levels %s > %s), its track on the strip's layer" % (o.lip.level, o.hp.level or 1),
-        o.lip.level > (o.hp.level or 1) and L.eval("rawequal(WowCompanion.prd.pet.hpFrame.track.parent, WowCompanion.prd.petL)")
-        and L.eval("rawequal(WowCompanion.prd.pet.hpFrame.top.l.parent, WowCompanion.prd.pet.lip)"))
-    chk("prd11: the round portrait: GetPetIcon's file (%s), masked round; the name in small text (%s, %s)" % (o.face.tex, o.name.text, o.name.fsize / sk),
-        o.face.tex == 132203 and o.face.masked is not None and o.name.text == "Wolf" and near(o.name.fsize, 11 * sk))
+        o.lip.level > (o.hp.level or 1) and L.eval("rawequal(WowCompanion.prd.pet.frame.track.parent, WowCompanion.prd.petL)")
+        and L.eval("rawequal(WowCompanion.prd.pet.frame.top.l.parent, WowCompanion.prd.pet.lip)"))
+    chk("prd12: the round portrait %.1f spec px (>= 34), a thin rim (face %.1f): GetPetIcon's file (%s), masked round; NO name (%s)"
+        % (o.ring.w / sk, o.face.w / sk, o.face.tex, o.name), o.ring.w >= 34 * sk and near(o.ring.w, o.ring.h) and near(o.ring.w - o.face.w, 4 * sk)
+        and o.face.tex == 132203 and o.face.masked is not None and o.ring.masked is not None and o.name is None and P.PET_NAME is None)
     chk("prd11: the happiness face, plain 3 (happy): the game's PetFrame texture, its first face (%s)" % (o.happy.coord and list(o.happy.coord.values())),
         o.happy.shown is True and o.happy.tex.endswith("UI-PetHappiness") and list(o.happy.coord.values()) == [0, 0.1875, 0, 0.359375])
+    # prd12: the rects in spec px across the strip (x from its left), from the anchors the code set
+    g = P.petGeo()
+    ring = (o.ring.point[4] / sk, o.ring.point[4] / sk + o.ring.w / sk)
+    hpL = o.hp.point[4] / sk
+    hapL = hpL + o.unit.w / sk + o.happy.point[4] / sk
+    hap = (hapL, hapL + o.happy.w / sk)
+    chk("prd12: the happiness face %.1f spec px (18-20), past the unit's right rim at x %.1f, clear of the portrait (%.1f..%.1f)"
+        % (o.happy.w / sk, hap[0], ring[0], ring[1]), 18 * sk <= o.happy.w <= 20 * sk and near(o.happy.w, o.happy.h)
+        and o.happy.point[1] == "LEFT" and o.happy.point[3] == "RIGHT" and L.eval("rawequal(WowCompanion.prd.pet.happy.point[2], WowCompanion.prd.pet.unit)")
+        and o.happy.point[4] >= o.frame.right.w and (hap[0] >= ring[1] or hap[1] <= ring[0]) and hap[1] <= 280)
+    grp = (ring[0], hap[1])
+    chk("prd13: portrait + unit + happiness face centred under the player's bars (%.2f .. %.2f of 280)" % grp,
+        near(grp[0], 280 - grp[1]) and grp[0] > 0 and o.ring.point[1] == "TOPLEFT" and o.hp.point[1] == "TOPLEFT"
+        and near(hpL - ring[1], P.PET_IGAP) and hpL - ring[1] >= o.frame.left.w / sk)
+    ringMid = -o.ring.point[5] / sk + o.ring.h / sk / 2
+    unitMid = -o.hp.point[5] / sk + o.unit.h / sk / 2
+    chk("prd12: the portrait vertically centred on the bars (%.2f = %.2f spec px from the strip's top), its top inside the strip"
+        % (ringMid, unitMid), near(ringMid, unitMid) and o.ring.point[5] <= 0 and near(g.iconTop, 0))
+    # prd13 (review, 2026-11-11): at the minimum width the happiness face inside the HUD frame (the pet bars narrowed to fit)
+    P.W = P.W_MIN; P.petLayout(P.petDrop, True)
+    hpL2 = o.hp.point[4] / sk
+    hap2 = hpL2 + o.unit.w / sk + o.happy.point[4] / sk + o.happy.w / sk
+    ring2 = o.ring.point[4] / sk
+    chk("prd13: W = %s: the happiness face inside the frame (its right %.2f), portrait from %.2f, bars %.1f wide (<= 60 %%), centred"
+        % (P.W_MIN, hap2, ring2, o.unit.w / sk), P.W_MIN == 180 and hap2 <= 180 + 1e-6 and ring2 >= 0 and o.unit.w <= 0.6 * 180 * sk + 1e-6
+        and near(o.hp.w, o.unit.w) and near(o.pw.w, o.unit.w) and near(ring2, 180 - hap2) and o.happy.shown is True)
+    P.W = 280; P.petLayout(P.petDrop, True)
+    chk("prd13: back at 280: the bars 60 %% again (%.1f)" % (o.unit.w / sk), near(o.unit.w, 0.6 * 280 * sk))
     run(0.3)
     top1 = P.buffs[1].f.point[5]
-    chk("prd11: the strip takes its room (petDrop %s = gap 16 + row 28): the aura row %.1f spec px lower, the frame taller, the shadow too"
-        % (P.petDrop, (top0 - top1) / sk), P.petDrop == 44 and near(top0 - top1, 44 * sk) and near(P.f.h, (15 + 8 + 9 + 44) * sk)
-        and near(P.shadow.point[5], -(15 + 8 + 9 + 16 + 44) * sk))
-    chk("prd11: the strip right under the power bar (%.1f spec px down)" % (-P.petL.point[5] / sk), near(P.petL.point[5], -(15 + 8 + 9 + 16) * sk)
-        and P.petL.point[1] == "TOPLEFT")
-    # review of prd11 (2026-11-11): the shared texel scale's 8-texel bottom lip (15 spec px) must cover no pet opening. Each lip piece's
-    # reach from the anchors the code set: the health bar's bottom lip down from the health bar, the player's power-bar lip down from it
-    hpBot = o.hpFrame.bot.h                                              # the pet health bar's bottom lip, UI px below its opening
-    pwTop = -o.pw.point[5]                                               # the pet power opening's top, below the health bar's bottom
-    plBot = P.pwFrame.bot.h                                              # the player's power-bar bottom lip below the player's power bar
-    petTop = -P.petL.point[5] - (15 + 8 + 9) * sk                        # the pet health opening's top below the player's power bar
-    chk("prd11 review: the pet power opening clear of the health bar's bottom lip (%.1f >= %.1f spec px), its own top rim in the gap only"
-        % (pwTop / sk, hpBot / sk), o.pw.point[1] == "TOPLEFT" and o.pw.point[3] == "BOTTOMLEFT" and pwTop >= hpBot
-        and o.pwFrame.top.h <= pwTop)
-    chk("prd11 review: the pet health opening clear of the player's power-bar lip (%.1f >= %.1f spec px)" % (petTop / sk, plBot / sk),
-        petTop >= plBot and o.hp.point[5] == 0)
-    chk("prd11 review: the row %s spec px (the bars %s with their gap, the portrait centred on it); the aura row under the pet's lip"
-        % (P.petRow(), 8 + 16 + 4), P.petRow() == 28 and near(P.petL.h, 28 * sk) and o.ring.point[1] == "LEFT"
-        and (P.ROW_GAP * sk) >= o.pwFrame.bot.h)
+    chk("prd13: the strip takes its room (petDrop %s = gap 17 + row 39.5): the aura row %.1f spec px lower, the frame taller, the shadow too"
+        % (P.petDrop, (top0 - top1) / sk), near(P.petDrop, 56.5) and near(top0 - top1, 56.5 * sk) and near(P.f.h, (15 + 8 + 9 + 56.5) * sk)
+        and near(P.shadow.point[5], -(15 + 8 + 9 + 16 + 56.5) * sk))
+    clear = (-P.petL.point[5] - o.ring.point[5] - (15 + 8 + 9) * sk - P.pwFrame.bot.h) / sk
+    chk("prd13: the strip under the power bar (%.1f spec px down); the portrait %.2f spec px clear of the player's power-bar lip (>= 1)"
+        % (-P.petL.point[5] / sk, clear), near(P.petL.point[5], -(15 + 8 + 9 + 17) * sk) and P.petL.point[1] == "TOPLEFT" and clear >= 1 - 1e-6)
+    # the pet health opening's top below the player's power bar; prd11 had it 16 spec px down (right under the lip): now lower
+    petTop = (-P.petL.point[5] - o.hp.point[5]) / sk - (15 + 8 + 9)
+    chk("prd12: the pet bars LOWER than prd11's (opening %.1f spec px under the player's power bar, was 16: +%.1f, 8..13)" % (petTop, petTop - 16),
+        8 <= petTop - 16 <= 13 and petTop * sk - o.frame.top.h >= P.pwFrame.bot.h)
+    chk("prd12: the row %s spec px (the portrait 36, the unit 13 with its rims 3 / 8 texels); the aura row under the unit's lip"
+        % P.petRow(), near(P.petRow(), 39.5) and near(P.petL.h, 39.5 * sk) and near(g.row, max(g.iconTop + 36, g.unitTop + 13 + 15))
+        and near(-o.hp.point[5] + o.unit.h + o.frame.bot.h, P.petL.h) and (P.ROW_GAP * sk) >= 0)
     chk("prd11: no lag chunk for the pet (its queue would keep a secret in a table)", o.lag is None)
     vals = [P.pex[k] for k in ("has", "src", "dead", "ptok", "happy", "cbad", "icon", "a")]
     chk("prd11: the probe's pet (has / src / ptok / happy) holds no secret", all(not Lg.issecretvalue(v) for v in vals)
@@ -571,16 +612,19 @@ def main():
     Lg.PET = L.table_from({"hp": 900, "hpMax": 900, "pw": 200, "pwMax": 400, "ptype": 0, "tok": "MANA", "name": "Voidwalker", "icon": 136221})
     fire("UNIT_PET", "player"); run(0.3)
     chk("prd11: a demon: MANA's blue %s, no happiness face, its own portrait (%s)" % (list(o.pw.color.values()), o.face.tex),
-        list(o.pw.color.values()) == [0, 0.45, 1] and o.happy.shown is False and o.face.tex == 136221 and o.name.text == "Voidwalker")
+        list(o.pw.color.values()) == [0, 0.45, 1] and o.happy.shown is False and o.face.tex == 136221 and o.name is None)
+    dr = o.hp.point[4] / sk + o.unit.w / sk + o.frame.right.w / sk
+    chk("prd13: no face can show: portrait + unit alone centred again (%.2f .. %.2f of 280)" % (o.ring.point[4] / sk, dr),
+        P.petHappyOn is False and near(o.ring.point[4] / sk, 280 - dr) and near(o.unit.w, 0.6 * 280 * sk))
     Lg.PET.tok = None; Lg.PET.ptype = 2; run(0.3)
     chk("prd11: no plain token: the type's number says FOCUS (%s)" % P.pex.ptok, P.pex.ptok == "FOCUS" and list(o.pw.color.values()) == [1, 0.5, 0.25])
     Lg.PET.tok = "MANA"; Lg.PET.ptype = 0
-    # dead: greyed, the game's word
+    # dead: greyed (prd12: no name, no word)
     Lg.PET.dead = True; run(0.3)
-    chk("prd11: a dead pet greyed (%s), 'Dead' (%s)" % (list(o.hp.color.values()), o.name.text),
-        list(o.hp.color.values()) == [0.5, 0.5, 0.5] and o.name.text == "Dead" and P.pex.dead is True)
+    chk("prd11: a dead pet greyed (%s), no name text (%s)" % (list(o.hp.color.values()), o.name),
+        list(o.hp.color.values()) == [0.5, 0.5, 0.5] and o.name is None and P.pex.dead is True)
     Lg.PET.dead = None; run(0.3)
-    chk("prd11: alive again: gold, its name", list(o.hp.color.values()) == [1, 0.78, 0.1] and o.name.text == "Voidwalker")
+    chk("prd12: alive again: the player's green", list(o.hp.color.values()) == [0.12, 0.86, 0.12])
     # UnitExists secret: a plain name says it
     Lg.PET_EXISTS_SECRET = True; run(0.3)
     chk("prd11: UnitExists secret: known by its plain name (%s)" % P.pex.src, P.petL.shown is True and P.pex.src == "name")
@@ -588,9 +632,9 @@ def main():
     # a Rogue's pips show: the strip under them
     Lg.CLASS = "ROGUE"; run(0.3)
     chk("prd11: the combo pips shown: the strip under them (petDrop %s, %.1f spec px down)" % (P.petDrop, -P.petL.point[5] / sk),
-        P.cp.shown is True and P.petDrop == 53 and near(P.petL.point[5], -(15 + 8 + 9 + 9 + 16) * sk))
+        P.cp.shown is True and near(P.petDrop, 65.5) and near(P.petL.point[5], -(15 + 8 + 9 + 9 + 17) * sk))
     Lg.CLASS = "MAGE"; run(0.3)
-    chk("prd11: the pips gone again: back under the power bar (%s)" % P.petDrop, P.petDrop == 44)
+    chk("prd11: the pips gone again: back under the power bar (%s)" % P.petDrop, near(P.petDrop, 56.5))
     # its own switch
     Lg.WowCompanion.npWant.pet = False; run(0.3)
     chk("prd11: its switch off (npWant.pet false): hidden, no room taken, the aura row back (%s)" % P.petDrop,
