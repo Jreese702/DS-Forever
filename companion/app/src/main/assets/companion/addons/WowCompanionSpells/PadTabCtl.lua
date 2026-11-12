@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p36"                -- bump on every change; p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
+local CV = "p37"                -- bump on every change; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -66,14 +66,15 @@ local SWITCHES = { normal = { "dpad" }, ds = { "dpad" }, combat = { "cc", "sa" }
 -- p29 (f-combat-forms): the In combat tab's "forms" row (Caster | the character's forms / stances), only while it has forms
 -- p32 (the user's pick A on test20): the out-of-combat tab's form row too, the GAME's own form bars (PadMap m57), while the game puts one
 local ORDER = { normal = { "tabs", "switches", "forms", "sets", "buttons" }, ds = { "tabs", "switches", "dpad" }, combat = { "tabs", "switches", "forms", "sets", "buttons" },
-                radial = { "tabs", "rpages", "buttons" }, party = { "tabs", "prows", "pright" } }
-local HOME_FOCUS = { normal = "buttons", ds = "dpad", combat = "buttons", radial = "buttons", party = "prows" }
+                radial = { "tabs", "rpages", "buttons" }, party = { "tabs", "psets", "ptouch", "pdiam" } }     -- p37: the party tab's rows
+local HOME_FOCUS = { normal = "buttons", ds = "dpad", combat = "buttons", radial = "buttons", party = "pdiam" }
 local function SR() return type(WC.spellRadial) == "table" and WC.spellRadial or nil end
 
 -- `view`: the tab ("normal" = WoW Defaults, "ds", "combat" = In combat)
 local tc = { on = false, focus = "buttons", set = 1, pos = 1, chooser = nil, box = nil, note = nil, view = "normal",
-             tcur = 1, sw = 1, scur = 2, dpos = 2, carry = nil, rpage = 1, form = 0, fcur = 0, ppos = 2, pright = 1 }
+             tcur = 1, sw = 1, scur = 2, dpos = 2, carry = nil, rpage = 1, form = 0, fcur = 0, ppos = 8, pright = 1, pset = 1, ptouch = 1 }
 local PT = {}                   -- p33: the Party tab's functions (filled at the end of this file)
+local PFOCUS = { tabs = "tabs", psets = "sets", ptouch = "touch", pdiam = "diam", pright = "right" }      -- p37: the doc's pfocus
 -- p25 THE KEEP MODE (Book b36's quiet enter; test22 device: two of the restore's taps were lost, the "combat layer" pick among them, so
 -- the In-combat spell went onto the GAME's bar slot as a plain spell): while the app restores its backup, a spell is ONLY ever an
 -- In-combat setting (the overlay / a face's fight spell), and only right after a FRESH set AND button pick; nothing else acts
@@ -91,10 +92,12 @@ end
 local function tabIndex(v) for i, t in ipairs(TABS) do if t == v then return i end end return 1 end
 -- p34: the tabs the room shows; LB / RB / the tab row step over the hidden one
 local HIDDEN = { ds = true }
+-- p37 (party_design.md B): the Party mode tab shows only while Party mode is allowed (Hub's experimental switch: WC.partyOk)
+local function hidden(v) return HIDDEN[v] == true or (v == "party" and WC.partyOk ~= true) end
 local shownSet                  -- below
 local function tabStep(i, d)
     local j = i + d
-    while TABS[j] and HIDDEN[TABS[j]] do j = j + d end
+    while TABS[j] and hidden(TABS[j]) do j = j + d end
     return TABS[j] and j or nil
 end
 -- p34: the bare D-pad is the DS WoW toolbar's while it is on (WoW Defaults and In combat show its four there): nothing goes on it
@@ -152,7 +155,9 @@ local function report(note)
         rpage = tc.view == "radial" and tc.rpage or nil, rad = tc.view == "radial" and radialPage() or nil,
         form = tc.form ~= 0 and tc.form or nil, fcur = tc.view == "combat" and tc.fcur or nil,
         ppos = tc.view == "party" and tc.ppos or nil, pright = tc.view == "party" and (tc.pright - 1) or nil,   -- 0-based (the app's)
-        pfocus = tc.view == "party" and (tc.focus == "pright" and "right" or "rows") or nil } }))
+        -- p37: the party tab's places (the router's 8 positions), its layer on show, the Touch row's tile, where the cursor is
+        pset = tc.view == "party" and PT.shown and PT.shown() or nil, ptouch = tc.view == "party" and tc.ptouch or nil,
+        pfocus = tc.view == "party" and (PFOCUS[tc.focus] or "diam") or nil } }))
     WC.push()
 end
 
@@ -371,7 +376,7 @@ end
 -- ---------------------------------------------------------------- p9: tabs, switches, Move
 
 local function setTab(v)
-    if HIDDEN[v] then v = "normal" end                                   -- p34: an old padtab 1 (the DS tab) opens WoW Defaults
+    if hidden(v) then v = "normal" end                                   -- p34: an old padtab 1 (the DS tab) opens WoW Defaults
     tc.view = v
     tc.carry, tc.chooser, tc.box = nil, nil, nil
     tc.tcur, tc.sw = tabIndex(v), 1
@@ -414,6 +419,7 @@ local function step(dir)
     tc.focus = order[j]
     if tc.focus == "tabs" then tc.tcur = tabIndex(tc.view) end
     if tc.focus == "sets" then tc.scur = (tc.set >= 2 and tc.set) or 2 end
+    if tc.focus == "psets" then tc.scur = ((tc.pset or 1) >= 2 and tc.pset) or 2 end           -- p37
     if tc.focus == "switches" then tc.sw = math.min(math.max(tc.sw or 1, 1), math.max(1, #(SWITCHES[tc.view] or {}))) end
     report("to-" .. tc.focus)
     return true
@@ -713,7 +719,9 @@ WC.padTabCtl = {
         if tc.focus == "forms" then return pressForms(key) end
         if tc.focus == "rpages" then return pressRpages(key) end
         if tc.focus == "dpad" then return pressDpad(key) end
-        if tc.focus == "prows" and PT.pressRows then return PT.pressRows(key) end      -- p33
+        if tc.focus == "psets" and PT.pressSets then return PT.pressSets(key) end      -- p37
+        if tc.focus == "ptouch" and PT.pressTouch then return PT.pressTouch(key) end
+        if tc.focus == "pdiam" and PT.pressDiam then return PT.pressDiam(key) end
         if tc.focus == "pright" and PT.pressRight then return PT.pressRight(key) end
         if tc.focus == "cleanup" or tc.focus == "shared" then           -- p19 / p21: A asks (a box that names it all), Up the D-pad, B Home
             if key == "PAD1" then
@@ -891,22 +899,47 @@ WC.padTabCtl = {
 }
 
 -- ---------------------------------------------------------------- p33 THE PARTY MODE TAB (PARTY_BUILD.md 4.4; PadMap m77 holds the settings)
--- Left page, two columns of six: 1 D-pad (fixed), 2 A, 3 X, 4 Y, 5 Touch, 6 (an empty place); 7-12 ZL+A, ZL+X, ZL+Y, ZR+A, ZR+X, ZR+Y.
--- Up / Down in a column (Up from the first row: the tabs), Left / Right across at the same row; A = the right page; there A = its ONE
--- red action (Change: the chooser; with Smart Y on, Y's page: Remove a party buff / Add one / Change the In combat action), B = back.
+-- p37 (party_design.md B and the user's decisions 2026-11-11): the tab is drawn on the normal layers' own picture, and the cursor walks
+-- it as it walks them: the SET ROW (ZL, ZR; ZL + ZR locked: nothing happens with both held), the TOUCH ROW (Touch: the second tap's
+-- action; Hold: the player menu, locked), the two DIAMONDS (the D-pad: Up / Down move the pick, locked; Left / Right kept for raids,
+-- empty and locked - the user: "this will need to support raids at some point"; the faces: A, X, Y as set, B the red Back, locked).
+-- ZL / ZR (chosen on the set row, or held) show that layer's A / X / Y. A on a place = the right page; there A = its ONE red action
+-- (Change: the chooser; with Smart Y on, Y's page: Remove a party buff / Add one / Change the In combat action), B = back.
 -- By touch (Book's padtab): 26 the tab, 27-36 a slot pick (fresh 2 s), 37 the picked slot's no-spell value, Book's two-tap spell.
 -- Every setting is PadMap's (WC.padMap.party.put / padd / pbRemove, each answered with a partyack); nothing here touches the game.
 local function partyTab()
-    local SLOT = { [2] = "a", [3] = "x", [4] = "yc", [5] = "touch", [7] = "zla", [8] = "zlx", [9] = "zly", [10] = "zra", [11] = "zrx",
-                   [12] = "zry" }
-    local PICK = { 2, 3, 4, 5, 7, 8, 9, 10, 11, 12 }       -- padtab 27-36: slot k -> its place (ppos)
+    -- the slot on (set, position): position 8 A, 5 X, 6 Y (the router's numbers, as the normal page); set 1 base, 2 ZL, 3 ZR
+    local FACE = { [8] = "a", [5] = "x", [6] = "y" }
+    local function slotAt(set, pos)
+        local f = FACE[pos]
+        if not f or set == 4 then return nil end
+        if set == 1 then return f == "y" and "yc" or f end
+        return (set == 2 and "zl" or "zr") .. f
+    end
+    -- padtab 27-36: slot k -> where the cursor goes (PartyModel.PICKS' order)
+    local PICK = { { 1, 8 }, { 1, 5 }, { 1, 6 }, "touch", { 2, 8 }, { 2, 5 }, { 2, 6 }, { 3, 8 }, { 3, 5 }, { 3, 6 } }
     local NONE = { yc = "inspect", touch = "target" }      -- the chooser's no-spell row (else "empty")
     local PICK_S = 2
     local function party() local pm = PM(); return pm and type(pm.party) == "table" and pm.party or nil end
     local function cfg() local p = party(); if not p then return nil end; local ok, c = pcall(p.cfg); return ok and c or nil end
+    -- the layer on show: a held trigger (the game's active set) wins over the one chosen on the set row
+    local function shownP()
+        if type(WC.spellsActiveSet) == "function" then
+            local ok, a = pcall(WC.spellsActiveSet)
+            if ok and type(a) == "number" and a >= 2 and a <= 4 then return a end
+        end
+        return tc.pset or 1
+    end
+    PT.shown = shownP
+    -- the slot under the cursor (the Touch row's Touch, a face on the layer on show), else nil (a locked place)
+    local function curSlot()
+        if tc.focus == "ptouch" or (tc.focus == "pright" and tc.pfrom == "touch") then return tc.ptouch == 1 and "touch" or nil end
+        return slotAt(shownP(), tc.ppos)
+    end
+    PT.curSlot = curSlot
     -- the right page's rows: one (Change), or for Y with Smart Y on the party list's rows, the Add row, then "In combat" (Change)
     local function rightRows()
-        if SLOT[tc.ppos] ~= "yc" then return { { kind = "change" } } end
+        if curSlot() ~= "yc" then return { { kind = "change" } } end
         local c = cfg()
         if not (c and c.sy and c.sy.on) then return { { kind = "change" } } end
         local out = {}
@@ -940,7 +973,7 @@ local function partyTab()
     end
     local function openChooser(list)
         if inCombat() then refusedCombat() return end
-        tc.chooser = { list = list, row = 1, slot = SLOT[tc.ppos] }
+        tc.chooser = { list = list, row = 1, slot = curSlot() }
         report("chooser")
     end
     PT.pressChooser = function(key)
@@ -965,25 +998,65 @@ local function partyTab()
         elseif key == "PAD2" then tc.chooser = nil; report("chooser-closed") end
         return true
     end
-    -- the left page
-    PT.pressRows = function(key)
-        local p = tc.ppos
-        local col, row = p > 6 and 2 or 1, (p - 1) % 6 + 1
-        if key == "PADDUP" then
-            if row == 1 then step(-1) else tc.ppos = p - 1; report("pmove") end
-        elseif key == "PADDDOWN" then
-            if row < 6 and not (col == 1 and p + 1 == 6) then tc.ppos = p + 1; report("pmove") end
-        elseif key == "PADDLEFT" then
-            if col == 2 then tc.ppos = (p - 6 == 6) and 5 or p - 6; report("pmove") end
-        elseif key == "PADDRIGHT" then
-            if col == 1 then tc.ppos = p + 6; report("pmove") end
+    local function toRight(from)
+        tc.pfrom, tc.focus, tc.pright = from, "pright", 1
+        report("to-pright")
+    end
+    -- the set row: ZL / ZR shown by A (A again: the base layer); ZL + ZR locked
+    PT.pressSets = function(key)
+        if key == "PADDLEFT" then tc.scur = math.max(2, tc.scur - 1); report("set-cursor")
+        elseif key == "PADDRIGHT" then tc.scur = math.min(4, tc.scur + 1); report("set-cursor")
         elseif key == "PAD1" then
-            if p == 1 then report("locked") return true end         -- the D-pad moves the box: fixed
-            if not SLOT[p] then return true end
-            tc.focus, tc.pright = "pright", 1
-            report("to-pright")
+            if tc.scur == 4 then report("locked") return true end
+            tc.pset = (tc.pset == tc.scur) and 1 or tc.scur; report("set")
+        elseif key == "PADDDOWN" then step(1)
+        elseif key == "PADDUP" then step(-1)
         elseif key == "PAD2" then return false
         end
+        return true
+    end
+    -- the Touch row: 1 Touch (the picked plate's second tap), 2 Hold (the player menu, locked)
+    PT.pressTouch = function(key)
+        if key == "PADDLEFT" then tc.ptouch = 1; report("ptouch")
+        elseif key == "PADDRIGHT" then tc.ptouch = 2; report("ptouch")
+        elseif key == "PADDUP" then step(-1)
+        elseif key == "PADDDOWN" then step(1)
+        elseif key == "PAD1" then
+            if tc.ptouch ~= 1 then report("locked") return true end
+            toRight("touch")
+        elseif key == "PAD2" then return false
+        end
+        return true
+    end
+    -- the diamonds (as drawn: the layout's grid, as the normal page); Up from the top row = the Touch row
+    PT.pressDiam = function(key)
+        local d = DIRS[key]
+        if d then
+            local grid = GRIDS[layout()]
+            local cur = grid[tc.ppos]
+            local best, bestScore
+            for i = 1, 8 do
+                local g = grid[i]
+                if i ~= tc.ppos then
+                    local dx, dy = g[1] - cur[1], g[2] - cur[2]
+                    local along = dx * d[1] + dy * d[2]
+                    if along > 0 then
+                        local score = along + 2 * (math.abs(dx * d[2]) + math.abs(dy * d[1]))
+                        if not bestScore or score < bestScore then best, bestScore = i, score end
+                    end
+                end
+            end
+            if best then tc.ppos = best; report("pmove")
+            elseif key == "PADDUP" then step(-1) end
+            return true
+        end
+        if key == "PAD1" then
+            if tc.ppos == 1 or tc.ppos == 3 then report("reserved") return true end      -- kept for raids (the user, 2026-11-11)
+            if not curSlot() then report("locked") return true end                      -- Up / Down move the pick; B; ZL + ZR
+            toRight("diam")
+            return true
+        end
+        if key == "PAD2" then return false end
         return true
     end
     -- the right page: its rows (Y with Smart Y on) and the ONE red action for the row under the cursor
@@ -991,7 +1064,7 @@ local function partyTab()
         local rr = rightRows()
         if key == "PADDUP" then tc.pright = math.max(1, tc.pright - 1); report("pright")
         elseif key == "PADDDOWN" then tc.pright = math.min(#rr, tc.pright + 1); report("pright")
-        elseif key == "PAD2" then tc.focus = "prows"; report("to-prows")
+        elseif key == "PAD2" then tc.focus = tc.pfrom == "touch" and "ptouch" or "pdiam"; report("to-prows")
         elseif key == "PAD1" then
             local r = rr[math.min(tc.pright, #rr)]
             if not r then return true end
@@ -1008,11 +1081,18 @@ local function partyTab()
     end
     -- TOUCH: padtab 27-36 = a slot pick (fresh PICK_S; the cursor moves with it), 37 = its no-spell value, the spell = Book's two taps
     WC.padTabCtl.touchPartySlot = function(k)
-        local pos = PICK[k]
-        if not pos then return end
-        tc.ppick = { slot = SLOT[pos], at = GetTime() }
-        tc.ppos = pos
-        if tc.on and not tc.chooser and tc.view == "party" then tc.focus = "prows" end
+        local where = PICK[k]
+        if not where then return end
+        local slot
+        if where == "touch" then
+            tc.ptouch, tc.pfrom, slot = 1, "touch", "touch"
+            if tc.on and not tc.chooser and tc.view == "party" then tc.focus = "ptouch" end
+        else
+            tc.pset, tc.ppos = where[1], where[2]
+            slot = slotAt(where[1], where[2])
+            if tc.on and not tc.chooser and tc.view == "party" then tc.focus = "pdiam" end
+        end
+        tc.ppick = { slot = slot, at = GetTime() }
         report("touch-pslot")
     end
     local function fresh()

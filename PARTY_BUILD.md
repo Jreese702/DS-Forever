@@ -294,6 +294,11 @@ combat only, after `on` / `off`: `routerBind("party")` (3.5).
 
 ### 3.4 THE BOX'S MOVES: `NAV(n, from, dir)` (identical in Lua and Kotlin; both test this table)
 
+**SUPERSEDED (PadMap m129, the user's decisions 2026-11-11; E:/wow-build/party_design.md A.3):** one column, you first. Up / Down
+move the pick one row with no wrap (`from - 1` / `from + 1`, clamped to 1..n); Left / Right never move it (kept for raid navigation
+later: "this will need to support raids at some point"), and nothing can be put on them. The table below is the old grid's, kept for
+the history only; tools/test_party.py, PartyModelTest and PartyLayoutTest test the column.
+
 Layout by n (index 1 = you): n1 `[1]`; n2 `[1] [2]`; n3 `[1] [2 3]`; n4 `[1] [2 3 4]`; n5 `[1] [2 3] [4 5]`. Rows are walked by Up / Down,
 cells by Left / Right; no wrap; "-" = no move (the app dims that arrow).
 
