@@ -795,7 +795,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (LauncherHooks.pkg != null) {
             startView.firstLabel = "Save your Battle.net login"; startView.firstW = 680f      // the longer words
             sweepTrigger()
-            NativeLogin.onChange = { if (!shell.hostGone()) loginShow() }
+            NativeLogin.onChange = { if (!shell.hostGone()) { loginShow(); downloadLine() } }
         }
         loginWatch = HomeLoginWatch(
             // the games whose login screen can be up: GameNative's and WoW Forever's logs, each with the package that writes it
@@ -1883,7 +1883,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // the start screen waits for the game's first current word, as at every start
                     ui.postDelayed({
                         setupBusy = false; setupView.close()
-                        startView.line = if (SetupBridge.seeding) SetupFlow.timesLine(SetupFlow.Step.PREPARE) else "Waiting for the game."; startView.visibility = View.VISIBLE
+                        startView.line = if (SetupBridge.seeding) SetupFlow.timesLine(SetupFlow.Step.PREPARE) else PreLoginTraffic.waitingLine(PreLoginTraffic.WAITING_LINE, NativeLogin.downloading); startView.visibility = View.VISIBLE
                     }, 4_000L)
                 }
             }
@@ -2781,6 +2781,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the line back, but never over a newer one (the review: "Reloading the game's interface" must not be overwritten)
             lineBeforeLogin?.let { if (startView.line == lineWritten) startView.line = it }
             lineBeforeLogin = null; lineWritten = null
+            downloadLine()
             // a start screen brought back only for the row goes with it (never during a reload, which owns the screen then)
             if (loginRevealed) { loginRevealed = false; if (reloadAt == 0L) startView.visibility = View.GONE }
             return
@@ -3211,6 +3212,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         else -> null
     }
     private var loginRevealed = false
+
+    /** issue #132 (the user's pick 2026-11-12): the plain waiting line says "Game downloading" while the game fetches its files */
+    private fun downloadLine() {
+        if (!::startView.isInitialized) return
+        val l = PreLoginTraffic.waitingLine(startView.line, NativeLogin.downloading)
+        if (l != startView.line) { startView.line = l; startView.invalidate() }
+    }
 
     /**
      * OUT OF THE WORLD, STILL SIGNED IN ([HomeLogin.State.away]: character select after a logout, measured 2026-10-06 - the bottom
