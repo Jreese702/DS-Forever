@@ -64,7 +64,6 @@ class LbPartyView(context: Context) : View(context) {
         return if (held) (fromT + dt).coerceAtMost(UiKit.PAUSE_OPEN_MS) else (fromT - dt).coerceAtLeast(0f)
     }
 
-    private val pBar = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pText by lazy { UiKit.bodyPaint(30f, Color.WHITE) }
     private val pSmall by lazy { UiKit.bodyPaint(22f, Theme.dim) }
 
@@ -101,7 +100,8 @@ class LbPartyView(context: Context) : View(context) {
         if (held && t < UiKit.PAUSE_OPEN_MS || !held || pressedAt.values.any { now - it < PRESS_MS }) postInvalidateOnAnimation()
     }
 
-    /** one member's bar: the button's glyph at its left, the name in the class colour, health and power; lit while its press shows */
+    /** one member's bar: the button's glyph at its left, the name in the class colour, the level / dead / offline (m129: no health or
+     *  mana on the bottom); lit while its press shows */
     private fun bar(c: Canvas, r: RectF, m: PartyModel.Member?, unit: String?, key: String, a: Int, now: Long, s: Float) {
         val pressed = unit != null && (pressedAt[unit]?.let { now - it < PRESS_MS } ?: false)
         UiKit.pressed(c, r, pressed) {
@@ -116,22 +116,13 @@ class LbPartyView(context: Context) : View(context) {
             val col = classColour(m)
             pText.textSize = 28f * s; pText.color = col; pText.alpha = a
             val name = android.text.TextUtils.ellipsize(m.n, android.text.TextPaint(pText), x1 - x0, android.text.TextUtils.TruncateAt.END).toString()
-            c.drawText(name, x0, r.top + 36f * s, pText)
-            // health (green; grey when dead) and power (the power type's colour)
-            val hb = RectF(x0, r.top + 48f * s, x1, r.top + 70f * s)
-            val pb = RectF(x0, r.top + 76f * s, x1, r.top + 86f * s)
-            fill(c, hb, if (m.dead) 0f else m.hpNow() / 100f, if (m.dead) Color.GRAY else HEALTH, a)
-            fill(c, pb, m.powerNow(), powerColour(m.pt), a)
-            if (m.dead) c.drawText(Tr.t("Dead"), x1 - 70f * s, r.top + 66f * s, pSmall.apply { alpha = a; textSize = 20f * s })
+            // m129 (party_design.md A.5, the user 2026-11-11: no health or mana on the bottom): the name, the level, dead / offline
+            pText.alpha = if (m.dead || m.dim) a / 2 else a
+            c.drawText(name, x0, r.centerY() - 2f * s, pText)
+            val sub = when { m.dead -> "Dead"; m.off -> "Offline"; else -> m.lv?.let { "Level $it" } }
+            sub?.let { c.drawText(Tr.t(it), x0, r.centerY() + 28f * s, pSmall.apply { alpha = a; textSize = 22f * s }) }
         }
         if (pressed) UiKit.focus(c, r)
-    }
-
-    private fun fill(c: Canvas, r: RectF, f: Float, colour: Int, a: Int) {
-        pBar.style = Paint.Style.FILL
-        pBar.color = Color.argb(a * 200 / 255, 10, 10, 12); c.drawRect(r, pBar)
-        pBar.color = colour; pBar.alpha = a
-        c.drawRect(RectF(r.left, r.top, r.left + r.width() * f.coerceIn(0f, 1f), r.bottom), pBar)
     }
 
     private fun classColour(m: PartyModel.Member): Int {
@@ -145,7 +136,6 @@ class LbPartyView(context: Context) : View(context) {
         const val COL_W = 300f
         const val SIDE_PX = 340f
 
-        private val HEALTH = Color.rgb(32, 180, 40)
         private val SLOT_KEY = listOf(PadInput.SLOT_FACE_BOTTOM to "PAD1", PadInput.SLOT_DPAD_UP to "PADDUP", PadInput.SLOT_DPAD_RIGHT to "PADDRIGHT",
             PadInput.SLOT_DPAD_DOWN to "PADDDOWN", PadInput.SLOT_DPAD_LEFT to "PADDLEFT", PadInput.SLOT_FACE_RIGHT to "PAD2",
             PadInput.SLOT_FACE_LEFT to "PAD3", PadInput.SLOT_FACE_TOP to "PAD4")
@@ -154,11 +144,6 @@ class LbPartyView(context: Context) : View(context) {
             "PADDUP" -> "gen_up"; "PADDDOWN" -> "gen_down"; "PADDLEFT" -> "gen_left"; "PADDRIGHT" -> "gen_right"
             "PAD1" -> UiKit.okGlyph()
             else -> "gen_" + key.removePrefix("PAD").lowercase()
-        }
-
-        fun powerColour(pt: String): Int = when (pt.uppercase()) {
-            "RAGE" -> Color.rgb(200, 30, 30); "ENERGY" -> Color.rgb(230, 210, 40); "FOCUS" -> Color.rgb(230, 130, 40)
-            "RUNIC_POWER" -> Color.rgb(0, 200, 230); else -> Color.rgb(40, 90, 220)
         }
     }
 }

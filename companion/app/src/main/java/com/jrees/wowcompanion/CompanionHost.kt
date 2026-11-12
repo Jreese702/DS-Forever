@@ -161,8 +161,6 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private lateinit var barSelect: HomeBarSelect
 
     private var tail: LogSource? = null
-    /** the game's combat log (CombatLogTail: party health), beside the game's own log; none while Streaming */
-    private var clogTail: CombatLogTail? = null
     /** WoW Forever as GameLocator found it on this device (the log, the setup's folders); set once at start */
     @Volatile private var game: GameLocator.Found? = null
         set(v) { field = v; if (::setupRunner.isInitialized) setupRunner.wowForever = v }
@@ -1068,7 +1066,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     fun onStart() {
         DirectPad.start()
-        if (room == Room.HOME) ui.post { partyAsk(PartyModel.Ask.HOME_SHOWN) }     // back from the background: Party mode's documents
+        if (room == Room.HOME) ui.post { partyAsk(PartyModel.Ask.HOME_SHOWN); homeView.partyHomeOpened() }     // back from the background: Party mode's documents
         TapBridge.watchPad()        // the quiet pad's clock from the start (Quests, step 0): the first tap already knows the last press
         if (unpacking) return
         GameUi.onVisible(true)
@@ -1094,7 +1092,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         MemWatch.room = r.name.lowercase()                                // WCMEM: what is on show
         flushBLeave()
         // PARTY MODE (1.1, 4.2): Home shown again re-asks the add-on's documents; leaving Home turns Party mode off only by the switch
-        if (r == Room.HOME && room != Room.HOME) partyAsk(PartyModel.Ask.HOME_SHOWN)
+        if (r == Room.HOME && room != Room.HOME) { partyAsk(PartyModel.Ask.HOME_SHOWN); homeView.partyHomeOpened() }
         if (r != Room.HOME && room == Room.HOME) partyLeaveHome("room $r")
         if (r == Room.HOME) ui.postDelayed({ newSpellAsk() }, 800L)          // f-new-spell-prompt: back Home, the next one
         // the pause menu never stays over a room change (a whisper's jump, a game window); its own picks run after it has folded
@@ -1318,12 +1316,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the module's touches and the player menu's outcomes: every tap from `partycfg.pad` (PartyTaps), on the pad the app holds */
     private fun partyWire() {
         val live = PartyModel.live
+        // m129 (party_design.md C, Touch): a plate's tap is its pick cell; the add-on's snippet decides (off = Target; another member
+        // = the pick moves; the picked one = the Touch action). The module draws a pick at once (the partybox corrects it)
         homeView.onPartyCell = { i ->
-            val cells = PartyTaps.touch(live.cfg, i)
+            val cells = PartyTaps.choose(live.cfg, i)
             when {
-                !live.tapsAllowed(SystemClock.uptimeMillis()) -> Log.i("WCHOME", "party: touch on $i refused (the roster just changed)")
-                cells == null -> Log.i("WCHOME", "party: touch on $i: no cell (no partycfg / column)")
-                else -> TapBridge.taps(this, questsPad, cells) { why -> Log.i("WCHOME", "party: touch on $i not sent: $why") }
+                !live.tapsAllowed(SystemClock.uptimeMillis()) -> Log.i("WCHOME", "party: tap on $i refused (the roster just changed)")
+                cells == null -> Log.i("WCHOME", "party: tap on $i: no cell (no partycfg / column)")
+                TapBridge.taps(this, questsPad, cells) { why -> Log.i("WCHOME", "party: tap on $i not sent: $why") } ->
+                    if (live.choose(i) != null) partyRedraw()
+                else -> {}
             }
         }
         homeView.onPartyLong = { i ->
@@ -1332,9 +1334,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 partyWheel(i, byPad = false)
             } else Log.i("WCHOME", "party: hold on $i: the menu was not asked")
         }
-        homeView.onPartyTag = {
-            val sent = PartyTaps.on(live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } } == true
-            Log.i("WCHOME", "party: the (-) tag: on ${if (sent) "tapped" else "not sent"}")
+        // party_design.md E: the Select tab turns Party mode on (off / not bound) or off (on); the look follows the document only
+        homeView.onPartyTag = { wantOn ->
+            val cells = if (wantOn) PartyTaps.on(live.cfg) else PartyTaps.off(live.cfg)
+            val sent = cells?.let { TapBridge.taps(this, questsPad, it) { } } == true
+            Log.i("WCHOME", "party: the Select tab: ${if (wantOn) "on" else "off"} ${if (sent) "tapped" else "not sent"}")
         }
         homeView.partyMenu.onDo = { d, byPad ->
             val menu = homeView.partyMenu
@@ -1402,17 +1406,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.partyChanged()
     }
 
-    private var partyHsLast = ""
     private fun partyDoc(p: PartyModel.Party, current: Boolean) {
         // 2026-11-04 (the user: logged in on another character, "it showed my hunter as myself in the party"): a party document from the
         // log's history may be another character's; only a CURRENT one is shown (the add-on sends its own within seconds of a login)
         if (!current) return
-        // m96: the live hit counts feed the combat-log estimate (CombatHealth)
-        val at = System.currentTimeMillis()
-        for (m in p.m) CombatHealth.counts(m.g, m.cw, m.cc, m.ch, at, m.cs)
         val live = PartyModel.live
-        // m79: which reader each member's health came from, logged when it changes (2026-11-04: "staying at full health for everyone")
-        p.m.joinToString(" ") { "${it.u}=${it.hs ?: "?"}" }.let { if (it != partyHsLast) { partyHsLast = it; Log.i("WCPARTY", "health sources: $it") } }
         val wasOn = live.party?.on == true
         if (live.onParty(p, current, SystemClock.uptimeMillis())) partyRedraw()
         if (current && p.on && !wasOn) partyAsk(PartyModel.Ask.PARTY_ON)
@@ -2582,11 +2580,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         tail = PlayModes.pick(PlayModes.current, PlayModes.bridgeLog, onMessage, onStatus) {
             LogTail(follow.first(), onMessage = onMessage, onStatus = onStatus, follow = follow)
         }.also { it.start() }
-        // 2026-11-07: the combat log sits in the same Logs folder as the game's own log
-        clogTail?.stop(); clogTail = null
+        // m129: the combat log is no longer read (no health on the bottom); the files our older add-ons made still go
         if (!streaming) java.io.File(log).parentFile?.let { dir ->
-            CombatHealth.clear()
-            clogTail = CombatLogTail(dir) { ui.post { if (!shell.hostGone()) partyRedraw() } }.also { it.start() }
             // 1.0.19 (the user's pick "Delete ours older than a day"): the combat log files (Party mode's, PadMap m92 / m95-97) piled up in
             // the game's Logs folder (264 MB on the Thor in two days); only WoWCombatLog-*.txt older than 24 h, nothing else there
             Thread {

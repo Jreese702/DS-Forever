@@ -45,10 +45,10 @@ class LbPartyShotsTest {
     fun lbPicture() {
         artRoot()
         val doc = JSONObject("""{"p":{"box":1,"fight":false,"grp":true,"m":[
-            {"c":"SHAMAN","col":"ff0070dd","dead":false,"full":true,"hp":100,"i":0,"n":"Korvash","off":false,"pt":"MANA","role":"NONE","u":"player"},
-            {"c":"WARRIOR","col":"ffc69b6d","dead":false,"full":false,"hp":62,"i":1,"n":"Brannoc","off":false,"pt":"RAGE","role":"TANK","u":"party1"},
-            {"c":"MAGE","col":"ff3fc7eb","dead":false,"full":true,"hp":100,"i":2,"n":"Iselle","off":false,"pt":"MANA","role":"DAMAGER","u":"party2"},
-            {"c":"PRIEST","col":"ffffffff","dead":true,"full":false,"hp":0,"i":3,"n":"Aldric","off":false,"pt":"MANA","role":"HEALER","u":"party3"}],
+            {"c":"SHAMAN","col":"ff0070dd","dead":false,"lv":20,"i":0,"n":"Korvash","off":false,"pt":"MANA","role":"NONE","u":"player"},
+            {"c":"WARRIOR","col":"ffc69b6d","dead":false,"lv":21,"i":1,"n":"Brannoc","off":false,"pt":"RAGE","role":"TANK","u":"party1"},
+            {"c":"MAGE","col":"ff3fc7eb","dead":false,"lv":20,"i":2,"n":"Iselle","off":false,"pt":"MANA","role":"DAMAGER","u":"party2"},
+            {"c":"PRIEST","col":"ffffffff","dead":true,"lv":19,"i":3,"n":"Aldric","off":false,"pt":"MANA","role":"HEALER","u":"party3"}],
             "on":false,"sel":"bound"},"rs":2,"type":"party","v":"m104"}""")
         val p = PartyModel.parseParty(doc)!!
         PartyModel.live.onParty(p, true, System.currentTimeMillis())

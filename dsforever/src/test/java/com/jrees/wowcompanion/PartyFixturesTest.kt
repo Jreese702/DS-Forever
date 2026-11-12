@@ -26,7 +26,7 @@ class PartyFixturesTest {
         assertEquals(1, p.n)
         val me = p.m[0]
         assertEquals("player", me.u); assertEquals(0, me.i); assertEquals("Korvash", me.n); assertEquals("SHAMAN", me.c)
-        assertEquals("MANA", me.pt); assertEquals(100, me.hp); assertTrue(me.full); assertNull(me.rng); assertEquals(400, me.hpMax)
+        assertEquals("MANA", me.pt); assertEquals(20, me.lv); assertNull(me.rng)
     }
 
     @Test fun partyThreeOnAndOff() {
@@ -49,7 +49,7 @@ class PartyFixturesTest {
         assertFalse(c.sy.on); assertTrue(c.sy.list.isEmpty()); assertTrue(c.sy.known.isEmpty()); assertTrue(c.sy.pick.isEmpty())
         assertEquals(listOf(331), c.spells.map { it.id })
         val pad = c.pad
-        assertEquals("party", pad.row); assertEquals(0, pad.tgt); assertEquals(5, pad.tsp); assertEquals(10, pad.on); assertEquals(11, pad.off)
+        assertEquals("party", pad.row); assertEquals(0, pad.pick); assertEquals(10, pad.on); assertEquals(11, pad.off)
         assertEquals(12, pad.focus); assertEquals(17, pad.menu); assertEquals(22, pad.resend); assertEquals(23, pad.pbsel)
         assertEquals(31, pad.pbRemove); assertEquals(32, pad.pbUp); assertEquals(33, pad.pbDown); assertEquals(34, pad.pbAdd)
         assertEquals(35, pad.mdone); assertEquals("padtab", pad.tabRow); assertEquals(26, pad.tab); assertEquals(27, pad.slot0); assertEquals(37, pad.none)
@@ -71,9 +71,9 @@ class PartyFixturesTest {
         assertEquals(331, c.yc!!.id); assertEquals(8004, c.touch!!.id)
         assertTrue(c.sy.on); assertEquals(listOf(131, 546), c.sy.list.map { it.id })
         assertEquals(131, c.sy.pick["party1"]!!.id); assertEquals(546, c.sy.pick["party2"]!!.id); assertNull(c.sy.pick["player"])
-        // the touch spell routes a cell tap to tsp + i
-        assertEquals(listOf("party" to 6), PartyTaps.touch(c, 1))
-        assertEquals(listOf("party" to 1), PartyTaps.touch(PartyModel.parseCfg(fx("partycfg_shaman_default")), 1))
+        // m129: a plate's tap is its pick cell (pick + i), the Touch spell or not
+        assertEquals(listOf("party" to 1), PartyTaps.choose(c, 1))
+        assertEquals(listOf("party" to 1), PartyTaps.choose(PartyModel.parseCfg(fx("partycfg_shaman_default")), 1))
         // a PB op = ONE batch of distinct cells (TapPad's 0.25 s same-cell guard never swallows one of them)
         val op = PartyTaps.pbOp(c, 2, PartyTaps.PbOp.REMOVE)!!
         assertEquals(listOf("party" to 24, "party" to 31), op)
@@ -86,7 +86,8 @@ class PartyFixturesTest {
         val st = PartyModel.State()
         st.onParty(PartyModel.parseParty(fx("party_three_on"))!!, current = true, now = 0L)
         val on = PartyModel.parseBox(fx("partybox_on"))!!
-        assertEquals("on", on.k); assertNull(on.u); assertNull(on.key); assertNull(on.sp)
+        // m129 (party_design.md A.2): PARTYFLIP "on" sets wc-u from the clamped box: the top's ring is never empty after a flip
+        assertEquals("on", on.k); assertEquals("player", on.u); assertEquals(1, on.box); assertNull(on.key); assertNull(on.sp)
         assertTrue(st.onBox(on, true))
         val mv = PartyModel.parseBox(fx("partybox_move"))!!
         assertEquals("move", mv.k); assertEquals(2, mv.box); assertEquals("party1", mv.u); assertEquals(PartyModel.Dir.DOWN, PartyModel.dirOf(mv.key))
@@ -115,6 +116,15 @@ class PartyFixturesTest {
         val off = PartyModel.parseBox(fx("partybox_off"))!!
         assertEquals("off", off.k); assertFalse(off.on); assertFalse(off.pm)
         assertTrue(st.onBox(off, true)); assertFalse(st.party!!.on); assertNull(st.party!!.box)
+        // m129 a plate's taps: another member = k pick (the box follows, wc-u with it); the picked one = k touch (the box stays)
+        val pick = PartyModel.parseBox(fx("partybox_pick"))!!
+        assertEquals("pick", pick.k); assertEquals(3, pick.box); assertEquals("party2", pick.u); assertTrue(pick.on)
+        val touch = PartyModel.parseBox(fx("partybox_touch"))!!
+        assertEquals("touch", touch.k); assertEquals(3, touch.box); assertEquals("party2", touch.u)
+        val s2 = PartyModel.State()
+        s2.onParty(PartyModel.parseParty(fx("party_three_on"))!!, current = true, now = 0L)
+        assertTrue(s2.onBox(pick, true)); assertEquals(3, s2.box)
+        assertTrue(s2.onBox(touch, true)); assertEquals(3, s2.box)
     }
 
     @Test fun acks() {
@@ -122,8 +132,6 @@ class PartyFixturesTest {
         assertTrue(resend.ok); assertNull(resend.why); assertFalse(PartyModel.forSettings(resend))
         val cell = PartyModel.parseAck(fx("partyack_cell"))!!
         assertEquals("cell", cell.op); assertFalse(cell.ok); assertEquals("unknown column", cell.why); assertFalse(PartyModel.forSettings(cell))
-        val tt = PartyModel.parseAck(fx("partyack_touch_target"))!!
-        assertEquals("touch", tt.op); assertEquals("target", tt.why); assertNull(tt.slot); assertFalse(PartyModel.forSettings(tt))
         val combat = PartyModel.parseAck(fx("partyack_combat"))!!
         assertEquals("combat", combat.why); assertEquals("a", combat.slot); assertEquals(331, combat.id); assertTrue(PartyModel.forSettings(combat))
         val ok = PartyModel.parseAck(fx("partyack_slot_ok"))!!
@@ -132,10 +140,12 @@ class PartyFixturesTest {
         assertEquals("pb", pb.op); assertTrue(pb.ok); assertEquals(131, pb.id); assertNull(pb.slot); assertTrue(PartyModel.forSettings(pb))
     }
 
-    /** padtabctl's party fields: ppos 1..12, pfocus rows / right, pright 0-BASED, the chooser lists "party" and "pbuff" */
+    /** padtabctl's party fields (p37): ppos = the router's 1..8, pfocus tabs / sets / touch / diam / right, pset, ptouch, pright 0-BASED,
+     *  the chooser lists "party" and "pbuff" */
     @Test fun padTabCtl() {
         val r = PadMapModel.parseCtl(fx("padtabctl_party_right"))!!
-        assertEquals("party", r.view); assertEquals(5, r.tcur); assertEquals(2, r.ppos); assertEquals("right", r.pfocus); assertEquals(0, r.pright)
+        assertEquals("party", r.view); assertEquals(5, r.tcur); assertEquals(8, r.ppos); assertEquals("right", r.pfocus); assertEquals(0, r.pright)
+        assertEquals(1, r.pset); assertEquals(1, r.ptouch); assertEquals("a", PartyModel.slotAt(r.pset, r.ppos))
         assertNull(r.chooser)
         val ch = PadMapModel.parseCtl(fx("padtabctl_party_chooser"))!!
         assertEquals("party", ch.chooser!!.list); assertEquals(2, ch.chooser!!.row); assertEquals("331", ch.chooser!!.id)
@@ -143,7 +153,7 @@ class PartyFixturesTest {
         val cfg = PartyModel.parseCfg(fx("partycfg_full"))!!
         assertEquals(331, cfg.spells[ch.chooser!!.row - 2].id)
         val y = PadMapModel.parseCtl(fx("padtabctl_party_y_add"))!!
-        assertEquals(4, y.ppos); assertEquals("right", y.pfocus)
+        assertEquals(6, y.ppos); assertEquals("right", y.pfocus); assertEquals("yc", PartyModel.slotAt(y.pset, y.ppos))
         // Smart Y on, two buffs: rows buff, buff, Add, In combat; pright 2 = Add
         val rows = cfg.sy.list.map { "buff" } + "add" + (if (PartyTabPage.YC_ROW_IN_SMART_Y) listOf("yc") else emptyList())
         assertEquals("add", rows[y.pright])

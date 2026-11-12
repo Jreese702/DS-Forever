@@ -12,7 +12,7 @@ import org.junit.Test
 class PartyStripTest {
     private val cfg = PartyModelTest.cfg()
     private val party = PartyModelTest.party()               // box 2 = Brannoc, alive
-    private val dead = party.copy(m = party.m.mapIndexed { i, m -> if (i == 1) m.copy(dead = true, hp = 0) else m })
+    private val dead = party.copy(m = party.m.mapIndexed { i, m -> if (i == 1) m.copy(dead = true) else m })
     private val learned = cfg.copy(slots = cfg.slots.mapValues { (_, s) -> s?.copy(k = true) })
 
     @Test fun litAndDim() {
@@ -63,8 +63,9 @@ class PartyStripTest {
     @Test fun dimArrowsPerNAndBox() {
         assertEquals(mapOf(Dir.UP to false, Dir.DOWN to false, Dir.LEFT to false, Dir.RIGHT to false), PartyStrip.arrows(1, 1))
         assertEquals(mapOf(Dir.UP to false, Dir.DOWN to true, Dir.LEFT to false, Dir.RIGHT to false), PartyStrip.arrows(2, 1))
-        assertEquals(mapOf(Dir.UP to true, Dir.DOWN to false, Dir.LEFT to true, Dir.RIGHT to true), PartyStrip.arrows(4, 3))
-        assertEquals(mapOf(Dir.UP to true, Dir.DOWN to true, Dir.LEFT to false, Dir.RIGHT to true), PartyStrip.arrows(5, 2))
+        // m129: one column; Left / Right never lit (kept for raids)
+        assertEquals(mapOf(Dir.UP to true, Dir.DOWN to true, Dir.LEFT to false, Dir.RIGHT to false), PartyStrip.arrows(4, 3))
+        assertEquals(mapOf(Dir.UP to true, Dir.DOWN to false, Dir.LEFT to false, Dir.RIGHT to false), PartyStrip.arrows(5, 5))
     }
 
     @Test fun triggerPlates() {

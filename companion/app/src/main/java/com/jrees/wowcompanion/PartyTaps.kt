@@ -15,11 +15,15 @@ object PartyTaps {
 
     private fun one(c: Pair<String, Int>?): PartyCells? = c?.let { listOf(it) }
 
-    /** a TAP on a cell: Target (touch null) = `tgt + i`, else the touch spell = `tsp + i` */
-    fun touch(cfg: PartyModel.Cfg?, i: Int): PartyCells? {
+    /**
+     * m129 A PLATE'S TAP (party_design.md C, Touch): `pick + i`, always the same cell - the add-on's secure snippet decides what it
+     * does: Party mode off = Target; on, another member = the pick moves there (nothing cast); on, the picked member = the Touch action
+     * (Target, or the Touch spell). Named apart from [pick] (the Controller tab's slot picker).
+     */
+    fun choose(cfg: PartyModel.Cfg?, i: Int): PartyCells? {
         val p = cfg?.pad ?: return null
         if (i !in 0..4) return null
-        return one(if (cfg.touch == null) at(p.row, p.tgt, i) else at(p.row, p.tsp, i))
+        return one(at(p.row, p.pick, i))
     }
 
     /** the (-) tag: Party mode ON (absolute) */
