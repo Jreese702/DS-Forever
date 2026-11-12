@@ -85,6 +85,12 @@ function Region:GetFrameLevel() return self.level or 1 end
 function Region:SetFrameLevel(l) self.level = l end
 function Region:SetClipsChildren(c) self.clips = c end
 function Region:SetBlendMode(m) self.blend = m end
+-- prd14 review: every point a region holds (the stub keeps the last only), for the pick boxes' geometry
+do
+    local sp, cl = Region.SetPoint, Region.ClearAllPoints
+    function Region:SetPoint(...) sp(self, ...); self.anch = self.anch or {}; self.anch[#self.anch + 1] = { ... } end
+    function Region:ClearAllPoints() cl(self); self.anch = nil end
+end
 Enum = Enum or {}
 Enum.StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 }
 INC, ABS = nil, nil
@@ -722,6 +728,43 @@ def main():
     chk("prd14: the pick on the pet, its strip out: the gold box round the strip (%s), none round yours; the strip plainly shown (%s)"
         % (P.pickWho, P.petSrc), P.pickWho == "pet" and P.pick.pet.on is True and you.on is not True and P.petL.shown is True
         and P.petL.alpha == 1 and P.petSrc == "party")
+    # prd14 review (two reviewers, 2026-11-11): each box hangs on ONE area frame: the area's TOPLEFT on the first region, its BOTTOMRIGHT
+    # on the second; all eight edge points on the area itself (no edge spans two regions - the pet's clashed: portrait vs bars)
+    geo = L.eval('''(function()
+        local P = WowCompanion.prd
+        local function pts(r) local o = {}; for i, p in ipairs(r.anch or {}) do o[i] = p end; return o end
+        local function box(r, tl, br)
+            local a = pts(r.area)
+            if #a ~= 2 or a[1][1] ~= "TOPLEFT" or not rawequal(a[1][2], tl) or a[1][3] ~= "TOPLEFT"
+                or a[2][1] ~= "BOTTOMRIGHT" or not rawequal(a[2][2], br) or a[2][3] ~= "BOTTOMRIGHT" then return "area" end
+            local want = { { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
+            for i = 1, 4 do
+                local e = pts(r.t[i])
+                if #e ~= 2 then return "edge" .. i .. " n" end
+                for j = 1, 2 do
+                    if e[j][1] ~= want[i][j] or e[j][3] ~= want[i][j] or not rawequal(e[j][2], r.area) or e[j][4] ~= 0 or e[j][5] ~= 0 then
+                        return "edge" .. i .. "." .. j
+                    end
+                end
+            end
+            return a
+        end
+        local y, q = box(P.pick.you, P.hp, P.pw), box(P.pick.pet, P.pet.ring, P.pet.unit)
+        if type(y) == "string" then return "you " .. y end
+        if type(q) == "string" then return "pet " .. q end
+        local g, pad, k = P.petGeo(), P.PICK_PAD, P.HH / 8
+        local s = (P.pet.ring.w or P.PET_ICON) / P.PET_ICON                -- the spec px -> UI scale (u is linear)
+        -- the pet's area in the row's own frame (L's top-left = 0, 0; y down), in spec px: left / top / right / bottom
+        local ringL, ringT = g.x0, g.iconTop
+        local unitR, unitB = g.x0 + P.PET_ICON + P.PET_IGAP + g.barW, g.unitTop + g.unit
+        local l, t = ringL + q[1][4] / s, ringT - q[1][5] / s
+        local r, b = unitR + q[2][4] / s, unitB - q[2][5] / s
+        return string.format("%.3f %.3f %.3f %.3f|%.3f %.3f %.3f %.3f", l, t, r, b,
+            g.x0 - pad, -pad, unitR + 7 * k + pad, g.row + pad)
+    end)()''')
+    gl = geo.split("|") if "|" in geo else None
+    chk("prd14 review: the boxes on one area each, every edge on it alone; the pet's area = the row: portrait left, row top / bottom, the "
+        "bars' right rim, PICK_PAD out (%s)" % geo, gl is not None and gl[0] == gl[1])
     PMP.u = "party1"; run(0.5)
     chk("prd14: the pick on a party member: no box here (Hub's ring on the top block)", P.pickWho is None and P.pick.pet.on is not True)
     PMP.u = "player"; run(0.5)

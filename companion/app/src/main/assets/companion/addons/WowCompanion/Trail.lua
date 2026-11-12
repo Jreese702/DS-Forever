@@ -3777,21 +3777,30 @@ do
         if who == "player" or who == "pet" then return who end
         return nil
     end
-    -- a gold box of four edges on P.f's own top layer (never on the curve's P.g, never under the pet strip's alpha)
+    -- a gold box of four edges on P.f's own top layer (never on the curve's P.g, never under the pet strip's alpha). prd14 review (the
+    -- user's ask, 2026-11-11: the box round the bars / the strip): ONE mouse-less area frame per box spans what is boxed (its two corners
+    -- may come from two regions: a frame's TOPLEFT and BOTTOMRIGHT are independent), and all four edges hang on that one area - no edge
+    -- takes its two points from two regions (those clashed on the pet: the portrait's top against the bars' top, 46 px apart in x)
     function P.pickRing(host)
         local r = { t = {} }
+        r.area = CreateFrame("Frame", nil, host)
+        r.area:EnableMouse(false)
         for i = 1, 4 do
             r.t[i] = host:CreateTexture(nil, "OVERLAY", nil, 7)
             r.t[i]:SetColorTexture(P.PICK_GOLD[1], P.PICK_GOLD[2], P.PICK_GOLD[3], 0.95)
             r.t[i]:Hide()
         end
-        function r.place(tl, br, padL, padT, padR, padB)
-            local t, px = r.t, u(P.PICK_PX)
+        -- the area: TOPLEFT on tl (+ offsets), BOTTOMRIGHT on br (+ offsets); the edges on the area alone
+        function r.place(tl, tlx, tly, br, brx, bry)
+            local t, a, px = r.t, r.area, u(P.PICK_PX)
+            a:ClearAllPoints()
+            a:SetPoint("TOPLEFT", tl, "TOPLEFT", tlx, tly)
+            a:SetPoint("BOTTOMRIGHT", br, "BOTTOMRIGHT", brx, bry)
             for i = 1, 4 do t[i]:ClearAllPoints() end
-            t[1]:SetPoint("TOPLEFT", tl, "TOPLEFT", -padL, padT); t[1]:SetPoint("TOPRIGHT", br, "TOPRIGHT", padR, padT); t[1]:SetHeight(px)
-            t[2]:SetPoint("BOTTOMLEFT", tl, "BOTTOMLEFT", -padL, -padB); t[2]:SetPoint("BOTTOMRIGHT", br, "BOTTOMRIGHT", padR, -padB); t[2]:SetHeight(px)
-            t[3]:SetPoint("TOPLEFT", tl, "TOPLEFT", -padL, padT); t[3]:SetPoint("BOTTOMLEFT", br, "BOTTOMLEFT", -padL, -padB); t[3]:SetWidth(px)
-            t[4]:SetPoint("TOPRIGHT", br, "TOPRIGHT", padR, padT); t[4]:SetPoint("BOTTOMRIGHT", br, "BOTTOMRIGHT", padR, -padB); t[4]:SetWidth(px)
+            t[1]:SetPoint("TOPLEFT", a, "TOPLEFT", 0, 0); t[1]:SetPoint("TOPRIGHT", a, "TOPRIGHT", 0, 0); t[1]:SetHeight(px)
+            t[2]:SetPoint("BOTTOMLEFT", a, "BOTTOMLEFT", 0, 0); t[2]:SetPoint("BOTTOMRIGHT", a, "BOTTOMRIGHT", 0, 0); t[2]:SetHeight(px)
+            t[3]:SetPoint("TOPLEFT", a, "TOPLEFT", 0, 0); t[3]:SetPoint("BOTTOMLEFT", a, "BOTTOMLEFT", 0, 0); t[3]:SetWidth(px)
+            t[4]:SetPoint("TOPRIGHT", a, "TOPRIGHT", 0, 0); t[4]:SetPoint("BOTTOMRIGHT", a, "BOTTOMRIGHT", 0, 0); t[4]:SetWidth(px)
         end
         function r.show(on)
             for i = 1, 4 do if on then r.t[i]:Show() else r.t[i]:Hide() end end
@@ -3799,8 +3808,10 @@ do
         end
         return r
     end
-    -- built with the bars: one box round the player's health + power (their PRD frames: 3 texels up / left, 7 right, 8 down), one round
-    -- the pet's portrait + unit
+    -- built with the bars: one box round the player's health + power (their PRD frames: 3 texels up / left, 7 right, 8 down; the two bars
+    -- share x: both TOP-centred, P.W wide), one round the pet's whole strip row: the portrait's left to the bars' right rim (7 texels at
+    -- the PLAYER's scale, the pet's frame uses it: P.petBuild o.k), and in y the row itself (P.petGeo: the row's top and bottom are the
+    -- taller of the portrait and the bars' unit with its rims, whichever that is)
     function P.pickBuild()
         if P.pick or not P.f then return P.pick end
         local host = CreateFrame("Frame", nil, P.f)
@@ -3810,9 +3821,11 @@ do
         local k = u(P.HH / 8)
         local pad = u(P.PICK_PAD)
         local o = { host = host, you = P.pickRing(host), pet = P.pickRing(host) }
-        o.you.place(P.hp, P.pw, 3 * k + pad, 3 * k + pad, 7 * k + pad, 8 * u(P.PH / 8) + pad)
+        o.you.place(P.hp, -(3 * k + pad), 3 * k + pad, P.pw, 7 * k + pad, -(8 * u(P.PH / 8) + pad))
         if P.pet and P.pet.ring and P.pet.unit then
-            o.pet.place(P.pet.ring, P.pet.unit, pad, pad, 7 * k + pad, 8 * k + pad)
+            local g = P.petGeo()
+            -- the ring sits g.iconTop under the row's top, the unit (health's top) g.unitTop; the row is g.row tall
+            o.pet.place(P.pet.ring, -pad, u(g.iconTop) + pad, P.pet.unit, 7 * k + pad, -(u(g.row - g.unitTop - g.unit) + pad))
         end
         P.pick = o
         return o
