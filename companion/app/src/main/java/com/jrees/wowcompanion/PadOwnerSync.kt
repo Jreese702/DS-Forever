@@ -34,6 +34,12 @@ class PadOwnerSync {
     var holder: String? = null
         private set
 
+    /** an NPC / loot window let go with B in this fight (Interact's N.npcLeft): it no longer wants the pad until it closes */
+    var npcLeft = false
+        private set
+    private var backN = 0
+    private var backSeen = 0
+
     private var wantRoom: Boolean? = null
     private var tries = 0
     private var lastTapAt = 0L
@@ -49,7 +55,20 @@ class PadOwnerSync {
         leaveCell = cellOf(msg.optJSONObject("fightLeave"))
         gmLock = msg.optBoolean("gmLock", false)
         holder = msg.optString("holder", "").ifEmpty { null }
-        if (mode == null) { wantRoom = null; tries = 0; stuckSaid = false }
+        npcLeft = msg.optBoolean("npcLeft", false)
+        backN = msg.optInt("fightBack", 0)
+        if (mode == null) { wantRoom = null; tries = 0; stuckSaid = false; backN = 0; backSeen = 0 }
+    }
+
+    /**
+     * combat_nav Step 4 (the user, 2026-11-11: "If I am looting ... my dpad should not stop working"): B at a held window's top level in
+     * a fight reaches the add-on as PAD2 (never the game's close from our code), which steps `fightBack`; the app answers with ONE LEAVE
+     * tap, whose secure click closes the window. The cell to tap once per step, else null.
+     */
+    fun backAsked(): Pair<String, Int>? {
+        if (mode != ROOM || backN <= backSeen) return null
+        backSeen = backN
+        return leaveCell
     }
 
     /** the router delivers to us now (room mode in a fight) */

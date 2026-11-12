@@ -86,4 +86,28 @@ class PadOwnerSyncTest {
         assertFalse(PadOwnerSync.appReadsLoot(fightNav = true, fightMode = "room"))          // the add-on's N.move has it
         assertFalse(PadOwnerSync.appReadsLoot(fightNav = false, fightMode = "game"))
     }
+
+    // combat_nav Step 4 (the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"):
+    // B reaches the room's own chain; at its top level the room goes Home and the reconciler LEAVEs, below it nothing is tapped
+    @Test fun theBChainInAFight() {
+        val s = PadOwnerSync()
+        s.note(doc("room", holder = "map"))
+        assertEquals(PadOwnerSync.Act.NONE, s.step(wantsPad = true, nowMs = 0).act)      // B one step back: the room still shows
+        assertEquals(PadOwnerSync.Act.LEAVE, s.step(wantsPad = false, nowMs = 100).act)  // B at the top level: Home -> LEAVE
+    }
+
+    @Test fun bAtAHeldWindowsTopLevelAsksForOneLeave() {
+        val s = PadOwnerSync()
+        s.note(doc("room", holder = "npc"))
+        assertNull(s.backAsked())
+        s.note(doc("room", holder = "npc").put("fightBack", 1))
+        assertEquals("idlg" to 24, s.backAsked())
+        assertNull(s.backAsked())                                                        // once per step
+        s.note(doc("game").put("fightBack", 1).put("npcLeft", true))
+        assertNull(s.backAsked())
+        assertTrue(s.npcLeft)
+        s.note(doc(null))                                                                // the fight ends: the count starts again
+        s.note(doc("room", holder = "npc").put("fightBack", 1))
+        assertEquals("idlg" to 24, s.backAsked())
+    }
 }

@@ -1254,12 +1254,22 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * tool), the bar cursor, a radial, the pause or target radial, InteractView or DialogView. Never while the game menu has it.
      */
     private fun bottomWantsPad(): Boolean =
-        room != Room.HOME || homeView.homeGuestWanted() || tradOpen() || castView.overlayOpen?.invoke() == true ||
-            (::pauseView.isInitialized && pauseView.isOpen) || startView.visibility == View.VISIBLE
+        room != Room.HOME || homeView.homeGuestWanted() || tradOpen() || radialView.isOpen || barSelect.open ||
+            (::pauseView.isInitialized && pauseView.isOpen) || spellsOverlay.visibility == View.VISIBLE ||
+            (::dialogView.isInitialized && dialogView.visibility == View.VISIBLE) ||
+            // a loot / NPC window left with B in this fight wants the pad no more (its LEAVE went out; Step 4)
+            (::interactView.isInitialized && interactView.visibility == View.VISIBLE && !padOwner.npcLeft)
 
     /** one look of the reconciler: from every current interact document, show(), and a tick while a fight lasts */
     private fun padOwnerStep() {
         val now = SystemClock.uptimeMillis()
+        // combat_nav Step 4: B at a held window's top level (doc.fightBack stepped): the app's LEAVE, once
+        padOwner.backAsked()?.let { (row, col) ->
+            leftIds = setOfNotNull(padOwner.holder); leftAt = now
+            val sent = TapBridge.tap(this, questsPad, row, col) { }
+            Log.i("WCHOME", "pad owner: B at the window's top level -> LEAVE $row $col ${if (sent) "sent" else "not sent"}")
+            return
+        }
         val st = padOwner.step(bottomWantsPad(), now)
         when (st.act) {
             PadOwnerSync.Act.NONE -> {}

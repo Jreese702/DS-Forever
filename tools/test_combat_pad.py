@@ -324,10 +324,9 @@ for order in ('loaded', 'reversed'):
     check('PADDDOWN' in pad_keys(r) or any('WowCompanionInteractPad' in x for x in r['clicks']),
           "S1[%s] D-pad Down in the fight reaches the Map room" % order, r)
     r = press(W, "PAD2")
-    xcheck(modes(W) == ['room'] * 8 and holder(W) == 'map' and any(d.get('k') in ('PAD2', 'BACK') for d in r['pads']),
-           "S1[%s] B in the fight goes to the Map room's own B chain (one step back, then Home), the room keeps holding" % order,
-           "B in room mode IS the secure leave (wc-room-dest PAD2 = WowCompanionRoomLeave): one B drops the room and closes the map, "
-           "whatever level of the map's chain was open", (modes(W)[:2], holder(W), r['clicks']))
+    check(modes(W) == ['room'] * 8 and holder(W) == 'map' and any(d.get('k') in ('PAD2', 'BACK') for d in r['pads']),
+          "S1[%s] B in the fight goes to the Map room's own B chain (one step back, then Home), the room keeps holding (Step 4)" % order,
+          (modes(W)[:2], holder(W), r['clicks']))
     # the app at Home: the reconciler taps LEAVE (doc.fightLeave) - today B already did it
     if holder(W) == 'map':
         tap(W, idoc(W).get('fightLeave'))
@@ -352,9 +351,16 @@ W = world()
 W.execute('WorldMapFrame:Show(); advance(3)')
 pull(W)
 r = press(W, "PAD2", lt=True, rt=True)
-xcheck(any('WowCompanionRoomLeave' in x for x in r['clicks']) and 'wc-esc' in str(dict(W.eval('WowCompanionFaceB.a'))),
-       "S1 LT + RT + B in room mode is the secure escape (wc-esc = WowCompanionRoomLeave)",
-       "no escape chord: any B is the leave today (so it gets out, but not through wc-esc)", r['clicks'])
+check(any('WowCompanionRoomLeave' in x for x in r['clicks']) and 'wc-esc' in str(dict(W.eval('WowCompanionFaceB.a'))),
+      "S1 LT + RT + B in room mode is the secure escape (wc-esc = WowCompanionRoomLeave)", r['clicks'])
+check(holder(W) is None and modes(W) == [None] * 8 and clean(W) == {},
+      "S1 ... the escape clears the room mode from inside the snippet (FLIP): the fight's again, no breach", (holder(W), modes(W)[:2], clean(W)))
+W = world()
+W.execute('WorldMapFrame:Show(); advance(3)')
+pull(W)
+r = press(W, "PAD2", lt=True)
+check(holder(W) == 'map' and modes(W) == ['room'] * 8 and not any('WowCompanionRoomLeave' in x for x in r['clicks']),
+      "S1 LT + B alone is no escape: the room's own B", (holder(W), r['clicks']))
 
 # ================================================================ S2. LOOTING IN A FIGHT (the user: "If I am looting ... my dpad should not stop working";
 # the user's decision 2: loot always mirrored on the bottom screen in fights, whatever the "loot on top" switch says)
@@ -376,7 +382,12 @@ for order in ('loaded', 'reversed'):
     r = press(W, "PAD1")
     check([a for a in r['acts'] if a.get('kind') == 'lootslot'] == [{'kind': 'lootslot', 'slot': 2}], "S2[%s] A loots the picked item (slot 2)" % order, r['acts'])
     r = press(W, "PAD2")
-    check(holder(W) is None and modes(W) == [None] * 8, "S2[%s] B leaves the loot: the router back to the fight" % order, (holder(W), modes(W)[:2]))
+    d = idoc(W)
+    check(holder(W) == 'npc' and modes(W) == ['room'] * 8 and d.get('fightBack') and 'CloseLoot' not in lst(W, 'SPY'),
+          "S2[%s] B at the loot's top level (Step 4: B is the sink's PAD2): no game close from our code, the app asked for the LEAVE (doc.fightBack)" % order,
+          (holder(W), d.get('fightBack')))
+    tap(W, d.get('fightLeave'))                  # the app's LEAVE (PadOwnerSync: fightBack stepped)
+    check(holder(W) is None and modes(W) == [None] * 8, "S2[%s] the app's LEAVE: the router back to the fight" % order, (holder(W), modes(W)[:2]))
     xcheck(W.eval('LootFrame._shown') is False, "S2[%s] ... and the game's loot window is CLOSED by that leave (design phase 2: a pre-aimed leave per window)" % order,
            "the leave was aimed at the pull (no window then): it closes nothing; the loot window stays open, hidden, driven by nobody",
            (W.eval('LootFrame._shown'), W.eval('LootFrame:GetAlpha()')))
@@ -463,8 +474,8 @@ for combat in (False, True):
     W2 = W
     if combat:
         r = press(W2, "PAD2")
-        xcheck(modes(W2) == ['room'] * 8 and pad_keys(r) == ['PAD2'], "S3[%s] B in room mode goes to the app as PAD2 (its B chain), the mode stays" % tag,
-               "B in room mode is the secure leave: the room is dropped at once, the app's chain never sees the B", (modes(W2)[:2], r['clicks']))
+        check(modes(W2) == ['room'] * 8 and pad_keys(r) == ['PAD2'], "S3[%s] B in room mode goes to the app as PAD2 (its B chain), the mode stays (Step 4)" % tag,
+              (modes(W2)[:2], r['clicks']))
         if holder(W2) is not None:
             tap(W2, idoc(W2).get('fightLeave'))
         check(holder(W2) is None and modes(W2) == [None] * 8, "S3[%s] Home: the leave gives the fight back (router modes cleared)" % tag,
