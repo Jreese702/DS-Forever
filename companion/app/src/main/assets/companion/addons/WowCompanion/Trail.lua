@@ -2907,8 +2907,15 @@ end
 --   Review fixes (2026-11-11, before any device run): the pet's curve asked only while a pet plainly exists (a dismissal never latches
 --   P.petCurveBad; UNIT_PET hides the strip at once); a refusal with a pet out: the strip on the PLAYER's curve (fades with the HUD);
 --   PET_BAR_GAP / PET_GAP = the shared scale's 8-texel bottom lip (15) + 1, so no lip lies over a pet bar's opening (P.petRow).
-WC.prd = { V = "prd11", PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 16, PET_GAP = 16, PET_ICON = 20, PET_IGAP = 10, PET_NAME = 11,
-           PET_RGB = { 1, 0.78, 0.1 }, PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
+-- prd12 THE PET'S STRIP REWORKED (the user on the device, 2026-11-11: "The pet hp should be green. It needs to be moved down a bit and
+-- the gap between the bars should be minimal as possible. The portrait of the pet is way too small as well as the happiness. The name
+-- on the right should be removed"; their pick "Same green as mine"): the pet's health in the player's own HEALTH_RGB; the health and
+-- the power ONE framed unit (o.unit: one PRD frame round both, no lip between them, the power PET_BAR_GAP = 1 under the health); the
+-- round portrait PET_ICON = 36 (the unit's height and a little), a thin dark rim, left of the unit and centred on its bars; the
+-- happiness face PET_HAPPY = 20 past the unit's right rim (never on the portrait); no name; portrait + unit centred under the player's
+-- bars; the strip PET_GAP = 15 under the power bar (its top at the player's lip: the bars 10.5 spec px lower than prd11's; P.petGeo).
+WC.prd = { V = "prd12", PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 15, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
+           PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
            PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
            ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.25, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
@@ -3552,8 +3559,20 @@ do
     -- (review of prd11, 2026-11-11: the user's "Sub-strip under" at the player's texel scale draws an 8-texel bottom lip, HH = 15 spec
     -- px, under every bar; PET_BAR_GAP and PET_GAP are that lip + 1, so no rim piece of the health bar (or of the player's power bar
     -- above) lies over the pet's power / health opening; the rims may overlap each other, the openings stay clear)
-    function P.petRow() return math.max(P.PET_ICON, P.PET_HH + P.PET_BAR_GAP + P.PET_PH) end
-    -- built with the bars, hidden until a pet is out: the round portrait, the gold health, the power, the name, the happiness face
+    -- prd12: the strip's geometry in spec px (the player's texel scale k = HH / 8: a 3-texel top rim, an 8-texel bottom lip, a 7-texel
+    -- right rim): the bars' unit (health, PET_BAR_GAP, power) its centre level with the portrait's; mid = that centre from the strip's top;
+    -- the row = the portrait or the unit with its rims, the taller; x0 = the portrait's left, so portrait + unit are centred on the bar
+    function P.petGeo()
+        local k = P.HH / 8
+        local unit = P.PET_HH + P.PET_BAR_GAP + P.PET_PH
+        local mid = math.max(P.PET_ICON / 2, 3 * k + unit / 2)
+        local g = { k = k, unit = unit, unitTop = mid - unit / 2, iconTop = mid - P.PET_ICON / 2 }
+        g.row = math.max(g.iconTop + P.PET_ICON, g.unitTop + unit + 8 * k)
+        g.x0 = math.max(0, (P.W - (P.PET_ICON + P.PET_IGAP + P.W * P.PET_W + 7 * k)) / 2)
+        return g
+    end
+    function P.petRow() return P.petGeo().row end
+    -- built with the bars, hidden until a pet is out: the round portrait, the green health, the power (one frame), the happiness face
     function P.petBuild()
         if P.petL or not P.f then return P.petL end
         local L = CreateFrame("Frame", nil, P.f)                    -- beside P.g, never under it (the player's curve would hide it)
@@ -3566,11 +3585,10 @@ do
         -- the portrait: a dark ring under it, both through the game's round portrait mask
         o.ring = L:CreateTexture(nil, "ARTWORK", nil, 1)
         o.ring:SetColorTexture(0, 0, 0, 0.85)
-        o.ring:SetPoint("LEFT", L, "LEFT", 0, 0)                     -- (centred on the bars' row)
-        o.ring:SetSize(u(P.PET_ICON), u(P.PET_ICON))
+        o.ring:SetSize(u(P.PET_ICON), u(P.PET_ICON))                 -- (placed by P.petLayout: centred on the bars' unit)
         o.face = L:CreateTexture(nil, "ARTWORK", nil, 2)
         o.face:SetPoint("CENTER", o.ring, "CENTER", 0, 0)
-        o.face:SetSize(u(P.PET_ICON - 3), u(P.PET_ICON - 3))
+        o.face:SetSize(u(P.PET_ICON - 4), u(P.PET_ICON - 4))         -- prd12: a thin rim (2 spec px)
         for _, t in ipairs({ o.ring, o.face }) do
             pcall(function()
                 local m = L:CreateMaskTexture()
@@ -3579,31 +3597,30 @@ do
                 t:AddMaskTexture(m)
             end)
         end
-        -- the bars, past the portrait (PET_IGAP clears the frame's left rim), PET_W of the player's width (P.petLayout)
+        -- the bars, past the portrait (PET_IGAP clears the frame's left rim), PET_W of the player's width (P.petLayout); prd12: the
+        -- player's own green, the power PET_BAR_GAP under the health
         o.hp = bar(L, P.PET_HH)
-        o.hp:SetPoint("TOPLEFT", L, "TOPLEFT", u(P.PET_ICON + P.PET_IGAP), 0)
-        P.paint(o.hp, P.PET_RGB[1], P.PET_RGB[2], P.PET_RGB[3])
+        P.paint(o.hp, P.HEALTH_RGB[1], P.HEALTH_RGB[2], P.HEALTH_RGB[3])
         o.pw = bar(L, P.PET_PH)
         o.pw:SetPoint("TOPLEFT", o.hp, "BOTTOMLEFT", 0, -u(P.PET_BAR_GAP))
-        -- the PRD frame round each, its own lip over both, the PLAYER's texel scale: the rims one thickness on every bar
+        -- prd12: ONE PRD frame round the pair (the unit: the health's top to the power's bottom, a mouse-less frame), its own lip over
+        -- both, the PLAYER's texel scale: the rim one thickness with the player's bars, no lip between the pet's two
+        o.unit = CreateFrame("Frame", nil, L)
+        o.unit:EnableMouse(false)
+        o.unit:SetPoint("TOPLEFT", o.hp, "TOPLEFT", 0, 0)
+        o.unit:SetSize(u(P.W * P.PET_W), u(P.PET_HH + P.PET_BAR_GAP + P.PET_PH))
         o.lip = CreateFrame("Frame", nil, L)
         o.lip:SetAllPoints(L)
         o.lip:EnableMouse(false)
         o.k = u(P.HH / 8)
-        o.hpFrame, o.pwFrame = P.frameFor(o.hp, L, o.lip, o.k), P.frameFor(o.pw, L, o.lip, o.k)
+        o.frame = P.frameFor(o.unit, L, o.lip, o.k)
         pcall(function() o.lip:SetFrameLevel(o.hp:GetFrameLevel() + 20) end)
-        -- the name, small, past the health bar's right rim (7 texels)
-        o.name = o.lip:CreateFontString(nil, "OVERLAY")
-        o.name:SetFont("Fonts\\FRIZQT__.TTF", u(P.PET_NAME), "OUTLINE")
-        o.name:SetPoint("LEFT", o.hp, "RIGHT", 7 * o.k + u(4), 0)
-        pcall(function() o.name:SetJustifyH("LEFT") end)
-        pcall(function() o.name:SetWordWrap(false) end)
-        o.name:SetTextColor(1, 1, 1)
-        -- a hunter's pet's happiness: the game's own faces (PetFrame's texture), on the portrait's corner
+        -- a hunter's pet's happiness: the game's own faces (PetFrame's texture), PET_HAPPY big, past the unit's right rim (7 texels),
+        -- level with the bars (prd12: never over the portrait)
         o.happy = o.lip:CreateTexture(nil, "OVERLAY", nil, 3)
         o.happy:SetTexture(P.PET_HAPPY_TEX)
-        o.happy:SetSize(u(12), u(12))
-        o.happy:SetPoint("BOTTOMRIGHT", o.ring, "BOTTOMRIGHT", u(4), -u(3))
+        o.happy:SetSize(u(P.PET_HAPPY), u(P.PET_HAPPY))
+        o.happy:SetPoint("LEFT", o.unit, "RIGHT", 7 * o.k + u(2), 0)
         o.happy:Hide()
         P.petLayout(0, true)
         return L
@@ -3622,8 +3639,14 @@ do
         local cpx = (P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0
         L:ClearAllPoints()
         L:SetPoint("TOPLEFT", P.f, "TOPLEFT", 0, -u(base + cpx + P.PET_GAP))
-        L:SetSize(u(P.W), u(P.petRow()))
-        o.hp:SetWidth(u(P.W * P.PET_W)); o.pw:SetWidth(u(P.W * P.PET_W))
+        local g = P.petGeo()
+        L:SetSize(u(P.W), u(g.row))
+        -- prd12: portrait + unit centred under the player's bars, the portrait level with the bars' unit
+        o.ring:ClearAllPoints()
+        o.ring:SetPoint("TOPLEFT", L, "TOPLEFT", u(g.x0), -u(g.iconTop))
+        o.hp:ClearAllPoints()
+        o.hp:SetPoint("TOPLEFT", L, "TOPLEFT", u(g.x0 + P.PET_ICON + P.PET_IGAP), -u(g.unitTop))
+        o.hp:SetWidth(u(P.W * P.PET_W)); o.pw:SetWidth(u(P.W * P.PET_W)); o.unit:SetWidth(u(P.W * P.PET_W))
     end
     -- fed at every poll as the player's bars are: the game's values straight to the setters, nothing read back (no lag chunk: its queue
     -- would keep a secret in a table)
@@ -3639,7 +3662,7 @@ do
             P.petLayout(0)
             return
         end
-        P.petLayout(((P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0) + P.PET_GAP + P.petRow())
+        P.petLayout(((P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0) + P.PET_GAP + P.petGeo().row)
         if not L:IsShown() then L:Show() end
         -- the portrait: GetPetIcon's plain file, else the game's own portrait setter (a widget setter: nothing read back)
         local okI, ic = pcall(GetPetIcon)
@@ -3649,20 +3672,16 @@ do
         elseif o.icon ~= "portrait" and type(SetPortraitTexture) == "function" and pcall(SetPortraitTexture, o.face, "pet") then
             o.icon = "portrait"
         end
-        -- dead (plainly so): greyed, the game's word for it
+        -- dead (plainly so): greyed (prd12: no name, no word)
         local okD, d = pcall(UnitIsDead, "pet")
         local dead = okD and not secret(d) and (d == true or d == 1) or false
         if o.dead ~= dead then
             o.dead = dead
-            local c = dead and P.PET_DEAD_RGB or P.PET_RGB
+            local c = dead and P.PET_DEAD_RGB or P.HEALTH_RGB
             P.paint(o.hp, c[1], c[2], c[3])
             pcall(function() o.face:SetDesaturated(dead) end)
         end
-        local okN, n = pcall(UnitName, "pet")
-        local name = (okN and type(n) == "string" and not secret(n)) and n or ""
-        if dead then name = (type(DEAD) == "string" and not secret(DEAD)) and DEAD or "Dead" end
-        o.name:SetText(name)
-        -- health: gold (the user: "better distinguish the player HUD vs Pet HUD")
+        -- health: the player's green (prd12, the user's pick "Same green as mine"; the strip's own place and frame tell it apart)
         pcall(function() o.hp:SetMinMaxValues(0, UnitHealthMax("pet")) end)
         pcall(function() o.hp:SetValue(UnitHealth("pet")) end)
         -- power by the pet's own type: a hunter's pet FOCUS, a demon MANA
