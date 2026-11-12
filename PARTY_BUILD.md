@@ -176,6 +176,13 @@ action act on the tap's RELEASE (the template's rule); cells with `type = nil` r
 Attributes are set by `init` out of combat only; a change in a fight waits for PLAYER_REGEN_ENABLED (TapPad.lua:312-314). `u` below =
 0 player, 1..4 party1..party4.
 
+**SUPERSEDED for cols 0-9 (PadMap m129 / m130, 2026-11-11):** cols 0-4 are the PICK cells: each cell carries the PARTYPICK pre
+snippet itself (`SecureHandlerWrapScript` on the cell, no `type` at rest): Party mode off = `type="target"`; the picked member = the
+Touch action (`type="target"` or `type="spell"`); another member = the pick moves (`wc-box` + `wc-u` on the pad), nothing cast. The
+first edge of a press decides and stores it (`wc-pdec`), later edges re-use it, the release clears it; one partybox a press
+(`wc-pseq`). m129's hidden `WowCompanionPartyPick1..5` relay buttons are gone (review: a relayed `Click(button)` could miss the
+delegate's action edge). Cols 5-9 are spare. The rows below are the old layout, kept for the history.
+
 | col | name | cell | what it does |
 |---|---|---|---|
 | 0-4 | TGT u | `type="target"`, `unit=U[u]` (static) | Touch = Target: the member becomes the GAME's target (on purpose). Works in fights |

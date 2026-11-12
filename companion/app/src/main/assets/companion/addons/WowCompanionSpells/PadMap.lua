@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m129"               -- bump on every change; m129: PARTY MODE, ONE PICK AND ONE COLUMN (party_design.md and the user's decisions 2026-11-11): wc-box is the only pick and every writer sets wc-box + wc-u together (PARTYFLIP on clamps it and sets wc-u; a state driver re-clamps it after a roster change, in fights too; the bottom's plates pick through the hidden WowCompanionPartyPick1..5 buttons, party cols 0-4); the D-pad's Up / Down move the pick in a straight line, Left / Right do nothing (the user: "this will need to support raids at some point" - kept for raid navigation, never assignable); range from ONE place (UnitInRange, checked plainly true: WC.padMap.party.rng, Hub reads it too); NO HEALTH OR MANA FOR THE BOTTOM: the drawn-fill read (m86), the estimate and the hit / cast counts (m79 / m96 / m98), the party UNIT_HEALTH / UNIT_COMBAT registrations and the combat log (m92 / m95-97 / m112) retired - only the give-back of the Advanced Combat Logging we turned on stays (aclOurs / aclReset1); m128: THE MODEL'S EATING / DRINKING RATE FOLLOWS WHAT Y USES (the user's 2026-11-11 order rule, review): OV.smartItem came from the old fixed food-then-drink pick, so with Water above Food Y drank while the drink aura took the FOOD item's (absent) mana rate and an early-stopped drink gave no mana; now each kind keeps the item Y last armed for it (OV.smartEat), and the why line names the step the walk chose; m127: SMART Y v2 (the user, 2026-11-11): TRACKING NEVER ON Y ("I dont think that I want to have the tracking abilities to be selectable here": OV.isTracking, in Manners' pick and press, the Add list and the add, Party mode's chooser); MANNERS A ROW OF ITS OWN that only buffs OTHER players (never you, a bare /use or tracking; at the pick and at the press); ONE ORDERED LIST ("it shouldnt hardcode food and water as first and second, let people move spell priorities above them": typed rows food / drink / manners / { ids }, walked top to bottom by OV.smartWalk; the v2 saved-variable migration in sbdb); m126: THE HIT RULE LOWERS THE MODEL, NOT A 90 S FLOOR (the user, 2026-11-11: "I am consistently getting a food recommendation long after sitting at full hp for a long long while"; the log: "hp 50% via hit rule ... picked food" for 90 s after every fight with a hit): a fight's end with hits takes about 6 % a hit (at most half) off the model's health once; the model's own regen brings it back, and food stops at the 80 % line (plain facts only: the hit count, the class / Spirit regen); m125: A COOLDOWN THAT HAS RUN OUT IS GONE (the user, 2026-11-10: "about 50% of the time when I press a skill and I know it should show a gcd its still not showing a gcd"): a held GCD / cooldown was dropped only by a SPELL_UPDATE_COOLDOWN saying "not active", which the game often skips at the GCD's end; the stale entry then matched the next GCD (same kind, and in a fight no plain time to compare) and the new one was never sent. An entry past its end now counts as none, so every press starts a fresh one; m124: THE IN-COMBAT SPELLS FOLLOW THE RANK THAT CASTS (the user, 2026-11-10: Serpent Sting "its casting but not triggering a gcd or looking like it cast visually and also it doesn't show range properly which seems to be an issue on my shaman as well"; the Thor's log: the entry kept Rank 1's id 1978 while "/cast Serpent Sting" fires Rank 2, 13549): at login and on every SPELLS_CHANGED each entry's id / icon is set to the spell its NAME casts, so the cooldown, cast and range pictures read the rank that fires; m123: Y opens the target radial in a fight too (the user, 2026-11-10: "pressing y in combat is opening the context menu on the top screen. this should open on the bottom screen and hide on top"): the GROW no longer sends a bare Y to the game's Inspect menu; a fight spell / Smart Y on Y still wins, the Y glyph keeps the GROW rule; m122: the "soft" document retired (the LB picture shows no line over you: the user, "Scrap the soft target bit" ... "remove the L target"); m121: the LB picture's top line - what LB ALONE is bound to (lbmap tap / tapn, read from the game) and what you soft-target now (the "soft" document: soft enemy / friend / interact names, on change); m120: the Y in the layout's own glyph set (Nintendo = the white Gamepad_Rev_Y; the user: "why is the Y yellow when im using the nintendo glyphs?"); the game's X over an NPC trumps the Y also when the game will not say it is the same unit (secret reads count as the same); m119: the inspect glyph is the game's Y on every layout (the user: "the inspect glyph is Y not X"); m118: the target bar wears Hub's OWN prompt right of the bar (the user: "it needs to be to the right with our custom Icon"): Spells only says the letter (WC.tgPrompt), no glyph of ours on the bar; m117: the Y glyph over the nameplate again AND a smaller one beside the target bar's name (the user: "the glyphs still need to appear over the name plates"); the GROW rule alone for Hub's nameplate hiding (WC.tgGrown; "the hide name plate needs to have the same rules as the hide glyph"); m116 is the hunt build's; m115: the Y glyph beside the name on Hub's target bar while the bar shows (the user: "it should have the button glyph"); m112: the combat log (m92 / m95-97) ONLY while Party mode is allowed (WC.partyOk; the user, 2026-11-09: "Only while Party mode is on"); our Advanced Combat Logging given back when it is not (aclOurs; once for 1.0.17 / 1.0.18, aclReset1); m111 is the hunt build's; m110: Party mode's picked unit and the LB map for Hub's own party frames (WC.padMap.party.box / .lb, read only); m108: the several spell radials (m105) taken out of 1.0.18 (bisect test21: with them the loot window's close ran SetPreferredGamepadInteractTarget tainted by this add-on); one radial as in 1.0.17; m107: Manners' PreClick / PostClick are never run from our code (its code ran as ours: the taint log's buff frame / gamepad binding stack blamed on WowCompanionSpells); its armed prompt is only read; m106: the Y glyph over the target is OUR texture with the game's atlas (no Blizzard InputIconTextureFrameTemplate: its code ran tainted and tainted the gamepad UI -> SetPreferredGamepadInteractTarget forbidden; the taint log, 2026-11-08); m105: a command per spell radial (DSSRADIAL2..6, shown while that radial exists; WC.padMapDropCommand); m104: the LB party-target map ("lbmap": which LB + button targets you / party1..4, read from the game's own bindings) for the app's LB view; m103: the game's X (interact) glyph over an NPC target trumps our Y glyph (the user, 2026-11-07); Trail's friendly nameplates now follow a friendly target; m102: the target radial and its Y glyph follow the controller's GROW (the user: "I want it to go away when I /startattack, same rules as the button grow animation"): gone while a fight or an attack is on and not given back by B, back after B; m101: THE TARGET RADIAL (the user, 2026-11-07): out of a fight, a bare Y with a target opens the app's radial (wc-kind "tradial", no game action; Quests q51 reads the target's menu) and the game's own Y glyph shows over the target (its nameplate, else beside the target frame); m100: Party mode EXPERIMENTAL, off by default (Hub hub25 WC.partyOk): Select stays the game's key and Party mode ends (out of combat) while it is not allowed; m99: B in a fight - the first press gives the bars back AND stops the attack (the target kept), the next one clears the target; Smart Y's fight buff only when it was missing at the fight's start, once a fight; m98: each member's live CAST count (cs, UNIT_SPELLCAST_SUCCEEDED) for the app's mana estimate (the user: "The mana bars always show 100%"); m97: the combat log's stop and start a moment APART (in the same instant the game wrote nothing - test12 measured 2.5 min late again), a "clog" tick report every 12 stops; m96: each member's live HIT COUNTS (cw wounds, cc crits, ch heals: UNIT_COMBAT, amounts hidden) for the app's calibrated estimate; the combat log written out every 5 s OUT of a fight (in a fight the game ignores it - measured); m95: in a fight the combat log is stopped and started every 3 s (the game writes it only every ~5 min otherwise; the user picked "Try the restart trick"), its chat lines hidden; m94: m93's snippet comment held the word f-u-n-c-t-i-o-n, which the game's secure checker refuses even in a comment - every A / X / Y / B / D-pad press did nothing (the user, test9); m93: SMART Y IN A FIGHT - with no fight spell on Y (or given back by B), Y casts the top buff of your Smart buff list (wc-smarty-cb, armed out of combat); m92: each party member's GUID (g) for the app's combat-log health; Advanced Combat Logging and the combat log switched on at login (the user's ruling 2026-11-07); m91: the party row's column 36 is a secure /startattack cell (WC.atkCell: Hub's Start attack on hostile target); m90: after a fight with hits taken, food is due (90 s, until eating) - the game's eating rule; m89: a hit with a hidden amount counts as 6 % of the max health (Smart Y food by hits taken); m88: UNIT_COMBAT seen / hidden-amount counts in the why line (uc); m87: Y is routed while Smart Y is on, even with no In-combat spell on Y (Smart Y never heard a bare Y before); m86: health read from the DRAWN bar fill (texture width / bar width) when the value is secret; your own cell from the player frame first; m85: a party member's error no longer drops the party document (reported once, probe partyerr); Manners' prompt always hidden; m84: your own party cell takes a plain reading before the vitals' estimate (hs vit:<src>); m83: party members found by the party count / name too (UnitExists may be secret); m82: the party roster looked at again 2 / 5 / 10 s after a login (tokens come late); m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m130"               -- bump on every change; m130: A PLATE'S TAP DECIDES ONCE A PRESS, ON THE CELL ITSELF (review, 2026-11-11): the PARTYPICK snippet is wrapped on the party row's own cells 0-4 (no WowCompanionPartyPick buttons behind a "click" relay, whose own Target / spell could miss its edge), the first edge of a press decides and the later ones re-use it (wc-pdec), one partybox a press (wc-pseq); m129: PARTY MODE, ONE PICK AND ONE COLUMN (party_design.md and the user's decisions 2026-11-11): wc-box is the only pick and every writer sets wc-box + wc-u together (PARTYFLIP on clamps it and sets wc-u; a state driver re-clamps it after a roster change, in fights too; the bottom's plates pick through the hidden WowCompanionPartyPick1..5 buttons, party cols 0-4); the D-pad's Up / Down move the pick in a straight line, Left / Right do nothing (the user: "this will need to support raids at some point" - kept for raid navigation, never assignable); range from ONE place (UnitInRange, checked plainly true: WC.padMap.party.rng, Hub reads it too); NO HEALTH OR MANA FOR THE BOTTOM: the drawn-fill read (m86), the estimate and the hit / cast counts (m79 / m96 / m98), the party UNIT_HEALTH / UNIT_COMBAT registrations and the combat log (m92 / m95-97 / m112) retired - only the give-back of the Advanced Combat Logging we turned on stays (aclOurs / aclReset1); m128: THE MODEL'S EATING / DRINKING RATE FOLLOWS WHAT Y USES (the user's 2026-11-11 order rule, review): OV.smartItem came from the old fixed food-then-drink pick, so with Water above Food Y drank while the drink aura took the FOOD item's (absent) mana rate and an early-stopped drink gave no mana; now each kind keeps the item Y last armed for it (OV.smartEat), and the why line names the step the walk chose; m127: SMART Y v2 (the user, 2026-11-11): TRACKING NEVER ON Y ("I dont think that I want to have the tracking abilities to be selectable here": OV.isTracking, in Manners' pick and press, the Add list and the add, Party mode's chooser); MANNERS A ROW OF ITS OWN that only buffs OTHER players (never you, a bare /use or tracking; at the pick and at the press); ONE ORDERED LIST ("it shouldnt hardcode food and water as first and second, let people move spell priorities above them": typed rows food / drink / manners / { ids }, walked top to bottom by OV.smartWalk; the v2 saved-variable migration in sbdb); m126: THE HIT RULE LOWERS THE MODEL, NOT A 90 S FLOOR (the user, 2026-11-11: "I am consistently getting a food recommendation long after sitting at full hp for a long long while"; the log: "hp 50% via hit rule ... picked food" for 90 s after every fight with a hit): a fight's end with hits takes about 6 % a hit (at most half) off the model's health once; the model's own regen brings it back, and food stops at the 80 % line (plain facts only: the hit count, the class / Spirit regen); m125: A COOLDOWN THAT HAS RUN OUT IS GONE (the user, 2026-11-10: "about 50% of the time when I press a skill and I know it should show a gcd its still not showing a gcd"): a held GCD / cooldown was dropped only by a SPELL_UPDATE_COOLDOWN saying "not active", which the game often skips at the GCD's end; the stale entry then matched the next GCD (same kind, and in a fight no plain time to compare) and the new one was never sent. An entry past its end now counts as none, so every press starts a fresh one; m124: THE IN-COMBAT SPELLS FOLLOW THE RANK THAT CASTS (the user, 2026-11-10: Serpent Sting "its casting but not triggering a gcd or looking like it cast visually and also it doesn't show range properly which seems to be an issue on my shaman as well"; the Thor's log: the entry kept Rank 1's id 1978 while "/cast Serpent Sting" fires Rank 2, 13549): at login and on every SPELLS_CHANGED each entry's id / icon is set to the spell its NAME casts, so the cooldown, cast and range pictures read the rank that fires; m123: Y opens the target radial in a fight too (the user, 2026-11-10: "pressing y in combat is opening the context menu on the top screen. this should open on the bottom screen and hide on top"): the GROW no longer sends a bare Y to the game's Inspect menu; a fight spell / Smart Y on Y still wins, the Y glyph keeps the GROW rule; m122: the "soft" document retired (the LB picture shows no line over you: the user, "Scrap the soft target bit" ... "remove the L target"); m121: the LB picture's top line - what LB ALONE is bound to (lbmap tap / tapn, read from the game) and what you soft-target now (the "soft" document: soft enemy / friend / interact names, on change); m120: the Y in the layout's own glyph set (Nintendo = the white Gamepad_Rev_Y; the user: "why is the Y yellow when im using the nintendo glyphs?"); the game's X over an NPC trumps the Y also when the game will not say it is the same unit (secret reads count as the same); m119: the inspect glyph is the game's Y on every layout (the user: "the inspect glyph is Y not X"); m118: the target bar wears Hub's OWN prompt right of the bar (the user: "it needs to be to the right with our custom Icon"): Spells only says the letter (WC.tgPrompt), no glyph of ours on the bar; m117: the Y glyph over the nameplate again AND a smaller one beside the target bar's name (the user: "the glyphs still need to appear over the name plates"); the GROW rule alone for Hub's nameplate hiding (WC.tgGrown; "the hide name plate needs to have the same rules as the hide glyph"); m116 is the hunt build's; m115: the Y glyph beside the name on Hub's target bar while the bar shows (the user: "it should have the button glyph"); m112: the combat log (m92 / m95-97) ONLY while Party mode is allowed (WC.partyOk; the user, 2026-11-09: "Only while Party mode is on"); our Advanced Combat Logging given back when it is not (aclOurs; once for 1.0.17 / 1.0.18, aclReset1); m111 is the hunt build's; m110: Party mode's picked unit and the LB map for Hub's own party frames (WC.padMap.party.box / .lb, read only); m108: the several spell radials (m105) taken out of 1.0.18 (bisect test21: with them the loot window's close ran SetPreferredGamepadInteractTarget tainted by this add-on); one radial as in 1.0.17; m107: Manners' PreClick / PostClick are never run from our code (its code ran as ours: the taint log's buff frame / gamepad binding stack blamed on WowCompanionSpells); its armed prompt is only read; m106: the Y glyph over the target is OUR texture with the game's atlas (no Blizzard InputIconTextureFrameTemplate: its code ran tainted and tainted the gamepad UI -> SetPreferredGamepadInteractTarget forbidden; the taint log, 2026-11-08); m105: a command per spell radial (DSSRADIAL2..6, shown while that radial exists; WC.padMapDropCommand); m104: the LB party-target map ("lbmap": which LB + button targets you / party1..4, read from the game's own bindings) for the app's LB view; m103: the game's X (interact) glyph over an NPC target trumps our Y glyph (the user, 2026-11-07); Trail's friendly nameplates now follow a friendly target; m102: the target radial and its Y glyph follow the controller's GROW (the user: "I want it to go away when I /startattack, same rules as the button grow animation"): gone while a fight or an attack is on and not given back by B, back after B; m101: THE TARGET RADIAL (the user, 2026-11-07): out of a fight, a bare Y with a target opens the app's radial (wc-kind "tradial", no game action; Quests q51 reads the target's menu) and the game's own Y glyph shows over the target (its nameplate, else beside the target frame); m100: Party mode EXPERIMENTAL, off by default (Hub hub25 WC.partyOk): Select stays the game's key and Party mode ends (out of combat) while it is not allowed; m99: B in a fight - the first press gives the bars back AND stops the attack (the target kept), the next one clears the target; Smart Y's fight buff only when it was missing at the fight's start, once a fight; m98: each member's live CAST count (cs, UNIT_SPELLCAST_SUCCEEDED) for the app's mana estimate (the user: "The mana bars always show 100%"); m97: the combat log's stop and start a moment APART (in the same instant the game wrote nothing - test12 measured 2.5 min late again), a "clog" tick report every 12 stops; m96: each member's live HIT COUNTS (cw wounds, cc crits, ch heals: UNIT_COMBAT, amounts hidden) for the app's calibrated estimate; the combat log written out every 5 s OUT of a fight (in a fight the game ignores it - measured); m95: in a fight the combat log is stopped and started every 3 s (the game writes it only every ~5 min otherwise; the user picked "Try the restart trick"), its chat lines hidden; m94: m93's snippet comment held the word f-u-n-c-t-i-o-n, which the game's secure checker refuses even in a comment - every A / X / Y / B / D-pad press did nothing (the user, test9); m93: SMART Y IN A FIGHT - with no fight spell on Y (or given back by B), Y casts the top buff of your Smart buff list (wc-smarty-cb, armed out of combat); m92: each party member's GUID (g) for the app's combat-log health; Advanced Combat Logging and the combat log switched on at login (the user's ruling 2026-11-07); m91: the party row's column 36 is a secure /startattack cell (WC.atkCell: Hub's Start attack on hostile target); m90: after a fight with hits taken, food is due (90 s, until eating) - the game's eating rule; m89: a hit with a hidden amount counts as 6 % of the max health (Smart Y food by hits taken); m88: UNIT_COMBAT seen / hidden-amount counts in the why line (uc); m87: Y is routed while Smart Y is on, even with no In-combat spell on Y (Smart Y never heard a bare Y before); m86: health read from the DRAWN bar fill (texture width / bar width) when the value is secret; your own cell from the player frame first; m85: a party member's error no longer drops the party document (reported once, probe partyerr); Manners' prompt always hidden; m84: your own party cell takes a plain reading before the vitals' estimate (hs vit:<src>); m83: party members found by the party count / name too (UnitExists may be secret); m82: the party roster looked at again 2 / 5 / 10 s after a login (tokens come late); m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -5058,7 +5058,8 @@ local function partyMode()
     PM.KEYNAME = { [1] = "PADDLEFT", [2] = "PADDUP", [3] = "PADDRIGHT", [4] = "PADDDOWN", [5] = "PAD3", [6] = "PAD4", [7] = "PAD2", [8] = "PAD1" }
     PM.PAD, PM.TOGGLE, PM.ON, PM.OFF, PM.MDONE = "WowCompanionPartyPad", "WowCompanionPartyToggle", "WowCompanionPartyOn",
         "WowCompanionPartyOff", "WowCompanionPartyMenuDone"
-    PM.PICK, PM.CNT = "WowCompanionPartyPick", "WowCompanionPartyCount"           -- m129: the plates' picks 1..5, the roster's driver
+    PM.CNT = "WowCompanionPartyCount"                                            -- m129: the roster's driver
+    PM.pickW, PM.pickSent = {}, {}                                                -- m130: the wrapped pick cells, their last sent press
     PM.U = { [0] = "player", "party1", "party2", "party3", "party4" }
     -- THE ONE SWITCH (THE USER'S RULINGS 2026-10-28: Party mode turns OFF when you leave Home - a room, a Home module full screen -
     -- and ANYTHING that takes the controller ends it: the pause wheel, the bar cursor, a game window such as a vendor or loot).
@@ -5252,52 +5253,60 @@ local function partyMode()
     pad:SetAttribute("wc-cnt", n)
     pad:SetAttribute("wc-u", u)
 ]=]
-    -- m129 A PLATE'S TAP (party_design.md C, Touch; party cols 0-4 click WowCompanionPartyPick1..5): Party mode off = Target the member;
-    -- the picked member = the Touch action (Target, or the Touch spell); another member = the pick moves there (wc-box + wc-u on the pad
-    -- through its frame ref, the write PARTYFLIP already makes), nothing cast. Decided here, so a late document never turns a pick into
-    -- a Target or the other way round.
+    -- m129 A PLATE'S TAP (party_design.md C, Touch): Party mode off = Target the member; the picked member = the Touch action (Target,
+    -- or the Touch spell); another member = the pick moves there (wc-box + wc-u on the pad through its frame ref, the write PARTYFLIP
+    -- already makes), nothing cast. Decided here, so a late document never turns a pick into a Target or the other way round.
+    -- m130 (review, 2026-11-11): the snippet sits on the party row's OWN cells 0-4 (a wrap), never behind a "click" relay: a relayed
+    -- Click(button) may come without its down flag, and with ActionButtonUseKeyDown on the delegate's own Target / spell then fired on
+    -- neither edge; the cell's own type target / spell is the path the old cells proved. And ONE DECISION A PRESS: the cell hears its
+    -- down AND its up (and on this device sometimes two downs, pad5), so the first edge decides and keeps it (wc-pdec), the later edges
+    -- re-use it, the up clears it. Without that the down moved the pick and the up saw it picked and cast the Touch action.
     PM.PARTYPICK = [=[
+    if self:GetAttribute("wc-pdec") then
+        if not down then self:SetAttribute("wc-pdec", nil) end
+        return
+    end
     self:SetAttribute("type", nil)
     self:SetAttribute("spell", nil)
     self:SetAttribute("unit", nil)
     local pad = self:GetFrameRef("wc-pad")
     local u = self:GetAttribute("wc-pu")
     if not (pad and u) then return end
+    local k = "none"
     if not pad:GetAttribute("wc-party") then
         self:SetAttribute("type", "target")
         self:SetAttribute("unit", u)
-        self:SetAttribute("wc-pk", "target")
-        return
-    end
-    local n, idx = 1, nil
-    if u == "player" then idx = 1 end
-    for i = 1, 4 do
-        if SecureCmdOptionParse("[@party" .. i .. ",exists] 1") == "1" then
-            n = n + 1
-            if u == "party" .. i then idx = n end
+        k = "target"
+    else
+        local n, idx = 1, nil
+        if u == "player" then idx = 1 end
+        for i = 1, 4 do
+            if SecureCmdOptionParse("[@party" .. i .. ",exists] 1") == "1" then
+                n = n + 1
+                if u == "party" .. i then idx = n end
+            end
+        end
+        if idx and pad:GetAttribute("wc-box") == idx and pad:GetAttribute("wc-u") == u then
+            local t = self:GetAttribute("wc-touch")
+            if t then
+                self:SetAttribute("type", "spell")
+                self:SetAttribute("spell", t)
+            else
+                self:SetAttribute("type", "target")
+            end
+            self:SetAttribute("unit", u)
+            k = "touch"
+        elseif idx then
+            pad:SetAttribute("wc-box", idx)
+            pad:SetAttribute("wc-cnt", n)
+            pad:SetAttribute("wc-u", u)
+            pad:SetAttribute("wc-k", "pick")
+            k = "pick"
         end
     end
-    if not idx then
-        self:SetAttribute("wc-pk", "none")
-        return
-    end
-    if pad:GetAttribute("wc-box") == idx and pad:GetAttribute("wc-u") == u then
-        local t = self:GetAttribute("wc-touch")
-        if t then
-            self:SetAttribute("type", "spell")
-            self:SetAttribute("spell", t)
-        else
-            self:SetAttribute("type", "target")
-        end
-        self:SetAttribute("unit", u)
-        self:SetAttribute("wc-pk", "touch")
-        return
-    end
-    pad:SetAttribute("wc-box", idx)
-    pad:SetAttribute("wc-cnt", n)
-    pad:SetAttribute("wc-u", u)
-    pad:SetAttribute("wc-k", "pick")
-    self:SetAttribute("wc-pk", "pick")
+    self:SetAttribute("wc-pk", k)
+    self:SetAttribute("wc-pseq", (self:GetAttribute("wc-pseq") or 0) + 1)
+    if down then self:SetAttribute("wc-pdec", k) end
 ]=]
     PM.MENUDONE = [=[ local pad = self:GetFrameRef("wc-pad"); if pad then pad:SetAttribute("wc-pmenu", nil) end ]=]
 
@@ -5340,23 +5349,14 @@ local function partyMode()
             f.mdone = CreateFrame("Button", PM.MDONE, UIParent, "SecureActionButtonTemplate")
             f.mdone:RegisterForClicks("AnyDown", "AnyUp")
             SecureHandlerWrapScript(f.mdone, "OnClick", hdr, PM.MENUDONE)
-            -- m129: the plates' pick buttons (party cols 0-4 click them: the secure click relays once per press) and the roster's driver
-            f.pick = {}
-            for i = 0, 4 do
-                local b = CreateFrame("Button", PM.PICK .. (i + 1), UIParent, "SecureActionButtonTemplate")
-                b:RegisterForClicks("AnyDown", "AnyUp")
-                b:SetAttribute("wc-pu", PM.U[i])
-                SecureHandlerWrapScript(b, "OnClick", hdr, PM.PARTYPICK)
-                b:HookScript("PostClick", function(self) pcall(PM.afterPick, self) end)
-                f.pick[i] = b
-            end
+            -- m129: the roster's driver (m130: the plates' picks are the party row's own cells, PM.pickCell)
             f.cnt = CreateFrame("Frame", PM.CNT, UIParent, "SecureHandlerStateTemplate")
             f.cnt:SetAttribute("_onstate-cnt", PM.PARTYCNT)
             PM.f = f
         end)
         PM.makePending = nil
         if ok and PM.f then pcall(PM.link) end
-        if ok and PM.f and PM.row then pcall(PM.buildRow) end              -- m129: the pick cells need the pick buttons
+        if ok and PM.f and PM.row then pcall(PM.buildRow) end              -- m129: the pick cells need the pad's ref
         return ok and PM.f ~= nil
     end
 
@@ -5374,8 +5374,8 @@ local function partyMode()
             h:SetAttribute("wc-rn", #PM.ORDER)
             pcall(SecureHandlerSetFrameRef, h, "wc-pad", f.pad)
         end
-        -- m129: the picks and the roster's driver write the pad through this ref
-        for i = 0, 4 do if f.pick and f.pick[i] then pcall(SecureHandlerSetFrameRef, f.pick[i], "wc-pad", f.pad) end end
+        -- m129: the picks (m130: the party row's cells 0-4) and the roster's driver write the pad through this ref
+        PM.eachPick(PM.pickCell)
         if f.cnt then
             pcall(SecureHandlerSetFrameRef, f.cnt, "wc-pad", f.pad)
             if not PM.cntDriven then PM.cntDriven = pcall(RegisterStateDriver, f.cnt, "cnt", PM.CNT_DRIVER) end
@@ -5444,11 +5444,14 @@ local function partyMode()
         PM.sendBox()
         PM.flipped()
     end
-    -- m129: a plate's tap went through its pick button: the box document says what it did (pick / touch / target; "none" = not in
+    -- m129: a plate's tap went through its pick cell (m130: the cell itself): the box document says what it did (pick / touch / target; "none" = not in
     -- the group now)
+    -- m130: once a press (the snippet counts its decisions in wc-pseq; the press's later edges re-use it and send nothing)
     function PM.afterPick(b)
-        local k = A(b, "wc-pk") or "none"
-        PM.sendBox(k)
+        local q = A(b, "wc-pseq")
+        if q == nil or PM.pickSent[b] == q then return end
+        PM.pickSent[b] = q
+        PM.sendBox(A(b, "wc-pk") or "none")
     end
     -- Party mode turned on or off: the bindings follow (out of combat), the documents say it
     function PM.flipped()
@@ -5647,8 +5650,8 @@ local function partyMode()
         pad:SetAttribute("wc-py", (c.yc and c.yc.k) and c.yc.n or nil)
         local tn = (c.touch and c.touch.k) and c.touch.n or nil
         PM.touchName = tn
-        -- m129: the Touch spell rides the pick buttons (a tap on the picked plate); the row's cells never change with it
-        for i = 0, 4 do if PM.f.pick and PM.f.pick[i] then PM.f.pick[i]:SetAttribute("wc-touch", tn) end end
+        -- m129: the Touch spell rides the pick cells (a tap on the picked plate; m130: the party row's cells 0-4 themselves)
+        PM.eachPick(function(btn) btn:SetAttribute("wc-touch", tn) end)
         if not PM.rowBuilt then PM.buildRow() end
         if PM.smartApply then pcall(PM.smartApply, true) end                -- (its picks ride the partycfg below)
         if PM.sendCfg then pcall(PM.sendCfg, why) end
@@ -5656,15 +5659,34 @@ local function partyMode()
     end
 
     -- ---------------------------------------------------------------- the party row (2.2): 40 secure cells, opts.onPress
-    -- m129: cols 0-4 = the plates' PICK cells (a click on WowCompanionPartyPick1..5, whose snippet picks / touches / targets); the old
-    -- target (0-4) and touch-spell (5-9) cells are gone (5-9 spare now)
+    -- m129: cols 0-4 = the plates' PICK cells (m130: the PARTYPICK snippet wrapped on the cell itself picks / touches / targets); the
+    -- old target (0-4) and touch-spell (5-9) cells are gone (5-9 spare now)
     PM.COL = { pick = 0, on = 10, off = 11, focus = 12, menu = 17, resend = 22, pbsel = 23,
                pbops = { remove = 31, up = 32, down = 33, add = 34 }, mdone = 35, atk = 36 }
+    -- m130: a pick cell (out of combat): wrapped once, its unit, the Touch spell, the pad's ref (again whenever the pad is made)
+    function PM.pickCell(btn, col)
+        if inCombat() or not btn then return end
+        btn:SetAttribute("wc-pu", PM.U[col])
+        btn:SetAttribute("wc-touch", PM.touchName)
+        btn:SetAttribute("wc-pdec", nil)
+        if PM.f and PM.f.pad then pcall(SecureHandlerSetFrameRef, btn, "wc-pad", PM.f.pad) end
+        if PM.pickW[btn] then return end
+        local hdr = routerHeader()
+        if hdr and pcall(SecureHandlerWrapScript, btn, "OnClick", hdr, PM.PARTYPICK) then
+            PM.pickW[btn] = true
+            btn:HookScript("PostClick", function(self) pcall(PM.afterPick, self) end)
+        end
+    end
+    function PM.eachPick(fn)
+        local r = WC.pad and type(WC.pad.rows) == "table" and WC.pad.rows.party or nil
+        if not (r and r.secure and type(r.cells) == "table") then return end
+        for i = 0, 4 do if r.cells[i] then pcall(fn, r.cells[i], i) end end
+    end
     function PM.cellInit(btn, col)
         for _, k in ipairs({ "type", "spell", "unit", "clickbutton" }) do btn:SetAttribute(k, nil) end
         local f = PM.f
         if col <= 4 then
-            if f and f.pick and f.pick[col] then btn:SetAttribute("type", "click"); btn:SetAttribute("clickbutton", f.pick[col]) end
+            PM.pickCell(btn, col)
         elseif col <= 9 then
             return
         elseif (col == PM.COL.on or col == PM.COL.off or col == PM.COL.mdone) and f then

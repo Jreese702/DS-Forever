@@ -1057,7 +1057,7 @@ bad = []
 for col in range(40):
     a = cell(col).a
     t, sp, un, cb = a['type'], a['spell'], a['unit'], a['clickbutton']
-    if col <= 4: want = ("click", None, None, "WowCompanionPartyPick%d" % (col + 1))      # m129: the plates' pick cells
+    if col <= 4: want = (None, None, None, None)                                            # m130: the pick cells (wrapped, no action at rest)
     elif col <= 9: want = (None, None, None, None)                                          # m129: the old touch cells retired
     elif col == 10: want = ("click", None, None, "WowCompanionPartyOn")
     elif col == 11: want = ("click", None, None, "WowCompanionPartyOff")
@@ -1068,12 +1068,17 @@ for col in range(40):
     got = (t, sp, un, cb._name if cb is not None else None)
     if got != want:
         bad.append((col, got, want))
-check(not bad, "every party row cell (m129: PICK 0-4 = clicks on WowCompanionPartyPick1..5, 5-9 spare, ON 10, OFF 11, FOCUS 12-16, MENU DONE 35)", bad[:3])
-pk = lambda i: W6.eval('rawget(_G, "WowCompanionPartyPick%d")' % (i + 1))
-check(all(pk(i).a['wc-pu'] == U[i] and pk(i).a['wc-touch'] == "Lesser Healing Wave" and pk(i).refs['wc-pad'] is not None for i in range(5)),
-      "m129: each pick button: its unit (wc-pu), the Touch spell (wc-touch Lesser Healing Wave), a ref to the pad")
+check(not bad, "every party row cell (m130: PICK 0-4 = wrapped cells, 5-9 spare, ON 10, OFF 11, FOCUS 12-16, MENU DONE 35)", bad[:3])
+pk = lambda i: cell(i)
+check(all(pk(i).a['wc-pu'] == U[i] and pk(i).a['wc-touch'] == "Lesser Healing Wave" and pk(i).refs['wc-pad'] is not None
+          and len(pk(i).wraps['OnClick']) == 1 and len(pk(i).hooks['PostClick']) == 1 for i in range(5)),
+      "m130: each pick CELL: wrapped once (PARTYPICK) with one PostClick, its unit (wc-pu), the Touch spell, a ref to the pad")
+check(W6.eval('rawget(_G, "WowCompanionPartyPick1")') is None, "m130: no WowCompanionPartyPick buttons (no click relay)")
 W6.eval('WowCompanion.padMap.party.put')("touch", False)
-check(all(pk(i).a['wc-touch'] is None for i in range(5)), "Touch = Target: no wc-touch on the pick buttons")
+check(all(pk(i).a['wc-touch'] is None for i in range(5)), "Touch = Target: no wc-touch on the pick cells")
+W6.execute('local r = WowCompanion.pad.rows.party; r.built = false; WowCompanion.pad.buildSecure()')
+check(all(len(pk(i).wraps['OnClick']) == 1 and len(pk(i).hooks['PostClick']) == 1 for i in range(5)),
+      "m130: a rebuilt row never wraps a pick cell twice")
 # m129 A PLATE'S TAP (party cols 0-4): off = Target; on: another member = the pick moves (nothing cast); the picked one = Touch
 W6.eval('party')(W6.table_from([W6.table_from(m) for m in MEMBERS[:2]]))
 W6.execute('fire("GROUP_ROSTER_UPDATE"); advance(1)')
@@ -1108,7 +1113,56 @@ got, pb = tap6(4)
 check(got == [] and W6.eval('PADA("wc-box")') == 1 and pb and pb[-1]['b']['k'] == 'none', "m129: a plate with nobody there (party4): nothing, k none",
       (got, pb and pb[-1]['b']['k']))
 W6.execute('COMBAT = false')
+
+
+# m130 (review 2026-11-11): ONE DECISION A PRESS, whatever edges arrive
+def edges(col, seq):
+    a0 = nact(W6)
+    n0 = nsent(W6)
+    W6.execute(' '.join('doClick(WowCompanion.pad.rows.party.cells[%d], "LeftButton", %s);' % (col, 'true' if d else 'false') for d in seq)
+               + ' NOW = NOW + 0.3')
+    return acts(W6, a0), docs(W6, n0, 'partybox')
+
+
+W6.execute('local P = rawget(_G, "WowCompanionPartyPad"); P.a["wc-box"] = 1; P.a["wc-u"] = "player"')
+for ond in (True, False):
+    W6.execute('ACT_ON_DOWN = %s' % ('true' if ond else 'false'))
+    W6.execute('local P = rawget(_G, "WowCompanionPartyPad"); P.a["wc-box"] = 1; P.a["wc-u"] = "player"')
+    got, pb = edges(2, [True, False])
+    check(got == [] and W6.eval('PADA("wc-box")') == 3 and len(pb) == 1 and pb[0]['b']['k'] == 'pick',
+          "m130: down + up on an unpicked plate (action on %s): ONE pick, nothing cast, one partybox" % ("down" if ond else "up"),
+          (got, W6.eval('PADA("wc-box")'), [d['b']['k'] for d in pb]))
+    # pad5: one tap can arrive as TWO downs and one up; a real mouse tap acts on the up (TapPad's measure), so the two-down case is
+    # the action-on-up one; with the action on the down a cell fires on each down whatever the snippet says (as the old cells did)
+    got, pb = edges(2, [True, True, False] if not ond else [True, False])
+    check(got == [("spell", "Lesser Healing Wave", "party2")] and len(pb) == 1 and pb[0]['b']['k'] == 'touch',
+          "m130: %s on the picked plate: ONE Touch (Lesser Healing Wave), one partybox" % ("two downs + one up" if not ond else "down + up"),
+          (got, [d['b']['k'] for d in pb]))
+    got, pb = edges(0, [False])
+    check(got == ([] if ond else []) and W6.eval('PADA("wc-box")') == 1 and len(pb) == 1 and pb[0]['b']['k'] == 'pick',
+          "m130: an up alone (no down heard): decided on the up, the pick moves (you)", (got, W6.eval('PADA("wc-box")')))
+    got, pb = edges(0, [False])
+    check(got == ([] if ond else [("spell", "Lesser Healing Wave", "player")]) and len(pb) == 1 and pb[0]['b']['k'] == 'touch',
+          "m130: an up alone on the picked plate: Touch (fires only where the action edge is the up)", (got, [d['b']['k'] for d in pb]))
+# a lost up: the next press re-uses that decision once, then the cell is clean again
+W6.execute('ACT_ON_DOWN = true; local P = rawget(_G, "WowCompanionPartyPad"); P.a["wc-box"] = 1; P.a["wc-u"] = "player"')
+got, pb = edges(2, [True])
+check(W6.eval('PADA("wc-box")') == 3 and W6.eval('WowCompanion.pad.rows.party.cells[2].a["wc-pdec"]') == "pick", "m130: a down whose up is lost: the pick, kept")
+got, pb = edges(2, [True, False])
+check(got == [] and pb == [] and W6.eval('WowCompanion.pad.rows.party.cells[2].a["wc-pdec"]') is None,
+      "m130: the next press re-uses it (no Touch, no box) and its up clears it", (got, pb))
+got, pb = edges(2, [True, False])
+check(got == [("spell", "Lesser Healing Wave", "party2")] and len(pb) == 1 and pb[0]['b']['k'] == 'touch', "m130: and the press after that is the Touch again",
+      (got, [d['b']['k'] for d in pb]))
+# Party mode off: Target by a plate tap on either action edge
 W6.execute('local c = WowCompanion.pad.rows.party.cells[11]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false); advance(0.3)')
+for ond in (True, False):
+    W6.execute('ACT_ON_DOWN = %s' % ('true' if ond else 'false'))
+    got, pb = edges(1, [True, False])
+    check(got == [("target", None, "party1")] and len(pb) == 1 and pb[0]['b']['k'] == 'target',
+          "m130: Party mode OFF, action on %s: a plate's tap = ONE Target (the cell's own action)" % ("down" if ond else "up"),
+          (got, [d['b']['k'] for d in pb]))
+W6.execute('ACT_ON_DOWN = true')
 W6.eval('WowCompanion.padMap.party.put')("touch", False)
 W6.eval('party')(W6.table_from([]))
 W6.execute('fire("GROUP_ROSTER_UPDATE"); advance(1)')
@@ -1171,7 +1225,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "lv", "rng"}   # m129: plain facts only (no hp / full / hs / g / hit counts)
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm129' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm130' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1352,7 +1406,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p37"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m129"' in SRC["padmap"],
+check('local CV = "p37"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m130"' in SRC["padmap"],
       "the versions: PadMap m129, PadTabCtl p37, Book b48")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
@@ -1470,10 +1524,10 @@ check(ack and ack[0]['slot'] == 'zrx' and ack[0]['id'] == 331 and ack[0]['ok'] i
 check(ctlDoc(W8)['ppos'] == 5 and ctlDoc(W8)['pset'] == 3, "the pick moved the cursor (p37: X on the ZR layer)", ctlDoc(W8))
 W8.execute('ptab(30)')
 W8.execute('spellTaps(8004)')
-check(int(cfg(W8)['touch']['id']) == 8004 and W8.eval('rawget(_G, "WowCompanionPartyPick2").a["wc-touch"]') == "Lesser Healing Wave",
-      "padtab 30 (touch) + a spell: Touch = Lesser Healing Wave (m129: the pick buttons follow)", cfg(W8)['touch'])
+check(int(cfg(W8)['touch']['id']) == 8004 and W8.eval('WowCompanion.pad.rows.party.cells[1].a["wc-touch"]') == "Lesser Healing Wave",
+      "padtab 30 (touch) + a spell: Touch = Lesser Healing Wave (m130: the pick cells follow)", cfg(W8)['touch'])
 W8.execute('ptab(30); ptab(37)')
-check(cfg(W8)['touch'] is None and W8.eval('rawget(_G, "WowCompanionPartyPick2").a["wc-touch"]') is None, "padtab 30 + 37: Touch = Target", cfg(W8)['touch'])
+check(cfg(W8)['touch'] is None and W8.eval('WowCompanion.pad.rows.party.cells[1].a["wc-touch"]') is None, "padtab 30 + 37: Touch = Target", cfg(W8)['touch'])
 W8.execute('ptab(28); ptab(37)')
 check(cfg(W8)['slots']['x'] is None and W8.eval('WowCompanionSpellsDB.partyBy["Korvash-Realm"].slots.x') is False, "padtab 28 + 37: X = Empty")
 n0 = nsent(W8)
