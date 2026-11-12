@@ -3182,7 +3182,15 @@ end
 -- (P.liftFor -> P.lift, added in P.place); re-read every frame (the roster's rows, the scale, the combo pips), applied only at the fade's
 -- bottom (the bars fade too while it changes: P.hudFade), never a visible jump; out of Party mode no lift. Our own plain frames and alpha
 -- only (allowed in a fight).
-WC.prd = { V = "prd15", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
+-- prd16 (issue #181, a player on the top screen: "Buffs and debuffs wouldn't show on the DS frames in the top screen during combat
+-- for both player and target"): in a fight the game's aura reads are SECRET for add-ons (C_UnitAuras.GetAuraDataByIndex /
+-- ByAuraInstanceID carry SecretWhenUnitAuraRestricted in this client's own API docs), and the row's reader compared those values
+-- (num: v == v before the secret test; the icon cache: o.icon ~= a.icon), which a secret refuses. Now ONE reader for the HUD's row
+-- and Hub's target bar (P.auraRead): every value tested with issecretvalue before any compare or index, a secret table never
+-- indexed, a secret icon handed straight to SetTexture (it takes one), and when the index loop throws or gives only secret tables,
+-- the instance-ID route (GetUnitAuraInstanceIDs, plain in a fight) as Auras.lua reads them. What a fight's reads gave is reported
+-- once per kind (probe "aurasec": the app logs it under WCLOG, so the next issue report carries it).
+WC.prd = { V = "prd16", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
            PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
@@ -3193,7 +3201,8 @@ WC.prd.min, WC.prd.max, WC.prd.step, WC.prd.def = WC.prd.Y_MIN, WC.prd.Y_MAX, WC
 do
     local P = WC.prd
     local function now() return (type(GetTime) == "function" and GetTime()) or 0 end
-    local function num(v) if type(v) == "number" and v == v and not (type(issecretvalue) == "function" and issecretvalue(v)) then return v end end
+    -- prd16 (issue #181): the secret test FIRST - a secret refuses the v == v compare
+    local function num(v) if type(v) == "number" and not (type(issecretvalue) == "function" and issecretvalue(v)) and v == v then return v end end
     local function u(px)
         local C = WC.compass
         if C and type(C.u) == "function" then return C.u(px) end
@@ -3681,49 +3690,150 @@ do
     end
 
     -- ---------------------------------------------------------------- the auras
-    local function auraAt(i, filter)
-        if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-            local ok, a = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, filter)
-            if ok then return a end
-            return nil
+    -- prd16 (issue #181): ONE secret-safe reader (the HUD's row here, Hub's target bar through WC.prd.auraRead). A value is tested with
+    -- issecretvalue before any compare; a table that is itself secret is never indexed (on this client that is a blocked action); a
+    -- nil is told by type(). An entry: { id, icon, sicon (the icon is secret: straight to SetTexture, never compared), dur / exp (plain)
+    -- or secret = true with sdur / sexp (straight to the widget setter), n (plain stacks), kind (a plain dispel type, else "none") }.
+    local function secret(v) return type(issecretvalue) == "function" and issecretvalue(v) or false end
+    local function plainTable(t)
+        if type(t) ~= "table" or secret(t) then return false end
+        if type(canaccesstable) == "function" then
+            local ok, can = pcall(canaccesstable, t)
+            if ok and can == false then return false end
         end
-        local ok, name, ic, count, dtype, dur, exp = pcall(UnitAura, "player", i, filter)
-        if ok and name then return { name = name, icon = ic, applications = count, dispelName = dtype, duration = dur, expirationTime = exp } end
+        return true
+    end
+    local function errText(e)
+        if type(e) == "string" and not secret(e) then return e:gsub("[%c\"\\]", " "):sub(1, 120) end
+        return "?"
+    end
+    local function entryOf(a, id, dg)
+        if type(a) ~= "table" then return nil end
+        if not plainTable(a) then dg.st = dg.st + 1; return nil end
+        local e = { id = id }
+        local aid = a.auraInstanceID
+        if type(aid) == "number" and not secret(aid) then e.id = aid end
+        local ic = a.icon
+        if type(ic) == "nil" then return nil end
+        if secret(ic) then e.sicon = true; dg.sf = dg.sf + 1 end
+        e.icon = ic
+        local dur, exp = a.duration, a.expirationTime
+        if secret(dur) or secret(exp) then
+            e.secret, e.sdur, e.sexp = true, dur, exp; dg.sf = dg.sf + 1
+        else
+            e.dur, e.exp = num(dur), num(exp)
+        end
+        local n = a.applications
+        if secret(n) then dg.sf = dg.sf + 1 else e.n = num(n) end
+        local k = a.dispelName
+        if secret(k) then dg.sf = dg.sf + 1; e.kind = "none"
+        elseif type(k) == "string" and k ~= "" then e.kind = k
+        else e.kind = "none" end
+        return e
+    end
+    -- unit, filter ("HELPFUL", "HARMFUL", "HARMFUL|PLAYER"), max entries (40 at most) -> list, dg { via, seen, st, sf, th, err }
+    function P.auraRead(unit, filter, max)
+        max = math.min(max or 40, 40)
+        local out, dg = {}, { via = "index", seen = 0, st = 0, sf = 0, th = 0 }
+        local CU = type(C_UnitAuras) == "table" and C_UnitAuras or nil
+        for i = 1, 40 do
+            if #out >= max then break end
+            local ok, a
+            if CU and type(CU.GetAuraDataByIndex) == "function" then
+                ok, a = pcall(CU.GetAuraDataByIndex, unit, i, filter)
+            elseif type(UnitAura) == "function" then
+                local okU, name, ic, count, dtype, dur, exp = pcall(UnitAura, unit, i, filter)
+                ok = okU
+                if okU and type(name) ~= "nil" then a = { name = name, icon = ic, applications = count, dispelName = dtype, duration = dur, expirationTime = exp }
+                elseif not okU then a = name end
+            else dg.via = "none"; break end
+            if not ok then dg.th = dg.th + 1; dg.err = dg.err or errText(a); break end
+            if type(a) == "nil" then break end
+            dg.seen = dg.seen + 1
+            local e = entryOf(a, nil, dg)
+            if e then out[#out + 1] = e end
+        end
+        -- the index loop threw or gave only tables we may not read: the instance IDs (plain in a fight) and each aura by its ID
+        if #out == 0 and (dg.th > 0 or dg.st > 0) and CU and type(CU.GetUnitAuraInstanceIDs) == "function"
+                and type(CU.GetAuraDataByAuraInstanceID) == "function" then
+            dg.via = "ids"
+            local ok, ids = pcall(CU.GetUnitAuraInstanceIDs, unit, filter, max)
+            if not ok then dg.th = dg.th + 1; dg.err = dg.err or errText(ids)
+            elseif plainTable(ids) then
+                for k = 1, math.min(#ids, max) do
+                    local id = ids[k]
+                    if type(id) == "number" and not secret(id) then
+                        local okd, a = pcall(CU.GetAuraDataByAuraInstanceID, unit, id)
+                        if not okd then dg.th = dg.th + 1; dg.err = dg.err or errText(a)
+                        else
+                            dg.seen = dg.seen + 1
+                            local e = entryOf(a, id, dg)
+                            if e then out[#out + 1] = e end
+                        end
+                    end
+                end
+            end
+        end
+        return out, dg
+    end
+    -- prd16: what a fight's reads gave, once per kind and unit (at most PROBE_MAX a login): the app logs it (WCLOG), so a report
+    -- shows whether the reads threw, came back secret, or came back empty
+    P.PROBE_MAX, P.probeN, P.probeSeen = 8, 0, {}
+    function P.auraProbe(unit, list, dgs)
+        if P.probeN >= P.PROBE_MAX then return end
+        local okC, c = pcall(InCombatLockdown)
+        local fight = okC and c == true
+        local th, st, sf, seen, via, err = 0, 0, 0, 0, {}, nil
+        for _, dg in ipairs(dgs) do
+            th, st, sf, seen = th + dg.th, st + dg.st, sf + dg.sf, seen + dg.seen
+            via[#via + 1] = dg.via; err = err or dg.err
+        end
+        if not fight and th == 0 and st == 0 and sf == 0 then return end
+        local okS, sec = pcall(function() return C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret() end)
+        local lock = (okS and type(sec) == "boolean" and not secret(sec)) and sec or nil
+        local key = table.concat({ unit, tostring(fight), tostring(lock), table.concat(via, "/"), th > 0 and "t" or "", st > 0 and "s" or "",
+                                   sf > 0 and "f" or "", (seen == 0) and "0" or "n", (#list == 0) and "e" or "l" }, ",")
+        if P.probeSeen[key] then return end
+        P.probeSeen[key] = true
+        P.probeN = P.probeN + 1
+        if WC.send and WC.encode then
+            pcall(function() WC.send(WC.encode({ type = "cap", probe = "aurasec", v = P.V, u = unit, fight = fight, lock = lock,
+                via = table.concat(via, "/"), seen = seen, shown = #list, st = st, sf = sf, th = th, err = err })) end)
+        end
     end
     -- the auras worth showing: { icon, dur, exp, n, kind (debuffs) }
-    local function secret(v) return type(issecretvalue) == "function" and issecretvalue(v) or false end
     function P.auras()
         local b, d, sb, sd = {}, {}, {}, {}
         local ab = { seen = 0, sec = 0, long = 0, nodur = 0, hseen = 0 }
-        for i = 1, 40 do
-            local a = auraAt(i, "HELPFUL")
-            if type(a) ~= "table" then break end
-            ab.seen = ab.seen + 1
-            local dur, exp = num(a.duration), num(a.expirationTime)
-            if secret(a.duration) or secret(a.expirationTime) then
+        local hl, dgh = P.auraRead("player", "HELPFUL", 40)
+        ab.seen = dgh.seen
+        for _, a in ipairs(hl) do
+            local dur, exp = a.dur, a.exp
+            if a.secret then
                 ab.sec = ab.sec + 1                                          -- (c) shown, after the plain ones; no seconds
-                sb[#sb + 1] = { icon = a.icon, sdur = a.duration, sexp = a.expirationTime, secret = true }
+                sb[#sb + 1] = { icon = a.icon, sicon = a.sicon, sdur = a.sdur, sexp = a.sexp, secret = true }
             elseif not (dur and exp and dur > 0) then ab.nodur = ab.nodur + 1
             elseif dur > P.BUFF_DUR then ab.long = ab.long + 1
             elseif #b < P.BUFF_MAX then
-                b[#b + 1] = { icon = a.icon, dur = dur, exp = exp, n = num(a.applications) }
+                b[#b + 1] = { icon = a.icon, sicon = a.sicon, dur = dur, exp = exp, n = a.n }
             end
         end
         for _, a in ipairs(sb) do if #b < P.BUFF_MAX then b[#b + 1] = a end end
-        for i = 1, 40 do
-            local a = auraAt(i, "HARMFUL")
-            if type(a) ~= "table" then break end
-            ab.hseen = ab.hseen + 1
-            local dur, exp = num(a.duration), num(a.expirationTime)
-            local kind = (type(a.dispelName) == "string" and not secret(a.dispelName) and a.dispelName ~= "") and a.dispelName or "none"
-            if secret(a.duration) or secret(a.expirationTime) then
-                sd[#sd + 1] = { icon = a.icon, sdur = a.duration, sexp = a.expirationTime, secret = true, kind = kind }
+        local dl, dgd = P.auraRead("player", "HARMFUL", 40)
+        ab.hseen = dgd.seen
+        for _, a in ipairs(dl) do
+            local dur, exp = a.dur, a.exp
+            if a.secret then
+                sd[#sd + 1] = { icon = a.icon, sicon = a.sicon, sdur = a.sdur, sexp = a.sexp, secret = true, kind = a.kind }
             elseif dur and exp and dur > 0 and #d < P.DEBUFF_MAX then
-                d[#d + 1] = { icon = a.icon, dur = dur, exp = exp, n = num(a.applications), kind = kind }
+                d[#d + 1] = { icon = a.icon, sicon = a.sicon, dur = dur, exp = exp, n = a.n, kind = a.kind }
             end
         end
         for _, a in ipairs(sd) do if #d < P.DEBUFF_MAX then d[#d + 1] = a end end
+        -- prd16: the read's own word (via, secret tables / fields, throws) rides on the probe's ab
+        ab.via, ab.st, ab.sf, ab.th, ab.err = dgh.via .. "/" .. dgd.via, dgh.st + dgd.st, dgh.sf + dgd.sf, dgh.th + dgd.th, dgh.err or dgd.err
         P.ab = ab
+        pcall(P.auraProbe, "player", hl, { dgh, dgd })
         return b, d
     end
     -- the BuffFrame's own way: "2 m" / "8 s"
@@ -3761,12 +3871,15 @@ do
                     o.f:ClearAllPoints()
                     if fromRight then o.f:SetPoint("TOPRIGHT", P.f, "TOPRIGHT", -(i - 1) * step, y)
                     else o.f:SetPoint("TOPLEFT", P.f, "TOPLEFT", (i - 1) * step, y) end
-                    if o.icon ~= a.icon then pcall(function() o.tx:SetTexture(a.icon) end); o.icon = a.icon end
+                    -- prd16: a secret icon straight to SetTexture (it takes one), never compared or kept
+                    if a.sicon then pcall(function() o.tx:SetTexture(a.icon) end); o.icon = nil
+                    elseif o.icon ~= a.icon then pcall(function() o.tx:SetTexture(a.icon) end); o.icon = a.icon end
                     if a.secret then
                         -- (c) the secret times straight to the swipe (a widget setter takes them), no arithmetic, no seconds
-                        if o.sexp ~= a.sexp then
-                            if not pcall(function() o.cd:SetCooldownFromExpirationTime(a.sexp, a.sdur) end) then o.cd:Clear() end
-                            o.sexp, o.exp, o.dur = a.sexp, nil, nil
+                        -- prd16: a secret is never compared: handed again once per re-read of the list (P.auraAt, plain)
+                        if o.sAt ~= P.auraAt or not o.sexp then
+                            if not pcall(function() o.cd:SetCooldownFromExpirationTime(a.sexp, a.sdur) end) then pcall(function() o.cd:Clear() end) end
+                            o.sexp, o.exp, o.dur, o.sAt = true, nil, nil, P.auraAt
                         end
                     elseif o.exp ~= a.exp or o.dur ~= a.dur then
                         pcall(function() o.cd:SetCooldown(a.exp - a.dur, a.dur) end)

@@ -1935,6 +1935,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // pad14: WoW's hardware cursor setting before / after DS Forever's one switch to the software cursor
         if (msg.optString("probe") == "cursorsoft") Log.i("WCCURSOR", "gxCursor before ${msg.optString("before")} set ${msg.optString("set")} after ${msg.optString("after")}")
         if (msg.optString("probe") == "partyerr") Log.w("WCPARTY", "party error (${msg.optString("u")}): ${msg.optString("err")}")
+        // prd16 / uf16 (issue #181): what a fight's aura reads gave the top screen's HUD row / target bar, once per kind (WCLOG: the report
+        // carries it)
+        if (msg.optString("probe") == "aurasec") Log.i("WCLOG", AuraProbe.line(msg))
         // chat29: what the game says its chat style is, and what the switch did (the chat bar on the top screen, 2026-11-04)
         if (msg.optString("probe") == "chatstyle") Log.i("WCCHAT", "chat style: now ${msg.optString("now")} default ${msg.optString("default")} " +
             "set ${msg.optString("set")} after ${msg.optString("now2")} ${msg.optString("why")}")
