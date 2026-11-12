@@ -731,6 +731,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private val artMissing = HashSet<String>()      // no such file: not retried, like Icons.ui
     private val artLoading = HashSet<String>()      // handed to ART_EXEC, not back yet
     private var artWant: ArrayList<String>? = null  // set only while loadArt lists what is missing
+    /** THEMES (2026-11-12): the art's metal is the theme's (UiKit.recolour, decoded on ART_EXEC); a change bumps the generation, so a
+     *  decode started in the old theme is dropped when it comes back, and [themeArt] decodes everything again in the new one */
+    private var artGen = 0
+    private var artTheme: ThemeSpec = Theme.cur
     private val mainHandler = Handler(Looper.getMainLooper())
     private val sq = FrameArt()
     private val ci = FrameArt()
@@ -845,6 +849,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     init {
         CastSettings.init(context)
         buildPaths()
+        // a theme picked in Settings: the toolbar's metal follows (a weak hold: a CastView that is gone is never kept for this)
+        val me = java.lang.ref.WeakReference(this)
+        Theme.onChange { me.get()?.let { v -> v.mainHandler.post { v.themeArt(); v.invalidate() } } }
         pad = PadInput(
             onPad = { lt, rt, lb, rb -> onPad(lt, rt, lb, rb) },
             onStatus = { ok, _ -> padOk = ok; invalidate() },
@@ -1483,14 +1490,22 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         artWant = want
         try { applyArt() } finally { artWant = null }
         if (want.isEmpty()) return
+        decode(want)
+    }
+
+    /** [want] decoded on ART_EXEC in the current theme's metal, then cached (and drawn) on the main thread, unless the theme changed */
+    private fun decode(want: List<String>) {
         artLoading.addAll(want)
+        val gen = artGen
+        val metal = artTheme.metal
         ART_EXEC.execute {
             try {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
             } catch (_: Throwable) {}
             val got = arrayOfNulls<Art>(want.size)
-            for (i in want.indices) got[i] = decodeArt(want[i])
+            for (i in want.indices) got[i] = decodeArt(want[i], metal)
             mainHandler.post {
+                if (gen != artGen) return@post             // decoded in a theme that is gone: [themeArt] asked for them again
                 for (i in want.indices) {
                     artLoading.remove(want[i])
                     val a = got[i]
@@ -1500,6 +1515,20 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 invalidate()
             }
         }
+    }
+
+    /**
+     * A THEME CHANGE (Settings > System > Theme): every piece decoded again in the new metal, OFF the main thread; the old pieces keep
+     * drawing until the new ones are back (no flash of the vector stand-ins). Main thread.
+     */
+    private fun themeArt() {
+        if (artTheme === Theme.cur) return
+        artTheme = Theme.cur
+        artGen++
+        artLoading.clear()
+        val again = artCache.keys.filter { ThemePresets.isCastMetal(it) }
+        if (again.isNotEmpty()) decode(again)
+        loadArt()                                       // and what an old-theme decode was still bringing (dropped when it came back)
     }
 
     private fun loadFrame(f: FrameArt, shape: String) {
@@ -3755,10 +3784,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             Thread(r, "cast-art").apply { isDaemon = true }
         }
 
-        /** one art file, decoded and ink-measured; ART_EXEC only; null when missing or unreadable */
-        private fun decodeArt(name: String): Art? = try {
+        /** one art file, decoded, its metal in the theme's ([metal]; ThemePresets.isCastMetal) and ink-measured; ART_EXEC only; null
+         *  when missing or unreadable */
+        private fun decodeArt(name: String, metal: Metal?): Art? = try {
             val f = ArtHarvest.file("ui/cast/$name.png")
-            if (f.canRead()) BitmapFactory.decodeFile(f.path)?.let { Art(it) } else null
+            if (f.canRead()) BitmapFactory.decodeFile(f.path)?.let { b ->
+                Art(if (metal != null && ThemePresets.isCastMetal(name)) UiKit.recolour(b, metal) else b)
+            } else null
         } catch (t: Throwable) {
             null
         }

@@ -106,7 +106,7 @@ class SettingsTabsTest {
         assertEquals(listOf(B.HOME_SECTION, B.MAP, B.CHAT), SettingsTabs.blocks(T.HOME))   // Home's rows, then its modules' (test40)
         assertEquals("Home module settings", SettingsTabs.HOME_MODULES)
         assertEquals(listOf(B.FRAMES, B.INDOOR), SettingsTabs.blocks(T.PERFORMANCE))
-        assertEquals(listOf(B.LANGUAGE, B.GAME, B.LIGHTER, B.STREAMING, B.COMPANION), SettingsTabs.blocks(T.SYSTEM))   // 2026-11-07: Language first
+        assertEquals(listOf(B.THEME, B.LANGUAGE, B.GAME, B.LIGHTER, B.STREAMING, B.COMPANION), SettingsTabs.blocks(T.SYSTEM))   // 2026-11-12: Theme first, then Language
         assertTrue("Cast bar" in B.GAME_UI.rows && B.GAME_UI.tab == T.TOP)   // the HUD-mode split: the cast bar back on Top screen
         assertTrue("Frame limit" in B.FRAMES.rows)
     }
@@ -114,7 +114,7 @@ class SettingsTabsTest {
     @Test fun settingsViewDrawsItsOwnBlocksOnly() {
         assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.HOME))   // under Home's section (HomeSettingsSection)
         assertTrue(SettingsTabs.viewBlocks(T.TOP).isEmpty())           // the game's elements
-        assertEquals(listOf(B.LANGUAGE, B.GAME, B.LIGHTER, B.STREAMING), SettingsTabs.viewBlocks(T.SYSTEM))   // + the companion's status (GameUiSection)
+        assertEquals(listOf(B.THEME, B.LANGUAGE, B.GAME, B.LIGHTER, B.STREAMING), SettingsTabs.viewBlocks(T.SYSTEM))   // + the companion's status (GameUiSection)
         assertEquals(listOf(B.CONTROLLER, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT),
             SettingsTabs.viewBlocks(T.CONTROLLER))
     }

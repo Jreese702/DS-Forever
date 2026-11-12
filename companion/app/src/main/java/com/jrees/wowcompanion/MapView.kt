@@ -2101,14 +2101,14 @@ class MapView(context: Context) : View(context) {
     }
 
     private val cGold = Color.parseColor("#FFD100")
-    private val cBronze = Color.parseColor("#C8AA6E")
-    private val cDim = Color.parseColor("#8F8168")
-    private val cInk = Color.parseColor("#0E0B08")
-    private val cField = Color.parseColor("#141009")
-    private val cPanel = Color.parseColor("#17120C")
+    private val cBronze: Int get() = Theme.bronze          // the theme's (2026-11-12); Classic #C8AA6E
+    private val cDim: Int get() = Theme.dim          // the theme's (2026-11-12); Classic #8F8168
+    private val cInk: Int get() = Theme.ink          // the theme's (2026-11-12); Classic #0E0B08
+    private val cField: Int get() = Theme.field          // the theme's (2026-11-12); Classic #141009
+    private val cPanel: Int get() = Theme.panel          // the theme's (2026-11-12); Classic #17120C
     private val cPlayer = Color.parseColor("#AAD372")
     private val cFlight = Color.parseColor("#7FC4E8")
-    private val cText = Color.parseColor("#E8DCC0")
+    private val cText: Int get() = Theme.text          // the theme's (2026-11-12); Classic #E8DCC0
 
     private val pLine = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE; strokeWidth = 3f; color = cBronze
@@ -5628,7 +5628,7 @@ class MapView(context: Context) : View(context) {
             QuestTier.DIFFICULT -> Theme.questYellow
             QuestTier.VERY_DIFFICULT -> Theme.questOrange
             QuestTier.IMPOSSIBLE -> Theme.questRed
-            QuestTier.UNKNOWN -> Theme.gold
+            QuestTier.UNKNOWN -> Theme.gameGold
         }
         val objs = ArrayList<Pair<String, Boolean>>()
         e.optJSONArray("obj")?.let { arr ->

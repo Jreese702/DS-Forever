@@ -63,7 +63,7 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
     private var lastN = -1
 
     init {
-        setBackgroundColor(Theme.ink)
+        ThemeLive.bg(this, Tok.INK)
         addView(head, LayoutParams(LayoutParams.MATCH_PARENT, HEAD_H))
         addView(pad, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply { topMargin = HEAD_H })
         addView(kb, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = HEAD_H + 90 })

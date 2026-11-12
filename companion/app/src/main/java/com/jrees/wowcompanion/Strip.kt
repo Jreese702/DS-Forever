@@ -255,7 +255,7 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         c.drawCircle(homeX, homeY, HOME / 2f + RING, pFill)
         pStroke.color = Theme.bronze; pStroke.strokeWidth = 2f
         c.drawCircle(homeX, homeY, HOME / 2f + RING - 1f, pStroke)
-        pFill.color = Color.parseColor("#46361A")
+        pFill.color = UiKit.metal(Color.parseColor("#46361A"))
         c.drawCircle(homeX, homeY, HOME / 2f, pFill)
         pStroke.strokeWidth = 3f
         c.drawCircle(homeX, homeY, HOME / 2f - 1.5f, pStroke)
@@ -563,8 +563,11 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
             // THE GAME'S CONTROLLER RADIAL-MENU PICTURES (LATER 18): one artist, one light; kept in proportion inside the square
             // (they are not square), no item frame. Set 3 stands each on the radial menu's own dark disc in a bronze ring.
             if (iconSet == 3) {
-                pFill.color = if (active) Color.rgb(6, 5, 3) else Color.rgb(16, 12, 9); c.drawCircle(cx, cy, size * 0.52f, pFill)
-                pStroke.color = if (active) Theme.bronzeDim else Color.rgb(150, 122, 72); pStroke.strokeWidth = 2.5f
+                // a theme's disc (the user, 2026-11-12): OLED = black, the ring through the theme's metal (UiKit.metal)
+                pFill.color = if (Theme.classic) (if (active) Color.rgb(6, 5, 3) else Color.rgb(16, 12, 9))
+                    else if (active) Theme.ink else Theme.raised
+                c.drawCircle(cx, cy, size * 0.52f, pFill)
+                pStroke.color = if (active) Theme.bronzeDim else UiKit.metal(Color.rgb(150, 122, 72)); pStroke.strokeWidth = 2.5f
                 c.drawCircle(cx, cy, size * 0.52f, pStroke)
             }
             val fit = size * (if (iconSet == 3) 0.74f else 0.92f)

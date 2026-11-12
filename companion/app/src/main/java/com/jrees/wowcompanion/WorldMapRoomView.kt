@@ -1383,7 +1383,7 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     override fun onDraw(c: Canvas) {
         layout()
-        c.drawColor(Color.rgb(16, 12, 9))
+        c.drawColor(if (Theme.classic) Color.rgb(16, 12, 9) else Theme.field)   // a theme's field (2026-11-12)
         if (!artReady || model.maps.isEmpty()) {
             val p = UiKit.bodyPaint(30f, Theme.text).apply { textAlign = Paint.Align.CENTER }
             c.drawText(Tr.t(artNote ?: "Opening the map"), width / 2f, height / 2f, p)
@@ -1953,7 +1953,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         c.restore()
     }
 
-    private val titleP = TextPaint(UiKit.bodyPaint(24f, Theme.gold))
+    private val titleP by themed { TextPaint(UiKit.bodyPaint(24f, Theme.gold)) }
     private fun titleOf(id: Int): String {
         val q = logEntry(id)
         // test27 (the user: "the Level number in front of the quests text is confusing, trim that from the quests"): no "[level]"; its colour keeps the difficulty

@@ -30,7 +30,7 @@ class SettingsTabBar(context: Context, private val onPick: (SettingsTabs.Tab) ->
     var cursor = false
         set(v) { if (field != v) { field = v; invalidate() } }
 
-    private val pTitle = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 44f; color = Theme.gold; typeface = Typeface.DEFAULT_BOLD }
+    private val pTitle by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 44f; color = Theme.gold; typeface = Typeface.DEFAULT_BOLD } }
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pFade = Paint(Paint.ANTI_ALIAS_FLAG)
     private var tabs: List<RectF> = emptyList()

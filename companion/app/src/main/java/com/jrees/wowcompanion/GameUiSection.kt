@@ -29,7 +29,7 @@ const val SETTINGS_H = 960
  * onMeasure then answers with ALL of it, and the section below is pushed off the screen.
  */
 fun settingsRoom(context: Context, settingsView: View): View = ScrollView(context).apply {
-    setBackgroundColor(Theme.ink)
+    ThemeLive.bg(this, Tok.INK)
     addView(LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         settingsView.minimumHeight = SETTINGS_H
@@ -71,9 +71,9 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         style = Paint.Style.STROKE; strokeWidth = 2f
         strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
     }
-    private val pSection = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 32f; color = Theme.gold }   // a heading, in Morpheus
-    private val pLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 31f; color = Theme.text }
-    private val pSub = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Theme.textDim }
+    private val pSection by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 32f; color = Theme.gold } }   // a heading, in Morpheus
+    private val pLabel by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 31f; color = Theme.text } }
+    private val pSub by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Theme.textDim } }
     private val pMode = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 27f; textAlign = Paint.Align.RIGHT; typeface = Typeface.DEFAULT_BOLD
     }

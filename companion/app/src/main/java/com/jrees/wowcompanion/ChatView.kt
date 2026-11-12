@@ -298,7 +298,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
 
     init {
         orientation = VERTICAL
-        setBackgroundColor(Theme.ink)
+        ThemeLive.bg(this, Tok.INK)
         isFocusable = true
         isFocusableInTouchMode = true
 
@@ -332,10 +332,10 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         // ---- the message bar: just the field (the types went to the top; no Send by the bar: the user, "its redundant")
         composer.orientation = HORIZONTAL
         composer.gravity = Gravity.CENTER_VERTICAL
-        composer.setBackgroundColor(Theme.panel)
+        ThemeLive.bg(composer, Tok.PANEL)
         composer.setPadding(0, 0, 16, HOME_CLEAR)
-        input.setHintTextColor(Theme.dim)
-        input.setTextColor(Theme.text)
+        ThemeLive.hint(input, Tok.DIM)
+        ThemeLive.fg(input, Tok.TEXT)
         input.textSize = 16f
         input.isSingleLine = false
         input.maxLines = 2
@@ -358,7 +358,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
 
         // ---- THE BOARD under the bar: quick chat and the keyboard, two pages of one board (X turns the page)
         boardBox.orientation = VERTICAL
-        boardBox.setBackgroundColor(Theme.ink)
+        ThemeLive.bg(boardBox, Tok.INK)
         boardBox.visibility = View.GONE
         boardBox.setPadding(0, 0, 0, HOME_CLEAR)
         quick.onTile = { t -> pad.focus = Focus.Quick(t); quickTile(t); afterAct() }
@@ -1092,7 +1092,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         if (pad.focus == Focus.Field) postDelayed(blink, 530)
     }
 
-    private val caretPaint = Paint().apply { color = Theme.gold; strokeWidth = 3f }
+    private val caretPaint by themed { Paint().apply { color = Theme.gold; strokeWidth = 3f } }
 
     private fun barMarks(c: Canvas) {
         val f = pad.focus ?: return

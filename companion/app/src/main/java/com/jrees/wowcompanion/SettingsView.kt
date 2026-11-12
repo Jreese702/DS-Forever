@@ -36,10 +36,10 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val pTitle = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 44f; color = Theme.gold; typeface = Typeface.DEFAULT_BOLD
     }
-    private val pSection = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 32f; color = Theme.gold }   // a heading, in Morpheus
-    private val pSubHead = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 26f; color = Theme.gold }   // a block under [SettingsTabs.HOME_MODULES]
-    private val pLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 31f; color = Theme.text }
-    private val pSub = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Theme.textDim }
+    private val pSection by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 32f; color = Theme.gold } }   // a heading, in Morpheus
+    private val pSubHead by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 26f; color = Theme.gold } }   // a block under [SettingsTabs.HOME_MODULES]
+    private val pLabel by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 31f; color = Theme.text } }
+    private val pSub by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Theme.textDim } }
     private val pBtn = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 27f; textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD
     }
@@ -79,6 +79,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segFog = Array(2) { RectF() }
     private val segPsTop = Array(2) { RectF() }          // hub31: Polestar on the top screen, Show / Hide
     private val segLang = Array(Tr.LANGS.size) { RectF() }          // 2026-11-07: Settings > System > Language
+    private val segTheme = Array(Theme.presets.size) { RectF() }    // 2026-11-12: Settings > System > Theme (one tile a preset)
     private val segLight = Array(2) { RectF() }
     private val segLowGfx = Array(2) { RectF() }                      // 2026-11-08: Settings > System > Low-memory graphics                       // 1.0.17: Settings > Performance > Lighter mode
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
@@ -171,6 +172,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val addonOptionSegs = LinkedHashMap<String, Array<RectF>>()
 
     init {
+        Theme.init(context)
+        Theme.onChange { postInvalidate() }
         ThirdPartyAddons.init(context)
         ThirdPartyAddons.onChange { postInvalidate() }
         Settings.onChange { postInvalidate() }
@@ -212,7 +215,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPsTop.toList() + segPq.flatMap { it.toList() } + segDanger.toList() + segFog.toList() + segChat.toList() +
-            segLang.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
+            segTheme.toList() + segLang.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
             segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
@@ -247,7 +250,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segLight,
+                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segLight,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -270,6 +273,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** a block's height from its heading's y to its last row's bottom, laid out exactly as its draw function lays it out */
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.LANGUAGE -> 16f + ROW_H
+        SettingsTabs.Block.THEME -> 16f + themeGridH()
         SettingsTabs.Block.LIGHTER -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
@@ -413,6 +417,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 if (lti >= 0) { Settings.lighterMode = lti == 0; invalidate(); return }
                 val lgx = segLowGfx.indexOfFirst { it.contains(x, y) }
                 if (lgx >= 0) { Settings.lowMemGraphics = lgx == 0; invalidate(); return }
+                val thi = segTheme.indexOfFirst { it.contains(x, y) }
+                if (thi >= 0) { Theme.use(Theme.presets[thi].id); invalidate(); return }
                 val lgi = segLang.indexOfFirst { it.contains(x, y) }
                 if (lgi >= 0) { Tr.setChoice(context, Tr.LANGS[lgi].code); invalidate(); return }
                 if (fi >= 0) { Settings.worldMapFog = if (fi == 0) "all" else "explored"; invalidate(); return }
@@ -463,6 +469,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             y += 16f
             y = when (b) {
                 SettingsTabs.Block.LANGUAGE -> drawLanguage(c, y)
+                SettingsTabs.Block.THEME -> drawTheme(c, y)
                 SettingsTabs.Block.LIGHTER -> drawLighter(c, y)
                 SettingsTabs.Block.GAME -> drawGame(c, y)
                 SettingsTabs.Block.STREAMING -> drawStreaming(c, y)
@@ -511,6 +518,66 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (t in LAYOUT_LABELS) w = maxOf(w, pBtn.measureText(t) + SEG_PAD)
         pBtn.textSize = 27f
         return w
+    }
+
+    // ---- THEME (System; the user, 2026-11-12: "an oled theme, but different color variations for menus like pink and silver or gold
+    // instead of the classic bronze"): one tile a preset, five across, each drawn in its own colours (its ground, its edge, its name in
+    // its accent) so the tile IS the preview; a tap applies it at once, everywhere (Theme.use). The chosen one is the one lit tile.
+    private val themeCols = 5
+    private val themeTileH = 112f
+    private val themeGap = 12f
+    private fun themeGridH(): Float {
+        val rows = (Theme.presets.size + themeCols - 1) / themeCols
+        return rows * themeTileH + (rows - 1) * themeGap
+    }
+    private val pThemeName = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private val pThemeFill = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    private fun drawTheme(c: Canvas, top: Float): Float {
+        val left = 16f; val right = width - 16f
+        val tw = (right - left - (themeCols - 1) * themeGap) / themeCols
+        for ((i, t) in Theme.presets.withIndex()) {
+            val col = i % themeCols; val rw = i / themeCols
+            val r = RectF(left + col * (tw + themeGap), top + rw * (themeTileH + themeGap),
+                left + col * (tw + themeGap) + tw, top + rw * (themeTileH + themeGap) + themeTileH)
+            segTheme[i].set(r)
+            rowHits.add(RectF(r) to "Theme")
+            val chosen = t === Theme.cur
+            // the one in use is the ONE bright tile (review, 2026-11-12: every tile in its full accent hid the chosen one): its focus
+            // light round it, its edge full and heavy, its band in its selected colour, its name in its accent; the others' edges
+            // half-faded and their names in their dim words
+            if (chosen) UiKit.glow(c, RectF(r.left - 10f, r.top - 10f, r.right + 10f, r.bottom + 10f), t.focus, 0.55f)
+            // its ground; the band its rows stand on; its edge
+            pThemeFill.style = Paint.Style.FILL; pThemeFill.color = t.ink
+            c.drawRoundRect(r, 10f, 10f, pThemeFill)
+            pThemeFill.color = if (chosen) t.selected else t.raised
+            c.drawRoundRect(RectF(r.left + 12f, r.bottom - 40f, r.right - 12f, r.bottom - 14f), 6f, 6f, pThemeFill)
+            // three marks: its accent, its edge, its words' colour
+            for ((k, mc) in listOf(t.accent, t.edge, t.text).withIndex()) {
+                pThemeFill.color = mc
+                c.drawCircle(r.left + 30f + k * 24f, r.bottom - 27f, 7f, pThemeFill)
+            }
+            pThemeFill.style = Paint.Style.STROKE
+            if (chosen) {
+                pThemeFill.strokeWidth = 6f; pThemeFill.color = t.focus
+                c.drawRoundRect(RectF(r.left + 3f, r.top + 3f, r.right - 3f, r.bottom - 3f), 10f, 10f, pThemeFill)
+            } else {
+                pThemeFill.strokeWidth = 2f; pThemeFill.color = (t.edge and 0xFFFFFF) or (0x70 shl 24)
+                c.drawRoundRect(RectF(r.left + 1f, r.top + 1f, r.right - 1f, r.bottom - 1f), 10f, 10f, pThemeFill)
+            }
+            pThemeFill.style = Paint.Style.FILL
+            UiKit.asBody(pThemeName)
+            pThemeName.textSize = 25f; pThemeName.color = if (chosen) t.accent else t.textDim
+            c.drawText(Tr.t(fit(pThemeName, t.name, tw - 16f)), r.centerX(), r.top + 44f, pThemeName)
+            if (chosen) {
+                // the game's tick, in the theme's metal (it is the theme in use: UiKit recolours the kit's tick) (the cursor keeps the focus box)
+                val tick = UiKit.tex("check_tick")
+                val tr = RectF(r.right - 46f, r.bottom - 46f, r.right - 10f, r.bottom - 10f)
+                if (tick != null) c.drawBitmap(tick, null, tr, null)
+                else { pThemeFill.color = t.focus; c.drawCircle(tr.centerX(), tr.centerY(), 9f, pThemeFill) }
+            }
+        }
+        return top + themeGridH()
     }
 
     // ---- GAME (System): Reload, the saved login, the problem report

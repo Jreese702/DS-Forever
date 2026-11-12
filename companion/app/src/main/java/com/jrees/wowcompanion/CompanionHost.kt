@@ -55,6 +55,11 @@ interface HostShell {
 class CompanionHost(base: Context, private val shell: HostShell) : ContextWrapper(base) {
 
     private lateinit var content: FrameLayout
+    /** THEMES (the user, 2026-11-12): a theme picked in Settings repaints the whole bottom screen at once (ThemeLive) */
+    private var themeRoot: View? = null
+    private val themeChanged: () -> Unit = {
+        ui.post { themeRoot?.let { r -> ThemeLive.repaint((r.parent as? View) ?: r, Theme.prev, Theme.cur) } }
+    }
     private lateinit var strip: Strip
     /** the status text lives in the Settings room now (user, 2026-09-28); every `status.text = ...` is unchanged */
     private val status = StatusLine
@@ -408,6 +413,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // THE PRIVATE SHARE'S PICTURES (RuntimeArt): copied out once, BEFORE anything loads a picture - the readers remember a miss
         if (RuntimeArt.needed(this)) { unpacking = true; unpackFirst(); return }
         Settings.init(this)
+        Theme.init(this)                     // the saved theme (Settings > System > Theme), before any view copies a colour
         GameUi.init(this)
         PolestarQol.init(this)
         GameInput.onStatus = { s -> ui.post { status.text = s.take(110) } }
@@ -418,8 +424,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Theme.ink)
+            ThemeLive.bg(this, Tok.INK)
         }
+        themeRoot = root
+        Theme.onChange(themeChanged)
         content = FrameLayout(this)
         root.addView(content, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -2677,6 +2685,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     fun onDestroy() {
+        Theme.removeListener(themeChanged)
         ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
         ArtHarvest.offState(iconArtState)
         IndoorSchedulerStep.stop()

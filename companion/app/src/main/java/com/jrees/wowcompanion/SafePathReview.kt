@@ -347,7 +347,7 @@ class SafePathReview(context: Context) : View(context) {
     private val menuHits = ArrayList<RectF>()
 
     override fun onDraw(c: Canvas) {
-        c.drawColor(Color.rgb(16, 12, 9))
+        c.drawColor(if (Theme.classic) Color.rgb(16, 12, 9) else Theme.field)   // a theme's field (2026-11-12)
         if (map == 0) drawList(c) else drawZone(c)
         drawLegend(c)
         val n = note

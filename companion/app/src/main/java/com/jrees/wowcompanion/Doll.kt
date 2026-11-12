@@ -83,7 +83,7 @@ object Doll {
     private val pTint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val pBroken = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
         colorFilter = PorterDuffColorFilter(Color.rgb(255, 70, 70), PorterDuff.Mode.MULTIPLY) }
-    private val pEmpty = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.raised }
+    private val pEmpty by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.raised } }
     private val pCount = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.RIGHT }
 
     /**
