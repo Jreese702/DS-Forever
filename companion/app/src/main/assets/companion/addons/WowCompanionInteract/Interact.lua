@@ -6185,7 +6185,9 @@ function N.routerDoc(doc)
     if not (N.ra and N.ra.btns) then N.lastRouterRoom = false; return end
     local b1 = N.ra.btns[1]
     doc.routerMode = (b1 and TS(function() return b1:GetAttribute("wc-mode") end) == "room") and "room" or nil
-    if doc.routerMode and not doc.combat and not inCombat() and not N.fight and not G.holder and F.leave then
+    -- (review: never while anything holds or waits to hold - an "npc" hold out of combat has no G.holder; a stale LEAVE crossing into
+    -- the next pull would drop that fight's hold)
+    if doc.routerMode and not doc.combat and not inCombat() and not N.fight and not G.holder and not N.holding and not N.pend and F.leave then
         pcall(function() F.leave:SetAttribute("type", nil) end)
         doc.routerLeave = { row = N.ra.row, col = N.ra.col }
     end

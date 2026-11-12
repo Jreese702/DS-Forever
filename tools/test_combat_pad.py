@@ -1201,5 +1201,18 @@ check(s['holder'] is None and s['modes'] == [None] * 8 and s['routerMode'] is No
       "L5 ... PLAYER_REGEN_ENABLED releases it and clears the mode itself (doc.modeFix 0)", s)
 check(clean(W) == {}, "L5 no VIOL / SNIPERR", clean(W))
 
+# L6 (review): out of a fight the document offers the app NO routerLeave while anything holds (an "npc" hold has no G.holder) or waits
+# to hold (N.pend) - a stale LEAVE crossing into the next pull would drop that fight's hold
+for what, setup in (('holding', '__IN.N.holding = true'), ('pend', '__IN.N.pend = { id = "npc", n = 0 }')):
+    W = world()
+    W.execute('advance(1)')
+    force_room(W)
+    W.execute(setup)
+    W.execute('RD = {}; __IN.N.routerDoc(RD)')
+    check(W.eval('RD.routerMode') == 'room' and W.eval('RD.routerLeave') is None,
+          "L6[%s] room mode out of a fight but something holds / waits: routerMode \"room\", no routerLeave" % what,
+          (W.eval('RD.routerMode'), W.eval('RD.routerLeave')))
+    check(clean(W) == {}, "L6[%s] no VIOL / SNIPERR" % what, clean(W))
+
 print('%s (%d pass, %d xfail, %d fail, %d xpass)' % ('ALL PASS' if fails == 0 and xpasses == 0 else 'FAILED', passes, xfails, fails, xpasses))
 sys.exit(1 if (fails or xpasses) else 0)

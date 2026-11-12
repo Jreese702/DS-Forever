@@ -60,7 +60,7 @@ class PadOwnerSync {
     private var outTries = 0
     private var outLastAt = 0L
     private var outStuckSaid = false
-    /** i152's doc.dead: the player is dead or a ghost */
+    /** i152's doc.dead: the player is dead or a ghost (for the log only: it is stale at the moment of death) */
     var dead = false
         private set
 
@@ -118,12 +118,14 @@ class PadOwnerSync {
 
     /**
      * one look: what to tap now, given whether the bottom screen wants the pad; [deathOnly] = its only want is DialogView's DEATH pop-up
-     * (with a dead player that is never an ENTER: the game answers its own pop-up)
+     * (never an ENTER: the game answers its own pop-up; a room mode already on stays)
      */
     fun step(wantsPad: Boolean, nowMs: Long, deathOnly: Boolean = false): Step {
         val m = mode ?: return outOfAFight(nowMs)
         if (gmLock || gmFight) return Step(Act.NONE)
-        @Suppress("NAME_SHADOWING") val wantsPad = wantsPad && !(deathOnly && dead)
+        // the DEATH pop-up alone never asks for an ENTER (the game shows it to a dead player only, so doc.dead - stale at the death: no
+        // document goes out at PLAYER_DEAD - is not asked); room mode already on is kept, never turned into a LEAVE (review, 2026-11-12)
+        if (deathOnly && wantsPad && m != ROOM) return Step(Act.NONE)
         if (wantRoom != wantsPad) { wantRoom = wantsPad; tries = 0; stuckSaid = false; lastTapAt = 0L }
         val goal = if (wantsPad) ROOM else GAME
         if (m == goal) { tries = 0; stuckSaid = false; return Step(Act.NONE) }

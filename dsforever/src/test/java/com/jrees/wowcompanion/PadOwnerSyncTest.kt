@@ -228,8 +228,23 @@ class PadOwnerSyncTest {
         assertEquals(PadOwnerSync.Act.NONE, s.step(wantsPad = true, nowMs = 0, deathOnly = true).act)
         assertEquals(PadOwnerSync.Act.NONE, s.step(true, 1000, deathOnly = true).act)
         assertEquals(PadOwnerSync.Act.ENTER, s.step(true, 2000, deathOnly = false).act)    // a room shown as well: the pad is wanted
-        val alive = PadOwnerSync()
-        alive.note(doc("game"))
-        assertEquals(PadOwnerSync.Act.ENTER, alive.step(true, 0, deathOnly = true).act)    // alive: the pop-up gets the pad as before
+    }
+
+    /** review: the real death order - the last document is the in-combat, alive one (no dead field): still no ENTER */
+    @Test fun noEnterForTheDeathPopUpFromAStaleAliveDocument() {
+        val s = PadOwnerSync()
+        s.note(doc("game"))
+        assertFalse(s.dead)
+        assertEquals(PadOwnerSync.Act.NONE, s.step(wantsPad = true, nowMs = 0, deathOnly = true).act)
+        assertEquals(PadOwnerSync.Act.NONE, s.step(true, 1000, deathOnly = true).act)
+        assertEquals(PadOwnerSync.Act.ENTER, s.step(true, 2000, deathOnly = false).act)    // something else wants it: ENTER as before
+    }
+
+    /** review: room mode already on (a stray ENTER's "app" holder) with only the DEATH pop-up wanting the pad is kept, never a LEAVE */
+    @Test fun theDeathPopUpAloneNeverTurnsRoomModeIntoALeave() {
+        val s = PadOwnerSync()
+        s.note(doc("room", holder = "app").put("dead", true))
+        for (t in 0L..2000L step 500L) assertEquals(PadOwnerSync.Act.NONE, s.step(true, t, deathOnly = true).act)
+        assertEquals(PadOwnerSync.Act.LEAVE, s.step(false, 3000).act)     // nothing wants it any more: LEAVE as before
     }
 }
