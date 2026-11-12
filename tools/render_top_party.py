@@ -11,6 +11,9 @@ colour / atlas-name placeholder boxes in their tint, the HUD art's rim pieces as
 (you + 1 .. 4 members), each without and with a pet, Party mode off and on (the gold ring on a member; extra shapes with the pick on
 you / your pet: the HUD bars' / pet strip's gold box), one member dead and one out of range in the bigger groups, a hostile target.
 
+--width-options renders a full row's bar at three widths side by side (W_BAR 194 today, 1427's 228, 300) for the user's pick:
+top_width_options.png (hub41 review, 2026-11-12: the rows' widths are the user's call, not decided here).
+
 --rev renders that commit's Hub.lua instead (git show REV:...), e.g. --rev 097503d8 --tag 1428 --shapes party5 for the old 1428.
 The geometry half (boot / scene / rects) is shared with tools/test_party_top.py (the width checks); PIL only for the PNGs."""
 import os
@@ -506,7 +509,7 @@ def draw(items, path, title, notes=()):
     img.convert("RGB").save(path)
 
 
-def sheet(paths, out, cols=4):
+def sheet(paths, out, cols=4, crop=None):
     from PIL import Image, ImageDraw, ImageFont
     tw, th = 640, 360
     rows = (len(paths) + cols - 1) // cols
@@ -517,7 +520,8 @@ def sheet(paths, out, cols=4):
     except OSError:
         f = ImageFont.load_default()
     for i, p in enumerate(paths):
-        im = Image.open(p).resize((tw, th))
+        im = Image.open(p)
+        im = (im.crop(crop) if crop else im).resize((tw, th))
         x, y = (i % cols) * tw, (i // cols) * (th + 26)
         s.paste(im, (x, y + 26))
         d.text((x + 6, y + 4), os.path.splitext(os.path.basename(p))[0], font=f, fill=(230, 230, 230))
@@ -532,6 +536,25 @@ def render(rig, sh, path, title):
     return bars
 
 
+WIDTH_LINE = "local w = math.min(PF.W_BAR, PF.COL_W - PF.BAR_X - 30)"
+
+
+def width_options(out, widths=(194, 228, 300), names=("party2", "party3_mode", "party4_pet")):
+    """A full row's bar at each width (a shared row's halves stay W_BAR); one PNG per (width, shape), then one sheet, a column per width."""
+    base = open(HUB, encoding="utf-8").read()
+    assert WIDTH_LINE in base
+    paths = []
+    all_sh = shapes()
+    for nm in names:
+        for w in widths:
+            src = base.replace(WIDTH_LINE, 'local w = (side == "full") and %d or math.min(PF.W_BAR, PF.COL_W - PF.BAR_X - 30)' % w, 1)
+            p = os.path.join(out, "top_wopt_%d_%s.png" % (w, nm))
+            render(Rig(src), all_sh[nm], p, "full row %d px  %s" % (w, nm))
+            paths.append(p)
+    sheet(paths, os.path.join(out, "top_width_options.png"), cols=len(widths), crop=(0, 0, 960, 540))
+    print(os.path.join(out, "top_width_options.png"))
+
+
 def main():
     a = sys.argv[1:]
     out = a[a.index("--out") + 1] if "--out" in a else OUT
@@ -541,6 +564,9 @@ def main():
     src = None
     if rev:
         src = subprocess.run(["git", "-C", ROOT, "show", "%s:%s" % (rev, HUB_REL)], capture_output=True, check=True).stdout.decode("utf-8")
+    if "--width-options" in a:
+        width_options(out)
+        return
     all_sh = shapes()
     names = want or list(all_sh)
     done = []

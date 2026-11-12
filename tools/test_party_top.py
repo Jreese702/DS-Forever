@@ -136,7 +136,7 @@ def main():
         return {i: (f[i].look.row, f[i].look.side) for i in f}
 
     src = open(HUB, encoding="utf-8").read()
-    chk("hub40: the version tag (hub38 the player / pet row, the game's side tab; hub39 int/1429; hub40 the bars one column wide)", 'local HV = "hub40"' in src)
+    chk("hub40: the version tag (hub38 the player / pet row, the game's side tab; hub39 int/1429; hub40 the bars one column wide; hub41 the tab on a K change, pitch 64)", 'local HV = "hub41"' in src)
     chk("hub34: the combat log's switch calls are gone (PadMap m129)", 'WC.clogSync' not in src and 'WC.clogTicker' not in src)
 
     # solo, Party mode off: nothing (no row, no tab)
@@ -317,6 +317,39 @@ def main():
     chk("hub40: after a K change (1080 -> 768): every bar re-sized to the new scale's column (%s -> %s), the heights too" % (w0, w1),
         all(abs(w - col) < 1e-6 for w in w0.values()) and all(abs(w - col * 768 / 1080) < 1e-6 for w in w1.values())
         and all(abs((v["hp"][3] - v["hp"][1]) - PF.HP * 768 / 1080) < 1e-6 for v in b1.values()), (w0, w1))
+    # hub41 (the user, 2026-11-12, the top screen's party renders): the Select tab follows the K change too - its top beside the first
+    # row's bar (PF.Y + NAME_H - 4 at today's K), its width TAB_W * K, its cap slices TAB_W * K * the art's cap ratio
+    t = rig.PF.tab
+    tr = rig.rect(t)
+    k2 = 768 / 1080.0
+    top0 = max(v["frame"][3] for v in b1.values())
+    capw = PF.TAB_W * k2 * 120 * PF.TAB_CAP / 110
+    chk("hub41: after the K change the Select tab moved with the block (top %.2f = the first row's top %.2f - (NAME_H - 4) * K, width %.2f)"
+        % (tr[3], top0, tr[2] - tr[0]),
+        abs(tr[3] - (top0 - (PF.NAME_H - 4) * k2)) < 1e-6 and abs((tr[2] - tr[0]) - PF.TAB_W * k2) < 1e-6
+        and abs(t.base[1].h - capw) < 1e-6 and abs(t.lit[3].h - capw) < 1e-6
+        and abs(t.sel.w - (PF.TAB_W - 2) * k2) < 1e-6, (tr, top0, t.base[1].h, capw))
+    # hub41: Party mode's gold ring never crosses another row's name (it cut "Quill" / "Elowen" at pitch 55), every mode shape, both K
+    for nm, sh in rtp.shapes().items():
+        if not sh["mode"]:
+            continue
+        for uih in (None, 768):
+            rig = rtp.Rig()
+            rig.scene(dict(sh, uih=uih) if uih else sh)
+            hit = []
+            for i in range(1, 5):
+                f = rig.PF.frames[i]
+                if f is None or f.shown is False:
+                    continue
+                a = rig.rect(f.ring.area)
+                for j in range(1, 5):
+                    g = rig.PF.frames[j]
+                    if j == i or g is None or g.shown is False:
+                        continue
+                    n = rig.rect(g.name)
+                    if a[0] < n[2] and n[0] < a[2] and a[1] < n[3] and n[1] < a[3]:
+                        hit.append((i, j))
+            chk("hub41: %s (K %s): no row's ring over another row's name" % (nm, uih or 1080), not hit, hit)
     # the OLD code (1428, hub37) under the same rig: one member alone got the two-column bar - the user's "mile"
     import subprocess
     try:
