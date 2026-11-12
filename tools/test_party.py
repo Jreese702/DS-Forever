@@ -1243,8 +1243,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p44"' in SRC["padtabctl"] and 'local BV = "b49"' in SRC["book"] and 'local PV = "m142"' in SRC["padmap"],
-      "the versions: PadMap m142, PadTabCtl p44, Book b49 (stance-bind, issue #179)")
+check('local CV = "p44"' in SRC["padtabctl"] and 'local BV = "b50"' in SRC["book"] and 'local PV = "m142"' in SRC["padmap"],
+      "the versions: PadMap m142, PadTabCtl p44, Book b50 (b49 stance-bind #179, b50 toolbar D-pad #18/#20)")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl

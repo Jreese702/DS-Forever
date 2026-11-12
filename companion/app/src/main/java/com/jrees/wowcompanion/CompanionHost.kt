@@ -2388,7 +2388,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     }
                 }
             }
-            "spellsack" -> if (current) SpellsModel.parseBind(msg)?.let { spellsOverlay.onBind(it); spellbookView.invalidate(); newSpellBindDone() }
+            "spellsack" -> if (current) {
+                // issues #18 / #20 / #31: every bind answer in the report's log (the add-on's trigger read beside the app's own)
+                if (msg.optString("op") == "bind") {
+                    Log.i("WCHOME", SpellsModel.bindLogLine(msg, spellsOverlay.triggerRead()))
+                }
+                // review of #31's fix: a refusal the box keeps waiting after (dpad bar, reserved, unsure, form-unknown) must not end the
+                // new-spell flow, or the player is sent Home before pressing again; the box's close (bind-cancel / result-closed) and the
+                // 120 s timeout still end it
+                SpellsModel.parseBind(msg)?.let { spellsOverlay.onBind(it); spellbookView.invalidate(); if (SpellsModel.bindFinal(it)) newSpellBindDone() }
+            }
             // the Professions room (professions session): the professions, the open one's recipes, the answers to its taps
             "prof" -> msg.optJSONObject("p")?.let { p ->
                 val was = ProfessionsStore.overview?.open
