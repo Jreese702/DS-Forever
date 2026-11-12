@@ -214,16 +214,22 @@ class DialogView(context: Context) : View(context) {
         if (a != null) for (n in 0 until a.length()) {
             val d = a.optJSONObject(n) ?: continue
             val cells = d.optJSONObject("cells")
+            // a quest starter's prompt (the user, 2026-11-11; Dialogs d27): one more game dialog, in the app's own terse words
+            val qs = QuestStartPrompt.parse(d)
+            if (QuestStartPrompt.isPrompt(str(d, "which")) && qs == null) continue
             val bs = ArrayList<Btn>()
             val ba = d.optJSONArray("buttons")
             if (ba != null) for (m in 0 until ba.length()) {
                 val b = ba.optJSONObject(m) ?: continue
                 val k = b.optInt("k", 0)
                 if (k !in 1..4) continue
-                bs.add(Btn(k, str(b, "label") ?: "", b.optBoolean("on", true), str(b, "key"),
+                val label = str(b, "label") ?: ""
+                bs.add(Btn(k, if (qs != null) QuestStartPrompt.label(k, label) else label, b.optBoolean("on", true), str(b, "key"),
                            cells?.optInt("b$k", -1) ?: -1))
             }
-            out.add(Dlg(d.optInt("i", 0), str(d, "which") ?: "", str(d, "text") ?: "", str(d, "sub"), bs,
+            out.add(Dlg(d.optInt("i", 0), str(d, "which") ?: "",
+                        if (qs != null) Tr.t(QuestStartPrompt.QUESTION) else str(d, "text") ?: "",
+                        if (qs != null) qs.sub else str(d, "sub"), bs,
                         str(d, "extra"), str(d, "extraKey"), cells?.optInt("extra", -1) ?: -1,
                         d.optBoolean("x"), cells?.optInt("x", -1) ?: -1,
                         d.optInt("left", 0), d.optDouble("dur", 0.0).toFloat(), d.optBoolean("bar"),

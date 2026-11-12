@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d26"         -- bump on every change; d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
+local DV = "d27"         -- bump on every change; d27: A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -356,7 +356,180 @@ local function readGuild(f)
     else d.fkey = TS(function() return GetBindingKey("TOGGLEUIFOCUS") end) or TS(function() return GAMEPAD_MENU_LEFT end) end
     return d
 end
+-- ---------------------------------------------------------------- A QUEST STARTER IN THE BAGS (d27)
+-- The user, 2026-11-11: "I dont have a polestar objective because its a quest item in my bag I realized. If I pick up a quest item like
+-- that we should make a prompt asking if we want to start that quest" (the item was [Ripped Missive]). The game marks such an item in
+-- its slot (C_Container.GetContainerItemQuestInfo: a quest id, not active); the bags are looked at when they change (BAG_UPDATE_DELAYED,
+-- a loot line) and the first starter whose quest is neither taken nor done is offered as a dialog OF OURS, which = QUEST_START:
+--   * A = Start: a binding click (the dialogs' own capture, D.padSync) of a SECURE item button of ours, type "item" on that bag and slot,
+--     so the game uses the item in its own code and opens its own quest page (which Interact mirrors as its quest pop-up). Its attributes
+--     are set OUT OF COMBAT only, on our own button and our own touch cell (the idlg row, D.QS.col): no macro, no binding saved, nothing
+--     of the player's touched (the no-trace ruling).
+--   * B = Not now: no more asking for that item this login; it is still in the bags (the Bags room, Polestar's row) to use by hand.
+--   * ONE AT A TIME, NEVER OVER A GAME WINDOW: shown only with no game dialog, no loot roll and no NPC / game window open and no room
+--     holding the controller; a starter looted in a fight waits for PLAYER_REGEN_ENABLED. The rest wait their turn in the bags.
+-- Everything read is a plain value (WC.S / TN / TS: a secret value is never used), and every field lives in D (no new chunk locals).
+D.QS = { i = POOL + 2, col = POOL * CELLS + 9, which = "QUEST_START", use = "WowCompanionQStartUse", no = "WowCompanionQStartNo",
+         bags = 5,          -- the backpack, the four bags and the reagent bag (0 .. 5)
+         -- the game windows a prompt never covers (Interact's NPC windows, the trade, the readable page)
+         busy = { "QuestFrame", "GossipFrame", "MerchantFrame", "ClassTrainerFrame", "PetStableFrame", "MailFrame", "AuctionHouseFrame",
+                  "FlightMapFrame", "TaxiFrame", "BankFrame", "LootFrame", "PetitionFrame", "ItemTextFrame", "TradeFrame" } }
+D.qs = { asked = {}, cur = nil, dirty = true, clickAt = nil }
+
+-- the quest this slot's item starts and whether it is already in the log (the C_Container table, or the older numbered returns)
+function D.qsInfo(bag, slot)
+    local qid, active
+    local qi = S(function() return C_Container.GetContainerItemQuestInfo(bag, slot) end)
+    if type(qi) == "table" and qi ~= WC.ABSENT and qi ~= WC.SECRET and qi ~= WC.THREW then
+        qid = TN(function() return qi.questID end)
+        active = TB(function() return qi.isActive end)
+    elseif type(GetContainerItemQuestInfo) == "function" and type(WC.CALL) == "function" then
+        local ok, _, q, a = WC.CALL(function() return GetContainerItemQuestInfo(bag, slot) end)
+        if ok then qid, active = TN(function() return q end), TB(function() return a end) end
+    end
+    return qid, active
+end
+
+-- the starter in this slot, not yet asked about and its quest neither taken nor done; nil otherwise
+function D.qsAt(bag, slot)
+    local qid, active = D.qsInfo(bag, slot)
+    if not qid or qid <= 0 or active == true then return nil end
+    local info = S(function() return C_Container.GetContainerItemInfo(bag, slot) end)
+    if type(info) ~= "table" or info == WC.ABSENT or info == WC.SECRET or info == WC.THREW then info = nil end
+    local id = (info and TN(function() return info.itemID end)) or TN(function() return C_Container.GetContainerItemID(bag, slot) end)
+    if not id or D.qs.asked[id] then return nil end
+    if TB(function() return C_QuestLog.IsOnQuest(qid) end) == true then return nil end
+    if TB(function() return C_QuestLog.IsQuestFlaggedCompleted(qid) end) == true then return nil end
+    local it = { id = id, bag = bag, slot = slot, quest = qid }
+    it.name = TS(function() return C_Item.GetItemNameByID(id) end)
+    if not it.name and info then
+        local link = TS(function() return info.hyperlink end)
+        it.name = link and link:match("%[(.-)%]") or nil
+    end
+    if it.name == "" then it.name = nil end
+    it.icon = (info and TN(function() return info.iconFileID end)) or TN(function() return C_Item.GetItemIconByID(id) end)
+    local q = info and TN(function() return info.quality end)
+    if q then
+        local c = S(function() return ITEM_QUALITY_COLORS[q] end)
+        if type(c) == "table" and c ~= WC.ABSENT and c ~= WC.SECRET and c ~= WC.THREW then
+            local r, g, b = TN(function() return c.r end), TN(function() return c.g end), TN(function() return c.b end)
+            if r and g and b then it.rgb = { r, g, b } end
+        end
+    end
+    local title = TS(function() return C_QuestLog.GetTitleForQuestID(qid) end)
+    if title and title:find("%S") then it.title = title end
+    return it
+end
+
+-- the bags, in the game's order: the first starter is the one offered (the others wait their turn)
+function D.qsScan()
+    D.qs.dirty = false
+    D.qs.cur = nil
+    for bag = 0, D.QS.bags do
+        local n = TN(function() return C_Container.GetContainerNumSlots(bag) end) or 0
+        for slot = 1, n do
+            local it = D.qsAt(bag, slot)
+            if it then D.qs.cur = it; return end
+        end
+    end
+end
+
+-- our two secure buttons (made out of combat, off screen, never under a finger): Start uses the item, Not now presses nothing
+function D.qsButtons()
+    if _G[D.QS.use] and _G[D.QS.no] then return true end
+    if TB(function() return InCombatLockdown() end) == true then return false end
+    for _, n in ipairs({ D.QS.use, D.QS.no }) do
+        if not _G[n] then
+            pcall(function()
+                local b = CreateFrame("Button", n, UIParent, "SecureActionButtonTemplate")
+                pcall(function() b:SetSize(1, 1); b:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -50, 50); b:EnableMouse(false) end)
+                -- a binding click fires a secure button on the press or the release (ActionButtonUseKeyDown): both registered (d21)
+                pcall(b.RegisterForClicks, b, "AnyDown", "AnyUp")
+                if n == D.QS.use then b:SetAttribute("type", "item") end
+                local what = (n == D.QS.use) and "start" or "later"
+                b:HookScript("OnClick", function(_, _, down) D.qsClicked(what, down) end)
+            end)
+        end
+    end
+    return _G[D.QS.use] ~= nil and _G[D.QS.no] ~= nil
+end
+
+-- arm (or, with nil, disarm) the item on our button and our touch cell: OUT OF COMBAT ONLY (a secure attribute); false = not armed
+function D.qsAim(c)
+    if TB(function() return InCombatLockdown() end) == true then return false end
+    local want = c and (c.bag .. " " .. c.slot) or nil
+    local ok = true
+    for _, b in ipairs({ _G[D.QS.use] or false, D.qsCell or false }) do
+        if b then
+            local okG, cur = pcall(b.GetAttribute, b, "item")
+            if not okG or cur ~= want then
+                if not pcall(function() b:SetAttribute("type", "item"); b:SetAttribute("item", want) end) then ok = false end
+            end
+        end
+    end
+    return ok
+end
+
+-- may the prompt show now? (one at a time, never over a game window, never in a fight)
+function D.qsReady(list, rolls)
+    if not (D.mode and D.qs.cur) then return false end
+    if #list > 0 or rolls ~= nil then return false end
+    if TB(function() return InCombatLockdown() end) == true then return false end
+    if TB(function() return UnitIsDeadOrGhost("player") end) == true then return false end
+    if now() - (D.qs.clickAt or -1e9) < 2 then return false end        -- the game's quest page is on its way: no next prompt under it
+    for _, n in ipairs(D.QS.busy) do if shown(_G[n]) then return false end end
+    local cap = WC.capture
+    if type(cap) == "table" and type(cap.state) == "function" then
+        local ok, st = pcall(cap.state)
+        if ok and type(st) == "table" and st.holder ~= nil and st.holder ~= "dialogs" then return false end
+    end
+    return D.qsButtons()
+end
+
+function D.qsDialog()
+    local c = D.qs.cur
+    return { i = D.QS.i, which = D.QS.which, text = "Start quest?", sub = c.title,
+             item = { name = c.name, icon = c.icon, rgb = c.rgb, id = c.id },
+             qs = { item = c.id, bag = c.bag, slot = c.slot, quest = c.quest, title = c.title },
+             buttons = { { k = 1, label = "Start", on = true }, { k = 2, label = "Not now", on = true } } }
+end
+
+-- build(): the prompt joins the list when it may show (armed first); otherwise our cells are disarmed (a stray tap uses nothing)
+function D.qsOffer(list, rolls)
+    local q = D.qs
+    if q.cur then
+        local again = D.qsAt(q.cur.bag, q.cur.slot)
+        if not again or again.id ~= q.cur.id then q.dirty = true end          -- moved, used, or its quest taken
+    end
+    if q.dirty then D.qsScan() end
+    if q.cur and D.qsReady(list, rolls) and D.qsAim(q.cur) then
+        list[#list + 1] = D.qsDialog()
+        return true
+    end
+    if now() - (q.clickAt or -1e9) > 1 then D.qsAim(nil) end
+    return false
+end
+
+-- Start or Not now pressed (a binding click: [down] is the edge; a touch cell: nil). Only the edge the game's secure action runs on
+-- counts, so the item is used before the capture lets go of the key.
+function D.qsClicked(what, down)
+    if down ~= nil then
+        local kd = TB(function() return GetCVarBool("ActionButtonUseKeyDown") end) == true
+        if (down == true) ~= kd then return end
+    end
+    local c = D.qs.cur
+    if not c then return end
+    D.qs.asked[c.id] = what
+    D.qs.cur, D.qs.dirty = nil, true
+    if what == "start" then D.qs.clickAt = now() end
+    WC.send(WC.encode({ type = "dialogack", dv = DV, which = D.QS.which, i = D.QS.i, k = (what == "start") and 1 or 2,
+                        item = c.id, quest = c.quest }))
+    WC.push()
+    if type(C_Timer) == "table" and type(WC.dialogs) == "table" then C_Timer.After(0, WC.dialogs.look) end
+end
+
 local function buttonsOf(d)
+    if d.i == D.QS.i then return _G[D.QS.use], _G[D.QS.no] end
     if d.i == GUILD_I then return guildButton(1), guildButton(2) end
     local f = dialogFrame(d.i)
     return f and buttonOf(f, 1), f and buttonOf(f, 2)
@@ -445,13 +618,17 @@ function D.padSync(list)
         if D.queued == want and okS and type(st) == "table" and st.holder == "dialogs" then
             D.held, D.queued = want, nil             -- a queued take granted (the room or the NPC window let go)
         elseif D.queued ~= want then
-            pcall(function()
-                DLG.a:SetAttribute("clickbutton", b1)
-                DLG.b:SetAttribute("clickbutton", shown(b2) and b2 or nil)
-            end)
+            local qs = target.i == D.QS.i       -- d27: the quest starter's A / B are binding clicks of OUR two secure buttons themselves
+            if not qs then
+                pcall(function()
+                    DLG.a:SetAttribute("clickbutton", b1)
+                    DLG.b:SetAttribute("clickbutton", shown(b2) and b2 or nil)
+                end)
+            end
             -- d22: a guarded dialog (QUIT) binds A to nothing: its button 1 ("Exit now") is never pressed by the controller
-            local spec = { press = function() end, lost = function() D.held, D.queued = nil, nil end, a = (not target.guard) and "WowCompanionDlgA" or nil,
-                           back = shown(b2) and "WowCompanionDlgB" or nil, noFight = true, pass = DLG_PASS }
+            local spec = { press = function() end, lost = function() D.held, D.queued = nil, nil end,
+                           a = qs and D.QS.use or ((not target.guard) and "WowCompanionDlgA" or nil),
+                           back = qs and D.QS.no or (shown(b2) and "WowCompanionDlgB" or nil), noFight = true, pass = DLG_PASS }
             local ok, got, why = pcall(cap.take, "dialogs", spec)
             if ok and got and why == nil then D.held = want
             elseif ok and got then D.queued = want end      -- queued behind a room / an NPC window: as before until then
@@ -467,8 +644,9 @@ end
 
 local function build()
     local list = collect()
-    pcall(D.padSync, list)
     local rolls = readRolls()
+    pcall(D.qsOffer, list, rolls)       -- d27: a quest starter's prompt, when nothing else is up
+    pcall(D.padSync, list)
     hideRolls(rolls ~= nil)
     -- touch = false: this pad has no room for the dialogs' cells; they are answered with the controller
     local doc = { type = "dialogs", dv = DV, mode = D.mode or nil, list = list, touch = D.touch, rolls = rolls,
@@ -491,7 +669,8 @@ local function build()
                 for _, d in ipairs(list) do
                     d.cells = {}
                     for _, b in ipairs(d.buttons) do
-                        d.cells["b" .. b.k] = (d.i == GUILD_I) and (GUILD_COL + b.k - 1) or cellOf(d.i, b.k)
+                        d.cells["b" .. b.k] = (d.i == GUILD_I) and (GUILD_COL + b.k - 1)
+                                              or (d.i == D.QS.i) and (D.QS.col + b.k - 1) or cellOf(d.i, b.k)
                     end
                     if d.extra then d.cells.extra = cellOf(d.i, 5) end
                     if d.x then d.cells.x = cellOf(d.i, 6) end
@@ -643,7 +822,10 @@ local function offerTouch()
         local ok, d = pcall(WC.pad.describe)
         if ok and type(d) == "table" and type(d.ch) == "number" and d.ch >= 6 then D.touch = false; return end
     end
-    local got, row = pcall(WC.pad.secureRow, ROW, POOL * CELLS + 9, function(btn, col)
+    -- d27: two more columns, the quest starter's Start (type "item", armed out of combat by D.qsAim) and Not now (no secure action)
+    local got, row = pcall(WC.pad.secureRow, ROW, POOL * CELLS + 11, function(btn, col)
+        if col == D.QS.col then btn:SetAttribute("type", "item"); D.qsCell = btn; return end
+        if col == D.QS.col + 1 then D.qsNoCell = btn; return end
         if col == TRADE_COL or col == TRADE_COL + 1 then
             btn:SetAttribute("type", "click")       -- d23: aimed at the trade window's own button (again on TRADE_SHOW: tradeAim)
             D.tCell = D.tCell or {}
@@ -683,6 +865,8 @@ local function offerTouch()
             btn:SetAttribute("clickbutton", target)
         end
     end, function(col)
+        if col == D.QS.col then D.qsClicked("start"); return end          -- d27: the item was used (the click already ran)
+        if col == D.QS.col + 1 then D.qsClicked("later"); return end
         if col == CLOSE_COL or col == ENTER_COL then
             if type(WC.interactPoke) == "function" then pcall(WC.interactPoke) end
             return
@@ -809,6 +993,30 @@ do
     end)
     pcall(function() gf:RegisterEvent("GUILD_INVITE_REQUEST") end)
     pcall(function() gf:RegisterEvent("GUILD_INVITE_CANCEL") end)
+end
+
+-- d27: the bags looked at anew when they change, a quest is taken or dropped, a fight ends (a held prompt shows), a game window closes
+-- (a queued prompt shows); the frame is kept in D (no chunk local)
+D.qsFrame = CreateFrame("Frame")
+D.qsFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_REGEN_DISABLED" then look(); return end
+    if event == "GET_ITEM_INFO_RECEIVED" then
+        if D.qs.cur and not D.qs.cur.name then D.qs.dirty = true; look() end
+        return
+    end
+    D.qs.dirty = true
+    -- a loot line comes before the item is in the bag, a closing window before its frame is hidden: a moment later
+    if (event == "CHAT_MSG_LOOT" or event:find("CLOSED$") or event == "QUEST_FINISHED") and type(C_Timer) == "table" then
+        C_Timer.After(0.5, function() D.qs.dirty = true; look() end)
+        return
+    end
+    look()
+end)
+for _, e in ipairs({ "BAG_UPDATE_DELAYED", "CHAT_MSG_LOOT", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "PLAYER_ENTERING_WORLD",
+                     "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "GET_ITEM_INFO_RECEIVED", "QUEST_FINISHED", "GOSSIP_CLOSED",
+                     "MERCHANT_CLOSED", "LOOT_CLOSED", "TRADE_CLOSED", "MAIL_CLOSED", "BANKFRAME_CLOSED", "TRAINER_CLOSED",
+                     "ITEM_TEXT_CLOSED", "TAXIMAP_CLOSED", "PETITION_CLOSED", "AUCTION_HOUSE_CLOSED" }) do
+    pcall(D.qsFrame.RegisterEvent, D.qsFrame, e)
 end
 
 do
