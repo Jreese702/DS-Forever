@@ -87,6 +87,10 @@ object CrashLogs {
                     appendLine("Process: ${e.processName} (pid ${e.pid}), importance ${e.importance}")
                     appendLine("Memory: pss ${e.pss} KB, rss ${e.rss} KB")
                     appendLine("App: ${BuildConfig.VERSION_NAME}; device ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
+                    // the killed run's memory lines, taken now, before this run's own lines push them out of mem.log (the review of
+                    // the 1.0.28 crash cluster: #164 #167 #171 #182 were reported minutes to hours after the restart); before the
+                    // trace, so a 1 MB ANR trace cannot push them past the report's 200 000-character read
+                    append(memoryPart(runCatching { com.jrees.wowcompanion.MemWatch.history() }.getOrDefault(""), e.timestamp))
                     // the tombstone (native crash) or the ANR traces, when Android kept them
                     runCatching { e.traceInputStream }.getOrNull()?.use { s ->
                         appendLine(); appendLine("---------- Trace ----------")
@@ -98,6 +102,15 @@ object CrashLogs {
             }
             exits.maxOfOrNull { it.timestamp }?.let { prefs.edit().putLong(KEY_LAST_EXIT, it).apply() }
         }.onFailure { Timber.w(it, "exit records") }
+    }
+
+    /** the record's last part: mem.log's lines up to [whenMs] (MemWatch.linesUpTo) under [MEMORY_MARK], "" = none; read back by
+     *  ReportUpload (it keeps them apart from the 15 000-character record cut) */
+    const val MEMORY_MARK = com.jrees.wowcompanion.ReportUpload.MEMORY_MARK
+    fun memoryPart(history: String, whenMs: Long): String {
+        val ls = com.jrees.wowcompanion.MemWatch.linesUpTo(history, whenMs)
+        if (ls.isEmpty()) return ""
+        return "\n$MEMORY_MARK\n" + ls.joinToString("\n") + "\n"
     }
 
     /** the exit record's trace as text: a native crash's tombstone protobuf decoded (issue #114: it was written as raw bytes) */

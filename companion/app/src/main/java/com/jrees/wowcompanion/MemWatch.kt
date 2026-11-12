@@ -186,6 +186,25 @@ object MemWatch {
     }
     fun history(): String = runCatching { if (file.isFile) file.readText() else "" }.getOrDefault("")
 
+    /**
+     * THE KILLED RUN'S OWN LINES (review of the 1.0.28 crash cluster: #164 #167 #171 #182 were reported 8 min - 4 h after the restart,
+     * so mem.log's newest lines were the NEW run's, and #182's killed run had left the 1 h file altogether): the last [max] lines of
+     * [history] stamped at or before [whenMs] (an exit record's time; the stamp is to the second, so that second counts). The stamps carry
+     * no year: one more than a day after [whenMs] is last year's (a kill just after New Year). Pure (the tests).
+     */
+    const val BEFORE_LINES = 72
+    fun linesUpTo(history: String, whenMs: Long, max: Int = BEFORE_LINES): List<String> {
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = whenMs }
+        val year = cal.get(java.util.Calendar.YEAR)
+        val fmt = java.text.SimpleDateFormat("yyyy MM-dd HH:mm:ss", java.util.Locale.US).apply { isLenient = false }
+        val limit = whenMs - whenMs % 1000 + 999
+        return history.lineSequence().filter { it.length > 14 }.filter { l ->
+            val t = runCatching { fmt.parse("$year " + l.substring(0, 14))!!.time }.getOrNull() ?: return@filter false
+            val at = if (t > whenMs + 86_400_000L) runCatching { fmt.parse("${year - 1} " + l.substring(0, 14))!!.time }.getOrDefault(t) else t
+            at <= limit
+        }.toList().takeLast(max)
+    }
+
     @Volatile private var lastPssMb = 0L
     internal fun mb(kb: Long) = (kb + 512) / 1024
     internal fun mbB(b: Long) = (b + 512 * 1024) / (1024 * 1024)

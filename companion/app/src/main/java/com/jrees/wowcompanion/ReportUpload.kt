@@ -38,11 +38,17 @@ object ReportUpload {
             .let { it + dxvk }
         // the crash records, ours (DS Forever's) and the game's heads, at the very END: the trims keep the newest end (issue #9)
         // an ANR's main thread first (LogSieve.traceFirst: #153 #177 #191 were cut inside the runtime's stats before it)
-        val crashText = report.files.filter { it.first.startsWith("crashes/") || it.first.startsWith("game-crashes/") }
-            .joinToString("") { (n, t) -> "\n\n===== $n =====\n" + LogSieve.traceFirst(t).take(15_000) }.takeLast(30_000)
-        // the memory watch's newest lines (MemWatch's mem.log) before them: the 1.0.25 / 1.0.26 low-memory reports (#187 #188) carried
-        // 1 - 4 WCMEM lines of the killed run (the logcat ring had dropped the rest); memory.txt was in the saved zip only
-        val mem = memoryTail(file("memory.txt"))
+        // a record's own memory part (CrashLogs.memoryPart: the killed run's mem.log lines) is kept apart from the record's cut
+        val records = report.files.filter { it.first.startsWith("crashes/") || it.first.startsWith("game-crashes/") }
+        val crashText = records
+            .joinToString("") { (n, t) -> "\n\n===== $n =====\n" + LogSieve.traceFirst(splitMemory(t).first).take(15_000) }.takeLast(30_000)
+        // the memory watch's lines before them: the 1.0.25 / 1.0.26 low-memory reports (#187 #188) carried 1 - 4 WCMEM lines of the
+        // killed run (the logcat ring had dropped the rest); memory.txt was in the saved zip only. The newest record's own memory part
+        // when it has one (the review: #164 #167 #171 #182 were made 8 min - 4 h after the restart, so mem.log's newest lines were the
+        // new run's), else mem.log's newest lines
+        val mem = records.firstNotNullOfOrNull { (n, t) -> splitMemory(t).second?.let { n to it } }
+            ?.let { (n, m) -> memoryBlock("before the end, from ${n.substringAfterLast('/')}", m) }
+            ?: memoryTail(file("memory.txt"))
         logs = logs.takeLast(MAX_LOGS - crashText.length - mem.length) + mem + crashText
         val head = file("report.txt").let { if (it.length > MAX_REPORT) it.take(MAX_REPORT) + "\n[cut]" else it }
         val diag = file("diagnostics.txt").let { if (it.length > MAX_DIAG) it.take(MAX_DIAG - 8) + "\n[cut]" else it }
@@ -68,10 +74,26 @@ object ReportUpload {
     /** the memory watch's last [MEM_LINES] lines (6 minutes at 5 s), "" = none; at most [MEM_MAX] characters, the newest kept */
     const val MEM_LINES = 72
     const val MEM_MAX = 30_000
-    fun memoryTail(memory: String): String {
+    fun memoryTail(memory: String): String = memoryBlock("the newest", memory)
+
+    private fun memoryBlock(what: String, memory: String): String {
         val ls = memory.lineSequence().filter { it.isNotBlank() }.toList().takeLast(MEM_LINES)
         if (ls.isEmpty()) return ""
-        return "\n\n===== memory.txt (the newest ${ls.size} lines) =====\n" + ls.joinToString("\n").takeLast(MEM_MAX)
+        return "\n\n===== memory.txt ($what: ${ls.size} lines) =====\n" + ls.joinToString("\n").takeLast(MEM_MAX)
+    }
+
+    /** where a crash record's memory part starts (CrashLogs.memoryPart writes it last) */
+    const val MEMORY_MARK = "---------- Memory before the end (mem.log) ----------"
+
+    /** a record without its memory part, and that part (null = none); the part runs to the next "----------" heading (the trace) */
+    fun splitMemory(record: String): Pair<String, String?> {
+        val i = record.indexOf(MEMORY_MARK)
+        if (i < 0) return record to null
+        val from = i + MEMORY_MARK.length
+        val end = record.indexOf("\n----------", from).let { if (it < 0) record.length else it }
+        val before = record.substring(0, i).trimEnd('\n', ' ')
+        val after = record.substring(end).trimStart('\n')
+        return (before + "\n" + if (after.isEmpty()) "" else "\n" + after) to record.substring(from, end).trim()
     }
 
     /** under the receiver's 200 000 (tools/report-worker LIMITS.maxBytes) */

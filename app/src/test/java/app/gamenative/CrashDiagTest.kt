@@ -80,7 +80,7 @@ class CrashDiagTest {
             memory = mem)
         val logs = JSONObject(ReportUpload.request(r, "Automatic crash report", facts, false, emptyList())).getString("logs")
         assertTrue(logs.contains("at com.jrees.wowcompanion.MinimapTiles.has(MinimapTiles.kt:57)"))  // was beyond the 15 000 cut
-        assertTrue(logs.contains("===== memory.txt (the newest 72 lines) ====="))
+        assertTrue(logs.contains("===== memory.txt (the newest: 72 lines) ====="))
         assertTrue(logs.contains("pss 4200 MB")); assertFalse(logs.contains("pss 4128 MB"))         // the newest 72 of 200
         assertTrue(logs.indexOf("===== crashes/") > logs.indexOf("===== memory.txt"))              // the crash records stay last
         assertEquals("", ReportUpload.memoryTail("\n \n"))
@@ -118,6 +118,58 @@ class CrashDiagTest {
         MemWatch.trimmed(ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
         assertEquals(ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW, got)
         MemWatch.onTrim("test") { 0L }
+    }
+
+    // ---------------------------------------------------------------- the killed run's memory lines (the review: #164 #167 #171 #182)
+
+    private val memStamp = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US)
+    private fun memLine(ms: Long, pss: Int) = "${memStamp.format(java.util.Date(ms))} pss $pss MB (java 1) | game 3406 MB (12), free 2632 MB"
+    /** a kill at [kill]: the killed run's lines every 5 s for 10 minutes up to it (pss 1000 + n), then [after] lines of the new run
+     *  from 4 hours later (pss 5000 + n), mem.log's shape when #182 was reported */
+    private fun memAround(kill: Long, after: Int = 200): String =
+        ((120 downTo 0).map { memLine(kill - it * 5_000L, 1000 + (120 - it)) } +
+            (0 until after).map { memLine(kill + 4 * 3_600_000L + it * 5_000L, 5000 + it) }).joinToString("\n")
+
+    private val kill = java.util.GregorianCalendar(2026, 10, 12, 11, 13, 5).timeInMillis + 400L
+
+    @Test fun theKilledRunsLinesAreTheOnesUpToTheKill() {
+        val ls = MemWatch.linesUpTo(memAround(kill), kill)
+        assertEquals(72, ls.size)
+        assertTrue(ls.last(), ls.last().contains("pss 1120 MB"))                                     // the line in the kill's own second
+        assertTrue(ls.first().contains("pss 1049 MB"))
+        assertTrue(ls.none { it.contains("pss 5") })                                                 // nothing of the new run
+        assertEquals(emptyList<String>(), MemWatch.linesUpTo("", kill))
+        assertEquals(emptyList<String>(), MemWatch.linesUpTo("not a line\n\n", kill))
+        // a kill just after New Year: December's lines are last year's, not eleven months ahead
+        val ny = java.util.GregorianCalendar(2027, 0, 1, 0, 0, 30).timeInMillis
+        val h = listOf(memLine(ny - 40_000L, 1), memLine(ny - 5_000L, 2), memLine(ny + 60_000L, 3)).joinToString("\n")
+        assertEquals(listOf(memLine(ny - 40_000L, 1), memLine(ny - 5_000L, 2)), MemWatch.linesUpTo(h, ny))
+    }
+
+    @Test fun theUploadCarriesTheKilledRunsLinesEvenHoursLater() {
+        val record = "DS Forever: how the last run ended\nWhen: 2026-11-12_11-13-05\nReason: low-memory (3), status 0\n" +
+            "App: 1.0.28\n" + CrashLogs.memoryPart(memAround(kill), kill)
+        assertTrue(record.contains(CrashLogs.MEMORY_MARK))
+        val r = ProblemReport.build(0L, "Automatic crash report", facts, emptyList(), listOf("10-14 12:00:00.000  1  2 I WCHARVEST: x"),
+            listOf("2026-11-12_11-13-05_low-memory.txt" to record), false, emptyList(), memory = memAround(kill))
+        val logs = JSONObject(ReportUpload.request(r, "Automatic crash report", facts, false, emptyList())).getString("logs")
+        assertTrue(logs, logs.contains("===== memory.txt (before the end, from 2026-11-12_11-13-05_low-memory.txt: 72 lines) ====="))
+        assertTrue(logs.contains("pss 1120 MB")); assertFalse(logs.contains("pss 1048 MB"))
+        assertFalse(logs.contains("pss 5199 MB"))                                                    // the new run's tail is not sent
+        assertFalse(logs.contains(CrashLogs.MEMORY_MARK))                                            // taken out of the record's own cut
+        assertTrue(logs.contains("Reason: low-memory (3)"))
+        assertTrue(logs.indexOf("===== crashes/") > logs.indexOf("===== memory.txt"))
+    }
+
+    @Test fun anAnrsMemoryPartLeavesItsTraceAlone() {
+        val a = anr()
+        val mark = a.indexOf("\n---------- Trace ----------")
+        val withMem = a.substring(0, mark).trimEnd('\n') + "\n" + CrashLogs.memoryPart(memAround(kill), kill) + a.substring(mark)
+        val (rest, mem) = ReportUpload.splitMemory(withMem)
+        assertEquals(a, rest)
+        assertEquals(72, mem!!.lines().size)
+        assertEquals(a to null, ReportUpload.splitMemory(a))
+        assertEquals("", CrashLogs.memoryPart("", kill))
     }
 
     // ---------------------------------------------------------------- the tombstone (#114)
