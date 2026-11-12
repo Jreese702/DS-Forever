@@ -3418,7 +3418,7 @@ class MapView(context: Context) : View(context) {
         deriveQdb(m)
         if (m == null) return
         QuestTrace.init(context)
-        val st = PolestarMerge.areaFocus(shownFocus(), psMerged())   // the game's focus, else the default (refreshDefault)
+        val st = shownFocus()   // the game's focus, else the default (refreshDefault); merged: psFocus() = the merged quest
         val r = rect
         val placed = HashSet<Int>()
         // a tracked quest the GAME places no point for on this map but QuestieDB has spawns for here still gets its areas
