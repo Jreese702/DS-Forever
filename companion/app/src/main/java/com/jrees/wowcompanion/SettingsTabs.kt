@@ -44,7 +44,7 @@ object SettingsTabs {
         // m62 SMART BUFFS (the user: "this setting will need its own section in the settings"): Y out of combat, per character; on QOL
         SMART_Y(Tab.QOL, "Smart Y (out of combat, nothing targeted)", listOf("Smart Y")),
         // QOL's quality-of-life groups (GameUiSection's QOL part draws them, the same rows, ids, taps and channels as before)
-        QOL_HUD(Tab.QOL, "HUD", listOf("Resource bar", "HUD height", "HUD width", "HUD scale")),
+        QOL_HUD(Tab.QOL, "HUD", listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale")),
         QOL_NAV(Tab.QOL, "Navigation", listOf("Compass bar", "World markers", "Compass follows the camera", "Avoid dangerous areas")),
         QOL_COMBAT(Tab.QOL, "Combat", listOf("Aggro tint")),
         // Top screen: the game's own windows only

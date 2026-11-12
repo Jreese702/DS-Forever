@@ -3,7 +3,8 @@ game, Trail.lua under the compass tests' stub for the nameplate and personal-bar
 
     python tools/test_hud_switches.py
 
-Checks each switch alone (the player frame with the pet's, the target frame with its target's, the enemy nameplates, the personal bar),
+Checks each switch alone (the player frame with the pet's, the target frame with its target's, the enemy nameplates, the personal bar;
+hub33: the pet's strip, and the game's pet frame as its own group - hidden while our strip is on, else as the player frame),
 absolute taps (a repeat changes nothing), alpha only (never Show / Hide), the bundle's old columns 34 / 35 still moving every part, a
 switch once set winning over the bundle, the hub document's sw (the row, the columns, the state), and the app's defaults applied as
 taps (the frames hidden, the nameplates and the bar on). Needs lupa. Exit code 1 on any failure."""
@@ -89,7 +90,7 @@ def main():
     for c in (SW.PLAYER_HIDE, SW.TARGET_HIDE, SW.NP_ON, SW.PRD_ON):
         sw(None, c)
     d1 = doc()
-    chk("the defaults as taps: the player and pet frames hidden (%s, %s), the target and its target hidden (%s, %s)"
+    chk("the defaults as taps (no Trail.lua here: no pet strip): the player and pet frames hidden (%s, %s), the target and its target hidden (%s, %s)"
         % (a("PlayerFrame"), a("PetFrame"), a("TargetFrame"), a("TargetFrameToT")),
         a("PlayerFrame") == 0 and a("PetFrame") == 0 and a("TargetFrame") == 0 and a("TargetFrameToT") == 0
         and d1.sw.player == "hidden" and d1.sw.target == "hidden")
@@ -97,7 +98,7 @@ def main():
         G.WowCompanion.npWant.np is True and G.WowCompanion.npWant.prd is True and d1.sw.np is True and d1.sw.prd is True)
     # EACH ALONE
     sw(None, SW.PLAYER_SHOW)
-    chk("the player frame alone: shown (%s, pet %s), the target still hidden (%s)" % (a("PlayerFrame"), a("PetFrame"), a("TargetFrame")),
+    chk("the player frame alone, no pet strip: shown (%s, the pet's as the player's %s), the target still hidden (%s)" % (a("PlayerFrame"), a("PetFrame"), a("TargetFrame")),
         a("PlayerFrame") == 1 and a("PetFrame") == 1 and a("TargetFrame") == 0 and a("TargetFrameToT") == 0)
     # hub26: while OUR target bar is on (its default) the game's target frame stays hidden, whatever its own switch says
     sw(None, SW.TARGET_SHOW)
@@ -125,6 +126,33 @@ def main():
         % (dw0.sw.wm, dw1.sw.wm, G.WowCompanion.npWant.wm, dw2.sw.wm),
         dw0.sw.wm is False and dw1.sw.wm is True and dw2.sw.wm is False and dw2.sw.set.wm is True
         and dw2.sw.cols.WM_OFF == 8 and dw2.sw.cols.WM_ON == 9)
+    # hub33 (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs Pet HUD"): the pet's
+    # strip's own switch on "uisw" 32 / 33 (WC.npWant.pet, on unless turned off); the game's pet frame its own group "pet": hidden while
+    # our strip is on (Trail.lua's WC.prd.petOn), else as the player frame
+    dp0 = doc()
+    chk("hub33: the pet's switch: cols 32 / 33, on before any tap (%s), not yet set (%s)" % (dp0.sw.pet, dp0.sw.set.pet),
+        dp0.sw.cols.PET_OFF == 32 and dp0.sw.cols.PET_ON == 33 and dp0.sw.pet is True and dp0.sw.set.pet is None)
+    sw(None, SW.PET_OFF)
+    dp1 = doc()
+    chk("hub33: 32 off (npWant.pet %s, sw.pet %s, set %s)" % (G.WowCompanion.npWant.pet, dp1.sw.pet, dp1.sw.set.pet),
+        G.WowCompanion.npWant.pet is False and dp1.sw.pet is False and dp1.sw.set.pet is True)
+    sw(None, SW.PET_ON)
+    dp2 = doc()
+    chk("hub33: 33 on again (%s, %s)" % (G.WowCompanion.npWant.pet, dp2.sw.pet), G.WowCompanion.npWant.pet is True and dp2.sw.pet is True)
+    L2.execute("PETON = true; WowCompanion.prd = { petOn = function() return PETON end }")
+    sw(None, SW.PLAYER_SHOW)
+    chk("hub33: our pet strip on: the game's pet frame hidden (%s) while the player frame shows (%s)" % (a("PetFrame"), a("PlayerFrame")),
+        a("PetFrame") == 0 and a("PlayerFrame") == 1)
+    G.PETON = False
+    sw(None, SW.PET_OFF)
+    chk("hub33: our pet strip off: the game's pet frame as the player frame again (%s)" % a("PetFrame"), a("PetFrame") == 1)
+    sw(None, SW.PLAYER_HIDE)
+    chk("hub33: ... and hidden with it (%s, %s)" % (a("PlayerFrame"), a("PetFrame")), a("PlayerFrame") == 0 and a("PetFrame") == 0)
+    G.PETON = True
+    sw(None, SW.PRD_ON)
+    chk("hub33: a resource bar tap re-applies the frames (the pet frame by our strip: %s)" % a("PetFrame"), a("PetFrame") == 0)
+    L2.execute("WowCompanion.prd = nil")
+    sw(None, SW.PET_ON); sw(None, SW.NP_ON)
     chk("alpha only: no Show / Hide on any game frame (%d / %d)" % (G.CALLS.show, G.CALLS.hide), G.CALLS.show == 0 and G.CALLS.hide == 0)
     # hub28 / hub30: COMBAT AUTO SHOT'S THIRD CHOICE (the user, 2026-11-10: on by default "incase someone else pulls me into combat", off
     # when "I target something out of combat AND start attack", back on "when an ability is used before that ability fires", never for
@@ -215,7 +243,7 @@ def main():
     G3.ROWS.uisw(None, SW3.UFT_OFF)
     chk("hub32: our bar off again: lifted again (%s)" % G3.ComboFrame.ipa, G3.ComboFrame.ipa is True)
     hubsrc = open(HUB, encoding="utf-8").read()
-    chk("hub32: the version tag", 'local HV = "hub32"' in hubsrc)
+    chk("hub33: the version tag", 'local HV = "hub33"' in hubsrc)
     # TRAIL.LUA's consumers: the nameplate wish and the personal bar follow their own switches, else the bundle
     LT = tc.run()
     T = LT.globals()
@@ -230,6 +258,17 @@ def main():
     r = P.wanted()
     ok = r[0] if isinstance(r, tuple) else r
     chk("the bar's own switch on with no HUD mode: wanted (%s)" % ok, ok is not False)
+    # hub33 / prd11: Trail's own answer Hub reads for the pet frame's group
+    T.WowCompanion.npWant = LT.table_from({"prd": True})
+    on1 = P.petOn()
+    T.WowCompanion.npWant.pet = False
+    on2 = P.petOn()
+    T.WowCompanion.npWant = LT.table_from({"prd": False})
+    on3 = P.petOn()
+    T.WowCompanion.npWant = LT.table_from({"hud": True})
+    on4 = P.petOn()
+    chk("prd11: petOn: bar on -> %s; its own off -> %s; bar off -> %s; HUD mode's bundle -> %s" % (on1, on2, on3, on4),
+        on1 is True and on2 is False and on3 is False and on4 is True)
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
 

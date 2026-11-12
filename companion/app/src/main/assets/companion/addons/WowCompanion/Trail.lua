@@ -1650,7 +1650,7 @@ do
             pdz = C.wm and C.wm.pinDz or nil,
             more = type(WC.routeWp) == "table" and type(WC.routeWp.more) == "table" and #WC.routeWp.more or 0,
             prd = (type(WC.prd) == "table" and WC.prd.f) and { a = math.floor((WC.prd.alpha or 0) * 100 + 0.5), why = WC.prd.why,
-                src = WC.prd.src, y = WC.prd.y, nb = WC.prd.nb, nd = WC.prd.nd, pt = WC.prd.ptok, cbad = WC.prd.curveBad, ab = WC.prd.ab, ex = WC.prd.ex, w = WC.prd.wd, s = WC.prd.sc, sel = WC.prd.sel, prest = WC.prd.prest } or nil, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
+                src = WC.prd.src, y = WC.prd.y, nb = WC.prd.nb, nd = WC.prd.nd, pt = WC.prd.ptok, cbad = WC.prd.curveBad, ab = WC.prd.ab, ex = WC.prd.ex, w = WC.prd.wd, s = WC.prd.sc, sel = WC.prd.sel, prest = WC.prd.prest, pet = WC.prd.pex } or nil, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
             lx = C.cam.lx and math.floor(C.cam.lx * 100 + 0.5) / 100 or nil, ly = C.cam.ly and math.floor(C.cam.ly * 100 + 0.5) / 100 or nil,
             ferr = C.cam.ferr and math.floor(math.deg(C.cam.ferr) + 0.5) or nil,
             gp = C.cam.gp, from = C.cam.from, rx = C.cam.rx and math.floor(C.cam.rx * 100 + 0.5) / 100 or nil,
@@ -2891,7 +2891,22 @@ end
 -- prd10 (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"; 2026-11-11): a Rogue's (and a cat's)
 -- combo points as a thin pip strip right under the power bar (CPH high, CP_GAP below it, inside the aura rows' ROW_GAP), the read fed
 -- straight to the bar like every value here; on the player's power events (UNIT_POWER_FREQUENT too) at the next frame
-WC.prd = { V = "prd10", CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
+-- prd11 PET HEALTH IN THE HUD (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs
+-- Pet HUD"; their pick, mock-up A "Sub-strip under"): under the player's bars (and under the combo pips when they show) a thinner,
+-- shorter strip, PET_W of the bar's width: a round portrait at its left (GetPetIcon's plain fileDataID, else the game's own portrait
+-- setter), the pet's health in GOLD (never the player's green) PET_HH high and its power PET_PH high (FOCUS for a hunter's pet, MANA for a
+-- demon: P.POWER by the pet's own token), the pet's name in small text, the happiness face only while C_PetInfo.GetPetHappiness is plain.
+--   The strip is its own LAYER (P.petL), a child of P.f beside the player's P.g: the player's curve never hides it. Out of combat on the
+--   curve route its alpha is UnitHealthPercent("pet") through the same step curve, with its OWN bad flag (P.petCurveBad: a refused pet
+--   call never turns the player's curve off); without the curve it fades with the HUD (no pet model exists to say "hurt").
+--   Each bar in the PRD frame cut as the player's (P.frameFor with the strip as its host and its own lip) at the player's texel scale:
+--   the rims one thickness on every bar. Fed as the player's: the game's values straight to the setters, nothing read back, no lag chunk.
+--   Presence from plain reads only (UnitExists, else a plain UnitName, else HasPetUI); a plainly dead pet greyed. The pet's health and
+--   power events are heard with the player's; its casts never are (the cost and the spend are the player's). Its own switch (Hub's
+--   "uisw" 32 / 33: WC.npWant.pet, on unless turned off); while it is on, Hub keeps the game's pet frame hidden (it replaces it).
+WC.prd = { V = "prd11", PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 8, PET_GAP = 10, PET_ICON = 20, PET_IGAP = 10, PET_NAME = 11,
+           PET_RGB = { 1, 0.78, 0.1 }, PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
+           PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
            ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.25, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
            alpha = 0, shown = false, why = "off" }
@@ -3029,8 +3044,11 @@ do
     -- prd4: the PRD's own bar BG round a bar, on the layer UNDER every bar (so the lag chunk shows above it): the template's margins
     -- (TOPLEFT -2,3 / BOTTOMRIGHT 6,-7 round its 10 px bar) at the health bar's scale for both, so the edge is one width
     -- prd5: the PRD frame as a channel round the bar b (b's rect is the opening); returns its pieces
-    function P.frameFor(b)
-        local k = u(P.HH / 8)                                   -- UI units per texel (one scale for both bars)
+    -- prd11: the host layer, its lip frame and the texel scale given (the pet's strip: its own layer and lip, the player's scale);
+    -- left out: the player's layer P.g, its lip P.lip, the health opening's 8 texels = HH
+    function P.frameFor(b, host, lip, k)
+        host = host or P.g
+        k = k or u(P.HH / 8)                                    -- UI units per texel (one scale for every bar)
         local info, atlas
         for _, a in ipairs(P.BG) do
             local ok, i = pcall(function() return C_Texture.GetAtlasInfo(a) end)
@@ -3039,7 +3057,7 @@ do
         local pieces = { atlas = atlas }
         if not info then
             -- no atlas coordinates: the whole piece behind the bar (prd4's way), by its measured margins
-            local t = P.g:CreateTexture(nil, "BACKGROUND", nil, -4)
+            local t = host:CreateTexture(nil, "BACKGROUND", nil, -4)
             local ok = false
             for _, a in ipairs(P.BG) do if pcall(function() t:SetAtlas(a) end) then ok = true; pieces.atlas = a; break end end
             if not ok then t:SetColorTexture(0, 0, 0, 0.59) end
@@ -3055,26 +3073,29 @@ do
             t:SetTexCoord(L + (R - L) * c0 / P.BG_W, L + (R - L) * c1 / P.BG_W, Tt + (B - Tt) * r0 / P.BG_H, Tt + (B - Tt) * r1 / P.BG_H)
             return t
         end
-        if not P.lip then
-            P.lip = CreateFrame("Frame", nil, P.g)
-            P.lip:SetAllPoints(P.g)
-            P.lip:EnableMouse(false)
+        if not lip then
+            if not P.lip then
+                P.lip = CreateFrame("Frame", nil, P.g)
+                P.lip:SetAllPoints(P.g)
+                P.lip:EnableMouse(false)
+            end
+            lip = P.lip
         end
         -- the track: the art's dark middle (rows 3..11) under the bar, the full width
-        local tr = sub(P.g, "BACKGROUND", -4, 0, 3, P.BG_W, 11)
+        local tr = sub(host, "BACKGROUND", -4, 0, 3, P.BG_W, 11)
         tr:SetPoint("TOPLEFT", b, "TOPLEFT", -3 * k, 0)
         tr:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 7 * k, 0)
         -- the lip over the bar: the top rows and the bottom rows IN THREE - the art's end caps (columns 0..11, 118..132) and a
         -- middle stretched from a MARK-FREE span (31..50: the art's notches at 57 / 52 / 116 would sit at the same spot on both bars:
         -- prd6, the user: "The markings on the borders being in the same spots makes them seem a bit lazy") - then the sides
         local function rim(r0, r1, h, edge, sideL, sideR)
-            local l = sub(P.lip, "ARTWORK", 1, 0, r0, 11, r1)
+            local l = sub(lip, "ARTWORK", 1, 0, r0, 11, r1)
             l:SetPoint(edge == "top" and "BOTTOMLEFT" or "TOPLEFT", b, sideL, -3 * k, 0)
             l:SetSize(11 * k, h)
-            local r = sub(P.lip, "ARTWORK", 1, 118, r0, P.BG_W, r1)
+            local r = sub(lip, "ARTWORK", 1, 118, r0, P.BG_W, r1)
             r:SetPoint(edge == "top" and "BOTTOMRIGHT" or "TOPRIGHT", b, sideR, 7 * k, 0)
             r:SetSize(14 * k, h)
-            local m = sub(P.lip, "ARTWORK", 1, 31, r0, 50, r1)
+            local m = sub(lip, "ARTWORK", 1, 31, r0, 50, r1)
             m:SetPoint(edge == "top" and "BOTTOMLEFT" or "TOPLEFT", l, edge == "top" and "BOTTOMRIGHT" or "TOPRIGHT", 0, 0)
             m:SetPoint(edge == "top" and "BOTTOMRIGHT" or "TOPRIGHT", r, edge == "top" and "BOTTOMLEFT" or "TOPLEFT", 0, 0)
             m:SetHeight(h)
@@ -3082,16 +3103,16 @@ do
         end
         local top = rim(0, 3, 3 * k, "top", "TOPLEFT", "TOPRIGHT")
         local bot = rim(11, P.BG_H, 8 * k, "bottom", "BOTTOMLEFT", "BOTTOMRIGHT")
-        local lf = sub(P.lip, "ARTWORK", 1, 0, 3, 3, 11)
+        local lf = sub(lip, "ARTWORK", 1, 0, 3, 3, 11)
         lf:SetPoint("TOPRIGHT", b, "TOPLEFT", 0, 0)
         lf:SetPoint("BOTTOMRIGHT", b, "BOTTOMLEFT", 0, 0)
         lf:SetWidth(3 * k)
-        local rt = sub(P.lip, "ARTWORK", 1, 125, 3, P.BG_W, 11)
+        local rt = sub(lip, "ARTWORK", 1, 125, 3, P.BG_W, 11)
         rt:SetPoint("TOPLEFT", b, "TOPRIGHT", 0, 0)
         rt:SetPoint("BOTTOMLEFT", b, "BOTTOMRIGHT", 0, 0)
         rt:SetWidth(7 * k)
         -- the inner shadow: the lip's shade over the opening's top
-        local sh = P.lip:CreateTexture(nil, "ARTWORK", nil, 0)
+        local sh = lip:CreateTexture(nil, "ARTWORK", nil, 0)
         sh:SetColorTexture(0, 0, 0, 1)
         sh:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
         sh:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0)
@@ -3162,7 +3183,7 @@ do
         local sh = f:CreateTexture(nil, "BACKGROUND", nil, -8)
         sh:SetTexture("Interface\\AddOns\\WowCompanion\\Media\\compass_band")
         sh:SetPoint("TOPLEFT", f, "TOPLEFT", -u(16), u(10))
-        sh:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", u(16), -u(P.HH + P.BAR_GAP + P.PH + 16))
+        sh:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", u(16), -u(P.HH + P.BAR_GAP + P.PH + 16 + (P.petDrop or 0)))
         sh:SetAlpha(0.9)
         P.shadow = sh
         P.hp = bar(f, P.HH)
@@ -3185,6 +3206,8 @@ do
         P.buffs, P.debuffs = {}, {}
         for i = 1, P.BUFF_MAX do P.buffs[i] = icon(f, i) end
         for i = 1, P.DEBUFF_MAX do P.debuffs[i] = icon(f, i) end
+        P.petL, P.pet = nil, nil
+        P.petBuild()                                                   -- prd11: the pet's strip (its own layer on P.f)
         P.place()
         return f
     end
@@ -3193,9 +3216,10 @@ do
         if not P.wd then P.loadSize() end
         P.W = P.wd
         if not P.f then return end
-        P.f:SetSize(u(P.W), u(P.HH + P.BAR_GAP + P.PH))
+        P.f:SetSize(u(P.W), u(P.HH + P.BAR_GAP + P.PH + (P.petDrop or 0)))
         pcall(function() P.f:SetScale(P.sc / 100) end)
         for _, b in ipairs({ P.hp, P.pw, P.lag, P.cp }) do if b then b:SetWidth(u(P.W)) end end
+        P.petLayout(P.petDrop or 0, true)                                -- prd11: the pet's strip at the new width
         if P.cp then P.cp.max = nil end                                  -- prd10: the pips' gaps laid out again at the new width
         for _, b in ipairs({ P.heal, P.shield }) do if b then b:SetWidth(u(P.W)) end end
         if P.lag then P.lag:SetAllPoints(P.hp) end
@@ -3343,6 +3367,7 @@ do
         pcall(function() P.pw:SetMinMaxValues(0, UnitPowerMax("player", pt)) end)
         pcall(function() P.pw:SetValue(UnitPower("player", pt)) end)
         pcall(P.combo, pt)
+        pcall(P.petValues)                                               -- prd11: the pet's strip
     end
     -- prd10 (issue #120): a Rogue's / a cat's combo points into the pip strip; nothing read back (a secret goes straight to the setter)
     function P.combo(pt)
@@ -3437,7 +3462,7 @@ do
         end
         P.nb, P.nd = #b, #d
         local step = u(P.ICON + P.IGAP)
-        local top = -u(P.HH + P.BAR_GAP + P.PH + P.ROW_GAP)
+        local top = -u(P.HH + P.BAR_GAP + P.PH + P.ROW_GAP + (P.petDrop or 0))    -- prd11: under the pet's strip
         -- one row when both fit across the bar, else the debuffs on a second row (right aligned)
         local fits = (#b + #d) * (P.ICON + P.IGAP) - P.IGAP <= P.W
         local dTop = fits and top or top - u(P.ICON + 18)
@@ -3495,6 +3520,184 @@ do
         end
         put(b, P.buffs, false, top)
         put(d, P.debuffs, true, dTop)
+    end
+
+    -- ---------------------------------------------------------------- prd11: the pet's strip
+    -- (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs Pet HUD"; mock-up A)
+    -- its switch: Hub's "uisw" 32 / 33 (WC.npWant.pet), on unless turned off, and only while the resource bar's own switch is on
+    function P.petOn()
+        local npw = type(WC.npWant) == "table" and WC.npWant or {}
+        if npw.pet == false then return false end
+        local on = npw.prd
+        if on == nil then on = npw.hud == true end
+        return on == true
+    end
+    function P.wantedPet() return P.petOn() and (P.wanted()) == true end
+    -- a pet out, from PLAIN reads only (UnitExists can be secret: then a plain name, then HasPetUI); how it was known
+    function P.petHas()
+        local okE, e = pcall(UnitExists, "pet")
+        if okE and not secret(e) then return e == true or e == 1, "exists" end
+        local okN, n = pcall(UnitName, "pet")
+        if okN and type(n) == "string" and not secret(n) and n ~= "" then return true, "name" end
+        local okP, h = pcall(HasPetUI)
+        if okP and not secret(h) then return h == true or h == 1, "petui" end
+        return false, "none"
+    end
+    -- the power type's token by its number, when the client gives no plain token
+    P.PTOK = { [0] = "MANA", [1] = "RAGE", [2] = "FOCUS", [3] = "ENERGY" }
+    -- built with the bars, hidden until a pet is out: the round portrait, the gold health, the power, the name, the happiness face
+    function P.petBuild()
+        if P.petL or not P.f then return P.petL end
+        local L = CreateFrame("Frame", nil, P.f)                    -- beside P.g, never under it (the player's curve would hide it)
+        L:EnableMouse(false)
+        L:SetSize(u(P.W), u(P.PET_ICON))
+        L:Hide()
+        P.petL = L
+        local o = {}
+        P.pet = o
+        -- the portrait: a dark ring under it, both through the game's round portrait mask
+        o.ring = L:CreateTexture(nil, "ARTWORK", nil, 1)
+        o.ring:SetColorTexture(0, 0, 0, 0.85)
+        o.ring:SetPoint("TOPLEFT", L, "TOPLEFT", 0, 0)
+        o.ring:SetSize(u(P.PET_ICON), u(P.PET_ICON))
+        o.face = L:CreateTexture(nil, "ARTWORK", nil, 2)
+        o.face:SetPoint("CENTER", o.ring, "CENTER", 0, 0)
+        o.face:SetSize(u(P.PET_ICON - 3), u(P.PET_ICON - 3))
+        for _, t in ipairs({ o.ring, o.face }) do
+            pcall(function()
+                local m = L:CreateMaskTexture()
+                m:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+                m:SetAllPoints(t)
+                t:AddMaskTexture(m)
+            end)
+        end
+        -- the bars, past the portrait (PET_IGAP clears the frame's left rim), PET_W of the player's width (P.petLayout)
+        o.hp = bar(L, P.PET_HH)
+        o.hp:SetPoint("TOPLEFT", L, "TOPLEFT", u(P.PET_ICON + P.PET_IGAP), 0)
+        P.paint(o.hp, P.PET_RGB[1], P.PET_RGB[2], P.PET_RGB[3])
+        o.pw = bar(L, P.PET_PH)
+        o.pw:SetPoint("TOPLEFT", o.hp, "BOTTOMLEFT", 0, -u(P.PET_BAR_GAP))
+        -- the PRD frame round each, its own lip over both, the PLAYER's texel scale: the rims one thickness on every bar
+        o.lip = CreateFrame("Frame", nil, L)
+        o.lip:SetAllPoints(L)
+        o.lip:EnableMouse(false)
+        o.k = u(P.HH / 8)
+        o.hpFrame, o.pwFrame = P.frameFor(o.hp, L, o.lip, o.k), P.frameFor(o.pw, L, o.lip, o.k)
+        pcall(function() o.lip:SetFrameLevel(o.hp:GetFrameLevel() + 20) end)
+        -- the name, small, past the health bar's right rim (7 texels)
+        o.name = o.lip:CreateFontString(nil, "OVERLAY")
+        o.name:SetFont("Fonts\\FRIZQT__.TTF", u(P.PET_NAME), "OUTLINE")
+        o.name:SetPoint("LEFT", o.hp, "RIGHT", 7 * o.k + u(4), 0)
+        pcall(function() o.name:SetJustifyH("LEFT") end)
+        pcall(function() o.name:SetWordWrap(false) end)
+        o.name:SetTextColor(1, 1, 1)
+        -- a hunter's pet's happiness: the game's own faces (PetFrame's texture), on the portrait's corner
+        o.happy = o.lip:CreateTexture(nil, "OVERLAY", nil, 3)
+        o.happy:SetTexture(P.PET_HAPPY_TEX)
+        o.happy:SetSize(u(12), u(12))
+        o.happy:SetPoint("BOTTOMRIGHT", o.ring, "BOTTOMRIGHT", u(4), -u(3))
+        o.happy:Hide()
+        P.petLayout(0, true)
+        return L
+    end
+    -- the strip's place (under the power bar, under the pips when they show) and P.petDrop, the room it takes: P.f's height, the
+    -- shadow and the aura row move down by it; 0 with no pet
+    function P.petLayout(drop, force)
+        if drop == P.petDrop and not force then return end
+        P.petDrop = drop
+        local base = P.HH + P.BAR_GAP + P.PH
+        if P.f then pcall(function() P.f:SetHeight(u(base + drop)) end) end
+        if P.shadow and P.g then P.shadow:SetPoint("BOTTOMRIGHT", P.g, "TOPRIGHT", u(16), -u(base + 16 + drop)) end
+        P.cache = nil
+        local L, o = P.petL, P.pet
+        if not (L and o) then return end
+        local cpx = (P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0
+        L:ClearAllPoints()
+        L:SetPoint("TOPLEFT", P.f, "TOPLEFT", 0, -u(base + cpx + P.PET_GAP))
+        L:SetSize(u(P.W), u(P.PET_ICON))
+        o.hp:SetWidth(u(P.W * P.PET_W)); o.pw:SetWidth(u(P.W * P.PET_W))
+    end
+    -- fed at every poll as the player's bars are: the game's values straight to the setters, nothing read back (no lag chunk: its queue
+    -- would keep a secret in a table)
+    function P.petValues()
+        local L, o = P.petL, P.pet
+        if not (L and o) then return end
+        local has, how = false, "off"
+        if P.wantedPet() then has, how = P.petHas() end
+        local x = { has = has, src = how, cbad = P.petCurveBad, a = P.petSrc }
+        P.pex = x
+        if not has then
+            if L:IsShown() then L:Hide() end
+            P.petLayout(0)
+            return
+        end
+        P.petLayout(((P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0) + P.PET_GAP + P.PET_ICON)
+        if not L:IsShown() then L:Show() end
+        -- the portrait: GetPetIcon's plain file, else the game's own portrait setter (a widget setter: nothing read back)
+        local okI, ic = pcall(GetPetIcon)
+        ic = (okI and (type(ic) == "number" or type(ic) == "string") and not secret(ic)) and ic or nil
+        if ic then
+            if o.icon ~= ic then pcall(function() o.face:SetTexture(ic) end); o.icon = ic end
+        elseif o.icon ~= "portrait" and type(SetPortraitTexture) == "function" and pcall(SetPortraitTexture, o.face, "pet") then
+            o.icon = "portrait"
+        end
+        -- dead (plainly so): greyed, the game's word for it
+        local okD, d = pcall(UnitIsDead, "pet")
+        local dead = okD and not secret(d) and (d == true or d == 1) or false
+        if o.dead ~= dead then
+            o.dead = dead
+            local c = dead and P.PET_DEAD_RGB or P.PET_RGB
+            P.paint(o.hp, c[1], c[2], c[3])
+            pcall(function() o.face:SetDesaturated(dead) end)
+        end
+        local okN, n = pcall(UnitName, "pet")
+        local name = (okN and type(n) == "string" and not secret(n)) and n or ""
+        if dead then name = (type(DEAD) == "string" and not secret(DEAD)) and DEAD or "Dead" end
+        o.name:SetText(name)
+        -- health: gold (the user: "better distinguish the player HUD vs Pet HUD")
+        pcall(function() o.hp:SetMinMaxValues(0, UnitHealthMax("pet")) end)
+        pcall(function() o.hp:SetValue(UnitHealth("pet")) end)
+        -- power by the pet's own type: a hunter's pet FOCUS, a demon MANA
+        local okT, pt, tok = pcall(UnitPowerType, "pet")
+        pt = okT and num(pt) or 0
+        tok = (okT and type(tok) == "string" and not secret(tok)) and tok or P.PTOK[pt]
+        if tok ~= o.ptok or not o.pw.rgb then
+            local cc = (tok and P.POWER[tok]) or P.POWER.MANA
+            P.paint(o.pw, cc[1], cc[2], cc[3])
+            o.ptok = tok
+        end
+        -- (again each poll: nothing the game does to the textures leaves them grey)
+        for _, b in ipairs({ o.hp, o.pw }) do
+            if b.rgb then pcall(function() b.fill:SetVertexColor(b.rgb[1], b.rgb[2], b.rgb[3]) end) end
+        end
+        pcall(function() o.pw:SetMinMaxValues(0, UnitPowerMax("pet", pt)) end)
+        pcall(function() o.pw:SetValue(UnitPower("pet", pt)) end)
+        -- happiness: only a plain answer (1 unhappy, 2 content, 3 happy); a secret or none: no face
+        local okH, hv = pcall(function()
+            if type(C_PetInfo) == "table" and type(C_PetInfo.GetPetHappiness) == "function" then return C_PetInfo.GetPetHappiness() end
+            return GetPetHappiness()
+        end)
+        local h = okH and num(hv) or nil
+        local uv = h and P.PET_HAPPY_U[h]
+        if uv then o.happy:SetTexCoord(uv[1], uv[2], 0, P.PET_HAPPY_V); o.happy:Show() else o.happy:Hide() end
+        x.dead, x.ptok, x.happy, x.icon = dead or nil, tok, uv and h or nil, o.icon ~= nil or nil
+    end
+    -- out of combat on the curve route: the strip's alpha the pet's own UnitHealthPercent through the same curve; its OWN bad flag (a
+    -- refused pet call - no pet, a client without - never turns the player's curve off); otherwise plainly shown (it fades with the HUD)
+    function P.petCurve(on)
+        local L = P.petL
+        if not (L and L:IsShown()) then return end
+        if on and P.curve and not P.petCurveBad then
+            local ok, err = pcall(function()
+                local a = UnitHealthPercent("pet", false, P.curve)
+                if a == nil then error("no value") end
+                L:SetAlpha(a)
+            end)
+            if ok then P.petSrc = "curve"; return end
+            P.petCurveBad = tostring(err):sub(1, 80)
+        end
+        pcall(function() L:SetAlpha(1) end)
+        P.petSrc = "plain"
     end
 
     -- ---------------------------------------------------------------- when it shows
@@ -3589,10 +3792,13 @@ do
         local powerOff = rest == false and not fight
         if powerOff then
             pcall(function() P.g:SetAlpha(1) end)                       -- (the power keeps it up: the health curve may not hide it)
+            P.petCurve(false)
         elseif settled and P.curveSet() then
             hurt, src = true, "curve"                                    -- (our timing stays on: the layer itself shows or not)
+            P.petCurve(true)                                             -- prd11: the pet's strip by its own health, its own flag
         else
             pcall(function() P.g:SetAlpha(1) end)
+            P.petCurve(false)
         end
         P.src = src
         local on = fight or hurt == true or powerOff
@@ -3623,13 +3829,24 @@ do
 
     local ev = CreateFrame("Frame")
     for _, e in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD" }) do pcall(function() ev:RegisterEvent(e) end) end
-    for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_POWER_FREQUENT", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER", "UNIT_AURA",
-                         "UNIT_HEAL_PREDICTION", "UNIT_ABSORB_AMOUNT_CHANGED", "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START",
-                         "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_CHANNEL_STOP" }) do
+    -- prd11: the bars' values heard for the player AND the pet; the casts (the cost, the spend) and the auras (the row is the player's)
+    -- for the player only
+    for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_POWER_FREQUENT", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER",
+                         "UNIT_HEAL_PREDICTION", "UNIT_ABSORB_AMOUNT_CHANGED" }) do
+        pcall(function() ev:RegisterUnitEvent(e, "player", "pet") end)
+    end
+    for _, e in ipairs({ "UNIT_AURA", "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED",
+                         "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_PET" }) do
         pcall(function() ev:RegisterUnitEvent(e, "player") end)
     end
+    for _, e in ipairs({ "PET_UI_UPDATE", "UNIT_HAPPINESS" }) do pcall(function() ev:RegisterEvent(e) end) end
     ev:SetScript("OnEvent", function(_, e, unit, _, spellID)
-        if e == "UNIT_SPELLCAST_START" or e == "UNIT_SPELLCAST_CHANNEL_START" then
+        -- prd11: only the player's own casts and auras are ours (a pet's never sets the cost or the spend)
+        if unit ~= nil and unit ~= "player" and (e == "UNIT_AURA" or e:sub(1, 15) == "UNIT_SPELLCAST_") then return end
+        if e == "UNIT_PET" or e == "PET_UI_UPDATE" then
+            if P.pet then P.pet.icon = nil end                          -- (a new pet: its portrait again)
+            if P.f and P.shown then P.pollAt = 0 end
+        elseif e == "UNIT_SPELLCAST_START" or e == "UNIT_SPELLCAST_CHANNEL_START" then
             if P.f then pcall(P.castCost, spellID) end
         elseif e == "UNIT_SPELLCAST_STOP" or e == "UNIT_SPELLCAST_FAILED" or e == "UNIT_SPELLCAST_INTERRUPTED" or e == "UNIT_SPELLCAST_CHANNEL_STOP" then
             P.castEnd()
