@@ -30,8 +30,21 @@ class DependencyPolestarTest {
     }
 
     @Test fun wantedOnlyWhenChosen() {
-        // no settings (a fresh install): Vanilla, so QuestieDB only, and Polestar not wanted
+        // no settings (a fresh install, not asked yet): QuestieDB, and Polestar fetched ahead but not wanted in AddOns
         assertTrue(DependencyAddons.wanted(DependencyAddons.DEPS.first { it.folder == "QuestieDB" }))
         assertFalse(ThirdPartyAddons.coreWanted(pole))
+        assertTrue(ThirdPartyAddons.prefetch(pole, "core"))
+    }
+
+    /** the user, 2026-11-12: Polestar in the base install (its own pinned official release, never in the APK), QuestTrail no longer a
+     *  Quest tracking add-on (no "in use", no options mirror) */
+    @Test fun polestarIsABaseAddOnQuestTrailIsRetired() {
+        assertTrue(pole.base)
+        assertEquals("fitzforge/polestar", pole.repo)
+        assertEquals("GPL-3.0-only", pole.license)
+        assertTrue(ThirdPartyAddons.ALL.filter { it.base } == listOf(pole))
+        val qt = ThirdPartyAddons.QUESTTRAIL
+        assertNull(qt.inUse); assertNull(qt.usedIn); assertNull(qt.settings); assertFalse(qt.base)
+        assertTrue(qt in ThirdPartyAddons.ALL)                                  // an installed copy can still go out by its Uninstall
     }
 }

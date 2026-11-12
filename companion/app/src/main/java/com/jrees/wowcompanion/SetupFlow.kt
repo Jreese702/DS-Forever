@@ -80,6 +80,8 @@ object SetupFlow {
         val artNotice: Boolean = false,
         /** the last session ended badly (LastRun.pending): what ended it, in words; null = it did not */
         val lastCrash: String? = null,
+        /** the Polestar quest guide has not been answered yet (PolestarGuide.ask; the user, 2026-11-12): its one question */
+        val polestarAsk: Boolean = false,
     )
 
     enum class Action {
@@ -102,7 +104,9 @@ object SetupFlow {
         /** the out-of-date folder's pop-up: OK (this run) */
         STALE_OK,
         /** the saved report's note: open its GitHub issue, or dismiss it */
-        REPORT_OPEN, REPORT_DISMISS
+        REPORT_OPEN, REPORT_DISMISS,
+        /** 2026-11-12 (the user: "give a prompt asking players if they want to use the new polestar quest guide integration"): Yes / No */
+        POLESTAR_YES, POLESTAR_NO
     }
     data class Button(val label: String, val action: Action, val enabled: Boolean = true)
     data class Prompt(val id: String, val title: String, val text: String, val buttons: List<Button>)
@@ -302,6 +306,10 @@ object SetupFlow {
             !i.loginSaved && !i.loginSkipped -> Prompt("login", "Your Battle.net login",
                 "Save it once and the game signs you in by itself. It stays encrypted on this device.",
                 listOf(Button("Enter login", Action.ENTER_LOGIN), Button("Play without", Action.SKIP_LOGIN)))
+            // the user, 2026-11-12: the Polestar quest guide, asked once (a title and two buttons: the terse rule); never holds Play.
+            // Not answered: Polestar stays as it is (fetched ahead, not moved in) and the question comes back at the next start
+            i.polestarAsk -> Prompt("polestar", PolestarGuide.TITLE, "",
+                listOf(Button("Yes", Action.POLESTAR_YES), Button("No", Action.POLESTAR_NO)))
             else -> null
         }
         // the client prompt carries its own Play ("Play anyway"); everything else blocking hides behind a disabled Play
