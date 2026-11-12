@@ -78,7 +78,7 @@ object Settings {
 
     /**
      * THE POLESTAR QUEST GUIDE (the user, 2026-11-12; [PolestarGuide]): "on" / "off", null = not asked yet. Set by the launcher's
-     * prompt, Settings > Add-ons and Home > Map's Quest tracking (all through [PolestarGuide.set]); the launcher reads the same prefs
+     * prompt, Settings > Add-ons > Polestar (the guide's On / Off and Quest tracking; all through [PolestarGuide.set]); the launcher reads the same prefs
      */
     var polestarGuide: String?
         get() = prefs?.getString(GUIDE, null)?.takeIf { it == PolestarGuide.ON || it == PolestarGuide.OFF }

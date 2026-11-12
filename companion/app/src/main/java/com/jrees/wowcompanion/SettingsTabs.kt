@@ -112,7 +112,7 @@ object SettingsTabs {
     fun groups(tab: Tab): List<Group> = Group.values().filter { it.tab == tab && blocks(it).isNotEmpty() }
 
     /** the groups OPEN when [tab] is shown (the user's pick, 2026-11-12: every time a tab shows, its first group open, the rest folded) */
-    fun openOnShow(tab: Tab): Set<Group> = groups(tab).take(1).toSet()
+    fun openOnShow(tab: Tab, hasRows: (Group) -> Boolean = { true }): Set<Group> = groups(tab).filter(hasRows).take(1).toSet()
 
     /** 1.0.9 (the user: "Disable the safe path, quest trail and polestar buttons for now"): with the route modes held back, the
      *  Polestar and QuestTrail blocks are not shown (Spoken stays) */

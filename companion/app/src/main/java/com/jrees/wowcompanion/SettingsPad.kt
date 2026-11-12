@@ -82,7 +82,43 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         body.addView(preview, LinearLayout.LayoutParams(PREVIEW_W, ViewGroup.LayoutParams.MATCH_PARENT))
         addView(body, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         scroll.setOnScrollChangeListener { _, _, _, _, _ -> pad.invalidate() }
+        // entering the room shows its tab afresh: the first group open, the rest folded, the page at its top (the user's rule)
+        pad.onEnter = { show(tab, force = true) }
+        // rows that come and go (the add-on's switches, an add-on installed or removed, the login row, Polestar in use): the groups
+        // with rows now are the ones shown, and every part measures again
+        // (the main thread's handler, not View.post: a change while the room is not attached must not wait for it to be)
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        val again: () -> Unit = { main.post { refreshGroups() } }
+        for (gu in gameUis) gu.onContent = again
+        view.onContent = again
+        GameUi.onChange(again); ThirdPartyAddons.onChange(again); Settings.onChange(again); HomeAttackSwitch.onChange(again)
+        CompassSwitch.onChange(again); RingsSwitch.onChange(again); TipsSwitch.onChange(again); HomeLootSwitch.onChange(again)
+        FrameGen.onChange(again)
         show(SettingsTabs.last, force = true)
+    }
+
+    /** [p] has rows to draw now */
+    private fun hasContent(p: View): Boolean = when (p) {
+        is SettingsView -> p.hasContent(); is GameUiSection -> p.hasContent(); is HomeSettingsSection -> p.hasContent(); else -> true
+    }
+    /** [g] has rows to draw now (a group without any is not shown: no heading, no cursor stop) */
+    fun hasRows(g: SettingsTabs.Group): Boolean = groupBoxes.firstOrNull { it.group == g }?.parts?.any { hasContent(it) } == true
+    /** a group was opened or folded by hand since the tab showed (a group that shows up later then leaves the folds alone) */
+    private var touched = false
+
+    /** the groups shown on the tab now: the tab's groups with rows now */
+    private fun applyGroups() {
+        val shown = SettingsTabs.groups(tab).filter { hasRows(it) }
+        for (gb in groupBoxes) gb.box.visibility = if (gb.group in shown) View.VISIBLE else View.GONE
+    }
+
+    /** rows came or went: the groups shown again, every part measured again; untouched folds follow the tab's first group with rows */
+    fun refreshGroups() {
+        applyGroups()
+        if (!touched) { open.clear(); open.addAll(SettingsTabs.openOnShow(tab) { hasRows(it) }) }
+        applyFolds()
+        for (gb in groupBoxes) for (p in gb.parts) p.requestLayout()
+        pad.invalidate()
     }
 
     /** the views that draw [g]'s rows, in its blocks' order: a run of SettingsView blocks is one slice */
@@ -117,9 +153,9 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         tab = t
         SettingsTabs.last = t
         gameUis.forEach { it.closeSelection() }
-        open.clear(); open.addAll(SettingsTabs.openOnShow(t))
-        val shown = SettingsTabs.groups(t)
-        for (gb in groupBoxes) gb.box.visibility = if (gb.group in shown) View.VISIBLE else View.GONE
+        touched = false
+        open.clear(); open.addAll(SettingsTabs.openOnShow(t) { hasRows(it) })
+        applyGroups()
         applyFolds()
         tabBar.tab = t
         scroll.scrollTo(0, 0)
@@ -132,6 +168,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
 
     /** a tap on [g]'s heading or A on it: open it, or fold it */
     fun toggle(g: SettingsTabs.Group) {
+        touched = true
         if (!open.remove(g)) {
             open.add(g)
             firstPicture(setOf(g))?.let { preview.id = it }            // the panel follows the group just opened
@@ -303,6 +340,7 @@ class SettingsPad(
         val out = ArrayList<Target>()
         for (s in sections) {
             val top = contentTop(s.view) ?: continue                // another tab's, or a folded group's: its boxes are stale
+            if (s.view.height == 0) continue                          // a part with nothing to show: never drawn, its boxes stale
             for (r in s.targets()) out.add(Target(RectF(r.left, r.top + top, r.right, r.bottom + top), s, r, s.noStart(r)))
         }
         // in reading order down the page, whatever order the sections are listed in (on Home, Home's own rows stand above the
@@ -337,8 +375,12 @@ class SettingsPad(
 
     // ---------------------------------------------------------------- the guest (MainActivity calls these on the touch path)
 
+    /** the room is entered: the room shows its tab afresh (the user's rule: its first group open, the rest folded, every time) */
+    var onEnter: (() -> Unit)? = null
+
     /** the room was entered by touch: hold the controller (one tap) */
     fun enter() {
+        onEnter?.invoke()
         focus = null; lastPadN = -1; bSaid = null
         // the cursor is there AT ONCE, with its A (the user, 2026-10-15: "make sure that the cursor appears with the A glyph when
         // changing to the settings room"): on the tab row, before the hold's answer (a pending or late answer left none until a press)

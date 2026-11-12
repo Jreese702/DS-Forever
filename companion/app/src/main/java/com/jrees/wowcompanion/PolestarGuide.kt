@@ -15,7 +15,7 @@ package com.jrees.wowcompanion
  *
  * The question is asked once per install, on the launcher's bottom screen before Play (SetupFlow's "polestar" prompt); an existing
  * player is asked once too, unless they already used SafePath, QuestTrail or Polestar: they count as Yes ([migrate]). The answer can
- * be changed in Settings > Add-ons (Polestar quest guide On / Off) or Home > Map's Quest tracking (Vanilla / Polestar).
+ * be changed in Settings > Add-ons (Polestar quest guide On / Off) or the Quest tracking row under it (Vanilla / Polestar).
  */
 object PolestarGuide {
     const val ON = "on"

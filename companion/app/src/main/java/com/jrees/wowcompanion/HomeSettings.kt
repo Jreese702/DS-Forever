@@ -532,6 +532,9 @@ class HomeSettingsSection(context: Context,
     /** rows drawn by the last [lay] (the first one stands at [TOP], each next one [GAP] below the last) */
     private var drawn = 0
 
+    /** this section has rows to draw now (the room hides a group whose parts have none) */
+    fun hasContent(): Boolean = rowLabels().isNotEmpty()
+
     /** the row labels this section draws now (the room's tests) */
     fun rowLabels(): List<String> { lay(null); return labelsNow.toList() }
     private val labelsNow = ArrayList<String>()

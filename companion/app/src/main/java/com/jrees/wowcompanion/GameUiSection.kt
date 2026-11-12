@@ -137,13 +137,13 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     /** a heading row ("#" + its words) over [rows], none when the group is empty */
     private fun group(heading: String, rows: List<GameUi.Row>): List<GameUi.Row> =
         if (rows.isEmpty()) emptyList() else listOf(GameUi.Row("#$heading", heading, null, UiMode.ON, true, false, "")) + rows
-    /** QOL > Navigation: SafePath's "Avoid dangerous areas" (moved from Home > Map: the same Settings.avoidDanger), Off / Low / High.
+    /** SafePath's "Avoid dangerous areas" (it was under Map, then QOL > Navigation: the same Settings.avoidDanger), Off / Low / High.
      *  NOT SHOWN since 2026-11-12 (SafePath is no longer a Quest tracking option); kept with SafePath's code */
     private fun dangerRow(): GameUi.Row {
         val safe = Settings.ROUTE_MODES_ON && Settings.questTracking == "safepath"
         val note = when {
             !Settings.ROUTE_MODES_ON -> "Comes with SafePath in a later update"
-            Settings.questTracking != "safepath" -> "SafePath only: choose SafePath in Home > Map > Quest tracking"
+            Settings.questTracking != "safepath" -> "SafePath only: choose SafePath in Quest tracking"
             Settings.avoidDanger == "off" -> "The line goes straight, through hostile mobs"
             Settings.avoidDanger == "low" -> "The line bends round dense or high-level hostile mobs"
             else -> "The line bends round hostile mobs at or above your level"
@@ -174,7 +174,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         val before = rows.size
         rows = allRows()
         if (selected != null && rows.none { it.id == selected }) selected = null
-        if (rows.size != before) requestLayout()
+        if (rows.size != before) { requestLayout(); if ((before == 0) != rows.isEmpty()) onContent?.invoke() }
         invalidate()
     }
 
@@ -188,9 +188,16 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
-        setMeasuredDimension(getDefaultSize(suggestedMinimumWidth, widthSpec),
-                             resolveSize(wantedHeight(), heightSpec))
+        val h = wantedHeight()
+        // a part shrunk to nothing is never drawn again (a 0 px child is skipped): its last boxes must not stay pressable
+        if (h == 0) { rowBoxes.clear(); segBoxes.clear(); stepBoxes.clear(); statusBox.setEmpty() }
+        setMeasuredDimension(getDefaultSize(suggestedMinimumWidth, widthSpec), resolveSize(h, heightSpec))
     }
+
+    /** this part has rows to draw now (the room hides a group whose parts have none: the switches come with the add-on's word) */
+    fun hasContent(): Boolean = !hasUi || part == Part.ALL || allRows().isNotEmpty()      // the add-on's word now (refresh may be pending)
+    /** the rows came or went (the room shows / hides the group's heading) */
+    var onContent: (() -> Unit)? = null
 
     /** the controller's targets (Home's Settings cursor, LATER item 5): every row, then the open bar's three modes, in reading order */
     fun focusTargets(): List<RectF> {
@@ -220,7 +227,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                 if (abs(e.x - downX) > SLOP || abs(e.y - downY) > SLOP) return true
                 for ((box, sd) in stepBoxes) if (box.contains(e.x, e.y)) {
                     when (sd.first) {
-                        // QOL > Navigation: the same Settings.avoidDanger Home > Map set (SafePath only)
+                        // the same Settings.avoidDanger the old Map row set (SafePath only)
                         DANGER_ID -> if (Settings.ROUTE_MODES_ON && Settings.questTracking == "safepath")
                             Settings.avoidDanger = Settings.AVOID_DANGER[sd.second]
                         GameUi.UFHP_ID -> GameUi.setHpText(sd.second)

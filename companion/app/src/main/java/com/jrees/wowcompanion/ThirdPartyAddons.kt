@@ -48,7 +48,7 @@ object ThirdPartyAddons {
     data class Module(val id: String, val title: String, val what: String, val pkg: Pkg)
     data class Option(val id: String, val title: String, val on: String, val off: String, val default: Boolean)
     /**
-     * [inUse] set: an add-on another setting USES (Map's Quest tracking for Polestar / QuestTrail; [usedIn] names it). Display only:
+     * [inUse] set: an add-on another setting USES (Add-ons > Polestar's Quest tracking for Polestar; [usedIn] names it). Display only:
      * it is installed from Add-ons like any (the user, test40: "Install from Add-ons"), and kept until its Uninstall. [version] = the
      * pinned release's version. [base] = PART OF THE BASE INSTALL (Polestar, the user 2026-11-12: "including this addon to the base
      * install like questie"): wanted by its own choice ([baseChoice], not Install / Uninstall), downloaded on any network like
@@ -104,7 +104,7 @@ object ThirdPartyAddons {
         license = "GPL-3.0-only", repo = "fitzforge/polestar", version = "0.2.5",
         core = Pkg("v0.2.5", "Polestar-0.2.5.zip", 38_112_129L, "ff3ea16e3d83e7e3071416c6a89d14be557b7f56f1733caa6d3067248594ff60",
             listOf("Polestar", "Polestar_Nav")),
-        inUse = { Settings.questTracking == "polestar" }, usedIn = "Map › Quest tracking", base = true)
+        inUse = { Settings.questTracking == "polestar" }, usedIn = "Add-ons › Polestar › Quest tracking", base = true)
 
     /**
      * QUESTTRAIL (Krom, MIT; CurseForge project 1725624; Map's "Quest tracking: QuestTrail", the user: "Download it

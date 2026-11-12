@@ -62,7 +62,9 @@ class SettingsRoomTest {
         val r = room()
         for (t in SettingsTabs.visible) {
             r.show(t); lay(r)
-            val groups = SettingsTabs.groups(t)
+            // the tab's groups WITH ROWS NOW (no game here: Top screen's switches have not come, only Game windows' minimap)
+            val groups = SettingsTabs.groups(t).filter { r.hasRows(it) }
+            assertTrue(t.label, groups.isNotEmpty())
             assertEquals(t.label, setOf(groups.first()), r.open)
             for (gb in r.groupBoxes) {
                 val onTab = gb.group in groups
@@ -144,6 +146,120 @@ class SettingsRoomTest {
             SettingsTabs.Group.NAVIGATION, SettingsTabs.Group.WINDOWS, SettingsTabs.Group.COMBAT),
             r.groupBoxes.filter { gb -> gb.parts.any { it is GameUiSection } }.map { it.group }.toSet())
     }
+
+    // ---------------------------------------------------------------- the review's findings (2026-11-12)
+
+    /** 1: a part shrunk to 0 px keeps no pressable boxes, and the cursor never stops in it */
+    @Test fun zeroHeightPartsAreNoStops() {
+        val r = room()
+        r.show(SettingsTabs.Tab.GENERAL); r.toggle(SettingsTabs.Group.ACCOUNT); lay(r)
+        val slice = box(r, SettingsTabs.Group.ACCOUNT).parts.single() as SettingsView
+        val loginBox = slice.focusTargets().single()
+        assertTrue(r.pad.targetBoxes().any { it.top >= headBox(r, SettingsTabs.Group.ACCOUNT).bottom && it.height() == loginBox.height() })
+        // the host takes the login row away: measured again (no idle: the group's refresh has not run yet), the slice is 0 px
+        val host = SettingsView::class.java.getDeclaredField("hub").apply { isAccessible = true }.get(slice) as SettingsView
+        host.loginRow = false
+        r.measure(View.MeasureSpec.makeMeasureSpec(1240, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1080 - Strip.HEIGHT, View.MeasureSpec.EXACTLY))
+        r.layout(0, 0, 1240, 1080 - Strip.HEIGHT)
+        assertEquals(0, slice.height)
+        assertTrue("no stale login box", slice.focusTargets().isEmpty())
+        val acc = headBox(r, SettingsTabs.Group.ACCOUNT)
+        assertTrue(r.pad.targetBoxes().none { it.top >= acc.bottom && it.bottom <= acc.bottom + 4f })
+        // and once the refresh runs, the empty group is gone with its heading
+        lay(r)
+        assertEquals(View.GONE, box(r, SettingsTabs.Group.ACCOUNT).box.visibility)
+        assertEquals("one stop per shown heading", r.groupBoxes.count { it.box.visibility == View.VISIBLE }, headingStops(r))
+    }
+
+    /** 2: entering the room shows its tab afresh: the first group open, the rest folded, the page at its top */
+    @Test fun reEnteringTheRoomOpensTheFirstGroup() {
+        val r = room()
+        r.show(SettingsTabs.Tab.CONTROLLER); lay(r)
+        r.toggle(SettingsTabs.Group.BUTTONS); r.toggle(SettingsTabs.Group.WHEELS); r.toggle(SettingsTabs.Group.SMART_Y)
+        assertEquals(setOf(SettingsTabs.Group.WHEELS, SettingsTabs.Group.SMART_Y), r.open)
+        r.pad.leave()
+        r.pad.enter()
+        lay(r)
+        assertEquals(SettingsTabs.Tab.CONTROLLER, r.tab)
+        assertEquals(setOf(SettingsTabs.Group.BUTTONS), r.open)
+    }
+
+    /** 3: Polestar's "choose it in" names the row's new place, in all three languages */
+    @Test fun polestarPointsAtItsQuestTrackingRow() {
+        assertEquals("Add-ons › Polestar › Quest tracking", ThirdPartyAddons.POLESTAR.usedIn)
+        assertEquals(SettingsTabs.Group.POLESTAR, SettingsTabs.Block.QUEST_TRACKING.group)
+        val line = "Installed, not in use: choose it in ${ThirdPartyAddons.POLESTAR.usedIn}"
+        for (l in listOf("es", "fr")) {
+            val f = listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json")).first { it.canRead() }
+            Tr.load(l, f.readText())
+            val t = Tr.t(line, l)
+            assertTrue("$l: $t", t != line && "Polestar" in t && "Map" !in t && "Mapa" !in t && "Carte" !in t)
+        }
+    }
+
+    /** 4 / 6: a group with no rows now is not shown (no heading, no stop); it shows - and opens, folds untouched - when rows come */
+    @Test fun emptyGroupsHideUntilTheirRowsCome() {
+        val r = room()
+        r.show(SettingsTabs.Tab.TOP); lay(r)
+        // no game: only Game windows (the minimap is always listed) has rows; it is the open one
+        for (g in listOf(SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY, SettingsTabs.Group.NAVIGATION))
+            assertEquals("$g", View.GONE, box(r, g).box.visibility)
+        assertEquals(setOf(SettingsTabs.Group.WINDOWS), r.open)
+        assertTrue(r.pad.targetBoxes().none { it == headBox(r, SettingsTabs.Group.NAVIGATION) })
+        // the add-on says the compass bar's word: Navigation has a row now, shows, and (folds untouched) is the open one
+        CompassSwitch.note(JSONObject().put("proof", JSONObject().put("compc", JSONObject().put("show", true).put("on", 1).put("off", 2))))
+        lay(r)
+        assertEquals(View.VISIBLE, box(r, SettingsTabs.Group.NAVIGATION).box.visibility)
+        assertEquals(setOf(SettingsTabs.Group.NAVIGATION), r.open)
+        assertTrue(r.pad.targetBoxes().any { it == headBox(r, SettingsTabs.Group.NAVIGATION) })
+        // Controller > Combat helpers: no switch, no attack row - hidden
+        r.show(SettingsTabs.Tab.CONTROLLER); lay(r)
+        assertEquals(View.GONE, box(r, SettingsTabs.Group.COMBAT).box.visibility)
+    }
+
+    /** 5: the Frames slice's draw compares with the MEASURED row count, so a row that comes or goes asks for a new layout */
+    @Test fun framesDrawAsksForLayoutWhenItsRowsChange() {
+        val r = room()
+        r.show(SettingsTabs.Tab.PERFORMANCE); lay(r)
+        val frames = box(r, SettingsTabs.Group.FRAMES).parts.single() as SettingsView
+        val f = SettingsView::class.java.getDeclaredField("measuredFg").apply { isAccessible = true }
+        assertTrue(f.getInt(frames) > 0)
+        assertTrue(!frames.isLayoutRequested)
+        f.setInt(frames, 99)                                         // as if the rows changed since the measure
+        frames.draw(Canvas(Bitmap.createBitmap(1240, 1000, Bitmap.Config.ARGB_8888)))
+        assertTrue("the draw asked for a new layout", frames.isLayoutRequested)
+        assertEquals(99, f.getInt(frames))                           // the draw path leaves the measured count alone
+    }
+
+    /** 7: an add-on group that stops being shown (QuestTrail out) goes at once, heading and band, without a tab switch */
+    @Test fun questTrailGroupFollowsItsAddon() {
+        ThirdPartyAddons::class.java.getDeclaredField("noFetch").apply { isAccessible = true }.setBoolean(null, true)   // no downloads here
+        val r = room()
+        ThirdPartyAddons.setCore(ThirdPartyAddons.QUESTTRAIL, true)
+        r.show(SettingsTabs.Tab.ADDONS); lay(r)
+        assertEquals(View.VISIBLE, box(r, SettingsTabs.Group.QUESTTRAIL).box.visibility)
+        ThirdPartyAddons.setCore(ThirdPartyAddons.QUESTTRAIL, false)
+        lay(r)
+        assertEquals(View.GONE, box(r, SettingsTabs.Group.QUESTTRAIL).box.visibility)
+        assertEquals("one stop per shown heading", r.groupBoxes.count { it.box.visibility == View.VISIBLE }, headingStops(r))
+    }
+
+    /** 8: a change that decides a slice's rows (an add-on's state, Polestar's top-screen row's inputs) measures every part again */
+    @Test fun aSliceIsMeasuredAgainWhenItsRowsChange() {
+        val r = room()
+        r.show(SettingsTabs.Tab.ADDONS); lay(r)
+        val parts = r.groupBoxes.filter { it.box.visibility == View.VISIBLE && it.group in r.open }.flatMap { it.parts }
+        assertTrue(parts.isNotEmpty())
+        for (p in parts) assertTrue(!p.isLayoutRequested)
+        // an add-on change (as Polestar coming into use, which decides Navigation's top-screen row): every part measured again
+        val o = ThirdPartyAddons.SPOKEN.options.first()
+        ThirdPartyAddons.setOption(ThirdPartyAddons.SPOKEN, o, !ThirdPartyAddons.option(ThirdPartyAddons.SPOKEN, o))
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        assertTrue("every part measured again", parts.all { it.isLayoutRequested })
+    }
+
+    /** the cursor's heading stops now (a heading's box is the only stop of its height) */
+    private fun headingStops(r: SettingsRoom): Int = r.pad.targetBoxes().count { Math.abs(it.height() - (SettingsFoldHeading.H - 8f)) < 0.5f }
 
     private fun headBox(r: SettingsRoom, g: SettingsTabs.Group): RectF {
         val gb = box(r, g)

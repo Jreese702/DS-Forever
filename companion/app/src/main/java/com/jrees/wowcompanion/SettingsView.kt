@@ -89,7 +89,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      */
     var loginRow = false
         get() = hub?.loginRow ?: field
-        set(v) { if (field != v) { field = v; requestLayout(); invalidate() } }
+        set(v) { if (field != v) { field = v; requestLayout(); invalidate(); onContent?.invoke() } }
+    /** a row that decides whether a group shows came or went (the login row): the room shows / hides the group */
+    var onContent: (() -> Unit)? = null
     var loginSaved: () -> Boolean = { false }
         get() = hub?.loginSaved ?: field
     var onLogin: () -> Unit = {}
@@ -298,8 +300,16 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     /** the part's height, laid out exactly as onDraw lays it out (the room's scroll asks; nothing here scrolls) */
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
-        setMeasuredDimension(MeasureSpec.getSize(widthSpec), Math.round(layoutHeight()))
+        // the Frame rows counted HERE (the draw compares its own count with this one and asks for a new layout when a row came or went)
+        measuredFg = fgRows().size
+        val h = Math.round(layoutHeight())
+        // a part shrunk to nothing is never drawn again (a 0 px child is skipped): its last boxes must not stay pressable
+        if (h == 0) clearBoxes()
+        setMeasuredDimension(MeasureSpec.getSize(widthSpec), h)
     }
+
+    /** this view has rows to draw now (the room hides a group whose parts have none) */
+    fun hasContent(): Boolean = layoutHeight() > 0f
 
     private fun layoutHeight(): Float {
         val blocks = drawnBlocks()
@@ -356,7 +366,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             (gameRunning() && !SetupBridge.restarting && FrameGen.limitNeedsRestart(FrameGen.launchedLimit, FrameGen.fpsLimit)))
 
     private fun fgHeight(): Float {
-        val n = fgRows().size.also { measuredFg = it }
+        val n = fgRows().size                     // no side effect: the draw path asks this too ([measuredFg] is onMeasure's)
         return n * ROW_H + (n - 1) * 10f
     }
 
