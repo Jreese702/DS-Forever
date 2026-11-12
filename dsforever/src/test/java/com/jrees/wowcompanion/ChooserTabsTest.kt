@@ -1,29 +1,38 @@
 package com.jrees.wowcompanion
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
  * PadTabCtl p39 (the user, 2026-11-11, on 1428): "The in combat tab of the controller bindings is missing all 5 pages of options, it only
- * shows the first 3. The icons for those 5 tabs look weird being narrowed". The chooser's tab keys per room tab and button, and each tab
- * drawn square in its slot. tools/test_party.py "p39" checks the add-on's own onlySpells() the same way.
+ * shows the first 3. The icons for those 5 tabs look weird being narrowed"; p43 (the user, 2026-11-12, on 1429: "In combat still does not
+ * show all 5 tabs", then the pick "All 5 on every button"). The chooser's tab keys per room tab and button, the bindings' grey, and each
+ * tab drawn square in its slot. tools/test_party.py "p43" checks the add-on's own onlySpells() / bindHere the same way.
  */
 class ChooserTabsTest {
     private val five = listOf("spells", "general", "professions", "extra", "dstool")
     private val three = listOf("spells", "general", "professions")
 
-    private fun tabs(view: String, face: Boolean = false, form: Boolean = false, toolbarDpad: Boolean = false, combat: Boolean = false) =
-        ChooserTabs.keys(ChooserTabs.spellsOnly(view, face, form, toolbarDpad, combat))
+    private fun tabs(view: String, combat: Boolean = false) = ChooserTabs.keys(ChooserTabs.spellsOnly(view, combat))
 
-    @Test fun inCombatHasAllFive() {
+    @Test fun inCombatHasAllFiveOnEveryButton() {
+        // every In combat button: plain, a fight spell on it, a base X / Y / A, a form's set, the toolbar's D-pad, any set / page - the
+        // rule has no button input In combat at all
         assertEquals("In combat, a plain button", five, tabs("combat"))
         assertEquals("In combat, a button with a fight spell (an Extra / DS entry replaces it on the fight layer, p41)", five, tabs("combat", combat = true))
     }
 
-    @Test fun inCombatKeepsThreeWhereOnlyAFightSpellGoes() {
-        assertEquals("a base X / Y / A", three, tabs("combat", face = true))
-        assertEquals("a form's own set", three, tabs("combat", form = true))
-        assertEquals("the bare D-pad the DS WoW toolbar holds (p36)", three, tabs("combat", toolbarDpad = true))
+    @Test fun inCombatBindingsGreyOnlyWhereNoChordGoes() {
+        // the rows stay (five tabs, the "extra" row counts them); a binding is dim with the add-on's own reason
+        for (p in listOf(5, 6, 8)) assertEquals("a base face ($p)", "fixed", ChooserTabs.bindBlock(1, p, toolbar = false, form = false))
+        assertEquals("a form's own set", "form", ChooserTabs.bindBlock(1, 8, toolbar = false, form = true))
+        assertEquals("a form's own D-pad", "form", ChooserTabs.bindBlock(1, 1, toolbar = false, form = true))
+        assertEquals("the bare D-pad the DS WoW toolbar holds", "dpad bar", ChooserTabs.bindBlock(1, 2, toolbar = true, form = false))
+        assertEquals("ZR", "layer", ChooserTabs.bindBlock(3, 1, toolbar = false, form = false))
+        assertEquals("ZL + ZR", "layer", ChooserTabs.bindBlock(4, 8, toolbar = false, form = false))
+        assertNull("the bare D-pad, toolbar off", ChooserTabs.bindBlock(1, 1, toolbar = false, form = false))
+        assertNull("ZL + A (the toolbar only holds the bare D-pad)", ChooserTabs.bindBlock(2, 8, toolbar = true, form = false))
     }
 
     @Test fun wowDefaultsAndRadialAsBefore() {

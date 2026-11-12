@@ -63,6 +63,9 @@ class ControllerShotsTest {
         // p41 (the user, 2026-11-11: "Build a fight-only layer"): Open Map from In combat on the fight-spell button: the box names only the fight-layer entry
         shot("ctl_combat_whole_box", "padmap_combat", ctl("ctl_combat_dstool") {
             it.put("box", org.json.JSONObject().put("kind", "replace").put("thing", "command").put("what", "DSMAP")) })
+        // p43 (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then "All 5 on every button"): In combat on
+        // a base A, its chooser on the DS tab - all five square tabs
+        shot("ctl_combat_a_five", "padmap_combat_a", ctl("ctl_combat_a"))
         shot("ctl_tabs", "padmap_on", ctl("ctl_dleft") { it.put("focus", "tabs").put("tcur", 3).put("view", "combat") })
         shot("ctl_switch", "padmap_on", ctl("ctl_dleft") { it.put("focus", "switches") })
     }

@@ -1017,7 +1017,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "lv", "rng", "ic"}   # m129: plain facts only (no hp / full / hs / g / hit counts); m134: the pet's ic
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm140' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm141' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1243,8 +1243,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p42"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m140"' in SRC["padmap"],
-      "the versions: PadMap m140, PadTabCtl p42, Book b48 (int/1429)")
+check('local CV = "p43"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m141"' in SRC["padmap"],
+      "the versions: PadMap m141, PadTabCtl p43, Book b48 (ctl-all5)")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
@@ -1885,8 +1885,8 @@ WT.execute('local pm = WowCompanion.padMap; SLOTAT0 = pm.slotAt; local f = SLOTA
            'return f(pg, st, ps) end')
 WT.execute('PUTS = {}; CLR = {}; FIGHTS = {}; local pm = WowCompanion.padMap; local g = pm.clearCombat; '        # (the p34 putCommand spy stays)
            'pm.clearCombat = function(pg, st, ps) CLR[#CLR + 1] = st .. ":" .. ps; return g(pg, st, ps) end; '
-           'local h = pm.putFight; pm.putFight = function(pg, st, ps, k, v) FIGHTS[#FIGHTS + 1] = st .. ":" .. ps .. ":" .. k .. ":" .. tostring(v); '
-           'return h(pg, st, ps, k, v) end')
+           'local h = pm.putFight; pm.putFight = function(pg, st, ps, k, v, fm) FIGHTS[#FIGHTS + 1] = st .. ":" .. ps .. ":" .. k .. ":" .. tostring(v) '
+           '.. (fm and (":" .. fm) or ""); return h(pg, st, ps, k, v, fm) end')
 WT.execute('pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end')
 check(ctlDoc(WT)['chooser']['list'] == 'dstool', "p39: In combat on a fight-spell button: the DS tab is there too", ctlDoc(WT)['chooser'])
 WT.execute('WowCompanion.padMap.emit(true)')
@@ -1922,27 +1922,98 @@ c = ctlDoc(WT)
 check(b is None and fights == ['1:1:command:DSMAP'] and int(WT.eval('#PUTS')) == 0 and int(WT.eval('#CLR')) == 0
       and not c.get('chooser'), "p41: Open Map on an empty In combat button: straight onto the fight layer, no box, the chooser closes", (b, fights))
 WT.execute('WowCompanion.padMap.slotAt = SLOTAT0')
-# the DS WoW toolbar on: In combat's bare D-pad takes fight spells only (p36), so its chooser keeps the three spell tabs
-WT.execute('WowCompanion.padMap.dpadBar(true); pp("PAD1"); for i = 1, 6 do pp("PADDRIGHT") end')
-c = ctlDoc(WT)
-check(WT.eval('want()') is True and c.get('chooser') and c['chooser']['list'] == 'professions',
-      "p39: toolbar on, In combat's bare D-pad: three spell tabs (the last is Professions)", c.get('chooser'))
-WT.execute('pp("PAD2"); WowCompanion.padMap.dpadBar(false)')
-# a base X / Y / A: its fight spell only, three tabs
-for _ in range(12):
-    if ctlDoc(WT)['pos'] >= 5 and ctlDoc(WT)['pos'] != 7:
+# ================================================================ p43 (the user, 2026-11-12, on 1429: "In combat still does not show all 5
+# tabs", then the pick "All 5 on every button"): EVERY In combat button lists all five tabs - the base X / Y / A, a form's own set, the
+# bare D-pad with and without the DS WoW toolbar, ZL / ZR / ZL + ZR (B stays the game's Back: no chooser)
+def tabs_here(L):
+    L.execute('pp("PAD1")')
+    for _ in range(3):
+        if ctlDoc(L).get('box'):
+            L.execute('pp("PAD2")')
+    seen = []
+    for _ in range(6):
+        ch = ctlDoc(L).get('chooser')
+        if not ch:
+            break
+        seen.append(ch['list'])
+        L.execute('pp("PADDRIGHT")')
+    if ctlDoc(L).get('chooser'):
+        L.execute('pp("PAD2")')
+    return list(dict.fromkeys(seen))
+
+
+def at(L, set_, pos, form=0):
+    L.execute('local t = WowCompanion.padTabCtl.state(); t.set = %d; t.pos = %d; t.form = %d; t.focus = "buttons"; '
+              't.chooser = nil; t.box = nil; t.carry = nil' % (set_, pos, form))
+
+
+FIVE = ['spells', 'general', 'professions', 'extra', 'dstool']
+check(ctlDoc(WT)['view'] == 'combat', "p43: on the In combat tab", ctlDoc(WT)['view'])
+bad = []
+for tb in (False, True):
+    WT.execute('WowCompanion.padMap.dpadBar(%s)' % ('true' if tb else 'false'))
+    for st in (1, 2, 3, 4):
+        for p in (1, 2, 3, 4, 5, 6, 8):
+            at(WT, st, p)
+            got = tabs_here(WT)
+            if got != FIVE:
+                bad.append((tb, st, p, got))
+    for p in (1, 2, 3, 4, 5, 6, 8):                         # a form's own set (Cat Form chosen on the form row)
+        at(WT, 1, p, 768)
+        got = tabs_here(WT)
+        if got != FIVE:
+            bad.append((tb, 'form', p, got))
+WT.execute('WowCompanion.padMap.dpadBar(false)')
+check(bad == [], "p43: In combat, every button (sets 1-4, the D-pad and A / X / Y, a form's set, the toolbar on and off) lists all five tabs", bad)
+# p43: an Extra / DS entry on base A goes on A's FIGHT LAYER (PadMap.putFight on set 1 position 8); WoW Defaults (the game's Jump) stays
+at(WT, 1, 8)
+WT.execute('FIGHTS = {}; PUTS = {}; pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end')
+check(ctlDoc(WT)['chooser']['list'] == 'dstool', "p43: base A's chooser on the DS tab", ctlDoc(WT)['chooser'])
+WT.execute('for i = 1, 80 do pp("PADDUP") end; pp("PADDDOWN")')
+for _ in range(40):
+    if ctlDoc(WT)['chooser']['id'] == 'DSMAP':
         break
-    WT.execute('pp("PADDRIGHT")')
-c = ctlDoc(WT)
-check(c['view'] == 'combat' and c['pos'] in (5, 6, 8) and c['shown'] == 1, "p39: on a base face button In combat", c)
+    WT.execute('pp("PADDDOWN")')
 WT.execute('pp("PAD1")')
-for _ in range(3):
-    if ctlDoc(WT).get('box'):
-        WT.execute('pp("PAD2")')
-WT.execute('for i = 1, 6 do pp("PADDRIGHT") end')
-c = ctlDoc(WT)
-check(c.get('chooser') and c['chooser']['list'] == 'professions', "p39: a base face button In combat: three spell tabs", c.get('chooser'))
+if ctlDoc(WT).get('box'):
+    WT.execute('pp("PAD1")')
+fights = [WT.eval('FIGHTS[%d]' % (i + 1)) for i in range(int(WT.eval('#FIGHTS')))]
+fe = WT.eval('(WowCompanionSpellsDB.faceBy or {})[WHO .. "-" .. REALM] and WowCompanionSpellsDB.faceBy[WHO .. "-" .. REALM][8]')
+a8 = WT.eval('WowCompanion.padMap.slotAt(1, 1, 8)')
+check(fights == ['1:8:command:DSMAP'] and int(WT.eval('#PUTS')) == 0 and fe is not None and fe.key == 'DSMAP' and fe.t == 'command',
+      "p43: Open Map from base A's DS tab goes on A's fight layer (putFight, the face store), no putCommand", (fights, dict(fe) if fe else None))
+check(a8.kind == 'fixed' and a8.cf is not None and a8.cf.key == 'DSMAP',
+      "p43: WoW Defaults stays: A is still the game's own button (fixed); Open Map is only its In combat entry", (a8.kind, a8.n))
+WT.execute('WowCompanion.padMap.emit(true)')
+at(WT, 1, 8)
+WT.execute('pp("PAD1"); pp("PAD2"); pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end')
+ctl_dump('padmap_combat_a', WT, 'padmap'); ctl_dump('ctl_combat_a', WT, 'padtabctl')
+check(ctlDoc(WT)['chooser']['list'] == 'dstool' and ctlDoc(WT)['pos'] == 8, "p43: base A (with its fight-layer command): the DS tab again",
+      ctlDoc(WT)['chooser'])
+# a binding on base A: the row is there, but refused with the reason (bind-fixed: the game keeps the key)
+WT.execute('pp("PADDLEFT")')
+check(ctlDoc(WT)['chooser']['list'] == 'extra', "p43: base A's Extra tab", ctlDoc(WT)['chooser'])
+for _ in range(60):
+    r = ctlDoc(WT)['chooser']
+    if r['id'] == 'JUMP':
+        break
+    WT.execute('pp("PADDDOWN")')
+if ctlDoc(WT)['chooser']['id'] == 'JUMP':
+    WT.execute('FIGHTS = {}; pp("PAD1")')
+    check(ctlDoc(WT).get('note') == 'bind-fixed' and int(WT.eval('#FIGHTS')) == 0, "p43: Jump on base A: refused, bind-fixed (nothing put)",
+          ctlDoc(WT).get('note'))
+WT.execute('pp("PAD2"); WowCompanion.padMap.clearCombatFace(8)')
+# a form's set: a binding refused (bind-form), an Extra entry goes on the form's fight layer (putFight with the form)
+at(WT, 1, 5, 768)
+WT.execute('FIGHTS = {}; pp("PAD1"); for i = 1, 3 do pp("PADDRIGHT") end')
+for _ in range(60):
+    if ctlDoc(WT)['chooser']['id'] == 'JUMP':
+        break
+    WT.execute('pp("PADDDOWN")')
+WT.execute('pp("PAD1")')
+check(ctlDoc(WT).get('note') == 'bind-form' and int(WT.eval('#FIGHTS')) == 0, "p43: Jump on a form's X: refused, bind-form", ctlDoc(WT).get('note'))
 WT.execute('pp("PAD2")')
+at(WT, 1, 1)
 # WoW Defaults unchanged: five on a plain button
 WT.execute('pp("PADLSHOULDER")')
 for _ in range(12):

@@ -274,6 +274,7 @@ class PadTabPage(
         if (c.note == "bind-dpad bar") say("The DS WoW toolbar has the plain D-pad")
         if (c.note == "dpad-bar") say("The DS WoW toolbar has this button: turn it off to use it")    // p34
         if (c.note == "bind-fixed") say("The game keeps that button for itself")
+        if (c.note == "bind-form") say("A form's set has no game key of its own")                  // p43
         if (c.note == "bind-move") say("It rides the key, not the bar: clear it and choose it where you want it")
         if (c.note == "move-refused") say("The game did not move it")
         if (c.note == "not-on-radial") say("The spell radial takes spells only")
@@ -464,26 +465,25 @@ class PadTabPage(
         "JUMP" -> UiKit.tex("fixed_jump"); "INTERACTTARGET" -> UiKit.tex("fixed_interact"); else -> Icons.get(icon)
     }
 
-    /** m34 why the chosen button cannot take a game binding (PadMap's rule), or null when it can */
-    private fun bindWhy(m: PadMapModel.Map): String? {
-        val s = shown()
-        return when {
-            s == 1 && pos >= 5 -> "The game keeps that button for itself"
-            s == 3 || s == 4 -> "Only on a button with no trigger, or with ${setWord(2)}: the game keeps ${setWord(3)} to itself"
-            s == 1 && m.dpad?.want == true -> "The DS WoW toolbar has the plain D-pad: turn it off, or use ${setWord(2)}"
-            else -> null
-        }
+    /** m34 / p43 why the chosen button cannot take a game binding (PadMap's rule, ChooserTabs.bindBlock), or null when it can */
+    private fun bindBlock(m: PadMapModel.Map): String? =
+        ChooserTabs.bindBlock(shown(), pos, toolbar = m.dpad?.want == true, form = formNow() != null && pos != 7)
+
+    private fun bindWhy(m: PadMapModel.Map): String? = when (bindBlock(m)) {
+        "form" -> "A form's set has no game key of its own"                // p43 (PadMap m141)
+        "fixed" -> "The game keeps that button for itself"
+        "layer" -> "Only on a button with no trigger, or with ${setWord(2)}: the game keeps ${setWord(3)} to itself"
+        "dpad bar" -> "The DS WoW toolbar has the plain D-pad: turn it off, or use ${setWord(2)}"
+        else -> null
     }
 
     /** m34 the same, as the end of one short line under the chooser ("Jump" + it) */
-    private fun bindShort(m: PadMapModel.Map): String? {
-        val s = shown()
-        return when {
-            s == 1 && pos >= 5 -> "cannot go on the game's own button"
-            s == 3 || s == 4 -> "works on buttons without a trigger, or with ${setWord(2)}"
-            s == 1 && m.dpad?.want == true -> "needs the DS WoW toolbar off, or ${setWord(2)}"
-            else -> null
-        }
+    private fun bindShort(m: PadMapModel.Map): String? = when (bindBlock(m)) {
+        "form" -> "cannot go on a form's set"
+        "fixed" -> "cannot go on the game's own button"
+        "layer" -> "works on buttons without a trigger, or with ${setWord(2)}"
+        "dpad bar" -> "needs the DS WoW toolbar off, or ${setWord(2)}"
+        else -> null
     }
 
     private fun iconOf(m: PadMapModel.Map, sl: PadMapModel.Slot?, p: Int) = when {
@@ -498,13 +498,10 @@ class PadTabPage(
         else -> PadMapModel.commandOn(m, sl)?.name ?: sl.name ?: "Set in the game"
     }
 
-    /** spells only (the addon's onlySpells, PadTabCtl p39): the radial; In combat a base X / Y / A, a form's own set, the toolbar's bare
-     *  D-pad; out of combat a combat button. Anywhere else In combat has all five tabs (the user on 1428: "it only shows the first 3") */
-    private fun onlySpells(m: PadMapModel.Map): Boolean {
-        val sl = slotOf(m, shown(), pos)
-        return ChooserTabs.spellsOnly(view, face = PadMapModel.isFace(sl), form = formNow() != null && pos != 7,
-            toolbarDpad = shown() == 1 && pos in 1..4 && toolbarOn(), combatButton = sl?.kind == PadMapModel.Kind.COMBAT)
-    }
+    /** spells only (the addon's onlySpells, PadTabCtl p43): the radial, and out of combat a combat button. Every In combat button has all
+     *  five tabs (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button") */
+    private fun onlySpells(m: PadMapModel.Map): Boolean =
+        ChooserTabs.spellsOnly(view, combatButton = slotOf(m, shown(), pos)?.kind == PadMapModel.Kind.COMBAT)
 
     /** p11 the chooser's tabs (the user 2026-10-07: "in the controller menu, when assigning a spell, the spell menu needs some tabs. start on spells, then general (including professions), then extra"); a fight spell's chooser has no Extra */
     private fun chooserTabs(m: PadMapModel.Map) = ChooserTabs.keys(onlySpells(m))  // p14; p34: the DS tab ("dstool"); p39: In combat too
@@ -1478,7 +1475,8 @@ class PadTabPage(
         }
         // PadTabCtl p41 (PadMap m132, the fight-only layer): on the In combat tab a whole-button thing goes on the fight layer only, so
         // Replace asks only when the fight layer holds something there (a combat button); an empty fight layer: straight on
-        if (fight() && whole(t)) return if (!afterReplace && here?.kind == PadMapModel.Kind.COMBAT) "replace" else null
+        // p43: a base X / Y / A's fight action counts too
+        if (fight() && whole(t)) return if (!afterReplace && (here?.kind == PadMapModel.Kind.COMBAT || (PadMapModel.isFace(here) && here!!.fight != null))) "replace" else null
         if (!afterReplace && PadMapModel.replaces(m, shown(), pos) != null) return "replace"
         if (t is Thing.Command && !t.c.made) return if (PadMapModel.macrosFull(m)) "full" else "make"
         return null
