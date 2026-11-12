@@ -24,7 +24,7 @@ import kotlin.math.abs
  * chosen tab glides into view with [FADE] px of the next one showing, the cut edges fade, and L / R stay on the row's outsides.
  */
 class SettingsTabBar(context: Context, private val onPick: (SettingsTabs.Tab) -> Unit) : View(context) {
-    var tab: SettingsTabs.Tab = SettingsTabs.Tab.HOME
+    var tab: SettingsTabs.Tab = SettingsTabs.Tab.GENERAL
         set(v) { if (field != v) { field = v; invalidate() } }
     /** the controller's cursor is on the tab row (on [tab]) */
     var cursor = false

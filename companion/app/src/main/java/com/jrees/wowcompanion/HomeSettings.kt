@@ -419,7 +419,10 @@ object TipsSwitch {
  * (UiKit.choice, the chosen one lit). Stacked under the game-UI section by settingsRoom (GameUiSection.kt). Touches act on
  * RELEASE and only when the finger has not moved (the page scrolls).
  */
-class HomeSettingsSection(context: Context) : View(context) {
+class HomeSettingsSection(context: Context,
+    /** the six tabs (2026-11-12): the rows this section draws, by their words (null = all); Bottom screen > Home has all but "Start the
+     *  attack when a spell is cast", which Controller > Combat helpers' own section draws */
+    val only: ((String) -> Boolean)? = null) : View(context) {
     private val pSection by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 32f; color = Theme.gold } }
     private val pLabel by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 31f; color = Theme.text } }
     private val pSub by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Theme.textDim } }
@@ -476,8 +479,9 @@ class HomeSettingsSection(context: Context) : View(context) {
         // THE PAGE'S ROW LOOK (the user's signed-off picture, 2026-10-06; Map's emulator check: this section had no row boxes and
         // bigger buttons): a raised row, its label and sub-line on the left, its choices as one compact pair on the right. A row is
         // ROW tall (48 dp) and each choice's touch area spans the whole row, though the button is drawn the page's compact size
-        c?.drawText(Tr.t("Home"), 28f, 48f, pSection)
-        var y = 60f
+        // the six tabs: no title of its own (the room's folding heading names the group); each row only when [only] has it
+        drawn = 0; labelsNow.clear()
+        var y = TOP
         y = row(c, y, "Controller on Home", listOf("Out of combat. In combat the diamonds always take over."),
             listOf("Thin row", "Diamonds"), HomeRest.values().indexOf(HomeSettings.rest),
             listOf({ HomeSettings.rest = HomeRest.ROW }, { HomeSettings.rest = HomeRest.DIAMONDS }))
@@ -522,12 +526,24 @@ class HomeSettingsSection(context: Context) : View(context) {
                 else listOf({ if (d.want == true) onDpad(false) }, { if (d.want != true) onDpad(true) }))
             // the radial's way moved to Settings' Controller section: TWO settings for every wheel (Wheels: open / Wheels: pick)
         }
-        return y + 20f
+        return if (drawn == 0) 0f else y + 10f
     }
 
+    /** rows drawn by the last [lay] (the first one stands at [TOP], each next one [GAP] below the last) */
+    private var drawn = 0
+
+    /** the row labels this section draws now (the room's tests) */
+    fun rowLabels(): List<String> { lay(null); return labelsNow.toList() }
+    private val labelsNow = ArrayList<String>()
+
     /** one raised row at [top]: [label], [subs] (one line each), [choices] on the right with [sel] lit; [acts] null = not switchable */
-    private fun row(c: Canvas?, top: Float, label: String, subs: List<String>, choices: List<String>, sel: Int,
+    private fun row(c: Canvas?, top0: Float, label: String, subs: List<String>, choices: List<String>, sel: Int,
                     acts: List<() -> Unit>?): Float {
+        if (only?.invoke(label) == false) return if (drawn == 0) TOP else top0 - GAP     // not this section's: no room taken
+        // the callers add GAP before every row but the first; the first one DRAWN stands at TOP
+        val top = if (drawn == 0) TOP else top0
+        drawn++
+        labelsNow.add(label)
         val h = maxOf(ROW, 75f + (subs.size - 1) * SUB_H + 21f)
         val box = RectF(16f, top, width - 16f, top + h)
         if (c != null) { pRow.color = Theme.raised; c.drawRoundRect(box, 8f, 8f, pRow); rowHits.add(RectF(box) to label) }
@@ -570,6 +586,7 @@ class HomeSettingsSection(context: Context) : View(context) {
     }
 
     private companion object {
+        const val TOP = 8f              // the first row's top (the room's folding heading stands above the section)
         const val ROW = 112f            // a row's height: the 48 dp touch floor (each choice's touch area is the whole row)
         const val ROW_H_DRAWN = 96f     // where the compact buttons sit: centred as on the page's 96 px rows
         const val GAP = 10f             // between rows, as on the page

@@ -139,7 +139,7 @@ class ThemeShotsTest {
     private fun settings(): Bitmap {
         Settings.init(app); SettingsTabs.init(app)
         val v = SettingsView(app) { }
-        v.tab = SettingsTabs.Tab.HOME                                         // the Theme picker's tab (the top of Home)
+        v.tab = SettingsTabs.Tab.GENERAL                                      // the Theme picker's tab (General > Look)
         return shot(v, 1080 - Strip.HEIGHT)
     }
 

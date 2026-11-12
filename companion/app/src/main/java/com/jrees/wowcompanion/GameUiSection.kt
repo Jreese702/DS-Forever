@@ -59,12 +59,15 @@ fun settingsRoom(context: Context, settingsView: View): View = ScrollView(contex
 class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(context) {
 
     /**
-     * THE SETTINGS TABS (board f-settings-tabs): the game's elements are the "Top screen" tab ([Part.GAME_UI]) and the companion's
-     * status is on "System" ([Part.COMPANION]); [Part.ALL] is both, as before the tabs.
+     * THE SIX TABS (the user's approved layout, 2026-11-12): one part per group's rows, drawn under the room's folding heading (no title
+     * of its own) - Top screen's [HUD] / [TARGET] / [PARTY] / [NAVIGATION] / [WINDOWS], Controller > Combat helpers' [COMBAT] and
+     * [AUTO_SHOT], General > Help's [COMPANION] status. The rows, their ids, taps and channels are the ones they had.
      */
-    enum class Part { ALL, GAME_UI, COMPANION, QOL }
+    enum class Part { ALL, HUD, TARGET, PARTY, NAVIGATION, WINDOWS, COMBAT, AUTO_SHOT, COMPANION }
     private val hasUi get() = part != Part.COMPANION
-    private val hasStatus get() = part != Part.GAME_UI
+    private val hasStatus get() = part == Part.ALL || part == Part.COMPANION
+    /** a group's part: no title, its rows under the room's heading */
+    private val grouped get() = part != Part.ALL
 
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -115,18 +118,22 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             if (s.show) "On: hostile nameplates glow yellow, orange, then red as you near their aggro range" else "Off: no tint on the nameplates")
     }
     private fun allRows(): List<GameUi.Row> = when (part) {
-        // Top screen: the game's own windows only (the housekeeping pass)
-        Part.GAME_UI -> GameUi.rows() + listOfNotNull(lootRow(), GameUi.playerRow(), GameUi.ufTargetRow(), GameUi.ufHpRow(), GameUi.ufTotRow(), GameUi.targetRow(), GameUi.ufPartyRow(), GameUi.partyRow(), GameUi.castBarRow(),
-            GameUi.nameplatesRow(), tipsRow())
-        // QOL: three groups, each under its heading (a "#" row); the rows, their ids and taps are the ones Top screen had
-        Part.QOL -> group("HUD", listOfNotNull(GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow())) +
-            // "Avoid dangerous areas" (SafePath's) left with SafePath (the user, 2026-11-12: "remove safe path ... from the options")
-            group("Navigation", listOfNotNull(compassRow(), GameUi.worldMarkersRow(), compassCamRow())) +
-            group("Combat", listOfNotNull(GameUi.attackRow(), GameUi.autoShotRow(), ringsRow())) +
-            // Party mode out of Experimental, on by default (the user, 2026-11-12)
-            group("Party", listOfNotNull(GameUi.partyModeRow()))
+        Part.HUD -> listOfNotNull(GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow())
+        Part.TARGET -> listOfNotNull(GameUi.ufTargetRow(), GameUi.ufHpRow(), GameUi.ufTotRow(), ringsRow(), GameUi.nameplatesRow())
+        Part.PARTY -> listOfNotNull(GameUi.ufPartyRow(), GameUi.partyRow())
+        // "Avoid dangerous areas" (SafePath's) left with SafePath (the user, 2026-11-12: "remove safe path ... from the options")
+        Part.NAVIGATION -> listOfNotNull(compassRow(), compassCamRow(), GameUi.worldMarkersRow())
+        // the game's own windows, in the approved order (the game's elements by their ids; the controller bars last)
+        Part.WINDOWS -> (GameUi.rows() + listOfNotNull(lootRow(), tipsRow(), GameUi.castBarRow(), GameUi.playerRow(), GameUi.targetRow()))
+            .sortedBy { r -> WINDOWS_ORDER.indexOf(r.id).let { if (it < 0) WINDOWS_ORDER.size else it } }
+        // Party mode out of Experimental, on by default (the user, 2026-11-12)
+        Part.COMBAT -> listOfNotNull(GameUi.partyModeRow(), GameUi.attackRow())
+        Part.AUTO_SHOT -> listOfNotNull(GameUi.autoShotRow())
+        Part.COMPANION -> emptyList()
         else -> GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
     }
+    /** the rows this part draws now, by their words (the room's tests) */
+    fun rowLabels(): List<String> = rows.filter { !it.id.startsWith("#") }.map { it.label }
     /** a heading row ("#" + its words) over [rows], none when the group is empty */
     private fun group(heading: String, rows: List<GameUi.Row>): List<GameUi.Row> =
         if (rows.isEmpty()) emptyList() else listOf(GameUi.Row("#$heading", heading, null, UiMode.ON, true, false, "")) + rows
@@ -143,6 +150,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         }
         return GameUi.Row(DANGER_ID, "Avoid dangerous areas", null, UiMode.ON, safe, false, note)
     }
+    /** the status row as last drawn (a stop for the controller's cursor: A there does nothing) */
+    private val statusBox = RectF()
     private var selected: String? = null
     private val rowBoxes = ArrayList<Pair<RectF, String>>()
     private val segBoxes = ArrayList<Pair<RectF, UiMode>>()
@@ -171,8 +180,9 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
 
     private fun wantedHeight(): Int {
         val heads = rows.count { it.id.startsWith("#") }
-        var h = (if (hasUi) (if (part == Part.QOL) QOL_TOP else HEAD_H) + (rows.size - heads) * (ROW_H + GAP) + heads * SUBHEAD_H else 0f) +
-            BOTTOM + (if (hasStatus) STATUS_H else 0f)
+        if (grouped && hasUi && rows.isEmpty()) return 0                  // nothing to draw: the group's heading alone
+        var h = (if (hasUi) (if (grouped) QOL_TOP else HEAD_H) + (rows.size - heads) * (ROW_H + GAP) + heads * SUBHEAD_H else 0f) +
+            BOTTOM + (if (hasStatus) (if (grouped) STATUS_ROW_H else STATUS_H) else 0f)
         if (hasUi && selected != null) h += BAR_H + GAP
         return h.toInt()
     }
@@ -189,6 +199,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             out.add(RectF(box))
             if (id == selected) { segBoxes.forEach { out.add(RectF(it.first)) }; stepBoxes.forEach { out.add(RectF(it.first)) } }
         }
+        if (part == Part.COMPANION && !statusBox.isEmpty) out.add(RectF(statusBox))
         return out
     }
 
@@ -271,7 +282,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         rowBoxes.clear(); segBoxes.clear(); stepBoxes.clear()
         var y = 0f
         if (hasUi) {
-        if (part == Part.QOL) y = QOL_TOP
+        if (grouped) y = QOL_TOP
         else { c.drawText(Tr.t("Game UI on the top screen"), 28f, HEAD_TEXT + 4f, pSection); y = HEAD_H }
         for (r in rows) {
             if (r.id.startsWith("#")) {
@@ -309,9 +320,12 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         if (!hasStatus) return
 
         // ---- what the status line under the strip used to say (user, 2026-09-28: it lives here now)
-        y += COMPANION_TOP                 // the page's 90 px seam above a heading (Map's measure 2026-10-06: it was 52)
-        c.drawText(Tr.t("Companion"), 28f, y + HEAD_TEXT + 12f, pSection)
-        val box = RectF(16f, y + HEAD_H + 8f, width - 16f, y + HEAD_H + 8f + ROW_H)
+        val box = if (grouped) RectF(16f, y + STATUS_TOP, width - 16f, y + STATUS_TOP + ROW_H) else {
+            y += COMPANION_TOP                 // the page's 90 px seam above a heading (Map's measure 2026-10-06: it was 52)
+            c.drawText(Tr.t("Companion"), 28f, y + HEAD_TEXT + 12f, pSection)
+            RectF(16f, y + HEAD_H + 8f, width - 16f, y + HEAD_H + 8f + ROW_H)
+        }
+        statusBox.set(box)
         pFill.color = Theme.raised
         c.drawRoundRect(box, 8f, 8f, pFill)
         pLabel.color = Theme.text
@@ -610,6 +624,12 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         const val BOTTOM = 16f
         const val COMPANION_TOP = 38f
         const val STATUS_H = COMPANION_TOP + HEAD_H + 8f + ROW_H + 8f     // the "Companion" heading and its one row
+        /** General > Help's status row under Reload (no heading of its own): its top inside the part, and the part's depth */
+        const val STATUS_TOP = 2f
+        const val STATUS_ROW_H = STATUS_TOP + ROW_H
+        /** Top screen > Game windows' order (the user's approved list): the game's elements and our switches by id */
+        val WINDOWS_ORDER = listOf("minimap", "tracker", "chat", "dialogs", LOOT_ID, TIPS_ID, GameUi.CASTBAR_ID, GameUi.PLAYER_ID,
+            GameUi.TARGET_ID, "hud")
         const val SLOP = 24f
     }
 }

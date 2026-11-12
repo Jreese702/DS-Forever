@@ -5,84 +5,100 @@ import android.content.SharedPreferences
 
 /**
  * THE SETTINGS ROOM'S TABS (board f-settings-tabs; the user, 2026-10-15: "the settings menu has grown a lot ... we need to make tabs
- * for it", the plan and mocks approved the same day: indoor maps under Performance, the room opens on the last tab used). Phase 1:
- * the tabs and the rows on them; the "What it does" previews come in phase 2.
+ * for it", the plan and mocks approved the same day). 2026-11-12 (the user's approved layout): SIX TABS of FOLDING GROUPS - General,
+ * Bottom screen, Top screen, Controller, Add-ons, Performance; the QOL and System tabs are gone.
  *
- * ROWS DECLARE THEIR TAB, as data: every row belongs to one [Block] (a heading's rows, drawn by one view), and each block names its
- * tab. A new row joins its block's list (and so its tab); a new kind of row is a new block with its tab. The room shows the current
- * tab's blocks only. [Block.rows] are the rows' own words, so the off-device test proves every row is on exactly one tab.
+ * ROWS DECLARE THEIR PLACE, as data: every row belongs to one [Block] (rows drawn by one view, in one place), each block to one [Group]
+ * (a heading that folds), each group to one [Tab]. The order within a tab / group is the enums' order. [Block.rows] are the rows' own
+ * words, so the off-device test proves every row is in exactly one group. A block names WHO draws it ([Drawer]); only where a row is
+ * drawn changed in the six-tab pass: each row's id, taps, channels and saved values are the ones it had.
  */
 object SettingsTabs {
     enum class Tab(val label: String, val hidden: Boolean = false) {
-        // test40 (the user: "Rather than renaming, move those settings to the home tab and put them under home module settings"): the
-        // Rooms tab is gone, its Map and Chat rows on Home under [HOME_MODULES] (a saved "ROOMS" opens on Home: [last])
-        // the housekeeping pass (the user: "I want to hide the performance tab and add a QOL tab where we move all of our quality of life
-        // enhancements to"; "Build it" / "Hide it all"): QOL after Controller; PERFORMANCE HIDDEN - its settings keep their saved values
-        // and keep working, the tab is never shown nor stepped onto (a saved "PERFORMANCE" opens on Home: [last])
-        // 2026-11-09 (the user: "I want to get lossless re added back into the settings", the pick "Unhide the Performance tab"): Performance
-        // is back on the row, as it was: the frame limit and Lossless frame generation, then Indoor maps
-        HOME("Home"), CONTROLLER("Controller"), QOL("QOL"), TOP("Top screen"), ADDONS("Add-ons"), PERFORMANCE("Performance"),
-        SYSTEM("System")
+        GENERAL("General"), BOTTOM("Bottom screen"), TOP("Top screen"), CONTROLLER("Controller"), ADDONS("Add-ons"),
+        PERFORMANCE("Performance")
     }
 
     /** the tabs the room shows, in order (a hidden one is never on the row, never stepped onto) */
     val visible: List<Tab> get() = Tab.values().filter { !it.hidden }
 
-    /** the order within a tab is this enum's order */
-    enum class Block(val tab: Tab, val heading: String, val rows: List<String>) {
-        // 2026-11-12 (the user: "I personally want an oled theme, but different color variations for menus like pink and silver or
-        // gold instead of the classic bronze"): the theme picker; the TOP OF HOME (the user, 2026-11-12: "Themes should be the top of home")
-        THEME(Tab.HOME, "Theme", listOf("Theme")),
-        HOME_SECTION(Tab.HOME, "Home", listOf("Controller on Home", "Combat layout", "Swing timer",
-            // "Stance bar", "Pet bar": hidden for now (test40, the user: "hide the settings that don't do anything for now")
-            "Focused quest", "Start the attack when a spell is cast", "DS WoW toolbar")),
-        CONTROLLER(Tab.CONTROLLER, "Controller", listOf("ABXY location", "Button glyphs")),
-        // f-radial-settings (1.0.9, the user: "better organize each radial setting into categories so its clear what each one is"): a
-        // heading per wheel, naming the button that opens it
-        PAUSE_WHEEL(Tab.CONTROLLER, "Pause menu (Start)", listOf("Pause menu: open", "Pause menu: pick")),
-        ITEM_WHEEL(Tab.CONTROLLER, "Item wheel (D-pad Up)", listOf("Item wheel: open", "Item wheel: pick")),
-        SPELL_WHEEL(Tab.CONTROLLER, "Spell wheel (its button in Controller)", listOf("Spell wheel: open", "Spell wheel: pick")),
-        CLASS_LEFT(Tab.CONTROLLER, "Left class radial (LB + LT)", listOf("Left class radial: open", "Left class radial: pick")),
-        CLASS_RIGHT(Tab.CONTROLLER, "Right class radial (RB + RT)", listOf("Right class radial: open", "Right class radial: pick")),
-        // m62 SMART BUFFS (the user: "this setting will need its own section in the settings"): Y out of combat, per character; on QOL
-        SMART_Y(Tab.QOL, "Smart Y (out of combat, nothing targeted)", listOf("Smart Y")),
-        // QOL's quality-of-life groups (GameUiSection's QOL part draws them, the same rows, ids, taps and channels as before)
-        QOL_HUD(Tab.QOL, "HUD", listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale")),
-        // 2026-11-12 (the user: "remove safe path and quest trail from the options"): SafePath's "Avoid dangerous areas" is gone
-        QOL_NAV(Tab.QOL, "Navigation", listOf("Compass bar", "World markers", "Compass follows the camera")),
-        QOL_COMBAT(Tab.QOL, "Combat", listOf("Aggro tint")),
-        // Top screen: the game's own windows only
-        GAME_UI(Tab.TOP, "Game UI on the top screen", listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window",
-            "NPC windows", "Loot window",
-            // hub17 (the HUD-mode split): the game's own frames and nameplates, the cast bar and the tooltips, as switches
-            "Player frame", "Target bar", "Target health text", "Target of target", "Target frame", "DS party frames", "Party frames", "Cast bar", "Enemy nameplates", "Game tooltips")),
-        MAP(Tab.HOME, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "Quest tracking", "World map")),
-        CHAT(Tab.HOME, "Chat", listOf("Message input")),
-        // 1.0.9 (the user, on Spoken: "make an addon section of our settings"): one block per third-party add-on (ThirdPartyAddons)
-        ADDON_SPOKEN(Tab.ADDONS, "Spoken", ThirdPartyAddons.SPOKEN.rowWords()),
-        ADDON_POLESTAR(Tab.ADDONS, "Polestar", ThirdPartyAddons.POLESTAR.rowWords()),
-        ADDON_QUESTTRAIL(Tab.ADDONS, "QuestTrail", ThirdPartyAddons.QUESTTRAIL.rowWords()),
-        ADDON_MANNERS(Tab.ADDONS, "Manners", ThirdPartyAddons.MANNERS.rowWords()),
-        FRAMES(Tab.PERFORMANCE, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
-            "Flow scale", "Performance mode", "Restart the game")),
-        INDOOR(Tab.PERFORMANCE, "Indoor maps", listOf("Build in the background", "Progress", "Route data")),
-        // 2026-11-07 (the user: Spanish and French, "Start screen + login first", the Thor's language or an override here)
-        LANGUAGE(Tab.SYSTEM, "Language", listOf("Language")),
-        GAME(Tab.SYSTEM, "Game", listOf("Reload game UI", "Battle.net login", "Problem report")),
-        // 1.0.17 (the user's pick "A setting, off by default"): the lighter behaviour on any Thor (System: Performance is hidden)
-        LIGHTER(Tab.SYSTEM, "Lighter mode", listOf("Lighter mode", "Low-memory graphics")),
-        STREAMING(Tab.SYSTEM, "Streaming", listOf("Stream settings")),
-        COMPANION(Tab.SYSTEM, "Companion", listOf("Status")),
+    /** a heading that folds (the user's pick: a tab opens with its FIRST group open, the rest folded) */
+    enum class Group(val tab: Tab, val heading: String) {
+        LOOK(Tab.GENERAL, "Look"), ACCOUNT(Tab.GENERAL, "Account"), HELP(Tab.GENERAL, "Help"),
+        HOME(Tab.BOTTOM, "Home"), MAP(Tab.BOTTOM, "Map"), CHAT(Tab.BOTTOM, "Chat"),
+        HUD(Tab.TOP, "Your HUD"), TARGET(Tab.TOP, "Target"), PARTY(Tab.TOP, "Party"), NAVIGATION(Tab.TOP, "Navigation"),
+        WINDOWS(Tab.TOP, "Game windows"),
+        BUTTONS(Tab.CONTROLLER, "Buttons"), WHEELS(Tab.CONTROLLER, "Wheels"), SMART_Y(Tab.CONTROLLER, "Smart Y"),
+        COMBAT(Tab.CONTROLLER, "Combat helpers"),
+        POLESTAR(Tab.ADDONS, "Polestar"), SPOKEN(Tab.ADDONS, "Spoken"), QUESTTRAIL(Tab.ADDONS, "QuestTrail"), MANNERS(Tab.ADDONS, "Manners"),
+        FRAMES(Tab.PERFORMANCE, "Frames"), MEMORY(Tab.PERFORMANCE, "Memory"), INDOOR(Tab.PERFORMANCE, "Indoor maps"),
+        STREAMING(Tab.PERFORMANCE, "Streaming"),
     }
 
-    /** the heading over the Home modules' blocks on the Home tab (below Home's own rows) */
-    const val HOME_MODULES = "Home module settings"
+    /** who draws a block: SettingsView, Home's section (HomeSettingsSection) or a GameUiSection part */
+    enum class Drawer { VIEW, HOME, GAME_UI }
 
-    /** the blocks SettingsView draws itself (the others are Home's section and the two GameUiSection parts) */
-    val VIEW_BLOCKS = setOf(Block.THEME, Block.LIGHTER, Block.LANGUAGE, Block.GAME, Block.STREAMING, Block.MAP, Block.INDOOR, Block.CONTROLLER, Block.PAUSE_WHEEL, Block.ITEM_WHEEL, Block.SPELL_WHEEL,
-        Block.CLASS_LEFT, Block.CLASS_RIGHT, Block.SMART_Y,
-        Block.CHAT, Block.FRAMES, Block.ADDON_SPOKEN, Block.ADDON_POLESTAR, Block.ADDON_QUESTTRAIL,
-        Block.ADDON_MANNERS)
+    /** the order within a group is this enum's order; [subHead] = the block keeps its own sub-heading inside its group (the wheels) */
+    enum class Block(val group: Group, val heading: String, val rows: List<String>, val drawer: Drawer = Drawer.VIEW,
+                     val subHead: Boolean = false) {
+        // ---- General
+        // 2026-11-12 (the user: "an oled theme, but different color variations for menus"): the theme picker, the language under it
+        THEME(Group.LOOK, "Theme", listOf("Theme")),
+        LANGUAGE(Group.LOOK, "Language", listOf("Language")),
+        ACCOUNT(Group.ACCOUNT, "Battle.net login", listOf("Battle.net login")),
+        HELP(Group.HELP, "Help", listOf("Problem report", "Reload game UI")),
+        COMPANION(Group.HELP, "Companion", listOf("Status"), Drawer.GAME_UI),
+        // ---- Bottom screen (the old Home tab)
+        HOME_SECTION(Group.HOME, "Home", listOf("Controller on Home", "Combat layout", "Swing timer",
+            // "Stance bar", "Pet bar": hidden for now (test40, the user: "hide the settings that don't do anything for now")
+            "Focused quest", "DS WoW toolbar"), Drawer.HOME),
+        MAP(Group.MAP, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map")),
+        CHAT(Group.CHAT, "Chat", listOf("Message input")),
+        // ---- Top screen (GameUiSection's parts: the same rows, ids, taps and channels as on QOL / Top screen before)
+        HUD(Group.HUD, "Your HUD", listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale"), Drawer.GAME_UI),
+        TARGET(Group.TARGET, "Target", listOf("Target bar", "Target health text", "Target of target", "Aggro tint", "Enemy nameplates"),
+            Drawer.GAME_UI),
+        PARTY(Group.PARTY, "Party", listOf("DS party frames", "Party frames"), Drawer.GAME_UI),
+        NAVIGATION(Group.NAVIGATION, "Navigation", listOf("Compass bar", "Compass follows the camera", "World markers"), Drawer.GAME_UI),
+        // hub31: Polestar's own frame on the top screen (it was under Add-ons > Polestar), shown while Polestar is in use
+        POLESTAR_TOP(Group.NAVIGATION, "Polestar on the top screen", listOf("Polestar on the top screen")),
+        GAME_UI(Group.WINDOWS, "Game windows", listOf("Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window",
+            "Game tooltips", "Cast bar", "Player frame", "Target frame", "Controller bars, buffs and XP"), Drawer.GAME_UI),
+        // ---- Controller
+        CONTROLLER(Group.BUTTONS, "Buttons", listOf("ABXY location", "Button glyphs")),
+        // f-radial-settings (1.0.9, the user: "better organize each radial setting into categories so its clear what each one is"): a
+        // sub-heading per wheel, naming the button that opens it
+        PAUSE_WHEEL(Group.WHEELS, "Pause menu (Start)", listOf("Pause menu: open", "Pause menu: pick"), subHead = true),
+        ITEM_WHEEL(Group.WHEELS, "Item wheel (D-pad Up)", listOf("Item wheel: open", "Item wheel: pick"), subHead = true),
+        SPELL_WHEEL(Group.WHEELS, "Spell wheel (its button in Controller)", listOf("Spell wheel: open", "Spell wheel: pick"), subHead = true),
+        CLASS_LEFT(Group.WHEELS, "Left class radial (LB + LT)", listOf("Left class radial: open", "Left class radial: pick"), subHead = true),
+        CLASS_RIGHT(Group.WHEELS, "Right class radial (RB + RT)", listOf("Right class radial: open", "Right class radial: pick"), subHead = true),
+        // m62 SMART BUFFS (the user: "this setting will need its own section in the settings"): Y out of combat, per character
+        SMART_Y(Group.SMART_Y, "Smart Y (out of combat, nothing targeted)", listOf("Smart Y")),
+        // Combat helpers: Party mode, Start attack on hostile target, Start the attack when a spell is cast (Home's section's row),
+        // Combat Auto Shot - in that order, so three blocks by two views
+        COMBAT(Group.COMBAT, "Combat", listOf("Party mode", "Start attack on hostile target"), Drawer.GAME_UI),
+        ATTACK_CAST(Group.COMBAT, "Start the attack when a spell is cast", listOf("Start the attack when a spell is cast"), Drawer.HOME),
+        AUTO_SHOT(Group.COMBAT, "Combat Auto Shot", listOf("Combat Auto Shot"), Drawer.GAME_UI),
+        // ---- Add-ons: one group per third-party add-on (ThirdPartyAddons); Polestar's carries Quest tracking (it was under Map)
+        ADDON_POLESTAR(Group.POLESTAR, "Polestar", ThirdPartyAddons.POLESTAR.rowWords()),
+        QUEST_TRACKING(Group.POLESTAR, "Quest tracking", listOf("Quest tracking")),
+        ADDON_SPOKEN(Group.SPOKEN, "Spoken", ThirdPartyAddons.SPOKEN.rowWords()),
+        ADDON_QUESTTRAIL(Group.QUESTTRAIL, "QuestTrail", ThirdPartyAddons.QUESTTRAIL.rowWords()),
+        ADDON_MANNERS(Group.MANNERS, "Manners", ThirdPartyAddons.MANNERS.rowWords()),
+        // ---- Performance
+        FRAMES(Group.FRAMES, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
+            "Flow scale", "Performance mode", "Restart the game")),
+        // 1.0.17 (the user's pick "A setting, off by default"): the lighter behaviour on any Thor
+        LIGHTER(Group.MEMORY, "Lighter mode", listOf("Lighter mode", "Low-memory graphics")),
+        INDOOR(Group.INDOOR, "Indoor maps", listOf("Build in the background", "Progress", "Route data")),
+        STREAMING(Group.STREAMING, "Streaming", listOf("Stream settings"));
+
+        val tab: Tab get() = group.tab
+    }
+
+    /** the blocks SettingsView draws itself (the others are Home's section and the GameUiSection parts) */
+    val VIEW_BLOCKS: Set<Block> get() = Block.values().filter { it.drawer == Drawer.VIEW }.toSet()
 
     /** the third-party add-on a block draws (Settings > Add-ons), or null */
     fun addonOf(b: Block): ThirdPartyAddons.Addon? = when (b) {
@@ -90,6 +106,13 @@ object SettingsTabs {
         Block.ADDON_QUESTTRAIL -> ThirdPartyAddons.QUESTTRAIL; Block.ADDON_MANNERS -> ThirdPartyAddons.MANNERS; else -> null }
 
     fun blocks(tab: Tab): List<Block> = Block.values().filter { it.tab == tab && shown(it) }
+    fun blocks(g: Group): List<Block> = Block.values().filter { it.group == g && shown(it) }
+
+    /** the groups a tab shows, in order (a group with no shown block is not there: QuestTrail's while it is not installed) */
+    fun groups(tab: Tab): List<Group> = Group.values().filter { it.tab == tab && blocks(it).isNotEmpty() }
+
+    /** the groups OPEN when [tab] is shown (the user's pick, 2026-11-12: every time a tab shows, its first group open, the rest folded) */
+    fun openOnShow(tab: Tab): Set<Group> = groups(tab).take(1).toSet()
 
     /** 1.0.9 (the user: "Disable the safe path, quest trail and polestar buttons for now"): with the route modes held back, the
      *  Polestar and QuestTrail blocks are not shown (Spoken stays) */
@@ -110,12 +133,24 @@ object SettingsTabs {
         return all[Math.floorMod(i + dir, all.size)]
     }
 
-    // ---- the last tab used (the user's pick: the room opens on it); Home before any
+    /**
+     * a saved tab name (the last tab used) as today's tab: the old seven tabs' names map onto the six (HOME and the older ROOMS ->
+     * Bottom screen, QOL -> Top screen, SYSTEM -> General); nothing saved or an unknown name -> General, the first tab
+     */
+    fun fromSaved(name: String?): Tab = when (name) {
+        null -> Tab.GENERAL
+        "HOME", "ROOMS" -> Tab.BOTTOM
+        "QOL" -> Tab.TOP
+        "SYSTEM" -> Tab.GENERAL
+        else -> runCatching { Tab.valueOf(name) }.getOrDefault(Tab.GENERAL)
+    }.let { if (it.hidden) Tab.GENERAL else it }
+
+    // ---- the last tab used (the user's pick: the room opens on it)
     private var prefs: SharedPreferences? = null
     fun init(c: Context) { if (prefs == null) prefs = c.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE) }
 
     var last: Tab
-        get() = runCatching { Tab.valueOf(prefs?.getString(KEY_TAB, null) ?: Tab.HOME.name) }.getOrDefault(Tab.HOME).let { if (it.hidden) Tab.HOME else it }
+        get() = fromSaved(prefs?.getString(KEY_TAB, null))
         set(v) { prefs?.edit()?.putString(KEY_TAB, v.name)?.apply() }
 
     private const val KEY_TAB = "settingsTab"

@@ -27,18 +27,40 @@ import android.view.ViewConfiguration
  */
 class SettingsView(context: Context, private val onReload: () -> Unit) : View(context) {
 
-    /** the tab shown (the room sets it) */
-    var tab: SettingsTabs.Tab = SettingsTabs.Tab.HOME
+    /** the tab shown, for a view that draws a whole tab ([only] null: each block under its own heading, as before the six tabs) */
+    var tab: SettingsTabs.Tab = SettingsTabs.Tab.GENERAL
         set(v) { if (field != v) { field = v; requestLayout(); invalidate() } }
-    /** 2026-11-12 (the user: "Themes should be the top of home"): the room's second view draws ONLY these blocks (Theme, above Home's
-     *  own rows); the main view leaves them out ([skip]) */
+    /**
+     * THE SIX TABS' FOLDING GROUPS (the user's approved layout, 2026-11-12): the room draws each group's SettingsView rows with a SLICE
+     * of this view ([slice]) that draws ONLY [only]'s blocks (no block heading: the group's folding heading is the room's, except a
+     * [SettingsTabs.Block.subHead] block's own sub-heading, the wheels'). A slice takes its host's wiring ([hub]: the logins, the
+     * report, the picker, Smart Y's taps ...), and the host's invalidate / requestLayout / partyChanged / onSmartAck reach every slice.
+     */
     var only: Set<SettingsTabs.Block>? = null
-    var skip: Set<SettingsTabs.Block> = emptySet()
-    private fun blocksHere(): List<SettingsTabs.Block> = SettingsTabs.viewBlocks(tab).filter { (only?.contains(it) ?: true) && it !in skip }
-    /** on Home, the modules' blocks stand under one heading of their own (not the Theme view) */
-    private fun modulesHere(): Boolean = tab == SettingsTabs.Tab.HOME && only == null && blocksHere().isNotEmpty()
-    /** this view has something to draw on [t] */
-    fun hasBlocks(t: SettingsTabs.Tab): Boolean = SettingsTabs.viewBlocks(t).any { (only?.contains(it) ?: true) && it !in skip }
+        set(v) { field = v; requestLayout(); invalidate() }
+    private fun blocksHere(): List<SettingsTabs.Block> =
+        only?.let { o -> SettingsTabs.Block.values().filter { it in o && SettingsTabs.shown(it) } } ?: SettingsTabs.viewBlocks(tab)
+    /** a block's own heading is drawn: every block in a whole-tab view; in a slice only a sub-headed one (the wheels) */
+    private fun headed(b: SettingsTabs.Block): Boolean = only == null || b.subHead
+    /** this view has something to draw on [t] (a whole-tab view) */
+    fun hasBlocks(t: SettingsTabs.Tab): Boolean = SettingsTabs.viewBlocks(t).isNotEmpty()
+
+    /** the view whose wiring this slice uses (null = its own: the host's view) */
+    private var hub: SettingsView? = null
+    /** the slices made from this view (the host's): its invalidate / requestLayout and the host's calls reach them */
+    private var slices: ArrayList<SettingsView>? = null
+    /** a view drawing only [blocks], wired through this one (the room's groups) */
+    fun slice(blocks: Set<SettingsTabs.Block>): SettingsView = SettingsView(context, onReload).also { s ->
+        s.hub = this
+        s.only = blocks
+        (slices ?: ArrayList<SettingsView>().also { slices = it }).add(s)
+    }
+    /** the slices made from this view (the room's) */
+    fun sliceViews(): List<SettingsView> = slices?.toList() ?: emptyList()
+
+    override fun invalidate() { super.invalidate(); slices?.forEach { it.invalidate() } }
+    override fun postInvalidate() { super.postInvalidate(); slices?.forEach { it.postInvalidate() } }
+    override fun requestLayout() { super.requestLayout(); slices?.forEach { it.requestLayout() } }
 
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
@@ -46,7 +68,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         textSize = 44f; color = Theme.gold; typeface = Typeface.DEFAULT_BOLD
     }
     private val pSection by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 32f; color = Theme.gold } }   // a heading, in Morpheus
-    private val pSubHead by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 26f; color = Theme.gold } }   // a block under [SettingsTabs.HOME_MODULES]
+    private val pSubHead by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 26f; color = Theme.gold } }   // a wheel's sub-heading inside its group
     private val pLabel by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 31f; color = Theme.text } }
     private val pSub by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Theme.textDim } }
     private val pBtn = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -66,13 +88,19 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      * the host's login prompt.
      */
     var loginRow = false
+        get() = hub?.loginRow ?: field
         set(v) { if (field != v) { field = v; requestLayout(); invalidate() } }
     var loginSaved: () -> Boolean = { false }
+        get() = hub?.loginSaved ?: field
     var onLogin: () -> Unit = {}
+        get() = hub?.onLogin ?: field
     /** "Send a problem report" (board f-problem-report): the host opens the report page; [onReportSendNow] while recording; the note */
     var onReport: () -> Unit = {}
+        get() = hub?.onReport ?: field
     var onReportSendNow: () -> Unit = {}
+        get() = hub?.onReportSendNow ?: field
     var onReportOpenSaved: () -> Unit = {}
+        get() = hub?.onReportOpenSaved ?: field
     private var btnReport = RectF()
     private var btnStream = RectF()
     private var btnReportDismiss = RectF()
@@ -102,6 +130,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** Route data's "Review paths" (b-safepath-review): the host opens SafePath's review over this room */
     private var btnRouteReview = RectF()
     var onRouteReview: () -> Unit = {}
+        get() = hub?.onRouteReview ?: field
     private var deferredOpen = false
     private var progress: IndoorScheduler.Status? = null
     private val LIST_LINE = 38f
@@ -141,9 +170,12 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      * the next game start.
      */
     var onChooseDll: () -> Unit = {}
+        get() = hub?.onChooseDll ?: field
     var gameRunning: () -> Boolean = { false }
+        get() = hub?.gameRunning ?: field
     /** "Restart the game" (the launcher's restart: close, wait, Play again; SetupBridge.restartGame) */
     var onRestart: () -> Unit = {}
+        get() = hub?.onRestart ?: field
     private var btnDll = RectF()
     private var btnRestart = RectF()
     /** the frame-generation rows the last measure counted ([fgRows]) */
@@ -270,33 +302,52 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     }
 
     private fun layoutHeight(): Float {
-        val blocks = blocksHere()
+        val blocks = drawnBlocks()
         if (blocks.isEmpty()) return 0f
-        return TOP_PAD + (if (modulesHere()) MODULES_HEAD else 0f) + blocks.sumOf { blockHeight(it).toDouble() }.toFloat() + SECTION_GAP * (blocks.size - 1) + BOTTOM_PAD
+        var h = topPad()
+        for ((i, b) in blocks.withIndex()) {
+            if (i > 0) h += gap()
+            if (headed(b)) h += headGap()
+            h += blockHeight(b)
+        }
+        return h + bottomPad()
     }
+
+    /** the blocks drawn now (a block with nothing to show - no login row, Polestar's top-screen row while it is not in use - none) */
+    private fun drawnBlocks(): List<SettingsTabs.Block> = blocksHere().filter { blockHeight(it) > 0f }
+    // a whole-tab view keeps the page's measured spacing; a slice sits under its group's heading, its rows 10 px apart as in a block
+    private fun topPad() = if (only == null) TOP_PAD else SLICE_PAD
+    private fun bottomPad() = if (only == null) BOTTOM_PAD else SLICE_PAD
+    private fun gap() = if (only == null) SECTION_GAP else 10f
+    /** a block heading's room above its first row (its baseline 12 px above that row) */
+    private fun headGap() = if (only == null) 16f else 52f
 
     /** hub31: the "Polestar on the top screen" row shows (Polestar installed, the add-on has the switch) - the draw and the height agree */
     private fun psTopRow(): Boolean =
         ThirdPartyAddons.status(ThirdPartyAddons.POLESTAR, "core").kind == ThirdPartyAddons.Kind.INSTALLED && GameUi.swNow(GameUi.SW_PS) != null
+    /** Top screen > Navigation's Polestar row: shown when it was under Add-ons > Polestar (the guide on and installed) */
+    private fun psTopShown(): Boolean = guideOn() && ThirdPartyAddons.coreInstalled(ThirdPartyAddons.POLESTAR) && psTopRow()
 
-    /** a block's height from its heading's y to its last row's bottom, laid out exactly as its draw function lays it out */
+    /** a block's rows' height (from its first row's top to its last row's bottom), laid out exactly as its draw function lays it out */
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
-        SettingsTabs.Block.LANGUAGE -> 16f + ROW_H
-        SettingsTabs.Block.THEME -> 16f + themeGridH()
-        SettingsTabs.Block.LIGHTER -> 16f + ROW_H + 10f + ROW_H
-        SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
-        // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
-        SettingsTabs.Block.STREAMING -> 16f + ROW_H
-        // zoom out, zoom in, Quest tracking, World map (the SafePath network row went with SafePath, the user 2026-11-12)
-        SettingsTabs.Block.MAP -> 16f + 4 * ROW_H + 3 * 10f
-        SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
-        SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 10f + ROW_H
+        SettingsTabs.Block.LANGUAGE -> ROW_H
+        SettingsTabs.Block.THEME -> themeGridH()
+        SettingsTabs.Block.LIGHTER -> ROW_H + 10f + ROW_H
+        SettingsTabs.Block.ACCOUNT -> if (loginRow) ROW_H else 0f
+        SettingsTabs.Block.HELP -> ROW_H + 10f + ROW_H
+        SettingsTabs.Block.STREAMING -> ROW_H
+        // zoom out, zoom in, World map (Quest tracking moved to Add-ons > Polestar, 2026-11-12)
+        SettingsTabs.Block.MAP -> 3 * ROW_H + 2 * 10f
+        SettingsTabs.Block.QUEST_TRACKING -> ROW_H
+        SettingsTabs.Block.POLESTAR_TOP -> if (psTopShown()) ROW_H else 0f
+        SettingsTabs.Block.INDOOR -> ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
+        SettingsTabs.Block.CONTROLLER -> ROW_H + 10f + ROW_H
         SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
-        SettingsTabs.Block.CLASS_LEFT, SettingsTabs.Block.CLASS_RIGHT -> 16f + ROW_H + 10f + ROW_H
-        SettingsTabs.Block.CHAT -> 16f + ROW_H
-        SettingsTabs.Block.FRAMES -> 16f + fgHeight()
-        SettingsTabs.Block.SMART_Y -> sbLines().size.let { n -> 16f + n * ROW_H + (n - 1) * 10f } + pbHeight()
-        else -> SettingsTabs.addonOf(b)?.let { a -> val n = addonRows(a); 16f + n * ROW_H + (n - 1) * 10f } ?: 0f
+        SettingsTabs.Block.CLASS_LEFT, SettingsTabs.Block.CLASS_RIGHT -> ROW_H + 10f + ROW_H
+        SettingsTabs.Block.CHAT -> ROW_H
+        SettingsTabs.Block.FRAMES -> fgHeight()
+        SettingsTabs.Block.SMART_Y -> sbLines().size.let { n -> n * ROW_H + (n - 1) * 10f } + pbHeight()
+        else -> SettingsTabs.addonOf(b)?.let { a -> val n = addonRows(a); n * ROW_H + (n - 1) * 10f } ?: 0f
     }
 
     /** the Frame generation section's rows now (FrameGen.rows: the DLL row alone until one is set; Restart when it would change something) */
@@ -467,22 +518,25 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         drawnScroll = scroll
         c.drawColor(Theme.ink)
         clearBoxes()
-        var y = TOP_PAD - scroll       // everything below is laid out in screen coordinates
-        // on Home, the modules' blocks stand under one heading of their own, below Home's rows (each block then a sub-heading)
-        val modules = modulesHere()
-        if (modules) { c.drawText(Tr.t(SettingsTabs.HOME_MODULES), PAD_X, y + 4f, pSection); y += MODULES_HEAD }
-        for ((i, b) in blocksHere().withIndex()) {
-            if (i > 0) y += SECTION_GAP
-            // the block's heading (its words are the tab data's), then its rows; each draw returns its last row's bottom
-            c.drawText(Tr.t(b.heading), PAD_X, y + 4f, if (modules) pSubHead else pSection)
-            y += 16f
+        var y = topPad() - scroll      // everything below is laid out in screen coordinates
+        for ((i, b) in drawnBlocks().withIndex()) {
+            if (i > 0) y += gap()
+            // the block's heading (its words are the tab data's; in a slice only a sub-headed block's), then its rows; each draw
+            // returns its last row's bottom
+            if (headed(b)) {
+                c.drawText(Tr.t(b.heading), PAD_X, y + headGap() - 12f, if (only == null) pSection else pSubHead)
+                y += headGap()
+            }
             y = when (b) {
                 SettingsTabs.Block.LANGUAGE -> drawLanguage(c, y)
                 SettingsTabs.Block.THEME -> drawTheme(c, y)
                 SettingsTabs.Block.LIGHTER -> drawLighter(c, y)
-                SettingsTabs.Block.GAME -> drawGame(c, y)
+                SettingsTabs.Block.ACCOUNT -> drawAccount(c, y)
+                SettingsTabs.Block.HELP -> drawHelp(c, y)
                 SettingsTabs.Block.STREAMING -> drawStreaming(c, y)
                 SettingsTabs.Block.MAP -> drawMap(c, y)
+                SettingsTabs.Block.QUEST_TRACKING -> { drawQuestTrackingRow(c, y); y + ROW_H }
+                SettingsTabs.Block.POLESTAR_TOP -> drawPsTop(c, y)
                 SettingsTabs.Block.INDOOR -> drawIndoor(c, y)
                 SettingsTabs.Block.CONTROLLER -> drawController(c, y)
                 SettingsTabs.Block.PAUSE_WHEEL -> drawWheel(c, y, "Pause menu", "Press Start to open; it stays until B.",
@@ -501,7 +555,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 else -> SettingsTabs.addonOf(b)?.let { drawAddon(c, y, it) } ?: y
             }
         }
-        y += BOTTOM_PAD
+        y += bottomPad()
 
         val h = Math.round(y + scroll).toFloat()   // back to content coordinates (no float drift)
         if (h != contentH) {
@@ -624,34 +678,25 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         return t2 + ROW_H
     }
 
-    private fun drawGame(c: Canvas, top: Float): Float {
-        var y = top
-        val now = SystemClock.elapsedRealtime()
-        val armed = reloadArmedAt != 0L && now - reloadArmedAt < ARM_MS
-        val sent = reloadSentAt != 0L && now - reloadSentAt < 2500L
-        if (sent) postInvalidateDelayed(300)
-        btnReload = row(c, y, "Reload game UI",
-            if (sent) "Sent -- the game UI should restart now" else "Reloads the game's UI. Tap twice to confirm.",
+    /** General > Account: the saved Battle.net login (the host sets [loginRow]) */
+    private fun drawAccount(c: Canvas, top: Float): Float {
+        if (!loginRow) { btnLogin = RectF(); return top }
+        val saved = loginSaved()
+        btnLogin = row(c, top, "Battle.net login",
+            if (saved) "Saved. The game signs in with it by itself." else "Not saved: save it to sign in by itself.",
             enabled = true) { box ->
             val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            // the game's red button; armed = held down, and it says what the second tap does
-            UiKit.button(c, b, if (armed) "Tap again" else "Reload", if (armed) UiKit.Button.DOWN else UiKit.Button.UP)
+            UiKit.button(c, b, if (saved) "Change" else "Save", UiKit.Button.UP)
             b
         }
-        if (loginRow) {
-            y += ROW_H + 10f
-            val saved = loginSaved()
-            btnLogin = row(c, y, "Battle.net login",
-                if (saved) "Saved. The game signs in with it by itself." else "Not saved: save it to sign in by itself.",
-                enabled = true) { box ->
-                val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                UiKit.button(c, b, if (saved) "Change" else "Save", UiKit.Button.UP)
-                b
-            }
-        } else btnLogin = RectF()
+        return top + ROW_H
+    }
+
+    /** General > Help: the problem report, then Reload game UI (the companion's status under them is GameUiSection's) */
+    private fun drawHelp(c: Canvas, top: Float): Float {
+        var y = top
         // "Send a problem report" (board f-problem-report): "Send report" while Record 5 minutes runs (stop + send), the time left on the
         // row; a report saved by itself shows its note with Open issue / Dismiss until one is pressed
-        y += ROW_H + 10f
         val rec = DiagLog.recording()
         val left = DiagLog.recordLeftMs() / 1000
         val saved = ReportFlow.pending
@@ -674,12 +719,25 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         }
         if (saved != null) { val d = btnReportDismiss; btnReport = RectF(d.right + 16f, d.top, d.right + 16f + 244f, d.bottom) }
         if (rec) postInvalidateDelayed(1000)
+        y += ROW_H + 10f
+        val now = SystemClock.elapsedRealtime()
+        val armed = reloadArmedAt != 0L && now - reloadArmedAt < ARM_MS
+        val sent = reloadSentAt != 0L && now - reloadSentAt < 2500L
+        if (sent) postInvalidateDelayed(300)
+        btnReload = row(c, y, "Reload game UI",
+            if (sent) "Sent -- the game UI should restart now" else "Reloads the game's UI. Tap twice to confirm.",
+            enabled = true) { box ->
+            val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            // the game's red button; armed = held down, and it says what the second tap does
+            UiKit.button(c, b, if (armed) "Tap again" else "Reload", if (armed) UiKit.Button.DOWN else UiKit.Button.UP)
+            b
+        }
         return y + ROW_H
     }
 
     // ---- MAP (Rooms): the small map's two widths
     private fun drawStreaming(c: Canvas, top: Float): Float {
-        val y = top + 16f
+        val y = top
         val on = SetupBridge.openStreamSettings != null
         val box = row(c, y, "Stream settings", if (on) "Resolution, frame rate, bit rate and sound." else "While streaming.", enabled = on) { b ->
             val r = RectF(b.right - 260f, b.centerY() - 34f, b.right - 16f, b.centerY() + 34f)
@@ -734,9 +792,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         boxes = stepperRow(c, y, "Minimap zoom indoors", "Width of the small map on Home inside buildings",
                            Settings.minimapIndoorYd, true)
         btnMiniInMinus = boxes.first; btnMiniInPlus = boxes.second
-        y += ROW_H + 10f
-        drawQuestTrackingRow(c, y)
-        // AVOID DANGEROUS AREAS moved to QOL > Navigation (the housekeeping pass; GameUiSection's QOL part, the same Settings.avoidDanger)
+        // Quest tracking moved to Add-ons > Polestar (the six tabs, 2026-11-12: [SettingsTabs.Block.QUEST_TRACKING])
         y += ROW_H + 10f
         // WORLD MAP (b-seamless-map; the user: "Give an option in settings"): the stitched continent, every zone or only the explored
         val all = Settings.worldMapFog == "all"
@@ -860,12 +916,16 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     /** the padmap's Smart buffs (the host's: the latest padmap); null = no game yet, or an add-on before m62 */
     var smartDoc: () -> SmartYModel.Doc? = { null }
+        get() = hub?.smartDoc ?: field
     /** m127: the kind of what Y would do now (the padmap's `smarty` k: food / drink / buff / or / manners); null = nothing */
     var smartNow: () -> String? = { null }
+        get() = hub?.smartNow ?: field
     /** sends one batch of taps (the host's TapBridge); false = not sent */
     var smartTaps: (List<Pair<String, Int>>) -> Boolean = { false }
+        get() = hub?.smartTaps ?: field
     /** a spell's two taps on the "spells" row by its name (the host's book); null = none known */
     var smartSpellCells: (String) -> List<Pair<String, Int>>? = { null }
+        get() = hub?.smartSpellCells ?: field
     /** the row an "Or" is choosing for (while [sbChoose] is "addor") */
     private var sbSel: Int? = null
     private var sbChoose: String? = null
@@ -874,6 +934,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     /** m127: the add-on's answer to an edit (smartyack): a refusal is said on the Add row; a done edit clears the note */
     fun onSmartAck(op: String, ok: Boolean, why: String?) {
+        slices?.forEach { it.onSmartAck(op, ok, why) }
         if (op == "on" || op == "off") return
         sbNote = if (ok) null else (why?.takeIf { it.isNotBlank() } ?: "Not taken")
         invalidate()
@@ -1092,8 +1153,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private var pbNote: String? = null
 
     /** Party mode's documents changed: the sub-section follows */
-    fun partyChanged() { if (pbShown() || pbSel != null) { requestLayout(); invalidate() } }
+    fun partyChanged() { slices?.forEach { it.partyChanged() }; if (pbShown() || pbSel != null) { requestLayout(); invalidate() } }
     fun onPartyAck(a: PartyModel.Ack) {
+        slices?.forEach { it.onPartyAck(a) }
         if (a.op != "pb") return
         pbNote = if (a.ok) null else if (a.why == "combat") "Not in a fight: try again after it." else "The game did not take it."
         invalidate()
@@ -1293,7 +1355,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     /** pq1 / hub31 (the user, 2026-11-11: the Polestar settings "under the polestar addons tab"): the top screen, then the three
      *  automation switches (off by default). 2026-11-12: the Quest tracking row is the guide's own On / Off now ([drawGuide]) */
-    private fun polestarRows(): Int = (if (psTopRow()) 1 else 0) + 3
+    private fun polestarRows(): Int = 3          // the top screen's row is under Top screen > Navigation since the six tabs
     private val segPq = Array(3) { Array(2) { RectF() } }
 
     // ---- THE POLESTAR QUEST GUIDE (the user, 2026-11-12: "If they say no let's add a toggle in settings to turn it on and off")
@@ -1348,19 +1410,22 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         return y + ROW_H
     }
 
+    /** Top screen > Navigation (hub31): Polestar's own frame on the top screen, Show / Hide (it stood under Add-ons > Polestar) */
+    private fun drawPsTop(c: Canvas, top: Float): Float {
+        if (!psTopShown()) return top
+        val hide = GameUi.swWant(GameUi.SW_PS)
+        val sent = GameUi.swNow(GameUi.SW_PS) != hide
+        row(c, top, "Polestar on the top screen", if (sent) "Sent" else if (hide) "Hidden" else "Shown", enabled = true) { box ->
+            val bw = minOf(segW() * 2.6f, box.width() * 0.5f)
+            val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, listOf("Show", "Hide"), if (hide) 1 else 0, segPsTop)
+            b
+        }
+        return top + ROW_H
+    }
+
     private fun drawPolestarRows(c: Canvas, top: Float): Float {
         var y = top
-        if (psTopRow()) {
-            y += ROW_H + 10f
-            val hide = GameUi.swWant(GameUi.SW_PS)
-            val sent = GameUi.swNow(GameUi.SW_PS) != hide
-            row(c, y, "Polestar on the top screen", if (sent) "Sent" else if (hide) "Hidden" else "Shown", enabled = true) { box ->
-                val bw = minOf(segW() * 2.6f, box.width() * 0.5f)
-                val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                segmented(c, b, listOf("Show", "Hide"), if (hide) 1 else 0, segPsTop)
-                b
-            }
-        }
         val who = GameUi.character
         val rows = listOf(
             Triple(PolestarQol.QUEST, "Auto quest", "Polestar accepts and turns in guide quests" to "You accept and turn in quests yourself"),
@@ -1380,6 +1445,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     /** an add-on's own settings, on the bottom screen (QuestTrail's): the host leaves Settings and asks the game to open them */
     var onAddonSettings: (ThirdPartyAddons.Addon) -> Unit = {}
+        get() = hub?.onAddonSettings ?: field
     private val addonSettingsBtn = HashMap<String, RectF>()
 
     private fun drawAddon(c: Canvas, top: Float, a: ThirdPartyAddons.Addon): Float {
@@ -1635,10 +1701,10 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         private const val SEG_MIN_W = 120f
         // SPACING, measured against the signed-off picture on the emulator (2026-10-06): a row's bottom to the next heading's top
         // is 60 px everywhere; a heading's cap top is ~26 px above its baseline, which is drawn 4 px below the section's y
-        private const val MODULES_HEAD = 58f  // "Home module settings" -> its first block's heading
         private const val SECTION_GAP = 82f  // row bottom -> the next section's y (its heading baseline 86 below: cap top +60)
         private const val TOP_PAD = 48f      // the page's top -> its first heading's y (the tab bar stands above the page)
         private const val PAD_X = 28f
         private const val BOTTOM_PAD = 56f   // REST's end -> Game UI's first heading: 60 (it was 28)
+        private const val SLICE_PAD = 8f     // a slice's top and foot: its group's heading above, the next part below
     }
 }

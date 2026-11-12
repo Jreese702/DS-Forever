@@ -2,6 +2,7 @@ package com.jrees.wowcompanion
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.PointF
 import android.graphics.RectF
 import android.os.SystemClock
@@ -15,59 +16,67 @@ import org.json.JSONObject
 
 /**
  * THE SETTINGS ROOM: the title and the TAB ROW fixed at the top ([SettingsTabBar]; board f-settings-tabs, the user's approved plan
- * 2026-10-15), and under it one tab's page in a scroll: SettingsView's own blocks of that tab, Home's section (Home), the game's
- * elements (Top screen), the companion's status (System). Which block is on which tab is [SettingsTabs]' data. The room opens on the
+ * 2026-10-15), and under it one tab's page in a scroll. THE SIX TABS (the user's approved layout, 2026-11-12): a tab's page is its
+ * FOLDING GROUPS ([SettingsTabs.Group]), each a heading ([SettingsFoldHeading]) and the parts that draw its rows - SettingsView slices
+ * ([SettingsView.slice]), Home's section, GameUiSection parts. Showing a tab opens its FIRST group and folds the rest, every time; a
+ * tap on a heading (or A on it) opens / folds that group. Which row is in which group is [SettingsTabs]' data. The room opens on the
  * last tab used ([SettingsTabs.last]). [SettingsPad] is drawn over the page for the controller.
  */
 class SettingsRoom(context: Context, private val view: SettingsView, padSource: () -> JSONObject?) : LinearLayout(context) {
-    val gameUi = GameUiSection(context, GameUiSection.Part.GAME_UI)
-    /** the QOL tab's groups (HUD, Navigation, Combat): the same rows as before, drawn by their own part */
-    val qolUi = GameUiSection(context, GameUiSection.Part.QOL)
-    val homeSection = HomeSettingsSection(context)
-    /** 2026-11-12 (the user: "Themes should be the top of home"): the Theme picker, its own view ABOVE Home's rows */
-    val themeView = SettingsView(context) { }.apply { only = setOf(SettingsTabs.Block.THEME) }
-    /** the companion's status (System); built after [gameUi] so the status line's one listener is its */
-    val companion = GameUiSection(context, GameUiSection.Part.COMPANION)
+    /** Bottom screen > Home's rows (the host wires its DS WoW toolbar) */
+    val homeSection = HomeSettingsSection(context) { it != ATTACK_CAST }
+    /** Controller > Combat helpers' "Start the attack when a spell is cast" (Home's section's row, drawn here) */
+    private val attackSection = HomeSettingsSection(context) { it == ATTACK_CAST }
+    /** every GameUiSection part (B closes an open On / Off bar of any of them first) */
+    val gameUis = ArrayList<GameUiSection>()
     val tabBar = SettingsTabBar(context) { t -> show(t) }
     /** "What it does" (phase 2): the row's picture, right of the page, on the tabs that have pictures */
     val preview = SettingsPreviewView(context) { homeSection.dpadState()?.want }
     private val scroll = ScrollView(context).apply { ThemeLive.bg(this, Tok.INK) }
+    private val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     val pad: SettingsPad
 
+    /** one group as the page shows it: its heading, its parts (folded = the parts GONE) */
+    class GroupBox(val group: SettingsTabs.Group, val box: LinearLayout, val heading: SettingsFoldHeading, val parts: List<View>)
+    val groupBoxes = ArrayList<GroupBox>()
+
     /** the tab shown */
-    var tab: SettingsTabs.Tab = SettingsTabs.Tab.HOME
+    var tab: SettingsTabs.Tab = SettingsTabs.Tab.GENERAL
         private set
+    /** the groups open now (on the tab shown) */
+    val open = LinkedHashSet<SettingsTabs.Group>()
 
     init {
         orientation = VERTICAL
         ThemeLive.bg(this, Tok.INK)
         SettingsTabs.init(context)
-        view.skip = setOf(SettingsTabs.Block.THEME)
-        val column = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            // each part measures its own height; this scroll scrolls the tab's page
-            val wrap = { LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
-            // Home's own rows first: on the Home tab the modules' blocks (SettingsView's Map / Chat) come below them
-            addView(themeView, wrap())                                    // Home: the Theme picker first
-            addView(homeSection, wrap())
-            addView(view, wrap())
-            addView(qolUi, wrap())                                        // QOL: under Smart Y (SettingsView's block)
-            addView(gameUi, wrap())
-            addView(companion, wrap())
+        val wrap = { LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
+        val sections = ArrayList<SettingsPad.Section>()
+        for (g in SettingsTabs.Group.values()) {
+            val heading = SettingsFoldHeading(context, g) { toggle(it) }
+            val parts = partsOf(g)
+            val box = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            box.addView(heading, wrap())
+            for (p in parts) box.addView(p, wrap())
+            column.addView(box, wrap())
+            groupBoxes.add(GroupBox(g, box, heading, parts))
+            // the cursor stops on the heading (A opens / folds it), then on the rows of an open group
+            sections.add(SettingsPad.Section(heading, { listOf(heading.rect()) }))
+            for (p in parts) sections.add(when (p) {
+                // General's "Reload game UI", the room's one destructive control: the cursor never STARTS there
+                is SettingsView -> SettingsPad.Section(p, { p.focusTargets() }, noStart = { p.isReload(it) })
+                is HomeSettingsSection -> SettingsPad.Section(p, { p.focusTargets() })
+                is GameUiSection -> SettingsPad.Section(p, { p.focusTargets() })
+                else -> SettingsPad.Section(p, { emptyList() })
+            })
         }
         scroll.addView(column)
         addView(tabBar, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val page = FrameLayout(context)
         page.addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         val body = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-        pad = SettingsPad(context, scroll, listOf(
-            // System's first button is "Reload game UI", the room's one destructive control: the cursor never STARTS there
-            SettingsPad.Section(themeView, { themeView.focusTargets() }),
-            SettingsPad.Section(view, { view.focusTargets() }, noStart = { view.isReload(it) }),
-            SettingsPad.Section(homeSection, targets = { homeSection.focusTargets() }),
-            SettingsPad.Section(gameUi, targets = { gameUi.focusTargets() }),
-            SettingsPad.Section(qolUi, targets = { qolUi.focusTargets() }),
-        ), listOf(gameUi, qolUi), padSource, tabBar, { dir -> show(SettingsTabs.step(tab, dir)) }, { v, r -> rowOf(v, r.centerX(), r.centerY()) })
+        pad = SettingsPad(context, scroll, sections, gameUis, padSource, tabBar, { dir -> show(SettingsTabs.step(tab, dir)) },
+            { v, r -> rowOf(v, r.centerX(), r.centerY()) })
         page.addView(pad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         body.addView(page, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         body.addView(preview, LinearLayout.LayoutParams(PREVIEW_W, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -76,43 +85,94 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         show(SettingsTabs.last, force = true)
     }
 
-    /** show tab [t]: only its blocks are in the page (the others GONE, so they take no room and press nothing) */
+    /** the views that draw [g]'s rows, in its blocks' order: a run of SettingsView blocks is one slice */
+    private fun partsOf(g: SettingsTabs.Group): List<View> {
+        val out = ArrayList<View>()
+        val run = LinkedHashSet<SettingsTabs.Block>()
+        fun flush() { if (run.isNotEmpty()) { out.add(view.slice(run.toSet())); run.clear() } }
+        for (b in SettingsTabs.Block.values().filter { it.group == g }) when (b.drawer) {
+            SettingsTabs.Drawer.VIEW -> run.add(b)
+            SettingsTabs.Drawer.HOME -> { flush(); out.add(if (b == SettingsTabs.Block.ATTACK_CAST) attackSection else homeSection) }
+            SettingsTabs.Drawer.GAME_UI -> { flush(); out.add(GameUiSection(context, gameUiPart(b)).also { gameUis.add(it) }) }
+        }
+        flush()
+        return out
+    }
+
+    /** the GameUiSection part that draws [b] */
+    private fun gameUiPart(b: SettingsTabs.Block): GameUiSection.Part = when (b) {
+        SettingsTabs.Block.COMPANION -> GameUiSection.Part.COMPANION
+        SettingsTabs.Block.HUD -> GameUiSection.Part.HUD
+        SettingsTabs.Block.TARGET -> GameUiSection.Part.TARGET
+        SettingsTabs.Block.PARTY -> GameUiSection.Part.PARTY
+        SettingsTabs.Block.NAVIGATION -> GameUiSection.Part.NAVIGATION
+        SettingsTabs.Block.COMBAT -> GameUiSection.Part.COMBAT
+        SettingsTabs.Block.AUTO_SHOT -> GameUiSection.Part.AUTO_SHOT
+        else -> GameUiSection.Part.WINDOWS
+    }
+
+    /** show tab [t]: only its groups are in the page (the others GONE, so they take no room and press nothing); its first group open */
     fun show(t: SettingsTabs.Tab, force: Boolean = false) {
         if (t == tab && !force) return
         tab = t
         SettingsTabs.last = t
-        gameUi.closeSelection(); qolUi.closeSelection()
-        view.tab = t
-        view.visibility = if (!view.hasBlocks(t)) View.GONE else View.VISIBLE
-        themeView.tab = t
-        themeView.visibility = if (themeView.hasBlocks(t)) View.VISIBLE else View.GONE
-        homeSection.visibility = if (SettingsTabs.Block.HOME_SECTION.tab == t) View.VISIBLE else View.GONE
-        gameUi.visibility = if (SettingsTabs.Block.GAME_UI.tab == t) View.VISIBLE else View.GONE
-        qolUi.visibility = if (SettingsTabs.Block.QOL_HUD.tab == t) View.VISIBLE else View.GONE
-        companion.visibility = if (SettingsTabs.Block.COMPANION.tab == t) View.VISIBLE else View.GONE
+        gameUis.forEach { it.closeSelection() }
+        open.clear(); open.addAll(SettingsTabs.openOnShow(t))
+        val shown = SettingsTabs.groups(t)
+        for (gb in groupBoxes) gb.box.visibility = if (gb.group in shown) View.VISIBLE else View.GONE
+        applyFolds()
         tabBar.tab = t
         scroll.scrollTo(0, 0)
-        // the panel: on the tabs with pictures, starting on the tab's first row that has one
+        // the panel: on the tabs with pictures, starting on the first open group's first row that has one
         val rows = SettingsTabs.blocks(t).flatMap { it.rows }
         preview.visibility = if (rows.any { SettingsPreview.has(it) }) View.VISIBLE else View.GONE
-        preview.id = rows.firstOrNull { SettingsPreview.has(it) }
+        preview.id = firstPicture(open) ?: rows.firstOrNull { SettingsPreview.has(it) }
         pad.tabChanged()
     }
 
+    /** a tap on [g]'s heading or A on it: open it, or fold it */
+    fun toggle(g: SettingsTabs.Group) {
+        if (!open.remove(g)) {
+            open.add(g)
+            firstPicture(setOf(g))?.let { preview.id = it }            // the panel follows the group just opened
+        } else {
+            // a folded group's open On / Off bar closes with it (B would otherwise close a bar nobody sees)
+            groupBoxes.firstOrNull { it.group == g }?.parts?.forEach { (it as? GameUiSection)?.closeSelection() }
+        }
+        applyFolds()
+        pad.invalidate()
+    }
+
+    private fun applyFolds() {
+        for (gb in groupBoxes) {
+            val on = gb.group in open
+            gb.heading.open = on
+            for (p in gb.parts) p.visibility = if (on) View.VISIBLE else View.GONE
+        }
+    }
+
+    private fun firstPicture(groups: Set<SettingsTabs.Group>): String? =
+        groups.flatMap { SettingsTabs.blocks(it) }.flatMap { it.rows }.firstOrNull { SettingsPreview.has(it) }
+
     /** the row at ([x], [y]) of section [v] (its own coordinates) shows in the panel, when it has a picture */
     private fun rowOf(v: View, x: Float, y: Float) {
-        val id = when (v) { view -> view.rowAt(x, y); themeView -> themeView.rowAt(x, y); homeSection -> homeSection.rowAt(x, y); else -> null }
+        val id = when (v) { is SettingsView -> v.rowAt(x, y); is HomeSettingsSection -> v.rowAt(x, y); else -> null }
         if (SettingsPreview.has(id)) preview.id = id
     }
 
     /** a touch on a row: the panel shows it (the touch itself goes on to the row as always) */
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
         if (e.actionMasked == MotionEvent.ACTION_DOWN && preview.visibility == View.VISIBLE) {
-            val col = scroll.getChildAt(0) as? ViewGroup
             val sx = e.x; val sy = e.y - tabBar.height + scroll.scrollY
-            if (col != null && sx < scroll.width) for (i in 0 until col.childCount) {
-                val ch = col.getChildAt(i)
-                if (ch.visibility == View.VISIBLE && sy >= ch.top && sy < ch.bottom) { rowOf(ch, sx, sy - ch.top); break }
+            if (sx < scroll.width) for (gb in groupBoxes) {
+                val b = gb.box
+                if (b.visibility != View.VISIBLE || sy < b.top || sy >= b.bottom) continue
+                val y = sy - b.top
+                for (i in 0 until b.childCount) {
+                    val ch = b.getChildAt(i)
+                    if (ch.visibility == View.VISIBLE && y >= ch.top && y < ch.bottom) { rowOf(ch, sx, y - ch.top); break }
+                }
+                break
             }
         }
         return super.dispatchTouchEvent(e)
@@ -120,6 +180,66 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
 
     private companion object {
         const val PREVIEW_W = 470
+        const val ATTACK_CAST = "Start the attack when a spell is cast"
+    }
+}
+
+/**
+ * A GROUP'S FOLDING HEADING (the six tabs, 2026-11-12): the page's heading as every Settings heading is drawn (Morpheus, gold), with
+ * the game's own fold sign before it (the kit's list plus / minus, as the game's folding lists have it); a folded group's words dim.
+ * A tap, or the cursor's A (a touch at its centre), opens / folds the group ([onToggle]). Touches act on RELEASE, only when the
+ * finger has not moved (the page scrolls).
+ */
+class SettingsFoldHeading(context: Context, val group: SettingsTabs.Group, private val onToggle: (SettingsTabs.Group) -> Unit) : View(context) {
+    var open = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+    private val pHead by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 32f; color = Theme.gold } }
+    private val pSign = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private var downX = 0f
+    private var downY = 0f
+
+    init { Theme.onChange { postInvalidate() } }
+
+    /** the heading's box (the cursor's stop and its touch area), in this view's coordinates */
+    fun rect(): RectF = RectF(16f, 4f, width - 16f, H - 4f)
+
+    override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+        setMeasuredDimension(MeasureSpec.getSize(widthSpec), H.toInt())
+    }
+
+    override fun onDraw(c: Canvas) {
+        UiKit.asTitle(pHead)
+        c.drawColor(Theme.ink)
+        val cy = H / 2f
+        val sign = UiKit.tex(if (open) "list_minus" else "list_plus")
+        if (sign != null) {
+            val h = SIGN_W * sign.height / sign.width
+            c.drawBitmap(sign, null, RectF(SIGN_X, cy - h / 2f, SIGN_X + SIGN_W, cy + h / 2f), pSign)
+        } else {
+            // no kit yet: the sign in the heading's own gold
+            val p = UiKit.titlePaint(36f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
+            c.drawText(if (open) "-" else "+", SIGN_X + SIGN_W / 2f, cy - (p.ascent() + p.descent()) / 2f, p)
+        }
+        pHead.color = Theme.gold
+        pHead.alpha = if (open) 255 else 190
+        c.drawText(Tr.t(group.heading), SIGN_X + SIGN_W + 18f, cy - (pHead.ascent() + pHead.descent()) / 2f, pHead)
+        pHead.alpha = 255
+    }
+
+    @Suppress("ClickableViewAccessibility")
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { downX = e.x; downY = e.y }
+            MotionEvent.ACTION_UP -> if (Math.abs(e.x - downX) <= SLOP && Math.abs(e.y - downY) <= SLOP) onToggle(group)
+        }
+        return true
+    }
+
+    companion object {
+        const val H = 84f
+        const val SIGN_X = 28f
+        const val SIGN_W = 30f
+        const val SLOP = 24f
     }
 }
 
@@ -182,8 +302,7 @@ class SettingsPad(
     private fun targets(): List<Target> {
         val out = ArrayList<Target>()
         for (s in sections) {
-            if (s.view.visibility != View.VISIBLE) continue       // another tab's: its boxes are stale
-            val top = s.view.top.toFloat()
+            val top = contentTop(s.view) ?: continue                // another tab's, or a folded group's: its boxes are stale
             for (r in s.targets()) out.add(Target(RectF(r.left, r.top + top, r.right, r.bottom + top), s, r, s.noStart(r)))
         }
         // in reading order down the page, whatever order the sections are listed in (on Home, Home's own rows stand above the
@@ -191,6 +310,26 @@ class SettingsPad(
         out.sortWith(compareBy({ it.box.top }, { it.box.left }))
         return out
     }
+
+    /** [v]'s top in the scroll's content (a section may stand inside a group's box); null = it or a box round it is not VISIBLE */
+    private fun contentTop(v: View): Float? {
+        val content = scroll.getChildAt(0)
+        var y = 0f
+        var cur: View = v
+        while (cur !== content) {
+            if (cur.visibility != View.VISIBLE) return null
+            y += cur.top
+            cur = cur.parent as? View ?: return null
+        }
+        return y
+    }
+
+    /** the buttons as the controller walks them (the room's tests): content-coordinate boxes, in reading order */
+    fun targetBoxes(): List<RectF> = targets().map { RectF(it.box) }
+    /** the cursor's button now (content coordinates), or null (the tests) */
+    fun focusBox(): RectF? = focus?.let { f -> nearest(targets(), f)?.box?.let { RectF(it) } }
+    /** the cursor is on the tab row (the tests) */
+    val onTabRow get() = onTabs
 
     /** where the cursor starts: the first button in view that may start it (the user's ruling, via tracking 2026-09-30: not on Reload) */
     private fun startTarget(all: List<Target>): Target? =
