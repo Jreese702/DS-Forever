@@ -156,10 +156,23 @@ object GameUi {
         val def = if (part == SW_PRD) prefs?.getBoolean("hud.$who", true) ?: true else SW_DEFAULT[part] ?: false
         return prefs?.getBoolean("sw.$part.$who", def) ?: def
     }
+    /**
+     * Issue #197 ("Not portrait for the target even when enabled": the player turned the game's Target frame on and it stayed hidden):
+     * while DS Forever's target bar is on, the add-on keeps the game's target frame hidden (hub26, the user's pick "replaces the game's"),
+     * and the two switches sit on different tabs. Now they are one choice: turning the game's Target frame ON turns the target bar off,
+     * and turning the target bar ON hides the game's frame again. The other switch to write for [part] [on], or null.
+     */
+    fun swLinked(part: String, on: Boolean): Pair<String, Boolean>? = when {
+        part == SW_TARGET && on -> SW_UFT to false
+        part == SW_UFT && on -> SW_TARGET to false
+        else -> null
+    }
     fun setSwitch(part: String, on: Boolean) {
         if (part == SW_PMODE) { prefs?.edit()?.putBoolean("sw.$SW_PMODE", on)?.apply(); reconcile(); changed(); return }
         val who = character ?: return
-        prefs?.edit()?.putBoolean("sw.$part.$who", on)?.apply()
+        val ed = prefs?.edit()?.putBoolean("sw.$part.$who", on)
+        swLinked(part, on)?.let { (p, v) -> ed?.putBoolean("sw.$p.$who", v) }
+        ed?.apply()
         reconcile()
         changed()
     }
@@ -207,7 +220,8 @@ object GameUi {
     fun playerRow(): Row? = swRow(PLAYER_ID, SW_PLAYER, "Player frame", "Shown on the top screen", "Hidden: the resource bar and the HUD instead")
     // hub26: while DS Forever's own frames are on, the game's of that group stay hidden whatever their own switch says
     fun targetRow(): Row? = swRow(TARGET_ID, SW_TARGET, "Target frame", "Shown on the top screen", "Hidden: the bars over the mobs instead")
-        ?.let { r -> if (swWant(SW_UFT) && swNow(SW_UFT) == true) Row(r.id, r.label, r.home, r.mode, r.known, true, "Hidden: the target bar replaces it") else r }
+        // #197: shown as Off while the bar stands in (it IS hidden), so its On is the tap that brings it back (swLinked)
+        ?.let { r -> if (swWant(SW_UFT) && swNow(SW_UFT) == true) Row(r.id, r.label, r.home, UiMode.OFF, r.known, true, "Hidden: the target bar replaces it") else r }
     fun partyRow(): Row? = swRow(PARTY_ID, SW_PARTY, "Party frames", "Shown on the top screen", "Hidden: the party strip below instead")
         ?.let { r -> if (swWant(SW_UFP) && swNow(SW_UFP) == true) Row(r.id, r.label, r.home, r.mode, r.known, true, "Hidden: DS party frames replace them") else r }
     /** hub26: DS Forever's own party frames (a left column; Party mode's pick and LB glyphs) and the target bar under the compass */

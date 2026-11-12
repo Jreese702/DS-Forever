@@ -1108,10 +1108,15 @@ end
 -- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar), UFTOT_OFF / UFTOT_ON (the bar's target of
 -- target, uf8: off by default); the app keeps each per character.
 do
-    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf15" }
+    -- uf16 (issue #181: "Buffs and debuffs wouldn't show on the DS frames in the top screen during combat for both player and target"):
+    -- the target bar's auras through Trail's one secret-safe reader (WC.prd.auraRead, prd16): in a fight the game's aura values are
+    -- secret for add-ons, and plainV tested v ~= nil BEFORE the secret test (a secret refuses the compare); a secret table is never
+    -- indexed, a secret icon goes straight to SetTexture; the instance-ID route when the index loop throws; the probe "aurasec".
+    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf16" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
-    local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
+    -- uf16 (issue #181): the secret test FIRST, then the nil test (a secret refuses even ~= nil)
+    local function plainV(v) return (type(WC.isPlain) ~= "function" or WC.isPlain(v)) and type(v) ~= "nil" end
     local function call(f, ...) local ok, a, b, c, d, e, g, h, i = pcall(f, ...); if ok then return a, b, c, d, e, g, h, i end end
     local function bool(f, ...) local v = call(f, ...); if plainV(v) then return v == true end return nil end
     local function scaleK()
@@ -1996,14 +2001,16 @@ do
         f.casting = true
         f.cast:Show()
     end
-    local function auraList(filter, max, skip)
+    -- uf16: Trail's reader (entries { id, icon, sicon, dur / exp or secret + sdur / sexp, n, kind }); its words kept for the probe
+    local function auraList(filter, max, skip, dgs)
+        if type(PRD.auraRead) ~= "function" then return {} end
+        local ok, list, dg = pcall(PRD.auraRead, "target", filter, skip and 40 or max)
+        if not ok or type(list) ~= "table" then return {} end
+        if dgs and type(dg) == "table" then dgs[#dgs + 1] = dg end
         local out = {}
-        for i = 1, 40 do
+        for _, e in ipairs(list) do
             if #out >= max then break end
-            local a = C_UnitAuras and call(C_UnitAuras.GetAuraDataByIndex, "target", i, filter)
-            if type(a) ~= "table" then break end
-            local id = a.auraInstanceID
-            if not (skip and plainV(id) and skip[id]) then out[#out + 1] = a end
+            if not (skip and type(e.id) == "number" and skip[e.id]) then out[#out + 1] = e end
         end
         return out
     end
@@ -2026,14 +2033,19 @@ do
                 o.f:ClearAllPoints()
                 if fromRight then o.f:SetPoint("TOPRIGHT", TB.f.hp, "TOPRIGHT", -(i - 1) * step, y)
                 else o.f:SetPoint("TOPLEFT", TB.f.hp, "TOPLEFT", (i - 1) * step, y) end
-                pcall(function() o.tx:SetTexture(a.icon) end)
-                if not pcall(function() o.cd:SetCooldownFromExpirationTime(a.expirationTime, a.duration) end) then
-                    if not pcall(function() o.cd:SetCooldown(a.expirationTime - a.duration, a.duration) end) then o.cd:Clear() end
-                end
-                local n = a.applications
-                if plainV(n) and type(n) == "number" and n > 1 then o.n:SetText(n) else o.n:SetText("") end
+                pcall(function() o.tx:SetTexture(a.icon) end)                 -- uf16: a secret icon too (SetTexture takes one)
+                if a.secret then
+                    -- secret times: only straight to the setter (never arithmetic); refused, the swipe is cleared
+                    if not pcall(function() o.cd:SetCooldownFromExpirationTime(a.sexp, a.sdur) end) then pcall(function() o.cd:Clear() end) end
+                elseif type(a.exp) == "number" and type(a.dur) == "number" then
+                    if not pcall(function() o.cd:SetCooldownFromExpirationTime(a.exp, a.dur) end) then
+                        if not pcall(function() o.cd:SetCooldown(a.exp - a.dur, a.dur) end) then pcall(function() o.cd:Clear() end) end
+                    end
+                else pcall(function() o.cd:Clear() end) end
+                local n = a.n
+                if type(n) == "number" and n > 1 then o.n:SetText(n) else o.n:SetText("") end
                 if objs == TB.f.deb then
-                    local kind = (plainV(a.dispelName) and type(a.dispelName) == "string" and a.dispelName ~= "") and a.dispelName or "none"
+                    local kind = (type(a.kind) == "string" and a.kind ~= "") and a.kind or "none"
                     local atl = "UI-Debuff-Border-" .. ((type(PRD.DEBUFF_ATLAS) == "table" and PRD.DEBUFF_ATLAS[kind]) or "default") .. "-NoIcon"
                     if o.bdAtlas ~= atl then
                         o.bdAtlas = atl
@@ -2054,16 +2066,25 @@ do
         f.lastAuraY = f.auraY
         TB.auraAt, TB.auraDirty = GetTime(), false
         -- debuffs: yours first (the "PLAYER" filter), then the others (not repeated, by the game's own aura id where it is plain)
-        local mine = auraList("HARMFUL|PLAYER", TB.DEBUFF_MAX)
+        local dgs = {}
+        local mine = auraList("HARMFUL|PLAYER", TB.DEBUFF_MAX, nil, dgs)
         local seen = {}
-        for _, a in ipairs(mine) do if plainV(a.auraInstanceID) then seen[a.auraInstanceID] = true end end
-        local others = auraList("HARMFUL", TB.DEBUFF_MAX, seen)
+        for _, a in ipairs(mine) do if type(a.id) == "number" then seen[a.id] = true end end
+        local others = auraList("HARMFUL", TB.DEBUFF_MAX, seen, dgs)
         local deb = {}
         for _, a in ipairs(mine) do deb[#deb + 1] = a end
         for _, a in ipairs(others) do if #deb < TB.DEBUFF_MAX then deb[#deb + 1] = a end end
-        local buf = auraList("HELPFUL", TB.BUFF_MAX)
+        local buf = auraList("HELPFUL", TB.BUFF_MAX, nil, dgs)
         putAuras(f.deb, deb, false)
         putAuras(f.buf, buf, true)
+        -- uf16: what the reads gave (the probe "aurasec", once per kind a login); the last scan's words for a harness
+        TB.dgs = dgs
+        if type(PRD.auraProbe) == "function" then
+            local all = {}
+            for _, a in ipairs(deb) do all[#all + 1] = a end
+            for _, a in ipairs(buf) do all[#all + 1] = a end
+            pcall(PRD.auraProbe, "target", all, dgs)
+        end
     end
     -- uf14 THE FLY (the user, 2026-11-09: "When targetting an enemy I want their nameplate to animate up into the target space centered at
     -- the top of the screen and vise versa"): a new ENEMY target's nameplate bar flies up into the target bar (our own copy: the plate is
