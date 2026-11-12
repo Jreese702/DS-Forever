@@ -144,6 +144,8 @@ object StartupDiag {
         "Launch: ${LauncherHooks.launchState.ifEmpty { "(no launch in this run)" }}",
         "Game screen up: ${LauncherHooks.gameUp()}" + (if (LauncherHooks.gameStartSec > 0) ", since ${stamp(LauncherHooks.gameStartSec * 1000)}" else ""),
         "Last clean exit: ${LauncherHooks.lastCleanExit.ifEmpty { "(none)" }}",
+        // issues #132 / #42 / #57: downloading before the login screen, or a login screen that never read login.txt
+        "Before the login screen: ${runCatching { NativeLogin.preLoginLine() }.getOrElse { "? (${it.message})" }}",
     )
 
     private fun gameFolder(ctx: Context): List<String> {
@@ -166,6 +168,11 @@ object StartupDiag {
             out += "  ${p.flavorDir}: exe ${exe.name} ${if (exe.isFile) "present (${mb(exe.length())}, ${stamp(exe.lastModified())})" else "missing"}"
         }
         out += "Data: ${dataSize(File(root, "Data"))}"
+        // issue #57: the keys a copied folder brings (names only)
+        out += "Config.wtf: " + runCatching {
+            val p = choice?.product ?: WowProduct.of(root)
+            GameConfigWtf.reportLine(File(root, "${p.flavorDir}/WTF/Config.wtf").takeIf { it.isFile }?.readText())
+        }.getOrElse { "? (${it.message})" }
         out += "Active build (GameFiles): ${runCatching { GameFiles.activeBuild(root)?.let { "${it.first} ${it.second}" } }.getOrNull() ?: "none"}"
         out += "Last open problem: ${GameFiles.lastWhy ?: "(none)"}"
         return out
