@@ -3,12 +3,13 @@ Hub.lua under a stub game whose frames remember what was drawn, PadMap's exports
 
     python tools/test_party_top.py
 
-Checks the block (hub35: only party1..4, in the bottom's arrangement of PadMap m131's entries - the same rows and sides, the you / pet
-rows dropped, a full row's bar both columns wide; no self row; a raid or our switch off: nothing),
+Checks the block (hub42, the user 2026-11-12: only party1..4 - out of Party mode ONE column top left, party1..4 top to bottom; in Party
+mode faded out, moved and faded in UNDER the HUD bar, [party1][party2] / [party3][party4], the pet strip beside the HP bar (Trail prd15);
+every bar one column's; no self row; a raid or our switch off: nothing),
 Party mode's looks (each row's LB glyph, the gold ring on the pick box.u, the white chevron at your target; off: a white ring on your
 target), dead / offline / out of range (the shared rng: 0.45), the HUD green re-tinted every step, the secret health only into the
-widget setters, and the Select tab (off / on / not bound; hub38: the game's side tab in three slices on the screen's left edge,
-lit by its selected art - the user, 2026-11-11). hub38: the rows follow PadMap m134 (you + the pet share the first row). Needs lupa. Exit code 1 on any failure."""
+widget setters, and the Select tab (hub42, the user's pick B: only in Party mode, lit, at the grid's left edge; hub38: the game's side tab
+in three slices, lit by its selected art). Needs lupa. Exit code 1 on any failure."""
 import os
 import sys
 
@@ -108,6 +109,25 @@ WowCompanion.padMap = { party = {
 '''
 
 
+RING_CHECK = '''(function()
+    local f = WowCompanion.uf.pf.frames[1]
+    local r = f.ring
+    local a = r.area and r.area.anch or {}
+    if #a ~= 2 or a[1][1] ~= "TOPLEFT" or not rawequal(a[1][2], f.hp) or a[2][1] ~= "BOTTOMRIGHT" or not rawequal(a[2][2], f.mp) then
+        return "area"
+    end
+    local want = { { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
+    for i = 1, 4 do
+        local e = r.t[i].anch or {}
+        if #e ~= 2 then return "edge" .. i end
+        for j = 1, 2 do
+            if e[j][1] ~= want[i][j] or e[j][3] ~= want[i][j] or not rawequal(e[j][2], r.area) then return "edge" .. i .. "." .. j end
+        end
+    end
+    return "ok"
+end)()'''
+
+
 def main():
     fails = []
 
@@ -136,37 +156,82 @@ def main():
         return {i: (f[i].look.row, f[i].look.side) for i in f}
 
     src = open(HUB, encoding="utf-8").read()
-    chk("hub40: the version tag (hub38 the player / pet row, the game's side tab; hub39 int/1429; hub40 the bars one column wide; hub41 the tab on a K change, pitch 64)", 'local HV = "hub41"' in src)
+    chk("hub42: the version tag (hub38 the player / pet row, the game's side tab; hub40 the bars one column wide; hub41 pitch 64; hub42 the "
+        "left column / the grid under the HUD, the fade, the tab beside the grid)", 'local HV = "hub42"' in src)
     chk("hub34: the combat log's switch calls are gone (PadMap m129)", 'WC.clogSync' not in src and 'WC.clogTicker' not in src)
+    chk("hub42: the fade runs every frame from the driver (PF.fadeTick on drv's OnUpdate), alpha only, FADE_S %s s" % PF.FADE_S,
+        'pcall(UF.pf.fadeTick, el)' in src and 0.15 <= PF.FADE_S <= 0.25)
+    chk("hub42: the old flush-left tab place is gone (no TAB_X)", PF.TAB_X is None and 'TAB_X' not in src)
+
+    def settle():
+        step()
+        for _ in range(40):
+            PF.fadeTick(0.05)
+        step()
+
+    def anch(f):
+        a = f.anch[1]
+        return (a[1], "UIParent" if G.rawequal(a[2], G.UIParent) else a[2], a[3], a[4], a[5])
 
     # solo, Party mode off: nothing (no row, no tab)
     G.WowCompanion.partyOk = True
-    step()
+    settle()
     chk("solo, Party mode off: no row, no tab", frames() == {} and PF.rows == 0 and (PF.tab is None or not PF.tab.shown), PF.rows)
-    # hub35 (the user, 2026-11-11: "When selecting myself or my pet it just highlights my HUD bar"): NO self row; solo with Party mode on
-    # only the tab (one row high) says it is on
+    # hub35 / hub42 (the user, 2026-11-12: "the player should not have their HP bar on the right side with party mode any more"): NO self
+    # row in any mode; solo with Party mode on only the tab (one row high, under the HUD) says it is on
     G.PM.on = True
     G.PM.u = "player"
-    step()
-    chk("hub35: solo, Party mode on: no row at all (you = the HUD's bars), the Select tab on", frames() == {} and PF.rows == 0
-        and PF.tab is not None and PF.tab.shown and PF.tabLook == "on", (list(frames()), PF.tabLook))
-    chk("hub35: no frame is ever made for you (no WowCompanionUFParty0)", G.WowCompanionUFParty0 is None, "")
-    # a party of two (you, party1, party2: n 3, one full row each): party1 then party2, full width
+    settle()
+    chk("hub42: solo, Party mode on: no row at all (you = the HUD's bars), the Select tab on, under the HUD", frames() == {} and PF.rows == 0
+        and PF.tab is not None and PF.tab.shown and PF.tabLook == "on" and PF.at == "hud", (list(frames()), PF.tabLook, PF.at))
+    chk("hub35: no frame is ever made for you or your pet (no WowCompanionUFParty0 / 5)", G.WowCompanionUFParty0 is None
+        and G.WowCompanionUFParty5 is None, "")
+    # OUT of Party mode: ONE column top left, party1..4 top to bottom
     L.execute('UNITS.party1 = { name = "Brannoc", cls = "WARRIOR", lv = 21 }; UNITS.party2 = { name = "Iselle", cls = "MAGE", lv = 19 }; '
               'PM.on = false; PM.u = "party1"; TARGET = "party2"')
-    step()
+    settle()
     f = frames()
-    chk("hub35: grouped (n 3), Party mode off: party1 row 0, party2 row 1, both full width (you are not drawn)",
-        where(f) == {1: (0, "full"), 2: (1, "full")} and f[1].look.w == PF.W_FULL, where(f))
+    chk("hub42: Party mode off: ONE column top left - party1 row 0, party2 row 1, each on the left, a column's bar (you are not drawn)",
+        where(f) == {1: (0, "left"), 2: (1, "left")} and f[1].look.w == PF.W_BAR and PF.at == "left", where(f))
+    chk("hub42: ... placed from the screen's top left (x %s, y -%s - row * %s)" % (PF.X, PF.Y, PF.PITCH),
+        anch(f[1]) == ("TOPLEFT", "UIParent", "TOPLEFT", PF.X, -PF.Y) and anch(f[2]) == ("TOPLEFT", "UIParent", "TOPLEFT", PF.X, -(PF.Y + PF.PITCH)),
+        (anch(f[1]), anch(f[2])))
     chk("Party mode off: no LB glyph (the slot kept empty), a WHITE ring on your target (party2), no gold ring",
         all(f[i].look.glyph is None for i in f) and f[2].look.ring == "white" and f[1].look.ring is None
         and not any(f[i].look.chev for i in f), [(f[i].look.ring, f[i].look.glyph) for i in sorted(f)])
     chk("names in class colour, the level in its box", f[1].name.text == "Brannoc" and abs(f[1].name.tc[1] - 0.78) < 1e-6 and f[1].lvl.text == 21,
         (f[1].name.text, f[1].lvl.text))
-    chk("hub35: the tab two rows high beside the block", PF.tab.shown and PF.tabLook == "off", PF.tabLook)
-    # Party mode on: glyphs, the gold ring on the pick, the white chevron at your target
+    chk("hub42: Party mode off: NO top Select tab (the user's pick B)", PF.tab is None or not PF.tab.shown, PF.tabLook)
+    # THE FADE (the user: "fade out, move, fade in"): Select turns Party mode on
     G.PM.on = True
     step()
+    f = frames()
+    chk("hub42: Party mode on: first a fade OUT where the block stands (still the left column, fading)", PF.fdir == -1 and PF.at == "left"
+        and where(f) == {1: (0, "left"), 2: (1, "left")}, (PF.fdir, PF.at))
+    PF.fadeTick(0.1)
+    chk("hub42: ... half way out: the rows at alpha %.2f" % f[1].alpha, abs(PF.fa - 0.5) < 1e-6 and abs(f[1].alpha - 0.5) < 1e-6
+        and PF.at == "left", (PF.fa, f[1].alpha))
+    PF.fadeTick(0.1)
+    f = frames()
+    chk("hub42: ... unseen: moved under the HUD ([party1][party2] side by side), alpha 0, now fading IN",
+        PF.at == "hud" and PF.fdir == 1 and PF.fa == 0 and where(f) == {1: (0, "left"), 2: (0, "right")} and f[1].alpha == 0, (PF.at, where(f)))
+    PF.fadeTick(0.1)
+    chk("hub42: ... half way in (%.2f), the tab fading in with the rows" % f[1].alpha, abs(f[1].alpha - 0.5) < 1e-6
+        and PF.tab.shown and abs(PF.tab.alpha - 0.5) < 1e-6, (f[1].alpha, PF.tab.alpha))
+    PF.fadeTick(0.1)
+    chk("hub42: ... done: alpha 1, no fade running", PF.fa == 1 and PF.fdir is None and f[1].alpha == 1, (PF.fa, PF.fdir))
+    g = PF.g
+    chk("hub42: under the HUD: party1's bar under the HP bar's left (TOPLEFT on UIParent's CENTER at geo.x - BAR_X), party2 one column right",
+        anch(f[1]) == ("TOPLEFT", "UIParent", "CENTER", g.x - PF.BAR_X, g.y)
+        and anch(f[2]) == ("TOPLEFT", "UIParent", "CENTER", g.x - PF.BAR_X + PF.COL_W + PF.COL_GAP, g.y), (anch(f[1]), anch(f[2])))
+    # a turn back mid-fade: in again where it stands
+    G.PM.on = False
+    step()
+    PF.fadeTick(0.05)
+    G.PM.on = True
+    step()
+    chk("hub42: Party mode back on mid-fade-out: fades in again where it stands (under the HUD)", PF.fdir == 1 and PF.at == "hud", (PF.fdir, PF.at))
+    settle()
     f = frames()
     chk("Party mode on: each row's LB glyph (p1, p2)", [f[i].look.glyph for i in sorted(f)] == ["PADDUP", "PADDDOWN"],
         [f[i].look.glyph for i in sorted(f)])
@@ -174,24 +239,7 @@ def main():
         f[1].look.ring == "gold" and f[2].look.ring is None and f[2].look.chev is True and f[1].look.chev is False,
         [(f[i].look.ring, f[i].look.chev) for i in sorted(f)])
     chk("the ring's gold is the bottom box's (1, 0.82, 0)", f[1].ring.t[1].ct[0 + 1] == 1 and abs(f[1].ring.t[1].ct[2] - 0.82) < 1e-6, "")
-    # hub35 review (2026-11-11): the ring on ONE area (TOPLEFT on the health bar, BOTTOMRIGHT on the power bar), every edge on it alone
-    rg = L.eval('''(function()
-        local f = WowCompanion.uf.pf.frames[1]
-        local r = f.ring
-        local a = r.area and r.area.anch or {}
-        if #a ~= 2 or a[1][1] ~= "TOPLEFT" or not rawequal(a[1][2], f.hp) or a[2][1] ~= "BOTTOMRIGHT" or not rawequal(a[2][2], f.mp) then
-            return "area"
-        end
-        local want = { { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
-        for i = 1, 4 do
-            local e = r.t[i].anch or {}
-            if #e ~= 2 then return "edge" .. i end
-            for j = 1, 2 do
-                if e[j][1] ~= want[i][j] or e[j][3] ~= want[i][j] or not rawequal(e[j][2], r.area) then return "edge" .. i .. "." .. j end
-            end
-        end
-        return "ok"
-    end)()''')
+    rg = L.eval(RING_CHECK)
     chk("hub35 review: the ring on one area (health's top-left to power's bottom-right), every edge on that area alone", rg == "ok", rg)
     G.PM.u = "player"
     step()
@@ -199,35 +247,42 @@ def main():
     chk("hub35: the pick on you: no ring on any party row (the HUD's bars wear it)", all(f[i].look.ring is None for i in f),
         [f[i].look.ring for i in sorted(f)])
     G.PM.u = "party1"
-    # hub35 THE BOTTOM'S ARRANGEMENT (PadMap m131's entries, PM.units = WC.padMap.party.units): every shape the top can hold
+    # every shape: out of Party mode one column, in it the grid two a row; you and your pet never drawn
     L.execute('UNITS.party3 = { name = "Doran", cls = "WARRIOR", lv = 20 }; UNITS.party4 = { name = "Mira", cls = "MAGE", lv = 20 }')
     shapes = [
-        (["player", "party1", "party2", "party3", "party4"], {1: (0, "left"), 2: (0, "right"), 3: (1, "left"), 4: (1, "right")},
-         "n 5, no pet: you | p1 p2 | p3 p4 -> the 2x2 square"),
-        (["player", "pet", "party1", "party2", "party3", "party4"], {1: (0, "left"), 2: (0, "right"), 3: (1, "left"), 4: (1, "right")},
-         "n 6: you pet | p1 p2 | p3 p4 -> the 2x2 square (the you / pet row dropped)"),
-        (["player", "pet", "party1", "party2", "party3"], {1: (0, "full"), 2: (1, "left"), 3: (1, "right")},
-         "hub38: n 5 with the pet: you pet | p1 | p2 p3 -> p1 full, p2 p3 under it (as without the pet)"),
-        (["player", "party1", "party2", "party3"], {1: (0, "full"), 2: (1, "left"), 3: (1, "right")},
-         "n 4, no pet: you | p1 | p2 p3 -> p1 full, p2 p3 under it"),
-        (["player", "pet", "party1", "party2"], {1: (0, "full"), 2: (1, "full")}, "hub38: n 4 with the pet: you pet | p1 | p2 -> two full rows"),
-        (["player", "pet", "party1"], {1: (0, "full")}, "n 3 with the pet: you pet | p1 -> p1 full"),
-        (["player", "party1", "party2"], {1: (0, "full"), 2: (1, "full")}, "n 3, no pet: you | p1 | p2 -> two full rows"),
+        (["player", "party1", "party2", "party3", "party4"], 4, "n 5, no pet"),
+        (["player", "pet", "party1", "party2", "party3", "party4"], 4, "n 6 with the pet"),
+        (["player", "pet", "party1", "party2", "party3"], 3, "n 5 with the pet"),
+        (["player", "party1", "party2", "party3"], 3, "n 4, no pet"),
+        (["player", "pet", "party1", "party2"], 2, "n 4 with the pet"),
+        (["player", "pet", "party1"], 1, "n 3 with the pet"),
+        (["player", "party4", "party2", "party1", "party3"], 4, "PadMap's list out of order: the bottom's order party1..4 still"),
     ]
-    for units, want, why in shapes:
+    for units, k, why in shapes:
         G.PM.units = L.table_from(units)
-        step()
-        f = frames()
-        rows = max(r for r, _ in want.values()) + 1
-        chk("hub35: " + why, where(f) == want and PF.rows == rows, (where(f), PF.rows))
-        chk("hub35: ... widths: a half %d, a full %d; the right column %d px over" % (PF.W_HALF, PF.W_FULL, PF.COL_W + PF.COL_GAP),
-            all(f[i].look.w == (PF.W_FULL if s_ == "full" else PF.W_HALF) for i, (_, s_) in want.items()), [f[i].look.w for i in f])
+        for mode in (False, True):
+            G.PM.on = mode
+            settle()
+            f = frames()
+            if mode:
+                want = {i: ((i - 1) // 2, "left" if i % 2 == 1 else "right") for i in range(1, k + 1)}
+                rows = (k + 1) // 2
+            else:
+                want = {i: (i - 1, "left") for i in range(1, k + 1)}
+                rows = k
+            chk("hub42: %s, Party mode %s: %s" % (why, "on (the grid under the HUD)" if mode else "off (one column)", want),
+                where(f) == want and PF.rows == rows and all(f[i].look.at == ("hud" if mode else "left") for i in f)
+                and all(f[i].look.w == PF.W_BAR for i in f), (where(f), PF.rows))
+            chk("hub42: ... the tab %s" % ("beside the grid, the rows' full height" if mode else "absent"),
+                (PF.tab.shown and abs(PF.tab.h - (rows * PF.PITCH - (PF.PITCH - PF.HP - PF.GAP - PF.MP) + 4)) < 1e-6) if mode
+                else not PF.tab.shown, (PF.tab.shown, PF.tab.h))
     G.PM.units = None
+    G.PM.on = False
     L.execute('UNITS.party3 = nil; UNITS.party4 = nil')
-    step()
+    settle()
     f = frames()
-    chk("hub35: back to two members (PadMap's list gone: the plain count): party1, party2 full rows again",
-        where(f) == {1: (0, "full"), 2: (1, "full")} and not (PF.frames[3] and PF.frames[3].shown), where(f))
+    chk("hub35: back to two members (PadMap's list gone: the plain count): one column again",
+        where(f) == {1: (0, "left"), 2: (1, "left")} and not (PF.frames[3] and PF.frames[3].shown), where(f))
     # dead, offline, out of range (PadMap's rng)
     L.execute('UNITS.party1.dead = true; UNITS.party2.off = true')
     step()
@@ -240,6 +295,12 @@ def main():
     f = frames()
     chk("out of range by PadMap's rng (false): 0.45; not known (nil): no dim", f[1].alpha == 0.45 and f[2].alpha == 1 and not f[1].deadG.shown,
         (f[1].alpha, f[2].alpha))
+    G.PM.on = True
+    step()
+    PF.fadeTick(0.1)
+    chk("hub42: a dimmed row fades with the block (0.45 x the fade: %.3f)" % f[1].alpha, abs(f[1].alpha - 0.45 * 0.5) < 1e-6, f[1].alpha)
+    settle()
+    f = frames()
     L.execute('PM.rng = {}')
     # the HUD's green, set every step; secret health only into the setters
     p0 = f[1].hp.paints or 0
@@ -249,64 +310,124 @@ def main():
     chk("the health re-tinted every step (PRD.HEALTH_RGB's green)", (f[1].hp.paints or 0) >= p0 + 2 and abs(f[1].hp.sbc[2] - 0.86) < 1e-6,
         (p0, f[1].hp.paints))
     chk("the secret health went into the bar's setters only", G.rawequal(f[1].hp.val, G.SECRET) and G.rawequal(f[1].hp.mm[2], G.SECRET), "")
-    # the top Select tab: on / off / not bound
+    # the top Select tab: Party mode on only, at the grid's left edge
     tab = PF.tab
+
     def shown(parts):
         return [p.shown for p in parts.values()]
     chk("hub38: the Select tab: on (Party mode on), the B glyph shown, the game's side tab lit (its selected art shown over it)",
         tab is not None and tab.shown and PF.tabLook == "on" and tab.b.shown and all(shown(tab.base)) and all(shown(tab.lit))
         and len(tab.base) == 3 and len(tab.lit) == 3, PF.tabLook)
-    chk("hub38: the side tab is the game's atlas in three slices (no drawn fill / edge), flush on the screen's left edge",
-        all(p.tex == 7000001 for p in tab.base.values()) and G.rawget(tab, "bg") is None and G.rawget(tab, "edge") is None and PF.TAB_X == 0
-        and tab.anch[1][4] == 0 and abs(tab.base[1].tc[3] - 0.5) < 1e-9 and abs(tab.base[3].tc[4] - 0.7) < 1e-9
-        and abs(tab.base[1].h - PF.TAB_W * 120 * PF.TAB_CAP / 110) < 1e-6,
-        (tab.anch[1][4], list(tab.base[1].tc.values()), list(tab.base[3].tc.values()), tab.base[1].h))
+    g = PF.g
+    chk("hub42: the side tab is the game's atlas in three slices (no drawn fill / edge), at the grid's LEFT edge (TOPRIGHT TAB_GAP left of "
+        "the first column, level with its first name), not on the screen's edge",
+        all(p.tex == 7000001 for p in tab.base.values()) and G.rawget(tab, "bg") is None and G.rawget(tab, "edge") is None
+        and anch(tab) == ("TOPRIGHT", "UIParent", "CENTER", g.x - (PF.BAR_X + PF.TAB_GAP), g.y - (PF.NAME_H - 4))
+        and abs(tab.base[1].tc[3] - 0.5) < 1e-9 and abs(tab.base[3].tc[4] - 0.7) < 1e-9
+        and abs(tab.base[1].h - PF.TAB_W * 120 * PF.TAB_CAP / 110) < 1e-6, anch(tab))
     G.PM.on = False
-    step()
-    chk("hub38: off, Select bound: the plain side tab (its lit art hidden), no B, no lock", PF.tabLook == "off" and all(shown(tab.base))
-        and not any(shown(tab.lit)) and not tab.b.shown and not tab.lock.shown, PF.tabLook)
-    G.PM.sel = "dialog"
-    step()
-    chk("Select not bound (a dialog): the glyph at 40 %, the lock, the side tab dimmer", PF.tabLook == "unbound" and tab.sel.alpha == 0.4
-        and tab.lock.shown and tab.base[1].alpha == 0.6 and not any(shown(tab.lit)), PF.tabLook)
-    G.PM.sel = "bound"
+    settle()
+    chk("hub42: Party mode off: the tab gone, the block back in the left column", not tab.shown and PF.at == "left", (tab.shown, PF.at))
     G.WowCompanion.partyOk = False
-    step()
-    chk("Party mode not allowed (the experimental switch off): no tab, the column stays", not tab.shown and len(frames()) == 2, tab.shown)
+    G.PM.on = True
+    settle()
+    chk("Party mode not allowed (the switch off): no tab, the column stays top left", not tab.shown and len(frames()) == 2 and PF.at == "left", tab.shown)
     G.WowCompanion.partyOk = True
     # a raid: nothing; our switch off: nothing
     G.RAID = True
-    step()
+    settle()
     chk("in a raid: nothing (no row, no tab)", frames() == {} and not tab.shown, list(frames()))
     G.RAID = False
     UF.party = False
-    step()
+    settle()
     chk("our party frames switched off (SW_UFP): nothing", frames() == {} and not tab.shown, list(frames()))
     UF.party = True
-    step()
+    settle()
     chk("on again: two rows", len(frames()) == 2, len(frames()))
+    G.PM.on = False
+    settle()
 
-    # hub40 (the user, 2026-11-12: "I had someone join my group on an old build and their health bar was a mile long"): the bars'
-    # RESOLVED width (tools/render_top_party.py: Trail + Hub on the geometry stub, every anchor resolved) in every shape the renders
-    # draw - a party of 2..5, with / without the pet, Party mode off / on, the picks on you / your pet, one dead, one out of range -
-    # never more than one column's bar, both bars of a row the same width, a full row in the left column; and after a K change
-    chk("hub40: every bar one column's bar (W_BAR %s = COL_W - BAR_X - 30, W_FULL no longer a span: %s)" % (PF.W_BAR, PF.W_FULL),
-        PF.W_BAR == PF.COL_W - PF.BAR_X - 30 and PF.W_FULL == PF.W_BAR and PF.W_HALF == PF.W_BAR, (PF.W_BAR, PF.W_FULL))
+    # THE RESOLVED GEOMETRY (tools/render_top_party.py: Trail + Hub on the geometry stub, every anchor resolved), every shape the renders
+    # draw: bars one column wide (hub40), out of Party mode the left column, in it the grid under the HUD's bars with party1 under the HP
+    # bar's left, the pet strip beside the HP bar ([me][pet]), the tab at the grid's left edge, no self row
+    chk("hub40: every bar one column's bar (W_BAR %s = COL_W - BAR_X - 30)" % PF.W_BAR, PF.W_BAR == PF.COL_W - PF.BAR_X - 30, PF.W_BAR)
     import render_top_party as rtp
     col = PF.W_BAR
-    for nm, sh in rtp.shapes().items():
+    for nm, sh in list(rtp.shapes().items()) + list(rtp.party_top_shapes().items()):
         rig = rtp.Rig()
         rig.scene(sh)
         k = rig.G.UIParent.hh / 1080.0
         bars = rig.party_bars()
         tb = rig.rect(rig.UF.tb.f.hp)
+        P = rig.P
+        hp, pw = rig.rect(P.hp), rig.rect(P.pw)
         bad = {u: round(v["hp"][2] - v["hp"][0], 2) for u, v in bars.items()
-               if v["hp"][2] - v["hp"][0] > col * k + 1e-6 or abs((v["mp"][2] - v["mp"][0]) - (v["hp"][2] - v["hp"][0])) > 1e-6
-               or (v["side"] != "right" and abs(v["hp"][0] - (PF.X + PF.BAR_X) * k) > 1e-6)
-               or (v["side"] == "right" and abs(v["hp"][0] - (PF.X + PF.COL_W + PF.COL_GAP + PF.BAR_X) * k) > 1e-6)}
-        chk("hub40: %s: %d bars, each <= one column (%.1f px), under the target bar's %.1f, left-aligned in its column"
-            % (nm, len(bars), col * k, tb[2] - tb[0]),
+               if v["hp"][2] - v["hp"][0] > col * k + 1e-6 or abs((v["mp"][2] - v["mp"][0]) - (v["hp"][2] - v["hp"][0])) > 1e-6}
+        chk("hub40: %s: %d bars, each <= one column (%.1f px), under the target bar's %.1f" % (nm, len(bars), col * k, tb[2] - tb[0]),
             len(bars) == sh["n"] - 1 and not bad and all(v["hp"][2] - v["hp"][0] < tb[2] - tb[0] for v in bars.values()), bad)
+        L0 = rig.rect(P.petL) if sh["pet"] else None
+        if not sh["mode"]:
+            badp = {u: v["hp"][0] for u, v in bars.items() if abs(v["hp"][0] - (PF.X + PF.BAR_X) * k) > 1e-6
+                    or abs(v["frame"][3] - (1080 - (PF.Y + (int(u[5:]) - 1) * PF.PITCH) * k)) > 1e-6}
+            chk("hub42: %s: Party mode off: ONE column top left (x %.0f), party1..4 top to bottom" % (nm, (PF.X + PF.BAR_X) * k), not badp, badp)
+            if L0:
+                chk("hub42: %s: the pet strip stays under the resource bar (top %.1f under the power bar's %.1f)" % (nm, L0[3], pw[1]),
+                    L0[3] < pw[1] and P.petSide == "under", (L0, pw))
+            chk("hub42: %s: no tab out of Party mode, no aura room taken (%s)" % (nm, P.partyRoomPx),
+                (rig.PF.tab is None or rig.PF.tab.shown is False) and P.partyRoomPx == 0, P.partyRoomPx)
+        else:
+            badg = {}
+            for u, v in bars.items():
+                i = int(u[5:])
+                wx = hp[0] + (0 if i % 2 == 1 else (PF.COL_W + PF.COL_GAP) * k)
+                if abs(v["hp"][0] - wx) > 1e-6 or v["row"] != (i - 1) // 2:
+                    badg[u] = (v["hp"][0], wx, v["row"])
+                if v["frame"][3] > pw[1] + 1e-6:
+                    badg[u + " above"] = (v["frame"][3], pw[1])
+            chk("hub42: %s: Party mode: the grid UNDER the HUD's bars ([p1][p2] / [p3][p4]), party1's bar under the HP bar's left (%.1f)"
+                % (nm, hp[0]), not badg, badg)
+            if L0:
+                chk("hub42: %s: [me][pet]: the pet strip RIGHT of the HP bar (its left %.1f past the HP bar's right %.1f), level with the bars"
+                    % (nm, L0[0], hp[2]), L0[0] > hp[2] and L0[1] < hp[3] and L0[3] > pw[1] and P.petSide == "beside", (L0, hp, pw))
+            t = rig.PF.tab
+            tr = rig.rect(t)
+            if bars:
+                fr = [v["frame"] for v in bars.values()]
+                left = min(x[0] for x in fr)
+                chk("hub42: %s: the lit tab at the grid's LEFT edge (right %.1f < the first column's left %.1f), down the rows (%.1f..%.1f)"
+                    % (nm, tr[2], left, tr[1], tr[3]),
+                    t.shown is not False and rig.PF.tabLook == "on" and tr[2] < left and tr[2] > left - 20 * k
+                    and tr[3] <= max(x[3] for x in fr) and tr[1] <= max(v["mp"][1] for v in bars.values()) and tr[0] > 0, (tr, fr))
+                chk("hub42: %s: the grid takes its room under the bars (the aura row under it: %.1f spec px)" % (nm, P.partyRoomPx),
+                    P.partyRoomPx > 0 and P.petDrop > P.partyRoomPx, (P.partyRoomPx, P.petDrop))
+            chk("hub42 / prd15: %s: Party mode holds the HUD up (why %s)" % (nm, P.why), P.why in ("party", "fight") and P.shown is True, P.why)
+            if sh.get("pick") == "pet":
+                pa = rig.rect(P.pick.pet.area)
+                chk("prd15: %s: the pick on your pet: the gold box round the strip BESIDE the HP bar (%.1f..%.1f)" % (nm, pa[0], pa[2]),
+                    P.pickWho == "pet" and pa[0] < L0[0] + 1e-6 and pa[2] > L0[0] and pa[0] > hp[2], (pa, L0))
+        chk("hub42: %s: no self row (no top frame for you / your pet)" % nm, rig.G.WowCompanionUFParty0 is None
+            and rig.G.WowCompanionUFParty5 is None, "")
+    # Party mode on and off in the rig (every frame driven): the pet strip fades out, moves beside the HP bar, fades in; and back
+    rig = rtp.Rig()
+    rig.scene(rtp.party_top_shapes()["off_4members"])
+    P = rig.P
+    rig.G.PM.on = True
+    seen = []
+    for _ in range(30):
+        rig.run(1 / 30)
+        seen.append((P.petSide, P.petFadeA, rig.PF.at, rig.PF.fa))
+    chk("prd15: Party mode on: the pet strip fades out under the bars, moves, fades in beside them (alpha ramps both ways, ends at 1)",
+        any(x[0] == "under" and x[1] is not None and 0 < x[1] < 1 for x in seen)
+        and any(x[0] == "beside" and x[1] is not None and 0 < x[1] < 1 for x in seen)
+        and seen[-1][0] == "beside" and seen[-1][1] is None, seen[:12])
+    chk("hub42: ... the block too: out of the column, in under the HUD (ends at alpha 1, under the HUD)",
+        any(x[2] == "left" and 0 < x[3] < 1 for x in seen) and any(x[2] == "hud" and 0 < x[3] < 1 for x in seen)
+        and seen[-1][2] == "hud" and seen[-1][3] == 1, [x[2:] for x in seen[:14]])
+    rig.G.PM.on = False
+    rig.run(1.0)
+    chk("prd15 / hub42: Party mode off again: the strip back under the bars, the block back in the left column, no room held",
+        P.petSide == "under" and rig.PF.at == "left" and P.partyRoomPx == 0 and P.petFadeA is None and rig.PF.fa == 1,
+        (P.petSide, rig.PF.at, P.partyRoomPx))
     # a row made at one scale, the scale recomputed at PLAYER_ENTERING_WORLD (Hub's K = UIParent:GetHeight() / 1080): re-sized
     rig = rtp.Rig()
     rig.scene(rtp.shapes()["party3"])
@@ -317,8 +438,12 @@ def main():
     chk("hub40: after a K change (1080 -> 768): every bar re-sized to the new scale's column (%s -> %s), the heights too" % (w0, w1),
         all(abs(w - col) < 1e-6 for w in w0.values()) and all(abs(w - col * 768 / 1080) < 1e-6 for w in w1.values())
         and all(abs((v["hp"][3] - v["hp"][1]) - PF.HP * 768 / 1080) < 1e-6 for v in b1.values()), (w0, w1))
-    # hub41 (the user, 2026-11-12, the top screen's party renders): the Select tab follows the K change too - its top beside the first
-    # row's bar (PF.Y + NAME_H - 4 at today's K), its width TAB_W * K, its cap slices TAB_W * K * the art's cap ratio
+    # hub41 / hub42: the Select tab follows the K change too - under the HUD, its top level with the first row's name (NAME_H - 4 under
+    # the first row's top at today's K), its width TAB_W * K, its cap slices TAB_W * K * the art's cap ratio
+    rig = rtp.Rig()
+    rig.scene(rtp.shapes()["party3_mode"])
+    rig.set_k(768)
+    b1 = rig.party_bars()
     t = rig.PF.tab
     tr = rig.rect(t)
     k2 = 768 / 1080.0
@@ -329,7 +454,7 @@ def main():
         abs(tr[3] - (top0 - (PF.NAME_H - 4) * k2)) < 1e-6 and abs((tr[2] - tr[0]) - PF.TAB_W * k2) < 1e-6
         and abs(t.base[1].h - capw) < 1e-6 and abs(t.lit[3].h - capw) < 1e-6
         and abs(t.sel.w - (PF.TAB_W - 2) * k2) < 1e-6, (tr, top0, t.base[1].h, capw))
-    # hub41: Party mode's gold ring never crosses another row's name (it cut "Quill" / "Elowen" at pitch 55), every mode shape, both K
+    # hub41: Party mode's gold ring never crosses another row's name, every mode shape, both K
     for nm, sh in rtp.shapes().items():
         if not sh["mode"]:
             continue

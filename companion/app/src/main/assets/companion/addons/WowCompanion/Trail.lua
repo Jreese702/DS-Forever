@@ -3167,7 +3167,15 @@ end
 -- gold box (Hub's ring gold 1 / 0.82 / 0, PICK_PAD spec px outside the frame) stands round the player's two bars; on "pet", round the
 -- pet's strip (portrait to bars). Hidden whenever Party mode is off. While one of them is the pick the HUD stays shown at full alpha
 -- (why "party": the box never frames nothing); the box lives on P.f itself, never on the curve's layer. Read every PICK_S, nothing written.
-WC.prd = { V = "prd14", PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
+-- prd15 [ME][PET] IN PARTY MODE (the user, 2026-11-12: "In Party mode the PET strip moves from under the HUD bar to the RIGHT of the
+-- player's HP bar"; the members "fade back in UNDER the player's HUD bar"): while Party mode is on (PadMap's on, plain; never in a raid)
+-- the pet strip fades out (PET_FADE_S 0.2), moves beside the HP bar (PET_SIDE_GAP past its right rim, centred on the two bars; P.petSide
+-- "beside", its portrait from the strip's own left) and fades in; the reverse when it goes off. The pick box rides the strip (it waits
+-- for the fade). Hub's party grid hangs under the bars (P.partyGeo: the HP bar's left, the room's top PET_GAP + PARTY_GAP under the
+-- power bar, from the HUD's own height / width / scale, never the slide) and says its height (P.partyRoom): that room is P.petDrop then
+-- (the aura row under the grid; the shadow stays under the bars). Party mode holds the HUD up (why "party"): it is the block's [me] row.
+-- Our own plain frames and alpha only (allowed in a fight).
+WC.prd = { V = "prd15", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, petSide = "under", partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
            PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
@@ -3829,6 +3837,7 @@ do
         local fixed = P.PET_ICON + P.PET_IGAP + 7 * k + (P.petHappyOn and (2 + P.PET_HAPPY) or 0)
         g.barW = math.max(0, math.min(P.W * P.PET_W, P.W - fixed))
         g.x0 = math.max(0, (P.W - (fixed + g.barW)) / 2)
+        if P.petSide == "beside" then g.x0 = 0 end                   -- prd15: beside the HP bar, from its own left
         return g
     end
     function P.petRow() return P.petGeo().row end
@@ -3888,19 +3897,36 @@ do
     end
     -- the strip's place (under the power bar, under the pips when they show) and P.petDrop, the room it takes: P.f's height, the
     -- shadow and the aura row move down by it; 0 with no pet
+    -- prd15 (the user, 2026-11-12): beside the HP bar in Party mode (P.petSide "beside": no room under the bars), and Hub's party grid
+    -- under the bars takes the room instead (P.partyRoomPx): P.dropFor says what the room is in those two cases
+    function P.dropFor()
+        local cpx = (P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0
+        local room = num(P.partyRoomPx) or 0
+        if room > 0 then return cpx + P.PET_GAP + P.PARTY_GAP + room end
+        if P.petSide ~= "beside" and P.petL and P.petL:IsShown() then return cpx + P.PET_GAP + P.petGeo().row end
+        return 0
+    end
     function P.petLayout(drop, force)
+        if (num(P.partyRoomPx) or 0) > 0 or P.petSide == "beside" then drop = P.dropFor() end
         if drop == P.petDrop and not force then return end
         P.petDrop = drop
         local base = P.HH + P.BAR_GAP + P.PH
         if P.f then pcall(function() P.f:SetHeight(u(base + drop)) end) end
-        if P.shadow and P.g then P.shadow:SetPoint("BOTTOMRIGHT", P.g, "TOPRIGHT", u(16), -u(base + 16 + drop)) end
+        -- (prd15: the shadow stays under the bars alone while the room is Hub's grid or the pet stands beside)
+        local sdrop = ((num(P.partyRoomPx) or 0) > 0 or P.petSide == "beside") and 0 or drop
+        if P.shadow and P.g then P.shadow:SetPoint("BOTTOMRIGHT", P.g, "TOPRIGHT", u(16), -u(base + 16 + sdrop)) end
         P.cache = nil
         local L, o = P.petL, P.pet
         if not (L and o) then return end
         local cpx = (P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0
-        L:ClearAllPoints()
-        L:SetPoint("TOPLEFT", P.f, "TOPLEFT", 0, -u(base + cpx + P.PET_GAP))
         local g = P.petGeo()
+        L:ClearAllPoints()
+        if P.petSide == "beside" and P.hp then
+            -- prd15: [me][pet] - right of the HP bar's right rim (7 texels) by PET_SIDE_GAP, the row centred on the player's two bars
+            L:SetPoint("TOPLEFT", P.hp, "TOPRIGHT", u(7 * P.HH / 8 + P.PET_SIDE_GAP), u((g.row - base) / 2))
+        else
+            L:SetPoint("TOPLEFT", P.f, "TOPLEFT", 0, -u(base + cpx + P.PET_GAP))
+        end
         L:SetSize(u(P.W), u(g.row))
         -- prd12: portrait + unit centred under the player's bars, the portrait level with the bars' unit
         o.ring:ClearAllPoints()
@@ -4073,13 +4099,63 @@ do
         P.pick = o
         return o
     end
+    -- ---------------------------------------------------------------- prd15: Party mode's [me][pet] row and Hub's grid under it
+    -- Party mode on (PadMap's on, plainly true) outside a raid (raids: unchanged)
+    function P.partyModeOn()
+        local p = type(WC.padMap) == "table" and WC.padMap.party or nil
+        if type(p) ~= "table" or type(p.on) ~= "function" then return false end
+        local okO, on = pcall(p.on)
+        if not okO or on ~= true then return false end
+        local okR, r = pcall(IsInRaid)
+        if okR and r == true then return false end
+        return true
+    end
+    -- the HUD's place for Hub's party grid, in UI units from UIParent's CENTER (the HUD's own height and width settings and its scale;
+    -- never its show / hide slide): x = the HP bar's left, top = the bars' top, y = the room's top under the bars (and the combo pips),
+    -- PET_GAP + PARTY_GAP under the power bar (the first row's name clear of the power bar's lip)
+    function P.partyGeo()
+        if not P.wd then pcall(P.loadSize) end
+        local s = (num(P.sc) or P.S_DEF) / 100
+        local y = num(P.y) or P.loadY()
+        local cpx = (P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0
+        local w = num(P.W) or P.W_DEF
+        return { x = -u(w) / 2 * s, top = u(y) * s, y = u(y - (P.HH + P.BAR_GAP + P.PH + cpx + P.PET_GAP + P.PARTY_GAP)) * s, s = s }
+    end
+    -- Hub's grid's height (UI units; 0 = none): the room under the bars, the aura row under it (as under the pet strip before)
+    function P.partyRoom(ui)
+        local s = (num(P.sc) or P.S_DEF) / 100
+        local one = u(1) * s
+        local px = (num(ui) and ui > 0 and one > 0) and ui / one or 0
+        if px == P.partyRoomPx then return end
+        P.partyRoomPx = px
+        if P.f then P.petLayout(P.dropFor(), true) end
+    end
+    -- the strip's move: fade out (PET_FADE_S), move while unseen, fade in; a strip not shown moves at once. Plain alpha on our own layer
+    -- (it holds over the curve's alpha for those 0.4 s); the pick box waits for the strip (P.pickStep)
+    function P.petMoveStep(dt)
+        local want = P.partyOn == true and "beside" or "under"
+        local L = P.petL
+        if not (L and L:IsShown()) then
+            P.petFadeA = nil
+            if P.petSide ~= want then P.petSide = want; if P.f then P.petLayout(P.dropFor(), true) end end
+            return
+        end
+        local a = P.petFadeA or 1
+        if P.petSide ~= want then
+            a = a - (num(dt) or 0) / P.PET_FADE_S
+            if a <= 0 then a = 0; P.petSide = want; P.petLayout(P.dropFor(), true) end
+        elseif a < 1 then
+            a = math.min(1, a + (num(dt) or 0) / P.PET_FADE_S)
+        end
+        if a >= 1 then P.petFadeA = nil else P.petFadeA = a; pcall(function() L:SetAlpha(a) end) end
+    end
     -- the boxes follow the pick (the pet's only while its strip shows); P.pickWho = what is boxed, for the tests
     function P.pickStep(who)
         local o = P.pick
         if not o then return end
         local petShown = P.petL ~= nil and P.petL:IsShown()
         o.you.show(who == "player")
-        o.pet.show(who == "pet" and petShown)
+        o.pet.show(who == "pet" and petShown and P.petFadeA == nil)      -- prd15: back with the strip, at its new place
         P.pickWho = (who == "player" and "player") or ((who == "pet" and petShown) and "pet") or nil
     end
 
@@ -4166,8 +4242,9 @@ do
         local t = now()
         P.on = true
         -- prd14: Party mode's pick on you / your pet (read every PICK_S)
-        if not P.pickAt or t - P.pickAt >= P.PICK_S or t < P.pickAt then P.pickAt = t; P.partyWho = P.partyPick() end
-        local picked = P.partyWho ~= nil
+        if not P.pickAt or t - P.pickAt >= P.PICK_S or t < P.pickAt then P.pickAt = t; P.partyWho = P.partyPick(); P.partyOn = P.partyModeOn() end
+        -- prd15: Party mode on holds the HUD up too (it is the block's [me] row: the grid hangs under it)
+        local picked = P.partyWho ~= nil or P.partyOn == true
         local fight = P.fight()
         local hurt, src = P.hurt()
         if fight then P.lastFight = t end
@@ -4214,6 +4291,7 @@ do
         elseif P.f:IsShown() then
             P.f:SetAlpha(0); P.f:Hide()
         end
+        P.petMoveStep(dt)                                               -- prd15: the pet strip's move (after its alpha for this frame)
         P.pickStep(P.partyWho)                                          -- prd14: after the poll (the pet strip's shown state is fresh)
         P.shown = P.alpha > 0
     end

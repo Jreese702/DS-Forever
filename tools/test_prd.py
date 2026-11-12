@@ -481,7 +481,7 @@ def main():
     chk("prd8: read back at log in: 300 wide, 100 %%", P.wd == 300 and P.sc == 100)
     P.select(); P.nudge(0); P.sel = "y"
     # prd10 (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"): the pips under the power bar
-    chk("prd14: the version tag", P.V == "prd14")
+    chk("prd15: the version tag", P.V == "prd15")
     chk("prd10: the player's UNIT_POWER_FREQUENT is heard (combo points at the next frame)", ev.events.UNIT_POWER_FREQUENT == "player")
     L.execute('''
         local upm = UnitPowerMax

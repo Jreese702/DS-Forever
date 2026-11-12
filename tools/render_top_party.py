@@ -555,8 +555,53 @@ def width_options(out, widths=(194, 228, 300), names=("party2", "party3_mode", "
     print(os.path.join(out, "top_width_options.png"))
 
 
+# hub42 / prd15 (the user, 2026-11-12): the redesign's shots - out of Party mode the members in ONE column top left; Party mode: they
+# fade out and back in under the HUD bar ([me][pet] / [p1][p2] / [p3][p4]), the pet strip beside the HP bar, the lit side tab at the
+# block's left edge; and the move caught mid-fade
+SHOTS = "C:/Users/Jrees/AppData/Local/Temp/claude/6c5148a90427b4bc/789b5138-341f-4ef8-8102-099551ca3a8a/scratchpad/party-top-shots"
+
+
+def party_top_shapes():
+    return {
+        "off_1member": dict(n=2, pet=True, mode=False, pick=None, dead=None, oor=None),
+        "off_2members": dict(n=3, pet=True, mode=False, pick=None, dead=None, oor=None),
+        "off_4members": dict(n=5, pet=True, mode=False, pick=None, dead=None, oor=4),
+        "mode_pet_4members": dict(n=5, pet=True, mode=True, pick="party1", dead=None, oor=4),
+        "mode_pet_2members": dict(n=3, pet=True, mode=True, pick="party2", dead=None, oor=None),
+        "mode_nopet_4members": dict(n=5, pet=False, mode=True, pick="party3", dead=None, oor=None),
+        "mode_pet_4members_pick_pet": dict(n=5, pet=True, mode=True, pick="pet", dead=None, oor=None),
+    }
+
+
+def party_top(out):
+    done = []
+    for nm, sh in party_top_shapes().items():
+        p = os.path.join(out, "top_%s.png" % nm)
+        render(Rig(), sh, p, nm)
+        print(p)
+        done.append(p)
+    # the move caught mid-way: Party mode turned on from the left column (n 5 with the pet); 0.2 s in = fading out of the column,
+    # 0.45 s in = fading in under the HUD (FADE_S 0.2 each way, from the next 0.1 s step)
+    for secs, nm in ((0.2, "midfade_out"), (0.45, "midfade_in")):
+        rig = Rig()
+        rig.scene(party_top_shapes()["off_4members"])
+        rig.G.PM.on = True
+        rig.G.PM.u = "party1"
+        rig.run(secs)
+        p = os.path.join(out, "top_%s.png" % nm)
+        draw(rig.items(), p, "%s (%.1f s after Select)" % (nm, secs),
+             notes=["block alpha %.2f at %s" % (rig.PF.fa, rig.PF.at), "pet strip alpha %s, %s" % (rig.P.petFadeA, rig.P.petSide)])
+        print(p)
+        done.append(p)
+    sheet(done, os.path.join(out, "top_party_sheet.png"), cols=3)
+    print(os.path.join(out, "top_party_sheet.png"))
+
+
 def main():
     a = sys.argv[1:]
+    if "--party-top" in a:
+        party_top(a[a.index("--out") + 1] if "--out" in a else SHOTS)
+        return
     out = a[a.index("--out") + 1] if "--out" in a else OUT
     rev = a[a.index("--rev") + 1] if "--rev" in a else None
     tag = a[a.index("--tag") + 1] if "--tag" in a else (rev or "")
