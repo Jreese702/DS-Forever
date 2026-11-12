@@ -7,7 +7,8 @@ Checks each switch alone (the player frame with the pet's, the target frame with
 hub33: the pet's strip, and the game's pet frame as its own group - as the player frame, never hidden by our strip alone),
 absolute taps (a repeat changes nothing), alpha only (never Show / Hide), the bundle's old columns 34 / 35 still moving every part, a
 switch once set winning over the bundle, the hub document's sw (the row, the columns, the state), and the app's defaults applied as
-taps (the frames hidden, the nameplates and the bar on). Needs lupa. Exit code 1 on any failure."""
+taps (the frames hidden, the nameplates and the bar on); hub31 / hub36: Polestar's windows kept at alpha 0 through its own
+SetAlpha, fades, re-shows, later-made and re-parented frames, and given back at Off. Needs lupa. Exit code 1 on any failure."""
 import os
 import sys
 
@@ -246,7 +247,99 @@ def main():
     G3.ROWS.uisw(None, SW3.UFT_OFF)
     chk("hub32: our bar off again: lifted again (%s)" % G3.ComboFrame.ipa, G3.ComboFrame.ipa is True)
     hubsrc = open(HUB, encoding="utf-8").read()
-    chk("hub34: the version tag (hub33 + the top party column)", 'local HV = "hub34"' in hubsrc)
+    chk("hub36: the version tag (hub34 + Polestar's hide sticks; hub35 is fix/party-grid's)", 'local HV = "hub36"' in hubsrc)
+    # hub31 / hub36 POLESTAR ON THE TOP SCREEN (the user, 2026-11-11, the switch on: "The polestar window randomly reappears a lot"):
+    # Polestar 0.2.5 fades its windows back by itself with no Show (every fight's start / end: UI/GuideFrame.lua:2528-2540 ->
+    # GF.ApplyAlpha(true) -> Anim.To -> o:SetAlpha per frame), fades each window in as it shows, and makes windows later. A stub with a
+    # real hooksecurefunc / HookScript / C_Timer, Polestar's Anim tween played step by step.
+    L4 = tc.lupa.LuaRuntime()
+    L4.execute(STUB + r'''
+        MADE = {}; TICKERS = {}
+        local base = CreateFrame
+        function CreateFrame(kind, name, parent)
+            local f = base(); f.parent = parent; f.hooks = {}; MADE[#MADE + 1] = f
+            if name then _G[name] = f end
+            return f
+        end
+        function Frame:GetParent() return self.parent end
+        function Frame:SetParent(p) self.parent = p end
+        function Frame:GetObjectType() return "Frame" end
+        function Frame:IsProtected() return self.prot == true end
+        function Frame:HookScript(k, fn) self.hooks[k] = self.hooks[k] or {}; table.insert(self.hooks[k], fn) end
+        function Frame:Show() CALLS.show = CALLS.show + 1; if self.OnShow then self.OnShow(self) end
+            for _, fn in ipairs(self.hooks.OnShow or {}) do fn(self) end end
+        function hooksecurefunc(t, k, fn)
+            if type(t) == "string" then return end
+            local orig = t[k]
+            rawset(t, k, function(...) local r = orig(...); fn(...); return r end)
+        end
+        C_Timer = { After = function() end, NewTicker = function(s, fn) TICKERS[s] = fn end }
+        UIParent = setmetatable({ hooks = {} }, Frame)
+        Minimap = setmetatable({ hooks = {} }, Frame)
+        -- Polestar's Anim.To(obj, "alpha", from, to): SetAlpha(from), then steps, then SetAlpha(to) (Theme/Anim.lua:70-80, :105-140)
+        function FADE(o, from, to) o:SetAlpha(from); for i = 1, 4 do o:SetAlpha(from + (to - from) * i / 5) end; o:SetAlpha(to) end
+        GF = CreateFrame("Frame", "PolestarGuideFrame", UIParent)
+        ARROW = CreateFrame("Frame", "PolestarNavArrow", UIParent)
+        HINTS = CreateFrame("Frame", "PolestarPadHints", UIParent)
+        STEP = CreateFrame("Button", "PolestarStepButton", UIParent); STEP.prot = true
+        MMB = CreateFrame("Button", "PolestarMinimapButton", Minimap)
+        OTHER = CreateFrame("Frame", "SomeoneElsesFrame", UIParent)
+    ''')
+    L4.execute(open(HUB, encoding="utf-8").read().replace("local ADDON = ...", "local ADDON = 'WowCompanionHub'", 1))
+    G4 = L4.globals()
+    for i in range(1, len(G4.MADE) + 1):
+        if G4.MADE[i].OnEvent:
+            G4.MADE[i].OnEvent(G4.MADE[i], "PLAYER_LOGIN")
+    SW4, H4 = G4.WowCompanion.hub.SW, G4.WowCompanion.hub
+    quick, slow = G4.TICKERS[0.25], G4.TICKERS[5]
+    chk("hub36: a 0.25 s look beside the 5 s one", quick is not None and slow is not None)
+    G4.ARROW.SetAlpha(G4.ARROW, 0.7)                       # the arrow's own nav.arrowAlpha (Nav/Arrow.lua:604) before the switch
+    shows0 = G4.CALLS.show
+    G4.ROWS.uisw(None, SW4.PS_HIDE)
+    chk("hub31: on: Polestar's window, arrow, pad hints, secure step button at 0 (%s %s %s %s)"
+        % (G4.GF.alpha, G4.ARROW.alpha, G4.HINTS.alpha, G4.STEP.alpha),
+        G4.GF.alpha == 0 and G4.ARROW.alpha == 0 and G4.HINTS.alpha == 0 and G4.STEP.alpha == 0)
+    chk("hub31: a frame under the minimap and someone else's frame untouched (never written, no hook)",
+        L4.eval("rawget(MMB, 'alpha') == nil and rawget(OTHER, 'alpha') == nil and rawget(MMB, 'SetAlpha') == nil and rawget(OTHER, 'SetAlpha') == nil"))
+    chk("hub36: the protected frame gets no SetAlpha hook (its method is the stub's own)", L4.eval("rawget(STEP, 'SetAlpha') == nil"))
+    L4.execute("FADE(GF, GF:GetAlpha(), 1)")               # a fight starts / ends: GF.ApplyAlpha(true)
+    chk("hub36: Polestar's combat fade (GuideFrame.lua:1652) leaves its window at 0 (%s)" % G4.GF.alpha, G4.GF.alpha == 0)
+    L4.execute("GF:SetAlpha(1)")                           # a setting change: GF.ApplyAlpha(false)
+    chk("hub36: Polestar setting its own alpha 1 (GuideFrame.lua:1655): still 0 (%s)" % G4.GF.alpha, G4.GF.alpha == 0)
+    L4.execute("GF.OnShow = function(self) FADE(self, 0, 1) end; GF:Show()")   # re-shown with a fade-in (Report / Copy style OnShow)
+    chk("hub36: re-shown with its own fade-in: still 0 (%s)" % G4.GF.alpha, G4.GF.alpha == 0)
+    L4.execute('TOAST = CreateFrame("Frame", "PolestarRareToast", UIParent); TOAST:Show(); FADE(TOAST, 0, 1)')
+    t0 = G4.TOAST.alpha
+    quick()
+    t1 = G4.TOAST.alpha
+    L4.execute("FADE(TOAST, 0, 1)")
+    chk("hub36: a window made later (the rare toast, Rares/Toast.lua:78 / :187): 0 at the next 0.25 s look (%s -> %s), its next fade too (%s)"
+        % (t0, t1, G4.TOAST.alpha), t0 == 1 and t1 == 0 and G4.TOAST.alpha == 0)
+    L4.execute('LATE = CreateFrame("Frame", "PolestarSomethingNew", UIParent); LATE:SetAlpha(1)')
+    quick()
+    l0 = G4.LATE.alpha
+    slow()
+    chk("hub36: an unknown Polestar name: the 5 s look finds it (%s -> %s)" % (l0, G4.LATE.alpha), l0 == 1 and G4.LATE.alpha == 0)
+    L4.execute("STEP.alpha = 1")                           # anything that gave a protected frame its alpha back
+    quick()
+    chk("hub36: the 0.25 s look puts a drifted frame back to 0 (%s)" % G4.STEP.alpha, G4.STEP.alpha == 0)
+    L4.execute("HINTS:SetParent(GF); HINTS:SetAlpha(1)")   # the pad hints re-parented into the window (UI/Gamepad.lua:1501)
+    chk("hub36: the pad hints re-parented into the window: still 0 (%s)" % G4.HINTS.alpha, G4.HINTS.alpha == 0)
+    L4.execute("ARROW:SetAlpha(0.8)")                      # Polestar's latest wish for the arrow while hidden
+    shows1 = G4.CALLS.show
+    G4.ROWS.uisw(None, SW4.PS_SHOW)
+    chk("hub36: off: each frame back to the alpha Polestar last asked for - window %s, toast %s, late %s, step %s, hints %s (re-parented), arrow %s"
+        % (G4.GF.alpha, G4.TOAST.alpha, G4.LATE.alpha, G4.STEP.alpha, G4.HINTS.alpha, G4.ARROW.alpha),
+        G4.GF.alpha == 1 and G4.TOAST.alpha == 1 and G4.LATE.alpha == 1 and G4.STEP.alpha == 1 and G4.HINTS.alpha == 1
+        and abs(G4.ARROW.alpha - 0.8) < 1e-9)
+    L4.execute("FADE(GF, 1, 0.5)")
+    quick(); slow()
+    chk("hub36: off: Polestar's own fades pass through (%s)" % G4.GF.alpha, abs(G4.GF.alpha - 0.5) < 1e-9)
+    chk("hub36: never Show / Hide from us (Show calls only the test's own: %d -> %d, hide %d)" % (shows0, shows1, G4.CALLS.hide),
+        shows1 - shows0 == 2 and G4.CALLS.hide == 0)
+    G4.ROWS.uisw(None, SW4.PS_HIDE)
+    L4.execute("FADE(GF, 0, 1)")
+    chk("hub36: on again: the hooks still hold (%s)" % G4.GF.alpha, G4.GF.alpha == 0)
     # TRAIL.LUA's consumers: the nameplate wish and the personal bar follow their own switches, else the bundle
     LT = tc.run()
     T = LT.globals()

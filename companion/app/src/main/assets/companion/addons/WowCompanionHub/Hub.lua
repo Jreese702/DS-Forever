@@ -29,7 +29,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S = WC.S
 
-local HV = "hub34"          -- hub34: THE TOP PARTY COLUMN (party_design.md D and the user's decisions 2026-11-11): you, then party1..4, one row each in the bottom's order, every row the target bar's builder (npBar + the HUD rim, the level in a hudBox, the name above the lip, the HUD's green re-tinted every step); your own row while grouped or whenever Party mode is on; Party mode on: each row's LB glyph, a gold ring on the pick (PadMap box.u) and a white chevron at your target; dead / offline / out of range (PadMap's one rng) as the bottom; an 18 px Select tab beside the column (off / on / not bound); in a raid nothing; the combat log's switch calls retired (PadMap m129); hub33: THE PET'S STRIP IN THE HUD (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs Pet HUD"): "uisw" 32 / 33 -> WC.npWant.pet (Trail.lua prd11: the pet's strip under the resource bar, on unless turned off); the game's pet frame is its own group now ("pet"): as the player frame (hidden with it while our strip stands in; a review fix 2026-11-11: never hidden by our strip alone); the doc's sw.pet / set.pet; hub32: THE GAME'S COMBO POINTS UNDER A HIDDEN TARGET FRAME (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"; 2026-11-11): the game draws them on ComboFrame, a child of TargetFrame (Blizzard's Classic FrameXML), so HUD mode's target switch (TargetFrame at alpha 0) hid them with it; with our target bar off nothing showed them. Now, while the game's host frame is hidden by us and our target bar (its own pips) is off, the combo frame ignores its parent's alpha (SetIgnoreParentAlpha, alpha only like the rest of HUD mode); otherwise it follows it again; hub31: HIDE POLESTAR ON THE TOP SCREEN (the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): "uisw" 30 / 31 - every top-level frame Polestar names (PolestarGuideFrame, its arrow, its pad hints, toasts ...) at alpha 0 while on, and kept there when it shows again; off gives each its alpha 1 back; alpha only, nothing of Polestar changed; the doc's sw.ps; hub30: the third choice's RULES (the user, 2026-11-10: "it would be better if it stay on out of combat incase someone else pulls me into combat, and it should turn off when I target something out of combat AND start attack and then swap back when an ability is used before that ability fires" ... "make sure hunters mark does not trigger it to swap back on"): on by default and after every fight; OFF when an attack starts out of a fight with a target (PLAYER_ENTER_COMBAT); back ON at an ability's send (UNIT_SPELLCAST_SENT, before it fires) - never for Hunter's Mark, Auto Shot or Attack; hub29 (replaced by hub30): "In combat" turns the option on AT THE PULL (the user, 2026-11-10: "I pull with arcane shot and then when they get close, my auto attack melee is not on"): a spell you cast, Auto Shot or a melee swing starting out of a fight writes 1 right then (allowed: no lockdown yet), and 0 again 8 s later if no fight came of it; hub28: COMBAT AUTO SHOT "In combat" (the user, 2026-11-10: "add a third toggle to the hunter option to basically only turn it on during combat"): "uisw" 28 / 29 - while on, the game's autoRangedCombat is written 1 as a fight starts and 0 when it ends (and 0 at once out of a fight); the doc's sw.shotf, sw.shotfk = whether the fight's write took; hub27: the Party mode switch also starts / stops the combat log (PadMap m112); hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub36"          -- hub36 (hub35 is fix/party-grid's tag: merge both, keep the higher): POLESTAR'S HIDE STICKS (the user, 2026-11-11, the switch on: "The polestar window randomly reappears a lot"): Polestar fades its windows back by itself (every fight's start and end, a setting change, each window's own fade-in, windows made later), with no Show; now a secure post-hook on each frame's SetAlpha puts the 0 back in the same frame and keeps the alpha Polestar asked for, its known names looked up every 0.25 s while hidden, Off gives back every frame touched (re-parented too); hub34: THE TOP PARTY COLUMN (party_design.md D and the user's decisions 2026-11-11): you, then party1..4, one row each in the bottom's order, every row the target bar's builder (npBar + the HUD rim, the level in a hudBox, the name above the lip, the HUD's green re-tinted every step); your own row while grouped or whenever Party mode is on; Party mode on: each row's LB glyph, a gold ring on the pick (PadMap box.u) and a white chevron at your target; dead / offline / out of range (PadMap's one rng) as the bottom; an 18 px Select tab beside the column (off / on / not bound); in a raid nothing; the combat log's switch calls retired (PadMap m129); hub33: THE PET'S STRIP IN THE HUD (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs Pet HUD"): "uisw" 32 / 33 -> WC.npWant.pet (Trail.lua prd11: the pet's strip under the resource bar, on unless turned off); the game's pet frame is its own group now ("pet"): as the player frame (hidden with it while our strip stands in; a review fix 2026-11-11: never hidden by our strip alone); the doc's sw.pet / set.pet; hub32: THE GAME'S COMBO POINTS UNDER A HIDDEN TARGET FRAME (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"; 2026-11-11): the game draws them on ComboFrame, a child of TargetFrame (Blizzard's Classic FrameXML), so HUD mode's target switch (TargetFrame at alpha 0) hid them with it; with our target bar off nothing showed them. Now, while the game's host frame is hidden by us and our target bar (its own pips) is off, the combo frame ignores its parent's alpha (SetIgnoreParentAlpha, alpha only like the rest of HUD mode); otherwise it follows it again; hub31: HIDE POLESTAR ON THE TOP SCREEN (the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): "uisw" 30 / 31 - every top-level frame Polestar names (PolestarGuideFrame, its arrow, its pad hints, toasts ...) at alpha 0 while on, and kept there when it shows again; off gives each its alpha 1 back; alpha only, nothing of Polestar changed; the doc's sw.ps; hub30: the third choice's RULES (the user, 2026-11-10: "it would be better if it stay on out of combat incase someone else pulls me into combat, and it should turn off when I target something out of combat AND start attack and then swap back when an ability is used before that ability fires" ... "make sure hunters mark does not trigger it to swap back on"): on by default and after every fight; OFF when an attack starts out of a fight with a target (PLAYER_ENTER_COMBAT); back ON at an ability's send (UNIT_SPELLCAST_SENT, before it fires) - never for Hunter's Mark, Auto Shot or Attack; hub29 (replaced by hub30): "In combat" turns the option on AT THE PULL (the user, 2026-11-10: "I pull with arcane shot and then when they get close, my auto attack melee is not on"): a spell you cast, Auto Shot or a melee swing starting out of a fight writes 1 right then (allowed: no lockdown yet), and 0 again 8 s later if no fight came of it; hub28: COMBAT AUTO SHOT "In combat" (the user, 2026-11-10: "add a third toggle to the hunter option to basically only turn it on during combat"): "uisw" 28 / 29 - while on, the game's autoRangedCombat is written 1 as a fight starts and 0 when it ends (and 0 at once out of a fight); the doc's sw.shotf, sw.shotfk = whether the fight's write took; hub27: the Party mode switch also starts / stops the combat log (PadMap m112); hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -548,42 +548,108 @@ function hub.swTap(col)
     return true
 end
 hub.hmSet = hmSet               -- for the harness
--- hub31: Polestar's top-level frames (every global frame named Polestar..., parented to UIParent or nothing), alpha 0 while hidden; frames
--- Polestar makes later are found by the next look (every 5 s while hidden). Read only: alpha, an OnShow hook that keeps it 0.
-hub.ps = { hidden = nil, hooked = {}, seen = {} }
+-- hub31: Polestar's top-level frames (every global frame named Polestar..., parented to UIParent or nothing), alpha 0 while hidden.
+-- hub36: THE HIDE STICKS (the user, 2026-11-11, with the switch on: "The polestar window randomly reappears a lot"). Polestar 0.2.5
+-- gives its windows their alpha back by itself, with no Show, so hub31's OnShow hook never saw it and only the 5 s look put the 0 back:
+--   - every fight's start and end: PLAYER_REGEN_DISABLED / _ENABLED -> GF.ApplyAlpha(true) (UI/GuideFrame.lua:2528-2540), a fade of
+--     PolestarGuideFrame from its alpha (our 0) to ui.opacity (GuideFrame.lua:1649-1653) through Anim.To -> o:SetAlpha each frame
+--     (Theme/Anim.lua:35, :70-80); a setting change too (ui.opacity / ui.combat / ui: GuideFrame.lua:1725, :1738, :1948);
+--   - the fade-ins of its other windows as they show: the rare toast (Rares/Toast.lua:187), the transit banner (Nav/Alerts.lua:162),
+--     the menu (Theme/Widgets.lua:1185), Options / Picker (Widgets.lua:2214), Report / RouteChoice / Copy's OnShow
+--     (UI/Report.lua:464, UI/RouteChoice.lua:322, UI/Copy.lua:62), the arrow's own opacity (Nav/Arrow.lua:604);
+--   - windows made the first time they are needed (the toast, the banner, the menu, Copy, Report, RouteChoice, Welcome, the pad
+--     hints / ring), not there at our look: up to 5 s on screen;
+--   - the pad hints and ring re-parented into a window (UI/Gamepad.lua:1501, :1511) dropped out of the look, so the switch's Off
+--     never gave them their alpha back.
+-- Now: a secure post-hook on each frame's own SetAlpha (Anim calls o:SetAlpha, so the instance hook sees every step) puts the 0 back
+-- in the same frame and keeps the alpha Polestar asked for (given back at Off); OnShow as before; Polestar's known names looked up
+-- every 0.25 s while hidden (cheap: a name each), and the full look every 5 s for any other; Off gives back every frame ever touched,
+-- re-parented or not, and the hooks pass everything through. Alpha only: nothing of Polestar's code, settings, Show / Hide or parents.
+-- A protected frame (the QoL secure buttons) gets no SetAlpha hook (none of Polestar's code fades them); the 0.25 s look keeps it 0.
+hub.ps = { hidden = nil, hooked = {}, touched = {}, want = {}, busy = false,
+           NAMES = { "PolestarGuideFrame", "PolestarNavArrow", "PolestarTransitAlert", "PolestarRareToast", "PolestarMenu",
+                     "PolestarCopy", "PolestarPadHints", "PolestarPadRing", "PolestarReport", "PolestarRouteChoice", "PolestarWelcome",
+                     "PolestarOptions", "PolestarPicker", "PolestarFlightTimer", "PolestarInstanceTracker", "PolestarQuestItemButton",
+                     "PolestarHearthButton", "PolestarTargetButton", "PolestarTravelButton", "PolestarStepButton" } }
+function hub.psTop(fr)
+    if type(fr) ~= "table" or type(fr.GetObjectType) ~= "function" or type(fr.SetAlpha) ~= "function" then return false end
+    local okP, parent = pcall(fr.GetParent, fr)
+    return okP and (parent == nil or parent == UIParent)
+end
 function hub.psFrames()
     local out = {}
     for name, fr in pairs(_G) do
-        if type(name) == "string" and name:sub(1, 8) == "Polestar" and type(fr) == "table" and type(fr.GetObjectType) == "function"
-            and type(fr.SetAlpha) == "function" then
-            local okP, parent = pcall(fr.GetParent, fr)
-            if okP and (parent == nil or parent == UIParent) then out[#out + 1] = { name, fr } end
-        end
+        if type(name) == "string" and name:sub(1, 8) == "Polestar" and hub.psTop(fr) then out[#out + 1] = { name, fr } end
     end
     return out
 end
-function hub.psApply()
+function hub.psZero(fr)
     local P = hub.ps
-    for _, nf in ipairs(hub.psFrames()) do
-        local name, fr = nf[1], nf[2]
-        if P.hidden then
-            P.seen[name] = true
-            if not P.hooked[name] and type(fr.HookScript) == "function" then
-                P.hooked[name] = true
-                pcall(fr.HookScript, fr, "OnShow", function(self) if hub.ps.hidden then pcall(self.SetAlpha, self, 0) end end)
-            end
-            pcall(fr.SetAlpha, fr, 0)
-        elseif P.seen[name] then
-            pcall(fr.SetAlpha, fr, 1)
+    P.busy = true
+    pcall(fr.SetAlpha, fr, 0)
+    P.busy = false
+end
+function hub.psHook(fr)
+    local P = hub.ps
+    if P.hooked[fr] then return end
+    P.hooked[fr] = true
+    local okA, a0 = pcall(fr.GetAlpha, fr)
+    P.want[fr] = (okA and type(a0) == "number" and a0 > 0.01) and a0 or 1
+    if type(fr.HookScript) == "function" then
+        pcall(fr.HookScript, fr, "OnShow", function(self) if hub.ps.hidden then hub.psZero(self) end end)
+    end
+    local okPr, prot = pcall(function() return fr.IsProtected and fr:IsProtected() end)
+    if okPr and not prot then
+        pcall(hooksecurefunc, fr, "SetAlpha", function(self, a)
+            local Q = hub.ps
+            if Q.busy then return end
+            if type(a) == "number" then Q.want[self] = a end
+            if Q.hidden then hub.psZero(self) end
+        end)
+    end
+end
+function hub.psHide(fr)
+    local P = hub.ps
+    hub.psHook(fr)
+    P.touched[fr] = true
+    local ok, a = pcall(fr.GetAlpha, fr)
+    if not ok or type(a) ~= "number" or a > 0.01 then hub.psZero(fr) end
+end
+function hub.psQuick()
+    local P = hub.ps
+    if not P.hidden then return end
+    for _, name in ipairs(P.NAMES) do
+        local fr = _G[name]
+        if P.touched[fr] then
+            local ok, a = pcall(fr.GetAlpha, fr)
+            if ok and type(a) == "number" and a > 0.01 then hub.psZero(fr) end
+        elseif hub.psTop(fr) then
+            hub.psHide(fr)
         end
     end
-    if not P.hidden then P.seen = {} end
+end
+function hub.psApply()
+    local P = hub.ps
+    if P.hidden then
+        for _, nf in ipairs(hub.psFrames()) do hub.psHide(nf[2]) end
+        hub.psQuick()
+    else
+        for fr in pairs(P.touched) do
+            P.busy = true
+            pcall(fr.SetAlpha, fr, P.want[fr] or 1)
+            P.busy = false
+        end
+        P.touched = {}
+    end
 end
 function hub.psSet(hide)
     hub.ps.hidden = hide == true
     hub.psApply()
 end
-if type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then C_Timer.NewTicker(5, function() if hub.ps.hidden then pcall(hub.psApply) end end) end
+if type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then
+    C_Timer.NewTicker(5, function() if hub.ps.hidden then pcall(hub.psApply) end end)
+    C_Timer.NewTicker(0.25, function() if hub.ps.hidden then pcall(hub.psQuick) end end)
+end
 local function hmCheck()
     for _, name in ipairs(HUD_FRAMES) do
         local fr = groupHidden(name) and riderFrame(name)
