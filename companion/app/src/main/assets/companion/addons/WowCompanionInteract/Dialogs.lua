@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d28"         -- bump on every change; d28: the quest starter's Start is DISARMED on the very event a vendor / bank / mail / trade / NPC window opens (a bag item used at a vendor is sold) and aimed by item id, not bag and slot; a Start on a disarmed button is no answer; d27: A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
+local DV = "d29"         -- bump on every change; d29: the quest starter prompt ONLY when a starter is NEWLY LOOTED this session (the user, 2026-11-11, asked how long "Not now" lasts: "Only when newly looted"): a baseline of the bags' item counts at login / reload, a prompt only for a count rising above it (never for what was already there, a /reload or a move between bags), Not now = that one prompt; d28: the quest starter's Start is DISARMED on the very event a vendor / bank / mail / trade / NPC window opens (a bag item used at a vendor is sold) and aimed by item id, not bag and slot; a Start on a disarmed button is no answer; d27: A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -365,7 +365,13 @@ end
 --     so the game uses the item in its own code and opens its own quest page (which Interact mirrors as its quest pop-up). Its attributes
 --     are set OUT OF COMBAT only, on our own button and our own touch cell (the idlg row, D.QS.col): no macro, no binding saved, nothing
 --     of the player's touched (the no-trace ruling).
---   * B = Not now: no more asking for that item this login; it is still in the bags (the Bags room, Polestar's row) to use by hand.
+--   * B = Not now: that one prompt dismissed; the item is still in the bags (the Bags room, Polestar's row) to use by hand.
+--   * d29, ONLY WHEN NEWLY LOOTED (the user, 2026-11-11, asked how long "Not now" lasts: "Only when newly looted"): the bags' items
+--     are counted by item id (stacks summed, so a move between bags changes nothing); the counts at login / a /reload
+--     (PLAYER_ENTERING_WORLD, settled D.QS.settle s and until the bags are seen holding anything) are the BASELINE and never offered.
+--     After that a count rising above the last tally (a loot, a quest reward, mail, a trade) marks that item a GAIN, the only thing
+--     ever offered; Start or Not now spends the gain, a count falling (used, sold, deleted, banked) lowers the tally, and what comes
+--     back while the bank is open is absorbed, not a gain. So an item is offered again only if a NEW copy is looted later.
 --   * ONE AT A TIME, NEVER OVER A GAME WINDOW: shown only with no game dialog, no loot roll and no NPC / game window open and no room
 --     holding the controller; a starter looted in a fight waits for PLAYER_REGEN_ENABLED. The rest wait their turn in the bags.
 -- Everything read is a plain value (WC.S / TN / TS: a secret value is never used), and every field lives in D (no new chunk locals).
@@ -379,8 +385,11 @@ D.QS = { i = POOL + 2, col = POOL * CELLS + 9, which = "QUEST_START", use = "Wow
          opens = { "MERCHANT_SHOW", "BANKFRAME_OPENED", "MAIL_SHOW", "TRADE_SHOW", "AUCTION_HOUSE_SHOW", "GOSSIP_SHOW", "QUEST_DETAIL",
                    "QUEST_GREETING", "QUEST_PROGRESS", "QUEST_COMPLETE", "LOOT_OPENED", "TRAINER_SHOW", "TAXIMAP_OPENED",
                    "PETITION_SHOW", "ITEM_TEXT_BEGIN", "PET_STABLE_SHOW", "GUILDBANKFRAME_OPENED", "PLAYER_INTERACTION_MANAGER_FRAME_SHOW" },
-         hold = 1 }         -- d28: seconds a window's opening event holds the prompt off (then its shown frame does)
-D.qs = { asked = {}, cur = nil, dirty = true, clickAt = nil, openAt = nil }
+         hold = 1,          -- d28: seconds a window's opening event holds the prompt off (then its shown frame does)
+         settle = 5 }       -- d29: seconds after a login / reload the bags still load: every count then is baseline, never a gain
+-- d29: base = the last tally (item id -> count; nil = no baseline yet), gain = item ids newly looted and not yet answered, settleAt =
+-- the login / reload's PLAYER_ENTERING_WORLD, seen = the bags seen holding anything since, bank = the bank (or guild bank) open
+D.qs = { base = nil, gain = {}, settleAt = nil, seen = false, bank = false, cur = nil, dirty = true, clickAt = nil, openAt = nil }
 
 -- the quest this slot's item starts and whether it is already in the log (the C_Container table, or the older numbered returns)
 function D.qsInfo(bag, slot)
@@ -396,16 +405,19 @@ function D.qsInfo(bag, slot)
     return qid, active
 end
 
--- the starter in this slot, not yet asked about and its quest neither taken nor done; nil otherwise
+-- the starter in this slot, newly looted (d29: a gain) and its quest neither taken nor done; nil otherwise (and, as a second value,
+-- the item's id when its quest is taken or done: that gain is spent)
 function D.qsAt(bag, slot)
     local qid, active = D.qsInfo(bag, slot)
-    if not qid or qid <= 0 or active == true then return nil end
+    if not qid or qid <= 0 then return nil end
     local info = S(function() return C_Container.GetContainerItemInfo(bag, slot) end)
     if type(info) ~= "table" or info == WC.ABSENT or info == WC.SECRET or info == WC.THREW then info = nil end
     local id = (info and TN(function() return info.itemID end)) or TN(function() return C_Container.GetContainerItemID(bag, slot) end)
-    if not id or D.qs.asked[id] then return nil end
-    if TB(function() return C_QuestLog.IsOnQuest(qid) end) == true then return nil end
-    if TB(function() return C_QuestLog.IsQuestFlaggedCompleted(qid) end) == true then return nil end
+    if not id then return nil end
+    if active == true then return nil, id end
+    if TB(function() return C_QuestLog.IsOnQuest(qid) end) == true then return nil, id end
+    if TB(function() return C_QuestLog.IsQuestFlaggedCompleted(qid) end) == true then return nil, id end
+    if not D.qs.gain[id] then return nil end         -- d29: in the bags before (the baseline) or already answered: never offered
     local it = { id = id, bag = bag, slot = slot, quest = qid }
     it.name = TS(function() return C_Item.GetItemNameByID(id) end)
     if not it.name and info then
@@ -427,15 +439,54 @@ function D.qsAt(bag, slot)
     return it
 end
 
--- the bags, in the game's order: the first starter is the one offered (the others wait their turn)
+-- d29: every item in the bags counted by id (stacks summed: a move between bags or a split changes no count); any = anything there
+function D.qsCount()
+    local n, any = {}, false
+    for bag = 0, D.QS.bags do
+        local slots = TN(function() return C_Container.GetContainerNumSlots(bag) end) or 0
+        for slot = 1, slots do
+            local info = S(function() return C_Container.GetContainerItemInfo(bag, slot) end)
+            local id, c
+            if type(info) == "table" and info ~= WC.ABSENT and info ~= WC.SECRET and info ~= WC.THREW then
+                id, c = TN(function() return info.itemID end), TN(function() return info.stackCount end)
+            end
+            id = id or TN(function() return C_Container.GetContainerItemID(bag, slot) end)
+            if id then n[id] = (n[id] or 0) + ((c and c > 0) and c or 1); any = true end
+        end
+    end
+    return n, any
+end
+
+-- d29 (the user, 2026-11-11: "Only when newly looted"): this tally against the last. Settling (no login / reload seen yet, its first
+-- D.QS.settle s, the bags not yet seen holding anything, or [absorb]) or the bank open: the counts ARE the baseline. Otherwise a count
+-- above the last is a gain (newly looted). A gain whose item left the bags is dropped; this tally becomes the new baseline.
+function D.qsTally(absorb)
+    local q = D.qs
+    local n, any = D.qsCount()
+    -- the first tally that sees the bags holding anything is still baseline (bags that load late, after the settle)
+    local settling = absorb or q.base == nil or not q.settleAt or (now() - q.settleAt) < D.QS.settle or not q.seen
+    if q.settleAt and any then q.seen = true end
+    if not (settling or q.bank or shown(_G.BankFrame)) then
+        for id, c in pairs(n) do
+            if c > (q.base[id] or 0) then q.gain[id] = true end
+        end
+    end
+    for id in pairs(q.gain) do if not n[id] then q.gain[id] = nil end end
+    q.base = n
+end
+
+-- the bags, in the game's order: the first newly looted starter is the one offered (the others wait their turn)
 function D.qsScan()
     D.qs.dirty = false
     D.qs.cur = nil
+    D.qsTally()
+    if next(D.qs.gain) == nil then return end
     for bag = 0, D.QS.bags do
         local n = TN(function() return C_Container.GetContainerNumSlots(bag) end) or 0
         for slot = 1, n do
-            local it = D.qsAt(bag, slot)
+            local it, spent = D.qsAt(bag, slot)
             if it then D.qs.cur = it; return end
+            if spent then D.qs.gain[spent] = nil end  -- d29: its quest taken or done: that copy's gain is spent
         end
     end
 end
@@ -532,7 +583,7 @@ function D.qsClicked(what, down, b)
         local ok, cur = pcall(b.GetAttribute, b, "item")
         if not ok or cur ~= ("item:" .. c.id) then return end
     end
-    D.qs.asked[c.id] = what
+    D.qs.gain[c.id] = nil       -- d29: Start or Not now answers that copy; only a NEW copy looted later is offered again
     D.qs.cur, D.qs.dirty = nil, true
     if what == "start" then D.qs.clickAt = now() end
     WC.send(WC.encode({ type = "dialogack", dv = DV, which = D.QS.which, i = D.QS.i, k = (what == "start") and 1 or 2,
@@ -1011,8 +1062,22 @@ end
 -- d27: the bags looked at anew when they change, a quest is taken or dropped, a fight ends (a held prompt shows), a game window closes
 -- (a queued prompt shows); the frame is kept in D (no chunk local)
 D.qsFrame = CreateFrame("Frame")
-D.qsFrame:SetScript("OnEvent", function(_, event)
+D.qsFrame:SetScript("OnEvent", function(_, event, a1, a2)
     if event == "PLAYER_REGEN_ENABLED" then look(); return end
+    -- d29: a login or a /reload (or the first entering in this Lua state): the bags' counts until settled are the baseline, then one
+    -- last absorbing tally (nothing in the bags by then is ever offered); a plain zone change keeps the session's tally
+    if event == "PLAYER_ENTERING_WORLD" and (not D.qs.settleAt or a1 or a2) then
+        D.qs.settleAt, D.qs.seen = now(), false
+        if type(C_Timer) == "table" then
+            C_Timer.After(D.QS.settle + 0.5, function() pcall(D.qsTally, true); D.qs.dirty = true; look() end)
+        end
+    end
+    -- d29: the bank open: what comes out of it is the player's own, moved, not looted (absorbed until its close has settled)
+    if event == "BANKFRAME_OPENED" or event == "GUILDBANKFRAME_OPENED" then D.qs.bank = true end
+    if (event == "BANKFRAME_CLOSED" or event == "GUILDBANKFRAME_CLOSED") and type(C_Timer) == "table" then
+        C_Timer.After(0.5, function() pcall(D.qsTally, true); D.qs.bank = false; D.qs.dirty = true; look() end)
+        return
+    end
     -- d28: a fight starting (the event comes before the lockdown) or a game window opening: disarm NOW, in this frame, then rebuild
     -- (the prompt drops); a window's frame may not be shown yet, so its event holds the prompt off for D.QS.hold
     if event == "PLAYER_REGEN_DISABLED" or D.QS.openSet[event] then
@@ -1036,7 +1101,7 @@ end)
 for _, e in ipairs({ "BAG_UPDATE_DELAYED", "CHAT_MSG_LOOT", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "PLAYER_ENTERING_WORLD",
                      "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "GET_ITEM_INFO_RECEIVED", "QUEST_FINISHED", "GOSSIP_CLOSED",
                      "MERCHANT_CLOSED", "LOOT_CLOSED", "TRADE_CLOSED", "MAIL_CLOSED", "BANKFRAME_CLOSED", "TRAINER_CLOSED",
-                     "ITEM_TEXT_CLOSED", "TAXIMAP_CLOSED", "PETITION_CLOSED", "AUCTION_HOUSE_CLOSED" }) do
+                     "ITEM_TEXT_CLOSED", "TAXIMAP_CLOSED", "PETITION_CLOSED", "AUCTION_HOUSE_CLOSED", "GUILDBANKFRAME_CLOSED" }) do
     pcall(D.qsFrame.RegisterEvent, D.qsFrame, e)
 end
 D.QS.openSet = {}

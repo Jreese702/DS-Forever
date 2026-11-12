@@ -3,8 +3,11 @@ make a prompt asking if we want to start that quest"), off-device: Dialogs.lua a
 
     python tools/test_quest_start.py
 
-Checks the bag scan (a starter is found; a normal item, a quest item of a quest already taken and a quest already done are not), one
-prompt per item per login (Start and Not now both), the fight hold (nothing shown or armed in combat; shown at PLAYER_REGEN_ENABLED),
+Checks (d29, the user 2026-11-11: "Only when newly looted") that only a NEWLY LOOTED starter is offered: none already in the bags at
+login or a /reload, before PLAYER_ENTERING_WORLD, in bags that load late, or moved between bags / banked and taken back; a loot after
+the login (and after a plain zone change) is; Not now then the item still there or moved = no prompt; a second copy looted later, or a
+new one after the first was used up = a prompt. And the bag scan (a starter is found; a normal item, a quest item of a quest already taken and a quest already done are not), one
+prompt per looted copy (Start and Not now both), the fight hold (nothing shown or armed in combat; shown at PLAYER_REGEN_ENABLED),
 the queue (never over an open game window or a room holding the controller), A = a binding click of our secure item button armed with
 that item's id (d28) OUT OF COMBAT only (and only on the edge the game's secure action runs on), B = Not now, the touch cells, and (d28) a vendor / bank / mail / trade window opening
 under the prompt (disarmed on its event, a Start in the gap uses nothing). Needs
@@ -51,9 +54,9 @@ function FLUSH() for _ = 1, 5 do local q = GAME.timers; GAME.timers = {}; for _,
 ITEM_QUALITY_COLORS = { [1] = { r = 1, g = 1, b = 1 } }
 -- the bags: GAME.bags[bag][slot] = { id, name, quest = id?, questItem = bool? }
 C_Container = {
-    GetContainerNumSlots = function(bag) return (bag <= 1) and 4 or 0 end,
+    GetContainerNumSlots = function(bag) if GAME.unloaded then return 0 end; return (bag <= 1) and 6 or 0 end,
     GetContainerItemInfo = function(bag, slot) local it = GAME.bags[bag] and GAME.bags[bag][slot]
-        if it then return { itemID = it.id, iconFileID = 134939, quality = 1, hyperlink = "|cffffffff|Hitem:" .. it.id .. "|h[" .. it.name .. "]|h|r" } end end,
+        if it then return { itemID = it.id, stackCount = it.count or 1, iconFileID = 134939, quality = 1, hyperlink = "|cffffffff|Hitem:" .. it.id .. "|h[" .. it.name .. "]|h|r" } end end,
     GetContainerItemID = function(bag, slot) local it = GAME.bags[bag] and GAME.bags[bag][slot]; return it and it.id end,
     GetContainerItemQuestInfo = function(bag, slot) local it = GAME.bags[bag] and GAME.bags[bag][slot]
         if not it then return { isQuestItem = false } end
@@ -81,7 +84,7 @@ WowCompanion = {
             describe = function() return { ch = 3, rows = { idlg = 1, iact = 2 } } end,
             slotFor = function() return 0 end },
 }
-function FIRE(e) for _, f in ipairs(FRAMES) do if f.events[e] and f.scripts.OnEvent then f.scripts.OnEvent(f, e) end end; FLUSH() end
+function FIRE(e, ...) for _, f in ipairs(FRAMES) do if f.events[e] and f.scripts.OnEvent then f.scripts.OnEvent(f, e, ...) end end; FLUSH() end
 -- a binding click of a secure button of ours: the game's secure action runs on its edge (ActionButtonUseKeyDown), then our hook
 function PRESS(name, down)
     local b = _G[name]
@@ -114,14 +117,27 @@ local out = {}
 local function chk(n, c) out[#out + 1] = (c and "PASS " or "FAIL ") .. n end
 
 -- the bags: a plain item, a quest item of a quest already taken, a starter whose quest is already done, the starter
-GAME.bags[0] = { [1] = { id = 2589, name = "Linen Cloth" },
+-- d29 (the user, 2026-11-11: "Only when newly looted"): and a starter ALREADY in the bags at login (an old letter, never offered)
+GAME.bags[0] = { [1] = { id = 2589, name = "Linen Cloth", count = 5 },
                  [2] = { id = 5000, name = "Wolf Fang", quest = 700 },
-                 [3] = { id = 1972, name = "Ripped Missive", quest = 900 } }
+                 [5] = { id = 1990, name = "Old Letter", quest = 901 } }
 GAME.bags[1] = { [1] = { id = 1307, name = "Gold Pickup Schedule", quest = 123 } }
 GAME.quests[700] = true
 GAME.done[123] = true
 GAME.titles[900] = "The Missing Courier"
 FIRE("BAG_UPDATE_DELAYED")
+chk("d29: before PLAYER_ENTERING_WORLD: a starter in the bags is not offered", PROMPT() == nil)
+FIRE("PLAYER_ENTERING_WORLD", true, false)
+chk("d29: login: a starter already in the bags is not offered", PROMPT() == nil)
+GAME.t = GAME.t + 6
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: settled: still never offered (it was there at login)", PROMPT() == nil and ACKS() == 0)
+GAME.bags[1][5] = GAME.bags[0][5]; GAME.bags[0][5] = nil
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: moved to another bag: still not offered", PROMPT() == nil)
+-- the starter NEWLY LOOTED
+GAME.bags[0][3] = { id = 1972, name = "Ripped Missive", quest = 900 }
+FIRE("CHAT_MSG_LOOT"); FIRE("BAG_UPDATE_DELAYED")
 local p = PROMPT()
 chk("a quest starter in the bags is offered", p ~= nil)
 chk("it is the starter (" .. tostring(p and p.item and p.item.name) .. "), not the cloth, the taken quest's item or a done quest's",
@@ -167,6 +183,9 @@ chk("B closes it (Not now)", PROMPT() == nil and ACKS() == 2 and #GAME.used == 1
 FIRE("BAG_UPDATE_DELAYED")
 chk("and it is not asked again", PROMPT() == nil)
 chk("the item is still in the bags", GAME.bags[1][2] ~= nil)
+GAME.bags[1][6] = GAME.bags[1][2]; GAME.bags[1][2] = nil
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: Not now, then moved between bags: not offered again", PROMPT() == nil)
 
 -- QUEUED: never over a game window, a room holding the controller or another dialog
 GAME.bags[1][3] = { id = 4000, name = "A Mysterious Letter", quest = 555 }
@@ -236,16 +255,104 @@ end
 GAME.bags[1][4] = GAME.bags[0][2]; GAME.bags[0][2] = nil
 PRESS("WowCompanionQStartUse", true)
 chk("d28: moved, then A: that item is used, not whatever is in its old slot", GAME.used[#GAME.used] == "item:4300" and ACKS() == acks + 1)
+GAME.bags[0][6] = GAME.bags[1][4]; GAME.bags[1][4] = nil
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: answered, then moved again: not offered", PROMPT() == nil)
+
+-- d29: a SECOND copy looted later (onto the Not-now one's stack): offered again, once
+GAME.t = GAME.t + 5
+acks = ACKS()
+GAME.bags[1][6].count = 2
+FIRE("CHAT_MSG_LOOT"); FIRE("BAG_UPDATE_DELAYED")
+p = PROMPT()
+chk("d29: a second copy looted later: offered (" .. tostring(p and p.item.name) .. ")", p ~= nil and p.qs.item == 1971)
+PRESS("WowCompanionQStartNo", GAME.keyDown)
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: Not now again: gone, both copies still in the bags", PROMPT() == nil and ACKS() == acks + 1 and GAME.bags[1][6].count == 2)
+-- d29: used up (gone from the bags), then a new one looted: the tally fell with it, so the new one is a gain
+GAME.bags[1][6] = nil
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: used up: nothing", PROMPT() == nil)
+GAME.bags[0][5] = { id = 1971, name = "Furlbrow's Deed", quest = 184 }
+FIRE("CHAT_MSG_LOOT"); FIRE("BAG_UPDATE_DELAYED")
+p = PROMPT()
+chk("d29: then a new copy looted: offered", p ~= nil and p.qs.item == 1971 and p.qs.bag == 0 and p.qs.slot == 5)
+PRESS("WowCompanionQStartNo", GAME.keyDown)
+chk("d29: answered", PROMPT() == nil)
+-- d29: the bank: a starter deposited and taken back out is the player's own, not newly looted
+BankFrame = CreateFrame("Frame", "BankFrame"); BankFrame.shown = true
+FIRE("BANKFRAME_OPENED")
+local banked = GAME.bags[1][5]; GAME.bags[1][5] = nil
+FIRE("BAG_UPDATE_DELAYED")
+GAME.bags[1][5] = banked
+FIRE("BAG_UPDATE_DELAYED")
+BankFrame.shown = false; FIRE("BANKFRAME_CLOSED")
+FIRE("BAG_UPDATE_DELAYED")
+GAME.t = GAME.t + 2
+chk("d29: banked and taken back out: not offered", PROMPT() == nil)
+BankFrame.shown = true; FIRE("BANKFRAME_OPENED")
+GAME.bags[1][5] = nil; FIRE("BAG_UPDATE_DELAYED")
+BankFrame.shown = false; FIRE("BANKFRAME_CLOSED")
+BankFrame.shown = true; FIRE("BANKFRAME_OPENED")
+GAME.bags[1][5] = banked; FIRE("BAG_UPDATE_DELAYED")
+BankFrame.shown = false; FIRE("BANKFRAME_CLOSED"); FIRE("BAG_UPDATE_DELAYED")
+GAME.t = GAME.t + 2
+chk("d29: deposited on one visit, withdrawn on the next: not offered", PROMPT() == nil)
+-- d29: a plain zone change (PLAYER_ENTERING_WORLD, neither login nor reload) keeps the session: a loot right after it is offered
+FIRE("PLAYER_ENTERING_WORLD", false, false)
+GAME.bags[1][2] = { id = 4400, name = "Wanted Poster", quest = 559 }
+FIRE("CHAT_MSG_LOOT"); FIRE("BAG_UPDATE_DELAYED")
+chk("d29: a zone change is no baseline: a loot right after it is offered", (PROMPT() or {}).qs and PROMPT().qs.item == 4400)
 chk("never in combat, all along", GAME.combatSets == 0)
 return table.concat(out, "\n")
 '''
 
+# d29: a /reload (a fresh Lua state) with newly looted, unanswered starters in the bags: never offered; and bags that load late
+RELOAD = r'''
+local out = {}
+local function chk(n, c) out[#out + 1] = (c and "PASS " or "FAIL ") .. n end
+GAME.bags[0] = { [1] = { id = 4400, name = "Wanted Poster", quest = 559 }, [2] = { id = 1972, name = "Ripped Missive", quest = 900 } }
+FIRE("BAG_UPDATE_DELAYED")
+FIRE("PLAYER_ENTERING_WORLD", false, true)
+chk("d29: a /reload with starters in the bags: not offered", PROMPT() == nil)
+GAME.t = GAME.t + 6
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: settled after the reload: still not offered", PROMPT() == nil and ACKS() == 0)
+GAME.bags[1] = { [1] = { id = 4500, name = "Faded Map", quest = 560 } }
+FIRE("CHAT_MSG_LOOT"); FIRE("BAG_UPDATE_DELAYED")
+local p = PROMPT()
+chk("d29: a starter looted after the reload: offered", p ~= nil and p.qs.item == 4500)
+return table.concat(out, "\n")
+'''
 
-def main():
+LATE = r'''
+local out = {}
+local function chk(n, c) out[#out + 1] = (c and "PASS " or "FAIL ") .. n end
+GAME.unloaded = true
+GAME.bags[0] = { [1] = { id = 1972, name = "Ripped Missive", quest = 900 } }
+FIRE("PLAYER_ENTERING_WORLD", true, false)
+GAME.t = GAME.t + 30
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: bags still empty long after login: nothing", PROMPT() == nil)
+GAME.unloaded = false
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: the bags load late: what they hold is baseline, not offered", PROMPT() == nil)
+GAME.bags[0][2] = { id = 4500, name = "Faded Map", quest = 560 }
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: then a loot: offered", (PROMPT() or {}).qs ~= nil)
+return table.concat(out, "\n")
+'''
+
+
+def run(test):
     L = lupa.LuaRuntime()
     L.execute(STUB)
     L.execute(open(SRC, encoding='utf-8').read())
-    res = str(L.execute(TEST))
+    return str(L.execute(test))
+
+
+def main():
+    res = "\n".join(run(t) for t in (TEST, RELOAD, LATE))   # d29: each its own Lua state (a /reload is a fresh one)
     print(res)
     fails = res.count("FAIL ")
     print("failed: %d" % fails)
