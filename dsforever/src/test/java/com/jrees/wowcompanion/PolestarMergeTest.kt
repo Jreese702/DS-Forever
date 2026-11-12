@@ -83,15 +83,15 @@ class PolestarMergeTest {
         val d = MapCursor(); d.touched(8, before); d.moved(7, MapList.POLESTAR, merged)
         assertEquals(8, d.sel)
     }
-    // the reviewer, on the user's 2026-11-11 merge: the merged row keeps its quest's X (untrack / track) and Y (its panel)
-    @Test fun theMergedRowsXAndYActOnItsQuest() {
+    // pk1 (the user, 2026-11-12: "X Skip, Y Previous"): the merged row's X / Y are no longer its quest's Track / Open
+    // (PolestarSkipTest has the Skip / Previous routing); with nothing to skip or undo they do nothing
+    @Test fun theMergedRowsXAndYAreNoLongerItsQuests() {
         val g = emptyList<Pair<String, List<Int>>>()
         val merged = MapList.stops(MapList.items(true, listOf(7, 8), g, polestar = true, merged = 7) { false })
         val c = MapCursor(); c.touched(MapList.POLESTAR, merged)
-        assertEquals(MapCursor.Do.Untrack(7), c.key("PAD3", merged, MapList.POLESTAR, false, merged = 7, mergedTracked = true))
-        assertEquals(MapCursor.Do.Watch(7), c.key("PAD3", merged, MapList.POLESTAR, false, merged = 7, mergedTracked = false))
-        assertEquals(MapCursor.Do.Open(7), c.key("PAD4", merged, MapList.POLESTAR, false, merged = 7))
-        assertEquals(MapCursor.Do.Polestar, c.key("PAD1", merged, MapList.POLESTAR, false, merged = 7))
+        assertEquals(MapCursor.Do.Nothing, c.key("PAD3", merged, MapList.POLESTAR, false))
+        assertEquals(MapCursor.Do.Nothing, c.key("PAD4", merged, MapList.POLESTAR, false))
+        assertEquals(MapCursor.Do.Polestar, c.key("PAD1", merged, MapList.POLESTAR, false))
         // unmerged (a travel step): the blue row's X / Y still do nothing
         val plain = MapList.stops(MapList.items(true, listOf(7, 8), g, polestar = true) { false })
         val d = MapCursor(); d.touched(MapList.POLESTAR, plain)

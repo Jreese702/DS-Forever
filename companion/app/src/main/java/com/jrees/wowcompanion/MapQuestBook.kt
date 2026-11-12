@@ -14,6 +14,9 @@ class MapQuestBook {
     sealed class Row {
         data class Header(val zone: String, val count: Int, val open: Boolean) : Row()
         data class Quest(val id: Int, val zone: String) : Row()
+        /** pk1 (the user, 2026-11-12: "we need to make a way to skip a polestar objective"; the pick: the Map room too): Polestar's
+         *  step, the light blue row on top (its X Skip, its Y Previous) */
+        object Polestar : Row()
     }
 
     /** one quest of the log as the book needs it */
@@ -41,8 +44,10 @@ class MapQuestBook {
         return tops + all.filter { it.first !in topZones }
     }
 
-    fun rows(log: List<Entry>): List<Row> {
+    /** [polestar]: a Polestar step is shown - its row first */
+    fun rows(log: List<Entry>, polestar: Boolean = false): List<Row> {
         val out = ArrayList<Row>()
+        if (polestar) out.add(Row.Polestar)
         for ((zone, ids) in groups(log)) {
             val open = isOpen(zone)
             out.add(Row.Header(zone, ids.size, open))

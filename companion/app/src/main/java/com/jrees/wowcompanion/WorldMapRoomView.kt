@@ -694,6 +694,16 @@ class WorldMapRoomView(context: Context) : View(context) {
     var onFocusPicked: ((id: Int, on: Boolean) -> Unit)? = null
     var onUntrackQuest: ((Int) -> Unit)? = null
     var onLeave: (() -> Unit)? = null
+    // pk1 (the user, 2026-11-12: "we need to make a way to skip a polestar objective"; the picks: X Skip, Y Previous, the Map room too):
+    // Polestar's step as the Map (Home's light blue row) has it, on top of this room's quest list
+    /** Polestar's step for the list's top row: its title, the goal's words, whether Skip / Previous can be pressed */
+    class Ps(val title: String, val words: String?, val canSkip: Boolean, val canPrev: Boolean)
+    /** the Map's Polestar step now (null = none: no row) */
+    var polestar: () -> Ps? = { null }
+    /** a Skip ([prev] false) or Previous pressed on the row (the Map's one press path, MapView.polestarSkip) */
+    var onPolestarSkip: ((prev: Boolean) -> Boolean)? = null
+    /** a line under the map (a refused Skip / Previous says why) */
+    fun sayLine(t: String) = say(t)
 
     // ---------------------------------------------------------------- what is shown
     private var shown = 0
@@ -935,7 +945,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     private var listIndex = 0
     private var listScroll = 0f
     private fun entries() = questLog.map { MapQuestBook.Entry(it.optInt("id", 0), it.optString("zone", "")) }
-    private fun listRows() = book.rows(entries())
+    private fun listRows() = book.rows(entries(), polestar = runCatching { polestar() }.getOrNull() != null)
 
     /** the shown map's headers first and open (its quests' headers, then its own name); the map's side only */
     private fun refreshTop() {
@@ -1947,6 +1957,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             if (y + h >= top && y <= bottom) when (r) {
                 is MapQuestBook.Row.Header -> drawHeader(c, r, RectF(panelR.left + 8f, y, panelR.right - 8f, y + h), i)
                 is MapQuestBook.Row.Quest -> drawQuestRow(c, r.id, RectF(panelR.left + 8f, y, panelR.right - 8f, y + h), i, numbers)
+                MapQuestBook.Row.Polestar -> drawPolestarRow(c, RectF(panelR.left + 8f, y, panelR.right - 8f, y + h), i)
             }
             y += h + ROW_GAP
         }
@@ -1972,6 +1983,20 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun rowHeight(r: MapQuestBook.Row): Float = when (r) {
         is MapQuestBook.Row.Header -> HEAD_H
         is MapQuestBook.Row.Quest -> 12f + max(CHECK_PX, titleLayout(r.id, titleW()).height.toFloat()) + objLines(r.id) * 26f + 8f
+        MapQuestBook.Row.Polestar -> 12f + 30f + (if (runCatching { polestar() }.getOrNull()?.words != null) 26f else 0f) + 8f
+    }
+
+    /** pk1: Polestar's step, in its light blue (Home's row), its goal's words under the title */
+    private fun drawPolestarRow(c: Canvas, row: RectF, i: Int) {
+        val ps = runCatching { polestar() }.getOrNull() ?: return
+        if (region == MapRoomKeys.Region.LIST && i == listIndex && optQuest == 0 && confirmId == 0) UiKit.focus(c, row)
+        val tp = UiKit.bodyPaint(24f, PS_BLUE)
+        c.drawText(Tr.t(ellipsize(tp, ps.title, row.width() - 40f)), row.left + 20f, row.top + 34f, tp)
+        ps.words?.let { w ->
+            val wp = UiKit.bodyPaint(20f, Theme.text)
+            c.drawText(Tr.t(ellipsize(wp, "- $w", row.width() - 70f)), row.left + 60f, row.top + 34f + 26f, wp)
+        }
+        rowHits.add(row to i)
     }
 
     /** the game's ListHeaderVisualTemplate: list_heading as a 3-slice bar, the zone name in light text with a shadow on the left,
@@ -2116,6 +2141,11 @@ class WorldMapRoomView(context: Context) : View(context) {
                 is MapQuestBook.Row.Quest -> {
                     out += MapRoomKeys.questPrompts(logEntry(row.id)?.let { trackedQ(it) } ?: false, row.id == focusQid).map { prompt(it) }
                     out += Prompt(listOf(glyph("y")), "Options")
+                }
+                // pk1: X Skip step, Y Previous step (only while a skip is left to undo)
+                MapQuestBook.Row.Polestar -> runCatching { polestar() }.getOrNull()?.let { ps ->
+                    if (ps.canSkip) out += Prompt(listOf(glyph("x")), PolestarSkip.SKIP_WORD)
+                    if (ps.canPrev) out += Prompt(listOf(glyph("y")), PolestarSkip.PREV_WORD)
                 }
                 null -> {}
             }
@@ -2468,6 +2498,15 @@ class WorldMapRoomView(context: Context) : View(context) {
             }
             return false
         }
+        // pk1: on the list's Polestar row X skips its step, Y undoes the last skip, A does nothing (the rest as on any row)
+        if (region == MapRoomKeys.Region.LIST && panelOn && listRows().getOrNull(listIndex) == MapQuestBook.Row.Polestar) {
+            when (MapRoomKeys.polestarKey(k, runCatching { polestar() }.getOrNull()?.let { it.canSkip to it.canPrev })) {
+                MapRoomKeys.PsDo.SKIP -> { onPolestarSkip?.invoke(false); return false }
+                MapRoomKeys.PsDo.PREV -> { onPolestarSkip?.invoke(true); return false }
+                MapRoomKeys.PsDo.NOTHING -> return false
+                MapRoomKeys.PsDo.PASS -> {}
+            }
+        }
         when (val d = MapRoomKeys.press(k, keyCtx())) {
             MapRoomKeys.Do.Home -> return true
             MapRoomKeys.Do.Up -> model.parentOf(shown)?.let { goTo(it) }      // the map's side: the list re-sorts for the new zone
@@ -2551,6 +2590,7 @@ class WorldMapRoomView(context: Context) : View(context) {
                     if (long) { region = MapRoomKeys.Region.LIST; listIndex = i; setListCursor(follow = false); openOptions(r.id) }
                     else if (listIndex == i && region == MapRoomKeys.Region.LIST) trackFocus(r.id)
                     else { region = MapRoomKeys.Region.LIST; listIndex = i; setListCursor() }
+                MapQuestBook.Row.Polestar -> { region = MapRoomKeys.Region.LIST; listIndex = i; setListCursor(follow = false) }
                 null -> {}
             }
             syncB(); invalidate(); return true
@@ -2579,6 +2619,8 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
 
     private companion object {
+        /** pk1: Polestar's light blue (Home's row, MapView.psBlue) */
+        val PS_BLUE = Color.rgb(120, 200, 255)
         const val SPAWN_PX = 26f          // UI Art: on painted maps a spawn spot is the ghost PICTURE (24 px and up), never the dot
         const val DISC_PX = 58f           // a quest marker
         const val HOVER_PX = DISC_PX / 2f // a quest marker under the cursor: within its own drawn size

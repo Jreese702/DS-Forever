@@ -112,6 +112,21 @@ object MapRoomKeys {
     const val ZOOM_GLYPH = "gen_rstickupdown"
 
     /** the legend's lines on the map side (the game's footer; the view draws them): which prompts show for [c] */
+    /** pk1: what a press does on the list's Polestar row: Skip, Previous, nothing (the press is the row's) or PASS (the list's usual) */
+    enum class PsDo { SKIP, PREV, NOTHING, PASS }
+
+    /**
+     * pk1 (the user, 2026-11-12: "X Skip, Y Previous"; the Map room too): a press [k] on the list's Polestar row, [can] = (Skip, Previous)
+     * can be pressed (null: no step). X skips while it can, Y undoes the last skip while one is left (else nothing: never Options, there
+     * is no quest), A does nothing; every other key is the list's as on any row
+     */
+    fun polestarKey(k: String, can: Pair<Boolean, Boolean>?): PsDo = when (k) {
+        "PAD3" -> if (can?.first == true) PsDo.SKIP else PsDo.NOTHING
+        "PAD4" -> if (can?.second == true) PsDo.PREV else PsDo.NOTHING
+        "PAD1" -> PsDo.NOTHING
+        else -> PsDo.PASS
+    }
+
     enum class Prompt { CHANGE_MAP, FOCUS_TRACK, FOCUS, TRACK, UNTRACK, BACK, QUESTS, OPEN, OPEN_QUEST, SHOW_QUESTS, HIDE_QUESTS, MORE, ZOOM }
 
     /** the map side's legend, the current mapping (the user on test61: "the glyphs need to be updated"): A Open / Open quest, X Show /

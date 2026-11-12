@@ -79,7 +79,7 @@ def run():
         and d.none is None)
     tick()
     s = said()
-    chk("... sent as ps5 (int/1429) with its stamp", s is not None and s.type == "pstep" and s.v == "ps5" and s.b == 12345 and s.m == 1429)
+    chk("... sent as ps6 (pk1) with its stamp", s is not None and s.type == "pstep" and s.v == "ps6" and s.b == 12345 and s.m == 1429)
 
     # ps4: the waypoint's world spot (map 2521, 54 / 39 -> world (1610, 460), continent 1)
     M.execute('''
@@ -124,7 +124,7 @@ def run():
         ok = False
         print("  tick error:", e)
     s = said()
-    chk("... the ticker sends it without an error", ok and M.eval("#SAID") == n + 1 and s.nl is True and s.v == "ps5" and s.m is None)
+    chk("... the ticker sends it without an error", ok and M.eval("#SAID") == n + 1 and s.nl is True and s.v == "ps6" and s.m is None)
     last = M.eval("WC.pstep.last")
     chk("... WC.pstep.last has no location (the compass shows no Polestar point)", last.nl is True and last.m is None and last.none is None)
 
@@ -185,7 +185,7 @@ def run():
         and d.k == "accept")
     tick()
     s = said()
-    chk("... sent with the item (ps4, doc tag ps5)", s.v == "ps5" and s.it == 20310 and s.ih is True)
+    chk("... sent with the item (ps4, doc tag ps6)", s.v == "ps6" and s.it == 20310 and s.ih is True)
     n = M.eval("#SAID")
     M.execute("T = 4; COUNT = {}")
     tick()

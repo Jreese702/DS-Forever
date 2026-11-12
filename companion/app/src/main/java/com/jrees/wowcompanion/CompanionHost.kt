@@ -519,6 +519,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // ps3 (the user, 2026-11-11): the Polestar row clears the game's focus for a step with no quest in the log (logged only: a
         // refusal such as "In combat" draws no note), and stops a focus check still retrying the step it moved on from
         mapView.onPushUnfocus = { id -> homeView.unfocusQuest(id) { Log.i("WCMAP", "polestar unfocus $id: $it") } }
+        // pk1 (the user, 2026-11-12: "we need to make a way to skip a polestar objective"): Skip / Previous on Map.lua's "pnav" row
+        mapView.onPolestarSkip = { prev -> polestarSkipTap(prev) }
         mapView.onCancelFocus = { id -> homeView.cancelFocusWant(id) }
         // the Map room's X on its list (map session, the user's quest-list feedback): untrack through Home's one quest-action path
         mapView.onUntrackQuest = { id -> homeView.untrackQuest(id) { mapView.note(it) } }
@@ -572,6 +574,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // themselves) are the player's picks too: the Polestar row lets go (on Remove Focus as well, or the sync would re-focus the
         // step quest), a cleared focus is not pushed back as the default
         worldMapRoom.onFocusPicked = { id, on -> mapView.psRelease(); if (!on) mapView.focusCleared(id) }
+        // pk1: the Map room's Polestar row (its X Skip, Y Previous) shows and presses the Map's own Polestar step
+        worldMapRoom.polestar = { mapView.polestarTitle()?.let { WorldMapRoomView.Ps(it, mapView.polestarWords(), mapView.polestarCanSkip(), mapView.polestarCanPrev()) } }
+        worldMapRoom.onPolestarSkip = { prev -> mapView.polestarSkip(prev) }
         questsView.onFocusPicked = { id, on -> mapView.psRelease(); if (!on) mapView.focusCleared(id) }
         // LATER item 7: Select opens a cursor on the bar; A on a room is what a touch on its picture does
         // the swirl (Home) picked on the bar = the pause wheel, on Home and in rooms (the user 2026-10-09: "if I select the spiral I want
@@ -914,6 +919,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         pauseView.onPick = { s -> pausePick(s) }
+        pauseView.polestar = { mapView.polestarCanSkip() to mapView.polestarCanPrev() }      // pk1: its Skip / Previous step slices
         // THE TARGET RADIAL: the pause wheel's slide, close and place; a pick runs as the party menu's entries do
         targetRadial = TargetRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         // 1.0.18 (the user: "When holding LB i want the bottom screen to shift around like when opening a radial ... the players bar with
@@ -1565,6 +1571,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // the pause wheel's D-pad Left / Right (the user, 2026-10-16): the Track Pad / the Keyboard, the same tool on its tab
                 "trackpad", "typetool" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openTypeTool(0) } }
                 "keyboard" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openTypeTool(1) } }
+                // pk1: Polestar's Skip step / Previous step, where the player is (no room opens)
+                PolestarSkip.KEY_SKIP -> mapView.polestarSkip(prev = false)
+                PolestarSkip.KEY_PREV -> mapView.polestarSkip(prev = true)
             }
             else -> {}
         }
@@ -2017,7 +2026,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             "pnavroute" -> if (current) { mapView.polestar.onRoute(msg, SystemClock.elapsedRealtime()); mapView.invalidate() }
             "pqol" -> if (current) { PolestarQol.onDoc(msg); if (::settingsView.isInitialized) settingsView.postInvalidate() }     // pq1: Polestar's automation
-            "pstep" -> if (current) mapView.onPolestarStep(msg)          // ps1: Polestar's own objective, the light blue row
+            "pstep" -> if (current) { mapView.onPolestarStep(msg); if (room == Room.MAP) worldMapRoom.postInvalidate() }   // ps1: the light blue row
+            "pskip" -> if (current) {                                   // pk1: a Skip / Previous answered
+                Log.i("WCMAP", "polestar ${msg.optString("op")}: ${if (msg.optBoolean("ok")) "ok, step ${msg.optInt("i")}" else "refused ${msg.optString("why", "")}"}")
+                mapView.onPolestarSkipAnswer(msg)
+                if (room == Room.MAP && !msg.optBoolean("ok")) PolestarSkip.refusedLine(msg.optString("why", ""))?.let { worldMapRoom.sayLine(it) }
+            }
             "routewp" -> if (current) {
                 routeWp.onAnswer(msg.optString("op"), msg.optBoolean("ok"), SystemClock.elapsedRealtime())
                 Log.i("WCMAP", "route pin: ${msg.optString("op")} ${if (msg.optBoolean("ok")) "ok" else "refused"} ${msg.optString("why", "")}")
@@ -3645,6 +3659,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val key = why.replace(Regex(""", \d+ yd ahead"""), "")
         val now = SystemClock.elapsedRealtime()
         if (key != pinStateLast || now - pinStateAt >= 5_000L) { pinStateLast = key; pinStateAt = now; Log.i("WCMAP", "route pin: $why") }
+    }
+
+    /** pk1: one Skip ([prev] false) or Previous on Map.lua's "pnav" row (38 then 10 / 11; the one tap worker keeps it apart from
+     *  PolestarNav's batches). False = not sent (an older add-on, the game not live) */
+    private fun polestarSkipTap(prev: Boolean): Boolean {
+        val pad = questsPad ?: return false
+        if (pad.optJSONObject("rows")?.has(PolestarNav.ROW) != true) return false
+        val cols = PolestarSkip.cols(prev)
+        Log.i("WCMAP", "polestar ${if (prev) "previous" else "skip"}: tap $cols")
+        return TapBridge.tapsSpaced(this, pad, cols.map { PolestarNav.ROW to it }, 120L) { why -> Log.i("WCMAP", "polestar skip: tap failed: $why") }
     }
 
     // POLESTAR AS THE ROUTER (b-route-polestar): PolestarNav decides the taps of Map.lua's row "pnav" (only while the setting is Polestar;

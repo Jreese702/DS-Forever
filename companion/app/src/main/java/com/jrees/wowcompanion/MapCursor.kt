@@ -37,6 +37,10 @@ class MapCursor {
         object PlayerMenu : Do()
         /** A on Polestar's objective (ps1): follow it / stop following it */
         object Polestar : Do()
+        /** pk1: X on Polestar's objective: skip its step ([PolestarSkip]) */
+        object PsSkip : Do()
+        /** pk1: Y on Polestar's objective: undo the last skip */
+        object PsPrev : Do()
         /** A on an untracked tab: open / close it */
         data class Toggle(val key: Int) : Do()
         /** A on an untracked quest: the game's tracker takes it, and the game's focus (the user, 2026-10-16: "A to track and Focus") */
@@ -119,12 +123,13 @@ class MapCursor {
     }
 
     /**
-     * One press [k]; [ids] the tracked quests in the list's order; [focusId] the game's focused quest (0 = none). [merged] (0 none):
-     * the quest the light blue row stands for, [mergedTracked] whether the game's tracker has it -- X and Y on the row act on that
-     * quest as on its own row (the user, 2026-11-11: "consolidate that into one"; A stays the Polestar toggle).
+     * One press [k]; [ids] the tracked quests in the list's order; [focusId] the game's focused quest (0 = none). On the light blue
+     * Polestar row A stays the Polestar toggle; pk1 (the user, 2026-11-12: "X Skip, Y Previous"): X skips its step while [psSkip],
+     * Y undoes the last skip while [psPrev] (nothing to undo: Y does nothing) - merged with a quest too: that quest's Track / Open
+     * (the 2026-11-11 merge's X / Y) leave the row's X and Y.
      */
     fun key(k: String, ids: List<Int>, focusId: Int, filterOpen: Boolean, untracked: Set<Int> = emptySet(),
-            merged: Int = 0, mergedTracked: Boolean = true): Do {
+            psSkip: Boolean = false, psPrev: Boolean = false): Do {
         keepValid(ids)
         if (k == "PAD2") return if (filterOpen) Do.CloseFilter else Do.Leave
         if (k == "PADBACK") return Do.ToggleFilter         // Select / View (Start is the pause wheel, the user 2026-10-09)
@@ -159,7 +164,7 @@ class MapCursor {
             }
             "PAD3" -> return when {
                 !shown || !valid -> Do.Nothing
-                sel == MapList.POLESTAR && merged > 0 -> if (mergedTracked) Do.Untrack(merged) else Do.Watch(merged)
+                sel == MapList.POLESTAR -> if (psSkip) Do.PsSkip else Do.Nothing
                 sel <= 0 -> Do.Nothing
                 sel in untracked -> Do.Watch(sel)
                 else -> Do.Untrack(sel)
@@ -168,7 +173,7 @@ class MapCursor {
             // in the map module"); highlighting a tracked quest already brings it into view, so Y no longer only shows it on the map
             "PAD4" -> return when {
                 !shown || !valid -> Do.Nothing
-                sel == MapList.POLESTAR && merged > 0 -> Do.Open(merged)
+                sel == MapList.POLESTAR -> if (psPrev) Do.PsPrev else Do.Nothing
                 sel <= 0 -> Do.Nothing
                 else -> Do.Open(sel)
             }

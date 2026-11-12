@@ -3563,6 +3563,31 @@ class MapView(context: Context) : View(context) {
         if (on) psSync.picked()                          // an explicit re-pick lifts the re-send cap
         psChanged()
     }
+    // ---- SKIP POLESTAR'S STEP / UNDO THE LAST SKIP (pk1; the user, 2026-11-12: "we need to make a way to skip a polestar objective,
+    // idealy in the home map moduale with X or Y, maybe we also add a previous step button? idk"): the light blue row's X / Y, the Map
+    // room's Polestar row and the pause wheel's two slices all come here; the host taps Map.lua's "pnav" row ([PolestarSkip.cols])
+    /** the host's way to tap a Skip ([prev] false) or a Previous; null = not wired (the press says so) */
+    var onPolestarSkip: ((prev: Boolean) -> Boolean)? = null
+    /** Skip can be pressed now (a Polestar step is shown and the add-on can skip it) */
+    fun polestarCanSkip(): Boolean = PolestarSkip.canSkip(psShown(), psStep)
+    /** Previous can be pressed now (a skip is left to undo) */
+    fun polestarCanPrev(): Boolean = PolestarSkip.canPrev(psShown(), psStep)
+    /** Polestar's step as shown on the light blue row (its title, else its goal's words), or null when there is none */
+    fun polestarTitle(): String? = if (psShown()) psStep?.let { it.title ?: it.words } else null
+    /** the goal's words under it (null when the same as the title, or none) */
+    fun polestarWords(): String? = if (psShown()) psStep?.let { st -> st.words?.takeIf { it != st.title } } else null
+    /** one press: Skip, or Previous ([prev]); nothing when it cannot be pressed now. True = the tap went */
+    fun polestarSkip(prev: Boolean): Boolean {
+        if (if (prev) !polestarCanPrev() else !polestarCanSkip()) return false
+        val sent = onPolestarSkip?.invoke(prev) ?: false
+        if (!sent) note("No Polestar step")
+        return sent
+    }
+    /** the add-on's answer {"type":"pskip"}: a refused press says why (terse) */
+    fun onPolestarSkipAnswer(d: org.json.JSONObject) {
+        if (d.optBoolean("ok")) return
+        PolestarSkip.refusedLine(d.optString("why", ""))?.let { note(it) }
+    }
     /** ps3: an explicit focus pick outside the Map list (Home, the World map, the Quests room): the light blue row lets go */
     fun psRelease() { if (Settings.questTracking == "polestar") psSetPicked(false) }   // (another mode: the login's default kept)
     /** ps3: the player cleared quest [id]'s focus in another room (Remove Focus): the default push never takes it back */
@@ -5269,13 +5294,8 @@ class MapView(context: Context) : View(context) {
         when {
             at == MapList.ME -> if (onPlayerMenu != null) pairs.add(glyph("a") to "Menu")
             at == MapList.POLESTAR -> {
-                pairs.add(glyph("a") to (if (psHolds()) "Unfocus" else "Focus"))
-                val mq = psMerged()                                   // merged: X / Y are its quest's, as on its own row
-                if (mq > 0) {
-                    if (trackedIds().contains(mq)) { if (onUntrackQuest != null) pairs.add(glyph("x") to "Untrack") }
-                    else if (onTrackQuest != null) pairs.add(glyph("x") to "Track")
-                    pairs.add(glyph("y") to "Open")
-                }
+                // pk1 (the user, 2026-11-12): X Skip, Y Previous (only while a skip is left to undo), merged or not
+                for ((b, w) in PolestarSkip.rowHints(psHolds(), polestarCanSkip(), polestarCanPrev())) pairs.add(glyph(b) to w)
             }
             MapList.isGroup(at) -> pairs.add(glyph("a") to (if (openTabs[groupZone(at)] == true) "Close" else "Open"))
             at > 0 && at in MapList.untracked(items) -> {
@@ -5459,10 +5479,10 @@ class MapView(context: Context) : View(context) {
             invalidate(); return MapCursor.Do.Nothing
         }
         // ps3: while the light blue row holds it is the focused row (A on the game's old quest focuses it, A on the row lets go)
-        // the merged row's X / Y are its quest's (the user, 2026-11-11: "consolidate that into one")
-        val mq = psMerged()
+        // pk1 (the user, 2026-11-12: "X Skip, Y Previous"): the row's X skips Polestar's step, its Y undoes the last skip - merged
+        // with a quest too (that quest's Track / Open of the 2026-11-11 merge leave X and Y)
         val d = cursor.key(k, listKeys(), if (psHolds()) MapList.POLESTAR else focusQid, filterOpen, MapList.untracked(items),
-            merged = mq, mergedTracked = mq > 0 && trackedIds().contains(mq))
+            psSkip = PolestarSkip.canSkip(psShown(), psStep), psPrev = PolestarSkip.canPrev(psShown(), psStep))
         when (d) {
             MapCursor.Do.Show -> { listShow(cursor.sel); landOn(cursor.sel) }
             is MapCursor.Do.Select -> {
@@ -5475,6 +5495,8 @@ class MapView(context: Context) : View(context) {
             }
             MapCursor.Do.PlayerMenu -> openPlayerMenu()
             MapCursor.Do.Polestar -> psToggle()
+            MapCursor.Do.PsSkip -> polestarSkip(prev = false)
+            MapCursor.Do.PsPrev -> polestarSkip(prev = true)
             is MapCursor.Do.Toggle -> toggleTab(d.key)
             is MapCursor.Do.Track -> onTrackFocusQuest?.let { it(d.id); trackNow(d.id, true) } ?: note("Track is not on the tap pad yet")
             is MapCursor.Do.Watch -> onTrackQuest?.let { it(d.id); trackNow(d.id, true) } ?: note("Track is not on the tap pad yet")

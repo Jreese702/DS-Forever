@@ -2854,6 +2854,9 @@ end
 -- itself, whose route geom() refused as not ours - no pnavroute (no line on the bottom map) and no WC.pnav.legs (no path marker).
 WC.pnav = { active = false, keepAt = 0, digits = nil, digitsAt = 0, sig = nil, sentAt = 0, KEEP_S = 60, PTS = 240, PTS_FULL = 2000, OWNER = "DSForever" }
 -- pn6 / ps5 (int/1429): ps-compass pn3-pn5 / ps4 and ps-noloc-guide ps4 in one file, the two signals one.
+-- pn7 / ps6 / pk1 (the user, 2026-11-12: "we need to make a way to skip a polestar objective, idealy in the home map moduale with X or
+-- Y, maybe we also add a previous step button? idk"; the picks: X Skip, Y Previous = "Undo my last skip", no confirm, Home's map + the
+-- Map room + the pause wheel): 38 then 10 = SKIP Polestar's shown step, 38 then 11 = PREVIOUS (the last skip undone); see WC.pskip.
 -- int/1429: ONE signal for both (ps-compass pn4's "row holds" and ps-noloc-guide ps4's "row picked"): 38 then 8 / 9, sent by the
 -- app's PolestarNav.tick only (at every change and every 20 s while on), forgotten after KEEP_S (60 s); ONE reader, WC.pnav.psOn(),
 -- used by the compass / geom code here and Trail.lua and by PadMap's starter-item arming (an item-started quest's item on Y only
@@ -2866,7 +2869,7 @@ function WC.pnav.api()
 end
 function WC.pnav.say(op, ok, why)
     pcall(function()
-        WC.send(WC.encode({ type = "pnav", v = "pn6", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
+        WC.send(WC.encode({ type = "pnav", v = "pn7", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
         WC.push()
     end)
 end
@@ -2959,7 +2962,7 @@ function WC.pnav.diag(okG, raw)
     end
     local ps = S == nil and "nil" or (S.none and "none") or (S.nl and "nl") or (psLoc and "loc") or "?"
     pcall(function()
-        WC.send(WC.encode({ type = "cap", probe = "pnavt", v = "pn6", act = act, own = own, tm = tm, tx = tx, ty = ty, gm = gm,
+        WC.send(WC.encode({ type = "cap", probe = "pnavt", v = "pn7", act = act, own = own, tm = tm, tx = tx, ty = ty, gm = gm,
             a = P.active and true or false, gom = P.m, gox = P.x and math.floor(P.x * 10000 + 0.5) / 10000 or nil,
             goy = P.y and math.floor(P.y * 10000 + 0.5) / 10000 or nil, on = P.psOn(), said = P.psSaid == true,
             legs = type(P.legs) == "table" and #P.legs or 0, ps = ps, fr = type(S) == "table" and S.fr or nil,
@@ -3014,6 +3017,11 @@ if WC.pad and type(WC.pad.op) == "function" then
             P.psAt, P.psSaid = (col == 8) and GetTime() or nil, true             -- (psSaid: this app says; Trail.lua stops guessing)
             return
         end
+        if P.qolAt and (col == 10 or col == 11) and GetTime() - P.qolAt <= 2 then           -- pk1: skip / previous (WC.pskip)
+            P.qolAt = nil
+            if type(WC.pskip) == "table" then pcall(col == 10 and WC.pskip.skip or WC.pskip.prev) end
+            return
+        end
         P.qolAt = nil
         if col == 39 then P.digits = nil; return P.cancel("asked") end
         if col == 37 then P.keepAt = GetTime(); return end
@@ -3056,7 +3064,7 @@ do
         if not okR or not legs then return end
         if sig ~= P.sig or GetTime() - P.sentAt > 10 then
             P.sig, P.sentAt = sig, GetTime()
-            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn6", legs = legs })); WC.push() end)
+            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn7", legs = legs })); WC.push() end)
         end
     end)
 end
@@ -3272,16 +3280,146 @@ function WC.pstep.starter(d, pick)
     d.ic = okI and type(ic) == "number" and (not WC.isPlain or WC.isPlain(ic)) and ic or nil
     d.itn = name
 end
+-- ---------------------------------------------------------------- POLESTAR: SKIP THE STEP, UNDO THE LAST SKIP (pk1)
+-- The user (2026-11-12): "we need to make a way to skip a polestar objective, idealy in the home map moduale with X or Y, maybe we also
+-- add a previous step button? idk"; the picks: X Skip, Y Previous; Previous = "Undo my last skip" (the step last skipped comes back as
+-- the live step); no confirm; on Home's map, in the Map room and on the pause wheel. The app taps the "pnav" row: 38 then 10 = SKIP,
+-- 38 then 11 = PREVIOUS (an older add-on ignores both). Polestar's own plain Lua (third-party, GPL: never changed or bundled here):
+-- Engine.Skip() skips the step shown (saved by Polestar, fires PLAYER_SKIPPED_STEP(guideId, step)), Engine.Unskip(i) opens step i
+-- again, Engine.Goto(i) shows it (and un-skips it). Every skip (ours, or Polestar's own window / slash command, heard through
+-- Polestar.On) goes on THIS character's stack for that guide (WowCompanionDB.pskip[name-realm][guideId], at most MAX), so Previous
+-- walks back one skip per press; a step no longer skipped (done, brought back in Polestar's window) is dropped from it. Refused in
+-- combat (Polestar's listeners may touch its secure step button, as WC.pqol). Answers {"type":"pskip", op, ok, why, i}; the step doc
+-- (pstep ps6) carries sk = Skip is there and u = how many skips Previous can undo. Nothing of the game is changed.
+WC.pskip = { MAX = 20 }
+function WC.pskip.engine()
+    local P = _G.Polestar
+    local E = type(P) == "table" and type(P.Engine) == "table" and P.Engine or nil
+    if E and type(E.Skip) == "function" and type(E.GetGuide) == "function" then return E, P end
+end
+-- the guide shown now: its id as Polestar keys it, and as our stack's key
+function WC.pskip.guide(E)
+    local okG, g = pcall(E.GetGuide)
+    local id = okG and type(g) == "table" and g.id or nil
+    if type(id) == "string" or type(id) == "number" then return id, tostring(id) end
+end
+-- this character's skips for guide [gk] (create: made when missing)
+function WC.pskip.stack(gk, create)
+    local who = WC.pqol.key()
+    if not who or not gk then return nil end
+    if type(WowCompanionDB) ~= "table" then if not create then return nil end; WowCompanionDB = {} end
+    local db = WowCompanionDB.pskip
+    if type(db) ~= "table" then if not create then return nil end; db = {}; WowCompanionDB.pskip = db end
+    local mine = db[who]
+    if type(mine) ~= "table" then if not create then return nil end; mine = {}; db[who] = mine end
+    local st = mine[gk]
+    if type(st) ~= "table" then if not create then return nil end; st = {}; mine[gk] = st end
+    return st
+end
+function WC.pskip.push(guideId, step)
+    if type(step) ~= "number" or guideId == nil then return end
+    local st = WC.pskip.stack(tostring(guideId), true)
+    if not st then return end
+    if st[#st] == step then return end                                  -- (the event and our own call: once)
+    for i = #st, 1, -1 do if st[i] == step then table.remove(st, i) end end
+    st[#st + 1] = step
+    while #st > WC.pskip.MAX do table.remove(st, 1) end
+end
+-- step [i] of guide [gid] is still skipped: Polestar's own saved skips when readable, else its step view
+function WC.pskip.still(E, P, gid, i)
+    if type(P.CharState) == "function" then
+        local okC, cs = pcall(P.CharState)
+        if okC and type(cs) == "table" and type(cs.skipped) == "table" then
+            local sk = cs.skipped[gid]
+            return type(sk) == "table" and sk[i] == true
+        end
+    end
+    if type(E.GetStepView) ~= "function" then return true end
+    local okV, v = pcall(E.GetStepView, i)
+    return okV and type(v) == "table" and (v.status == "skipped" or v.status == "upcoming")
+end
+-- every skip heard, from anywhere (once: Polestar.On is its message bus)
+function WC.pskip.listen()
+    if WC.pskip.heard then return end
+    local P = _G.Polestar
+    if type(P) ~= "table" or type(P.On) ~= "function" then return end
+    local ok = pcall(P.On, "PLAYER_SKIPPED_STEP", function(guideId, step) pcall(WC.pskip.push, guideId, step) end)
+    if ok then WC.pskip.heard = true end
+end
+-- Skip there (true / false), and how many skips Previous can undo (the stack pruned of steps no longer skipped)
+function WC.pskip.state()
+    local E, P = WC.pskip.engine()
+    if not E then return false, 0 end
+    local gid, gk = WC.pskip.guide(E)
+    if not gid then return false, 0 end
+    local st = WC.pskip.stack(gk)
+    if not st then return true, 0 end
+    for i = #st, 1, -1 do if not WC.pskip.still(E, P, gid, st[i]) then table.remove(st, i) end end
+    return true, #st
+end
+function WC.pskip.say(op, ok, why, i)
+    pcall(function()
+        WC.send(WC.encode({ type = "pskip", v = "pk1", op = op, ok = ok and true or false, why = why, i = i }))
+        WC.push()
+    end)
+end
+function WC.pskip.skip()
+    local E = WC.pskip.engine()
+    if not E then return WC.pskip.say("skip", false, "no Polestar") end
+    if InCombatLockdown() then return WC.pskip.say("skip", false, "combat") end
+    local gid = WC.pskip.guide(E)
+    if not gid then return WC.pskip.say("skip", false, "no guide") end
+    pcall(WC.pskip.listen)
+    local okS, s = pcall(E.Skip)
+    if not okS then return WC.pskip.say("skip", false, tostring(s):sub(1, 120)) end
+    if type(s) ~= "number" then return WC.pskip.say("skip", false, "no step") end
+    WC.pskip.push(gid, s)
+    WC.pstep.sig = nil                                                  -- the new step goes to the app at the next second
+    WC.pskip.say("skip", true, nil, s)
+end
+function WC.pskip.prev()
+    local E, P = WC.pskip.engine()
+    if not E then return WC.pskip.say("prev", false, "no Polestar") end
+    if InCombatLockdown() then return WC.pskip.say("prev", false, "combat") end
+    local gid, gk = WC.pskip.guide(E)
+    if not gid then return WC.pskip.say("prev", false, "no guide") end
+    local st = WC.pskip.stack(gk)
+    while st and #st > 0 do
+        local i = table.remove(st)
+        if WC.pskip.still(E, P, gid, i) then
+            local back = false
+            if type(E.Unskip) == "function" then
+                local okU, r = pcall(E.Unskip, i)
+                back = okU and r == true
+            elseif type(E.Goto) == "function" then
+                back = pcall(E.Goto, i)
+            end
+            if back then
+                -- the live step again: shown with Goto when an earlier open step would stand in front of it
+                if type(E.GetStepIndex) == "function" and type(E.Goto) == "function" then
+                    local okI, cur = pcall(E.GetStepIndex)
+                    if okI and cur ~= i then pcall(E.Goto, i) end
+                end
+                WC.pstep.sig = nil
+                return WC.pskip.say("prev", true, nil, i)
+            end
+        end
+    end
+    WC.pskip.say("prev", false, "nothing")
+end
 C_Timer.NewTicker(1, function()
     local P = WC.pstep
     local okR, d = pcall(P.read)
     if not okR or not d then P.last = nil; return end
     P.last = d
+    -- pk1: Skip there (sk) and how many skips Previous can still undo (u); a step shown only (none: nothing to skip)
+    if not d.none then pcall(WC.pskip.listen); local okS, sk, u = pcall(WC.pskip.state); if okS and sk then d.sk, d.u = true, u end end
     local sig = d.none and "none" or table.concat({ d.t or "", d.g or "", d.k or "", tostring(d.q or 0),
-        tostring(d.m or "nl"), tostring(d.x or ""), tostring(d.y or ""), tostring(d.it or ""), tostring(d.ih or "") }, "|")
+        tostring(d.m or "nl"), tostring(d.x or ""), tostring(d.y or ""), tostring(d.it or ""), tostring(d.ih or ""),
+        tostring(d.sk or ""), tostring(d.u or "") }, "|")
     if sig ~= P.sig or GetTime() - P.sentAt > 15 then
         P.sig, P.sentAt = sig, GetTime()
-        d.type, d.v = "pstep", "ps5"
+        d.type, d.v = "pstep", "ps6"
         if P.boot ~= 0 then d.b = P.boot end
         pcall(function() WC.send(WC.encode(d)); WC.push() end)
     end

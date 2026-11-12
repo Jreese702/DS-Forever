@@ -17,7 +17,10 @@ class PolestarStep(val title: String?, val words: String?, val kind: String?, va
                     *  NaN / null from an older add-on */
                    val wx: Double = Double.NaN, val wy: Double = Double.NaN, val cont: Int? = null,
                    /** ps4 (ps-noloc-guide): an item-started quest's accept item (Map.lua it / ih / ic / itn) */
-                   val itemId: Int = 0, val itemHeld: Boolean = false, val itemIcon: Int = 0, val itemName: String? = null) {
+                   val itemId: Int = 0, val itemHeld: Boolean = false, val itemIcon: Int = 0, val itemName: String? = null,
+                   /** pk1 (the user, 2026-11-12: "we need to make a way to skip a polestar objective"): the add-on can skip Polestar's
+                    *  step (Map.lua's sk), and how many skips Previous can still undo (its u) */
+                   val skip: Boolean = false, val undo: Int = 0) {
     /** the step has a spot of its own (Polestar's waypoint): map, x, y */
     val hasLoc: Boolean get() = map != 0 && !x.isNaN() && !y.isNaN()
     /** ps4: its world spot is known */
@@ -54,7 +57,8 @@ class PolestarStep(val title: String?, val words: String?, val kind: String?, va
                 if (loc) d.optDouble("wy", Double.NaN) else Double.NaN,
                 if (loc && d.has("c")) d.optInt("c") else null,
                 itemId = d.optInt("it", 0).coerceAtLeast(0), itemHeld = d.optBoolean("ih", false),
-                itemIcon = d.optInt("ic", 0).coerceAtLeast(0), itemName = d.optString("itn", "").ifEmpty { null })
+                itemIcon = d.optInt("ic", 0).coerceAtLeast(0), itemName = d.optString("itn", "").ifEmpty { null },
+                skip = d.optBoolean("sk", false), undo = d.optInt("u", 0).coerceAtLeast(0))
         }
 
         /**

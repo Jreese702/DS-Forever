@@ -4488,7 +4488,9 @@ object UiKit {
 
     /** the slice's kit picture */
     private fun pauseIcon(key: String) = "ricon_" + when (key) {
-        "lfd" -> "groupfinder"; "store" -> "shop"; "map" -> "quests"; "menu" -> "gamemenu"; "time" -> "clock"; else -> key
+        "lfd" -> "groupfinder"; "store" -> "shop"; "map" -> "quests"; "menu" -> "gamemenu"; "time" -> "clock"
+        PolestarSkip.KEY_SKIP, PolestarSkip.KEY_PREV -> "quests"          // pk1: Polestar's Skip / Previous step (no kit icon of their own)
+        else -> key
     }
 
     /** t for the open motion, [ms] after a close began (PAUSE_OPEN_MS .. 0) */

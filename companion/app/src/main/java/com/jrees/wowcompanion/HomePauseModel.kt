@@ -24,8 +24,10 @@ object HomePauseModel {
     data class Slice(
         val key: String, val label: String, val kind: Kind,
         val room: String? = null, val cmd: String? = null, val confirm: Boolean = false, val tab: String? = null,
+        /** pk1: greyed for now (Previous with nothing to undo): let go on, it says [offLine] and the wheel stays */
+        val off: Boolean = false, val offLine: String? = null,
     ) {
-        val enabled get() = kind != Kind.LATER
+        val enabled get() = kind != Kind.LATER && !off
     }
 
     private fun room(key: String, label: String, r: String, tab: String? = null) = Slice(key, label, Kind.ROOM, room = r, tab = tab)
@@ -40,6 +42,12 @@ object HomePauseModel {
         game.forEachIndexed { i, s -> out[fromGame(i)] = s }
         return out
     }
+
+    /** pk1: Polestar's Skip step / Previous step (Home picks: MapView.polestarSkip) */
+    val PS_SKIP = Slice(PolestarSkip.KEY_SKIP, PolestarSkip.SKIP_WORD, Kind.HOME)
+    val PS_PREV = Slice(PolestarSkip.KEY_PREV, PolestarSkip.PREV_WORD, Kind.HOME)
+    /** the line under the wheel for Previous with nothing to undo */
+    const val NOTHING_LINE = "Nothing to undo"
 
     /** THE THREE MAIN PAGES, in the game's order per page (E, NE, N, NW, W, SW, S, SE) */
     val PAGES: List<List<Slice?>> = listOf(
@@ -67,11 +75,13 @@ object HomePauseModel {
             game("menu", "Game Menu", "menu"),
             room("spellbook", "Spellbook", "SPELLBOOK"),
         )),
-        // page 3 (RIGHT): three slices, the rest empty (hidden), as in the game
+        // page 3 (RIGHT): three slices, the rest empty (hidden), as in the game; pk1 (the user, 2026-11-12: "we need to make a way to
+        // skip a polestar objective"; the pick: the pause wheel too): Skip step (N) and Previous step (NW), shown only while a Polestar
+        // step is ([Flow.psSkip]), Previous greyed with nothing to undo ([Flow.psPrev])
         kitOrder(listOf(
             later("time", "Clock"),
             room("calendar", "Calendar", "CALENDAR"),
-            null, null,
+            PS_SKIP, PS_PREV,
             game("pvp", "PvP", "pvp", confirm = true),
             null, null, null,
         )),
@@ -157,7 +167,18 @@ object HomePauseModel {
             sawNeutral = false; aimArmed = true
         }
 
-        fun slices(): List<Slice?> = if (page == EMOTE_PAGE) EMOTES else PAGES[page]
+        /** pk1: a Polestar step is shown and can be skipped (else both Polestar slices are hidden); a skip is left to undo (else
+         *  Previous is greyed) - set by the view at each open from the Map's state */
+        var psSkip = false
+        var psPrev = false
+
+        fun slices(): List<Slice?> = if (page == EMOTE_PAGE) EMOTES else PAGES[page].map { s ->
+            when (s?.key) {
+                PolestarSkip.KEY_SKIP -> s.takeIf { psSkip }
+                PolestarSkip.KEY_PREV -> if (!psSkip) null else if (psPrev) s else s.copy(off = true, offLine = NOTHING_LINE)
+                else -> s
+            }
+        }
         fun header(): String = if (page == EMOTE_PAGE) "Emotes" else "Main Menu"
 
         /** the stick: [x] right +, [y] UP +, -1..1, at [now] (ms; the spring-back latch, as the consumables wheel's) */

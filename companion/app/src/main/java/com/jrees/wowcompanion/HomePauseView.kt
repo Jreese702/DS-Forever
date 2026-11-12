@@ -47,6 +47,8 @@ class HomePauseView(
     private var slidT = 0f
     /** a ROOM or HOME pick, run once the wheel has folded away */
     var onPick: (HomePauseModel.Slice) -> Unit = {}
+    /** pk1: Polestar's Skip / Previous can be pressed now (the Map's state, read at each open and each frame) */
+    var polestar: () -> Pair<Boolean, Boolean> = { false to false }
 
     private val flow = HomePauseModel.Flow()
     private var openedAt = 0L
@@ -106,6 +108,7 @@ class HomePauseView(
         openByStart = byStart
         LatLog.mark("wheel", "pause open")
         flow.reset(); flow.holdOpen = !HomeSettings.pauseTap; flow.pickA = HomeSettings.pausePickA      // its own pair (the user, 2026-10-09)
+        psState()
         flow.armMs = RadialModel.ARM_MS; flow.openAt = SystemClock.uptimeMillis(); stickWait = false; removeCallbacks(stickBack)
         afterStick = null
         line = null; after = null; pvpArmedAt = 0L; aimStick = -1; startHeld = false
@@ -358,7 +361,7 @@ class HomePauseView(
             HomePauseModel.Act.None -> {}
             HomePauseModel.Act.Close -> pressHub()
             HomePauseModel.Act.Sit -> game("sit", stay = true)
-            is HomePauseModel.Act.Refuse -> say(HomePauseModel.LATER_LINE)
+            is HomePauseModel.Act.Refuse -> say(a.slice.offLine ?: HomePauseModel.LATER_LINE)
             is HomePauseModel.Act.Pick -> pick(a.slice)
         }
         invalidate()
@@ -377,7 +380,7 @@ class HomePauseView(
                 game(cmd, stay = false)
             }
             HomePauseModel.Kind.ROOM, HomePauseModel.Kind.HOME -> { after = s; close("a room picked") }
-            HomePauseModel.Kind.LATER -> say(HomePauseModel.LATER_LINE)
+            HomePauseModel.Kind.LATER -> say(s.offLine ?: HomePauseModel.LATER_LINE)
         }
     }
 
@@ -539,7 +542,9 @@ class HomePauseView(
     private val pHint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 34f; color = Theme.gold; textAlign = android.graphics.Paint.Align.CENTER }
 
-    private fun slices(): List<UiKit.PauseSlice?> = flow.slices().map { it?.let { s -> UiKit.PauseSlice(s.key, s.label, s.enabled) } }
+    private fun slices(): List<UiKit.PauseSlice?> { psState(); return flow.slices().map { it?.let { s -> UiKit.PauseSlice(s.key, s.label, s.enabled) } } }
+    /** pk1: the Polestar slices follow the Map's state (a skip made from the wheel: Previous lights at the next frame) */
+    private fun psState() { val (sk, pv) = runCatching { polestar() }.getOrDefault(false to false); flow.psSkip = sk; flow.psPrev = pv }
 
     override fun onDraw(c: Canvas) {
         if (!isOpen && glideAt != 0L) {

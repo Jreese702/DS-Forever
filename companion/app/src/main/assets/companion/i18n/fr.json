@@ -1,5 +1,13 @@
 {
 "plain": {
+"Skip step": "Passer l'étape",
+"Previous step": "Étape précédente",
+"Skip": "Passer",
+"Previous": "Précédente",
+"step": "étape",
+"Nothing to undo": "Rien à annuler",
+"After combat": "Après le combat",
+"No Polestar step": "Aucune étape Polestar",
 "Installed, not in use: choose it in Add-ons › Polestar › Quest tracking": "Installé, non utilisé : choisissez-le dans AddOns › Polestar › Suivi des quêtes",
 "Add-ons › Polestar › Quest tracking": "AddOns › Polestar › Suivi des quêtes",
 "General": "Général",
