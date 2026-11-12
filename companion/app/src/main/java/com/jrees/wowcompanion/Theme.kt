@@ -28,6 +28,8 @@ object Theme {
     val textDim: Int get() = cur.textDim
     val dim: Int get() = cur.dim
     val warn: Int get() = cur.warn
+    /** the words on the game's red cloth buttons (gold in Classic, as always; white / a pale tint where the accent would clash on red) */
+    val btnLabel: Int get() = cur.btnLabel
 
     /** the game's own gold (#FFD100) where it is a MEANING, not decoration: quest marks, an invite, a zone's or a class's fallback */
     val gameGold = Color.parseColor("#FFD100")

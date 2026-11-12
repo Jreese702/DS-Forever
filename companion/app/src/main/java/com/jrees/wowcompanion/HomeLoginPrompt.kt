@@ -116,8 +116,8 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
         setSingleLine()
         typeface = UiKit.body
         setTextSize(TypedValue.COMPLEX_UNIT_PX, 38f)
-        setTextColor(Theme.text); setHintTextColor(Theme.dim)
-        setBackgroundColor(Theme.ink)
+        ThemeLive.fg(this, Tok.TEXT); ThemeLive.hint(this, Tok.DIM)
+        ThemeLive.bg(this, Tok.INK)
         setPadding(24, 0, 24, 0)
         gravity = Gravity.CENTER_VERTICAL
         setOnEditorActionListener { _, action, _ ->

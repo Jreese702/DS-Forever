@@ -98,7 +98,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         search.apply {
             background = UiKit.background { cv, r -> UiKit.searchBox(cv, r, "", "") }
             setTextSize(TypedValue.COMPLEX_UNIT_PX, 26f)
-            setTextColor(Theme.text); setHintTextColor(Theme.dim)
+            ThemeLive.fg(this, Tok.TEXT); ThemeLive.hint(this, Tok.DIM)
             UiKit.asBody(this)
             setSingleLine(); inputType = InputType.TYPE_CLASS_TEXT
             // not the full-screen keyboard Android gives a wide screen: the list must stay in view while it filters (seen on the emulator)

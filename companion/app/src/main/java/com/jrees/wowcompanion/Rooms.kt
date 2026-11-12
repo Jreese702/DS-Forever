@@ -22,9 +22,9 @@ private fun lp(w: Int, h: Int, weight: Float = 0f) =
 
 private fun header(c: Context, title: String): TextView = TextView(c).apply {
     text = title
-    setTextColor(Theme.gold)
+    ThemeLive.fg(this, Tok.ACCENT)
     textSize = 21f
     setTypeface(null, Typeface.BOLD)
     setPadding(20, 14, 20, 12)
-    setBackgroundColor(Theme.panel)
+    ThemeLive.bg(this, Tok.PANEL)
 }

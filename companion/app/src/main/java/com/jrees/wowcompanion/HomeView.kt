@@ -119,7 +119,7 @@ class HomeView(
                 castView.swingOn = HomeSettings.swingTimer                                     // p-swing-timer: switched in a fight
             else if (laidGrow != HomeSettings.combatGrow) { laidGrow = HomeSettings.combatGrow; shown?.let { if (it.takeover) apply(it, animate = isShown) } }
         } }
-        setBackgroundColor(Theme.ink)
+        ThemeLive.bg(this, Tok.INK)
         setWillNotDraw(false)
         for ((_, v) in views) { addView(v); v.visibility = View.GONE }
         addView(partyMenu); partyMenu.visibility = View.GONE; partyMenu.translationZ = PARTY_MENU_Z

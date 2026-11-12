@@ -131,8 +131,13 @@ object UiKit {
      * when the theme changes, so every draw site follows with no change of its own.
      */
     private fun themed(name: String, b: Bitmap): Bitmap {
-        val m = Theme.cur.metal ?: return b
         if (!ThemePresets.isMetal(name)) return b
+        return recolour(b, Theme.cur.metal)
+    }
+
+    /** [b] with its metal in [m] (null = as it is): [b] itself when it is mutable ARGB, else a copy ([b] recycled). Any thread */
+    fun recolour(b: Bitmap, m: Metal?): Bitmap {
+        if (m == null) return b
         return runCatching {
             val out = if (b.isMutable && b.config == Bitmap.Config.ARGB_8888) b else b.copy(Bitmap.Config.ARGB_8888, true)
             val px = IntArray(out.width * out.height)
@@ -372,7 +377,7 @@ object UiKit {
         val p = bodyPaint(textSize, when {
             state == Button.DISABLED -> if (words != null) Color.rgb(128, 128, 128) else Theme.dim
             words != null -> words
-            else -> Theme.gold
+            else -> Theme.btnLabel
         })
         p.textAlign = Paint.Align.CENTER
         val w = p.measureText(label)
@@ -2845,7 +2850,7 @@ object UiKit {
             pGlow.colorFilter = null
             c.drawBitmap(it, null, r, pGlow)
         }
-        val p = bodyPaint(size, if (!enabled) Theme.dim else if (chosen) Theme.gold else Theme.textDim)
+        val p = bodyPaint(size, if (!enabled) Theme.dim else if (chosen) Theme.btnLabel else Theme.textDim)   // on the red cloth
             .apply { textAlign = Paint.Align.CENTER }
         var s = size
         while (p.measureText(label) > r.width() - r.height() * 0.5f && s > 16f) { s -= 1f; p.textSize = s }
@@ -4474,7 +4479,7 @@ object UiKit {
     const val PAUSE_HUB = -2
 
     /** the game's label colours (NORMAL_FONT_COLOR / DISABLED_FONT_COLOR) and its error line's red (UIErrorsFrame: 1, 0.1, 0.1) */
-    private val PAUSE_GOLD = Color.rgb(255, 209, 0)
+    private val PAUSE_GOLD: Int get() = Theme.gold          // the theme's accent (Classic: the game's own 255, 209, 0)
     private val PAUSE_GREY = Color.rgb(128, 128, 128)
     private val PAUSE_RED = Color.rgb(255, 26, 26)
 
@@ -6638,7 +6643,35 @@ object UiKit {
      *  theme's metal; the fonts stay */
     @Synchronized
     fun dropThemed() {
-        texCache.clear(); tileCache.clear(); missing.clear(); tabEdges.clear()
+        // only what the theme changed: the recoloured metal (and the edge tiles cut from it) and the traced tab edges. Parchment, the
+        // grounds and the icons are drawn as harvested in every theme, so they stay decoded (a tap must not re-read the whole kit)
+        texCache.keys.removeAll { ThemePresets.isMetal(it) }
+        tileCache.keys.removeAll { ThemePresets.isMetal(it) }
+        tabEdges.clear()
+        hiliteFor = null
+    }
+
+    private var hiliteFor: ThemeSpec? = null
+    private var hilite: android.graphics.ColorFilter? = null
+    /**
+     * The game's yellow HIGHLIGHTS (checkbuttonhilight and the like, drawn ADDED over a slot) in the theme's focus colour: the picture's
+     * brightness times the colour. null in Classic (the picture as it is).
+     */
+    fun hiliteFilter(): android.graphics.ColorFilter? {
+        val t = Theme.cur
+        if (t === ThemePresets.CLASSIC) return null
+        if (hiliteFor !== t) {
+            hiliteFor = t
+            val f = t.focus
+            val r = Color.red(f) / 255f; val g = Color.green(f) / 255f; val b = Color.blue(f) / 255f
+            // the yellow hilite's own brightest channel is red/green: weigh them so the picture's light keeps its strength
+            hilite = ColorMatrixColorFilter(floatArrayOf(
+                0.5f * r, 0.5f * r, 0f, 0f, 0f,
+                0.5f * g, 0.5f * g, 0f, 0f, 0f,
+                0.5f * b, 0.5f * b, 0f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f))
+        }
+        return hilite
     }
 
     @Synchronized

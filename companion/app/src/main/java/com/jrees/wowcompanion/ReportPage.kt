@@ -99,7 +99,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
 
     private val ui = Handler(Looper.getMainLooper())
     private val kb = ChatKeyboard(c, swap = false).apply { visibility = View.GONE; sendWord = "Done" }
-    private val previewText = TextView(c).apply { textSize = 11f; typeface = Typeface.MONOSPACE; setTextColor(Theme.text); setPadding(28, 20, 28, 20) }
+    private val previewText = TextView(c).apply { textSize = 11f; typeface = Typeface.MONOSPACE; ThemeLive.fg(this, Tok.TEXT); setPadding(28, 20, 28, 20) }
     private val preview = ScrollView(c).apply { visibility = View.GONE; addView(previewText) }
 
     var isOpen = false; private set

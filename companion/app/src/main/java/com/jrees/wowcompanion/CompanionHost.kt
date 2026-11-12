@@ -424,7 +424,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Theme.ink)
+            ThemeLive.bg(this, Tok.INK)
         }
         themeRoot = root
         Theme.onChange(themeChanged)

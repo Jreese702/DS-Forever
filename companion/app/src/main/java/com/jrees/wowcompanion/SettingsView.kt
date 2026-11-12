@@ -518,7 +518,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     // ---- THEME (System; the user, 2026-11-12: "an oled theme, but different color variations for menus like pink and silver or gold
     // instead of the classic bronze"): one tile a preset, five across, each drawn in its own colours (its ground, its edge, its name in
-    // its accent) so the tile IS the preview; a tap applies it at once, everywhere (Theme.use). The chosen one wears the focus box.
+    // its accent) so the tile IS the preview; a tap applies it at once, everywhere (Theme.use). The chosen one is the one lit tile.
     private val themeCols = 5
     private val themeTileH = 112f
     private val themeGap = 12f
@@ -539,27 +539,34 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segTheme[i].set(r)
             rowHits.add(RectF(r) to "Theme")
             val chosen = t === Theme.cur
+            // the one in use is the ONE bright tile (review, 2026-11-12: every tile in its full accent hid the chosen one): its focus
+            // light round it, its edge full and heavy, its band in its selected colour, its name in its accent; the others' edges
+            // half-faded and their names in their dim words
+            if (chosen) UiKit.glow(c, RectF(r.left - 10f, r.top - 10f, r.right + 10f, r.bottom + 10f), t.focus, 0.55f)
             // its ground; the band its rows stand on; its edge
             pThemeFill.style = Paint.Style.FILL; pThemeFill.color = t.ink
             c.drawRoundRect(r, 10f, 10f, pThemeFill)
-            pThemeFill.color = t.raised
+            pThemeFill.color = if (chosen) t.selected else t.raised
             c.drawRoundRect(RectF(r.left + 12f, r.bottom - 40f, r.right - 12f, r.bottom - 14f), 6f, 6f, pThemeFill)
             // three marks: its accent, its edge, its words' colour
             for ((k, mc) in listOf(t.accent, t.edge, t.text).withIndex()) {
                 pThemeFill.color = mc
                 c.drawCircle(r.left + 30f + k * 24f, r.bottom - 27f, 7f, pThemeFill)
             }
-            pThemeFill.style = Paint.Style.STROKE; pThemeFill.strokeWidth = 3f; pThemeFill.color = t.edge
-            c.drawRoundRect(RectF(r.left + 1.5f, r.top + 1.5f, r.right - 1.5f, r.bottom - 1.5f), 10f, 10f, pThemeFill)
+            pThemeFill.style = Paint.Style.STROKE
+            if (chosen) {
+                pThemeFill.strokeWidth = 6f; pThemeFill.color = t.focus
+                c.drawRoundRect(RectF(r.left + 3f, r.top + 3f, r.right - 3f, r.bottom - 3f), 10f, 10f, pThemeFill)
+            } else {
+                pThemeFill.strokeWidth = 2f; pThemeFill.color = (t.edge and 0xFFFFFF) or (0x70 shl 24)
+                c.drawRoundRect(RectF(r.left + 1f, r.top + 1f, r.right - 1f, r.bottom - 1f), 10f, 10f, pThemeFill)
+            }
             pThemeFill.style = Paint.Style.FILL
             UiKit.asBody(pThemeName)
-            pThemeName.textSize = 25f; pThemeName.color = t.accent
+            pThemeName.textSize = 25f; pThemeName.color = if (chosen) t.accent else t.textDim
             c.drawText(Tr.t(fit(pThemeName, t.name, tw - 16f)), r.centerX(), r.top + 44f, pThemeName)
             if (chosen) {
-                // the one in use: a heavier edge in its own focus colour and the game's tick (the cursor keeps the focus box)
-                pThemeFill.style = Paint.Style.STROKE; pThemeFill.strokeWidth = 5f; pThemeFill.color = t.focus
-                c.drawRoundRect(RectF(r.left + 2.5f, r.top + 2.5f, r.right - 2.5f, r.bottom - 2.5f), 10f, 10f, pThemeFill)
-                pThemeFill.style = Paint.Style.FILL
+                // the game's tick, in the theme's metal (it is the theme in use: UiKit recolours the kit's tick) (the cursor keeps the focus box)
                 val tick = UiKit.tex("check_tick")
                 val tr = RectF(r.right - 46f, r.bottom - 46f, r.right - 10f, r.bottom - 10f)
                 if (tick != null) c.drawBitmap(tick, null, tr, null)

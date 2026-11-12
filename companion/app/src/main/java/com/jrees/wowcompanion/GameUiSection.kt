@@ -29,7 +29,7 @@ const val SETTINGS_H = 960
  * onMeasure then answers with ALL of it, and the section below is pushed off the screen.
  */
 fun settingsRoom(context: Context, settingsView: View): View = ScrollView(context).apply {
-    setBackgroundColor(Theme.ink)
+    ThemeLive.bg(this, Tok.INK)
     addView(LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         settingsView.minimumHeight = SETTINGS_H

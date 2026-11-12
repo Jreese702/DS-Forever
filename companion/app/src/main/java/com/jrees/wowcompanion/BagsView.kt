@@ -57,12 +57,12 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     private val head = Header(c)
     private val search = EditText(c).apply {
         hint = "Search"
-        setHintTextColor(Theme.dim)
-        setTextColor(Theme.text)
+        ThemeLive.hint(this, Tok.DIM)
+        ThemeLive.fg(this, Tok.TEXT)
         textSize = 15f
         setSingleLine()
         inputType = InputType.TYPE_CLASS_TEXT
-        setBackgroundColor(Theme.raised)
+        ThemeLive.bg(this, Tok.RAISED)
         setPadding(20, 14, 16, 14)
         UiKit.asBody(this)
     }
@@ -87,7 +87,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     private val ctlLayer = CtlLayer(c, state, grid, gridScroll, bar) { search }
 
     init {
-        setBackgroundColor(Theme.ink)
+        ThemeLive.bg(this, Tok.INK)
         column.orientation = LinearLayout.VERTICAL
         super.addView(column, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -1330,8 +1330,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         }
 
         fun drawGlow(cv: Canvas, box: RectF, p: Paints) {
-            Icons.ui("checkbuttonhilight")?.let { b -> cv.drawBitmap(b, null, box, p.add) }
-                ?: cv.drawRect(box, p.selRim)
+            // the game's yellow hilite in the theme's focus colour (Classic: as it is; themes, 2026-11-12)
+            Icons.ui("checkbuttonhilight")?.let { b -> p.add.colorFilter = UiKit.hiliteFilter(); cv.drawBitmap(b, null, box, p.add); p.add.colorFilter = null }
+                ?: run { p.selRim.color = Theme.focusA(255); cv.drawRect(box, p.selRim) }
         }
 
         /** the game's outlined stack count, bottom right */

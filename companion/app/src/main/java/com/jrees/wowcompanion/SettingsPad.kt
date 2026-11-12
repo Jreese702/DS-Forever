@@ -29,7 +29,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     val tabBar = SettingsTabBar(context) { t -> show(t) }
     /** "What it does" (phase 2): the row's picture, right of the page, on the tabs that have pictures */
     val preview = SettingsPreviewView(context) { homeSection.dpadState()?.want }
-    private val scroll = ScrollView(context).apply { setBackgroundColor(Theme.ink) }
+    private val scroll = ScrollView(context).apply { ThemeLive.bg(this, Tok.INK) }
     val pad: SettingsPad
 
     /** the tab shown */
@@ -38,7 +38,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
 
     init {
         orientation = VERTICAL
-        setBackgroundColor(Theme.ink)
+        ThemeLive.bg(this, Tok.INK)
         SettingsTabs.init(context)
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
