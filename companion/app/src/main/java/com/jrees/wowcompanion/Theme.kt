@@ -11,19 +11,69 @@ import android.graphics.Color
  * enough to pass while staying unmistakably "blue" and "purple".
  */
 object Theme {
-    val ink = Color.parseColor("#0E0B08")       // page ground
-    val field = Color.parseColor("#141009")     // map field / recessed areas
-    val panel = Color.parseColor("#17120C")     // header + strip
-    val raised = Color.parseColor("#1B1610")    // tiles, rows
-    val selected = Color.parseColor("#2E2411")  // selected row / active tab
+    // THEMES (the user, 2026-11-12: "I personally want an oled theme, but different color variations for menus like pink and silver or
+    // gold instead of the classic bronze"): the chrome's colours are the current preset's ([cur], ThemePresets). Classic Bronze is the
+    // default and draws exactly what these were before. The game's own meanings below (quality, class, quest difficulty, standings,
+    // the finder's / calendar's / zones' colours, parchment ink) never follow a theme.
+    val ink: Int get() = cur.ink              // page ground
+    val field: Int get() = cur.field          // map field / recessed areas
+    val panel: Int get() = cur.panel          // header + strip
+    val raised: Int get() = cur.raised        // tiles, rows
+    val selected: Int get() = cur.selected    // selected row / active tab
 
-    val gold = Color.parseColor("#FFD100")      // headings, quest markers, the active tab
-    val bronze = Color.parseColor("#C8AA6E")    // rules, borders
-    val bronzeDim = Color.parseColor("#4A3A1C")
-    val text = Color.parseColor("#E8DCC0")
-    val textDim = Color.parseColor("#B3A48A")
-    val dim = Color.parseColor("#8F8168")
-    val warn = Color.parseColor("#D99A4E")
+    val gold: Int get() = cur.accent          // headings, the active tab, button labels (the page's accent: a theme's colour)
+    val bronze: Int get() = cur.edge          // rules, borders
+    val bronzeDim: Int get() = cur.edgeDim
+    val text: Int get() = cur.text
+    val textDim: Int get() = cur.textDim
+    val dim: Int get() = cur.dim
+    val warn: Int get() = cur.warn
+
+    /** the game's own gold (#FFD100) where it is a MEANING, not decoration: quest marks, an invite, a zone's or a class's fallback */
+    val gameGold = Color.parseColor("#FFD100")
+
+    /** the focus box's glow at [a] (0..255): the game's gold in Classic, the theme's focus colour otherwise */
+    fun focusA(a: Int): Int = (cur.focus and 0xFFFFFF) or (a.coerceIn(0, 255) shl 24)
+    /** the soft cursor wash (the focus box's warm light; UiKit.SOFT_GOLD in Classic) */
+    val soft: Int get() = cur.soft
+    /** true while Classic Bronze is on: the places that keep their exact old literals ask this */
+    val classic: Boolean get() = cur === ThemePresets.CLASSIC
+
+    // ---- the current preset, persisted per device ("settings" prefs, key "theme"); [use] applies it LIVE (Settings > System > Theme)
+    @Volatile var cur: ThemeSpec = ThemePresets.CLASSIC
+        private set
+    /** the theme before the last change (ThemeLive maps its colours to the new one's) */
+    @Volatile var prev: ThemeSpec = ThemePresets.CLASSIC
+        private set
+    private var prefs: android.content.SharedPreferences? = null
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
+    /** all presets, in the picker's order */
+    val presets: List<ThemeSpec> get() = ThemePresets.ALL
+    fun byId(id: String?): ThemeSpec? = ThemePresets.ALL.firstOrNull { it.id == id }
+
+    /** reads the saved preset (once per process; [reread] = read it again, the off-device test's fresh app) */
+    fun init(c: android.content.Context, reread: Boolean = false) {
+        if (prefs != null && !reread) return
+        prefs = c.applicationContext.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+        val saved = byId(prefs?.getString(KEY, null)) ?: ThemePresets.CLASSIC
+        if (saved !== cur) { cur = saved; UiKit.dropThemed() }
+    }
+
+    /** switches to preset [id] (unknown = Classic), saves it, drops the recoloured art and tells every listener (they repaint) */
+    fun use(id: String) {
+        val t = byId(id) ?: ThemePresets.CLASSIC
+        prefs?.edit()?.putString(KEY, t.id)?.apply()
+        if (t === cur) return
+        prev = cur
+        cur = t
+        UiKit.dropThemed()
+        for (l in listeners) runCatching { l() }
+    }
+
+    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun removeListener(l: () -> Unit) { listeners.remove(l) }
+    private const val KEY = "theme"
 
     val flight = Color.parseColor("#7FC4E8")
     val ok = Color.parseColor("#8FC47A")
@@ -77,7 +127,7 @@ object Theme {
         2, 4 -> debuffed
         5, 8 -> tentative
         7 -> finderPlain
-        else -> gold
+        else -> gameGold
     }
 
     // an item the character cannot use: the game writes its name in red
@@ -116,7 +166,7 @@ object Theme {
     }
 
     fun classColourOf(name: String?): Int =
-        classColour[(name ?: "").uppercase().replace(" ", "")] ?: gold
+        classColour[(name ?: "").uppercase().replace(" ", "")] ?: gameGold
 
     // INDOOR TRANSITION ZONES, drawn instead of stairs (the user, 2026-09-29: "drawing transition zones with highlighted colors
     // instead of trying to draw stairs, like red for the exit and different colors for up or down"; set 2 picked 15:38).
@@ -135,7 +185,7 @@ object Theme {
         "arena", "hostile", "combat" -> Color.rgb(255, 26, 26)
         "friendly" -> Color.rgb(26, 255, 26)
         "contested" -> Color.rgb(255, 179, 0)
-        else -> gold
+        else -> gameGold
     }
 }
 

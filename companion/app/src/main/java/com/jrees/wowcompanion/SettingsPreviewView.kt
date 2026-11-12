@@ -18,9 +18,9 @@ class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean
     var id: String? = null
         set(v) { if (field != v) { field = v; invalidate() } }
 
-    private val pLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 18f; color = Theme.dim }
-    private val pTitle = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 26f; color = Theme.gold; typeface = Typeface.DEFAULT_BOLD }
-    private val pCap = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 21f; color = Theme.textDim }
+    private val pLabel by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 18f; color = Theme.dim } }
+    private val pTitle by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 26f; color = Theme.gold; typeface = Typeface.DEFAULT_BOLD } }
+    private val pCap by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 21f; color = Theme.textDim } }
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
 

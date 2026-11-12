@@ -75,18 +75,18 @@ class QuestsView(
         style = Paint.Style.STROKE; strokeWidth = 1.6f
         strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
     }
-    private val pTitle = tp(32f, Theme.gold, bold = true)
-    private val pHead = tp(21f, Theme.dim)
-    private val pZone = tp(21f, Theme.textDim)
-    private val pRow = tp(25f, Theme.text)
-    private val pRowSub = tp(20f, Theme.textDim)
-    private val pDist = tp(21f, Theme.textDim)
-    private val pDTitle = tp(40f, Theme.text, bold = true)
-    private val pMeta = tp(20f, Theme.dim)
-    private val pObj = tp(22f, Theme.text)
-    private val pBody = tp(20f, Theme.textDim)
-    private val pBtn = tp(24f, Theme.text, bold = true)
-    private val pSection = tp(30f, Theme.gold)               // a heading on the dark ground, in Morpheus
+    private val pTitle by themed { tp(32f, Theme.gold, bold = true) }
+    private val pHead by themed { tp(21f, Theme.dim) }
+    private val pZone by themed { tp(21f, Theme.textDim) }
+    private val pRow by themed { tp(25f, Theme.text) }
+    private val pRowSub by themed { tp(20f, Theme.textDim) }
+    private val pDist by themed { tp(21f, Theme.textDim) }
+    private val pDTitle by themed { tp(40f, Theme.text, bold = true) }
+    private val pMeta by themed { tp(20f, Theme.dim) }
+    private val pObj by themed { tp(22f, Theme.text) }
+    private val pBody by themed { tp(20f, Theme.textDim) }
+    private val pBtn by themed { tp(24f, Theme.text, bold = true) }
+    private val pSection by themed { tp(30f, Theme.gold) }   // a heading on the dark ground, in Morpheus
     private val pInk = tp(22f, Theme.parchmentInk)           // what is read lies on parchment, in ink
     private val pInkHead = tp(30f, Theme.parchmentInk)
     private val pArt = Paint(Paint.FILTER_BITMAP_FLAG)
@@ -286,8 +286,8 @@ class QuestsView(
 
     private fun diffColour(q: JSONObject): Int {
         if (q.optBoolean("trivial")) return GREY
-        val d = doc ?: return Theme.gold
-        if (!q.has("lv") || !d.has("plv")) return Theme.gold
+        val d = doc ?: return Theme.gameGold
+        if (!q.has("lv") || !d.has("plv")) return Theme.gameGold
         val diff = q.optInt("lv") - d.optInt("plv")
         val green = if (d.has("trivRange")) d.optInt("trivRange") else 5
         return when {

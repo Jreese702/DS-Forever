@@ -119,9 +119,37 @@ object UiKit {
         texCache[name]?.let { return it }
         if (!retry(name)) return null
         val f = ArtHarvest.file("ui/kit/$name.png")          // the harvested kit (app-private), else the pushed one
-        val bmp = if (f.canRead()) BitmapFactory.decodeFile(f.path) else null
+        val bmp = (if (f.canRead()) BitmapFactory.decodeFile(f.path) else null)?.let { themed(name, it) }
         if (bmp != null) { texCache[name] = bmp; missing.remove(name) }
         return bmp
+    }
+
+    /**
+     * THE THEME'S METAL (the user, 2026-11-12: "different color variations for menus like pink and silver or gold instead of the classic
+     * bronze"): a frame / border / tab piece ([ThemePresets.isMetal]) recoloured ONCE as it loads, its shading kept (Metal.apply: only
+     * the bronze / gold hues move, so a red button's cloth stays red). Classic = the picture as harvested. [forget] drops the cache
+     * when the theme changes, so every draw site follows with no change of its own.
+     */
+    private fun themed(name: String, b: Bitmap): Bitmap {
+        val m = Theme.cur.metal ?: return b
+        if (!ThemePresets.isMetal(name)) return b
+        return runCatching {
+            val out = if (b.isMutable && b.config == Bitmap.Config.ARGB_8888) b else b.copy(Bitmap.Config.ARGB_8888, true)
+            val px = IntArray(out.width * out.height)
+            out.getPixels(px, 0, out.width, 0, 0, out.width, out.height)
+            m.apply(px)
+            out.setPixels(px, 0, out.width, 0, 0, out.width, out.height)
+            if (out !== b) b.recycle()
+            out
+        }.getOrDefault(b)
+    }
+
+    /** one drawn colour through the theme's metal (the drawn stand-ins of the art: [ringEdge]'s taupe), as the art is */
+    fun metal(colour: Int): Int {
+        val m = Theme.cur.metal ?: return colour
+        val px = intArrayOf(colour)
+        m.apply(px)
+        return px[0]
     }
 
     /**
@@ -849,7 +877,7 @@ object UiKit {
     fun strip(c: Canvas, inner: RectF, height: Float = STRIP): RectF {
         val s = RectF(inner.left - 8f, inner.bottom - height, inner.right + 8f, inner.bottom + 6f)
         ground(c, s, "ground_rock", 0.32f)
-        pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(96, 80, 50)
+        pFlat.style = Paint.Style.FILL; pFlat.color = metal(Color.rgb(96, 80, 50))
         c.drawRect(s.left, s.top, s.right, s.top + 2f, pFlat)
         pFlat.color = Color.BLACK
         c.drawRect(s.left, s.top + 3f, s.right, s.top + 4f, pFlat)
@@ -1349,7 +1377,7 @@ object UiKit {
             p.textAlign = if (x < 0f) Paint.Align.RIGHT else Paint.Align.LEFT
             c.drawText(Tr.t(w), if (x < 0f) -x else x, cy - (p.ascent() + p.descent()) / 2f, p)
         }
-        pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(160, 96, 80, 50)
+        pFlat.style = Paint.Style.FILL; pFlat.color = metal(Color.argb(160, 96, 80, 50))
         c.drawRect(left, cy + 20f, right, cy + 22f, pFlat)
     }
 
@@ -1682,7 +1710,7 @@ object UiKit {
     const val CARD_OVER_MAP_ALPHA = 140
 
     /** the cursor's wash: a softer, warmer gold than [Theme.gold] (the user, LATER 19), shared by the gold box and the lit tab */
-    val SOFT_GOLD = Color.rgb(226, 170, 80)
+    val SOFT_GOLD: Int get() = Theme.soft                 // Classic: rgb(226, 170, 80); a theme's own wash otherwise (2026-11-12)
 
     fun focus(c: Canvas, r: RectF, onPaper: Boolean = false) {
         // on a parchment page: GOLD, look 2 (the user, 2026-09-30: "2, gold bar with a gold edge"), no more darkened paper
@@ -1697,10 +1725,10 @@ object UiKit {
         glow(c, RectF(r.left + r.width() * 0.08f, r.top, r.right - r.width() * 0.08f, r.bottom), SOFT_GOLD, 0.22f)
         val o = RectF(r.left - 5f, r.top - 5f, r.right + 5f, r.bottom + 5f)
         pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 8f
-        pFlat.color = if (onPaper) Color.argb(60, 42, 24, 8) else Color.argb(70, 255, 209, 0)
+        pFlat.color = if (onPaper) Color.argb(60, 42, 24, 8) else Theme.focusA(70)
         c.drawRoundRect(o, 8f, 8f, pFlat)
         pFlat.strokeWidth = 3.5f
-        pFlat.color = if (onPaper) Theme.parchmentInk else Theme.gold
+        pFlat.color = if (onPaper) Theme.parchmentInk else Theme.focusA(255)
         c.drawRoundRect(o, 8f, 8f, pFlat)
     }
 
@@ -1708,15 +1736,16 @@ object UiKit {
      *  ring of radius [r] round ([cx], [cy]); a round element never gets the square frame */
     fun focusRing(c: Canvas, cx: Float, cy: Float, r: Float) {
         // a FILLED gold light under the ring (no bare ring: the user rejects a cursor that is only an outline)
-        val g = RadialGradient(cx, cy, r * 1.15f, intArrayOf(Color.argb(150, 255, 209, 0), Color.argb(70, 255, 190, 0), Color.argb(0, 255, 190, 0)),
+        val g = RadialGradient(cx, cy, r * 1.15f, if (Theme.classic) intArrayOf(Color.argb(150, 255, 209, 0), Color.argb(70, 255, 190, 0), Color.argb(0, 255, 190, 0))
+                else intArrayOf(Theme.focusA(150), Theme.focusA(70), Theme.focusA(0)),
             floatArrayOf(0f, 0.75f, 1f), Shader.TileMode.CLAMP)
         pFlat.style = Paint.Style.FILL; pFlat.shader = g
         c.drawCircle(cx, cy, r * 1.15f, pFlat)
         pFlat.shader = null
         pFlat.style = Paint.Style.STROKE
-        pFlat.strokeWidth = 9f; pFlat.color = Color.argb(70, 255, 209, 0)
+        pFlat.strokeWidth = 9f; pFlat.color = Theme.focusA(70)
         c.drawCircle(cx, cy, r, pFlat)
-        pFlat.strokeWidth = 4f; pFlat.color = Theme.gold
+        pFlat.strokeWidth = 4f; pFlat.color = Theme.focusA(255)
         c.drawCircle(cx, cy, r, pFlat)
     }
 
@@ -1736,6 +1765,18 @@ object UiKit {
     private val pTabLift = Paint().apply {
         xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD); colorFilter = LightingColorFilter(Color.rgb(205, 160, 90), 0); alpha = 80
     }
+    private var tabLiftFor: ThemeSpec? = null
+    /** the lit tab's warm lift in the theme's wash (Classic: rgb(205, 160, 90), as always) */
+    private fun tabLift(): Paint {
+        val t = Theme.cur
+        if (tabLiftFor !== t) {
+            tabLiftFor = t
+            val w = t.soft
+            pTabLift.colorFilter = LightingColorFilter(if (t === ThemePresets.CLASSIC) Color.rgb(205, 160, 90)
+                else Color.rgb(Color.red(w) * 9 / 10, Color.green(w) * 9 / 10, Color.blue(w) * 9 / 10), 0)
+        }
+        return pTabLift
+    }
     private val pTabWash = Paint(Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP) }
     private val tabEdges = HashMap<String, Bitmap>()
 
@@ -1751,11 +1792,13 @@ object UiKit {
         val l = c.saveLayer(b, null)
         draw(c)
         pTabWash.shader = LinearGradient(0f, r.top, 0f, r.bottom,
-            intArrayOf(Color.argb(40, 232, 182, 96), Color.argb(100, 226, 170, 80), Color.argb(50, 210, 150, 70)),
+            if (Theme.classic) intArrayOf(Color.argb(40, 232, 182, 96), Color.argb(100, 226, 170, 80), Color.argb(50, 210, 150, 70))
+            else Theme.soft.let { w -> intArrayOf(Color.argb(40, minOf(255, Color.red(w) + 6), minOf(255, Color.green(w) + 12), minOf(255, Color.blue(w) + 16)),
+                (w and 0xFFFFFF) or (100 shl 24), Color.argb(50, Color.red(w) * 93 / 100, Color.green(w) * 88 / 100, Color.blue(w) * 87 / 100)) },
             floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
         c.drawRect(b, pTabWash)
         c.restoreToCount(l)
-        val l2 = c.saveLayer(b, pTabLift)
+        val l2 = c.saveLayer(b, tabLift())
         draw(c)
         c.restoreToCount(l2)
         val k = key + "|" + r.width().toInt() + "x" + r.height().toInt() + "|" + (tex("button_up_center") != null)
@@ -1775,7 +1818,7 @@ object UiKit {
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val oc = Canvas(out)
         val cut = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_OUT) }
-        for ((grow, colour) in listOf(8f to Color.argb(70, 255, 209, 0), 3.5f to Theme.gold)) {
+        for ((grow, colour) in listOf(8f to Theme.focusA(70), 3.5f to Theme.focusA(255))) {
             val ring = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val rc = Canvas(ring)
             val tint = Paint().apply { colorFilter = PorterDuffColorFilter(colour, PorterDuff.Mode.SRC_IN) }
@@ -2229,7 +2272,21 @@ object UiKit {
     const val RING_K = 1.6f
     private const val RING_C = 14
     private val pRingTex = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-    private val ringLit = ColorMatrixColorFilter(ColorMatrix().apply { setScale(1.95f, 1.7f, 0.55f, 1f) })  // the taupe metal -> gold
+    private val ringLitClassic = ColorMatrixColorFilter(ColorMatrix().apply { setScale(1.95f, 1.7f, 0.55f, 1f) })  // the taupe metal -> gold
+    private var ringLitFor: ThemeSpec? = null
+    private var ringLitTheme: ColorMatrixColorFilter = ringLitClassic
+    /** held: the metal lit in the theme's accent (Classic's 1.95 / 1.7 / 0.55 is 0.55 + 1.4 x the game's gold, so the same rule) */
+    private val ringLit: ColorMatrixColorFilter get() {
+        val t = Theme.cur
+        if (t === ThemePresets.CLASSIC) return ringLitClassic
+        if (ringLitFor !== t) {
+            ringLitFor = t
+            val a = t.accent
+            fun k(ch: Int) = 0.55f + 1.4f * ch / 255f
+            ringLitTheme = ColorMatrixColorFilter(ColorMatrix().apply { setScale(k(Color.red(a)), k(Color.green(a)), k(Color.blue(a)), 1f) })
+        }
+        return ringLitTheme
+    }
 
     /** the art nine-sliced onto [box]: corners [cw] canvas units, edges stretched */
     private fun ringNine(c: Canvas, art: Bitmap, box: RectF, cw: Float, p: Paint) {
@@ -2316,8 +2373,10 @@ object UiKit {
             pRing.strokeWidth = w; pRing.color = col; pRing.alpha = (alpha * a).toInt().coerceIn(0, 255); c.drawPath(path, pRing)
         }
         stroke(width, Color.rgb(28, 26, 23), 0.55f)                                   // the soft dark rim
-        stroke(width * 0.72f, if (lit) Color.rgb(150, 112, 20) else Color.rgb(88, 72, 54), 1f)
-        stroke(width * 0.44f, if (lit) Theme.gold else Color.rgb(112, 91, 68), 1f)  // the core
+        val litMid = if (Theme.classic) Color.rgb(150, 112, 20)
+            else Theme.gold.let { a -> Color.rgb(Color.red(a) * 59 / 100, Color.green(a) * 54 / 100, Color.blue(a) * 40 / 100) }
+        stroke(width * 0.72f, if (lit) litMid else metal(Color.rgb(88, 72, 54)), 1f)
+        stroke(width * 0.44f, if (lit) Theme.gold else metal(Color.rgb(112, 91, 68)), 1f)  // the core
     }
 
     /** clips [c] to a well's rounded shape (save first; restore after): for a map or a list drawn inside [module] */
@@ -2493,7 +2552,7 @@ object UiKit {
         if (lit) {
             val rr = r.height() * 0.9f
             pTrigGlow.shader = android.graphics.RadialGradient(r.centerX(), r.centerY(), rr,
-                intArrayOf(Color.argb((150 * alpha / 255f).toInt(), 255, 209, 0), Color.argb(0, 255, 209, 0)), floatArrayOf(0f, 1f),
+                intArrayOf(Theme.focusA((150 * alpha / 255f).toInt()), Theme.focusA(0)), floatArrayOf(0f, 1f),
                 android.graphics.Shader.TileMode.CLAMP)
             c.drawCircle(r.centerX(), r.centerY(), rr, pTrigGlow)
         }
@@ -2953,12 +3012,12 @@ object UiKit {
         }
         val disc = tex(if (focus) "poi_disc_focus" else "poi_disc")
         if (disc == null) {
-            pFlat.style = Paint.Style.FILL; pFlat.color = if (focus) Theme.gold else Color.rgb(70, 30, 20)
+            pFlat.style = Paint.Style.FILL; pFlat.color = if (focus) Theme.gameGold else Color.rgb(70, 30, 20)
             c.drawCircle(cx, cy, size * 0.36f, pFlat)
-            pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2.5f; pFlat.color = Theme.gold
+            pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2.5f; pFlat.color = Theme.gameGold
             c.drawCircle(cx, cy, size * 0.36f, pFlat)
             if (number != null) {
-                val p = numberPaint(size * 0.4f, if (focus) Color.rgb(34, 22, 6) else Theme.gold, shadow = !focus)
+                val p = numberPaint(size * 0.4f, if (focus) Color.rgb(34, 22, 6) else Theme.gameGold, shadow = !focus)
                     .apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
                 c.drawText(Tr.t(number.toString()), cx, cy - (p.ascent() + p.descent()) / 2f, p)
             }
@@ -2972,7 +3031,7 @@ object UiKit {
         }
         c.drawBitmap(disc, null, r, pBmp)
         if (number != null) {
-            val p = numberPaint(size * 0.46f, if (focus) Color.rgb(34, 22, 6) else Theme.gold, shadow = !focus)
+            val p = numberPaint(size * 0.46f, if (focus) Color.rgb(34, 22, 6) else Theme.gameGold, shadow = !focus)
                 .apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
             c.drawText(Tr.t(number.toString()), cx, cy - (p.ascent() + p.descent()) / 2f, p)
             return
@@ -3562,12 +3621,12 @@ object UiKit {
 
     /** a pane's ground over [r]: the list's (left) or the detail's ([right]) */
     fun pane(c: Canvas, r: RectF, right: Boolean = false) {
-        val b = tex(if (right) "pane_right" else "pane_left")
+        val b = if (Theme.cur.oled) null else tex(if (right) "pane_right" else "pane_left")
         if (b == null) {
             pFlat.style = Paint.Style.FILL; pFlat.color = if (right) Theme.panel else Theme.ink
             c.drawRect(r, pFlat); return
         }
-        c.drawBitmap(b, null, r, pLit)
+        c.drawBitmap(b, null, r, litPaint())
     }
 
     /** the game's divider between the two panes, down from [top] to [bottom], centred on [x] */
@@ -4351,7 +4410,7 @@ object UiKit {
                 val x = g.hx + (n - (pages - 1) / 2f) * (ds + 6f * s)
                 val dot = tex(if (n == page) "rpage_on" else "rpage_off")
                 if (dot != null) { pBmp.alpha = a; c.drawBitmap(dot, null, RectF(x - ds / 2f, dy - ds / 2f, x + ds / 2f, dy + ds / 2f), pBmp); pBmp.alpha = 255 }
-                else { pFlat.style = Paint.Style.FILL; pFlat.color = if (n == page) Color.argb(a, 255, 209, 0) else Color.argb(a, 70, 64, 52); c.drawCircle(x, dy, ds / 2f, pFlat) }
+                else { pFlat.style = Paint.Style.FILL; pFlat.color = if (n == page) Theme.focusA(a) else Color.argb(a, 70, 64, 52); c.drawCircle(x, dy, ds / 2f, pFlat) }
             }
             val gs = 46f * s
             pad(c, shoulderGlyph(false), g.hx - half, ty, gs, a)
@@ -5156,9 +5215,10 @@ object UiKit {
 
     /** the ground of the Overview ([page] false) or of a crafting page, over [r] */
     fun professionGround(c: Canvas, r: RectF, page: Boolean) {
-        val b = tex(if (page) "prof_ground_page" else "prof_ground")
+        // OLED: the Overview's stone goes black; a crafting page is paper and stays
+        val b = if (!page && Theme.cur.oled) null else tex(if (page) "prof_ground_page" else "prof_ground")
         if (b == null) { pFlat.style = Paint.Style.FILL; pFlat.color = Theme.ink; c.drawRect(r, pFlat); return }
-        c.drawBitmap(b, null, r, pLit)
+        c.drawBitmap(b, null, r, if (page) pLit else litPaint())
     }
 
     /**
@@ -6076,7 +6136,7 @@ object UiKit {
     fun holdRing(c: Canvas, cx: Float, cy: Float, radius: Float, fraction: Float) {
         val o = RectF(cx - radius, cy - radius, cx + radius, cy + radius)
         pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 4f; pFlat.strokeCap = Paint.Cap.ROUND
-        pFlat.color = Color.argb(90, 255, 209, 0); c.drawOval(o, pFlat)
+        pFlat.color = Theme.focusA(90); c.drawOval(o, pFlat)
         val f = fraction.coerceIn(0f, 1f)
         if (f > 0f) { pFlat.color = Theme.gold; pFlat.strokeWidth = 5f; c.drawArc(o, -90f, 360f * f, false, pFlat) }
         pFlat.strokeCap = Paint.Cap.BUTT; pFlat.style = Paint.Style.FILL
@@ -6123,7 +6183,7 @@ object UiKit {
         // the ring round the tile, with its bright head
         val rr = RectF(box.left - 6f, box.top - 6f, box.right + 6f, box.bottom + 6f)
         pHold.style = Paint.Style.STROKE; pHold.strokeCap = Paint.Cap.ROUND
-        pHold.strokeWidth = 4f; pHold.color = Color.argb(70, 255, 209, 0); c.drawRoundRect(rr, 10f, 10f, pHold)
+        pHold.strokeWidth = 4f; pHold.color = Theme.focusA(70); c.drawRoundRect(rr, 10f, 10f, pHold)
         // the gold runs ROUND THE TILE'S OWN EDGE, clockwise from the top middle (a circle over a square read wrong)
         pHold.strokeWidth = 5f; pHold.color = Theme.gold
         holdPath.reset(); holdPath.addRoundRect(rr, 10f, 10f, android.graphics.Path.Direction.CW)
@@ -6439,15 +6499,36 @@ object UiKit {
 
     /** a texture tiled over [r], darkened to [light] (1 = as it is) */
     private fun ground(c: Canvas, r: RectF, name: String, light: Float) {
-        val b = tex(name)
+        val t = Theme.cur
+        // OLED (the user, 2026-11-12: "I personally want an oled theme"): no stone, the page's pure black
+        val b = if (t.groundLight <= 0f) null else tex(name)
         if (b == null) {
             pFlat.style = Paint.Style.FILL; pFlat.color = Theme.ink
             c.drawRect(r, pFlat); return
         }
         val p = Paint(Paint.FILTER_BITMAP_FLAG)
         p.shader = android.graphics.BitmapShader(b, android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT)
-        p.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setScale(light, light, light, 1f) })
+        p.colorFilter = ColorMatrixColorFilter(groundMatrix(light))
         c.drawRect(r, p)
+    }
+
+    /** [light] as the theme draws its grounds: Classic exactly [light]; a Dark theme dims (groundLight) and greys (groundSat) the stone */
+    private fun groundMatrix(light: Float): ColorMatrix {
+        val t = Theme.cur
+        val k = light * t.groundLight
+        return ColorMatrix().apply {
+            if (t.groundSat != 1f) { setSaturation(t.groundSat); postConcat(ColorMatrix().apply { setScale(k, k, k, 1f) }) }
+            else setScale(k, k, k, 1f)
+        }
+    }
+    private var litFor: ThemeSpec? = null
+    private val pLitTheme = Paint(Paint.FILTER_BITMAP_FLAG)
+    /** the panes' 1.5x lift ([pLit]) as the theme draws its grounds (Classic: [pLit] itself) */
+    private fun litPaint(): Paint {
+        val t = Theme.cur
+        if (t === ThemePresets.CLASSIC) return pLit
+        if (litFor !== t) { litFor = t; pLitTheme.colorFilter = ColorMatrixColorFilter(groundMatrix(1.5f)) }
+        return pLitTheme
     }
 
     /** an edge piece repeated from its start to [to], across or down, at the frame's scale */
@@ -6551,6 +6632,13 @@ object UiKit {
         }
         tileCache[name] = out
         return out
+    }
+
+    /** a theme change (Theme.use, 2026-11-12): the recoloured pictures and the traced tab edges go, so they are made again in the new
+     *  theme's metal; the fonts stay */
+    @Synchronized
+    fun dropThemed() {
+        texCache.clear(); tileCache.clear(); missing.clear(); tabEdges.clear()
     }
 
     @Synchronized

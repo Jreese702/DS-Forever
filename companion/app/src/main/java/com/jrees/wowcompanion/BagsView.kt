@@ -1569,7 +1569,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         private var free = 0; private var total = 0; private var money: Long? = null
         private val pTitle = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Theme.gold; textSize = 48f; typeface = Typeface.DEFAULT_BOLD }
-        private val pSub = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.textDim; textSize = 34f }
+        private val pSub by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.textDim; textSize = 34f } }
         private val pMoney = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Theme.text; textSize = 36f; textAlign = Paint.Align.RIGHT }
 
@@ -1740,9 +1740,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     private class Grid(c: Context, private val st: State) : View(c) {
         private val p = Paints()
         private val tiles = ArrayList<Triple<RectF, Int, Int>>()     // hit box, bag, slot
-        private val pRule = Paint().apply { color = Theme.bronzeDim; strokeWidth = 2f }
+        private val pRule by themed { Paint().apply { color = Theme.bronzeDim; strokeWidth = 2f } }
         private val pDimOverlay = Paint().apply { color = Color.argb(150, 14, 11, 8) }
-        private val pLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.textDim; textSize = 30f }
+        private val pLabel by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.textDim; textSize = 30f } }
 
         companion object {
             const val COLS = 10          // v3: the room's full width (the addon's D-pad walks the same 10)

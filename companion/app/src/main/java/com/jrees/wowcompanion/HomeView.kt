@@ -1826,7 +1826,7 @@ class HomeView(
 
         private fun state(q: HomeQuest) = if (q.ready) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS
 
-        private val pGround = Paint().apply { color = Theme.panel }
+        private val pGround by themed { Paint().apply { color = Theme.panel } }
 
         /** the map's morph flies this card: it is not drawn here meanwhile (the flight draws it) */
         var cardHidden = false
@@ -2126,7 +2126,7 @@ class HomeView(
         private val rows = ArrayList<Pair<RectF, Int>>()
         private var scroll = 0f; private var rowsTop = 0f; private var rowsBottom = 0f
         private var noteText: String? = null; private var noteUntil = 0L
-        private val tp = TextPaint(UiKit.bodyPaint(23f, Theme.textDim))
+        private val tp by themed { TextPaint(UiKit.bodyPaint(23f, Theme.textDim)) }
 
         fun note(t: String) { noteText = t; noteUntil = System.currentTimeMillis() + NOTE_MS; invalidate() }
         fun close() { if (open != null) { open = null; sel = null; scroll = 0f; invalidate() } }
@@ -2609,7 +2609,7 @@ class HomeView(
         QuestTier.DIFFICULT -> Theme.questYellow
         QuestTier.VERY_DIFFICULT -> Theme.questOrange
         QuestTier.IMPOSSIBLE -> Theme.questRed
-        QuestTier.UNKNOWN -> Theme.gold
+        QuestTier.UNKNOWN -> Theme.gameGold
     }
 
     companion object {

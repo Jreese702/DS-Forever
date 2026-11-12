@@ -538,7 +538,7 @@ class ControllerView(
         private val ALL_TAB_VIEWS = listOf("normal", "combat", "radial", "party")
         private val ALL_TAB_NAMES = listOf("WoW Defaults", "In combat", "Spell radial", "Party mode")
         /** the tab's word, measured for the swords' room (UiKit.tab's size) */
-        private val PTABW = UiKit.bodyPaint(28f, Theme.text)
+        private val PTABW by themed { UiKit.bodyPaint(28f, Theme.text) }
         /** the clean-up buttons' small lines stay this far from the Home bar's frame */
         private const val TEXT_INSET = 24f
     }

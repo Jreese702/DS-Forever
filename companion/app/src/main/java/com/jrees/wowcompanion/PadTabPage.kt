@@ -1578,7 +1578,7 @@ class PadTabPage(
         /** the base set's fixed face buttons (positions 5-8: the game's PAD3 / PAD4 / PAD2 / PAD1), the game's own pictures */
         private val FIXED_ART = arrayOf("fixed_interact", "fixed_inspect", "square_exit_up", "fixed_jump")
         private val PBMP = Paint(Paint.FILTER_BITMAP_FLAG)
-        private val PFILL = Paint().apply { color = Color.rgb(18, 14, 9) }
+        private val PFILL by themed { Paint().apply { color = if (Theme.classic) Color.rgb(18, 14, 9) else Theme.raised } }
         /** UI Art's "stays the same" dimming, ink 150 / 255 */
         private val PDIM = Paint().apply { color = Color.argb(150, 14, 10, 6) }
         /** p9: the swap mark's stand-in while the game's picture is not on the device */

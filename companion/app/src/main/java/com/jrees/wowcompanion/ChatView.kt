@@ -1092,7 +1092,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         if (pad.focus == Focus.Field) postDelayed(blink, 530)
     }
 
-    private val caretPaint = Paint().apply { color = Theme.gold; strokeWidth = 3f }
+    private val caretPaint by themed { Paint().apply { color = Theme.gold; strokeWidth = 3f } }
 
     private fun barMarks(c: Canvas) {
         val f = pad.focus ?: return
