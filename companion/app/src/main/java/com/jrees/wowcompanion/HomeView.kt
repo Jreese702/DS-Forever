@@ -1140,6 +1140,8 @@ class HomeView(
     }
     private var laidPartyMode = PartyLayout.Mode.REST
     private var laidPartyN = 0
+    /** m131: a pet in place of a party member at the same n changes the cells' widths */
+    private var laidPartyPet = false
     private var laidPartyOn = false
     private var laidPartyModule = false
     init {
@@ -1157,7 +1159,7 @@ class HomeView(
         val combat = flow.combat(grow.shown(now) && !partyOnHere())
         if (combat && flow.takeover) grewAt = now
         val placed = flow.full == null || flow.takeover
-        if (shown != null && (combat || placed && (n != laidPartyN || on != laidPartyOn || partyModeNow(flow.screen) != laidPartyMode
+        if (shown != null && (combat || placed && (n != laidPartyN || on != laidPartyOn || (p?.pet == true) != laidPartyPet || partyModeNow(flow.screen) != laidPartyMode
                 || PARTY_MODULE != laidPartyModule))) changed()
         partyView.invalidate()
         shown?.let { partyStripSync(it) }
@@ -1210,9 +1212,9 @@ class HomeView(
         val p = party.party ?: return base
         val chat = base[Part.CHAT] ?: return base
         val mode = partyModeNow(s)
-        laidPartyMode = mode; laidPartyN = p.n; laidPartyOn = p.onLive
+        laidPartyMode = mode; laidPartyN = p.n; laidPartyOn = p.onLive; laidPartyPet = p.pet
         val right = w / 2f - 5f
-        val m = PartyLayout.module(mode, p.n, top = chat.top, left = chat.left, right = right)
+        val m = PartyLayout.module(mode, p.n, pet = p.pet, top = chat.top, left = chat.left, right = right)
         partyView.mode = mode
         val out = LinkedHashMap(base)
         out[Part.PARTY] = RectF(chat.left, chat.top - PartyModuleView.RISE, right, m.well.b)

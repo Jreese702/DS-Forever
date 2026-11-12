@@ -19,8 +19,8 @@ object PartyModel {
     val PICKS = listOf("a", "x", "yc", "touch", "zla", "zlx", "zly", "zra", "zrx", "zry")
     /**
      * p37 THE CONTROLLER TAB'S PLACES (PadTabCtl's slotAt; party_design.md B): the slot on layer [set] (1 base, 2 ZL, 3 ZR, 4 both:
-     * locked) at the router's position [pos] (8 A, 5 X, 6 Y; the D-pad 1-4 and B 7 are locked: Up / Down move the pick, Left / Right
-     * are kept for raids). Null = a locked place.
+     * locked) at the router's position [pos] (8 A, 5 X, 6 Y; the D-pad 1-4 and B 7 are locked: p38, the user's adaptive rows
+     * 2026-11-11 - all four D-pad directions move the pick). Null = a locked place.
      */
     fun slotAt(set: Int, pos: Int): String? {
         val f = when (pos) { 8 -> "a"; 5 -> "x"; 6 -> "y"; else -> return null }
@@ -32,8 +32,8 @@ object PartyModel {
         for (set in 1..3) for (pos in listOf(8, 5, 6)) if (slotAt(set, pos) == slot) return set to pos
         return null
     }
-    /** the D-pad's Left / Right in Party mode: kept for raid navigation (the user, 2026-11-11), never assignable */
-    fun reserved(pos: Int) = pos == 1 || pos == 3
+    /** p38 (the user's adaptive rows, 2026-11-11): the D-pad's four places (1 Left, 2 Up, 3 Right, 4 Down) all move the pick */
+    fun movesPick(pos: Int) = pos in 1..4
 
     /** the Controller tab's chooser lists from the add-on (PadTabCtl p33 `padtabctl.chooser.list`): "party" = a slot's spell (row 1 =
      *  the pseudo row Empty / Inspect / Target, then partycfg.spells), "pbuff" = Smart Y's Add (sy.known minus the list, no pseudo row) */
@@ -48,7 +48,9 @@ object PartyModel {
         val dead: Boolean, val off: Boolean, val pt: String, val lv: Int?, val rng: Boolean?,
     ) {
         /** offline, or out of range by the shared answer (party_design.md A.4): drawn at [DIM] on both screens */
-        val dim: Boolean get() = off || (rng == false && u != "player")
+        val dim: Boolean get() = off || (rng == false && u != "player" && u != "pet")
+        /** m131: your pet's entry (right after you while one is out) */
+        val isPet: Boolean get() = u == "pet"
     }
 
     /** offline / out of range: the same 0.45 as the top screen (party_design.md A.4) */
@@ -61,6 +63,8 @@ object PartyModel {
         /** Party mode on and routing (not suspended by a room / window): the only state that draws a box */
         val onLive: Boolean get() = on && aside == null
         val n: Int get() = m.size
+        /** m131: a pet is out (its entry the second, PadMap's PM.units) */
+        val pet: Boolean get() = m.any { it.isPet }
     }
 
     data class Spell(val id: Int, val n: String, val i: Int, val k: Boolean = true, val d: Boolean = false, val res: Boolean = false)
@@ -100,7 +104,7 @@ object PartyModel {
         val p = msg.optJSONObject("p") ?: return null
         val arr = p.optJSONArray("m") ?: return null
         val m = ArrayList<Member>()
-        for (k in 0 until minOf(arr.length(), 5)) {
+        for (k in 0 until minOf(arr.length(), MAX_N)) {
             val o = arr.optJSONObject(k) ?: continue
             val u = o.str("u") ?: continue
             m.add(Member(
@@ -161,9 +165,15 @@ object PartyModel {
 
     // ------------------------------------------------------------------------------------------------ units, NAV
 
-    /** "player" 0, "party1".."party4" 1..4, else null */
+    /** m131: at most you, your pet and four party members */
+    const val MAX_N = 6
+    /** m131: the pet's unit index (its pick cell = the party row's pick + 5; PadMap PM.PET_COL) */
+    const val PET_I = 5
+
+    /** "player" 0, "party1".."party4" 1..4, "pet" 5 (m131), else null */
     fun unitIndex(u: String?): Int? = when {
         u == "player" -> 0
+        u == "pet" -> PET_I
         u != null && u.startsWith("party") -> u.removePrefix("party").toIntOrNull()?.takeIf { it in 1..4 }
         else -> null
     }
@@ -175,22 +185,45 @@ object PartyModel {
         "PADDUP" -> Dir.UP; "PADDDOWN" -> Dir.DOWN; "PADDLEFT" -> Dir.LEFT; "PADDRIGHT" -> Dir.RIGHT; else -> null
     }
 
-    /** m129 (party_design.md A.1): ONE COLUMN, one member per row (index 1 = you): n1 [1]; n3 [1][2][3]; n5 [1][2][3][4][5] */
-    fun rows(n: Int): List<List<Int>> = (1..n.coerceIn(1, 5)).map { listOf(it) }
+    /**
+     * m131 ADAPTIVE ROWS (party_design.md "ADAPTIVE ROWS"; the user, 2026-11-11: "when one two or three full sized, when 4, bottom 2
+     * consolidate, when 5 the next 2 consolidate"): the n entries (1-based: you, your pet while out, party1..4) in min(n, 3) rows, the
+     * bottom max(0, n - 3) of them shared by two. The first [fullRows] entries are full-width rows, the rest pairs (left, right).
+     * n 1 [1]; n 3 [1][2][3]; n 4 [1][2][3,4]; n 5 [1][2,3][4,5]; n 6 [1,2][3,4][5,6].
+     */
+    fun rows(n: Int): List<List<Int>> {
+        val m = n.coerceIn(1, MAX_N)
+        val f = fullRows(m)
+        return (1..f).map { listOf(it) } + (f + 1..m step 2).map { listOf(it, it + 1) }
+    }
+
+    /** how many of the first entries stand alone on a full-width row */
+    fun fullRows(n: Int): Int { val m = n.coerceIn(1, MAX_N); return if (m <= 3) m else 6 - m }
 
     /**
-     * THE PICK'S MOVES (identical in the add-on's OV.partyNav, both test the same column): Up / Down one row, no wrap; Left / Right
-     * never (the user, 2026-11-11: "this will need to support raids at some point" - kept for raid navigation, nothing on them).
-     * Null = no move (the strip dims that arrow). A box past n clamps first.
+     * THE PICK'S MOVES over [rows] (the SAME rule as the add-on's OV.partyNav and its PARTY-NAV snippet body; tools/test_party.py writes
+     * the geometric table both are tested against, party-fixtures/party_nav.json): Up / Down a row (a shared row into a full one: that
+     * cell; a full row into a shared one: its LEFT cell; shared to shared: the same side), Left / Right only inside a shared row; no
+     * wrap. Null = no move (the strip dims that arrow). A box past n clamps first.
      */
     fun nav(n: Int, from: Int, dir: Dir): Int? {
-        val m = n.coerceIn(1, 5)
-        val f = from.coerceIn(1, m)
-        return when (dir) {
-            Dir.UP -> (f - 1).takeIf { it >= 1 }
-            Dir.DOWN -> (f + 1).takeIf { it <= m }
+        val m = n.coerceIn(1, MAX_N)
+        val b = from.coerceIn(1, m)
+        val f = fullRows(m)
+        val to: Int? = if (b <= f) when (dir) {
+            Dir.UP -> (b - 1).takeIf { it >= 1 }
+            Dir.DOWN -> (b + 1).takeIf { it <= m }
             Dir.LEFT, Dir.RIGHT -> null
+        } else {
+            val right = (b - f) % 2 == 0
+            when (dir) {
+                Dir.LEFT -> if (right) b - 1 else null
+                Dir.RIGHT -> if (!right) b + 1 else null
+                Dir.UP -> if (b - 2 > f) b - 2 else f.takeIf { it >= 1 }
+                Dir.DOWN -> (b + 2).takeIf { it <= m }
+            }
         }
+        return to
     }
 
     // ------------------------------------------------------------------------------------------------ the app's live state

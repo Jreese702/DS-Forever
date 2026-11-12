@@ -4,10 +4,14 @@ package com.jrees.wowcompanion
  * PARTY MODE'S HOME MODULE, EVERY RECT (party_design.md C and the user's decisions 2026-11-11; it replaces PARTY_BUILD.md 4.2's grid).
  * Pure (no Android types: [Box], never RectF), JVM-tested (PartyLayoutTest). All px on the 1240 x 1080 bottom screen.
  *
- * ONE COLUMN, the top screen's order: you, then party1..4, one plate per member. The well is x 8..615; the Select tab always stands at
- * x 20..56, the column's full height, and the plates run x 64..603, so nothing moves when Party mode turns on or off (the user: the
- * tab STAYS and lights up gold while Party mode is on). Plates 64 high at rest, 88 in a fight with Party mode on (bigger targets), 56
- * in the takeover (a fight with Party mode off, the well's top at y 398); 8 px between them.
+ * m131 ADAPTIVE ROWS (party_design.md "ADAPTIVE ROWS"; the user, 2026-11-11: "when one two or three full sized, when 4, bottom 2
+ * consolidate, when 5 the next 2 consolidate", "WHEN NO PET MAKE THE PLAYER FULL SIZED", "MAKE THE PET A BIT SMALLER"): the entries
+ * (you, your pet while one is out, party1..4) in [PartyModel.rows]: min(n, 3) rows, the bottom max(0, n - 3) shared by two cells; a
+ * full row's cell spans the plates' width, a shared row's two cells split it (8 px apart) in halves - the pet's cell narrower
+ * ([PET_SHARE]) than the one it shares with. No pet = no pet cell. The well is x 8..615; the Select tab always stands at x 20..56, the
+ * column's full height, and the plates run x 64..603, so nothing moves when Party mode turns on or off (the user: the tab STAYS and
+ * lights up gold while Party mode is on). Rows 64 high at rest, 88 in a fight with Party mode on (bigger targets), 56 in the takeover
+ * (a fight with Party mode off, the well's top at y 398); 8 px between them.
  */
 object PartyLayout {
     data class Box(val l: Float, val t: Float, val r: Float, val b: Float) {
@@ -21,8 +25,8 @@ object PartyLayout {
 
     enum class Mode { REST, FIGHT_ON, FIGHT_OFF }
 
-    /** [cells] = the plates in box order (index 0 = you); [tag] = the Select tab (always there) */
-    data class Module(val well: Box, val cells: List<Box>, val tag: Box, val chatTop: Float)
+    /** [cells] = the plates in box order (index 0 = you); [tag] = the Select tab (always there); [rows] = each cell's row (0-based) */
+    data class Module(val well: Box, val cells: List<Box>, val tag: Box, val chatTop: Float, val rows: List<Int> = cells.indices.toList())
 
     const val LEFT = 8f
     const val RIGHT = 615f
@@ -41,18 +45,31 @@ object PartyLayout {
     const val REST_H = 64f
     const val FIGHT_H = 88f
     const val TAKEOVER_H = 56f
+    /** m131 ("MAKE THE PET A BIT SMALLER"): the pet's share of a shared row's width (its partner the rest) */
+    const val PET_SHARE = 0.4f
 
     fun defaultTop(mode: Mode) = if (mode == Mode.FIGHT_OFF) FIGHT_TOP else REST_TOP
     fun plateH(mode: Mode) = when (mode) { Mode.REST -> REST_H; Mode.FIGHT_ON -> FIGHT_H; Mode.FIGHT_OFF -> TAKEOVER_H }
 
-    /** the module for [n] members (1..5) in [mode], its well's top at [top] */
-    fun module(mode: Mode, n: Int, top: Float = defaultTop(mode), left: Float = LEFT, right: Float = RIGHT): Module {
-        val m = n.coerceIn(1, 5)
+    /**
+     * the module for [n] entries (1..6) in [mode], its well's top at [top]; [pet] = the second entry is your pet (m131: its cell the
+     * narrower one of a shared row)
+     */
+    fun module(mode: Mode, n: Int, pet: Boolean = false, top: Float = defaultTop(mode), left: Float = LEFT, right: Float = RIGHT): Module {
+        val m = n.coerceIn(1, PartyModel.MAX_N)
         val h = plateH(mode)
         val pl = left + IN + SIDE_W + SIDE_GAP; val pr = right - IN
-        val cells = (0 until m).map { k -> val t = top + IN + k * (h + GAP); Box(pl, t, pr, t + h) }
+        val cells = ArrayList<Box>(m)
+        val rowOf = ArrayList<Int>(m)
+        for ((r, row) in PartyModel.rows(m).withIndex()) {
+            val t = top + IN + r * (h + GAP)
+            if (row.size == 1) { cells.add(Box(pl, t, pr, t + h)); rowOf.add(r); continue }
+            val share = when { pet && row[0] == 2 -> PET_SHARE; pet && row[1] == 2 -> 1f - PET_SHARE; else -> 0.5f }
+            val mid = pl + (pr - pl - GAP) * share
+            cells.add(Box(pl, t, mid, t + h)); cells.add(Box(mid + GAP, t, pr, t + h)); rowOf.add(r); rowOf.add(r)
+        }
         val well = Box(left, top, right, cells.last().b + IN)
-        return Module(well, cells, Box(left + IN, well.t + IN, left + IN + SIDE_W, well.b - IN), well.b + CHAT_GAP)
+        return Module(well, cells, Box(left + IN, well.t + IN, left + IN + SIDE_W, well.b - IN), well.b + CHAT_GAP, rowOf)
     }
 
     // ------------------------------------------------------------------------------------------------ a plate's parts
@@ -72,16 +89,35 @@ object PartyLayout {
     const val CHIP = 40f
     const val CHIP_STEP = 50f
     const val BADGE = 24f
-    /** the picked plate's chips (A, X, Y of the layer on show), [k] of them, right-aligned before the LB glyph, 50 px apart */
+    /** m131: a cell narrower than this (a shared row's) takes the small chips */
+    const val WIDE_CELL = 360f
+    const val CHIP_SMALL = 30f
+    const val BADGE_SMALL = 18f
+    /** m131: the name keeps at least this much room; fewer chips when it would not */
+    const val MIN_NAME = 60f
+    /** a cell's chip size: 40 px, 30 on a narrow (shared-row) cell */
+    fun chipSize(p: Box) = if (p.w >= WIDE_CELL) CHIP else CHIP_SMALL
+    /** the picked plate's chips (A, X, Y of the layer on show), [k] of them, right-aligned before the LB glyph, 10 px apart */
     fun chips(p: Box, k: Int): List<Box> {
         val right = glyph(p).l - 12f
+        val size = chipSize(p)
+        val step = size + CHIP_STEP - CHIP
         return (0 until k).map { j ->
-            val r = right - (k - 1 - j) * CHIP_STEP
-            Box(r - CHIP, p.cy - CHIP / 2f, r, p.cy + CHIP / 2f)
+            val r = right - (k - 1 - j) * step
+            Box(r - size, p.cy - size / 2f, r, p.cy + size / 2f)
         }
     }
-    /** a chip's glyph badge (24 px) on its top-right corner */
-    fun badge(chip: Box) = Box(chip.r - BADGE / 2f - 4f, chip.t - BADGE / 2f + 4f, chip.r + BADGE / 2f - 4f, chip.t + BADGE / 2f + 4f)
+    /** m131: how many of [want] chips fit with the name's [MIN_NAME] room kept (fewer on narrow cells) */
+    fun chipsFit(p: Box, mode: Mode, want: Int, glyph: Boolean): Int {
+        var k = want.coerceAtLeast(0)
+        while (k > 0 && nameRoom(p, mode, k, glyph) < MIN_NAME) k--
+        return k
+    }
+    /** a chip's glyph badge (24 px; 18 on a small chip) on its top-right corner */
+    fun badge(chip: Box): Box {
+        val s = if (chip.w >= CHIP) BADGE else BADGE_SMALL
+        return Box(chip.r - s / 2f - 4f, chip.t - s / 2f + 4f, chip.r + s / 2f - 4f, chip.t + s / 2f + 4f)
+    }
     /** the room the name has before the chips (or the glyph) */
     fun nameRoom(p: Box, mode: Mode, chips: Int, glyph: Boolean): Float {
         val stop = if (chips > 0) chips(p, chips).first().l else if (glyph) glyph(p).l else p.r - 8f
@@ -110,7 +146,7 @@ object PartyLayout {
         else TabParts(t.cx, t.cy - 10f, 30f, t.cy + 16f, 18f, t.cy + 16f, 18f, t.b - 11f, 16f, 6f, true)
     }
 
-    /** the notch's centre y: the picked plate's (1-based [box]) */
+    /** the notch's centre y: the picked plate's (1-based [box]): its row's centre (m131: a shared row's two cells share it) */
     fun notchY(m: Module, box: Int): Float = m.cells[(box - 1).coerceIn(0, m.cells.size - 1)].cy
 }
 

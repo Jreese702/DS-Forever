@@ -38,6 +38,21 @@ class PartyFixturesTest {
         assertFalse(off.on); assertNull(off.box)
     }
 
+    /** m131: the pet out - its entry right after you (i 5, no class), the shape's cells, a Down from you lands on it */
+    @Test fun partyWithThePet() {
+        val p = PartyModel.parseParty(fx("party_pet_on"))!!
+        assertEquals(listOf("player", "pet", "party1", "party2"), p.m.map { it.u }); assertEquals(listOf(0, 5, 1, 2), p.m.map { it.i })
+        assertTrue(p.pet); assertTrue(p.m[1].isPet); assertEquals("", p.m[1].c); assertNull(p.m[1].col); assertFalse(p.m[1].dim)
+        assertEquals(listOf(listOf(1), listOf(2), listOf(3, 4)), PartyModel.rows(p.n))
+        val b = PartyModel.parseBox(fx("partybox_pet_move"))!!
+        assertEquals("move", b.k); assertEquals(2, b.box); assertEquals("pet", b.u); assertEquals(4, b.cnt)
+        assertEquals(b.box, PartyModel.nav(p.n, 1, PartyModel.Dir.DOWN))
+        val s = PartyModel.State()
+        s.onParty(p, true, 0L)
+        assertTrue(s.onBox(b, true)); assertEquals(2, s.box)
+        assertEquals(listOf("party" to 5), PartyTaps.choose(PartyModel.parseCfg(fx("partycfg_shaman_default")), p.m[1].i))
+    }
+
     @Test fun cfgShamanDefaults() {
         val c = PartyModel.parseCfg(fx("partycfg_shaman_default"))!!
         assertEquals(331, c.slot("a")!!.id); assertTrue(c.slot("a")!!.k); assertTrue(c.slot("a")!!.d)

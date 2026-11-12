@@ -12,7 +12,9 @@ the aura row moved by it, plain presence / happiness / death only, its own curve
 prd12: the user's device look - the player's green, ONE frame round both pet bars (1 px apart), a 36 px round portrait centred on them,
 a 20 px happiness face off the portrait, no name, the strip lower and centred under the player's bars;
 prd13: the shade over the pet's health in the player's proportion (45 % of the health bar, not of the unit), the portrait clear of
-the player's power-bar lip, the happiness face inside the HUD frame at the minimum width.
+the player's power-bar lip, the happiness face inside the HUD frame at the minimum width;
+prd14: Party mode's pick on you / your pet (PadMap m131's box.u) - a gold box round the player's bars / the pet's strip, the HUD kept
+shown while boxed, nothing while Party mode is off or the pick is a party member.
 Needs lupa. Exit code 1 on any failure."""
 import os
 import sys
@@ -83,6 +85,12 @@ function Region:GetFrameLevel() return self.level or 1 end
 function Region:SetFrameLevel(l) self.level = l end
 function Region:SetClipsChildren(c) self.clips = c end
 function Region:SetBlendMode(m) self.blend = m end
+-- prd14 review: every point a region holds (the stub keeps the last only), for the pick boxes' geometry
+do
+    local sp, cl = Region.SetPoint, Region.ClearAllPoints
+    function Region:SetPoint(...) sp(self, ...); self.anch = self.anch or {}; self.anch[#self.anch + 1] = { ... } end
+    function Region:ClearAllPoints() cl(self); self.anch = nil end
+end
 Enum = Enum or {}
 Enum.StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 }
 INC, ABS = nil, nil
@@ -473,7 +481,7 @@ def main():
     chk("prd8: read back at log in: 300 wide, 100 %%", P.wd == 300 and P.sc == 100)
     P.select(); P.nudge(0); P.sel = "y"
     # prd10 (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"): the pips under the power bar
-    chk("prd13: the version tag", P.V == "prd13")
+    chk("prd14: the version tag", P.V == "prd14")
     chk("prd10: the player's UNIT_POWER_FREQUENT is heard (combo points at the next frame)", ev.events.UNIT_POWER_FREQUENT == "player")
     L.execute('''
         local upm = UnitPowerMax
@@ -696,6 +704,75 @@ def main():
     chk("prd11 review: ... the player hurt: the strip with the bars (%s)" % P.petL.alpha.n, P.petL.alpha.n == 1)
     ME.hp = 1000; Lg.PET_REFUSE = None; P.petCurveBad = None
     Lg.PET = None; run(0.3)
+    # prd14 (the user, 2026-11-11: "When selecting myself or my pet it just highlights my HUD bar"): Party mode's pick on you / your pet
+    Lg.WowCompanion.padMap = None
+    ME.fight = False; fire("PLAYER_REGEN_ENABLED"); ME.hp = 1000; run(5)
+    chk("prd14: no PadMap: no box (%s), the HUD faded out of a fight at full health (%s)" % (P.pickWho, P.why),
+        P.pickWho is None and P.pick is not None and P.pick.you.on is not True and P.why != "party")
+    L.execute('PMP = { on = false, u = "player" }; WowCompanion.padMap = { party = { on = function() return PMP.on end, '
+              'box = function() return { u = PMP.u } end } }')
+    PMP = Lg.PMP
+    run(0.5)
+    chk("prd14: Party mode off: no box (%s)" % P.pickWho, P.pickWho is None and P.pick.you.on is not True and P.why != "party")
+    PMP.on = True; run(0.5)
+    you = P.pick.you
+    chk("prd14: the pick on you: the gold box round the player's bars (%s), the HUD shown for it (%s, alpha %.2f)" % (P.pickWho, P.why, P.alpha),
+        P.pickWho == "player" and you.on is True and you.t[1].shown is True and P.pick.pet.on is not True and P.why == "party"
+        and P.shown is True and P.g.alpha == 1)
+    chk("prd14: the box in Hub's ring gold (1, 0.82, 0), on P.f's own layer (never the curve's P.g)",
+        [you.t[1].colortex[i] for i in (1, 2, 3)] == [1, 0.82, 0] and L.eval("rawequal(WowCompanion.prd.pick.host.parent, WowCompanion.prd.f)"))
+    PMP.u = "pet"; run(0.5)
+    chk("prd14: the pick on the pet with no pet out: no box (%s)" % P.pickWho, P.pickWho is None and you.on is not True and P.pick.pet.on is not True)
+    Lg.PET = L.table_from({"hp": 300, "hpMax": 500, "pw": 60, "pwMax": 100, "ptype": 2, "tok": "FOCUS", "name": "Wolf", "icon": 132203, "hunter": True})
+    fire("UNIT_PET", "player"); run(0.5)
+    chk("prd14: the pick on the pet, its strip out: the gold box round the strip (%s), none round yours; the strip plainly shown (%s)"
+        % (P.pickWho, P.petSrc), P.pickWho == "pet" and P.pick.pet.on is True and you.on is not True and P.petL.shown is True
+        and P.petL.alpha == 1 and P.petSrc == "party")
+    # prd14 review (two reviewers, 2026-11-11): each box hangs on ONE area frame: the area's TOPLEFT on the first region, its BOTTOMRIGHT
+    # on the second; all eight edge points on the area itself (no edge spans two regions - the pet's clashed: portrait vs bars)
+    geo = L.eval('''(function()
+        local P = WowCompanion.prd
+        local function pts(r) local o = {}; for i, p in ipairs(r.anch or {}) do o[i] = p end; return o end
+        local function box(r, tl, br)
+            local a = pts(r.area)
+            if #a ~= 2 or a[1][1] ~= "TOPLEFT" or not rawequal(a[1][2], tl) or a[1][3] ~= "TOPLEFT"
+                or a[2][1] ~= "BOTTOMRIGHT" or not rawequal(a[2][2], br) or a[2][3] ~= "BOTTOMRIGHT" then return "area" end
+            local want = { { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
+            for i = 1, 4 do
+                local e = pts(r.t[i])
+                if #e ~= 2 then return "edge" .. i .. " n" end
+                for j = 1, 2 do
+                    if e[j][1] ~= want[i][j] or e[j][3] ~= want[i][j] or not rawequal(e[j][2], r.area) or e[j][4] ~= 0 or e[j][5] ~= 0 then
+                        return "edge" .. i .. "." .. j
+                    end
+                end
+            end
+            return a
+        end
+        local y, q = box(P.pick.you, P.hp, P.pw), box(P.pick.pet, P.pet.ring, P.pet.unit)
+        if type(y) == "string" then return "you " .. y end
+        if type(q) == "string" then return "pet " .. q end
+        local g, pad, k = P.petGeo(), P.PICK_PAD, P.HH / 8
+        local s = (P.pet.ring.w or P.PET_ICON) / P.PET_ICON                -- the spec px -> UI scale (u is linear)
+        -- the pet's area in the row's own frame (L's top-left = 0, 0; y down), in spec px: left / top / right / bottom
+        local ringL, ringT = g.x0, g.iconTop
+        local unitR, unitB = g.x0 + P.PET_ICON + P.PET_IGAP + g.barW, g.unitTop + g.unit
+        local l, t = ringL + q[1][4] / s, ringT - q[1][5] / s
+        local r, b = unitR + q[2][4] / s, unitB - q[2][5] / s
+        return string.format("%.3f %.3f %.3f %.3f|%.3f %.3f %.3f %.3f", l, t, r, b,
+            g.x0 - pad, -pad, unitR + 7 * k + pad, g.row + pad)
+    end)()''')
+    gl = geo.split("|") if "|" in geo else None
+    chk("prd14 review: the boxes on one area each, every edge on it alone; the pet's area = the row: portrait left, row top / bottom, the "
+        "bars' right rim, PICK_PAD out (%s)" % geo, gl is not None and gl[0] == gl[1])
+    PMP.u = "party1"; run(0.5)
+    chk("prd14: the pick on a party member: no box here (Hub's ring on the top block)", P.pickWho is None and P.pick.pet.on is not True)
+    PMP.u = "player"; run(0.5)
+    PMP.on = False; run(5)
+    chk("prd14: Party mode off again: the box gone, the HUD back to its own rules (%s)" % P.why, P.pickWho is None and you.on is not True
+        and P.why != "party")
+    Lg.WowCompanion.padMap = None
+    Lg.PET = None; fire("UNIT_PET", "player"); run(0.3)
     # tt1, HIDE THE GAME'S TOOLTIPS (the user: "I need a setting to hide top screen tooltips"): alpha only, held by hooks
     TT = Lg.WowCompanion.tips
     tip = Lg.GameTooltip

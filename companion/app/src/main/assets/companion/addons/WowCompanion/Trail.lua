@@ -2919,7 +2919,12 @@ end
 -- and the pet's green read darker; now frameFor takes an optional shade height and the pet's unit passes 0.45 * PET_HH (the player's
 -- and the target's bars unchanged). Review nits: the portrait 2 spec px clear of the player's power-bar lip (PET_GAP 17); the
 -- happiness face counted in the centring width while it can show (P.petHappyOn), the pet bars narrowed to fit at W_MIN = 180.
-WC.prd = { V = "prd13", PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
+-- prd14 PARTY MODE'S PICK ON YOU / YOUR PET (the user, 2026-11-11: "When selecting myself or my pet it just highlights my HUD bar"; the
+-- adaptive rows, PadMap m131): while Party mode is on and its pick (WC.padMap.party.box().u, our own attribute: plain) is "player", a
+-- gold box (Hub's ring gold 1 / 0.82 / 0, PICK_PAD spec px outside the frame) stands round the player's two bars; on "pet", round the
+-- pet's strip (portrait to bars). Hidden whenever Party mode is off. While one of them is the pick the HUD stays shown at full alpha
+-- (why "party": the box never frames nothing); the box lives on P.f itself, never on the curve's layer. Read every PICK_S, nothing written.
+WC.prd = { V = "prd14", PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
            PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
@@ -3224,6 +3229,8 @@ do
         for i = 1, P.DEBUFF_MAX do P.debuffs[i] = icon(f, i) end
         P.petL, P.pet = nil, nil
         P.petBuild()                                                   -- prd11: the pet's strip (its own layer on P.f)
+        P.pick = nil
+        P.pickBuild()                                                  -- prd14: Party mode's pick boxes (you / your pet), with these bars
         P.place()
         return f
     end
@@ -3758,6 +3765,81 @@ do
         P.petSrc = "plain"
     end
 
+    -- ---------------------------------------------------------------- prd14: Party mode's pick on you / your pet
+    -- Party mode's pick when it is you or your pet (PadMap's export: on, box.u - its own secure attributes, plain), else nil
+    function P.partyPick()
+        local p = type(WC.padMap) == "table" and WC.padMap.party or nil
+        if type(p) ~= "table" or type(p.on) ~= "function" or type(p.box) ~= "function" then return nil end
+        local okO, on = pcall(p.on)
+        if not okO or on ~= true then return nil end
+        local okB, b = pcall(p.box)
+        local who = okB and type(b) == "table" and b.u or nil
+        if who == "player" or who == "pet" then return who end
+        return nil
+    end
+    -- a gold box of four edges on P.f's own top layer (never on the curve's P.g, never under the pet strip's alpha). prd14 review (the
+    -- user's ask, 2026-11-11: the box round the bars / the strip): ONE mouse-less area frame per box spans what is boxed (its two corners
+    -- may come from two regions: a frame's TOPLEFT and BOTTOMRIGHT are independent), and all four edges hang on that one area - no edge
+    -- takes its two points from two regions (those clashed on the pet: the portrait's top against the bars' top, 46 px apart in x)
+    function P.pickRing(host)
+        local r = { t = {} }
+        r.area = CreateFrame("Frame", nil, host)
+        r.area:EnableMouse(false)
+        for i = 1, 4 do
+            r.t[i] = host:CreateTexture(nil, "OVERLAY", nil, 7)
+            r.t[i]:SetColorTexture(P.PICK_GOLD[1], P.PICK_GOLD[2], P.PICK_GOLD[3], 0.95)
+            r.t[i]:Hide()
+        end
+        -- the area: TOPLEFT on tl (+ offsets), BOTTOMRIGHT on br (+ offsets); the edges on the area alone
+        function r.place(tl, tlx, tly, br, brx, bry)
+            local t, a, px = r.t, r.area, u(P.PICK_PX)
+            a:ClearAllPoints()
+            a:SetPoint("TOPLEFT", tl, "TOPLEFT", tlx, tly)
+            a:SetPoint("BOTTOMRIGHT", br, "BOTTOMRIGHT", brx, bry)
+            for i = 1, 4 do t[i]:ClearAllPoints() end
+            t[1]:SetPoint("TOPLEFT", a, "TOPLEFT", 0, 0); t[1]:SetPoint("TOPRIGHT", a, "TOPRIGHT", 0, 0); t[1]:SetHeight(px)
+            t[2]:SetPoint("BOTTOMLEFT", a, "BOTTOMLEFT", 0, 0); t[2]:SetPoint("BOTTOMRIGHT", a, "BOTTOMRIGHT", 0, 0); t[2]:SetHeight(px)
+            t[3]:SetPoint("TOPLEFT", a, "TOPLEFT", 0, 0); t[3]:SetPoint("BOTTOMLEFT", a, "BOTTOMLEFT", 0, 0); t[3]:SetWidth(px)
+            t[4]:SetPoint("TOPRIGHT", a, "TOPRIGHT", 0, 0); t[4]:SetPoint("BOTTOMRIGHT", a, "BOTTOMRIGHT", 0, 0); t[4]:SetWidth(px)
+        end
+        function r.show(on)
+            for i = 1, 4 do if on then r.t[i]:Show() else r.t[i]:Hide() end end
+            r.on = on
+        end
+        return r
+    end
+    -- built with the bars: one box round the player's health + power (their PRD frames: 3 texels up / left, 7 right, 8 down; the two bars
+    -- share x: both TOP-centred, P.W wide), one round the pet's whole strip row: the portrait's left to the bars' right rim (7 texels at
+    -- the PLAYER's scale, the pet's frame uses it: P.petBuild o.k), and in y the row itself (P.petGeo: the row's top and bottom are the
+    -- taller of the portrait and the bars' unit with its rims, whichever that is)
+    function P.pickBuild()
+        if P.pick or not P.f then return P.pick end
+        local host = CreateFrame("Frame", nil, P.f)
+        host:SetAllPoints(P.f)
+        host:EnableMouse(false)
+        pcall(function() host:SetFrameLevel(P.hp:GetFrameLevel() + 30) end)
+        local k = u(P.HH / 8)
+        local pad = u(P.PICK_PAD)
+        local o = { host = host, you = P.pickRing(host), pet = P.pickRing(host) }
+        o.you.place(P.hp, -(3 * k + pad), 3 * k + pad, P.pw, 7 * k + pad, -(8 * u(P.PH / 8) + pad))
+        if P.pet and P.pet.ring and P.pet.unit then
+            local g = P.petGeo()
+            -- the ring sits g.iconTop under the row's top, the unit (health's top) g.unitTop; the row is g.row tall
+            o.pet.place(P.pet.ring, -pad, u(g.iconTop) + pad, P.pet.unit, 7 * k + pad, -(u(g.row - g.unitTop - g.unit) + pad))
+        end
+        P.pick = o
+        return o
+    end
+    -- the boxes follow the pick (the pet's only while its strip shows); P.pickWho = what is boxed, for the tests
+    function P.pickStep(who)
+        local o = P.pick
+        if not o then return end
+        local petShown = P.petL ~= nil and P.petL:IsShown()
+        o.you.show(who == "player")
+        o.pet.show(who == "pet" and petShown)
+        P.pickWho = (who == "player" and "player") or ((who == "pet" and petShown) and "pet") or nil
+    end
+
     -- ---------------------------------------------------------------- when it shows
     function P.wanted()
         -- hub17: the bar's own switch (npWant.prd) once set, else HUD mode's bundle (npWant.hud)
@@ -3840,6 +3922,9 @@ do
         P.build()
         local t = now()
         P.on = true
+        -- prd14: Party mode's pick on you / your pet (read every PICK_S)
+        if not P.pickAt or t - P.pickAt >= P.PICK_S or t < P.pickAt then P.pickAt = t; P.partyWho = P.partyPick() end
+        local picked = P.partyWho ~= nil
         local fight = P.fight()
         local hurt, src = P.hurt()
         if fight then P.lastFight = t end
@@ -3848,7 +3933,11 @@ do
         local rest, rwhy = P.powerRest(t, fight)
         P.prest = rwhy
         local powerOff = rest == false and not fight
-        if powerOff then
+        if picked then
+            pcall(function() P.g:SetAlpha(1) end)                       -- prd14: the boxed bars plainly shown
+            if P.petL then pcall(function() P.petL:SetAlpha(1) end) end
+            P.petSrc = "party"
+        elseif powerOff then
             pcall(function() P.g:SetAlpha(1) end)                       -- (the power keeps it up: the health curve may not hide it)
             P.petCurve(false)
         elseif settled and P.curveSet() then
@@ -3859,7 +3948,7 @@ do
             P.petCurve(false)
         end
         P.src = src
-        local on = fight or hurt == true or powerOff
+        local on = fight or hurt == true or powerOff or picked
         if on then P.offAt = nil
         elseif not P.offAt then P.offAt = t end
         -- the target: 1 while wanted; out of combat and full (or no signal), HOLD_S then a FADE_S fade
@@ -3872,7 +3961,7 @@ do
         P.alpha = e
         local dy = -P.TRAVEL * (1 - e)
         if dy ~= P.dy then P.dy = dy; P.place() end
-        P.why = fight and "fight" or (powerOff and "power") or (src == "curve" and "curve") or (hurt and "hurt") or (P.alpha > 0 and "fading") or "full"
+        P.why = fight and "fight" or (picked and "party") or (powerOff and "power") or (src == "curve" and "curve") or (hurt and "hurt") or (P.alpha > 0 and "fading") or "full"
         if P.alpha > 0 then
             if not P.f:IsShown() then P.f:Show() end
             P.f:SetAlpha(P.alpha * P.REST)
@@ -3882,6 +3971,7 @@ do
         elseif P.f:IsShown() then
             P.f:SetAlpha(0); P.f:Hide()
         end
+        P.pickStep(P.partyWho)                                          -- prd14: after the poll (the pet strip's shown state is fresh)
         P.shown = P.alpha > 0
     end
 

@@ -16,10 +16,9 @@ import android.view.View
  * what the pad does while Party mode is on.
  *
  * Left page: the SET ROW (ZL, ZR as on the normal page; ZL + ZR dimmed with a lock: nothing happens with both held), the TOUCH ROW
- * (Touch: the picked plate's second tap, Target by default; Hold: the player menu, locked), the D-PAD DIAMOND (Up / Down: gold move
- * arrows, locked - they move the pick; Left / Right: empty and locked, kept for raids - the user: "this will need to support raids at
- * some point"), the FACE DIAMOND (A, X, Y as set on the layer on show; Y's base place split: out of combat Inspect / Smart Y, in combat
- * `yc`; B the red Back, locked) and a FOOTER plate: Select, the swirl, B (the way in and out). Right page: the place's title, its icon,
+ * (Touch: the picked plate's second tap, Target by default; Hold: the player menu, locked), the D-PAD DIAMOND (all four: gold move
+ * arrows, locked - they move the pick; p38, the user's adaptive rows 2026-11-11), the FACE DIAMOND (A, X, Y as set on the layer on
+ * show; Y's base place split: out of combat Inspect / Smart Y, in combat `yc`; B the red Back, locked) and a FOOTER plate: Select, the swirl, B (the way in and out). Right page: the place's title, its icon,
  * "Now", ONE red Change. The CURSOR is the add-on's (PadTabCtl p37: ppos = the router's 8 positions, pset, ptouch, pfocus); a finger
  * picks with padtab 27-36 (PartyTaps.pick), sets the no-spell value with 37, a spell with Book's two taps.
  */
@@ -174,16 +173,16 @@ class PartyTabPage(
         }
     }
 
-    /** one place on the diamonds: the D-pad's locked arrows / reserved sides, a face's spell on the layer on show, B the red Back */
+    /** one place on the diamonds: the D-pad's locked arrows (all four move the pick), a face's spell on the layer on show, B the red Back */
     private fun drawPlace(c: Canvas, q: Int, s: Int, cfg: PartyModel.Cfg?) {
         val r = sq(q)
         when {
-            q == 2 || q == 4 -> {
+            // p38 (the user's adaptive rows, 2026-11-11): all four directions move the pick - gold arrows, locked
+            PartyModel.movesPick(q) -> {
                 UiKit.spell(c, null, r.left, r.top, 80f, UiKit.Spell.KNOWN)
-                moveArrow(c, r, if (q == 2) -90f else 90f)
+                moveArrow(c, r, when (q) { 1 -> 180f; 2 -> -90f; 3 -> 0f; else -> 90f })
                 lock(c, r)
             }
-            PartyModel.reserved(q) -> { UiKit.spell(c, null, r.left, r.top, 80f, UiKit.Spell.LEVEL); lock(c, r) }
             q == 7 -> { UiKit.spell(c, UiKit.tex("square_exit_up"), r.left, r.top, 80f, UiKit.Spell.KNOWN); lock(c, r) }
             else -> {
                 val slot = PartyModel.slotAt(s, q)
@@ -249,8 +248,7 @@ class PartyTabPage(
             val what = when {
                 holdTile -> "Player menu"
                 touch -> "Touch"
-                p == 2 || p == 4 -> "Moves the pick"
-                PartyModel.reserved(p) -> "Kept for raids"
+                PartyModel.movesPick(p) -> "Moves the pick"
                 p == 7 -> "Party mode off"
                 else -> "Nothing (both held)"
             }

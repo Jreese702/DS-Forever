@@ -110,23 +110,38 @@ class PartyModelTest {
     @Test fun unitIndex() {
         assertEquals(0, PartyModel.unitIndex("player")); assertEquals(1, PartyModel.unitIndex("party1"))
         assertEquals(4, PartyModel.unitIndex("party4")); assertNull(PartyModel.unitIndex("party5")); assertNull(PartyModel.unitIndex("raid1"))
+        assertEquals(5, PartyModel.unitIndex("pet"))                                            // m131: the pet's index (its pick cell)
         assertNull(PartyModel.unitIndex(null))
     }
 
-    /** m129 THE ONE COLUMN (the add-on's OV.partyNav: tools/test_party.py tests the same): Up / Down a row, no wrap; Left / Right
-     *  never (the user, 2026-11-11: "this will need to support raids at some point") */
-    @Test fun navIsTheColumn() {
-        for (n in 1..5) for (from in 1..n) {
-            assertEquals("n $n from $from up", if (from > 1) from - 1 else null, PartyModel.nav(n, from, Dir.UP))
-            assertEquals("n $n from $from down", if (from < n) from + 1 else null, PartyModel.nav(n, from, Dir.DOWN))
-            assertNull(PartyModel.nav(n, from, Dir.LEFT)); assertNull(PartyModel.nav(n, from, Dir.RIGHT))
+    /**
+     * m131 ADAPTIVE ROWS (the user, 2026-11-11): PartyModel.nav equals the GEOMETRIC table tools/test_party.py builds from the rows and
+     * tests the add-on's OV.partyNav and PARTY-NAV snippet against (party-fixtures/party_nav.json): every n 1..6, every box, all four
+     * directions - so the app, the pure Lua and the secure snippet agree for every shape (the pet changes n, never the rule)
+     */
+    @Test fun navIsTheAddOnsTable() {
+        val s = javaClass.classLoader!!.getResourceAsStream("party-fixtures/party_nav.json")!!.bufferedReader().use { it.readText() }
+        val rows = JSONObject(s).getJSONArray("rows")
+        val seen = HashSet<Pair<Int, Int>>()
+        for (k in 0 until rows.length()) {
+            val r = rows.getJSONObject(k)
+            val n = r.getInt("n"); val box = r.getInt("box")
+            seen.add(n to box)
+            for ((key, d) in listOf("up" to Dir.UP, "down" to Dir.DOWN, "left" to Dir.LEFT, "right" to Dir.RIGHT)) {
+                val want = if (r.isNull(key)) null else r.getInt(key)
+                assertEquals("n $n box $box $key", want, PartyModel.nav(n, box, d))
+            }
         }
+        assertEquals((1..6).sumOf { it }, seen.size)
         // a box past n clamps
         assertEquals(2, PartyModel.nav(3, 5, Dir.UP))
-        assertEquals((1..4).map { listOf(it) }, PartyModel.rows(4))
+        assertEquals(listOf(listOf(1), listOf(2), listOf(3, 4)), PartyModel.rows(4))
+        assertEquals(listOf(listOf(1), listOf(2, 3), listOf(4, 5)), PartyModel.rows(5))
+        assertEquals(listOf(listOf(1, 2), listOf(3, 4), listOf(5, 6)), PartyModel.rows(6))
+        assertEquals(listOf(listOf(1), listOf(2), listOf(3)), PartyModel.rows(3))
     }
 
-    /** p37 the Controller tab's places (PadTabCtl's slotAt): A / X / Y per layer, the rest locked; Left / Right kept for raids */
+    /** p37 the Controller tab's places (PadTabCtl's slotAt): A / X / Y per layer, the rest locked; p38: all four D-pad places move the pick */
     @Test fun controllerTabPlaces() {
         assertEquals("a", PartyModel.slotAt(1, 8)); assertEquals("x", PartyModel.slotAt(1, 5)); assertEquals("yc", PartyModel.slotAt(1, 6))
         assertEquals("zla", PartyModel.slotAt(2, 8)); assertEquals("zly", PartyModel.slotAt(2, 6)); assertEquals("zrx", PartyModel.slotAt(3, 5))
@@ -134,7 +149,7 @@ class PartyModelTest {
         for (p in 1..8) assertNull(PartyModel.slotAt(4, p))                                 // ZL + ZR: locked
         for (s in PartyModel.PICKS.filter { it != "touch" }) PartyModel.placeOf(s)!!.let { (set, pos) -> assertEquals(s, PartyModel.slotAt(set, pos)) }
         assertNull(PartyModel.placeOf("touch"))
-        assertTrue(PartyModel.reserved(1) && PartyModel.reserved(3)); assertFalse(PartyModel.reserved(2) || PartyModel.reserved(4))
+        assertTrue((1..4).all { PartyModel.movesPick(it) }); assertFalse(PartyModel.movesPick(7) || PartyModel.movesPick(8))
     }
 
     @Test fun newestNWinsRepeatsAndReplaysDropped() {
@@ -156,8 +171,9 @@ class PartyModelTest {
         val s = PartyModel.State()
         val p5 = party().let { p -> p.copy(box = 1, m = (0..4).map { i -> p.m[0].copy(u = if (i == 0) "player" else "party$i", i = i) }) }
         s.onParty(p5, true, 0L)
-        assertEquals(2, s.move(Dir.DOWN)); assertNull(s.move(Dir.RIGHT)); assertNull(s.move(Dir.LEFT)); assertEquals(3, s.move(Dir.DOWN))
-        assertEquals(2, s.move(Dir.UP))
+        // m131: five entries = you | (2 3) | (4 5): Down onto the left of the shared row, Right, Down, Up
+        assertEquals(2, s.move(Dir.DOWN)); assertNull(s.move(Dir.LEFT)); assertEquals(3, s.move(Dir.RIGHT)); assertEquals(5, s.move(Dir.DOWN))
+        assertEquals(3, s.move(Dir.UP)); assertEquals(1, s.move(Dir.UP)); assertEquals(2, s.move(Dir.DOWN))
         // m129 a plate's tap draws the pick at once (the add-on decides): another member moves it; the picked one does not (its Touch)
         assertEquals(5, s.choose(4)); assertEquals(5, s.box); assertNull(s.choose(4)); assertEquals(1, s.choose(0)); assertNull(s.choose(7))
         s.onParty(p5.copy(on = false, box = null), true, 0L)
