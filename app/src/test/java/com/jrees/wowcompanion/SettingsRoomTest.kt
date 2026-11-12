@@ -169,6 +169,13 @@ class SettingsRoomTest {
         for ((i, t) in SettingsTabs.visible.withIndex()) { r.show(t); shot("settings_${i + 1}_${t.name.lowercase()}") }
         // one tab with a second group opened: Controller with Wheels open as well as Buttons
         r.show(SettingsTabs.Tab.CONTROLLER); r.toggle(SettingsTabs.Group.WHEELS); shot("settings_4b_controller_wheels_open")
+        // the six tabs in Spanish and French (all on the row, no scrolling)
+        for (l in listOf("es", "fr")) {
+            listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
+                .firstOrNull { it.canRead() }?.let { Tr.load(l, it.readText()) }
+            Tr.setChoice(app, l); r.show(SettingsTabs.Tab.PERFORMANCE); shot("settings_6_performance_$l")
+        }
+        Tr.setChoice(app, "auto")
         // the contact sheet: three across at half size, each name under it
         val k = 0.5f
         val cw = (1240 * k).toInt(); val ch = ((1080 - Strip.HEIGHT) * k).toInt()

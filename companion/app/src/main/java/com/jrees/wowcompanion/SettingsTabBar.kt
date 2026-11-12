@@ -66,7 +66,7 @@ class SettingsTabBar(context: Context, private val onPick: (SettingsTabs.Tab) ->
         val scrolls = lay.total > right - left + 0.5f
         c.save()
         if (scrolls) c.clipRect(left, 0f, right, BAR_H)
-        for ((i, t) in all.withIndex()) UiKit.tab(c, tabs[i], t.label, t == tab, cursor = cursor && t == tab)
+        for ((i, t) in all.withIndex()) UiKit.tab(c, tabs[i], t.label, t == tab, cursor = cursor && t == tab, textSize = LABEL_SIZE)
         // the cut edges fade into the bar: there is more that way
         if (scrolls) {
             if (off > 0.5f) fade(c, left, left + FADE, true)
@@ -143,12 +143,19 @@ class SettingsTabBar(context: Context, private val onPick: (SettingsTabs.Tab) ->
             return Layout(xs, total, off)
         }
 
-        /** a label's width as UiKit.tab draws it */
-        fun labelW(s: String): Float = UiKit.bodyPaint(28f).measureText(s)
+        /** a label's width as UiKit.tab draws it: in the player's language (the tab draws Tr.t of it), at [LABEL_SIZE] */
+        fun labelW(s: String): Float = UiKit.bodyPaint(LABEL_SIZE).measureText(Tr.t(s))
 
-        const val TAB_PAD = 26f          // a label's room to its tab's ends (the tab art's caps)
-        const val TAB_GAP = 8f
-        const val TAB_MIN_W = 110f
+        /** the strip for the room's tabs at a bar [width] (the tests: all six fit, no scroll) */
+        fun layoutFor(width: Float, chosen: Int = 0): Layout =
+            layout(SettingsTabs.visible.map { it.label }, width - 32f - 2f * UiKit.TAB_END_W, chosen)
+
+        // the six tabs (the user, 2026-11-12: "fit all six" - on the 1240 px bar, in English, Spanish and French, no scrolling):
+        // tighter ends and gaps first, the words a size under the kit's 28 (still above the room's smallest, 22)
+        const val LABEL_SIZE = 26f
+        const val TAB_PAD = 12f          // a label's room to its tab's ends (the tab art's caps)
+        const val TAB_GAP = 4f
+        const val TAB_MIN_W = 128f       // the tab art's two caps (35 + 37 px at 36 tall, drawn 64 tall): a tab is never narrower
         const val FADE = 44f
         const val GLIDE_MS = 220L
         const val TITLE_BASE = 56f

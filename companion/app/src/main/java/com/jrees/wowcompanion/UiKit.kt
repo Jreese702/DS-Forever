@@ -917,8 +917,9 @@ object UiKit {
      * A tab. [onTop] is a tab standing on top of a list (the game's hanging tab turned over);
      * without it the tab hangs under a frame, as the game's do. [count] shows after the label.
      */
-    fun tab(c: Canvas, r: RectF, label: String, active: Boolean, count: Int = 0, onTop: Boolean = true, cursor: Boolean = false) {
-        if (cursor) { tabCursor(c, r, "tab:$active:$onTop") { tab(it, r, label, active, count, onTop) }; return }
+    fun tab(c: Canvas, r: RectF, label: String, active: Boolean, count: Int = 0, onTop: Boolean = true, cursor: Boolean = false,
+            textSize: Float = 28f) {
+        if (cursor) { tabCursor(c, r, "tab:$active:$onTop") { tab(it, r, label, active, count, onTop, textSize = textSize) }; return }
         val pre = if (active) "tab_on_" else "tab_"
         val l = tex(pre + "left"); val m = tex(pre + "center"); val rt = tex(pre + "right")
         if (l != null && m != null && rt != null) {
@@ -934,7 +935,7 @@ object UiKit {
             pFlat.style = Paint.Style.FILL; pFlat.color = if (active) Theme.selected else Theme.raised
             c.drawRect(r, pFlat)
         }
-        val p = bodyPaint(28f, if (active) Color.WHITE else Theme.gold).apply { textAlign = Paint.Align.CENTER }
+        val p = bodyPaint(textSize, if (active) Color.WHITE else Theme.gold).apply { textAlign = Paint.Align.CENTER }
         val ty = r.centerY() + (if (onTop) 8f else -6f) - (p.ascent() + p.descent()) / 2f
         val tx = r.centerX() - (if (count > 0) 14f else 0f)
         c.drawText(Tr.t(label), tx, ty, p)
