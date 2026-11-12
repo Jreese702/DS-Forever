@@ -6,8 +6,8 @@ package com.jrees.wowcompanion
  * quests objectives instead of 'complete that quest'".
  *
  * While the light blue row is picked and its step's quest is in the log, the row IS that quest: its title and its live objectives
- * (done / progress as the quest's own card reads them) in Polestar's light blue, and that quest's own row (tracked or untracked) is
- * not drawn a second time. Its A stays the Polestar toggle. A step with no quest, or one not in the log (accept / travel / train /
+ * (done / progress as the quest's own card reads them) in Polestar's light blue. Its A stays the Polestar toggle; since pk2 (2026-11-12)
+ * its X / Y are Skip step / Previous step and that quest's own row stays in the list for its Track / Open ([listMerged]). A step with no quest, or one not in the log (accept / travel / train /
  * talk): the step's title and goal words, as before. Not picked: nothing merges.
  */
 object PolestarMerge {
@@ -21,6 +21,14 @@ object PolestarMerge {
      * (the unmerged row stays POLESTAR: no quest of its own on the map)
      */
     fun key(key: Int, merged: Int): Int = if (key == MapList.POLESTAR && merged > 0) merged else key
+
+    /**
+     * pk2 (the user, 2026-11-12, the Skip / Previous picks: "Open stays reachable on the quest's own row"): with X / Y on the light blue
+     * row now Skip step / Previous step, the merged quest's own row (tracked, or in its tab) stays in Home's list so its X Track /
+     * Untrack and Y Open are still one cursor stop away. The light blue row still reads as that quest (title + live objectives).
+     * What MapList.items gets as its `merged` (the row it leaves out): never one now.
+     */
+    fun listMerged(@Suppress("UNUSED_PARAMETER") merged: Int): Int = 0
 
     /** what the light blue row reads: a title and its lines (text, done) */
     class Content(val title: String, val lines: List<Pair<String, Boolean>>, val merged: Boolean)

@@ -66,6 +66,30 @@ class PolestarSkipTest {
         assertEquals(MapCursor.Do.Open(8), c.key("PAD4", merged, MapList.POLESTAR, false, psSkip = true, psPrev = true))
     }
 
+    // pk2 (the user, 2026-11-12: "Open stays reachable on the quest's own row"): on Home's map the merged quest's own row stays a
+    // cursor stop, so its Track / Untrack and Open are reachable while the light blue row's X / Y are Skip / Previous
+    @Test fun mergedQuestsOwnRowStaysReachableOnHomesMap() {
+        // tracked merged quest 7
+        val keys = MapList.stops(MapList.items(true, listOf(7, 8), g, polestar = true,
+            merged = PolestarMerge.listMerged(7)) { false })
+        assertTrue("the quest's own row is a stop", keys.contains(7))
+        assertTrue(keys.contains(MapList.POLESTAR))
+        val c = MapCursor(); c.touched(7, keys)
+        assertEquals(MapCursor.Do.Untrack(7), c.key("PAD3", keys, MapList.POLESTAR, false, psSkip = true, psPrev = true))
+        assertEquals(MapCursor.Do.Open(7), c.key("PAD4", keys, MapList.POLESTAR, false, psSkip = true, psPrev = true))
+        c.touched(MapList.POLESTAR, keys)
+        assertEquals(MapCursor.Do.PsSkip, c.key("PAD3", keys, MapList.POLESTAR, false, psSkip = true, psPrev = true))
+        assertEquals(MapCursor.Do.PsPrev, c.key("PAD4", keys, MapList.POLESTAR, false, psSkip = true, psPrev = true))
+        // untracked merged quest 9 in an open tab: X tracks it, Y opens it
+        val tabs = listOf("Elwynn Forest" to listOf(9))
+        val items = MapList.items(true, listOf(8), tabs, polestar = true, merged = PolestarMerge.listMerged(9)) { true }
+        val k2 = MapList.stops(items)
+        assertTrue(k2.contains(9))
+        val c2 = MapCursor(); c2.touched(9, k2)
+        assertEquals(MapCursor.Do.Watch(9), c2.key("PAD3", k2, MapList.POLESTAR, false, MapList.untracked(items), psSkip = true, psPrev = true))
+        assertEquals(MapCursor.Do.Open(9), c2.key("PAD4", k2, MapList.POLESTAR, false, MapList.untracked(items), psSkip = true, psPrev = true))
+    }
+
     @Test fun theRowsHintsSayOnlyWhatWorks() {
         assertEquals(listOf("a" to "Unfocus", "x" to "Skip step", "y" to "Previous step"), PolestarSkip.rowHints(true, true, true))
         assertEquals(listOf("a" to "Focus", "x" to "Skip step"), PolestarSkip.rowHints(false, true, false))   // nothing to undo: no Y

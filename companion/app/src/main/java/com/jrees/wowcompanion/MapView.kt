@@ -3895,7 +3895,9 @@ class MapView(context: Context) : View(context) {
         val current = listOfNotNull(m?.optString("subzone", "")?.ifEmpty { null }, m?.optString("zone", "")?.ifEmpty { null })
         val groups = MapList.groups(entries, questsPlv, current, ownHeaders)
         val merged = psMerged()
-        items = MapList.items(portrait != null && trackedKnown, trackedIds(), groups, polestar = psShown(), merged = merged) { z -> openTabs[z] == true }
+        // pk2 (the user, 2026-11-12: "Open stays reachable on the quest's own row"): the merged quest's own row stays (PolestarMerge.listMerged)
+        items = MapList.items(portrait != null && trackedKnown, trackedIds(), groups, polestar = psShown(),
+            merged = PolestarMerge.listMerged(merged)) { z -> openTabs[z] == true }
         // the user, 2026-11-11 ("consolidate that into one"): a selection on the quest the light blue row now stands for moves onto it
         if (merged > 0) cursor.moved(merged, MapList.POLESTAR, listKeys())
     }
