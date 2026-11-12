@@ -363,6 +363,13 @@ class Rig:
             G.PET = None
         G.ME.fight = True
         G.ME.hp = 620
+        if sh.get("buffs"):
+            t = G.GAME.t
+            mk = lambda i, d, left, kind=None: L.table_from(dict({"icon": i, "duration": d, "expirationTime": t + left},
+                                                                  **({"dispelName": kind} if kind else {})))
+            G.ME.buffs = L.table_from([mk(135953, 15, 9), mk(136081, 12, 6), mk(132333, 120, 100), mk(136085, 60, 40)])
+            G.ME.debuffs = L.table_from([mk(136134, 18, 10, "Magic"), mk(136139, 30, 22, "Poison")])
+            self.fire("UNIT_AURA", "player")
         self.fire("PLAYER_REGEN_DISABLED")
         self.fire("UNIT_PET", "player")
         self.fire("GROUP_ROSTER_UPDATE")
@@ -570,6 +577,10 @@ def party_top_shapes():
         "mode_pet_2members": dict(n=3, pet=True, mode=True, pick="party2", dead=None, oor=None),
         "mode_nopet_4members": dict(n=5, pet=False, mode=True, pick="party3", dead=None, oor=None),
         "mode_pet_4members_pick_pet": dict(n=5, pet=True, mode=True, pick="pet", dead=None, oor=None),
+        "mode_pet_3members": dict(n=4, pet=True, mode=True, pick="party1", dead=None, oor=None),
+        "mode_solo_pet": dict(n=1, pet=True, mode=True, pick="player", dead=None, oor=None),
+        "off_4members_buffs": dict(n=5, pet=True, mode=False, pick=None, dead=None, oor=None, buffs=True),
+        "mode_pet_4members_buffs": dict(n=5, pet=True, mode=True, pick="party1", dead=None, oor=None, buffs=True),
     }
 
 

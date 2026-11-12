@@ -109,6 +109,14 @@ WowCompanion.padMap = { party = {
 '''
 
 
+def grid(k):
+    """hub42 (the user's answer, 2026-11-12): Party mode's rows under the HUD for k members -> { i: (row, side) }:
+    1 [p1]; 2 [p1][p2]; 3 [p1] / [p2][p3]; 4 [p1][p2] / [p3][p4]"""
+    if k == 3:
+        return {1: (0, "left"), 2: (1, "left"), 3: (1, "right")}
+    return {i: ((i - 1) // 2, "left" if i % 2 == 1 else "right") for i in range(1, k + 1)}
+
+
 RING_CHECK = '''(function()
     local f = WowCompanion.uf.pf.frames[1]
     local r = f.ring
@@ -178,12 +186,17 @@ def main():
     settle()
     chk("solo, Party mode off: no row, no tab", frames() == {} and PF.rows == 0 and (PF.tab is None or not PF.tab.shown), PF.rows)
     # hub35 / hub42 (the user, 2026-11-12: "the player should not have their HP bar on the right side with party mode any more"): NO self
-    # row in any mode; solo with Party mode on only the tab (one row high, under the HUD) says it is on
+    # row in any mode; solo with Party mode on only the tab (beside the [me][pet] row) says it is on
     G.PM.on = True
     G.PM.u = "player"
     settle()
     chk("hub42: solo, Party mode on: no row at all (you = the HUD's bars), the Select tab on, under the HUD", frames() == {} and PF.rows == 0
         and PF.tab is not None and PF.tab.shown and PF.tabLook == "on" and PF.at == "hud", (list(frames()), PF.tabLook, PF.at))
+    sg = PF.g
+    chk("hub42 (the user's answer): solo, the tab BESIDE the [me][pet] row - TOPRIGHT left of the HP bar's rim, the bars' height + pads",
+        PF.tab.solo is True and PF.tab.anch[1][1] == "TOPRIGHT" and PF.tab.anch[1][3] == "CENTER"
+        and abs(PF.tab.anch[1][4] - (sg.x - PF.TAB_GAP - PF.SOLO_RIM)) < 1e-9 and abs(PF.tab.anch[1][5] - (sg.top + PF.SOLO_PAD)) < 1e-9
+        and abs(PF.tab.h - (sg.h + 2 * PF.SOLO_PAD)) < 1e-9, (PF.tab.anch[1][4], PF.tab.anch[1][5], PF.tab.h))
     chk("hub35: no frame is ever made for you or your pet (no WowCompanionUFParty0 / 5)", G.WowCompanionUFParty0 is None
         and G.WowCompanionUFParty5 is None, "")
     # OUT of Party mode: ONE column top left, party1..4 top to bottom
@@ -265,8 +278,8 @@ def main():
             settle()
             f = frames()
             if mode:
-                want = {i: ((i - 1) // 2, "left" if i % 2 == 1 else "right") for i in range(1, k + 1)}
-                rows = (k + 1) // 2
+                want = grid(k)
+                rows = max(r for r, _ in want.values()) + 1
             else:
                 want = {i: (i - 1, "left") for i in range(1, k + 1)}
                 rows = k
@@ -377,14 +390,16 @@ def main():
                 (rig.PF.tab is None or rig.PF.tab.shown is False) and P.partyRoomPx == 0, P.partyRoomPx)
         else:
             badg = {}
+            gw = grid(len(bars))
             for u, v in bars.items():
                 i = int(u[5:])
-                wx = hp[0] + (0 if i % 2 == 1 else (PF.COL_W + PF.COL_GAP) * k)
-                if abs(v["hp"][0] - wx) > 1e-6 or v["row"] != (i - 1) // 2:
+                wr, ws = gw[i]
+                wx = hp[0] + (0 if ws == "left" else (PF.COL_W + PF.COL_GAP) * k)
+                if abs(v["hp"][0] - wx) > 1e-6 or v["row"] != wr:
                     badg[u] = (v["hp"][0], wx, v["row"])
                 if v["frame"][3] > pw[1] + 1e-6:
                     badg[u + " above"] = (v["frame"][3], pw[1])
-            chk("hub42: %s: Party mode: the grid UNDER the HUD's bars ([p1][p2] / [p3][p4]), party1's bar under the HP bar's left (%.1f)"
+            chk("hub42: %s: Party mode: the grid UNDER the HUD's bars (1 / 2 / 3 = [p1] + [p2][p3] / 4 = 2 x 2), party1's bar under the HP bar's left (%.1f)"
                 % (nm, hp[0]), not badg, badg)
             if L0:
                 chk("hub42: %s: [me][pet]: the pet strip RIGHT of the HP bar (its left %.1f past the HP bar's right %.1f), level with the bars"
@@ -407,6 +422,41 @@ def main():
                     P.pickWho == "pet" and pa[0] < L0[0] + 1e-6 and pa[2] > L0[0] and pa[0] > hp[2], (pa, L0))
         chk("hub42: %s: no self row (no top frame for you / your pet)" % nm, rig.G.WowCompanionUFParty0 is None
             and rig.G.WowCompanionUFParty5 is None, "")
+    # hub42 (the user's answer): solo in Party mode the tab stands beside the [me][pet] row, level with the HUD's bars
+    rig = rtp.Rig()
+    rig.scene(rtp.party_top_shapes()["mode_solo_pet"])
+    hp, pw = rig.rect(rig.P.hp), rig.rect(rig.P.pw)
+    tr = rig.rect(rig.PF.tab)
+    chk("hub42: solo, Party mode: the lit tab LEFT of the HP bar (right %.1f < %.1f), spanning the two bars (%.1f..%.1f over %.1f..%.1f)"
+        % (tr[2], hp[0], tr[1], tr[3], pw[1], hp[3]),
+        rig.PF.tab.shown is not False and rig.PF.tabLook == "on" and tr[2] < hp[0] and tr[2] > hp[0] - 20 and tr[3] >= hp[3] and tr[1] <= pw[1]
+        and rig.party_bars() == {}, tr)
+    # prd15 (the user's answer): Party mode's buff / debuff row ABOVE the HUD bars, under them out of it; it fades with the strip
+    for mode in (False, True):
+        rig = rtp.Rig()
+        rig.scene(rtp.party_top_shapes()["mode_pet_4members_buffs" if mode else "off_4members_buffs"])
+        P = rig.P
+        hp, pw = rig.rect(P.hp), rig.rect(P.pw)
+        icons = [rig.rect(o.f) for o in list(P.buffs.values()) + list(P.debuffs.values()) if o.f.shown is not False]
+        if mode:
+            ok = icons and all(r[1] > hp[3] for r in icons) and P.auraUp is True
+            fr = [v["frame"] for v in rig.party_bars().values()]
+            ok = ok and all(r[1] > max(x[3] for x in fr) for r in icons)
+        else:
+            ok = icons and all(r[3] < pw[1] for r in icons) and P.auraUp is False
+        chk("prd15: Party mode %s: %d aura icons %s the HUD bars (bars %.1f..%.1f; icons %s)"
+            % ("on" if mode else "off", len(icons), "ABOVE" if mode else "under", pw[1], hp[3], [(round(r[1]), round(r[3])) for r in icons[:3]]),
+            ok, icons)
+    rig = rtp.Rig()
+    rig.scene(rtp.party_top_shapes()["off_4members_buffs"])
+    P = rig.P
+    rig.G.PM.on = True
+    seen = []
+    for _ in range(30):
+        rig.run(1 / 30)
+        seen.append((P.auraUp, rig.G.RPLAIN(P.buffs[1].f.alpha) if P.buffs[1].f.alpha is not None else 1))
+    chk("prd15: the aura row fades out under the bars, moves above, fades in (ends at alpha 1, above)",
+        any((not up) and 0 < a < 1 for up, a in seen) and any(up and 0 < a < 1 for up, a in seen) and seen[-1] == (True, 1), seen[:14])
     # Party mode on and off in the rig (every frame driven): the pet strip fades out, moves beside the HP bar, fades in; and back
     rig = rtp.Rig()
     rig.scene(rtp.party_top_shapes()["off_4members"])
