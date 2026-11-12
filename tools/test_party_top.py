@@ -136,7 +136,7 @@ def main():
         return {i: (f[i].look.row, f[i].look.side) for i in f}
 
     src = open(HUB, encoding="utf-8").read()
-    chk("hub39: the version tag (hub38 the player / pet row, the game's side tab; hub39 int/1429)", 'local HV = "hub39"' in src)
+    chk("hub40: the version tag (hub38 the player / pet row, the game's side tab; hub39 int/1429; hub40 the bars one column wide)", 'local HV = "hub40"' in src)
     chk("hub34: the combat log's switch calls are gone (PadMap m129)", 'WC.clogSync' not in src and 'WC.clogTicker' not in src)
 
     # solo, Party mode off: nothing (no row, no tab)
@@ -285,6 +285,49 @@ def main():
     UF.party = True
     step()
     chk("on again: two rows", len(frames()) == 2, len(frames()))
+
+    # hub40 (the user, 2026-11-12: "I had someone join my group on an old build and their health bar was a mile long"): the bars'
+    # RESOLVED width (tools/render_top_party.py: Trail + Hub on the geometry stub, every anchor resolved) in every shape the renders
+    # draw - a party of 2..5, with / without the pet, Party mode off / on, the picks on you / your pet, one dead, one out of range -
+    # never more than one column's bar, both bars of a row the same width, a full row in the left column; and after a K change
+    chk("hub40: every bar one column's bar (W_BAR %s = COL_W - BAR_X - 30, W_FULL no longer a span: %s)" % (PF.W_BAR, PF.W_FULL),
+        PF.W_BAR == PF.COL_W - PF.BAR_X - 30 and PF.W_FULL == PF.W_BAR and PF.W_HALF == PF.W_BAR, (PF.W_BAR, PF.W_FULL))
+    import render_top_party as rtp
+    col = PF.W_BAR
+    for nm, sh in rtp.shapes().items():
+        rig = rtp.Rig()
+        rig.scene(sh)
+        k = rig.G.UIParent.hh / 1080.0
+        bars = rig.party_bars()
+        tb = rig.rect(rig.UF.tb.f.hp)
+        bad = {u: round(v["hp"][2] - v["hp"][0], 2) for u, v in bars.items()
+               if v["hp"][2] - v["hp"][0] > col * k + 1e-6 or abs((v["mp"][2] - v["mp"][0]) - (v["hp"][2] - v["hp"][0])) > 1e-6
+               or (v["side"] != "right" and abs(v["hp"][0] - (PF.X + PF.BAR_X) * k) > 1e-6)
+               or (v["side"] == "right" and abs(v["hp"][0] - (PF.X + PF.COL_W + PF.COL_GAP + PF.BAR_X) * k) > 1e-6)}
+        chk("hub40: %s: %d bars, each <= one column (%.1f px), under the target bar's %.1f, left-aligned in its column"
+            % (nm, len(bars), col * k, tb[2] - tb[0]),
+            len(bars) == sh["n"] - 1 and not bad and all(v["hp"][2] - v["hp"][0] < tb[2] - tb[0] for v in bars.values()), bad)
+    # a row made at one scale, the scale recomputed at PLAYER_ENTERING_WORLD (Hub's K = UIParent:GetHeight() / 1080): re-sized
+    rig = rtp.Rig()
+    rig.scene(rtp.shapes()["party3"])
+    w0 = {u: v["hp"][2] - v["hp"][0] for u, v in rig.party_bars().items()}
+    rig.set_k(768)
+    b1 = rig.party_bars()
+    w1 = {u: v["hp"][2] - v["hp"][0] for u, v in b1.items()}
+    chk("hub40: after a K change (1080 -> 768): every bar re-sized to the new scale's column (%s -> %s), the heights too" % (w0, w1),
+        all(abs(w - col) < 1e-6 for w in w0.values()) and all(abs(w - col * 768 / 1080) < 1e-6 for w in w1.values())
+        and all(abs((v["hp"][3] - v["hp"][1]) - PF.HP * 768 / 1080) < 1e-6 for v in b1.values()), (w0, w1))
+    # the OLD code (1428, hub37) under the same rig: one member alone got the two-column bar - the user's "mile"
+    import subprocess
+    try:
+        old = subprocess.run(["git", "-C", rtp.ROOT, "show", "097503d8:" + rtp.HUB_REL], capture_output=True, check=True).stdout.decode("utf-8")
+    except Exception:
+        old = None
+    if old:
+        rig = rtp.Rig(old)
+        rig.scene(rtp.shapes()["party2"])
+        wo = {u: round(v["hp"][2] - v["hp"][0]) for u, v in rig.party_bars().items()}
+        chk("hub40: the 1428 code's lone member had the 510 px bar (the bug this fixes): %s" % wo, wo == {"party1": 510}, wo)
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
 
