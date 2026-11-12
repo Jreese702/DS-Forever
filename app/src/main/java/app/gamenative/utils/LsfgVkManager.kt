@@ -479,7 +479,8 @@ object LsfgVkManager {
      * Apply LSFG-related environment variables to the launch environment.
      * Called during container startup in BionicProgramLauncherComponent.
      *
-     * @return true if LSFG is armed and env vars were applied
+     * @return true if the in-game layer is armed (legacy backend) and its env vars were applied; false when it stays unloaded
+     *   (off, no DLL, or the native backend, which frame-generates in the host renderer)
      */
     @JvmStatic
     fun applyLaunchEnv(container: Container, envVars: EnvVars): Boolean {
@@ -496,6 +497,18 @@ object LsfgVkManager {
 
         val dllPath = containerDllPath(container)
         val armed = parseBool(container.getExtra(EXTRA_ARMED, "false")) && dllPath != null
+
+        if (armed && isNativeBackend(container)) {
+            // Native backend: frame generation runs in the host renderer, the in-game layer has nothing to do (conf.toml holds
+            // multiplier=1) - and loading it is not harmless: it adopts DXVK's VkDevice into process-wide state its
+            // vkDestroyDevice hook never finalizes, so the game's own device re-create (GxRestart "DeviceStateChanged", ~20 s
+            // after the account pick) aborted Wow-ARM64.exe in Turnip's kgsl_bo_finish (bo->gem_handle). Keep it unloaded:
+            // the manifest removed, and the manifest's own disable switch as a second guard.
+            disableLayerInContainer(container)
+            envVars.put(ENV_DISABLE, "1")
+            Timber.tag(TAG).i("LSFG native backend: in-game layer not loaded (dll=%s)", dllPath)
+            return false
+        }
 
         if (!armed) {
             // Remove the manifest so the Vulkan loader can't find the layer
