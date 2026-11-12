@@ -2369,7 +2369,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // would tap close). Home's finding, AGENT_LOG 9596d1a. The book, the tree and the chosen talent replay: the last known state shows.
             "spellsctl" -> if (current) SpellsModel.parseCtl(msg)?.let { c ->
                 spellbookView.onCtl(c); controllerView.onCtl(c); spellsOverlay.onCtl(c)
-                if (c.note == "bind-cancel" || c.note == "result-closed") newSpellBindDone()   // f-new-spell-prompt: the Bind box closed
+                newSpellBindCtl(c)   // f-new-spell-prompt: the Bind box closed, kept or undid (SpellsModel.bindStepCtl)
                 // the page the controller drives (Book.lua b3 `pg`) picks the room: the game's own Talents / Spellbook buttons bring theirs
                 // up; between the two rooms the page follows the bar (no taps here: see pickRoom)
                 // (the Talents page flag BEFORE the jump: show()'s hand-over reads it, so a page the game moved is not moved again)
@@ -2396,7 +2396,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // review of #31's fix: a refusal the box keeps waiting after (dpad bar, reserved, unsure, form-unknown) must not end the
                 // new-spell flow, or the player is sent Home before pressing again; the box's close (bind-cancel / result-closed) and the
                 // 120 s timeout still end it
-                SpellsModel.parseBind(msg)?.let { spellsOverlay.onBind(it); spellbookView.invalidate(); if (SpellsModel.bindFinal(it)) newSpellBindDone() }
+                // the user 2026-11-12 ("Wait for keep/undo"): a bind that TOOK does not end it either: the box asks keep / undo first
+                SpellsModel.parseBind(msg)?.let { spellsOverlay.onBind(it); spellbookView.invalidate(); newSpellBindStep(SpellsModel.bindStepAck(it)) }
             }
             // the Professions room (professions session): the professions, the open one's recipes, the answers to its taps
             "prof" -> msg.optJSONObject("p")?.let { p ->
@@ -3394,7 +3395,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun newSpellAsk() {
         val who = newSpellWho ?: return
         val book = lastBook ?: return
-        if (newSpellBinding != 0) { if (room == Room.HOME) newSpellBinding = 0 else return }   // back Home: that bind is over
+        if (newSpellBinding != 0) { if (room == Room.HOME) { newSpellBinding = 0; newSpellConfirm = 0 } else return }   // back Home: that bind is over
         if (newSpellAsking != 0) return
         if (room != Room.HOME || homeView.homeGuestWanted() || capHolder.isNotEmpty() || homeView.inFight() || book.combat) return
         if (setupView.visibility == View.VISIBLE || setupWaiting != null || startView.visibility == View.VISIBLE) return
@@ -3433,16 +3434,43 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val e = if (bind) lastBook?.let { NewSpells.bindEntry(it, id) } else null
         if (e == null) { ui.postDelayed({ newSpellAsk() }, 400L); return }
         Log.i(HomeView.TAG, "new spells: bind $id")
-        newSpellBinding = id
+        newSpellBinding = id; newSpellConfirm = 0
         show(Room.SPELLBOOK); spellbookView.openAt(id)
         ui.postDelayed({ spellsCells(e) }, 400L)
         ui.postDelayed({ if (newSpellBinding == id && room != Room.SPELLBOOK) newSpellBindDone() }, 120_000L)
     }
 
-    /** the Bind box closed (bound, cancelled, refused): back Home, where the next prompt follows */
+    /** the user 2026-11-12 ("Wait for keep/undo"): a bind that took waits for the box's keep / undo (or its close) before Home. Not
+     *  stuck: no word within [NEW_SPELL_CONFIRM_MS] ends it as before; leaving the room is the 120 s timer / Home's newSpellAsk as before */
+    private var newSpellConfirm = 0                   // >0: the generation of the armed keep / undo wait; 0 = not waiting
+    private var newSpellConfirmGen = 0
+    private val NEW_SPELL_CONFIRM_MS = 90_000L
+
+    private fun newSpellBindStep(step: SpellsModel.BindStep) {
+        if (newSpellBinding == 0) return
+        when (step) {
+            SpellsModel.BindStep.DONE -> newSpellBindDone()
+            SpellsModel.BindStep.WAIT -> newSpellConfirm = 0
+            SpellsModel.BindStep.CONFIRM -> {
+                val gen = ++newSpellConfirmGen
+                newSpellConfirm = gen
+                val id = newSpellBinding
+                Log.i(HomeView.TAG, "new spells: bound $id, waits for keep / undo")
+                ui.postDelayed({ if (newSpellConfirm == gen && newSpellBinding == id) { Log.i(HomeView.TAG, "new spells: no keep / undo word, Home"); newSpellBindDone() } }, NEW_SPELL_CONFIRM_MS)
+            }
+        }
+    }
+
+    private fun newSpellBindCtl(c: SpellsModel.Ctl) {
+        if (newSpellBinding == 0) return
+        SpellsModel.bindStepCtl(c, newSpellConfirm != 0)?.let { newSpellBindStep(it) }
+    }
+
+    /** the Bind box closed (kept, cancelled, refused): back Home, where the next prompt follows */
     private fun newSpellBindDone() {
         if (newSpellBinding == 0) return
         newSpellBinding = 0
+        newSpellConfirm = 0
         ui.postDelayed({ if (room == Room.SPELLBOOK) show(Room.HOME); ui.postDelayed({ newSpellAsk() }, 700L) }, 900L)
     }
     /** issue #136 (2026-11-11): the game run ([LauncherHooks.gameStartSec]) whose first word each character's kept choice was checked

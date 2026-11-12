@@ -64,6 +64,28 @@ class BindLogLineTest {
         assertFalse(SpellsModel.bindFinal(parsed))
     }
 
+    /** the user 2026-11-12 ("Wait for keep/undo"): a bind that took does not send the player Home while the box asks keep / undo */
+    @Test fun aBindThatTookWaitsForKeepOrUndo() {
+        fun r(ok: Boolean, why: String?) = SpellsModel.BindResult(133, ok, why, null)
+        fun ctl(s: String) = SpellsModel.parseCtl(ack("""{"type":"spellsctl","v":"b50","ctl":$s}"""))!!
+        assertEquals(SpellsModel.BindStep.CONFIRM, SpellsModel.bindStepAck(r(true, null)))
+        assertEquals(SpellsModel.BindStep.WAIT, SpellsModel.bindStepAck(r(false, "dpad bar")))
+        assertEquals(SpellsModel.BindStep.DONE, SpellsModel.bindStepAck(r(false, "combat")))
+        // the box asks: no change, then A keeps it: Home
+        assertEquals(null, SpellsModel.bindStepCtl(ctl("""{"on":true,"mode":"confirm","note":"bound"}"""), true))
+        assertEquals(null, SpellsModel.bindStepCtl(ctl("""{"on":true,"mode":"confirm","note":"bind-undo-combat"}"""), true))
+        assertEquals(SpellsModel.BindStep.DONE, SpellsModel.bindStepCtl(ctl("""{"on":true,"mode":"book","note":"bind-kept"}"""), true))
+        // B undoes: the box waits for a button again (no Home)
+        assertEquals(SpellsModel.BindStep.WAIT, SpellsModel.bindStepCtl(ctl("""{"on":true,"mode":"bind","bind":133,"note":"bind-undone"}"""), true))
+        // a placed bind with no undo record: the result's 1.5 s close
+        assertEquals(SpellsModel.BindStep.DONE, SpellsModel.bindStepCtl(ctl("""{"on":true,"mode":"book","note":"result-closed"}"""), true))
+        assertEquals(SpellsModel.BindStep.DONE, SpellsModel.bindStepCtl(ctl("""{"on":true,"mode":"book","note":"bind-cancel"}"""), false))
+        // the box gone some other way while confirming (the controller let go): Home as before; not while merely waiting
+        assertEquals(SpellsModel.BindStep.DONE, SpellsModel.bindStepCtl(ctl("""{"on":false,"mode":"book","note":"released"}"""), true))
+        assertEquals(null, SpellsModel.bindStepCtl(ctl("""{"on":false,"mode":"book","note":"released"}"""), false))
+        assertEquals(null, SpellsModel.bindStepCtl(ctl("""{"on":true,"mode":"bind","bind":133,"note":"bind-form"}"""), false))
+    }
+
     @Test fun aRefusalNamesItsReason() {
         val l = SpellsModel.bindLogLine(ack("""{"type":"spellsack","op":"bind","v":"b50","id":133,"ok":false,"why":"dpad bar",
             "probe":{"src":"pad","pad":1,"padSrc":"gps"}}"""), none)

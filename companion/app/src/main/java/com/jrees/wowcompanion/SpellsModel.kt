@@ -125,6 +125,27 @@ object SpellsModel {
      *  presses again, so the new-spell flow must not go Home on it. Every other answer ends the box */
     fun bindFinal(r: BindResult): Boolean = r.ok || r.why !in setOf("reserved", "unsure", "form-unknown", "dpad bar")
 
+    /** the new-spell flow's Bind box, step by step. The user (2026-11-12, "Wait for keep/undo"): after a bind took, the box asks keep /
+     *  undo (Book b42 mode "confirm"); the flow must not go Home meanwhile, only once the player keeps it or the box closes.
+     *  WAIT = the box waits for a button (keep going, no timeout of its own); CONFIRM = a bind took, the box's answer is coming / asking
+     *  keep or undo (the app arms a timeout); DONE = the box is over (go Home as before) */
+    enum class BindStep { WAIT, CONFIRM, DONE }
+
+    /** a bind answer (spellsack op "bind"): one that took waits for the box's keep / undo (or its 1.5 s result close); a refusal the box
+     *  keeps waiting after waits; any other refusal ends it */
+    fun bindStepAck(r: BindResult): BindStep = when { r.ok -> BindStep.CONFIRM; bindFinal(r) -> BindStep.DONE; else -> BindStep.WAIT }
+
+    /** a spellsctl while the flow's box is open; [confirming] = a bind took and keep / undo is awaited. null = no change. The add-on's
+     *  own notes (Book b42): bind-kept / bind-cancel / result-closed end it; bind-undone puts the box back to waiting for a button
+     *  ("b removes it and let's you keep binding"). While confirming, the controller let go or the box back on the book (any other
+     *  close) also ends it */
+    fun bindStepCtl(c: Ctl, confirming: Boolean): BindStep? = when {
+        c.note == "bind-kept" || c.note == "bind-cancel" || c.note == "result-closed" -> BindStep.DONE
+        c.note == "bind-undone" -> BindStep.WAIT
+        confirming && (!c.on || c.mode == "book") -> BindStep.DONE
+        else -> null
+    }
+
     fun bindLogLine(msg: JSONObject, app: AppTrig): String {
         val p = msg.optJSONObject("pad")
         val pr = msg.optJSONObject("probe")
