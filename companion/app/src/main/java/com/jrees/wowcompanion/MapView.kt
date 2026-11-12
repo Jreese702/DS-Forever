@@ -3530,7 +3530,7 @@ class MapView(context: Context) : View(context) {
     private fun psFocus(): Int { val q = psStep?.quest ?: 0; return if (psHolds() && q > 0 && questById.containsKey(q)) q else 0 }
     /** {"type":"pstep"}: Polestar's live objective, or none */
     fun onPolestarStep(d: JSONObject) {
-        val before = psShown(); val beforeHolds = psHolds(); val beforeWords = psStep?.let { it.title + "|" + it.words }
+        val before = psShown(); val beforeHolds = psHolds(); val beforeWords = psStep?.sig()
         val beforeMerged = psMerged()
         psStep = PolestarStep.parse(d)
         if (psStep != null) psStepAt = System.currentTimeMillis()   // (Map.lua re-sends a none every 15 s: only a real step stamps)
@@ -3543,7 +3543,7 @@ class MapView(context: Context) : View(context) {
             psPicked = if (first && !psPicked) { Settings.polestarOffBoot = b; false } else Settings.polestarOffBoot != b
         }
         if (psShown() != before) { rebuildItems(); if (cursor.shown && cursor.sel == MapList.POLESTAR && !psShown()) cursor.reset() }
-        if (psHolds() != beforeHolds || psStep?.let { it.title + "|" + it.words } != beforeWords || psMerged() != beforeMerged) psChanged()
+        if (psHolds() != beforeHolds || psStep?.sig() != beforeWords || psMerged() != beforeMerged) psChanged()
         psSyncTick()
         postInvalidate()
     }
@@ -3577,6 +3577,16 @@ class MapView(context: Context) : View(context) {
         psSyncTick()
         invalidate()
     }
+    // ps4 (ps-noloc-guide)'s "row picked" for the add-on is [polestarHolds] above (int/1429: one signal; Map.lua WC.pnav.psOn, which
+    // PadMap's starter item on Y reads too)
+    /** ps4: the item PadMap armed on Y (its padmap doc's qitem id, 0 none): the light blue row's Y glyph shows only when it is ours */
+    var qitemArmed = 0
+        set(v) {
+            if (field == v) return
+            field = v; cards.remove(MapList.POLESTAR)
+            onShownFocusChanged?.let { cb -> post { cb() } }
+            postInvalidate()
+        }
     /** the quest the picked light blue row stands for ([PolestarMerge]; the user, 2026-11-11: "consolidate that into one"), 0 none */
     private fun psMerged(): Int = PolestarMerge.quest(psShown(), psPicked, psStep?.quest ?: 0) { questById.containsKey(it) }
     /** the QUEST the cursor's key stands for on the map: the merged light blue row is its quest ([PolestarMerge.key]), else the key */
@@ -3590,8 +3600,13 @@ class MapView(context: Context) : View(context) {
         val base = if (q > 0) (tracked.firstOrNull { it.optInt("id", 0) == q } ?: questById[q])?.let { cardFor(it) } else null
         val ct = PolestarMerge.content(if (base != null) q else 0, st.title, st.words, base?.title, base?.objectives ?: emptyList())
             ?: return null
+        // ps4 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): an item-started
+        // quest with the item in the bags reads "Use <item>" with its icon, and Y's glyph once PadMap has armed it on Y (m132)
         val card = if (ct.merged && base != null)
             UiKit.QuestCard(ct.title, base.level, psBlue, ct.lines, turnIn = base.turnIn, number = base.number, focused = true)
+        else if (st.useItem)
+            UiKit.QuestCard(st.title ?: st.useLine(), 0, psBlue, listOf(st.useLine() to false), focused = psHolds(),
+                useIcon = st.itemIcon, useGlyph = if (psHolds() && qitemArmed == st.itemId) glyph("y") else null)
         else UiKit.QuestCard(ct.title, 0, psBlue, ct.lines, focused = psHolds())
         cards[MapList.POLESTAR] = card
         return card
@@ -4289,9 +4304,15 @@ class MapView(context: Context) : View(context) {
     fun polestarGoal(): DoubleArray? {
         if (Settings.questTracking != "polestar") return null
         // ps3: a held step with no spot of its own sends no goal (no GO, no route): Polestar guides it itself, the quest's goals are not it
-        if (psHolds()) psStep?.let { st -> return if (st.hasLoc) doubleArrayOf(st.map.toDouble(), st.x, st.y) else null }
+        // ps4 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"; the approved fallback):
+        // ... unless its quest is in the log - then that quest's objective areas, exactly as a focused quest's; Polestar's point wins
+        var q = focusQid
+        if (psHolds()) when (val g = PolestarStep.guide(psStep) { questById.containsKey(it) }) {
+            is PolestarStep.Guide.Point -> return doubleArrayOf(g.map.toDouble(), g.x, g.y)
+            is PolestarStep.Guide.Quest -> q = g.q
+            PolestarStep.Guide.None -> return null
+        }
         val m = map ?: return null
-        val q = focusQid
         if (q <= 0 || m.optInt("onTaxi", 0) == 1) return null
         val mapId = m.optInt("mapID", 0)
         val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)

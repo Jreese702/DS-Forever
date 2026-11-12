@@ -2332,7 +2332,10 @@ object UiKit {
      * (null = the plain mark); [focused] = the game's focused (super-tracked) quest: the gold disc and the gold bar.
      */
     class QuestCard(val title: String, val level: Int, val colour: Int, val objectives: List<Pair<String, Boolean>>,
-                    val turnIn: Boolean = false, val number: Int? = null, val focused: Boolean = true)
+                    val turnIn: Boolean = false, val number: Int? = null, val focused: Boolean = true,
+                    /** ps4 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): an item
+                     *  to use - its icon (fileDataID, 0 none) in place of the first line's mark, and a pad glyph (null none) at its end */
+                    val useIcon: Int = 0, val useGlyph: String? = null)
 
     /** the card's measures at scale 1 (the Map room's list: 400 px wide); Home draws it at [CARD_HOME_SCALE] */
     const val CARD_PAD = 12f
@@ -2417,13 +2420,22 @@ object UiKit {
             val po = bodyPaint(23f * s, Color.rgb(120, 220, 120)).apply { setAlpha(lineAlpha(y)) }
             val cy = y + CARD_LINE * s / 2f
             c.drawText(Tr.t("Ready for turn-in"), tx, cy - (po.ascent() + po.descent()) / 2f, po)
-        } else for ((line, done) in q.objectives) {
+        } else for ((li, lp) in q.objectives.withIndex()) {
+            val (line, done) = lp
             val la = lineAlpha(y)
             if (la <= 0) break
             val cy = y + CARD_LINE * s / 2f
-            if (la >= 255) objectiveMark(c, tx + 9f * s, cy, 20f * s, done)
+            // ps4: the item to use on the first line - its icon for the mark, the pad glyph at the line's end
+            val use = li == 0 && (q.useIcon > 0 || q.useGlyph != null)
+            val ib = if (use) Icons.get(q.useIcon) else null
+            if (la >= 255) {
+                if (ib != null) c.drawBitmap(ib, null, RectF(tx - 2f * s, cy - 11f * s, tx + 20f * s, cy + 11f * s), pixel)
+                else objectiveMark(c, tx + 9f * s, cy, 20f * s, done)
+            }
+            val gw = if (use && q.useGlyph != null) 34f * s else 0f
+            if (use && q.useGlyph != null && la >= 255) pad(c, q.useGlyph, box.right - pad - gw / 2f, cy, 30f * s)
             val po = bodyPaint(23f * s, if (done) Theme.dim else Color.rgb(204, 204, 204)).apply { setAlpha(la) }
-            c.drawText(Tr.t(TextUtils.ellipsize(line, po, box.right - pad - tx - 26f * s, TextUtils.TruncateAt.END).toString()), tx + 26f * s,
+            c.drawText(Tr.t(TextUtils.ellipsize(line, po, box.right - pad - tx - 26f * s - gw, TextUtils.TruncateAt.END).toString()), tx + 26f * s,
                 cy - (po.ascent() + po.descent()) / 2f, po)
             y += CARD_LINE * s
         }

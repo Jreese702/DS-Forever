@@ -54,4 +54,49 @@ class PolestarStepTest {
         val nl = PolestarStep.parse(JSONObject("""{"type":"pstep","v":"ps4","t":"Talk","nl":true,"wx":1.0,"wy":2.0,"c":0}"""))!!
         assertFalse(nl.hasWorld)
     }
+
+    // ps4 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go")
+    @Test fun anItemStartedQuestCarriesItsItem() {
+        val st = PolestarStep.parse(JSONObject("""{"type":"pstep","v":"ps4","t":"Vayn Moongaze","g":"Accept Ripped Missive","k":"accept","q":8460,"nl":true,"it":20310,"ih":true,"ic":134939,"itn":"Ripped Missive"}"""))!!
+        assertTrue(st.useItem)
+        assertEquals(20310, st.itemId); assertEquals(134939, st.itemIcon); assertEquals("Use Ripped Missive", st.useLine())
+        val notHeld = PolestarStep.parse(JSONObject("""{"type":"pstep","t":"Vayn Moongaze","g":"Accept Ripped Missive","nl":true,"it":20310,"ih":false}"""))!!
+        assertFalse("not in the bags: the step as today", notHeld.useItem)
+        assertTrue(st.sig() != notHeld.sig())
+        val old = PolestarStep.parse(JSONObject("""{"type":"pstep","v":"ps3","t":"Talk","nl":true}"""))!!
+        assertFalse(old.useItem); assertEquals(0, old.itemId); assertNull(old.itemName)
+        assertEquals("Use the item", PolestarStep("t", null, "accept", 1, 0, Double.NaN, Double.NaN, itemId = 5, itemHeld = true).useLine())
+    }
+
+    @Test fun theFallbackGuidance() {
+        val inLog = setOf(77)
+        // no point, its quest in the log: that quest's areas, as a focused quest
+        val noLoc = PolestarStep.parse(JSONObject("""{"type":"pstep","t":"Train","g":"Talk","q":77,"nl":true}"""))
+        val g = PolestarStep.guide(noLoc) { it in inLog }
+        assertTrue(g is PolestarStep.Guide.Quest); assertEquals(77, (g as PolestarStep.Guide.Quest).q)
+        // a point: Polestar's point wins, its quest in the log or not
+        val pt = PolestarStep.guide(PolestarStep.parse(JSONObject("""{"type":"pstep","t":"Wolves","q":77,"m":1429,"x":0.4,"y":0.6}"""))) { it in inLog }
+        assertTrue(pt is PolestarStep.Guide.Point); pt as PolestarStep.Guide.Point
+        assertEquals(1429, pt.map); assertEquals(0.4, pt.x, 1e-9); assertEquals(0.6, pt.y, 1e-9)
+        // no point, no quest in the log (an accept, an item to use): nothing
+        assertEquals(PolestarStep.Guide.None, PolestarStep.guide(PolestarStep.parse(JSONObject("""{"type":"pstep","t":"Accept","q":8460,"nl":true}"""))) { it in inLog })
+        assertEquals(PolestarStep.Guide.None, PolestarStep.guide(PolestarStep.parse(JSONObject("""{"type":"pstep","t":"Hearth","nl":true}"""))) { it in inLog })
+        assertEquals(PolestarStep.Guide.None, PolestarStep.guide(null) { true })
+    }
+
+    /** int/1429: ps-noloc-guide's pick tell and ps-compass's "row holds" word are ONE signal now, sent by PolestarNav.tick only
+     *  (38 then 8 / 9): on change, again every KEEP_EVERY_MS (20 s) while on (Map.lua forgets it after 60 s), a lost batch said again */
+    @Test fun thePickIsToldOnChangeAndAgainWhilePicked() {
+        val t = PolestarNav()
+        assertEquals("nothing said yet, nothing held: no taps", emptyList<Int>(), t.tick(null, 0, false))
+        assertEquals(listOf(38, 8), t.tick(null, 100_001, true))
+        assertEquals(emptyList<Int>(), t.tick(null, 100_001 + PolestarNav.KEEP_EVERY_MS - 1, true))
+        assertEquals(listOf(38, 8), t.tick(null, 100_001 + PolestarNav.KEEP_EVERY_MS, true))
+        assertTrue("re-said well inside the add-on's 60 s", PolestarNav.KEEP_EVERY_MS <= 20_000L)
+        assertEquals(listOf(38, 9), t.tick(null, 200_000, false))
+        assertEquals(emptyList<Int>(), t.tick(null, 200_001, false))
+        t.lost()
+        assertEquals("a lost batch is said again", listOf(38, 9), t.tick(null, 200_002, false))
+        assertEquals(emptyList<Int>(), t.tick(null, 200_003, false))
+    }
 }

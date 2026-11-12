@@ -2370,6 +2370,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
                 spellbookView.onPadMap(it); controllerView.onPadMap(it); homeView.onPadMap(it); spellsOverlay.onPadMap(it)
+                if (current) mapView.qitemArmed = it.qitem?.id ?: 0          // ps4: the light blue row's Y glyph (PadMap m132)
                 if (current) { newSpellMap = it; it.dpad?.name?.takeIf { n -> n.isNotEmpty() }?.let { n -> newSpellWho = "$n-${it.dpad.realm ?: ""}" } }
                 // the D-pad room bar (Spells' m24): the Settings row's state, and the once-per-character prompt
                 it.dpad?.let { d ->
@@ -3614,7 +3615,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun polestarTick() {
         val pad = questsPad ?: return
         if (pad.optJSONObject("rows")?.has(PolestarNav.ROW) != true) return          // an older add-on: no Polestar bridge
-        // pn4 (the user, 2026-11-11): the add-on is told while the light blue Polestar row holds (its compass leads to Polestar's goal)
+        // pn4 (the user, 2026-11-11): the add-on is told while the light blue Polestar row holds (its compass leads to Polestar's goal);
+        // int/1429: the same word is ps4's "row picked" (PadMap m132's starter item on Y): ONE sender, this tick (PolestarPickTell folded in)
         val cols = mapView.polestar.tick(mapView.polestarGoal(), SystemClock.elapsedRealtime(), mapView.polestarHolds())
         if (cols.isEmpty()) {
             // pq1: Polestar's automation, when our choice differs from the one the add-on holds (its own batch: never inside a GO's digits)
@@ -3628,7 +3630,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         Log.i("WCMAP", "polestar: tap $cols")
         // spaced (the user, 2026-11-11: the Polestar path never showed): a cell swallows a second press within 0.25 s, so a target like
         // "1, 34, 1" lost its second digit, the add-on never had all seven and never asked Polestar (RouteWaypoint spaces its digits too)
-        TapBridge.tapsSpaced(this, pad, cols.map { PolestarNav.ROW to it }, 120L) { why -> Log.i("WCMAP", "polestar: tap failed: $why") }
+        TapBridge.tapsSpaced(this, pad, cols.map { PolestarNav.ROW to it }, 120L) { why ->
+            mapView.polestar.lost(); Log.i("WCMAP", "polestar: tap failed: $why") }       // (ps4: the row's word said again)
     }
 
     private fun cleanExit(why: String, done: (Boolean) -> Unit) {

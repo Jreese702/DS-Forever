@@ -201,10 +201,11 @@ check(r.returncode == 0 and r.stdout.strip().endswith('ALL PASS'), "tools/test_s
 # the contract's base b187c3c1 (+ m78 Manners), then m101 (the user's ruling 2026-11-07: a soft-interact target no longer blocks Smart Y):
 # the file is pinned by its content now; change it only on a ruling, and re-pin here. Re-pinned for m127 (the user's rulings
 # 2026-11-11: no tracking on Y, Manners its own row for other players only, one ordered list with Food / Water movable) and for m128
-# (the same order rule: the model's eating / drinking rate and the why line from the step Y uses)
+# (the same order rule: the model's eating / drinking rate and the why line from the step Y uses), and for m132 (the user, 2026-11-11:
+# "My current polestar objective does not give any direction on where to go": the picked Polestar step's starting item on Y, "bag")
 import hashlib
 smarty_sha = hashlib.sha256(open(os.path.join(ROOT, 'tools', 'test_smarty.py'), 'rb').read()).hexdigest()
-check(smarty_sha == "cc8eb0563f544ecf182e982938db6de61d793f5f8d4cd0d9d36b9b37443a1da0", "tools/test_smarty.py is byte for byte the pinned contract (b187c3c1 + m78 Manners + m101 soft-interact + m127 Smart Y v2 + m128 rate per kind)", smarty_sha[:12])
+check(smarty_sha == "0d1ec55e6e24f915391a1d9583351be49acbb8124fe4e724581eaf9268423758", "tools/test_smarty.py is byte for byte the pinned contract (b187c3c1 + m78 Manners + m101 soft-interact + m127 Smart Y v2 + m128 rate per kind + m132 Polestar starter, nothing targeted)", smarty_sha[:12])
 
 # ================================================================ THE WORLD: the real Spells files (and TapPad) logged in
 ROUTER_NAME = {8: "WowCompanionCombatFace8", 7: "WowCompanionFaceB", 5: "WowCompanionCombatFace5", 6: "WowCompanionCombatFace6",

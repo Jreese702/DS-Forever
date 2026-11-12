@@ -25,9 +25,15 @@ class PolestarNav {
     // compass then shows Polestar's waypoint and route whether or not a quest is focused or in the log, and Polestar's route is read
     // even when Polestar guides its step itself (it drops our GO at every step change) - so the route here is kept while [psOn] too.
     /** the light blue row holds (the last [tick]'s word) */
+    // int/1429: this word is ALSO ps-noloc-guide's "row picked" (PadMap's starter item on Y reads it through Map.lua WC.pnav.psOn):
+    // ONE protocol (pnav 38 then 8 / 9), ONE sender (this tick; PolestarPickTell folded in), the strictest timing of the two (on
+    // change + every 20 s; the add-on forgets it after 60 s) and PickTell's re-say after a lost batch ([lost])
     var psOn = false; private set
-    private var psSaid = false
+    private var psSaid: Boolean? = false                // null = said into a lost batch: say again at the next tick
     private var psSaidAt = Long.MIN_VALUE / 2
+
+    /** a refused / lost tap batch: the row's word is said again at the next [tick] (ps-noloc-guide's PolestarPickTell.lost) */
+    fun lost() { psSaid = null }
 
     /** One look at the goal at [nowMs]: [want] = (uiMapID, x, y) or null; [ps] = the light blue Polestar row holds. The row's columns
      *  to tap, in order (empty = nothing): the GO / KEEP / CANCEL first, then the row's word (never inside a GO's digits) */
@@ -179,3 +185,4 @@ class PolestarNav {
         }
     }
 }
+
