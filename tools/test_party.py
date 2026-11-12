@@ -1537,8 +1537,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p38"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m131"' in SRC["padmap"],
-      "the versions: PadMap m131, PadTabCtl p38, Book b48")
+check('local CV = "p39"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m131"' in SRC["padmap"],
+      "the versions: PadMap m131, PadTabCtl p39, Book b48")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
@@ -2152,6 +2152,83 @@ for _ in range(3):
 puts = [WT.eval('PUTS[%d]' % (i + 1)) for i in range(int(WT.eval('#PUTS')))]
 check(puts == ['1:1:DSMAP'], "p34: Open Map from the DS tab is put on the bare D-pad Left (PadMap.putCommand)", puts)
 check(WT.eval('#SPY') == 0 and WT.eval('#VIOL') == 0, "p34: no spied call, no lockdown breach")
+
+# ================================================================ p39: the In combat tab's chooser has all five tabs (the user, 2026-11-11,
+# on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3")
+WT.execute('pp("PADRSHOULDER")')
+c = ctlDoc(WT)
+check(c['view'] == 'combat' and c['pos'] == 1 and c['shown'] == 1 and WT.eval('want()') is False, "p39: In combat, the bare D-pad Left, toolbar off", c)
+WT.execute('pp("PAD1")')
+check(ctlDoc(WT).get('chooser') and ctlDoc(WT)['chooser']['list'] == 'spells', "p39: A opens In combat's chooser on Spells", ctlDoc(WT).get('chooser'))
+seen = []
+for _ in range(6):
+    seen.append(ctlDoc(WT)['chooser']['list'])
+    WT.execute('pp("PADDRIGHT")')
+seen = list(dict.fromkeys(seen))
+check(seen == ['spells', 'general', 'professions', 'extra', 'dstool'], "p39: In combat's chooser: all five tabs (Extra and DS too)", seen)
+ds = walk(WT)
+check({'DSCHAT', 'DSMAP'} <= set(ds), "p39: In combat's DS tab lists DS Forever's commands", ds)
+WT.execute('pp("PAD2")')
+# a fight spell on the button first; an In combat DS entry put there replaces it (the button does the command in fights too)
+# (this world has no game bars: the button reads as one with a fight spell over it, PadMap m43's view)
+WT.execute('local pm = WowCompanion.padMap; SLOTAT0 = pm.slotAt; local f = SLOTAT0; pm.slotAt = function(pg, st, ps) '
+           'if st == 1 and ps == 1 then return { kind = "combat", c = { id = 403, n = "Lightning Bolt", i = 1 }, ov = true } end '
+           'return f(pg, st, ps) end')
+WT.execute('PUTS = {}; CLR = {}; local pm = WowCompanion.padMap; local g = pm.clearCombat; '        # (the p34 putCommand spy stays)
+           'pm.clearCombat = function(pg, st, ps) CLR[#CLR + 1] = st .. ":" .. ps; return g(pg, st, ps) end')
+WT.execute('pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end')
+check(ctlDoc(WT)['chooser']['list'] == 'dstool', "p39: In combat on a fight-spell button: the DS tab is there too", ctlDoc(WT)['chooser'])
+WT.execute('WowCompanion.padMap.emit(true)')
+ctl_dump('padmap_combat', WT, 'padmap'); ctl_dump('ctl_combat_dstool', WT, 'padtabctl')
+WT.execute('for i = 1, 80 do pp("PADDUP") end; pp("PADDDOWN")')
+for _ in range(40):
+    if ctlDoc(WT)['chooser']['id'] == 'DSMAP':
+        break
+    WT.execute('pp("PADDDOWN")')
+WT.execute('pp("PAD1")')
+for _ in range(3):
+    if ctlDoc(WT).get('box'):
+        WT.execute('pp("PAD1")')
+puts = [WT.eval('PUTS[%d]' % (i + 1)) for i in range(int(WT.eval('#PUTS')))]
+clr = [WT.eval('CLR[%d]' % (i + 1)) for i in range(int(WT.eval('#CLR')))]
+check(puts == ['1:1:DSMAP'] and clr == ['1:1'], "p39: Open Map from In combat's DS tab: the fight spell gives way, the command goes on", (puts, clr))
+WT.execute('WowCompanion.padMap.slotAt = SLOTAT0')
+# the DS WoW toolbar on: In combat's bare D-pad takes fight spells only (p36), so its chooser keeps the three spell tabs
+WT.execute('WowCompanion.padMap.dpadBar(true); pp("PAD1"); for i = 1, 6 do pp("PADDRIGHT") end')
+c = ctlDoc(WT)
+check(WT.eval('want()') is True and c.get('chooser') and c['chooser']['list'] == 'professions',
+      "p39: toolbar on, In combat's bare D-pad: three spell tabs (the last is Professions)", c.get('chooser'))
+WT.execute('pp("PAD2"); WowCompanion.padMap.dpadBar(false)')
+# a base X / Y / A: its fight spell only, three tabs
+for _ in range(12):
+    if ctlDoc(WT)['pos'] >= 5 and ctlDoc(WT)['pos'] != 7:
+        break
+    WT.execute('pp("PADDRIGHT")')
+c = ctlDoc(WT)
+check(c['view'] == 'combat' and c['pos'] in (5, 6, 8) and c['shown'] == 1, "p39: on a base face button In combat", c)
+WT.execute('pp("PAD1")')
+for _ in range(3):
+    if ctlDoc(WT).get('box'):
+        WT.execute('pp("PAD2")')
+WT.execute('for i = 1, 6 do pp("PADDRIGHT") end')
+c = ctlDoc(WT)
+check(c.get('chooser') and c['chooser']['list'] == 'professions', "p39: a base face button In combat: three spell tabs", c.get('chooser'))
+WT.execute('pp("PAD2")')
+# WoW Defaults unchanged: five on a plain button
+WT.execute('pp("PADLSHOULDER")')
+for _ in range(12):
+    if ctlDoc(WT)['pos'] == 2:
+        break
+    WT.execute('pp("PADDLEFT")')
+WT.execute('pp("PAD1")')
+for _ in range(3):
+    if ctlDoc(WT).get('box'):
+        WT.execute('pp("PAD2")')
+WT.execute('for i = 1, 6 do pp("PADDRIGHT") end')
+c = ctlDoc(WT)
+check(c['view'] == 'normal' and c.get('chooser') and c['chooser']['list'] == 'dstool', "p39: WoW Defaults keeps its five tabs", (c['view'], c['pos'], c.get('chooser')))
+WT.execute('pp("PAD2")')
+check(WT.eval('#SPY') == 0 and WT.eval('#VIOL') == 0, "p39: no spied call, no lockdown breach")
 
 # ================================================================ m124: the In-combat spells follow the rank that casts
 WR = world()

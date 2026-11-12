@@ -498,14 +498,16 @@ class PadTabPage(
         else -> PadMapModel.commandOn(m, sl)?.name ?: sl.name ?: "Set in the game"
     }
 
-    /** the combat view, or a combat button out of combat: spells only (the addon's rows do the same) */
-    private fun onlySpells(m: PadMapModel.Map) = fight() || view == "radial" ||                  // p16: a radial casts spells
-        slotOf(m, shown(), pos)?.kind == PadMapModel.Kind.COMBAT
+    /** spells only (the addon's onlySpells, PadTabCtl p39): the radial; In combat a base X / Y / A, a form's own set, the toolbar's bare
+     *  D-pad; out of combat a combat button. Anywhere else In combat has all five tabs (the user on 1428: "it only shows the first 3") */
+    private fun onlySpells(m: PadMapModel.Map): Boolean {
+        val sl = slotOf(m, shown(), pos)
+        return ChooserTabs.spellsOnly(view, face = PadMapModel.isFace(sl), form = formNow() != null && pos != 7,
+            toolbarDpad = shown() == 1 && pos in 1..4 && toolbarOn(), combatButton = sl?.kind == PadMapModel.Kind.COMBAT)
+    }
 
     /** p11 the chooser's tabs (the user 2026-10-07: "in the controller menu, when assigning a spell, the spell menu needs some tabs. start on spells, then general (including professions), then extra"); a fight spell's chooser has no Extra */
-    private fun chooserTabs(m: PadMapModel.Map) =
-        if (onlySpells(m)) listOf("spells", "general", "professions")
-        else listOf("spells", "general", "professions", "extra", "dstool")   // p14; p34: the DS tab (PadTabCtl p34's "dstool")
+    private fun chooserTabs(m: PadMapModel.Map) = ChooserTabs.keys(onlySpells(m))  // p14; p34: the DS tab ("dstool"); p39: In combat too
     /** p34 (the user 2026-11-10: "add a 4th skill assignment category where we can add the DS toolbar buttons to any button slot"): DS
      *  Forever's own commands (keys "DS..."), the chooser's DS tab, out of Extra; each keeps its place in the padmap doc's list (the
      *  "extra" pad row counts by it) */
@@ -1106,7 +1108,9 @@ class PadTabPage(
         val cur = keys.indexOf(shownList).coerceAtLeast(0)
         val ccTabs = ctlChooser()?.tabs == true
         val classIcon = book?.lines?.firstOrNull { it.index == 1 }?.let { Icons.get(it.icon) }
+        // p39 (the user on 1428: "The icons for those 5 tabs look weird being narrowed"): each tab square in its slot, never 64 x 84
         val tr = cGaps.row(keys.size, inner.left + 8f - UiKit.TAB_END_W, inner.right - 8f + UiKit.TAB_END_W, box.top + TABS_TOP, 84f, 84f, cur, host)
+            .map { PadDiamonds.rect(ChooserTabs.square(it.left, it.top, it.right, it.bottom)) }
         for (i in keys.indices) {
             val icon = when (keys[i]) {
                 "spells" -> UiKit.tex("ricon_spellbook"); "general" -> classIcon

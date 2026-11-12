@@ -58,6 +58,8 @@ class ControllerShotsTest {
         shot("ctl_toolbar_on", "padmap_on", ctl("ctl_dleft"))
         shot("ctl_toolbar_off", "padmap_off", ctl("ctl_dleft") { it.remove("note") })
         shot("ctl_chooser_ds", "padmap_off", ctl("ctl_dstool"))
+        // p39 (the user on 1428): In combat's chooser with all five tabs, each square
+        shot("ctl_chooser_combat_ds", "padmap_combat", ctl("ctl_combat_dstool"))
         shot("ctl_tabs", "padmap_on", ctl("ctl_dleft") { it.put("focus", "tabs").put("tcur", 3).put("view", "combat") })
         shot("ctl_switch", "padmap_on", ctl("ctl_dleft") { it.put("focus", "switches") })
     }
