@@ -340,31 +340,29 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
                     val c = java.net.URL("https://$host/$path/$rel").openConnection() as java.net.HttpURLConnection
                     c.connectTimeout = 15_000; c.readTimeout = 60_000
                     if (have > 0) c.setRequestProperty("Range", "bytes=$have-")
-                    var keep = false               // true while the bytes flow: a network error then keeps the part for the next try
+                    var drop = false               // only an answer that proves the part wrong drops it (CdnResume.dropsPart)
                     try {
                         val from = when (val u = CdnResume.use(c.responseCode, c.getHeaderField("Content-Range"), c.contentLengthLong, have, size)) {
-                            is CdnResume.Use.Refuse -> return@run u.why
+                            is CdnResume.Use.Refuse -> { drop = CdnResume.dropsPart(u.why); return@run u.why }
                             is CdnResume.Use.Append -> { size = u.size; have }
                             is CdnResume.Use.Fresh -> { size = u.size; 0L }
                         }
                         // the big tables (ENCODING, ROOT) say how far they are (b-art-progress)
                         val counter = tables?.takeIf { size >= TablesProgress.MIN_BYTES }
                         counter?.start(size)
-                        keep = true
                         c.inputStream.use { i -> java.io.RandomAccessFile(tmp, "rw").use { o ->
                             o.setLength(from); o.seek(from)
                             val buf = ByteArray(1 shl 16); var n = from
                             counter?.progress(n)
                             while (true) { val k = i.read(buf); if (k < 0) break; o.write(buf, 0, k); n += k; counter?.progress(n) }
                         } }
-                        keep = false
                         // whole and the right kind before it is used: a short or damaged answer never lands in the cache (p-casclib-1000)
-                        CascHeal.problem(rel, tmp, size)?.let { return@run "a damaged download ($it)" }
+                        CascHeal.problem(rel, tmp, size)?.let { drop = CdnResume.dropsPart(null, damaged = true); return@run "a damaged download ($it)" }
                         if (!tmp.renameTo(to)) { to.delete(); if (!tmp.renameTo(to)) return@run "could not save it" }
                         android.util.Log.i("WCHARVEST", "fetched $rel (${to.length()} bytes) from $host" + if (from > 0) " (resumed at $from)" else "")
                         counter?.finish()
                         null
-                    } finally { c.disconnect(); if (!keep) tmp.delete() }
+                    } finally { c.disconnect(); if (drop) tmp.delete() }
                 }
                 if (why == null) break
                 val grew = (if (tmp.isFile) tmp.length() else 0L) - before

@@ -191,7 +191,7 @@ object NativeLogin {
     fun onTraffic(rxBytes: Long, txBytes: Long = -1L) {
         main.post {
             worldTraffic(rxBytes); onTrafficSample?.invoke(rxBytes, txBytes)
-            if (firstReadAt == 0L && !reachedWorld) preLogin.add(rxBytes, System.currentTimeMillis())?.let { logEvent(it) }
+            if (PreLoginTraffic.counts(firstReadAt > 0L, pastLogin, reachedWorld)) preLogin.add(rxBytes, System.currentTimeMillis())?.let { logEvent(it) }
         }
         if (!pastLogin && rxBytes >= PAST_LOGIN_BYTES && signInTraffic()) main.post {
             if (!pastLogin) {

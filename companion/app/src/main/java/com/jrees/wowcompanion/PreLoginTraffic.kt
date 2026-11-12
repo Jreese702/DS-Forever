@@ -48,6 +48,14 @@ internal class PreLoginTraffic(private val minuteMs: Long = 60_000L) {
             else -> sinceStartS >= graceS
         }
 
+        /**
+         * Is this second's traffic still "before the login screen"? Not after the client's first read, not once the run is past the
+         * login screen (the no-file grace path: 'Play without' signs in by hand and the loading screen streams data), not in the world
+         * (review of 5f61774f). A sign-in typed by hand after an unread file's cap sets neither until the world, so that loading screen
+         * still counts: the deletion line says the cap came first.
+         */
+        fun counts(read: Boolean, pastLogin: Boolean, reachedWorld: Boolean): Boolean = !read && !pastLogin && !reachedWorld
+
         const val BUSY_MB = 10L
         private const val MB = 1L shl 20
         fun mb(bytes: Long): Long = bytes / MB

@@ -76,7 +76,40 @@ class StartupIssuesTest {
         assertTrue(tries in 9..10)
     }
 
+    /** review of 5f61774f: a link that drops before the headers, or one host's 503, must keep the bytes already in hand */
+    @Test fun onlyAnAnswerThatProvesThePartWrongDropsIt() {
+        assertFalse(CdnResume.dropsPart(null))                        // connect timeout / host not found / end of stream
+        assertFalse(CdnResume.dropsPart("HTTP 503"))
+        assertFalse(CdnResume.dropsPart("HTTP 404"))
+        assertFalse(CdnResume.dropsPart("HTTP 403"))
+        assertTrue(CdnResume.dropsPart("HTTP 416"))
+        val wrong = (CdnResume.use(206, "bytes 0-99/100", 100L, 50L, 100L) as CdnResume.Use.Refuse).why
+        assertTrue(CdnResume.dropsPart(wrong))
+        assertTrue(CdnResume.dropsPart(null, damaged = true))
+        // the refusal the wiring hands it is exactly use()'s
+        assertFalse(CdnResume.dropsPart((CdnResume.use(503, null, -1L, 50L, 100L) as CdnResume.Use.Refuse).why))
+    }
+
+    /** #41 again: try 1 drops at 50 MB, try 2's reconnect fails before the headers, try 3 gets a 503: the part survives to try 4 */
+    @Test fun issue41APartSurvivesFailuresBeforeTheBody() {
+        val size = 135L * mb
+        var part = 50L * mb
+        for (fail in listOf<String?>(null, "HTTP 503")) if (CdnResume.dropsPart(fail)) part = 0L
+        assertEquals(50L * mb, part)
+        val from = CdnResume.rangeFor(part, size)
+        assertEquals(50L * mb, from)
+        assertTrue(CdnResume.use(206, "bytes $from-${size - 1}/$size", size - from, from, size) is CdnResume.Use.Append)
+    }
+
     // ---- #132 / #42: PreLoginTraffic ----
+
+    /** review of 5f61774f: once past the login screen (the no-file grace path) or in the world, the minute lines stop */
+    @Test fun theCounterStopsPastTheLoginScreen() {
+        assertTrue(PreLoginTraffic.counts(read = false, pastLogin = false, reachedWorld = false))
+        assertFalse(PreLoginTraffic.counts(read = false, pastLogin = true, reachedWorld = false))
+        assertFalse(PreLoginTraffic.counts(read = true, pastLogin = false, reachedWorld = false))
+        assertFalse(PreLoginTraffic.counts(read = false, pastLogin = false, reachedWorld = true))
+    }
 
     @Test fun aDownloadingClientIsSaidOnceAMinute() {
         val t = PreLoginTraffic()

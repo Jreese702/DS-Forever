@@ -6,7 +6,9 @@ package com.jrees.wowcompanion
  * finished (62 / 135 MB, over and over). GameFiles' CDN download now keeps its .part on a network error and asks the next try for the
  * rest (Range: bytes=<have>-); while a round of tries still adds bytes another round follows ([keepGoing]). An answer is appended only
  * when it is a 206 starting exactly where the part ends and running to the file's end; a 200 starts the file over; anything else is
- * refused and the part goes. The finished file still passes CascHeal's checks before it is used. Pure: the off-device tests drive it.
+ * refused. The part stays through every failure except one that proves it wrong ([dropsPart]): a link that drops before the headers
+ * (connect timeout, host not found, end of stream) or a host's 503 / 403 / 404 must not throw away the bytes already in hand (review of
+ * 5f61774f). The finished file still passes CascHeal's checks before it is used. Pure: the off-device tests drive it.
  */
 internal object CdnResume {
     /** rounds of CdnRetry (every host, twice) a download may take while each round still adds bytes */
@@ -35,6 +37,14 @@ internal object CdnResume {
         }
         else -> Use.Refuse("HTTP $code")
     }
+
+    /**
+     * Does this try's failure throw the kept part away? Only when the answer proves the part wrong: a wrong resume answer, HTTP 416 (the
+     * range is past the file), or a finished file that fails CascHeal ([damaged]). A network error ([refusal] null: an exception, before or
+     * during the body) and a plain refusal (5xx / 403 / 404 from one host) keep it for the next try.
+     */
+    fun dropsPart(refusal: String?, damaged: Boolean = false): Boolean =
+        damaged || refusal == "HTTP 416" || (refusal?.startsWith("a wrong resume answer") == true)
 
     /** another round after a failed one: only while the last round added bytes ([grew]), at most [MAX_ROUNDS] */
     fun keepGoing(grew: Long, round: Int): Boolean = grew > 0 && round < MAX_ROUNDS
