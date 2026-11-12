@@ -215,7 +215,8 @@ object PadMapModel {
             fish = m.optJSONObject("fish")?.let { o -> textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0)) } },
             formFights = objects(m.optJSONArray("ff")).mapNotNull { o ->
                 val f = o.optInt("f", 0); val p = o.optInt("p", 0)
-                val r = textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0)) }
+                // PadMap m141 (PadTabCtl p43): a form's fight-layer command / item / mount carries `t` / `key` (no id)
+                val r = textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0), layer = textOrNull(o, "t"), key = textOrNull(o, "key")) }
                 if (f > 0 && p in 1..8 && r != null) FormFight(f, p, r) else null
             },
             faceKeys = m.optJSONObject("face")?.optJSONObject("keys")?.let { k ->

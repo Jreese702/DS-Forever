@@ -14,6 +14,9 @@ Defaults assignment (its out-of-combat spell / command) stays exactly as it is o
     lockdown, and in the header's own [combat] state snippet) and back at its end, with no forbidden write in combat;
   7 m133 (review): the chord follows the LIVE slot (page 2 with no entry: the WoW Defaults Jump) and B's give-back / the re-arm;
   8 m133: Party mode switched on mid-fight gives the chord to the router (its pad reads it), off again gives it back;
+  10 m141 / p43 (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then "All 5 on every button"): the base
+    X / Y / A, a form's own set and the toolbar's bare D-pad take a command / item / mount on their fight layer (WoW Defaults untouched);
+    a binding there is refused with its reason;
 plus the documents (the combat view's `c.t` / `c.key`, no id) and no spied call. Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -153,7 +156,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m140"' in SRC["padmap"] and 'local CV = "p42"' in SRC["padtabctl"], "the versions: PadMap m140, PadTabCtl p42 (int/1429)")
+check('local PV = "m141"' in SRC["padmap"] and 'local CV = "p43"' in SRC["padtabctl"], "the versions: PadMap m141, PadTabCtl p43 (ctl-all5)")
 ONF = re.search(r'local ONFIGHT = \[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
 check(not re.search(r'\bfunction\b', ONF), "the header's ONFIGHT snippet holds no 'function' (the game refuses it)")
 FBS = re.search(r'function OV\.fbSnip\(fbf\)\n    return .*?\[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
@@ -289,7 +292,7 @@ ok = W.eval('WowCompanion.padMap.putFight(1, 1, 4, "mount", 7)')
 check(ok is True and ft(W, 4).get('t') == 'mount' and W.eval('HDR("wc-ft-4")') == "/cast Swift Brown Steed",
       "a mount: its summon spell in fights", W.eval('HDR("wc-ft-4")'))
 check(W.eval('WowCompanion.padMap.putFight(1, 1, 4, "mount", 999)')[0] is False and ft(W, 4).get('t') == 'mount', "an unknown mount is refused (nothing changes)")
-check(W.eval('WowCompanion.padMap.putFight(1, 1, 5, "command", "DSMAP")')[0] is False, "the base X (fixed) takes no fight-layer entry here (its own fight spell)")
+check(W.eval('WowCompanion.padMap.putFight(1, 1, 7, "command", "DSMAP")')[0] is False, "B (the game's Back) takes no fight-layer entry (m141)")
 fs = list(W.eval('WowCompanion.padMapFightSpells()').values())
 check(6948 not in fs and 7 not in fs, "the In-combat spell list (state pictures by spell id) leaves the item / mount out", fs)
 W.execute('WowCompanion.padMap.clearCombat(1, 1, 3); WowCompanion.padMap.clearCombat(1, 1, 4)')
@@ -432,6 +435,83 @@ check(W4.eval('BIND["PADDUP"]') != "JUMP",
       W4.eval('BIND["PADDUP"]'))
 W4.execute('COMBAT = true; driveAll(); COMBAT = false; driveAll(); GameMenuFrame = nil; fire("PLAYER_REGEN_ENABLED"); runTimers(NOW + 1)')
 clean(W4, "9")
+
+# ================================================================ 10. m141 / p43: the fight layer on EVERY In combat button (the user,
+# 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button")
+FORMS = r"""
+GetNumShapeshiftForms = function() return 1 end
+GetShapeshiftFormInfo = function(x) if x == 1 then return 132276, false, true, 768 end end
+SPELLNAME[768] = "Cat Form"
+"""
+W5 = boot(FORMS)
+pm = 'WowCompanion.padMap'
+FACEDB = 'WowCompanionSpellsDB.faceBy[WHO .. "-" .. REALM]'
+# a base A (set 1, position 8): Open Map on its fight layer; out of combat A stays the game's Jump (fixed, nothing of ours bound)
+ok = W5.eval(pm + '.putFight(1, 1, 8, "command", "DSMAP")')
+fe = W5.eval(FACEDB + '[8]')
+check(ok is True and fe is not None and fe.t == 'command' and fe.key == 'DSMAP', "10: Open Map on base A's fight layer (the face store, `t` command)",
+      dict(fe) if fe is not None else None)
+sl = slot_doc(W5, 1, 8)
+check(sl['kind'] == 'fixed' and sl.get('cf', {}).get('t') == 'command' and sl['cf'].get('key') == 'DSMAP' and 'id' not in sl['cf'],
+      "10: the document: A is still the game's own (fixed) with the fight layer's Open Map as its In combat entry (no id)", sl)
+check(W5.eval('router(8).a["wc-fight-type"]') == "macro" and W5.eval('router(8).a["wc-fight-macro"]') == "/click WowCompanionPadMap",
+      "10: the router's A: its fight action is the command's text", (W5.eval('router(8).a["wc-fight-type"]'), W5.eval('router(8).a["wc-fight-macro"]')))
+out0 = W5.eval('BIND["PAD1"]')
+a, kind, mt = W5.eval('key("PAD1")')
+check(kind != "fight" and 'WowCompanionPadMap' not in (mt or ''), "10: out of combat A is the game's own (Jump: never the command)", (a, kind, mt))
+W5.execute('fightOn()')
+a, kind, mt = W5.eval('key("PAD1")')
+check(a == "CLICK WowCompanionCombatFace8:LeftButton" and kind == "fight" and mt == "/click WowCompanionPadMap",
+      "10: in a fight A runs Open Map (the router's face button, its fight action)", (a, kind, mt))
+W5.execute('fightOff()')
+a, kind, mt = W5.eval('key("PAD1")')
+check(kind != "fight" and 'WowCompanionPadMap' not in (mt or ''), "10: after the fight A is the game's own again", (a, kind, mt))
+fs = list(W5.eval('WowCompanion.padMapFightSpells()').values())
+check(fs == [], "10: the state list leaves A's command out (no spell)", fs)
+# an item on base X, a mount on base Y
+ok = W5.eval(pm + '.putFight(1, 1, 5, "item", 6948)')
+check(ok is True and W5.eval('router(5).a["wc-fight-macro"]') == "/use item:6948", "10: an item on base X's fight layer", W5.eval('router(5).a["wc-fight-macro"]'))
+ok = W5.eval(pm + '.putFight(1, 1, 6, "mount", 7)')
+check(ok is True and W5.eval('router(6).a["wc-fight-macro"]') == "/cast Swift Brown Steed", "10: a mount on base Y's fight layer",
+      W5.eval('router(6).a["wc-fight-macro"]'))
+r = W5.eval(pm + '.putFight(1, 1, 8, "bind", "JUMP")')
+check(r[0] is False and r[1] == 'fixed' and W5.eval(FACEDB + '[8].key') == 'DSMAP',
+      "10: a binding on base A is refused (fixed: the game keeps the key), nothing changes", tuple(r))
+# a fight spell there replaces it (one fight-layer entry per button), and Clear takes it off
+W5.execute('BOOK = { 403 }')
+ok = W5.eval(pm + '.putCombatFace(8, 1)')
+check(ok is True and W5.eval(FACEDB + '[8].t') is None and W5.eval('router(8).a["wc-fight-spell"]') == "Lightning Bolt",
+      "10: a fight spell on A replaces the command (the newer wins)", W5.eval('router(8).a["wc-fight-spell"]'))
+W5.execute(pm + '.putFight(1, 1, 8, "command", "DSMAP"); ' + pm + '.clearCombatFace(8)')
+check(W5.eval(FACEDB + '[8]') is None and W5.eval('router(8).a["wc-fight-type"]') is None,
+      "10: Clear combat spell takes A's fight-layer command off", W5.eval('router(8).a["wc-fight-type"]'))
+# a form's own set (Cat Form, A): its fight text "wc-ff-<form index>-<pos>"
+ok = W5.eval(pm + '.putFight(1, 1, 8, "command", "DSMAP", 768)')
+ffe = W5.eval('WowCompanionSpellsDB.formFightBy[WHO .. "-" .. REALM][768][8]')
+check(ok is True and ffe is not None and ffe.t == 'command' and W5.eval('HDR("wc-ff-1-8")') == "/click WowCompanionPadMap",
+      "10: Open Map on Cat Form's A (the form's own set): its fight text", W5.eval('HDR("wc-ff-1-8")'))
+W5.execute(pm + '.emit(true)')
+ffd = [d for d in (docs(W5, 'padmap')[-1]['m'].get('ff') or []) if d['f'] == 768 and d['p'] == 8]
+check(ffd and ffd[0].get('t') == 'command' and ffd[0].get('key') == 'DSMAP' and 'id' not in ffd[0], "10: the document's ff entry: `t` / `key`, no id", ffd)
+r = W5.eval(pm + '.putFight(1, 1, 8, "bind", "JUMP", 768)')
+check(r[0] is False and r[1] == 'form', "10: a binding on a form's set is refused (form: no key of its own)", tuple(r))
+check(W5.eval(pm + '.putFight(1, 1, 8, "command", "DSMAP", 5487)')[0] is False, "10: a form this character does not have is refused")
+W5.execute(pm + '.clearCombatForm(768, 8)')
+check(W5.eval('HDR("wc-ff-1-8")') is None, "10: the form's entry cleared: no fight text", W5.eval('HDR("wc-ff-1-8")'))
+# the bare D-pad while the DS WoW toolbar holds it: a command on its fight layer is cast in fights (the toolbar's own press otherwise)
+W5.execute(pm + '.dpadBar(true)')
+ok = W5.eval(pm + '.putFight(1, 1, 1, "command", "DSMAP")')
+check(ok is True and W5.eval('HDR("wc-ft-1")') == "/click WowCompanionPadMap", "10: toolbar on: Open Map on the bare D-pad Left's fight layer", ok)
+r = W5.eval(pm + '.putFight(1, 1, 2, "bind", "JUMP")')
+check(r[0] is False and r[1] == 'dpad bar', "10: toolbar on: a binding on the bare D-pad is refused (dpad bar)", tuple(r))
+W5.execute('fightOn()')
+a, kind, mt = W5.eval('key("PADDLEFT")')
+check(kind == "slotfight" and mt == "/click WowCompanionPadMap", "10: toolbar on, in a fight: D-pad Left runs the fight layer's Open Map", (a, kind, mt))
+W5.execute('fightOff()')
+a, kind, mt = W5.eval('key("PADDLEFT")')
+check(kind != "slotfight", "10: toolbar on, out of combat: D-pad Left is the toolbar's again", (a, kind, mt))
+W5.execute(pm + '.clearCombat(1, 1, 1); ' + pm + '.dpadBar(false)')
+clean(W5, "10")
 
 print('ALL PASS (%d checks)' % passes if fails == 0 else '%d FAILED (of %d)' % (fails, fails + passes))
 sys.exit(1 if fails else 0)

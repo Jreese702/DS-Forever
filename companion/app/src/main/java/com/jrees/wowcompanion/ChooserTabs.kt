@@ -4,10 +4,12 @@ package com.jrees.wowcompanion
  * THE CONTROLLER ROOM'S CHOOSER TABS, PURE (PadTabCtl p39). The user, 2026-11-11, on 1428: "The in combat tab of the controller bindings
  * is missing all 5 pages of options, it only shows the first 3. The icons for those 5 tabs look weird being narrowed".
  *
- * Which tabs: all five (Spells, General, Professions, Extra, DS) on WoW Defaults AND In combat; only the three spell tabs where nothing
- * but a spell can go - the spell radial, on the In combat tab a base X / Y / A (its fight spell), a form's own set (PadMap m55) and the
- * bare D-pad while the DS WoW toolbar holds it (p36), and out of combat a combat button (its Otherwise spell). PadTabCtl's onlySpells()
- * is the same rule (the controller's tab row and the finger's must match: the "extra" pad row counts by them).
+ * Which tabs (PadTabCtl p43; the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every
+ * button"): all five (Spells, General, Professions, Extra, DS) on WoW Defaults AND on EVERY In combat button - a base X / Y / A, a
+ * form's own set, the bare D-pad with or without the DS WoW toolbar, every page and ZL / ZR / ZL + ZR set. An Extra / DS entry chosen
+ * there goes on that button's FIGHT LAYER only (PadMap m132 / m141); its WoW Defaults assignment never changes. Only the three spell tabs
+ * where nothing but a spell can go: the spell radial, and out of combat a combat button (its Otherwise spell). PadTabCtl's onlySpells()
+ * is the same rule on the same inputs (the controller's tab row and the finger's must match: the "extra" pad row counts by them).
  *
  * How they look: five tabs share the narrow chooser (about 64 px each, the row 84 high); each tab is drawn SQUARE in its slot (the
  * frame and its icon), never stretched to 64 x 84. Three tabs keep their 84 x 84.
@@ -16,12 +18,22 @@ object ChooserTabs {
     val SPELL_TABS = listOf("spells", "general", "professions")
     val ALL_TABS = listOf("spells", "general", "professions", "extra", "dstool")
 
-    /** [view] the room's tab; [face] a base X / Y / A; [form] a form's own set on show; [toolbarDpad] the bare D-pad the DS WoW toolbar
-     *  holds; [combatButton] the button carries a fight spell */
-    fun spellsOnly(view: String, face: Boolean, form: Boolean, toolbarDpad: Boolean, combatButton: Boolean): Boolean = when (view) {
+    /** [view] the room's tab ("normal", "combat", "radial", ...); [combatButton] the button carries a fight spell (WoW Defaults' Otherwise) */
+    fun spellsOnly(view: String, combatButton: Boolean): Boolean = when (view) {
         "radial" -> true
-        "combat" -> face || form || toolbarDpad
+        "combat" -> false
         else -> combatButton
+    }
+
+    /** p43 the bindings' grey (PadMap m34 bindAllowed + m141; PadTabCtl bindHere): why a game binding cannot go on [set] / [pos], as the
+     *  add-on's reason ("form" a form's own set on show, "fixed" the base X / Y / A / B, "layer" ZR / ZL + ZR, "dpad bar" the bare
+     *  D-pad while [toolbar] holds it), or null. The rows stay in the list (the "extra" row counts them), drawn dim with the reason */
+    fun bindBlock(set: Int, pos: Int, toolbar: Boolean, form: Boolean): String? = when {
+        form -> "form"
+        set == 1 && pos >= 5 -> "fixed"
+        set == 3 || set == 4 -> "layer"
+        set == 1 && toolbar -> "dpad bar"
+        else -> null
     }
 
     fun keys(spellsOnly: Boolean): List<String> = if (spellsOnly) SPELL_TABS else ALL_TABS
