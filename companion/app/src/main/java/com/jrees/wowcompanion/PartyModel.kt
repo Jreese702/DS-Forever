@@ -46,6 +46,8 @@ object PartyModel {
     data class Member(
         val u: String, val i: Int, val n: String, val c: String, val col: String?, val role: String,
         val dead: Boolean, val off: Boolean, val pt: String, val lv: Int?, val rng: Boolean?,
+        /** m134: the pet's portrait icon (the game's GetPetIcon, a plain fileID; icons.pak), null = none known */
+        val ic: Int? = null,
     ) {
         /** offline, or out of range by the shared answer (party_design.md A.4): drawn at [DIM] on both screens */
         val dim: Boolean get() = off || (rng == false && u != "player" && u != "pet")
@@ -60,8 +62,11 @@ object PartyModel {
         val v: String, val rs: Int, val on: Boolean, val aside: String?, val box: Int?, val fight: Boolean, val grp: Boolean,
         val sel: String, val m: List<Member>,
     ) {
-        /** Party mode on and routing (not suspended by a room / window): the only state that draws a box */
-        val onLive: Boolean get() = on && aside == null
+        /** Party mode on and routing (not suspended by a room / window): the only state that draws a box. IN A FIGHT `on` alone
+         *  (PadMap m132, the user 2026-11-11, a healer: "Party mode needs to be usable in combat for healers"): the add-on never steps
+         *  aside at a fight's start while Party mode is allowed, and its `aside` is not refreshed in the lockdown, so a stale one must
+         *  never hide a live Party mode */
+        val onLive: Boolean get() = on && (aside == null || fight)
         val n: Int get() = m.size
         /** m131: a pet is out (its entry the second, PadMap's PM.units) */
         val pet: Boolean get() = m.any { it.isPet }
@@ -110,6 +115,7 @@ object PartyModel {
             m.add(Member(
                 u, o.int("i") ?: unitIndex(u) ?: k, o.str("n") ?: "?", o.str("c") ?: "", o.str("col"), o.str("role") ?: "NONE",
                 o.bool("dead") ?: false, o.bool("off") ?: false, o.str("pt") ?: "", o.int("lv")?.takeIf { it > 0 }, o.bool("rng"),
+                o.int("ic")?.takeIf { it > 0 },
             ))
         }
         if (m.isEmpty()) return null
@@ -186,44 +192,45 @@ object PartyModel {
     }
 
     /**
-     * m131 ADAPTIVE ROWS (party_design.md "ADAPTIVE ROWS"; the user, 2026-11-11: "when one two or three full sized, when 4, bottom 2
-     * consolidate, when 5 the next 2 consolidate"): the n entries (1-based: you, your pet while out, party1..4) in min(n, 3) rows, the
-     * bottom max(0, n - 3) of them shared by two. The first [fullRows] entries are full-width rows, the rest pairs (left, right).
-     * n 1 [1]; n 3 [1][2][3]; n 4 [1][2][3,4]; n 5 [1][2,3][4,5]; n 6 [1,2][3,4][5,6].
+     * m134 THE PLAYER / PET ROW (party_design.md "PLAYER / PET REVISION"; the user, 2026-11-11, after using 1428: "I think the pet
+     * should be to the right of the player"): the n entries (1-based: you, your pet while out, party1..4) in rows - the FIRST row is you
+     * alone, or you + the pet on your right ([pet]); the k party members fill the rows under it by the adaptive rule among themselves
+     * ("when one two or three full sized, when 4, bottom 2 consolidate"): 1 or 2 full rows; 3: a full row, then a shared one; 4: 2x2.
+     * No pet: n 1 [1]; 3 [1][2][3]; 4 [1][2][3,4]; 5 [1][2,3][4,5]. With the pet: 2 [1,2]; 4 [1,2][3][4]; 5 [1,2][3][4,5]; 6 [1,2][3,4][5,6].
      */
-    fun rows(n: Int): List<List<Int>> {
-        val m = n.coerceIn(1, MAX_N)
-        val f = fullRows(m)
-        return (1..f).map { listOf(it) } + (f + 1..m step 2).map { listOf(it, it + 1) }
+    fun rows(n: Int, pet: Boolean = false): List<List<Int>> {
+        val h = if (pet && n >= 2) 2 else 1
+        val k = (n - h).coerceIn(0, 4)
+        val m = h + k
+        val f = partyFullRows(k)
+        return listOf((1..h).toList()) + (h + 1..h + f).map { listOf(it) } + (h + f + 1..m step 2).map { listOf(it, it + 1) }
     }
 
-    /** how many of the first entries stand alone on a full-width row */
-    fun fullRows(n: Int): Int { val m = n.coerceIn(1, MAX_N); return if (m <= 3) m else 6 - m }
+    /** of [k] party members under the first row, how many stand alone on a full-width row (the rest in pairs) */
+    fun partyFullRows(k: Int): Int = if (k <= 2) k.coerceAtLeast(0) else 4 - k
 
     /**
      * THE PICK'S MOVES over [rows] (the SAME rule as the add-on's OV.partyNav and its PARTY-NAV snippet body; tools/test_party.py writes
-     * the geometric table both are tested against, party-fixtures/party_nav.json): Up / Down a row (a shared row into a full one: that
-     * cell; a full row into a shared one: its LEFT cell; shared to shared: the same side), Left / Right only inside a shared row; no
-     * wrap. Null = no move (the strip dims that arrow). A box past n clamps first.
+     * the geometric table both are tested against, party-fixtures/party_nav.json, every shape with and without the pet): Up / Down a
+     * row (a shared row into a full one: that cell; a full row into a shared one: its LEFT cell; shared to shared: the same side), Left /
+     * Right only inside a shared row (you <-> your pet in the first row); no wrap. Null = no move (the strip dims that arrow). A box
+     * past n clamps first.
      */
-    fun nav(n: Int, from: Int, dir: Dir): Int? {
-        val m = n.coerceIn(1, MAX_N)
+    fun nav(n: Int, from: Int, dir: Dir, pet: Boolean = false): Int? {
+        val all = rows(n, pet)
+        val m = all.sumOf { it.size }
         val b = from.coerceIn(1, m)
-        val f = fullRows(m)
-        val to: Int? = if (b <= f) when (dir) {
-            Dir.UP -> (b - 1).takeIf { it >= 1 }
-            Dir.DOWN -> (b + 1).takeIf { it <= m }
-            Dir.LEFT, Dir.RIGHT -> null
-        } else {
-            val right = (b - f) % 2 == 0
-            when (dir) {
-                Dir.LEFT -> if (right) b - 1 else null
-                Dir.RIGHT -> if (!right) b + 1 else null
-                Dir.UP -> if (b - 2 > f) b - 2 else f.takeIf { it >= 1 }
-                Dir.DOWN -> (b + 2).takeIf { it <= m }
+        val r = all.indexOfFirst { b in it }
+        val row = all[r]
+        val side = row.indexOf(b)
+        return when (dir) {
+            Dir.LEFT -> if (row.size == 2 && side == 1) row[0] else null
+            Dir.RIGHT -> if (row.size == 2 && side == 0) row[1] else null
+            Dir.UP, Dir.DOWN -> {
+                val to = all.getOrNull(if (dir == Dir.UP) r - 1 else r + 1) ?: return null
+                if (to.size == 2 && row.size == 2) to[side] else to[0]
             }
         }
-        return to
     }
 
     // ------------------------------------------------------------------------------------------------ the app's live state
@@ -246,9 +253,16 @@ object PartyModel {
      * itself out of combat, and at a fight's end when something took the controller during it. false = suspended only.
      */
     const val OFF_ON_LEAVE = true
+    /** m133: capture holders that are a prompt (only suspend Party mode, never end it): PadMap PM.PROMPT_HOLDERS */
+    val PROMPT_HOLDERS = setOf("dialogs")
 
-    /** leaving Home's rest page: tap `off` when Party mode is ON at all (on, or on but suspended by an `aside`: off is absolute) */
-    fun offOnLeave(p: Party?): Boolean = OFF_ON_LEAVE && p?.on == true
+    /** leaving Home's rest page: tap `off` when Party mode is ON at all (on, or on but suspended by an `aside`: off is absolute).
+     *  m132: never IN A FIGHT ([fight]): there it is only suspended while something else holds (the user: usable in combat) */
+    /** m133 (review): what a tap on the bottom tab sends (true = `on`): the opposite of what the tab SHOWS (`onLive`, PartyLayout's look),
+     *  so a Party mode only suspended by a prompt out of combat (drawn off) gets a harmless `on`, never an `off` the player did not see */
+    fun tabWants(p: Party?): Boolean = p?.onLive != true
+
+    fun offOnLeave(p: Party?, fight: Boolean = false): Boolean = OFF_ON_LEAVE && !fight && p?.fight != true && p?.on == true
 
     /** Home's screen went from its rest page (no module full screen; a fight's takeover counts as rest) to a module full screen */
     fun leftRest(wasFull: Boolean, nowFull: Boolean): Boolean = nowFull && !wasFull
@@ -335,9 +349,14 @@ object PartyModel {
          * THE USER'S RULING (anything that takes the controller ends Party mode): a CURRENT interact document names the capture's
          * [holder] (a room, a Home module full screen, the pause wheel, the bar cursor, an NPC / vendor / loot window in a fight).
          * True = tap party `off` now: Party mode is on and someone holds; once per holder, again after [TAKER_RETRY_MS] while it still
-         * says on (a lost tap). This is the route IN A FIGHT, where the add-on cannot flip it itself.
+         * says on (a lost tap). m132 (the user, 2026-11-11, a healer: "Party mode needs to be usable in combat for healers. Locking it
+         * is retarded"): NEVER IN A FIGHT ([fight], or the party document's own `fight`): a holder there only suspends Party mode (the
+         * router's room mode comes first) and it is live again when the holder lets go. Out of combat the add-on ends it itself.
          */
-        fun takerSeen(holder: String?, now: Long): Boolean {
+        fun takerSeen(holder: String?, now: Long, fight: Boolean = false): Boolean {
+            if (fight || party?.fight == true) return false
+            // m133 (review): a prompt's capture (Interact's "dialogs": a static popup's mirror) only suspends, as PadMap's PM.PROMPT_HOLDERS
+            if (holder != null && holder in PROMPT_HOLDERS) return false
             if (!OFF_ON_LEAVE || holder.isNullOrEmpty() || party?.on != true) { if (holder.isNullOrEmpty()) takerTapped = null; return false }
             if (holder == takerTapped && now - takerAt < TAKER_RETRY_MS) return false
             takerTapped = holder; takerAt = now
@@ -362,7 +381,7 @@ object PartyModel {
         fun move(dir: Dir): Int? {
             val p = party ?: return null
             if (!p.onLive) return null
-            val to = nav(p.n, box, dir) ?: return null
+            val to = nav(p.n, box, dir, p.pet) ?: return null
             box = to
             return to
         }

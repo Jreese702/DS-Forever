@@ -15,16 +15,23 @@ import com.jrees.wowcompanion.PartyLayout.Box
 import kotlin.math.abs
 
 /**
- * PARTY MODE'S HOME MODULE (party_design.md C and the user's decisions 2026-11-11; m131 ADAPTIVE ROWS: the entries you, your pet
- * while out, party1..4 in min(n, 3) rows, the bottom max(0, n - 3) shared, the pet's cell the narrower - [PartyLayout.module]) beside
- * the Select tab, which always stands (off: the way in; on: lit gold, the B under it, the gold notch at the
- * pick; not bound: dim with a lock). NO health or mana here (the user: "give up on displaying HP/Mana down there").
+ * PARTY MODE'S HOME MODULE (party_design.md C and the user's decisions 2026-11-11; m134 THE PLAYER / PET ROW: you, with your pet on
+ * your right while one is out, on the first row - you the big cell - and the party members under it by the adaptive rule among
+ * themselves: [PartyLayout.module]) beside the Select tab, which always stands (off: the way in; on: lit, the B under it, the game's
+ * small gold arrow at the pick; not bound: dim with a lock). NO health or mana here (the user: "give up on displaying HP/Mana down
+ * there").
  *
  * A plate: the class stripe, the class / role icon, the name in class colour with the level after it, a skull (dead) or a plug
- * (offline), the member's LB glyph at the right while Party mode is on; offline / out of range at 0.45 (the shared rng). The PICKED
- * plate wears the gold UiKit.focus box and the A / X / Y chips of the layer on show (ZL / ZR held swap them) - not tap targets.
- * TOUCH: a tap = the member's pick cell (the add-on decides: off = Target; another member = the pick moves; the picked one = the Touch
- * action); a long press = the player menu; a tap on the tab = on (off / not bound) or off (on).
+ * (offline); offline / out of range at 0.45 (the shared rng). The pet's
+ * plate: its portrait and its name, no stripe and no green dot (m134). The PICKED plate wears the gold UiKit.focus box only - m134 (the
+ * user, 2026-11-11: "the a button glyph on them needs to be removed since highlighting it should target and a will be whatever spell is
+ * bound"): no A / X / Y chips and no LB + button glyph on the plates; the strip shows what each button casts.
+ * TOUCH: a tap = the member's pick cell (the add-on decides: off = Target; another member = the pick moves AND targets it, m134; the
+ * picked one = the Touch spell, else Target again); a long press = the player menu; a tap on the tab = on (off / not bound) or off (on).
+ *
+ * THE SELECT TAB (m134; the user, 2026-11-11: "The side panel around the select button looks like an AI border. It needs to use wow
+ * assets and sit outside of the player brand look more like its attached to the side of the screen"): the game's side tab
+ * ([UiKit.sideHandle]) flush on the screen's left edge, outside the member band; lit = the game's selected side tab over it.
  */
 @SuppressLint("ViewConstructor")
 class PartyModuleView(context: Context, private val live: PartyModel.State) : View(context) {
@@ -36,13 +43,11 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     var onCellLong: ((Int) -> Unit)? = null
     /** the Select tab's tap: true = turn Party mode on, false = off */
     var onTag: ((Boolean) -> Unit)? = null
-    /** the triggers held now (the strip's reader): ZL / ZR swap the picked plate's chips */
-    var triggers: () -> Pair<Boolean, Boolean> = { false to false }
 
     /** the tab's look and motion */
     val tab = SelectTab()
 
-    /** the module in this view's own px */
+    /** the module in this view's own px: the view's left is the screen's edge (the tab's place, m134) */
     fun module(): PartyLayout.Module =
         PartyLayout.module(mode, live.party?.n ?: 1, pet = live.party?.pet == true, top = 0f, left = 0f, right = width.toFloat())
 
@@ -56,7 +61,6 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pBmp = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val r = RectF()
-    private val path = Path()
 
     private fun RectF.of(b: Box): RectF { set(b.l, b.t, b.r, b.b); return this }
 
@@ -70,12 +74,11 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         tab.setLook(SelectTab.lookOf(p), now)
         tab.setNotch(if (on) PartyLayout.notchY(m, boxed + 1) else null, now)
         tab.groupSeen(p.grp, p.fight, now)
-        val cfg = live.cfg
-        val resOn = cfg?.slots?.values?.any { it != null && it.res && it.k } == true
+        val resOn = live.cfg?.slots?.values?.any { it != null && it.res && it.k } == true
         for ((k, cell) in m.cells.withIndex()) {
             val mem = p.m.getOrNull(k) ?: continue
             val save = if (mem.dim) c.saveLayerAlpha(cell.l, cell.t, cell.r, cell.b, (255 * PartyModel.DIM).toInt()) else -1
-            drawPlate(c, cell, mem, on, k == boxed, cfg, p, boxed + 1, resOn)
+            drawPlate(c, cell, mem, k == boxed, resOn)
             if (save >= 0) c.restoreToCount(save)
         }
         drawTab(c, m.tag, now)
@@ -83,7 +86,6 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     }
 
     private fun classColour(m: PartyModel.Member): Int {
-        if (m.isPet) return PET_RGB                                    // m131: the pet strip's green (Trail's HEALTH_RGB)
         m.col?.let { s -> runCatching { return (s.toLong(16) or 0xFF000000L).toInt() } }
         return Theme.classColourOf(m.c)
     }
@@ -91,14 +93,16 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     private val nameP by lazy { UiKit.bodyPaint(24f, Color.WHITE) }
     private val lvP by lazy { UiKit.bodyPaint(18f, Theme.dim) }
 
-    private fun drawPlate(c: Canvas, p: Box, mem: PartyModel.Member, on: Boolean, picked: Boolean, cfg: PartyModel.Cfg?,
-                          party: PartyModel.Party, box: Int, resOn: Boolean) {
+    private fun drawPlate(c: Canvas, p: Box, mem: PartyModel.Member, picked: Boolean, resOn: Boolean) {
         pFill.shader = null; pFill.colorFilter = null; pFill.style = Paint.Style.FILL
         pFill.color = Color.argb(230, 14, 12, 10)
         c.drawRoundRect(r.of(p), 6f, 6f, pFill)
-        val col = classColour(mem)
-        pFill.color = if (mem.dead) Color.rgb(110, 110, 110) else col
-        c.drawRect(r.of(PartyLayout.stripe(p)), pFill)
+        // m134 (the user, 2026-11-11: "the pet should ... not have the green dot"): a person's plate has the class stripe, the pet's none
+        val col = if (mem.isPet) Theme.text else classColour(mem)
+        if (!mem.isPet) {
+            pFill.color = if (mem.dead) Color.rgb(110, 110, 110) else col
+            c.drawRect(r.of(PartyLayout.stripe(p)), pFill)
+        }
         if (picked) UiKit.focus(c, RectF().of(p))                      // the golden BOX (the user's ruling), under the words
         // a dead member and a res spell set: a soft green edge (the res is there to cast)
         if (mem.dead && resOn) {
@@ -107,46 +111,39 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
             pFill.style = Paint.Style.FILL
         }
         val ib = PartyLayout.icon(p, mode)
-        val roleArt = when (mem.role) { "TANK" -> "role_small_tank"; "HEALER" -> "role_small_heal"; "DAMAGER" -> "role_small_dps"; else -> null }
-        val icon = roleArt?.let { UiKit.tex(it) } ?: mem.c.takeIf { it.isNotEmpty() }?.let { UiKit.classIcon(it) }
+        // the pet: its portrait (the game's GetPetIcon, m134) or nothing - never a drawn dot; a person: the role, else the class icon
+        val icon = if (mem.isPet) mem.ic?.let { Icons.get(it) } else {
+            val roleArt = when (mem.role) { "TANK" -> "role_small_tank"; "HEALER" -> "role_small_heal"; "DAMAGER" -> "role_small_dps"; else -> null }
+            roleArt?.let { UiKit.tex(it) } ?: mem.c.takeIf { it.isNotEmpty() }?.let { UiKit.classIcon(it) }
+        }
         if (icon != null) bmp(c, icon, ib, if (mem.dead) 140 else 255)
-        else { pFill.color = col; c.drawCircle(ib.cx, ib.cy, ib.w * 0.34f, pFill) }
-        // the chips first (their count fixes the name's room): the picked plate only, the layer on show
-        val glyphKey = if (on) LbMap.keyOf(mem.u) else null
-        // m131: as many as fit with the name readable (fewer, smaller, on a shared row's narrow cell)
-        val chips = if (picked) chipPics(cfg, party, box).let { it.take(PartyLayout.chipsFit(p, mode, it.size, glyphKey != null)) } else emptyList()
-        val nx = PartyLayout.nameX(p, mode)
-        val room = PartyLayout.nameRoom(p, mode, chips.size, glyphKey != null)
+        else if (!mem.isPet) { pFill.color = col; c.drawCircle(ib.cx, ib.cy, ib.w * 0.34f, pFill) }
+        // m134 (the user, 2026-11-11: "the a button glyph on them needs to be removed since highlighting it should target"): no button
+        // glyph on a plate - the game's LB + button targeting hint (an A on your own plate) is gone with the chips; the pick targets
+        val nx = if (mem.isPet && icon == null) p.l + 14f else PartyLayout.nameX(p, mode)
+        val room = PartyLayout.nameRoom(p, mode) + (PartyLayout.nameX(p, mode) - nx)
         nameP.textSize = PartyLayout.nameSize(mode)
         nameP.color = if (mem.dead) Color.rgb(150, 150, 150) else col
-        val lv = mem.lv?.let { " $it" } ?: ""
+        // the pet: its short name alone (m134: "its portrait/icon + short name"); a person: the level after the name
+        val lv = if (mem.isPet) "" else mem.lv?.let { " $it" } ?: ""
         lvP.textSize = PartyLayout.nameSize(mode) * 0.72f
         val lvW = if (lv.isEmpty()) 0f else lvP.measureText(lv)
-        val name = android.text.TextUtils.ellipsize(Tr.t(mem.n), android.text.TextPaint(nameP), (room - lvW - 40f).coerceAtLeast(40f),
-            android.text.TextUtils.TruncateAt.END).toString()
+        // the skull / plug's room only when it is drawn
+        val name = fit(Tr.t(mem.n), nameP, (room - lvW - (if (mem.dead || mem.off) 40f else 0f)).coerceAtLeast(40f))
         val baseY = p.cy - (nameP.ascent() + nameP.descent()) / 2f
         c.drawText(name, nx, baseY, nameP)
         var x = nx + nameP.measureText(name)
         if (lv.isNotEmpty()) { c.drawText(lv, x, baseY, lvP); x += lvW }
         val st = PartyLayout.state(p, x)
         if (mem.dead) PartyArt.skull(c, st) else if (mem.off) PartyArt.plug(c, st)
-        glyphKey?.let { UiKit.pad(c, LbPartyView.glyphOf(it), PartyLayout.glyph(p).cx, p.cy, 36f) }
-        for ((j, b) in PartyLayout.chips(p, chips.size).withIndex()) {
-            val (face, pic) = chips[j]
-            val art = if (pic.kind == PartyStrip.Kind.INSPECT) UiKit.tex("fixed_inspect") else pic.spell?.let { Icons.get(it.i) }
-            UiKit.spell(c, art, b.l, b.t, b.w, if (pic.lit) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL, onDark = true)
-            val bg = PartyLayout.badge(b)
-            UiKit.pad(c, Glyphs.translate("rev_$face", CastSettings.buttonLayout), bg.cx, bg.cy, bg.w)
-        }
     }
 
-    /** the picked plate's chips: A, X, Y of the layer the triggers show (ZL / ZR swap them; both held: none); Empty not drawn */
-    private fun chipPics(cfg: PartyModel.Cfg?, party: PartyModel.Party, box: Int): List<Pair<String, PartyStrip.Pic>> {
-        val (lt, rt) = triggers()
-        val layer = PartyStrip.layer(lt, rt)
-        if (layer == PartyStrip.Layer.BOTH) return emptyList()
-        return listOf("a", "x", "y").map { it to PartyStrip.face(it, layer, cfg, party, box, party.fight) }
-            .filter { it.second.kind != PartyStrip.Kind.EMPTY }
+    /** [s] cut to [room] px with an ellipsis (measured, so a narrow cell never draws past its edge) */
+    private fun fit(s: String, p: Paint, room: Float): String {
+        if (p.measureText(s) <= room) return s
+        var k = s.length
+        while (k > 1 && p.measureText(s, 0, k) + p.measureText("\u2026") > room) k--
+        return s.substring(0, k).trimEnd() + "\u2026"
     }
 
     private fun bmp(c: Canvas, b: Bitmap, at: Box, alpha: Int) {
@@ -156,38 +153,25 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     }
 
     /**
-     * THE SELECT TAB (party_design.md E): the same rectangle in every state, no words. Off: the dark panel, a 2 px gold edge, the
-     * Select glyph and the gold arrow pointing into the column. On: SOFT_GOLD at 35 % (wiped in), the full-gold edge, the glyph bright
-     * with the checked glow, the arrow turned to point out, a small B, the gold notch at the pick. Not bound: the glyph at 40 %, a lock.
+     * THE SELECT TAB (party_design.md E; m134, the user 2026-11-11: "It needs to use wow assets and sit outside of the player brand look
+     * more like its attached to the side of the screen"): the game's side tab as a drawer handle on the screen's left edge
+     * ([UiKit.sideHandle]); the same rectangle in every state, no words, no drawn edge or glow. Off: the plain side tab, the Select glyph
+     * and the gold arrow pointing into the band. On: the game's selected side tab lit over it (wiped in), the arrow turned to point out,
+     * a small B, the game's small gold arrow on the tab's edge at the pick. Not bound: the glyph at 40 %, a lock. A group forming: the
+     * lit art pulses twice; a Select press: the glyph pressed in.
      */
     private fun drawTab(c: Canvas, t: Box, now: Long) {
         val look = tab.look
         val w = tab.wipe(now)
-        pFill.shader = null; pFill.colorFilter = null; pFill.style = Paint.Style.FILL
-        pFill.color = Color.rgb(20, 17, 13)
-        c.drawRoundRect(r.of(t), 6f, 6f, pFill)
-        if (w > 0f) {
-            // the gold wipe: from the top down while it turns on (and back up while it turns off)
-            pFill.color = Color.argb((255 * 0.35f).toInt(), Color.red(UiKit.SOFT_GOLD), Color.green(UiKit.SOFT_GOLD), Color.blue(UiKit.SOFT_GOLD))
-            c.save(); c.clipRect(t.l, t.t, t.r, t.t + t.h * w)
-            c.drawRoundRect(r.of(t), 6f, 6f, pFill)
-            c.restore()
-        }
-        val edge = when {
-            tab.pressed(now) -> Color.rgb(196, 156, 72)
-            look == SelectTab.Look.ON -> Color.rgb(255, 209, 0)
-            else -> Color.rgb(140, 110, 52)
-        }
-        pFill.style = Paint.Style.STROKE; pFill.strokeWidth = 2f
-        pFill.color = Color.argb((255 * tab.edgeAlpha(now)).toInt(), Color.red(edge), Color.green(edge), Color.blue(edge))
-        c.drawRoundRect(RectF(t.l + 1f, t.t + 1f, t.r - 1f, t.b - 1f), 6f, 6f, pFill)
-        pFill.style = Paint.Style.FILL
+        val pulse = tab.edgeAlpha(now)
+        // the lit art: the wipe (on / off), else a pulse while it is off (a group formed: 0.5 .. 1 .. 0.5 shown as 0 .. 0.5 .. 0)
+        val lit = if (w > 0f) w else if (pulse < 1f) (1f - pulse) else 0f
+        UiKit.sideHandle(c, RectF().of(t), lit, if (look == SelectTab.Look.UNBOUND) 170 else 255)
         val tp = PartyLayout.tabParts(t)
         val gs = tp.glyph * tab.glyphScale(now)
         val ga = if (look == SelectTab.Look.UNBOUND) (255 * 0.4f).toInt() else 255
-        if (look == SelectTab.Look.ON) UiKit.checkedGlow(c, RectF(tp.glyphCx - gs / 2f, tp.glyphCy - gs / 2f, tp.glyphCx + gs / 2f, tp.glyphCy + gs / 2f))
         UiKit.pad(c, Glyphs.translate("rev_minus", CastSettings.buttonLayout), tp.glyphCx, tp.glyphCy, gs, ga)
-        // the arrow: into the column (right) when off, turned 180 deg (out, left) when on; a short tab's On look shows the B in its
+        // the arrow: into the band (right) when off, turned 180 deg (out, left) when on; a short tab's On look shows the B in its
         // place (the user's decision 1, 2026-11-11: "B shown")
         val onLook = look == SelectTab.Look.ON
         if (!(onLook && tp.bOnArrow)) UiKit.tex("move_arrow_right")?.let { a ->
@@ -199,11 +183,9 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         if (look == SelectTab.Look.UNBOUND) UiKit.tex("talent_lock")?.let { l ->
             bmp(c, l, Box(tp.glyphCx - tp.lock / 2f, tp.lockCy - tp.lock / 2f, tp.glyphCx + tp.lock / 2f, tp.lockCy + tp.lock / 2f), 255)
         }
-        // the gold notch on the right edge at the pick (it slides with it)
+        // the pick on the tab's right edge (it slides with it): the game's small gold arrow (common-dropdown-icon-next), pointing in
         tab.notchY(now)?.let { ny ->
-            pFill.color = Theme.gold
-            path.reset(); path.moveTo(t.r, ny - tp.notchW); path.lineTo(t.r + tp.notchW, ny); path.lineTo(t.r, ny + tp.notchW); path.close()
-            c.drawPath(path, pFill)
+            UiKit.tex("menu_next")?.let { a -> bmp(c, a, Box(t.r - tp.notch * 0.35f, ny - tp.notch / 2f, t.r + tp.notch * 0.65f, ny + tp.notch / 2f), 255) }
         }
     }
 
@@ -240,7 +222,9 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
             MotionEvent.ACTION_UP -> {
                 removeCallbacks(longPress)
                 val m = module()
-                if (downTag && PartyLayout.hitTag(m, e.x, e.y)) onTag?.invoke(live.party?.onLive != true)
+                // m133 (review): the tap follows what the tab SHOWS (`onLive`, the look's own value): drawn off = `on` (also a Party mode
+                // only suspended by a prompt out of combat, a harmless `on`), drawn on = `off`; in a fight onLive is `on` alone (m132)
+                if (downTag && PartyLayout.hitTag(m, e.x, e.y)) onTag?.invoke(PartyModel.tabWants(live.party))
                 else if (downCell >= 0 && !longFired && PartyLayout.hit(m, e.x, e.y) == downCell) unitOf(downCell)?.let { onCellTap?.invoke(it) }
                 downCell = -1; downTag = false
             }
@@ -259,8 +243,6 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         const val LONG_MS = 450L
         /** a tap moves no more than this */
         const val SLOP = 24f
-        /** m131: the pet's colour - the HUD pet strip's green (Trail.lua HEALTH_RGB 0.12 / 0.86 / 0.12) */
-        val PET_RGB = Color.rgb(31, 219, 31)
     }
 }
 

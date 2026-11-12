@@ -50,13 +50,19 @@ class PartyShotsTest {
         member(4, "Odwin Thornbrook", "PRIEST", "HEALER", "MANA", 45),
     )
 
-    private fun party(n: Int, on: Boolean, box: Int, deadOn: Boolean = n == 5): JSONObject {
+    /** m134: the pet's entry (right after you): no class, its portrait icon (a hunter wolf's) */
+    private val petEntry = JSONObject().put("u", "pet").put("i", 5).put("n", "Grimfang").put("role", "NONE").put("pt", "FOCUS")
+        .put("lv", 20).put("dead", false).put("off", false).put("ic", 132266)
+
+    /** [n] people (you + party), plus [pet] (your pet as the second entry) */
+    private fun party(n: Int, on: Boolean, box: Int, deadOn: Boolean = n == 5, pet: Boolean = false): JSONObject {
         val m = org.json.JSONArray()
         val order = if (n == 3) listOf(0, 1, 3) else (0 until n).toList()
         for (k in order) {
             val o = JSONObject(roster[k].toString())
             if (k == 3 && !deadOn) o.put("dead", false)
             m.put(o)
+            if (k == 0 && pet) m.put(JSONObject(petEntry.toString()))
         }
         return JSONObject().put("type", "party").put("v", "m77").put("rs", 1)
             .put("p", JSONObject().put("on", on).put("box", box).put("fight", false).put("grp", n > 1).put("sel", "bound").put("m", m))
@@ -82,17 +88,27 @@ class PartyShotsTest {
         File(d, name).outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
-    /** the module as Home places it (HomeView.withParty): its well's top at [top], the left column x 8..615 */
-    private fun module(name: String, mode: PartyLayout.Mode, n: Int, on: Boolean, box: Int, top: Float = PartyLayout.defaultTop(mode)) {
+    /** the module as Home places it (HomeView.withParty): its well's top at [top]; m134: the view from the screen's left edge (the
+     *  Select tab's place) to x 615, the chat's well under it x 8..615 */
+    private fun module(name: String, mode: PartyLayout.Mode, n: Int, on: Boolean, box: Int, top: Float = PartyLayout.defaultTop(mode),
+                       pet: Boolean = false, sel: String = "bound") {
         val st = PartyModel.State()
-        st.onParty(PartyModel.parseParty(party(n, on, box))!!, true, 0L)
+        val doc = party(n, on, box, pet = pet)
+        doc.getJSONObject("p").put("sel", sel)
+        st.onParty(PartyModel.parseParty(doc)!!, true, 0L)
         val v = PartyModuleView(RuntimeEnvironment.getApplication(), st)
         v.mode = mode
-        val m = PartyLayout.module(mode, st.party!!.n, top = top)
+        val m = PartyLayout.module(mode, st.party!!.n, pet = st.party!!.pet, top = top)
         val (bmp, c) = page()
         // the chat's well under it, empty: where chat would stand
         UiKit.module(c, android.graphics.RectF(8f, m.chatTop, 616f, 927f))
-        draw(c, v, 8f, top - PartyModuleView.RISE, 615f, m.well.b)
+        draw(c, v, PartyLayout.EDGE, top - PartyModuleView.RISE, 615f, m.well.b)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        Thread.sleep(300)                                                 // the pet's portrait decodes off the UI thread
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        c.drawColor(Theme.ink)
+        UiKit.module(c, android.graphics.RectF(8f, m.chatTop, 616f, 927f))
+        draw(c, v, PartyLayout.EDGE, top - PartyModuleView.RISE, 615f, m.well.b)
         save(bmp, name)
     }
 
@@ -145,7 +161,7 @@ class PartyShotsTest {
         val mod = PartyModuleView(RuntimeEnvironment.getApplication(), st)
         val m = PartyLayout.module(PartyLayout.Mode.REST, 3)
         UiKit.module(c, android.graphics.RectF(8f, m.chatTop, 616f, 927f))
-        draw(c, mod, 8f, 216f - PartyModuleView.RISE, 615f, m.well.b)
+        draw(c, mod, PartyLayout.EDGE, 216f - PartyModuleView.RISE, 615f, m.well.b)
         val v = PartyMenuView(RuntimeEnvironment.getApplication())
         v.open(1, "Brannoc Ironhelm", byPad = true)
         v.onDoc(JSONObject("""{"type":"pmenu","unit":"party1","which":"PARTY","nm":"Brannoc Ironhelm","src":"party","items":[
@@ -202,5 +218,25 @@ class PartyShotsTest {
         module("home_solo_off_rest.png", PartyLayout.Mode.REST, 1, on = false, box = 1)
         module("home_solo_on_combat.png", PartyLayout.Mode.FIGHT_ON, 1, on = true, box = 1)
         module("home_solo_off_combat.png", PartyLayout.Mode.FIGHT_OFF, 1, on = false, box = 1)
+    }
+
+    /**
+     * m134 (party_design.md "PLAYER / PET REVISION" + "SELECT TAB LOOK"; the user, 2026-11-11, after using 1428): you + the pet on your
+     * right in the first row (you the big cell, the pet's portrait, no green dot, no A chip), the party under it; no pet = you full width;
+     * the Select tab as the game's side tab on the screen's left edge, off / on / not bound
+     */
+    @Test fun playerPetAndSelectTab() {
+        assumeTrue(out != null)
+        artRoot()
+        module("m134_pet_party5_on_rest.png", PartyLayout.Mode.REST, 5, on = true, box = 2, pet = true)
+        module("m134_pet_party3_on_rest.png", PartyLayout.Mode.REST, 3, on = true, box = 1, pet = true)
+        module("m134_pet_solo_on_combat.png", PartyLayout.Mode.FIGHT_ON, 1, on = true, box = 2, pet = true)
+        module("m134_pet_party4_off_rest.png", PartyLayout.Mode.REST, 4, on = false, box = 1, pet = true)
+        module("m134_nopet_party5_on_rest.png", PartyLayout.Mode.REST, 5, on = true, box = 3)
+        module("m134_nopet_party4_off_rest.png", PartyLayout.Mode.REST, 4, on = false, box = 1)
+        module("m134_tab_on_party3.png", PartyLayout.Mode.REST, 3, on = true, box = 3)
+        module("m134_tab_off_party3.png", PartyLayout.Mode.REST, 3, on = false, box = 1)
+        module("m134_tab_unbound_party3.png", PartyLayout.Mode.REST, 3, on = false, box = 1, sel = "dialog")
+        module("m134_tab_off_takeover_solo.png", PartyLayout.Mode.FIGHT_OFF, 1, on = false, box = 1)
     }
 }

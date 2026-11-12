@@ -7,7 +7,8 @@ import com.jrees.wowcompanion.PartyModel.Dir
  * draws it. Party mode OFF: today's strip, untouched (nothing here is asked).
  *
  * D-pad: the game's gold arrows, an arrow whose NAV is "-" dimmed. A / X: the slot's spell or Empty. Y: out of combat the game's own Y
- * (Inspect), or with Smart Y on the buff of `sy.pick[u]`; in a fight `yc`'s icon, or Inspect. B: Back (closes Party mode). A held
+ * (Inspect), or with Smart Y on the buff of `sy.pick[u]`; in a fight `yc`'s icon, else Smart Y's armed `sy.pick[u]`, else Target (PadMap m132:
+ * no player menu in a fight). B: Back (closes Party mode). A held
  * trigger swaps A / X / Y to its chord layer (both held: nothing). Lit / dim: the boxed member DEAD -> only `res` spells lit; ALIVE ->
  * `res` spells dim; not learned (`k = false`) dim; Y's Inspect / Smart pick and B never dim.
  */
@@ -32,6 +33,8 @@ object PartyStrip {
         SMART,
         /** the game's red Back */
         BACK,
+        /** m132: Y in a fight with nothing to cast: Target the boxed member (the friendly reticle) */
+        TARGET,
     }
 
     data class Pic(val kind: Kind, val spell: PartyModel.Spell?, val lit: Boolean)
@@ -58,15 +61,16 @@ object PartyStrip {
         if (layer == Layer.BOTH) return Pic(Kind.EMPTY, null, false)          // both triggers: nothing
         if (cfg == null) return if (face == "y" && layer == Layer.BASE) Pic(Kind.INSPECT, null, true) else Pic(Kind.EMPTY, null, false)
         if (face == "y" && layer == Layer.BASE) {
-            if (fight) return cfg.yc?.let { Pic(Kind.SPELL, it, true) } ?: Pic(Kind.INSPECT, null, true)
             val pick = if (cfg.sy.on) m?.let { cfg.sy.pick[it.u] } else null
+            if (fight) return cfg.yc?.let { Pic(Kind.SPELL, it, true) } ?: pick?.let { Pic(Kind.SMART, it, true) } ?: Pic(Kind.TARGET, null, true)
             return pick?.let { Pic(Kind.SMART, it, true) } ?: Pic(Kind.INSPECT, null, true)
         }
         return spellPic(cfg.slot(layer.prefix + face), m)
     }
 
-    /** the D-pad arrows: true = lit (the box can move that way), false = dimmed to 28 % */
-    fun arrows(n: Int, box: Int): Map<Dir, Boolean> = Dir.values().associateWith { PartyModel.nav(maxOf(1, n), box, it) != null }
+    /** the D-pad arrows: true = lit (the box can move that way), false = dimmed to 28 %; [pet] = your pet out (m134: on your right) */
+    fun arrows(n: Int, box: Int, pet: Boolean = false): Map<Dir, Boolean> =
+        Dir.values().associateWith { PartyModel.nav(maxOf(1, n), box, it, pet) != null }
 
     /** the trigger plate's chord spells (ZL: zla, zlx, zly; ZR: zra, zrx, zry), Empty places not shown */
     fun plateIcons(cfg: PartyModel.Cfg?, left: Boolean): List<PartyModel.Spell> {

@@ -247,7 +247,7 @@ def main():
     G3.ROWS.uisw(None, SW3.UFT_OFF)
     chk("hub32: our bar off again: lifted again (%s)" % G3.ComboFrame.ipa, G3.ComboFrame.ipa is True)
     hubsrc = open(HUB, encoding="utf-8").read()
-    chk("hub37: the version tag (hub35 party block + hub36 Polestar hide)", 'local HV = "hub37"' in hubsrc)
+    chk("hub38: the version tag (hub38 the player / pet row + side tab art)", 'local HV = "hub38"' in hubsrc)
     # hub31 / hub36 POLESTAR ON THE TOP SCREEN (the user, 2026-11-11, the switch on: "The polestar window randomly reappears a lot"):
     # Polestar 0.2.5 fades its windows back by itself with no Show (every fight's start / end: UI/GuideFrame.lua:2528-2540 ->
     # GF.ApplyAlpha(true) -> Anim.To -> o:SetAlpha per frame), fades each window in as it shows, and makes windows later. A stub with a

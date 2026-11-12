@@ -278,7 +278,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (src < 4) {
             // the D-pad: emptied, the game's gold arrow inside, a direction the box cannot go dimmed to 28 %
             val dir = when (src) { 0 -> PartyModel.Dir.LEFT; 1 -> PartyModel.Dir.UP; 2 -> PartyModel.Dir.RIGHT; else -> PartyModel.Dir.DOWN }
-            val lit = PartyStrip.arrows(party?.n ?: 1, live.box)[dir] == true
+            val lit = PartyStrip.arrows(party?.n ?: 1, live.box, party?.pet == true)[dir] == true
             return partyBtns.getOrPut("d$src$lit") {
                 Btn().apply {
                     p = src + 1; k = "fixed"; e = true
@@ -297,6 +297,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 Btn().apply { p = src + 1; k = "fixed"; e = true; fx = if (pic.kind == PartyStrip.Kind.BACK) "back" else "inspect"; classify(this) }
             }
             PartyStrip.Kind.EMPTY -> partyBtns.getOrPut("e$src") { Btn().apply { p = src + 1; k = ""; e = true; drawAlpha = (255 * 0.45f).toInt() } }
+            // m132: Y in a fight with nothing armed targets the member: the friendly reticle
+            PartyStrip.Kind.TARGET -> partyBtns.getOrPut("t$src") {
+                Btn().apply { p = src + 1; k = "fixed"; e = true; fx = "target"; classify(this); special = SP_RETICLE_FRIENDLY }
+            }
             PartyStrip.Kind.SPELL, PartyStrip.Kind.SMART -> {
                 val s = pic.spell!!
                 val b = partyBtns.getOrPut("s$src:${s.i}:${pic.lit}") {
@@ -621,8 +625,6 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var padLt = false; private var padRt = false
     /** p-grow-glitch: ZL or ZR held now (this view's own controller reader): a B then is a layer's ability, not "shrink" */
     fun triggerHeld(): Boolean = padLt || padRt
-    /** ZL / ZR held now (Party mode's picked plate shows that layer's chips, as the strip does) */
-    fun padTriggers(): Pair<Boolean, Boolean> = padLt to padRt
     private var padLb = false; private var padRb = false
     private var padOk = true
     private var layer = N

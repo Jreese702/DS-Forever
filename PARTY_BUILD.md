@@ -776,6 +776,30 @@ in Party mode END it, as leaving Home does; nothing only suspends it any more.
   room let go first; (c) a loot window in the fight = off at its end; (d) no taker = stays on with its keys. App:
   `PartyFixturesTest.offWhenLeavingHome` and `takerEndsPartyMode`.
 
+Third ruling (2026-11-11, the user, a healer: "Party mode needs to be usable in combat for healers. Locking it is retarded"; PadMap
+m132). The second ruling now holds OUT OF COMBAT ONLY; in a fight nothing turns Party mode off except the player (Select, B, the tab):
+- A fight's start with Party mode allowed never steps the router aside for a game window (a loot roll / popup at the pull): all 8 keys
+  and Select are carried; Select is bound solo and with an unfocused invite too; while grouped (or on) the player's own m34 chords are
+  not bound for that fight, so ZL + a face and the bare D-pad reach the party pad if it is turned on mid-fight (`PM.fightKeys`).
+- In the fight: no taker is noted (`PM.noteFightTaker` / `PM.fightTaken` gone), nothing switches it off at PLAYER_REGEN_ENABLED; the
+  app never taps `off` for a holder (`takerSeen(.., fight)`) or for leaving Home (`offOnLeave(.., fight)`); a room holding only
+  suspends it (room mode first); the app draws it from `on` alone in a fight (`Party.onLive`) and the tab flips `on`.
+- Out of combat a PROMPT (`PM.PROMPTS`: GroupLootFrame1, StaticPopup1-4, ReadyCheckFrame) only suspends it (A answers the prompt).
+- Y in a fight never opens the player menu: the In combat action, else Smart Y's party buff armed before the fight (`wc-pb-<unit>`,
+  partycfg's `sy.pick` now sent in fights too), else Target.
+- Still refused in a fight (the game's lockdown): the Controller room's edits and Smart Y's party list (`partyack why=combat`).
+- Tests: `test_party.py` "m132 fight-first" (the fight entered FIRST, then on / pick / move / casts / Touch / roster / pet / tab / B),
+  "window-at-pull", the prompts; `PartyFixturesTest`, `PartyModelTest`, `PartyStripTest`.
+- m133 (review of m132): the window-at-pull rule and the chords' release apply only while Party mode may be wanted in the fight
+  (`PM.fightKeys`: on, grouped, or a pet out); solo with no pet and Party mode off, a game window open at the pull (GameMenuFrame,
+  LootFrame, Gossip, a roll...) keeps its own controller navigation and the m34 chords stay, as before m132. Where the rule applies,
+  EVERY game window open at the pull (not only a prompt) is answered by touch or after the fight. Not covered: an invite accepted
+  or a pet summoned mid-fight after a solo, pet-less pull (the bindings were set at the pull). Smart Y's party pick casts once a fight
+  per member (the secure Y clears `wc-pb-<unit>`; a roster change in the fight clears party1-4's; `PM.picksSync` drops them from
+  partycfg, so the strip shows TARGET); the fight's end arms them again. PM.PROMPTS adds GamepadGroupLootRollFrame (the controller
+  roll frame) and GroupLootFrame2-4; Interact's "dialogs" capture is a prompt (`PM.PROMPT_HOLDERS`, the app's
+  `PartyModel.PROMPT_HOLDERS`). The tab's tap sends the opposite of what it shows (`PartyModel.tabWants` = `!onLive`).
+
 ### Cross-side fixtures (new)
 
 `tools/test_party.py` (block "CROSS-SIDE FIXTURES") dumps 24 raw documents straight out of Safety.lua's encoder to
@@ -804,3 +828,24 @@ P10 range. Plus the add-on worker's P11 (one tap on party cells 0, 10, 11, 22 at
 fight-spell regression after the PRE edit (FEASIBILITY risk 4), and for this ruling: open a room and a Home module full screen with
 Party mode on (in and out of a fight), and the pause wheel, the bar cursor, a vendor and a loot window (a loot window in a fight too);
 come back, Party mode off and the keys the game's again.
+
+## m134 / hub38: THE PLAYER / PET ROW, HIGHLIGHTING = TARGETING, THE SELECT TAB IN THE GAME'S ART (2026-11-11, after using 1428)
+
+The user: "The size of the player and the pet don't feel right ... I think the pet should be to the right of the player and not have the
+green dot. Also the a button glyph on them needs to be removed since highlighting it should target and a will be whatever spell is
+bound", and "The side panel around the select button looks like an AI border. It needs to use wow assets and sit outside of the player
+brand look more like its attached to the side of the screen" (party_design.md "PLAYER / PET REVISION", "SELECT TAB LOOK").
+
+- Rows: the first row is you alone, or you + the pet on your right (`PartyLayout.PET_SHARE` 0.33: you about two thirds); the k party
+  members under it by the adaptive rule among themselves (1-2 full rows; 3: a full row, then a shared one; 4: 2x2). One rule in
+  `OV.partyNav(n, box, dir, pet)`, the PARTY-NAV snippet body and `PartyModel.rows / nav(n, box, dir, pet)`; `party_nav.json` now
+  carries every shape with `pet` (no pet n 1..5, the pet n 2..6). Hub's top block (`PF.layout`) draws the party rows only, so it no
+  longer depends on the pet.
+- Highlighting = targeting: a PARTYPAD D-pad move that moved sets `type target` + `unit` (the new pick) in the same secure click, in
+  fights too; an edge press targets nothing. PARTYPICK's pick of another plate targets it too; the picked plate's tap is the Touch
+  spell, else Target again. A / X / Y and the ZL / ZR layers cast as before on the pick.
+- Plates: no A / X / Y chips and no LB + button glyph (the "A" on your own plate was the game's LB + A targeting hint); the pet's plate
+  has no stripe and no green dot, its portrait (`ic` = `GetPetIcon()`, plain only; icons.pak) and its short name.
+- The Select tab: `UiKit.sideHandle` = the game's side tab (`side_tab`, lit by `side_tab_on`), cut in three down its height, flush on
+  the screen's left edge (x 0..52); the member band (the well) starts at x 56. The pick's notch is the game's small gold arrow
+  (`menu_next`). Hub: the same side tab atlas (`common-sidetab-c60-2x`, lit `common-sidetab-selected-c60-2x`) in three slices at x 0.

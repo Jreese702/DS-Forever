@@ -7,7 +7,8 @@ Checks the block (hub35: only party1..4, in the bottom's arrangement of PadMap m
 rows dropped, a full row's bar both columns wide; no self row; a raid or our switch off: nothing),
 Party mode's looks (each row's LB glyph, the gold ring on the pick box.u, the white chevron at your target; off: a white ring on your
 target), dead / offline / out of range (the shared rng: 0.45), the HUD green re-tinted every step, the secret health only into the
-widget setters, and the 18 px Select tab (off / on / not bound). Needs lupa. Exit code 1 on any failure."""
+widget setters, and the Select tab (off / on / not bound; hub38: the game's side tab in three slices on the screen's left edge,
+lit by its selected art - the user, 2026-11-11). hub38: the rows follow PadMap m134 (you + the pet share the first row). Needs lupa. Exit code 1 on any failure."""
 import os
 import sys
 
@@ -39,6 +40,8 @@ function Frame:SetMinMaxValues(a, b) self.mm = { a, b } end
 function Frame:SetValue(v) self.val = v end
 function Frame:SetAtlas(a) if not ATLAS[a] then error("no atlas " .. tostring(a)) end; self.atlas = a end
 function Frame:SetTexture(t) self.tex = t end
+function Frame:SetTexCoord(...) self.tc = { ... } end
+function Frame:SetHeight(h) self.h = h end
 function Frame:CreateTexture() local t = mk("Texture"); CHILD[#CHILD + 1] = t; return t end
 function Frame:CreateFontString() local t = mk("FontString"); return t end
 function Frame:GetParent() return self.parent end
@@ -52,6 +55,12 @@ CHILD = {}
 function CreateFrame(kind, name, parent) local f = mk(kind, name); f.parent = parent; if name then _G[name] = f end; MADE[#MADE + 1] = f; return f end
 MADE = {}
 ATLAS = { ["Gamepad_Rev_Minus_64"] = true, ["Gamepad_Rev_A_64"] = true, ["Gamepad_Gen_Up_64"] = true, ["Gamepad_Gen_Down_64"] = true }
+-- hub38: the game's side tab pieces (the kit's side_tab / side_tab_on: 110 x 120 on their sheet)
+C_Texture = { GetAtlasInfo = function(a)
+    if a == "common-sidetab-c60-2x" or a == "common-sidetab-selected-c60-2x" then
+        return { file = 7000001, leftTexCoord = 0.1, rightTexCoord = 0.2, topTexCoord = 0.5, bottomTexCoord = 0.7, width = 110, height = 120 }
+    end
+end }
 UIParent = mk("Frame", "UIParent")
 for _, n in ipairs({ "PlayerFrame", "PetFrame", "TargetFrame", "TargetFrameToT" }) do _G[n] = setmetatable({ alpha = 1 }, Frame) end
 function hooksecurefunc() end
@@ -127,7 +136,7 @@ def main():
         return {i: (f[i].look.row, f[i].look.side) for i in f}
 
     src = open(HUB, encoding="utf-8").read()
-    chk("hub37: the version tag (hub35 party block + hub36 Polestar hide)", 'local HV = "hub37"' in src)
+    chk("hub38: the version tag (the player / pet row, the game's side tab)", 'local HV = "hub38"' in src)
     chk("hub34: the combat log's switch calls are gone (PadMap m129)", 'WC.clogSync' not in src and 'WC.clogTicker' not in src)
 
     # solo, Party mode off: nothing (no row, no tab)
@@ -197,12 +206,13 @@ def main():
          "n 5, no pet: you | p1 p2 | p3 p4 -> the 2x2 square"),
         (["player", "pet", "party1", "party2", "party3", "party4"], {1: (0, "left"), 2: (0, "right"), 3: (1, "left"), 4: (1, "right")},
          "n 6: you pet | p1 p2 | p3 p4 -> the 2x2 square (the you / pet row dropped)"),
-        (["player", "pet", "party1", "party2", "party3"], {1: (0, "right"), 2: (1, "left"), 3: (1, "right")},
-         "n 5 with the pet: you | pet p1 | p2 p3 -> p1 on the right as below, p2 p3 under it"),
+        (["player", "pet", "party1", "party2", "party3"], {1: (0, "full"), 2: (1, "left"), 3: (1, "right")},
+         "hub38: n 5 with the pet: you pet | p1 | p2 p3 -> p1 full, p2 p3 under it (as without the pet)"),
         (["player", "party1", "party2", "party3"], {1: (0, "full"), 2: (1, "left"), 3: (1, "right")},
          "n 4, no pet: you | p1 | p2 p3 -> p1 full, p2 p3 under it"),
-        (["player", "pet", "party1", "party2"], {1: (0, "left"), 2: (0, "right")}, "n 4 with the pet: you | pet | p1 p2 -> one shared row"),
-        (["player", "pet", "party1"], {1: (0, "full")}, "n 3 with the pet: you | pet | p1 -> p1 full"),
+        (["player", "pet", "party1", "party2"], {1: (0, "full"), 2: (1, "full")}, "hub38: n 4 with the pet: you pet | p1 | p2 -> two full rows"),
+        (["player", "pet", "party1"], {1: (0, "full")}, "n 3 with the pet: you pet | p1 -> p1 full"),
+        (["player", "party1", "party2"], {1: (0, "full"), 2: (1, "full")}, "n 3, no pet: you | p1 | p2 -> two full rows"),
     ]
     for units, want, why in shapes:
         G.PM.units = L.table_from(units)
@@ -241,15 +251,24 @@ def main():
     chk("the secret health went into the bar's setters only", G.rawequal(f[1].hp.val, G.SECRET) and G.rawequal(f[1].hp.mm[2], G.SECRET), "")
     # the top Select tab: on / off / not bound
     tab = PF.tab
-    chk("the Select tab beside the column: on (Party mode on), the B glyph shown, gold fill at 35 %",
-        tab is not None and tab.shown and PF.tabLook == "on" and abs(tab.bg.ct[4] - 0.35) < 1e-6, PF.tabLook)
+    def shown(parts):
+        return [p.shown for p in parts.values()]
+    chk("hub38: the Select tab: on (Party mode on), the B glyph shown, the game's side tab lit (its selected art shown over it)",
+        tab is not None and tab.shown and PF.tabLook == "on" and tab.b.shown and all(shown(tab.base)) and all(shown(tab.lit))
+        and len(tab.base) == 3 and len(tab.lit) == 3, PF.tabLook)
+    chk("hub38: the side tab is the game's atlas in three slices (no drawn fill / edge), flush on the screen's left edge",
+        all(p.tex == 7000001 for p in tab.base.values()) and G.rawget(tab, "bg") is None and G.rawget(tab, "edge") is None and PF.TAB_X == 0
+        and tab.anch[1][4] == 0 and abs(tab.base[1].tc[3] - 0.5) < 1e-9 and abs(tab.base[3].tc[4] - 0.7) < 1e-9
+        and abs(tab.base[1].h - PF.TAB_W * 120 * PF.TAB_CAP / 110) < 1e-6,
+        (tab.anch[1][4], list(tab.base[1].tc.values()), list(tab.base[3].tc.values()), tab.base[1].h))
     G.PM.on = False
     step()
-    chk("off, Select bound: the dark panel (rgb 20 17 13), no lock", PF.tabLook == "off" and abs(tab.bg.ct[1] - 20 / 255) < 1e-6 and not tab.lock.shown,
-        PF.tabLook)
+    chk("hub38: off, Select bound: the plain side tab (its lit art hidden), no B, no lock", PF.tabLook == "off" and all(shown(tab.base))
+        and not any(shown(tab.lit)) and not tab.b.shown and not tab.lock.shown, PF.tabLook)
     G.PM.sel = "dialog"
     step()
-    chk("Select not bound (a dialog): the glyph at 40 %, the lock", PF.tabLook == "unbound" and tab.sel.alpha == 0.4 and tab.lock.shown, PF.tabLook)
+    chk("Select not bound (a dialog): the glyph at 40 %, the lock, the side tab dimmer", PF.tabLook == "unbound" and tab.sel.alpha == 0.4
+        and tab.lock.shown and tab.base[1].alpha == 0.6 and not any(shown(tab.lit)), PF.tabLook)
     G.PM.sel = "bound"
     G.WowCompanion.partyOk = False
     step()

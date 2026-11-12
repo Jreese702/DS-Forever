@@ -43,15 +43,16 @@ class PartyStripTest {
     }
 
     @Test fun yOutOfAndInCombat() {
-        // Smart Y off: the game's Y, in and out of a fight (yc null)
+        // Smart Y off: the game's Y out of a fight; m132: in a fight (yc null) Target, never the player menu
         assertEquals(Kind.INSPECT, PartyStrip.face("y", Layer.BASE, cfg, party, 2, false).kind)
-        assertEquals(Kind.INSPECT, PartyStrip.face("y", Layer.BASE, cfg, party, 2, true).kind)
+        assertEquals(Kind.TARGET, PartyStrip.face("y", Layer.BASE, cfg, party, 2, true).kind)
         // Smart Y on: the pick for the boxed member (party1) out of combat; none for you -> Inspect
         val sy = cfg.copy(sy = cfg.sy.copy(on = true))
         PartyStrip.face("y", Layer.BASE, sy, party, 2, false).let { assertEquals(Kind.SMART, it.kind); assertEquals(131, it.spell!!.id) }
         assertEquals(Kind.INSPECT, PartyStrip.face("y", Layer.BASE, sy, party, 1, false).kind)
-        // never Smart Y's buff in a fight: yc, or Inspect
-        assertEquals(Kind.INSPECT, PartyStrip.face("y", Layer.BASE, sy, party, 2, true).kind)
+        // m132: in a fight yc, else Smart Y's buff armed before it, else Target
+        PartyStrip.face("y", Layer.BASE, sy, party, 2, true).let { assertEquals(Kind.SMART, it.kind); assertEquals(131, it.spell!!.id) }
+        assertEquals(Kind.TARGET, PartyStrip.face("y", Layer.BASE, sy, party, 1, true).kind)
         val yc = sy.copy(yc = PartyModel.Spell(331, "Healing Wave", 136052))
         PartyStrip.face("y", Layer.BASE, yc, party, 2, true).let { assertEquals(Kind.SPELL, it.kind); assertEquals(331, it.spell!!.id); assertTrue(it.lit) }
         assertEquals(Kind.SMART, PartyStrip.face("y", Layer.BASE, yc, party, 2, false).kind)     // out of combat: unchanged
@@ -67,6 +68,9 @@ class PartyStripTest {
         assertEquals(mapOf(Dir.UP to true, Dir.DOWN to false, Dir.LEFT to false, Dir.RIGHT to true), PartyStrip.arrows(4, 3))
         assertEquals(mapOf(Dir.UP to true, Dir.DOWN to false, Dir.LEFT to true, Dir.RIGHT to false), PartyStrip.arrows(5, 5))
         assertEquals(mapOf(Dir.UP to true, Dir.DOWN to true, Dir.LEFT to false, Dir.RIGHT to false), PartyStrip.arrows(3, 2))
+        // m134: the pet on your right - from you: Right lit (the pet), Down lit (party1); from the pet: Left, Down
+        assertEquals(mapOf(Dir.UP to false, Dir.DOWN to true, Dir.LEFT to false, Dir.RIGHT to true), PartyStrip.arrows(3, 1, pet = true))
+        assertEquals(mapOf(Dir.UP to false, Dir.DOWN to true, Dir.LEFT to true, Dir.RIGHT to false), PartyStrip.arrows(3, 2, pet = true))
     }
 
     @Test fun triggerPlates() {
