@@ -95,6 +95,26 @@ offer(207, "Contract Broken")
 ok = ACT.accept("207")
 chk("QuestieDB with another contract: Make Space first", ok and accepted == 0 and LOOT.ms == "quest")
 
+-- 1c. i145: begun from a bag item, but QuestieDB says it hands out ANOTHER item: the server checks room for that item before it uses
+-- up the starter, so Make Space first
+qdb({ [209] = 1307, [210] = 30000, [211] = 0 })
+fullBags(30000)
+offer(209, "Missive With A Parcel", 30000)
+ok = ACT.accept("209")
+chk("item-begun quest handing out another item, full bags: Make Space first", ok and accepted == 0 and LOOT.ms == "quest")
+
+-- 1d. begun from a bag item that is also the item it hands out: accept at once
+fullBags(30000)
+offer(210, "Keep The Missive", 30000)
+ok = ACT.accept("210")
+chk("item-begun quest handing out its own starter, full bags: accepted at once", ok and accepted == 1 and LOOT.ms ~= "quest")
+
+-- 1e. begun from a bag item, QuestieDB says it hands out nothing: accept at once
+fullBags(30000)
+offer(211, "Plain Missive", 30000)
+ok = ACT.accept("211")
+chk("item-begun quest, QuestieDB says no item, full bags: accepted at once", ok and accepted == 1 and LOOT.ms ~= "quest")
+
 -- 5. free slots: accept (unchanged), whatever QuestieDB says
 qdb({ [208] = 1307 })
 fullBags(); GAME.bags[4] = nil
