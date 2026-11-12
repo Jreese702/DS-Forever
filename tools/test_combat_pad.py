@@ -454,10 +454,9 @@ for combat in (False, True):
     qtap(W, QACT["quests"])
     lost = [d for d in docs(W, n0, 'guestpad') if d.get('id') == 'map' and d.get('lost')]
     if combat:
-        xcheck(holder(W) == 'pad:quests' and lost and lost[-1]['lost'] == 'taken' and clean(W) == {},
-               "S3[%s] room to room is an in-place swap: the new room holds at once, the old one lost(taken), no secure write" % tag,
-               "the take is QUEUED behind the holder (doc.wait) until a LEAVE + a new ENTER: two taps, presses dropped in between",
-               (holder(W), idoc(W).get('wait'), lost))
+        check(holder(W) == 'pad:quests' and lost and lost[-1]['lost'] == 'taken' and clean(W) == {} and modes(W) == ['room'] * 8,
+              "S3[%s] room to room is an in-place swap: the new room holds at once, the old one lost(taken), no secure write (Step 3)" % tag,
+              (holder(W), idoc(W).get('wait'), lost))
     else:
         check(holder(W) in ('pad:quests', 'pad:map'), "S3[%s] room to room out of a fight: the capture's queue / pre-emption as before" % tag, holder(W))
     # B: the app's own B chain decides (one step back or Home); at Home the reconciler taps LEAVE
@@ -574,6 +573,54 @@ check(holder(W) == 'npc' and W.eval('WowCompanionInteractGrab._shown') is not Fa
       and (W.eval('BIND.PADDDOWN') or '').startswith('CLICK WowCompanionInteract'),
       "A3 the fight's end: the loot held through it gets its bindings and the grab back", (holder(W), W.eval('BIND.PADDDOWN')))
 check(clean(W) == {}, "A3 no lockdown breach, no spied call, no handle / snippet error", clean(W))
+
+# ================================================================ STEP 3: THE MODE REPORT, THE STRAY ENTER ("app"), THE IN-PLACE SWAP
+W = world()
+check(idoc(W).get('fightMode') is None and idoc(W).get('fightEnter') is None, "M1 out of a fight: no fightMode / fightEnter in the document",
+      (idoc(W).get('fightMode'), idoc(W).get('fightEnter')))
+pull(W)
+d = idoc(W)
+check(d.get('fightMode') == 'game' and (d.get('fightEnter') or {}).get('col') is not None and not d.get('enter'),
+      "M2 the pull with nothing held: fightMode \"game\", the ENTER cell always there for the app's reconciler", (d.get('fightMode'), d.get('fightEnter')))
+tap(W, d.get('fightEnter'))
+d = idoc(W)
+check(holder(W) == 'app' and modes(W) == ['room'] * 8 and d.get('fightMode') == 'room',
+      "M3 a stray ENTER (the app wants the pad for something of its own): holder \"app\", room mode, fightMode \"room\"", (holder(W), d.get('fightMode')))
+r = press(W, "PADDDOWN")
+check(r['game'] == [] and not stopattack(r), "M4 ... its keys are swallowed (the app reads its own controller): nothing reaches the game", r)
+check(d.get('holder') == 'app' and d.get('fightLeave'), "M5 ... never an \"npc\" (no orphan-NPC leave), the leave cell published", (d.get('holder'), d.get('fightLeave')))
+n0 = nsent(W)
+qtap(W, QACT["map"])
+ack = [x for x in docs(W, n0, 'guestack') if x.get('id') == 'map']
+check(holder(W) == 'pad:map' and not idoc(W).get('enter') and modes(W) == ['room'] * 8,
+      "M6 a room's take over the \"app\" holder: an in-place swap, held at once (no second ENTER)", (holder(W), idoc(W).get('enter'), ack))
+r = press(W, "PADDUP")
+check(pad_keys(r) == ['PADDUP'], "M7 ... and the D-pad reaches it", r['pads'])
+tap(W, idoc(W).get('fightLeave'))
+check(holder(W) is None and modes(W) == [None] * 8 and idoc(W).get('fightMode') == 'game', "M8 the LEAVE: fightMode back to \"game\"",
+      (holder(W), idoc(W).get('fightMode')))
+check(clean(W) == {}, "M9 the mode report, the stray ENTER and the swap: no lockdown breach, no spied call, no handle / snippet error", clean(W))
+# a room to room swap leaves the old room's game window hidden by alpha (never unhidden mid-fight)
+W = world()
+W.execute('WorldMapFrame:Show(); advance(3)')
+pull(W)
+qtap(W, QACT["quests"])
+check(holder(W) == 'pad:quests' and W.eval('WorldMapFrame:GetAlpha()') == 0 and clean(W) == {},
+      "M10 the Map room swapped for another in the fight: the game's map stays hidden by alpha, no secure write",
+      (holder(W), W.eval('WorldMapFrame:GetAlpha()'), clean(W)))
+
+# a noFight guest (Dialogs' pop-up hold) at the pull: released, every key still carried; the app's ENTER then gives it the pad ("app")
+W = world()
+W.execute('NFT = {}; WowCompanion.capture.take("dialogs", { press = function(k) NFT[#NFT + 1] = k end, noFight = true }); advance(1)')
+check(holder(W) == 'dialogs', "N1 a noFight guest (the pop-up's hold) out of combat", holder(W))
+pull(W)
+check(holder(W) is None and carried(W) and idoc(W).get('fightMode') == 'game', "N2 the pull: a noFight guest is released, every key carried",
+      (holder(W), keys(W)))
+tap(W, idoc(W).get('fightEnter'))
+r = press(W, "PAD1")
+check(holder(W) == 'app' and r['game'] == [] and not any(a.get('kind') == 'spell' for a in r['acts']),
+      "N3 ... the pop-up's mirror up (DialogView wants the pad): the ENTER, A reaches nobody in the game (the app answers its cell)", (holder(W), r))
+check(clean(W) == {}, "N4 no lockdown breach, no spied call, no handle / snippet error", clean(W))
 
 print('%s (%d pass, %d xfail, %d fail, %d xpass)' % ('ALL PASS' if fails == 0 and xpasses == 0 else 'FAILED', passes, xfails, fails, xpasses))
 sys.exit(1 if (fails or xpasses) else 0)

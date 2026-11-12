@@ -106,6 +106,9 @@ class DialogView(context: Context) : View(context) {
             }
             if (!PadInput.isHeld(down, slot)) continue
             val d = active()
+            // combat_nav (the user's decision 1, 2026-11-11: pop-ups and loot rolls in a fight "should be built on the bottom screen"): while
+            // the app has the pad in a fight (PadOwnerSync's room mode) the game never sees the press, so it answers the mirror at once
+            if (appOwnsPad()) { if (fightPress(key, d)) changed = true; continue }
             if (d != null) {
                 // the game answers only the dialog it focuses, with the key it gives each button
                 if (!d.focus || foldOf(d) > 0f) continue
@@ -141,6 +144,34 @@ class DialogView(context: Context) : View(context) {
         if (changed) postInvalidateOnAnimation()
     }
     private var padKey = ""
+
+    /** set by the host: the app has the pad in a fight (the router delivers to us, PadOwnerSync's room mode) */
+    var appOwnsPad: () -> Boolean = { false }
+
+    /** a press while the app owns the pad in a fight: A / B on the dialog's buttons (DialogPad's rule), else A Need / X Greed or
+     *  Transmog / B Pass on the shown roll, Left / Right between rolls - each one tap on its own cell, as a finger's; true = answered */
+    private fun fightPress(key: String, d: Dlg?): Boolean {
+        if (d != null) {
+            if (foldOf(d) > 0f) return false
+            val delayed = secondsOf(d.delay) > 0
+            val k = DialogPad.dialogButton(key, d.buttons.map { DialogPad.B(it.k, it.on, it.cell) }, delayed, d.which == "QUIT") ?: return false
+            val b = d.buttons.firstOrNull { it.k == k } ?: return false
+            padHit = "b$k"; padKey = key
+            android.util.Log.i("WCDLG", "controller $key on '${b.label}' of dialog ${d.i} ${d.which}: the app has the pad (a fight), its cell now")
+            if (send(b.label, b.cell)) chose("b$k", d)
+            return true
+        }
+        if (rolls.isEmpty()) return false
+        val ids = rolls.map { it.optInt("id") }
+        val r = shownRoll() ?: return false
+        val move = DialogPad.rollMove(key, ids, r.optInt("id"))
+        if (move != null) { rollPick = move; rollsMin = false; return true }
+        val kind = DialogPad.rollKind(key, r.optBoolean("need"), r.optBoolean("greed"), r.optBoolean("transmog")) ?: return false
+        val cell = r.optJSONObject("cells")?.optInt(kind, -1) ?: -1
+        padHit = "roll:$kind"; padKey = key
+        if (rollSend(kind, cell)) chose("roll:$kind", null, r.optInt("id"))
+        return true
+    }
 
     // ---- A THE GAME DID NOT TAKE (b-release-spirit, 1.0.8 test16/17: the user's A on Release Spirit / Accept res "presses but nothing
     // happens and then it reappears", while a finger works). The press is the game's first; a document written PAD_FALLBACK_MS or more
@@ -856,7 +887,9 @@ class DialogView(context: Context) : View(context) {
         const val PAD_FALLBACK_MAX_MS = 6_000L   // later than this the press is stale: nothing is tapped
         const val PAD_POKE_MS = 450L          // the sign of life that asks the add-on for that document     // a document this much newer that still lists the dialog = the game refused
         private val PAD_SLOTS = listOf(PadInput.SLOT_FACE_BOTTOM to "PAD1", PadInput.SLOT_FACE_RIGHT to "PAD2",
-                                       PadInput.SLOT_FACE_LEFT to "PAD3", PadInput.SLOT_FACE_TOP to "PAD4")
+                                       PadInput.SLOT_FACE_LEFT to "PAD3", PadInput.SLOT_FACE_TOP to "PAD4",
+                                       // combat_nav: Left / Right between the loot rolls while the app has the pad in a fight (fightPress)
+                                       PadInput.SLOT_DPAD_LEFT to "PADDLEFT", PadInput.SLOT_DPAD_RIGHT to "PADDRIGHT")
         const val MIN_LIFE_GAP_MS = 1_000L    // never more than one sign of life a second
         private val DAYS_BEFORE = intArrayOf(0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)
     }

@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i144"     -- bump on every change; i144: COMBAT NAV STEP 2 (combat_nav_design.md; the user, 2026-11-11: "everything on the bottom screen breaks in combat"): every pull keeps what holds - a room whatever the Hub's NPC-windows bit, an "npc" hold with it - and ONLY the game menu open at the pull lets go (its lock: doc.gmLock while it shows); the fight hold is built (F.make) and armed (N.armIdle) out of combat at every document, so a /reload in a fight blocks nothing and arms at its end; loot in a fight is the bottom screen's whatever the loot-on-top switch (LOOT.top reads off in the lockdown) and the NPC-windows bit (N.fightLoot); the fight's end gives an "npc" holder its bindings and the grab back (N.check); i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
+local IV = "i145"     -- bump on every change; i145: COMBAT NAV STEP 3 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): the document reports who has the pad in a fight (fightMode "room" / "game", read back from the router's wc-mode) and the ENTER cell always (fightEnter) for the app's reconciler (PadOwnerSync); room to room in a fight is an IN-PLACE SWAP for every guest holder (the old one lost "taken", nothing written, its window kept hidden by alpha); a stray ENTER holds as the guest "app" (keys swallowed, never the orphan-NPC leave); i144: COMBAT NAV STEP 2 (combat_nav_design.md; the user, 2026-11-11: "everything on the bottom screen breaks in combat"): every pull keeps what holds - a room whatever the Hub's NPC-windows bit, an "npc" hold with it - and ONLY the game menu open at the pull lets go (its lock: doc.gmLock while it shows); the fight hold is built (F.make) and armed (N.armIdle) out of combat at every document, so a /reload in a fight blocks nothing and arms at its end; loot in a fight is the bottom screen's whatever the loot-on-top switch (LOOT.top reads off in the lockdown) and the NPC-windows bit (N.fightLoot); the fight's end gives an "npc" holder its bindings and the grab back (N.check); i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2381,6 +2381,15 @@ local function buildDoc()
     if N.wait then doc.wait = { ["for"] = N.wait.id } end
     -- v10: a take waiting for the app's ENTER tap
     if N.pend and N.ra then doc.enter = { row = N.ra.erow, col = N.ra.ecol, ["for"] = N.pend.id, n = N.pend.n } end
+    -- i145 (combat_nav_design Step 3, the user 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything
+    -- like normal"): in a fight the document says who has the pad - fightMode "room" (the router delivers to us) or "game" - read back
+    -- from the router's own wc-mode (the ENTER / LEAVE snippets write it; their post-hooks send this document), and the ENTER cell
+    -- always, so the app's reconciler (PadOwnerSync) can take the pad for anything it shows and give it back at Home
+    if doc.combat and N.ra then
+        local b1 = N.ra.btns and N.ra.btns[1]
+        doc.fightMode = (b1 and TS(function() return b1:GetAttribute("wc-mode") end) == "room") and "room" or "game"
+        doc.fightEnter = { row = N.ra.erow, col = N.ra.ecol }
+    end
     -- i144 (the user's decision 1, 2026-11-11: the game menu "should be locked until the game menu closes"): the game menu was open at
     -- the pull, so the game has the pad for this fight (PadMap m134) - the bottom screen is locked while the menu still shows
     if N.fightMenu and doc.combat and TB(function() return _G.GameMenuFrame:IsShown() end) == true then doc.gmLock = true end
@@ -5921,9 +5930,12 @@ function N.fightEntered()
     local pe = N.pend
     if not (inCombat() and N.ra) or N.holding then return end      -- repeats of one tap, or a tap out of a fight: nothing
     if not pe then
-        -- a stray ENTER (nothing pending): its snippet already set the router to room; held by nobody's room, so that B
-        -- (always the leave in room mode) brings the fight back
+        -- a stray ENTER (nothing pending: the app's reconciler took the pad for something of its own - the bar, a radial, a room whose
+        -- take is still on its way): its snippet already set the router to room. i145 (combat_nav Step 3): held by the guest "app",
+        -- which swallows the keys (the app reads its own controller); a room's take then swaps in place; never the orphan-NPC leave
         N.fight, N.holding, N.npcExtra = "router", true, {}
+        G.holder, G.spec, G.chord, G.eat, G.bnext = "app", { press = function() end }, nil, nil, "home"
+        N.takeAt = TN(function() return GetTime() end) or 0
         N.fc = { row = N.ra.row, col = N.ra.col }
         emitSoon()
         return
@@ -7602,12 +7614,18 @@ WC.capture = {
             -- capture v12 (Home, 2026-10-06, the rooms consistency pass): HOME'S BAR CURSOR is PRE-EMPTED in a fight too, while the
             -- router is in room mode. Both reach the pad through the same sink, so it is only the holder that changes: no binding,
             -- no attribute, nothing protected (guestLost re-binds keys only out of a fight; SetAlpha and our own shields are free).
-            if G.holder == "pad:bar" and id ~= "pad:bar" and N.fight == "router" and N.holding then
-                guestLost("taken")
-                N.relN = N.relN + 1
-                N.rel = { n = N.relN, by = "taken", who = "pad:bar" }
+            -- i145 (combat_nav_design Step 3): ROOM TO ROOM IN A FIGHT IS AN IN-PLACE SWAP, for every guest holder (a room, a Home
+            -- module, the bar, the stray ENTER's "app"): the new room holds at once and the old one is told lost("taken"). Nothing is
+            -- written (the router stays in room mode), and the old room's game window stays hidden by alpha (no N.unhide mid-fight)
+            if G.holder and G.holder ~= id and N.fight == "router" and N.holding then
+                local old, ospec = G.holder, G.spec
+                if N.lend == old then N.lend = nil end
                 G.holder, G.spec, G.chord, G.eat, G.bnext = id, cspec, nil, nil, "home"
+                if ospec and type(ospec.lost) == "function" then pcall(ospec.lost, "taken") end
+                N.relN = N.relN + 1
+                N.rel = { n = N.relN, by = "taken", who = old }
                 if N.wait and N.wait.id == id then N.wait = nil end
+                if N.pend and N.pend.id == id then N.pend = nil end
                 N.takeAt = TN(function() return GetTime() end) or 0
                 guestHide()
                 emitSoon()
