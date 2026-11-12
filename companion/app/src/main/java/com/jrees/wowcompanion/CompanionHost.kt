@@ -2345,6 +2345,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
                 spellbookView.onPadMap(it); controllerView.onPadMap(it); homeView.onPadMap(it); spellsOverlay.onPadMap(it)
+                if (current) mapView.qitemArmed = it.qitem?.id ?: 0          // ps4: the light blue row's Y glyph (PadMap m132)
                 if (current) { newSpellMap = it; it.dpad?.name?.takeIf { n -> n.isNotEmpty() }?.let { n -> newSpellWho = "$n-${it.dpad.realm ?: ""}" } }
                 // the D-pad room bar (Spells' m24): the Settings row's state, and the once-per-character prompt
                 it.dpad?.let { d ->
@@ -3586,6 +3587,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     // POLESTAR AS THE ROUTER (b-route-polestar): PolestarNav decides the taps of Map.lua's row "pnav" (only while the setting is Polestar;
     // switching away cancels its guidance)
+    private val psPickTell = PolestarPickTell()
     private fun polestarTick() {
         val pad = questsPad ?: return
         if (pad.optJSONObject("rows")?.has(PolestarNav.ROW) != true) return          // an older add-on: no Polestar bridge
@@ -3596,6 +3598,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             if (q.isNotEmpty()) {
                 Log.i("WCMAP", "polestar automation: tap $q")
                 TapBridge.tapsSpaced(this, pad, q.map { PolestarNav.ROW to it }, 120L) { why -> Log.i("WCMAP", "polestar automation: tap failed: $why") }
+                return
+            }
+            // ps4 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): the add-on hears
+            // whether the light blue row is picked (PadMap m132: an item-started step's item on Y only then)
+            val p = psPickTell.tick(mapView.polestarHolds(), SystemClock.elapsedRealtime())
+            if (p.isNotEmpty()) {
+                Log.i("WCMAP", "polestar pick: tap $p")
+                TapBridge.tapsSpaced(this, pad, p.map { PolestarNav.ROW to it }, 120L) { why ->
+                    psPickTell.lost(); Log.i("WCMAP", "polestar pick: tap failed: $why") }
             }
             return
         }

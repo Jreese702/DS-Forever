@@ -139,3 +139,26 @@ class PolestarNav {
         }
     }
 }
+
+/**
+ * ps4 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): the add-on is told whether
+ * the light blue Polestar row is picked (Map.lua WC.pnav.picked; PadMap m132 puts an item-started step's item on Y only then) - the
+ * "pnav" row's 38 then 8 (picked) / 9 (not): at every change, and again every [AGAIN_MS] while picked (the add-on forgets it after 75 s).
+ * Pure: which taps, at [nowMs].
+ */
+class PolestarPickTell {
+    private var told: Boolean? = null
+    private var toldAt = Long.MIN_VALUE / 2
+    fun tick(picked: Boolean, nowMs: Long): List<Int> {
+        if (told == picked && (!picked || nowMs - toldAt < AGAIN_MS)) return emptyList()
+        told = picked; toldAt = nowMs
+        return listOf(PolestarQol.COL_NEXT, if (picked) PICKED else RELEASED)
+    }
+    /** a refused / lost batch: said again at the next tick */
+    fun lost() { told = null }
+
+    companion object {
+        const val PICKED = 8; const val RELEASED = 9
+        const val AGAIN_MS = 30_000L
+    }
+}

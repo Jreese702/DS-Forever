@@ -2840,9 +2840,18 @@ end
 --   36, m1, m2, m3, x1, x2, y1, y2   GO: the target (uiMapID in three base-36 digits, x / y in two each: 1296 steps)
 --   37                                KEEP: the app still wants it (none for KEEP_S: cancelled)
 --   39                                CANCEL
+--   38, 8 / 38, 9                     ps4: the light blue Polestar row is picked / not (WC.pnav.picked)
 -- Answers {"type":"pnav", op, ok, why, have} (have = Polestar's API is there); the route as {"type":"pnavroute", legs = {{k, c, p}}}
 -- (p = wx, wy pairs, at most PTS points in all), sent when it changes.
 WC.pnav = { active = false, keepAt = 0, digits = nil, digitsAt = 0, sig = nil, sentAt = 0, KEEP_S = 60, PTS = 240, OWNER = "DSForever" }
+-- ps4 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): whether the app's light
+-- blue Polestar row is picked - the pad row's 38 then 8 (picked) / 9 (not), re-said by the app while it is picked; no word for PICK_S
+-- = not picked. Read by PadMap (an item-started quest's item on Y only while the row is picked).
+WC.pnav.PICK_S = 75
+function WC.pnav.picked()
+    local at = WC.pnav.pickAt
+    return type(at) == "number" and GetTime() - at <= WC.pnav.PICK_S
+end
 function WC.pnav.api()
     local P = _G.Polestar
     if type(P) == "table" and type(P.Nav) == "table" and type(P.Nav.API) == "table" and type(P.Nav.API.Navigate) == "function" then
@@ -2924,6 +2933,11 @@ if WC.pad and type(WC.pad.op) == "function" then
         -- pq1: 38 = Polestar's automation mask follows (WC.pqol), the next tap 0-7 within 2 s is it
         if col == 38 then P.digits = nil; P.qolAt = GetTime(); return end
         if P.qolAt and col <= 7 and GetTime() - P.qolAt <= 2 then P.qolAt = nil; return pcall(WC.pqol.choose, col) end
+        -- ps4: 38 then 8 = the app's light blue row is picked (re-said every PICK_EVERY s while it is), 38 then 9 = it is not
+        if P.qolAt and (col == 8 or col == 9) and GetTime() - P.qolAt <= 2 then
+            P.qolAt = nil; P.pickAt = (col == 8) and GetTime() or nil
+            return
+        end
         P.qolAt = nil
         if col == 39 then P.digits = nil; return P.cancel("asked") end
         if col == 37 then P.keepAt = GetTime(); return end
@@ -3047,7 +3061,7 @@ end
 -- tracker list that has the polestar objective". Read only: Polestar's live guide step (Engine.GetLiveStep / GetStepView: the step's
 -- title) and its waypoint (Engine.GetWaypoint: the goal the arrow leads to, its words, kind, map and point on Polestar's 0-100 scale)
 -- go to the app as {"type":"pstep", t, g, k, q, m, x, y} (x / y 0..1), or {"type":"pstep", none = true} when Polestar has no step
--- (ps3: a step with no spot of its own: {t, g, k, q, nl = true}, no m / x / y);
+-- (ps3: a step with no spot of its own: {t, g, k, q, nl = true}, no m / x / y; ps4: an item-started quest's accept adds it / ih / ic / itn);
 -- sent when it changes and every 15 s. Nothing of Polestar or the game is changed.
 -- ps2 (the user, 2026-11-11: "should probably be the default selection if its enabled when logging in"): every pstep carries b, this
 -- login's stamp (time() when this file loaded: a new one at each login and /reload; not part of sig), so the app picks the light blue
@@ -3112,7 +3126,34 @@ function WC.pstep.noLoc(E)
     local title = type(v.title) == "string" and v.title ~= "" and v.title or nil
     if title and WC.isPlain and not WC.isPlain(title) then title = nil end
     if not title and not words then return { none = true } end       -- (nothing to show: the row would have no words)
-    return { t = title, g = words, k = pick and type(pick.t) == "string" and pick.t or nil, q = quest, nl = true }
+    local d = { t = title, g = words, k = pick and type(pick.t) == "string" and pick.t or nil, q = quest, nl = true }
+    WC.pstep.starter(d, pick)
+    return d
+end
+-- ps4 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): a quest STARTED BY AN
+-- ITEM in the bags (Polestar's accept goal with an item and no NPC / object: GetStepView's accept row with its `starter`) has no
+-- waypoint, and with Polestar's own window and arrow hidden nothing said to use the item. The step's doc carries the item: it = the
+-- item id, ih = it is in the bags (the bags' own plain count; a count the game will not give plainly: Polestar's starter.held),
+-- ic = its icon, itn = its name (plain only). The app's light blue row shows "Use <item>" with Y; PadMap arms it as Y's quest item
+-- while that row is picked (WC.pnav.picked). Not yet held, Polestar's step is the collect (its own waypoint): nothing here.
+function WC.pstep.starter(d, pick)
+    if type(pick) ~= "table" or pick.t ~= "accept" or type(pick.item) ~= "number" then return end
+    local it = pick.item
+    local st = type(pick.starter) == "table" and pick.starter or nil
+    local okC, n = pcall(function() return (C_Item and C_Item.GetItemCount or GetItemCount)(it) end)
+    local held
+    if okC and type(n) == "number" and (not WC.isPlain or WC.isPlain(n)) then held = n > 0
+    else held = st ~= nil and st.held == true end
+    local okI, ic = pcall(function() return (C_Item and C_Item.GetItemIconByID or GetItemIcon)(it) end)
+    local name = st and type(st.item) == "string" and st.item ~= "" and st.item or nil
+    if not name then
+        local okN, nm = pcall(function() return (C_Item and C_Item.GetItemNameByID or GetItemInfo)(it) end)
+        name = okN and type(nm) == "string" and nm ~= "" and nm or nil
+    end
+    if name and WC.isPlain and not WC.isPlain(name) then name = nil end
+    d.it, d.ih = it, held and true or false
+    d.ic = okI and type(ic) == "number" and (not WC.isPlain or WC.isPlain(ic)) and ic or nil
+    d.itn = name
 end
 C_Timer.NewTicker(1, function()
     local P = WC.pstep
@@ -3120,10 +3161,10 @@ C_Timer.NewTicker(1, function()
     if not okR or not d then P.last = nil; return end
     P.last = d
     local sig = d.none and "none" or table.concat({ d.t or "", d.g or "", d.k or "", tostring(d.q or 0),
-        tostring(d.m or "nl"), tostring(d.x or ""), tostring(d.y or "") }, "|")
+        tostring(d.m or "nl"), tostring(d.x or ""), tostring(d.y or ""), tostring(d.it or ""), tostring(d.ih or "") }, "|")
     if sig ~= P.sig or GetTime() - P.sentAt > 15 then
         P.sig, P.sentAt = sig, GetTime()
-        d.type, d.v = "pstep", "ps3"
+        d.type, d.v = "pstep", "ps4"
         if P.boot ~= 0 then d.b = P.boot end
         pcall(function() WC.send(WC.encode(d)); WC.push() end)
     end

@@ -365,6 +365,34 @@ check(k[0] == "qitem", "the quest item beats Smart Y's food", k[0])
 k = press_q([], qi=None)
 check(k[0] == "native", "nothing armed: Y as before", k[0])
 
+# m132 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): the picked Polestar step's
+# starting item, used from the bags ("bag")
+k = press_q([], qu="bag")
+check(k == ("qitem", "item", "item:12345", None), "m132: a starter item, nothing targeted: the item from the bags, no unit", k)
+k = press_q(["@target,exists,nodead", "@target,exists"], qu="bag")
+check(k[0] == "qitem" and k[3] is None, "m132: ... with a target too: the item, still no unit (never on the target)", k)
+k = press_q(["combat"], qu="bag", fight=True)
+check(k[0] == "fight", "m132: ... in a fight: Y's fight spell as before", k[0])
+k = press_q([], qu="bag", smart="item:117")
+check(k[0] == "qitem", "m132: ... before Smart Y's food", k[0])
+
+ps = re.search(r'-- QI-PS-BEGIN[^\n]*\n(.*?)-- QI-PS-END', SRC, re.S).group(1)
+S = lupa.LuaRuntime(unpack_returned_tuples=True)
+S.execute('OV = {}\n' + ps)
+S.execute('function st(t, p) local e = OV.qiStarter(t, p); if e then return e.item, e.q, e.icon end end')
+
+
+def starter(t, picked):
+    return S.eval('st')(S.eval(t), picked)
+
+
+check(starter('{ nl = true, q = 8460, it = 20310, ih = true, ic = 134939, itn = "Ripped Missive" }', True) == (20310, 8460, 134939),
+      "m132: a held starter, the row picked: armed with that item", "")
+check(starter('{ nl = true, q = 8460, it = 20310, ih = false }', True) is None, "m132: not held: no arm", "")
+check(starter('{ nl = true, q = 8460, it = 20310, ih = true }', False) is None, "m132: the row not picked: no arm", "")
+check(starter('{ none = true }', True) is None, "m132: no step: no arm", "")
+check(starter('{ nl = true, q = 33 }', True) is None, "m132: a step with no item: no arm", "")
+
 qm = re.search(r'-- QI-MATCH-BEGIN[^\n]*\n(.*?)-- QI-MATCH-END', SRC, re.S).group(1)
 M = lupa.LuaRuntime(unpack_returned_tuples=True)
 M.execute('OV = {}\n' + qm)
