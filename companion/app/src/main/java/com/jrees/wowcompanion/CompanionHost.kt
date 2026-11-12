@@ -1930,6 +1930,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Log.w("WCSETUP", "add-ons the game had switched off, on again: ${msg.optJSONArray("list")}${if (addonsReloaded) " (reloaded once already)" else ": reloading"}")
             if (!addonsReloaded) { addonsReloaded = true; if (GameInput.reload()) reloadStarted() }
         }
+        // chat33 (#183, "Not able to send messages"): each DS Forever add-on the game did not load (the game's reason), the shared
+        // capture's version (0 = Interact never ran: no room can hold the controller) and the first Lua errors from our files; one a login
+        if (msg.optString("probe") == "ours") oursProbeLine(msg)?.let { (warn, line) -> if (warn) Log.w("WCSETUP", line) else Log.i("WCSETUP", line) }
         // hub21: the frames standing where the bottom-left bar is (one probe per login)
         if (msg.optString("probe") == "barprobe") Log.i("WCHUB", "bar probe (${msg.optInt("scanned")} frames): ${msg.optJSONArray("frames")}")
         // pad14: WoW's hardware cursor setting before / after DS Forever's one switch to the software cursor
