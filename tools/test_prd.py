@@ -6,7 +6,9 @@ health / power that are SECRET (as on Forever), the player's auras, combat, and 
 Checks: nothing without HUD mode; the secret values FED to the bars, never read; the power type's colour; the show rules (a fight,
 starting one, not full by Controller's model; out of combat and full: held, then faded; no signal: fades after the fight); the aura
 row (in combat only; buffs of 5 min or less up to 6, debuffs with a duration up to 4, the swipe, the seconds gold under 5, a second
-row when they do not fit); the height (the app's steps, per character in our saved data, its range); our own frames, nothing written.
+row when they do not fit); the height (the app's steps, per character in our saved data, its range); our own frames, nothing written;
+prd11: the pet's strip (its own layer beside the player's, gold health, the pet's power colour, the PRD frame at the player's texel scale,
+the aura row moved by it, plain presence / happiness / death only, its own curve flag, the pet's casts never the player's).
 Needs lupa. Exit code 1 on any failure."""
 import os
 import sys
@@ -20,14 +22,26 @@ function issecretvalue(v) return type(v) == "table" and getmetatable(v) and getm
 local function secret(n) return setmetatable({ n = n }, { secret = true }) end
 ME = { hp = 620, hpMax = 1000, pw = 45, pwMax = 100, ptype = 0, tok = "MANA", fight = false, dead = false, buffs = {}, debuffs = {} }
 READS = 0                                         -- arithmetic or comparison on a secret would error; this counts the feeds
-function UnitHealth(u) return secret(ME.hp) end
-function UnitHealthMax(u) return ME.hpMax end
-function UnitPower(u, t) return secret(ME.pw) end
-function UnitPowerMax(u, t) return ME.pwMax end
-function UnitPowerType(u) return ME.ptype, ME.tok end
+PET = nil                                         -- prd11: the pet ({ hp, hpMax, pw, pwMax, ptype, tok, name, icon, dead, happy }), nil = none
+local function W(u) if u == "pet" then return PET or {} end return ME end
+function UnitHealth(u) return secret(W(u).hp) end
+function UnitHealthMax(u) return W(u).hpMax end
+function UnitPower(u, t) return secret(W(u).pw) end
+function UnitPowerMax(u, t) return W(u).pwMax end
+function UnitPowerType(u) return W(u).ptype, W(u).tok end
 function UnitAffectingCombat(u) return ME.fight end
 function UnitIsDeadOrGhost(u) return ME.dead end
-function UnitName(u) return "Yes" end
+function UnitName(u) if u == "pet" then return PET and PET.name or nil end return "Yes" end
+PET_EXISTS_SECRET = false
+function UnitExists(u) if u == "pet" then if PET_EXISTS_SECRET then return secret(1) end return PET ~= nil end return true end
+function HasPetUI() return PET ~= nil, PET and PET.hunter or false end
+function UnitIsDead(u) if u == "pet" then return PET ~= nil and PET.dead == true end return ME.dead end
+function GetPetIcon() return PET and PET.icon or nil end
+C_PetInfo = { GetPetHappiness = function()
+    if not PET or not PET.happy then return nil end
+    if PET.happySecret then return secret(PET.happy) end
+    return PET.happy
+end }
 function GetRealmName() return "Lander" end
 PowerBarColor = { MANA = { r = 0, g = 0, b = 1 }, RAGE = { r = 1, g = 0, b = 0 }, ENERGY = { r = 1, g = 1, b = 0 } }
 DebuffTypeColor = { none = { r = 0.8, g = 0, b = 0 }, Magic = { r = 0.2, g = 0.6, b = 1 } }
@@ -57,7 +71,7 @@ function Region:SetCooldown(s, d) self.cdStart, self.cdDur = s, d end
 function Region:SetReverse(r) self.reverse = r end
 function Region:SetDrawEdge(e) self.edge = e end
 function Region:SetHideCountdownNumbers(h) self.nonum = h end
-function Region:RegisterUnitEvent(e, u) self.events = self.events or {}; self.events[e] = u end
+function Region:RegisterUnitEvent(e, u, u2) self.events = self.events or {}; self.events[e] = u; self.units = self.units or {}; self.units[e] = { u, u2 } end
 function Region:GetAlpha() return self.alpha or 1 end
 function Region:SetTextColor(r, g, b, a) self.tcolor = { r, g, b } end
 function Region:SetValue(v, interp) self.value = v; self.interp = interp; READS = READS + 1 end
@@ -257,7 +271,10 @@ def main():
             return c
         end }
         function UnitHealthPercent(u, pred, curve)
-            local x, y = ME.hp / ME.hpMax, nil
+            if u == "pet" and PET_REFUSE then error("pet refused") end
+            if u == "pet" and PET == nil then return nil end         -- (review of prd11: no pet, no value - the code's own "no value")
+            local w = (u == "pet") and PET or ME
+            local x, y = w.hp / w.hpMax, nil
             for _, p in ipairs(curve.pts) do if x >= p[1] then y = p[2] end end
             return setmetatable({ n = y }, { secret = true })
         end
@@ -452,7 +469,7 @@ def main():
     chk("prd8: read back at log in: 300 wide, 100 %%", P.wd == 300 and P.sc == 100)
     P.select(); P.nudge(0); P.sel = "y"
     # prd10 (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"): the pips under the power bar
-    chk("prd10: the version tag", P.V == "prd10")
+    chk("prd11: the version tag", P.V == "prd11")
     chk("prd10: the player's UNIT_POWER_FREQUENT is heard (combo points at the next frame)", ev.events.UNIT_POWER_FREQUENT == "player")
     L.execute('''
         local upm = UnitPowerMax
@@ -472,6 +489,169 @@ def main():
     P["values"]()
     chk("prd10: nothing to read: an empty strip (0), no error", P.cp.shown is True and P.cp.value == 0)
     Lg.CLASS = "MAGE"; P["values"]()
+    # prd11 PET HEALTH IN THE HUD (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs
+    # Pet HUD"; mock-up A "Sub-strip under")
+    sk = 768 / 1080
+    L.execute('function UnitPower(u, t) local w = (u == "pet") and (PET or {}) or ME; return setmetatable({ n = w.pw }, { secret = true }) end')
+    def near(a, b): return a is not None and b is not None and abs(a - b) < 1e-6
+    fire("PLAYER_REGEN_DISABLED"); ME.fight = True; run(0.3)
+    ME.buffs = lst(aura(135953, 15, 9)); ME.debuffs = lst()
+    fire("UNIT_AURA", "player"); run(0.3)
+    top0 = P.buffs[1].f.point[5]
+    chk("prd11: no pet: the strip built but hidden, it takes no room (petDrop %s), the aura row where it was" % P.petDrop,
+        P.petL is not None and P.petL.shown is False and P.petDrop == 0 and near(top0, -(15 + 8 + 9 + 20) * sk))
+    chk("prd11: the strip is its OWN layer: a child of the bar's frame beside the player's layer, never under it (the player's curve)",
+        L.eval("rawequal(WowCompanion.prd.petL.parent, WowCompanion.prd.f)") and not L.eval("rawequal(WowCompanion.prd.petL.parent, WowCompanion.prd.g)"))
+    u1 = ev.units.UNIT_HEALTH; u2 = ev.units.UNIT_SPELLCAST_START; u3 = ev.units.UNIT_AURA
+    chk("prd11: the health / power events heard for the player AND the pet; the casts and the auras for the player only",
+        u1[1] == "player" and u1[2] == "pet" and ev.units.UNIT_POWER_FREQUENT[2] == "pet" and ev.units.UNIT_MAXHEALTH[2] == "pet"
+        and u2[1] == "player" and u2[2] is None and u3[1] == "player" and u3[2] is None and ev.units.UNIT_PET[1] == "player")
+    Lg.PET = L.table_from({"hp": 300, "hpMax": 500, "pw": 60, "pwMax": 100, "ptype": 2, "tok": "FOCUS", "name": "Wolf", "icon": 132203,
+                           "hunter": True, "happy": 3})
+    fire("UNIT_PET", "player"); run(0.3)
+    o = P.pet
+    chk("prd11: a hunter's pet: the strip shown (%s), known by a plain UnitExists (%s)" % (P.petL.shown, P.pex and P.pex.src),
+        P.petL.shown is True and P.pex.has is True and P.pex.src == "exists")
+    chk("prd11: the pet's health FED: its secret straight to SetValue, the plain max to SetMinMaxValues",
+        Lg.issecretvalue(o.hp.value) and o.hp.value.n == 300 and o.hp.max == 500 and o.hp.min == 0)
+    chk("prd11: the pet's health in GOLD %s, never the player's green" % list(o.hp.color.values()),
+        list(o.hp.color.values()) == [1, 0.78, 0.1] and list(o.hp.color.values()) != list(P.hp.color.values()))
+    chk("prd11: a hunter's pet's FOCUS colour %s, its power secret fed the same way (max %s)" % (list(o.pw.color.values()), o.pw.max),
+        list(o.pw.color.values()) == [1, 0.5, 0.25] and Lg.issecretvalue(o.pw.value) and o.pw.max == 100)
+    chk("prd11: thinner and shorter: %.1f x %.1f health, %.1f power, %d %% of the player's width" % (o.hp.w / sk, o.hp.h / sk, o.pw.h / sk, round(o.hp.w / P.hp.w * 100)),
+        near(o.hp.w, 0.6 * 280 * sk) and near(o.hp.h, 8 * sk) and near(o.pw.h, 4 * sk) and near(o.pw.w, o.hp.w))
+    chk("prd11: the PRD frame round both pet bars at the PLAYER's texel scale: the rims one thickness (top %.2f = %.2f, bottom %.2f = %.2f)"
+        % (o.hpFrame.top.h, P.hpFrame.top.h, o.pwFrame.bot.h, P.hpFrame.bot.h),
+        o.hpFrame.top is not None and near(o.hpFrame.top.h, P.hpFrame.top.h) and near(o.pwFrame.top.h, P.pwFrame.top.h)
+        and near(o.hpFrame.bot.h, P.hpFrame.bot.h) and near(o.hpFrame.left.w, P.hpFrame.left.w) and near(o.k, 15 / 8 * sk))
+    chk("prd11: the strip's own lip over its bars (levels %s > %s), its track on the strip's layer" % (o.lip.level, o.hp.level or 1),
+        o.lip.level > (o.hp.level or 1) and L.eval("rawequal(WowCompanion.prd.pet.hpFrame.track.parent, WowCompanion.prd.petL)")
+        and L.eval("rawequal(WowCompanion.prd.pet.hpFrame.top.l.parent, WowCompanion.prd.pet.lip)"))
+    chk("prd11: the round portrait: GetPetIcon's file (%s), masked round; the name in small text (%s, %s)" % (o.face.tex, o.name.text, o.name.fsize / sk),
+        o.face.tex == 132203 and o.face.masked is not None and o.name.text == "Wolf" and near(o.name.fsize, 11 * sk))
+    chk("prd11: the happiness face, plain 3 (happy): the game's PetFrame texture, its first face (%s)" % (o.happy.coord and list(o.happy.coord.values())),
+        o.happy.shown is True and o.happy.tex.endswith("UI-PetHappiness") and list(o.happy.coord.values()) == [0, 0.1875, 0, 0.359375])
+    run(0.3)
+    top1 = P.buffs[1].f.point[5]
+    chk("prd11: the strip takes its room (petDrop %s = gap 16 + row 28): the aura row %.1f spec px lower, the frame taller, the shadow too"
+        % (P.petDrop, (top0 - top1) / sk), P.petDrop == 44 and near(top0 - top1, 44 * sk) and near(P.f.h, (15 + 8 + 9 + 44) * sk)
+        and near(P.shadow.point[5], -(15 + 8 + 9 + 16 + 44) * sk))
+    chk("prd11: the strip right under the power bar (%.1f spec px down)" % (-P.petL.point[5] / sk), near(P.petL.point[5], -(15 + 8 + 9 + 16) * sk)
+        and P.petL.point[1] == "TOPLEFT")
+    # review of prd11 (2026-11-11): the shared texel scale's 8-texel bottom lip (15 spec px) must cover no pet opening. Each lip piece's
+    # reach from the anchors the code set: the health bar's bottom lip down from the health bar, the player's power-bar lip down from it
+    hpBot = o.hpFrame.bot.h                                              # the pet health bar's bottom lip, UI px below its opening
+    pwTop = -o.pw.point[5]                                               # the pet power opening's top, below the health bar's bottom
+    plBot = P.pwFrame.bot.h                                              # the player's power-bar bottom lip below the player's power bar
+    petTop = -P.petL.point[5] - (15 + 8 + 9) * sk                        # the pet health opening's top below the player's power bar
+    chk("prd11 review: the pet power opening clear of the health bar's bottom lip (%.1f >= %.1f spec px), its own top rim in the gap only"
+        % (pwTop / sk, hpBot / sk), o.pw.point[1] == "TOPLEFT" and o.pw.point[3] == "BOTTOMLEFT" and pwTop >= hpBot
+        and o.pwFrame.top.h <= pwTop)
+    chk("prd11 review: the pet health opening clear of the player's power-bar lip (%.1f >= %.1f spec px)" % (petTop / sk, plBot / sk),
+        petTop >= plBot and o.hp.point[5] == 0)
+    chk("prd11 review: the row %s spec px (the bars %s with their gap, the portrait centred on it); the aura row under the pet's lip"
+        % (P.petRow(), 8 + 16 + 4), P.petRow() == 28 and near(P.petL.h, 28 * sk) and o.ring.point[1] == "LEFT"
+        and (P.ROW_GAP * sk) >= o.pwFrame.bot.h)
+    chk("prd11: no lag chunk for the pet (its queue would keep a secret in a table)", o.lag is None)
+    vals = [P.pex[k] for k in ("has", "src", "dead", "ptok", "happy", "cbad", "icon", "a")]
+    chk("prd11: the probe's pet (has / src / ptok / happy) holds no secret", all(not Lg.issecretvalue(v) for v in vals)
+        and P.pex.ptok == "FOCUS" and P.pex.happy == 3)
+    Lg.PET.happySecret = True; run(0.3)
+    chk("prd11: happiness SECRET: no face (%s)" % o.happy.shown, o.happy.shown is False and P.pex.happy is None)
+    Lg.PET.happySecret = None
+    # a pet's cast is never the player's
+    sp0 = P.spentAt
+    ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_START", "pet", "guid", 8936)
+    chk("prd11: a pet's cast: no cost segment on the player's power bar", P.cost.shown is False and P.ex.cost is None)
+    ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_SUCCEEDED", "pet", "guid", 17253)
+    chk("prd11: a pet's cast done: the player's spend clock untouched (%s)" % P.spentAt, P.spentAt == sp0)
+    ev.scripts.OnEvent(ev, "UNIT_AURA", "pet")
+    chk("prd11: a pet's aura change: the player's aura list not re-read", not P.auraDirty)
+    # a warlock's demon: mana, no happiness
+    Lg.PET = L.table_from({"hp": 900, "hpMax": 900, "pw": 200, "pwMax": 400, "ptype": 0, "tok": "MANA", "name": "Voidwalker", "icon": 136221})
+    fire("UNIT_PET", "player"); run(0.3)
+    chk("prd11: a demon: MANA's blue %s, no happiness face, its own portrait (%s)" % (list(o.pw.color.values()), o.face.tex),
+        list(o.pw.color.values()) == [0, 0.45, 1] and o.happy.shown is False and o.face.tex == 136221 and o.name.text == "Voidwalker")
+    Lg.PET.tok = None; Lg.PET.ptype = 2; run(0.3)
+    chk("prd11: no plain token: the type's number says FOCUS (%s)" % P.pex.ptok, P.pex.ptok == "FOCUS" and list(o.pw.color.values()) == [1, 0.5, 0.25])
+    Lg.PET.tok = "MANA"; Lg.PET.ptype = 0
+    # dead: greyed, the game's word
+    Lg.PET.dead = True; run(0.3)
+    chk("prd11: a dead pet greyed (%s), 'Dead' (%s)" % (list(o.hp.color.values()), o.name.text),
+        list(o.hp.color.values()) == [0.5, 0.5, 0.5] and o.name.text == "Dead" and P.pex.dead is True)
+    Lg.PET.dead = None; run(0.3)
+    chk("prd11: alive again: gold, its name", list(o.hp.color.values()) == [1, 0.78, 0.1] and o.name.text == "Voidwalker")
+    # UnitExists secret: a plain name says it
+    Lg.PET_EXISTS_SECRET = True; run(0.3)
+    chk("prd11: UnitExists secret: known by its plain name (%s)" % P.pex.src, P.petL.shown is True and P.pex.src == "name")
+    Lg.PET_EXISTS_SECRET = False
+    # a Rogue's pips show: the strip under them
+    Lg.CLASS = "ROGUE"; run(0.3)
+    chk("prd11: the combo pips shown: the strip under them (petDrop %s, %.1f spec px down)" % (P.petDrop, -P.petL.point[5] / sk),
+        P.cp.shown is True and P.petDrop == 53 and near(P.petL.point[5], -(15 + 8 + 9 + 9 + 16) * sk))
+    Lg.CLASS = "MAGE"; run(0.3)
+    chk("prd11: the pips gone again: back under the power bar (%s)" % P.petDrop, P.petDrop == 44)
+    # its own switch
+    Lg.WowCompanion.npWant.pet = False; run(0.3)
+    chk("prd11: its switch off (npWant.pet false): hidden, no room taken, the aura row back (%s)" % P.petDrop,
+        P.petL.shown is False and P.petDrop == 0 and near(P.buffs[1].f.point[5], top0) and P.pex.src == "off")
+    Lg.WowCompanion.npWant.pet = None; run(0.3)
+    chk("prd11: on unless turned off (npWant.pet nil): shown", P.petL.shown is True and P.wantedPet() is True)
+    # the pet dismissed
+    Lg.PET = None; fire("UNIT_PET", "player"); run(0.3)
+    chk("prd11: the pet gone: hidden, petDrop 0 (%s)" % P.petDrop, P.petL.shown is False and P.petDrop == 0)
+    # THE CURVE: the strip by the pet's own health, its own bad flag
+    Lg.PET = L.table_from({"hp": 300, "hpMax": 500, "pw": 60, "pwMax": 100, "ptype": 2, "tok": "FOCUS", "name": "Wolf", "icon": 132203, "hunter": True})
+    Lg.HPM = L.table_from({"hp": 1000, "max": 1000, "mp": 1000, "mpMax": 1000})
+    ME.ptype, ME.tok, ME.hp = 0, "MANA", 1000
+    fire("UNIT_DISPLAYPOWER", "player")
+    P.curveBad = None
+    ME.fight = False; fire("PLAYER_REGEN_ENABLED"); run(3)
+    chk("prd11: the curve route out of combat (%s): the pet's strip gets the pet's own SECRET alpha (hurt: %s), the player's layer its own (%s)"
+        % (P.src, P.petL.alpha and getattr(P.petL.alpha, "n", P.petL.alpha), getattr(P.g.alpha, "n", P.g.alpha)),
+        P.src == "curve" and P.petSrc == "curve" and Lg.issecretvalue(P.petL.alpha) and P.petL.alpha.n == 1 and Lg.issecretvalue(P.g.alpha) and P.g.alpha.n == 0)
+    Lg.PET.hp = 500; run(0.3)
+    chk("prd11: the pet full: its strip's secret alpha 0", P.petL.alpha.n == 0)
+    Lg.PET_REFUSE = True; Lg.PET.hp = 200; run(0.3)
+    chk("prd11: the pet's curve refused: its OWN flag (%s), the strip on the player's curve (review fix: %s); the player's curve untouched (%s, %s)"
+        % (P.petCurveBad, P.petSrc, P.curveBad, P.src),
+        P.petCurveBad is not None and "pet refused" in P.petCurveBad and P.curveBad is None and P.src == "curve"
+        and P.petSrc == "player" and Lg.issecretvalue(P.petL.alpha) and Lg.issecretvalue(P.g.alpha))
+    Lg.PET_REFUSE = None
+    fire("PLAYER_REGEN_DISABLED"); ME.fight = True; run(0.3)
+    chk("prd11: in a fight the strip plainly shown", P.petL.alpha == 1 and P.petSrc == "plain")
+    Lg.PET = None; run(0.3)
+    # review of prd11 (2026-11-11): DISMISSED ON THE CURVE ROUTE - the tick asks the pet's curve before the poll; with no pet that must
+    # latch nothing (the stub's UnitHealthPercent errors on a nil PET, as a refusal would)
+    P.petCurveBad = None
+    Lg.PET = L.table_from({"hp": 300, "hpMax": 500, "pw": 60, "pwMax": 100, "ptype": 2, "tok": "FOCUS", "name": "Wolf", "icon": 132203, "hunter": True})
+    fire("UNIT_PET", "player"); ME.fight = False; fire("PLAYER_REGEN_ENABLED"); run(3)
+    chk("prd11 review: the curve route with a pet (%s, %s)" % (P.src, P.petSrc), P.src == "curve" and P.petSrc == "curve" and P.petL.shown is True)
+    Lg.PET = None
+    ev.scripts.OnUpdate(ev, 1 / 30)                                      # a tick before UNIT_PET / the poll: the curve asked first
+    chk("prd11 review: dismissed, the tick before the poll: nothing latched (%s), the strip hidden, no room (%s)" % (P.petCurveBad, P.petDrop),
+        P.petCurveBad is None and P.petL.shown is False and P.petDrop == 0 and P.curveBad is None)
+    fire("UNIT_PET", "player"); run(0.5)
+    chk("prd11 review: ... and after UNIT_PET and the poll: still nothing latched, hidden (%s)" % P.petCurveBad,
+        P.petCurveBad is None and P.petL.shown is False)
+    Lg.PET = L.table_from({"hp": 300, "hpMax": 500, "pw": 60, "pwMax": 100, "ptype": 2, "tok": "FOCUS", "name": "Wolf", "icon": 132203, "hunter": True})
+    Lg.PET.hp = 200
+    fire("UNIT_PET", "player"); run(0.5)
+    chk("prd11 review: resummoned out of combat: the pet's own curve alpha back (%s, %s)" % (P.petSrc, getattr(P.petL.alpha, "n", P.petL.alpha)),
+        P.petL.shown is True and P.petSrc == "curve" and Lg.issecretvalue(P.petL.alpha) and P.petL.alpha.n == 1)
+    Lg.PET = None; fire("UNIT_PET", "player")
+    chk("prd11 review: UNIT_PET with no pet hides the strip at once (%s)" % P.petL.shown, P.petL.shown is False and P.petCurveBad is None)
+    # a refusal WITH a pet out: latched, and the strip follows the PLAYER's curve (the bars' own layer: it fades with the HUD), not 1
+    Lg.PET = L.table_from({"hp": 200, "hpMax": 500, "pw": 60, "pwMax": 100, "ptype": 2, "tok": "FOCUS", "name": "Wolf", "icon": 132203, "hunter": True})
+    Lg.PET_REFUSE = True; ME.hp = 1000
+    fire("UNIT_PET", "player"); run(0.5)
+    chk("prd11 review: refused with a pet out: latched (%s), the strip on the PLAYER's curve (%s: player full -> %s)"
+        % (P.petCurveBad, P.petSrc, getattr(P.petL.alpha, "n", P.petL.alpha)),
+        P.petCurveBad is not None and P.petSrc == "player" and Lg.issecretvalue(P.petL.alpha) and P.petL.alpha.n == 0 and P.curveBad is None)
+    ME.hp = 600; run(0.3)
+    chk("prd11 review: ... the player hurt: the strip with the bars (%s)" % P.petL.alpha.n, P.petL.alpha.n == 1)
+    ME.hp = 1000; Lg.PET_REFUSE = None; P.petCurveBad = None
+    Lg.PET = None; run(0.3)
     # tt1, HIDE THE GAME'S TOOLTIPS (the user: "I need a setting to hide top screen tooltips"): alpha only, held by hooks
     TT = Lg.WowCompanion.tips
     tip = Lg.GameTooltip

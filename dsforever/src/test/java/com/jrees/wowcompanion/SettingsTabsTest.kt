@@ -55,7 +55,8 @@ class SettingsTabsTest {
     /** QOL "Build it": Smart Y, then HUD / Navigation / Combat, each row in the approved order (the D-pad walks them in this order) */
     @Test fun qolTabInTheApprovedOrder() {
         assertEquals(listOf(B.SMART_Y, B.QOL_HUD, B.QOL_NAV, B.QOL_COMBAT), SettingsTabs.blocks(T.QOL))
-        assertEquals(listOf("Resource bar", "HUD height", "HUD width", "HUD scale"), B.QOL_HUD.rows)
+        // hub33 (the user, 2026-11-11: "find a way to include Pet HP in the HUD"): the pet's strip right under the resource bar
+        assertEquals(listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale"), B.QOL_HUD.rows)
         assertEquals(listOf("Compass bar", "World markers", "Compass follows the camera", "Avoid dangerous areas"), B.QOL_NAV.rows)
         assertEquals(listOf("Aggro tint"), B.QOL_COMBAT.rows)
         assertEquals(listOf(B.SMART_Y), SettingsTabs.viewBlocks(T.QOL))   // Smart Y by SettingsView, the groups by GameUiSection's QOL part
