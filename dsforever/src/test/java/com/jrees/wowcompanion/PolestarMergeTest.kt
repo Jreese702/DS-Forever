@@ -98,4 +98,30 @@ class PolestarMergeTest {
         assertEquals(MapCursor.Do.Nothing, d.key("PAD3", plain, MapList.POLESTAR, false))
         assertEquals(MapCursor.Do.Nothing, d.key("PAD4", plain, MapList.POLESTAR, false))
     }
+
+    // the user on 1428 (2026-11-11): "The newest update isn't showing the questie quest areas for the focused quest" - the merged row's
+    // key is POLESTAR (negative), so everything that read the cursor's key as a quest id lost the quest
+    @Test fun theMergedKeyResolvesToItsQuest() {
+        val log = setOf(7, 8)
+        val merged = PolestarMerge.quest(shown = true, picked = true, stepQuest = 7) { it in log }
+        assertEquals(7, PolestarMerge.key(MapList.POLESTAR, merged))                 // merged: the row IS quest 7 on the map
+        assertEquals(8, PolestarMerge.key(8, merged))                                // another quest's row: itself
+        assertEquals(MapList.ME, PolestarMerge.key(MapList.ME, merged))              // the portrait: itself
+        // unmerged (a travel / accept step): the row stays POLESTAR - no quest of its own, nothing on the map is looked up
+        val travel = PolestarMerge.quest(true, true, stepQuest = 0) { it in log }
+        assertEquals(MapList.POLESTAR, PolestarMerge.key(MapList.POLESTAR, travel))
+        // not picked: nothing merges, every key is itself
+        val off = PolestarMerge.quest(true, picked = false, stepQuest = 7) { it in log }
+        assertEquals(MapList.POLESTAR, PolestarMerge.key(MapList.POLESTAR, off))
+        assertEquals(7, PolestarMerge.key(7, off))
+        assertTrue(PolestarMerge.key(MapList.POLESTAR, off) <= 0)                     // never taken for a quest
+    }
+
+    @Test fun theFocusedAreasAreTheMergedQuestsElseTheShownFocus() {
+        assertEquals(7, PolestarMerge.areaFocus(shownFocus = 7, merged = 7))         // merged: its quest's areas filled
+        assertEquals(7, PolestarMerge.areaFocus(shownFocus = 0, merged = 7))         // ... even before the focus caught up
+        assertEquals(8, PolestarMerge.areaFocus(shownFocus = 8, merged = 0))         // unmerged / not picked: the shown focus, as 1427
+        assertEquals(0, PolestarMerge.areaFocus(shownFocus = 0, merged = 0))         // none
+        assertEquals(0, PolestarMerge.areaFocus(shownFocus = MapList.POLESTAR, merged = 0))  // a list key is never a quest
+    }
 }
