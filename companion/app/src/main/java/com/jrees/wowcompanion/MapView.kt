@@ -6980,7 +6980,7 @@ class MapView(context: Context) : View(context) {
         // a held step with no quest focused through it (an accept / talk / go-to step) had no mark on either map; now the compass's own
         // objective disc with its "!" at Polestar's waypoint ([PolestarNav.goalMark]), and on Home's small map pinned just inside the
         // rim on the way to it when it is off the field (as the next checkpoint flag), so the way always shows
-        if (!morphOn) PolestarNav.goalMark(psHolds(), psStep, map?.optInt("mapID", 0) ?: 0, psFocus())?.let { g ->
+        if (!morphOn) PolestarNav.goalMark(psHolds(), psStep, map?.optInt("mapID", 0) ?: 0, psFocus(), rect)?.let { g ->
             val gx = sx(g[0]); val gy = sy(g[1])
             val nb = top + (if (compact) compactTop() else 0f)
             if (gx in left..(left + fw) && gy in nb..(top + fh)) UiKit.questDisc(c, gx, gy, BUBBLE_ART, focus = true)

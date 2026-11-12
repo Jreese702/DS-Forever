@@ -42,4 +42,16 @@ class PolestarStepTest {
         assertNull(PolestarStep.parse(JSONObject("""{"type":"pstep","v":"ps3","none":true}""")))
         assertNull("an empty doc", PolestarStep.parse(JSONObject("""{"type":"pstep"}""")))
     }
+
+    /** ps4 (the user, 2026-11-11: "a polestar objective that is not in my bag and not telling me where to go"): the waypoint's world
+     *  spot and continent (wx, wy, c) are read; an older add-on's doc has none */
+    @Test fun aStepCarriesItsWorldSpot() {
+        val st = PolestarStep.parse(JSONObject("""{"type":"pstep","v":"ps4","t":"Hermit","g":"Accept","q":0,"m":2521,"x":0.54,"y":0.39,"wx":-1234.5,"wy":678.9,"c":1}"""))!!
+        assertTrue(st.hasWorld)
+        assertEquals(-1234.5, st.wx, 1e-9); assertEquals(678.9, st.wy, 1e-9); assertEquals(1, st.cont)
+        val old = PolestarStep.parse(JSONObject("""{"type":"pstep","v":"ps3","t":"Hermit","m":2521,"x":0.54,"y":0.39}"""))!!
+        assertTrue(old.hasLoc); assertFalse(old.hasWorld); assertNull(old.cont)
+        val nl = PolestarStep.parse(JSONObject("""{"type":"pstep","v":"ps4","t":"Talk","nl":true,"wx":1.0,"wy":2.0,"c":0}"""))!!
+        assertFalse(nl.hasWorld)
+    }
 }

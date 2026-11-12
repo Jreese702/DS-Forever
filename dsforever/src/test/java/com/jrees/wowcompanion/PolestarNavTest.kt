@@ -111,4 +111,25 @@ class PolestarNavTest {
         assertNull(PolestarNav.goalMark(true, PolestarStep("Talk", "Talk to Kandris", "talk", 77, 0, Double.NaN, Double.NaN), 2521, 0))
         assertNull(PolestarNav.goalMark(true, null, 2521, 0))
     }
+
+    /** ps4 (the review of pn4; the user, 2026-11-11: "a polestar objective that is not in my bag and not telling me where to go"): a held
+     *  step on ANOTHER map of the shown map's continent is marked through its world spot and the shown map's world rect (as the route's
+     *  legs are); another continent, no rect, or an older add-on with no world spot: none */
+    @Test fun theGoalMarkForAStepOnAnotherMap() {
+        val r = PoiStore.Rect(0, 1000.0, 0.0, 500.0, -500.0, fromClient = true)
+        val there = PolestarStep("Go to Elwynn", "Go to Goldshire", "goto", 0, 1429, 0.42, 0.65, wx = 750.0, wy = 0.0, cont = 0)
+        assertArrayEquals(doubleArrayOf(0.5, 0.25), PolestarNav.goalMark(true, there, 1436, 0, r)!!, 1e-9)
+        // off the shown map's field (north of it): still given, the small map pins it at the rim on the way there
+        val north = PolestarStep("Go", "Go", "goto", 0, 1429, 0.4, 0.4, wx = 1500.0, wy = 250.0, cont = 0)
+        assertArrayEquals(doubleArrayOf(0.25, -0.5), PolestarNav.goalMark(true, north, 1436, 0, r)!!, 1e-9)
+        assertNull("another continent", PolestarNav.goalMark(true,
+            PolestarStep("Go", "Go", "goto", 0, 1429, 0.4, 0.4, wx = 750.0, wy = 0.0, cont = 1), 1436, 0, r))
+        assertNull("no rect", PolestarNav.goalMark(true, there, 1436, 0, null))
+        assertNull("an older add-on: no world spot", PolestarNav.goalMark(true,
+            PolestarStep("Go", "Go", "goto", 0, 1429, 0.4, 0.4), 1436, 0, r))
+        assertNull("not held", PolestarNav.goalMark(false, there, 1436, 0, r))
+        assertNull("a quest focused through it", PolestarNav.goalMark(true, there, 1436, 77, r))
+        // the same map still uses the step's own map place, not the world spot
+        assertArrayEquals(doubleArrayOf(0.42, 0.65), PolestarNav.goalMark(true, there, 1429, 0, r)!!, 1e-9)
+    }
 }

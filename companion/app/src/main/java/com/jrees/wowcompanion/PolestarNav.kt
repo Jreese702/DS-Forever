@@ -158,10 +158,19 @@ class PolestarNav {
         /**
          * pn4 (the user, 2026-11-11: "a polestar objective that is not in my bag and not telling me where to go"): where the maps mark
          * Polestar's goal - the held light blue row's waypoint (this map's 0..1) when it has one on the map shown ([mapId]) and no quest
-         * is focused through it ([focusThrough] 0: that quest's own disc marks it), else null
+         * is focused through it ([focusThrough] 0: that quest's own disc marks it); on another map of the same continent, carried
+         * through its world spot and [rect] (ps4); else null
          */
-        fun goalMark(holds: Boolean, step: PolestarStep?, mapId: Int, focusThrough: Int): DoubleArray? =
-            if (holds && step != null && step.hasLoc && mapId != 0 && step.map == mapId && focusThrough == 0) doubleArrayOf(step.x, step.y) else null
+        fun goalMark(holds: Boolean, step: PolestarStep?, mapId: Int, focusThrough: Int, rect: PoiStore.Rect? = null): DoubleArray? {
+            if (!holds || step == null || !step.hasLoc || mapId == 0 || focusThrough != 0) return null
+            if (step.map == mapId) return doubleArrayOf(step.x, step.y)
+            // ps4 (the review of pn4: a goto / talk step across a zone line had no disc and no rim pin on Home's small map): a step on
+            // another map of the shown map's continent, through its world spot and the shown map's world rect (as the route's legs)
+            // - off the field, so the small map pins it at the rim on the way there
+            val r = rect ?: return null
+            if (!step.hasWorld || !r.valid || step.cont != r.continent) return null
+            return doubleArrayOf(r.nx(step.wy), r.ny(step.wx))
+        }
 
         /** a uiMapID as three base-36 digits (Map.lua: (d1 * 36 + d2) * 36 + d3) */
         fun mapDigits(m: Int): List<Int> {

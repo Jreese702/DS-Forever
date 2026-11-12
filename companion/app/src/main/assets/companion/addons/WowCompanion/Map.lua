@@ -2860,7 +2860,7 @@ function WC.pnav.api()
 end
 function WC.pnav.say(op, ok, why)
     pcall(function()
-        WC.send(WC.encode({ type = "pnav", v = "pn4", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
+        WC.send(WC.encode({ type = "pnav", v = "pn5", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
         WC.push()
     end)
 end
@@ -2897,18 +2897,68 @@ end
 function WC.pnav.geom()
     local P = _G.Polestar
     local api = WC.pnav.api()
+    WC.pnav.geomWhy = "noapi"                                           -- pn5: why geom() gave nothing (the pnavt diag's gw)
     if not (P and api and type(P.Nav.GetRouteGeometry) == "function") then return nil end
     if type(api.Active) == "function" then
         local okA, act, owner = pcall(api.Active)
         -- pn4: while the app's Polestar row holds, Polestar's own target (its step, after it dropped our GO) is the one we want too
-        if okA and (not act or (owner ~= WC.pnav.OWNER and not WC.pnav.psOn())) then return nil end
+        if okA and not act then WC.pnav.geomWhy = "inactive"; return nil end
+        if okA and owner ~= WC.pnav.OWNER and not WC.pnav.psOn() then WC.pnav.geomWhy = "owner"; return nil end
     end
     local okG, legs = pcall(P.Nav.GetRouteGeometry)
-    if not okG or type(legs) ~= "table" then return nil end
+    if not okG or type(legs) ~= "table" then WC.pnav.geomWhy = okG and "none" or "err"; return nil end
+    WC.pnav.geomWhy = "ok"
     -- pn2 (the user, 2026-11-11: "the polestar option in quest tracking in home should also show the path on the bottom map"): Polestar
     -- answers { legs = { ... } } (Nav/Walk.lua), not the legs themselves - read as a list it gave no route at all
     if type(legs.legs) == "table" then legs = legs.legs end
     return legs
+end
+-- pn5 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where to go";
+-- the device's no-goal / no-line case was not reproduced off-device): one line every 10 s while a GO of ours, the app's word or a
+-- Polestar step with a spot stands - what Polestar's Nav says (API.Active: act, its owner; Nav.GetTarget's map and 0-100 point),
+-- what geom() gave (gm: "nil", "err" or the legs and points), our GO (m, x, y), the word (on, said) and the step read (ps: nil /
+-- none / nl / loc, its frame fr). It rides the next flush: no push of its own. Read only.
+WC.pnav.DIAG_S = 10
+function WC.pnav.diag(okG, raw)
+    local P = WC.pnav
+    local S = type(WC.pstep) == "table" and WC.pstep.last or nil
+    local psLoc = type(S) == "table" and not S.none and not S.nl and type(S.m) == "number"
+    if not (P.active or P.psOn() or psLoc) then return end
+    local now = GetTime()
+    if P.diagAt and now - P.diagAt < P.DIAG_S then return end
+    P.diagAt = now
+    local api = P.api()
+    local act, own
+    if api and type(api.Active) == "function" then
+        local okA, a, o = pcall(api.Active)
+        if okA then act, own = a and true or false, type(o) == "string" and o or nil else act = "err" end
+    end
+    local tm, tx, ty
+    local PN = type(_G.Polestar) == "table" and _G.Polestar.Nav or nil
+    if type(PN) == "table" and type(PN.GetTarget) == "function" then
+        local okT, t = pcall(PN.GetTarget)
+        if okT and type(t) == "table" and type(t.map) == "number" and type(t.x) == "number" and type(t.y) == "number" then
+            tm, tx, ty = t.map, math.floor(t.x * 10 + 0.5) / 10, math.floor(t.y * 10 + 0.5) / 10
+        end
+    end
+    local gm = "nil"
+    if not (P.active or P.psOn()) then gm = "-"
+    elseif not okG then gm = "err"
+    elseif type(raw) == "table" then
+        local nl, np = 0, 0
+        for _, leg in ipairs(raw) do
+            if type(leg) == "table" and type(leg.pts) == "table" then nl = nl + 1; np = np + #leg.pts end
+        end
+        gm = nl .. "/" .. np
+    end
+    local ps = S == nil and "nil" or (S.none and "none") or (S.nl and "nl") or (psLoc and "loc") or "?"
+    pcall(function()
+        WC.send(WC.encode({ type = "cap", probe = "pnavt", v = "pn5", act = act, own = own, tm = tm, tx = tx, ty = ty, gm = gm,
+            a = P.active and true or false, gom = P.m, gox = P.x and math.floor(P.x * 10000 + 0.5) / 10000 or nil,
+            goy = P.y and math.floor(P.y * 10000 + 0.5) / 10000 or nil, on = P.psOn(), said = P.psSaid == true,
+            legs = type(P.legs) == "table" and #P.legs or 0, ps = ps, fr = type(S) == "table" and S.fr or nil,
+            psm = psLoc and S.m or nil, gw = P.geomWhy }))
+    end)
 end
 function WC.pnav.route(full, raw)
     local legs = raw
@@ -2982,11 +3032,13 @@ do
         local P = WC.pnav
         -- pn4: also while the app's Polestar row holds with no GO of ours in force (Polestar guiding its step itself)
         if P.active and GetTime() - P.keepAt > P.KEEP_S then pcall(P.cancel, "no word from the app") end
+        local okG, raw = false, nil
+        if P.active or P.psOn() then okG, raw = pcall(P.geom) end
+        pcall(P.diag, okG, raw)
         if not P.active and not P.psOn() then
             if P.legs then P.legs, P.legSig, P.legsAt = nil, nil, nil end
             return
         end
-        local okG, raw = pcall(P.geom)
         local okR, legs, sig = false, nil, nil
         if okG and raw then okR, legs, sig = pcall(P.route, false, raw) end
         -- pn3 (the user, 2026-11-11: "The polestar doted line needs its own kind of marker to point on the compass to keep players on
@@ -2998,7 +3050,7 @@ do
         if not okR or not legs then return end
         if sig ~= P.sig or GetTime() - P.sentAt > 10 then
             P.sig, P.sentAt = sig, GetTime()
-            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn4", legs = legs })); WC.push() end)
+            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn5", legs = legs })); WC.push() end)
         end
     end)
 end
@@ -3116,9 +3168,36 @@ function WC.pstep.read()
             if type(gv) == "table" and type(gv.quest) == "number" then quest = gv.quest end
         end
     end
+    -- ps4 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where to
+    -- go"): a guide point in Polestar's Era map frame (wp.f = "e": Engine.lua waypointOf carries posOf's frame; Compat.lua MapToWorld
+    -- reads it through ns.MapFrames.era, not the live map) is NOT live map percent - read raw, the app's GO, the compass and Home's map
+    -- all put it somewhere else. Polestar's own Nav.LiveCoords (Nav/Nav.lua: what its Bridges hand TomTom and the game's pin) turns it
+    -- into the live frame; when it cannot, the step goes as one with no spot (no wrong GO). Read only.
+    local m, x, y = wp.map, wp.x, wp.y
+    if wp.f ~= nil then
+        local LC = type(P.Nav) == "table" and P.Nav.LiveCoords or nil
+        local okC, lm, lx, ly = false, nil, nil, nil
+        if type(LC) == "function" then okC, lm, lx, ly = pcall(LC, wp) end
+        if not (okC and type(lm) == "number" and type(lx) == "number" and type(ly) == "number") then
+            local d = WC.pstep.noLoc(E)
+            if type(d) == "table" and not d.none then d.fr = tostring(wp.f) end
+            return d
+        end
+        m, x, y = lm, lx, ly
+    end
+    -- ps4: its world spot too (wx, wy yards and continent c, the game's own conversion), so Home's small map can mark a step on
+    -- another map of the same continent (MapView's goal disc pinned at the rim on the way to it)
+    local wx, wy, c
+    pcall(function()
+        local cont, v = C_Map.GetWorldPosFromMapPos(m, CreateVector2D(x / 100, y / 100))
+        if type(cont) == "number" and type(v) == "table" and type(v.x) == "number" and type(v.y) == "number" then
+            wx, wy, c = math.floor(v.x * 10 + 0.5) / 10, math.floor(v.y * 10 + 0.5) / 10, cont
+        end
+    end)
     return {
         t = title, g = type(wp.label) == "string" and wp.label or nil, k = type(wp.kind) == "string" and wp.kind or nil, q = quest,
-        m = wp.map, x = math.floor(wp.x * 100 + 0.5) / 10000, y = math.floor(wp.y * 100 + 0.5) / 10000,
+        m = m, x = math.floor(x * 100 + 0.5) / 10000, y = math.floor(y * 100 + 0.5) / 10000,
+        wx = wx, wy = wy, c = c, fr = wp.f ~= nil and tostring(wp.f) or nil,
     }
 end
 -- ps3 (the user, 2026-11-11: "The polestar tracked quest went missing from my quests"): a step with no fixed spot (talk / use / train /
@@ -3169,7 +3248,7 @@ C_Timer.NewTicker(1, function()
         tostring(d.m or "nl"), tostring(d.x or ""), tostring(d.y or "") }, "|")
     if sig ~= P.sig or GetTime() - P.sentAt > 15 then
         P.sig, P.sentAt = sig, GetTime()
-        d.type, d.v = "pstep", "ps3"
+        d.type, d.v = "pstep", "ps4"
         if P.boot ~= 0 then d.b = P.boot end
         pcall(function() WC.send(WC.encode(d)); WC.push() end)
     end

@@ -8,9 +8,15 @@ import org.json.JSONObject
  * goals; Map.lua sends nl = true and no m / x / y) is still a step - the row stays, its A works, the step's quest is still focused;
  * only what needs a place (the goal sent to Polestar's router, the route, the distance) has none: [hasLoc] false.
  */
-class PolestarStep(val title: String?, val words: String?, val kind: String?, val quest: Int, val map: Int, val x: Double, val y: Double) {
+class PolestarStep(val title: String?, val words: String?, val kind: String?, val quest: Int, val map: Int, val x: Double, val y: Double,
+                   /** ps4 (the user, 2026-11-11: "a polestar objective that is not in my bag and not telling me where to go"): the
+                    *  waypoint's world spot (yards, Map.lua's game conversion) and continent, so a map of another zone can mark it;
+                    *  NaN / null from an older add-on */
+                   val wx: Double = Double.NaN, val wy: Double = Double.NaN, val cont: Int? = null) {
     /** the step has a spot of its own (Polestar's waypoint): map, x, y */
     val hasLoc: Boolean get() = map != 0 && !x.isNaN() && !y.isNaN()
+    /** ps4: its world spot is known */
+    val hasWorld: Boolean get() = hasLoc && !wx.isNaN() && !wy.isNaN() && cont != null
 
     companion object {
         /** the doc's step, or null for {none = true}; a step with no location (nl, or no "m") keeps map 0 and NaN x / y */
@@ -23,7 +29,10 @@ class PolestarStep(val title: String?, val words: String?, val kind: String?, va
             return PolestarStep(title, words, d.optString("k", "").ifEmpty { null }, d.optInt("q", 0),
                 if (loc) d.optInt("m", 0) else 0,
                 if (loc) d.optDouble("x", Double.NaN) else Double.NaN,
-                if (loc) d.optDouble("y", Double.NaN) else Double.NaN)
+                if (loc) d.optDouble("y", Double.NaN) else Double.NaN,
+                if (loc) d.optDouble("wx", Double.NaN) else Double.NaN,
+                if (loc) d.optDouble("wy", Double.NaN) else Double.NaN,
+                if (loc && d.has("c")) d.optInt("c") else null)
         }
     }
 }

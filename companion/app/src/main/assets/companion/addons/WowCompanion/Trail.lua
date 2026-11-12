@@ -92,7 +92,7 @@ end
 -- go", then: Polestar's own arrow stays hidden, DS Forever's compass leads): while the app's light blue Polestar row holds (Map.lua
 -- pn4 WC.pnav.psOn: the app says so) the compass shows Polestar's waypoint (and the path marker, Polestar's route) whether or not a
 -- quest is focused, in the log, or our GO is the one Polestar follows; cp35's guess from the GO alone stays for an app that never says.
-WC.compass = { V = "cp37" }
+WC.compass = { V = "cp38" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -262,10 +262,27 @@ do
             psHold = psOn and C.psAt and GetTime() - C.psAt < 5 or false
         end
         C.psHold = psHold and true or false
+        local psW
         if psHold and psLoc then
-            local w = C.world(PS.m, PS.x, PS.y)
-            if w then t.quest, C.qsrc, C.qid = w, "polestar", num(PS.q) end      -- (an accept / go-to step: no quest, C.qid nil)
+            psW = C.world(PS.m, PS.x, PS.y)
+            if psW then t.quest, C.qsrc, C.qid = psW, "polestar", num(PS.q) end  -- (an accept / go-to step: no quest, C.qid nil)
         end
+        -- cp38 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where to
+        -- go"; the device's missing goal was not reproduced off-device): what the Polestar goal stood on, for the diag's psd -
+        -- the step read (nil / none / nl / loc, its map and frame), the world spot (w: 1 found, 0 none, - not asked), its continent
+        -- against the player's (c: 1 same, 0 other: dropped below, - unknown), the game super-tracking a user waypoint (st: the
+        -- route list then shows the pin, not the goal), Map's route pin (rw), and the GO (go: its map, and whether it matches the step)
+        local goM = type(PN) == "table" and PN.active and num(PN.m) and num(PN.x) and num(PN.y) and PN.m or nil
+        C.psd = table.concat({
+            PS == nil and "nil" or (type(PS) ~= "table" and "?") or (PS.none and "none") or (PS.nl and "nl") or (psLoc and "loc") or "?",
+            "m" .. tostring(type(PS) == "table" and num(PS.m) or "-"), "f" .. tostring(type(PS) == "table" and PS.fr or "-"),
+            "w" .. ((psHold and psLoc) and (psW and "1" or "0") or "-"),
+            "c" .. ((psW and me and psW.cont ~= nil and me.cont ~= nil) and (psW.cont == me.cont and "1" or "0") or "-"),
+            "st" .. ((okS and onPin == true) and "1" or "0"), "rw" .. (routeQ and "1" or "0"),
+            "go" .. tostring(goM or "-") .. ((goM and psLoc and PS.m == goM and math.abs(PS.x - PN.x) < C.PS_TOL
+                and math.abs(PS.y - PN.y) < C.PS_TOL) and "=" or ""),
+            "me" .. ((me and me.map) and tostring(me.map) or "-"),
+        }, ",")
         -- the corpse, while dead or a ghost
         local okD, dead = pcall(UnitIsDeadOrGhost, "player")
         if okD and dead == true and me and me.map then
@@ -1369,10 +1386,18 @@ do
             end
         else
             local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
-            if okP and onPin == true and tg.pin then
+            -- cp38 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where
+            -- to go", and Polestar's own arrow stays hidden): while Polestar leads (C.qsrc "polestar": its row holds) its goal comes
+            -- FIRST even when the game super-tracks a user waypoint - cp37 showed only that pin then (a pin left from before, or the one
+            -- the game falls back to once "polestar unfocus" clears the quest focus); the pin stays, second
+            local psLead = C.qsrc == "polestar" and tg.quest ~= nil
+            if okP and onPin == true and tg.pin and not psLead then
                 items[1] = { id = "cp:" .. rtAt(tg.pin), w = tg.pin, kind = "pin", pin = true, why = "ownpin" }   -- (the same id as in a route)
             elseif tg.quest then
-                items[1] = { id = C.goalId(), w = tg.quest, kind = "goal", why = "noroute" }
+                items[1] = { id = C.goalId(), w = tg.quest, kind = "goal", why = psLead and "polestar" or "noroute" }
+                if psLead and okP and onPin == true and tg.pin and not dup(tg.pin, RT.GOAL_NEAR) then
+                    items[2] = { id = "cp:" .. rtAt(tg.pin), w = tg.pin, kind = "pin", pin = true, why = "ownpin2" }
+                end
             end
         end
         return items
@@ -1846,6 +1871,8 @@ do
             pin = tg.pin and true or false, qid = C.qid, qsrc = C.qsrc, quest = tg.quest and true or false,
             corpse = tg.corpse and true or false, n = #L.marks,
             ps = C.psHold,                                                                          -- cp37: the Polestar row holds
+            psd = C.psd,                                                         -- cp38: what Polestar's goal stood on (C.targets)
+            rt1 = (C.rt_ and C.rt_[1]) and (tostring(C.rt_[1].id) .. ":" .. tostring(C.rt_[1].why)) or nil,     -- cp38: the list's first
             pa = C.paWhy, pai = C.PA.st.idx, pal = C.PA.st.left and math.floor(C.PA.st.left + 0.5) or nil,     -- cp36
             rt = (function()
                 local p = {}
