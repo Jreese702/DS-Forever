@@ -2382,7 +2382,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     }
                 }
             }
-            "spellsack" -> if (current) SpellsModel.parseBind(msg)?.let { spellsOverlay.onBind(it); spellbookView.invalidate(); newSpellBindDone() }
+            "spellsack" -> if (current) {
+                // issues #18 / #20 / #31: every bind answer in the report's log (the add-on's trigger read beside the app's own)
+                if (msg.optString("op") == "bind") {
+                    val (hl, hr) = spellsOverlay.heldTriggers()
+                    Log.i("WCHOME", SpellsModel.bindLogLine(msg, hl, hr))
+                }
+                SpellsModel.parseBind(msg)?.let { spellsOverlay.onBind(it); spellbookView.invalidate(); newSpellBindDone() }
+            }
             // the Professions room (professions session): the professions, the open one's recipes, the answers to its taps
             "prof" -> msg.optJSONObject("p")?.let { p ->
                 val was = ProfessionsStore.overview?.open

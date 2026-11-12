@@ -113,6 +113,25 @@ object SpellsModel {
         )
     }
 
+    /** issues #18 / #20 / #31 ("Trying to bind an attack, doesnt show up on bottom screen"; "Any modifier key binding doesn't work"; "i cant
+     *  bind new spells to anything"): the reports carried no word of what the Bind box did, so every bind answer is one log line: the
+     *  answer, where it went, how the add-on read the triggers (probe src / pad / padSrc / game / slotSrc / shift) and what the app's
+     *  own controller reader saw held then ([appLt] / [appRt]) - a trigger the add-on could not see shows as app set != the bound set */
+    fun bindLogLine(msg: JSONObject, appLt: Boolean, appRt: Boolean): String {
+        val p = msg.optJSONObject("pad")
+        val pr = msg.optJSONObject("probe")
+        fun o(j: JSONObject?, k: String): String = if (j != null && j.has(k) && !j.isNull(k)) j.opt(k).toString() else "-"
+        val appSet = when { appLt && appRt -> 4; appRt -> 3; appLt -> 2; else -> 1 }
+        val ok = msg.optBoolean("ok", false)
+        val head = if (ok) "ok" else "refused ${msg.optString("why", "failed").ifEmpty { "failed" }}"
+        val at = if (p == null) "-" else "s=${o(p, "s")} pg=${o(p, "pg")} b=${o(p, "b")} p=${o(p, "p")}${if (p.optBoolean("fight", false)) " fight" else ""}"
+        val bound = p?.optInt("b", 0)?.takeIf { it in 1..4 }
+        val miss = if (bound != null && bound != appSet) " SET MISMATCH" else ""
+        return "spells bind: ${msg.optString("v", "?")} id=${msg.optInt("id", 0)} $head at $at; read src=${o(pr, "src")} pad=${o(pr, "pad")} " +
+            "padSrc=${o(pr, "padSrc")} game=${o(pr, "game")} over=${o(pr, "over")} slotSrc=${o(pr, "slotSrc")} shift=${o(pr, "shift")} " +
+            "held=${o(pr, "held")}; app set=$appSet$miss"
+    }
+
     fun parseBind(msg: JSONObject): BindResult? {
         if (msg.optString("type") != "spellsack" || msg.optString("op") != "bind") return null
         val id = msg.optInt("id", 0).takeIf { it > 0 } ?: return null

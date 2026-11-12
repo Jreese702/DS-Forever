@@ -141,6 +141,9 @@ class SpellsOverlay(
     private var padMap: PadMapModel.Map? = null
     fun onPadMap(m: PadMapModel.Map) { padMap = m; if (boxOpen()) invalidate() }
 
+    /** issues #18 / #20 / #31: the triggers the app's own reader holds now (LT, RT), for the bind answer's log line */
+    fun heldTriggers(): Pair<Boolean, Boolean> = lt to rt
+
     fun onBind(r: SpellsModel.BindResult) {
         result = r; resultAt = SystemClock.uptimeMillis()
         if (boxSpell == null) boxSpell = r.spellId

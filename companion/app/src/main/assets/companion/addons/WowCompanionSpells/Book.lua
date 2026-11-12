@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b49"                -- bump on every change; b49 (review): the default is the active form only while the game SHOWS its stance bar (WC.padMap.stanceShown); a form with no bar (Ghost Wolf, Travel Form, an aura) keeps the caster path; b49: A STANCE-COVERED BUTTON BINDS TO THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): a Warrior in Battle Stance bound Charge on ZR + B page 1, the game lays the stance bar over RT there, the box's form defaulted to the caster and the plain RT slot (199) took it while the game, the router and Home read the stance bar's; now the box's form is "not chosen" (nil) until the player picks one, and then the active form's bar is the default (bform reports it, so the app's form row lights it); 0 = the caster picked on purpose (the old path); the ack's probe.slotSrc says where the slot came from (stance / form / game / button / formula); b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
+local BV = "b50"                -- bump on every change; b50: THE BARE D-PAD IS THE DS WoW TOOLBAR'S IN THE BIND BOX TOO (issues #18 / #20, 1.0.15: "Trying to bind an attack, doesnt show up on bottom screen and or the button display for attacks on the buton layout"; a second player on #20: "When I disabled the DS shortcuts (dpad) it allowed me to bind abilities to the Dpad. But only there. Any modifier key binding doesn't work."; #31, 1.0.16: "i cant bind new spells to anything"): with the toolbar on (PadMap dpadWant), a bare D-pad press placed the spell on the plain D-pad slot the router's toolbar keys cover, so it never cast and Home drew the toolbar there; now it answers "dpad bar" (nothing placed, the box keeps waiting) as the Controller room does (PadTabCtl p34 toolbarHas); the In combat tab's bare D-pad still takes a fight spell (p36); b49 (review): the default is the active form only while the game SHOWS its stance bar (WC.padMap.stanceShown); a form with no bar (Ghost Wolf, Travel Form, an aura) keeps the caster path; b49: A STANCE-COVERED BUTTON BINDS TO THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): a Warrior in Battle Stance bound Charge on ZR + B page 1, the game lays the stance bar over RT there, the box's form defaulted to the caster and the plain RT slot (199) took it while the game, the router and Home read the stance bar's; now the box's form is "not chosen" (nil) until the player picks one, and then the active form's bar is the default (bform reports it, so the app's form row lights it); 0 = the caster picked on purpose (the old path); the ack's probe.slotSrc says where the slot came from (stance / form / game / button / formula); b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -604,6 +604,12 @@ local function bindPress(key)
         ack(false, b.id, (why == "combat" or why == "bind" or why == "dpad bar") and why or "failed", nil, probe)
         return why == "combat" and "combat" or "failed"
     end
+    -- b50 (issues #18 / #20 / #31): the bare D-pad is the DS WoW toolbar's while it is wanted (the router's Chat / Radial / Map / Home bar
+    -- keys sit on it): a spell placed under it would never cast nor show on Home. Refused, as the Controller room does (PadTabCtl p34)
+    if set == 1 and pos and pos <= 4 and type(WC.padMap) == "table" and type(WC.padMap.dpadState) == "function" then
+        local okd, st = pcall(WC.padMap.dpadState)
+        if okd and type(st) == "table" and st.want == true then ack(false, b.id, "dpad bar", nil, probe) return "dpad bar" end
+    end
     local page = gamePage()
     -- b44 (the user's pick A): a FORM chosen in the box's row, pressed in the set the game lays the form bar over = that form's own slot
     -- b49 (issue #179, "buttons do not stay mapped on ZR +FACE buttons"): no form picked yet (nil) = the ACTIVE form, so a stance-covered
@@ -892,7 +898,7 @@ onPress = function(key)
         end
         ctl.undo = nil
         local why = bindPress(key)
-        if why == "reserved" or why == "unsure" then report("bind-" .. why) return end    -- the box keeps waiting (SPEC 4)
+        if why == "reserved" or why == "unsure" or why == "dpad bar" then report("bind-" .. why) return end    -- the box keeps waiting (SPEC 4; b50 the toolbar's D-pad)
         -- b42: it took: the box asks (A keeps, B undoes); B must reach the room meanwhile
         if not why and ctl.undo then ctl.bind, ctl.mode = nil, "confirm"; backFor(true); report("bound") return end
         -- placed, or refused for good: the box shows the answer for 1.5 s, then the book; B closes it at once (SPEC 4)
