@@ -162,22 +162,39 @@ def main():
     # when "I target something out of combat AND start attack", back on "when an ability is used before that ability fires", never for
     # Hunter's Mark)
     L2.execute(r"""
-        CV = { autoRangedCombat = "0" }; FIGHT = false; REFUSE = false; HASTGT = true
+        CV = { autoRangedCombat = "0" }; FIGHT = false; REFUSE = false; HASTGT = true; A6603 = false; WRITES = {}
         C_CVar = { GetCVarBool = function(k) return CV[k] == "1" end,
-                   SetCVar = function(k, v) if FIGHT and REFUSE then error("blocked") end; CV[k] = v end }
+                   SetCVar = function(k, v) if FIGHT and REFUSE then error("blocked") end; CV[k] = v; WRITES[#WRITES + 1] = { v = v, lock = FIGHT } end }
         C_Spell = { GetSpellName = function(id) if id == 1130 or id == 14325 then return "Hunter's Mark" end return "Spell" .. id end }
         function InCombatLockdown() return FIGHT end
         function UnitExists(u) return u == "target" and HASTGT end
+        function UnitCanAttack() return true end
+        function UnitIsDeadOrGhost() return false end
+        function IsCurrentSpell(id) if id == 6603 then return A6603 end return false end
         function FIRE(e, ...) for i = 1, #MADE do local f = MADE[i]; if f.OnEvent then pcall(f.OnEvent, f, e, ...) end end end
+        -- hub43: a clock and C_Timer.After
+        NOW = 100; TIMERS = {}
+        function GetTime() return NOW end
+        C_Timer = C_Timer or {}
+        C_Timer.After = function(s, fn) TIMERS[#TIMERS + 1] = { at = NOW + s, fn = fn } end
+        function advance(s)
+            NOW = NOW + s
+            local due, keep = {}, {}
+            for _, t in ipairs(TIMERS) do if t.at <= NOW then due[#due + 1] = t else keep[#keep + 1] = t end end
+            TIMERS = keep
+            for _, t in ipairs(due) do pcall(t.fn) end
+        end
     """)
     cv = lambda: G.CV.autoRangedCombat
+    adv = G.advance
     sw(None, SW.SHOTF_ON)
     ds0 = doc()
     chk("hub30: the third choice chosen: on at once, out of a fight too (%s), the doc's shotf (%s, set %s), cols 28 / 29"
         % (cv(), ds0.sw.shotf, ds0.sw.set.shotf), cv() == "1" and ds0.sw.shotf is True and ds0.sw.set.shotf is True
         and ds0.sw.cols.SHOTF_OFF == 28 and ds0.sw.cols.SHOTF_ON == 29)
+    G.A6603 = True
     G.FIRE("PLAYER_ENTER_COMBAT")
-    chk("hub30: an attack started out of a fight with a target: off (%s)" % cv(), cv() == "0")
+    chk("hub30: an attack started out of a fight with a target: off at once (%s)" % cv(), cv() == "0")
     G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g1", 1130)
     G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g2", 14325)
     chk("hub30: Hunter's Mark (any rank) does not turn it back on (%s)" % cv(), cv() == "0")
@@ -191,7 +208,7 @@ def main():
     G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED")
     G.FIRE("PLAYER_ENTER_COMBAT")
     chk("hub30: an attack started INSIDE a fight leaves it on (%s)" % cv(), cv() == "1")
-    G.FIGHT = False; G.FIRE("PLAYER_ENTER_COMBAT")
+    G.FIGHT = False; adv(5); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
     G.FIGHT = True; G.REFUSE = True; G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g7", 3044)
     ds2 = doc()
     chk("hub30: the game refusing a write inside a fight: no error, the doc says so (shotfk %s)" % ds2.sw.shotfk, ds2.sw.shotfk is False)
@@ -199,6 +216,79 @@ def main():
     chk("hub30: the fight's end turns it on again (%s)" % cv(), cv() == "1")
     G.HASTGT = False; G.FIRE("PLAYER_ENTER_COMBAT")
     chk("hub30: no target: an attack start changes nothing (%s)" % cv(), cv() == "1")
+    G.HASTGT = True
+    # hub43 (the user, 2026-11-12, a level 15 Hunter: "sometimes when using arcane shot my auto fire just stops and my dude stands
+    # there"): every harmful spell from the controller runs PadMap's "/startattack [harm,nodead]" first, so the attack start is often
+    # an ability's own; the 0 must never stick into the fight from one
+    def fresh():
+        G.FIGHT = False; G.REFUSE = False
+        G.FIRE("PLAYER_REGEN_ENABLED"); adv(10)
+        G.WRITES = L2.table(); G.A6603 = True; G.HASTGT = True
+
+    def zeros(lock=None):
+        return [G.WRITES[i] for i in range(1, len(G.WRITES) + 1)
+                if G.WRITES[i].v == "0" and (lock is None or G.WRITES[i].lock is lock)]
+
+    def sent(spell, g="gx"):
+        G.FIRE("UNIT_SPELLCAST_SENT", "player", "", g, spell)
+    fresh(); sent(3044); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    chk("hub43 1: Arcane Shot's SEND, then its /startattack's attack start: stays on (%s, 0 writes %d)" % (cv(), len(zeros())),
+        cv() == "1" and not zeros())
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.1); sent(3044); adv(0.4)
+    chk("hub43 2: the attack start, then Arcane Shot's SEND: on again, out of the lockdown (%s, 0 writes %d, in lockdown %d)"
+        % (cv(), len(zeros()), len(zeros(True))), cv() == "1" and len(zeros(False)) == 1 and not zeros(True))
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    chk("hub43 3: a plain melee pull (no ability): off (%s)" % cv(), cv() == "0")
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.05); G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); adv(0.4)
+    chk("hub43 4: a plain pull in swing range, the fight 0.05 s later: still off, the 0 written before the lockdown (%s, %d / %d)"
+        % (cv(), len(zeros(False)), len(zeros(True))), cv() == "0" and len(zeros(False)) == 1 and not zeros(True))
+    fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 3044); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    chk("hub43 4b: a cast that failed unsent, its /startattack's attack start: stays on (%s, 0 writes %d)" % (cv(), len(zeros())),
+        cv() == "1" and not zeros())
+    fresh(); G.FIRE("UNIT_SPELLCAST_SUCCEEDED", "player", "gs", 3044); G.FIRE("PLAYER_ENTER_COMBAT")
+    chk("hub43 4c: a SUCCEEDED alone is no press: a plain pull, off (%s)" % cv(), cv() == "0")
+    fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 1130); G.FIRE("PLAYER_ENTER_COMBAT")
+    chk("hub43 4d: a failed Hunter's Mark is still a plain pull: off (%s)" % cv(), cv() == "0")
+    fresh(); sent(1130); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    chk("hub43 5: a Hunter's Mark pull is still a plain pull: off (%s)" % cv(), cv() == "0")
+    fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 3044); adv(2.5); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    c_fail = cv()
+    G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); c_rd = cv(); sent(3044)
+    d6 = doc()
+    chk("hub43 6: a failed cast (no SEND), 2.5 s later a pull: off (%s), the fight's start alone leaves it (%s), the in-fight SEND: on (%s, shotfk %s)"
+        % (c_fail, c_rd, cv(), d6.sw.shotfk), c_fail == "0" and c_rd == "0" and cv() == "1" and d6.sw.shotfk is True)
+    fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 3044); adv(2.5); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    G.FIGHT = True; G.REFUSE = True; G.FIRE("PLAYER_REGEN_DISABLED"); sent(3044)
+    d6b = doc()
+    chk("hub43 6b: ... the game refusing that write: no error, shotfk false (%s, %s)" % (cv(), d6b.sw.shotfk), cv() == "0" and d6b.sw.shotfk is False)
+    fresh()
+    G.WowCompanion.atkCell = L2.table_from({"row": "party", "col": 36})
+    sw(None, SW.ATK_ON)
+    G.A6603 = False; G.SENT = L2.table(); G.FIRE("PLAYER_TARGET_CHANGED")
+    went = [G.SENT[i] for i in range(1, len(G.SENT) + 1) if G.SENT[i].type == "atkgo"]
+    adv(1.0); G.A6603 = True; G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    chk("hub43 7: our atkgo, then its attack start within 1.5 s: stays on (atkgo %d, %s)" % (len(went), cv()), len(went) == 1 and cv() == "1")
+    fresh(); G.A6603 = False; G.FIRE("PLAYER_TARGET_CHANGED"); adv(2.0); G.A6603 = True; G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    chk("hub43 7b: an attack start 2 s after the atkgo is a plain pull again: off (%s)" % cv(), cv() == "0")
+    sw(None, SW.ATK_OFF); G.WowCompanion.atkCell = None
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    G.FIGHT = True; G.REFUSE = True; sent(3044); c_ref = cv(); G.REFUSE = False; adv(0.5); G.FIRE("PLAYER_REGEN_DISABLED")
+    d8 = doc()
+    chk("hub43 8: an ability's SEND refused, then the fight's start within 2 s: written again (%s -> %s, shotfk %s)" % (c_ref, cv(), d8.sw.shotfk),
+        c_ref == "0" and cv() == "1" and d8.sw.shotfk is True)
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4); adv(3); G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED")
+    chk("hub43 8b: no ability within 2 s of the fight's start: left off (%s)" % cv(), cv() == "0")
+    fresh()
+    for i in range(30):
+        sent(3044, "g%d" % i); adv(0.01)
+    lg = doc().shotlog
+    rows = [lg[i] for i in range(1, len(lg) + 1)] if lg is not None else []
+    FIELDS = {"t", "ev", "spell", "cv", "a6603", "a75", "lock"}
+    plain = all(set(r.keys()) <= FIELDS and all(isinstance(r[k], (int, float, str, bool)) for k in r.keys()) for r in rows)
+    chk("hub43 9: the shot log: the last 24 only (%d), plain fields only (%s), the newest last (%s)"
+        % (len(rows), plain, rows[-1].ev if rows else None),
+        len(rows) == 24 and plain and rows[-1].ev in ("sent", "w1") and all(r.t is not None and r.ev for r in rows))
+    G.FIGHT = False; G.FIRE("PLAYER_REGEN_ENABLED")
     sw(None, SW.SHOTF_OFF); sw(None, SW.SHOT_OFF)
     G.HASTGT = True; G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g8", 3044)
     ds3 = doc()
@@ -247,7 +337,7 @@ def main():
     G3.ROWS.uisw(None, SW3.UFT_OFF)
     chk("hub32: our bar off again: lifted again (%s)" % G3.ComboFrame.ipa, G3.ComboFrame.ipa is True)
     hubsrc = open(HUB, encoding="utf-8").read()
-    chk("hub40: the version tag (hub38 the player / pet row + side tab art; hub39 int/1429; hub40 the party bars one column wide; hub41 the tab on a K change, pitch 64; hub42 the left column / the grid under the HUD)", 'local HV = "hub42"' in hubsrc)
+    chk("hub40: the version tag (hub38 the player / pet row + side tab art; hub39 int/1429; hub40 the party bars one column wide; hub41 the tab on a K change, pitch 64; hub42 the left column / the grid under the HUD)", 'local HV = "hub43"' in hubsrc and "hub42:" in hubsrc)
     # hub31 / hub36 POLESTAR ON THE TOP SCREEN (the user, 2026-11-11, the switch on: "The polestar window randomly reappears a lot"):
     # Polestar 0.2.5 fades its windows back by itself with no Show (every fight's start / end: UI/GuideFrame.lua:2528-2540 ->
     # GF.ApplyAlpha(true) -> Anim.To -> o:SetAlpha per frame), fades each window in as it shows, and makes windows later. A stub with a
