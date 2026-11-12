@@ -296,18 +296,15 @@ RL.execute('for _, a in ipairs({ "WowCompanion", "WowCompanionQuests", "WowCompa
 secure_made = RL.eval('(function() local n = 0; for _, f in ipairs(ALLF) do if f._secure then n = n + 1 end end; return n end)()')
 ours = [k for k, v in keys(RL).items() if v.startswith('CLICK WowCompanion')] + [k for k, v in dict(RL.eval('BIND')).items() if v.startswith('CLICK WowCompanion')]
 c = clean(RL)
-xcheck(c == {}, "RL1 a /reload in a fight: the add-ons load with no ADDON_ACTION_BLOCKED, no error",
-       "Interact makes its fight hold at load whatever the lockdown: CreateFrame(WowCompanionFightHold, SecureHandlerBaseTemplate) "
-       "is blocked (the rest of its pcall - RoomLeave, RoomEnter - never runs)", {k: v[:4] for k, v in c.items()})
+check(c == {}, "RL1 a /reload in a fight: the add-ons load with no ADDON_ACTION_BLOCKED, no error (Step 2: i144 F.make out of combat only)",
+      {k: v[:4] for k, v in c.items()})
 check(secure_made == 0, "RL2 ... no secure piece exists in that fight", secure_made)
 check(not ours, "RL3 ... nothing of ours is bound in the fight", ours[:4])
 RL.execute('VIOL = {}; ERRS = {}; SNIPERR = {}')
 fight_end(RL)
-xcheck(RL.eval('WowCompanion.padMap.routerReady()') is True and RL.eval('__IN.N.routerArm()') is True and clean(RL) == {},
-       "RL4 ... the fight's end builds what the reload skipped: the router ready, the fight hold armable",
-       "the router comes up, but Interact's fight hold is made only at load: after a reload in a fight it never exists, so "
-       "routerArm() is false and no room keeps the controller in any later fight",
-       (RL.eval('WowCompanion.padMap.routerReady()'), RL.eval('__IN.N.routerArm()'), clean(RL)))
+check(RL.eval('WowCompanion.padMap.routerReady()') is True and RL.eval('__IN.N.routerArm()') is True and clean(RL) == {},
+      "RL4 ... the fight's end builds what the reload skipped: the router ready, the fight hold armable (Step 2)",
+      (RL.eval('WowCompanion.padMap.routerReady()'), RL.eval('__IN.N.routerArm()'), clean(RL)))
 
 # ================================================================ S1. THE BOTTOM MAP OPEN AT THE PULL (the user: "If I am looking at the bottom map then I
 # should be able to press B to exit out of it and then start fighting"; design S3: the hold is kept, keys carried, B walks the map's chain
@@ -318,13 +315,14 @@ for order in ('loaded', 'reversed'):
     check(holder(W) == 'map' and W.eval('WorldMapFrame:GetAlpha()') == 0, "S1[%s] out of combat the Map room holds, the game's map hidden by alpha" % order,
           (holder(W), W.eval('WorldMapFrame:GetAlpha()')))
     pull(W, order)
-    maybe(order == 'reversed', holder(W) == 'map' and carried(W),
-          "S1[%s] the pull: the Map room keeps the controller, all 8 router keys carried" % order, REVERSED_WHY, (holder(W), keys(W)))
+    check(holder(W) == 'map' and carried(W),
+          "S1[%s] the pull: the Map room keeps the controller, all 8 router keys carried (Step 2: m134 routerCheck waits for the lockdown)" % order,
+          (holder(W), keys(W)))
     check(modes(W) == ['room'] * 8, "S1[%s] the pull: every router button in room mode" % order, modes(W))
     check(W.eval('WorldMapFrame:GetAlpha()') == 0, "S1[%s] the game's map stays hidden by alpha through the pull" % order, W.eval('WorldMapFrame:GetAlpha()'))
     r = press(W, "PADDDOWN")
-    maybe(order == 'reversed', 'PADDDOWN' in pad_keys(r) or any('WowCompanionInteractPad' in x for x in r['clicks']),
-          "S1[%s] D-pad Down in the fight reaches the Map room" % order, "no key of ours bound (above): the D-pad goes to the game", r)
+    check('PADDDOWN' in pad_keys(r) or any('WowCompanionInteractPad' in x for x in r['clicks']),
+          "S1[%s] D-pad Down in the fight reaches the Map room" % order, r)
     r = press(W, "PAD2")
     xcheck(modes(W) == ['room'] * 8 and holder(W) == 'map' and any(d.get('k') in ('PAD2', 'BACK') for d in r['pads']),
            "S1[%s] B in the fight goes to the Map room's own B chain (one step back, then Home), the room keeps holding" % order,
@@ -337,8 +335,7 @@ for order in ('loaded', 'reversed'):
           "S1[%s] the leave: the room lets go, the router back to the fight, the game's map CLOSED (its own close button)" % order,
           (holder(W), modes(W)[:2], W.eval('WorldMapFrame._shown')))
     r = press(W, "PAD2")
-    maybe(order == 'reversed', stopattack(r), "S1[%s] then B is the fight's (stop attack): \"then start fighting\"" % order,
-          "no key of ours bound (above): B is the game's", r['acts'])
+    check(stopattack(r), "S1[%s] then B is the fight's (stop attack): \"then start fighting\"" % order, r['acts'])
     check(clean(W) == {}, "S1[%s] no lockdown breach, no spied call, no handle / snippet error" % order, clean(W))
     if order == 'loaded':
         check(dynamic_scan(W) == [], "SC3 (live world) every frame ref a snippet reads with a method call is a protected frame", dynamic_scan(W))
@@ -346,11 +343,9 @@ for order in ('loaded', 'reversed'):
 W = world(mode=False)
 W.execute('WorldMapFrame:Show(); advance(3)')
 pull(W)
-xcheck(holder(W) == 'map' and carried(W) and modes(W) == ['room'] * 8, "S1[mode off] the Map room keeps the controller at the pull with the NPC-windows bit off",
-       "the pull's armed rule needs N.mode (Interact 7323): the room is let go (lost combat), the map comes back on the TOP screen in the fight",
-       (holder(W), modes(W)[:2], W.eval('WorldMapFrame:GetAlpha()')))
-xcheck(W.eval('WorldMapFrame:GetAlpha()') == 0, "S1[mode off] ... and the game's map never shows on the top screen in the fight",
-       "released at the pull: N.unhide puts WorldMapFrame back to alpha 1", W.eval('WorldMapFrame:GetAlpha()'))
+check(holder(W) == 'map' and carried(W) and modes(W) == ['room'] * 8, "S1[mode off] the Map room keeps the controller at the pull with the NPC-windows bit off (Step 2)",
+      (holder(W), modes(W)[:2], W.eval('WorldMapFrame:GetAlpha()')))
+check(W.eval('WorldMapFrame:GetAlpha()') == 0, "S1[mode off] ... and the game's map never shows on the top screen in the fight", W.eval('WorldMapFrame:GetAlpha()'))
 check(clean(W) == {}, "S1[mode off] no lockdown breach, no spied call, no handle / snippet error", clean(W))
 # the escape chord (design Step 4): LT + RT + B always gets out of room mode
 W = world()
@@ -398,11 +393,10 @@ for order in ('loaded', 'reversed'):
     W.execute('LootFrame:Show(); fire("LOOT_OPENED"); advance(1)')
     check(holder(W) == 'npc', "S2[%s] out of combat the loot window holds the controller" % tag, holder(W))
     pull(W, order)
-    maybe(order == 'reversed', holder(W) == 'npc' and carried(W) and modes(W) == ['room'] * 8,
-          "S2[%s] the pull keeps the loot's hold (keys carried, room mode)" % tag, REVERSED_WHY, (holder(W), modes(W)[:2], keys(W)))
+    check(holder(W) == 'npc' and carried(W) and modes(W) == ['room'] * 8,
+          "S2[%s] the pull keeps the loot's hold (keys carried, room mode)" % tag, (holder(W), modes(W)[:2], keys(W)))
     press(W, "PADDDOWN")
-    maybe(order == 'reversed', (idoc(W).get('nav') or {}).get('cur') == 'loot 2', "S2[%s] D-pad Down still moves the loot cursor in the fight" % tag,
-          "no key of ours bound (above): the D-pad goes to the game's hidden loot window", (idoc(W).get('nav') or {}).get('cur'))
+    check((idoc(W).get('nav') or {}).get('cur') == 'loot 2', "S2[%s] D-pad Down still moves the loot cursor in the fight" % tag, (idoc(W).get('nav') or {}).get('cur'))
     r = press(W, "PAD2")
     if holder(W) is not None:
         tap(W, idoc(W).get('fightLeave'))
@@ -421,18 +415,16 @@ W.execute('LootFrame:Hide(); fire("LOOT_CLOSED"); advance(1)')
 pull(W)
 W.execute('LootFrame:Show(); fire("LOOT_OPENED"); advance(1)')
 d = idoc(W)
-xcheck(d.get('loot') and (d.get('enter') or {}).get('for') == 'npc' and W.eval('LootFrame:GetAlpha()') == 0,
-       "S2[loot on top] in a fight the loot is mirrored on the bottom whatever the switch (the user's decision 2)",
-       "LOOT.top() turns every loot path off in fights too: the game's window on top, and our carried keys leave its D-pad dead",
-       (bool(d.get('loot')), d.get('enter'), W.eval('LootFrame:GetAlpha()')))
+check(d.get('loot') and (d.get('enter') or {}).get('for') == 'npc' and W.eval('LootFrame:GetAlpha()') == 0,
+      "S2[loot on top] in a fight the loot is mirrored on the bottom whatever the switch (the user's decision 2; i144 LOOT.top)",
+      (bool(d.get('loot')), d.get('enter'), W.eval('LootFrame:GetAlpha()')))
 check(clean(W) == {}, "S2[loot on top] no lockdown breach, no spied call, no handle / snippet error", clean(W))
 # the NPC-windows bit off: loot in a fight still on the bottom with the D-pad (the design: rooms no longer depend on the Hub's bit)
 W = world(mode=False)
 pull(W)
 W.execute('LootFrame:Show(); fire("LOOT_OPENED"); advance(1)')
 d = idoc(W)
-xcheck((d.get('enter') or {}).get('for') == 'npc', "S2[mode off] loot in a fight waits for the ENTER tap with the NPC-windows bit off too",
-       "the ENTER wait needs N.mode (Interact N.sync) and the fight hold was never armed (N.ra nil)", d.get('enter'))
+check((d.get('enter') or {}).get('for') == 'npc', "S2[mode off] loot in a fight waits for the ENTER tap with the NPC-windows bit off too (i144)", d.get('enter'))
 check(clean(W) == {}, "S2[mode off] no lockdown breach, no spied call, no handle / snippet error", clean(W))
 
 # ================================================================ S3. B AND FULL NAVIGATION IN A FIGHT (the user: "If I am in combat and press B I should be
@@ -491,9 +483,8 @@ pull(W)
 n0 = nsent(W)
 qtap(W, QACT["map"])
 ack = [d for d in docs(W, n0, 'guestack') if d.get('id') == 'map']
-xcheck(ack and ack[-1].get('ok') is True and ack[-1].get('why') == 'pending' and (idoc(W).get('enter') or {}).get('for') == 'pad:map',
-       "S3[mode off] a room opened in a fight answers pending (an ENTER to tap), never \"combat\"",
-       "the fight hold is armed only at the pull and only with N.mode (N.ra nil): the take is refused \"combat\"", ack)
+check(ack and ack[-1].get('ok') is True and ack[-1].get('why') == 'pending' and (idoc(W).get('enter') or {}).get('for') == 'pad:map',
+      "S3[mode off] a room opened in a fight answers pending (an ENTER to tap), never \"combat\" (Step 2: armed out of combat)", ack)
 check(clean(W) == {}, "S3[mode off] no lockdown breach, no spied call, no handle / snippet error", clean(W))
 
 # ================================================================ PARTY MODE IN A FIGHT (design: wc-party routing stays, room mode first; a room only
@@ -534,18 +525,55 @@ for win, grouped in (("GameMenuFrame", False), ("GameMenuFrame", True)):
     r = press(W, "PADDDOWN")
     ok = r['how'] == 'game' and not any(v.startswith('CLICK WowCompanion') for k, v in keys(W).items() if k in ROUTER)
     tag = "W[%s, %s] the game menu open at the pull: the game keeps the pad (its own navigation)" % (win, 'grouped' if grouped else 'solo')
-    if grouped:
-        xcheck(ok, tag, "m132: with Party mode allowed and grouped the pull carries every key over the game menu too", keys(W))
-    else:
-        check(ok, tag, keys(W))
+    check(ok, tag, keys(W))
+    gtag = "W[%s, %s]" % (win, 'grouped' if grouped else 'solo')
+    check(idoc(W).get('gmLock') is True, gtag + " ... and the bottom screen is locked while it shows (doc.gmLock)", idoc(W).get('gmLock'))
+    W.execute('%s:Hide(); advance(1)' % win)
+    check(not idoc(W).get('gmLock'), gtag + " ... released when the game menu closes", idoc(W).get('gmLock'))
     check(clean(W) == {}, "W[%s, %s] no lockdown breach, no spied call, no handle / snippet error" % (win, 'grouped' if grouped else 'solo'), clean(W))
 for win in ("StaticPopup1", "ReadyCheckFrame", "GroupLootFrame1"):
     W = world()
     W.execute('%s:Show(); advance(1); NOW = NOW + 2; tick(0.1)' % win)
     pull(W)
-    xcheck(carried(W), "W[%s] a pop-up / ready check / loot roll at the pull (solo): the controller is kept (handled on the bottom screen)" % win,
-           "m133: solo with Party mode off any game window at the pull steps the router aside: our keys are gone for the whole fight", keys(W))
+    check(carried(W), "W[%s] a pop-up / ready check / loot roll at the pull (solo): the controller is kept (handled on the bottom screen; m134)" % win, keys(W))
+    check(not idoc(W).get('gmLock'), "W[%s] ... no lock (only the game menu locks)" % win, idoc(W).get('gmLock'))
     check(clean(W) == {}, "W[%s] no lockdown breach, no spied call, no handle / snippet error" % win, clean(W))
+
+# ================================================================ STEP 2: CARRY EVERYTHING AT THE PULL, ARM OUT OF COMBAT
+# {window open, no holder} x {Party mode allowed or not} x {the D-pad toolbar on or off}: every key bound, R.aside nil (the user's decision 1)
+for win in (None, "StaticPopup1", "ReadyCheckFrame", "GroupLootFrame1", "MerchantFrame"):
+    for party_ok in (True, False):
+        for tb in (True, False):
+            tag = "C[%s, party %s, toolbar %s]" % (win or 'nothing', 'ok' if party_ok else 'off', 'on' if tb else 'off')
+            W = world(party_ok=party_ok, pre='mkwin("MerchantFrame", false); WowCompanionSpellsDB = { dpad = setmetatable({}, { __index = function() return %s end }) }'
+                      % ('true' if tb else 'false'))
+            if win:
+                W.execute('%s:Show(); advance(1); NOW = NOW + 2; tick(0.1)' % win)
+            pull(W)
+            st = W.eval('WowCompanion.padMap.dpadState()')
+            check(carried(W) and st.aside is None, tag + " the pull: all 8 router keys carried, R.aside nil", (keys(W), st.aside))
+            check(clean(W) == {}, tag + " no lockdown breach, no spied call, no handle / snippet error", clean(W))
+# a first fight's take (no pull with anything held) answers pending, never "combat"
+W = world()
+pull(W)
+n0 = nsent(W)
+qtap(W, QACT["quests"])
+ack = [d for d in docs(W, n0, 'guestack') if d.get('id') == 'quests']
+check(ack and ack[-1].get('ok') is True and ack[-1].get('why') == 'pending', "A1 the first fight's take answers pending (armed out of combat)", ack)
+check(clean(W) == {}, "A1 no lockdown breach, no spied call, no handle / snippet error", clean(W))
+# the fight hold is armed out of combat, before any pull (N.ra), with the NPC-windows bit off too
+W = world(mode=False)
+check(W.eval('__IN.N.ra') is not None, "A2 the fight hold is armed out of combat (N.ra) with the NPC-windows bit off", W.eval('__IN.N.ra'))
+# REGEN_ENABLED gives an "npc" holder its bindings and the grab back (audit item 11)
+W = world()
+W.execute('LootFrame:Show(); fire("LOOT_OPENED"); advance(1)')
+pull(W)
+W.execute('BIND.PADDDOWN = nil')                 # the game took a key meanwhile: N.check() takes it back
+fight_end(W)
+check(holder(W) == 'npc' and W.eval('WowCompanionInteractGrab._shown') is not False
+      and (W.eval('BIND.PADDDOWN') or '').startswith('CLICK WowCompanionInteract'),
+      "A3 the fight's end: the loot held through it gets its bindings and the grab back", (holder(W), W.eval('BIND.PADDDOWN')))
+check(clean(W) == {}, "A3 no lockdown breach, no spied call, no handle / snippet error", clean(W))
 
 print('%s (%d pass, %d xfail, %d fail, %d xpass)' % ('ALL PASS' if fails == 0 and xpasses == 0 else 'FAILED', passes, xfails, fails, xpasses))
 sys.exit(1 if (fails or xpasses) else 0)

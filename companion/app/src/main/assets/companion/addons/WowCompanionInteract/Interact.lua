@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i143"     -- bump on every change; i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
+local IV = "i144"     -- bump on every change; i144: COMBAT NAV STEP 2 (combat_nav_design.md; the user, 2026-11-11: "everything on the bottom screen breaks in combat"): every pull keeps what holds - a room whatever the Hub's NPC-windows bit, an "npc" hold with it - and ONLY the game menu open at the pull lets go (its lock: doc.gmLock while it shows); the fight hold is built (F.make) and armed (N.armIdle) out of combat at every document, so a /reload in a fight blocks nothing and arms at its end; loot in a fight is the bottom screen's whatever the loot-on-top switch (LOOT.top reads off in the lockdown) and the NPC-windows bit (N.fightLoot); the fight's end gives an "npc" holder its bindings and the grab back (N.check); i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -897,7 +897,10 @@ LOOT.retry = nil        -- the quest action to run again after the delete: { cmd
 -- the game's: this file never collects it, never takes the controller for it and never touches LootFrame's alpha (isOpen("loot")
 -- answers false, so every loot path here is off). Kept in WowCompanionDB.lootTop, which the app keeps across updates (SvKeep,
 -- PadMap m51). Default (nil / false) = the bottom screen's pop-up, as before.
+-- i144 (the user's decision 2, 2026-11-11: loot "always mirrored on the bottom screen in fights whatever the 'loot on top' switch says"):
+-- in the lockdown the switch reads off, so a fight's loot is the bottom screen's with the D-pad; out of combat it keeps its meaning
 function LOOT.top()
+    if pcall(InCombatLockdown) and InCombatLockdown() then return false end
     return type(WowCompanionDB) == "table" and WowCompanionDB.lootTop == true
 end
 -- is Make Space up, for whichever window it serves
@@ -2351,6 +2354,7 @@ local function buildDoc()
     -- The controller takes the buttons only while a window is open and the companion is in charge.
     -- sync() binds or lets go BEFORE the document is built, so `nav.on` is what is true now.
     local open = (doc.gossip or doc.quest or doc.merchant or doc.trainer or doc.stable or doc.mail or doc.auction or doc.taxi or doc.bank or doc.loot or doc.petition or doc.book or doc.qtsetup or doc.trade) and true or false
+    if N.armIdle then N.armIdle() end       -- i144: the fight hold armed out of combat (combat_nav Step 2)
     if N.sync then N.sync(open, doc) end
     if N.grantWait then N.grantWait() end       -- v11: the queued take, once nobody holds
     doc.rel = N.rel
@@ -2377,6 +2381,9 @@ local function buildDoc()
     if N.wait then doc.wait = { ["for"] = N.wait.id } end
     -- v10: a take waiting for the app's ENTER tap
     if N.pend and N.ra then doc.enter = { row = N.ra.erow, col = N.ra.ecol, ["for"] = N.pend.id, n = N.pend.n } end
+    -- i144 (the user's decision 1, 2026-11-11: the game menu "should be locked until the game menu closes"): the game menu was open at
+    -- the pull, so the game has the pad for this fight (PadMap m134) - the bottom screen is locked while the menu still shows
+    if N.fightMenu and doc.combat and TB(function() return _G.GameMenuFrame:IsShown() end) == true then doc.gmLock = true end
     if doc.holder == "npc" then
         doc.heal = HEAL.col             -- the app's self-heal cell, only while an "npc" hold exists
         if not doc.pad then doc.pad = padNow end   -- with no window in the document the app still needs the pad to tap it
@@ -5770,23 +5777,40 @@ F.FLIP = [=[
         if r then r:SetAttribute("wc-mode", set) end
     end
 ]=]
-pcall(function()
-    F.hold = CreateFrame("Frame", "WowCompanionFightHold", UIParent, "SecureHandlerBaseTemplate")
-    F.leave = CreateFrame("Button", "WowCompanionRoomLeave", UIParent, "SecureActionButtonTemplate")
-    F.leave:RegisterForClicks("AnyDown", "AnyUp")
-    SecureHandlerWrapScript(F.leave, "OnClick", F.hold, F.FLIP)
-    F.enter = CreateFrame("Button", "WowCompanionRoomEnter", UIParent, "SecureActionButtonTemplate")
-    F.enter:RegisterForClicks("AnyDown", "AnyUp")
-    F.enter:SetAttribute("wc-set", "room")
-    SecureHandlerWrapScript(F.enter, "OnClick", F.hold, F.FLIP)
-end)
+-- i144 (combat_nav_design Step 2, the user 2026-11-11: "everything on the bottom screen breaks in combat"): made OUT OF COMBAT only - at
+-- load, or by the first N.routerArm after a /reload inside a fight (a secure CreateFrame in the lockdown is ADDON_ACTION_BLOCKED, and the
+-- fight hold then never existed for the rest of the session). The post-hooks ride the same build.
+function F.make()
+    if F.hold or inCombat() then return F.hold ~= nil end
+    pcall(function()
+        F.hold = CreateFrame("Frame", "WowCompanionFightHold", UIParent, "SecureHandlerBaseTemplate")
+        F.leave = CreateFrame("Button", "WowCompanionRoomLeave", UIParent, "SecureActionButtonTemplate")
+        F.leave:RegisterForClicks("AnyDown", "AnyUp")
+        SecureHandlerWrapScript(F.leave, "OnClick", F.hold, F.FLIP)
+        F.enter = CreateFrame("Button", "WowCompanionRoomEnter", UIParent, "SecureActionButtonTemplate")
+        F.enter:RegisterForClicks("AnyDown", "AnyUp")
+        F.enter:SetAttribute("wc-set", "room")
+        SecureHandlerWrapScript(F.enter, "OnClick", F.hold, F.FLIP)
+    end)
+    if F.leave and not F.leaveHooked then
+        F.leaveHooked = true
+        pcall(function() F.leave:HookScript("OnClick", function() if N.fight then N.fightLeft() else N.leaveOut() end end) end)
+    end
+    if F.enter and not F.enterHooked then
+        F.enterHooked = true
+        pcall(function() F.enter:HookScript("OnClick", function() N.fightEntered() end) end)
+    end
+    return F.hold ~= nil
+end
 -- the router's buttons (Spells, PadMap m22: made at login, never destroyed) and what each one delivers in room mode
 F.ROUTER = { { "WowCompanionCombatFace8", "PAD1" }, { "WowCompanionFaceB", "PAD2" }, { "WowCompanionCombatFace5", "PAD3" },
              { "WowCompanionCombatFace6", "PAD4" }, { "WowCompanionFaceD1", "PADDLEFT" }, { "WowCompanionFaceD2", "PADDUP" },
              { "WowCompanionFaceD3", "PADDRIGHT" }, { "WowCompanionFaceD4", "PADDDOWN" } }
 -- out of combat or before the lockdown: refs + destinations + the two cells; true = a fight hold is possible
 function N.routerArm()
+    if inCombat() then return N.ra ~= nil end          -- i144: never a secure write in the lockdown; what was armed stays armed
     N.ra = nil
+    F.make()
     if not (F.hold and F.leave and F.enter) then return false end
     local pm = WC.padMap
     if not (type(pm) == "table" and type(pm.routerReady) == "function" and pm.routerReady()) then return false end
@@ -5891,9 +5915,6 @@ function N.leaveAim()
         pcall(C_Timer.After, LEAVE_YOUNG + 0.1, function() F.aging = nil; emitSoon() end)
     end
 end
-if F.leave then
-    pcall(function() F.leave:HookScript("OnClick", function() if N.fight then N.fightLeft() else N.leaveOut() end end) end)
-end
 -- THE ENTER landed (its snippet set the router to room): the pending holder becomes real
 N.enterN = 0
 function N.fightEntered()
@@ -5920,7 +5941,13 @@ function N.fightEntered()
     end
     emitSoon()
 end
-if F.enter then pcall(function() F.enter:HookScript("OnClick", function() N.fightEntered() end) end) end
+-- i144: the fight hold built (out of combat) and armed whenever it is not (Step 2: "arming happens out of combat"): at every document, so
+-- a room or a loot window opened mid-fight finds the ENTER ready whatever the Hub's NPC-windows bit, and a /reload in a fight arms at its end
+F.make()
+function N.armIdle()
+    if N.ra or inCombat() then return end
+    pcall(N.routerArm)
+end
 -- v11: the queue (one place: the latest requester)
 function N.queue(id, spec)
     local old = N.wait
@@ -6227,6 +6254,11 @@ function N.watchMoney()
     if now - lastActAt > 2 then N.distrustNow("money") end
 end
 
+-- i144 (combat_nav Step 2; the user's decision 2, 2026-11-11): in a fight the loot is the bottom screen's with the D-pad (dimmed, the ENTER
+-- wait) even with the Hub's NPC-windows bit off: "If I am looting ... my dpad should not stop working"
+function N.fightLoot(doc)
+    return type(doc) == "table" and doc.loot ~= nil and inCombat()
+end
 function N.sync(open, doc)
     N.stale = false
     -- f-inbox-send, THE USER'S PICK (1.0.8, "Confirm on the top"): money or items to someone not a friend or guildmate stop at the
@@ -6266,7 +6298,7 @@ function N.sync(open, doc)
             for k in pairs(want) do if not N.npcExtra[k] then padBind(k) end end
             N.npcExtra = want
         end
-    elseif N.mode and open and doc and inCombat() and not N.holding and not G.holder and not letGo and (N.frameSeen or N.trusted) then
+    elseif (N.mode or N.fightLoot(doc)) and open and doc and inCombat() and not N.holding and not G.holder and not letGo and (N.frameSeen or N.trusted) then
         -- i136: a window open in a fight that we do not hold: dimmed (ours shows), the controller the game's until the ENTER tap or the
         -- fight's end; never released here (a release puts the game's window back)
         for kind in pairs(HIDE) do if doc[kind] then N.fightDim(kind) end end
@@ -6275,7 +6307,7 @@ function N.sync(open, doc)
     end
     if not inCombat() or N.holding then N.fightDimmed = {} end
     -- v10: an NPC / loot window opens in a fight: it waits for the ENTER tap (the app taps when its pop-up shows)
-    if N.mode and open and inCombat() and not N.holding and not G.holder and not N.npcLeft then N.wantEnter("npc") end
+    if (N.mode or N.fightLoot(doc)) and open and inCombat() and not N.holding and not G.holder and not N.npcLeft then N.wantEnter("npc") end
     if not open then
         N.npcLeft = nil                                  -- a window left with B in a fight is not entered again until it closes
         if N.pend and N.pend.id == "npc" then N.pend = nil end
@@ -7320,7 +7352,21 @@ do
         if event == "PLAYER_REGEN_DISABLED" then
             if N.bar.bound and pcall(function() ClearOverrideBindings(selOwner) end) then N.bar.bound = false end
             local who = G.holder
-            local armed = not (G.spec and G.spec.noFight) and FIGHT_KEEP and N.mode and N.routerArm()
+            -- i144 (combat_nav Step 2; the user's decision 1, 2026-11-11): every pull keeps what holds - a room whatever the Hub's
+            -- NPC-windows bit (N.mode only says the companion is in charge of the GAME's windows: an "npc" hold needs it, a room does
+            -- not); the hold armed again here before the lockdown (it was armed out of combat already). ONLY the game menu open gives
+            -- the pad to the game (PadMap m134 keeps the router aside then): whatever holds lets go
+            local ra = FIGHT_KEEP and N.routerArm()
+            local menu = TB(function() return _G.GameMenuFrame:IsShown() end) == true
+            local armed = ra and not menu and not (G.spec and G.spec.noFight) and (G.holder ~= nil or N.mode)
+            N.fightMenu = menu or nil
+            if menu and not N.gmHooked then
+                -- the menu's own show / hide sends a document (insecure post-hooks on an unprotected window: nothing of the game's runs as ours)
+                N.gmHooked = pcall(function()
+                    _G.GameMenuFrame:HookScript("OnHide", function() emitSoon() end)
+                    _G.GameMenuFrame:HookScript("OnShow", function() emitSoon() end)
+                end)
+            end
             if armed and N.holding and N.fightArm() then         -- a room OR an NPC window (item 10)
                 -- CAPTURE v8 (user, 2026-10-01: "I don't want the game to take the controller at all, I want the room that
                 -- I am in to flash red, and then going back home by what ever means, engages the combat transition"):
@@ -7361,6 +7407,7 @@ do
             return
         end
         if event == "PLAYER_REGEN_ENABLED" then
+            N.fightMenu = nil
             N.fc = nil
             N.pend = nil
             N.npcLeft = nil
@@ -7369,10 +7416,14 @@ do
             if N.fight then
                 -- v9: the room held to the fight's end: back to the frame + its bindings, as before the fight
                 N.fight = nil
-                if G.holder and N.holding then
+                -- i144 (combat_nav Step 2): an "npc" holder (a loot window held through the fight) gets its bindings and the grab
+                -- back too (audit item 11), then N.check() takes back what the game re-bound meanwhile
+                if N.holding then
                     for _, k in ipairs(PAD_KEYS) do padBind(k) end
                     for _, k in ipairs(extraKeys()) do padBind(k) end
                     pcall(function() padGrab:Show(); padGrab:EnableGamePadButton(true) end)
+                    N.reasserts = 0
+                    N.check()
                 end
             end
         end

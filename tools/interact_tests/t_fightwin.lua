@@ -56,16 +56,23 @@ for _, k in ipairs(KINDS) do
     chk(slot .. ": the fight ends -> ours (holding " .. tostring(N.holding) .. "), still dimmed (" .. tostring(_G[fname].alpha) ..
         "), the A line gone", N.holding == true and _G[fname].alpha == 0 and N.fightDoc() == nil)
 end
--- a fight with the Loot window kept on the top screen by its own switch: the game's loot window stays
+-- the Loot window's own "top" switch: out of combat it keeps the game's loot window; in a fight the loot is the bottom screen's whatever
+-- the switch (i144, the user's decision 2, 2026-11-11: "always mirrored on the bottom screen in fights")
 InCombatLockdown = function() return false end
 N.sync(false, nil); N.unhide()
 WowCompanionDB.lootTop = true
 LootFrame.alpha = 1
+if ON.LOOT_OPENED then pcall(ON.LOOT_OPENED) end
+N.early("loot")
+chk("the Loot window's own 'top' switch on, out of combat: the game's loot window kept (" .. tostring(LootFrame.alpha) .. ")",
+    LootFrame.alpha == 1)
+N.sync(false, nil); N.unhide()
+LootFrame.alpha = 1
 InCombatLockdown = function() return true end
 if ON.LOOT_OPENED then pcall(ON.LOOT_OPENED) end
 N.early("loot")
-chk("the Loot window's own 'top' switch on: the game's loot window kept even in a fight (" .. tostring(LootFrame.alpha) .. ")",
-    LootFrame.alpha == 1)
+chk("the Loot window's own 'top' switch on, in a fight: mirrored on the bottom anyway, the game's window dimmed (" .. tostring(LootFrame.alpha) .. ")",
+    LootFrame.alpha == 0)
 WowCompanionDB.lootTop = false
 InCombatLockdown = function() return false end
 return table.concat(out, "\n")
