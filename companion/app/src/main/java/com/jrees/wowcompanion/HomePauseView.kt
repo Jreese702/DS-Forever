@@ -494,6 +494,9 @@ class HomePauseView(
         // the user (via tracking): "In combat, say why nothing happens instead of failing silently"
         showHint(if (inFight()) "Not during a fight: the game keeps its menu closed" else "The game's menu didn't open")
     }
+    /** pk3: a line from elsewhere about a pick made on the wheel (a refused Polestar Skip / Previous): on the wheel's line while it is
+     *  open, else where the game's red line stands once it has gone, in any room (Tr.t: ES / FR) */
+    fun note(text: String) { if (live()) say(text) else showHint(text) }
     private fun showHint(text: String) {
         hintText = text; hintAt = SystemClock.uptimeMillis(); if (!isOpen) visibility = VISIBLE; invalidate()
     }

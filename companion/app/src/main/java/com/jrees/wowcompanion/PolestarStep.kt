@@ -29,6 +29,9 @@ class PolestarStep(val title: String?, val words: String?, val kind: String?, va
     val useItem: Boolean get() = itemId > 0 && itemHeld
     /** what [useItem]'s line reads (terse: the user's rule) */
     fun useLine(): String = "Use " + (itemName ?: "the item")
+    /** pk3: the same step with [n] skips left to undo (a pskip answer's count, before the next step doc) */
+    fun withUndo(n: Int): PolestarStep = PolestarStep(title, words, kind, quest, map, x, y, wx, wy, cont, itemId, itemHeld, itemIcon,
+        itemName, skip, n.coerceAtLeast(0))
     /** what the row's change check compares (words and the item's state) */
     fun sig(): String = "$title|$words|$itemId|$itemHeld"
 

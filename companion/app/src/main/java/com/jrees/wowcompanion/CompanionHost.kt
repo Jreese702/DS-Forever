@@ -1571,9 +1571,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // the pause wheel's D-pad Left / Right (the user, 2026-10-16): the Track Pad / the Keyboard, the same tool on its tab
                 "trackpad", "typetool" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openTypeTool(0) } }
                 "keyboard" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openTypeTool(1) } }
-                // pk1: Polestar's Skip step / Previous step, where the player is (no room opens)
-                PolestarSkip.KEY_SKIP -> mapView.polestarSkip(prev = false)
-                PolestarSkip.KEY_PREV -> mapView.polestarSkip(prev = true)
+                // pk1: Polestar's Skip step / Previous step, where the player is (no room opens); pk3: a refusal (now, or the add-on's
+                // answer) says why on the wheel's own line, in whatever room the wheel was opened
+                PolestarSkip.KEY_SKIP, PolestarSkip.KEY_PREV -> {
+                    psWheelAt = SystemClock.uptimeMillis()
+                    mapView.polestarPress(prev = s.key == PolestarSkip.KEY_PREV)?.let { pauseView.note(it) }
+                }
             }
             else -> {}
         }
@@ -2028,9 +2031,20 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "pqol" -> if (current) { PolestarQol.onDoc(msg); if (::settingsView.isInitialized) settingsView.postInvalidate() }     // pq1: Polestar's automation
             "pstep" -> if (current) { mapView.onPolestarStep(msg); if (room == Room.MAP) worldMapRoom.postInvalidate() }   // ps1: the light blue row
             "pskip" -> if (current) {                                   // pk1: a Skip / Previous answered
-                Log.i("WCMAP", "polestar ${msg.optString("op")}: ${if (msg.optBoolean("ok")) "ok, step ${msg.optInt("i")}" else "refused ${msg.optString("why", "")}"}")
-                mapView.onPolestarSkipAnswer(msg)
-                if (room == Room.MAP && !msg.optBoolean("ok")) PolestarSkip.refusedLine(msg.optString("why", ""))?.let { worldMapRoom.sayLine(it) }
+                val ok = msg.optBoolean("ok")
+                Log.i("WCMAP", "polestar ${msg.optString("op")}: ${if (ok) "ok, step ${msg.optInt("i")}" else "refused ${msg.optString("why", "")}"}" +
+                    (if (msg.has("u")) ", undo ${msg.optInt("u")}" else ""))
+                // pk3: the undo count at once (Previous right after a Skip); a refusal's line where the press came from
+                val line = PolestarSkip.refusedLine(msg.optString("why", "").takeUnless { ok })
+                val where = PolestarSkip.noteWhere(ok, line, SystemClock.uptimeMillis(), psWheelAt, room == Room.MAP)
+                psWheelAt = 0L                                          // (one answer per press)
+                mapView.onPolestarSkipAnswer(msg, note = where == PolestarSkip.Where.HOME_MAP)
+                when (where) {
+                    PolestarSkip.Where.WHEEL -> if (::pauseView.isInitialized) line?.let { pauseView.note(it) }
+                    PolestarSkip.Where.MAP_ROOM -> line?.let { worldMapRoom.sayLine(it) }
+                    else -> {}
+                }
+                if (room == Room.MAP) worldMapRoom.postInvalidate()
             }
             "routewp" -> if (current) {
                 routeWp.onAnswer(msg.optString("op"), msg.optBoolean("ok"), SystemClock.elapsedRealtime())
@@ -3660,6 +3674,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val now = SystemClock.elapsedRealtime()
         if (key != pinStateLast || now - pinStateAt >= 5_000L) { pinStateLast = key; pinStateAt = now; Log.i("WCMAP", "route pin: $why") }
     }
+
+    /** pk3: when a Skip / Previous was last picked on the pause wheel (uptime ms, 0 none): its answer's refusal goes on the wheel's line */
+    private var psWheelAt = 0L
 
     /** pk1: one Skip ([prev] false) or Previous on Map.lua's "pnav" row (38 then 10 / 11; the one tap worker keeps it apart from
      *  PolestarNav's batches). False = not sent (an older add-on, the game not live) */

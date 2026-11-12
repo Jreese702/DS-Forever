@@ -165,7 +165,7 @@ def main():
 
     src = open(HUB, encoding="utf-8").read()
     chk("hub42: the version tag (hub38 the player / pet row, the game's side tab; hub40 the bars one column wide; hub41 pitch 64; hub42 the "
-        "left column / the grid under the HUD, the fade, the tab beside the grid)", 'local HV = "hub43"' in src and "hub42:" in src)
+        "left column / the grid under the HUD, the fade, the tab beside the grid)", 'local HV = "hub44"' in src and "hub42:" in src and "hub43:" in src)
     chk("hub34: the combat log's switch calls are gone (PadMap m129)", 'WC.clogSync' not in src and 'WC.clogTicker' not in src)
     chk("hub42: the fade runs every frame from the driver (PF.fadeTick on drv's OnUpdate), alpha only, FADE_S %s s" % PF.FADE_S,
         'pcall(UF.pf.fadeTick, el)' in src and 0.15 <= PF.FADE_S <= 0.25)

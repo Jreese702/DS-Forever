@@ -3579,13 +3579,28 @@ class MapView(context: Context) : View(context) {
     /** one press: Skip, or Previous ([prev]); nothing when it cannot be pressed now. True = the tap went */
     fun polestarSkip(prev: Boolean): Boolean {
         if (if (prev) !polestarCanPrev() else !polestarCanSkip()) return false
-        val sent = onPolestarSkip?.invoke(prev) ?: false
-        if (!sent) note("No Polestar step")
-        return sent
+        val why = polestarPress(prev)
+        if (why != null) note(why)
+        return why == null
     }
-    /** the add-on's answer {"type":"pskip"}: a refused press says why (terse) */
-    fun onPolestarSkipAnswer(d: org.json.JSONObject) {
-        if (d.optBoolean("ok")) return
+    /** pk3: one press from the pause wheel (any room): null = the tap went, else the line saying why not (the wheel shows it) */
+    fun polestarPress(prev: Boolean): String? {
+        if (if (prev) !polestarCanPrev() else !polestarCanSkip()) return PolestarSkip.cantLine(prev, polestarCanSkip())
+        val sent = onPolestarSkip?.invoke(prev) ?: false
+        return if (sent) null else PolestarSkip.NO_STEP_LINE
+    }
+    /**
+     * the add-on's answer {"type":"pskip"}: pk3 - the undo count at once (its u, else +1 / -1 for an ok press: Previous is there right
+     * after a Skip, no wait for the next step doc); a refused press says why on Home's map when [note] (the host: not a wheel press)
+     */
+    fun onPolestarSkipAnswer(d: org.json.JSONObject, note: Boolean = true) {
+        val ok = d.optBoolean("ok")
+        psStep?.let { st ->
+            val u = if (d.has("u")) d.optInt("u", -1) else null
+            val n = PolestarSkip.undoAfter(d.optString("op"), ok, u, st.undo)
+            if (n != st.undo) { psStep = st.withUndo(n); postInvalidate() }
+        }
+        if (ok || !note) return
         PolestarSkip.refusedLine(d.optString("why", ""))?.let { note(it) }
     }
     /** ps3: an explicit focus pick outside the Map list (Home, the World map, the Quests room): the light blue row lets go */

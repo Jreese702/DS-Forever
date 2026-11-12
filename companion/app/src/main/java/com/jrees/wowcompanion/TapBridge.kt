@@ -209,7 +209,7 @@ object TapBridge {
         val now = System.currentTimeMillis()
         if (!GameInput.live(now)) { onFail("${GameInput.gate.why(now) ?: "The game is not live"}: nothing was sent"); return false }
         val c = gamePoint(ctx, pad, gx, gy) ?: run { onFail("no trusted geometry for $what"); return false }
-        return clicks(listOf(c), 0L, what, null, onFail)
+        return clicks(listOf(c), null, 0L, what, null, onFail)
     }
 
     private fun send(ctx: Context, pad: JSONObject?, cells: List<Pair<String, Int>>, gapMs: Long, onFail: (String) -> Unit): Boolean {
@@ -253,18 +253,23 @@ object TapBridge {
             !KEYS_ON -> "off"; !inLauncher -> "no launcher"; GameInput.typing -> "typing"
             TapKeys.session(pad) != keySession -> "no handshake"; else -> "a cell without keys" } else null
         val pts = cells.map { (op, col) -> cellCentre(ctx, pad, op, col) ?: return false }
-        return clicks(pts, gapMs, cells.joinToString(" ") { "${it.first}:${it.second}" }, keysOff, onFail)
+        return clicks(pts, cells, gapMs, cells.joinToString(" ") { "${it.first}:${it.second}" }, keysOff, onFail)
     }
 
-    /** the taps at display points [pts], in one batch on the worker, after the quiet pad */
-    private fun clicks(pts: List<PointF>, gapMs: Long, what: String, keysOff: String?, onFail: (String) -> Unit): Boolean {
+    /** pk3: when the spaced cells were last tapped, for [TapSpacing] (the shell's thread only) */
+    private val spacing = TapSpacing.Clock()
+
+    /** the taps at display points [pts] ([cells]: the pad cells they are, null for game points), in one batch on the worker, after
+     *  the quiet pad */
+    private fun clicks(pts: List<PointF>, cells: List<Pair<String, Int>>?, gapMs: Long, what: String, keysOff: String?,
+                       onFail: (String) -> Unit): Boolean {
         // -d 0: the top screen. The companion holds focus on display 4, and a bare input command would deliver to itself.
         // ONE root shell for every tap (RootShell, 2026-10-06: a new su per tap was a Magisk toast per tap); the taps of one action
         // are one batch, so nothing else lands between them
         // and a short rest after the action: the game takes one touch per frame, and two actions' taps close together lost one
         // (b61: a wheel's hold right behind another tap never reached the game)
         val gap = if (gapMs > 0L) "\nsleep ${"%.3f".format(java.util.Locale.ROOT, gapMs / 1000.0)}\n" else "\n"
-        val script = pts.joinToString(gap) { c -> "input -d 0 tap ${"%.2f".format(java.util.Locale.ROOT, c.x)} ${"%.2f".format(java.util.Locale.ROOT, c.y)}" } + "\nsleep 0.08"
+        val taps = pts.joinToString(gap) { c -> "input -d 0 tap ${"%.2f".format(java.util.Locale.ROOT, c.x)} ${"%.2f".format(java.util.Locale.ROOT, c.y)}" } + "\nsleep 0.08"
         val queuedAt = SystemClock.uptimeMillis()
         watchPad()
         // b90 (23:00:18 padstray, Home's focus): a press handled INSIDE the controller reader's own dispatch (DirectPad: Home's map
@@ -279,7 +284,14 @@ object TapBridge {
             Log.i(TAG, "quiet pad: $what waited $waited ms (held at queue $heldAtQueue)" + (keysOff?.let { " keys off: $it" } ?: ""))
             tapHistory(what)
             CursorPolicy.tapping(SystemClock.uptimeMillis(), pts.size)       // these touches are ours: the cursor stays hidden
-            RootShell.run(script) { r ->
+            // pk3 (TapSpacing): a cell of a spaced row ("pnav") tapped again within 260 ms of its last tap, counted across batches,
+            // waits first (TapPad's 0.25 s repeat guard would drop it): two quick Skips both land. Measured on the shell's own thread
+            RootShell.runBuilt({
+                val lead = TapSpacing.lead(spacing, SystemClock.uptimeMillis(), cells, gapMs)
+                if (lead > 0L) Log.i(TAG, "spaced: $what waits $lead ms")
+                if (lead > 0L) "sleep ${"%.3f".format(java.util.Locale.ROOT, lead / 1000.0)}\n$taps" else taps
+            }) { r ->
+                TapSpacing.ran(spacing, SystemClock.uptimeMillis(), cells, gapMs)
                 if (r.exit != 0) onFail(if (r.exit == -1) "no root shell (refused, or it died)" else "tap was refused (exit ${r.exit})")
             }
         }

@@ -3017,7 +3017,7 @@ if WC.pad and type(WC.pad.op) == "function" then
             P.psAt, P.psSaid = (col == 8) and GetTime() or nil, true             -- (psSaid: this app says; Trail.lua stops guessing)
             return
         end
-        if P.qolAt and (col == 10 or col == 11) and GetTime() - P.qolAt <= 2 then           -- pk1: skip / previous (WC.pskip)
+        if P.qolAt and (col == 10 or col == 11) and GetTime() - P.qolAt <= 2 then           -- pk1 / pk3: skip / previous (WC.pskip), in a fight too
             P.qolAt = nil
             if type(WC.pskip) == "table" then pcall(col == 10 and WC.pskip.skip or WC.pskip.prev) end
             return
@@ -3280,7 +3280,12 @@ function WC.pstep.starter(d, pick)
     d.ic = okI and type(ic) == "number" and (not WC.isPlain or WC.isPlain(ic)) and ic or nil
     d.itn = name
 end
--- ---------------------------------------------------------------- POLESTAR: SKIP THE STEP, UNDO THE LAST SKIP (pk1)
+-- ---------------------------------------------------------------- POLESTAR: SKIP THE STEP, UNDO THE LAST SKIP (pk1, pk3)
+-- pk3 (the user's picks, 2026-11-12): "Work in fights too" - Skip / Previous run in a fight as well (they only change Polestar's
+-- guide, nothing protected; every Polestar call stays plain Lua, pcall'd, never a secure frame of ours: the pnav row is a PLAIN pad
+-- row, whose clicks reach us in combat as out of it); "Mark pull keeps Auto Shot" (Hub.lua hub44); "Two rows is fine" (Home's map
+-- keeps the merged quest's own row, pk2, unchanged). Also pk3: an answer carries u (the skips Previous can undo after it) and the
+-- step doc goes out AT ONCE after a skip / previous (no wait for the 1 s tick), so Previous is there right after a Skip.
 -- The user (2026-11-12): "we need to make a way to skip a polestar objective, idealy in the home map moduale with X or Y, maybe we also
 -- add a previous step button? idk"; the picks: X Skip, Y Previous; Previous = "Undo my last skip" (the step last skipped comes back as
 -- the live step); no confirm; on Home's map, in the Map room and on the pause wheel. The app taps the "pnav" row: 38 then 10 = SKIP,
@@ -3288,9 +3293,9 @@ end
 -- Engine.Skip() skips the step shown (saved by Polestar, fires PLAYER_SKIPPED_STEP(guideId, step)), Engine.Unskip(i) opens step i
 -- again, Engine.Goto(i) shows it (and un-skips it). Every skip (ours, or Polestar's own window / slash command, heard through
 -- Polestar.On) goes on THIS character's stack for that guide (WowCompanionDB.pskip[name-realm][guideId], at most MAX), so Previous
--- walks back one skip per press; a step no longer skipped (done, brought back in Polestar's window) is dropped from it. Refused in
--- combat (Polestar's listeners may touch its secure step button, as WC.pqol). Answers {"type":"pskip", op, ok, why, i}; the step doc
--- (pstep ps6) carries sk = Skip is there and u = how many skips Previous can undo. Nothing of the game is changed.
+-- walks back one skip per press; a step no longer skipped (done, brought back in Polestar's window) is dropped from it. In combat too
+-- since pk3 (pk1 refused it). Answers {"type":"pskip", op, ok, why, i, u}; the step doc (pstep ps6) carries sk = Skip is there and
+-- u = how many skips Previous can undo. Nothing of the game is changed.
 WC.pskip = { MAX = 20 }
 function WC.pskip.engine()
     local P = _G.Polestar
@@ -3358,15 +3363,21 @@ function WC.pskip.state()
     return true, #st
 end
 function WC.pskip.say(op, ok, why, i)
+    local okS, sk, u = pcall(WC.pskip.state)                            -- pk3: the count after this press, for the app at once
     pcall(function()
-        WC.send(WC.encode({ type = "pskip", v = "pk1", op = op, ok = ok and true or false, why = why, i = i }))
+        WC.send(WC.encode({ type = "pskip", v = "pk3", op = op, ok = ok and true or false, why = why, i = i,
+            u = (okS and sk and type(u) == "number") and u or nil }))
         WC.push()
     end)
+end
+-- pk3: the step doc now (after a skip / previous), not at the next second
+function WC.pskip.now()
+    WC.pstep.sig = nil
+    if type(WC.pstep.tick) == "function" then pcall(WC.pstep.tick) end
 end
 function WC.pskip.skip()
     local E = WC.pskip.engine()
     if not E then return WC.pskip.say("skip", false, "no Polestar") end
-    if InCombatLockdown() then return WC.pskip.say("skip", false, "combat") end
     local gid = WC.pskip.guide(E)
     if not gid then return WC.pskip.say("skip", false, "no guide") end
     pcall(WC.pskip.listen)
@@ -3374,13 +3385,12 @@ function WC.pskip.skip()
     if not okS then return WC.pskip.say("skip", false, tostring(s):sub(1, 120)) end
     if type(s) ~= "number" then return WC.pskip.say("skip", false, "no step") end
     WC.pskip.push(gid, s)
-    WC.pstep.sig = nil                                                  -- the new step goes to the app at the next second
+    pcall(WC.pskip.now)                                                 -- pk3: the new step (and its u) to the app at once
     WC.pskip.say("skip", true, nil, s)
 end
 function WC.pskip.prev()
     local E, P = WC.pskip.engine()
     if not E then return WC.pskip.say("prev", false, "no Polestar") end
-    if InCombatLockdown() then return WC.pskip.say("prev", false, "combat") end
     local gid, gk = WC.pskip.guide(E)
     if not gid then return WC.pskip.say("prev", false, "no guide") end
     local st = WC.pskip.stack(gk)
@@ -3400,14 +3410,15 @@ function WC.pskip.prev()
                     local okI, cur = pcall(E.GetStepIndex)
                     if okI and cur ~= i then pcall(E.Goto, i) end
                 end
-                WC.pstep.sig = nil
+                pcall(WC.pskip.now)
                 return WC.pskip.say("prev", true, nil, i)
             end
         end
     end
     WC.pskip.say("prev", false, "nothing")
 end
-C_Timer.NewTicker(1, function()
+-- the step doc, once a second (and at once after a skip / previous: WC.pskip.now, pk3)
+function WC.pstep.tick()
     local P = WC.pstep
     local okR, d = pcall(P.read)
     if not okR or not d then P.last = nil; return end
@@ -3423,7 +3434,8 @@ C_Timer.NewTicker(1, function()
         if P.boot ~= 0 then d.b = P.boot end
         pcall(function() WC.send(WC.encode(d)); WC.push() end)
     end
-end)
+end
+C_Timer.NewTicker(1, function() pcall(WC.pstep.tick) end)
 
 -- ---------------------------------------------------------------- QUESTTRAIL'S ARROW, READ (b-route-questtrail)
 -- The user (2026-10-17): "(a) + (b)" - with Settings' "Quest tracking: QuestTrail" the map's line and arrow follow QuestTrail's own
