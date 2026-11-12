@@ -32,6 +32,20 @@ class ChooserTabsTest {
         assertEquals("the spell radial casts spells", three, tabs("radial"))
     }
 
+    @Test fun inCombatWholeButtonBoxNamesBothSides() {
+        // p40 (review of p39): a command from In combat replaces the button out of combat too; the box says so
+        assertEquals(Triple("X / Y: Lightning Bolt in fights, Healing Wave out of combat.",
+            "Replace both with Open Map, in and out of fights?", "Replace"),
+            ChooserTabs.wholeBox("X / Y", "Open Map", true, "Lightning Bolt", "Healing Wave"))
+        assertEquals(Triple("X / Y: Lightning Bolt in fights, nothing out of combat.",
+            "Replace both with Open Map, in and out of fights?", "Replace"),
+            ChooserTabs.wholeBox("X / Y", "Open Map", true, "Lightning Bolt", null))
+        assertEquals(Triple("Healing Wave is on Left out of combat.", "Replace it with Open Map, in and out of fights?", "Replace"),
+            ChooserTabs.wholeBox("Left", "Open Map", false, null, "Healing Wave"))
+        assertEquals(Triple("Open Map goes on Left in and out of fights.", "Set it?", "Set"),
+            ChooserTabs.wholeBox("Left", "Open Map", false, null, null))
+    }
+
     @Test fun narrowSlotsDrawSquareTabs() {
         // five tabs in the chooser: about 64 wide in an 84-high row -> a 64 x 64 square on the row's middle
         val b = ChooserTabs.square(100f, 30f, 164f, 114f)

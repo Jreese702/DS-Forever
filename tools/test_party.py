@@ -1537,8 +1537,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p39"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m131"' in SRC["padmap"],
-      "the versions: PadMap m131, PadTabCtl p39, Book b48")
+check('local CV = "p40"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m131"' in SRC["padmap"],
+      "the versions: PadMap m131, PadTabCtl p40, Book b48")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
@@ -2186,12 +2186,34 @@ for _ in range(40):
         break
     WT.execute('pp("PADDDOWN")')
 WT.execute('pp("PAD1")')
+b = ctlDoc(WT).get('box')
+check(b and b['kind'] == 'replace' and b.get('what') == 'DSMAP' and int(WT.eval('#PUTS')) == 0 and int(WT.eval('#CLR')) == 0,
+      "p40: Open Map on In combat's fight-spell button: Replace asks first, nothing changed yet", b)
 for _ in range(3):
     if ctlDoc(WT).get('box'):
         WT.execute('pp("PAD1")')
 puts = [WT.eval('PUTS[%d]' % (i + 1)) for i in range(int(WT.eval('#PUTS')))]
 clr = [WT.eval('CLR[%d]' % (i + 1)) for i in range(int(WT.eval('#CLR')))]
 check(puts == ['1:1:DSMAP'] and clr == ['1:1'], "p39: Open Map from In combat's DS tab: the fight spell gives way, the command goes on", (puts, clr))
+# p40: an EMPTY button on the In combat tab: a DS entry still asks first (it goes on the button out of combat too); B leaves it alone
+WT.execute('local pm = WowCompanion.padMap; pm.slotAt = function(pg, st, ps) '
+           'if st == 1 and ps == 1 then return { kind = "none" } end return SLOTAT0(pg, st, ps) end')
+WT.execute('PUTS = {}; CLR = {}; pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end')
+WT.execute('for i = 1, 80 do pp("PADDUP") end; pp("PADDDOWN")')
+for _ in range(40):
+    if ctlDoc(WT)['chooser']['id'] == 'DSMAP':
+        break
+    WT.execute('pp("PADDDOWN")')
+WT.execute('pp("PAD1")')
+b = ctlDoc(WT).get('box')
+check(b and b['kind'] == 'replace' and b.get('what') == 'DSMAP' and int(WT.eval('#PUTS')) == 0,
+      "p40: Open Map on an empty In combat button: Replace asks first (in and out of fights)", b)
+WT.execute('pp("PAD2")')
+check(not ctlDoc(WT).get('box') and int(WT.eval('#PUTS')) == 0 and int(WT.eval('#CLR')) == 0,
+      "p40: B on that box: nothing put", ctlDoc(WT).get('box'))
+WT.execute('pp("PAD2")')
+c = ctlDoc(WT)
+check(not c.get('chooser') and not c.get('box'), "p40: B again closes the chooser", c)
 WT.execute('WowCompanion.padMap.slotAt = SLOTAT0')
 # the DS WoW toolbar on: In combat's bare D-pad takes fight spells only (p36), so its chooser keeps the three spell tabs
 WT.execute('WowCompanion.padMap.dpadBar(true); pp("PAD1"); for i = 1, 6 do pp("PADDRIGHT") end')

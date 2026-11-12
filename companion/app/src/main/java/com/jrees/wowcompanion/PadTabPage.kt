@@ -1216,6 +1216,9 @@ class PadTabPage(
             kind == "make" -> Triple("This uses one of your General Macros (${(g?.n ?: 0) + 1} of ${g?.max ?: "?"}).", "Make ${thingName(thing)}?", "Make")
             kind == "cmake" -> Triple("This uses one of your Character Macros (${(ch?.n ?: 0) + 1} of ${ch?.max ?: "?"}).",
                 "Make ${thingName(thing)} this button's combat spell?", "Make")
+            // PadTabCtl p40: a command / binding / mount / item from In combat goes on the WHOLE button (in and out of fights)
+            kind == "replace" && fight() && whole(thing) -> ChooserTabs.wholeBox(comboWord(s, pos), thingName(thing), isCombat,
+                if (isCombat) sl!!.combat?.name else null, if (isCombat) sl!!.otherwise?.name else PadMapModel.replaces(m, s, pos)?.let { here })
             kind == "replace" && isCombat && fight() -> Triple("${sl!!.combat?.name ?: "?"} is this button's combat spell.",
                 "Replace it with ${thingName(thing)}?", "Replace")
             kind == "replace" && isCombat -> Triple("${sl!!.otherwise?.name ?: "Nothing"} is on ${comboWord(s, pos)} out of combat.",
@@ -1457,6 +1460,9 @@ class PadTabPage(
         if (k != null) tBox = Box(k, t) else act(t)
     }
 
+    /** What goes on the whole button (PadTabCtl act's `whole`): on the In combat tab it changes the button out of combat too */
+    private fun whole(t: Thing) = t is Thing.Command || t is Thing.Binding || t is Thing.Mount || t is Thing.Item
+
     private fun boxFor(t: Thing, m: PadMapModel.Map, afterReplace: Boolean): String? {
         if (t is Thing.Clear || t is Thing.Uncombat || t is Thing.Unface) return "clear"
         if (view == "radial") return if (!afterReplace && radId(pos) != 0) "replace" else null       // p16: PadTabCtl's boxFor
@@ -1470,7 +1476,8 @@ class PadTabPage(
             val k = slotOf(m, shown(), pos)?.kind
             return if (k == PadMapModel.Kind.COMBAT && !afterReplace) "replace" else null
         }
-        if (!afterReplace && PadMapModel.replaces(m, shown(), pos) != null) return "replace"
+        // PadTabCtl p40: on the In combat tab a whole-button thing changes the button out of combat too: Replace always asks first
+        if (!afterReplace && (PadMapModel.replaces(m, shown(), pos) != null || (fight() && whole(t)))) return "replace"
         if (t is Thing.Command && !t.c.made) return if (PadMapModel.macrosFull(m)) "full" else "make"
         return null
     }
