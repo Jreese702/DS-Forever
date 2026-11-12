@@ -66,16 +66,22 @@ object MapList {
         }
     }
 
-    /** the whole list; [isOpen] says which tabs the player opened (none is, until then) */
+    /**
+     * the whole list; [isOpen] says which tabs the player opened (none is, until then). [merged] (a quest id, 0 none): the light blue
+     * row stands for that quest ([PolestarMerge]; the user, 2026-11-11: "consolidate that into one"), so its own row - tracked or in
+     * a tab - is left out (a tab it empties goes too): every key stays once.
+     */
     fun items(me: Boolean, tracked: List<Int>, groups: List<Pair<String, List<Int>>>, polestar: Boolean = false,
-              isOpen: (String) -> Boolean): List<Item> {
+              merged: Int = 0, isOpen: (String) -> Boolean): List<Item> {
         val out = ArrayList<Item>()
+        val m = if (polestar) merged else 0
+        val tabs = if (m > 0) groups.map { (z, ids) -> z to ids.filter { it != m } }.filter { it.second.isNotEmpty() } else groups
         if (me) out.add(Item.Me)
         if (polestar) out.add(Item.Polestar)            // above the tracked quests: Polestar's objective, the light blue row
-        for (id in tracked) out.add(Item.Tracked(id))
-        if (groups.isNotEmpty()) {
-            out.add(Item.Section(groups.sumOf { it.second.size }))
-            for ((z, ids) in groups) {
+        for (id in tracked) if (m == 0 || id != m) out.add(Item.Tracked(id))
+        if (tabs.isNotEmpty()) {
+            out.add(Item.Section(tabs.sumOf { it.second.size }))
+            for ((z, ids) in tabs) {
                 val open = isOpen(z)
                 out.add(Item.Group(z, ids.size, open))
                 if (open) for (id in ids) out.add(Item.Untracked(id, z))

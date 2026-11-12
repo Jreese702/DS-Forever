@@ -69,6 +69,12 @@ class MapCursor {
         lastIndex = ids.indexOf(id).coerceAtLeast(0)
     }
 
+    /** the stop [from] is now drawn as [to] (the user, 2026-11-11: Polestar's row stands for its quest): a selection on it follows */
+    fun moved(from: Int, to: Int, ids: List<Int>) {
+        if (sel == 0 || sel != from || ids.contains(from) || !ids.contains(to)) return
+        sel = to; lastIndex = ids.indexOf(to)
+    }
+
     /**
      * The tracked list changed ([ids], in its order). A selected quest that left it (untracked, turned in) hands the
      * selection to the quest now at its place, so X can go down the list one press at a time.
