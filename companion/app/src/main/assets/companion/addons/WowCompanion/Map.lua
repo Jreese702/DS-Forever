@@ -2851,7 +2851,7 @@ function WC.pnav.api()
 end
 function WC.pnav.say(op, ok, why)
     pcall(function()
-        WC.send(WC.encode({ type = "pnav", v = "pn2", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
+        WC.send(WC.encode({ type = "pnav", v = "pn3", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
         WC.push()
     end)
 end
@@ -2871,6 +2871,7 @@ function WC.pnav.cancel(why)
     local api = WC.pnav.api()
     if api and type(api.Cancel) == "function" then pcall(api.Cancel, WC.pnav.OWNER) end
     WC.pnav.active, WC.pnav.sig, WC.pnav.m = false, nil, nil
+    WC.pnav.legs, WC.pnav.legSig, WC.pnav.legsAt = nil, nil, nil       -- pn3: the compass's path marker goes with it
     WC.pnav.say("cancel", true, why)
 end
 -- the route Polestar is guiding now, as legs of world points (only while the guidance is ours)
@@ -2949,10 +2950,14 @@ do
         if not P.active then return end
         if GetTime() - P.keepAt > P.KEEP_S then return pcall(P.cancel, "no word from the app") end
         local okR, legs, sig = pcall(P.route)
+        -- pn3 (the user, 2026-11-11: "The polestar doted line needs its own kind of marker to point on the compass to keep players on
+        -- path"): the last read route kept for the top-screen compass's path marker (Trail.lua C.pathAhead), every second; nil when
+        -- there is none (Polestar no longer guiding for us)
+        if okR and legs then P.legs, P.legSig, P.legsAt = legs, sig, GetTime() else P.legs, P.legSig, P.legsAt = nil, nil, nil end
         if not okR or not legs then return end
         if sig ~= P.sig or GetTime() - P.sentAt > 10 then
             P.sig, P.sentAt = sig, GetTime()
-            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn2", legs = legs })); WC.push() end)
+            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn3", legs = legs })); WC.push() end)
         end
     end)
 end
