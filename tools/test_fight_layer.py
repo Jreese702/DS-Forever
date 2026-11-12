@@ -513,5 +513,31 @@ check(kind != "slotfight", "10: toolbar on, out of combat: D-pad Left is the too
 W5.execute(pm + '.clearCombat(1, 1, 1); ' + pm + '.dpadBar(false)')
 clean(W5, "10")
 
+# ================================================================ 11. Interact i152 (router-heal; the user, 2026-11-12: "I died and then my
+# jump input just stopped working"): the router's PRE snippet out of combat - wc-mode nil gives A to the game's own bar button (Jump on
+# the gamepad bar), wc-mode "room" sends it to Interact's sink (which nobody holds out of a fight: why Interact never leaves it there)
+W6 = boot()
+W6.execute('router(8):SetAttribute("wc-room-dest", "WowCompanionInteractPad")')     # what Interact's routerArm sets
+
+
+def pre_a(L):
+    L.execute('doClick(router(8), "LeftButton", true)')
+    got = tuple(L.eval('router(8).a["%s"]' % k) for k in ('wc-kind', 'type', 'macrotext', 'wc-at'))
+    L.execute('doClick(router(8), "LeftButton", false)')
+    return got
+
+
+got = pre_a(W6)
+check(got == ('native', 'macro', '/click GPTop8 LeftButton 1', 'GPTop8'),
+      "11: out of combat, wc-mode nil: A's PRE is the game's own bar button (GPTop8, Jump)", got)
+W6.execute('router(8):SetAttribute("wc-mode", "room")')
+got = pre_a(W6)
+check(got[2] == '/click WowCompanionInteractPad PAD1 1' and got[3] == 'WowCompanionInteractPad',
+      "11: out of combat, wc-mode \"room\" (no holder): A's PRE goes to Interact's sink - nothing in the game", got)
+W6.execute('router(8):SetAttribute("wc-mode", nil)')
+got = pre_a(W6)
+check(got[3] == 'GPTop8', "11: wc-mode cleared again: A is the game's bar button again", got)
+clean(W6, "11")
+
 print('ALL PASS (%d checks)' % passes if fails == 0 else '%d FAILED (of %d)' % (fails, fails + passes))
 sys.exit(1 if fails else 0)

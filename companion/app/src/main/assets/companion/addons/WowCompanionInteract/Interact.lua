@@ -92,7 +92,7 @@ local S, CALL = WC.S, WC.CALL
 
 -- i150 (int/1429): combat-nav i144-i148 (combat-proof input, the leave cells, pop-ups with the pad) + accept-space i144-i145
 -- (Make Space only when the quest gives an item, QuestieDB first)
-local IV = "i151"     -- bump on every change; i151 (b-home): B GOES HOME FROM EVERY ROOM IN A FIGHT (the user, 2026-11-12: "ALL ROOMS SHOULD ALWAYS GO HOME WITH B EVEN IN COMBAT"; on 1429 B in the Bags room did nothing after the pull): a room whose own B at its top level lets go through capture.release(id, "B") (Bags, Character, the Spellbook / Talents / Controller book, Calendar, Group Finder, Social, Quests) was answered "tap leave" in a fight and nobody told the app, so Bags stayed on screen holding the pad; now that release asks the app to go Home (doc.fightHome = { n, who }; nothing written, the room still holds until the app's LEAVE tap, which closes its window as before); i150: int/1429, both above; i145 (accept-space): (the user, 2026-11-11, i144 follow-up) QuestieDB is asked BEFORE the starter shortcut: the server checks room for the item a quest hands out before it uses up the starter, so an item-begun quest that hands out ANOTHER item still opens Make Space first with full bags (LOOT.acceptNeedsRoom); i144 (accept-space): ACCEPT WITH FULL BAGS ASKS FOR SPACE ONLY WHEN THE QUEST GIVES AN ITEM (the user, 2026-11-11: "Accepting that quest with a full bag asked me to delete an Item but I didn't actually need more space"; [Ripped Missive] started it): a quest begun from a bag item frees that item's slot, so it is accepted at once; otherwise QuestieDB (when installed) says whether the quest hands out an item (its sourceItemId); unknown = Make Space first as before (LOOT.acceptNeedsRoom); i148 (combat-nav): COMBAT NAV REVIEW FIXES (the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): a stray ENTER's "app" holder ends with the fight (released at PLAYER_REGEN_ENABLED, never re-bound); Step 5a's "left behind" looks only at the held window's own frames, counts a fading loot window as closed and looks again every half second of the fight (N.behindCheck), the shields of what closed go at once; a fight that began in the game menu stays the game's to its end (no ENTER, doc.gmFight); while the app shows a pop-up as its box in a fight, A and B are the app's alone (Dialogs d28 WC.dialogs.mirrored); i147: COMBAT NAV STEP 5 (combat_nav_design.md; the user, 2026-11-11: "If I am looting ... my dpad should not stop working"): 5a the fight's leave never unhides a window it could not close (hidden by alpha, the shields kept, N.release waits) until PLAYER_REGEN_ENABLED, when the out-of-combat path takes it back (an NPC window held again, anything else released); 5c a pre-aimed leave per game window (WowCompanionRoomLeave1..7 on Dialogs d27's cells: loot, map, gossip, quest, merchant, trainer, bank; aimed out of combat at each window's own close) and doc.fightLeave names the held window's own one (an npc hold, a room taken mid-fight) - the pull's generic leave stays with the holder it was aimed for (N.fcFor); i146: COMBAT NAV STEP 4 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): B in room mode goes to our sink as PAD2 like every other key (wc-room-dest), so the app's own B chain decides; LT + RT + B is the secure escape (wc-esc = the leave button, PadMap m135); B at a held window's top level in a fight never runs the game's close from our code - it steps doc.fightBack and the app taps the LEAVE; doc.npcLeft says a window left with B wants the pad no more; i145: COMBAT NAV STEP 3 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): the document reports who has the pad in a fight (fightMode "room" / "game", read back from the router's wc-mode) and the ENTER cell always (fightEnter) for the app's reconciler (PadOwnerSync); room to room in a fight is an IN-PLACE SWAP for every guest holder (the old one lost "taken", nothing written, its window kept hidden by alpha); a stray ENTER holds as the guest "app" (keys swallowed, never the orphan-NPC leave); i144: COMBAT NAV STEP 2 (combat_nav_design.md; the user, 2026-11-11: "everything on the bottom screen breaks in combat"): every pull keeps what holds - a room whatever the Hub's NPC-windows bit, an "npc" hold with it - and ONLY the game menu open at the pull lets go (its lock: doc.gmLock while it shows); the fight hold is built (F.make) and armed (N.armIdle) out of combat at every document, so a /reload in a fight blocks nothing and arms at its end; loot in a fight is the bottom screen's whatever the loot-on-top switch (LOOT.top reads off in the lockdown) and the NPC-windows bit (N.fightLoot); the fight's end gives an "npc" holder its bindings and the grab back (N.check); i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
+local IV = "i152"     -- bump on every change; i152 (router-heal): THE ROUTER NEVER STAYS IN ROOM MODE OUT OF A FIGHT (the user, 2026-11-12: "I died and then my jump input just stopped working", "its not just a, inputs work like I can see the button pushing but its not actually doing anything in game"): the player died in a fight, the app's ENTER for the DEATH pop-up landed just AFTER PLAYER_REGEN_ENABLED, its FLIP set wc-mode "room" on all 8 router buttons and N.fightEntered (out of combat) left it - every routed press went to our empty sink until the next fight's end. Now an ENTER out of a fight (N.fight nil: the pull's pre-lockdown window keeps its room mode) clears it at once, and N.modeHeal clears any out-of-fight room mode at every document, PLAYER_REGEN_ENABLED, PLAYER_DEAD / ALIVE / UNGHOST / ENTERING_WORLD and a 1 s watchdog (doc.modeFix counts them); the document always reports doc.routerMode, doc.routerLeave (no fight, no holder) and doc.dead, so the app's reconciler taps LEAVE itself and never ENTERs for a dead player's DEATH pop-up alone; i151 (b-home): B GOES HOME FROM EVERY ROOM IN A FIGHT (the user, 2026-11-12: "ALL ROOMS SHOULD ALWAYS GO HOME WITH B EVEN IN COMBAT"; on 1429 B in the Bags room did nothing after the pull): a room whose own B at its top level lets go through capture.release(id, "B") (Bags, Character, the Spellbook / Talents / Controller book, Calendar, Group Finder, Social, Quests) was answered "tap leave" in a fight and nobody told the app, so Bags stayed on screen holding the pad; now that release asks the app to go Home (doc.fightHome = { n, who }; nothing written, the room still holds until the app's LEAVE tap, which closes its window as before); i150: int/1429, both above; i145 (accept-space): (the user, 2026-11-11, i144 follow-up) QuestieDB is asked BEFORE the starter shortcut: the server checks room for the item a quest hands out before it uses up the starter, so an item-begun quest that hands out ANOTHER item still opens Make Space first with full bags (LOOT.acceptNeedsRoom); i144 (accept-space): ACCEPT WITH FULL BAGS ASKS FOR SPACE ONLY WHEN THE QUEST GIVES AN ITEM (the user, 2026-11-11: "Accepting that quest with a full bag asked me to delete an Item but I didn't actually need more space"; [Ripped Missive] started it): a quest begun from a bag item frees that item's slot, so it is accepted at once; otherwise QuestieDB (when installed) says whether the quest hands out an item (its sourceItemId); unknown = Make Space first as before (LOOT.acceptNeedsRoom); i148 (combat-nav): COMBAT NAV REVIEW FIXES (the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): a stray ENTER's "app" holder ends with the fight (released at PLAYER_REGEN_ENABLED, never re-bound); Step 5a's "left behind" looks only at the held window's own frames, counts a fading loot window as closed and looks again every half second of the fight (N.behindCheck), the shields of what closed go at once; a fight that began in the game menu stays the game's to its end (no ENTER, doc.gmFight); while the app shows a pop-up as its box in a fight, A and B are the app's alone (Dialogs d28 WC.dialogs.mirrored); i147: COMBAT NAV STEP 5 (combat_nav_design.md; the user, 2026-11-11: "If I am looting ... my dpad should not stop working"): 5a the fight's leave never unhides a window it could not close (hidden by alpha, the shields kept, N.release waits) until PLAYER_REGEN_ENABLED, when the out-of-combat path takes it back (an NPC window held again, anything else released); 5c a pre-aimed leave per game window (WowCompanionRoomLeave1..7 on Dialogs d27's cells: loot, map, gossip, quest, merchant, trainer, bank; aimed out of combat at each window's own close) and doc.fightLeave names the held window's own one (an npc hold, a room taken mid-fight) - the pull's generic leave stays with the holder it was aimed for (N.fcFor); i146: COMBAT NAV STEP 4 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): B in room mode goes to our sink as PAD2 like every other key (wc-room-dest), so the app's own B chain decides; LT + RT + B is the secure escape (wc-esc = the leave button, PadMap m135); B at a held window's top level in a fight never runs the game's close from our code - it steps doc.fightBack and the app taps the LEAVE; doc.npcLeft says a window left with B wants the pad no more; i145: COMBAT NAV STEP 3 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): the document reports who has the pad in a fight (fightMode "room" / "game", read back from the router's wc-mode) and the ENTER cell always (fightEnter) for the app's reconciler (PadOwnerSync); room to room in a fight is an IN-PLACE SWAP for every guest holder (the old one lost "taken", nothing written, its window kept hidden by alpha); a stray ENTER holds as the guest "app" (keys swallowed, never the orphan-NPC leave); i144: COMBAT NAV STEP 2 (combat_nav_design.md; the user, 2026-11-11: "everything on the bottom screen breaks in combat"): every pull keeps what holds - a room whatever the Hub's NPC-windows bit, an "npc" hold with it - and ONLY the game menu open at the pull lets go (its lock: doc.gmLock while it shows); the fight hold is built (F.make) and armed (N.armIdle) out of combat at every document, so a /reload in a fight blocks nothing and arms at its end; loot in a fight is the bottom screen's whatever the loot-on-top switch (LOOT.top reads off in the lockdown) and the NPC-windows bit (N.fightLoot); the fight's end gives an "npc" holder its bindings and the grab back (N.check); i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2448,6 +2448,12 @@ local function buildDoc()
         -- the router's wc-mode routes nothing) - "game", no ENTER cell, and gmFight so the app's reconciler does not try
         if N.fightMenu then doc.fightMode, doc.fightEnter, doc.gmFight = "game", nil, true end
     end
+    -- i152 (router-heal; the user, 2026-11-12: "I died and then my jump input just stopped working"): the router's own mode in AND out of
+    -- a fight (read after N.armIdle's heal above), how many out-of-fight room modes were healed, and whether the player is dead - so the app
+    -- can LEAVE an out-of-fight room mode itself (doc.routerLeave: no fight, no holder) and never ENTERs for a dead player's DEATH pop-up
+    if N.routerDoc then N.routerDoc(doc) end      -- (F and G are declared further down)
+    doc.modeFix = N.modeFixN or 0
+    doc.dead = TB(function() return UnitIsDeadOrGhost("player") end) or nil
     -- i144 (the user's decision 1, 2026-11-11: the game menu "should be locked until the game menu closes"): the game menu was open at
     -- the pull, so the game has the pad for this fight (PadMap m134) - the bottom screen is locked while the menu still shows
     if N.fightMenu and doc.combat and TB(function() return _G.GameMenuFrame:IsShown() end) == true then doc.gmLock = true end
@@ -5927,7 +5933,10 @@ function F.make()
     end)
     if F.leave and not F.leaveHooked then
         F.leaveHooked = true
-        pcall(function() F.leave:HookScript("OnClick", function() if N.fight then N.fightLeft() else N.leaveOut() end end) end)
+        -- i152: an out-of-fight LEAVE the app tapped for a stuck room mode (doc.routerLeave) gets its document (the FLIP cleared it)
+        pcall(function() F.leave:HookScript("OnClick", function()
+            if N.fight then N.fightLeft() else N.leaveOut(); if N.lastRouterRoom then N.lastRouterRoom = false; emitSoon() end end
+        end) end)
     end
     if F.enter and not F.enterHooked then
         F.enterHooked = true
@@ -6105,7 +6114,15 @@ end
 N.enterN = 0
 function N.fightEntered()
     local pe = N.pend
-    if not (inCombat() and N.ra) or N.holding then return end      -- repeats of one tap, or a tap out of a fight: nothing
+    -- i152 (router-heal; the user, 2026-11-12: "I died and then my jump input just stopped working"): an ENTER that lands OUT of a fight
+    -- (the app's tap for the DEATH pop-up arrived after dying ended the fight: PLAYER_REGEN_ENABLED had already run) set every router
+    -- button to room mode with nobody to hold or clear it - undone at once. Not in the pull's pre-lockdown window (N.fight set: room
+    -- mode is the fight's own there)
+    if not inCombat() then
+        if not N.fight then N.modeHeal("enter") end
+        return
+    end
+    if not N.ra or N.holding then return end      -- repeats of one tap: nothing
     -- i148 (review; the user's decision 1, 2026-11-11: the game menu "should be locked until the game menu closes"): the game menu was
     -- open at the pull, so PadMap stepped aside and nothing of ours is bound for this fight - an ENTER would only make each press act in
     -- the room AND in the game: refused for the whole fight (doc.gmFight tells the app not to try)
@@ -6142,6 +6159,49 @@ function N.armIdle()
     if inCombat() then return end
     if not N.ra then pcall(N.routerArm) end
     pcall(F.aimLeaves)                      -- i147: the per-window leaves follow the close buttons the game has made
+    pcall(N.modeHeal, "doc")                -- i152: never room mode out of a fight
+end
+-- i152 (router-heal; the user, 2026-11-12: "its not just a, inputs work like I can see the button pushing but its not actually doing
+-- anything in game"): room mode on the router OUT of a fight (no lockdown, no fight hold: the pull's pre-lockdown window has N.fight)
+-- sends every routed press (A / X / Y / B / D-pad / Start: PadMap's PRE snippet) to our sink with nobody holding - nothing reaches the
+-- game. Interact owns wc-mode: cleared here, out of combat only (our own attributes on the router buttons), counted in doc.modeFix
+N.modeFixN = 0
+function N.modeHeal(why)
+    if inCombat() or N.fight or not (N.ra and N.ra.btns) then return false end
+    local room = false
+    for _, b in ipairs(N.ra.btns) do
+        if TS(function() return b:GetAttribute("wc-mode") end) == "room" then room = true; break end
+    end
+    if not room then return false end
+    N.routerMode(nil)
+    N.modeFixN = N.modeFixN + 1
+    N.modeFixWhy = why
+    emitSoon()
+    return true
+end
+-- i152: the router's mode for the document (buildDoc above; F and G are known here): "room" or nil, and out of a fight with nobody holding
+-- the generic leave's cell (aimed at nothing first: out of combat that tap only flips the mode back)
+function N.routerDoc(doc)
+    if not (N.ra and N.ra.btns) then N.lastRouterRoom = false; return end
+    local b1 = N.ra.btns[1]
+    doc.routerMode = (b1 and TS(function() return b1:GetAttribute("wc-mode") end) == "room") and "room" or nil
+    if doc.routerMode and not doc.combat and not inCombat() and not N.fight and not G.holder and F.leave then
+        pcall(function() F.leave:SetAttribute("type", nil) end)
+        doc.routerLeave = { row = N.ra.row, col = N.ra.col }
+    end
+    N.lastRouterRoom = doc.routerMode == "room"
+end
+WC.interactModeHeal = function(why) return N.modeHeal(why or "ext") end
+-- the moments a death / a load can leave it behind, and a 1 s watchdog out of combat
+do
+    local hf = CreateFrame("Frame")
+    hf:SetScript("OnEvent", function(_, event)
+        pcall(C_Timer.After, 0.2, function() pcall(N.modeHeal, event) end)
+    end)
+    for _, e in ipairs({ "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST", "PLAYER_ENTERING_WORLD" }) do
+        pcall(function() hf:RegisterEvent(e) end)
+    end
+    pcall(C_Timer.NewTicker, 1, function() if not inCombat() then pcall(N.modeHeal, "tick") end end)
 end
 -- v11: the queue (one place: the latest requester)
 function N.queue(id, spec)
@@ -7648,6 +7708,7 @@ do
                     N.check()
                 end
             end
+            pcall(N.modeHeal, "regen")      -- i152: after the reset (a room mode written meanwhile never outlives the fight)
         end
         emitSoon()              -- after the fight the open window takes them again, through sync()
     end)

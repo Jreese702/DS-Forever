@@ -15,6 +15,11 @@ import org.json.JSONObject
  * Each change of want gets at most [TRIES] taps, [RETRY_MS] apart; then it is STUCK once (a red cue and a log line) until the want or
  * the mode changes. Out of a fight (no fightMode) and while the game menu has the pad (`gmLock`, the user's decision 1) it does nothing.
  * Pure (PadOwnerSyncTest); CompanionHost sends the taps.
+ *
+ * OUT OF A FIGHT (Interact i152, the user 2026-11-12: "I died and then my jump input just stopped working"): the router in room mode with no
+ * fight and nobody holding (doc.routerMode "room" + doc.routerLeave) routes every press to the add-on's empty sink - the reconciler taps that
+ * LEAVE ([TRIES] / [RETRY_MS], then STUCK once), whatever the bottom screen shows. And a dead player's DEATH pop-up alone never asks for an
+ * ENTER (the tap that, landing just after dying ended the fight, left the router in room mode).
  */
 class PadOwnerSync {
     enum class Act { NONE, ENTER, LEAVE, STUCK }
@@ -48,6 +53,17 @@ class PadOwnerSync {
     private var homeSeen = 0
     private var homeWho: String? = null
 
+    /** i152: out of a fight the router is in room mode with nobody holding (doc.routerMode "room" with doc.routerLeave) */
+    var outRoom = false
+        private set
+    private var outLeave: Pair<String, Int>? = null
+    private var outTries = 0
+    private var outLastAt = 0L
+    private var outStuckSaid = false
+    /** i152's doc.dead: the player is dead or a ghost */
+    var dead = false
+        private set
+
     private var wantRoom: Boolean? = null
     private var tries = 0
     private var lastTapAt = 0L
@@ -68,6 +84,10 @@ class PadOwnerSync {
         backN = msg.optInt("fightBack", 0)
         msg.optJSONObject("fightHome").let { h -> homeN = h?.optInt("n", 0) ?: 0; homeWho = h?.optString("who", "")?.ifEmpty { null } }
         if (mode == null) { wantRoom = null; tries = 0; stuckSaid = false; backN = 0; backSeen = 0; homeN = 0; homeSeen = 0; homeWho = null }
+        dead = msg.optBoolean("dead", false)
+        outLeave = if (mode == null && msg.optString("routerMode", "") == ROOM) cellOf(msg.optJSONObject("routerLeave")) else null
+        outRoom = outLeave != null
+        if (!outRoom) { outTries = 0; outLastAt = 0L; outStuckSaid = false }
     }
 
     /**
@@ -96,10 +116,14 @@ class PadOwnerSync {
     /** the router delivers to us now (room mode in a fight) */
     fun roomMode(): Boolean = mode == ROOM
 
-    /** one look: what to tap now, given whether the bottom screen wants the pad */
-    fun step(wantsPad: Boolean, nowMs: Long): Step {
-        val m = mode ?: return Step(Act.NONE)
+    /**
+     * one look: what to tap now, given whether the bottom screen wants the pad; [deathOnly] = its only want is DialogView's DEATH pop-up
+     * (with a dead player that is never an ENTER: the game answers its own pop-up)
+     */
+    fun step(wantsPad: Boolean, nowMs: Long, deathOnly: Boolean = false): Step {
+        val m = mode ?: return outOfAFight(nowMs)
         if (gmLock || gmFight) return Step(Act.NONE)
+        @Suppress("NAME_SHADOWING") val wantsPad = wantsPad && !(deathOnly && dead)
         if (wantRoom != wantsPad) { wantRoom = wantsPad; tries = 0; stuckSaid = false; lastTapAt = 0L }
         val goal = if (wantsPad) ROOM else GAME
         if (m == goal) { tries = 0; stuckSaid = false; return Step(Act.NONE) }
@@ -113,6 +137,20 @@ class PadOwnerSync {
         tries++
         lastTapAt = nowMs
         return Step(if (wantsPad) Act.ENTER else Act.LEAVE, cell)
+    }
+
+    /** i152: out of a fight, room mode with nobody holding is never right - its LEAVE, [TRIES] taps [RETRY_MS] apart, then STUCK once */
+    private fun outOfAFight(nowMs: Long): Step {
+        val cell = outLeave ?: return Step(Act.NONE)
+        if (outTries > 0 && nowMs - outLastAt < RETRY_MS) return Step(Act.NONE)
+        if (outTries >= TRIES) {
+            if (outStuckSaid) return Step(Act.NONE)
+            outStuckSaid = true
+            return Step(Act.STUCK)
+        }
+        outTries++
+        outLastAt = nowMs
+        return Step(Act.LEAVE, cell)
     }
 
     companion object {

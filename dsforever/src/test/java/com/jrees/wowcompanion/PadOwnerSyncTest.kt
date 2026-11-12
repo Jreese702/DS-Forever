@@ -189,4 +189,47 @@ class PadOwnerSyncTest {
         s.note(doc("room", holder = "bags").put("fightHome", JSONObject().put("n", 1).put("who", "bags")))
         assertEquals("bags", s.homeAsked())                                              // the next fight's first ask
     }
+
+    /** Interact i152 (router-heal; the user, 2026-11-12: "I died and then my jump input just stopped working"): out of a fight the router
+     *  in room mode with nobody holding (doc.routerMode "room" + doc.routerLeave) gets its LEAVE, TRIES taps RETRY_MS apart, then STUCK once */
+    @Test fun outOfAFightRoomModeTapsLeaveOnce() {
+        val s = PadOwnerSync()
+        val stuck = JSONObject().put("routerMode", "room").put("routerLeave", JSONObject().put("row", "idlg").put("col", 24))
+        s.note(stuck)
+        assertNull(s.mode)
+        assertTrue(s.outRoom)
+        assertEquals(PadOwnerSync.Step(PadOwnerSync.Act.LEAVE, "idlg" to 24), s.step(wantsPad = false, nowMs = 0))
+        s.note(JSONObject(stuck.toString()))                                          // the next document, still stuck
+        assertEquals(PadOwnerSync.Act.NONE, s.step(false, 100).act)                 // the tap's document is still on its way
+        assertEquals(PadOwnerSync.Act.LEAVE, s.step(true, 450).act)                 // whatever the bottom screen wants
+        assertEquals(PadOwnerSync.Act.LEAVE, s.step(false, 900).act)
+        assertEquals(PadOwnerSync.Act.STUCK, s.step(false, 1350).act)               // once
+        assertEquals(PadOwnerSync.Act.NONE, s.step(false, 5000).act)
+        s.note(JSONObject())                                                         // healed: routerMode nil
+        assertFalse(s.outRoom)
+        assertEquals(PadOwnerSync.Act.NONE, s.step(false, 6000).act)
+        s.note(JSONObject(stuck.toString()))                                         // stuck again later: afresh
+        assertEquals(PadOwnerSync.Act.LEAVE, s.step(false, 7000).act)
+        // room mode without a leave cell (the pull's pre-lockdown window, or a room holds): nothing
+        s.note(JSONObject().put("routerMode", "room"))
+        assertFalse(s.outRoom)
+        assertEquals(PadOwnerSync.Act.NONE, s.step(false, 8000).act)
+        // in a fight the routerMode word is not this one's (fightMode decides)
+        s.note(doc("room").put("routerMode", "room").put("routerLeave", JSONObject().put("row", "idlg").put("col", 24)))
+        assertFalse(s.outRoom)
+        assertEquals(PadOwnerSync.Act.NONE, s.step(true, 9000).act)
+    }
+
+    /** i152: the DEATH pop-up alone (DialogView's only want) of a dead player never asks for an ENTER; anything else still does */
+    @Test fun noEnterFromADeadDocument() {
+        val s = PadOwnerSync()
+        s.note(doc("game").put("dead", true))
+        assertTrue(s.dead)
+        assertEquals(PadOwnerSync.Act.NONE, s.step(wantsPad = true, nowMs = 0, deathOnly = true).act)
+        assertEquals(PadOwnerSync.Act.NONE, s.step(true, 1000, deathOnly = true).act)
+        assertEquals(PadOwnerSync.Act.ENTER, s.step(true, 2000, deathOnly = false).act)    // a room shown as well: the pad is wanted
+        val alive = PadOwnerSync()
+        alive.note(doc("game"))
+        assertEquals(PadOwnerSync.Act.ENTER, alive.step(true, 0, deathOnly = true).act)    // alive: the pop-up gets the pad as before
+    }
 }

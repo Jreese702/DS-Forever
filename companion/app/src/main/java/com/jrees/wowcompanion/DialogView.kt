@@ -325,6 +325,10 @@ class DialogView(context: Context) : View(context) {
      */
     fun wantsPad() = showing() && (active() != null || (rolls.isNotEmpty() && !rollsMin))
 
+    /** Interact i152 (router-heal): the pad is wanted for the game's DEATH pop-up alone (no rolls open) - with a dead player that is never
+     *  an ENTER (PadOwnerSync.step's deathOnly) */
+    fun wantsPadForDeathOnly() = wantsPad() && active()?.which == "DEATH" && (rolls.isEmpty() || rollsMin)
+
     private fun str(o: JSONObject, key: String) = if (o.has(key) && !o.isNull(key)) o.optString(key) else null
 
     // ---------------------------------------------------------------- which dialog is the box
