@@ -1272,6 +1272,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Log.i("WCHOME", "pad owner: B at the window's top level -> LEAVE $row $col ${if (sent) "sent" else "not sent"}")
             return
         }
+        // B GOES HOME FROM EVERY ROOM IN A FIGHT (the user, 2026-11-12: "ALL ROOMS SHOULD ALWAYS GO HOME WITH B EVEN IN COMBAT"; 1429: B in
+        // Bags did nothing after the pull): the room's own B at its top level let go through the capture, which in a fight only asks
+        // (Interact i151's doc.fightHome) - Home now, and show() runs this again: nothing wants the pad there, so the LEAVE goes out
+        padOwner.homeAsked()?.let { who ->
+            if (PadOwnerSync.fightHomeGoes(who, room.name)) {
+                Log.i("WCHOME", "pad owner: B in ${room.name} let $who go in the fight -> Home (the LEAVE follows)")
+                show(Room.HOME)
+                return
+            }
+            Log.i("WCHOME", "pad owner: B let $who go in the fight, not the room on screen (${room.name}): stays")
+        }
         val st = padOwner.step(bottomWantsPad(), now)
         when (st.act) {
             PadOwnerSync.Act.NONE -> {}

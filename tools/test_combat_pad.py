@@ -796,5 +796,295 @@ check([a for a in r['acts'] if a.get('kind') == 'lootslot'] == [{'kind': 'lootsl
       "R4 the pop-up gone: A loots again", r['acts'])
 check(clean(W) == {}, "R4 no lockdown breach, no spied call, no handle / snippet error", clean(W))
 
+# ================================================================ B -> HOME FROM EVERY ROOM, IN A FIGHT AND OUT (the user, 2026-11-12, on 1429: "ALL ROOMS
+# SHOULD ALWAYS GO HOME WITH B EVEN IN COMBAT"; the log: Bags opened 1 s before the pull, then B did nothing - Bags' own B let go through
+# capture.release("bags", "B"), which a fight answers "tap leave", and nobody told the app). Interact i151: that release asks the app to
+# go Home (doc.fightHome); Home's LEAVE (PadOwnerSync) lets go. THE MATRIX: every room x {opened out of combat, then the pull} x {opened in a
+# fight} (and x {no fight}: unchanged): a sub-screen's B steps back first (where the stub can open one), the top level's B reaches Home - the
+# room's own B asking (fightHome) or the app's B chain getting the press (its pad document) - then Home's LEAVE, the next B is the fight's
+# again, #VIOL == 0. The rooms' REAL files load over the same stub.
+from wowstub import ADDONS, ADDON_OF, SRC as _SRC
+for _k, (_d, _f) in {"bags": ("WowCompanion", "Bags.lua"), "character": ("WowCompanionCharacter", "Character.lua"),
+                     "social": ("WowCompanionSocial", "Social.lua"), "calendar": ("WowCompanionCalendar", "Calendar.lua"),
+                     "gfinder": ("WowCompanionGroupFinder", "GroupFinder.lua"), "prof": ("WowCompanionProfessions", "Professions.lua")}.items():
+    F[_k] = os.path.join(ADDONS, _d, _f)
+    _SRC[_k] = open(F[_k], encoding="utf-8").read()
+    ADDON_OF[_k] = _d
+ROOM_FILES = tuple(list(WORLD_FILES[:2]) + ["bags"] + list(WORLD_FILES[2:]) + ["character", "social", "calendar", "gfinder", "prof"])
+ROOM_LOGIN = ('for _, a in ipairs({ "WowCompanion", "WowCompanionQuests", "WowCompanionHub", "WowCompanionInteract", "WowCompanionSpells", '
+              '"WowCompanionCharacter", "WowCompanionSocial", "WowCompanionCalendar", "WowCompanionGroupFinder", "WowCompanionProfessions" }) do '
+              'fire("ADDON_LOADED", a) end; fire("PLAYER_LOGIN"); fire("PLAYER_ENTERING_WORLD", true, false); runTimers(NOW + 10)')
+BAG_PRE = ('C_Container = { GetContainerNumSlots = function(b) if b == 0 then return 16 end return 0 end, '
+           'GetContainerItemID = function(b, s) if b == 0 and s == 1 then return 2589 end end, '
+           'GetContainerItemInfo = function(b, s) if b == 0 and s == 1 then return { itemID = 2589, stackCount = 2, quality = 1, iconFileID = 1 } end end, '
+           'GetContainerItemLink = function() return nil end, PickupContainerItem = function() end }\n')
+
+
+# Social's code columns: its CODES list's order (Social.lua: CODE_COL[c] = i - 1)
+SOCIAL_COL = {c: i for i, c in enumerate(re.findall(r'"([a-z0-9]+)"', re.search(r'local CODES = [{](.*?)\n[}]', _SRC["social"].replace("\r", ""),
+                                                                                 re.S).group(1)))}
+
+
+def room_world():
+    L, errs = boot_world(files=ROOM_FILES, pre=GAME_PRE + 'WowCompanion.partyOk = true\n' + BAG_PRE, login=ROOM_LOGIN)
+    L.execute('LOADERRS = {}')
+    for e in errs:
+        L.eval('function(s) LOADERRS[#LOADERRS + 1] = s end')(e)
+    L.execute('__IN.ACT.trust(); advance(1); __IN.N.setMode(true); advance(1)')
+    return L
+
+
+def slot(L, ns, key):
+    return L.eval('WowCompanion.pad.slotFor')(ns, key)
+
+
+def rtap(L, row, col):
+    L.eval('hwTap')(row, col)
+    L.execute('advance(0.4)')
+
+
+def last(L, typ):
+    d = docs(L, 0, typ)
+    return d[-1] if d else {}
+
+
+def bags_note(L):
+    return (last(L, 'bagsctl').get('ctl') or {}).get('note')
+
+
+# each room: how the app opens it (a tap, or the file's own touch entry), a sub-screen to step back from (None = none the stub can open),
+# the press document its app view reads (None = the room's own Lua B chain: its top-level B asks fightHome) with the room's own
+# "free because of B" cell the app taps at the top (None = none), and its capture id (HomeBack.roomsOf)
+ROOMS = [
+    ("BAGS", "bags", lambda L: rtap(L, "bmvq", 29),
+     (lambda L: press(L, "PAD1"), lambda L: bags_note(L) == 'picked', lambda L: bags_note(L) == 'cancelled'), None),
+    ("CHARACTER", "character", lambda L: (L.eval('WowCompanion.character.touchOpen')(), L.execute('advance(0.4)')), None, None),
+    ("SPELLBOOK", "spells", lambda L: rtap(L, "spells", L.eval('WowCompanion.spellsWinCols.open')), None, None),
+    ("TALENTS", "spells", lambda L: rtap(L, "spells", L.eval('WowCompanion.spellsWinCols.topen')), None, None),
+    ("CALENDAR", "calendar", lambda L: rtap(L, "cal", slot(L, "cal", "h")), None, ('calpad', ("cal", "fb"))),
+    ("GROUPFINDER", "groupfinder", lambda L: rtap(L, "gf", slot(L, "gf", "h")), None, ('gfpad', ("gf", "fb"))),
+    ("SOCIAL", "social", lambda L: rtap(L, "sact", SOCIAL_COL["hold"]), None, ('socialpad', None)),
+    ("PROFESSIONS", "professions", lambda L: rtap(L, "prof", slot(L, "profctl", "book")), None, ('profpad', None)),
+    ("QUESTS", "pad:quests", lambda L: qtap(L, QACT["quests"]), None, ('guestpad', None)),
+    ("MAP", "pad:map", lambda L: qtap(L, QACT["map"]), None, ('guestpad', None)),
+    ("SETTINGS", "pad:settings", lambda L: qtap(L, 12), None, ('guestpad', None)),
+    ("CHAT", "pad:chat", lambda L: qtap(L, 14), None, ('guestpad', None)),
+]
+for rname, who, opener, sub, appdoc in ROOMS:
+    for how in ('before the pull', 'in a fight', 'no fight'):
+        tag = 'B-HOME[%s, %s]' % (rname, how)
+        W = room_world()
+        if how == 'in a fight':
+            pull(W)
+        opener(W)
+        if how == 'in a fight' and holder(W) != who:
+            tap(W, idoc(W).get('enter'))                  # the room's take waits for the app's ENTER (PadOwnerSync: a room wants the pad)
+        if how == 'before the pull':
+            check(holder(W) == who, "%s the room holds the controller before the pull" % tag, holder(W))
+            pull(W)
+        check(holder(W) == who and (how == 'no fight' or modes(W) == ['room'] * 8),
+              "%s %s" % (tag, "held through the fight in room mode" if how != 'no fight' else "held"), (holder(W), modes(W)[:2]))
+        if sub:
+            go, inside, back = sub
+            go(W)
+            check(inside(W), "%s a sub-screen opened" % tag, bags_note(W))
+            r = press(W, "PAD2")
+            check(back(W) and holder(W) == who and not idoc(W).get('fightHome'),
+                  "%s B in the sub-screen steps back one level (the room still holds, no Home ask)" % tag, (bags_note(W), holder(W)))
+        n0 = nsent(W)
+        r = press(W, "PAD2")
+        d = idoc(W)
+        if how == 'no fight':
+            # as before: the room lets go, its app chain has B, or B is the game window's own close through the binding (spec.back: the
+            # window's OnHide then lets go - the stub's close button is a stand-in that closes nothing)
+            bound = str(W.eval('BIND.PAD2') or '')
+            gone = (holder(W) != who or bool(appdoc and [x for x in docs(W, n0, appdoc[0]) if x.get('k') == 'PAD2'])
+                    or (bound.startswith('CLICK ') and 'WowCompanionInteract' not in bound))
+            check(gone and not d.get('fightHome'), "%s B at the top level: the room's own route as before, no fightHome" % tag,
+                  (holder(W), bound, d.get('fightHome')))
+            check(clean(W) == {}, "%s no lockdown breach, no spied call, no handle / snippet error" % tag, clean(W))
+            continue
+        if appdoc:
+            got = [x for x in docs(W, n0, appdoc[0]) if x.get('k') == 'PAD2']
+            check(bool(got) and modes(W) == ['room'] * 8 and not stopattack(r),
+                  "%s B reaches the room's app view (%s PAD2: its own B chain, Home at the top), the mode stays" % (tag, appdoc[0]),
+                  (r['clicks'], modes(W)[:2]))
+            if appdoc[1]:                                  # the app's top-level B also tells the room (its "free because of B" cell)
+                rtap(W, appdoc[1][0], slot(W, *appdoc[1]))
+                d = idoc(W)
+                check((d.get('fightHome') or {}).get('who') == who and holder(W) == who and clean(W) == {},
+                      "%s ... its free-by-B in the fight asks Home too (doc.fightHome), nothing written" % tag, (d.get('fightHome'), holder(W)))
+        else:
+            check((d.get('fightHome') or {}).get('who') == who and holder(W) == who and modes(W) == ['room'] * 8 and not stopattack(r),
+                  "%s B at the top level asks the app to go Home (doc.fightHome who=%s), the room still holds, nothing written" % (tag, who),
+                  (d.get('fightHome'), holder(W), r['clicks']))
+        # the app is Home: nothing wants the pad, so PadOwnerSync taps the LEAVE once
+        tap(W, d.get('fightLeave'))
+        d = idoc(W)
+        check(holder(W) is None and modes(W) == [None] * 8 and d.get('fightMode') == 'game',
+              "%s Home's LEAVE gives the fight back (fightMode game)" % tag, (holder(W), d.get('fightMode')))
+        r = press(W, "PAD2")
+        check(stopattack(r), "%s then the next B on Home works: the fight's own stop attack" % tag, r['acts'])
+        check(clean(W) == {}, "%s #VIOL == 0, no spied call, no handle / snippet error" % tag, clean(W))
+        fight_end(W)
+        check(not idoc(W).get('fightHome') and clean(W) == {}, "%s the fight's end: no fightHome left, still clean" % tag, idoc(W).get('fightHome'))
+
+
+# ---------------------------------------------------------------- B-HOME, THE BAGS ROOM THROUGH THE GAME'S OWN BAG WINDOW (the review of 2026-11-12 on
+# fix/b-home: the 1429 log's Bags was opened by the backpack's door, "quiet pad: bag0:39" - the game's ContainerFrameCombinedBags open, B
+# PASSED to the game in the grid (Bags' syncPass), the fight's leave = a click of the window's own close button). The user, 2026-11-12: "ALL
+# ROOMS SHOULD ALWAYS GO HOME WITH B EVEN IN COMBAT". Rows: opened by the door before the pull (the app's touchedOut on Home by either route:
+# the close door bag0 38 or bmvq 30), opened by the game's own bag key in a fight, no fight
+BAGWIN_PRE = r"""
+mkwin("ContainerFrameCombinedBags", false)
+local bp = CreateFrame("Button", "MainMenuBarBackpackButton", UIParent)
+bp:RegisterForClicks("AnyDown", "AnyUp")
+bp:SetScript("OnClick", function(_, _, down)        -- the game's ToggleBag(0), once per click
+    if down == false then return end
+    ACTIONS[#ACTIONS + 1] = { kind = "togglebag" }
+    if ContainerFrameCombinedBags._shown then ContainerFrameCombinedBags:Hide() else ContainerFrameCombinedBags:Show() end
+end)
+"""
+
+
+def bagwin_world():
+    L, errs = boot_world(files=ROOM_FILES, pre=GAME_PRE + 'WowCompanion.partyOk = true\n' + BAG_PRE + BAGWIN_PRE, login=ROOM_LOGIN)
+    L.execute('LOADERRS = {}')
+    for e in errs:
+        L.eval('function(s) LOADERRS[#LOADERRS + 1] = s end')(e)
+    L.execute('__IN.ACT.trust(); advance(1); __IN.N.setMode(true); advance(1)')
+    return L
+
+
+def bagwin_shown(L):
+    return L.eval('ContainerFrameCombinedBags._shown') is True
+
+
+def bagwin_alpha(L):
+    return L.eval('ContainerFrameCombinedBags:GetAlpha()')
+
+
+for how, out in (('door, before the pull', ('bag0', 38)), ('door, before the pull', ('bmvq', 30)), ('bag key, in a fight', None),
+                 ('door, no fight', None)):
+    tag = 'B-HOME[BAGS window, %s%s]' % (how, (', Home taps %s %d' % out) if out else '')
+    W = bagwin_world()
+    if how.endswith('in a fight'):
+        pull(W)
+        W.execute('ContainerFrameCombinedBags:Show(); advance(0.4)')      # the game's own bag key, in the fight: the window's take
+        if holder(W) != 'bags':
+            tap(W, idoc(W).get('enter'))
+    else:
+        ok, log = tap(W, {'row': 'bag0', 'col': 39})                       # the backpack's open door (the 1429 log's bag0:39)
+        check(ok and 'MainMenuBarBackpackButton+' in log, "%s the open door is a secure click of the game's backpack button" % tag, log)
+    c = last(W, 'bagsctl').get('ctl') or {}
+    spec_leave = W.eval('__IN.G.spec and __IN.G.spec.leave')
+    check(holder(W) == 'bags' and c.get('open') is True and bagwin_shown(W) and spec_leave == 'ContainerFrameCombinedBagsCloseButton',
+          "%s Bags holds with the game's bag window open (its leave = the window's own close button)" % tag,
+          (holder(W), c.get('open'), bagwin_shown(W), spec_leave))
+    if not how.endswith('in a fight'):
+        check(W.eval('__IN.G.spec.pass and __IN.G.spec.pass.PAD2') is True and not W.eval('BIND.PAD2'),
+              "%s out of combat, B in the grid is PASSED to the game (Bags' syncPass)" % tag, W.eval('BIND.PAD2'))
+    if how.endswith('no fight'):
+        press(W, "PAD2")
+        W.execute('ContainerFrameCombinedBags:Hide(); advance(0.4)')        # the game's own B closed its bags (the stub's game has no B)
+        check(holder(W) is None and bags_note(W) == 'left-B' and not idoc(W).get('fightHome') and clean(W) == {},
+              "%s B is the game's: its bags close, Bags lets go with B (Home), no fightHome, clean" % tag, (holder(W), bags_note(W)))
+        continue
+    if how.endswith('before the pull'):
+        pull(W)
+    check(holder(W) == 'bags' and modes(W) == ['room'] * 8, "%s held through the fight in room mode" % tag, (holder(W), modes(W)[:2]))
+    r = press(W, "PAD2")
+    d = idoc(W)
+    check((d.get('fightHome') or {}).get('who') == 'bags' and holder(W) == 'bags' and not stopattack(r) and clean(W) == {},
+          "%s B in the grid reaches Bags in the fight (no pass in the lockdown) and asks Home (doc.fightHome who=bags), nothing written" % tag,
+          (d.get('fightHome'), holder(W), r['clicks']))
+    if out:                                                              # show(HOME): BagsView.touchedOut, by the door or bmvq 30
+        ok, log = tap(W, {'row': out[0], 'col': out[1]})
+        check(holder(W) == 'bags' and clean(W) == {}, "%s Home's touchedOut in the fight: still held till the LEAVE, clean" % tag,
+              (log, holder(W), clean(W)))
+    ok, log = tap(W, idoc(W).get('fightLeave'))
+    W.execute('advance(0.5)')
+    d = idoc(W)
+    check(holder(W) is None and modes(W) == [None] * 8 and d.get('fightMode') == 'game',
+          "%s Home's LEAVE gives the fight back (fightMode game)" % tag, (log, holder(W), d.get('fightMode')))
+    if how.endswith('before the pull'):
+        check(not bagwin_shown(W), "%s ... and the game's bag window is closed (its own close button, aimed before the pull)" % tag, log)
+    else:
+        # a bag window opened IN the fight has no pre-aimed close (combat_nav 5c aims seven windows' leaves; attributes cannot change in the
+        # lockdown): it is hidden by alpha off the top screen for the rest of the fight (5a), never closed from our code
+        check(bagwin_shown(W) and bagwin_alpha(W) == 0, "%s ... the bag window opened in the fight is hidden by alpha (5a), not closed" % tag,
+              (bagwin_shown(W), bagwin_alpha(W)))
+    r = press(W, "PAD2")
+    check(stopattack(r), "%s then the next B on Home works: the fight's own stop attack" % tag, r['acts'])
+    check(clean(W) == {}, "%s #VIOL == 0, no spied call, no handle / snippet error" % tag, clean(W))
+    fight_end(W)
+    W.execute('advance(2)')
+    check(holder(W) is None and bags_note(W) == 'left-B' and not idoc(W).get('fightHome') and clean(W) == {},
+          "%s the fight's end: Bags does not take the pad back (left with B), no fightHome left, clean" % tag, (holder(W), bags_note(W)))
+
+# ---------------------------------------------------------------- B-HOME, THE BAGS ROOM WITH THE GAME'S BIND QUESTION UP AT THE PULL (the review of
+# 2026-11-12: "B while the game's bind question is up is dropped" in a fight). A bag that binds when worn, equipped before the pull: Bags is
+# in "bindask" (A / B passed to the game's own question). In the fight the question is the app's box (Dialogs mirrors it) and A / B are the
+# DialogView's (Interact's sink lets them by, WC.dialogs.mirrored; DialogView.fightPress taps the button's own cell): B = Cancel, the
+# question goes, Bags steps back to its grid (a sub-screen step, the "B in sub-screens" ruling); the next B goes Home
+BINDASK_PRE = r"""
+BAGID = 4496
+C_Container.GetContainerItemID = function(b, s) if b == 0 and s == 1 then return BAGID end end
+C_Container.GetContainerItemInfo = function(b, s) if b == 0 and s == 1 then return { itemID = BAGID, stackCount = 1, quality = 1, iconFileID = 1 } end end
+C_Container.ContainerIDToInventoryID = function(b) if b >= 1 and b <= 4 then return 30 + b end end
+C_Container.GetContainerNumFreeSlots = function() return 0 end
+C_Item = {}
+C_Item.GetItemInfoInstant = function(id) if id == BAGID then return id, "Bag", "Container", "INVTYPE_BAG", 1, 1, 0 end end
+function GetInventoryItemID() return nil end
+function CursorHasItem() return false end
+function PutItemInBag(inv)
+    ACTIONS[#ACTIONS + 1] = { kind = "putbag", inv = inv }
+    StaticPopup1.which = "EQUIP_BIND"; StaticPopup1:Show(); WowCompanion.dialogs.look()
+end
+POPB = {}
+for k = 1, 2 do
+    local b = CreateFrame("Button", "StaticPopup1Button" .. k, StaticPopup1)
+    b._text = (k == 1) and "Okay" or "Cancel"
+    b.GetText = function(self) return self._text end
+    b.IsEnabled = function() return true end
+    b:RegisterForClicks("AnyDown", "AnyUp")
+    b:SetScript("OnClick", function() ACTIONS[#ACTIONS + 1] = { kind = "popup", k = k }; StaticPopup1:Hide() end)
+    POPB[k] = b
+end
+StaticPopup1.GetButton = function(self, k) return POPB[k] end
+"""
+tag = 'B-HOME[BAGS bind question, before the pull]'
+W = room_world()
+W.execute(BINDASK_PRE)
+rtap(W, "bmvq", 29)
+press(W, "PAD3")                                   # X on the bag: into the hand, the bag bar
+press(W, "PAD1")                                   # A: into bag slot 1 - the game asks "bind it to you?"
+W.execute('advance(0.5)')
+check((last(W, 'bagsctl').get('ctl') or {}).get('mode') == 'bindask' and holder(W) == 'bags',
+      "%s the game's bind question is up, Bags in bindask, held" % tag, last(W, 'bagsctl').get('ctl'))
+pull(W)
+W.execute('WowCompanion.dialogs.look(); advance(0.5)')
+dl = (docs(W, 0, 'dialogs')[-1].get('list') or [{}])[0]
+check(W.eval('WowCompanion.dialogs.mirrored()') == 1 and dl.get('which') == 'EQUIP_BIND' and 'b2' in (dl.get('cells') or {}),
+      "%s in the fight the question is the app's box (mirrored, its Cancel has a cell)" % tag, dl)
+r = press(W, "PAD2")
+check((last(W, 'bagsctl').get('ctl') or {}).get('mode') == 'bindask' and not idoc(W).get('fightHome') and holder(W) == 'bags',
+      "%s B is the box's (Interact's sink lets it by): nothing of Bags' acts on it" % tag, (r['clicks'], idoc(W).get('fightHome')))
+ok, log = tap(W, {'row': 'idlg', 'col': dl['cells']['b2']})          # DialogView.fightPress: B = button 2's cell
+W.execute('advance(1.5)')
+check(ok and 'StaticPopup1Button2+' in log and not W.eval('StaticPopup1._shown'),
+      "%s ... the box's B = a secure click of the game's own Cancel: the question goes" % tag, log)
+c = last(W, 'bagsctl').get('ctl') or {}
+check(c.get('mode') == 'grid' and c.get('note') == 'equip-cancelled' and holder(W) == 'bags' and not idoc(W).get('fightHome'),
+      "%s ... Bags steps back to its grid (one level), still holds, no Home ask" % tag, (c.get('mode'), c.get('note'), holder(W)))
+r = press(W, "PAD2")
+d = idoc(W)
+check((d.get('fightHome') or {}).get('who') == 'bags' and holder(W) == 'bags' and not stopattack(r),
+      "%s the next B at the grid's top level asks Home (doc.fightHome who=bags)" % tag, (d.get('fightHome'), holder(W)))
+tap(W, d.get('fightLeave'))
+r = press(W, "PAD2")
+check(holder(W) is None and idoc(W).get('fightMode') == 'game' and stopattack(r) and clean(W) == {},
+      "%s Home's LEAVE gives the fight back; the next B is the stop attack; #VIOL == 0" % tag, (holder(W), clean(W)))
+
 print('%s (%d pass, %d xfail, %d fail, %d xpass)' % ('ALL PASS' if fails == 0 and xpasses == 0 else 'FAILED', passes, xfails, fails, xpasses))
 sys.exit(1 if (fails or xpasses) else 0)

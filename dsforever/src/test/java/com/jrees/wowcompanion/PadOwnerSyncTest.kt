@@ -123,4 +123,70 @@ class PadOwnerSyncTest {
         s.note(doc("room", holder = "npc").put("fightBack", 1))
         assertEquals("idlg" to 24, s.backAsked())
     }
+
+    // ---------------------------------------------------------------- B -> HOME FROM EVERY ROOM IN A FIGHT (the user, 2026-11-12: "ALL ROOMS
+    // SHOULD ALWAYS GO HOME WITH B EVEN IN COMBAT"; 1429: B in the Bags room did nothing after the pull). Interact i151's doc.fightHome
+
+    /** every room on the bottom screen and the capture id that holds the pad for it (HomeBack.idsOf, the inverse of roomsOf) */
+    private val rooms = Room.values().filter { it != Room.HOME }
+
+    @Test fun everyRoomHasACaptureIdTheAskCanName() {
+        for (r in rooms) assertTrue("${r.name} has a capture id", HomeBack.idsOf(r.name).isNotEmpty())
+    }
+
+    /** the MATRIX: every room x {opened out of combat, then the pull} x {opened in a fight}: sub-screen B steps (no ask), the top level's
+     *  B asks Home, Home taps the LEAVE once, the mode goes "game" and the next press on Home needs nothing of ours */
+    @Test fun theMatrixEveryRoomBothWaysIn() {
+        for (r in rooms) for (who in HomeBack.idsOf(r.name)) for (inFight in listOf(false, true)) {
+            val tag = "${r.name}/$who/${if (inFight) "opened in a fight" else "opened before the pull"}"
+            val s = PadOwnerSync()
+            if (inFight) {
+                s.note(doc("game"))                                                       // the room shown in the fight: ENTER
+                assertEquals(tag, PadOwnerSync.Act.ENTER, s.step(true, 0).act)
+            }
+            s.note(doc("room", holder = who))                                            // held (the pull kept it, or the ENTER landed)
+            assertEquals(tag, PadOwnerSync.Act.NONE, s.step(true, 1000).act)
+            assertNull(tag, s.homeAsked())
+            // B inside a sub-screen: the room's own code steps back (no ask): the room still shows and keeps the pad
+            s.note(doc("room", holder = who))
+            assertNull(tag, s.homeAsked())
+            assertEquals(tag, PadOwnerSync.Act.NONE, s.step(true, 1100).act)
+            // B at the top level: the ask
+            s.note(doc("room", holder = who).put("fightHome", JSONObject().put("n", 1).put("who", who)))
+            val asked = s.homeAsked()
+            assertEquals(tag, who, asked)
+            assertTrue(tag, PadOwnerSync.fightHomeGoes(asked!!, r.name))
+            assertNull("$tag: once per ask", s.homeAsked())
+            // Home: nothing wants the pad -> ONE LEAVE, then the game's
+            assertEquals(tag, PadOwnerSync.Step(PadOwnerSync.Act.LEAVE, "idlg" to 24), s.step(false, 1200))
+            assertEquals(tag, PadOwnerSync.Act.NONE, s.step(false, 1300).act)
+            s.note(doc("game").put("fightHome", JSONObject().put("n", 1).put("who", who)))
+            assertNull(tag, s.homeAsked())
+            assertEquals("$tag: the next press on Home is the game's", PadOwnerSync.Act.NONE, s.step(false, 2000).act)
+            assertFalse(tag, PadOwnerSync.fightHomeGoes(who, "HOME"))
+        }
+    }
+
+    @Test fun aLateAskOfARoomLeftBehindNeverPullsTheNewRoomHome() {
+        assertFalse(PadOwnerSync.fightHomeGoes("bags", "CHARACTER"))
+        assertFalse(PadOwnerSync.fightHomeGoes("pad:social", "BAGS"))
+        assertFalse(PadOwnerSync.fightHomeGoes("pad:radial", "BAGS"))                   // a wheel closes itself
+        assertFalse(PadOwnerSync.fightHomeGoes("pad:bar", "BAGS"))
+        assertFalse(PadOwnerSync.fightHomeGoes("app", "BAGS"))
+        assertTrue(PadOwnerSync.fightHomeGoes("spells", "TALENTS"))
+        assertTrue(PadOwnerSync.fightHomeGoes("spells", "CONTROLLER"))
+    }
+
+    @Test fun theAskOutOfAFightOrReplayedIsNothingAndTheCountStartsAgain() {
+        val s = PadOwnerSync()
+        s.note(doc(null).put("fightHome", JSONObject().put("n", 1).put("who", "bags")))
+        assertNull(s.homeAsked())                                                        // out of a fight: the capture's own release
+        s.note(doc("room", holder = "bags").put("fightHome", JSONObject().put("n", 1).put("who", "bags")), current = false)
+        assertNull(s.homeAsked())                                                        // a replayed document says nothing about now
+        s.note(doc("room", holder = "bags").put("fightHome", JSONObject().put("n", 1).put("who", "bags")))
+        assertEquals("bags", s.homeAsked())
+        s.note(doc(null))                                                                // the fight ends
+        s.note(doc("room", holder = "bags").put("fightHome", JSONObject().put("n", 1).put("who", "bags")))
+        assertEquals("bags", s.homeAsked())                                              // the next fight's first ask
+    }
 }
