@@ -929,5 +929,162 @@ for rname, who, opener, sub, appdoc in ROOMS:
         fight_end(W)
         check(not idoc(W).get('fightHome') and clean(W) == {}, "%s the fight's end: no fightHome left, still clean" % tag, idoc(W).get('fightHome'))
 
+
+# ---------------------------------------------------------------- B-HOME, THE BAGS ROOM THROUGH THE GAME'S OWN BAG WINDOW (the review of 2026-11-12 on
+# fix/b-home: the 1429 log's Bags was opened by the backpack's door, "quiet pad: bag0:39" - the game's ContainerFrameCombinedBags open, B
+# PASSED to the game in the grid (Bags' syncPass), the fight's leave = a click of the window's own close button). The user, 2026-11-12: "ALL
+# ROOMS SHOULD ALWAYS GO HOME WITH B EVEN IN COMBAT". Rows: opened by the door before the pull (the app's touchedOut on Home by either route:
+# the close door bag0 38 or bmvq 30), opened by the game's own bag key in a fight, no fight
+BAGWIN_PRE = r"""
+mkwin("ContainerFrameCombinedBags", false)
+local bp = CreateFrame("Button", "MainMenuBarBackpackButton", UIParent)
+bp:RegisterForClicks("AnyDown", "AnyUp")
+bp:SetScript("OnClick", function(_, _, down)        -- the game's ToggleBag(0), once per click
+    if down == false then return end
+    ACTIONS[#ACTIONS + 1] = { kind = "togglebag" }
+    if ContainerFrameCombinedBags._shown then ContainerFrameCombinedBags:Hide() else ContainerFrameCombinedBags:Show() end
+end)
+"""
+
+
+def bagwin_world():
+    L, errs = boot_world(files=ROOM_FILES, pre=GAME_PRE + 'WowCompanion.partyOk = true\n' + BAG_PRE + BAGWIN_PRE, login=ROOM_LOGIN)
+    L.execute('LOADERRS = {}')
+    for e in errs:
+        L.eval('function(s) LOADERRS[#LOADERRS + 1] = s end')(e)
+    L.execute('__IN.ACT.trust(); advance(1); __IN.N.setMode(true); advance(1)')
+    return L
+
+
+def bagwin_shown(L):
+    return L.eval('ContainerFrameCombinedBags._shown') is True
+
+
+def bagwin_alpha(L):
+    return L.eval('ContainerFrameCombinedBags:GetAlpha()')
+
+
+for how, out in (('door, before the pull', ('bag0', 38)), ('door, before the pull', ('bmvq', 30)), ('bag key, in a fight', None),
+                 ('door, no fight', None)):
+    tag = 'B-HOME[BAGS window, %s%s]' % (how, (', Home taps %s %d' % out) if out else '')
+    W = bagwin_world()
+    if how.endswith('in a fight'):
+        pull(W)
+        W.execute('ContainerFrameCombinedBags:Show(); advance(0.4)')      # the game's own bag key, in the fight: the window's take
+        if holder(W) != 'bags':
+            tap(W, idoc(W).get('enter'))
+    else:
+        ok, log = tap(W, {'row': 'bag0', 'col': 39})                       # the backpack's open door (the 1429 log's bag0:39)
+        check(ok and 'MainMenuBarBackpackButton+' in log, "%s the open door is a secure click of the game's backpack button" % tag, log)
+    c = last(W, 'bagsctl').get('ctl') or {}
+    spec_leave = W.eval('__IN.G.spec and __IN.G.spec.leave')
+    check(holder(W) == 'bags' and c.get('open') is True and bagwin_shown(W) and spec_leave == 'ContainerFrameCombinedBagsCloseButton',
+          "%s Bags holds with the game's bag window open (its leave = the window's own close button)" % tag,
+          (holder(W), c.get('open'), bagwin_shown(W), spec_leave))
+    if not how.endswith('in a fight'):
+        check(W.eval('__IN.G.spec.pass and __IN.G.spec.pass.PAD2') is True and not W.eval('BIND.PAD2'),
+              "%s out of combat, B in the grid is PASSED to the game (Bags' syncPass)" % tag, W.eval('BIND.PAD2'))
+    if how.endswith('no fight'):
+        press(W, "PAD2")
+        W.execute('ContainerFrameCombinedBags:Hide(); advance(0.4)')        # the game's own B closed its bags (the stub's game has no B)
+        check(holder(W) is None and bags_note(W) == 'left-B' and not idoc(W).get('fightHome') and clean(W) == {},
+              "%s B is the game's: its bags close, Bags lets go with B (Home), no fightHome, clean" % tag, (holder(W), bags_note(W)))
+        continue
+    if how.endswith('before the pull'):
+        pull(W)
+    check(holder(W) == 'bags' and modes(W) == ['room'] * 8, "%s held through the fight in room mode" % tag, (holder(W), modes(W)[:2]))
+    r = press(W, "PAD2")
+    d = idoc(W)
+    check((d.get('fightHome') or {}).get('who') == 'bags' and holder(W) == 'bags' and not stopattack(r) and clean(W) == {},
+          "%s B in the grid reaches Bags in the fight (no pass in the lockdown) and asks Home (doc.fightHome who=bags), nothing written" % tag,
+          (d.get('fightHome'), holder(W), r['clicks']))
+    if out:                                                              # show(HOME): BagsView.touchedOut, by the door or bmvq 30
+        ok, log = tap(W, {'row': out[0], 'col': out[1]})
+        check(holder(W) == 'bags' and clean(W) == {}, "%s Home's touchedOut in the fight: still held till the LEAVE, clean" % tag,
+              (log, holder(W), clean(W)))
+    ok, log = tap(W, idoc(W).get('fightLeave'))
+    W.execute('advance(0.5)')
+    d = idoc(W)
+    check(holder(W) is None and modes(W) == [None] * 8 and d.get('fightMode') == 'game',
+          "%s Home's LEAVE gives the fight back (fightMode game)" % tag, (log, holder(W), d.get('fightMode')))
+    if how.endswith('before the pull'):
+        check(not bagwin_shown(W), "%s ... and the game's bag window is closed (its own close button, aimed before the pull)" % tag, log)
+    else:
+        # a bag window opened IN the fight has no pre-aimed close (combat_nav 5c aims seven windows' leaves; attributes cannot change in the
+        # lockdown): it is hidden by alpha off the top screen for the rest of the fight (5a), never closed from our code
+        check(bagwin_shown(W) and bagwin_alpha(W) == 0, "%s ... the bag window opened in the fight is hidden by alpha (5a), not closed" % tag,
+              (bagwin_shown(W), bagwin_alpha(W)))
+    r = press(W, "PAD2")
+    check(stopattack(r), "%s then the next B on Home works: the fight's own stop attack" % tag, r['acts'])
+    check(clean(W) == {}, "%s #VIOL == 0, no spied call, no handle / snippet error" % tag, clean(W))
+    fight_end(W)
+    W.execute('advance(2)')
+    check(holder(W) is None and bags_note(W) == 'left-B' and not idoc(W).get('fightHome') and clean(W) == {},
+          "%s the fight's end: Bags does not take the pad back (left with B), no fightHome left, clean" % tag, (holder(W), bags_note(W)))
+
+# ---------------------------------------------------------------- B-HOME, THE BAGS ROOM WITH THE GAME'S BIND QUESTION UP AT THE PULL (the review of
+# 2026-11-12: "B while the game's bind question is up is dropped" in a fight). A bag that binds when worn, equipped before the pull: Bags is
+# in "bindask" (A / B passed to the game's own question). In the fight the question is the app's box (Dialogs mirrors it) and A / B are the
+# DialogView's (Interact's sink lets them by, WC.dialogs.mirrored; DialogView.fightPress taps the button's own cell): B = Cancel, the
+# question goes, Bags steps back to its grid (a sub-screen step, the "B in sub-screens" ruling); the next B goes Home
+BINDASK_PRE = r"""
+BAGID = 4496
+C_Container.GetContainerItemID = function(b, s) if b == 0 and s == 1 then return BAGID end end
+C_Container.GetContainerItemInfo = function(b, s) if b == 0 and s == 1 then return { itemID = BAGID, stackCount = 1, quality = 1, iconFileID = 1 } end end
+C_Container.ContainerIDToInventoryID = function(b) if b >= 1 and b <= 4 then return 30 + b end end
+C_Container.GetContainerNumFreeSlots = function() return 0 end
+C_Item = {}
+C_Item.GetItemInfoInstant = function(id) if id == BAGID then return id, "Bag", "Container", "INVTYPE_BAG", 1, 1, 0 end end
+function GetInventoryItemID() return nil end
+function CursorHasItem() return false end
+function PutItemInBag(inv)
+    ACTIONS[#ACTIONS + 1] = { kind = "putbag", inv = inv }
+    StaticPopup1.which = "EQUIP_BIND"; StaticPopup1:Show(); WowCompanion.dialogs.look()
+end
+POPB = {}
+for k = 1, 2 do
+    local b = CreateFrame("Button", "StaticPopup1Button" .. k, StaticPopup1)
+    b._text = (k == 1) and "Okay" or "Cancel"
+    b.GetText = function(self) return self._text end
+    b.IsEnabled = function() return true end
+    b:RegisterForClicks("AnyDown", "AnyUp")
+    b:SetScript("OnClick", function() ACTIONS[#ACTIONS + 1] = { kind = "popup", k = k }; StaticPopup1:Hide() end)
+    POPB[k] = b
+end
+StaticPopup1.GetButton = function(self, k) return POPB[k] end
+"""
+tag = 'B-HOME[BAGS bind question, before the pull]'
+W = room_world()
+W.execute(BINDASK_PRE)
+rtap(W, "bmvq", 29)
+press(W, "PAD3")                                   # X on the bag: into the hand, the bag bar
+press(W, "PAD1")                                   # A: into bag slot 1 - the game asks "bind it to you?"
+W.execute('advance(0.5)')
+check((last(W, 'bagsctl').get('ctl') or {}).get('mode') == 'bindask' and holder(W) == 'bags',
+      "%s the game's bind question is up, Bags in bindask, held" % tag, last(W, 'bagsctl').get('ctl'))
+pull(W)
+W.execute('WowCompanion.dialogs.look(); advance(0.5)')
+dl = (docs(W, 0, 'dialogs')[-1].get('list') or [{}])[0]
+check(W.eval('WowCompanion.dialogs.mirrored()') == 1 and dl.get('which') == 'EQUIP_BIND' and 'b2' in (dl.get('cells') or {}),
+      "%s in the fight the question is the app's box (mirrored, its Cancel has a cell)" % tag, dl)
+r = press(W, "PAD2")
+check((last(W, 'bagsctl').get('ctl') or {}).get('mode') == 'bindask' and not idoc(W).get('fightHome') and holder(W) == 'bags',
+      "%s B is the box's (Interact's sink lets it by): nothing of Bags' acts on it" % tag, (r['clicks'], idoc(W).get('fightHome')))
+ok, log = tap(W, {'row': 'idlg', 'col': dl['cells']['b2']})          # DialogView.fightPress: B = button 2's cell
+W.execute('advance(1.5)')
+check(ok and 'StaticPopup1Button2+' in log and not W.eval('StaticPopup1._shown'),
+      "%s ... the box's B = a secure click of the game's own Cancel: the question goes" % tag, log)
+c = last(W, 'bagsctl').get('ctl') or {}
+check(c.get('mode') == 'grid' and c.get('note') == 'equip-cancelled' and holder(W) == 'bags' and not idoc(W).get('fightHome'),
+      "%s ... Bags steps back to its grid (one level), still holds, no Home ask" % tag, (c.get('mode'), c.get('note'), holder(W)))
+r = press(W, "PAD2")
+d = idoc(W)
+check((d.get('fightHome') or {}).get('who') == 'bags' and holder(W) == 'bags' and not stopattack(r),
+      "%s the next B at the grid's top level asks Home (doc.fightHome who=bags)" % tag, (d.get('fightHome'), holder(W)))
+tap(W, d.get('fightLeave'))
+r = press(W, "PAD2")
+check(holder(W) is None and idoc(W).get('fightMode') == 'game' and stopattack(r) and clean(W) == {},
+      "%s Home's LEAVE gives the fight back; the next B is the stop attack; #VIOL == 0" % tag, (holder(W), clean(W)))
+
 print('%s (%d pass, %d xfail, %d fail, %d xpass)' % ('ALL PASS' if fails == 0 and xpasses == 0 else 'FAILED', passes, xfails, fails, xpasses))
 sys.exit(1 if (fails or xpasses) else 0)
