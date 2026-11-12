@@ -182,18 +182,27 @@ object InputSink {
         return null
     }
 
-    /** types [text] as keys (false = a character that has no key here; nothing of the rest is sent then) */
+    /**
+     * types [text] as keys (false = a character that has no key here; nothing of the rest is sent then). A SHIFTED character (issues
+     * #160 / #180: the sign-in keyboard's '@') gets the same shape as the launcher's top-screen keyboard since 1.0.25 (IMEInputReceiver,
+     * 449c5d62): Shift down [SHIFT_LEAD_MS] before the key, the key held [KEY_HOLD_MS], Shift up [SHIFT_LEAD_MS] after it, so no frame
+     * of the game can see the key without Shift. Plain characters are unchanged.
+     */
     fun typeText(text: String): Boolean {
         val s = sink ?: return false
         val keys = text.map { charKey(it) ?: return false }
         for ((k, shift) in keys) {
-            if (shift) s.key(SHIFT_L, true)
-            s.key(k, true); s.key(k, false)
-            if (shift) s.key(SHIFT_L, false)
+            if (shift) {
+                s.key(SHIFT_L, true); Thread.sleep(SHIFT_LEAD_MS)
+                s.key(k, true); Thread.sleep(KEY_HOLD_MS); s.key(k, false)
+                Thread.sleep(SHIFT_LEAD_MS); s.key(SHIFT_L, false)
+            } else { s.key(k, true); s.key(k, false) }
             Thread.sleep(CHAR_GAP_MS)
         }
         return true
     }
+    private const val SHIFT_LEAD_MS = 20L
+    private const val KEY_HOLD_MS = 35L
 
     private fun keyTap(code: Int) { val s = sink ?: return; s.key(code, true); Thread.sleep(KEY_GAP_MS); s.key(code, false) }
     private fun click(at: Pair<Float, Float>) { sink?.tap(at.first, at.second) }

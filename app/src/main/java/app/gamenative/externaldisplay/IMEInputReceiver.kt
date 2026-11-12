@@ -92,7 +92,8 @@ class IMEInputReceiver(
         
         return object : BaseInputConnection(this, false) {
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                Timber.d("IMEInputReceiver: commitText called with: '$text'")
+                // issue #160 review: never the text itself (a debug build logged a typed password here); its length only
+                Timber.d("IMEInputReceiver: commitText called (${text?.length ?: 0} chars)")
                 text?.let(::typeText)
                 return true
             }

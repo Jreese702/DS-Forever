@@ -23,6 +23,22 @@ object GameTyping {
     /** a character the tool may type into the game's focused text box */
     fun allowed(c: Char): Boolean = c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c == ' '
 
+    /**
+     * THE SIGN-IN KEYBOARD's characters on a LOCAL game (issues #160 "the @ signs still dont work when I try to login", #180 "cant
+     * login manually since at symbol doesnt work", #174, #190): the waiting screen's Keyboard (SignInBoard) used [allowed], so an
+     * email's '@' and '.' and a password's symbols were dropped before they reached the game - a manual login could never be typed.
+     * The sign-in may type a login (the user's ruling: typing allowed for sign-in only): every printable US-ASCII character, each one
+     * key with at most Shift (InputSink.charKey) - never Alt, Ctrl, an F-key, Escape, Tab, Enter or any other system key.
+     */
+    fun signInAllowed(c: Char): Boolean = c.code in 32..126
+
+    /** the sign-in keyboard sends [c]: the stream's Battle.net takes any character, a local game its printable ASCII ([signInAllowed]) */
+    fun signInSends(c: Char, toPc: Boolean): Boolean = toPc || signInAllowed(c)
+
+    /** the report's line as the sign-in keyboard closes: whether a Shift key went out, how many characters were not sent (no count of keys) */
+    fun boardClosedLine(shifted: Boolean, dropped: Int): String =
+        "sign-in: keyboard (bottom) closed, shifted keys ${if (shifted) "sent" else "none"}, not sent $dropped"
+
     /** what the keyboard's text change means for the game: [back] Backspaces, then [type] typed (only allowed characters) */
     data class Ops(val back: Int, val type: String)
 

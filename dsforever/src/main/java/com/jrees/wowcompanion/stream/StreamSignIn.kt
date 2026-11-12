@@ -124,9 +124,14 @@ class SignInBoard(c: Context, private val onClose: () -> Unit) : FrameLayout(c) 
         sendWord = "Enter"; swapWord = "Tab"; fillHeight = BOARD_H
         text = { HELD }
         onText = { new ->
-            // a local game: only what the key-safety ruling allows (GameTyping); the stream's Battle.net takes any character
+            // issues #160 / #180 / #174 / #190: a local game took only letters, digits and space here (GameTyping.allowed), so an
+            // email's '@' and '.' never reached it. Now a local game takes printable ASCII (GameTyping.signInSends); the stream any character
             if (new.length < HELD.length) { InputSink.signInBack(); count = (count - 1).coerceAtLeast(0) }
-            else if (toPc() || GameTyping.allowed(new.last())) { InputSink.signInChar(new.last()); count++ }
+            else {
+                val ch = new.last()
+                if (GameTyping.signInSends(ch, toPc())) { InputSink.signInChar(ch); count++; if (InputSink.charKey(ch)?.second == true) shifted = true }
+                else dropped++
+            }
             dots.invalidate()
         }
         onSend = { InputSink.gameEnter(); clear() }
@@ -153,7 +158,20 @@ class SignInBoard(c: Context, private val onClose: () -> Unit) : FrameLayout(c) 
         head.invalidate()
     }
 
-    override fun onDetachedFromWindow() { InputSink.gamePointer(false); super.onDetachedFromWindow() }
+    /** for the problem report (issue #189 "cant log in": nothing said whether this keyboard was used): never a typed character */
+    private var shifted = false
+    private var dropped = 0
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        com.jrees.wowcompanion.NativeLogin.logEvent("sign-in: keyboard (bottom) opened, ${if (toPc()) "stream" else "local game"}")
+    }
+
+    override fun onDetachedFromWindow() {
+        InputSink.gamePointer(false)
+        com.jrees.wowcompanion.NativeLogin.logEvent(GameTyping.boardClosedLine(shifted, dropped))
+        super.onDetachedFromWindow()
+    }
 
     /** Tab goes only to the stream, never a local game (the key-safety ruling) */
     private fun toPc() = (InputSink.sink as? TapSink)?.route == "stream"
