@@ -146,12 +146,13 @@ object ThemePresets {
         text = c(0xFFCDD2D9), textDim = c(0xFFA3A9B2), dim = c(0xFF878D96), warn = c(0xFFE0A860),
         focus = c(0xFFF2F5FA), soft = c(0xFFC8D0DC), btnLabel = c(0xFFFFFFFF), groundLight = 0f, groundSat = 1f, metal = SILVER)
 
-    // the user's "pink and silver": silver metal, a pink accent
+    // the user's "pink and silver": a pink accent; its borders Dark Rose's (the user, 2026-11-12: "the OLED rose should have the same
+    // home border colors as dark rose", "its that second color pallet"): Dark Rose's edge, edgeDim and rose metal
     val OLED_ROSE = ThemeSpec("oled_rose", "OLED Rose",
         ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF110C0F), selected = c(0xFF331A28),
-        accent = c(0xFFFF8CC6), edge = c(0xFFC3C8D0), edgeDim = c(0xFF444850),
+        accent = c(0xFFFF8CC6), edge = c(0xFFD9A3BE), edgeDim = c(0xFF55334A),
         text = c(0xFFF0E6EB), textDim = c(0xFFC4B5BD), dim = c(0xFF9C8C95), warn = c(0xFFE0A860),
-        focus = c(0xFFFF8CC6), soft = c(0xFFF0A0C8), btnLabel = c(0xFFFFE3F1), groundLight = 0f, groundSat = 1f, metal = SILVER)
+        focus = c(0xFFFF8CC6), soft = c(0xFFF0A0C8), btnLabel = c(0xFFFFE3F1), groundLight = 0f, groundSat = 1f, metal = ROSE)
 
     val OLED_ROSE_GOLD = ThemeSpec("oled_rose_gold", "OLED Rose Gold",
         ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF120D0B), selected = c(0xFF331F19),

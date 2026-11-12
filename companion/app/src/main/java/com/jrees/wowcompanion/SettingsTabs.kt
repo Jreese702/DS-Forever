@@ -30,6 +30,9 @@ object SettingsTabs {
 
     /** the order within a tab is this enum's order */
     enum class Block(val tab: Tab, val heading: String, val rows: List<String>) {
+        // 2026-11-12 (the user: "I personally want an oled theme, but different color variations for menus like pink and silver or
+        // gold instead of the classic bronze"): the theme picker; the TOP OF HOME (the user, 2026-11-12: "Themes should be the top of home")
+        THEME(Tab.HOME, "Theme", listOf("Theme")),
         HOME_SECTION(Tab.HOME, "Home", listOf("Controller on Home", "Combat layout", "Swing timer",
             // "Stance bar", "Pet bar": hidden for now (test40, the user: "hide the settings that don't do anything for now")
             "Focused quest", "Start the attack when a spell is cast", "DS WoW toolbar")),
@@ -63,9 +66,6 @@ object SettingsTabs {
         FRAMES(Tab.PERFORMANCE, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game")),
         INDOOR(Tab.PERFORMANCE, "Indoor maps", listOf("Build in the background", "Progress", "Route data")),
-        // 2026-11-12 (the user: "I personally want an oled theme, but different color variations for menus like pink and silver or
-        // gold instead of the classic bronze"): the theme picker, first on System
-        THEME(Tab.SYSTEM, "Theme", listOf("Theme")),
         // 2026-11-07 (the user: Spanish and French, "Start screen + login first", the Thor's language or an override here)
         LANGUAGE(Tab.SYSTEM, "Language", listOf("Language")),
         GAME(Tab.SYSTEM, "Game", listOf("Reload game UI", "Battle.net login", "Problem report")),

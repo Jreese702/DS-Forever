@@ -103,18 +103,18 @@ class SettingsTabsTest {
 
     @Test fun theUsersPicks() {
         assertEquals(T.PERFORMANCE, B.INDOOR.tab)                       // indoor maps: "Performance (Recommended)"
-        assertEquals(listOf(B.HOME_SECTION, B.MAP, B.CHAT), SettingsTabs.blocks(T.HOME))   // Home's rows, then its modules' (test40)
+        assertEquals(listOf(B.THEME, B.HOME_SECTION, B.MAP, B.CHAT), SettingsTabs.blocks(T.HOME))   // 2026-11-12: Theme first ("the top of home")   // Home's rows, then its modules' (test40)
         assertEquals("Home module settings", SettingsTabs.HOME_MODULES)
         assertEquals(listOf(B.FRAMES, B.INDOOR), SettingsTabs.blocks(T.PERFORMANCE))
-        assertEquals(listOf(B.THEME, B.LANGUAGE, B.GAME, B.LIGHTER, B.STREAMING, B.COMPANION), SettingsTabs.blocks(T.SYSTEM))   // 2026-11-12: Theme first, then Language
+        assertEquals(listOf(B.LANGUAGE, B.GAME, B.LIGHTER, B.STREAMING, B.COMPANION), SettingsTabs.blocks(T.SYSTEM))   // Theme moved to Home   // 2026-11-12: Theme first, then Language
         assertTrue("Cast bar" in B.GAME_UI.rows && B.GAME_UI.tab == T.TOP)   // the HUD-mode split: the cast bar back on Top screen
         assertTrue("Frame limit" in B.FRAMES.rows)
     }
 
     @Test fun settingsViewDrawsItsOwnBlocksOnly() {
-        assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.HOME))   // under Home's section (HomeSettingsSection)
+        assertEquals(listOf(B.THEME, B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.HOME))   // Theme: drawn by the room's own Theme view, above   // under Home's section (HomeSettingsSection)
         assertTrue(SettingsTabs.viewBlocks(T.TOP).isEmpty())           // the game's elements
-        assertEquals(listOf(B.THEME, B.LANGUAGE, B.GAME, B.LIGHTER, B.STREAMING), SettingsTabs.viewBlocks(T.SYSTEM))   // + the companion's status (GameUiSection)
+        assertEquals(listOf(B.LANGUAGE, B.GAME, B.LIGHTER, B.STREAMING), SettingsTabs.viewBlocks(T.SYSTEM))   // + the companion's status (GameUiSection)
         assertEquals(listOf(B.CONTROLLER, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT),
             SettingsTabs.viewBlocks(T.CONTROLLER))
     }

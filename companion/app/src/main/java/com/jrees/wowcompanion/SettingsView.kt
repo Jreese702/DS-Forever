@@ -30,6 +30,15 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** the tab shown (the room sets it) */
     var tab: SettingsTabs.Tab = SettingsTabs.Tab.HOME
         set(v) { if (field != v) { field = v; requestLayout(); invalidate() } }
+    /** 2026-11-12 (the user: "Themes should be the top of home"): the room's second view draws ONLY these blocks (Theme, above Home's
+     *  own rows); the main view leaves them out ([skip]) */
+    var only: Set<SettingsTabs.Block>? = null
+    var skip: Set<SettingsTabs.Block> = emptySet()
+    private fun blocksHere(): List<SettingsTabs.Block> = SettingsTabs.viewBlocks(tab).filter { (only?.contains(it) ?: true) && it !in skip }
+    /** on Home, the modules' blocks stand under one heading of their own (not the Theme view) */
+    private fun modulesHere(): Boolean = tab == SettingsTabs.Tab.HOME && only == null && blocksHere().isNotEmpty()
+    /** this view has something to draw on [t] */
+    fun hasBlocks(t: SettingsTabs.Tab): Boolean = SettingsTabs.viewBlocks(t).any { (only?.contains(it) ?: true) && it !in skip }
 
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
@@ -261,9 +270,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     }
 
     private fun layoutHeight(): Float {
-        val blocks = SettingsTabs.viewBlocks(tab)
+        val blocks = blocksHere()
         if (blocks.isEmpty()) return 0f
-        return TOP_PAD + (if (tab == SettingsTabs.Tab.HOME) MODULES_HEAD else 0f) + blocks.sumOf { blockHeight(it).toDouble() }.toFloat() + SECTION_GAP * (blocks.size - 1) + BOTTOM_PAD
+        return TOP_PAD + (if (modulesHere()) MODULES_HEAD else 0f) + blocks.sumOf { blockHeight(it).toDouble() }.toFloat() + SECTION_GAP * (blocks.size - 1) + BOTTOM_PAD
     }
 
     /** hub31: the "Polestar on the top screen" row shows (Polestar installed, the add-on has the switch) - the draw and the height agree */
@@ -460,9 +469,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         clearBoxes()
         var y = TOP_PAD - scroll       // everything below is laid out in screen coordinates
         // on Home, the modules' blocks stand under one heading of their own, below Home's rows (each block then a sub-heading)
-        val modules = tab == SettingsTabs.Tab.HOME && SettingsTabs.viewBlocks(tab).isNotEmpty()
+        val modules = modulesHere()
         if (modules) { c.drawText(Tr.t(SettingsTabs.HOME_MODULES), PAD_X, y + 4f, pSection); y += MODULES_HEAD }
-        for ((i, b) in SettingsTabs.viewBlocks(tab).withIndex()) {
+        for ((i, b) in blocksHere().withIndex()) {
             if (i > 0) y += SECTION_GAP
             // the block's heading (its words are the tab data's), then its rows; each draw returns its last row's bottom
             c.drawText(Tr.t(b.heading), PAD_X, y + 4f, if (modules) pSubHead else pSection)

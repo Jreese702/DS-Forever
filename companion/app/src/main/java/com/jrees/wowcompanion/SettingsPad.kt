@@ -24,6 +24,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     /** the QOL tab's groups (HUD, Navigation, Combat): the same rows as before, drawn by their own part */
     val qolUi = GameUiSection(context, GameUiSection.Part.QOL)
     val homeSection = HomeSettingsSection(context)
+    /** 2026-11-12 (the user: "Themes should be the top of home"): the Theme picker, its own view ABOVE Home's rows */
+    val themeView = SettingsView(context) { }.apply { only = setOf(SettingsTabs.Block.THEME) }
     /** the companion's status (System); built after [gameUi] so the status line's one listener is its */
     val companion = GameUiSection(context, GameUiSection.Part.COMPANION)
     val tabBar = SettingsTabBar(context) { t -> show(t) }
@@ -40,11 +42,13 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         orientation = VERTICAL
         ThemeLive.bg(this, Tok.INK)
         SettingsTabs.init(context)
+        view.skip = setOf(SettingsTabs.Block.THEME)
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             // each part measures its own height; this scroll scrolls the tab's page
             val wrap = { LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
             // Home's own rows first: on the Home tab the modules' blocks (SettingsView's Map / Chat) come below them
+            addView(themeView, wrap())                                    // Home: the Theme picker first
             addView(homeSection, wrap())
             addView(view, wrap())
             addView(qolUi, wrap())                                        // QOL: under Smart Y (SettingsView's block)
@@ -58,6 +62,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         val body = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         pad = SettingsPad(context, scroll, listOf(
             // System's first button is "Reload game UI", the room's one destructive control: the cursor never STARTS there
+            SettingsPad.Section(themeView, { themeView.focusTargets() }),
             SettingsPad.Section(view, { view.focusTargets() }, noStart = { view.isReload(it) }),
             SettingsPad.Section(homeSection, targets = { homeSection.focusTargets() }),
             SettingsPad.Section(gameUi, targets = { gameUi.focusTargets() }),
@@ -78,7 +83,9 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         SettingsTabs.last = t
         gameUi.closeSelection(); qolUi.closeSelection()
         view.tab = t
-        view.visibility = if (SettingsTabs.viewBlocks(t).isEmpty()) View.GONE else View.VISIBLE
+        view.visibility = if (!view.hasBlocks(t)) View.GONE else View.VISIBLE
+        themeView.tab = t
+        themeView.visibility = if (themeView.hasBlocks(t)) View.VISIBLE else View.GONE
         homeSection.visibility = if (SettingsTabs.Block.HOME_SECTION.tab == t) View.VISIBLE else View.GONE
         gameUi.visibility = if (SettingsTabs.Block.GAME_UI.tab == t) View.VISIBLE else View.GONE
         qolUi.visibility = if (SettingsTabs.Block.QOL_HUD.tab == t) View.VISIBLE else View.GONE
@@ -94,7 +101,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
 
     /** the row at ([x], [y]) of section [v] (its own coordinates) shows in the panel, when it has a picture */
     private fun rowOf(v: View, x: Float, y: Float) {
-        val id = when (v) { view -> view.rowAt(x, y); homeSection -> homeSection.rowAt(x, y); else -> null }
+        val id = when (v) { view -> view.rowAt(x, y); themeView -> themeView.rowAt(x, y); homeSection -> homeSection.rowAt(x, y); else -> null }
         if (SettingsPreview.has(id)) preview.id = id
     }
 
