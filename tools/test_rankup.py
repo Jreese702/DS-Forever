@@ -17,7 +17,12 @@ touch those" (a rank Book's Bind placed BELOW the top on purpose is remembered a
   e A (padtab 38 + the spell's key, Book's route): all 6 become Rank 3 at once, the padack says 6, the deliberate Rank 1 slot / entry
     untouched; the texts cast Rank 3; a key WITHOUT the pick is Bind by touch as before (no rankup);
   f Rank 4 learned: asked again (6 copies);
-  g every lower copy deliberate: no candidate (no prompt).
+  g every lower copy deliberate: no candidate (no prompt);
+  h (review, m144) a rank learned with NO news this load (off the app, a reload): rankSync moves the In-combat entries that were not
+    picked on purpose to the top at once (no stuck old rank), the deliberate one keeps its rank;
+  i (review) a backup restore (PadTabCtl keep mode) never marks a fresh `lo`; it keeps an earlier entry's own mark for the same id;
+  j (review) a lower rank's text not loaded yet: Y's spell attribute is the exact id anyway, `lo` is still marked, the fight text is
+    rebuilt with "(Rank 1)" when SPELL_TEXT_UPDATE brings the text.
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -167,10 +172,10 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "book", "spells"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m143"' in SRC["padmap"] and 'local BV = "b51"' in SRC["book"] and 'local SV = "s8"' in SRC["spells"],
-      "the versions: PadMap m143, Book b51, Spells s8")
+check('local PV = "m144"' in SRC["padmap"] and 'local BV = "b51"' in SRC["book"] and 'local SV = "s9"' in SRC["spells"]
+      and 'local CV = "p45"' in SRC["padtabctl"], "the versions: PadMap m144, Book b51, Spells s9, PadTabCtl p45")
 QUOTE = "I know we have something in place to rank up abilities on login"
-check(all(QUOTE in SRC[k] for k in ("padmap", "book", "spells")), "each changed file's header note quotes the user")
+check(all(QUOTE in SRC[k] for k in ("padmap", "book", "spells", "padtabctl")), "each changed file's header note quotes the user")
 check('WC.rankUpList' in SRC["spells"] and 'doc.rk = rk' in SRC["spells"], "Spells s8: the feed's `rk` comes from WC.rankUpList (read only)")
 
 # ================================================================ a. the world
@@ -200,7 +205,7 @@ check(A.eval('ACTIONINFO[%d][2]' % TOPB) == 205 and A.eval('WowCompanionSpellsDB
 check(A.eval('HDR("wc-ft-%d")' % FTS) == "/cast Frostbolt(Rank 2)", "b. the fight layer casts the exact rank: /cast Frostbolt(Rank 2)",
       A.eval('HDR("wc-ft-%d")' % FTS))
 check(A.eval('HDR("wc-ft-%d")' % LOS) == "/cast Frostbolt(Rank 1)", "b. the deliberate one: /cast Frostbolt(Rank 1)", A.eval('HDR("wc-ft-%d")' % LOS))
-check(A.eval('YSPELL()') == "Frostbolt(Rank 2)", "b. Y's In-combat spell: Frostbolt(Rank 2) (the router's spell attribute)", A.eval('YSPELL()'))
+check(A.eval('YSPELL()') == 205, "b. Y's In-combat spell: the router's spell attribute is Rank 2's own id (205)", A.eval('YSPELL()'))
 
 # ================================================================ c. Rank 3 learned
 n0 = int(A.eval('#PLACED'))
@@ -210,8 +215,8 @@ check(got == [{'id': 837, 'n': 7, 'kept': 2}], "c. Rank 3 learned: 7 lower copie
       "the fight layer, Y), 2 kept on purpose", got)
 check(int(A.eval('#PLACED')) == n0 and A.eval('FT(%d).id' % FTS) == 205 and A.eval('FACE(6).id') == 205
       and A.eval('WowCompanion.spellRadial.get(3)') == 205, "c. NOTHING written before the player's A (no PlaceAction, the entries as they were)")
-check(A.eval('HDR("wc-ft-%d")' % FTS) == "/cast Frostbolt(Rank 2)" and A.eval('YSPELL()') == "Frostbolt(Rank 2)",
-      "c. SPELLS_CHANGED's rankSync no longer repoints them: still Rank 2 exactly", (A.eval('HDR("wc-ft-%d")' % FTS), A.eval('YSPELL()')))
+check(A.eval('HDR("wc-ft-%d")' % FTS) == "/cast Frostbolt(Rank 2)" and A.eval('YSPELL()') == 205,
+      "c. while Rank 3 is this load's prompt, SPELLS_CHANGED's rankSync does not repoint them: still Rank 2 exactly", (A.eval('HDR("wc-ft-%d")' % FTS), A.eval('YSPELL()')))
 check(rk(A, [205]) is None and rk(A, [133]) is None, "c. a rank that is not the top now / a spell with no lower copy: no candidate")
 doc = A.eval('WowCompanion.collectSpells()')
 feed = [dict(x) for x in doc.rk.values()] if doc is not None and doc.rk is not None else None
@@ -241,7 +246,7 @@ check(A.eval('ACTIONINFO[%d][2]' % (KB + 1)) == 133, "e. another spell's slot un
 check(A.eval('WowCompanion.spellRadial.get(3)') == 837 and A.eval('FT(%d).id' % FTS) == 837 and A.eval('FACE(6).id') == 837,
       "e. the radial place, the fight layer, Y: Rank 3")
 check(A.eval('ACTIONINFO[%d][2]' % DEL) == 116 and A.eval('FT(%d).id' % LOS) == 116, "e. the deliberate Rank 1 slot and In-combat entry: untouched")
-check(A.eval('HDR("wc-ft-%d")' % FTS) == "/cast Frostbolt(Rank 3)" and A.eval('YSPELL()') == "Frostbolt(Rank 3)"
+check(A.eval('HDR("wc-ft-%d")' % FTS) == "/cast Frostbolt(Rank 3)" and A.eval('YSPELL()') == 837
       and A.eval('HDR("wc-ft-%d")' % LOS) == "/cast Frostbolt(Rank 1)", "e. the texts cast Rank 3 now; the deliberate one Rank 1",
       (A.eval('HDR("wc-ft-%d")' % FTS), A.eval('YSPELL()')))
 check(rk(A, [837]) is None, "e. nothing left to ask about Rank 3")
@@ -263,6 +268,56 @@ G.execute('WHO = "Other"')
 got = rk(G, [837])
 check(got == [{'id': 837, 'n': 1}], "g. the deliberate record is this character's (name-realm): another character's view counts that slot", got)
 check(errs(G) == [], "g. no Lua error", errs(G)[:2])
+
+# ================================================================ h. a rank with no news (off the app / a reload): no stuck old rank
+H = boot()
+HF, HL = H.eval('BK.storageFor(1, 2, 3)'), H.eval('BK.storageFor(1, 3, 2)')
+H.execute('WowCompanion.padMap.putCombat(1, 2, 3, bookSlot(205)); WowCompanion.padMap.putCombatFace(6, bookSlot(205))')
+H.execute('WowCompanion.padMap.putCombat(1, 3, 2, bookSlot(116))')
+check(H.eval('FT(%d).lo' % HF) is None and H.eval('FT(%d).lo' % HL) is True, "h. Rank 2 (the top then) not deliberate, Rank 1 deliberate")
+H.execute('BOOK[#BOOK + 1] = 837; fire("SPELLS_CHANGED"); runTimers(NOW + 2)')          # learned with no LEARNED_SPELL_IN_SKILL_LINE here
+check(H.eval('WowCompanion.spellsNewsHas(837)') is False, "h. Rank 3 is not in this load's news (no prompt will come)")
+check(H.eval('FT(%d).id' % HF) == 837 and H.eval('FACE(6).id') == 837 and H.eval('YSPELL()') == 837
+      and H.eval('HDR("wc-ft-%d")' % HF) == "/cast Frostbolt(Rank 3)",
+      "h. rankSync moves the not-deliberate fight layer entry and Y to Rank 3 (as m124 did)", (H.eval('FT(%d).id' % HF), H.eval('YSPELL()')))
+check(H.eval('FT(%d).id' % HL) == 116 and H.eval('HDR("wc-ft-%d")' % HL) == "/cast Frostbolt(Rank 1)", "h. the deliberate Rank 1 keeps its rank")
+H.execute('fire("PLAYER_ENTERING_WORLD", false, true); runTimers(NOW + 2)')
+check(H.eval('FT(%d).id' % HL) == 116 and H.eval('FT(%d).id' % HF) == 837, "h. ... and the next login too")
+check(errs(H) == [] and H.eval('#VIOL') == 0, "h. no Lua error, no lockdown breach", errs(H)[:2])
+
+# ================================================================ i. a backup restore never marks a fresh `lo`
+I = boot()
+I.execute('BOOK[#BOOK + 1] = 837; fire("SPELLS_CHANGED"); runTimers(NOW + 2)')           # Rank 3 known now
+IS, IL = I.eval('BK.storageFor(1, 2, 3)'), I.eval('BK.storageFor(1, 3, 2)')
+I.execute('WowCompanion.padMap.putCombat(1, 3, 2, bookSlot(116))')                    # the player's own pick of Rank 1
+check(I.eval('FT(%d).lo' % IL) is True, "i. the player's own pick of Rank 1: `lo`")
+I.execute('WowCompanion.padTabCtl.keepMode(true)')
+check(I.eval('WowCompanion.padTabCtl.keepOn()') is True, "i. PadTabCtl p45 keepOn() reads the restore's keep mode")
+I.execute('WowCompanion.padMap.putCombat(1, 2, 3, bookSlot(205)); WowCompanion.padMap.putCombatFace(6, bookSlot(205))')
+check(I.eval('FT(%d).lo' % IS) is None and I.eval('FACE(6).lo') is None,
+      "i. the restore re-puts a stale Rank 2 (the backup's old id): NOT marked deliberate", (I.eval('FT(%d).lo' % IS), I.eval('FACE(6).lo')))
+I.execute('WowCompanion.padMap.putCombat(1, 3, 2, bookSlot(116))')
+check(I.eval('FT(%d).lo' % IL) is True, "i. the restore re-puts the player's Rank 1 over its own entry: its mark kept")
+I.execute('WowCompanion.padTabCtl.keepMode(false); fire("SPELLS_CHANGED"); runTimers(NOW + 2)')
+check(I.eval('FT(%d).id' % IS) == 837 and I.eval('FACE(6).id') == 837 and I.eval('FT(%d).id' % IL) == 116,
+      "i. so rankSync moves the restored stale entries to the top; the deliberate one stays Rank 1")
+check(errs(I) == [], "i. no Lua error", errs(I)[:2])
+
+# ================================================================ j. the rank text not loaded yet (login)
+J = boot()
+J.execute('BOOK[#BOOK + 1] = 837; fire("SPELLS_CHANGED"); runTimers(NOW + 2); SUB_KEEP = SUB[116]; SUB[116] = nil')
+JL = J.eval('BK.storageFor(1, 3, 2)')
+J.execute('WowCompanion.padMap.putCombat(1, 3, 2, bookSlot(116)); WowCompanion.padMap.putCombatFace(6, bookSlot(116))')
+check(J.eval('FT(%d).lo' % JL) is True and J.eval('FACE(6).lo') is True, "j. no rank text: Rank 1 is still marked picked on purpose")
+check(J.eval('YSPELL()') == 116, "j. Y's spell attribute is Rank 1's own id (exact, no rank text needed)", J.eval('YSPELL()'))
+check(J.eval('HDR("wc-ft-%d")' % JL) == "/cast Frostbolt", "j. the fight text can only say the bare name for now", J.eval('HDR("wc-ft-%d")' % JL))
+J.execute('SUB[116] = SUB_KEEP; fire("SPELL_TEXT_UPDATE", 116); runTimers(NOW + 3)')
+check(J.eval('HDR("wc-ft-%d")' % JL) == "/cast Frostbolt(Rank 1)", "j. SPELL_TEXT_UPDATE: rebuilt as /cast Frostbolt(Rank 1)", J.eval('HDR("wc-ft-%d")' % JL))
+J.execute('SUB[116] = nil; WowCompanion.padMap.putCombat(1, 3, 2, bookSlot(116)); COMBAT = true; SUB[116] = SUB_KEEP; fire("SPELL_TEXT_UPDATE", 116); runTimers(NOW + 3)')
+check(J.eval('HDR("wc-ft-%d")' % JL) == "/cast Frostbolt" and J.eval('#VIOL') == 0, "j. in combat: not rebuilt (no lockdown write)")
+J.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); runTimers(NOW + 3)')
+check(J.eval('HDR("wc-ft-%d")' % JL) == "/cast Frostbolt(Rank 1)", "j. the fight's end: rebuilt", J.eval('HDR("wc-ft-%d")' % JL))
+check(errs(J) == [] and J.eval('#VIOL') == 0, "j. no Lua error, no lockdown breach", errs(J)[:2])
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

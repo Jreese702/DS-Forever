@@ -30,7 +30,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local SV = "s8"     -- bump on every change; s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
+local SV = "s9"     -- bump on every change; s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
 
 local MAX_LINES = 24        -- skill lines read (the game has General + class + a few)
 local MAX_ITEMS = 400       -- book entries read, all lines together
@@ -310,6 +310,11 @@ end
 
 local news, pushed = {}, {}   -- newest last; `nid` counts every one since this load
 local nid = 0
+-- s9 (PadMap m144): learned this load (the news kept for the prompt). Read only
+WC.spellsNewsHas = function(id)
+    for _, n in ipairs(news) do if n.id == id then return true end end
+    return false
+end
 
 -- s3 PROFESSIONS (the user 2026-10-07: "I have no way to bind profession skills. they should appear in a section of the general tab of the spell book"): the game keeps them out
 -- of the book's lines, in its own Professions book (blizzard_professionsbook, camelot: GetProfessions -> prof1, prof2, first aid, fishing,

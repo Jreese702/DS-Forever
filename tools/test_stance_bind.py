@@ -148,8 +148,8 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("book", "padmap", "padtabctl"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local BV = "b51"' in SRC["book"] and 'local PV = "m143"' in SRC["padmap"] and 'local CV = "p44"' in SRC["padtabctl"],
-      "the versions: Book b51 (b49 + the toolbar D-pad + rank up), PadMap m143, PadTabCtl p44 (issue #179)")
+check('local BV = "b51"' in SRC["book"] and 'local PV = "m144"' in SRC["padmap"] and 'local CV = "p45"' in SRC["padtabctl"],
+      "the versions: Book b51 (b49 + the toolbar D-pad + rank up), PadMap m144, PadTabCtl p45 (issue #179)")
 for k in ("book", "padmap", "padtabctl"):
     check("buttons do not stay mapped on ZR +FACE buttons" in SRC[k], "%s's header quotes the user's report" % os.path.basename(F[k]))
 
