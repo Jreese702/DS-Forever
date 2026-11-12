@@ -681,6 +681,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         interactView.padSource = { questsPad }
         dialogView = DialogView(this)
         dialogView.appOwnsPad = { padOwner.roomMode() }          // combat_nav: a pop-up / a roll answered with the pad in a fight
+        dialogView.rollsOwnPad = { padOwner.holder == null || padOwner.holder == "app" }   // review 2026-11-11: never with a room's press
         startView = StartView(this)
         // INSIDE THE ONE APP (the native login.txt sign-in; the user: "injecting the keys is not the way to go"): the row never types -
         // its button saves / updates the login, which the game uses by itself at its next start (NativeLogin)
@@ -1256,7 +1257,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun bottomWantsPad(): Boolean =
         room != Room.HOME || homeView.homeGuestWanted() || tradOpen() || radialView.isOpen || barSelect.open ||
             (::pauseView.isInitialized && pauseView.isOpen) || spellsOverlay.visibility == View.VISIBLE ||
-            (::dialogView.isInitialized && dialogView.visibility == View.VISIBLE) ||
+            // a pop-up as the box, or the rolls open - never the folded rolls pill (DialogView.wantsPad; the review of 2026-11-11)
+            (::dialogView.isInitialized && dialogView.wantsPad()) ||
             // a loot / NPC window left with B in this fight wants the pad no more (its LEAVE went out; Step 4)
             (::interactView.isInitialized && interactView.visibility == View.VISIBLE && !padOwner.npcLeft)
 

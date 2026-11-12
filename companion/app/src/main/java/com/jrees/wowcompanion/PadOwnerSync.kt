@@ -30,6 +30,10 @@ class PadOwnerSync {
     /** the game menu was open at the pull and still shows: the game has the pad, the bottom screen is locked */
     var gmLock = false
         private set
+    /** the fight began in the game menu (Interact i148's doc.gmFight): it stays the game's to its end, the menu shown or not - PadMap
+     *  stepped aside at the pull, so an ENTER would only make every press act in the app AND in the game (review of 2026-11-11) */
+    var gmFight = false
+        private set
     /** who holds (the capture id), from the same document */
     var holder: String? = null
         private set
@@ -54,6 +58,7 @@ class PadOwnerSync {
         enterCell = cellOf(msg.optJSONObject("fightEnter")) ?: cellOf(msg.optJSONObject("enter"))
         leaveCell = cellOf(msg.optJSONObject("fightLeave"))
         gmLock = msg.optBoolean("gmLock", false)
+        gmFight = msg.optBoolean("gmFight", false)
         holder = msg.optString("holder", "").ifEmpty { null }
         npcLeft = msg.optBoolean("npcLeft", false)
         backN = msg.optInt("fightBack", 0)
@@ -77,7 +82,7 @@ class PadOwnerSync {
     /** one look: what to tap now, given whether the bottom screen wants the pad */
     fun step(wantsPad: Boolean, nowMs: Long): Step {
         val m = mode ?: return Step(Act.NONE)
-        if (gmLock) return Step(Act.NONE)
+        if (gmLock || gmFight) return Step(Act.NONE)
         if (wantRoom != wantsPad) { wantRoom = wantsPad; tries = 0; stuckSaid = false; lastTapAt = 0L }
         val goal = if (wantsPad) ROOM else GAME
         if (m == goal) { tries = 0; stuckSaid = false; return Step(Act.NONE) }

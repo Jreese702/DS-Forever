@@ -148,6 +148,10 @@ class DialogView(context: Context) : View(context) {
     /** set by the host: the app has the pad in a fight (the router delivers to us, PadOwnerSync's room mode) */
     var appOwnsPad: () -> Boolean = { false }
 
+    /** set by the host: nothing of the add-on's holds the pad but the app's own stray-ENTER holder ("app") - a room or a loot window
+     *  that holds gets every press through the add-on, so the rolls must not answer the same press (the review of 2026-11-11) */
+    var rollsOwnPad: () -> Boolean = { true }
+
     /** a press while the app owns the pad in a fight: A / B on the dialog's buttons (DialogPad's rule), else A Need / X Greed or
      *  Transmog / B Pass on the shown roll, Left / Right between rolls - each one tap on its own cell, as a finger's; true = answered */
     private fun fightPress(key: String, d: Dlg?): Boolean {
@@ -162,6 +166,8 @@ class DialogView(context: Context) : View(context) {
             return true
         }
         if (rolls.isEmpty()) return false
+        if (rollsMin) return false             // folded into the pill: the presses are not the rolls' (wantsPad)
+        if (!rollsOwnPad()) return false       // a room / the loot holds: its presses, the rolls by touch (one press, one answer)
         val ids = rolls.map { it.optInt("id") }
         val r = shownRoll() ?: return false
         val move = DialogPad.rollMove(key, ids, r.optInt("id"))
@@ -305,6 +311,13 @@ class DialogView(context: Context) : View(context) {
 
     /** true while a dialog owns the bottom screen */
     fun showing() = visibility == VISIBLE
+
+    /**
+     * the dialogs want the pad in a fight (PadOwnerSync's want; the user's decision 1, 2026-11-11: pop-ups and loot rolls "should be built on
+     * the bottom screen"): a pop-up as the box, or the rolls OPEN - never the folded rolls pill (the review of 2026-11-11: a minimized
+     * roll kept the whole controller from the fight for up to a minute)
+     */
+    fun wantsPad() = showing() && (active() != null || (rolls.isNotEmpty() && !rollsMin))
 
     private fun str(o: JSONObject, key: String) = if (o.has(key) && !o.isNull(key)) o.optString(key) else null
 

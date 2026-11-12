@@ -39,6 +39,19 @@ class PadOwnerSyncTest {
         assertEquals(PadOwnerSync.Act.NONE, s.step(true, 0).act)                   // the user's decision 1: the game menu has the pad
     }
 
+    /** the review of 2026-11-11: the game menu open at the pull, then closed in the fight - no lock any more, but the fight stays the
+     *  game's (gmFight): no ENTER for a room shown, until the fight ends */
+    @Test fun aFightThatBeganInTheGameMenuStaysTheGames() {
+        val s = PadOwnerSync()
+        s.note(doc("game").put("gmFight", true))
+        assertFalse(s.gmLock)
+        assertTrue(s.gmFight)
+        assertEquals(PadOwnerSync.Act.NONE, s.step(true, 0).act)
+        assertEquals(PadOwnerSync.Act.NONE, s.step(true, 1000).act)
+        s.note(doc("game"))                                                          // the next fight: the reconciler again
+        assertEquals(PadOwnerSync.Act.ENTER, s.step(true, 2000).act)
+    }
+
     @Test fun threeTriesThenStuckOnce() {
         val s = PadOwnerSync()
         s.note(doc("game"))
