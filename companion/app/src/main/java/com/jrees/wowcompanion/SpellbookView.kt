@@ -21,7 +21,7 @@ import kotlin.math.abs
  *
  * WHO CHOOSES: a finger (app only), or, while the room holds the controller, the addon's gold glow (`spellsctl`), which then wins:
  * each controller document puts the glow where the addon has it. A tap on Bind hands the spell to [onBind] (one pad tap); the
- * press that answers the Bind box comes from the controller. The Bind box and the "New spell" card are [SpellsOverlay].
+ * press that answers the Bind box comes from the controller. The Bind box is [SpellsOverlay].
  *
  * THE CONTROLLER TAB: REMOVED from the book (the user 2026-10-05: "it should actually be a home tab instead of a spellbook tab"): the
  * page is its own room now, [ControllerView] (proven on b48). What follows is the old tab's history; the code paths stay unused.
@@ -184,7 +184,7 @@ class SpellbookView(
         invalidate()
     }
 
-    /** open the book at a spell (the "New spell" card was tapped) */
+    /** open the book at a spell (Home's new-spell prompt: A = Bind) */
     fun openAt(spellId: Int) {
         val b = book ?: return
         for (t in SpellsModel.tabs(b)) {

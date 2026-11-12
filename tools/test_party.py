@@ -1017,7 +1017,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "lv", "rng", "ic"}   # m129: plain facts only (no hp / full / hs / g / hit counts); m134: the pet's ic
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm142' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm143' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1243,8 +1243,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p44"' in SRC["padtabctl"] and 'local BV = "b50"' in SRC["book"] and 'local PV = "m142"' in SRC["padmap"],
-      "the versions: PadMap m142, PadTabCtl p44, Book b50 (b49 stance-bind #179, b50 toolbar D-pad #18/#20)")
+check('local CV = "p44"' in SRC["padtabctl"] and 'local BV = "b51"' in SRC["book"] and 'local PV = "m143"' in SRC["padmap"],
+      "the versions: PadMap m143, PadTabCtl p44, Book b51 (b49 stance-bind #179, b50 toolbar D-pad #18/#20, b51 / m143 rank up)")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
@@ -1696,6 +1696,9 @@ hits = [(p, ln) for (p, ln) in hits if not (p == r'\bSetCVar\b' and ('STYLE_CVAR
                                                                   # Trail ag (the user, 2026-11-07, "Turn on friendly nameplates"): the friendly nameplate options once
                                                                   or 'SetCVar(name, "1")' in ln or 'SetCVar(name, v)' in ln))]
 # (and pad14's software cursor: the user's "Yes, try software cursor", 2026-11-04, gxCursor once)
+# PadMap m143 RANK UP (the user, 2026-11-12, "Prompt, A upgrades all"): the player's own A on Home's prompt puts the new rank on the slots that
+# held a lower one - a player-approved bar write exactly like Book's Bind (tools/test_rankup.py proves it runs only after that A)
+hits = [(p, ln) for (p, ln) in hits if not (p == r'\bPlaceAction\b' and ln == 'CALL(function() return PlaceAction(c.s) end)')]
 check(not hits, "no trace in the new add-on code: no SetBinding / SaveBindings / macros / CVars / bar writes / Blizzard window code",
       hits[:3])
 check(not any('SetOverrideBindingClick' in ln and 'hdr' not in ln and 'owner' not in ln for ln in code),

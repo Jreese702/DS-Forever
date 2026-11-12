@@ -33,6 +33,42 @@ object NewSpells {
         return family.none { f -> f.bars.isNotEmpty() || (f.spellId ?: f.actionId) in onPad }
     }
 
+    // ---------------------------------------------------------------- rank up (the user, 2026-11-12: "I know we have something in place to
+    // rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is
+    // learned is available?"; the picks "Prompt, A upgrades all", "Done at once", "Skip this rank"): a learned rank whose LOWER ranks sit
+    // on buttons is asked about in the same one-at-a-time queue; A upgrades every lower copy at once (PadMap m143), B never asks about
+    // this rank again (the per-character handled set: the next rank is a new spell id, so it asks again)
+
+    /** what the prompt about learned spell [id] is: Bind (a new spell on no button) or Rank up (a new rank of one on buttons) */
+    enum class Ask { BIND, RANK_UP }
+
+    /** the add-on's word (Spells s8 `rk`) that [id] is a just-learned top rank with lower copies on buttons; null = none */
+    fun rankUpOf(book: SpellsModel.Book, id: Int): SpellsModel.RankUp? = book.rankUps.firstOrNull { it.spellId == id && it.count > 0 }
+
+    /** the prompt [id] deserves now, or null (none): Bind as before; else Rank up while the add-on lists lower copies and the spell
+     *  has its two taps (a pad number) */
+    fun askKind(book: SpellsModel.Book, id: Int, onPad: Set<Int>): Ask? = when {
+        worthAsking(book, id, onPad) -> Ask.BIND
+        rankUpOf(book, id) != null && entryOf(book, id)?.padNumber != null && !(entryOf(book, id)?.passive ?: true) -> Ask.RANK_UP
+        else -> null
+    }
+
+    /** Book b51's rank-up pick: the padtab row's column 38, fresh 2 s, then the spell's own two taps */
+    const val COL_RANKUP = 38
+
+    /** A on the rank-up prompt: the pick, then the new rank's two taps on the `spells` row (ONE batch); null = no touch way */
+    fun rankUpCells(book: SpellsModel.Book, id: Int): List<Pair<String, Int>>? {
+        val e = entryOf(book, id) ?: return null
+        val cells = SpellsModel.bindCells(book, e) ?: return null
+        return listOf(PadMapModel.ROW_PADTAB to COL_RANKUP) + cells
+    }
+
+    /** the prompt's words (English: the host translates): "Serpent Sting (Rank 3): upgrade on your buttons?", "Lower rank on 3 buttons" */
+    fun rankUpTitle(e: SpellsModel.Entry): String = (e.name + (e.rank?.let { " ($it)" } ?: "")) + ": upgrade on your buttons?"
+    fun rankUpCount(n: Int): String = if (n == 1) "Lower rank on 1 button" else "Lower rank on $n buttons"
+    /** "Done at once": the one line after A */
+    fun rankUpLine(n: Int): String = if (n == 1) "Upgraded on 1 button" else "Upgraded on $n buttons"
+
     /** the spell ids a padmap shows on any button: the bar's spells, the In-combat (overlay) spells, the faces' fight spells */
     fun onPad(map: PadMapModel.Map?): Set<Int> {
         if (map == null) return emptySet()

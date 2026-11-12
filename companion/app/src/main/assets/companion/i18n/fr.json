@@ -1,5 +1,8 @@
 {
 "plain": {
+"Upgrade": "Améliorer",
+"Upgraded on 1 button": "Amélioré sur 1 bouton",
+"Lower rank on 1 button": "Rang inférieur sur 1 bouton",
 "Skip step": "Passer l'étape",
 "Previous step": "Étape précédente",
 "Skip": "Passer",
@@ -700,7 +703,6 @@
 "Needs the game running with the newer Spells add-on.": "Nécessite le jeu lancé avec le nouvel AddOn Spells.",
 "Needs the newer Spells add-on": "Nécessite l'add-on Spells plus récent",
 "New Players Welcome": "Nouveaux joueurs bienvenus",
-"New spell": "Nouveau sort",
 "Next": "Suivant",
 "Next Page": "Page suivante",
 "Next item: Will not be traded": "Objet suivant : ne sera pas échangé",
@@ -1545,6 +1547,9 @@
 "The game's own target frame, by its switch below. For this character.": "Le cadre de cible du jeu, selon son interrupteur ci-dessous. Pour ce personnage."
 },
 "templates": {
+"%s: upgrade on your buttons?": "%s : améliorer sur vos boutons ?",
+"Upgraded on %s buttons": "Amélioré sur %s boutons",
+"Lower rank on %s buttons": "Rang inférieur sur %s boutons",
 "Put the Spell Radial command on a button (WoW Defaults: Change, DS). %s": "Placez la commande Radial de sorts sur un bouton (WoW Defaults : Changer, DS). %s",
 "Abandon \"%s\"?": "Abandonner « %s » ?",
 "The update download stopped (%s). Update resumes it.": "Le téléchargement de la mise à jour s'est arrêté (%s). Mettre à jour le reprend.",

@@ -43,9 +43,16 @@ class SetupView(context: Context) : View(context) {
      */
     fun ask(p: CompanionSetup.Prompt, yes: String, no: String, onYes: () -> Unit, onNo: () -> Unit, icon: Int = 0) {
         face = Face.PROMPT; title = p.title; bullets = p.bullets; footer = p.footer; note = ""; promptIcon = icon
-        yesLabel = yes; noLabel = no; yesAct = onYes; noAct = onNo
+        yesLabel = yes; noLabel = no; yesAct = onYes; noAct = onNo; answered = false
         visibility = VISIBLE; invalidate()
     }
+    /** rank up (the user 2026-11-12, "Done at once"): the open prompt's answer in ONE line in place of its buttons ("Upgraded on 3
+     *  buttons"); A / B / a touch do nothing more; the caller closes it */
+    fun answer(line: String) {
+        if (face != Face.PROMPT || visibility != VISIBLE) return
+        footer = line; answered = true; yesAct = {}; noAct = {}; invalidate()
+    }
+    private var answered = false
     /** b130 (the user, 2026-10-07: "When loading in on a new charactor can we put button glyphs on the setup prompt? A for yes b for no?"): the buttons wear A / B and the controller presses them - only while the app holds the controller for this
      *  prompt (MainActivity's setupPad), so an A never also reaches the game */
     var padOn = false
@@ -135,6 +142,7 @@ class SetupView(context: Context) : View(context) {
         y += 18f
         for (l in fl) { c.drawText(Tr.t(l), cx, y, fp); y += 38f }
         if (nl.isNotEmpty()) { y += 16f; for (l in nl) { c.drawText(Tr.t(l), cx, y, np); y += 42f } }
+        if (answered) return                                            // the answer's line stands where the buttons were
         val by = box.bottom - 50f - 111f
         button(c, RectF(cx - 20f - 300f, by, cx - 20f, by + 111f), yesLabel, "setup")
         button(c, RectF(cx + 20f, by, cx + 20f + 300f, by + 111f), noLabel, "later")

@@ -6,27 +6,24 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.os.SystemClock
-import android.text.TextUtils
 import android.view.MotionEvent
 import android.view.View
 
 /**
- * What the Spellbook brings over the WHOLE screen (UI Art's SPEC 4 and 5): the game's "Bind to Action Bar" box, and the "New spell"
- * card. It lies over the rooms and the bar and UNDER the NPC windows (an NPC window covers everything).
+ * What the Spellbook brings over the WHOLE screen (UI Art's SPEC 4): the game's "Bind to Action Bar" box. It lies over the rooms and the
+ * bar and UNDER the NPC windows (an NPC window covers everything).
  *
  * THE BIND BOX shows while the addon's Bind box is open (`spellsctl` mode "bind", then "result" for the answer). It is a dialog: it
  * takes every touch while it is up. The answer to the press comes from the addon (`spellsack`); B cancels on the controller.
  * The two groups of buttons are the Cast room's own drawing of that set ([drawSet], cast session `f5a0baa`), with the button that
  * took the spell lit; until the Cast room has its first layout they are stand-ins in the same rectangles.
  *
- * THE CARD comes for every spell the addon reports learned (`news`) after this app started: 4 s each, fading in 150 ms and out
- * 250 ms, the others waiting under it; never while [blocked] (an NPC window or a dialog) or the Bind box is up. A tap on it opens the
- * Spellbook at that spell ([onOpen]) and drops the ones that wait; a touch beside it is the room's.
+ * THE "New spell" CARD IS GONE (the user, 2026-11-12: "along with the Keep/undo I feel like the pop up toasts that appear before that are
+ * redundant and should be scrapped"; the pick: scrap ONLY the 4 s card per learned spell): Home's one-at-a-time prompt
+ * (CompanionHost.newSpellAsk) asks about each learned spell; the box's green "Bound to" line, its "Put back" line and every refusal stay.
  */
 class SpellsOverlay(
     context: Context,
-    private val blocked: () -> Boolean,
-    private val onOpen: (spellId: Int) -> Unit,
     /** the Cast room's own drawing of one trigger set (CastView.drawSet, read-only); false = it has no layout yet */
     private val drawSet: (c: Canvas, set: Int, dpad: RectF, face: RectF, lit: Int?, litIcon: android.graphics.Bitmap?,
                           fight: ((Int) -> Int?)?) -> Boolean =
@@ -89,13 +86,6 @@ class SpellsOverlay(
     }
     private var pad: PadInput? = null
 
-    // the card
-    private var seenNid = -1                        // -1 = no document yet: what is already there is not new
-    private val queue = ArrayList<Int>()
-    private var cardSpell: Int? = null
-    private var cardAt = 0L
-    private val cardRect = RectF()
-
     init { CastSettings.init(context) }
 
     private fun style(): SpellsModel.PadStyle = when (CastSettings.buttonLayout) {
@@ -108,12 +98,6 @@ class SpellsOverlay(
 
     fun onBook(b: SpellsModel.Book) {
         book = b
-        val top = b.news.maxOfOrNull { it.nid } ?: 0
-        if (seenNid < 0) seenNid = top
-        else {
-            for (n in SpellsModel.newSince(b, seenNid)) if (n.spellId !in queue && n.spellId != cardSpell) queue += n.spellId
-            seenNid = maxOf(seenNid, top)
-        }
         tick()
     }
 
@@ -174,26 +158,19 @@ class SpellsOverlay(
         pad?.stop(); pad = null; lt = false; rt = false; ltAt = 0L; rtAt = 0L
     }
 
-    // everything that moves on its own: the card's life, the answer's 1.5 s
+    // everything that moves on its own: the answer's 1.5 s
     private fun tick() {
         val now = SystemClock.uptimeMillis()
-        val card = cardSpell
-        if (card != null && now - cardAt > CARD_MS) { cardSpell = null }
-        if (cardSpell == null && queue.isNotEmpty() && !blocked() && !boxOpen()) {
-            cardSpell = queue.removeAt(0); cardAt = now
-        }
-        visibility = if (boxOpen() || cardSpell != null) VISIBLE else GONE
+        visibility = if (boxOpen()) VISIBLE else GONE
         invalidate()
-        if (cardSpell != null || (result != null && now - resultAt < SHOW_MS) || now - undoneAt < SHOW_MS || queue.isNotEmpty())
-            postDelayed({ tick() }, 50)
+        if ((result != null && now - resultAt < SHOW_MS) || now - undoneAt < SHOW_MS) postDelayed({ tick() }, 50)
     }
 
     // ---------------------------------------------------------------- drawing
 
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        if (boxOpen()) { bindBox(c, w, h); return }
-        cardSpell?.let { card(c, w, it) }
+        if (boxOpen()) bindBox(c, w, h)
     }
 
     /** the game's "Bind to Action Bar": its box and words, the controller's buttons for the set held (SPEC 4) */
@@ -409,48 +386,6 @@ class SpellsOverlay(
         return UiKit.padCombo(c, trigger, combo.button, x, cy, size, colour, shadow)
     }
 
-    /** the "New spell" card over the top of whatever room is open (SPEC 5) */
-    private fun card(c: Canvas, w: Float, spellId: Int) {
-        val b = book ?: return
-        val e = SpellsModel.find(b, spellId) ?: return
-        val age = SystemClock.uptimeMillis() - cardAt
-        val a = when {
-            age < 150 -> age / 150f
-            age > CARD_MS - 250 -> ((CARD_MS - age) / 250f).coerceAtLeast(0f)
-            else -> 1f
-        }
-        val layer = c.saveLayerAlpha(0f, 0f, w, 200f, (a * 255).toInt())
-        val r = cardRect.apply { set((w - 820f) / 2f, 10f, (w + 820f) / 2f, 150f) }
-        UiKit.card(c, r, queue.size)
-        UiKit.spell(c, Icons.get(e.icon), r.left + 58f, r.top + 26f, 88f, onDark = true)
-        val pt = UiKit.bodyPaint(24f, Theme.gold)
-        c.drawText(Tr.t("New spell"), r.left + 176f, r.top + 36f - (pt.ascent() + pt.descent()) / 2f, pt)
-        val pn = UiKit.bodyPaint(34f, Color.WHITE)
-        val name = TextUtils.ellipsize(Tr.t(e.name), android.text.TextPaint(pn), r.right - 250f - (r.left + 176f), TextUtils.TruncateAt.END).toString()
-        c.drawText(Tr.t(name), r.left + 176f, r.top + 74f - (pn.ascent() + pn.descent()) / 2f, pn)
-        e.rank?.let {
-            val pr = UiKit.bodyPaint(22f, Theme.dim)
-            c.drawText(Tr.t(it), r.left + 176f, r.top + 110f - (pr.ascent() + pr.descent()) / 2f, pr)
-        }
-        // where the game put it: the controller button that holds it now (read at every frame: the fly-in may land during the 4 s)
-        val slot = e.pad.firstOrNull()
-        if (slot != null) {
-            val combo = SpellsModel.combo(slot, style())
-            val n = 64f
-            // SPEC 5: 64 wide for a button alone, 156 with a trigger; with both triggers the first stands 62 px before that
-            val wide = when (combo.triggers.size) { 0 -> n; 1 -> 2f * n + 28f; else -> 62f + 2f * n + 28f }
-            drawCombo(c, combo, r.right - 44f - wide, r.centerY(), n, Theme.text, true)
-        } else {
-            val pb = UiKit.bodyPaint(26f, Theme.notOnBar).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(Tr.t("Not on a button"), r.right - 40f, r.centerY() - 2f - (pb.ascent() + pb.descent()) / 2f, pb)
-        }
-        if (queue.isNotEmpty()) {
-            val pc = UiKit.numberPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(Tr.t("1 of ${queue.size + 1}"), r.right - 40f, r.bottom - 22f - (pc.ascent() + pc.descent()) / 2f, pc)
-        }
-        c.restoreToCount(layer)
-    }
-
     // ---------------------------------------------------------------- touch
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
@@ -471,14 +406,7 @@ class SpellsOverlay(
             }
             return true
         }
-        val card = cardSpell ?: return false
-        if (!cardRect.contains(ev.x, ev.y)) return false            // beside the card: the room's
-        if (ev.actionMasked == MotionEvent.ACTION_UP) {
-            queue.clear(); cardSpell = null
-            onOpen(card)
-            tick()
-        }
-        return true
+        return false                                                // no box: the room's
     }
 
     override fun onDetachedFromWindow() {
@@ -487,7 +415,6 @@ class SpellsOverlay(
     }
 
     companion object {
-        private const val CARD_MS = 4000L
         private const val SHOW_MS = 1500L
     }
 }

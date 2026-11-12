@@ -198,6 +198,9 @@ object SpellsModel {
 
     data class News(val nid: Int, val spellId: Int, val line: Int?, val at: Double?)
     data class Pushed(val nid: Int, val spellId: Int, val slot: Int?, val page: Int?, val at: Double?)
+    /** Spells s8 (PadMap m143, the user 2026-11-12: a prompt to rank up spells already on a bar): a just-learned TOP rank [spellId] whose
+     *  lower ranks sit on [count] buttons (bars, the spell radial, In-combat entries) an A would upgrade; [kept] = picked lower on purpose */
+    data class RankUp(val spellId: Int, val count: Int, val kept: Int)
 
     data class Book(
         val version: String,
@@ -220,6 +223,8 @@ object SpellsModel {
         /** Book b12 (s2): the room's way in and out on the `spells` row: "open" (the Spellbook face), "topen" (the Talents face),
          *  "close" -- secure clicks on the game's own buttons; empty from an older addon */
         val win: Map<String, Int> = emptyMap(),
+        /** Spells s8: the rank-up candidates among the news (empty from an older add-on: no rank-up prompt then) */
+        val rankUps: List<RankUp> = emptyList(),
     )
 
     /** The `spells` message (the whole document, `type` = "spells"); null when it is not one. */
@@ -264,6 +269,10 @@ object SpellsModel {
                 (listOf("open", "close", "topen", "croom", "bfon", "bfoff") + (0 until PV_GROUPS).map { "vb$it" } +
                     (0 until PV_PER).map { "vo$it" }).mapNotNull { k -> if (w.has(k)) w.optInt(k, -1).takeIf { it in 0..39 }?.let { k to it } else null }.toMap()
             } ?: emptyMap(),
+            rankUps = objects(s.optJSONArray("rk")).mapNotNull { o ->
+                val id = o.optInt("id", 0); val n = o.optInt("n", 0)
+                if (id <= 0 || n <= 0) null else RankUp(id, n, o.optInt("kept", 0))
+            },
         )
     }
 

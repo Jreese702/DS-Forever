@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b50"                -- bump on every change; b50: THE BARE D-PAD IS THE DS WoW TOOLBAR'S IN THE BIND BOX TOO (issues #18 / #20, 1.0.15: "Trying to bind an attack, doesnt show up on bottom screen and or the button display for attacks on the buton layout"; a second player on #20: "When I disabled the DS shortcuts (dpad) it allowed me to bind abilities to the Dpad. But only there. Any modifier key binding doesn't work."; #31, 1.0.16: "i cant bind new spells to anything"): with the toolbar on (PadMap dpadWant), a bare D-pad press placed the spell on the plain D-pad slot the router's toolbar keys cover, so it never cast and Home drew the toolbar there; now it answers "dpad bar" (nothing placed, the box keeps waiting) as the Controller room does (PadTabCtl p34 toolbarHas); the In combat tab's bare D-pad still takes a fight spell (p36); b49 (review): the default is the active form only while the game SHOWS its stance bar (WC.padMap.stanceShown); a form with no bar (Ghost Wolf, Travel Form, an aura) keeps the caster path; b49: A STANCE-COVERED BUTTON BINDS TO THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): a Warrior in Battle Stance bound Charge on ZR + B page 1, the game lays the stance bar over RT there, the box's form defaulted to the caster and the plain RT slot (199) took it while the game, the router and Home read the stance bar's; now the box's form is "not chosen" (nil) until the player picks one, and then the active form's bar is the default (bform reports it, so the app's form row lights it); 0 = the caster picked on purpose (the old path); the ack's probe.slotSrc says where the slot came from (stance / form / game / button / formula); b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
+local BV = "b51"                -- bump on every change; b51 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): padtab column 38 is the rank-up pick (PadMap m143 WC.rankUpPick), the spell's two taps after it upgrade that spell's lower copies (WC.rankUpSpell); a Bind that places a rank below the top remembers it as picked on purpose (WC.rankPicked: never upgraded); b50 b50: THE BARE D-PAD IS THE DS WoW TOOLBAR'S IN THE BIND BOX TOO (issues #18 / #20, 1.0.15: "Trying to bind an attack, doesnt show up on bottom screen and or the button display for attacks on the buton layout"; a second player on #20: "When I disabled the DS shortcuts (dpad) it allowed me to bind abilities to the Dpad. But only there. Any modifier key binding doesn't work."; #31, 1.0.16: "i cant bind new spells to anything"): with the toolbar on (PadMap dpadWant), a bare D-pad press placed the spell on the plain D-pad slot the router's toolbar keys cover, so it never cast and Home drew the toolbar there; now it answers "dpad bar" (nothing placed, the box keeps waiting) as the Controller room does (PadTabCtl p34 toolbarHas); the In combat tab's bare D-pad still takes a fight spell (p36); b49 (review): the default is the active form only while the game SHOWS its stance bar (WC.padMap.stanceShown); a form with no bar (Ghost Wolf, Travel Form, an aura) keeps the caster path; b49: A STANCE-COVERED BUTTON BINDS TO THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): a Warrior in Battle Stance bound Charge on ZR + B page 1, the game lays the stance bar over RT there, the box's form defaulted to the caster and the plain RT slot (199) took it while the game, the router and Home read the stance bar's; now the box's form is "not chosen" (nil) until the player picks one, and then the active form's bar is the default (bform reports it, so the app's form row lights it); 0 = the caster picked on purpose (the old path); the ack's probe.slotSrc says where the slot came from (stance / form / game / button / formula); b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -658,6 +658,8 @@ local function bindPress(key)
     local after = cursorKey()
     CALL(function() return ClearCursor() end)
     if after == before then ack(false, b.id, "failed", nil, probe) return "failed" end
+    -- b51 (PadMap m143, "Never touch those"): a rank below the top placed on purpose is remembered for this slot; the top forgets it
+    if type(WC.rankPicked) == "function" then pcall(WC.rankPicked, storage, b.id) end
     ctl.undo = { storage = storage, was = was, page = page, set = set, pos = pos, bind = b }
     ack(true, b.id, nil, { s = storage, pg = page, b = set, p = pos }, probe)
     return nil
@@ -1269,6 +1271,8 @@ if type(pad) == "table" and type(pad.slotFor) == "function" and (secureRowOk or 
         end
         -- a spell: Bind by touch. The controller is taken for the press if the room does not hold it yet.
         if type(key) ~= "number" then report("pad-unknown") return end
+        -- b51: Home's rank-up prompt picked padtab 38 just before (its fresh pick): that spell's lower copies become it (PadMap m143)
+        if type(WC.rankUpWants) == "function" and WC.rankUpWants() then pcall(WC.rankUpSpell, key) return end
         -- b46: Settings' Smart buffs picked "add" / "add or" / "take out" just before (its fresh pick): the spell goes there, nothing else
         if type(WC.smartYWants) == "function" and WC.smartYWants() then pcall(WC.smartYSpell, key) return end
         -- while the CONTROLLER TAB is open (the pad owner's YES: the same column), the spell goes onto the tab's chosen button
@@ -1295,6 +1299,7 @@ if type(pad) == "table" and type(pad.slotFor) == "function" and (secureRowOk or 
         report("pad-not-in-book")
     end
     onCell = function(col) handle(colKey[col]) end
+    WC._spellsBookKey = function(key) handle(key) end                    -- b51: the harness (a key as the row would hand it)
     if secureRowOk then
         refreshCells()
     else
@@ -1382,7 +1387,7 @@ local PADTAB = {
 for k = 1, 10 do PADTAB[15 + k] = function(pt) if type(pt.touchForm) == "function" then pt.touchForm(k) end end end
 -- b47 PARTY MODE (PadTabCtl p33; PARTY_BUILD.md 2.3, the lead's contract): 26 the 5th tab (Party mode), 27-36 pick party slot k = col - 26
 -- (1 a, 2 x, 3 yc, 4 touch, 5 zla, 6 zlx, 7 zly, 8 zra, 9 zrx, 10 zry; a no-action pick, fresh 2 s), 37 ONE action: the picked slot's
--- no-spell value (Empty; Inspect for yc; Target for touch). A spell for it = the spells row's two taps (it reaches pt.touchSpell). 38-39 refused
+-- no-spell value (Empty; Inspect for yc; Target for touch). A spell for it = the spells row's two taps (it reaches pt.touchSpell). 38 the rank-up pick (b51), 39 refused
 PADTAB[26] = function(pt) pt.touchTab(5) end
 for k = 1, 10 do PADTAB[26 + k] = function(pt) if type(pt.touchPartySlot) == "function" then pt.touchPartySlot(k) end end end
 PADTAB[37] = function(pt) if type(pt.touchPartyNone) == "function" then pt.touchPartyNone() end end
@@ -1393,6 +1398,11 @@ if type(pad) == "table" and type(pad.op) == "function" then
         -- b35 THE QUIET ENTER (the user's ruling after test20, "Both": the app re-applies a character's In-combat settings from its backup
         -- at login, out of combat, by the Controller tab's own touch picks and ONE actions): column 14 opens the tab for touch WITHOUT the
         -- room and WITHOUT taking the controller (the player keeps playing); talents code 28 leaves it as before. Refused in a fight.
+        -- b51 RANK UP (PadMap m143): column 38 is the pick for the spell's two taps that follow (no room, no controller needed)
+        if col == 38 then
+            if type(WC.rankUpPick) == "function" then pcall(WC.rankUpPick) end
+            return
+        end
         if col == 14 and type(pt) == "table" then
             local fight = InCombatLockdown and InCombatLockdown()
             if not fight and not ctl.ctrlTab then
