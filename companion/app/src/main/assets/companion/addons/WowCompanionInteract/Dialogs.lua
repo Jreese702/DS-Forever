@@ -38,7 +38,7 @@ local S = WC.S
 
 -- d30 (int/1429): combat-nav d27-d28 (the idlg leave cells 33-39, WC.dialogs.mirrored) + starter-prompt d27-d29 (the quest starter
 -- prompt, its Start / Not now now on the charter's Sign / Offer cells 28 / 29: the row stays 40 columns)
-local DV = "d30"         -- bump on every change; d30 int/1429: the quest starter's Start / Not now SHARE the charter's Sign / Offer cells (idlg 28 / 29: the prompt never shows with the charter open, PETITION_SHOW disarms it and gives the cells back), so the row keeps combat-nav's seven leave cells (33-39) at 40 columns; d29 (starter-prompt): the quest starter prompt ONLY when a starter is NEWLY LOOTED this session (the user, 2026-11-11, asked how long "Not now" lasts: "Only when newly looted"): a baseline of the bags' item counts at login / reload, a prompt only for a count rising above it (never for what was already there, a /reload or a move between bags), Not now = that one prompt; d28 (starter-prompt): the quest starter's Start is DISARMED on the very event a vendor / bank / mail / trade / NPC window opens (a bag item used at a vendor is sold) and aimed by item id, not bag and slot; a Start on a disarmed button is no answer; d27 (starter-prompt): A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d28 (combat-nav): WC.dialogs.mirrored() - the pop-ups the app shows as its box (Interact's fight sink leaves A / B to the app while one shows: the review of combat_nav, the user's decision 1, 2026-11-11); d27 (combat-nav): the idlg row's last seven columns (33-39, the row grows to 40: no new row) are the capture's per-window leave cells (combat_nav_design Step 5c, the user 2026-11-11), aimed by Interact (WC.dialogs.leaveCell); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
+local DV = "d31"         -- bump on every change; d31 (issue #69, 1.0.18: "tried to sign a guild chart didnt work"; the offline harness signs by touch and by A, the report's log has no trace of the charter): DIAGNOSTICS ONLY, nothing pressed or written - the charter's Sign is followed for 4 s and one "cap" document says what came of it (petSign: by touch / A, signatures before / after, the window closed, the game's UI error id, which petition system message by its place in D.PETMSG, a pop-up shown), numbers only; d30 int/1429: the quest starter's Start / Not now SHARE the charter's Sign / Offer cells (idlg 28 / 29: the prompt never shows with the charter open, PETITION_SHOW disarms it and gives the cells back), so the row keeps combat-nav's seven leave cells (33-39) at 40 columns; d29 (starter-prompt): the quest starter prompt ONLY when a starter is NEWLY LOOTED this session (the user, 2026-11-11, asked how long "Not now" lasts: "Only when newly looted"): a baseline of the bags' item counts at login / reload, a prompt only for a count rising above it (never for what was already there, a /reload or a move between bags), Not now = that one prompt; d28 (starter-prompt): the quest starter's Start is DISARMED on the very event a vendor / bank / mail / trade / NPC window opens (a bag item used at a vendor is sold) and aimed by item id, not bag and slot; a Start on a disarmed button is no answer; d27 (starter-prompt): A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d28 (combat-nav): WC.dialogs.mirrored() - the pop-ups the app shows as its box (Interact's fight sink leaves A / B to the app while one shows: the review of combat_nav, the user's decision 1, 2026-11-11); d27 (combat-nav): the idlg row's last seven columns (33-39, the row grows to 40: no new row) are the capture's per-window leave cells (combat_nav_design Step 5c, the user 2026-11-11), aimed by Interact (WC.dialogs.leaveCell); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -955,6 +955,8 @@ local function offerTouch()
             D.pCell[col - PET_COL + 1] = btn
             local t = _G[PET[col - PET_COL + 1].target]
             if type(t) == "table" then btn:SetAttribute("clickbutton", t) end
+            -- d31 (issue #69): which route pressed the charter's Sign (read only: a stamp, the click itself is the game's)
+            if col == PET_COL then pcall(btn.HookScript, btn, "OnClick", function() D.petStamp(1) end) end
             -- int/1429: the first two are also the quest starter's Start / Not now (D.qsAim swaps them while its prompt shows)
             if col == D.QS.col then D.qsCell = btn elseif col == D.QS.col + 1 then D.qsNoCell = btn end
             return
@@ -1084,11 +1086,81 @@ do
     pcall(function() tf:RegisterEvent("PLAYER_LOGIN") end)
     pcall(function() tf:RegisterEvent("TRADE_SHOW") end)
 end
+-- d31 (issue #69, 1.0.18: "tried to sign a guild chart didnt work"): WHAT CAME OF A SIGN, for the next report. Read only: the game's Sign
+-- button is hooked after its own click (HookScript: the game's code runs first and untouched), our two routes to it (the touch cell and
+-- A's secure button) only stamp which one it was. For 4 s after the Sign: the game's red error (UI_ERROR_MESSAGE: its numeric id), a
+-- petition system message (CHAT_MSG_SYSTEM matched against the game's own ERR_PETITION_* strings: only its PLACE in D.PETMSG leaves, never
+-- words), PETITION_CLOSED, a pop-up shown, the signature count before / after. One "cap" document { petSign = {...} }, numbers only (the
+-- diagnostics keep shapes, never words). The list's order is fixed: append only.
+D.PETMSG = { "ERR_PETITION_SIGNED", "ERR_PETITION_SIGNED_S", "ERR_PETITION_ALREADY_SIGNED", "ERR_PETITION_ALREADY_SIGNED_OTHER",
+             "ERR_PETITION_IN_GUILD", "ERR_PETITION_RESTRICTED_ACCOUNT", "ERR_PETITION_RESTRICTED_ACCOUNT_TRIAL", "ERR_PETITION_NOT_SAME_SERVER",
+             "ERR_PETITION_FULL", "ERR_PETITION_CREATOR", "ERR_PETITION_DECLINED_S", "ERR_PETITION_OFFERED_S", "ERR_ALREADY_IN_GUILD",
+             "ERR_ALREADY_IN_GUILD_S", "ERR_GUILD_NAME_EXISTS_S", "ERR_PLAYER_WRONG_FACTION", "ERR_GUILD_PERMISSIONS" }
+D.PET_WATCH = 4
+-- our route's own click hook (it runs AFTER the click it made, the game's Sign included): 1 = the touch cell, 2 = A's button
+function D.petStamp(n)
+    local w = D.petW
+    if w and w.via == 0 and now() - w.at < 0.5 then w.via = n else D.petVia = { n = n, at = now() } end
+end
+function D.petNames() return TN(function() return GetNumPetitionNames() end) end
+-- the place in D.PETMSG of the game string this text is (its %s / %d as wildcards), nil = none of them
+function D.petMsg(text)
+    if type(text) ~= "string" then return nil end
+    for i, n in ipairs(D.PETMSG) do
+        local g = TS(function() return _G[n] end)
+        if g then
+            local pat = "^" .. g:gsub("([%%%^%$%(%)%.%[%]%*%+%-%?])", "%%%1"):gsub("%%%%s", ".+"):gsub("%%%%d", "%%d+") .. "$"
+            local ok, hit = pcall(string.find, text, pat)
+            if ok and hit then return i end
+        end
+    end
+    return nil
+end
+function D.petPopup()
+    for i = 1, 4 do
+        local f = _G["StaticPopup" .. i]
+        if type(f) == "table" and shown(f) then return i end
+    end
+    return nil
+end
+function D.petStart()
+    local via = (D.petVia and now() - D.petVia.at < 1) and D.petVia.n or 0     -- 1 = the touch cell, 2 = A, 0 = neither of ours
+    D.petVia = nil
+    D.petW = { at = now(), via = via, before = D.petNames(), combat = TB(function() return InCombatLockdown() end) == true }
+    local w = D.petW
+    C_Timer.After(D.PET_WATCH, function()
+        if D.petW ~= w then return end
+        D.petW = nil
+        local p = { via = w.via, before = w.before, after = D.petNames(), closed = w.closed or false, err = w.err, sys = w.sys,
+                    popup = w.popup or D.petPopup(), combat = w.combat }
+        pcall(function() WC.send(WC.encode({ type = "cap", petSign = p })) end)
+    end)
+end
+function D.petHook()
+    if D.petHooked then return end
+    local b = _G.PetitionFrameSignButton
+    if type(b) ~= "table" then return end
+    if pcall(b.HookScript, b, "OnClick", function() pcall(D.petStart) end) then D.petHooked = true end
+    local own = _G.WowCompanionPetSign
+    if type(own) == "table" and not D.petOwnHooked then
+        D.petOwnHooked = pcall(own.HookScript, own, "OnClick", function() D.petStamp(2) end)
+    end
+end
 do
     local pf = CreateFrame("Frame")
-    pf:SetScript("OnEvent", function() petAim() end)
-    pcall(function() pf:RegisterEvent("PLAYER_LOGIN") end)
-    pcall(function() pf:RegisterEvent("PETITION_SHOW") end)
+    pf:SetScript("OnEvent", function(_, event, a1, a2)
+        if event == "PLAYER_LOGIN" or event == "PETITION_SHOW" then petAim(); pcall(D.petHook); return end
+        local w = D.petW
+        if not w then return end
+        if event == "PETITION_CLOSED" then w.closed = true
+        elseif event == "UI_ERROR_MESSAGE" then w.err = w.err or TN(function() return a1 end) or -1
+        elseif event == "CHAT_MSG_SYSTEM" then w.sys = w.sys or D.petMsg(TS(function() return a1 end))
+        end
+        w.popup = w.popup or D.petPopup()
+    end)
+    for _, e in ipairs({ "PLAYER_LOGIN", "PETITION_SHOW", "PETITION_CLOSED", "UI_ERROR_MESSAGE", "CHAT_MSG_SYSTEM" }) do
+        pcall(function() pf:RegisterEvent(e) end)
+    end
 end
 
 do

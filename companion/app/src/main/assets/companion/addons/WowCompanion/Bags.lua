@@ -14,6 +14,11 @@
 -- USER RULINGS (2026-09-27): one row per STACK and in BAG ORDER -- the room shows the bags
 -- exactly as they are, because every action works on one stack at a time. Sorting and a merged
 -- "clean" view may come later as toggles; the wire stays per-slot either way.
+--
+-- bags-kit2 (issue #89, 1.0.21: "replacing an existing armor kit with another one does not work, the confirmation screen loops"): while
+-- the room's "Choose an item" list is up and the GAME asks its own question about the pick (StaticPopup REPLACE_ENCHANT and the like,
+-- or any pop-up the game's controller focuses), A / B are PASSED to the game, as for a bag's bind question ("bindask"). Before, the
+-- room kept A: every Yes re-used the kit on the item, the game asked again, and the question came back for ever (KIT.asking).
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -1081,6 +1086,8 @@ local function syncPass()
     local want = false
     if ctl.on and not ctl.pending then
         if ctl.mode == "bindask" then want = "PAD1 PAD2"
+        -- bags-kit2 (issue #89): the game's own question about the pick (Replace enchant?) is answered by the game's own A / B
+        elseif ctl.mode == "target" and WC._kit and WC._kit.asking() then want = "PAD1 PAD2"
         elseif ctl.open and ctl.mode == "grid" and ctl.pick == nil then want = "PAD2" end
     end
     if want == (ctl.passing or false) or not (cap and cap.pass) then return end
@@ -1326,8 +1333,29 @@ function KIT.used(bag, slot)
     local id = bagItemID(bag, slot)
     if id then KIT.last = { id = id, t = GetTime() } end
 end
+-- bags-kit2 (issue #89): the GAME is asking about the pick - its replace / bind question for the item just chosen, or any pop-up
+-- its controller focuses (its A / B answer that one, never our list). Read only; the pop-up's name, nil when none asks
+KIT.ASKS = { REPLACE_ENCHANT = true, TRADE_REPLACE_ENCHANT = true, BIND_ENCHANT = true, ACTION_WILL_BIND_ITEM = true,
+             REPLACE_TRADESKILL_ENCHANT = true }
+function KIT.asking()
+    for i = 1, 4 do
+        local f = _G["StaticPopup" .. i]
+        if type(f) == "table" and S(function() return f:IsShown() end) == true then
+            local which = S(function() return f.which end)
+            if type(which) == "string" and KIT.ASKS[which] then return which end
+            if S(function() return f.gamepadFocused end) == true then return type(which) == "string" and which or "?" end
+        end
+    end
+    return nil
+end
 -- the pick started / ended: the room's cursor follows; any route says it (an "itarget" document: the Character room waits for it)
 function KIT.step()
+    -- bags-kit2 (issue #89): the game's question about the pick came or went: report, so syncPass hands A / B over (or back)
+    local ask = (ctl.on and ctl.mode == "target") and KIT.asking() or nil
+    if ask ~= KIT.askWas then
+        KIT.askWas = ask
+        if ctl.on and ctl.mode == "target" then report(ask and ("pick-ask-" .. ask) or "pick-answered") end
+    end
     local on = KIT.on()
     if not on and next(KIT.byKey) ~= nil and not InCombatLockdown() then KIT.byKey = {} end    -- the pick's cells free again
     if on ~= KIT.was then
@@ -1959,6 +1987,9 @@ local function onPress(key)
         -- "equipping": the game is working: nothing here
     elseif ctl.mode == "target" then
         -- "Choose an item": up / down walk the list, A uses the chosen item (the pick's target), B stops the pick
+        -- bags-kit2 (issue #89): while the game asks about the pick, A / B are its own (passed); one that still reaches the room
+        -- (the pass not yet in force) never uses the item again - that was the loop - and the pass is made again
+        if (A or B) and KIT.asking() then ctl.passing = false; report("pick-ask-" .. key); return end
         local list = KIT.list()
         if key == "PADDUP" or key == "PADDDOWN" then
             ctl.tsel = math.max(1, math.min(#list, (ctl.tsel or 1) + (key == "PADDUP" and -1 or 1))); report(nil)
