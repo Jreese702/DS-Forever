@@ -176,6 +176,13 @@ action act on the tap's RELEASE (the template's rule); cells with `type = nil` r
 Attributes are set by `init` out of combat only; a change in a fight waits for PLAYER_REGEN_ENABLED (TapPad.lua:312-314). `u` below =
 0 player, 1..4 party1..party4.
 
+**SUPERSEDED for cols 0-9 (PadMap m129 / m130, 2026-11-11):** cols 0-4 are the PICK cells: each cell carries the PARTYPICK pre
+snippet itself (`SecureHandlerWrapScript` on the cell, no `type` at rest): Party mode off = `type="target"`; the picked member = the
+Touch action (`type="target"` or `type="spell"`); another member = the pick moves (`wc-box` + `wc-u` on the pad), nothing cast. The
+first edge of a press decides and stores it (`wc-pdec`), later edges re-use it, the release clears it; one partybox a press
+(`wc-pseq`). m129's hidden `WowCompanionPartyPick1..5` relay buttons are gone (review: a relayed `Click(button)` could miss the
+delegate's action edge). Cols 5-9 are spare. The rows below are the old layout, kept for the history.
+
 | col | name | cell | what it does |
 |---|---|---|---|
 | 0-4 | TGT u | `type="target"`, `unit=U[u]` (static) | Touch = Target: the member becomes the GAME's target (on purpose). Works in fights |
@@ -293,6 +300,11 @@ PostClick (insecure, plain, in fights too): read `wc-k`, `wc-box`, `wc-u`, `spel
 combat only, after `on` / `off`: `routerBind("party")` (3.5).
 
 ### 3.4 THE BOX'S MOVES: `NAV(n, from, dir)` (identical in Lua and Kotlin; both test this table)
+
+**SUPERSEDED (PadMap m129, the user's decisions 2026-11-11; E:/wow-build/party_design.md A.3):** one column, you first. Up / Down
+move the pick one row with no wrap (`from - 1` / `from + 1`, clamped to 1..n); Left / Right never move it (kept for raid navigation
+later: "this will need to support raids at some point"), and nothing can be put on them. The table below is the old grid's, kept for
+the history only; tools/test_party.py, PartyModelTest and PartyLayoutTest test the column.
 
 Layout by n (index 1 = you): n1 `[1]`; n2 `[1] [2]`; n3 `[1] [2 3]`; n4 `[1] [2 3 4]`; n5 `[1] [2 3] [4 5]`. Rows are walked by Up / Down,
 cells by Left / Right; no wrap; "-" = no move (the app dims that arrow).

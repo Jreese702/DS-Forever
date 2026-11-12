@@ -17,30 +17,42 @@ object PartyModel {
     val SLOTS = listOf("a", "x", "zla", "zlx", "zly", "zra", "zrx", "zry")
     /** padtab pick k (1..10) -> the slot's name (section 2.3) */
     val PICKS = listOf("a", "x", "yc", "touch", "zla", "zlx", "zly", "zra", "zrx", "zry")
+    /**
+     * p37 THE CONTROLLER TAB'S PLACES (PadTabCtl's slotAt; party_design.md B): the slot on layer [set] (1 base, 2 ZL, 3 ZR, 4 both:
+     * locked) at the router's position [pos] (8 A, 5 X, 6 Y; the D-pad 1-4 and B 7 are locked: Up / Down move the pick, Left / Right
+     * are kept for raids). Null = a locked place.
+     */
+    fun slotAt(set: Int, pos: Int): String? {
+        val f = when (pos) { 8 -> "a"; 5 -> "x"; 6 -> "y"; else -> return null }
+        return when (set) { 1 -> if (f == "y") "yc" else f; 2 -> "zl$f"; 3 -> "zr$f"; else -> null }
+    }
+    /** a slot's place: (layer, position); "touch" = the Touch row (null) */
+    fun placeOf(slot: String): Pair<Int, Int>? {
+        if (slot == "touch") return null
+        for (set in 1..3) for (pos in listOf(8, 5, 6)) if (slotAt(set, pos) == slot) return set to pos
+        return null
+    }
+    /** the D-pad's Left / Right in Party mode: kept for raid navigation (the user, 2026-11-11), never assignable */
+    fun reserved(pos: Int) = pos == 1 || pos == 3
+
     /** the Controller tab's chooser lists from the add-on (PadTabCtl p33 `padtabctl.chooser.list`): "party" = a slot's spell (row 1 =
      *  the pseudo row Empty / Inspect / Target, then partycfg.spells), "pbuff" = Smart Y's Add (sy.known minus the list, no pseudo row) */
     val CTL_LISTS = setOf("party", "pbuff")
 
+    /**
+     * A member's PLAIN facts (PadMap m129; party_design.md A.5, the user 2026-11-11: no health or mana on the bottom): who, class
+     * colour, role, dead, offline, the power type, the level, and [rng] = the ONE range answer both screens dim by (null = not known).
+     */
     data class Member(
         val u: String, val i: Int, val n: String, val c: String, val col: String?, val role: String,
-        val dead: Boolean, val off: Boolean, val pt: String, val hpMax: Int?, val pmMax: Int?,
-        /** the health ESTIMATE, 0..100 (the app always prints "~") */
-        val hp: Int, val full: Boolean, val rng: Boolean?,
-        /** m79: where [hp] came from: "unit" / "pct" / "frame" / "compact" (read) or "est" (the estimate); null = an older add-on */
-        val hs: String? = null,
-        /** m92: the member's GUID, for the combat log's health (CombatHealth); null = an older add-on / not plain */
-        val g: String? = null,
-        /** m96: the live hit counts since the add-on loaded (wounds, crits among them, heals); null = an older add-on */
-        val cw: Int? = null, val cc: Int? = null, val ch: Int? = null,
-        /** m98: the live cast count (UNIT_SPELLCAST_SUCCEEDED), for the mana estimate */
-        val cs: Int? = null,
+        val dead: Boolean, val off: Boolean, val pt: String, val lv: Int?, val rng: Boolean?,
     ) {
-        /** the power bar's fill (0..1): the combat log's while it has one, else full (nothing known) */
-        fun powerNow(): Float = CombatHealth.powerFrac(g) ?: 1f
-        /** the health to show: the combat log's while fresh, else the add-on's */
-        fun hpNow(): Int = CombatHealth.pct(g) ?: hp
-        fun fullNow(): Boolean = CombatHealth.pct(g)?.let { it >= 100 } ?: full
+        /** offline, or out of range by the shared answer (party_design.md A.4): drawn at [DIM] on both screens */
+        val dim: Boolean get() = off || (rng == false && u != "player")
     }
+
+    /** offline / out of range: the same 0.45 as the top screen (party_design.md A.4) */
+    const val DIM = 0.45f
 
     data class Party(
         val v: String, val rs: Int, val on: Boolean, val aside: String?, val box: Int?, val fight: Boolean, val grp: Boolean,
@@ -56,8 +68,9 @@ object PartyModel {
     data class SmartY(val on: Boolean, val list: List<Spell>, val known: List<Spell>, val pick: Map<String, Spell>)
 
     /** `partycfg.pad`: every column the app taps comes from here; null = that action unavailable */
+    /** m129: [pick] = the plates' pick cells (pick + i: the add-on's snippet picks, touches or targets) */
     data class Pad(
-        val row: String?, val tgt: Int?, val tsp: Int?, val on: Int?, val off: Int?, val focus: Int?, val menu: Int?,
+        val row: String?, val pick: Int?, val on: Int?, val off: Int?, val focus: Int?, val menu: Int?,
         val resend: Int?, val pbsel: Int?, val pbRemove: Int?, val pbUp: Int?, val pbDown: Int?, val pbAdd: Int?, val mdone: Int?,
         val tabRow: String?, val tab: Int?, val slot0: Int?, val none: Int?,
     )
@@ -92,8 +105,7 @@ object PartyModel {
             val u = o.str("u") ?: continue
             m.add(Member(
                 u, o.int("i") ?: unitIndex(u) ?: k, o.str("n") ?: "?", o.str("c") ?: "", o.str("col"), o.str("role") ?: "NONE",
-                o.bool("dead") ?: false, o.bool("off") ?: false, o.str("pt") ?: "", o.int("hpMax"), o.int("pmMax"),
-                (o.int("hp") ?: 100).coerceIn(0, 100), o.bool("full") ?: false, o.bool("rng"), o.str("hs"), o.str("g"), o.int("cw"), o.int("cc"), o.int("ch"), o.int("cs"),
+                o.bool("dead") ?: false, o.bool("off") ?: false, o.str("pt") ?: "", o.int("lv")?.takeIf { it > 0 }, o.bool("rng"),
             ))
         }
         if (m.isEmpty()) return null
@@ -126,7 +138,7 @@ object PartyModel {
         val po = c.optJSONObject("pad")
         val ops = po?.optJSONObject("pbops")
         val pt = po?.optJSONObject("ptab")
-        val pad = Pad(po?.str("row"), po?.int("tgt"), po?.int("tsp"), po?.int("on"), po?.int("off"), po?.int("focus"), po?.int("menu"),
+        val pad = Pad(po?.str("row"), po?.int("pick"), po?.int("on"), po?.int("off"), po?.int("focus"), po?.int("menu"),
             po?.int("resend"), po?.int("pbsel"), ops?.int("remove"), ops?.int("up"), ops?.int("down"), ops?.int("add"), po?.int("mdone"),
             pt?.str("row"), pt?.int("tab"), pt?.int("slot0"), pt?.int("none"))
         Cfg(msg.optString("v", ""), slots, spell(c.optJSONObject("yc")), spell(c.optJSONObject("touch")), spells(c.optJSONArray("spells")),
@@ -163,29 +175,21 @@ object PartyModel {
         "PADDUP" -> Dir.UP; "PADDDOWN" -> Dir.DOWN; "PADDLEFT" -> Dir.LEFT; "PADDRIGHT" -> Dir.RIGHT; else -> null
     }
 
-    /** the box's rows by n (index 1 = you): n1 [1]; n2 [1][2]; n3 [1][2 3]; n4 [1][2 3 4]; n5 [1][2 3][4 5] */
-    fun rows(n: Int): List<List<Int>> = when (n.coerceIn(1, 5)) {
-        1 -> listOf(listOf(1))
-        2 -> listOf(listOf(1), listOf(2))
-        3 -> listOf(listOf(1), listOf(2, 3))
-        4 -> listOf(listOf(1), listOf(2, 3, 4))
-        else -> listOf(listOf(1), listOf(2, 3), listOf(4, 5))
-    }
+    /** m129 (party_design.md A.1): ONE COLUMN, one member per row (index 1 = you): n1 [1]; n3 [1][2][3]; n5 [1][2][3][4][5] */
+    fun rows(n: Int): List<List<Int>> = (1..n.coerceIn(1, 5)).map { listOf(it) }
 
     /**
-     * THE BOX'S MOVES (3.4; identical in the add-on's OV.partyNav, both test the same table): rows by Up / Down (the same place in the
-     * next row, clamped to its length), cells by Left / Right, no wrap. Null = no move (the strip dims that arrow). A box past n clamps.
+     * THE PICK'S MOVES (identical in the add-on's OV.partyNav, both test the same column): Up / Down one row, no wrap; Left / Right
+     * never (the user, 2026-11-11: "this will need to support raids at some point" - kept for raid navigation, nothing on them).
+     * Null = no move (the strip dims that arrow). A box past n clamps first.
      */
     fun nav(n: Int, from: Int, dir: Dir): Int? {
-        val rs = rows(n)
-        val f = from.coerceIn(1, n.coerceIn(1, 5))
-        val r = rs.indexOfFirst { f in it }
-        val c = rs[r].indexOf(f)
+        val m = n.coerceIn(1, 5)
+        val f = from.coerceIn(1, m)
         return when (dir) {
-            Dir.LEFT -> rs[r].getOrNull(c - 1)
-            Dir.RIGHT -> rs[r].getOrNull(c + 1)
-            Dir.UP -> rs.getOrNull(r - 1)?.let { it[c.coerceAtMost(it.size - 1)] }
-            Dir.DOWN -> rs.getOrNull(r + 1)?.let { it[c.coerceAtMost(it.size - 1)] }
+            Dir.UP -> (f - 1).takeIf { it >= 1 }
+            Dir.DOWN -> (f + 1).takeIf { it <= m }
+            Dir.LEFT, Dir.RIGHT -> null
         }
     }
 
@@ -305,6 +309,20 @@ object PartyModel {
             if (holder == takerTapped && now - takerAt < TAKER_RETRY_MS) return false
             takerTapped = holder; takerAt = now
             return true
+        }
+
+        /**
+         * m129: a plate's tap with Party mode on and live (the add-on's pick snippet decides; this only draws the move at once): member
+         * [i] (unit index 0..4) becomes the pick unless it already is. -> the new box (1-based), or null (nothing moves: off, not
+         * there, or already picked - that tap is the Touch action).
+         */
+        fun choose(i: Int): Int? {
+            val p = party ?: return null
+            if (!p.onLive) return null
+            val k = p.m.indexOfFirst { it.i == i }
+            if (k < 0 || k + 1 == box) return null
+            box = k + 1
+            return box
         }
 
         /** the app's own pad reader moved the box (optimistic; the add-on's partybox corrects it); null = no move */

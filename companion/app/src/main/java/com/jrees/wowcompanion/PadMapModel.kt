@@ -429,11 +429,14 @@ object PadMapModel {
         /** p29 (f-combat-forms): the In combat tab's chosen form (its spell id; null = Caster) and the form row's cursor (0 = Caster) */
         val form: Int? = null,
         val fcur: Int? = null,
-        /** PARTY MODE's tab (PadTabCtl p33, PARTY_BUILD.md 4.4): the left page's row (1..12), the focus ("rows" / "right"), the right
-         *  page's row (0-based) */
-        val ppos: Int = 2,
-        val pfocus: String = "rows",
+        /** PARTY MODE's tab (PadTabCtl p37, party_design.md B): the place on the diamonds (the router's 1..8: 1-4 the D-pad's left /
+         *  up / right / down, 5 X, 6 Y, 7 B, 8 A), the focus ("tabs" / "sets" / "touch" / "diam" / "right"), the right page's row
+         *  (0-based), the layer on show (1 base, 2 ZL, 3 ZR, 4 both), the Touch row's tile (1 Touch, 2 Hold) */
+        val ppos: Int = 8,
+        val pfocus: String = "diam",
         val pright: Int = 0,
+        val pset: Int = 1,
+        val ptouch: Int = 1,
     )
     /** the button Move carries: its set (1-4), its place (1-8), its bar page */
     data class Carry(val set: Int, val pos: Int, val page: Int)
@@ -467,9 +470,11 @@ object PadMapModel {
             rad = c.optJSONArray("rad")?.let { a -> List(minOf(8, a.length())) { i -> a.optInt(i, 0) } } ?: emptyList(),
             form = intOrNull(c, "form")?.takeIf { it > 0 },
             fcur = intOrNull(c, "fcur"),
-            ppos = c.optInt("ppos", 2).coerceIn(1, 12),
-            pfocus = c.optString("pfocus", "rows").ifEmpty { "rows" },
+            ppos = c.optInt("ppos", 8).coerceIn(1, 8),
+            pfocus = c.optString("pfocus", "diam").ifEmpty { "diam" },
             pright = c.optInt("pright", 0).coerceAtLeast(0),
+            pset = c.optInt("pset", 1).coerceIn(1, 4),
+            ptouch = c.optInt("ptouch", 1).coerceIn(1, 2),
         )
     }
 

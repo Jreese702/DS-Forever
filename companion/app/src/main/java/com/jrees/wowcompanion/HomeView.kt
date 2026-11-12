@@ -79,7 +79,7 @@ class HomeView(
     private val auraPane = AuraPane(context)
     private val barsSlot = FrameLayout(context)
     private val chatSlot = FrameLayout(context)
-    /** PARTY MODE's module (PARTY_BUILD.md 4.2): the game's raid-style cells over the left column, never hidden while `party` comes */
+    /** PARTY MODE's module (party_design.md C, m129): one column of plates beside the Select tab, over the left column */
     private val party = PartyModel.live
     private val partyView = PartyModuleView(context, party)
     /** the player menu for a party member (PARTY_BUILD.md 4.6), over the left column; the host drives it */
@@ -127,7 +127,8 @@ class HomeView(
         mapView.onCompactTap = { if (flow.tapMap()) changed() }
         partyView.onCellTap = { i -> onPartyCell?.invoke(i) }
         partyView.onCellLong = { i -> onPartyLong?.invoke(i) }
-        partyView.onTag = { onPartyTag?.invoke() }
+        partyView.onTag = { on -> onPartyTag?.invoke(on) }
+        partyView.triggers = { castView.padTriggers() }                // the picked plate's chips follow ZL / ZR
         // the card's CONTENT is the map's (its focus, its default focus): a change there re-lays Home when the card comes or goes
         // (p-card-invisible: it only redrew, and a pane laid without a card stayed GONE until a later quests document)
         mapView.onShownFocusChanged = { questPane.invalidate(); cardCheck("focus") }
@@ -1121,8 +1122,8 @@ class HomeView(
 
     /** Party mode on and routing, while Home's rest page shows (a full module = the add-on suspends it; drawn as off) */
     private fun partyOnHere(): Boolean = party.party?.onLive == true
-    /** the bottom screen's party module (off 2026-11-05 - the game hid every health number; ON again 2026-11-07, the user: "bring back
-     *  the party mode built off of it": the health now comes from the game's combat log, CombatHealth) */
+    /** the bottom screen's party module (m129, party_design.md C and the user's decisions 2026-11-11: one column of plates beside the
+     *  Select tab, no health or mana: the user "give up on displaying HP/Mana down there") */
     // 2026-11-07 (the user: "Make the party mode an experimental toggle that is off by default"): QOL > Experimental > Party mode
     private val PARTY_MODULE get() = GameUi.partyModeOn()
     /** Party mode holds the D-pad here (its box moves on it): the game's D-pad layout must not also open the bar cursor (2026-11-04,
@@ -1175,6 +1176,9 @@ class HomeView(
 
     /** the app's own pad reader: a D-pad press moves the box at once while Party mode is on and Home's rest page holds it */
     private var partyDpadWas = 0
+    private var partySelWas = false
+    /** Home's rest page shown (back from a room / the background): grouped, the Select tab's edge pulses (party_design.md E) */
+    fun partyHomeOpened() { if (PARTY_MODULE) partyView.homeOpened() }
     private fun partyPad(held: Int) {
         val dirs = listOf(PadInput.SLOT_DPAD_UP to PartyModel.Dir.UP, PadInput.SLOT_DPAD_DOWN to PartyModel.Dir.DOWN,
             PadInput.SLOT_DPAD_LEFT to PartyModel.Dir.LEFT, PadInput.SLOT_DPAD_RIGHT to PartyModel.Dir.RIGHT)
@@ -1182,14 +1186,18 @@ class HomeView(
         for ((k, _) in dirs.withIndex()) if (PadInput.isHeld(held, dirs[k].first)) mask = mask or (1 shl k)
         val fresh = mask and partyDpadWas.inv()
         partyDpadWas = mask
+        // party_design.md E: a Select press the reader sees flashes the tab's pressed look (the add-on's document turns it on / off)
+        val sel = PadInput.isHeld(held, PadInput.SLOT_SELECT)
+        if (sel && !partySelWas && PARTY_MODULE && flow.full == null && isShown) partyView.selectPressed()
+        partySelWas = sel
         if (fresh == 0 || !partyOnHere() || flow.full != null || !isShown || typeWanted) return
         for ((k, d) in dirs.withIndex()) if ((fresh and (1 shl k)) != 0 && party.move(d.second) != null) { partyView.invalidate(); castView.partyChanged() }
     }
 
-    /** the module's touches: Home's host taps them (a tap = Target / the touch spell, a hold = the player menu, the tag = on) */
+    /** the module's touches: Home's host taps them (a tap = the plate's pick cell, a hold = the player menu, the tab = on / off) */
     var onPartyCell: ((Int) -> Unit)? = null
     var onPartyLong: ((Int) -> Unit)? = null
-    var onPartyTag: (() -> Unit)? = null
+    var onPartyTag: ((Boolean) -> Unit)? = null
     /** a Home module went full screen (Home's rest page left): the host taps Party mode off (PartyModel.OFF_ON_LEAVE) */
     var onPartyLeaveRest: (() -> Unit)? = null
 
@@ -1204,7 +1212,7 @@ class HomeView(
         val mode = partyModeNow(s)
         laidPartyMode = mode; laidPartyN = p.n; laidPartyOn = p.onLive
         val right = w / 2f - 5f
-        val m = PartyLayout.module(mode, p.n, top = chat.top, tagShown = !p.onLive, left = chat.left, right = right)
+        val m = PartyLayout.module(mode, p.n, top = chat.top, left = chat.left, right = right)
         partyView.mode = mode
         val out = LinkedHashMap(base)
         out[Part.PARTY] = RectF(chat.left, chat.top - PartyModuleView.RISE, right, m.well.b)

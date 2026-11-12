@@ -12,16 +12,17 @@ class PartyTapsTest {
     private val book = listOf("spells" to 3, "spells" to 9)
 
     @Test fun cellsFromThePad() {
-        assertEquals(listOf("party" to 2), PartyTaps.touch(cfg, 2))                       // Touch = Target
+        // m129: a plate's tap is always its pick cell (the add-on's snippet: off Target, another member the pick, the picked one Touch)
+        assertEquals(listOf("party" to 2), PartyTaps.choose(cfg, 2))
         val spellTouch = cfg.copy(touch = PartyModel.Spell(331, "Healing Wave", 136052))
-        assertEquals(listOf("party" to 7), PartyTaps.touch(spellTouch, 2))                // Touch = a spell
+        assertEquals(listOf("party" to 2), PartyTaps.choose(spellTouch, 2))               // the Touch spell rides the pick button
         assertEquals(listOf("party" to 10), PartyTaps.on(cfg))
         assertEquals(listOf("party" to 11), PartyTaps.off(cfg))
         assertEquals(listOf("party" to 21), PartyTaps.menu(cfg, 4))
         assertEquals(listOf("party" to 12), PartyTaps.focus(cfg, 0))
         assertEquals(listOf("party" to 22), PartyTaps.resend(cfg))
         assertEquals(listOf("party" to 35), PartyTaps.menuDone(cfg))
-        assertNull(PartyTaps.touch(cfg, 5)); assertNull(PartyTaps.menu(cfg, -1))
+        assertNull(PartyTaps.choose(cfg, 5)); assertNull(PartyTaps.menu(cfg, -1))
     }
 
     @Test fun smartYPartyListOpsAreOneBatch() {
@@ -46,14 +47,16 @@ class PartyTapsTest {
     }
 
     @Test fun aMissingColumnMeansUnavailable() {
-        assertNull(PartyTaps.touch(null, 0))
-        val bare = PartyModel.parseCfg(JSONObject("""{"type":"partycfg","c":{"pad":{"row":"party","tgt":0,"on":10}}}"""))!!
-        assertEquals(listOf("party" to 1), PartyTaps.touch(bare, 1))
+        assertNull(PartyTaps.choose(null, 0))
+        val bare = PartyModel.parseCfg(JSONObject("""{"type":"partycfg","c":{"pad":{"row":"party","pick":0,"on":10}}}"""))!!
+        assertEquals(listOf("party" to 1), PartyTaps.choose(bare, 1))
         assertEquals(listOf("party" to 10), PartyTaps.on(bare))
         assertNull(PartyTaps.off(bare)); assertNull(PartyTaps.menu(bare, 1)); assertNull(PartyTaps.resend(bare))
         assertNull(PartyTaps.pbOp(bare, 1, PbOp.REMOVE)); assertNull(PartyTaps.pbAdd(bare, book)); assertNull(PartyTaps.tab(bare))
         assertNull(PartyTaps.setNone(bare, "a"))
-        val noRow = PartyModel.parseCfg(JSONObject("""{"type":"partycfg","c":{"pad":{"tgt":0}}}"""))!!
-        assertNull(PartyTaps.touch(noRow, 0))
+        val noRow = PartyModel.parseCfg(JSONObject("""{"type":"partycfg","c":{"pad":{"pick":0}}}"""))!!
+        assertNull(PartyTaps.choose(noRow, 0))
+        // an older add-on's target / touch-spell columns are not read (no pick column: no tap)
+        assertNull(PartyTaps.choose(PartyModel.parseCfg(JSONObject("""{"type":"partycfg","c":{"pad":{"row":"party","tgt":0,"tsp":5}}}""")), 0))
     }
 }

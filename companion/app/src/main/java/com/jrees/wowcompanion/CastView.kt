@@ -621,6 +621,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var padLt = false; private var padRt = false
     /** p-grow-glitch: ZL or ZR held now (this view's own controller reader): a B then is a layer's ability, not "shrink" */
     fun triggerHeld(): Boolean = padLt || padRt
+    /** ZL / ZR held now (Party mode's picked plate shows that layer's chips, as the strip does) */
+    fun padTriggers(): Pair<Boolean, Boolean> = padLt to padRt
     private var padLb = false; private var padRb = false
     private var padOk = true
     private var layer = N

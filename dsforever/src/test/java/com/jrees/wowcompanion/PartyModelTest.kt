@@ -9,15 +9,16 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** PARTY_BUILD.md section 1's documents, 3.4's NAV and 1.1's resend / stale-tap rules */
+/** PARTY_BUILD.md section 1's documents (m129: plain facts only), the one-column NAV (the user's decisions 2026-11-11) and 1.1's
+ *  resend / stale-tap rules */
 class PartyModelTest {
     companion object {
         val PARTY = """{"type":"party","v":"m77","rs":12,"p":{
   "on":true,"aside":null,"box":2,"fight":false,"grp":true,"sel":"bound",
   "m":[{"u":"player","i":0,"n":"Korvash","c":"SHAMAN","col":"ff0070dd","role":"HEALER","dead":false,"off":false,
-        "pt":"MANA","hpMax":412,"pmMax":380,"hp":100,"full":true},
+        "pt":"MANA","lv":20},
        {"u":"party1","i":1,"n":"Brannoc","c":"WARRIOR","col":"ffc69b6d","role":"TANK","dead":false,"off":false,
-        "pt":"RAGE","hpMax":510,"hp":72,"full":false,"rng":true}]}}"""
+        "pt":"RAGE","lv":21,"rng":true}]}}"""
         val CFG = """{"type":"partycfg","v":"m77","c":{
   "slots":{"a":{"id":331,"n":"Healing Wave","i":136052,"k":true,"d":true},
            "x":{"id":8004,"n":"Lesser Healing Wave","i":136043,"k":false,"d":true},
@@ -28,7 +29,7 @@ class PartyModelTest {
   "spells":[{"id":331,"n":"Healing Wave","i":136052}],
   "sy":{"on":false,"list":[{"id":131,"n":"Water Breathing","i":136148,"k":false}],"known":[],
         "pick":{"party1":{"id":131,"n":"Water Breathing","i":136148}}},
-  "pad":{"row":"party","tgt":0,"tsp":5,"on":10,"off":11,"focus":12,"menu":17,"resend":22,"pbsel":23,
+  "pad":{"row":"party","pick":0,"on":10,"off":11,"focus":12,"menu":17,"resend":22,"pbsel":23,
          "pbops":{"remove":31,"up":32,"down":33,"add":34},"mdone":35,
          "ptab":{"row":"padtab","tab":26,"slot0":27,"none":37}}}}"""
         val BOX = """{"type":"partybox","v":"m77","b":{"n":57,"on":true,"box":2,"cnt":3,"u":"party1","k":"cast","key":"PAD1","ly":"",
@@ -45,11 +46,14 @@ class PartyModelTest {
         val me = p.m[0]
         assertEquals("player", me.u); assertEquals(0, me.i); assertEquals("Korvash", me.n); assertEquals("SHAMAN", me.c)
         assertEquals("ff0070dd", me.col); assertEquals("HEALER", me.role); assertFalse(me.dead); assertFalse(me.off)
-        assertEquals("MANA", me.pt); assertEquals(412, me.hpMax); assertEquals(380, me.pmMax); assertEquals(100, me.hp); assertTrue(me.full)
-        assertNull(me.rng)
+        assertEquals("MANA", me.pt); assertEquals(20, me.lv)
+        assertNull(me.rng); assertFalse(me.dim)
         val t = p.m[1]
         assertEquals("party1", t.u); assertEquals(1, t.i); assertEquals("TANK", t.role); assertEquals("RAGE", t.pt)
-        assertNull(t.pmMax); assertEquals(72, t.hp); assertFalse(t.full); assertEquals(true, t.rng)
+        assertEquals(21, t.lv); assertEquals(true, t.rng); assertFalse(t.dim)
+        // m129 (party_design.md A.4): offline or out of range by the shared answer = dim (0.45, the top screen's); you never by range
+        assertTrue(t.copy(rng = false).dim); assertTrue(t.copy(off = true).dim); assertFalse(me.copy(rng = false).dim)
+        assertEquals(0.45f, PartyModel.DIM)
     }
 
     @Test fun cfgParsesFieldForField() {
@@ -64,7 +68,7 @@ class PartyModelTest {
         assertFalse(c.sy.on); assertEquals(listOf(131), c.sy.list.map { it.id }); assertFalse(c.sy.list[0].k)
         assertTrue(c.sy.known.isEmpty()); assertEquals(131, c.sy.pick["party1"]!!.id)
         val pad = c.pad
-        assertEquals("party", pad.row); assertEquals(0, pad.tgt); assertEquals(5, pad.tsp); assertEquals(10, pad.on); assertEquals(11, pad.off)
+        assertEquals("party", pad.row); assertEquals(0, pad.pick); assertEquals(10, pad.on); assertEquals(11, pad.off)
         assertEquals(12, pad.focus); assertEquals(17, pad.menu); assertEquals(22, pad.resend); assertEquals(23, pad.pbsel)
         assertEquals(31, pad.pbRemove); assertEquals(32, pad.pbUp); assertEquals(33, pad.pbDown); assertEquals(34, pad.pbAdd)
         assertEquals(35, pad.mdone); assertEquals("padtab", pad.tabRow); assertEquals(26, pad.tab); assertEquals(27, pad.slot0)
@@ -88,13 +92,13 @@ class PartyModelTest {
         assertNull(PartyModel.parseCfg(JSONObject("""{"type":"partycfg"}""")))
         assertNull(PartyModel.parseBox(JSONObject("""{"type":"partybox","b":{}}""")))
         assertNull(PartyModel.parseAck(JSONObject("""{"type":"partyack"}""")))
-        // a sparse member: defaults (hp full, no role, the index from the unit)
-        val p = PartyModel.parseParty(JSONObject("""{"type":"party","p":{"m":[{"u":"party3"}]}}"""))!!
-        assertEquals(3, p.m[0].i); assertEquals("?", p.m[0].n); assertEquals(100, p.m[0].hp); assertEquals("NONE", p.m[0].role)
+        // a sparse member: defaults (no level, no role, the index from the unit); an older add-on's health fields are ignored
+        val p = PartyModel.parseParty(JSONObject("""{"type":"party","p":{"m":[{"u":"party3","hp":40,"full":false,"lv":0}]}}"""))!!
+        assertEquals(3, p.m[0].i); assertEquals("?", p.m[0].n); assertNull(p.m[0].lv); assertEquals("NONE", p.m[0].role)
         assertFalse(p.on); assertNull(p.box)
         // a cfg with no pad: every column missing (actions unavailable)
         val c = PartyModel.parseCfg(JSONObject("""{"type":"partycfg","c":{}}"""))!!
-        assertNull(c.pad.tgt); assertNull(c.pad.row); assertNull(c.slot("a")); assertFalse(c.sy.on)
+        assertNull(c.pad.pick); assertNull(c.pad.row); assertNull(c.slot("a")); assertFalse(c.sy.on)
         // box only while on
         val off = PartyModel.parseParty(JSONObject(PARTY.replace("\"on\":true", "\"on\":false")))!!
         assertNull(off.box)
@@ -109,25 +113,28 @@ class PartyModelTest {
         assertNull(PartyModel.unitIndex(null))
     }
 
-    /** 3.4's table, row for row ("-" = null) */
-    @Test fun navIsTheTable() {
-        val t = listOf(
-            "1 1 - - - -",
-            "2 1 - 2 - -", "2 2 1 - - -",
-            "3 1 - 2 - -", "3 2 1 - - 3", "3 3 1 - 2 -",
-            "4 1 - 2 - -", "4 2 1 - - 3", "4 3 1 - 2 4", "4 4 1 - 3 -",
-            "5 1 - 2 - -", "5 2 1 4 - 3", "5 3 1 5 2 -", "5 4 2 - - 5", "5 5 3 - 4 -",
-        )
-        for (row in t) {
-            val f = row.split(" ")
-            val n = f[0].toInt(); val from = f[1].toInt()
-            for ((k, d) in listOf(Dir.UP, Dir.DOWN, Dir.LEFT, Dir.RIGHT).withIndex()) {
-                val want = f[2 + k].toIntOrNull()
-                assertEquals("n $n from $from $d", want, PartyModel.nav(n, from, d))
-            }
+    /** m129 THE ONE COLUMN (the add-on's OV.partyNav: tools/test_party.py tests the same): Up / Down a row, no wrap; Left / Right
+     *  never (the user, 2026-11-11: "this will need to support raids at some point") */
+    @Test fun navIsTheColumn() {
+        for (n in 1..5) for (from in 1..n) {
+            assertEquals("n $n from $from up", if (from > 1) from - 1 else null, PartyModel.nav(n, from, Dir.UP))
+            assertEquals("n $n from $from down", if (from < n) from + 1 else null, PartyModel.nav(n, from, Dir.DOWN))
+            assertNull(PartyModel.nav(n, from, Dir.LEFT)); assertNull(PartyModel.nav(n, from, Dir.RIGHT))
         }
         // a box past n clamps
-        assertEquals(1, PartyModel.nav(3, 5, Dir.UP))
+        assertEquals(2, PartyModel.nav(3, 5, Dir.UP))
+        assertEquals((1..4).map { listOf(it) }, PartyModel.rows(4))
+    }
+
+    /** p37 the Controller tab's places (PadTabCtl's slotAt): A / X / Y per layer, the rest locked; Left / Right kept for raids */
+    @Test fun controllerTabPlaces() {
+        assertEquals("a", PartyModel.slotAt(1, 8)); assertEquals("x", PartyModel.slotAt(1, 5)); assertEquals("yc", PartyModel.slotAt(1, 6))
+        assertEquals("zla", PartyModel.slotAt(2, 8)); assertEquals("zly", PartyModel.slotAt(2, 6)); assertEquals("zrx", PartyModel.slotAt(3, 5))
+        for (p in listOf(1, 2, 3, 4, 7)) assertNull(PartyModel.slotAt(1, p))
+        for (p in 1..8) assertNull(PartyModel.slotAt(4, p))                                 // ZL + ZR: locked
+        for (s in PartyModel.PICKS.filter { it != "touch" }) PartyModel.placeOf(s)!!.let { (set, pos) -> assertEquals(s, PartyModel.slotAt(set, pos)) }
+        assertNull(PartyModel.placeOf("touch"))
+        assertTrue(PartyModel.reserved(1) && PartyModel.reserved(3)); assertFalse(PartyModel.reserved(2) || PartyModel.reserved(4))
     }
 
     @Test fun newestNWinsRepeatsAndReplaysDropped() {
@@ -149,9 +156,12 @@ class PartyModelTest {
         val s = PartyModel.State()
         val p5 = party().let { p -> p.copy(box = 1, m = (0..4).map { i -> p.m[0].copy(u = if (i == 0) "player" else "party$i", i = i) }) }
         s.onParty(p5, true, 0L)
-        assertEquals(2, s.move(Dir.DOWN)); assertEquals(3, s.move(Dir.RIGHT)); assertNull(s.move(Dir.RIGHT)); assertEquals(5, s.move(Dir.DOWN))
+        assertEquals(2, s.move(Dir.DOWN)); assertNull(s.move(Dir.RIGHT)); assertNull(s.move(Dir.LEFT)); assertEquals(3, s.move(Dir.DOWN))
+        assertEquals(2, s.move(Dir.UP))
+        // m129 a plate's tap draws the pick at once (the add-on decides): another member moves it; the picked one does not (its Touch)
+        assertEquals(5, s.choose(4)); assertEquals(5, s.box); assertNull(s.choose(4)); assertEquals(1, s.choose(0)); assertNull(s.choose(7))
         s.onParty(p5.copy(on = false, box = null), true, 0L)
-        assertNull(s.move(Dir.UP))
+        assertNull(s.move(Dir.UP)); assertNull(s.choose(2))                       // off: a tap is Target, nothing drawn as a pick
         s.onParty(p5.copy(aside = "room"), true, 0L)
         assertNull(s.move(Dir.UP))
     }

@@ -38,7 +38,7 @@ class PartyShotsTest {
 
     private fun member(i: Int, n: String, c: String, role: String, pt: String, hp: Int, dead: Boolean = false, off: Boolean = false) =
         JSONObject().put("u", if (i == 0) "player" else "party$i").put("i", i).put("n", n).put("c", c).put("role", role)
-            .put("pt", pt).put("hp", hp).put("full", hp >= 100).put("dead", dead).put("off", off)
+            .put("pt", pt).put("lv", 20 + i).put("dead", dead).put("off", off).put("rng", if (i == 4) false else JSONObject.NULL)   // m129: no hp
             .put("col", when (c) { "SHAMAN" -> "ff0070dd"; "WARRIOR" -> "ffc69b6d"; "MAGE" -> "ff3fc7eb"; "ROGUE" -> "fffff468"
                 "PRIEST" -> "ffffffff"; else -> "ffffd100" })
 
@@ -55,7 +55,7 @@ class PartyShotsTest {
         val order = if (n == 3) listOf(0, 1, 3) else (0 until n).toList()
         for (k in order) {
             val o = JSONObject(roster[k].toString())
-            if (k == 3 && !deadOn) o.put("dead", false).put("hp", 58)
+            if (k == 3 && !deadOn) o.put("dead", false)
             m.put(o)
         }
         return JSONObject().put("type", "party").put("v", "m77").put("rs", 1)
@@ -88,7 +88,7 @@ class PartyShotsTest {
         st.onParty(PartyModel.parseParty(party(n, on, box))!!, true, 0L)
         val v = PartyModuleView(RuntimeEnvironment.getApplication(), st)
         v.mode = mode
-        val m = PartyLayout.module(mode, st.party!!.n, top = top, tagShown = !on)
+        val m = PartyLayout.module(mode, st.party!!.n, top = top)
         val (bmp, c) = page()
         // the chat's well under it, empty: where chat would stand
         UiKit.module(c, android.graphics.RectF(8f, m.chatTop, 616f, 927f))
@@ -104,7 +104,7 @@ class PartyShotsTest {
                "zly":null,"zra":{"id":2008,"n":"Ancestral Spirit","i":136077,"k":true,"d":true,"res":true},"zrx":null,"zry":null},
       "yc":null,"touch":null,"spells":[{"id":331,"n":"Healing Wave","i":136052},{"id":8004,"n":"Lesser Healing Wave","i":136043}],
       "sy":{"on":false,"list":[{"id":131,"n":"Water Breathing","i":136148,"k":true}],"known":[{"id":131,"n":"Water Breathing","i":136148}],"pick":{}},
-      "pad":{"row":"party","tgt":0,"tsp":5,"on":10,"off":11,"focus":12,"menu":17,"resend":22,"pbsel":23,
+      "pad":{"row":"party","pick":0,"on":10,"off":11,"focus":12,"menu":17,"resend":22,"pbsel":23,
              "pbops":{"remove":31,"up":32,"down":33,"add":34},"mdone":35,"ptab":{"row":"padtab","tab":26,"slot0":27,"none":37}}}}"""
 
     /** the strip's band at rest (Home's bars slot y 8..226), Party mode on, with the game's own Y / B */
@@ -143,7 +143,7 @@ class PartyShotsTest {
         val st = PartyModel.State()
         st.onParty(PartyModel.parseParty(party(3, true, 2))!!, true, 0L)
         val mod = PartyModuleView(RuntimeEnvironment.getApplication(), st)
-        val m = PartyLayout.module(PartyLayout.Mode.REST, 3, tagShown = false)
+        val m = PartyLayout.module(PartyLayout.Mode.REST, 3)
         UiKit.module(c, android.graphics.RectF(8f, m.chatTop, 616f, 927f))
         draw(c, mod, 8f, 216f - PartyModuleView.RISE, 615f, m.well.b)
         val v = PartyMenuView(RuntimeEnvironment.getApplication())
@@ -160,16 +160,18 @@ class PartyShotsTest {
     }
 
     /** P4 / P4Y / P4S: the Controller room on its Party mode tab (the room's 1240 x 935 above the bar) */
-    private fun tab(name: String, ppos: Int, smartY: Boolean, yc: Boolean, pfocus: String = "rows", pright: Int = 0) {
+    private fun tab(name: String, ppos: Int, smartY: Boolean, yc: Boolean, pfocus: String = "diam", pright: Int = 0, pset: Int = 1) {
         val live = PartyModel.live
         var cfg = JSONObject(cfgJson)
         if (smartY) cfg.getJSONObject("c").getJSONObject("sy").put("on", true)
         if (yc) cfg.getJSONObject("c").put("yc", JSONObject("""{"id":331,"n":"Healing Wave","i":136052}"""))
         live.onCfg(PartyModel.parseCfg(cfg)!!, true)
         live.onParty(PartyModel.parseParty(party(3, true, 1))!!, true, 0L)
+        GameUi.init(RuntimeEnvironment.getApplication())                  // party_design.md B: the tab shows while Party mode is allowed
+        GameUi.setSwitch(GameUi.SW_PMODE, true)
         val v = ControllerView(RuntimeEnvironment.getApplication(), onPadCells = { true })
         v.onPadTabCtl(PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","c":{"on":true,"view":"party","focus":"buttons","tcur":5,
-            "ppos":$ppos,"pfocus":"$pfocus","pright":$pright}}"""))!!)
+            "ppos":$ppos,"pfocus":"$pfocus","pright":$pright,"pset":$pset}}"""))!!)
         val (bmp, c) = page()
         draw(c, v, 0f, 0f, 1240f, 935f)
         save(bmp, name)
@@ -178,10 +180,13 @@ class PartyShotsTest {
     @Test fun controllerTab() {
         assumeTrue(out != null)
         artRoot()
-        tab("controller_party_tab_a.png", 2, smartY = false, yc = false)
-        tab("controller_party_tab_y.png", 4, smartY = false, yc = true)
-        tab("controller_party_tab_y_smart.png", 4, smartY = true, yc = false, pfocus = "right", pright = 0)
-        tab("controller_party_tab_touch.png", 5, smartY = false, yc = false)
+        // p37: ppos = the router's places (8 A, 6 Y, 3 the D-pad's Right: kept for raids), pset the layer on show
+        tab("controller_party_tab_a.png", 8, smartY = false, yc = false)
+        tab("controller_party_tab_y.png", 6, smartY = false, yc = true)
+        tab("controller_party_tab_y_smart.png", 6, smartY = true, yc = false, pfocus = "right", pright = 0)
+        tab("controller_party_tab_touch.png", 8, smartY = false, yc = false, pfocus = "touch")
+        tab("controller_party_tab_zl.png", 5, smartY = false, yc = false, pset = 2)
+        tab("controller_party_tab_reserved.png", 3, smartY = false, yc = false)
     }
 
     @Test fun homeModule() {

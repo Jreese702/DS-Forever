@@ -11,13 +11,17 @@ import android.view.MotionEvent
 import android.view.View
 
 /**
- * THE CONTROLLER ROOM'S PARTY MODE TAB (PARTY_BUILD.md 4.4; SPEC_DRAFT v10, v9 trim; P4, P4Y, P4S). Drawn by [ControllerView] when
- * the tab on show is "party". The CURSOR is the add-on's (PadTabCtl: `ppos` 1..12, `pfocus` rows / right, `pright`, a chooser with
- * list "party"); a finger picks with `padtab` 27-36 (PartyTaps.pick), sets the no-spell value with 37, a spell with Book's two taps.
+ * THE CONTROLLER ROOM'S PARTY MODE TAB (party_design.md B and the user's decisions 2026-11-11; PadTabCtl p37). Drawn by
+ * [ControllerView] when the tab on show is "party", ON THE NORMAL LAYERS' OWN PICTURE ([PadDiamonds]): whatever is set here is exactly
+ * what the pad does while Party mode is on.
  *
- * Left page: two columns of six rows (111 high from y 188): LEFT 1 D-pad (fixed), 2 A, 3 X, 4 Y, 5 Touch, 6 (empty place); RIGHT
- * 7 ZL+A .. 12 ZR+Y. A row: the glyph, the spell in the book's frame, its name and ONE line; no button on a row; the chosen row is the
- * paper's gold. Right page: the titles, the icons and the current value, ONE red action (the user's v9 trim: no explanations).
+ * Left page: the SET ROW (ZL, ZR as on the normal page; ZL + ZR dimmed with a lock: nothing happens with both held), the TOUCH ROW
+ * (Touch: the picked plate's second tap, Target by default; Hold: the player menu, locked), the D-PAD DIAMOND (Up / Down: gold move
+ * arrows, locked - they move the pick; Left / Right: empty and locked, kept for raids - the user: "this will need to support raids at
+ * some point"), the FACE DIAMOND (A, X, Y as set on the layer on show; Y's base place split: out of combat Inspect / Smart Y, in combat
+ * `yc`; B the red Back, locked) and a FOOTER plate: Select, the swirl, B (the way in and out). Right page: the place's title, its icon,
+ * "Now", ONE red Change. The CURSOR is the add-on's (PadTabCtl p37: ppos = the router's 8 positions, pset, ptouch, pfocus); a finger
+ * picks with padtab 27-36 (PartyTaps.pick), sets the no-spell value with 37, a spell with Book's two taps.
  */
 class PartyTabPage(
     private val host: View,
@@ -26,13 +30,11 @@ class PartyTabPage(
     /** Book's two taps for spell [id] (the `spells` row's vb / vo), null = not in the book now */
     private val spellCells: (Int) -> List<Pair<String, Int>>?,
 ) {
-    /** ppos -> the slot it sets (null: the D-pad and the empty place) */
-    private fun slotOf(pos: Int): String? = when (pos) {
-        2 -> "a"; 3 -> "x"; 4 -> "yc"; 5 -> "touch"; 7 -> "zla"; 8 -> "zlx"; 9 -> "zly"; 10 -> "zra"; 11 -> "zrx"; 12 -> "zry"; else -> null
-    }
-
     // a finger's own choices, shown at once; the add-on's echo (padtabctl) takes over after ECHO_MS
-    private var localPos = 2
+    private var localPos = 8
+    private var localSet = 1
+    /** a finger on the Touch row (true) or the diamonds */
+    private var localTouch = false
     private var localUntil = 0L
     private var localRight = 0
     /** the touch chooser (the controller's own is the add-on's, drawn from [ctl]) */
@@ -43,162 +45,164 @@ class PartyTabPage(
 
     private fun live() = PartyModel.live
 
-    /** the row the page shows as chosen: the controller's while it holds the tab, else the finger's */
-    private fun pos(ctl: PadMapModel.Ctl?): Int =
-        if (ctl != null && ctl.on && ctl.view == "party" && SystemClock.uptimeMillis() >= localUntil) ctl.ppos.coerceIn(1, 12) else localPos
-    private fun rightRow(ctl: PadMapModel.Ctl?): Int =
-        if (ctl != null && ctl.on && ctl.view == "party" && SystemClock.uptimeMillis() >= localUntil) ctl.pright.coerceAtLeast(0) else localRight
+    private fun ctlHolds(ctl: PadMapModel.Ctl?) = ctl != null && ctl.on && ctl.view == "party" && SystemClock.uptimeMillis() >= localUntil
+    /** the place the page shows as chosen: the controller's while it holds the tab, else the finger's */
+    private fun pos(ctl: PadMapModel.Ctl?): Int = if (ctlHolds(ctl)) ctl!!.ppos.coerceIn(1, 8) else localPos
+    private fun set(ctl: PadMapModel.Ctl?): Int = if (ctlHolds(ctl)) ctl!!.pset.coerceIn(1, 4) else localSet
+    private fun onTouchRow(ctl: PadMapModel.Ctl?): Boolean =
+        if (ctlHolds(ctl)) ctl!!.pfocus == "touch" || (ctl.pfocus == "right" && lastRightFromTouch) else localTouch
+    private fun rightRow(ctl: PadMapModel.Ctl?): Int = if (ctlHolds(ctl)) ctl!!.pright.coerceAtLeast(0) else localRight
     private fun rightFocus(ctl: PadMapModel.Ctl?): Boolean = ctl != null && ctl.on && ctl.view == "party" && ctl.pfocus == "right"
+    /** the controller went to the right page from the Touch row (pfocus touch, then right) */
+    private var lastRightFromTouch = false
+
+    /** the slot the page edits now: the Touch row's Touch, else the place on the layer on show (null: a locked place) */
+    private fun curSlot(ctl: PadMapModel.Ctl?): String? =
+        if (onTouchRow(ctl)) (if (ctlHolds(ctl) && ctl!!.ptouch == 2) null else "touch") else PartyModel.slotAt(set(ctl), pos(ctl))
 
     fun say(s: String) { flash = s; flashUntil = SystemClock.uptimeMillis() + 2500L; host.postInvalidateDelayed(2550L); host.invalidate() }
 
     fun onAck(a: PartyModel.Ack) {
         if (a.ok) { chooser = null; host.invalidate(); return }
-        say(when (a.why) { "combat" -> "Not in a fight: try again after it"; null -> "The game did not take it"; else -> "The game did not take it" })
+        say(when (a.why) { "combat" -> "Not in a fight"; else -> "Not taken" })
     }
 
     fun chooserOpen(ctl: PadMapModel.Ctl?): Boolean = chooser != null || ctl?.chooser?.list in PartyModel.CTL_LISTS
 
     // ------------------------------------------------------------------------------------------------ geometry
 
-    private fun rowRect(pos: Int): RectF {
-        val col = if (pos <= 6) 0 else 1
-        val k = (pos - 1) % 6
-        val l = if (col == 0) 36f else 374f
-        return RectF(l, ROW_TOP + k * ROW_H, l + 326f, ROW_TOP + (k + 1) * ROW_H)
-    }
+    private fun swap() = CastSettings.faceSwap
+    private fun sq(p: Int) = PadDiamonds.rect(PadDiamonds.square(p, swap()))
+    private fun setR(i: Int) = PadDiamonds.rect(PadDiamonds.setRect(i))
+    private fun touchR(i: Int) = PadDiamonds.rect(PadDiamonds.touchRect(i))
     private val act = RectF(790f, 804f, 1172f, 892f)
     private fun listRow(k: Int) = RectF(782f, LIST_TOP + k * ROW_H, 1192f, LIST_TOP + (k + 1) * ROW_H)
 
-    // ------------------------------------------------------------------------------------------------ what a row says
-
-    private class RowWords(val icon: android.graphics.Bitmap?, val name: String, val line: String, val dim: Boolean)
-
     private fun icon(s: PartyModel.Spell?) = s?.let { Icons.get(it.i) }
 
-    private fun words(pos: Int, cfg: PartyModel.Cfg?): RowWords? {
-        return when (pos) {
-            1 -> RowWords(null, "Moves the box", "Fixed", false)
-            6 -> null
-            4 -> {
-                val sy = cfg?.sy?.on == true
-                RowWords(UiKit.tex("fixed_inspect"), if (sy) "Smart Y" else "Inspect", "In combat: ${cfg?.yc?.n ?: "Inspect"}", false)
-            }
-            5 -> cfg?.touch?.let { RowWords(icon(it), "Touch", it.n, !it.k) } ?: RowWords(null, "Touch", "Target", false)
-            else -> {
-                val s = slotOf(pos)?.let { cfg?.slot(it) }
-                if (s == null) RowWords(null, "Empty", "Nothing on it", true)
-                else RowWords(icon(s), s.n, if (s.res) "A dead member" else "Boxed member", !s.k)
-            }
-        }
+    private fun style(): SpellsModel.PadStyle = when (CastSettings.buttonLayout) {
+        CastSettings.ButtonLayout.XBOX -> SpellsModel.PadStyle.LTR
+        CastSettings.ButtonLayout.PLAYSTATION -> SpellsModel.PadStyle.SHP
+        CastSettings.ButtonLayout.NINTENDO -> SpellsModel.PadStyle.REV
     }
-
+    private fun glyph(p: Int) = SpellsModel.combo(SpellsModel.PadSlot(0, 1, 1, p), style()).button
     private fun padSet(): String = when (CastSettings.buttonLayout) {
         CastSettings.ButtonLayout.XBOX -> "ltr"; CastSettings.ButtonLayout.PLAYSTATION -> "shp"; else -> "rev"
     }
-    private fun face(f: String): String =
-        if (padSet() == "shp") "shp_" + mapOf("x" to "square", "y" to "triangle", "b" to "circle", "a" to "cross").getValue(f) else "${padSet()}_$f"
-
-    /** the row's glyph: a face, a chord (the trigger's 50 px over the face's 34 px), the D-pad's cross, the pointing gauntlet */
-    private fun drawGlyph(c: Canvas, pos: Int, cx: Float, cy: Float) {
-        when (pos) {
-            1 -> dpadCross(c, cx, cy, 44f)
-            2 -> UiKit.pad(c, face("a"), cx, cy, 44f)
-            3 -> UiKit.pad(c, face("x"), cx, cy, 44f)
-            4 -> UiKit.pad(c, face("y"), cx, cy, 44f)
-            5 -> PartyArt.gauntlet(c, cx, cy, 52f)
-            in 7..12 -> {
-                val trig = if (pos <= 9) "ltrigger" else "rtrigger"
-                val f = when ((pos - 7) % 3) { 0 -> "a"; 1 -> "x"; else -> "y" }
-                UiKit.pad(c, "${padSet()}_$trig", cx, cy - 17f, 50f)
-                UiKit.pad(c, face(f), cx, cy + 20f, 34f)
-            }
-        }
-    }
+    private fun face(f: String): String = Glyphs.translate("rev_$f", CastSettings.buttonLayout)
 
     private val pFlat = Paint(Paint.ANTI_ALIAS_FLAG)
-    /** UiKit.bookEntry's chosen band (the row stays chosen while the right page has the cursor) */
-    private fun chosenBand(c: Canvas, r: RectF) {
-        val band = RectF(r.left, r.top + 5f, r.right, r.bottom - 5f)
-        pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(51, 110, 60, 14); c.drawRect(band, pFlat)
-        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Color.rgb(122, 84, 36); c.drawRect(band, pFlat)
-        pFlat.style = Paint.Style.FILL
-    }
-    private fun dpadCross(c: Canvas, cx: Float, cy: Float, s: Float) {
-        pFlat.style = Paint.Style.FILL; pFlat.color = Color.WHITE
-        val a = s * 0.18f
-        c.drawRoundRect(cx - a, cy - s / 2f, cx + a, cy + s / 2f, 4f, 4f, pFlat)
-        c.drawRoundRect(cx - s / 2f, cy - a, cx + s / 2f, cy + a, 4f, 4f, pFlat)
-    }
+    private val pBmp = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val pDim = Paint().apply { color = Color.argb(150, 14, 10, 6) }
 
-    /** the frame's content for rows with no spell: the D-pad's four gold arrows, Touch's target ring */
-    private fun drawFrameArt(c: Canvas, pos: Int, x: Float, y: Float, size: Float) {
-        if (pos == 1) {
-            val cx = x + size / 2f; val cy = y + size / 2f
-            pFlat.style = Paint.Style.FILL; pFlat.color = Theme.gold
-            for (k in 0 until 4) {
-                c.save(); c.rotate(90f * k, cx, cy)
-                val p = android.graphics.Path(); p.moveTo(cx, cy - size * 0.36f); p.lineTo(cx - size * 0.12f, cy - size * 0.18f)
-                p.lineTo(cx + size * 0.12f, cy - size * 0.18f); p.close(); c.drawPath(p, pFlat)
-                c.restore()
-            }
-        } else if (pos == 5) PartyArt.targetRing(c, x + size / 2f, y + size / 2f, size * 0.36f)
+    private fun lock(c: Canvas, r: RectF) =
+        UiKit.tex("talent_lock")?.let { c.drawBitmap(it, null, RectF(r.right - 20f, r.bottom - 30f, r.right - 2f, r.bottom - 4f), pBmp) }
+
+    /** a gold move arrow in [r]'s middle, pointing [deg] (0 = right, -90 = up) */
+    private fun moveArrow(c: Canvas, r: RectF, deg: Float) {
+        val a = UiKit.tex("move_arrow_right") ?: return
+        c.save(); c.rotate(deg, r.centerX(), r.centerY())
+        c.drawBitmap(a, null, RectF(r.centerX() - 22f, r.centerY() - 22f, r.centerX() + 22f, r.centerY() + 22f), pBmp)
+        c.restore()
     }
 
     // ------------------------------------------------------------------------------------------------ draw
 
     fun draw(c: Canvas, w: Float, h: Float, ctl: PadMapModel.Ctl?) {
+        lastCtl = ctl
         val cfg = live().cfg
-        val chosen = pos(ctl)
-        val cursorOnRows = ctl == null || !ctl.on || ctl.focus != "tabs"
-        val pn = TextPaint(UiKit.inkPaint(27f))
-        val pl = TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim })
-        for (p in 1..12) {
-            val r = rowRect(p)
-            val wd = words(p, cfg) ?: continue
-            // the cursor's gold on the chosen row; while the cursor works in the right page, the book's chosen band (P4S)
-            if (p == chosen && cursorOnRows) { if (rightFocus(ctl)) chosenBand(c, r) else UiKit.focus(c, r, onPaper = true) }
-            val cy = r.centerY()
-            drawGlyph(c, p, r.left + 30f, cy)
-            val ix = r.left + 96f; val iy = cy - 29f
-            UiKit.spell(c, wd.icon, ix, iy, 58f, if (wd.dim) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN)
-            if (wd.icon == null) drawFrameArt(c, p, ix, iy, 58f)
-            if (p == 1) UiKit.tex("talent_lock")?.let { c.drawBitmap(it, null, RectF(ix + 40f, iy + 34f, ix + 60f, iy + 62f), null) }
-            val nx = r.left + 166f; val room = r.right - nx - 6f
-            // the name set smaller down to 23, then two lines (P4: "Lesser Healing / Wave"); the line smaller, then two at its colon
-            val nameLines = wrap(wd.name, room, pn, 27f, 23f)
-            val nameSize = wrapSize
-            val subLines = wrap(wd.line, room, pl, 22f, 20f, splitAt = ':')
-            val all = nameLines.size + subLines.size
-            var y = cy - (all - 1) * 14f + 4f
-            pn.textSize = nameSize; for (t in nameLines) { c.drawText(Tr.t(t), nx, y, pn); y += 28f }
-            for (t in subLines) { c.drawText(Tr.t(t), nx, y, pl); y += 25f }
+        val s = set(ctl)
+        val p = pos(ctl)
+        val k = ctl?.takeIf { it.on && it.view == "party" }
+        if (k?.pfocus == "touch") lastRightFromTouch = true else if (k?.pfocus == "diam" || k?.pfocus == "sets") lastRightFromTouch = false
+        // THE SET ROW: ZL / ZR (the lit one is the layer on show), ZL + ZR dimmed with a lock
+        val trig = SpellsModel.combo(SpellsModel.PadSlot(0, 4, 4, 1), style()).triggers
+        for (i in 0..2) {
+            val r = setR(i)
+            UiKit.choice(c, r, "", i + 2 == s, enabled = i < 2)
+            val g = when (i) { 0 -> listOf(trig[0]); 1 -> listOf(trig[1]); else -> trig }
+            if (g.size == 1) UiKit.pad(c, g[0], r.centerX(), r.centerY(), 56f)
+            else { UiKit.pad(c, g[0], r.centerX() - 32f, r.centerY(), 52f, 150); UiKit.pad(c, g[1], r.centerX() + 32f, r.centerY(), 52f, 150) }
+            if (i == 2) lock(c, r)
         }
-        drawRight(c, w, h, ctl, cfg, chosen)
+        // THE TOUCH ROW: Touch (the finger, then its action), Hold (the player menu, locked)
+        for (i in 0..1) {
+            val r = touchR(i)
+            UiKit.choice(c, r, "", false)
+            PartyArt.gauntlet(c, r.left + 36f, r.centerY(), 46f)
+            val ix = r.left + 72f; val iy = r.centerY() - 26f
+            val pn = TextPaint(UiKit.bodyPaint(25f, Theme.text))            // on the dark tile (UiKit.choice), as the set plates
+            if (i == 0) {
+                val t = cfg?.touch
+                UiKit.spell(c, icon(t), ix, iy, 52f, if (t != null && !t.k) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN)
+                if (t == null) PartyArt.targetRing(c, ix + 26f, r.centerY(), 18f)
+                fitLine(c, t?.n ?: "Target", ix + 64f, r.centerY() + 9f, r.right - ix - 70f, pn, 25f, 18f)
+            } else {
+                UiKit.spell(c, UiKit.tex("fixed_inspect"), ix, iy, 52f, UiKit.Spell.LEVEL)
+                fitLine(c, "Menu", ix + 64f, r.centerY() + 9f, r.right - ix - 70f, pn, 25f, 18f)
+                lock(c, r)
+            }
+        }
+        // THE TWO DIAMONDS
+        for (q in 1..8) drawPlace(c, q, s, cfg)
+        for (q in 1..8) sq(q).let { r -> UiKit.pad(c, glyph(q), r.centerX() + 36f, r.centerY() - 36f, 40f) }
+        // THE FOOTER: Select -> the swirl -> B (the way in and out of Party mode)
+        val f = PadDiamonds.rect(PadDiamonds.FOOTER)
+        UiKit.module(c, f)
+        UiKit.pad(c, face("minus"), f.left + 80f, f.centerY(), 46f)
+        UiKit.tex("home_swirl")?.let { c.drawBitmap(it, null, RectF(f.centerX() - 26f, f.centerY() - 26f, f.centerX() + 26f, f.centerY() + 26f), pBmp) }
+        UiKit.pad(c, face("b"), f.right - 80f, f.centerY(), 46f)
+        moveArrow(c, RectF(f.left + 130f, f.top, f.centerX() - 40f, f.bottom), 0f)
+        moveArrow(c, RectF(f.centerX() + 40f, f.top, f.right - 130f, f.bottom), 0f)
+        // ONE cursor (the controller's or a finger's): the set plate, the Touch tile, the place; on the right page the place wears the
+        // checked mark (the normal page's rule)
+        val quiet = SystemClock.uptimeMillis() >= localUntil
+        when {
+            k != null && quiet && k.pfocus == "tabs" -> {}
+            k != null && quiet && k.pfocus == "sets" -> UiKit.focus(c, setR((k.scur - 2).coerceIn(0, 2)), onPaper = true)
+            onTouchRow(ctl) -> {
+                val r = touchR(if (ctlHolds(ctl)) (ctl!!.ptouch - 1).coerceIn(0, 1) else 0)
+                if (rightFocus(ctl) || chooserOpen(ctl)) UiKit.checkedGlow(c, r) else UiKit.focus(c, r, onPaper = true)
+            }
+            rightFocus(ctl) || chooserOpen(ctl) -> UiKit.checkedGlow(c, sq(p))
+            else -> UiKit.slotFocus(c, sq(p))
+        }
+        drawRight(c, ctl, cfg, s, p)
         flash?.takeIf { SystemClock.uptimeMillis() < flashUntil }?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
             c.drawText(Tr.t(it), act.centerX(), act.top - 24f, pw)
         }
     }
 
-    private var wrapSize = 27f
-
-    /** [s] in one line from [size] down to [min]; else two lines (at the space that keeps the longer shortest, or after [splitAt]),
-     *  each set smaller to fit if it must. The size it took stays in [p]. Never more than two lines (the second cut with "...") */
-    private fun wrap(s: String, room: Float, p: TextPaint, size: Float, min: Float, splitAt: Char? = null): List<String> {
-        p.textSize = size
-        while (p.textSize > min && p.measureText(s) > room) p.textSize -= 1f
-        if (p.measureText(s) <= room || !s.contains(' ')) { wrapSize = p.textSize; return listOf(s) }
-        val cut = splitAt?.let { ch -> s.indexOf(ch).takeIf { it > 0 }?.let { it + 1 } }
-        val (a, b) = if (cut != null) s.substring(0, cut).trim() to s.substring(cut).trim() else {
-            val w = s.split(' ')
-            (1 until w.size).map { k -> w.subList(0, k).joinToString(" ") to w.subList(k, w.size).joinToString(" ") }
-                .minByOrNull { (x, y) -> maxOf(p.measureText(x), p.measureText(y)) }!!
+    /** one place on the diamonds: the D-pad's locked arrows / reserved sides, a face's spell on the layer on show, B the red Back */
+    private fun drawPlace(c: Canvas, q: Int, s: Int, cfg: PartyModel.Cfg?) {
+        val r = sq(q)
+        when {
+            q == 2 || q == 4 -> {
+                UiKit.spell(c, null, r.left, r.top, 80f, UiKit.Spell.KNOWN)
+                moveArrow(c, r, if (q == 2) -90f else 90f)
+                lock(c, r)
+            }
+            PartyModel.reserved(q) -> { UiKit.spell(c, null, r.left, r.top, 80f, UiKit.Spell.LEVEL); lock(c, r) }
+            q == 7 -> { UiKit.spell(c, UiKit.tex("square_exit_up"), r.left, r.top, 80f, UiKit.Spell.KNOWN); lock(c, r) }
+            else -> {
+                val slot = PartyModel.slotAt(s, q)
+                if (slot == null) { UiKit.spell(c, null, r.left, r.top, 80f, UiKit.Spell.LEVEL); lock(c, r); return }
+                if (slot == "yc") { drawSplitY(c, r, cfg); return }
+                val sp = cfg?.slot(slot)
+                UiKit.spell(c, icon(sp), r.left, r.top, 80f, if (sp != null && !sp.k) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN)
+                if (sp == null) c.drawRoundRect(RectF(r.left + 4f, r.top + 4f, r.right - 4f, r.bottom - 4f), 6f, 6f, pDim)
+            }
         }
-        p.textSize = min
-        while (p.textSize > 14f && (p.measureText(a) > room || p.measureText(b) > room)) p.textSize -= 1f
-        wrapSize = p.textSize
-        return listOf(a, TextUtils.ellipsize(Tr.t(b), p, room, TextUtils.TruncateAt.END).toString())
+    }
+
+    /** Y's base place, two parts as today: out of combat Inspect / Smart Y on top, in combat `yc` below with the crossed swords pip */
+    private fun drawSplitY(c: Canvas, r: RectF, cfg: PartyModel.Cfg?) {
+        UiKit.spell(c, null, r.left, r.top, 80f, UiKit.Spell.KNOWN)
+        val top = if (cfg?.sy?.on == true) cfg.sy.list.firstOrNull()?.let { icon(it) } ?: UiKit.tex("fixed_inspect") else UiKit.tex("fixed_inspect")
+        top?.let { c.drawBitmap(it, null, RectF(r.left + 6f, r.top + 4f, r.left + 42f, r.top + 40f), pBmp) }
+        (icon(cfg?.yc) ?: UiKit.tex("fixed_inspect"))?.let { c.drawBitmap(it, null, RectF(r.right - 42f, r.bottom - 40f, r.right - 6f, r.bottom - 4f), pBmp) }
+        UiKit.tex("combat_swords")?.let { c.drawBitmap(it, null, RectF(r.left + 6f, r.bottom - 26f, r.left + 30f, r.bottom - 4f), pBmp) }
     }
 
     private fun fitLine(c: Canvas, s: String, x: Float, y: Float, room: Float, p: TextPaint, size: Float, min: Float) {
@@ -217,7 +221,17 @@ class PartyTabPage(
 
     private fun section(c: Canvas, s: String, y: Float) = c.drawText(Tr.t(s), 790f, y, UiKit.inkPaint(32f, heading = true))
 
-    private fun drawRight(c: Canvas, w: Float, h: Float, ctl: PadMapModel.Ctl?, cfg: PartyModel.Cfg?, pos: Int) {
+    /** the place's words: "ZL + A", "D-pad Up", "Touch" ... */
+    private fun placeWord(s: Int, p: Int, touch: Boolean): String {
+        if (touch) return "Touch"
+        val trig = when (s) { 2 -> Glyphs.name("ltrigger") + " + "; 3 -> Glyphs.name("rtrigger") + " + "; else -> "" }
+        return when (p) {
+            1 -> "D-pad Left"; 2 -> "D-pad Up"; 3 -> "D-pad Right"; 4 -> "D-pad Down"
+            5 -> trig + Glyphs.name("x"); 6 -> trig + Glyphs.name("y"); 7 -> Glyphs.name("b"); else -> trig + Glyphs.name("a")
+        }
+    }
+
+    private fun drawRight(c: Canvas, ctl: PadMapModel.Ctl?, cfg: PartyModel.Cfg?, s: Int, p: Int) {
         // the chooser (a finger's, or the controller's list "party" / "pbuff") stands over the right page
         val ctlCh = ctl?.chooser?.takeIf { it.list in PartyModel.CTL_LISTS && ctl.on }
         if (chooser != null || ctlCh != null) { drawChooser(c, ctlCh, cfg); return }
@@ -225,46 +239,54 @@ class PartyTabPage(
             c.drawText(Tr.t("Waiting for the game"), 790f, 400f, UiKit.inkPaint(27f).apply { color = Theme.parchmentInkDim })
             return
         }
-        val wd = words(pos, cfg) ?: return
-        val faceWord = when (pos) {
-            1 -> "D-pad"; 2 -> Glyphs.name("a"); 3 -> Glyphs.name("x"); 4 -> Glyphs.name("y"); 5 -> "A party cell"
-            in 7..9 -> "ZL + " + Glyphs.name(listOf("a", "x", "y")[pos - 7]); else -> "ZR + " + Glyphs.name(listOf("a", "x", "y")[(pos - 10).coerceIn(0, 2)])
-        }
-        title(c, {
-            UiKit.spell(c, wd.icon, 820f, 206f - 0f, 96f, UiKit.Spell.KNOWN)
-            if (wd.icon == null) drawFrameArt(c, pos, 820f, 206f, 96f)
-        }, if (pos == 4) wd.name else if (pos == 5) "Touch" else wd.name, when (pos) { 1 -> "D-pad, in Party mode"; 5 -> "A party cell, any time"; else -> "$faceWord, in Party mode" })
+        val touch = onTouchRow(ctl)
+        val holdTile = touch && ctlHolds(ctl) && ctl!!.ptouch == 2
         val ink = UiKit.inkPaint(27f)
-        val dim = UiKit.inkPaint(21f).apply { color = Theme.parchmentInkDim }
-        when (pos) {
-            1 -> UiKit.button(c, act, "Change", face("a"), UiKit.Button.DISABLED)
-            4 -> if (cfg.sy.on) drawSmartY(c, ctl, cfg) else {
-                // P4Y (v9 trim): Out of combat = Inspect; In combat = the chosen spell (crossed swords); ONE red Change (the In combat action)
-                section(c, "Out of combat", 380f)
-                UiKit.spell(c, UiKit.tex("fixed_inspect"), 838f, 422f, 58f, UiKit.Spell.KNOWN)
-                c.drawText(Tr.t("Inspect"), 910f, 461f, ink)
-                section(c, "In combat", 556f)
-                UiKit.spell(c, icon(cfg.yc) ?: UiKit.tex("fixed_inspect"), 838f, 598f, 58f, UiKit.Spell.KNOWN)
-                UiKit.tex("combat_swords")?.let { c.drawBitmap(it, null, RectF(880f, 580f, 918f, 618f), null) }
-                c.drawText(Tr.t(cfg.yc?.n ?: "Inspect"), 910f, 637f, ink)
-                button(c, "Change", live().cfg?.pad?.slot0 != null)
+        val slot = curSlot(ctl)
+        val word = if (holdTile) "Hold" else placeWord(s, p, touch)
+        // a locked place: its title and what it does, Change disabled
+        if (slot == null) {
+            val what = when {
+                holdTile -> "Player menu"
+                touch -> "Touch"
+                p == 2 || p == 4 -> "Moves the pick"
+                PartyModel.reserved(p) -> "Kept for raids"
+                p == 7 -> "Party mode off"
+                else -> "Nothing (both held)"
             }
-            5 -> {
-                section(c, "Now", 380f)
-                UiKit.spell(c, icon(cfg.touch), 838f, 422f, 58f, UiKit.Spell.KNOWN)
-                if (cfg.touch == null) PartyArt.targetRing(c, 867f, 451f, 21f)
-                c.drawText(Tr.t(cfg.touch?.n ?: "Target"), 910f, 451f, ink)
-                if (cfg.touch == null) c.drawText(Tr.t("Makes them your target"), 910f, 480f, dim)
-                button(c, "Change", true)
-            }
-            else -> button(c, "Change", true)
+            title(c, { UiKit.spell(c, null, 820f, 206f, 96f, UiKit.Spell.LEVEL) }, word, what)
+            UiKit.button(c, act, "Change", face("a"), UiKit.Button.DISABLED)
+            return
         }
+        val sp = when (slot) { "touch" -> cfg.touch; "yc" -> cfg.yc; else -> cfg.slot(slot) }
+        title(c, {
+            UiKit.spell(c, icon(sp) ?: if (slot == "yc") UiKit.tex("fixed_inspect") else null, 820f, 206f, 96f, UiKit.Spell.KNOWN)
+            if (sp == null && slot == "touch") PartyArt.targetRing(c, 868f, 254f, 30f)
+        }, word, "In Party mode")
+        if (slot == "yc" && cfg.sy.on) { drawSmartY(c, ctl, cfg); return }
+        if (slot == "yc") {
+            // Y (two parts as today): out of combat Inspect; in combat the chosen spell (crossed swords); ONE red Change (the In combat action)
+            section(c, "Out of combat", 380f)
+            UiKit.spell(c, UiKit.tex("fixed_inspect"), 838f, 422f, 58f, UiKit.Spell.KNOWN)
+            c.drawText(Tr.t("Inspect"), 910f, 461f, ink)
+            section(c, "In combat", 556f)
+            UiKit.spell(c, icon(cfg.yc) ?: UiKit.tex("fixed_inspect"), 838f, 598f, 58f, UiKit.Spell.KNOWN)
+            UiKit.tex("combat_swords")?.let { c.drawBitmap(it, null, RectF(880f, 580f, 918f, 618f), null) }
+            c.drawText(Tr.t(cfg.yc?.n ?: "Inspect"), 910f, 637f, ink)
+            button(c, "Change", live().cfg?.pad?.slot0 != null)
+            return
+        }
+        section(c, "Now", 380f)
+        UiKit.spell(c, icon(sp), 838f, 422f, 58f, if (sp != null && !sp.k) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN)
+        if (sp == null && slot == "touch") PartyArt.targetRing(c, 867f, 451f, 21f)
+        c.drawText(Tr.t(sp?.n ?: if (slot == "touch") "Target" else "Empty"), 910f, 461f, ink)
+        button(c, "Change", true)
     }
 
     private fun button(c: Canvas, label: String, enabled: Boolean) =
         UiKit.button(c, act, label, face("a"), if (!enabled || live().party?.fight == true) UiKit.Button.DISABLED else UiKit.Button.UP)
 
-    /** the Y row's right page with Smart Y on (P4S): the party buffs, the Add row and (open question 2's default) In combat */
+    /** the Y place's right page with Smart Y on (P4S): the party buffs, the Add row and (open question 2's default) In combat */
     private fun smartRows(cfg: PartyModel.Cfg): List<String> {
         val rows = ArrayList<String>()
         for (k in cfg.sy.list.indices) rows.add("buff")
@@ -296,7 +318,6 @@ class PartyTabPage(
                     UiKit.spell(c, null, 838f, cy - 29f, 58f, UiKit.Spell.KNOWN)
                     UiKit.pad(c, "${padSet()}_plus", 867f, cy, 30f)
                     c.drawText(Tr.t("Add a party buff"), 910f, cy - 6f, ink)
-                    c.drawText(Tr.t("Yours, cast on others"), 910f, cy + 26f, dim)
                 }
                 else -> {
                     UiKit.spell(c, icon(cfg.yc) ?: UiKit.tex("fixed_inspect"), 838f, cy - 29f, 58f, UiKit.Spell.KNOWN)
@@ -319,9 +340,9 @@ class PartyTabPage(
 
     private fun drawChooser(c: Canvas, ctlCh: PadMapModel.Chooser?, cfg: PartyModel.Cfg?) {
         val ch = chooser
-        // the controller's "pbuff" (Smart Y's Add, PadTabCtl p33): sy.known minus the list, no pseudo row; "party": the pseudo row first
+        // the controller's "pbuff" (Smart Y's Add): sy.known minus the list, no pseudo row; "party": the pseudo row first
         val pbuff = ch == null && ctlCh?.list == "pbuff"
-        val rows = ch?.rows ?: chooserRows(if (pbuff) null else ctlSlot(), cfg)
+        val rows = ch?.rows ?: chooserRows(if (pbuff) null else curSlot(lastCtl), cfg)
         val sel = ch?.sel ?: ((ctlCh?.row ?: 1) - 1)
         section(c, if ((ch?.slot == null && ch != null) || pbuff) "Add a party buff" else "Change", 240f)
         val fit = ((900f - CHOOSE_TOP) / CHOOSE_H).toInt()
@@ -338,15 +359,21 @@ class PartyTabPage(
         }
     }
 
-    /** the slot the controller's chooser is for (the row its cursor stands on) */
+    /** the controller's last document (the chooser's slot is the place its cursor stands on) */
     private var lastCtl: PadMapModel.Ctl? = null
-    private fun ctlSlot(): String? = lastCtl?.let { slotOf(it.ppos) }
 
-    fun onCtl(c: PadMapModel.Ctl) { lastCtl = c; if (c.chooser?.list in PartyModel.CTL_LISTS) chooser = null }
+    fun onCtl(c: PadMapModel.Ctl) {
+        lastCtl = c
+        if (c.chooser?.list in PartyModel.CTL_LISTS) chooser = null
+        if (c.view == "party" && c.pfocus == "touch") lastRightFromTouch = true
+        else if (c.view == "party" && (c.pfocus == "diam" || c.pfocus == "sets")) lastRightFromTouch = false
+    }
 
     // ------------------------------------------------------------------------------------------------ touch
 
-    private var downRow = -1
+    private var downPlace = -1
+    private var downSet = -1
+    private var downTouch = -1
     private var downAct = false
     private var downList = -1
     private var downChoose = -1
@@ -356,9 +383,11 @@ class PartyTabPage(
         val x = ev.x; val y = ev.y
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downRow = (1..12).firstOrNull { rowRect(it).contains(x, y) && words(it, cfg) != null } ?: -1
+                downPlace = (1..8).firstOrNull { sq(it).contains(x, y) } ?: -1
+                downSet = (0..2).firstOrNull { setR(it).contains(x, y) } ?: -1
+                downTouch = (0..1).firstOrNull { touchR(it).contains(x, y) } ?: -1
                 downAct = act.contains(x, y)
-                downList = if (pos(ctl) == 4 && cfg?.sy?.on == true) (0 until 6).firstOrNull { listRow(it).contains(x, y) } ?: -1 else -1
+                downList = if (curSlot(ctl) == "yc" && cfg?.sy?.on == true) (0 until 6).firstOrNull { listRow(it).contains(x, y) } ?: -1 else -1
                 downChoose = if (chooser != null && x > 760f && y >= CHOOSE_TOP) ((y - CHOOSE_TOP) / CHOOSE_H).toInt() else -1
             }
             MotionEvent.ACTION_UP -> {
@@ -368,14 +397,29 @@ class PartyTabPage(
                     else if (x < 740f) { chooser = null }                                  // a touch on the left page: the chooser goes
                     host.invalidate(); return true
                 }
-                if (downRow > 0 && rowRect(downRow).contains(x, y)) {
-                    localPos = downRow; localRight = 0; localUntil = SystemClock.uptimeMillis() + ECHO_MS
-                    slotOf(downRow)?.let { s -> PartyTaps.pick(cfg, s)?.let { tap(it) } }
-                } else if (downList >= 0 && listRow(downList).contains(x, y)) {
-                    val rows = cfg?.let { smartRows(it) } ?: emptyList()
-                    val first = 0
-                    localRight = (first + downList).coerceIn(0, maxOf(0, rows.size - 1)); localUntil = SystemClock.uptimeMillis() + ECHO_MS
-                } else if (downAct && act.contains(x, y)) action(ctl, cfg)
+                val now = SystemClock.uptimeMillis()
+                when {
+                    downSet >= 0 && setR(downSet).contains(x, y) -> {
+                        // ZL / ZR shown by a finger (A again: the base layer); ZL + ZR locked
+                        if (downSet == 2) say("Both held: nothing")
+                        else { localSet = if (set(ctl) == downSet + 2) 1 else downSet + 2; localPos = pos(ctl); localTouch = false; localUntil = now + ECHO_MS }
+                    }
+                    downTouch >= 0 && touchR(downTouch).contains(x, y) -> {
+                        if (downTouch == 1) say("The player menu: fixed")
+                        else { localTouch = true; localRight = 0; localUntil = now + ECHO_MS; PartyTaps.pick(cfg, "touch")?.let { tap(it) } }
+                    }
+                    downPlace > 0 && sq(downPlace).contains(x, y) -> {
+                        val s = set(ctl)
+                        localPos = downPlace; localSet = s; localTouch = false; localRight = 0; localUntil = now + ECHO_MS
+                        PartyModel.slotAt(s, downPlace)?.let { slot -> PartyTaps.pick(cfg, slot)?.let { tap(it) } }
+                    }
+                    downList >= 0 && listRow(downList).contains(x, y) -> {
+                        val rows = cfg?.let { smartRows(it) } ?: emptyList()
+                        localPos = pos(ctl); localSet = set(ctl); localTouch = false
+                        localRight = downList.coerceIn(0, maxOf(0, rows.size - 1)); localUntil = now + ECHO_MS
+                    }
+                    downAct && act.contains(x, y) -> action(ctl, cfg)
+                }
                 host.invalidate()
             }
         }
@@ -385,9 +429,9 @@ class PartyTabPage(
     /** the ONE red action, by touch */
     private fun action(ctl: PadMapModel.Ctl?, cfg: PartyModel.Cfg?) {
         if (cfg == null) return
-        if (live().party?.fight == true) { say("Not in a fight: try again after it"); return }
-        val p = pos(ctl)
-        if (p == 4 && cfg.sy.on) {
+        if (live().party?.fight == true) { say("Not in a fight"); return }
+        val slot = curSlot(ctl) ?: return
+        if (slot == "yc" && cfg.sy.on) {
             val rows = smartRows(cfg)
             val k = rightRow(ctl).coerceIn(0, rows.size - 1)
             when (rows[k]) {
@@ -397,7 +441,6 @@ class PartyTabPage(
             }
             return
         }
-        val slot = slotOf(p) ?: return
         chooser = Chooser(slot, chooserRows(slot, cfg))
     }
 
@@ -409,14 +452,13 @@ class PartyTabPage(
             s == null -> PartyTaps.setNone(cfg, ch.slot)
             else -> PartyTaps.setSpell(cfg, ch.slot, s.id, spellCells(s.id))
         }
-        if (cells == null || !tap(cells)) say("$name: not on the tap pad now")
+        if (cells == null || !tap(cells)) say("$name: not on the tap pad")
         else chooser = null
     }
 
     companion object {
-        const val ROW_TOP = 188f
-        const val ROW_H = 111f
         const val LIST_TOP = 410f
+        const val ROW_H = 111f
         const val CHOOSE_TOP = 280f
         const val CHOOSE_H = 96f
         const val ECHO_MS = 1500L
