@@ -3450,7 +3450,8 @@ class MapView(context: Context) : View(context) {
             // QuestieDB's areas first (the user's pick), then the shape traced from the user's play, the circle. (The baked
             // AzerothCore shapes, assets/quest_areas.json, left the app with the art harvest, the user 2026-10-09.)
             var any = id in placed || qdbAreasFor(m, id, focused)
-            if (!any && r != null && r.valid) QuestTrace.shape(id, r.continent)?.let { pts ->
+            // t2: one area per separate traced blob (never one strip joining them), only real areas (no thin strips)
+            if (!any && r != null && r.valid) for (pts in QuestTrace.shapes(id, r.continent)) {
                 val wx = DoubleArray(pts.size) { pts[it][0] }
                 val wy = DoubleArray(pts.size) { pts[it][1] }
                 toQArea(r, wx, wy, focused, true)?.let { qAreas.add(it); any = true }
