@@ -388,8 +388,9 @@ D.QS = { i = POOL + 2, col = POOL * CELLS + 9, which = "QUEST_START", use = "Wow
          hold = 1,          -- d28: seconds a window's opening event holds the prompt off (then its shown frame does)
          settle = 5 }       -- d29: seconds after a login / reload the bags still load: every count then is baseline, never a gain
 -- d29: base = the last tally (item id -> count; nil = no baseline yet), gain = item ids newly looted and not yet answered, settleAt =
--- the login / reload's PLAYER_ENTERING_WORLD, seen = the bags seen holding anything since, bank = the bank (or guild bank) open
-D.qs = { base = nil, gain = {}, settleAt = nil, seen = false, bank = false, cur = nil, dirty = true, clickAt = nil, openAt = nil }
+-- the login / reload's PLAYER_ENTERING_WORLD, slots = each bag's slot count at the last tally (bag -> n; a bag never read = 0),
+-- bank = the bank (or guild bank) open
+D.qs = { base = nil, gain = {}, settleAt = nil, slots = {}, bank = false, cur = nil, dirty = true, clickAt = nil, openAt = nil }
 
 -- the quest this slot's item starts and whether it is already in the log (the C_Container table, or the older numbered returns)
 function D.qsInfo(bag, slot)
@@ -439,11 +440,14 @@ function D.qsAt(bag, slot)
     return it
 end
 
--- d29: every item in the bags counted by id (stacks summed: a move between bags or a split changes no count); any = anything there
+-- d29: every item in the bags counted by id (stacks summed: a move between bags or a split changes no count); also each bag's slot
+-- count, and the counts of the bags whose slots ROSE since the last tally (late = a bag that loaded late, or a bag just equipped)
 function D.qsCount()
-    local n, any = {}, false
+    local n, late, sl = {}, {}, {}
     for bag = 0, D.QS.bags do
         local slots = TN(function() return C_Container.GetContainerNumSlots(bag) end) or 0
+        sl[bag] = slots
+        local rose = slots > (D.qs.slots[bag] or 0)
         for slot = 1, slots do
             local info = S(function() return C_Container.GetContainerItemInfo(bag, slot) end)
             local id, c
@@ -451,24 +455,29 @@ function D.qsCount()
                 id, c = TN(function() return info.itemID end), TN(function() return info.stackCount end)
             end
             id = id or TN(function() return C_Container.GetContainerItemID(bag, slot) end)
-            if id then n[id] = (n[id] or 0) + ((c and c > 0) and c or 1); any = true end
+            if id then
+                c = (c and c > 0) and c or 1
+                n[id] = (n[id] or 0) + c
+                if rose then late[id] = (late[id] or 0) + c end
+            end
         end
     end
-    return n, any
+    return n, late, sl
 end
 
 -- d29 (the user, 2026-11-11: "Only when newly looted"): this tally against the last. Settling (no login / reload seen yet, its first
--- D.QS.settle s, the bags not yet seen holding anything, or [absorb]) or the bank open: the counts ARE the baseline. Otherwise a count
--- above the last is a gain (newly looted). A gain whose item left the bags is dropped; this tally becomes the new baseline.
+-- D.QS.settle s, or [absorb]) or the bank open: the counts ARE the baseline. Otherwise a count above the last is a gain (newly looted),
+-- except what sits in a bag whose slots rose since the last tally: a bag that loaded late (backpack read, bags 1-5 still 0 slots on a
+-- cold login) holds what was there at login, and a bag just equipped is empty (a bag must be empty to equip), so its contents are
+-- baseline, per bag. A gain whose item left the bags is dropped; this tally becomes the new baseline.
 function D.qsTally(absorb)
     local q = D.qs
-    local n, any = D.qsCount()
-    -- the first tally that sees the bags holding anything is still baseline (bags that load late, after the settle)
-    local settling = absorb or q.base == nil or not q.settleAt or (now() - q.settleAt) < D.QS.settle or not q.seen
-    if q.settleAt and any then q.seen = true end
+    local n, late, sl = D.qsCount()
+    q.slots = sl
+    local settling = absorb or q.base == nil or not q.settleAt or (now() - q.settleAt) < D.QS.settle
     if not (settling or q.bank or shown(_G.BankFrame)) then
         for id, c in pairs(n) do
-            if c > (q.base[id] or 0) then q.gain[id] = true end
+            if c > (q.base[id] or 0) + (late[id] or 0) then q.gain[id] = true end
         end
     end
     for id in pairs(q.gain) do if not n[id] then q.gain[id] = nil end end
@@ -1067,7 +1076,7 @@ D.qsFrame:SetScript("OnEvent", function(_, event, a1, a2)
     -- d29: a login or a /reload (or the first entering in this Lua state): the bags' counts until settled are the baseline, then one
     -- last absorbing tally (nothing in the bags by then is ever offered); a plain zone change keeps the session's tally
     if event == "PLAYER_ENTERING_WORLD" and (not D.qs.settleAt or a1 or a2) then
-        D.qs.settleAt, D.qs.seen = now(), false
+        D.qs.settleAt, D.qs.slots = now(), {}
         if type(C_Timer) == "table" then
             C_Timer.After(D.QS.settle + 0.5, function() pcall(D.qsTally, true); D.qs.dirty = true; look() end)
         end

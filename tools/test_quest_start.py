@@ -54,7 +54,7 @@ function FLUSH() for _ = 1, 5 do local q = GAME.timers; GAME.timers = {}; for _,
 ITEM_QUALITY_COLORS = { [1] = { r = 1, g = 1, b = 1 } }
 -- the bags: GAME.bags[bag][slot] = { id, name, quest = id?, questItem = bool? }
 C_Container = {
-    GetContainerNumSlots = function(bag) if GAME.unloaded then return 0 end; return (bag <= 1) and 6 or 0 end,
+    GetContainerNumSlots = function(bag) if GAME.unloaded == true or (type(GAME.unloaded) == 'table' and GAME.unloaded[bag]) then return 0 end; return (bag <= 1) and 6 or 0 end,
     GetContainerItemInfo = function(bag, slot) local it = GAME.bags[bag] and GAME.bags[bag][slot]
         if it then return { itemID = it.id, stackCount = it.count or 1, iconFileID = 134939, quality = 1, hyperlink = "|cffffffff|Hitem:" .. it.id .. "|h[" .. it.name .. "]|h|r" } end end,
     GetContainerItemID = function(bag, slot) local it = GAME.bags[bag] and GAME.bags[bag][slot]; return it and it.id end,
@@ -343,6 +343,45 @@ chk("d29: then a loot: offered", (PROMPT() or {}).qs ~= nil)
 return table.concat(out, "\n")
 '''
 
+# d29 review: bags truly EMPTY at login (the backpack reports its slots): the first real loot, minutes later, is offered
+EMPTY = r'''
+local out = {}
+local function chk(n, c) out[#out + 1] = (c and "PASS " or "FAIL ") .. n end
+FIRE("PLAYER_ENTERING_WORLD", true, false)
+FIRE("BAG_UPDATE_DELAYED")
+GAME.t = GAME.t + 6
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: empty bags at login: nothing", PROMPT() == nil)
+GAME.t = GAME.t + 300
+GAME.bags[0] = { [1] = { id = 4500, name = "Faded Map", quest = 560 } }
+FIRE("CHAT_MSG_LOOT"); FIRE("BAG_UPDATE_DELAYED")
+local p = PROMPT()
+chk("d29: empty bags at login, then the first loot: offered", p ~= nil and p.qs.item == 4500)
+return table.concat(out, "\n")
+'''
+
+# d29 review: a cold login, the backpack readable but bag 1 still 0 slots until after the settle: bag 1's old starter is baseline
+PARTIAL = r'''
+local out = {}
+local function chk(n, c) out[#out + 1] = (c and "PASS " or "FAIL ") .. n end
+GAME.unloaded = { [1] = true }
+GAME.bags[0] = { [1] = { id = 2589, name = "Linen Cloth", count = 5 } }
+GAME.bags[1] = { [1] = { id = 1972, name = "Ripped Missive", quest = 900 } }
+FIRE("PLAYER_ENTERING_WORLD", true, false)
+FIRE("BAG_UPDATE_DELAYED")
+GAME.t = GAME.t + 30
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: backpack loaded, bag 1 not yet: nothing", PROMPT() == nil)
+GAME.unloaded = false
+FIRE("BAG_UPDATE_DELAYED")
+chk("d29: bag 1 loads after the settle: its old starter is baseline, not offered", PROMPT() == nil and ACKS() == 0)
+GAME.bags[1][2] = { id = 4500, name = "Faded Map", quest = 560 }
+FIRE("CHAT_MSG_LOOT"); FIRE("BAG_UPDATE_DELAYED")
+local p = PROMPT()
+chk("d29: then a loot into bag 1: offered (the Faded Map, not the old one)", p ~= nil and p.qs.item == 4500)
+return table.concat(out, "\n")
+'''
+
 
 def run(test):
     L = lupa.LuaRuntime()
@@ -352,7 +391,7 @@ def run(test):
 
 
 def main():
-    res = "\n".join(run(t) for t in (TEST, RELOAD, LATE))   # d29: each its own Lua state (a /reload is a fresh one)
+    res = "\n".join(run(t) for t in (TEST, RELOAD, LATE, EMPTY, PARTIAL))   # d29: each its own Lua state (a /reload is a fresh one)
     print(res)
     fails = res.count("FAIL ")
     print("failed: %d" % fails)
