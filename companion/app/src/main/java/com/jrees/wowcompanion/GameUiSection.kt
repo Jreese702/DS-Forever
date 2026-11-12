@@ -422,7 +422,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         if (r.id == GameUi.HUD_ID) return if (r.mode == UiMode.ON)
             "The resource bar under your character: health, power, buffs and debuffs. For this character."
             else "No resource bar under your character."
-        if (r.id == GameUi.PET_ID) return if (r.mode == UiMode.ON) "Your pet's health and power under the resource bar. The game's pet frame is hidden. For this character."
+        if (r.id == GameUi.PET_ID) return if (r.mode == UiMode.ON) "Your pet's health and power under the resource bar. For this character."
             else "No pet bar. For this character."
         if (r.id == GameUi.WM_ID) return if (r.mode == UiMode.ON) "Markers stand in the 3D world on the next checkpoint and the quest. For this character."
             else "No markers in the 3D world; the compass bar still shows them. For this character."

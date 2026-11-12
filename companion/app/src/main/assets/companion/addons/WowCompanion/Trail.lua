@@ -2903,8 +2903,11 @@ end
 --   the rims one thickness on every bar. Fed as the player's: the game's values straight to the setters, nothing read back, no lag chunk.
 --   Presence from plain reads only (UnitExists, else a plain UnitName, else HasPetUI); a plainly dead pet greyed. The pet's health and
 --   power events are heard with the player's; its casts never are (the cost and the spend are the player's). Its own switch (Hub's
---   "uisw" 32 / 33: WC.npWant.pet, on unless turned off); while it is on, Hub keeps the game's pet frame hidden (it replaces it).
-WC.prd = { V = "prd11", PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 8, PET_GAP = 10, PET_ICON = 20, PET_IGAP = 10, PET_NAME = 11,
+--   "uisw" 32 / 33: WC.npWant.pet, on unless turned off); the game's pet frame stays with the game's player frame (Hub hub33).
+--   Review fixes (2026-11-11, before any device run): the pet's curve asked only while a pet plainly exists (a dismissal never latches
+--   P.petCurveBad; UNIT_PET hides the strip at once); a refusal with a pet out: the strip on the PLAYER's curve (fades with the HUD);
+--   PET_BAR_GAP / PET_GAP = the shared scale's 8-texel bottom lip (15) + 1, so no lip lies over a pet bar's opening (P.petRow).
+WC.prd = { V = "prd11", PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 16, PET_GAP = 16, PET_ICON = 20, PET_IGAP = 10, PET_NAME = 11,
            PET_RGB = { 1, 0.78, 0.1 }, PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
            PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
@@ -3545,12 +3548,17 @@ do
     end
     -- the power type's token by its number, when the client gives no plain token
     P.PTOK = { [0] = "MANA", [1] = "RAGE", [2] = "FOCUS", [3] = "ENERGY" }
+    -- the strip's row: the portrait or the two bars with their gap, the taller
+    -- (review of prd11, 2026-11-11: the user's "Sub-strip under" at the player's texel scale draws an 8-texel bottom lip, HH = 15 spec
+    -- px, under every bar; PET_BAR_GAP and PET_GAP are that lip + 1, so no rim piece of the health bar (or of the player's power bar
+    -- above) lies over the pet's power / health opening; the rims may overlap each other, the openings stay clear)
+    function P.petRow() return math.max(P.PET_ICON, P.PET_HH + P.PET_BAR_GAP + P.PET_PH) end
     -- built with the bars, hidden until a pet is out: the round portrait, the gold health, the power, the name, the happiness face
     function P.petBuild()
         if P.petL or not P.f then return P.petL end
         local L = CreateFrame("Frame", nil, P.f)                    -- beside P.g, never under it (the player's curve would hide it)
         L:EnableMouse(false)
-        L:SetSize(u(P.W), u(P.PET_ICON))
+        L:SetSize(u(P.W), u(P.petRow()))
         L:Hide()
         P.petL = L
         local o = {}
@@ -3558,7 +3566,7 @@ do
         -- the portrait: a dark ring under it, both through the game's round portrait mask
         o.ring = L:CreateTexture(nil, "ARTWORK", nil, 1)
         o.ring:SetColorTexture(0, 0, 0, 0.85)
-        o.ring:SetPoint("TOPLEFT", L, "TOPLEFT", 0, 0)
+        o.ring:SetPoint("LEFT", L, "LEFT", 0, 0)                     -- (centred on the bars' row)
         o.ring:SetSize(u(P.PET_ICON), u(P.PET_ICON))
         o.face = L:CreateTexture(nil, "ARTWORK", nil, 2)
         o.face:SetPoint("CENTER", o.ring, "CENTER", 0, 0)
@@ -3614,7 +3622,7 @@ do
         local cpx = (P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0
         L:ClearAllPoints()
         L:SetPoint("TOPLEFT", P.f, "TOPLEFT", 0, -u(base + cpx + P.PET_GAP))
-        L:SetSize(u(P.W), u(P.PET_ICON))
+        L:SetSize(u(P.W), u(P.petRow()))
         o.hp:SetWidth(u(P.W * P.PET_W)); o.pw:SetWidth(u(P.W * P.PET_W))
     end
     -- fed at every poll as the player's bars are: the game's values straight to the setters, nothing read back (no lag chunk: its queue
@@ -3631,7 +3639,7 @@ do
             P.petLayout(0)
             return
         end
-        P.petLayout(((P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0) + P.PET_GAP + P.PET_ICON)
+        P.petLayout(((P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0) + P.PET_GAP + P.petRow())
         if not L:IsShown() then L:Show() end
         -- the portrait: GetPetIcon's plain file, else the game's own portrait setter (a widget setter: nothing read back)
         local okI, ic = pcall(GetPetIcon)
@@ -3684,17 +3692,36 @@ do
     end
     -- out of combat on the curve route: the strip's alpha the pet's own UnitHealthPercent through the same curve; its OWN bad flag (a
     -- refused pet call - no pet, a client without - never turns the player's curve off); otherwise plainly shown (it fades with the HUD)
+    -- (review of prd11, 2026-11-11: the tick runs this BEFORE the poll that hides the strip, so a pet dismissed / despawned had its
+    -- curve asked with no pet and the refusal latched for the session - the strip then held at 1 out of combat on the curve route.
+    -- Now: presence again first (no pet: hidden, no room, NOTHING latched); a refusal latches only while a pet plainly exists; once
+    -- latched, the strip takes the PLAYER's curve (the bars' own layer: it fades with the HUD), else plainly 1)
+    function P.petHide()
+        local L = P.petL
+        if L and L:IsShown() then L:Hide() end
+        P.petLayout(0)
+    end
     function P.petCurve(on)
         local L = P.petL
         if not (L and L:IsShown()) then return end
-        if on and P.curve and not P.petCurveBad then
-            local ok, err = pcall(function()
-                local a = UnitHealthPercent("pet", false, P.curve)
+        if on and P.curve then
+            local has = false
+            if P.wantedPet() then has = P.petHas() end
+            if not has then P.petHide(); P.petSrc = "gone"; return end
+            if not P.petCurveBad then
+                local ok, err = pcall(function()
+                    local a = UnitHealthPercent("pet", false, P.curve)
+                    if a == nil then error("no value") end
+                    L:SetAlpha(a)
+                end)
+                if ok then P.petSrc = "curve"; return end
+                if P.petHas() then P.petCurveBad = tostring(err):sub(1, 80) end
+            end
+            if P.petCurveBad and not P.curveBad and pcall(function()
+                local a = UnitHealthPercent("player", false, P.curve)
                 if a == nil then error("no value") end
                 L:SetAlpha(a)
-            end)
-            if ok then P.petSrc = "curve"; return end
-            P.petCurveBad = tostring(err):sub(1, 80)
+            end) then P.petSrc = "player"; return end
         end
         pcall(function() L:SetAlpha(1) end)
         P.petSrc = "plain"
@@ -3845,6 +3872,8 @@ do
         if unit ~= nil and unit ~= "player" and (e == "UNIT_AURA" or e:sub(1, 15) == "UNIT_SPELLCAST_") then return end
         if e == "UNIT_PET" or e == "PET_UI_UPDATE" then
             if P.pet then P.pet.icon = nil end                          -- (a new pet: its portrait again)
+            -- (review of prd11: gone at once, before any curve is asked of it)
+            if P.petL and P.petL:IsShown() and not (P.wantedPet() and (P.petHas())) then P.petHide() end
             if P.f and P.shown then P.pollAt = 0 end
         elseif e == "UNIT_SPELLCAST_START" or e == "UNIT_SPELLCAST_CHANNEL_START" then
             if P.f then pcall(P.castCost, spellID) end

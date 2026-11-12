@@ -272,6 +272,7 @@ def main():
         end }
         function UnitHealthPercent(u, pred, curve)
             if u == "pet" and PET_REFUSE then error("pet refused") end
+            if u == "pet" and PET == nil then return nil end         -- (review of prd11: no pet, no value - the code's own "no value")
             local w = (u == "pet") and PET or ME
             local x, y = w.hp / w.hpMax, nil
             for _, p in ipairs(curve.pts) do if x >= p[1] then y = p[2] end end
@@ -532,11 +533,25 @@ def main():
         o.happy.shown is True and o.happy.tex.endswith("UI-PetHappiness") and list(o.happy.coord.values()) == [0, 0.1875, 0, 0.359375])
     run(0.3)
     top1 = P.buffs[1].f.point[5]
-    chk("prd11: the strip takes its room (petDrop %s = gap 10 + row 20): the aura row %.1f spec px lower, the frame taller, the shadow too"
-        % (P.petDrop, (top0 - top1) / sk), P.petDrop == 30 and near(top0 - top1, 30 * sk) and near(P.f.h, (15 + 8 + 9 + 30) * sk)
-        and near(P.shadow.point[5], -(15 + 8 + 9 + 16 + 30) * sk))
-    chk("prd11: the strip right under the power bar (%.1f spec px down)" % (-P.petL.point[5] / sk), near(P.petL.point[5], -(15 + 8 + 9 + 10) * sk)
+    chk("prd11: the strip takes its room (petDrop %s = gap 16 + row 28): the aura row %.1f spec px lower, the frame taller, the shadow too"
+        % (P.petDrop, (top0 - top1) / sk), P.petDrop == 44 and near(top0 - top1, 44 * sk) and near(P.f.h, (15 + 8 + 9 + 44) * sk)
+        and near(P.shadow.point[5], -(15 + 8 + 9 + 16 + 44) * sk))
+    chk("prd11: the strip right under the power bar (%.1f spec px down)" % (-P.petL.point[5] / sk), near(P.petL.point[5], -(15 + 8 + 9 + 16) * sk)
         and P.petL.point[1] == "TOPLEFT")
+    # review of prd11 (2026-11-11): the shared texel scale's 8-texel bottom lip (15 spec px) must cover no pet opening. Each lip piece's
+    # reach from the anchors the code set: the health bar's bottom lip down from the health bar, the player's power-bar lip down from it
+    hpBot = o.hpFrame.bot.h                                              # the pet health bar's bottom lip, UI px below its opening
+    pwTop = -o.pw.point[5]                                               # the pet power opening's top, below the health bar's bottom
+    plBot = P.pwFrame.bot.h                                              # the player's power-bar bottom lip below the player's power bar
+    petTop = -P.petL.point[5] - (15 + 8 + 9) * sk                        # the pet health opening's top below the player's power bar
+    chk("prd11 review: the pet power opening clear of the health bar's bottom lip (%.1f >= %.1f spec px), its own top rim in the gap only"
+        % (pwTop / sk, hpBot / sk), o.pw.point[1] == "TOPLEFT" and o.pw.point[3] == "BOTTOMLEFT" and pwTop >= hpBot
+        and o.pwFrame.top.h <= pwTop)
+    chk("prd11 review: the pet health opening clear of the player's power-bar lip (%.1f >= %.1f spec px)" % (petTop / sk, plBot / sk),
+        petTop >= plBot and o.hp.point[5] == 0)
+    chk("prd11 review: the row %s spec px (the bars %s with their gap, the portrait centred on it); the aura row under the pet's lip"
+        % (P.petRow(), 8 + 16 + 4), P.petRow() == 28 and near(P.petL.h, 28 * sk) and o.ring.point[1] == "LEFT"
+        and (P.ROW_GAP * sk) >= o.pwFrame.bot.h)
     chk("prd11: no lag chunk for the pet (its queue would keep a secret in a table)", o.lag is None)
     vals = [P.pex[k] for k in ("has", "src", "dead", "ptok", "happy", "cbad", "icon", "a")]
     chk("prd11: the probe's pet (has / src / ptok / happy) holds no secret", all(not Lg.issecretvalue(v) for v in vals)
@@ -573,9 +588,9 @@ def main():
     # a Rogue's pips show: the strip under them
     Lg.CLASS = "ROGUE"; run(0.3)
     chk("prd11: the combo pips shown: the strip under them (petDrop %s, %.1f spec px down)" % (P.petDrop, -P.petL.point[5] / sk),
-        P.cp.shown is True and P.petDrop == 39 and near(P.petL.point[5], -(15 + 8 + 9 + 9 + 10) * sk))
+        P.cp.shown is True and P.petDrop == 53 and near(P.petL.point[5], -(15 + 8 + 9 + 9 + 16) * sk))
     Lg.CLASS = "MAGE"; run(0.3)
-    chk("prd11: the pips gone again: back under the power bar (%s)" % P.petDrop, P.petDrop == 30)
+    chk("prd11: the pips gone again: back under the power bar (%s)" % P.petDrop, P.petDrop == 44)
     # its own switch
     Lg.WowCompanion.npWant.pet = False; run(0.3)
     chk("prd11: its switch off (npWant.pet false): hidden, no room taken, the aura row back (%s)" % P.petDrop,
@@ -598,13 +613,44 @@ def main():
     Lg.PET.hp = 500; run(0.3)
     chk("prd11: the pet full: its strip's secret alpha 0", P.petL.alpha.n == 0)
     Lg.PET_REFUSE = True; Lg.PET.hp = 200; run(0.3)
-    chk("prd11: the pet's curve refused: its OWN flag (%s), the strip plainly shown; the player's curve untouched (%s, %s)"
-        % (P.petCurveBad, P.curveBad, P.src),
+    chk("prd11: the pet's curve refused: its OWN flag (%s), the strip on the player's curve (review fix: %s); the player's curve untouched (%s, %s)"
+        % (P.petCurveBad, P.petSrc, P.curveBad, P.src),
         P.petCurveBad is not None and "pet refused" in P.petCurveBad and P.curveBad is None and P.src == "curve"
-        and P.petL.alpha == 1 and Lg.issecretvalue(P.g.alpha))
+        and P.petSrc == "player" and Lg.issecretvalue(P.petL.alpha) and Lg.issecretvalue(P.g.alpha))
     Lg.PET_REFUSE = None
     fire("PLAYER_REGEN_DISABLED"); ME.fight = True; run(0.3)
     chk("prd11: in a fight the strip plainly shown", P.petL.alpha == 1 and P.petSrc == "plain")
+    Lg.PET = None; run(0.3)
+    # review of prd11 (2026-11-11): DISMISSED ON THE CURVE ROUTE - the tick asks the pet's curve before the poll; with no pet that must
+    # latch nothing (the stub's UnitHealthPercent errors on a nil PET, as a refusal would)
+    P.petCurveBad = None
+    Lg.PET = L.table_from({"hp": 300, "hpMax": 500, "pw": 60, "pwMax": 100, "ptype": 2, "tok": "FOCUS", "name": "Wolf", "icon": 132203, "hunter": True})
+    fire("UNIT_PET", "player"); ME.fight = False; fire("PLAYER_REGEN_ENABLED"); run(3)
+    chk("prd11 review: the curve route with a pet (%s, %s)" % (P.src, P.petSrc), P.src == "curve" and P.petSrc == "curve" and P.petL.shown is True)
+    Lg.PET = None
+    ev.scripts.OnUpdate(ev, 1 / 30)                                      # a tick before UNIT_PET / the poll: the curve asked first
+    chk("prd11 review: dismissed, the tick before the poll: nothing latched (%s), the strip hidden, no room (%s)" % (P.petCurveBad, P.petDrop),
+        P.petCurveBad is None and P.petL.shown is False and P.petDrop == 0 and P.curveBad is None)
+    fire("UNIT_PET", "player"); run(0.5)
+    chk("prd11 review: ... and after UNIT_PET and the poll: still nothing latched, hidden (%s)" % P.petCurveBad,
+        P.petCurveBad is None and P.petL.shown is False)
+    Lg.PET = L.table_from({"hp": 300, "hpMax": 500, "pw": 60, "pwMax": 100, "ptype": 2, "tok": "FOCUS", "name": "Wolf", "icon": 132203, "hunter": True})
+    Lg.PET.hp = 200
+    fire("UNIT_PET", "player"); run(0.5)
+    chk("prd11 review: resummoned out of combat: the pet's own curve alpha back (%s, %s)" % (P.petSrc, getattr(P.petL.alpha, "n", P.petL.alpha)),
+        P.petL.shown is True and P.petSrc == "curve" and Lg.issecretvalue(P.petL.alpha) and P.petL.alpha.n == 1)
+    Lg.PET = None; fire("UNIT_PET", "player")
+    chk("prd11 review: UNIT_PET with no pet hides the strip at once (%s)" % P.petL.shown, P.petL.shown is False and P.petCurveBad is None)
+    # a refusal WITH a pet out: latched, and the strip follows the PLAYER's curve (the bars' own layer: it fades with the HUD), not 1
+    Lg.PET = L.table_from({"hp": 200, "hpMax": 500, "pw": 60, "pwMax": 100, "ptype": 2, "tok": "FOCUS", "name": "Wolf", "icon": 132203, "hunter": True})
+    Lg.PET_REFUSE = True; ME.hp = 1000
+    fire("UNIT_PET", "player"); run(0.5)
+    chk("prd11 review: refused with a pet out: latched (%s), the strip on the PLAYER's curve (%s: player full -> %s)"
+        % (P.petCurveBad, P.petSrc, getattr(P.petL.alpha, "n", P.petL.alpha)),
+        P.petCurveBad is not None and P.petSrc == "player" and Lg.issecretvalue(P.petL.alpha) and P.petL.alpha.n == 0 and P.curveBad is None)
+    ME.hp = 600; run(0.3)
+    chk("prd11 review: ... the player hurt: the strip with the bars (%s)" % P.petL.alpha.n, P.petL.alpha.n == 1)
+    ME.hp = 1000; Lg.PET_REFUSE = None; P.petCurveBad = None
     Lg.PET = None; run(0.3)
     # tt1, HIDE THE GAME'S TOOLTIPS (the user: "I need a setting to hide top screen tooltips"): alpha only, held by hooks
     TT = Lg.WowCompanion.tips

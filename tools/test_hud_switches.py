@@ -4,7 +4,7 @@ game, Trail.lua under the compass tests' stub for the nameplate and personal-bar
     python tools/test_hud_switches.py
 
 Checks each switch alone (the player frame with the pet's, the target frame with its target's, the enemy nameplates, the personal bar;
-hub33: the pet's strip, and the game's pet frame as its own group - hidden while our strip is on, else as the player frame),
+hub33: the pet's strip, and the game's pet frame as its own group - as the player frame, never hidden by our strip alone),
 absolute taps (a repeat changes nothing), alpha only (never Show / Hide), the bundle's old columns 34 / 35 still moving every part, a
 switch once set winning over the bundle, the hub document's sw (the row, the columns, the state), and the app's defaults applied as
 taps (the frames hidden, the nameplates and the bar on). Needs lupa. Exit code 1 on any failure."""
@@ -127,8 +127,8 @@ def main():
         dw0.sw.wm is False and dw1.sw.wm is True and dw2.sw.wm is False and dw2.sw.set.wm is True
         and dw2.sw.cols.WM_OFF == 8 and dw2.sw.cols.WM_ON == 9)
     # hub33 (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs Pet HUD"): the pet's
-    # strip's own switch on "uisw" 32 / 33 (WC.npWant.pet, on unless turned off); the game's pet frame its own group "pet": hidden while
-    # our strip is on (Trail.lua's WC.prd.petOn), else as the player frame
+    # strip's own switch on "uisw" 32 / 33 (WC.npWant.pet, on unless turned off); the game's pet frame its own group "pet": as the player
+    # frame (review fix 2026-11-11: our strip alone never hides it - the strip fades with the HUD, the game's frame would be gone too)
     dp0 = doc()
     chk("hub33: the pet's switch: cols 32 / 33, on before any tap (%s), not yet set (%s)" % (dp0.sw.pet, dp0.sw.set.pet),
         dp0.sw.cols.PET_OFF == 32 and dp0.sw.cols.PET_ON == 33 and dp0.sw.pet is True and dp0.sw.set.pet is None)
@@ -139,18 +139,21 @@ def main():
     sw(None, SW.PET_ON)
     dp2 = doc()
     chk("hub33: 33 on again (%s, %s)" % (G.WowCompanion.npWant.pet, dp2.sw.pet), G.WowCompanion.npWant.pet is True and dp2.sw.pet is True)
-    L2.execute("PETON = true; WowCompanion.prd = { petOn = function() return PETON end }")
+    L2.execute("PETON = true; WowCompanion.prd = { petOn = function() return PETON end, wantedPet = function() return PETON end }")
     sw(None, SW.PLAYER_SHOW)
-    chk("hub33: our pet strip on: the game's pet frame hidden (%s) while the player frame shows (%s)" % (a("PetFrame"), a("PlayerFrame")),
-        a("PetFrame") == 0 and a("PlayerFrame") == 1)
+    chk("hub33 review: the player frame SHOWN and our strip on (the HUD may be faded): the game's pet frame stays shown (%s, %s)"
+        % (a("PetFrame"), a("PlayerFrame")), a("PetFrame") == 1 and a("PlayerFrame") == 1)
     G.PETON = False
     sw(None, SW.PET_OFF)
-    chk("hub33: our pet strip off: the game's pet frame as the player frame again (%s)" % a("PetFrame"), a("PetFrame") == 1)
+    chk("hub33: our pet strip off: the game's pet frame as the player frame (%s)" % a("PetFrame"), a("PetFrame") == 1)
     sw(None, SW.PLAYER_HIDE)
     chk("hub33: ... and hidden with it (%s, %s)" % (a("PlayerFrame"), a("PetFrame")), a("PlayerFrame") == 0 and a("PetFrame") == 0)
     G.PETON = True
     sw(None, SW.PRD_ON)
-    chk("hub33: a resource bar tap re-applies the frames (the pet frame by our strip: %s)" % a("PetFrame"), a("PetFrame") == 0)
+    chk("hub33: the player frame hidden, our strip on: the game's pet frame hidden with it (%s)" % a("PetFrame"), a("PetFrame") == 0)
+    sw(None, SW.PLAYER_SHOW)
+    chk("hub33 review: the player frame shown again: the pet frame with it, our strip on or not (%s)" % a("PetFrame"), a("PetFrame") == 1)
+    sw(None, SW.PLAYER_HIDE)
     L2.execute("WowCompanion.prd = nil")
     sw(None, SW.PET_ON); sw(None, SW.NP_ON)
     chk("alpha only: no Show / Hide on any game frame (%d / %d)" % (G.CALLS.show, G.CALLS.hide), G.CALLS.show == 0 and G.CALLS.hide == 0)
