@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p37"                -- bump on every change; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
+local CV = "p38"                -- bump on every change; p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -901,8 +901,8 @@ WC.padTabCtl = {
 -- ---------------------------------------------------------------- p33 THE PARTY MODE TAB (PARTY_BUILD.md 4.4; PadMap m77 holds the settings)
 -- p37 (party_design.md B and the user's decisions 2026-11-11): the tab is drawn on the normal layers' own picture, and the cursor walks
 -- it as it walks them: the SET ROW (ZL, ZR; ZL + ZR locked: nothing happens with both held), the TOUCH ROW (Touch: the second tap's
--- action; Hold: the player menu, locked), the two DIAMONDS (the D-pad: Up / Down move the pick, locked; Left / Right kept for raids,
--- empty and locked - the user: "this will need to support raids at some point"; the faces: A, X, Y as set, B the red Back, locked).
+-- action; Hold: the player menu, locked), the two DIAMONDS (the D-pad: all four directions move the pick, locked - p38, the user's
+-- adaptive rows 2026-11-11; the faces: A, X, Y as set, B the red Back, locked).
 -- ZL / ZR (chosen on the set row, or held) show that layer's A / X / Y. A on a place = the right page; there A = its ONE red action
 -- (Change: the chooser; with Smart Y on, Y's page: Remove a party buff / Add one / Change the In combat action), B = back.
 -- By touch (Book's padtab): 26 the tab, 27-36 a slot pick (fresh 2 s), 37 the picked slot's no-spell value, Book's two-tap spell.
@@ -1051,8 +1051,7 @@ local function partyTab()
             return true
         end
         if key == "PAD1" then
-            if tc.ppos == 1 or tc.ppos == 3 then report("reserved") return true end      -- kept for raids (the user, 2026-11-11)
-            if not curSlot() then report("locked") return true end                      -- Up / Down move the pick; B; ZL + ZR
+            if not curSlot() then report("locked") return true end                      -- p38: the D-pad moves the pick; B; ZL + ZR
             toRight("diam")
             return true
         end
