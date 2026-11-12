@@ -783,46 +783,59 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     }
 
     // ---- SMART Y (Spells' PadMap m62; the user: "logic rows, with the bottom row being an Add button ... on a single row I need to be
-    // able to add an "or""): Food and Water fixed at the top, then the character's buff rows in priority order, then Add. A row is
-    // SELECTED by a press (the select -> ONE action pattern, no per-row buttons): its actions show on the line under it. The add-on keeps
-    // the rows per character; every change is ONE batch of taps (SmartYModel), and the next padmap redraws the section.
+    // able to add an "or""). m127 FACELIFT (the user, 2026-11-11, picks "Buttons on every row" and "less verbose and more visual ... the
+    // Or/takeout/remove buttons shouldnt be hidden after tap, they should be integrated better"): ONE ordered list - Food, Water,
+    // Manners and the buff rows, in the player's order ("it shouldnt hardcode food and water as first and second") - each row its
+    // pictures (an OR row's buffs as chained slots, each slot's x takes that buff out), a short name and tag, then its own Up / Down /
+    // Or (buff rows) / X, always shown (this section's exception to the select -> ONE action rule, by the user's pick); "Add a buff"
+    // last. The add-on keeps the list per character; every change is ONE batch of taps (SmartYModel); its smartyack answers (a refusal
+    // is said on the Add row), and the next padmap redraws the section.
 
     /** the padmap's Smart buffs (the host's: the latest padmap); null = no game yet, or an add-on before m62 */
     var smartDoc: () -> SmartYModel.Doc? = { null }
+    /** m127: the kind of what Y would do now (the padmap's `smarty` k: food / drink / buff / or / manners); null = nothing */
+    var smartNow: () -> String? = { null }
     /** sends one batch of taps (the host's TapBridge); false = not sent */
     var smartTaps: (List<Pair<String, Int>>) -> Boolean = { false }
     /** a spell's two taps on the "spells" row by its name (the host's book); null = none known */
     var smartSpellCells: (String) -> List<Pair<String, Int>>? = { null }
+    /** the row an "Or" is choosing for (while [sbChoose] is "addor") */
     private var sbSel: Int? = null
     private var sbChoose: String? = null
     private var sbNote: String? = null
     private val sbHits = ArrayList<Pair<RectF, () -> Unit>>()
 
-    /** the section's lines, in order: "none", "food", "water", a row's index, "act" (the selected row's actions), "add", a Buff, "cancel" */
+    /** m127: the add-on's answer to an edit (smartyack): a refusal is said on the Add row; a done edit clears the note */
+    fun onSmartAck(op: String, ok: Boolean, why: String?) {
+        if (op == "on" || op == "off") return
+        sbNote = if (ok) null else (why?.takeIf { it.isNotBlank() } ?: "Not taken")
+        invalidate()
+    }
+
+    /** the section's lines, in order: "none", "toggle", a row's index, "add"; while choosing: a Buff or a kind ("k:food"), "cancel" */
     private fun sbLines(): List<Any> {
         val d = smartDoc() ?: return listOf("none")
         // m76: the On / Off row first; the rest only while Smart Y is on (the user: "hide the other settings until it's turned on")
         if (!SmartYModel.rowsShown(d)) return listOf("toggle")
-        val out = ArrayList<Any>(listOf("toggle", "food", "water"))
+        val out = ArrayList<Any>(listOf("toggle"))
+        if (d.fixedFood) { out += "food"; out += "water" }                  // an add-on before m127: Food / Water fixed on top
+        for (r in d.rows.indices) out += r
         val choose = sbChoose
-        for (r in d.rows.indices) { out += r; if (sbSel == r && choose == null) out += "act" }
         if (choose == null) { out += "add"; return out }
         val sel = sbSel
-        val list = when {
-            choose == "add" -> SmartYModel.addChoices(d)
-            sel != null && choose == "addor" -> SmartYModel.orChoices(d, sel)
-            sel != null -> SmartYModel.outChoices(d, sel)
-            else -> emptyList()
+        when {
+            choose == "add" -> { SmartYModel.kindChoices(d).forEach { out += "k:$it" }; out.addAll(SmartYModel.addChoices(d)) }
+            sel != null && choose == "addor" -> out.addAll(SmartYModel.orChoices(d, sel))
         }
-        out.addAll(list); out += "cancel"
+        out += "cancel"
         return out
     }
 
     private fun sbSend(taps: List<Pair<String, Int>>?, done: String) {
         sbNote = when {
-            taps == null -> "That spell has no tap way yet: open the Spellbook once, then try again."
+            taps == null -> "Open the Spellbook once, then again"
             smartTaps(taps) -> done
-            else -> "Nothing was sent: the game is not live."
+            else -> "Game not live"
         }
         sbSel = null; sbChoose = null
     }
@@ -830,6 +843,107 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun sbButton(c: Canvas, box: RectF, label: String, act: () -> Unit) {
         UiKit.choice(c, RectF(box.left + 2f, box.top - 6f, box.right - 2f, box.bottom + 6f), label, false, textSize = SEG_TEXT)
         sbHits += RectF(box) to act
+    }
+
+    /** an up / down button: the game's button plate with its gold arrow; greyed with no hit at the list's end */
+    private fun sbArrow(c: Canvas, b: RectF, up: Boolean, enabled: Boolean, act: () -> Unit) {
+        UiKit.choice(c, b, "", false, enabled = enabled)
+        val size = 26f
+        // moveArrowsUpDown draws the up arrow size * 0.62 above its box's middle (the down one below): shifted so it sits in [b]'s middle
+        val shift = if (up) size * 0.62f else -size * 0.62f
+        UiKit.moveArrowsUpDown(c, RectF(b.left, b.top + shift, b.right, b.bottom + shift), up = up, down = !up, x = b.centerX(),
+            size = size, alpha = if (enabled) 255 else 90)
+        if (enabled) sbHits += RectF(b) to act
+    }
+
+    /** a slot with a kind's picture ([icon]; Manners with no picture: its gold M) */
+    private fun sbSlot(c: Canvas, icon: Int, x: Float, y: Float, s: Float, mark: String?) {
+        val bmp = Icons.get(icon)
+        UiKit.slot(c, bmp, x, y, s)
+        if (bmp == null && mark != null) {
+            val p = UiKit.titlePaint(s * 0.5f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
+            c.drawText(mark, x + s / 2f, y + s / 2f - (p.ascent() + p.descent()) / 2f, p)
+        }
+    }
+
+    /** one row of the list: its pictures, its name and tag, its four buttons */
+    private fun drawSbRow(c: Canvas, d: SmartYModel.Doc, r: Int, y: Float) {
+        val box = RectF(16f, y, width - 16f, y + ROW_H)
+        val row = d.rows[r]
+        val label = SmartYModel.label(d, r)
+        rowHits.add(RectF(box) to label)
+        pFill.color = Theme.raised
+        c.drawRoundRect(box, 8f, 8f, pFill)
+        if (sbChoose == "addor" && sbSel == r) UiKit.selectedRow(c, box)
+        // the buttons, right to left: X, Or (buff rows), Down, Up
+        val bs = 72f; val gap = 8f; val cy = box.centerY()
+        var bx = box.right - 14f - bs
+        val sq = { RectF(bx, cy - bs / 2f, bx + bs, cy + bs / 2f) }
+        val canEdit = r < d.max
+        val xr = sq()
+        UiKit.square(c, "exit", xr.centerX(), xr.centerY(), bs, if (canEdit) UiKit.Button.UP else UiKit.Button.DISABLED)
+        if (canEdit) sbHits += RectF(xr) to { sbSend(SmartYModel.rowTaps(d, r, "remove"), "Removed") }
+        bx -= bs + gap
+        if (row.isBuff) {
+            val orr = sq()
+            val canOr = canEdit && row.ids.size < SmartYModel.MAX_OR
+            UiKit.choice(c, orr, "Or", false, enabled = canOr, textSize = SEG_TEXT)
+            if (canOr) sbHits += RectF(orr) to { sbSel = r; sbChoose = "addor"; sbNote = null }
+            bx -= bs + gap
+        }
+        val down = sq()
+        sbArrow(c, down, up = false, enabled = canEdit && r < d.rows.size - 1) { sbSend(SmartYModel.rowTaps(d, r, "down"), "Moved") }
+        bx -= bs + gap
+        val upB = sq()
+        sbArrow(c, upB, up = true, enabled = canEdit && r > 0) { sbSend(SmartYModel.rowTaps(d, r, "up"), "Moved") }
+        val right = upB.left - 16f
+        // the pictures: one slot, or an OR row's chained slots (each with its x: take that buff out)
+        val s = ROW_H - 30f
+        var x = box.left + 14f
+        val sy = box.top + 15f
+        val icons = SmartYModel.icons(d, r)
+        val names = SmartYModel.names(d, r)
+        val or = SmartYModel.isOr(d, r)
+        val maxSlots = ((right - x - 160f) / (s + 18f)).toInt().coerceAtLeast(1)
+        for ((k, icon) in icons.withIndex()) {
+            if (k >= maxSlots) break
+            if (k > 0) {                                                    // the chain between two slots
+                pFill.color = Theme.gold
+                c.drawRect(x - 18f, sy + s / 2f - 2f, x, sy + s / 2f + 2f, pFill)
+            }
+            if (row.isBuff) UiKit.slot(c, Icons.get(icon), x, sy, s, unusable = NoMana.has(row.ids[k]))
+            else sbSlot(c, icon, x, sy, s, if (row.kind == SmartYModel.MANNERS) "M" else null)
+            if (or) {
+                val n = names[k]
+                UiKit.closeX(c, x + s - 4f, sy + 4f, 30f)
+                sbHits += RectF(x, sy, x + s, sy + s) to {
+                    sbSend(SmartYModel.spellTaps(d, r, "out", smartSpellCells(n)), "Taken out")
+                }
+            }
+            x += s + 18f
+        }
+        if (icons.size > maxSlots) {
+            val p = UiKit.numberPaint(24f, Theme.textDim)
+            c.drawText("+${icons.size - maxSlots}", x, cy + 9f, p); x += p.measureText("+${icons.size - maxSlots}") + 12f
+        }
+        // the name (gold: what Y does now) and its tag
+        val tx = x + 6f
+        val now = SmartYModel.nowRow(d, smartNow()) == r
+        pLabel.color = if (now) Theme.gold else Theme.text
+        // a spell's name is the game's text (never through Tr.t: menus only); a kind's name is ours
+        val shown = if (or) names.joinToString(" / ") else if (row.isBuff) label else Tr.t(label)
+        c.drawText(fit(pLabel, shown, right - tx), tx, box.top + 41f, pLabel)
+        val tag = when {
+            !row.isBuff -> SmartYModel.kindTag(row.kind)
+            row.ids.any { NoMana.has(it) } -> "no mana"
+            or -> "any one"
+            d.list.firstOrNull { it.id == row.ids[0] }?.imbue == true -> "weapon"
+            else -> null
+        }
+        if (tag != null) {
+            pSub.color = if (tag == "no mana") Theme.questRed else Theme.textDim
+            c.drawText(Tr.t(tag), tx, box.top + 75f, pSub)
+        }
     }
 
     private fun drawSmartY(c: Canvas, top: Float): Float {
@@ -840,10 +954,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             if (i > 0) y += ROW_H + 10f
             val box = RectF(16f, y, width - 16f, y + ROW_H)
             when {
-                line == "none" -> row(c, y, "Smart Y", "Needs the game running with the newer Spells add-on.", enabled = false) { RectF(it.right - 16f, it.top, it.right - 16f, it.bottom) }
+                line == "none" -> row(c, y, "Smart Y", "Needs the game running", enabled = false) { RectF(it.right - 16f, it.top, it.right - 16f, it.bottom) }
                 line == "toggle" && d != null -> {
-                    row(c, y, "Smart Y", if (d.on) "Y uses food, water, your buffs and quest items when it has nothing else to do."
-                        else "Off: Y is the game's own Y (Inspect; its fight spell in a fight).", enabled = true) { b ->
+                    row(c, y, "Smart Y", if (d.on) "Y: your list, top first" else "Off", enabled = true) { b ->
                         val bw = 300f
                         val bb = RectF(b.right - 16f - bw, b.centerY() - 30f, b.right - 16f, b.centerY() + 30f)
                         val hw = bw / 2f
@@ -851,71 +964,51 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                             val sb = RectF(bb.left + k * hw, bb.top, bb.left + (k + 1) * hw, bb.bottom)
                             UiKit.choice(c, RectF(sb.left + 2f, sb.top - 6f, sb.right - 2f, sb.bottom + 6f), pair.first, d.on == pair.second, textSize = SEG_TEXT)
                             sbHits += RectF(sb) to {
-                                if (d.on != pair.second) sbSend(SmartYModel.toggleTaps(d, pair.second), if (pair.second) "Smart Y is on." else "Smart Y is off.")
+                                if (d.on != pair.second) sbSend(SmartYModel.toggleTaps(d, pair.second), if (pair.second) "On" else "Off")
                             }
                         }
                         bb
                     }
                 }
-                line == "food" -> row(c, y, "1. Food", "Health below 80%: the cheapest food in your bags.", enabled = true) { RectF(it.right - 16f, it.top, it.right - 16f, it.bottom) }
-                line == "water" -> row(c, y, "2. Water", "Mana below 80%: the cheapest drink in your bags.", enabled = true) { RectF(it.right - 16f, it.top, it.right - 16f, it.bottom) }
-                line is Int && d != null -> {
-                    val r = line
-                    if (sbSel == r) UiKit.selectedRow(c, box)
-                    val or = SmartYModel.isOr(d, r)
-                    row(c, y, "${r + 3}. " + SmartYModel.label(d, r),
-                        when {
-                            d.rows[r].any { NoMana.has(it) } -> "Not enough mana now for " +
-                                SmartYModel.names(d, r).filterIndexed { k, _ -> NoMana.has(d.rows[r][k]) }.joinToString(" or ") + "."
-                            or -> "One of them up is enough. None up: Y opens a wheel to choose."
-                            else -> "Cast on yourself when it is not up."
-                        },
-                        enabled = true) { RectF(it.right - 16f, it.top, it.right - 16f, it.bottom) }
-                    sbHits += RectF(box) to { sbSel = if (sbSel == r) null else r; sbChoose = null; sbNote = null }
-                }
-                line == "act" && d != null -> {
-                    val r = sbSel ?: continue
-                    val acts = ArrayList<Pair<String, () -> Unit>>()
-                    if (r > 0) acts += "Up" to { sbSend(SmartYModel.rowTaps(d, r, "up"), "Moved up.") }
-                    if (r < d.rows.size - 1) acts += "Down" to { sbSend(SmartYModel.rowTaps(d, r, "down"), "Moved down.") }
-                    if (d.rows[r].size < SmartYModel.MAX_OR) acts += "Add or" to { sbChoose = "addor" }
-                    if (SmartYModel.isOr(d, r)) acts += "Take out" to { sbChoose = "out" }
-                    acts += "Remove" to { sbSend(SmartYModel.rowTaps(d, r, "remove"), "Removed.") }
-                    pFill.color = Theme.raised; c.drawRoundRect(box, 8f, 8f, pFill)
-                    pLabel.color = Theme.textDim
-                    c.drawText(Tr.t("Row ${r + 3}:"), box.left + 22f, box.centerY() + 10f, pLabel)
-                    val bw = 150f
-                    var x = box.right - 16f - bw * acts.size
-                    for ((label, act) in acts) { sbButton(c, RectF(x, box.centerY() - 30f, x + bw - 6f, box.centerY() + 30f), label, act); x += bw }
-                }
+                // an add-on before m127 only: Food / Water fixed on top
+                line == "food" -> row(c, y, "Food", "< 80%", enabled = true) { RectF(it.right - 16f, it.top, it.right - 16f, it.bottom) }
+                line == "water" -> row(c, y, "Water", "< 80%", enabled = true) { RectF(it.right - 16f, it.top, it.right - 16f, it.bottom) }
+                line is Int && d != null -> drawSbRow(c, d, line, y)
                 line == "add" && d != null -> {
-                    val full = d.rows.size >= SmartYModel.MAX_ROWS
-                    row(c, y, "Add a buff", sbNote ?: if (full) "16 rows at most." else "One of your own buffs, cast on yourself.", enabled = !full) { b ->
-                        val bb = RectF(b.right - 16f - 150f, b.centerY() - 30f, b.right - 16f, b.centerY() + 30f)
-                        if (!full) sbButton(c, bb, "Add") { sbChoose = "add"; sbNote = null }
+                    val full = SmartYModel.full(d)
+                    row(c, y, "Add a buff", sbNote ?: if (full) "${d.max} at most" else "", enabled = !full) { b ->
+                        val bb = RectF(b.right - 14f - 72f, b.centerY() - 36f, b.right - 14f, b.centerY() + 36f)
+                        UiKit.square(c, "plus", bb.centerX(), bb.centerY(), 72f, if (full) UiKit.Button.DISABLED else UiKit.Button.UP)
+                        if (!full) sbHits += RectF(box) to { sbChoose = "add"; sbSel = null; sbNote = null }
                         bb
                     }
+                }
+                line is String && line.startsWith("k:") && d != null -> {
+                    val kind = line.removePrefix("k:")
+                    rowHits.add(RectF(box) to SmartYModel.kindName(kind))
+                    pFill.color = Theme.raised; c.drawRoundRect(box, 8f, 8f, pFill)
+                    UiKit.auraRow(c, box, Icons.get(d.icons[kind] ?: 0), SmartYModel.kindName(kind))
+                    sbHits += RectF(box) to { sbSend(SmartYModel.addKindTaps(d, kind), "Added") }
                 }
                 line is SmartYModel.Buff && d != null -> {
                     val b = line
                     val choose = sbChoose
-                    row(c, y, b.name, if (b.imbue) "A weapon imbue: up while your main hand is enchanted." else "", enabled = true) { bx ->
-                        val bb = RectF(bx.right - 16f - 150f, bx.centerY() - 30f, bx.right - 16f, bx.centerY() + 30f)
-                        sbButton(c, bb, if (choose == "out") "Take out" else "Pick") {
-                            val cells = smartSpellCells(b.name)
-                            val sel = sbSel
-                            when {
-                                choose == "add" -> sbSend(SmartYModel.addTaps(d, cells), "Added.")
-                                sel != null && choose == "addor" -> sbSend(SmartYModel.spellTaps(d, sel, "addor", cells), "Added as an \"or\".")
-                                sel != null -> sbSend(SmartYModel.spellTaps(d, sel, "out", cells), "Taken out.")
-                            }
+                    rowHits.add(RectF(box) to b.name)
+                    pFill.color = Theme.raised; c.drawRoundRect(box, 8f, 8f, pFill)
+                    UiKit.auraRow(c, box, Icons.get(b.icon), b.name)
+                    sbHits += RectF(box) to {
+                        val cells = smartSpellCells(b.name)
+                        val sel = sbSel
+                        when {
+                            choose == "add" -> sbSend(SmartYModel.addTaps(d, cells), "Added")
+                            sel != null && choose == "addor" -> sbSend(SmartYModel.spellTaps(d, sel, "addor", cells), "Added")
                         }
-                        bb
                     }
                 }
                 line == "cancel" -> row(c, y, "Cancel", "", enabled = true) { b ->
-                    val bb = RectF(b.right - 16f - 150f, b.centerY() - 30f, b.right - 16f, b.centerY() + 30f)
-                    sbButton(c, bb, "Cancel") { sbChoose = null }
+                    val bb = RectF(b.right - 14f - 72f, b.centerY() - 36f, b.right - 14f, b.centerY() + 36f)
+                    UiKit.closeX(c, bb.centerX(), bb.centerY(), 72f)
+                    sbHits += RectF(box) to { sbChoose = null; sbSel = null }
                     bb
                 }
             }

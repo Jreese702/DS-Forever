@@ -24,7 +24,10 @@ object PadMapModel {
 
     /** a spell a combat button names: its id and icon when the game knows the name; [item] (PadMap m32): an ITEM it keeps for outside
      *  fights ("/use [nocombat] item:<id>"), [id] then the item's id */
-    data class Ref(val id: Int?, val name: String, val icon: Int, val item: Boolean = false)
+    /** [kind] (m127): Smart Y's pick's source - food / drink / both / buff / or / manners (a Manners pick shows as Manners'); null elsewhere */
+    data class Ref(val id: Int?, val name: String, val icon: Int, val item: Boolean = false, val kind: String? = null) {
+        val manners: Boolean get() = kind == "manners"
+    }
 
     /** [combat] / [otherwise]: a COMBAT button's two spells ([otherwise] null = nothing out of combat); [fight]: the spell a base X / Y / A
      *  (FIXED) casts in a fight (PadMap m7, the user 2026-10-01 "Yes, per button"; no macro: the companion's own secure button) */
@@ -203,7 +206,8 @@ object PadMapModel {
             },
             smartBuffs = SmartYModel.parse(m.optJSONObject("sb")),
             qitem = m.optJSONObject("qitem")?.let { o -> Ref(intOrNull(o, "id"), textOrNull(o, "n") ?: "Quest item", o.optInt("i", 0), item = true) },
-            smartY = m.optJSONObject("smarty")?.let { o -> textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0), item = true) } },
+            // m127: the pick's kind kept (the verified report: dropped here, a Manners pick looked like Smart Y's own)
+            smartY = m.optJSONObject("smarty")?.let { o -> textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0), item = true, kind = textOrNull(o, "k")) } },
             fish = m.optJSONObject("fish")?.let { o -> textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0)) } },
             formFights = objects(m.optJSONArray("ff")).mapNotNull { o ->
                 val f = o.optInt("f", 0); val p = o.optInt("p", 0)

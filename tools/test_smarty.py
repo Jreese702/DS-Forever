@@ -466,10 +466,202 @@ check(tuple(rd("/cast [@player] Mark of the Wild(Rank 2)\n"))[0] == "Mark of the
 check(tuple(rd("/use item:1234")) == ("item:1234", None), "a scroll: the item use", tuple(rd("/use item:1234")))
 check(rd("") is None and rd(None) is None and rd("/targetlasttarget") is None, "nothing armed: nil", "")
 
-# m78: the order in smartApply - Manners only when nothing of your own (food / water, a buff row) is due
+# m127: smartApply walks ONE ordered list (OV.smartWalk); Manners is asked only when the list has its row
 sa = SRC[SRC.index('function OV.smartApply()'):SRC.index('OV.smartF = CreateFrame("Frame")')]
-check(sa.index('OV.sbStep') < sa.index('OV.mannersArmed()') and 'if not val then' in sa[sa.index('OV.sbStep'):sa.index('OV.mannersArmed()')],
-      "Manners comes after food / water and the buff rows", "")
+check('OV.smartWalk(rows, due' in sa and 'if OV.sbHas(rows, "manners") then' in sa
+      and sa.index('OV.sbHas(rows, "manners")') < sa.index('OV.mannersArmed()'),
+      "m127: smartApply walks the ordered list; Manners only with its row", "")
+
+# ---------------------------------------------------------------- m127: TRACKING NEVER ON Y (the user, 2026-11-11)
+tb = re.search(r'-- TRACK-BEGIN[^\n]*\n(.*?)-- TRACK-END', SRC, re.S).group(1)
+TR = lupa.LuaRuntime(unpack_returned_tuples=True)
+TR.execute('OV = {}\n' + tb + '\n' + mr)
+TR.execute(r"""
+NAMES = { [2383] = "Find Herbs", [19883] = "Track Humanoids", [5225] = "Track Humanoids", [1494] = "Track Beasts" }
+LIST = { { name = "Find Minerals" }, "Track Hidden", false, { name = "Sense Undead(Rank 1)" } }
+function info(i) local v = LIST[i]; if v == nil then return nil end; if type(v) == "table" then return v.name end; return v end
+OV.trackSet = OV.trackBuild({ 2383, 19883, 5225, 1494, 9999 }, function(id) return NAMES[id] end, info)
+""")
+ist = TR.eval('OV.isTracking')
+check(ist("Track Humanoids") and ist("Find Herbs") and ist("Track Beasts"), "tracking: the static ids by name", "")
+check(ist("Find Herbs(Rank 1)") and ist("find herbs (Rank 2)"), "tracking: any rank, any case", "")
+check(ist("Find Minerals") and ist("Track Hidden") and ist("Sense Undead"), "tracking: the minimap list (a table, a name; its rank stripped)", "")
+check(not ist("Arcane Intellect") and not ist(None) and not ist(""), "not tracking: a buff, nothing", "")
+TR.execute('LIST = { { name = "A" }, nil, { name = "Find Fish" } }; OV.trackSet2 = OV.trackBuild({}, function() end, info)')
+check(TR.eval('OV.trackSet2["a"] == true and OV.trackSet2["find fish"] == nil'), "the list is read until it answers nothing", "")
+
+# Manners: OTHER players only (at the pick)
+ok_ = TR.eval('function(t, me) local s, w = OV.mannersOk(t, me, OV.isTracking); if s then return s .. "|" .. tostring(w) end return false end')
+cases = [
+    ("/target Me\n/cast Track Humanoids\n/cleartarget", "Me", False, "its own tracking reminder on you (the report's case)"),
+    ("/cast Find Herbs", "Me", False, "a tracking spell with no /target"),
+    ("/cast Find Herbs(Rank 1)", "Me", False, "a tracking spell with a rank"),
+    ("/target Bob\n/cast Track Beasts", "Me", False, "a tracking spell on anybody"),
+    ("/target Me-Realm\n/cast Aspect of the Hawk", "Me", False, "your own buff on you (name-realm)"),
+    ("/target me\n/cast Arcane Intellect", "Me", False, "your own buff on you (any case)"),
+    ("/target Me Surname\n/cast Arcane Intellect", "Me", False, "your own buff on you (a surname)"),
+    ("/cast [@player] Mark of the Wild", "Me", False, "a cast on @player"),
+    ("/use item:1234", "Me", False, "a bare /use (your own scroll)"),
+    ("/target Bob\n/cast Arcane Intellect\n/cleartarget", "Me", "Arcane Intellect|Bob", "another player's buff: kept"),
+    ("/target Bob-Other\n/cast Arcane Intellect", "Me", "Arcane Intellect|Bob-Other", "another player on another realm: kept"),
+    ("/target Mel\n/cast Arcane Intellect", "Me", "Arcane Intellect|Mel", "a name that only starts like yours: kept"),
+    ("/cast Arcane Brilliance", "Me", "Arcane Brilliance|nil", "a group buff with no /target (Manners' selfcast): kept"),
+]
+for text, me, want, name in cases:
+    got = ok_(text, me)
+    check(got == want, "Manners pick: " + name, got)
+
+# Manners at the PRESS (OV.mannersPre: the same filter on the lines copied now)
+mpre = re.search(r'(function OV\.mannersPre\(b\).*?\nend)\n', SRC, re.S).group(1)
+marm = re.search(r'(function OV\.mannersArmed\(\).*?\nend)\n', SRC, re.S).group(1)
+TR.execute(r"""
+WC = { isPlain = function() return true end }
+function T(fn) local ok, v = pcall(fn); if ok then return v end end
+function inCombat() return false end
+function UnitExists() return false end
+function UnitName() return "Me" end
+function SecureCmdOptionParse() return nil end
+function OV.mannersHook() end
+function OV.myName() return "Me" end
+TEXT = ""
+MannersPrompt = { IsShown = function() return true end,
+                  GetAttribute = function(_, k) if k == "type" then return "macro" end if k == "macrotext" then return TEXT end end }
+function mkb() local b = { a = { ["wc-smarty-t"] = "manners" } }
+  function b:GetAttribute(k) return self.a[k] end
+  function b:SetAttribute(k, v) self.a[k] = v end
+  return b end
+""" + marm + '\n' + mpre + r"""
+function pressWith(t) TEXT = t; local b = mkb(); OV.mannersPre(b); return b.a["wc-manners-text"] or false end
+function armedWith(t) TEXT = t; local s = OV.mannersArmed(); return s or false end
+""")
+pw, aw = TR.eval('pressWith'), TR.eval('armedWith')
+BOB = "/target Bob\n/cast Arcane Intellect\n/cleartarget"
+check(pw(BOB) == BOB, "press: another player's buff, its lines copied", "")
+check(pw("/target Me\n/cast Track Humanoids") is False, "press: tracking on you -> no lines (Y casts nothing)", "")
+check(pw("/target Me\n/cast Aspect of the Hawk") is False, "press: your own buff on you -> no lines", "")
+check(pw("/use item:4321") is False, "press: a bare /use -> no lines", "")
+check(aw(BOB) == "Arcane Intellect" and pw("/target Me\n/cast Track Humanoids") is False,
+      "the prompt re-armed to tracking between the pick and the press: the press sends no lines", "")
+check(aw("/target Me\n/cast Track Humanoids") is False, "armed: tracking on you is never picked", "")
+
+# ---------------------------------------------------------------- m127: tracking never in the Add list, never added
+kn = re.search(r'(function OV\.sbKnown\(\).*?\nend)\n', SRC, re.S).group(1)
+sp = re.search(r'(WC\.smartYSpell = function\(id\).*?\nend)\n', SRC, re.S).group(1)
+mg = re.search(r'-- SB-MIGRATE-BEGIN[^\n]*\n(.*?)-- SB-MIGRATE-END', SRC, re.S).group(1)
+TR.execute(r"""
+WC.spellsBindableList = function() return { { id = 1459 }, { id = 19883 }, { id = 168 } } end
+BOOK = { [1459] = "Arcane Intellect", [19883] = "Track Humanoids", [168] = "Frost Armor" }
+function OV.sbName(id) return BOOK[id] end
+C_Spell = { GetSpellTexture = function() return 1 end }
+OV.SB_IDS = { 1459, 19883, 168 }; OV.SB_IMBUE = {}; OV.SB_MAX = 16
+ACKS = {}
+function OV.sbAck(op, ok, why) ACKS[#ACKS + 1] = { op = op, ok = ok, why = why } end
+function OV.smartApply() end
+function emit() end
+function WC.push() end
+function GetTime() return 100 end
+MN = false
+function OV.mannersOn() return MN end
+DB = { rows = {} }
+function OV.sbdb() return OV.sbMigrate(DB, MN) end
+""" + kn + '\n' + sp + '\n' + mg + r"""
+function knownNames() local out = {}; for _, e in ipairs(OV.sbKnown()) do out[#out + 1] = e.n end; return table.concat(out, ",") end
+function addId(id) OV.sbPick = { op = "add", at = 100 }; WC.smartYSpell(id); local a = ACKS[#ACKS]; return a and (tostring(a.ok) .. ":" .. tostring(a.why)) end
+""")
+check(TR.eval('knownNames()') == "Arcane Intellect,Frost Armor", "the Add list: the book's self-buffs, never a tracking spell", TR.eval('knownNames()'))
+got = TR.eval('addId(19883)')
+check(got == "false:tracking is never on Y", "a tracking spell sent anyway is refused (and said)", got)
+got = TR.eval('addId(1459)')
+check(got == "true:nil" and TR.eval('DB.rows[#DB.rows].ids[1] == 1459'), "a known buff is added at the end", got)
+
+# ---------------------------------------------------------------- m127: the v1 -> v2 migration (typed rows), shown rows
+MG = lupa.LuaRuntime(unpack_returned_tuples=True)
+MG.execute('OV = {}\n' + mg + r"""
+function kinds(e) local o = {}; for _, r in ipairs(e.rows) do o[#o + 1] = r.k or ("b" .. table.concat(r.ids, "+")) end; return table.concat(o, ",") end
+""")
+kinds = MG.eval('kinds')
+mig = MG.eval('OV.sbMigrate')
+v1 = MG.eval('function() return { rows = { { ids = { 1459 } }, { ids = { 168, 7302 } } } } end')()
+e = mig(v1, True)
+check(kinds(e) == "food,drink,b1459,b168+7302,manners" and e["v"] == 2, "v1 -> v2: Food, Water, the old rows, then Manners (installed)", kinds(e))
+check(kinds(mig(e, True)) == "food,drink,b1459,b168+7302,manners", "v2 again: unchanged", "")
+e2 = mig(MG.eval('function() return { rows = { { ids = { 1459 } } } } end')(), False)
+check(kinds(e2) == "food,drink,b1459", "v1 -> v2 without Manners: no Manners row", kinds(e2))
+check(kinds(mig(e2, True)) == "food,drink,b1459,manners", "Manners installed later: its row added at the end", "")
+check(kinds(mig(MG.eval('function() return { rows = {} } end')(), False)) == "food,drink", "a fresh character: Food, Water", "")
+e3 = MG.eval('function() return { v = 2, mnOff = true, rows = { { ids = { 1 } }, { k = "food" } } } end')()
+check(kinds(mig(e3, True)) == "b1,food", "removed by the player (mnOff): Manners not added back; a buff above Food stays", kinds(e3))
+e4 = MG.eval('function() return { v = 2, rows = { { k = "food" }, { k = "food" }, { ids = {} }, "x", { k = "nope" }, { k = "drink" } } } end')()
+check(kinds(mig(e4, False)) == "food,drink", "malformed rows and a second Food dropped", kinds(e4))
+vis = MG.eval('function(mn) local e = { v = 2, rows = { { k = "food" }, { k = "manners" }, { ids = { 1 } } } }; return table.concat(OV.sbVis(e.rows, mn), ",") end')
+check(vis(False) == "1,3" and vis(True) == "1,2,3", "Manners' row hidden while it is not installed (kept in the list)", (vis(False), vis(True)))
+
+# ---------------------------------------------------------------- m127: the edits on typed rows (sbOp / sbAddKind)
+so_ = re.search(r'(function OV\.sbOp\(col\).*?\nend)\n', SRC, re.S).group(1)
+ak = re.search(r'(function OV\.sbAddKind\(kind\).*?\nend)\n', SRC, re.S).group(1)
+TR.execute(r"""
+OV.SB_SEL0, OV.SB_OPS = 8, { remove = 24, up = 25, down = 26, add = 27, addor = 28, out = 29 }
+OV.SB_KINDS = { "food", "drink", "manners" }
+""" + so_ + '\n' + ak + r"""
+function setRows(t, mn, off) DB = { v = 2, rows = t, mnOff = off }; MN = mn; ACKS = {}; OV.sbPick = nil; OV.sbSel = nil end
+function k2() local o = {}; for _, r in ipairs(DB.rows) do o[#o + 1] = r.k or ("b" .. table.concat(r.ids, "+")) end; return table.concat(o, ",") end
+function taps(...) for _, c in ipairs({ ... }) do OV.sbOp(c) end; local a = ACKS[#ACKS]; return k2() .. (a and (" " .. tostring(a.ok) .. ":" .. tostring(a.why)) or "") end
+""")
+TR.execute('setRows({ { k = "food" }, { k = "drink" }, { ids = { 1459 } } }, false)')
+got = TR.eval('taps(10, 25)')
+check(got.startswith("food,b1459,drink"), "a buff moved up above Water (select row 3, Up)", got)
+got = TR.eval('taps(9, 25)')
+check(got.startswith("b1459,food,drink"), "... and above Food", got)
+TR.execute('setRows({ { k = "food" }, { k = "manners" }, { ids = { 1459 } } }, false)')
+got = TR.eval('taps(8, 26)')
+check(got.startswith("b1459,manners,food"), "Manners not installed: Down on Food swaps with the next SHOWN row", got)
+TR.execute('setRows({ { k = "food" }, { k = "manners" } }, true)')
+got = TR.eval('taps(9, 24)')
+check(got.startswith("food ") and TR.eval('DB.mnOff == true'), "Manners removed: gone, and marked so it is not added back", got)
+got = TR.eval('taps(27, 10)')
+check(got.startswith("food,manners true") and TR.eval('DB.mnOff == nil'), "Add then select cell + 2: Manners back at the end", got)
+got = TR.eval('taps(27, 8)')
+check(got.endswith("false:already on the list"), "Add Food when it is there: refused, said", got)
+TR.execute('setRows({ { k = "drink" } }, false)')
+check(TR.eval('taps(27, 8)').startswith("drink,food true"), "Add then select cell + 0: Food back (at the end)", "")
+check(TR.eval('taps(27, 10)').endswith("false:Manners is not installed"), "Add Manners while it is not installed: refused", "")
+check(TR.eval('taps(8, 28)').endswith("false:not a buff row"), "Or on Water: refused (buff rows only)", "")
+
+# ---------------------------------------------------------------- m127: the ORDERED walk (any order; a buff above food)
+wk = re.search(r'-- SMARTY-WALK-BEGIN[^\n]*\n(.*?)-- SMARTY-WALK-END', SRC, re.S).group(1)
+W = lupa.LuaRuntime(unpack_returned_tuples=True)
+W.execute('OV = {}\n' + oc + '\n' + wk + r"""
+F, D, M = { v = "food" }, { v = "drink" }, { v = "manners" }
+B = { v = "buff", cost = 50 }
+function walk(rows, due, mana) local st, k = OV.smartWalk(rows, due, mana); return st and (st.v .. ":" .. k) or false end
+""")
+walk = W.eval('walk')
+lua = W.execute
+std = 'return { { k = "food" }, { k = "drink" }, { ids = { 1 } }, { k = "manners" } }'
+up = 'return { { ids = { 1 } }, { k = "food" }, { k = "drink" }, { k = "manners" } }'
+def due(**k):
+    parts = ['%s = %s' % (n, v) for n, v in k.items()]
+    return W.execute('return { ' + ', '.join(parts) + ' }')
+check(walk(lua(std), due(food='F', buff='B', buffAt=3), 200) == "food:food", "the default order: Food first", "")
+check(walk(lua(up), due(food='F', buff='B', buffAt=1), 200) == "buff:buff", "a buff moved above Food: the buff first", "")
+check(walk(lua(up), due(food='F', buff='B', buffAt=1), 30) == "food:food", "... the mana short for it: Food / Water below go first (m75)", "")
+check(walk(lua(up), due(buff='B', buffAt=1), 30) == "buff:buff", "... the mana short, nothing below due: the buff", "")
+check(walk(lua(up), due(food='F', buff='B', buffAt=1), None) == "buff:buff", "... the mana unknown: the buff", "")
+check(walk(lua(std), due(drink='D', buff='B', buffAt=3), 10) == "drink:drink", "Water due above a buff: Water", "")
+check(walk(lua('return { { k = "drink" }, { k = "food" } }'), due(food='F', drink='D'), 10) == "drink:drink", "Water moved above Food: Water first", "")
+check(walk(lua('return { { k = "manners" }, { k = "food" } }'), due(food='F', manners='M'), 10) == "manners:manners", "Manners moved to the top: Manners first", "")
+check(walk(lua(std), due(manners='M', buff='B', buffAt=3), 200) == "buff:buff", "Manners below the buffs (the default): the buff first", "")
+check(walk(lua('return { { k = "drink" } }'), due(food='F'), 10) is False, "Food removed from the list: never food", "")
+check(walk(lua(std), due(buff='B', buffAt=1), 200) is False, "buffAt on a typed row: nothing (only a buff row takes the buff)", "")
+check(walk(lua(std), due(), 200) is False, "nothing due: nothing", "")
+
+# the kind pickers the walk uses
+check(pick(P.table_from({"hp": 50, "hpMax": 100, "mp": 50, "mpMax": 100, "level": 10, "drinking": False,
+                         "items": P.table_from([P.table_from(i) for i in ITEMS])}), "drink")["id"] == 159,
+      "smartPick(s, \"drink\"): the drink alone, with food due too", "")
+check(pick(P.table_from({"hp": 50, "hpMax": 100, "mp": 100, "mpMax": 100, "level": 10, "eating": True,
+                         "items": P.table_from([P.table_from(i) for i in ITEMS])}), "food") is None,
+      "smartPick(s, \"food\") while eating: nothing", "")
 
 print('ALL PASS' if fails == 0 else '%d FAILED' % fails)
 sys.exit(1 if fails else 0)

@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m126"               -- bump on every change; m126: THE HIT RULE LOWERS THE MODEL, NOT A 90 S FLOOR (the user, 2026-11-11: "I am consistently getting a food recommendation long after sitting at full hp for a long long while"; the log: "hp 50% via hit rule ... picked food" for 90 s after every fight with a hit): a fight's end with hits takes about 6 % a hit (at most half) off the model's health once; the model's own regen brings it back, and food stops at the 80 % line (plain facts only: the hit count, the class / Spirit regen); m125: A COOLDOWN THAT HAS RUN OUT IS GONE (the user, 2026-11-10: "about 50% of the time when I press a skill and I know it should show a gcd its still not showing a gcd"): a held GCD / cooldown was dropped only by a SPELL_UPDATE_COOLDOWN saying "not active", which the game often skips at the GCD's end; the stale entry then matched the next GCD (same kind, and in a fight no plain time to compare) and the new one was never sent. An entry past its end now counts as none, so every press starts a fresh one; m124: THE IN-COMBAT SPELLS FOLLOW THE RANK THAT CASTS (the user, 2026-11-10: Serpent Sting "its casting but not triggering a gcd or looking like it cast visually and also it doesn't show range properly which seems to be an issue on my shaman as well"; the Thor's log: the entry kept Rank 1's id 1978 while "/cast Serpent Sting" fires Rank 2, 13549): at login and on every SPELLS_CHANGED each entry's id / icon is set to the spell its NAME casts, so the cooldown, cast and range pictures read the rank that fires; m123: Y opens the target radial in a fight too (the user, 2026-11-10: "pressing y in combat is opening the context menu on the top screen. this should open on the bottom screen and hide on top"): the GROW no longer sends a bare Y to the game's Inspect menu; a fight spell / Smart Y on Y still wins, the Y glyph keeps the GROW rule; m122: the "soft" document retired (the LB picture shows no line over you: the user, "Scrap the soft target bit" ... "remove the L target"); m121: the LB picture's top line - what LB ALONE is bound to (lbmap tap / tapn, read from the game) and what you soft-target now (the "soft" document: soft enemy / friend / interact names, on change); m120: the Y in the layout's own glyph set (Nintendo = the white Gamepad_Rev_Y; the user: "why is the Y yellow when im using the nintendo glyphs?"); the game's X over an NPC trumps the Y also when the game will not say it is the same unit (secret reads count as the same); m119: the inspect glyph is the game's Y on every layout (the user: "the inspect glyph is Y not X"); m118: the target bar wears Hub's OWN prompt right of the bar (the user: "it needs to be to the right with our custom Icon"): Spells only says the letter (WC.tgPrompt), no glyph of ours on the bar; m117: the Y glyph over the nameplate again AND a smaller one beside the target bar's name (the user: "the glyphs still need to appear over the name plates"); the GROW rule alone for Hub's nameplate hiding (WC.tgGrown; "the hide name plate needs to have the same rules as the hide glyph"); m116 is the hunt build's; m115: the Y glyph beside the name on Hub's target bar while the bar shows (the user: "it should have the button glyph"); m112: the combat log (m92 / m95-97) ONLY while Party mode is allowed (WC.partyOk; the user, 2026-11-09: "Only while Party mode is on"); our Advanced Combat Logging given back when it is not (aclOurs; once for 1.0.17 / 1.0.18, aclReset1); m111 is the hunt build's; m110: Party mode's picked unit and the LB map for Hub's own party frames (WC.padMap.party.box / .lb, read only); m108: the several spell radials (m105) taken out of 1.0.18 (bisect test21: with them the loot window's close ran SetPreferredGamepadInteractTarget tainted by this add-on); one radial as in 1.0.17; m107: Manners' PreClick / PostClick are never run from our code (its code ran as ours: the taint log's buff frame / gamepad binding stack blamed on WowCompanionSpells); its armed prompt is only read; m106: the Y glyph over the target is OUR texture with the game's atlas (no Blizzard InputIconTextureFrameTemplate: its code ran tainted and tainted the gamepad UI -> SetPreferredGamepadInteractTarget forbidden; the taint log, 2026-11-08); m105: a command per spell radial (DSSRADIAL2..6, shown while that radial exists; WC.padMapDropCommand); m104: the LB party-target map ("lbmap": which LB + button targets you / party1..4, read from the game's own bindings) for the app's LB view; m103: the game's X (interact) glyph over an NPC target trumps our Y glyph (the user, 2026-11-07); Trail's friendly nameplates now follow a friendly target; m102: the target radial and its Y glyph follow the controller's GROW (the user: "I want it to go away when I /startattack, same rules as the button grow animation"): gone while a fight or an attack is on and not given back by B, back after B; m101: THE TARGET RADIAL (the user, 2026-11-07): out of a fight, a bare Y with a target opens the app's radial (wc-kind "tradial", no game action; Quests q51 reads the target's menu) and the game's own Y glyph shows over the target (its nameplate, else beside the target frame); m100: Party mode EXPERIMENTAL, off by default (Hub hub25 WC.partyOk): Select stays the game's key and Party mode ends (out of combat) while it is not allowed; m99: B in a fight - the first press gives the bars back AND stops the attack (the target kept), the next one clears the target; Smart Y's fight buff only when it was missing at the fight's start, once a fight; m98: each member's live CAST count (cs, UNIT_SPELLCAST_SUCCEEDED) for the app's mana estimate (the user: "The mana bars always show 100%"); m97: the combat log's stop and start a moment APART (in the same instant the game wrote nothing - test12 measured 2.5 min late again), a "clog" tick report every 12 stops; m96: each member's live HIT COUNTS (cw wounds, cc crits, ch heals: UNIT_COMBAT, amounts hidden) for the app's calibrated estimate; the combat log written out every 5 s OUT of a fight (in a fight the game ignores it - measured); m95: in a fight the combat log is stopped and started every 3 s (the game writes it only every ~5 min otherwise; the user picked "Try the restart trick"), its chat lines hidden; m94: m93's snippet comment held the word f-u-n-c-t-i-o-n, which the game's secure checker refuses even in a comment - every A / X / Y / B / D-pad press did nothing (the user, test9); m93: SMART Y IN A FIGHT - with no fight spell on Y (or given back by B), Y casts the top buff of your Smart buff list (wc-smarty-cb, armed out of combat); m92: each party member's GUID (g) for the app's combat-log health; Advanced Combat Logging and the combat log switched on at login (the user's ruling 2026-11-07); m91: the party row's column 36 is a secure /startattack cell (WC.atkCell: Hub's Start attack on hostile target); m90: after a fight with hits taken, food is due (90 s, until eating) - the game's eating rule; m89: a hit with a hidden amount counts as 6 % of the max health (Smart Y food by hits taken); m88: UNIT_COMBAT seen / hidden-amount counts in the why line (uc); m87: Y is routed while Smart Y is on, even with no In-combat spell on Y (Smart Y never heard a bare Y before); m86: health read from the DRAWN bar fill (texture width / bar width) when the value is secret; your own cell from the player frame first; m85: a party member's error no longer drops the party document (reported once, probe partyerr); Manners' prompt always hidden; m84: your own party cell takes a plain reading before the vitals' estimate (hs vit:<src>); m83: party members found by the party count / name too (UnitExists may be secret); m82: the party roster looked at again 2 / 5 / 10 s after a login (tokens come late); m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m127"               -- bump on every change; m127: SMART Y v2 (the user, 2026-11-11): TRACKING NEVER ON Y ("I dont think that I want to have the tracking abilities to be selectable here": OV.isTracking, in Manners' pick and press, the Add list and the add, Party mode's chooser); MANNERS A ROW OF ITS OWN that only buffs OTHER players (never you, a bare /use or tracking; at the pick and at the press); ONE ORDERED LIST ("it shouldnt hardcode food and water as first and second, let people move spell priorities above them": typed rows food / drink / manners / { ids }, walked top to bottom by OV.smartWalk; the v2 saved-variable migration in sbdb); m126: THE HIT RULE LOWERS THE MODEL, NOT A 90 S FLOOR (the user, 2026-11-11: "I am consistently getting a food recommendation long after sitting at full hp for a long long while"; the log: "hp 50% via hit rule ... picked food" for 90 s after every fight with a hit): a fight's end with hits takes about 6 % a hit (at most half) off the model's health once; the model's own regen brings it back, and food stops at the 80 % line (plain facts only: the hit count, the class / Spirit regen); m125: A COOLDOWN THAT HAS RUN OUT IS GONE (the user, 2026-11-10: "about 50% of the time when I press a skill and I know it should show a gcd its still not showing a gcd"): a held GCD / cooldown was dropped only by a SPELL_UPDATE_COOLDOWN saying "not active", which the game often skips at the GCD's end; the stale entry then matched the next GCD (same kind, and in a fight no plain time to compare) and the new one was never sent. An entry past its end now counts as none, so every press starts a fresh one; m124: THE IN-COMBAT SPELLS FOLLOW THE RANK THAT CASTS (the user, 2026-11-10: Serpent Sting "its casting but not triggering a gcd or looking like it cast visually and also it doesn't show range properly which seems to be an issue on my shaman as well"; the Thor's log: the entry kept Rank 1's id 1978 while "/cast Serpent Sting" fires Rank 2, 13549): at login and on every SPELLS_CHANGED each entry's id / icon is set to the spell its NAME casts, so the cooldown, cast and range pictures read the rank that fires; m123: Y opens the target radial in a fight too (the user, 2026-11-10: "pressing y in combat is opening the context menu on the top screen. this should open on the bottom screen and hide on top"): the GROW no longer sends a bare Y to the game's Inspect menu; a fight spell / Smart Y on Y still wins, the Y glyph keeps the GROW rule; m122: the "soft" document retired (the LB picture shows no line over you: the user, "Scrap the soft target bit" ... "remove the L target"); m121: the LB picture's top line - what LB ALONE is bound to (lbmap tap / tapn, read from the game) and what you soft-target now (the "soft" document: soft enemy / friend / interact names, on change); m120: the Y in the layout's own glyph set (Nintendo = the white Gamepad_Rev_Y; the user: "why is the Y yellow when im using the nintendo glyphs?"); the game's X over an NPC trumps the Y also when the game will not say it is the same unit (secret reads count as the same); m119: the inspect glyph is the game's Y on every layout (the user: "the inspect glyph is Y not X"); m118: the target bar wears Hub's OWN prompt right of the bar (the user: "it needs to be to the right with our custom Icon"): Spells only says the letter (WC.tgPrompt), no glyph of ours on the bar; m117: the Y glyph over the nameplate again AND a smaller one beside the target bar's name (the user: "the glyphs still need to appear over the name plates"); the GROW rule alone for Hub's nameplate hiding (WC.tgGrown; "the hide name plate needs to have the same rules as the hide glyph"); m116 is the hunt build's; m115: the Y glyph beside the name on Hub's target bar while the bar shows (the user: "it should have the button glyph"); m112: the combat log (m92 / m95-97) ONLY while Party mode is allowed (WC.partyOk; the user, 2026-11-09: "Only while Party mode is on"); our Advanced Combat Logging given back when it is not (aclOurs; once for 1.0.17 / 1.0.18, aclReset1); m111 is the hunt build's; m110: Party mode's picked unit and the LB map for Hub's own party frames (WC.padMap.party.box / .lb, read only); m108: the several spell radials (m105) taken out of 1.0.18 (bisect test21: with them the loot window's close ran SetPreferredGamepadInteractTarget tainted by this add-on); one radial as in 1.0.17; m107: Manners' PreClick / PostClick are never run from our code (its code ran as ours: the taint log's buff frame / gamepad binding stack blamed on WowCompanionSpells); its armed prompt is only read; m106: the Y glyph over the target is OUR texture with the game's atlas (no Blizzard InputIconTextureFrameTemplate: its code ran tainted and tainted the gamepad UI -> SetPreferredGamepadInteractTarget forbidden; the taint log, 2026-11-08); m105: a command per spell radial (DSSRADIAL2..6, shown while that radial exists; WC.padMapDropCommand); m104: the LB party-target map ("lbmap": which LB + button targets you / party1..4, read from the game's own bindings) for the app's LB view; m103: the game's X (interact) glyph over an NPC target trumps our Y glyph (the user, 2026-11-07); Trail's friendly nameplates now follow a friendly target; m102: the target radial and its Y glyph follow the controller's GROW (the user: "I want it to go away when I /startattack, same rules as the button grow animation"): gone while a fight or an attack is on and not given back by B, back after B; m101: THE TARGET RADIAL (the user, 2026-11-07): out of a fight, a bare Y with a target opens the app's radial (wc-kind "tradial", no game action; Quests q51 reads the target's menu) and the game's own Y glyph shows over the target (its nameplate, else beside the target frame); m100: Party mode EXPERIMENTAL, off by default (Hub hub25 WC.partyOk): Select stays the game's key and Party mode ends (out of combat) while it is not allowed; m99: B in a fight - the first press gives the bars back AND stops the attack (the target kept), the next one clears the target; Smart Y's fight buff only when it was missing at the fight's start, once a fight; m98: each member's live CAST count (cs, UNIT_SPELLCAST_SUCCEEDED) for the app's mana estimate (the user: "The mana bars always show 100%"); m97: the combat log's stop and start a moment APART (in the same instant the game wrote nothing - test12 measured 2.5 min late again), a "clog" tick report every 12 stops; m96: each member's live HIT COUNTS (cw wounds, cc crits, ch heals: UNIT_COMBAT, amounts hidden) for the app's calibrated estimate; the combat log written out every 5 s OUT of a fight (in a fight the game ignores it - measured); m95: in a fight the combat log is stopped and started every 3 s (the game writes it only every ~5 min otherwise; the user picked "Try the restart trick"), its chat lines hidden; m94: m93's snippet comment held the word f-u-n-c-t-i-o-n, which the game's secure checker refuses even in a comment - every A / X / Y / B / D-pad press did nothing (the user, test9); m93: SMART Y IN A FIGHT - with no fight spell on Y (or given back by B), Y casts the top buff of your Smart buff list (wc-smarty-cb, armed out of combat); m92: each party member's GUID (g) for the app's combat-log health; Advanced Combat Logging and the combat log switched on at login (the user's ruling 2026-11-07); m91: the party row's column 36 is a secure /startattack cell (WC.atkCell: Hub's Start attack on hostile target); m90: after a fight with hits taken, food is due (90 s, until eating) - the game's eating rule; m89: a hit with a hidden amount counts as 6 % of the max health (Smart Y food by hits taken); m88: UNIT_COMBAT seen / hidden-amount counts in the why line (uc); m87: Y is routed while Smart Y is on, even with no In-combat spell on Y (Smart Y never heard a bare Y before); m86: health read from the DRAWN bar fill (texture width / bar width) when the value is secret; your own cell from the player frame first; m85: a party member's error no longer drops the party document (reported once, probe partyerr); Manners' prompt always hidden; m84: your own party cell takes a plain reading before the vitals' estimate (hs vit:<src>); m83: party members found by the party count / name too (UnitExists may be secret); m82: the party roster looked at again 2 / 5 / 10 s after a login (tokens come late); m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -3705,8 +3705,9 @@ end)
 -- pick is put on Y's router button as ONE attribute ("wc-smarty" = "item:<id>": in memory, nothing saved, no binding, no macro, no bar
 -- write); the secure pre-click uses it only on a bare Y out of combat with no target and no soft-interact target. Read only otherwise.
 -- SMARTY-PICK-BEGIN (the pure choice, tested off-device by tools/test_smarty.py)
--- s = { hp, hpMax, mp, mpMax, level, eating, drinking, items = { { id, kind = "food" | "drink" | "both", sell, minLv, n } } }
-OV.smartPick = function(s)
+-- s = { hp, hpMax, mp, mpMax, level, eating, drinking, items = { { id, kind = "food" | "drink" | "both", sell, minLv, n } } }; [want]
+-- (m127) "food" / "drink" = that kind alone (its item or nil), nil = the old food-then-drink choice (-> item, kind)
+OV.smartPick = function(s, want)
     local function low(v, m) return type(v) == "number" and type(m) == "number" and m > 0 and v / m < 0.8 end
     local needHp = low(s.hp, s.hpMax)
     local needMp = low(s.mp, s.mpMax)                                   -- no mana pool (mpMax 0): never
@@ -3721,11 +3722,15 @@ OV.smartPick = function(s)
         end
         return pick
     end
-    -- food first; once eating, the next press is the drink (one action per press)
+    if want == "food" then if needHp and not s.eating then return best("food") end return nil end
+    if want == "drink" then if needMp and not s.drinking then return best("drink") end return nil end
+    -- the old fixed order (the why line's): food first; once eating, the next press is the drink (one action per press)
     if needHp and not s.eating then local f = best("food"); if f then return f, "food" end end
     if needMp and not s.drinking then local d = best("drink"); if d then return d, "drink" end end
     return nil
 end
+-- m127: one kind alone, for the ordered list's Food / Water rows (smartWalk walks them wherever the player put them)
+OV.smartPickKind = function(s, want) return OV.smartPick(s, want) end
 -- SMARTY-PICK-END
 -- SMARTY-ORDER-BEGIN (pure: tools/test_smarty.py) m75: may a due buff go before food / drink? [food] = food or drink is due; [cost] = the
 -- buff's mana cost (nil = none / not mana: it never waits), [mana] = the mana now (nil = unknown: the buff goes, as it would without food)
@@ -3736,6 +3741,31 @@ OV.smartOrder = function(food, cost, mana)
     return mana >= cost
 end
 -- SMARTY-ORDER-END
+-- SMARTY-WALK-BEGIN (pure: tools/test_smarty.py) m127 ANY ORDER (the user, 2026-11-11: "it shouldnt hardcode food and water as first and
+-- second, let people move spell priorities above them"): ONE ordered list, walked top to bottom; the first row with something due wins.
+-- [rows] = the player's list ({ k = "food" | "drink" | "manners" } or a buff row { ids }); [due] = what each kind would do now (a step,
+-- or nil): due.food / due.drink / due.manners, and due.buff for the row due.buffAt (the first unsatisfied buff row: sbFirst's); a
+-- step's [cost] = its mana cost (nil = none). m75's rule KEPT in the one place it still means something with an explicit order: a buff
+-- the mana does not cover gives way to Food / Water FURTHER DOWN (Y would only say "not enough mana"; the drink brings the mana back).
+-- A buff below Food is never lifted above it any more: the order is the player's. -> the step, its kind ("food" / "drink" / "manners"
+-- / "buff"); nil = nothing due
+OV.smartWalk = function(rows, due, mana)
+    local list = {}
+    for r, row in ipairs(rows or {}) do
+        local k = type(row) == "table" and row.k or nil
+        local st
+        if k == "food" or k == "drink" or k == "manners" then st = due[k]
+        elseif k == nil and r == due.buffAt then st = due.buff end
+        if st then list[#list + 1] = { k = k or "buff", st = st } end
+    end
+    for i, e in ipairs(list) do
+        local later = false
+        for j = i + 1, #list do if list[j].k == "food" or list[j].k == "drink" then later = true end end
+        if e.k ~= "buff" or OV.smartOrder(later, e.st.cost, mana) then return e.st, e.k end
+    end
+    return nil
+end
+-- SMARTY-WALK-END
 -- the mana now (plain or modelled), nil = unknown; a character without a mana pool: nil
 function OV.smartMana()
     local okv, v = pcall(OV.smartVitals)
@@ -3993,28 +4023,27 @@ function OV.smartApply()
     local state = OV.smartState()
     local pick = OV.smartPick(state)
     pcall(OV.smartSayWhy, state, pick)
-    local val = pick and ("item:" .. pick.id) or nil
-    local typ = pick and "item" or nil
-    OV.smarty = pick and { id = pick.id, n = pick.name, i = pick.icon, k = pick.kind } or nil
-    -- m62: food and water first; then the player's buff rows (their OR cells kept current either way)
     if pick then OV.smartItem = { id = pick.id, kind = pick.kind } end      -- m70: the model's eating / drinking rate
-    local okb, bv, bt, be = pcall(OV.sbStep)
-    -- m75 (the user: "the buffs should probably come before food/Water if I have enough Mana for it"): a due buff the mana covers comes
-    -- FIRST; food / drink first only when the mana is short for it (or no buff is due)
-    local buffFirst = okb and bv and OV.smartOrder(pick ~= nil, OV.sbCost(bt, be), OV.smartMana())
-    if okb and bv and (not pick or buffFirst) then
-        val, typ = bv, bt
-        OV.smarty = { id = be.id, n = be.n, i = be.i, k = bt == "or" and "or" or "buff" }
+    -- m127 THE ORDERED LIST (the user, 2026-11-11): Food, Water, Manners and the buff rows in the player's own order, walked top to
+    -- bottom (OV.smartWalk); m62's fixed "food and water first" and m78's fixed "Manners last" are now just the default order
+    local rows = OV.sbdb().rows
+    local due = {}
+    local function item(it, k) return it and { val = "item:" .. it.id, typ = "item", shown = { id = it.id, n = it.name, i = it.icon, k = k } } or nil end
+    due.food, due.drink = item(OV.smartPickKind(state, "food"), "food"), item(OV.smartPickKind(state, "drink"), "drink")
+    local okb, bv, bt, be = pcall(OV.sbStep)                              -- the OR cells kept current either way
+    if okb and bv then
+        due.buffAt = OV.sbAt
+        due.buff = { val = bv, typ = bt, cost = OV.sbCost(bt, be), shown = { id = be.id, n = be.n, i = be.i, k = bt == "or" and "or" or "buff" } }
     end
-    -- m78 MANNERS (the user: "add this addon to the default smart Y stack"; picks: after your own, its prompt hidden): nothing of
-    -- your own due, and Manners' prompt has somebody to buff -> Y presses it (OV.mannersPre / Post)
-    if not val then
+    -- m78 MANNERS (the user: "add this addon to the default smart Y stack"): its row in the list; m127: only ever a buff for ANOTHER
+    -- player (OV.mannersArmed's filter: never you, never a bare /use, never a tracking spell)
+    if OV.sbHas(rows, "manners") then
         local ms, mw = OV.mannersArmed()
-        if ms then
-            val, typ = "manners", "manners"
-            OV.smarty = { id = 0, n = mw and (ms .. " on " .. mw) or ms, i = OV.mannersIcon(ms), k = "manners" }
-        end
+        if ms then due.manners = { val = "manners", typ = "manners", shown = { id = 0, n = mw and (ms .. " on " .. mw) or ms, i = OV.mannersIcon(ms), k = "manners" } } end
     end
+    local st = OV.smartWalk(rows, due, OV.smartMana())
+    local val, typ = st and st.val or nil, st and st.typ or nil
+    OV.smarty = st and st.shown or nil
     if not OV.smartOn() then val, typ, OV.smarty = nil, nil, nil end    -- m76: off = nothing armed, Y as before Smart Y
     pcall(OV.mannersLook)
     local b = face.buttons[6]
@@ -4063,6 +4092,54 @@ OV.smartF:SetScript("OnEvent", function(_, e, unit)
     OV.smartSoon = true
     C_Timer.After(0.3, function() OV.smartSoon = nil; pcall(OV.smartApply) end)
 end)
+-- m127 TRACKING NEVER ON Y (the user, 2026-11-11: "I dont think that I want to have the tracking abilities to be selectable here"): the
+-- tracking spells by name (any rank): the game's tracking ids (Find Herbs / Minerals / Treasure / Fish, Sense Undead / Demons, every
+-- Track ..., Find ...), and whatever the minimap's own tracking list names (C_Minimap.GetTrackingInfo(i) read until it answers
+-- nothing, 40 at most: this build has no count getter; a table or several values; a secret name = nothing). Built at login and on
+-- SPELLS_CHANGED / MINIMAP_UPDATE_TRACKING. Used wherever a spell could reach Smart Y: Manners' pick and press, the Add list, the add
+-- itself, and Party mode's chooser / add (defensive: none offers one today).
+OV.TRACK_IDS = { 2383, 8387, 2580, 8388, 2481, 1494, 19883, 5225, 19884, 19885, 19880, 19878, 19882, 19879, 5502, 5500, 43308 }
+-- TRACK-BEGIN (pure: tools/test_smarty.py) a name without its rank, lower case; the set from [ids] by [nameOf] and the list [info](i)
+-- (-> a name, false = an entry with no plain name, nil = the end)
+OV.trackBase = function(n)
+    if type(n) ~= "string" then return nil end
+    n = n:gsub("%s*%(.-%)%s*$", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    return n ~= "" and n:lower() or nil
+end
+OV.trackBuild = function(ids, nameOf, info)
+    local set = {}
+    for _, id in ipairs(ids or {}) do local b = OV.trackBase(nameOf(id)); if b then set[b] = true end end
+    if info then
+        for i = 1, 40 do
+            local n = info(i)
+            if n == nil then break end
+            local b = n and OV.trackBase(n)
+            if b then set[b] = true end
+        end
+    end
+    return set
+end
+OV.isTracking = function(name)
+    local b = OV.trackBase(name)
+    if not b then return false end
+    if not OV.trackSet then pcall(OV.trackRebuild) end
+    return (OV.trackSet or {})[b] == true
+end
+-- TRACK-END
+function OV.trackInfo(i)
+    local f = (type(C_Minimap) == "table" and C_Minimap.GetTrackingInfo) or _G.GetTrackingInfo
+    if type(f) ~= "function" then return nil end
+    local ok, a = CALL(f, i)
+    if not ok or type(a) == "nil" then return nil end
+    local n = a
+    if type(a) == "table" then local okn, v = CALL(function() return a.name end); n = okn and v or nil end
+    if type(n) == "string" and WC.isPlain(n) then return n end
+    return false
+end
+function OV.trackRebuild() OV.trackSet = OV.trackBuild(OV.TRACK_IDS, OV.sbName, OV.trackInfo) end
+OV.trackF = CreateFrame("Frame")
+for _, e in ipairs({ "PLAYER_LOGIN", "SPELLS_CHANGED", "MINIMAP_UPDATE_TRACKING" }) do pcall(function() OV.trackF:RegisterEvent(e) end) end
+OV.trackF:SetScript("OnEvent", function() pcall(OV.trackRebuild) end)
 -- m78 MANNERS ON SMART Y (the user: "I want to add this addon to the default smart Y stack", Manners by Sacha, MIT, an optional
 -- download in Settings > Add-ons; picks: after your own food / water and buffs, its prompt hidden while Smart Y is on). Manners decides
 -- who and what (its own scan, never-list, cooldowns, speech); its prompt is the secure button MannersPrompt, armed out of combat with a
@@ -4080,6 +4157,37 @@ OV.mannersRead = function(text)
     if spell == "" then return nil end
     local who = text:match("/target%s+([^\n]+)")
     if who then who = who:gsub("%s+$", ""); if who == "" then who = nil end end
+    return spell, who
+end
+-- m127 OTHER PLAYERS ONLY (the user, 2026-11-11, Track Humanoids on Y: "I dont think that I want to have the tracking abilities to be
+-- selectable here"; their pick: Manners as its own row that only ever buffs OTHER players). Manners also reminds you of your OWN buffs
+-- and tracking ("/target <you>" + "/cast Track Humanoids", its "self" strategy; a scroll is a bare "/use item:<id>"): your own come only
+-- from your rows. -> the spell and the player as mannersRead, or nil when the lines target you (the name before any "-" / space, any
+-- case; "[@player]" too), are a bare /use with no /target, or cast a tracking spell on ANY /cast line. [me] = UnitName("player"),
+-- [isTracking](name) = OV.isTracking. A /cast with no /target (Manners' group-buff "selfcast") is kept: it buffs the party.
+OV.mannersBase = function(n)
+    if type(n) ~= "string" then return nil end
+    local b = n:match("^%s*([^%-%s]+)")
+    return b and b:lower() or nil
+end
+OV.mannersOk = function(text, me, isTracking)
+    local spell, who = OV.mannersRead(text)
+    if not spell then return nil end
+    for line in text:gmatch("[^\n]+") do
+        local c = line:match("^%s*/cast%s+(.+)$")
+        if c then
+            if c:find("^%[[^%]]*@player") or c:find("^%[[^%]]*target=player") then return nil end
+            c = c:gsub("^%[[^%]]*%]%s*", ""):gsub("%s+$", "")
+            if isTracking and isTracking(c) then return nil end
+        end
+    end
+    if isTracking and isTracking(spell) then return nil end
+    if not who then
+        if not text:find("/cast%s") then return nil end                 -- a bare /use: your own item
+        return spell, nil
+    end
+    local wb, mb = OV.mannersBase(who), OV.mannersBase(me)
+    if wb == "player" or (mb and wb == mb) then return nil end
     return spell, who
 end
 -- MANNERS-READ-END
@@ -4123,7 +4231,17 @@ function OV.mannersArmed()
     pcall(OV.mannersHook, mp)
     if T(function() return mp:IsShown() end) ~= true then return nil end
     if T(function() return mp:GetAttribute("type") end) ~= "macro" then return nil end
-    return OV.mannersRead(T(function() return mp:GetAttribute("macrotext") end))
+    return OV.mannersOk(T(function() return mp:GetAttribute("macrotext") end), OV.myName(), OV.isTracking)   -- m127: others only
+end
+function OV.myName()
+    local n = T(function() return (UnitName("player")) end)
+    return (type(n) == "string" and WC.isPlain(n)) and n or nil
+end
+-- m127: Manners is loaded (its prompt, else the game's add-on list); its row shows only then
+function OV.mannersOn()
+    if _G.MannersPrompt then return true end
+    local f = (C_AddOns and C_AddOns.IsAddOnLoaded) or _G.IsAddOnLoaded
+    return type(f) == "function" and T(function() return (f("Manners")) end) == true
 end
 function OV.mannersIcon(spell)
     local n = type(spell) == "string" and spell:gsub("%s*%(.-%)$", "") or nil
@@ -4146,6 +4264,9 @@ function OV.mannersPre(b)
     -- then SetPreferredGamepadInteractTarget was forbidden): Manners' own PreClick, run from here, ran ALL of Manners' code as ours
     -- (its buff scan, its prompt, its binding). It is never run now: only the prompt Manners has armed by itself is read
     local mt = mp:IsShown() and mp:GetAttribute("type") == "macro" and mp:GetAttribute("macrotext") or nil
+    -- m127 (the verified report: the prompt re-arms on its own clock, so what mannersArmed approved 0.3 s ago is not what is copied
+    -- now): the SAME filter at press time - you, a bare /use or a tracking spell = no lines, Y casts nothing
+    if mt and not OV.mannersOk(mt, OV.myName(), OV.isTracking) then mt = nil end
     b:SetAttribute("wc-manners-text", mt)
     OV.mannersPressed = mt ~= nil
 end
@@ -4170,6 +4291,8 @@ end
 -- "gamemenu" (Radial.lua: cols 0-5 the Game Menu's, as before): cols 8-23 select a row (fresh 2 s), 24 remove it, 25 / 26 move it
 -- up / down, 27 add a row, 28 add an "or" to the selected row, 29 take a buff out of it (27-29: the spell follows as Book's two-tap
 -- spell number, WC.smartYWants / WC.smartYSpell); cols 30-39 are the OR row's cast cells (type spell, unit player, set out of combat). Nothing saved but our own table; no macro, no binding, no bar write, no CVar.
+-- m127 (the user, 2026-11-11): Food, Water and Manners are rows of the same list now ({ k = ... }, OV.sbMigrate), moved and removed by
+-- the same cells; Add (27) then a select cell adds one back (sel0 + 0 / 1 / 2); 16 rows shown at most (the 16 selects)
 OV.SB_IDS = {
     -- Paladin: auras, blessings (on yourself), seals, Righteous Fury
     465, 7294, 19746, 19876, 19888, 19891, 20218, 19740, 19742, 20217, 1038, 19977, 20911, 21084, 21082, 20165, 20166, 20164, 20375,
@@ -4199,11 +4322,50 @@ function OV.sbdb()
     local db = _G.WowCompanionSpellsDB
     if type(db.smartBuffs) ~= "table" then db.smartBuffs = {} end
     local k = whoKey()
-    if not k then return { rows = {} } end
+    if not k then return OV.sbMigrate({ rows = {} }, false) end
     if type(db.smartBuffs[k]) ~= "table" then db.smartBuffs[k] = { rows = {} } end
-    if type(db.smartBuffs[k].rows) ~= "table" then db.smartBuffs[k].rows = {} end
-    return db.smartBuffs[k]
+    return OV.sbMigrate(db.smartBuffs[k], OV.mannersOn())
 end
+-- SB-MIGRATE-BEGIN (pure: tools/test_smarty.py) m127 THE TYPED LIST, v2 (the user, 2026-11-11: food and water movable; Manners a row of
+-- its own): rows = { { k = "food" }, { k = "drink" }, { k = "manners" }, { ids = { spell id, ... } } } in the player's order. v1 (rows
+-- of { ids } only, food / water fixed above them, Manners fixed after them) -> Food, Water, the old buff rows, then Manners when it is
+-- installed. Manners' row is added (at the end) whenever Manners is installed and the list has none, unless the player removed it
+-- (mnOff); it stays in the list while Manners is not installed, hidden (OV.sbVis). Every call drops a malformed row and a second row
+-- of the same kind.
+OV.SB_KINDS = { "food", "drink", "manners" }                        -- after Add, select cell sel0 + 0 / 1 / 2 adds that kind
+OV.sbMigrate = function(e, mannersOn)
+    if type(e.rows) ~= "table" then e.rows = {} end
+    if e.v ~= 2 then
+        local rows = { { k = "food" }, { k = "drink" } }
+        for _, row in ipairs(e.rows) do rows[#rows + 1] = row end
+        e.rows, e.v = rows, 2
+    end
+    local out, seen = {}, {}
+    for _, row in ipairs(e.rows) do
+        local k = type(row) == "table" and row.k or nil
+        if k == "food" or k == "drink" or k == "manners" then
+            if not seen[k] then seen[k] = true; out[#out + 1] = { k = k } end
+        elseif type(row) == "table" and k == nil and type(row.ids) == "table" and #row.ids > 0 then
+            out[#out + 1] = row
+        end
+    end
+    if mannersOn and not seen.manners and not e.mnOff then out[#out + 1] = { k = "manners" } end
+    -- in place: a caller holding e.rows keeps the live table
+    for i = #e.rows, 1, -1 do e.rows[i] = nil end
+    for i, row in ipairs(out) do e.rows[i] = row end
+    return e
+end
+-- the rows shown (indexes into rows): every row, less Manners' while Manners is not installed
+OV.sbVis = function(rows, mannersOn)
+    local v = {}
+    for r, row in ipairs(rows or {}) do if row.k ~= "manners" or mannersOn then v[#v + 1] = r end end
+    return v
+end
+OV.sbHas = function(rows, kind)
+    for _, row in ipairs(rows or {}) do if row.k == kind then return true end end
+    return false
+end
+-- SB-MIGRATE-END
 -- the self-buffs this character knows (the book's spells, by name): { id, n, i, k = "aura" | "imbue" }, SB_IDS' order; byName for checks
 function OV.sbKnown()
     local names = {}
@@ -4212,7 +4374,7 @@ function OV.sbKnown()
     local out, byName = {}, {}
     for _, id in ipairs(OV.SB_IDS) do
         local n = OV.sbName(id)
-        if n and names[n] and not byName[n] then
+        if n and names[n] and not byName[n] and not OV.isTracking(n) then            -- m127: never a tracking spell
             local i = T(function() return (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(id)) or GetSpellTexture(id) end)
             local e = { id = id, n = n, i = type(i) == "number" and i or 0, k = OV.SB_IMBUE[id] and "imbue" or "aura" }
             out[#out + 1] = e; byName[n] = e
@@ -4274,21 +4436,47 @@ function OV.sbBuild()
     return OV.sbRow ~= nil
 end
 function OV.sbAck(op, ok, why) WC.send(WC.encode({ type = "smartyack", v = PV, op = op, ok = ok, why = why })); WC.push() end
--- an op column from the app (no game action): a row select, or an op on the selected row, or the mode for the spell that follows
+-- an op column from the app (no game action): a row select, or an op on the selected row, or the mode for the spell that follows.
+-- m127: the selects and the ops address the rows SHOWN (OV.sbVis: Manners' hidden while it is not installed); right after Add (27) a
+-- select cell names a kind instead (sel0 + 0 Food, + 1 Water, + 2 Manners: OV.SB_KINDS); Or / Take out are for buff rows only
 function OV.sbOp(col)
-    local rows, now = OV.sbdb().rows, GetTime()
-    if col < OV.SB_OPS.remove then OV.sbSel = { row = col - OV.SB_SEL0 + 1, at = now } return end
-    local sel = OV.sbSel and now - OV.sbSel.at <= 2 and OV.sbSel.row or nil
+    local e, now = OV.sbdb(), GetTime()
+    local rows = e.rows
+    local vis = OV.sbVis(rows, OV.mannersOn())
+    if col < OV.SB_OPS.remove then
+        local p = OV.sbPick
+        if p and p.op == "add" and now - p.at <= 2 then OV.sbPick = nil; OV.sbAddKind(OV.SB_KINDS[col - OV.SB_SEL0 + 1]) return end
+        OV.sbSel = { row = col - OV.SB_SEL0 + 1, at = now } return
+    end
+    local sv = OV.sbSel and now - OV.sbSel.at <= 2 and OV.sbSel.row or nil
+    local sel = sv and vis[sv]
     OV.sbSel = nil
     if col == OV.SB_OPS.add then OV.sbPick = { op = "add", at = now } return end
     if not sel or not rows[sel] then OV.sbAck("row", false, "no row picked") return end
-    if col == OV.SB_OPS.remove then table.remove(rows, sel)
-    elseif col == OV.SB_OPS.up and sel > 1 then rows[sel], rows[sel - 1] = rows[sel - 1], rows[sel]
-    elseif col == OV.SB_OPS.down and sel < #rows then rows[sel], rows[sel + 1] = rows[sel + 1], rows[sel]
+    if col == OV.SB_OPS.remove then
+        if rows[sel].k == "manners" then e.mnOff = true end             -- removed by the player: not added back by itself
+        table.remove(rows, sel)
+    elseif col == OV.SB_OPS.up and sv > 1 then rows[sel], rows[vis[sv - 1]] = rows[vis[sv - 1]], rows[sel]
+    elseif col == OV.SB_OPS.down and sv < #vis then rows[sel], rows[vis[sv + 1]] = rows[vis[sv + 1]], rows[sel]
     elseif col == OV.SB_OPS.addor or col == OV.SB_OPS.out then
+        if rows[sel].k then OV.sbAck(col == OV.SB_OPS.addor and "or" or "out", false, "not a buff row") return end
         OV.sbPick = { op = col == OV.SB_OPS.addor and "or" or "out", row = sel, at = now } return
     else OV.sbAck("row", false, "nothing to do") return end
     OV.sbAck(col == OV.SB_OPS.remove and "remove" or "move", true)
+    pcall(OV.smartApply); pcall(emit, true); WC.push()
+end
+OV.SB_MAX = 16                                                          -- the rows shown, the selects' 16 cells (8-23)
+-- m127: Add Food / Water / Manners (a kind the list does not have) at the end
+function OV.sbAddKind(kind)
+    local e = OV.sbdb()
+    local mn = OV.mannersOn()
+    if not kind then OV.sbAck("add", false, "nothing to add") return end
+    if kind == "manners" and not mn then OV.sbAck("add", false, "Manners is not installed") return end
+    if OV.sbHas(e.rows, kind) then OV.sbAck("add", false, "already on the list") return end
+    if #OV.sbVis(e.rows, mn) >= OV.SB_MAX then OV.sbAck("add", false, OV.SB_MAX .. " rows at most") return end
+    e.rows[#e.rows + 1] = { k = kind }
+    if kind == "manners" then e.mnOff = nil end
+    OV.sbAck("add", true)
     pcall(OV.smartApply); pcall(emit, true); WC.push()
 end
 WC.smartYWants = function() return OV.sbPick ~= nil and GetTime() - OV.sbPick.at <= 2 end
@@ -4300,14 +4488,16 @@ WC.smartYSpell = function(id)
     local rows = OV.sbdb().rows
     local _, byName = OV.sbKnown()
     local n = OV.sbName(id)
+    if n and OV.isTracking(n) then OV.sbAck(p.op, false, "tracking is never on Y") return end        -- m127
     local e = n and byName[n]
     if not e then OV.sbAck(p.op, false, "not a self-buff this character knows") return end
     if p.op == "add" then
-        if #rows >= 16 then OV.sbAck("add", false, "16 rows at most") return end
+        if #OV.sbVis(rows, OV.mannersOn()) >= OV.SB_MAX then OV.sbAck("add", false, OV.SB_MAX .. " rows at most") return end
         rows[#rows + 1] = { ids = { e.id } }
     else
         local row = rows[p.row]
         if not row then OV.sbAck(p.op, false, "the row is gone") return end
+        if type(row.ids) ~= "table" then OV.sbAck(p.op, false, "not a buff row") return end      -- m127: Food / Water / Manners
         local at
         for k, x in ipairs(row.ids) do if OV.sbName(x) == n then at = k end end
         if p.op == "or" then
@@ -4358,12 +4548,29 @@ OV.sbF:SetScript("OnEvent", function(_, e, unit)
     if e == "PLAYER_LOGIN" then C_Timer.After(1, function() pcall(OV.sbBuild) end) end
     C_Timer.After(0.3, function() pcall(OV.smartApply) end)
 end)
+-- m127: the rows SHOWN, typed ({ k = "food" | "drink" | "manners" | "buff", ids }: ids always sent, empty for a kind), "at" their index;
+-- mn = Manners installed; the kinds' select cells after Add (kinds) and their icons (food / water: the game's bread and water items,
+-- Manners: what it would cast now, else the Mark of the Wild picture); max = the rows at most
+function OV.sbItemIcon(id)
+    return T(function() return C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(id) end)
+        or T(function() return (select(5, C_Item.GetItemInfoInstant(id))) end) or 0
+end
 function OV.sbDoc()
     local list = OV.sbList or OV.sbKnown()
-    local rows = {}
-    for _, row in ipairs(OV.sbdb().rows) do rows[#rows + 1] = { ids = row.ids } end
-    OV.sbDocNow = { rows = rows, list = list, at = OV.sbAt, row = "gamemenu", pad = OV.sbRow ~= nil,
-                    sel0 = OV.SB_SEL0, ops = OV.SB_OPS, on = OV.smartOn(), onCol = OV.SMART_ON_COL, offCol = OV.SMART_OFF_COL }
+    local e, mn = OV.sbdb(), OV.mannersOn()
+    local rows, at = {}, nil
+    for v, r in ipairs(OV.sbVis(e.rows, mn)) do
+        local row = e.rows[r]
+        rows[#rows + 1] = row.k and { k = row.k, ids = {} } or { k = "buff", ids = row.ids or {} }
+        if r == OV.sbAt then at = v end
+    end
+    local mi = (OV.smarty and OV.smarty.k == "manners" and OV.smarty.i) or T(function() return C_Spell.GetSpellTexture(1126) end) or 0
+    local kinds = {}
+    for k, kind in ipairs(OV.SB_KINDS) do kinds[kind] = OV.SB_SEL0 + k - 1 end
+    OV.sbDocNow = { v = 2, rows = rows, list = list, at = at, row = "gamemenu", pad = OV.sbRow ~= nil,
+                    sel0 = OV.SB_SEL0, ops = OV.SB_OPS, on = OV.smartOn(), onCol = OV.SMART_ON_COL, offCol = OV.SMART_OFF_COL,
+                    mn = mn, kinds = kinds, max = OV.SB_MAX,
+                    icons = { food = OV.sbItemIcon(4540), drink = OV.sbItemIcon(159), manners = type(mi) == "number" and mi or 0 } }
 end
 -- m72: the vitals DIAGNOSTIC (m65-m69, rounds 2-5) is GONE (the user on test41: "I keep getting lua errors from wow companion": round 4's
 -- secure snippet called UnitHealth, which the restricted environment does not have). What it found built m70's model below.
@@ -5296,7 +5503,8 @@ local function partyMode()
         for _, e in ipairs(order) do
             local helpful = T(function() return C_Spell.IsSpellHelpful(e.id) end)
             local plainHelp = helpful == true and WC.isPlain(helpful)
-            if (plainHelp and not selfOnly[e.n]) or defs[e.n] or party[e.n] then out[#out + 1] = { id = e.id, n = e.n, i = PM.icon(e.id) } end
+            -- m127 (the user, 2026-11-11: no tracking selectable for Smart Y): never a tracking spell (defensive: the game's "helpful" flag)
+            if ((plainHelp and not selfOnly[e.n]) or defs[e.n] or party[e.n]) and not OV.isTracking(e.n) then out[#out + 1] = { id = e.id, n = e.n, i = PM.icon(e.id) } end
         end
         return out
     end
@@ -5502,7 +5710,7 @@ local function partyMode()
         local n = type(id) == "number" and OV.sbName(id) or nil
         local pid = nil
         for _, b in ipairs(OV.PARTY_BUFFS) do if OV.sbName(b) == n then pid = b end end
-        if not (n and pid and names[n]) then PM.ack("pb", false, "not a party buff this character knows", nil, id) return false end
+        if not (n and pid and names[n]) or OV.isTracking(n) then PM.ack("pb", false, "not a party buff this character knows", nil, id) return false end
         local list = PM.store().buffs
         for _, x in ipairs(list) do if OV.sbName(x) == n then PM.ack("pb", false, "already listed", nil, id) return false end end
         if #list >= PM.BUFFS_MAX then PM.ack("pb", false, PM.BUFFS_MAX .. " at most", nil, id) return false end
