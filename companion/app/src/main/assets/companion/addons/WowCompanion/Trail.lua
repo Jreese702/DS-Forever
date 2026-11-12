@@ -3176,8 +3176,13 @@ end
 -- (the shadow stays under the bars). Party mode holds the HUD up (why "party"): it is the block's [me] row (the user, 2026-11-12: "HUD
 -- bar ALWAYS shown in Party mode"). The user's answers the same day: in Party mode the player's buff / debuff row moves ABOVE the HUD
 -- bars (P.auraUp: its timers AURA_UP clear of the health bar's top rim, a second row above the first), out of it it stays under them;
--- it fades out, moves and fades in with the pet strip (one fade: P.petMoveStep). Our own plain frames and alpha only (allowed in a fight).
-WC.prd = { V = "prd15", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
+-- it fades out, moves and fades in with the pet strip (one fade: P.petMoveStep). THE ON-SCREEN GUARD (the user, the same day: "KEEP IT
+-- ON SCREEN"): in Party mode, when the block (the bars, the combo pips, Hub's rows and their rings) would end closer than LIFT_MARGIN to
+-- the screen's bottom, the HUD (and with it the pet strip, the auras and Hub's rows: P.partyGeo carries it) is lifted by just enough
+-- (P.liftFor -> P.lift, added in P.place); re-read every frame (the roster's rows, the scale, the combo pips), applied only at the fade's
+-- bottom (the bars fade too while it changes: P.hudFade), never a visible jump; out of Party mode no lift. Our own plain frames and alpha
+-- only (allowed in a fight).
+WC.prd = { V = "prd15", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
            PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
@@ -3504,7 +3509,7 @@ do
     function P.place()
         if not P.f then return end
         P.f:ClearAllPoints()
-        P.f:SetPoint("TOP", UIParent, "CENTER", 0, u((P.y or P.loadY()) + (P.dy or 0)))
+        P.f:SetPoint("TOP", UIParent, "CENTER", 0, u((P.y or P.loadY()) + (P.dy or 0) + (num(P.lift) or 0)))   -- prd15: the guard's lift
     end
 
     -- ---------------------------------------------------------------- the values (fed, never read)
@@ -4127,11 +4132,31 @@ do
         local y = num(P.y) or P.loadY()
         local cpx = (P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0
         local w = num(P.W) or P.W_DEF
+        y = y + P.liftFor(P.partyModeOn())                              -- (the guard's lift the block is going to: Hub fades its rows to it)
         -- (h: the two bars' height, for the solo tab beside the [me][pet] row)
         return { x = -u(w) / 2 * s, top = u(y) * s, h = u(P.HH + P.BAR_GAP + P.PH) * s,
                  y = u(y - (P.HH + P.BAR_GAP + P.PH + cpx + P.PET_GAP + P.PARTY_GAP)) * s, s = s }
     end
-    -- Hub's grid's height (UI units; 0 = none): the room under the bars, the aura row under it (as under the pet strip before)
+    -- prd15 THE ON-SCREEN GUARD (the user, 2026-11-12: "KEEP IT ON SCREEN"): in Party mode, the lift (spec px, up) that keeps the block -
+    -- the HUD's bars (the combo pips included), and Hub's rows under them (P.partyRoomPx, their rings in it) or the bars' lip while solo -
+    -- LIFT_MARGIN px (scaled) clear of the screen's bottom edge; 0 when it fits and always out of Party mode (nothing moves then)
+    function P.liftFor(on)
+        if not on then return 0 end
+        local s = (num(P.sc) or P.S_DEF) / 100
+        local y = num(P.y) or P.loadY()
+        local okH, hh = pcall(function() return UIParent:GetHeight() end)
+        hh = (okH and num(hh) and hh > 0) and hh or 768
+        local cpx = (P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0
+        local room = num(P.partyRoomPx) or 0
+        local block = P.HH + P.BAR_GAP + P.PH + cpx + ((room > 0) and (P.PET_GAP + P.PARTY_GAP + room) or P.HH)
+        local one = u(1) * s
+        if one <= 0 then return 0 end
+        local bottom = (y - block) * one                                -- UI units from UIParent's CENTER
+        local need = (-hh / 2 + u(P.LIFT_MARGIN)) - bottom
+        if need <= 0 then return 0 end
+        return math.floor(need / one * 100 + 0.999) / 100
+    end
+    -- Hub's grid's height (UI units; 0 = none): the room under the bars (P.f's height; the aura row stands above the bars in Party mode)
     function P.partyRoom(ui)
         local s = (num(P.sc) or P.S_DEF) / 100
         local one = u(1) * s
@@ -4160,14 +4185,20 @@ do
         local on = P.partyOn == true
         local want = on and "beside" or "under"
         local L = P.petL
-        local moved = P.petSide ~= want or P.auraUp ~= on
+        local lift = P.liftFor(on)
+        local lifts = math.abs((num(P.lift) or 0) - lift) > 0.01
+        local moved = P.petSide ~= want or P.auraUp ~= on or lifts
+        if lifts then P.hudFade = true end                               -- (the bars themselves move: they fade too)
         local function swap()
             P.petSide, P.auraUp = want, on
             if P.f then P.petLayout(P.dropFor(), true) end
             P.cache = nil                                                -- (the aura row drawn again at its new place)
+            if math.abs((num(P.lift) or 0) - lift) > 0.01 then P.lift = lift; P.place() end
         end
-        if not ((L and L:IsShown()) or P.aurasShown()) then
+        local hudShown = P.hudFade and P.f ~= nil and P.f:IsShown() and (num(P.alpha) or 0) > 0
+        if not ((L and L:IsShown()) or P.aurasShown() or hudShown) then
             if P.petFadeA then P.petFadeA = nil; P.moveAlpha(1) end
+            P.hudFade = nil
             if moved then swap() end
             return
         end
@@ -4184,6 +4215,7 @@ do
         end
         if a >= 1 then
             if P.petFadeA then P.petFadeA = nil; P.moveAlpha(1) end
+            P.hudFade = nil
         else
             P.petFadeA = a
             P.moveAlpha(a)
@@ -4282,7 +4314,8 @@ do
         local t = now()
         P.on = true
         -- prd14: Party mode's pick on you / your pet (read every PICK_S)
-        if not P.pickAt or t - P.pickAt >= P.PICK_S or t < P.pickAt then P.pickAt = t; P.partyWho = P.partyPick(); P.partyOn = P.partyModeOn() end
+        if not P.pickAt or t - P.pickAt >= P.PICK_S or t < P.pickAt then P.pickAt = t; P.partyWho = P.partyPick() end
+        P.partyOn = P.partyModeOn()                                     -- prd15: every frame (the lift and Hub's grid read it live)
         -- prd15: Party mode on holds the HUD up too (it is the block's [me] row: the grid hangs under it)
         local picked = P.partyWho ~= nil or P.partyOn == true
         local fight = P.fight()
@@ -4324,7 +4357,7 @@ do
         P.why = fight and "fight" or (picked and "party") or (powerOff and "power") or (src == "curve" and "curve") or (hurt and "hurt") or (P.alpha > 0 and "fading") or "full"
         if P.alpha > 0 then
             if not P.f:IsShown() then P.f:Show() end
-            P.f:SetAlpha(P.alpha * P.REST)
+            P.f:SetAlpha(P.alpha * P.REST * ((P.hudFade and P.petFadeA) or 1))   -- prd15: the HUD fades too while its lift changes
             P.pollAt = P.pollAt or 0
             if t - P.pollAt >= P.POLL_S then P.pollAt = t; P.values() end
             P.drawAuras(true)                                -- (a) test45: whenever the bar shows (a HoT after the fight too)

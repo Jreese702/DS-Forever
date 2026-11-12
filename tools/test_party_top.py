@@ -457,6 +457,81 @@ def main():
         seen.append((P.auraUp, rig.G.RPLAIN(P.buffs[1].f.alpha) if P.buffs[1].f.alpha is not None else 1))
     chk("prd15: the aura row fades out under the bars, moves above, fades in (ends at alpha 1, above)",
         any((not up) and 0 < a < 1 for up, a in seen) and any(up and 0 < a < 1 for up, a in seen) and seen[-1] == (True, 1), seen[:14])
+    # prd15 / hub42 THE ON-SCREEN GUARD (the user, 2026-11-12: "KEEP IT ON SCREEN"): in Party mode the block (the HUD's bars, the combo
+    # pips, the rows and their rings) ends >= LIFT_MARGIN px from the screen's bottom - lifted by just enough, else not at all
+    def lowest(rig):
+        P = rig.P
+        ys = [rig.rect(P.hp)[1], rig.rect(P.pw)[1]]
+        if P.cp.shown is not False:
+            ys.append(rig.rect(P.cp)[1])
+        if P.petL.shown is not False:
+            ys.append(rig.rect(P.petL)[1])
+        for i in range(1, 5):
+            f = rig.PF.frames[i]
+            if f is not None and f.shown is not False:
+                ys += [rig.rect(f.mp)[1], rig.rect(f.ring.area)[1]]
+        return min(ys)
+    for nm, lifted, why in (("mode_pet_4members", False, "4 members, the default height: fits (no lift)"),
+                            ("mode_2members_nolift", False, "2 members: fits (no lift)"),
+                            ("mode_rogue_4members_combo", True, "4 members + a Rogue's combo pips: lifted"),
+                            ("mode_low_hud_4members", True, "4 members, the HUD set low (-420): lifted"),
+                            ("off_rogue_4members_combo", False, "Party mode OFF (the pips, 4 members): nothing moves")):
+        sh = rtp.party_top_shapes()[nm]
+        rig = rtp.Rig()
+        rig.scene(sh)
+        P = rig.P
+        lo = lowest(rig)
+        m = P.LIFT_MARGIN
+        y0 = sh.get("y", P.Y_DEF)
+        hp_top = rig.rect(P.hp)[3]
+        if lifted:
+            ok = P.lift > 0 and m - 1e-6 <= lo <= m + 0.5 and abs(hp_top - (540 + y0 + P.lift)) < 1e-6
+        else:
+            ok = P.lift == 0 and (lo >= m - 1e-6 or not sh["mode"]) and abs(hp_top - (540 + y0)) < 1e-6
+        chk("prd15 guard: %s - lift %.2f, the block's lowest edge %.1f px over the screen's bottom (margin %s), the HP bar's top %.1f"
+            % (why, P.lift, lo, m, hp_top), ok, (P.lift, lo, hp_top))
+        if lifted and sh["pet"]:
+            L0, hp = rig.rect(P.petL), rig.rect(P.hp)
+            chk("prd15 guard: %s - the pet strip lifted with the bars (beside the HP bar, %.1f..%.1f)" % (nm, L0[1], L0[3]),
+                L0[0] > hp[2] and L0[1] < hp[3] and L0[3] > hp[1], (L0, hp))
+    # the lift happens inside the fade: the HUD's bars and the rows change place only while (nearly) unseen
+    rig = rtp.Rig()
+    rig.scene(rtp.party_top_shapes()["off_rogue_4members_combo"])
+    P = rig.P
+    PL = rig.G.RPLAIN
+
+    def watch(secs):
+        out = []
+        last = (P.lift, None)
+        for _ in range(int(secs * 30)):
+            rig.run(1 / 30)
+            f1 = rig.PF.frames[1]
+            ay = f1.anch[1][5] if f1.anch else None
+            out.append((P.lift, PL(P.f.alpha) or 0, ay, rig.PF.fa, last))
+            last = (P.lift, ay)
+        return out
+
+    rig.G.PM.on = True
+    seen = watch(1.2)
+    jumps = [(x[0], x[1]) for x in seen if x[4][0] != x[0] and x[1] > 0.05]
+    rjump = [(x[2], x[3]) for x in seen if x[4][1] is not None and x[4][1] != x[2] and x[3] > 0.05]
+    chk("prd15 guard: Party mode on (a Rogue, 4 members): lifted %.2f, the bars moved only while faded (%s), the rows only at alpha 0 (%s), "
+        "the HUD back at its alpha (%.2f)" % (P.lift, jumps, rjump, seen[-1][1]),
+        P.lift > 0 and not jumps and not rjump and abs(seen[-1][1] - 0.92) < 1e-6 and any(x[1] < 0.05 for x in seen), seen[:10])
+    # the combo pips go (a druid leaving cat form; here the class changes): the guard re-reads, re-placed inside a fade again
+    rig.G.PLAYERCLS = "SHAMAN"
+    seen = watch(1.2)
+    jumps = [(x[0], x[1]) for x in seen if x[4][0] != x[0] and x[1] > 0.05]
+    rjump = [(x[2], x[3]) for x in seen if x[4][1] is not None and x[4][1] != x[2] and x[3] > 0.05]
+    chk("prd15 guard: the combo pips gone: no lift needed now (%.2f), moved down inside the fade (bars %s, rows %s)" % (P.lift, jumps, rjump),
+        P.lift == 0 and P.cp.shown is False and not jumps and not rjump and abs(seen[-1][1] - 0.92) < 1e-6, seen[:10])
+    rig.G.PLAYERCLS = "ROGUE"
+    watch(1.2)
+    rig.G.PM.on = False
+    seen = watch(1.2)
+    jumps = [(x[0], x[1]) for x in seen if x[4][0] != x[0] and x[1] > 0.05]
+    chk("prd15 guard: Party mode off: the lift gone (%.2f), the bars back down inside the fade (%s), the rows back in the left column"
+        % (P.lift, jumps), P.lift == 0 and not jumps and rig.PF.at == "left" and abs(seen[-1][1] - 0.92) < 1e-6, seen[:10])
     # Party mode on and off in the rig (every frame driven): the pet strip fades out, moves beside the HP bar, fades in; and back
     rig = rtp.Rig()
     rig.scene(rtp.party_top_shapes()["off_4members"])

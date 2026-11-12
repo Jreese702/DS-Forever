@@ -221,7 +221,8 @@ function UnitPowerType(u) local x = X(u); if x then return x.ptype or 0, x.tok o
 function UnitName(u) local x = X(u); if x then return x.name end if u:match("^party") or u:match("target") then return nil end return base.UnitName(u) end
 function UnitIsDeadOrGhost(u) local x = X(u); if x then return x.dead == true end return base.UnitIsDeadOrGhost(u) end
 function UnitExists(u) if X(u) then return true end if u:match("^party") or u:match("target") then return false end return base.UnitExists(u) end
-function UnitClass(u) local x = X(u); if x then return x.cls, x.cls end if u == "player" then return "Shaman", "SHAMAN" end end
+PLAYERCLS = "SHAMAN"
+function UnitClass(u) local x = X(u); if x then return x.cls, x.cls end if u == "player" then return PLAYERCLS, PLAYERCLS end end
 function UnitLevel(u) local x = X(u); if x then return x.lv end return 6 end
 function UnitIsConnected(u) local x = X(u); if x then return not x.off end return true end
 function UnitIsUnit(a, b) return b == "target" and a == TARGET end
@@ -337,7 +338,7 @@ class Rig:
         self.G.UIParent.hh = uih
         self.G.UIParent.ww = uih * 16 / 9
         self.fire("PLAYER_ENTERING_WORLD")
-        self.run(0.3)
+        self.run(1.0)
 
     def scene(self, sh):
         L, G = self.L, self.G
@@ -361,6 +362,9 @@ class Rig:
                                   "icon": 132203, "hunter": True})
         else:
             G.PET = None
+        G.PLAYERCLS = sh.get("cls", "SHAMAN")
+        if sh.get("y") is not None:                       # the HUD's own height setting (spec px from the centre)
+            self.P.y = sh["y"]
         G.ME.fight = True
         G.ME.hp = 620
         if sh.get("buffs"):
@@ -577,6 +581,10 @@ def party_top_shapes():
         "mode_pet_2members": dict(n=3, pet=True, mode=True, pick="party2", dead=None, oor=None),
         "mode_nopet_4members": dict(n=5, pet=False, mode=True, pick="party3", dead=None, oor=None),
         "mode_pet_4members_pick_pet": dict(n=5, pet=True, mode=True, pick="pet", dead=None, oor=None),
+        "mode_rogue_4members_combo": dict(n=5, pet=False, mode=True, pick="party1", dead=None, oor=None, cls="ROGUE"),
+        "off_rogue_4members_combo": dict(n=5, pet=False, mode=False, pick=None, dead=None, oor=None, cls="ROGUE"),
+        "mode_low_hud_4members": dict(n=5, pet=True, mode=True, pick="party1", dead=None, oor=None, y=-420),
+        "mode_2members_nolift": dict(n=3, pet=True, mode=True, pick="party1", dead=None, oor=None),
         "mode_pet_3members": dict(n=4, pet=True, mode=True, pick="party1", dead=None, oor=None),
         "mode_solo_pet": dict(n=1, pet=True, mode=True, pick="player", dead=None, oor=None),
         "off_4members_buffs": dict(n=5, pet=True, mode=False, pick=None, dead=None, oor=None, buffs=True),
