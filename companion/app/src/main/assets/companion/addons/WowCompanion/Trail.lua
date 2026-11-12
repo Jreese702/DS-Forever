@@ -2914,7 +2914,12 @@ end
 -- round portrait PET_ICON = 36 (the unit's height and a little), a thin dark rim, left of the unit and centred on its bars; the
 -- happiness face PET_HAPPY = 20 past the unit's right rim (never on the portrait); no name; portrait + unit centred under the player's
 -- bars; the strip PET_GAP = 15 under the power bar (its top at the player's lip: the bars 10.5 spec px lower than prd11's; P.petGeo).
-WC.prd = { V = "prd12", PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 15, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
+-- prd13 THE PET'S GREEN MATCHES THE PLAYER'S (the user's pick "Same green as mine", 2026-11-11): P.frameFor's inner shade covered 45 %
+-- of its OPENING, and the pet's opening is the whole 13 px unit, so 5.85 of the 8 px health bar lay under it (the player's: 6.75 of 15)
+-- and the pet's green read darker; now frameFor takes an optional shade height and the pet's unit passes 0.45 * PET_HH (the player's
+-- and the target's bars unchanged). Review nits: the portrait 2 spec px clear of the player's power-bar lip (PET_GAP 17); the
+-- happiness face counted in the centring width while it can show (P.petHappyOn), the pet bars narrowed to fit at W_MIN = 180.
+WC.prd = { V = "prd13", PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
            PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
@@ -3056,7 +3061,8 @@ do
     -- prd5: the PRD frame as a channel round the bar b (b's rect is the opening); returns its pieces
     -- prd11: the host layer, its lip frame and the texel scale given (the pet's strip: its own layer and lip, the player's scale);
     -- left out: the player's layer P.g, its lip P.lip, the health opening's 8 texels = HH
-    function P.frameFor(b, host, lip, k)
+    -- prd13 (the user's "Same green as mine", 2026-11-11): shadeH, the inner shade's height in UI units (left out: 45 % of b's height)
+    function P.frameFor(b, host, lip, k, shadeH)
         host = host or P.g
         k = k or u(P.HH / 8)                                    -- UI units per texel (one scale for every bar)
         local info, atlas
@@ -3126,7 +3132,7 @@ do
         sh:SetColorTexture(0, 0, 0, 1)
         sh:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
         sh:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0)
-        sh:SetHeight(b:GetHeight() * 0.45)
+        sh:SetHeight(shadeH or (b:GetHeight() * 0.45))
         if not pcall(function() sh:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.47)) end) then sh:SetAlpha(0.2) end
         pieces.track, pieces.top, pieces.bot, pieces.left, pieces.right, pieces.shade = tr, top, bot, lf, rt, sh
         return pieces
@@ -3568,7 +3574,11 @@ do
         local mid = math.max(P.PET_ICON / 2, 3 * k + unit / 2)
         local g = { k = k, unit = unit, unitTop = mid - unit / 2, iconTop = mid - P.PET_ICON / 2 }
         g.row = math.max(g.iconTop + P.PET_ICON, g.unitTop + unit + 8 * k)
-        g.x0 = math.max(0, (P.W - (P.PET_ICON + P.PET_IGAP + P.W * P.PET_W + 7 * k)) / 2)
+        -- prd13 (review, 2026-11-11): the happiness face (2 + PET_HAPPY past the right rim) counted while it can show; the bars narrowed
+        -- when the whole group would not fit (W_MIN = 180), so the face stays inside the HUD frame
+        local fixed = P.PET_ICON + P.PET_IGAP + 7 * k + (P.petHappyOn and (2 + P.PET_HAPPY) or 0)
+        g.barW = math.max(0, math.min(P.W * P.PET_W, P.W - fixed))
+        g.x0 = math.max(0, (P.W - (fixed + g.barW)) / 2)
         return g
     end
     function P.petRow() return P.petGeo().row end
@@ -3613,7 +3623,8 @@ do
         o.lip:SetAllPoints(L)
         o.lip:EnableMouse(false)
         o.k = u(P.HH / 8)
-        o.frame = P.frameFor(o.unit, L, o.lip, o.k)
+        -- prd13: the shade over the pet's HEALTH as the player's over theirs (45 % of the health bar, not of the whole unit)
+        o.frame = P.frameFor(o.unit, L, o.lip, o.k, u(P.PET_HH) * 0.45)
         pcall(function() o.lip:SetFrameLevel(o.hp:GetFrameLevel() + 20) end)
         -- a hunter's pet's happiness: the game's own faces (PetFrame's texture), PET_HAPPY big, past the unit's right rim (7 texels),
         -- level with the bars (prd12: never over the portrait)
@@ -3646,7 +3657,7 @@ do
         o.ring:SetPoint("TOPLEFT", L, "TOPLEFT", u(g.x0), -u(g.iconTop))
         o.hp:ClearAllPoints()
         o.hp:SetPoint("TOPLEFT", L, "TOPLEFT", u(g.x0 + P.PET_ICON + P.PET_IGAP), -u(g.unitTop))
-        o.hp:SetWidth(u(P.W * P.PET_W)); o.pw:SetWidth(u(P.W * P.PET_W)); o.unit:SetWidth(u(P.W * P.PET_W))
+        o.hp:SetWidth(u(g.barW)); o.pw:SetWidth(u(g.barW)); o.unit:SetWidth(u(g.barW))
     end
     -- fed at every poll as the player's bars are: the game's values straight to the setters, nothing read back (no lag chunk: its queue
     -- would keep a secret in a table)
@@ -3707,6 +3718,7 @@ do
         local h = okH and num(hv) or nil
         local uv = h and P.PET_HAPPY_U[h]
         if uv then o.happy:SetTexCoord(uv[1], uv[2], 0, P.PET_HAPPY_V); o.happy:Show() else o.happy:Hide() end
+        if (uv ~= nil) ~= (P.petHappyOn == true) then P.petHappyOn = uv ~= nil; P.petLayout(P.petDrop, true) end   -- prd13: re-centred
         x.dead, x.ptok, x.happy, x.icon = dead or nil, tok, uv and h or nil, o.icon ~= nil or nil
     end
     -- out of combat on the curve route: the strip's alpha the pet's own UnitHealthPercent through the same curve; its OWN bad flag (a
