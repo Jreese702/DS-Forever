@@ -3512,6 +3512,42 @@ object UiKit {
         if (active) tex("side_tab_on")?.let { c.drawBitmap(it, null, r, pBmp) }
     }
 
+    /**
+     * THE GAME'S SIDE TAB AS A DRAWER HANDLE (Party mode's Select tab, m134; the user, 2026-11-11: "The side panel around the select
+     * button looks like an AI border. It needs to use wow assets and sit outside of the player brand look more like its attached to the
+     * side of the screen"): [sideTab]'s own art (common-sidetab, its open side on the LEFT: it stands against the screen's edge), cut in
+     * three down its height so a tall narrow handle keeps the art's bevelled corners: the top and bottom [SIDE_CAP] of the picture at
+     * their own aspect for [r]'s width, the middle stretched. [lit] (0..1) = the game's selected side tab (its gold frame) over it, at
+     * that alpha (the on / off wipe); [alpha] the plain tab's. No art on the device: a flat square stand-in, as [sideTab]'s.
+     */
+    fun sideHandle(c: Canvas, r: RectF, lit: Float, alpha: Int = 255) {
+        val tab = tex("side_tab")
+        if (tab == null) {
+            pFlat.style = Paint.Style.FILL; pFlat.color = if (lit > 0.5f) Theme.selected else Theme.raised
+            c.drawRect(r, pFlat)
+            return
+        }
+        pBmp.alpha = alpha
+        slice3v(c, tab, r)
+        pBmp.alpha = 255
+        if (lit > 0f) tex("side_tab_on")?.let { on ->
+            pBmp.alpha = (255 * lit.coerceIn(0f, 1f)).toInt()
+            slice3v(c, on, r)
+            pBmp.alpha = 255
+        }
+    }
+
+    /** the top / bottom share of the side tab's picture kept at its own aspect by [sideHandle] */
+    const val SIDE_CAP = 0.3f
+
+    private fun slice3v(c: Canvas, b: Bitmap, r: RectF) {
+        val cap = (b.height * SIDE_CAP).toInt()
+        val capPx = minOf(cap * r.width() / b.width, r.height() / 2f)
+        c.drawBitmap(b, Rect(0, 0, b.width, cap), RectF(r.left, r.top, r.right, r.top + capPx), pBmp)
+        c.drawBitmap(b, Rect(0, cap, b.width, b.height - cap), RectF(r.left, r.top + capPx, r.right, r.bottom - capPx), pBmp)
+        c.drawBitmap(b, Rect(0, b.height - cap, b.width, b.height), RectF(r.left, r.bottom - capPx, r.right, r.bottom), pBmp)
+    }
+
     /** a pane's ground over [r]: the list's (left) or the detail's ([right]) */
     fun pane(c: Canvas, r: RectF, right: Boolean = false) {
         val b = tex(if (right) "pane_right" else "pane_left")

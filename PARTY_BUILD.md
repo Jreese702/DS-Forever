@@ -828,3 +828,24 @@ P10 range. Plus the add-on worker's P11 (one tap on party cells 0, 10, 11, 22 at
 fight-spell regression after the PRE edit (FEASIBILITY risk 4), and for this ruling: open a room and a Home module full screen with
 Party mode on (in and out of a fight), and the pause wheel, the bar cursor, a vendor and a loot window (a loot window in a fight too);
 come back, Party mode off and the keys the game's again.
+
+## m134 / hub38: THE PLAYER / PET ROW, HIGHLIGHTING = TARGETING, THE SELECT TAB IN THE GAME'S ART (2026-11-11, after using 1428)
+
+The user: "The size of the player and the pet don't feel right ... I think the pet should be to the right of the player and not have the
+green dot. Also the a button glyph on them needs to be removed since highlighting it should target and a will be whatever spell is
+bound", and "The side panel around the select button looks like an AI border. It needs to use wow assets and sit outside of the player
+brand look more like its attached to the side of the screen" (party_design.md "PLAYER / PET REVISION", "SELECT TAB LOOK").
+
+- Rows: the first row is you alone, or you + the pet on your right (`PartyLayout.PET_SHARE` 0.33: you about two thirds); the k party
+  members under it by the adaptive rule among themselves (1-2 full rows; 3: a full row, then a shared one; 4: 2x2). One rule in
+  `OV.partyNav(n, box, dir, pet)`, the PARTY-NAV snippet body and `PartyModel.rows / nav(n, box, dir, pet)`; `party_nav.json` now
+  carries every shape with `pet` (no pet n 1..5, the pet n 2..6). Hub's top block (`PF.layout`) draws the party rows only, so it no
+  longer depends on the pet.
+- Highlighting = targeting: a PARTYPAD D-pad move that moved sets `type target` + `unit` (the new pick) in the same secure click, in
+  fights too; an edge press targets nothing. PARTYPICK's pick of another plate targets it too; the picked plate's tap is the Touch
+  spell, else Target again. A / X / Y and the ZL / ZR layers cast as before on the pick.
+- Plates: no A / X / Y chips and no LB + button glyph (the "A" on your own plate was the game's LB + A targeting hint); the pet's plate
+  has no stripe and no green dot, its portrait (`ic` = `GetPetIcon()`, plain only; icons.pak) and its short name.
+- The Select tab: `UiKit.sideHandle` = the game's side tab (`side_tab`, lit by `side_tab_on`), cut in three down its height, flush on
+  the screen's left edge (x 0..52); the member band (the well) starts at x 56. The pick's notch is the game's small gold arrow
+  (`menu_next`). Hub: the same side tab atlas (`common-sidetab-c60-2x`, lit `common-sidetab-selected-c60-2x`) in three slices at x 0.

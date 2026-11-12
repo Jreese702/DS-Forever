@@ -68,6 +68,9 @@ class PartyStripTest {
         assertEquals(mapOf(Dir.UP to true, Dir.DOWN to false, Dir.LEFT to false, Dir.RIGHT to true), PartyStrip.arrows(4, 3))
         assertEquals(mapOf(Dir.UP to true, Dir.DOWN to false, Dir.LEFT to true, Dir.RIGHT to false), PartyStrip.arrows(5, 5))
         assertEquals(mapOf(Dir.UP to true, Dir.DOWN to true, Dir.LEFT to false, Dir.RIGHT to false), PartyStrip.arrows(3, 2))
+        // m134: the pet on your right - from you: Right lit (the pet), Down lit (party1); from the pet: Left, Down
+        assertEquals(mapOf(Dir.UP to false, Dir.DOWN to true, Dir.LEFT to false, Dir.RIGHT to true), PartyStrip.arrows(3, 1, pet = true))
+        assertEquals(mapOf(Dir.UP to false, Dir.DOWN to true, Dir.LEFT to true, Dir.RIGHT to false), PartyStrip.arrows(3, 2, pet = true))
     }
 
     @Test fun triggerPlates() {

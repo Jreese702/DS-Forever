@@ -68,8 +68,9 @@ object PartyStrip {
         return spellPic(cfg.slot(layer.prefix + face), m)
     }
 
-    /** the D-pad arrows: true = lit (the box can move that way), false = dimmed to 28 % */
-    fun arrows(n: Int, box: Int): Map<Dir, Boolean> = Dir.values().associateWith { PartyModel.nav(maxOf(1, n), box, it) != null }
+    /** the D-pad arrows: true = lit (the box can move that way), false = dimmed to 28 %; [pet] = your pet out (m134: on your right) */
+    fun arrows(n: Int, box: Int, pet: Boolean = false): Map<Dir, Boolean> =
+        Dir.values().associateWith { PartyModel.nav(maxOf(1, n), box, it, pet) != null }
 
     /** the trigger plate's chord spells (ZL: zla, zlx, zly; ZR: zra, zrx, zry), Empty places not shown */
     fun plateIcons(cfg: PartyModel.Cfg?, left: Boolean): List<PartyModel.Spell> {

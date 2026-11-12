@@ -128,7 +128,6 @@ class HomeView(
         partyView.onCellTap = { i -> onPartyCell?.invoke(i) }
         partyView.onCellLong = { i -> onPartyLong?.invoke(i) }
         partyView.onTag = { on -> onPartyTag?.invoke(on) }
-        partyView.triggers = { castView.padTriggers() }                // the picked plate's chips follow ZL / ZR
         // the card's CONTENT is the map's (its focus, its default focus): a change there re-lays Home when the card comes or goes
         // (p-card-invisible: it only redrew, and a pane laid without a card stayed GONE until a later quests document)
         mapView.onShownFocusChanged = { questPane.invalidate(); cardCheck("focus") }
@@ -1216,10 +1215,12 @@ class HomeView(
         val mode = partyModeNow(s)
         laidPartyMode = mode; laidPartyN = p.n; laidPartyOn = p.onLive; laidPartyPet = p.pet
         val right = w / 2f - 5f
-        val m = PartyLayout.module(mode, p.n, pet = p.pet, top = chat.top, left = chat.left, right = right)
+        // m134 (the user, 2026-11-11: the Select tab "attached to the side of the screen"): the module's view starts at the screen's
+        // left edge, where the tab stands; the member band (the well) starts right of it
+        val m = PartyLayout.module(mode, p.n, pet = p.pet, top = chat.top, left = PartyLayout.EDGE, right = right)
         partyView.mode = mode
         val out = LinkedHashMap(base)
-        out[Part.PARTY] = RectF(chat.left, chat.top - PartyModuleView.RISE, right, m.well.b)
+        out[Part.PARTY] = RectF(PartyLayout.EDGE, chat.top - PartyModuleView.RISE, right, m.well.b)
         out[Part.CHAT] = RectF(chat.left, minOf(m.chatTop, chat.bottom - 1f), chat.right, chat.bottom)
         return out
     }

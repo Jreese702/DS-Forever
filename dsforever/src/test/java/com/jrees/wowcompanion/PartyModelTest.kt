@@ -136,30 +136,53 @@ class PartyModelTest {
     }
 
     /**
-     * m131 ADAPTIVE ROWS (the user, 2026-11-11): PartyModel.nav equals the GEOMETRIC table tools/test_party.py builds from the rows and
-     * tests the add-on's OV.partyNav and PARTY-NAV snippet against (party-fixtures/party_nav.json): every n 1..6, every box, all four
-     * directions - so the app, the pure Lua and the secure snippet agree for every shape (the pet changes n, never the rule)
+     * m134 THE PLAYER / PET ROW (the user, 2026-11-11, after using 1428: "I think the pet should be to the right of the player"):
+     * PartyModel.nav equals the GEOMETRIC table tools/test_party.py builds from the rows and tests the add-on's OV.partyNav and PARTY-NAV
+     * snippet against (party-fixtures/party_nav.json): every shape (n 1..5 without the pet, 2..6 with it), every box, all four
+     * directions - so the app, the pure Lua and the secure snippet agree for every shape
      */
     @Test fun navIsTheAddOnsTable() {
         val s = javaClass.classLoader!!.getResourceAsStream("party-fixtures/party_nav.json")!!.bufferedReader().use { it.readText() }
         val rows = JSONObject(s).getJSONArray("rows")
-        val seen = HashSet<Pair<Int, Int>>()
+        val seen = HashSet<Triple<Int, Boolean, Int>>()
         for (k in 0 until rows.length()) {
             val r = rows.getJSONObject(k)
-            val n = r.getInt("n"); val box = r.getInt("box")
-            seen.add(n to box)
+            val n = r.getInt("n"); val box = r.getInt("box"); val pet = r.getBoolean("pet")
+            seen.add(Triple(n, pet, box))
             for ((key, d) in listOf("up" to Dir.UP, "down" to Dir.DOWN, "left" to Dir.LEFT, "right" to Dir.RIGHT)) {
                 val want = if (r.isNull(key)) null else r.getInt(key)
-                assertEquals("n $n box $box $key", want, PartyModel.nav(n, box, d))
+                assertEquals("n $n pet $pet box $box $key", want, PartyModel.nav(n, box, d, pet))
             }
         }
-        assertEquals((1..6).sumOf { it }, seen.size)
+        // every shape: no pet n 1..5 (15 boxes), the pet n 2..6 (20 boxes)
+        assertEquals((1..5).sum() + (2..6).sum(), seen.size)
         // a box past n clamps
         assertEquals(2, PartyModel.nav(3, 5, Dir.UP))
+    }
+
+    /** m134: the rows - you (+ the pet on your right) first, the party under it: 1-2 full rows, 3: full + shared, 4: 2x2 */
+    @Test fun rowsWithAndWithoutThePet() {
+        assertEquals(listOf(listOf(1)), PartyModel.rows(1))
+        assertEquals(listOf(listOf(1), listOf(2), listOf(3)), PartyModel.rows(3))
         assertEquals(listOf(listOf(1), listOf(2), listOf(3, 4)), PartyModel.rows(4))
         assertEquals(listOf(listOf(1), listOf(2, 3), listOf(4, 5)), PartyModel.rows(5))
-        assertEquals(listOf(listOf(1, 2), listOf(3, 4), listOf(5, 6)), PartyModel.rows(6))
-        assertEquals(listOf(listOf(1), listOf(2), listOf(3)), PartyModel.rows(3))
+        assertEquals(listOf(listOf(1, 2)), PartyModel.rows(2, pet = true))
+        assertEquals(listOf(listOf(1, 2), listOf(3)), PartyModel.rows(3, pet = true))
+        assertEquals(listOf(listOf(1, 2), listOf(3), listOf(4)), PartyModel.rows(4, pet = true))
+        assertEquals(listOf(listOf(1, 2), listOf(3), listOf(4, 5)), PartyModel.rows(5, pet = true))
+        assertEquals(listOf(listOf(1, 2), listOf(3, 4), listOf(5, 6)), PartyModel.rows(6, pet = true))
+        // you <-> the pet in the first row; the pet's Down: party1 (a full row) or party2 (the 2x2's right)
+        assertEquals(2, PartyModel.nav(3, 1, Dir.RIGHT, pet = true)); assertEquals(1, PartyModel.nav(3, 2, Dir.LEFT, pet = true))
+        assertEquals(3, PartyModel.nav(3, 2, Dir.DOWN, pet = true)); assertEquals(4, PartyModel.nav(6, 2, Dir.DOWN, pet = true))
+        assertNull(PartyModel.nav(2, 1, Dir.DOWN, pet = true)); assertNull(PartyModel.nav(2, 2, Dir.UP, pet = true))
+    }
+
+    /** m134 (the user, 2026-11-11: "highlighting it should target"): the app's optimistic move follows the pet's row too */
+    @Test fun theStatesMoveKnowsThePet() {
+        val s = PartyModel.State()
+        val doc = javaClass.classLoader!!.getResourceAsStream("party-fixtures/party_pet_on.json")!!.bufferedReader().use { it.readText() }
+        s.onParty(PartyModel.parseParty(JSONObject(doc))!!.copy(on = true, box = 1), true, 0L)
+        assertEquals(2, s.move(Dir.RIGHT)); assertEquals(3, s.move(Dir.DOWN)); assertEquals(1, s.move(Dir.UP))
     }
 
     /** p37 the Controller tab's places (PadTabCtl's slotAt): A / X / Y per layer, the rest locked; p38: all four D-pad places move the pick */

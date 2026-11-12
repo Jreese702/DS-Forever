@@ -38,15 +38,16 @@ class PartyFixturesTest {
         assertFalse(off.on); assertNull(off.box)
     }
 
-    /** m131: the pet out - its entry right after you (i 5, no class), the shape's cells, a Down from you lands on it */
+    /** m131: the pet out - its entry right after you (i 5, no class); m134: its portrait (ic), its place on your right (a Right from you) */
     @Test fun partyWithThePet() {
         val p = PartyModel.parseParty(fx("party_pet_on"))!!
         assertEquals(listOf("player", "pet", "party1", "party2"), p.m.map { it.u }); assertEquals(listOf(0, 5, 1, 2), p.m.map { it.i })
         assertTrue(p.pet); assertTrue(p.m[1].isPet); assertEquals("", p.m[1].c); assertNull(p.m[1].col); assertFalse(p.m[1].dim)
-        assertEquals(listOf(listOf(1), listOf(2), listOf(3, 4)), PartyModel.rows(p.n))
+        assertEquals(132242, p.m[1].ic); assertNull(p.m[0].ic)
+        assertEquals(listOf(listOf(1, 2), listOf(3), listOf(4)), PartyModel.rows(p.n, p.pet))
         val b = PartyModel.parseBox(fx("partybox_pet_move"))!!
-        assertEquals("move", b.k); assertEquals(2, b.box); assertEquals("pet", b.u); assertEquals(4, b.cnt)
-        assertEquals(b.box, PartyModel.nav(p.n, 1, PartyModel.Dir.DOWN))
+        assertEquals("move", b.k); assertEquals(2, b.box); assertEquals("pet", b.u); assertEquals(4, b.cnt); assertEquals("PADDRIGHT", b.key)
+        assertEquals(b.box, PartyModel.nav(p.n, 1, PartyModel.Dir.RIGHT, p.pet))
         val s = PartyModel.State()
         s.onParty(p, true, 0L)
         assertTrue(s.onBox(b, true)); assertEquals(2, s.box)
