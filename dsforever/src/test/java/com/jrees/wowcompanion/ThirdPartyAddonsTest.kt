@@ -85,6 +85,7 @@ class ThirdPartyAddonsTest {
         ThirdPartyAddons.ALL = listOf(ThirdPartyAddons.SPOKEN, ThirdPartyAddons.POLESTAR, ThirdPartyAddons.QUESTTRAIL, ThirdPartyAddons.MANNERS)
         ThirdPartyAddons.renameDir = realRename; ThirdPartyAddons.fileRename = realFileRename; ThirdPartyAddons.settleMs = 5_000L
         ThirdPartyAddons.baseChoice = realBaseChoice; ThirdPartyAddons.setBaseChoice = realSetBaseChoice
+        ThirdPartyAddons.noFetch = false
     }
     private val realBaseChoice = ThirdPartyAddons.baseChoice
     private val realSetBaseChoice = ThirdPartyAddons.setBaseChoice
@@ -455,6 +456,7 @@ class ThirdPartyAddonsTest {
             "TestB/TestB.toc" to "## Version: 1.0\n", "LICENSE" to "GPL-3.0 text", "THIRD_PARTY.md" to "credits", "README.md" to "no")
         val a = addon(zipBytes).copy(base = true)
         ThirdPartyAddons.ALL = listOf(a)
+        ThirdPartyAddons.noFetch = true                                     // no background worker: fetchNow is the worker's download
         ThirdPartyAddons.baseChoice = { choice }
         ThirdPartyAddons.setBaseChoice = { _, on -> choice = on; ThirdPartyAddons.choiceChanged(a) }
         return a
@@ -464,6 +466,10 @@ class ThirdPartyAddonsTest {
         val a = baseAddon(); choice = null
         assertFalse(ThirdPartyAddons.coreWanted(a))
         assertTrue(ThirdPartyAddons.prefetch(a, "core"))
+        // review of 2026-11-12: never downloaded inside the start step (it held Play): the background worker fetches it ahead
+        val first = ThirdPartyAddons.applyAtStart(game)
+        assertTrue(first, first.contains("Test downloading"))
+        ThirdPartyAddons.fetchNow(a, "core")                                // the worker's own download
         val line = ThirdPartyAddons.applyAtStart(game)
         assertTrue(line, line.contains("Test ready (not in use)"))
         assertTrue("fetched ahead", served > 0)
@@ -508,7 +514,7 @@ class ThirdPartyAddonsTest {
             override fun get(k: String, d: Boolean) = choices[k] ?: d
             override fun put(k: String, v: Boolean) { choices[k] = v }
         }, File(tmp, "private"))
-        ThirdPartyAddons.applyAtStart(game)
+        ThirdPartyAddons.fetchNow(a, "core")                                // fetched ahead by the worker
         assertTrue(File(tmp, "private/dl/Test-1.0.zip").isFile)
         choice = false
         ThirdPartyAddons.applyAtStart(game)
@@ -523,5 +529,40 @@ class ThirdPartyAddonsTest {
         assertTrue(ThirdPartyAddons.coreWanted(a))
         ThirdPartyAddons.applyAtStart(game)
         assertTrue("never moved out before the answer", File(addons, "TestA").exists())
+    }
+
+    /** review of 2026-11-12: the worker and the start step wrote the same .part at once; one writer per package, never twice */
+    @Test fun aDownloadedPackageIsNeverFetchedAgain() {
+        val a = baseAddon(); choice = true
+        ThirdPartyAddons.fetchNow(a, "core")
+        val once = served
+        assertTrue(once > 0)
+        ThirdPartyAddons.fetchNow(a, "core")
+        assertTrue(ThirdPartyAddons.applyAtStart(game).contains("Test 1.0 installed"))
+        assertEquals("no second download", once, served)
+        assertFalse(ThirdPartyAddons.fetchingNow(a, "core"))
+    }
+
+    /** review of 2026-11-12: a QuestTrail player moved to Polestar: QuestTrail out to the backup at the next start, never deleted */
+    @Test fun aMovedQuestTrailPlayerLosesQuestTrailOnce() {
+        val a = addon(zipBytes).copy(id = "questtrail")
+        ThirdPartyAddons.ALL = listOf(a)
+        ThirdPartyAddons.noFetch = true
+        ThirdPartyAddons.setCore(a, true)
+        ThirdPartyAddons.fetchNow(a, "core")
+        ThirdPartyAddons.applyAtStart(game)
+        assertTrue(File(addons, "TestA").exists())
+        var mark = true
+        ThirdPartyAddons.takeQuestTrailRetire = { val m = mark; mark = false; m }
+        try {
+            ThirdPartyAddons.start(object : ThirdPartyAddons.Store {
+                override fun get(k: String, d: Boolean) = choices[k] ?: d
+                override fun put(k: String, v: Boolean) { choices[k] = v }
+            }, File(tmp, "private"))
+        } finally { ThirdPartyAddons.takeQuestTrailRetire = { Settings.takeQuestTrailRetire() } }
+        assertFalse(ThirdPartyAddons.coreWanted(a))
+        ThirdPartyAddons.applyAtStart(game)
+        assertFalse(File(addons, "TestA").exists())
+        assertTrue(File(game, "Interface/AddOns-backup-dsforever").listFiles()!!.any { it.name.startsWith("TestA-1.0-") })
     }
 }

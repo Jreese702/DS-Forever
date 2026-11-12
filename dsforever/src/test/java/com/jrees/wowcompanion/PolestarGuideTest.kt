@@ -91,6 +91,16 @@ class PolestarGuideTest {
     @Test fun aQuestTrailPlayerToo() {
         start("questTrackingSafePath" to true, "questTracking" to "questtrail")
         assertEquals("polestar", Settings.questTracking)
+        // review of 2026-11-12: two guides at once otherwise: QuestTrail goes out once (ThirdPartyAddons takes the mark)
+        assertTrue(Settings.takeQuestTrailRetire())
+        assertFalse("once", Settings.takeQuestTrailRetire())
+    }
+
+    @Test fun onlyAQuestTrailPlayerLosesQuestTrail() {
+        start("questTrackingSafePath" to true, "questTracking" to "safepath")
+        assertFalse(Settings.takeQuestTrailRetire())
+        start("questTrackingSafePath" to true, "questTracking" to "vanilla")
+        assertFalse(Settings.takeQuestTrailRetire())
     }
 
     @Test fun aVanillaPlayerIsAsked() {

@@ -46,6 +46,10 @@ object Settings {
                 val stored = p.getString("questTracking", null)
                 val guide = PolestarGuide.migrate(existing, stored, p.getString(GUIDE, null))
                 if (guide != null) e.putString(GUIDE, guide)
+                // review of 2026-11-12: a QuestTrail player moved to Polestar would run both guides (QuestTrail's own arrow and
+                // super-tracking next to Polestar's): QuestTrail goes out to the backup at the next start (ThirdPartyAddons.start
+                // takes this mark), never deleted
+                if (stored == "questtrail" && guide == PolestarGuide.ON) e.putBoolean(QT_RETIRE, true)
                 e.putString("questTracking", PolestarGuide.mode(guide))
                 e.putBoolean(QT_POLESTAR, true).apply()
             }
@@ -62,6 +66,15 @@ object Settings {
     /** the 2026-11-12 move (PolestarGuide.migrate) is done */
     private const val QT_POLESTAR = "questTrackingPolestar1112"
     private const val GUIDE = "polestarGuide"
+    /** a QuestTrail player moved to Polestar: QuestTrail goes out once ([takeQuestTrailRetire]) */
+    private const val QT_RETIRE = "questTrailRetire1112"
+    /** true once, for a QuestTrail player moved to Polestar (the mark is cleared): ThirdPartyAddons moves QuestTrail out */
+    fun takeQuestTrailRetire(): Boolean {
+        val p = prefs ?: return false
+        if (!p.getBoolean(QT_RETIRE, false)) return false
+        p.edit().remove(QT_RETIRE).apply()
+        return true
+    }
 
     /**
      * THE POLESTAR QUEST GUIDE (the user, 2026-11-12; [PolestarGuide]): "on" / "off", null = not asked yet. Set by the launcher's

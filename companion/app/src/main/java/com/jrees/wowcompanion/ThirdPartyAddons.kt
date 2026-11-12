@@ -22,7 +22,8 @@ import java.util.concurrent.Executors
  * project's own GitHub releases.
  *
  * THE WAY IN, the same rules as [DependencyAddons]:
- *  - Install (or a module switched on) DOWNLOADS at once, in the background, only on an unmetered network (Wi-Fi) and only with the
+ *  - Install (or a module switched on) DOWNLOADS at once, in the background, only on an unmetered network (Wi-Fi; a base add-on the
+ *    player said Yes to, on any network, as QuestieDB; a base add-on not asked about yet is fetched ahead on Wi-Fi only) and only with the
  *    room for it (the package + [SPACE_MARGIN] free in the app's private storage); resumed where it stopped (HTTP Range); checked for
  *    its exact size and its pinned sha256; kept in the app's private storage until it is in;
  *  - it is MOVED IN only at a start with the game closed ([applyAtStart], from the launcher's dependency step): unpacked (each entry's
@@ -178,9 +179,14 @@ object ThirdPartyAddons {
         for (a in ALL) if (!a.base && installed(a, "core") && prefs?.get("${a.id}.migrated", false) != true) {
             prefs?.put("${a.id}.migrated", true); if (!coreWanted(a)) prefs?.put("${a.id}.core", true)
         }
+        // review of 2026-11-12: a QuestTrail player moved to Polestar (Settings' one-time move) would run both quest guides: QuestTrail's
+        // Install is undone once, so it goes out to the backup at the next start with the game closed (never deleted)
+        if (takeQuestTrailRetire()) { prefs?.put("${QUESTTRAIL.id}.migrated", true); prefs?.put("${QUESTTRAIL.id}.core", false) }
         // anything asked for and not here yet carries on downloading (a 1.5 GB pack outlives the app being closed)
         resume()
     }
+    /** Settings' one-time QuestTrail mark ([Settings.takeQuestTrailRetire]); the off-device tests set their own */
+    @Volatile internal var takeQuestTrailRetire: () -> Boolean = { Settings.takeQuestTrailRetire() }
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     fun onChange(l: () -> Unit) { listeners.add(l) }
     private fun changed() { for (l in listeners) runCatching { l() } }
@@ -342,8 +348,28 @@ object ThirdPartyAddons {
         caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
     }.getOrDefault(true)
 
-    /** one package: room, Wi-Fi, the download (resumed), its size and pinned sha256; then it waits for a start with the game closed */
-    private fun fetch(a: Addon, key: String, p: Pkg) {
+    /** the packages being downloaded right now (the worker or the start step): one writer per .part file */
+    private val fetching = HashSet<String>()
+
+    /**
+     * one package: room, Wi-Fi, the download (resumed), its size and pinned sha256; then it waits for a start with the game closed.
+     * ONE AT A TIME PER PACKAGE (review of 2026-11-12: the worker queued by [start] and the start step both wrote the same .part, which
+     * then failed its size / sha256 check): a second caller while one runs returns at once (that download carries on, its status
+     * shown); a package already downloaded is never downloaded again. false = another caller has it
+     */
+    private fun fetch(a: Addon, key: String, p: Pkg): Boolean {
+        val id = "${a.id}/$key"
+        if (!synchronized(fetching) { fetching.add(id) }) return false
+        try {
+            if (state(a, key).optString("zip") == p.tag && zipOf(p).length() == p.bytes) return true
+            fetchOne(a, key, p)
+        } finally { synchronized(fetching) { fetching.remove(id) } }
+        return true
+    }
+    /** a download of this package is running now */
+    internal fun fetchingNow(a: Addon, key: String): Boolean = synchronized(fetching) { "${a.id}/$key" in fetching }
+
+    private fun fetchOne(a: Addon, key: String, p: Pkg) {
         val zip = zipOf(p)
         val part = File(zip.path + ".part")
         try {
@@ -354,8 +380,9 @@ object ThirdPartyAddons {
                 setLive(a, key, Status(Kind.NO_SPACE, "Needs ${size(((p.bytes - have + SPACE_MARGIN) / 1_000_000).toInt())} free on this device"))
                 return
             }
-            // a base add-on downloads on any network, as QuestieDB does (the user, 2026-11-12: "like questie"; 38 MB)
-            if (!a.base && !unmetered()) { setLive(a, key, Status(Kind.WAITING_WIFI, "Waiting for Wi-Fi to download ${size(p.mb)}")); return }
+            // a base add-on the player said Yes to downloads on any network, as QuestieDB does (the user, 2026-11-12: "like questie";
+            // 38 MB); fetched AHEAD (not asked yet) only on Wi-Fi (review of 2026-11-12: no mobile data spent before the answer)
+            if ((!a.base || prefetch(a, key)) && !unmetered()) { setLive(a, key, Status(Kind.WAITING_WIFI, "Waiting for Wi-Fi to download ${size(p.mb)}")); return }
             setLive(a, key, Status(Kind.DOWNLOADING, "Downloading ${size(p.mb)}", (have * 100 / p.bytes).toInt()))
             download(a.repo, p, part) { got ->
                 setLive(a, key, Status(Kind.DOWNLOADING, "Downloading: ${size((got / 1_000_000).toInt())} of ${size(p.mb)}",
@@ -458,8 +485,9 @@ object ThirdPartyAddons {
                     moveOut(a, key, flavorRoot); lines.add("$name moved to the backup"); log("add-ons: removed $name (to the backup)"); continue
                 }
                 if (!want && !inst && prefetch(a, key)) {
-                    // not asked yet (the launcher's Polestar prompt): fetched ahead in the start step, moved in only on a Yes
-                    if (state(a, key).optString("zip") != p.tag && p.bytes <= SMALL && fetchSmall) { onStep("Downloading add-ons: $name..."); fetch(a, key, p) }
+                    // not asked yet (the launcher's Polestar prompt): fetched ahead by the BACKGROUND worker only (Wi-Fi), never in this
+                    // step (review of 2026-11-12: a 38 MB download here held Play, which waits on this step's lock), moved in only on a Yes
+                    if (state(a, key).optString("zip") != p.tag) resume()
                     lines.add(if (state(a, key).optString("zip") == p.tag) "$name ready (not in use)" else "$name downloading")
                     continue
                 }
@@ -475,7 +503,11 @@ object ThirdPartyAddons {
                     log("add-ons: $name not applied: it failed at an earlier start ($failed); not tried again until Settings > Add-ons' Try again or a new version")
                     continue
                 }
-                if (state(a, key).optString("zip") != p.tag && p.bytes <= SMALL && fetchSmall) { onStep("Downloading add-ons: $name..."); fetch(a, key, p) }
+                // a small one is fetched here, unless the worker is downloading it now (then it goes in when that is done: here at Play,
+                // or the next start), never a second writer on the same file
+                if (state(a, key).optString("zip") != p.tag && p.bytes <= SMALL && fetchSmall && !fetchingNow(a, key)) {
+                    onStep("Downloading add-ons: $name..."); fetch(a, key, p)
+                }
                 if (state(a, key).optString("zip") != p.tag || zipOf(p).length() != p.bytes) {
                     resume(); lines.add("$name downloading")
                     log("add-ons: $name not applied: not downloaded yet (${if (zipOf(p).isFile) "${zipOf(p).length()} of ${p.bytes} bytes" else "nothing yet"})")
