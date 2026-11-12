@@ -33,7 +33,50 @@ internal class PreLoginTraffic(private val minuteMs: Long = 60_000L) {
         return line
     }
 
+    /**
+     * Is the game downloading right now (issue #132, the user's pick 2026-11-12 "Wait for login screen")? The last whole minute or the
+     * minute so far reached [BUSY_MB] MB. Only meaningful while [counts] holds: the caller ANDs it ([downloading]).
+     */
+    val busy: Boolean get() = lastMinute >= BUSY_MB * MB || minute >= BUSY_MB * MB
+
     companion object {
+        /** before the login screen and receiving at least [BUSY_MB] MB a minute: the game is fetching its files */
+        fun downloading(counts: Boolean, busy: Boolean): Boolean = counts && busy
+
+        /**
+         * THE UNREAD FILE'S CAP (the user's pick 2026-11-12, "Wait for login screen": "Keep the file until the game reaches its login
+         * screen (still deleted 20 s after its first read), with a hard cap of 30 minutes"). Returns how long to wait before asking
+         * again, or 0 = delete now. [lifeMs] (5 min) runs from the write, or from the last moment the game was seen downloading before
+         * its login screen ([holdFrom], 0 = never): while it downloads the cap waits, and the login screen gets the full [lifeMs] once the
+         * download ends. [HARD_CAP_MS] from the write always deletes. A re-login file never downloads (the world came first), so its
+         * cap is unchanged.
+         */
+        fun capWait(nowMs: Long, writtenAt: Long, holdFrom: Long, lifeMs: Long, downloading: Boolean): Long {
+            val age = nowMs - writtenAt
+            if (age >= HARD_CAP_MS - SLACK_MS) return 0L
+            val hardLeft = HARD_CAP_MS - age
+            if (downloading) return minOf(RECHECK_MS, hardLeft)
+            val left = lifeMs - (nowMs - maxOf(writtenAt, holdFrom))
+            return if (left <= SLACK_MS) 0L else minOf(left, hardLeft)
+        }
+
+        /** the hard cap of an unread login.txt, whatever the game does (the user's pick 2026-11-12) */
+        const val HARD_CAP_MS = 30 * 60_000L
+        /** while the game downloads past the cap, asked again this often */
+        const val RECHECK_MS = 60_000L
+        /** a handler a few ms early is on time */
+        private const val SLACK_MS = 1_000L
+
+        /** the start screen's plain waiting line, and the one while the game fetches its files before its login screen */
+        const val WAITING_LINE = "Waiting for the game."
+        const val DOWNLOADING_LINE = "Game downloading"
+        /** the start screen's line for [downloading]: only the plain waiting line swaps, any other line stays */
+        fun waitingLine(line: String, downloading: Boolean): String = when {
+            downloading && line == WAITING_LINE -> DOWNLOADING_LINE
+            !downloading && line == DOWNLOADING_LINE -> WAITING_LINE
+            else -> line
+        }
+
         /**
          * May a second of heavy traffic mean "past the login screen" (NativeLogin)? After the client's read, yes; while a written file
          * waits for its read, no. Without a read, issue #132 (2026-11-11, a 2.6 GB direct install): the client downloading its own data

@@ -30,6 +30,8 @@ object NativeLogin {
      * The hard backstop for an UNREAD file: the user's rule caps a written file at 5 minutes. TEST12 (2026-10-12 17:38): a fresh
      * install's first boot (prefix build, caches) took over 2 minutes to its login screen; the old 120 s deleted the file first and
      * the first sign-in never happened. Also the clock now restarts when the game's window appears ([gameWindowUp]).
+     * Issue #132 (the user's pick 2026-11-12, "Wait for login screen"): while the game downloads its files before its login screen this
+     * cap waits, with a hard cap of 30 minutes from the write ([PreLoginTraffic.capWait]).
      */
     private const val MAX_LIFE_MS = 300_000L
     /** when Play wrote this run's first file (the window's log line says how long the start took) */
@@ -84,14 +86,34 @@ object NativeLogin {
     private var flavorDir: File? = null
     private val main = Handler(Looper.getMainLooper())
     private var lifeMs = MAX_LIFE_MS
-    private val timeout = Runnable {
-        if (active) {
-            // issue #132: an unread file at its cap before the world = the client never reached its login screen in that time
-            if (!reachedWorld) expiredUnread = true
-            logEvent("login.txt not read in ${lifeMs / 1000} s, deleting" +
-                if (firstReadAt == 0L && preLogin.total > 0) " (the game received ${PreLoginTraffic.mb(preLogin.total)} MB since it started)" else "")
-            clear()
+    private val timeout = Runnable { capCheck() }
+
+    /**
+     * THE GAME DOWNLOADS BEFORE ITS LOGIN SCREEN (issue #132): its traffic before the first read, at least [PreLoginTraffic.BUSY_MB] MB
+     * a minute. The unread file's cap waits then, and the start screen says "Game downloading". Main thread.
+     */
+    @Volatile var downloading = false; private set
+    /** the last moment [downloading] was seen (0 = not in this run): the 5-minute cap counts from here once the download ends */
+    private var holdFrom = 0L
+    /** the "kept past its cap" line once per file */
+    private var capHeld = false
+
+    /** the unread file's cap ([PreLoginTraffic.capWait]): deleted now, or asked again later while the game downloads. Main thread. */
+    private fun capCheck() {
+        if (!active) return
+        val now = System.currentTimeMillis()
+        val wait = PreLoginTraffic.capWait(now, writtenAt, holdFrom, lifeMs, downloading)
+        if (wait > 0L) {
+            if (downloading && !capHeld) { capHeld = true; logEvent("login.txt kept past its ${lifeMs / 1000} s cap: the game is downloading before its login screen") }
+            main.postDelayed(timeout, wait)
+            return
         }
+        // issue #132: an unread file at its cap before the world = the client never reached its login screen in that time
+        if (!reachedWorld) expiredUnread = true
+        val age = now - writtenAt
+        logEvent("login.txt not read in ${age / 1000} s${if (age >= PreLoginTraffic.HARD_CAP_MS - 1_000L) " (the 30-minute hard cap)" else ""}, deleting" +
+            if (firstReadAt == 0L && preLogin.total > 0) " (the game received ${PreLoginTraffic.mb(preLogin.total)} MB since it started)" else "")
+        clear()
     }
 
     /** issue #132: the game's window appeared in this client run (a login screen needs one; set whatever the file's state) */
@@ -114,6 +136,7 @@ object NativeLogin {
         consumed = false; firstReadAt = 0L; pastLogin = false; quietFor = 0; quiet = false   // a new client run
         outOfWorld = false; reachedWorld = false; lifeMs = MAX_LIFE_MS; appCtx = ctx.applicationContext; changed()
         playAt = System.currentTimeMillis(); windowArmed = false; windowSeen = false; expiredUnread = false; main.post { preLogin.reset() }
+        downloading = false; holdFrom = 0L; capHeld = false
         val root = shadowRoot(ctx).apply { mkdirs() }
         val isLinkF = { f: File -> Files.isSymbolicLink(f.toPath()) }
         // test57: a flavor folder in the shadow that is a LINK into the shared game folder is unlinked first, and one that still resolves
@@ -147,7 +170,7 @@ object NativeLogin {
             val f = File(fl, FILE)
             f.writeText("${login.email}\n${login.password}\n")
             Os.chmod(f.absolutePath, 384)          // 0600: this app only
-            active = true; consumed = false; writtenAt = System.currentTimeMillis()
+            active = true; consumed = false; writtenAt = System.currentTimeMillis(); capHeld = false
             watch(fl)
             main.postDelayed(timeout, MAX_LIFE_MS)
             Log.i(TAG, "login.txt written (Play; private shadow folder); waiting for the client's read")
@@ -191,7 +214,16 @@ object NativeLogin {
     fun onTraffic(rxBytes: Long, txBytes: Long = -1L) {
         main.post {
             worldTraffic(rxBytes); onTrafficSample?.invoke(rxBytes, txBytes)
-            if (PreLoginTraffic.counts(firstReadAt > 0L, pastLogin, reachedWorld)) preLogin.add(rxBytes, System.currentTimeMillis())?.let { logEvent(it) }
+            val counts = PreLoginTraffic.counts(firstReadAt > 0L, pastLogin, reachedWorld)
+            if (counts) preLogin.add(rxBytes, System.currentTimeMillis())?.let { logEvent(it) }
+            // issue #132: downloading before the login screen holds the unread file's cap and says "Game downloading"
+            val d = PreLoginTraffic.downloading(counts, preLogin.busy)
+            if (d) holdFrom = System.currentTimeMillis()
+            if (d != downloading) {
+                downloading = d
+                logEvent(if (d) "the game is downloading before its login screen" else "the game's download before its login screen ended")
+                onChange?.invoke()
+            }
         }
         if (!pastLogin && rxBytes >= PAST_LOGIN_BYTES && signInTraffic()) main.post {
             if (!pastLogin) {
@@ -261,7 +293,7 @@ object NativeLogin {
             f.writeText("${login.email}\n${login.password}\n")
             Os.chmod(f.absolutePath, 384)          // 0600: this app only
         } catch (t: Throwable) { Log.w(TAG, "re-login file failed: ${t.message}"); clear(); return }
-        active = true; consumed = false; firstReadAt = 0L; writtenAt = System.currentTimeMillis()
+        active = true; consumed = false; firstReadAt = 0L; writtenAt = System.currentTimeMillis(); capHeld = false
         lifeMs = REARM_LIFE_MS
         main.postDelayed(timeout, REARM_LIFE_MS)
         logEvent("login.txt written again ($why): waiting for the return to the login screen")
@@ -297,7 +329,7 @@ object NativeLogin {
             f.writeText("${login.email}\n${login.password}\n")
             Os.chmod(f.absolutePath, 384)          // 0600: this app only
         } catch (t: Throwable) { Log.w(TAG, "window file failed: ${t.message}"); clear(); return@post }
-        active = true; consumed = false; firstReadAt = 0L; writtenAt = System.currentTimeMillis(); lifeMs = MAX_LIFE_MS
+        active = true; consumed = false; firstReadAt = 0L; writtenAt = System.currentTimeMillis(); lifeMs = MAX_LIFE_MS; capHeld = false
         main.postDelayed(timeout, MAX_LIFE_MS)
         logEvent("login.txt written (game window up, ${(writtenAt - playAt) / 1000} s after Play)")
         changed()
@@ -332,6 +364,7 @@ object NativeLogin {
     /** the game screen went: the file goes and the watching stops */
     fun end(ctx: Context? = null) {
         outOfWorld = false
+        if (downloading) { downloading = false; changed() }
         clear(ctx)
         observer?.stopWatching(); observer = null
         logEvent("client run ends")
