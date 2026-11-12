@@ -1452,7 +1452,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     /** the capture's holder (a current interact document): a taker while Party mode is on -> off (PartyModel.State.takerSeen) */
     private fun partyTaker(holder: String) {
-        if (!PartyModel.live.takerSeen(holder, SystemClock.uptimeMillis())) return
+        // m132: in a fight a holder only suspends Party mode (never the off tap: the user, a healer, "usable in combat")
+        if (!PartyModel.live.takerSeen(holder, SystemClock.uptimeMillis(), homeView.fightShown())) return
         if (homeView.partyMenu.isOpen) homeView.partyMenu.close()
         if (partyWheelOpen()) targetRadial.close("Party mode left")
         val sent = PartyTaps.off(PartyModel.live.cfg)?.let { TapBridge.taps(this, questsPad, it) { w -> Log.i("WCHOME", "party: off not sent: $w") } } == true
@@ -1462,7 +1463,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun partyLeaveHome(why: String) {
         if (homeView.partyMenu.isOpen) homeView.partyMenu.close()
         if (partyWheelOpen()) targetRadial.close("Party mode left")
-        if (!PartyModel.offOnLeave(PartyModel.live.party)) return
+        if (!PartyModel.offOnLeave(PartyModel.live.party, homeView.fightShown())) return     // m132: never in a fight
         val sent = PartyTaps.off(PartyModel.live.cfg)?.let { TapBridge.taps(this, questsPad, it) { w -> Log.i("WCHOME", "party: off not sent: $w") } } == true
         Log.i("WCHOME", "party: left Home ($why): off ${if (sent) "tapped" else "not sent"}")
     }

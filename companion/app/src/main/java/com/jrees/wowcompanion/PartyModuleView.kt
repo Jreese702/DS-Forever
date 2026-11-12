@@ -146,7 +146,7 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         val layer = PartyStrip.layer(lt, rt)
         if (layer == PartyStrip.Layer.BOTH) return emptyList()
         return listOf("a", "x", "y").map { it to PartyStrip.face(it, layer, cfg, party, box, party.fight) }
-            .filter { it.second.kind != PartyStrip.Kind.EMPTY }
+            .filter { it.second.kind != PartyStrip.Kind.EMPTY && it.second.kind != PartyStrip.Kind.TARGET }   // m132: Target has no spell art
     }
 
     private fun bmp(c: Canvas, b: Bitmap, at: Box, alpha: Int) {
@@ -240,7 +240,8 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
             MotionEvent.ACTION_UP -> {
                 removeCallbacks(longPress)
                 val m = module()
-                if (downTag && PartyLayout.hitTag(m, e.x, e.y)) onTag?.invoke(live.party?.onLive != true)
+                // m132: the tab flips what the game has (`on`), also while suspended or in a fight (never `on` sent to a Party mode already on)
+                if (downTag && PartyLayout.hitTag(m, e.x, e.y)) onTag?.invoke(live.party?.on != true)
                 else if (downCell >= 0 && !longFired && PartyLayout.hit(m, e.x, e.y) == downCell) unitOf(downCell)?.let { onCellTap?.invoke(it) }
                 downCell = -1; downTag = false
             }

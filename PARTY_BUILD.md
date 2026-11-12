@@ -776,6 +776,21 @@ in Party mode END it, as leaving Home does; nothing only suspends it any more.
   room let go first; (c) a loot window in the fight = off at its end; (d) no taker = stays on with its keys. App:
   `PartyFixturesTest.offWhenLeavingHome` and `takerEndsPartyMode`.
 
+Third ruling (2026-11-11, the user, a healer: "Party mode needs to be usable in combat for healers. Locking it is retarded"; PadMap
+m132). The second ruling now holds OUT OF COMBAT ONLY; in a fight nothing turns Party mode off except the player (Select, B, the tab):
+- A fight's start with Party mode allowed never steps the router aside for a game window (a loot roll / popup at the pull): all 8 keys
+  and Select are carried; Select is bound solo and with an unfocused invite too; while grouped (or on) the player's own m34 chords are
+  not bound for that fight, so ZL + a face and the bare D-pad reach the party pad if it is turned on mid-fight (`PM.fightKeys`).
+- In the fight: no taker is noted (`PM.noteFightTaker` / `PM.fightTaken` gone), nothing switches it off at PLAYER_REGEN_ENABLED; the
+  app never taps `off` for a holder (`takerSeen(.., fight)`) or for leaving Home (`offOnLeave(.., fight)`); a room holding only
+  suspends it (room mode first); the app draws it from `on` alone in a fight (`Party.onLive`) and the tab flips `on`.
+- Out of combat a PROMPT (`PM.PROMPTS`: GroupLootFrame1, StaticPopup1-4, ReadyCheckFrame) only suspends it (A answers the prompt).
+- Y in a fight never opens the player menu: the In combat action, else Smart Y's party buff armed before the fight (`wc-pb-<unit>`,
+  partycfg's `sy.pick` now sent in fights too), else Target.
+- Still refused in a fight (the game's lockdown): the Controller room's edits and Smart Y's party list (`partyack why=combat`).
+- Tests: `test_party.py` "m132 fight-first" (the fight entered FIRST, then on / pick / move / casts / Touch / roster / pet / tab / B),
+  "window-at-pull", the prompts; `PartyFixturesTest`, `PartyModelTest`, `PartyStripTest`.
+
 ### Cross-side fixtures (new)
 
 `tools/test_party.py` (block "CROSS-SIDE FIXTURES") dumps 24 raw documents straight out of Safety.lua's encoder to

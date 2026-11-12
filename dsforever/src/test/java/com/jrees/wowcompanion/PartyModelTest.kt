@@ -105,6 +105,13 @@ class PartyModelTest {
         // aside = suspended: drawn as off
         val aside = PartyModel.parseParty(JSONObject(PARTY.replace("\"aside\":null", "\"aside\":\"room\"")))!!
         assertTrue(aside.on); assertFalse(aside.onLive)
+        // m132: in a fight `on` alone (a stale `aside` never hides a live Party mode; the add-on never steps aside at a fight's start)
+        assertTrue(aside.copy(fight = true).onLive)
+        assertFalse(aside.copy(fight = true, on = false).onLive)
+        // ... so the box moves and the plates pick in a fight even with an `aside` left over
+        val st = PartyModel.State()
+        st.onParty(aside.copy(fight = true), current = true, now = 0L)
+        assertNotNull(st.move(PartyModel.Dir.UP))
     }
 
     @Test fun unitIndex() {

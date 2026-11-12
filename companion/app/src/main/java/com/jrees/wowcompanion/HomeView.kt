@@ -261,6 +261,8 @@ class HomeView(
      */
     /** a fight is on (Home's combat takeover): the self-setup never closes the game then */
     fun inFight(): Boolean = flow.takeover
+    /** m132: the game is fighting as Home shows it - the takeover (Party mode off) or the grow (Party mode on, no takeover) */
+    fun fightShown(): Boolean = flow.takeover || grow.fighting(System.currentTimeMillis())
 
     fun bGoesHome(): Boolean = bGlyph.shown(System.currentTimeMillis()) || (flow.full != null && !flow.takeover) ||
         // the buff / debuff list open: B returns Home at any time there (the user, 2026-09-30: "the red with the b button")

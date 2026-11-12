@@ -60,8 +60,11 @@ object PartyModel {
         val v: String, val rs: Int, val on: Boolean, val aside: String?, val box: Int?, val fight: Boolean, val grp: Boolean,
         val sel: String, val m: List<Member>,
     ) {
-        /** Party mode on and routing (not suspended by a room / window): the only state that draws a box */
-        val onLive: Boolean get() = on && aside == null
+        /** Party mode on and routing (not suspended by a room / window): the only state that draws a box. IN A FIGHT `on` alone
+         *  (PadMap m132, the user 2026-11-11, a healer: "Party mode needs to be usable in combat for healers"): the add-on never steps
+         *  aside at a fight's start while Party mode is allowed, and its `aside` is not refreshed in the lockdown, so a stale one must
+         *  never hide a live Party mode */
+        val onLive: Boolean get() = on && (aside == null || fight)
         val n: Int get() = m.size
         /** m131: a pet is out (its entry the second, PadMap's PM.units) */
         val pet: Boolean get() = m.any { it.isPet }
@@ -247,8 +250,9 @@ object PartyModel {
      */
     const val OFF_ON_LEAVE = true
 
-    /** leaving Home's rest page: tap `off` when Party mode is ON at all (on, or on but suspended by an `aside`: off is absolute) */
-    fun offOnLeave(p: Party?): Boolean = OFF_ON_LEAVE && p?.on == true
+    /** leaving Home's rest page: tap `off` when Party mode is ON at all (on, or on but suspended by an `aside`: off is absolute).
+     *  m132: never IN A FIGHT ([fight]): there it is only suspended while something else holds (the user: usable in combat) */
+    fun offOnLeave(p: Party?, fight: Boolean = false): Boolean = OFF_ON_LEAVE && !fight && p?.fight != true && p?.on == true
 
     /** Home's screen went from its rest page (no module full screen; a fight's takeover counts as rest) to a module full screen */
     fun leftRest(wasFull: Boolean, nowFull: Boolean): Boolean = nowFull && !wasFull
@@ -335,9 +339,12 @@ object PartyModel {
          * THE USER'S RULING (anything that takes the controller ends Party mode): a CURRENT interact document names the capture's
          * [holder] (a room, a Home module full screen, the pause wheel, the bar cursor, an NPC / vendor / loot window in a fight).
          * True = tap party `off` now: Party mode is on and someone holds; once per holder, again after [TAKER_RETRY_MS] while it still
-         * says on (a lost tap). This is the route IN A FIGHT, where the add-on cannot flip it itself.
+         * says on (a lost tap). m132 (the user, 2026-11-11, a healer: "Party mode needs to be usable in combat for healers. Locking it
+         * is retarded"): NEVER IN A FIGHT ([fight], or the party document's own `fight`): a holder there only suspends Party mode (the
+         * router's room mode comes first) and it is live again when the holder lets go. Out of combat the add-on ends it itself.
          */
-        fun takerSeen(holder: String?, now: Long): Boolean {
+        fun takerSeen(holder: String?, now: Long, fight: Boolean = false): Boolean {
+            if (fight || party?.fight == true) return false
             if (!OFF_ON_LEAVE || holder.isNullOrEmpty() || party?.on != true) { if (holder.isNullOrEmpty()) takerTapped = null; return false }
             if (holder == takerTapped && now - takerAt < TAKER_RETRY_MS) return false
             takerTapped = holder; takerAt = now

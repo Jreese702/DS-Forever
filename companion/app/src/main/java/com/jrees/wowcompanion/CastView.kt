@@ -297,6 +297,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 Btn().apply { p = src + 1; k = "fixed"; e = true; fx = if (pic.kind == PartyStrip.Kind.BACK) "back" else "inspect"; classify(this) }
             }
             PartyStrip.Kind.EMPTY -> partyBtns.getOrPut("e$src") { Btn().apply { p = src + 1; k = ""; e = true; drawAlpha = (255 * 0.45f).toInt() } }
+            // m132: Y in a fight with nothing armed targets the member: the friendly reticle
+            PartyStrip.Kind.TARGET -> partyBtns.getOrPut("t$src") {
+                Btn().apply { p = src + 1; k = "fixed"; e = true; fx = "target"; classify(this); special = SP_RETICLE_FRIENDLY }
+            }
             PartyStrip.Kind.SPELL, PartyStrip.Kind.SMART -> {
                 val s = pic.spell!!
                 val b = partyBtns.getOrPut("s$src:${s.i}:${pic.lit}") {

@@ -214,6 +214,10 @@ class PartyFixturesTest {
         assertTrue(PartyModel.offOnLeave(on))
         assertTrue(PartyModel.offOnLeave(on.copy(aside = "room")))      // suspended still counts: off is absolute
         assertFalse(PartyModel.offOnLeave(off)); assertFalse(PartyModel.offOnLeave(null))
+        // m132 (the user, 2026-11-11, a healer: "Party mode needs to be usable in combat"): never in a fight - Home's or the document's
+        assertFalse(PartyModel.offOnLeave(on, fight = true))
+        assertFalse(PartyModel.offOnLeave(on.copy(fight = true)))
+        assertFalse(PartyModel.offOnLeave(on.copy(fight = true, aside = "room")))
         assertTrue(PartyModel.leftRest(wasFull = false, nowFull = true))
         assertFalse(PartyModel.leftRest(wasFull = true, nowFull = true)); assertFalse(PartyModel.leftRest(wasFull = true, nowFull = false))
         // the tap is the add-on's own column (partycfg.pad.off)
@@ -226,7 +230,8 @@ class PartyFixturesTest {
         assertFalse(st.party!!.onLive)
         assertNull(st.move(PartyModel.Dir.DOWN))                        // no optimistic box move with Party mode off
     }
-    /** THE USER'S RULING: anything that takes the controller (a holder in a current interact document) ends Party mode, fights too */
+    /** THE USER'S RULING: anything that takes the controller (a holder in a current interact document) ends Party mode - out of
+     *  combat (m132: in a fight it is only suspended) */
     @Test fun takerEndsPartyMode() {
         val st = PartyModel.State()
         val on = PartyModel.parseParty(fx("party_three_on"))!!
@@ -241,9 +246,14 @@ class PartyFixturesTest {
         assertTrue(st.takerSeen("npc", 100L + PartyModel.TAKER_RETRY_MS))   // ... again while Party mode still says on (a lost tap)
         st.onParty(PartyModel.parseParty(fx("party_three_off"))!!, current = true, now = 3000L)
         assertFalse(st.takerSeen("npc", 9000L))                        // off: nothing to do
-        // the fight's own state does not matter: the tap (party col 11, a secure click) is the route in a fight
+        // m132: IN A FIGHT no holder ends it (no off tap): the party document's fight, or Home's own fight
         val fight = PartyModel.State(); fight.onParty(on.copy(fight = true), current = true, now = 0L)
-        assertTrue(fight.takerSeen("spells", 10L))
+        for (h in listOf("pad:radial", "pad:bar", "npc", "spells", "pad:home")) assertFalse(h, fight.takerSeen(h, 10L))
+        val homeFight = PartyModel.State(); homeFight.onParty(on, current = true, now = 0L)
+        assertFalse(homeFight.takerSeen("npc", 10L, fight = true))
+        // ... and the fight over, the same holder is a taker again (the add-on ends it out of combat too)
+        fight.onParty(on.copy(fight = false), current = true, now = 5000L)
+        assertTrue(fight.takerSeen("spells", 5010L))
         assertEquals(listOf("party" to 11), PartyTaps.off(PartyModel.parseCfg(fx("partycfg_full"))))
     }
 }
