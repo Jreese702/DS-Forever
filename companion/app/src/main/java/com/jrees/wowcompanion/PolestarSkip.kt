@@ -11,6 +11,10 @@ package com.jrees.wowcompanion
  * taps the "pnav" row: 38 then 10 = Skip, 38 then 11 = Previous. Its step doc says whether Skip is there ([PolestarStep.skip], an
  * older add-on: never) and how many skips can be undone ([PolestarStep.undo]); nothing to undo: Previous is hidden (Home's hints, the
  * Map room's legend) or dim (the wheel) and does nothing. Its answer {"type":"pskip", op, ok, why} says why a press did nothing.
+ * pk3 (the user's picks, 2026-11-12): "Work in fights too" - no combat refusal any more (Map.lua pk3 skips in a fight; the pnav row is
+ * a plain pad row, its taps reach the add-on in a fight as out of it); the answer carries u, so Previous is there AT ONCE after a Skip
+ * ([undoAfter]); every pnav tap is spaced across batches ([TapSpacing]) so two quick presses both land; a refused press from the pause
+ * wheel says why on the wheel's own line wherever it was opened ([noteWhere]).
  */
 object PolestarSkip {
     const val SAY = 38
@@ -40,12 +44,51 @@ object PolestarSkip {
         if (canPrev) "y" to PREV_WORD else null,
     )
 
-    /** the line for a refused press (the add-on's why), or null to say nothing */
+    const val NOTHING_LINE = "Nothing to undo"
+    const val NO_STEP_LINE = "No Polestar step"
+    /** pk3: Polestar's own call failed (an error of its own; never seen) */
+    const val REFUSED_LINE = "Polestar refused it"
+
+    /** the line for a refused press (the add-on's why), or null to say nothing (no why). pk3: no combat refusal any more */
     fun refusedLine(why: String?): String? = when (why) {
-        "combat" -> "After combat"
-        "nothing" -> "Nothing to undo"
-        "no Polestar", "no guide", "no step" -> "No Polestar step"
-        else -> null
+        null, "" -> null
+        "nothing" -> NOTHING_LINE
+        "no Polestar", "no guide", "no step" -> NO_STEP_LINE
+        else -> REFUSED_LINE
+    }
+
+    /** pk3: a press that cannot go now ([prev] with nothing to undo, or no step to skip): its line */
+    fun cantLine(prev: Boolean, canSkip: Boolean): String = if (prev && canSkip) NOTHING_LINE else NO_STEP_LINE
+
+    /**
+     * pk3 (the rough edge "Previous does nothing for ~1 s right after a Skip"): the undo count after an answer {"type":"pskip"} ([op],
+     * [ok], [u] = the add-on's count after the press, null from a pk1 add-on), from [cur]: the add-on's count when it says one, else
+     * an ok Skip +1 and an ok Previous -1 (never below 0); a refused press without a count leaves it
+     */
+    fun undoAfter(op: String, ok: Boolean, u: Int?, cur: Int): Int = when {
+        u != null && u >= 0 -> u
+        !ok -> cur
+        op == "skip" -> cur + 1
+        op == "prev" -> (cur - 1).coerceAtLeast(0)
+        else -> cur
+    }
+
+    /** where a refused press's line goes: the pause wheel's own line, the Map room's, Home's map, or nowhere */
+    enum class Where { WHEEL, MAP_ROOM, HOME_MAP, NONE }
+
+    /** a press from the pause wheel within this long of its answer: the answer's line goes on the wheel's line */
+    const val WHEEL_ANSWER_MS = 5_000L
+
+    /**
+     * pk3 (the rough edge "a refused Skip / Previous from the pause wheel shows no note outside Home and the Map room"): a refused
+     * answer's line goes where the press came from - pressed on the wheel ([wheelAt] its time, 0 none; [now]) the wheel's own line in
+     * any room; else in the Map room ([inMapRoom]) its line, else Home's map. An ok answer, or no line: nowhere
+     */
+    fun noteWhere(ok: Boolean, line: String?, now: Long, wheelAt: Long, inMapRoom: Boolean): Where = when {
+        ok || line == null -> Where.NONE
+        wheelAt > 0L && now - wheelAt in 0L..WHEEL_ANSWER_MS -> Where.WHEEL
+        inMapRoom -> Where.MAP_ROOM
+        else -> Where.HOME_MAP
     }
 
     /** the pause wheel's two slices' keys */

@@ -154,9 +154,94 @@ class PolestarSkipTest {
     }
 
     @Test fun aRefusedPressSaysWhyTersely() {
-        assertEquals("After combat", PolestarSkip.refusedLine("combat"))
+        // pk3 (the user's pick 2026-11-12, "Work in fights too"): no combat refusal any more; an error of Polestar's own: one line
+        assertEquals("Polestar refused it", PolestarSkip.refusedLine("combat"))
         assertEquals("Nothing to undo", PolestarSkip.refusedLine("nothing"))
         assertEquals("No Polestar step", PolestarSkip.refusedLine("no Polestar"))
-        assertNull(PolestarSkip.refusedLine("weird"))
+        assertEquals("Polestar refused it", PolestarSkip.refusedLine("Interface/AddOns/Polestar/Core/Engine.lua:12: oops"))
+        assertNull(PolestarSkip.refusedLine("")); assertNull(PolestarSkip.refusedLine(null))
+        assertEquals("Nothing to undo", PolestarSkip.cantLine(prev = true, canSkip = true))
+        assertEquals("No Polestar step", PolestarSkip.cantLine(prev = true, canSkip = false))
+        assertEquals("No Polestar step", PolestarSkip.cantLine(prev = false, canSkip = false))
+    }
+
+    // pk3 rough edge a): "Previous does nothing for ~1 s right after a Skip" - the ok answer's count is taken at once
+    @Test fun theUndoCountFollowsTheOkAnswerAtOnce() {
+        val st = step(sk = true, u = 0)!!
+        assertFalse(PolestarSkip.canPrev(true, st))
+        val n = PolestarSkip.undoAfter("skip", ok = true, u = 1, cur = st.undo)
+        val after = st.withUndo(n)
+        assertEquals(1, after.undo); assertTrue(PolestarSkip.canPrev(true, after))
+        assertEquals("the rest of the step kept", st.sig(), after.sig()); assertTrue(after.skip)
+        assertEquals(0, PolestarSkip.undoAfter("prev", ok = true, u = 0, cur = 1))
+        // a pk1 answer (no u): +1 / -1 for an ok press, never below 0; a refusal leaves it
+        assertEquals(3, PolestarSkip.undoAfter("skip", ok = true, u = null, cur = 2))
+        assertEquals(1, PolestarSkip.undoAfter("prev", ok = true, u = null, cur = 2))
+        assertEquals(0, PolestarSkip.undoAfter("prev", ok = true, u = null, cur = 0))
+        assertEquals(2, PolestarSkip.undoAfter("prev", ok = false, u = null, cur = 2))
+        // a refusal WITH the add-on's count: the count (a skip undone in Polestar's own window meanwhile)
+        assertEquals(0, PolestarSkip.undoAfter("prev", ok = false, u = 0, cur = 2))
+        assertEquals(0, st.withUndo(-3).undo)
+    }
+
+    // pk3 rough edge c): a refused Skip / Previous from the pause wheel says why on the wheel's own line, wherever it was opened
+    @Test fun aRefusedWheelPressSaysWhyOnTheWheel() {
+        val now = 100_000L
+        assertEquals(PolestarSkip.Where.WHEEL, PolestarSkip.noteWhere(false, "Nothing to undo", now, now - 300L, inMapRoom = false))
+        assertEquals("the Map room too", PolestarSkip.Where.WHEEL, PolestarSkip.noteWhere(false, "No Polestar step", now, now - 300L, inMapRoom = true))
+        assertEquals(PolestarSkip.Where.MAP_ROOM, PolestarSkip.noteWhere(false, "No Polestar step", now, 0L, inMapRoom = true))
+        assertEquals(PolestarSkip.Where.HOME_MAP, PolestarSkip.noteWhere(false, "No Polestar step", now, 0L, inMapRoom = false))
+        assertEquals("a wheel press long ago: not the wheel's", PolestarSkip.Where.HOME_MAP,
+            PolestarSkip.noteWhere(false, "No Polestar step", now, now - PolestarSkip.WHEEL_ANSWER_MS - 1L, inMapRoom = false))
+        assertEquals(PolestarSkip.Where.NONE, PolestarSkip.noteWhere(true, null, now, now - 300L, inMapRoom = false))
+        assertEquals(PolestarSkip.Where.NONE, PolestarSkip.noteWhere(false, null, now, now - 300L, inMapRoom = false))
+        // the words are terse and have ES / FR
+        val es = java.io.File(i18nDir(), "es.json").readText(); val fr = java.io.File(i18nDir(), "fr.json").readText()
+        for (w in listOf(PolestarSkip.NOTHING_LINE, PolestarSkip.NO_STEP_LINE, PolestarSkip.REFUSED_LINE)) {
+            assertTrue("es: $w", es.contains("\"$w\":")); assertTrue("fr: $w", fr.contains("\"$w\":"))
+            assertTrue("terse: $w", w.split(" ").size <= 4)
+        }
+        assertFalse("no combat line left", es.contains("\"After combat\"") || fr.contains("\"After combat\""))
+    }
+    private fun i18nDir(): java.io.File {
+        var d: java.io.File? = java.io.File("").absoluteFile
+        while (d != null) {
+            val f = java.io.File(d, "companion/app/src/main/assets/companion/i18n")
+            if (f.isDirectory) return f
+            d = d.parentFile
+        }
+        error("i18n folder not found")
+    }
+
+    // pk3 rough edge b): "Two quick presses can lose the second" - every pnav cell is spaced >= MIN_MS (400 ms) across batches
+    @Test fun twoQuickSkipsAreSpacedAcrossBatches() {
+        val c = TapSpacing.Clock()
+        val skip = PolestarSkip.cols(prev = false).map { PolestarNav.ROW to it }
+        assertEquals(0L, TapSpacing.lead(c, 1_000L, skip, 120L))
+        // the first Skip ran 1000..1200 (38 at 1000, 10 at 1120, the rest); the shell is free at once for the second
+        TapSpacing.ran(c, 1_200L, skip, 120L)
+        val lead = TapSpacing.lead(c, 1_200L, skip, 120L)
+        assertTrue("waits ($lead ms)", lead > 0L)
+        val lastSay = c.lastAt[PolestarNav.ROW to PolestarSkip.SAY]!!
+        assertTrue("38 recorded no earlier than it ran ($lastSay)", lastSay >= 1_000L)
+        assertTrue("the second 38 >= MIN_MS after the first", 1_200L + lead - lastSay >= TapSpacing.MIN_MS)
+        assertTrue("the second 10 too", 1_200L + lead + 120L - c.lastAt[PolestarNav.ROW to PolestarSkip.SKIP]!! >= TapSpacing.MIN_MS)
+        // Skip then Previous: 38 is shared, so it is spaced as well
+        val prev = PolestarSkip.cols(prev = true).map { PolestarNav.ROW to it }
+        assertTrue(TapSpacing.lead(c, 1_200L, prev, 120L) > 0L)
+        // long after: no wait; other rows never wait; game points never
+        assertEquals(0L, TapSpacing.lead(c, 5_000L, skip, 120L))
+        TapSpacing.ran(c, 6_000L, listOf("qact" to 3), 0L)
+        assertEquals(0L, TapSpacing.lead(c, 6_000L, listOf("qact" to 3), 0L))
+        assertEquals(0L, TapSpacing.lead(c, 6_000L, null, 0L))
+        TapSpacing.ran(c, 6_000L, null, 0L)
+        // PolestarNav's own 38 then 8 right behind a Skip waits too
+        TapSpacing.ran(c, 7_000L, skip, 120L)
+        assertTrue(TapSpacing.lead(c, 7_000L, listOf(PolestarNav.ROW to PolestarNav.PS_SAY, PolestarNav.ROW to PolestarNav.PS_ON), 0L) > 0L)
+        assertTrue("never more than MIN_MS", TapSpacing.lead(c, 7_000L, skip, 0L) <= TapSpacing.MIN_MS)
+        // review fix: the margin over TapPad's 0.25 s guard covers a press handled one slow frame late (a fight at ~7 fps), less the
+        // ran() estimate's ~20 ms of slack (TAP_REST 20 + TAIL 30 against TAIL_MIN_MS 30)
+        assertTrue("MIN_MS covers the 0.25 s guard plus a slow frame", TapSpacing.MIN_MS - TapSpacing.FRAME_MS >= 250L)
+        assertTrue("a frame of 150 ms is budgeted", TapSpacing.FRAME_MS >= 150L)
     }
 }

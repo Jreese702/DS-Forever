@@ -195,8 +195,12 @@ def main():
     G.A6603 = True
     G.FIRE("PLAYER_ENTER_COMBAT")
     chk("hub30: an attack started out of a fight with a target: off at once (%s)" % cv(), cv() == "0")
+    # (hub44 review fix: a Mark SENT within PULL_UNDO_S of the attack start is the macro's own Mark pull, 5f; hub30's "Mark after a
+    # melee pull" comes later than that)
+    adv(1.0)
     G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g1", 1130)
     G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g2", 14325)
+    G.FIRE("UNIT_SPELLCAST_SUCCEEDED", "player", "g2", 14325)
     chk("hub30: Hunter's Mark (any rank) does not turn it back on (%s)" % cv(), cv() == "0")
     G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g3", 75)
     G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g4", 6603)
@@ -249,8 +253,44 @@ def main():
     chk("hub43 4c: a SUCCEEDED alone is no press: a plain pull, off (%s)" % cv(), cv() == "0")
     fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 1130); G.FIRE("PLAYER_ENTER_COMBAT")
     chk("hub43 4d: a failed Hunter's Mark is still a plain pull: off (%s)" % cv(), cv() == "0")
+    # hub44 (the user's pick, 2026-11-12: "Mark pull keeps Auto Shot"): a Hunter's Mark pull is no plain melee pull any more
     fresh(); sent(1130); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
-    chk("hub43 5: a Hunter's Mark pull is still a plain pull: off (%s)" % cv(), cv() == "0")
+    chk("hub44 5: a Hunter's Mark pull (its SEND, the attack start) keeps Auto Shot: on (%s, 0 writes %d)" % (cv(), len(zeros())),
+        cv() == "1" and not zeros())
+    fresh(); G.FIRE("UNIT_SPELLCAST_SUCCEEDED", "player", "gm", 14325); adv(1.2); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    chk("hub44 5b: a Mark rank's SUCCEEDED, the attack start 1.2 s later: on (%s, 0 writes %d)" % (cv(), len(zeros())),
+        cv() == "1" and not zeros())
+    L2.execute("C_Spell.GetSpellName = function(id) if id == 1130 or id == 14325 or id == 99999 then return [[Hunter's Mark]] end return 'Spell' .. id end")
+    fresh(); sent(99999); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    chk("hub44 5c: a Mark known by its name only: on (%s)" % cv(), cv() == "1" and not zeros())
+    fresh(); sent(1130); adv(2.0); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    chk("hub44 5d: a Mark 2 s before the attack start is past MARK_S: a plain pull, off (%s)" % cv(), cv() == "0")
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    G.WRITES = L2.table()
+    sent(1130); G.FIRE("UNIT_SPELLCAST_SUCCEEDED", "player", "gm", 1130); adv(0.2); G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); adv(0.4)
+    ones = [G.WRITES[i] for i in range(1, len(G.WRITES) + 1) if G.WRITES[i].v == "1"]
+    chk("hub44 5e: Mark alone never turns it on: after a plain pull's 0, Mark's SEND / SUCCEEDED and the fight's start leave it off (%s, 1 writes %d)"
+        % (cv(), len(ones)), cv() == "0" and not ones)
+    chk("hub44: MARK_S is 1.5 s", G.WowCompanion.hub.SHOT_T.MARK_S == 1.5)
+    # hub44 review fix: a controller Mark is PadMap's attack-on-cast macro (/startattack THEN /cast Hunter's Mark): the attack start
+    # comes first and writes the plain pull's 0, then Mark's SEND undoes that same press's 0 (within PULL_UNDO_S, out of the lockdown)
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); sent(1130); G.FIRE("UNIT_SPELLCAST_SUCCEEDED", "player", "gm", 1130); adv(0.4)
+    ones = [G.WRITES[i] for i in range(1, len(G.WRITES) + 1) if G.WRITES[i].v == "1"]
+    chk("hub44 5f: the macro order (attack start, then Mark's SEND): on again, out of the lockdown (%s, 1 writes %d)" % (cv(), len(ones)),
+        cv() == "1" and len(ones) == 1 and ones[0].lock is False)
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.1); sent(14325); adv(0.4)
+    chk("hub44 5g: the macro order with a Mark rank 0.1 s behind: on (%s)" % cv(), cv() == "1")
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(2.0); G.WRITES = L2.table(); sent(1130); adv(0.4)
+    ones = [G.WRITES[i] for i in range(1, len(G.WRITES) + 1) if G.WRITES[i].v == "1"]
+    chk("hub44 5h: a Mark 2 s after a plain pull never turns it on (%s, 1 writes %d)" % (cv(), len(ones)), cv() == "0" and not ones)
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.05); G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); G.WRITES = L2.table()
+    sent(1130); adv(0.4)
+    ones = [G.WRITES[i] for i in range(1, len(G.WRITES) + 1) if G.WRITES[i].v == "1"]
+    chk("hub44 5i: a Mark inside the fight's lockdown writes nothing (%s, 1 writes %d)" % (cv(), len(ones)), cv() == "0" and not ones)
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.1); sent(1130); G.WRITES = L2.table(); sent(1130); adv(0.4)
+    ones = [G.WRITES[i] for i in range(1, len(G.WRITES) + 1) if G.WRITES[i].v == "1"]
+    chk("hub44 5j: the undo is once per pull (a second Mark writes nothing more: %d)" % len(ones), not ones)
+    chk("hub44: PULL_UNDO_S is 0.3 s", G.WowCompanion.hub.SHOT_T.PULL_UNDO_S == 0.3)
     fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 3044); adv(2.5); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
     c_fail = cv()
     G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); c_rd = cv(); sent(3044)
@@ -337,7 +377,8 @@ def main():
     G3.ROWS.uisw(None, SW3.UFT_OFF)
     chk("hub32: our bar off again: lifted again (%s)" % G3.ComboFrame.ipa, G3.ComboFrame.ipa is True)
     hubsrc = open(HUB, encoding="utf-8").read()
-    chk("hub40: the version tag (hub38 the player / pet row + side tab art; hub39 int/1429; hub40 the party bars one column wide; hub41 the tab on a K change, pitch 64; hub42 the left column / the grid under the HUD)", 'local HV = "hub43"' in hubsrc and "hub42:" in hubsrc)
+    chk("hub40: the version tag (hub38 the player / pet row + side tab art; hub39 int/1429; hub40 the party bars one column wide; hub41 the tab on a K change, pitch 64; hub42 the left column / the grid under the HUD)", 'local HV = "hub44"' in hubsrc and "hub42:" in hubsrc and "hub43:" in hubsrc
+        and "Mark pull keeps Auto Shot" in hubsrc)
     # hub31 / hub36 POLESTAR ON THE TOP SCREEN (the user, 2026-11-11, the switch on: "The polestar window randomly reappears a lot"):
     # Polestar 0.2.5 fades its windows back by itself with no Show (every fight's start / end: UI/GuideFrame.lua:2528-2540 ->
     # GF.ApplyAlpha(true) -> Anim.To -> o:SetAlpha per frame), fades each window in as it shows, and makes windows later. A stub with a

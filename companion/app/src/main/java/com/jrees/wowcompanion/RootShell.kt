@@ -38,6 +38,12 @@ object RootShell {
         handler.post { done(runNow(script, timeoutMs)) }
     }
 
+    /** [run] with the script built on the shell's thread right as it starts ([build]; pk3 TapSpacing: a wait measured from the
+     *  shell's own start) */
+    fun runBuilt(build: () -> String, timeoutMs: Long = 10_000L, done: (Result) -> Unit = {}) {
+        handler.post { done(runNow(build(), timeoutMs)) }
+    }
+
     /** the same, BLOCKING: only for callers already on a worker thread of their own */
     fun runBlocking(script: String, timeoutMs: Long = 10_000L): Result {
         if (Thread.currentThread() === thread) return runNow(script, timeoutMs)
