@@ -22,7 +22,9 @@ class PartyTapsTest {
         assertEquals(listOf("party" to 12), PartyTaps.focus(cfg, 0))
         assertEquals(listOf("party" to 22), PartyTaps.resend(cfg))
         assertEquals(listOf("party" to 35), PartyTaps.menuDone(cfg))
-        assertNull(PartyTaps.choose(cfg, 5)); assertNull(PartyTaps.menu(cfg, -1))
+        // m131: the pet's pick cell is pick + 5; no player menu / focus cell for it
+        assertEquals(listOf("party" to 5), PartyTaps.choose(cfg, 5)); assertNull(PartyTaps.choose(cfg, 6))
+        assertNull(PartyTaps.menu(cfg, 5)); assertNull(PartyTaps.focus(cfg, 5)); assertNull(PartyTaps.menu(cfg, -1))
     }
 
     @Test fun smartYPartyListOpsAreOneBatch() {

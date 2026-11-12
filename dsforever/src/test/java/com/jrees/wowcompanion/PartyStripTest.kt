@@ -63,9 +63,10 @@ class PartyStripTest {
     @Test fun dimArrowsPerNAndBox() {
         assertEquals(mapOf(Dir.UP to false, Dir.DOWN to false, Dir.LEFT to false, Dir.RIGHT to false), PartyStrip.arrows(1, 1))
         assertEquals(mapOf(Dir.UP to false, Dir.DOWN to true, Dir.LEFT to false, Dir.RIGHT to false), PartyStrip.arrows(2, 1))
-        // m129: one column; Left / Right never lit (kept for raids)
-        assertEquals(mapOf(Dir.UP to true, Dir.DOWN to true, Dir.LEFT to false, Dir.RIGHT to false), PartyStrip.arrows(4, 3))
-        assertEquals(mapOf(Dir.UP to true, Dir.DOWN to false, Dir.LEFT to false, Dir.RIGHT to false), PartyStrip.arrows(5, 5))
+        // m131 adaptive rows: n 4 = 1 | 2 | (3 4); n 5 = 1 | (2 3) | (4 5) - Left / Right lit inside a shared row
+        assertEquals(mapOf(Dir.UP to true, Dir.DOWN to false, Dir.LEFT to false, Dir.RIGHT to true), PartyStrip.arrows(4, 3))
+        assertEquals(mapOf(Dir.UP to true, Dir.DOWN to false, Dir.LEFT to true, Dir.RIGHT to false), PartyStrip.arrows(5, 5))
+        assertEquals(mapOf(Dir.UP to true, Dir.DOWN to true, Dir.LEFT to false, Dir.RIGHT to false), PartyStrip.arrows(3, 2))
     }
 
     @Test fun triggerPlates() {

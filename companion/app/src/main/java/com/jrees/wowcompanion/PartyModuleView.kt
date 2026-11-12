@@ -15,8 +15,9 @@ import com.jrees.wowcompanion.PartyLayout.Box
 import kotlin.math.abs
 
 /**
- * PARTY MODE'S HOME MODULE (party_design.md C and the user's decisions 2026-11-11): ONE COLUMN of plates, you first - the top
- * screen's order - beside the Select tab, which always stands (off: the way in; on: lit gold, the B under it, the gold notch at the
+ * PARTY MODE'S HOME MODULE (party_design.md C and the user's decisions 2026-11-11; m131 ADAPTIVE ROWS: the entries you, your pet
+ * while out, party1..4 in min(n, 3) rows, the bottom max(0, n - 3) shared, the pet's cell the narrower - [PartyLayout.module]) beside
+ * the Select tab, which always stands (off: the way in; on: lit gold, the B under it, the gold notch at the
  * pick; not bound: dim with a lock). NO health or mana here (the user: "give up on displaying HP/Mana down there").
  *
  * A plate: the class stripe, the class / role icon, the name in class colour with the level after it, a skull (dead) or a plug
@@ -42,7 +43,8 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     val tab = SelectTab()
 
     /** the module in this view's own px */
-    fun module(): PartyLayout.Module = PartyLayout.module(mode, live.party?.n ?: 1, top = 0f, left = 0f, right = width.toFloat())
+    fun module(): PartyLayout.Module =
+        PartyLayout.module(mode, live.party?.n ?: 1, pet = live.party?.pet == true, top = 0f, left = 0f, right = width.toFloat())
 
     /** a Select press the app's reader saw: the pressed look for 120 ms */
     fun selectPressed() { tab.press(SystemClock.uptimeMillis()); invalidate() }
@@ -81,6 +83,7 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     }
 
     private fun classColour(m: PartyModel.Member): Int {
+        if (m.isPet) return PET_RGB                                    // m131: the pet strip's green (Trail's HEALTH_RGB)
         m.col?.let { s -> runCatching { return (s.toLong(16) or 0xFF000000L).toInt() } }
         return Theme.classColourOf(m.c)
     }
@@ -109,8 +112,9 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         if (icon != null) bmp(c, icon, ib, if (mem.dead) 140 else 255)
         else { pFill.color = col; c.drawCircle(ib.cx, ib.cy, ib.w * 0.34f, pFill) }
         // the chips first (their count fixes the name's room): the picked plate only, the layer on show
-        val chips = if (picked) chipPics(cfg, party, box) else emptyList()
         val glyphKey = if (on) LbMap.keyOf(mem.u) else null
+        // m131: as many as fit with the name readable (fewer, smaller, on a shared row's narrow cell)
+        val chips = if (picked) chipPics(cfg, party, box).let { it.take(PartyLayout.chipsFit(p, mode, it.size, glyphKey != null)) } else emptyList()
         val nx = PartyLayout.nameX(p, mode)
         val room = PartyLayout.nameRoom(p, mode, chips.size, glyphKey != null)
         nameP.textSize = PartyLayout.nameSize(mode)
@@ -130,9 +134,9 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         for ((j, b) in PartyLayout.chips(p, chips.size).withIndex()) {
             val (face, pic) = chips[j]
             val art = if (pic.kind == PartyStrip.Kind.INSPECT) UiKit.tex("fixed_inspect") else pic.spell?.let { Icons.get(it.i) }
-            UiKit.spell(c, art, b.l, b.t, PartyLayout.CHIP, if (pic.lit) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL, onDark = true)
+            UiKit.spell(c, art, b.l, b.t, b.w, if (pic.lit) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL, onDark = true)
             val bg = PartyLayout.badge(b)
-            UiKit.pad(c, Glyphs.translate("rev_$face", CastSettings.buttonLayout), bg.cx, bg.cy, PartyLayout.BADGE)
+            UiKit.pad(c, Glyphs.translate("rev_$face", CastSettings.buttonLayout), bg.cx, bg.cy, bg.w)
         }
     }
 
@@ -255,6 +259,8 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         const val LONG_MS = 450L
         /** a tap moves no more than this */
         const val SLOP = 24f
+        /** m131: the pet's colour - the HUD pet strip's green (Trail.lua HEALTH_RGB 0.12 / 0.86 / 0.12) */
+        val PET_RGB = Color.rgb(31, 219, 31)
     }
 }
 

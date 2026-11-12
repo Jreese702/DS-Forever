@@ -3,7 +3,7 @@ package com.jrees.wowcompanion
 /**
  * PARTY MODE'S TAPS (PARTY_BUILD.md 2.2-2.4): the cells of every action, from `partycfg.pad` only (never a constant of the app's).
  * Each function returns ONE batch for TapBridge.taps, or null when a column (or the cfg) is missing: that action is unavailable.
- * Pure, JVM-tested (PartyTapsTest). `i` = the member's unit index (0 = player, 1..4 = partyN).
+ * Pure, JVM-tested (PartyTapsTest). `i` = the member's unit index (0 = player, 1..4 = partyN, 5 = the pet: m131).
  */
 typealias PartyCells = List<Pair<String, Int>>
 
@@ -18,11 +18,12 @@ object PartyTaps {
     /**
      * m129 A PLATE'S TAP (party_design.md C, Touch): `pick + i`, always the same cell - the add-on's secure snippet decides what it
      * does: Party mode off = Target; on, another member = the pick moves there (nothing cast); on, the picked member = the Touch action
-     * (Target, or the Touch spell). Named apart from [pick] (the Controller tab's slot picker).
+     * (Target, or the Touch spell). Named apart from [pick] (the Controller tab's slot picker). m131: the pet's cell is `pick + 5`
+     * (PadMap PM.PET_COL); the menu / focus cells stay you and party1..4 (the pet has no player menu here).
      */
     fun choose(cfg: PartyModel.Cfg?, i: Int): PartyCells? {
         val p = cfg?.pad ?: return null
-        if (i !in 0..4) return null
+        if (i !in 0..PartyModel.PET_I) return null
         return one(at(p.row, p.pick, i))
     }
 
