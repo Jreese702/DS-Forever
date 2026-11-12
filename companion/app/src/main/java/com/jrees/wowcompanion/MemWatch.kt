@@ -1,8 +1,13 @@
 package com.jrees.wowcompanion
 
+import android.content.ComponentCallbacks2
+import android.content.Context
+import android.content.res.Configuration
 import android.os.Debug
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 
 /**
@@ -46,11 +51,12 @@ object MemWatch {
         }.onFailure { Log.i(TAG, "heap dump failed: ${it.javaClass.simpleName}: ${it.message}") }
     }
 
-    fun start() {
+    fun start(ctx: Context? = null) {
         if (thread != null) return
         val t = HandlerThread("WCMEM").also { it.start() }
         thread = t
         val h = Handler(t.looper)
+        handler = h
         val tick = object : Runnable {
             override fun run() {
                 runCatching { val l = line(); Log.i(TAG, l); keep(l) }
@@ -59,7 +65,114 @@ object MemWatch {
             }
         }
         h.postDelayed(tick, 5_000L)
+        // 1.0.28 (the 1.0.25 / 1.0.26 low-memory reports #159 - #193): every second the device's free memory (the low between two lines:
+        // #193's last line, 5 s before the kill, said 4.8 GB free) and the main thread's beat (the ANRs #177 #191: what blocked it)
+        val main = Handler(Looper.getMainLooper())
+        val fast = object : Runnable {
+            override fun run() {
+                runCatching { sampleFree() }
+                runCatching { checkStall(main) }
+                h.postDelayed(this, FAST_MS)
+            }
+        }
+        h.postDelayed(fast, FAST_MS)
+        ctx?.applicationContext?.registerComponentCallbacks(object : ComponentCallbacks2 {
+            override fun onTrimMemory(level: Int) { trimmed(level) }
+            override fun onConfigurationChanged(newConfig: Configuration) {}
+            @Deprecated("Deprecated in Java") override fun onLowMemory() { trimmed(LOW_MEMORY) }
+        })
     }
+    @Volatile private var handler: Handler? = null
+
+    // ---------------------------------------------------------------- 1.0.28: the kills' missing facts (issues #159 - #193, #125, #177 #191)
+    private const val FAST_MS = 1_000L
+
+    /** the lowest MemAvailable (KB) since the last line, -1 = none read yet */
+    @Volatile private var lowKb = -1L
+    private val SPACES = Regex("\\s+")
+    private fun sampleFree() {
+        val kb = java.io.File("/proc/meminfo").useLines { ls -> ls.firstOrNull { it.startsWith("MemAvailable:") } }
+            ?.split(SPACES)?.getOrNull(1)?.toLongOrNull() ?: return
+        lowKb = lowest(lowKb, kb)
+    }
+    /** the low-water mark: [kb] when none yet ([was] < 0) or lower */
+    fun lowest(was: Long, kb: Long): Long = if (was < 0 || kb < was) kb else was
+
+    /**
+     * THE SYSTEM'S OWN WARNINGS (onTrimMemory): logged at once with the level, and handed to what registered a trim ([onTrim]: the Map
+     * room's pictures while it is not on screen). Whether Android warns DS Forever before its low-memory kills at all is what the next
+     * reports say ("trim ... ago" on every line after one).
+     */
+    const val LOW_MEMORY = 1000
+    private val trimmers = LinkedHashMap<String, (Int) -> Long>()
+    /** [f] gives memory back for a trim level and says how many bytes it let go; the last registration of a name wins */
+    @Synchronized fun onTrim(name: String, f: (Int) -> Long) { trimmers[name] = f }
+    /** a cache of something not on screen lets go at Android's running-low or worse (and at every background level) */
+    fun hiddenLetsGo(level: Int, shown: Boolean): Boolean = !shown && level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW
+    @Volatile private var trimLevel = -1
+    @Volatile private var trimAt = 0L
+    /** a trim from Android (the main thread): logged, handed on, and a line at once */
+    fun trimmed(level: Int) {
+        trimLevel = level; trimAt = SystemClock.uptimeMillis()
+        val freed = synchronized(this) { trimmers.toList() }.map { (n, f) -> n to runCatching { f(level) }.getOrDefault(-1L) }
+        Log.i(TAG, "trim from Android: ${trimName(level)}" + if (freed.isEmpty()) "" else
+            " (let go: ${freed.joinToString { (n, b) -> "$n ${if (b < 0) "failed" else "${mbB(b)} MB"}" }})")
+        handler?.post { runCatching { val l = line(); Log.i(TAG, l); keep(l) } }
+    }
+    fun trimName(level: Int): String = when (level) {
+        ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> "running-moderate"
+        ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> "running-low"
+        ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> "running-critical"
+        ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> "ui-hidden"
+        ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> "background"
+        ComponentCallbacks2.TRIM_MEMORY_MODERATE -> "moderate"
+        ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> "complete"
+        LOW_MEMORY -> "low-memory"
+        else -> "level $level"
+    }
+
+    /**
+     * THE MAIN THREAD'S BEAT: a stamp posted to it every second; when the stamp is older than [STALL_MS] the main thread's own stack is
+     * logged once for that stall (before Android's 5 s ANR; the ANR traces in the reports were cut before the main thread).
+     */
+    const val STALL_MS = 2_500L
+    @Volatile private var beat = 0L
+    @Volatile private var stallOf = -1L
+    @Volatile private var beatPosted = false
+    private fun checkStall(main: Handler) {
+        val now = SystemClock.uptimeMillis()
+        if (beat == 0L) beat = now
+        if (!beatPosted) { beatPosted = true; main.post { beat = SystemClock.uptimeMillis(); beatPosted = false } }
+        val blocked = now - beat
+        if (stalled(blocked, beat, stallOf)) {
+            stallOf = beat
+            val l = stallLine(blocked, Looper.getMainLooper().thread.stackTrace.map { it.toString() })
+            Log.w(TAG, l); keep(l)
+        }
+    }
+    /** a stall worth its one line: blocked [STALL_MS] or more, and not this beat's stall again */
+    fun stalled(blockedMs: Long, beat: Long, reportedBeat: Long): Boolean = blockedMs >= STALL_MS && reportedBeat != beat
+    /** "stall: the main thread blocked 3.0 s: at a.b(F.kt:1) <- at c.d(...)": [frames] innermost first, at most [max] */
+    fun stallLine(blockedMs: Long, frames: List<String>, max: Int = 24): String =
+        "stall: the main thread blocked ${blockedMs / 100 / 10.0} s: " +
+            frames.take(max).joinToString(" <- ") { "at $it" } + if (frames.size > max) " <- ..." else ""
+
+    /** the GPU driver's own total (Adreno's kgsl), bytes; null when this device does not let us read it */
+    @Volatile private var gpuReadable = true
+    private fun gpuBytes(): Long? {
+        if (!gpuReadable) return null
+        val v = runCatching { java.io.File("/sys/class/kgsl/kgsl/page_alloc").readText().trim().toLong() }.getOrNull()
+        if (v == null) gpuReadable = false
+        return v
+    }
+
+    /** the line's last part: "low 317 MB, jheap 133/512 MB, gpu 880 MB, trim running-low 12 s ago" (pure: the tests) */
+    fun extras(lowKb: Long, jUsed: Long, jMax: Long, gpu: Long?, trimLevel: Int, trimAgoMs: Long): String = buildList {
+        if (lowKb >= 0) add("low ${mb(lowKb)} MB")
+        add("jheap ${mbB(jUsed)}/${mbB(jMax)} MB")
+        gpu?.let { add("gpu ${mbB(it)} MB") }
+        if (trimLevel >= 0) add("trim ${trimName(trimLevel)} ${trimAgoMs / 1000} s ago")
+    }.joinToString(", ")
 
     /** the history in its own file (the 8 GB test, 2026-11-08: the low-memory killer's thousands of log lines pushed WCMEM out of the
      *  log), newest last, at most [KEEP] lines; crash reports attach it (ProblemReport's memory.txt) */
@@ -74,8 +187,8 @@ object MemWatch {
     fun history(): String = runCatching { if (file.isFile) file.readText() else "" }.getOrDefault("")
 
     @Volatile private var lastPssMb = 0L
-    private fun mb(kb: Long) = (kb + 512) / 1024
-    private fun mbB(b: Long) = (b + 512 * 1024) / (1024 * 1024)
+    internal fun mb(kb: Long) = (kb + 512) / 1024
+    internal fun mbB(b: Long) = (b + 512 * 1024) / (1024 * 1024)
 
     /** one line: "pss 1187 MB (java 29, native 974, gfx 146, code 19) heap 1061/1179 MB | minimap 22, icons 9, ... | art kit, game up" */
     fun line(): String {
@@ -96,7 +209,11 @@ object MemWatch {
             runCatching { IndoorSchedulerStep.status?.let { s -> add("indoor ${s.phase.name.lowercase()}${if (s.now.isNotEmpty()) " " + s.now.take(24) else ""}") } }
             add(if (LauncherHooks.gameUp()) "game up" else "game down")
         }.joinToString(", ")
-        return "pss ${mb(pss)} MB ($parts) $heap | ${device()} | $caches | $doing"
+        val rt = Runtime.getRuntime()
+        val low = lowKb; lowKb = -1L                                  // the low since the last line, then the next window
+        val more = extras(low, rt.totalMemory() - rt.freeMemory(), rt.maxMemory(), gpuBytes(), trimLevel,
+            if (trimAt > 0L) SystemClock.uptimeMillis() - trimAt else 0L)
+        return "pss ${mb(pss)} MB ($parts) $heap | ${device()} | $caches | $doing | $more"
     }
 
     /**

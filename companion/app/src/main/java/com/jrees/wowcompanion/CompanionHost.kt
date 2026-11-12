@@ -619,7 +619,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         homeView.onBHome = { strip.homePressed() }
         partyWire()
         MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
-        MemWatch.start()                                                  // WCMEM: where the memory goes (the 1.0.17 low-memory kills)
+        MemWatch.start(this)                                              // WCMEM: where the memory goes (the 1.0.17 low-memory kills); 1.0.28: Android's trims
         homeView.onPartyLeaveRest = { partyLeaveHome("a Home module full screen") }
         // Home's controller reader passes each held mask to Interact's pop-up while it shows: its Make Space ring follows the real A
         // press (display only; one getevent). In a room no reader of Home's runs: the ring falls back to Interact's document

@@ -82,6 +82,41 @@ object LogSieve {
         return out.toString().trimEnd()
     }
 
+    /**
+     * AN ANR's THREADS, MAIN FIRST (issues #153 #177 #191, 1.0.24 - 1.0.25 "stopped responding": the uploaded crash record is cut at
+     * 15 000 characters, and Android's ANR trace opens with ~20 KB of the runtime's own stats, so every report ended inside the "main"
+     * thread's header - the one stack that says what blocked). A text with a "---------- Trace ----------" part and a "main" thread:
+     * its head, then the main thread, then the threads running our own code (com.jrees / app.gamenative / com.winlator), then the
+     * rest as it was. Anything else comes back unchanged. Pure.
+     */
+    fun traceFirst(text: String): String {
+        val mark = text.indexOf(TRACE_MARK)
+        if (mark < 0) return text
+        val head = text.substring(0, mark + TRACE_MARK.length)
+        val lines = text.substring(mark + TRACE_MARK.length).split('\n')
+        // the blocks: a thread starts at a line `"name" ... prio=.. tid=..` and ends at the first blank line
+        val blocks = ArrayList<IntRange>()
+        var i = 0
+        while (i < lines.size) {
+            if (THREAD_START.containsMatchIn(lines[i])) {
+                var j = i
+                while (j + 1 < lines.size && lines[j + 1].isNotBlank()) j++
+                blocks += i..j; i = j + 1
+            } else i++
+        }
+        val main = blocks.firstOrNull { lines[it.first].startsWith("\"main\"") } ?: return text
+        val ours = blocks.filter { b -> b != main && b.any { k -> OUR_FRAME.containsMatchIn(lines[k]) } }
+        val moved = HashSet<Int>().apply { (listOf(main) + ours).forEach { addAll(it) } }
+        val out = StringBuilder(head).append("\n[the main thread first, then the threads in our code; the full trace follows]\n")
+        for (b in listOf(main) + ours) { for (k in b) out.append(lines[k]).append('\n'); out.append('\n') }
+        out.append("[the rest of the trace]\n")
+        lines.forEachIndexed { k, l -> if (k !in moved) out.append(l).append('\n') }
+        return out.toString().trimEnd() + "\n"
+    }
+    private const val TRACE_MARK = "---------- Trace ----------"
+    private val THREAD_START = Regex("""^"[^"]*".*\b(prio=\d+|tid=\d+)""")
+    private val OUR_FRAME = Regex("""\bat (com\.jrees\.|app\.gamenative\.|com\.winlator\.)""")
+
     /** a game crash report's head (the time, the command, the exception, the first stack lines): [maxLines] lines, nothing after */
     fun gameCrashHead(text: String, maxLines: Int = 60): String =
         text.lineSequence().take(maxLines).joinToString("\n") + "\n[the rest of the game's report is left out]"

@@ -37,9 +37,13 @@ object ReportUpload {
         var logs = file("logs.txt").let { if (it.length > MAX_LOGS - dxvk.length) "[older lines cut]\n" + it.takeLast(MAX_LOGS - dxvk.length) else it }
             .let { it + dxvk }
         // the crash records, ours (DS Forever's) and the game's heads, at the very END: the trims keep the newest end (issue #9)
+        // an ANR's main thread first (LogSieve.traceFirst: #153 #177 #191 were cut inside the runtime's stats before it)
         val crashText = report.files.filter { it.first.startsWith("crashes/") || it.first.startsWith("game-crashes/") }
-            .joinToString("") { (n, t) -> "\n\n===== $n =====\n" + t.take(15_000) }.takeLast(30_000)
-        logs = logs.takeLast(MAX_LOGS - crashText.length) + crashText
+            .joinToString("") { (n, t) -> "\n\n===== $n =====\n" + LogSieve.traceFirst(t).take(15_000) }.takeLast(30_000)
+        // the memory watch's newest lines (MemWatch's mem.log) before them: the 1.0.25 / 1.0.26 low-memory reports (#187 #188) carried
+        // 1 - 4 WCMEM lines of the killed run (the logcat ring had dropped the rest); memory.txt was in the saved zip only
+        val mem = memoryTail(file("memory.txt"))
+        logs = logs.takeLast(MAX_LOGS - crashText.length - mem.length) + mem + crashText
         val head = file("report.txt").let { if (it.length > MAX_REPORT) it.take(MAX_REPORT) + "\n[cut]" else it }
         val diag = file("diagnostics.txt").let { if (it.length > MAX_DIAG) it.take(MAX_DIAG - 8) + "\n[cut]" else it }
         fun json() = JSONObject()
@@ -59,6 +63,15 @@ object ReportUpload {
             out = json()
         }
         return out
+    }
+
+    /** the memory watch's last [MEM_LINES] lines (6 minutes at 5 s), "" = none; at most [MEM_MAX] characters, the newest kept */
+    const val MEM_LINES = 72
+    const val MEM_MAX = 30_000
+    fun memoryTail(memory: String): String {
+        val ls = memory.lineSequence().filter { it.isNotBlank() }.toList().takeLast(MEM_LINES)
+        if (ls.isEmpty()) return ""
+        return "\n\n===== memory.txt (the newest ${ls.size} lines) =====\n" + ls.joinToString("\n").takeLast(MEM_MAX)
     }
 
     /** under the receiver's 200 000 (tools/report-worker LIMITS.maxBytes) */

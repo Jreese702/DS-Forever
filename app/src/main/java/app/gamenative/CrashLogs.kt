@@ -90,7 +90,7 @@ object CrashLogs {
                     // the tombstone (native crash) or the ANR traces, when Android kept them
                     runCatching { e.traceInputStream }.getOrNull()?.use { s ->
                         appendLine(); appendLine("---------- Trace ----------")
-                        append(String(s.readNBytesCompat(MAX_TRACE_BYTES), Charsets.UTF_8))
+                        append(traceText(e.reason, s.readNBytesCompat(MAX_TRACE_BYTES)))
                     }
                 }
                 save(ctx, "${stamp(e.timestamp)}_${reasonName(e.reason)}.txt", text)
@@ -99,6 +99,11 @@ object CrashLogs {
             exits.maxOfOrNull { it.timestamp }?.let { prefs.edit().putLong(KEY_LAST_EXIT, it).apply() }
         }.onFailure { Timber.w(it, "exit records") }
     }
+
+    /** the exit record's trace as text: a native crash's tombstone protobuf decoded (issue #114: it was written as raw bytes) */
+    fun traceText(reason: Int, bytes: ByteArray): String =
+        (if (reason == ApplicationExitInfo.REASON_CRASH_NATIVE) runCatching { Tombstone.text(bytes) }.getOrNull() else null)
+            ?: String(bytes, Charsets.UTF_8)
 
     private fun java.io.InputStream.readNBytesCompat(max: Long): ByteArray {
         val out = java.io.ByteArrayOutputStream()

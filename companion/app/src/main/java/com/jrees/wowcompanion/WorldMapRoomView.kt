@@ -62,6 +62,9 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
     private val inFlight = HashSet<String>()
     init { MemWatch.source("worldroom") { bmps.size().toLong() } }
+    // 1.0.28 (the low-memory kills #173 #182 #171 #177: up to 72 MB of this room's pictures held on Home / Group Finder, the game at
+    // 3.6 GB): Android's running-low warning lets them go while the room is not on screen (they are read again when it opens)
+    init { MemWatch.onTrim("worldroom") { level -> if (MemWatch.hiddenLetsGo(level, isShown)) bmps.size().toLong().also { bmps.evictAll() } else 0L } }
     @Volatile private var artReady = false
     private var artNote: String? = null
     private fun artDir() = ArtHarvest.dir("worldmap")
