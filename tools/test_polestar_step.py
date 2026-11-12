@@ -4,6 +4,7 @@ Runs Map.lua's WC.pstep section under a stubbed Polestar Engine (read only):
 - a waypoint: the step with m / x / y (0..1);
 - no waypoint but a current step (a talk / use / train goal): t / g / q / nl, no none, no m;
 - no guide (no current step): none;
+- review: a done step (no focus) -> none; a quest only from an open goal; a gated Class guide's live step -> none;
 - the 1 s ticker sends each of them (doc tag ps3) without an error, and WC.pstep.last carries no location for an nl step.
 """
 import os
@@ -64,7 +65,7 @@ def run():
     # no waypoint, a current step (a talk goal; the first goal done, the marked one = 2)
     M.execute('''
         T = 1; WP = nil
-        VIEWS[4] = { title = "Train at Kandris", current = 2, goals = {
+        VIEWS[4] = { title = "Train at Kandris", status = "current", focus = 1, live = 4, current = 2, goals = {
             { text = "Go to Thunder Bluff", status = "done" },
             { text = "Talk to Kandris Dreamseeker", t = "talk", quest = 77, status = "active" } } }
         IDX = 4
@@ -87,7 +88,7 @@ def run():
 
     # no marked goal: the first open one; a goal's quest from the first open goal that has one
     M.execute('''
-        VIEWS[5] = { title = "Use the totem", goals = {
+        VIEWS[5] = { title = "Use the totem", status = "current", focus = 1, goals = {
             { text = "Done one", status = "done", quest = 1 },
             { text = "Use the Totem of Hawkwind", t = "use", status = "active" },
             { text = "Hand in", t = "turnin", status = "pending", quest = 88 } } }
@@ -95,6 +96,35 @@ def run():
     ''')
     d = read()
     chk("the first open goal's words, the first open goal's quest", d.g == "Use the Totem of Hawkwind" and d.q == 88 and d.nl is True)
+
+    # review: a done step paged back to with Prev (the pin; GetStepView: status current, no focus, no marked goal, all done)
+    M.execute('''
+        VIEWS[2] = { title = "Turned in", status = "current", live = 4, goals = {
+            { text = "Hand in Wolves", t = "turnin", quest = 33, status = "done" } } }
+        IDX = 2
+    ''')
+    d = read()
+    chk("a done step (no focus): none, no stale quest", d.none is True and d.q is None and d.nl is None)
+    # a focus group but every goal closed: never a done goal's quest
+    M.execute('''
+        VIEWS[6] = { title = "Odd", status = "current", focus = 1, current = 1, goals = {
+            { text = "Hand in Wolves", t = "turnin", quest = 33, status = "done" } } }
+        IDX = 6
+    ''')
+    d = read()
+    chk("no open goal: no quest, no done goal's words", d.q is None and d.g is None and d.t == "Odd")
+    # a Class guide this character cannot start yet, on its live step: none (Polestar's arrow has nothing either)
+    M.execute('''
+        VIEWS[7] = { title = "Class start", status = "current", focus = 1, live = 7, goals = {
+            { text = "Talk to the trainer", t = "talk", quest = 90, status = "active" } } }
+        IDX = 7; GATE = { level = 10 }
+        Polestar.Engine.GetGuide = function() return { id = "cls" } end
+        Polestar.Engine.StartGate = function(id) return id == "cls" and GATE or nil end
+    ''')
+    chk("a gated Class guide's live step: none", read().none is True)
+    M.execute("GATE = nil")
+    d = read()
+    chk("... once it can start: the step", d.nl is True and d.q == 90)
 
     # no guide: none
     M.execute("T = 2; IDX = nil")

@@ -3080,19 +3080,31 @@ end
 -- is read from Engine.GetStepIndex + GetStepView instead and sent with nl = true and no m / x / y: its title, the goal the guide marks
 -- (else its first open one) - that goal's words when plain, and its quest (else the first open goal's). {none = true} only when
 -- Polestar has no current step (no guide, or the guide is done). Read only, as ps1.
+-- ps3 review (the user, 2026-11-11, same report): {none = true} too where Polestar's own arrow has nothing to point at
+-- (Engine.lua findWaypoint): a step with no focus group (v.focus nil: every blocking goal done, e.g. a done step paged back to
+-- with Prev, which GetStepIndex returns as the pin) and a Class guide this character cannot start yet (Engine.StartGate) on its
+-- live step. The quest only ever comes from an open goal, so a done (turned in) quest never reaches the app's focus sync.
 function WC.pstep.noLoc(E)
     if type(E.GetStepIndex) ~= "function" or type(E.GetStepView) ~= "function" then return { none = true } end
     local okI, i = pcall(E.GetStepIndex)
     if not okI or type(i) ~= "number" then return { none = true } end
     local okV, v = pcall(E.GetStepView, i)
-    if not okV or type(v) ~= "table" then return { none = true } end
+    if not okV or type(v) ~= "table" or v.focus == nil then return { none = true } end
+    if v.live == i and type(E.StartGate) == "function" and type(E.GetGuide) == "function" then
+        local okG, gd = pcall(E.GetGuide)
+        local id = okG and type(gd) == "table" and gd.id or nil
+        if id ~= nil then
+            local okS, gate = pcall(E.StartGate, id)
+            if okS and gate then return { none = true } end
+        end
+    end
     local goals = type(v.goals) == "table" and v.goals or {}
     local function open(gv)
         return type(gv) == "table" and not gv.folded and gv.status ~= "done" and gv.status ~= "skipped" and gv.status ~= "na"
     end
     local pick = type(v.current) == "number" and type(goals[v.current]) == "table" and goals[v.current] or nil
+    if pick and not open(pick) then pick = nil end
     if not pick then for _, gv in ipairs(goals) do if open(gv) then pick = gv; break end end end
-    pick = pick or (type(goals[1]) == "table" and goals[1]) or nil
     local quest = pick and type(pick.quest) == "number" and pick.quest or nil
     if not quest then for _, gv in ipairs(goals) do if open(gv) and type(gv.quest) == "number" then quest = gv.quest; break end end end
     local words = pick and type(pick.text) == "string" and pick.text ~= "" and pick.text or nil
