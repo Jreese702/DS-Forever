@@ -43,6 +43,10 @@ class PadOwnerSync {
         private set
     private var backN = 0
     private var backSeen = 0
+    /** i151's doc.fightHome: a room let go with B at its top level in this fight (n counts, who = the capture id that asked) */
+    private var homeN = 0
+    private var homeSeen = 0
+    private var homeWho: String? = null
 
     private var wantRoom: Boolean? = null
     private var tries = 0
@@ -62,7 +66,8 @@ class PadOwnerSync {
         holder = msg.optString("holder", "").ifEmpty { null }
         npcLeft = msg.optBoolean("npcLeft", false)
         backN = msg.optInt("fightBack", 0)
-        if (mode == null) { wantRoom = null; tries = 0; stuckSaid = false; backN = 0; backSeen = 0 }
+        msg.optJSONObject("fightHome").let { h -> homeN = h?.optInt("n", 0) ?: 0; homeWho = h?.optString("who", "")?.ifEmpty { null } }
+        if (mode == null) { wantRoom = null; tries = 0; stuckSaid = false; backN = 0; backSeen = 0; homeN = 0; homeSeen = 0; homeWho = null }
     }
 
     /**
@@ -74,6 +79,18 @@ class PadOwnerSync {
         if (mode != ROOM || backN <= backSeen) return null
         backSeen = backN
         return leaveCell
+    }
+
+    /**
+     * B GOES HOME FROM EVERY ROOM IN A FIGHT (the user, 2026-11-12: "ALL ROOMS SHOULD ALWAYS GO HOME WITH B EVEN IN COMBAT"; on 1429 B in
+     * the Bags room did nothing after the pull): a room whose own B at its top level lets go through the capture (Bags, Character, the
+     * book's Spellbook / Talents / Controller, Calendar, Group Finder, Social, Quests) is answered "tap leave" in a fight, so Interact i151
+     * asks the app to go Home instead (doc.fightHome). The capture id that asked, once per ask, else null; Home's LEAVE ([step]) follows.
+     */
+    fun homeAsked(): String? {
+        if (mode == null || homeN <= homeSeen) return null
+        homeSeen = homeN
+        return homeWho ?: ""
     }
 
     /** the router delivers to us now (room mode in a fight) */
@@ -115,6 +132,13 @@ class PadOwnerSync {
          * is in room mode (the presses are ours whoever the add-on names: the in-place swap or a stray ENTER's "app" holder).
          */
         fun directLive(shown: Boolean, holderMatch: Boolean, roomMode: Boolean): Boolean = shown && (holderMatch || roomMode)
+
+        /**
+         * i151's ask goes Home from the room on screen [roomName] (a Room name) when the capture id [who] holds for that room
+         * (HomeBack.roomsOf). Never from Home, never for a wheel, the bar cursor or a Home module (they close themselves: no room to
+         * leave), and never from ANOTHER room the player opened since (a late ask of the room left behind names a different one)
+         */
+        fun fightHomeGoes(who: String, roomName: String): Boolean = roomName != "HOME" && roomName in HomeBack.roomsOf(who)
 
         /** InteractView's own fight-loot reader (fightLootPress) runs only while the game has the pad: in room mode every press already
          *  reaches the add-on's loot cursor through the router, so reading it here too would act on the same press twice */
