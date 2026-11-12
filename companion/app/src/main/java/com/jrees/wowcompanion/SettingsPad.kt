@@ -61,7 +61,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             column.addView(box, wrap())
             groupBoxes.add(GroupBox(g, box, heading, parts))
             // the cursor stops on the heading (A opens / folds it), then on the rows of an open group
-            sections.add(SettingsPad.Section(heading, { listOf(heading.rect()) }))
+            // a tab that does not fold (General): no stop on its plain headings
+            sections.add(SettingsPad.Section(heading, { if (g.tab.folds) listOf(heading.rect()) else emptyList() }))
             for (p in parts) sections.add(when (p) {
                 // General's "Reload game UI", the room's one destructive control: the cursor never STARTS there
                 is SettingsView -> SettingsPad.Section(p, { p.focusTargets() }, noStart = { p.isReload(it) })
@@ -168,6 +169,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
 
     /** a tap on [g]'s heading or A on it: open it, or fold it */
     fun toggle(g: SettingsTabs.Group) {
+        if (!g.tab.folds) return                                         // General: always open
         touched = true
         if (!open.remove(g)) {
             open.add(g)
@@ -248,8 +250,11 @@ class SettingsFoldHeading(context: Context, val group: SettingsTabs.Group, priva
         UiKit.asTitle(pHead)
         c.drawColor(Theme.ink)
         val cy = H / 2f
-        val sign = UiKit.tex(if (open) "list_minus" else "list_plus")
-        if (sign != null) {
+        val folds = group.tab.folds
+        val sign = if (folds) UiKit.tex(if (open) "list_minus" else "list_plus") else null
+        if (!folds) {
+            // General: a plain heading, no fold sign
+        } else if (sign != null) {
             val h = SIGN_W * sign.height / sign.width
             c.drawBitmap(sign, null, RectF(SIGN_X, cy - h / 2f, SIGN_X + SIGN_W, cy + h / 2f), pSign)
         } else {
@@ -259,7 +264,7 @@ class SettingsFoldHeading(context: Context, val group: SettingsTabs.Group, priva
         }
         pHead.color = Theme.gold
         pHead.alpha = if (open) 255 else 190
-        c.drawText(Tr.t(group.heading), SIGN_X + SIGN_W + 18f, cy - (pHead.ascent() + pHead.descent()) / 2f, pHead)
+        c.drawText(Tr.t(group.heading), if (folds) SIGN_X + SIGN_W + 18f else SIGN_X, cy - (pHead.ascent() + pHead.descent()) / 2f, pHead)
         pHead.alpha = 255
     }
 

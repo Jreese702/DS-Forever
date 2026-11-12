@@ -14,8 +14,10 @@ import android.content.SharedPreferences
  * drawn changed in the six-tab pass: each row's id, taps, channels and saved values are the ones it had.
  */
 object SettingsTabs {
-    enum class Tab(val label: String, val hidden: Boolean = false) {
-        GENERAL("General"), BOTTOM("Bottom screen"), TOP("Top screen"), CONTROLLER("Controller"), ADDONS("Add-ons"),
+    /** [folds] false = its groups are always open, plain headings (the user, 2026-11-12: "the general tab doesnt need the folding
+     *  sections") */
+    enum class Tab(val label: String, val hidden: Boolean = false, val folds: Boolean = true) {
+        GENERAL("General", folds = false), BOTTOM("Bottom screen"), TOP("Top screen"), CONTROLLER("Controller"), ADDONS("Add-ons"),
         PERFORMANCE("Performance")
     }
 
@@ -112,7 +114,8 @@ object SettingsTabs {
     fun groups(tab: Tab): List<Group> = Group.values().filter { it.tab == tab && blocks(it).isNotEmpty() }
 
     /** the groups OPEN when [tab] is shown (the user's pick, 2026-11-12: every time a tab shows, its first group open, the rest folded) */
-    fun openOnShow(tab: Tab, hasRows: (Group) -> Boolean = { true }): Set<Group> = groups(tab).filter(hasRows).take(1).toSet()
+    fun openOnShow(tab: Tab, hasRows: (Group) -> Boolean = { true }): Set<Group> =
+        if (!tab.folds) groups(tab).toSet() else groups(tab).filter(hasRows).take(1).toSet()
 
     /** 1.0.9 (the user: "Disable the safe path, quest trail and polestar buttons for now"): with the route modes held back, the
      *  Polestar and QuestTrail blocks are not shown (Spoken stays) */

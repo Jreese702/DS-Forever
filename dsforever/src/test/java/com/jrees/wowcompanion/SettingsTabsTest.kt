@@ -140,8 +140,11 @@ class SettingsTabsTest {
 
     /** the user's pick: showing a tab opens its FIRST group, the rest folded */
     @Test fun firstGroupOpenOnShow() {
-        for (t in T.values()) assertEquals(t.label, setOf(SettingsTabs.groups(t).first()), SettingsTabs.openOnShow(t))
-        assertEquals(setOf(G.LOOK), SettingsTabs.openOnShow(T.GENERAL))
+        for (t in T.values()) if (t.folds) assertEquals(t.label, setOf(SettingsTabs.groups(t).first()), SettingsTabs.openOnShow(t))
+        // the user, 2026-11-12: "the general tab doesnt need the folding sections": every General group always open
+        assertEquals(false, T.GENERAL.folds)
+        assertEquals(setOf(G.LOOK, G.ACCOUNT, G.HELP), SettingsTabs.openOnShow(T.GENERAL))
+        assertEquals(T.values().filter { it != T.GENERAL }, T.values().filter { it.folds })
         assertEquals(setOf(G.HUD), SettingsTabs.openOnShow(T.TOP))
     }
 

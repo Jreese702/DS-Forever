@@ -65,11 +65,12 @@ class SettingsRoomTest {
             // the tab's groups WITH ROWS NOW (no game here: Top screen's switches have not come, only Game windows' minimap)
             val groups = SettingsTabs.groups(t).filter { r.hasRows(it) }
             assertTrue(t.label, groups.isNotEmpty())
-            assertEquals(t.label, setOf(groups.first()), r.open)
+            // General does not fold (the user, 2026-11-12): every group open
+            assertEquals(t.label, if (t.folds) setOf(groups.first()) else groups.toSet(), r.open)
             for (gb in r.groupBoxes) {
                 val onTab = gb.group in groups
                 assertEquals("${gb.group} box", if (onTab) View.VISIBLE else View.GONE, gb.box.visibility)
-                val isOpen = gb.group == groups.first()
+                val isOpen = if (t.folds) gb.group == groups.first() else onTab
                 assertEquals("${gb.group} heading", isOpen, gb.heading.open)
                 for (p in gb.parts) assertEquals("${gb.group} part", if (isOpen) View.VISIBLE else View.GONE, p.visibility)
             }
@@ -83,39 +84,49 @@ class SettingsRoomTest {
 
     @Test fun aOnAHeadingFoldsAndOpensIt() {
         val r = room()
-        r.show(SettingsTabs.Tab.GENERAL); lay(r)
-        val look = box(r, SettingsTabs.Group.LOOK)
-        val account = box(r, SettingsTabs.Group.ACCOUNT)
-        // the targets: every heading of the tab is a stop, and the open group's rows; a folded group's rows are not
-        val heads = SettingsTabs.groups(SettingsTabs.Tab.GENERAL).map { g -> headBox(r, g) }
+        r.show(SettingsTabs.Tab.PERFORMANCE); lay(r)
+        val groups = SettingsTabs.groups(SettingsTabs.Tab.PERFORMANCE).filter { r.hasRows(it) }
+        val first = groups[0]; val second = groups[1]
+        val heads = groups.map { g -> headBox(r, g) }
         val targets = r.pad.targetBoxes()
         for (h in heads) assertTrue("heading $h is a stop", targets.any { it == h })
-        val lookRows = targets.count { it.top > heads[0].bottom && it.bottom < heads[1].top }
-        assertTrue("Look's rows are stops", lookRows >= 2)
-        // the cursor's first stop is the first heading (D-pad into the page)
+        // the cursor's first stop is the first heading; A folds it
         press(r, "PADDDOWN")
         assertEquals(heads[0], r.pad.focusBox())
-        // A folds Look
         press(r, "PAD1")
-        assertTrue(SettingsTabs.Group.LOOK !in r.open)
-        assertTrue(look.parts.all { it.visibility == View.GONE })
-        assertTrue(!look.heading.open)
-        // down: the next heading (Look's rows are gone); A opens Account
+        assertTrue(first !in r.open)
+        assertTrue(box(r, first).parts.all { it.visibility == View.GONE })
+        assertTrue(!box(r, first).heading.open)
+        // down: the next heading; A opens it
         press(r, "PADDDOWN")
-        assertEquals(headBox(r, SettingsTabs.Group.ACCOUNT), r.pad.focusBox())
+        assertEquals(headBox(r, second), r.pad.focusBox())
         press(r, "PAD1")
-        assertTrue(SettingsTabs.Group.ACCOUNT in r.open && account.heading.open)
-        assertTrue(account.parts.all { it.visibility == View.VISIBLE })
-        // the login row is a stop now, under Account's heading
+        assertTrue(second in r.open && box(r, second).heading.open)
+        assertTrue(box(r, second).parts.all { it.visibility == View.VISIBLE })
+        // up: back on the first heading; A opens it again
+        press(r, "PADDUP")
+        assertEquals(headBox(r, first), r.pad.focusBox())
+        press(r, "PAD1")
+        assertTrue(first in r.open)
+    }
+
+    /** the user, 2026-11-12: "the general tab doesnt need the folding sections": General's groups always open, no heading stops,
+     *  a tap or toggle on a heading does nothing */
+    @Test fun generalDoesNotFold() {
+        val r = room()
+        r.show(SettingsTabs.Tab.GENERAL); lay(r)
+        val groups = SettingsTabs.groups(SettingsTabs.Tab.GENERAL).filter { r.hasRows(it) }
+        assertEquals(groups.toSet(), r.open)
+        for (g in groups) assertTrue(box(r, g).parts.all { it.visibility == View.VISIBLE })
+        val targets = r.pad.targetBoxes()
+        for (g in groups) assertTrue("no stop on $g's heading", targets.none { it == headBox(r, g) })
+        r.toggle(groups[0])
+        assertEquals(groups.toSet(), r.open)
+        // the cursor's first stop is a row, never a heading
         press(r, "PADDDOWN")
         val f = r.pad.focusBox()
         assertNotNull(f)
-        assertTrue(f!!.top >= headBox(r, SettingsTabs.Group.ACCOUNT).bottom)
-        // up, up: back on Look's heading; A opens it again
-        press(r, "PADDUP"); press(r, "PADDUP")
-        assertEquals(heads[0], r.pad.focusBox())
-        press(r, "PAD1")
-        assertTrue(SettingsTabs.Group.LOOK in r.open)
+        assertTrue(groups.none { headBox(r, it) == f })
     }
 
     @Test fun aTapOnAHeadingToggles() {
@@ -168,7 +179,7 @@ class SettingsRoomTest {
         // and once the refresh runs, the empty group is gone with its heading
         lay(r)
         assertEquals(View.GONE, box(r, SettingsTabs.Group.ACCOUNT).box.visibility)
-        assertEquals("one stop per shown heading", r.groupBoxes.count { it.box.visibility == View.VISIBLE }, headingStops(r))
+        assertEquals("no stops on General headings", 0, headingStops(r))
     }
 
     /** 2: entering the room shows its tab afresh: the first group open, the rest folded, the page at its top */
