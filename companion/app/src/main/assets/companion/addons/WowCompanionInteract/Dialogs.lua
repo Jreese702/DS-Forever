@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d27"         -- bump on every change; d27: A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
+local DV = "d28"         -- bump on every change; d28: the quest starter's Start is DISARMED on the very event a vendor / bank / mail / trade / NPC window opens (a bag item used at a vendor is sold) and aimed by item id, not bag and slot; a Start on a disarmed button is no answer; d27: A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -373,8 +373,14 @@ D.QS = { i = POOL + 2, col = POOL * CELLS + 9, which = "QUEST_START", use = "Wow
          bags = 5,          -- the backpack, the four bags and the reagent bag (0 .. 5)
          -- the game windows a prompt never covers (Interact's NPC windows, the trade, the readable page)
          busy = { "QuestFrame", "GossipFrame", "MerchantFrame", "ClassTrainerFrame", "PetStableFrame", "MailFrame", "AuctionHouseFrame",
-                  "FlightMapFrame", "TaxiFrame", "BankFrame", "LootFrame", "PetitionFrame", "ItemTextFrame", "TradeFrame" } }
-D.qs = { asked = {}, cur = nil, dirty = true, clickAt = nil }
+                  "FlightMapFrame", "TaxiFrame", "BankFrame", "LootFrame", "PetitionFrame", "ItemTextFrame", "TradeFrame" },
+         -- d28: the opening events of those windows. A bag item used at a vendor is SOLD (at a bank, mail or trade it is moved), so on
+         -- the event itself, before the window's frame is even shown, the prompt drops and both buttons are disarmed in the same frame
+         opens = { "MERCHANT_SHOW", "BANKFRAME_OPENED", "MAIL_SHOW", "TRADE_SHOW", "AUCTION_HOUSE_SHOW", "GOSSIP_SHOW", "QUEST_DETAIL",
+                   "QUEST_GREETING", "QUEST_PROGRESS", "QUEST_COMPLETE", "LOOT_OPENED", "TRAINER_SHOW", "TAXIMAP_OPENED",
+                   "PETITION_SHOW", "ITEM_TEXT_BEGIN", "PET_STABLE_SHOW", "GUILDBANKFRAME_OPENED", "PLAYER_INTERACTION_MANAGER_FRAME_SHOW" },
+         hold = 1 }         -- d28: seconds a window's opening event holds the prompt off (then its shown frame does)
+D.qs = { asked = {}, cur = nil, dirty = true, clickAt = nil, openAt = nil }
 
 -- the quest this slot's item starts and whether it is already in the log (the C_Container table, or the older numbered returns)
 function D.qsInfo(bag, slot)
@@ -447,7 +453,7 @@ function D.qsButtons()
                 pcall(b.RegisterForClicks, b, "AnyDown", "AnyUp")
                 if n == D.QS.use then b:SetAttribute("type", "item") end
                 local what = (n == D.QS.use) and "start" or "later"
-                b:HookScript("OnClick", function(_, _, down) D.qsClicked(what, down) end)
+                b:HookScript("OnClick", function(self, _, down) D.qsClicked(what, down, self) end)
             end)
         end
     end
@@ -457,7 +463,8 @@ end
 -- arm (or, with nil, disarm) the item on our button and our touch cell: OUT OF COMBAT ONLY (a secure attribute); false = not armed
 function D.qsAim(c)
     if TB(function() return InCombatLockdown() end) == true then return false end
-    local want = c and (c.bag .. " " .. c.slot) or nil
+    -- d28: aimed by the item's id ("item:<id>"), not its bag and slot, so an item moved before the next build is still the one used
+    local want = c and ("item:" .. c.id) or nil
     local ok = true
     for _, b in ipairs({ _G[D.QS.use] or false, D.qsCell or false }) do
         if b then
@@ -477,6 +484,7 @@ function D.qsReady(list, rolls)
     if TB(function() return InCombatLockdown() end) == true then return false end
     if TB(function() return UnitIsDeadOrGhost("player") end) == true then return false end
     if now() - (D.qs.clickAt or -1e9) < 2 then return false end        -- the game's quest page is on its way: no next prompt under it
+    if now() - (D.qs.openAt or -1e9) < D.QS.hold then return false end -- d28: a game window is opening (its frame not shown yet)
     for _, n in ipairs(D.QS.busy) do if shown(_G[n]) then return false end end
     local cap = WC.capture
     if type(cap) == "table" and type(cap.state) == "function" then
@@ -511,14 +519,19 @@ function D.qsOffer(list, rolls)
 end
 
 -- Start or Not now pressed (a binding click: [down] is the edge; a touch cell: nil). Only the edge the game's secure action runs on
--- counts, so the item is used before the capture lets go of the key.
-function D.qsClicked(what, down)
+-- counts, so the item is used before the capture lets go of the key. [b] = the Start button pressed (our button or our cell).
+function D.qsClicked(what, down, b)
     if down ~= nil then
         local kd = TB(function() return GetCVarBool("ActionButtonUseKeyDown") end) == true
         if (down == true) ~= kd then return end
     end
     local c = D.qs.cur
     if not c then return end
+    if what == "start" and b then
+        -- d28: a Start on a disarmed button used nothing (a window opened in between): not an answer, the item is asked about later
+        local ok, cur = pcall(b.GetAttribute, b, "item")
+        if not ok or cur ~= ("item:" .. c.id) then return end
+    end
     D.qs.asked[c.id] = what
     D.qs.cur, D.qs.dirty = nil, true
     if what == "start" then D.qs.clickAt = now() end
@@ -865,7 +878,7 @@ local function offerTouch()
             btn:SetAttribute("clickbutton", target)
         end
     end, function(col)
-        if col == D.QS.col then D.qsClicked("start"); return end          -- d27: the item was used (the click already ran)
+        if col == D.QS.col then D.qsClicked("start", nil, D.qsCell); return end   -- d27: the item was used (the click already ran)
         if col == D.QS.col + 1 then D.qsClicked("later"); return end
         if col == CLOSE_COL or col == ENTER_COL then
             if type(WC.interactPoke) == "function" then pcall(WC.interactPoke) end
@@ -999,7 +1012,15 @@ end
 -- (a queued prompt shows); the frame is kept in D (no chunk local)
 D.qsFrame = CreateFrame("Frame")
 D.qsFrame:SetScript("OnEvent", function(_, event)
-    if event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_REGEN_DISABLED" then look(); return end
+    if event == "PLAYER_REGEN_ENABLED" then look(); return end
+    -- d28: a fight starting (the event comes before the lockdown) or a game window opening: disarm NOW, in this frame, then rebuild
+    -- (the prompt drops); a window's frame may not be shown yet, so its event holds the prompt off for D.QS.hold
+    if event == "PLAYER_REGEN_DISABLED" or D.QS.openSet[event] then
+        if event ~= "PLAYER_REGEN_DISABLED" then D.qs.openAt = now() end
+        D.qsAim(nil)
+        look()
+        return
+    end
     if event == "GET_ITEM_INFO_RECEIVED" then
         if D.qs.cur and not D.qs.cur.name then D.qs.dirty = true; look() end
         return
@@ -1018,6 +1039,8 @@ for _, e in ipairs({ "BAG_UPDATE_DELAYED", "CHAT_MSG_LOOT", "QUEST_ACCEPTED", "Q
                      "ITEM_TEXT_CLOSED", "TAXIMAP_CLOSED", "PETITION_CLOSED", "AUCTION_HOUSE_CLOSED" }) do
     pcall(D.qsFrame.RegisterEvent, D.qsFrame, e)
 end
+D.QS.openSet = {}
+for _, e in ipairs(D.QS.opens) do D.QS.openSet[e] = true; pcall(D.qsFrame.RegisterEvent, D.qsFrame, e) end      -- d28
 
 do
     local lf = CreateFrame("Frame")

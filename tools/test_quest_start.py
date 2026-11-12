@@ -6,7 +6,8 @@ make a prompt asking if we want to start that quest"), off-device: Dialogs.lua a
 Checks the bag scan (a starter is found; a normal item, a quest item of a quest already taken and a quest already done are not), one
 prompt per item per login (Start and Not now both), the fight hold (nothing shown or armed in combat; shown at PLAYER_REGEN_ENABLED),
 the queue (never over an open game window or a room holding the controller), A = a binding click of our secure item button armed with
-that bag and slot OUT OF COMBAT only (and only on the edge the game's secure action runs on), B = Not now, and the touch cells. Needs
+that item's id (d28) OUT OF COMBAT only (and only on the edge the game's secure action runs on), B = Not now, the touch cells, and (d28) a vendor / bank / mail / trade window opening
+under the prompt (disarmed on its event, a Start in the gap uses nothing). Needs
 lupa. Exit code 1 on any failure."""
 import os
 import sys
@@ -132,16 +133,16 @@ chk("the controller: A and B on them (the dialogs' capture)", p and p.focus == t
 chk("A is a binding click of OUR secure item button, B of our Not now", CAP.spec and CAP.spec.a == "WowCompanionQStartUse"
     and CAP.spec.back == "WowCompanionQStartNo" and CAP.spec.noFight == true)
 local use = _G.WowCompanionQStartUse
-chk("armed out of combat: type item, that bag and slot", use and use.attr.type == "item" and use.attr.item == "0 3")
+chk("armed out of combat: type item, that item by id (d28)", use and use.attr.type == "item" and use.attr.item == "item:1972")
 chk("the touch cells: Start 33 (armed the same), Not now 34 (no secure action)", p and p.cells and p.cells.b1 == 33 and p.cells.b2 == 34
-    and ROW.n == 35 and ROW.cells[33].attr.item == "0 3" and ROW.cells[34].attr.type == nil)
+    and ROW.n == 35 and ROW.cells[33].attr.item == "item:1972" and ROW.cells[34].attr.type == nil)
 chk("nothing used yet", #GAME.used == 0)
 
 -- A: the press's other edge does nothing (ActionButtonUseKeyDown off: the release is the action's)
 PRESS("WowCompanionQStartUse", true)
 chk("the press edge alone neither uses nor closes", #GAME.used == 0 and PROMPT() ~= nil)
 PRESS("WowCompanionQStartUse", false)
-chk("A uses the item in its slot (the game's own use: it opens its quest page)", GAME.used[1] == "0 3" and #GAME.used == 1)
+chk("A uses the item (by id) (the game's own use: it opens its quest page)", GAME.used[1] == "item:1972" and #GAME.used == 1)
 chk("and the prompt is gone, with its answer sent", PROMPT() == nil and ACKS() == 1)
 chk("the controller let go", CAP.holder == nil)
 FIRE("BAG_UPDATE_DELAYED")
@@ -158,7 +159,7 @@ GAME.combat = false
 FIRE("PLAYER_REGEN_ENABLED")
 p = PROMPT()
 chk("the fight over: the held prompt shows (" .. tostring(p and p.item.name) .. ")", p ~= nil and p.qs.item == 1971 and p.sub == nil)
-chk("re-armed on its slot", use.attr.item == "1 2")
+chk("re-armed on that item", use.attr.item == "item:1971")
 
 -- B = Not now: gone, never again this login, the item stays in the bags
 PRESS("WowCompanionQStartNo", false)
@@ -187,7 +188,7 @@ chk("that dialog gone: the prompt is back", PROMPT() ~= nil)
 
 -- the touch path: the Start cell uses the item, then the row's answer closes it
 TAP(33)
-chk("a tap on Start uses the item through its cell", GAME.used[2] == "1 3")
+chk("a tap on Start uses the item through its cell", GAME.used[2] == "item:4000")
 chk("and closes it", PROMPT() == nil and ACKS() == 3)
 -- the key-down setting: the press is the action's edge
 GAME.t = GAME.t + 5
@@ -196,7 +197,7 @@ GAME.bags[0][4] = { id = 4100, name = "Torn Page", quest = 556 }
 FIRE("BAG_UPDATE_DELAYED")
 chk("the next one shows", PROMPT() ~= nil)
 PRESS("WowCompanionQStartUse", true)
-chk("ActionButtonUseKeyDown on: the press uses it and closes it", GAME.used[3] == "0 4" and PROMPT() == nil)
+chk("ActionButtonUseKeyDown on: the press uses it and closes it", GAME.used[3] == "item:4100" and PROMPT() == nil)
 PRESS("WowCompanionQStartUse", false)
 chk("and the release adds nothing", #GAME.used == 3 and ACKS() == 4)
 
@@ -208,6 +209,33 @@ chk("a fourth starter shows", PROMPT() ~= nil)
 GAME.quests[557] = true
 FIRE("QUEST_ACCEPTED")
 chk("its quest taken elsewhere (the item's own page): the prompt goes", PROMPT() == nil)
+
+-- d28: a VENDOR opens while the prompt is up (a bag item used at a vendor is SOLD): on MERCHANT_SHOW itself, before its frame shows
+-- and before any build, both buttons are disarmed and the prompt drops; a Start in that gap uses nothing and is no answer
+GAME.t = GAME.t + 5
+GAME.bags[0][2] = { id = 4300, name = "Sealed Letter", quest = 558 }
+FIRE("BAG_UPDATE_DELAYED")
+chk("d28: a fifth starter shows", PROMPT() ~= nil and use.attr.item == "item:4300")
+local acks, used = ACKS(), #GAME.used
+for _, f in ipairs(FRAMES) do if f.events.MERCHANT_SHOW then f.scripts.OnEvent(f, "MERCHANT_SHOW") end end
+chk("d28: MERCHANT_SHOW disarms our button and our Start cell at once", use.attr.item == nil and ROW.cells[33].attr.item == nil)
+PRESS("WowCompanionQStartUse", true); TAP(33)
+chk("d28: a Start in the gap sells nothing, uses nothing and is no answer", #GAME.used == used and ACKS() == acks)
+MerchantFrame = CreateFrame("Frame", "MerchantFrame"); MerchantFrame.shown = false
+chk("d28: the prompt drops while the window opens (its frame not shown yet)", PROMPT() == nil)
+MerchantFrame.shown = true; GAME.t = GAME.t + 2
+chk("d28: and stays off while the vendor is open", PROMPT() == nil and use.attr.item == nil)
+MerchantFrame.shown = false; FIRE("MERCHANT_CLOSED")
+chk("d28: the vendor closed: it is back, armed again", PROMPT() ~= nil and use.attr.item == "item:4300")
+for _, ev in ipairs({ "BANKFRAME_OPENED", "MAIL_SHOW", "TRADE_SHOW", "AUCTION_HOUSE_SHOW", "GOSSIP_SHOW", "QUEST_DETAIL", "LOOT_OPENED" }) do
+    local reg = false
+    for _, f in ipairs(FRAMES) do if f.events[ev] then reg = true end end
+    chk("d28: " .. ev .. " is listened to", reg)
+end
+-- d28: the item MOVED before the next build: Start still uses that item (aimed by id)
+GAME.bags[1][4] = GAME.bags[0][2]; GAME.bags[0][2] = nil
+PRESS("WowCompanionQStartUse", true)
+chk("d28: moved, then A: that item is used, not whatever is in its old slot", GAME.used[#GAME.used] == "item:4300" and ACKS() == acks + 1)
 chk("never in combat, all along", GAME.combatSets == 0)
 return table.concat(out, "\n")
 '''
