@@ -561,10 +561,11 @@ r = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'test_smarty.py'
 check(r.returncode == 0 and r.stdout.strip().endswith('ALL PASS'), "tools/test_smarty.py passes UNCHANGED", r.stdout.strip()[-60:])
 # the contract's base b187c3c1 (+ m78 Manners), then m101 (the user's ruling 2026-11-07: a soft-interact target no longer blocks Smart Y):
 # the file is pinned by its content now; change it only on a ruling, and re-pin here. Re-pinned for m127 (the user's rulings
-# 2026-11-11: no tracking on Y, Manners its own row for other players only, one ordered list with Food / Water movable)
+# 2026-11-11: no tracking on Y, Manners its own row for other players only, one ordered list with Food / Water movable) and for m128
+# (the same order rule: the model's eating / drinking rate and the why line from the step Y uses)
 import hashlib
 smarty_sha = hashlib.sha256(open(os.path.join(ROOT, 'tools', 'test_smarty.py'), 'rb').read()).hexdigest()
-check(smarty_sha == "43e18bebd3b4853d266ac7b9423b947cd93e98f8694a0f84731e753e0e3d952f", "tools/test_smarty.py is byte for byte the pinned contract (b187c3c1 + m78 Manners + m101 soft-interact + m127 Smart Y v2)", smarty_sha[:12])
+check(smarty_sha == "cc8eb0563f544ecf182e982938db6de61d793f5f8d4cd0d9d36b9b37443a1da0", "tools/test_smarty.py is byte for byte the pinned contract (b187c3c1 + m78 Manners + m101 soft-interact + m127 Smart Y v2 + m128 rate per kind)", smarty_sha[:12])
 
 # ================================================================ THE WORLD: the real Spells files (and TapPad) logged in
 ROUTER_NAME = {8: "WowCompanionCombatFace8", 7: "WowCompanionFaceB", 5: "WowCompanionCombatFace5", 6: "WowCompanionCombatFace6",
@@ -1095,7 +1096,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng", "hs", "g", "cw", "cc", "ch", "cs"}   # m79: hs, the health source; m92: g, the GUID (combat log)
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm127' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm128' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1291,7 +1292,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p36"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m127"' in SRC["padmap"],
+check('local CV = "p36"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m128"' in SRC["padmap"],
       "the versions: PadMap m107, PadTabCtl p40, Book b49")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''

@@ -655,6 +655,33 @@ check(walk(lua('return { { k = "drink" } }'), due(food='F'), 10) is False, "Food
 check(walk(lua(std), due(buff='B', buffAt=1), 200) is False, "buffAt on a typed row: nothing (only a buff row takes the buff)", "")
 check(walk(lua(std), due(), 200) is False, "nothing due: nothing", "")
 
+# m128 (review of m127): the model's eating / drinking rate and the why line follow the step the walk CHOSE, not the old fixed pick
+EF, WP = W.eval('OV.smartEatFrom'), W.eval('OV.smartWhyPick')
+W.execute('''
+FS = { val = "item:4540", typ = "item", ik = "food", shown = { id = 4540, k = "food" } }
+DS = { val = "item:159", typ = "item", ik = "drink", shown = { id = 159, k = "drink" } }
+BS = { val = "item:2288", typ = "item", ik = "both", shown = { id = 2288, k = "drink" } }
+SP = { val = "spell:1126", typ = "spell", shown = { id = 1126, k = "buff" } }
+''')
+wst, wk2 = W.eval('(function() return OV.smartWalk({ { k = "drink" }, { k = "food" } }, { food = FS, drink = DS }, 10) end)')()
+e1 = EF(None, wst)
+check(e1['drink'] == 159 and e1['food'] is None, "Water above Food, both due: the drink's item is the one Y uses (its rate for the drink aura)", (e1['drink'], e1['food']))
+wp = WP(wst, wk2)
+check(wp['kind'] == "drink" and wp['id'] == 159, "... and the why line says the drink", (wp['kind'], wp['id']))
+e2 = EF(e1, W.eval('FS'))
+check(e2['food'] == 4540 and e2['drink'] == 159, "Food armed next (drinking already): the drink's item kept for its running aura", (e2['food'], e2['drink']))
+e3 = EF(e2, None)
+check(e3['food'] == 4540 and e3['drink'] == 159, "nothing due (both auras running): both kept", "")
+e4 = EF(e3, W.eval('SP'))
+check(e4['food'] == 4540 and e4['drink'] == 159, "a buff step: the items untouched", "")
+e5 = EF(None, W.eval('BS'))
+check(e5['food'] == 2288 and e5['drink'] == 2288, "a food-and-drink item: counts for both auras", "")
+check(WP(None, None) is None and WP(W.eval('SP'), "buff")['kind'] == "buff", "the why pick: nothing due = nil, a buff step = buff", "")
+check('OV.smartPick(state)' not in sa and 'OV.smartEatFrom(OV.smartEat, st)' in sa and 'OV.smartWhyPick(st, sk)' in sa,
+      "m128: smartApply no longer uses the fixed food-then-drink pick for the rate / why line", "")
+hs = SRC[SRC.index('function OV.hmStep()'):SRC.index('function OV.hmItemRate(')]
+check('OV.smartEat[k]' in hs and 'OV.smartItem' not in hs, "m128: hmStep takes each aura's rate from its own kind's item", "")
+
 # the kind pickers the walk uses
 check(pick(P.table_from({"hp": 50, "hpMax": 100, "mp": 50, "mpMax": 100, "level": 10, "drinking": False,
                          "items": P.table_from([P.table_from(i) for i in ITEMS])}), "drink")["id"] == 159,
