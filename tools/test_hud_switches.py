@@ -172,7 +172,7 @@ def main():
         function UnitIsDeadOrGhost() return false end
         function IsCurrentSpell(id) if id == 6603 then return A6603 end return false end
         function FIRE(e, ...) for i = 1, #MADE do local f = MADE[i]; if f.OnEvent then pcall(f.OnEvent, f, e, ...) end end end
-        -- hub43: a clock and C_Timer.After (the 0's wait)
+        -- hub43: a clock and C_Timer.After
         NOW = 100; TIMERS = {}
         function GetTime() return NOW end
         C_Timer = C_Timer or {}
@@ -194,10 +194,7 @@ def main():
         and ds0.sw.cols.SHOTF_OFF == 28 and ds0.sw.cols.SHOTF_ON == 29)
     G.A6603 = True
     G.FIRE("PLAYER_ENTER_COMBAT")
-    c_now = cv()
-    adv(0.4)
-    chk("hub30 / hub43: an attack started out of a fight with a target: off after the 0.35 s wait (at once %s, then %s)" % (c_now, cv()),
-        c_now == "1" and cv() == "0")
+    chk("hub30: an attack started out of a fight with a target: off at once (%s)" % cv(), cv() == "0")
     G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g1", 1130)
     G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g2", 14325)
     chk("hub30: Hunter's Mark (any rank) does not turn it back on (%s)" % cv(), cv() == "0")
@@ -238,24 +235,29 @@ def main():
     chk("hub43 1: Arcane Shot's SEND, then its /startattack's attack start: stays on (%s, 0 writes %d)" % (cv(), len(zeros())),
         cv() == "1" and not zeros())
     fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.1); sent(3044); adv(0.4)
-    chk("hub43 2: the attack start, then Arcane Shot's SEND inside the wait: stays on (%s, 0 writes %d)" % (cv(), len(zeros())),
+    chk("hub43 2: the attack start, then Arcane Shot's SEND: on again, out of the lockdown (%s, 0 writes %d, in lockdown %d)"
+        % (cv(), len(zeros()), len(zeros(True))), cv() == "1" and len(zeros(False)) == 1 and not zeros(True))
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    chk("hub43 3: a plain melee pull (no ability): off (%s)" % cv(), cv() == "0")
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.05); G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); adv(0.4)
+    chk("hub43 4: a plain pull in swing range, the fight 0.05 s later: still off, the 0 written before the lockdown (%s, %d / %d)"
+        % (cv(), len(zeros(False)), len(zeros(True))), cv() == "0" and len(zeros(False)) == 1 and not zeros(True))
+    fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 3044); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    chk("hub43 4b: a cast that failed unsent, its /startattack's attack start: stays on (%s, 0 writes %d)" % (cv(), len(zeros())),
         cv() == "1" and not zeros())
-    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); c_now = cv(); adv(0.4)
-    chk("hub43 3: a plain melee pull (no ability): off after the wait (at once %s, then %s)" % (c_now, cv()), c_now == "1" and cv() == "0")
-    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.1); G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); adv(0.4)
-    chk("hub43 4: the fight starts inside the wait: stays on, no 0 written in lockdown (%s, %d / %d)"
-        % (cv(), len(zeros(True)), len(zeros())), cv() == "1" and not zeros())
-    fresh(); G.A6603 = False; G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
-    chk("hub43: the melee attack already off by the wait's end: no 0 (%s)" % cv(), cv() == "1" and not zeros())
+    fresh(); G.FIRE("UNIT_SPELLCAST_SUCCEEDED", "player", "gs", 3044); G.FIRE("PLAYER_ENTER_COMBAT")
+    chk("hub43 4c: a SUCCEEDED alone is no press: a plain pull, off (%s)" % cv(), cv() == "0")
+    fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 1130); G.FIRE("PLAYER_ENTER_COMBAT")
+    chk("hub43 4d: a failed Hunter's Mark is still a plain pull: off (%s)" % cv(), cv() == "0")
     fresh(); sent(1130); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
     chk("hub43 5: a Hunter's Mark pull is still a plain pull: off (%s)" % cv(), cv() == "0")
-    fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 3044); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 3044); adv(2.5); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
     c_fail = cv()
     G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); c_rd = cv(); sent(3044)
     d6 = doc()
-    chk("hub43 6: a failed cast (no SEND) then the pull: off (%s), the fight's start alone leaves it (%s), the in-fight SEND: on (%s, shotfk %s)"
+    chk("hub43 6: a failed cast (no SEND), 2.5 s later a pull: off (%s), the fight's start alone leaves it (%s), the in-fight SEND: on (%s, shotfk %s)"
         % (c_fail, c_rd, cv(), d6.sw.shotfk), c_fail == "0" and c_rd == "0" and cv() == "1" and d6.sw.shotfk is True)
-    fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 3044); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
+    fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 3044); adv(2.5); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
     G.FIGHT = True; G.REFUSE = True; G.FIRE("PLAYER_REGEN_DISABLED"); sent(3044)
     d6b = doc()
     chk("hub43 6b: ... the game refusing that write: no error, shotfk false (%s, %s)" % (cv(), d6b.sw.shotfk), cv() == "0" and d6b.sw.shotfk is False)
