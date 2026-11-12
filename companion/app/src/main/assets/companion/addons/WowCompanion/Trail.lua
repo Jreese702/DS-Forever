@@ -4521,7 +4521,14 @@ end
 -- scale, so the 9 out matches the bar's units) in the plate's own strata, one frame level UNDER the plate's UnitFrame - so under its
 -- name, level and health bar fill. Only our own frame is parented / levelled (legal in combat); the plate's level and strata are
 -- READ (no taint), nothing of it is written; forbidden plates (enemies in instances) never reach us (GetNamePlateForUnit).
-WC.rings = { V = "at7", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
+-- at8 (the user, 2026-11-12, on 1.0.26: "the aggro tint looks like its floating because its trying to go around the cast bar too (which
+-- is not there)"): at7's frame round Hub's target bar was cut for the HUD art's whole PIECES (3 texels left / top, 7 right, 8 bottom),
+-- but most of the right and bottom pieces are clear (the c60 art's visible rim is 3 texels on every side: rows 11..13, cols 125..127,
+-- one faint texel past them); the frame stood 31 px under the bar, so the outline floated ~20 px below it as if round a cast bar.
+-- Now R.barAnchor puts the art's outline ON the rim's visible edge (3 texels out on every side) and only round the health bar (the
+-- cast bar, pips and auras under it are never inside): the frame's outsets solved from the art's own geometry (its outline PAD - 3 in
+-- from the frame's sides and bottom, PAD - 4 from its top, of a 166 x 20 bar's frame), so the glow beyond it is the nameplate's.
+WC.rings = { V = "at8", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
              ALPHA = 0.95, OUTSET = 6, PAD = 9, TOP_IN = 4, TEX_V = 53 / 64, list = {}, est = {}, react = {}, why = {}, n = 0,
              COL = { far = { 0.32, 0.86, 0.36 }, approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
              TEX = "Interface\\AddOns\\WowCompanion\\Media\\tint_glow" }
@@ -4592,6 +4599,24 @@ do
         return o
     end
 
+    -- at8: the target bar's tint frame round its health bar [hp] (w x h: its size, else read): the art's outline on the HUD rim's
+    -- visible edge, 3 texels (k = h / 8) out on every side; returns the four outsets (left, top, right, bottom)
+    function R.barAnchor(f, hp, w, h)
+        h = tonumber(h) or (hp.GetHeight and hp:GetHeight()) or 17
+        w = tonumber(w) or (hp.GetWidth and hp:GetWidth()) or 0
+        if not (type(h) == "number" and h > 0) then h = 17 end
+        if type(w) ~= "number" then w = 0 end
+        local rim = 3 * h / 8
+        local W0, H0 = 166 + 2 * R.PAD, 20 + 2 * R.PAD                  -- the art's frame (tools/make_world_markers.py)
+        local inS, inT = R.PAD - 3, R.PAD - 4                            -- its outline in from the frame's sides / bottom, top
+        local l = (rim + inS * w / W0) / (1 - 2 * inS / W0)              -- l = rim + inS * (w + 2l) / W0
+        local s = (h + 2 * rim) / (H0 - inT - inS)                       -- the art's vertical stretch: (h + t + b) / H0
+        local t, b = rim + inT * s, rim + inS * s
+        f:SetPoint("TOPLEFT", hp, "TOPLEFT", -l, t)
+        f:SetPoint("BOTTOMRIGHT", hp, "BOTTOMRIGHT", l, -b)
+        return l, t, l, b
+    end
+
     function R.tick(dt)
         local rec = A and A.last
         local on = R.wanted() and rec and type(rec.m) == "table" and not A.off
@@ -4643,11 +4668,8 @@ do
                         if o.plate ~= tbHp then
                             o.f:ClearAllPoints()
                             o.f:SetParent(UIParent)
-                            -- round the bar's HUD frame (its lip: 3 texels left / top, 7 right, 8 bottom of an 8-texel-high bar)
-                            local h = tbHp:GetHeight() or 17
-                            local k = h / 8
-                            o.f:SetPoint("TOPLEFT", tbHp, "TOPLEFT", -3 * k - 7, 3 * k + 7)
-                            o.f:SetPoint("BOTTOMRIGHT", tbHp, "BOTTOMRIGHT", 7 * k + 7, -8 * k - 7)
+                            -- at8: on the HUD rim's visible edge, round the health bar only (never the cast bar under it)
+                            R.barAnchor(o.f, tbHp)
                             o.plate, o.bar, o.onBar = tbHp, nil, true
                             o.strata, o.lvl = nil, nil
                         end

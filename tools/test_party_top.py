@@ -611,6 +611,22 @@ def main():
         rig.scene(rtp.shapes()["party2"])
         wo = {u: round(v["hp"][2] - v["hp"][0]) for u, v in rig.party_bars().items()}
         chk("hub40: the 1428 code's lone member had the 510 px bar (the bug this fixes): %s" % wo, wo == {"party1": 510}, wo)
+    # uf15 / at8 (the user, 2026-11-12: "the target bars cast bar is too squished into it", "the aggro tint looks like its floating"):
+    # the pips / cast bar start clear of the HUD rim's visible lower lip (4 texels, k = 3 px at 1080) plus a gap; the tint round the
+    # health bar only, its outline on the rim's visible edge (3 texels out) on every side
+    import render_target_bar as rtb
+    _, tint, hp, cast, cp, ufv, atv = rtb.shoot(None, None, dict(tint=True, cast=True, pips=True))
+    k = (hp[3] - hp[1]) / 8
+    chk("uf15: UF.V uf15, at8: rings V at8 (%s / %s)" % (ufv, atv), ufv == "uf15" and atv == "at8")
+    chk("uf15: the pips' top %.1f px under the bar (>= the lip %.0f + 4), the cast below them %.1f" % (hp[1] - cp[3], 4 * k, cp[1] - cast[3]),
+        hp[1] - cp[3] >= 4 * k + 4 and cp[1] - cast[3] >= 4)
+    _, _, hp2, cast2, _, _, _ = rtb.shoot(None, None, dict(cast=True))
+    chk("uf15: no pips: the cast's top %.1f px under the bar (>= the lip %.0f + 4)" % (hp2[1] - cast2[3], 4 * k), hp2[1] - cast2[3] >= 4 * k + 4)
+    W0, H0 = 184.0, 38.0
+    sx, sy = (tint[2] - tint[0]) / W0, (tint[3] - tint[1]) / H0
+    out = (hp[0] - tint[0] - 6 * sx, tint[3] - hp[3] - 5 * sy, tint[2] - hp[2] - 6 * sx, hp[1] - tint[1] - 6 * sy)
+    chk("at8: the tint's outline 3 texels (%.1f px) out of the health bar on every side (l t r b %s), never round the cast bar"
+        % (3 * k, ["%.2f" % v for v in out]), all(abs(v - 3 * k) < 0.05 for v in out) and tint[1] > cast[3])
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
 
