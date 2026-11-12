@@ -17,7 +17,7 @@ class ChooserTabsTest {
 
     @Test fun inCombatHasAllFive() {
         assertEquals("In combat, a plain button", five, tabs("combat"))
-        assertEquals("In combat, a button with a fight spell (an Extra / DS entry replaces it)", five, tabs("combat", combat = true))
+        assertEquals("In combat, a button with a fight spell (an Extra / DS entry replaces it on the fight layer, p41)", five, tabs("combat", combat = true))
     }
 
     @Test fun inCombatKeepsThreeWhereOnlyAFightSpellGoes() {
@@ -32,18 +32,16 @@ class ChooserTabsTest {
         assertEquals("the spell radial casts spells", three, tabs("radial"))
     }
 
-    @Test fun inCombatWholeButtonBoxNamesBothSides() {
-        // p40 (review of p39): a command from In combat replaces the button out of combat too; the box says so
-        assertEquals(Triple("X / Y: Lightning Bolt in fights, Healing Wave out of combat.",
-            "Replace both with Open Map, in and out of fights?", "Replace"),
-            ChooserTabs.wholeBox("X / Y", "Open Map", true, "Lightning Bolt", "Healing Wave"))
-        assertEquals(Triple("X / Y: Lightning Bolt in fights, nothing out of combat.",
-            "Replace both with Open Map, in and out of fights?", "Replace"),
-            ChooserTabs.wholeBox("X / Y", "Open Map", true, "Lightning Bolt", null))
-        assertEquals(Triple("Healing Wave is on Left out of combat.", "Replace it with Open Map, in and out of fights?", "Replace"),
-            ChooserTabs.wholeBox("Left", "Open Map", false, null, "Healing Wave"))
-        assertEquals(Triple("Open Map goes on Left in and out of fights.", "Set it?", "Set"),
-            ChooserTabs.wholeBox("Left", "Open Map", false, null, null))
+    @Test fun inCombatFightLayerBoxNamesOnlyTheFightEntry() {
+        // p41 / m132 (the user, 2026-11-11: "Build a fight-only layer"): a command from In combat goes on the fight layer only; the box
+        // names the fight-layer entry it replaces and nothing of the button's WoW Defaults side
+        assertEquals(Triple("Lightning Bolt is X / Y's In combat entry.", "Replace it with Open Map?", "Replace"),
+            ChooserTabs.fightLayerBox("X / Y", "Open Map", "Lightning Bolt"))
+        assertEquals(Triple("Open Chat is Left's In combat entry.", "Replace it with Jump?", "Replace"),
+            ChooserTabs.fightLayerBox("Left", "Jump", "Open Chat"))
+        val (l1, l2, _) = ChooserTabs.fightLayerBox("Left", "Open Map", "Lightning Bolt")
+        assertEquals("never 'out of combat' / 'both': the WoW Defaults side is not touched", false,
+            (l1 + l2).contains("out of combat") || (l1 + l2).contains("both"))
     }
 
     @Test fun narrowSlotsDrawSquareTabs() {

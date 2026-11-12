@@ -26,15 +26,12 @@ object ChooserTabs {
 
     fun keys(spellsOnly: Boolean): List<String> = if (spellsOnly) SPELL_TABS else ALL_TABS
 
-    /** PadTabCtl p40 (review of p39): the box before a command / binding / mount / item from the In combat tab goes on [combo]. It goes on
-     *  the WHOLE button (PadMap has no command-only-in-fights layer), so the box names both what goes: on a button with a fight spell
-     *  ([fightButton]) its [fight] spell and its [out] (out of combat; null = nothing), else [out] (null = an empty button) */
-    fun wholeBox(combo: String, thing: String, fightButton: Boolean, fight: String?, out: String?): Triple<String, String, String> = when {
-        fightButton -> Triple("$combo: ${fight ?: "?"} in fights, ${out ?: "nothing"} out of combat.",
-            "Replace both with $thing, in and out of fights?", "Replace")
-        out != null -> Triple("$out is on $combo out of combat.", "Replace it with $thing, in and out of fights?", "Replace")
-        else -> Triple("$thing goes on $combo in and out of fights.", "Set it?", "Set")
-    }
+    /** PadTabCtl p41 / PadMap m132 THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; p40's "replace both" box
+     *  retired): a command / binding / mount / item from the In combat tab goes on [combo]'s FIGHT LAYER only - what the button does out of
+     *  combat (WoW Defaults) is not touched, so the box names only the fight-layer entry it replaces, [fight] (a fight spell or another
+     *  whole-button entry). An empty fight layer has no box (it goes straight on) */
+    fun fightLayerBox(combo: String, thing: String, fight: String?): Triple<String, String, String> =
+        Triple("${fight ?: "?"} is $combo's In combat entry.", "Replace it with $thing?", "Replace")
 
     /** the tab's own square in its slot ([l]..[r] x [t]..[b]): as wide as the slot, centred on its height (never taller than it) */
     fun square(l: Float, t: Float, r: Float, b: Float): PartyLayout.Box {

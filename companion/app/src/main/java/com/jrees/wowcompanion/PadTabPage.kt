@@ -1216,9 +1216,9 @@ class PadTabPage(
             kind == "make" -> Triple("This uses one of your General Macros (${(g?.n ?: 0) + 1} of ${g?.max ?: "?"}).", "Make ${thingName(thing)}?", "Make")
             kind == "cmake" -> Triple("This uses one of your Character Macros (${(ch?.n ?: 0) + 1} of ${ch?.max ?: "?"}).",
                 "Make ${thingName(thing)} this button's combat spell?", "Make")
-            // PadTabCtl p40: a command / binding / mount / item from In combat goes on the WHOLE button (in and out of fights)
-            kind == "replace" && fight() && whole(thing) -> ChooserTabs.wholeBox(comboWord(s, pos), thingName(thing), isCombat,
-                if (isCombat) sl!!.combat?.name else null, if (isCombat) sl!!.otherwise?.name else PadMapModel.replaces(m, s, pos)?.let { here })
+            // PadTabCtl p41 / PadMap m132 (the user, 2026-11-11: "Build a fight-only layer"): a command / binding / mount / item from In
+            // combat goes on the FIGHT LAYER only; the box names only the fight-layer entry it replaces
+            kind == "replace" && fight() && whole(thing) -> ChooserTabs.fightLayerBox(comboWord(s, pos), thingName(thing), sl?.combat?.name)
             kind == "replace" && isCombat && fight() -> Triple("${sl!!.combat?.name ?: "?"} is this button's combat spell.",
                 "Replace it with ${thingName(thing)}?", "Replace")
             kind == "replace" && isCombat -> Triple("${sl!!.otherwise?.name ?: "Nothing"} is on ${comboWord(s, pos)} out of combat.",
@@ -1460,7 +1460,7 @@ class PadTabPage(
         if (k != null) tBox = Box(k, t) else act(t)
     }
 
-    /** What goes on the whole button (PadTabCtl act's `whole`): on the In combat tab it changes the button out of combat too */
+    /** A whole-button thing (PadTabCtl act's `whole`): on the In combat tab it goes on the button's FIGHT LAYER only (PadMap m132) */
     private fun whole(t: Thing) = t is Thing.Command || t is Thing.Binding || t is Thing.Mount || t is Thing.Item
 
     private fun boxFor(t: Thing, m: PadMapModel.Map, afterReplace: Boolean): String? {
@@ -1476,8 +1476,10 @@ class PadTabPage(
             val k = slotOf(m, shown(), pos)?.kind
             return if (k == PadMapModel.Kind.COMBAT && !afterReplace) "replace" else null
         }
-        // PadTabCtl p40: on the In combat tab a whole-button thing changes the button out of combat too: Replace always asks first
-        if (!afterReplace && (PadMapModel.replaces(m, shown(), pos) != null || (fight() && whole(t)))) return "replace"
+        // PadTabCtl p41 (PadMap m132, the fight-only layer): on the In combat tab a whole-button thing goes on the fight layer only, so
+        // Replace asks only when the fight layer holds something there (a combat button); an empty fight layer: straight on
+        if (fight() && whole(t)) return if (!afterReplace && here?.kind == PadMapModel.Kind.COMBAT) "replace" else null
+        if (!afterReplace && PadMapModel.replaces(m, shown(), pos) != null) return "replace"
         if (t is Thing.Command && !t.c.made) return if (PadMapModel.macrosFull(m)) "full" else "make"
         return null
     }
@@ -1524,16 +1526,20 @@ class PadTabPage(
                 else -> tapSpell(t.e)
             }
             // p12: every Extra entry by the "extra" row, its page pick first (the pad owner's rule); the answer is checked (onAck)
-            is Thing.Command -> { extraSent = t.c.key; tap(pre + PadMapModel.extraCells(t.index - 1)) }
-            is Thing.Mount -> { extraSent = t.x.id.toString(); tap(pre + PadMapModel.extraCells(t.index)) }
-            is Thing.Item -> { extraSent = t.x.id.toString(); tap(pre + PadMapModel.extraCells(t.index)) }
-            is Thing.Binding -> { extraSent = t.b.key; tap(pre + PadMapModel.extraCells(t.index)) }
+            // p41 (PadMap m132): on In combat the "combat layer" pick goes first, so the add-on puts it on the FIGHT LAYER only
+            is Thing.Command -> { extraSent = t.c.key; tap(pre + layerPick(f, combatPick) + PadMapModel.extraCells(t.index - 1)) }
+            is Thing.Mount -> { extraSent = t.x.id.toString(); tap(pre + layerPick(f, combatPick) + PadMapModel.extraCells(t.index)) }
+            is Thing.Item -> { extraSent = t.x.id.toString(); tap(pre + layerPick(f, combatPick) + PadMapModel.extraCells(t.index)) }
+            is Thing.Binding -> { extraSent = t.b.key; tap(pre + layerPick(f, combatPick) + PadMapModel.extraCells(t.index)) }
             is Thing.Header -> {}
             Thing.Clear -> tap(pre + listOf(PadMapModel.ROW to PadMapModel.COL_CLEAR))
             Thing.Uncombat, Thing.Unface -> tap(pre + listOf(combatPick, PadMapModel.ROW to PadMapModel.COL_CLEAR))
                 ?: say("Use the controller: X on A, then the first row")
         }
     }
+
+    /** p41: the one-shot "combat layer" pick before an Extra / DS entry put from In combat (the add-on's touchExtra reads it) */
+    private fun layerPick(fight: Boolean, pick: Pair<String, Int>): List<Pair<String, Int>> = if (fight) listOf(pick) else emptyList()
 
     /** a finger takes the controller's chooser over (its tabs): its latched set comes along */
     private fun takeOver() {

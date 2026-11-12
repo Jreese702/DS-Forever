@@ -25,7 +25,11 @@ object PadMapModel {
     /** a spell a combat button names: its id and icon when the game knows the name; [item] (PadMap m32): an ITEM it keeps for outside
      *  fights ("/use [nocombat] item:<id>"), [id] then the item's id */
     /** [kind] (m127): Smart Y's pick's source - food / drink / both / buff / or / manners (a Manners pick shows as Manners'); null elsewhere */
-    data class Ref(val id: Int?, val name: String, val icon: Int, val item: Boolean = false, val kind: String? = null) {
+    /** [layer] (PadMap m132, THE FIGHT-ONLY LAYER - the user, 2026-11-11: "Build a fight-only layer"): a combat button's In combat entry
+     *  that is a whole-button thing - "command" / "bind" / "item" / "mount" - with [key] (the command's / binding's key, "i:<id>" /
+     *  "m:<id>"; no [id], so nothing reads it as a spell); null = a spell */
+    data class Ref(val id: Int?, val name: String, val icon: Int, val item: Boolean = false, val kind: String? = null,
+                   val layer: String? = null, val key: String? = null) {
         val manners: Boolean get() = kind == "manners"
     }
 
@@ -159,7 +163,7 @@ object PadMapModel {
 
     private fun count(o: JSONObject?): MacroCount? = o?.let { MacroCount(it.optInt("n", 0), intOrNull(it, "max")) }
     private fun ref(o: JSONObject?): Ref? = o?.let { r ->
-        textOrNull(r, "n")?.let { Ref(intOrNull(r, "id"), it, r.optInt("i", 0), r.optBoolean("item", false)) }
+        textOrNull(r, "n")?.let { Ref(intOrNull(r, "id"), it, r.optInt("i", 0), r.optBoolean("item", false), layer = textOrNull(r, "t"), key = textOrNull(r, "key")) }
     }
 
     /** The `padmap` message; null when it is not one. */
