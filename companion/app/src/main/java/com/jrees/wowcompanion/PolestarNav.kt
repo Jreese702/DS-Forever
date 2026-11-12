@@ -19,8 +19,29 @@ class PolestarNav {
     /** why Polestar is not routing (null = it is, or nothing was asked yet) */
     var why: String? = null; private set
 
-    /** One look at the goal at [nowMs]: [want] = (uiMapID, x, y) or null. The row's columns to tap, in order (empty = nothing). */
-    fun tick(want: DoubleArray?, nowMs: Long): List<Int> {
+    // ---- THE ROW HOLDS (pn4; the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not
+    // telling me where to go", then: Polestar's own arrow stays hidden, DS Forever's compass leads). The add-on is TOLD while the light
+    // blue Polestar row holds (38, 8; 38, 9 when it stops; re-said every [KEEP_EVERY_MS], Map.lua forgets it after its KEEP_S): its
+    // compass then shows Polestar's waypoint and route whether or not a quest is focused or in the log, and Polestar's route is read
+    // even when Polestar guides its step itself (it drops our GO at every step change) - so the route here is kept while [psOn] too.
+    /** the light blue row holds (the last [tick]'s word) */
+    var psOn = false; private set
+    private var psSaid = false
+    private var psSaidAt = Long.MIN_VALUE / 2
+
+    /** One look at the goal at [nowMs]: [want] = (uiMapID, x, y) or null; [ps] = the light blue Polestar row holds. The row's columns
+     *  to tap, in order (empty = nothing): the GO / KEEP / CANCEL first, then the row's word (never inside a GO's digits) */
+    fun tick(want: DoubleArray?, nowMs: Long, ps: Boolean = false): List<Int> {
+        val nav = navTick(want, nowMs)
+        psOn = ps
+        if (!ps && !active) route = emptyList()
+        val say = ps != psSaid || (ps && nowMs - psSaidAt >= KEEP_EVERY_MS)
+        if (!say) return nav
+        psSaid = ps; psSaidAt = nowMs
+        return nav + listOf(PS_SAY, if (ps) PS_ON else PS_OFF)
+    }
+
+    private fun navTick(want: DoubleArray?, nowMs: Long): List<Int> {
         if (want == null) {
             if (!active) return emptyList()
             active = false; sent = null; route = emptyList(); liveFrom = 1
@@ -67,7 +88,7 @@ class PolestarNav {
             if (pts.any { it.isNaN() }) continue
             out.add(Leg(l.optString("k", "walk"), if (l.has("c")) l.optInt("c") else null, pts))
         }
-        if (!active) return                  // a late route after a cancel: not ours any more
+        if (!active && !psOn) return         // a late route after a cancel: not ours any more (pn4: the held row's route is)
         // a new plan starts the progress again; the 10 s resends of the same plan keep it
         val same = route.size == out.size && route.zip(out).all { (a, b) -> a.kind == b.kind && a.pts.contentEquals(b.pts) }
         if (!same) liveFrom = 1
@@ -93,7 +114,7 @@ class PolestarNav {
     }
 
     /** the route when it is current: Polestar sends it every 10 s at least while guiding */
-    fun liveRoute(nowMs: Long): List<Leg>? = route.takeIf { active && it.isNotEmpty() && nowMs - routeAt <= STALE_MS }
+    fun liveRoute(nowMs: Long): List<Leg>? = route.takeIf { (active || psOn) && it.isNotEmpty() && nowMs - routeAt <= STALE_MS }
 
     companion object {
         /** Polestar's own LIVE_REACH (RouteLines.lua): progress along the path moves only while the player is this near it */
@@ -125,12 +146,31 @@ class PolestarNav {
         }
 
         const val GO = 36; const val KEEP = 37; const val CANCEL = 39
+        /** pn4: 38 then 8 = the light blue row holds, 9 = it does not (38's 0-7 are Polestar's automation mask, PolestarQol) */
+        const val PS_SAY = 38; const val PS_ON = 8; const val PS_OFF = 9
         const val ROW = "pnav"
         const val MOVE = 0.004
         const val SET_EVERY_MS = 2_000L
         const val KEEP_EVERY_MS = 20_000L      // well inside Map.lua's 60 s KEEP_S
         const val REFUSED_MS = 60_000L
         const val STALE_MS = 25_000L
+
+        /**
+         * pn4 (the user, 2026-11-11: "a polestar objective that is not in my bag and not telling me where to go"): where the maps mark
+         * Polestar's goal - the held light blue row's waypoint (this map's 0..1) when it has one on the map shown ([mapId]) and no quest
+         * is focused through it ([focusThrough] 0: that quest's own disc marks it); on another map of the same continent, carried
+         * through its world spot and [rect] (ps4); else null
+         */
+        fun goalMark(holds: Boolean, step: PolestarStep?, mapId: Int, focusThrough: Int, rect: PoiStore.Rect? = null): DoubleArray? {
+            if (!holds || step == null || !step.hasLoc || mapId == 0 || focusThrough != 0) return null
+            if (step.map == mapId) return doubleArrayOf(step.x, step.y)
+            // ps4 (the review of pn4: a goto / talk step across a zone line had no disc and no rim pin on Home's small map): a step on
+            // another map of the shown map's continent, through its world spot and the shown map's world rect (as the route's legs)
+            // - off the field, so the small map pins it at the rim on the way there
+            val r = rect ?: return null
+            if (!step.hasWorld || !r.valid || step.cont != r.continent) return null
+            return doubleArrayOf(r.nx(step.wy), r.ny(step.wx))
+        }
 
         /** a uiMapID as three base-36 digits (Map.lua: (d1 * 36 + d2) * 36 + d3) */
         fun mapDigits(m: Int): List<Int> {

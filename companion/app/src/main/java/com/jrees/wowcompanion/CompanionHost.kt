@@ -3614,7 +3614,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun polestarTick() {
         val pad = questsPad ?: return
         if (pad.optJSONObject("rows")?.has(PolestarNav.ROW) != true) return          // an older add-on: no Polestar bridge
-        val cols = mapView.polestar.tick(mapView.polestarGoal(), SystemClock.elapsedRealtime())
+        // pn4 (the user, 2026-11-11): the add-on is told while the light blue Polestar row holds (its compass leads to Polestar's goal)
+        val cols = mapView.polestar.tick(mapView.polestarGoal(), SystemClock.elapsedRealtime(), mapView.polestarHolds())
         if (cols.isEmpty()) {
             // pq1: Polestar's automation, when our choice differs from the one the add-on holds (its own batch: never inside a GO's digits)
             val q = PolestarQol.taps(GameUi.character, SystemClock.elapsedRealtime())

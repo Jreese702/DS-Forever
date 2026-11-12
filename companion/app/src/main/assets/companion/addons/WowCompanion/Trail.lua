@@ -82,7 +82,17 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp35" }
+-- cp36 THE PATH MARKER (the user, 2026-11-11: "The polestar doted line needs its own kind of marker to point on the compass to keep
+-- players on path so that they don't resort to walking at the final objective"): while Polestar guides for us (Map.lua WC.pnav: the
+-- app's GO; its route read back each second as WC.pnav.legs, the same legs the bottom map draws dotted), a light blue double chevron
+-- on the band points at the route a little AHEAD of the player (C.pathAhead: AHEAD yd along the route past the player's nearest
+-- point on it, passed segments never looked at again; a flight / boat / portal leg: that leg's start, with its distance), and yields
+-- to the objective marker over the last HAND yd of the route. The objective marker is unchanged. Read only: Polestar's own route.
+-- cp37 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where to
+-- go", then: Polestar's own arrow stays hidden, DS Forever's compass leads): while the app's light blue Polestar row holds (Map.lua
+-- pn4 WC.pnav.psOn: the app says so) the compass shows Polestar's waypoint (and the path marker, Polestar's route) whether or not a
+-- quest is focused, in the log, or our GO is the one Polestar follows; cp35's guess from the GO alone stays for an app that never says.
+WC.compass = { V = "cp38" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -111,7 +121,7 @@ do
         quest  = { atlas = "questnormal",               size = 32, red = false },
         corpse = { atlas = "Navigation-Tombstone-Icon", size = 26, red = false },
     }
-    C.ORDER = { "corpse", "pin", "quest" }               -- drawn back to front (the quest in front)
+    C.ORDER = { "corpse", "pin", "path", "quest" }       -- drawn back to front (the quest in front; cp36: the path marker under it)
     -- the letters by their angle COUNTER-CLOCKWISE from north (the game's facing convention): W is a quarter turn left of N
     C.NAMES = { [0] = "N", [45] = "NW", [90] = "W", [135] = "SW", [180] = "S", [225] = "SE", [270] = "E", [315] = "NE" }
     C.FONT = "Fonts\\FRIZQT__.TTF"
@@ -235,14 +245,44 @@ do
         -- super-tracked spot: the engine's point (the yaw / pitch reads) is that one, whatever the compass shows.
         t.stq = t.quest
         local PN, PS = WC.pnav, type(WC.pstep) == "table" and WC.pstep.last or nil
-        local psOn = type(PN) == "table" and PN.active and num(PN.m) and num(PN.x) and num(PN.y) and type(PS) == "table"
-            and not PS.none and num(PS.m) and num(PS.x) and num(PS.y)
-        if psOn and PS.m == PN.m and math.abs(PS.x - PN.x) < 0.002 and math.abs(PS.y - PN.y) < 0.002 then C.psAt = GetTime()
-        elseif C.psAt and (not psOn or (num(PN.goAt) and PN.goAt > C.psAt)) then C.psAt = nil end
-        if psOn and C.psAt and GetTime() - C.psAt < 5 then
-            local w = C.world(PS.m, PS.x, PS.y)
-            if w then t.quest, C.qsrc, C.qid = w, "polestar", num(PS.q) end      -- (an accept / go-to step: no quest, C.qid nil)
+        local psLoc = type(PS) == "table" and not PS.none and num(PS.m) and num(PS.x) and num(PS.y) and true or false
+        -- cp37: the app's word first (Map.lua pn4: 38, 8 / 9). cp35's guess only stood while the GO matched Polestar's step within
+        -- 0.002 - a step whose point moved less than the app's own re-send threshold (PolestarNav.MOVE 0.004) lost the goal after
+        -- 5 s for good, and a GO Polestar dropped at a step change (its Nav.lua stepMoved) left nothing to match
+        local told = type(PN) == "table" and type(PN.psOn) == "function" and PN.psSaid == true
+        local psHold = false
+        if told then
+            local okH, h = pcall(PN.psOn)
+            psHold = okH and h == true
+            C.psAt = nil
+        else
+            local psOn = type(PN) == "table" and PN.active and num(PN.m) and num(PN.x) and num(PN.y) and psLoc
+            if psOn and PS.m == PN.m and math.abs(PS.x - PN.x) < C.PS_TOL and math.abs(PS.y - PN.y) < C.PS_TOL then C.psAt = GetTime()
+            elseif C.psAt and (not psOn or (num(PN.goAt) and PN.goAt > C.psAt)) then C.psAt = nil end
+            psHold = psOn and C.psAt and GetTime() - C.psAt < 5 or false
         end
+        C.psHold = psHold and true or false
+        local psW
+        if psHold and psLoc then
+            psW = C.world(PS.m, PS.x, PS.y)
+            if psW then t.quest, C.qsrc, C.qid = psW, "polestar", num(PS.q) end  -- (an accept / go-to step: no quest, C.qid nil)
+        end
+        -- cp38 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where to
+        -- go"; the device's missing goal was not reproduced off-device): what the Polestar goal stood on, for the diag's psd -
+        -- the step read (nil / none / nl / loc, its map and frame), the world spot (w: 1 found, 0 none, - not asked), its continent
+        -- against the player's (c: 1 same, 0 other: dropped below, - unknown), the game super-tracking a user waypoint (st: the
+        -- route list then shows the pin, not the goal), Map's route pin (rw), and the GO (go: its map, and whether it matches the step)
+        local goM = type(PN) == "table" and PN.active and num(PN.m) and num(PN.x) and num(PN.y) and PN.m or nil
+        C.psd = table.concat({
+            PS == nil and "nil" or (type(PS) ~= "table" and "?") or (PS.none and "none") or (PS.nl and "nl") or (psLoc and "loc") or "?",
+            "m" .. tostring(type(PS) == "table" and num(PS.m) or "-"), "f" .. tostring(type(PS) == "table" and PS.fr or "-"),
+            "w" .. ((psHold and psLoc) and (psW and "1" or "0") or "-"),
+            "c" .. ((psW and me and psW.cont ~= nil and me.cont ~= nil) and (psW.cont == me.cont and "1" or "0") or "-"),
+            "st" .. ((okS and onPin == true) and "1" or "0"), "rw" .. (routeQ and "1" or "0"),
+            "go" .. tostring(goM or "-") .. ((goM and psLoc and PS.m == goM and math.abs(PS.x - PN.x) < C.PS_TOL
+                and math.abs(PS.y - PN.y) < C.PS_TOL) and "=" or ""),
+            "me" .. ((me and me.map) and tostring(me.map) or "-"),
+        }, ",")
         -- the corpse, while dead or a ghost
         local okD, dead = pcall(UnitIsDeadOrGhost, "player")
         if okD and dead == true and me and me.map then
@@ -1276,6 +1316,9 @@ do
         C.me_ = C.me()
         C.tg_ = C.targets(C.me_)
         C.rt_ = C.route(C.tg_)
+        local okA, pa = pcall(C.pathTarget, C.me_)                          -- cp36: the path marker's point (nil: none)
+        C.pa_ = okA and pa or nil
+        if not okA then C.paWhy = "err" end
         return true
     end
 
@@ -1343,10 +1386,18 @@ do
             end
         else
             local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
-            if okP and onPin == true and tg.pin then
+            -- cp38 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where
+            -- to go", and Polestar's own arrow stays hidden): while Polestar leads (C.qsrc "polestar": its row holds) its goal comes
+            -- FIRST even when the game super-tracks a user waypoint - cp37 showed only that pin then (a pin left from before, or the one
+            -- the game falls back to once "polestar unfocus" clears the quest focus); the pin stays, second
+            local psLead = C.qsrc == "polestar" and tg.quest ~= nil
+            if okP and onPin == true and tg.pin and not psLead then
                 items[1] = { id = "cp:" .. rtAt(tg.pin), w = tg.pin, kind = "pin", pin = true, why = "ownpin" }   -- (the same id as in a route)
             elseif tg.quest then
-                items[1] = { id = C.goalId(), w = tg.quest, kind = "goal", why = "noroute" }
+                items[1] = { id = C.goalId(), w = tg.quest, kind = "goal", why = psLead and "polestar" or "noroute" }
+                if psLead and okP and onPin == true and tg.pin and not dup(tg.pin, RT.GOAL_NEAR) then
+                    items[2] = { id = "cp:" .. rtAt(tg.pin), w = tg.pin, kind = "pin", pin = true, why = "ownpin2" }
+                end
             end
         end
         return items
@@ -1406,7 +1457,189 @@ do
         local listed = false
         for _, it in ipairs(C.rt_ or {}) do if it.pin then listed = true end end
         if tg.pin and not listed then t.pin = tg.pin end
+        t.path = C.pa_                                                      -- cp36
         return t
+    end
+
+    -- ---------------------------------------------------------------- cp36: THE PATH MARKER (the user, 2026-11-11)
+    -- Polestar's route (Map.lua WC.pnav.legs: { k, c, p = { wx, wy, ... } }, world yards as C.world's, the current leg first) ->
+    -- where the path marker points. Modelled on Polestar's own arrow (Nav/Walk.lua Walk.Aim: the nearest segment from the current
+    -- one to a few ahead, the index only ever moving on):
+    --   * the first leg a walk: the walk legs in a row from it are ONE line; the player's nearest point on it, searched from the
+    --     segment reached so far (st.idx) over WIN segments (all further ones when that is over STRAY yd off) - the segments behind
+    --     are passed and never looked at again; the point AHEAD yd further along the line from there (clamped at its end). That end
+    --     is the next leg's start (a flight master, a dock, a portal: the marker then shows its distance) or the route's end: within
+    --     HAND yd of the end ALONG the route, the marker yields to the objective (the route's length, never the straight line: a
+    --     goal close by over a cliff keeps the path marker).
+    --   * the first leg a flight / boat / zeppelin / tram / portal / hearth / lift: that leg's start, with its distance; gone within
+    --     REACH yd of it, and for the rest of that leg (aboard: the start is behind; on a taxi), until Polestar moves the route on.
+    --   * a new route (its signature, Map's legSig) starts again at its first segment.
+    -- cp37: cp35's GO match (an app that never says pn4's 38, 8): the GO's own rounding (1/2590) and the app's re-send threshold
+    -- (PolestarNav.MOVE 0.004) inside it
+    C.PS_TOL = 0.006
+    C.PA = { AHEAD = 30, HAND = 35, REACH = 8, WIN = 12, STRAY = 25, STALE_S = 3, RGB = { 120 / 255, 200 / 255, 1 }, st = {} }
+    function C.pathAhead(me, legs, st, sig)
+        local PA = C.PA
+        st = st or {}
+        if not me or type(legs) ~= "table" or #legs == 0 then return nil, "none" end
+        if st.sig ~= sig then st.sig, st.idx, st.boarded = sig, 1, nil end
+        local function sameCont(leg) return not (num(leg.c) and num(me.cont) and leg.c ~= me.cont) end
+        local function dist(ax, ay, bx, by) return math.sqrt((bx - ax) ^ 2 + (by - ay) ^ 2) end
+        local L1 = legs[1]
+        if type(L1) ~= "table" or type(L1.p) ~= "table" or not sameCont(L1) then return nil, "cont" end
+        if L1.k ~= "walk" then
+            local sx, sy = num(L1.p[1]), num(L1.p[2])
+            if not (sx and sy) then return nil, "none" end
+            local okT, taxi = pcall(UnitOnTaxi, "player")
+            local d = dist(me.x, me.y, sx, sy)
+            local key = tostring(L1.k) .. ":" .. math.floor(sx + 0.5) .. ":" .. math.floor(sy + 0.5)
+            if d <= PA.REACH then st.boarded = key end
+            if okT and taxi == true then return nil, "taxi" end
+            if st.boarded == key then return nil, (d <= PA.REACH) and "at" or "aboard" end
+            return { x = sx, y = sy, cont = me.cont, kind = L1.k, d = d }, "leg"
+        end
+        -- the walk legs in a row from the first: one line
+        local xs, ys, nextK, last = {}, {}, nil, 0
+        for i, leg in ipairs(legs) do
+            if type(leg) ~= "table" or type(leg.p) ~= "table" then break end
+            if leg.k ~= "walk" or not sameCont(leg) then nextK = leg.k or "walk"; break end
+            local p = leg.p
+            for j = 1, #p - 1, 2 do
+                local x, y = num(p[j]), num(p[j + 1])
+                if x and y and not (#xs > 0 and math.abs(x - xs[#xs]) < 0.05 and math.abs(y - ys[#ys]) < 0.05) then
+                    xs[#xs + 1], ys[#ys + 1] = x, y
+                end
+            end
+            last = i
+        end
+        local n = #xs
+        if n == 0 then return nil, "none" end
+        local isLast = last == #legs
+        local qx, qy, a
+        if n == 1 then
+            qx, qy, a = xs[1], ys[1], 1
+        else
+            local i0 = math.max(1, math.min(st.idx or 1, n - 1))
+            local function scan(a0, a1)
+                local off, ba, bx, by = math.huge, a0, xs[a0], ys[a0]
+                for k = a0, a1 do
+                    local ax, ay, ex, ey = xs[k], ys[k], xs[k + 1], ys[k + 1]
+                    local dx, dy = ex - ax, ey - ay
+                    local ll = dx * dx + dy * dy
+                    local t = (ll > 0) and (((me.x - ax) * dx + (me.y - ay) * dy) / ll) or 0
+                    t = math.max(0, math.min(1, t))
+                    local px, py = ax + dx * t, ay + dy * t
+                    local o = dist(me.x, me.y, px, py)
+                    if o < off then off, ba, bx, by = o, k, px, py end
+                end
+                return off, ba, bx, by
+            end
+            local off, ba, bx, by = scan(i0, math.min(n - 1, i0 + PA.WIN))
+            if off > PA.STRAY and i0 + PA.WIN < n - 1 then
+                local o2, a2, x2, y2 = scan(i0, n - 1)
+                if o2 < off then off, ba, bx, by = o2, a2, x2, y2 end
+            end
+            st.idx, a, qx, qy = ba, ba, bx, by
+            st.off = off
+        end
+        -- the yards left along the line from there, and the point AHEAD yd on
+        local left = (a < n) and dist(qx, qy, xs[a + 1], ys[a + 1]) or 0
+        for k = a + 1, n - 1 do left = left + dist(xs[k], ys[k], xs[k + 1], ys[k + 1]) end
+        st.left = left
+        if isLast and left <= PA.HAND then return nil, "hand" end
+        local rem, cx, cy, k = PA.AHEAD, qx, qy, a
+        local tx, ty, atEnd
+        while true do
+            if k >= n then tx, ty, atEnd = xs[n], ys[n], true; break end
+            local ex, ey = xs[k + 1], ys[k + 1]
+            local sl = dist(cx, cy, ex, ey)
+            if sl >= rem and sl > 0 then tx, ty = cx + (ex - cx) * rem / sl, cy + (ey - cy) * rem / sl; break end
+            rem, cx, cy, k = rem - sl, ex, ey, k + 1
+        end
+        if atEnd and not isLast then
+            local d = dist(me.x, me.y, tx, ty)
+            if d <= PA.REACH then return nil, "at" end
+            return { x = tx, y = ty, cont = me.cont, kind = nextK, d = d }, "end"
+        end
+        return { x = tx, y = ty, cont = me.cont, kind = "walk" }, "walk"
+    end
+    -- the path marker's point now: only while Polestar guides for us (the app's GO) with a fresh route read
+    function C.pathTarget(me)
+        local PN, PA = WC.pnav, C.PA
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        if type(PN) ~= "table" or not (PN.active or C.psHold) or type(PN.legs) ~= "table" or not num(PN.legsAt) or now - PN.legsAt > PA.STALE_S then
+            PA.st, C.paWhy = {}, "off"
+            return nil
+        end
+        local w, why = C.pathAhead(me, PN.legs, PA.st, PN.legSig)
+        C.paWhy = why
+        return w
+    end
+    -- its look: a light blue DOUBLE CHEVRON pointing up (go on this way), a dark rim under each stroke; smaller than the objective's
+    -- disc and nothing like it. Lines (as Polestar's own route lines), on our frame, made once.
+    C.PA.ARMS = { { 0, 7, -8, 0 }, { 0, 7, 8, 0 }, { 0, -1, -8, -8 }, { 0, -1, 8, -8 } }   -- spec px from the marker's centre, y up
+    C.PA.W, C.PA.RIM, C.PA.SIZE = 3.5, 6, 18
+    function C.paBuild()
+        if C.pa then return C.pa end
+        local f = C.frame
+        local o = { rim = {}, ln = {} }
+        local R = C.PA.RGB
+        for i = 1, #C.PA.ARMS do
+            o.rim[i] = f:CreateLine(nil, "ARTWORK", nil, 0); o.rim[i]:SetColorTexture(0, 0, 0, 0.85)
+            o.ln[i] = f:CreateLine(nil, "ARTWORK", nil, 2); o.ln[i]:SetColorTexture(R[1], R[2], R[3], 1)
+        end
+        o.d = f:CreateFontString(nil, "OVERLAY")
+        o.d:SetFont(C.FONT, C.u(C.SPEC.dist), "OUTLINE")
+        o.d:SetTextColor(R[1], R[2], R[3], 1)
+        o.a = f:CreateTexture(nil, "ARTWORK", nil, 3)
+        pcall(function() o.a:SetAtlas("Navigation-Tracked-Arrow") end)
+        o.a:SetVertexColor(R[1], R[2], R[3])
+        o.a:SetSize(C.u(14), C.u(14))
+        C.pa = o
+        return o
+    end
+    function C.paVis(o, on)                                          -- (no new locals: show / hide come later)
+        if on then if not o:IsShown() then o:Show() end elseif o:IsShown() then o:Hide() end
+    end
+    function C.paDraw(m, w)
+        local f, u, S, PA = C.frame, C.u, C.SPEC, C.PA
+        local o = C.paBuild()
+        local cx, cy = m.x, -S.line
+        for i, arm in ipairs(PA.ARMS) do
+            local x1, y1, x2, y2 = arm[1], arm[2], arm[3], arm[4]
+            local dx, dy = x2 - x1, y2 - y1
+            local l = math.sqrt(dx * dx + dy * dy)
+            local ex, ey = dx / l, dy / l                                  -- (the rim a pixel longer at both ends)
+            local al = (i > 2) and 0.7 or 1                                -- (the rear chevron a little dimmer)
+            local r, ln = o.rim[i], o.ln[i]
+            r:SetThickness(u(PA.RIM)); r:SetAlpha(al)
+            r:SetStartPoint("TOP", f, u(cx + x1 - ex), u(cy + y1 - ey)); r:SetEndPoint("TOP", f, u(cx + x2 + ex), u(cy + y2 + ey))
+            ln:SetThickness(u(PA.W)); ln:SetAlpha(al)
+            ln:SetStartPoint("TOP", f, u(cx + x1), u(cy + y1)); ln:SetEndPoint("TOP", f, u(cx + x2), u(cy + y2))
+            C.paVis(r, true); C.paVis(ln, true)
+        end
+        -- terse: a distance only for a leg's start (where the walk ends: a flight master, a dock, a portal)
+        local txt = (type(w) == "table" and w.kind ~= "walk" and num(w.d)) and C.distText(w.d) or nil
+        if txt then
+            if o.text ~= txt then o.d:SetText(txt); o.text = txt end
+            o.d:SetPoint("TOP", f, "TOP", u(m.x), -u(S.line + PA.SIZE / 2 + 3)); C.paVis(o.d, true)
+        else
+            C.paVis(o.d, false)
+        end
+        if m.off then
+            if o.side ~= m.side then pcall(function() o.a:SetRotation(m.side > 0 and -PI / 2 or PI / 2) end); o.side = m.side end
+            o.a:SetPoint("CENTER", f, "TOP", u(m.x + m.side * (PA.SIZE / 2 + 10)), -u(S.line)); C.paVis(o.a, true)
+        else
+            C.paVis(o.a, false)
+        end
+        o.shown = true
+    end
+    function C.paHide()
+        local o = C.pa
+        if not o or not o.shown then return end
+        for i = 1, #o.ln do C.paVis(o.rim[i], false); C.paVis(o.ln[i], false) end
+        C.paVis(o.d, false); C.paVis(o.a, false)
+        o.shown = false
     end
 
     local function hide(o) if o:IsShown() then o:Hide() end end
@@ -1458,6 +1691,9 @@ do
           if m.key == "rt" then
             C.rkDraw(m)
             rdrawn[m.id] = true
+          elseif m.key == "path" then
+            C.paDraw(m, C.pa_)                                              -- cp36: the path marker, its own look
+            drawn.path = true
           else
             local o, spec = C.mk[m.key], C.MARK[m.key]
             drawn[m.key] = true
@@ -1488,6 +1724,7 @@ do
             end
           end
         end
+        if not drawn.path then C.paHide() end
         for key, o in pairs(C.mk) do
             if not drawn[key] then hide(o.sh); hide(o.tx); hide(o.d); hide(o.a); if o.num then hide(o.num) end end
         end
@@ -1633,6 +1870,10 @@ do
             uwp = (okH and has == true) and true or false, st = (okS and onPin == true) and true or false, route = route,
             pin = tg.pin and true or false, qid = C.qid, qsrc = C.qsrc, quest = tg.quest and true or false,
             corpse = tg.corpse and true or false, n = #L.marks,
+            ps = C.psHold,                                                                          -- cp37: the Polestar row holds
+            psd = C.psd,                                                         -- cp38: what Polestar's goal stood on (C.targets)
+            rt1 = (C.rt_ and C.rt_[1]) and (tostring(C.rt_[1].id) .. ":" .. tostring(C.rt_[1].why)) or nil,     -- cp38: the list's first
+            pa = C.paWhy, pai = C.PA.st.idx, pal = C.PA.st.left and math.floor(C.PA.st.left + 0.5) or nil,     -- cp36
             rt = (function()
                 local p = {}
                 for _, it in ipairs(C.RT.pair or {}) do

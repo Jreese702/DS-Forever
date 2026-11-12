@@ -5,7 +5,10 @@ Runs Map.lua's WC.pstep section under a stubbed Polestar Engine (read only):
 - no waypoint but a current step (a talk / use / train goal): t / g / q / nl, no none, no m;
 - no guide (no current step): none;
 - review: a done step (no focus) -> none; a quest only from an open goal; a gated Class guide's live step -> none;
-- the 1 s ticker sends each of them (doc tag ps3) without an error, and WC.pstep.last carries no location for an nl step.
+- the 1 s ticker sends each of them (doc tag ps4) without an error, and WC.pstep.last carries no location for an nl step.
+- ps4 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where to go"):
+  the waypoint's world spot (wx, wy, c); a waypoint in Polestar's Era map frame (f = "e") turned into the live frame by Polestar's own
+  Nav.LiveCoords (ps3 sent the Era percent as if it were live: these checks fail on ps3), and sent with no spot when it cannot be.
 """
 import os
 import sys
@@ -28,6 +31,19 @@ Polestar = { Engine = {
     GetStepIndex = function() return IDX end,
     GetStepView = function(i) return VIEWS[i] end,
 } }
+-- ps4: the game's map -> world (map 2521: x 0..1 -> world y 1000..0, y 0..1 -> world x 2000..1000, continent 1) and Polestar's
+-- Nav.LiveCoords (an Era point on 2521: live x = era x / 2 + 10, live y = era y / 2 + 20; LC_FAIL: it cannot)
+function CreateVector2D(x, y) return { x = x, y = y } end
+C_Map = { GetWorldPosFromMapPos = function(m, v)
+    if m ~= 2521 then return nil end
+    return 1, { x = 2000 - 1000 * v.y, y = 1000 - 1000 * v.x }
+end }
+LC_FAIL = false
+Polestar.Nav = { LiveCoords = function(p)
+    if not p.f then return p.map, p.x, p.y end
+    if LC_FAIL then return nil end
+    return p.map, p.x / 2 + 10, p.y / 2 + 20
+end }
 '''
 
 fails = []
@@ -60,7 +76,30 @@ def run():
         and d.none is None)
     tick()
     s = said()
-    chk("... sent as ps3 with its stamp", s is not None and s.type == "pstep" and s.v == "ps3" and s.b == 12345 and s.m == 1429)
+    chk("... sent as ps4 with its stamp", s is not None and s.type == "pstep" and s.v == "ps4" and s.b == 12345 and s.m == 1429)
+
+    # ps4: the waypoint's world spot (map 2521, 54 / 39 -> world (1610, 460), continent 1)
+    M.execute('''
+        VIEWS[8] = { title = "The Strange Hermit", focus = 1, goals = { { text = "Accept The Strange Hermit", t = "accept", status = "active" } } }
+        WP = { map = 2521, x = 54, y = 39, label = "Accept The Strange Hermit", kind = "accept", stepIndex = 8, goalIndex = 1 }
+    ''')
+    d = read()
+    chk("ps4: a live waypoint: m / x / y as before, its world spot and continent", d.m == 2521 and abs(d.x - 0.54) < 1e-9
+        and abs(d.y - 0.39) < 1e-9 and d.wx == 1610 and d.wy == 460 and d.c == 1 and d.fr is None and d.q is None)
+    # an Era-frame point (f = "e"): Polestar's own Nav.LiveCoords gives the live percent (ps3 sent 0.54 / 0.39 as if live)
+    M.execute("WP.f = 'e'")
+    d = read()
+    chk("ps4: an Era-frame waypoint: the live frame through Nav.LiveCoords (%s / %s)" % (d.x, d.y), d.m == 2521
+        and abs(d.x - 0.37) < 1e-9 and abs(d.y - 0.395) < 1e-9 and d.fr == "e" and d.wx == 1605 and d.wy == 630)
+    # it cannot be turned: a step with no spot (no wrong GO), the frame said
+    M.execute("LC_FAIL = true; IDX = 8")
+    d = read()
+    chk("ps4: an Era-frame waypoint Polestar cannot turn: no spot (nl), fr said", d.nl is True and d.m is None and d.x is None
+        and d.fr == "e" and d.t == "The Strange Hermit")
+    M.execute("LC_FAIL = false; WP.map = 1429; WP.f = nil")
+    d = read()
+    chk("ps4: a map the game gives no world spot for: m / x / y, no wx / wy / c", d.m == 1429 and d.wx is None and d.c is None)
+    M.execute("WP = nil; IDX = nil")
 
     # no waypoint, a current step (a talk goal; the first goal done, the marked one = 2)
     M.execute('''
@@ -82,7 +121,7 @@ def run():
         ok = False
         print("  tick error:", e)
     s = said()
-    chk("... the ticker sends it without an error", ok and M.eval("#SAID") == n + 1 and s.nl is True and s.v == "ps3" and s.m is None)
+    chk("... the ticker sends it without an error", ok and M.eval("#SAID") == n + 1 and s.nl is True and s.v == "ps4" and s.m is None)
     last = M.eval("WC.pstep.last")
     chk("... WC.pstep.last has no location (the compass shows no Polestar point)", last.nl is True and last.m is None and last.none is None)
 
