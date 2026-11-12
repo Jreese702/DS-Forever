@@ -582,7 +582,7 @@ check(r.returncode == 0 and r.stdout.strip().endswith('ALL PASS'), "tools/test_s
 # "My current polestar objective does not give any direction on where to go": the picked Polestar step's starting item on Y, "bag")
 import hashlib
 smarty_sha = hashlib.sha256(open(os.path.join(ROOT, 'tools', 'test_smarty.py'), 'rb').read()).hexdigest()
-check(smarty_sha == "6c05094c626a5af327e4b7bf79edf950d09c018541c57dc3d9926fbd359fcb6b", "tools/test_smarty.py is byte for byte the pinned contract (b187c3c1 + m78 Manners + m101 soft-interact + m127 Smart Y v2 + m128 rate per kind + m132 Polestar starter)", smarty_sha[:12])
+check(smarty_sha == "0d1ec55e6e24f915391a1d9583351be49acbb8124fe4e724581eaf9268423758", "tools/test_smarty.py is byte for byte the pinned contract (b187c3c1 + m78 Manners + m101 soft-interact + m127 Smart Y v2 + m128 rate per kind + m132 Polestar starter, nothing targeted)", smarty_sha[:12])
 
 # ================================================================ THE WORLD: the real Spells files (and TapPad) logged in
 ROUTER_NAME = {8: "WowCompanionCombatFace8", 7: "WowCompanionFaceB", 5: "WowCompanionCombatFace5", 6: "WowCompanionCombatFace6",

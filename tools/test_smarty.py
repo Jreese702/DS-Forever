@@ -337,7 +337,7 @@ check(nm('[1] = SECRET, [2] = SECRET, [3] = SECRET', mana=40) == ([1, 2], "model
 check(nm('[1] = SECRET, [2] = SECRET, [3] = SECRET', mana=500) == ([], "none"), "enough for all: an empty set", "")
 
 # ---------------------------------------------------------------- m74: the quest item on Y (armed out of combat; used when its target exists)
-def press_q(conds=(), qi="item:12345", qu="target", fight=False, smart=None):
+def press_q(conds=(), qi="item:12345", qu="target", fight=False, smart=None, trad=False):
     L.execute('TRUE = {}')
     for c in conds:
         L.execute('TRUE["%s"] = true' % c)
@@ -345,6 +345,7 @@ def press_q(conds=(), qi="item:12345", qu="target", fight=False, smart=None):
                           "wc-fight-type": "spell", "wc-fight-spell": "Wrath"})
     if qi: attrs["wc-qitem"] = qi; attrs["wc-qitem-u"] = qu
     if smart: attrs["wc-smarty"] = smart
+    if trad: attrs["wc-tradial"] = True
     mk = L.eval('mkframe')
     btn = mk(attrs, L.table_from({"wc-hdr": mk(L.table_from({})), "wc-bar-top-1": mk(L.table_from({}))}))
     run(btn, "LeftButton", True)
@@ -369,8 +370,14 @@ check(k[0] == "native", "nothing armed: Y as before", k[0])
 # starting item, used from the bags ("bag")
 k = press_q([], qu="bag")
 check(k == ("qitem", "item", "item:12345", None), "m132: a starter item, nothing targeted: the item from the bags, no unit", k)
+# review (2026-11-11): only with NOTHING targeted - a target keeps Y (the target radial), so a starter that cannot be accepted
+# never takes every Y on every target
 k = press_q(["@target,exists,nodead", "@target,exists"], qu="bag")
-check(k[0] == "qitem" and k[3] is None, "m132: ... with a target too: the item, still no unit (never on the target)", k)
+check(k[0] == "native", "m132: ... with a target: not the starter (Y as before)", k)
+k = press_q(["@target,exists,nodead", "@target,exists"], qu="bag", trad=True)
+check(k[0] == "tradial", "m132: ... with a target and the radial on: the target radial", k)
+k = press_q(["@softinteract,exists"], qu="bag")
+check(k[0] == "qitem" and k[3] is None, "m132: ... only a soft-interact unit (no target): the starter, no unit", k)
 k = press_q(["combat"], qu="bag", fight=True)
 check(k[0] == "fight", "m132: ... in a fight: Y's fight spell as before", k[0])
 k = press_q([], qu="bag", smart="item:117")
