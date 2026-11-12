@@ -1194,12 +1194,20 @@ do
     function PF.ring(parent, layer)
         local r = { t = {} }
         for i = 1, 4 do r.t[i] = parent:CreateTexture(nil, layer or "OVERLAY", nil, 6); r.t[i]:Hide() end
+        -- hub35 review (2026-11-11, the user's gold ring on the pick): ONE mouse-less area frame, TOPLEFT on tl and BOTTOMRIGHT on br, and
+        -- every edge's two points on that area alone (an edge's two points on two regions clashed: the top edge's right end on the power
+        -- bar's top, the bottom edge's left end on the health bar's bottom)
         function r.place(tl, br, tlx, tly, brx, bry, px)
             local t = r.t
-            t[1]:SetPoint("TOPLEFT", tl, "TOPLEFT", tlx, tly); t[1]:SetPoint("TOPRIGHT", br, "TOPRIGHT", brx, tly); t[1]:SetHeight(px)
-            t[2]:SetPoint("BOTTOMLEFT", tl, "BOTTOMLEFT", tlx, bry); t[2]:SetPoint("BOTTOMRIGHT", br, "BOTTOMRIGHT", brx, bry); t[2]:SetHeight(px)
-            t[3]:SetPoint("TOPLEFT", tl, "TOPLEFT", tlx, tly); t[3]:SetPoint("BOTTOMLEFT", br, "BOTTOMLEFT", tlx, bry); t[3]:SetWidth(px)
-            t[4]:SetPoint("TOPRIGHT", tl, "TOPRIGHT", brx, tly); t[4]:SetPoint("BOTTOMRIGHT", br, "BOTTOMRIGHT", brx, bry); t[4]:SetWidth(px)
+            if not r.area then r.area = CreateFrame("Frame", nil, parent); r.area:EnableMouse(false) end
+            local a = r.area
+            a:ClearAllPoints()
+            a:SetPoint("TOPLEFT", tl, "TOPLEFT", tlx, tly); a:SetPoint("BOTTOMRIGHT", br, "BOTTOMRIGHT", brx, bry)
+            for i = 1, 4 do t[i]:ClearAllPoints() end
+            t[1]:SetPoint("TOPLEFT", a, "TOPLEFT", 0, 0); t[1]:SetPoint("TOPRIGHT", a, "TOPRIGHT", 0, 0); t[1]:SetHeight(px)
+            t[2]:SetPoint("BOTTOMLEFT", a, "BOTTOMLEFT", 0, 0); t[2]:SetPoint("BOTTOMRIGHT", a, "BOTTOMRIGHT", 0, 0); t[2]:SetHeight(px)
+            t[3]:SetPoint("TOPLEFT", a, "TOPLEFT", 0, 0); t[3]:SetPoint("BOTTOMLEFT", a, "BOTTOMLEFT", 0, 0); t[3]:SetWidth(px)
+            t[4]:SetPoint("TOPRIGHT", a, "TOPRIGHT", 0, 0); t[4]:SetPoint("BOTTOMRIGHT", a, "BOTTOMRIGHT", 0, 0); t[4]:SetWidth(px)
         end
         function r.show(rr, g, b, a)
             for i = 1, 4 do r.t[i]:SetColorTexture(rr, g, b, a); r.t[i]:Show() end

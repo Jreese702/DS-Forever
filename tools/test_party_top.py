@@ -30,6 +30,8 @@ function Frame:SetText(t) if type(t) == "table" then error("a secret value into 
 function Frame:SetTextColor(r, g, b) self.tc = { r, g, b } end
 function Frame:SetColorTexture(r, g, b, a) self.ct = { r, g, b, a } end
 function Frame:SetVertexColor(r, g, b) self.vc = { r, g, b } end
+function Frame:SetPoint(...) local l = rawget(self, "anch") or {}; l[#l + 1] = { ... }; self.anch = l end
+function Frame:ClearAllPoints() self.anch = nil end
 function Frame:SetStatusBarColor(r, g, b) self.sbc = { r, g, b }; self.paints = (rawget(self, "paints") or 0) + 1 end
 function Frame:SetStatusBarTexture(t) self.sbt = t end
 function Frame:GetStatusBarTexture() return self.sbt end
@@ -163,6 +165,25 @@ def main():
         f[1].look.ring == "gold" and f[2].look.ring is None and f[2].look.chev is True and f[1].look.chev is False,
         [(f[i].look.ring, f[i].look.chev) for i in sorted(f)])
     chk("the ring's gold is the bottom box's (1, 0.82, 0)", f[1].ring.t[1].ct[0 + 1] == 1 and abs(f[1].ring.t[1].ct[2] - 0.82) < 1e-6, "")
+    # hub35 review (2026-11-11): the ring on ONE area (TOPLEFT on the health bar, BOTTOMRIGHT on the power bar), every edge on it alone
+    rg = L.eval('''(function()
+        local f = WowCompanion.uf.pf.frames[1]
+        local r = f.ring
+        local a = r.area and r.area.anch or {}
+        if #a ~= 2 or a[1][1] ~= "TOPLEFT" or not rawequal(a[1][2], f.hp) or a[2][1] ~= "BOTTOMRIGHT" or not rawequal(a[2][2], f.mp) then
+            return "area"
+        end
+        local want = { { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
+        for i = 1, 4 do
+            local e = r.t[i].anch or {}
+            if #e ~= 2 then return "edge" .. i end
+            for j = 1, 2 do
+                if e[j][1] ~= want[i][j] or e[j][3] ~= want[i][j] or not rawequal(e[j][2], r.area) then return "edge" .. i .. "." .. j end
+            end
+        end
+        return "ok"
+    end)()''')
+    chk("hub35 review: the ring on one area (health's top-left to power's bottom-right), every edge on that area alone", rg == "ok", rg)
     G.PM.u = "player"
     step()
     f = frames()
