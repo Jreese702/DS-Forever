@@ -3516,6 +3516,7 @@ class MapView(context: Context) : View(context) {
     /** {"type":"pstep"}: Polestar's live objective, or none */
     fun onPolestarStep(d: JSONObject) {
         val before = psShown(); val beforeHolds = psHolds(); val beforeWords = psStep?.let { it.title + "|" + it.words }
+        val beforeMerged = psMerged()
         psStep = PolestarStep.parse(d)
         if (psStep != null) psStepAt = System.currentTimeMillis()   // (Map.lua re-sends a none every 15 s: only a real step stamps)
         // ps3: a gap with no step keeps the pick (psHolds needs a step anyway); a new login's stamp picks the row again, unless this
@@ -3527,7 +3528,7 @@ class MapView(context: Context) : View(context) {
             psPicked = if (first && !psPicked) { Settings.polestarOffBoot = b; false } else Settings.polestarOffBoot != b
         }
         if (psShown() != before) { rebuildItems(); if (cursor.shown && cursor.sel == MapList.POLESTAR && !psShown()) cursor.reset() }
-        if (psHolds() != beforeHolds || psStep?.let { it.title + "|" + it.words } != beforeWords) psChanged()
+        if (psHolds() != beforeHolds || psStep?.let { it.title + "|" + it.words } != beforeWords || psMerged() != beforeMerged) psChanged()
         psSyncTick()
         postInvalidate()
     }
@@ -3553,6 +3554,7 @@ class MapView(context: Context) : View(context) {
     private fun psChanged() {
         cards.clear()
         orderTracked(trackedIds())
+        rebuildItems()                                   // the light blue row may stand for its quest now, or no longer (PolestarMerge)
         deriveFocusTarget(map)
         deriveQuestAreas(map)
         firedFocus = shownFocus()
@@ -3560,12 +3562,22 @@ class MapView(context: Context) : View(context) {
         psSyncTick()
         invalidate()
     }
-    /** the light blue row's card: Polestar's step title, the goal's words under it */
+    /** the quest the picked light blue row stands for ([PolestarMerge]; the user, 2026-11-11: "consolidate that into one"), 0 none */
+    private fun psMerged(): Int = PolestarMerge.quest(psShown(), psPicked, psStep?.quest ?: 0) { questById.containsKey(it) }
+    /** the light blue row's card: Polestar's step title, the goal's words under it; merged (the user, 2026-11-11: "show that quests
+     *  objectives instead of 'complete that quest'"): the quest's own title and live objectives, in Polestar's light blue */
     private fun psCard(): UiKit.QuestCard? {
+        cards[MapList.POLESTAR]?.let { return it }
         val st = psStep ?: return null
-        val title = st.title ?: st.words ?: return null
-        val words = st.words?.takeIf { it != title }
-        return UiKit.QuestCard(title, 0, psBlue, listOfNotNull(words?.let { it to false }), focused = psHolds())
+        val q = psMerged()
+        val base = if (q > 0) (tracked.firstOrNull { it.optInt("id", 0) == q } ?: questById[q])?.let { cardFor(it) } else null
+        val ct = PolestarMerge.content(if (base != null) q else 0, st.title, st.words, base?.title, base?.objectives ?: emptyList())
+            ?: return null
+        val card = if (ct.merged && base != null)
+            UiKit.QuestCard(ct.title, base.level, psBlue, ct.lines, turnIn = base.turnIn, number = base.number, focused = true)
+        else UiKit.QuestCard(ct.title, 0, psBlue, ct.lines, focused = psHolds())
+        cards[MapList.POLESTAR] = card
+        return card
     }
 
     // ---- QUESTTRAIL'S STEP AS THE FOCUS (b-qtrail-focus; the user, test51: "Using quest trail, the focused quest should be overwritten
@@ -3824,7 +3836,10 @@ class MapView(context: Context) : View(context) {
         }
         val current = listOfNotNull(m?.optString("subzone", "")?.ifEmpty { null }, m?.optString("zone", "")?.ifEmpty { null })
         val groups = MapList.groups(entries, questsPlv, current, ownHeaders)
-        items = MapList.items(portrait != null && trackedKnown, trackedIds(), groups, polestar = psShown()) { z -> openTabs[z] == true }
+        val merged = psMerged()
+        items = MapList.items(portrait != null && trackedKnown, trackedIds(), groups, polestar = psShown(), merged = merged) { z -> openTabs[z] == true }
+        // the user, 2026-11-11 ("consolidate that into one"): a selection on the quest the light blue row now stands for moves onto it
+        if (merged > 0) cursor.moved(merged, MapList.POLESTAR, listKeys())
     }
 
     private fun toggleTab(key: Int) {
@@ -5213,7 +5228,15 @@ class MapView(context: Context) : View(context) {
         if (stops.size > 1) pairs.add(glyph("up") to "Select")
         when {
             at == MapList.ME -> if (onPlayerMenu != null) pairs.add(glyph("a") to "Menu")
-            at == MapList.POLESTAR -> pairs.add(glyph("a") to (if (psHolds()) "Unfocus" else "Focus"))
+            at == MapList.POLESTAR -> {
+                pairs.add(glyph("a") to (if (psHolds()) "Unfocus" else "Focus"))
+                val mq = psMerged()                                   // merged: X / Y are its quest's, as on its own row
+                if (mq > 0) {
+                    if (trackedIds().contains(mq)) { if (onUntrackQuest != null) pairs.add(glyph("x") to "Untrack") }
+                    else if (onTrackQuest != null) pairs.add(glyph("x") to "Track")
+                    pairs.add(glyph("y") to "Open")
+                }
+            }
             MapList.isGroup(at) -> pairs.add(glyph("a") to (if (openTabs[groupZone(at)] == true) "Close" else "Open"))
             at > 0 && at in MapList.untracked(items) -> {
                 if (onTrackFocusQuest != null) pairs.add(glyph("a") to "Track & focus")
@@ -5395,7 +5418,10 @@ class MapView(context: Context) : View(context) {
             invalidate(); return MapCursor.Do.Nothing
         }
         // ps3: while the light blue row holds it is the focused row (A on the game's old quest focuses it, A on the row lets go)
-        val d = cursor.key(k, listKeys(), if (psHolds()) MapList.POLESTAR else focusQid, filterOpen, MapList.untracked(items))
+        // the merged row's X / Y are its quest's (the user, 2026-11-11: "consolidate that into one")
+        val mq = psMerged()
+        val d = cursor.key(k, listKeys(), if (psHolds()) MapList.POLESTAR else focusQid, filterOpen, MapList.untracked(items),
+            merged = mq, mergedTracked = mq > 0 && trackedIds().contains(mq))
         when (d) {
             MapCursor.Do.Show -> { listShow(cursor.sel); landOn(cursor.sel) }
             is MapCursor.Do.Select -> {
@@ -5761,12 +5787,14 @@ class MapView(context: Context) : View(context) {
         val winBot = y0 + gh - (if (more > 0) lineO else 0f)
         if (above > 0) c.drawText(Tr.t("$above more above"), x + ROW_PAD_X, y0 + lineO - 10f, dp)
         // THE TOP SPOT, where Home's flying card lands (see [morph]): the first tracked quest's row as the list puts it once settled
-        val ti = list.indexOfFirst { it is MapList.Item.Tracked }
+        // (merged, the user 2026-11-11: the light blue row is the focused quest's one row, so Home's card lands on it)
+        val psOne = psMerged() > 0
+        val ti = if (psOne) list.indexOfFirst { it is MapList.Item.Polestar } else list.indexOfFirst { it is MapList.Item.Tracked }
         if (ti >= listFirst && ti >= 0) {
-            val e0 = tracked.firstOrNull { it.optInt("id", 0) == list[ti].key }
-            if (e0 != null) {
+            val h0 = if (psOne) itemH(list[ti]) else tracked.firstOrNull { it.optInt("id", 0) == list[ti].key }?.let { rowContentH(it) }
+            if (h0 != null && h0 > 0f) {
                 val t0 = winTop + at[ti] - at[listFirst] + (if (isSel(list[ti])) SEL_GAP else 0f)
-                flyLand.set(x, t0, x + w, t0 + rowContentH(e0))
+                flyLand.set(x, t0, x + w, t0 + h0)
             }
         }
         val stops = listKeys()
@@ -5775,7 +5803,7 @@ class MapView(context: Context) : View(context) {
         // the FOCUSED quest is drawn last, so while it slides up to the top spot it passes over the others
         for (pass in 0..1) for (i in 0 until n) {
             val it = list[i]
-            val front = it is MapList.Item.Tracked && it.id == shownFocus()
+            val front = if (psOne) it is MapList.Item.Polestar else it is MapList.Item.Tracked && it.id == shownFocus()
             if ((pass == 1) != front) continue
             if (fly && i == ti && front) continue            // in flight: drawFlight draws it
             val pos = rowPos[it.key] ?: at[i]
@@ -5813,17 +5841,19 @@ class MapView(context: Context) : View(context) {
      */
     private fun drawFlight(c: Canvas) {
         val card = morphCard ?: return
-        if (flyLand.isEmpty || tracked.isEmpty()) return
-        val e = tracked[0]
-        if (e.optInt("id", 0) != shownFocus()) return
+        if (flyLand.isEmpty) return
+        // merged (the user, 2026-11-11: "consolidate that into one"): the light blue card flies, Home's card and the list's one row
+        val ps = if (psMerged() > 0) psCard() else null
+        val e = if (ps == null) tracked.firstOrNull() ?: return else null
+        if (e != null && e.optInt("id", 0) != shownFocus()) return
         val a = if (morphOpening) morphK else 1f - morphK         // 1 = in the list's top spot
         val ox = hostX(); val oy = hostY()
         // UI Art's flight: the box AND the type size eased together, Home's CARD_HOME_SCALE to the list's 1
         flyTmp.set(card.left - ox + (flyLand.left - (card.left - ox)) * a, card.top - oy + (flyLand.top - (card.top - oy)) * a,
                    card.right - ox + (flyLand.right - (card.right - ox)) * a, card.bottom - oy + (flyLand.bottom - (card.bottom - oy)) * a)
         val sc = UiKit.CARD_HOME_SCALE + (1f - UiKit.CARD_HOME_SCALE) * a
-        drawRow(c, e, flyTmp, sc)
-        if (cursor.shown && cursor.sel == e.optInt("id", 0)) UiKit.focus(c, flyTmp)
+        if (ps != null) UiKit.questCard(c, flyTmp, ps, scale = sc) else if (e != null) drawRow(c, e, flyTmp, sc)
+        if (cursor.shown && cursor.sel == (e?.optInt("id", 0) ?: MapList.POLESTAR)) UiKit.focus(c, flyTmp)
     }
 
     // ---- FOCUS: the Quests room's "Show on map" (requested by the quests session).
