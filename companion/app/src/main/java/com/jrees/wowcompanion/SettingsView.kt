@@ -72,7 +72,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segLayout = Array(LAYOUTS.size) { RectF() }
     private val segLocation = Array(LOCATIONS.size) { RectF() }
     private val segChat = Array(CHAT_INPUTS.size) { RectF() }
-    private val segQt = Array(4) { RectF() }
+    private val segQt = Array(2) { RectF() }                          // Vanilla / Polestar (the user, 2026-11-12: SafePath, QuestTrail gone)
+    private val segGuide = Array(2) { RectF() }                       // Add-ons > Polestar quest guide On / Off (2026-11-12)
+    private var btnGuidePending = RectF()                             // its Restart game / Try again
     private val segDanger = Array(3) { RectF() }
     private val segFog = Array(2) { RectF() }
     private val segPsTop = Array(2) { RectF() }          // hub31: Polestar on the top screen, Show / Hide
@@ -228,7 +230,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun isReload(r: RectF): Boolean = !btnReload.isEmpty && r == btnReload
 
     /** the Add-ons tab's controls, in reading order (each module's box, then each option's two segments) */
-    private fun addonFocus(): List<RectF> = listOf(addonRestart) + addonCoreBtn.values.toList() + addonSettingsBtn.values.toList() + addonModuleBoxes.values.toList() +
+    private fun addonFocus(): List<RectF> = segGuide.toList() + listOf(btnGuidePending, addonRestart) + addonCoreBtn.values.toList() + addonSettingsBtn.values.toList() + addonModuleBoxes.values.toList() +
         addonOptionSegs.values.flatMap { it.toList() }
 
     /** the rows as last drawn, with their words (the "What it does" panel follows the row under the cursor or a touch) */
@@ -241,6 +243,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun clearBoxes() {
         rowHits.clear(); sbHits.clear()
         addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty(); addonSettingsBtn.clear()
+        btnGuidePending.setEmpty(); for (r in segGuide) r.setEmpty()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
@@ -271,7 +274,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
         SettingsTabs.Block.STREAMING -> 16f + ROW_H
-        SettingsTabs.Block.MAP -> 16f + 5 * ROW_H + 4 * 10f     // zoom out, zoom in, Quest tracking, World map, SafePath network
+        // zoom out, zoom in, Quest tracking, World map (the SafePath network row went with SafePath, the user 2026-11-12)
+        SettingsTabs.Block.MAP -> 16f + 4 * ROW_H + 3 * 10f
         SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
         SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
@@ -412,12 +416,12 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 val lgi = segLang.indexOfFirst { it.contains(x, y) }
                 if (lgi >= 0) { Tr.setChoice(context, Tr.LANGS[lgi].code); invalidate(); return }
                 if (fi >= 0) { Settings.worldMapFog = if (fi == 0) "all" else "explored"; invalidate(); return }
-                if (di >= 0) { if (Settings.questTracking == "safepath") Settings.avoidDanger = Settings.AVOID_DANGER[di]; invalidate(); return }
+                if (di >= 0) { invalidate(); return }          // SafePath's danger row: never drawn since SafePath left the options
                 if (qi >= 0 && !Settings.ROUTE_MODES_ON && qi != 0) { invalidate(); return }   // held back for 1.0.9
                 if (qi >= 0) {
-                    if (Settings.questTracking != Settings.QUEST_TRACKING[qi]) Settings.questTracking = Settings.QUEST_TRACKING[qi]
-                    // an add-on not installed yet: choosing it installs it (the Add-ons tab's own Install; the app's route meanwhile)
-                    qtAddon(qi)?.let { a -> if (!ThirdPartyAddons.coreInstalled(a)) ThirdPartyAddons.install(a) }
+                    // the user, 2026-11-12: Vanilla / Polestar is the Polestar quest guide's own choice (PolestarGuide): the add-on
+                    // goes in (downloaded first when it is not here) or out at the next start with the game closed
+                    PolestarGuide.set(Settings.QUEST_TRACKING[qi] == "polestar")
                     invalidate()
                 }
                 else if (ci >= 0) { if (Settings.chatDefaultInput != CHAT_INPUTS[ci]) Settings.chatDefaultInput = CHAT_INPUTS[ci] }
@@ -610,8 +614,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         return y + ROW_H
     }
 
-    /** the Quest tracking row at [y] (Settings > Map, and the Polestar block on Add-ons: the user, 2026-11-11, "the quest tracking can
-     *  share a link between these two spots"): one setting, one segmented control (the two are on different tabs, so one set of boxes) */
+    /** the Quest tracking row at [y] (Settings > Map): Vanilla / Polestar, the Polestar quest guide's own choice (the user, 2026-11-12;
+     *  the Add-ons tab's Polestar block switches the same choice with its On / Off) */
     private fun drawQuestTrackingRow(c: Canvas, y: Float) {
         // QUEST TRACKING (the user, 2026-10-17): what the map's line, arrows and pin follow
         pBtn.textSize = SEG_TEXT
@@ -628,15 +632,13 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             }
             return "${a.title} ${a.version}: $state · $what"        // the state first: a long line is cut at its end
         }
+        // the user, 2026-11-12: two choices, Vanilla and Polestar (SafePath and QuestTrail are no longer options)
         val sub = when (Settings.questTracking) {
             "polestar" -> addonWord(ThirdPartyAddons.POLESTAR, "walking routes")
-            "questtrail" -> addonWord(ThirdPartyAddons.QUESTTRAIL, "the line follows its arrow, no game pin")
-            "vanilla" -> if (Settings.ROUTE_MODES_ON) "The game's own way: the line points straight at the quest, no route, the game's pin left alone"
-                         else "The line points straight at the quest. SafePath, QuestTrail and Polestar come in a later update"
-            else -> "DS Forever's route: round mobs and cliffs, by roads, ways and rides, checkpoint flags"
+            else -> "The game's own way: the line points straight at the quest"
         }
         row(c, y, "Quest tracking", sub, enabled = true) { box ->
-            // four choices: never more than two thirds of the row, the label and its line keep the rest
+            // never more than two thirds of the row, the label and its line keep the rest
             val bw = minOf(qtW * QT_LABELS.size, box.width() * 0.66f)
             val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             qtSegmented(c, b, Settings.QUEST_TRACKING.indexOf(Settings.questTracking))
@@ -660,7 +662,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         drawQuestTrackingRow(c, y)
         // AVOID DANGEROUS AREAS moved to QOL > Navigation (the housekeeping pass; GameUiSection's QOL part, the same Settings.avoidDanger)
         y += ROW_H + 10f
-        val safe = Settings.questTracking == "safepath"
         // WORLD MAP (b-seamless-map; the user: "Give an option in settings"): the stitched continent, every zone or only the explored
         val all = Settings.worldMapFog == "all"
         row(c, y, "World map", if (all) "The Map room's continents show every zone, revealed" else "The Map room's continents show what you have explored",
@@ -670,12 +671,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segmented(c, b, listOf("Show all", "Explored only"), if (all) 0 else 1, segFog)
             b
         }
-        // SAFEPATH'S NETWORK (test20: the v1 / v2 switch removed; no control): the shipped network's word for this zone (ShippedNets.line:
-        // "Shipped network" / "may be out of date (exported for build X, game is Y)" / none)
-        y += ROW_H + 10f
-        row(c, y, "SafePath network", if (!safe) "SafePath only: choose SafePath in Quest tracking" else ShippedNets.line, enabled = true) { box ->
-            RectF(box.right - 16f, box.centerY(), box.right - 16f, box.centerY())
-        }
+        // the "SafePath network" row went with SafePath (the user, 2026-11-12: "remove safe path ... from the options"); ShippedNets stays
         return y + ROW_H
     }
 
@@ -722,14 +718,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         }
         // the route's data from the game files (b-route-data-all: terrain and buildings for every zone, made before Play)
         y += 10f
-        // SafePath's network (b-safepath-review): each zone's draft, reviewed and corrected over this room
+        // "Review paths" (SafePath's network review, b-safepath-review) went with SafePath (the user, 2026-11-12); the data's line stays
         row(c, y, "Route data", Terrain.coverageLine(), enabled = true) { box ->
-            val label = "Review paths"
-            val w = UiKit.bodyPaint(26f).measureText(label) + 80f
-            val b = RectF(box.right - 16f - w, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            UiKit.button(c, b, label, UiKit.Button.UP)
-            btnRouteReview = b
-            b
+            RectF(box.right - 16f, box.centerY(), box.right - 16f, box.centerY())
         }
         if (Terrain.coverageNow()?.let { it.optInt("zones") < it.optInt("total") } != false) postInvalidateDelayed(3_000L)
         y += ROW_H
@@ -1220,19 +1211,69 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      */
     /** the rows an add-on's block shows now: its own row; its modules and options only once it is installed (the user, test40:
      *  "The settings under spoken shouldn't show until after it's installed") */
-    private fun addonRows(a: ThirdPartyAddons.Addon): Int =
+    private fun addonRows(a: ThirdPartyAddons.Addon): Int = if (a.base) guideRows() else
         1 + (if (ThirdPartyAddons.coreInstalled(a)) a.modules.size + a.options.size + (if (a.settings != null) 1 else 0) +
             (if (a.id == ThirdPartyAddons.POLESTAR.id) polestarRows() else 0) else 0)
 
-    /** pq1 / hub31 (the user, 2026-11-11: the Polestar settings "under the polestar addons tab"): Quest tracking (shared with Map), the
-     *  top screen, then the three automation switches (off by default) */
-    private fun polestarRows(): Int = 1 + (if (psTopRow()) 1 else 0) + 3
+    /** pq1 / hub31 (the user, 2026-11-11: the Polestar settings "under the polestar addons tab"): the top screen, then the three
+     *  automation switches (off by default). 2026-11-12: the Quest tracking row is the guide's own On / Off now ([drawGuide]) */
+    private fun polestarRows(): Int = (if (psTopRow()) 1 else 0) + 3
     private val segPq = Array(3) { Array(2) { RectF() } }
+
+    // ---- THE POLESTAR QUEST GUIDE (the user, 2026-11-12: "If they say no let's add a toggle in settings to turn it on and off")
+    private fun guideOn(): Boolean = Settings.polestarGuide == PolestarGuide.ON
+    /** what waits on the game: a failed move (Try again), or a change that needs the game started again (Restart game); null = none */
+    private fun guidePending(): String? {
+        val a = ThirdPartyAddons.POLESTAR
+        val k = ThirdPartyAddons.status(a, "core").kind
+        return when {
+            ThirdPartyAddons.coreWanted(a) && ThirdPartyAddons.anyFailed(a) -> "retry"
+            gameRunning() && (k == ThirdPartyAddons.Kind.DOWNLOADED || k == ThirdPartyAddons.Kind.REMOVING) -> "restart"
+            else -> null
+        }
+    }
+    /** the guide's rows: its On / Off, the pending row, then (on and installed) Polestar's own settings */
+    private fun guideRows(): Int = 1 + (if (guidePending() != null) 1 else 0) +
+        (if (guideOn() && ThirdPartyAddons.coreInstalled(ThirdPartyAddons.POLESTAR)) polestarRows() else 0)
+
+    private fun drawGuide(c: Canvas, top: Float, a: ThirdPartyAddons.Addon): Float {
+        var y = top
+        if (addonRows(a) != addonDrawnRows[a.id]) { addonDrawnRows[a.id] = addonRows(a); requestLayout() }
+        val st = ThirdPartyAddons.status(a, "core")
+        if (st.kind == ThirdPartyAddons.Kind.DOWNLOADING || st.kind == ThirdPartyAddons.Kind.WAITING_WIFI) postInvalidateDelayed(1000)
+        val on = guideOn()
+        val sub = when {
+            Settings.polestarGuide == null -> "${a.what}. By ${a.by}, ${a.license}."
+            st.kind == ThirdPartyAddons.Kind.INSTALLED -> if (on) "In use. Version ${a.version}. By ${a.by}, ${a.license}." else st.line
+            st.kind == ThirdPartyAddons.Kind.DOWNLOADING && st.pct >= 0 -> "${st.line} (${st.pct}%)"
+            st.kind == ThirdPartyAddons.Kind.NONE -> if (on) "Waiting to download" else "Off. By ${a.by}, ${a.license}."
+            else -> st.line
+        }
+        row(c, y, "Polestar quest guide", sub, enabled = true) { box ->
+            val b = RectF(box.right - 16f - segW() * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, listOf("On", "Off"), if (on) 0 else if (Settings.polestarGuide == PolestarGuide.OFF) 1 else -1, segGuide)
+            b
+        }
+        guidePending()?.let { p ->
+            y += ROW_H + 10f
+            val going = SystemClock.elapsedRealtime() - addonRestartAt < 60_000L
+            val (label, line, btn) = if (p == "retry")
+                Triple("Polestar did not go in", ThirdPartyAddons.failedWhy(a, "core") ?: "", "Try again")
+            else Triple("Restart the game", if (on) "Polestar loads when the game starts again" else "Polestar unloads when the game starts again",
+                if (going) "Restarting..." else "Restart game")
+            btnGuidePending = row(c, y, label, line, enabled = true) { box ->
+                val r = RectF(box.right - 16f - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                val down = p == "restart" && going
+                UiKit.button(c, r, btn, if (down) UiKit.Button.DOWN else UiKit.Button.UP)
+                if (down) { postInvalidateDelayed(1000); RectF(r.left, r.top, r.left, r.top) } else r
+            }
+        }
+        if (on && ThirdPartyAddons.coreInstalled(a)) y = drawPolestarRows(c, y)
+        return y + ROW_H
+    }
 
     private fun drawPolestarRows(c: Canvas, top: Float): Float {
         var y = top
-        y += ROW_H + 10f
-        drawQuestTrackingRow(c, y)
         if (psTopRow()) {
             y += ROW_H + 10f
             val hide = GameUi.swWant(GameUi.SW_PS)
@@ -1266,6 +1307,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val addonSettingsBtn = HashMap<String, RectF>()
 
     private fun drawAddon(c: Canvas, top: Float, a: ThirdPartyAddons.Addon): Float {
+        if (a.base) return drawGuide(c, top, a)
         var y = top
         val K = ThirdPartyAddons.Kind.INSTALLED            // (the kinds read below, by name)
         val core = ThirdPartyAddons.status(a, "core")
@@ -1334,7 +1376,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             }
             addonOptionSegs["${a.id}.${o.id}"] = segs
         }
-        if (a.id == ThirdPartyAddons.POLESTAR.id) y = drawPolestarRows(c, y)
         // its own settings view (QuestTrail's options pages, mirrored), only with the game up
         a.settings?.let { label ->
             y += ROW_H + 10f
@@ -1369,6 +1410,13 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** a press on an Add-ons control; true = it was one */
     private fun addonTap(x: Float, y: Float): Boolean {
         if (!addonRestart.isEmpty && addonRestart.contains(x, y)) { addonRestartAt = SystemClock.elapsedRealtime(); onRestart(); return true }
+        // 2026-11-12: the Polestar quest guide's On / Off, and its Restart game / Try again
+        segGuide.indexOfFirst { !it.isEmpty && it.contains(x, y) }.takeIf { it >= 0 }?.let { PolestarGuide.set(it == 0); invalidate(); return true }
+        if (!btnGuidePending.isEmpty && btnGuidePending.contains(x, y)) {
+            if (guidePending() == "retry") ThirdPartyAddons.retry(ThirdPartyAddons.POLESTAR)
+            else { addonRestartAt = SystemClock.elapsedRealtime(); onRestart() }
+            invalidate(); return true
+        }
         for (a in ThirdPartyAddons.ALL) {
             if (addonSettingsBtn[a.id]?.let { !it.isEmpty && it.contains(x, y) } == true) { onAddonSettings(a); return true }
             addonCoreBtn[a.id]?.takeIf { !it.isEmpty && it.contains(x, y) }?.let {
@@ -1459,7 +1507,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     /** the add-on behind Quest tracking's segment [i] (QuestTrail, Polestar), or null (Vanilla) */
     private fun qtAddon(i: Int): ThirdPartyAddons.Addon? = when (Settings.QUEST_TRACKING.getOrNull(i)) {
-        "polestar" -> ThirdPartyAddons.POLESTAR; "questtrail" -> ThirdPartyAddons.QUESTTRAIL; else -> null }
+        "polestar" -> ThirdPartyAddons.POLESTAR; else -> null }
 
     /**
      * Quest tracking's three segments (the user: Polestar / QuestTrail installed from Settings > Add-ons; the picker "offers the
@@ -1505,7 +1553,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         }
         private val CHAT_INPUTS = listOf("quick", "keys")
         private val CHAT_INPUT_LABELS = listOf("Quick chat", "Keyboard")
-        private val QT_LABELS = listOf("Vanilla", "SafePath", "QuestTrail", "Polestar")
+        private val QT_LABELS = listOf("Vanilla", "Polestar")          // the user, 2026-11-12: SafePath and QuestTrail removed
         private const val SEG_TEXT = 24f
         private const val SEG_PAD = 36f      // text-to-edge room inside a segment, both sides
         private const val SEG_MIN_W = 120f

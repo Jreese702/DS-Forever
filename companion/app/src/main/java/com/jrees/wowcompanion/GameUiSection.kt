@@ -120,7 +120,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             GameUi.nameplatesRow(), tipsRow())
         // QOL: three groups, each under its heading (a "#" row); the rows, their ids and taps are the ones Top screen had
         Part.QOL -> group("HUD", listOfNotNull(GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow())) +
-            group("Navigation", listOfNotNull(compassRow(), GameUi.worldMarkersRow(), compassCamRow(), dangerRow())) +
+            // "Avoid dangerous areas" (SafePath's) left with SafePath (the user, 2026-11-12: "remove safe path ... from the options")
+            group("Navigation", listOfNotNull(compassRow(), GameUi.worldMarkersRow(), compassCamRow())) +
             group("Combat", listOfNotNull(GameUi.attackRow(), GameUi.autoShotRow(), ringsRow())) +
             group("Experimental", listOfNotNull(GameUi.partyModeRow()))
         else -> GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
@@ -128,7 +129,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     /** a heading row ("#" + its words) over [rows], none when the group is empty */
     private fun group(heading: String, rows: List<GameUi.Row>): List<GameUi.Row> =
         if (rows.isEmpty()) emptyList() else listOf(GameUi.Row("#$heading", heading, null, UiMode.ON, true, false, "")) + rows
-    /** QOL > Navigation: SafePath's "Avoid dangerous areas" (moved from Home > Map: the same Settings.avoidDanger), Off / Low / High */
+    /** QOL > Navigation: SafePath's "Avoid dangerous areas" (moved from Home > Map: the same Settings.avoidDanger), Off / Low / High.
+     *  NOT SHOWN since 2026-11-12 (SafePath is no longer a Quest tracking option); kept with SafePath's code */
     private fun dangerRow(): GameUi.Row {
         val safe = Settings.ROUTE_MODES_ON && Settings.questTracking == "safepath"
         val note = when {

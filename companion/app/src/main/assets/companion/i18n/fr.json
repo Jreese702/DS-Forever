@@ -1,5 +1,11 @@
 {
 "plain": {
+"Use the Polestar quest guide?": "Utiliser le guide de quêtes Polestar ?",
+"Polestar quest guide": "Guide de quêtes Polestar",
+"Polestar loads when the game starts again": "Polestar se charge au prochain lancement du jeu",
+"Polestar unloads when the game starts again": "Polestar se retire au prochain lancement du jeu",
+"Polestar did not go in": "Polestar n'a pas pu être installé",
+"The game's own way: the line points straight at the quest": "À la manière du jeu : la ligne pointe droit vers la quête",
 "Training points": "Points de dressage",
 "Training points ": "Points de dressage ",
 "Not enough training points": "Pas assez de points de dressage",

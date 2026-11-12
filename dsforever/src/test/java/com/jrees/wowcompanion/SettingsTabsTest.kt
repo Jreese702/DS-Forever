@@ -57,7 +57,8 @@ class SettingsTabsTest {
         assertEquals(listOf(B.SMART_Y, B.QOL_HUD, B.QOL_NAV, B.QOL_COMBAT), SettingsTabs.blocks(T.QOL))
         // hub33 (the user, 2026-11-11: "find a way to include Pet HP in the HUD"): the pet's strip right under the resource bar
         assertEquals(listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale"), B.QOL_HUD.rows)
-        assertEquals(listOf("Compass bar", "World markers", "Compass follows the camera", "Avoid dangerous areas"), B.QOL_NAV.rows)
+        // 2026-11-12: SafePath's "Avoid dangerous areas" went with SafePath (the user: "remove safe path ... from the options")
+        assertEquals(listOf("Compass bar", "World markers", "Compass follows the camera"), B.QOL_NAV.rows)
         assertEquals(listOf("Aggro tint"), B.QOL_COMBAT.rows)
         assertEquals(listOf(B.SMART_Y), SettingsTabs.viewBlocks(T.QOL))   // Smart Y by SettingsView, the groups by GameUiSection's QOL part
         // Top screen keeps only the game's own windows
@@ -79,8 +80,9 @@ class SettingsTabsTest {
 
     /** 1.0.9 Add-ons: every third-party add-on has its block there, its rows its own (title, modules, options) */
     @Test fun addOnsHaveTheirOwnTab() {
-        // 1.0.9: with the route modes held back, only Spoken's block shows (Polestar / QuestTrail come back with them)
-        val shown = if (Settings.ROUTE_MODES_ON) listOf(B.ADDON_SPOKEN, B.ADDON_POLESTAR, B.ADDON_QUESTTRAIL, B.ADDON_MANNERS)
+        // 1.0.9: with the route modes held back, only Spoken's block shows (Polestar / QuestTrail come back with them).
+        // 2026-11-12 (the user: "remove safe path and quest trail from the options"): QuestTrail only while a copy is installed
+        val shown = if (Settings.ROUTE_MODES_ON) listOf(B.ADDON_SPOKEN, B.ADDON_POLESTAR, B.ADDON_MANNERS)
             else listOf(B.ADDON_SPOKEN, B.ADDON_MANNERS)
         assertEquals(shown, SettingsTabs.blocks(T.ADDONS))
         assertEquals(shown, SettingsTabs.viewBlocks(T.ADDONS))
