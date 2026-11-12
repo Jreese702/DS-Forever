@@ -22,6 +22,17 @@ class DialogPadTest {
         assertNull(DialogPad.dialogButton("PAD1", listOf(DialogPad.B(1, true, -1)), false, false))       // no cell: never a guess
     }
 
+    /** int/1429 (combat-nav's pad answers x starter-prompt's dialog): the quest starter's prompt (Dialogs QUEST_START) is one more
+     *  dialog - A = Start on its own cell, B = Not now - its cells the charter's shared Sign / Offer (idlg 28 / 29: the row is full at
+     *  40 with the leave cells 33-39) */
+    @Test fun theQuestStarterPromptWithThePad() {
+        val qs = listOf(DialogPad.B(1, true, 28), DialogPad.B(2, true, 29))
+        assertEquals(1, DialogPad.dialogButton("PAD1", qs, delayed = false, quit = QuestStartPrompt.WHICH == "QUIT"))
+        assertEquals(2, DialogPad.dialogButton("PAD2", qs, delayed = false, quit = false))
+        assertEquals(QuestStartPrompt.START, QuestStartPrompt.label(1, "x")); assertEquals(QuestStartPrompt.LATER, QuestStartPrompt.label(2, "x"))
+        assertNull("a cell of the leave range is never the prompt's", qs.firstOrNull { it.cell in 33..39 })
+    }
+
     @Test fun theRollKeys() {
         assertEquals("need", DialogPad.rollKind("PAD1", need = true, greed = true, transmog = false))
         assertNull(DialogPad.rollKind("PAD1", need = false, greed = true, transmog = false))
