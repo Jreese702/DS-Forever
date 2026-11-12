@@ -40,11 +40,21 @@ class PartyLayoutTest {
         assertEquals(b(20, 228, 56, 436), m.tag)
         assertTrue(PartyLayout.hitTag(m, 30f, 300f)); assertFalse(PartyLayout.hitTag(m, 300f, 300f))
         assertEquals(1, PartyLayout.hit(m, 300f, 330f)); assertEquals(-1, PartyLayout.hit(m, 40f, 330f)); assertEquals(-1, PartyLayout.hit(m, 700f, 330f))
-        // the tab's parts: a tall tab carries the glyph, the arrow and the B; one plate's tab leaves the B out
+        // the tab's parts: a tall tab carries the glyph, the arrow and the B; the user's decision 1 (2026-11-11, "B shown"): a one-plate
+        // tab (64 at rest, 56 in the takeover) never drops the B - it takes the arrow's place in the On look; one fight plate (88) holds all three
         val tall = PartyLayout.tabParts(m.tag)
-        assertEquals(38f, tall.glyphCx); assertEquals(32f, tall.glyph); assertEquals(20f, tall.arrow); assertTrue(tall.bCy != null)
-        assertTrue(tall.glyphCy < tall.arrowCy && tall.arrowCy < tall.bCy!!)
-        assertNull(PartyLayout.tabParts(PartyLayout.module(Mode.REST, 1).tag).bCy)
+        assertEquals(38f, tall.glyphCx); assertEquals(32f, tall.glyph); assertEquals(20f, tall.arrow); assertFalse(tall.bOnArrow)
+        assertTrue(tall.glyphCy < tall.arrowCy && tall.arrowCy < tall.bCy)
+        for (mode in listOf(Mode.REST, Mode.FIGHT_OFF)) {
+            val t1 = PartyLayout.module(mode, 1).tag
+            val s = PartyLayout.tabParts(t1)
+            assertTrue("$mode: B swaps in for the arrow", s.bOnArrow); assertEquals(s.arrowCy, s.bCy); assertTrue(s.b > 0f)
+            assertTrue("$mode: the glyph and the B inside the tab",
+                s.glyphCy - s.glyph / 2f >= t1.t && s.bCy + s.b / 2f <= t1.b && s.glyphCy + s.glyph / 2f <= s.bCy - s.b / 2f)
+        }
+        val f1 = PartyLayout.module(Mode.FIGHT_ON, 1).tag
+        val f = PartyLayout.tabParts(f1)
+        assertFalse(f.bOnArrow); assertTrue(f.glyphCy - f.glyph / 2f >= f1.t && f.bCy + f.b / 2f <= f1.b && f.arrowCy + f.arrow / 2f <= f.bCy - f.b / 2f)
         // the notch at the picked plate's centre
         assertEquals(332f, PartyLayout.notchY(m, 2)); assertEquals(404f, PartyLayout.notchY(m, 9))
     }

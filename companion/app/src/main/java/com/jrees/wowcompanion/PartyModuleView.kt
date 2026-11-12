@@ -183,13 +183,15 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         val ga = if (look == SelectTab.Look.UNBOUND) (255 * 0.4f).toInt() else 255
         if (look == SelectTab.Look.ON) UiKit.checkedGlow(c, RectF(tp.glyphCx - gs / 2f, tp.glyphCy - gs / 2f, tp.glyphCx + gs / 2f, tp.glyphCy + gs / 2f))
         UiKit.pad(c, Glyphs.translate("rev_minus", CastSettings.buttonLayout), tp.glyphCx, tp.glyphCy, gs, ga)
-        // the arrow: into the column (right) when off, turned 180 deg (out, left) when on
-        UiKit.tex("move_arrow_right")?.let { a ->
+        // the arrow: into the column (right) when off, turned 180 deg (out, left) when on; a short tab's On look shows the B in its
+        // place (the user's decision 1, 2026-11-11: "B shown")
+        val onLook = look == SelectTab.Look.ON
+        if (!(onLook && tp.bOnArrow)) UiKit.tex("move_arrow_right")?.let { a ->
             c.save(); c.rotate(tab.arrowDeg(now), tp.glyphCx, tp.arrowCy)
             bmp(c, a, Box(tp.glyphCx - tp.arrow / 2f, tp.arrowCy - tp.arrow / 2f, tp.glyphCx + tp.arrow / 2f, tp.arrowCy + tp.arrow / 2f), ga)
             c.restore()
         }
-        if (look == SelectTab.Look.ON) tp.bCy?.let { UiKit.pad(c, Glyphs.translate("rev_b", CastSettings.buttonLayout), tp.glyphCx, it, tp.b) }
+        if (onLook) UiKit.pad(c, Glyphs.translate("rev_b", CastSettings.buttonLayout), tp.glyphCx, tp.bCy, tp.b)
         if (look == SelectTab.Look.UNBOUND) UiKit.tex("talent_lock")?.let { l ->
             bmp(c, l, Box(tp.glyphCx - tp.lock / 2f, tp.lockCy - tp.lock / 2f, tp.glyphCx + tp.lock / 2f, tp.lockCy + tp.lock / 2f), 255)
         }

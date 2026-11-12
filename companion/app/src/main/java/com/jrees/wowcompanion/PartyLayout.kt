@@ -97,16 +97,17 @@ object PartyLayout {
     // ------------------------------------------------------------------------------------------------ the Select tab
 
     /**
-     * The tab's parts (party_design.md E): the 32 px Select glyph, the 20 px gold arrow under it, and (on) a small B under the arrow -
-     * on a tab too short for all three (one plate at rest) the B is left out ([b] null; the gold look still says on). [notchW] = the
-     * 6 px gold notch on the right edge at the picked plate's centre.
+     * The tab's parts (party_design.md E): the 32 px Select glyph, the 20 px gold arrow under it, and (on) a small B under the arrow.
+     * The user's decision 1 (2026-11-11) says the On look shows B, so B is never left out: on a tab too short for all three (one plate
+     * at rest 64 px, the takeover's 56 px) the B takes the ARROW's place while Party mode is on ([bOnArrow]: the arrow is drawn only
+     * off / unbound, the B at [bCy] = [arrowCy]). [notchW] = the 6 px gold notch on the right edge at the picked plate's centre.
      */
     data class TabParts(val glyphCx: Float, val glyphCy: Float, val glyph: Float, val arrowCy: Float, val arrow: Float,
-                        val bCy: Float?, val b: Float, val lockCy: Float, val lock: Float, val notchW: Float)
+                        val bCy: Float, val b: Float, val lockCy: Float, val lock: Float, val notchW: Float, val bOnArrow: Boolean)
     fun tabParts(t: Box): TabParts {
-        val tall = t.h >= 100f
-        return if (tall) TabParts(t.cx, t.cy - 24f, 32f, t.cy + 6f, 20f, t.cy + 32f, 20f, t.b - 14f, 18f, 6f)
-        else TabParts(t.cx, t.cy - 10f, 30f, t.cy + 16f, 18f, null, 0f, t.b - 11f, 16f, 6f)
+        val tall = t.h >= FIGHT_H                                        // one fight plate (88) still holds all three
+        return if (tall) TabParts(t.cx, t.cy - 24f, 32f, t.cy + 6f, 20f, t.cy + 32f, 20f, t.b - 14f, 18f, 6f, false)
+        else TabParts(t.cx, t.cy - 10f, 30f, t.cy + 16f, 18f, t.cy + 16f, 18f, t.b - 11f, 16f, 6f, true)
     }
 
     /** the notch's centre y: the picked plate's (1-based [box]) */
