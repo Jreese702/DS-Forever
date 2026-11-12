@@ -120,7 +120,7 @@ def main():
         return out
 
     src = open(HUB, encoding="utf-8").read()
-    chk("hub34: the version tag", 'local HV = "hub34"' in src)
+    chk("hub34: the version tag (hub36 since Polestar's hide sticks)", 'local HV = "hub36"' in src)
     chk("hub34: the combat log's switch calls are gone (PadMap m129)", 'WC.clogSync' not in src and 'WC.clogTicker' not in src)
 
     # solo, Party mode off: nothing (no self row, no tab)
