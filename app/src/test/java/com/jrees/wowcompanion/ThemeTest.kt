@@ -90,6 +90,43 @@ class ThemeTest {
         assertEquals(0xFF1EFF00.toInt(), other.currentTextColor)
     }
 
+    /**
+     * By NAME, not by value (review, 2026-11-12): every OLED preset's ink, field and panel are all #000000, so a value map turned every
+     * black into the next theme's ink. A view given its colour by name comes back exactly; a view whose black was only a value (an
+     * intentional black) is left alone.
+     */
+    @Test fun repaintByNameRoundTripsOled() {
+        Theme.init(app, reread = true)
+        Theme.use("oled_rose")
+        val root = ThemeLive.bg(FrameLayout(app), Tok.INK)
+        val composer = ThemeLive.bg(FrameLayout(app), Tok.PANEL)
+        val field = ThemeLive.bg(FrameLayout(app), Tok.FIELD)
+        val words = ThemeLive.hint(ThemeLive.fg(TextView(app), Tok.TEXT), Tok.DIM)
+        val black = FrameLayout(app).apply { setBackgroundColor(0xFF000000.toInt()) }        // a black meant as black
+        composer.addView(words); root.addView(composer); root.addView(field); root.addView(black)
+        Theme.use(ThemePresets.CLASSIC.id)
+        ThemeLive.repaint(root, Theme.prev, Theme.cur)
+        val c = ThemePresets.CLASSIC
+        fun bg(v: android.view.View) = (v.background as android.graphics.drawable.ColorDrawable).color
+        assertEquals(c.ink, bg(root)); assertEquals(c.panel, bg(composer)); assertEquals(c.field, bg(field))
+        assertEquals(c.text, words.currentTextColor); assertEquals(c.dim, words.currentHintTextColor)
+        assertEquals(0xFF000000.toInt(), bg(black))
+        // and on to a Dark one
+        Theme.use("dark_gold")
+        ThemeLive.repaint(root, Theme.prev, Theme.cur)
+        assertEquals(ThemePresets.DARK_GOLD.panel, bg(composer))
+        assertEquals(0xFF000000.toInt(), bg(black))
+    }
+
+    /** the value map holds only colours that are one token's alone in the old theme (warn included) */
+    @Test fun valueMapSkipsSharedColours() {
+        val m = ThemeLive.map(ThemePresets.OLED_SILVER, ThemePresets.CLASSIC)
+        assertTrue(0xFF000000.toInt() !in m.keys)
+        assertEquals(ThemePresets.CLASSIC.warn, m[ThemePresets.OLED_SILVER.warn])
+        val k = ThemeLive.map(ThemePresets.CLASSIC, ThemePresets.OLED_GOLD)
+        assertEquals(ThemePresets.OLED_GOLD.panel, k[ThemePresets.CLASSIC.panel])
+    }
+
     /** a member made with [themed] is made again after a change, and only then */
     @Test fun themedMembersRebuild() {
         Theme.use(ThemePresets.CLASSIC.id)

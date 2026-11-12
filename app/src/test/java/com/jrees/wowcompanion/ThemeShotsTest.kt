@@ -71,7 +71,12 @@ class ThemeShotsTest {
 
     // ---------------------------------------------------------------- the screens
 
-    private fun home(): Bitmap {
+    private fun home(): Bitmap = homeShot(bar = false)
+    /** Home with the DS toolbar fed (a layout of eight spells on the plain D-pad / face, the Controller room's pad map): the toolbar's
+     *  slot frames are CastView's own art (ui/cast), not the kit's, so they need their own look */
+    private fun homeBar(): Bitmap? = if (System.getenv("THEME_CTL_DOCS") == null) null else homeShot(bar = true)
+
+    private fun homeShot(bar: Boolean): Bitmap {
         val holder = FrameLayout(app)
         val map = MapView(app); val cast = CastView(app) { }; val chat = ChatView(app) { }
         holder.addView(map); holder.addView(cast); holder.addView(chat)
@@ -79,6 +84,16 @@ class ThemeShotsTest {
         home.borrow()
         val h = 1080 - Strip.HEIGHT
         lay(home, 1240, h)
+        if (bar) {
+            val icons = listOf(136048, 136026, 135990, 136052, 135813, 136015, 135824, 136075)
+            val n = JSONArray()
+            for (p in 1..8) n.put(JSONObject().put("p", p).put("k", "spell").put("id", 400 + p).put("i", icons[p - 1]))
+            cast.update(JSONObject().put("hud", JSONObject().put("ok", true).put("page", 1)
+                .put("pages", JSONArray().put(true).put(true).put(true)).put("L", JSONObject().put("n", n))))
+            val dir = File(System.getenv("THEME_CTL_DOCS")!!)
+            home.onPadMap(PadMapModel.parse(JSONObject(File(dir, "padmap_on.json").readText()))!!)
+            settle()
+        }
         home.tick()
         // Home's rest places with no motion (HomeView.previewSettle is internal to the companion's module: found by its JVM name)
         val look = HomeView.Companion.Look(HomeRest.DIAMONDS, false, false, false)
@@ -181,7 +196,7 @@ class ThemeShotsTest {
         artRoot()
         val only = System.getenv("THEME_ONLY")
         val ids = presetIds().filter { only == null || it == only }
-        val screens = listOf<Pair<String, () -> Bitmap?>>("home" to ::home, "controller" to ::controller, "bags" to ::bags,
+        val screens = listOf<Pair<String, () -> Bitmap?>>("home" to ::home, "homebar" to ::homeBar, "controller" to ::controller, "bags" to ::bags,
             "settings" to ::settings, "dialog" to ::dialog, "party" to ::party)
         val made = LinkedHashMap<String, MutableList<Pair<String, Bitmap>>>()
         for (id in ids) {
