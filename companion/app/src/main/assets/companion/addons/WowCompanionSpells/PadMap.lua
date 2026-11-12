@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m136"               -- bump on every change; m136: COMBAT NAV STEP 5b (combat_nav_design.md, the user 2026-11-11): a game window open at a fight's start with nothing of ours holding it (not a prompt, not the game menu) gets its NAMED close on B ("wc-pull-close", routerBind): the first bare B is /click <close> then /stopattack and the snippet spends the name; m135: COMBAT NAV STEP 4 (combat_nav_design.md, the user 2026-11-11): in room mode B is the room's own B (Interact's sink, PAD2: the app's B chain), and LT + RT + B is the secure escape - the snippet sends it to "wc-esc" (Interact's leave button), which clears the room mode itself; m134 (combat-nav): COMBAT NAV STEP 2 (combat_nav_design.md; the user's decision 1, 2026-11-11: "those scenarios should be built on the bottom screen. If we are in the game menu though ... it should be locked until the game menu closes. That's the only valid example"): a fight's start carries every key whatever is open (a room, loot, a pop-up, a ready check, a loot roll); only the game menu (R.menuOpen) keeps the router aside then; routerCheck waits from PLAYER_REGEN_DISABLED to the lockdown (fightNow.on), so Interact's fight-start capture change no longer clears the carried keys when PadMap's handler ran first; m134 (party-combat): PLAYER / PET ROW AND HIGHLIGHTING = TARGETING (the user, 2026-11-11, after using 1428: "I think the pet should be to the right of the player and not have the green dot. Also the a button glyph on them needs to be removed since highlighting it should target and a will be whatever spell is bound"): with a pet out you and the pet share the FIRST row (the pet on the right), the party members fill the rows under it by the adaptive rule among themselves (1-2 full rows, 3: the bottom two share, 4: 2x2); no pet: you full width (OV.partyNav(n, box, dir, pet) = the PARTY-NAV snippet body = the app's PartyModel.nav); a D-pad move of the pick and a plate's pick TARGET the new unit in the same secure click (type target, in fights too), the picked plate's tap is the Touch spell, else Target again; the pet's portrait icon (GetPetIcon, plain only) in its member entry (ic); m133: REVIEW OF m132: Smart Y's party pick casts once a fight per member (wc-pb-<unit> cleared by the secure Y, and the party picks by a roster change in a fight; PM.picksSync tells the app); PM.fightKeys counts a pet out, and a fight's start ignores game windows only then (solo with Party mode off keeps the window's navigation); PM.PROMPTS + the controller roll frame and GroupLootFrame2-4, and Interact's "dialogs" capture is a prompt (PM.PROMPT_HOLDERS); m132: PARTY MODE USABLE IN FIGHTS (the user, 2026-11-11, a healer: "Party mode needs to be usable in combat for healers. Locking it is retarded"): a fight's start with Party mode allowed never steps the router aside for a game window (a loot roll / popup at the pull: every key and Select carried), binds Select solo and with an invite waiting too (PM.selWant), and keeps the player's own m34 chords off the party layers while grouped or on (PM.fightKeys); nothing in a fight turns Party mode off (the fight-taker note and its PLAYER_REGEN_ENABLED switch-off gone); out of combat a prompt (GroupLootFrame1, StaticPopup1-4, ReadyCheckFrame: PM.PROMPTS) only suspends it; in a fight Y never opens the player menu: the In combat action, else Smart Y's party buff armed before the fight (wc-pb-<unit>), else Target; partycfg's Smart Y picks in fights too; m131: PARTY MODE'S ADAPTIVE ROWS AND THE PET (the user, 2026-11-11: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate", "WHEN NO PET MAKE THE PLAYER FULL SIZED", "MAKE THE PET A BIT SMALLER"): the pick runs over you, your pet (only while one plainly exists; [@pet,exists] in the secure code) and party1..4 (PM.units, the pick index, the roster's count and its new pet driver, every snippet's unit walk); the D-pad moves the pick GEOMETRICALLY over min(n, 3) rows whose bottom max(0, n - 3) rows hold two cells (Up / Down between rows, Left / Right inside a shared row, no wrap; OV.partyNav = the PARTY-NAV snippet body = the app's PartyModel.nav); the pet's own pick cell (party row col 5), casts / Target / Touch on unit "pet"; the roster's driver keeps the picked unit when it is still there (a pet coming out no longer moves the pick to another person), else clamps; m130: A PLATE'S TAP DECIDES ONCE A PRESS, ON THE CELL ITSELF (review, 2026-11-11): the PARTYPICK snippet is wrapped on the party row's own cells 0-4 (no WowCompanionPartyPick buttons behind a "click" relay, whose own Target / spell could miss its edge), the first edge of a press decides and the later ones re-use it (wc-pdec), one partybox a press (wc-pseq); m129: PARTY MODE, ONE PICK AND ONE COLUMN (party_design.md and the user's decisions 2026-11-11): wc-box is the only pick and every writer sets wc-box + wc-u together (PARTYFLIP on clamps it and sets wc-u; a state driver re-clamps it after a roster change, in fights too; the bottom's plates pick through the hidden WowCompanionPartyPick1..5 buttons, party cols 0-4); the D-pad's Up / Down move the pick in a straight line, Left / Right do nothing (the user: "this will need to support raids at some point" - kept for raid navigation, never assignable); range from ONE place (UnitInRange, checked plainly true: WC.padMap.party.rng, Hub reads it too); NO HEALTH OR MANA FOR THE BOTTOM: the drawn-fill read (m86), the estimate and the hit / cast counts (m79 / m96 / m98), the party UNIT_HEALTH / UNIT_COMBAT registrations and the combat log (m92 / m95-97 / m112) retired - only the give-back of the Advanced Combat Logging we turned on stays (aclOurs / aclReset1); m128: THE MODEL'S EATING / DRINKING RATE FOLLOWS WHAT Y USES (the user's 2026-11-11 order rule, review): OV.smartItem came from the old fixed food-then-drink pick, so with Water above Food Y drank while the drink aura took the FOOD item's (absent) mana rate and an early-stopped drink gave no mana; now each kind keeps the item Y last armed for it (OV.smartEat), and the why line names the step the walk chose; m127: SMART Y v2 (the user, 2026-11-11): TRACKING NEVER ON Y ("I dont think that I want to have the tracking abilities to be selectable here": OV.isTracking, in Manners' pick and press, the Add list and the add, Party mode's chooser); MANNERS A ROW OF ITS OWN that only buffs OTHER players (never you, a bare /use or tracking; at the pick and at the press); ONE ORDERED LIST ("it shouldnt hardcode food and water as first and second, let people move spell priorities above them": typed rows food / drink / manners / { ids }, walked top to bottom by OV.smartWalk; the v2 saved-variable migration in sbdb); m126: THE HIT RULE LOWERS THE MODEL, NOT A 90 S FLOOR (the user, 2026-11-11: "I am consistently getting a food recommendation long after sitting at full hp for a long long while"; the log: "hp 50% via hit rule ... picked food" for 90 s after every fight with a hit): a fight's end with hits takes about 6 % a hit (at most half) off the model's health once; the model's own regen brings it back, and food stops at the 80 % line (plain facts only: the hit count, the class / Spirit regen); m125: A COOLDOWN THAT HAS RUN OUT IS GONE (the user, 2026-11-10: "about 50% of the time when I press a skill and I know it should show a gcd its still not showing a gcd"): a held GCD / cooldown was dropped only by a SPELL_UPDATE_COOLDOWN saying "not active", which the game often skips at the GCD's end; the stale entry then matched the next GCD (same kind, and in a fight no plain time to compare) and the new one was never sent. An entry past its end now counts as none, so every press starts a fresh one; m124: THE IN-COMBAT SPELLS FOLLOW THE RANK THAT CASTS (the user, 2026-11-10: Serpent Sting "its casting but not triggering a gcd or looking like it cast visually and also it doesn't show range properly which seems to be an issue on my shaman as well"; the Thor's log: the entry kept Rank 1's id 1978 while "/cast Serpent Sting" fires Rank 2, 13549): at login and on every SPELLS_CHANGED each entry's id / icon is set to the spell its NAME casts, so the cooldown, cast and range pictures read the rank that fires; m123: Y opens the target radial in a fight too (the user, 2026-11-10: "pressing y in combat is opening the context menu on the top screen. this should open on the bottom screen and hide on top"): the GROW no longer sends a bare Y to the game's Inspect menu; a fight spell / Smart Y on Y still wins, the Y glyph keeps the GROW rule; m122: the "soft" document retired (the LB picture shows no line over you: the user, "Scrap the soft target bit" ... "remove the L target"); m121: the LB picture's top line - what LB ALONE is bound to (lbmap tap / tapn, read from the game) and what you soft-target now (the "soft" document: soft enemy / friend / interact names, on change); m120: the Y in the layout's own glyph set (Nintendo = the white Gamepad_Rev_Y; the user: "why is the Y yellow when im using the nintendo glyphs?"); the game's X over an NPC trumps the Y also when the game will not say it is the same unit (secret reads count as the same); m119: the inspect glyph is the game's Y on every layout (the user: "the inspect glyph is Y not X"); m118: the target bar wears Hub's OWN prompt right of the bar (the user: "it needs to be to the right with our custom Icon"): Spells only says the letter (WC.tgPrompt), no glyph of ours on the bar; m117: the Y glyph over the nameplate again AND a smaller one beside the target bar's name (the user: "the glyphs still need to appear over the name plates"); the GROW rule alone for Hub's nameplate hiding (WC.tgGrown; "the hide name plate needs to have the same rules as the hide glyph"); m116 is the hunt build's; m115: the Y glyph beside the name on Hub's target bar while the bar shows (the user: "it should have the button glyph"); m112: the combat log (m92 / m95-97) ONLY while Party mode is allowed (WC.partyOk; the user, 2026-11-09: "Only while Party mode is on"); our Advanced Combat Logging given back when it is not (aclOurs; once for 1.0.17 / 1.0.18, aclReset1); m111 is the hunt build's; m110: Party mode's picked unit and the LB map for Hub's own party frames (WC.padMap.party.box / .lb, read only); m108: the several spell radials (m105) taken out of 1.0.18 (bisect test21: with them the loot window's close ran SetPreferredGamepadInteractTarget tainted by this add-on); one radial as in 1.0.17; m107: Manners' PreClick / PostClick are never run from our code (its code ran as ours: the taint log's buff frame / gamepad binding stack blamed on WowCompanionSpells); its armed prompt is only read; m106: the Y glyph over the target is OUR texture with the game's atlas (no Blizzard InputIconTextureFrameTemplate: its code ran tainted and tainted the gamepad UI -> SetPreferredGamepadInteractTarget forbidden; the taint log, 2026-11-08); m105: a command per spell radial (DSSRADIAL2..6, shown while that radial exists; WC.padMapDropCommand); m104: the LB party-target map ("lbmap": which LB + button targets you / party1..4, read from the game's own bindings) for the app's LB view; m103: the game's X (interact) glyph over an NPC target trumps our Y glyph (the user, 2026-11-07); Trail's friendly nameplates now follow a friendly target; m102: the target radial and its Y glyph follow the controller's GROW (the user: "I want it to go away when I /startattack, same rules as the button grow animation"): gone while a fight or an attack is on and not given back by B, back after B; m101: THE TARGET RADIAL (the user, 2026-11-07): out of a fight, a bare Y with a target opens the app's radial (wc-kind "tradial", no game action; Quests q51 reads the target's menu) and the game's own Y glyph shows over the target (its nameplate, else beside the target frame); m100: Party mode EXPERIMENTAL, off by default (Hub hub25 WC.partyOk): Select stays the game's key and Party mode ends (out of combat) while it is not allowed; m99: B in a fight - the first press gives the bars back AND stops the attack (the target kept), the next one clears the target; Smart Y's fight buff only when it was missing at the fight's start, once a fight; m98: each member's live CAST count (cs, UNIT_SPELLCAST_SUCCEEDED) for the app's mana estimate (the user: "The mana bars always show 100%"); m97: the combat log's stop and start a moment APART (in the same instant the game wrote nothing - test12 measured 2.5 min late again), a "clog" tick report every 12 stops; m96: each member's live HIT COUNTS (cw wounds, cc crits, ch heals: UNIT_COMBAT, amounts hidden) for the app's calibrated estimate; the combat log written out every 5 s OUT of a fight (in a fight the game ignores it - measured); m95: in a fight the combat log is stopped and started every 3 s (the game writes it only every ~5 min otherwise; the user picked "Try the restart trick"), its chat lines hidden; m94: m93's snippet comment held the word f-u-n-c-t-i-o-n, which the game's secure checker refuses even in a comment - every A / X / Y / B / D-pad press did nothing (the user, test9); m93: SMART Y IN A FIGHT - with no fight spell on Y (or given back by B), Y casts the top buff of your Smart buff list (wc-smarty-cb, armed out of combat); m92: each party member's GUID (g) for the app's combat-log health; Advanced Combat Logging and the combat log switched on at login (the user's ruling 2026-11-07); m91: the party row's column 36 is a secure /startattack cell (WC.atkCell: Hub's Start attack on hostile target); m90: after a fight with hits taken, food is due (90 s, until eating) - the game's eating rule; m89: a hit with a hidden amount counts as 6 % of the max health (Smart Y food by hits taken); m88: UNIT_COMBAT seen / hidden-amount counts in the why line (uc); m87: Y is routed while Smart Y is on, even with no In-combat spell on Y (Smart Y never heard a bare Y before); m86: health read from the DRAWN bar fill (texture width / bar width) when the value is secret; your own cell from the player frame first; m85: a party member's error no longer drops the party document (reported once, probe partyerr); Manners' prompt always hidden; m84: your own party cell takes a plain reading before the vitals' estimate (hs vit:<src>); m83: party members found by the party count / name too (UnitExists may be secret); m82: the party roster looked at again 2 / 5 / 10 s after a login (tokens come late); m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m136"               -- bump on every change; m133 (ctl-sets): THE FIGHT LAYER'S CHORDS FOLLOW THE LIVE SLOT, B AND PARTY MODE (review of m132, 2026-11-11; the user's ruling the same day: "Build a fight-only layer"): one secure body (OV.fbSnip) decides each chord from what the router would do with the press now - the live slot under the chord (its page: "wc-fbs-<slot>" a fight-layer binding, "wc-ft-<slot>" a fight text) and B's give-back; a page with no fight-layer entry and a give-back leave the WoW Defaults binding (Jump) on the chord, never the action button it hides; Party mode (also switched on mid-fight) gives every chord to the router its pad reads (the m77 rule); run by the header's [combat] snippet, at the fight's start (SecureHandlerExecute), on every router key-down, the give-back / re-arm buttons and PARTYFLIP; always the header's own override bindings; m132 (ctl-sets): THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"): the In combat tab's command / binding / item / mount applies ONLY in fights, the button's WoW Defaults assignment stays as it is out of combat; one fight-layer entry per button (fightBy[slot], per character: a fight spell OR a whole-button thing, `t` = command / bind / item / mount, the newer wins); a command / item / mount is the router's pre-armed per-slot fight text (OV.ftBody, "wc-ft-<slot>", switched by the [combat] attribute driver as the fight spells); a binding, and a WoW Defaults binding under a fight-layer entry, flip their CHORD in the header's ONFIGHT state snippet from attributes armed out of combat (OV.fbPlan / fbArm, "wc-fb-*"); putFight, putCombat over a binding allowed, OV.ftRef in the documents (`c.t`, `c.key`, no id); m136: COMBAT NAV STEP 5b (combat_nav_design.md, the user 2026-11-11): a game window open at a fight's start with nothing of ours holding it (not a prompt, not the game menu) gets its NAMED close on B ("wc-pull-close", routerBind): the first bare B is /click <close> then /stopattack and the snippet spends the name; m135: COMBAT NAV STEP 4 (combat_nav_design.md, the user 2026-11-11): in room mode B is the room's own B (Interact's sink, PAD2: the app's B chain), and LT + RT + B is the secure escape - the snippet sends it to "wc-esc" (Interact's leave button), which clears the room mode itself; m134 (combat-nav): COMBAT NAV STEP 2 (combat_nav_design.md; the user's decision 1, 2026-11-11: "those scenarios should be built on the bottom screen. If we are in the game menu though ... it should be locked until the game menu closes. That's the only valid example"): a fight's start carries every key whatever is open (a room, loot, a pop-up, a ready check, a loot roll); only the game menu (R.menuOpen) keeps the router aside then; routerCheck waits from PLAYER_REGEN_DISABLED to the lockdown (fightNow.on), so Interact's fight-start capture change no longer clears the carried keys when PadMap's handler ran first; m134 (party-combat): PLAYER / PET ROW AND HIGHLIGHTING = TARGETING (the user, 2026-11-11, after using 1428: "I think the pet should be to the right of the player and not have the green dot. Also the a button glyph on them needs to be removed since highlighting it should target and a will be whatever spell is bound"): with a pet out you and the pet share the FIRST row (the pet on the right), the party members fill the rows under it by the adaptive rule among themselves (1-2 full rows, 3: the bottom two share, 4: 2x2); no pet: you full width (OV.partyNav(n, box, dir, pet) = the PARTY-NAV snippet body = the app's PartyModel.nav); a D-pad move of the pick and a plate's pick TARGET the new unit in the same secure click (type target, in fights too), the picked plate's tap is the Touch spell, else Target again; the pet's portrait icon (GetPetIcon, plain only) in its member entry (ic); m133: REVIEW OF m132: Smart Y's party pick casts once a fight per member (wc-pb-<unit> cleared by the secure Y, and the party picks by a roster change in a fight; PM.picksSync tells the app); PM.fightKeys counts a pet out, and a fight's start ignores game windows only then (solo with Party mode off keeps the window's navigation); PM.PROMPTS + the controller roll frame and GroupLootFrame2-4, and Interact's "dialogs" capture is a prompt (PM.PROMPT_HOLDERS); m132: PARTY MODE USABLE IN FIGHTS (the user, 2026-11-11, a healer: "Party mode needs to be usable in combat for healers. Locking it is retarded"): a fight's start with Party mode allowed never steps the router aside for a game window (a loot roll / popup at the pull: every key and Select carried), binds Select solo and with an invite waiting too (PM.selWant), and keeps the player's own m34 chords off the party layers while grouped or on (PM.fightKeys); nothing in a fight turns Party mode off (the fight-taker note and its PLAYER_REGEN_ENABLED switch-off gone); out of combat a prompt (GroupLootFrame1, StaticPopup1-4, ReadyCheckFrame: PM.PROMPTS) only suspends it; in a fight Y never opens the player menu: the In combat action, else Smart Y's party buff armed before the fight (wc-pb-<unit>), else Target; partycfg's Smart Y picks in fights too; m131: PARTY MODE'S ADAPTIVE ROWS AND THE PET (the user, 2026-11-11: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate", "WHEN NO PET MAKE THE PLAYER FULL SIZED", "MAKE THE PET A BIT SMALLER"): the pick runs over you, your pet (only while one plainly exists; [@pet,exists] in the secure code) and party1..4 (PM.units, the pick index, the roster's count and its new pet driver, every snippet's unit walk); the D-pad moves the pick GEOMETRICALLY over min(n, 3) rows whose bottom max(0, n - 3) rows hold two cells (Up / Down between rows, Left / Right inside a shared row, no wrap; OV.partyNav = the PARTY-NAV snippet body = the app's PartyModel.nav); the pet's own pick cell (party row col 5), casts / Target / Touch on unit "pet"; the roster's driver keeps the picked unit when it is still there (a pet coming out no longer moves the pick to another person), else clamps; m130: A PLATE'S TAP DECIDES ONCE A PRESS, ON THE CELL ITSELF (review, 2026-11-11): the PARTYPICK snippet is wrapped on the party row's own cells 0-4 (no WowCompanionPartyPick buttons behind a "click" relay, whose own Target / spell could miss its edge), the first edge of a press decides and the later ones re-use it (wc-pdec), one partybox a press (wc-pseq); m129: PARTY MODE, ONE PICK AND ONE COLUMN (party_design.md and the user's decisions 2026-11-11): wc-box is the only pick and every writer sets wc-box + wc-u together (PARTYFLIP on clamps it and sets wc-u; a state driver re-clamps it after a roster change, in fights too; the bottom's plates pick through the hidden WowCompanionPartyPick1..5 buttons, party cols 0-4); the D-pad's Up / Down move the pick in a straight line, Left / Right do nothing (the user: "this will need to support raids at some point" - kept for raid navigation, never assignable); range from ONE place (UnitInRange, checked plainly true: WC.padMap.party.rng, Hub reads it too); NO HEALTH OR MANA FOR THE BOTTOM: the drawn-fill read (m86), the estimate and the hit / cast counts (m79 / m96 / m98), the party UNIT_HEALTH / UNIT_COMBAT registrations and the combat log (m92 / m95-97 / m112) retired - only the give-back of the Advanced Combat Logging we turned on stays (aclOurs / aclReset1); m128: THE MODEL'S EATING / DRINKING RATE FOLLOWS WHAT Y USES (the user's 2026-11-11 order rule, review): OV.smartItem came from the old fixed food-then-drink pick, so with Water above Food Y drank while the drink aura took the FOOD item's (absent) mana rate and an early-stopped drink gave no mana; now each kind keeps the item Y last armed for it (OV.smartEat), and the why line names the step the walk chose; m127: SMART Y v2 (the user, 2026-11-11): TRACKING NEVER ON Y ("I dont think that I want to have the tracking abilities to be selectable here": OV.isTracking, in Manners' pick and press, the Add list and the add, Party mode's chooser); MANNERS A ROW OF ITS OWN that only buffs OTHER players (never you, a bare /use or tracking; at the pick and at the press); ONE ORDERED LIST ("it shouldnt hardcode food and water as first and second, let people move spell priorities above them": typed rows food / drink / manners / { ids }, walked top to bottom by OV.smartWalk; the v2 saved-variable migration in sbdb); m126: THE HIT RULE LOWERS THE MODEL, NOT A 90 S FLOOR (the user, 2026-11-11: "I am consistently getting a food recommendation long after sitting at full hp for a long long while"; the log: "hp 50% via hit rule ... picked food" for 90 s after every fight with a hit): a fight's end with hits takes about 6 % a hit (at most half) off the model's health once; the model's own regen brings it back, and food stops at the 80 % line (plain facts only: the hit count, the class / Spirit regen); m125: A COOLDOWN THAT HAS RUN OUT IS GONE (the user, 2026-11-10: "about 50% of the time when I press a skill and I know it should show a gcd its still not showing a gcd"): a held GCD / cooldown was dropped only by a SPELL_UPDATE_COOLDOWN saying "not active", which the game often skips at the GCD's end; the stale entry then matched the next GCD (same kind, and in a fight no plain time to compare) and the new one was never sent. An entry past its end now counts as none, so every press starts a fresh one; m124: THE IN-COMBAT SPELLS FOLLOW THE RANK THAT CASTS (the user, 2026-11-10: Serpent Sting "its casting but not triggering a gcd or looking like it cast visually and also it doesn't show range properly which seems to be an issue on my shaman as well"; the Thor's log: the entry kept Rank 1's id 1978 while "/cast Serpent Sting" fires Rank 2, 13549): at login and on every SPELLS_CHANGED each entry's id / icon is set to the spell its NAME casts, so the cooldown, cast and range pictures read the rank that fires; m123: Y opens the target radial in a fight too (the user, 2026-11-10: "pressing y in combat is opening the context menu on the top screen. this should open on the bottom screen and hide on top"): the GROW no longer sends a bare Y to the game's Inspect menu; a fight spell / Smart Y on Y still wins, the Y glyph keeps the GROW rule; m122: the "soft" document retired (the LB picture shows no line over you: the user, "Scrap the soft target bit" ... "remove the L target"); m121: the LB picture's top line - what LB ALONE is bound to (lbmap tap / tapn, read from the game) and what you soft-target now (the "soft" document: soft enemy / friend / interact names, on change); m120: the Y in the layout's own glyph set (Nintendo = the white Gamepad_Rev_Y; the user: "why is the Y yellow when im using the nintendo glyphs?"); the game's X over an NPC trumps the Y also when the game will not say it is the same unit (secret reads count as the same); m119: the inspect glyph is the game's Y on every layout (the user: "the inspect glyph is Y not X"); m118: the target bar wears Hub's OWN prompt right of the bar (the user: "it needs to be to the right with our custom Icon"): Spells only says the letter (WC.tgPrompt), no glyph of ours on the bar; m117: the Y glyph over the nameplate again AND a smaller one beside the target bar's name (the user: "the glyphs still need to appear over the name plates"); the GROW rule alone for Hub's nameplate hiding (WC.tgGrown; "the hide name plate needs to have the same rules as the hide glyph"); m116 is the hunt build's; m115: the Y glyph beside the name on Hub's target bar while the bar shows (the user: "it should have the button glyph"); m112: the combat log (m92 / m95-97) ONLY while Party mode is allowed (WC.partyOk; the user, 2026-11-09: "Only while Party mode is on"); our Advanced Combat Logging given back when it is not (aclOurs; once for 1.0.17 / 1.0.18, aclReset1); m111 is the hunt build's; m110: Party mode's picked unit and the LB map for Hub's own party frames (WC.padMap.party.box / .lb, read only); m108: the several spell radials (m105) taken out of 1.0.18 (bisect test21: with them the loot window's close ran SetPreferredGamepadInteractTarget tainted by this add-on); one radial as in 1.0.17; m107: Manners' PreClick / PostClick are never run from our code (its code ran as ours: the taint log's buff frame / gamepad binding stack blamed on WowCompanionSpells); its armed prompt is only read; m106: the Y glyph over the target is OUR texture with the game's atlas (no Blizzard InputIconTextureFrameTemplate: its code ran tainted and tainted the gamepad UI -> SetPreferredGamepadInteractTarget forbidden; the taint log, 2026-11-08); m105: a command per spell radial (DSSRADIAL2..6, shown while that radial exists; WC.padMapDropCommand); m104: the LB party-target map ("lbmap": which LB + button targets you / party1..4, read from the game's own bindings) for the app's LB view; m103: the game's X (interact) glyph over an NPC target trumps our Y glyph (the user, 2026-11-07); Trail's friendly nameplates now follow a friendly target; m102: the target radial and its Y glyph follow the controller's GROW (the user: "I want it to go away when I /startattack, same rules as the button grow animation"): gone while a fight or an attack is on and not given back by B, back after B; m101: THE TARGET RADIAL (the user, 2026-11-07): out of a fight, a bare Y with a target opens the app's radial (wc-kind "tradial", no game action; Quests q51 reads the target's menu) and the game's own Y glyph shows over the target (its nameplate, else beside the target frame); m100: Party mode EXPERIMENTAL, off by default (Hub hub25 WC.partyOk): Select stays the game's key and Party mode ends (out of combat) while it is not allowed; m99: B in a fight - the first press gives the bars back AND stops the attack (the target kept), the next one clears the target; Smart Y's fight buff only when it was missing at the fight's start, once a fight; m98: each member's live CAST count (cs, UNIT_SPELLCAST_SUCCEEDED) for the app's mana estimate (the user: "The mana bars always show 100%"); m97: the combat log's stop and start a moment APART (in the same instant the game wrote nothing - test12 measured 2.5 min late again), a "clog" tick report every 12 stops; m96: each member's live HIT COUNTS (cw wounds, cc crits, ch heals: UNIT_COMBAT, amounts hidden) for the app's calibrated estimate; the combat log written out every 5 s OUT of a fight (in a fight the game ignores it - measured); m95: in a fight the combat log is stopped and started every 3 s (the game writes it only every ~5 min otherwise; the user picked "Try the restart trick"), its chat lines hidden; m94: m93's snippet comment held the word f-u-n-c-t-i-o-n, which the game's secure checker refuses even in a comment - every A / X / Y / B / D-pad press did nothing (the user, test9); m93: SMART Y IN A FIGHT - with no fight spell on Y (or given back by B), Y casts the top buff of your Smart buff list (wc-smarty-cb, armed out of combat); m92: each party member's GUID (g) for the app's combat-log health; Advanced Combat Logging and the combat log switched on at login (the user's ruling 2026-11-07); m91: the party row's column 36 is a secure /startattack cell (WC.atkCell: Hub's Start attack on hostile target); m90: after a fight with hits taken, food is due (90 s, until eating) - the game's eating rule; m89: a hit with a hidden amount counts as 6 % of the max health (Smart Y food by hits taken); m88: UNIT_COMBAT seen / hidden-amount counts in the why line (uc); m87: Y is routed while Smart Y is on, even with no In-combat spell on Y (Smart Y never heard a bare Y before); m86: health read from the DRAWN bar fill (texture width / bar width) when the value is secret; your own cell from the player frame first; m85: a party member's error no longer drops the party document (reported once, probe partyerr); Manners' prompt always hidden; m84: your own party cell takes a plain reading before the vitals' estimate (hs vit:<src>); m83: party members found by the party count / name too (UnitExists may be secret); m82: the party roster looked at again 2 / 5 / 10 s after a login (tokens come late); m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -727,6 +727,100 @@ function OV.ftAt(s)
     local e = OV.ftdb()[s]
     return (type(e) == "table" and type(e.n) == "string") and e or nil
 end
+-- m132 THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"): what the In combat tab sets applies ONLY in fights; the
+-- button's WoW Defaults assignment stays exactly as it is out of combat. A button's fight-layer entry is its fightBy[slot] entry (one per
+-- slot, so a fight spell and a fight command never share a button: the newer one replaces the older), per character as the fight
+-- spells always were. Besides a spell (no `t`) it may be a whole-button thing, `t` = "command" (key), "bind" (key: the game binding),
+-- "item" (id) or "mount" (id, `sp` its summon spell's name). A spell / command / item / mount is the router's per-slot fight text
+-- ("wc-ft-<slot>", pre-armed out of combat, flipped per press by the [combat] attribute driver, exactly as the fight spells); a binding
+-- is the header's chord flip (OV.fbPlan: armed out of combat, flipped from secure code by OV.fbSnip, m133).
+OV.FT_WHOLE = { command = true, bind = true, item = true, mount = true }
+function OV.ftKind(e) return (type(e) == "table" and OV.FT_WHOLE[e.t]) and e.t or "spell" end
+-- the router's fight text for an entry (nil = none: a binding, or a command this client no longer has)
+function OV.ftBody(e, saOn)
+    local t = OV.ftKind(e)
+    if t == "spell" then
+        if type(e.n) ~= "string" or not WC.isPlain(e.n) then return nil end
+        return ((saOn and harmful(e.id or e.n)) and attackLines("") or "") .. "/cast " .. e.n
+    elseif t == "command" then
+        local c = OV.byKey(e.key)
+        return c and c.body or nil
+    elseif t == "item" then
+        return type(e.id) == "number" and ("/use item:" .. e.id) or nil
+    elseif t == "mount" then
+        return (type(e.sp) == "string" and WC.isPlain(e.sp)) and ("/cast " .. e.sp) or nil
+    end
+    return nil
+end
+-- what the documents carry for an entry (`c` of a combat view): a spell by its id; a whole-button thing by `t` and its key (a mount /
+-- an item "m:<id>" / "i:<id>", the chooser's own row keys) - no id, so nothing reads it as a spell's
+function OV.ftRef(e)
+    local t = OV.ftKind(e)
+    if t == "spell" then return { n = e.n, id = e.id, i = e.i } end
+    local key = e.key
+    if t == "item" then key = "i:" .. tostring(e.id) elseif t == "mount" then key = "m:" .. tostring(e.id) end
+    return { n = e.n, i = e.i, t = t, key = key }
+end
+-- m133 THE CHORD FLIP, ONE SECURE BODY (review of m132, 2026-11-11; the user's ruling the same day: "Build a fight-only layer" - the WoW
+-- Defaults assignment stays as it is wherever the fight layer has nothing): each chord of OV.fbPlan (armed on the header out of combat)
+-- is decided from what the ROUTER would do with the press right now: in a fight, not given back by B, the live slot under the chord
+-- (the router's own bar ref, its GetID: every page) holding a fight-layer binding ("wc-fbs-<slot>") = that binding; a fight text
+-- ("wc-ft-<slot>", a form's own) = the router's button; nothing there = the chord's out-of-combat binding (else the router, as the
+-- fight's carry); given back = the out-of-combat binding; Party mode on (any time, also switched on mid-fight) = the router's button
+-- (its pad reads the router: the m77 rule); out of a fight = the out-of-combat side. Applied only when it changes ("wc-fb-cur-<i>").
+-- Run from the header's [combat] snippet, at the fight's start (SecureHandlerExecute, before the lockdown), on every router press's
+-- key-down (B's give-back, an attack's re-arm, the page under the next press), the give-back / re-arm buttons and Party mode's flips.
+-- The bindings are always the HEADER's own override bindings (`h`: the header, through each caller's "wc-hdr" ref). `fbf` = 1 / 0
+-- forces the fight / no fight (the header's own [combat] state, the fight's start); nil reads the router's "wc-state". Restricted
+-- code: no f-u-n-c-t-i-o-n word (the game refuses it), its own `do` block (no clash with the caller's locals)
+function OV.fbSnip(fbf)
+    return "\n    do\n    local fbf = " .. fbf .. "\n" .. [=[
+    local h = self:GetFrameRef("wc-hdr") or self
+    local fm = h:GetAttribute("wc-form") or 0
+    for i = 1, (h:GetAttribute("wc-fb-n") or 0) do
+        local key, pc = h:GetAttribute("wc-fb-k-" .. i), h:GetAttribute("wc-fb-pc-" .. i)
+        local r = h:GetFrameRef("wc-fb-r-" .. i)
+        local act, btn = h:GetAttribute("wc-fb-ob-" .. i), h:GetAttribute("wc-fb-oc-" .. i)
+        local fight = fbf == 1
+        if fbf == nil then fight = (r and r:GetAttribute("wc-state") == "fight") and true or false end
+        if key and r and r:GetAttribute("wc-party") then
+            act, btn = nil, pc
+        elseif key and fight then
+            if r and (fbf == 1 or not r:GetAttribute("wc-given")) then
+                local an = h:GetAttribute("wc-fb-a-" .. i) or "top"
+                local at = 1
+                local bn = r:GetAttribute("wc-n-" .. an) or 0
+                while bn > 1 do
+                    local bar = r:GetFrameRef("wc-bar-" .. an .. "-" .. bn)
+                    if bar and bar:IsShown() then at = bn; bn = 0 else bn = bn - 1 end
+                end
+                local nb = r:GetFrameRef("wc-btn-" .. an .. "-" .. at)
+                local id = nb and nb:GetID()
+                local fb = id and h:GetAttribute("wc-fbs-" .. id)
+                local ft = id and h:GetAttribute("wc-ft-" .. id)
+                local fp = h:GetAttribute("wc-fb-p-" .. i)
+                if an == "top" and fm ~= 0 and fp then
+                    ft = h:GetAttribute("wc-ff-" .. fm .. "-" .. fp) or ft or h:GetAttribute("wc-ffc-" .. fp)
+                end
+                if fb then act, btn = fb, nil
+                elseif ft or not act then act, btn = nil, pc end
+            elseif not act then
+                btn = pc
+            end
+        end
+        if key then
+            local want = (act and ("b:" .. act)) or (btn and ("c:" .. btn)) or "-"
+            if h:GetAttribute("wc-fb-cur-" .. i) ~= want then
+                h:SetAttribute("wc-fb-cur-" .. i, want)
+                if act then h:SetBinding(true, key, act)
+                elseif btn then h:SetBindingClick(true, key, btn, "LeftButton")
+                else h:ClearBinding(key) end
+            end
+        end
+    end
+    end
+]=]
+end
 -- m55 IN-COMBAT SETS PER FORM (f-combat-forms; the user 2026-10-15: "we need to figure out a way to have dynamic in combat bars that support
 -- changing forms", then the pick "1: A set per form"): a druid's Bear / Cat / ..., a warrior's stances, a rogue's Stealth each get their OWN
 -- In-combat spells for the BARE set (the one the game swaps per form: the triggers' sets stay the caster's), this character's entry
@@ -818,11 +912,12 @@ end
 -- its Otherwise being whatever the button holds
 function OV.view(set, pos, s)
     local b = bindSlot and bindSlot(set, pos, s)
-    if b then return b end
-    local base = (s and cmdSlot and cmdSlot(s)) or (s and readSlot(s)) or { kind = "none" }
     local e = s and OV.ftAt(s)
+    if b and not e then return b end
+    -- m132: a fight-layer entry over a WoW Defaults binding reads as a combat button too (its Otherwise = the binding)
+    local base = b or (s and cmdSlot and cmdSlot(s)) or (s and readSlot(s)) or { kind = "none" }
     if not e then return base end
-    local c = { n = e.n, id = e.id, i = e.i }
+    local c = OV.ftRef(e)                                                          -- m132: a spell, or the layer's whole-button thing
     if base.kind == "combat" then base.c = c; base.ov = true; return base end      -- an old "DS Combat" slot: the overlay's spell wins
     local o = nil
     if base.kind == "spell" then o = { n = base.n, id = base.id, i = base.i }
@@ -1348,24 +1443,29 @@ local PRE = [=[
             self:SetAttribute("type", nil)
             self:SetAttribute("typerelease", nil)
         end
+        -- m133 FBSNIP: the chord flip (OV.fbSnip) is put here, below
     elseif self:GetAttribute("wc-kind") == "native" then
         self:SetAttribute("macrotext", "/click " .. self:GetAttribute("wc-at") .. " " .. (self:GetAttribute("wc-mb") or "LeftButton") .. " 0")
     end
 ]=]
+-- m133: every router key-down re-decides the fight layer's chords (B's give-back, an attack's re-arm, the page under the press)
+do local a, b = PRE:find("-- m133 FBSNIP: the chord flip (OV.fbSnip) is put here, below", 1, true); PRE = PRE:sub(1, a - 1) .. OV.fbSnip("nil") .. PRE:sub(b + 1) end
 -- the header: owns the bindings, the fight driver that clears "given back" at each fight's start, and the secure give-back button
 local GIVE = [=[
     for _, pos in ipairs(newtable(1, 2, 3, 4, 5, 6, 8)) do
         local b = self:GetFrameRef("wc-face-" .. pos)
         if b then b:SetAttribute("wc-given", true) end
     end
-]=]
+]=] .. OV.fbSnip("nil")
 local REARMBODY = [=[
     for _, pos in ipairs(newtable(1, 2, 3, 4, 5, 6, 8)) do
         local b = self:GetFrameRef("wc-face-" .. pos)
         if b then b:SetAttribute("wc-given", nil) end
     end
-]=]
+]=] .. OV.fbSnip("nil")
 local routerAfterClick
+-- m132 / m133 the header's [combat] snippet: a fight's start clears B's give-back, then the fight layer's chords flip (OV.fbSnip: the
+-- one body, here forced to the header's own state). The header's OWN override bindings, changed from secure code: allowed in fights
 local ONFIGHT = [=[
     if newstate == "1" then
         for _, pos in ipairs(newtable(1, 2, 3, 4, 5, 6, 8)) do
@@ -1373,7 +1473,7 @@ local ONFIGHT = [=[
             if b then b:SetAttribute("wc-given", nil) end
         end
     end
-]=]
+]=] .. OV.fbSnip('(newstate == "1") and 1 or 0')
 local routerMacrosSoon
 local function routerHeader()
     if R.hdr then return R.hdr end
@@ -1392,6 +1492,9 @@ local function routerHeader()
         R.rearm = CreateFrame("Button", REARM, UIParent, "SecureHandlerClickTemplate")
         R.rearm:RegisterForClicks("AnyDown", "AnyUp")
         R.rearm:SetAttribute("_onclick", REARMBODY)
+        -- m133: the give-back / re-arm buttons flip the fight layer's chords too (OV.fbSnip), on the header's own bindings
+        SecureHandlerSetFrameRef(R.give, "wc-hdr", R.hdr)
+        SecureHandlerSetFrameRef(R.rearm, "wc-hdr", R.hdr)
         pcall(function() R.rearm:HookScript("PostClick", function() pcall(routerAfterClick, "rearm") end) end)
     end)
     if not ok then R.hdr = nil end
@@ -1684,9 +1787,9 @@ local function routerMacros()
     local wantF = {}
     if combatOn() then
         for slot, e in pairs(OV.ftdb()) do
-            if type(slot) == "number" and type(e) == "table" and type(e.n) == "string" and WC.isPlain(e.n) then
-                wantF[slot] = ((saOn and harmful(e.id or e.n)) and attackLines("") or "") .. "/cast " .. e.n
-            end
+            -- m132: the fight layer's command / item / mount texts too (a binding has none: the header's chord flip, OV.fbPlan)
+            local body = type(slot) == "number" and type(e) == "table" and type(e.n) == "string" and OV.ftBody(e, saOn) or nil
+            if body and #body <= 1023 then wantF[slot] = body end
         end
     end
     -- m52 START ATTACK ON CAST AS THE OVERLAY (f-start-attack-overlay, the user 2026-10-13: "investigated and solved for", the no-trace
@@ -1779,6 +1882,86 @@ local function bindPlan()
         end
     end
     return out
+end
+-- m132 THE FIGHT LAYER'S CHORDS (the user, 2026-11-11: "Build a fight-only layer"): a key binding knows no fight, so where the fight
+-- layer and a binding meet the CHORD itself flips in fights (OV.fbSnip, from the attributes armed here out of combat):
+--   * a fight-layer BINDING (Jump, Interact, Auto Run, Walk / Run) on a button: in fights, while its slot is the live one under the
+--     chord, the chord is that binding ("wc-fbs-<slot>");
+--   * a WoW Defaults binding under a fight-layer spell / command / item / mount: in fights, while the live slot has its fight text,
+--     the chord is the router's button for that position (whose snippet runs it); out of combat the binding, as before.
+-- m133 (review of m132): a chord is decided by the LIVE slot (its page) and B's give-back, not once a fight - on a page with no
+-- fight-layer entry and after B, the WoW Defaults binding (Jump) holds the chord, never the action button it hides; Party mode (on
+-- before the fight or switched on in it) gives every chord to the router, whose pad reads it. Off with Combat controls off.
+-- { list = { { k = chord, set, pos, b = router } } in a fixed order, slots = { [slot] = fight-layer binding } }
+function OV.fbRouter(pos)
+    if FACE[pos] then local b = face.buttons[pos]; if b then routerSetup(b, pos) end; return b end
+    if pos == 7 then return routerB() end
+    routerD()
+    return R.dbtn[pos]
+end
+function OV.fbPlan()
+    local out = { list = {}, slots = {} }
+    if not combatOn() then return out end
+    local seen = {}
+    local function add(set, pos)
+        local chord = bindChord(set, pos)
+        if not chord or seen[chord] then return end
+        local b = OV.fbRouter(pos)
+        if b then seen[chord] = true; out.list[#out.list + 1] = { k = chord, set = set, pos = pos, b = b } end
+    end
+    local slots = {}
+    for slot in pairs(OV.ftdb()) do if type(slot) == "number" then slots[#slots + 1] = slot end end
+    table.sort(slots)
+    for _, slot in ipairs(slots) do
+        local e = OV.ftAt(slot)
+        if e and OV.ftKind(e) == "bind" and bindByKey(e.key) and type(e.set) == "number" and type(e.pos) == "number"
+            and bindAllowed(e.set, e.pos) then
+            out.slots[slot] = e.key
+            add(e.set, e.pos)
+        end
+    end
+    local ats = {}
+    for at in pairs(bindStore()) do ats[#ats + 1] = at end
+    table.sort(ats)
+    for _, at in ipairs(ats) do
+        local set, pos = at:match("^(%d):(%d)$")
+        set, pos = tonumber(set), tonumber(pos)
+        if set and pos and bindByKey(bindStore()[at]) and bindAllowed(set, pos) then
+            local hit = false
+            for page = 1, PAGES do
+                local s = storage(page, set, pos)
+                local e = s and OV.ftAt(s)
+                if e and OV.ftKind(e) ~= "bind" and OV.ftBody(e, false) then hit = true end
+            end
+            if hit then add(set, pos) end
+        end
+    end
+    return out
+end
+-- arm the header (out of combat): each chord, its router (name + ref), its anchor / position (the live slot and the forms' fight
+-- spells), its out-of-combat side (what is bound on it now; also what the snippet last applied), and the fight-layer bindings by slot
+function OV.fbArm(hdr, plan)
+    local list = plan.list or {}
+    for i, p in ipairs(list) do
+        local now = TS(function() return GetBindingAction(p.k, true) end)
+        local oc = now and now:match("^CLICK ([%w_]+):LeftButton$")
+        local ob = (now and now ~= "" and not oc) and now or nil
+        hdr:SetAttribute("wc-fb-k-" .. i, p.k)
+        hdr:SetAttribute("wc-fb-pc-" .. i, p.b:GetName())
+        SecureHandlerSetFrameRef(hdr, "wc-fb-r-" .. i, p.b)
+        hdr:SetAttribute("wc-fb-a-" .. i, p.set == 2 and "left" or "top")
+        hdr:SetAttribute("wc-fb-p-" .. i, p.pos)
+        hdr:SetAttribute("wc-fb-ob-" .. i, ob); hdr:SetAttribute("wc-fb-oc-" .. i, oc)
+        hdr:SetAttribute("wc-fb-cur-" .. i, (ob and ("b:" .. ob)) or (oc and ("c:" .. oc)) or "-")
+    end
+    for i = #list + 1, R.fbN or 0 do
+        for _, a in ipairs({ "k", "pc", "a", "p", "ob", "oc", "cur" }) do hdr:SetAttribute("wc-fb-" .. a .. "-" .. i, nil) end
+    end
+    for slot in pairs(R.fbSlots or {}) do if not (plan.slots or {})[slot] then hdr:SetAttribute("wc-fbs-" .. slot, nil) end end
+    R.fbSlots = {}
+    for slot, k in pairs(plan.slots or {}) do hdr:SetAttribute("wc-fbs-" .. slot, k); R.fbSlots[slot] = true end
+    R.fbN = #list
+    hdr:SetAttribute("wc-fb-n", #list)
 end
 local routerSay
 -- the bindings (out of combat only). `fightStart` = before the lockdown: rooms let go then, so only a game window keeps the router aside
@@ -1887,6 +2070,9 @@ local function routerBind(why, fightStart)
             R.cbound[chord] = TS(function() return GetBindingAction(chord, true) end) == k or nil
         end
     end
+    -- m132: the fight layer's chords, armed now (their out-of-combat side is what is bound on them at this point)
+    local fbp = (not aside) and OV.fbPlan() or {}
+    pcall(OV.fbArm, hdr, fbp)
     -- the fight's start: every other key too (faces without a fight spell, the D-pad): Forever's own buttons, or the room's in room mode
     -- (m34: never over a binding the player put there)
     if not aside and fightStart then
@@ -1917,6 +2103,11 @@ local function routerBind(why, fightStart)
     end
     -- m77 PARTY MODE: on = all 8 router keys carried; Select to the party toggle (PARTY_BUILD.md 3.5)
     if OV.pm and OV.pm.bind then pcall(OV.pm.bind, aside, fightStart, carry) end
+    -- m132 / m133: at the fight's start (before the lockdown) the fight layer's chords take their fight side, through the same secure
+    -- body as in the fight (OV.fbSnip, forced to "a fight": B's give-back starts cleared), after Party mode's keys (it wins there)
+    if not aside and (fightStart or fighting()) and (R.fbN or 0) > 0 then
+        pcall(SecureHandlerExecute, hdr, OV.fbSnip("1"))
+    end
     local want = 0
     for pos in pairs(face.keys) do if face.buttons[pos] and type(faceStore()[pos]) == "table" then want = want + 1 end end
     local got = 0
@@ -2256,7 +2447,8 @@ function OV.fightAt(pos)
     if pos >= 1 and pos <= 4 then
         local s = storage(gamePage(), 1, pos)
         local e = s and OV.ftAt(s)
-        return (type(e) == "table" and type(e.n) == "string") and e or nil
+        -- m132: a fight-layer command / binding / item / mount is no spell (no cooldown, cast or range of its own to draw)
+        return (type(e) == "table" and type(e.n) == "string" and OV.ftKind(e) == "spell") and e or nil
     end
     return nil
 end
@@ -3143,6 +3335,7 @@ function OV.rankSync()
     local changed = false
     local function fix(e)
         if type(e) ~= "table" or type(e.n) ~= "string" or not WC.isPlain(e.n) then return end
+        if OV.ftKind(e) ~= "spell" then return end                     -- m132: a fight-layer command / binding / item / mount has no rank
         local ok, info = pcall(C_Spell.GetSpellInfo, e.n)
         if not ok or type(info) ~= "table" then return end
         local id = TN(function() return info.spellID end)
@@ -3166,7 +3359,7 @@ OV.rkF:SetScript("OnEvent", function()
 end)
 WC.padMapFightSpells = function()
     local out, seen = {}, {}
-    local function add(e) if type(e) == "table" and type(e.id) == "number" and not seen[e.id] then seen[e.id] = true; out[#out + 1] = e.id end end
+    local function add(e) if type(e) == "table" and OV.ftKind(e) == "spell" and type(e.id) == "number" and not seen[e.id] then seen[e.id] = true; out[#out + 1] = e.id end end
     for _, e in pairs(faceStore()) do add(e) end
     if combatOn() then for _, e in pairs(OV.ftdb()) do add(e) end end
     -- m58 (the user on 1.0.10-test2, a druid: "my Wrath ability on my Y button never shows when it's too low mana to cast, like with other
@@ -3307,9 +3500,18 @@ WC.padMap = {
         -- m43: the fight spells go with the move (a swap swaps them); one on an otherwise empty button moves alone
         local function moveFight()
             local db, ff, tf = OV.ftdb(), OV.ftAt(fs), OV.ftAt(ts)
-            db[ts] = ff and { id = ff.id, n = ff.n, i = ff.i, page = tpage, set = tset, pos = tpos } or nil
-            db[fs] = tf and { id = tf.id, n = tf.n, i = tf.i, page = fpage, set = fset, pos = fpos } or nil
+            -- m132: the whole entry moves (a fight-layer command / binding / item / mount keeps its kind and key)
+            local function cp(e, pg, st, ps)
+                if not e then return nil end
+                local n = {}
+                for k, v in pairs(e) do n[k] = v end
+                n.page, n.set, n.pos = pg, st, ps
+                return n
+            end
+            db[ts] = cp(ff, tpage, tset, tpos)
+            db[fs] = cp(tf, fpage, fset, fpos)
             pcall(routerMacros)
+            OV.rebind = true                                             -- m132: a fight-layer binding's chord moves with it
         end
         if OV.ftAt(fs) and not OV.at(fs) and readSlot(fs).kind == "none" then
             if tset == 1 and tpos <= 4 and dpadWant() == true then ack("move", false, "dpad bar", ts) return false, "dpad bar" end
@@ -3531,13 +3733,54 @@ WC.padMap = {
         local cid, cname = bookSpell(bookSlot)
         if not cname then ack("combat", false, "bad spell", s) return false, "bad spell" end
         -- m43 THE OVERLAY: stored for this character, run by the router in fights; the button itself is not touched
-        if bindAt(set, pos) then ack("combat", false, "bind", s) return false, "bind" end
+        -- m132: over a WoW Defaults binding too (in fights its chord goes to the router: OV.fbPlan); out of combat the binding stays
         -- m44: the D-pad's four slots take fight spells too (in fights they cast; out of combat the D-pad stays DS Forever's)
         if not whoKey() then ack("combat", false, "no character", s) return false, "no character" end
         local r = spellRef(cname) or {}
         OV.ftdb()[s] = { id = cid, n = cname, i = r.i or 0, page = page, set = set, pos = pos }
         pcall(routerMacros)
+        pcall(routerBind, "fight layer")                                -- m132: a binding under it routes to the router in fights
         ack("combat", true, nil, s)
+        soon()
+        return true
+    end,
+    -- m132 THE FIGHT LAYER'S WHOLE-BUTTON THINGS (the user, 2026-11-11: "Build a fight-only layer"): a command / binding / item / mount
+    -- for this button IN FIGHTS ONLY (kind, then the command's / binding's key or the item's / mount's id). The button's own (WoW
+    -- Defaults) assignment is not touched; a fight spell there gives way (one fight-layer entry per button: the newer wins). Out of combat
+    -- only; nothing of the player's changes (the router's header texts / chords, as every fight spell)
+    putFight = function(page, set, pos, kind, v)
+        local s, why = target(page, set, pos)
+        if not s then ack("fight", false, why) return false, why end
+        if not whoKey() then ack("fight", false, "no character", s) return false, "no character" end
+        local e
+        if kind == "command" then
+            local c = OV.byKey(v)
+            if not c then ack("fight", false, "unknown command", s) return false, "unknown command" end
+            e = { t = "command", key = c.key, n = commandName(c), i = c.icon }
+        elseif kind == "bind" then
+            local b = bindByKey(v)
+            if not b then ack("fight", false, "unknown", s) return false, "unknown" end
+            local ok, bwhy = bindAllowed(set, pos)
+            if not ok then ack("fight", false, bwhy, s) return false, bwhy end
+            if not bindChord(set, pos) then ack("fight", false, "no key", s) return false, "no key" end
+            e = { t = "bind", key = b.key, n = bindName(b), i = b.icon }
+        elseif kind == "item" then
+            local name = type(v) == "number" and TS(function() return C_Item.GetItemNameByID(v) end)
+            if not name then ack("fight", false, "bad item", s) return false, "bad item" end
+            e = { t = "item", id = v, n = name, i = TN(function() return C_Item.GetItemIconByID(v) end) }
+        elseif kind == "mount" then
+            local okm, name, spellID, icon = false, nil, nil, nil
+            if type(v) == "number" then okm, name, spellID, icon = CALL(function() return C_MountJournal.GetMountInfoByID(v) end) end
+            local sp = okm and WC.isPlain(spellID) and type(spellID) == "number" and TS(function() return C_Spell.GetSpellName(spellID) end)
+            if not (okm and WC.isPlain(name) and type(name) == "string" and sp) then ack("fight", false, "bad mount", s) return false, "bad mount" end
+            e = { t = "mount", id = v, n = name, sp = sp, i = WC.isPlain(icon) and type(icon) == "number" and icon or nil }
+        else
+            ack("fight", false, "unknown", s) return false, "unknown"
+        end
+        e.page, e.set, e.pos = page, set, pos
+        OV.ftdb()[s] = e
+        pcall(routerMacros); pcall(routerBind, "fight layer")
+        ack("fight", true, nil, s)
         soon()
         return true
     end,
@@ -3580,6 +3823,7 @@ WC.padMap = {
         if OV.ftAt(s) then                                              -- m43: the overlay's fight spell comes off; the button stays
             OV.ftdb()[s] = nil
             pcall(routerMacros)
+            pcall(routerBind, "fight layer")                            -- m132: a fight-layer binding's chord / a binding's router route
             ack("uncombat", true, nil, s)
             soon()
             return true
@@ -5385,7 +5629,7 @@ local function partyMode()
             pad:SetAttribute("wc-u", u)
         end
     end
-]=]
+]=] .. OV.fbSnip("nil")                -- m133: Party mode switched on / off (also mid-fight): the fight layer's chords follow (m77 rule)
     -- m129 ONE PICK (party_design.md A.2): the roster changed (a state driver, in fights too): the pick re-clamped over the members
     -- there now and wc-u set from it, so the bottom's box and the top's ring never point at two people
     -- m131: a second driver on the pet (out / gone); the picked unit is KEPT while it is still there (its index moves with the pet),
@@ -5559,6 +5803,7 @@ local function partyMode()
             end
             h:SetAttribute("wc-rn", #PM.ORDER)
             pcall(SecureHandlerSetFrameRef, h, "wc-pad", f.pad)
+            if R.hdr then pcall(SecureHandlerSetFrameRef, h, "wc-hdr", R.hdr) end    -- m133: PARTYFLIP flips the fight layer's chords
         end
         -- m129: the picks (m130: the party row's cells 0-4) and the roster's driver write the pad through this ref
         PM.eachPick(PM.pickCell)

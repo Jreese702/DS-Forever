@@ -178,6 +178,8 @@ function SecureHandlerWrapScript(frame, script, header, pre, post)
     return true
 end
 function SecureHandlerSetFrameRef(frame, name, ref) blocked("SetFrameRef"); frame.refs[name] = ref end
+-- the header's Execute (insecure code, out of combat only): the body runs in the restricted environment with self = the header (ctl-sets m133)
+function SecureHandlerExecute(frame, body) blocked("Execute"); runSecure(compileSnippet(body, "self"), frame) end
 DRIVERS = {}
 function RegisterStateDriver(f, st, cond) blocked("RegisterStateDriver"); DRIVERS[#DRIVERS + 1] = { f = f, st = st, cond = cond } end
 -- the game's state drivers (they run in fights too): the first clause whose conditions hold; a change runs the frame's _onstate-<st>

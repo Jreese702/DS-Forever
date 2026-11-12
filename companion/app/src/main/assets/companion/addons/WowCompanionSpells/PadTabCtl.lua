@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p38"                -- bump on every change; p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
+local CV = "p41"                -- bump on every change; p41: THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; PadMap m132): an Extra / DS entry on the In combat tab goes on the button's fight layer only (PadMap.putFight), the WoW Defaults assignment stays out of combat; its box is a plain Set / Replace on the fight layer (Replace only when a fight spell / fight-layer entry is there, naming it; p40's "replace both" retired); Clear combat spell removes it; p40: an Extra / DS entry on the In combat tab always asks first (Replace, an empty button too): it changes the button out of combat as well, and the box says so; p39: THE IN COMBAT TAB'S CHOOSER HAS ALL FIVE TABS (the user, 2026-11-11, on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3"): Extra and DS on In combat too (a command, binding, mount or item goes on the button itself, a fight spell there gives way); the three spell tabs only where nothing but a fight spell can go (a base X / Y / A, a form's own set, the bare D-pad the DS WoW toolbar holds, the radial; out of combat a combat button, as before); p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -188,10 +188,27 @@ fightView = function()
     if tc.chooser and tc.chooser.fight ~= nil then return tc.chooser.fight end
     return tc.view == "combat"
 end
-local function onlySpells() return fightView() or isCombat(here()) end
 -- the base set's X / Y / A (PadMap m7, the user 2026-10-01 "Yes, per button"): in the combat view they take a spell for fights (no macro);
 -- B (7) stays the game's Back
 local function isFace(slot) return slot and slot.kind == "fixed" and slot.face == true end
+-- p39 (the user 2026-11-11, on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the
+-- first 3"): the chooser keeps only its three spell tabs where nothing but a spell can go: the radial (it casts spells), on the In combat
+-- tab a base X / Y / A (its fight spell), a form's own set (that form's fight spells, PadMap m55) and the bare D-pad while the DS WoW
+-- toolbar holds it (p36: only fight spells there), and out of combat a combat button (its Otherwise spell). Anywhere else In combat has
+-- all five: an Extra / DS entry goes on the button's fight layer (p41, PadMap m132: in fights only), and a fight spell there gives way ([act])
+local function toolbarWant()
+    local pm = PM()
+    local ok, st = pcall(function() return pm and type(pm.dpadState) == "function" and pm.dpadState() end)
+    return ok and type(st) == "table" and st.want == true
+end
+local function onlySpells()
+    if tc.view == "radial" then return true end
+    local h = here()
+    if fightView() then
+        return isFace(h) or (h ~= nil and h.form ~= nil) or (tc.pos <= 4 and shownSet() == 1 and toolbarWant())
+    end
+    return isCombat(h)
+end
 
 -- p11 THE CHOOSER'S TABS (the user 2026-10-07: "in the controller menu, when assigning a spell, the spell menu needs some tabs. start on spells, then general
 -- (including professions), then extra"): Spells (the class's lines), General (the book's General tab, its professions too), Extra (the commands).
@@ -205,7 +222,7 @@ local CTABS = { "spells", "general", "professions", "extra", "dstool" }
 local function dsKey(k) return type(k) == "string" and k:sub(1, 2) == "DS" end
 -- p35: the room bar's own three (the Home Bar command opens the bar and the D-pad moves it, as the toolbar's Down does)
 local function barKey(k) return type(k) == "string" and k:sub(1, 5) == "DSBAR" end
-local function ctabs() if onlySpells() or tc.view == "radial" then return { "spells", "general", "professions" } end return CTABS end
+local function ctabs() if onlySpells() then return { "spells", "general", "professions" } end return CTABS end
 local function ctabIndex(list)
     for i, v in ipairs(ctabs()) do if v == list then return i end end
     return 1
@@ -231,7 +248,7 @@ rows = function()
     end
     -- (p24: p8's class "suggestion" row is gone - the user: nothing is ever suggested; the chooser is the player's own spells only)
     local list = tc.chooser and tc.chooser.list or "spells"
-    if (list == "extra" or list == "dstool") and (onlySpells() or tc.view == "radial") then list = "spells" end
+    if (list == "extra" or list == "dstool") and onlySpells() then list = "spells" end
     if list ~= "extra" and list ~= "dstool" then
         if type(WC.spellsBindableList) == "function" then
             for _, e in ipairs(WC.spellsBindableList()) do
@@ -264,7 +281,7 @@ end
 
 -- ---------------------------------------------------------------- doing it
 
-local function act(thing)
+local function act(thing, fightTouch)
     if tc.view == "radial" then                                     -- p16: the spell radial's slice (SpellRadial.lua)
         local sr, h = SR(), here()
         if sr and h then
@@ -282,6 +299,15 @@ local function act(thing)
     if h and h.form and type(pm.putCombatForm) == "function" then
         if thing.kind == "combat" or thing.kind == "cface" then pm.putCombatForm(h.form, pos, thing.slot)
         elseif thing.kind == "uncombat" or thing.kind == "uncface" then pm.clearCombatForm(h.form, pos) end
+        tc.box, tc.chooser, tc.focus = nil, nil, "buttons"
+        return
+    end
+    -- p41 THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; PadMap m132): an Extra / DS entry put on the In combat
+    -- tab goes on the button's FIGHT LAYER only (PadMap.putFight); its WoW Defaults assignment stays as it is out of combat, and a fight
+    -- spell there gives way (one fight-layer entry per button: the newer wins)
+    local whole = thing.kind == "command" or thing.kind == "bind" or thing.kind == "item" or thing.kind == "mount"
+    if whole and (fightView() or fightTouch) and type(pm.putFight) == "function" then
+        pm.putFight(page, set, pos, thing.kind, (thing.kind == "command" or thing.kind == "bind") and thing.key or thing.id)
         tc.box, tc.chooser, tc.focus = nil, nil, "buttons"
         return
     end
@@ -315,6 +341,11 @@ local function boxFor(thing, afterReplace)
         if isCombat(h) then return (not afterReplace) and "replace" or nil end
         return nil
     end
+    -- p41 (the user, 2026-11-11: "Build a fight-only layer"; p40's "replace both" box retired): on the In combat tab an Extra / DS
+    -- entry goes on the fight layer only, so it asks only when the fight layer already holds something there (a fight spell or another
+    -- whole-button entry: Replace names that one); on an empty fight layer it goes straight on
+    local whole = thing.kind == "command" or thing.kind == "bind" or thing.kind == "item" or thing.kind == "mount"
+    if whole and fightView() then return (not afterReplace and isCombat(here())) and "replace" or nil end
     if not afterReplace and filled(here()) then return "replace" end
     local pm = PM()
     if thing.kind == "command" and pm and not pm.made(thing.key) then return pm.macrosFull() and "full" or "make" end
@@ -875,6 +906,9 @@ WC.padTabCtl = {
     touchExtra = function(col)
         local pick = tc.xpage
         tc.xpage = nil
+        -- p41: the touch's one-shot "combat layer" pick before it (the app on In combat) = the entry is for the fight layer
+        local combat = tc.combatAt and GetTime() - tc.combatAt <= COMBAT_PICK_S or nil
+        tc.combatAt = nil
         if not pick or GetTime() - pick.at > EXTRA_PICK_S then return false, "no page picked" end
         if tc.view == "radial" then report("not-on-radial") return false, "radial" end   -- p16
         if inCombat() then refusedCombat() return false, "combat" end
@@ -885,8 +919,9 @@ WC.padTabCtl = {
         if not x then return false, "no entry", idx end
         local h = here()
         if h and h.kind == "fixed" then report(isFace(h) and "fixed" or "stays-back") return false, "fixed", idx, x end
+        if (fightView() or combat) and onlySpells() then report("spells-only") return false, "spells only", idx, x end   -- p39: a form's set, the toolbar's D-pad
         if not bindHere(x) then return false, "bind not here", idx, x end
-        act((x.kind == "command" or x.kind == "bind") and { kind = x.kind, key = x.key } or { kind = x.kind, id = x.id })
+        act((x.kind == "command" or x.kind == "bind") and { kind = x.kind, key = x.key } or { kind = x.kind, id = x.id }, combat)
         report("put")
         return true, nil, idx, x
     end,

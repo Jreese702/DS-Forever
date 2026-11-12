@@ -21,6 +21,15 @@ fails = 0
 passes = 0
 
 
+# m133: PRE with the chord flip's body (OV.fbSnip("nil")) spliced in at its mark: the router's whole snippet, as the add-on builds it
+def full_pre(src):
+    pre = re.search(r'local PRE = \[=\[(.*?)\]=\]', src, re.S).group(1)
+    body = re.search(r'function OV\.fbSnip\(fbf\)\n    return .*?\[=\[(.*?)\]=\]', src, re.S).group(1)
+    mark = "-- m133 FBSNIP: the chord flip (OV.fbSnip) is put here, below"
+    assert pre.count(mark) == 1
+    return pre.replace(mark, "\n    do\n    local fbf = nil\n" + body)
+
+
 def check(ok, name, got=''):
     global fails, passes
     print(('PASS ' if ok else 'FAIL ') + name + ((' -> ' + str(got)) if got != '' else ''))
@@ -70,7 +79,7 @@ hidden = L10.eval('(function() local r = WowCompanion.pad.rows["r54"]; local s =
 check(hidden is True, "rows 54-55 are hidden at the smallest scale (never inside a dialog)", hidden)
 
 # ================================================================ 1. PRE + Party mode (the router's real snippet, restricted)
-PRE = re.search(r'local PRE = \[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
+PRE = full_pre(SRC["padmap"])
 # m94 (test9, 2026-11-07: every A / X / Y / B / D-pad press dead): the game's secure checker refuses the word "function" ANYWHERE in a
 # snippet, comments included ("The function keyword is not permitted"); no secure snippet of any add-on may hold it
 _snip_bad = []
@@ -1233,8 +1242,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p38"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m136"' in SRC["padmap"],
-      "the versions: PadMap m136, PadTabCtl p38, Book b48")
+check('local CV = "p41"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m136"' in SRC["padmap"],
+      "the versions: PadMap m136, PadTabCtl p41, Book b48")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
@@ -1671,7 +1680,10 @@ except Exception as e:                                                    # no g
     print('NOTE no git diff: ' + str(e))
 added = [ln[1:] for ln in diff.splitlines() if ln.startswith('+') and not ln.startswith('+++')]
 code = [re.sub(r'--.*$', '', ln) for ln in added]
-BAD = [r'\bSetBinding\s*\(', r'\bSaveBindings\b', r'\bCreateMacro\b', r'\bEditMacro\b', r'\bSetCVar\b', r'\bPlaceAction\b',
+# m132 (the user, 2026-11-11: "Build a fight-only layer"): `self:SetBinding(` inside the header's own secure state snippet is the
+# restricted handle's OVERRIDE binding on that header (never saved, cleared with it), not the game's saved SetBinding; m133: the same
+# header handle reached as `h` (OV.fbSnip: the caller's "wc-hdr" ref, or the header itself)
+BAD = [r'(?<!self:)(?<!h:)\bSetBinding\s*\(', r'\bSaveBindings\b', r'\bCreateMacro\b', r'\bEditMacro\b', r'\bSetCVar\b', r'\bPlaceAction\b',
        r'\bPickupAction\b', r'\bPickupMacro\b', r'\bShowUIPanel\b', r'\bHideUIPanel\b', r'\bToggleFrame\b', r'\bInspectUnit\b',
        r'\bUnitPopup_OpenMenu\b', r'\bTargetFrame_OpenMenu\b', r'\bToggleGameMenu\b', r'\bCloseAllBags\b', r'\bOpenAllBags\b',
        r'\bSetOverrideBinding\s*\(']
@@ -1848,6 +1860,103 @@ for _ in range(3):
 puts = [WT.eval('PUTS[%d]' % (i + 1)) for i in range(int(WT.eval('#PUTS')))]
 check(puts == ['1:1:DSMAP'], "p34: Open Map from the DS tab is put on the bare D-pad Left (PadMap.putCommand)", puts)
 check(WT.eval('#SPY') == 0 and WT.eval('#VIOL') == 0, "p34: no spied call, no lockdown breach")
+
+# ================================================================ p39: the In combat tab's chooser has all five tabs (the user, 2026-11-11,
+# on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3")
+WT.execute('pp("PADRSHOULDER")')
+c = ctlDoc(WT)
+check(c['view'] == 'combat' and c['pos'] == 1 and c['shown'] == 1 and WT.eval('want()') is False, "p39: In combat, the bare D-pad Left, toolbar off", c)
+WT.execute('pp("PAD1")')
+check(ctlDoc(WT).get('chooser') and ctlDoc(WT)['chooser']['list'] == 'spells', "p39: A opens In combat's chooser on Spells", ctlDoc(WT).get('chooser'))
+seen = []
+for _ in range(6):
+    seen.append(ctlDoc(WT)['chooser']['list'])
+    WT.execute('pp("PADDRIGHT")')
+seen = list(dict.fromkeys(seen))
+check(seen == ['spells', 'general', 'professions', 'extra', 'dstool'], "p39: In combat's chooser: all five tabs (Extra and DS too)", seen)
+ds = walk(WT)
+check({'DSCHAT', 'DSMAP'} <= set(ds), "p39: In combat's DS tab lists DS Forever's commands", ds)
+WT.execute('pp("PAD2")')
+# a fight spell on the button first; an In combat DS entry put there replaces it (the button does the command in fights too)
+# (this world has no game bars: the button reads as one with a fight spell over it, PadMap m43's view)
+WT.execute('local pm = WowCompanion.padMap; SLOTAT0 = pm.slotAt; local f = SLOTAT0; pm.slotAt = function(pg, st, ps) '
+           'if st == 1 and ps == 1 then return { kind = "combat", c = { id = 403, n = "Lightning Bolt", i = 1 }, ov = true } end '
+           'return f(pg, st, ps) end')
+WT.execute('PUTS = {}; CLR = {}; FIGHTS = {}; local pm = WowCompanion.padMap; local g = pm.clearCombat; '        # (the p34 putCommand spy stays)
+           'pm.clearCombat = function(pg, st, ps) CLR[#CLR + 1] = st .. ":" .. ps; return g(pg, st, ps) end; '
+           'local h = pm.putFight; pm.putFight = function(pg, st, ps, k, v) FIGHTS[#FIGHTS + 1] = st .. ":" .. ps .. ":" .. k .. ":" .. tostring(v); '
+           'return h(pg, st, ps, k, v) end')
+WT.execute('pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end')
+check(ctlDoc(WT)['chooser']['list'] == 'dstool', "p39: In combat on a fight-spell button: the DS tab is there too", ctlDoc(WT)['chooser'])
+WT.execute('WowCompanion.padMap.emit(true)')
+ctl_dump('padmap_combat', WT, 'padmap'); ctl_dump('ctl_combat_dstool', WT, 'padtabctl')
+WT.execute('for i = 1, 80 do pp("PADDUP") end; pp("PADDDOWN")')
+for _ in range(40):
+    if ctlDoc(WT)['chooser']['id'] == 'DSMAP':
+        break
+    WT.execute('pp("PADDDOWN")')
+WT.execute('pp("PAD1")')
+b = ctlDoc(WT).get('box')
+check(b and b['kind'] == 'replace' and b.get('what') == 'DSMAP' and int(WT.eval('#PUTS')) == 0 and int(WT.eval('#FIGHTS')) == 0,
+      "p41: Open Map on In combat's fight-spell button: Replace (the fight layer's spell) asks first, nothing changed yet", b)
+WT.execute('pp("PAD1")')
+puts = [WT.eval('PUTS[%d]' % (i + 1)) for i in range(int(WT.eval('#PUTS')))]
+clr = [WT.eval('CLR[%d]' % (i + 1)) for i in range(int(WT.eval('#CLR')))]
+fights = [WT.eval('FIGHTS[%d]' % (i + 1)) for i in range(int(WT.eval('#FIGHTS')))]
+check(fights == ['1:1:command:DSMAP'] and puts == [] and clr == [] and not ctlDoc(WT).get('box'),
+      "p41: Replace's ONE yes: Open Map goes on the FIGHT LAYER only (putFight; no putCommand on the button, no second box)", (fights, puts, clr))
+# p41: an EMPTY fight layer on the In combat tab: a DS entry goes straight on (the fight layer only: nothing out of combat changes)
+WT.execute('local pm = WowCompanion.padMap; pm.slotAt = function(pg, st, ps) '
+           'if st == 1 and ps == 1 then return { kind = "none" } end return SLOTAT0(pg, st, ps) end')
+WT.execute('PUTS = {}; CLR = {}; FIGHTS = {}; pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end')
+WT.execute('for i = 1, 80 do pp("PADDUP") end; pp("PADDDOWN")')
+for _ in range(40):
+    if ctlDoc(WT)['chooser']['id'] == 'DSMAP':
+        break
+    WT.execute('pp("PADDDOWN")')
+WT.execute('pp("PAD1")')
+b = ctlDoc(WT).get('box')
+fights = [WT.eval('FIGHTS[%d]' % (i + 1)) for i in range(int(WT.eval('#FIGHTS')))]
+c = ctlDoc(WT)
+check(b is None and fights == ['1:1:command:DSMAP'] and int(WT.eval('#PUTS')) == 0 and int(WT.eval('#CLR')) == 0
+      and not c.get('chooser'), "p41: Open Map on an empty In combat button: straight onto the fight layer, no box, the chooser closes", (b, fights))
+WT.execute('WowCompanion.padMap.slotAt = SLOTAT0')
+# the DS WoW toolbar on: In combat's bare D-pad takes fight spells only (p36), so its chooser keeps the three spell tabs
+WT.execute('WowCompanion.padMap.dpadBar(true); pp("PAD1"); for i = 1, 6 do pp("PADDRIGHT") end')
+c = ctlDoc(WT)
+check(WT.eval('want()') is True and c.get('chooser') and c['chooser']['list'] == 'professions',
+      "p39: toolbar on, In combat's bare D-pad: three spell tabs (the last is Professions)", c.get('chooser'))
+WT.execute('pp("PAD2"); WowCompanion.padMap.dpadBar(false)')
+# a base X / Y / A: its fight spell only, three tabs
+for _ in range(12):
+    if ctlDoc(WT)['pos'] >= 5 and ctlDoc(WT)['pos'] != 7:
+        break
+    WT.execute('pp("PADDRIGHT")')
+c = ctlDoc(WT)
+check(c['view'] == 'combat' and c['pos'] in (5, 6, 8) and c['shown'] == 1, "p39: on a base face button In combat", c)
+WT.execute('pp("PAD1")')
+for _ in range(3):
+    if ctlDoc(WT).get('box'):
+        WT.execute('pp("PAD2")')
+WT.execute('for i = 1, 6 do pp("PADDRIGHT") end')
+c = ctlDoc(WT)
+check(c.get('chooser') and c['chooser']['list'] == 'professions', "p39: a base face button In combat: three spell tabs", c.get('chooser'))
+WT.execute('pp("PAD2")')
+# WoW Defaults unchanged: five on a plain button
+WT.execute('pp("PADLSHOULDER")')
+for _ in range(12):
+    if ctlDoc(WT)['pos'] == 2:
+        break
+    WT.execute('pp("PADDLEFT")')
+WT.execute('pp("PAD1")')
+for _ in range(3):
+    if ctlDoc(WT).get('box'):
+        WT.execute('pp("PAD2")')
+WT.execute('for i = 1, 6 do pp("PADDRIGHT") end')
+c = ctlDoc(WT)
+check(c['view'] == 'normal' and c.get('chooser') and c['chooser']['list'] == 'dstool', "p39: WoW Defaults keeps its five tabs", (c['view'], c['pos'], c.get('chooser')))
+WT.execute('pp("PAD2")')
+check(WT.eval('#SPY') == 0 and WT.eval('#VIOL') == 0, "p39: no spied call, no lockdown breach")
 
 # ================================================================ m132 PARTY MODE IN A FIGHT, THE FIGHT FIRST (the user, 2026-11-11, a healer:
 # "Party mode needs to be usable in combat for healers. Locking it is retarded"). Every world here ENTERS THE FIGHT FIRST (the lockdown
