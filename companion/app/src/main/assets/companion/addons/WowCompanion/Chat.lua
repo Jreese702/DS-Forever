@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat32"     -- chat32: any /command from the composer runs (the secure cell chcmd, armed at the check); chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
+local CHATV = "chat34"     -- chat34 (#183 review): the "ours" probe also says how far Interact.lua ran (istage: none / top / guard / cap / end, Interact i153) and its version, and whether the error handler is still ours (eh: ours / other / unset), so "loaded, no capture, no errors" is no longer one answer; chat33 (#183, 1.0.25: "Not able to send messages in chat/guild/whisper/party/etc"; its log: every key, type and send answered ok=0, every room's hold "no controller capture", no Interact document in 15 min): the game never ran DS Forever: Interact, so no room could hold the controller and the chat refused all with "the chat is not open". A refusal now says so ("Interact add-on not running"), and one probe per login ("ours") names each DS Forever add-on the game did not load, with the game's reason, and the first Lua errors from our own files (why it did not load is not in that report); chat32: any /command from the composer runs (the secure cell chcmd, armed at the check); chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -30,6 +30,26 @@ local dirty = false
 -- The ring restarts at 1 on every /reload, so a line number alone does not identify a line.
 -- The app keeps its own history and appends by (s, i); a new s tells it the numbering restarted.
 local session = SN(function() return time() end) or math.floor(GetTime())
+
+-- chat33 (#183): THE FIRST LUA ERRORS FROM OUR OWN FILES, kept for the login's "ours" probe (below). The game's error handler is
+-- wrapped HERE, in WowCompanion, so it is in place before every add-on that depends on us loads (a load error in Interact.lua left
+-- WC.capture unset and nobody saw why). The game's own handler still runs for every error, first; nothing is saved; another add-on
+-- that sets its own handler later simply takes over. Only messages naming a WowCompanion file are kept, three at most, 300 bytes each.
+WC.ourErrors = WC.ourErrors or {}
+local ourHandler       -- chat34: kept so the probe can say whether a later add-on replaced it (then errors may be unseen)
+do
+    local okG, prev = pcall(function() return geterrorhandler() end)
+    if okG and type(prev) == "function" and type(seterrorhandler) == "function" then
+        ourHandler = function(msg, ...)
+            pcall(function()
+                local e = WC.ourErrors
+                if #e < 3 and type(msg) == "string" and isPlain(msg) and msg:find("WowCompanion", 1, true) then e[#e + 1] = msg:sub(1, 300) end
+            end)
+            return prev(msg, ...)
+        end
+        pcall(seterrorhandler, ourHandler)
+    end
+end
 
 -- event -> the short channel tag the room displays
 local CHANNELS = {
@@ -1387,6 +1407,14 @@ local function tack(op, row, col, ok, why, now)
     C_Timer.After(LETTER_REST, function() if g == letterGen then WC.push() end end)
 end
 
+-- chat33 (#183): why the chat cannot take a key. No capture at all = Interact.lua never ran (it sets WC.capture), so no room can hold
+local function notOpen()
+    local c = WC.capture
+    if type(c) ~= "table" or type(c.take) ~= "function" then return "Interact add-on not running" end
+    return "the chat is not open"
+end
+WC.chatNotOpen = notOpen
+
 chatHolds = function()
     local c = WC.capture
     if type(c) ~= "table" or type(c.state) ~= "function" then return false end
@@ -1544,8 +1572,8 @@ local function onQuick(_, col)
         return qack("send", col, false, "a field is open")
     end
     if not chatHolds() then
-        if isTyped then return tack(op or "key", "chq", col, false, "the chat is not open", true) end
-        return qack("send", col, false, "the chat is not open")
+        if isTyped then return tack(op or "key", "chq", col, false, notOpen(), true) end
+        return qack("send", col, false, notOpen())
     end
     if QTYPES[col] then
         qtype = QTYPES[col]
@@ -1572,7 +1600,7 @@ local function onLetters(row)
             return typeChar(row, col)
         end
         if row == "chs" and col == 36 then setTop(false); return tack("topoff", row, col, true) end   -- display only, always
-        if not chatHolds() then return tack("key", row, col, false, "the chat is not open", true) end
+        if not chatHolds() then return tack("key", row, col, false, notOpen(), true) end
         if row == "chs" and col == 39 then setTop(true); return tack("topon", row, col, true) end
         typeChar(row, col)
     end
@@ -1608,6 +1636,38 @@ local function joinPad()
 end
 joinPad()
 
+-- ---------------------------------------------------------------- chat33 (#183): OUR ADD-ONS AS THE GAME LOADED THEM
+-- One probe a login (2 s after PLAYER_LOGIN: every add-on that loads has loaded): each DS Forever add-on the game did NOT load, with
+-- the game's own reason (C_AddOns.GetAddOnInfo: DISABLED, DEP_MISSING, INTERFACE_VERSION, CORRUPT ...), the shared capture's version
+-- (0: none, Interact never ran) and the first Lua errors from our files. Read-only: nothing enabled, loaded or saved here.
+local OURS = { "WowCompanionSpells", "WowCompanionHub", "WowCompanionQuests", "WowCompanionInteract", "WowCompanionCharacter",
+               "WowCompanionSocial", "WowCompanionCalendar", "WowCompanionGroupFinder", "WowCompanionProfessions", "WowCompanionPvp" }
+function WC.oursProbe()
+    local A = type(C_AddOns) == "table" and C_AddOns or {}
+    local isLoaded = A.IsAddOnLoaded or rawget(_G, "IsAddOnLoaded")
+    local info = A.GetAddOnInfo or rawget(_G, "GetAddOnInfo")
+    local off, loaded = {}, 0
+    for _, a in ipairs(OURS) do
+        local okL, l = pcall(function() return isLoaded and isLoaded(a) end)
+        if okL and l then loaded = loaded + 1
+        else
+            local okI, _, _, _, loadable, reason = pcall(function() if info then return info(a) end end)
+            local r = okI and str(reason) or nil
+            off[#off + 1] = a .. ":" .. (r or (okI and loadable and "LOADABLE") or "?")
+        end
+    end
+    local c = WC.capture
+    local capv = (type(c) == "table" and type(c.take) == "function") and (num(c.version) or 1) or 0
+    -- chat34: how far Interact.lua ran (nil = never: unreadable, or a copy older than i153) and who owns the error handler now
+    local eh = "unset"
+    if ourHandler then
+        local okH, h = pcall(function() return geterrorhandler() end)
+        eh = (okH and h == ourHandler) and "ours" or "other"
+    end
+    return { type = "cap", probe = "ours", v = CHATV, loaded = loaded, missing = #off, off = off, capv = capv,
+             errN = #WC.ourErrors, errs = WC.ourErrors, istage = str(WC.interactStage) or "none", iv = str(WC.interactIV), eh = eh }
+end
+
 -- ---------------------------------------------------------------- start
 
 f:SetScript("OnEvent", function(_, event, ...)
@@ -1623,6 +1683,7 @@ f:SetScript("OnEvent", function(_, event, ...)
                             typing = padRows.chr ~= nil and padRows.chs ~= nil }))
         reportStyle()
         talkChanged()
+        C_Timer.After(2, function() pcall(function() WC.send(WC.encode(WC.oursProbe())); WC.push() end) end)
         return
     end
     if event == "PLAYER_REGEN_ENABLED" then

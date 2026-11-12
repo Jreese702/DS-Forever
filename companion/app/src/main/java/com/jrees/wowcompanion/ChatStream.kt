@@ -276,6 +276,12 @@ class ChatStream(
         }
         when {
             step == Step.CHECK && h.op == "body" && pendingBody > 0 -> {}       // an earlier 15's answer: the check's is still coming
+            // chat33 (#183): the check itself REFUSED (the chat does not hold the controller; with no capture at all "Interact add-on
+            // not running"): the add-on's own reason at once, never two more full re-types ending in "did not get all the letters"
+            step == Step.CHECK && h.op == "body" && !h.ok -> {
+                step = Step.NONE
+                onEvent(Event.Refused(h.why ?: "The game refused it"))
+            }
             step == Step.CHECK && h.op == "body" -> {
                 if (matches(h)) {
                     // chat32: a /command runs from the add-on's command cell (as the game's chat box would run it), never Send
