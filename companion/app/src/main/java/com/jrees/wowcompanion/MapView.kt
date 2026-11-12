@@ -3412,6 +3412,9 @@ class MapView(context: Context) : View(context) {
         if (a.m == map?.optInt("mapID", Int.MIN_VALUE)) { deriveQuestAreas(map); invalidate() }
     }
     private val qdbAreas = LinkedHashMap<Int, QdbAreas.Areas>()
+    /** whether quest [qid]'s areas are drawn, [st] the shown focus: tracked quests, and the SHOWN focus tracked or not - the merged
+     *  light blue row's quest included (the user, 2026-11-11: "isn't showing the questie quest areas for the focused quest"; FocusAreas) */
+    private fun areaQuest(qid: Int, st: Int): Boolean = FocusAreas.shown(qid, st, trackedKnown, trackedNo.containsKey(qid))
 
     private fun deriveQuestAreas(m: JSONObject?) {
         qAreas.clear(); qCircles.clear()
@@ -3426,8 +3429,8 @@ class MapView(context: Context) : View(context) {
             val onMap = HashSet<Int>()
             m.optJSONArray("quests")?.let { qs -> for (i in 0 until qs.length()) qs.optJSONObject(i)?.let { onMap.add(it.optInt("questID", 0)) } }
             for (o in a.objs.map { it.qid }.distinct()) {
-                if (o in onMap || !shownQuest(o)) continue
-                if (tracked.firstOrNull { it.optInt("id", 0) == o }?.let { it.optBoolean("ready") || it.optBoolean("done") } == true) continue
+                if (o in onMap || !areaQuest(o, st)) continue
+                if ((tracked.firstOrNull { it.optInt("id", 0) == o } ?: questById[o])?.let { it.optBoolean("ready") || it.optBoolean("done") } == true) continue
                 if (qdbAreasFor(m, o, o == st)) placed.add(o)
             }
         }
@@ -3436,7 +3439,7 @@ class MapView(context: Context) : View(context) {
             val q = qs.optJSONObject(i) ?: continue
             if (q.optBoolean("done", false)) continue      // ready: the "?" at the hand-in, no area
             val id = q.optInt("questID", 0)
-            if (!shownQuest(id)) continue                  // untracked: no area
+            if (!areaQuest(id, st)) continue               // untracked: no area (the shown focus always has one: FocusAreas)
             val focused = id != 0 && id == st
             // QuestieDB's areas first (the user's pick), then the shape traced from the user's play, the circle. (The baked
             // AzerothCore shapes, assets/quest_areas.json, left the app with the art harvest, the user 2026-10-09.)
