@@ -15,8 +15,12 @@ package com.jrees.wowcompanion
  * own rest only makes it earlier still). So the real spacing is never less than [MIN_MS].
  */
 object TapSpacing {
-    /** TapPad's REPEAT (0.25 s) and a margin */
-    const val MIN_MS = 260L
+    /** TapPad's REPEAT (0.25 s) and a FRAME'S margin (pk3 review fix): TapPad stamps a press when the game's frame handles it, so
+     *  one press handled a slow frame late (a fight at 7-10 fps on the Thor) shrinks the gap the game sees by up to a frame; 260 ms
+     *  left 10 ms of that. 400 ms keeps the seen gap >= 0.25 s for frames up to ~150 ms (with the [ran] estimate's own ~20 ms) */
+    const val MIN_MS = 400L
+    /** the slowest frame [MIN_MS] is sized for (ms) */
+    const val FRAME_MS = 150L
     /** the rows spaced (by name): Map.lua's "pnav" (PolestarNav.ROW) */
     val ROWS: Set<String> = setOf(PolestarNav.ROW)
     /** the least rest a batch takes after its last tap (InputSink's TAIL_REST_MS 30; a shell's "sleep 0.08" is longer) */

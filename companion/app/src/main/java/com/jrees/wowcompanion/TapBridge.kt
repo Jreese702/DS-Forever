@@ -284,7 +284,7 @@ object TapBridge {
             Log.i(TAG, "quiet pad: $what waited $waited ms (held at queue $heldAtQueue)" + (keysOff?.let { " keys off: $it" } ?: ""))
             tapHistory(what)
             CursorPolicy.tapping(SystemClock.uptimeMillis(), pts.size)       // these touches are ours: the cursor stays hidden
-            // pk3 (TapSpacing): a cell of a spaced row ("pnav") tapped again within 260 ms of its last tap, counted across batches,
+            // pk3 (TapSpacing): a cell of a spaced row ("pnav") tapped again within TapSpacing.MIN_MS (400 ms: the 0.25 s guard and a slow frame) of its last tap, counted across batches,
             // waits first (TapPad's 0.25 s repeat guard would drop it): two quick Skips both land. Measured on the shell's own thread
             RootShell.runBuilt({
                 val lead = TapSpacing.lead(spacing, SystemClock.uptimeMillis(), cells, gapMs)

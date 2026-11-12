@@ -195,6 +195,9 @@ def main():
     G.A6603 = True
     G.FIRE("PLAYER_ENTER_COMBAT")
     chk("hub30: an attack started out of a fight with a target: off at once (%s)" % cv(), cv() == "0")
+    # (hub44 review fix: a Mark SENT within PULL_UNDO_S of the attack start is the macro's own Mark pull, 5f; hub30's "Mark after a
+    # melee pull" comes later than that)
+    adv(1.0)
     G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g1", 1130)
     G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g2", 14325)
     G.FIRE("UNIT_SPELLCAST_SUCCEEDED", "player", "g2", 14325)
@@ -269,6 +272,25 @@ def main():
     chk("hub44 5e: Mark alone never turns it on: after a plain pull's 0, Mark's SEND / SUCCEEDED and the fight's start leave it off (%s, 1 writes %d)"
         % (cv(), len(ones)), cv() == "0" and not ones)
     chk("hub44: MARK_S is 1.5 s", G.WowCompanion.hub.SHOT_T.MARK_S == 1.5)
+    # hub44 review fix: a controller Mark is PadMap's attack-on-cast macro (/startattack THEN /cast Hunter's Mark): the attack start
+    # comes first and writes the plain pull's 0, then Mark's SEND undoes that same press's 0 (within PULL_UNDO_S, out of the lockdown)
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); sent(1130); G.FIRE("UNIT_SPELLCAST_SUCCEEDED", "player", "gm", 1130); adv(0.4)
+    ones = [G.WRITES[i] for i in range(1, len(G.WRITES) + 1) if G.WRITES[i].v == "1"]
+    chk("hub44 5f: the macro order (attack start, then Mark's SEND): on again, out of the lockdown (%s, 1 writes %d)" % (cv(), len(ones)),
+        cv() == "1" and len(ones) == 1 and ones[0].lock is False)
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.1); sent(14325); adv(0.4)
+    chk("hub44 5g: the macro order with a Mark rank 0.1 s behind: on (%s)" % cv(), cv() == "1")
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(2.0); G.WRITES = L2.table(); sent(1130); adv(0.4)
+    ones = [G.WRITES[i] for i in range(1, len(G.WRITES) + 1) if G.WRITES[i].v == "1"]
+    chk("hub44 5h: a Mark 2 s after a plain pull never turns it on (%s, 1 writes %d)" % (cv(), len(ones)), cv() == "0" and not ones)
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.05); G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); G.WRITES = L2.table()
+    sent(1130); adv(0.4)
+    ones = [G.WRITES[i] for i in range(1, len(G.WRITES) + 1) if G.WRITES[i].v == "1"]
+    chk("hub44 5i: a Mark inside the fight's lockdown writes nothing (%s, 1 writes %d)" % (cv(), len(ones)), cv() == "0" and not ones)
+    fresh(); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.1); sent(1130); G.WRITES = L2.table(); sent(1130); adv(0.4)
+    ones = [G.WRITES[i] for i in range(1, len(G.WRITES) + 1) if G.WRITES[i].v == "1"]
+    chk("hub44 5j: the undo is once per pull (a second Mark writes nothing more: %d)" % len(ones), not ones)
+    chk("hub44: PULL_UNDO_S is 0.3 s", G.WowCompanion.hub.SHOT_T.PULL_UNDO_S == 0.3)
     fresh(); G.FIRE("UNIT_SPELLCAST_FAILED", "player", "gf", 3044); adv(2.5); G.FIRE("PLAYER_ENTER_COMBAT"); adv(0.4)
     c_fail = cv()
     G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); c_rd = cv(); sent(3044)

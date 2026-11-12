@@ -213,7 +213,7 @@ class PolestarSkipTest {
         error("i18n folder not found")
     }
 
-    // pk3 rough edge b): "Two quick presses can lose the second" - every pnav cell is spaced >= 260 ms across batches
+    // pk3 rough edge b): "Two quick presses can lose the second" - every pnav cell is spaced >= MIN_MS (400 ms) across batches
     @Test fun twoQuickSkipsAreSpacedAcrossBatches() {
         val c = TapSpacing.Clock()
         val skip = PolestarSkip.cols(prev = false).map { PolestarNav.ROW to it }
@@ -224,7 +224,7 @@ class PolestarSkipTest {
         assertTrue("waits ($lead ms)", lead > 0L)
         val lastSay = c.lastAt[PolestarNav.ROW to PolestarSkip.SAY]!!
         assertTrue("38 recorded no earlier than it ran ($lastSay)", lastSay >= 1_000L)
-        assertTrue("the second 38 >= 260 ms after the first", 1_200L + lead - lastSay >= TapSpacing.MIN_MS)
+        assertTrue("the second 38 >= MIN_MS after the first", 1_200L + lead - lastSay >= TapSpacing.MIN_MS)
         assertTrue("the second 10 too", 1_200L + lead + 120L - c.lastAt[PolestarNav.ROW to PolestarSkip.SKIP]!! >= TapSpacing.MIN_MS)
         // Skip then Previous: 38 is shared, so it is spaced as well
         val prev = PolestarSkip.cols(prev = true).map { PolestarNav.ROW to it }
@@ -239,5 +239,9 @@ class PolestarSkipTest {
         TapSpacing.ran(c, 7_000L, skip, 120L)
         assertTrue(TapSpacing.lead(c, 7_000L, listOf(PolestarNav.ROW to PolestarNav.PS_SAY, PolestarNav.ROW to PolestarNav.PS_ON), 0L) > 0L)
         assertTrue("never more than MIN_MS", TapSpacing.lead(c, 7_000L, skip, 0L) <= TapSpacing.MIN_MS)
+        // review fix: the margin over TapPad's 0.25 s guard covers a press handled one slow frame late (a fight at ~7 fps), less the
+        // ran() estimate's ~20 ms of slack (TAP_REST 20 + TAIL 30 against TAIL_MIN_MS 30)
+        assertTrue("MIN_MS covers the 0.25 s guard plus a slow frame", TapSpacing.MIN_MS - TapSpacing.FRAME_MS >= 250L)
+        assertTrue("a frame of 150 ms is budgeted", TapSpacing.FRAME_MS >= 150L)
     }
 }

@@ -8,7 +8,7 @@ Polestar.On's PLAYER_SKIPPED_STEP and CharState's saved skips, as Core/Engine.lu
 - the stack is this character's (name-realm) and the guide's; a step doc (pstep ps6) carries sk and u;
 - pk3 (the user's pick 2026-11-12, "Work in fights too"): in combat both WORK (Polestar called, answered ok); the answer carries u
   (the skips Previous can undo after it) and the step doc goes out AT ONCE (no wait for the 1 s tick), so Previous is there right
-  after a Skip; two quick presses through the REAL pad cells, spaced as the app spaces pnav taps (>= 0.26 s), both land;
+  after a Skip; two quick presses through the REAL pad cells, spaced as the app spaces pnav taps (>= 0.40 s), both land, the first press handled a slow frame late too;
 - Polestar absent / an older one with no Skip: harmless, sk absent;
 - 38 then 8 / 9 (the row holds) and 0-7 (the automation mask) are as before.
 """
@@ -199,7 +199,7 @@ def run():
         chk("a refused Previous still says u = 0", a["ok"] is False and a.get("u") == 0)
 
     # pk3: a quick double press through the REAL pad cells (TapPad's press + its 0.25 s repeat guard), spaced as the app spaces every
-    # pnav tap (TapSpacing.MIN_MS 260 ms between two taps of one cell, across batches): both skips land
+    # pnav tap (TapSpacing.MIN_MS 400 ms between two taps of one cell, across batches): both skips land
     def press(col, dt):
         L.execute('local c = WowCompanion.pad.rows.pnav.cells[%d]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false); '
                   'NOW = NOW + %f' % (col, dt))
@@ -208,14 +208,14 @@ def run():
     L.execute('CALLS = {}')
     cur0 = L.eval('CUR')
     n0 = nsent(L)
-    press(38, 0.12); press(10, 0.14)          # batch 1: 38 at 0, 10 at 0.12; the next 38 at 0.26
+    press(38, 0.12); press(10, 0.28)          # batch 1: 38 at 0, 10 at 0.12; the next 38 at 0.40
     press(38, 0.12); press(10, 0.30)
     ans = [x for x in docs(L, n0, "pskip") if x["op"] == "skip"]
-    chk("two quick skips (0.26 s apart) both land (%d answers, %d Skip calls)" % (len(ans), L.eval('#CALLS')),
+    chk("two quick skips (0.40 s apart) both land (%d answers, %d Skip calls)" % (len(ans), L.eval('#CALLS')),
         len(ans) == 2 and all(x["ok"] for x in ans) and L.eval('#CALLS') == 2)
     L.execute('CALLS = {}')
     n0 = nsent(L)
-    press(38, 0.12); press(11, 0.14)
+    press(38, 0.12); press(11, 0.28)
     press(38, 0.12); press(11, 0.30)
     ans = [x for x in docs(L, n0, "pskip") if x["op"] == "prev"]
     chk("two quick previous presses both land, the step back to %s" % cur0, len(ans) == 2 and all(x["ok"] for x in ans) and L.eval('CUR') == cur0)
@@ -225,6 +225,17 @@ def run():
     press(38, 0.1); press(10, 0.1)
     press(38, 0.1); press(10, 0.5)
     chk("(unspaced, 0.2 s: the second press is lost, as the app's spacing is for)", L.eval('#CALLS') == 1)
+    # review fix: TapPad stamps a press when the game's FRAME handles it, so the first press handled one slow frame late (a fight at
+    # ~7-10 fps) shrinks the gap the game sees. Injected 0.40 s apart, the first 38 handled 0.1 s late: seen 0.30 s apart, both land;
+    # the old 0.26 s spacing with a 33 ms late first press (seen 0.227 s) lost the second
+    def lateFirst(spacing, late):
+        L.execute('CALLS = {}')
+        L.execute('NOW = NOW + %f' % late)                    # (the first 38 waits a frame before the game handles it)
+        press(38, 0.12); press(10, spacing - late - 0.12)     # the second batch's 38 lands [spacing] after the first was INJECTED
+        press(38, 0.12); press(10, 0.5)
+        return L.eval('#CALLS')
+    chk("a first press handled 0.1 s late, 0.40 s spacing: both skips land (%d)" % lateFirst(0.40, 0.10), L.eval('#CALLS') == 2)
+    chk("(0.26 s spacing, the first press 33 ms late: the second is lost - why MIN_MS is 400)", lateFirst(0.26, 0.033) == 1)
 
     # the row's other words are as before
     L.execute('WowCompanion.pnav.psAt = nil')
