@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b48"                -- bump on every change; b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
+local BV = "b49"                -- bump on every change; b49: A STANCE-COVERED BUTTON BINDS TO THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): a Warrior in Battle Stance bound Charge on ZR + B page 1, the game lays the stance bar over RT there, the box's form defaulted to the caster and the plain RT slot (199) took it while the game, the router and Home read the stance bar's; now the box's form is "not chosen" (nil) until the player picks one, and then the active form's bar is the default (bform reports it, so the app's form row lights it); 0 = the caster picked on purpose (the old path); the ack's probe.slotSrc says where the slot came from (stance / form / game / button / formula); b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -242,6 +242,25 @@ local function tellB()
     if ok and got then toldB = want end
 end
 
+-- b49 (issue #179): the form the player is in now (its spell id, the game's order index), nil = the caster / no form
+local function activeFormId()
+    local idx = TN(function() return GetShapeshiftForm() end)
+    if not idx or idx <= 0 then return nil end
+    local okf, _, _, _, sid = pcall(GetShapeshiftFormInfo, idx)
+    if okf and type(sid) == "number" and sid > 0 then return sid end
+end
+-- b49: the Bind box's form as the box shows it: the player's pick (0 = the caster), else - Normal only, while the game lays a stance bar
+-- over a set - the active form (its bar is what that set shows and presses); nil = the caster's
+local function bindFormNow()
+    if ctl.bindForm ~= nil then return ctl.bindForm end
+    if not ctl.bind or ctl.bind.fight then return nil end
+    local pm = WC.padMap
+    if type(pm) ~= "table" or type(pm.stance) ~= "function" then return nil end
+    local okS, st = pcall(pm.stance)
+    if not (okS and st) then return nil end
+    return activeFormId()
+end
+
 local function report(note)
     tellB()
     ctl.note = note or ctl.note
@@ -256,7 +275,7 @@ local function report(note)
         rk = ri, rks = e and e.ranks and #e.ranks or nil,
         sel = p and (p.id or p.a) or nil, mode = ctl.mode, bind = ctl.bind and ctl.bind.id or nil, pg = ctl.pg, ctrl = ctl.ctrlTab or nil,
         bf = ctl.bind and ctl.bind.fight or nil,                    -- b37: the Bind box puts it on the In combat layout
-        bform = (ctl.bindForm and ctl.bindForm ~= 0) and ctl.bindForm or nil,   -- b43: the In combat bind goes to this form's own set
+        bform = (function() local f = bindFormNow(); return (f and f ~= 0) and f or nil end)(),   -- b43 / b49: the chosen (or default) form
         bk = extraOn and "select" or nil, croom = ctl.croom or nil,
         tn = ctl.croom and (ctl.tn or 0) or nil, pn = ctl.croom and (ctl.pn or 0) or nil, note = ctl.note } }))
     WC.push()
@@ -585,19 +604,29 @@ local function bindPress(key)
     end
     local page = gamePage()
     -- b44 (the user's pick A): a FORM chosen in the box's row, pressed in the set the game lays the form bar over = that form's own slot
-    local fslot = nil
+    -- b49 (issue #179, "buttons do not stay mapped on ZR +FACE buttons"): no form picked yet (nil) = the ACTIVE form, so a stance-covered
+    -- button takes the spell on the bar the game, the router and Home show there; 0 = the caster picked on purpose (the plain set's slot)
+    local fslot, fsrc = nil, nil
     local pmf = WC.padMap
-    if ctl.bindForm and ctl.bindForm ~= 0 and type(pmf) == "table" and type(pmf.stance) == "function" then
+    local form, auto = ctl.bindForm, false
+    if form == nil then form = activeFormId(); auto = form ~= nil end
+    if form and form ~= 0 and pos and type(pmf) == "table" and type(pmf.stance) == "function" then
         local st = pmf.stance()
         if st and st.b == set and st.pg == page then
-            fslot = pmf.formSlot(ctl.bindForm, pos)
+            if type(pmf.formLearn) == "function" then pcall(pmf.formLearn) end          -- the active form's first slot, kept
+            fslot = type(pmf.formSlot) == "function" and pmf.formSlot(form, pos) or nil
+            if fslot then fsrc = auto and "stance" or "form"
+            elseif form == activeFormId() then                                       -- not kept (no character key): the game's own word
+                local first = TN(function() return C_GamepadUI.GetFirstGamepadActionBarStorageSlotIndexForActiveStance() end)
+                if first and first > 0 then fslot, fsrc = first + pos - 1, "game" end
+            end
             if not fslot then ack(false, b.id, "form-unknown", nil, probe) return "unsure" end
         end
     end
     -- the slot: from the game's own button when it is the set the press was made in (right in a form or stance as well); else the
     -- standard-page formula for that set (b16: the trigger held while the game still shows the base bar)
     local storage = fslot or (activeBar and (not pset or pset == gameSet) and storageFromGame(activeBar, pos))
-    probe.slotSrc = storage and "button" or "formula"
+    probe.slotSrc = fsrc or (storage and "button" or "formula")
     if storage == 0 then ack(false, b.id, "reserved", nil, probe) return "reserved" end
     if not storage then
         if set == 1 and pos >= FIRST_RESERVED then ack(false, b.id, "reserved", nil, probe) return "reserved" end
@@ -680,6 +709,7 @@ local function startBind(e)
     if not bindable(e) then report("bind-not-bindable") return false end
     if TB(function() return InCombatLockdown() end) then report("bind-combat") return false end
     ctl.bind = { slot = e.slot, id = e.id or e.a }
+    ctl.bindForm = nil                                  -- b49: not chosen yet (the active stance's bar by default; 0 = the caster on purpose)
     ctl.mode = "bind"
     extraFor(true)                                      -- capture v4: Select is the way back, asked for before the box says so
     report("bind-wait")
@@ -846,7 +876,8 @@ onPress = function(key)
             local okf, list = pcall(WC.padMap.forms)
             if okf and type(list) == "table" and #list > 0 then
                 local i = 0
-                for k, f in ipairs(list) do if f.id == ctl.bindForm then i = k end end
+                local cur = bindFormNow()                                   -- b49: from the form the box shows
+                for k, f in ipairs(list) do if f.id == cur then i = k end end
                 i = (i + 1) % (#list + 1)
                 ctl.bindForm = i == 0 and 0 or list[i].id
                 report("bind-form")
@@ -1440,4 +1471,4 @@ end
 
 -- for the harness
 WC._spellsBook = { ctl = ctl, press = function(k) onPress(k) end, take = take, release = release, tabs = tabs, colKey = colKey,
-                   storageFor = storageFor, hook = hookBook, setPage = function(pg) setPage(pg) end }
+                   storageFor = storageFor, hook = hookBook, bindPress = function(k) return bindPress(k) end, startBind = startBind, setPage = function(pg) setPage(pg) end }

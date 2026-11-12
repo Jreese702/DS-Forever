@@ -34,7 +34,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
 -- p42 (int/1429): ctl-sets p39-p41 (the In combat chooser's five tabs, the fight-only layer) merged with party-combat / combat-nav
-local CV = "p43"                -- bump on every change; p43: ALL FIVE TABS ON EVERY In combat BUTTON (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button"): a base X / Y / A, a form's own set and the bare D-pad with the DS WoW toolbar on too; an Extra / DS entry there goes on the fight layer (PadMap m141 putFight: the face store, the form's set, the slot), WoW Defaults untouched; a binding where no chord of ours can go (a base face, a form's set, the toolbar's D-pad) is refused with its reason (bind-fixed / bind-form / bind-dpad bar); spells only on the radial and out of combat's combat button; p41: THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; PadMap m132): an Extra / DS entry on the In combat tab goes on the button's fight layer only (PadMap.putFight), the WoW Defaults assignment stays out of combat; its box is a plain Set / Replace on the fight layer (Replace only when a fight spell / fight-layer entry is there, naming it; p40's "replace both" retired); Clear combat spell removes it; p40: an Extra / DS entry on the In combat tab always asks first (Replace, an empty button too): it changes the button out of combat as well, and the box says so; p39: THE IN COMBAT TAB'S CHOOSER HAS ALL FIVE TABS (the user, 2026-11-11, on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3"): Extra and DS on In combat too (a command, binding, mount or item goes on the button itself, a fight spell there gives way); the three spell tabs only where nothing but a fight spell can go (a base X / Y / A, a form's own set, the bare D-pad the DS WoW toolbar holds, the radial; out of combat a combat button, as before); p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
+local CV = "p44"                -- bump on every change; p44: THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): until the player picks a form in the row (tc.formPicked), WoW Defaults' form is the one the player is in while the game lays a stance bar over a set (PadMap m142's OV.fe follows), so that set shows and edits the bar the game presses; the caster picked on purpose stays the caster; In combat keeps the caster until a pick (as before); a fresh room open forgets the pick; p43: ALL FIVE TABS ON EVERY In combat BUTTON (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button"): a base X / Y / A, a form's own set and the bare D-pad with the DS WoW toolbar on too; an Extra / DS entry there goes on the fight layer (PadMap m141 putFight: the face store, the form's set, the slot), WoW Defaults untouched; a binding where no chord of ours can go (a base face, a form's set, the toolbar's D-pad) is refused with its reason (bind-fixed / bind-form / bind-dpad bar); spells only on the radial and out of combat's combat button; p41: THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; PadMap m132): an Extra / DS entry on the In combat tab goes on the button's fight layer only (PadMap.putFight), the WoW Defaults assignment stays out of combat; its box is a plain Set / Replace on the fight layer (Replace only when a fight spell / fight-layer entry is there, naming it; p40's "replace both" retired); Clear combat spell removes it; p40: an Extra / DS entry on the In combat tab always asks first (Replace, an empty button too): it changes the button out of combat as well, and the box says so; p39: THE IN COMBAT TAB'S CHOOSER HAS ALL FIVE TABS (the user, 2026-11-11, on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3"): Extra and DS on In combat too (a command, binding, mount or item goes on the button itself, a fight spell there gives way); the three spell tabs only where nothing but a fight spell can go (a base X / Y / A, a form's own set, the bare D-pad the DS WoW toolbar holds, the radial; out of combat a combat button, as before); p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -73,7 +73,7 @@ local function SR() return type(WC.spellRadial) == "table" and WC.spellRadial or
 
 -- `view`: the tab ("normal" = WoW Defaults, "ds", "combat" = In combat)
 local tc = { on = false, focus = "buttons", set = 1, pos = 1, chooser = nil, box = nil, note = nil, view = "normal",
-             tcur = 1, sw = 1, scur = 2, dpos = 2, carry = nil, rpage = 1, form = 0, fcur = 0, ppos = 8, pright = 1, pset = 1, ptouch = 1 }
+             tcur = 1, sw = 1, scur = 2, dpos = 2, carry = nil, rpage = 1, form = 0, fcur = 0, formPicked = false, ppos = 8, pright = 1, pset = 1, ptouch = 1 }
 local PT = {}                   -- p33: the Party tab's functions (filled at the end of this file)
 local PFOCUS = { tabs = "tabs", psets = "sets", ptouch = "touch", pdiam = "diam", pright = "right" }      -- p37: the doc's pfocus
 -- p25 THE KEEP MODE (Book b36's quiet enter; test22 device: two of the restore's taps were lost, the "combat layer" pick among them, so
@@ -131,8 +131,23 @@ local function radialPage()
     for i = 1, 8 do out[i] = (sr and sr.get((tc.rpage - 1) * 8 + i)) or 0 end
     return out
 end
+local formList                  -- below
+-- p44 (issue #179): no form picked yet = WoW Defaults shows the ACTIVE form's bar while the game lays a stance bar over a set
+-- (tc.formAuto = the form put there this way; In combat and out of every stance it goes back to the caster's)
+local function formAuto()
+    if tc.formPicked then return end
+    local want, at = 0, 0
+    local pm = PM()
+    if tc.view == "normal" and pm and type(pm.stance) == "function" and pm.stance() ~= nil then
+        for k, f in ipairs(formList()) do if f.on then want, at = f.id, k end end
+    end
+    if tc.form ~= 0 and tc.form ~= tc.formAuto then return end          -- a form set some other way counts as a pick
+    if want ~= tc.form then tc.form, tc.fcur = want, at end
+    tc.formAuto = want ~= 0 and want or nil
+end
 local function report(note)
     tc.note = note or tc.note
+    formAuto()
     local pm = PM()
     -- p32: the form chosen on the out-of-combat tab is the one whose own bar the room shows and edits (PadMap m57); else the caster's
     if pm and type(pm.formEdit) == "function" then
@@ -424,7 +439,7 @@ end
 
 -- one row up / down in the tab's ORDER (the carried button stays among the sets and the buttons)
 -- p19 / p21: the DS tab's bottom rows are there only while they have something to do
-local function formList()
+formList = function()
     local pm = PM()
     return (pm and type(pm.forms) == "function") and pm.forms() or {}
 end
@@ -609,6 +624,7 @@ local function pressForms(key)
     if key == "PADDLEFT" or key == "PADDRIGHT" then
         tc.fcur = math.min(#list, math.max(0, (tc.fcur or 0) + (key == "PADDLEFT" and -1 or 1)))
         tc.form = tc.fcur == 0 and 0 or (list[tc.fcur] and list[tc.fcur].id or 0)
+        tc.formPicked = true                                            -- p44
         report("form")
     elseif key == "PADDUP" then step(-1)
     elseif key == "PADDDOWN" then step(1)
@@ -712,6 +728,7 @@ WC.padTabCtl = {
     -- left tab"): the cursor ON THE TAB ROW, on the first tab (WoW Defaults), which it opens (p10: landing opens)
     enter = function(where)
         tc.on, tc.chooser, tc.box, tc.carry = true, nil, nil, nil
+        tc.formPicked = false                                           -- p44: a fresh open starts on the active stance's bar
         if where == "tabs" then tc.view = TABS[1] end
         tc.focus = where == "tabs" and "tabs" or HOME_FOCUS[tc.view] or "buttons"
         tc.tcur = tabIndex(tc.view)
@@ -747,6 +764,7 @@ WC.padTabCtl = {
             if (tc.view == "combat" or (tc.view == "normal" and rowThere("forms"))) and #list > 0 then
                 tc.fcur = ((tc.fcur or 0) + 1) % (#list + 1)
                 tc.form = tc.fcur == 0 and 0 or list[tc.fcur].id
+                tc.formPicked = true                                    -- p44
                 report("form")
             end
             return true
@@ -816,7 +834,7 @@ WC.padTabCtl = {
     touchForm = function(k)
         local list = formList()
         if k == 0 or list[k] then
-            tc.fcur = k; tc.form = k == 0 and 0 or list[k].id
+            tc.fcur = k; tc.form = k == 0 and 0 or list[k].id; tc.formPicked = true      -- p44
             if tc.on and not tc.chooser and not tc.box then tc.focus = "forms" end
             report("touch-form")
         end
