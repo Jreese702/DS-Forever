@@ -402,7 +402,7 @@ class PadTabPage(
                else PadMapModel.Slot(p, null, PadMapModel.Kind.NONE, null, null, 0)
     }
     /** the form row: Caster, then the forms (between the set row and the buttons) */
-    private fun formRect(i: Int) = RectF(40f + i * 112f, 364f, 40f + i * 112f + 100f, 434f)
+    private fun formRect(i: Int) = PadDiamonds.rect(PadDiamonds.formRect(i))
     /** the form row shows: In combat (a character with forms), or out of combat while the game lays a form bar (PadMap m57, the user's A) */
     private fun formsShown(m: PadMapModel.Map) = m.forms.isNotEmpty() && (view == "combat" || (view == "normal" && m.stance != null))
     private fun drawForms(c: Canvas, m: PadMapModel.Map, book: SpellsModel.Book?) {
@@ -592,13 +592,9 @@ class PadTabPage(
 
     // ---------------------------------------------------------------- geometry (SPEC 3-6)
 
-    /** p9: the set row is ZL / ZR / ZL + ZR (sets 2-4; [i] 0-2), their glyphs, no "None" */
-    private fun setRect(i: Int) = RectF(40f + i * 222f, 280f, 40f + i * 222f + 208f, 350f)
-    private fun centre(p: Int): Pair<Float, Float> {
-        val cx = if (p <= 4) 190f else 556f; val cy = 590f
-        return when (PadMapModel.drawnSpot(p, swap())) { 0 -> cx - 100f to cy; 1 -> cx to cy - 100f; 2 -> cx + 100f to cy; else -> cx to cy + 100f }
-    }
-    private fun square(p: Int) = centre(p).let { (x, y) -> RectF(x - 40f, y - 40f, x + 40f, y + 40f) }
+    /** p9: the set row is ZL / ZR / ZL + ZR (sets 2-4; [i] 0-2), their glyphs, no "None" (PadDiamonds: shared with Party mode's tab) */
+    private fun setRect(i: Int) = PadDiamonds.rect(PadDiamonds.setRect(i))
+    private fun square(p: Int) = PadDiamonds.rect(PadDiamonds.square(p, swap()))
     private fun actRect(w: Float, h: Float) = RectF(SPLIT + 40f, h - 141f, w - 56f, h - 30f)
     /** p9: the second button, over the first: X = Move (or, carrying, B = Cancel) */
     private fun moveRect(w: Float, h: Float) = RectF(SPLIT + 40f, h - 252f, w - 56f, h - 160f)

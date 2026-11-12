@@ -185,6 +185,9 @@ class ControllerView(
     // ---------------------------------------------------------------- the tabs and their switches
 
     private fun tab(): String = page.currentView()
+    /** party_design.md B: the Party mode tab shows only while Party mode is allowed (QOL > Experimental; PadTabCtl p37 steps over it too) */
+    private val TAB_VIEWS: List<String> get() = if (GameUi.partyModeOn()) ALL_TAB_VIEWS else ALL_TAB_VIEWS.dropLast(1)
+    private val TAB_NAMES: List<String> get() = ALL_TAB_NAMES.take(TAB_VIEWS.size)
     /** the four tabs (p16), the gaps ONLY round the chosen one, where its LB / RB glyphs stand; they move over when the tab changes (the user
      *  after b118: "the spacing should only be between the currently selected tab. swaping between tabs should animate this spacing";
      *  UI Art art-kit 494b1830). Party mode (the 5th tab): the row from the screen edges (the row keeps its L / R room itself) */
@@ -302,6 +305,12 @@ class ControllerView(
             val r = tabRect(ci, w)
             if ((r.width() - PTABW.measureText(TAB_NAMES[ci])) / 2f >= 64f)
                 c.drawBitmap(sw, null, RectF(r.left + 20f, r.centerY() - 16f, r.left + 56f, r.centerY() + 18f), PBMP)
+        }
+        // party_design.md B: the Party mode tab carries the Select glyph (its way in), as In combat carries the swords
+        TAB_VIEWS.indexOf("party").takeIf { it >= 0 }?.let { pi ->
+            val r = tabRect(pi, w)
+            if ((r.width() - PTABW.measureText(TAB_NAMES[pi])) / 2f >= 56f)
+                UiKit.pad(c, Glyphs.translate("rev_minus", CastSettings.buttonLayout), r.left + 36f, r.centerY() + 1f, 34f)
         }
         // L and R on the row's outsides, always (the user, 15 Oct), the chooser open too (PadTabCtl p30: LB / RB stay the room's tabs)
         gaps.badges(c)
@@ -526,8 +535,8 @@ class ControllerView(
         private val PBMP = Paint(Paint.FILTER_BITMAP_FLAG)
         /** p16 the room's tabs, in PadTabCtl's order; p34 (the user 2026-11-10: "consolidate the Controller menu"): the DS tab is gone (its
          *  switch on WoW Defaults, its four places on WoW Defaults' bare D-pad; the Item wheel's Tap / Hold in Settings > Controller) */
-        private val TAB_VIEWS = listOf("normal", "combat", "radial", "party")
-        private val TAB_NAMES = listOf("WoW Defaults", "In combat", "Spell radial", "Party mode")
+        private val ALL_TAB_VIEWS = listOf("normal", "combat", "radial", "party")
+        private val ALL_TAB_NAMES = listOf("WoW Defaults", "In combat", "Spell radial", "Party mode")
         /** the tab's word, measured for the swords' room (UiKit.tab's size) */
         private val PTABW = UiKit.bodyPaint(28f, Theme.text)
         /** the clean-up buttons' small lines stay this far from the Home bar's frame */
