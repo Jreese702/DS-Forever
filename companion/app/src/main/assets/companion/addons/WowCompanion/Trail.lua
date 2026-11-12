@@ -88,7 +88,11 @@ end
 -- on the band points at the route a little AHEAD of the player (C.pathAhead: AHEAD yd along the route past the player's nearest
 -- point on it, passed segments never looked at again; a flight / boat / portal leg: that leg's start, with its distance), and yields
 -- to the objective marker over the last HAND yd of the route. The objective marker is unchanged. Read only: Polestar's own route.
-WC.compass = { V = "cp36" }
+-- cp37 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where to
+-- go", then: Polestar's own arrow stays hidden, DS Forever's compass leads): while the app's light blue Polestar row holds (Map.lua
+-- pn4 WC.pnav.psOn: the app says so) the compass shows Polestar's waypoint (and the path marker, Polestar's route) whether or not a
+-- quest is focused, in the log, or our GO is the one Polestar follows; cp35's guess from the GO alone stays for an app that never says.
+WC.compass = { V = "cp37" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -241,11 +245,24 @@ do
         -- super-tracked spot: the engine's point (the yaw / pitch reads) is that one, whatever the compass shows.
         t.stq = t.quest
         local PN, PS = WC.pnav, type(WC.pstep) == "table" and WC.pstep.last or nil
-        local psOn = type(PN) == "table" and PN.active and num(PN.m) and num(PN.x) and num(PN.y) and type(PS) == "table"
-            and not PS.none and num(PS.m) and num(PS.x) and num(PS.y)
-        if psOn and PS.m == PN.m and math.abs(PS.x - PN.x) < 0.002 and math.abs(PS.y - PN.y) < 0.002 then C.psAt = GetTime()
-        elseif C.psAt and (not psOn or (num(PN.goAt) and PN.goAt > C.psAt)) then C.psAt = nil end
-        if psOn and C.psAt and GetTime() - C.psAt < 5 then
+        local psLoc = type(PS) == "table" and not PS.none and num(PS.m) and num(PS.x) and num(PS.y) and true or false
+        -- cp37: the app's word first (Map.lua pn4: 38, 8 / 9). cp35's guess only stood while the GO matched Polestar's step within
+        -- 0.002 - a step whose point moved less than the app's own re-send threshold (PolestarNav.MOVE 0.004) lost the goal after
+        -- 5 s for good, and a GO Polestar dropped at a step change (its Nav.lua stepMoved) left nothing to match
+        local told = type(PN) == "table" and type(PN.psOn) == "function" and PN.psSaid == true
+        local psHold = false
+        if told then
+            local okH, h = pcall(PN.psOn)
+            psHold = okH and h == true
+            C.psAt = nil
+        else
+            local psOn = type(PN) == "table" and PN.active and num(PN.m) and num(PN.x) and num(PN.y) and psLoc
+            if psOn and PS.m == PN.m and math.abs(PS.x - PN.x) < C.PS_TOL and math.abs(PS.y - PN.y) < C.PS_TOL then C.psAt = GetTime()
+            elseif C.psAt and (not psOn or (num(PN.goAt) and PN.goAt > C.psAt)) then C.psAt = nil end
+            psHold = psOn and C.psAt and GetTime() - C.psAt < 5 or false
+        end
+        C.psHold = psHold and true or false
+        if psHold and psLoc then
             local w = C.world(PS.m, PS.x, PS.y)
             if w then t.quest, C.qsrc, C.qid = w, "polestar", num(PS.q) end      -- (an accept / go-to step: no quest, C.qid nil)
         end
@@ -1432,6 +1449,9 @@ do
     --   * the first leg a flight / boat / zeppelin / tram / portal / hearth / lift: that leg's start, with its distance; gone within
     --     REACH yd of it, and for the rest of that leg (aboard: the start is behind; on a taxi), until Polestar moves the route on.
     --   * a new route (its signature, Map's legSig) starts again at its first segment.
+    -- cp37: cp35's GO match (an app that never says pn4's 38, 8): the GO's own rounding (1/2590) and the app's re-send threshold
+    -- (PolestarNav.MOVE 0.004) inside it
+    C.PS_TOL = 0.006
     C.PA = { AHEAD = 30, HAND = 35, REACH = 8, WIN = 12, STRAY = 25, STALE_S = 3, RGB = { 120 / 255, 200 / 255, 1 }, st = {} }
     function C.pathAhead(me, legs, st, sig)
         local PA = C.PA
@@ -1522,7 +1542,7 @@ do
     function C.pathTarget(me)
         local PN, PA = WC.pnav, C.PA
         local now = (type(GetTime) == "function" and GetTime()) or 0
-        if type(PN) ~= "table" or not PN.active or type(PN.legs) ~= "table" or not num(PN.legsAt) or now - PN.legsAt > PA.STALE_S then
+        if type(PN) ~= "table" or not (PN.active or C.psHold) or type(PN.legs) ~= "table" or not num(PN.legsAt) or now - PN.legsAt > PA.STALE_S then
             PA.st, C.paWhy = {}, "off"
             return nil
         end
@@ -1825,6 +1845,7 @@ do
             uwp = (okH and has == true) and true or false, st = (okS and onPin == true) and true or false, route = route,
             pin = tg.pin and true or false, qid = C.qid, qsrc = C.qsrc, quest = tg.quest and true or false,
             corpse = tg.corpse and true or false, n = #L.marks,
+            ps = C.psHold,                                                                          -- cp37: the Polestar row holds
             pa = C.paWhy, pai = C.PA.st.idx, pal = C.PA.st.left and math.floor(C.PA.st.left + 0.5) or nil,     -- cp36
             rt = (function()
                 local p = {}

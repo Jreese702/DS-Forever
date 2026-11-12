@@ -2842,6 +2842,15 @@ end
 --   39                                CANCEL
 -- Answers {"type":"pnav", op, ok, why, have} (have = Polestar's API is there); the route as {"type":"pnavroute", legs = {{k, c, p}}}
 -- (p = wx, wy pairs, at most PTS points in all), sent when it changes.
+-- pn4 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where to go",
+-- then: Polestar's own arrow stays hidden, DS Forever's compass leads): the app SAYS when its light blue Polestar row holds -
+--   38, 8                             PS ON: the row holds (re-sent every 20 s while it does; none for KEEP_S: off)
+--   38, 9                             PS OFF
+-- (38's next tap within 2 s; 0-7 stay pq1's mask, an older add-on ignores 8 / 9). While on (WC.pnav.psOn) the compass follows
+-- Polestar's own waypoint whatever the GO (Trail.lua C.targets cp37: cp35 only guessed it from the GO matching the step within
+-- 0.002, which the app re-sends only past 0.004), and Polestar's route is read whoever owns its target: Polestar drops our GO at
+-- every step change (Polestar Nav/Nav.lua stepMoved: STEP_CHANGED / GUIDE_CHANGED clear its override) and guides its own step
+-- itself, whose route geom() refused as not ours - no pnavroute (no line on the bottom map) and no WC.pnav.legs (no path marker).
 WC.pnav = { active = false, keepAt = 0, digits = nil, digitsAt = 0, sig = nil, sentAt = 0, KEEP_S = 60, PTS = 240, PTS_FULL = 2000, OWNER = "DSForever" }
 function WC.pnav.api()
     local P = _G.Polestar
@@ -2851,7 +2860,7 @@ function WC.pnav.api()
 end
 function WC.pnav.say(op, ok, why)
     pcall(function()
-        WC.send(WC.encode({ type = "pnav", v = "pn3", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
+        WC.send(WC.encode({ type = "pnav", v = "pn4", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
         WC.push()
     end)
 end
@@ -2865,6 +2874,11 @@ function WC.pnav.go(m, x, y)
     WC.pnav.active, WC.pnav.keepAt, WC.pnav.sig = true, GetTime(), nil
     WC.pnav.m, WC.pnav.x, WC.pnav.y, WC.pnav.goAt = m, x, y, GetTime()
     WC.pnav.say("go", true)
+end
+-- pn4: the app's light blue row holds (its 38, 8 within KEEP_S)
+function WC.pnav.psOn()
+    local at = WC.pnav.psAt
+    return type(at) == "number" and GetTime() - at <= WC.pnav.KEEP_S
 end
 function WC.pnav.cancel(why)
     if not WC.pnav.active then return end
@@ -2886,7 +2900,8 @@ function WC.pnav.geom()
     if not (P and api and type(P.Nav.GetRouteGeometry) == "function") then return nil end
     if type(api.Active) == "function" then
         local okA, act, owner = pcall(api.Active)
-        if okA and (not act or owner ~= WC.pnav.OWNER) then return nil end
+        -- pn4: while the app's Polestar row holds, Polestar's own target (its step, after it dropped our GO) is the one we want too
+        if okA and (not act or (owner ~= WC.pnav.OWNER and not WC.pnav.psOn())) then return nil end
     end
     local okG, legs = pcall(P.Nav.GetRouteGeometry)
     if not okG or type(legs) ~= "table" then return nil end
@@ -2938,6 +2953,11 @@ if WC.pad and type(WC.pad.op) == "function" then
         -- pq1: 38 = Polestar's automation mask follows (WC.pqol), the next tap 0-7 within 2 s is it
         if col == 38 then P.digits = nil; P.qolAt = GetTime(); return end
         if P.qolAt and col <= 7 and GetTime() - P.qolAt <= 2 then P.qolAt = nil; return pcall(WC.pqol.choose, col) end
+        if P.qolAt and (col == 8 or col == 9) and GetTime() - P.qolAt <= 2 then             -- pn4: the Polestar row holds / not
+            P.qolAt = nil
+            P.psAt, P.psSaid = (col == 8) and GetTime() or nil, true             -- (psSaid: this app says; Trail.lua stops guessing)
+            return
+        end
         P.qolAt = nil
         if col == 39 then P.digits = nil; return P.cancel("asked") end
         if col == 37 then P.keepAt = GetTime(); return end
@@ -2960,8 +2980,12 @@ do
     -- once a second while ours: the route when it changed (and every 10 s anyway); no word from the app for KEEP_S: cancelled
     C_Timer.NewTicker(1, function()
         local P = WC.pnav
-        if not P.active then return end
-        if GetTime() - P.keepAt > P.KEEP_S then return pcall(P.cancel, "no word from the app") end
+        -- pn4: also while the app's Polestar row holds with no GO of ours in force (Polestar guiding its step itself)
+        if P.active and GetTime() - P.keepAt > P.KEEP_S then pcall(P.cancel, "no word from the app") end
+        if not P.active and not P.psOn() then
+            if P.legs then P.legs, P.legSig, P.legsAt = nil, nil, nil end
+            return
+        end
         local okG, raw = pcall(P.geom)
         local okR, legs, sig = false, nil, nil
         if okG and raw then okR, legs, sig = pcall(P.route, false, raw) end
@@ -2974,7 +2998,7 @@ do
         if not okR or not legs then return end
         if sig ~= P.sig or GetTime() - P.sentAt > 10 then
             P.sig, P.sentAt = sig, GetTime()
-            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn3", legs = legs })); WC.push() end)
+            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn4", legs = legs })); WC.push() end)
         end
     end)
 end

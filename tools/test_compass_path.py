@@ -13,6 +13,11 @@ Trail.lua's compass under test_compass.py's stub game, with a stub Polestar rout
   gold disc, unchanged; hidden when the route goes;
 - Map.lua pn3: the 1 s ticker keeps the route read (legs, legSig, legsAt) for the compass, cancel drops it, the docs say pn3.
 - pn3 review fix: a journey over 240 points: the compass keeps every corner (the app's copy alone is thinned); the look-ahead goes round it.
+- cp37 / pn4 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where to
+  go"): with NO focused quest, an accept step's waypoint and the app's matching GO -> Polestar's goal shown (and the path marker with a
+  route); the app's word (pn4 38, 8) shows it whatever the GO (a drift, no GO of ours, Polestar guiding its step itself); 38, 9 or
+  no word for KEEP_S -> the focused quest again; cp35's guess keeps a drift inside the app's re-send threshold; Map.lua's pad row
+  (38, 8 / 9), geom() taking Polestar's own target while the row holds, the ticker running then and dropping the route after.
 Needs lupa. Exit code 1 on any failure."""
 import math
 import os
@@ -56,7 +61,7 @@ def main():
     L.execute(open(TC.TRAIL, encoding="utf-8").read().replace("local ADDON = ...", "local ADDON = 'WowCompanion'", 1))
     G, WC = L.globals().GAME, L.globals().WowCompanion
     C = WC.compass
-    chk("cp36: the compass's version tag", C.V == "cp36")
+    chk("cp37: the compass's version tag", C.V == "cp37")
     chk("cp36: the path marker drawn under the quest (C.ORDER)", [C.ORDER[i] for i in range(1, len(C.ORDER) + 1)]
         == ["corpse", "pin", "path", "quest"])
 
@@ -195,6 +200,81 @@ def main():
     C.draw()
     chk("the diag line: pa = off", C.lastDiag is not None and C.lastDiag.pa == "off")
 
+    # ------------------------------------------------------------------ cp37: Polestar's goal with NO focused quest (the device's case)
+    # Polestar step "The Strange Hermit - Accept The Strange Hermit": no quest in the log, the game's focus cleared ("polestar unfocus");
+    # its waypoint north-east (map 0.6, 0.4 = world (100, -100)); the app's GO for it (two base-36 digits per axis)
+    G.quest = None
+    L.execute("""WowCompanion.pstep = { last = { t = "The Strange Hermit", g = "Accept The Strange Hermit", k = "accept", m = 1429,
+            x = 0.6, y = 0.4 } }
+        WowCompanion.pnav = { active = true, m = 1429, x = 777 / 1295, y = 518 / 1295, goAt = GAME.t - 1, KEEP_S = 60 }
+        function WowCompanion.pnav.psOn()
+            local at = WowCompanion.pnav.psAt
+            return type(at) == "number" and GetTime() - at <= WowCompanion.pnav.KEEP_S
+        end""")
+
+    def goal():
+        C.draw()
+        return C.rt_[1] if C.rt_ and len(C.rt_) > 0 else None
+
+    it = goal()
+    chk("cp37: no focused quest + an accept step + the matching GO: Polestar's goal (goal:ps)", it is not None
+        and it.id == "goal:ps" and C.qsrc == "polestar" and C.qid is None and near(it.w.x, 100, 0.5) and near(it.w.y, -100, 0.5))
+    rk = C.rk["goal:ps"] if C.rk else None
+    chk("cp37: ... drawn: the gold disc with its '!'", rk is not None and rk.disc.shown and rk.num.text == "!")
+    # cp35's guess: a drift of 0.003 (inside the app's own MOVE 0.004, so no new GO) no longer loses it
+    L.execute("WowCompanion.pstep.last.x = 0.603")
+    G.t = G.t + 6
+    it = goal()
+    chk("cp37: a drift of 0.003 with no new GO (cp35's 0.002 lost it after 5 s): still Polestar's", it is not None and it.id == "goal:ps")
+    L.execute("WowCompanion.pstep.last.x = 0.6")
+    # with a route: the cp36 path marker too
+    L.execute("""WowCompanion.pnav.legs = { { k = "walk", c = 0, p = { 0, 0, 100, 0, 100, -100 } } }
+        WowCompanion.pnav.legSig = "hermit"; WowCompanion.pnav.legsAt = GAME.t""")
+    goal()
+    m = {C.last.marks[i].key: C.last.marks[i] for i in range(1, len(C.last.marks) + 1)}
+    chk("cp37: ... and the path marker on Polestar's route (30, 0)", C.pa_ is not None and near(C.pa_.x, 30) and near(C.pa_.y, 0)
+        and "path" in m and "rt" in m)
+    # THE APP'S WORD (pn4 38, 8): Polestar guiding its step itself after dropping our GO (Map.lua active false, no GO match at all)
+    L.execute("WowCompanion.pnav.active = false; WowCompanion.pnav.psSaid = true; WowCompanion.pnav.psAt = GAME.t")
+    it = goal()
+    chk("cp37: the row holds (38, 8), no GO of ours in force: Polestar's goal", it is not None and it.id == "goal:ps"
+        and C.qsrc == "polestar" and C.psHold is True)
+    L.execute("WowCompanion.pnav.legsAt = GAME.t")
+    goal()
+    chk("cp37: ... and the path marker (Polestar's own route)", C.pa_ is not None and C.paWhy == "walk")
+    L.execute("WowCompanion.pnav.active = true; WowCompanion.pnav.x = 0.2; WowCompanion.pnav.goAt = GAME.t")
+    it = goal()
+    chk("cp37: the row holds, the GO elsewhere: still Polestar's", it is not None and it.id == "goal:ps")
+    # a focused quest while the row holds: Polestar's waypoint wins (cp35's rule), its quest id when it has one
+    G.quest = L.table(0.4, 0.3)
+    L.execute("WowCompanion.pstep.last.q = 555")
+    it = goal()
+    chk("cp37: a focused quest too: Polestar's waypoint, its quest's id", it is not None and it.id == "goal:555" and C.qsrc == "polestar"
+        and near(it.w.x, 100, 0.5))
+    C.diagAt = -100
+    C.draw()
+    chk("cp37: the diag says ps", C.lastDiag is not None and C.lastDiag.ps is True and C.lastDiag.qsrc == "polestar")
+    # released (38, 9): the focused quest as before, even with the GO matching Polestar's step (no guessing once the app says)
+    L.execute("WowCompanion.pnav.psAt = nil; WowCompanion.pnav.x = 777 / 1295; WowCompanion.pnav.goAt = GAME.t")
+    it = goal()
+    chk("cp37: released (38, 9): the focused quest again (no guess)", it is not None and it.id == "goal:123" and C.qsrc == "onmap"
+        and C.psHold is False)
+    # no word for KEEP_S (the app gone): the same
+    L.execute("WowCompanion.pnav.psAt = GAME.t")
+    G.t = G.t + 61
+    it = goal()
+    chk("cp37: no word for 60 s: the focused quest again", it is not None and it.id == "goal:123" and C.qsrc == "onmap")
+    # a held step with no spot of its own: the focused quest (the app focuses the step's quest)
+    L.execute("WowCompanion.pnav.psAt = GAME.t; WowCompanion.pstep.last = { t = 'Train', g = 'Talk to Kandris', nl = true, q = 123 }")
+    it = goal()
+    chk("cp37: a held step with no spot: the focused quest's own goal", it is not None and it.id == "goal:123" and C.qsrc == "onmap")
+    # nothing at all focused, the row holds, no spot: nothing (as before)
+    G.quest = None
+    it = goal()
+    chk("cp37: nothing focused, no spot: no goal", it is None)
+    L.execute("WowCompanion.pnav = { active = false }; WowCompanion.pstep = nil")
+    G.quest = L.table(0.4, 0.3)
+
     # ------------------------------------------------------------------ Map.lua pn3: the ticker keeps the route for the compass
     src = open(TC.MAPLUA, encoding="utf-8").read()
     a0 = src.index("WC.pnav = {")
@@ -202,7 +282,9 @@ def main():
     M = lupa.LuaRuntime()
     M.execute(r'''
         SAID = {}
-        WC = { send = function(s) SAID[#SAID + 1] = s end, encode = function(t) return t end, push = function() end }
+        WC = { send = function(s) SAID[#SAID + 1] = s end, encode = function(t) return t end, push = function() end,
+               pad = { op = function(row, k, fn) PAD = fn end } }
+        OWNER = "DSForever"
         T = 0; function GetTime() return T end
         TICK = nil
         C_Timer = { NewTicker = function(_, fn) TICK = fn end }
@@ -213,14 +295,14 @@ def main():
         Polestar = { Nav = { API = {
             Navigate = function() ACTIVE = true; return true end,
             Cancel = function() ACTIVE = false end,
-            Active = function() return ACTIVE, "DSForever" end },
+            Active = function() return ACTIVE, OWNER end },
             GetRouteGeometry = function() return GEOM end } }
     ''' + src[a0:b0])
     M.execute("WC.pnav.go(1429, 0.5, 0.5); T = 1; TICK()")
     P = M.eval("WC.pnav")
     chk("pn3: the ticker keeps the route read for the compass", P.legs is not None and len(P.legs) == 2 and P.legs[1].k == "walk"
         and P.legs[1].p[3] == 50 and P.legs[2].k == "fly" and P.legSig == P.sig and P.legsAt == 1)
-    chk("pn3: the docs say pn3", all(M.eval("SAID")[i].v == "pn3" for i in range(1, len(M.eval("SAID")) + 1)))
+    chk("pn4: the docs say pn4", all(M.eval("SAID")[i].v == "pn4" for i in range(1, len(M.eval("SAID")) + 1)))
     M.execute("WC.pnav.cancel('test')")
     chk("pn3: cancel drops it", P.legs is None and P.legSig is None and P.legsAt is None)
 
@@ -243,6 +325,30 @@ def main():
     chk("pn3: the look-ahead on the long route goes round the corner (90,0) -> (100,20)", w and near(w[0], 100) and near(w[1], 20)
         and why == "walk")
     M.execute("WC.pnav.cancel('test')")
+
+    # ------------------------------------------------------------------ pn4: the app's word, Polestar guiding its step itself
+    M.execute("T = 100; PAD(nil, 38); PAD(nil, 8)")
+    chk("pn4: 38, 8 -> the row holds (psOn, psSaid)", M.eval("WC.pnav.psOn()") is True and M.eval("WC.pnav.psSaid") is True)
+    chk("pn4: ... not Polestar's automation (pq1's 0-7 only)", M.eval("WC.pnav.digits") is None and M.eval("WC.pnav.qolAt") is None)
+    # Polestar dropped our GO at a step change and guides its own step: Active() = true, owner nil; our GO gone (active false)
+    M.execute("ACTIVE = true; OWNER = nil; SAID = {}; T = 101; TICK()")
+    sent = [s for s in (M.eval("SAID")[i] for i in range(1, len(M.eval("SAID")) + 1)) if s.type == "pnavroute"]
+    chk("pn4: the row holds, Polestar's own target: the route read (pnavroute, legs for the compass)", len(sent) == 1
+        and M.eval("WC.pnav.legs") is not None and M.eval("WC.pnav.active") is False)
+    M.execute("OWNER = 'SomeoneElse'; T = 102; TICK()")
+    chk("pn4: (another owner while the row holds: Polestar's guidance still read)", M.eval("WC.pnav.legsAt") == 102)
+    M.execute("T = 103; PAD(nil, 38); PAD(nil, 9)")
+    chk("pn4: 38, 9 -> released", M.eval("WC.pnav.psOn()") is False and M.eval("WC.pnav.psAt") is None)
+    M.execute("T = 104; TICK()")
+    chk("pn4: released, no GO of ours: the route dropped", M.eval("WC.pnav.legs") is None)
+    chk("pn4: geom() refuses another owner's target again", M.eval("WC.pnav.geom()") is None)
+    M.execute("T = 200; PAD(nil, 38); PAD(nil, 8); T = 261; TICK()")
+    chk("pn4: no word for over KEEP_S: off, the route dropped", M.eval("WC.pnav.psOn()") is False and M.eval("WC.pnav.legs") is None)
+    M.execute("T = 300; PAD(nil, 38); T = 303; PAD(nil, 8)")
+    chk("pn4: an 8 more than 2 s after the 38 is not the word", M.eval("WC.pnav.psOn()") is False)
+    M.execute("PQ = nil; WC.pqol = { choose = function(m) PQ = m end }; T = 400; PAD(nil, 38); PAD(nil, 5)")
+    chk("pn4: 38 then 0-7 is still Polestar's automation mask (pq1)", M.eval("PQ") == 5 and M.eval("WC.pnav.psOn()") is False)
+    M.execute("OWNER = 'DSForever'")
 
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)

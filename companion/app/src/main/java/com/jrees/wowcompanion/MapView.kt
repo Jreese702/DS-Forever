@@ -3512,6 +3512,12 @@ class MapView(context: Context) : View(context) {
     private val psBlue = Color.rgb(120, 200, 255)
     private fun psShown(): Boolean = Settings.questTracking == "polestar" && psStep != null
     private fun psHolds(): Boolean = psPicked && psShown()
+    /** pn4 (the user, 2026-11-11: "a polestar objective that is not in my bag and not telling me where to go"): Polestar is the
+     *  tracker - the setting, the light blue row picked, and a Polestar step seen within the last minute (through a step's none-gaps:
+     *  no flapping word; no guide at all: no word, no taps) - said to the add-on (PolestarNav.tick's ps), so its compass leads to
+     *  Polestar's waypoint whether or not a quest is focused or in the log */
+    fun polestarHolds(): Boolean = Settings.questTracking == "polestar" && psPicked && psStepAt != 0L &&
+        System.currentTimeMillis() - psStepAt < 60_000L
     private fun psFocus(): Int { val q = psStep?.quest ?: 0; return if (psHolds() && q > 0 && questById.containsKey(q)) q else 0 }
     /** {"type":"pstep"}: Polestar's live objective, or none */
     fun onPolestarStep(d: JSONObject) {
@@ -6968,6 +6974,20 @@ class MapView(context: Context) : View(context) {
                 if (bubbleN * 2 + 2 > bubbleXY.size) { bubbleXY = bubbleXY.copyOf(bubbleXY.size * 2); bubbleQ = bubbleQ.copyOf(bubbleQ.size * 2) }
                 bubbleXY[2 * bubbleN] = cxp; bubbleXY[2 * bubbleN + 1] = cyp; bubbleQ[bubbleN] = qid; bubbleN++
             } else drawIcon(c, Ic.QUEST_DONE, cxp, cyp, QUEST_ICON_PX)
+        }
+
+        // ---- POLESTAR'S GOAL (pn4; the user, 2026-11-11: "a polestar objective that is not in my bag and not telling me where to go"):
+        // a held step with no quest focused through it (an accept / talk / go-to step) had no mark on either map; now the compass's own
+        // objective disc with its "!" at Polestar's waypoint ([PolestarNav.goalMark]), and on Home's small map pinned just inside the
+        // rim on the way to it when it is off the field (as the next checkpoint flag), so the way always shows
+        if (!morphOn) PolestarNav.goalMark(psHolds(), psStep, map?.optInt("mapID", 0) ?: 0, psFocus())?.let { g ->
+            val gx = sx(g[0]); val gy = sy(g[1])
+            val nb = top + (if (compact) compactTop() else 0f)
+            if (gx in left..(left + fw) && gy in nb..(top + fh)) UiKit.questDisc(c, gx, gy, BUBBLE_ART, focus = true)
+            else if (compact && !px.isNaN() && !py.isNaN())
+                rimPoint(sx(px), sy(py), gx, gy, left + RIM_FLAG_IN, nb + RIM_FLAG_IN, left + fw - RIM_FLAG_IN, top + fh - RIM_FLAG_IN)
+                    ?.let { UiKit.questDisc(c, it[0], it[1], BUBBLE_ART * 0.8f, focus = true) }
+            else if (onField(gx, gy)) UiKit.questDisc(c, gx, gy, BUBBLE_ART, focus = true)
         }
 
         // ---- THE CORPSE's gravestone: drawn with the rim arrow below (the stone OR the arrow); here only when the player's own
