@@ -246,7 +246,7 @@ def main():
     G3.ROWS.uisw(None, SW3.UFT_OFF)
     chk("hub32: our bar off again: lifted again (%s)" % G3.ComboFrame.ipa, G3.ComboFrame.ipa is True)
     hubsrc = open(HUB, encoding="utf-8").read()
-    chk("hub34: the version tag (hub33 + the top party column)", 'local HV = "hub34"' in hubsrc)
+    chk("hub35: the version tag (hub34 + the top party block in the bottom's arrangement)", 'local HV = "hub35"' in hubsrc)
     # TRAIL.LUA's consumers: the nameplate wish and the personal bar follow their own switches, else the bundle
     LT = tc.run()
     T = LT.globals()
