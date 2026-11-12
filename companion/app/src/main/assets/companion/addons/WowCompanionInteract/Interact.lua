@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i143"     -- bump on every change; i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
+local IV = "i144"     -- bump on every change; i144: ACCEPT WITH FULL BAGS ASKS FOR SPACE ONLY WHEN THE QUEST GIVES AN ITEM (the user, 2026-11-11: "Accepting that quest with a full bag asked me to delete an Item but I didn't actually need more space"; [Ripped Missive] started it): a quest begun from a bag item frees that item's slot, so it is accepted at once; otherwise QuestieDB (when installed) says whether the quest hands out an item (its sourceItemId); unknown = Make Space first as before (LOOT.acceptNeedsRoom); i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -928,6 +928,41 @@ function LOOT.roomNow(freed)
         if okI and type(it) == "table" and TN(function() return it.itemID end) then pending = pending + 1 end
     end
     return LOOT.freeGeneral() + pending
+end
+
+-- i144 (the user, 2026-11-11: "Accepting that quest with a full bag asked me to delete an Item but I didn't actually need more space";
+-- the quest came from a bag item, [Ripped Missive]): does accepting quest `id` need a free slot? Read only.
+-- 1. begun from an item (QUEST_DETAIL's questStartItemID, kept in LOOT.qStart): the starter is used up and frees its slot (a quest that
+--    also hands out an item nets zero) - only when it is a single item (not a stack) in a general bag, so the slot really empties;
+-- 2. else QuestieDB (optional, the data-only add-on Quests reads): a quest it knows with no sourceItemId (the item given on accept)
+--    gives nothing; one with a sourceItemId does;
+-- 3. else (no QuestieDB, a quest it does not know): unknown = true, Make Space first as before.
+function LOOT.acceptNeedsRoom(id)
+    local sid = LOOT.qStart
+    if type(sid) == "number" and sid > 0 then
+        for bag = 0, 4 do
+            local okF, _, fam = CALL(function() return C_Container.GetContainerNumFreeSlots(bag) end)
+            if okF and (fam == nil or (type(fam) == "number" and fam == 0)) then
+                for sl = 1, math.min(TN(function() return C_Container.GetContainerNumSlots(bag) end) or 0, 40) do
+                    local okI, it = CALL(function() return C_Container.GetContainerItemInfo(bag, sl) end)
+                    if okI and type(it) == "table" and TN(function() return it.itemID end) == sid
+                       and (TN(function() return it.stackCount end) or 1) <= 1 then return false end
+                end
+            end
+        end
+    end
+    local L = _G.LibQuestieDB
+    if type(L) ~= "table" or type(L.RequireContract) ~= "function" then return true end
+    local okC, okR = pcall(L.RequireContract, 1)
+    if not (okC and okR == true) then return true end
+    local Q = type(L.QuestDB) == "table" and L.QuestDB or _G.QuestDB
+    if type(Q) ~= "table" or type(Q.name) ~= "function" or type(Q.sourceItemId) ~= "function" then return true end
+    local okN, name = pcall(Q.name, id)
+    if not (okN and type(name) == "string" and name ~= "") then return true end         -- a quest it does not know: unknown
+    local okS, item = pcall(Q.sourceItemId, id)
+    if not okS then return true end
+    if item == nil or item == 0 then return false end
+    return true
 end
 
 function LOOT.questFirst(rt)
@@ -2517,11 +2552,13 @@ local ON = {
     GOSSIP_CLOSED = function() mark("gossip", false) end,
     -- i143: a window another add-on already closed (inside this same event) is not opened
     QUEST_GREETING = function() questStage = "greeting"; if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
-    QUEST_DETAIL = function() questStage = "detail"; if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
+    QUEST_DETAIL = function(startItem) questStage = "detail"; LOOT.qStart = tonumber(startItem) or 0    -- i144: the item it began from
+        if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
     QUEST_PROGRESS = function() questStage = "progress"; if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
     QUEST_COMPLETE = function() questStage = "complete"; if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
     QUEST_FINISHED = function()
         if LOOT.ms == "quest" then LOOT.full, LOOT.ms, LOOT.retry, LOOT.hold, LOOT.rare = false, nil, nil, nil, nil end
+        LOOT.qStart = nil
         mark("quest", false)
     end,
     MERCHANT_SHOW = function() mark("merchant", true) end,
@@ -2781,10 +2818,13 @@ end
 -- WITH COMPLETELY FULL BAGS (the user, 2026-10-05: "Make space first"): Make Space opens before the game is asked (the game
 -- cannot say whether the quest hands out an item, and it closes its window at once); after the delete the quest is accepted;
 -- B there = accept anyway (a quest that gives nothing).
+-- i144 (the user, 2026-11-11: "Accepting that quest with a full bag asked me to delete an Item but I didn't actually need more space"):
+-- only when the quest may hand out an item (LOOT.acceptNeedsRoom: not one begun from a bag item, not one QuestieDB says gives nothing).
 function ACT.accept(a, anyway)
     local id, why = questGuard("detail", a)
     if not id then return false, why end
-    if anyway ~= "anyway" and not TB(function() return QuestGetAutoAccept() end) and LOOT.freeGeneral() == 0 then
+    if anyway ~= "anyway" and not TB(function() return QuestGetAutoAccept() end) and LOOT.freeGeneral() == 0
+       and LOOT.acceptNeedsRoom(id) then
         return LOOT.questFirst({ cmd = "accept", a = a, anyway = true, title = TS(function() return GetTitleText() end) })
     end
     if TB(function() return QuestGetAutoAccept() end) then
