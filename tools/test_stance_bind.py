@@ -14,10 +14,15 @@ Spellbook and the Controller room; the caster ("Normal") stays pickable on purpo
   c a Druid in caster form (GetShapeshiftForm 0) -> 199;
   d the stance bar on LT (CVar 2): RT -> 199, LT -> the stance slot;
   e page 2 RT with CVar 3 -> the formula slot;
-  f nothing kept and the game's word nil -> "form-unknown", no PlaceAction;
+  f the game's word nil (no stance bar shown): the default keeps the caster path (199); a form PICKED whose bar is not kept ->
+    "form-unknown", no PlaceAction;
   g in combat -> refused before any placement;
   h the Controller room: the form defaults to the active one (OV.fe), a put on (1, 3, 7) goes to first + 6, the caster picked -> 199;
-  i B's undo after a stance bind (ZR + A: without capture v4 a bare B is the box's way back) gives the stance slot its old spell back.
+  i B's undo after a stance bind (ZR + A: without capture v4 a bare B is the box's way back) gives the stance slot its old spell back;
+  j (review) a form with NO stance bar (the game's bonus bar down: Shaman Ghost Wolf, Druid Travel Form, a Paladin's aura) with CVar 3:
+    the bind goes to 199, nothing learned, no bform, the room's (1, 3, 7) is the plain slot;
+  k (review) a fresh room open forgets an explicit FORM pick too (Defensive picked, leave, reopen in Battle Stance -> Battle's bar);
+  l (review) a stance change with the room open: the room follows before the next input (a put lands on the new stance's slot).
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -55,7 +60,10 @@ EXTRA = r'''
 CLASS = "WARRIOR"
 SPELLNAME[100] = "Charge"; SPELLNAME[6673] = "Battle Shout"; SPELLNAME[772] = "Rend"
 SPELLNAME[2457] = "Battle Stance"; SPELLNAME[71] = "Defensive Stance"
-SPELLNAME[768] = "Cat Form"; SPELLNAME[5487] = "Bear Form"
+SPELLNAME[768] = "Cat Form"; SPELLNAME[5487] = "Bear Form"; SPELLNAME[783] = "Travel Form"; SPELLNAME[2645] = "Ghost Wolf"
+SPELLNAME[465] = "Devotion Aura"
+BONUS = true
+C_ActionBar = { HasBonusActionBar = function() return BONUS end }
 BOOK = { 100, 6673, 772 }
 CVARS = { GamepadStanceBarOverride = "3" }
 C_CVar = { GetCVar = function(k) return CVARS[k] end }
@@ -216,8 +224,11 @@ check(why is None and placed == [want] and want != 79 and ack.get('probe', {}).g
 # ================================================================ f. nothing kept, no game word
 U = boot('STFIRST = nil')
 why, ack, placed = bind(U, "RT")
+check(why is None and placed == [199] and ack.get('probe', {}).get('slotSrc') == 'formula',
+      "f. the game's word nil (no stance bar shown), nothing picked: the caster path, 199", (why, placed, ack.get('probe', {}).get('slotSrc')))
+why, ack, placed = bind(U, "RT", form='71')
 check(why == 'unsure' and ack.get('ok') is False and ack.get('why') == 'form-unknown' and placed == [],
-      "f. no kept slot, the game's word nil: form-unknown, nothing placed", (why, ack.get('why'), placed))
+      "f. Defensive Stance PICKED, its bar not kept: form-unknown, nothing placed", (why, ack.get('why'), placed))
 
 # ================================================================ g. in combat
 G = boot()
@@ -269,6 +280,60 @@ un = [d for d in docs(I, 'spellsack') if d.get('op') == 'unbind']
 check(un and un[-1].get('ok') is True and I.eval('ACTIONINFO[80][2]') == 6673 and I.eval('ACTIONINFO[200]') is None,
       "i. B undoes it: Battle Shout back on 80, 200 untouched", (un[-1] if un else None, I.eval('ACTIONINFO[80] and ACTIONINFO[80][2]')))
 check(errs(I) == [], "i: no Lua error", errs(I)[:2])
+
+# ================================================================ j. forms with no stance bar (review)
+def room_put(L):
+    n0 = int(L.eval('#PLACED'))
+    ok = L.eval('WowCompanion.padMap.putSpell(1, 3, 7, 1)')
+    return ok, [L.eval('PLACED[%d]' % i) for i in range(n0 + 1, int(L.eval('#PLACED')) + 1)]
+
+
+for label, pre in (
+        ("Shaman Ghost Wolf (bonus bar down, the game still names a slot)",
+         'CLASS = "SHAMAN"; FORMS = { { id = 2645, icon = 136095 } }; FORM = 1; BONUS = false; STFIRST = 73'),
+        ("Druid Travel Form (bonus bar down, no slot named)",
+         'CLASS = "DRUID"; FORMS = { { id = 768, icon = 132115 }, { id = 783, icon = 132144 } }; FORM = 2; BONUS = false; STFIRST = nil'),
+        ("Paladin Devotion Aura (the global HasBonusActionBar false)",
+         'CLASS = "PALADIN"; FORMS = { { id = 465, icon = 135893 } }; FORM = 1; C_ActionBar = {}; '
+         'function HasBonusActionBar() return false end; STFIRST = 73')):
+    J = boot(pre)
+    J.execute('BK.startBind({ t = 1, slot = 1, id = 100 })')
+    bf = docs(J, 'spellsctl')[-1]['ctl'].get('bform')
+    why, ack, placed = bind(J, "RT")
+    src = ack.get('probe', {}).get('slotSrc')
+    check(why is None and placed == [199] and src in ('button', 'formula') and bf is None,
+          "j. %s, CVar 3, ZR + B page 1: 199, slotSrc %s, no bform" % (label, src), (why, placed, src, bf))
+    kept = J.eval('WowCompanionSpellsDB.formSlotsBy and WowCompanionSpellsDB.formSlotsBy[WHO .. "-" .. REALM] '
+                  'and next(WowCompanionSpellsDB.formSlotsBy[WHO .. "-" .. REALM])')
+    check(kept is None, "j. %s: no form slot learned" % label, kept)
+    J.execute('WowCompanion.padTabCtl.enter("tabs")')
+    c = docs(J, 'padtabctl')[-1]['c']
+    ok, placed = room_put(J)
+    check(c.get('form') is None and ok is True and placed == [199],
+          "j. %s: the room keeps the caster's set, a put on (1, 3, 7) -> 199" % label, (c.get('form'), ok, placed))
+    check(errs(J) == [], "j. %s: no Lua error" % label, errs(J)[:2])
+
+# ================================================================ k. a fresh open forgets a FORM pick (review)
+K = boot('WowCompanionSpellsDB = WowCompanionSpellsDB or {}')
+K.execute('WowCompanion.padTabCtl.enter("tabs"); WowCompanion.padTabCtl.touchForm(2)')
+c1 = docs(K, 'padtabctl')[-1]['c'].get('form')
+K.execute('WowCompanion.padTabCtl.leave(); WowCompanion.padTabCtl.enter("tabs"); WowCompanion.padMap.emit(true)')
+c2 = docs(K, 'padtabctl')[-1]['c'].get('form')
+fe = docs(K, 'padmap')[-1]['m'].get('fe')
+check(c1 == 71 and c2 == 2457 and fe == 2457,
+      "k. Defensive picked, leave, reopen in Battle Stance: Battle Stance's bar (form and OV.fe)", (c1, c2, fe))
+check(errs(K) == [], "k: no Lua error", errs(K)[:2])
+
+# ================================================================ l. a stance change with the room open (review)
+M = boot()
+M.execute('WowCompanion.padTabCtl.enter("tabs")')
+M.execute('WowCompanionSpellsDB.formSlotsBy[WHO .. "-" .. REALM][71] = 85')
+M.execute('FORM = 2; STFIRST = 85; fire("UPDATE_SHAPESHIFT_FORM"); runTimers(NOW + 1)')
+c = docs(M, 'padtabctl')[-1]['c']
+ok, placed = room_put(M)
+check(c.get('form') == 71 and ok is True and placed == [91],
+      "l. Battle -> Defensive with the room open: the room follows, a put on (1, 3, 7) -> 91", (c.get('form'), ok, placed))
+check(errs(M) == [], "l: no Lua error", errs(M)[:2])
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b49"                -- bump on every change; b49: A STANCE-COVERED BUTTON BINDS TO THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): a Warrior in Battle Stance bound Charge on ZR + B page 1, the game lays the stance bar over RT there, the box's form defaulted to the caster and the plain RT slot (199) took it while the game, the router and Home read the stance bar's; now the box's form is "not chosen" (nil) until the player picks one, and then the active form's bar is the default (bform reports it, so the app's form row lights it); 0 = the caster picked on purpose (the old path); the ack's probe.slotSrc says where the slot came from (stance / form / game / button / formula); b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
+local BV = "b49"                -- bump on every change; b49 (review): the default is the active form only while the game SHOWS its stance bar (WC.padMap.stanceShown); a form with no bar (Ghost Wolf, Travel Form, an aura) keeps the caster path; b49: A STANCE-COVERED BUTTON BINDS TO THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): a Warrior in Battle Stance bound Charge on ZR + B page 1, the game lays the stance bar over RT there, the box's form defaulted to the caster and the plain RT slot (199) took it while the game, the router and Home read the stance bar's; now the box's form is "not chosen" (nil) until the player picks one, and then the active form's bar is the default (bform reports it, so the app's form row lights it); 0 = the caster picked on purpose (the old path); the ack's probe.slotSrc says where the slot came from (stance / form / game / button / formula); b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -242,12 +242,14 @@ local function tellB()
     if ok and got then toldB = want end
 end
 
--- b49 (issue #179): the form the player is in now (its spell id, the game's order index), nil = the caster / no form
+-- b49 (issue #179): the form the player is in now (its spell id) WHILE the game lays its stance bar over a set (PadMap's stanceShown:
+-- in a form, its bonus bar up, the game's first slot named); nil = the caster, no form, or a form with no bar (Ghost Wolf, Travel Form,
+-- a Paladin's aura: the set stays the plain one)
 local function activeFormId()
-    local idx = TN(function() return GetShapeshiftForm() end)
-    if not idx or idx <= 0 then return nil end
-    local okf, _, _, _, sid = pcall(GetShapeshiftFormInfo, idx)
-    if okf and type(sid) == "number" and sid > 0 then return sid end
+    local pm = WC.padMap
+    if type(pm) ~= "table" or type(pm.stanceShown) ~= "function" then return nil end
+    local ok, sid = pcall(pm.stanceShown)
+    if ok and type(sid) == "number" and sid > 0 then return sid end
 end
 -- b49: the Bind box's form as the box shows it: the player's pick (0 = the caster), else - Normal only, while the game lays a stance bar
 -- over a set - the active form (its bar is what that set shows and presses); nil = the caster's
