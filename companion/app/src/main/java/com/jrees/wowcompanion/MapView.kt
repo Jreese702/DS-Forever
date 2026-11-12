@@ -3502,7 +3502,8 @@ class MapView(context: Context) : View(context) {
     // "b"; an off choice lasts until the next login, Settings.polestarOffBoot), and the game's focus follows it through the one focus
     // path ([PolestarFocusSync]): the step's tracked quest focused, the focus cleared for a step with no quest in the log (the user's
     // ruling), debounced against the game's own auto-track. The default push waits while the row is picked ([psWaits]).
-    class PolestarStep(val title: String?, val words: String?, val kind: String?, val quest: Int, val map: Int, val x: Double, val y: Double)
+    // ps3 (the user, 2026-11-11: "The polestar tracked quest went missing from my quests"): a step with no spot of its own (Map.lua's
+    // nl: talk / use / train goals) keeps the row ([PolestarStep.parse]); only the goal sent to the router has none ([polestarGoal]).
     private var psStep: PolestarStep? = null
     private var psPicked = true                          // ps3: the default at login (an older add-on without "b": in memory only)
     private var psBoot = 0L                              // the login's stamp (pstep "b") the pick belongs to
@@ -3515,9 +3516,7 @@ class MapView(context: Context) : View(context) {
     /** {"type":"pstep"}: Polestar's live objective, or none */
     fun onPolestarStep(d: JSONObject) {
         val before = psShown(); val beforeHolds = psHolds(); val beforeWords = psStep?.let { it.title + "|" + it.words }
-        psStep = if (d.optBoolean("none") || !d.has("m")) null else PolestarStep(
-            d.optString("t", "").ifEmpty { null }, d.optString("g", "").ifEmpty { null }, d.optString("k", "").ifEmpty { null },
-            d.optInt("q", 0), d.optInt("m", 0), d.optDouble("x", Double.NaN), d.optDouble("y", Double.NaN))
+        psStep = PolestarStep.parse(d)
         if (psStep != null) psStepAt = System.currentTimeMillis()   // (Map.lua re-sends a none every 15 s: only a real step stamps)
         // ps3: a gap with no step keeps the pick (psHolds needs a step anyway); a new login's stamp picks the row again, unless this
         // login's off choice was stored (an app restart in the same login keeps it)
@@ -4256,7 +4255,8 @@ class MapView(context: Context) : View(context) {
     /** Polestar's goal: the focused quest's nearest still-needed goal here, else its nearest zone spot - (uiMapID, x, y), or null */
     fun polestarGoal(): DoubleArray? {
         if (Settings.questTracking != "polestar") return null
-        if (psHolds()) psStep?.let { st -> if (st.map != 0 && !st.x.isNaN() && !st.y.isNaN()) return doubleArrayOf(st.map.toDouble(), st.x, st.y) }
+        // ps3: a held step with no spot of its own sends no goal (no GO, no route): Polestar guides it itself, the quest's goals are not it
+        if (psHolds()) psStep?.let { st -> return if (st.hasLoc) doubleArrayOf(st.map.toDouble(), st.x, st.y) else null }
         val m = map ?: return null
         val q = focusQid
         if (q <= 0 || m.optInt("onTaxi", 0) == 1) return null
