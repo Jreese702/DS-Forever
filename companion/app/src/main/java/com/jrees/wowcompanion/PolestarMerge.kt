@@ -15,6 +15,13 @@ object PolestarMerge {
     fun quest(shown: Boolean, picked: Boolean, stepQuest: Int, inLog: (Int) -> Boolean): Int =
         if (shown && picked && stepQuest > 0 && inLog(stepQuest)) stepQuest else 0
 
+    /**
+     * the QUEST a list key stands for on the map: the merged light blue row's key [MapList.POLESTAR] is its quest [merged] - its objective point,
+     * its reveal / framing, its route line, its bubble ring, its panel - exactly as on that quest's own row; any other key is itself
+     * (the unmerged row stays POLESTAR: no quest of its own on the map)
+     */
+    fun key(key: Int, merged: Int): Int = if (key == MapList.POLESTAR && merged > 0) merged else key
+
     /** what the light blue row reads: a title and its lines (text, done) */
     class Content(val title: String, val lines: List<Pair<String, Boolean>>, val merged: Boolean)
 

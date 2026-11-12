@@ -98,4 +98,22 @@ class PolestarMergeTest {
         assertEquals(MapCursor.Do.Nothing, d.key("PAD3", plain, MapList.POLESTAR, false))
         assertEquals(MapCursor.Do.Nothing, d.key("PAD4", plain, MapList.POLESTAR, false))
     }
+
+    // the merged row's key is POLESTAR (negative): everything that reads the cursor's key as a quest id resolves it first
+    @Test fun theMergedKeyResolvesToItsQuest() {
+        val log = setOf(7, 8)
+        val merged = PolestarMerge.quest(shown = true, picked = true, stepQuest = 7) { it in log }
+        assertEquals(7, PolestarMerge.key(MapList.POLESTAR, merged))                 // merged: the row IS quest 7 on the map
+        assertEquals(8, PolestarMerge.key(8, merged))                                // another quest's row: itself
+        assertEquals(MapList.ME, PolestarMerge.key(MapList.ME, merged))              // the portrait: itself
+        // unmerged (a travel / accept step): the row stays POLESTAR - no quest of its own, nothing on the map is looked up
+        val travel = PolestarMerge.quest(true, true, stepQuest = 0) { it in log }
+        assertEquals(MapList.POLESTAR, PolestarMerge.key(MapList.POLESTAR, travel))
+        // not picked: nothing merges, every key is itself
+        val off = PolestarMerge.quest(true, picked = false, stepQuest = 7) { it in log }
+        assertEquals(MapList.POLESTAR, PolestarMerge.key(MapList.POLESTAR, off))
+        assertEquals(7, PolestarMerge.key(7, off))
+        assertTrue(PolestarMerge.key(MapList.POLESTAR, off) <= 0)                     // never taken for a quest
+    }
+
 }
