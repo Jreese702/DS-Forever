@@ -998,7 +998,7 @@ end
 -- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar), UFTOT_OFF / UFTOT_ON (the bar's target of
 -- target, uf8: off by default); the app keeps each per character.
 do
-    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf14" }
+    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf15" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
@@ -1097,9 +1097,15 @@ do
     -- rare dragon behind it); the raid marker on the right; combo pips, the cast bar, then the auras UNDER it, their seconds small in a
     -- corner; the colour READ from the target's nameplate (else the game's own nameplate rule, UnitSelectionColor); the target's nameplate
     -- health bar hidden (alpha) while it is targeted. No power bar.
+    -- uf15 (the user, 2026-11-12, on 1.0.26: "the target bars cast bar is too squished into it"): the pips, the cast bar and the auras
+    -- sat 5 px under the bar, inside the HUD rim's lower lip (its visible rim 3 texels + a faint fourth, k = HP / 8 px each, 12 px at
+    -- 1080); now everything under the bar starts LIP_B texels below it plus GAP px, and the stack keeps its own gaps (pips 5, cast 6).
+    -- Hub's HV stays (the party branch's hub42); this section's tag is UF.V.
     local TB = { W = 372, SHIFT = 16, NAME = 20, HP = 24, CP = 6, CAST = 15, LV = 30, ICON = 26, IGAP = 3, DEBUFF_MAX = 8, BUFF_MAX = 6,
-                 TOT_W = 140, TOT_HP = 10, AURA_S = 0.25 }
+                 TOT_W = 140, TOT_HP = 10, AURA_S = 0.25, LIP_B = 4, GAP = 5 }
     UF.tb = TB
+    -- uf15: the space under the health bar's bottom edge before anything stacks there: the rim's visible lower lip + GAP
+    function TB.under() return u(TB.HP / 8) * TB.LIP_B + u(TB.GAP) end
     local function atlas(tex, name)
         if type(PRD.atlasOn) == "function" then return PRD.atlasOn(tex, name) end
         return pcall(function() tex:SetAtlas(name) end)
@@ -1627,7 +1633,7 @@ do
         f.prompt = pr
         -- combo points: a thin pip strip right under the bar (0..max with the gaps drawn over)
         f.cp = npBar(f, TB.W * 0.4, TB.CP, "UI-HUD-CoolDownManager-Bar", false)
-        f.cp:SetPoint("TOP", f.hp, "BOTTOM", 0, -u(5)); paint(f.cp, 1, 0.82, 0.1); f.cp:Hide()
+        f.cp:SetPoint("TOP", f.hp, "BOTTOM", 0, -TB.under()); paint(f.cp, 1, 0.82, 0.1); f.cp:Hide()
         f.cpGaps = {}
         -- the cast bar under it, in the game's casting bar fill
         f.cast = npBar(f, TB.W - TB.CAST - 8, TB.CAST, "ui-castingbar-filling-standard", false)
@@ -1795,16 +1801,17 @@ do
         return out
     end
     -- below the bar: the combo pips, the cast bar, then the auras (the stack closes up when a part is not shown)
+    -- uf15: from the bar's top, clear of its rim's lower lip (TB.under) - not 5 px into it
     local function underLayout(f)
-        local y = TB.HP + 5
-        if f.cp:IsShown() then y = y + TB.CP + 5 end
-        f.cast:ClearAllPoints(); f.cast:SetPoint("TOPRIGHT", f.hp, "TOPRIGHT", 0, -u(y))
-        if f.casting then y = y + TB.CAST + 6 end
-        f.auraY = -u(y)
+        local y = u(TB.HP) + TB.under()
+        if f.cp:IsShown() then y = y + u(TB.CP + 5) end
+        f.cast:ClearAllPoints(); f.cast:SetPoint("TOPRIGHT", f.hp, "TOPRIGHT", 0, -y)
+        if f.casting then y = y + u(TB.CAST + 6) end
+        f.auraY = -y
     end
     local function putAuras(objs, list, fromRight)
         local step = u(TB.ICON + TB.IGAP)
-        local y = TB.f.auraY or -u(TB.HP + 5)
+        local y = TB.f.auraY or -(u(TB.HP) + TB.under())
         for i, o in ipairs(objs) do
             local a = list[i]
             if not a then o.f:Hide()
