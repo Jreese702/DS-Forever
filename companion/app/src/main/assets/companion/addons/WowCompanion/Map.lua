@@ -3046,7 +3046,8 @@ end
 -- The user (2026-11-11): "rather than syncing the tracked quest to polestar maybe we add a light blue objective to select from the
 -- tracker list that has the polestar objective". Read only: Polestar's live guide step (Engine.GetLiveStep / GetStepView: the step's
 -- title) and its waypoint (Engine.GetWaypoint: the goal the arrow leads to, its words, kind, map and point on Polestar's 0-100 scale)
--- go to the app as {"type":"pstep", t, g, k, q, m, x, y} (x / y 0..1), or {"type":"pstep", none = true} when Polestar has no step;
+-- go to the app as {"type":"pstep", t, g, k, q, m, x, y} (x / y 0..1), or {"type":"pstep", none = true} when Polestar has no step
+-- (ps3: a step with no spot of its own: {t, g, k, q, nl = true}, no m / x / y);
 -- sent when it changes and every 15 s. Nothing of Polestar or the game is changed.
 -- ps2 (the user, 2026-11-11: "should probably be the default selection if its enabled when logging in"): every pstep carries b, this
 -- login's stamp (time() when this file loaded: a new one at each login and /reload; not part of sig), so the app picks the light blue
@@ -3058,7 +3059,7 @@ function WC.pstep.read()
     if not (E and type(E.GetWaypoint) == "function") then return nil end
     local okW, wp = pcall(E.GetWaypoint)
     if not okW or type(wp) ~= "table" or type(wp.map) ~= "number" or type(wp.x) ~= "number" or type(wp.y) ~= "number" then
-        return { none = true }
+        return WC.pstep.noLoc(E)
     end
     local title, quest
     if type(E.GetStepView) == "function" and type(wp.stepIndex) == "number" then
@@ -3074,15 +3075,55 @@ function WC.pstep.read()
         m = wp.map, x = math.floor(wp.x * 100 + 0.5) / 10000, y = math.floor(wp.y * 100 + 0.5) / 10000,
     }
 end
+-- ps3 (the user, 2026-11-11: "The polestar tracked quest went missing from my quests"): a step with no fixed spot (talk / use / train /
+-- recruit goals) has no waypoint (Engine.GetWaypoint nil) while Polestar still guides it, so the light blue row went away. Such a step
+-- is read from Engine.GetStepIndex + GetStepView instead and sent with nl = true and no m / x / y: its title, the goal the guide marks
+-- (else its first open one) - that goal's words when plain, and its quest (else the first open goal's). {none = true} only when
+-- Polestar has no current step (no guide, or the guide is done). Read only, as ps1.
+-- ps3 review (the user, 2026-11-11, same report): {none = true} too where Polestar's own arrow has nothing to point at
+-- (Engine.lua findWaypoint): a step with no focus group (v.focus nil: every blocking goal done, e.g. a done step paged back to
+-- with Prev, which GetStepIndex returns as the pin) and a Class guide this character cannot start yet (Engine.StartGate) on its
+-- live step. The quest only ever comes from an open goal, so a done (turned in) quest never reaches the app's focus sync.
+function WC.pstep.noLoc(E)
+    if type(E.GetStepIndex) ~= "function" or type(E.GetStepView) ~= "function" then return { none = true } end
+    local okI, i = pcall(E.GetStepIndex)
+    if not okI or type(i) ~= "number" then return { none = true } end
+    local okV, v = pcall(E.GetStepView, i)
+    if not okV or type(v) ~= "table" or v.focus == nil then return { none = true } end
+    if v.live == i and type(E.StartGate) == "function" and type(E.GetGuide) == "function" then
+        local okG, gd = pcall(E.GetGuide)
+        local id = okG and type(gd) == "table" and gd.id or nil
+        if id ~= nil then
+            local okS, gate = pcall(E.StartGate, id)
+            if okS and gate then return { none = true } end
+        end
+    end
+    local goals = type(v.goals) == "table" and v.goals or {}
+    local function open(gv)
+        return type(gv) == "table" and not gv.folded and gv.status ~= "done" and gv.status ~= "skipped" and gv.status ~= "na"
+    end
+    local pick = type(v.current) == "number" and type(goals[v.current]) == "table" and goals[v.current] or nil
+    if pick and not open(pick) then pick = nil end
+    if not pick then for _, gv in ipairs(goals) do if open(gv) then pick = gv; break end end end
+    local quest = pick and type(pick.quest) == "number" and pick.quest or nil
+    if not quest then for _, gv in ipairs(goals) do if open(gv) and type(gv.quest) == "number" then quest = gv.quest; break end end end
+    local words = pick and type(pick.text) == "string" and pick.text ~= "" and pick.text or nil
+    if words and WC.isPlain and not WC.isPlain(words) then words = nil end
+    local title = type(v.title) == "string" and v.title ~= "" and v.title or nil
+    if title and WC.isPlain and not WC.isPlain(title) then title = nil end
+    if not title and not words then return { none = true } end       -- (nothing to show: the row would have no words)
+    return { t = title, g = words, k = pick and type(pick.t) == "string" and pick.t or nil, q = quest, nl = true }
+end
 C_Timer.NewTicker(1, function()
     local P = WC.pstep
     local okR, d = pcall(P.read)
     if not okR or not d then P.last = nil; return end
     P.last = d
-    local sig = d.none and "none" or table.concat({ d.t or "", d.g or "", d.k or "", tostring(d.q or 0), d.m, d.x, d.y }, "|")
+    local sig = d.none and "none" or table.concat({ d.t or "", d.g or "", d.k or "", tostring(d.q or 0),
+        tostring(d.m or "nl"), tostring(d.x or ""), tostring(d.y or "") }, "|")
     if sig ~= P.sig or GetTime() - P.sentAt > 15 then
         P.sig, P.sentAt = sig, GetTime()
-        d.type, d.v = "pstep", "ps2"
+        d.type, d.v = "pstep", "ps3"
         if P.boot ~= 0 then d.b = P.boot end
         pcall(function() WC.send(WC.encode(d)); WC.push() end)
     end
