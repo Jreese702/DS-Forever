@@ -482,6 +482,15 @@ W5.execute('BOOK = { 403 }')
 ok = W5.eval(pm + '.putCombatFace(8, 1)')
 check(ok is True and W5.eval(FACEDB + '[8].t') is None and W5.eval('router(8).a["wc-fight-spell"]') == "Lightning Bolt",
       "10: a fight spell on A replaces the command (the newer wins)", W5.eval('router(8).a["wc-fight-spell"]'))
+# hub43 pin (the user, 2026-11-12, a Hunter: "sometimes when using arcane shot my auto fire just stops and my dude stands there"): a HARMFUL
+# fight spell runs PadMap's attack-on-cast lines first - Hub.lua's Combat Auto Shot reads that /startattack's attack start as the ability's
+ATTACK_LINES = "/target [noexists][dead] softenemy\n/startattack [harm,nodead]\n/click [harm,nodead] WowCompanionFaceRearm\n"
+W5.execute('HARM_SAVE = C_Spell.IsSpellHarmful; C_Spell.IsSpellHarmful = function(s) return s == 403 or s == "Lightning Bolt" end')
+ok = W5.eval(pm + '.putCombatFace(8, 1)')
+check(ok is True and W5.eval('router(8).a["wc-fight-type"]') == "macro"
+      and W5.eval('router(8).a["wc-fight-macro"]') == ATTACK_LINES + "/cast Lightning Bolt",
+      "hub43 pin: a harmful fight spell's text = PadMap's attackLines('') + /cast", W5.eval('router(8).a["wc-fight-macro"]'))
+W5.execute('C_Spell.IsSpellHarmful = HARM_SAVE; ' + pm + '.putCombatFace(8, 1)')
 W5.execute(pm + '.putFight(1, 1, 8, "command", "DSMAP"); ' + pm + '.clearCombatFace(8)')
 check(W5.eval(FACEDB + '[8]') is None and W5.eval('router(8).a["wc-fight-type"]') is None,
       "10: Clear combat spell takes A's fight-layer command off", W5.eval('router(8).a["wc-fight-type"]'))
