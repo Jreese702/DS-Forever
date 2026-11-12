@@ -1337,7 +1337,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "lv", "rng"}   # m129: plain facts only (no hp / full / hs / g / hit counts)
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm131' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm132' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1537,8 +1537,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p40"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m131"' in SRC["padmap"],
-      "the versions: PadMap m131, PadTabCtl p40, Book b48")
+check('local CV = "p41"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m132"' in SRC["padmap"],
+      "the versions: PadMap m132, PadTabCtl p41, Book b48")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
@@ -1975,7 +1975,9 @@ except Exception as e:                                                    # no g
     print('NOTE no git diff: ' + str(e))
 added = [ln[1:] for ln in diff.splitlines() if ln.startswith('+') and not ln.startswith('+++')]
 code = [re.sub(r'--.*$', '', ln) for ln in added]
-BAD = [r'\bSetBinding\s*\(', r'\bSaveBindings\b', r'\bCreateMacro\b', r'\bEditMacro\b', r'\bSetCVar\b', r'\bPlaceAction\b',
+# m132 (the user, 2026-11-11: "Build a fight-only layer"): `self:SetBinding(` inside the header's own secure state snippet is the
+# restricted handle's OVERRIDE binding on that header (never saved, cleared with it), not the game's saved SetBinding
+BAD = [r'(?<!self:)\bSetBinding\s*\(', r'\bSaveBindings\b', r'\bCreateMacro\b', r'\bEditMacro\b', r'\bSetCVar\b', r'\bPlaceAction\b',
        r'\bPickupAction\b', r'\bPickupMacro\b', r'\bShowUIPanel\b', r'\bHideUIPanel\b', r'\bToggleFrame\b', r'\bInspectUnit\b',
        r'\bUnitPopup_OpenMenu\b', r'\bTargetFrame_OpenMenu\b', r'\bToggleGameMenu\b', r'\bCloseAllBags\b', r'\bOpenAllBags\b',
        r'\bSetOverrideBinding\s*\(']
@@ -2174,8 +2176,10 @@ WT.execute('pp("PAD2")')
 WT.execute('local pm = WowCompanion.padMap; SLOTAT0 = pm.slotAt; local f = SLOTAT0; pm.slotAt = function(pg, st, ps) '
            'if st == 1 and ps == 1 then return { kind = "combat", c = { id = 403, n = "Lightning Bolt", i = 1 }, ov = true } end '
            'return f(pg, st, ps) end')
-WT.execute('PUTS = {}; CLR = {}; local pm = WowCompanion.padMap; local g = pm.clearCombat; '        # (the p34 putCommand spy stays)
-           'pm.clearCombat = function(pg, st, ps) CLR[#CLR + 1] = st .. ":" .. ps; return g(pg, st, ps) end')
+WT.execute('PUTS = {}; CLR = {}; FIGHTS = {}; local pm = WowCompanion.padMap; local g = pm.clearCombat; '        # (the p34 putCommand spy stays)
+           'pm.clearCombat = function(pg, st, ps) CLR[#CLR + 1] = st .. ":" .. ps; return g(pg, st, ps) end; '
+           'local h = pm.putFight; pm.putFight = function(pg, st, ps, k, v) FIGHTS[#FIGHTS + 1] = st .. ":" .. ps .. ":" .. k .. ":" .. tostring(v); '
+           'return h(pg, st, ps, k, v) end')
 WT.execute('pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end')
 check(ctlDoc(WT)['chooser']['list'] == 'dstool', "p39: In combat on a fight-spell button: the DS tab is there too", ctlDoc(WT)['chooser'])
 WT.execute('WowCompanion.padMap.emit(true)')
@@ -2187,18 +2191,18 @@ for _ in range(40):
     WT.execute('pp("PADDDOWN")')
 WT.execute('pp("PAD1")')
 b = ctlDoc(WT).get('box')
-check(b and b['kind'] == 'replace' and b.get('what') == 'DSMAP' and int(WT.eval('#PUTS')) == 0 and int(WT.eval('#CLR')) == 0,
-      "p40: Open Map on In combat's fight-spell button: Replace asks first, nothing changed yet", b)
-for _ in range(3):
-    if ctlDoc(WT).get('box'):
-        WT.execute('pp("PAD1")')
+check(b and b['kind'] == 'replace' and b.get('what') == 'DSMAP' and int(WT.eval('#PUTS')) == 0 and int(WT.eval('#FIGHTS')) == 0,
+      "p41: Open Map on In combat's fight-spell button: Replace (the fight layer's spell) asks first, nothing changed yet", b)
+WT.execute('pp("PAD1")')
 puts = [WT.eval('PUTS[%d]' % (i + 1)) for i in range(int(WT.eval('#PUTS')))]
 clr = [WT.eval('CLR[%d]' % (i + 1)) for i in range(int(WT.eval('#CLR')))]
-check(puts == ['1:1:DSMAP'] and clr == ['1:1'], "p39: Open Map from In combat's DS tab: the fight spell gives way, the command goes on", (puts, clr))
-# p40: an EMPTY button on the In combat tab: a DS entry still asks first (it goes on the button out of combat too); B leaves it alone
+fights = [WT.eval('FIGHTS[%d]' % (i + 1)) for i in range(int(WT.eval('#FIGHTS')))]
+check(fights == ['1:1:command:DSMAP'] and puts == [] and clr == [] and not ctlDoc(WT).get('box'),
+      "p41: Replace's ONE yes: Open Map goes on the FIGHT LAYER only (putFight; no putCommand on the button, no second box)", (fights, puts, clr))
+# p41: an EMPTY fight layer on the In combat tab: a DS entry goes straight on (the fight layer only: nothing out of combat changes)
 WT.execute('local pm = WowCompanion.padMap; pm.slotAt = function(pg, st, ps) '
            'if st == 1 and ps == 1 then return { kind = "none" } end return SLOTAT0(pg, st, ps) end')
-WT.execute('PUTS = {}; CLR = {}; pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end')
+WT.execute('PUTS = {}; CLR = {}; FIGHTS = {}; pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end')
 WT.execute('for i = 1, 80 do pp("PADDUP") end; pp("PADDDOWN")')
 for _ in range(40):
     if ctlDoc(WT)['chooser']['id'] == 'DSMAP':
@@ -2206,14 +2210,10 @@ for _ in range(40):
     WT.execute('pp("PADDDOWN")')
 WT.execute('pp("PAD1")')
 b = ctlDoc(WT).get('box')
-check(b and b['kind'] == 'replace' and b.get('what') == 'DSMAP' and int(WT.eval('#PUTS')) == 0,
-      "p40: Open Map on an empty In combat button: Replace asks first (in and out of fights)", b)
-WT.execute('pp("PAD2")')
-check(not ctlDoc(WT).get('box') and int(WT.eval('#PUTS')) == 0 and int(WT.eval('#CLR')) == 0,
-      "p40: B on that box: nothing put", ctlDoc(WT).get('box'))
-WT.execute('pp("PAD2")')
+fights = [WT.eval('FIGHTS[%d]' % (i + 1)) for i in range(int(WT.eval('#FIGHTS')))]
 c = ctlDoc(WT)
-check(not c.get('chooser') and not c.get('box'), "p40: B again closes the chooser", c)
+check(b is None and fights == ['1:1:command:DSMAP'] and int(WT.eval('#PUTS')) == 0 and int(WT.eval('#CLR')) == 0
+      and not c.get('chooser'), "p41: Open Map on an empty In combat button: straight onto the fight layer, no box, the chooser closes", (b, fights))
 WT.execute('WowCompanion.padMap.slotAt = SLOTAT0')
 # the DS WoW toolbar on: In combat's bare D-pad takes fight spells only (p36), so its chooser keeps the three spell tabs
 WT.execute('WowCompanion.padMap.dpadBar(true); pp("PAD1"); for i = 1, 6 do pp("PADDRIGHT") end')
