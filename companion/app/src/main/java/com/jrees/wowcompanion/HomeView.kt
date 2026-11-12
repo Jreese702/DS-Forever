@@ -1135,7 +1135,7 @@ class HomeView(
     private fun partyOnHere(): Boolean = party.party?.onLive == true
     /** the bottom screen's party module (m129, party_design.md C and the user's decisions 2026-11-11: one column of plates beside the
      *  Select tab, no health or mana: the user "give up on displaying HP/Mana down there") */
-    // 2026-11-07 (the user: "Make the party mode an experimental toggle that is off by default"): QOL > Experimental > Party mode
+    // QOL > Party > Party mode (an experimental switch from 2026-11-07; on by default since 1.0.26, the user 2026-11-12)
     private val PARTY_MODULE get() = GameUi.partyModeOn()
     /** Party mode holds the D-pad here (its box moves on it): the game's D-pad layout must not also open the bar cursor (2026-11-04,
      *  the user: "pushing down on the Dpad makes the cursor also appear on the bottom bar menu") */
@@ -1156,7 +1156,7 @@ class HomeView(
     private var laidPartyOn = false
     private var laidPartyModule = false
     init {
-        // QOL > Experimental > Party mode flipped: the module comes or goes at once
+        // QOL > Party > Party mode flipped: the module comes or goes at once
         GameUi.onChange { post { if (PARTY_MODULE != laidPartyModule) partyChanged() } }
     }
 

@@ -129,8 +129,9 @@ object GameUi {
      *  Shot's third choice, kept as its own switch (off by default): while on, the add-on turns the game's option on as a fight starts
      *  and off when it ends, and SW_SHOT is not reconciled (the game's word flips with each fight) */
     const val SW_SHOTF = "shotf"
-    /** hub25: Party mode, EXPERIMENTAL (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"):
-     *  one choice for the whole app (not per character), off until turned on */
+    /** hub25: Party mode, one choice for the whole app (not per character). ON BY DEFAULT since 1.0.26 (the user, 2026-11-12: "Party
+     *  mode is ready to be a default on feature instead of experimental"; it was an experimental switch, off by default, from 2026-11-07).
+     *  A choice already made (the key present) is kept, so a player who turned it off stays off */
     const val SW_PMODE = "pmode"
     /** hub26 (the user, 2026-11-09: our own party frames and a target bar under the compass; the picks "replaces the game's"): on by default */
     const val SW_UFP = "ufp"; const val SW_UFT = "uft"
@@ -146,11 +147,11 @@ object GameUi {
     // hub19: the party frames; ON by default since 2026-11-05 (the game hides health from add-ons: its own frames are the real health)
     private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true, SW_WM to false, SW_PARTY to true,
         // hub22: start attack off until chosen; Auto Shot follows the game's own default (on) unless chosen
-        SW_ATK to false, SW_SHOT to true, SW_PMODE to false, SW_UFP to true, SW_UFT to true, SW_UFTOT to false, SW_UFHPP to false, SW_UFHPT to false, SW_SHOTF to false, SW_PS to false,
+        SW_ATK to false, SW_SHOT to true, SW_PMODE to true, SW_UFP to true, SW_UFT to true, SW_UFTOT to false, SW_UFHPP to false, SW_UFHPT to false, SW_SHOTF to false, SW_PS to false,
         SW_PET to true)
     /** this character's choice for [part] (its default until one is made); the resource bar's old "HUD mode" choice carries over */
     fun swWant(part: String): Boolean {
-        if (part == SW_PMODE) return prefs?.getBoolean("sw.$SW_PMODE", false) ?: false
+        if (part == SW_PMODE) return prefs?.getBoolean("sw.$SW_PMODE", true) ?: true
         val who = character ?: return SW_DEFAULT[part] ?: false
         val def = if (part == SW_PRD) prefs?.getBoolean("hud.$who", true) ?: true else SW_DEFAULT[part] ?: false
         return prefs?.getBoolean("sw.$part.$who", def) ?: def
@@ -244,7 +245,7 @@ object GameUi {
     /** QOL > Combat (hub22): a new hostile target starts the attack; the hunter's Auto Shot under it */
     fun attackRow(): Row? = swRow(ATK_ID, SW_ATK, "Start attack on hostile target", "On: targeting an enemy starts your attack", "Off")
     const val ATK_ID = "startattack"
-    /** QOL > Experimental (hub25): Party mode, off by default */
+    /** QOL > Party (hub25): Party mode, on by default since 1.0.26 */
     fun partyModeRow(): Row? = swRow(PMODE_ID, SW_PMODE, "Party mode", "On: Select turns Party mode on", "Off")
     const val PMODE_ID = "partymode"
     /** Party mode allowed: Home draws its party module only then */

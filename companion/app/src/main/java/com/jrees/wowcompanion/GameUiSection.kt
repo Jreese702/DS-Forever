@@ -123,7 +123,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             // "Avoid dangerous areas" (SafePath's) left with SafePath (the user, 2026-11-12: "remove safe path ... from the options")
             group("Navigation", listOfNotNull(compassRow(), GameUi.worldMarkersRow(), compassCamRow())) +
             group("Combat", listOfNotNull(GameUi.attackRow(), GameUi.autoShotRow(), ringsRow())) +
-            group("Experimental", listOfNotNull(GameUi.partyModeRow()))
+            // Party mode out of Experimental, on by default (the user, 2026-11-12)
+            group("Party", listOfNotNull(GameUi.partyModeRow()))
         else -> GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
     }
     /** a heading row ("#" + its words) over [rows], none when the group is empty */

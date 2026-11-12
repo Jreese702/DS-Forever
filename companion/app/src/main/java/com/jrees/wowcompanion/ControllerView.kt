@@ -185,7 +185,7 @@ class ControllerView(
     // ---------------------------------------------------------------- the tabs and their switches
 
     private fun tab(): String = page.currentView()
-    /** party_design.md B: the Party mode tab shows only while Party mode is allowed (QOL > Experimental; PadTabCtl p37 steps over it too) */
+    /** party_design.md B: the Party mode tab shows only while Party mode is allowed (QOL > Party, on by default; PadTabCtl p37 steps over it too) */
     private val TAB_VIEWS: List<String> get() = if (GameUi.partyModeOn()) ALL_TAB_VIEWS else ALL_TAB_VIEWS.dropLast(1)
     private val TAB_NAMES: List<String> get() = ALL_TAB_NAMES.take(TAB_VIEWS.size)
     /** the four tabs (p16), the gaps ONLY round the chosen one, where its LB / RB glyphs stand; they move over when the tab changes (the user
