@@ -57,6 +57,19 @@ function GetNumLootItems() if LootFrame._shown == false then return 0 end; retur
 function GetLootSlotInfo(i) local l = LOOTS[i]; if l then return l[1], l[2], l[3], l[4], l[5], false, false, nil, true, false end end
 function GetLootSlotLink(i) return nil end
 function LootSlot(i) ACTIONS[#ACTIONS + 1] = { kind = "lootslot", slot = i } end
+-- the review of 2026-11-11: frames every hide dims that are SHOWN in the real game (the input legend, the item tooltip), and the real
+-- loot window's close: CloseLoot -> LOOT_CLOSED a frame later -> Close() (isOpen false, the 0.1 s HideAnim) -> hidden when the fade ends
+CreateFrame("Frame", "GamepadPersistentInputLegend", UIParent); CreateFrame("Frame", "GameTooltip", UIParent)
+LootFrame:HookScript("OnShow", function() LootFrame.isOpen = true end)
+LootFrame.CloseButton:SetScript("OnClick", function()
+    if LootFrame._shown == false then return end
+    ACTIONS[#ACTIONS + 1] = { kind = "close", frame = "LootFrame" }
+    C_Timer.After(0.02, function()
+        LootFrame.isOpen = false
+        fire("LOOT_CLOSED")
+        C_Timer.After(0.1, function() LootFrame:Hide() end)
+    end)
+end)
 '''
 
 
@@ -694,6 +707,94 @@ pull(W)
 check(W.eval('WowCompanionFaceB.a["wc-pull-close"]') is None, "5b the loot held at the pull: no pull-close (its own leave)", W.eval('WowCompanionFaceB.a["wc-pull-close"]'))
 fight_end(W)
 check(W.eval('WowCompanionFaceB.a["wc-pull-close"]') is None, "5b the fight's end clears it", W.eval('WowCompanionFaceB.a["wc-pull-close"]'))
+
+# ================================================================ THE REVIEW OF 2026-11-11 (each case once failed on 39a11c13; Interact i148, Dialogs d28)
+def shields(L):
+    return len(lst(L, 'WowCompanion.shield.rects()'))
+
+
+# R1: a stray ENTER's "app" holder ends with the fight - the controller is the game's again after it, nothing of ours bound
+W = world()
+pull(W)
+tap(W, idoc(W).get('fightEnter'))
+check(holder(W) == 'app', "R1 a stray ENTER in the fight: the \"app\" holder", holder(W))
+fight_end(W)
+ours = {k: v for k, v in keys(W).items() if (v or '').startswith('CLICK WowCompanionInteract')}
+check(holder(W) is None and W.eval('__IN.N.holding') is False and not ours,
+      "R1 ... the fight's end lets it go: no holder, not holding, no key of ours bound", (holder(W), W.eval('__IN.N.holding'), ours))
+W.execute('NOW = NOW + 30; advance(1)')
+r = press(W, "PADDDOWN")
+check(not any(c.startswith('WowCompanionInteractPad') for c in r['clicks']) and holder(W) is None,
+      "R1 ... a press 30 s later never reaches our pad sink", r)
+check(clean(W) == {}, "R1 no lockdown breach, no spied call, no handle / snippet error", clean(W))
+
+# R2: Step 5a with the frames the real game shows (the input legend, the tooltip) and the real loot close (LOOT_CLOSED a frame
+# later, the 0.1 s fade): a leave that closed the window gives everything back - no "left behind", no shield, the alphas back
+for at_pull in (False, True):
+    tag = 'at the pull' if at_pull else 'mid-fight'
+    W = world()
+    W.execute('GamepadPersistentInputLegend:Show(); GameTooltip:Show()')
+    if at_pull:
+        W.execute('LootFrame:Show(); fire("LOOT_OPENED"); advance(1)')
+        pull(W)
+    else:
+        pull(W)
+        W.execute('LootFrame:Show(); fire("LOOT_OPENED"); advance(1)')
+        tap(W, idoc(W).get('enter'))
+    check(holder(W) == 'npc' and shields(W) >= 1 and W.eval('GameTooltip:GetAlpha()') == 0,
+          "R2[%s] the loot held in the fight: shielded, the tooltip dimmed" % tag, (holder(W), shields(W)))
+    press(W, "PAD2")
+    tap(W, idoc(W).get('fightLeave'))
+    W.execute('advance(1)')
+    check(W.eval('LootFrame._shown') is False and W.eval('__IN.N.fightBehind') is None and shields(W) == 0,
+          "R2[%s] the leave closed the loot window (through its fade): nothing left behind, no shield over its place" % tag,
+          (W.eval('LootFrame._shown'), W.eval('__IN.N.fightBehind'), shields(W)))
+    check(W.eval('GameTooltip:GetAlpha()') == 1 and W.eval('GamepadPersistentInputLegend:GetAlpha()') == 1,
+          "R2[%s] ... the tooltip and the input legend have their alpha back" % tag,
+          (W.eval('GameTooltip:GetAlpha()'), W.eval('GamepadPersistentInputLegend:GetAlpha()')))
+    check(clean(W) == {}, "R2[%s] no lockdown breach, no spied call, no handle / snippet error" % tag, clean(W))
+
+# R3: the game menu open at the pull, then closed in the fight: the fight stays the game's (PadMap stepped aside) - no ENTER cell, an
+# ENTER tap anyway changes nothing, fightMode stays "game" and gmFight tells the app's reconciler not to try
+W = world()
+W.execute('GameMenuFrame:Show(); advance(1); NOW = NOW + 2; tick(0.1)')
+pull(W)
+W.execute('GameMenuFrame:Hide(); advance(1)')
+d = idoc(W)
+check(not d.get('gmLock') and d.get('gmFight') is True and d.get('fightMode') == 'game' and not d.get('fightEnter'),
+      "R3 the game menu closed mid-fight: no lock, gmFight, fightMode \"game\", no ENTER cell", (d.get('gmLock'), d.get('gmFight'), d.get('fightEnter')))
+tap(W, {'row': W.eval('__IN.N.ra.erow'), 'col': W.eval('__IN.N.ra.ecol')})
+d = idoc(W)
+r = press(W, "PADDDOWN")
+check(holder(W) is None and W.eval('__IN.N.holding') is not True and d.get('fightMode') == 'game' and r['how'] == 'game',
+      "R3 ... an ENTER tap anyway: no holder, fightMode still \"game\", the press is the game's", (holder(W), d.get('fightMode'), r['how']))
+n0 = nsent(W)
+qtap(W, QACT["quests"])
+ack = [x for x in docs(W, n0, 'guestack') if x.get('id') == 'quests']
+check(holder(W) is None and not idoc(W).get('enter') and not (ack and ack[-1].get('why') == 'pending'),
+      "R3 ... a room's take in that fight never waits for an ENTER", (holder(W), ack))
+check(clean(W) == {}, "R3 no lockdown breach, no spied call, no handle / snippet error", clean(W))
+
+# R4: a pop-up the app shows as its box while the loot holds in a fight (a BoP item looted): A and B are the pop-up's (DialogView taps
+# its cells) - never also the loot cursor's A or the window's B / leave; gone, they are the loot's again
+W = world()
+pull(W)
+W.execute('LootFrame:Show(); fire("LOOT_OPENED"); advance(1)')
+tap(W, idoc(W).get('enter'))
+W.execute('StaticPopup1.which = "LOOT_BIND"; StaticPopup1:Show(); advance(0.2); WowCompanion.dialogs.look(); advance(0.5)')
+check(W.eval('WowCompanion.dialogs.mirrored()') == 1, "R4 the bind pop-up is mirrored (the app's box)", W.eval('WowCompanion.dialogs.mirrored()'))
+b0 = idoc(W).get('fightBack') or 0
+r1 = press(W, "PAD1")
+r2 = press(W, "PAD2")
+d = idoc(W)
+check(not any(a.get('kind') == 'lootslot' for a in r1['acts'] + r2['acts']) and (d.get('fightBack') or 0) == b0 and holder(W) == 'npc'
+      and W.eval('LootFrame._shown') is True,
+      "R4 ... A and B on the pop-up: no loot taken, no B ask for the LEAVE, the loot still held", (r1['acts'], d.get('fightBack'), holder(W)))
+W.execute('StaticPopup1:Hide(); advance(0.2); WowCompanion.dialogs.look(); advance(0.5)')
+r = press(W, "PAD1")
+check([a for a in r['acts'] if a.get('kind') == 'lootslot'] == [{'kind': 'lootslot', 'slot': 1}],
+      "R4 the pop-up gone: A loots again", r['acts'])
+check(clean(W) == {}, "R4 no lockdown breach, no spied call, no handle / snippet error", clean(W))
 
 print('%s (%d pass, %d xfail, %d fail, %d xpass)' % ('ALL PASS' if fails == 0 and xpasses == 0 else 'FAILED', passes, xfails, fails, xpasses))
 sys.exit(1 if (fails or xpasses) else 0)

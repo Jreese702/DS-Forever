@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d27"         -- bump on every change; d27: the idlg row's last seven columns (33-39, the row grows to 40: no new row) are the capture's per-window leave cells (combat_nav_design Step 5c, the user 2026-11-11), aimed by Interact (WC.dialogs.leaveCell); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
+local DV = "d28"         -- bump on every change; d28: WC.dialogs.mirrored() - the pop-ups the app shows as its box (Interact's fight sink leaves A / B to the app while one shows: the review of combat_nav, the user's decision 1, 2026-11-11); d27: the idlg row's last seven columns (33-39, the row grows to 40: no new row) are the capture's per-window leave cells (combat_nav_design Step 5c, the user 2026-11-11), aimed by Interact (WC.dialogs.leaveCell); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -478,6 +478,10 @@ local function build()
     local doc = { type = "dialogs", dv = DV, mode = D.mode or nil, list = list, touch = D.touch, rolls = rolls,
                   rollsMore = rolls and D.rollsMore or nil }
     local busy = #list > 0 or rolls ~= nil
+    -- d28 (review of combat_nav, the user's decision 1, 2026-11-11): how many pop-ups the app shows as its box (mirrored: not left on top)
+    -- - while one shows in a fight the app answers A / B on it, and Interact's sink lets those presses go by (WC.dialogs.mirrored)
+    D.mirN = 0
+    if D.mode then for _, d in ipairs(list) do if d.top == nil then D.mirN = D.mirN + 1 end end end
     if D.mode and busy and WC.pad and type(WC.pad.slotFor) == "function" then
         local ok, col = pcall(WC.pad.slotFor, "iact", "alive")
         if ok and type(col) == "number" then doc.life = { col = col, every = LIFE_EVERY } end
@@ -846,6 +850,7 @@ WC.dialogs = { version = DV, setMode = setMode, look = look,
                    if b and i >= 1 and i <= LEAVE_N then return b, ROW, LEAVE_COL + i - 1 end
                end,
                leaveN = LEAVE_N,
+               mirrored = function() return D.mirN or 0 end,       -- d28: the pop-ups the app shows as its box, at the last document
                rollsHide = function(on) ROLLS_HIDE = on and true or false; look() end,  -- the harness; the build flips the default
                -- how many dialogs the controller answers right now: shown AND with the game's focus
                -- (read by Interact.lua for bnext). A dialog without the focus does not take B.
