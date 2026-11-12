@@ -114,6 +114,20 @@ class PartyModelTest {
         assertNotNull(st.move(PartyModel.Dir.UP))
     }
 
+    /** m133 (review): the tab's tap follows its look; a prompt's "dialogs" capture never taps off */
+    @Test fun tabFollowsItsLookAndDialogsOnlySuspend() {
+        val p = party()
+        assertFalse(PartyModel.tabWants(p))                                                 // drawn on -> off
+        assertTrue(PartyModel.tabWants(p.copy(on = false)))                                 // drawn off -> on
+        assertTrue(PartyModel.tabWants(p.copy(aside = "managed")))                          // suspended by a prompt out of combat: drawn off -> on
+        assertFalse(PartyModel.tabWants(p.copy(aside = "managed", fight = true)))           // in a fight `on` alone: drawn on -> off
+        assertTrue(PartyModel.tabWants(null))
+        val st = PartyModel.State()
+        st.onParty(p, current = true, now = 0L)
+        assertFalse(st.takerSeen("dialogs", 0L))                                            // a popup's mirror: suspended only
+        assertTrue(st.takerSeen("spells", 10_000L))                                         // a room still ends it out of combat
+    }
+
     @Test fun unitIndex() {
         assertEquals(0, PartyModel.unitIndex("player")); assertEquals(1, PartyModel.unitIndex("party1"))
         assertEquals(4, PartyModel.unitIndex("party4")); assertNull(PartyModel.unitIndex("party5")); assertNull(PartyModel.unitIndex("raid1"))

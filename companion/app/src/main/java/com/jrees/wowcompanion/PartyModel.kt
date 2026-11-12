@@ -249,9 +249,15 @@ object PartyModel {
      * itself out of combat, and at a fight's end when something took the controller during it. false = suspended only.
      */
     const val OFF_ON_LEAVE = true
+    /** m133: capture holders that are a prompt (only suspend Party mode, never end it): PadMap PM.PROMPT_HOLDERS */
+    val PROMPT_HOLDERS = setOf("dialogs")
 
     /** leaving Home's rest page: tap `off` when Party mode is ON at all (on, or on but suspended by an `aside`: off is absolute).
      *  m132: never IN A FIGHT ([fight]): there it is only suspended while something else holds (the user: usable in combat) */
+    /** m133 (review): what a tap on the bottom tab sends (true = `on`): the opposite of what the tab SHOWS (`onLive`, PartyLayout's look),
+     *  so a Party mode only suspended by a prompt out of combat (drawn off) gets a harmless `on`, never an `off` the player did not see */
+    fun tabWants(p: Party?): Boolean = p?.onLive != true
+
     fun offOnLeave(p: Party?, fight: Boolean = false): Boolean = OFF_ON_LEAVE && !fight && p?.fight != true && p?.on == true
 
     /** Home's screen went from its rest page (no module full screen; a fight's takeover counts as rest) to a module full screen */
@@ -345,6 +351,8 @@ object PartyModel {
          */
         fun takerSeen(holder: String?, now: Long, fight: Boolean = false): Boolean {
             if (fight || party?.fight == true) return false
+            // m133 (review): a prompt's capture (Interact's "dialogs": a static popup's mirror) only suspends, as PadMap's PM.PROMPT_HOLDERS
+            if (holder != null && holder in PROMPT_HOLDERS) return false
             if (!OFF_ON_LEAVE || holder.isNullOrEmpty() || party?.on != true) { if (holder.isNullOrEmpty()) takerTapped = null; return false }
             if (holder == takerTapped && now - takerAt < TAKER_RETRY_MS) return false
             takerTapped = holder; takerAt = now

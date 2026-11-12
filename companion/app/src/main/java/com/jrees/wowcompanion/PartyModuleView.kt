@@ -240,8 +240,9 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
             MotionEvent.ACTION_UP -> {
                 removeCallbacks(longPress)
                 val m = module()
-                // m132: the tab flips what the game has (`on`), also while suspended or in a fight (never `on` sent to a Party mode already on)
-                if (downTag && PartyLayout.hitTag(m, e.x, e.y)) onTag?.invoke(live.party?.on != true)
+                // m133 (review): the tap follows what the tab SHOWS (`onLive`, the look's own value): drawn off = `on` (also a Party mode
+                // only suspended by a prompt out of combat, a harmless `on`), drawn on = `off`; in a fight onLive is `on` alone (m132)
+                if (downTag && PartyLayout.hitTag(m, e.x, e.y)) onTag?.invoke(PartyModel.tabWants(live.party))
                 else if (downCell >= 0 && !longFired && PartyLayout.hit(m, e.x, e.y) == downCell) unitOf(downCell)?.let { onCellTap?.invoke(it) }
                 downCell = -1; downTag = false
             }

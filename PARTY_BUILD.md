@@ -790,6 +790,15 @@ m132). The second ruling now holds OUT OF COMBAT ONLY; in a fight nothing turns 
 - Still refused in a fight (the game's lockdown): the Controller room's edits and Smart Y's party list (`partyack why=combat`).
 - Tests: `test_party.py` "m132 fight-first" (the fight entered FIRST, then on / pick / move / casts / Touch / roster / pet / tab / B),
   "window-at-pull", the prompts; `PartyFixturesTest`, `PartyModelTest`, `PartyStripTest`.
+- m133 (review of m132): the window-at-pull rule and the chords' release apply only while Party mode may be wanted in the fight
+  (`PM.fightKeys`: on, grouped, or a pet out); solo with no pet and Party mode off, a game window open at the pull (GameMenuFrame,
+  LootFrame, Gossip, a roll...) keeps its own controller navigation and the m34 chords stay, as before m132. Where the rule applies,
+  EVERY game window open at the pull (not only a prompt) is answered by touch or after the fight. Not covered: an invite accepted
+  or a pet summoned mid-fight after a solo, pet-less pull (the bindings were set at the pull). Smart Y's party pick casts once a fight
+  per member (the secure Y clears `wc-pb-<unit>`; a roster change in the fight clears party1-4's; `PM.picksSync` drops them from
+  partycfg, so the strip shows TARGET); the fight's end arms them again. PM.PROMPTS adds GamepadGroupLootRollFrame (the controller
+  roll frame) and GroupLootFrame2-4; Interact's "dialogs" capture is a prompt (`PM.PROMPT_HOLDERS`, the app's
+  `PartyModel.PROMPT_HOLDERS`). The tab's tap sends the opposite of what it shows (`PartyModel.tabWants` = `!onLive`).
 
 ### Cross-side fixtures (new)
 
