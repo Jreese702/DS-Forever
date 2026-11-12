@@ -141,8 +141,12 @@ class SpellsOverlay(
     private var padMap: PadMapModel.Map? = null
     fun onPadMap(m: PadMapModel.Map) { padMap = m; if (boxOpen()) invalidate() }
 
-    /** issues #18 / #20 / #31: the triggers the app's own reader holds now (LT, RT), for the bind answer's log line */
-    fun heldTriggers(): Pair<Boolean, Boolean> = lt to rt
+    /** issues #18 / #20 / #31: when the app's own reader last saw LT / RT held (uptime ms; 0 = not since the reader started). The ack
+     *  reaches the app after the press, often after the trigger is let go, so the log line reads the LATCH, not the state now */
+    private var ltAt = 0L; private var rtAt = 0L
+    fun triggerRead(now: Long = SystemClock.uptimeMillis()): SpellsModel.AppTrig =
+        if (pad == null) SpellsModel.AppTrig(readerOn = false, ltAgoMs = null, rtAgoMs = null)
+        else SpellsModel.AppTrig(true, if (lt) 0L else if (ltAt > 0) now - ltAt else null, if (rt) 0L else if (rtAt > 0) now - rtAt else null)
 
     fun onBind(r: SpellsModel.BindResult) {
         result = r; resultAt = SystemClock.uptimeMillis()
@@ -158,14 +162,16 @@ class SpellsOverlay(
 
     private fun startPad() {
         if (pad != null || otherReader()) return
-        pad = PadInput(onPad = { l, r, lb, rb -> lt = l; rt = r; bumpers(lb, rb); invalidate() }, onStatus = { _, _ -> }).also {
+        pad = PadInput(onPad = { l, r, lb, rb ->
+            val t = SystemClock.uptimeMillis(); if (lt || l) ltAt = t; if (rt || r) rtAt = t   // held now, or just let go: the last held moment
+            lt = l; rt = r; bumpers(lb, rb); invalidate() }, onStatus = { _, _ -> }).also {
             it.triggerSwap = CastSettings.triggerSwap
             it.start()
         }
     }
 
     private fun stopPad() {
-        pad?.stop(); pad = null; lt = false; rt = false
+        pad?.stop(); pad = null; lt = false; rt = false; ltAt = 0L; rtAt = 0L
     }
 
     // everything that moves on its own: the card's life, the answer's 1.5 s
