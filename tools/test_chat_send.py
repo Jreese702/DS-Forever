@@ -176,6 +176,24 @@ L2 = world()
 L2.execute('NOT_LOADED = {}; fire("PLAYER_LOGIN"); runTimers(NOW + 3)')
 p2 = [d for d in docs(L2) if d.get("probe") == "ours"][-1]
 ok(p2["capv"] == 13 and p2["missing"] == 0 and p2["errN"] == 0, "all loaded: %r" % p2)
+ok(p2["istage"] == "none" and p2["eh"] == "ours", "no Interact file here: never ran, the handler ours: %r" % p2)
+
+# chat34 (#183 review): how far Interact.lua ran, and whether the error handler is still ours
+L2.execute('WowCompanion.interactStage = "guard"; fire("PLAYER_LOGIN"); runTimers(NOW + 3)')
+p2 = [d for d in docs(L2) if d.get("probe") == "ours"][-1]
+ok(p2["istage"] == "guard", "a file that stopped halfway is named: %r" % p2)
+L2.execute('seterrorhandler(function() end); fire("PLAYER_LOGIN"); runTimers(NOW + 3)')
+p2 = [d for d in docs(L2) if d.get("probe") == "ours"][-1]
+ok(p2["eh"] == "other", "a handler another add-on set later is reported: %r" % p2)
+
+# the REAL Interact.lua marks its stages: with no WowCompanion.S it stops at its guard ("top"); its last line is the end marker
+INTERACT = open(os.path.join(ADDONS, "WowCompanionInteract", "Interact.lua"), encoding="utf-8").read()
+ok(INTERACT.rstrip().endswith("WC.interactIV = IV"), "the end marker is the file's last line")
+L3 = world()
+L3.execute('WowCompanion.S = nil; WowCompanion.interactStage = nil')
+load3 = L3.eval('function(src, name) local f, e = loadstring(src, name); if not f then error(e) end; return f end')
+load3(INTERACT, "@Interact.lua")("WowCompanionInteract")
+ok(L3.eval("WowCompanion.interactStage") == "top", "the guard stops it at top")
 
 # ---------------------------------------------------------------- 4. the first Lua errors from OUR files (the game's handler still runs)
 L.execute('raise("Interface/AddOns/WowCompanionInteract/Interact.lua:123: attempt to index a nil value")')

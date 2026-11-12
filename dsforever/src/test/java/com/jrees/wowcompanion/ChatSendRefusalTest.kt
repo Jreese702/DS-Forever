@@ -79,4 +79,18 @@ class ChatSendRefusalTest {
         assertEquals("our add-ons: 10 loaded; controller capture v13", good.second)
         assertNull(oursProbeLine(JSONObject("""{"type":"cap","probe":"chatstyle"}""")))
     }
+
+    /** chat34 (#183 review): "loaded, no capture, no errors" now says which of its causes it is */
+    @Test fun theOursProbeTellsNeverRanFromStoppedHalfway() {
+        val never = oursProbeLine(JSONObject("""{"probe":"ours","loaded":10,"off":{},"capv":0,"errs":{},"istage":"none","eh":"ours"}"""))!!
+        assertTrue(never.first)
+        assertTrue(never.second, never.second.contains("Interact.lua never ran"))
+        val half = oursProbeLine(JSONObject("""{"probe":"ours","loaded":10,"off":{},"capv":0,"errs":{},"istage":"guard","eh":"other"}"""))!!
+        assertTrue(half.first)
+        assertTrue(half.second, half.second.contains("Interact.lua stopped after 'guard'"))
+        assertTrue(half.second, half.second.contains("error handler replaced"))
+        val good = oursProbeLine(JSONObject("""{"probe":"ours","loaded":10,"off":{},"capv":20,"errs":{},"istage":"end","iv":"i153","eh":"ours"}"""))!!
+        assertFalse(good.first)
+        assertEquals("our add-ons: 10 loaded; controller capture v20; Interact.lua ran i153", good.second)
+    }
 }
