@@ -12,6 +12,7 @@ Trail.lua's compass under test_compass.py's stub game, with a stub Polestar rout
 - the drawing: the path marker's own look (light blue lines, a double chevron, no texture of the objective's) beside the objective's
   gold disc, unchanged; hidden when the route goes;
 - Map.lua pn3: the 1 s ticker keeps the route read (legs, legSig, legsAt) for the compass, cancel drops it, the docs say pn3.
+- pn3 review fix: a journey over 240 points: the compass keeps every corner (the app's copy alone is thinned); the look-ahead goes round it.
 Needs lupa. Exit code 1 on any failure."""
 import math
 import os
@@ -222,6 +223,26 @@ def main():
     chk("pn3: the docs say pn3", all(M.eval("SAID")[i].v == "pn3" for i in range(1, len(M.eval("SAID")) + 1)))
     M.execute("WC.pnav.cancel('test')")
     chk("pn3: cancel drops it", P.legs is None and P.legSig is None and P.legsAt is None)
+
+    # pn3 review fix (the user, 2026-11-11: "keep players on path so that they don't resort to walking at the final objective"): a
+    # journey of over PTS (240) points: the app's copy is thinned (every 3rd point here) and loses the first walk's corner (100,0);
+    # the compass's copy keeps every corner, and the look-ahead goes round it, not across
+    M.execute(r'''
+        local far = {}
+        for i = 1, 600 do far[i] = { 0, 100 + i, 100 } end
+        GEOM = { legs = { { kind = "walk", pts = { { 0, 0, 0 }, { 0, 100, 0 }, { 0, 100, 100 } } }, { kind = "walk", pts = far } } }
+        SAID = {}; WC.pnav.go(1429, 0.5, 0.5); T = 20; TICK()
+    ''')
+    full = [P.legs[1].p[i] for i in range(1, len(P.legs[1].p) + 1)]
+    sent = [s for s in (M.eval("SAID")[i] for i in range(1, len(M.eval("SAID")) + 1)) if s.type == "pnavroute"]
+    thin = [sent[-1].legs[1].p[i] for i in range(1, len(sent[-1].legs[1].p) + 1)] if sent else None
+    chk("pn3: over 240 points: the app's copy is thinned (the corner gone)", thin == [0, 0, 100, 100])
+    chk("pn3: the compass's copy keeps every corner", full == [0, 0, 100, 0, 100, 100] and len(P.legs[2].p) == 1200)
+    RL = route(("walk", 0, full), ("walk", 0, [P.legs[2].p[i] for i in range(1, len(P.legs[2].p) + 1)]))
+    w, why = ahead(90, 0, RL, L.table(), "long")
+    chk("pn3: the look-ahead on the long route goes round the corner (90,0) -> (100,20)", w and near(w[0], 100) and near(w[1], 20)
+        and why == "walk")
+    M.execute("WC.pnav.cancel('test')")
 
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)

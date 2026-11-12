@@ -2842,7 +2842,7 @@ end
 --   39                                CANCEL
 -- Answers {"type":"pnav", op, ok, why, have} (have = Polestar's API is there); the route as {"type":"pnavroute", legs = {{k, c, p}}}
 -- (p = wx, wy pairs, at most PTS points in all), sent when it changes.
-WC.pnav = { active = false, keepAt = 0, digits = nil, digitsAt = 0, sig = nil, sentAt = 0, KEEP_S = 60, PTS = 240, OWNER = "DSForever" }
+WC.pnav = { active = false, keepAt = 0, digits = nil, digitsAt = 0, sig = nil, sentAt = 0, KEEP_S = 60, PTS = 240, PTS_FULL = 2000, OWNER = "DSForever" }
 function WC.pnav.api()
     local P = _G.Polestar
     if type(P) == "table" and type(P.Nav) == "table" and type(P.Nav.API) == "table" and type(P.Nav.API.Navigate) == "function" then
@@ -2874,8 +2874,13 @@ function WC.pnav.cancel(why)
     WC.pnav.legs, WC.pnav.legSig, WC.pnav.legsAt = nil, nil, nil       -- pn3: the compass's path marker goes with it
     WC.pnav.say("cancel", true, why)
 end
--- the route Polestar is guiding now, as legs of world points (only while the guidance is ours)
-function WC.pnav.route()
+-- the route Polestar is guiding now, as legs of world points (only while the guidance is ours).
+-- pn3 (the user, 2026-11-11: "keep players on path so that they don't resort to walking at the final objective"): full = the
+-- compass's copy (Trail.lua C.pathAhead steers by it): every point Polestar gave (its walk paths are corner points; thinned to PTS
+-- for the app, a long journey lost the current walk's corners and the 30 yd look-ahead cut across them - through a building, over
+-- a cliff edge). Only past PTS_FULL points in all (a safety cap) is it thinned. raw = Polestar's legs already read (the ticker's
+-- one read for both copies); else read here.
+function WC.pnav.geom()
     local P = _G.Polestar
     local api = WC.pnav.api()
     if not (P and api and type(P.Nav.GetRouteGeometry) == "function") then return nil end
@@ -2888,9 +2893,17 @@ function WC.pnav.route()
     -- pn2 (the user, 2026-11-11: "the polestar option in quest tracking in home should also show the path on the bottom map"): Polestar
     -- answers { legs = { ... } } (Nav/Walk.lua), not the legs themselves - read as a list it gave no route at all
     if type(legs.legs) == "table" then legs = legs.legs end
+    return legs
+end
+function WC.pnav.route(full, raw)
+    local legs = raw
+    if type(legs) ~= "table" then
+        legs = WC.pnav.geom()
+        if not legs then return nil end
+    end
     local n = 0
     for _, leg in ipairs(legs) do if type(leg) == "table" and type(leg.pts) == "table" then n = n + #leg.pts end end
-    local step = math.max(1, math.ceil(n / WC.pnav.PTS))
+    local step = math.max(1, math.ceil(n / (full and WC.pnav.PTS_FULL or WC.pnav.PTS)))
     local out, sig = {}, {}
     for _, leg in ipairs(legs) do
         if type(leg) == "table" and type(leg.pts) == "table" then
@@ -2949,11 +2962,15 @@ do
         local P = WC.pnav
         if not P.active then return end
         if GetTime() - P.keepAt > P.KEEP_S then return pcall(P.cancel, "no word from the app") end
-        local okR, legs, sig = pcall(P.route)
+        local okG, raw = pcall(P.geom)
+        local okR, legs, sig = false, nil, nil
+        if okG and raw then okR, legs, sig = pcall(P.route, false, raw) end
         -- pn3 (the user, 2026-11-11: "The polestar doted line needs its own kind of marker to point on the compass to keep players on
-        -- path"): the last read route kept for the top-screen compass's path marker (Trail.lua C.pathAhead), every second; nil when
-        -- there is none (Polestar no longer guiding for us)
-        if okR and legs then P.legs, P.legSig, P.legsAt = legs, sig, GetTime() else P.legs, P.legSig, P.legsAt = nil, nil, nil end
+        -- path"): the last read route kept for the top-screen compass's path marker (Trail.lua C.pathAhead), every second, UNTHINNED
+        -- (route(true): every corner, the app's copy is thinned); nil when there is none (Polestar no longer guiding for us)
+        local okF, full, fsig = false, nil, nil
+        if okR and legs then okF, full, fsig = pcall(P.route, true, raw) end
+        if okF and full then P.legs, P.legSig, P.legsAt = full, fsig, GetTime() else P.legs, P.legSig, P.legsAt = nil, nil, nil end
         if not okR or not legs then return end
         if sig ~= P.sig or GetTime() - P.sentAt > 10 then
             P.sig, P.sentAt = sig, GetTime()
