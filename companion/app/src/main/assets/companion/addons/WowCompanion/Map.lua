@@ -2853,6 +2853,7 @@ end
 -- every step change (Polestar Nav/Nav.lua stepMoved: STEP_CHANGED / GUIDE_CHANGED clear its override) and guides its own step
 -- itself, whose route geom() refused as not ours - no pnavroute (no line on the bottom map) and no WC.pnav.legs (no path marker).
 WC.pnav = { active = false, keepAt = 0, digits = nil, digitsAt = 0, sig = nil, sentAt = 0, KEEP_S = 60, PTS = 240, PTS_FULL = 2000, OWNER = "DSForever" }
+-- pn6 / ps5 (int/1429): ps-compass pn3-pn5 / ps4 and ps-noloc-guide ps4 in one file, the two signals one.
 -- int/1429: ONE signal for both (ps-compass pn4's "row holds" and ps-noloc-guide ps4's "row picked"): 38 then 8 / 9, sent by the
 -- app's PolestarNav.tick only (at every change and every 20 s while on), forgotten after KEEP_S (60 s); ONE reader, WC.pnav.psOn(),
 -- used by the compass / geom code here and Trail.lua and by PadMap's starter-item arming (an item-started quest's item on Y only
@@ -2865,7 +2866,7 @@ function WC.pnav.api()
 end
 function WC.pnav.say(op, ok, why)
     pcall(function()
-        WC.send(WC.encode({ type = "pnav", v = "pn5", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
+        WC.send(WC.encode({ type = "pnav", v = "pn6", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
         WC.push()
     end)
 end
@@ -2958,7 +2959,7 @@ function WC.pnav.diag(okG, raw)
     end
     local ps = S == nil and "nil" or (S.none and "none") or (S.nl and "nl") or (psLoc and "loc") or "?"
     pcall(function()
-        WC.send(WC.encode({ type = "cap", probe = "pnavt", v = "pn5", act = act, own = own, tm = tm, tx = tx, ty = ty, gm = gm,
+        WC.send(WC.encode({ type = "cap", probe = "pnavt", v = "pn6", act = act, own = own, tm = tm, tx = tx, ty = ty, gm = gm,
             a = P.active and true or false, gom = P.m, gox = P.x and math.floor(P.x * 10000 + 0.5) / 10000 or nil,
             goy = P.y and math.floor(P.y * 10000 + 0.5) / 10000 or nil, on = P.psOn(), said = P.psSaid == true,
             legs = type(P.legs) == "table" and #P.legs or 0, ps = ps, fr = type(S) == "table" and S.fr or nil,
@@ -3055,7 +3056,7 @@ do
         if not okR or not legs then return end
         if sig ~= P.sig or GetTime() - P.sentAt > 10 then
             P.sig, P.sentAt = sig, GetTime()
-            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn5", legs = legs })); WC.push() end)
+            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn6", legs = legs })); WC.push() end)
         end
     end)
 end
@@ -3280,7 +3281,7 @@ C_Timer.NewTicker(1, function()
         tostring(d.m or "nl"), tostring(d.x or ""), tostring(d.y or ""), tostring(d.it or ""), tostring(d.ih or "") }, "|")
     if sig ~= P.sig or GetTime() - P.sentAt > 15 then
         P.sig, P.sentAt = sig, GetTime()
-        d.type, d.v = "pstep", "ps4"
+        d.type, d.v = "pstep", "ps5"
         if P.boot ~= 0 then d.b = P.boot end
         pcall(function() WC.send(WC.encode(d)); WC.push() end)
     end

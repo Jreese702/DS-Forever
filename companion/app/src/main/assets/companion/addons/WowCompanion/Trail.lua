@@ -92,7 +92,9 @@ end
 -- go", then: Polestar's own arrow stays hidden, DS Forever's compass leads): while the app's light blue Polestar row holds (Map.lua
 -- pn4 WC.pnav.psOn: the app says so) the compass shows Polestar's waypoint (and the path marker, Polestar's route) whether or not a
 -- quest is focused, in the log, or our GO is the one Polestar follows; cp35's guess from the GO alone stays for an app that never says.
-WC.compass = { V = "cp38" }
+-- cp39 (int/1429): ps-compass cp36-cp38 (the Polestar path marker, its goal whenever the row holds) on the one "row holds" word
+-- (Map.lua WC.pnav.psOn, shared with ps-noloc-guide's starter item)
+WC.compass = { V = "cp39" }
 do
     local C = WC.compass
     local PI = math.pi

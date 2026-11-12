@@ -136,7 +136,7 @@ def main():
         return {i: (f[i].look.row, f[i].look.side) for i in f}
 
     src = open(HUB, encoding="utf-8").read()
-    chk("hub38: the version tag (the player / pet row, the game's side tab)", 'local HV = "hub38"' in src)
+    chk("hub39: the version tag (hub38 the player / pet row, the game's side tab; hub39 int/1429)", 'local HV = "hub39"' in src)
     chk("hub34: the combat log's switch calls are gone (PadMap m129)", 'WC.clogSync' not in src and 'WC.clogTicker' not in src)
 
     # solo, Party mode off: nothing (no row, no tab)
