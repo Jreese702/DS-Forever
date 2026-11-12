@@ -758,6 +758,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.onReport = { openReport() }
         // m62 Smart buffs: the Settings section reads the latest padmap, edits by taps, names a spell by the book's two taps
         settingsView.smartDoc = { lastPadMap?.smartBuffs }
+        settingsView.smartNow = { lastPadMap?.smartY?.kind }                // m127: the row Y would act on now
         settingsView.smartTaps = { cells -> TapBridge.tapsSpaced(this, spellsPad ?: questsPad, cells, 120L) }   // the user 11-11: Pick added nothing - a repeated cell inside 0.25 s was swallowed (as Polestar's digits)
         settingsView.smartSpellCells = { name ->
             lastBook?.let { b -> SpellsModel.tabSpells(b).firstOrNull { it.name == name }?.let { SpellsModel.bindCells(b, it) } }
@@ -2371,6 +2372,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "facecd" -> if (current) PadMapModel.parseCd(msg)?.let { homeView.onFaceCd(it) }
             // the fight flag also from Spells' facewatch (Tracking after test18): Home's D-pad picture follows the newest word
             "facewatch" -> if (current) homeView.onFightWord(msg.optBoolean("fight", false))
+            // m127: Smart Y's list edits answered (a refusal said on its Add row; the user, 2026-11-11: it was never read)
+            "smartyack" -> if (current && ::settingsView.isInitialized) settingsView.onSmartAck(msg.optString("op"), msg.optBoolean("ok", false), msg.optString("why").ifEmpty { null })
             "padack" -> if (current) PadMapModel.parseAck(msg)?.let {
                 spellbookView.onPadAck(it); controllerView.onPadAck(it)
                 // issue #136 (2026-11-11): the toolbar switch refused by the game (a fight, no character) is logged; DpadChoice re-sends it

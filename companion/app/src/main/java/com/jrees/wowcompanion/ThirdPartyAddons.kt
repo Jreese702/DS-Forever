@@ -123,9 +123,12 @@ object ThirdPartyAddons {
      * .toc Manners_Camelot.toc, Interface 16001). v1.11.0 (file 9408996, 2026-11-02), CurseForge's file CDN, our pinned size and
      * sha256. Its prompt is hidden and Smart Y presses it (PadMap m78): after your own food / water and buffs, with Manners' own
      * pre- and post-click (its ledger and hand-back are its own). Its key binding, its bar macro and its options stay Manners'.
+     * m127 (the user, 2026-11-11, Track Humanoids on Y): Manners also reminds you of your OWN buffs and tracking; on Smart Y it is a
+     * row of the list (movable, removable) that only ever buffs OTHER players (PadMap's OV.mannersOk). Its own "Tracking: Don't remind
+     * me" option is Manners' to set, never ours.
      */
     val MANNERS = Addon(
-        id = "manners", title = "Manners", what = "Y buffs back whoever buffed you, and nearby players missing your buff",
+        id = "manners", title = "Manners", what = "On Smart Y: buffs other players back, and those missing your buff",
         by = "Sacha", license = "MIT", repo = "", version = "1.11.0",
         core = Pkg("1.11.0", "Manners-v1.11.0.zip", 3_654_185L, "20dc080b26687fd2de4a457283fd27f09c1096a6d45df2b41f8d290a1b6a03ef",
             listOf("Manners"), url = "https://mediafilez.forgecdn.net/files/9408/996/Manners-v1.11.0.zip"))
