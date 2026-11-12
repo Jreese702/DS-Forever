@@ -118,8 +118,13 @@ class MapCursor {
         fun focusFromQuests(docFocus: Int, mapSays: Boolean, current: Int): Int = if (docFocus != 0 || !mapSays) docFocus else current
     }
 
-    /** One press [k]; [ids] the tracked quests in the list's order; [focusId] the game's focused quest (0 = none). */
-    fun key(k: String, ids: List<Int>, focusId: Int, filterOpen: Boolean, untracked: Set<Int> = emptySet()): Do {
+    /**
+     * One press [k]; [ids] the tracked quests in the list's order; [focusId] the game's focused quest (0 = none). [merged] (0 none):
+     * the quest the light blue row stands for, [mergedTracked] whether the game's tracker has it -- X and Y on the row act on that
+     * quest as on its own row (the user, 2026-11-11: "consolidate that into one"; A stays the Polestar toggle).
+     */
+    fun key(k: String, ids: List<Int>, focusId: Int, filterOpen: Boolean, untracked: Set<Int> = emptySet(),
+            merged: Int = 0, mergedTracked: Boolean = true): Do {
         keepValid(ids)
         if (k == "PAD2") return if (filterOpen) Do.CloseFilter else Do.Leave
         if (k == "PADBACK") return Do.ToggleFilter         // Select / View (Start is the pause wheel, the user 2026-10-09)
@@ -154,13 +159,19 @@ class MapCursor {
             }
             "PAD3" -> return when {
                 !shown || !valid -> Do.Nothing
+                sel == MapList.POLESTAR && merged > 0 -> if (mergedTracked) Do.Untrack(merged) else Do.Watch(merged)
                 sel <= 0 -> Do.Nothing
                 sel in untracked -> Do.Watch(sel)
                 else -> Do.Untrack(sel)
             }
             // Y opens the quest's panel, tracked or not (the user, 2026-10-16: "The show button should be on the tracked quests as well
             // in the map module"); highlighting a tracked quest already brings it into view, so Y no longer only shows it on the map
-            "PAD4" -> return if (!shown || !valid || sel <= 0) Do.Nothing else Do.Open(sel)
+            "PAD4" -> return when {
+                !shown || !valid -> Do.Nothing
+                sel == MapList.POLESTAR && merged > 0 -> Do.Open(merged)
+                sel <= 0 -> Do.Nothing
+                else -> Do.Open(sel)
+            }
         }
         return Do.Nothing
     }

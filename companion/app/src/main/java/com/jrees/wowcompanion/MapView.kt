@@ -5228,7 +5228,15 @@ class MapView(context: Context) : View(context) {
         if (stops.size > 1) pairs.add(glyph("up") to "Select")
         when {
             at == MapList.ME -> if (onPlayerMenu != null) pairs.add(glyph("a") to "Menu")
-            at == MapList.POLESTAR -> pairs.add(glyph("a") to (if (psHolds()) "Unfocus" else "Focus"))
+            at == MapList.POLESTAR -> {
+                pairs.add(glyph("a") to (if (psHolds()) "Unfocus" else "Focus"))
+                val mq = psMerged()                                   // merged: X / Y are its quest's, as on its own row
+                if (mq > 0) {
+                    if (trackedIds().contains(mq)) { if (onUntrackQuest != null) pairs.add(glyph("x") to "Untrack") }
+                    else if (onTrackQuest != null) pairs.add(glyph("x") to "Track")
+                    pairs.add(glyph("y") to "Open")
+                }
+            }
             MapList.isGroup(at) -> pairs.add(glyph("a") to (if (openTabs[groupZone(at)] == true) "Close" else "Open"))
             at > 0 && at in MapList.untracked(items) -> {
                 if (onTrackFocusQuest != null) pairs.add(glyph("a") to "Track & focus")
@@ -5410,7 +5418,10 @@ class MapView(context: Context) : View(context) {
             invalidate(); return MapCursor.Do.Nothing
         }
         // ps3: while the light blue row holds it is the focused row (A on the game's old quest focuses it, A on the row lets go)
-        val d = cursor.key(k, listKeys(), if (psHolds()) MapList.POLESTAR else focusQid, filterOpen, MapList.untracked(items))
+        // the merged row's X / Y are its quest's (the user, 2026-11-11: "consolidate that into one")
+        val mq = psMerged()
+        val d = cursor.key(k, listKeys(), if (psHolds()) MapList.POLESTAR else focusQid, filterOpen, MapList.untracked(items),
+            merged = mq, mergedTracked = mq > 0 && trackedIds().contains(mq))
         when (d) {
             MapCursor.Do.Show -> { listShow(cursor.sel); landOn(cursor.sel) }
             is MapCursor.Do.Select -> {
