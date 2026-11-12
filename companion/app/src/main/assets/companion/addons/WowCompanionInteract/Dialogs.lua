@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d26"         -- bump on every change; d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
+local DV = "d27"         -- bump on every change; d27: the idlg row's last seven columns (33-39, the row grows to 40: no new row) are the capture's per-window leave cells (combat_nav_design Step 5c, the user 2026-11-11), aimed by Interact (WC.dialogs.leaveCell); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -45,6 +45,10 @@ local ROW = "idlg"
 -- mid-fight, so the game closes its own window in its own code (its controller catcher owned the pad otherwise, 10:47).
 local CLOSE_COL = POOL * CELLS
 local ENTER_COL = POOL * CELLS + 1      -- d15: the capture's ENTER cell (a room or window taking the controller in a fight)
+-- d27 (combat_nav_design Step 5c, the user 2026-11-11: "If I am looting ... my dpad should not stop working"): the capture's PER-WINDOW
+-- LEAVE cells after the trade's two (LEAVE_COL .. LEAVE_COL + LEAVE_N - 1, the row's last columns: no new row, TapPad's 40 columns):
+-- each a secure "click" on one of Interact's leave buttons, aimed by Interact out of combat at one game window's own close
+local LEAVE_COL, LEAVE_N = POOL * CELLS + 9, 7
 -- d17: THE GUILD INVITE (the user, 2026-10-09: "the pop up to join a guild is on the top screen instead of the bottom"). Not a
 -- StaticPopup: GuildInviteFrame (StaticPopupSpecial_Show), on GUILD_INVITE_REQUEST; Join = GuildInviteFrameJoinButton (AcceptGuild),
 -- Decline = GuildInviteFrameDeclineButton (its OnHide declines); it declines by itself after 60 s (read by Social from the
@@ -643,7 +647,13 @@ local function offerTouch()
         local ok, d = pcall(WC.pad.describe)
         if ok and type(d) == "table" and type(d.ch) == "number" and d.ch >= 6 then D.touch = false; return end
     end
-    local got, row = pcall(WC.pad.secureRow, ROW, POOL * CELLS + 9, function(btn, col)
+    local got, row = pcall(WC.pad.secureRow, ROW, LEAVE_COL + LEAVE_N, function(btn, col)
+        if col >= LEAVE_COL and col < LEAVE_COL + LEAVE_N then
+            btn:SetAttribute("type", "click")       -- d27: its clickbutton (Interact's leave button for that window) is set by Interact
+            D.leaveBtn = D.leaveBtn or {}
+            D.leaveBtn[col - LEAVE_COL + 1] = btn
+            return
+        end
         if col == TRADE_COL or col == TRADE_COL + 1 then
             btn:SetAttribute("type", "click")       -- d23: aimed at the trade window's own button (again on TRADE_SHOW: tradeAim)
             D.tCell = D.tCell or {}
@@ -683,7 +693,7 @@ local function offerTouch()
             btn:SetAttribute("clickbutton", target)
         end
     end, function(col)
-        if col == CLOSE_COL or col == ENTER_COL then
+        if col == CLOSE_COL or col == ENTER_COL or (col >= LEAVE_COL and col < LEAVE_COL + LEAVE_N) then
             if type(WC.interactPoke) == "function" then pcall(WC.interactPoke) end
             return
         end
@@ -830,6 +840,12 @@ WC.dialogs = { version = DV, setMode = setMode, look = look,
                -- the fight-close cell: its button (to aim, out of combat), its row and column; nil while the row is not built
                closeCell = function() if D.closeBtn then return D.closeBtn, ROW, CLOSE_COL end end,
                enterCell = function() if D.enterBtn then return D.enterBtn, ROW, ENTER_COL end end,
+               -- d27: the i-th per-window leave cell (1 .. LEAVE_N): its button, row and column; nil while the row is not built
+               leaveCell = function(i)
+                   local b = D.leaveBtn and D.leaveBtn[i]
+                   if b and i >= 1 and i <= LEAVE_N then return b, ROW, LEAVE_COL + i - 1 end
+               end,
+               leaveN = LEAVE_N,
                rollsHide = function(on) ROLLS_HIDE = on and true or false; look() end,  -- the harness; the build flips the default
                -- how many dialogs the controller answers right now: shown AND with the game's focus
                -- (read by Interact.lua for bnext). A dialog without the focus does not take B.

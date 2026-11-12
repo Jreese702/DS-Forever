@@ -14,8 +14,8 @@ PRE -> the click it resolves to (the /click chain followed); a tap is a click on
 fight.
 
 The scenarios (S1 map open at the pull, S2 loot in a fight, S3 B navigation in a fight, Party mode in a fight, the game windows at the pull)
-describe the behaviour the design and the user's decisions ask for. Where TODAY's code (97036b2b) does not do it yet the check is an XFAIL with
-the reason; the build steps flip them. An XPASS (a marked check that passes) is a FAILURE: flip its marker in the same commit.
+describe the behaviour the design and the user's decisions ask for. They started as XFAILs against 97036b2b; Build plan Steps 1-5 flipped
+every one (the sections STEP 2 / STEP 3 / STEP 5 below add each step's own checks). An XPASS (a marked check that passes) is a FAILURE.
 Needs lupa. Exit code 1 on any FAIL or XPASS."""
 import os
 import re
@@ -388,14 +388,12 @@ for order in ('loaded', 'reversed'):
           (holder(W), d.get('fightBack')))
     tap(W, d.get('fightLeave'))                  # the app's LEAVE (PadOwnerSync: fightBack stepped)
     check(holder(W) is None and modes(W) == [None] * 8, "S2[%s] the app's LEAVE: the router back to the fight" % order, (holder(W), modes(W)[:2]))
-    xcheck(W.eval('LootFrame._shown') is False, "S2[%s] ... and the game's loot window is CLOSED by that leave (design phase 2: a pre-aimed leave per window)" % order,
-           "the leave was aimed at the pull (no window then): it closes nothing; the loot window stays open, hidden, driven by nobody",
-           (W.eval('LootFrame._shown'), W.eval('LootFrame:GetAlpha()')))
+    check(W.eval('LootFrame._shown') is False, "S2[%s] ... and the game's loot window is CLOSED by that leave (Step 5c: its own pre-aimed leave)" % order,
+          (W.eval('LootFrame._shown'), W.eval('LootFrame:GetAlpha()')))
     check(W.eval('LootFrame:GetAlpha()') == 0 or W.eval('LootFrame._shown') is False,
           "S2[%s] ... a window the leave could not close stays hidden by alpha in the fight (never unhidden mid-fight)" % order, W.eval('LootFrame:GetAlpha()'))
     fight_end(W)
-    xcheck(W.eval('LootFrame._shown') is False, "S2[%s] the fight's end closes the loot window left behind (design 5a)" % order,
-           "nothing closes it after the fight", W.eval('LootFrame._shown'))
+    check(W.eval('LootFrame._shown') is False, "S2[%s] the fight's end: no loot window left behind (closed by its leave)" % order, W.eval('LootFrame._shown'))
     check(clean(W) == {}, "S2[%s] no lockdown breach, no spied call, no handle / snippet error" % order, clean(W))
 # loot open AT the pull (looting when a mob pulls you): the npc hold is kept, the D-pad keeps working
 for order in ('loaded', 'reversed'):
@@ -412,9 +410,8 @@ for order in ('loaded', 'reversed'):
     if holder(W) is not None:
         tap(W, idoc(W).get('fightLeave'))
     check(holder(W) is None, "S2[%s] B / the leave gives the fight back" % tag, (holder(W), r['clicks']))
-    xcheck(W.eval('LootFrame._shown') is False, "S2[%s] ... and closes the loot window" % tag,
-           "the pull aims the leave from G.spec (a room's hide / back / leave) only: the npc holder has no spec, so the leave clicks nothing",
-           (W.eval('LootFrame._shown'), r['clicks']))
+    check(W.eval('LootFrame._shown') is False, "S2[%s] ... and closes the loot window (Step 5c: the npc hold's own leave)" % tag,
+          (W.eval('LootFrame._shown'), r['clicks']))
     check(W.eval('LootFrame._shown') is False or W.eval('LootFrame:GetAlpha()') == 0,
           "S2[%s] ... a loot window it could not close stays hidden by alpha in the fight (i136's fight dim)" % tag, W.eval('LootFrame:GetAlpha()'))
     check(clean(W) == {}, "S2[%s] no lockdown breach, no spied call, no handle / snippet error" % tag, clean(W))
@@ -632,6 +629,71 @@ r = press(W, "PAD1")
 check(holder(W) == 'app' and r['game'] == [] and not any(a.get('kind') == 'spell' for a in r['acts']),
       "N3 ... the pop-up's mirror up (DialogView wants the pad): the ENTER, A reaches nobody in the game (the app answers its cell)", (holder(W), r))
 check(clean(W) == {}, "N4 no lockdown breach, no spied call, no handle / snippet error", clean(W))
+
+# ================================================================ STEP 5: LEAVING WINDOWS CLEANLY
+# 5c's budget: the per-window leave cells are the idlg row's last columns (no new row; TapPad's 40 columns, 56 rows)
+W = world()
+pd = W.eval('WowCompanion.pad.describe()')
+sizes = dict(pd.sizes) if pd is not None else {}
+check(pd is not None and sizes.get('idlg') == 40 and sizes['idlg'] <= int(pd.cols) and len(sizes) < 56,
+      "5c the TapPad row budget: idlg grows to 40 columns (<= cols), no new row (%d rows placed)" % len(sizes), (sizes.get('idlg'), len(sizes)))
+# 5c: the cell chosen - an npc hold's own window, a room keeps the leave the pull aimed at its own close
+pull(W)
+W.execute('LootFrame:Show(); fire("LOOT_OPENED"); advance(1)')
+tap(W, idoc(W).get('enter'))
+fl = idoc(W).get('fightLeave') or {}
+check(fl.get('row') == 'idlg' and fl.get('col') == 33, "5c loot held in the fight: doc.fightLeave is the loot window's own leave cell (idlg 33)", fl)
+check(clean(W) == {}, "5c no lockdown breach, no spied call, no handle / snippet error", clean(W))
+W = world()
+W.execute('WorldMapFrame:Show(); advance(3)')
+pull(W)
+fl = idoc(W).get('fightLeave') or {}
+check(fl.get('col') == 24, "5c the Map room held at the pull: the generic leave the pull aimed at its own close (idlg 24)", fl)
+# 5a: a window its leave could not close stays hidden by alpha through the fight; the fight's end makes it the bottom screen's again
+W = world(pre='LootFrame.CloseButton = nil; LootFrame.BorderFrame = nil; LootFrameCloseButton = nil')
+pull(W)
+W.execute('LootFrame:Show(); fire("LOOT_OPENED"); advance(1)')
+tap(W, idoc(W).get('enter'))
+press(W, "PAD2")
+tap(W, idoc(W).get('fightLeave'))
+check(holder(W) is None and W.eval('LootFrame._shown') is True and W.eval('LootFrame:GetAlpha()') == 0,
+      "5a a loot window with no close: the leave lets go, the window stays hidden by alpha (never unhidden mid-fight)",
+      (holder(W), W.eval('LootFrame._shown'), W.eval('LootFrame:GetAlpha()')))
+W.execute('advance(2); NOW = NOW + 2; tick(0.1); advance(1)')
+check(W.eval('LootFrame:GetAlpha()') == 0 and holder(W) is None, "5a ... still hidden a moment later in the fight (documents come and go)",
+      (W.eval('LootFrame:GetAlpha()'), holder(W)))
+fight_end(W)
+check(holder(W) == 'npc' and W.eval('LootFrame:GetAlpha()') == 0, "5a the fight's end: the loot window is the bottom screen's again (held, B closes it)",
+      (holder(W), W.eval('LootFrame:GetAlpha()')))
+check(clean(W) == {}, "5a no lockdown breach, no spied call, no handle / snippet error", clean(W))
+# 5b: a game window open at the pull with nothing of ours holding it: the first bare B is /click <close> then /stopattack
+for combat_tag, mode in (("NPC-windows on", True), ("NPC-windows off", False)):
+    W = world(mode=mode, pre='mkwin("MerchantFrame", false); UNITS.target = { name = "Kobold", alive = true, foe = true }')
+    W.execute('MerchantFrame:Show(); advance(1); NOW = NOW + 2; tick(0.1)')
+    pull(W)
+    check(W.eval('WowCompanionFaceB.a["wc-pull-close"]') == 'MerchantFrameCloseButton',
+          "5b[%s] the pull names the open window's close on B (wc-pull-close)" % combat_tag, W.eval('WowCompanionFaceB.a["wc-pull-close"]'))
+    r = press(W, "PAD2")
+    lines = [a.get('line') for a in r['acts'] if a.get('kind') == 'macroline']
+    seq = [(a.get('kind'), a.get('frame') or a.get('line')) for a in r['acts']]
+    check(seq[:2] == [('close', 'MerchantFrame'), ('macroline', '/stopattack')] and W.eval('MerchantFrame._shown') is False,
+          "5b[%s] the first B: /click MerchantFrameCloseButton (its own close ran) then /stopattack" % combat_tag, seq)
+    check(W.eval('WowCompanionFaceB.a["wc-pull-close"]') is None, "5b[%s] ... the name spent (cleared by the snippet)" % combat_tag,
+          W.eval('WowCompanionFaceB.a["wc-pull-close"]'))
+    r = press(W, "PAD2")
+    check(not any(a.get('kind') == 'close' for a in r['acts']) and r['clicks'][:1] == ['WowCompanionFaceB+'] and r['game'] == [],
+          "5b[%s] the next B is the fight's own again (m99: no close, the router's B)" % combat_tag, r)
+    check(clean(W) == {}, "5b[%s] no lockdown breach, no spied call, no handle / snippet error" % combat_tag, clean(W))
+# 5b: nothing named with nothing open, nor for a window ours holds (loot held: its own leave)
+W = world()
+pull(W)
+check(W.eval('WowCompanionFaceB.a["wc-pull-close"]') is None, "5b nothing open at the pull: no pull-close", W.eval('WowCompanionFaceB.a["wc-pull-close"]'))
+W = world()
+W.execute('LootFrame:Show(); fire("LOOT_OPENED"); advance(1)')
+pull(W)
+check(W.eval('WowCompanionFaceB.a["wc-pull-close"]') is None, "5b the loot held at the pull: no pull-close (its own leave)", W.eval('WowCompanionFaceB.a["wc-pull-close"]'))
+fight_end(W)
+check(W.eval('WowCompanionFaceB.a["wc-pull-close"]') is None, "5b the fight's end clears it", W.eval('WowCompanionFaceB.a["wc-pull-close"]'))
 
 print('%s (%d pass, %d xfail, %d fail, %d xpass)' % ('ALL PASS' if fails == 0 and xpasses == 0 else 'FAILED', passes, xfails, fails, xpasses))
 sys.exit(1 if (fails or xpasses) else 0)
