@@ -1047,7 +1047,9 @@ class InteractView(context: Context) : View(context) {
     private var fightLootAll = -1
     /** a press read by the app in a fight while the loot window shows: true = handled here */
     private fun fightLootPress(down: Int): Boolean {
-        if (kind != Kind.LOOT || doc?.optJSONObject("nav")?.optJSONObject("fight") == null || fightLootCmds.isEmpty()) return false
+        // combat_nav Step 3: only while the game has the pad (fightMode "game"); in room mode the add-on's own N.move drives the loot
+        if (kind != Kind.LOOT || !PadOwnerSync.appReadsLoot(doc?.optJSONObject("nav")?.optJSONObject("fight") != null, doc?.optString("fightMode"))
+            || fightLootCmds.isEmpty()) return false
         val i = fightLootCmds.indexOf(selected).coerceAtLeast(0)
         when {
             PadInput.isHeld(down, PadInput.SLOT_DPAD_UP) -> selected = fightLootCmds[max(0, i - 1)]

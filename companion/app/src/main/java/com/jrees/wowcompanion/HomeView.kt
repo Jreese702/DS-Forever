@@ -673,7 +673,7 @@ class HomeView(
         val n = msg.optInt("n", -1)
         if (n == homePadN) return
         homePadN = n
-        mapHeld = true
+        if (!mapHeld) mapHeldNow()                                // a press arrived: held (also after a "pending" answer)
         val k = msg.optString("k")
         // b129 (the user's pick "Right goes to buffs"): the buff / debuff list open = its keys; the cursor on an aura = the
         // auras' keys; else Right enters the auras, Left does nothing (no D-pad pan), SELECT = the map's filter (2026-10-09: Start
@@ -709,7 +709,13 @@ class HomeView(
         }
         if (mapWanted) {
             when (msg.optString("op")) {
-                "hold" -> if (msg.optBoolean("ok")) { mapHeld = true; mapBSaid = null; mapView.padHints = true; mapView.hostStart(); syncMapB(); mapFallbackOff() }
+                // combat_nav Step 1 (the user, 2026-11-11): "pending" (a fight's take until the ENTER tap) is NOT held: the guard reads B
+                // meanwhile; the first press that arrives (mapPad) makes it held
+                "hold" -> if (MapExitGuard.ackHeld(msg.optBoolean("ok"), msg.optString("why"))) mapHeldNow()
+                    else if (MapExitGuard.ackPending(msg.optBoolean("ok"), msg.optString("why"))) {
+                        Log.i(TAG, "map module: hold pending (the fight's ENTER)")
+                        mapHeld = false; mapRefused = false; mapFallbackOn(); removeCallbacks(mapWatch); postDelayed(mapWatch, 1000L)
+                    }
                     else {
                         Log.i(TAG, "map module: hold refused (${msg.optString("why")})"); homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))
                         // never a module the player cannot leave: B read by Home closes it (MapExitGuard), the hold asked again after the fight
@@ -721,7 +727,9 @@ class HomeView(
         }
         if (!chatWanted) { auraPane.onGuestAck(msg); return }
         when (msg.optString("op")) {
-            "hold" -> if (msg.optBoolean("ok")) {
+            "hold" -> if (MapExitGuard.ackPending(msg.optBoolean("ok"), msg.optString("why"))) {
+                chatHeld = false                                  // combat_nav Step 1 (2026-11-11): pending is not held; the first press holds
+            } else if (msg.optBoolean("ok")) {
                 chatHeld = true
                 // the Home button's B follows the chat's own chain (the Chat room's wiring, MainActivity's onBackChanged)
                 chatView.post { chatView.onBackChanged(chatView.bLeadsHome()) }
@@ -761,6 +769,8 @@ class HomeView(
         if (MapExitGuard.retry(mapWanted, mapHeld, inFight(), since)) { Log.i("WCLOG", "map module: the hold asked again (out of the fight)"); mapAsk(); return }
         if (!mapHeld) postDelayed(mapWatch, 1000L)
     }
+    /** the map module holds the controller now (a "held" answer, or the first press after "pending"): the guard off */
+    private fun mapHeldNow() { mapHeld = true; mapBSaid = null; mapView.padHints = true; mapView.hostStart(); syncMapB(); mapFallbackOff() }
     private fun mapFallbackOn() {
         if (mapFallbackReader != null) return
         Log.i("WCLOG", "map module: no controller hold (${if (mapRefused) "refused: a fight" else "no answer"}): B closes it")

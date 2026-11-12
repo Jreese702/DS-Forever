@@ -2414,7 +2414,8 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     fun onGuestAck(msg: JSONObject) {
         when (msg.optString("op")) {
-            "hold" -> { holdAsk.answered(); if (msg.optBoolean("ok")) { held = true; bSaid = "home"; syncB() } }
+            // combat_nav Step 1 (the user, 2026-11-11): "pending" (a fight's take until the ENTER tap) is not held; onPad holds
+            "hold" -> { holdAsk.answered(); if (msg.optBoolean("ok")) { held = MapExitGuard.ackHeld(true, msg.optString("why")); bSaid = "home"; syncB() } }
             "free", "leave" -> held = false
         }
         invalidate()

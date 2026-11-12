@@ -20,6 +20,14 @@ object MapExitGuard {
     fun retry(wanted: Boolean, held: Boolean, inFight: Boolean, sinceAskMs: Long): Boolean =
         wanted && !held && !inFight && sinceAskMs >= RETRY_MS
 
+    /** a hold answer that HOLDS (combat_nav_design Step 1, the user 2026-11-11: "If I am looking at the bottom map then I should be
+     *  able to press B to exit out of it"): ok AND not "pending". "pending" (a take in a fight, until the app's ENTER tap lands) is ok
+     *  but the game still has the pad, so it counts as NOT held: the fallback reader and MapExitGuard stay on until a press arrives. */
+    fun ackHeld(ok: Boolean, why: String?): Boolean = ok && why != "pending"
+
+    /** the hold answer was "pending": not held yet, the guard reads B meanwhile (QuestsView's rule, 635-639) */
+    fun ackPending(ok: Boolean, why: String?): Boolean = ok && why == "pending"
+
     /** a press of B in the read buttons: held now and not before (one close per press) */
     fun bPressed(before: Int, now: Int): Boolean =
         PadInput.isHeld(now, PadInput.SLOT_FACE_RIGHT) && !PadInput.isHeld(before, PadInput.SLOT_FACE_RIGHT)

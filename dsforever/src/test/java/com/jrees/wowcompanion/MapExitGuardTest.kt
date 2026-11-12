@@ -35,4 +35,22 @@ class MapExitGuardTest {
         assertFalse(MapExitGuard.bPressed(0, a))            // A is not B
         assertTrue(MapExitGuard.bPressed(a, a or b))
     }
+
+    // combat_nav_design Step 1 (the user, 2026-11-11: "If I am looking at the bottom map then I should be able to press B to exit out
+    // of it and then start fighting"): a fight's "pending" answer is not a hold, so the guard keeps reading B until a press arrives
+    @Test fun aPendingAnswerIsNotHeldAndKeepsTheGuardOn() {
+        val held = MapExitGuard.ackHeld(ok = true, why = "pending")
+        assertFalse(held)
+        assertTrue(MapExitGuard.ackPending(ok = true, why = "pending"))
+        assertTrue(MapExitGuard.fallback(wanted = true, held = held, refused = false, sinceAskMs = MapExitGuard.ANSWER_MS))
+    }
+
+    @Test fun aHeldAnswerTurnsTheGuardOff() {
+        val held = MapExitGuard.ackHeld(ok = true, why = "")
+        assertTrue(held)
+        assertFalse(MapExitGuard.ackPending(ok = true, why = ""))
+        assertFalse(MapExitGuard.fallback(wanted = true, held = held, refused = false, sinceAskMs = 60_000))
+        assertFalse(MapExitGuard.ackHeld(ok = false, why = "combat"))
+        assertFalse(MapExitGuard.ackPending(ok = false, why = "pending"))
+    }
 }

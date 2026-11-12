@@ -50,6 +50,14 @@ class RoomCombatCue(context: Context) : View(context) {
         invalidate()
     }
 
+    /** combat_nav Step 3: the pad could not be put where the bottom screen wants it (PadOwnerSync STUCK): one red flash, then the fade */
+    fun stuck() {
+        val now = SystemClock.uptimeMillis()
+        startAt = now; heardAt = now; endAt = -1
+        if (!active) { active = true; visibility = VISIBLE }
+        invalidate()
+    }
+
     /** Home shows, or the app goes away: no cue, at once */
     fun off() {
         if (!active) return

@@ -82,8 +82,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var questsPad: org.json.JSONObject? = null
     /** capture v9: while a room holds through a fight, every leave the app starts goes through ONE secure leave cell (Home's) */
     private val fightLeave = FightLeave()
-    /** SPEC_COMBAT 9 / 10: a room / window opened in a fight takes the controller through ONE secure tap on Interact's enter cell */
-    private val fightEnter = FightEnter()
+    /** combat_nav Step 3 (the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"):
+     *  in a fight the pad follows what the bottom screen wants - ENTER when something of ours is up and the mode is "game", LEAVE at Home
+     *  when it is "room" (Interact's doc.fightMode); it replaces SPEC_COMBAT 9 / 10's per-room enter tap and show()'s inline leave */
+    private val padOwner = PadOwnerSync()
+    private val padOwnerTick = object : Runnable {
+        override fun run() { padOwnerStep(); if (padOwner.mode != null) ui.postDelayed(this, PAD_OWNER_TICK_MS) }
+    }
+    private lateinit var gameMenuLock: GameMenuLock
     /** the capture ids of the room the app last left by its own show(), and when (uptime ms): HomeBack.isOwnLeave */
     private var leftIds: Set<String> = emptySet()
     private var leftAt = 0L
@@ -665,12 +671,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // overlay; it takes no touch
         roomCue = RoomCombatCue(this)
         content.addView(roomCue, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        // the user's decision 1 (2026-11-11): the game menu open at the pull keeps the game's pad, the bottom screen locked until it closes
+        gameMenuLock = GameMenuLock(this)
+        content.addView(gameMenuLock, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         interactView = InteractView(this)
         interactKb = ChatKeyboard(this, swap = false).apply { visibility = View.GONE }
         interactView.keyboard = interactKb
         interactView.padSource = { questsPad }
         dialogView = DialogView(this)
+        dialogView.appOwnsPad = { padOwner.roomMode() }          // combat_nav: a pop-up / a roll answered with the pad in a fight
+        dialogView.rollsOwnPad = { padOwner.holder == null || padOwner.holder == "app" }   // review 2026-11-11: never with a room's press
         startView = StartView(this)
         // INSIDE THE ONE APP (the native login.txt sign-in; the user: "injecting the keys is not the way to go"): the row never types -
         // its button saves / updates the login, which the game uses by itself at its next start (NativeLogin)
@@ -1106,20 +1117,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         barSelect.closeFor(r, room)
         // and the room's combat cue: a room shown anew is cued only once a document says it holds through the fight
         if (::roomCue.isInitialized && r != room) roomCue.off()
-        // MID-FIGHT (capture v9): a room holding through a fight lets go ONLY through the capture's secure leave cell - one tap, the same
-        // for every room and EVERY route that leaves it (a touch on a room or the Home disc, the bar cursor, a game window's jump, a
-        // whisper, the map pin). The rooms' own release / take taps below are refused in a fight (harmless)
-        val fightLeft = r != room && fightLeave.cell != null
-        if (r != room) fightLeave.leaveNow()?.let { (row, col) ->
-            val sent = TapBridge.tap(this, questsPad, row, col) { }
-            Log.i("WCHOME", "fight leave: $row $col ${if (sent) "sent" else "not sent"} ($room -> $r)")
-            ui.postDelayed({
-                fightLeave.retryNow()?.let { (rr, cc) ->
-                    val again = TapBridge.tap(this, questsPad, rr, cc) { }
-                    Log.i("WCHOME", "fight leave: once more $rr $cc (the room still held) ${if (again) "sent" else "not sent"}")
-                }
-            }, FightLeave.RETRY_MS)
-        }
+        // MID-FIGHT (combat_nav Step 3, 2026-11-11): the router in room mode lets go ONLY through the capture's secure leave cell, and
+        // PadOwnerSync taps it once nothing on the bottom screen wants the pad (Home); room to room is the add-on's in-place swap, so the
+        // new room's take goes out as usual. The old room's own release taps are skipped (refused in a fight anyway)
+        val fightLeft = r != room && padOwner.roomMode()
         // EVERY ROUTE THE SAME (the user 2026-10-01: "it should act the EXACT same for all rooms"; picked "Every room opens the game's own
         // window behind it, as Professions does"): the rooms whose hand-over lived on the touch path only (Settings, Bags, the Spellbook and
         // its Talents, Character) let go HERE, before the new room takes, for every route that leaves them - a touch, the bar cursor, a game
@@ -1222,9 +1223,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (calIn) calendarView.onShown()
         // ... and the same rooms take the controller here, for every route that brings them up (each tap guarded on the room not
         // holding already: a room the GAME opened holds before its jump lands here, so nothing is tapped then - the trainer lend too)
-        if (!fightLeft) touchRoomsEnter(was, r)
-        // a room shown in a fight whose take is pending (doc.enter came first) gets its enter tap now
-        fightEnterCheck()
+        touchRoomsEnter(was, r)
+        // in a fight the pad follows the room shown now (PadOwnerSync)
+        padOwnerStep()
         GameUi.onRoom(r)
     }
 
@@ -1250,26 +1251,41 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var socialTry = 0
 
     /**
-     * SPEC_COMBAT 9 / 10: the pending enter (Interact's doc.enter) is tapped ONCE when what waits is actually on screen - its room shown
-     * (HomeBack.roomsOf), or for "npc" Interact's window up (never a hidden or late one: Interact's ruling) - and once more after
-     * RETRY_MS while the same appearance is still pending (a tap lost to the park point; the cell is safe to repeat). Called from every
-     * current interact document and from show().
+     * combat_nav Step 3 (PadOwnerSync): does the bottom screen want the pad now - a room, a Home module (map, chat, an aura list, the
+     * tool), the bar cursor, a radial, the pause or target radial, InteractView or DialogView. Never while the game menu has it.
      */
-    private fun fightEnterCheck() {
-        val w = fightEnter.want ?: return
-        val onScreen = if (w.forId == "npc") ::interactView.isInitialized && interactView.visibility == View.VISIBLE
-            else room.name in HomeBack.roomsOf(w.forId)
-        if (!onScreen) return
-        val id = w.forId
-        fightEnter.enterNow(id)?.let { (row, col) ->
+    private fun bottomWantsPad(): Boolean =
+        room != Room.HOME || homeView.homeGuestWanted() || tradOpen() || radialView.isOpen || barSelect.open ||
+            (::pauseView.isInitialized && pauseView.isOpen) || spellsOverlay.visibility == View.VISIBLE ||
+            // a pop-up as the box, or the rolls open - never the folded rolls pill (DialogView.wantsPad; the review of 2026-11-11)
+            (::dialogView.isInitialized && dialogView.wantsPad()) ||
+            // a loot / NPC window left with B in this fight wants the pad no more (its LEAVE went out; Step 4)
+            (::interactView.isInitialized && interactView.visibility == View.VISIBLE && !padOwner.npcLeft)
+
+    /** one look of the reconciler: from every current interact document, show(), and a tick while a fight lasts */
+    private fun padOwnerStep() {
+        val now = SystemClock.uptimeMillis()
+        // combat_nav Step 4: B at a held window's top level (doc.fightBack stepped): the app's LEAVE, once
+        padOwner.backAsked()?.let { (row, col) ->
+            leftIds = setOfNotNull(padOwner.holder); leftAt = now
             val sent = TapBridge.tap(this, questsPad, row, col) { }
-            Log.i("WCHOME", "fight enter: $row $col for $id ${if (sent) "sent" else "not sent"}")
-            ui.postDelayed({
-                fightEnter.retryNow(id)?.let { (rr, cc) ->
-                    val again = TapBridge.tap(this, questsPad, rr, cc) { }
-                    Log.i("WCHOME", "fight enter: once more $rr $cc for $id (still pending) ${if (again) "sent" else "not sent"}")
-                }
-            }, FightEnter.RETRY_MS)
+            Log.i("WCHOME", "pad owner: B at the window's top level -> LEAVE $row $col ${if (sent) "sent" else "not sent"}")
+            return
+        }
+        val st = padOwner.step(bottomWantsPad(), now)
+        when (st.act) {
+            PadOwnerSync.Act.NONE -> {}
+            PadOwnerSync.Act.ENTER, PadOwnerSync.Act.LEAVE -> st.cell?.let { (row, col) ->
+                // the LEAVE's release by "B" is the app's own (it must never pull a room Home): HomeBack.isOwnLeave
+                if (st.act == PadOwnerSync.Act.LEAVE) { leftIds = setOfNotNull(padOwner.holder); leftAt = now }
+                val sent = TapBridge.tap(this, questsPad, row, col) { }
+                Log.i("WCHOME", "pad owner: ${st.act} $row $col ${if (sent) "sent" else "not sent"} (room $room, mode ${padOwner.mode})")
+            }
+            PadOwnerSync.Act.STUCK -> {
+                Log.w("WCLOG", "pad owner: STUCK - ${PadOwnerSync.TRIES} taps and the mode is still ${padOwner.mode} (room $room, " +
+                    "holder ${padOwner.holder ?: "-"})")
+                if (::roomCue.isInitialized) roomCue.stuck()
+            }
         }
     }
 
@@ -1588,7 +1604,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         fun synth(id: String, handle: (org.json.JSONObject) -> Unit): (String, Boolean, Boolean) -> Unit = { k, down, _ ->
             if (down) handle(org.json.JSONObject().put("type", "guestpad").put("id", id).put("k", k).put("n", --directN))
         }
-        fun live(id: String): () -> Boolean = { guestShown(id) && capHolder == "pad:$id" }
+        // combat_nav Step 3: in a fight's room mode the shown surface is live too (the in-place swap / the stray ENTER's "app" holder)
+        fun live(id: String): () -> Boolean = { PadOwnerSync.directLive(guestShown(id), capHolder == "pad:$id", padOwner.roomMode()) }
         val lr = setOf(DirectPadKeys.LB, DirectPadKeys.RB)
         DirectPad.register(DirectPad.Reg("quests", DirectPadKeys.EIGHT, repeat = setOf("PADDUP", "PADDDOWN"), active = live("quests")) { k, down, rp ->
             if (down) questsView.onDirect(k, rp) })
@@ -2144,8 +2161,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                         }, FightLeave.RETRY_MS)
                     }
                 }, FightLeave.SETTLE_MS)
-                // ... and a room or window wanting the controller in a fight waits for ONE tap on the enter cell (doc.enter)
-                if (current) { fightEnter.note(msg); fightEnterCheck() }
+                // ... and in a fight the pad follows the bottom screen (PadOwnerSync: ENTER / LEAVE on Interact's fightMode), the game menu
+                // open at the pull locking the bottom screen until it closes (the user's decision 1, 2026-11-11)
+                if (current) {
+                    val wasFight = padOwner.mode != null
+                    padOwner.note(msg, current)
+                    if (::gameMenuLock.isInitialized) gameMenuLock.locked = padOwner.gmLock
+                    padOwnerStep()
+                    if (!wasFight && padOwner.mode != null) { ui.removeCallbacks(padOwnerTick); ui.postDelayed(padOwnerTick, PAD_OWNER_TICK_MS) }
+                }
                 // B handed the controller back (interact's shared capture, rel.n / rel.by): Home, as the user ruled
                 // ... and the disc that showed B gets its press (the user: "Pushing B should have the button push effect and do the
                 // yellow flash"), on Home too (a window closed over Home)
@@ -3665,6 +3689,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         @Volatile private var sweepRegistered = false
         /** a holder seen with its room hidden this long is freed (the one rule for every room; see freeHidden) */
         private const val HIDDEN_GRACE = 3_000L
+        /** combat_nav Step 3: PadOwnerSync's look while a fight lasts (a surface opening or closing needs no hook of its own) */
+        private const val PAD_OWNER_TICK_MS = 150L
         /** a room left by the game's own B: its leave taps wait this long for the release (bPressed; the echo lands well within 1 s) */
         private const val B_LEAVE_MS = 1_000L
         private const val SETUP_SHOW_ANYWAY_MS = 120_000L   // b138: a waiting prompt shows by now at the latest (a new character's intro ran ~85 s)
