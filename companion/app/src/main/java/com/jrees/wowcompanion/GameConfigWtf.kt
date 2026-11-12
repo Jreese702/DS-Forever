@@ -128,4 +128,23 @@ object GameConfigWtf {
             WowSwitch.replace(configWtf, (updated.joinToString("\n") + "\n").toByteArray())
         }
     }
+
+    /**
+     * THE REPORT'S Config.wtf LINE (issue #57, 1.0.17: "no log in fields at sign in screen in game", a 47.7 GB folder named "World of
+     * Warcraft" copied whole; the client sat at 0 bytes with its window up and never read login.txt - the cause is not known). It
+     * says which keys the folder brings that DS Forever never sets itself, by NAME only (a value may be an account name), plus the portal
+     * and the number of SET lines, so the next report can tell a copied PC setting apart. Pure.
+     */
+    fun reportLine(text: String?): String {
+        if (text == null) return "missing"
+        val keys = text.lineSequence().mapNotNull { l ->
+            l.trim().takeIf { it.startsWith("SET ", ignoreCase = true) }?.drop(4)?.trim()?.split(" ", limit = 2)?.takeIf { it.size == 2 }
+        }.toList()
+        val ours = (CONFIG_DEFAULTS.keys + LOW_MEMORY_GRAPHICS.keys + listOf("portal", "agentUID")).map { it.lowercase() }.toSet()
+        val portal = keys.lastOrNull { it[0].equals("portal", ignoreCase = true) }?.get(1)?.trim('"') ?: "(none)"
+        val others = keys.map { it[0] }.filter { it.lowercase() !in ours }.distinct()
+        return "${keys.size} SET lines; portal $portal; not set by DS Forever: " +
+            if (others.isEmpty()) "none" else others.take(REPORT_KEYS).joinToString(" ") + if (others.size > REPORT_KEYS) " (+${others.size - REPORT_KEYS})" else ""
+    }
+    private const val REPORT_KEYS = 60
 }

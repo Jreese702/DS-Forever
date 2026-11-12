@@ -320,31 +320,57 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
         @Volatile var lastFetchWhy: String? = null
             internal set
 
-        /** one loose CDN file ([rel] under the CDN path) to [to], whole or not at all; every host, twice (CdnRetry) */
+        /**
+         * one loose CDN file ([rel] under the CDN path) to [to], whole or not at all; every host, twice (CdnRetry). Issue #41: a network
+         * error part-way KEEPS the .part and the next try asks for the rest (CdnResume); rounds go on while they still add bytes, and a
+         * part left by an earlier open is resumed too. [to] itself is only ever the whole, checked file.
+         */
         private fun download(hosts: List<String>, path: String, rel: String, to: File, missingIsFinal: Boolean = false): Boolean {
             to.parentFile?.mkdirs()
-            val tmp = File(to.path + ".part")
-            val why = CdnRetry.run(hosts, final = { missingIsFinal && looseRefusal(it) }) { host ->
-                val c = java.net.URL("https://$host/$path/$rel").openConnection() as java.net.HttpURLConnection
-                c.connectTimeout = 15_000; c.readTimeout = 60_000
-                try {
-                    if (c.responseCode != 200) return@run "HTTP ${c.responseCode}"
-                    // the big tables (ENCODING, ROOT) say how far they are (b-art-progress)
-                    val counter = tables?.takeIf { c.contentLengthLong >= TablesProgress.MIN_BYTES }
-                    counter?.start(c.contentLengthLong)
-                    c.inputStream.use { i -> tmp.outputStream().use { o ->
-                        val buf = ByteArray(1 shl 16); var n = 0L
-                        while (true) { val k = i.read(buf); if (k < 0) break; o.write(buf, 0, k); n += k; counter?.progress(n) }
-                    } }
-                    // whole and the right kind before it is used: a short or damaged answer never lands in the cache (p-casclib-1000)
-                    CascHeal.problem(rel, tmp, c.contentLengthLong)?.let { return@run "a damaged download ($it)" }
-                    if (!tmp.renameTo(to)) { to.delete(); if (!tmp.renameTo(to)) return@run "could not save it" }
-                    android.util.Log.i("WCHARVEST", "fetched $rel (${to.length()} bytes) from $host")
-                    counter?.finish()
-                    null
-                } finally { c.disconnect(); tmp.delete() }
+            // its own name: CdnArchives' range fetch of the same file uses <file>.part (truncated there), never this kept part
+            val tmp = File(to.path + ".loose.part")
+            var size = -1L                 // the whole file's length, once an answer said it
+            var round = 0
+            var why: String?
+            while (true) {
+                val before = if (tmp.isFile) tmp.length() else 0L
+                why = CdnRetry.run(hosts, final = { missingIsFinal && looseRefusal(it) }) { host ->
+                    val have = CdnResume.rangeFor(if (tmp.isFile) tmp.length() else 0L, size)
+                    if (have == 0L) tmp.delete()
+                    val c = java.net.URL("https://$host/$path/$rel").openConnection() as java.net.HttpURLConnection
+                    c.connectTimeout = 15_000; c.readTimeout = 60_000
+                    if (have > 0) c.setRequestProperty("Range", "bytes=$have-")
+                    var drop = false               // only an answer that proves the part wrong drops it (CdnResume.dropsPart)
+                    try {
+                        val from = when (val u = CdnResume.use(c.responseCode, c.getHeaderField("Content-Range"), c.contentLengthLong, have, size)) {
+                            is CdnResume.Use.Refuse -> { drop = CdnResume.dropsPart(u.why); return@run u.why }
+                            is CdnResume.Use.Append -> { size = u.size; have }
+                            is CdnResume.Use.Fresh -> { size = u.size; 0L }
+                        }
+                        // the big tables (ENCODING, ROOT) say how far they are (b-art-progress)
+                        val counter = tables?.takeIf { size >= TablesProgress.MIN_BYTES }
+                        counter?.start(size)
+                        c.inputStream.use { i -> java.io.RandomAccessFile(tmp, "rw").use { o ->
+                            o.setLength(from); o.seek(from)
+                            val buf = ByteArray(1 shl 16); var n = from
+                            counter?.progress(n)
+                            while (true) { val k = i.read(buf); if (k < 0) break; o.write(buf, 0, k); n += k; counter?.progress(n) }
+                        } }
+                        // whole and the right kind before it is used: a short or damaged answer never lands in the cache (p-casclib-1000)
+                        CascHeal.problem(rel, tmp, size)?.let { drop = CdnResume.dropsPart(null, damaged = true); return@run "a damaged download ($it)" }
+                        if (!tmp.renameTo(to)) { to.delete(); if (!tmp.renameTo(to)) return@run "could not save it" }
+                        android.util.Log.i("WCHARVEST", "fetched $rel (${to.length()} bytes) from $host" + if (from > 0) " (resumed at $from)" else "")
+                        counter?.finish()
+                        null
+                    } finally { c.disconnect(); if (drop) tmp.delete() }
+                }
+                if (why == null) break
+                val grew = (if (tmp.isFile) tmp.length() else 0L) - before
+                if (!CdnResume.keepGoing(grew, ++round)) break
+                android.util.Log.i("WCHARVEST", "resuming $rel at ${tmp.length()} bytes (round ${round + 1}; the last one stopped: $why)")
             }
-            if (why != null) { lastFetchWhy = why; android.util.Log.w("WCHARVEST", "could not fetch $rel: $why") }
+            if (why != null) { lastFetchWhy = why; android.util.Log.w("WCHARVEST", "could not fetch $rel: $why" +
+                if (tmp.isFile) " (${tmp.length()} bytes kept for the next try)" else "") }
             return why == null
         }
 

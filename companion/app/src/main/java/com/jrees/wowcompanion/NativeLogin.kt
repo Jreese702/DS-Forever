@@ -84,7 +84,22 @@ object NativeLogin {
     private var flavorDir: File? = null
     private val main = Handler(Looper.getMainLooper())
     private var lifeMs = MAX_LIFE_MS
-    private val timeout = Runnable { if (active) { logEvent("login.txt not read in ${lifeMs / 1000} s, deleting"); clear() } }
+    private val timeout = Runnable {
+        if (active) {
+            // issue #132: an unread file at its cap before the world = the client never reached its login screen in that time
+            if (!reachedWorld) expiredUnread = true
+            logEvent("login.txt not read in ${lifeMs / 1000} s, deleting" +
+                if (firstReadAt == 0L && preLogin.total > 0) " (the game received ${PreLoginTraffic.mb(preLogin.total)} MB since it started)" else "")
+            clear()
+        }
+    }
+
+    /** issue #132: the game's window appeared in this client run (a login screen needs one; set whatever the file's state) */
+    @Volatile var windowSeen = false; private set
+    /** issue #132: this run's file was deleted unread at its cap before the world (traffic after that is not a sign-in's) */
+    @Volatile private var expiredUnread = false
+    /** issues #132 / #42 / #57: what the client received before its first read of login.txt (main thread) */
+    internal val preLogin = PreLoginTraffic()
 
     /** the private shadow root (Wine's G:) */
     fun shadowRoot(ctx: Context) = File(ctx.filesDir, "gameroot")
@@ -98,7 +113,7 @@ object NativeLogin {
         clear()
         consumed = false; firstReadAt = 0L; pastLogin = false; quietFor = 0; quiet = false   // a new client run
         outOfWorld = false; reachedWorld = false; lifeMs = MAX_LIFE_MS; appCtx = ctx.applicationContext; changed()
-        playAt = System.currentTimeMillis(); windowArmed = false
+        playAt = System.currentTimeMillis(); windowArmed = false; windowSeen = false; expiredUnread = false; main.post { preLogin.reset() }
         val root = shadowRoot(ctx).apply { mkdirs() }
         val isLinkF = { f: File -> Files.isSymbolicLink(f.toPath()) }
         // test57: a flavor folder in the shadow that is a LINK into the shared game folder is unlinked first, and one that still resolves
@@ -169,19 +184,19 @@ object NativeLogin {
      * [NO_FILE_GRACE_S] after the game screen came up. Never while a written file still waits for its read.
      */
     private const val NO_FILE_GRACE_S = 60L
-    private fun signInTraffic(): Boolean = when {
-        consumed -> true
-        active -> false
-        else -> LauncherHooks.gameStartSec > 0 && System.currentTimeMillis() / 1000 - LauncherHooks.gameStartSec >= NO_FILE_GRACE_S
-    }
+    private fun signInTraffic(): Boolean = PreLoginTraffic.trafficIsSignIn(consumed, active, windowSeen, expiredUnread,
+        if (LauncherHooks.gameStartSec > 0) System.currentTimeMillis() / 1000 - LauncherHooks.gameStartSec else -1L, NO_FILE_GRACE_S)
 
     /** one second's received bytes of the game (the launcher's traffic loop): only [pastLogin]; the delete is [AFTER_READ_MS]'s */
     fun onTraffic(rxBytes: Long, txBytes: Long = -1L) {
-        main.post { worldTraffic(rxBytes); onTrafficSample?.invoke(rxBytes, txBytes) }
+        main.post {
+            worldTraffic(rxBytes); onTrafficSample?.invoke(rxBytes, txBytes)
+            if (PreLoginTraffic.counts(firstReadAt > 0L, pastLogin, reachedWorld)) preLogin.add(rxBytes, System.currentTimeMillis())?.let { logEvent(it) }
+        }
         if (!pastLogin && rxBytes >= PAST_LOGIN_BYTES && signInTraffic()) main.post {
             if (!pastLogin) {
                 pastLogin = true
-                logEvent("past the login screen ($rxBytes B/s)"); onChange?.invoke()
+                logEvent("past the login screen ($rxBytes B/s${if (!consumed) ", no login.txt read" else ""})"); onChange?.invoke()
             }
         }
     }
@@ -270,6 +285,7 @@ object NativeLogin {
      * (private 0600, deleted 20 s after the first read). Any thread.
      */
     fun gameWindowUp() = main.post {
+        windowSeen = true
         if (windowArmed || consumed || flavorDir == null) return@post
         windowArmed = true
         val ctx = appCtx ?: return@post
@@ -286,6 +302,16 @@ object NativeLogin {
         logEvent("login.txt written (game window up, ${(writtenAt - playAt) / 1000} s after Play)")
         changed()
     }
+
+    /**
+     * The report's "Before the login screen" line (issues #132 / #42 / #57): whether the window is up and the file was read, and what the
+     * client received before that read - minutes of megabytes = the game downloading its data; zero with the window up = a login screen
+     * that never read the file.
+     */
+    fun preLoginLine(): String =
+        "window up $windowSeen; login.txt written $active, read ${firstReadAt > 0L}, deleted unread at its cap $expiredUnread; " +
+            "past the login screen $pastLogin; received before the read: ${PreLoginTraffic.mb(preLogin.total)} MB " +
+            "(${PreLoginTraffic.mb(preLogin.lastMinute)} MB in the last whole minute)"
 
     /** the add-on's documents are current: the run is in the world (a re-login may follow a later logout / disconnect) */
     fun worldSeen() {
