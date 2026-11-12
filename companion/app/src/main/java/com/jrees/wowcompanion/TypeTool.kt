@@ -35,6 +35,17 @@ object GameTyping {
     /** the sign-in keyboard sends [c]: the stream's Battle.net takes any character, a local game its printable ASCII ([signInAllowed]) */
     fun signInSends(c: Char, toPc: Boolean): Boolean = toPc || signInAllowed(c)
 
+    /** what one change of the sign-in keyboard's stand-in text ([held] -> [new]) does: one Backspace, one character sent, or nothing */
+    sealed class SignInOp { object Back : SignInOp(); data class Send(val c: Char) : SignInOp(); object Drop : SignInOp() }
+
+    /** SignInBoard.onText's whole decision (pure, so the #160 / #180 '@' path is tested end to end): shorter = Back, else its last character */
+    fun signInOp(held: String, new: String, toPc: Boolean): SignInOp = when {
+        new.length < held.length -> SignInOp.Back
+        new.isEmpty() -> SignInOp.Drop
+        signInSends(new.last(), toPc) -> SignInOp.Send(new.last())
+        else -> SignInOp.Drop
+    }
+
     /** the report's line as the sign-in keyboard closes: whether a Shift key went out, how many characters were not sent (no count of keys) */
     fun boardClosedLine(shifted: Boolean, dropped: Int): String =
         "sign-in: keyboard (bottom) closed, shifted keys ${if (shifted) "sent" else "none"}, not sent $dropped"

@@ -12,7 +12,7 @@ import org.junit.Test
  * keyboard dropped every character but letters, digits and space on a local game, so an email could never be typed.
  */
 class SignInKeysTest {
-    @After fun reset() { InputSink.sink = null }
+    @After fun reset() { InputSink.sink = null; InputSink.pause = { Thread.sleep(it) } }
 
     private class Rec : InputSink.Sink {
         val keys = ArrayList<Pair<Int, Boolean>>()
@@ -49,6 +49,49 @@ class SignInKeysTest {
         val r = Rec(); InputSink.sink = r
         assertTrue(InputSink.typeText("a@"))
         assertEquals(listOf(38 to true, 38 to false, 50 to true, 11 to true, 11 to false, 50 to false), r.keys)
+    }
+
+    /** keys and waits in one list: a wait is (-ms, false) */
+    private fun recordWithWaits(): Rec { val r = Rec(); InputSink.sink = r; InputSink.pause = { ms -> synchronized(r.keys) { r.keys += -ms.toInt() to false } }; return r }
+
+    @Test fun theShiftLeadsAndOutlastsTheKeyWithTheTopKeyboardsTiming() {
+        val r = recordWithWaits()
+        assertTrue(InputSink.typeText("@"))
+        val lead = -InputSink.SHIFT_LEAD_MS.toInt(); val hold = -InputSink.KEY_HOLD_MS.toInt()
+        assertEquals(listOf(50 to true, lead to false, 11 to true, hold to false, 11 to false, lead to false, 50 to false, -12 to false), r.keys)
+    }
+
+    /** the board's text changes for typing [s] on a local game, as SignInBoard.onText gets them (the stand-in "x" + one character each) */
+    private fun boardOps(s: String, toPc: Boolean = false) = s.map { GameTyping.signInOp("x", "x$it", toPc) }
+
+    @Test fun theBoardSendsAnEmailsAtSignAndDotOnALocalGame() {
+        // the #160 / #180 bug site: with the old filter (GameTyping.allowed) '@' and '.' were Drop here
+        assertEquals("a@b.c".map { GameTyping.SignInOp.Send(it) }, boardOps("a@b.c"))
+        assertEquals(GameTyping.SignInOp.Back, GameTyping.signInOp("x", "", toPc = false))
+        assertEquals(GameTyping.SignInOp.Drop, GameTyping.signInOp("x", "x\t", toPc = false))
+        assertEquals(GameTyping.SignInOp.Drop, GameTyping.signInOp("x", "xé", toPc = false))
+        assertEquals(GameTyping.SignInOp.Send('é'), GameTyping.signInOp("x", "xé", toPc = true))
+    }
+
+    @Test fun anEmailTypedOnTheBoardReachesALocalGameAsShiftTwoAndPeriod() {
+        val r = Rec(); InputSink.sink = r; InputSink.pause = {}
+        for (op in boardOps("a@b.c")) assertTrue(InputSink.typeText((op as GameTyping.SignInOp.Send).c.toString()))
+        // a, Shift+2 (@), b, period, c
+        assertEquals(listOf(38 to true, 38 to false, 50 to true, 11 to true, 11 to false, 50 to false, 56 to true, 56 to false,
+            60 to true, 60 to false, 54 to true, 54 to false), r.keys)
+    }
+
+    @Test fun theSignInBoardDecidesThroughSignInOp() {
+        // guards the one-line wiring: the board must not go back to the pause wheel's filter
+        val f = listOf("dsforever/src/main/java/com/jrees/wowcompanion/stream/StreamSignIn.kt", "src/main/java/com/jrees/wowcompanion/stream/StreamSignIn.kt")
+            .map { java.io.File(it) }.first { it.exists() }
+        val board = f.readText().substringAfter("class SignInBoard(").substringBefore("\nclass ")
+            .lines().map { it.substringBefore("//") }.filterNot { it.trim().startsWith("*") || it.trim().startsWith("/*") }.joinToString("\n")
+        val onText = board.substringAfter("onText = {").substringBefore("onSend =")
+        assertTrue(onText.contains("GameTyping.signInOp(HELD, new, toPc())"))
+        assertTrue(onText.contains("InputSink.signInChar(op.c)"))
+        assertFalse(board.contains("GameTyping.allowed"))
+        assertFalse(board.contains("gameKeys("))
     }
 
     @Test fun theToolKeyboardRulingIsUnchanged() {

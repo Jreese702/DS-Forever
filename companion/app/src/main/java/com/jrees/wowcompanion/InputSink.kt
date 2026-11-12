@@ -193,16 +193,18 @@ object InputSink {
         val keys = text.map { charKey(it) ?: return false }
         for ((k, shift) in keys) {
             if (shift) {
-                s.key(SHIFT_L, true); Thread.sleep(SHIFT_LEAD_MS)
-                s.key(k, true); Thread.sleep(KEY_HOLD_MS); s.key(k, false)
-                Thread.sleep(SHIFT_LEAD_MS); s.key(SHIFT_L, false)
+                s.key(SHIFT_L, true); pause(SHIFT_LEAD_MS)
+                s.key(k, true); pause(KEY_HOLD_MS); s.key(k, false)
+                pause(SHIFT_LEAD_MS); s.key(SHIFT_L, false)
             } else { s.key(k, true); s.key(k, false) }
-            Thread.sleep(CHAR_GAP_MS)
+            pause(CHAR_GAP_MS)
         }
         return true
     }
-    private const val SHIFT_LEAD_MS = 20L
-    private const val KEY_HOLD_MS = 35L
+    const val SHIFT_LEAD_MS = 20L
+    const val KEY_HOLD_MS = 35L
+    /** [typeText]'s waits (a unit test records them to prove the Shift lead / hold shape; the app always sleeps) */
+    @JvmStatic var pause: (Long) -> Unit = { Thread.sleep(it) }
 
     private fun keyTap(code: Int) { val s = sink ?: return; s.key(code, true); Thread.sleep(KEY_GAP_MS); s.key(code, false) }
     private fun click(at: Pair<Float, Float>) { sink?.tap(at.first, at.second) }

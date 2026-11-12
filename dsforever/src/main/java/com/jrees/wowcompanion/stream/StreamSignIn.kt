@@ -126,11 +126,10 @@ class SignInBoard(c: Context, private val onClose: () -> Unit) : FrameLayout(c) 
         onText = { new ->
             // issues #160 / #180 / #174 / #190: a local game took only letters, digits and space here (GameTyping.allowed), so an
             // email's '@' and '.' never reached it. Now a local game takes printable ASCII (GameTyping.signInSends); the stream any character
-            if (new.length < HELD.length) { InputSink.signInBack(); count = (count - 1).coerceAtLeast(0) }
-            else {
-                val ch = new.last()
-                if (GameTyping.signInSends(ch, toPc())) { InputSink.signInChar(ch); count++; if (InputSink.charKey(ch)?.second == true) shifted = true }
-                else dropped++
+            when (val op = GameTyping.signInOp(HELD, new, toPc())) {
+                GameTyping.SignInOp.Back -> { InputSink.signInBack(); count = (count - 1).coerceAtLeast(0) }
+                is GameTyping.SignInOp.Send -> { InputSink.signInChar(op.c); count++; if (InputSink.charKey(op.c)?.second == true) shifted = true }
+                GameTyping.SignInOp.Drop -> dropped++
             }
             dots.invalidate()
         }
