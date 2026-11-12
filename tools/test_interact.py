@@ -71,7 +71,7 @@ function LASTT() for i = #SENT, 1, -1 do if SENT[i].type == "chatt" then return 
 chat = open(os.path.join(addons, "WowCompanion", "Chat.lua"), encoding="utf-8").read()
 src = open(os.path.join(addons, "WowCompanionInteract", "Interact.lua"), encoding="utf-8").read()
 src = src.replace("local ADDON = ...", "local ADDON = 'x'", 1)
-src += "\n_G.__N = N; _G.__ACT = ACT; _G.__ON = ON; _G.__MAIL = MAIL; _G.__AH = AH; _G.__build = buildDoc\n"
+src += "\n_G.__N = N; _G.__ACT = ACT; _G.__ON = ON; _G.__MAIL = MAIL; _G.__AH = AH; _G.__build = buildDoc; _G.__LOOT = LOOT\n"
 names = sys.argv[1:] or sorted(n for n in os.listdir(HERE) if n.startswith("t_") and n.endswith(".lua"))
 fails = 0
 for n in names:

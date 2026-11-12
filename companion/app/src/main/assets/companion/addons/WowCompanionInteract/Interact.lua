@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i148"     -- bump on every change; i148: COMBAT NAV REVIEW FIXES (the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): a stray ENTER's "app" holder ends with the fight (released at PLAYER_REGEN_ENABLED, never re-bound); Step 5a's "left behind" looks only at the held window's own frames, counts a fading loot window as closed and looks again every half second of the fight (N.behindCheck), the shields of what closed go at once; a fight that began in the game menu stays the game's to its end (no ENTER, doc.gmFight); while the app shows a pop-up as its box in a fight, A and B are the app's alone (Dialogs d28 WC.dialogs.mirrored); i147: COMBAT NAV STEP 5 (combat_nav_design.md; the user, 2026-11-11: "If I am looting ... my dpad should not stop working"): 5a the fight's leave never unhides a window it could not close (hidden by alpha, the shields kept, N.release waits) until PLAYER_REGEN_ENABLED, when the out-of-combat path takes it back (an NPC window held again, anything else released); 5c a pre-aimed leave per game window (WowCompanionRoomLeave1..7 on Dialogs d27's cells: loot, map, gossip, quest, merchant, trainer, bank; aimed out of combat at each window's own close) and doc.fightLeave names the held window's own one (an npc hold, a room taken mid-fight) - the pull's generic leave stays with the holder it was aimed for (N.fcFor); i146: COMBAT NAV STEP 4 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): B in room mode goes to our sink as PAD2 like every other key (wc-room-dest), so the app's own B chain decides; LT + RT + B is the secure escape (wc-esc = the leave button, PadMap m135); B at a held window's top level in a fight never runs the game's close from our code - it steps doc.fightBack and the app taps the LEAVE; doc.npcLeft says a window left with B wants the pad no more; i145: COMBAT NAV STEP 3 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): the document reports who has the pad in a fight (fightMode "room" / "game", read back from the router's wc-mode) and the ENTER cell always (fightEnter) for the app's reconciler (PadOwnerSync); room to room in a fight is an IN-PLACE SWAP for every guest holder (the old one lost "taken", nothing written, its window kept hidden by alpha); a stray ENTER holds as the guest "app" (keys swallowed, never the orphan-NPC leave); i144: COMBAT NAV STEP 2 (combat_nav_design.md; the user, 2026-11-11: "everything on the bottom screen breaks in combat"): every pull keeps what holds - a room whatever the Hub's NPC-windows bit, an "npc" hold with it - and ONLY the game menu open at the pull lets go (its lock: doc.gmLock while it shows); the fight hold is built (F.make) and armed (N.armIdle) out of combat at every document, so a /reload in a fight blocks nothing and arms at its end; loot in a fight is the bottom screen's whatever the loot-on-top switch (LOOT.top reads off in the lockdown) and the NPC-windows bit (N.fightLoot); the fight's end gives an "npc" holder its bindings and the grab back (N.check); i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
+local IV = "i148"     -- bump on every change; i145 (accept-space): (the user, 2026-11-11, i144 follow-up) QuestieDB is asked BEFORE the starter shortcut: the server checks room for the item a quest hands out before it uses up the starter, so an item-begun quest that hands out ANOTHER item still opens Make Space first with full bags (LOOT.acceptNeedsRoom); i144 (accept-space): ACCEPT WITH FULL BAGS ASKS FOR SPACE ONLY WHEN THE QUEST GIVES AN ITEM (the user, 2026-11-11: "Accepting that quest with a full bag asked me to delete an Item but I didn't actually need more space"; [Ripped Missive] started it): a quest begun from a bag item frees that item's slot, so it is accepted at once; otherwise QuestieDB (when installed) says whether the quest hands out an item (its sourceItemId); unknown = Make Space first as before (LOOT.acceptNeedsRoom); i148: COMBAT NAV REVIEW FIXES (the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): a stray ENTER's "app" holder ends with the fight (released at PLAYER_REGEN_ENABLED, never re-bound); Step 5a's "left behind" looks only at the held window's own frames, counts a fading loot window as closed and looks again every half second of the fight (N.behindCheck), the shields of what closed go at once; a fight that began in the game menu stays the game's to its end (no ENTER, doc.gmFight); while the app shows a pop-up as its box in a fight, A and B are the app's alone (Dialogs d28 WC.dialogs.mirrored); i147: COMBAT NAV STEP 5 (combat_nav_design.md; the user, 2026-11-11: "If I am looting ... my dpad should not stop working"): 5a the fight's leave never unhides a window it could not close (hidden by alpha, the shields kept, N.release waits) until PLAYER_REGEN_ENABLED, when the out-of-combat path takes it back (an NPC window held again, anything else released); 5c a pre-aimed leave per game window (WowCompanionRoomLeave1..7 on Dialogs d27's cells: loot, map, gossip, quest, merchant, trainer, bank; aimed out of combat at each window's own close) and doc.fightLeave names the held window's own one (an npc hold, a room taken mid-fight) - the pull's generic leave stays with the holder it was aimed for (N.fcFor); i146: COMBAT NAV STEP 4 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): B in room mode goes to our sink as PAD2 like every other key (wc-room-dest), so the app's own B chain decides; LT + RT + B is the secure escape (wc-esc = the leave button, PadMap m135); B at a held window's top level in a fight never runs the game's close from our code - it steps doc.fightBack and the app taps the LEAVE; doc.npcLeft says a window left with B wants the pad no more; i145: COMBAT NAV STEP 3 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): the document reports who has the pad in a fight (fightMode "room" / "game", read back from the router's wc-mode) and the ENTER cell always (fightEnter) for the app's reconciler (PadOwnerSync); room to room in a fight is an IN-PLACE SWAP for every guest holder (the old one lost "taken", nothing written, its window kept hidden by alpha); a stray ENTER holds as the guest "app" (keys swallowed, never the orphan-NPC leave); i144: COMBAT NAV STEP 2 (combat_nav_design.md; the user, 2026-11-11: "everything on the bottom screen breaks in combat"): every pull keeps what holds - a room whatever the Hub's NPC-windows bit, an "npc" hold with it - and ONLY the game menu open at the pull lets go (its lock: doc.gmLock while it shows); the fight hold is built (F.make) and armed (N.armIdle) out of combat at every document, so a /reload in a fight blocks nothing and arms at its end; loot in a fight is the bottom screen's whatever the loot-on-top switch (LOOT.top reads off in the lockdown) and the NPC-windows bit (N.fightLoot); the fight's end gives an "npc" holder its bindings and the grab back (N.check); i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -931,6 +931,48 @@ function LOOT.roomNow(freed)
         if okI and type(it) == "table" and TN(function() return it.itemID end) then pending = pending + 1 end
     end
     return LOOT.freeGeneral() + pending
+end
+
+-- i144 (the user, 2026-11-11: "Accepting that quest with a full bag asked me to delete an Item but I didn't actually need more space";
+-- the quest came from a bag item, [Ripped Missive]): does accepting quest `id` need a free slot? Read only.
+-- QuestieDB (optional, the data-only add-on Quests reads) is asked FIRST: the server checks room for the item a quest hands out
+-- (its sourceItemId) BEFORE it uses up the starter, so a full bag refuses such an accept even when the quest began from a bag item.
+-- 1. QuestieDB knows the quest and it hands out an item other than the starter: true, Make Space first;
+-- 2. begun from an item (QUEST_DETAIL's questStartItemID, kept in LOOT.qStart) as a single item (not a stack) in a general bag:
+--    false, the starter is used up and frees its slot (QuestieDB missing, not knowing the quest, or saying nothing / the starter);
+-- 3. QuestieDB knows the quest and it hands out nothing: false;
+-- 4. else (no QuestieDB, a quest it does not know): unknown = true, Make Space first as before.
+function LOOT.acceptNeedsRoom(id)
+    local sid = LOOT.qStart
+    if type(sid) ~= "number" then sid = 0 end
+    local known, give = false, nil         -- give: QuestieDB's sourceItemId (0 = none), when it knows the quest
+    local L = _G.LibQuestieDB
+    if type(L) == "table" and type(L.RequireContract) == "function" then
+        local okC, okR = pcall(L.RequireContract, 1)
+        local Q = (okC and okR == true) and (type(L.QuestDB) == "table" and L.QuestDB or _G.QuestDB) or nil
+        if type(Q) == "table" and type(Q.name) == "function" and type(Q.sourceItemId) == "function" then
+            local okN, name = pcall(Q.name, id)
+            if okN and type(name) == "string" and name ~= "" then
+                local okS, item = pcall(Q.sourceItemId, id)
+                if okS and (item == nil or type(item) == "number") then known, give = true, item or 0 end
+            end
+        end
+    end
+    if known and give ~= 0 and give ~= sid then return true end
+    if sid > 0 then
+        for bag = 0, 4 do
+            local okF, _, fam = CALL(function() return C_Container.GetContainerNumFreeSlots(bag) end)
+            if okF and (fam == nil or (type(fam) == "number" and fam == 0)) then
+                for sl = 1, math.min(TN(function() return C_Container.GetContainerNumSlots(bag) end) or 0, 40) do
+                    local okI, it = CALL(function() return C_Container.GetContainerItemInfo(bag, sl) end)
+                    if okI and type(it) == "table" and TN(function() return it.itemID end) == sid
+                       and (TN(function() return it.stackCount end) or 1) <= 1 then return false end
+                end
+            end
+        end
+    end
+    if known and give == 0 then return false end
+    return true
 end
 
 function LOOT.questFirst(rt)
@@ -2544,11 +2586,13 @@ local ON = {
     GOSSIP_CLOSED = function() mark("gossip", false) end,
     -- i143: a window another add-on already closed (inside this same event) is not opened
     QUEST_GREETING = function() questStage = "greeting"; if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
-    QUEST_DETAIL = function() questStage = "detail"; if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
+    QUEST_DETAIL = function(startItem) questStage = "detail"; LOOT.qStart = tonumber(startItem) or 0    -- i144: the item it began from
+        if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
     QUEST_PROGRESS = function() questStage = "progress"; if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
     QUEST_COMPLETE = function() questStage = "complete"; if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
     QUEST_FINISHED = function()
         if LOOT.ms == "quest" then LOOT.full, LOOT.ms, LOOT.retry, LOOT.hold, LOOT.rare = false, nil, nil, nil, nil end
+        LOOT.qStart = nil
         mark("quest", false)
     end,
     MERCHANT_SHOW = function() mark("merchant", true) end,
@@ -2808,10 +2852,13 @@ end
 -- WITH COMPLETELY FULL BAGS (the user, 2026-10-05: "Make space first"): Make Space opens before the game is asked (the game
 -- cannot say whether the quest hands out an item, and it closes its window at once); after the delete the quest is accepted;
 -- B there = accept anyway (a quest that gives nothing).
+-- i144 (the user, 2026-11-11: "Accepting that quest with a full bag asked me to delete an Item but I didn't actually need more space"):
+-- only when the quest may hand out an item (LOOT.acceptNeedsRoom: not one begun from a bag item, not one QuestieDB says gives nothing).
 function ACT.accept(a, anyway)
     local id, why = questGuard("detail", a)
     if not id then return false, why end
-    if anyway ~= "anyway" and not TB(function() return QuestGetAutoAccept() end) and LOOT.freeGeneral() == 0 then
+    if anyway ~= "anyway" and not TB(function() return QuestGetAutoAccept() end) and LOOT.freeGeneral() == 0
+       and LOOT.acceptNeedsRoom(id) then
         return LOOT.questFirst({ cmd = "accept", a = a, anyway = true, title = TS(function() return GetTitleText() end) })
     end
     if TB(function() return QuestGetAutoAccept() end) then
