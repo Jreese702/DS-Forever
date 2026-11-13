@@ -122,7 +122,7 @@ end
 function body(n) local _, m = at(n); return m and m.body end
 function nmac() return #mymac() end
 -- the CVars (this client's error speech), every write logged
-CVARS = { Sound_EnableErrorSpeech = "1" }
+CVARS = { Sound_EnableErrorSpeech = "1", Sound_EnableSFX = "1" }
 CVLOG = {}
 C_CVar = { GetCVar = function(k) return CVARS[k] end, SetCVar = function(k, v) CVLOG[#CVLOG + 1] = k .. "=" .. tostring(v); CVARS[k] = tostring(v) end }
 function GetCVar(k) return CVARS[k] end
@@ -220,15 +220,19 @@ function padtab(col) WowCompanion.pad.rows["padtab"].handler(nil, col) end
 '''
 
 
-def boot():
+def boot(macros_loaded=True, pre=None):
     L = lupa.LuaRuntime(unpack_returned_tuples=True)
     L.execute(GAME)
     L.execute(EXTRA)
+    if pre:
+        L.execute(pre)                                                # m147: a later load's saved state (and the macro window's)
     load = L.eval('function(src, name) local f, e = loadstring(src, name); if not f then error(e) end; return f end')
     for k in ("safety", "tappad", "book", "padmap", "padtabctl"):
         load(SRC[k], '@' + os.path.basename(F[k]))(os.path.basename(F[k]))
     L.execute(WORLD_HELPERS)
     L.execute('fire("PLAYER_LOGIN"); fire("PLAYER_ENTERING_WORLD", true, false); runTimers(NOW + 10)')
+    if macros_loaded:
+        L.execute('fire("UPDATE_MACROS"); runTimers(NOW + 1)')       # the game: the macros arrive (m147 waits for them)
     L.execute(AFTER)
     L.execute('WowCompanion.padMap.emit(true); runTimers(NOW + 1)')
     return L
@@ -301,7 +305,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl", "book"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m146"' in SRC["padmap"] and 'local CV = "p46"' in SRC["padtabctl"] and 'local BV = "b52"' in SRC["book"],
+check('local PV = "m147"' in SRC["padmap"] and 'local CV = "p47"' in SRC["padtabctl"] and 'local BV = "b52"' in SRC["book"],
       "the versions: PadMap m146, PadTabCtl p46, Book b52")
 check(all('this should be per button/ button modifier combo' in SRC[k] for k in ("padmap", "padtabctl", "book")),
       "each changed file's header note quotes the user")
@@ -387,17 +391,25 @@ check(kind == "slotfight" and mac == "DSF ZR+Up" and got[:1] == ["runmacro:DSF Z
       "k. in a fight ZR + Up runs OUR saved macro by name (the router's macro attribute)", (kind, mac, got))
 check(got[1:] == ["m:/run DSF_SR0()", "m:/cast Raptor Strike(Rank 1)", "m:/cast Arcane Shot(Rank 1)", "m:/run DSF_SR1()"],
       "k. its lines in order: SR0, Raptor Strike, Arcane Shot, SR1", got)
-check(W.eval('CVLOG[1]') == "Sound_EnableErrorSpeech=0" and W.eval('CVLOG[2]') == "Sound_EnableErrorSpeech=1" and W.eval('#CVLOG') == 2
-      and W.eval('CVARS.Sound_EnableErrorSpeech') == "1" and W.eval('CLEARS') >= 1,
-      "d. SR0 turned the error speech off, SR1 gave the player's own value back (on), the error text cleared", (W.eval('#CVLOG'), W.eval('CLEARS')))
+CVL = [W.eval('CVLOG[%d]' % i) for i in range(1, int(W.eval('#CVLOG')) + 1)]
+check(CVL[:2] == ["Sound_EnableErrorSpeech=0", "Sound_EnableSFX=0"] and sorted(CVL[2:]) == ["Sound_EnableErrorSpeech=1", "Sound_EnableSFX=1"]
+      and W.eval('CVARS.Sound_EnableErrorSpeech') == "1" and W.eval('CVARS.Sound_EnableSFX') == "1" and W.eval('CLEARS') >= 1,
+      "d. SR0 turned the error speech AND the error sound (m147: Sound_EnableSFX) off, SR1 gave the player's own values back (on), "
+      "the error text cleared", (CVL, W.eval('CLEARS')))
 W.execute('trig(false, false); hit(2)')
 check(W.eval('router(2).a["macro"]') is None, "k. a bare D-pad Up press in the same fight: no saved macro (the attribute cleared)")
 W.execute('trig(false, false); fightOff()')
 clean(W, "k")
 
 # ================================================================ d. SR0 / SR1: already off, a missed SR1
-W.execute('CVARS.Sound_EnableErrorSpeech = "0"; CVLOG = {}; DSF_SR0(); DSF_SR1()')
-check(W.eval('#CVLOG') == 0 and W.eval('CVARS.Sound_EnableErrorSpeech') == "0", "d. the player's own OFF: never written, never forced on")
+W.execute('CVARS.Sound_EnableErrorSpeech = "0"; CVARS.Sound_EnableSFX = "0"; CVLOG = {}; DSF_SR0(); DSF_SR1()')
+check(W.eval('#CVLOG') == 0 and W.eval('CVARS.Sound_EnableErrorSpeech') == "0" and W.eval('CVARS.Sound_EnableSFX') == "0",
+      "d. the player's own OFF (both): never written, never forced on")
+W.execute('CVARS.Sound_EnableErrorSpeech = "1"; CVARS.Sound_EnableSFX = "0"; CVLOG = {}; DSF_SR0(); DSF_SR1()')
+check(W.eval('CVARS.Sound_EnableErrorSpeech') == "1" and W.eval('CVARS.Sound_EnableSFX') == "0" and W.eval('#CVLOG') == 2,
+      "d. m147: speech on, sound effects off (the player's own): the sound effects never written, speech given back", W.eval('#CVLOG'))
+W.execute('CVARS.Sound_EnableSFX = nil; CVLOG = {}; DSF_SR0(); DSF_SR1(); CVARS.Sound_EnableSFX = "1"')
+check(W.eval('#CVLOG') == 2 and W.eval('CVLOG[1]') == "Sound_EnableErrorSpeech=0", "d. a CVar the client does not have: skipped", W.eval('#CVLOG'))
 W.execute('CVARS.Sound_EnableErrorSpeech = "1"; CVLOG = {}; DSF_SR0()')
 check(W.eval('CVARS.Sound_EnableErrorSpeech') == "0", "d. SR0 alone: off")
 W.execute('runTimers(NOW + 2)')
@@ -566,6 +578,97 @@ check(slot_doc(Y, 1, 6).get('sr') is None and Y.eval('FACEE(6).n') == 'Raptor St
 check(ctl(Y).get('view') == 'combat', "l. a padtab 0 after the pick is NOT the WoW Defaults tab")
 dump(Y, "off")
 clean(Y, "l")
+
+# ================================================================ m. PadMap m147 / PadTabCtl p47: the review of m146 / p46
+# (the user, 2026-11-12: "okay so I was skeptical and so I tried it with a different melee skill, wing clip and it did not work")
+check('local PV = "m147"' in SRC["padmap"] and 'local CV = "p47"' in SRC["padtabctl"]
+      and all('I tried it with a different melee skill, wing clip and it did not work' in SRC[k] for k in ("padmap", "padtabctl")),
+      "m. the versions: PadMap m147, PadTabCtl p47, each with the user's words")
+# m1. a login before the game has loaded the macros: nothing made; the macros arrive: ONE macro (ours read back, never a second copy)
+SER = r"""
+function ser(v)
+    if type(v) == "table" then local t = {} for k, x in pairs(v) do t[#t + 1] = "[" .. ser(k) .. "]=" .. ser(x) end return "{" .. table.concat(t, ",") .. "}"
+    elseif type(v) == "string" then return string.format("%q", v) else return tostring(v) end
+end
+"""
+HIDE = r"""
+MHIDE = true
+local g1, g2, g3 = GetNumMacros, GetMacroInfo, GetMacroIndexByName
+function GetNumMacros() if MHIDE then return 0, 0 end return g1() end
+function GetMacroInfo(x) if MHIDE then return nil end return g2(x) end
+function GetMacroIndexByName(n) if MHIDE then return 0 end return g3(n) end
+"""
+G = boot()
+G.execute('PM.srToggle(1, 3, 2, true); PM.srPut(1, 3, 2, "m", bs(2973)); PM.srPut(1, 3, 2, "r", bs(3044))')
+check(G.eval('nmac()') == 1 and G.eval('HDR("wc-ftm-%d")' % S) == "DSF ZR+Up", "m1. (the pair made: one macro, the router runs it)")
+G.execute(SER)
+SAVED = 'WowCompanionSpellsDB = ' + G.eval('ser(WowCompanionSpellsDB)') + '; CHARM = ' + G.eval('ser(CHARM)')
+# the next load (a fresh Lua state): the saved variables and the server's macros there, the macros not yet given to the UI
+G = boot(macros_loaded=False, pre=SAVED + HIDE + 'MLOG = {}')
+check(mlog(G) == [] and G.eval('nmac()') == 1, "m1. a login before the game has loaded the macros: nothing made, renamed or deleted (m147 waits)", mlog(G))
+G.execute('MHIDE = false; fire("UPDATE_MACROS"); runTimers(NOW + 2)')
+check(mlog(G) == [] and G.eval('nmac()') == 1 and G.eval('HDR("wc-ftm-%d")' % S) == "DSF ZR+Up",
+      "m1. the macros arrive (UPDATE_MACROS): our own read back, still ONE, the router runs it", (mlog(G), G.eval('nmac()')))
+clean(G, "m1")
+# m2. a second copy of ours (left by an older login): deleted by its index; the player's own untouched
+G.execute('table.insert(mymac(), { name = "Mine", body = "/say mine" }); table.insert(mymac(), { name = "DSF ZR+Up", body = body("DSF ZR+Up") })')
+G.execute('MLOG = {}; PM.srSync()')
+names = [G.eval('mymac()[%d].name' % i) for i in range(1, int(G.eval('nmac()')) + 1)]
+check(names == ["DSF ZR+Up", "Mine"] and mlog(G) == ["delete DSF ZR+Up"] and G.eval('body("Mine")') == "/say mine",
+      "m2. two 'DSF ZR+Up' of ours: the second deleted, the player's 'Mine' kept", (names, mlog(G)))
+check(G.eval('HDR("wc-ftm-%d")' % S) is None or G.eval('HDR("wc-ftm-%d")' % S) == "DSF ZR+Up", "m2. the router still names ours")
+clean(G, "m2")
+
+# m3. the base Y's saved macro name follows the sync (the face re-armed without a faceSetup)
+Z = boot()
+Z.execute('PM.srToggle(1, 1, 6, true); PM.srPut(1, 1, 6, "m", bs(2973)); PM.srPut(1, 1, 6, "r", bs(3044))')
+check(Z.eval('router(6).a["wc-fight-mname"]') == "DSF Y", "m3. (Y's pair: the face runs 'DSF Y')")
+Z.execute('for _, m in ipairs(mymac()) do if m.name == "DSF Y" then m.name = "My Y" end end')
+Z.execute('for i = #mymac() + 1, 18 do mymac()[i] = { name = "Mine " .. i, body = "/say " .. i } end')
+Z.execute('MLOG = {}; fire("UPDATE_MACROS"); runTimers(NOW + 2)')
+check(Z.eval('router(6).a["wc-fight-mname"]') is None and Z.eval('FACEE(6).se') == "full" and mlog(Z) == [],
+      "m3. the player renamed 'DSF Y' and the window is full: the face no longer names it (no faceSetup needed); nothing touched",
+      (Z.eval('router(6).a["wc-fight-mname"]'), Z.eval('FACEE(6).se'), mlog(Z)))
+Z.execute('fightOn()')
+r0 = int(Z.eval('#RAN'))
+Z.execute('hit(6)')
+check(ran(Z, r0)[:2] == ["t:/run DSF_SR0()", "t:/cast Raptor Strike(Rank 1)"],
+      "m3. in a fight Y runs the pair's own lines (the stand-in), never a missing / the player's macro", ran(Z, r0))
+Z.execute('fightOff()')
+Z.execute('for i, m in ipairs(mymac()) do if m.name == "Mine 18" then table.remove(mymac(), i) break end end')
+Z.execute('MLOG = {}; fire("UPDATE_MACROS"); runTimers(NOW + 2)')
+check(Z.eval('router(6).a["wc-fight-mname"]') == "DSF Y" and mlog(Z) == ["create DSF Y"] and Z.eval('body("My Y")') is not None,
+      "m3. a slot free again: 'DSF Y' made again and the face names it at once; the player's 'My Y' untouched", mlog(Z))
+clean(Z, "m3")
+
+# m4. a Move in progress: a tap on the Smart Range plate / Melee / Range changes nothing on the hidden target button
+Z = boot()                                                          # (a fresh load: Z's macro window is full)
+Z.execute('PM.srToggle(1, 3, 2, true); PM.srPut(1, 3, 2, "m", bs(2973)); PM.srPut(1, 3, 2, "r", bs(3044))')
+Z.execute('PT.enter("buttons"); pp("PADRSHOULDER"); PT.touchSet(3); PT.touchPos(2); padtab(39); padtab(2); pp("PAD3")')
+check(ctl(Z).get('carry', {}).get('h') == 'r', "m4. (ZR + Up's Range half carried)", ctl(Z).get('carry'))
+Z.execute('PT.touchPos(5)')
+b5 = slot_doc(Z, 3, 5).get('sr')
+Z.execute('padtab(39); padtab(0)')
+check(ctl(Z).get('note') == 'sr-carry' and slot_doc(Z, 3, 5).get('sr') == b5 and ctl(Z).get('carry', {}).get('h') == 'r',
+      "m4. padtab 39 + 0 while carrying: refused 'sr-carry', ZR + X's box as it was, the carry kept", ctl(Z).get('note'))
+Z.execute('padtab(39); padtab(1)')
+check(ctl(Z).get('note') == 'sr-carry' and ctl(Z).get('srh') is None, "m4. padtab 39 + 1 while carrying: no half picked", ctl(Z))
+Z.execute('pp("PAD2")')
+check(not ctl(Z).get('carry'), "m4. B: the carry cancelled")
+# m5. a half's Clear goes straight off (no box naming the other half)
+Z.execute('PT.touchPos(2); pp("PAD1"); pp("PADDRIGHT"); pp("PAD1")')
+check(ctl(Z).get('srh') == 'r' and ctl(Z).get('chooser', {}).get('list') == 'spells', "m5. (the Range half's chooser)", ctl(Z))
+for _ in range(16):
+    if ctl(Z)['chooser']['id'] == 'uncombat':
+        break
+    Z.execute('pp("PADDDOWN")')
+check(ctl(Z)['chooser']['id'] == 'uncombat', "m5. (its Clear row)", ctl(Z)['chooser'])
+Z.execute('pp("PAD1")')
+S5 = Z.eval('WowCompanion.spellsStorageFor(1, 3, 2)')
+e5 = tbl(Z.eval('FT(%d)' % S5))
+check(not ctl(Z).get('box') and e5.get('n') == 'Raptor Strike' and e5.get('rg') is None and Z.eval('body("DSF ZR+Up")') is None,
+      "m5. Clear on the Range half: no box; Arcane Shot off, Raptor Strike stays, the pair's macro gone", (ctl(Z).get('box'), e5))
+clean(Z, "m5")
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

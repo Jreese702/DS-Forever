@@ -361,6 +361,7 @@ class PadTabPage(
         "form" -> "Not on a form's own set"
         "not a spell" -> "Smart Range takes spells only"
         "off" -> "Turn Smart Range on first"
+        "carry" -> "Place or cancel the Move first"                    // p47: no box flip / half pick while carrying
         else -> null
     }
 
@@ -1227,6 +1228,20 @@ class PadTabPage(
                 c.drawText(TextUtils.ellipsize(Tr.t(it), TextPaint(ph), x1 - x0 - 16f, TextUtils.TruncateAt.END).toString(), x0 + 8f, 608f, ph)
             }
         }
+        // m147 (review): a base X / Y / A's real problem is still said here (m16 / m43: the game refusing key changes; no key on the
+        // button), under the row / the hint and clear of the note over Move / Bind
+        val why = if (face && (entry != null || on)) when {
+            m.faceRefused -> "Fight buttons unavailable: the game is not taking key changes right now, so ${buttonWord(pos)} stays ${nameOf(m, sl)} in fights."
+            PadMapModel.faceUnbound(m, sl) -> "The game has no key on ${buttonWord(pos)} now, so this spell will not cast. Check the game's controller keys."
+            else -> null
+        } else null
+        why?.let {
+            val pd = TextPaint(UiKit.inkPaint(22f))
+            val prose = StaticLayout.Builder.obtain(Tr.span(it), 0, Tr.span(it).length, pd, (x1 - x0 - 16f).toInt())
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(2f, 1f).setMaxLines(2)
+                .setEllipsize(TextUtils.TruncateAt.END).build()
+            c.save(); c.translate(x0 + 8f, if (on) 622f else 556f); prose.draw(c); c.restore()
+        }
         val act = actRect(w, h)
         val moveShown = if (on) picked != null && !face && PadMapModel.srHalf(sl, picked) != null
                         else sl != null && sl.kind != PadMapModel.Kind.NONE && !fixed
@@ -1234,7 +1249,7 @@ class PadTabPage(
         val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && (!fixed || face)) COMBAT else null
         note?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-            c.drawText(Tr.t(it), act.centerX(), above - 40f, pw)
+            c.drawText(Tr.t(it), act.centerX(), above - (if (why != null) 14f else 40f), pw)
         }
         if (on) {
             // nothing picked: no Bind / Move (pick a half first)
@@ -1529,8 +1544,9 @@ class PadTabPage(
         if (was == DOWN_CANCEL && moveRect(w, h).contains(x, y)) {
             tap(listOf(PadMapModel.ROW_PADTAB to PadMapModel.COL_CANCEL)); localFirst(DOWN_CANCEL); return
         }
-        // m146 SMART RANGE: the box (a flip), Melee / Range (a pick), then Bind / Move act on the picked half
-        if (view == "combat") {
+        // m146 SMART RANGE: the box (a flip), Melee / Range (a pick), then Bind / Move act on the picked half; m147: never while a
+        // button is carried (the Move page is on show: a stray tap there changed the hidden target button)
+        if (view == "combat" && carryNow() == null) {
             val sl = slotOf(m, shown(), pos)
             if (srAllowed(sl)) {
                 if (srPlate(w).contains(x, y)) { if (m.combat) say(COMBAT) else tap(PadMapModel.srCells(PadMapModel.SR_BOX)); return }
@@ -1657,6 +1673,8 @@ class PadTabPage(
     private fun whole(t: Thing) = t is Thing.Command || t is Thing.Binding || t is Thing.Mount || t is Thing.Item
 
     private fun boxFor(t: Thing, m: PadMapModel.Map, afterReplace: Boolean): String? {
+        // m147 / p47 (review): a Smart Range half's Clear goes straight off like its put (the Clear box named the button's other half)
+        if (fight() && (t is Thing.Uncombat || t is Thing.Unface) && halfChooser() != null) return null
         if (t is Thing.Clear || t is Thing.Uncombat || t is Thing.Unface) return "clear"
         if (view == "radial") return if (!afterReplace && radId(pos) != 0) "replace" else null       // p16: PadTabCtl's boxFor
         val here = slotOf(m, shown(), pos)

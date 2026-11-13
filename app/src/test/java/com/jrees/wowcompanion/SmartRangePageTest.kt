@@ -124,6 +124,53 @@ class SmartRangePageTest {
         r.draw()                                                            // the picker's box on Range draws (no crash)
     }
 
+    // ---------------------------------------------------------------- m147 / p47 (review; the user, 2026-11-12: "okay so I was
+    // skeptical and so I tried it with a different melee skill, wing clip and it did not work")
+
+    private fun zrMap() = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m147","m":{"page":1,"pages":3,"sets":[{"set":1,"slots":[]},
+        {"set":3,"slots":[$zrPair]}]}}"""))!!
+    private fun zrCtl(extra: String = "") = PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p47","c":{"focus":"buttons","set":3,
+        "shown":3,"pos":2,"page":1,"view":"combat","lay":"swap"$extra}}"""))!!
+
+    @Test fun aHalfsClearGoesStraightOffWithNoBox() {
+        val r = Rig(zrMap(), zrCtl())
+        r.tap(range.first, range.second)
+        r.tap(bind.first, bind.second)
+        assertTrue("Bind on Range: the chooser", r.page.chooserOpen())
+        r.cells.clear()
+        r.tap(990f, (h - 12f) - 196f + 30f)                                // the chooser's pinned Clear row (clearTop = box bottom - 196)
+        assertEquals("the Range half's Clear: the half picked again, the combat-layer pick, Clear - in one touch, no box first",
+            listOf(PadMapModel.srCells(PadMapModel.SR_RANGE) + listOf(PadMapModel.ROW_LAYOUT to PadMapModel.COL_COMBAT_LAYER,
+                PadMapModel.ROW to PadMapModel.COL_CLEAR)), r.cells)
+        assertFalse(r.page.chooserOpen())
+    }
+
+    @Test fun aTapOnTheMovePageNeverFlipsTheBoxOrPicksAHalf() {
+        val r = Rig(zrMap(), zrCtl(""","on":true,"carry":{"set":3,"pos":1,"page":1,"h":"r"}"""))
+        r.tap(plate.first, plate.second)
+        r.tap(melee.first, melee.second)
+        r.tap(range.first, range.second)
+        assertTrue("carrying: the plate / Melee / Range taps send nothing", r.cells.isEmpty())
+    }
+
+    @Test fun aFacesNoKeyWarningStaysOnTheInCombatTab() {
+        fun shot(keys: String): Bitmap {
+            val m = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m147","m":{"page":1,"pages":3,"face":{"keys":{$keys}},
+                "sets":[{"set":1,"slots":[$yOff]}]}}"""))!!
+            val page = PadTabPage(View(RuntimeEnvironment.getApplication()), {}, {}, { false })
+            page.onMap(m); page.onCtl(ctl(6))
+            val b = Bitmap.createBitmap(1240, 960, Bitmap.Config.ARGB_8888)
+            page.draw(Canvas(b), 1240f, 960f, null)
+            return b
+        }
+        assertTrue(PadMapModel.faceUnbound(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m147","m":{"page":1,"pages":3,
+            "sets":[{"set":1,"slots":[$yOff]}]}}"""))!!, PadMapModel.slot(map(yOff), 1, 6)))
+        val warned = shot(""); val plain = shot(""""6":"PAD4"""")
+        var diff = 0
+        for (y in 556 until 612) for (x in 790 until 1180) if (warned.getPixel(x, y) != plain.getPixel(x, y)) diff++
+        assertTrue("the 'no key on Y' prose under the In combat row (y 556-612): $diff pixels differ", diff > 200)
+    }
+
     @Test fun shots() {
         val out = System.getenv("SR_SHOTS_DIR")?.let { File(it) } ?: return
         val docs = File(out, "docs")
