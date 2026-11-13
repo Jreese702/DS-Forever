@@ -20,8 +20,9 @@ import android.view.View
  * view, "4 with an arrow on the sides indicating if there are abilities that way"): all 8 slots (cb6) on one strip at BOTH's size, 4 in view
  * spread evenly, clipped to the well; the strip follows the finger and stops wherever it is let go (a light fling with friction, no
  * snapping); a small gold arrow at an edge (fading with the scroll) where slots are hidden that way. Under both (BOTH, cb6, the user:
- * "8 total, 4 per side"): two wells, slots 1-4 under the chat and 5-8 under the minimap, each at LEFT's / RIGHT's place, no scroll.
- * [side]. No page text (labels + icons only: nothing written at all). A finger on a slot is ONE tap through [onTap] (the
+ * "8 total, 4 per side"; cb8, the user: "I want it to be one full bar"): ONE well across the whole width under both columns, all 8
+ * slots spread evenly across it, no scroll. RIGHT rests at the strip's END (cb8: slots 5-8 in view, the left arrow showing), LEFT at
+ * its start. [side]. No page text (labels + icons only: nothing written at all). A finger on a slot is ONE tap through [onTap] (the
  * host's TapBridge on the add-on's "castbar" row; the slot index 0..7 under the finger at the scroll it is at). A finger that moves more
  * than [CastStripModel.TAP_SLOP_PX] never casts; a finger that catches a fling stops it and casts nothing. The scroll is kept for the
  * app's run ([CastStripModel.Live.pos]). A slot waiting for a fight's end is drawn dimmed and takes no tap; the cooldown is the game's
@@ -50,14 +51,15 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
 
     /** the place Home laid the bar in (its slots in view and spread) */
     var side: CastStripModel.Side = CastStripModel.Side.LEFT
-        set(v) { if (field != v) { field = v; flingAt = -1L; invalidate() } }
+        set(v) { CastStripModel.Live.laid(v); if (field != v) { field = v; flingAt = -1L; invalidate() } }
 
     /** cb5: the strip's scroll now (px, 0 = slot 1 leftmost), kept for the app's run as slots' shares in [CastStripModel.Live.pos] */
     var scroll: Float
-        get() = CastStripModel.fromPos(side, width.toFloat(), CastStripModel.Live.pos)
+        get() = CastStripModel.fromPos(side, width.toFloat(), CastStripModel.Live.posFor(side))
         set(v) {
+            if (!CastStripModel.scrolls(side) || width <= 0) return                 // cb8: BOTH never scrolls (nor a bar not laid yet)
             val p = CastStripModel.toPos(side, width.toFloat(), v)
-            if (p != CastStripModel.Live.pos) { CastStripModel.Live.pos = p; invalidate() }
+            if (CastStripModel.Live.side != side || p != CastStripModel.Live.pos) { CastStripModel.Live.keep(side, p); invalidate() }
         }
 
     /** THE BAR IN A FIGHT (Settings > Tap-to-cast bar > In combat): cb7, Hide SLIDES the bar down behind Home's bottom bar while Home
@@ -122,27 +124,24 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
         stepFling(SystemClock.uptimeMillis())
         val o = scroll
         var sweeping = false
-        // cb6: one well (LEFT / RIGHT, the strip scrolling inside it) or BOTH's two (slots 1-4 under the chat, 5-8 under the minimap)
-        for ((k, well) in CastStripModel.wells(side, w).withIndex()) {
-            UiKit.module(c, RectF(well.first, 0f, well.second, h))
-            val (wl, wr) = CastStripModel.windowOf(side, w, k)
-            c.save()
-            c.clipRect(wl, 0f, wr, h)                                                   // the strip scrolls inside the well
-            if (drawSlots(c, o, now, k)) sweeping = true
-            c.restore()
-        }
+        // cb8: ONE well, every side (LEFT / RIGHT the strip scrolling inside it; BOTH all 8 across the whole width, no split)
+        UiKit.module(c, RectF(0f, 0f, w, h))
+        val (wl, wr) = CastStripModel.window(w)
+        c.save()
+        c.clipRect(wl, 0f, wr, h)                                                       // the strip scrolls inside the well
+        if (drawSlots(c, o, now)) sweeping = true
+        c.restore()
         val (al, ar) = CastStripModel.arrows(side, w, o)
         if (al > 0f) edge(c, true, al, w, h)
         if (ar > 0f) edge(c, false, ar, w, h)
         if (sweeping || now < pressedUntil || flinging) postInvalidateDelayed(FRAME_MS)
     }
 
-    /** the slots in view at scroll [o] in well [well]; true = a cooldown sweep runs on one of them */
-    private fun drawSlots(c: Canvas, o: Float, now: Long, well: Int): Boolean {
+    /** the slots in view at scroll [o]; true = a cooldown sweep runs on one of them */
+    private fun drawSlots(c: Canvas, o: Float, now: Long): Boolean {
         val b = bar
         var sweeping = false
         for (i in CastStripModel.inView(side, width.toFloat(), height.toFloat(), o)) {
-            if (CastStripModel.wellOf(side, i) != well) continue
             val r = slotRect(i)
             val s = b?.slots?.getOrNull(i)
             val live = CastStripModel.tapCell(b, i) != null

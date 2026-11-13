@@ -45,7 +45,7 @@ class CastBarCombatShotsTest {
     private val HIDE = CastStripModel.Combat.HIDE
     private val STAY = CastStripModel.Combat.STAY
 
-    @After fun down() { CastStripModel.Live.pos = 0f; HomeSettings.init(app); HomeSettings.castBarCombat = HIDE; HomeSettings.castBarSide = CastStripModel.Side.OFF }
+    @After fun down() { CastStripModel.Live.pos = 0f; CastStripModel.Live.side = null; HomeSettings.init(app); HomeSettings.castBarCombat = HIDE; HomeSettings.castBarSide = CastStripModel.Side.OFF }
 
     private val doc = JSONObject("""{"type":"castbar","v":"cb6","n":8,"pick":8,"pp":[39,19],"e":[
         {"s":1,"id":403,"i":136048,"c":0},{"s":2,"id":8042,"i":136026,"c":1},{"s":3,"id":331,"i":136052,"c":2},

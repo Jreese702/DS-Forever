@@ -148,7 +148,7 @@ class CastBarCombatTest {
             for (w in listOf("In combat", "Hide", "Stay", "Hide: the bar slides away in a fight.", "Cast bar in combat: Hide",
                 "Cast bar in combat: Stay", "In a fight the tap-to-cast bar slides", "down; chat and map take its room.",
                 "In a fight the tap-to-cast bar stays,", "one tap casts each.", "Hide: the bar slides away", "Stay: the bar stays",
-                "Eight spells, four under each column;", "Eight spells, one tap each.",
+                "Eight spells in one bar under both;", "Eight spells, one tap each.",
                 "In a fight:", "no bar, no taps", "tap to cast"))
                 assertTrue("$l: $w", Tr.t(w, l) != w)
         }

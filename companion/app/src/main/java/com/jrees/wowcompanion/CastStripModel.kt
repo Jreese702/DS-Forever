@@ -31,9 +31,15 @@ import org.json.JSONObject
  * the slot under the finger at the scroll it is at ([slotAt]). The scroll is kept for the app's run ([Live.pos]). BOTH is unchanged.
  * cb6 EIGHT SLOTS, FOUR PER SIDE (the user, 2026-11-13: "only see 6 slots instead of 8 when using both, I think that you misunderstood
  * and kept 6 total slots on both side even with the slide for more."; the pick: "8 total, 4 per side"): [SLOTS] = 8 everywhere. LEFT /
- * RIGHT: the strip of 8 scrolls under 4 in view (as cb5). BOTH: two wells ([wells]), slots 1-4 under the chat and 5-8 under the
+ * RIGHT: the strip of 8 scrolls under 4 in view (as cb5). BOTH: two wells (cb8: now one bar), slots 1-4 under the chat and 5-8 under the
  * minimap, each well exactly where LEFT's / RIGHT's bar lies and each slot where LEFT's / RIGHT's slot at rest lies, no scroll. The Bind
  * box's slots 7-8: padtab 39 then 27-28 ([slotCode]; 20-25 stay slots 1-6, 26 the tab; Book b57, ActionBar cb6).
+ * cb8 BOTH IS ONE BAR, RIGHT RESTS ON THE RIGHT (the user, 2026-11-13: "small tap to cast changes- I want on both the UI is split down
+ * the middle. I want it to be one full bar. on Right, I want it to show the right 4 abilities and scroll left at its resting
+ * position"): BOTH is ONE well across the whole width under both columns (no split, no gap at the middle), all 8 slots at the one size
+ * spread evenly across it, no scroll (cb6's two wells are gone). RIGHT's strip rests at its END ([rest]: slots 5-8 in view, the left
+ * arrow showing); the player scrolls left for 1-4. LEFT rests at the start. The scroll kept for the run is per side ([Live.side]): a
+ * side change starts that side at its rest ([Live.laid]).
  * The logic, without the look (unit-tested in dsforever: CastStripModelTest).
  */
 object CastStripModel {
@@ -197,20 +203,8 @@ object CastStripModel {
 
     // ---------------------------------------------------------------- cb5: the scroll (Left / Right: 4 in view, the strip scrolls freely)
 
-    /** cb5: the slots in view at once: LEFT / RIGHT 4 (the strip of all 8 scrolls under them), BOTH all 8 (cb6: 4 per well), OFF none */
+    /** cb5: the slots in view at once: LEFT / RIGHT 4 (the strip of all 8 scrolls under them), BOTH all 8 (cb8: one bar), OFF none */
     fun visible(side: Side): Int = when (side) { Side.LEFT, Side.RIGHT -> VISIBLE; Side.BOTH -> SLOTS; Side.OFF -> 0 }
-
-    /** cb6: the bar's wells across, in the bar's own px ([bw] wide): BOTH = two, the left column's (slots 1-4) and the right column's
-     *  (slots 5-8), [SPLIT] apart at the middle (LEFT's bar ends 4 px left of the page's middle, RIGHT's starts 4 px right of it), so
-     *  each is exactly LEFT's / RIGHT's bar; every other side one well, the whole bar */
-    fun wells(side: Side, bw: Float): List<Pair<Float, Float>> =
-        if (side == Side.BOTH) listOf(0f to bw / 2f - SPLIT / 2f, bw / 2f + SPLIT / 2f to bw) else listOf(0f to bw)
-
-    /** cb6: the well slot [i] lies in (BOTH: 0 for slots 1-4, 1 for 5-8; else 0) */
-    fun wellOf(side: Side, i: Int): Int = if (side == Side.BOTH && i >= VISIBLE) 1 else 0
-
-    /** cb6: one well's width in a bar [bw] wide */
-    private fun wellW(side: Side, bw: Float): Float = wells(side, bw)[0].let { it.second - it.first }
 
     /** cb5: the strip scrolls (more slots than fit in view: LEFT / RIGHT) */
     fun scrolls(side: Side): Boolean = visible(side) in 1 until SLOTS
@@ -218,8 +212,8 @@ object CastStripModel {
     /** the slot side for [side] at a bar [barW] wide: every mode the same size (cb4, the user: "they should be the same size as the both
      *  option"), at most [MAX_SIDE], smaller only when the bar is too narrow for the slots in view */
     fun slotSide(side: Side, barW: Float): Float {
-        val n = VISIBLE                                                  // cb6: 4 in a well, every side (BOTH's well is LEFT's bar)
-        return ((wellW(side, barW) - 2 * PAD - GAP * (n - 1)) / n).coerceIn(MIN_SIDE, MAX_SIDE)
+        val n = maxOf(1, visible(side))                                  // cb8: BOTH's 8 across the one bar, LEFT / RIGHT 4 in view
+        return ((barW - 2 * PAD - GAP * (n - 1)) / n).coerceIn(MIN_SIDE, MAX_SIDE)
     }
 
     /** the bar's height for [side] on a page [w] wide (0 = none): the slots' row (cb5: no dots band) */
@@ -255,54 +249,51 @@ object CastStripModel {
     private fun sideIn(side: Side, bw: Float, bh: Float): Float = minOf(slotSide(side, bw), bh - 2 * PAD).coerceAtLeast(MIN_SIDE)
 
     /** cb5: one slot's share across a bar [bw] wide: the slot and an even gap (the slots in view spread evenly, the same room at each
-     *  end as half the room between two: BOTH's look, LEFT / RIGHT alike with 4 in view). cb6: across one well (4 to a well) */
-    fun pitch(side: Side, bw: Float): Float = (wellW(side, bw) - 2 * PAD) / VISIBLE
+     *  end as half the room between two: BOTH's look, LEFT / RIGHT alike with 4 in view). cb8: BOTH's 8 across the one bar */
+    fun pitch(side: Side, bw: Float): Float = (bw - 2 * PAD) / maxOf(1, visible(side))
 
     /** cb5: the furthest the strip scrolls (px): the hidden slots' shares; 0 = it does not scroll (BOTH, OFF) */
     fun maxScroll(side: Side, bw: Float): Float = if (!scrolls(side)) 0f else maxOf(0f, (SLOTS - VISIBLE) * pitch(side, bw))
+
+    /** cb8: the strip's rest in slots' shares (what a run, or a side change, starts at): RIGHT at its END (slots 5-8 in view, more
+     *  to the left: the user's "show the right 4 abilities and scroll left at its resting position"), every other side the start */
+    fun rest(side: Side): Float = if (side == Side.RIGHT) (SLOTS - VISIBLE).toFloat() else 0f
 
     /** cb5: a scroll held to the strip's ends (any place between: no snapping) */
     fun clampScroll(side: Side, bw: Float, o: Float): Float = o.coerceIn(0f, maxScroll(side, bw))
 
     /** slot [i]'s box (0..7) inside a bar [bw] x [bh] (the bar's own px) with the strip scrolled [scroll] px (0 = slot 1 leftmost);
-     *  cb6: BOTH lays slots 1-4 in the left well and 5-8 in the right one, each at its LEFT / RIGHT place at rest */
+     *  cb8: BOTH lays all 8 across its one bar */
     fun slotBox(side: Side, i: Int, bw: Float, bh: Float, scroll: Float = 0f): Box {
         val s = sideIn(side, bw, bh)
         val p = pitch(side, bw)
         val y0 = (bh - s) / 2f
-        val k = wellOf(side, i)
-        val x = wells(side, bw)[k].first + PAD + (p - s) / 2f + (i - k * VISIBLE) * p - clampScroll(side, bw, scroll)
+        val x = PAD + (p - s) / 2f + i * p - clampScroll(side, bw, scroll)
         return Box(x, y0, x + s, y0 + s)
     }
 
     /** cb5: the strip's window across (the slots are clipped to it): the well inside its ring edge */
     fun window(bw: Float): Pair<Float, Float> = PAD / 2f to bw - PAD / 2f
 
-    /** cb6: well [k]'s window (BOTH has two; else [window]) */
-    fun windowOf(side: Side, bw: Float, k: Int): Pair<Float, Float> = wells(side, bw)[k].let { (l, r) -> l + PAD / 2f to r - PAD / 2f }
-
     /** cb5: the slot (0..7) under a finger at [x], [y] in a bar [bw] x [bh] scrolled [scroll]: the slot's share across, inside the
-     *  window, and the slot's row (half a [GAP] of slack); -1 = none (cb6: BOTH's gap between its two wells too) */
+     *  window, and the slot's row (half a [GAP] of slack); -1 = none */
     fun slotAt(side: Side, x: Float, y: Float, bw: Float, bh: Float, scroll: Float): Int {
         if (visible(side) == 0) return -1
-        val ws = wells(side, bw)
-        val k = ws.indices.firstOrNull { val (wl, wr) = windowOf(side, bw, it); x in wl..wr } ?: return -1
+        val (wl, wr) = window(bw)
+        if (x < wl || x > wr) return -1
         val p = pitch(side, bw)
-        val lo = if (ws.size > 1) k * VISIBLE else 0
-        val hi = if (ws.size > 1) lo + VISIBLE - 1 else SLOTS - 1
-        val i = (lo + kotlin.math.floor((x - ws[k].first - PAD + clampScroll(side, bw, scroll)) / p).toInt()).coerceIn(lo, hi)
+        val i = kotlin.math.floor((x - PAD + clampScroll(side, bw, scroll)) / p).toInt().coerceIn(0, SLOTS - 1)
         val r = slotBox(side, i, bw, bh, scroll)
         val m = GAP / 2f
         if (y < r.t - m || y > r.b + m) return -1
         return i
     }
 
-    /** cb5: the slots at least partly in view at [scroll] (their indexes, leftmost first; cb6: each in its own well's window) */
-    fun inView(side: Side, bw: Float, bh: Float, scroll: Float): List<Int> =
-        (0 until SLOTS).filter { i ->
-            val (wl, wr) = windowOf(side, bw, wellOf(side, i))
-            slotBox(side, i, bw, bh, scroll).let { it.r > wl && it.l < wr }
-        }
+    /** cb5: the slots at least partly in view at [scroll] (their indexes, leftmost first) */
+    fun inView(side: Side, bw: Float, bh: Float, scroll: Float): List<Int> {
+        val (wl, wr) = window(bw)
+        return (0 until SLOTS).filter { i -> slotBox(side, i, bw, bh, scroll).let { it.r > wl && it.l < wr } }
+    }
 
     /** cb5: the edge arrows' strength (0 hidden .. 1 shown), left then right: a slot is hidden that way; each fades in over the first
      *  [ARROW_FADE] of a slot's share of scroll away from its end (none on a bar that does not scroll) */
@@ -391,8 +382,6 @@ object CastStripModel {
     const val MIN_SIDE = 8f
     const val GAP = 8f
     const val PAD = 10f
-    /** cb6: BOTH's room between its two wells (the page's middle: LEFT's bar ends 4 px left of it, RIGHT's starts 4 px right) */
-    const val SPLIT = 8f
     const val TAP_SLOP_PX = 24f
     /** cb5: the edge arrow (px) and its fade: full once this part of a slot's share is hidden that way */
     const val ARROW_W = 12f
@@ -409,8 +398,16 @@ object CastStripModel {
     /** the live bar (the host sets it from every `castbar` document); listeners hear each change */
     object Live {
         /** cb5: the LEFT / RIGHT strip's scroll in slots' shares (0 = slot 1 leftmost, 4 = slot 8 rightmost, any place between), kept
-         *  for the app's run (not saved: a new run starts at slot 1) */
+         *  for the app's run (not saved: a new run starts at its side's [rest]); cb8: it is [side]'s scroll */
         @Volatile var pos: Float = 0f
+        /** cb8: the scrolling side [pos] belongs to (null = none laid yet this run) */
+        @Volatile var side: Side? = null
+        /** cb8: the scroll for [s] now: its kept one, or its [rest] when [pos] is another side's (or none) */
+        fun posFor(s: Side): Float = if (side == s) pos else rest(s)
+        /** cb8: a bar laid on [s]: a scrolling side other than the kept one starts at its [rest] (BOTH / OFF do not scroll: kept) */
+        fun laid(s: Side) { if (scrolls(s) && side != s) { side = s; pos = rest(s) } }
+        /** cb8: keep [p] as [s]'s scroll */
+        fun keep(s: Side, p: Float) { side = s; pos = p }
         @Volatile var bar: Bar? = null
             private set
         private val listeners = ArrayList<() -> Unit>()

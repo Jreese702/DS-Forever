@@ -94,7 +94,7 @@ class HomeView(
      */
     private val chatGlideBox = RectF()
     /** THE TAP-TO-CAST BAR (GitHub #43 cb3, [CastStripModel]): 8 slots (cb6), under the chat (Left) or under the minimap (Right) a
-     *  strip with 4 in view that scrolls freely (cb5: no pages; edge arrows where slots are hidden), 4 under each column (Both), by
+     *  strip with 4 in view that scrolls freely (cb5: no pages; edge arrows where slots are hidden), (cb8: Right resting on 5-8), ONE bar of all 8 across under both columns (Both), by
      *  Settings > Bottom screen > Tap-to-cast bar (Off by default); a tap = ONE pad tap on the add-on's "castbar" row (the scroll never
      *  moves the bar). cb7: Hide in combat slides it down behind Home's bottom bar and gives its room back to the column(s) */
     private val castStrip = CastStripView(context) { i -> castStripTap(i) }
