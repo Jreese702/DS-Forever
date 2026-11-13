@@ -31,7 +31,7 @@ local S = WC.S
 
 -- hub40 (fix/top-party, the user 2026-11-12: the party bar "a mile long"): every top party bar one column wide, re-sized on a K change.
 -- hub39 (int/1429): party-combat hub38 (the player / pet row, the Select side tab) with combat-nav's PadMap m134-m136
-local HV = "hub46"          -- hub46: ONE GLYPH RULE (issue #195 review, the user's m119 ruling "the inspect glyph is Y not X"): the party glyphs and the Select tab's B take ActionBar.lua's WC.padGlyphAtlas (each button its own letter, Rev_* Nintendo / Ltr_* plain: Back = Rev_B as the app's rev_b), no swapped letters of Hub's own; hub45: THE NINTENDO BAR'S SWITCH (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off / Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar replacing the stock one): "uisw" NBAR_OFF 34 / NBAR_ON 35 -> WC.nbarSet (ActionBar.lua nbar1: the stock bar at alpha 0, ours shown); the doc's sw.nbar / set.nbar; and the target bar's aura sweeps by the duration object (uf17, "Yes, fix them too"). hub44: A HUNTER'S MARK PULL KEEPS AUTO SHOT (the user's pick, 2026-11-12: "Mark pull keeps Auto Shot"; the attack start PLAYER_ENTER_COMBAT reports within MARK_S of a Mark SENT / SUCCEEDED is the Mark pull's, so it writes no 0; the macro order too, the review fix: an attack start, then a Mark SENT within PULL_UNDO_S 0.3 s out of the lockdown, writes 1 back - it undoes that same press's 0; Mark still never turns it ON by itself, the hub30 rule "make sure hunters mark does not trigger it to swap back on"). hub43: COMBAT AUTO SHOT KEEPS AUTO SHOT THROUGH AN ABILITY'S OWN /startattack (the user, 2026-11-12, a level 15 Hunter: "sometimes when using arcane shot my auto fire just stops and my dude stands there"): the attack start PLAYER_ENTER_COMBAT reports is often PadMap's attack-on-cast /startattack, so the "In combat" choice's 0 no longer follows an ability's SEND (or its FAILED, a cast that never sent) within 1 s or our atkgo within 1.5 s; otherwise the plain pull's 0 is written at once, as hub30 did (a wait lost the 0 to the lockdown of an in-range first swing), and an ability's SEND after it writes 1; PLAYER_REGEN_DISABLED writes 1 again after an ability's SEND within 2 s while it reads 0; the doc's shotlog (the last 24 moments, plain values, riding along); hub42: THE TOP PARTY BLOCK MOVES WITH PARTY MODE (the user, 2026-11-12: "party members are listed in ONE column ... on the LEFT side"; in Party mode they "fade out of the left column and fade back in UNDER the player's HUD bar"; "the player should not have their HP bar on the right side with party mode any more"; the Select tab: their pick B): out of Party mode party1..4 one a row, top to bottom, in the top-left column (PF.X / PF.Y as before), no Select tab; Party mode on: the block fades out (FADE_S 0.2), moves while unseen and fades in under the HUD bar (Trail prd15 WC.prd.partyGeo: party1's bar under the HP bar's left), two a row - [party1][party2] / [party3][party4] - and the reverse when it goes off (alpha only, our own plain frames: allowed in a fight; no secure frame moves); the game's side tab, lit, at the grid's LEFT edge, the rows' full height (none on the screen's edge any more); the grid tells Trail the room it takes (WC.prd.partyRoom: the HUD's aura row under it); still no self row, every bar one column's (W_BAR), raids nothing. The user's answers the same day: three members = [party1] alone on the first row (one column's bar), then [party2][party3]; solo in Party mode the tab stands beside the [me][pet] row (the HUD bars' height), grouped beside the party rows as before; the HUD always shown in Party mode, its buff / debuff row above its bars (Trail prd15); THE ON-SCREEN GUARD (the user: "KEEP IT ON SCREEN"): the rows' room (RING_PAD under the last) told to Trail from the moment Party mode is wanted, the grid placed at Trail's lifted HUD, and a changed place under the HUD (the lift, the scale, the combo pips) re-placed only at the fade's bottom (PF.regeo); hub41: THE TOP BLOCK'S REVIEW FIXES (the user, 2026-11-12, the top screen's party renders): the Select tab follows a K change too (PF.tabScale: its place, width, cap slices and glyphs again at today's K; before, it stayed at the scale it was made with while the rows moved), and the rows' pitch 55 -> 64 so Party mode's gold ring on a row ends above the next row's name (it cut through the name); hub40: THE TOP PARTY BARS ONE COLUMN WIDE (the user, 2026-11-12: "I had someone join my group on an old build and their health bar was a mile long"): a full row's bar spanned both columns (W_FULL 510 px, hub35 / 1428 on), so one member alone, or the first rows of a party of 3 / 4, had a bar wider than the target bar; now every party bar is one column's (W_BAR 194), a full row left-aligned, and PF.place re-sizes a row when K changes (PLAYER_ENTERING_WORLD); hub39: int/1429 (hub38 + combat-nav). hub38: THE PLAYER / PET ROW AND THE SELECT TAB IN THE GAME'S ART (the user, 2026-11-11, after using 1428: "I think the pet should be to the right of the player" and "The side panel around the select button looks like an AI border. It needs to use wow assets and sit outside of the player brand look more like its attached to the side of the screen"): the top block follows PadMap m134's rows (you + the pet share the first row, the party members under it: 1-2 full rows, 3: a full row then a shared one, 4: 2x2), so the party block no longer depends on the pet; the top Select tab is the game's own side tab (atlas common-sidetab-c60-2x, sliced top / middle / bottom so its bevels keep their shape; lit = common-sidetab-selected-c60-2x over it), flush on the screen's left edge (x 0); no drawn fill or edge any more; hub37: hub35 (the party grid) and hub36 (Polestar's hide sticks) merged, both kept. hub35: THE TOP PARTY BLOCK (the user, 2026-11-11: "the other 4 party members are in a square shape in the top left", then the adaptive rows "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate"): ONLY the party members, in the bottom's own arrangement (PadMap m131's entries you / pet / party1..4: the same rows and left / right sides, the rows with no party member dropped) as a compact block in the top left - a full row's bar spans both columns, a shared row's halves one each; no self row any more (picking you / your pet boxes the HUD's bars / pet strip: Trail.lua prd14); the Select tab beside the block (its rows; one row's height while solo with Party mode on); hub34: THE TOP PARTY COLUMN (party_design.md D and the user's decisions 2026-11-11): you, then party1..4, one row each in the bottom's order, every row the target bar's builder (npBar + the HUD rim, the level in a hudBox, the name above the lip, the HUD's green re-tinted every step); your own row while grouped or whenever Party mode is on; Party mode on: each row's LB glyph, a gold ring on the pick (PadMap box.u) and a white chevron at your target; dead / offline / out of range (PadMap's one rng) as the bottom; an 18 px Select tab beside the column (off / on / not bound); in a raid nothing; the combat log's switch calls retired (PadMap m129); hub33: THE PET'S STRIP IN THE HUD (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs Pet HUD"): "uisw" 32 / 33 -> WC.npWant.pet (Trail.lua prd11: the pet's strip under the resource bar, on unless turned off); the game's pet frame is its own group now ("pet"): as the player frame (hidden with it while our strip stands in; a review fix 2026-11-11: never hidden by our strip alone); the doc's sw.pet / set.pet; hub32: THE GAME'S COMBO POINTS UNDER A HIDDEN TARGET FRAME (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"; 2026-11-11): the game draws them on ComboFrame, a child of TargetFrame (Blizzard's Classic FrameXML), so HUD mode's target switch (TargetFrame at alpha 0) hid them with it; with our target bar off nothing showed them. Now, while the game's host frame is hidden by us and our target bar (its own pips) is off, the combo frame ignores its parent's alpha (SetIgnoreParentAlpha, alpha only like the rest of HUD mode); otherwise it follows it again; hub31: HIDE POLESTAR ON THE TOP SCREEN (the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): "uisw" 30 / 31 - every top-level frame Polestar names (PolestarGuideFrame, its arrow, its pad hints, toasts ...) at alpha 0 while on, and kept there when it shows again; off gives each its alpha 1 back; alpha only, nothing of Polestar changed; the doc's sw.ps; hub30: the third choice's RULES (the user, 2026-11-10: "it would be better if it stay on out of combat incase someone else pulls me into combat, and it should turn off when I target something out of combat AND start attack and then swap back when an ability is used before that ability fires" ... "make sure hunters mark does not trigger it to swap back on"): on by default and after every fight; OFF when an attack starts out of a fight with a target (PLAYER_ENTER_COMBAT); back ON at an ability's send (UNIT_SPELLCAST_SENT, before it fires) - never for Hunter's Mark, Auto Shot or Attack; hub29 (replaced by hub30): "In combat" turns the option on AT THE PULL (the user, 2026-11-10: "I pull with arcane shot and then when they get close, my auto attack melee is not on"): a spell you cast, Auto Shot or a melee swing starting out of a fight writes 1 right then (allowed: no lockdown yet), and 0 again 8 s later if no fight came of it; hub28: COMBAT AUTO SHOT "In combat" (the user, 2026-11-10: "add a third toggle to the hunter option to basically only turn it on during combat"): "uisw" 28 / 29 - while on, the game's autoRangedCombat is written 1 as a fight starts and 0 when it ends (and 0 at once out of a fight); the doc's sw.shotf, sw.shotfk = whether the fight's write took; hub27: the Party mode switch also starts / stops the combat log (PadMap m112); hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked hub36 (hub35 is fix/party-grid's tag: merge both, keep the higher): POLESTAR'S HIDE STICKS (the user, 2026-11-11, the switch on: "The polestar window randomly reappears a lot"): Polestar fades its windows back by itself (every fight's start and end, a setting change, each window's own fade-in, windows made later), with no Show; now a secure post-hook on each frame's SetAlpha puts the 0 back in the same frame and keeps the alpha Polestar asked for, its known names looked up every 0.25 s while hidden, Off gives back every frame touched (re-parented too); hub34: THE TOP PARTY COLUMN (party_design.md D and the user's decisions 2026-11-11): you, then party1..4, one row each in the bottom's order, every row the target bar's builder (npBar + the HUD rim, the level in a hudBox, the name above the lip, the HUD's green re-tinted every step); your own row while grouped or whenever Party mode is on; Party mode on: each row's LB glyph, a gold ring on the pick (PadMap box.u) and a white chevron at your target; dead / offline / out of range (PadMap's one rng) as the bottom; an 18 px Select tab beside the column (off / on / not bound); in a raid nothing; the combat log's switch calls retired (PadMap m129); hub33: THE PET'S STRIP IN THE HUD (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs Pet HUD"): "uisw" 32 / 33 -> WC.npWant.pet (Trail.lua prd11: the pet's strip under the resource bar, on unless turned off); the game's pet frame is its own group now ("pet"): as the player frame (hidden with it while our strip stands in; a review fix 2026-11-11: never hidden by our strip alone); the doc's sw.pet / set.pet; hub32: THE GAME'S COMBO POINTS UNDER A HIDDEN TARGET FRAME (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"; 2026-11-11): the game draws them on ComboFrame, a child of TargetFrame (Blizzard's Classic FrameXML), so HUD mode's target switch (TargetFrame at alpha 0) hid them with it; with our target bar off nothing showed them. Now, while the game's host frame is hidden by us and our target bar (its own pips) is off, the combo frame ignores its parent's alpha (SetIgnoreParentAlpha, alpha only like the rest of HUD mode); otherwise it follows it again; hub31: HIDE POLESTAR ON THE TOP SCREEN (the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): "uisw" 30 / 31 - every top-level frame Polestar names (PolestarGuideFrame, its arrow, its pad hints, toasts ...) at alpha 0 while on, and kept there when it shows again; off gives each its alpha 1 back; alpha only, nothing of Polestar changed; the doc's sw.ps; hub30: the third choice's RULES (the user, 2026-11-10: "it would be better if it stay on out of combat incase someone else pulls me into combat, and it should turn off when I target something out of combat AND start attack and then swap back when an ability is used before that ability fires" ... "make sure hunters mark does not trigger it to swap back on"): on by default and after every fight; OFF when an attack starts out of a fight with a target (PLAYER_ENTER_COMBAT); back ON at an ability's send (UNIT_SPELLCAST_SENT, before it fires) - never for Hunter's Mark, Auto Shot or Attack; hub29 (replaced by hub30): "In combat" turns the option on AT THE PULL (the user, 2026-11-10: "I pull with arcane shot and then when they get close, my auto attack melee is not on"): a spell you cast, Auto Shot or a melee swing starting out of a fight writes 1 right then (allowed: no lockdown yet), and 0 again 8 s later if no fight came of it; hub28: COMBAT AUTO SHOT "In combat" (the user, 2026-11-10: "add a third toggle to the hunter option to basically only turn it on during combat"): "uisw" 28 / 29 - while on, the game's autoRangedCombat is written 1 as a fight starts and 0 when it ends (and 0 at once out of a fight); the doc's sw.shotf, sw.shotfk = whether the fight's write took; hub27: the Party mode switch also starts / stops the combat log (PadMap m112); hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub47"          -- hub47: THE TARGET PLATE PASS (the user, 2026-11-13: "I want an animation that transitions an enemy targets name plates to the top of the screen when targeting them and putting a sort of animated red pointer over the in place of it (the skull and !should be moving to the top as well)", "I dont like the current Y button visual on the target plates", "The target bar in general seems kind of blurry"): WC.uf uf18 - the head flies scaled from the plate, the bobbing red arrow, the bare Y glyph + spyglass, the pixel-snapped crisp bar; hub46: ONE GLYPH RULE (issue #195 review, the user's m119 ruling "the inspect glyph is Y not X"): the party glyphs and the Select tab's B take ActionBar.lua's WC.padGlyphAtlas (each button its own letter, Rev_* Nintendo / Ltr_* plain: Back = Rev_B as the app's rev_b), no swapped letters of Hub's own; hub45: THE NINTENDO BAR'S SWITCH (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off / Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar replacing the stock one): "uisw" NBAR_OFF 34 / NBAR_ON 35 -> WC.nbarSet (ActionBar.lua nbar1: the stock bar at alpha 0, ours shown); the doc's sw.nbar / set.nbar; and the target bar's aura sweeps by the duration object (uf17, "Yes, fix them too"). hub44: A HUNTER'S MARK PULL KEEPS AUTO SHOT (the user's pick, 2026-11-12: "Mark pull keeps Auto Shot"; the attack start PLAYER_ENTER_COMBAT reports within MARK_S of a Mark SENT / SUCCEEDED is the Mark pull's, so it writes no 0; the macro order too, the review fix: an attack start, then a Mark SENT within PULL_UNDO_S 0.3 s out of the lockdown, writes 1 back - it undoes that same press's 0; Mark still never turns it ON by itself, the hub30 rule "make sure hunters mark does not trigger it to swap back on"). hub43: COMBAT AUTO SHOT KEEPS AUTO SHOT THROUGH AN ABILITY'S OWN /startattack (the user, 2026-11-12, a level 15 Hunter: "sometimes when using arcane shot my auto fire just stops and my dude stands there"): the attack start PLAYER_ENTER_COMBAT reports is often PadMap's attack-on-cast /startattack, so the "In combat" choice's 0 no longer follows an ability's SEND (or its FAILED, a cast that never sent) within 1 s or our atkgo within 1.5 s; otherwise the plain pull's 0 is written at once, as hub30 did (a wait lost the 0 to the lockdown of an in-range first swing), and an ability's SEND after it writes 1; PLAYER_REGEN_DISABLED writes 1 again after an ability's SEND within 2 s while it reads 0; the doc's shotlog (the last 24 moments, plain values, riding along); hub42: THE TOP PARTY BLOCK MOVES WITH PARTY MODE (the user, 2026-11-12: "party members are listed in ONE column ... on the LEFT side"; in Party mode they "fade out of the left column and fade back in UNDER the player's HUD bar"; "the player should not have their HP bar on the right side with party mode any more"; the Select tab: their pick B): out of Party mode party1..4 one a row, top to bottom, in the top-left column (PF.X / PF.Y as before), no Select tab; Party mode on: the block fades out (FADE_S 0.2), moves while unseen and fades in under the HUD bar (Trail prd15 WC.prd.partyGeo: party1's bar under the HP bar's left), two a row - [party1][party2] / [party3][party4] - and the reverse when it goes off (alpha only, our own plain frames: allowed in a fight; no secure frame moves); the game's side tab, lit, at the grid's LEFT edge, the rows' full height (none on the screen's edge any more); the grid tells Trail the room it takes (WC.prd.partyRoom: the HUD's aura row under it); still no self row, every bar one column's (W_BAR), raids nothing. The user's answers the same day: three members = [party1] alone on the first row (one column's bar), then [party2][party3]; solo in Party mode the tab stands beside the [me][pet] row (the HUD bars' height), grouped beside the party rows as before; the HUD always shown in Party mode, its buff / debuff row above its bars (Trail prd15); THE ON-SCREEN GUARD (the user: "KEEP IT ON SCREEN"): the rows' room (RING_PAD under the last) told to Trail from the moment Party mode is wanted, the grid placed at Trail's lifted HUD, and a changed place under the HUD (the lift, the scale, the combo pips) re-placed only at the fade's bottom (PF.regeo); hub41: THE TOP BLOCK'S REVIEW FIXES (the user, 2026-11-12, the top screen's party renders): the Select tab follows a K change too (PF.tabScale: its place, width, cap slices and glyphs again at today's K; before, it stayed at the scale it was made with while the rows moved), and the rows' pitch 55 -> 64 so Party mode's gold ring on a row ends above the next row's name (it cut through the name); hub40: THE TOP PARTY BARS ONE COLUMN WIDE (the user, 2026-11-12: "I had someone join my group on an old build and their health bar was a mile long"): a full row's bar spanned both columns (W_FULL 510 px, hub35 / 1428 on), so one member alone, or the first rows of a party of 3 / 4, had a bar wider than the target bar; now every party bar is one column's (W_BAR 194), a full row left-aligned, and PF.place re-sizes a row when K changes (PLAYER_ENTERING_WORLD); hub39: int/1429 (hub38 + combat-nav). hub38: THE PLAYER / PET ROW AND THE SELECT TAB IN THE GAME'S ART (the user, 2026-11-11, after using 1428: "I think the pet should be to the right of the player" and "The side panel around the select button looks like an AI border. It needs to use wow assets and sit outside of the player brand look more like its attached to the side of the screen"): the top block follows PadMap m134's rows (you + the pet share the first row, the party members under it: 1-2 full rows, 3: a full row then a shared one, 4: 2x2), so the party block no longer depends on the pet; the top Select tab is the game's own side tab (atlas common-sidetab-c60-2x, sliced top / middle / bottom so its bevels keep their shape; lit = common-sidetab-selected-c60-2x over it), flush on the screen's left edge (x 0); no drawn fill or edge any more; hub37: hub35 (the party grid) and hub36 (Polestar's hide sticks) merged, both kept. hub35: THE TOP PARTY BLOCK (the user, 2026-11-11: "the other 4 party members are in a square shape in the top left", then the adaptive rows "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate"): ONLY the party members, in the bottom's own arrangement (PadMap m131's entries you / pet / party1..4: the same rows and left / right sides, the rows with no party member dropped) as a compact block in the top left - a full row's bar spans both columns, a shared row's halves one each; no self row any more (picking you / your pet boxes the HUD's bars / pet strip: Trail.lua prd14); the Select tab beside the block (its rows; one row's height while solo with Party mode on); hub34: THE TOP PARTY COLUMN (party_design.md D and the user's decisions 2026-11-11): you, then party1..4, one row each in the bottom's order, every row the target bar's builder (npBar + the HUD rim, the level in a hudBox, the name above the lip, the HUD's green re-tinted every step); your own row while grouped or whenever Party mode is on; Party mode on: each row's LB glyph, a gold ring on the pick (PadMap box.u) and a white chevron at your target; dead / offline / out of range (PadMap's one rng) as the bottom; an 18 px Select tab beside the column (off / on / not bound); in a raid nothing; the combat log's switch calls retired (PadMap m129); hub33: THE PET'S STRIP IN THE HUD (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs Pet HUD"): "uisw" 32 / 33 -> WC.npWant.pet (Trail.lua prd11: the pet's strip under the resource bar, on unless turned off); the game's pet frame is its own group now ("pet"): as the player frame (hidden with it while our strip stands in; a review fix 2026-11-11: never hidden by our strip alone); the doc's sw.pet / set.pet; hub32: THE GAME'S COMBO POINTS UNDER A HIDDEN TARGET FRAME (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"; 2026-11-11): the game draws them on ComboFrame, a child of TargetFrame (Blizzard's Classic FrameXML), so HUD mode's target switch (TargetFrame at alpha 0) hid them with it; with our target bar off nothing showed them. Now, while the game's host frame is hidden by us and our target bar (its own pips) is off, the combo frame ignores its parent's alpha (SetIgnoreParentAlpha, alpha only like the rest of HUD mode); otherwise it follows it again; hub31: HIDE POLESTAR ON THE TOP SCREEN (the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): "uisw" 30 / 31 - every top-level frame Polestar names (PolestarGuideFrame, its arrow, its pad hints, toasts ...) at alpha 0 while on, and kept there when it shows again; off gives each its alpha 1 back; alpha only, nothing of Polestar changed; the doc's sw.ps; hub30: the third choice's RULES (the user, 2026-11-10: "it would be better if it stay on out of combat incase someone else pulls me into combat, and it should turn off when I target something out of combat AND start attack and then swap back when an ability is used before that ability fires" ... "make sure hunters mark does not trigger it to swap back on"): on by default and after every fight; OFF when an attack starts out of a fight with a target (PLAYER_ENTER_COMBAT); back ON at an ability's send (UNIT_SPELLCAST_SENT, before it fires) - never for Hunter's Mark, Auto Shot or Attack; hub29 (replaced by hub30): "In combat" turns the option on AT THE PULL (the user, 2026-11-10: "I pull with arcane shot and then when they get close, my auto attack melee is not on"): a spell you cast, Auto Shot or a melee swing starting out of a fight writes 1 right then (allowed: no lockdown yet), and 0 again 8 s later if no fight came of it; hub28: COMBAT AUTO SHOT "In combat" (the user, 2026-11-10: "add a third toggle to the hunter option to basically only turn it on during combat"): "uisw" 28 / 29 - while on, the game's autoRangedCombat is written 1 as a fight starts and 0 when it ends (and 0 at once out of a fight); the doc's sw.shotf, sw.shotfk = whether the fight's write took; hub27: the Party mode switch also starts / stops the combat log (PadMap m112); hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked hub36 (hub35 is fix/party-grid's tag: merge both, keep the higher): POLESTAR'S HIDE STICKS (the user, 2026-11-11, the switch on: "The polestar window randomly reappears a lot"): Polestar fades its windows back by itself (every fight's start and end, a setting change, each window's own fade-in, windows made later), with no Show; now a secure post-hook on each frame's SetAlpha puts the 0 back in the same frame and keeps the alpha Polestar asked for, its known names looked up every 0.25 s while hidden, Off gives back every frame touched (re-parented too); hub34: THE TOP PARTY COLUMN (party_design.md D and the user's decisions 2026-11-11): you, then party1..4, one row each in the bottom's order, every row the target bar's builder (npBar + the HUD rim, the level in a hudBox, the name above the lip, the HUD's green re-tinted every step); your own row while grouped or whenever Party mode is on; Party mode on: each row's LB glyph, a gold ring on the pick (PadMap box.u) and a white chevron at your target; dead / offline / out of range (PadMap's one rng) as the bottom; an 18 px Select tab beside the column (off / on / not bound); in a raid nothing; the combat log's switch calls retired (PadMap m129); hub33: THE PET'S STRIP IN THE HUD (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs Pet HUD"): "uisw" 32 / 33 -> WC.npWant.pet (Trail.lua prd11: the pet's strip under the resource bar, on unless turned off); the game's pet frame is its own group now ("pet"): as the player frame (hidden with it while our strip stands in; a review fix 2026-11-11: never hidden by our strip alone); the doc's sw.pet / set.pet; hub32: THE GAME'S COMBO POINTS UNDER A HIDDEN TARGET FRAME (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"; 2026-11-11): the game draws them on ComboFrame, a child of TargetFrame (Blizzard's Classic FrameXML), so HUD mode's target switch (TargetFrame at alpha 0) hid them with it; with our target bar off nothing showed them. Now, while the game's host frame is hidden by us and our target bar (its own pips) is off, the combo frame ignores its parent's alpha (SetIgnoreParentAlpha, alpha only like the rest of HUD mode); otherwise it follows it again; hub31: HIDE POLESTAR ON THE TOP SCREEN (the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): "uisw" 30 / 31 - every top-level frame Polestar names (PolestarGuideFrame, its arrow, its pad hints, toasts ...) at alpha 0 while on, and kept there when it shows again; off gives each its alpha 1 back; alpha only, nothing of Polestar changed; the doc's sw.ps; hub30: the third choice's RULES (the user, 2026-11-10: "it would be better if it stay on out of combat incase someone else pulls me into combat, and it should turn off when I target something out of combat AND start attack and then swap back when an ability is used before that ability fires" ... "make sure hunters mark does not trigger it to swap back on"): on by default and after every fight; OFF when an attack starts out of a fight with a target (PLAYER_ENTER_COMBAT); back ON at an ability's send (UNIT_SPELLCAST_SENT, before it fires) - never for Hunter's Mark, Auto Shot or Attack; hub29 (replaced by hub30): "In combat" turns the option on AT THE PULL (the user, 2026-11-10: "I pull with arcane shot and then when they get close, my auto attack melee is not on"): a spell you cast, Auto Shot or a melee swing starting out of a fight writes 1 right then (allowed: no lockdown yet), and 0 again 8 s later if no fight came of it; hub28: COMBAT AUTO SHOT "In combat" (the user, 2026-11-10: "add a third toggle to the hunter option to basically only turn it on during combat"): "uisw" 28 / 29 - while on, the game's autoRangedCombat is written 1 as a fight starts and 0 when it ends (and 0 at once out of a fight); the doc's sw.shotf, sw.shotfk = whether the fight's write took; hub27: the Party mode switch also starts / stops the combat log (PadMap m112); hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -1129,44 +1129,52 @@ do
     -- indexed, a secret icon goes straight to SetTexture; the instance-ID route when the index loop throws; the probe "aurasec".
     -- uf17 (issue #195, the user 2026-11-12: "Yes, fix them too"): the target bar's secret aura sweeps by the aura's duration object
     -- (Trail.lua prd17 P.auraSweep), the old setter route without it.
-    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf17" }
+    -- uf18 (the user, 2026-11-13: "I want an animation that transitions an enemy targets name plates to the top of the screen when
+    -- targeting them and putting a sort of animated red pointer over the in place of it (the skull and !should be moving to the top as
+    -- well)"; "I dont like the current Y button visual on the target plates I think that it should go back to just being the Y glyph there
+    -- maybe with the magnifying glass in its corner"; "The target bar in general seems kind of blurry"): the whole head flies (FLY, scaled),
+    -- the hostile target's plate hidden while targeted and the bobbing red arrow in its place (TB.arrow), Trail's skull / '!' on the bar,
+    -- the prompt the bare Y glyph + a corner spyglass (the floating glyph's corner too), and the crisp pass (PX, snapped u, NEAREST rim).
+    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf18" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     -- uf16 (issue #181): the secret test FIRST, then the nil test (a secret refuses even ~= nil)
     local function plainV(v) return (type(WC.isPlain) ~= "function" or WC.isPlain(v)) and type(v) ~= "nil" end
     local function call(f, ...) local ok, a, b, c, d, e, g, h, i = pcall(f, ...); if ok then return a, b, c, d, e, g, h, i end end
     local function bool(f, ...) local v = call(f, ...); if plainV(v) then return v == true end return nil end
+    -- uf18 THE CRISP BAR (the user, 2026-11-13: "The target bar in general seems kind of blurry"): K stays "1 spec px at 1080", and PX
+    -- is ONE PHYSICAL PIXEL in UIParent's units (its height over the screen's physical height, GetPhysicalScreenSize; 1080 without
+    -- it). Every u() is rounded to whole physical pixels (a 148.8 px pip strip, a 1.5 px gap and a non-1080 screen all landed between
+    -- pixels and were drawn smeared over two), the font shadow is one physical pixel (it was 1 UI unit = 1.4 px at 1080: a soft double
+    -- edge round every letter with the outline), the thin edges are whole pixels (edgeBox), and the HUD rim pieces are drawn with
+    -- the NEAREST filter (TB.FILTER: the 19-texel art blown up 3x by the default bilinear filter was the soft rim).
     local function scaleK()
         local okH, uh = pcall(function() return UIParent:GetHeight() end)
         return (okH and type(uh) == "number" and uh > 0) and (uh / 1080) or (768 / 1080)
     end
-    local K = scaleK()
-    local function u(px) return px * K end
+    local function scalePX()
+        local okH, uh = pcall(function() return UIParent:GetHeight() end)
+        if not (okH and type(uh) == "number" and uh > 0) then uh = 768 end
+        local okP, _, ph = pcall(GetPhysicalScreenSize)
+        if not (okP and type(ph) == "number" and ph > 0 and plainV(ph)) then ph = 1080 end
+        return uh / ph
+    end
+    local K, PX = scaleK(), scalePX()
+    local crispTex
+    local function snap(v) return math.floor(v / PX + 0.5) * PX end
+    local function u(px) return snap(px * K) end
+    -- a texel scale (a multiplier: the HUD art's k = h / 8) stays exact; what it builds is placed in whole texels of it
+    local function ur(px) return px * K end
+    UF.u, UF.snap = u, snap
+    function UF.px() return PX end
     local FONT = "Fonts\\FRIZQT__.TTF"
 
     -- ---------------------------------------------------------------- pieces
     local function text(parent, size, layer)
         local fs = parent:CreateFontString(nil, layer or "OVERLAY")
         fs:SetFont(FONT, u(size), "OUTLINE")
-        fs:SetShadowOffset(1, -1)
+        fs:SetShadowOffset(PX, -PX)                                         -- uf18: one physical pixel (was 1 UI unit)
         return fs
-    end
-    local function bar(parent, w, h)
-        local b = CreateFrame("StatusBar", nil, parent)
-        b:SetSize(u(w), u(h))
-        local edge = b:CreateTexture(nil, "BACKGROUND", nil, -2)
-        edge:SetPoint("TOPLEFT", b, "TOPLEFT", -1, 1); edge:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 1, -1)
-        edge:SetColorTexture(0, 0, 0, 0.85)
-        local bg = b:CreateTexture(nil, "BACKGROUND", nil, -1)
-        bg:SetAllPoints(b); bg:SetColorTexture(0.06, 0.06, 0.06, 0.75)
-        local fill = b:CreateTexture(nil, "ARTWORK")
-        b.fill = fill
-        if type(PRD.setFill) == "function" then pcall(PRD.setFill, b) else fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar") end
-        b:SetStatusBarTexture(fill)
-        local okT, real = pcall(function() return b:GetStatusBarTexture() end)
-        if okT and type(real) == "table" then b.fill = real end
-        b:SetMinMaxValues(0, 1); b:SetValue(1)
-        return b
     end
     -- hub34 (party_design.md D): every call re-tints (the early return left a colour the game had changed on the fill)
     local function paint(b, r, g, bl)
@@ -1239,16 +1247,24 @@ do
     -- 1080); now everything under the bar starts LIP_B texels below it plus GAP px, and the stack keeps its own gaps (pips 5, cast 6).
     -- Hub's HV stays (the party branch's hub42); this section's tag is UF.V.
     local TB = { W = 372, SHIFT = 16, NAME = 20, HP = 24, CP = 6, CAST = 15, LV = 30, ICON = 26, IGAP = 3, DEBUFF_MAX = 8, BUFF_MAX = 6,
-                 TOT_W = 140, TOT_HP = 10, AURA_S = 0.25, LIP_B = 4, GAP = 5 }
+                 TOT_W = 140, TOT_HP = 10, AURA_S = 0.25, LIP_B = 4, GAP = 5, PROMPT = 30, GLASS = 15, ICON_AV = 22, ICON_Q = 24 }
     UF.tb = TB
     -- uf15: the space under the health bar's bottom edge before anything stacks there: the rim's visible lower lip + GAP
-    function TB.under() return u(TB.HP / 8) * TB.LIP_B + u(TB.GAP) end
+    function TB.under() return ur(TB.HP / 8) * TB.LIP_B + u(TB.GAP) end
     local function atlas(tex, name)
         if type(PRD.atlasOn) == "function" then return PRD.atlasOn(tex, name) end
         return pcall(function() tex:SetAtlas(name) end)
     end
+    -- uf18: the HUD rim art at whole texels (no bilinear smear), snapped to the pixel grid; a client without the filter argument: plain
+    TB.FILTER = "NEAREST"
+    crispTex = function(t, file)
+        if not pcall(t.SetTexture, t, file, "CLAMP", "CLAMP", TB.FILTER) then t:SetTexture(file) end
+        pcall(t.SetSnapToPixelGrid, t, true)
+        pcall(t.SetTexelSnappingBias, t, 0)
+    end
     -- a black frame (2 px) with a thin dark-gold rim round the bar, a plain dark ground: nothing of it sits inside the bar's own edge
     local function edgeBox(parent, target, px, r, g, b, a, layer, sub)
+        px = px * PX                                                        -- uf18: whole physical pixels
         for _, e in ipairs({ { "TOPLEFT", "TOPRIGHT", 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", -1 } }) do
             local t = parent:CreateTexture(nil, layer, nil, sub)
             t:SetColorTexture(r, g, b, a)
@@ -1276,14 +1292,14 @@ do
             if ok and type(i) == "table" and i.file and type(i.leftTexCoord) == "number" then info = i; break end
         end
         if not info then return false end
-        local k = u(h / 8)
+        local k = ur(h / 8)
         local L, R, Tt, B = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
         local host = b:GetParent()
         local lip = CreateFrame("Frame", nil, host)
         lip:SetAllPoints(b); lip:SetFrameLevel(b:GetFrameLevel() + 2); lip:EnableMouse(false)
         local function sub(parent, layer, level, c0, r0, c1, r1)
             local t = parent:CreateTexture(nil, layer, nil, level)
-            t:SetTexture(info.file)
+            crispTex(t, info.file)
             t:SetTexCoord(L + (R - L) * c0 / BW, L + (R - L) * c1 / BW, Tt + (B - Tt) * r0 / BH, Tt + (B - Tt) * r1 / BH)
             return t
         end
@@ -1322,13 +1338,13 @@ do
             if ok and type(i) == "table" and i.file and type(i.leftTexCoord) == "number" then info = i; break end
         end
         if not info then return false end
-        local k = u(kh / 8)
+        local k = ur(kh / 8)
         local L, R, Tt, B = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
         -- uf9 (the user: "the shadows in side of the level box on the top and bottom of the number look bad"): the art's top lip and left
         -- side only, mirrored for the bottom and the right (an even 3-texel edge all round, none of the bar's shade rows), a FLAT ground
         local function piece(layer, c0, r0, c1, r1)
             local t = box:CreateTexture(nil, layer, nil, 1)
-            t:SetTexture(info.file)
+            crispTex(t, info.file)
             t:SetTexCoord(L + (R - L) * c0 / BW, L + (R - L) * c1 / BW, Tt + (B - Tt) * r0 / BH, Tt + (B - Tt) * r1 / BH)
             return t
         end
@@ -1499,7 +1515,7 @@ do
         f.mp:SetPoint("TOPLEFT", f.hp, "BOTTOMLEFT", 0, -u(PF.GAP))
         -- the name above the bar's lip (the target bar's rule)
         f.name = text(f, PF.NAME); f.name:SetJustifyH("LEFT")
-        f.name:SetPoint("BOTTOMLEFT", f.hp, "TOPLEFT", u(2), u(PF.HP / 8) * 3 + u(2))
+        f.name:SetPoint("BOTTOMLEFT", f.hp, "TOPLEFT", u(2), ur(PF.HP / 8) * 3 + u(2))
         -- the glyph slot (36 px, always kept), the LB glyph in it while Party mode is on
         f.glyph = f:CreateTexture(nil, "OVERLAY"); f.glyph:SetSize(u(PF.SLOT - 6), u(PF.SLOT - 6))
         f.glyph:SetPoint("CENTER", f, "TOPLEFT", u(PF.SLOT / 2), -u(PF.NAME_H + (PF.HP + PF.GAP + PF.MP) / 2)); f.glyph:Hide()
@@ -1517,7 +1533,7 @@ do
         -- dead: a grey ground over the bar
         f.deadG = f.hp:CreateTexture(nil, "OVERLAY", nil, 5); f.deadG:SetAllPoints(f.hp); f.deadG:SetColorTexture(0.5, 0.5, 0.5, 0.35); f.deadG:Hide()
         -- the rings: 3 px outside the HUD frame (its lip: 3 texels up / left, 7 right, 8 down, the power bar's under the bar's)
-        local kh, km = u(PF.HP / 8), u(PF.MP / 8)
+        local kh, km = ur(PF.HP / 8), ur(PF.MP / 8)
         f.ring = PF.ring(f)
         f.ring.place(f.hp, f.mp, -3 * kh - u(3), 3 * kh + u(3), 7 * kh + u(3), -8 * km - u(3), u(2))
         -- your target, while Party mode is on: a small white chevron right of the bar (the pick is the gold ring)
@@ -1533,7 +1549,7 @@ do
     function PF.rescale(f)
         if f.look.k == K then return end
         f.look.k = K
-        local kh, km = u(PF.HP / 8), u(PF.MP / 8)
+        local kh, km = ur(PF.HP / 8), ur(PF.MP / 8)
         f.hp:ClearAllPoints(); f.hp:SetPoint("TOPLEFT", f, "TOPLEFT", u(PF.BAR_X), -u(PF.NAME_H))
         f.mp:ClearAllPoints(); f.mp:SetPoint("TOPLEFT", f.hp, "BOTTOMLEFT", 0, -u(PF.GAP))
         f.name:ClearAllPoints(); f.name:SetPoint("BOTTOMLEFT", f.hp, "TOPLEFT", u(2), kh * 3 + u(2))
@@ -1823,22 +1839,31 @@ do
         PF.draw(pm)
     end
 
-    local function buildTarget()
-        if TB.f then return TB.f end
-        local f = CreateFrame("Frame", "WowCompanionUFTarget", UIParent)
-        f:SetSize(u(TB.W), u(TB.NAME + 2 + TB.HP))
-        f:SetFrameStrata("LOW"); f:EnableMouse(false); f:Hide()
-        TB.f = f
+    -- uf18: the spyglass (the game's INV_Misc_Spyglass_02) on a glyph's lower right corner, a thin black edge round it; size in UI units
+    local function glassOn(parent, corner, size)
+        size = snap(size)
+        local bd = parent:CreateTexture(nil, "OVERLAY", nil, 1)
+        bd:SetColorTexture(0, 0, 0, 0.9); bd:SetSize(size + 2 * PX, size + 2 * PX)
+        local ic = parent:CreateTexture(nil, "OVERLAY", nil, 2)
+        ic:SetSize(size, size); ic:SetTexture("Interface\\Icons\\INV_Misc_Spyglass_02"); ic:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        local d = snap(size * 0.2)
+        ic:SetPoint("CENTER", corner, "BOTTOMRIGHT", -d, d); bd:SetPoint("CENTER", ic, "CENTER", 0, 0)
+        return ic, bd
+    end
+    -- uf18 THE HEAD: the name above the bar, the bar, the level box (the skull for ??, the elite / rare dragon behind it) and the plate's
+    -- own icons (Trail ag2's AVOID skull and quest '!': the user, 2026-11-13, "the skull and ! should be moving to the top as well") -
+    -- built the same for the target bar and for the fly's copy, so the copy that leaves the plate IS the bar that lands
+    local function buildHead(f)
         -- the name above the bar, centred
         f.name = text(f, 16); f.name:SetJustifyH("CENTER")
         f.hp = npBar(f, TB.W, TB.HP, "UI-HUD-CoolDownManager-Bar", true)
         f.hp:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -u(TB.NAME + 2))
         -- uf7 (the user: "The name shouldn't sit behind the border"): the name above the bar's lip (3 texels of the HUD art over the bar)
-        f.name:SetPoint("BOTTOM", f.hp, "TOP", 0, u(TB.HP / 8) * 3 + u(3))
+        f.name:SetPoint("BOTTOM", f.hp, "TOP", 0, ur(TB.HP / 8) * 3 + u(3))
         f.pct = text(f.hp, 12); f.pct:SetPoint("RIGHT", f.hp, "RIGHT", -u(6), 0)
         -- the level shield on the left: its own dark box in a gold rim, the level in gold (the skull for ??); the elite / rare dragon behind
         f.shield = CreateFrame("Frame", nil, f)
-        f.shield:SetSize(u(TB.LV), u(TB.LV)); f.shield:SetPoint("RIGHT", f.hp, "LEFT", -u(14), 0)
+        f.shield:SetPoint("RIGHT", f.hp, "LEFT", -u(14), 0)
         f.shield:SetSize(u(TB.HP + 6), u(TB.HP))                           -- uf7: the bar's height, so its frame lines up with the bar's
         if not hudBox(f.shield, TB.HP) then
             local sg = f.shield:CreateTexture(nil, "BACKGROUND"); sg:SetAllPoints(f.shield); sg:SetColorTexture(0.17, 0.13, 0.09, 0.95)
@@ -1849,21 +1874,42 @@ do
         f.skull = f.shield:CreateTexture(nil, "ARTWORK"); f.skull:SetSize(u(20), u(20)); f.skull:SetPoint("CENTER", f.shield, "CENTER", 0, 0); f.skull:Hide()
         if not atlas(f.skull, "ui-hud-nameplates-levelindicator-skull") then f.skull:SetTexture("Interface\\TargetingFrame\\UI-TargetingFrame-Skull") end
         f.cls = f:CreateTexture(nil, "BACKGROUND", nil, -5); f.cls:SetSize(u(48), u(48)); f.cls:SetPoint("CENTER", f.shield, "CENTER", -u(4), u(2)); f.cls:Hide()
+        -- uf18: the plate's icons ride with the target, right of its name (Trail's own atlases: dungeonskull / smallquestbang)
+        f.av = f:CreateTexture(nil, "OVERLAY"); f.av:SetSize(u(TB.ICON_AV), u(TB.ICON_AV)); f.av:Hide()
+        if not atlas(f.av, "dungeonskull") then f.av:SetTexture("Interface\\TargetingFrame\\UI-TargetingFrame-Skull") end
+        f.q = f:CreateTexture(nil, "OVERLAY"); f.q:SetSize(u(TB.ICON_Q), u(TB.ICON_Q)); f.q:Hide()
+        atlas(f.q, "smallquestbang")
+    end
+    -- uf18: the icons in a row right of the name: the skull, then the '!'
+    local function headIcons(f, av, q)
+        local after = f.name
+        for _, it in ipairs({ { f.av, av }, { f.q, q } }) do
+            local t, on = it[1], it[2]
+            if on then
+                t:ClearAllPoints(); t:SetPoint("LEFT", after, "RIGHT", u(after == f.name and 6 or 2), 0); t:Show()
+                after = t
+            else t:Hide() end
+        end
+    end
+    local function buildTarget()
+        if TB.f then return TB.f end
+        local f = CreateFrame("Frame", "WowCompanionUFTarget", UIParent)
+        f:SetSize(u(TB.W), u(TB.NAME + 2 + TB.HP))
+        f:SetFrameStrata("LOW"); f:EnableMouse(false); f:Hide()
+        TB.f = f
+        buildHead(f)
         f.mark = f:CreateTexture(nil, "OVERLAY"); f.mark:SetSize(u(22), u(22)); f.mark:SetPoint("LEFT", f.hp, "RIGHT", u(7), 0)
         f.mark:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons"); f.mark:Hide()
-        -- uf9 / uf10 (the user's pick "3: Both in the box", "it needs to be a bit bigger"): the inspect prompt right of the bar - the GAME'S
-        -- own button glyph (the one over the nameplates: its atlas on our texture, m106's rule) and the spyglass, in the level box's frame
+        -- uf18 (the user, 2026-11-13: "I dont like the current Y button visual on the target plates I think that it should go back to just
+        -- being the Y glyph there maybe with the magnifying glass in its corner"): no box any more - the GAME'S own Y glyph (its atlas on
+        -- our texture: WC.tgPrompt, PadMap's one glyph rule) with a small spyglass on its lower right corner (TB.PROMPT / TB.GLASS)
         local pr = CreateFrame("Frame", nil, f)
-        pr:SetSize(u(62), u(30)); pr:SetPoint("LEFT", f.hp, "RIGHT", u(14), 0); pr:Hide()
-        if not hudBox(pr, TB.HP) then
-            local pg = pr:CreateTexture(nil, "BACKGROUND"); pg:SetAllPoints(pr); pg:SetColorTexture(0, 0, 0, 0.6)
-            edgeBox(pr, pr, 1, 0.42, 0.39, 0.33, 1, "BORDER", 0)
-        end
-        pr.btn = pr:CreateTexture(nil, "ARTWORK"); pr.btn:SetSize(u(26), u(26)); pr.btn:SetPoint("LEFT", pr, "LEFT", u(3), 0)
-        pr.letter = pr:CreateFontString(nil, "OVERLAY"); pr.letter:SetFont(FONT, u(15), "OUTLINE")   -- only without the atlas
-        pr.letter:SetPoint("CENTER", pr.btn, "CENTER", 0, 0); pr.letter:Hide()
-        pr.icon = pr:CreateTexture(nil, "ARTWORK"); pr.icon:SetSize(u(24), u(24)); pr.icon:SetPoint("LEFT", pr.btn, "RIGHT", u(4), 0)
-        pr.icon:SetTexture("Interface\\Icons\\INV_Misc_Spyglass_02"); pr.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        pr:SetSize(u(TB.PROMPT), u(TB.PROMPT)); pr:SetPoint("LEFT", f.hp, "RIGHT", u(14), 0); pr:Hide()
+        pr.btn = pr:CreateTexture(nil, "ARTWORK"); pr.btn:SetAllPoints(pr)
+        pr.letter = pr:CreateFontString(nil, "OVERLAY"); pr.letter:SetFont(FONT, u(18), "OUTLINE")   -- only without the atlas
+        pr.letter:SetShadowOffset(PX, -PX)
+        pr.letter:SetPoint("CENTER", pr, "CENTER", 0, 0); pr.letter:Hide()
+        pr.icon, pr.iconBd = glassOn(pr, pr, u(TB.GLASS))
         f.prompt = pr
         -- combo points: a thin pip strip right under the bar (0..max with the gaps drawn over)
         f.cp = npBar(f, TB.W * 0.4, TB.CP, "UI-HUD-CoolDownManager-Bar", false)
@@ -1886,7 +1932,7 @@ do
         pcall(function() f.totName:SetFont(FONT, u(13), "THICKOUTLINE") end)       -- uf7 ("I cant read the name on the target of target")
         f.totHp = npBar(f.tot, TB.TOT_W, TB.TOT_HP, "UI-HUD-CoolDownManager-Bar", true)
         f.totHp:SetPoint("TOPLEFT", f.tot, "TOPLEFT", 0, -u(17)); paint(f.totHp, 0.1, 0.8, 0.1)
-        f.totName:SetPoint("BOTTOMLEFT", f.totHp, "TOPLEFT", 0, u(TB.TOT_HP / 8) * 3 + u(2))
+        f.totName:SetPoint("BOTTOMLEFT", f.totHp, "TOPLEFT", 0, ur(TB.TOT_HP / 8) * 3 + u(2))
         f.tot:Hide()
         UF.placeTarget()
         return f
@@ -2111,11 +2157,21 @@ do
         end
     end
     -- uf14 THE FLY (the user, 2026-11-09: "When targetting an enemy I want their nameplate to animate up into the target space centered at
-    -- the top of the screen and vise versa"): a new ENEMY target's nameplate bar flies up into the target bar (our own copy: the plate is
-    -- only read for where it is on screen, never moved), the bar shows when it lands; losing the target, the bar flies back down onto the
-    -- plate it came from while that plate still shows. Our own frame, alpha / place only; read-only geometry of the plate.
-    local FLY_S = 0.24
+    -- the top of the screen and vise versa"): a new ENEMY target's nameplate flies up into the target bar (our own copy: the plate is
+    -- only read for where it is on screen, never moved), the bar shows when it lands; losing the target, the copy flies back down onto the
+    -- plate it came from while that plate still shows. Our own frame, alpha / place / scale only; read-only geometry of the plate.
+    -- uf18 (the user, 2026-11-13: "I want an animation that transitions an enemy targets name plates to the top of the screen when
+    -- targeting them and putting a sort of animated red pointer over the in place of it (the skull and !should be moving to the top as
+    -- well)"; the pick "Bobbing red arrow"): the copy is the WHOLE head (buildHead: the name, the bar in the plate's colour, the level /
+    -- skull, the dragon, Trail's skull and '!') at the bar's own layout, SCALED from the plate's bar width to the bar's (one SetScale, so
+    -- the text and the icons shrink and grow with it) and moved centre to centre, FLY_S with an ease out; the plate itself is hidden
+    -- (alpha) from the first frame and the bobbing red arrow (TB.arrow) stands where it was. Plain frames: allowed in a fight too.
+    local FLY_S = 0.3
     local FLY = { host = nil, bar = nil, t0 = 0, from = nil, to = nil, dir = nil }
+    UF.fly = FLY
+    UF.FLY_S = FLY_S
+    -- the aggro tint (Trail at9) waits for the landing: no tint round a bar that is not shown yet
+    function UF.flying() return FLY.dir == "up" end
     local function rectOf(r)
         if type(r) ~= "table" then return nil end
         local ok, l, b, w, h, k = pcall(function()
@@ -2126,65 +2182,153 @@ do
         if w <= 0 or h <= 0 then return nil end
         return { l * k, b * k, w * k, h * k }
     end
+    UF.rectOf = rectOf
     local function plateBarOf(plate)
         local hb = plate and call(function() return plate.UnitFrame and (plate.UnitFrame.HealthBarsContainer or plate.UnitFrame.healthBar) end)
         return type(hb) == "table" and hb or nil
     end
+    -- the copy's bar centred on (cx, cy) w wide, in UIParent units: the head at scale w / bar width (offsets are in its own scaled units)
+    function FLY.place(cx, cy, w)
+        local host = FLY.host
+        local s = math.max(0.05, w / u(TB.W))
+        FLY.s = s
+        pcall(host.SetScale, host, s)
+        host:ClearAllPoints()
+        host:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cx / s - u(TB.W) / 2, (cy + u(TB.HP) * s / 2) / s + u(TB.NAME + 2))
+    end
+    -- the place at p (0..1) of the way, eased out (cubic)
+    function FLY.at(p)
+        local e = 1 - (1 - p) ^ 3
+        local a, z = FLY.from, FLY.to
+        local ca = { a[1] + a[3] / 2, a[2] + a[4] / 2 }
+        local cz = { z[1] + z[3] / 2, z[2] + z[4] / 2 }
+        return ca[1] + (cz[1] - ca[1]) * e, ca[2] + (cz[2] - ca[2]) * e, a[3] + (z[3] - a[3]) * e
+    end
+    local function flyLand()
+        local dir = FLY.dir
+        FLY.host:Hide()
+        FLY.dir = nil
+        if dir == "up" and TB.f then TB.f:SetAlpha(1) end
+        -- down: the plate it flew onto shows again now (it stayed hidden under the copy)
+        if dir == "down" and FLY.uf and TB.hidPlate == FLY.uf then
+            pcall(FLY.uf.SetAlpha, FLY.uf, 1)
+            TB.hidPlate = nil
+        end
+        FLY.uf = nil
+    end
+    function FLY.tick(now)
+        if not FLY.dir then return end
+        local p = ((now or GetTime()) - FLY.t0) / FLY_S
+        if p >= 1 or not FLY.from or not FLY.to then flyLand(); return end
+        FLY.place(FLY.at(math.max(0, p)))
+    end
     local function flyMake()
         if FLY.host then return end
         local host = CreateFrame("Frame", nil, UIParent)
-        host:SetFrameStrata("LOW"); host:EnableMouse(false); host:Hide()
-        FLY.bar = bar(host, 10, 4)
-        FLY.bar:ClearAllPoints(); FLY.bar:SetAllPoints(host)
-        host:SetScript("OnUpdate", function()
-            local p = (GetTime() - FLY.t0) / FLY_S
-            if p >= 1 or not FLY.from or not FLY.to then
-                host:Hide()
-                if FLY.dir == "up" and TB.f then TB.f:SetAlpha(1) end
-                FLY.dir = nil
-                return
-            end
-            local e = 1 - (1 - p) ^ 3
-            local a, z = FLY.from, FLY.to
-            host:ClearAllPoints()
-            host:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", a[1] + (z[1] - a[1]) * e, a[2] + (z[2] - a[2]) * e)
-            host:SetSize(a[3] + (z[3] - a[3]) * e, a[4] + (z[4] - a[4]) * e)
-        end)
-        FLY.host = host
+        host:SetFrameStrata("LOW"); host:SetFrameLevel(20); host:EnableMouse(false); host:Hide()
+        host:SetSize(u(TB.W), u(TB.NAME + 2 + TB.HP))
+        buildHead(host)
+        FLY.host, FLY.bar = host, host.hp
+        host:SetScript("OnUpdate", function() FLY.tick() end)
     end
+    -- the copy dressed as the target now (its colours, its name, its level, Trail's icons)
+    local fillHead
     local function flyGo(dir, from, to)
         if not from or not to then return false end
         flyMake()
         FLY.dir, FLY.from, FLY.to, FLY.t0 = dir, from, to, GetTime()
-        FLY.host:ClearAllPoints()
-        FLY.host:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", from[1], from[2]); FLY.host:SetSize(from[3], from[4])
+        FLY.place(FLY.at(0))
         FLY.host:Show()
         return true
     end
 
-    function UF.targetStep()
-        local has = UF.target and bool(UnitExists, "target")
-        if has == nil and UF.target then has = call(UnitName, "target") ~= nil end
-        if not has then
-            -- uf14: the bar flies back down onto the plate it came from (while that plate still shows)
-            if TB.f and TB.f:IsShown() and TB.enemy and TB.lastPlate and TB.lastRect then
-                local okS, shown = pcall(function() return TB.lastPlate:IsVisible() end)
-                if okS and shown == true then
-                    flyMake()
-                    if TB.lastRGB then paint(FLY.bar, TB.lastRGB[1], TB.lastRGB[2], TB.lastRGB[3]) end
-                    flyGo("down", TB.lastRect, rectOf(plateBarOf(TB.lastPlate)))
-                end
-            end
-            TB.enemy, TB.lastPlate, TB.lastRect, TB.changed = nil, nil, nil, nil
-            if TB.f then TB.f:Hide(); TB.f:SetAlpha(1) end
-            plateHide(false)
+    -- uf18 THE POINTER (the pick "Bobbing red arrow"): a red down-arrow over the mob, in its plate's place, gently bobbing (BOB px up
+    -- and down, PERIOD s, a sine). OUR texture (WowCompanion/Media/target_arrow.tga, tools/make_world_markers.py) on OUR frame, a
+    -- WorldFrame child as the aggro tint (Trail at4): ANCHORED to the plate (its top, centred; never read or written: the arrow and its
+    -- bob stay inside the plate's top so PadMap's Y glyph over the plate keeps its place), in the plate's strata,
+    -- one level under its UnitFrame (so under the plate's text), sized in UIParent pixels whatever the plates' own scale. Shown while
+    -- the target bar shows a hostile target whose plate is hidden for it; a fade in of FADE_S.
+    TB.ARROW = { W = 40, H = 40, BOB = 8, PERIOD = 1.1, FADE_S = 0.2, TEX = "Interface\\AddOns\\WowCompanion\\Media\\target_arrow" }
+    local function arrowMake()
+        if TB.arrow then return TB.arrow end
+        local par = (type(WorldFrame) == "table" and WorldFrame) or UIParent
+        local a = CreateFrame("Frame", nil, par)
+        a:EnableMouse(false); a:Hide()
+        a.t = a:CreateTexture(nil, "ARTWORK")
+        a.t:SetTexture(TB.ARROW.TEX)
+        a.t0, a.a = GetTime(), 0
+        a:SetScript("OnUpdate", function(self, el)
+            local A = TB.ARROW
+            self.a = math.min(1, (self.a or 0) + (el or 0) / A.FADE_S)
+            self:SetAlpha(self.a)
+            local y = A.BOB * (0.5 + 0.5 * math.sin((GetTime() - self.t0) * 2 * math.pi / A.PERIOD))
+            self.t:ClearAllPoints()
+            self.t:SetPoint("BOTTOM", self, "BOTTOM", 0, snap(y * K) * (self.rs or 1))
+        end)
+        TB.arrow = a
+        return a
+    end
+    UF.arrowMake = arrowMake
+    -- the arrow on [plate] (nil: hidden)
+    local function arrowStep(plate)
+        local a = TB.arrow
+        if not plate then
+            if a and a:IsShown() then a:Hide() end
+            if a then a.plate, a.a = nil, 0 end
             return
         end
-        local f = buildTarget()
+        a = arrowMake()
+        if a.plate ~= plate then
+            -- UIParent pixels in the arrow's own units (WorldFrame's scale is not UIParent's)
+            local okS, rs = pcall(function() return UIParent:GetEffectiveScale() / a:GetParent():GetEffectiveScale() end)
+            rs = (okS and type(rs) == "number" and plainV(rs) and rs > 0) and rs or 1
+            a.rs = rs
+            a:SetSize(u(TB.ARROW.W) * rs, (u(TB.ARROW.H) + u(TB.ARROW.BOB)) * rs)
+            a.t:SetSize(u(TB.ARROW.W) * rs, u(TB.ARROW.H) * rs)
+            a:ClearAllPoints()
+            a:SetPoint("TOP", plate, "TOP", 0, -u(2) * rs)
+            a.plate, a.t0, a.a = plate, GetTime(), 0
+        end
+        -- under the plate's UnitFrame (its strata, one level below: re-read, a targeted plate is raised)
+        local ref = call(function() return plate.UnitFrame end) or plate
+        local strata = call(ref.GetFrameStrata, ref)
+        local lvl = call(ref.GetFrameLevel, ref)
+        if type(strata) == "string" and plainV(strata) and a.strata ~= strata then pcall(a.SetFrameStrata, a, strata); a.strata = strata end
+        if type(lvl) == "number" and plainV(lvl) then
+            local want = math.max(0, lvl - 1)
+            if a.lvl ~= want then pcall(a.SetFrameLevel, a, want); a.lvl = want end
+        end
+        if not a:IsShown() then a:Show() end
+    end
+    UF.arrowStep = arrowStep
+
+    -- uf18: the spyglass on the corner of PadMap's floating Y glyph too (WowCompanionTargetY: PadMap's frame, only anchored to and read)
+    local function glassStep()
+        local g = _G.WowCompanionTargetY
+        local shown = type(g) == "table" and call(g.IsShown, g) == true
+        if not shown then
+            if TB.glassF and TB.glassF:IsShown() then TB.glassF:Hide() end
+            return
+        end
+        if not TB.glassF then
+            local gf = CreateFrame("Frame", nil, UIParent)
+            gf:SetFrameStrata("HIGH"); gf:EnableMouse(false)
+            gf:SetAllPoints(g)
+            gf.icon, gf.bd = glassOn(gf, gf, (call(g.GetWidth, g) or 36) * TB.GLASS / TB.PROMPT)
+            TB.glassF = gf
+        end
+        local lv = call(g.GetFrameLevel, g)
+        if type(lv) == "number" and plainV(lv) then pcall(TB.glassF.SetFrameLevel, TB.glassF, lv + 2) end
+        if not TB.glassF:IsShown() then TB.glassF:Show() end
+    end
+    UF.glassStep = glassStep
+
+    -- uf18: the head dressed as the target: name and its plate colour, the bar in the plate's colour fed the target's health, the level /
+    -- skull, the dragon, Trail's icons (WC.live.tgtIcons: what the target's plate wore)
+    fillHead = function(f, rgb)
         setText(f.name, call(UnitName, "target") or "")
-        paint(f.hp, plateRGB("target"))
+        paint(f.hp, rgb[1], rgb[2], rgb[3])
         f.name:SetTextColor(plateNameRGB("target"))
-        -- the level in the shield (the skull for ??), the elite / rare dragon behind it
         local lv = call(UnitLevel, "target")
         if plainV(lv) and type(lv) == "number" and lv < 0 then f.lvl:SetText(""); f.skull:Show()
         else f.skull:Hide(); setText(f.lvl, lv) end
@@ -2195,6 +2339,40 @@ do
             if f.clsA then f.cls:Show() else f.cls:Hide() end
         else f.cls:Hide() end
         feed(f.hp, nil, "target")
+        local L = WC.live
+        local ti = type(L) == "table" and type(L.tgtIcons) == "table" and L.tgtIcons or nil
+        headIcons(f, ti and ti.av == true, ti and ti.q == true)
+    end
+    -- uf18: Hub owns the target's plate look while this is true (Trail hides that plate's skull / '!' then: they are on the bar)
+    function UF.ownsPlate()
+        return TB.f ~= nil and TB.f:IsShown() and TB.hostile == true
+    end
+
+    function UF.targetStep()
+        local has = UF.target and bool(UnitExists, "target")
+        if has == nil and UF.target then has = call(UnitName, "target") ~= nil end
+        if not has then
+            -- uf14: the copy flies back down onto the plate it came from (while that plate still shows); uf18: that plate stays hidden
+            -- under it until it lands
+            local down = false
+            if TB.f and TB.f:IsShown() and TB.enemy and TB.lastPlate and TB.lastRect then
+                local okS, shown = pcall(function() return TB.lastPlate:IsVisible() end)
+                if okS and shown == true then
+                    flyMake()
+                    FLY.uf = TB.hidPlate
+                    down = flyGo("down", TB.lastRect, rectOf(plateBarOf(TB.lastPlate)))
+                end
+            end
+            TB.enemy, TB.lastPlate, TB.lastRect, TB.changed, TB.hostile = nil, nil, nil, nil, nil
+            if TB.f then TB.f:Hide(); TB.f:SetAlpha(1) end
+            arrowStep(nil)
+            if not down and FLY.dir ~= "down" then plateHide(false) end
+            glassStep()
+            return
+        end
+        local f = buildTarget()
+        local rgb = { plateRGB("target") }
+        fillHead(f, rgb)
         -- uf11: blank by default; Total = health / max (the game's short form, else whole numbers), Percent = the percent. Secret values
         -- only go straight into the setter
         if UF.hpt then
@@ -2240,28 +2418,32 @@ do
             feed(f.totHp, nil, "targettarget")
             f.tot:Show()
         else f.tot:Hide() end
-        plateHide(plateRule())
+        -- uf18: a HOSTILE target's plate is hidden for as long as it is the target (its look is up here now; the arrow stands in its
+        -- place); any other target's by the old GROW rule (uf8)
+        TB.hostile = bool(UnitCanAttack, "player", "target") == true
+        local plate = TB.hostile and plateOf("target") or nil
+        if FLY.dir == "down" then flyLand() end                             -- a new target while the last one flew down
+        plateHide(TB.hostile or plateRule())
         f:Show()
-        -- uf14: a NEW enemy target: its plate's bar flies up into the bar (the bar shows when it lands); the fly copy follows the health
-        local rgb = { plateRGB("target") }
+        -- uf14: a NEW enemy target: its plate flies up into the bar (the bar shows when it lands); the fly copy follows the health
         if TB.changed then
             TB.changed = nil
-            TB.enemy = bool(UnitCanAttack, "player", "target") == true
-            local plate = TB.enemy and plateOf("target") or nil
+            TB.enemy = TB.hostile
             TB.lastPlate = plate
             if plate then
                 flyMake()
-                paint(FLY.bar, rgb[1], rgb[2], rgb[3])
-                feed(FLY.bar, nil, "target")
+                fillHead(FLY.host, rgb)
                 if flyGo("up", rectOf(plateBarOf(plate)), rectOf(f.hp)) then f:SetAlpha(0) end
             elseif FLY.dir == "up" then FLY.host:Hide(); FLY.dir = nil; f:SetAlpha(1) end
         end
         if TB.enemy then
             TB.lastRect = rectOf(f.hp) or TB.lastRect
             TB.lastRGB = rgb
-            if FLY.bar then feed(FLY.bar, nil, "target"); paint(FLY.bar, rgb[1], rgb[2], rgb[3]) end
+            if FLY.host then fillHead(FLY.host, rgb) end
         end
         if FLY.dir ~= "up" then f:SetAlpha(1) end
+        arrowStep(plate)
+        glassStep()
     end
 
     -- ---------------------------------------------------------------- the driver: events mark dirty, a 0.1 s step draws
@@ -2278,7 +2460,7 @@ do
     end
     drv:SetScript("OnEvent", function(_, e, unit)
         if e == "UNIT_AURA" then if unit == "target" then TB.auraDirty = true end return end
-        if e == "PLAYER_ENTERING_WORLD" then K = scaleK() end
+        if e == "PLAYER_ENTERING_WORLD" then K, PX = scaleK(), scalePX(); if TB.arrow then TB.arrow.plate = nil end end
         if e == "PLAYER_TARGET_CHANGED" then TB.auraDirty = true; TB.changed = true end      -- uf14: the fly
         stepAll()
     end)

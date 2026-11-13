@@ -11,7 +11,11 @@ resolved from its anchors) with a hostile target ("Kobold Tunneler"), in shots:
 The HUD rim pieces are drawn from the REAL art (E:/safepath-work/design/prd/game_art2/m_ui_hud_cooldownmanager_bar_bg_c60.png, cut by
 each piece's own tex coords) when it is there, else the placeholder rim; the aggro tint is our own tint_glow.tga, tinted red, in the
 frame the code places: Trail.lua's WC.rings.barAnchor (at8 on), else at7's offsets (TOPLEFT -3k-7, 3k+7 / BOTTOMRIGHT 7k+7, -8k-7).
---rev renders that commit's Hub.lua (and its Trail.lua) instead; --sheet stacks two tags' shots as a before / after sheet."""
+--rev renders that commit's Hub.lua (and its Trail.lua) instead; --sheet stacks two tags' shots as a before / after sheet.
+uf18 (2026-11-13) adds: prompt (the Y glyph prompt right of the bar), icons (Trail's skull + '!' on the bar), and three SCENE shots with a
+stand-in nameplate low on the screen: fly_0 (the plate's first frame: the copy over it, the plate hidden), fly_50 (half way, FLY_S / 2),
+landed (the bar shown, the bobbing red arrow where the plate was, PadMap's floating Y glyph with Hub's corner spyglass). The rim pieces
+drawn NEAREST when the code asks for that filter (uf18's crisp pass), else BILINEAR; atlases without art are labelled placeholders."""
 import os
 import subprocess
 import sys
@@ -31,7 +35,15 @@ OUT = "C:/Users/Jrees/AppData/Local/Temp/claude/6c5148a90427b4bc/789b5138-341f-4
 SCALE = 2                                      # the crop's zoom in the PNGs
 
 SHOTS = [("plain", dict(tint=False)), ("tint", dict(tint=True)), ("cast_tint", dict(tint=True, cast=True)),
-         ("pips_cast_tint", dict(tint=True, cast=True, pips=True)), ("full_tint", dict(tint=True, cast=True, pips=True, auras=True))]
+         ("pips_cast_tint", dict(tint=True, cast=True, pips=True)), ("full_tint", dict(tint=True, cast=True, pips=True, auras=True)),
+         ("prompt", dict(tint=True, prompt=True)), ("icons", dict(tint=True, prompt=True, icons=True))]
+SCENES = [("fly_0", dict(plate=True, icons=True, at=0.0)), ("fly_50", dict(plate=True, icons=True, at=0.5)),
+          ("landed", dict(plate=True, icons=True, prompt=True, glyph=True, at=None))]
+ARROW_TGA = os.path.join(ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanion", "Media", "target_arrow.tga")
+# placeholder looks for atlases with no art here: (label, fill, text colour, round)
+LABEL = {"Gamepad_Rev_Y_64": ("Y", (40, 40, 44), (255, 255, 255), True), "Gamepad_Ltr_Y_64": ("Y", (200, 170, 20), (20, 20, 20), True),
+         "dungeonskull": ("\u2620", (225, 220, 205), (30, 30, 30), True), "smallquestbang": ("!", (250, 205, 30), (60, 30, 0), False),
+         "INV_Misc_Spyglass_02": ("\u2315", (120, 85, 50), (255, 240, 200), False)}
 
 SETUP = r'''
 local baseClass = UnitClass
@@ -55,7 +67,104 @@ C_UnitAuras.GetAuraDataByIndex = function(u, i, filter)
     return nil
 end
 TINTF = CreateFrame("Frame")
+-- uf18: the filter a texture asks for (Hub's crisp rim: NEAREST), kept for the drawing
+local R0 = getmetatable(CreateFrame("Frame"))
+local st0 = R0.SetTexture
+function R0:SetTexture(t, wh, wv, filter) st0(self, t); rawset(self, "filter", filter) end
+-- uf18: geometry reads for Hub's fly (rectOf): every region's resolved rect, scale 1 everywhere but a SetScale'd frame (ESCALE)
+local function rr(self) RECT_RESET(); return RECT(self) end
+function R0:GetLeft() return rr(self)[1] end
+function R0:GetBottom() return rr(self)[2] end
+function R0:GetWidth() if rawequal(self, UIParent) then return 1920 end local q = rr(self); return q[3] - q[1] end
+function R0:GetHeight() if rawequal(self, UIParent) then return self.hh end local q = rr(self); return q[4] - q[2] end
+function R0:GetEffectiveScale() if rawequal(self, UIParent) then return 1 end return ESCALE(self) end
+-- a stand-in NAMEPLATE low on the screen: its UnitFrame (the name, the level, a red health bar in HealthBarsContainer), shown with SHOT.plate
+PLATE = CreateFrame("Frame", nil, UIParent); PLATE:SetSize(150, 44); PLATE:SetPoint("BOTTOM", UIParent, "BOTTOM", 60, 380)
+PLATE.UnitFrame = CreateFrame("Frame", nil, PLATE); PLATE.UnitFrame:SetAllPoints(PLATE)
+local hb = CreateFrame("Frame", nil, PLATE.UnitFrame); hb:SetSize(126, 12); hb:SetPoint("BOTTOM", PLATE, "BOTTOM", 0, 6)
+PLATE.UnitFrame.HealthBarsContainer = hb
+local fill = hb:CreateTexture(nil, "ARTWORK"); fill:SetAllPoints(hb); fill:SetColorTexture(0.9, 0.12, 0.1, 1)
+local edge = hb:CreateTexture(nil, "BACKGROUND"); edge:SetPoint("TOPLEFT", hb, "TOPLEFT", -2, 2); edge:SetPoint("BOTTOMRIGHT", hb, "BOTTOMRIGHT", 2, -2); edge:SetColorTexture(0, 0, 0, 1)
+local nm = PLATE.UnitFrame:CreateFontString(nil, "OVERLAY"); nm:SetFont("x", 13, "OUTLINE"); nm:SetText("Kobold Tunneler"); nm:SetJustifyH("CENTER")
+nm:SetPoint("BOTTOM", hb, "TOP", 0, 4)
+local lv = PLATE.UnitFrame:CreateFontString(nil, "OVERLAY"); lv:SetFont("x", 12, "OUTLINE"); lv:SetText("5"); lv:SetPoint("LEFT", hb, "RIGHT", 4, 0)
+PLATE.UnitFrame.GetFrameStrata = function() return "BACKGROUND" end
+PLATE.UnitFrame.GetFrameLevel = function() return 5 end
+C_NamePlate = { GetNamePlateForUnit = function(u) if u == "target" and SHOT.plate then return PLATE end end }
+-- PadMap's floating Y glyph (WowCompanionTargetY: 36 UI units = 50 px at 1080) over the plate, shown with SHOT.glyph
+YG = CreateFrame("Frame", "WowCompanionTargetY", UIParent); YG:SetSize(50, 50); YG:SetPoint("BOTTOM", PLATE, "TOP", 0, 2)
+local yt = YG:CreateTexture(nil, "OVERLAY"); yt:SetAllPoints(YG); yt:SetAtlas("Gamepad_Rev_Y_64"); YG:Hide()
 '''
+
+
+def shoot_scene(hub_src, trail_src, opts):
+    """A scene: the plate low on the screen, the target changed, the fly at opts['at'] of FLY_S (None: landed); every root collected."""
+    old_trail = tc.TRAIL
+    tmp = None
+    if trail_src is not None:
+        tmp = os.path.join(OUT, "_trail_rev.lua")
+        os.makedirs(OUT, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8", newline="") as fh:
+            fh.write(trail_src)
+        tc.TRAIL = tmp
+    try:
+        rig = rt.Rig(hub_src)
+    finally:
+        tc.TRAIL = old_trail
+    rig.L.execute(SETUP)
+    G = rig.G
+    WC = G.WowCompanion
+    G.SHOT.plate = True
+    if opts.get("prompt"):
+        WC.tgPrompt = "Gamepad_Rev_Y_64"
+    if opts.get("icons") and WC.live is not None:
+        WC.live.iconsStep = rig.L.eval("function() end")
+        WC.live.tgtIcons = rig.L.table_from({"av": True, "q": True})
+    if opts.get("glyph"):
+        G.YG.Show(G.YG)
+    rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
+    UF = rig.UF
+    fly = UF.fly
+    if fly is not None and fly.tick is not None:
+        fly.tick(G.GAME.t + 10)                                              # the scene's own fly landed
+        rig.fire("PLAYER_TARGET_CHANGED")                                    # the moment of targeting
+        t0 = G.GAME.t
+        at = opts.get("at")
+        fly.tick(t0 + (UF.FLY_S * at if at is not None else 10))
+    if opts.get("at") is None:
+        rig.run(0.1)
+    ar = UF.tb.arrow
+    if ar is not None and ar.scripts is not None and ar.scripts.OnUpdate is not None:
+        ar.scripts.OnUpdate(ar, UF.FLY_S * (opts.get("at") if opts.get("at") is not None else 2))   # its fade in, by the same clock
+    roots = rig.L.table()
+    for key, fr in (("target", UF.tb.f), ("fly", fly and fly.host), ("arrow", UF.tb.arrow), ("plate", G.PLATE),
+                    ("glyph", G.YG), ("glass", UF.tb.glassF)):
+        if fr is not None:
+            roots[fr] = key
+    got = G.COLLECT(roots)
+    items = [dict(got[i]) for i in range(1, len(got) + 1)]
+    want = {it["seq"] for it in items}
+    coords = {}
+    A = G.ALLR
+    for i in range(1, len(A) + 1):
+        r = A[i]
+        if r.seq in want and r.coord is not None:
+            coords[r.seq] = r.coord
+    for it in items:
+        it["coord"] = coords.get(it["seq"])
+    flt = {}
+    for i in range(1, len(A) + 1):
+        r = A[i]
+        if r.seq in want and r.filter is not None:
+            flt[r.seq] = str(r.filter)
+    for it in items:
+        it["filter"] = flt.get(it["seq"])
+    notes = ["UF %s / tint %s" % (UF.V, WC.rings.V)]
+    if fly is not None and fly.dir is not None:
+        notes.append("fly %s at %.0f%%: scale %.2f" % (fly.dir, 100 * (opts.get("at") or 0), fly.s or 0))
+    pa = G.PLATE.UnitFrame.alpha
+    notes.append("the plate's UnitFrame alpha %s" % (pa if pa is not None else 1))
+    return items, notes
 
 
 def git_show(rev, rel):
@@ -79,9 +188,19 @@ def shoot(hub_src, trail_src, opts):
     rig.L.execute(SETUP)
     G = rig.G
     for k, v in opts.items():
-        G.SHOT[k] = v
+        if v is not None:
+            G.SHOT[k] = v
+    WC = G.WowCompanion
+    if opts.get("prompt"):
+        WC.tgPrompt = "Gamepad_Rev_Y_64"
+    if opts.get("icons") and WC.live is not None:
+        WC.live.iconsStep = rig.L.eval("function() end")                     # Trail's own scan left out: the icons as given
+        WC.live.tgtIcons = rig.L.table_from({"av": True, "q": True})
     rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
     rig.run(0.5)
+    if opts.get("glyph"):
+        G.YG.Show(G.YG)
+        rig.run(0.2)
     f = rig.UF.tb.f
     roots = rig.L.table()
     roots[f] = "target"
@@ -96,6 +215,12 @@ def shoot(hub_src, trail_src, opts):
             coords[r.seq] = r.coord
     for it in items:
         it["coord"] = coords.get(it["seq"])
+    for i in range(1, len(A) + 1):
+        r = A[i]
+        if r.seq in want and r.filter is not None:
+            for it in items:
+                if it["seq"] == r.seq:
+                    it["filter"] = str(r.filter)
     hp = rig.rect(f.hp)
     tint = None
     if opts.get("tint"):
@@ -132,12 +257,12 @@ def lua4(t):
         return None
 
 
-def draw(items, tint, hp, path, title, notes):
+def draw(items, tint, hp, path, title, notes, pads=(120, 70, 130), scale=None):
     from PIL import Image, ImageDraw, ImageFont
-    pad_x, pad_top, pad_bot = 120, 70, 130
+    pad_x, pad_top, pad_bot = pads
     L0, T0 = hp[0] - pad_x, hp[3] + pad_top                          # the crop's top-left in UI units (y up)
     Wc, Hc = int(hp[2] - hp[0] + 2 * pad_x), int(pad_top + (hp[3] - hp[1]) + pad_bot)
-    S = SCALE
+    S = scale or SCALE
     img = Image.new("RGBA", (Wc * S, Hc * S))
     g = ImageDraw.Draw(img)
     for y in range(Hc * S):
@@ -147,13 +272,13 @@ def draw(items, tint, hp, path, title, notes):
     def px(x, y):
         return ((x - L0) * S, (T0 - y) * S)
 
-    def paste(src, l, b, r, t, alpha=1.0, tintc=None):
+    def paste(src, l, b, r, t, alpha=1.0, tintc=None, nearest=False):
         x0, y0 = px(l, t)
         x1, y1 = px(r, b)
         w, h = int(round(x1 - x0)), int(round(y1 - y0))
         if w <= 0 or h <= 0 or src is None:
             return
-        im = src.resize((w, h), Image.BILINEAR)
+        im = src.resize((w, h), Image.NEAREST if nearest else Image.BILINEAR)
         if tintc is not None or alpha < 1:
             rr, gg, bb, aa = im.split()
             if tintc is not None:
@@ -227,8 +352,22 @@ def draw(items, tint, hp, path, title, notes):
             else:
                 piece = src
             tc3 = [tintc[i] for i in range(3)] if tintc else None
-            paste(piece, l, b, r, t, a, tc3)
+            paste(piece, l, b, r, t, a, tc3, nearest=(it.get("filter") == "NEAREST"))
             od = ImageDraw.Draw(img)
+        elif "target_arrow" in name and os.path.exists(ARROW_TGA):
+            paste(Image.open(ARROW_TGA).convert("RGBA"), l, b, r, t, a)
+            od = ImageDraw.Draw(img)
+        elif name.split("\\")[-1] in LABEL:
+            lab, fill, tcol, rnd = LABEL[name.split("\\")[-1]]
+            if rnd:
+                od.ellipse(bx, fill=fill + (int(255 * a),), outline=(0, 0, 0, int(255 * a)))
+            else:
+                od.rectangle(bx, fill=fill + (int(255 * a),), outline=(0, 0, 0, int(255 * a)))
+            try:
+                sym = ImageFont.truetype("seguisym.ttf", max(8, int((y1 - y0) * 0.75)))
+            except OSError:
+                sym = font((y1 - y0) * 0.75)
+            od.text(((x0 + x1) / 2, (y0 + y1) / 2), lab, font=sym, fill=tcol + (int(255 * a),), anchor="mm")
         elif at or tex is not None:
             c = tintc or [0.75, 0.6, 0.85]
             od.rectangle(bx, fill=rt._rgb(list(c[:3]) + [0.92], a))
@@ -248,7 +387,7 @@ def draw(items, tint, hp, path, title, notes):
 def sheet(out, tags):
     from PIL import Image, ImageDraw, ImageFont
     rows = []
-    for nm, _ in SHOTS:
+    for nm, _ in SHOTS[:5]:
         rows.append([os.path.join(out, "tb_%s_%s.png" % (t, nm)) for t in tags])
     ims = [[Image.open(p) for p in r] for r in rows]
     cw, ch = ims[0][0].size
@@ -291,6 +430,13 @@ def main():
         p = os.path.join(out, "tb_%s_%s.png" % (tag, nm))
         draw(items, tint, hp, p, "%s  %s  %s / %s" % (tag, nm, ufv, atv), notes)
         print(p, "; ".join(notes))
+    if "--scenes" in a:
+        crop = (560, 300, 1360, 1040)                                          # the plate low, the bar under the compass
+        for nm, opts in SCENES:
+            items, notes = shoot_scene(hub, trail, opts)
+            p = os.path.join(out, "tb_%s_%s.png" % (tag, nm))
+            draw(items, None, crop, p, "%s  %s" % (tag, nm), notes, pads=(0, 0, 0), scale=1)
+            print(p, "; ".join(notes))
 
 
 if __name__ == "__main__":
