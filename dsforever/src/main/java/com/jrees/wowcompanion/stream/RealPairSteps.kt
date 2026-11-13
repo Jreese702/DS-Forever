@@ -54,7 +54,7 @@ class RealPairSteps(
         XmlFields.get(info, "HttpsPort")?.toIntOrNull()?.let { if (it > 0) http.httpsPort = it }
         val r = MoonPairing(http, identity).pair(MoonPairing.majorVersion(XmlFields.get(info, "appversion")), pin)
         // issue #219: certificate fingerprints (public, first 12 hex) so the Thor's log can be matched with Desktop's "sunshine state" line
-        NvHttp.defaultLog("pairing: ${r.state}${if (r.why.isNotEmpty()) " (${r.why})" else ""}; Thor cert ${identity.fingerprint.take(12)}, " +
+        NvHttp.defaultLog("pairing: ${r.state}${if (r.why.isNotEmpty()) " (${r.why})" else ""}${if (r.detail.isNotEmpty()) " [PC said ${r.detail}]" else ""}; Thor cert ${identity.fingerprint.take(12)}, " +
             "PC cert ${r.serverCert?.let { Hex.fingerprint(it.encoded).take(12) } ?: "none"}, http ${http.httpPort}, https ${http.httpsPort}, " +
             "PC ${XmlFields.get(info, "appversion") ?: "?"}")
         return StreamPairing.MoonOutcome(r.state, r.serverCert?.let { ClientIdentity.toPem(it.encoded) } ?: "",

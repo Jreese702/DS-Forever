@@ -36,7 +36,8 @@ class MoonPairing(
 ) {
     enum class State { PAIRED, PIN_WRONG, FAILED, ALREADY_IN_PROGRESS }
 
-    data class Result(val state: State, val serverCert: X509Certificate? = null, val why: String = "")
+    /** [detail] = the PC's own words when [why] is our fixed wording (issue #219 review: kept for the log) */
+    data class Result(val state: State, val serverCert: X509Certificate? = null, val why: String = "", val detail: String = "")
 
     /** [serverMajorVersion] = the first number of serverinfo's appversion (7+ = SHA-256, older = SHA-1) */
     fun pair(serverMajorVersion: Int, pin: String): Result {
@@ -92,7 +93,9 @@ class MoonPairing(
         // issue #219 (1.0.27): the PC answered 401 here on every try after a Desktop update - it took the code (step 5) but its
         // secure port refused the Thor's certificate; said in those words, not as Sunshine's "Certificate verification failed"
         val r6 = try { http.pairChallenge(serverCert) } catch (e: HostHttpException) {
-            safeUnpair(); return Result(State.FAILED, why = if (e.code == 401) CERT_REFUSED else "TLS check failed: ${e.message}")
+            safeUnpair()
+            return if (e.code == 401) Result(State.FAILED, why = CERT_REFUSED, detail = "401: ${e.message}")
+            else Result(State.FAILED, why = "TLS check failed: ${e.message}")
         } catch (t: Throwable) { safeUnpair(); return Result(State.FAILED, why = "TLS check failed: ${t.message}") }
         if (!paired(r6)) { safeUnpair(); return Result(State.FAILED, why = "final check refused") }
         return Result(State.PAIRED, serverCert)
@@ -103,7 +106,7 @@ class MoonPairing(
     private fun random(n: Int) = ByteArray(n).also { rng.nextBytes(it) }
 
     companion object {
-        const val CERT_REFUSED = "the PC took the code but refused the Thor's certificate. Restart DS Forever Desktop, then pair again"
+        const val CERT_REFUSED = "the PC took the code but refused the Thor's certificate"
         private fun algo(alg: String) = if (alg == "EC") "SHA256withECDSA" else "SHA256withRSA"
         fun sign(data: ByteArray, key: PrivateKey): ByteArray =
             Signature.getInstance(algo(key.algorithm)).run { initSign(key); update(data); sign() }
