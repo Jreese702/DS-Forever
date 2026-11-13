@@ -1,5 +1,19 @@
 {
 "plain": {
+"Smart Range": "Portée intelligente",
+"Melee": "Mêlée",
+"Range": "Distance",
+"Both: Melee when close, else Range": "Les deux : mêlée de près, sinon distance",
+"Melee needs a next-swing attack": "La mêlée demande une attaque au prochain coup",
+"A macro of yours has that name": "Une de vos macros porte déjà ce nom",
+"Too long for one macro": "Trop long pour une macro",
+"Already the other half": "Déjà dans l'autre moitié",
+"Pick Melee or Range first": "Choisissez d'abord mêlée ou distance",
+"Not on a form's own set": "Pas sur le jeu propre d'une forme",
+"Smart Range takes spells only": "La portée intelligente n'accepte que des sorts",
+"Turn Smart Range on first": "Activez d'abord la portée intelligente",
+"Not saved: all Character Macros are in use": "Non enregistré : toutes les macros de personnage sont utilisées",
+"Not saved: a macro of yours has that name": "Non enregistré : une de vos macros porte ce nom",
 "Upgrade": "Améliorer",
 "Upgraded on 1 button": "Amélioré sur 1 bouton",
 "Lower rank on 1 button": "Rang inférieur sur 1 bouton",
@@ -1547,6 +1561,7 @@
 "The game's own target frame, by its switch below. For this character.": "Le cadre de cible du jeu, selon son interrupteur ci-dessous. Pour ce personnage."
 },
 "templates": {
+"Always %s": "Toujours %s",
 "%s: upgrade on your buttons?": "%s : améliorer sur vos boutons ?",
 "Upgraded on %s buttons": "Amélioré sur %s boutons",
 "Lower rank on %s buttons": "Rang inférieur sur %s boutons",

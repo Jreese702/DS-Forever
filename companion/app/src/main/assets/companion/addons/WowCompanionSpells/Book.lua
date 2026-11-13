@@ -601,7 +601,9 @@ local function bindPress(key)
             ack(true, b.id, nil, { pg = gamePage(), b = set, p = pos, fight = true }, probe) return nil
         end
         local why = okp and fwhy or nil
-        ack(false, b.id, (why == "combat" or why == "bind" or why == "dpad bar") and why or "failed", nil, probe)
+        -- b52: a Smart Range box's refusals are said as they are (all character macros in use, a macro of the player's has its name ...)
+        local srWhy = why == "full" or why == "taken" or why == "long" or why == "same" or why == "swing"
+        ack(false, b.id, (why == "combat" or why == "bind" or why == "dpad bar" or srWhy) and why or "failed", nil, probe)
         return why == "combat" and "combat" or "failed"
     end
     -- b50 (issues #18 / #20 / #31): the bare D-pad is the DS WoW toolbar's while it is wanted (the router's Chat / Radial / Map / Home bar

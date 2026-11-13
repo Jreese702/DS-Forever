@@ -576,7 +576,8 @@ local function carryStart()
         return
     end
     if h and h.kind == "bind" then report("bind-move") return end         -- p15: a binding rides the key, not the bar
-    if tc.view == "combat" and srOn(h) then                             -- p46: X moves the PICKED half
+    if tc.view == "combat" and srOn(h) then                             -- p46: X moves the PICKED half (a base X / Y / A's stay: no Move there)
+        if isFace(h) then report("locked") return end
         local hh = srHalf()
         if not hh then report("sr-pick-half") return end
         local m, g = srHalves(h)

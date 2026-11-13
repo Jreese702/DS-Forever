@@ -543,13 +543,20 @@ Y.execute('hit(6)')
 check(ran(Y, r0)[:2] == ["runmacro:DSF Y", "m:/run DSF_SR0()"] and Y.eval('router(6).a["wc-kind"]') == "fight",
       "k. in a fight the base Y runs 'DSF Y'", ran(Y, r0))
 Y.execute('fightOff()')
-# X moves the picked half: Range onto ZR + Y
+# X on a base face: no Move there (the page shows none); X moves the picked half of a slot button: ZR + Y's Range onto ZR + X
 Y.execute('pp("PAD3")')
-check(ctl(Y).get('carry', {}).get('h') == 'r', "l. X: the picked (Range) half is carried", ctl(Y).get('carry'))
-Y.execute('PT.touchSet(3); PT.touchPos(6); pp("PAD1")')
+check(ctl(Y).get('note') == 'locked' and not ctl(Y).get('carry'), "l. X on the base Y: no Move (the base X / Y / A stay)", ctl(Y).get('note'))
+check(Y.eval('(PM.srMove(1, 1, 6, "r", 1, 3, 6))') is True, "l. (the add-on's own move: Y's Range half onto ZR + Y)")
 SY = Y.eval('WowCompanion.spellsStorageFor(1, 3, 6)')
-check(ctl(Y).get('note') == 'moved' and tbl(Y.eval('FT(%d)' % SY)).get('n') == 'Arcane Shot' and Y.eval('FACEE(6).rg') is None
-      and Y.eval('body("DSF Y")') is None, "l. A on ZR + Y: Arcane Shot moved there (its Range half), Y's macro gone", ctl(Y).get('note'))
+check(tbl(Y.eval('FT(%d)' % SY)).get('n') == 'Arcane Shot' and Y.eval('FACEE(6).rg') is None and Y.eval('body("DSF Y")') is None,
+      "l. Arcane Shot is ZR + Y's Range half, Y's pair broken: its macro gone")
+Y.execute('PT.touchSet(3); PT.touchPos(6); padtab(39); padtab(2); pp("PAD3")')
+check(ctl(Y).get('carry', {}).get('h') == 'r', "l. X on ZR + Y with Range picked: the half is carried", ctl(Y).get('carry'))
+Y.execute('PT.touchPos(5); pp("PAD1")')
+SX = Y.eval('WowCompanion.spellsStorageFor(1, 3, 5)')
+check(ctl(Y).get('note') == 'moved' and tbl(Y.eval('FT(%d)' % SX)).get('n') == 'Arcane Shot' and Y.eval('FT(%d)' % SY) is None,
+      "l. A on ZR + X: Arcane Shot moved there (its Range half); ZR + Y left empty, its box still checked", ctl(Y).get('note'))
+check(slot_doc(Y, 3, 6).get('sr') is True and slot_doc(Y, 3, 5).get('sr') is True, "l. both boxes checked")
 # touch: padtab 39 + code
 Y.execute('PT.touchSet(1); PT.touchPos(6)')
 Y.execute('padtab(39); padtab(2)')

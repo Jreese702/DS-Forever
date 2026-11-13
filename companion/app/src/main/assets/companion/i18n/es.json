@@ -1,5 +1,19 @@
 {
 "plain": {
+"Smart Range": "Alcance inteligente",
+"Melee": "Cuerpo a cuerpo",
+"Range": "Distancia",
+"Both: Melee when close, else Range": "Ambos: cuerpo a cuerpo de cerca, si no, distancia",
+"Melee needs a next-swing attack": "Cuerpo a cuerpo necesita un ataque al siguiente golpe",
+"A macro of yours has that name": "Una macro tuya ya tiene ese nombre",
+"Too long for one macro": "Demasiado largo para una macro",
+"Already the other half": "Ya está en la otra mitad",
+"Pick Melee or Range first": "Elige primero cuerpo a cuerpo o distancia",
+"Not on a form's own set": "No en el conjunto propio de una forma",
+"Smart Range takes spells only": "Alcance inteligente solo admite hechizos",
+"Turn Smart Range on first": "Activa primero Alcance inteligente",
+"Not saved: all Character Macros are in use": "No guardado: todas las macros de personaje están en uso",
+"Not saved: a macro of yours has that name": "No guardado: una macro tuya tiene ese nombre",
 "Upgrade": "Mejorar",
 "Upgraded on 1 button": "Mejorado en 1 botón",
 "Lower rank on 1 button": "Rango inferior en 1 botón",
@@ -1572,6 +1586,7 @@
 "The game's own target frame, by its switch below. For this character.": "El marco de objetivo del juego, según su interruptor de abajo. Para este personaje."
 },
 "templates": {
+"Always %s": "Siempre %s",
 "%s: upgrade on your buttons?": "%s: ¿mejorar en tus botones?",
 "Upgraded on %s buttons": "Mejorado en %s botones",
 "Lower rank on %s buttons": "Rango inferior en %s botones",

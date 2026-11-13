@@ -53,6 +53,14 @@ import kotlin.math.abs
  * cursor's slice lit; on the plates no slice is lit: one gold box); the right page the slice's spell, "Slice 3, page 1", X Move, A Change.
  * The chooser has Spells / General / Professions; Clear in it. The slices are the addon's (SpellRadial.lua through PadTabCtl p16: `rpage`,
  * `rad`); a finger's slice / page is the same talents picks as a button / a bar page, a spell the same Bind column (Book: touchSpell).
+ *
+ * m146 / p46 SMART RANGE (the user, 2026-11-12: "revise the right section and remove the "Otherwise spell", and instead move down the
+ * assigned spell and make space for an optional checkbox called "Smart Range". when enabled I want two selectable buttons, one for melee
+ * and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button
+ * modifier combo"): the In combat tab's right page is the header, the Smart Range plate (Y flips it; a tap), then with it off the assigned
+ * spell's row (Move / Change combat spell as before), with it on Melee | Range (the picked one lit, the controller's A picker's cursor
+ * boxed), a one-line hint, and Bind (A) / Move (X) for the picked half. A finger's box / half / Bind / Move are Book b52's padtab 39 pick
+ * + its code (no game action), then the usual spell / Clear / Move taps; the add-on (PadTabCtl p46, PadMap m146) does the rest.
  */
 class PadTabPage(
     private val host: View,
@@ -134,6 +142,17 @@ class PadTabPage(
      *  note says what became of the carry: a refusal shows at once), or after [ECHO_MS] */
     private var carryLocal: PadMapModel.Carry? = null
     private var carryUntil = 0L
+    /** m146: a finger's Melee / Range pick, shown at the tap until the add-on's `srh` agrees (or [ECHO_MS]) */
+    private var tHalf: String? = null
+    private var tHalfUntil = 0L
+    /** the Smart Range half picked on the button on show ("m" / "r"), null = none */
+    private fun half(): String? = if (SystemClock.uptimeMillis() < tHalfUntil && ctl?.srh != tHalf) tHalf else ctl?.srh
+    /** the chooser is a Smart Range half's (spells only, its Clear clears that half) */
+    private fun halfChooser(): String? {
+        if (view != "combat" || chooserList() == null) return null
+        val m = map ?: return null
+        return if (srAllowed(slotOf(m, shown(), pos)) && PadMapModel.srOn(slotOf(m, shown(), pos))) half() else null
+    }
     private fun carryNow(): PadMapModel.Carry? =
         if (SystemClock.uptimeMillis() < carryUntil) carryLocal else ctl?.takeIf { it.on }?.carry
 
@@ -279,6 +298,7 @@ class PadTabPage(
         if (c.note == "move-refused") say("The game did not move it")
         if (c.note == "not-on-radial") say("The spell radial takes spells only")
         if (c.note == "paused") say(PAUSED_LINE)                            // m40 / p18
+        c.note?.takeIf { it.startsWith("sr-") }?.let { srWord(it.removePrefix("sr-")) }?.let { say(it) }      // m146 / p46
         host.invalidate()
     }
 
@@ -325,9 +345,23 @@ class PadTabPage(
             // m41 / m43: the plain D-pad is the DS toolbar's while it is on; a game binding rides that key
             "dpad bar" -> "The DS toolbar has the plain D-pad: hold a trigger, or turn the toolbar off"
             "bind" -> "A game key rides this button: clear it first"
-            else -> "The game did not take it" + (a.why?.let { " ($it)" } ?: "")
+            else -> srWord(a.why) ?: ("The game did not take it" + (a.why?.let { " ($it)" } ?: ""))
         })
         host.invalidate()
+    }
+
+    /** m146 SMART RANGE: the add-on's refusal words (PadMap's padack `why`, PadTabCtl's "sr-" notes), said terse; null = not one */
+    private fun srWord(why: String?): String? = when (why) {
+        "swing" -> "Melee needs a next-swing attack"
+        "full" -> "All Character Macros are in use"
+        "taken" -> "A macro of yours has that name"
+        "long" -> "Too long for one macro"
+        "same" -> "Already the other half"
+        "pick-half" -> "Pick Melee or Range first"
+        "form" -> "Not on a form's own set"
+        "not a spell" -> "Smart Range takes spells only"
+        "off" -> "Turn Smart Range on first"
+        else -> null
     }
 
     /** the layout the addon moves by is not the app's: the next touch-open tells it (a no-action pick) */
@@ -500,7 +534,7 @@ class PadTabPage(
 
     /** spells only (the addon's onlySpells, PadTabCtl p43): the radial, and out of combat a combat button. Every In combat button has all
      *  five tabs (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button") */
-    private fun onlySpells(m: PadMapModel.Map): Boolean =
+    private fun onlySpells(m: PadMapModel.Map): Boolean = halfChooser() != null ||       // m146: a Smart Range half takes spells only
         ChooserTabs.spellsOnly(view, combatButton = slotOf(m, shown(), pos)?.kind == PadMapModel.Kind.COMBAT)
 
     /** p11 the chooser's tabs (the user 2026-10-07: "in the controller menu, when assigning a spell, the spell menu needs some tabs. start on spells, then general (including professions), then extra"); a fight spell's chooser has no Extra */
@@ -519,7 +553,9 @@ class PadTabPage(
         if ((list != "extra" && list != "dstool") || onlySpells(m)) {
             val which = if (list == "extra" || list == "dstool") "spells" else list
             // the combat view leaves out the spells already on the button (the same spell in and out of a fight only spends a macro)
-            val skip = if (fight()) PadMapModel.onButton(slotOf(m, shown(), pos)) else emptySet()
+            val hc = halfChooser()                                          // m146: a half leaves out only its own spell
+            val skip = if (hc != null) setOfNotNull(PadMapModel.srHalf(slotOf(m, shown(), pos), hc)?.id)
+                       else if (fight()) PadMapModel.onButton(slotOf(m, shown(), pos)) else emptySet()
             val spells = book?.let { b -> SpellsModel.tabSpells(b, which).filter { (it.spellId ?: it.actionId) !in skip }.map { Thing.Spell(it) } }
                 ?: emptyList()
             // (m45 / p24: no "suggestion" row - the user: nothing is ever suggested; the add-on's chooser has none either, so rows line up)
@@ -546,6 +582,9 @@ class PadTabPage(
     private fun pinned(m: PadMapModel.Map): Thing? {
         if (view == "radial") return if (radId(pos) != 0) Thing.Clear else null            // p16: "Clear this slice"
         val sl = slotOf(m, shown(), pos)
+        halfChooser()?.let { hc ->                                          // m146: the half's own Clear
+            return if (PadMapModel.srHalf(sl, hc) == null) null else if (PadMapModel.isFace(sl)) Thing.Unface else Thing.Uncombat
+        }
         return if (fight()) when {
             sl?.kind == PadMapModel.Kind.COMBAT -> Thing.Uncombat
             PadMapModel.isFace(sl) && sl!!.fight != null -> Thing.Unface
@@ -663,7 +702,7 @@ class PadTabPage(
         else if (chooserList() != null) {}                                  // the edited button wears its checked mark (drawButton)
         else UiKit.slotFocus(c, square(pos))
         // the carried picture rides the cursor
-        if (carry != null) UiKit.carried(c, viewIcon(m, PadMapModel.slot(m, carry.set, carry.pos), carry.pos), square(pos))
+        if (carry != null) UiKit.carried(c, carryIcon(m, carry), square(pos))
         drawFly(c)
         UiKit.bookPaging(c, 330f, h - 70f, page(), m.pages.coerceIn(1, 3))
         drawRight(c, m, s, w, h)
@@ -827,6 +866,10 @@ class PadTabPage(
         if (view == "combat" && !changes && icon != null) c.drawRoundRect(RectF(r.left + 4f, r.top + 4f, r.right - 4f, r.bottom - 4f), 6f, 6f, PDIM)
         if (locked) UiKit.tex("talent_lock")?.let { c.drawBitmap(it, null, RectF(r.right - 20f, r.bottom - 30f, r.right - 2f, r.bottom - 4f), PBMP) }
         if (changes) swords(c, r.left + 8f, r.bottom - 10f, 34f)
+        // m146 SMART RANGE: both halves set = the Melee spell, its Range half's small mark in the top-left corner
+        if (view == "combat" && PadMapModel.srMelee(sl) != null) PadMapModel.srRange(sl)?.let { g ->
+            UiKit.spell(c, Icons.get(g.icon), r.left - 6f, r.top - 6f, 34f, UiKit.Spell.KNOWN)
+        }
     }
 
     /** where [UiKit.carried] draws a carried picture over [slot] (the same numbers) */
@@ -959,6 +1002,11 @@ class PadTabPage(
         })
     }
 
+    /** what a carry shows: the button's picture, or (m146) the Smart Range half's */
+    private fun carryIcon(m: PadMapModel.Map, carry: PadMapModel.Carry) = PadMapModel.slot(m, carry.set, carry.pos).let { src ->
+        if (carry.h != null) PadMapModel.srHalf(src, carry.h)?.let { Icons.get(it.icon) } else viewIcon(m, src, carry.pos)
+    }
+
     /** p9 CARRYING (UI Art's ctl_move): what moves, from where; what goes back on a swap; A Place (or Swap), B Cancel */
     private fun drawMoveRight(c: Canvas, m: PadMapModel.Map, s: Int, carry: PadMapModel.Carry, w: Float, h: Float) {
         val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
@@ -967,11 +1015,17 @@ class PadTabPage(
         val src = PadMapModel.slot(m, carry.set, carry.pos)
         val under = PadMapModel.slot(m, s, pos)
         val same = carry.set == s && carry.pos == pos
-        val swap = !same && under != null && under.kind != PadMapModel.Kind.NONE && under.kind != PadMapModel.Kind.FIXED
+        // m146: a Smart Range half swaps only with the target's same half
+        val swap = if (carry.h != null) !same && PadMapModel.srHalf(under, carry.h) != null
+                   else !same && under != null && under.kind != PadMapModel.Kind.NONE && under.kind != PadMapModel.Kind.FIXED
         val pl = UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }
         val ps = UiKit.inkPaint(30f)
-        val rows = mutableListOf(Triple(viewIcon(m, src, carry.pos), nameOf(m, src), "from " + comboWord(carry.set, carry.pos)))
-        if (swap) rows += Triple(viewIcon(m, under, pos), nameOf(m, under), "goes to " + comboWord(carry.set, carry.pos))
+        val hWord = carry.h?.let { if (it == "m") " (Melee)" else " (Range)" } ?: ""
+        val srcName = carry.h?.let { PadMapModel.srHalf(src, it)?.name } ?: nameOf(m, src)
+        val rows = mutableListOf(Triple(carryIcon(m, carry), srcName, "from " + comboWord(carry.set, carry.pos) + hWord))
+        if (swap) rows += if (carry.h != null) PadMapModel.srHalf(under, carry.h)!!.let { u ->
+            Triple(Icons.get(u.icon), u.name, "goes to " + comboWord(carry.set, carry.pos) + hWord) }
+            else Triple(viewIcon(m, under, pos), nameOf(m, under), "goes to " + comboWord(carry.set, carry.pos))
         for ((k, row) in rows.withIndex()) {
             val y = top + 96f + k * 100f
             UiKit.spell(c, row.first, x0 + 8f, y + 8f, 72f, UiKit.Spell.KNOWN)
@@ -1031,6 +1085,7 @@ class PadTabPage(
         while (dim.measureText(sub) > nameW && dim.textSize > 18f) dim.textSize -= 1f
         c.drawText(Tr.t(TextUtils.ellipsize(sub, TextPaint(dim), nameW, TextUtils.TruncateAt.END).toString()), x0 + 160f, top + 34f + nameH + 24f, dim)
         UiKit.tex("book_divider")?.let { c.drawBitmap(it, null, RectF(x0, top + 150f, x1, top + 161f), PBMP) }
+        if (inCombat) { drawFightBody(c, m, sl, w, h); return }           // m146: no Otherwise row on the In combat tab
         val pd = TextPaint(UiKit.inkPaint(23f))
         if (face && fight != null) {
             // In combat: the fight spell / Otherwise: the game's own (Jump), its picture
@@ -1086,6 +1141,118 @@ class PadTabPage(
         if (filled) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
             m.combat || sl?.storage == null -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
         if (!fixed || (face && inCombat)) UiKit.button(c, act, if (inCombat) "Change combat spell" else "Change", glyph(8), when {
+            !canChange || !changeHere() -> UiKit.Button.DISABLED
+            isDown(DOWN_CHANGE) -> UiKit.Button.DOWN
+            else -> UiKit.Button.UP
+        })
+    }
+
+    // ---------------------------------------------------------------- m146 SMART RANGE (the In combat tab's right page)
+
+    /** [text] cut to [width] with an ellipsis (measured: one line on the plate) */
+    private fun fit(text: String, p: Paint, width: Float): String {
+        if (p.measureText(text) <= width) return text
+        var n = text.length
+        while (n > 1 && p.measureText(text, 0, n) + p.measureText("...") > width) n--
+        return text.substring(0, n).trimEnd() + "..."
+    }
+
+    /** the plate (UI Art's switch plate, the room's own), y 370-440; the Melee | Range buttons, y 470-570 */
+    private fun srPlate(w: Float) = RectF(SPLIT + 40f, 370f, w - 56f, 440f)
+    private fun srHalfRect(w: Float, k: Int): RectF {
+        val x0 = SPLIT + 40f; val x1 = w - 56f; val mid = (x0 + x1) / 2f
+        return if (k == 0) RectF(x0, 470f, mid - 8f, 570f) else RectF(mid + 8f, 470f, x1, 570f)
+    }
+    /** Smart Range is offered here: the In combat tab, the caster's set (no form chosen), a base X / Y / A or any button with a slot; never B */
+    private fun srAllowed(sl: PadMapModel.Slot?): Boolean = view == "combat" && formNow() == null && sl != null &&
+        (PadMapModel.isFace(sl) || (sl.kind != PadMapModel.Kind.FIXED && sl.storage != null))
+
+    /** under the header: the plate; off = the assigned spell's row and Move / Change combat spell; on = Melee | Range, the hint, Bind / Move */
+    private fun drawFightBody(c: Canvas, m: PadMapModel.Map, sl: PadMapModel.Slot?, w: Float, h: Float) {
+        val x0 = SPLIT + 40f; val x1 = w - 56f
+        val face = PadMapModel.isFace(sl)
+        val fixed = sl?.kind == PadMapModel.Kind.FIXED
+        val allowed = srAllowed(sl)
+        val on = allowed && PadMapModel.srOn(sl)
+        if (allowed) {
+            val r = srPlate(w)
+            c.drawRoundRect(r, 8f, 8f, PPLATE)
+            val p = UiKit.bodyPaint(26f, Theme.text)
+            c.drawText(Tr.t("Smart Range"), r.left + 20f, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+            UiKit.pad(c, glyph(6), r.right - 112f, r.centerY(), 44f)
+            UiKit.check(c, r.right - 42f, r.centerY(), 58f, on, enabled = !m.combat)
+        }
+        val entry = PadMapModel.fightRef(sl)
+        val picked = if (on) half() else null
+        if (!on) {
+            // the assigned spell, moved down (no Otherwise row: the user's ruling)
+            entry?.let { e ->
+                val y = 462f
+                val pl = UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }
+                val ps = UiKit.inkPaint(30f)
+                UiKit.spell(c, Icons.get(e.icon), x0 + 8f, y + 8f, 64f, UiKit.Spell.KNOWN)
+                val label = Tr.t("In combat")
+                c.drawText(label, x0 + 92f, y + 28f, pl)
+                swords(c, x0 + 92f + pl.measureText(label) + 22f, y + 20f, 28f)
+                c.drawText(TextUtils.ellipsize(Tr.t(e.name), TextPaint(ps), x1 - x0 - 100f, TextUtils.TruncateAt.END).toString(), x0 + 92f, y + 66f, ps)
+            }
+        } else {
+            val halves = listOf(PadMapModel.srMelee(sl), PadMapModel.srRange(sl))
+            val pickAt = ctl?.takeIf { it.on }?.srp
+            for (k in 0..1) {
+                val rr = srHalfRect(w, k)
+                val ref = halves[k]
+                val lit = picked == (if (k == 0) "m" else "r")
+                c.drawRoundRect(rr, 8f, 8f, PPLATE)
+                if (lit) c.drawRoundRect(RectF(rr.left + 2f, rr.top + 2f, rr.right - 2f, rr.bottom - 2f), 8f, 8f, PEDGE)   // the picked one, lit
+                // the half's picture (an empty well when none), its word; the spell's name (or Empty) on the line under, the plate's width
+                UiKit.spell(c, ref?.let { Icons.get(it.icon) }, rr.left + 10f, rr.top + 8f, 48f, if (ref != null) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL)
+                val pw = UiKit.bodyPaint(28f, if (lit) Theme.gold else Theme.text)
+                c.drawText(Tr.t(if (k == 0) "Melee" else "Range"), rr.left + 70f, rr.top + 32f - (pw.ascent() + pw.descent()) / 2f, pw)
+                val pn = UiKit.bodyPaint(22f, if (ref != null) Theme.text else Theme.dim)
+                c.drawText(fit(Tr.t(ref?.name ?: "Empty"), pn, rr.width() - 24f), rr.left + 12f, rr.top + 86f, pn)
+                if (pickAt == k + 1) UiKit.focus(c, rr, onPaper = true)                 // the controller's A picker
+            }
+            val melee = halves[0]; val range = halves[1]
+            val hint = when {
+                melee != null && range != null && entry?.srErr == "full" -> "Not saved: all Character Macros are in use"
+                melee != null && range != null && entry?.srErr == "taken" -> "Not saved: a macro of yours has that name"
+                melee != null && range != null -> "Both: Melee when close, else Range"
+                melee != null -> "Always ${melee.name}"
+                range != null -> "Always ${range.name}"
+                else -> null
+            }
+            hint?.let {
+                val ph = UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }
+                c.drawText(TextUtils.ellipsize(Tr.t(it), TextPaint(ph), x1 - x0 - 16f, TextUtils.TruncateAt.END).toString(), x0 + 8f, 608f, ph)
+            }
+        }
+        val act = actRect(w, h)
+        val moveShown = if (on) picked != null && !face && PadMapModel.srHalf(sl, picked) != null
+                        else sl != null && sl.kind != PadMapModel.Kind.NONE && !fixed
+        val above = if (moveShown) moveRect(w, h).top else act.top
+        val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && (!fixed || face)) COMBAT else null
+        note?.let {
+            val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
+            c.drawText(Tr.t(it), act.centerX(), above - 40f, pw)
+        }
+        if (on) {
+            // nothing picked: no Bind / Move (pick a half first)
+            if (picked == null) return
+            if (moveShown) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
+                m.combat -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
+            UiKit.button(c, act, "Bind", glyph(8), when {
+                m.combat || !changeHere() -> UiKit.Button.DISABLED
+                isDown(DOWN_CHANGE) -> UiKit.Button.DOWN
+                else -> UiKit.Button.UP
+            })
+            return
+        }
+        // m32: any button takes a combat spell (no "spell first" gate any more)
+        val canChange = if (face) !m.combat else !fixed && sl?.storage != null && !m.combat && !m.paused   // m40
+        if (moveShown) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
+            m.combat || sl?.storage == null -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
+        if (!fixed || face) UiKit.button(c, act, "Change combat spell", glyph(8), when {
             !canChange || !changeHere() -> UiKit.Button.DISABLED
             isDown(DOWN_CHANGE) -> UiKit.Button.DOWN
             else -> UiKit.Button.UP
@@ -1362,6 +1529,34 @@ class PadTabPage(
         if (was == DOWN_CANCEL && moveRect(w, h).contains(x, y)) {
             tap(listOf(PadMapModel.ROW_PADTAB to PadMapModel.COL_CANCEL)); localFirst(DOWN_CANCEL); return
         }
+        // m146 SMART RANGE: the box (a flip), Melee / Range (a pick), then Bind / Move act on the picked half
+        if (view == "combat") {
+            val sl = slotOf(m, shown(), pos)
+            if (srAllowed(sl)) {
+                if (srPlate(w).contains(x, y)) { if (m.combat) say(COMBAT) else tap(PadMapModel.srCells(PadMapModel.SR_BOX)); return }
+                if (PadMapModel.srOn(sl)) {
+                    for (k in 0..1) if (srHalfRect(w, k).contains(x, y)) {
+                        val hh = if (k == 0) "m" else "r"
+                        tHalf = hh; tHalfUntil = SystemClock.uptimeMillis() + ECHO_MS
+                        tap(PadMapModel.srCells(PadMapModel.srCode(hh))); host.invalidate(); return
+                    }
+                    val hh = half()
+                    if (was == DOWN_MOVE && moveRect(w, h).contains(x, y)) {
+                        if (hh == null || PadMapModel.isFace(sl) || PadMapModel.srHalf(sl, hh) == null) return
+                        if (m.combat) say(COMBAT) else {
+                            tap(PadMapModel.srCells(PadMapModel.srCode(hh)) + listOf(PadMapModel.ROW_PADTAB to PadMapModel.COL_CARRY))
+                            if (ctl?.on == true) { carryLocal = PadMapModel.Carry(shown(), pos, page(), hh); carryUntil = SystemClock.uptimeMillis() + ECHO_MS }
+                        }
+                        return
+                    }
+                    if (was == DOWN_CHANGE && actRect(w, h).contains(x, y)) {
+                        if (hh == null) return
+                        if (m.combat) say(COMBAT) else { tLock = shown(); tChooser = "spells"; scroll = 0f }
+                        return
+                    }
+                }
+            }
+        }
         // Move: pick it up (a pick; the addon carries the chosen button)
         if (view == "radial" && was == DOWN_MOVE && radId(pos) == 0) return                     // p16: an empty slice has no Move
         if (view == "radial" && was == DOWN_CHANGE && actRect(w, h).contains(x, y)) {
@@ -1444,6 +1639,7 @@ class PadTabPage(
     }
 
     private fun pick(s: Int, p: Int) {
+        if (s != set || p != pos) { tHalf = null; tHalfUntil = SystemClock.uptimeMillis() + ECHO_MS }     // m146: a new button, no half yet
         set = s; pos = p
         pickUntil = SystemClock.uptimeMillis() + ECHO_MS
     }
@@ -1464,6 +1660,7 @@ class PadTabPage(
         if (t is Thing.Clear || t is Thing.Uncombat || t is Thing.Unface) return "clear"
         if (view == "radial") return if (!afterReplace && radId(pos) != 0) "replace" else null       // p16: PadTabCtl's boxFor
         val here = slotOf(m, shown(), pos)
+        if (fight() && t is Thing.Spell && halfChooser() != null) return null   // m146: a half's spell goes straight on (PadTabCtl p46)
         if (fight() && t is Thing.Spell && PadMapModel.isFace(here)) {
             // a base X / Y / A: its own box the first time (it changes every fight), Replace after; no macro
             return if (here!!.fight != null) (if (!afterReplace) "replace" else null) else "cface"
@@ -1507,8 +1704,12 @@ class PadTabPage(
         // b-bind-hold-triggers / b-bind-combat-toggle: read before the chooser closes. A finger's latched set the add-on does not know
         // goes first as a set pick (no action), so a released trigger cannot send it to the base set
         val f = fight()
-        val pre = tLock?.takeIf { view != "radial" && (tChooser != null || tBox != null) && it != set }
+        // m146: a Smart Range half's chooser: its half picked again first (Book b52: padtab 39 + 1 / 2), in the same touch
+        val hc = if (f) halfChooser() else null
+        val halfPick = hc?.let { PadMapModel.srCells(PadMapModel.srCode(it)) } ?: emptyList()
+        val pre0 = tLock?.takeIf { view != "radial" && (tChooser != null || tBox != null) && it != set }
             ?.let { s -> pick(s, pos); listOf(PadMapModel.ROW to PadMapModel.colSet(s)) } ?: emptyList()
+        val pre = pre0 + halfPick
         tBox = null; tChooser = null; tLock = null
         if (view == "radial") {                                             // p16: the slice shows it at the tap; the addon's `rad` follows
             val id = when { t is Thing.Spell && cellsOf(t.e) != null -> t.e.spellId ?: t.e.actionId; t == Thing.Clear -> 0; else -> null }
@@ -1583,5 +1784,8 @@ class PadTabPage(
         private val PSWAP = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 4f; strokeCap = Paint.Cap.ROUND }
         /** p9: the carried button's empty place, a faint ghost */
         private val PGHOST = Paint().apply { color = Color.argb(170, 40, 30, 18) }
+        /** m146 SMART RANGE: the plate (the room's switch plate) and the picked half's gold edge */
+        private val PPLATE by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.raised } }
+        private val PEDGE by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 4f; color = Theme.gold } }
     }
 }

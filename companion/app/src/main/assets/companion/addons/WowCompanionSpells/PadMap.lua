@@ -2518,13 +2518,13 @@ function OV.fightAt(pos)
     if f then local e = OV.ffAt(f.id, pos); if e then return OV.ftKind(e) == "spell" and e or nil end end
     if FACE[pos] then
         local c = faceStore()[pos]
-        return (type(c) == "table" and type(c.n) == "string" and OV.ftKind(c) == "spell") and c or nil
+        return (type(c) == "table" and type(c.n) == "string" and OV.ftKind(c) == "spell") and OV.srShown(c) or nil
     end
     if pos >= 1 and pos <= 4 then
         local s = storage(gamePage(), 1, pos)
         local e = s and OV.ftAt(s)
         -- m132: a fight-layer command / binding / item / mount is no spell (no cooldown, cast or range of its own to draw)
-        return (type(e) == "table" and type(e.n) == "string" and OV.ftKind(e) == "spell") and e or nil
+        return (type(e) == "table" and type(e.n) == "string" and OV.ftKind(e) == "spell") and OV.srShown(e) or nil
     end
     return nil
 end
@@ -4056,6 +4056,14 @@ function OV.srMove(fpage, fset, fpos, half, tpage, tset, tpos)
     if tr.face then pcall(faceSetup) end
     ack("srmove", true, nil, tr.s)
     return true
+end
+-- m146: the half Home draws now for a pair (OV.fightAt: its cooldown / cast): the Melee half while the target reads in melee range
+-- (WC.spellRange: a next-swing attack by the game's close-distance check), else the Range half; any other entry as it is
+function OV.srShown(e)
+    if not OV.srPair(e) then return e end
+    local m, g = OV.srHalves(e)
+    local ok, v = pcall(function() return type(WC.spellRange) == "function" and WC.spellRange(m.id, "target") end)
+    return (ok and (v == true or v == 1)) and m or g
 end
 -- what the documents carry of a Smart Range entry (OV.ftRef / faceRef): the box, the top half's side, the range half, our macro
 function OV.srInto(r, e)

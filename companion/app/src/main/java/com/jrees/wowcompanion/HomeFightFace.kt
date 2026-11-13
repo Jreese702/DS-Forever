@@ -86,6 +86,26 @@ object HomeFightFace {
             }
         }.toMap()
 
+    /**
+     * m146 SMART RANGE (the user, 2026-11-12: "Melee should show that skill when the enemy is in melee range, range should show that skill
+     * when the enemy is not in Melee range"): every button whose In combat entry has BOTH halves, [cmdKey] -> (Melee, Range). Home's picture
+     * follows the press: [smartPick] with the Melee spell's own range state (the add-on's hudS.fs `r`: WC.spellRange reads a next-swing
+     * attack, which has no range of its own, by the game's close-distance check). A button with one half shows that spell always (no pair).
+     */
+    fun smartPairs(map: PadMapModel.Map): Map<Int, Pair<PadMapModel.Ref, PadMapModel.Ref>> {
+        val out = HashMap<Int, Pair<PadMapModel.Ref, PadMapModel.Ref>>()
+        for (st in map.sets) for (sl in st.slots) {
+            if (st.set !in 1..4 || sl.pos !in 1..8) continue
+            val m = PadMapModel.srMelee(sl) ?: continue
+            val r = PadMapModel.srRange(sl) ?: continue
+            out[cmdKey(st.set, sl.pos)] = m to r
+        }
+        return out
+    }
+
+    /** which half the press casts now: the Melee half while its spell reads in range ([meleeRange] 1), else the Range half */
+    fun smartPick(pair: Pair<PadMapModel.Ref, PadMapModel.Ref>, meleeRange: Int?): PadMapModel.Ref = if (meleeRange == 1) pair.first else pair.second
+
     /** the pictures may show: proven, and at least one base face is armed with a fight spell */
     fun on(map: PadMapModel.Map, proven: Boolean = PROVEN): Boolean = proven && icons(map).isNotEmpty()
 

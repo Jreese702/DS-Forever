@@ -207,6 +207,12 @@ class SpellsOverlay(
                 "dpad bar" -> "The DS toolbar has the plain D-pad: hold a trigger" to Theme.unusable
                 "unsure" -> "Press it again" to Theme.warn
                 "form-unknown" -> "Shift into that form once so the game shows its bar" to Theme.warn       // b44
+                // PadMap m146 / Book b52 SMART RANGE: that button's box is on (the spell went to its half)
+                "full" -> "All Character Macros are in use" to Theme.unusable
+                "taken" -> "A macro of yours has that name" to Theme.unusable
+                "long" -> "Too long for one macro" to Theme.unusable
+                "same" -> "Already the other half" to Theme.unusable
+                "swing" -> "Melee needs a next-swing attack" to Theme.unusable
                 else -> "That did not work" to Theme.unusable
             }
             val p = UiKit.bodyPaint(30f, colour).apply { textAlign = Paint.Align.CENTER }
