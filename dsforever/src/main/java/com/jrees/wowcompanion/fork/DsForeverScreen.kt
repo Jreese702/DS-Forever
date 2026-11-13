@@ -142,7 +142,11 @@ class DsForeverScreen(private val context: Context) {
     /** the launcher came back to the front: the bottom screen is DS Forever's again */
     fun show() { hidden = false; update() }
     /** the launcher went away: Cocoon's bottom grid is the user's (the game itself is paused by the launcher then) */
-    fun hide() { hidden = true; shown?.dismiss(); shown = null }
+    fun hide() {
+        hidden = true
+        if (shown != null) com.jrees.wowcompanion.DiagLog.event("app", "bottom screen hidden (the launcher went to the background)")   // #147
+        shown?.dismiss(); shown = null
+    }
     private var hidden = false
 
     /**
@@ -157,6 +161,8 @@ class DsForeverScreen(private val context: Context) {
     private val traffic = object : Runnable {
         override fun run() {
             if (!running || !gameOn) return
+            // issues #16 / #84 / #147: does the game screen hold the window focus (else every press goes to another window)
+            (context as? Activity)?.let { a -> com.jrees.wowcompanion.PadDiag.focusNote(a.hasWindowFocus(), shown?.typing == true) }
             val uid = android.os.Process.myUid()
             val rx = android.net.TrafficStats.getUidRxBytes(uid); val tx = android.net.TrafficStats.getUidTxBytes(uid)
             if (lastRx >= 0 && rx >= 0) {
@@ -189,10 +195,17 @@ class DsForeverScreen(private val context: Context) {
         if (!running || hidden) return
         val game = gameDisplay()
         val target = dm?.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)?.firstOrNull { it.isValid && it.displayId != game }
-        if (target == null) { shown?.dismiss(); shown = null; Log.i(TAG, "no other screen than the game's ($game)"); return }
+        if (target == null) {
+            if (shown != null) com.jrees.wowcompanion.DiagLog.event("app", "bottom screen gone: no other screen than the game's ($game)")   // #147
+            shown?.dismiss(); shown = null; Log.i(TAG, "no other screen than the game's ($game)"); return
+        }
         if (shown?.display?.displayId == target.displayId) return
         shown?.dismiss()
-        shown = try { HostPresentation(context, target) { rebuild() }.also { it.show(); it.board(boardWanted) } } catch (t: Throwable) { Log.w(TAG, "presentation: ${t.message}"); null }
+        shown = try { HostPresentation(context, target) { rebuild() }.also { it.show(); it.board(boardWanted) } } catch (t: Throwable) {
+            Log.w(TAG, "presentation: ${t.message}")
+            com.jrees.wowcompanion.DiagLog.event("app", "bottom screen failed to open on display ${target.displayId}: ${t.javaClass.simpleName}")   // #147
+            null
+        }
         Log.i(TAG, "DS Forever on display ${target.displayId} (game on $game)")
     }
 
@@ -317,7 +330,8 @@ private class HostPresentation(outer: Context, display: Display, private val onR
      * for its keyboard, and this window is NOT focusable so the game keeps the focus. A touch on a text field makes it focusable for the
      * typing; a touch anywhere else gives the focus back to the game.
      */
-    private var typing = false
+    var typing = false
+        private set
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
@@ -338,6 +352,9 @@ private class HostPresentation(outer: Context, display: Display, private val onR
      * launcher's activity sends them (the user on the Thor, 10-28: the chooser and Update did not answer the controller)
      */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        // #84 / #147: a press that reaches the bottom window (it holds the focus) never reaches PadFeed or the game
+        com.jrees.wowcompanion.PadDiag.key(event, (event.source and android.view.InputDevice.SOURCE_GAMEPAD) == android.view.InputDevice.SOURCE_GAMEPAD ||
+            (event.source and android.view.InputDevice.SOURCE_JOYSTICK) == android.view.InputDevice.SOURCE_JOYSTICK, "the bottom window${if (typing) " (typing)" else ""}")
         if (com.jrees.wowcompanion.StartKeys.route(event)) return true
         return super.dispatchKeyEvent(event)
     }

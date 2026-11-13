@@ -1485,6 +1485,8 @@ fun XServerScreen(
         val isGamepad = ExternalController.isGameController(it.event.device)
         // DS Forever fork 3c: a COPY of every pad key to DS Forever's readers (nothing consumed; the game gets it as before)
         if (isGamepad) com.jrees.wowcompanion.PadFeed.key(it.event)
+        // issues #16 / #84 / #116 / #147: the first press per device and the run's count, in the problem report (PadDiag)
+        com.jrees.wowcompanion.PadDiag.key(it.event, isGamepad, "game screen")
         val waitingForManualResume =
             manualResumeMode &&
                 PluviaApp.isOverlayPaused &&

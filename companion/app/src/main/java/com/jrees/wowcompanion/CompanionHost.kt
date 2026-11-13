@@ -773,6 +773,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             ui.post(signInTick)
         }
         ui.postDelayed(guardTick, 3000L)                                 // the exit guard: no room ever without a working B
+        hostUpAt = SystemClock.elapsedRealtime(); ui.postDelayed(silenceCheck, AddonSilence.AFTER_MS)   // #147: the add-ons' silence
         // the saved login is changed in Settings (the user 2026-10-08: "Change saved login" moves there)
         settingsView.loginSaved = { HomeLoginStore.has(this) }
         settingsView.onLogin = { loginPrompt.open() }
@@ -1783,6 +1784,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var docCurrent = false
     /** the first CURRENT document since start was logged (Home's restart check proves documents arrive; batch 24, 2026-10-01) */
     private var docFlowSeen = false
+    /** #147 (1.0.24, "cant get the bottom screen to work"): no add-on document at all while the bottom screen was up, said once */
+    private var hostUpAt = 0L
+    private val silenceCheck = Runnable {
+        if (shell.hostGone()) return@Runnable
+        val gameMs = if (LauncherHooks.gameStartSec > 0) System.currentTimeMillis() - LauncherHooks.gameStartSec * 1000 else 0L
+        AddonSilence.line(docFlowSeen, LauncherHooks.gameUp(), SystemClock.elapsedRealtime() - hostUpAt, gameMs)?.let {
+            Log.w("WCSETUP", it); DiagLog.event("addons", it)
+        }
+    }
     /**
      * The game's bag button handed the controller to Bags: show that room. Bags letting go while its room shows ends it as every room
      * ends: HOME (USER RULING 2026-09-28 23:12, B goes Home everywhere; 2026-10-01 "the EXACT same for all rooms" - no more going back
@@ -1930,7 +1940,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         // chat33 (#183, "Not able to send messages"): each DS Forever add-on the game did not load (the game's reason), the shared
         // capture's version (0 = Interact never ran: no room can hold the controller) and the first Lua errors from our files; one a login
-        if (msg.optString("probe") == "ours") oursProbeLine(msg)?.let { (warn, line) -> if (warn) Log.w("WCSETUP", line) else Log.i("WCSETUP", line) }
+        if (msg.optString("probe") == "ours") oursProbeLine(msg)?.let { (warn, line) ->
+            if (warn) Log.w("WCSETUP", line) else Log.i("WCSETUP", line)
+            DiagLog.event("addons", line)                    // #84 / #147: also in the rolling file (logcat's lines go within minutes)
+        }
         // hub21: the frames standing where the bottom-left bar is (one probe per login)
         if (msg.optString("probe") == "barprobe") Log.i("WCHUB", "bar probe (${msg.optInt("scanned")} frames): ${msg.optJSONArray("frames")}")
         // pad14: WoW's hardware cursor setting before / after DS Forever's one switch to the software cursor
@@ -2747,6 +2760,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     fun onDestroy() {
         Theme.removeListener(themeChanged)
         ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
+        ui.removeCallbacks(silenceCheck)
         ArtHarvest.offState(iconArtState)
         IndoorSchedulerStep.stop()
         ui.removeCallbacks(signInTick)
