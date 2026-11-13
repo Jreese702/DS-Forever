@@ -89,12 +89,10 @@ class SetupPresetsTest {
 
     @Test fun aPickWritesTheBundleAndAManualChangeShowsCustom() {
         assertEquals(SetupPresets.Preset.FULL, SetupPresets.matching(SetupPresets.current()))   // a fresh store: today's defaults
-        assertFalse(Settings.setupAsked)
         SetupPresets.apply(SetupPresets.Preset.CLASSIC)
         assertEquals(SetupPresets.Preset.CLASSIC, SetupPresets.matching(SetupPresets.current()))
         assertEquals(UiMode.ON, GameUi.mode("minimap")); assertFalse(GameUi.castBarHide()); assertFalse(GameUi.swWant(GameUi.SW_PMODE))
         assertEquals("off", Settings.polestarGuide); assertEquals("vanilla", Settings.questTracking)
-        assertTrue(Settings.setupAsked)
         GameUi.setMode("chat", UiMode.DYNAMIC)                               // any manual change
         assertNull(SetupPresets.matching(SetupPresets.current()))
         SetupPresets.apply(SetupPresets.Preset.BALANCED)
@@ -109,45 +107,18 @@ class SetupPresetsTest {
 
     private fun ready() = SetupFlow.Inputs(path = "/g", folderFound = true, art = SetupFlow.Art.READY, loginSaved = true, addonsInstalled = true)
 
-    @Test fun theOneTimePicker() {
-        val s = SetupFlow.screen(ready().copy(setupAsk = true, polestarAsk = true))
-        val p = s.prompt!!
-        assertEquals("setup", p.id)                                          // before the Polestar question
-        assertEquals("", p.text)                                             // terse: a title and the buttons
-        assertEquals(listOf("Classic", "Balanced", "Full", "Keep current"), p.buttons.map { it.label })
-        assertTrue(p.buttons.all { SetupFlow.padTarget(it) })                 // the pad's box lands on each; A picks
-        assertEquals(SetupFlow.Action.SETUP_KEEP, p.back)                    // B = Keep current
-        assertEquals(true, s.play?.enabled); assertTrue(SetupFlow.padDriven(s))
-        assertNull(SetupFlow.screen(ready().copy(setupAsk = true, gameRunning = true)).prompt)
-        assertEquals("login", SetupFlow.screen(ready().copy(setupAsk = true, loginSaved = false)).prompt?.id)
-        assertNull(SetupFlow.screen(ready().copy(polestarAsk = true)).prompt?.back)   // other pop-ups: B as before
-        assertEquals(SetupPresets.Preset.CLASSIC, SetupFlow.setupPreset(SetupFlow.Action.SETUP_CLASSIC))
-        assertNull(SetupFlow.setupPreset(SetupFlow.Action.SETUP_KEEP))
-    }
-
-    @Test fun thePickerAsksOnceThroughTheBridge() {
+    @Test fun noFirstStartPopUp() {                                      // the user, 2026-11-13: "Settings only, no pop-up"
+        assertNull(SetupFlow.screen(ready()).prompt)
+        assertEquals("polestar", SetupFlow.screen(ready().copy(polestarAsk = true)).prompt?.id)
         SetupBridge.publish(ready())
-        assertEquals("setup", SetupBridge.screen(gameRunning = false)?.prompt?.id)
-        SetupBridge.press(SetupFlow.Action.SETUP_KEEP)                       // B: nothing changes
-        assertTrue(Settings.setupAsked)
-        assertEquals("on", Settings.polestarGuide)
-        assertEquals(SetupPresets.Preset.FULL, SetupPresets.matching(SetupPresets.current()))
-        assertNull(SetupBridge.screen(gameRunning = false)?.prompt)          // asked once
-        // a pick from the picker writes the bundle
-        Settings.setupAsked = false
-        SetupBridge.press(SetupFlow.Action.SETUP_CLASSIC)
-        assertEquals(SetupPresets.Preset.CLASSIC, SetupPresets.matching(SetupPresets.current()))
-        assertTrue(Settings.setupAsked)
-        // no prefs at all (an off-device test without its own): never asked
-        Settings.startForTest(null)
-        assertTrue(Settings.setupAsked)
+        assertNull(SetupBridge.screen(gameRunning = false)?.prompt)
     }
 
     @Test fun spanishAndFrenchWords() {
         val dir = listOf("../companion/app/src/main/assets/companion/i18n", "companion/app/src/main/assets/companion/i18n")
             .map { java.io.File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) Tr.load(l, java.io.File(dir, "$l.json").readText())
-        val words = listOf("Setup", SetupFlow.SETUP_TITLE, SetupPresets.CUSTOM, "Keep current") + P.map { it.label }
+        val words = listOf("Setup", SetupPresets.CUSTOM) + P.map { it.label }
         for (l in listOf("es", "fr")) for (w in words) assertTrue("$l: $w", Tr.t(w, l) != w)
         assertEquals("Classique", Tr.t("Classic", "fr"))
         assertEquals("Equilibrado", Tr.t("Balanced", "es"))

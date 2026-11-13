@@ -191,14 +191,6 @@ object Settings {
         set(v) { prefs?.edit()?.putBoolean("lowMemGraphics", v)?.apply(); changed() }
 
     /**
-     * #170: the one-time Setup picker (SetupFlow's "setup" prompt) was answered - a preset picked (here or in Settings > General) or
-     * kept with B. No prefs (the off-device tests without their own) = answered: no prompt
-     */
-    var setupAsked: Boolean
-        get() = prefs?.getBoolean("setupAsked170", false) ?: true
-        set(v) { if (v != setupAsked) { prefs?.edit()?.putBoolean("setupAsked170", v)?.apply(); changed() } }
-
-    /**
      * GAME ACCOUNT (GitHub #47, 1.0.16 report: "i have more than1 account linked to my battle netaccount and cannot change which one to
      * use"): true = "Ask each time" - before every start GameConfigWtf clears the game's remembered game-account choice in Config.wtf,
      * so the game's own account-select screen comes up and the player picks there with the pad. False (the default) = "Remembered":

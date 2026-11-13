@@ -100,8 +100,7 @@ object SetupBridge {
             reportSaved = ReportFlow.pending?.let { ReportFlow.noteTitle(it) },
             staleData = DataStaleness.current()?.takeIf { !staleOk },
             lowSpace = i.lowSpace?.takeIf { !spaceOk },
-            gameClosed = GameLife.note, lastCrash = LastRun.pending, polestarAsk = PolestarGuide.ask(Settings.polestarGuide),
-            setupAsk = !Settings.setupAsked))
+            gameClosed = GameLife.note, lastCrash = LastRun.pending, polestarAsk = PolestarGuide.ask(Settings.polestarGuide)))
     }
 
     /** the start-up checks have passed (the chooser may show); false while the launcher hasn't published them */
@@ -134,10 +133,6 @@ object SetupBridge {
             // 2026-11-12: the Polestar quest guide's answer (Settings > Add-ons changes it later); the add-on moves at the next start
             SetupFlow.Action.POLESTAR_YES -> { PolestarGuide.set(true); log?.invoke("polestar guide: yes"); changed() }
             SetupFlow.Action.POLESTAR_NO -> { PolestarGuide.set(false); log?.invoke("polestar guide: no"); changed() }
-            // #170: the one-time Setup picker (Settings > General > Setup changes it later)
-            SetupFlow.Action.SETUP_CLASSIC, SetupFlow.Action.SETUP_BALANCED, SetupFlow.Action.SETUP_FULL -> {
-                SetupFlow.setupPreset(a)?.let { SetupPresets.apply(it); log?.invoke("setup preset: ${it.label}") }; changed() }
-            SetupFlow.Action.SETUP_KEEP -> { SetupPresets.keep(); log?.invoke("setup preset: kept"); changed() }
             else -> launcherActions?.invoke(a)
         }
     }
