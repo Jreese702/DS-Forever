@@ -320,6 +320,11 @@ B.execute(PT % 39 + PT % 26 + 'NOW = NOW + 0.3')
 check(B.eval('WowCompanion._spellsBook.ctl.bind') is None, "26 with no box waiting: nothing")
 B.execute(PT % 39 + PT % 21 + 'NOW = NOW + 0.3; WowCompanion._spellsBookKey(324)')
 check(store(B) == {2: 324, 3: 403, 6: 331}, "no box: 39 then 21 is the slot pick for the spell's two taps that follow (slot 2)", store(B))
+# b56b (review): the box hands the bar the book item's ACTION id (`a`, what the spell's two taps carry), not its spell id: an overridden
+# spell (spellID != actionID) would otherwise land as a second copy of itself
+B.execute('WowCompanion._spellsBook.ctl.mode = "bind"; WowCompanion._spellsBook.ctl.bind = { id = 99403, a = 403 }; NOW = NOW + 3')
+B.execute(PT % 39 + PT % 23 + 'NOW = NOW + 0.3')
+check(store(B) == {2: 324, 4: 403, 6: 331}, "b56b: the action id goes on the bar (403 moved from slot 3 to 4, no 99403)", store(B))
 
 # ================================================================ h no trace
 spy = [x for x in L.eval('SPY').values()]
