@@ -58,6 +58,10 @@
 -- done drag pick and a pending cursor tap with it: a bag is never guessed. Plain rows only, no game action, the same in a fight.
 -- Rows: "bmvq" goes on at this file's load (before the radials' and the cast bar's lazy rows), "bmv" is PINNED to the pad's last row
 -- (TapPad pad19), so at the smallest UI scale (54 rows) the shared drag row is the one that drops. The bags doc says the route (mv).
+-- bags-onerow3 (review of bags-onerow1, the user 2026-11-13: "Bags share one row"): a finger on a slot is now THREE taps (bmvq 36, the
+-- bag's name, the bmv cell) and a put-down by touch is a fourth (bmvq 31). When the cursor move is lost (a nameless bmv, a bmv that
+-- missed its 36, or a 36 whose bmv never came), the touch A / Y / bag-X that follows within CURSOR_TTL is REFUSED (note
+-- "cursor-miss", no game action), never acted on the slot the cursor was still on. The controller's own buttons are not touched.
 -- bags-act1 (the user's picks, 2026-11-13, on E:/wow-build/bags_design_1113.md: "Compare action in the bag item Y menu (gear only)",
 -- "side by side: bag item left, worn item(s) right", "confirm stays A = Yes, B = No; rare and better stay REFUSED", "never in combat",
 -- "'Suggested' section at the top of the Destroy picker, RANKED MIX", "a two-hander compares vs main hand + off hand together; empty
@@ -766,6 +770,7 @@ local function mvRegister()
             end
             -- right after a "cursor" tap (bmvq col 36) this tap only moves the controller's cursor here
             if WC._bagsCursorTap and WC._bagsCursorTap(bag, slot) then return end
+            if WC._bagsCursorMiss then WC._bagsCursorMiss() end    -- bags-onerow3: a slot tap that moved no cursor
             onBagCell(bag, slot)
         end, { last = true })
     end
@@ -3165,10 +3170,19 @@ function WC._bagsShutTap(col)
     return true
 end
 
-function WC._bagsCursorVoid() ctl.cursorAt = nil end      -- bags-onerow1: a bmv tap with no bag name voids a pending cursor tap
+-- bags-onerow1: a bmv tap with no bag name voids a pending cursor tap; bags-onerow3: and the touch A / Y / X right after it is refused
+function WC._bagsCursorVoid() ctl.cursorAt = nil; ctl.missAt = GetTime() end
+function WC._bagsCursorMiss() if ctl.on then ctl.missAt = GetTime() end end   -- a bmv tap that was no cursor move (its 36 lost)
+-- bags-onerow3: true (once) when the last finger's cursor move was lost, or its 36 is still waiting for its bmv cell
+local function cursorMissed()
+    local now = GetTime()
+    local miss = (ctl.missAt and (now - ctl.missAt) <= CURSOR_TTL) or (ctl.cursorAt and (now - ctl.cursorAt) <= CURSOR_TTL)
+    ctl.missAt, ctl.cursorAt = nil, nil
+    return miss and true or false
+end
 function WC._bagsCursorTap(bag, slot)
     if not ctl.cursorAt or (GetTime() - ctl.cursorAt) > CURSOR_TTL then return false end
-    ctl.cursorAt = nil
+    ctl.cursorAt, ctl.missAt = nil, nil
     if not ctl.on then tryTake() end
     if not ctl.on then return true end            -- not taken (the reason is logged): nothing else happens
     -- bags-act1: in the Destroy picker a finger on a row is 36 + that item's bmv cell: the gold row goes there (no game action)
@@ -3235,6 +3249,8 @@ function WC._bagsTouch(col)
     elseif col == DROP_HELD then
         if heldNow() and ctl.mode == "grid" and ctl.pick then ctl.pick = nil; report("cancelled") end
     elseif VIRTUAL[col] then
+        -- bags-onerow3: A / Y / X by touch act on the slot the finger named; its cursor move lost = nothing (no other slot)
+        if (col == 31 or col == 32 or col == 22) and cursorMissed() then report("cursor-miss"); return end
         if not ctl.on then tryTake() end
         if not heldNow() then return end
         local key = VIRTUAL[col]
