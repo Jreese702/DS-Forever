@@ -1541,6 +1541,8 @@ fun XServerScreen(
                     winHandler.refreshControllerMappingsForHotplug()
                 }
                 val assignedSlot = ControllerManager.getInstance().getSlotForDevice(it.event.device.id)
+                // 1.0.29 key lag ("insane input lag on my face buttons"): the press's event time -> the game's handler, rate-limited
+                com.jrees.wowcompanion.KeyLag.atGame(it.event)
                 if (assignedSlot > 0) {
                     handled = winHandler.onKeyEvent(it.event)
                 } else {

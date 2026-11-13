@@ -15,8 +15,16 @@ import android.view.MotionEvent
  * bottom), B = EAST (face right), X = NORTH (code 307: face LEFT, PadReader.FACE_307_IS_LEFT), Y = WEST (308: face top). [R] for the
  * Thor's own key layout; the first device test says.
  * Main thread only (the launcher's input callbacks).
+ *
+ * 1.0.29 key-lag fix (the user: "insane input lag on my face buttons"): this runs in the launcher's key callback BEFORE the game gets
+ * the press, so it does only the state arithmetic here; every delivery to [PadHub] (and through it every room's subscriber) is POSTED
+ * to the main thread's queue, in order, and runs after the game already has the press. The rooms see it one looper turn later.
  */
 object PadFeed {
+    /** where the deliveries go (the main thread's queue; tests: run at once) */
+    @Volatile internal var post: (Runnable) -> Unit = { r -> main.post(r) }
+    private val main by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+
     private var keys = 0          // slot bits from key events (D-pad keys, face, Start / Select, stick clicks)
     private var hat = 0           // D-pad slot bits from the hat axes
     private var lt = false; private var rt = false; private var lb = false; private var rb = false
@@ -49,11 +57,13 @@ object PadFeed {
             else -> {
                 val slot = KEY_SLOT[e.keyCode] ?: return
                 keys = if (down) keys or (1 shl slot) else keys and (1 shl slot).inv()
-                PadHub.feedButtons(keys or hat)
+                val m = keys or hat
+                post(Runnable { PadHub.feedButtons(m) })
                 return
             }
         }
-        PadHub.feedPad(lt || ltAxis, rt || rtAxis, lb, rb)
+        val a = lt || ltAxis; val b = rt || rtAxis; val c = lb; val d = rb
+        post(Runnable { PadHub.feedPad(a, b, c, d) })
     }
 
     /** a copy of one motion event from a game controller (sticks, hat, analog triggers); nothing is consumed */
@@ -66,13 +76,17 @@ object PadFeed {
         if (hx > 0.5f) h = h or (1 shl PadInput.SLOT_DPAD_RIGHT)
         if (hy < -0.5f) h = h or (1 shl PadInput.SLOT_DPAD_UP)
         if (hy > 0.5f) h = h or (1 shl PadInput.SLOT_DPAD_DOWN)
-        if (h != hat) { hat = h; PadHub.feedButtons(keys or hat) }
+        if (h != hat) { hat = h; val m = keys or hat; post(Runnable { PadHub.feedButtons(m) }) }
         // analog triggers: held over 35 %, let go under 30 % (the reader's thresholds)
         val l = maxOf(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE))
         val r = maxOf(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS))
         val nl = if (ltAxis) l > 0.30f else l > 0.35f
         val nr = if (rtAxis) r > 0.30f else r > 0.35f
-        if (nl != ltAxis || nr != rtAxis) { ltAxis = nl; rtAxis = nr; PadHub.feedPad(lt || ltAxis, rt || rtAxis, lb, rb) }
+        if (nl != ltAxis || nr != rtAxis) {
+            ltAxis = nl; rtAxis = nr
+            val a = lt || ltAxis; val b = rt || rtAxis; val c = lb; val d = rb
+            post(Runnable { PadHub.feedPad(a, b, c, d) })
+        }
         // the sticks: left X / Y; right Z / RZ (or RX / RY on a pad that uses those), y DOWN positive like evdev
         stick(0, e.getAxisValue(MotionEvent.AXIS_X), e.getAxisValue(MotionEvent.AXIS_Y))
         val zx = e.getAxisValue(MotionEvent.AXIS_Z); val zy = e.getAxisValue(MotionEvent.AXIS_RZ)
@@ -87,13 +101,13 @@ object PadFeed {
         val home = x == 0f && y == 0f && (px != 0f || py != 0f)
         if (home || kotlin.math.abs(x - px) > VEC_EPS || kotlin.math.abs(y - py) > VEC_EPS) {
             vec[st * 2] = x; vec[st * 2 + 1] = y
-            PadHub.feedVector(st, x, y)
+            post(Runnable { PadHub.feedVector(st, x, y) })
         }
         // the eighth past half deflection, 0 at the top, clockwise (the reader's sectorOf)
         val sec = if (x * x + y * y < 0.25f) -1
             else ((((Math.toDegrees(kotlin.math.atan2(x.toDouble(), -y.toDouble())) + 360.0 + 22.5) % 360.0) / 45.0).toInt().coerceIn(0, 7))
-        if (st == 0 && sec != lSec) { lSec = sec; PadHub.feedLeftStick(sec) }
-        if (st == 1 && sec != rSec) { rSec = sec; PadHub.feedStick(sec) }
+        if (st == 0 && sec != lSec) { lSec = sec; post(Runnable { PadHub.feedLeftStick(sec) }) }
+        if (st == 1 && sec != rSec) { rSec = sec; post(Runnable { PadHub.feedStick(sec) }) }
     }
 
     private const val DEAD = 0.08f

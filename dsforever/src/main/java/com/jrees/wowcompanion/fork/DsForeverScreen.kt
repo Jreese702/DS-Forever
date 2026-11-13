@@ -179,15 +179,11 @@ class DsForeverScreen(private val context: Context) {
      * the same lines kept in a small file of our own (/sdcard/WowCompanion/logs/dsnet.log, one rotation at 1 MB): logcat's ring buffer
      * had already dropped the sign-in part of the first measured session (2026-10-08 21:25)
      */
-    private val netLog = java.io.File("/sdcard/WowCompanion/logs/dsnet.log")
+    // 1.0.29 key-lag review: this ran on the MAIN thread every second the game had traffic (every 10 s when quiet), an append through
+    // FUSE in the same queue as the game's key presses; now queued and written by the background log writer (BgAppend)
+    private val netLog = com.jrees.wowcompanion.BgAppend({ java.io.File("/sdcard/WowCompanion/logs/dsnet.log") })
     private val stamp = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.ROOT)
-    private fun note(line: String) {
-        try {
-            netLog.parentFile?.mkdirs()
-            if (netLog.length() > 1_000_000L) netLog.renameTo(java.io.File(netLog.path + ".1"))
-            netLog.appendText("${stamp.format(java.util.Date())} $line\n")
-        } catch (_: Throwable) {}
-    }
+    private fun note(line: String) { runCatching { netLog.add("${stamp.format(java.util.Date())} $line") } }
 
     private fun gameDisplay(): Int = (context as? Activity)?.display?.displayId ?: Display.DEFAULT_DISPLAY
 

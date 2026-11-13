@@ -38,21 +38,25 @@ object TapBridge {
     // ---------------------------------------------------------------- the tap history (2026-11-04: "my mouse cursor is still on screen
     // visibly flashing around"; every batch is a mouse click on the top screen, and logcat rotates within a minute here): one line per
     // batch, its rows and cells, in /sdcard/WowCompanion/logs/taps.log, capped like login.log (past 1500 lines the last 800 stay)
+    // 1.0.29 key-lag review: the append ran on the tap worker BEFORE every batch's taps (a FUSE write in front of each tap); now the
+    // line is queued and the background log writer appends it (BgAppend), the cap kept there
     private var tapWrites = 0
-    private fun tapHistory(what: String) {
-        try {
-            val f = java.io.File("/sdcard/WowCompanion/logs/taps.log")
-            f.parentFile?.mkdirs()
-            f.appendText("${java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())} $what\n")
-            if (++tapWrites % 50 == 0) {
-                val lines = f.readLines()
-                if (lines.size > 1500) {
-                    val tmp = java.io.File(f.path + ".part")
-                    tmp.writeText(lines.takeLast(800).joinToString("\n", postfix = "\n"))
-                    if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
-                }
+    private val tapLog = BgAppend({ java.io.File("/sdcard/WowCompanion/logs/taps.log") }, write = { f, lines, _ ->
+        f.parentFile?.let { if (!it.isDirectory) it.mkdirs() }
+        f.appendText(lines.joinToString("\n", postfix = "\n"))
+        tapWrites += lines.size
+        if (tapWrites >= 50) {
+            tapWrites = 0
+            val all = f.readLines()
+            if (all.size > 1500) {
+                val tmp = java.io.File(f.path + ".part")
+                tmp.writeText(all.takeLast(800).joinToString("\n", postfix = "\n"))
+                if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
             }
-        } catch (_: Throwable) {}
+        }
+    })
+    private fun tapHistory(what: String) {
+        runCatching { tapLog.add("${java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())} $what") }
     }
 
     /** the L1 key channel: OFF since the Alt+F4 closes (2026-10-09), see the batch send below */
