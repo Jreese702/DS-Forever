@@ -1,5 +1,7 @@
 package com.jrees.wowcompanion
 
+import org.json.JSONObject
+
 /**
  * THE BAGS ROOM'S CURSOR, AHEAD OF THE GAME (the user: "when I look around the bags at different items it lags a lot ... if I push
  * two fast it gets a little lost and inconsistent"; tracking's yes to (a)-(d), 2026-10-22). The add-on still owns the cursor and acts
@@ -173,6 +175,67 @@ object BagsCursor {
         if (a <= STICK_DEADZONE) return scrolled.coerceIn(0f, max)
         val k = (a - STICK_DEADZONE) / (1f - STICK_DEADZONE) * kotlin.math.sign(y)
         return (scrolled + k * STICK_SPEED * dtMs / 1000f).coerceIn(0f, max)
+    }
+
+    /**
+     * THE FULL TOOLTIP EVERY TIME (bags-tip1, the user 2026-11-13: "the tool tip shows one thing for a half second and has to load the
+     * rest and reloads the tool tip. I want it to feel fast and load that tool tip as its full description each time";
+     * E:/wow-build/bags_design_1113.md fix 1). The last FULL tooltip of each item is kept, keyed on bag, slot, item id and count
+     * ([id]), so a document without one (a bags refresh, the heartbeat, an older add-on's stand-in time) never drops the card back to
+     * the stand-in. [pick] chooses, in order: the game's tooltip for this item when it is complete; the kept one; the card shown last,
+     * HELD up to [holdMs] after the last real card (warm: no stand-in flash between two items, nor while a fresh read is on its way);
+     * the game's loading one; the stand-in (name, type, count) only when nothing ever came for the item. A tooltip with no lines,
+     * none or loading is never kept. What is worn changing ([worn]) forgets the kept ones (their compare). Pure.
+     */
+    class TipMemory(private val holdMs: Long = HOLD_MS, private val max: Int = MAX) {
+        /** what to draw: [tip] for the item [name] / [quality]; [held] = the previous card standing in (draw again soon) */
+        data class Card(val key: String, val tip: JSONObject, val name: String, val quality: Int, val held: Boolean = false, val stand: Boolean = false)
+
+        private val kept = object : LinkedHashMap<String, JSONObject>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, JSONObject>?) = size > max
+        }
+        private var last: Card? = null
+        private var lastAt = Long.MIN_VALUE / 2
+        private var wornSig: String? = null
+
+        val size get() = kept.size
+
+        fun id(key: String, count: Int) = "$key x$count"
+
+        /** a tooltip document [t] about item [key] (count [count]): kept when complete; true when it was */
+        fun offer(t: JSONObject?, key: String, count: Int): Boolean {
+            if (t == null || t.optString("key") != key || !complete(t)) return false
+            kept[id(key, count)] = t
+            return true
+        }
+
+        /** the signature of what is worn: a change forgets every kept tooltip (their "Currently Equipped" and stat changes) */
+        fun worn(sig: String?) {
+            if (sig == wornSig) return
+            if (wornSig != null) kept.clear()
+            wornSig = sig
+        }
+
+        fun forget() { kept.clear(); last = null; lastAt = Long.MIN_VALUE / 2 }
+
+        fun pick(key: String, count: Int, live: JSONObject?, name: String, quality: Int, now: Long, stand: () -> JSONObject): Card {
+            val mine = live?.takeIf { it.optString("key") == key }
+            offer(mine, key, count)
+            kept[id(key, count)]?.let { t -> return Card(key, t, name, quality).also { last = it; lastAt = now } }
+            val l = last
+            if (l != null && now - lastAt <= holdMs) return l.copy(held = true)
+            if (mine != null && (mine.optJSONArray("lines")?.length() ?: 0) > 0 && !mine.optBoolean("none")) return Card(key, mine, name, quality)
+            return Card(key, stand(), name, quality, stand = true)
+        }
+
+        companion object {
+            /** the previous card stays this long while the next item's full tooltip is on its way (the design's "about 300 ms") */
+            const val HOLD_MS = 300L
+            /** kept tooltips: more than the bags hold (4 bags and the backpack are under 120 slots) */
+            const val MAX = 160
+            fun complete(t: JSONObject): Boolean =
+                !t.optBoolean("none") && !t.optBoolean("loading") && (t.optJSONArray("lines")?.length() ?: 0) > 0
+        }
     }
 
     const val MIN_SCALE = 0.62f

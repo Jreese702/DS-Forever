@@ -41,6 +41,14 @@
 -- ctl.unbound = the chord. The sheet is told the item's own buttons (ctl.mine) and every item bind of this character (ctl.bbinds,
 -- diagnostics), so a next report shows what is held. A button held by an item no longer in the bags: bind any item over it, then
 -- press it again. Overrides only, as before: nothing of the player's is touched.
+--
+-- bags-tip1 (the user, 2026-11-13: "When looking at items in bags it sometimes feels really laggy and the tool tip shows one thing for a
+-- half second and has to load the rest and reloads the tool tip. I want it to feel fast and load that tool tip as its full description
+-- each time"; E:/wow-build/bags_design_1113.md section 1): the cursor's tooltip is KEPT per item (TIP, many items, read ahead around
+-- the cursor out of a fight) and rides with the cursor's own message, so no rest and no second send; a bags collect no longer
+-- forgets them (only an item gone or changed, or what is worn); only complete tooltips are kept ("Retrieving item information" /
+-- no lines = loading, read again on ITEM_DATA_LOAD_RESULT / TOOLTIP_DATA_UPDATE); the 19 worn tooltips are read only when worn gear
+-- changes (WORN). Read-only calls only; the 0.2 s send limit is unchanged.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -603,7 +611,8 @@ function WC._bagsPinTips(items)
 end
 
 function WC.collectBags()
-    if WC._bagsTipForget then WC._bagsTipForget() end      -- an item may have changed under the cursor: read its tooltip again
+    -- bags-tip1: no longer forgets every tooltip (that dropped the card back to its stand-in at every refresh); WC._bagsTipKeep
+    -- (after the loop) drops only the items gone from their slots, and a changed link is caught where a tooltip is used
     local items, free, total, bags = {}, 0, 0, {}
     local freeGeneral = 0
     pending = {}
@@ -724,6 +733,7 @@ function WC.collectBags()
         end
     end
 
+    if WC._bagsTipKeep then WC._bagsTipKeep(items) end
     local here = ctx
     if here == "mail" and not mailSendShown() then here = nil end
     WC.bagsPadRows(bags)
@@ -827,6 +837,11 @@ if #bagMissing > 0 then
 end
 
 bf:SetScript("OnEvent", function(_, event, a1)
+    -- bags-tip1: what is worn changed: every kept bag tooltip (its compare) and the worn ones are read again; durability: the worn ones
+    if event == "PLAYER_EQUIPMENT_CHANGED" then
+        if WC._bagsTipForget then WC._bagsTipForget() end
+        if WC._bagsWornDirty then WC._bagsWornDirty() end
+    elseif event == "UPDATE_INVENTORY_DURABILITY" and WC._bagsWornDirty then WC._bagsWornDirty() end
     if event == "PLAYER_REGEN_ENABLED" and syncDoors then syncDoors() end
     if event == "PLAYER_REGEN_DISABLED" then pcall(emptyFightOff) elseif event == "PLAYER_REGEN_ENABLED" then pcall(emptyFightOn) end
     -- GET_ITEM_INFO_RECEIVED fires for every item anything asks about (chat links, tooltips,
@@ -1115,39 +1130,191 @@ local EQ = {}               -- below: equipping a bag (after toGrid)
 local BAR = {}              -- below: the cursor on the room's top strip, closed bags (after toGrid)
 -- THE TOOLTIP of the item under the cursor (the user 2026-09-30: no right panel, "reuse some of the tool tip stuff"):
 -- Interact's WC.tipOf("bag <bag> <slot> <itemID>") = the game's own bag-item tooltip, with "Currently Equipped" and the
--- stat changes for gear (cmp: the app shows it by itself, the user's ruling). Read once per cursor position / item (the cache empties on every bags collect), never
--- while an item is in the hand or a menu / dialog is open. An Interact without WC.tipOf: no tooltip lines (the app
--- falls back to the item's name).
--- (c) ONLY WHERE THE CURSOR RESTS (tracking 2026-10-22, the bags lag): reading the game's tooltip on every press cost each step;
--- now a new slot's tooltip is read TIP_REST after the cursor reached it, if it is still there, and sent then (the app shows the
--- item's own name and type meanwhile, and drops a tooltip whose key is not its slot's).
-local TIP_REST = 0.12
-local tipCache = { key = nil, val = nil }
-local tipWant = nil
+-- stat changes for gear (cmp: the app shows it by itself, the user's ruling). Never read while an item is in the hand or a menu /
+-- dialog is open. An Interact without WC.tipOf: no tooltip lines (the app falls back to the item's name).
+-- (c) ONLY WHERE THE CURSOR RESTS (tracking 2026-10-22, the bags lag): an item NOT YET READ is read TIP.REST after the cursor
+-- reached it, if it is still there, and sent then.
+-- bags-tip1 (the user, 2026-11-13: "the tool tip shows one thing for a half second and has to load the rest and reloads the tool
+-- tip. I want it to feel fast and load that tool tip as its full description each time"; E:/wow-build/bags_design_1113.md 1):
+--  * MANY ITEMS ARE KEPT (TIP.c, one per "bag <bag> <slot> <id>"), not one: a bags collect no longer forgets them all. An item's
+--    tooltip is forgotten only when its id (the key) or its link changes, or when it leaves the bags (WC._bagsTipKeep); all of them
+--    on PLAYER_EQUIPMENT_CHANGED / PLAYER_LEVEL_UP (the compare and the red lines depend on what is worn and the level).
+--  * A KEPT ONE RIDES WITH THE CURSOR'S OWN MESSAGE: no rest, no second send. One older than TIP.FRESH is still sent at once and read
+--    again behind it (the cooldown / durability text); a new read that says the same sends nothing.
+--  * READ AHEAD: while the room holds the grid, out of a fight, the slots nearest the cursor are read TIP.PER_TICK each TIP.TICK
+--    (Professions' TIP_PER_TICK pattern), nothing sent: the cursor finds them kept.
+--  * ONLY COMPLETE ONES ARE KEPT: no lines (none) or the game's "Retrieving item information" = still loading (sent with
+--    loading = true, never kept); ITEM_DATA_LOAD_RESULT / TOOLTIP_DATA_UPDATE read the cursor's again (TIP.TRIES at most).
+-- Read-only calls only (C_TooltipInfo through Interact); nothing happens in the game.
+local TIP = { REST = 0.12, FRESH = 8, TICK = 0.1, PER_TICK = 2, MAX = 200, TRIES = 6,
+              c = {}, n = 0, want = nil, wait = nil, loading = nil, tries = 0, queue = nil, qFor = nil, ticking = false,
+              again = false, reads = 0, pre = 0, rows = {} }
 local function tipKey()
     if not (ctl.on and ctl.mode == "grid" and not ctl.pick) or type(WC.tipOf) ~= "function" then return nil end
     local id = bagItemID(ctl.bag, ctl.slot)
     if not id then return nil end
     return "bag " .. ctl.bag .. " " .. ctl.slot .. " " .. id
 end
+function TIP.link(bag, slot) return S(function() return C_Container.GetContainerItemLink(bag, slot) end) end
+-- a tooltip the game has finished: lines, and none of them (nor the compare's) the game's "Retrieving item information"
+function TIP.complete(t)
+    if type(t) ~= "table" or t.none or type(t.lines) ~= "table" or #t.lines == 0 then return false end
+    local wait = S(function() return RETRIEVING_ITEM_INFO end)
+    if type(wait) ~= "string" or wait == "" then wait = "Retrieving item information" end
+    local function has(lines)
+        for _, l in ipairs(lines) do if type(l) == "table" and l.t == wait then return true end end
+        return false
+    end
+    if has(t.lines) then return false end
+    if type(t.cmp) == "table" then
+        for _, c in ipairs(t.cmp) do if type(c) == "table" and type(c.lines) == "table" and has(c.lines) then return false end end
+    end
+    return true
+end
+-- the kept tooltip of key, if the slot still holds the same item (its link)
+function TIP.get(key, bag, slot)
+    local e = TIP.c[key]
+    if e and e.link ~= TIP.link(bag, slot) then TIP.c[key] = nil; TIP.n = TIP.n - 1; e = nil end
+    return e
+end
+-- read key's tooltip now: (tooltip, kept). A loading one comes back marked loading and is not kept.
+function TIP.read(key, bag, slot)
+    TIP.reads = TIP.reads + 1
+    local ok, t = pcall(WC.tipOf, key)
+    if not (ok and type(t) == "table") then return nil, false end
+    if not TIP.complete(t) then t.loading = true; return t, false end
+    if TIP.n >= TIP.MAX then TIP.c, TIP.n = {}, 0 end            -- a long session: start again
+    if not TIP.c[key] then TIP.n = TIP.n + 1 end
+    TIP.c[key] = { link = TIP.link(bag, slot), val = t, at = GetTime(), sig = TIP.rows[key] }
+    return t, true
+end
+-- read the cursor's item and send it when it says something new (old = the kept one it replaces, if any)
+function TIP.readCursor(key)
+    if tipKey() ~= key then return end
+    local old = TIP.get(key, ctl.bag, ctl.slot)
+    local oldJson = old and WC.encode(old.val) or nil
+    local t, kept = TIP.read(key, ctl.bag, ctl.slot)
+    if kept then
+        TIP.wait = nil; TIP.loading = nil
+        if WC.encode(t) ~= oldJson then sendCtlSoon() end
+    elseif old then
+        old.at = GetTime()                                       -- a loading re-read: the complete one stays (read again later)
+    elseif t then
+        if TIP.loading ~= key then TIP.loading = key; TIP.tries = 0 end
+        TIP.wait = { key = key, val = t }
+        sendCtlSoon()
+    end
+end
+-- the slots of the open bags nearest the cursor first (the grid as the room draws it: COLS a row, bag under bag)
+function TIP.around()
+    local list, row0, cr, cc = {}, 0, 0, 0
+    for _, e in ipairs(BAR.open()) do
+        if e.bag == ctl.bag then cr = row0 + math.floor((ctl.slot - 1) / COLS); cc = (ctl.slot - 1) % COLS end
+        row0 = row0 + math.floor((e.slots + COLS - 1) / COLS)
+    end
+    row0 = 0
+    for _, e in ipairs(BAR.open()) do
+        for s = 1, e.slots do
+            local r, c = row0 + math.floor((s - 1) / COLS), (s - 1) % COLS
+            list[#list + 1] = { e.bag, s, math.abs(r - cr) + math.abs(c - cc) }
+        end
+        row0 = row0 + math.floor((e.slots + COLS - 1) / COLS)
+    end
+    table.sort(list, function(a, b) if a[3] ~= b[3] then return a[3] < b[3] end; if a[1] ~= b[1] then return a[1] < b[1] end; return a[2] < b[2] end)
+    return list
+end
+function TIP.step()
+    TIP.ticking = false
+    -- the room let go, a menu / the hand, or a fight: no reads ahead (Chat's rule: out of combat when it can be). The cursor's own
+    -- item still reads in a fight, as before
+    if not tipKey() or InCombatLockdown() then return end
+    local here = ctl.bag .. " " .. ctl.slot
+    if TIP.qFor ~= here or not TIP.queue then TIP.queue = TIP.around(); TIP.qFor = here end
+    local done = 0
+    while done < TIP.PER_TICK and #TIP.queue > 0 do
+        local q = table.remove(TIP.queue, 1)
+        local id = bagItemID(q[1], q[2])
+        if id then
+            local key = "bag " .. q[1] .. " " .. q[2] .. " " .. id
+            -- the cursor's own item is its rest timer's (TIP.want), never read twice
+            if key ~= TIP.want and not TIP.get(key, q[1], q[2]) then TIP.read(key, q[1], q[2]); TIP.pre = TIP.pre + 1; done = done + 1 end
+        end
+    end
+    if #TIP.queue > 0 then TIP.ticking = true; C_Timer.After(TIP.TICK, TIP.step) end
+end
+function TIP.ahead()
+    -- review: in a fight TIP.step does nothing, so no timer either (_bagsTip runs at every ctl document)
+    if TIP.ticking or InCombatLockdown() then return end
+    if TIP.queue and #TIP.queue == 0 and TIP.qFor == (ctl.bag .. " " .. ctl.slot) then return end   -- all read for this spot
+    TIP.ticking = true
+    C_Timer.After(TIP.TICK, TIP.step)
+end
 function WC._bagsTip()
     local key = tipKey()
     if not key then return nil end
-    if tipCache.key == key then return tipCache.val end
-    if tipWant ~= key then
-        tipWant = key
-        C_Timer.After(TIP_REST, function()
-            if tipWant ~= key then return end           -- the cursor moved on: that slot's own timer reads it
-            tipWant = nil
-            if tipKey() ~= key then return end
-            local ok, t = pcall(WC.tipOf, key)
-            tipCache.key = key; tipCache.val = (ok and type(t) == "table") and t or nil
-            sendCtlSoon()
+    TIP.ahead()
+    local e = TIP.get(key, ctl.bag, ctl.slot)
+    if e and (GetTime() - e.at) < TIP.FRESH then return e.val end
+    if TIP.want ~= key then
+        TIP.want = key
+        C_Timer.After(TIP.REST, function()
+            if TIP.want ~= key then return end           -- the cursor moved on: that slot's own timer reads it
+            TIP.want = nil
+            local k = tipKey() == key and TIP.get(key, ctl.bag, ctl.slot)
+            if k and (GetTime() - k.at) < TIP.FRESH then sendCtlSoon(); return end   -- read ahead meanwhile: just sent
+            TIP.readCursor(key)
         end)
     end
+    if e then return e.val end                           -- kept but old: sent at once, read again behind it
+    if TIP.wait and TIP.wait.key == key then return TIP.wait.val end
     return nil
 end
-function WC._bagsTipForget() tipCache.key = nil; tipCache.val = nil; tipWant = nil end
+-- everything forgotten (what is worn or the level changed)
+function WC._bagsTipForget() TIP.c, TIP.n = {}, 0; TIP.want = nil; TIP.wait = nil; TIP.queue = nil end
+-- a bags collect: keep the tooltips of the items still where they were (their links are checked when used)
+-- review: and of the items whose stack, bound state or durability changed with the same link (a stack used up, a death's or a
+-- repair's durability on gear in the bags, a piece gone soulbound): the link does not show those, the tooltip text does
+local function rowSig(r) return tostring(r.count) .. "|" .. tostring(r.bound) .. "|" .. tostring(r.dur) end
+function WC._bagsTipKeep(items)
+    local here = {}
+    for _, r in ipairs(items) do here["bag " .. r.bag .. " " .. r.slot .. " " .. r.id] = rowSig(r) end
+    TIP.rows = here
+    for k, e in pairs(TIP.c) do
+        local sig = here[k]
+        if not sig or (e.sig ~= nil and e.sig ~= sig) then TIP.c[k] = nil; TIP.n = TIP.n - 1 else e.sig = sig end
+    end
+    TIP.queue = nil                                      -- the bags changed: the read-ahead looks again
+end
+-- the game finished loading something: the cursor's loading tooltip is read again (at most TIP.TRIES times, once a frame)
+function WC._bagsTipLoaded()
+    if not TIP.loading or TIP.again then return end
+    if TIP.tries >= TIP.TRIES then return end
+    TIP.again = true
+    C_Timer.After(0, function()
+        TIP.again = false
+        local k = TIP.loading
+        if not k then return end
+        TIP.tries = TIP.tries + 1
+        TIP.readCursor(k)
+    end)
+end
+-- for the off-device tests (tools/test_bags_tip.py)
+function WC._bagsTipStats() return { n = TIP.n, reads = TIP.reads, pre = TIP.pre, loading = TIP.loading } end
+do
+    local tf = CreateFrame("Frame")
+    local missing = {}
+    for _, e in ipairs({ "ITEM_DATA_LOAD_RESULT", "TOOLTIP_DATA_UPDATE", "PLAYER_LEVEL_UP" }) do
+        local ok, registered = pcall(function() return tf:RegisterEvent(e) end)
+        if not ok or registered == false then missing[#missing + 1] = e end
+    end
+    if #missing > 0 then
+        pcall(function() WC.send(WC.encode({ type = "cap", bagsTipMissingEvents = missing })) end)
+    end
+    tf:SetScript("OnEvent", function(_, e)
+        if e == "PLAYER_LEVEL_UP" then WC._bagsTipForget(); if WC._bagsWornDirty then WC._bagsWornDirty() end
+        else WC._bagsTipLoaded() end
+    end)
+end
 
 function WC._bagsCtlDoc()
     -- off, the last note still rides along: a refused take ("take-refused-npc", "-no way in", ...) or a
@@ -2561,8 +2728,36 @@ local function alertColours()
     return (out[1] or out[2]) and out or nil
 end
 
+-- bags-tip1 (E:/wow-build/bags_design_1113.md 1, fix 4): THE WORN TOOLTIPS ARE READ WHEN WORN GEAR CHANGES, not at every collect (every
+-- bags collect re-read all 19, and collects follow every bag, money and action-bar change, many a second in a fight). A slot is read
+-- again when its link (or a weapon's temporary enchant) changed, after PLAYER_EQUIPMENT_CHANGED / UPDATE_INVENTORY_DURABILITY /
+-- PLAYER_LEVEL_UP (WC._bagsWornDirty), or WORN.FRESH s after the last full read (the timed text in them). A tooltip still
+-- loading is never kept.
+local WORN = { dirty = true, at = -1e9, FRESH = 60, tips = {} }
+function WC._bagsWornDirty() WORN.dirty = true end
+function WC._bagsWornReads() return WORN.reads or 0 end
+local function wornSig(slot, link)
+    if slot ~= 16 and slot ~= 17 then return link end
+    local ok, hm, _, mc, mid, ho, _, oc, oid = CALL(function() return GetWeaponEnchantInfo() end)
+    if not ok then return link end
+    local function v(x) local t = S(function() return x end); return (type(t) == "number" or type(t) == "boolean") and tostring(t) or "-" end
+    if slot == 16 then return tostring(link) .. "|" .. v(hm) .. v(mc) .. v(mid) end
+    return tostring(link) .. "|" .. v(ho) .. v(oc) .. v(oid)
+end
+local function wornTip(slot, link, all)
+    local sig = wornSig(slot, link)
+    local w = WORN.tips[slot]
+    if not all and w and w.sig == sig then return w.t end
+    WORN.reads = (WORN.reads or 0) + 1
+    local t = tipLines(slot)
+    WORN.tips[slot] = (t and TIP.complete({ lines = t })) and { sig = sig, t = t } or nil
+    return t
+end
+
 function WC.collectEquipped()
     local out = {}
+    local all = WORN.dirty or (GetTime() - WORN.at) > WORN.FRESH
+    if all then WORN.dirty = false; WORN.at = GetTime() end
     for slot = 1, 19 do
         local id = SN(function() return GetInventoryItemID("player", slot) end)
         local row = { slot = slot, name = SLOTS[slot] }
@@ -2583,7 +2778,7 @@ function WC.collectEquipped()
             local link = S(function() return GetInventoryItemLink("player", slot) end)
             row.ilvl = ilvlOf(link)
             row.stats = statsOf(link)
-            row.tip = tipLines(slot)
+            row.tip = wornTip(slot, link, all)
             -- an on-use ability (a trinket, say), for the Character room's card and Bind (character session's
             -- request, 2026-09-28): the same test the bag rows use, plus its spell. use = true like a bag row.
             local okS, spName, spID = WC.CALL(function() return C_Item.GetItemSpell(id) end)
