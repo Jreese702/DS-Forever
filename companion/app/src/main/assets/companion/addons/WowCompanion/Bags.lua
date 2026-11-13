@@ -54,6 +54,10 @@
 -- "WEAPONS (slots 16,17,18) MAY be unequipped in combat, armor is refused in combat"; "Never let a stale bag pick equip anything"):
 -- WC.bagsUnequip(slot), reached by Character.lua's arming cell then one bmvq column (WC._bagsUnequipArm / _bagsUnequipTap, after
 -- WC.bagsMove). The game's own pick-up and put-down into the first free plain bag slot; a blocked pick-up in a fight = "combat".
+--
+-- uneq2 (review of uneq1; the user's pick: "Never let a stale bag pick equip anything"): the Character room's More menu opening
+-- (`moreon`) voids a Bags drag pick too (WC._bagsVoidPick), so a lost arm tap can no longer turn the slot tap into a drop; and a
+-- Bags-room tap (bmvq column 19+) disarms a pending arm, so a lost slot tap can never make a later Bags tap take a piece off.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -526,9 +530,13 @@ function WC._bagsUnequipArm()
     picked = nil                                   -- never a drop: a stale bag pick is void from here
 end
 
+-- uneq2: the Character room's More menu opened (Character.lua's "moreon"): a Bags drag pick is void from here as well
+function WC._bagsVoidPick() picked = nil end
+
 -- a bmvq column 0..18: taken (true) right after the arm, or as its late / doubled press; never reaches onInvCell then
 function WC._bagsUnequipTap(col)
     local now = GetTime()
+    if col >= 19 then UQ.at = nil; return false end                              -- uneq2: a Bags-room tap: the arm is stale
     if UQ.swallowCol == col and now < UQ.swallowUntil then return true end      -- the input path's second press
     if not UQ.at then return false end
     local age = now - UQ.at
@@ -665,9 +673,10 @@ function WC.bagsMoveRows(bagList)
         -- columns 0..18 = the worn slots; 19 and up = the Bags room by touch (controller mode, below)
         pcall(WC.pad.op, "bmvq", "bmvq", function(_, col)
             col = col or 0
-            if col >= 19 then if WC._bagsTouch then WC._bagsTouch(col) end; return end
-            -- uneq1: right after the Character room's Unequip arm, the column names the worn slot to take off (first: never a drop)
+            -- uneq1: right after the Character room's Unequip arm, the column names the worn slot to take off (first: never a drop);
+            -- uneq2: a column 19+ (the Bags room) disarms it and goes on below
             if WC._bagsUnequipTap and WC._bagsUnequipTap(col) then return end
+            if col >= 19 then if WC._bagsTouch then WC._bagsTouch(col) end; return end
             -- right after a "target" tap (col 26) a column 1..5 names the bag slot for the bag in the hand (EQ)
             if WC._bagsTargetTap and WC._bagsTargetTap(col) then return end
             if WC._bagsShutTap and WC._bagsShutTap(col) then return end

@@ -1,4 +1,4 @@
-"""uneq1 / Character c14 (the user's picks, 2026-11-13: "Unequip lives in the Character room: choose a worn slot, Y = More opens a small
+"""uneq1 / Character c14, uneq2 / c15 (review: moreon voids a Bags pick; a Bags-room tap disarms) (the user's picks, 2026-11-13: "Unequip lives in the Character room: choose a worn slot, Y = More opens a small
 menu with 'Unequip' first"; "WEAPONS (slots 16,17,18) MAY be unequipped in combat, armor is refused in combat"; "Target: first free
 plain-bag slot, backpack first; bags full -> row disabled 'Bags full'; ammo (slot 0) not offered"; "Never let a stale bag pick equip
 anything"). Loads the REAL WowCompanion/Bags.lua and WowCompanionCharacter/Character.lua in Lua 5.1 with stand-in game functions (a
@@ -206,7 +206,7 @@ L.execute('WowCompanionDB = {}; fire("PLAYER_LOGIN"); WowCompanion._bagsMoveRead
           'WowCompanion.bagsMoveRows({ { bag = 0, slots = 4 }, { bag = 1, slots = 2 }, { bag = 2, slots = 2 } })')
 check(L.eval('type(OPS.bmvq)') == 'function' and L.eval('type(OPS.bmv0)') == 'function', "the drag rows are there")
 check(L.eval('type(WowCompanion.bagsUnequip)') == 'function', "WC.bagsUnequip exists")
-check(str(L.eval('WowCompanion.character.version')).startswith('c14'), "Character's version is bumped (c14)", L.eval('WowCompanion.character.version'))
+check(str(L.eval('WowCompanion.character.version')).startswith('c15'), "Character's version is bumped (c15)", L.eval('WowCompanion.character.version'))
 
 # the eqs part carries the route's cells; the sets' retain keeps them
 d = L.eval('eqs()')
@@ -315,6 +315,20 @@ check(L.eval('eqs().more') is False, "moreoff closes it")
 L.execute('tapSet("moreon"); NOW = 510; tapSet("uneq")')
 check(L.eval('eqs().more') is False, "the Unequip arm closes it too")
 L.execute('NOW = 520; bmvq(16)')       # consume the arm (slot 17 worn? it was moved earlier: empty)
+
+# 6b. uneq2 (review): the More menu opening voids a Bags drag pick, so a LOST arm can't turn the slot tap into a drop (= an equip)
+L.execute('NOW = 540; WORN[17] = 902; BAG[0][1] = nil; BAG[0][1] = 117')
+L.execute('NOW = 541; OPS.bmv0(nil, 0)')
+check(L.eval('lastMove().picked ~= nil and lastMove().picked.bag == 0'), "uneq2: a bag pick is held")
+L.execute('NOW = 542; tapSet("moreon"); NOW = 543; bmvq(16)')        # the arm tap was lost: only the slot tap arrives
+check(L.eval('CALLS.equip') == 0 and L.eval('lastMove().picked ~= nil and lastMove().picked.inv == 17') and L.eval('BAG[0][1]') == 117,
+      "uneq2: moreon voided the pick: a lost arm's slot tap is a pick, never an equip", (L.eval('CALLS.equip'), L.eval('BAG[0][1]')))
+L.execute('tapSet("moreoff"); NOW = 560')
+# a Bags-room tap (column 19+) disarms: a lost slot tap can't make the next Bags worn-slot tap an unequip
+L.execute('NOW = 561; tapSet("uneq"); NOW = 561.2; bmvq(39); NOW = 561.5; bmvq(16)')
+check(L.eval('WORN[17]') == 902 and L.eval('lastMove().picked ~= nil and lastMove().picked.inv == 17'),
+      "uneq2: a Bags-room tap disarms: the next worn-slot tap is a pick, nothing taken off", (L.eval('WORN[17]'),))
+L.execute('NOW = 580')
 
 # 7. no trace
 check(L.eval('#TRACE') == 0, "no trace: no SetBinding / macro / CVar / Blizzard open-close / StaticPopup call", list(L.eval('TRACE').values()))

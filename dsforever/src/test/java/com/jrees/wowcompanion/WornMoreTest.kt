@@ -67,6 +67,15 @@ class WornMoreTest {
         assertEquals("The game refused it", WornMore.say(false, "refused"))
     }
 
+    // uneq2: the add-on re-sends its last ack in every eqs part; only an answer to this room's own tap is said
+    @Test fun onlyAFreshAnswerIsSaid() {
+        assertFalse("no tap sent", WornMore.fresh(0L, 10_000L))
+        assertTrue("the answer at once", WornMore.fresh(10_000L, 10_050L))
+        assertTrue("the 0.6 s confirm", WornMore.fresh(10_000L, 10_700L))
+        assertFalse("an old ack minutes later", WornMore.fresh(10_000L, 200_000L))
+        assertFalse("a clock before the tap", WornMore.fresh(10_000L, 9_000L))
+    }
+
     @Test fun everyWordHasSpanishAndFrench() {
         val words = listOf("Unequip", "More", "Bags full", "In combat", "Empty", "Unavailable", "Try again", "The game refused it",
             "The game did not take it", "Choose", "Back")

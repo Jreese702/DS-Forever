@@ -183,7 +183,12 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             if (sp.more) moreSeen = true else if (moreSeen && moreFor != null) { moreSeen = false; closeMore(tell = false) }
         }
         if ("eqs" in changed && current) model.setPad?.ack?.takeIf { it.op == "unequip" }?.let { a ->
-            if (a.seq != ackShownSeq) { ackShownSeq = a.seq; WornMore.say(a.ok, a.why)?.let { kitSay(it) } }
+            // uneq2 (review): the add-on re-sends its LAST ack in every eqs part, so an old answer (another piece, another visit) is
+            // only recorded; a line is said only for an answer that came within [WornMore.ANSWER_MS] of this room's own unequip tap
+            if (a.seq != ackShownSeq) {
+                ackShownSeq = a.seq
+                if (WornMore.fresh(unequipSentAt, android.os.SystemClock.uptimeMillis())) WornMore.say(a.ok, a.why)?.let { kitSay(it) }
+            }
         }
         if ("eqs" in changed && current) model.setPad?.ack?.takeIf { it.op != "unequip" }?.let { a ->
             if (a.seq != ackShownSeq) {
@@ -305,6 +310,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     private var moreFor: Int? = null
     private var moreSel = 0
     private var moreSeen = false                    // the add-on has said `more` true for this menu (its false then closes it)
+    private var unequipSentAt = 0L                  // uneq2: uptime of this room's last unequip batch (0 = none): only its answer is said
     private val moreHits = ArrayList<Pair<RectF, Int>>()
 
     /** the pad that has both cells of the route (the bags document's is the newer), else null: nothing is tapped */
@@ -346,6 +352,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         // ONE batch, all or nothing: the arm, then the worn slot's column; spaced past the pad's 0.25 s repeat guard
         val ok = TapBridge.tapsSpaced(context, pad, WornMore.cells(sp.row, arm, slot), 120L)
         Log.i(TAG, "character: unequip slot $slot -> ${if (ok) "tapped" else "refused"}")
+        unequipSentAt = if (ok) android.os.SystemClock.uptimeMillis() else 0L
         if (!ok) { sp.moreOff?.let { setTap("more off", it) }; kitSay("The game did not take it") }
     }
 

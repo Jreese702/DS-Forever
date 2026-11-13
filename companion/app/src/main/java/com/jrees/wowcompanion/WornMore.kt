@@ -45,6 +45,13 @@ object WornMore {
     /** the taps of one unequip, in ONE batch (all or nothing): the arm on the add-on's row, then the worn slot's bmvq column */
     fun cells(row: String, arm: Int, slot: Int): List<Pair<String, Int>> = listOf(row to arm, "bmvq" to slot - 1)
 
+    /** uneq2: how long after this room's own unequip tap its answer is still said (the 0.6 s confirm and a late block fit well inside) */
+    const val ANSWER_MS = 5000L
+
+    /** uneq2: an `unequip` ack is this room's answer only when its tap went out at [sentAt] (uptime ms, 0 = none) within [ANSWER_MS]
+     *  of [now]; the add-on re-sends its last ack in every eqs part, so anything else is an old answer and is never said */
+    fun fresh(sentAt: Long, now: Long): Boolean = sentAt > 0L && now >= sentAt && now - sentAt <= ANSWER_MS
+
     /** the add-on's answer (eqs ack `unequip`) as the room's one line; null = done, nothing to say (the doll shows it) */
     fun say(ok: Boolean, why: String): String? = if (ok) null else when (why) {
         "full" -> "Bags full"

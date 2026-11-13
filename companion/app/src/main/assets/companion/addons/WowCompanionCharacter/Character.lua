@@ -51,7 +51,7 @@ local format = string.format
 -- and the core's heartbeat. Set to false when the Character room itself goes to the device.
 local BARS_ONLY = false
 
-local CV = BARS_ONLY and "c14b" or "c14"     -- bump on every change; c14 (uneq1): the Unequip route's cells (see THE GEAR SETS' BUTTONS); c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
+local CV = BARS_ONLY and "c15b" or "c15"     -- bump on every change; c15 (uneq2, the user: "Never let a stale bag pick equip anything"): moreon also voids a Bags drag pick; c14 (uneq1): the Unequip route's cells (see THE GEAR SETS' BUTTONS); c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
 
 -- ---------------------------------------------------------------- safe reads
 
@@ -1143,6 +1143,7 @@ local function onSetTap(key)
     sid = tonumber(sid)
     if key == "no" then if not eqForget() then eqAck("no", nil, false, "nothing asked") end return end
     if key == "moreon" then
+        if type(WC._bagsVoidPick) == "function" then pcall(WC._bagsVoidPick) end      -- c15: a lost arm can't make the slot tap a drop
         if eqs.ask then return end                          -- the save question is up: its own buttons answer
         eqs.more = true; passB(false); dirty.eqs = true; soon(0); return
     end
