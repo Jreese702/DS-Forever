@@ -450,6 +450,7 @@ object SpellsModel {
         }
         val key = when (p.pos) { 5 -> "x"; 6 -> "y"; 7 -> "b"; 8 -> "a"; else -> null }
         val button = when {
+            PadMapModel.isStick(p.pos) -> PadMapModel.stickGlyph(p.pos)          // m150: L3 / R3 (the Controller tab's stick buttons)
             p.pos in 1..4 -> "gen_" + arrayOf("left", "up", "right", "down")[p.pos - 1]
             style == PadStyle.SHP -> "shp_" + mapOf("x" to "square", "y" to "triangle", "b" to "circle", "a" to "cross").getValue(key!!)
             else -> "${set}_$key"
