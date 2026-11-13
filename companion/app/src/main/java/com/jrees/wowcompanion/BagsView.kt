@@ -216,6 +216,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             const val KIT_ROW = -100     // "Choose an item": row i = KIT_ROW - i (its item's secure cell)
             const val MIN_CMP_W = 300f                          // Currently Equipped narrowed to a side's room, never under this
             const val PRESS_MIN_MS = 160L                       // a press stays visibly in at least this long (Interact's recipe)
+            const val HOLD_REDRAW_MS = 50L                      // bags-tip1: a held card draws again this often until its hold ends
             val PRESS_KEYS = setOf("PAD1", "PAD2", "PAD3", "PAD4")
         }
 
@@ -399,9 +400,6 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             return Triple(x, tw, cmpX.coerceIn(16f, maxOf(16f, width - cw - 16f)))
         }
 
-        /** the game's tooltip only for the slot shown: one for a slot the cursor has left is stale (dropped by its key) */
-        private fun tipFor(t: JSONObject?, key: String): JSONObject? = tipOfSlot(t, key)
-
         /** an addon without Interact's WC.tipOf: the item's own name and type, so the tooltip is never empty */
         private fun fallbackTip(key: String, it: JSONObject): JSONObject {
             val lines = JSONArray().put(JSONObject().put("t", it.optString("name")))
@@ -480,11 +478,14 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             val name = it.optString("name").takeIf { s -> real(s) } ?: "Loading…"
             val q = if (it.has("quality")) it.optInt("quality") else 1
             val key = "bag $bag $slot ${it.optInt("id")}"
-            // (c) the detail at once from the bags already here (the item's own name and type); the game's full tooltip replaces it
-            // when ITS key is this slot's: a late one for a slot the cursor has left is dropped
-            val tip = tipFor(st.ctl?.optJSONObject("tip")?.takeIf { st.ctlOn }, key) ?: fallbackTip(key, it)
+            // (c) the game's full tooltip when ITS key is this slot's (a late one for a slot the cursor has left is dropped).
+            // bags-tip1: else this item's last full one (kept per item: a refresh never drops it), else the card shown a moment ago
+            // (held, warm), and the stand-in (the item's own name and type) only when nothing ever came for it (BagsCursor.TipMemory)
+            val live = st.ctl?.optJSONObject("tip")?.takeIf { st.ctlOn }
+            val shown = st.tips.pick(key, it.optInt("count", 1), live, name, q, clock()) { fallbackTip(key, it) }
+            if (shown.held) postInvalidateDelayed(HOLD_REDRAW_MS)       // the hold ends by itself: draw again
             val (acts, what) = actions(it, bag, slot)
-            card(c, cur, name, q, tip, tip.optJSONArray("cmp"), acts, what, top, bottom)
+            card(c, cur, shown.name, shown.quality, shown.tip, shown.tip.optJSONArray("cmp"), acts, what, top, bottom)
             return true
         }
 
@@ -1026,6 +1027,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         val c = if (current && bags.has("ctl")) bags.optJSONObject("ctl") else state.ctl
         state.ctl = c
         val changed = state.set(bags)
+        if (current) state.noteTip(bags)
         if (current) state.feed(android.os.SystemClock.uptimeMillis())
         if (state.ctlOn) state.follow()          // the item panel shows what the cursor is on
         if (changed) layoutAll()
@@ -1039,6 +1041,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     fun updateCtl(c: JSONObject, current: Boolean) {
         if (!current) return
         state.ctl = c
+        state.noteTip(null)
         state.feed(android.os.SystemClock.uptimeMillis())
         if (state.ctlOn) state.follow()
         layoutAll()
@@ -1486,6 +1489,25 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         fun ctlCur(): Pair<Int, Int>? = if (ctlOn && !equipping && !onBar) predict.shown ?: at(ctl?.optJSONObject("cur")) else null
         /** (b) the app's copy of the cursor, ahead of the game's documents (BagsCursor) */
         val predict = BagsCursor.Predictor()
+        /** bags-tip1: each item's last full tooltip, so no document ever drops a card back to its stand-in (BagsCursor.TipMemory) */
+        val tips = BagsCursor.TipMemory()
+        /**
+         * A document arrived: what is worn ([bags].equipped, when it is a full one) and the game's tooltip in ctl to the memory, while
+         * its item is still in its slot (the key's id against the bags here).
+         */
+        fun noteTip(bags: JSONObject?) {
+            bags?.optJSONObject("equipped")?.optJSONArray("slots")?.let { a ->
+                tips.worn((0 until a.length()).joinToString(",") { i -> a.optJSONObject(i)?.optInt("id", 0)?.toString() ?: "0" })
+            }
+            val t = ctl?.optJSONObject("tip") ?: return
+            val k = t.optString("key")
+            val p = k.split(" ")
+            if (p.size != 4 || p[0] != "bag") return
+            val b = p[1].toIntOrNull() ?: return; val s = p[2].toIntOrNull() ?: return
+            val it = items[key(b, s)] ?: return
+            if (it.optInt("id") != p[3].toIntOrNull()) return
+            tips.offer(t, k, it.optInt("count", 1))
+        }
         /** the game's bags.ctl to the copy: its seq, its cursor, the open bags in order, something in the hand */
         fun feed(now: Long) {
             val c = ctl
