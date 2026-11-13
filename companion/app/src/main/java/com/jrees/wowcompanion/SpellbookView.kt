@@ -245,8 +245,9 @@ class SpellbookView(
         if (castOn()) RectF(SPLIT + 40f, h - 30f - 111f, actionMid(w) - 6f, h - 30f) else RectF(SPLIT + 40f, h - 30f - 111f, w - 56f, h - 30f)
 
     // GitHub #43 THE CAST BAR ACTION: the selected spell's second action beside Bind (the one-action select flow: no per-row button), only
-    // while the add-on has the castbar row; the button stays pushed in while the spell is on the bar, and a tap takes it off again
-    private fun castOn() = onCastBar != null && CastStripModel.Live.bar?.pick != null
+    // while the add-on can take the pick (cb2: the padtab pick, before the castbar row exists; or the row's own pick cell); the button
+    // stays pushed in while the spell is on the bar, and a tap takes it off again
+    private fun castOn() = onCastBar != null && CastStripModel.Live.bar?.pickable == true
     private fun actionMid(w: Float) = (SPLIT + 40f + w - 56f) / 2f
     private fun castRect(w: Float, h: Float) = RectF(actionMid(w) + 6f, h - 30f - 111f, w - 56f, h - 30f)
     /** the spell can go on the bar (or off it): a known spell you cast, with an id, and room on the bar unless it is there */

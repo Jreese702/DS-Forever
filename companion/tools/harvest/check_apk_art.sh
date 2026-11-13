@@ -36,8 +36,8 @@ echo "assets: $(printf '%s\n' "$LIST" | grep -c '^assets/') files; recipes: $(pr
 FAIL=0
 if [ -n "$BAD" ]; then echo "GAME-DERIVED (must not ship):"; printf '%s\n' "$BAD" | sed 's#/[^/]*$#/…#' | sort | uniq -c | head -20; FAIL=1; fi
 if [ -n "$PICS" ]; then echo "NOT ON THE ALLOW-LIST (check each, then allow it here if it is ours):"; printf '%s\n' "$PICS" | head -30; FAIL=1; fi
-# the add-on's own Media: our D icon, the compass band, the world markers and the blank cursor (pad12, a transparent 32x32), the target arrow (uf18, tools/make_world_markers.py arrow) (our own art: tools/make_compass_band.py, tools/make_world_markers.py)
-MEDIA=$(printf '%s\n' "$LIST" | grep -E '^assets/companion/addons/[^/]+/Media/' | grep -vE '(ds_forever_icon|compass_band|marker_ring|marker_beam|marker_pin|marker_diamond|quest_disc|tint_glow|cursor_blank|target_arrow)\.tga$' || true)
+# the add-on's own Media: our D icon, the compass band, the world markers and the blank cursor (pad12, a transparent 32x32), the target arrow (uf18, tools/make_world_markers.py arrow), the HUD rim hud_rim_2/4/8/16 (uf20 / uf21, tools/make_hud_rim.py) (our own art: tools/make_compass_band.py, tools/make_world_markers.py)
+MEDIA=$(printf '%s\n' "$LIST" | grep -E '^assets/companion/addons/[^/]+/Media/' | grep -vE '(ds_forever_icon|compass_band|marker_ring|marker_beam|marker_pin|marker_diamond|quest_disc|tint_glow|cursor_blank|target_arrow|hud_rim_(2|4|8|16))\.tga$' || true)
 if [ -n "$MEDIA" ]; then echo "ADD-ON MEDIA other than ours:"; printf '%s\n' "$MEDIA"; FAIL=1; fi
 # OUR OWN required art must BE in the APK (the user on h1: the swirl was missing on a fresh install): tools/harvest/own_art.txt
 OWN=$(dirname "$0")/own_art.txt

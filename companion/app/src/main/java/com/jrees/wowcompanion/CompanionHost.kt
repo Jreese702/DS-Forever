@@ -3442,7 +3442,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun castBarToggle(e: SpellsModel.Entry) {
         val cells = CastStripModel.toggleCells(CastStripModel.Live.bar, CastStripModel.entryId(e.actionId, e.spellId), lastBook?.let { SpellsModel.bindCells(it, e) })
         if (cells == null) { Log.i(HomeView.TAG, "cast bar: ${e.spellId} not sent (no row, full, or no taps for it)"); return }
-        val pad = listOf(questsPad, spellsPad).firstOrNull { it?.optJSONObject("rows")?.has(CastStripModel.ROW) == true } ?: spellsPad
+        // cb2: the pad that has every row the taps use (the padtab pick + the spells row, or the castbar row's pick cell)
+        val need = cells.map { it.first }.toSet()
+        val pad = listOf(spellsPad, questsPad).firstOrNull { p -> p?.optJSONObject("rows")?.let { r -> need.all { r.has(it) } } == true } ?: spellsPad
         val sent = TapBridge.taps(this, pad, cells) { why -> Log.i(HomeView.TAG, "cast bar: refused ($why)") }
         Log.i(HomeView.TAG, "cast bar: toggle ${e.spellId} ${if (sent) "tapped" else "not sent"}")
     }

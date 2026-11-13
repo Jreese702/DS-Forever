@@ -14,7 +14,13 @@ every region's rect resolved from its anchors, SetScale honoured) with render_ta
   uf18  the prompt: the bare Y glyph (no hudBox), the spyglass on its corner; PadMap's floating glyph gets the corner spyglass too
   uf18  Trail's skull / '!' for the target ride on the bar; Trail hides them on the plate while Hub owns it (ag9)
   uf19  the bar's own top-left snapped: every edge of the bar / its health bar on whole pixels at 720 / 900 / 1080 / 1200 / 1440 lines
-  uf18  crisp: u() in whole physical pixels at K = 768 / 1080 (and at a 1440-line screen), the font shadow one pixel, the rim NEAREST
+  uf18  crisp: u() in whole physical pixels at K = 768 / 1080 (and at a 1440-line screen), the font shadow one pixel
+  uf20  the smooth rim (the user, 2026-11-13: "The shaper bar still looks so fucking pixelated on the corners"): no texture of ours is
+        NEAREST; every rim piece (target bar, level box, target of target, party rows' bars + level boxes) is our hud_rim_<s> art, LINEAR,
+        and at 720 / 1080 / 1440 lines every piece's art has at least one texture pixel per screen pixel across the rim (corners both
+        ways), at most 2 (no skipped texels) once a texel is a pixel or more; the pieces' sizes on whole pixels; the Media files exist
+  uf21  the old corner shape, smooth (the user, 2026-11-13: "Square-notched, smooth"): the Media files' md5 + size; the corner cut at
+        45 degrees (not rounded), its edge anti-aliased, the corner piece seamless against the lip piece
 Needs lupa. Exit code 1 on any failure."""
 import os
 import sys
@@ -92,7 +98,7 @@ WowCompanionDB.npFriends = { orig = { nameplateShowFriendlyPlayers = "0", namepl
     rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
     fly = UF.fly
     fly.tick(G.GAME.t + 10)
-    chk("uf19: the version tag", UF.V == "uf19", UF.V)
+    chk("uf21: the version tag", UF.V == "uf21", UF.V)
     plateUF = G.PLATE.UnitFrame
     chk("uf18: a hostile target's plate hidden while targeted (alpha 0; no attack needed)", plateUF.alpha == 0, plateUF.alpha)
     rig.fire("PLAYER_TARGET_CHANGED")
@@ -237,9 +243,97 @@ function R0:SetShadowOffset(x, y) rawset(self, "shadow", { x, y }) end
                 return True
             o = o.parent
         return False
-    rim = [A2[i] for i in range(1, len(A2) + 1) if A2[i].kind == "tex" and str(A2[i].tex or "").startswith("atlas:UI-HUD-CoolDownManager-Bar-BG")
-           and under_tb(A2[i])]
-    chk("uf18: the HUD rim pieces drawn NEAREST (%d pieces)" % len(rim), rim and all(r.filter == "NEAREST" for r in rim))
+    rim = [A2[i] for i in range(1, len(A2) + 1) if A2[i].kind == "tex" and "hud_rim_" in str(A2[i].tex or "") and under_tb(A2[i])]
+    chk("uf20: the target bar's rim pieces are our art, LINEAR (%d pieces)" % len(rim), len(rim) >= 9 * 2 + 8 and all(r.filter == "LINEAR" for r in rim))
+    old = [A2[i] for i in range(1, len(A2) + 1) if A2[i].kind == "tex" and "CoolDownManager-Bar-BG" in str(A2[i].tex or "") and under_tb(A2[i])]
+    chk("uf20: none of the game's 19-texel HUD art left on the target bar (%d)" % len(old), len(old) == 0)
+    hub_src = open(rt.HUB, encoding="utf-8").read()
+    chk("uf20: no NEAREST filter in Hub.lua's code (crispTex / TB.FILTER gone)",
+        '"NEAREST"' not in hub_src and "crispTex" not in hub_src and 'local HV = "hub51"' in hub_src)
+
+    # ------------------------------------------------------------------ uf20: the smooth rim at 720 / 1080 / 1440 lines
+    media = os.path.join(rt.ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanion", "Media")
+    from PIL import Image
+    sizes = {}
+    for lv in (2, 4, 8, 16):
+        f = os.path.join(media, "hud_rim_%d.tga" % lv)
+        sizes[lv] = Image.open(f).size if os.path.exists(f) else None
+    chk("uf20: the Media files hud_rim_2/4/8/16.tga, power-of-two, 16 x 32 art texels each (%s)" % sizes,
+        all(sizes[lv] == (16 * lv, 32 * lv) for lv in sizes))
+    # uf21 (the user, 2026-11-13, picking the corner: "Square-notched, smooth"): the files are tools/make_hud_rim.py's output as committed
+    import hashlib
+    RIM_MD5 = {2: ("be6cb6c7a421712b67590d37c3902a04", 8236), 4: ("7049448be55e975fc1fdb7d089a1d547", 32812),
+               8: ("9ce20dc4881030cbf82f26439af3b027", 131116), 16: ("5648b662e55d9658c707f5707d844969", 524332)}
+    got = {}
+    for lv in RIM_MD5:
+        f = os.path.join(media, "hud_rim_%d.tga" % lv)
+        got[lv] = (hashlib.md5(open(f, "rb").read()).hexdigest(), os.path.getsize(f)) if os.path.exists(f) else None
+    chk("uf21: hud_rim_2/4/8/16.tga are the notched art (md5 + size) %s" % {lv: got[lv] for lv in got if got[lv] != RIM_MD5[lv]},
+        got == RIM_MD5)
+    # the corner's shape and finish, read off the art: the corner texel cut away, the 45-degree edge anti-aliased (many partial alphas
+    # along it, no hard 0 / 255 step), no round bulge (the cut's midpoint is outside), the corner piece meets the lip piece with no seam
+    im16 = Image.open(os.path.join(media, "hud_rim_16.tga")).convert("RGBA")
+    A16 = [[im16.getpixel((x, y))[3] for x in range(64)] for y in range(64)]
+    cut_mid = A16[int(1.5 * 16) - 4][int(1.5 * 16) - 4]           # inside x + y < 3 by about 0.5 texel: transparent when cut straight
+    diag = [A16[i][47 - i] for i in range(48)]                   # across the 45-degree edge (x + y = 3 texels)
+    partial = len({v for v in diag if 0 < v < 255})
+    chk("uf21: the rim's corner is cut at 45 degrees, not rounded (corner %d, inside the cut %d, on the straight side %d)"
+        % (A16[0][0], cut_mid, A16[8][60]), A16[0][0] == 0 and cut_mid == 0 and A16[8][60] >= 150)
+    chk("uf21: the cut edge is anti-aliased (%d partial alphas across the diagonal)" % partial, partial >= 6)
+    # where the corner piece ends (x = 3 texels) the art is the straight lip's own: every band's diagonal ends on that edge
+    seam = max(abs(im16.getpixel((48, y))[c] - im16.getpixel((64, y))[c]) for y in range(48) for c in range(4))
+    chk("uf21: the art at the corner piece's edge (x = 3 texels) is the lip's own (seamless nine-slice, max diff %d)" % seam, seam <= 2)
+    THIN_X = {(0, 3), (3, 0), (9, 16)}
+    THIN_Y = {(0, 3), (3, 0), (11, 19)}
+    for ph in (720, 1080, 1440):
+        r = rig_with()
+        r.G.GAME.physH = ph
+        r.set_k(768)
+        r.scene(dict(n=3, pet=False, mode=False, pick=None, dead=None, oor=None))
+        r.UF.tb.f.tot.Show(r.UF.tb.f.tot)
+        p = r.UF.px()
+        A3 = r.G.ALLR
+        allt = [A3[i] for i in range(1, len(A3) + 1) if A3[i].kind == "tex"]
+        chk("uf20: %d lines: no texture of ours asks for NEAREST" % ph, not any(str(t.filter) == "NEAREST" for t in allt if t.filter is not None))
+        pieces = [t for t in allt if "hud_rim_" in str(t.tex or "")]
+        owners = set()
+        bad, worst, snapbad = [], [9, 0], []
+        for t in pieces:
+            lv = int(str(t.tex).rsplit("_", 1)[1])
+            c = t.coord or t.tc
+            cl, cr, ct, cb = round(c[1] * 16, 6), round(c[2] * 16, 6), round(c[3] * 32, 6), round(c[4] * 32, 6)
+            q = r.rect(t)
+            w, h = (q[2] - q[0]) / p, (q[3] - q[1]) / p
+            for ax, (a0, a1), size in (("x", (cl, cr), w), ("y", (ct, cb), h)):
+                pair = (int(round(a0)), int(round(a1)))
+                if pair not in (THIN_X if ax == "x" else THIN_Y):
+                    continue
+                if abs(size - round(size)) > 1e-6:
+                    snapbad.append((str(t.tex), ax, size))
+                texpx = abs(a1 - a0) * lv
+                ratio = texpx / size if size > 0 else 0
+                kp = size / abs(a1 - a0)                     # one art texel in screen pixels
+                worst = [min(worst[0], ratio), max(worst[1], ratio if kp >= 1 else 0)]
+                if ratio < 1 - 1e-9 or (kp >= 1 and ratio > 2.2):
+                    bad.append((lv, ax, pair, round(size, 2), round(ratio, 2)))
+            o = t.parent
+            while o is not None:
+                for i in range(1, 5):
+                    if r.PF.frames[i] is not None and r.L.eval('rawequal')(o, r.PF.frames[i]):
+                        owners.add("party%d" % i)
+                o = o.parent
+        chk("uf20: %d lines: %d rim pieces, every one LINEAR" % (ph, len(pieces)),
+            len(pieces) > 60 and all(str(t.filter) == "LINEAR" for t in pieces))
+        chk("uf20: %d lines: the art never magnified, never shrunk past 2x across the rim (texture px per screen px %.2f..%.2f) %s"
+            % (ph, worst[0], worst[1], bad[:4]), not bad and worst[0] >= 1 - 1e-9)
+        chk("uf20: %d lines: the rim's thickness on whole pixels %s" % (ph, snapbad[:3]), not snapbad)
+        chk("uf20: %d lines: the party rows wear it too (%s)" % (ph, sorted(x for x in owners if x)[:4]),
+            len(owners) >= 2)
+        tbf = r.UF.tb.f
+        files = {str(tbf.hp.rimFile), str(tbf.shield.rimFile), str(tbf.totHp.rimFile)}
+        want = {720: "hud_rim_2", 1080: "hud_rim_4", 1440: "hud_rim_4"}[ph]
+        chk("uf20: %d lines: the target bar's level is %s (a texel %.2f px) %s" % (ph, want, 3 * 768 / 1080 / p, files),
+            str(tbf.hp.rimFile).endswith(want))
 
     # ------------------------------------------------------------------ uf19: the bar's own spot on whole pixels (review of uf18)
     # the rig's UIParent rect is made its real size (its GetWidth / GetHeight: ww x hh) so a 768-unit UIParent on 720 / 1080 / 1440

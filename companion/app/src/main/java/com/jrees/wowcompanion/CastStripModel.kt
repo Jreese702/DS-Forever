@@ -10,10 +10,16 @@ import org.json.JSONObject
  * Spells only. An edit made in a fight is queued by the add-on until the fight ends; its slot comes dimmed ([Slot.queued]) and with no
  * cell, so it cannot be tapped meanwhile. The cooldowns come from the add-on's `castcd` (facecd's shape: only what the game leaves
  * plain, the length estimated in a fight), never read off the screen.
+ * cb2 THE LAZY ROW (1.0.30 code 1454): the add-on registers the castbar row only once the bar has a spell (TapPad's 56 rows are
+ * over-subscribed: an empty bar's row pushed the 4th bag's drag row off), so the Spellbook's pick goes by the padtab row instead:
+ * the document's [Bar.padPick] (pp = [39, 19]: Smart Range's one-shot pick, then the cast bar's code; Book b55). An older add-on
+ * without pp keeps the row's own pick cell ([Bar.pick]).
  * The logic, without the look (unit-tested in dsforever: CastStripModelTest).
  */
 object CastStripModel {
     const val ROW = "castbar"
+    /** cb2: the row the Spellbook's pick goes by (Book b55) */
+    const val PADTAB = "padtab"
     const val SLOTS = 12
     const val PER_ROW = 6
 
@@ -22,8 +28,10 @@ object CastStripModel {
     data class Slot(val index: Int, val id: Int?, val icon: Int?, val cell: Int?, val queued: Boolean)
 
     /** the `castbar` document: [slots] always 12 (empty ones have no id), [pick] the Spellbook's pick cell (null = no pad row),
-     *  [fight] the add-on's lockdown now */
-    data class Bar(val slots: List<Slot>, val pick: Int?, val fight: Boolean, val version: String) {
+     *  [fight] the add-on's lockdown now, [padPick] cb2's pick on the padtab row (its columns in order; null = an older add-on) */
+    data class Bar(val slots: List<Slot>, val pick: Int?, val fight: Boolean, val version: String, val padPick: List<Int>? = null) {
+        /** the Spellbook's "Cast bar" can be sent: the padtab pick (cb2) or the row's own pick cell */
+        val pickable: Boolean get() = padPick != null || pick != null
         val hasSpells: Boolean get() = slots.any { it.id != null }
         fun has(spellId: Int?): Boolean = spellId != null && slots.any { it.id == spellId }
         val full: Boolean get() = slots.all { it.id != null }
@@ -50,7 +58,9 @@ object CastStripModel {
         }
         val slots = (0 until SLOTS).map { bySlot[it] ?: Slot(it, null, null, null, false) }
         val pick = if (msg.has("pick")) msg.optInt("pick", -1).takeIf { it >= 0 } else null
-        return Bar(slots, pick, msg.optBoolean("fight", false), msg.optString("v", ""))
+        val pp = msg.optJSONArray("pp")?.let { a -> (0 until a.length()).map { a.optInt(it, -1) } }
+            ?.takeIf { l -> l.isNotEmpty() && l.size <= 4 && l.all { it in 0 until 40 } }
+        return Bar(slots, pick, msg.optBoolean("fight", false), msg.optString("v", ""), pp)
     }
 
     /** the `castcd` message: slot index (0..11) -> its running cooldown; EMPTY = none runs. Null when it is not one. */
@@ -73,14 +83,15 @@ object CastStripModel {
         return s.cell?.let { ROW to it }
     }
 
-    /** the Spellbook's "Cast bar": the pick, then the spell's two taps (Book's); null = it cannot be sent (no row, a full bar for a
-     *  spell not on it, no taps for the spell) */
+    /** the Spellbook's "Cast bar": the pick, then the spell's two taps (Book's); null = it cannot be sent (no pick, a full bar for a
+     *  spell not on it, no taps for the spell). cb2: the pick is the padtab row's (padPick) whenever the add-on names it, so it works
+     *  before the castbar row exists; else the row's own pick cell */
     fun toggleCells(bar: Bar?, spellId: Int?, spellCells: List<Pair<String, Int>>?): List<Pair<String, Int>>? {
         val b = bar ?: return null
-        val pick = b.pick ?: return null
+        val pick = b.padPick?.map { PADTAB to it } ?: b.pick?.let { listOf(ROW to it) } ?: return null
         if (spellCells.isNullOrEmpty()) return null
         if (!b.has(spellId) && b.full) return null
-        return listOf(ROW to pick) + spellCells
+        return pick + spellCells
     }
 
     /** the Settings choice: [setting] null = never chosen -> shown only while the bar has spells (the default) */

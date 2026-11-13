@@ -11,6 +11,7 @@
 -- DISPLAY_SIZE_CHANGED, a window taking the pad) and keeps its last spot when a fight hides the centre.
 -- cb1 (GitHub #43, the tap-to-cast bar): one secure pad row "castbar" (12 spell cells + the Spellbook's pick), the character's own
 -- slots (WowCompanionSpellsDB.castBar[name-realm]), a fight's edits queued to its end; documents "castbar" / "castcd". At "THE TAP-TO-CAST BAR".
+-- cb2 (1.0.30 code 1454): the row "castbar" only once the character's bar has a spell (bmv4 kept on a full pad); the Spellbook's pick on padtab 39 + 19.
 -- The CAST room's data. Two feeds live here:
 --
 --  1. LEGACY keyboard-slot rows (`slots`, slots 1-12 + their ACTIONBUTTONn keys). Unchanged; the app
@@ -795,8 +796,15 @@ end
 -- leaves plain: C_Spell.GetSpellCooldown's isActive / isOnGCD (never secret), inside SPELL_UPDATE_COOLDOWN (the one time isOnGCD is
 -- trusted); its length only when it reads plainly (out of a fight, then learned), else the learned one, else 1.5 s for the GCD. A secret
 -- value is never compared, indexed or kept (S / SN answer a sentinel / nil for it).
+-- cb2 THE LAZY ROW (1.0.30 code 1454): TapPad's 56 rows are over-subscribed, and cb1's row (registered at the login, even empty) pushed
+-- the 4th bag's drag row bmv4 off the pad for a player with every bag and the reagent bag. So the row "castbar" is registered only
+-- once this character's bar has a spell (the login with stored slots, or the first edit, out of combat); an empty bar holds no row,
+-- and the row allocation is cb1's predecessor's. TapPad has no way to give a row back, so a bar emptied later keeps its (empty) row
+-- until the next /reload or login. THE SPELLBOOK'S PICK no longer needs the row: Book b55 takes it on the padtab row, Smart Range's
+-- one-shot pick (padtab 39) then code 19 (WC.castBarPick); the document says so (pp = { 39, 19 }). The row's own pick cell 12 stays.
 do
-local CBV = "cb1"
+local CBV = "cb2"
+local CB_PADTAB_PICK = { 39, 19 }        -- cb2: padtab 39 (the one-shot pick) then 19 (its cast bar code): Book b55 -> WC.castBarPick
 local CB_N, CB_PICK_COL, CB_PICK_S = 12, 12, 2
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 local CB = { want = {}, frozen = {}, row = nil, sig = nil, pick = nil, queue = {}, ready = false, cd = {}, learned = {}, last = nil }
@@ -880,7 +888,8 @@ end
 local function cbClick(col)
     if col == CB_PICK_COL then CB.pick = cbNow() end
 end
--- (re)build the row when the stored slots changed; out of combat only. The pick cell is there even with an empty bar.
+-- (re)build the row when the stored slots changed; out of combat only. cb2: no row is registered for an empty bar (the row once
+-- registered stays, emptied: TapPad cannot give it back); the Spellbook's pick works without it (padtab 39 then 19).
 function CB.sync()
     if cbFight() then return false end
     local pad = WC.pad
@@ -893,6 +902,10 @@ function CB.sync()
     end
     local sig = table.concat(parts, ",")
     if CB.row and sig == CB.sig then return true end
+    if not CB.row and #parts == 0 then                   -- cb2: an empty bar takes no pad row
+        CB.want, CB.sig, CB.frozen = {}, nil, {}
+        return false
+    end
     CB.want = want
     local ok, row = pcall(pad.secureRow, "castbar", CB_N + 1, cbInit, cbClick, { onPress = true })
     CB.row = (ok and type(row) == "number") and row or nil
@@ -917,7 +930,7 @@ function CB.doc()
         end
     end
     return { type = "castbar", v = CBV, n = CB_N, pick = CB.row and CB_PICK_COL or nil, fight = cbFight() or nil,
-             nopad = (not CB.row) and 1 or nil, e = e }
+             nopad = (not CB.row) and 1 or nil, pp = CB_PADTAB_PICK, e = e }
 end
 function CB.send(force)
     if type(WC.encode) ~= "function" or type(WC.send) ~= "function" then return end
@@ -976,6 +989,10 @@ function CB.flushQueue()
 end
 
 -- Book b53: the Spellbook's pick was tapped just before (fresh CB_PICK_S): the spell's two taps that follow are ours
+-- cb2: the same pick by the padtab row (Book b55: padtab 39 then 19), the castbar row not needed
+function WC.castBarPick()
+    CB.pick = cbNow()
+end
 function WC.castBarWants()
     local p = CB.pick
     return p ~= nil and cbNow() - p <= CB_PICK_S

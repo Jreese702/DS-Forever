@@ -69,6 +69,28 @@ class CastStripModelTest {
         assertEquals(listOf("castbar" to 12) + spell, CastStripModel.toggleCells(full, 1003, spell))   // but one on it can come off
     }
 
+    // cb2 THE LAZY ROW: an empty bar has no castbar row; the pick goes by the padtab row (39 then 19, Book b55) the document names
+    @Test fun cb2ThePickGoesByThePadtabRowWithoutTheCastbarRow() {
+        val empty = bar("""{"type":"castbar","v":"cb2","n":12,"nopad":1,"pp":[39,19],"e":[]}""")
+        assertNull(empty.pick)
+        assertEquals(listOf(39, 19), empty.padPick)
+        assertTrue(empty.pickable)
+        val spell = listOf("spells" to 20, "spells" to 31)
+        assertEquals(listOf("padtab" to 39, "padtab" to 19) + spell, CastStripModel.toggleCells(empty, 324, spell))
+        // the row exists too: the padtab pick still goes first (the same route whatever the row)
+        val withRow = bar("""{"type":"castbar","v":"cb2","n":12,"pick":12,"pp":[39,19],"e":[{"s":1,"id":403,"c":0}]}""")
+        assertEquals(listOf("padtab" to 39, "padtab" to 19) + spell, CastStripModel.toggleCells(withRow, 403, spell))
+        // an older add-on (cb1): no pp, the row's own pick cell; neither = not pickable
+        val cb1 = bar("""{"type":"castbar","v":"cb1","n":12,"pick":12,"e":[]}""")
+        assertNull(cb1.padPick); assertTrue(cb1.pickable)
+        val none = bar("""{"type":"castbar","v":"cb1","n":12,"nopad":1,"e":[]}""")
+        assertFalse(none.pickable)
+        assertNull(CastStripModel.toggleCells(none, 324, spell))
+        // a bad pp is ignored
+        assertNull(bar("""{"type":"castbar","pp":[39,99],"e":[]}""").padPick)
+        assertNull(bar("""{"type":"castbar","pp":[],"e":[]}""").padPick)
+    }
+
     // review: the add-on stores the id Book's taps carry (the book item's action id); an overridden spell's spellID differs from it
     @Test fun anOverriddenSpellIsFoundByItsActionId() {
         val b = bar(two)
