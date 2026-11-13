@@ -31,6 +31,11 @@ enum class UiMode {
     /** LATER 25 (the user 2026-10-07: "Show the game's minimap on top while tracking"): the minimap only - shown on the top screen
      *  while one of the game's tracking abilities (Find Herbs / Find Minerals / Find Treasure) is on, hidden as Off otherwise */
     TRACKING,
+    /** Issue #195 ("Adaptative layout for action bars port to main screen"; the user 2026-11-12: a "Nintendo" choice next to On / Off /
+     *  Dynamic): the controller bars only - the game's stock gamepad bar REPLACED in its own spot by DS Forever's Nintendo-layout bar
+     *  (ActionBar.lua nbar1; the stock bar at alpha 0, the controller still casting through it). For the layout bit it reads as On (the
+     *  element's riders, the buffs / debuffs / XP bar, stay); the bar itself rides its own switch, "uisw" NBAR_OFF / NBAR_ON (GameUi.SW_NBAR) */
+    NINTENDO,
 }
 
 /**
@@ -59,9 +64,12 @@ object UiElements {
         UiElement("dialogs", "NPC windows", "", UiMode.OFF),
     )
     fun of(id: String) = KNOWN.firstOrNull { it.id == id }
-    /** the modes an element offers: "While tracking" is the minimap's alone (LATER 25) */
-    fun modesFor(id: String): List<UiMode> =
-        if (id == "minimap") listOf(UiMode.ON, UiMode.OFF, UiMode.DYNAMIC, UiMode.TRACKING) else listOf(UiMode.ON, UiMode.OFF, UiMode.DYNAMIC)
+    /** the modes an element offers: "While tracking" is the minimap's alone (LATER 25); "Nintendo" the controller bars' alone (issue #195) */
+    fun modesFor(id: String): List<UiMode> = when (id) {
+        "minimap" -> listOf(UiMode.ON, UiMode.OFF, UiMode.DYNAMIC, UiMode.TRACKING)
+        "hud" -> listOf(UiMode.ON, UiMode.OFF, UiMode.DYNAMIC, UiMode.NINTENDO)
+        else -> listOf(UiMode.ON, UiMode.OFF, UiMode.DYNAMIC)
+    }
 }
 
 /** one element as the addon reports it */
@@ -157,6 +165,8 @@ class GameUiPolicy(/** LATER 25: a tracking ability of the game is on now (the m
             UiMode.OFF -> true
             UiMode.DYNAMIC -> room == info.home || (room == HOME && info.onHome)
             UiMode.TRACKING -> !trackingOn()
+            // issue #195: the element stays (its riders shown); the stock bar alone goes, by the Nintendo bar's own switch
+            UiMode.NINTENDO -> false
         }
     }
 

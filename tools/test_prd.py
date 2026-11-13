@@ -481,7 +481,7 @@ def main():
     chk("prd8: read back at log in: 300 wide, 100 %%", P.wd == 300 and P.sc == 100)
     P.select(); P.nudge(0); P.sel = "y"
     # prd10 (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"): the pips under the power bar
-    chk("prd16: the version tag (issue #181: the secret-safe aura reader)", P.V == "prd16")
+    chk("prd17: the version tag (issue #195: the aura sweep by the duration object; prd16 issue #181: the secret-safe aura reader)", P.V == "prd17")
     chk("prd10: the player's UNIT_POWER_FREQUENT is heard (combo points at the next frame)", ev.events.UNIT_POWER_FREQUENT == "player")
     L.execute('''
         local upm = UnitPowerMax

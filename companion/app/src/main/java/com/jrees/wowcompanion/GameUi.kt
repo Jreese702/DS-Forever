@@ -117,7 +117,9 @@ object GameUi {
                   /** hub31: Polestar's own windows hidden on the top screen; null = an add-on without the switch */
                   val ps: Boolean? = null,
                   /** hub33: the pet's strip under the resource bar on (Trail.lua prd11); null = an add-on without the switch */
-                  val pet: Boolean? = null)
+                  val pet: Boolean? = null,
+                  /** hub45 (issue #195): DS Forever's Nintendo bar in the stock gamepad bar's place on; null = an add-on without it */
+                  val nbar: Boolean? = null)
     @Volatile private var sw: Sw? = null
     private var swTapAt = 0L
     private var swTapN = -1
@@ -144,6 +146,10 @@ object GameUi {
     /** hub33 (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs Pet HUD"): the pet's
      *  strip under the resource bar (mock-up A, "Sub-strip under"); on by default */
     const val SW_PET = "pet"
+    /** hub45 (issue #195, the user 2026-11-12: a "Nintendo" choice next to On / Off / Dynamic for the top screen's action bar): the
+     *  Nintendo bar's switch. Not a choice of its own: it follows the "hud" element's mode (wanted exactly while that mode is NINTENDO),
+     *  so it is kept where the element's mode is kept (app-wide, as every element's mode) */
+    const val SW_NBAR = "nbar"
     // hub19: the party frames; ON by default since 2026-11-05 (the game hides health from add-ons: its own frames are the real health)
     private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true, SW_WM to false, SW_PARTY to true,
         // hub22: start attack off until chosen; Auto Shot follows the game's own default (on) unless chosen
@@ -152,6 +158,7 @@ object GameUi {
     /** this character's choice for [part] (its default until one is made); the resource bar's old "HUD mode" choice carries over */
     fun swWant(part: String): Boolean {
         if (part == SW_PMODE) return prefs?.getBoolean("sw.$SW_PMODE", true) ?: true
+        if (part == SW_NBAR) return nbarWanted(mode("hud"))
         val who = character ?: return SW_DEFAULT[part] ?: false
         val def = if (part == SW_PRD) prefs?.getBoolean("hud.$who", true) ?: true else SW_DEFAULT[part] ?: false
         return prefs?.getBoolean("sw.$part.$who", def) ?: def
@@ -178,7 +185,9 @@ object GameUi {
     }
     /** the game's word for [part] now (null = not said / no add-on with it) */
     fun swNow(part: String): Boolean? = sw?.let { when (part) { SW_PLAYER -> it.player; SW_TARGET -> it.target; SW_NP -> it.np; SW_WM -> it.wm; SW_PARTY -> it.party; SW_ATK -> it.atk; SW_SHOT -> it.shot; SW_SHOTF -> it.shotf; SW_PMODE -> it.pmode
-        SW_UFP -> it.ufp; SW_UFT -> it.uft; SW_UFTOT -> it.uftot; SW_UFHPP -> it.ufhpp; SW_UFHPT -> it.ufhpt; SW_PS -> it.ps; SW_PET -> it.pet; else -> it.prd } }
+        SW_UFP -> it.ufp; SW_UFT -> it.uft; SW_UFTOT -> it.uftot; SW_UFHPP -> it.ufhpp; SW_UFHPT -> it.ufhpt; SW_PS -> it.ps; SW_PET -> it.pet; SW_NBAR -> it.nbar; else -> it.prd } }
+    /** issue #195: the Nintendo bar is wanted exactly while the controller bars' mode is NINTENDO */
+    fun nbarWanted(hudMode: UiMode): Boolean = hudMode == UiMode.NINTENDO
     /** the absolute column that makes [part] [on] */
     fun swCol(s: Sw, part: String, on: Boolean): Int? = s.cols[when (part) {
         SW_PLAYER -> if (on) "PLAYER_SHOW" else "PLAYER_HIDE"
@@ -197,13 +206,14 @@ object GameUi {
         SW_UFHPT -> if (on) "UFHPT_ON" else "UFHPT_OFF"
         SW_PS -> if (on) "PS_HIDE" else "PS_SHOW"
         SW_PET -> if (on) "PET_ON" else "PET_OFF"
+        SW_NBAR -> if (on) "NBAR_ON" else "NBAR_OFF"
         else -> if (on) "PRD_ON" else "PRD_OFF"
     }]
     /** the switch to tap now: the first whose game word differs from the choice, or which the game has not had since its /reload */
     fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? =
-        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOTF, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT, SW_PS, SW_PET).firstOrNull { p ->
+        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOTF, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT, SW_PS, SW_PET, SW_NBAR).firstOrNull { p ->
             val now = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; SW_PARTY -> s.party
-                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; else -> s.prd }
+                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; SW_NBAR -> s.nbar; else -> s.prd }
             // hub22: Auto Shot is the game's own saved option: only a CHOICE made here is sent (never the default over the game's)
             val chosen = p != SW_SHOT || character?.let { prefs?.contains("sw.$p.$it") } == true
             // hub28: while "In combat" is wanted (and the add-on knows it), the game's option follows the fight: not tapped
@@ -437,7 +447,7 @@ object GameUi {
             fun shown(k: String) = if (o.has(k)) o.optString(k) == "shown" else null
             fun flag(k: String) = if (o.has(k)) o.optBoolean(k) else null
             Sw(o.optString("row", "uisw"), cols, shown("player"), shown("target"), flag("np"), flag("prd"), set, flag("wm"), shown("party"), flag("atk"), flag("shot"), flag("pmode"),
-               flag("ufp"), flag("uft"), flag("uftot"), flag("ufhpp"), flag("ufhpt"), flag("shotf"), flag("shotfk"), flag("ps"), flag("pet"))
+               flag("ufp"), flag("uft"), flag("uftot"), flag("ufhpp"), flag("ufhpt"), flag("shotf"), flag("shotfk"), flag("ps"), flag("pet"), flag("nbar"))
         }
         val prd = h.optJSONObject("prd")
         prdY = prd?.let { if (it.has("y")) it.optInt("y") else null }
@@ -549,7 +559,7 @@ object GameUi {
             if (el == null && info.id != "minimap") continue
             val m = mode(info.id)
             out.add(Row(info.id, info.label, roomOf(info.home), m, el != null,
-                        el?.hidden == true, note(el, m)))
+                        el?.hidden == true, if (info.id == "hud" && m == UiMode.NINTENDO && el != null) nbarNote(sw?.nbar) else note(el, m)))
         }
         return out
     }
@@ -570,6 +580,13 @@ object GameUi {
             step is UiStep.Wait -> step.why
             else -> "Sent"
         }
+    }
+
+    /** issue #195: the controller bars' row while Nintendo is chosen: what the Nintendo bar's switch says (null = an older add-on) */
+    fun nbarNote(now: Boolean?): String = when (now) {
+        null -> "The game does not offer this yet"
+        true -> "DS Forever's bar on the top screen now"
+        false -> "Sent"
     }
 
     private fun roomOf(name: String): Room? = try { Room.valueOf(name) } catch (_: Throwable) { null }
