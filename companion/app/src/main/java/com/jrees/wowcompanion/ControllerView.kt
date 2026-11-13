@@ -73,6 +73,7 @@ class ControllerView(
     init {
         CastSettings.init(context)
         HomeSettings.init(context)
+        RadialMeta.init(context)
         HomeSettings.onChange { postInvalidate() }      // the radial's way (Hold / Tap) can change in Home's Settings too
     }
 

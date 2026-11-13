@@ -109,6 +109,7 @@ class HomeView(
         applyHideRuling(context)
         // the thin row or the diamonds at rest: the user's switch in Settings (HomeSettings; the diamonds until changed)
         HomeSettings.init(context)
+        RadialMeta.init(context)
         flow.setRest(HomeSettings.rest)
         HomeSettings.onChange { post {
             if (flow.setRest(HomeSettings.rest)) changed()

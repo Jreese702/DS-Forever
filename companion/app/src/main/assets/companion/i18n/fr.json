@@ -1537,6 +1537,7 @@
 "Low-memory graphics": "Graphismes économes en mémoire",
 "Smaller game textures, so Android does not close the game for memory. From the next game start": "Textures du jeu plus petites, pour qu’Android ne ferme pas le jeu faute de mémoire. Dès le prochain lancement du jeu",
 "Name this radial": "Nommer cette roue",
+"Icon": "Icône",
 "New radial": "Nouvelle roue",
 "No spell radials: make one with +": "Aucune roue de sorts : créez-en une avec +",
 "Opening": "Ouverture",

@@ -1562,6 +1562,7 @@
 "Low-memory graphics": "Gráficos de poca memoria",
 "Smaller game textures, so Android does not close the game for memory. From the next game start": "Texturas del juego más pequeñas, para que Android no cierre el juego por falta de memoria. Desde el próximo inicio del juego",
 "Name this radial": "Nombra esta rueda",
+"Icon": "Icono",
 "New radial": "Nueva rueda",
 "No spell radials: make one with +": "No hay ruedas de hechizos: crea una con +",
 "Opening": "Abriendo",
