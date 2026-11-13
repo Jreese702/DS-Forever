@@ -109,4 +109,38 @@ class PadDiagTest {
         assertTrue(l, l.startsWith("no current document from the game's add-ons 2 min after the bottom screen came up (the game up 14 min)"))
         assertFalse(AddonSilence.line(false, true, 125_000L, 0L)!!.contains("up 0"))
     }
+
+    /** issue #231: the silence line carries the reader's and the shadow folder's state, the file's name only */
+    @Test fun theAddOnsSilenceSaysWhatTheReaderSaw() {
+        val r = AddonSilence.reader("/storage/emulated/0/WoW Forever/_forever_/Logs/General.log", true, 3 * 1024 * 1024, 1_000_000L,
+            1_090_000L, 2048, 4_000L, 900, 0, 0)
+        assertEquals("reader: General.log 3072 KB, written 1 min ago; read 2 KB (the last 4 s ago), 900 lines, 0 of ours, 0 documents", r)
+        assertFalse(r, r.contains("WoW Forever"))
+        assertTrue(AddonSilence.reader("x/General.log", false, 0, 0, 0, 0, -1, 0, 0, 0).contains("General.log not there; nothing read yet"))
+        val l = AddonSilence.line(false, true, 125_000L, 60_000L, "$r; shadow Logs: link")!!
+        assertTrue(l, l.endsWith("the rooms wait for them; $r; shadow Logs: link"))
+        assertFalse(AddonSilence.line(false, true, 125_000L, 60_000L, "")!!.endsWith("; "))
+    }
+
+    /** issue #231 (review): the report's bottom-screen line says what the reader saw at report time, only while no document came */
+    @Test fun theReportCarriesTheReaderWhileSilent() {
+        assertEquals(" (reader: x; shadow Logs: link)", AddonSilence.atReport(false, "reader: x; shadow Logs: link"))
+        assertEquals("", AddonSilence.atReport(true, "reader: x"))
+        assertEquals("", AddonSilence.atReport(false, null))
+        assertEquals("", AddonSilence.atReport(false, ""))
+    }
+
+    @Test fun theShadowLogsEntry() {
+        val root = java.nio.file.Files.createTempDirectory("sh231").toFile()
+        try {
+            assertEquals("shadow Logs: no shadow this run", AddonSilence.shadowLogs(null, { false }, 0L))
+            val logs = java.io.File(root, "Logs")
+            assertEquals("shadow Logs: missing", AddonSilence.shadowLogs(logs, { false }, 0L))
+            assertEquals("shadow Logs: link", AddonSilence.shadowLogs(logs, { true }, 0L))
+            logs.mkdirs()
+            assertEquals("shadow Logs: REAL dir (no General.log)", AddonSilence.shadowLogs(logs, { false }, 0L))
+            val g = java.io.File(logs, "General.log"); g.writeBytes(ByteArray(4096)); g.setLastModified(1_000_000L)
+            assertEquals("shadow Logs: REAL dir (General.log 4 KB, written 5 s ago)", AddonSilence.shadowLogs(logs, { false }, 1_005_000L))
+        } finally { root.deleteRecursively() }
+    }
 }

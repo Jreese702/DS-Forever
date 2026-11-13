@@ -84,6 +84,9 @@ object NativeLogin {
     /** when this run's file was written (its lifetime goes to the log when it is deleted) */
     private var writtenAt = 0L
     private var flavorDir: File? = null
+    /** issue #231 (diagnostics only): this run's shadow Logs entry, for the add-ons' silence line */
+    fun shadowLogsLine(): String = AddonSilence.shadowLogs(flavorDir?.let { File(it, "Logs") },
+        { f -> Files.isSymbolicLink(f.toPath()) }, System.currentTimeMillis())
     private val main = Handler(Looper.getMainLooper())
     private var lifeMs = MAX_LIFE_MS
     private val timeout = Runnable { capCheck() }

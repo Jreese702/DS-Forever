@@ -231,7 +231,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!::reportPage.isInitialized) return
         DiagLog.event("report", if (sendNow) "send now (from Settings, recording)" else "report page opened")
         // issue #215 (diagnostics only): what the bottom screen showed when the player chose to report, before Settings covers it
-        StartupDiag.bottomAtReport = System.currentTimeMillis() to runCatching { bottomState() }.getOrElse { "(could not be read: ${it.javaClass.simpleName})" }
+        StartupDiag.bottomAtReport = System.currentTimeMillis() to runCatching { bottomState(atReport = true) }.getOrElse { "(could not be read: ${it.javaClass.simpleName})" }
         if (LauncherHooks.gameUp() && room != Room.SETTINGS) show(Room.SETTINGS)
         reportPage.open(sendNow)
     }
@@ -1792,10 +1792,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val silenceCheck = Runnable {
         if (shell.hostGone()) return@Runnable
         val gameMs = if (LauncherHooks.gameStartSec > 0) System.currentTimeMillis() - LauncherHooks.gameStartSec * 1000 else 0L
-        AddonSilence.line(docFlowSeen, LauncherHooks.gameUp(), SystemClock.elapsedRealtime() - hostUpAt, gameMs)?.let {
+        // issue #231 ("ui iz on top screen": no document in 2 runs, the game at in-world memory): the reader and the shadow's Logs
+        val detail = if (docFlowSeen) null else readerDetail()
+        AddonSilence.line(docFlowSeen, LauncherHooks.gameUp(), SystemClock.elapsedRealtime() - hostUpAt, gameMs, detail)?.let {
             Log.w("WCSETUP", it); DiagLog.event("addons", it)
         }
     }
+    /** issue #231: the log reader's and the shadow's Logs state in one line (main thread) */
+    private fun readerDetail(): String? = runCatching { listOfNotNull(tail?.diag(), NativeLogin.shadowLogsLine()).joinToString("; ") }.getOrNull()
     /**
      * The game's bag button handed the controller to Bags: show that room. Bags letting go while its room shows ends it as every room
      * ends: HOME (USER RULING 2026-09-28 23:12, B goes Home everywhere; 2026-10-01 "the EXACT same for all rooms" - no more going back
@@ -3235,7 +3239,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * screen): what is on show, for NativeLogin's busy-minute line and the report's "Bottom screen when the report page opened" line - the start screen and its line (the app's own words), or the room
      * behind it and whether any current document came. Main thread.
      */
-    private fun bottomState(): String {
+    private fun bottomState(atReport: Boolean = false): String {
         if (!::startView.isInitialized) return "not up yet"
         fun shown(v: View?) = v != null && v.visibility == View.VISIBLE
         val start = if (shown(startView)) "start screen '${startView.line}' (row ${startView.login.name.lowercase()}${if (loginRevealed) ", for the row" else ""})"
@@ -3246,7 +3250,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             if (::chooserPanel.isInitialized && shown(chooserPanel)) add("chooser")
             if (::loginPrompt.isInitialized && loginPrompt.isOpen) add("login prompt")
         }
-        return "$start; room ${room.name.lowercase()}; documents ${if (docFlowSeen) "seen" else "none yet"}" +
+        // issue #231 (review): at report time, with no document yet, the reader's state NOW (the silence line's is from 2 min in)
+        val docs = AddonSilence.atReport(docFlowSeen, if (atReport && !docFlowSeen) readerDetail() else null)
+        return "$start; room ${room.name.lowercase()}; documents ${if (docFlowSeen) "seen" else "none yet"}$docs" +
             if (over.isEmpty()) "" else "; over it: ${over.joinToString()}"
     }
 

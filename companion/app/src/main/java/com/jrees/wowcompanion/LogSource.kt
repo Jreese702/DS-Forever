@@ -16,6 +16,8 @@ interface LogSource {
     fun stop()
     /** sequence gaps seen (lines the add-on refused) */
     fun gapCount(): Int
+    /** issue #231 (diagnostics only): the reader's state in one line for the report (the add-ons' silence line) */
+    fun diag(): String = kind
 }
 
 /** which game the app plays: LOCAL = the container on the Thor (today), STREAM = the PC through Moonlight + the Desktop bridge */
