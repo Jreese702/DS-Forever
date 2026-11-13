@@ -407,7 +407,9 @@ object Terrain {
             val g = job.game
             val t0 = System.nanoTime()
             var bytes = 0L
-            fun read(fid: Int): ByteArray? = g.read(fid)?.also { bytes += it.size }
+            // issues #207 #203 (1.0.27): each read a yield point (the zone in hand, [at] of [count]), not only each zone's start
+            var at = 0; var count = 1
+            fun read(fid: Int): ByteArray? { job.yieldPoint(at, count); return g.read(fid)?.also { bytes += it.size } }
             val rects = MapHarvestSteps.zoneRects(job).filterValues { MapHarvest.tilesUnder(it) != null }
             check(rects.isNotEmpty()) { "the worldmap recipe has no zone rects" }
             val mapRows = (g.db2(MapHarvest.DB_MAP) ?: error("Map.db2 unreadable: ${g.lastReadWhy}")).rows().associateBy { it.id }
@@ -424,9 +426,11 @@ object Terrain {
                 if (n == null || e.value.c != nearC) 0.0 else hypot((e.value.t + e.value.b) / 2 - n.second, (e.value.l + e.value.r) / 2 - n.third)
             }))
             var built = 0
+            count = order.size
             for ((i, e) in order.withIndex()) {
                 val (map, rect) = e.key to e.value
                 if (map.toString() in done) continue
+                at = i
                 job.progress(i, order.size, "")
                 val (slopes, cover) = pass.zone(rect) ?: continue
                 slopes.write(job.file("terrain/$map.bin"))

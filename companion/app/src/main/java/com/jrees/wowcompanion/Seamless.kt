@@ -93,9 +93,11 @@ object Seamless {
             var made = 0
             for ((ci, cont) in conts.withIndex()) {
                 for (variant in VARIANTS) {
-                    job.progress(ci * 2 + VARIANTS.indexOf(variant), conts.size * 2, model.name(cont))
-                    val big = composite(art, model, rects, cont, variant)
-                    pyramid(big) { rel, b -> job.writeWebp("seamless/$cont/$variant/$rel", b, 82) }
+                    val step = ci * 2 + VARIANTS.indexOf(variant)
+                    job.progress(step, conts.size * 2, model.name(cont))
+                    // issues #207 #212 (1.0.27): a yield point per zone picture and per tile written, not only per continent variant
+                    val big = composite(art, model, rects, cont, variant) { job.yieldPoint(step, conts.size * 2, model.name(cont)) }
+                    pyramid(big) { rel, b -> job.yieldPoint(step, conts.size * 2, model.name(cont)); job.writeWebp("seamless/$cont/$variant/$rel", b, 82) }
                     big.recycle()
                 }
                 job.writeBytes("seamless/$cont/index.json", JSONObject().put("w", W0).put("h", H0).put("tile", TILE).put("levels", LEVELS)
@@ -107,7 +109,8 @@ object Seamless {
     }
 
     /** one continent's level-0 picture */
-    fun composite(art: File, model: WorldMapModel, rects: Map<Int, MapHarvest.Rect>, cont: Int, variant: String): Bitmap {
+    fun composite(art: File, model: WorldMapModel, rects: Map<Int, MapHarvest.Rect>, cont: Int, variant: String,
+                  yieldPoint: () -> Unit = {}): Bitmap {
         val big = Bitmap.createBitmap(W0, H0, Bitmap.Config.ARGB_8888)
         val c = Canvas(big)
         val pBmp = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
@@ -115,6 +118,7 @@ object Seamless {
         mapArt(art, model, cont, variant == "all")?.let { b -> c.drawBitmap(b, null, Rect(0, 0, W0, H0), pBmp); b.recycle() }
         val cr = rects[cont] ?: return big
         for (z in zonesOf(cont, model, rects)) {
+            yieldPoint()
             val zr = rects[z] ?: continue
             val p = place(cr, zr).let { RectF(it[0], it[1], it[2], it[3]) }
             val x0 = (p.left * W0).roundToInt(); val y0 = (p.top * H0).roundToInt()
