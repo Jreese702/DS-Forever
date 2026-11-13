@@ -7,6 +7,9 @@ the magnifying glass in its corner"; "The target bar in general seems kind of bl
 Trail.lua ag9 / at9 + Hub.lua uf18 in tools/render_top_party.py's rig (both add-ons in one lupa runtime on the compass tests' stub game,
 every region's rect resolved from its anchors, SetScale honoured) with render_target_bar.py's stand-in nameplate:
   ag9   a friendly target writes no plate option; a value of ours left from before is given back out of a fight (never in one)
+  ag11  Off hides them (the user on 1462: "friendly name plates still show with the setting off"): the player's own friendly plate
+        options on -> 0 out of a fight (never in one, kept through one), their values kept and given back at log out / when the
+        switch goes On; a change of theirs meanwhile stands
   uf18  a hostile target: its plate hidden (alpha), the head's copy starts ON the plate's bar (scaled) and lands on the bar (the bar at
         alpha 0 till then), the aggro tint held while it flies (at9), the bobbing red arrow on the plate (our texture, WorldFrame's
         child or UIParent here, under the plate's UnitFrame level), it bobs; losing the target flies the copy down and gives the plate
@@ -65,7 +68,7 @@ function UnitIsFriend(a, b) return true end
     A.friendsStep()
     rig.run(0.5)
     chk("ag9: a friendly target switches no plate option on (%d writes)" % len(G.CVW), len(G.CVW) == 0, list(G.CVW.values()))
-    chk("ag9: the version tag", A.V == "ag10" and G.WowCompanion.rings.V == "at9", (A.V, G.WowCompanion.rings.V))
+    chk("ag9: the version tag", A.V == "ag11" and G.WowCompanion.rings.V == "at9", (A.V, G.WowCompanion.rings.V))
     # a player who had them on from ag2..ag8: our values in place, the saved originals
     L.execute('''
 CV.nameplateShowFriendlyPlayers, CV.nameplateShowFriendlyNPCs, CV.nameplateNotSelectedAlpha = "1", "1", "0"
@@ -396,7 +399,7 @@ function UnitIsFriend(a, b) return true end
     G.GAME.fight = False
     hub = WC.hub
     chk("ag10: the version tag; the switch Off by default, said in the doc (npf false, not chosen)",
-        A.V == "ag10" and A.FRIENDS_ON is False and hub.npfFlag() is False and A.friendsChosen is None, (A.V, A.FRIENDS_ON))
+        A.V == "ag11" and A.FRIENDS_ON is False and hub.npfFlag() is False and A.friendsChosen is None, (A.V, A.FRIENDS_ON))
     A.friendsStep()
     chk("ag10: Off: a friendly target writes nothing (ag9)", len(G.CVW) == 0, list(G.CVW.values()))
     chk("hub52: NPF_ON (column 39) reaches Trail", hub.swTap(39) is True and A.FRIENDS_ON is True and hub.npfFlag() is True
@@ -425,6 +428,103 @@ function UnitIsFriend(a, b) return true end
         G.CV.nameplateShowFriendlyPlayers == "0" and G.CV.nameplateNotSelectedAlpha == "0.5" and G.WowCompanionDB.npFriends is None)
     A.friendsStep()
     chk("ag10: ... and nothing more written", len(G.CVW) == n)
+
+    # ------------------------------------------------------------------ ag11: Off hides the player's OWN friendly plates (the user on
+    # build 1462: "friendly name plates still show with the setting off")
+    rig = rig_with()
+    L, G = rig.L, rig.G
+    WC = G.WowCompanion
+    A = WC.live
+    hub = WC.hub
+    liveEv = [r for r in rig._frames() if r.events and r.events.NAME_PLATE_UNIT_ADDED and r.scripts][0]
+
+    def fire(e):
+        liveEv.scripts.OnEvent(liveEv, e, None)
+
+    def steps(k=3):
+        for _ in range(k):
+            A.friendsStep()
+    L.execute('''
+CVW = {}
+CV = CV or {}
+CV.nameplateShowFriendlyPlayers, CV.nameplateShowFriendlyNPCs, CV.nameplateNotSelectedAlpha = "1", "1", "0.5"
+CV.nameplateShowFriends = nil
+C_CVar.SetCVar = function(k, v) CVW[#CVW + 1] = k .. "=" .. tostring(v); CV[k] = tostring(v) end
+function UnitIsFriend(a, b) return true end
+WowCompanionDB.npFriends = nil; WowCompanionDB.npFriendsOff = nil
+''')
+    G.UNITS = L.table_from({"target": L.table_from({"name": "Guard Thomas", "lv": 10, "hp": 1, "hpMax": 1})})
+    G.TARGET = "target"
+    G.GAME.fight = True
+    A.friendsStep()
+    chk("ag11: Off, the game's own friendly plates on, in a fight: nothing written", len(G.CVW) == 0, list(G.CVW.values()))
+    G.GAME.fight = False
+    steps()
+    chk("ag11: Off: out of the fight the game's own friendly player + NPC plates go off, the player's values kept (%s)"
+        % ",".join(G.CVW.values()),
+        G.CV.nameplateShowFriendlyPlayers == "0" and G.CV.nameplateShowFriendlyNPCs == "0" and G.CV.nameplateNotSelectedAlpha == "0.5"
+        and G.CV.nameplateShowFriends is None and G.WowCompanionDB.npFriendsOff is not None
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyPlayers == "1"
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyNPCs == "1")
+    n = len(G.CVW)
+    steps()
+    chk("ag11: ... written once (%d)" % n, len(G.CVW) == n == 2)
+    G.GAME.fight = True
+    fire("PLAYER_REGEN_DISABLED")
+    steps()
+    chk("ag11: ... a fight keeps them off", G.CV.nameplateShowFriendlyPlayers == "0" and G.WowCompanionDB.npFriendsOff is not None
+        and len(G.CVW) == n)
+    fire("PLAYER_LOGOUT")
+    chk("ag11: ... log out (even in a fight) gives the player's own values back",
+        G.CV.nameplateShowFriendlyPlayers == "1" and G.CV.nameplateShowFriendlyNPCs == "1" and G.WowCompanionDB.npFriendsOff is None)
+    # a new session: off again; the switch goes On -> the player's own values first, then On's rule
+    G.GAME.fight = False
+    steps()
+    chk("ag11: next session: off again", G.CV.nameplateShowFriendlyPlayers == "0" and G.WowCompanionDB.npFriendsOff is not None)
+    G.CVW = L.table_from({})
+    chk("ag11: NPF_ON reaches Trail", hub.swTap(39) is True and A.FRIENDS_ON is True)
+    steps()
+    chk("ag11: On: the player's own values back, then a friendly target: On's rule (only the alpha was not theirs) (%s)"
+        % ",".join(G.CVW.values()),
+        G.CV.nameplateShowFriendlyPlayers == "1" and G.CV.nameplateShowFriendlyNPCs == "1" and G.CV.nameplateNotSelectedAlpha == "0"
+        and G.WowCompanionDB.npFriendsOff is None and G.WowCompanionDB.npFriends is not None
+        and G.WowCompanionDB.npFriends.orig.nameplateShowFriendlyPlayers is None
+        and G.WowCompanionDB.npFriends.orig.nameplateNotSelectedAlpha == "0.5")
+    chk("ag11: NPF_OFF reaches Trail", hub.swTap(38) is True and A.FRIENDS_ON is False)
+    steps()
+    chk("ag11: Off again: On's alpha back, the plates off, the player's values kept",
+        G.CV.nameplateNotSelectedAlpha == "0.5" and G.CV.nameplateShowFriendlyPlayers == "0" and G.CV.nameplateShowFriendlyNPCs == "0"
+        and G.WowCompanionDB.npFriends is None and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyPlayers == "1")
+    # the player turns friendly player plates on in the game's own menu: their choice stands (not fought, not restored)
+    L.execute('CV.nameplateShowFriendlyPlayers = "1"')
+    n = len(G.CVW)
+    steps(5)
+    chk("ag11: the player's own change in the game stands (not fought)",
+        G.CV.nameplateShowFriendlyPlayers == "1" and len(G.CVW) == n
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyPlayers is None
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyNPCs == "1")
+    fire("PLAYER_LOGOUT")
+    chk("ag11: ... log out gives back only what is still ours", G.CV.nameplateShowFriendlyPlayers == "1"
+        and G.CV.nameplateShowFriendlyNPCs == "1" and G.WowCompanionDB.npFriendsOff is None)
+    # a /reload in a fight where the game refuses the write: the entry is kept for the next chance
+    G.CVW = L.table_from({})
+    steps()
+    L.execute('local real = C_CVar.SetCVar; REFUSE = true; C_CVar.SetCVar = function(k, v) if REFUSE then return false end; return real(k, v) end')
+    fire("PLAYER_LOGOUT")
+    chk("ag11: a refused give-back keeps its entry (the declined one stays the player's)", G.CV.nameplateShowFriendlyNPCs == "0"
+        and G.CV.nameplateShowFriendlyPlayers == "1" and G.WowCompanionDB.npFriendsOff is not None
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyNPCs == "1"
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyPlayers is None)
+    L.execute('REFUSE = false')
+    fire("PLAYER_LOGOUT")
+    chk("ag11: ... given back at the next log out", G.CV.nameplateShowFriendlyPlayers == "1" and G.CV.nameplateShowFriendlyNPCs == "1"
+        and G.WowCompanionDB.npFriendsOff is None)
+    # already off in the game: nothing written, nothing recorded
+    L.execute('CV.nameplateShowFriendlyPlayers, CV.nameplateShowFriendlyNPCs = "0", "0"')
+    A.offDeclined = L.table_from({})
+    n = len(G.CVW)
+    steps()
+    chk("ag11: already off in the game: nothing written or recorded", len(G.CVW) == n and G.WowCompanionDB.npFriendsOff is None)
 
     # ------------------------------------------------------------------ uf22: the bar on top, the glyph sizes
     rig = rig_with({"plate": True})
