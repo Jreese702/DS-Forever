@@ -10,7 +10,7 @@ import java.nio.file.Files
 /**
  * GAME ACCOUNT: ASK EACH TIME (GitHub #47): the game's remembered game-account choice leaves Config.wtf before a start, so the game's own
  * account-select screen comes up. Only key NAMES come back (a value is an account name); absent keys = a no-op. The keys are the PC
- * client's (accountList with its "!" marker, accountName): a device check on a multi-account login still has to confirm them.
+ * client's (accountList with its "!" marker; accountName = the Battle.net login, never touched): a device check on a multi-account login still has to confirm them.
  */
 class GameAccountAskTest {
     private val secretA = "SECRET_ACCT_ONE"
@@ -26,11 +26,11 @@ class GameAccountAskTest {
         return root
     }
 
-    @Test fun theMarkedListAndTheNameAreCleared() {
+    @Test fun theMarkedListIsClearedTheLoginNameStays() {
         val (kept, cleared) = GameConfigWtf.forgetAccountChoice(listOf(
             "SET gxApi \"D3D11\"", "SET accountList \"$secretA|!$secretB|\"", "SET accountName \"$mail\"", "SET portal \"us\""))
-        assertEquals(listOf("accountList", "accountName"), cleared)
-        assertEquals(listOf("SET gxApi \"D3D11\"", "SET portal \"us\""), kept)
+        assertEquals(listOf("accountList"), cleared)
+        assertEquals(listOf("SET gxApi \"D3D11\"", "SET accountName \"$mail\"", "SET portal \"us\""), kept)
     }
 
     @Test fun nothingRememberedIsANoOp() {
@@ -44,13 +44,14 @@ class GameAccountAskTest {
 
     @Test fun anyCaseAndSpacingAndNamesComeBackInOneSpelling() {
         val (kept, cleared) = GameConfigWtf.forgetAccountChoice(listOf(
-            "  set ACCOUNTLIST \"!$secretA|$secretB|\"", "SET accountname \"$mail\"", "SET accountName \"$mail\"", "# comment"))
-        assertEquals(listOf("accountList", "accountName"), cleared)
-        assertEquals(listOf("# comment"), kept)
+            "  set ACCOUNTLIST \"!$secretA|$secretB|\"", "SET accountlist \"$secretA|!$secretB\"", "SET accountName \"$mail\"", "# comment"))
+        assertEquals(listOf("accountList"), cleared)
+        assertEquals(listOf("SET accountName \"$mail\"", "# comment"), kept)
     }
 
     @Test fun noValueEverComesBack() {
         val (_, cleared) = GameConfigWtf.forgetAccountChoice(listOf("SET accountList \"!$secretA|\"", "SET accountName \"$secretB\""))
+        assertEquals(listOf("accountList"), cleared)
         for (n in cleared) {
             assertTrue(n in GameConfigWtf.ACCOUNT_CHOICE_KEYS)
             assertFalse(n.contains(secretA) || n.contains(secretB))
@@ -63,12 +64,12 @@ class GameAccountAskTest {
         // Remembered (the default): the file as the game left it
         assertEquals(emptyList<String>(), GameConfigWtf.ensure(root, WowProduct.LAUNCH, mapOf("Branch" to "us")))
         assertEquals(before, wtf(root).readText())
-        // Ask each time: both lines go, every other line stays
-        assertEquals(listOf("accountList", "accountName"),
+        // Ask each time: the marked list goes, every other line (the login name too) stays
+        assertEquals(listOf("accountList"),
             GameConfigWtf.ensure(root, WowProduct.LAUNCH, mapOf("Branch" to "us"), askAccount = true))
         val after = wtf(root).readText()
-        assertFalse(after.contains(secretA) || after.contains(secretB) || after.contains(mail))
-        assertEquals(before.lines().filterNot { it.contains("account", ignoreCase = true) }, after.lines())
+        assertFalse(after.contains(secretA) || after.contains(secretB))
+        assertEquals(before.lines().filterNot { it.contains("accountList", ignoreCase = true) }, after.lines())
         // the next start with nothing remembered: a no-op, the file untouched
         val stamp = wtf(root).lastModified()
         assertEquals(emptyList<String>(), GameConfigWtf.ensure(root, WowProduct.LAUNCH, mapOf("Branch" to "us"), askAccount = true))

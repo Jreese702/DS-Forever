@@ -140,9 +140,10 @@ object GameConfigWtf {
      * on this client: a device check on a multi-account login is owed):
      *  - accountList: the game accounts, "|"-separated, the remembered one marked with a leading "!" (e.g. "WoW1|!WoW2|"). Only a list
      *    that HOLDS a "!" is a choice; that line goes (the game writes it again from Battle.net), a list with no marker stays.
-     *  - accountName: the account name the login screen remembers. A non-empty value goes; an empty one stays.
+     *  - NOT accountName (review 11-13): on the Battle.net-era clients that is the remembered Battle.net login (the e-mail), not the
+     *    game-account pick; clearing it would forget the player's login name and is no part of the choice. It is never touched.
      */
-    val ACCOUNT_CHOICE_KEYS = listOf("accountList", "accountName")
+    val ACCOUNT_CHOICE_KEYS = listOf("accountList")
 
     /**
      * [lines] without the remembered game-account choice, and the NAMES of the keys cleared (in [ACCOUNT_CHOICE_KEYS]'s spelling; each
@@ -155,10 +156,7 @@ object GameConfigWtf {
             val key = parts?.getOrNull(0)?.let { k -> ACCOUNT_CHOICE_KEYS.firstOrNull { it.equals(k, ignoreCase = true) } }
                 ?: return@filter true
             val value = parts.getOrNull(1)?.trim()?.trim('"').orEmpty()
-            val remembers = when (key) {
-                "accountList" -> value.split('|').any { it.trim().startsWith("!") }
-                else -> value.isNotBlank()
-            }
+            val remembers = value.split('|').any { it.trim().startsWith("!") }      // accountList: only a marked list is a choice
             if (remembers) cleared.add(key)
             !remembers
         }
