@@ -199,6 +199,32 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
+        public static void Issue219StateSummaryCountsPairingsWithoutCerts()
+        {
+            var id = DsfDesktop.Sunshine.SunshineDiag.Fp("-----BEGIN CERTIFICATE-----\nAAECAw==\n-----END CERTIFICATE-----\n");
+            A.Eq(12, id.Length);
+            var json = "{\"root\":{\"uniqueid\":\"X\",\"named_devices\":[{\"name\":\"AYN Thor (1a2b3c4d)\",\"cert\":\"-----BEGIN CERTIFICATE-----\nAAECAw==\n-----END CERTIFICATE-----\n\",\"uuid\":\"u1\"}]}}";
+            var s = DsfDesktop.Sunshine.SunshineDiag.StateSummary(json);
+            A.Eq("1 paired: AYN Thor (1a2b3c4d) [fp " + id + "]", s);
+            A.False(s.Contains("AAECAw"), "never the certificate");
+            A.Eq("0 paired", DsfDesktop.Sunshine.SunshineDiag.StateSummary("{\"root\":{\"named_devices\":[]}}"));
+            A.Eq("no file", DsfDesktop.Sunshine.SunshineDiag.StateSummary(null));
+            A.Eq("unreadable", DsfDesktop.Sunshine.SunshineDiag.StateSummary("not json"));
+        }
+
+        [Test]
+        public static void Issue219PairLinesKeepPairingAndHidePins()
+        {
+            var log = "[2026-11-12 18:59:03.879]: Info: Executing [Desktop]\r\n[2026-11-12 18:59:03.912]: Warning: SSL Verification error :: self signed certificate\r\n" +
+                      "[x]: Info: pin 1234 accepted for pairing\n-----BEGIN CERTIFICATE-----\n";
+            var l = DsfDesktop.Sunshine.SunshineDiag.PairLines(log);
+            A.Eq(2, l.Count);
+            A.True(l[0].Contains("SSL Verification error"));
+            A.False(l[1].Contains("1234"), "the PIN is masked");
+            A.Eq("47984 listening, 52984 free", DsfDesktop.Sunshine.SunshineDiag.Listeners(new[] { 47984, 52984, 47984 }, p => p != 47984));
+        }
+
+        [Test]
         public static void PortPlannerSkipsBusyBases()
         {
             var busy = new HashSet<int> { 47989, 47990, 48989, 49989 };

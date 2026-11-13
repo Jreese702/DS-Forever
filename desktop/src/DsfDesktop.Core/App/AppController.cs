@@ -273,8 +273,17 @@ namespace DsfDesktop.App
             Sunshine = new SunshineHost(SunshineLayout);
             Sunshine.Status += _ => Fire();
             if (!Sunshine.Available) { Log.I("sunshine not bundled at " + SunshineLayout.Exe); return; }
+            // issue #219 diagnostics: a stale sunshine.exe still holding our ports, another GameStream host, the
+            // pairings Sunshine's state file holds: logged before ours starts
+            foreach (var o in SunshineDiag.OtherSunshines(-1)) Log.I("sunshine: another sunshine.exe is running before ours: " + o);
+            int sticky = Settings.SunshinePort;
+            var gs = new List<int> { 47984, 47989 };
+            if (sticky > 0) { gs.Add(sticky - 5); gs.Add(sticky); }
+            Log.I("sunshine: GameStream ports before start: " + SunshineDiag.Listeners(gs, PortPlanner.TcpFree));
+            Log.I("sunshine: state file: " + SunshineDiag.StateSummaryOfFile(SunshineLayout.State));
             int port = PortPlanner.Pick(Settings.SunshinePort, PortPlanner.TcpFree, PortPlanner.UdpFree);
             if (port < 0) { Log.I("sunshine: no free port set"); return; }
+            if (sticky > 0 && port != sticky) Log.I("sunshine: port " + sticky + " was busy, moving to " + port + " (a paired Thor learns it from the bridge)");
             if (port != Settings.SunshinePort) { Settings.SunshinePort = port; SaveSettings(); }
             SunshinePort = port;
             WriteSunshineConfig();
@@ -282,6 +291,7 @@ namespace DsfDesktop.App
                 Log.I("sunshine: setting its login failed");
             api = new SunshineApi(port, Settings.SunshineUser, Pass, SunshineLayout.Cert);
             Sunshine.Start();
+            foreach (var o in SunshineDiag.OtherSunshines(Sunshine.Pid)) Log.I("sunshine: another sunshine.exe runs beside ours: " + o);
             // issue #54: Sunshine's virtual Xbox pad needs ViGEmBus; without it the Thor's controller does nothing on the PC
             var pad = PadDriver.Now();
             Log.I("controller driver (ViGEmBus): " + pad + (pad == "missing" ? " - the Thor's controller can't reach WoW until it is installed" : ""));
@@ -313,6 +323,7 @@ namespace DsfDesktop.App
             Task.Run(async () =>
             {
                 string err;
+                long logAt = SunshineDiag.LogLength(SunshineLayout.LogFile);
                 try
                 {
                     if (api == null || Sunshine == null || !Sunshine.Running) err = "the streaming host isn't running";
@@ -321,6 +332,21 @@ namespace DsfDesktop.App
                 catch (Exception e) { err = e.Message; }
                 Log.I("stream pairing for " + name + ": " + (err ?? "done"));
                 done(err);
+                // issue #219 diagnostics: the device's TLS check (its last step) comes after the PIN was taken; a few seconds on, what
+                // Sunshine saved and said
+                try
+                {
+                    await Task.Delay(6000).ConfigureAwait(false);
+                    Log.I("stream pairing for " + name + ": sunshine state: " + SunshineDiag.StateSummaryOfFile(SunshineLayout.State));
+                    if (api != null)
+                    {
+                        try { Log.I("stream pairing for " + name + ": sunshine lists " + (await api.Clients(CancellationToken.None).ConfigureAwait(false)).Count + " client(s)"); }
+                        catch (Exception e) { Log.I("stream pairing: sunshine client list: " + e.Message); }
+                    }
+                    foreach (var l in SunshineDiag.PairLines(SunshineDiag.LogSince(SunshineLayout.LogFile, logAt))) Log.I("sunshine log: " + l);
+                    foreach (var o in SunshineDiag.OtherSunshines(Sunshine?.Pid ?? -1)) Log.I("sunshine: another sunshine.exe runs beside ours: " + o);
+                }
+                catch (Exception e) { Log.I("stream pairing diagnostics: " + e.Message); }
             });
         }
 

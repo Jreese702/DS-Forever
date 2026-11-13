@@ -25,6 +25,8 @@ namespace DsfDesktop.Sunshine
         public event Action<string> Status;
         public bool Running { get { lock (gate) return proc != null && !proc.HasExited; } }
         public string LastStatus { get; private set; } = "stopped";
+        /// <summary>our sunshine.exe's pid, -1 when not running (issue #219 diagnostics: telling ours from a stale one)</summary>
+        public int Pid { get { lock (gate) { try { return proc != null && !proc.HasExited ? proc.Id : -1; } catch (Exception) { return -1; } } } }
 
         public SunshineHost(SunshineLayout layout) { this.layout = layout; }
 

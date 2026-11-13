@@ -124,6 +124,19 @@ class PairingTest {
         assertEquals(1, liar.unpaired)
     }
 
+    /** issue #219: the PC takes the code (step 5) but its https port answers 401 to the final check */
+    @Test fun aRefusedCertificateAtTheFinalCheckSaysSoAndUnpairs() {
+        val inner = FakeSunshine("482913", server)
+        val pc = object : PairHttp by inner {
+            override fun pairChallenge(serverCert: X509Certificate): String =
+                throw HostHttpException(401, "pair: The client is not authorized. Certificate verification failed.")
+        }
+        val r = MoonPairing(pc, client).pair(7, "482913")
+        assertEquals(MoonPairing.State.FAILED, r.state)
+        assertEquals(MoonPairing.CERT_REFUSED, r.why)
+        assertEquals(1, inner.unpaired)
+    }
+
     @Test fun versionParsing() {
         assertEquals(7, MoonPairing.majorVersion("7.1.431.0"))
         assertEquals(0, MoonPairing.majorVersion(null))
