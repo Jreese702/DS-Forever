@@ -2242,8 +2242,13 @@ WC.mapRoomCell = function(col) return mrOnCell(col) end   -- for tools/test_map_
 -- disabled add-on leaves the game as it was), unless the player changed it since; the Controller UI's own SoftTargetInteract is
 -- left alone when it is on. Bars, bindings and macros are never touched.
 -- All of it lives in WC.mmp: Map.lua's main chunk is at Lua 5.1's 200-local limit (no new top-level local).
+-- mp2 (issue #87, 1.0.21: "Can't see herbs on minimap. or maybe I'm missing somthing."): DIAGNOSTICS ONLY. Every report from 1.0.18 on
+-- has d[0] in every reading (1.0.16: dots in 115 of 121), the cause unknown from the reports (the summary keeps numbers only): the
+-- document now says why in numbers - wy, fh / fm (Find Herbs / Minerals on), dg (per scan: answers, secret drops, lines, names,
+-- soft-cursor frames, batches that threw). A batch that throws is counted and skipped (sc.i moves on) instead of being retried.
 WC.mmp = {
-    V = "mp1",
+    V = "mp2",
+    WHY = { combat = 1, api = 2, hidden = 3, busy = 4 },
     STEP = 8,                 -- minimap units between the points tried (a dot answers within ~15)
     PER_FRAME = 60,           -- points tried in one frame
     PACE_MOVING = 0.5, PACE_STILL = 2.0, PACE_EMPTY = 4.0, PACE_OFF = 5.0,
@@ -2330,7 +2335,8 @@ function WC.mmp.start()
     if okC and (r == "1" or r == 1) then rot = true end
     local facing = rot and SN(GetPlayerFacing) or 0
     P.scan = { pts = P.grid(width), i = 1, hits = {}, width = width, left = left, bottom = bottom, scale = scale, radius = radius,
-               rot = rot, facing = facing or 0, wx = wx, wy = wy, m = plainNum(mapID()), cost = 0 }
+               rot = rot, facing = facing or 0, wx = wx, wy = wy, m = plainNum(mapID()), cost = 0,
+               dg = { pd = 0, ps = 0, pl = 0, pt = 0, px = 0, pe = 0, cs = 0, fr = 0 } }
 end
 
 -- one batch of points: the soft cursor on, the points, the soft cursor off - in this frame, whatever happens
@@ -2339,28 +2345,47 @@ function WC.mmp.step()
     if type(InCombatLockdown) == "function" and InCombatLockdown() then P.scan = nil; P.wait = P.PACE_OFF; return end
     local M = _G.Minimap
     local t0 = (type(debugprofilestop) == "function") and debugprofilestop() or 0
+    local dg = sc.dg
     pcall(M.SetUsingSoftCursor, M, true)
-    pcall(function()
-        local last = math.min(sc.i + P.PER_FRAME - 1, #sc.pts)
+    -- mp2 (issue #87): did the soft cursor take (the frames it read back on)?
+    dg.fr = dg.fr + 1
+    if type(M.IsUsingSoftCursor) == "function" then
+        local okU, using = pcall(M.IsUsingSoftCursor, M)
+        if okU and using == true then dg.cs = dg.cs + 1 end
+    end
+    local last = math.min(sc.i + P.PER_FRAME - 1, #sc.pts)
+    local okB = pcall(function()
         for k = sc.i, last do
             local key = sc.pts[k]
             local x, y = math.floor(key / 1000) * P.STEP, key % 1000 * P.STEP
             M:UpdateMouseoverAtPoint((sc.left + x) * sc.scale, (sc.bottom + y) * sc.scale)
             local data = C_TooltipInfo.GetMinimapMouseover()
-            local lines = (type(data) == "table" and WC.isPlain(data)) and data.lines or nil
-            if type(lines) == "table" and WC.isPlain(lines) then
+            -- mp2 (issue #87): what each point answered, counted (pd any answer, ps dropped as secret, pl lines read, pt names kept,
+            -- px a line with no plain text)
+            local lines = nil
+            if data ~= nil then
+                dg.pd = dg.pd + 1
+                if type(data) == "table" and WC.isPlain(data) then lines = data.lines else dg.ps = dg.ps + 1 end
+            end
+            if lines ~= nil and not (type(lines) == "table" and WC.isPlain(lines)) then dg.ps = dg.ps + 1; lines = nil end
+            if lines then
+                dg.pl = dg.pl + 1
                 for _, line in ipairs(lines) do
                     local name = P.clean(type(line) == "table" and line.leftText or nil)
                     if name then
+                        dg.pt = dg.pt + 1
                         local h = sc.hits[name]
                         if not h then h = {}; sc.hits[name] = h end
                         h[key] = true
+                    else
+                        dg.px = dg.px + 1
                     end
                 end
             end
         end
-        sc.i = last + 1
     end)
+    if not okB then dg.pe = dg.pe + 1 end         -- mp2: a batch that threw is counted and skipped (it never stalls the scan)
+    sc.i = last + 1
     pcall(M.SetUsingSoftCursor, M, false)
     if type(debugprofilestop) == "function" then sc.cost = sc.cost + (debugprofilestop() - t0) end
     if sc.i > #sc.pts then P.finish() end
@@ -2410,7 +2435,7 @@ function WC.mmp.finish()
     P.empty = (#dots == 0) and math.min(P.empty + 1, 10) or 0
     P.wait = (#dots == 0 and P.empty >= 3) and P.PACE_EMPTY or (moved and P.PACE_MOVING or P.PACE_STILL)
     P.switched = false                                             -- a scan has run since the last switch
-    P.dots, P.cost, P.np, P.m, P.r = dots, sc.cost, #sc.pts, sc.m, sc.radius
+    P.dots, P.cost, P.np, P.m, P.r, P.dg = dots, sc.cost, #sc.pts, sc.m, sc.radius, sc.dg
     P.send(false)
 end
 
@@ -2426,23 +2451,34 @@ function WC.mmp.send(force)
     if not force and t - P.sentAt < P.SEND_MIN then return end
     P.sig, P.sentAt = sig, t
     pcall(function()
+        -- mp2 (issue #87): the why as a number too (wy: 1 combat, 2 api, 3 hidden, 4 busy), Find Herbs / Minerals (fh / fm: 1 on,
+        -- 0 listed but off, absent = not listed) and the last scan's counts (dg) - the report keeps numbers only, never the words
+        local ta = P.tracking()
         WC.send(WC.encode({ type = "mmprobe", v = P.V, m = P.m, r = P.r and math.floor(P.r + 0.5) or nil, d = P.dots or {},
-            o = P.opt, why = P.why, ms = P.cost and math.floor(P.cost * 10 + 0.5) / 10 or nil, np = P.np, ta = P.tracking() }))
+            o = P.opt, why = P.why, wy = P.why and (P.WHY[P.why] or 9) or nil, fh = P.fh, fm = P.fm, dg = P.dg,
+            ms = P.cost and math.floor(P.cost * 10 + 0.5) / 10 or nil, np = P.np, ta = ta }))
         WC.push()
     end)
 end
 
 -- the minimap's tracking types that are on (names), for the report "what the probe can see"
 function WC.mmp.tracking()
-    local out = {}
+    local P, out = WC.mmp, {}
+    P.fh, P.fm = nil, nil
     if type(C_Minimap) ~= "table" or type(C_Minimap.GetNumTrackingTypes) ~= "function" then return out end
     local okN, n = CALL(C_Minimap.GetNumTrackingTypes)
     if not okN or type(n) ~= "number" or not WC.isPlain(n) then return out end
     for i = 1, math.min(n, 40) do
         local okI, a, b, c = CALL(C_Minimap.GetTrackingInfo, i)
-        local name, active
-        if okI and type(a) == "table" then name, active = a.name, a.active else name, active = a, c end
+        local name, active, spell
+        if okI and type(a) == "table" then name, active, spell = a.name, a.active, a.spellID else name, active = a, c end
         if active == true and type(name) == "string" and WC.isPlain(name) then out[#out + 1] = name end
+        -- mp2 (issue #87): Find Herbs / Find Minerals by spell or name, on (1) or off (0)
+        local kind = (spell ~= nil and WC.isPlain(spell) and P.FINDERS[spell]) or (type(name) == "string" and WC.isPlain(name) and P.FINDER_NAMES[name])
+        if kind and WC.isPlain(active) then
+            local v = (active == true) and 1 or 0
+            if kind == "herbs" then P.fh = math.max(P.fh or 0, v) else P.fm = math.max(P.fm or 0, v) end
+        end
     end
     return out
 end
