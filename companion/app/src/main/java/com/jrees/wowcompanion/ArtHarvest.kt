@@ -61,6 +61,14 @@ object ArtHarvest {
         fun progress(done: Int, total: Int, what: String = "") = onProgress(if (total > 0) done.toFloat() / total else 0f, what)
 
         /**
+         * Issues #207 #203 #212 #200 #208 (1.0.27, 8 GB Thors killed for memory): a background step reported only once per zone, so the
+         * "never beside the game" pause ([checkStop], run from each report) trailed the game's start by up to ~35 s with the game files
+         * open (native ~450 MB) while the game grew to ~1.9 GB. A step calls this before EACH heavy read (a tile, a picture): the same
+         * report, at the same place of the bar ([done] of [total]), so the pause comes within one read.
+         */
+        fun yieldPoint(done: Int, total: Int, what: String = "") = progress(done, total, what)
+
+        /**
          * RESUME (issue #11, 1.0.9: "stuck on 68% EPL, then reopened stuck on 8% EPL"): the parts of this step finished for THIS game
          * build, kept across a restart so a reopened app goes on where it stopped; forgotten when the step is stamped done (or for
          * another build).
@@ -354,7 +362,10 @@ object ArtHarvest {
                     try {
                         work(app) { r -> beforePlayDone(r) }
                     } catch (e: PausedForGame) {
-                        Log.i(TAG, "harvest: paused while the game runs (${DeviceTier.model()}), the game files let go")
+                        // issues #207 #203 (2026-11-13): which step paused and how long after the launch (the pause's lag, in the report)
+                        val at = LauncherHooks.launchAtMs
+                        val lag = if (at > 0L) "${(System.currentTimeMillis() - at) / 1000} s after the launch" else "no launch time"
+                        Log.i(TAG, "harvest: paused while the game runs (${DeviceTier.model()}), the game files let go (step ${currentStep ?: "-"}, $lag)")
                         bgPhase = false; currentStep = null
                         parkedForGame = true
                         try {

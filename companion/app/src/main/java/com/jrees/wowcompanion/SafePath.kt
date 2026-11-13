@@ -956,7 +956,9 @@ object SafePath {
             // each continent's water (ZoneWater: its tiles' water and walkways kept while near)
             val waterOf = HashMap<Int, ZoneWater>()
             var built = 0
+            var at = 0                                     // the zone in hand (the continent's ZoneWater outlives the zone that made it)
             for ((i, e) in rects.entries.withIndex()) {
+                at = i
                 val (map, rect) = e.key to e.value
                 val root = roots.getOrPut(rect.c) { mapRows[rect.c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) }?.let { Terrain.maidRoot(it) } ?: emptyMap() }
                 val z = Zones.build(rect.t, rect.b, rect.l, rect.r, PlaceNames.CHUNK_YD) { wx, wy ->
@@ -964,6 +966,8 @@ object SafePath {
                     if (tc !in 0..63 || tr !in 0..63) null else {
                         val key = (rect.c.toLong() shl 32) or MapHarvest.key(tc, tr).toLong()
                         val chunks = tiles[key] ?: run {
+                            // issues #207 #203 (1.0.27): the game's start pauses the step before this tile's read, not after the zone
+                            job.yieldPoint(at, rects.size)
                             var waited = 0
                             while (IndoorSchedulerStep.playerMoving() && waited < 600) { Thread.sleep(1000); waited++ }
                             (root[MapHarvest.key(tc, tr)]?.let { g.read(it) }?.let { PlaceNames.chunkAreas(it) } ?: emptyMap()).also { tiles[key] = it }
@@ -971,15 +975,19 @@ object SafePath {
                         chunks[ch]
                     }
                 }
-                z.write(job.file("safepath/zones/$map.bin"))
-                zones.drop(map)
+                // review of #207: the water's reads are yield points now, so the zone's ground is written only after its water - a pause
+                // mid-water must not leave zones/$map.bin without water/$map.bin (a draft would read every lake and lava as walkable)
                 val wt0 = System.nanoTime()
                 waterOf.getOrPut(rect.c) {
                     val obj = objs.getOrPut(rect.c) { mapRows[rect.c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) }?.let { Terrain.maidObj0(it) } ?: emptyMap() }
-                    ZoneWater(lethal, { tc, tr -> root[MapHarvest.key(tc, tr)]?.let { g.read(it) } }, { tc, tr -> obj[MapHarvest.key(tc, tr)]?.let { g.read(it) } }) { g.read(it) }
+                    // the water's reads too (a continent's tiles, buildings and models): each one a yield point (issues #207 #203)
+                    ZoneWater(lethal, { tc, tr -> job.yieldPoint(at, rects.size); root[MapHarvest.key(tc, tr)]?.let { g.read(it) } },
+                        { tc, tr -> job.yieldPoint(at, rects.size); obj[MapHarvest.key(tc, tr)]?.let { g.read(it) } }) { job.yieldPoint(at, rects.size); g.read(it) }
                 }.build(rect).write(job.file("safepath/water/$map.bin"))
                 SafePathDiag.harvestStep(id, map, (System.nanoTime() - wt0) / 1_000_000)
                 waters.drop(map)
+                z.write(job.file("safepath/zones/$map.bin"))
+                zones.drop(map)
                 built++
                 job.progress(i + 1, rects.size, "")
             }

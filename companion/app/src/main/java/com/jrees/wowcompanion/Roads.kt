@@ -280,6 +280,8 @@ object Roads {
                     if (col !in 0..63 || row !in 0..63) return@grid null
                     val key = (rect.c.toLong() shl 32) or MapHarvest.key(col, row).toLong()
                     if (cache.containsKey(key)) return@grid cache[key]
+                    // issues #207 #203 (1.0.27): the game's start pauses the step before this tile's read, not after the zone (~30 s later)
+                    job.yieldPoint(i, order.size)
                     // walking: wait (the game's frames come first), then read
                     var waited = 0
                     while (IndoorSchedulerStep.playerMoving() && waited < 600) { Thread.sleep(1000); waited++ }

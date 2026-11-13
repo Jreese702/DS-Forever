@@ -93,10 +93,13 @@ object Seamless {
             var made = 0
             for ((ci, cont) in conts.withIndex()) {
                 for (variant in VARIANTS) {
-                    job.progress(ci * 2 + VARIANTS.indexOf(variant), conts.size * 2, model.name(cont))
-                    val big = composite(art, model, rects, cont, variant)
-                    pyramid(big) { rel, b -> job.writeWebp("seamless/$cont/$variant/$rel", b, 82) }
-                    big.recycle()
+                    val step = ci * 2 + VARIANTS.indexOf(variant)
+                    job.progress(step, conts.size * 2, model.name(cont))
+                    // issues #207 #212 (1.0.27): a yield point per zone picture and per tile written, not only per continent variant
+                    val big = composite(art, model, rects, cont, variant) { job.yieldPoint(step, conts.size * 2, model.name(cont)) }
+                    // review of #207: a pause throws out of pyramid() - the 43 MB continent picture is recycled on that path too
+                    try { pyramid(big) { rel, b -> job.yieldPoint(step, conts.size * 2, model.name(cont)); job.writeWebp("seamless/$cont/$variant/$rel", b, 82) } }
+                    finally { big.recycle() }
                 }
                 job.writeBytes("seamless/$cont/index.json", JSONObject().put("w", W0).put("h", H0).put("tile", TILE).put("levels", LEVELS)
                     .put("variants", JSONArray(VARIANTS)).put("zones", JSONArray(zonesOf(cont, model, rects))).toString().toByteArray())
@@ -107,29 +110,34 @@ object Seamless {
     }
 
     /** one continent's level-0 picture */
-    fun composite(art: File, model: WorldMapModel, rects: Map<Int, MapHarvest.Rect>, cont: Int, variant: String): Bitmap {
+    fun composite(art: File, model: WorldMapModel, rects: Map<Int, MapHarvest.Rect>, cont: Int, variant: String,
+                  yieldPoint: () -> Unit = {}): Bitmap {
         val big = Bitmap.createBitmap(W0, H0, Bitmap.Config.ARGB_8888)
         val c = Canvas(big)
         val pBmp = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
         // the continent's own painting (and its overlays in "all")
         mapArt(art, model, cont, variant == "all")?.let { b -> c.drawBitmap(b, null, Rect(0, 0, W0, H0), pBmp); b.recycle() }
         val cr = rects[cont] ?: return big
-        for (z in zonesOf(cont, model, rects)) {
+        // review of #207: a yield point throws mid-loop - recycle the continent picture (and the zone's) before it leaves
+        var zb: Bitmap? = null
+        try { for (z in zonesOf(cont, model, rects)) {
+            yieldPoint()
             val zr = rects[z] ?: continue
             val p = place(cr, zr).let { RectF(it[0], it[1], it[2], it[3]) }
             val x0 = (p.left * W0).roundToInt(); val y0 = (p.top * H0).roundToInt()
             val w = max(2, (p.width() * W0).roundToInt()); val h = max(2, (p.height() * H0).roundToInt())
             val full = mapArt(art, model, z, variant == "all") ?: continue
-            val zb = Bitmap.createScaledBitmap(full, w, h, true); if (zb !== full) full.recycle()
+            val s = Bitmap.createScaledBitmap(full, w, h, true); if (s !== full) full.recycle()
+            zb = s
             val mask = mask(art, model, cont, z, p, w, h)
-            if (mask == null) { zb.recycle(); continue }
-            val px = IntArray(w * h); zb.getPixels(px, 0, w, 0, 0, w, h)
+            if (mask == null) { s.recycle(); zb = null; continue }
+            val px = IntArray(w * h); s.getPixels(px, 0, w, 0, 0, w, h)
             for (k in px.indices) px[k] = (px[k] and 0x00FFFFFF) or (min(255, mask[k]) shl 24)
-            zb.setHasAlpha(true)                                    // copied from an opaque picture: its mask would draw black
-            zb.setPixels(px, 0, w, 0, 0, w, h)
-            c.drawBitmap(zb, x0.toFloat(), y0.toFloat(), pBmp)
-            zb.recycle()
-        }
+            s.setHasAlpha(true)                                     // copied from an opaque picture: its mask would draw black
+            s.setPixels(px, 0, w, 0, 0, w, h)
+            c.drawBitmap(s, x0.toFloat(), y0.toFloat(), pBmp)
+            s.recycle(); zb = null
+        } } catch (t: Throwable) { zb?.recycle(); big.recycle(); throw t }
         return big
     }
 
@@ -190,20 +198,22 @@ object Seamless {
     /** [big] as a tile pyramid: [write] gets each tile's "<level>/<col>_<row>.webp" and its picture */
     fun pyramid(big: Bitmap, write: (String, Bitmap) -> Unit) {
         var lv = big
-        for (level in 0 until LEVELS) {
-            val cols = (lv.width + TILE - 1) / TILE; val rows = (lv.height + TILE - 1) / TILE
-            for (r in 0 until rows) for (cc in 0 until cols) {
-                val x = cc * TILE; val y = r * TILE
-                val t = Bitmap.createBitmap(lv, x, y, min(TILE, lv.width - x), min(TILE, lv.height - y))
-                write("$level/${cc}_$r.webp", t); if (t !== lv) t.recycle()
+        // review of #207: [write] is a yield point and throws on a pause - the level and the tile in hand are recycled on that path too
+        try {
+            for (level in 0 until LEVELS) {
+                val cols = (lv.width + TILE - 1) / TILE; val rows = (lv.height + TILE - 1) / TILE
+                for (r in 0 until rows) for (cc in 0 until cols) {
+                    val x = cc * TILE; val y = r * TILE
+                    val t = Bitmap.createBitmap(lv, x, y, min(TILE, lv.width - x), min(TILE, lv.height - y))
+                    try { write("$level/${cc}_$r.webp", t) } finally { if (t !== lv) t.recycle() }
+                }
+                if (level + 1 < LEVELS) {
+                    val next = Bitmap.createScaledBitmap(lv, max(1, lv.width / 2), max(1, lv.height / 2), true)
+                    if (lv !== big) lv.recycle()
+                    lv = next
+                }
             }
-            if (level + 1 < LEVELS) {
-                val next = Bitmap.createScaledBitmap(lv, max(1, lv.width / 2), max(1, lv.height / 2), true)
-                if (lv !== big) lv.recycle()
-                lv = next
-            }
-        }
-        if (lv !== big) lv.recycle()
+        } finally { if (lv !== big) lv.recycle() }
     }
 
     /** a continent's pyramid is on the device (its index) */
