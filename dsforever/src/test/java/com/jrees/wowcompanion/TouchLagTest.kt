@@ -56,6 +56,21 @@ class TouchLagTest {
         assertEquals("main beat max 1.4 s", MemWatch.beatNote(1_400))
     }
 
+    @Test fun theBottomWindowIsTimedAndNamedApart() {
+        TouchLag.note(TouchLag.BOTTOM, 0, eventTime = 10_000, start = 12_000, end = 12_005)
+        assertEquals(listOf("bottom screen touch (down) reached the main thread 2.0 s late, handled in 5 ms; main beat 0.4 s old"), lines)
+        TouchLag.note(2, eventTime = 13_000, start = 13_000, end = 13_300)  // top: its own rate limit
+        assertEquals(2, lines.size)
+        assertTrue(lines[1], lines[1].startsWith("top screen touch (move)"))
+        assertEquals("touch late max 0.0 s, slow max 300 ms (n 1), bottom touch late max 2.0 s, slow max 5 ms (n 1)", TouchLag.take())
+        assertEquals("", TouchLag.take())
+    }
+
+    @Test fun windowTitlesAreDistinctAndNotThePackage() {
+        assertEquals(WinTitle.ALL.size, WinTitle.ALL.toSet().size)
+        WinTitle.ALL.forEach { assertTrue(it, it.isNotBlank() && it != "app.dsforever.companion" && !it.contains('/')) }
+    }
+
     @Test fun aClockGoingBackCountsAsZero() {
         TouchLag.note(1, eventTime = 5_000, start = 4_000, end = 3_000)
         assertTrue(lines.isEmpty())

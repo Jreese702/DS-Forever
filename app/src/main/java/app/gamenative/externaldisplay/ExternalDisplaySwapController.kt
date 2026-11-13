@@ -145,6 +145,8 @@ private class GamePresentation(
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
         )
+        // DS Forever #230: named, so an input ANR line says which window stopped answering
+        com.jrees.wowcompanion.WinTitle.apply(window, com.jrees.wowcompanion.WinTitle.GAME)
         setContentView(root)
     }
 }

@@ -351,6 +351,8 @@ private class HostPresentation(outer: Context, display: Display, private val onR
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
         )
+        // #230: named, so an input ANR line says which window stopped answering (untitled = the package name, like the others)
+        com.jrees.wowcompanion.WinTitle.apply(window, com.jrees.wowcompanion.WinTitle.BOTTOM)
         host = CompanionHost(context, this).also { it.onCreate(savedInstanceState); it.onStart() }
     }
 
@@ -363,6 +365,15 @@ private class HostPresentation(outer: Context, display: Display, private val onR
         private set
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        // #230: this window's touches timed like the top screen's (age on arrival, handling time)
+        val start = android.os.SystemClock.uptimeMillis()
+        try { return dispatchTouchEventTimed(ev) }
+        finally {
+            runCatching { com.jrees.wowcompanion.TouchLag.note(com.jrees.wowcompanion.TouchLag.BOTTOM, ev.actionMasked, ev.eventTime, start, android.os.SystemClock.uptimeMillis()) }
+        }
+    }
+
+    private fun dispatchTouchEventTimed(ev: MotionEvent): Boolean {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
             // only a field that takes typing (Chat's bar is display-only: its own keyboard, and the game keeps the pad)
             val field = (window?.decorView?.let { hit(it, ev.rawX, ev.rawY) } as? EditText)?.takeIf { it.isFocusable && it.isEnabled }
@@ -392,6 +403,8 @@ private class HostPresentation(outer: Context, display: Display, private val onR
 
     private fun focusable(on: Boolean) {
         typing = on
+        // #230 open lead: the ANR came ~6-11 s after this window gave the focus back (sign-in board); the switches are logged
+        runCatching { com.jrees.wowcompanion.DiagLog.event("touch", "bottom window focusable ${if (on) "on" else "off"}") }
         val w = window ?: return
         if (on) w.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         else {
