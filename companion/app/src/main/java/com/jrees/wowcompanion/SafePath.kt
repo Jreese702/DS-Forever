@@ -975,8 +975,8 @@ object SafePath {
                         chunks[ch]
                     }
                 }
-                z.write(job.file("safepath/zones/$map.bin"))
-                zones.drop(map)
+                // review of #207: the water's reads are yield points now, so the zone's ground is written only after its water - a pause
+                // mid-water must not leave zones/$map.bin without water/$map.bin (a draft would read every lake and lava as walkable)
                 val wt0 = System.nanoTime()
                 waterOf.getOrPut(rect.c) {
                     val obj = objs.getOrPut(rect.c) { mapRows[rect.c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) }?.let { Terrain.maidObj0(it) } ?: emptyMap() }
@@ -986,6 +986,8 @@ object SafePath {
                 }.build(rect).write(job.file("safepath/water/$map.bin"))
                 SafePathDiag.harvestStep(id, map, (System.nanoTime() - wt0) / 1_000_000)
                 waters.drop(map)
+                z.write(job.file("safepath/zones/$map.bin"))
+                zones.drop(map)
                 built++
                 job.progress(i + 1, rects.size, "")
             }

@@ -8,7 +8,8 @@ import java.io.File
  * Issues #207 #203 #212 #200 #208 (1.0.27, 8 GB Thors killed for memory): the background art's "never beside the game" pause runs from a
  * step's progress report, and groundtex / safepathzones / terrain reported once per ZONE - the game files (~450 MB native) stayed open
  * up to ~35 s after the game started while it grew to ~1.9 GB. Every per-tile game-file read in those steps (and seamless's per-zone
- * picture and per-tile write) is now a yield point; a read added later without one fails here.
+ * picture and per-tile write) is now a yield point; a read added later without one fails here. Review follow-up: safepathzones writes a
+ * zone's ground only after its water, and seamless recycles its bitmaps when a pause throws.
  */
 class ArtYieldPointsTest {
     private val src = listOf("../companion/app/src/main/java/com/jrees/wowcompanion", "companion/app/src/main/java/com/jrees/wowcompanion")
@@ -56,6 +57,27 @@ class ArtYieldPointsTest {
         assertTrue(all.contains("composite(art, model, rects, cont, variant) { job.yieldPoint("))
         assertTrue(all.contains("pyramid(big) { rel, b -> job.yieldPoint("))
         assertTrue(Regex("for \\(z in zonesOf\\(cont, model, rects\\)\\) \\{\\s*yieldPoint\\(\\)").containsMatchIn(all))
+    }
+
+    @Test fun safepathZonesWritesTheGroundOnlyAfterItsWater() {
+        // review of #207: a pause mid-water must not leave zones/$map.bin without water/$map.bin (Ground's '?: true' = all water walkable)
+        val b = body("SafePath.kt", "safepathzones").joinToString("\n")
+        val water = b.indexOf("write(job.file(\"safepath/water/\$map.bin\"))")
+        val wDrop = b.indexOf("waters.drop(map)")
+        val zone = b.indexOf("z.write(job.file(\"safepath/zones/\$map.bin\"))")
+        val zDrop = b.indexOf("zones.drop(map)")
+        assertTrue("both writes found", water >= 0 && zone >= 0 && wDrop >= 0 && zDrop >= 0)
+        assertTrue("the zone's ground is written after its water", zone > water && zone > wDrop && zDrop > zone)
+        assertTrue("no second zones write", Regex("safepath/zones/").findAll(b).count() == 1)
+    }
+
+    @Test fun seamlessRecyclesItsPicturesWhenAPauseThrows() {
+        // review of #207: the yield points throw PausedForGame mid-picture; the 43 MB continent bitmap (and the pyramid's level) must not leak
+        val all = File(src, "Seamless.kt").readText()
+        assertTrue("STEP recycles big in a finally", Regex("try \\{ pyramid\\(big\\)[\\s\\S]{0,300}?\\}\\s*finally \\{ big.recycle\\(\\) \\}").containsMatchIn(all))
+        assertTrue("composite recycles on the throw path", all.contains("catch (t: Throwable) { zb?.recycle(); big.recycle(); throw t }"))
+        assertTrue("pyramid recycles its level in a finally", all.contains("} finally { if (lv !== big) lv.recycle() }"))
+        assertTrue("pyramid recycles the tile in hand", all.contains("try { write(\"\$level/\${cc}_\$r.webp\", t) } finally { if (t !== lv) t.recycle() }"))
     }
 
     @Test fun theYieldPointIsTheProgressReport() {
