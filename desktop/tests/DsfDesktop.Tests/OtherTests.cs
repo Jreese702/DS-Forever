@@ -13,6 +13,21 @@ using DsfDesktop.Sunshine;
 
 namespace DsfDesktop.Tests
 {
+    /// <summary>issue #54: the welcome says whether Sunshine can make the Thor's controller pad (ViGEmBus)</summary>
+    public static class PadDriverTests
+    {
+        [Test]
+        public static void SaysWhetherTheControllerDriverIsThere()
+        {
+            A.Eq("vigem", PadDriver.Word(true));
+            A.Eq("missing", PadDriver.Word(false));
+            A.Eq("unknown", PadDriver.Word(null));
+            var now = PadDriver.Now();
+            A.True(now == "vigem" || now == "missing" || now == "unknown", "one of the three words: " + now);
+            A.Eq(now, PadDriver.Now(), "cached between welcomes");
+        }
+    }
+
     public static class WsTests
     {
         [Test]

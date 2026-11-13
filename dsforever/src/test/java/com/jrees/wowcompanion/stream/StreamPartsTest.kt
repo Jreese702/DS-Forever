@@ -231,6 +231,16 @@ class StreamPartsTest {
         assertEquals(BridgeMsg.Welcome("d1", "Den", true, 47989, 47984, pc = PcWow()),
             BridgeProtocol.parse(o("t" to "welcome", "proto" to 1, "host_id" to "d1", "pc_name" to "Den", "wow" to JSONObject().put("running", true), "sunshine" to sun)))
         assertEquals(BridgeMsg.Error("unauthorized", "pair again"), BridgeProtocol.parse(o("t" to "error", "error" to "unauthorized", "detail" to "pair again")))
+        // issue #54: a newer Desktop's word on the controller driver; an older Desktop says nothing
+        assertEquals("missing", (BridgeProtocol.parse(o("t" to "welcome", "host_id" to "d1", "pad_driver" to "missing", "sunshine" to sun)) as BridgeMsg.Welcome).padDriver)
+        assertEquals("", (BridgeProtocol.parse(o("t" to "welcome", "host_id" to "d1", "sunshine" to sun)) as BridgeMsg.Welcome).padDriver)
+        assertTrue(PadNote.driver("missing").startsWith("MISSING"))
+        assertEquals("installed", PadNote.driver("vigem"))
+        assertEquals("not reported (an older Desktop)", PadNote.driver(""))
+        assertEquals("controller: nothing sent", PadNote.sent(0, "vigem"))
+        assertEquals("controller: 12 inputs sent, but the PC has no ViGEmBus", PadNote.sent(12, "missing"))
+        assertEquals("controller: 12 inputs sent", PadNote.sent(12, "vigem"))
+        assertEquals("controller: not sent (the stream library was not loaded)", PadNote.sent(-1, ""))
         assertEquals(BridgeMsg.Doc(7, 99L, "{}"), BridgeProtocol.parse(o("t" to "doc", "seq" to 7, "gt" to 99, "doc" to "{}")))
         assertEquals(BridgeMsg.Lines(listOf("a", "b")), BridgeProtocol.parse(o("t" to "lines", "l" to org.json.JSONArray(listOf("a", "b")))))
         assertEquals(BridgeMsg.PairChallenge("n1", 5, false), BridgeProtocol.parse(o("t" to "pair_challenge", "nonce" to "n1", "attempts_left" to 5, "locked" to false)))

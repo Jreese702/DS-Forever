@@ -280,6 +280,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     /** Desktop listed the PC's home-network addresses: the one on this Wi-Fi is tried first next time (Route); its Tailscale ones are
      *  remembered for away from home, and Sunshine's ports it chose (the user, 2026-11-11: streaming away fixes) */
     private fun welcomed(w: BridgeMsg.Welcome) {
+        // issue #54 ("on pc stream I cant use my ayn thor to play, input doesnt work"): the PC's word on its controller driver, in the report
+        if (w.padDriver != padDriver) { padDriver = w.padDriver; Log.i(TAG, "PC controller driver (ViGEmBus): " + PadNote.driver(w.padDriver)) }
         val h = host ?: return
         var n = Route.reported(h, w.lan, NetProbe.subnet(activity), w.tailscale)
         if (w.httpPort > 0 && w.httpsPort > 0 && (w.httpPort != n.httpPort || w.httpsPort != n.httpsPort)) n = n.copy(httpPort = w.httpPort, httpsPort = w.httpsPort)
@@ -385,6 +387,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private fun onStarted(w: Int, h: Int) {
         policy.reset()
+        padSent = 0
         show(Screen.STREAMING)
         val k = StreamKeys(MoonBridge.INPUT, w, h).also { keys = it }
         DsForeverScreen.current?.attachStream(k)
@@ -404,7 +407,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun onEnded(error: Int, notPaired: Boolean, message: String) {
         val wasStreaming = screen == Screen.STREAMING
         teardown()
-        Log.i(TAG, "stream ended ($error, paired ${!notPaired}): $message")
+        Log.i(TAG, "stream ended ($error, paired ${!notPaired}): $message; " + PadNote.sent(padSent, padDriver))
         if (!isOpen) return
         if (notPaired) { problem(Diagnosis.Reason.NOT_PAIRED.title, Diagnosis.Reason.NOT_PAIRED.detail, message, auto = false); return }
         if (wasStreaming) policy.reset()
@@ -734,8 +737,13 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     fun cancelTouch() { touchIds.clear(); touchMouse?.cancel() }
 
+    /** issue #54: controller states sent to the PC this stream, and the PC's controller driver word (a Desktop with this fix) */
+    private var padSent = 0
+    private var padDriver = ""
+
     private fun sendPad() {
-        if (!MoonBridge.loaded) return
+        if (!MoonBridge.loaded) { if (padSent == 0) { padSent = -1; Log.w(TAG, "pad: not sent (the stream library is not loaded)") }; return }
+        if (padSent >= 0 && padSent++ == 0) Log.i(TAG, "pad: first controller input sent to the PC; " + PadNote.driver(padDriver))
         val s = pad.snapshot()
         MoonBridge.sendMultiControllerInput(0, 1, s.buttons, s.lt.toByte(), s.rt.toByte(), s.lx.toShort(), s.ly.toShort(), s.rx.toShort(), s.ry.toShort())
     }

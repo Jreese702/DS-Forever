@@ -282,6 +282,9 @@ namespace DsfDesktop.App
                 Log.I("sunshine: setting its login failed");
             api = new SunshineApi(port, Settings.SunshineUser, Pass, SunshineLayout.Cert);
             Sunshine.Start();
+            // issue #54: Sunshine's virtual Xbox pad needs ViGEmBus; without it the Thor's controller does nothing on the PC
+            var pad = PadDriver.Now();
+            Log.I("controller driver (ViGEmBus): " + pad + (pad == "missing" ? " - the Thor's controller can't reach WoW until it is installed" : ""));
         }
 
         // no prep command: the portable Sunshine can't start ours (error 5, tracking 252f5ec7); the Thor's bridge "focus" covers it
@@ -994,6 +997,8 @@ namespace DsfDesktop.App
                 ["uniqueid"] = SunshineId,
             },
             ["stream"] = StreamWord,
+            // issue #54: whether Sunshine can make the Thor's controller pad (ViGEmBus): "vigem" / "missing" / "unknown" (an older Thor ignores it)
+            ["pad_driver"] = PadDriver.Now(),
             ["wow"] = new Dictionary<string, object>
             {
                 ["found"] = Wow != null, ["flavor"] = Flavor, ["running"] = WowWindow.IsRunning(), ["focused"] = WowWindow.IsForeground(),
