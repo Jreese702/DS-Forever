@@ -185,6 +185,10 @@ object HomeSettings {
     var clockBags: Boolean
         get() = prefs?.getBoolean(KEY_CLOCK_BAGS, true) ?: true
         set(v) { if (v != clockBags) { prefs?.edit()?.putBoolean(KEY_CLOCK_BAGS, v)?.apply(); for (l in listeners) l() } }
+    /** feat/clock-extras-v2 (the user: "there should also be an ammo option"): the equipped ammo's icon + count (shown only with ammo) */
+    var clockAmmo: Boolean
+        get() = prefs?.getBoolean(KEY_CLOCK_AMMO, true) ?: true
+        set(v) { if (v != clockAmmo) { prefs?.edit()?.putBoolean(KEY_CLOCK_AMMO, v)?.apply(); for (l in listeners) l() } }
 
     fun onChange(l: () -> Unit) { listeners.add(l) }
 
@@ -194,6 +198,7 @@ object HomeSettings {
     private const val KEY_CLOCK_TELEPORT = "clockTeleport"
     private const val KEY_CLOCK_GOLD = "clockGold"
     private const val KEY_CLOCK_BAGS = "clockBags"
+    private const val KEY_CLOCK_AMMO = "clockAmmo"
     private const val KEY_COMBAT_GROW = "combatGrow"
     private const val KEY_SWING = "swingTimer"
     private const val KEY_PAUSE_TAP = "pauseTap"
@@ -552,6 +557,8 @@ class HomeSettingsSection(context: Context,
             listOf({ HomeSettings.clockGold = true }, { HomeSettings.clockGold = false }))
         y = row(c, y + GAP, "Free bag slots", listOf("Beside the clock."), listOf("On", "Off"), if (HomeSettings.clockBags) 0 else 1,
             listOf({ HomeSettings.clockBags = true }, { HomeSettings.clockBags = false }))
+        y = row(c, y + GAP, "Ammo", listOf("Beside the clock."), listOf("On", "Off"), if (HomeSettings.clockAmmo) 0 else 1,
+            listOf({ HomeSettings.clockAmmo = true }, { HomeSettings.clockAmmo = false }))
         // START ATTACK ON CAST (Spells' m13): Off / On, from the add-on's word (null = an older add-on: no row); its notes under it
         HomeAttackSwitch.state?.let { s ->
             y = row(c, y + GAP, "Start the attack when a spell is cast",

@@ -1330,8 +1330,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     /** 1.0.18: a second listener on the held buttons (the LB picture's press feedback) */
     var onButtonsAlso: ((held: Int) -> Unit)? = null
 
+    /** feat/clock-extras-v2: ZL / ZR held changed (Home's clock band fades out while a trigger is held) */
+    var onTriggers: ((lt: Boolean, rt: Boolean) -> Unit)? = null
+
     private fun onPad(lt: Boolean, rt: Boolean, lb: Boolean, rb: Boolean) {
         if (lt != padLt || rt != padRt || lb != padLb || rb != padRb) shoulderAt = SystemClock.elapsedRealtime()   // b-class-free-gap
+        val trig = lt != padLt || rt != padRt
         padLt = lt; padRt = rt; padLb = lb; padRb = rb
         noteClassRadial()                                                 // f-class-radial: Home's mirror
         // 1.0.20 (the user: "the LB and class radial on L and L2 are conflicting and overlapping"): LB + a trigger is the class radial's
@@ -1340,7 +1344,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         noteJoin(SystemClock.elapsedRealtime())
         setLayer(computeLayer())
         invalidate()
+        if (trig) onTriggers?.invoke(lt, rt)
     }
+
+    /** feat/clock-extras-v2: where Home's clock band goes (CastBarPlace.clockSpot) in this view's px; null = not the diamonds band */
+    fun clockSpot(): FloatArray? =
+        if (layout != Layout.DIAMONDS || width <= 0 || height <= 0) null
+        else CastBarPlace.clockSpot(width.toFloat(), height.toFloat() - topPx(), stripH()).also { if (topPx() > 0f) { it[1] += topPx(); it[3] += topPx(); it[5] += topPx() } }
 
     /**
      * Read-only listener on the SAME controller reader (for Home's B: one getevent, not two). Called on the
@@ -3980,6 +3990,35 @@ internal object CastBarPlace {
         } else out[0] = xo + (x + size / 2f) * sx
         out[1] = yo + (y - top + size / 2f) * sx
         out[2] = size * sx
+    }
+
+    /** the ZL + ZR join's centre above the band's bottom strip (frame px; CastView.drawTriggerStrip) */
+    const val JOIN_BOTTOM = 60f
+    /** the clock band's clearance from the buttons round it (frame px) */
+    const val CLOCK_PAD = 4f
+
+    /**
+     * THE CLOCK BAND'S SPOT (feat/clock-extras-v2, the user: "center them where the ZR and LR appear"): Home's DIAMONDS band [w] x [h] at
+     * rest with its bottom strip [strip] px: (left, top, right, bottom, centre x, the join's centre y) in view px. Centred on the join
+     * (the band's middle); as wide as the gap between the D-pad's and the faces' BOTTOM buttons, from under the buttons above that gap
+     * (the D-pad's Right, the faces' left) to the strip, so no item ever stands on a button.
+     */
+    fun clockSpot(w: Float, h: Float, strip: Float): FloatArray {
+        val s = w / FRAME_W
+        val sx = (h - strip) / TAKE_H
+        val box = FloatArray(3)
+        fun edges(pos: Int): FloatArray { slot(pos, true, 1f, sx, 0f, 0f, w, box); val r = box[2] / 2f
+            return floatArrayOf(box[0] - r, box[1] - r, box[0] + r, box[1] + r) }
+        val left = edges(3)[2] + CLOCK_PAD * s
+        val right = edges(7)[0] - CLOCK_PAD * s
+        var top = 0f
+        for (p in 0 until 8) if (p != 3 && p != 7) {
+            val e = edges(p)
+            if (e[2] > left && e[0] < right) top = maxOf(top, e[3])
+        }
+        top += CLOCK_PAD * s
+        val bottom = h - strip - GAP * s
+        return floatArrayOf(left, top, right, bottom, w / 2f, h - strip - JOIN_BOTTOM * s)
     }
 
     /** the bar (left, top, right, bottom) in a [w] x [h] band: [top] = in a fight (along the top edge), else the strip at the bottom */

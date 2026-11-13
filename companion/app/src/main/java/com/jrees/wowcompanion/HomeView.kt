@@ -221,6 +221,7 @@ class HomeView(
         castView.onPadButtons = { held -> onPadHeld(held) }
         castView.onClassRadial = { open -> classLayerShow(open) }             // f-class-radial: the mirror over Home
         castView.onClassStick = { if (classOpen) classLayer.invalidate() }      // b-class-radial-stick: the pointed slice follows
+        castView.onTriggers = { lt, rt -> trigHold(lt || rt) }                  // feat/clock-extras-v2: the clock band fades under a trigger
         // ARRIVING MID-FIGHT (the user, 2026-10-01: "going back home by what ever means, engages the combat transition at that time"):
         // the takeover was already on while Home was hidden, so Home lands at its rest and the combat transition PLAYS from there
         if (flow.takeover) {
@@ -240,6 +241,7 @@ class HomeView(
         if (lent(castView)) {
             castView.layout = CastView.Layout.FULL; castView.bottomLine = false; castView.onPadButtons = null
             castView.onClassRadial = null; castView.onClassStick = null; classLayerShow(false)   // the Cast room draws its own radial
+            castView.onTriggers = null; trigHold(false)
             castView.groundPainter = null; castView.triggerStrip = false; redShown = false
             castView.partyStrip = false
         }
@@ -891,6 +893,11 @@ class HomeView(
             val g = if (bg.has("money")) bg.optLong("money") else null
             val f = if (bg.has("freeGeneral")) bg.optInt("freeGeneral") else if (bg.has("free")) bg.optInt("free") else -1
             if (g != goldCopper || f != bagFree) { goldCopper = g; bagFree = f; invalidate() }
+            // feat/clock-extras-v2: the equipped ammo (slot 0's icon + count, plain data); a bags doc without `equipped` keeps what was said
+            bg.optJSONObject("equipped")?.let { eq ->
+                val a = ClockBand.ammo(eq)
+                if (a?.icon != ammo?.icon || a?.count != ammo?.count) { ammo = a; invalidate() }
+            }
         }
         val fight = HomeCombat.fromFull(msg)?.also { grow.noteFight(it, current, now) }
         val attack = HomeGrow.fromFull(msg)?.also { grow.noteAttack(it, current, now) }
@@ -902,31 +909,49 @@ class HomeView(
     /** r20: the purse in copper (null = not said yet) and the free slots in the bags that take anything (-1 = not said yet) */
     private var goldCopper: Long? = null
     private var bagFree = -1
+    /** feat/clock-extras-v2: the equipped ammo (null = none in the slot / not said) */
+    private var ammo: ClockBand.Ammo? = null
 
     /**
-     * THE CLOCK EXTRAS (feat/item-cooldowns; the user's picks 2026-11-13): beside the clock chip, each by its own Bottom > Home row.
-     * Left: the Hearthstone ("shows ALWAYS: bright icon when ready, icon + mm:ss while cooling") and the class teleport (once known);
-     * right: gold and free bag slots.
+     * THE CLOCK BAND's items (feat/clock-extras-v2; the user's picks 2026-11-13, each by its own Bottom > Home row), in ClockBand's
+     * order: the Hearthstone ("shows ALWAYS: bright icon when ready, icon + mm:ss while cooling"; ready = its soft glow), the class
+     * teleport (once known), the clock + battery, the whole purse (gold, silver, copper), the free bag slots, the equipped ammo.
      */
-    private fun clockExtras(): Pair<List<UiKit.ClockExtra>, List<UiKit.ClockExtra>> {
-        val left = ArrayList<UiKit.ClockExtra>(); val right = ArrayList<UiKit.ClockExtra>()
-        if (HomeSettings.clockHearth && ItemCd.hearthHave != false) {
-            val l = ItemCd.left(ItemCd.HEARTH)
-            left += UiKit.ClockExtra(Icons.get(ItemCd.hearthIcon), if (l > 0.0) ItemCd.mmss(l) else "",
-                cooling = l > 0.0 || ItemCd.dim(ItemCd.HEARTH))
+    private fun bandItems(): List<UiKit.BandItem> {
+        val hs = HomeSettings.clockHearth && ItemCd.hearthHave != false
+        val tp = ItemCd.teleport.takeIf { HomeSettings.clockTeleport }
+        val g = goldCopper.takeIf { HomeSettings.clockGold }
+        val bags = HomeSettings.clockBags && bagFree >= 0
+        val am = ammo.takeIf { HomeSettings.clockAmmo }
+        return ClockBand.kinds(hs, tp != null, g != null, bags, am != null).map { k ->
+            when (k) {
+                ClockBand.Kind.HEARTH -> {
+                    val l = ItemCd.left(ItemCd.HEARTH); val dim = ItemCd.dim(ItemCd.HEARTH)
+                    UiKit.BandItem.Icon(Icons.get(ItemCd.hearthIcon), if (l > 0.0) ItemCd.mmss(l) else "", cooling = l > 0.0 || dim,
+                        glow = ClockBand.hearthGlow(ItemCd.hearthHave, l, dim))
+                }
+                ClockBand.Kind.TELEPORT -> {
+                    val l = ItemCd.teleportLeft()
+                    UiKit.BandItem.Icon(Icons.get(tp!!.icon), if (l > 0.0) ItemCd.mmss(l) else "", cooling = l > 0.0 || ItemCd.teleportDim())
+                }
+                ClockBand.Kind.CLOCK -> UiKit.BandItem.Clock(clockText, batteryPct, charging)
+                ClockBand.Kind.GOLD -> UiKit.BandItem.Gold(Icons.get(GOLD_ICON) ?: Icons.ui("ui-goldicon"), g!!)
+                ClockBand.Kind.BAGS -> UiKit.BandItem.Icon(Icons.get(133633), bagFree.toString())        // the backpack's icon
+                ClockBand.Kind.AMMO -> UiKit.BandItem.Icon(Icons.get(am!!.icon), ClockBand.count(am.count))
+            }
         }
-        val tp = ItemCd.teleport
-        if (HomeSettings.clockTeleport && tp != null) {
-            val l = ItemCd.teleportLeft()
-            left += UiKit.ClockExtra(Icons.get(tp.icon), if (l > 0.0) ItemCd.mmss(l) else "", cooling = l > 0.0 || ItemCd.teleportDim())
-        }
-        val g = goldCopper
-        if (HomeSettings.clockGold && g != null) {
-            val gold = g / 10000L
-            right += UiKit.ClockExtra(Icons.ui("ui-goldicon"), if (gold >= 10000L) "${gold / 1000L}k" else gold.toString())
-        }
-        if (HomeSettings.clockBags && bagFree >= 0) right += UiKit.ClockExtra(Icons.get(133633), bagFree.toString())   // the backpack's icon
-        return left to right
+    }
+
+    /** feat/clock-extras-v2: the clock band under the triggers (ZL / ZR held = fading out, let go = back), Home's own fade */
+    private var trigHeld = false
+    private var trigFrom = 1f
+    private var trigAt = 0L
+    private fun trigVis(now: Long): Float = ClockBand.fade(trigFrom, trigHeld, now - trigAt, FADE_MS)
+    private fun trigHold(held: Boolean) {
+        if (held == trigHeld) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        trigFrom = trigVis(now); trigHeld = held; trigAt = now
+        invalidate()
     }
 
     /** THE WORLD NOTICE over the chat (the user's pick "A: system line"; Chat's chat21 `notice` documents, current only) */
@@ -1880,20 +1905,24 @@ class HomeView(
             if (save >= 0) c.restoreToCount(save)
         }
         if (slideSave >= 0) c.restoreToCount(slideSave)
-        // THE CLOCK AND THE BATTERY at the top centre, between the two diamond groups (17:30: "the time should be on display
-        // at the top center between the controls, right under it, a battery Icon with my current system charge").
+        // THE CLOCK BAND (feat/clock-extras-v2; was the clock + battery at the top centre, LATER 18): the clock, the battery and the
+        // extras turned on in ONE row where the ZL + ZR join shows (CastBarPlace.clockSpot), faded out while a trigger is held.
         // not before the controller layout has come: the Cast view's "Waiting" stands there (UI Art, seen on its emulator)
         if (pauseSave >= 0) { c.restoreToCount(pauseSave); c.save(); c.translate(pauseTop[0], pauseTop[1]) }
-        if (clockA > 0.01f && barsSeen && clockText.isNotEmpty() && batteryPct >= 0) now[Part.BARS]?.let { b ->
-            val save = if (clockA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (clockA * 255).toInt()) else -1
-            val chip = UiKit.clockChip(c, b.centerX(), b.top + 10f, clockText, batteryPct, charging)
-            // r20: the clock extras beside the chip, under the chip's own show / fade rules
-            val (xl, xr) = clockExtras()
-            if (xl.isNotEmpty() || xr.isNotEmpty()) {
-                UiKit.clockExtras(c, chip, xl, xr)
-                if (xl.any { it.value.isNotEmpty() }) postInvalidateDelayed(1000L)   // the mm:ss counts (as the auras' times); nothing ticks otherwise
+        val tNow = android.os.SystemClock.elapsedRealtime()
+        val trigA = trigVis(tNow)
+        if (trigA != (if (trigHeld) 0f else 1f)) postInvalidateOnAnimation()
+        val bandA = clockA * trigA
+        if (bandA > 0.01f && barsSeen && clockText.isNotEmpty() && batteryPct >= 0 && castView.parent === barsSlot) now[Part.BARS]?.let { b ->
+            castView.clockSpot()?.let { spot ->
+                for (i in 0..5) spot[i] += if (i % 2 == 0) b.left else b.top
+                val save = if (bandA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (bandA * 255).toInt()) else -1
+                val items = bandItems()
+                UiKit.clockBand(c, spot, items)
+                // the mm:ss counts (as the auras' times); nothing ticks otherwise
+                if (items.any { it is UiKit.BandItem.Icon && it.value.contains(':') }) postInvalidateDelayed(1000L)
+                if (save >= 0) c.restoreToCount(save)
             }
-            if (save >= 0) c.restoreToCount(save)
         }
         if (pauseSave >= 0) c.restoreToCount(pauseSave)
     }
@@ -2789,6 +2818,8 @@ class HomeView(
         const val ZONE_BAND_BOTTOM = 72f
         /** the page's fade at a move's start (out) and end (in) (HARMONY_SPEC section 3) */
         const val FADE_MS = 120f
+        /** feat/clock-extras-v2: the purse's icon in the clock band (the game's INV_Misc_Coin_01; the gold coin when the pack has none) */
+        const val GOLD_ICON = 133784
         /** the buff button, below the small map's zone bar */
         const val BTN_TOP = ZONE_BAND_BOTTOM + 8f
         /** b129, UI Art: the open map's auras - right-aligned at w - FULL_RIGHT (left of the filter corner and its Start glyph),
