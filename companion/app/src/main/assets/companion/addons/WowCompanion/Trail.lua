@@ -2099,7 +2099,7 @@ end
 --   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
 --   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 --   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-WC.live = { V = "ag9", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+WC.live = { V = "ag10", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -2580,7 +2580,20 @@ do
     -- player who had them on from ag2..ag8 (WowCompanionDB.npFriends: the values ours replaced, test30's npFriendsSet too) gets the
     -- own values back at the first moment out of a fight, and never again after. PadMap's Y glyph over a friend falls back to its
     -- other places (beside the target bar / frame) with no plate to stand on.
+    -- ag10 FRIENDLY PLATES, A SWITCH (the user, 2026-11-13: "friendly plates off ... maybe we should set this as a toggle defaulted to
+    -- off"): Hub's "uisw" NPF_OFF / NPF_ON (Settings > Top > Target, "Friendly plates", per character, Off by default) -> A.friendsSet.
+    -- Off (the default, and with an app that never sends it) = ag9 above: nothing switched on, a value of ours put back once out of a
+    -- fight. On = the behaviour before ag9 (ag2..ag8): out of a fight a FRIENDLY target turns A.NP_FRIEND_CVARS on (the player's own
+    -- values kept in WowCompanionDB.npFriends.orig), no friendly target puts them back; a fight and log out put them back too (the
+    -- events below). Turning it Off puts ours back at the first moment out of a fight.
     A.FRIENDS_ON = false
+    function A.friendsSet(on)
+        on = on == true
+        A.friendsChosen = true
+        if on == A.FRIENDS_ON then return end
+        A.FRIENDS_ON = on
+        A.friendWas = nil                       -- re-decided on the next step
+    end
     function A.friendsStep()
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
         -- test30 set them on once (npFriendsSet): that on is ours to put back (off)
@@ -2588,9 +2601,35 @@ do
             WowCompanionDB.npFriendsSet = nil
             WowCompanionDB.npFriends = WowCompanionDB.npFriends or { orig = { nameplateShowFriends = "0", nameplateShowFriendlyNPCs = "0" } }
         end
-        if type(WowCompanionDB.npFriends) ~= "table" then return end
+        if not A.FRIENDS_ON then
+            A.friendWas = nil
+            if type(WowCompanionDB.npFriends) ~= "table" then return end
+            if pv(InCombatLockdown) == true then return end
+            A.friendsRestore("friendly plates off")
+            return
+        end
+        -- ag10 On: the ag8 rule, as it was
         if pv(InCombatLockdown) == true then return end
-        A.friendsRestore("friendly plates off")
+        local friend = pv(function() return UnitExists("target") end) == true and pv(function() return UnitIsFriend("player", "target") end) == true
+            and pv(function() return UnitIsUnit("target", "player") end) ~= true
+        if friend == A.friendWas then return end
+        A.friendWas = friend
+        if friend then
+            local saved = WowCompanionDB.npFriends
+            for _, cv in ipairs(A.NP_FRIEND_CVARS) do
+                local name, want = cv[1], cv[2]
+                local cur = cvGet(name)
+                if cur and tonumber(cur) ~= tonumber(want) then
+                    saved = saved or { orig = {} }
+                    saved.orig = saved.orig or {}
+                    if saved.orig[name] == nil then saved.orig[name] = cur end
+                    cvSet(name, want)
+                end
+            end
+            WowCompanionDB.npFriends = saved
+        else
+            A.friendsRestore("no friendly target")
+        end
     end
 
     function A.npStep()
