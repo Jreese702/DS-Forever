@@ -2557,7 +2557,8 @@ object UiKit {
         val widths = FloatArray(items.size) { bandWidth(items[it], pt, pv) * fit }
         val pl = ClockBand.place(widths, spot[0], spot[2], spot[4])
         val k = fit * pl.scale
-        val top = (spot[1] + spot[3]) / 2f - ClockBand.CELL_H * k / 2f
+        val whole = pl.lefts.last() + widths.last() * pl.scale - pl.lefts[0]
+        val top = ClockBand.rowTop(spot, pl.lefts[0], pl.lefts[0] + whole, ClockBand.CELL_H * k)
         for ((i, it) in items.withIndex()) {
             val w = widths[i] / fit
             c.save(); c.translate(pl.lefts[i], top); c.scale(k, k)

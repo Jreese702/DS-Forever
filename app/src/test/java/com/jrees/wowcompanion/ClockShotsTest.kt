@@ -146,6 +146,9 @@ class ClockShotsTest {
         // 1 item: the clock alone
         items(false, false, false, false, false); hearth(true)
         page().also { feed(it, true); save(draw(it), "${tag}_n1") }
+        // 2 items: clock, gold (narrow enough to sit on the join itself)
+        items(false, false, true, false, false); hearth(true)
+        page().also { feed(it, true); save(draw(it), "${tag}_n2") }
         // 3 items: clock, Hearthstone (cooling), gold
         items(true, false, true, false, false); hearth(true)
         page().also { feed(it, true); save(draw(it), "${tag}_n3") }

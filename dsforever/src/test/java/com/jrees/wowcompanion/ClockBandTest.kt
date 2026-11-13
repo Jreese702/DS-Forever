@@ -43,6 +43,28 @@ class ClockBandTest {
         }
     }
 
+    @Test fun aNarrowRowSitsOnTheJoinAWideOneUnderTheButtons() {
+        val h = ClockBand.CELL_H
+        // the clock alone (~104 wide) passes between the D-pad's Right and the faces' Y: centred on the join itself
+        val one = ClockBand.place(floatArrayOf(104f), spot[0], spot[2], spot[4])
+        val t1 = ClockBand.rowTop(spot, one.lefts[0], one.lefts[0] + 104f, h)
+        assertEquals(spot[5] - h / 2f, t1, 0.01f)
+        // all six: as low as the spot's middle at most, and on no button at any count
+        val all = floatArrayOf(46f, 46f, 104f, 110f, 28f, 40f)
+        for (n in 1..6) {
+            val w = all.copyOfRange(0, n)
+            val pl = ClockBand.place(w, spot[0], spot[2], spot[4])
+            val x0 = pl.lefts[0]; val x1 = pl.lefts[n - 1] + w[n - 1] * pl.scale
+            val t = ClockBand.rowTop(spot, x0, x1, h * pl.scale)
+            assertTrue(t >= spot[5] - h / 2f - 0.01f && t <= (spot[1] + spot[3]) / 2f - h * pl.scale / 2f + 0.01f)
+            assertTrue(t + h * pl.scale <= 218f - CastBarPlace.REST_STRIP)
+            for (p in 0 until 8) {
+                val e = slotBox(p)
+                assertFalse("n=$n slot $p under the row", e[0] < x1 && e[2] > x0 && e[1] < t + h * pl.scale && e[3] > t)
+            }
+        }
+    }
+
     @Test fun itemsAreSpacedEvenlyAndCentredForEveryCount() {
         val all = floatArrayOf(46f, 46f, 104f, 110f, 28f, 40f)
         for (n in 1..6) {

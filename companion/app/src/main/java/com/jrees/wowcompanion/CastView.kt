@@ -1350,7 +1350,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     /** feat/clock-extras-v2: where Home's clock band goes (CastBarPlace.clockSpot) in this view's px; null = not the diamonds band */
     fun clockSpot(): FloatArray? =
         if (layout != Layout.DIAMONDS || width <= 0 || height <= 0) null
-        else CastBarPlace.clockSpot(width.toFloat(), height.toFloat() - topPx(), stripH()).also { if (topPx() > 0f) { it[1] += topPx(); it[3] += topPx(); it[5] += topPx() } }
+        else CastBarPlace.clockSpot(width.toFloat(), height.toFloat() - topPx(), stripH()).also { if (topPx() > 0f) for (i in 1 until it.size - 1 step 2) it[i] += topPx() }
 
     /**
      * Read-only listener on the SAME controller reader (for Home's B: one getevent, not two). Called on the
@@ -4018,7 +4018,13 @@ internal object CastBarPlace {
         }
         top += CLOCK_PAD * s
         val bottom = h - strip - GAP * s
-        return floatArrayOf(left, top, right, bottom, w / 2f, h - strip - JOIN_BOTTOM * s)
+        // review: then every button's box (left, top, right, bottom; 6 + 4 * pos) and the clearance, so a row narrow enough to pass
+        // between the D-pad's Right and the faces' Y rises onto the join itself (ClockBand.rowTop)
+        val out = FloatArray(6 + 4 * 8 + 1)
+        floatArrayOf(left, top, right, bottom, w / 2f, h - strip - JOIN_BOTTOM * s).copyInto(out)
+        for (p in 0 until 8) edges(p).copyInto(out, 6 + 4 * p)
+        out[out.size - 1] = CLOCK_PAD * s
+        return out
     }
 
     /** the bar (left, top, right, bottom) in a [w] x [h] band: [top] = in a fight (along the top edge), else the strip at the bottom */

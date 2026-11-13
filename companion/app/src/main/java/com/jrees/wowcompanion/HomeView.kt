@@ -1915,7 +1915,7 @@ class HomeView(
         val bandA = clockA * trigA
         if (bandA > 0.01f && barsSeen && clockText.isNotEmpty() && batteryPct >= 0 && castView.parent === barsSlot) now[Part.BARS]?.let { b ->
             castView.clockSpot()?.let { spot ->
-                for (i in 0..5) spot[i] += if (i % 2 == 0) b.left else b.top
+                for (i in 0 until spot.size - 1) spot[i] += if (i % 2 == 0) b.left else b.top
                 val save = if (bandA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (bandA * 255).toInt()) else -1
                 val items = bandItems()
                 UiKit.clockBand(c, spot, items)

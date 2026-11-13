@@ -46,6 +46,23 @@ object ClockBand {
     }
 
     /**
+     * The row's top (review of feat/clock-extras-v2: "center them where the ZR and LR appear"): ON the join (centred on its y) when the
+     * row [x0]..[x1], [cellH] high, passes clear of every button there; else just under the buttons it would touch, never lower than
+     * the spot's own middle. [spot] = CastBarPlace.clockSpot (left, top, right, bottom, cx, joinY, 8 button boxes, the clearance).
+     */
+    fun rowTop(spot: FloatArray, x0: Float, x1: Float, cellH: Float): Float {
+        val low = (spot[1] + spot[3]) / 2f - cellH / 2f
+        if (spot.size < 6 + 32 + 1) return low
+        val pad = spot[spot.size - 1]
+        var top = spot[5] - cellH / 2f
+        for (p in 0 until 8) {
+            val o = 6 + 4 * p
+            if (spot[o] < x1 + pad && spot[o + 2] > x0 - pad) top = maxOf(top, spot[o + 3] + pad)
+        }
+        return minOf(top, low)
+    }
+
+    /**
      * The row's alpha under the triggers (1 = shown): from [from] toward hidden while [held], back while let go, linear over [ms]
      * (Home's own overlay fade, HomeView.FADE_MS), [elapsed] ms since the last change
      */
