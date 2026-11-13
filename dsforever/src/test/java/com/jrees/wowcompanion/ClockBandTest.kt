@@ -12,11 +12,21 @@ import org.junit.Test
  * THE CLOCK BAND (feat/clock-extras-v2; the user, 2026-11-13: "lets center them where the ZR and LR appear (fade them out when holding ZL
  * and ZR) and make them space out evenly based on what else is turned on. the gold should be the total gold (including silver and copper)
  * when the hearthstone is ready it should have a subtle glow there should also be an ammo option."), off-device: the spot on the real
- * slot table, the even row, the trigger fade, the purse, the glow, the ammo.
+ * slot table, the even row, the trigger fade, the purse, the glow, the ammo. The clock + battery are NOT in the row (the user: "No the
+ * time and Battery still needs to be centered at the top like it was before, do not change that"): the row stays under the top chip.
  */
 class ClockBandTest {
     /** Home's DIAMONDS band at rest on the Thor: 1240 x 218, the 18 px cast-bar strip */
     private val spot = CastBarPlace.clockSpot(1240f, 218f, CastBarPlace.REST_STRIP)
+    /** the top clock chip's bottom + the clearance (HomeView: clockChip at b.top + 10, 84 high, as at 2e564ee8) */
+    private val floor = ClockBand.CHIP_TOP + ClockBand.CHIP_H + ClockBand.CHIP_PAD
+    /** the extras' widths (Hearthstone, class teleport, the purse, free bag slots, ammo) */
+    private val all = floatArrayOf(46f, 46f, 110f, 28f, 40f)
+
+    @Test fun theChipIsAsBefore() {
+        assertEquals(10f, ClockBand.CHIP_TOP, 0f)
+        assertEquals(84f, ClockBand.CHIP_H, 0f)
+    }
 
     private fun slotBox(pos: Int): FloatArray {
         val b = FloatArray(3)
@@ -45,18 +55,18 @@ class ClockBandTest {
 
     @Test fun aNarrowRowSitsOnTheJoinAWideOneUnderTheButtons() {
         val h = ClockBand.CELL_H
-        // the clock alone (~104 wide) passes between the D-pad's Right and the faces' Y: centred on the join itself
-        val one = ClockBand.place(floatArrayOf(104f), spot[0], spot[2], spot[4])
-        val t1 = ClockBand.rowTop(spot, one.lefts[0], one.lefts[0] + 104f, h)
+        // one extra (the Hearthstone, 46 wide) passes between the D-pad's Right and the faces' Y: centred on the join itself
+        val one = ClockBand.place(floatArrayOf(46f), spot[0], spot[2], spot[4])
+        val t1 = ClockBand.rowTop(spot, one.lefts[0], one.lefts[0] + 46f, h, floor)
         assertEquals(spot[5] - h / 2f, t1, 0.01f)
-        // all six: as low as the spot's middle at most, and on no button at any count
-        val all = floatArrayOf(46f, 46f, 104f, 110f, 28f, 40f)
-        for (n in 1..6) {
+        // 1..5: as low as the spot's middle at most, under the clock chip, above the strip, on no button at any count
+        for (n in 1..5) {
             val w = all.copyOfRange(0, n)
             val pl = ClockBand.place(w, spot[0], spot[2], spot[4])
             val x0 = pl.lefts[0]; val x1 = pl.lefts[n - 1] + w[n - 1] * pl.scale
-            val t = ClockBand.rowTop(spot, x0, x1, h * pl.scale)
+            val t = ClockBand.rowTop(spot, x0, x1, h * pl.scale, floor)
             assertTrue(t >= spot[5] - h / 2f - 0.01f && t <= (spot[1] + spot[3]) / 2f - h * pl.scale / 2f + 0.01f)
+            assertTrue("n=$n under the clock chip", t >= floor)
             assertTrue(t + h * pl.scale <= 218f - CastBarPlace.REST_STRIP)
             for (p in 0 until 8) {
                 val e = slotBox(p)
@@ -65,9 +75,15 @@ class ClockBandTest {
         }
     }
 
+    @Test fun theFloorHoldsTheRowUnderTheChip() {
+        // a spot reaching up past the chip: the row is pushed down to the floor, never onto the chip
+        val s = spot.copyOf(); s[5] = 60f
+        assertEquals(floor, ClockBand.rowTop(s, 600f, 640f, ClockBand.CELL_H, floor), 0.01f)
+        assertEquals(60f - ClockBand.CELL_H / 2f, ClockBand.rowTop(s, 600f, 640f, ClockBand.CELL_H), 0.01f)   // no floor: on the join
+    }
+
     @Test fun itemsAreSpacedEvenlyAndCentredForEveryCount() {
-        val all = floatArrayOf(46f, 46f, 104f, 110f, 28f, 40f)
-        for (n in 1..6) {
+        for (n in 1..5) {
             val w = all.copyOfRange(0, n)
             val pl = ClockBand.place(w, spot[0], spot[2], spot[4])
             assertEquals(1f, pl.scale, 0f)
@@ -78,17 +94,17 @@ class ClockBandTest {
             assertTrue(first >= spot[0] - 0.01f && last <= spot[2] + 0.01f)
         }
         // fewer items stand closer to the middle; never wider apart than GAP_MAX
-        val two = ClockBand.place(floatArrayOf(46f, 104f), spot[0], spot[2], spot[4])
+        val two = ClockBand.place(floatArrayOf(46f, 110f), spot[0], spot[2], spot[4])
         assertEquals(ClockBand.GAP_MAX, two.gap, 0.01f)
     }
 
     @Test fun aRowTooWideScalesDownToFitTheSpot() {
-        val w = FloatArray(6) { 120f }
+        val w = FloatArray(5) { 160f }
         val pl = ClockBand.place(w, spot[0], spot[2], spot[4])
         assertTrue(pl.scale < 1f)
         val half = minOf(spot[4] - spot[0], spot[2] - spot[4])                // centred on the join: the nearer edge
         assertEquals(spot[4] - half, pl.lefts[0], 0.5f)
-        assertEquals(spot[4] + half, pl.lefts[5] + 120f * pl.scale, 0.5f)
+        assertEquals(spot[4] + half, pl.lefts[4] + 160f * pl.scale, 0.5f)
         assertEquals(ClockBand.GAP_MIN * pl.scale, pl.gap, 0.01f)
     }
 
@@ -130,10 +146,12 @@ class ClockBandTest {
         assertEquals("1843", ClockBand.count(1843)); assertEquals("12k", ClockBand.count(12_400))
     }
 
-    @Test fun theOrderKeepsTheClockInTheMiddle() {
+    @Test fun theOrderAndNoClockInTheRow() {
         val k = ClockBand.Kind.values().toList()
+        assertEquals(5, k.size)                                               // the clock is the top chip, not a row item
+        assertFalse(k.any { it.name == "CLOCK" })
         assertEquals(k, ClockBand.kinds(true, true, true, true, true))
-        assertEquals(listOf(ClockBand.Kind.CLOCK), ClockBand.kinds(false, false, false, false, false))
-        assertEquals(listOf(ClockBand.Kind.HEARTH, ClockBand.Kind.CLOCK, ClockBand.Kind.AMMO), ClockBand.kinds(true, false, false, false, true))
+        assertEquals(emptyList<ClockBand.Kind>(), ClockBand.kinds(false, false, false, false, false))
+        assertEquals(listOf(ClockBand.Kind.HEARTH, ClockBand.Kind.AMMO), ClockBand.kinds(true, false, false, false, true))
     }
 }

@@ -913,9 +913,10 @@ class HomeView(
     private var ammo: ClockBand.Ammo? = null
 
     /**
-     * THE CLOCK BAND's items (feat/clock-extras-v2; the user's picks 2026-11-13, each by its own Bottom > Home row), in ClockBand's
+     * THE EXTRAS ROW's items (feat/clock-extras-v2; the user's picks 2026-11-13, each by its own Bottom > Home row), in ClockBand's
      * order: the Hearthstone ("shows ALWAYS: bright icon when ready, icon + mm:ss while cooling"; ready = its soft glow), the class
-     * teleport (once known), the clock + battery, the whole purse (gold, silver, copper), the free bag slots, the equipped ammo.
+     * teleport (once known), the whole purse (gold, silver, copper), the free bag slots, the equipped ammo. The clock + battery are
+     * NOT in it: the top clock chip, as before (the user: "the time and Battery still needs to be centered at the top like it was before").
      */
     private fun bandItems(): List<UiKit.BandItem> {
         val hs = HomeSettings.clockHearth && ItemCd.hearthHave != false
@@ -934,7 +935,6 @@ class HomeView(
                     val l = ItemCd.teleportLeft()
                     UiKit.BandItem.Icon(Icons.get(tp!!.icon), if (l > 0.0) ItemCd.mmss(l) else "", cooling = l > 0.0 || ItemCd.teleportDim())
                 }
-                ClockBand.Kind.CLOCK -> UiKit.BandItem.Clock(clockText, batteryPct, charging)
                 ClockBand.Kind.GOLD -> UiKit.BandItem.Gold(Icons.get(GOLD_ICON) ?: Icons.ui("ui-goldicon"), g!!)
                 ClockBand.Kind.BAGS -> UiKit.BandItem.Icon(Icons.get(133633), bagFree.toString())        // the backpack's icon
                 ClockBand.Kind.AMMO -> UiKit.BandItem.Icon(Icons.get(am!!.icon), ClockBand.count(am.count))
@@ -942,7 +942,7 @@ class HomeView(
         }
     }
 
-    /** feat/clock-extras-v2: the clock band under the triggers (ZL / ZR held = fading out, let go = back), Home's own fade */
+    /** feat/clock-extras-v2: the extras row under the triggers (ZL / ZR held = fading out, let go = back), Home's own fade; the clock chip keeps its own rules */
     private var trigHeld = false
     private var trigFrom = 1f
     private var trigAt = 0L
@@ -1905,20 +1905,27 @@ class HomeView(
             if (save >= 0) c.restoreToCount(save)
         }
         if (slideSave >= 0) c.restoreToCount(slideSave)
-        // THE CLOCK BAND (feat/clock-extras-v2; was the clock + battery at the top centre, LATER 18): the clock, the battery and the
-        // extras turned on in ONE row where the ZL + ZR join shows (CastBarPlace.clockSpot), faded out while a trigger is held.
+        // THE CLOCK AND THE BATTERY at the top centre, between the two diamond groups (17:30: "the time should be on display
+        // at the top center between the controls, right under it, a battery Icon with my current system charge").
         // not before the controller layout has come: the Cast view's "Waiting" stands there (UI Art, seen on its emulator)
         if (pauseSave >= 0) { c.restoreToCount(pauseSave); c.save(); c.translate(pauseTop[0], pauseTop[1]) }
+        if (clockA > 0.01f && barsSeen && clockText.isNotEmpty() && batteryPct >= 0) now[Part.BARS]?.let { b ->
+            val save = if (clockA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (clockA * 255).toInt()) else -1
+            UiKit.clockChip(c, b.centerX(), b.top + 10f, clockText, batteryPct, charging)
+            if (save >= 0) c.restoreToCount(save)
+        }
+        // THE EXTRAS ROW (feat/clock-extras-v2): the extras turned on in ONE row where the ZL + ZR join shows (CastBarPlace.clockSpot),
+        // under the clock chip, faded out while a trigger is held (the chip is not), under the chip's own combat / pause fades too
         val tNow = android.os.SystemClock.elapsedRealtime()
         val trigA = trigVis(tNow)
         if (trigA != (if (trigHeld) 0f else 1f)) postInvalidateOnAnimation()
         val bandA = clockA * trigA
-        if (bandA > 0.01f && barsSeen && clockText.isNotEmpty() && batteryPct >= 0 && castView.parent === barsSlot) now[Part.BARS]?.let { b ->
-            castView.clockSpot()?.let { spot ->
+        if (bandA > 0.01f && barsSeen && castView.parent === barsSlot) now[Part.BARS]?.let { b ->
+            val items = bandItems()
+            if (items.isNotEmpty()) castView.clockSpot()?.let { spot ->
                 for (i in 0 until spot.size - 1) spot[i] += if (i % 2 == 0) b.left else b.top
                 val save = if (bandA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (bandA * 255).toInt()) else -1
-                val items = bandItems()
-                UiKit.clockBand(c, spot, items)
+                UiKit.clockBand(c, spot, items, b.top + ClockBand.CHIP_TOP + ClockBand.CHIP_H + ClockBand.CHIP_PAD)
                 // the mm:ss counts (as the auras' times); nothing ticks otherwise
                 if (items.any { it is UiKit.BandItem.Icon && it.value.contains(':') }) postInvalidateDelayed(1000L)
                 if (save >= 0) c.restoreToCount(save)

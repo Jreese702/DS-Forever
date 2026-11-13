@@ -2508,29 +2508,59 @@ object UiKit {
         if (layer) c.restore()
     }
 
-    /** one item of THE CLOCK BAND (ClockBand; feat/clock-extras-v2): the clock + battery, an icon over its value, or the purse */
+    /**
+     * THE DEVICE'S CLOCK AND BATTERY (LATER 18; the user: "the current format of the time and battery kind of stick out and don't fit
+     * in", then 2026-10-01: "I don't really like the box around the time and battery"): NO well, centred on [cx] from [top]: the time
+     * in the module text colour, under it the battery in the kit's bronze (red only under 20 %; the gold bolt while [charging]) and the
+     * percentage, dim. Returns the area it covers (84 high).
+     */
+    fun clockChip(c: Canvas, cx: Float, top: Float, time: String, battery: Int, charging: Boolean = false, alpha: Int = 255): RectF {
+        val pt = numberPaint(32f, Theme.text).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha }
+        val pp = numberPaint(21f, Theme.textDim).apply { this.alpha = alpha }
+        val label = "$battery%"
+        val bw = 28f; val bh = 14f
+        val row = bw + 3f + 9f + pp.measureText(label)
+        val w = maxOf(pt.measureText(time), row) + 2f * 20f
+        val r = RectF(cx - w / 2f, top, cx + w / 2f, top + 84f)
+        c.drawText(Tr.t(time), cx, top + 31f - (pt.ascent() + pt.descent()) / 2f, pt)
+        val bx = cx - row / 2f; val by = top + 62f - bh / 2f
+        val case = RectF(bx, by, bx + bw, by + bh)
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Theme.bronze; pFlat.alpha = alpha
+        c.drawRoundRect(case, 2f, 2f, pFlat)
+        pFlat.style = Paint.Style.FILL
+        c.drawRect(case.right, case.centerY() - 3f, case.right + 3f, case.centerY() + 3f, pFlat)
+        pFlat.color = if (battery < 20) Color.rgb(210, 50, 40) else Theme.bronze; pFlat.alpha = alpha
+        c.drawRect(case.left + 3f, case.top + 3f, case.left + 3f + (bw - 6f) * (battery.coerceIn(0, 100) / 100f), case.bottom - 3f, pFlat)
+        if (charging) {
+            val bolt = android.graphics.Path().apply {
+                moveTo(case.centerX() + 2f, case.top - 2f); lineTo(case.centerX() - 5f, case.centerY() + 1f)
+                lineTo(case.centerX(), case.centerY() + 1f); lineTo(case.centerX() - 2f, case.bottom + 2f)
+                lineTo(case.centerX() + 5f, case.centerY() - 1f); lineTo(case.centerX(), case.centerY() - 1f); close()
+            }
+            pFlat.color = Theme.gold; pFlat.alpha = alpha; c.drawPath(bolt, pFlat)
+        }
+        pFlat.alpha = 255
+        c.drawText(Tr.t(label), case.right + 12f, case.centerY() - (pp.ascent() + pp.descent()) / 2f, pp)
+        return r
+    }
+
+    /** one item of THE EXTRAS ROW (ClockBand; feat/clock-extras-v2): an icon over its value, or the purse (the clock stays clockChip) */
     sealed class BandItem {
-        /** the device's time over its battery ([charging] = the gold bolt; red under 20 %) */
-        class Clock(val time: String, val battery: Int, val charging: Boolean) : BandItem()
         /** an icon over its short value ("" = the icon alone); [cooling] = the icon dimmed; [glow] = the soft ready halo (the Hearthstone) */
         class Icon(val icon: Bitmap?, val value: String, val cooling: Boolean = false, val glow: Boolean = false) : BandItem()
         /** the whole purse in copper: [icon] over 12[g] 34[s] 56[c] with the game's coins */
         class Gold(val icon: Bitmap?, val copper: Long) : BandItem()
     }
 
-    private const val BAND_TIME = 28f
     private const val BAND_VALUE = 18f
     private const val BAND_COIN = 13f
-    /** the value line's baseline in the cell ([ClockBand.CELL_H] high: the icon / the time 0..[ClockBand.ICON], the value under it) */
+    /** the value line's baseline in the cell ([ClockBand.CELL_H] high: the icon 0..[ClockBand.ICON], the value under it) */
     private const val BAND_BASE = 45f
 
-    private fun bandPaints(alpha: Int): Pair<Paint, Paint> =
-        numberPaint(BAND_TIME, Theme.text).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha } to
-            numberPaint(BAND_VALUE, Theme.text).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha }
+    private fun bandPaint(alpha: Int): Paint = numberPaint(BAND_VALUE, Theme.text).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha }
 
     /** an item's width in the band (unscaled px) */
-    private fun bandWidth(it: BandItem, pt: Paint, pv: Paint): Float = when (it) {
-        is BandItem.Clock -> maxOf(pt.measureText(it.time), 24f + 9f + pv.measureText("${it.battery}%"))
+    private fun bandWidth(it: BandItem, pv: Paint): Float = when (it) {
         is BandItem.Icon -> maxOf(ClockBand.ICON, if (it.value.isEmpty()) 0f else pv.measureText(it.value))
         is BandItem.Gold -> maxOf(ClockBand.ICON, goldWidth(it.copper, pv))
     }
@@ -2545,25 +2575,25 @@ object UiKit {
     private val COIN_RGB = intArrayOf(Color.rgb(255, 209, 0), Color.rgb(199, 199, 207), Color.rgb(200, 115, 60))
 
     /**
-     * THE CLOCK BAND (feat/clock-extras-v2; the user, 2026-11-13: "lets center them where the ZR and LR appear ... and make them space out
-     * evenly based on what else is turned on"): [items] in ONE row in [spot] (CastBarPlace.clockSpot: left, top, right, bottom, centre x,
-     * join y), centred on the join, equal gaps (ClockBand.place), each cell an icon (or the time) over its value on one shared baseline.
+     * THE EXTRAS ROW (feat/clock-extras-v2; the user, 2026-11-13: "lets center them where the ZR and LR appear ... and make them space out
+     * evenly based on what else is turned on"; then "the time and Battery still needs to be centered at the top like it was before"):
+     * [items] in ONE row in [spot] (CastBarPlace.clockSpot: left, top, right, bottom, centre x, join y), centred on the join, equal gaps
+     * (ClockBand.place), each cell an icon over its value on one shared baseline, never above [floor] (the top clock chip's bottom).
      * No well, no box: the kit's text with its shadow, each icon in a thin bronze edge. [alpha] = the caller's fades.
      */
-    fun clockBand(c: Canvas, spot: FloatArray, items: List<BandItem>, alpha: Int = 255) {
+    fun clockBand(c: Canvas, spot: FloatArray, items: List<BandItem>, floor: Float = Float.NEGATIVE_INFINITY, alpha: Int = 255) {
         if (items.isEmpty() || alpha <= 0) return
-        val (pt, pv) = bandPaints(alpha)
+        val pv = bandPaint(alpha)
         val fit = ((spot[3] - spot[1]) / ClockBand.CELL_H).coerceAtMost(1f)          // a shorter band: the row shrinks to its height
-        val widths = FloatArray(items.size) { bandWidth(items[it], pt, pv) * fit }
+        val widths = FloatArray(items.size) { bandWidth(items[it], pv) * fit }
         val pl = ClockBand.place(widths, spot[0], spot[2], spot[4])
         val k = fit * pl.scale
         val whole = pl.lefts.last() + widths.last() * pl.scale - pl.lefts[0]
-        val top = ClockBand.rowTop(spot, pl.lefts[0], pl.lefts[0] + whole, ClockBand.CELL_H * k)
+        val top = ClockBand.rowTop(spot, pl.lefts[0], pl.lefts[0] + whole, ClockBand.CELL_H * k, floor)
         for ((i, it) in items.withIndex()) {
             val w = widths[i] / fit
             c.save(); c.translate(pl.lefts[i], top); c.scale(k, k)
             when (it) {
-                is BandItem.Clock -> bandClock(c, w, it, pt, pv, alpha)
                 is BandItem.Icon -> {
                     bandIcon(c, w / 2f, it.icon, it.cooling, it.glow, alpha)
                     if (it.value.isNotEmpty()) c.drawText(Tr.t(it.value), w / 2f, BAND_BASE, pv)
@@ -2575,33 +2605,6 @@ object UiKit {
             }
             c.restore()
         }
-    }
-
-    private fun bandClock(c: Canvas, w: Float, it: BandItem.Clock, pt: Paint, pv: Paint, alpha: Int) {
-        c.drawText(Tr.t(it.time), w / 2f, ClockBand.ICON / 2f - (pt.ascent() + pt.descent()) / 2f, pt)
-        val label = "${it.battery}%"
-        val bw = 24f; val bh = 12f
-        val row = bw + 9f + pv.measureText(label)
-        val bx = w / 2f - row / 2f
-        val cy = BAND_BASE + (pv.ascent() + pv.descent()) / 2f                        // the value line's middle
-        val case = RectF(bx, cy - bh / 2f, bx + bw, cy + bh / 2f)
-        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Theme.bronze; pFlat.alpha = alpha
-        c.drawRoundRect(case, 2f, 2f, pFlat)
-        pFlat.style = Paint.Style.FILL
-        c.drawRect(case.right, case.centerY() - 3f, case.right + 3f, case.centerY() + 3f, pFlat)
-        pFlat.color = if (it.battery < 20) Color.rgb(210, 50, 40) else Theme.bronze; pFlat.alpha = alpha
-        c.drawRect(case.left + 3f, case.top + 3f, case.left + 3f + (bw - 6f) * (it.battery.coerceIn(0, 100) / 100f), case.bottom - 3f, pFlat)
-        if (it.charging) {
-            val bolt = android.graphics.Path().apply {
-                moveTo(case.centerX() + 2f, case.top - 2f); lineTo(case.centerX() - 5f, case.centerY() + 1f)
-                lineTo(case.centerX(), case.centerY() + 1f); lineTo(case.centerX() - 2f, case.bottom + 2f)
-                lineTo(case.centerX() + 5f, case.centerY() - 1f); lineTo(case.centerX(), case.centerY() - 1f); close()
-            }
-            pFlat.color = Theme.gold; pFlat.alpha = alpha; c.drawPath(bolt, pFlat)
-        }
-        pFlat.alpha = 255
-        val pl = Paint(pv).apply { textAlign = Paint.Align.LEFT }
-        c.drawText(Tr.t(label), case.right + 9f, BAND_BASE, pl)
     }
 
     /** an item's icon centred on [cx] in the top line, the icon's own dark rim trimmed, a thin bronze edge; [glow] = a soft halo behind */

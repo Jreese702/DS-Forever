@@ -6,12 +6,18 @@ import org.json.JSONObject
  * THE CLOCK BAND (feat/clock-extras-v2; the user, 2026-11-13: "the clock and extras all kind of look like poop. lets center them where
  * the ZR and LR appear (fade them out when holding ZL and ZR) and make them space out evenly based on what else is turned on. the gold
  * should be the total gold (including silver and copper) when the hearthstone is ready it should have a subtle glow there should also be
- * an ammo option."): the clock + battery and the extras the player turned on, as ONE row centred where the ZL + ZR join shows on Home
- * (CastBarPlace.clockSpot), equal gaps between the items, faded out while a trigger is held. Pure (no android.*): checked off-device.
+ * an ammo option."): the extras the player turned on, as ONE row centred where the ZL + ZR join shows on Home (CastBarPlace.clockSpot),
+ * equal gaps between the items, faded out while a trigger is held. THE CLOCK + BATTERY ARE NOT IN IT (the user, then: "No the time and
+ * Battery still needs to be centered at the top like it was before, do not change that"): UiKit.clockChip at the band's top centre,
+ * as before, with its own show / fade rules; the row stays under it ([CHIP_TOP] + [CHIP_H]). Pure (no android.*): checked off-device.
  */
 object ClockBand {
-    /** the items, left to right: the travel pair, the clock in the middle, the purse and the packs */
-    enum class Kind { HEARTH, TELEPORT, CLOCK, GOLD, BAGS, AMMO }
+    /** the items, left to right: the travel pair, the purse and the packs */
+    enum class Kind { HEARTH, TELEPORT, GOLD, BAGS, AMMO }
+
+    /** the top clock chip (UiKit.clockChip at the band's centre x, band top + [CHIP_TOP], [CHIP_H] high; unchanged since LATER 18) */
+    const val CHIP_TOP = 10f
+    const val CHIP_H = 84f
 
     /** the widest and narrowest gap between two items (px at 1240 wide); under the narrowest the whole row scales down to fit */
     const val GAP_MAX = 40f
@@ -19,6 +25,8 @@ object ClockBand {
     /** an item's cell: the icon (or the time) over its value */
     const val CELL_H = 48f
     const val ICON = 28f
+    /** the row's clearance under the clock chip */
+    const val CHIP_PAD = 4f
 
     /** where each item's LEFT edge goes and the row's [scale] (1 = room enough) */
     class Placement(val lefts: FloatArray, val gap: Float, val scale: Float) {
@@ -48,18 +56,19 @@ object ClockBand {
     /**
      * The row's top (review of feat/clock-extras-v2: "center them where the ZR and LR appear"): ON the join (centred on its y) when the
      * row [x0]..[x1], [cellH] high, passes clear of every button there; else just under the buttons it would touch, never lower than
-     * the spot's own middle. [spot] = CastBarPlace.clockSpot (left, top, right, bottom, cx, joinY, 8 button boxes, the clearance).
+     * the spot's own middle; and never above [floor] (the clock chip's bottom + [CHIP_PAD]). [spot] = CastBarPlace.clockSpot (left, top,
+     * right, bottom, cx, joinY, 8 button boxes, the clearance).
      */
-    fun rowTop(spot: FloatArray, x0: Float, x1: Float, cellH: Float): Float {
+    fun rowTop(spot: FloatArray, x0: Float, x1: Float, cellH: Float, floor: Float = Float.NEGATIVE_INFINITY): Float {
         val low = (spot[1] + spot[3]) / 2f - cellH / 2f
-        if (spot.size < 6 + 32 + 1) return low
+        if (spot.size < 6 + 32 + 1) return maxOf(low, floor)
         val pad = spot[spot.size - 1]
         var top = spot[5] - cellH / 2f
         for (p in 0 until 8) {
             val o = 6 + 4 * p
             if (spot[o] < x1 + pad && spot[o + 2] > x0 - pad) top = maxOf(top, spot[o + 3] + pad)
         }
-        return minOf(top, low)
+        return maxOf(minOf(top, low), floor)
     }
 
     /**
@@ -99,12 +108,11 @@ object ClockBand {
     /** a count in a narrow cell: as is under 10000, then thousands ("12k") */
     fun count(n: Int): String = if (n >= 10000) "${n / 1000}k" else n.toString()
 
-    /** which items show, in order: [on] the player's rows (and the data there), the clock always */
+    /** which items show, in order: the player's rows (and the data there); none = no row (the clock chip is apart) */
     fun kinds(hearth: Boolean, teleport: Boolean, gold: Boolean, bags: Boolean, ammo: Boolean): List<Kind> {
-        val k = ArrayList<Kind>(6)
+        val k = ArrayList<Kind>(5)
         if (hearth) k += Kind.HEARTH
         if (teleport) k += Kind.TELEPORT
-        k += Kind.CLOCK
         if (gold) k += Kind.GOLD
         if (bags) k += Kind.BAGS
         if (ammo) k += Kind.AMMO
