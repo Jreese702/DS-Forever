@@ -21,6 +21,13 @@ class Wcb1Assembler(
     private var lastSeq = -1
     var gaps = 0
         private set
+    /** issue #231 (diagnostics only): log lines read, lines with the WCB1 magic, documents handed on (read off the reader thread: approximate) */
+    @Volatile var linesSeen = 0L
+        private set
+    @Volatile var magicLines = 0L
+        private set
+    @Volatile var docsOut = 0L
+        private set
 
     /** the log restarted (truncated, or another log): half-assembled documents and the sequence are dropped */
     fun reset() { frags.clear(); lastSeq = -1 }
@@ -33,8 +40,10 @@ class Wcb1Assembler(
         // leaves a '\r' on the tail of every line -- invisible, and it lands exactly at each fragment boundary, corrupting the
         // reassembled JSON there. Strip it.
         val raw = rawIn.trimEnd('\r', '\n')
+        linesSeen++
         val i = raw.indexOf(MAGIC)
         if (i < 0) return                          // engine chatter, ignore
+        magicLines++
         val body = raw.substring(i + MAGIC.length) // "<seq>|<part>/<n>|<payload>"
         if (body.startsWith("pad|")) return        // flush padding
 
@@ -71,6 +80,7 @@ class Wcb1Assembler(
         try {
             val o = JSONObject(json)
             if (gt >= 0) o.put("_gt", gt)
+            docsOut++
             onMessage(o)
         }
         catch (t: Throwable) { onStatus("bad json (${json.length}b): ${t.message}") }

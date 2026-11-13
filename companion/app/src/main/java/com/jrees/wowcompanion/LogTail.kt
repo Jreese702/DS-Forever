@@ -41,6 +41,9 @@ class LogTail(
     private val handler = Handler(thread.looper)
     private var offset = 0L
     private var carry = ""                       // partial trailing line between reads
+    /** issue #231 (diagnostics only): bytes fed since start, and when the last read brought any */
+    @Volatile private var bytesFed = 0L
+    @Volatile private var lastFedAt = 0L
     private var running = false
 
     /** the WCB1 parser (Wcb1Assembler: shared with Streaming's bridge copy of the PC's log) */
@@ -330,6 +333,7 @@ class LogTail(
     private fun feed(buf: ByteArray, n: Int) {
         // A read straddling the edge of a reclaimed hole starts with NULs, and a NUL run has no
         // newline, so without this it would glue itself onto the first real line.
+        bytesFed += n; lastFedAt = android.os.SystemClock.elapsedRealtime()
         var s = String(buf, 0, n, Charsets.UTF_8)
         if (s.indexOf('\u0000') >= 0) s = s.replace("\u0000", "")       // only a read at a reclaimed hole has NULs
         val text = if (carry.isEmpty()) s else carry + s
@@ -344,6 +348,15 @@ class LogTail(
     private fun handleLine(raw: String) = docs.line(raw)
 
     override fun gapCount() = docs.gaps
+
+    /** issue #231: which log, the file as plain IO sees it, and what this reader got from it (AddonSilence.reader) */
+    override fun diag(): String {
+        val f = File(path)
+        val now = android.os.SystemClock.elapsedRealtime()
+        return AddonSilence.reader(path, runCatching { f.exists() }.getOrDefault(false), runCatching { f.length() }.getOrDefault(0L),
+            runCatching { f.lastModified() }.getOrDefault(0L), System.currentTimeMillis(), bytesFed,
+            if (lastFedAt > 0) now - lastFedAt else -1L, docs.linesSeen, docs.magicLines, docs.docsOut)
+    }
 
     companion object {
         const val MAGIC = Wcb1Assembler.MAGIC

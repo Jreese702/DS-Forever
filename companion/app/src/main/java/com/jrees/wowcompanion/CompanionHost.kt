@@ -1792,7 +1792,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val silenceCheck = Runnable {
         if (shell.hostGone()) return@Runnable
         val gameMs = if (LauncherHooks.gameStartSec > 0) System.currentTimeMillis() - LauncherHooks.gameStartSec * 1000 else 0L
-        AddonSilence.line(docFlowSeen, LauncherHooks.gameUp(), SystemClock.elapsedRealtime() - hostUpAt, gameMs)?.let {
+        // issue #231 ("ui iz on top screen": no document in 2 runs, the game at in-world memory): the reader and the shadow's Logs
+        val detail = if (docFlowSeen) null else runCatching { listOfNotNull(tail?.diag(), NativeLogin.shadowLogsLine()).joinToString("; ") }.getOrNull()
+        AddonSilence.line(docFlowSeen, LauncherHooks.gameUp(), SystemClock.elapsedRealtime() - hostUpAt, gameMs, detail)?.let {
             Log.w("WCSETUP", it); DiagLog.event("addons", it)
         }
     }

@@ -136,9 +136,38 @@ object PadDiag {
  */
 object AddonSilence {
     const val AFTER_MS = 120_000L
-    fun line(docSeen: Boolean, gameUp: Boolean, hostUpMs: Long, gameUpMs: Long): String? {
+    /** [detail] (issue #231): the reader's and the shadow folder's state, appended so the report tells "the game writes its log
+     *  elsewhere" from "the log grows without our add-ons' lines" from "the log stands still" */
+    fun line(docSeen: Boolean, gameUp: Boolean, hostUpMs: Long, gameUpMs: Long, detail: String? = null): String? {
         if (docSeen || !gameUp || hostUpMs < AFTER_MS) return null
         return "no current document from the game's add-ons ${GameLife.minutes(hostUpMs)} after the bottom screen came up " +
-            "(the game up ${if (gameUpMs > 0) GameLife.minutes(gameUpMs) else "?"}): not in the world yet, or our add-ons did not load; the rooms wait for them"
+            "(the game up ${if (gameUpMs > 0) GameLife.minutes(gameUpMs) else "?"}): not in the world yet, or our add-ons did not load; the rooms wait for them" +
+            (if (detail.isNullOrBlank()) "" else "; $detail")
+    }
+
+    /** issue #231: the local reader in one line ([sinceFedMs] -1 = nothing read yet); only the file's name, never the folder's */
+    fun reader(path: String, exists: Boolean, len: Long, mtime: Long, nowWall: Long, fed: Long, sinceFedMs: Long,
+               lines: Long, magic: Long, docs: Long): String {
+        val name = path.substringAfterLast('/').ifEmpty { path }
+        val file = if (!exists) "$name not there" else "$name ${len / 1024} KB, written ${if (mtime > 0) GameLife.minutes((nowWall - mtime).coerceAtLeast(0L)) + " ago" else "?"}"
+        val got = if (sinceFedMs < 0) "nothing read yet" else "read ${fed / 1024} KB (the last ${GameLife.minutes(sinceFedMs)} ago)"
+        return "reader: $file; $got, $lines lines, $magic of ours, $docs documents"
+    }
+
+    /** issue #231: the private shadow folder's Logs entry (the client writes General.log there when it is a real folder, not a link) */
+    fun shadowLogs(logs: java.io.File?, isLink: (java.io.File) -> Boolean, nowWall: Long): String {
+        if (logs == null) return "shadow Logs: no shadow this run"
+        return runCatching {
+            when {
+                isLink(logs) -> "shadow Logs: link"
+                !logs.exists() -> "shadow Logs: missing"
+                logs.isDirectory -> {
+                    val g = java.io.File(logs, "General.log")
+                    "shadow Logs: REAL dir (" + (if (g.exists()) "General.log ${g.length() / 1024} KB, written " +
+                        GameLife.minutes((nowWall - g.lastModified()).coerceAtLeast(0L)) + " ago" else "no General.log") + ")"
+                }
+                else -> "shadow Logs: a file"
+            }
+        }.getOrElse { "shadow Logs: unreadable (${it.javaClass.simpleName})" }
     }
 }
