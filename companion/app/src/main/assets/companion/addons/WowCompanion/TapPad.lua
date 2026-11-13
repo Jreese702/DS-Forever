@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad18"     -- pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad19"     -- pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -251,21 +251,33 @@ local function makeRow(r)
     end
 end
 
-local function newRow(name)
-    if pad.nrows >= ROWS_MAX then return nil end
-    local r = { name = name, row = pad.nrows, cells = {} }
-    pad.nrows = pad.nrows + 1
+-- pad19 (the user, 2026-11-13: "Bags share one row"): a row may be PINNED to the last row (ROWS_MAX - 1) instead of the next one, so
+-- every row registered after it still takes the lowest free row and the pinned one is the row that drops first when a smaller UI scale
+-- places fewer rows (Bags' shared drag row "bmv": at the smallest scale the drag row goes, never the rooms' or the radials' rows).
+-- Rows keep their places as before; pad.nrows stays one past the highest row in use (the readers loop 0 .. nrows - 1, a gap is nil).
+local nextRow = 0
+local function newRow(name, last)
+    local idx
+    if last and not pad.byRow[ROWS_MAX - 1] then
+        idx = ROWS_MAX - 1
+    else
+        while nextRow < ROWS_MAX and pad.byRow[nextRow] do nextRow = nextRow + 1 end
+        if nextRow >= ROWS_MAX then return nil end
+        idx = nextRow
+    end
+    local r = { name = name, row = idx, cells = {} }
+    pad.nrows = math.max(pad.nrows, idx + 1)
     pad.rows[name] = r
     pad.byRow[r.row] = r
     return r
 end
 
 -- Register a plain row. ns = the slot namespace its columns refer to, or nil for a single-cell
--- operation (column 0, no key).
-function pad.op(name, ns, handler)
+-- operation (column 0, no key). opts.last (pad19): pinned to the last row (see newRow).
+function pad.op(name, ns, handler, opts)
     local r = pad.rows[name]
     if r then r.handler = handler return r.row end
-    r = newRow(name)
+    r = newRow(name, type(opts) == "table" and opts.last == true)
     if not r then return nil end
     r.ns, r.handler, r.n = ns, handler, ns and COLS or 1
     if pad.geom then makeRow(r) end

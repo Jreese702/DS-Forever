@@ -187,6 +187,8 @@ function eqs() return WowCompanion.character.collect.eqs() end
 function cell(key) local t = PAD.ns.eqset; return t and t.byKey[key] end
 function tapSet(key) WowCompanion.character.onSetCell(WowCompanion.character.eqFirst + PAD.slotFor("eqset", key)) end
 function bmvq(col) OPS.bmvq(nil, col) end
+-- bags-onerow1: a bag slot's drag tap = the bag's name on bagsort (10 + bag), then the shared row bmv
+function bmvAt(bag, col) OPS.bagsort(nil, 10 + bag); OPS.bmv(nil, col) end
 function unequipVia(slot) tapSet("uneq"); NOW = NOW + 0.12; bmvq(slot - 1) end
 ''')
 load = L.eval('function(src, name, addon) local f, e = loadstring(src, "@" .. name); if not f then error(e) end; return f(addon) end')
@@ -204,7 +206,7 @@ except Exception as e:  # noqa: BLE001
 check(ok_load, "Character.lua loads with no error")
 L.execute('WowCompanionDB = {}; fire("PLAYER_LOGIN"); WowCompanion._bagsMoveReady = true; '
           'WowCompanion.bagsMoveRows({ { bag = 0, slots = 4 }, { bag = 1, slots = 2 }, { bag = 2, slots = 2 } })')
-check(L.eval('type(OPS.bmvq)') == 'function' and L.eval('type(OPS.bmv0)') == 'function', "the drag rows are there")
+check(L.eval('type(OPS.bmvq)') == 'function' and L.eval('type(OPS.bmv)') == 'function', "the drag rows are there")
 check(L.eval('type(WowCompanion.bagsUnequip)') == 'function', "WC.bagsUnequip exists")
 check(str(L.eval('WowCompanion.character.version')).startswith('c15'), "Character's version is bumped (c15)", L.eval('WowCompanion.character.version'))
 
@@ -239,7 +241,7 @@ check(len(conf) == 1 and conf[0].confirm is True, "confirmed after the bag updat
 check(L.eval('eqs().ack.ok') is True, "a good confirm adds no refusal")
 
 # 3. A STALE BAG PICK never equips: the Bags room's drag left bag 0 slot 1 picked; arm + slot
-L.execute('NOW = 300; OPS.bmv0(nil, 0)')
+L.execute('NOW = 300; bmvAt(0, 0)')
 check(L.eval('lastMove().picked ~= nil'), "a bag pick is held (the Bags room's finger-drag)")
 L.execute('NOW = 301; unequipVia(1)')
 check(L.eval('CALLS.equip') == 0 and L.eval('WORN[1]') is None and L.eval('BAG[0][1]') == 117, "stale pick + Unequip: the head came off, nothing equipped",
@@ -249,7 +251,7 @@ L.execute('NOW = 303; bmvq(15)')
 check(L.eval('CALLS.equip') == 0 and L.eval('lastMove().picked ~= nil and lastMove().picked.inv == 16'), "after the arm the old bag pick is void (next tap = a pick)")
 L.execute('NOW = 320')       # let that pick expire
 # a stale pick, an arm, a LATE slot tap (2..10 s): swallowed, still nothing equipped
-L.execute('OPS.bmv0(nil, 1); NOW = 321; tapSet("uneq"); NOW = 324; bmvq(16)')
+L.execute('bmvAt(0, 1); NOW = 321; tapSet("uneq"); NOW = 324; bmvq(16)')
 check(L.eval('lastMove().why') == 'late' and L.eval('CALLS.equip') == 0 and L.eval('WORN[17]') == 902, "a late slot tap: 'late', nothing moved or equipped")
 L.execute('NOW = 325; bmvq(16)')
 check(L.eval('CALLS.equip') == 0 and L.eval('lastMove().picked ~= nil and lastMove().picked.inv == 17'), "then a plain tap: only a pick, never an equip")
@@ -318,7 +320,7 @@ L.execute('NOW = 520; bmvq(16)')       # consume the arm (slot 17 worn? it was m
 
 # 6b. uneq2 (review): the More menu opening voids a Bags drag pick, so a LOST arm can't turn the slot tap into a drop (= an equip)
 L.execute('NOW = 540; WORN[17] = 902; BAG[0][1] = nil; BAG[0][1] = 117')
-L.execute('NOW = 541; OPS.bmv0(nil, 0)')
+L.execute('NOW = 541; bmvAt(0, 0)')
 check(L.eval('lastMove().picked ~= nil and lastMove().picked.bag == 0'), "uneq2: a bag pick is held")
 L.execute('NOW = 542; tapSet("moreon"); NOW = 543; bmvq(16)')        # the arm tap was lost: only the slot tap arrives
 check(L.eval('CALLS.equip') == 0 and L.eval('lastMove().picked ~= nil and lastMove().picked.inv == 17') and L.eval('BAG[0][1]') == 117,

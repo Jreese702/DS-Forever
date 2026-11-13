@@ -164,9 +164,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         val d = state.drag ?: return
         dragMove(rx, ry)
         val pad = state.pad
-        if (state.hoverBag >= 0 && state.canDropBag(state.hoverBag, state.hoverSlot) &&
-            GameInput.tap(context, pad, "bmv${d.fromBag}", d.fromSlot - 1))
-            GameInput.tap(context, pad, "bmv${state.hoverBag}", state.hoverSlot - 1)
+        // bags-onerow1: the pick and the drop, each with its bag's name tap, in ONE spaced batch (all or nothing)
+        if (state.hoverBag >= 0 && state.canDropBag(state.hoverBag, state.hoverSlot))
+            BagsMoveRoute.drag(pad, d.fromBag, d.fromSlot, state.hoverBag, state.hoverSlot)
+                ?.let { GameInput.taps(context, pad, it, BagsMoveRoute.GAP_MS) }
         state.endDrag()
         dragLayer.invalidate(); layoutAll()
     }
@@ -340,7 +341,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                     if (pick.optInt("sel", 1) - 1 == i) GameInput.tap(context, st.pad, "bmvq", 31)
                     else {
                         val bag = e.optInt("bag", -1); val slot = e.optInt("slot", 0)
-                        if (bag >= 0 && slot >= 1 && GameInput.tap(context, st.pad, "bmvq", 36)) GameInput.tap(context, st.pad, "bmv$bag", slot - 1)
+                        val cells = if (bag >= 0 && slot >= 1) BagsMoveRoute.cells(st.pad, bag, slot) else null    // bags-onerow1
+                        if (cells != null) GameInput.taps(context, st.pad, listOf("bmvq" to 36) + cells)
                     }
                 } else if (what <= KIT_ROW) {
                     // a finger on a row of "Choose an item": that item, at once (its secure cell: the pick's target)
@@ -1238,8 +1240,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
 
     private fun cursorTo(bag: Int, slot: Int): Boolean {
         if (state.ctlCur() == (bag to slot)) return true
-        if (!rowsHave("bmvq", "bmv$bag")) return false
-        return GameInput.tap(context, state.pad, "bmvq", 36) && GameInput.tap(context, state.pad, "bmv$bag", slot - 1)
+        if (!rowsHave("bmvq")) return false
+        val cells = BagsMoveRoute.cells(state.pad, bag, slot) ?: return false      // bags-onerow1: the bag's name, then the shared row
+        return GameInput.taps(context, state.pad, listOf("bmvq" to 36) + cells)
     }
 
     private fun touchSlot(bag: Int, slot: Int) {
@@ -1626,11 +1629,11 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         private fun hasRow(name: String) = pad?.optJSONObject("rows")?.has(name) == true
 
         /** a drag can only start when the addon has published the rows it needs */
-        fun canDragBag(bag: Int) = !clean && hasRow("bmv$bag") && hasRow("bmvq")
+        fun canDragBag(bag: Int) = !clean && BagsMoveRoute.reaches(pad, bag) && hasRow("bmvq")
 
         fun canDropBag(bag: Int, slot: Int): Boolean {
             val d = drag ?: return false
-            if (!hasRow("bmv$bag")) return false
+            if (!BagsMoveRoute.reaches(pad, bag)) return false
             return !(d.fromBag == bag && d.fromSlot == slot)
         }
 
