@@ -73,21 +73,6 @@ object GameUi {
         return try { UiMode.valueOf(s) } catch (_: Throwable) { def }
     }
 
-    /** the off-device tests' way in: their own prefs (null = none again) */
-    internal fun startForTest(p: SharedPreferences?) { prefs = p }
-
-    /**
-     * #170 SETUP PRESETS (SetupPresets): a whole bundle in ONE write - every element's mode, the cast bar's Hide, Party mode - then one
-     * reconcile, so one touch still sends at most one tap now (the rest follow at the policies' own pace, one at a time)
-     */
-    fun setBundle(modes: Map<String, UiMode>, castBarHide: Boolean, partyMode: Boolean) {
-        val e = prefs?.edit() ?: return
-        for ((id, m) in modes) e.putString("mode.$id", m.name)
-        e.putBoolean("castbar.hide", castBarHide).putBoolean("sw.$SW_PMODE", partyMode).apply()
-        reconcile()
-        changed()
-    }
-
     /** the user picked a mode: one touch, so at most one tap follows */
     fun setMode(id: String, m: UiMode) {
         prefs?.edit()?.putString("mode.$id", m.name)?.apply()

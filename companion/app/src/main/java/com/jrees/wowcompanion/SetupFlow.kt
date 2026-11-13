@@ -109,8 +109,7 @@ object SetupFlow {
         POLESTAR_YES, POLESTAR_NO
     }
     data class Button(val label: String, val action: Action, val enabled: Boolean = true)
-    /** [back] = what B presses on this pop-up (null: B goes back to the start-up chooser, as everywhere else) */
-    data class Prompt(val id: String, val title: String, val text: String, val buttons: List<Button>, val back: Action? = null)
+    data class Prompt(val id: String, val title: String, val text: String, val buttons: List<Button>)
     /** [play] null = no Play (the game runs); [line] = one status line under it; [report] = the small "Report a problem" with Play */
     data class Screen(val prompt: Prompt?, val play: Button?, val line: String, val report: Button? = null)
 
@@ -307,7 +306,6 @@ object SetupFlow {
             !i.loginSaved && !i.loginSkipped -> Prompt("login", "Your Battle.net login",
                 "Save it once and the game signs you in by itself. It stays encrypted on this device.",
                 listOf(Button("Enter login", Action.ENTER_LOGIN), Button("Play without", Action.SKIP_LOGIN)))
-            // #170: no first-start Setup pop-up (the user, 2026-11-13: "Settings only, no pop-up"); the tiles live in Settings > General
             // the user, 2026-11-12: the Polestar quest guide, asked once (a title and two buttons: the terse rule); never holds Play.
             // Not answered: Polestar stays as it is (fetched ahead, not moved in) and the question comes back at the next start
             i.polestarAsk -> Prompt("polestar", PolestarGuide.TITLE, "",

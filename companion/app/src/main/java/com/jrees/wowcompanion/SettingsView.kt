@@ -119,7 +119,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segPsTop = Array(2) { RectF() }          // hub31: Polestar on the top screen, Show / Hide
     private val segLang = Array(Tr.LANGS.size) { RectF() }          // 2026-11-07: Settings > System > Language
     private val segTheme = Array(Theme.presets.size) { RectF() }    // 2026-11-12: Settings > System > Theme (one tile a preset)
-    private val segSetup = Array(SetupPresets.Preset.values().size) { RectF() }   // #170: Settings > General > Setup (one tile a preset)
     private val segLight = Array(2) { RectF() }
     private val segLowGfx = Array(2) { RectF() }                      // 2026-11-08: Settings > System > Low-memory graphics                       // 1.0.17: Settings > Performance > Lighter mode
     private val segGameAcct = Array(2) { RectF() }                    // #47: Settings > General > Game account, Ask each time / Remembered
@@ -222,8 +221,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         ThirdPartyAddons.init(context)
         ThirdPartyAddons.onChange { postInvalidate() }
         Settings.onChange { postInvalidate() }
-        SetupPresets.init(context)
-        GameUi.onChange { postInvalidate() }                // #170: a mode changed anywhere: the Setup tile lit (or Custom) follows
         ReportFlow.init(context)
         ReportFlow.onChange { postInvalidate() }
         HomeSettings.onChange { postInvalidate() }          // the wheels' two settings (also switched from the Controller DS tab)
@@ -262,7 +259,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPsTop.toList() + segPq.flatMap { it.toList() } + segDanger.toList() + segFog.toList() + segChat.toList() +
-            segSetup.toList() + segTheme.toList() + segLang.toList() + segGameAcct.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
+            segTheme.toList() + segLang.toList() + segGameAcct.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
             segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
@@ -297,7 +294,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segSetup, segLight, segGameAcct,
+                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segLight, segGameAcct,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -346,7 +343,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.LANGUAGE -> ROW_H
         SettingsTabs.Block.THEME -> themeGridH()
-        SettingsTabs.Block.SETUP -> themeTileH
         SettingsTabs.Block.LIGHTER -> ROW_H + 10f + ROW_H
         SettingsTabs.Block.ACCOUNT -> if (loginRow) ROW_H else 0f
         SettingsTabs.Block.GAME_ACCOUNT -> ROW_H
@@ -495,8 +491,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 if (gai >= 0) { Settings.gameAccountAsk = gai == 0; invalidate(); return }
                 val lgx = segLowGfx.indexOfFirst { it.contains(x, y) }
                 if (lgx >= 0) { Settings.lowMemGraphics = lgx == 0; invalidate(); return }
-                val spi = segSetup.indexOfFirst { it.contains(x, y) }
-                if (spi >= 0) { SetupPresets.apply(SetupPresets.Preset.values()[spi]); invalidate(); return }
                 val thi = segTheme.indexOfFirst { it.contains(x, y) }
                 if (thi >= 0) { Theme.use(Theme.presets[thi].id); invalidate(); return }
                 val lgi = segLang.indexOfFirst { it.contains(x, y) }
@@ -550,7 +544,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             y = when (b) {
                 SettingsTabs.Block.LANGUAGE -> drawLanguage(c, y)
                 SettingsTabs.Block.THEME -> drawTheme(c, y)
-                SettingsTabs.Block.SETUP -> drawSetup(c, y)
                 SettingsTabs.Block.LIGHTER -> drawLighter(c, y)
                 SettingsTabs.Block.ACCOUNT -> drawAccount(c, y)
                 SettingsTabs.Block.GAME_ACCOUNT -> drawGameAccount(c, y)
@@ -663,51 +656,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             }
         }
         return top + themeGridH()
-    }
-
-    // ---- SETUP (General; #170): Classic / Balanced / Full, then Custom - the theme's tiles in the theme in use. A tap writes the
-    // preset's bundle (SetupPresets.apply); the lit tile is the preset the switches match now, Custom when none does (a status, never
-    // pressed: no hit box, the cursor skips it). Each tile's pips: how much of the game's own UI DS Forever takes over (1 to 3)
-    private fun drawSetup(c: Canvas, top: Float): Float {
-        val left = 16f; val right = width - 16f
-        val n = SetupPresets.Preset.values().size + 1
-        val tw = (right - left - (n - 1) * themeGap) / n
-        val lit = SetupPresets.litIndex(SetupPresets.current())
-        for (i in 0 until n) {
-            val r = RectF(left + i * (tw + themeGap), top, left + i * (tw + themeGap) + tw, top + themeTileH)
-            val custom = i == n - 1
-            if (!custom) { segSetup[i].set(r); rowHits.add(RectF(r) to "Setup") }
-            val chosen = i == lit
-            if (chosen) UiKit.glow(c, RectF(r.left - 10f, r.top - 10f, r.right + 10f, r.bottom + 10f), Theme.cur.focus, 0.55f)
-            pThemeFill.style = Paint.Style.FILL; pThemeFill.color = Theme.cur.ink
-            c.drawRoundRect(r, 10f, 10f, pThemeFill)
-            pThemeFill.color = if (chosen) Theme.cur.selected else Theme.cur.raised
-            c.drawRoundRect(RectF(r.left + 12f, r.bottom - 40f, r.right - 12f, r.bottom - 14f), 6f, 6f, pThemeFill)
-            if (!custom) for (k in 0..i) {
-                pThemeFill.color = if (chosen) Theme.cur.accent else Theme.cur.textDim
-                c.drawCircle(r.left + 30f + k * 24f, r.bottom - 27f, 7f, pThemeFill)
-            }
-            pThemeFill.style = Paint.Style.STROKE
-            if (chosen) {
-                pThemeFill.strokeWidth = 6f; pThemeFill.color = Theme.cur.focus
-                c.drawRoundRect(RectF(r.left + 3f, r.top + 3f, r.right - 3f, r.bottom - 3f), 10f, 10f, pThemeFill)
-            } else {
-                pThemeFill.strokeWidth = 2f; pThemeFill.color = (Theme.cur.edge and 0xFFFFFF) or (0x70 shl 24)
-                c.drawRoundRect(RectF(r.left + 1f, r.top + 1f, r.right - 1f, r.bottom - 1f), 10f, 10f, pThemeFill)
-            }
-            pThemeFill.style = Paint.Style.FILL
-            UiKit.asBody(pThemeName)
-            pThemeName.textSize = 25f; pThemeName.color = if (chosen) Theme.cur.accent else Theme.cur.textDim
-            val name = if (custom) SetupPresets.CUSTOM else SetupPresets.Preset.values()[i].label
-            c.drawText(fit(pThemeName, Tr.t(name), tw - 16f), r.centerX(), r.top + 44f, pThemeName)
-            if (chosen && !custom) {
-                val tick = UiKit.tex("check_tick")
-                val tr = RectF(r.right - 46f, r.bottom - 46f, r.right - 10f, r.bottom - 10f)
-                if (tick != null) c.drawBitmap(tick, null, tr, null)
-                else { pThemeFill.color = Theme.cur.focus; c.drawCircle(tr.centerX(), tr.centerY(), 9f, pThemeFill) }
-            }
-        }
-        return top + themeTileH
     }
 
     // ---- GAME (System): Reload, the saved login, the problem report
