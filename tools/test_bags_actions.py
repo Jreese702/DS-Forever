@@ -359,6 +359,24 @@ L.execute('BAG[0][3] = 614; fire("BAG_UPDATE_DELAYED"); run(0)')
 check(L.eval('doc().mode') == 'grid' and L.eval('doc().note') == 'moved', "its item gone: the sheet closes (moved)", L.eval('doc().mode'))
 L.execute('BAG[0] = SAVED2; WowCompanion._bagsLayout = WowCompanion.collectBags().bags')
 
+# bags-onerow3: a finger's cursor move lost -> the touch A that follows is refused, never put down on the old slot
+L.execute('NOW = NOW + 5; if doc().mode ~= "grid" then press("PAD2") end; to(1); press("PAD1")')
+check(L.eval('doc().pick') is not None, "A: an item in the hand (0:1)")
+L.execute('P1 = #PICKS; WowCompanion._bagsTouch(36); WowCompanion._bagsCursorVoid(); WowCompanion._bagsTouch(31); run(0)')
+check(L.eval('#PICKS') == L.eval('P1') and L.eval('doc().pick') is not None and L.eval('doc().note') == 'cursor-miss',
+      "36 + a nameless bmv, then touch A: refused (cursor-miss), still in the hand, nothing moved", L.eval('doc().note'))
+L.execute('WowCompanion._bagsTouch(36); WowCompanion._bagsTouch(31); run(0)')
+check(L.eval('#PICKS') == L.eval('P1') and L.eval('doc().pick') is not None, "36 whose bmv never came, then touch A: refused")
+L.execute('WowCompanion._bagsCursorMiss(); WowCompanion._bagsTouch(31); run(0)')
+check(L.eval('#PICKS') == L.eval('P1') and L.eval('doc().pick') is not None, "a bmv that missed its 36, then touch A: refused")
+L.execute('WowCompanion._bagsTouch(32); run(0)')
+check(L.eval('doc().mode') == 'grid', "a refusal is used once: nothing pending (Y with an item in the hand does nothing)")
+L.execute('WowCompanion._bagsTouch(36); WowCompanion._bagsCursorTap(0, 2); WowCompanion._bagsTouch(31); run(0)')
+check(L.eval('#PICKS') == L.eval('P1') + 2 and L.eval('doc().pick') is None and L.eval('doc().cur.slot') == 2,
+      "36 + its bmv, then touch A: put down on the slot the finger named (0:2)", (L.eval('#PICKS'), L.eval('doc().note')))
+L.execute('press("PAD1"); WowCompanion._bagsCursorVoid(); press("PAD1")')
+check(L.eval('doc().pick') is None, "the controller's own A is never held back")
+
 check(int(L.eval('#TRACE')) == 0, "no trace: no StaticPopup / SetBinding / SaveBindings / macro / CVar / window call",
       list(L.eval('TRACE').values()))
 print('ALL PASS (%d checks)' % passes if fails == 0 else '%d FAILED (of %d)' % (fails, fails + passes))
