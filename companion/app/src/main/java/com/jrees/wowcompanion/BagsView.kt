@@ -226,7 +226,6 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             /** the Y menu's rows: the add-on's names -> their words, and a finger's tap (bmvq 19 / 20 / 21; Compare by its prefix) */
             val MENU_WORDS = linkedMapOf("split" to "Split Stack", "bind" to "Bind to a Button", "compare" to "Compare", "destroy" to "Destroy")
             val MENU_TAP = mapOf("split" to 19, "bind" to 20, "compare" to COMPARE_TAP, "destroy" to 21)
-            const val MIN_CMP_W = 300f                          // Currently Equipped narrowed to a side's room, never under this
             const val PRESS_MIN_MS = 160L                       // a press stays visibly in at least this long (Interact's recipe)
             const val HOLD_REDRAW_MS = 50L                      // bags-tip1: a held card draws again this often until its hold ends
             val PRESS_KEYS = setOf("PAD1", "PAD2", "PAD3", "PAD4")
@@ -434,14 +433,18 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
          */
         private var cardsKey: Triple<Any?, Any?, Any?>? = null
         private var cardsVal = JSONArray()
+        private var hoverVal: List<UiKit.TipLine> = emptyList()
         private fun cardsOf(tip: JSONObject?, row: JSONObject?): JSONArray {
             val k = Triple(tip, row, st.equippedDoc)
             if (k == cardsKey) return cardsVal
             cardsKey = k
             cardsVal = BagsCompare.cards(tip, row, st.equipped, st.equippedDoc?.optBoolean("dw") == true,
                 BagsCompare.Words(empty = Tr.t("Empty"), changes = Tr.t("Stat changes")))
+            hoverVal = TipStack.lines(JSONArray(BagsCompare.hover(cardsVal)), false)
             return cardsVal
         }
+        /** bags-nocmp1: the hover card's stat changes (BagsCompare.hover), the lines that go at the foot of the item's own tooltip */
+        private fun changesOf(tip: JSONObject?, row: JSONObject?): List<UiKit.TipLine> { cardsOf(tip, row); return hoverVal }
         /** one card as the kit draws it: its first line the name; "Currently Equipped" over a worn piece, nothing over an empty slot */
         private data class Eq(val name: String, val colour: Int, val lines: List<UiKit.TipLine>, val head: String?)
         private fun eqCards(cmp: JSONArray?): List<Eq> = if (cmp == null) emptyList() else (0 until cmp.length()).mapNotNull { n ->
@@ -499,7 +502,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             return cells
         }
 
-        /** the highlighted item's tooltip and its actions under it; gear also shows what it would replace, always */
+        /** the highlighted item's tooltip and its actions under it; gear also shows its stat changes at the tooltip's foot, always (bags-nocmp1) */
         private fun tooltip(c: Canvas, gx: Float, gy: Float, top: Float, bottom: Float) {
             // THE HOVER WAIT ONCE (d, tracking 2026-10-22): the game's quarter second before the first tooltip only; moving on shows
             // each next item at once (BagsCursor.WarmFade)
@@ -537,7 +540,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             val shown = st.tips.pick(key, it.optInt("count", 1), live, name, q, clock()) { fallbackTip(key, it) }
             if (shown.held) postInvalidateDelayed(HOLD_REDRAW_MS)       // the hold ends by itself: draw again
             val (acts, what) = actions(it, bag, slot)
-            card(c, cur, shown.name, shown.quality, shown.tip, cardsOf(shown.tip, it), acts, what, top, bottom)
+            card(c, cur, shown.name, shown.quality, shown.tip, changesOf(shown.tip, it), acts, what, top, bottom)
             return true
         }
 
@@ -549,56 +552,31 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         private var dragY = -1f
 
         /**
-         * THE ITEM BY THE CURSOR (the user, 2026-10-09: "tooltip should stay by the cursor"), its cells under it, and for GEAR each worn
-         * item it would replace ("Currently Equipped", the game's stat-change lines last; the user: "it should just always auto compare"):
-         * beside the item's tooltip on the side AWAY from the cursor (Thor batch2: "I dont want it to cover the cursor"), or under the
-         * item's cells where that side has no room. Currently Equipped at the game's compare size ([UiKit.COMPARE_SCALE]).
+         * THE ITEM BY THE CURSOR (the user, 2026-10-09: "tooltip should stay by the cursor"), its cells under it. GEAR: what equipping it
+         * would change, at the FOOT of its own tooltip (bags-nocmp1, the user 2026-11-13: "the bag items are still showing currently
+         * equipped, I dont want to see that, but I do want to see the stat changes at the bottom of that weapon if I equip it"): no
+         * "Currently Equipped" card beside it any more, only the changes ([changes], BagsCompare.hover: the game's lines, the app's own
+         * count where the game gave none, an empty slot's gains, a two-hander against both hands). The Compare sheet keeps the cards.
          *
          * THE ROW OF GLYPHS ALWAYS SHOWS (the user, 2026-10-22: "the tooltip on some of the gear in my bag is too big, so I can't see
          * the button glyph options"): [BagsCursor.fit] keeps the tooltip and its row inside the room. A tall one shrinks; one still too
          * tall is cut at the room's foot with its row pinned there under it, never over it, and a finger scrolls it in its box.
          */
-        private fun card(c: Canvas, cur: RectF, name: String, q: Int, tip: JSONObject, cmp: JSONArray?,
+        private fun card(c: Canvas, cur: RectF, name: String, q: Int, tip: JSONObject, changes: List<UiKit.TipLine>,
                          acts: List<Pair<String?, String>>, what: List<Int>, top: Float, bottom: Float) {
             val key = tip.optString("key")
             val fade = warm.alpha(key, clock())
             if (warm.animating) postInvalidateOnAnimation()
             val lines = tip.optJSONArray("lines")
             val first = lines?.optJSONObject(0)
-            val body = TipStack.lines(lines, first != null && first.optString("t") == name)
-            val eq = eqCards(cmp)
-            val sc = UiKit.COMPARE_SCALE
+            val body = TipStack.lines(lines, first != null && first.optString("t") == name) + changes
             val plateH = if (acts.isEmpty()) 0f else 62f
-            val (x, tw, _) = place(cur, sc)
-            val itemRight = x >= cur.right
-            // beside the item on the side away from the cursor; where that has no room, beside the cursor on its other side (never
-            // over it), narrowed to that side's room if it must (not under MIN_CMP_W); else under the item's row
-            val awayX = if (itemRight) x + tw + 6f else x - 6f - tw * sc
-            val awayRoom = if (itemRight) width - 16f - (x + tw + 6f) else x - 6f - 16f
-            val otherRoom = if (itemRight) cur.left - 18f - 16f else width - 16f - (cur.right + 18f)
-            val cwFull = tw * sc
-            val cw = when {
-                eq.isEmpty() || awayRoom >= cwFull || otherRoom >= cwFull -> cwFull
-                maxOf(awayRoom, otherRoom) >= MIN_CMP_W -> maxOf(awayRoom, otherRoom)
-                else -> cwFull
-            }
-            val besideX = when {
-                awayRoom >= cw -> if (itemRight) awayX else x - 6f - cw
-                otherRoom >= cw -> if (itemRight) cur.left - 18f - cw else cur.right + 18f
-                else -> -1f
-            }
-            val beside = eq.isEmpty() || besideX >= 16f
-            val cmpX = if (beside) besideX else x
+            val (x, tw, _) = place(cur)
             val colour = Theme.quality(q)
             fun itemH(s: Float) = UiKit.tooltip(c, 0f, -9999f, tw, name, colour, body, alpha = 0, scale = s).height()
-            fun eqH(s: Float) = eq.sumOf { e ->
-                UiKit.tooltip(c, 0f, -9999f, cw, e.name, e.colour, e.lines, header = e.head, alpha = 0, scale = sc * s).height().toDouble() + 6.0
-            }.toFloat()
-            // up over the bag bar only if it must. The item and its row decide; a compare beside is cut at the room's foot if it is
-            // taller. Stacked under the row: the whole stack if it fits, else the item and its row alone (the compare then cut)
+            // up over the bag bar only if it must; the item and its row decide
             val roomTop = top - 90f; val rowY = maxOf(top, cur.top)
-            val whole = BagsCursor.fit(roomTop, bottom, rowY, plateH) { s -> if (beside) itemH(s) else itemH(s) + 6f + eqH(s) }
-            val f = if (whole.scrollMax <= 0f || beside) whole else BagsCursor.fit(roomTop, bottom, rowY, plateH) { s -> itemH(s) }
+            val f = BagsCursor.fit(roomTop, bottom, rowY, plateH) { s -> itemH(s) }
             val s = f.scale
             // the scroll belongs to one item; a new item starts at its top
             if (key != cutKey) { cutKey = key; scrolled = 0f }
@@ -627,11 +605,6 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             }
             plate(c, boxNow, acts, what, a)
             if (f.scrollMax > 0f) moreMark(c, boxNow, scrolled > 0f, scrolled < f.scrollMax, a)
-            var y = if (beside) f.y else boxNow.bottom + plateH + 6f
-            c.save(); c.clipRect(0f, roomTop, width.toFloat(), bottom)
-            for (e in eq) y = UiKit.tooltip(c, cmpX, y, cw, e.name, e.colour, e.lines, header = e.head, alpha = a,
-                scale = sc * s).bottom + 6f
-            c.restore()
         }
 
         private val pMore = Paint(Paint.ANTI_ALIAS_FLAG)

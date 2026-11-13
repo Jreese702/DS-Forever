@@ -119,4 +119,80 @@ class BagsCompareTest {
         assertEquals(0, BagsCompare.cards(JSONObject(), r, emptyMap(), false).length())
         assertEquals(0, BagsCompare.cards(JSONObject(), row("INVTYPE_BAG", JSONArray()), emptyMap(), false).length())
     }
+
+    // ---- bags-nocmp1 (the user, 2026-11-13: "the bag items are still showing currently equipped, I dont want to see that, but I do
+    // want to see the stat changes at the bottom of that weapon if I equip it")
+    private fun tipLine(t: String, c: String = "ffffff") = JSONObject().put("t", t).put("c", c)
+    private fun hoverTexts(l: List<JSONObject>) = l.map { it.optString("t") }
+    private fun nwGame(slot: Int, vararg changes: JSONObject) = JSONObject().put("slot", slot).put("nw", true).put("dn", changes.size)
+        .put("lines", JSONArray().put(line(" ")).put(line("If you replace this item, the following stat changes will occur:", "ffd100"))
+            .also { a -> changes.forEach { a.put(it) } })
+
+    @Test fun aCompareWithoutTheWornTooltipTakesItFromTheEquippedRow() {
+        val r = row("INVTYPE_CHEST", stats(stat(STA, "Stamina", 9)))
+        val w = worn(5, 900, "Chest", stats(stat(STA, "Stamina", 1))).put("tip", JSONArray().put(tipLine("Old Shirt", "1eff00")).put(tipLine("5 Armor")))
+        val cards = BagsCompare.cards(JSONObject().put("cmp", JSONArray().put(nwGame(5, line("+8 Stamina", "00ff00")))), r, mapOf(5 to w), false)
+        val c = cards.getJSONObject(0)
+        assertEquals(listOf("Old Shirt", "5 Armor", " ", "If you replace this item, the following stat changes will occur:", "+8 Stamina"), texts(c))
+        assertFalse(c.has("nw"))
+        assertFalse(c.has("mine"))
+        // the hover: only the changes, no worn piece
+        assertEquals(listOf(" ", "If you replace this item, the following stat changes will occur:", "+8 Stamina"), hoverTexts(BagsCompare.hover(cards)))
+        assertEquals("00ff00", BagsCompare.hover(cards).last().getString("c"))
+    }
+
+    @Test fun theHoverHasNoCurrentlyEquippedJustTheChanges() {
+        val r = row("INVTYPE_CHEST", stats(stat(STA, "Stamina", 9)))
+        val game = JSONObject().put("slot", 5).put("dn", 2)
+            .put("lines", JSONArray().put(line("Old Shirt")).put(line("Soulbound")).put(line(" ")).put(line("If you replace ...", "ffd100"))
+                .put(line("+9 Stamina", "00ff00")).put(line("-3 Spirit", "ff2020")))
+        val cards = BagsCompare.cards(JSONObject().put("cmp", JSONArray().put(game)), r, mapOf(5 to worn(5, 900, "Chest")), false)
+        val h = BagsCompare.hover(cards)
+        assertEquals(listOf(" ", "If you replace ...", "+9 Stamina", "-3 Spirit"), hoverTexts(h))
+        assertEquals(listOf("", "ffd100", "00ff00", "ff2020"), h.map { it.optString("c") })
+    }
+
+    @Test fun theHoverCountsItselfWhereTheGameGaveNothingAndAnEmptySlotIsAllGains() {
+        val chest = row("INVTYPE_CHEST", stats(stat(STA, "Stamina", 9)))
+        val game = JSONObject().put("slot", 5).put("nw", true).put("lines", JSONArray())
+        val cards = BagsCompare.cards(JSONObject().put("cmp", JSONArray().put(game)), chest,
+            mapOf(5 to worn(5, 900, "Chest", stats(stat(STA, "Stamina", 4)), item = "Old Shirt")), false)
+        assertEquals(listOf("Old Shirt", " ", "Stat changes", "+5 Stamina"), texts(cards.getJSONObject(0)))
+        assertEquals(listOf(" ", "Stat changes", "+5 Stamina"), hoverTexts(BagsCompare.hover(cards)))
+        val head = row("INVTYPE_HEAD", stats(stat(STA, "Stamina", 4)))
+        val e = BagsCompare.cards(JSONObject(), head, mapOf(1 to worn(1, null, "Head")), false)
+        assertEquals(listOf(" ", "Stat changes", "+4 Stamina"), hoverTexts(BagsCompare.hover(e)))
+    }
+
+    @Test fun twoRingsNameEachPieceOverItsChanges() {
+        val r = row("INVTYPE_FINGER", stats(stat(STA, "Stamina", 3)))
+        val w11 = worn(11, 70, "Finger 1", stats(stat(STA, "Stamina", 2))).put("tip", JSONArray().put(tipLine("Band", "1eff00")))
+        val cards = BagsCompare.cards(JSONObject().put("cmp", JSONArray().put(nwGame(11, line("+1 Stamina", "00ff00")))), r,
+            mapOf(11 to w11, 12 to worn(12, null, "Finger 2")), false)
+        val h = BagsCompare.hover(cards)
+        assertEquals(listOf(" ", "If you replace this item, the following stat changes will occur:", "Band", "+1 Stamina", " ",
+            "Finger 2 (Empty)", "+3 Stamina"), hoverTexts(h))
+        assertEquals(BagsCompare.DIM, h[2].getString("c"))           // a label, not one more green gain
+        assertEquals(BagsCompare.DIM, h[5].getString("c"))
+    }
+
+    @Test fun aTwoHandersHoverIsThePairsChangesOnce() {
+        val r = row("INVTYPE_2HWEAPON", stats(stat(STR, "Strength", 10)))
+        val m = nwGame(16, line("+5 Strength", "00ff00"), line("-200 Armor", "ff2020")).put("with", 17)
+        val o = JSONObject().put("slot", 17).put("pair", 16).put("nw", true).put("lines", JSONArray())
+        val wornM = worn(16, 801, "Main Hand", item = "Sword").put("tip", JSONArray().put(tipLine("Sword")))
+        val wornO = worn(17, 802, "Off Hand", item = "Shield").put("tip", JSONArray().put(tipLine("Shield")))
+        val cards = BagsCompare.cards(JSONObject().put("cmp", JSONArray().put(m).put(o)), r, mapOf(16 to wornM, 17 to wornO), false)
+        assertEquals(listOf("Shield"), texts(cards.getJSONObject(1)))        // the Compare sheet's off-hand card: its own text
+        assertEquals(listOf(" ", "If you replace this item, the following stat changes will occur:", "+5 Strength", "-200 Armor"),
+            hoverTexts(BagsCompare.hover(cards)))
+    }
+
+    @Test fun nothingToChangeNothingOnTheHover() {
+        assertEquals(0, BagsCompare.hover(JSONArray()).size)
+        assertEquals(0, BagsCompare.hover(null).size)
+        val r = row("INVTYPE_CHEST", stats(stat(STA, "Stamina", 4)))
+        val cards = BagsCompare.cards(JSONObject(), r, mapOf(5 to worn(5, 900, "Chest", stats(stat(STA, "Stamina", 4)))), false)
+        assertEquals(0, BagsCompare.hover(cards).size)
+    }
 }
