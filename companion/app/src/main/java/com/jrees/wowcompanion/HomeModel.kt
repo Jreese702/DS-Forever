@@ -66,7 +66,9 @@ class HomeFlow {
 
     /** back from a full-screen module */
     fun close(): Boolean {
-        if (takeover || full == null) return false
+        // combat-touch (the user, 2026-11-13: "I JUST WANT TOUCHING IT OR CHAT or any of the rooms and elements TO BEHAVE THAT SAME
+        // WAY"): no fight refusal here any more; arriving Home or the disc closes a module in a fight as out of one
+        if (full == null) return false
         full = null
         return true
     }
@@ -80,8 +82,9 @@ class HomeFlow {
 
     /**
      * The combat takeover on or off, from [HomeCombat.shown]. It covers whatever was on screen and
-     * gives it back unchanged, a full-screen module included. While it shows, the page's taps do
-     * nothing: the layout is fixed until the fight is over.
+     * gives it back unchanged, a full-screen module included (one open BEFORE the pull). It no longer freezes the page's taps
+     * (combat-touch, 2026-11-13, replacing "the layout is fixed until the fight is over"): a touch on a module first shrinks it
+     * as B does ([HomeTouch.open]), and it never comes back over a module the player opened during the fight ([HomeTouch.takeover]).
      */
     fun combat(on: Boolean): Boolean {
         if (on == takeover) return false
@@ -94,6 +97,41 @@ class HomeFlow {
         full = m
         return true
     }
+}
+
+/**
+ * TOUCH IN A FIGHT = TOUCH OUT OF ONE (combat-touch; the user, 2026-11-13: "When in combat sometimes I touch the map to open it and
+ * see, but it won't open and I have to press B to get to it. I JUST WANT TOUCHING IT OR CHAT or any of the rooms and elements TO
+ * BEHAVE THAT SAME WAY"). Home's module taps were refused while the fight's takeover showed; only B shrank it. Pure.
+ */
+object HomeTouch {
+    /**
+     * A touch (or the D-pad's map word) on module [m]: the first touch counts. In the takeover it first makes B's own change
+     * ([HomeGrow.minimize], then the takeover off: no taps, nothing secure; the guest hold and PadOwnerSync's ENTER follow from the
+     * layout as after B), without B's grace or trigger checks (those guard a FIGHT BUTTON; a finger on the bottom screen never is).
+     * A module the takeover was covering shows again. True = something changed.
+     */
+    fun open(flow: HomeFlow, grow: HomeGrow, m: HomeModule, now: Long): Boolean {
+        var changed = false
+        if (flow.takeover) {
+            grow.minimize(now)
+            changed = flow.combat(false)
+        }
+        val opened = when (m) {
+            HomeModule.CHAT -> flow.tapChat()
+            HomeModule.MAP -> flow.tapMap()
+            HomeModule.BARS -> flow.tapBars()
+        }
+        return opened || changed
+    }
+
+    /** whether the takeover should show: the grow's word, never with Party mode on (v17), never over a module opened in the fight */
+    fun takeover(growShown: Boolean, partyOn: Boolean, full: HomeModule?, openedInFight: Boolean): Boolean =
+        growShown && !partyOn && !(openedInFight && full != null)
+
+    /** the opened-in-a-fight mark: set by a touch's open while fighting, kept while that module is open and the fight runs */
+    fun keepOpened(openedInFight: Boolean, full: HomeModule?, fighting: Boolean): Boolean =
+        openedInFight && full != null && fighting
 }
 
 /**
