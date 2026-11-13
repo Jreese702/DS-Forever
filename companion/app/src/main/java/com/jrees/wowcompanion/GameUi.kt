@@ -44,7 +44,7 @@ object GameUi {
     private var hudHTapN = -1
     /** the character now ("Name-Realm", the host's from the padmap); null = not known yet: no HUD row */
     @Volatile var character: String? = null
-        set(v) { if (field != v) { field = v; reconcile(); changed() } }
+        set(v) { if (field != v) { field = v; playerClass = classFor(v); reconcile(); changed() } }    // Smart Res: the new character's class (its party document, before or after)
     /** the hub document's cb.hidden; null = an add-on without it (no row) */
     @Volatile private var castBarHidden: Boolean? = null
     /** LATER 25: one of the game's tracking abilities is on (the map document's track: h / m / t = 1) */
@@ -119,7 +119,9 @@ object GameUi {
                   /** hub33: the pet's strip under the resource bar on (Trail.lua prd11); null = an add-on without the switch */
                   val pet: Boolean? = null,
                   /** hub45 (issue #195): DS Forever's Nintendo bar in the stock gamepad bar's place on; null = an add-on without it */
-                  val nbar: Boolean? = null)
+                  val nbar: Boolean? = null,
+                  /** hub47 (the user, 2026-11-13): Smart Res on; null = an add-on without the switch */
+                  val sres: Boolean? = null)
     @Volatile private var sw: Sw? = null
     private var swTapAt = 0L
     private var swTapN = -1
@@ -150,15 +152,50 @@ object GameUi {
      *  Nintendo bar's switch. Not a choice of its own: it follows the "hud" element's mode (wanted exactly while that mode is NINTENDO),
      *  so it is kept where the element's mode is kept (app-wide, as every element's mode) */
     const val SW_NBAR = "nbar"
+    /** hub47 SMART RES (the user, 2026-11-13: "There should be an enable smart res toggle setting for party mode to enable pressing dead
+     *  team members on touch if they are dead and I am playing a class with a res. Similarly a revive pet would be neat."): a tap on a dead
+     *  party member casts the class's res (PadMap m150); per character (the res is the class's). ON BY DEFAULT since 2026-11-13 (the
+     *  user's pick: "Smart Res is ON by default, still saved per character (for classes with a res or Revive Pet; a character whose
+     *  class has neither shows it off/hidden)"); in Party mode or not, as built */
+    const val SW_SRES = "sres"
+    /** the classes Smart Res has something for: a res (Priest, Paladin, Shaman, Druid's Rebirth) or Revive Pet (Hunter); PadMap's RES_BY */
+    val SRES_CLASSES = setOf("PRIEST", "PALADIN", "SHAMAN", "DRUID", "HUNTER")
+    /** the class (UnitClass's file token) of [character] from the CURRENT party document's own entry; null = not known yet */
+    @Volatile var playerClass: String? = null
+        private set
+    /** Smart Res for [cls]: true = a res / Revive Pet, false = neither (the row hidden, the switch off), null = the class not known */
+    fun sresClass(cls: String?): Boolean? = cls?.takeIf { it.isNotBlank() }?.let { it.uppercase() in SRES_CLASSES }
+    /** the host's current party document: you are its "player" entry; a class for another name (a stale document) is not taken */
+    fun partySeen(p: PartyModel.Party) {
+        val me = p.m.firstOrNull { it.u == "player" } ?: return
+        // review 2026-11-13: kept even with no character yet: a party document that comes before the padmap's word (a login, a character
+        // switch) would otherwise leave the class unknown (the row shown On for a Warrior) until the add-on's next party document
+        seenMe = me.n to me.c
+        val who = character ?: return
+        val cls = classFor(who)
+        if (cls != playerClass) { playerClass = cls; reconcile(); changed() }
+    }
+    /** the last current party document's own entry (name, class token); null = none seen */
+    @Volatile private var seenMe: Pair<String, String>? = null
+    /** [who]'s class from that entry: only when its name is [who]'s (a stale document for another character says nothing) */
+    private fun classFor(who: String?): String? {
+        val me = seenMe ?: return null
+        if (who == null || me.first != who.substringBefore('-')) return null
+        return me.second.takeIf { it.isNotBlank() }
+    }
+    /** tests: forget the party document's entry */
+    fun resetSeenForTest() { seenMe = null; playerClass = null }
     // hub19: the party frames; ON by default since 2026-11-05 (the game hides health from add-ons: its own frames are the real health)
     private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true, SW_WM to false, SW_PARTY to true,
         // hub22: start attack off until chosen; Auto Shot follows the game's own default (on) unless chosen
         SW_ATK to false, SW_SHOT to true, SW_PMODE to true, SW_UFP to true, SW_UFT to true, SW_UFTOT to false, SW_UFHPP to false, SW_UFHPT to false, SW_SHOTF to false, SW_PS to false,
-        SW_PET to true)
+        SW_PET to true, SW_SRES to true)
     /** this character's choice for [part] (its default until one is made); the resource bar's old "HUD mode" choice carries over */
     fun swWant(part: String): Boolean {
         if (part == SW_PMODE) return prefs?.getBoolean("sw.$SW_PMODE", true) ?: true
         if (part == SW_NBAR) return nbarWanted(mode("hud"))
+        // 2026-11-13 (the user's pick): a class with neither a res nor Revive Pet: off, whatever was saved
+        if (part == SW_SRES && sresClass(playerClass) == false) return false
         val who = character ?: return SW_DEFAULT[part] ?: false
         val def = if (part == SW_PRD) prefs?.getBoolean("hud.$who", true) ?: true else SW_DEFAULT[part] ?: false
         return prefs?.getBoolean("sw.$part.$who", def) ?: def
@@ -185,7 +222,7 @@ object GameUi {
     }
     /** the game's word for [part] now (null = not said / no add-on with it) */
     fun swNow(part: String): Boolean? = sw?.let { when (part) { SW_PLAYER -> it.player; SW_TARGET -> it.target; SW_NP -> it.np; SW_WM -> it.wm; SW_PARTY -> it.party; SW_ATK -> it.atk; SW_SHOT -> it.shot; SW_SHOTF -> it.shotf; SW_PMODE -> it.pmode
-        SW_UFP -> it.ufp; SW_UFT -> it.uft; SW_UFTOT -> it.uftot; SW_UFHPP -> it.ufhpp; SW_UFHPT -> it.ufhpt; SW_PS -> it.ps; SW_PET -> it.pet; SW_NBAR -> it.nbar; else -> it.prd } }
+        SW_UFP -> it.ufp; SW_UFT -> it.uft; SW_UFTOT -> it.uftot; SW_UFHPP -> it.ufhpp; SW_UFHPT -> it.ufhpt; SW_PS -> it.ps; SW_PET -> it.pet; SW_NBAR -> it.nbar; SW_SRES -> it.sres; else -> it.prd } }
     /** issue #195: the Nintendo bar is wanted exactly while the controller bars' mode is NINTENDO */
     fun nbarWanted(hudMode: UiMode): Boolean = hudMode == UiMode.NINTENDO
     /** the absolute column that makes [part] [on] */
@@ -207,13 +244,14 @@ object GameUi {
         SW_PS -> if (on) "PS_HIDE" else "PS_SHOW"
         SW_PET -> if (on) "PET_ON" else "PET_OFF"
         SW_NBAR -> if (on) "NBAR_ON" else "NBAR_OFF"
+        SW_SRES -> if (on) "SRES_ON" else "SRES_OFF"
         else -> if (on) "PRD_ON" else "PRD_OFF"
     }]
     /** the switch to tap now: the first whose game word differs from the choice, or which the game has not had since its /reload */
     fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? =
-        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOTF, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT, SW_PS, SW_PET, SW_NBAR).firstOrNull { p ->
+        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOTF, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT, SW_PS, SW_PET, SW_NBAR, SW_SRES).firstOrNull { p ->
             val now = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; SW_PARTY -> s.party
-                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; SW_NBAR -> s.nbar; else -> s.prd }
+                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; SW_NBAR -> s.nbar; SW_SRES -> s.sres; else -> s.prd }
             // hub22: Auto Shot is the game's own saved option: only a CHOICE made here is sent (never the default over the game's)
             val chosen = p != SW_SHOT || character?.let { prefs?.contains("sw.$p.$it") } == true
             // hub28: while "In combat" is wanted (and the add-on knows it), the game's option follows the fight: not tapped
@@ -272,6 +310,10 @@ object GameUi {
     /** QOL > Party (hub25): Party mode, on by default since 1.0.26 */
     fun partyModeRow(): Row? = swRow(PMODE_ID, SW_PMODE, "Party mode", "On: Select turns Party mode on", "Off")
     const val PMODE_ID = "partymode"
+    /** hub47: Controller > Combat helpers, under Party mode: Smart Res (per character, on by default since 2026-11-13); hidden for a
+     *  class with neither a res nor Revive Pet */
+    fun smartResRow(): Row? = if (sresClass(playerClass) == false) null else swRow(SRES_ID, SW_SRES, "Smart Res", "On: tap a dead member to res", "Off")
+    const val SRES_ID = "smartres"
     /** Party mode allowed: Home draws its party module only then */
     fun partyModeOn(): Boolean = swWant(SW_PMODE)
     fun autoShotRow(): Row? {
@@ -447,7 +489,7 @@ object GameUi {
             fun shown(k: String) = if (o.has(k)) o.optString(k) == "shown" else null
             fun flag(k: String) = if (o.has(k)) o.optBoolean(k) else null
             Sw(o.optString("row", "uisw"), cols, shown("player"), shown("target"), flag("np"), flag("prd"), set, flag("wm"), shown("party"), flag("atk"), flag("shot"), flag("pmode"),
-               flag("ufp"), flag("uft"), flag("uftot"), flag("ufhpp"), flag("ufhpt"), flag("shotf"), flag("shotfk"), flag("ps"), flag("pet"), flag("nbar"))
+               flag("ufp"), flag("uft"), flag("uftot"), flag("ufhpp"), flag("ufhpt"), flag("shotf"), flag("shotfk"), flag("ps"), flag("pet"), flag("nbar"), flag("sres"))
         }
         val prd = h.optJSONObject("prd")
         prdY = prd?.let { if (it.has("y")) it.optInt("y") else null }

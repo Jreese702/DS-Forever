@@ -127,7 +127,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         Part.WINDOWS -> (GameUi.rows() + listOfNotNull(lootRow(), tipsRow(), GameUi.castBarRow(), GameUi.playerRow(), GameUi.targetRow()))
             .sortedBy { r -> WINDOWS_ORDER.indexOf(r.id).let { if (it < 0) WINDOWS_ORDER.size else it } }
         // Party mode out of Experimental, on by default (the user, 2026-11-12)
-        Part.COMBAT -> listOfNotNull(GameUi.partyModeRow(), GameUi.attackRow())
+        // hub47 Smart Res under Party mode (the user, 2026-11-13: "an enable smart res toggle setting for party mode")
+        Part.COMBAT -> listOfNotNull(GameUi.partyModeRow(), GameUi.smartResRow(), GameUi.attackRow())
         Part.AUTO_SHOT -> listOfNotNull(GameUi.autoShotRow())
         Part.COMPANION -> emptyList()
         else -> GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
@@ -260,6 +261,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                             GameUi.ATK_ID -> GameUi.setSwitch(GameUi.SW_ATK, m == UiMode.ON)
                             GameUi.SHOT_ID -> GameUi.setSwitch(GameUi.SW_SHOT, m == UiMode.ON)
                             GameUi.PMODE_ID -> GameUi.setSwitch(GameUi.SW_PMODE, m == UiMode.ON)
+                            GameUi.SRES_ID -> GameUi.setSwitch(GameUi.SW_SRES, m == UiMode.ON)
                             else -> GameUi.setMode(it, m)
                         }
                     }
@@ -406,7 +408,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         }
         val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == TIPS_ID || r.id == RINGS_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.HUD_ID ||
             r.id == GameUi.PLAYER_ID || r.id == GameUi.TARGET_ID || r.id == GameUi.PARTY_ID || r.id == GameUi.NP_ID || r.id == GameUi.WM_ID ||
-            r.id == GameUi.ATK_ID || r.id == GameUi.SHOT_ID || r.id == GameUi.UFP_ID || r.id == GameUi.UFT_ID || r.id == GameUi.UFTOT_ID || r.id == GameUi.PET_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
+            r.id == GameUi.ATK_ID || r.id == GameUi.SHOT_ID || r.id == GameUi.UFP_ID || r.id == GameUi.UFT_ID || r.id == GameUi.UFTOT_ID || r.id == GameUi.PET_ID || r.id == GameUi.SRES_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
         val sw = (right - left - gap * (modes.size - 1)) / modes.size
         var x = left
         for (m in modes) {
@@ -453,6 +455,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             else "No markers in the 3D world; the compass bar still shows them. For this character."
         if (r.id == GameUi.PLAYER_ID) return if (r.mode == UiMode.ON) "The game's player frame stays on the top screen. For this character."
             else "The game's player frame (and its pet frame) is hidden. For this character."
+        if (r.id == GameUi.SRES_ID) return if (r.mode == UiMode.ON) "A tap on a dead party member casts your res. Rebirth and Revive Pet in combat too. For this character."
+            else "A tap on a dead member works as on any member. For this character."
         if (r.id == GameUi.ATK_ID) return if (r.mode == UiMode.ON) "Targeting an enemy (RB) starts your auto attack. For this character."
             else "Targeting an enemy only targets it. For this character."
         if (r.id == GameUi.SHOT_ID && GameUi.shotMode() == 2) return "The game's own option, Smart: on by default; a plain attack you start out of a fight turns it off, your next ability (not Hunter's Mark) turns it back on. For this character."

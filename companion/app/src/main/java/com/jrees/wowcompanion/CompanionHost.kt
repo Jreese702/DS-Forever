@@ -1470,6 +1470,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // 2026-11-04 (the user: logged in on another character, "it showed my hunter as myself in the party"): a party document from the
         // log's history may be another character's; only a CURRENT one is shown (the add-on sends its own within seconds of a login)
         if (!current) return
+        GameUi.partySeen(p)                                                 // Smart Res: this character's class (shown / hidden)
         val live = PartyModel.live
         val wasOn = live.party?.on == true
         if (live.onParty(p, current, SystemClock.uptimeMillis())) partyRedraw()
@@ -1488,6 +1489,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "menu" -> PartyModel.unitIndex(b.u)?.let { i -> partyWheel(i, byPad = true) }
             "key" -> if (partyWheelOpen()) b.key?.let { targetRadial.key(it) } else if (menu.isOpen && menu.byPad) b.key?.let { menu.key(it) }
             "off" -> { if (partyWheelOpen()) targetRadial.close("Party mode off"); if (menu.isOpen && menu.byPad) menu.close() }
+            // m150 SMART RES: a tap on a dead member in a fight with no res a fight allows (only Rebirth / Revive Pet do)
+            "nores" -> { Log.i("WCHOME", "party: Smart Res refused in a fight"); homeView.partyNote("Not in combat") }
+            "res" -> Log.i("WCHOME", "party: Smart Res cast")
         }
         // the pad's menu sub-state with no menu of ours driving it (a lost k=menu, an app restart): MENU DONE frees the presses
         if (PartyModel.strandedMenu(b, partyWheelOpen() || (menu.isOpen && menu.byPad))) {

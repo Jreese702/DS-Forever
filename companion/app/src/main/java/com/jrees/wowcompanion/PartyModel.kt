@@ -61,6 +61,11 @@ object PartyModel {
     data class Party(
         val v: String, val rs: Int, val on: Boolean, val aside: String?, val box: Int?, val fight: Boolean, val grp: Boolean,
         val sel: String, val m: List<Member>,
+        /** m150 SMART RES (the user, 2026-11-13): a tap on a dead member casts this character's res (the add-on armed it) */
+        val res: Boolean = false,
+        /** m150: a Hunter's pet seen dead and gone (no unit), Revive Pet armed: drawn as a dead pet entry right of you; its tap = the
+         *  pet's cell (Revive Pet). Never in [m]: the add-on's pick walk and the box count stay without it */
+        val pd: Member? = null,
     ) {
         /** Party mode on and routing (not suspended by a room / window): the only state that draws a box. IN A FIGHT `on` alone
          *  (PadMap m132, the user 2026-11-11, a healer: "Party mode needs to be usable in combat for healers"): the add-on never steps
@@ -70,6 +75,12 @@ object PartyModel {
         val n: Int get() = m.size
         /** m131: a pet is out (its entry the second, PadMap's PM.units) */
         val pet: Boolean get() = m.any { it.isPet }
+        /** m150: the entries DRAWN on the bottom: [m], with the dead pet entry [pd] second (right of you) while there is one */
+        val view: List<Member> get() = pd?.let { d -> if (pet || m.isEmpty()) m else listOf(m[0], d) + m.drop(1) } ?: m
+        /** m150: the drawn rows have a pet's place (a pet out, or the dead pet entry) */
+        val viewPet: Boolean get() = pet || (pd != null && m.isNotEmpty())
+        /** m150: the drawn index (0-based, in [view]) of [m]'s entry [k] (0-based); the dead pet entry moves every party member one on */
+        fun viewIndex(k: Int): Int = if (k >= 1 && view.size > m.size) k + 1 else k
     }
 
     data class Spell(val id: Int, val n: String, val i: Int, val k: Boolean = true, val d: Boolean = false, val res: Boolean = false)
@@ -120,8 +131,12 @@ object PartyModel {
         }
         if (m.isEmpty()) return null
         val on = p.bool("on") ?: false
+        // m150: the dead pet entry (its last plain name / icon), dead by definition
+        val pd = p.optJSONObject("pd")?.let { o ->
+            Member("pet", PET_I, o.str("n") ?: "?", "", null, "NONE", true, false, "", null, null, o.int("ic")?.takeIf { it > 0 })
+        }
         Party(msg.optString("v", ""), msg.optInt("rs", 0), on, p.str("aside"), if (on) p.int("box") else null,
-            p.bool("fight") ?: false, p.bool("grp") ?: false, p.str("sel") ?: "off", m)
+            p.bool("fight") ?: false, p.bool("grp") ?: false, p.str("sel") ?: "off", m, p.bool("res") ?: false, pd)
     }.getOrNull()
 
     private fun spell(o: JSONObject?): Spell? {
