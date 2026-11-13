@@ -9,8 +9,9 @@ import org.junit.Test
 
 /**
  * THE TAP-TO-CAST BAR IN A FIGHT (the user, 2026-11-13: "there should be a settings toggle to make them Hide/stay in combat"; the picks:
- * the bar's own Bottom-tab section, "Hide in combat" the default): the setting (Hide by default, saved by name), the fade on Home's fight
- * (out at the start, back at the end, reversing from where it is), no touch while hidden, Stay seen and tappable in a fight (the
+ * the bar's own Bottom-tab section, "Hide in combat" the default): the setting (Hide by default, saved by name), cb7's slide on Home's
+ * fight (the user: "it should slide down behind the home bar out of view, not fade out and give that space back to the map or chat":
+ * below the page at the start, its column taking the room, back at the end, one progress for both), no touch while hidden or sliding, Stay seen and tappable in a fight (the
  * takeover with Party mode off and the grow's fight with it on are both Home's fightShown()), the Settings row and its picture.
  */
 class CastBarCombatTest {
@@ -41,49 +42,69 @@ class CastBarCombatTest {
         assertEquals(STAY, HomeSettings.castBarCombat)
     }
 
-    @Test fun hideFadesOutWhenTheFightStartsAndBackWhenItEnds() {
-        val f = CastStripModel.FightFade(ms = 100f)
-        assertFalse(f.note(HIDE, false, 0))                                   // at rest: shown, nothing changes
-        assertEquals(1f, f.vis(0), 0f); assertTrue(f.takesTouch())
-        assertTrue(f.note(HIDE, true, 1_000))                                 // the fight starts
+    @Test fun hideGoesWhenTheFightStartsAndBackWhenItEnds() {
+        val f = CastStripModel.FightGate()
+        assertFalse(f.note(HIDE, false))                                      // at rest: shown, nothing changes
+        assertTrue(f.takesTouch()); assertFalse(f.gone)
+        assertTrue(f.note(HIDE, true))                                        // the fight starts: Home lays the page again
         assertTrue(f.hidden)
-        assertEquals(0.5f, f.vis(1_050), 0.01f); assertTrue(f.fading(1_050))
-        assertEquals(0f, f.vis(1_100), 0f); assertFalse(f.fading(1_200))
-        assertFalse(f.note(HIDE, true, 1_500))                                // still fighting: no change
-        assertTrue(f.note(HIDE, false, 2_000))                                // the fight ends
-        assertFalse(f.hidden)
-        assertEquals(0.5f, f.vis(2_050), 0.01f)
-        assertEquals(1f, f.vis(2_200), 0f); assertTrue(f.takesTouch())
+        assertFalse(f.note(HIDE, true))                                       // still fighting: no change
+        assertTrue(f.note(HIDE, false))                                       // the fight ends
+        assertFalse(f.hidden); assertTrue(f.takesTouch())
     }
 
-    @Test fun aFadeReversesFromWhereItIs() {
-        val f = CastStripModel.FightFade(ms = 100f)
-        f.note(HIDE, true, 0)
-        f.note(HIDE, false, 50)                                               // half way out: back from 0.5
-        assertEquals(0.5f, f.vis(50), 0.01f)
-        assertEquals(0.75f, f.vis(100), 0.01f)
+    /** cb7 (the user: "it should slide down behind the home bar out of view, not fade out and give that space back to the map or
+     *  chat"): the hidden box is the laid one moved down until its top is the page's foot; the column's bottom goes back to its own */
+    @Test fun hiddenTheBarLiesBelowThePageAndTheColumnTakesItsRoom() {
+        val h = 990f
+        for (side in listOf(CastStripModel.Side.LEFT, CastStripModel.Side.RIGHT, CastStripModel.Side.BOTH)) {
+            val b = CastStripModel.place(side, 1240f, h, UiKit.MODULE_GAP)!!
+            val x = CastStripModel.hiddenBox(b, h)
+            assertEquals(h, x.t, 0f); assertEquals(b.h, x.h, 0f); assertEquals(b.l, x.l, 0f); assertEquals(b.r, x.r, 0f)
+        }
+        assertEquals(300f, CastStripModel.columnBottom(300f, 450f, hidden = false), 0f)
+        assertEquals(450f, CastStripModel.columnBottom(300f, 450f, hidden = true), 0f)
     }
 
-    @Test fun noTouchWhileHidden() {
-        val f = CastStripModel.FightFade()
-        f.note(HIDE, true, 0)
-        assertFalse(f.takesTouch())
-        assertFalse(f.takesTouch())                                           // at once, not only once faded
-        // the view's own touch gate: its very first line refuses every touch while hidden
+    /** one progress for both: half way down the bar has gone half its way and the column grown half its way */
+    @Test fun theSlideAndTheColumnShareOneProgress() {
+        val b = CastStripModel.Box(10f, 800f, 610f, 932f)
+        val h = 950f
+        for (k in listOf(0f, 0.25f, 0.5f, 1f)) {
+            val s = CastStripModel.slideAt(b, h, k)
+            val col = CastStripModel.columnAt(790f, 940f, k)
+            assertEquals((s.t - b.t) / (h - b.t), (col - 790f) / (940f - 790f), 1e-4f)
+            assertEquals(b.h, s.h, 1e-3f)
+        }
+        assertEquals(CastStripModel.hiddenBox(b, h), CastStripModel.slideAt(b, h, 1f))
+        assertEquals(b, CastStripModel.slideAt(b, h, 0f))
+    }
+
+    @Test fun noTouchWhileHiddenOrSliding() {
+        val f = CastStripModel.FightGate()
+        f.note(HIDE, true)
+        assertFalse(f.takesTouch())                                           // at once, not only once it landed
+        f.sliding = true; assertFalse(f.gone)                                 // on its way: drawn, no touch
+        f.sliding = false; assertTrue(f.gone)                                 // landed below the page: not drawn
+        f.note(HIDE, false); f.sliding = true
+        assertFalse(f.takesTouch())                                           // coming back up: still no touch
+        f.sliding = false; assertTrue(f.takesTouch())
+        // the view's own touch gate: its very first line refuses every touch while hidden / sliding; no fade any more
         val v = src("CastStripView.kt")
         val touch = v.substringAfter("override fun onTouchEvent(ev: MotionEvent): Boolean {")
-        assertTrue(touch.trimStart().lines().take(2).joinToString("\n").contains("if (!fightFade.takesTouch()) return false"))
-        assertTrue(v.contains("if (vis <= 0f) return"))                       // nothing drawn once faded out
+        assertTrue(touch.trimStart().lines().take(2).joinToString("\n").contains("if (!fightGate.takesTouch()) return false"))
+        assertTrue(v.contains("if (fightGate.gone) return"))
+        assertFalse(v.contains("saveLayerAlpha"))
     }
 
     @Test fun stayIsSeenAndTappableInAFight() {
-        val f = CastStripModel.FightFade()
-        assertFalse(f.note(STAY, true, 0))
-        assertFalse(f.hidden); assertEquals(1f, f.vis(10_000), 0f); assertTrue(f.takesTouch())
+        val f = CastStripModel.FightGate()
+        assertFalse(f.note(STAY, true))
+        assertFalse(f.hidden); assertTrue(f.takesTouch())
         // switched to Stay mid-fight: it comes back
-        val g = CastStripModel.FightFade(ms = 100f)
-        g.note(HIDE, true, 0)
-        assertTrue(g.note(STAY, true, 500)); assertTrue(g.takesTouch()); assertEquals(1f, g.vis(600), 0f)
+        val g = CastStripModel.FightGate()
+        g.note(HIDE, true)
+        assertTrue(g.note(STAY, true)); assertTrue(g.takesTouch())
         assertFalse(CastStripModel.hiddenIn(STAY, true)); assertTrue(CastStripModel.hiddenIn(HIDE, true))
         assertFalse(CastStripModel.hiddenIn(HIDE, false))
     }
@@ -92,12 +113,17 @@ class CastBarCombatTest {
      *  (only a module full screen outside the takeover drops it), so Stay keeps it in fights with Party mode on and off */
     @Test fun homeFollowsItsOwnFightSignal() {
         val h = src("HomeView.kt")
-        assertTrue(h.contains("private fun castStripFight() = castStrip.fight(HomeSettings.castBarCombat, fightShown())"))
+        assertTrue(h.contains("private fun castStripGate() { castStrip.fight(HomeSettings.castBarCombat, fightShown()) }"))
+        assertTrue(h.contains("CastStripModel.hiddenIn(HomeSettings.castBarCombat, fightShown())"))
+        // cb7: a change of hidden lays the page again with the one motion; apply itself only gates (no re-lay from inside apply)
+        assertTrue(h.contains("if (laidSide == CastStripModel.Side.OFF || castHiddenNow() == laidHidden) return"))
+        val apply = h.substringAfter("private fun apply(s: HomeScreen, animate: Boolean) {").substringBefore("\n    private fun big(")
+        assertTrue(apply.contains("castStripGate()")); assertFalse(apply.contains("castStripFight()"))
         assertTrue(h.contains("fun fightShown(): Boolean = flow.takeover || grow.fighting(System.currentTimeMillis())"))
         assertTrue(h.contains("if (s.full != null && !s.takeover) { laidSide = CastStripModel.Side.OFF; return base }"))
         assertTrue(h.contains("return withStrip(withParty(base, s, w), w, h)"))
-        // checked on every tick (a fight's start / end), every apply (the takeover) and every settings change
-        assertEquals(3, Regex("""castStripFight\(\)""").findAll(h).count() - 1)
+        // checked on every tick (a fight's start / end) and every settings change; the gate on every apply
+        assertEquals(2, Regex("""castStripFight\(\)""").findAll(h).count() - 1)
     }
 
     @Test fun theRowAndItsPicture() {
@@ -108,7 +134,7 @@ class CastBarCombatTest {
         assertTrue(SettingsPreview.has("In combat"))
         assertEquals("Cast bar in combat: Hide", SettingsPreview.title("In combat", SettingsPreview.State()))
         assertEquals("Cast bar in combat: Stay", SettingsPreview.title("In combat", SettingsPreview.State(castCombatHide = false)))
-        assertTrue(SettingsPreview.caption("In combat", SettingsPreview.State()).first().contains("fades"))
+        assertTrue(SettingsPreview.caption("In combat", SettingsPreview.State()).first().contains("slides"))
         assertTrue(SettingsPreview.caption("In combat", SettingsPreview.State(castCombatHide = false)).first().contains("stays"))
     }
 
@@ -117,9 +143,10 @@ class CastBarCombatTest {
             .map { java.io.File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) {
             Tr.load(l, java.io.File(dir, "$l.json").readText(Charsets.UTF_8))
-            for (w in listOf("In combat", "Hide", "Stay", "Hide: the bar fades out in a fight.", "Cast bar in combat: Hide",
-                "Cast bar in combat: Stay", "In a fight the tap-to-cast bar fades", "out; it comes back when the fight ends.",
-                "In a fight the tap-to-cast bar stays,", "one tap casts each.", "Hide: the bar fades out", "Stay: the bar stays",
+            for (w in listOf("In combat", "Hide", "Stay", "Hide: the bar slides away in a fight.", "Cast bar in combat: Hide",
+                "Cast bar in combat: Stay", "In a fight the tap-to-cast bar slides", "down; chat and map take its room.",
+                "In a fight the tap-to-cast bar stays,", "one tap casts each.", "Hide: the bar slides away", "Stay: the bar stays",
+                "Eight spells, four under each column;", "Eight spells, one tap each.",
                 "In a fight:", "no bar, no taps", "tap to cast"))
                 assertTrue("$l: $w", Tr.t(w, l) != w)
         }

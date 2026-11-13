@@ -32,7 +32,7 @@ class SpellsOverlay(
     private val otherReader: () -> Boolean = { false },
     /** b37: one tap on the `spells` row's column (the Bind box's Normal / In combat) */
     private val onTap: (Int) -> Unit = {},
-    /** GitHub #43 cb3: the Bind box's Cast bar tab and its slots (padtab 39 then 26 / 20-25, Book b56) */
+    /** GitHub #43 cb3: the Bind box's Cast bar tab and its slots (padtab 39 then 26 / 20-25, 27-28 for slots 7-8: Book b56 / b57) */
     private val onCastBarTaps: (List<Pair<String, Int>>) -> Unit = {},
 ) : View(context) {
 
@@ -73,6 +73,8 @@ class SpellsOverlay(
      * will add a third tab if this setting is turned on, showing the 6 slots on that bar"): Normal | In combat | Cast bar while the
      * setting is not Off and the add-on takes a slot pick (ActionBar cb3, Book b56). On it the box shows the bar's 6 slots: the add-on's
      * cursor (`bcb`, the D-pad left / right) or a finger picks one, A or the tap puts the spell there (padtab 39 then 20-25)
+     * cb6 (the user, 2026-11-13: "8 total, 4 per side"): the tab shows all 8 in ONE row, two groups of 4 (the chat's 1-4, the minimap's
+     * 5-8) a wider gap apart; the D-pad left / right walks all 8 (Book b57), slots 7-8 by padtab 39 then 27-28
      */
     private fun three(): Boolean = CastStripModel.bindTab(HomeSettings.castBarSide, CastStripModel.Live.bar)
     /** a finger's Cast bar tab, shown AT THE TAP until the add-on's `bcb` agrees or 1.5 s pass (as [fightWant]) */
@@ -95,11 +97,14 @@ class SpellsOverlay(
     }
     /** leaving the Cast bar tab (Normal / In combat by LB or a finger): shown at once, the add-on's bf-on / bf-off leave it (Book b56) */
     private fun leaveCb() { cbWant = false; cbUntil = SystemClock.uptimeMillis() + 1500L }
-    /** slot [i]'s box on the Cast bar tab: one row of 6 where the controller's sets stand on the other tabs ([cy] the box's top + 104) */
+    /** slot [i]'s box on the Cast bar tab: one row of 8 where the controller's sets stand on the other tabs ([cy] the box's top + 104);
+     *  cb6: two groups of 4 (Home's two sides) [CB_MID] apart, the row centred in the box (1000 px of the Thor's 1120 px box) */
     private fun cbSlotRect(i: Int, w: Float, cy: Float): RectF {
-        val s = 132f; val gap = 22f
-        val l = w / 2f - (CastStripModel.SLOTS * s + (CastStripModel.SLOTS - 1) * gap) / 2f + i * (s + gap)
-        val t = cy + 340f
+        val s = CB_SLOT; val gap = CB_GAP
+        val n = CastStripModel.SLOTS; val half = CastStripModel.VISIBLE
+        val rowW = n * s + (n - 2) * gap + CB_MID
+        val l = w / 2f - rowW / 2f + i * (s + gap) + (if (i >= half) CB_MID - gap else 0f)
+        val t = cy + 340f + (132f - s) / 2f
         return RectF(l, t, l + s, t + s)
     }
     private var downSlot = -1
@@ -294,7 +299,7 @@ class SpellsOverlay(
             UiKit.pad(c, "${st.prefix}_lshoulder", fightRect(0, w).left + 40f, fightRect(0, w).centerY(), 44f)
             UiKit.pad(c, "${st.prefix}_rshoulder", fightRect(nTabs - 1, w).right - 40f, fightRect(nTabs - 1, w).centerY(), 44f)
         }
-        // cb3: the Cast bar tab: the bar's 6 slots (their spells), the cursor's slot lit and showing the box's spell where it would go,
+        // cb3: the Cast bar tab: the bar's 8 slots (cb6; their spells), the cursor's slot lit and showing the box's spell where it would go,
         // the slot it is on already glowing green (picking that one takes it off)
         if (cbOn) {
             val bar = CastStripModel.Live.bar
@@ -500,5 +505,9 @@ class SpellsOverlay(
         private const val SHOW_MS = 1500L
         /** the box's top (84) + 104: the line the Cast bar tab's slots stand from ([cbSlotRect]) */
         private const val CB_CY = 84f + 104f
+        /** cb6: the Cast bar tab's slot, the gap in a group of 4 and the gap between the two groups (8 in one row) */
+        private const val CB_SLOT = 110f
+        private const val CB_GAP = 14f
+        private const val CB_MID = 36f
     }
 }

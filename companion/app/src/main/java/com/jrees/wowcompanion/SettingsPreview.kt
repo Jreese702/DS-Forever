@@ -3,7 +3,6 @@ package com.jrees.wowcompanion
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -161,9 +160,9 @@ object SettingsPreview {
         "Tap-to-cast bar" -> when (s.castBar) {
             1 -> listOf("Four spells under the chat;", "swipe for more.")
             2 -> listOf("Four spells under the minimap;", "swipe for more.")
-            3 -> listOf("One bar under both columns;", "one tap casts each.")
+            3 -> listOf("Eight spells, four under each column;", "one tap casts each.")
             else -> listOf("No tap-to-cast bar on Home.") }
-        "In combat" -> if (s.castCombatHide) listOf("In a fight the tap-to-cast bar fades", "out; it comes back when the fight ends.")
+        "In combat" -> if (s.castCombatHide) listOf("In a fight the tap-to-cast bar slides", "down; chat and map take its room.")
             else listOf("In a fight the tap-to-cast bar stays,", "one tap casts each.")
         "World map" -> if (s.worldMapAll) listOf("The Map room's continents show", "every zone, revealed.")
             else listOf("The Map room's continents show only", "what you have explored.")
@@ -217,7 +216,7 @@ object SettingsPreview {
     private val GROUND get() = Color.rgb(48, 38, 26)
     private val FLIGHT get() = Theme.flight
     private val SPELLS by lazy { intArrayOf(Color.rgb(150, 100, 40), Color.rgb(50, 95, 160), Color.rgb(150, 45, 40), Color.rgb(60, 130, 60),
-        Color.rgb(120, 70, 150), Color.rgb(170, 140, 50)) }
+        Color.rgb(120, 70, 150), Color.rgb(170, 140, 50), Color.rgb(40, 140, 150), Color.rgb(160, 90, 110)) }   // cb6: eight
 
     /** row [id]'s picture in [r] at [tMs] for state [s]; [prev] + [sinceMs]: the state before the last change (a change glides) */
     fun draw(c: Canvas, r: RectF, id: String, s: State, tMs: Long, glyph: Glyph, prev: State? = null, sinceMs: Long = Long.MAX_VALUE,
@@ -1097,18 +1096,19 @@ object SettingsPreview {
         }
     }
 
-    /** Bottom screen > Tap-to-cast bar > In combat: Home in a fight (the red edge) twice - Hide: the bar fading out (a dashed well
-     *  where it was), Stay: the bar there, a tap casting; the chosen one lit. The side is the player's (Left when the bar is Off) */
+    /** Bottom screen > Tap-to-cast bar > In combat: Home in a fight (the red edge) twice - Hide: cb7, the bar sliding down out of view
+     *  behind the page's foot while its column(s) grow down into the room, Stay: the bar there, a tap casting; the chosen one lit. The
+     *  side is the player's (Left when the bar is Off) */
     private fun castCombat(c: Canvas, r: RectF, s: State, t: Float) {
         val side = if (s.castBar in 1..3) s.castBar else 1
         val k = (t % 2.4f) / 2.4f
-        twoWays(c, r, "Hide: the bar fades out", "Stay: the bar stays", s.castCombatHide, 300f) { box, hide ->
+        twoWays(c, r, "Hide: the bar slides away", "Stay: the bar stays", s.castCombatHide, 300f) { box, hide ->
             val tw = minOf(box.width() * 0.5f, (box.height() - 16f) * 1.35f)
             val th = minOf(box.height() - 16f, tw / 1.35f)
             val tb = RectF(box.left + 12f, box.centerY() - th / 2f, box.left + 12f + tw, box.centerY() + th / 2f)
-            // the bar's strength: Hide fades it out over the first half and leaves it gone; Stay keeps it
-            val barA = if (hide) (255 * (1f - (k * 2f).coerceIn(0f, 1f))).toInt() else 255
-            homeThumb(c, tb, side, barA)
+            // cb7: Hide slides the bar down over the first half (Home's ease) and leaves it gone, the chat / map taller; Stay keeps it
+            val slide = if (hide) ease((k * 2f).coerceIn(0f, 1f)) else 0f
+            homeThumb(c, tb, side, slide = slide)
             UiKit.combatGlow(c, tb, 0.8f, 18f)
             val tx = tb.right + 18f; val cy = box.centerY()
             val sw = UiKit.tex("combat_swords")
@@ -1120,17 +1120,19 @@ object SettingsPreview {
     }
 
     /** a small Home: the controller band on top, the chat left, the minimap right, the bar under one column (cb5: four in view of a
-     *  strip that scrolls, the gold arrow at the edge where more wait) or under both (all six), the slots one size in every mode */
-    private fun homeThumb(c: Canvas, b: RectF, side: Int, barAlpha: Int = 255) {
+     *  strip that scrolls, the gold arrow at the edge where more wait) or under both (cb6: four under each, eight in all), the slots one
+     *  size in every mode. [slide] (cb7, Hide in combat) 0 = laid .. 1 = slid down out of the thumb, the column(s) grown into its room */
+    private fun homeThumb(c: Canvas, b: RectF, side: Int, slide: Float = 0f) {
         frame(c, b, BRONZE, 1.5f, Color.rgb(20, 16, 10))
         val g = 5f; val bandB = b.top + b.height() * 0.3f
         diamond(c, b.left + b.width() * 0.22f, (b.top + bandB) / 2f, 6f, 13f); diamond(c, b.right - b.width() * 0.22f, (b.top + bandB) / 2f, 6f, 13f)
         val mid = b.centerX()
-        val slot = minOf((b.width() - 2f * g - 8f) / 6.6f, (b.width() / 2f - 1.5f * g - 8f) / 4.6f, 22f)   // one size for all: Both's six, 4 in a column
+        val slot = minOf((b.width() / 2f - 1.5f * g - 8f) / 4.6f, 22f)    // one size for all: 4 in a column (cb6: Both's too)
         val barH = slot + 10f
         val leftBar = side == 1 || side == 3; val rightBar = side == 2 || side == 3
-        val chat = RectF(b.left + g, bandB + g, mid - g / 2f, b.bottom - g - (if (leftBar) barH + g else 0f))
-        val map = RectF(mid + g / 2f, bandB + g, b.right - g, b.bottom - g - (if (rightBar) barH + g else 0f))
+        val room = (barH + g) * (1f - slide)                                // cb7: the bar's room, given back as it slides away
+        val chat = RectF(b.left + g, bandB + g, mid - g / 2f, b.bottom - g - (if (leftBar) room else 0f))
+        val map = RectF(mid + g / 2f, bandB + g, b.right - g, b.bottom - g - (if (rightBar) room else 0f))
         frame(c, chat, Theme.bronzeDim, 1.5f, Color.rgb(28, 22, 15))
         pFill.color = DIMC
         for (j in 0 until 3) { val y = chat.bottom - 10f - j * 10f; if (y > chat.top + 6f) c.drawRect(chat.left + 6f, y - 3f, chat.right - 6f - j * 10f, y, pFill) }
@@ -1138,30 +1140,31 @@ object SettingsPreview {
         val mr = minOf(map.width(), map.height()) / 2f - 5f
         pFill.color = Color.rgb(60, 82, 52); c.drawCircle(map.centerX(), map.centerY(), mr, pFill)
         pStroke.color = BRONZE; pStroke.strokeWidth = 1.5f; c.drawCircle(map.centerX(), map.centerY(), mr, pStroke)
-        fun bar(l: Float, rr: Float, n: Int) {
-            val well = RectF(l, b.bottom - g - barH, rr, b.bottom - g)
-            if (barAlpha < 255) {                                               // In combat: Hide - a dashed well where the bar fades out
-                pStroke.color = Theme.bronzeDim; pStroke.strokeWidth = 1.5f; pStroke.pathEffect = DashPathEffect(floatArrayOf(6f, 5f), 0f)
-                c.drawRoundRect(well, 4f, 4f, pStroke); pStroke.pathEffect = null
-                if (barAlpha <= 0) return
-            }
-            val layer = if (barAlpha < 255) c.saveLayerAlpha(well.left - 2f, well.top - 2f, well.right + 2f, well.bottom + 2f, barAlpha) else -1
+        fun bar(l: Float, rr: Float, n: Int, first: Int, arrow: Boolean) {
+            val dy = (barH + g + 2f) * slide                                   // cb7: down behind the page's foot (clipped there)
+            val well = RectF(l, b.bottom - g - barH + dy, rr, b.bottom - g + dy)
+            if (slide >= 1f) return
+            c.save(); c.clipRect(b.left, b.top, b.right, b.bottom - 1.5f)
             frame(c, well, GOLD, 1.5f, Color.rgb(36, 28, 18))
             val gap = (well.width() - 8f - n * slot) / n                       // spread evenly, as on Home
             val cy = well.centerY()
             for (j in 0 until n) {
                 val x = well.left + 4f + gap / 2f + j * (slot + gap)
-                pFill.color = SPELLS[j]; c.drawRect(x, cy - slot / 2f, x + slot, cy + slot / 2f, pFill)
+                pFill.color = SPELLS[(first + j) % SPELLS.size]; c.drawRect(x, cy - slot / 2f, x + slot, cy + slot / 2f, pFill)
             }
-            if (n < 6) {                                                       // cb5: the strip at its start: more wait to the right
+            if (arrow) {                                                       // cb5: the strip at its start: more wait to the right
                 val end = 4f + gap / 2f
                 val ax = well.right - end / 2f - 0.5f; val ah = minOf(slot * 0.55f, 12f); val aw = minOf(ah * 0.5f, end - 2f)
                 val tri = Path().apply { moveTo(ax - aw / 2f, cy - ah / 2f); lineTo(ax + aw / 2f, cy); lineTo(ax - aw / 2f, cy + ah / 2f); close() }
                 pFill.color = GOLD; c.drawPath(tri, pFill)
             }
-            if (layer >= 0) c.restoreToCount(layer)
+            c.restore()
         }
-        when (side) { 1 -> bar(chat.left, chat.right, 4); 2 -> bar(map.left, map.right, 4); 3 -> bar(chat.left, map.right, 6) }
+        // cb6: Both = two bars, 4 under the chat (slots 1-4) and 4 under the minimap (5-8), each where Left's / Right's lies
+        when (side) {
+            1 -> bar(chat.left, chat.right, 4, 0, true); 2 -> bar(map.left, map.right, 4, 0, true)
+            3 -> { bar(chat.left, chat.right, 4, 0, false); bar(map.left, map.right, 4, 4, false) }
+        }
     }
 
     // ---- Bottom screen > Map > World map: the stitched continent, every zone or only the explored ones

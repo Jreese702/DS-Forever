@@ -558,11 +558,11 @@ class HomeSettingsSection(context: Context,
         // GitHub #43 cb3: the tap-to-cast bar's place, its own group (Settings > Bottom screen > Tap-to-cast bar): Off (the default),
         // Left (under the chat), Right (under the minimap), Both
         val sides = CastStripModel.Side.values()
-        y = row(c, y + GAP, "Tap-to-cast bar", listOf("Six spells, one tap each."),
+        y = row(c, y + GAP, "Tap-to-cast bar", listOf("Eight spells, one tap each."),
             sides.map { it.label }, sides.indexOf(HomeSettings.castBarSide), sides.map { sd -> { HomeSettings.castBarSide = sd } })
         // the bar in a fight (the user 2026-11-13: "a settings toggle to make them Hide/stay in combat"): Hide (the default) / Stay
         val modes = CastStripModel.Combat.values()
-        y = row(c, y + GAP, "In combat", listOf("Hide: the bar fades out in a fight."),
+        y = row(c, y + GAP, "In combat", listOf("Hide: the bar slides away in a fight."),
             modes.map { it.label }, modes.indexOf(HomeSettings.castBarCombat), modes.map { m -> { HomeSettings.castBarCombat = m } })
         // the focused quest's place (the user 2026-10-09): over the minimap (today's) or at the top of the chat
         y = row(c, y + GAP, "Focused quest", listOf("Where Home shows the quest you focus. Tap it to fold it."),
