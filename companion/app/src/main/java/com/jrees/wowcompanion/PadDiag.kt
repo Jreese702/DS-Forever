@@ -145,6 +145,9 @@ object AddonSilence {
             (if (detail.isNullOrBlank()) "" else "; $detail")
     }
 
+    /** issue #231 (review): the report's bottom-screen line, when no document came, carries the reader's state at report time */
+    fun atReport(docSeen: Boolean, detail: String?): String = if (docSeen || detail.isNullOrBlank()) "" else " ($detail)"
+
     /** issue #231: the local reader in one line ([sinceFedMs] -1 = nothing read yet); only the file's name, never the folder's */
     fun reader(path: String, exists: Boolean, len: Long, mtime: Long, nowWall: Long, fed: Long, sinceFedMs: Long,
                lines: Long, magic: Long, docs: Long): String {

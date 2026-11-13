@@ -122,6 +122,14 @@ class PadDiagTest {
         assertFalse(AddonSilence.line(false, true, 125_000L, 60_000L, "")!!.endsWith("; "))
     }
 
+    /** issue #231 (review): the report's bottom-screen line says what the reader saw at report time, only while no document came */
+    @Test fun theReportCarriesTheReaderWhileSilent() {
+        assertEquals(" (reader: x; shadow Logs: link)", AddonSilence.atReport(false, "reader: x; shadow Logs: link"))
+        assertEquals("", AddonSilence.atReport(true, "reader: x"))
+        assertEquals("", AddonSilence.atReport(false, null))
+        assertEquals("", AddonSilence.atReport(false, ""))
+    }
+
     @Test fun theShadowLogsEntry() {
         val root = java.nio.file.Files.createTempDirectory("sh231").toFile()
         try {
