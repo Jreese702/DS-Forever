@@ -47,7 +47,7 @@ class CastBarScrollShotsTest {
     private val R = CastStripModel.Side.RIGHT
     private val BOTH = CastStripModel.Side.BOTH
 
-    @After fun down() { CastStripModel.Live.pos = 0f }
+    @After fun down() { CastStripModel.Live.pos = 0f; CastStripModel.Live.side = null }
 
     private fun artRoot() {
         val root = System.getenv("CLOCK_ART_ROOT") ?: return
@@ -141,11 +141,11 @@ class CastBarScrollShotsTest {
 
     @Test fun aFlingGlidesAndAFingerStopsItWithoutACast() {
         val r = rig(R)
-        drag(r.v, -120f, hold = false)                                         // a quick flick
+        drag(r.v, 120f, hold = false)                                          // a quick flick rightward (cb8: Right rests at its end)
         assertTrue(r.v.flinging)
         val at = r.v.scroll
         ShadowSystemClock.advanceBy(Duration.ofMillis(60)); r.v.stepFlingForTest(SystemClock.uptimeMillis())
-        assertTrue(r.v.scroll > at)                                            // it glides on
+        assertTrue(r.v.scroll < at)                                            // it glides on
         // a finger on the gliding strip: it stops there, and the tap casts nothing
         tap(r.v, 1)
         assertFalse(r.v.flinging)
@@ -211,10 +211,11 @@ class CastBarScrollShotsTest {
     }
 
     /** the page with the bar scrolled to [pos] slots' shares */
-    private fun shot(side: CastStripModel.Side, pos: Float, name: String) {
+    private fun shot(side: CastStripModel.Side, pos: Float, name: String, prefix: String = "eight_") {
         val d = out ?: return
         d.mkdirs()
-        CastStripModel.Live.pos = pos
+        if (pos < 0f) { CastStripModel.Live.side = null; CastStripModel.Live.pos = 0f }   // cb8: the side's own rest
+        else CastStripModel.Live.keep(side, pos)
         val home = page(side)
         val strip = Strip(app) { }
         val b = Bitmap.createBitmap(1240, 1080, Bitmap.Config.ARGB_8888)
@@ -227,11 +228,11 @@ class CastBarScrollShotsTest {
             c.save(); c.translate(0f, (1080 - Strip.HEIGHT).toFloat()); strip.draw(c); c.restore()
             if (pass == 0) settle()
         }
-        save(b, "eight_$name.png")
+        save(b, "$prefix$name.png")
         val box = CastStripModel.place(side, 1240f, 1080f - Strip.HEIGHT, UiKit.MODULE_GAP)!!
         val crop = Bitmap.createBitmap(b, maxOf(0, box.l.toInt() - 8), maxOf(0, box.t.toInt() - 8),
             minOf(1240, box.r.toInt() + 8) - maxOf(0, box.l.toInt() - 8), minOf(1080 - Strip.HEIGHT, box.b.toInt() + 8) - maxOf(0, box.t.toInt() - 8))
-        save(Bitmap.createScaledBitmap(crop, crop.width * 2, crop.height * 2, true), "eight_${name}_bar.png")
+        save(Bitmap.createScaledBitmap(crop, crop.width * 2, crop.height * 2, true), "$prefix${name}_bar.png")
     }
 
     /** the Bind box's Cast bar tab: the bar's 8 slots (cb6: one row, two groups of 4) with their spells' icons, the cursor on slot 7
@@ -252,13 +253,47 @@ class CastBarScrollShotsTest {
         save(b, "eight_bind_tab.png")
     }
 
-    private fun settings(side: Int, name: String) {
+    private fun settings(side: Int, name: String, prefix: String = "eight_") {
         val d = out ?: return
         val b = Bitmap.createBitmap(620, 700, Bitmap.Config.ARGB_8888)
         val c = Canvas(b); c.drawColor(Theme.ink)
         SettingsPreview.draw(c, RectF(10f, 10f, 610f, 690f), "Tap-to-cast bar", SettingsPreview.State(castBar = side), 0L,
             SettingsPreview.Glyph { _, _, _, _, _, _ -> })
-        save(b, "eight_settings_$name.png")
+        save(b, "${prefix}settings_$name.png")
+    }
+
+    /** cb8 (the user: "on Right, I want it to show the right 4 abilities and scroll left at its resting position"): the real view on
+     *  Right rests at its end (slots 5-8, the left arrow), on Left at its start; a side change starts at that side's rest; Both is one
+     *  bar of 8 across, its middle no gap */
+    @Test fun rightRestsOnTheRightFour() {
+        val r = rig(R)
+        val w = r.v.width.toFloat()
+        assertEquals(CastStripModel.maxScroll(R, w), r.v.scroll, 0.01f)
+        assertEquals(listOf(4, 5, 6, 7), CastStripModel.inView(R, w, r.v.height.toFloat(), r.v.scroll))
+        assertEquals(1f to 0f, CastStripModel.arrows(R, w, r.v.scroll))
+        tap(r.v, 7)
+        assertEquals(listOf(7), r.taps)
+        drag(r.v, 900f, hold = true)                                           // scroll left to slots 1-4
+        assertEquals(0f, r.v.scroll, 0f)
+        val l = rig(L)
+        assertEquals(0f, l.v.scroll, 0f)                                       // Left at its start
+        drag(l.v, -100f, hold = true)
+        assertTrue(l.v.scroll > 0f)
+        assertEquals(CastStripModel.maxScroll(R, w), rig(R).v.scroll, 0.01f)   // a side change: Right's rest again
+        val b = rig(BOTH)
+        val bw = b.v.width.toFloat()
+        for (i in 0 until 8) assertEquals(CastStripModel.MAX_SIDE, b.v.slotRect(i).width(), 0.01f)
+        assertEquals(bw / 2f, (b.v.slotRect(3).right + b.v.slotRect(4).left) / 2f, 0.01f)
+        assertEquals(1240f - 2 * UiKit.MODULE_GAP, bw, 1f)                     // one bar under both columns
+    }
+
+    @Test fun fullShots() {
+        assumeTrue(out != null)
+        artRoot()
+        shot(BOTH, -1f, "full_both", prefix = "")
+        shot(R, -1f, "full_right_rest", prefix = "")
+        shot(L, -1f, "full_left_rest", prefix = "")
+        settings(2, "right", "full_"); settings(3, "both", "full_")
     }
 
     @Test fun shots() {

@@ -147,31 +147,53 @@ class CastStripModelTest {
         assertEquals((0 until 8).toList(), CastStripModel.inView(BOTH, b.w, b.h, 0f))
     }
 
-    /** cb6 (the user: "8 total, 4 per side"): Both = two wells, exactly Left's and Right's bars; slots 1-4 where Left's slots lie at
-     *  rest, 5-8 where Right's do; the room between the wells takes no tap */
-    @Test fun bothIsFourUnderEachColumnAtLeftsAndRightsPlaces() {
+    /** cb8 (the user: "I want on both the UI is split down the middle. I want it to be one full bar"): Both = ONE bar across the
+     *  whole width (no split), all 8 at the one size spread evenly across it, the columns above ending on the one bar's top; no scroll */
+    @Test fun bothIsOneFullBarOfEight() {
         val l = CastStripModel.place(L, W, H, G)!!
-        val r = CastStripModel.place(R, W, H, G)!!
         val b = CastStripModel.place(BOTH, W, H, G)!!
-        val ws = CastStripModel.wells(BOTH, b.w)
-        assertEquals(2, ws.size)
-        assertEquals(l.l, b.l + ws[0].first, 0.01f); assertEquals(l.r, b.l + ws[0].second, 0.01f)
-        assertEquals(r.l, b.l + ws[1].first, 0.01f); assertEquals(r.r, b.l + ws[1].second, 0.01f)
-        assertEquals(1, CastStripModel.wells(L, l.w).size)
-        for (i in 0 until 4) {
-            val sb = CastStripModel.slotBox(BOTH, i, b.w, b.h); val sl = CastStripModel.slotBox(L, i, l.w, l.h)
-            assertEquals("slot ${i + 1}", l.l + sl.l, b.l + sb.l, 0.01f); assertEquals(sl.w, sb.w, 0.01f); assertEquals(sl.t, sb.t, 0.01f)
-            val sb2 = CastStripModel.slotBox(BOTH, i + 4, b.w, b.h); val sr = CastStripModel.slotBox(R, i, r.w, r.h)
-            assertEquals("slot ${i + 5}", r.l + sr.l, b.l + sb2.l, 0.01f); assertEquals(sr.w, sb2.w, 0.01f)
-            assertEquals(0, CastStripModel.wellOf(BOTH, i)); assertEquals(1, CastStripModel.wellOf(BOTH, i + 4))
-        }
+        assertEquals(G, b.l, 0f); assertEquals(W - G, b.r, 0f)
+        assertEquals(l.t, b.t, 0.01f)                                         // one top: both columns end on it
+        val slots = (0 until 8).map { CastStripModel.slotBox(BOTH, it, b.w, b.h) }
+        for (s in slots) { assertEquals(CastStripModel.MAX_SIDE, s.w, 0.01f); assertEquals(slots[0].t, s.t, 0f) }
+        val between = slots[1].l - slots[0].r
+        assertTrue(between > 0f)
+        for (i in 1 until 8) assertEquals("even $i", between, slots[i].l - slots[i - 1].r, 0.01f)
+        assertEquals(between, (slots[0].l - CastStripModel.PAD) * 2f, 0.01f)
+        assertEquals(between, (b.w - CastStripModel.PAD - slots[7].r) * 2f, 0.01f)
+        // no gap at the middle: the page's middle falls on the even spacing between slots 4 and 5 (and a finger there is in the bar)
+        assertEquals(b.w / 2f, (slots[3].r + slots[4].l) / 2f, 0.01f)
         for (i in 0 until 8) {
-            val s = CastStripModel.slotBox(BOTH, i, b.w, b.h)
+            val s = slots[i]
             assertEquals(i, CastStripModel.slotAt(BOTH, (s.l + s.r) / 2f, (s.t + s.b) / 2f, b.w, b.h, 0f))
         }
-        assertEquals(-1, CastStripModel.slotAt(BOTH, b.w / 2f, b.h / 2f, b.w, b.h, 0f))      // between the two wells
         assertEquals(0f, CastStripModel.maxScroll(BOTH, b.w), 0f)
         assertEquals(CastStripModel.slotBox(BOTH, 5, b.w, b.h), CastStripModel.slotBox(BOTH, 5, b.w, b.h, 300f))   // no scroll
+        assertEquals(0f to 0f, CastStripModel.arrows(BOTH, b.w, 0f))
+        assertFalse(src("CastStripModel.kt").contains("fun wells("))         // cb6's two wells are gone
+    }
+
+    /** cb8 (the user: "on Right, I want it to show the right 4 abilities and scroll left at its resting position"): Right rests at the
+     *  strip's end (5-8 in view, the left arrow showing), Left at its start; the kept scroll is per side, a side change starts at its rest */
+    @Test fun rightRestsOnTheRightFourAndLeftOnTheFirst() {
+        val r = CastStripModel.place(R, W, H, G)!!
+        assertEquals(4f, CastStripModel.rest(R), 0f); assertEquals(0f, CastStripModel.rest(L), 0f); assertEquals(0f, CastStripModel.rest(BOTH), 0f)
+        val o = CastStripModel.fromPos(R, r.w, CastStripModel.rest(R))
+        assertEquals(CastStripModel.maxScroll(R, r.w), o, 0.01f)
+        assertEquals(listOf(4, 5, 6, 7), CastStripModel.inView(R, r.w, r.h, o))
+        assertEquals(1f to 0f, CastStripModel.arrows(R, r.w, o))              // more that way: left
+        val live = CastStripModel.Live
+        val (s0, p0) = live.side to live.pos
+        try {
+            live.side = null; live.pos = 0f
+            live.laid(R); assertEquals(4f, live.posFor(R), 0f)
+            live.keep(R, 1.5f); live.laid(R); assertEquals(1.5f, live.posFor(R), 0f)      // kept in the run
+            live.laid(BOTH); assertEquals(1.5f, live.posFor(R), 0f)                        // Both (the ask picture) does not touch it
+            assertEquals(0f, live.posFor(L), 0f)                                           // another side reads its rest
+            live.laid(L); assertEquals(0f, live.posFor(L), 0f)
+            live.keep(L, 2f); live.laid(R); assertEquals(4f, live.posFor(R), 0f)            // a side change: that side's rest
+            live.laid(L); assertEquals(0f, live.posFor(L), 0f)
+        } finally { live.side = s0; live.pos = p0 }
     }
 
     // ---------------------------------------------------------------- cb5: the scroll bar (any place, no pages), its arrows, the tap
@@ -382,7 +404,7 @@ class CastStripModelTest {
             .map { java.io.File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) {
             Tr.load(l, java.io.File(dir, "$l.json").readText(Charsets.UTF_8))
-            for (w in listOf("Tap-to-cast bar", "Eight spells, one tap each.", "Eight spells, four under each column;", "Cast bar", "Off", "Left", "Right", "Both", "Place",
+            for (w in listOf("Tap-to-cast bar", "Eight spells, one tap each.", "Eight spells in one bar under both;", "swipe left for more.", "Cast bar", "Off", "Left", "Right", "Both", "Place",
                 "Four spells under the chat;", "Four spells under the minimap;", "swipe for more."))
                 assertTrue("$l: $w", Tr.t(w, l) != w)
         }

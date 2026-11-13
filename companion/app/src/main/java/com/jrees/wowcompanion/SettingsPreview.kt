@@ -159,8 +159,8 @@ object SettingsPreview {
             else listOf("No ammo in the row.", "The others space out evenly.")
         "Tap-to-cast bar" -> when (s.castBar) {
             1 -> listOf("Four spells under the chat;", "swipe for more.")
-            2 -> listOf("Four spells under the minimap;", "swipe for more.")
-            3 -> listOf("Eight spells, four under each column;", "one tap casts each.")
+            2 -> listOf("Four spells under the minimap;", "swipe left for more.")
+            3 -> listOf("Eight spells in one bar under both;", "one tap casts each.")
             else -> listOf("No tap-to-cast bar on Home.") }
         "In combat" -> if (s.castCombatHide) listOf("In a fight the tap-to-cast bar slides", "down; chat and map take its room.")
             else listOf("In a fight the tap-to-cast bar stays,", "one tap casts each.")
@@ -1147,7 +1147,8 @@ object SettingsPreview {
     }
 
     /** a small Home: the controller band on top, the chat left, the minimap right, the bar under one column (cb5: four in view of a
-     *  strip that scrolls, the gold arrow at the edge where more wait) or under both (cb6: four under each, eight in all), the slots one
+     *  strip that scrolls, the gold arrow at the edge where more wait; cb8: Right at rest on 5-8, the arrow left) or under both (cb8:
+     *  one bar of eight across), the slots one
      *  size in every mode. [slide] (cb7, Hide in combat) 0 = laid .. 1 = slid down out of the thumb, the column(s) grown into its room */
     private fun homeThumb(c: Canvas, b: RectF, side: Int, slide: Float = 0f) {
         frame(c, b, BRONZE, 1.5f, Color.rgb(20, 16, 10))
@@ -1167,7 +1168,7 @@ object SettingsPreview {
         val mr = minOf(map.width(), map.height()) / 2f - 5f
         pFill.color = Color.rgb(60, 82, 52); c.drawCircle(map.centerX(), map.centerY(), mr, pFill)
         pStroke.color = BRONZE; pStroke.strokeWidth = 1.5f; c.drawCircle(map.centerX(), map.centerY(), mr, pStroke)
-        fun bar(l: Float, rr: Float, n: Int, first: Int, arrow: Boolean) {
+        fun bar(l: Float, rr: Float, n: Int, first: Int, arrow: Boolean, arrowLeft: Boolean = false) {
             val dy = (barH + g + 2f) * slide                                   // cb7: down behind the page's foot (clipped there)
             val well = RectF(l, b.bottom - g - barH + dy, rr, b.bottom - g + dy)
             if (slide >= 1f) return
@@ -1180,17 +1181,19 @@ object SettingsPreview {
                 pFill.color = SPELLS[(first + j) % SPELLS.size]; c.drawRect(x, cy - slot / 2f, x + slot, cy + slot / 2f, pFill)
             }
             if (arrow) {                                                       // cb5: the strip at its start: more wait to the right
-                val end = 4f + gap / 2f
-                val ax = well.right - end / 2f - 0.5f; val ah = minOf(slot * 0.55f, 12f); val aw = minOf(ah * 0.5f, end - 2f)
-                val tri = Path().apply { moveTo(ax - aw / 2f, cy - ah / 2f); lineTo(ax + aw / 2f, cy); lineTo(ax - aw / 2f, cy + ah / 2f); close() }
+                val end = 4f + gap / 2f                                        // cb8: Right rests at its end: more wait to the left
+                val ah = minOf(slot * 0.55f, 12f); val aw = minOf(ah * 0.5f, end - 2f)
+                val ax = if (arrowLeft) well.left + end / 2f + 0.5f else well.right - end / 2f - 0.5f
+                val tip = if (arrowLeft) -aw / 2f else aw / 2f
+                val tri = Path().apply { moveTo(ax - tip, cy - ah / 2f); lineTo(ax + tip, cy); lineTo(ax - tip, cy + ah / 2f); close() }
                 pFill.color = GOLD; c.drawPath(tri, pFill)
             }
             c.restore()
         }
-        // cb6: Both = two bars, 4 under the chat (slots 1-4) and 4 under the minimap (5-8), each where Left's / Right's lies
+        // cb8 (the user: "I want it to be one full bar"): Both = ONE bar of 8 across under both columns; Right rests on slots 5-8
         when (side) {
-            1 -> bar(chat.left, chat.right, 4, 0, true); 2 -> bar(map.left, map.right, 4, 0, true)
-            3 -> { bar(chat.left, chat.right, 4, 0, false); bar(map.left, map.right, 4, 4, false) }
+            1 -> bar(chat.left, chat.right, 4, 0, true); 2 -> bar(map.left, map.right, 4, 4, true, arrowLeft = true)
+            3 -> bar(chat.left, map.right, 8, 0, false)
         }
     }
 
