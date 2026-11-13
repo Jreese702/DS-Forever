@@ -65,7 +65,7 @@ class SettingsTabsTest {
             G.HELP to listOf("Problem report", "Reload game UI", "Status"),
             // the clock extras (the user's picks 2026-11-13, feat/item-cooldowns): one row each, before the toolbar
             G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Tap-to-cast bar", "Focused quest", "Hearthstone", "Class teleport", "Gold",
-                "Free bag slots", "DS WoW toolbar"),
+                "Free bag slots", "Ammo", "DS WoW toolbar"),          // feat/clock-extras-v2: Ammo
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
             G.CHAT to listOf("Message input"),
             G.HUD to listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale"),
@@ -129,7 +129,9 @@ class SettingsTabsTest {
             // added since: the clock extras (feat/item-cooldowns)
             listOf("Hearthstone", "Class teleport", "Gold", "Free bag slots") +
             // hub52 (the user, 2026-11-13: "maybe we should set this as a toggle defaulted to off"): Top > Target
-            listOf("Friendly plates")
+            listOf("Friendly plates") +
+            // added since: the clock band's ammo (feat/clock-extras-v2)
+            listOf("Ammo")
         val now = B.values().flatMap { it.rows }
         assertEquals(before.toSet(), now.toSet())
         assertEquals("a row in two places", now.size, now.toSet().size)

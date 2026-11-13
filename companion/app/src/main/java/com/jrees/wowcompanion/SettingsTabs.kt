@@ -58,7 +58,7 @@ object SettingsTabs {
             // GitHub #43: the tap-to-cast bar on Home
             "Tap-to-cast bar", "Focused quest",
             // the clock extras (the user's picks 2026-11-13): one row each
-            "Hearthstone", "Class teleport", "Gold", "Free bag slots", "DS WoW toolbar"), Drawer.HOME),
+            "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo", "DS WoW toolbar"), Drawer.HOME),
         MAP(Group.MAP, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map")),
         CHAT(Group.CHAT, "Chat", listOf("Message input")),
         // ---- Top screen (GameUiSection's parts: the same rows, ids, taps and channels as on QOL / Top screen before)
