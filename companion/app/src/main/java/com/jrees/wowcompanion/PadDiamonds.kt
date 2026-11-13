@@ -19,13 +19,25 @@ object PadDiamonds {
 
     /** position [p]'s centre (the router's 1-8: 1-4 the D-pad, 5-8 the faces) as drawn for the layout ([swap] = Nintendo's face diamond) */
     fun centre(p: Int, swap: Boolean): Pair<Float, Float> {
-        // m150 STICK BUTTONS (GitHub #78): L3 / R3 low between the two diamonds (their inner bottom corners), as a pad's two sticks
-        if (p == PadMapModel.POS_L3) return 290f to 690f
-        if (p == PadMapModel.POS_R3) return 456f to 690f
+        // m150 STICK BUTTONS (GitHub #78); m155 (the user, 2026-11-13: "slightly smaller and moved away from the other two cross's to make
+        // it clear what they are"): L3 / R3 a small pair of their own, centred below and between the two diamonds
+        if (p == PadMapModel.POS_L3) return STICK_CX - STICK_GAP / 2f to STICK_CY
+        if (p == PadMapModel.POS_R3) return STICK_CX + STICK_GAP / 2f to STICK_CY
         val cx = if (p <= 4) 190f else 556f; val cy = 590f
         return when (PadMapModel.drawnSpot(p, swap)) { 0 -> cx - 100f to cy; 1 -> cx to cy - 100f; 2 -> cx + 100f to cy; else -> cx to cy + 100f }
     }
-    fun square(p: Int, swap: Boolean) = centre(p, swap).let { (x, y) -> PartyLayout.Box(x - 40f, y - 40f, x + 40f, y + 40f) }
+    fun square(p: Int, swap: Boolean) = centre(p, swap).let { (x, y) ->
+        val half = size(p) / 2f
+        PartyLayout.Box(x - half, y - half, x + half, y + half)
+    }
+    /** a place's square side: 80 for the eight, [STICK_SIZE] for L3 / R3 (m155) */
+    fun size(p: Int) = if (PadMapModel.isStick(p)) STICK_SIZE else 80f
+    /** m155: the sticks' tile (80 % of a button), the pair's centre (midway between the diamonds, 100 below their bottom row) and
+     *  the centre-to-centre step */
+    const val STICK_SIZE = 64f
+    const val STICK_CX = 373f
+    const val STICK_CY = 790f
+    const val STICK_GAP = 100f
 
     fun rect(b: PartyLayout.Box) = RectF(b.l, b.t, b.r, b.b)
 }
