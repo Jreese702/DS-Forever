@@ -28,6 +28,10 @@ object CastBarAsk {
         else -> Act.ASK
     }
 
+    /** nothing else holds the controller: the capture's holder is none, or the question's OWN hold of Home's guest "home"
+     *  ([ownHold]: CompanionHost.setupPad; its "pad:home" landing must not count as Home left and put the question away) */
+    fun capFree(holder: String, ownHold: Boolean): Boolean = holder.isEmpty() || (ownHold && holder == "pad:home")
+
     /** the open question is put away (unanswered: it comes back) when a fight starts or Home is left */
     fun hideNow(open: Boolean, fight: Boolean, onHome: Boolean): Boolean = open && (fight || !onHome)
 

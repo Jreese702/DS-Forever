@@ -123,6 +123,14 @@ class CastBarAskTest {
     }
 
     /** the picture's loop: at rest, the fight cue, slid away, back up - and it repeats */
+    @Test fun itsOwnHoldIsNotHomeLeft() {
+        // merge review (1.0.30 code 1464): the question holds Home's guest "home" for A / B; that holder must not put it away
+        assertTrue(CastBarAsk.capFree("", ownHold = false))
+        assertTrue(CastBarAsk.capFree("pad:home", ownHold = true))
+        assertFalse(CastBarAsk.capFree("pad:home", ownHold = false))   // a chat / map hold of Home's own, not the question's
+        assertFalse(CastBarAsk.capFree("pad:bags", ownHold = true))    // a room's guest
+    }
+
     @Test fun thePictureLoops() {
         val rest = SettingsPreview.askPhase(200L)
         assertEquals(0f, rest.slide, 0f); assertEquals(0f, rest.fight, 0f)

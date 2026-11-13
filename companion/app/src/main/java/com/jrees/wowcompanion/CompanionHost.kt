@@ -3637,7 +3637,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun castBarAsk() {
         if (!::setupView.isInitialized || !::startView.isInitialized) return
         val fight = homeView.inFight()
-        val onHome = room == Room.HOME && !homeView.homeGuestWanted() && capHolder.isEmpty()
+        // merge review (1.0.30 code 1464): the question's own hold ("pad:home", setupPadOn) is not "Home left": it put itself away
+        val onHome = room == Room.HOME && !homeView.homeGuestWanted() && CastBarAsk.capFree(capHolder, castAskOpen && setupPad)
         if (castAskOpen) {
             if (CastBarAsk.hideNow(true, fight, onHome)) {
                 Log.i(HomeView.TAG, "cast bar ask: put away (${if (fight) "a fight" else "Home left"}), asked again later")
