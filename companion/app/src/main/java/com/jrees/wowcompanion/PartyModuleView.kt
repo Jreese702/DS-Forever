@@ -49,7 +49,12 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
 
     /** the module in this view's own px: the view's left is the screen's edge (the tab's place, m134) */
     fun module(): PartyLayout.Module =
-        PartyLayout.module(mode, live.party?.n ?: 1, pet = live.party?.pet == true, top = 0f, left = 0f, right = width.toFloat())
+        PartyLayout.module(mode, live.party?.view?.size ?: 1, pet = live.party?.viewPet == true, top = 0f, left = 0f, right = width.toFloat())
+
+    /** m150: a short word over the module (Smart Res refused in a fight), [NOTE_MS] */
+    fun note(s: String) { noteText = s; noteUntil = SystemClock.uptimeMillis() + NOTE_MS; invalidate() }
+    private var noteText: String? = null
+    private var noteUntil = 0L
 
     /** a Select press the app's reader saw: the pressed look for 120 ms */
     fun selectPressed() { tab.press(SystemClock.uptimeMillis()); invalidate() }
@@ -70,24 +75,56 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         val m = module()
         UiKit.module(c, RectF().of(m.well))
         val on = p.onLive
-        val boxed = if (on) live.box.coerceIn(1, p.n) - 1 else -1
+        // m150: the box is counted over the add-on's entries; drawn over the view (a dead pet entry moves the party one on)
+        val boxed = if (on) p.viewIndex(live.box.coerceIn(1, p.n) - 1) else -1
         tab.setLook(SelectTab.lookOf(p), now)
         tab.setNotch(if (on) PartyLayout.notchY(m, boxed + 1) else null, now)
         tab.groupSeen(p.grp, p.fight, now)
-        val resOn = live.cfg?.slots?.values?.any { it != null && it.res && it.k } == true
+        // m150: Smart Res armed counts as a res to cast (the soft green edge on a dead member)
+        val resOn = p.res || live.cfg?.slots?.values?.any { it != null && it.res && it.k } == true
+        val view = p.view
+        var pressing = false
         for ((k, cell) in m.cells.withIndex()) {
-            val mem = p.m.getOrNull(k) ?: continue
-            val save = if (mem.dim) c.saveLayerAlpha(cell.l, cell.t, cell.r, cell.b, (255 * PartyModel.DIM).toInt()) else -1
-            drawPlate(c, cell, mem, k == boxed, resOn)
+            val mem = view.getOrNull(k) ?: continue
+            // m150 THE PRESS: the touched plate dips and wears a gold outline while held, easing back out when let go
+            val depth = if (k == pressCell) PartyLayout.pressDepth(now, pressDownAt, pressUpAt) else 0f
+            // animating only while it eases in or out (a held plate at full depth draws once)
+            if (k == pressCell && ((pressUpAt == null && depth < 1f) || (pressUpAt != null && depth > 0f))) pressing = true
+            val at = if (depth > 0f) PartyLayout.pressed(cell, depth) else cell
+            val save = if (mem.dim) c.saveLayerAlpha(at.l, at.t, at.r, at.b, (255 * PartyModel.DIM).toInt()) else -1
+            drawPlate(c, at, mem, k == boxed, resOn)
             if (save >= 0) c.restoreToCount(save)
+            if (depth > 0f) pressEdge(c, at, depth)
         }
+        if (pressUpAt != null && PartyLayout.pressDepth(now, pressDownAt, pressUpAt) <= 0f) pressCell = -1
         drawTab(c, m.tag, now)
-        if (tab.moving(now)) postInvalidateOnAnimation()
+        noteText?.let { t -> if (now < noteUntil) drawNote(c, m, t) else noteText = null }
+        if (tab.moving(now) || pressing || noteText != null) postInvalidateOnAnimation()
     }
 
     private fun classColour(m: PartyModel.Member): Int {
         m.col?.let { s -> runCatching { return (s.toLong(16) or 0xFF000000L).toInt() } }
         return Theme.classColourOf(m.c)
+    }
+
+    private val pEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    /** m150: the press's gold outline (the game's gold, 255 209 0), [depth] its strength */
+    private fun pressEdge(c: Canvas, b: Box, depth: Float) {
+        val a = (255 * depth).toInt().coerceIn(0, 255)
+        pEdge.strokeWidth = 6f; pEdge.color = Color.argb(a * 80 / 255, 255, 190, 0)
+        c.drawRoundRect(RectF(b.l - 1f, b.t - 1f, b.r + 1f, b.b + 1f), 7f, 7f, pEdge)
+        pEdge.strokeWidth = 2.5f; pEdge.color = Color.argb(a, 255, 209, 0)
+        c.drawRoundRect(RectF(b.l + 1f, b.t + 1f, b.r - 1f, b.b - 1f), 6f, 6f, pEdge)
+    }
+    private val noteP by lazy { UiKit.bodyPaint(22f, Color.WHITE).apply { textAlign = Paint.Align.CENTER } }
+    /** m150: the note, a dark pill over the well's foot */
+    private fun drawNote(c: Canvas, m: PartyLayout.Module, t: String) {
+        val s = Tr.t(t)
+        val w = noteP.measureText(s) + 36f
+        val cx = m.well.cx; val y = m.well.b - 30f
+        pFill.shader = null; pFill.colorFilter = null; pFill.style = Paint.Style.FILL; pFill.color = Color.argb(225, 10, 8, 6)
+        c.drawRoundRect(RectF(cx - w / 2f, y - 22f, cx + w / 2f, y + 22f), 10f, 10f, pFill)
+        c.drawText(s, cx, y - (noteP.ascent() + noteP.descent()) / 2f, noteP)
     }
 
     private val nameP by lazy { UiKit.bodyPaint(24f, Color.WHITE) }
@@ -201,7 +238,15 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         if (k >= 0) { longFired = true; unitOf(k)?.let { onCellLong?.invoke(it) } }
     }
 
-    private fun unitOf(k: Int): Int? = live.party?.m?.getOrNull(k)?.i
+    /** m150: the drawn entry [k]'s unit index (the dead pet entry: the pet's, 5) */
+    private fun unitOf(k: Int): Int? = live.party?.view?.getOrNull(k)?.i
+
+    /** m150 THE PRESS: the plate under the finger (drawn index), since when, and when it was let go (null = still held) */
+    private var pressCell = -1
+    private var pressDownAt = 0L
+    private var pressUpAt: Long? = null
+    private fun pressStart(k: Int) { pressCell = k; pressDownAt = SystemClock.uptimeMillis(); pressUpAt = null; invalidate() }
+    private fun pressEnd() { if (pressCell >= 0 && pressUpAt == null) { pressUpAt = SystemClock.uptimeMillis(); invalidate() } }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -213,11 +258,11 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
                 downCell = if (downTag) -1 else PartyLayout.hit(m, e.x, e.y)
                 if (!downTag && downCell < 0) return false                 // the rest of the box: the page under it
                 downX = e.x; downY = e.y; longFired = false
-                if (downCell >= 0) postDelayed(longPress, LONG_MS)
+                if (downCell >= 0) { postDelayed(longPress, LONG_MS); pressStart(downCell) }
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (abs(e.x - downX) > SLOP || abs(e.y - downY) > SLOP) { removeCallbacks(longPress); downCell = -1; downTag = false }
+                if (abs(e.x - downX) > SLOP || abs(e.y - downY) > SLOP) { removeCallbacks(longPress); downCell = -1; downTag = false; pressEnd() }
             }
             MotionEvent.ACTION_UP -> {
                 removeCallbacks(longPress)
@@ -226,9 +271,9 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
                 // only suspended by a prompt out of combat, a harmless `on`), drawn on = `off`; in a fight onLive is `on` alone (m132)
                 if (downTag && PartyLayout.hitTag(m, e.x, e.y)) onTag?.invoke(PartyModel.tabWants(live.party))
                 else if (downCell >= 0 && !longFired && PartyLayout.hit(m, e.x, e.y) == downCell) unitOf(downCell)?.let { onCellTap?.invoke(it) }
-                downCell = -1; downTag = false
+                downCell = -1; downTag = false; pressEnd()
             }
-            MotionEvent.ACTION_CANCEL -> { removeCallbacks(longPress); downCell = -1; downTag = false }
+            MotionEvent.ACTION_CANCEL -> { removeCallbacks(longPress); downCell = -1; downTag = false; pressEnd() }
         }
         return true
     }
@@ -243,6 +288,8 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         const val LONG_MS = 450L
         /** a tap moves no more than this */
         const val SLOP = 24f
+        /** m150: the note's time on screen */
+        const val NOTE_MS = 1600L
     }
 }
 

@@ -1488,6 +1488,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "menu" -> PartyModel.unitIndex(b.u)?.let { i -> partyWheel(i, byPad = true) }
             "key" -> if (partyWheelOpen()) b.key?.let { targetRadial.key(it) } else if (menu.isOpen && menu.byPad) b.key?.let { menu.key(it) }
             "off" -> { if (partyWheelOpen()) targetRadial.close("Party mode off"); if (menu.isOpen && menu.byPad) menu.close() }
+            // m150 SMART RES: a tap on a dead member in a fight with no res a fight allows (only Rebirth / Revive Pet do)
+            "nores" -> { Log.i("WCHOME", "party: Smart Res refused in a fight"); homeView.partyNote("Not in combat") }
+            "res" -> Log.i("WCHOME", "party: Smart Res cast")
         }
         // the pad's menu sub-state with no menu of ours driving it (a lost k=menu, an app restart): MENU DONE frees the presses
         if (PartyModel.strandedMenu(b, partyWheelOpen() || (menu.isOpen && menu.byPad))) {

@@ -79,7 +79,7 @@ object SettingsTabs {
         SMART_Y(Group.SMART_Y, "Smart Y (out of combat, nothing targeted)", listOf("Smart Y")),
         // Combat helpers: Party mode, Start attack on hostile target, Start the attack when a spell is cast (Home's section's row),
         // Combat Auto Shot - in that order, so three blocks by two views
-        COMBAT(Group.COMBAT, "Combat", listOf("Party mode", "Start attack on hostile target"), Drawer.GAME_UI),
+        COMBAT(Group.COMBAT, "Combat", listOf("Party mode", "Smart Res", "Start attack on hostile target"), Drawer.GAME_UI),
         ATTACK_CAST(Group.COMBAT, "Start the attack when a spell is cast", listOf("Start the attack when a spell is cast"), Drawer.HOME),
         AUTO_SHOT(Group.COMBAT, "Combat Auto Shot", listOf("Combat Auto Shot"), Drawer.GAME_UI),
         // ---- Add-ons: one group per third-party add-on (ThirdPartyAddons); Polestar's carries Quest tracking (it was under Map)

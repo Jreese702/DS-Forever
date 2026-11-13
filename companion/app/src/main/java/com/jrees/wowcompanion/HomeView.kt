@@ -1164,14 +1164,14 @@ class HomeView(
     /** a party document (or a box) changed what Home draws: re-placed when the module's size changed, else redrawn */
     fun partyChanged() {
         val p = party.party
-        val n = p?.n ?: 0
+        val n = p?.view?.size ?: 0                                       // m150: the drawn entries (a dead pet entry too)
         val on = p?.onLive == true
         val now = System.currentTimeMillis()
         // Party mode on in a fight: the takeover goes (v17); off again: it comes back
         val combat = flow.combat(grow.shown(now) && !partyOnHere())
         if (combat && flow.takeover) grewAt = now
         val placed = flow.full == null || flow.takeover
-        if (shown != null && (combat || placed && (n != laidPartyN || on != laidPartyOn || (p?.pet == true) != laidPartyPet || partyModeNow(flow.screen) != laidPartyMode
+        if (shown != null && (combat || placed && (n != laidPartyN || on != laidPartyOn || (p?.viewPet == true) != laidPartyPet || partyModeNow(flow.screen) != laidPartyMode
                 || PARTY_MODULE != laidPartyModule))) changed()
         partyView.invalidate()
         shown?.let { partyStripSync(it) }
@@ -1193,6 +1193,8 @@ class HomeView(
     private var partySelWas = false
     /** Home's rest page shown (back from a room / the background): grouped, the Select tab's edge pulses (party_design.md E) */
     fun partyHomeOpened() { if (PARTY_MODULE) partyView.homeOpened() }
+    /** m150: a short word over the party module (Smart Res refused in a fight) */
+    fun partyNote(t: String) { if (PARTY_MODULE) partyView.note(t) }
     private fun partyPad(held: Int) {
         val dirs = listOf(PadInput.SLOT_DPAD_UP to PartyModel.Dir.UP, PadInput.SLOT_DPAD_DOWN to PartyModel.Dir.DOWN,
             PadInput.SLOT_DPAD_LEFT to PartyModel.Dir.LEFT, PadInput.SLOT_DPAD_RIGHT to PartyModel.Dir.RIGHT)
@@ -1224,11 +1226,11 @@ class HomeView(
         val p = party.party ?: return base
         val chat = base[Part.CHAT] ?: return base
         val mode = partyModeNow(s)
-        laidPartyMode = mode; laidPartyN = p.n; laidPartyOn = p.onLive; laidPartyPet = p.pet
+        laidPartyMode = mode; laidPartyN = p.view.size; laidPartyOn = p.onLive; laidPartyPet = p.viewPet
         val right = w / 2f - 5f
         // m134 (the user, 2026-11-11: the Select tab "attached to the side of the screen"): the module's view starts at the screen's
         // left edge, where the tab stands; the member band (the well) starts right of it
-        val m = PartyLayout.module(mode, p.n, pet = p.pet, top = chat.top, left = PartyLayout.EDGE, right = right)
+        val m = PartyLayout.module(mode, p.view.size, pet = p.viewPet, top = chat.top, left = PartyLayout.EDGE, right = right)
         partyView.mode = mode
         val out = LinkedHashMap(base)
         out[Part.PARTY] = RectF(PartyLayout.EDGE, chat.top - PartyModuleView.RISE, right, m.well.b)

@@ -76,7 +76,7 @@ class SettingsTabsTest {
             G.WHEELS to listOf("Pause menu: open", "Pause menu: pick", "Item wheel: open", "Item wheel: pick", "Spell wheel: open",
                 "Spell wheel: pick", "Left class radial: open", "Left class radial: pick", "Right class radial: open", "Right class radial: pick"),
             G.SMART_Y to listOf("Smart Y"),
-            G.COMBAT to listOf("Party mode", "Start attack on hostile target", "Start the attack when a spell is cast", "Combat Auto Shot"),
+            G.COMBAT to listOf("Party mode", "Smart Res", "Start attack on hostile target", "Start the attack when a spell is cast", "Combat Auto Shot"),
             G.POLESTAR to ThirdPartyAddons.POLESTAR.rowWords() + "Quest tracking",
             G.SPOKEN to ThirdPartyAddons.SPOKEN.rowWords(),
             G.QUESTTRAIL to ThirdPartyAddons.QUESTTRAIL.rowWords(),
@@ -117,7 +117,9 @@ class SettingsTabsTest {
                 "Build in the background", "Progress", "Route data", "Language", "Reload game UI", "Battle.net login", "Problem report",
                 "Lighter mode", "Low-memory graphics", "Stream settings", "Status") +
             // drawn before but in no block's list: GameUiSection's QOL Combat / Party groups, Add-ons > Polestar's top-screen row
-            listOf("Start attack on hostile target", "Combat Auto Shot", "Party mode", "Polestar on the top screen")
+            listOf("Start attack on hostile target", "Combat Auto Shot", "Party mode", "Polestar on the top screen") +
+            // m150 / hub47 (the user, 2026-11-13): Smart Res, new under Party mode
+            listOf("Smart Res")
         val now = B.values().flatMap { it.rows }
         assertEquals(before.toSet(), now.toSet())
         assertEquals("a row in two places", now.size, now.toSet().size)
