@@ -13,8 +13,8 @@ import org.junit.Test
 /**
  * GitHub #43, THE TAP-TO-CAST BAR (the app half; the add-on half is ActionBar.lua cb1-cb3 and Book.lua b53-b56, proven by
  * tools/test_cast_bar.py): the `castbar` document (cb3: 6 slots), the `castcd` cooldowns, the ONE tap per slot, cb3's setting (Off /
- * Left / Right / Both, Off by default, the old Home row's On -> Left), its place on Home per mode, the swipe that moves it (a tap still
- * casts), the Bind box's Cast bar tab (only while the setting is on), and the rules the page keeps (no page text, menus translated).
+ * Left / Right / Both, Off by default, the old Home row's On -> Left), its place on Home per mode, cb5's scroll bar (Left / Right a
+ * strip of 6 with 4 in view at Both's size, stopping anywhere, a light fling, edge arrows by the scroll; a tap casts the slot under the finger), the Bind box's Cast bar tab (only while the setting is on), and the rules the page keeps (no page text, menus translated).
  */
 class CastStripModelTest {
     private fun bar(json: String) = CastStripModel.parse(JSONObject(json))!!
@@ -114,44 +114,150 @@ class CastStripModelTest {
         assertTrue(CastStripModel.cutsLeft(L) && !CastStripModel.cutsRight(L))
         assertTrue(CastStripModel.cutsRight(R) && !CastStripModel.cutsLeft(R))
         assertTrue(CastStripModel.cutsLeft(BOTH) && CastStripModel.cutsRight(BOTH))
-        // ONE row of 6, much bigger than cb2's 56 px; Both bigger still
+        // cb5: Left / Right a strip of all 6 with 4 in view, Both all 6; every mode's slots ONE size (the user: "the same size as the both option")
+        assertEquals(4, CastStripModel.visible(L)); assertEquals(4, CastStripModel.visible(R)); assertEquals(6, CastStripModel.visible(BOTH))
+        assertEquals(0, CastStripModel.visible(OFF))
+        assertTrue(CastStripModel.scrolls(L) && CastStripModel.scrolls(R)); assertFalse(CastStripModel.scrolls(BOTH) || CastStripModel.scrolls(OFF))
+        assertEquals(l.h, b.h, 0.01f)                                         // no dots band any more: one height
         val sl = CastStripModel.slotBox(L, 0, l.w, l.h)
+        val sr = CastStripModel.slotBox(R, 0, r.w, r.h)
         val sb = CastStripModel.slotBox(BOTH, 0, b.w, b.h)
-        assertTrue("left slot ${sl.w}", sl.w >= 76f)
-        assertTrue("both slot ${sb.w}", sb.w > sl.w && sb.w <= CastStripModel.MAX_SIDE_BOTH)
-        for (side in listOf(L, BOTH)) {
-            val box = if (side == L) l else b
-            val slots = (0 until 6).map { CastStripModel.slotBox(side, it, box.w, box.h) }
+        assertEquals(CastStripModel.MAX_SIDE, sb.w, 0.01f)
+        assertEquals(sb.w, sl.w, 0.01f); assertEquals(sb.w, sr.w, 0.01f); assertEquals(sb.h, sl.h, 0.01f)
+        assertEquals(CastStripModel.PAD, sl.t, 0.01f)
+        for (side in listOf(L, R, BOTH)) {
+            val box = if (side == L) l else if (side == R) r else b
+            val n = CastStripModel.visible(side)
+            val slots = (0 until n).map { CastStripModel.slotBox(side, it, box.w, box.h) }
             for (s in slots) { assertEquals(slots[0].t, s.t, 0f); assertTrue(s.l >= 0f && s.r <= box.w && s.t >= 0f && s.b <= box.h) }
-            for (i in 1 until 6) assertTrue("$side $i no overlap", slots[i].l >= slots[i - 1].r)
+            for (i in 1 until n) assertTrue("$side $i no overlap", slots[i].l >= slots[i - 1].r)
+            // the slots in view spread evenly (the same room at each end as half the room between two): Both's look, 4 on Left / Right
+            val between = slots[1].l - slots[0].r
+            assertEquals("$side", between, (slots[0].l - CastStripModel.PAD) * 2f, 0.01f)
+            assertEquals("$side", between, (box.w - CastStripModel.PAD - slots[n - 1].r) * 2f, 0.01f)
+            for (i in 2 until n) assertEquals("$side even", between, slots[i].l - slots[i - 1].r, 0.01f)
         }
-        // Both: spread evenly across (the same room at each end as between two slots)
-        val s = (0 until 6).map { CastStripModel.slotBox(BOTH, it, b.w, b.h) }
-        val between = s[1].l - s[0].r
-        assertEquals(between, (s[0].l - CastStripModel.PAD) * 2f, 0.01f)
-        assertEquals(between, (b.w - CastStripModel.PAD - s[5].r) * 2f, 0.01f)
+        // the 5th and 6th wait off the right edge, beyond the window
+        assertTrue(CastStripModel.slotBox(L, 4, l.w, l.h).l >= CastStripModel.window(l.w).second)
+        assertEquals(listOf(0, 1, 2, 3), CastStripModel.inView(L, l.w, l.h, 0f))
+        assertEquals((0 until 6).toList(), CastStripModel.inView(BOTH, b.w, b.h, 0f))
     }
 
-    // ---------------------------------------------------------------- cb3: the swipe, and the tap that still casts
+    // ---------------------------------------------------------------- cb5: the scroll bar (any place, no pages), its arrows, the tap
 
-    @Test fun aSwipeMovesTheBarToTheOtherSide() {
-        assertEquals(R, CastStripModel.swipeTo(L, 200f, 10f, 250L))         // a sideways drag
-        assertEquals(L, CastStripModel.swipeTo(R, -200f, -20f, 250L))
-        assertEquals(R, CastStripModel.swipeTo(L, 60f, 5f, 60L))            // a quick flick
-        assertNull(CastStripModel.swipeTo(L, -200f, 0f, 250L))              // toward the edge: nothing to move to
-        assertNull(CastStripModel.swipeTo(R, 200f, 0f, 250L))
-        assertNull(CastStripModel.swipeTo(BOTH, 300f, 0f, 200L))            // Both / Off: never moves
-        assertNull(CastStripModel.swipeTo(OFF, 300f, 0f, 200L))
-        assertNull(CastStripModel.swipeTo(L, 150f, 140f, 200L))             // mostly down: not a swipe
-        assertNull(CastStripModel.swipeTo(L, 60f, 0f, 900L))                // slow and short: not a swipe
+    private val bw = 608f
+    private val bh = CastStripModel.MAX_SIDE + 2 * CastStripModel.PAD
+
+    @Test fun theStripScrollsToAnyPlaceAndHoldsAtItsEnds() {
+        val p = CastStripModel.pitch(L, bw)
+        assertEquals((bw - 2 * CastStripModel.PAD) / 4f, p, 0.001f)
+        assertEquals(2 * p, CastStripModel.maxScroll(L, bw), 0.001f)          // two slots hidden at the start
+        assertEquals(0f, CastStripModel.maxScroll(BOTH, 1224f), 0f)           // Both does not scroll
+        assertEquals(0f, CastStripModel.maxScroll(L, 0f), 0f)                 // not laid out yet: no scroll, no throw
+        assertEquals(0f, CastStripModel.clampScroll(L, bw, -50f), 0f)
+        assertEquals(2 * p, CastStripModel.clampScroll(L, bw, 9999f), 0.001f)
+        // an arbitrary place between slots stays where it is (no snapping): every slot moves by exactly the scroll
+        val o = 0.37f * p + 11f
+        assertEquals(o, CastStripModel.clampScroll(L, bw, o), 0f)
+        for (i in 0 until 6)
+            assertEquals(CastStripModel.slotBox(L, i, bw, bh).l - o, CastStripModel.slotBox(L, i, bw, bh, o).l, 0.001f)
+        assertEquals(listOf(0, 1, 2, 3, 4), CastStripModel.inView(L, bw, bh, o))      // part of slot 5 has come in
+        // the end: slots 3-6 in view spread evenly, as slots 1-4 were at the start
+        val e = CastStripModel.maxScroll(L, bw)
+        assertEquals(listOf(2, 3, 4, 5), CastStripModel.inView(L, bw, bh, e))
+        assertEquals(CastStripModel.slotBox(L, 0, bw, bh).l, CastStripModel.slotBox(L, 2, bw, bh, e).l, 0.001f)
+        assertEquals(CastStripModel.slotBox(L, 3, bw, bh).r, CastStripModel.slotBox(L, 5, bw, bh, e).r, 0.001f)
+        // the drag follows the finger (left brings the right-hand slots in), held to the ends
+        assertEquals(40f, CastStripModel.dragScroll(L, bw, 0f, -40f), 0f)
+        assertEquals(0f, CastStripModel.dragScroll(L, bw, 10f, 300f), 0f)
+        assertEquals(e, CastStripModel.dragScroll(L, bw, 10f, -2000f), 0.001f)
+        assertEquals(0f, CastStripModel.dragScroll(BOTH, 1224f, 0f, -200f), 0f)
+        // the scroll kept for the app's run as slots' shares: the same place after a new layout
+        assertEquals(1.25f, CastStripModel.toPos(L, bw, 1.25f * p), 0.0001f)
+        assertEquals(1.25f * CastStripModel.pitch(R, 600f), CastStripModel.fromPos(R, 600f, 1.25f), 0.001f)
+        assertEquals(2f, CastStripModel.toPos(L, bw, 1e6f), 0.0001f)
     }
 
-    @Test fun aTapStillCasts() {
-        assertFalse(CastStripModel.isSwipe(6f, 3f, 90L))
-        assertFalse(CastStripModel.leftTap(6f, 3f))                          // a finger that wobbles is still a tap
-        assertNull(CastStripModel.swipeTo(L, 6f, 3f, 90L))
-        assertTrue(CastStripModel.leftTap(40f, 0f))                          // moved off: no cast on its release
-        assertEquals("castbar" to 0, CastStripModel.tapCell(bar(two), 0))
+    @Test fun theArrowsShowWhereSlotsAreHidden() {
+        val p = CastStripModel.pitch(L, bw); val e = CastStripModel.maxScroll(L, bw)
+        assertEquals(0f to 1f, CastStripModel.arrows(L, bw, 0f))              // the start: more to the right only
+        assertEquals(1f to 0f, CastStripModel.arrows(L, bw, e))               // the end: more to the left only
+        assertEquals(1f to 1f, CastStripModel.arrows(L, bw, p))               // between: both ways
+        val (fl, fr) = CastStripModel.arrows(R, bw, p * CastStripModel.ARROW_FADE / 2f)
+        assertEquals(0.5f, fl, 0.001f); assertEquals(1f, fr, 0f)              // fading in with the scroll
+        assertEquals(0f to 0f, CastStripModel.arrows(BOTH, 1224f, 0f))        // Both: no arrows
+        // each arrow in the room beside the end slot in view, inside the window, on the slots' middle
+        val a = CastStripModel.arrowBox(L, true, bw, bh); val z = CastStripModel.arrowBox(L, false, bw, bh)
+        val s0 = CastStripModel.slotBox(L, 0, bw, bh); val s3 = CastStripModel.slotBox(L, 3, bw, bh)
+        assertTrue(a.l >= CastStripModel.window(bw).first && a.r <= s0.l)
+        assertTrue(z.r <= CastStripModel.window(bw).second && z.l >= s3.r)
+        assertEquals((s0.t + s0.b) / 2f, (a.t + a.b) / 2f, 0.01f)
+    }
+
+    @Test fun aTapCastsTheSlotUnderTheFingerAtAnyScroll() {
+        val p = CastStripModel.pitch(L, bw)
+        fun centre(i: Int, o: Float) = CastStripModel.slotBox(L, i, bw, bh, o).let { (it.l + it.r) / 2f to (it.t + it.b) / 2f }
+        for (o in listOf(0f, 0.37f * p, p, 1.61f * p, 2 * p)) for (i in CastStripModel.inView(L, bw, bh, o)) {
+            val (x, y) = centre(i, o)
+            if (x < CastStripModel.window(bw).first || x > CastStripModel.window(bw).second) continue
+            assertEquals("scroll $o slot $i", i, CastStripModel.slotAt(L, x, y, bw, bh, o))
+        }
+        // at the end, the leftmost place in view is slot 3, the rightmost slot 6
+        val e = CastStripModel.maxScroll(L, bw)
+        assertEquals(2, CastStripModel.slotAt(L, 40f, bh / 2f, bw, bh, e))
+        assertEquals(5, CastStripModel.slotAt(L, bw - 40f, bh / 2f, bw, bh, e))
+        assertEquals(-1, CastStripModel.slotAt(L, 2f, bh / 2f, bw, bh, 0f))           // outside the window: nothing
+        assertEquals(-1, CastStripModel.slotAt(L, 100f, 0.5f, bw, bh, 0f))            // above the slots' row: nothing
+        assertEquals(-1, CastStripModel.slotAt(OFF, 100f, bh / 2f, bw, bh, 0f))
+        val b = bar("""{"type":"castbar","v":"cb3","n":6,"pick":6,"pp":[39,19],"e":[{"s":1,"id":403,"i":136048,"c":0},
+            {"s":4,"id":8042,"i":136026,"c":3},{"s":6,"id":2484,"i":136102,"c":5}]}""")
+        assertEquals("castbar" to 5, CastStripModel.tapCell(b, CastStripModel.slotAt(L, bw - 40f, bh / 2f, bw, bh, e)))
+        // a finger that wobbles is still a tap; one that moved more than 24 px is a drag (never a cast)
+        assertFalse(CastStripModel.leftTap(6f, 3f)); assertFalse(CastStripModel.leftTap(24f, 0f))
+        assertTrue(CastStripModel.leftTap(25f, 0f)); assertTrue(CastStripModel.leftTap(18f, 18f))
+    }
+
+    @Test fun aFlingGlidesWithFrictionAndStopsAnywhere() {
+        // the finger's speed over its last 100 ms
+        assertEquals(0f, CastStripModel.velocity(listOf(0L), listOf(5f)), 0f)
+        assertEquals(-2f, CastStripModel.velocity(listOf(0L, 300L, 350L, 400L), listOf(0f, 0f, -100f, -200f)), 0.001f)
+        assertEquals(1f, CastStripModel.velocity(listOf(0L, 10L, 20L), listOf(0f, 10f, 20f)), 0.001f)
+        assertFalse(CastStripModel.flings(0.1f)); assertTrue(CastStripModel.flings(-1.5f))
+        // a leftward flick: the strip goes on rightward-scrolling, slowing; it never passes the end
+        val v = -1.0f
+        val a = CastStripModel.flingAt(L, bw, 50f, v, 50f); val b2 = CastStripModel.flingAt(L, bw, 50f, v, 100f)
+        val c = CastStripModel.flingAt(L, bw, 50f, v, 150f)
+        assertTrue(a > 50f && b2 > a && c > b2); assertTrue(b2 - a > c - b2)  // friction: each step shorter
+        assertEquals(50f, CastStripModel.flingAt(L, bw, 50f, v, 0f), 0f)
+        // its rest is NOT on a slot's place: light momentum (0.7 x 1 px/ms x 260 ms = 182 px), no snap
+        val rest = CastStripModel.flingAt(L, bw, 50f, v, 5000f)
+        assertEquals(50f + 182f, rest, 0.5f)
+        val p = CastStripModel.pitch(L, bw)
+        assertTrue((rest / p) % 1f in 0.05f..0.95f)
+        assertTrue(CastStripModel.flingDone(L, bw, 50f, v, 5000f)); assertFalse(CastStripModel.flingDone(L, bw, 50f, v, 50f))
+        // a hard flick stops at the end
+        val e = CastStripModel.maxScroll(L, bw)
+        assertEquals(e, CastStripModel.flingAt(L, bw, 50f, -10f, 5000f), 0.001f)
+        assertTrue(CastStripModel.flingDone(L, bw, 50f, -10f, 400f))
+        assertEquals(0f, CastStripModel.flingAt(L, bw, 50f, 10f, 5000f), 0f)
+        assertEquals(0f, CastStripModel.flingAt(BOTH, 1224f, 0f, -3f, 300f), 0f)       // Both does not move
+    }
+
+    /** the scroll never moves the bar: the side is set in Settings only; cb5: no pages are left (no flip, no dots) */
+    @Test fun theScrollNeverChangesTheSideAndThePagesAreGone() {
+        val p = Prefs(hashMapOf("castBarSide" to "LEFT"))
+        HomeSettings.startForTest(p)
+        assertEquals(L, HomeSettings.castBarSide); assertEquals("LEFT", p.m["castBarSide"])
+        val m = src("CastStripModel.kt")
+        for (gone in listOf("fun swipeTo(", "fun flipTo(", "fun dots(", "DOTS_H", "fun perPage(", "var page")) assertFalse(gone, m.contains(gone))
+        val home = src("HomeView.kt")
+        assertFalse(home.contains("castBarSide ="))                           // Home only reads the setting
+        assertFalse(home.contains("castStripSwipe"))
+        val v = src("CastStripView.kt")
+        assertFalse(v.contains("CastStripModel.Side) -> Unit")); assertFalse(v.contains("drawCircle"))
+        assertTrue(v.contains("Icons.get(it) ?: UiKit.icon(it)"))
+        // the Bind box's Cast bar tab shows the slots' spells from icons.pak too (the kit alone has no spell icons)
+        assertTrue(src("SpellsOverlay.kt").contains("sl?.icon?.let { Icons.get(it) ?: UiKit.icon(it) }"))
     }
 
     // ---------------------------------------------------------------- cb3: the Bind box's Cast bar tab (Book b56)
@@ -234,7 +340,8 @@ class CastStripModelTest {
             .map { java.io.File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) {
             Tr.load(l, java.io.File(dir, "$l.json").readText(Charsets.UTF_8))
-            for (w in listOf("Tap-to-cast bar", "Six spells, one tap each.", "Cast bar", "Off", "Left", "Right", "Both", "Place"))
+            for (w in listOf("Tap-to-cast bar", "Six spells, one tap each.", "Cast bar", "Off", "Left", "Right", "Both", "Place",
+                "Four spells under the chat;", "Four spells under the minimap;", "swipe for more."))
                 assertTrue("$l: $w", Tr.t(w, l) != w)
         }
     }

@@ -155,8 +155,8 @@ object SettingsPreview {
         "Ammo" -> if (s.clockAmmo) listOf("Your equipped ammo and its count,", "while you have some.")
             else listOf("No ammo in the row.", "The others space out evenly.")
         "Tap-to-cast bar" -> when (s.castBar) {
-            1 -> listOf("Six spells under the chat;", "one tap casts each.")
-            2 -> listOf("Six spells under the minimap;", "one tap casts each.")
+            1 -> listOf("Four spells under the chat;", "swipe for more.")
+            2 -> listOf("Four spells under the minimap;", "swipe for more.")
             3 -> listOf("One bar under both columns;", "one tap casts each.")
             else -> listOf("No tap-to-cast bar on Home.") }
         "World map" -> if (s.worldMapAll) listOf("The Map room's continents show", "every zone, revealed.")
@@ -1090,14 +1090,15 @@ object SettingsPreview {
         }
     }
 
-    /** a small Home: the controller band on top, the chat left, the minimap right, the bar of six under one column or both */
+    /** a small Home: the controller band on top, the chat left, the minimap right, the bar under one column (cb5: four in view of a
+     *  strip that scrolls, the gold arrow at the edge where more wait) or under both (all six), the slots one size in every mode */
     private fun homeThumb(c: Canvas, b: RectF, side: Int) {
         frame(c, b, BRONZE, 1.5f, Color.rgb(20, 16, 10))
         val g = 5f; val bandB = b.top + b.height() * 0.3f
         diamond(c, b.left + b.width() * 0.22f, (b.top + bandB) / 2f, 6f, 13f); diamond(c, b.right - b.width() * 0.22f, (b.top + bandB) / 2f, 6f, 13f)
         val mid = b.centerX()
-        val slot = minOf((b.width() / 2f - 2f * g) / 6.6f, 22f)
-        val barH = slot + 8f
+        val slot = minOf((b.width() - 2f * g - 8f) / 6.6f, (b.width() / 2f - 1.5f * g - 8f) / 4.6f, 22f)   // one size for all: Both's six, 4 in a column
+        val barH = slot + 10f
         val leftBar = side == 1 || side == 3; val rightBar = side == 2 || side == 3
         val chat = RectF(b.left + g, bandB + g, mid - g / 2f, b.bottom - g - (if (leftBar) barH + g else 0f))
         val map = RectF(mid + g / 2f, bandB + g, b.right - g, b.bottom - g - (if (rightBar) barH + g else 0f))
@@ -1108,14 +1109,23 @@ object SettingsPreview {
         val mr = minOf(map.width(), map.height()) / 2f - 5f
         pFill.color = Color.rgb(60, 82, 52); c.drawCircle(map.centerX(), map.centerY(), mr, pFill)
         pStroke.color = BRONZE; pStroke.strokeWidth = 1.5f; c.drawCircle(map.centerX(), map.centerY(), mr, pStroke)
-        fun bar(l: Float, rr: Float) {
+        fun bar(l: Float, rr: Float, n: Int) {
             val well = RectF(l, b.bottom - g - barH, rr, b.bottom - g)
             frame(c, well, GOLD, 1.5f, Color.rgb(36, 28, 18))
-            val s = minOf((well.width() - 8f) / 6f - 3f, well.height() - 8f)
-            val x0 = well.centerX() - (6f * s + 5f * 3f) / 2f
-            for (j in 0 until 6) { pFill.color = SPELLS[j]; c.drawRect(x0 + j * (s + 3f), well.centerY() - s / 2f, x0 + j * (s + 3f) + s, well.centerY() + s / 2f, pFill) }
+            val gap = (well.width() - 8f - n * slot) / n                       // spread evenly, as on Home
+            val cy = well.centerY()
+            for (j in 0 until n) {
+                val x = well.left + 4f + gap / 2f + j * (slot + gap)
+                pFill.color = SPELLS[j]; c.drawRect(x, cy - slot / 2f, x + slot, cy + slot / 2f, pFill)
+            }
+            if (n < 6) {                                                       // cb5: the strip at its start: more wait to the right
+                val end = 4f + gap / 2f
+                val ax = well.right - end / 2f - 0.5f; val ah = minOf(slot * 0.55f, 12f); val aw = minOf(ah * 0.5f, end - 2f)
+                val tri = Path().apply { moveTo(ax - aw / 2f, cy - ah / 2f); lineTo(ax + aw / 2f, cy); lineTo(ax - aw / 2f, cy + ah / 2f); close() }
+                pFill.color = GOLD; c.drawPath(tri, pFill)
+            }
         }
-        when (side) { 1 -> bar(chat.left, chat.right); 2 -> bar(map.left, map.right); 3 -> bar(chat.left, map.right) }
+        when (side) { 1 -> bar(chat.left, chat.right, 4); 2 -> bar(map.left, map.right, 4); 3 -> bar(chat.left, map.right, 6) }
     }
 
     // ---- Bottom screen > Map > World map: the stitched continent, every zone or only the explored ones

@@ -17,8 +17,18 @@ import org.json.JSONObject
  * itself should have 6 slots for abilities. if its sitting on the right or left, the player should be able to swipe on the bar to move it
  * to the other [side]. to assign to the bar, in the bind menu, where there is the L and R tabs, we will add a third tab if this setting
  * is turned on, showing the 6 slots on that bar."; the pick: 6 abilities in all, the Bind tab shows only those 6): ONE row of 6
- * ([CastStripView]) placed by [Side] ([place]); a swipe toward the other side moves it there ([swipeTo]); the Bind box's Cast bar tab
+ * ([CastStripView]) placed by [Side] ([place]); the Bind box's Cast bar tab
  * ([tabCells], [slotCells]: padtab 39 then 26 / 20-25, Book b56). The Spellbook's own "Cast bar" button is gone (the tab replaces it).
+ * cb4 THREE AT A TIME (the user, 2026-11-13: "make them only show 3 abilities at a time for left or right, and swipe to the other 3. they
+ * should be the same size as the both option"): LEFT / RIGHT were two pages of 3 at BOTH's size ([slotSide]), with page dots and a
+ * swipe that flipped them; the swipe stopped moving the bar (the side is set in Settings only). Replaced by cb5's scroll.
+ * cb5 A SCROLL BAR, NOT PAGES (the user, 2026-11-13: "I dont want them shown as pages, I want it to be a literal scroll bar that can stop
+ * in any position. do we have space to add more? it looks like there are gaps"; the picks: 4 in view, "4 with an arrow on the sides
+ * indicating if there are abilities that way for the left and right options", 6 in all): LEFT / RIGHT are a strip of all 6 at BOTH's
+ * size, 4 in view spread evenly ([visible], [pitch], [slotBox] with a scroll), that follows the finger and stops anywhere ([dragScroll],
+ * [clampScroll]; a light fling with friction: [velocity], [flingAt], [flingDone]; no snapping), clipped to the well ([window]). The
+ * page dots are gone; an edge arrow shows (fading with the scroll) where slots are hidden that way ([arrows], [arrowBox]). A tap casts
+ * the slot under the finger at the scroll it is at ([slotAt]). The scroll is kept for the app's run ([Live.pos]). BOTH is unchanged.
  * The logic, without the look (unit-tested in dsforever: CastStripModelTest).
  */
 object CastStripModel {
@@ -121,13 +131,22 @@ object CastStripModel {
         val h: Float get() = b - t
     }
 
-    /** slot side, gap and the well's padding for [side] at a bar [barW] wide: LEFT / RIGHT fill their column, BOTH spreads them wider */
+    // ---------------------------------------------------------------- cb5: the scroll (Left / Right: 4 in view, the strip scrolls freely)
+
+    /** cb5: the slots in view at once: LEFT / RIGHT 4 (the strip of all 6 scrolls under them), BOTH all 6, OFF none */
+    fun visible(side: Side): Int = when (side) { Side.LEFT, Side.RIGHT -> VISIBLE; Side.BOTH -> SLOTS; Side.OFF -> 0 }
+
+    /** cb5: the strip scrolls (more slots than fit in view: LEFT / RIGHT) */
+    fun scrolls(side: Side): Boolean = visible(side) in 1 until SLOTS
+
+    /** the slot side for [side] at a bar [barW] wide: every mode the same size (cb4, the user: "they should be the same size as the both
+     *  option"), at most [MAX_SIDE], smaller only when the bar is too narrow for the slots in view */
     fun slotSide(side: Side, barW: Float): Float {
-        val max = if (side == Side.BOTH) MAX_SIDE_BOTH else MAX_SIDE_ONE
-        return ((barW - 2 * PAD - GAP * (SLOTS - 1)) / SLOTS).coerceIn(MIN_SIDE, max)
+        val n = maxOf(1, visible(side))
+        return ((barW - 2 * PAD - GAP * (n - 1)) / n).coerceIn(MIN_SIDE, MAX_SIDE)
     }
 
-    /** the bar's height for [side] on a page [w] wide (0 = none) */
+    /** the bar's height for [side] on a page [w] wide (0 = none): the slots' row (cb5: no dots band) */
     fun height(side: Side, w: Float, gap: Float): Float {
         if (side == Side.OFF) return 0f
         return slotSide(side, barBox(side, w, 1000f, gap).w) + 2 * PAD
@@ -156,47 +175,110 @@ object CastStripModel {
     /** the right column (the minimap, its auras, the quest card over it) ends above the bar */
     fun cutsRight(side: Side): Boolean = side == Side.RIGHT || side == Side.BOTH
 
-    /** slot [i]'s box inside a bar [bw] x [bh] (the bar's own px): LEFT / RIGHT packed in the middle, BOTH spread evenly across */
-    fun slotBox(side: Side, i: Int, bw: Float, bh: Float): Box {
-        val s = minOf(slotSide(side, bw), bh - 2 * PAD).coerceAtLeast(MIN_SIDE)
+    /** the slot side inside a bar [bw] x [bh] */
+    private fun sideIn(side: Side, bw: Float, bh: Float): Float = minOf(slotSide(side, bw), bh - 2 * PAD).coerceAtLeast(MIN_SIDE)
+
+    /** cb5: one slot's share across a bar [bw] wide: the slot and an even gap (the slots in view spread evenly, the same room at each
+     *  end as half the room between two: BOTH's look, LEFT / RIGHT alike with 4 in view) */
+    fun pitch(side: Side, bw: Float): Float = (bw - 2 * PAD) / maxOf(1, visible(side))
+
+    /** cb5: the furthest the strip scrolls (px): the hidden slots' shares; 0 = it does not scroll (BOTH, OFF) */
+    fun maxScroll(side: Side, bw: Float): Float = if (!scrolls(side)) 0f else maxOf(0f, (SLOTS - visible(side)) * pitch(side, bw))
+
+    /** cb5: a scroll held to the strip's ends (any place between: no snapping) */
+    fun clampScroll(side: Side, bw: Float, o: Float): Float = o.coerceIn(0f, maxScroll(side, bw))
+
+    /** slot [i]'s box (0..5) inside a bar [bw] x [bh] (the bar's own px) with the strip scrolled [scroll] px (0 = slot 1 leftmost) */
+    fun slotBox(side: Side, i: Int, bw: Float, bh: Float, scroll: Float = 0f): Box {
+        val s = sideIn(side, bw, bh)
+        val p = pitch(side, bw)
         val y0 = (bh - s) / 2f
-        val x = if (side == Side.BOTH) {
-            val g = (bw - 2 * PAD - SLOTS * s) / SLOTS                        // an even share each side of every slot
-            PAD + g / 2f + i * (s + g)
-        } else {
-            val gw = s * SLOTS + GAP * (SLOTS - 1)
-            (bw - gw) / 2f + i * (s + GAP)
-        }
+        val x = PAD + (p - s) / 2f + i * p - clampScroll(side, bw, scroll)
         return Box(x, y0, x + s, y0 + s)
     }
 
-    // ---------------------------------------------------------------- cb3: the swipe
+    /** cb5: the strip's window across (the slots are clipped to it): the well inside its ring edge */
+    fun window(bw: Float): Pair<Float, Float> = PAD / 2f to bw - PAD / 2f
 
-    /**
-     * a finger that went [dx], [dy] px in [ms]: the side the bar moves to, or null (a tap, a slow drag, an upward / downward one, BOTH or
-     * OFF: nothing moves). Only toward the other side: LEFT moves right, RIGHT moves left. A swipe is a mostly-sideways move of at least
-     * [SWIPE_MIN_PX], or a quick flick (at least [FLICK_PX] at [FLICK_PX_PER_MS] or faster)
-     */
-    fun swipeTo(side: Side, dx: Float, dy: Float, ms: Long): Side? {
-        if (side != Side.LEFT && side != Side.RIGHT) return null
-        if (!isSwipe(dx, dy, ms)) return null
-        return when {
-            side == Side.LEFT && dx > 0 -> Side.RIGHT
-            side == Side.RIGHT && dx < 0 -> Side.LEFT
-            else -> null
-        }
+    /** cb5: the slot (0..5) under a finger at [x], [y] in a bar [bw] x [bh] scrolled [scroll]: the slot's share across, inside the
+     *  window, and the slot's row (half a [GAP] of slack); -1 = none */
+    fun slotAt(side: Side, x: Float, y: Float, bw: Float, bh: Float, scroll: Float): Int {
+        val n = visible(side)
+        if (n == 0) return -1
+        val (wl, wr) = window(bw)
+        if (x < wl || x > wr) return -1
+        val p = pitch(side, bw)
+        val i = kotlin.math.floor((x - PAD + clampScroll(side, bw, scroll)) / p).toInt().coerceIn(0, SLOTS - 1)
+        val r = slotBox(side, i, bw, bh, scroll)
+        val m = GAP / 2f
+        if (y < r.t - m || y > r.b + m) return -1
+        return i
     }
 
-    /** the move is a swipe, not a tap (a tap may wander up to [TAP_SLOP_PX]) */
-    fun isSwipe(dx: Float, dy: Float, ms: Long): Boolean {
-        val ax = kotlin.math.abs(dx); val ay = kotlin.math.abs(dy)
-        if (ax < 1.5f * ay) return false
-        if (ax >= SWIPE_MIN_PX) return true
-        return ax >= FLICK_PX && ms > 0 && ax / ms >= FLICK_PX_PER_MS
+    /** cb5: the slots at least partly in view at [scroll] (their indexes, leftmost first) */
+    fun inView(side: Side, bw: Float, bh: Float, scroll: Float): List<Int> {
+        val (wl, wr) = window(bw)
+        return (0 until SLOTS).filter { i -> slotBox(side, i, bw, bh, scroll).let { it.r > wl && it.l < wr } }
     }
+
+    /** cb5: the edge arrows' strength (0 hidden .. 1 shown), left then right: a slot is hidden that way; each fades in over the first
+     *  [ARROW_FADE] of a slot's share of scroll away from its end (none on a bar that does not scroll) */
+    fun arrows(side: Side, bw: Float, scroll: Float): Pair<Float, Float> {
+        if (!scrolls(side)) return 0f to 0f
+        val f = pitch(side, bw) * ARROW_FADE
+        val o = clampScroll(side, bw, scroll)
+        return (o / f).coerceIn(0f, 1f) to ((maxScroll(side, bw) - o) / f).coerceIn(0f, 1f)
+    }
+
+    /** cb5: the arrow's box at the bar's [left] or right edge: in the room beside the end slot in view, on the slots' middle */
+    fun arrowBox(side: Side, left: Boolean, bw: Float, bh: Float): Box {
+        val s = sideIn(side, bw, bh)
+        val end = PAD + (pitch(side, bw) - s) / 2f                          // the well's edge to the first slot at rest
+        val cx = (PAD / 2f + end) / 2f
+        val x = if (left) cx else bw - cx
+        return Box(x - ARROW_W / 2f, bh / 2f - ARROW_H / 2f, x + ARROW_W / 2f, bh / 2f + ARROW_H / 2f)
+    }
+
+    // ---------------------------------------------------------------- cb5: the finger (drag, fling, tap)
 
     /** the finger is not a tap any more (the slot's cast is not sent on its release) */
     fun leftTap(dx: Float, dy: Float): Boolean = kotlin.math.hypot(dx, dy) > TAP_SLOP_PX
+
+    /** cb5: the strip under a finger that went [dx] since it held the strip at [start]: it follows the finger (a finger going left
+     *  brings the slots on the right into view), held to the ends */
+    fun dragScroll(side: Side, bw: Float, start: Float, dx: Float): Float = clampScroll(side, bw, start - dx)
+
+    /** cb5: a finger's speed across (px/ms, + = rightward) from its recent samples ([ts] ms, [xs] px, oldest first): the move over the
+     *  last [VELOCITY_MS]; 0 for fewer than two */
+    fun velocity(ts: List<Long>, xs: List<Float>): Float {
+        if (ts.size < 2 || ts.size != xs.size) return 0f
+        val tEnd = ts.last()
+        var k = ts.size - 2
+        while (k > 0 && tEnd - ts[k - 1] <= VELOCITY_MS) k--
+        val dt = (tEnd - ts[k]).toFloat()
+        return if (dt <= 0f) 0f else (xs.last() - xs[k]) / dt
+    }
+
+    /** cb5: a release at finger speed [v] (px/ms) flings the strip (light momentum; a slow release just stops where it is) */
+    fun flings(v: Float): Boolean = kotlin.math.abs(v) * FLING_GAIN >= FLING_MIN
+
+    /** cb5, the fling: the strip's scroll [tMs] after a release at [start] with finger speed [v]: friction-damped, the strip goes on
+     *  the way the finger did (the scroll the other way), travel = v * GAIN * TAU * (1 - e^(-t / TAU)); held to the ends */
+    fun flingAt(side: Side, bw: Float, start: Float, v: Float, tMs: Float): Float {
+        val travel = v * FLING_GAIN * FLING_TAU_MS * (1f - kotlin.math.exp(-tMs / FLING_TAU_MS))
+        return clampScroll(side, bw, start - travel)
+    }
+
+    /** cb5, the fling is over at [tMs]: its speed fell under [FLING_STOP], or the strip reached the end it was going to */
+    fun flingDone(side: Side, bw: Float, start: Float, v: Float, tMs: Float): Boolean {
+        if (kotlin.math.abs(v) * FLING_GAIN * kotlin.math.exp(-tMs / FLING_TAU_MS) < FLING_STOP) return true
+        val o = flingAt(side, bw, start, v, tMs)
+        return (o <= 0f && v > 0f) || (o >= maxScroll(side, bw) && v < 0f)
+    }
+
+    /** cb5: the scroll [o] px as slots' shares (kept for the app's run in [Live.pos]: it survives a new layout) and back */
+    fun toPos(side: Side, bw: Float, o: Float): Float = pitch(side, bw).let { p -> if (p <= 0f) 0f else clampScroll(side, bw, o) / p }
+    fun fromPos(side: Side, bw: Float, pos: Float): Float = clampScroll(side, bw, pos * pitch(side, bw))
 
     // ---------------------------------------------------------------- cb3: the Bind box's Cast bar tab (Book b56)
 
@@ -219,18 +301,31 @@ object CastStripModel {
         return (1f - (nowMs - start).toFloat() / dur.toFloat()).coerceIn(0f, 1f)
     }
 
-    const val MAX_SIDE_ONE = 84f        // LEFT / RIGHT: a column's six (cb2's 2 x 6 were 56)
-    const val MAX_SIDE_BOTH = 112f      // BOTH: bigger still, spread across the page
+    /** cb5: the slots in view at once on a LEFT / RIGHT bar (the user's pick: "4 with an arrow on the sides") */
+    const val VISIBLE = 4
+    /** every mode's slot side (cb4: LEFT / RIGHT the same as BOTH's; cb3's LEFT / RIGHT were 84 at most, 78 on the Thor) */
+    const val MAX_SIDE = 112f
     const val MIN_SIDE = 8f
     const val GAP = 8f
     const val PAD = 10f
-    const val SWIPE_MIN_PX = 120f
-    const val FLICK_PX = 48f
-    const val FLICK_PX_PER_MS = 0.6f
     const val TAP_SLOP_PX = 24f
+    /** cb5: the edge arrow (px) and its fade: full once this part of a slot's share is hidden that way */
+    const val ARROW_W = 12f
+    const val ARROW_H = 28f
+    const val ARROW_FADE = 0.5f
+    /** cb5, the fling: light momentum (the finger's speed times [FLING_GAIN]), friction time [FLING_TAU_MS]; it starts at [FLING_MIN]
+     *  px/ms and ends under [FLING_STOP]; the finger's speed is read over its last [VELOCITY_MS] */
+    const val FLING_GAIN = 0.7f
+    const val FLING_TAU_MS = 260f
+    const val FLING_MIN = 0.15f
+    const val FLING_STOP = 0.02f
+    const val VELOCITY_MS = 100L
 
     /** the live bar (the host sets it from every `castbar` document); listeners hear each change */
     object Live {
+        /** cb5: the LEFT / RIGHT strip's scroll in slots' shares (0 = slot 1 leftmost, 2 = slot 6 rightmost, any place between), kept
+         *  for the app's run (not saved: a new run starts at slot 1) */
+        @Volatile var pos: Float = 0f
         @Volatile var bar: Bar? = null
             private set
         private val listeners = ArrayList<() -> Unit>()
