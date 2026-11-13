@@ -6,9 +6,15 @@ package com.jrees.wowcompanion
  * glyph)"; "WEAPONS (slots 16,17,18) MAY be unequipped in combat, armor is refused in combat"; "bags full -> row disabled 'Bags full';
  * ammo (slot 0) not offered"). The rules, pure: which rows, which are usable and why not, the keys, the taps and the answer's words.
  * The move itself is Bags.lua's WC.bagsUnequip, reached by the add-on's arm cell (Character.lua `uneq`) then bmvq column slot - 1.
+ *
+ * char-more (the user, 2026-11-13: "if unequip is the only thing in this more menu then what even is the point? we should have options
+ * there like unequip, replace and enchant"): three rows, Unequip, Replace ([WornReplace]: the bags' pieces for THIS slot) and Enchant
+ * (the kits that fit it, [KitFit]); a row that cannot be used is drawn disabled with its terse reason.
  */
 object WornMore {
     const val UNEQUIP = "Unequip"
+    const val REPLACE = "Replace"
+    const val ENCHANT = "Enchant"
     /** main hand, off hand, ranged / relic: the only pieces tried in a fight */
     val WEAPONS = setOf(16, 17, 18)
 
@@ -19,7 +25,7 @@ object WornMore {
      * The rows for worn [slot]. Empty = no menu at all (ammo, slot 0, or not a worn slot). [freeGeneral] = the bags document's free
      * slots in plain bags (null = not known yet: the add-on judges); [routed] = the add-on's arm cell and Bags' bmvq row are there.
      */
-    fun rows(slot: Int, worn: Boolean, combat: Boolean, freeGeneral: Int?, routed: Boolean): List<Row> {
+    fun rows(slot: Int, worn: Boolean, combat: Boolean, freeGeneral: Int?, routed: Boolean, fits: Fits? = null): List<Row> {
         if (slot !in 1..19) return emptyList()
         val why = when {
             !worn -> "Empty"
@@ -28,8 +34,33 @@ object WornMore {
             !routed -> "Unavailable"
             else -> null
         }
-        return listOf(Row(UNEQUIP, why == null, why))
+        val unequip = Row(UNEQUIP, why == null, why)
+        if (fits == null) return listOf(unequip)
+        // char-more: Replace = a bag piece for this slot (armour refused in a fight, as the game does; a weapon only where the game's own
+        // equip lands it in this slot); Enchant = a kit that may go on it (the ones the game said no to for this piece left out)
+        val rw = when {
+            !worn -> "Empty"
+            combat && slot !in WEAPONS -> "In combat"
+            fits.replace <= 0 -> "Nothing fits"
+            combat && fits.replaceNow <= 0 -> "In combat"
+            !fits.replaceRouted -> "Unavailable"
+            else -> null
+        }
+        val ew = when {
+            !worn -> "Empty"
+            fits.kits <= 0 -> "No kits"
+            fits.kitsFit <= 0 -> "Nothing fits"
+            else -> null
+        }
+        return listOf(unequip, Row(REPLACE, rw == null, rw), Row(ENCHANT, ew == null, ew))
     }
+
+    /**
+     * char-more: what the Replace and Enchant rows can offer for the slot: [replace] bag pieces that fit it, [replaceNow] of them that can
+     * go on now (all of them out of a fight), [replaceRouted] = the pad has the cells to equip one; [kits] = the bags' kits at all,
+     * [kitsFit] = those not known to be refused by this piece ([KitFit])
+     */
+    data class Fits(val replace: Int, val replaceNow: Int, val replaceRouted: Boolean, val kits: Int, val kitsFit: Int)
 
     enum class Act { NONE, CHOOSE, BACK }
 

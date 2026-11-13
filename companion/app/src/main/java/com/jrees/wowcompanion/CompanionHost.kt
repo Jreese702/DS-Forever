@@ -463,6 +463,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // B leaves the cursor -> Home (user ruling, every room)
         characterView.onLeave = { roomLeft(Room.CHARACTER) }
         characterView.kits = { if (::bagsView.isInitialized) bagsView.kitItems() else emptyList() }
+        characterView.bagItems = { if (::bagsView.isInitialized) bagsView.bagItems() else emptyList() }     // char-more: Replace
         // tab 4 (PvP): the PVP session's page inside the room's frame (its PvpRankTab, UI Art's SPEC 6)
         characterView.pvpDrawer = PvpRankTab::draw
         PvpRankTab.onChange = { characterView.invalidate() }

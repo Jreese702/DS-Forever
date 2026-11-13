@@ -208,7 +208,7 @@ L.execute('WowCompanionDB = {}; fire("PLAYER_LOGIN"); WowCompanion._bagsMoveRead
           'WowCompanion.bagsMoveRows({ { bag = 0, slots = 4 }, { bag = 1, slots = 2 }, { bag = 2, slots = 2 } })')
 check(L.eval('type(OPS.bmvq)') == 'function' and L.eval('type(OPS.bmv)') == 'function', "the drag rows are there")
 check(L.eval('type(WowCompanion.bagsUnequip)') == 'function', "WC.bagsUnequip exists")
-check(str(L.eval('WowCompanion.character.version')).startswith('c15'), "Character's version is bumped (c15)", L.eval('WowCompanion.character.version'))
+check(int(str(L.eval('WowCompanion.character.version'))[1:].rstrip('b')) >= 15, "Character's version is bumped (c15 or later)", L.eval('WowCompanion.character.version'))
 
 # the eqs part carries the route's cells; the sets' retain keeps them
 d = L.eval('eqs()')

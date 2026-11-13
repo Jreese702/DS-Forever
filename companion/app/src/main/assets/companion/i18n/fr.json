@@ -1592,6 +1592,9 @@
 "Health and its maximum": "Santé et son maximum",
 "What the target bar writes on its health. For this character.": "Ce que la barre de cible écrit sur sa santé. Pour ce personnage.",
 "The game's own target frame, by its switch below. For this character.": "Le cadre de cible du jeu, selon son interrupteur ci-dessous. Pour ce personnage.",
+"Enchant": "Enchanter",
+"Nothing fits": "Rien ne convient",
+"No kits": "Aucun kit",
 "Bags full": "Sacs pleins"
 },
 "templates": {

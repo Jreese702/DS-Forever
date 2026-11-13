@@ -99,6 +99,17 @@
 -- uneq2 (review of uneq1; the user's pick: "Never let a stale bag pick equip anything"): the Character room's More menu opening
 -- (`moreon`) voids a Bags drag pick too (WC._bagsVoidPick), so a lost arm tap can no longer turn the slot tap into a drop; and a
 -- Bags-room tap (bmvq column 19+) disarms a pending arm, so a lost slot tap can never make a later Bags tap take a piece off.
+--
+-- char-more1 (the user, 2026-11-13, on the Character room's More menu: "if unequip is the only thing in this more menu then what even is
+-- the point? we should have options there like unequip, replace and enchant"). Read-only additions for the room's Replace and Enchant:
+--  * a gear row carries `nouse` when the game won't let this character wear it (WC._bagsNoUse: its required level, the game's own
+--    C_PlayerInfo.CanUseItem, a red line on its kept tooltip): Replace lists only what can go on;
+--  * a kit row carries `kfy` / `kfn` (",5,7,"): the worn slots the GAME said the kit may / may not go on, asked whenever that kit's pick
+--    was on (KIT.learn: KIT.match's own calls for every worn piece), kept per worn piece (a new piece there is asked again);
+--  * a kit used from its own bag cell (the Character room's Apply / Enchant) names the pick that follows, as the Bags room's X does;
+--  * a drop on a worn slot (the drag; the room's Replace of a ring / trinket / a dual wielder's one-hander) that makes the game ask "bind it
+--    to you?" leaves the cursor alone while the game asks (its own A / B answer it), instead of clearing it at once (which said no).
+-- Plain rows and calls as before: no protected call, no Blizzard open / close, no binding, macro or CVar.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -310,6 +321,8 @@ function WC.bagsPadRows(bagList)
                         combat = InCombatLockdown() and true or false } })
                     return
                 end
+                -- char-more1: a kit used from its own cell (the Character room's Apply / Enchant) names the pick that follows
+                if WC._kitUsedAt then pcall(WC._kitUsedAt, bag, col + 1) end
                 -- the proof a tap landed (the secure action itself already ran)
                 WC.emit({ type = "cap", bagsTap = emptyFlags({ bag = bag, slot = col + 1,
                     combat = InCombatLockdown() and true or false }, "b" .. bag .. ":" .. (col + 1)) })
@@ -692,6 +705,32 @@ function WC.bagsFirstEmpty(where, itemID)
     return nil, "full"
 end
 
+-- char-more1: the game's own bind question for a piece being equipped (StaticPopup EQUIP_BIND / _TRADEABLE / _REFUNDABLE; read only)
+local function bindAsking()
+    for i = 1, 4 do
+        local f = _G["StaticPopup" .. i]
+        if type(f) == "table" and S(function() return f:IsShown() end) == true then
+            local which = S(function() return f.which end)
+            if type(which) == "string" and which:find("^EQUIP_BIND") then return true end
+        end
+    end
+    return false
+end
+local BINDWAIT = { STEP = 0.25, MAX = 60 }
+WC._bagsBindWait = BINDWAIT     -- for the harness
+-- once the game's question is answered (or after MAX), the piece is put back only if it is STILL on the cursor (a No): anything the
+-- player picked up since is left alone
+local function settleAfterBind(t0, id)
+    if bindAsking() and GetTime() - t0 < BINDWAIT.MAX then
+        C_Timer.After(BINDWAIT.STEP, function() settleAfterBind(t0, id) end)
+        return
+    end
+    BINDWAIT.on = nil
+    local ok, kind, cid = CALL(function() return GetCursorInfo() end)
+    if ok and kind == "item" and cid == id then CALL(function() return ClearCursor() end) end
+    movedAt = GetTime()
+end
+
 -- a tap on a worn-slot cell: a pick of worn gear, or the drop of a bag pick = equip it there
 local function onInvCell(slot)
     if settling() then return end
@@ -710,6 +749,16 @@ local function onInvCell(slot)
     if bagItemID(p.bag, p.slot) ~= p.id then mvReply({ ok = false, why = "moved", to = to }); return end
     pickupBag(p.bag, p.slot)
     CALL(function() return EquipCursorItem(slot) end)
+    if bindAsking() then
+        -- char-more1: the game asks "bind it to you?" for this piece: its own A / B answer it (Character.lua / the Bags room pass them),
+        -- so the cursor is NOT cleared now (that was a No); settleAfterBind puts the piece back only if the answer left it there
+        movedAt = GetTime()
+        BINDWAIT.on = true
+        mvReply({ ok = true, ask = "bind", from = { kind = "bag", bag = p.bag, slot = p.slot }, to = to })
+        local t0 = GetTime()
+        C_Timer.After(BINDWAIT.STEP, function() settleAfterBind(t0, p.id) end)
+        return
+    end
     local clean = settle()
     movedAt = GetTime()
     mvReply({ ok = clean, why = (not clean) and "refused" or nil,
@@ -914,6 +963,10 @@ function WC.collectBags()
                     -- an item that enhances another (Item Enhancement: armor kits, stones, oils, enchant scrolls), or seen to start the
                     -- game's "pick an item" (WC._kitLearned): the Character room lists these under a gear slot's Apply
                     if row.use and (row.cls == 8 or (row.cls == 0 and row.sub == 6) or (WC._kitLearned and WC._kitLearned[id])) then row.kit = true end
+                    -- char-more1: Replace lists only what this character can wear (WC._bagsNoUse); Enchant leaves out a kit the game
+                    -- said no to for the piece worn now (kfy / kfn, WC._kitFitOf)
+                    if row.equip and not NOT_WORN[row.equip] and WC._bagsNoUse and WC._bagsNoUse(bag, slot, id) then row.nouse = true end
+                    if row.kit and WC._kitFitOf then row.kfy, row.kfn = WC._kitFitOf(id) end
                     -- a quest item or a quest starter, as the game marks it in this slot (sent only when true)
                     local okQ, qi = CALL(function() return C_Container.GetContainerItemQuestInfo(bag, slot) end)
                     if okQ and type(qi) == "table" then
@@ -1791,15 +1844,22 @@ end
 -- bags-kit3: can the pick go on the item at `loc`? The game's own checks, called directly (never ItemButtonUtil's, which answers for the
 -- bank while it is open): enchant = DoesItemMatchTargetEnchantingSpell (paperdollframe.lua's CanApplyItemEnchant), cond =
 -- DoesItemMatchSpellItemCondition; other picks the game checks on the click itself. No answer = offered (the game still says no)
-function KIT.match(loc, ctx)
-    if not loc then return true end
+-- char-more1: the game's plain answer (true / false), nil when it gave none or the pick type has no check
+function KIT.answer(loc, ctx)
+    if not loc then return nil end
     local fn
     if ctx == "enchant" then fn = function() return C_Item.DoesItemMatchTargetEnchantingSpell(loc) end
     elseif ctx == "cond" then fn = function() return C_Item.DoesItemMatchSpellItemCondition(loc) end
-    else return true end
+    else return nil end
     local m = S(fn)
     if m == true or m == false then return m end
-    return true
+    return nil
+end
+function KIT.match(loc, ctx)
+    if not loc then return true end
+    local m = KIT.answer(loc, ctx)
+    if m == nil then return true end
+    return m
 end
 local INV_ORDER = { 5, 7, 10, 8, 6, 3, 1, 9, 16, 17, 18, 15, 2, 11, 12, 13, 14, 4, 19 }   -- chest, legs, hands, feet first (kits)
 -- the worn gear the pick can go on (bags-kit3: what does not fit is left out); none for Disenchant / Feed Pet (bag items only)
@@ -1820,6 +1880,48 @@ function KIT.worn(ctx)
     end
     return out
 end
+-- char-more1 THE KITS' FITS, LEARNED FROM THE GAME (the user, 2026-11-13: Enchant = "enchant/kit/stone/oil items in the bags that fit"):
+-- whether a kit may go on a piece can only be asked while that kit's pick is on, so it is asked then, for every worn piece at once, and
+-- kept: WC._kitFits[kit id][worn slot] = { w = the worn piece's id, ok = the game's answer }. A kit row then says the answers that still
+-- hold for what is worn now (kfy / kfn). Only the picks with a real check (enchant / cond); the rest are never guessed. Session only.
+WC._kitFits = WC._kitFits or {}
+function KIT.learn(kitId, ctx)
+    if type(kitId) ~= "number" or (ctx ~= "enchant" and ctx ~= "cond") then return false end
+    local t = WC._kitFits[kitId] or {}
+    local n = 0
+    for _, slot in ipairs(INV_ORDER) do
+        local id = invItemID(slot)
+        if id then
+            local loc = CALL(function() return ItemLocation end) and select(2, CALL(function() return ItemLocation:CreateFromEquipmentSlot(slot) end)) or nil
+            local m = KIT.answer(loc, ctx)
+            if m ~= nil then
+                local was = t[slot]
+                if not (was and was.w == id and was.ok == m) then n = n + 1 end
+                t[slot] = { w = id, ok = m }
+            end
+        end
+    end
+    WC._kitFits[kitId] = t
+    return n > 0                                     -- something new: the bags are sent again
+end
+-- a kit's answers for the pieces worn now: kfy, kfn (",5,7," each; nil = none)
+function WC._kitFitOf(kitId)
+    local t = WC._kitFits[kitId]
+    if not t then return nil, nil end
+    local y, n = ",", ","
+    for slot = 1, 19 do
+        local r = t[slot]
+        if r and invItemID(slot) == r.w then
+            if r.ok then y = y .. slot .. "," else n = n .. slot .. "," end
+        end
+    end
+    return (y ~= ",") and y or nil, (n ~= ",") and n or nil
+end
+-- the kit whose pick is on now (KIT.pickKit, set as it starts) is asked about, once its type is known
+local function kitLearnNow()
+    if KIT.pickKit and KIT.on() and KIT.learn(KIT.pickKit, KIT.ctx()) then sendSoon("kitfit") end
+end
+KIT.learnNow = kitLearnNow
 -- the worn slots the pick can go on, as ",5,10," (the itarget document: the Character room taps its slot only when it is listed)
 function KIT.wornOk(ctx)
     local s = ","
@@ -1945,6 +2047,19 @@ function KIT.used(bag, slot)
     local id = bagItemID(bag, slot)
     if id then KIT.last = { id = id, t = GetTime() } end
 end
+-- char-more1: a tap on a bag item's own secure cell (its use ran just now): a kit / stone / oil / enchant (a "Use:" item that is not gear)
+-- is remembered as KIT.used is, and a pick that is on already is that kit's
+function WC._kitUsedAt(bag, slot)
+    local id = bagItemID(bag, slot)
+    if not id then return end
+    local okSp, spName = CALL(function() return C_Item.GetItemSpell(id) end)
+    if not (okSp and type(spName) == "string") then return end
+    local okI, _, _, _, loc = CALL(function() return C_Item.GetItemInfoInstant(id) end)
+    loc = okI and S(function() return loc end) or nil
+    if type(loc) == "string" and loc ~= "" and not NOT_WORN[loc] then return end        -- gear: its cell equipped it
+    KIT.used(bag, slot)
+    if KIT.on() then KIT.pickKit = id; kitLearnNow() end
+end
 -- bags-kit2 (issue #89): the GAME is asking about the pick - its replace / bind question for the item just chosen, or any pop-up
 -- its controller focuses (its A / B answer that one, never our list). Read only; the pop-up's name, nil when none asks
 KIT.ASKS = { REPLACE_ENCHANT = true, TRADE_REPLACE_ENCHANT = true, BIND_ENCHANT = true, ACTION_WILL_BIND_ITEM = true,
@@ -1976,10 +2091,14 @@ function KIT.step()
         local was = KIT.ctxWas
         KIT.ctxWas = cxNow
         if was and cxNow and ctl.on and ctl.mode == "target" then report(nil) end
+        if cxNow then kitLearnNow() end                 -- char-more1: the pick's type came late: its kit is asked about now
     end
     if on ~= KIT.was then
         KIT.was = on
         if on and KIT.last and GetTime() - KIT.last.t < 2 then WC._kitLearned[KIT.last.id] = true end
+        -- char-more1: the kit this pick is for (used just now), asked about for every worn piece; nobody's once the pick ends
+        if on then KIT.pickKit = (KIT.last and GetTime() - KIT.last.t < 2) and KIT.last.id or KIT.pickKit; kitLearnNow()
+        else KIT.pickKit = nil end
         -- bags-kit3: the pick's type and the worn slots it can go on (the Character room taps its slot only when listed), and what
         -- the game said of the pick (cx: the device check of TargetSpellChecksItemCondition for kits)
         local cx = on and KIT.probe() or nil
@@ -2540,6 +2659,22 @@ function ACT.unusable(t)
     end
     return false
 end
+-- char-more1 (the user, 2026-11-13: Replace lists the bag pieces that can go in the slot, "hide items the player can't equip (red/unusable
+-- line)"): true when the game won't let this character wear the piece in bag / slot (item id): its required level is above the player's,
+-- the game's own C_PlayerInfo.CanUseItem says no (class / proficiency), or its KEPT tooltip has a red line. Read-only, no tooltip read here
+-- (the collect must stay cheap: an item not read yet is offered, the game refuses it itself)
+function WC._bagsNoUse(bag, slot, id)
+    if type(id) ~= "number" then return false end
+    local okI, _, _, _, _, minL = CALL(function() return GetItemInfo(id) end)
+    minL = okI and SN(function() return minL end) or nil
+    local lvl = SN(function() return UnitLevel("player") end)
+    if minL and lvl and minL > lvl then return true end
+    local can = S(function() return C_PlayerInfo.CanUseItem(id) end)
+    if can == false then return true end
+    local e = TIP.get("bag " .. bag .. " " .. slot .. " " .. id, bag, slot)
+    return e ~= nil and ACT.unusable(e.val)
+end
+
 -- the game's stat changes against one worn slot: true = all losses, false = a gain, nil = none given
 function ACT.allLoss(t, slot)
     if type(t) ~= "table" or type(t.cmp) ~= "table" then return nil end
