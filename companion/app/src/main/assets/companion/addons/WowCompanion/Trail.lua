@@ -2099,7 +2099,7 @@ end
 --   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
 --   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 --   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-WC.live = { V = "ag10", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+WC.live = { V = "ag11", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -2593,6 +2593,59 @@ do
         if on == A.FRIENDS_ON then return end
         A.FRIENDS_ON = on
         A.friendWas = nil                       -- re-decided on the next step
+        A.offDeclined = {}                      -- ag11: a new choice: the player's own on (declined) is re-decided too
+    end
+    -- ag11 OFF HIDES THEM (the user on build 1462: "friendly name plates still show with the setting off"). THE CAUSE: ag9 / ag10's Off
+    -- only stopped US turning the friendly plates on; it never turned off what was already on in the player's game - the game's own
+    -- Friendly Player / Friendly NPC nameplate options (on in the game's menu or its FRIENDNAMEPLATES key, or a 1 an older build of
+    -- ours left behind whose saved record a killed game never wrote: SavedVariables are written only at a clean log out / reload).
+    -- Off now MEANS off while DS Forever runs: out of a fight (the options are refused in one; the next moment out of it otherwise)
+    -- every friendly-plate option in A.NP_FRIEND_OFF that is not 0 goes to 0, the player's own value kept in OUR saved data
+    -- (WowCompanionDB.npFriendsOff.orig, the npFriends / npEnemies / error-sound pattern). Given back exactly when: the switch goes On
+    -- (before On's own rule runs), and at log out (a disabled add-on or a closed game leaves the game as it was). A change of the
+    -- player's own in the game meanwhile (an option of ours back on) stands for this session: dropped from the record, not fought.
+    -- An option the client does not have reads nil and is skipped. Fights keep the 0 (nothing is put back at PLAYER_REGEN_DISABLED).
+    A.NP_FRIEND_OFF = { "nameplateShowFriendlyPlayers", "nameplateShowFriends", "nameplateShowFriendlyNPCs" }
+    A.offDeclined = {}
+    function A.friendsOffRestore(why)
+        local saved = type(WowCompanionDB) == "table" and WowCompanionDB.npFriendsOff or nil
+        if type(saved) ~= "table" then return end
+        if pv(InCombatLockdown) == true and why ~= "logout" then return end
+        -- a write the game refuses (a /reload in a fight) keeps its entry: given back at the next chance (On, the next log out)
+        local left = {}
+        for name, orig in pairs(saved.orig or {}) do
+            local cur = cvGet(name)
+            if cur ~= nil and tonumber(cur) == 0 and tonumber(orig) ~= 0 then
+                cvSet(name, orig)
+                if tonumber(cvGet(name)) == 0 then left[name] = orig end
+            end
+        end
+        WowCompanionDB.npFriendsOff = next(left) ~= nil and { orig = left } or nil
+        A.offWhy = why
+    end
+    function A.friendsOffStep()
+        if pv(InCombatLockdown) == true then return end
+        local saved = WowCompanionDB.npFriendsOff
+        if type(saved) == "table" and type(saved.orig) ~= "table" then saved.orig = {} end
+        for _, name in ipairs(A.NP_FRIEND_OFF) do
+            local cur = cvGet(name)
+            if cur ~= nil then
+                local mine = type(saved) == "table" and saved.orig[name] ~= nil
+                if tonumber(cur) ~= 0 then
+                    if mine then
+                        -- ours was 0: the player turned it back on in the game; their choice stands (this session)
+                        saved.orig[name] = nil
+                        A.offDeclined[name] = true
+                    elseif not A.offDeclined[name] then
+                        saved = saved or { orig = {} }
+                        saved.orig[name] = cur
+                        WowCompanionDB.npFriendsOff = saved
+                        cvSet(name, "0")
+                    end
+                end
+            end
+        end
+        if type(saved) == "table" and next(saved.orig) == nil then WowCompanionDB.npFriendsOff = nil end
     end
     function A.friendsStep()
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
@@ -2603,13 +2656,16 @@ do
         end
         if not A.FRIENDS_ON then
             A.friendWas = nil
-            if type(WowCompanionDB.npFriends) ~= "table" then return end
             if pv(InCombatLockdown) == true then return end
-            A.friendsRestore("friendly plates off")
+            -- ON's values of ours first (the player's own back), then ag11: whatever is still on goes off
+            if type(WowCompanionDB.npFriends) == "table" then A.friendsRestore("friendly plates off") end
+            A.friendsOffStep()
             return
         end
         -- ag10 On: the ag8 rule, as it was
         if pv(InCombatLockdown) == true then return end
+        -- ag11: Off's 0s go back to the player's own values first (On starts from the game as the player left it)
+        if type(WowCompanionDB.npFriendsOff) == "table" then A.friendsOffRestore("friendly plates on") end
         local friend = pv(function() return UnitExists("target") end) == true and pv(function() return UnitIsFriend("player", "target") end) == true
             and pv(function() return UnitIsUnit("target", "player") end) ~= true
         if friend == A.friendWas then return end
@@ -2887,7 +2943,7 @@ do
         local ok, err = pcall(function()
             if e == "NAME_PLATE_UNIT_ADDED" then A.onAdded(a1)
             elseif e == "NAME_PLATE_UNIT_REMOVED" then A.onRemoved(a1)
-            elseif e == "PLAYER_LOGOUT" then A.npRestore("logout"); pcall(A.friendsRestore, "logout")
+            elseif e == "PLAYER_LOGOUT" then A.npRestore("logout"); pcall(A.friendsRestore, "logout"); pcall(A.friendsOffRestore, "logout")
             elseif e == "PLAYER_REGEN_DISABLED" then
                 -- a fight: the player's plate values back now (no friendly-target change sticks through a fight); re-decided after it
                 pcall(A.friendsRestore, "combat"); A.friendWas = nil
