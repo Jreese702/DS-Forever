@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat35"     -- chat35 (issue #29, streaming: "WowCompanion has been blocked from an action only available to the Blizzard UI" - SetPreferredGamepadInteractTarget(), after a Lua error opened the game's error frame): the game's error handler is NOT wrapped any more. chat33's wrapper made the game's own handler run inside a WowCompanion function for EVERY Lua error (anyone's), so the error frame it opens took the gamepad UI's focus as our code - the chain #29's reporter traced to the blocked gamepad bar. Our errors are now read with a secure post-hook on the error frame's own method (hooksecurefunc: the game's code stays the game's); the probe's eh says "hook" (caught) or "none" (no such method on this client: errors not caught); chat34 (#183 review): the "ours" probe also says how far Interact.lua ran (istage: none / top / guard / cap / end, Interact i153) and its version, and whether the error handler is still ours (eh: ours / other / unset), so "loaded, no capture, no errors" is no longer one answer; chat33 (#183, 1.0.25: "Not able to send messages in chat/guild/whisper/party/etc"; its log: every key, type and send answered ok=0, every room's hold "no controller capture", no Interact document in 15 min): the game never ran DS Forever: Interact, so no room could hold the controller and the chat refused all with "the chat is not open". A refusal now says so ("Interact add-on not running"), and one probe per login ("ours") names each DS Forever add-on the game did not load, with the game's reason, and the first Lua errors from our own files (why it did not load is not in that report); chat32: any /command from the composer runs (the secure cell chcmd, armed at the check); chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
+local CHATV = "chat36"     -- chat36 (issue #29 review: "the new error-frame hook is tried only when Chat.lua loads and at the login probe, so early load errors (Interact.lua) can be missed while eh still reads 'hook'"): the hook is tried again at every ADDON_LOADED (the error frame's own add-on may load after ours), and the probe tells "hooked before Interact.lua ran" (eh hook) from "hooked after it started" (eh late: an Interact load error may be missed) and counts every message the hook saw, anyone's (ehN: 0 with errors on screen = the hooked method is not the one the game calls); chat35 (issue #29, streaming: "WowCompanion has been blocked from an action only available to the Blizzard UI" - SetPreferredGamepadInteractTarget(), after a Lua error opened the game's error frame): the game's error handler is NOT wrapped any more. chat33's wrapper made the game's own handler run inside a WowCompanion function for EVERY Lua error (anyone's), so the error frame it opens took the gamepad UI's focus as our code - the chain #29's reporter traced to the blocked gamepad bar. Our errors are now read with a secure post-hook on the error frame's own method (hooksecurefunc: the game's code stays the game's); the probe's eh says "hook" (caught) or "none" (no such method on this client: errors not caught); chat34 (#183 review): the "ours" probe also says how far Interact.lua ran (istage: none / top / guard / cap / end, Interact i153) and its version, and whether the error handler is still ours (eh: ours / other / unset), so "loaded, no capture, no errors" is no longer one answer; chat33 (#183, 1.0.25: "Not able to send messages in chat/guild/whisper/party/etc"; its log: every key, type and send answered ok=0, every room's hold "no controller capture", no Interact document in 15 min): the game never ran DS Forever: Interact, so no room could hold the controller and the chat refused all with "the chat is not open". A refusal now says so ("Interact add-on not running"), and one probe per login ("ours") names each DS Forever add-on the game did not load, with the game's reason, and the first Lua errors from our own files (why it did not load is not in that report); chat32: any /command from the composer runs (the secure cell chcmd, armed at the check); chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -38,7 +38,10 @@ local session = SN(function() return time() end) or math.floor(GetTime())
 -- then on. Instead a secure post-hook (hooksecurefunc) on the error frame's own method sees each message after the game handled it.
 WC.ourErrors = WC.ourErrors or {}
 local ehHook       -- chat35: the error frame's method we hook ("OnError" ...), nil = not hooked (yet)
+local ehLate       -- chat36: true = hooked only after Interact.lua had started (WC.interactStage set), so its load errors may be missed
+local ehN = 0      -- chat36: messages the hook saw, anyone's
 local function keepError(_, msg)
+    ehN = ehN + 1
     pcall(function()
         local e = WC.ourErrors
         if #e < 3 and type(msg) == "string" and isPlain(msg) and msg:find("WowCompanion", 1, true) then e[#e + 1] = msg:sub(1, 300) end
@@ -51,7 +54,7 @@ local function hookErrors()
     for _, m in ipairs({ "OnError", "DisplayMessage", "DisplayMessageInternal" }) do
         local okM, fn = pcall(function() return fr[m] end)
         if okM and type(fn) == "function" then
-            if pcall(hooksecurefunc, fr, m, keepError) then ehHook = m end
+            if pcall(hooksecurefunc, fr, m, keepError) then ehHook = m; ehLate = WC.interactStage ~= nil end
             return
         end
     end
@@ -1667,15 +1670,15 @@ function WC.oursProbe()
     local capv = (type(c) == "table" and type(c.take) == "function") and (num(c.version) or 1) or 0
     -- chat34: how far Interact.lua ran (nil = never: unreadable, or a copy older than i153); chat35: whether our errors are caught
     pcall(hookErrors)
-    local eh = ehHook and "hook" or "none"
+    local eh = (ehHook and (ehLate and "late" or "hook")) or "none"
     return { type = "cap", probe = "ours", v = CHATV, loaded = loaded, missing = #off, off = off, capv = capv,
-             errN = #WC.ourErrors, errs = WC.ourErrors, istage = str(WC.interactStage) or "none", iv = str(WC.interactIV), eh = eh }
+             errN = #WC.ourErrors, errs = WC.ourErrors, istage = str(WC.interactStage) or "none", iv = str(WC.interactIV), eh = eh, ehN = ehN, ehM = ehHook }
 end
 
 -- ---------------------------------------------------------------- start
 
 f:SetScript("OnEvent", function(_, event, ...)
-    if event == "ADDON_LOADED" then pcall(joinHub) return end
+    if event == "ADDON_LOADED" then pcall(hookErrors); pcall(joinHub) return end   -- chat36: the error frame's add-on may load after ours
     if event == "PLAYER_LOGOUT" then pcall(topSave) return end
     if event == "PLAYER_LOGIN" then
         pcall(topRestore)

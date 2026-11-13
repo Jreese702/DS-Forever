@@ -28,6 +28,11 @@
 -- checks its slot just before the click (PreClick, out of combat): empty = no secure action for that click (type nil; PostClick puts
 -- "item" back), so nothing raises. A filled slot's click is exactly as before. In a fight attributes cannot change, so an empty cell
 -- still raises there; its tap proof says so (empty / emptyFight) so a next report shows whether that case is still hit.
+-- bags-empty2 (issue #29 review: "a tap on an empty slot still raises, opens the error frame and blocks the gamepad bar until /reload" in
+-- combat): at PLAYER_REGEN_DISABLED (the lockdown has not begun, attributes can still be written) every guarded cell whose slot is
+-- empty gets type nil for the whole fight; PLAYER_REGEN_ENABLED puts "item" back. Cost: an item looted into an empty slot mid-fight
+-- cannot be used by tap until the fight ends (a no-op, never an error). A slot that empties DURING the fight (the last potion used)
+-- keeps its "item" and can still raise; its tap proof says emptyFight without fightOff, so a next report shows whether that is hit.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -148,9 +153,11 @@ local rowSlots = {}
 -- take / leave columns (bmvq 29 / 30).
 -- bags-empty1 (issue #29): a secure "item" cell with an empty slot gets no secure action for that click (see the header).
 -- isEmpty() answers true only when the game says the slot holds nothing; lastEmpty = the last empty click, for the tap proof.
-local lastEmpty = { at = -math.huge, key = nil, fight = false }
+local lastEmpty = { at = -math.huge, key = nil, fight = false, off = false }
+local guarded = {}                                      -- bags-empty2: every guarded cell (a set), for the fight's switch
 local function emptyGuard(btn, key, isEmpty)
     btn.wcSlotKey, btn.wcIsEmpty = key, isEmpty
+    guarded[btn] = true
     if btn.wcEmptyHooked then return end
     btn.wcEmptyHooked = true
     pcall(btn.HookScript, btn, "PreClick", function(self)
@@ -160,6 +167,7 @@ local function emptyGuard(btn, key, isEmpty)
         if not (okE and empty == true) then return end
         local fight = InCombatLockdown() and true or false
         lastEmpty.at, lastEmpty.key, lastEmpty.fight = GetTime(), self.wcSlotKey, fight
+        lastEmpty.off = fight and self:GetAttribute("type") ~= "item"
         if fight or self:GetAttribute("type") ~= "item" then return end
         self:SetAttribute("type", nil)
         self.wcEmptyOff = true
@@ -174,9 +182,25 @@ end
 -- the tap proof's flags: this click (key) found its slot empty just now
 local function emptyFlags(t, key)
     if lastEmpty.key == key and GetTime() - lastEmpty.at < 1 then
-        if lastEmpty.fight then t.emptyFight = true else t.empty = true end
+        if lastEmpty.fight then t.emptyFight = true; t.fightOff = lastEmpty.off or nil else t.empty = true end
     end
     return t
+end
+-- bags-empty2: the fight's switch. PLAYER_REGEN_DISABLED: empty cells off for the fight; PLAYER_REGEN_ENABLED: back to "item".
+local function emptyFightOff()
+    if InCombatLockdown() then return end
+    for btn in pairs(guarded) do
+        local okE, empty = pcall(btn.wcIsEmpty)
+        if okE and empty == true and btn:GetAttribute("type") == "item" and pcall(btn.SetAttribute, btn, "type", nil) then
+            btn.wcFightOff = true
+        end
+    end
+end
+local function emptyFightOn()
+    if InCombatLockdown() then return end
+    for btn in pairs(guarded) do
+        if btn.wcFightOff and pcall(btn.SetAttribute, btn, "type", "item") then btn.wcFightOff = nil end
+    end
 end
 local function bagSlotEmpty(bag, slot)
     return function()
@@ -796,6 +820,7 @@ end
 
 bf:SetScript("OnEvent", function(_, event, a1)
     if event == "PLAYER_REGEN_ENABLED" and syncDoors then syncDoors() end
+    if event == "PLAYER_REGEN_DISABLED" then pcall(emptyFightOff) elseif event == "PLAYER_REGEN_ENABLED" then pcall(emptyFightOn) end
     -- GET_ITEM_INFO_RECEIVED fires for every item anything asks about (chat links, tooltips,
     -- other addons). Only a name WE are waiting for is worth a re-collect. (pcall: the arg is
     -- used as a table key, and nothing has measured whether an event arg can be secret.)

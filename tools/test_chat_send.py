@@ -191,6 +191,25 @@ ok(p2["istage"] == "guard", "a file that stopped halfway is named: %r" % p2)
 L4 = world(pre_extra="ScriptErrorsFrame = nil")
 p4 = [d for d in docs(L4) if d.get("probe") == "ours"][-1]
 ok(p4["eh"] == "none" and L4.eval("geterrorhandler() == GAME_HANDLER") is True, "no error frame: eh none, handler untouched: %r" % p4)
+# chat36 (issue #29 review): the error frame's own add-on loads after ours - the hook is tried again at every ADDON_LOADED
+L5 = world(pre_extra="SEF = ScriptErrorsFrame; ScriptErrorsFrame = nil")
+L5.execute('WowCompanion.interactStage = nil; ScriptErrorsFrame = SEF; fire("ADDON_LOADED", "Blizzard_ScriptErrors")')
+L5.execute('raise("Interface/AddOns/WowCompanionInteract/Interact.lua:9: early"); raise("Interface/AddOns/Other/o.lua:1: x")')
+L5.execute('fire("PLAYER_LOGIN"); runTimers(NOW + 3)')
+p5 = [d for d in docs(L5) if d.get("probe") == "ours"][-1]
+ok(p5["eh"] == "hook" and p5["ehN"] == 2 and p5["ehM"] == "OnError" and p5["errN"] == 1,
+   "hooked at the frame's ADDON_LOADED, before Interact ran: eh hook, both seen, ours kept: %r" % p5)
+ok(L5.eval("geterrorhandler() == GAME_HANDLER") is True and int(L5.eval("#GAMEERR")) == 2, "the game's handler still the game's, ran both")
+# hooked only after Interact.lua had started: eh late (its load errors may be missed)
+L6 = world(pre_extra="SEF = ScriptErrorsFrame; ScriptErrorsFrame = nil")
+L6.execute('WowCompanion.interactStage = "end"; ScriptErrorsFrame = SEF; fire("ADDON_LOADED", "Blizzard_ScriptErrors")')
+L6.execute('fire("PLAYER_LOGIN"); runTimers(NOW + 3)')
+p6 = [d for d in docs(L6) if d.get("probe") == "ours"][-1]
+ok(p6["eh"] == "late" and p6["ehN"] == 0, "hooked after Interact started: eh late: %r" % p6)
+# hooked once only (a second ADDON_LOADED adds no second hook)
+L5.execute('fire("ADDON_LOADED", "Other"); raise("Interface/AddOns/Other/o.lua:2: y"); fire("PLAYER_LOGIN"); runTimers(NOW + 3)')
+p5 = [d for d in docs(L5) if d.get("probe") == "ours"][-1]
+ok(p5["ehN"] == 3, "one hook: each message counted once: %r" % p5)
 
 # the REAL Interact.lua marks its stages: with no WowCompanion.S it stops at its guard ("top"); its last line is the end marker
 INTERACT = open(os.path.join(ADDONS, "WowCompanionInteract", "Interact.lua"), encoding="utf-8").read()

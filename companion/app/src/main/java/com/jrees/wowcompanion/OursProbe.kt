@@ -14,6 +14,8 @@ import org.json.JSONObject
  * Lua error may not have reached us).
  * chat35 (issue #29): the add-on no longer wraps the game's error handler (that ran the game's error frame as our code and blocked the
  * gamepad bar); our errors come from a secure post-hook on the error frame: eh "hook" = caught, "none" = this client had no method to hook.
+ * chat36 (issue #29 review): "late" = the frame was hooked only after Interact.lua had started (its load errors may be missed); ehN =
+ * every message the hook saw, anyone's (0 while errors showed on screen = the hooked method is not the one the game calls).
  * Pure: the tests drive it.
  */
 fun oursProbeLine(msg: JSONObject): Pair<Boolean, String>? {
@@ -35,6 +37,8 @@ fun oursProbeLine(msg: JSONObject): Pair<Boolean, String>? {
     })
     if (eh == "other") sb.append("; error handler replaced by another add-on")
     if (eh == "none") sb.append("; Lua errors not caught (no error frame hook)")   // chat35 (#29): the frame hook found no method
+    if (eh == "late") sb.append("; error frame hooked late (Interact load errors may be missed)")   // chat36
+    if ((eh == "hook" || eh == "late") && msg.has("ehN")) sb.append("; error frame saw ").append(msg.optInt("ehN"))   // chat36
     if (errs.isNotEmpty()) sb.append("; Lua errors: ").append(errs.joinToString(" | ") { it.replace('\n', ' ') })
     return warn to sb.toString()
 }

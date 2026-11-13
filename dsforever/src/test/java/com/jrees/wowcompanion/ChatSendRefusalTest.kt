@@ -103,4 +103,13 @@ class ChatSendRefusalTest {
         assertFalse(none.first)
         assertTrue(none.second, none.second.endsWith("; Lua errors not caught (no error frame hook)"))
     }
+
+    /** chat36 (issue #29 review): a late hook is named, and how many messages the frame hook saw */
+    @Test fun theOursProbeSaysALateHookAndItsCount() {
+        val late = oursProbeLine(JSONObject("""{"probe":"ours","loaded":10,"off":{},"capv":20,"errs":{},"istage":"end","iv":"i154","eh":"late","ehN":0}"""))!!
+        assertFalse(late.first)
+        assertEquals("our add-ons: 10 loaded; controller capture v20; Interact.lua ran i154; error frame hooked late (Interact load errors may be missed); error frame saw 0", late.second)
+        val hooked = oursProbeLine(JSONObject("""{"probe":"ours","loaded":10,"off":{},"capv":20,"errs":{},"istage":"end","iv":"i154","eh":"hook","ehN":4}"""))!!
+        assertTrue(hooked.second, hooked.second.endsWith("; Interact.lua ran i154; error frame saw 4"))
+    }
 }

@@ -5,7 +5,9 @@ game functions and checks the secure "item" cells of the bag rows and of binv (w
   - a click on an EMPTY slot's cell has no secure action for that click (PreClick: type nil), and "item" is back after it (PostClick);
   - a FILLED slot's cell keeps type "item" through the click (exactly as before);
   - in a fight nothing is changed (attributes are locked), and the tap proof says emptyFight; out of a fight it says empty;
-  - the cells' attributes are otherwise as before (type item, item "<bag> <slot>" / "<slot>").
+  - the cells' attributes are otherwise as before (type item, item "<bag> <slot>" / "<slot>");
+  - bags-empty2 (review): at PLAYER_REGEN_DISABLED (before the lockdown) empty cells are type nil for the fight, filled ones untouched,
+    and PLAYER_REGEN_ENABLED puts "item" back; a fight tap on such a cell runs nothing and its proof says emptyFight + fightOff.
 Run: python -B tools/test_bag_empty.py
 """
 import os
@@ -33,6 +35,14 @@ stub = setmetatable({}, { __index = function() return stub end, __call = functio
 setmetatable(_G, { __index = function(_, k) return stub end })
 NOW = 100
 function GetTime() return NOW end
+-- frames whose OnEvent scripts the test can fire (everything else on them is the stub)
+HANDLERS = {}
+function CreateFrame()
+    local fr = setmetatable({}, { __index = function() return stub end })
+    function fr:SetScript(k, fn) if k == "OnEvent" then HANDLERS[#HANDLERS + 1] = fn end end
+    return fr
+end
+function fire(ev, ...) for _, fn in ipairs(HANDLERS) do pcall(fn, nil, ev, ...) end end
 C_Timer = { NewTicker = function() return stub end, After = function() end, NewTimer = function() return stub end }
 EMITS, SECURE = {}, {}
 WowCompanion = {
@@ -120,6 +130,23 @@ check(e is not None and e.empty is True and e.slot == 2, "the kit tap proof says
 # the stop cell and the bag-gear macro cells are not touched
 L.execute('STOP = newCell(); SECURE.binv.init(STOP, 19); G = newCell(); SECURE.binv.init(G, 20)')
 check(L.eval('STOP.hooks.PreClick') is None and L.eval('G.hooks.PreClick') is None, "macro cells: no guard")
+
+# bags-empty2 (review): the fight's switch. PLAYER_REGEN_DISABLED fires before the lockdown: empty cells off, filled ones kept
+L.execute('NOW = NOW + 5; fire("PLAYER_REGEN_DISABLED"); COMBAT = true')
+check(L.eval('EMPTY.a.type') is None and L.eval('NECK.a.type') is None, "fight start: the empty bag / worn cells have no action")
+check(L.eval('FULL.a.type') == 'item' and L.eval('CHEST.a.type') == 'item', "fight start: the filled cells keep type item")
+check(L.eval('click(EMPTY)') is None, "a fight tap on the empty slot runs nothing (no IsEquippableItem(nil))")
+L.execute('SECURE.bag0.onClick(1)')
+e = L.eval('EMITS[#EMITS].bagsTap')
+check(e.emptyFight is True and e.fightOff is True, "its proof: emptyFight + fightOff", dict(e))
+check(L.eval('click(FULL)') == 'item', "a fight tap on a filled slot is the game's item action")
+L.execute('fire("PLAYER_REGEN_DISABLED")')
+check(L.eval('FULL.a.type') == 'item', "a second REGEN_DISABLED inside the lockdown writes nothing")
+L.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED")')
+check(L.eval('EMPTY.a.type') == 'item' and L.eval('NECK.a.type') == 'item' and L.eval('FULL.a.type') == 'item',
+      "fight end: every cell type item again")
+check(L.eval('EMPTY.wcFightOff') is None and L.eval('click(EMPTY)') is None and L.eval('EMPTY.a.type') == 'item',
+      "out of the fight the click guard works as before")
 
 import re
 CODE = chr(10).join(re.sub(r'--.*$', '', ln) for ln in SRC.splitlines())
