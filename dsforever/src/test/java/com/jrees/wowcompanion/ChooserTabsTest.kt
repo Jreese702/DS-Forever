@@ -49,8 +49,9 @@ class ChooserTabsTest {
 
     @Test fun sticksSitBetweenTheDiamondsInEveryLayout() {
         for (swap in listOf(false, true)) {
-            assertEquals(290f to 690f, PadDiamonds.centre(PadMapModel.POS_L3, swap))
-            assertEquals(456f to 690f, PadDiamonds.centre(PadMapModel.POS_R3, swap))
+            // m155: a pair of their own, below and between the two diamonds (the user, 2026-11-13: "moved away from the other two cross's")
+            assertEquals(323f to 790f, PadDiamonds.centre(PadMapModel.POS_L3, swap))
+            assertEquals(423f to 790f, PadDiamonds.centre(PadMapModel.POS_R3, swap))
         }
         assertEquals("the stick's glyph in any pad style", "gen_lstickin",
             SpellsModel.combo(SpellsModel.PadSlot(0, 1, 2, PadMapModel.POS_L3), SpellsModel.PadStyle.SHP).button)

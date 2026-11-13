@@ -75,11 +75,13 @@ class StickButtonsPageTest {
 
     @Test fun aFingerOnL3PicksItByTheOneShotPick() {
         val r = Rig(map(empty), ctl(4))
-        r.tap(290f, 690f)
+        val (lx, ly) = PadDiamonds.centre(PadMapModel.POS_L3, true)          // m155: the pair below the diamonds
+        r.tap(lx, ly)
         assertEquals(listOf(PadMapModel.stickCells(PadMapModel.POS_L3)), r.cells)
         assertEquals(listOf("talentn" to 38, "talents" to 15), PadMapModel.stickCells(PadMapModel.POS_L3))
         r.cells.clear()
-        r.tap(456f, 690f)
+        val (rx, ry) = PadDiamonds.centre(PadMapModel.POS_R3, true)
+        r.tap(rx, ry)
         assertEquals(listOf(listOf("talentn" to 38, "talents" to 16)), r.cells)
     }
 
@@ -95,7 +97,7 @@ class StickButtonsPageTest {
 
     @Test fun inCombatHasNoSticks() {
         val r = Rig(map(empty), ctl(4, view = "combat"))
-        r.tap(290f, 690f)
+        PadDiamonds.centre(PadMapModel.POS_L3, true).let { (x, y) -> r.tap(x, y) }
         assertTrue("no stick pick on the In combat tab: ${r.cells}", r.cells.none { it == PadMapModel.stickCells(PadMapModel.POS_L3) })
     }
 

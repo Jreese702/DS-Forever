@@ -484,7 +484,9 @@ class PadTabPage(
         if (view == "normal" && fo != null && !fo.bar) {
             val p = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
             p.textAlign = Paint.Align.CENTER
-            c.drawText(Tr.t("Shift into ${fo.name} once: the game then shows its bar here"), SPLIT / 2f, 806f, p)
+            // m155: under the sticks' pair (it was at 806, where L3 / R3 now sit), over the page arrows
+            p.textSize = 22f
+            c.drawText(Tr.t("Shift into ${fo.name} once: the game then shows its bar here"), SPLIT / 2f, FORM_NOTE_Y, p)
         }
     }
     private fun page(): Int {
@@ -541,7 +543,14 @@ class PadTabPage(
         else -> null
     }
 
+    /** m155 (the user, 2026-11-13: "L3 and R3 should show the wow default options on them by default"): the game's own binding on an
+     *  empty stick (WoW Defaults only), or null: one of ours wins, and the eight never have one */
+    /** the chosen button's name on the right page (tests: m155's game binding on an empty stick) */
+    fun shownName(): String? = map?.let { m -> nameOf(m, slotOf(m, shown(), pos)) }
+    private fun gameOn(sl: PadMapModel.Slot?) = sl?.game?.takeIf { sticksShown() && sl.kind == PadMapModel.Kind.NONE && sl.stick != null }
+
     private fun iconOf(m: PadMapModel.Map, sl: PadMapModel.Slot?, p: Int) = when {
+        gameOn(sl) != null -> gameOn(sl)!!.let { g -> bindIcon(g.key, g.icon) }        // m155
         sl == null || sl.kind == PadMapModel.Kind.NONE -> null
         sl.kind == PadMapModel.Kind.BIND -> bindIcon(sl.key, sl.icon)
         sl.kind == PadMapModel.Kind.FIXED -> UiKit.tex(FIXED_ART[(p - 5).coerceIn(0, 3)])
@@ -549,6 +558,7 @@ class PadTabPage(
     }
 
     private fun nameOf(m: PadMapModel.Map, sl: PadMapModel.Slot?): String = when {
+        gameOn(sl) != null -> gameOn(sl)!!.name                                          // m155: the game's own
         sl == null || sl.kind == PadMapModel.Kind.NONE -> "Empty"
         else -> PadMapModel.commandOn(m, sl)?.name ?: sl.name ?: "Set in the game"
     }
@@ -713,7 +723,10 @@ class PadTabPage(
         for (p in places) drawButton(c, m, s, p)
         // the glyphs over ALL the buttons: drawn with its own button, the bottom face button's was half hidden by the next one's frame
         // (it read as a lowercase "b"; UI Art 2026-10-01)
-        for (p in places) square(p).let { r -> UiKit.pad(c, glyph(p), r.centerX() + 36f, r.centerY() - 36f, 40f) }
+        for (p in places) square(p).let { r ->                              // m155: the sticks' glyph to their size
+            val k = r.width() / 80f
+            UiKit.pad(c, glyph(p), r.centerX() + 36f * k, r.centerY() - 36f * k, 40f * k)
+        }
         // p9 CARRYING: the place it left, a faint ghost; what is under the cursor shows the game's swap mark when it is taken
         if (carry != null && carry.set == s) {
             val r = square(carry.pos)
@@ -1238,10 +1251,20 @@ class PadTabPage(
         // the base X / Y / A can change in the combat view: no lock there (B keeps it: it stays the game's Back)
         val locked = fixed && !(view == "combat" && PadMapModel.isFace(sl))
         val icon = viewIcon(m, sl, p)
-        UiKit.spell(c, icon, r.left, r.top, 80f, if (fixed && !(view == "combat" && changes)) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN)
+        val sz = r.width()                                                  // m155: 80, a stick 64
+        val game = gameOn(sl)                                               // m155: an empty stick's game binding: the game's own look
+        UiKit.spell(c, icon, r.left, r.top, sz, if ((fixed && !(view == "combat" && changes)) || game != null) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN)
+        // m155: a game binding with no picture of its own: its name, small, in the tile (two lines at most)
+        if (game != null && icon == null) {
+            val tp = TextPaint(UiKit.inkPaint(15f)).apply { color = Theme.parchmentInkDim }
+            val nm = Tr.span(game.name)
+            val lay = StaticLayout.Builder.obtain(nm, 0, nm.length, tp, (sz - 10f).toInt()).setAlignment(Layout.Alignment.ALIGN_CENTER)
+                .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).build()
+            c.save(); c.translate(r.left + 5f, r.centerY() - lay.height / 2f); lay.draw(c); c.restore()
+        }
         // UI Art (the b128 frames): ONE gold box -- while the chooser is open it is the chooser's; the button being edited wears the game's
         // CHECKED action-button mark round its frame (UiKit.checkedGlow, kit picture slot_checked), not a box
-        if (p == pos && chooserList() != null) UiKit.checkedGlow(c, RectF(r.left, r.top, r.left + 80f, r.top + 80f))
+        if (p == pos && chooserList() != null) UiKit.checkedGlow(c, RectF(r.left, r.top, r.left + sz, r.top + sz))
         // in combat, a button without a combat spell keeps its normal one: dimmed (UI Art: ink 150 / 255 over it)
         if (view == "combat" && !changes && icon != null) c.drawRoundRect(RectF(r.left + 4f, r.top + 4f, r.right - 4f, r.bottom - 4f), 6f, 6f, PDIM)
         if (locked) UiKit.tex("talent_lock")?.let { c.drawBitmap(it, null, RectF(r.right - 20f, r.bottom - 30f, r.right - 2f, r.bottom - 4f), PBMP) }
@@ -1327,7 +1350,7 @@ class PadTabPage(
             PadMapModel.Kind.OTHER -> "Set in the game"
             PadMapModel.Kind.BIND -> "The game's own key"
             PadMapModel.Kind.COMMAND -> "Command (no macro)"                 // m41: the overlay
-            else -> null
+            else -> if (gameOn(sl) != null) "Set by the game" else null          // m155: a stick's game binding
         }
         val dim = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
         // smaller to fit the page ("Spell, starts the attack", a command's line): never past the page's edge
@@ -2185,6 +2208,8 @@ class PadTabPage(
 
     companion object {
         private const val SPLIT = 740f
+        /** m155: the form note's baseline, below the sticks' pair (PadDiamonds.STICK_CY + 32 = 822) and above the page arrows (854) */
+        const val FORM_NOTE_Y = 846f
         /** p16 the wheel's centre: the left page's middle */
         private const val WHEEL_CX = (8f + SPLIT) / 2f
         private const val ROW_H = 92f

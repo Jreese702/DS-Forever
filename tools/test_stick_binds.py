@@ -17,7 +17,9 @@ by the router's SetOverrideBinding on its own header out of combat. Proven here:
     retry, then taken;
   8 the room (PadTabCtl): the cursor walks onto L3 / R3 on WoW Defaults only (not In combat), A opens the chooser on Extra with the
     four bindings and nothing else (one tab), choosing Auto Run binds it; by touch: talentn 38 + button code 1 = L3; a spell / a
-    command by touch refused there;
+    command by touch refused there; p51: the pair sits below the diamonds (Down from D-pad Down = L3, from the face bottom = R3);
+  9 m155: an empty stick carries the game's own binding (gd / gn / gi: the gamepad context, then the plain layer, overrides left
+    out; out of combat only, a fight keeps the last read); one of ours wins; read only;
 plus no spied call (no SetBinding, SaveBindings, macro, CVar or bar write). Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -168,7 +170,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m154"' in SRC["padmap"] and 'local CV = "p50"' in SRC["padtabctl"], "the versions: PadMap m150, PadTabCtl p49 (stick buttons)")
+check('local PV = "m155"' in SRC["padmap"] and 'local CV = "p51"' in SRC["padtabctl"], "the versions: PadMap m150, PadTabCtl p49 (stick buttons)")
 STK = "\n".join(l.split("--", 1)[0] for l in
                 SRC["padmap"].split('-- m150 STICK BUTTONS (GitHub #78)\n', 1)[1].split('\nWC.padMap = {', 1)[0].splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', STK) and 'SaveBindings' not in STK and 'SetOverrideBinding' in STK,
@@ -316,14 +318,22 @@ clean(H, "7b")
 R = boot()
 R.execute('WowCompanion.padTabCtl.enter(); WowCompanion.padTabCtl.touchTab(1)')
 R.execute('WowCompanion.padTabCtl.touchPos(4)')                         # D-pad Down
-R.execute('pp("PADDRIGHT")')
+R.execute('pp("PADDDOWN")')
 c = ctl_doc(R)
-check(c.get('pos') == 9 and c.get('view') == 'normal', "WoW Defaults: Right from D-pad Down lands on L3 (position 9)", c.get('pos'))
+check(c.get('pos') == 9 and c.get('view') == 'normal', "WoW Defaults: Down from D-pad Down lands on L3 (position 9; p51: the pair below)", c.get('pos'))
 R.execute('pp("PADDRIGHT")')
 check(ctl_doc(R).get('pos') == 10, "... Right again: R3 (10)", ctl_doc(R).get('pos'))
 R.execute('pp("PADDUP")')
 check(ctl_doc(R).get('pos') in (5, 6), "Up from R3: the face diamond's left button", ctl_doc(R).get('pos'))
-R.execute('WowCompanion.padTabCtl.touchPos(4); pp("PADDRIGHT"); pp("PAD1")')
+R.execute('WowCompanion.padTabCtl.touchPos(4); pp("PADDDOWN"); pp("PADDRIGHT"); pp("PADDLEFT")')
+check(ctl_doc(R).get('pos') == 9, "p51: Left from R3: L3", ctl_doc(R).get('pos'))
+R.execute('pp("PADDUP")')
+check(ctl_doc(R).get('pos') == 3, "p51: Up from L3: the D-pad's Right (straight above it)", ctl_doc(R).get('pos'))
+R.execute('WowCompanion.padTabCtl.touchPos(7); pp("PADDDOWN")')
+check(ctl_doc(R).get('pos') == 10, "p51: Down from the face diamond's bottom (B, Nintendo layout): R3", ctl_doc(R).get('pos'))
+R.execute('pp("PADDRIGHT")')
+check(ctl_doc(R).get('pos') == 7, "p51: Right from R3: back to the face diamond's bottom", ctl_doc(R).get('pos'))
+R.execute('WowCompanion.padTabCtl.touchPos(4); pp("PADDDOWN"); pp("PAD1")')
 c = ctl_doc(R)
 check(c.get('chooser') and c['chooser'].get('list') == 'extra', "A on L3: the chooser opens on Extra", c.get('chooser'))
 rows = R.eval('(function() local t = {} for _ = 1, 9 do pp("PADDDOWN") end return true end)()')
@@ -348,8 +358,8 @@ check(ctl_doc(R).get('note') == 'bind-move' and not ctl_doc(R).get('carry'), "X 
 R.execute('WowCompanion.padTabCtl.touchTab(3)')
 c = ctl_doc(R)
 check(c.get('view') == 'combat' and c.get('pos') == 4, "In combat has no sticks: the cursor goes back to a button (L3 -> D-pad Down)", c.get('pos'))
-R.execute('WowCompanion.padTabCtl.touchPos(4); pp("PADDRIGHT")')
-check(ctl_doc(R).get('pos') != 9, "In combat: Right from D-pad Down never reaches L3", ctl_doc(R).get('pos'))
+R.execute('WowCompanion.padTabCtl.touchPos(4); pp("PADDRIGHT"); pp("PADDDOWN")')
+check(ctl_doc(R).get('pos') not in (9, 10), "In combat: Right / Down never reach L3 / R3", ctl_doc(R).get('pos'))
 # by touch: talentn 38 then button code 2 = R3; a spell / a command there refused; the Extra row's binding binds it
 R.execute('WowCompanion.padTabCtl.touchTab(1); WowCompanion.padTabCtl.commandsFrom12(); WowCompanion.padTabCtl.touchPos(2)')
 check(ctl_doc(R).get('pos') == 10, "by touch: the one-shot talentn 38 pick + button code 2 = R3", ctl_doc(R).get('pos'))
@@ -368,6 +378,68 @@ check(bind(R, "PADRSTICK") == "TOGGLERUN" and store(R).get("1:10") == "TOGGLERUN
 R.execute('WowCompanion.padTabCtl.touchClear()')
 check(bind(R, "PADRSTICK") in (None, "") and "1:10" not in store(R), "Clear by touch on R3", bind(R, "PADRSTICK"))
 clean(R, "8")
+
+# ================================================================ 9. m155 the game's own on an empty stick (the user, 2026-11-13: "L3 and
+# R3 should show the wow default options on them by default"): read with GetBindingAction(chord, false, ctx), then the plain layer;
+# overrides left out (false), so never ours; out of combat only; read only
+GD_PRE = r'''
+BINDING_NAME_TOGGLEWORLDMAP = "Toggle World Map"
+GAMECTX = { PADLSTICK = "TOGGLERUN", ["SHIFT-PADRSTICK"] = "TOGGLEWORLDMAP" }
+GAMEPLAIN = { PADRSTICK = "SPELL Frost Nova", PADLSTICK = "JUMP" }
+GDREADS, GDCOMBAT = 0, 0
+local gba = GetBindingAction
+function GetBindingAction(key, ovr, ctx)
+    if ovr == false and type(key) == "string" and key:find("STICK") then
+        GDREADS = GDREADS + 1
+        if COMBAT then GDCOMBAT = GDCOMBAT + 1 end
+        if ctx ~= nil then return GAMECTX[key] or "" end
+        return GAMEPLAIN[key] or ""
+    end
+    return gba(key, ovr, ctx)
+end
+'''
+D = boot(GD_PRE)
+sk = sticks(D)
+l3 = sk.get((1, 9), {})
+check(l3.get('kind') == 'none' and l3.get('gd') == 'TOGGLERUN' and l3.get('gn') == 'Walk / Run' and l3.get('gi') == 132539,
+      "an empty bare L3 carries the game's own (the gamepad context's TOGGLERUN, ahead of the plain layer's Jump): gd / gn / gi", l3)
+z3 = sk.get((2, 10), {})
+check(z3.get('gd') == 'TOGGLEWORLDMAP' and z3.get('gn') == 'Toggle World Map', "ZL + R3: the game's word for its action (BINDING_NAME_)", z3)
+r3 = sk.get((1, 10), {})
+check(r3.get('gd') == 'SPELL Frost Nova' and r3.get('gn') == 'Frost Nova' and r3.get('gi') == 0,
+      "bare R3, nothing in the context: the plain layer's (a spell binding: its name, no icon)", r3)
+check('gd' not in sk.get((2, 9), {}) and sk.get((2, 9), {}).get('kind') == 'none', "ZL + L3, nothing anywhere: no gd (empty as before)",
+      sk.get((2, 9)))
+check(D.eval('GDREADS') > 0, "read with GetBindingAction(chord, false, ...) (overrides left out)", D.eval('GDREADS'))
+D.eval(pm + '.putBind(1, 1, 9, "TOGGLEAUTORUN")')
+l3 = sticks(D).get((1, 9), {})
+check(l3.get('kind') == 'bind' and l3.get('key') == 'TOGGLEAUTORUN' and 'gd' not in l3,
+      "a DS Forever bind wins: L3 shows Auto Run, no game default beside it", l3)
+D.eval(pm + '.clear(1, 1, 9)')
+check(sticks(D).get((1, 9), {}).get('gd') == 'TOGGLERUN', "cleared: the game's own shows again", sticks(D).get((1, 9)))
+D.execute('fightOn(); GDCOMBAT = 0; GAMECTX.PADLSTICK = "TOGGLEAUTORUN"')
+l3 = sticks(D).get((1, 9), {})
+check(D.eval('GDCOMBAT') == 0 and l3.get('gd') == 'TOGGLERUN', "in a fight: nothing read, the last read kept", (D.eval('GDCOMBAT'), l3))
+D.execute('fightOff()')
+check(sticks(D).get((1, 9), {}).get('gd') == 'TOGGLEAUTORUN', "after the fight: read again (the game's change shows)", sticks(D).get((1, 9)))
+m = docs(D, 'padmap')[-1]['m']
+check(all('gd' not in sl for s_ in m['sets'] for sl in s_['slots']), "the eight buttons never carry gd (sticks only)")
+clean(D, "9")
+# STICK_DUMP=<dir>: the room's own documents for the render (StickTilesShotsTest): WoW Defaults, the cursor on L3; then Auto Run on L3
+dump = os.environ.get("STICK_DUMP")
+if dump:
+    os.makedirs(dump, exist_ok=True)
+    D.execute('GAMECTX.PADLSTICK = "TOGGLERUN"; WowCompanion.padTabCtl.enter(); WowCompanion.padTabCtl.touchTab(1); WowCompanion.padTabCtl.touchPos(4); pp("PADDDOWN")')
+
+    def put(name):
+        D.execute('WowCompanion.padMap.emit(true)')
+        with open(os.path.join(dump, name + "_padmap.json"), "w", encoding="utf-8") as f:
+            json.dump(docs(D, 'padmap')[-1], f)
+        with open(os.path.join(dump, name + "_ctl.json"), "w", encoding="utf-8") as f:
+            json.dump(docs(D, 'padtabctl')[-1], f)
+    put("sticks_game")
+    D.eval(pm + '.putBind(1, 1, 9, "TOGGLEAUTORUN")')
+    put("sticks_bound")
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

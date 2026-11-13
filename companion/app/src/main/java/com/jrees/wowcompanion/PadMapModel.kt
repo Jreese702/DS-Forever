@@ -53,7 +53,10 @@ object PadMapModel {
                     /** m150 STICK BUTTONS (GitHub #78): "L3" / "R3" on a stick's place (positions 9 / 10), null on the eight buttons */
                     val stick: String? = null,
                     /** m150: the game took this stick's key back twice: the add-on no longer binds it (the room says so) */
-                    val taken: Boolean = false)
+                    val taken: Boolean = false,
+                    /** m155 (the user, 2026-11-13: "L3 and R3 should show the wow default options on them by default"): an empty stick's
+                     *  GAME binding (the doc's gd / gn / gi: the action, its name, an icon fileID or 0), shown until one of ours is put */
+                    val game: Bind? = null)
     /** m13 START ATTACK ON CAST (the user 2026-10-01): [on]; [n] buttons converted; [full] / [user] / [refused] buttons left plain (no
      *  Character Macro free / a macro of that name is the user's own / the game refused); [pending] waits for the fight to end; [colOn] /
      *  [colOff] the `spells` row's columns Home's Settings room taps (no-action notes, idempotent) */
@@ -218,7 +221,9 @@ object PadMapModel {
                 val p = o.optInt("pos", 0); val st = o.optInt("set", 0)
                 if (!isStick(p) || st !in 1..2) null
                 else PadSet(st, listOf(Slot(p, null, kind(o.optString("kind", "")), null, textOrNull(o, "n"), o.optInt("i", 0),
-                    key = textOrNull(o, "key"), stick = textOrNull(o, "stick") ?: stickWord(p), taken = o.optString("st", "") == "taken")))
+                    key = textOrNull(o, "key"), stick = textOrNull(o, "stick") ?: stickWord(p), taken = o.optString("st", "") == "taken",
+                    game = textOrNull(o, "gd")?.takeIf { o.optString("kind", "") == "none" }
+                        ?.let { Bind(it, textOrNull(o, "gn") ?: it, o.optInt("gi", 0)) })))
             }.groupBy { it.set }.map { (st, l) -> PadSet(st, l.flatMap { it.slots }) },
             binds = objects(m.optJSONArray("binds")).mapNotNull { o ->
                 o.optString("key", "").takeIf { it.isNotEmpty() }?.let { Bind(it, o.optString("n", it), o.optInt("i", 0)) }
