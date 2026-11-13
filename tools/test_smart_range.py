@@ -157,7 +157,12 @@ local function runText(text, how)
         local code = line:match("^/run%s+(.*)$")
         if nm then
             local t = rawget(_G, nm)
-            if type(t) == "table" and t.a then doClick(t, btn ~= "" and btn or "LeftButton", d == "1" or (d == "" and true) or false) end
+            if nm == "DSFSR0" or nm == "DSFSR1" then
+                -- m149: the macro's own lines on our plain buttons (no secure attributes): logged, then the button's OnClick
+                RAN[#RAN + 1] = how .. ":" .. line
+                local sc = type(t) == "table" and type(t.GetScript) == "function" and t:GetScript("OnClick")
+                if sc then sc(t, "LeftButton", false) elseif type(t) == "table" and type(t.Click) == "function" then t:Click() end
+            elseif type(t) == "table" and t.a then doClick(t, btn ~= "" and btn or "LeftButton", d == "1" or (d == "" and true) or false) end
         elseif code then
             RAN[#RAN + 1] = how .. ":" .. line
             local f = loadstring(code); if f then IN_SECURE_WAS = IN_SECURE; f() end
@@ -305,8 +310,8 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl", "book"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m148"' in SRC["padmap"] and 'local CV = "p48"' in SRC["padtabctl"] and 'local BV = "b52"' in SRC["book"],
-      "the versions: PadMap m148, PadTabCtl p48, Book b52")
+check('local PV = "m149"' in SRC["padmap"] and 'local CV = "p48"' in SRC["padtabctl"] and 'local BV = "b52"' in SRC["book"],
+      "the versions: PadMap m149, PadTabCtl p48, Book b52")
 check(all('this should be per button/ button modifier combo' in SRC[k] for k in ("padmap", "padtabctl", "book")),
       "each changed file's header note quotes the user")
 PRE = re.search(r'local PRE = \[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
@@ -353,7 +358,7 @@ check(W.eval('HDR("wc-ft-%d")' % S).endswith("/cast Raptor Strike(Rank 1)") and 
 # ================================================================ c. both halves: the saved macro
 a0 = int(W.eval('#SENT'))
 ok = W.eval('(PM.srPut(1, 3, 2, "r", bs(3044)))')
-BODY = "#showtooltip\n/run DSF_SR0()\n/cast Raptor Strike(Rank 1)\n/cast Arcane Shot(Rank 1)\n/run DSF_SR1()"
+BODY = "#showtooltip\n/click DSFSR0\n/cast Raptor Strike(Rank 1)\n/cast Arcane Shot(Rank 1)\n/click DSFSR1"
 check(ok is True and W.eval('body("DSF ZR+Up")') == BODY, "c. Arcane Shot in the Range half: ONE character macro 'DSF ZR+Up', melee FIRST",
       W.eval('body("DSF ZR+Up")'))
 check(mlog(W) == ["create DSF ZR+Up"] and len(W.eval('"DSF ZR+Up"')) <= 16, "c. made once (CreateMacro, per character), the name within 16", mlog(W))
@@ -389,7 +394,7 @@ kind, mac = W.eval('router(2).a["wc-kind"]'), W.eval('router(2).a["macro"]')
 got = ran(W, r0)
 check(kind == "slotfight" and mac == "DSF ZR+Up" and got[:1] == ["runmacro:DSF ZR+Up"],
       "k. in a fight ZR + Up runs OUR saved macro by name (the router's macro attribute)", (kind, mac, got))
-check(got[1:] == ["m:/run DSF_SR0()", "m:/cast Raptor Strike(Rank 1)", "m:/cast Arcane Shot(Rank 1)", "m:/run DSF_SR1()"],
+check(got[1:] == ["m:/click DSFSR0", "m:/cast Raptor Strike(Rank 1)", "m:/cast Arcane Shot(Rank 1)", "m:/click DSFSR1"],
       "k. its lines in order: SR0, Raptor Strike, Arcane Shot, SR1", got)
 CVL = [W.eval('CVLOG[%d]' % i) for i in range(1, int(W.eval('#CVLOG')) + 1)]
 check(CVL[:2] == ["Sound_EnableErrorSpeech=0", "Sound_EnableSFX=0"] and sorted(CVL[2:]) == ["Sound_EnableErrorSpeech=1", "Sound_EnableSFX=1"]
@@ -422,13 +427,13 @@ W.execute('BOOK[#BOOK + 1] = 14260; fire("SPELLS_CHANGED"); runTimers(NOW + 2)')
 check(W.eval('body("DSF ZR+Up")') == BODY.replace("Raptor Strike(Rank 1)", "Raptor Strike(Rank 2)") and W.eval('FT(%d).id' % S) == 14260,
       "i. Raptor Strike Rank 2 learned: the macro casts Rank 2 (rewritten out of combat)", W.eval('body("DSF ZR+Up")'))
 W.execute('fightOn(); BOOK[#BOOK + 1] = 14281; fire("SPELLS_CHANGED"); runTimers(NOW + 2)')
-check(W.eval('body("DSF ZR+Up")').endswith("Arcane Shot(Rank 1)\n/run DSF_SR1()") and W.eval('#VIOL') == 0,
+check(W.eval('body("DSF ZR+Up")').endswith("Arcane Shot(Rank 1)\n/click DSFSR1") and W.eval('#VIOL') == 0,
       "i. Arcane Shot Rank 2 learned IN a fight: not rewritten yet (no lockdown write)", W.eval('body("DSF ZR+Up")'))
 a0 = int(W.eval('#SENT'))
 ok = W.eval('(PM.srPut(1, 3, 2, "r", bs(1978)))')
 check(ok is False and acks(W, a0, 'srput')[-1].get('why') == 'combat', "i. a put in combat: refused 'combat'")
 W.execute('fightOff(); runTimers(NOW + 3)')
-check(W.eval('body("DSF ZR+Up")') == "#showtooltip\n/run DSF_SR0()\n/cast Raptor Strike(Rank 2)\n/cast Arcane Shot(Rank 2)\n/run DSF_SR1()",
+check(W.eval('body("DSF ZR+Up")') == "#showtooltip\n/click DSFSR0\n/cast Raptor Strike(Rank 2)\n/cast Arcane Shot(Rank 2)\n/click DSFSR1",
       "i. the fight's end: rewritten with Arcane Shot Rank 2", W.eval('body("DSF ZR+Up")'))
 check(W.eval('nmac()') == 1 and "delete DSF ZR+Up" not in mlog(W) and mlog(W).count("create DSF ZR+Up") == 1, "i. still ONE macro of ours (edited in place)", mlog(W))
 clean(W, "i")
@@ -555,7 +560,7 @@ dump(Y, "on_both")
 Y.execute('fightOn()')
 r0 = int(Y.eval('#RAN'))
 Y.execute('hit(6)')
-check(ran(Y, r0)[:2] == ["runmacro:DSF Y", "m:/run DSF_SR0()"] and Y.eval('router(6).a["wc-kind"]') == "fight",
+check(ran(Y, r0)[:2] == ["runmacro:DSF Y", "m:/click DSFSR0"] and Y.eval('router(6).a["wc-kind"]') == "fight",
       "k. in a fight the base Y runs 'DSF Y'", ran(Y, r0))
 Y.execute('fightOff()')
 # X on a base face: no Move there (the page shows none); X moves the picked half of a slot button: ZR + Y's Range onto ZR + X
@@ -634,7 +639,7 @@ check(Z.eval('router(6).a["wc-fight-mname"]') is None and Z.eval('FACEE(6).se') 
 Z.execute('fightOn()')
 r0 = int(Z.eval('#RAN'))
 Z.execute('hit(6)')
-check(ran(Z, r0)[:2] == ["t:/run DSF_SR0()", "t:/cast Raptor Strike(Rank 1)"],
+check(ran(Z, r0)[:2] == ["t:/click DSFSR0", "t:/cast Raptor Strike(Rank 1)"],
       "m3. in a fight Y runs the pair's own lines (the stand-in), never a missing / the player's macro", ran(Z, r0))
 Z.execute('fightOff()')
 Z.execute('for i, m in ipairs(mymac()) do if m.name == "Mine 18" then table.remove(mymac(), i) break end end')
@@ -818,7 +823,7 @@ for _ in range(24):
         break
     D.execute('pp("PADDUP")')
 D.execute('pp("PAD1")')
-BB = "#showtooltip\n/run DSF_SR0()\n/cast Maul(Rank 1)\n/cast Growl(Rank 1)\n/run DSF_SR1()"
+BB = "#showtooltip\n/click DSFSR0\n/cast Maul(Rank 1)\n/cast Growl(Rank 1)\n/click DSFSR1"
 check(D.eval('body("DSF Bear Up")') == BB and mlog(D) == ["create DSF Bear Up"], "n3. Growl in the Range half: ONE macro 'DSF Bear Up', Maul first",
       (D.eval('body("DSF Bear Up")'), mlog(D)))
 check(D.eval('HDR("wc-ffm-1-2")') == "DSF Bear Up" and D.eval('HDR("wc-ff-1-2")') == BB[len("#showtooltip\n"):],
@@ -835,7 +840,7 @@ D.execute('FORMNOW = 1; driveAll(); fightOn()')
 r0 = int(D.eval('#RAN'))
 D.execute('hit(2)')
 got = ran(D, r0)
-check(D.eval('router(2).a["wc-kind"]') == "slotfight" and D.eval('router(2).a["macro"]') == "DSF Bear Up" and got[:2] == ["runmacro:DSF Bear Up", "m:/run DSF_SR0()"]
+check(D.eval('router(2).a["wc-kind"]') == "slotfight" and D.eval('router(2).a["macro"]') == "DSF Bear Up" and got[:2] == ["runmacro:DSF Bear Up", "m:/click DSFSR0"]
       and got[2:4] == ["m:/cast Maul(Rank 1)", "m:/cast Growl(Rank 1)"], "n3. in Bear Form, in a fight, Up runs 'DSF Bear Up' (Maul then Growl)", got)
 D.execute('FORMNOW = 0; driveAll()')
 r0 = int(D.eval('#RAN'))
