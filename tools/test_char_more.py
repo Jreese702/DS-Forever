@@ -174,7 +174,7 @@ for _, n in ipairs({ "MerchantFrame", "GossipFrame", "QuestFrame", "BankFrame", 
                      "GuildBankFrame", "ClassTrainerFrame", "CharacterFrame" }) do _G[n] = { IsShown = function() return false end } end
 PASSES, SPEC = {}, nil
 WowCompanion.capture = { version = 11, take = function(id, spec) if id == "character" then SPEC = spec end; return true end,
-    pass = function(id, keys) PASSES[#PASSES + 1] = table.concat(keys, " "); return true end, release = function() return true end,
+    pass = function(id, keys) if PASS_REFUSE == true then return false, "combat" end; PASSES[#PASSES + 1] = table.concat(keys, " "); return true end, release = function() return true end,
     state = function() return { holder = "character" } end, refused = function() return true end }
 function eqs() return WowCompanion.character.collect.eqs() end
 function tapSet(key) WowCompanion.character.onSetCell(WowCompanion.character.eqFirst + PAD.slotFor("eqset", key)) end
@@ -194,7 +194,7 @@ for src, name, addon in ((BAGS, 'Bags.lua', 'WowCompanion'), (CHAR, 'Character.l
 L.execute('WowCompanionDB = {}; fire("PLAYER_LOGIN"); WowCompanion._bagsLayout = { { bag = 0, slots = 4 } }; WowCompanion.bagsPadRows({ { bag = 0, slots = 4 } })')
 
 # ---- Character c16
-check(str(L.eval('WowCompanion.character.version')) == 'c16', "Character's version is bumped (c16)", L.eval('WowCompanion.character.version'))
+check(str(L.eval('WowCompanion.character.version')) == 'c17', "Character's version is bumped (c17)", L.eval('WowCompanion.character.version'))
 d = L.eval('eqs()')
 check(d.msb is not None and d.msb not in (d.uq, d.mon, d.moff) and d.msub is False, "eqs: the moresub cell (its own), msub false", (d.msb, d.uq, d.mon, d.moff))
 L.execute('WowCompanion.character.collect.sets()')
@@ -233,7 +233,24 @@ L.execute('POPUP = "REPLACE_ENCHANT"; WowCompanion.character.syncAsk()')
 check(L.eval('PASSES[#PASSES]') == 'PAD1 PAD2', "'Replace enchant?' over the room: A and B to the game")
 L.execute('POPUP = nil; WowCompanion.character.syncAsk(); POPUP = "DELETE_ITEM"; WowCompanion.character.syncAsk()')
 check(L.eval('PASSES[#PASSES]') == '', "another pop-up (Delete?) is not ours to hand over", L.eval('PASSES[#PASSES]'))
-L.execute('POPUP = nil')
+L.execute('POPUP = nil; WowCompanion.character.syncAsk()')
+# char-more2 (review): a pass the capture refuses (a fight) is tried again; the menu's own B pass never takes A / B back from the game
+n0 = int(L.eval('#PASSES'))
+L.execute('PASS_REFUSE = true; POPUP = "EQUIP_BIND"; WowCompanion.character.syncAsk()')
+check(int(L.eval('#PASSES')) == n0, "the capture refused the pass (a fight): nothing handed over yet")
+L.execute('PASS_REFUSE = false; WowCompanion.character.syncAsk()')
+check(int(L.eval('#PASSES')) == n0 + 1 and L.eval('PASSES[#PASSES]') == 'PAD1 PAD2', "...tried again on the next tick: A and B to the game",
+      L.eval('PASSES[#PASSES]'))
+n1 = int(L.eval('#PASSES'))
+L.execute('tapSet("moreon")')
+check(int(L.eval('#PASSES')) == n1, "the More menu opening while the game asks leaves A / B with the game", L.eval('PASSES[#PASSES]'))
+L.execute('PASS_REFUSE = true; POPUP = nil; WowCompanion.character.syncAsk()')
+check(int(L.eval('#PASSES')) == n1, "answered, but the way back refused: tried again")
+L.execute('PASS_REFUSE = false; WowCompanion.character.syncAsk()')
+check(int(L.eval('#PASSES')) == n1 + 1 and L.eval('PASSES[#PASSES]') == '', "...then the pass goes back", L.eval('PASSES[#PASSES]'))
+L.execute('WowCompanion.character.syncAsk()')
+check(int(L.eval('#PASSES')) == n1 + 1, "nothing asked: nothing passed again")
+L.execute('tapSet("moreoff")')
 
 # ---- Bags: what Replace may list
 check(L.eval('rowAt(0, 2).nouse') is None, "a wearable belt: no nouse")
@@ -282,6 +299,17 @@ L.execute('run(1)')
 check(L.eval('ST.cursor and ST.cursor.id') == 4239, "still asking a second later: left alone")
 L.execute('POPUP = nil; run(0.5)')         # the player said No: the game closed its question, the piece still in the hand
 check(L.eval('ST.cursor') is None, "a No: the piece is put back (the cursor cleared)")
+# char-more2 (review): in the Bags room (it holds the controller) the drag's bind question gets A / B too, then they come back
+L.execute('NOW = 550; OPS.bmvq(nil, 29)')
+bags_on = L.eval('WowCompanion._bagsCtlDoc().on')
+n0 = int(L.eval('#PASSES'))
+L.execute('NOW = 560; ST.cursor = nil; BINDS[4239] = true; BAG[0][2] = 4239; WORN[6] = 4200; OPS.bagsort(nil, 10); OPS.bmv(nil, 1); NOW = 560.2; OPS.bmvq(nil, 5)')
+check(bags_on is True and 'PAD1 PAD2' in [L.eval(f'PASSES[{i}]') for i in range(n0 + 1, int(L.eval('#PASSES')) + 1)],
+      "the Bags room's drag: the game's bind question gets A and B", (bags_on, [L.eval(f'PASSES[{i}]') for i in range(n0 + 1, int(L.eval('#PASSES')) + 1)]))
+L.execute('POPUP = nil; run(0.5)')
+check(L.eval('ST.cursor') is None and L.eval('PASSES[#PASSES]') != 'PAD1 PAD2', "answered: the piece put back, A / B the room's again",
+      (L.eval('ST.cursor'), L.eval('PASSES[#PASSES]')))
+L.execute('NOW = 570; OPS.bmvq(nil, 30)')
 L.execute('NOW = 600; BINDS = {}; OPS.bagsort(nil, 10); OPS.bmv(nil, 1); NOW = 600.2; OPS.bmvq(nil, 5)')
 check(L.eval('WORN[6]') == 4239 and L.eval('ST.cursor') is None and L.eval('lastMove().ok') is True and L.eval('lastMove().ask') is None,
       "no question: equipped into THAT slot at once, as before", (L.eval('WORN[6]'), L.eval('lastMove().ask')))

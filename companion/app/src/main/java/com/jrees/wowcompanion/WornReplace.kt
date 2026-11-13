@@ -14,6 +14,9 @@ import org.json.JSONObject
  *    equip, its bind question, weapons in a fight as the game allows). A piece with two possible slots (a ring, a trinket, a dual
  *    wielder's one-hander) goes in THIS slot by the Bags room's drag (the bag slot's pick, then the worn slot: EquipCursorItem(slot)),
  *    which the add-on refuses in a fight, so it is offered out of a fight only.
+ *  - char-more2 (review): while a game window changes what a right-click does ([window]: the bags document's `ctx`, a vendor / bank /
+ *    mail / trade / auction house) the secure cell would SELL / deposit / attach the piece, so every piece goes on by the drag then
+ *    (its id checked by the add-on, nothing sold), and none in a fight.
  */
 object WornReplace {
     const val MAIN = 16
@@ -40,19 +43,20 @@ object WornReplace {
     }
 
     /** can [p] go into worn [slot] now: out of a fight any; in a fight a weapon slot's piece the game's own equip lands there */
-    fun now(p: Pick, slot: Int, combat: Boolean): Boolean = !combat || (slot in WornMore.WEAPONS && p.exact)
+    fun now(p: Pick, slot: Int, combat: Boolean, window: Boolean = false): Boolean =
+        !combat || (!window && slot in WornMore.WEAPONS && p.exact)
 
     /** the terse reason a listed piece can't go on now, or null */
-    fun why(p: Pick, slot: Int, combat: Boolean): String? = if (now(p, slot, combat)) null else "In combat"
+    fun why(p: Pick, slot: Int, combat: Boolean, window: Boolean = false): String? = if (now(p, slot, combat, window)) null else "In combat"
 
     /**
      * The cells that put [p] into worn [slot] on [pad] (null = this pad can't, nothing is tapped): its bag slot's secure cell, or (two
      * possible slots, out of a fight) the drag: the bag slot's named pick on the shared row ([BagsMoveRoute]) then bmvq column slot - 1.
      */
-    fun cells(pad: JSONObject?, p: Pick, slot: Int, combat: Boolean): List<Pair<String, Int>>? {
+    fun cells(pad: JSONObject?, p: Pick, slot: Int, combat: Boolean, window: Boolean = false): List<Pair<String, Int>>? {
         val rows = pad?.optJSONObject("rows") ?: return null
-        if (!now(p, slot, combat)) return null
-        if (p.exact) return if (rows.has("bag${p.bag}") && p.slot >= 1) listOf("bag${p.bag}" to p.slot - 1) else null
+        if (!now(p, slot, combat, window)) return null
+        if (p.exact && !window) return if (rows.has("bag${p.bag}") && p.slot >= 1) listOf("bag${p.bag}" to p.slot - 1) else null
         if (!rows.has("bmvq")) return null
         val pick = BagsMoveRoute.cells(pad, p.bag, p.slot) ?: return null
         return pick + ("bmvq" to slot - 1)

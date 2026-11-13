@@ -48,6 +48,7 @@ object WornMore {
         }
         val ew = when {
             !worn -> "Empty"
+            fits.window -> "Window open"            // char-more2: the kit's own cell would sell / deposit / attach it now
             fits.kits <= 0 -> "No kits"
             fits.kitsFit <= 0 -> "Nothing fits"
             else -> null
@@ -58,9 +59,11 @@ object WornMore {
     /**
      * char-more: what the Replace and Enchant rows can offer for the slot: [replace] bag pieces that fit it, [replaceNow] of them that can
      * go on now (all of them out of a fight), [replaceRouted] = the pad has the cells to equip one; [kits] = the bags' kits at all,
-     * [kitsFit] = those not known to be refused by this piece ([KitFit])
+     * [kitsFit] = those not known to be refused by this piece ([KitFit]); char-more2: [window] = a game window (vendor, bank, mail,
+     * trade, auction house) makes a bag cell's tap sell / deposit / attach, so no kit is used then
      */
-    data class Fits(val replace: Int, val replaceNow: Int, val replaceRouted: Boolean, val kits: Int, val kitsFit: Int)
+    data class Fits(val replace: Int, val replaceNow: Int, val replaceRouted: Boolean, val kits: Int, val kitsFit: Int,
+                    val window: Boolean = false)
 
     enum class Act { NONE, CHOOSE, BACK }
 

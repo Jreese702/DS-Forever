@@ -117,6 +117,14 @@ class WornMoreTest {
         assertEquals(2 to WornMore.Act.NONE, WornMore.key(2, 3, "PADDDOWN"))
     }
 
+    /** char-more2 (review): a vendor / bank / mail open: a kit's cell would sell / deposit it, so Enchant says why */
+    @Test fun enchantWithAGameWindowOpen() {
+        val r = WornMore.rows(5, worn = true, combat = false, freeGeneral = 3, routed = true,
+            fits = WornMore.Fits(1, 1, true, kits = 2, kitsFit = 2, window = true))
+        assertEquals(WornMore.ENCHANT, r[2].label); assertFalse(r[2].usable); assertEquals("Window open", r[2].why)
+        assertTrue("Replace stays (the drag)", r[1].usable)
+    }
+
     @Test fun theModelReadsTheC16ListCell() {
         val m = CharacterModel()
         m.update(JSONObject().put("type", "character").put("c", JSONObject().put("eqs", JSONObject()

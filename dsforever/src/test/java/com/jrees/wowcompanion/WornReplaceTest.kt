@@ -66,6 +66,17 @@ class WornReplaceTest {
         assertNull("no pad row for the bag: nothing tapped", WornReplace.cells(JSONObject().put("rows", JSONObject()), chest, 5, combat = false))
     }
 
+    /** char-more2 (review): a vendor / bank / mail / trade / auction window makes the secure cell sell / deposit / attach the piece */
+    @Test fun aGameWindowOpenMeansTheDragNeverTheCell() {
+        val chest = WornReplace.picks(bags, 5, false).first { it.slot == 1 }
+        assertEquals("the chest by the drag (nothing sold)", listOf("bagsort" to 11, "bmv" to 0, "bmvq" to 4),
+            WornReplace.cells(pad, chest, 5, combat = false, window = true))
+        val shield = WornReplace.picks(bags, 17, false).first { it.slot == 4 }
+        assertNull("no secure equip in a fight either", WornReplace.cells(pad, shield, 17, combat = true, window = true))
+        assertEquals("In combat", WornReplace.why(shield, 17, combat = true, window = true))
+        assertFalse(WornReplace.now(shield, 17, combat = true, window = true))
+    }
+
     @Test fun armourInAFightIsNeverOffered() {
         val chest = WornReplace.picks(bags, 5, false).first()
         assertFalse(WornReplace.now(chest, 5, combat = true))

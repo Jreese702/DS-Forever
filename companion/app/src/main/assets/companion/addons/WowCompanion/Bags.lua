@@ -110,6 +110,10 @@
 --  * a drop on a worn slot (the drag; the room's Replace of a ring / trinket / a dual wielder's one-hander) that makes the game ask "bind it
 --    to you?" leaves the cursor alone while the game asks (its own A / B answer it), instead of clearing it at once (which said no).
 -- Plain rows and calls as before: no protected call, no Blizzard open / close, no binding, macro or CVar.
+--
+-- char-more2 (review of char-more1; the user: "we should have options there like unequip, replace and enchant"): while a drag's "bind it
+-- to you?" waits (BINDWAIT.on) the Bags room hands A / B to the game as well (syncPass, as for "bindask"): before, only the Character
+-- room did, so a drag in the Bags room left the piece on the cursor with no pad answer for up to BINDWAIT.MAX.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -729,6 +733,7 @@ local function settleAfterBind(t0, id)
     local ok, kind, cid = CALL(function() return GetCursorInfo() end)
     if ok and kind == "item" and cid == id then CALL(function() return ClearCursor() end) end
     movedAt = GetTime()
+    if WC._bagsSyncPass then pcall(WC._bagsSyncPass) end          -- char-more2: A / B back to the room
 end
 
 -- a tap on a worn-slot cell: a pick of worn gear, or the drop of a bag pick = equip it there
@@ -754,6 +759,7 @@ local function onInvCell(slot)
         -- so the cursor is NOT cleared now (that was a No); settleAfterBind puts the piece back only if the answer left it there
         movedAt = GetTime()
         BINDWAIT.on = true
+        if WC._bagsSyncPass then pcall(WC._bagsSyncPass) end      -- char-more2: the Bags room's A / B to the game's question
         mvReply({ ok = true, ask = "bind", from = { kind = "bag", bag = p.bag, slot = p.slot }, to = to })
         local t0 = GetTime()
         C_Timer.After(BINDWAIT.STEP, function() settleAfterBind(t0, p.id) end)
@@ -1629,6 +1635,8 @@ local function syncPass()
     local want = false
     if ctl.on and not ctl.pending then
         if ctl.mode == "bindask" then want = "PAD1 PAD2"
+        -- char-more2: a drag onto a worn slot that the game asks "bind it to you?" about (BINDWAIT): the game's own A / B answer it
+        elseif BINDWAIT.on and bindAsking() then want = "PAD1 PAD2"
         -- bags-kit2 (issue #89): the game's own question about the pick (Replace enchant?) is answered by the game's own A / B
         elseif ctl.mode == "target" and WC._kit and WC._kit.asking() then want = "PAD1 PAD2"
         elseif ctl.open and ctl.mode == "grid" and ctl.pick == nil then want = "PAD2" end
@@ -1640,6 +1648,7 @@ local function syncPass()
     if ok and done then ctl.passing = want end
 end
 
+WC._bagsSyncPass = function() syncPass() end      -- char-more2: for the drag's bind wait (above syncPass in the file)
 local function report(note)
     syncPass()
     ctl.note = note; ctl.seq = ctl.seq + 1

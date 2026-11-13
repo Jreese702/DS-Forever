@@ -50,6 +50,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     // uneq1: the bags document's free plain-bag slots (null = not known yet) and its pad (the bmvq row's presence)
     private var freeGeneral: Int? = null
     private var bagsPad: JSONObject? = null
+    private var bagsCtx: String? = null             // char-more2: a bag cell's tap sells / deposits / attaches now (no kit, no secure equip)
     private var chosenSlot: Int? = null
 
     // scroll offsets, by what is dragged
@@ -238,6 +239,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     private fun openKits(slot: Int) {
         val list = slotKits(slot)
         if (list.isEmpty()) { kitSay(if (kits().isEmpty()) "No armor kits, stones or enchants in your bags" else "Nothing fits"); return }
+        if (bagsCtx != null) { kitSay("Window open"); return }          // char-more2: the kit's cell would sell / deposit it
         moreFor = null; replFor = null; moreSeen = false; subSeen = false
         kitFor = slot; kitSel = 0
         model.setPad?.moreOn?.let { setTap("more on (kits)", it) }
@@ -253,6 +255,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     private fun applyKit(i: Int) {
         val slot = kitFor ?: return
         val (bag, s, row) = slotKits(slot).getOrNull(i) ?: return
+        if (bagsCtx != null) { kitSay("Window open"); return }          // char-more2: a vendor / bank / mail opened under the list
         // select -> ONE action: the list (and a More menu under it) is done; the add-on hears it in the same batch as the kit's use
         val sp = model.setPad
         val off = sp?.moreOff?.takeIf { sp.row.isNotEmpty() }?.let { listOf(sp.row to it) } ?: emptyList()
@@ -330,6 +333,8 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     fun updateBags(bags: JSONObject) {
         if (bags.has("freeGeneral")) freeGeneral = bags.optInt("freeGeneral")
         bags.optJSONObject("pad")?.let { bagsPad = it }
+        // char-more2: the game window that changes what a bag cell's tap does (vendor / bank / mail / trade / auction: the Bags room's ctx)
+        bagsCtx = bags.optString("ctx").takeIf { it.isNotEmpty() && it[0].code > 3 }
         bags.optJSONObject("equipped")?.let { equipped = it; if (model.tab == CharTab.CHARACTER) invalidate() }
     }
 
@@ -366,7 +371,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val sp = model.setPad
         val off = sp?.moreOff?.takeIf { sp.row.isNotEmpty() }
         for (pad in listOfNotNull(bagsPad, model.grid?.pad)) {
-            val cells = WornReplace.cells(pad, p, slot, model.combat) ?: continue
+            val cells = WornReplace.cells(pad, p, slot, model.combat, bagsCtx != null) ?: continue
             if (off != null && pad.optJSONObject("rows")?.has(sp.row) != true) continue
             return pad to ((if (off != null) listOf(sp.row to off) else emptyList()) + cells)
         }
@@ -376,9 +381,10 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     private fun moreRows(slot: Int): List<WornMore.Row> {
         val combat = model.combat
         val picks = replPicks(slot)
-        val now = picks.filter { WornReplace.now(it, slot, combat) }
+        val window = bagsCtx != null
+        val now = picks.filter { WornReplace.now(it, slot, combat, window) }
         val fits = WornMore.Fits(picks.size, now.size, now.isEmpty() || now.any { replRoute(it, slot) != null },
-            kits().size, slotKits(slot).size)
+            kits().size, slotKits(slot).size, window)
         return WornMore.rows(slot, worn()[slot]?.has("id") == true, combat, freeGeneral,
             model.setPad?.unequip != null && routePad() != null, fits)
     }
@@ -450,12 +456,12 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     private fun doReplace(i: Int) {
         val slot = replFor ?: return
         val p = replPicks(slot).getOrNull(i) ?: return
-        WornReplace.why(p, slot, model.combat)?.let { kitSay(it); return }
+        WornReplace.why(p, slot, model.combat, bagsCtx != null)?.let { kitSay(it); return }
         val route = replRoute(p, slot)
         if (route == null) { kitSay("Unavailable"); return }
         replFor = null; moreFor = null; kitFor = null; moreSeen = false; subSeen = false
         val ok = TapBridge.tapsSpaced(context, route.first, route.second, BagsMoveRoute.GAP_MS)
-        Log.i(TAG, "character: replace slot $slot with ${p.bag}:${p.slot} (${if (p.exact) "secure" else "drag"}) -> ${if (ok) "tapped" else "refused"}")
+        Log.i(TAG, "character: replace slot $slot with ${p.bag}:${p.slot} (${if (p.exact && bagsCtx == null) "secure" else "drag"}) -> ${if (ok) "tapped" else "refused"}")
         if (!ok) { model.setPad?.moreOff?.let { setTap("more off", it) }; kitSay("The game did not take it") }
         invalidate()
     }
@@ -499,7 +505,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             val y = inner.top + 64f + (k - first) * rowH
             val r = RectF(inner.left + 8f, y, inner.right - 8f, y + rowH - 6f)
             val icon = Icons.getOrUnknown(if (p.row.has("icon")) p.row.optInt("icon") else null)
-            val why = WornReplace.why(p, slot, combat)
+            val why = WornReplace.why(p, slot, combat, bagsCtx != null)
             val label = p.row.optString("name", "?") + (why?.let { " (" + Tr.t(it) + ")" } ?: "")
             UiKit.itemPlate(c, r, icon, label, Theme.quality(p.row.optInt("quality", 1)), 0, unusable = why != null)
             if (k == replSel) UiKit.focus(c, r)

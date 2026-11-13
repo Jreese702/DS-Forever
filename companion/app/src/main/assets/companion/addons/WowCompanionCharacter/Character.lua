@@ -51,7 +51,7 @@ local format = string.format
 -- and the core's heartbeat. Set to false when the Character room itself goes to the device.
 local BARS_ONLY = false
 
-local CV = BARS_ONLY and "c16b" or "c16"     -- bump on every change; c16 (char-more, the user: "we should have options there like unequip, replace and enchant"): the More menu's lists hold B (moresub: B one step back to the menu) and the game's own questions over the room (bind it to you? Replace enchant?) get A / B; c15 (uneq2, the user: "Never let a stale bag pick equip anything"): moreon also voids a Bags drag pick; c14 (uneq1): the Unequip route's cells (see THE GEAR SETS' BUTTONS); c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
+local CV = BARS_ONLY and "c17b" or "c17"     -- bump on every change; c17 (char-more2, review of c16; the user: "we should have options there like unequip, replace and enchant"): the game's question keeps A / B until it is gone (a pass the capture refused in a fight is tried again; the menu's own B pass never overrides it); c16 (char-more, the user: "we should have options there like unequip, replace and enchant"): the More menu's lists hold B (moresub: B one step back to the menu) and the game's own questions over the room (bind it to you? Replace enchant?) get A / B; c15 (uneq2, the user: "Never let a stale bag pick equip anything"): moreon also voids a Bags drag pick; c14 (uneq1): the Unequip route's cells (see THE GEAR SETS' BUTTONS); c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
 
 -- ---------------------------------------------------------------- safe reads
 
@@ -1122,8 +1122,11 @@ local function setName(id)
     local ok, name = CALL(function() return C_EquipmentSet.GetEquipmentSetInfo(id) end)
     return ok and PS(name) or nil
 end
+-- c17 (char-more2): the game's own question over the room (gameAsks, below) holds A / B while it shows: passB leaves them alone then
+local gameAsked, gamePassed = nil, false
 -- B is ours while the question is up (capture v2+ passes it to the game while the game's window is open)
 local function passB(on)
+    if gameAsked then return end
     local cap = capture()
     if not (cap and type(cap.pass) == "function" and holderIsMe(cap) and ctl.via == "window") then return end
     if (tonumber(cap.version) or 1) < 2 then return end
@@ -1244,18 +1247,29 @@ local function gameAsks()
     end
     return nil
 end
-local asked = nil
+-- c17 (char-more2, review): the pass is kept as a state, not a toggle: the capture refuses a pass in a fight ("combat"), so a refused
+-- one is tried again on the next tick (before, the room kept A / B for the whole question), and the way back is tried until it lands
 local function syncAsk()
     local cap = capture()
     if not (ctl.on and not ctl.pend and cap and type(cap.pass) == "function" and (tonumber(cap.version) or 1) >= 2 and holderIsMe(cap)) then
-        asked = nil; return
+        gameAsked, gamePassed = nil, false; return
     end
     local w = gameAsks()
-    if (w ~= nil) == (asked ~= nil) then return end
-    asked = w
-    if w then pcall(cap.pass, "character", { "PAD1", "PAD2" })
-    else pcall(cap.pass, "character", (ctl.via == "window" and not eqs.ask and not eqs.more) and { "PAD2" } or {}) end
-    note(w and ("game-asks-" .. w) or "game-answered")
+    if w then
+        gameAsked = w
+        if gamePassed then return end
+        local ok, done = pcall(cap.pass, "character", { "PAD1", "PAD2" })
+        if ok and done then gamePassed = true; note("game-asks-" .. w) end
+        return
+    end
+    if not gameAsked and not gamePassed then return end
+    gameAsked = nil
+    if gamePassed then
+        local ok, done = pcall(cap.pass, "character", (ctl.via == "window" and not eqs.ask and not eqs.more) and { "PAD2" } or {})
+        if not (ok and done) then return end                 -- refused (a fight): tried again next tick; passB waits for it too
+        gamePassed = false
+    end
+    note("game-answered")
 end
 if not BARS_ONLY and C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(0.25, function() pcall(syncAsk) end) end
 -- capture v8 (interact, the user's ruling: a room KEEPS the controller through a fight; leaving it gives the next press to the game):
