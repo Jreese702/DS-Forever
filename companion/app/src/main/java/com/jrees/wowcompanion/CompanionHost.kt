@@ -671,9 +671,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // each is reached from the bar
         spellbookView = SpellbookView(this, onBind = { e -> spellsCells(e) },
             // the Controller tab (spells session): its cells on spells' own pad rows; it reads ZL / ZR only while no other reader runs
-            onPadTab = { cells -> padTabTap(cells) }, otherReader = { castView.isShown },
-            // GitHub #43: the selected spell on / off the tap-to-cast bar (ActionBar cb1's pick, then the spell's two taps)
-            onCastBar = { e -> castBarToggle(e) })
+            onPadTab = { cells -> padTabTap(cells) }, otherReader = { castView.isShown })
         // the Controller room: the same "spells" guest on its own page (b17 croom), the same wiring as the Spellbook's tab
         controllerView = ControllerView(this, onPadCells = { cells -> padTabTap(cells) }, onBind = { e -> spellsCells(e) },
             otherReader = { castView.isShown })
@@ -838,7 +836,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             otherReader = { castView.isShown },
             // the Bind box's controller picture, drawn by the Cast room as it draws its own sets (false = no layout yet: stand-ins)
             drawSet = { c, set, dpad, face, lit, icon, fight -> castView.drawSet(c, set, dpad, face, lit, icon, fight) },
-            onTap = { col -> spellsTap(col) })                    // b37: the Bind box's Normal / In combat
+            onTap = { col -> spellsTap(col) },                    // b37: the Bind box's Normal / In combat
+            onCastBarTaps = { cells -> castBarTaps(cells) })        // GitHub #43 cb3: the box's Cast bar tab and its slots
         spellsOverlay.visibility = View.GONE
         radialView = HomeRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pinPicker = BagsPinPicker(this)
@@ -3439,15 +3438,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         TapBridge.tap(this, spellsPad, "spells", col)
     }
 
-    /** GitHub #43: the Spellbook's "Cast bar" for [e]: ONE edit (on the bar, or off it), through the freshest pad that has the row */
-    private fun castBarToggle(e: SpellsModel.Entry) {
-        val cells = CastStripModel.toggleCells(CastStripModel.Live.bar, CastStripModel.entryId(e.actionId, e.spellId), lastBook?.let { SpellsModel.bindCells(it, e) })
-        if (cells == null) { Log.i(HomeView.TAG, "cast bar: ${e.spellId} not sent (no row, full, or no taps for it)"); return }
-        // cb2: the pad that has every row the taps use (the padtab pick + the spells row, or the castbar row's pick cell)
+    /** GitHub #43 cb3: the Bind box's Cast bar tab (its tab, a slot: padtab 39 then 26 / 20-25, Book b56), through the freshest pad
+     *  that has the row */
+    private fun castBarTaps(cells: List<Pair<String, Int>>) {
         val need = cells.map { it.first }.toSet()
-        val pad = listOf(spellsPad, questsPad).firstOrNull { p -> p?.optJSONObject("rows")?.let { r -> need.all { r.has(it) } } == true } ?: spellsPad
+        val pad = listOf(spellsPad, questsPad, talentsPad).firstOrNull { p -> p?.optJSONObject("rows")?.let { r -> need.all { r.has(it) } } == true } ?: spellsPad
         val sent = TapBridge.taps(this, pad, cells) { why -> Log.i(HomeView.TAG, "cast bar: refused ($why)") }
-        Log.i(HomeView.TAG, "cast bar: toggle ${e.spellId} ${if (sent) "tapped" else "not sent"}")
+        Log.i(HomeView.TAG, "cast bar: ${cells.joinToString(" ") { "${it.first} ${it.second}" }} ${if (sent) "tapped" else "not sent"}")
     }
 
     /** b-druid-forms-bind: a spell's Bind by touch, its taps from the book on show (Book b38's two, or an older add-on's one) in ONE batch */

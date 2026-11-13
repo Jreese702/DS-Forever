@@ -93,9 +93,10 @@ class HomeView(
      * requestLayout every frame was what made the combat switch lag the game).
      */
     private val chatGlideBox = RectF()
-    /** THE TAP-TO-CAST BAR (GitHub #43, [CastStripModel]): 2 rows of 6 at the foot of the left column, above the bottom bar; shown by
-     *  Settings > Home "Tap-to-cast bar" (never chosen: only while it has spells); a tap = ONE pad tap on the add-on's "castbar" row */
-    private val castStrip = CastStripView(context) { i -> castStripTap(i) }
+    /** THE TAP-TO-CAST BAR (GitHub #43 cb3, [CastStripModel]): ONE row of 6 under the chat (Left), under the minimap (Right) or under
+     *  both (Both), by Settings > Bottom screen > Tap-to-cast bar (Off by default); a tap = ONE pad tap on the add-on's "castbar" row,
+     *  a swipe on a Left / Right bar moves it to the other side (the setting follows) */
+    private val castStrip = CastStripView(context, { i -> castStripTap(i) }) { to -> castStripSwipe(to) }
     // CLOSE is added last, so it is drawn above the module it closes
     private val views: Map<Part, View> = linkedMapOf(
         Part.BARS to barsSlot, Part.QUESTS to questPane, Part.CHAT to chatPane, Part.PARTY to partyView, Part.MAP to mapSlot,
@@ -1332,27 +1333,42 @@ class HomeView(
 
     private fun places(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
         val base = placesBase(s, w, h)
-        if (s.full != null && !s.takeover) { laidStrip = false; return base }
+        if (s.full != null && !s.takeover) { laidSide = CastStripModel.Side.OFF; return base }
         return withStrip(withParty(base, s, w), w, h)
     }
 
-    /** the tap-to-cast bar laid by the last [places] (a change of the choice or of the bar's spells lays the page again) */
-    private var laidStrip = false
+    /** the tap-to-cast bar's place laid by the last [places] (a change of the choice lays the page again) */
+    private var laidSide = CastStripModel.Side.OFF
 
     /**
-     * GitHub #43: THE TAP-TO-CAST BAR's place, at rest and in a fight alike (the bar is most use in one): the foot of the left column,
-     * above the bottom bar, [CastStripView.HEIGHT] tall; the chat (or the party module's chat) ends a gap above it. The map keeps its
-     * whole column. A module full screen has no strip (its own page).
+     * GitHub #43 cb3: THE TAP-TO-CAST BAR's place, at rest and in a fight alike (the bar is most use in one), above the page's foot:
+     * LEFT under the chat (the chat, the quest card above it and the party module end a gap above it), RIGHT under the minimap (the map,
+     * its auras and the card over it end above it), BOTH one bar under both columns ([CastStripModel.place]). A module full screen has
+     * no bar (its own page).
      */
     private fun withStrip(base: Map<Part, RectF>, w: Float, h: Float): Map<Part, RectF> {
-        laidStrip = CastStripModel.shown(HomeSettings.castStrip, CastStripModel.Live.bar)
-        if (!laidStrip) return base
+        val side = HomeSettings.castBarSide
+        laidSide = side
+        val b = CastStripModel.place(side, w, h, UiKit.MODULE_GAP) ?: return base
+        castStrip.side = side
         val g = UiKit.MODULE_GAP
-        val top = h - g - CastStripView.HEIGHT
+        val top = b.t
         val out = LinkedHashMap(base)
-        out[Part.STRIP] = RectF(g, top, w / 2f - 4f, h - g)
-        base[Part.CHAT]?.let { ch -> out[Part.CHAT] = RectF(ch.left, ch.top, ch.right, maxOf(ch.top + 1f, top - g)) }
+        out[Part.STRIP] = RectF(b.l, b.t, b.r, b.b)
+        fun cut(p: Part) { base[p]?.let { r -> if (r.bottom > top - g) out[p] = RectF(r.left, r.top, r.right, maxOf(r.top + 1f, top - g)) } }
+        val c = w / 2f
+        for (p in listOf(Part.CHAT, Part.QUESTS, Part.PARTY, Part.MAP, Part.AURAS)) {
+            val r = out[p] ?: continue
+            val leftCol = r.centerX() < c
+            if ((leftCol && CastStripModel.cutsLeft(side)) || (!leftCol && CastStripModel.cutsRight(side))) cut(p)
+        }
         return out
+    }
+
+    /** cb3: a swipe on a Left / Right bar: the setting follows (Left <-> Right); the bar then slides over ([castStripRelay]) */
+    private fun castStripSwipe(to: CastStripModel.Side) {
+        Log.i(TAG, "cast bar: swiped to $to")
+        HomeSettings.castBarSide = to
     }
 
     /** a finger on slot [i]: the slot's cell on the "castbar" row (nothing for an empty / waiting slot) */
@@ -1374,7 +1390,12 @@ class HomeView(
     private fun castStripRelay() {
         val s = shown ?: return
         if (s.full != null && !s.takeover) return
-        if (CastStripModel.shown(HomeSettings.castStrip, CastStripModel.Live.bar) != laidStrip) apply(s, animate = false)
+        val side = HomeSettings.castBarSide
+        if (side == laidSide) return
+        // cb3: Left <-> Right slides the bar over with the page's one motion (the columns make room); coming or going is laid at once
+        val slide = (side == CastStripModel.Side.LEFT || side == CastStripModel.Side.RIGHT) &&
+            (laidSide == CastStripModel.Side.LEFT || laidSide == CastStripModel.Side.RIGHT)
+        apply(s, animate = slide && isShown)
     }
 
     private fun placesBase(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
@@ -1845,7 +1866,8 @@ class HomeView(
         for ((p, v) in views) {
             val o = when (p) {
                 Part.BARS -> pauseTop
-                Part.CHAT, Part.CHAT_FULL, Part.PARTY, Part.STRIP -> left
+                Part.CHAT, Part.CHAT_FULL, Part.PARTY -> left
+                Part.STRIP -> if (laidSide == CastStripModel.Side.RIGHT) pauseMap else left       // cb3: under the minimap, it goes with it
                 Part.QUESTS -> if (cardOverMap()) pauseMap else left
                 Part.MAP, Part.AURAS -> pauseMap
             }

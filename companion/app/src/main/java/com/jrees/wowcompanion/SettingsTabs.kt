@@ -27,7 +27,8 @@ object SettingsTabs {
     /** a heading that folds (the user's pick: a tab opens with its FIRST group open, the rest folded) */
     enum class Group(val tab: Tab, val heading: String) {
         LOOK(Tab.GENERAL, "Look"), ACCOUNT(Tab.GENERAL, "Account"), HELP(Tab.GENERAL, "Help"),
-        HOME(Tab.BOTTOM, "Home"), MAP(Tab.BOTTOM, "Map"), CHAT(Tab.BOTTOM, "Chat"),
+        // GitHub #43 cb3 (the user, 2026-11-13: "the tap to cast bar should get its own bottom screen section"): its own group
+        HOME(Tab.BOTTOM, "Home"), CAST_BAR(Tab.BOTTOM, "Tap-to-cast bar"), MAP(Tab.BOTTOM, "Map"), CHAT(Tab.BOTTOM, "Chat"),
         HUD(Tab.TOP, "Your HUD"), TARGET(Tab.TOP, "Target"), PARTY(Tab.TOP, "Party"), NAVIGATION(Tab.TOP, "Navigation"),
         WINDOWS(Tab.TOP, "Game windows"),
         BUTTONS(Tab.CONTROLLER, "Buttons"), WHEELS(Tab.CONTROLLER, "Wheels"), SMART_Y(Tab.CONTROLLER, "Smart Y"),
@@ -55,10 +56,11 @@ object SettingsTabs {
         // ---- Bottom screen (the old Home tab)
         HOME_SECTION(Group.HOME, "Home", listOf("Controller on Home", "Combat layout", "Swing timer",
             // "Stance bar", "Pet bar": hidden for now (test40, the user: "hide the settings that don't do anything for now")
-            // GitHub #43: the tap-to-cast bar on Home
-            "Tap-to-cast bar", "Focused quest",
+            "Focused quest",
             // the clock extras (the user's picks 2026-11-13): one row each
             "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo", "DS WoW toolbar"), Drawer.HOME),
+        // GitHub #43 cb3: Off / Left / Right / Both (Home's section draws it, as it drew the old Home row)
+        CAST_BAR(Group.CAST_BAR, "Tap-to-cast bar", listOf("Tap-to-cast bar"), Drawer.HOME),
         MAP(Group.MAP, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map")),
         CHAT(Group.CHAT, "Chat", listOf("Message input")),
         // ---- Top screen (GameUiSection's parts: the same rows, ids, taps and channels as on QOL / Top screen before)

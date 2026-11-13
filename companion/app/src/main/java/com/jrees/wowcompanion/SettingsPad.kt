@@ -24,7 +24,9 @@ import org.json.JSONObject
  */
 class SettingsRoom(context: Context, private val view: SettingsView, padSource: () -> JSONObject?) : LinearLayout(context) {
     /** Bottom screen > Home's rows (the host wires its DS WoW toolbar) */
-    val homeSection = HomeSettingsSection(context) { it != ATTACK_CAST }
+    val homeSection = HomeSettingsSection(context) { it != ATTACK_CAST && it != CAST_BAR }
+    /** GitHub #43 cb3: Bottom screen > Tap-to-cast bar (Home's section's row, its own group) */
+    private val castBarSection = HomeSettingsSection(context) { it == CAST_BAR }
     /** Controller > Combat helpers' "Start the attack when a spell is cast" (Home's section's row, drawn here) */
     private val attackSection = HomeSettingsSection(context) { it == ATTACK_CAST }
     /** every GameUiSection part (B closes an open On / Off bar of any of them first) */
@@ -129,7 +131,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         fun flush() { if (run.isNotEmpty()) { out.add(view.slice(run.toSet())); run.clear() } }
         for (b in SettingsTabs.Block.values().filter { it.group == g }) when (b.drawer) {
             SettingsTabs.Drawer.VIEW -> run.add(b)
-            SettingsTabs.Drawer.HOME -> { flush(); out.add(if (b == SettingsTabs.Block.ATTACK_CAST) attackSection else homeSection) }
+            SettingsTabs.Drawer.HOME -> { flush(); out.add(when (b) {
+                SettingsTabs.Block.ATTACK_CAST -> attackSection; SettingsTabs.Block.CAST_BAR -> castBarSection; else -> homeSection }) }
             SettingsTabs.Drawer.GAME_UI -> { flush(); out.add(GameUiSection(context, gameUiPart(b)).also { gameUis.add(it) }) }
         }
         flush()
@@ -220,6 +223,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     private companion object {
         const val PREVIEW_W = 470
         const val ATTACK_CAST = "Start the attack when a spell is cast"
+        const val CAST_BAR = "Tap-to-cast bar"
     }
 }
 
