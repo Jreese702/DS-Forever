@@ -121,7 +121,9 @@ object GameUi {
                   /** hub45 (issue #195): DS Forever's Nintendo bar in the stock gamepad bar's place on; null = an add-on without it */
                   val nbar: Boolean? = null,
                   /** hub47 (the user, 2026-11-13): Smart Res on; null = an add-on without the switch */
-                  val sres: Boolean? = null)
+                  val sres: Boolean? = null,
+                  /** hub52 (the user, 2026-11-13): friendly plates while a friend is targeted (Trail ag10); null = without the switch */
+                  val npf: Boolean? = null)
     @Volatile private var sw: Sw? = null
     private var swTapAt = 0L
     private var swTapN = -1
@@ -158,6 +160,10 @@ object GameUi {
      *  user's pick: "Smart Res is ON by default, still saved per character (for classes with a res or Revive Pet; a character whose
      *  class has neither shows it off/hidden)"); in Party mode or not, as built */
     const val SW_SRES = "sres"
+    /** hub52 FRIENDLY PLATES (the user, 2026-11-13: "friendly plates off ... maybe we should set this as a toggle defaulted to off"): On =
+     *  Trail's old rule (ag2..ag8: the game's friendly nameplates while a friend is targeted, out of a fight, put back after); Off = ag9
+     *  (nothing switched on). Per character, OFF BY DEFAULT */
+    const val SW_NPF = "npf"
     /** the classes Smart Res has something for: a res (Priest, Paladin, Shaman, Druid's Rebirth) or Revive Pet (Hunter); PadMap's RES_BY */
     val SRES_CLASSES = setOf("PRIEST", "PALADIN", "SHAMAN", "DRUID", "HUNTER")
     /** the class (UnitClass's file token) of [character] from the CURRENT party document's own entry; null = not known yet */
@@ -189,7 +195,7 @@ object GameUi {
     private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true, SW_WM to false, SW_PARTY to true,
         // hub22: start attack off until chosen; Auto Shot follows the game's own default (on) unless chosen
         SW_ATK to false, SW_SHOT to true, SW_PMODE to true, SW_UFP to true, SW_UFT to true, SW_UFTOT to false, SW_UFHPP to false, SW_UFHPT to false, SW_SHOTF to false, SW_PS to false,
-        SW_PET to true, SW_SRES to true)
+        SW_PET to true, SW_SRES to true, SW_NPF to false)
     /** this character's choice for [part] (its default until one is made); the resource bar's old "HUD mode" choice carries over */
     fun swWant(part: String): Boolean {
         if (part == SW_PMODE) return prefs?.getBoolean("sw.$SW_PMODE", true) ?: true
@@ -222,7 +228,7 @@ object GameUi {
     }
     /** the game's word for [part] now (null = not said / no add-on with it) */
     fun swNow(part: String): Boolean? = sw?.let { when (part) { SW_PLAYER -> it.player; SW_TARGET -> it.target; SW_NP -> it.np; SW_WM -> it.wm; SW_PARTY -> it.party; SW_ATK -> it.atk; SW_SHOT -> it.shot; SW_SHOTF -> it.shotf; SW_PMODE -> it.pmode
-        SW_UFP -> it.ufp; SW_UFT -> it.uft; SW_UFTOT -> it.uftot; SW_UFHPP -> it.ufhpp; SW_UFHPT -> it.ufhpt; SW_PS -> it.ps; SW_PET -> it.pet; SW_NBAR -> it.nbar; SW_SRES -> it.sres; else -> it.prd } }
+        SW_UFP -> it.ufp; SW_UFT -> it.uft; SW_UFTOT -> it.uftot; SW_UFHPP -> it.ufhpp; SW_UFHPT -> it.ufhpt; SW_PS -> it.ps; SW_PET -> it.pet; SW_NBAR -> it.nbar; SW_SRES -> it.sres; SW_NPF -> it.npf; else -> it.prd } }
     /** issue #195: the Nintendo bar is wanted exactly while the controller bars' mode is NINTENDO */
     fun nbarWanted(hudMode: UiMode): Boolean = hudMode == UiMode.NINTENDO
     /** the absolute column that makes [part] [on] */
@@ -245,13 +251,14 @@ object GameUi {
         SW_PET -> if (on) "PET_ON" else "PET_OFF"
         SW_NBAR -> if (on) "NBAR_ON" else "NBAR_OFF"
         SW_SRES -> if (on) "SRES_ON" else "SRES_OFF"
+        SW_NPF -> if (on) "NPF_ON" else "NPF_OFF"
         else -> if (on) "PRD_ON" else "PRD_OFF"
     }]
     /** the switch to tap now: the first whose game word differs from the choice, or which the game has not had since its /reload */
     fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? =
-        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOTF, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT, SW_PS, SW_PET, SW_NBAR, SW_SRES).firstOrNull { p ->
+        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOTF, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT, SW_PS, SW_PET, SW_NBAR, SW_SRES, SW_NPF).firstOrNull { p ->
             val now = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; SW_PARTY -> s.party
-                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; SW_NBAR -> s.nbar; SW_SRES -> s.sres; else -> s.prd }
+                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; SW_NBAR -> s.nbar; SW_SRES -> s.sres; SW_NPF -> s.npf; else -> s.prd }
             // hub22: Auto Shot is the game's own saved option: only a CHOICE made here is sent (never the default over the game's)
             val chosen = p != SW_SHOT || character?.let { prefs?.contains("sw.$p.$it") } == true
             // hub28: while "In combat" is wanted (and the add-on knows it), the game's option follows the fight: not tapped
@@ -301,6 +308,9 @@ object GameUi {
     const val UFT_ID = "uftarget"
     const val PARTY_ID = "partyframes"
     fun nameplatesRow(): Row? = swRow(NP_ID, SW_NP, "Enemy nameplates", "On: the bars over hostile mobs", "The game's own setting")
+    /** hub52: Top > Target, under Enemy nameplates: friendly plates while a friend is targeted (per character, off by default) */
+    fun friendlyPlatesRow(): Row? = swRow(NPF_ID, SW_NPF, "Friendly plates", "On: while a friend is targeted", "Off")
+    const val NPF_ID = "friendlyplates"
     /** QOL > Navigation: the world markers (off by default), Interact's switch on "uisw" */
     fun worldMarkersRow(): Row? = swRow(WM_ID, SW_WM, "World markers", "On: the markers in the 3D world", "Off: no markers in the world")
     const val WM_ID = "worldmarkers"
@@ -489,7 +499,7 @@ object GameUi {
             fun shown(k: String) = if (o.has(k)) o.optString(k) == "shown" else null
             fun flag(k: String) = if (o.has(k)) o.optBoolean(k) else null
             Sw(o.optString("row", "uisw"), cols, shown("player"), shown("target"), flag("np"), flag("prd"), set, flag("wm"), shown("party"), flag("atk"), flag("shot"), flag("pmode"),
-               flag("ufp"), flag("uft"), flag("uftot"), flag("ufhpp"), flag("ufhpt"), flag("shotf"), flag("shotfk"), flag("ps"), flag("pet"), flag("nbar"), flag("sres"))
+               flag("ufp"), flag("uft"), flag("uftot"), flag("ufhpp"), flag("ufhpt"), flag("shotf"), flag("shotfk"), flag("ps"), flag("pet"), flag("nbar"), flag("sres"), flag("npf"))
         }
         val prd = h.optJSONObject("prd")
         prdY = prd?.let { if (it.has("y")) it.optInt("y") else null }

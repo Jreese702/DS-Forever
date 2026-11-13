@@ -18,7 +18,13 @@ landed (the bar shown, the bobbing red arrow where the plate was, PadMap's float
 drawn NEAREST when the code asks for that filter (uf18's crisp pass), else BILINEAR; atlases without art are labelled placeholders.
 uf20 (hub49, the smooth rim): our own rim art (WowCompanion/Media/hud_rim_<s>.tga) is drawn from the Media file; draw(..., phys=PX) draws
 at ONE PHYSICAL PIXEL per image pixel (the crop on the pixel grid) and samples every texture the way the GPU does (bilinear at each
-pixel's centre with no mipmaps, or NEAREST), so a magnified or a stair-stepped rim shows as it would on the screen (tools/render_rim.py)."""
+pixel's centre with no mipmaps, or NEAREST), so a magnified or a stair-stepped rim shows as it would on the screen (tools/render_rim.py).
+uf22 (hub52; the user, 2026-11-13: "that main target bar should be the top most layer"; "the button glyph size on the target bar should
+be about the same size as the name plate one, the name plate one should be slightly smaller"): the stand-in floating glyph takes the
+rendered rev's PadMap.lua layer (OV.tg.LAYER, else the old HIGH) and size (Hub's UF.yPlate, else 36 UI units = 50 px), and the scene
+"overlap" puts the targeted plate right under the bar (its UnitFrame LOW, level 60: a raised targeted plate), so the arrow, the glyph and
+its spyglass overlap the bar and the drawing order (strata, level, layer) shows which is on top."""
+import re
 import os
 import subprocess
 import sys
@@ -41,7 +47,19 @@ SHOTS = [("plain", dict(tint=False)), ("tint", dict(tint=True)), ("cast_tint", d
          ("pips_cast_tint", dict(tint=True, cast=True, pips=True)), ("full_tint", dict(tint=True, cast=True, pips=True, auras=True)),
          ("prompt", dict(tint=True, prompt=True)), ("icons", dict(tint=True, prompt=True, icons=True))]
 SCENES = [("fly_0", dict(plate=True, icons=True, at=0.0)), ("fly_50", dict(plate=True, icons=True, at=0.5)),
-          ("landed", dict(plate=True, icons=True, prompt=True, glyph=True, at=None))]
+          ("landed", dict(plate=True, icons=True, prompt=True, glyph=True, at=None)),
+          ("overlap", dict(plate=True, icons=True, prompt=True, glyph=True, at=None, high=True)),
+          ("overlap_fly", dict(plate=True, icons=True, prompt=True, glyph=True, at=0.15, high=True))]
+PADMAP_REL = "companion/app/src/main/assets/companion/addons/WowCompanionSpells/PadMap.lua"
+
+
+def glyph_layer(padmap_src):
+    """PadMap's floating glyph layer in that source: (strata, level or None)."""
+    m = re.search(r'OV\.tg\.LAYER = \{ strata = "(\w+)", level = (\d+) \}', padmap_src or "")
+    if m:
+        return m.group(1), int(m.group(2))
+    m = re.search(r'"WowCompanionTargetY".*?SetFrameStrata\("(\w+)"\)', padmap_src or "", re.S)
+    return (m.group(1) if m else "HIGH"), None
 ARROW_TGA = os.path.join(ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanion", "Media", "target_arrow.tga")
 # placeholder looks for atlases with no art here: (label, fill, text colour, round)
 LABEL = {"Gamepad_Rev_Y_64": ("Y", (40, 40, 44), (255, 255, 255), True), "Gamepad_Ltr_Y_64": ("Y", (200, 170, 20), (20, 20, 20), True),
@@ -100,7 +118,7 @@ local yt = YG:CreateTexture(nil, "OVERLAY"); yt:SetAllPoints(YG); yt:SetAtlas("G
 '''
 
 
-def shoot_scene(hub_src, trail_src, opts):
+def shoot_scene(hub_src, trail_src, opts, padmap_src=None):
     """A scene: the plate low on the screen, the target changed, the fly at opts['at'] of FLY_S (None: landed); every root collected."""
     old_trail = tc.TRAIL
     tmp = None
@@ -123,6 +141,21 @@ def shoot_scene(hub_src, trail_src, opts):
     if opts.get("icons") and WC.live is not None:
         WC.live.iconsStep = rig.L.eval("function() end")
         WC.live.tgtIcons = rig.L.table_from({"av": True, "q": True})
+    # uf22: the stand-in glyph as that rev's PadMap makes it (layer) and sizes it (Hub's UF.yPlate when there)
+    if padmap_src is None:
+        with open(os.path.join(ROOT, *PADMAP_REL.split("/")), encoding="utf-8") as fh:
+            padmap_src = fh.read()
+    gs, gl = glyph_layer(padmap_src)
+    yp = rig.UF.yPlate
+    gsz = yp() if yp is not None else 50
+    G.YGS, G.YGL, G.YGZ = gs, gl, gsz
+    rig.L.execute("YG:SetFrameStrata(YGS); if YGL then YG:SetFrameLevel(YGL) end; YG:SetSize(YGZ, YGZ); "
+                  "function YG:GetFrameStrata() return rawget(self, 'strata') or 'MEDIUM' end; "
+                  "function YG:GetFrameLevel() return rawget(self, 'level') or 1 end")
+    if opts.get("high"):
+        # the targeted plate right under the bar: its top inside the bar's health bar, a raised (targeted) plate's LOW level 60
+        rig.L.execute("PLATE:ClearAllPoints(); PLATE:SetPoint('TOP', UIParent, 'TOP', 60, -128); "
+                      "PLATE.UnitFrame.GetFrameStrata = function() return 'LOW' end; PLATE.UnitFrame.GetFrameLevel = function() return 60 end")
     if opts.get("glyph"):
         G.YG.Show(G.YG)
     rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
@@ -163,6 +196,8 @@ def shoot_scene(hub_src, trail_src, opts):
     for it in items:
         it["filter"] = flt.get(it["seq"])
     notes = ["UF %s / tint %s" % (UF.V, WC.rings.V)]
+    if opts.get("glyph"):
+        notes.append("glyph %s%s %.0f px" % (gs, (" %d" % gl) if gl is not None else "", gsz))
     if fly is not None and fly.dir is not None:
         notes.append("fly %s at %.0f%%: scale %.2f" % (fly.dir, 100 * (opts.get("at") or 0), fly.s or 0))
     pa = G.PLATE.UnitFrame.alpha
@@ -473,6 +508,7 @@ def main():
     tag = a[a.index("--tag") + 1] if "--tag" in a else (rev or "now")
     hub = git_show(rev, rt.HUB_REL) if rev else None
     trail = git_show(rev, TRAIL_REL) if rev else None
+    padmap = git_show(rev, PADMAP_REL) if rev else None
     for nm, opts in SHOTS:
         items, tint, hp, cast, cp, ufv, atv = shoot(hub, trail, opts)
         notes = []
@@ -488,7 +524,7 @@ def main():
     if "--scenes" in a:
         crop = (560, 300, 1360, 1040)                                          # the plate low, the bar under the compass
         for nm, opts in SCENES:
-            items, notes = shoot_scene(hub, trail, opts)
+            items, notes = shoot_scene(hub, trail, opts, padmap)
             p = os.path.join(out, "tb_%s_%s.png" % (tag, nm))
             draw(items, None, crop, p, "%s  %s" % (tag, nm), notes, pads=(0, 0, 0), scale=1)
             print(p, "; ".join(notes))

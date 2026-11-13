@@ -69,7 +69,7 @@ class SettingsTabsTest {
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
             G.CHAT to listOf("Message input"),
             G.HUD to listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale"),
-            G.TARGET to listOf("Target bar", "Target health text", "Target of target", "Aggro tint", "Enemy nameplates"),
+            G.TARGET to listOf("Target bar", "Target health text", "Target of target", "Aggro tint", "Enemy nameplates", "Friendly plates"),
             G.PARTY to listOf("DS party frames", "Party frames"),
             G.NAVIGATION to listOf("Compass bar", "Compass follows the camera", "World markers", "Polestar on the top screen"),
             G.WINDOWS to listOf("Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window", "Game tooltips", "Cast bar",
@@ -127,7 +127,9 @@ class SettingsTabsTest {
             // new since the six tabs: General > Account > Game account (#47)
             listOf("Game account") +
             // added since: the clock extras (feat/item-cooldowns)
-            listOf("Hearthstone", "Class teleport", "Gold", "Free bag slots")
+            listOf("Hearthstone", "Class teleport", "Gold", "Free bag slots") +
+            // hub52 (the user, 2026-11-13: "maybe we should set this as a toggle defaulted to off"): Top > Target
+            listOf("Friendly plates")
         val now = B.values().flatMap { it.rows }
         assertEquals(before.toSet(), now.toSet())
         assertEquals("a row in two places", now.size, now.toSet().size)

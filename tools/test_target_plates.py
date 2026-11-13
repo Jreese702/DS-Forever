@@ -65,7 +65,7 @@ function UnitIsFriend(a, b) return true end
     A.friendsStep()
     rig.run(0.5)
     chk("ag9: a friendly target switches no plate option on (%d writes)" % len(G.CVW), len(G.CVW) == 0, list(G.CVW.values()))
-    chk("ag9: the version tag", A.V == "ag9" and G.WowCompanion.rings.V == "at9", (A.V, G.WowCompanion.rings.V))
+    chk("ag9: the version tag", A.V == "ag10" and G.WowCompanion.rings.V == "at9", (A.V, G.WowCompanion.rings.V))
     # a player who had them on from ag2..ag8: our values in place, the saved originals
     L.execute('''
 CV.nameplateShowFriendlyPlayers, CV.nameplateShowFriendlyNPCs, CV.nameplateNotSelectedAlpha = "1", "1", "0"
@@ -98,7 +98,7 @@ WowCompanionDB.npFriends = { orig = { nameplateShowFriendlyPlayers = "0", namepl
     rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
     fly = UF.fly
     fly.tick(G.GAME.t + 10)
-    chk("uf21: the version tag", UF.V == "uf21", UF.V)
+    chk("uf22: the version tag", UF.V == "uf22", UF.V)
     plateUF = G.PLATE.UnitFrame
     chk("uf18: a hostile target's plate hidden while targeted (alpha 0; no attack needed)", plateUF.alpha == 0, plateUF.alpha)
     rig.fire("PLAYER_TARGET_CHANGED")
@@ -249,7 +249,7 @@ function R0:SetShadowOffset(x, y) rawset(self, "shadow", { x, y }) end
     chk("uf20: none of the game's 19-texel HUD art left on the target bar (%d)" % len(old), len(old) == 0)
     hub_src = open(rt.HUB, encoding="utf-8").read()
     chk("uf20: no NEAREST filter in Hub.lua's code (crispTex / TB.FILTER gone)",
-        '"NEAREST"' not in hub_src and "crispTex" not in hub_src and 'local HV = "hub51"' in hub_src)
+        '"NEAREST"' not in hub_src and "crispTex" not in hub_src and 'local HV = "hub52"' in hub_src)
 
     # ------------------------------------------------------------------ uf20: the smooth rim at 720 / 1080 / 1440 lines
     media = os.path.join(rt.ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanion", "Media")
@@ -377,6 +377,88 @@ function R0:GetWidth() if rawequal(self, UIParent) then return self.ww or 1920 e
     r4, e = placed(720, compass=False)
     chk("uf19: no compass frame: the spot by u(90) is snapped too (%s)" % ["%.2f" % v for v in e[:4]],
         all(abs(v - round(v)) < 1e-6 for v in e))
+
+    # ------------------------------------------------------------------ ag10 / hub52: the friendly plates switch (the user, 2026-11-13:
+    # "friendly plates off ... maybe we should set this as a toggle defaulted to off")
+    rig = rig_with()
+    L, G = rig.L, rig.G
+    WC = G.WowCompanion
+    A = WC.live
+    L.execute('''
+CVW = {}
+CV = CV or {}
+CV.nameplateShowFriendlyPlayers, CV.nameplateShowFriendlyNPCs, CV.nameplateNotSelectedAlpha = "0", "0", "0.5"
+C_CVar.SetCVar = function(k, v) CVW[#CVW + 1] = k .. "=" .. tostring(v); CV[k] = tostring(v) end
+function UnitIsFriend(a, b) return true end
+''')
+    G.UNITS = L.table_from({"target": L.table_from({"name": "Guard Thomas", "lv": 10, "hp": 1, "hpMax": 1})})
+    G.TARGET = "target"
+    G.GAME.fight = False
+    hub = WC.hub
+    chk("ag10: the version tag; the switch Off by default, said in the doc (npf false, not chosen)",
+        A.V == "ag10" and A.FRIENDS_ON is False and hub.npfFlag() is False and A.friendsChosen is None, (A.V, A.FRIENDS_ON))
+    A.friendsStep()
+    chk("ag10: Off: a friendly target writes nothing (ag9)", len(G.CVW) == 0, list(G.CVW.values()))
+    chk("hub52: NPF_ON (column 39) reaches Trail", hub.swTap(39) is True and A.FRIENDS_ON is True and hub.npfFlag() is True
+        and A.friendsChosen is True)
+    G.GAME.fight = True
+    A.friendsStep()
+    chk("ag10: On, in a fight: nothing written", len(G.CVW) == 0)
+    G.GAME.fight = False
+    A.friendsStep()
+    chk("ag10: On: a friendly target turns the friendly plates on, the player's own values kept (%s)" % ",".join(G.CVW.values()),
+        G.CV.nameplateShowFriendlyPlayers == "1" and G.CV.nameplateShowFriendlyNPCs == "1" and G.CV.nameplateNotSelectedAlpha == "0"
+        and G.WowCompanionDB.npFriends is not None and G.WowCompanionDB.npFriends.orig.nameplateNotSelectedAlpha == "0.5")
+    G.TARGET = None
+    G.UNITS = L.table_from({})
+    A.friendsStep()
+    chk("ag10: On: no friendly target puts them back", G.CV.nameplateShowFriendlyPlayers == "0" and G.CV.nameplateNotSelectedAlpha == "0.5"
+        and G.WowCompanionDB.npFriends is None)
+    G.UNITS = L.table_from({"target": L.table_from({"name": "Guard Thomas", "lv": 10, "hp": 1, "hpMax": 1})})
+    G.TARGET = "target"
+    A.friendsStep()
+    chk("ag10: ... a friend again: on again", G.CV.nameplateShowFriendlyPlayers == "1")
+    chk("hub52: NPF_OFF (column 38) reaches Trail", hub.swTap(38) is True and A.FRIENDS_ON is False and hub.npfFlag() is False)
+    A.friendsStep()
+    n = len(G.CVW)
+    chk("ag10: Off with the friend still targeted: ours put back at once out of a fight",
+        G.CV.nameplateShowFriendlyPlayers == "0" and G.CV.nameplateNotSelectedAlpha == "0.5" and G.WowCompanionDB.npFriends is None)
+    A.friendsStep()
+    chk("ag10: ... and nothing more written", len(G.CVW) == n)
+
+    # ------------------------------------------------------------------ uf22: the bar on top, the glyph sizes
+    rig = rig_with({"plate": True})
+    L, G = rig.L, rig.G
+    WC = G.WowCompanion
+    UF = rig.UF
+    TB = UF.tb
+    WC.tgPrompt = "Gamepad_Rev_Y_64"
+    L.execute("PLATE.UnitFrame.GetFrameStrata = function() return 'MEDIUM' end; PLATE.UnitFrame.GetFrameLevel = function() return 90 end; "
+              "YG:SetFrameStrata('MEDIUM'); YG:SetFrameLevel(5); YG:SetSize(UFY(), UFY()); "
+              "function YG:GetFrameStrata() return rawget(self, 'strata') end; function YG:GetFrameLevel() return rawget(self, 'level') end"
+              .replace("UFY()", "WowCompanion.uf.yPlate()"))
+    G.YG.Show(G.YG)
+    rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
+    UF.fly.tick(G.GAME.t + 10)
+    rig.run(0.2)
+    chk("uf22: the target bar and the fly's copy in MEDIUM at level 40 (%s %s / %s %s)" % (TB.f.strata, TB.f.level, UF.fly.host.strata, UF.fly.host.level),
+        TB.f.strata == "MEDIUM" and TB.f.level == 40 and UF.fly.host.strata == "MEDIUM" and UF.fly.host.level == 40)
+    ar = TB.arrow
+    chk("uf22: a plate in the bar's strata: the arrow one strata under it (%s)" % ar.strata, ar.strata == "LOW")
+    gf = TB.glassF
+    chk("uf22: the spyglass in the glyph's strata, two levels over it, under the bar (%s %s)" % (gf.strata, gf.level),
+        gf.strata == "MEDIUM" and gf.level == 7 and gf.level < TB.f.level)
+    pq = rig.rect(TB.f.prompt)
+    yq = rig.rect(G.YG)
+    bw, pw = pq[2] - pq[0], yq[2] - yq[0]
+    chk("uf22: the bar's glyph u(50) (the plate glyph's old size), the plate's 0.85 of it (%.1f / %.1f)" % (bw, pw),
+        abs(bw - UF.u(50)) < 1e-6 and abs(pw / bw - 0.85) < 0.02)
+    L.execute("YG:SetFrameLevel(45)")
+    rig.run(0.2)
+    chk("uf22: a glyph at the bar's level: the bar raised over it (%s > %s)" % (TB.f.level, gf.level), TB.f.level > gf.level)
+    pm_src = open(os.path.join(rt.ROOT, *rtb.PADMAP_REL.split("/")), encoding="utf-8").read()
+    chk("m155: PadMap's floating glyph in MEDIUM level 5, sized by Hub's UF.yPlate", rtb.glyph_layer(pm_src) == ("MEDIUM", 5)
+        and 'local PV = "m155"' in pm_src and "uf.yPlate" in pm_src and 'f:SetFrameStrata("HIGH")' not in pm_src)
 
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)

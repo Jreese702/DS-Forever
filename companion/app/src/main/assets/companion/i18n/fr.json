@@ -1,5 +1,9 @@
 {
 "plain": {
+"Friendly plates": "Barres amicales",
+"On: while a friend is targeted": "Activé : avec un allié en cible",
+"Friendly nameplates while a friend is targeted, out of combat. For this character.": "Barres de nom amicales avec un allié en cible, hors combat. Pour ce personnage.",
+"No friendly nameplates. For this character.": "Aucune barre de nom amicale. Pour ce personnage.",
 "Smart Res": "Résurrection intelligente",
 "On: tap a dead member to res": "Activé : touchez un membre mort pour le ressusciter",
 "A tap on a dead party member casts your res. Rebirth and Revive Pet in combat too. For this character.": "Toucher un membre du groupe mort lance votre résurrection. Renaissance et Ressusciter le familier aussi en combat. Pour ce personnage.",

@@ -63,7 +63,7 @@ object SettingsTabs {
         CHAT(Group.CHAT, "Chat", listOf("Message input")),
         // ---- Top screen (GameUiSection's parts: the same rows, ids, taps and channels as on QOL / Top screen before)
         HUD(Group.HUD, "Your HUD", listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale"), Drawer.GAME_UI),
-        TARGET(Group.TARGET, "Target", listOf("Target bar", "Target health text", "Target of target", "Aggro tint", "Enemy nameplates"),
+        TARGET(Group.TARGET, "Target", listOf("Target bar", "Target health text", "Target of target", "Aggro tint", "Enemy nameplates", "Friendly plates"),
             Drawer.GAME_UI),
         PARTY(Group.PARTY, "Party", listOf("DS party frames", "Party frames"), Drawer.GAME_UI),
         NAVIGATION(Group.NAVIGATION, "Navigation", listOf("Compass bar", "Compass follows the camera", "World markers"), Drawer.GAME_UI),
