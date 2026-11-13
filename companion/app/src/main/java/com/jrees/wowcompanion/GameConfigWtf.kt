@@ -80,9 +80,12 @@ object GameConfigWtf {
      * gets the forced keys, the old defaults' new values and the missing keys. For the launch client a beta portal ("test") or another
      * client's agentUID is set right too (a _forever_ folder made from a beta copy would otherwise sign in to the closed beta).
      */
-    fun ensure(root: File, product: WowProduct, row: Map<String, String>?, region: String? = null, lowMemory: Boolean = false) {
+    fun ensure(root: File, product: WowProduct, row: Map<String, String>?, region: String? = null, lowMemory: Boolean = false,
+               askAccount: Boolean = false): List<String> {
         // [region]: the player's choice (GameRegion; 2026-11-07, an EU account on a US-set device): it replaces any portal but the beta's
         // [lowMemory]: Settings.lowMemGraphics - the smaller textures over the defaults
+        // [askAccount]: Settings.gameAccountAsk (#47) - the game's remembered game-account choice cleared ([forgetAccountChoice]);
+        // returns the NAMES of the keys cleared (never a value: a value is an account name)
         val defaults = configDefaults(product, row, if (product.portal == null) region else null).let { d ->
             if (lowMemory) LinkedHashMap(d).apply { putAll(LOW_MEMORY_GRAPHICS) } else d
         }
@@ -95,14 +98,15 @@ object GameConfigWtf {
         val configWtf = File(flavorDir, "WTF/Config.wtf")
         if (!configWtf.exists()) {
             WowSwitch.replace(configWtf, (defaults.entries.joinToString("\n") { "SET ${it.key} ${it.value}" } + "\n").toByteArray())
-            return
+            return emptyList()                    // a new file remembers no account
         }
         val otherAgents = WowProduct.values().filter { it != product }.map { "\"${it.code}\"" }
         val betaPortal = WowProduct.values().mapNotNull { it.portal }.map { "\"$it\"" }
 
         val original = configWtf.readLines().filterNot { it.startsWith("SET ResampleSharpness", ignoreCase = true) }
+        val (kept, cleared) = if (askAccount) forgetAccountChoice(original) else original to emptyList()
         val existingKeys = mutableSetOf<String>()
-        val updated = original.map { line ->
+        val updated = kept.map { line ->
             val parts = line.takeIf { it.startsWith("SET ", ignoreCase = true) }?.removePrefix("SET ")?.trim()?.split(" ", limit = 2)
             if (parts?.size != 2) return@map line
             val (key, value) = parts
@@ -127,6 +131,36 @@ object GameConfigWtf {
         if (updated != original) {
             WowSwitch.replace(configWtf, (updated.joinToString("\n") + "\n").toByteArray())
         }
+        return cleared
+    }
+
+    /**
+     * THE GAME'S REMEMBERED GAME ACCOUNT (GitHub #47): with several game accounts on one Battle.net login (WoW1, WoW2 ...), the client
+     * keeps the last pick in Config.wtf and goes straight in with it. The keys, from the PC client's known Config.wtf (NOT yet confirmed
+     * on this client: a device check on a multi-account login is owed):
+     *  - accountList: the game accounts, "|"-separated, the remembered one marked with a leading "!" (e.g. "WoW1|!WoW2|"). Only a list
+     *    that HOLDS a "!" is a choice; that line goes (the game writes it again from Battle.net), a list with no marker stays.
+     *  - NOT accountName (review 11-13): on the Battle.net-era clients that is the remembered Battle.net login (the e-mail), not the
+     *    game-account pick; clearing it would forget the player's login name and is no part of the choice. It is never touched.
+     */
+    val ACCOUNT_CHOICE_KEYS = listOf("accountList")
+
+    /**
+     * [lines] without the remembered game-account choice, and the NAMES of the keys cleared (in [ACCOUNT_CHOICE_KEYS]'s spelling; each
+     * once). No such key, or none that remembers anything = the same lines and no names (a no-op). Pure; never returns a value.
+     */
+    fun forgetAccountChoice(lines: List<String>): Pair<List<String>, List<String>> {
+        val cleared = LinkedHashSet<String>()
+        val kept = lines.filter { line ->
+            val parts = line.trim().takeIf { it.startsWith("SET ", ignoreCase = true) }?.drop(4)?.trim()?.split(" ", limit = 2)
+            val key = parts?.getOrNull(0)?.let { k -> ACCOUNT_CHOICE_KEYS.firstOrNull { it.equals(k, ignoreCase = true) } }
+                ?: return@filter true
+            val value = parts.getOrNull(1)?.trim()?.trim('"').orEmpty()
+            val remembers = value.split('|').any { it.trim().startsWith("!") }      // accountList: only a marked list is a choice
+            if (remembers) cleared.add(key)
+            !remembers
+        }
+        return (if (cleared.isEmpty()) lines else kept) to cleared.toList()
     }
 
     /**
