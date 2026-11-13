@@ -13,6 +13,7 @@ every region's rect resolved from its anchors, SetScale honoured) with render_ta
         back only when it lands
   uf18  the prompt: the bare Y glyph (no hudBox), the spyglass on its corner; PadMap's floating glyph gets the corner spyglass too
   uf18  Trail's skull / '!' for the target ride on the bar; Trail hides them on the plate while Hub owns it (ag9)
+  uf19  the bar's own top-left snapped: every edge of the bar / its health bar on whole pixels at 720 / 900 / 1080 / 1200 / 1440 lines
   uf18  crisp: u() in whole physical pixels at K = 768 / 1080 (and at a 1440-line screen), the font shadow one pixel, the rim NEAREST
 Needs lupa. Exit code 1 on any failure."""
 import os
@@ -91,7 +92,7 @@ WowCompanionDB.npFriends = { orig = { nameplateShowFriendlyPlayers = "0", namepl
     rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
     fly = UF.fly
     fly.tick(G.GAME.t + 10)
-    chk("uf18: the version tag", UF.V == "uf18", UF.V)
+    chk("uf19: the version tag", UF.V == "uf19", UF.V)
     plateUF = G.PLATE.UnitFrame
     chk("uf18: a hostile target's plate hidden while targeted (alpha 0; no attack needed)", plateUF.alpha == 0, plateUF.alpha)
     rig.fire("PLAYER_TARGET_CHANGED")
@@ -239,6 +240,49 @@ function R0:SetShadowOffset(x, y) rawset(self, "shadow", { x, y }) end
     rim = [A2[i] for i in range(1, len(A2) + 1) if A2[i].kind == "tex" and str(A2[i].tex or "").startswith("atlas:UI-HUD-CoolDownManager-Bar-BG")
            and under_tb(A2[i])]
     chk("uf18: the HUD rim pieces drawn NEAREST (%d pieces)" % len(rim), rim and all(r.filter == "NEAREST" for r in rim))
+
+    # ------------------------------------------------------------------ uf19: the bar's own spot on whole pixels (review of uf18)
+    # the rig's UIParent rect is made its real size (its GetWidth / GetHeight: ww x hh) so a 768-unit UIParent on 720 / 1080 / 1440
+    # lines resolves as the client does; every edge of the bar and its health bar must land on a whole physical pixel
+    def placed(ph, uih=768, compass=True):
+        r = rig_with()
+        r.L.execute('''
+local RECT0 = RECT
+function RECT(q)
+    if q == nil or rawequal(q, UIParent) then return { 0, 0, UIParent.ww or 1920, UIParent.hh or 1080 } end
+    return RECT0(q)
+end
+local R0 = getmetatable(CreateFrame("Frame"))
+local gw = R0.GetWidth
+function R0:GetWidth() if rawequal(self, UIParent) then return self.ww or 1920 end return gw(self) end
+''')
+        if compass:
+            r.G.WowCompanion.compass.build()                 # the compass the bar sits under (built on its first show in the game)
+        r.G.GAME.physH = ph
+        r.set_k(uih)
+        r.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
+        p = r.UF.px()
+        out = []
+        for reg in (r.UF.tb.f, r.UF.tb.f.hp):
+            q = r.rect(reg)
+            out += [v / p for v in q]
+        return r, out
+    for ph in (720, 900, 1080, 1200, 1440):
+        r3, e = placed(ph)
+        chk("uf19: %d lines: the bar's and its health bar's edges on whole pixels (%s)" % (ph, ["%.2f" % v for v in e]),
+            all(abs(v - round(v)) < 1e-6 for v in e))
+    r3, e = placed(720)
+    c = r3.G.WowCompanion.compass.frame
+    tb = r3.rect(r3.UF.tb.f)
+    cq = r3.rect(c) if c is not None else None
+    px3 = r3.UF.px()
+    chk("uf19: 720 lines: the bar still under the compass (gap %.2f px, within a pixel of u(6)) and centred on it + SHIFT (%.2f)"
+        % ((cq[1] - tb[3]) / px3 if cq else -1, ((tb[0] + tb[2]) / 2 - (cq[0] + cq[2]) / 2) / px3 if cq else -1),
+        cq is not None and abs((cq[1] - tb[3]) - r3.UF.u(6)) <= px3 + 1e-9
+        and abs((tb[0] + tb[2]) / 2 - (cq[0] + cq[2]) / 2 - r3.UF.u(16)) <= px3 + 1e-9)
+    r4, e = placed(720, compass=False)
+    chk("uf19: no compass frame: the spot by u(90) is snapped too (%s)" % ["%.2f" % v for v in e[:4]],
+        all(abs(v - round(v)) < 1e-6 for v in e))
 
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
