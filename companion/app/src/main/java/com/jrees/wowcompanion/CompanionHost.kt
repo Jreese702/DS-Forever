@@ -230,6 +230,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun openReport(sendNow: Boolean = false) {
         if (!::reportPage.isInitialized) return
         DiagLog.event("report", if (sendNow) "send now (from Settings, recording)" else "report page opened")
+        // issue #215 (diagnostics only): what the bottom screen showed when the player chose to report, before Settings covers it
+        StartupDiag.bottomAtReport = System.currentTimeMillis() to runCatching { bottomState() }.getOrElse { "(could not be read: ${it.javaClass.simpleName})" }
         if (LauncherHooks.gameUp() && room != Room.SETTINGS) show(Room.SETTINGS)
         reportPage.open(sendNow)
     }
@@ -3230,7 +3232,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /**
      * issue #215 (diagnostics only, 1.0.27: the bottom screen "just a background graphic" while the game downloaded past its login
-     * screen): what is on show, for NativeLogin's busy-minute line - the start screen and its line (the app's own words), or the room
+     * screen): what is on show, for NativeLogin's busy-minute line and the report's "Bottom screen when the report page opened" line - the start screen and its line (the app's own words), or the room
      * behind it and whether any current document came. Main thread.
      */
     private fun bottomState(): String {
