@@ -49,7 +49,8 @@ class SettingsTabsTest {
     /** every group in its tab, in the approved order (QuestTrail's only while a copy is installed, as before) */
     @Test fun groupsInTheApprovedOrder() {
         assertEquals(listOf("Look", "Account", "Help"), SettingsTabs.groups(T.GENERAL).map { it.heading })
-        assertEquals(listOf("Home", "Map", "Chat"), SettingsTabs.groups(T.BOTTOM).map { it.heading })
+        // GitHub #43 cb3 (the user: "the tap to cast bar should get its own bottom screen section")
+        assertEquals(listOf("Home", "Tap-to-cast bar", "Map", "Chat"), SettingsTabs.groups(T.BOTTOM).map { it.heading })
         assertEquals(listOf("Your HUD", "Target", "Party", "Navigation", "Game windows"), SettingsTabs.groups(T.TOP).map { it.heading })
         assertEquals(listOf("Buttons", "Wheels", "Smart Y", "Combat helpers"), SettingsTabs.groups(T.CONTROLLER).map { it.heading })
         assertEquals(listOf("Polestar", "Spoken", "Manners"), SettingsTabs.groups(T.ADDONS).map { it.heading })   // QuestTrail: not installed
@@ -64,8 +65,9 @@ class SettingsTabsTest {
             G.ACCOUNT to listOf("Battle.net login", "Game account"),
             G.HELP to listOf("Problem report", "Reload game UI", "Status"),
             // the clock extras (the user's picks 2026-11-13, feat/item-cooldowns): one row each, before the toolbar
-            G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Tap-to-cast bar", "Focused quest", "Hearthstone", "Class teleport", "Gold",
+            G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Focused quest", "Hearthstone", "Class teleport", "Gold",
                 "Free bag slots", "DS WoW toolbar"),
+            G.CAST_BAR to listOf("Tap-to-cast bar"),
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
             G.CHAT to listOf("Message input"),
             G.HUD to listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale"),
@@ -89,12 +91,13 @@ class SettingsTabsTest {
             G.STREAMING to listOf("Stream settings"))
         for (g in G.values()) assertEquals(g.heading, want[g], B.values().filter { it.group == g }.flatMap { it.rows })
         // and each group's tab
-        val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP), T.BOTTOM to listOf(G.HOME, G.MAP, G.CHAT),
+        val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
             T.TOP to listOf(G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
             T.ADDONS to listOf(G.POLESTAR, G.SPOKEN, G.QUESTTRAIL, G.MANNERS), T.PERFORMANCE to listOf(G.FRAMES, G.MEMORY, G.INDOOR, G.STREAMING))
         for ((t, gs) in tabOf) assertEquals(t.label, gs, G.values().filter { it.tab == t })
         // who draws the rows that left their old view: Home's section still draws its attack row, GameUiSection the Top screen rows
         assertEquals(SettingsTabs.Drawer.HOME, B.ATTACK_CAST.drawer)
+        assertEquals(SettingsTabs.Drawer.HOME, B.CAST_BAR.drawer)
         assertEquals(SettingsTabs.Drawer.GAME_UI, B.COMPANION.drawer)
         assertEquals(SettingsTabs.Drawer.VIEW, B.POLESTAR_TOP.drawer)
         assertEquals(SettingsTabs.Drawer.VIEW, B.QUEST_TRACKING.drawer)
@@ -122,7 +125,7 @@ class SettingsTabsTest {
             listOf("Start attack on hostile target", "Combat Auto Shot", "Party mode", "Polestar on the top screen") +
             // m150 / hub47 (the user, 2026-11-13): Smart Res, new under Party mode
             listOf("Smart Res") +
-            // added since: GitHub #43's tap-to-cast bar (Bottom screen > Home)
+            // added since: GitHub #43's tap-to-cast bar (Bottom screen > Home; cb3: its own group, Bottom screen > Tap-to-cast bar)
             listOf("Tap-to-cast bar") +
             // new since the six tabs: General > Account > Game account (#47)
             listOf("Game account") +

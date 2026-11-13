@@ -32,6 +32,8 @@ class SpellsOverlay(
     private val otherReader: () -> Boolean = { false },
     /** b37: one tap on the `spells` row's column (the Bind box's Normal / In combat) */
     private val onTap: (Int) -> Unit = {},
+    /** GitHub #43 cb3: the Bind box's Cast bar tab and its slots (padtab 39 then 26 / 20-25, Book b56) */
+    private val onCastBarTaps: (List<Pair<String, Int>>) -> Unit = {},
 ) : View(context) {
 
     private var book: SpellsModel.Book? = null
@@ -53,13 +55,54 @@ class SpellsOverlay(
         return want
     }
     /** batch5 (the user: tabs "above where it says 'no triggers held' (that text can be removed)"): the two tabs where that line stood,
-     *  side by side in the box's middle; [i] 0 Normal, 1 In combat */
+     *  side by side in the box's middle; [i] 0 Normal, 1 In combat, 2 Cast bar (cb3: only while [three]) */
     private fun fightRect(i: Int, w: Float): RectF {
         // the user on test21: "the tabs for in combat vs not should be at the top, then the forms under that ... and the skill under that"
         val cy = 84f + 62f
+        if (three()) {
+            val tw = 290f; val gap = 12f
+            val l = w / 2f - (3 * tw + 2 * gap) / 2f + i * (tw + gap)
+            return RectF(l, cy - 38f, l + tw, cy + 38f)
+        }
         val l = w / 2f - 330f + i * 336f
         return RectF(l, cy - 38f, l + 324f, cy + 38f)
     }
+
+    /**
+     * GitHub #43 cb3 THE CAST BAR TAB (the user, 2026-11-13: "to assign to the bar, in the bind menu, where there is the L and R tabs, we
+     * will add a third tab if this setting is turned on, showing the 6 slots on that bar"): Normal | In combat | Cast bar while the
+     * setting is not Off and the add-on takes a slot pick (ActionBar cb3, Book b56). On it the box shows the bar's 6 slots: the add-on's
+     * cursor (`bcb`, the D-pad left / right) or a finger picks one, A or the tap puts the spell there (padtab 39 then 20-25)
+     */
+    private fun three(): Boolean = CastStripModel.bindTab(HomeSettings.castBarSide, CastStripModel.Live.bar)
+    /** a finger's Cast bar tab, shown AT THE TAP until the add-on's `bcb` agrees or 1.5 s pass (as [fightWant]) */
+    private var cbWant: Boolean? = null
+    private var cbUntil = 0L
+    private fun cbShown(): Boolean {
+        if (!three()) return false
+        val doc = ctl?.bindCb != null
+        val want = cbWant ?: return doc
+        if (want == doc || SystemClock.uptimeMillis() >= cbUntil) { cbWant = null; return doc }
+        return want
+    }
+    /** the tab lit: 0 Normal, 1 In combat, 2 Cast bar */
+    private fun tabShown(): Int = when { cbShown() -> 2; fightShown() -> 1; else -> 0 }
+    /** the Cast bar tab, by a finger or RB: its two taps, shown at once */
+    private fun pickCb() {
+        onCastBarTaps(CastStripModel.tabCells())
+        cbWant = true; cbUntil = SystemClock.uptimeMillis() + 1500L
+        invalidate()
+    }
+    /** leaving the Cast bar tab (Normal / In combat by LB or a finger): shown at once, the add-on's bf-on / bf-off leave it (Book b56) */
+    private fun leaveCb() { cbWant = false; cbUntil = SystemClock.uptimeMillis() + 1500L }
+    /** slot [i]'s box on the Cast bar tab: one row of 6 where the controller's sets stand on the other tabs ([cy] the box's top + 104) */
+    private fun cbSlotRect(i: Int, w: Float, cy: Float): RectF {
+        val s = 132f; val gap = 22f
+        val l = w / 2f - (CastStripModel.SLOTS * s + (CastStripModel.SLOTS - 1) * gap) / 2f + i * (s + gap)
+        val t = cy + 340f
+        return RectF(l, t, l + s, t + s)
+    }
+    private var downSlot = -1
     /** LB / RB as the app's own reader sees them (on the Thor the game never hears LB: it is its emulated Ctrl): a NEW press moves the tab */
     private var lbWas = false
     private var rbWas = false
@@ -68,9 +111,11 @@ class SpellsOverlay(
         lbWas = lb; rbWas = rb
         if (!lbNew && !rbNew) return
         if (ctl?.mode != "bind") return
-        val want = rbNew                                               // LB = the left tab (Normal), RB = the right one (In combat)
-        if (want == fightShown()) return
-        pickFight(want)
+        // LB = one tab left, RB = one tab right (Normal | In combat | Cast bar, cb3); no wrap
+        val from = tabShown()
+        val to = CastStripModel.stepTab(from, if (rbNew) 1 else -1, three())
+        if (to == from) return
+        if (to == 2) pickCb() else { if (from == 2) leaveCb(); pickFight(to == 1) }
     }
     /** ONE tap on the addon's column for [fight] (no-action, idempotent), shown at once */
     private fun pickFight(fight: Boolean) {
@@ -86,7 +131,7 @@ class SpellsOverlay(
     }
     private var pad: PadInput? = null
 
-    init { CastSettings.init(context) }
+    init { CastSettings.init(context); HomeSettings.init(context); CastStripModel.Live.onChange { postInvalidate() } }
 
     private fun style(): SpellsModel.PadStyle = when (CastSettings.buttonLayout) {
         CastSettings.ButtonLayout.XBOX -> SpellsModel.PadStyle.LTR
@@ -240,11 +285,31 @@ class SpellsOverlay(
         // the game's tab look, LB inside the left tab's outer edge and RB inside the right one's; LB / RB (the app's reader) or a tap. While
         // the answer shows, the tab it went on stays lit
         val f = if (r != null && r.ok) r.fight else fightShown()
-        UiKit.tab(c, fightRect(0, w), "Normal", !f)
-        UiKit.tab(c, fightRect(1, w), "In combat", f)
+        val cbOn = (r == null || !r.ok) && !confirming && cbShown()
+        val nTabs = if (three()) 3 else 2
+        UiKit.tab(c, fightRect(0, w), "Normal", !f && !cbOn)
+        UiKit.tab(c, fightRect(1, w), "In combat", f && !cbOn)
+        if (nTabs == 3) UiKit.tab(c, fightRect(2, w), "Cast bar", cbOn)
         if (r == null || !r.ok) {
             UiKit.pad(c, "${st.prefix}_lshoulder", fightRect(0, w).left + 40f, fightRect(0, w).centerY(), 44f)
-            UiKit.pad(c, "${st.prefix}_rshoulder", fightRect(1, w).right - 40f, fightRect(1, w).centerY(), 44f)
+            UiKit.pad(c, "${st.prefix}_rshoulder", fightRect(nTabs - 1, w).right - 40f, fightRect(nTabs - 1, w).centerY(), 44f)
+        }
+        // cb3: the Cast bar tab: the bar's 6 slots (their spells), the cursor's slot lit and showing the box's spell where it would go,
+        // the slot it is on already glowing green (picking that one takes it off)
+        if (cbOn) {
+            val bar = CastStripModel.Live.bar
+            val at = (ctl?.bindCb ?: 1) - 1
+            val here = e?.let { bar?.slotOf(it.actionId, it.spellId) } ?: -1
+            for (i in 0 until CastStripModel.SLOTS) {
+                val sr = cbSlotRect(i, w, cy)
+                val sl = bar?.slots?.getOrNull(i)
+                val bmp = if (i == at && here != i) e?.let { Icons.get(it.icon) } else sl?.icon?.let { UiKit.icon(it) }
+                UiKit.slot(c, bmp, sr.left, sr.top, sr.width())
+                if (i == here) UiKit.glow(c, RectF(sr).apply { inset(-10f, -10f) }, Color.rgb(60, 255, 60), 0.9f)
+                if (i == at) UiKit.focus(c, RectF(sr).apply { inset(-6f, -6f) })
+            }
+            UiKit.hints(c, box.right - 80f, box.bottom - 92f, UiKit.okGlyph() to "Place", faceGlyph(st, "b") to "Back")
+            return
         }
 
         // the D-pad's four and the face buttons' four: the Cast room's own drawing of that set; stand-ins until it has a layout
@@ -399,16 +464,27 @@ class SpellsOverlay(
             // b37: the Normal / In combat pair, while the box waits: ONE tap on its column (no-action, idempotent)
             val w = width.toFloat()
             when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> downFight = (0..1).firstOrNull { fightRect(it, w).contains(ev.x, ev.y) } ?: -1
+                MotionEvent.ACTION_DOWN -> {
+                    downFight = (0 until if (three()) 3 else 2).firstOrNull { fightRect(it, w).contains(ev.x, ev.y) } ?: -1
+                    downSlot = if (cbShown()) (0 until CastStripModel.SLOTS).firstOrNull { cbSlotRect(it, w, CB_CY).contains(ev.x, ev.y) } ?: -1 else -1
+                }
                 MotionEvent.ACTION_UP -> {
                     val i = downFight; downFight = -1
+                    val k0 = downSlot; downSlot = -1
                     val cols = fightCols()
-                    if (i >= 0 && fightRect(i, w).contains(ev.x, ev.y) && cols != null && ctl?.mode == "bind") pickFight(i == 1)
+                    // cb3: a finger on a Cast bar slot: the box's spell goes there (padtab 39 then 20 + slot, Book b56)
+                    if (k0 >= 0 && cbSlotRect(k0, w, CB_CY).contains(ev.x, ev.y) && ctl?.mode == "bind")
+                        CastStripModel.slotCells(k0)?.let { onCastBarTaps(it) }
+                    if (i == 2 && fightRect(2, w).contains(ev.x, ev.y) && ctl?.mode == "bind") pickCb()
+                    else if (i in 0..1 && fightRect(i, w).contains(ev.x, ev.y) && cols != null && ctl?.mode == "bind") {
+                        if (cbShown()) leaveCb()                            // bf-on / bf-off leave the Cast bar tab (Book b56)
+                        pickFight(i == 1)
+                    }
                     // b45 (a finger picks a form): the row's place k -> the spells row's "vo<k>" (Book b45 reads a lone one as the form)
                     val k = formHits.indexOfFirst { it.contains(ev.x, ev.y) }
                     if (k >= 0 && ctl?.mode == "bind") book?.win?.get("vo$k")?.let { onTap(it) }
                 }
-                MotionEvent.ACTION_CANCEL -> downFight = -1
+                MotionEvent.ACTION_CANCEL -> { downFight = -1; downSlot = -1 }
             }
             return true
         }
@@ -422,5 +498,7 @@ class SpellsOverlay(
 
     companion object {
         private const val SHOW_MS = 1500L
+        /** the box's top (84) + 104: the line the Cast bar tab's slots stand from ([cbSlotRect]) */
+        private const val CB_CY = 84f + 104f
     }
 }

@@ -25,6 +25,9 @@ object HomeSettings {
         if (prefs == null) prefs = c.applicationContext.getSharedPreferences("home", Context.MODE_PRIVATE)
     }
 
+    /** the off-device tests: these prefs (null = none, as before any init) */
+    internal fun startForTest(p: SharedPreferences?) { prefs = p }
+
     var rest: HomeRest
         get() = prefs?.getString(KEY, null)?.let { runCatching { HomeRest.valueOf(it) }.getOrNull() } ?: HomeRest.DIAMONDS
         set(v) {
@@ -162,13 +165,15 @@ object HomeSettings {
             for (l in listeners) l()
         }
 
-    /** GitHub #43: THE TAP-TO-CAST BAR on Home: true / false = the player's choice; null = never chosen, and then it shows only while
-     *  the character's bar has spells ([CastStripModel.shown]) */
-    var castStrip: Boolean?
-        get() = prefs?.takeIf { it.contains(KEY_CAST_STRIP) }?.getBoolean(KEY_CAST_STRIP, true)
+    /** GitHub #43 cb3: THE TAP-TO-CAST BAR's place (Settings > Bottom screen > Tap-to-cast bar; the user 2026-11-13: "left right or both
+     *  ... or off by default"): OFF, LEFT (under the chat), RIGHT (under the minimap), BOTH. Never chosen: the old Home row's On
+     *  ("castStrip" true) reads as LEFT, anything else OFF ([CastStripModel.sideOf]); the first change writes the new key and drops the old */
+    var castBarSide: CastStripModel.Side
+        get() = CastStripModel.sideOf(prefs?.getString(KEY_CAST_SIDE, null),
+            prefs?.takeIf { it.contains(KEY_CAST_STRIP) }?.getBoolean(KEY_CAST_STRIP, false))
         set(v) {
-            if (v == castStrip && (v == null) == (prefs?.contains(KEY_CAST_STRIP) != true)) return
-            prefs?.edit()?.apply { if (v == null) remove(KEY_CAST_STRIP) else putBoolean(KEY_CAST_STRIP, v) }?.apply()
+            if (v == castBarSide && prefs?.contains(KEY_CAST_SIDE) == true) return
+            prefs?.edit()?.putString(KEY_CAST_SIDE, v.name)?.remove(KEY_CAST_STRIP)?.apply()
             for (l in listeners) l()
         }
     /** THE CLOCK EXTRAS (the user's picks 2026-11-13: "clock extras beside the time/battery on Home, each with its own on/off row in
@@ -188,7 +193,9 @@ object HomeSettings {
 
     fun onChange(l: () -> Unit) { listeners.add(l) }
 
+    /** cb2's On / Off Home row (read once for cb3's migration, then removed) */
     private const val KEY_CAST_STRIP = "castStrip"
+    private const val KEY_CAST_SIDE = "castBarSide"
     private const val KEY = "rest"
     private const val KEY_CLOCK_HEARTH = "clockHearth"
     private const val KEY_CLOCK_TELEPORT = "clockTeleport"
@@ -477,7 +484,6 @@ class HomeSettingsSection(context: Context,
         // the attack switch appears / its words change: the section's height may change too
         HomeAttackSwitch.onChange { post { requestLayout(); invalidate() } }
         GameBars.onChange { post { requestLayout(); invalidate() } }               // f-class-radial: the rows appear / change
-        CastStripModel.Live.onChange { post { invalidate() } }                    // GitHub #43: the default follows the bar's spells
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
@@ -534,10 +540,11 @@ class HomeSettingsSection(context: Context,
             y = row(c, y + GAP, GameBars.petTitle ?: "Pet bar", listOf("$v. Change it in the game's Controller settings."),
                 emptyList(), -1, null)
         }
-        // GitHub #43: the tap-to-cast bar on Home (never chosen: shown while the character's bar has spells)
-        y = row(c, y + GAP, "Tap-to-cast bar", listOf("Your Spellbook picks, one tap each."),
-            listOf("On", "Off"), if (CastStripModel.shown(HomeSettings.castStrip, CastStripModel.Live.bar)) 0 else 1,
-            listOf({ HomeSettings.castStrip = true }, { HomeSettings.castStrip = false }))
+        // GitHub #43 cb3: the tap-to-cast bar's place, its own group (Settings > Bottom screen > Tap-to-cast bar): Off (the default),
+        // Left (under the chat), Right (under the minimap), Both
+        val sides = CastStripModel.Side.values()
+        y = row(c, y + GAP, "Tap-to-cast bar", listOf("Six spells, one tap each."),
+            sides.map { it.label }, sides.indexOf(HomeSettings.castBarSide), sides.map { sd -> { HomeSettings.castBarSide = sd } })
         // the focused quest's place (the user 2026-10-09): over the minimap (today's) or at the top of the chat
         y = row(c, y + GAP, "Focused quest", listOf("Where Home shows the quest you focus. Tap it to fold it."),
             // the user 2026-10-09: "Above Chat" first; the default stays Above Minimap

@@ -13,6 +13,9 @@
 -- slots (WowCompanionSpellsDB.castBar[name-realm]), a fight's edits queued to its end; documents "castbar" / "castcd". At "THE TAP-TO-CAST BAR".
 -- cb2 (1.0.30 code 1454): the row "castbar" only once the character's bar has a spell (bmv4 kept on a full pad); the Spellbook's pick on padtab 39 + 19.
 -- cb2b (review, code 1455): a castbar row registered mid-session asks for the quests document again (WC.questsSoon, Quests q59): Home's pad.
+-- cb3 (the user, 2026-11-13: "the buttons inside of it are too small ... the bar itself should have 6 slots for abilities ... to assign to
+-- the bar, in the bind menu, where there is the L and R tabs, we will add a third tab"): SIX slots (the row: 6 cells + the pick cell 6),
+-- an old 12-slot store keeps its first 6 spells; the pick may name a slot (padtab 39 then 20-25, Book b56): that spell goes THERE.
 -- The CAST room's data. Two feeds live here:
 --
 --  1. LEGACY keyboard-slot rows (`slots`, slots 1-12 + their ACTIONBUTTONn keys). Unchanged; the app
@@ -802,11 +805,17 @@ end
 -- once this character's bar has a spell (the login with stored slots, or the first edit, out of combat); an empty bar holds no row,
 -- and the row allocation is cb1's predecessor's. TapPad has no way to give a row back, so a bar emptied later keeps its (empty) row
 -- until the next /reload or login. THE SPELLBOOK'S PICK no longer needs the row: Book b55 takes it on the padtab row, Smart Range's
--- one-shot pick (padtab 39) then code 19 (WC.castBarPick); the document says so (pp = { 39, 19 }). The row's own pick cell 12 stays.
+-- one-shot pick (padtab 39) then code 19 (WC.castBarPick); the document says so (pp = { 39, 19 }). The row's own pick cell stays.
+-- cb3 SIX SLOTS (the user, 2026-11-13: "the buttons inside of it are too small, so I want to propose this- for options to turn it on,
+-- left right or both ... the bar itself should have 6 slots for abilities"; the pick: 6 abilities in all): cells 0-5 = slots 1-6, cell 6
+-- the pick. A store from cb1 / cb2 (12 slots) keeps its first 6 spells, in slot order, on slots 1-6 (cbMigrate, at the login, once).
+-- THE SLOT PICK (the Bind box's third tab, Book b56): padtab 39 then 20-25 = WC.castBarPick(1-6); the spell then goes on THAT slot
+-- (moved off another slot it was on; the same spell on that slot comes off), the pick without a slot (19) keeps the first-free toggle.
 do
-local CBV = "cb2b"
+local CBV = "cb3"
 local CB_PADTAB_PICK = { 39, 19 }        -- cb2: padtab 39 (the one-shot pick) then 19 (its cast bar code): Book b55 -> WC.castBarPick
-local CB_N, CB_PICK_COL, CB_PICK_S = 12, 12, 2
+local CB_N, CB_PICK_COL, CB_PICK_S = 6, 6, 2
+local CB_OLD_N = 12                      -- cb3: the slots a cb1 / cb2 store may hold (migrated to the first 6)
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 local CB = { want = {}, frozen = {}, row = nil, sig = nil, pick = nil, queue = {}, ready = false, cd = {}, learned = {}, last = nil }
 WC.castBar = CB
@@ -844,7 +853,23 @@ local function cbStore(create)
     end
     return s
 end
--- the stored slots, 1..12 (a bad entry reads as empty)
+-- cb3: an old store (slots past 6) keeps its first 6 spells on slots 1-6, in slot order (a repeat dropped); every slot past 6 cleared
+local function cbMigrate()
+    local s = cbStore(false)
+    if not s then return false end
+    local past = false
+    for i = CB_N + 1, CB_OLD_N do if rawget(s, i) ~= nil then past = true end end
+    if not past then return false end
+    local keep, seen = {}, {}
+    for i = 1, CB_OLD_N do
+        local id = rawget(s, i)
+        if type(id) == "number" and id > 0 and id == math.floor(id) and not seen[id] and #keep < CB_N then keep[#keep + 1] = id; seen[id] = true end
+    end
+    for i = 1, CB_OLD_N do s[i] = keep[i] end
+    return true
+end
+CB.migrate = cbMigrate
+-- the stored slots, 1..6 (a bad entry reads as empty)
 local function cbSlots()
     local out, s = {}, cbStore(false)
     if s then
@@ -855,8 +880,17 @@ local function cbSlots()
     end
     return out
 end
--- the toggle on a copy: the spell off its slot when it is on the bar, else on the first free slot
-local function cbApply(slots, id)
+-- the toggle on a copy: the spell off its slot when it is on the bar, else on the first free slot.
+-- cb3: an edit { id, s } puts the spell on slot s (off any other slot it was on; already there = off it), whatever was on s replaced
+local function cbApply(slots, e)
+    if type(e) == "table" then
+        local id, at = e.id, e.s
+        if slots[at] == id then slots[at] = nil; return "remove", at end
+        for i = 1, CB_N do if slots[i] == id then slots[i] = nil end end
+        slots[at] = id
+        return "add", at
+    end
+    local id = e
     for i = 1, CB_N do if slots[i] == id then slots[i] = nil; return "remove", i end end
     for i = 1, CB_N do if slots[i] == nil then slots[i] = id; return "add", i end end
     return nil, nil, "full"
@@ -866,14 +900,15 @@ local function cbView()
     local v, q = {}, {}
     local base = cbSlots()
     for i = 1, CB_N do v[i] = base[i] end
-    for _, id in ipairs(CB.queue) do
-        local _, i = cbApply(v, id)
+    for _, ed in ipairs(CB.queue) do
+        if type(ed) == "table" then for i = 1, CB_N do if v[i] == ed.id then q[i] = true end end end   -- cb3: the slot it leaves too
+        local _, i = cbApply(v, ed)
         if i then q[i] = true end
     end
     return v, q
 end
 
--- the cells: 0-11 the slots' casts, 12 the pick (no action: it runs on the press, as a plain cell)
+-- the cells: 0-5 the slots' casts, 6 the pick (no action: it runs on the press, as a plain cell)
 local function cbInit(btn, col)
     local w = CB.want[col]
     btn:SetAttribute("type", w and "spell" or nil)
@@ -952,17 +987,20 @@ local function cbAck(ok, why, op, slot, queued)
 end
 
 -- ONE edit: the spell on the bar or off it. Spells only (a known, active spell's id); in a fight it waits for the fight's end.
-function CB.toggle(id)
+-- cb3: [slot] 1-6 = on that slot (cbApply's { id, s }); nil = the first free slot / off again
+function CB.toggle(id, slot)
     if type(id) ~= "number" or id <= 0 then return cbAck(false, "spell") end
+    if slot ~= nil and not (type(slot) == "number" and slot >= 1 and slot <= CB_N and slot == math.floor(slot)) then return cbAck(false, "slot") end
     if not cbStr(function() return cbSpellApi("GetSpellName")(id) end) then return cbAck(false, "spell") end
     local passive = cbSpellApi("IsSpellPassive") or rawget(_G, "IsPassiveSpell")
     if type(passive) == "function" and S(passive, id) == true then return cbAck(false, "passive") end
     if not cbWho() then return cbAck(false, "character") end
+    local ed = slot and { id = id, s = slot } or id
     if cbFight() then
         local v = cbView()
-        local op, i, why = cbApply(v, id)
+        local op, i, why = cbApply(v, ed)
         if not op then return cbAck(false, why) end
-        CB.queue[#CB.queue + 1] = id
+        CB.queue[#CB.queue + 1] = ed
         cbAck(true, nil, op, i, true)
         CB.send()
         return true
@@ -970,9 +1008,9 @@ function CB.toggle(id)
     local s = cbStore(true)
     if not s then return cbAck(false, "character") end
     local v = cbSlots()
-    local op, i, why = cbApply(v, id)
+    local op, i, why = cbApply(v, ed)
     if not op then return cbAck(false, why) end
-    s[i] = v[i]
+    for k = 1, CB_N do s[k] = v[k] end                   -- cb3: a slot pick may move the spell off another slot too
     CB.sync()
     cbAck(true, nil, op, i)
     CB.send()
@@ -986,7 +1024,7 @@ function CB.flushQueue()
     CB.queue = {}
     if s then
         local v = cbSlots()
-        for _, id in ipairs(q) do cbApply(v, id) end
+        for _, ed in ipairs(q) do cbApply(v, ed) end
         for i = 1, CB_N do s[i] = v[i] end
     end
     return true
@@ -994,17 +1032,21 @@ end
 
 -- Book b53: the Spellbook's pick was tapped just before (fresh CB_PICK_S): the spell's two taps that follow are ours
 -- cb2: the same pick by the padtab row (Book b55: padtab 39 then 19), the castbar row not needed
-function WC.castBarPick()
+-- cb3: [slot] 1-6 = the Bind box's third tab picked that slot (Book b56: padtab 39 then 20-25); nil = the first free slot
+function WC.castBarPick(slot)
     CB.pick = cbNow()
+    CB.pickSlot = (type(slot) == "number" and slot >= 1 and slot <= CB_N and slot == math.floor(slot)) and slot or nil
 end
 function WC.castBarWants()
     local p = CB.pick
     return p ~= nil and cbNow() - p <= CB_PICK_S
 end
 function WC.castBarSpell(id)
-    CB.pick = nil
-    return CB.toggle(id)
+    local slot = CB.pickSlot
+    CB.pick, CB.pickSlot = nil, nil
+    return CB.toggle(id, slot)
 end
+WC.castBarSlots = CB_N
 
 -- ---------------------------------------------------------------- the cooldowns ("castcd")
 local function cbLearned(id)
@@ -1086,6 +1128,7 @@ cbF:SetScript("OnEvent", function(_, ev, a1, a2, a3)
     pcall(function()
         if ev == "PLAYER_LOGIN" or ev == "PLAYER_ENTERING_WORLD" then
             CB.ready = true
+            cbMigrate()                                  -- cb3: an old 12-slot store keeps its first 6
             CB.sync()
             CB.send(true)
             -- the pad may get its place a moment later (its cells are built then): the document again, once it can say so

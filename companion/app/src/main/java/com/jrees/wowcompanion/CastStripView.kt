@@ -10,20 +10,31 @@ import android.view.MotionEvent
 import android.view.View
 
 /**
- * THE TAP-TO-CAST BAR ON HOME (GitHub #43; the logic is [CastStripModel]): Home's module well, under it 12 slots in 2 rows of 6, each the
- * spell's icon inside the controller buttons' ring in its square form (the kit's `ring_square`, the HUD ring edge every Home module wears,
- * [UiKit.ringBox]; the drawn ring without the picture). No page text (labels + icons only: nothing written at all). A finger on a slot is
- * ONE tap through [onTap] (the host's TapBridge on the add-on's "castbar" row). A slot waiting for a fight's end is drawn dimmed and takes
- * no tap; the cooldown is the game's dark sweep from the add-on's `castcd`.
+ * THE TAP-TO-CAST BAR ON HOME (GitHub #43; the logic is [CastStripModel]): Home's module well, in it ONE row of 6 slots (cb3, the user
+ * 2026-11-13: "the buttons inside of it are too small ... the bar itself should have 6 slots"), each the spell's icon inside the
+ * controller buttons' ring in its square form (the kit's `ring_square`, the HUD ring edge every Home module wears, [UiKit.ringBox]; the
+ * drawn ring without the picture). Under the chat (LEFT), under the minimap (RIGHT) or spread under both (BOTH): [side]. No page text
+ * (labels + icons only: nothing written at all). A finger on a slot is ONE tap through [onTap] (the host's TapBridge on the add-on's
+ * "castbar" row). A sideways SWIPE on a LEFT / RIGHT bar moves it to the other side ([onSwipe]; the finger's slot is then not cast):
+ * the bar follows the finger a little while it moves, and Home slides it over. A slot waiting for a fight's end is drawn dimmed and
+ * takes no tap; the cooldown is the game's dark sweep from the add-on's `castcd`.
  */
-class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(context) {
+class CastStripView(context: Context, private val onTap: (Int) -> Unit, private val onSwipe: (CastStripModel.Side) -> Unit = {}) : View(context) {
 
     private var bar: CastStripModel.Bar? = null
     private var cds: Map<Int, PadMapModel.FaceCd> = emptyMap()
     private var cdAt = 0L
     private var downAt = -1
+    private var downX = 0f
+    private var downY = 0f
+    private var downMs = 0L
+    private var moved = false
     private var pressedSlot = -1
     private var pressedUntil = 0L
+
+    /** the place Home laid the bar in (its slots' spread) */
+    var side: CastStripModel.Side = CastStripModel.Side.LEFT
+        set(v) { if (field != v) { field = v; invalidate() } }
 
     fun update(b: CastStripModel.Bar) { bar = b; invalidate() }
 
@@ -32,19 +43,8 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
 
     /** slot [i]'s box in this view's px */
     fun slotRect(i: Int): RectF {
-        val (r, col) = CastStripModel.gridOf(i)
-        val s = side()
-        val gw = s * CastStripModel.PER_ROW + GAP * (CastStripModel.PER_ROW - 1)
-        val x0 = (width - gw) / 2f
-        val y0 = (height - (2 * s + GAP)) / 2f
-        val x = x0 + col * (s + GAP); val y = y0 + r * (s + GAP)
-        return RectF(x, y, x + s, y + s)
-    }
-
-    private fun side(): Float {
-        val byH = (height - 2 * PAD - GAP) / 2f
-        val byW = (width - 2 * PAD - GAP * (CastStripModel.PER_ROW - 1)) / CastStripModel.PER_ROW
-        return minOf(MAX_SIDE, byH, byW).coerceAtLeast(8f)
+        val b = CastStripModel.slotBox(side, i, width.toFloat(), height.toFloat())
+        return RectF(b.l, b.t, b.r, b.b)
     }
 
     private val pIcon = Paint(Paint.FILTER_BITMAP_FLAG)
@@ -94,37 +94,52 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
     private val ringPath = android.graphics.Path()
 
     private fun slotAt(x: Float, y: Float): Int = (0 until CastStripModel.SLOTS).firstOrNull { slotRect(it).let { r ->
-        x >= r.left - GAP / 2f && x <= r.right + GAP / 2f && y >= r.top - GAP / 2f && y <= r.bottom + GAP / 2f } } ?: -1
+        val m = CastStripModel.GAP / 2f
+        x >= r.left - m && x <= r.right + m && y >= r.top - m && y <= r.bottom + m } } ?: -1
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downAt = slotAt(ev.x, ev.y)
+                downAt = slotAt(ev.x, ev.y); downX = ev.rawX; downY = ev.rawY; downMs = SystemClock.uptimeMillis(); moved = false
                 if (downAt >= 0 && CastStripModel.tapCell(bar, downAt) != null) {
                     pressedSlot = downAt; pressedUntil = SystemClock.elapsedRealtime() + PRESS_MS; invalidate()
                 }
                 return true
             }
-            MotionEvent.ACTION_UP -> {
-                val i = slotAt(ev.x, ev.y)
-                if (i >= 0 && i == downAt && CastStripModel.tapCell(bar, i) != null) onTap(i)
-                downAt = -1
+            MotionEvent.ACTION_MOVE -> {
+                val dx = ev.rawX - downX; val dy = ev.rawY - downY
+                if (!moved && CastStripModel.leftTap(dx, dy)) { moved = true; pressedUntil = 0L; invalidate() }
+                // the bar follows the finger a little toward the other side only (a hint that it moves), never off its column
+                if (moved && (side == CastStripModel.Side.LEFT || side == CastStripModel.Side.RIGHT)) {
+                    val toward = if (side == CastStripModel.Side.LEFT) dx.coerceIn(0f, FOLLOW_MAX) else dx.coerceIn(-FOLLOW_MAX, 0f)
+                    translationX = toward * FOLLOW
+                }
                 return true
             }
-            MotionEvent.ACTION_CANCEL -> { downAt = -1; return true }
+            MotionEvent.ACTION_UP -> {
+                val dx = ev.rawX - downX; val dy = ev.rawY - downY
+                val to = CastStripModel.swipeTo(side, dx, dy, SystemClock.uptimeMillis() - downMs)
+                translationX = 0f
+                if (to != null) onSwipe(to)
+                else if (!moved) {
+                    val i = slotAt(ev.x, ev.y)
+                    if (i >= 0 && i == downAt && CastStripModel.tapCell(bar, i) != null) onTap(i)
+                }
+                downAt = -1; moved = false
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> { downAt = -1; moved = false; translationX = 0f; return true }
         }
         return super.onTouchEvent(ev)
     }
 
     companion object {
-        /** the strip's height on Home (two slots of [MAX_SIDE], the gap and the well's padding) */
-        const val HEIGHT = 2 * 56f + 6f + 2 * 10f
-        const val MAX_SIDE = 56f
-        const val GAP = 6f
-        const val PAD = 10f
         const val DIM = 90
         const val RING_SCALE = 0.75f
         const val PRESS_MS = 160L
         const val FRAME_MS = 33L
+        /** while the finger moves: the bar goes this share of the finger's way, at most [FOLLOW_MAX] of it */
+        const val FOLLOW = 0.35f
+        const val FOLLOW_MAX = 240f
     }
 }

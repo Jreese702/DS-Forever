@@ -75,6 +75,7 @@ object SpellsModel {
         val ranks: Int? = null,             // b23: how many ranks the family has
         val bindFight: Boolean = false,     // b37: the Bind box puts the spell on the In combat layout (b-bind-combat-toggle)
         val bindForm: Int? = null,          // b43: the In combat bind goes to this form's own set (its spell id); null = the caster's
+        val bindCb: Int? = null,            // b56 (GitHub #43 cb3): the Bind box's Cast bar tab is shown, its cursor on this slot (1-6)
     ) {
         val bindOpen get() = binding != null
     }
@@ -98,6 +99,7 @@ object SpellsModel {
             selected = c.optInt("sel", 0).takeIf { it > 0 },
             binding = if (c.optString("mode") == "bind") c.optInt("bind", 0).takeIf { it > 0 } else null,
             bindForm = c.optInt("bform", 0).takeIf { it > 0 },
+            bindCb = c.optInt("bcb", 0).takeIf { it in 1..CastStripModel.SLOTS },
             note = c.optString("note", "").takeIf { it.isNotEmpty() },
             mode = c.optString("mode", "book").ifEmpty { "book" },
             talentsPage = c.optString("pg", "book") == "talents",
