@@ -1119,6 +1119,33 @@ object SettingsPreview {
         }
     }
 
+    /** THE ONE-TIME "TRY THE NEW TAP-TO-CAST BAR?" PICTURE's loop (the user, 2026-11-13: "show a little picture with the pop up showing
+     *  how it looks with it animating away in combat"; the frames are the real Home's: PreviewStage.AskFrames) */
+    /** the ask picture's loop length (s) */
+    const val ASK_LOOP_S = 3.6f
+
+    /** where the ask picture's loop stands at [tMs]: [slide] 0 = the bar laid .. 1 = slid away; [fight] 0..1 the fight cue */
+    data class AskPhase(val slide: Float, val fight: Float)
+    fun askPhase(tMs: Long): AskPhase {
+        val t = (tMs / 1000f) % ASK_LOOP_S
+        // 0-0.7 rest; 0.7-0.95 the fight cue comes; 0.95-1.6 slide down; 1.6-2.3 hidden; 2.3-2.55 the cue goes; 2.55-3.2 back up; rest
+        val fight = when {
+            t < 0.7f -> 0f
+            t < 0.95f -> (t - 0.7f) / 0.25f
+            t < 2.3f -> 1f
+            t < 2.55f -> 1f - (t - 2.3f) / 0.25f
+            else -> 0f
+        }
+        val slide = when {
+            t < 0.95f -> 0f
+            t < 1.6f -> ease((t - 0.95f) / 0.65f)
+            t < 2.55f -> 1f
+            t < 3.2f -> 1f - ease((t - 2.55f) / 0.65f)
+            else -> 0f
+        }
+        return AskPhase(slide, fight)
+    }
+
     /** a small Home: the controller band on top, the chat left, the minimap right, the bar under one column (cb5: four in view of a
      *  strip that scrolls, the gold arrow at the edge where more wait) or under both (cb6: four under each, eight in all), the slots one
      *  size in every mode. [slide] (cb7, Hide in combat) 0 = laid .. 1 = slid down out of the thumb, the column(s) grown into its room */

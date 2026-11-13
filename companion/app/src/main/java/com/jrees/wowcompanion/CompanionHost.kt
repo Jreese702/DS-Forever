@@ -1056,6 +1056,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 android.view.Gravity.TOP or android.view.Gravity.END).apply { topMargin = 8; rightMargin = 8 })
         })
         show(Room.HOME)
+        ui.postDelayed(castAskTick, 1_000L)                                  // the one-time tap-to-cast bar question (CastBarAsk)
 
         if (!hasAllFiles()) {
             status.text =
@@ -2006,6 +2007,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 }
                 msg.optJSONObject("actionbar")?.let { castView.update(it) }
                 homeView.onFull(msg, current)
+                if (castAskOpen && homeView.inFight()) castBarAsk()          // a fight: the cast bar question goes at once (back after)
                 if (current) PreviewStage.feedFull(msg)                     // f-settings-previews: the Settings panel's live miniatures
                 PreviewStage.roomBar = { castView.roomBar }; PreviewStage.roomBarOn = { castView.roomBarOn }
                 msg.optJSONObject("bags")?.let { bagsView.update(it, current); pinPicker.update(it); characterView.updateBags(it)
@@ -3619,6 +3621,89 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun newSpellBindCtl(c: SpellsModel.Ctl) {
         if (newSpellBinding == 0) return
         SpellsModel.bindStepCtl(c, newSpellConfirm != 0)?.let { newSpellBindStep(it) }
+    }
+
+    // ---------------------------------------------------------------- THE ONE-TIME "TRY THE NEW TAP-TO-CAST BAR?" QUESTION
+    /** the user, 2026-11-13: "For this new install, I want it to have a one time pop up asking people if they want to try the new touch
+     *  input bar. if they select yes then assign it as both with the default, and hide in combat as the default." and "show a little
+     *  picture with the pop up showing how it looks with it animating away in combat". Rules in [CastBarAsk]; the prompt look of the
+     *  D-pad / new spell questions ([SetupView.ask]) with the bar's picture; A / B once the game hands Home the controller, the D-pad
+     *  moving the gold box. A fight (or leaving Home) puts it away unanswered; it comes back once Home has stood quiet again */
+    private var castAskOpen = false          // the question shows, or waits for the controller
+    private var castAskReadySince = 0L       // when Home last became ready to ask (0 = not ready)
+    private var castAskWaitId = 0
+    private var castAskFrames: PreviewStage.AskFrames? = null   // the picture's frames while it shows (dropped when it closes)
+
+    private fun castBarAsk() {
+        if (!::setupView.isInitialized || !::startView.isInitialized) return
+        val fight = homeView.inFight()
+        val onHome = room == Room.HOME && !homeView.homeGuestWanted() && capHolder.isEmpty()
+        if (castAskOpen) {
+            if (CastBarAsk.hideNow(true, fight, onHome)) {
+                Log.i(HomeView.TAG, "cast bar ask: put away (${if (fight) "a fight" else "Home left"}), asked again later")
+                castAskOpen = false; castAskReadySince = 0L; castAskWaitId++
+                setupView.close(); setupPadOff(); castAskFrames?.drop(); castAskFrames = null
+            }
+            return
+        }
+        val busy = setupView.visibility == View.VISIBLE || setupWaiting != null || setupBusy || setupLoading ||
+            startView.visibility == View.VISIBLE || reloadAt != 0L || loginPrompt.isOpen || newSpellAsking != 0 || newSpellBinding != 0 ||
+            interactView.visibility == View.VISIBLE || dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE ||
+            !PreviewStage.ready                                               // the picture is the real Home: the game's documents first
+        val inWorld = docCurrent && (GameLife.worldNow || LauncherHooks.pkg == null)
+        val now = SystemClock.uptimeMillis()
+        if (!CastBarAsk.ready(inWorld, onHome, busy, fight)) castAskReadySince = 0L
+        else if (castAskReadySince == 0L) castAskReadySince = now
+        val act = CastBarAsk.decide(HomeSettings.castBarAsked, HomeSettings.castBarChosen, HomeSettings.castBarSide,
+            if (castAskReadySince == 0L) 0L else now - castAskReadySince)
+        when (act) {
+            CastBarAsk.Act.NONE, CastBarAsk.Act.WAIT -> return
+            CastBarAsk.Act.MARK -> { HomeSettings.castBarAsked = true; Log.i(HomeView.TAG, "cast bar ask: the player set the bar already, never asked"); return }
+            CastBarAsk.Act.ASK -> {}
+        }
+        castAskOpen = true
+        val show = {
+            // the user, 2026-11-13: "make sure that this pop up uses realistic visuals instead of the renders": the real Home in
+            // miniature (PreviewStage's own, fed the game's documents), the bar on Both with the player's spells
+            val known = lastBook?.let { b -> SpellsModel.tabSpells(b).filter { !it.passive && it.icon > 0 }.map { (it.spellId ?: it.actionId) to it.icon } }
+                ?: emptyList()
+            val frames = PreviewStage.AskFrames(this, CastBarAsk.pictureBar(CastStripModel.Live.bar, known, { Icons.get(it) != null }),
+                CAST_ASK_PIC_H / 1080f)
+            castAskFrames = frames
+            setupView.ask(CompanionSetup.Prompt(Tr.t(CastBarAsk.TITLE), emptyList(), ""), "Yes", "No",
+                onYes = { castBarAnswer(true) }, onNo = { castBarAnswer(false) },
+                picture = SetupView.Picture(CAST_ASK_PIC_H, animated = true) { c, r, t -> frames.draw(c, r, t) },
+                cursor = true)
+        }
+        // as the new spell question: it shows once the game hands Home the controller (setupHoldAck runs [setupWaiting]), so an A
+        // never also reaches the game; no hold in time = shown anyway, touch first (A / B once the hold lands)
+        setupWaiting = show
+        val wait = ++castAskWaitId
+        if (!setupPadOn()) { setupWaiting = null; castAskOpen = false; return }
+        Log.i(HomeView.TAG, "cast bar ask: waits for the controller")
+        ui.postDelayed({ if (wait == castAskWaitId && castAskOpen && setupWaiting === show) setupShowAnyway("cast bar ask: no hold") }, 6_000L)
+    }
+
+    /** Yes = the bar under both columns, Hide in combat; No = it stays Off. Never asked again either way */
+    private fun castBarAnswer(yes: Boolean) {
+        if (!castAskOpen) return
+        castAskOpen = false; castAskWaitId++
+        CastBarAsk.answer(yes)
+        Log.i(HomeView.TAG, "cast bar ask: ${if (yes) "Yes - the bar on Both, Hide in combat" else "No - the bar stays Off"}")
+        setupView.close(); setupPadOff(); castAskFrames?.drop(); castAskFrames = null
+    }
+
+    private val CAST_ASK_PIC_H = 400f
+
+    /** once a second until the question has been answered (or was never owed); then it stops for good */
+    private val castAskTick = object : Runnable {
+        override fun run() {
+            if (shell.hostGone()) return
+            HomeSettings.init(this@CompanionHost)
+            if (HomeSettings.castBarAsked && !castAskOpen) return
+            runCatching { castBarAsk() }.onFailure { Log.w(HomeView.TAG, "cast bar ask failed", it) }
+            ui.postDelayed(this, 1_000L)
+        }
     }
 
     /** the Bind box closed (kept, cancelled, refused): back Home, where the next prompt follows */

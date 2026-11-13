@@ -113,8 +113,10 @@ class CastBarCombatTest {
      *  (only a module full screen outside the takeover drops it), so Stay keeps it in fights with Party mode on and off */
     @Test fun homeFollowsItsOwnFightSignal() {
         val h = src("HomeView.kt")
-        assertTrue(h.contains("private fun castStripGate() { castStrip.fight(HomeSettings.castBarCombat, fightShown()) }"))
-        assertTrue(h.contains("CastStripModel.hiddenIn(HomeSettings.castBarCombat, fightShown())"))
+        assertTrue(h.contains("private fun castStripGate() { castStrip.fight(castCombatNow(), fightShown()) }"))
+        assertTrue(h.contains("CastStripModel.hiddenIn(castCombatNow(), fightShown())"))
+        // the player's own rule (a preview look - the cast bar question's picture - shows Hide)
+        assertTrue(h.contains("if (renderLook?.castSide != null) CastStripModel.Combat.HIDE else HomeSettings.castBarCombat"))
         // cb7: a change of hidden lays the page again with the one motion; apply itself only gates (no re-lay from inside apply)
         assertTrue(h.contains("if (laidSide == CastStripModel.Side.OFF || castHiddenNow() == laidHidden) return"))
         val apply = h.substringAfter("private fun apply(s: HomeScreen, animate: Boolean) {").substringBefore("\n    private fun big(")

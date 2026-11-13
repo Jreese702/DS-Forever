@@ -176,6 +176,18 @@ class HomeView(
     /** f-settings-previews: where the map module lies now (Home's px), for the stage's minimap pictures */
     internal fun previewMapRect(): RectF? = now[Part.MAP]?.let { RectF(it) }
 
+    /** the cast bar question's picture (PreviewStage.castAsk): the boxes as laid now, by part name */
+    internal fun previewBoxes(): Map<String, RectF> = now.entries.associate { it.key.name to RectF(it.value) }
+    /** ... and the page's one motion at [k] between two of them ([a] at 0, [b] at 1): every box on one progress, the bar sliding */
+    internal fun previewBetween(a: Map<String, RectF>, b: Map<String, RectF>, k: Float) {
+        for (p in Part.values()) {
+            val f = a[p.name] ?: continue; val t = b[p.name] ?: f
+            now[p] = RectF(f.left + (t.left - f.left) * k, f.top + (t.top - f.top) * k, f.right + (t.right - f.right) * k, f.bottom + (t.bottom - f.bottom) * k)
+        }
+        castStrip.sliding = k > 0f && k < 1f
+        placeFrame()
+    }
+
     /** f-settings-previews: the offscreen stage's own Home at [look] (never the live one): its rest, then its places, no motion */
     internal fun previewSettle(look: Companion.Look) {
         flow.setRest(look.rest)
@@ -1355,7 +1367,7 @@ class HomeView(
      * bottom bar, [CastStripModel.hiddenBox]) and no column is cut; [apply]'s one motion carries the bar and the columns together.
      */
     private fun withStrip(base: Map<Part, RectF>, w: Float, h: Float): Map<Part, RectF> {
-        val side = HomeSettings.castBarSide
+        val side = castSideNow()
         laidSide = side
         val b0 = CastStripModel.place(side, w, h, UiKit.MODULE_GAP) ?: return base.also { laidHidden = false }
         castStrip.side = side
@@ -1409,15 +1421,19 @@ class HomeView(
     }
 
     /** the bar's touch gate for Home's fight now (no re-lay: [apply] calls this before it lays the page) */
-    private fun castStripGate() { castStrip.fight(HomeSettings.castBarCombat, fightShown()) }
+    private fun castStripGate() { castStrip.fight(castCombatNow(), fightShown()) }
+
+    /** the bar's side and its fight rule now: the player's, or a preview look's (Hide with it) */
+    private fun castSideNow(): CastStripModel.Side = renderLook?.castSide ?: HomeSettings.castBarSide
+    private fun castCombatNow(): CastStripModel.Combat = if (renderLook?.castSide != null) CastStripModel.Combat.HIDE else HomeSettings.castBarCombat
 
     /** cb7: the bar is slid away now (Hide in combat and Home shows a fight) */
-    private fun castHiddenNow(): Boolean = CastStripModel.hiddenIn(HomeSettings.castBarCombat, fightShown())
+    private fun castHiddenNow(): Boolean = CastStripModel.hiddenIn(castCombatNow(), fightShown())
 
     private fun castStripRelay() {
         val s = shown ?: return
         if (s.full != null && !s.takeover) return
-        val side = HomeSettings.castBarSide
+        val side = castSideNow()
         if (side == laidSide) return
         // cb3: Left <-> Right slides the bar over with the page's one motion (the columns make room); coming or going is laid at once
         val slide = (side == CastStripModel.Side.LEFT || side == CastStripModel.Side.RIGHT) &&
@@ -2841,7 +2857,10 @@ class HomeView(
          * setting). The stage sets this for the length of ONE synchronous render on the main thread and clears it; the live Home never
          * renders while it is set, and no setting is ever written. null = the player's settings
          */
-        data class Look(val rest: HomeRest, val grow: Boolean, val overMap: Boolean, val swing: Boolean)
+        data class Look(val rest: HomeRest, val grow: Boolean, val overMap: Boolean, val swing: Boolean,
+                        /** the one-time cast bar question's picture (the user, 2026-11-13: "make sure that this pop up uses realistic
+                         *  visuals"): the bar laid on this side, Hide in combat, whatever the player's own setting; null = theirs */
+                        val castSide: CastStripModel.Side? = null)
         internal var renderLook: Look? = null
         /** the Track Pad & Keyboard's own controller guest (Quests.lua's "tool": ZL / ZR kept from the game while it holds) */
         const val TOOL_GUEST = "tool"

@@ -185,6 +185,15 @@ object HomeSettings {
             prefs?.edit()?.putString(KEY_CAST_COMBAT, v.name)?.apply()
             for (l in listeners) l()
         }
+    /** THE ONE-TIME "TRY THE TAP-TO-CAST BAR?" QUESTION (the user, 2026-11-13: "For this new install, I want it to have a one time pop
+     *  up asking people if they want to try the new touch input bar"): true once it was answered (or never owed); app-wide, per
+     *  install. [CastBarAsk] decides; the host shows it on Home */
+    var castBarAsked: Boolean
+        get() = prefs?.getBoolean(KEY_CAST_ASKED, false) ?: false
+        set(v) { if (v != castBarAsked) prefs?.edit()?.putBoolean(KEY_CAST_ASKED, v)?.apply() }
+    /** the player has set the bar's side in Settings at least once (or the old Home row's On): their own choice, nothing to ask */
+    val castBarChosen: Boolean
+        get() = prefs?.let { it.contains(KEY_CAST_SIDE) || it.contains(KEY_CAST_STRIP) } ?: false
     /** THE CLOCK EXTRAS (the user's picks 2026-11-13: "clock extras beside the time/battery on Home, each with its own on/off row in
      *  Bottom > Home"): the Hearthstone, the class teleport (once known), gold, free bag slots; each on by default (true = shown) */
     var clockHearth: Boolean
@@ -210,6 +219,7 @@ object HomeSettings {
     private const val KEY_CAST_STRIP = "castStrip"
     private const val KEY_CAST_SIDE = "castBarSide"
     private const val KEY_CAST_COMBAT = "castBarCombat"
+    private const val KEY_CAST_ASKED = "castBarAsked"
     private const val KEY = "rest"
     private const val KEY_CLOCK_HEARTH = "clockHearth"
     private const val KEY_CLOCK_TELEPORT = "clockTeleport"
