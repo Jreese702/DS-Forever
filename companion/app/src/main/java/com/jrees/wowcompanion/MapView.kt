@@ -2182,6 +2182,21 @@ class MapView(context: Context) : View(context) {
         const val COUNT = 31                        // cells in the strip
     }
 
+    /** the guard's flag (gp1): its cell of the game's POIIcons sheet, [GUARD_FLAG_PX] square, centred on the spot */
+    private fun drawGuardFlag(c: Canvas, f: GuardFlag.Flag, cx: Float, cy: Float) {
+        val art = UiKit.tex(GuardFlag.ART) ?: return
+        val cut = f.cut() ?: return
+        guardSrc.set((cut[0] * art.width).toInt(), (cut[2] * art.height).toInt(), (cut[1] * art.width).toInt(), (cut[3] * art.height).toInt())
+        if (guardSrc.isEmpty) return
+        val h = GUARD_FLAG_PX / 2f
+        guardDst.set(cx - h, cy - h, cx + h, cy + h)
+        c.drawBitmap(art, guardSrc, guardDst, pArt)
+    }
+    private val guardSrc = Rect()
+    private val guardDst = RectF()
+    /** the guard's flag on this map: a service icon's size (SVC_ICON_PX), the game's 16 px pin at Home's scale */
+    private val GUARD_FLAG_PX = 38f
+
     /** Draw cell [idx] centred on (cx, cy) at [size] px. Falls back to nothing if no sheet. */
     private fun drawIcon(c: Canvas, idx: Int, cx: Float, cy: Float, size: Float, paint: Paint = pArt) {
         val sheet = iconSheet ?: return
@@ -2351,6 +2366,7 @@ class MapView(context: Context) : View(context) {
         // only the distances change on a position update, so re-sort rather than re-filter
         recomputeSeed()
         refreshDefault(m)                           // the nearest tracked quest may have changed
+        guardTick(m)                                // gp1: the guard's flag reached
         fireFocus()
         postInvalidate()
     }
@@ -2622,7 +2638,51 @@ class MapView(context: Context) : View(context) {
     /** the quest the rim arrow is for (the game's focus, else the default), 0 = none */
     private var focusTq = 0
 
+    /**
+     * THE ARROW'S TARGET: the guard's flag while the game holds one on this map and the player has not reached it (gp1, [guardTarget]),
+     * else the focused quest's ([deriveQuestTarget]). The corpse still comes first, at draw time.
+     */
     private fun deriveFocusTarget(m: JSONObject?) {
+        deriveQuestTarget(m)
+        guardTarget(m)
+    }
+
+    // ---- THE GUARD'S FLAG (gp1; the user, 2026-11-13: "when asking a guard for directions, it does not put the arrow and flag to what I
+    // am looking for on our map"): the gossip POI the game holds (Map.lua map.gpoi, [GuardFlag]) is drawn on this map as the game's world
+    // map draws it, for as long as the game holds it. The game's own minimap only draws it (its quest arrow stays on the quest); the user
+    // asked for the arrow too, so it takes the rim arrow ahead of the focused quest (below the corpse), no flight step, until the player
+    // is within GuardFlag.ARRIVE_YD of it (then the quest's arrow again, until the game holds a new or different flag).
+    private var guardFlag: GuardFlag.Flag? = null
+    private val guardArrival = GuardFlag.Arrival()
+    /** the rim arrow points at the guard's flag (focusTX / focusTY are its spot) */
+    private var guardArrow = false
+    private var guardSaid: String? = null
+
+    private fun guardTarget(m: JSONObject?) {
+        guardArrow = false
+        val f = GuardFlag.parse(m)
+        guardFlag = f
+        if (m == null) return
+        val p = f?.on(m.optInt("mapID", 0))
+        val r = rect?.takeIf { it.valid }
+        val wants = guardArrival.wants(f, m.optDouble("x", Double.NaN), m.optDouble("y", Double.NaN),
+            p?.get(0) ?: Double.NaN, p?.get(1) ?: Double.NaN, r?.width ?: 0.0, r?.height ?: 0.0)
+        val said = if (f == null) null else "${f.key} ${if (p == null) "not on this map" else if (wants) "arrow" else "arrived"}"
+        if (said != guardSaid) { guardSaid = said; android.util.Log.i("WCMAP", "guard flag: ${said ?: "none"}") }
+        if (!wants || p == null) return
+        focusTX = p[0]; focusTY = p[1]; flyStep = false; guardArrow = true
+    }
+
+    /** a position tick: the guard's arrow goes once the player reaches its flag (the quest's comes back) */
+    private fun guardTick(m: JSONObject) {
+        if (!guardArrow) return
+        val r = rect?.takeIf { it.valid } ?: return
+        val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
+        if (px.isNaN() || py.isNaN()) return
+        if (hypot((focusTX - px) * r.width, (focusTY - py) * r.height) <= GuardFlag.ARRIVE_YD) deriveFocusTarget(m)
+    }
+
+    private fun deriveQuestTarget(m: JSONObject?) {
         focusTX = Double.NaN; focusTY = Double.NaN; flyStep = false
         if (m == null) return
         val st = m.optInt("superTracked", 0)
@@ -7083,6 +7143,14 @@ class MapView(context: Context) : View(context) {
             postInvalidateOnAnimation()
         }
 
+        // ---- THE GUARD'S FLAG (gp1, guardTarget): the game's own picture (its cell of POIIcons, UI Art's kit map_gossip_poi) on its
+        // spot, on the small map and the full one, while the game holds it; nothing without the art
+        guardFlag?.let { f ->
+            val p = f.on(m.optInt("mapID", 0)) ?: return@let
+            val gx = sx(p[0]); val gy = sy(p[1])
+            if (onField(gx, gy)) drawGuardFlag(c, f, gx, gy)
+        }
+
         // ---- the object beside the player: the game's cursor icon for it (see absorbSoft).
         // Kept SOFT_MIN_PX off the player's arrow so the arrow never hides it.
         soft?.let { so ->
@@ -7132,8 +7200,10 @@ class MapView(context: Context) : View(context) {
         val bend: DoubleArray? = null
         // QuestTrail mode: no rim arrow of ours at all (the user, test58); the corpse's stays
         // test60: inside the focused quest's area the arrow goes (arrived); the corpse's stays
-        if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN() && !(Settings.questTracking == "questtrail" && !toCorpse) &&
-            (toCorpse || !arrivedInFocusArea())) {
+        // gp1: the guard's flag's arrow has its own arrival (guardTarget) and shows in QuestTrail mode too (it is no quest's)
+        val toGuard = !toCorpse && guardArrow
+        if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN() && !(Settings.questTracking == "questtrail" && !toCorpse && !toGuard) &&
+            (toCorpse || toGuard || !arrivedInFocusArea())) {
             val tx = sx(bend?.get(0) ?: rimTX); val ty = sy(bend?.get(1) ?: rimTY)
             val inset = RIM_R + 6f
             val l0 = left + inset; val r0 = left + fw - inset

@@ -1412,11 +1412,13 @@ class WorldMapRoomView(context: Context) : View(context) {
         drawArt(c)
         if (isZoneView()) drawZoneMarks(c) else { drawChildren(c); drawLayerQuests(c) }
         drawWaypoint(c)
+        drawGossipPoi(c)
         drawTravel(c)
         drawGroup(c)
         drawPlayer(c)
         drawAreaLabel(c)
         drawQuestTip(c)
+        drawGossipTip(c)
         drawTravelTip(c)
         // the quest panel (A on a quest circle: b-maproom-quests), at the map's left, over it
         if (qp.isOpen) qp.draw(c, canvasR.left + 16f, canvasR.top + 16f, canvasR.bottom - 16f, min(680f, canvasR.width() * 0.45f))
@@ -1781,6 +1783,48 @@ class WorldMapRoomView(context: Context) : View(context) {
         dst.set(cx - art.width * sc / 2f, cy - art.height * sc, cx + art.width * sc / 2f, cy)
         c.drawBitmap(art, null, dst, pBmp)
     }
+
+    /**
+     * THE GUARD'S FLAG (gp1; the user, 2026-11-13: "when asking a guard for directions, it does not put the arrow and flag to what I am
+     * looking for on our map"): the gossip POI the game holds (Map.lua map.gpoi, [GuardFlag]), as the game's world map draws it
+     * (GossipPinMixin): its cell of Interface/Minimap/POIIcons (UI Art's kit: map_gossip_poi), 16 px at the game's size, x1.8 here,
+     * centred on the spot, on its own map or carried to the map shown. Nothing is drawn without the art (as the map pin). The game
+     * clears it, the document stops carrying it, and it goes.
+     */
+    private fun drawGossipPoi(c: Canvas) {
+        gossipAt = null
+        val f = GuardFlag.parse(mapDoc) ?: return
+        val p = toShown(f.m, f.x.toFloat(), f.y.toFloat())
+            ?: f.on(playerMap)?.takeIf { f.m != playerMap }?.let { toShown(playerMap, it[0].toFloat(), it[1].toFloat()) } ?: return
+        val art = UiKit.tex(GuardFlag.ART) ?: return
+        val cut = f.cut() ?: return
+        srcR.set((cut[0] * art.width).toInt(), (cut[2] * art.height).toInt(), (cut[1] * art.width).toInt(), (cut[3] * art.height).toInt())
+        if (srcR.isEmpty) return
+        val cx = sx(p[0]); val cy = sy(p[1])
+        val h = GOSSIP_PX / 2f
+        dst.set(cx - h, cy - h, cx + h, cy + h)
+        c.drawBitmap(art, srcR, dst, pBmp)
+        gossipAt = Triple(f, cx, cy)
+    }
+    private var gossipAt: Triple<GuardFlag.Flag, Float, Float>? = null
+
+    /** the flag's name under the cursor (the game's pin tooltip: its name), as a quest's; a quest marker under it wins */
+    private fun drawGossipTip(c: Canvas) {
+        val g = gossipAt
+        val name = g?.first?.name
+        val on = g != null && name != null && region == MapRoomKeys.Region.MAP && hoverQuest == null &&
+            Math.hypot((sx(curX) - g.second).toDouble(), (sy(curY) - g.third).toDouble()) <= max(HOVER_PX, GOSSIP_PX / 2f)
+        val a = gossipFade.alpha(if (on) g!!.first.key else null)
+        if (gossipFade.animating) postInvalidateOnAnimation()
+        if (!on || a <= 0) return
+        val half = GOSSIP_PX / 2f
+        val right = min(artR.right + mapShift(), drawerLeft()) - 8f
+        var x = g!!.second + half + 5f
+        if (x + TIP_W > right) x = g.second - half - 5f - TIP_W
+        val y = (g.third - half + 2f).coerceIn(canvasR.top + 8f, canvasR.bottom - 78f)
+        UiKit.tooltip(c, x, y, TIP_W, name!!, Color.WHITE, emptyList(), alpha = a)
+    }
+    private val gossipFade = UiKit.TipFade()
 
     /** the cursor shows on the map's side only (the game hides its cursor overlay, the lines and the cursor, while its quest log has
      *  the focus) */
@@ -2634,6 +2678,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         const val CRUMB_TEXT = 27f         // one label size for every row of it
         const val LINK_ALPHA = 170         // the hovered marker's row: the game's quest-log glow, softer than the list's gold box
         const val TIP_W = 420f             // the lit quest's tooltip (UI Art: ~420 px)
+        const val GOSSIP_PX = GuardFlag.GAME_PX * 1.8f   // the guard's flag: the game's 16 px pin at our scale (UI Art: x1.8)
         const val HEAD_H = 56f            // a zone header (the game's ListHeaderVisualTemplate)
         const val HEAD_CAP = 30f / 56f    // its 3-slice ends
         const val ROW_GAP = 4f

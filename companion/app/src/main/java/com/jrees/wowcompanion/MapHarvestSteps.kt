@@ -149,7 +149,7 @@ object MapHarvestSteps {
 
     val POI_ICONS = object : ArtHarvest.Step {
         override val id = "poiicons"
-        override val version = 1
+        override val version = 2                  // gp1: + the guard's flag sheet (ui/kit/map_gossip_poi.png)
         override val beforePlay = true
         override val weight = 31
         override fun run(job: ArtHarvest.Job) {
@@ -189,7 +189,24 @@ object MapHarvestSteps {
             if (lost.size > cells.size * KitBuild.TOO_MANY) error("${lost.size} of ${cells.size} POI cells did not read: the game's files look damaged")
             job.writePng("ui/poi_icons.png", strip)
             strip.recycle()
+            gossipSheet(job, r)
             job.inputKey = KitSteps.degradedInputs(job, id, lost.size, lost.count { KitBuild.transient(it) })
+        }
+
+        /**
+         * THE GUARD'S FLAG (gp1; the user, 2026-11-13: "when asking a guard for directions, it does not put the arrow and flag to what
+         * I am looking for on our map"): the game's own POI sheet, Interface/Minimap/POIIcons, whole, as UI Art's kit picture
+         * GuardFlag.ART; Home's map and the Map room cut its cell (GuardFlag.Flag.cut, the game's GetPOITextureCoords). Not one of the
+         * map's must-haves: unreadable, it is logged and the flag is not drawn (as the map pin without its art).
+         */
+        private fun gossipSheet(job: ArtHarvest.Job, r: JSONObject) {
+            val b = runCatching { job.game.blpName(r.optString("gossipPoi", "Interface\\Minimap\\POIIcons.blp")) }.getOrNull()
+            if (b == null) {
+                android.util.Log.w("WCHARVEST", "the guard's flag sheet (POIIcons) did not read: ${job.game.lastReadWhy ?: "not a picture"}")
+                return
+            }
+            job.writePng("ui/kit/${GuardFlag.ART}.png", b)
+            b.recycle()
         }
 
         /** a cursor icon with its pointer tip cut away (the top-left triangle) */
