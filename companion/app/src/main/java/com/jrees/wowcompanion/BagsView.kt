@@ -200,16 +200,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     private class CtlLayer(c: Context, private val st: State, private val grid: Grid, private val scroll: View,
                            private val bar: BagBar, private val searchBox: () -> View) : View(c) {
         private val at = IntArray(2); private val gat = IntArray(2); private val sat = IntArray(2)
-        private var bindAt = -1L; private var unbindAt = -1L
-        private var lastBind: JSONObject? = null; private var lastBindItem: JSONObject? = null
         private val warm = BagsCursor.WarmFade()           // the quarter second before the FIRST tooltip only (d)
 
         companion object {
-            const val OPEN_MS = 220L; const val CLOSE_MS = 160L
-            /** the bindable buttons: glyph + the name the sheet's line uses (Nintendo layout, as the NPC windows). NOT Start / Plus: the
-             *  user's ruling 2026-10-09, Start opens the pause wheel from every room (Bags.lua no longer offers it) */
-            val KEY_GLYPH = mapOf("PADRSHOULDER" to "rev_rshoulder", "PADRTRIGGER" to "rev_rtrigger",
-                "PADLSTICK" to "gen_lstickin", "PADRSTICK" to "gen_rstickin", "PADBACK" to "rev_minus")
             fun word(s: String) = s.lowercase().replaceFirstChar { it.uppercase() }
             const val USE = -1           // a finger's Use / Equip: the slot's own secure cell (the game's right-click)
             const val MOVE = -2          // a finger's Move: the cursor to the shown slot, then A
@@ -300,8 +293,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         override fun onTouchEvent(e: MotionEvent): Boolean {
             val m = mode()
             if (e.actionMasked == MotionEvent.ACTION_DOWN) {
-                val blocking = m == "destroy" || m == "split" || m == "bind" || m == "target" || m == "dpick" || m == "compare" ||
-                    unbindAt >= 0
+                // bags-bindbox1: "bindbox" = the Spellbook's Bind box over everything (SpellsOverlay takes the touches)
+                val blocking = m == "destroy" || m == "split" || m == "target" || m == "dpick" || m == "compare"
                 owning = blocking || zones.any { it.contains(e.x, e.y) }
                 if (owning) { pressX = e.x; pressY = e.y; invalidate() }
             }
@@ -364,11 +357,6 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             hits.clear(); zones.clear(); useAt = null
             val m = mode()
             val now = android.os.SystemClock.uptimeMillis()
-            // the bind sheet's slide: in over 220 ms, out over 160 ms (drawn from its last state)
-            if (m == "bind") {
-                if (bindAt < 0) { bindAt = now; unbindAt = -1 }
-                lastBind = st.ctl; lastBindItem = curItem()
-            } else if (bindAt >= 0) { bindAt = -1; unbindAt = now }
             getLocationOnScreen(at); grid.getLocationOnScreen(gat); scroll.getLocationOnScreen(sat)
             val gx = (gat[0] - at[0]).toFloat(); val gy = (gat[1] - at[1]).toFloat()
             // the tooltip's room: the grid's visible part
@@ -389,17 +377,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 "compare" -> compare(c, screen)
                 "split" -> split(c, screen)
                 "target" -> target(c, screen)
-            }
-            val f = when {
-                bindAt >= 0 -> { val t = ((now - bindAt) / OPEN_MS.toFloat()).coerceIn(0f, 1f); 1f - (1f - t) * (1f - t) * (1f - t) }
-                unbindAt >= 0 -> { val t = ((now - unbindAt) / CLOSE_MS.toFloat()).coerceIn(0f, 1f); (1f - t) * (1f - t) }
-                else -> 0f
-            }
-            if (bindAt >= 0 || unbindAt >= 0) {
-                lastBind?.let { bind(c, screen, it, lastBindItem, f) }
-                val moving = (bindAt >= 0 && now - bindAt < OPEN_MS) || (unbindAt >= 0 && now - unbindAt < CLOSE_MS)
-                if (moving) postInvalidateOnAnimation()
-                else if (unbindAt >= 0) { unbindAt = -1; lastBind = null }
+                // bags-bindbox1: "bindbox" draws nothing here: the Spellbook's Bind box (SpellsOverlay) lies over the room
             }
         }
 
@@ -1109,56 +1087,6 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             button(c, okay, "Okay", "rev_a", "PAD1"); button(c, cancel, "Cancel", "rev_b", "PAD2")
             hits.add(okay to 31); hits.add(cancel to 33)
         }
-
-        /** the bind sheet, hanging from the top edge; [f] 0..1 = how far it has slid in (and how dark the cover is) */
-        private fun bind(c: Canvas, screen: RectF, ctl: JSONObject, it: JSONObject?, f: Float) {
-            UiKit.cover(c, screen, 0.70f * f)
-            val w = screen.width(); val cx = w / 2f
-            val top = -800f + (740f * f)                          // -800 (out of sight) .. -60 (at rest)
-            c.save(); c.translate(0f, top + 60f)                  // everything below is drawn at its resting place
-            val r = RectF(cx - 550f, -60f, cx + 550f, 740f)
-            UiKit.dialog(c, r)
-            c.drawText(Tr.t("Bind a Button"), cx, 56f, UiKit.titlePaint(46f).apply { textAlign = Paint.Align.CENTER })
-            UiKit.slot(c, iconOf(it), cx - 170f, 94f, 84f)
-            c.drawText(Tr.t(it?.optString("name") ?: ""), cx - 66f, 150f, UiKit.bodyPaint(38f, colourOf(it)))
-            val note = ctl.optString("note").takeIf { n -> n.isNotEmpty() }
-            val chord = ctl.optString("chord").takeIf { n -> n.isNotEmpty() }
-            val keyName = chord?.let { k -> bindKeyName(k) ?: k }
-            val line = when (note) {
-                "bind-taken" -> "$keyName is taken by " + (ctl.optString("takenByName").takeIf { n -> n.isNotEmpty() } ?: ctl.optString("takenBy"))
-                "bind-modifier" -> "Combinations cannot be bound yet"
-                "bind-unheard" -> "That button cannot be bound"
-                "bind-notready", "bind-failed" -> "Not ready yet, press it again"
-                "bound" -> "Bound to " + (bindKeyName(ctl.optString("bound")) ?: ctl.optString("bound"))
-                // bags-unbind1 (issue #213): the item's own button pressed again lets it go (Bags.lua BB.clear)
-                "unbound" -> "Cleared " + (bindKeyName(ctl.optString("unbound")) ?: ctl.optString("unbound"))
-                else -> ctl.optJSONArray("mine")?.optString(0)?.takeIf { k -> k.isNotEmpty() }
-                    ?.let { k -> "Press " + (bindKeyName(k) ?: k) + " again to clear it" }
-                    ?: "Press the button you want for this item"
-            }
-            val colour = when (note) { null -> Color.WHITE; "bound", "unbound" -> Theme.questGreen; else -> Theme.unusable }
-            c.drawText(Tr.t(line), cx, 232f, UiKit.bodyPaint(36f, colour).apply { textAlign = Paint.Align.CENTER })
-            val keys = ctl.optJSONArray("keys")
-            val bound = ctl.optString("bound")
-            for (i in 0 until (keys?.length() ?: 0)) {
-                val k = keys!!.optJSONObject(i) ?: continue
-                val name = k.optString("k")
-                val x = cx - 512f + (i % 2) * 524f
-                val y = 276f + (i / 2) * 118f
-                val a = k.optString("a").takeIf { s -> s.isNotEmpty() }
-                val label = k.optString("n").takeIf { s -> s.isNotEmpty() } ?: a ?: "Free"
-                val mark = when {
-                    note == "bound" && name == bound -> 2
-                    note != null && note.startsWith("bind-") && name == chord -> 1
-                    else -> 0
-                }
-                UiKit.keyChip(c, RectF(x, y, x + 500f, y + 104f), KEY_GLYPH[name] ?: "gen_rstickin", label, a == null, mark)
-            }
-            c.drawText(Tr.t("A, B, X and Y cannot be bound."), cx, 660f, UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER })
-            val hs = UiKit.hints(c, r.right - 70f, 654f, "rev_b" to if (note == "bound" || note == "unbound") "Close" else "Cancel")
-            c.restore()
-            if (f >= 1f) hits.add(RectF(hs - 20f, 654f - 44f + top + 60f, r.right - 50f, 654f + 44f + top + 60f) to 33)
-        }
     }
 
     /**
@@ -1355,6 +1283,13 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     override fun bLeadsHome(): Boolean =
         state.ctlOn && !kbOpen && state.drag == null && state.ctl?.optString("mode") == "grid" && state.ctlPick() == null
 
+    /** bags-bindbox1: a finger's A ("a") / B ("b") for the Spellbook's Bind box this room hosts (SpellsOverlay): Bags' own touch
+     *  A / B (bmvq 31 / 33), which Bags hands to the box. Only while the room holds and the box is up (mode "bindbox") */
+    fun boxKey(k: String) {
+        if (!state.ctlOn || state.ctl?.optString("mode") != "bindbox") return
+        GameInput.tap(context, state.pad, "bmvq", if (k == "a") 31 else 33)
+    }
+
     fun touchedOut() {
         state.holdAskedAt = 0L
         removeCallbacks(takeCheck)
@@ -1416,10 +1351,6 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     }
 
     companion object {
-        /** a bindable button's word in the chosen glyph set (Glyphs.name); null = not one the sheet binds */
-        private val KEY_ACTION = mapOf("PADRSHOULDER" to "rshoulder", "PADRTRIGGER" to "rtrigger", "PADLSTICK" to "lstick",
-            "PADRSTICK" to "rstick", "PADBACK" to "select")
-        fun bindKeyName(k: String): String? = KEY_ACTION[k]?.let { Glyphs.name(it) }
         private fun rule(colour: Int, c: Context) = View(c).apply { setBackgroundColor(colour) }
         const val TAKE_CHECK_MS = 1500L          // touchedIn's take, checked against bags.ctl this long after
         const val KB_REPEAT_FIRST_MS = 280L      // the search keyboard's D-pad repeat, as DirectPad's rooms (DirectPadKeys)

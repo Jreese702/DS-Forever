@@ -310,7 +310,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl", "book"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m158"' in SRC["padmap"] and 'local CV = "p52"' in SRC["padtabctl"] and 'local BV = "b58"' in SRC["book"],
+check('local PV = "m158"' in SRC["padmap"] and 'local CV = "p52"' in SRC["padtabctl"] and 'local BV = "b59"' in SRC["book"],
       "the versions: PadMap m158, PadTabCtl p52, Book b58")
 check(all('this should be per button/ button modifier combo' in SRC[k] for k in ("padmap", "padtabctl", "book")),
       "each changed file's header note quotes the user")

@@ -76,14 +76,26 @@ object SpellsModel {
         val bindFight: Boolean = false,     // b37: the Bind box puts the spell on the In combat layout (b-bind-combat-toggle)
         val bindForm: Int? = null,          // b43: the In combat bind goes to this form's own set (its spell id); null = the caster's
         val bindCb: Int? = null,            // b56 (GitHub #43 cb3): the Bind box's Cast bar tab is shown, its cursor on this slot (1-8, cb6)
+        /** Book b59 (the user, 2026-11-13: "when doing bind to a button from bags it should open the normal spell binding menu"): the box
+         *  is open for this BAG ITEM (hosted by the Bags room: `via` "bags"); null = a spell's box */
+        val bindItem: BoxItem? = null,
     ) {
         val bindOpen get() = binding != null
+        /** Book b59: a hosted box (Bags holds the controller and hands it the presses) */
+        val hosted get() = via == "bags"
     }
+
+    /** Book b59: the bag item a Bind box is for: its id, name and icon (a fileID, 0 = unknown) */
+    data class BoxItem(val id: Int, val name: String, val icon: Int)
 
     /** The answer to a Bind press (`spellsack`). [why]: "combat", "reserved", "unknown", "failed". */
     data class BindResult(val spellId: Int, val ok: Boolean, val why: String?, val pad: PadSlot?,
                           /** b37: it went on as that button's FIGHT spell (no game slot of its own: storage 0) */
-                          val fight: Boolean = false)
+                          val fight: Boolean = false,
+                          /** Book b59: the box was a bag item's ([spellId] is the item's id) */
+                          val item: Boolean = false,
+                          /** Book b59 (issue #213's rule): the press CLEARED the item from that button (it was on it already) */
+                          val cleared: Boolean = false)
 
     fun parseCtl(msg: JSONObject): Ctl? {
         if (msg.optString("type") != "spellsctl") return null
@@ -112,6 +124,10 @@ object SpellsModel {
             rank = c.optInt("rk", 0).takeIf { it > 0 },
             ranks = c.optInt("rks", 0).takeIf { it > 1 },
             bindFight = c.optBoolean("bf", false),
+            bindItem = c.optJSONObject("bitem")?.let { bi ->
+                val id = bi.optInt("id", 0)
+                if (id > 0) BoxItem(id, bi.optString("n", ""), bi.optInt("i", 0)) else null
+            },
         )
     }
 
@@ -177,7 +193,7 @@ object SpellsModel {
         }
         val ok = msg.optBoolean("ok", false) && pad != null
         return BindResult(id, ok, if (ok) null else msg.optString("why", "failed").ifEmpty { "failed" }, pad,
-            p?.optBoolean("fight", false) == true)
+            p?.optBoolean("fight", false) == true, item = msg.optBoolean("item", false), cleared = ok && msg.optBoolean("clr", false))
     }
 
     /**

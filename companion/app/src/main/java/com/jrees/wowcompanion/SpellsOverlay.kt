@@ -26,6 +26,12 @@ import android.view.View
  * and stuff to these, so any of those 5 controller tabs should be able to bind here"): on the Normal tab, bare or ZL, the box draws the
  * two sticks beside the trigger chips (what each holds now, from the padmap's `sticks`); pressing one puts the spell on it, lit as any
  * button. ZR / ZL + ZR or the In combat tab: no stick tiles (the add-on answers "layer" / "stick-normal" and the box keeps waiting).
+ *
+ * Book b59 A BAG ITEM (the user, 2026-11-13: "when doing bind to a button from bags it should open the normal spell binding menu"): the
+ * Bags room's Bind to a Button opens THIS box for the item (`bitem`: its name and icon where the spell's stand), hosted by Bags (`via`
+ * "bags"). The same tabs minus Cast bar (spells only), the same keep / undo; a press on the button the item is on already CLEARS it
+ * (the answer's `clr`: "Cleared from", "Keep it cleared?"). A finger answers the hosted box's question as A / B would (Keep left, Undo
+ * right; Back / Close at the foot): one tap on Bags' own row ([onHostKey]), which hands the press to the box.
  */
 class SpellsOverlay(
     context: Context,
@@ -39,6 +45,8 @@ class SpellsOverlay(
     private val onTap: (Int) -> Unit = {},
     /** GitHub #43 cb3: the Bind box's Cast bar tab and its slots (padtab 39 then 26 / 20-25, 27-28 for slots 7-8: Book b56 / b57) */
     private val onCastBarTaps: (List<Pair<String, Int>>) -> Unit = {},
+    /** Book b59: a finger's A ("a") / B ("b") for a HOSTED box (the Bags room's own row hands it to the box) */
+    private val onHostKey: (String) -> Unit = {},
 ) : View(context) {
 
     private var book: SpellsModel.Book? = null
@@ -81,7 +89,7 @@ class SpellsOverlay(
      * cb6 (the user, 2026-11-13: "8 total, 4 per side"): the tab shows all 8 in ONE row, two groups of 4 (the chat's 1-4, the minimap's
      * 5-8) a wider gap apart; the D-pad left / right walks all 8 (Book b57), slots 7-8 by padtab 39 then 27-28
      */
-    private fun three(): Boolean = CastStripModel.bindTab(HomeSettings.castBarSide, CastStripModel.Live.bar)
+    private fun three(): Boolean = ctl?.bindItem == null && CastStripModel.bindTab(HomeSettings.castBarSide, CastStripModel.Live.bar)   // b59: spells only
     /** a finger's Cast bar tab, shown AT THE TAP until the add-on's `bcb` agrees or 1.5 s pass (as [fightWant]) */
     private var cbWant: Boolean? = null
     private var cbUntil = 0L
@@ -231,8 +239,10 @@ class SpellsOverlay(
     /** the game's "Bind to Action Bar": its box and words, the controller's buttons for the set held (SPEC 4) */
     private fun bindBox(c: Canvas, w: Float, h: Float) {
         formHits.clear()                                                // b45: only the row drawn this frame takes a finger
+        hostHits.clear()                                                // b59: and only this frame's A / B places
         val b = book
-        val e = boxSpell?.let { id -> b?.let { SpellsModel.find(it, id) } }
+        val item = ctl?.bindItem                                        // Book b59: a bag item's box
+        val e = if (item != null) null else boxSpell?.let { id -> b?.let { SpellsModel.find(it, id) } }
         UiKit.cover(c, RectF(0f, 0f, w, h), 0.75f)
         val box = RectF(60f, 84f, w - 60f, 934f)
         UiKit.dialog(c, box)
@@ -252,7 +262,7 @@ class SpellsOverlay(
         // the line: the instruction, or the answer
         if (r != null && r.ok && r.pad != null) {
             val p = UiKit.bodyPaint(32f, Color.rgb(30, 255, 0)).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(Tr.t(if (r.fight) "In combat on" else "Bound to"), w / 2f - 60f, ly - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(answerWord(r)), w / 2f - 60f, ly - (p.ascent() + p.descent()) / 2f, p)
             drawCombo(c, SpellsModel.combo(r.pad, st), w / 2f - 40f, ly, 64f, Theme.text, true)
         } else if (r != null && !r.ok) {
             val (text, colour) = when (r.why) {
@@ -281,8 +291,13 @@ class SpellsOverlay(
             c.drawText(Tr.t("Put back what was there. Press another button"), w / 2f, ly - (p.ascent() + p.descent()) / 2f, p)
         }
 
-        // the spell
-        if (e != null) {
+        // the spell, or the bag item (b59)
+        if (item != null) {
+            val pn = UiKit.bodyPaint(40f, Theme.gold)
+            val bx = w / 2f - (pn.measureText(item.name) + 104f) / 2f
+            UiKit.slot(c, Icons.get(item.icon.takeIf { it > 0 }), bx, spellTop, 84f)
+            c.drawText(item.name, bx + 104f, spellTop + 42f - (pn.ascent() + pn.descent()) / 2f, pn)   // a game name: never Tr.t
+        } else if (e != null) {
             val pn = UiKit.bodyPaint(40f, Theme.gold)
             val bx = w / 2f - (pn.measureText(e.name) + 104f) / 2f
             UiKit.slot(c, Icons.get(e.icon), bx, spellTop, 84f)
@@ -329,7 +344,7 @@ class SpellsOverlay(
         val dpad = RectF(w / 2f - 270f - 240f, cy + 236f, w / 2f - 270f + 240f, cy + 236f + 340f)
         val face = RectF(w / 2f + 290f - 240f, cy + 236f, w / 2f + 290f + 240f, cy + 236f + 340f)
         val lit = r?.takeIf { it.ok }?.pad?.takeIf { it.bar == set }?.pos ?: -1
-        val icon = e?.let { Icons.get(it.icon) }
+        val icon = if (item != null) Icons.get(item.icon.takeIf { it > 0 }) else e?.let { Icons.get(it.icon) }
         // batch8 (the user: "when on the in combat tab the spells should all change to show what's bound for in combat"): with In combat
         // on, each button shows its IN COMBAT spell for that set (the Controller room's In combat tab: the overlay's fight spell, a base X /
         // Y / A's; the gold swords on it; none = an empty slot), from the add-on's padmap; Normal shows the game's bar as before
@@ -370,15 +385,22 @@ class SpellsOverlay(
             UiKit.dialog(c, qb)
             val qp = UiKit.bodyPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
             val failed = undoFail?.takeIf { now - undoFailAt < SHOW_MS }
-            val q = when (failed) { null -> "Keep this binding?"; "combat" -> "Can't undo in combat. Keep it?"; else -> "That couldn't be undone. Keep it?" }
+            val q = when (failed) { null -> keepQuestion(r); "combat" -> "Can't undo in combat. Keep it?"; else -> "That couldn't be undone. Keep it?" }
             c.drawText(Tr.t(q), qb.centerX(), qb.top + 64f, qp)
             UiKit.hints(c, qb.centerX() + 180f, qb.bottom - 46f, UiKit.okGlyph() to "Keep", back to "Undo")
+            // b59: a hosted box's question by a finger: the left half = Keep (A), the right half = Undo (B)
+            if (ctl?.hosted == true) { hostHits.add(RectF(qb.left, qb.top, qb.centerX(), qb.bottom) to "a"); hostHits.add(RectF(qb.centerX(), qb.top, qb.right, qb.bottom) to "b") }
             if (failed != null) postInvalidateDelayed(250L)
             return
         }
-        if (r != null && r.ok) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Close")
-        else if (!lt && !rt) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Back")
+        val hx = if (r != null && r.ok) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Close")
+        else if (!lt && !rt) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Back") else null
+        // b59: a hosted box's Back / Close by a finger (B)
+        if (hx != null && ctl?.hosted == true) hostHits.add(RectF(hx - 24f, box.bottom - 140f, box.right - 40f, box.bottom - 44f) to "b")
     }
+
+    /** Book b59: a hosted box's finger places as drawn this frame (A / B), see [onHostKey] */
+    private val hostHits = ArrayList<Pair<RectF, String>>()
 
     /**
      * b43 (the user on test20: "We need to add this to the actual bind pop up in the spell book", "We can use the select button to cycle these
@@ -515,6 +537,8 @@ class SpellsOverlay(
                     // b45 (a finger picks a form): the row's place k -> the spells row's "vo<k>" (Book b45 reads a lone one as the form)
                     val k = formHits.indexOfFirst { it.contains(ev.x, ev.y) }
                     if (k >= 0 && ctl?.mode == "bind") book?.win?.get("vo$k")?.let { onTap(it) }
+                    // b59: a hosted box's Keep / Undo / Back by a finger (ONE tap on the host's row: its A / B)
+                    else if (ctl?.hosted == true && i < 0 && k0 < 0) hostHits.firstOrNull { it.first.contains(ev.x, ev.y) }?.let { onHostKey(it.second) }
                 }
                 MotionEvent.ACTION_CANCEL -> { downFight = -1; downSlot = -1 }
             }
@@ -529,6 +553,14 @@ class SpellsOverlay(
     }
 
     companion object {
+        /** the answer's line: where it went, or (Book b59, an item already there) where it came off */
+        fun answerWord(r: SpellsModel.BindResult): String = when {
+            r.cleared -> "Cleared from"
+            r.fight -> "In combat on"
+            else -> "Bound to"
+        }
+        /** Book b59: the box's question after a press that took (a clear asks to keep it cleared) */
+        fun keepQuestion(r: SpellsModel.BindResult): String = if (r.cleared) "Keep it cleared?" else "Keep this binding?"
         private const val SHOW_MS = 1500L
         /** the box's top (84) + 104: the line the Cast bar tab's slots stand from ([cbSlotRect]) */
         private const val CB_CY = 84f + 104f

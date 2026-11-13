@@ -1931,6 +1931,8 @@
 "Your problem report was sent (%s, issue #%s)": "Tu informe de problema se envió (%s, incidencia #%s)",
 "Choose an icon for %s": "Elige un icono para %s",
 "Cleared %s": "Borrado %s",
-"Press %s again to clear it": "Pulsa %s otra vez para borrarlo"
+"Press %s again to clear it": "Pulsa %s otra vez para borrarlo",
+"Cleared from": "Quitado de",
+"Keep it cleared?": "¿Dejarlo quitado?"
 }
 }
