@@ -275,6 +275,30 @@ def main():
     chk("our own party frames on (their default), the game's switch at shown: every piece of the game's invisible (lit %s)" % lit(), lit() == [])
     tap(SW.UFP_OFF)
 
+    # REVIEW: the raid-style party frame made AFTER the last apply (CompactPartyFrame_Generate runs when those frames first come up):
+    # the game's own update learns the new buttons by their parent - no tap needed - and a plate is still never touched
+    tap(SW.PARTY_HIDE)
+    L.execute("""
+        local old = CompactPartyFrame
+        CompactPartyFrame = MK(PartyFrame, { secure = false, memberUnitFrames = {}, petUnitFrames = {} })
+        for i = 1, 5 do
+            local b = MK(CompactPartyFrame, { secure = true, unit = i == 1 and "player" or ("party" .. (i - 1)), optionTable = {} })
+            b.displayedUnit = b.unit
+            b.selectionHighlight = MK(b, { ignore = true, shown = false })
+            b.readyCheckIcon = MK(b, { ignore = true, shown = false })
+            b.readyCheckIcon.Icon = MK(b.readyCheckIcon, { ignore = true })
+            CompactPartyFrame.memberUnitFrames[i] = b
+        end
+        CompactPartyFrame.alpha = 0
+    """)
+    G.TARGET_CHANGED("party2")
+    late = G.CompactPartyFrame.memberUnitFrames[3].selectionHighlight
+    chk("a party frame made after the last apply, party2 targeted: its border invisible with no tap (vis %s)" % vis(late),
+        late.shown is True and vis(late) == 0)
+    tap(SW.PARTY_SHOW)
+    G.TARGET_CHANGED("party2")
+    chk("... and drawn once the party is shown again (vis %s)" % vis(late), vis(late) == 1)
+
     # the version tag and the header note
     chk("hub53: the version tag and the header note quote the user", 'local HV = "hub53"' in src
         and "there is a bug when targeting a party member, there is a highlight where the" in src and "hub53 THE PARTY TARGET HIGHLIGHT" in src)

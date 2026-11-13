@@ -689,12 +689,23 @@ local function phlGt(self)
     local inRaid = type(IsInRaid) == "function" and IsInRaid() == true
     phlRegionAlpha(hl, (phlHidden() and not inRaid) and 0 or 1)
 end
+-- (review, 2026-11-13: CompactPartyFrame is made by CompactPartyFrame_Generate when the raid-style party frames first come up, which
+-- can be after this file loads and after the last apply: a button of the party frame is learnt here, on the game's own update, by its
+-- parent - a getter only)
+local function phlKnown(frame)
+    if phl.cuf[frame] then return true end
+    local cpf = _G.CompactPartyFrame
+    if type(cpf) ~= "table" or type(frame) ~= "table" then return false end
+    local ok, p = pcall(function() return frame:GetParent() end)
+    if ok and p == cpf then phl.cuf[frame] = true; return true end
+    return false
+end
 local function phlHook()
     if type(hooksecurefunc) ~= "function" then return end
     for _, fn in ipairs({ "CompactUnitFrame_UpdateSelectionHighlight", "CompactUnitFrame_UpdateReadyCheck" }) do
         if not phl.hooked[fn] and type(_G[fn]) == "function" then
             phl.hooked[fn] = true
-            pcall(hooksecurefunc, fn, function(frame) if phl.cuf[frame] then pcall(phlCuf, frame) end end)
+            pcall(hooksecurefunc, fn, function(frame) if phlKnown(frame) then pcall(phlCuf, frame) end end)
         end
     end
     local hl = phlField(_G.GroupTargeting, "TargetHighlight")
@@ -885,6 +896,7 @@ local function hmCheck()
             if ok and type(a) == "number" and a > 0.01 then hm.fix = hm.fix + 1; hmZero(fr) end
         end
     end
+    pcall(hub.phlApply)            -- hub53 (review): a party frame or group-targeting box the game made after the last apply
 end
 -- hub15 HUD MODE'S BAR HEIGHT (tracking / Interact: the personal resource bar HUD mode shows, Trail.lua's WC.prd; the user: "Yes, add a
 -- slider", per character): Interact's bar owns its place (WC.prd.y, its steps, kept in WowCompanionDB.prdY); the row's last spare columns
