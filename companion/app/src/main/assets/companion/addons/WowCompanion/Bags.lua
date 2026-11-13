@@ -50,6 +50,14 @@
 -- no lines = loading, read again on ITEM_DATA_LOAD_RESULT / TOOLTIP_DATA_UPDATE); the 19 worn tooltips are read only when worn gear
 -- changes (WORN). Read-only calls only; the 0.2 s send limit is unchanged.
 --
+-- bags-onerow1 (the user, 2026-11-13: "Bags share one row"; the pad was full: with every bag and the reagent bag the six per-bag drag
+-- rows bmv0..bmv5 took 56 of 56 rows at the Thor's UI scale, so bmv5, bmvq and the radials' / cast bar's rows had no row): ONE shared
+-- plain drag row "bmv" (column = slot - 1) for every bag. The bag a bmv tap means is NAMED by the tap just before it, on Bags' own
+-- plain row "bagsort" (it was one cell; now 40: column 0 = the game's sort as before, column MV.BASE + bag = "the next bmv tap is in
+-- that bag"). A name is kept MV.TTL seconds and used by ONE bmv tap; a bmv tap with no fresh name is REFUSED (why "nobag"), the half-
+-- done drag pick and a pending cursor tap with it: a bag is never guessed. Plain rows only, no game action, the same in a fight.
+-- Rows: "bmvq" goes on at this file's load (before the radials' and the cast bar's lazy rows), "bmv" is PINNED to the pad's last row
+-- (TapPad pad19), so at the smallest UI scale (54 rows) the shared drag row is the one that drops. The bags doc says the route (mv).
 -- bags-act1 (the user's picks, 2026-11-13, on E:/wow-build/bags_design_1113.md: "Compare action in the bag item Y menu (gear only)",
 -- "side by side: bag item left, worn item(s) right", "confirm stays A = Yes, B = No; rare and better stay REFUSED", "never in combat",
 -- "'Suggested' section at the top of the Destroy picker, RANKED MIX", "a two-hander compares vs main hand + off hand together; empty
@@ -316,7 +324,11 @@ end
 -- "bagsort". Refused in combat, as the game refuses it. The reordering itself comes back as
 -- ordinary BAG_UPDATE_DELAYED traffic.
 if WC.pad and WC.pad.op then
-    pcall(WC.pad.op, "bagsort", nil, function()
+    -- bags-onerow1: 40 columns now; column >= 10 (MV.BASE) names the bag of the next "bmv" tap (WC._bagsNameTap, below), never a sort
+    pcall(WC.pad.op, "bagsort", "bagsort", function(_, col)
+        col = col or 0
+        if col >= 10 then if WC._bagsNameTap then WC._bagsNameTap(col) end; return end
+        if col ~= 0 then return end
         if InCombatLockdown() then
             WC.emit({ type = "cap", bagsSort = { ok = false, why = "combat" } })
             fightRefused()
@@ -335,9 +347,8 @@ end
 -- action tap does the pick-up AND the put-down in ONE handler, so nothing is ever left on the
 -- game's cursor between two taps -- a tap that goes astray leaves no item hanging.
 --
--- Rows: plain (insecure) rows "bmv<bag>" (column = slot - 1) and "bmvq" (column = worn slot - 1),
--- registered LAST (a few seconds after the world loads) so they take the highest pad rows and
--- nobody else's row moves. Equipment changes are refused in combat; a pick expires after 10 s.
+-- Rows: plain (insecure) rows "bmv" (column = slot - 1, the bag named just before on bagsort: bags-onerow1) and "bmvq"
+-- (column = worn slot - 1), registered at this file's load ("bmv" pinned to the pad's last row). Equipment changes are refused in combat; a pick expires after 10 s.
 local PICK_TTL = 10
 local picked = nil          -- { kind = "bag", bag, slot, id } or { kind = "inv", slot, id }
 -- MEASURED 2026-09-28 14:27 (3 drags, all OK): every drop was followed ~3 ms later by a SECOND
@@ -705,21 +716,26 @@ local function onInvCell(slot)
               from = { kind = "bag", bag = p.bag, slot = p.slot }, to = to })
 end
 
+-- bags-onerow1 (the user, 2026-11-13: "Bags share one row"): see the header. MV = the shared drag row's route, also in the bags doc.
+local MV = { ROW = "bmv", NAME_ROW = "bagsort", BASE = 10, TTL = 1.5, bag = nil, at = nil }
+WC._bagsMV = MV                 -- for the harness
+-- a tap on bagsort column BASE + bag: the bag of the NEXT bmv tap (a bag that is not the player's: no name at all)
+function WC._bagsNameTap(col)
+    local bag = (col or 0) - MV.BASE
+    MV.bag, MV.at = nil, nil
+    if not inList(PLAYER_BAGS, bag) then mvReply({ ok = false, why = "nobag", bag = bag }); return end
+    MV.bag, MV.at = bag, GetTime()
+end
+-- the named bag, used once; nil when there is none or it is older than TTL
+local function takeName()
+    local bag, at = MV.bag, MV.at
+    MV.bag, MV.at = nil, nil
+    if bag == nil or at == nil or (GetTime() - at) > MV.TTL or (GetTime() - at) < 0 then return nil end
+    return bag
+end
 local mvRows = {}
-function WC.bagsMoveRows(bagList)
-    if not (WC.pad and WC.pad.op) or not WC._bagsMoveReady then return end
-    for _, e in ipairs(bagList) do
-        local bag = e.bag
-        if not mvRows[bag] then
-            mvRows[bag] = true
-            -- a namespace makes it a 40-column row; the key it carries is not used, only the column
-            pcall(WC.pad.op, "bmv" .. bag, "bmv" .. bag, function(_, col)
-                -- right after a "cursor" tap (bmvq col 36) this tap only moves the controller's cursor here
-                if WC._bagsCursorTap and WC._bagsCursorTap(bag, (col or 0) + 1) then return end
-                onBagCell(bag, (col or 0) + 1)
-            end)
-        end
-    end
+local function mvRegister()
+    if not (WC.pad and WC.pad.op) then return end
     if not mvRows.q then
         mvRows.q = true
         -- columns 0..18 = the worn slots; 19 and up = the Bags room by touch (controller mode, below)
@@ -735,7 +751,27 @@ function WC.bagsMoveRows(bagList)
             onInvCell(col + 1)
         end)
     end
+    if not mvRows.s then
+        mvRows.s = true
+        -- a namespace makes it a 40-column row; the key it carries is not used, only the column. Pinned to the pad's last row.
+        pcall(WC.pad.op, MV.ROW, MV.ROW, function(_, col)
+            local slot = (col or 0) + 1
+            local bag = takeName()
+            if not bag then
+                -- never a guess: the drag's pick and a pending cursor tap are void too (no game action either way)
+                picked = nil
+                if WC._bagsCursorVoid then WC._bagsCursorVoid() end
+                mvReply({ ok = false, why = "nobag", to = { slot = slot } })
+                return
+            end
+            -- right after a "cursor" tap (bmvq col 36) this tap only moves the controller's cursor here
+            if WC._bagsCursorTap and WC._bagsCursorTap(bag, slot) then return end
+            onBagCell(bag, slot)
+        end, { last = true })
+    end
 end
+mvRegister()                    -- at this file's load: bmvq before every lazy row, bmv on the last row
+function WC.bagsMoveRows() mvRegister() end
 
 -- item ids whose name had not loaded when we last looked; GET_ITEM_INFO_RECEIVED re-collects.
 -- A load is REQUESTED once per id per session: an id the server never answers would otherwise
@@ -910,6 +946,7 @@ function WC.collectBags()
     return {
         items = items, free = free, total = total, bags = bags, money = SN(GetMoney),
         freeGeneral = freeGeneral,          -- free slots in bags that take anything (where loot can go)
+        mv = { r = MV.ROW, n = MV.NAME_ROW, b = MV.BASE },   -- bags-onerow1: the shared drag row, the row + first column that name a bag
         -- the game's own open / close of the bags (backpack row cols 39 / 38) can be tapped now
         gameDoors = WC._bagsDoorsLive and WC._bagsDoorsLive() or false,
         -- the old item macros / binds from before the 2026-10-09 ruling, while any exist (BB.old; bmvq 25 cleans them up)
@@ -1039,8 +1076,8 @@ bf:SetScript("OnEvent", function(_, event, a1)
     sendSoon(event)
 end)
 
--- the drag rows go on LAST, a few seconds after the world loads, so they take the highest pad rows
--- and no other room's row moves (the chat session's rule for late rows)
+-- a few seconds after the world loads the bags are collected and the pad published again (bags-onerow1: the drag rows themselves
+-- are registered at this file's load now, "bmv" pinned to the pad's last row)
 do
     local mf = CreateFrame("Frame")
     mf:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -3128,6 +3165,7 @@ function WC._bagsShutTap(col)
     return true
 end
 
+function WC._bagsCursorVoid() ctl.cursorAt = nil end      -- bags-onerow1: a bmv tap with no bag name voids a pending cursor tap
 function WC._bagsCursorTap(bag, slot)
     if not ctl.cursorAt or (GetTime() - ctl.cursorAt) > CURSOR_TTL then return false end
     ctl.cursorAt = nil

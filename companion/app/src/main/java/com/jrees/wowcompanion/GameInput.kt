@@ -99,6 +99,12 @@ object GameInput {
         return TapBridge.tap(ctx, pad, op, col)
     }
 
+    /** bags-onerow1: the taps of ONE action in one batch (all or nothing), [gapMs] apart (see TapBridge.tapsSpaced); the same gate as [tap] */
+    fun taps(ctx: Context, pad: JSONObject?, cells: List<Pair<String, Int>>, gapMs: Long = 0L): Boolean {
+        if (cells.isEmpty() || !ready()) return false
+        return if (gapMs > 0L) TapBridge.tapsSpaced(ctx, pad, cells, gapMs) else TapBridge.taps(ctx, pad, cells)
+    }
+
     /**
      * Typed chat, for the Chat room's composer and nothing else. MEASURED BROKEN on the Thor
      * (2026-09-27): the Enter lands and opens the box, then the letters, the closing Enter and
