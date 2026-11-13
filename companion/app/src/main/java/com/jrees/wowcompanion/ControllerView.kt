@@ -42,6 +42,12 @@ import android.view.View
  * goes; one yes per character"): under the D-pad while PadMap's plan (`padclean`) has something; a box names every button and macro first.
  * m42 THE SHARED ONES (the user's answer 2026-10-09 "Last, separately"): the account-wide DS macros get their own "Delete" button beside
  * it, once no checked character still holds one; its own box names them and any character not checked yet.
+ * p53 THE CAST BAR TAB (the user, 2026-11-13: "in the controller menu we need a Tab for the cast bar if its enabled, where people can
+ * assign anything from the 5 tabs"): a tab after Party mode, shown while Settings' Tap-to-cast bar is not Off and the add-on's bar
+ * takes every kind ([CastStripModel.ctlTab]); [PadTabPage] draws it. The add-on is told the setting (padtab 39 then 30 / 31) on every
+ * room open and every change, so its LB / RB step onto the tab only while it shows; a finger on the tab is padtab 39 then 29.
+ * The one-time try prompt's Yes ([openOnCastBar], the user: "if they press yes on the prompt to try the tap to cast bar, we should
+ * open them to the spell bind room that you are making so they can add spells to it"): the next open lands on that tab, slot 1.
  */
 class ControllerView(
     context: Context,
@@ -74,7 +80,8 @@ class ControllerView(
         CastSettings.init(context)
         HomeSettings.init(context)
         RadialMeta.init(context)
-        HomeSettings.onChange { postInvalidate() }      // the radial's way (Hold / Tap) can change in Home's Settings too
+        HomeSettings.onChange { post { cbSetting(false); invalidate() } }   // the radial's way (Hold / Tap); p53: the bar's setting
+        CastStripModel.Live.onChange { post { cbSetting(false); invalidate() } }    // p53: the Cast bar tab's slots
     }
 
     private val page = PadTabPage(this, { cells -> onPadCells(cells) }, { e -> onBind(e) }, otherReader, cursorOnTabs = { false },
@@ -103,10 +110,18 @@ class ControllerView(
      *  older addon without the "croom" column: the Controller tab's own touch-open (the page lit, Down enters it). */
     fun enterRoom(): Boolean {
         val col = book?.win?.get("croom")
-        val cells = if (col != null) listOf("spells" to col)
+        // p53: the bar's setting first (a no-action pick: the add-on's LB / RB step onto the Cast bar tab only while it shows)
+        val cbOn = cbTabOn()
+        val pre = CastStripModel.ctlSettingCells(cbOn)
+        // the try prompt's Yes: the Cast bar tab, slot 1, after the open (the room's own open route: B goes back as from any tab)
+        val toCb = col != null && castBarWanted && cbOn
+        val after = if (toCb) CastStripModel.ctlTabCells() + (PadMapModel.ROW to PadMapModel.colPos(1)) else emptyList()
+        val cells = if (col != null) pre + ("spells" to col) + after
                     else (if (page.needsLayout()) listOf(page.layoutCell()) else emptyList()) + (PadMapModel.ROW to PadMapModel.COL_OPENED)
         val sent = onPadCells(cells)
-        if (sent && col != null) page.showTabLocal(PadMapModel.TABS[0])      // p17: it opens on WoW Defaults, shown at the tap
+        if (sent && col != null) cbSent = cbOn
+        if (sent && col != null) castBarWanted = false                    // once: this open (on the tab when it shows)
+        if (sent && col != null) page.showTabLocal(if (toCb) "castbar" else PadMapModel.TABS[0])      // p17: it opens on WoW Defaults, shown at the tap
         Log.i(TAG, "controller room enter: ${cells.last()} ${if (sent) "tapped" else "not sent"}")
         page.setActive(isShown)
         return sent
@@ -120,6 +135,22 @@ class ControllerView(
         Log.i(TAG, "controller room leave: spells $col ${if (sent) "tapped" else "not sent"}")
         page.setActive(false)
         return sent
+    }
+
+    /** p53: the try prompt's Yes: the next room open lands on the Cast bar tab, slot 1 (once) */
+    private var castBarWanted = false
+    fun openOnCastBar() { castBarWanted = true }
+    /** the Yes's open is still owed (tests) */
+    val castBarOwed: Boolean get() = castBarWanted
+    /** p53: the Cast bar tab shows (Settings' bar not Off, the add-on's bar takes every kind) */
+    private fun cbTabOn(): Boolean = CastStripModel.ctlTab(HomeSettings.castBarSide, CastStripModel.Live.bar)
+    /** what the add-on was last told (null = nothing yet) */
+    private var cbSent: Boolean? = null
+    /** p53: the setting to the add-on when it changed since it was last told ([force]: always) */
+    private fun cbSetting(force: Boolean) {
+        val on = cbTabOn()
+        if (!force && cbSent == on) return
+        if (onPadCells(CastStripModel.ctlSettingCells(on))) cbSent = on
     }
 
     /** HOME'S ONE RULE FOR EVERY ROOM: let go of the shared capture exactly as leaving does, whatever this view's flags say. */
@@ -187,8 +218,13 @@ class ControllerView(
 
     private fun tab(): String = page.currentView()
     /** party_design.md B: the Party mode tab shows only while Party mode is allowed (QOL > Party, on by default; PadTabCtl p37 steps over it too) */
-    private val TAB_VIEWS: List<String> get() = if (GameUi.partyModeOn()) ALL_TAB_VIEWS else ALL_TAB_VIEWS.dropLast(1)
-    private val TAB_NAMES: List<String> get() = ALL_TAB_NAMES.take(TAB_VIEWS.size)
+    private val TAB_VIEWS: List<String> get() = ALL_TAB_VIEWS.filter { v ->
+        when (v) { "party" -> GameUi.partyModeOn(); "castbar" -> cbTabOn(); else -> true } }              // p53: the Cast bar's own rule
+    /** the page (tests) */
+    fun page(): PadTabPage = page
+    /** the tabs on show (tests: p53's Cast bar tab only while the bar is not Off) */
+    fun tabViews(): List<String> = TAB_VIEWS
+    private val TAB_NAMES: List<String> get() = TAB_VIEWS.map { ALL_TAB_NAMES[ALL_TAB_VIEWS.indexOf(it)] }
     /** the four tabs (p16), the gaps ONLY round the chosen one, where its LB / RB glyphs stand; they move over when the tab changes (the user
      *  after b118: "the spacing should only be between the currently selected tab. swaping between tabs should animate this spacing";
      *  UI Art art-kit 494b1830). Party mode (the 5th tab): the row from the screen edges (the row keeps its L / R room itself) */
@@ -404,7 +440,8 @@ class ControllerView(
             page.showTabLocal(v)
             // the Party mode tab: partycfg's own column when it came (PartyTaps.tab), else Book b47's padtab 26
             val cells = (if (v == "party") PartyTaps.tab(PartyModel.live.cfg) else null)
-                ?: listOf(PadMapModel.ROW_PADTAB to PadMapModel.colTab(n))
+                ?: if (v == "castbar") CastStripModel.ctlTabCells()                     // p53: padtab 39 then 29
+                else listOf(PadMapModel.ROW_PADTAB to PadMapModel.colTab(n))
             val sent = onPadCells(cells)
             Log.i(TAG, "tab '$v': padtab ${PadMapModel.colTab(n)} ${if (sent) "tapped" else "not sent"}")
             downTab = -1; invalidate(); return true
@@ -536,8 +573,8 @@ class ControllerView(
         private val PBMP = Paint(Paint.FILTER_BITMAP_FLAG)
         /** p16 the room's tabs, in PadTabCtl's order; p34 (the user 2026-11-10: "consolidate the Controller menu"): the DS tab is gone (its
          *  switch on WoW Defaults, its four places on WoW Defaults' bare D-pad; the Item wheel's Tap / Hold in Settings > Controller) */
-        private val ALL_TAB_VIEWS = listOf("normal", "combat", "radial", "party")
-        private val ALL_TAB_NAMES = listOf("WoW Defaults", "In combat", "Spell radial", "Party mode")
+        private val ALL_TAB_VIEWS = listOf("normal", "combat", "radial", "party", "castbar")
+        private val ALL_TAB_NAMES = listOf("WoW Defaults", "In combat", "Spell radial", "Party mode", "Cast bar")
         /** the tab's word, measured for the swords' room (UiKit.tab's size) */
         private val PTABW by themed { UiKit.bodyPaint(28f, Theme.text) }
         /** the clean-up buttons' small lines stay this far from the Home bar's frame */

@@ -74,7 +74,15 @@ def store(L, who="Korvash-Realm"):
     t = L.eval('(WowCompanionSpellsDB.castBar or {})["%s"]' % who)
     if t is None:
         return {}
-    return {int(k): int(v) for k, v in t.items()}
+    out = {}
+    for k, v in t.items():
+        if isinstance(v, (int, float)):
+            out[int(k)] = int(v)                    # a cb1-cb8 number (not migrated yet)
+        elif v["k"] == "spell":
+            out[int(k)] = int(v["id"])              # cb9: { k = "spell", id }
+        else:
+            out[int(k)] = (v["k"], v["key"] if v["k"] == "command" else int(v["id"]))
+    return out
 
 
 def last(L, typ):
@@ -102,7 +110,7 @@ nrows0 = int(L.eval('WowCompanion.pad.nrows'))
 check(L.eval('WowCompanion.pad.rows.castbar') is None, "cb2: an empty bar at the login registers NO castbar row")
 d = last(L, "castbar")
 check(d is not None and d.get("pick") is None and d.get("nopad") == 1 and d.get("pp") == [39, 19] and d.get("e") in ([], {})
-      and d.get("v") == "cb6" and d.get("n") == N, "the first document: an empty bar, no pick cell (nopad), the padtab pick 39 then 19", d)
+      and d.get("v") == "cb9" and d.get("n") == N, "the first document: an empty bar, no pick cell (nopad), the padtab pick 39 then 19", d)
 check(L.eval('WowCompanion.pad.describe().rows.castbar') is None, "describe() has no castbar row yet")
 L.execute('WowCompanion.castBar.sync(); fire("PLAYER_REGEN_ENABLED"); runTimers(NOW + 5)')
 check(L.eval('WowCompanion.pad.rows.castbar') is None, "a sync / fight's end with an empty bar: still no row")

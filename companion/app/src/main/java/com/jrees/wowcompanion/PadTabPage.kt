@@ -61,6 +61,13 @@ import kotlin.math.abs
  * spell's row (Move / Change combat spell as before), with it on Melee | Range (the picked one lit, the controller's A picker's cursor
  * boxed), a one-line hint, and Bind (A) / Move (X) for the picked half. A finger's box / half / Bind / Move are Book b52's padtab 39 pick
  * + its code (no game action), then the usual spell / Clear / Move taps; the add-on (PadTabCtl p46, PadMap m146) does the rest.
+ *
+ * p53 THE CAST BAR TAB (the user, 2026-11-13: "in the controller menu we need a Tab for the cast bar if its enabled, where people can
+ * assign anything from the 5 tabs"; PadTabCtl p53, ActionBar cb9): view "castbar" draws the tap-to-cast bar's 8 slots as one row in
+ * the bar's own well (the kit's slots; an item's count), the right page the slot's thing with Move (X) / Choose or Change (A); the
+ * chooser is the eight's with all five tabs (the game bindings left out: a key is no cast). The slots come from the `castbar`
+ * document ([CastStripModel.Live]); every tap is the eight's own route (a slot = button code 1-8, the spell's Bind taps, the "extra"
+ * row, Clear, padtab 3 / 4 / 5): the add-on puts it on the cast bar's slot.
  */
 class PadTabPage(
     private val host: View,
@@ -306,6 +313,7 @@ class PadTabPage(
         if (c.note == "bind-move") say("It rides the key, not the bar: clear it and choose it where you want it")
         if (c.note == "stick-binds") say("Game keys only")                                          // m150 / p49
         if (c.note == "stick-normal") say("L3 / R3 are set on WoW Defaults")                        // p52: no fight layer on a stick
+        if (c.note == "cb-bind") say("Game keys only on buttons")                                   // p53: the cast bar casts
         if (c.note == "move-refused") say("The game did not move it")
         if (c.note == "not-on-radial") say("The spell radial takes spells only")
         if (c.note == "paused") say(PAUSED_LINE)                            // m40 / p18
@@ -316,10 +324,10 @@ class PadTabPage(
     /** the carried button [from] went onto [to] (in set [toSet]); [swap]: what was there went back to [from]'s place */
     private fun startFly(from: PadMapModel.Carry, to: Int, toSet: Int, swap: Boolean) {
         val m = map ?: return
-        val a = viewIcon(m, PadMapModel.slot(m, from.set, from.pos), from.pos)
+        val a = viewIcon(m, at(m, from.set, from.pos), from.pos)
         val toR = square(to)
         val fromA = carriedRect(toR)
-        val b = if (swap) viewIcon(m, PadMapModel.slot(m, toSet, to), to) else null
+        val b = if (swap) viewIcon(m, at(m, toSet, to), to) else null
         val back = if (swap && from.set == toSet) square(from.pos) else null
         fly = Fly(a, fromA, toR, b, if (swap) toR else null, back, SystemClock.uptimeMillis())
         host.invalidate()
@@ -415,8 +423,10 @@ class PadTabPage(
         lbHeld = lb
         if (lb || ctl?.on != true) return
         if (boxOpenNow() == null) {                                     // p30: the chooser open too (LB is the room's tab before)
-            val i = PadMapModel.tabOf(view) - 1
-            if (i >= 1) showTabLocal(PadMapModel.TABS[i - 1])
+            // p53: the tab before among those shown (the DS tab never; Party mode only while it is allowed)
+            var i = PadMapModel.tabOf(view) - 2
+            while (i >= 0 && (PadMapModel.TABS[i] == "ds" || (PadMapModel.TABS[i] == "party" && !GameUi.partyModeOn()))) i--
+            if (i >= 0) showTabLocal(PadMapModel.TABS[i])
         }
         // the tap-timing rule: no tap within ~150 ms of a controller change
         host.postDelayed({ if (ctl?.on == true && host.isShown) tap(listOf(PadMapModel.ROW_PADTAB to PadMapModel.COL_LB)) }, LB_TAP_MS)
@@ -451,6 +461,7 @@ class PadTabPage(
     /** the button as the room shows it: with a form chosen, the bare set's positions are that form's own In-combat spells (empty = the
      *  caster's spell fights there); B (7) stays the game's Back */
     private fun slotOf(m: PadMapModel.Map, s: Int, p: Int): PadMapModel.Slot? {
+        if (castBar()) return cbSlot(p)                                     // p53
         val f = formNow()
         if (f == null || s != 1 || p == 7) return PadMapModel.slot(m, s, p)
         val r = PadMapModel.formFight(m, f, p)
@@ -460,6 +471,61 @@ class PadTabPage(
     }
     /** the form row: Caster, then the forms (between the set row and the buttons) */
     private fun formRect(i: Int) = PadDiamonds.rect(PadDiamonds.formRect(i))
+
+    // ---------------------------------------------------------------- p53 THE CAST BAR TAB
+    /** the Cast bar tab is on show */
+    private fun castBar() = view == "castbar"
+    /** cast bar slot [p] (1-8) as one of the page's slots (a storage of its own: Change / Move work on it as on a button) */
+    private fun cbSlot(p: Int): PadMapModel.Slot {
+        val s = CastStripModel.Live.bar?.slots?.getOrNull(p - 1)
+        if (s == null || !s.filled) return PadMapModel.Slot(p, p, PadMapModel.Kind.NONE, null, null, 0)
+        val kind = when (s.kind) {
+            CastStripModel.Kind.SPELL -> PadMapModel.Kind.SPELL; CastStripModel.Kind.ITEM -> PadMapModel.Kind.ITEM
+            CastStripModel.Kind.MOUNT -> PadMapModel.Kind.OTHER; CastStripModel.Kind.COMMAND -> PadMapModel.Kind.COMMAND
+        }
+        val name = s.name ?: if (s.kind == CastStripModel.Kind.SPELL) lastBook?.let { b -> SpellsModel.tabSpells(b)
+            .firstOrNull { it.spellId == s.id || it.actionId == s.id }?.name } else null
+        return PadMapModel.Slot(p, p, kind, s.id, name ?: if (s.kind == CastStripModel.Kind.SPELL) "Spell" else null, s.icon ?: 0, key = s.key)
+    }
+    /** the slot as the page shows it (the cast bar's, else the bar's) */
+    private fun at(m: PadMapModel.Map, s: Int, p: Int): PadMapModel.Slot? = if (castBar()) cbSlot(p) else PadMapModel.slot(m, s, p)
+    /** what a put on the chosen place replaces (PadMapModel.replaces; the cast bar's slot on its tab) */
+    private fun replacesHere(m: PadMapModel.Map): PadMapModel.Slot? =
+        at(m, shown(), pos)?.takeIf { it.kind != PadMapModel.Kind.NONE && it.kind != PadMapModel.Kind.FIXED }
+    /** slot [p]'s tile: one row of 8 in the bar's well, across the left page */
+    private fun cbTile(p: Int): RectF {
+        val x = CB_X0 + (p - 1).coerceIn(0, 7) * (CB_TILE + CB_GAP)
+        return RectF(x, CB_Y, x + CB_TILE, CB_Y + CB_TILE)
+    }
+    private fun cbWell() = RectF(CB_X0 - 22f, CB_Y - 22f, CB_X0 + 8 * CB_TILE + 7 * CB_GAP + 22f, CB_Y + CB_TILE + 22f)
+    private fun drawCastBar(c: Canvas, m: PadMapModel.Map) {
+        val k = ctl?.takeIf { it.on }
+        val open = chooserList() != null || tBox != null || ctlBox() != null
+        UiKit.module(c, cbWell())
+        val bar = CastStripModel.Live.bar
+        val pn = UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim; textAlign = Paint.Align.CENTER }
+        for (p in 1..8) {
+            val r = cbTile(p)
+            val sl = cbSlot(p)
+            val bs = bar?.slots?.getOrNull(p - 1)
+            val spent = bs?.kind == CastStripModel.Kind.ITEM && bs.count == 0
+            UiKit.slot(c, iconOf(m, sl, p), r.left, r.top, r.width(), count = bs?.countShown ?: 0, dim = spent || bs?.queued == true)
+            if (p == pos && chooserList() != null) UiKit.checkedGlow(c, RectF(r))
+            c.drawText(p.toString(), r.centerX(), cbWell().bottom + 30f, pn)
+        }
+        val carry = carryNow()
+        if (carry != null) {
+            val r = cbTile(carry.pos)
+            c.drawRoundRect(RectF(r.left + 4f, r.top + 4f, r.right - 4f, r.bottom - 4f), 6f, 6f, PGHOST)
+            if (carry.pos != pos && cbSlot(pos).kind != PadMapModel.Kind.NONE) swapMark(c, cbTile(pos))
+        }
+        val quiet = SystemClock.uptimeMillis() >= pickUntil
+        if (cursorOnTabs() && !open) {}
+        else if (k != null && (k.focus == "tabs" || k.focus == "switches") && !open && quiet) {}
+        else if (chooserList() != null) {}
+        else UiKit.slotFocus(c, cbTile(pos))
+        if (carry != null) UiKit.carried(c, carryIcon(m, carry), cbTile(pos))
+    }
     /** the form row shows: In combat (a character with forms), or out of combat while the game lays a form bar (PadMap m57, the user's A) */
     private fun formsShown(m: PadMapModel.Map) = m.forms.isNotEmpty() && (view == "combat" || (view == "normal" && m.stance != null))
     private fun drawForms(c: Canvas, m: PadMapModel.Map, book: SpellsModel.Book?) {
@@ -509,7 +575,7 @@ class PadTabPage(
         }
     }
     /** a button's words ("LT + X"); the Controller room's clean-up box names its buttons with it */
-    fun comboWord(s: Int, p: Int) = (if (s == 1) "" else setWord(s) + " + ") + buttonWord(p)
+    fun comboWord(s: Int, p: Int) = if (castBar()) "slot $p" else (if (s == 1) "" else setWord(s) + " + ") + buttonWord(p)   // p53
     private fun glyph(p: Int) = SpellsModel.combo(SpellsModel.PadSlot(0, 1, 1, p), style()).button
 
 
@@ -603,11 +669,12 @@ class PadTabPage(
         // items, each group under its heading once there is more than one group
         if (list == "dstool") return commandRows(m, true)                  // p34: the DS tab, its commands only
         val cmds = commandRows(m, false)
-        if (m.binds.isEmpty() && m.mounts.isEmpty() && m.items.isEmpty()) return cmds
+        if ((m.binds.isEmpty() || castBar()) && m.mounts.isEmpty() && m.items.isEmpty()) return cmds
         val out = ArrayList<Thing>()
         if (cmds.isNotEmpty()) { out += Thing.Header("Commands"); out += cmds }             // m40: none while paused
         // m34: the game's bindings (the router points the button's key at them), then m33's mounts and items
-        if (m.binds.isNotEmpty()) { out += Thing.Header("Controller"); m.binds.forEachIndexed { j, b -> out += Thing.Binding(b, m.commands.size + j) } }
+        // p53: the cast bar takes no game binding (a key, not a cast)
+        if (m.binds.isNotEmpty() && !castBar()) { out += Thing.Header("Controller"); m.binds.forEachIndexed { j, b -> out += Thing.Binding(b, m.commands.size + j) } }
         val n0 = m.commands.size + m.binds.size
         if (m.mounts.isNotEmpty()) { out += Thing.Header("Mounts"); m.mounts.forEachIndexed { j, x -> out += Thing.Mount(x, n0 + j) } }
         if (m.items.isNotEmpty()) {
@@ -628,7 +695,7 @@ class PadTabPage(
             PadMapModel.isFace(sl) && sl!!.fight != null -> Thing.Unface
             else -> null
         }
-        else if (PadMapModel.replaces(m, shown(), pos) != null) Thing.Clear else null
+        else if (replacesHere(m) != null) Thing.Clear else null
     }
 
     private fun idOf(t: Thing): String = when (t) {
@@ -670,7 +737,7 @@ class PadTabPage(
 
     /** p9: the set row is ZL / ZR / ZL + ZR (sets 2-4; [i] 0-2), their glyphs, no "None" (PadDiamonds: shared with Party mode's tab) */
     private fun setRect(i: Int) = PadDiamonds.rect(PadDiamonds.setRect(i))
-    private fun square(p: Int) = PadDiamonds.rect(PadDiamonds.square(p, swap()))
+    private fun square(p: Int) = if (castBar()) cbTile(p) else PadDiamonds.rect(PadDiamonds.square(p, swap()))   // p53: the bar's tiles
     private fun actRect(w: Float, h: Float) = RectF(SPLIT + 40f, h - 141f, w - 56f, h - 30f)
     /** p9: the second button, over the first: X = Move (or, carrying, B = Cancel) */
     private fun moveRect(w: Float, h: Float) = RectF(SPLIT + 40f, h - 252f, w - 56f, h - 160f)
@@ -706,6 +773,15 @@ class PadTabPage(
             return
         }
         if (view == "radial") { drawRadial(c, m, w, h, book); return }
+        lastBook = book ?: lastBook
+        if (castBar()) {                                                    // p53: the bar's 8 slots, the right page, the chooser, its boxes
+            drawCastBar(c, m)
+            drawFly(c)
+            drawRight(c, m, 1, w, h)
+            chooserList()?.let { drawChooser(c, m, book, 1, it, w, h) }
+            drawBox(c, m, book, 1, w)
+            return
+        }
         val s = shown()
         val k = ctl?.takeIf { it.on }
         val open = chooserList() != null || tBox != null || ctlBox() != null
@@ -1348,9 +1424,9 @@ class PadTabPage(
             PadMapModel.Kind.ITEM -> "Item"
             PadMapModel.Kind.MACRO -> cmd?.body?.let { "Macro: $it" } ?: "Macro"
             PadMapModel.Kind.FIXED -> "Set by the game"
-            PadMapModel.Kind.OTHER -> "Set in the game"
             PadMapModel.Kind.BIND -> "The game's own key"
-            PadMapModel.Kind.COMMAND -> "Command (no macro)"                 // m41: the overlay
+            PadMapModel.Kind.COMMAND -> if (castBar()) "Command" else "Command (no macro)"                 // m41: the overlay
+            PadMapModel.Kind.OTHER -> if (castBar()) "Mount" else "Set in the game"                            // p53
             else -> if (gameOn(sl) != null) "Set by the game" else null          // m155: a stick's game binding
         }
         val dim = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
@@ -1361,6 +1437,8 @@ class PadTabPage(
         // On: the set's trigger(s) + the button, as the game names it
         val cy = top + 166f
         val pOn = UiKit.inkPaint(28f).apply { color = Theme.parchmentInkDim }
+        if (castBar()) c.drawText(Tr.t("Cast bar slot $pos"), x0 + 8f, cy - 2f - (pOn.ascent() + pOn.descent()) / 2f, pOn)   // p53
+        else {
         c.drawText(Tr.t("On"), x0 + 8f, cy - 2f - (pOn.ascent() + pOn.descent()) / 2f, pOn)
         val combo = SpellsModel.combo(SpellsModel.PadSlot(0, 1, s, pos), style())
         var x = x0 + 66f
@@ -1370,6 +1448,7 @@ class PadTabPage(
             else -> null
         }
         UiKit.padCombo(c, trigger, combo.button, x, cy, 56f, Theme.parchmentInk, shadow = false)
+        }
         UiKit.tex("book_divider")?.let { c.drawBitmap(it, null, RectF(x0, top + 204f, x1, top + 215f), PBMP) }
 
         // one line of help
@@ -1378,6 +1457,7 @@ class PadTabPage(
             fixed && sl?.fight != null -> "Out of combat the game keeps this button for itself. In a fight it casts ${sl.fight.name} (In combat, above)."
             PadMapModel.isFace(sl) -> "Out of combat the game keeps this button for itself. In combat (above) it can cast a spell in fights."
             fixed -> "The game keeps this button for itself in the base set: it cannot change. Hold $l or $r for buttons you can set."
+            castBar() -> "Spells, items, mounts and commands"                                        // p53 (terse)
             else -> "Change puts a spell from your book, or one of the game's commands, on this button."
         }
         val pd = TextPaint(UiKit.inkPaint(24f))
@@ -1408,7 +1488,7 @@ class PadTabPage(
     }
 
     /** what a carry shows: the button's picture, or (m146) the Smart Range half's */
-    private fun carryIcon(m: PadMapModel.Map, carry: PadMapModel.Carry) = PadMapModel.slot(m, carry.set, carry.pos).let { src ->
+    private fun carryIcon(m: PadMapModel.Map, carry: PadMapModel.Carry) = at(m, carry.set, carry.pos).let { src ->
         if (carry.h != null) PadMapModel.srHalf(src, carry.h)?.let { Icons.get(it.icon) } else viewIcon(m, src, carry.pos)
     }
 
@@ -1417,8 +1497,8 @@ class PadTabPage(
         val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
         val pt = UiKit.inkPaint(40f, heading = true)
         c.drawText(Tr.t("Move"), x0 + 8f, top + 30f - pt.ascent() - 4f, pt)
-        val src = PadMapModel.slot(m, carry.set, carry.pos)
-        val under = PadMapModel.slot(m, s, pos)
+        val src = at(m, carry.set, carry.pos)
+        val under = at(m, s, pos)
         val same = carry.set == s && carry.pos == pos
         // m146: a Smart Range half swaps only with the target's same half
         val swap = if (carry.h != null) !same && PadMapModel.srHalf(under, carry.h) != null
@@ -1771,7 +1851,7 @@ class PadTabPage(
             val ct = clearTop(box)
             UiKit.divider(c, inner.left + 16f, ct - 4f, inner.right - 16f, ct - 4f)
             UiKit.menuRow(c, RectF(inner.left, ct, inner.right, ct + ROW_H), thingName(if (pin == Thing.Uncombat || pin == Thing.Unface) pin else Thing.Clear)
-                .let { if (it == "Clear") (if (view == "radial") "Clear this slice" else "Clear this button") else it }, sel == idOf(pin!!), Theme.unusable,
+                .let { if (it == "Clear") (if (view == "radial") "Clear this slice" else if (castBar()) "Clear this slot" else "Clear this button") else it }, sel == idOf(pin!!), Theme.unusable,
                 art = "icon_redx", enabled = !m.combat, size = ROW_TEXT)
         }
         // m34 (UI Art): the controller resting on a DIM binding row says why, one short line over the hints (the game's greyed entries say it
@@ -1819,7 +1899,7 @@ class PadTabPage(
             kind == "replace" -> Triple("$here is on ${comboWord(s, pos)}.", "Replace it with ${thingName(thing)}?", "Replace")
             kind == "clear" && thing == Thing.Uncombat -> Triple("${sl?.combat?.name ?: "?"} is this button's combat spell.",
                 "Clear it?" + (sl?.otherwise?.let { " ${it.name} stays out of combat." } ?: ""), "Clear")
-            kind == "clear" -> Triple("$here is on ${comboWord(s, pos)}.", "Clear this button?", "Clear")
+            kind == "clear" -> Triple("$here is on ${comboWord(s, pos)}.", if (castBar()) "Clear this slot?" else "Clear this button?", "Clear")
             kind == "cfull" -> Triple("All ${ch?.max ?: 30} Character Macros are in use.", "Delete one in the game's macro window first.", "Okay")
             else -> Triple("All ${g?.max ?: 120} General Macros are in use.", "Delete one in the game's macro window first.", "Okay")
         }
@@ -1883,6 +1963,12 @@ class PadTabPage(
     fun chooserOpen(): Boolean = chooserList() != null
     /** the chooser's open tab ("spells", "extra", ...), null = closed (tests: p52's stick chooser) */
     fun chooserTab(): String? = chooserList()
+    /** the open chooser's rows by id (tests: p53's Cast bar chooser lists no game binding); empty when none is open */
+    fun chooserRowIds(book: SpellsModel.Book?): List<String> {
+        val list = chooserList() ?: return emptyList()
+        val m = map ?: return emptyList()
+        return rowsOf(list, book, m).map { idOf(it) }
+    }
     /** the open chooser's spell rows by id (tests: m148's Melee half lists only next-swing attacks); empty when none is open */
     fun chooserSpellIds(book: SpellsModel.Book?): List<Int> {
         val list = chooserList() ?: return emptyList()
@@ -2029,6 +2115,16 @@ class PadTabPage(
 
     /** the left page: a set, a button, the page arrows (picks: no game action) */
     private fun tapLeft(x: Float, y: Float, h: Float, m: PadMapModel.Map) {
+        if (castBar()) {                                                    // p53: a slot = button code 1-8 (a pick, no game action)
+            for (p in 1..8) {
+                val r = cbTile(p)
+                if (x >= r.left - 6f && x <= r.right + 6f && y >= r.top - 10f && y <= r.bottom + 10f) {
+                    fingerOnButton = true
+                    pick(1, p); tap(listOf(PadMapModel.ROW to PadMapModel.colPos(p))); return
+                }
+            }
+            return
+        }
         if (view == "radial") {
             // p40: a radial's plate (a pick: it shows; the right page its settings), + (New: ONE action), a place on the wheel (a pick)
             val pi = plateAt(x, y)
@@ -2114,6 +2210,7 @@ class PadTabPage(
         // m147 / p47 (review): a Smart Range half's Clear goes straight off like its put (the Clear box named the button's other half)
         if (fight() && (t is Thing.Uncombat || t is Thing.Unface) && halfChooser() != null) return null
         if (t is Thing.Clear || t is Thing.Uncombat || t is Thing.Unface) return "clear"
+        if (castBar()) return if (!afterReplace && replacesHere(m) != null) "replace" else null   // p53: no macro is ever made
         if (view == "radial") return if (!afterReplace && radId(pos) != 0) "replace" else null       // p16: PadTabCtl's boxFor
         val here = slotOf(m, shown(), pos)
         if (fight() && t is Thing.Spell && halfChooser() != null) return null   // m146: a half's spell goes straight on (PadTabCtl p46)
@@ -2130,7 +2227,7 @@ class PadTabPage(
         // Replace asks only when the fight layer holds something there (a combat button); an empty fight layer: straight on
         // p43: a base X / Y / A's fight action counts too
         if (fight() && whole(t)) return if (!afterReplace && (here?.kind == PadMapModel.Kind.COMBAT || (PadMapModel.isFace(here) && here!!.fight != null))) "replace" else null
-        if (!afterReplace && PadMapModel.replaces(m, shown(), pos) != null) return "replace"
+        if (!afterReplace && replacesHere(m) != null) return "replace"
         if (t is Thing.Command && !t.c.made) return if (PadMapModel.macrosFull(m)) "full" else "make"
         return null
     }
@@ -2210,6 +2307,11 @@ class PadTabPage(
 
     companion object {
         private const val SPLIT = 740f
+        /** p53: the Cast bar tab's tiles (one row of 8 across the left page, in the bar's well) */
+        private const val CB_TILE = 72f
+        private const val CB_GAP = 12f
+        private const val CB_X0 = (8f + SPLIT) / 2f - (8 * CB_TILE + 7 * CB_GAP) / 2f
+        private const val CB_Y = 360f
         /** m155: the form note's baseline, below the sticks' pair (PadDiamonds.STICK_CY + 32 = 822) and above the page arrows (854) */
         const val FORM_NOTE_Y = 846f
         /** p16 the wheel's centre: the left page's middle */

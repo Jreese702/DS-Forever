@@ -3692,6 +3692,27 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         CastBarAsk.answer(yes)
         Log.i(HomeView.TAG, "cast bar ask: ${if (yes) "Yes - the bar on Both, Hide in combat" else "No - the bar stays Off"}")
         setupView.close(); setupPadOff(); castAskFrames?.drop(); castAskFrames = null
+        // the user, 2026-11-13: "if they press yes on the prompt to try the tap to cast bar, we should open them to the spell bind room
+        // that you are making so they can add spells to it": the Controller room on its Cast bar tab, slot 1 (once Home is free)
+        if (yes) { castTabOwed = true; controllerView.openOnCastBar(); ui.removeCallbacks(castTabTick); ui.postDelayed(castTabTick, 600L) }
+    }
+
+    /** the Yes's Controller room open, still owed (CastBarAsk.openTabNow) */
+    private var castTabOwed = false
+    private val castTabTick = object : Runnable {
+        override fun run() {
+            if (shell.hostGone() || !castTabOwed) return
+            val busy = setupView.visibility == View.VISIBLE || setupWaiting != null || startView.visibility == View.VISIBLE ||
+                loginPrompt.isOpen || newSpellAsking != 0 || newSpellBinding != 0 || interactView.visibility == View.VISIBLE ||
+                dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE
+            if (CastBarAsk.openTabNow(castTabOwed, room == Room.HOME && !homeView.homeGuestWanted(), homeView.inFight(),
+                    CastBarAsk.capFree(capHolder, false), busy)) {
+                castTabOwed = false
+                Log.i(HomeView.TAG, "cast bar ask: Yes - the Controller room on its Cast bar tab")
+                controllerView.openOnCastBar()
+                pickRoom(Room.CONTROLLER)
+            } else ui.postDelayed(this, 1_000L)
+        }
     }
 
     private val CAST_ASK_PIC_H = 400f

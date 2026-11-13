@@ -35,6 +35,13 @@ object CastBarAsk {
     /** the open question is put away (unanswered: it comes back) when a fight starts or Home is left */
     fun hideNow(open: Boolean, fight: Boolean, onHome: Boolean): Boolean = open && (fight || !onHome)
 
+    /** Yes OPENS THE CAST BAR TAB (the user, 2026-11-13: "if they press yes on the prompt to try the tap to cast bar, we should open
+     *  them to the spell bind room that you are making so they can add spells to it"): the Controller room on its Cast bar tab, slot 1,
+     *  by the room's own open (B one step back, then Home). Now when Home is free ([owed] the Yes's open not done yet, on Home, no fight,
+     *  nothing holding the controller, nothing else up); else as soon as it is, once */
+    fun openTabNow(owed: Boolean, onHome: Boolean, fight: Boolean, capFree: Boolean, busy: Boolean): Boolean =
+        owed && onHome && !fight && capFree && !busy
+
     /** the answer: Yes = the bar under both columns, hidden in a fight (the user's defaults); No = left Off. Asked for good either way */
     fun answer(yes: Boolean) {
         if (yes) {

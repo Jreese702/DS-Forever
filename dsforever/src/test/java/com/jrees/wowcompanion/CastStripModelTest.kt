@@ -28,6 +28,39 @@ class CastStripModelTest {
 
     @After fun down() { HomeSettings.startForTest(null) }
 
+    /** cb9 (the user, 2026-11-13: "in the controller menu we need a Tab for the cast bar if its enabled, where people can assign anything
+     *  from the 5 tabs"): every kind read; the Spellbook's reads count spells only; the Controller room's tab and its taps */
+    @Test fun cb9ReadsEveryKind() {
+        val b = bar("""{"type":"castbar","v":"cb9","n":8,"any":1,"e":[{"s":1,"id":403,"i":136048,"c":0},
+            {"s":2,"k":"command","key":"DSMAP","n":"Open Map","i":134269,"c":1},
+            {"s":3,"k":"item","id":118,"n":"Minor Healing Potion","i":134829,"ct":7,"cons":1,"c":2},
+            {"s":4,"k":"item","id":6948,"n":"Hearthstone","i":134414,"ct":1,"c":3},
+            {"s":5,"k":"mount","id":6,"n":"Brown Horse","i":132261,"q":1},{"s":6,"k":"item","id":118,"ct":0,"cons":1,"c":5}]}""")
+        assertTrue(b.anyKind)
+        assertEquals(CastStripModel.Kind.SPELL, b.slots[0].kind)
+        assertEquals(CastStripModel.Kind.COMMAND, b.slots[1].kind)
+        assertEquals("DSMAP", b.slots[1].key)
+        assertNull("a command has no id", b.slots[1].id)
+        assertEquals("Open Map", b.slots[1].name)
+        assertEquals(CastStripModel.ROW to 1, CastStripModel.tapCell(b, 1))
+        assertEquals(7, b.slots[2].countShown)
+        assertNull("a single Hearthstone shows no count", b.slots[3].countShown)
+        assertEquals("none left: 0 shown", 0, b.slots[5].countShown)
+        assertEquals(CastStripModel.Kind.MOUNT, b.slots[4].kind)
+        assertNull("a queued slot takes no tap", CastStripModel.tapCell(b, 4))
+        assertTrue(b.has(403))
+        assertFalse("an item id is no spell for the Bind box", b.has(118))
+        assertEquals(-1, b.slotOf(118, 118))
+        assertTrue(b.hasSpells)
+        assertFalse("a cb6 bar takes spells only", bar(two).anyKind)
+        assertTrue(CastStripModel.ctlTab(BOTH, b))
+        assertFalse(CastStripModel.ctlTab(OFF, b))
+        assertFalse(CastStripModel.ctlTab(L, bar(two)))
+        assertEquals(listOf("padtab" to 39, "padtab" to 29), CastStripModel.ctlTabCells())
+        assertEquals(listOf("padtab" to 39, "padtab" to 30), CastStripModel.ctlSettingCells(true))
+        assertEquals(listOf("padtab" to 39, "padtab" to 31), CastStripModel.ctlSettingCells(false))
+    }
+
     @Test fun theDocumentReadsEightSlots() {
         val b = bar(two)
         assertEquals(8, b.slots.size)

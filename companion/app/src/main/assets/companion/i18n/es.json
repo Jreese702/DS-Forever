@@ -1,5 +1,11 @@
 {
 "plain": {
+"Clear this slot": "Vaciar este espacio",
+"Clear this slot?": "¿Vaciar este espacio?",
+"Game keys only on buttons": "Las teclas del juego, solo en botones",
+"Mount": "Montura",
+"Command": "Comando",
+"Spells, items, mounts and commands": "Hechizos, objetos, monturas y comandos",
 "Eight spells in one bar under both;": "Ocho hechizos en una barra bajo ambas;",
 "swipe left for more.": "desliza a la izquierda para ver más.",
 "Try the new tap-to-cast bar?": "¿Probar la nueva barra de toque para lanzar?",
@@ -1766,6 +1772,7 @@
 "Bags full": "Bolsas llenas"
 },
 "templates": {
+"Cast bar slot %s": "Espacio %s de la barra",
 "Always %s": "Siempre %s",
 "%s: upgrade on your buttons?": "%s: ¿mejorar en tus botones?",
 "Upgraded on %s buttons": "Mejorado en %s botones",

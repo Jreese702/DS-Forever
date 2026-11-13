@@ -40,6 +40,11 @@ import org.json.JSONObject
  * spread evenly across it, no scroll (cb6's two wells are gone). RIGHT's strip rests at its END ([rest]: slots 5-8 in view, the left
  * arrow showing); the player scrolls left for 1-4. LEFT rests at the start. The scroll kept for the run is per side ([Live.side]): a
  * side change starts that side at its rest ([Live.laid]).
+ * cb9 ANY CHOOSER KIND (the user, 2026-11-13: "in the controller menu we need a Tab for the cast bar if its enabled, where people can
+ * assign anything from the 5 tabs"; ActionBar cb9, PadTabCtl p53): a slot holds a spell, an item, a mount or a command ([Slot.kind]);
+ * the document says the kind (`k`, none = a spell), the name (`n`), an item's count (`ct`, `cons` a consumable) and `any` = 1 (the bar
+ * takes every kind: [Bar.anyKind], the Controller room's Cast bar tab then shows). [Slot.id] is the spell / item / mount id; the
+ * Spellbook's reads ([Bar.has], [Bar.slotOf]) count spells only.
  * The logic, without the look (unit-tested in dsforever: CastStripModelTest).
  */
 object CastStripModel {
@@ -64,28 +69,41 @@ object CastStripModel {
      *  or one bar under BOTH columns */
     enum class Side(val label: String) { OFF("Off"), LEFT("Left"), RIGHT("Right"), BOTH("Both") }
 
-    /** one slot: [index] 0..7, the spell [id], its [icon] file id, the pad [cell] while the add-on's cell casts it (null = do not tap),
-     *  [queued] = a fight's edit waits for the fight's end (drawn dimmed) */
-    data class Slot(val index: Int, val id: Int?, val icon: Int?, val cell: Int?, val queued: Boolean)
+    /** cb9: what a slot holds */
+    enum class Kind { SPELL, ITEM, MOUNT, COMMAND }
+
+    /** one slot: [index] 0..7, the spell [id] (cb9: the item's / mount's for those kinds), its [icon] file id, the pad [cell] while the
+     *  add-on's cell casts it (null = do not tap), [queued] = a fight's edit waits for the fight's end (drawn dimmed); cb9: [kind], a
+     *  command's [key], the [name] (not for a spell: the book names it), an item's [count] (null = not said) and [consumable] */
+    data class Slot(val index: Int, val id: Int?, val icon: Int?, val cell: Int?, val queued: Boolean, val kind: Kind = Kind.SPELL,
+                    val key: String? = null, val name: String? = null, val count: Int? = null, val consumable: Boolean = false) {
+        /** something is on the slot (any kind) */
+        val filled: Boolean get() = id != null || key != null
+        /** the slot's spell id (a spell slot only) */
+        val spellId: Int? get() = if (kind == Kind.SPELL) id else null
+        /** cb9: the count drawn on the tile: a consumable's, or any item's past 1 (none for a single non-consumable: a Hearthstone) */
+        val countShown: Int? get() = count?.takeIf { kind == Kind.ITEM && (consumable || it != 1) }
+    }
 
     /** the `castbar` document: [slots] always [SLOTS] (empty ones have no id), [pick] the row's pick cell (null = no pad row),
      *  [fight] the add-on's lockdown now, [padPick] cb2's pick on the padtab row (its columns in order; null = an older add-on),
      *  [n] the add-on's slot count (cb6 = 8; cb3's 6 and an older add-on's 12 have no slot pick here: their codes differ) */
     data class Bar(val slots: List<Slot>, val pick: Int?, val fight: Boolean, val version: String, val padPick: List<Int>? = null,
-                   val n: Int = SLOTS) {
+                   val n: Int = SLOTS, val anyKind: Boolean = false) {
         /** a pick can be sent: the padtab pick (cb2) or the row's own pick cell */
         val pickable: Boolean get() = padPick != null || pick != null
         /** cb3: the add-on takes a pick for one slot (the Bind box's Cast bar tab, Book b56) */
         val slotPick: Boolean get() = padPick?.firstOrNull() == PICK && n == SLOTS
-        val hasSpells: Boolean get() = slots.any { it.id != null }
-        fun has(spellId: Int?): Boolean = spellId != null && slots.any { it.id == spellId }
-        val full: Boolean get() = slots.all { it.id != null }
+        /** something is on the bar (cb9: any kind) */
+        val hasSpells: Boolean get() = slots.any { it.filled }
+        fun has(spellId: Int?): Boolean = spellId != null && slots.any { it.spellId == spellId }
+        val full: Boolean get() = slots.all { it.filled }
         /** a Spellbook entry is on the bar: the add-on keeps the id Book's taps hand it (the book item's action id, Spells `a`),
          *  which is not the entry's [SpellsModel.Entry.spellId] for an overridden spell, so either one counts */
         fun hasEntry(actionId: Int?, spellId: Int?): Boolean = has(actionId?.takeIf { it > 0 }) || has(spellId)
         /** the slot an entry is on (0..7), or -1 */
         fun slotOf(actionId: Int?, spellId: Int?): Int = slots.indexOfFirst { s ->
-            s.id != null && (s.id == actionId?.takeIf { it > 0 } || s.id == spellId) }
+            s.spellId != null && (s.spellId == actionId?.takeIf { it > 0 } || s.spellId == spellId) }
     }
 
     /** the id the add-on stores for a Spellbook entry: Book's taps carry the book item's action id (Spells `a`), else its spell id */
@@ -99,16 +117,21 @@ object CastStripModel {
                 val o = a.optJSONObject(k) ?: continue
                 val s = o.optInt("s", 0)
                 if (s !in 1..SLOTS) continue
-                val id = o.optInt("id", 0).takeIf { it > 0 }
+                val kind = when (o.optString("k", "")) { "item" -> Kind.ITEM; "mount" -> Kind.MOUNT; "command" -> Kind.COMMAND; else -> Kind.SPELL }
+                val key = o.optString("key", "").takeIf { kind == Kind.COMMAND && it.isNotEmpty() }
+                val id = if (kind == Kind.COMMAND) null else o.optInt("id", 0).takeIf { it > 0 }
                 val cell = if (o.has("c")) o.optInt("c", -1).takeIf { it in 0 until SLOTS } else null
-                bySlot[s - 1] = Slot(s - 1, id, o.optInt("i", 0).takeIf { it > 0 }, cell, o.optInt("q", 0) == 1)
+                val filled = id != null || key != null
+                bySlot[s - 1] = Slot(s - 1, id, o.optInt("i", 0).takeIf { it > 0 }, cell.takeIf { filled }, o.optInt("q", 0) == 1,
+                    if (filled) kind else Kind.SPELL, key, o.optString("n", "").takeIf { filled && it.isNotEmpty() },
+                    if (kind == Kind.ITEM && o.has("ct")) o.optInt("ct", 0).coerceAtLeast(0) else null, kind == Kind.ITEM && o.optInt("cons", 0) == 1)
             }
         }
         val slots = (0 until SLOTS).map { bySlot[it] ?: Slot(it, null, null, null, false) }
         val pick = if (msg.has("pick")) msg.optInt("pick", -1).takeIf { it >= 0 } else null
         val pp = msg.optJSONArray("pp")?.let { a -> (0 until a.length()).map { a.optInt(it, -1) } }
             ?.takeIf { l -> l.isNotEmpty() && l.size <= 4 && l.all { it in 0 until 40 } }
-        return Bar(slots, pick, msg.optBoolean("fight", false), msg.optString("v", ""), pp, msg.optInt("n", 12))
+        return Bar(slots, pick, msg.optBoolean("fight", false), msg.optString("v", ""), pp, msg.optInt("n", 12), msg.optInt("any", 0) == 1)
     }
 
     /** the `castcd` message: slot index (0..7) -> its running cooldown; EMPTY = none runs. Null when it is not one. */
@@ -127,7 +150,7 @@ object CastStripModel {
     /** a finger on slot [i]: the ONE tap (row, cell), or null (empty, queued, not built) */
     fun tapCell(bar: Bar?, i: Int): Pair<String, Int>? {
         val s = bar?.slots?.getOrNull(i) ?: return null
-        if (s.id == null || s.queued) return null
+        if (!s.filled || s.queued) return null
         return s.cell?.let { ROW to it }
     }
 
@@ -355,6 +378,22 @@ object CastStripModel {
     fun fromPos(side: Side, bw: Float, pos: Float): Float = clampScroll(side, bw, pos * pitch(side, bw))
 
     // ---------------------------------------------------------------- cb3: the Bind box's Cast bar tab (Book b56)
+
+    // ---------------------------------------------------------------- cb9: the Controller room's Cast bar tab (PadTabCtl p53, Book b60)
+
+    /** b60: padtab 39 then 29 = the room's Cast bar tab; 30 / 31 = the bar setting on / off (the add-on shows the tab or not) */
+    const val CTL_TAB_CODE = 29
+    const val CTL_ON_CODE = 30
+    const val CTL_OFF_CODE = 31
+
+    /** the Controller room shows the Cast bar tab: the setting is not Off and the add-on's bar takes every kind (cb9) */
+    fun ctlTab(side: Side, bar: Bar?): Boolean = side != Side.OFF && bar?.anyKind == true
+
+    /** the taps that open the room's Cast bar tab (the room open): padtab 39 then 29 */
+    fun ctlTabCells(): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to CTL_TAB_CODE)
+
+    /** the taps that tell the add-on the setting ([on] = not Off): padtab 39 then 30 / 31 (no action, no room needed) */
+    fun ctlSettingCells(on: Boolean): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to if (on) CTL_ON_CODE else CTL_OFF_CODE)
 
     /** the Bind box shows its third tab: the setting is on and the add-on takes a slot pick */
     fun bindTab(side: Side, bar: Bar?): Boolean = side != Side.OFF && bar?.slotPick == true
