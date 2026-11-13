@@ -31,10 +31,16 @@ class GuardFlagTest {
     }
 
     @Test fun aParentsFlagIsCarriedOntoThePlayersMapOnly() {
-        val f = GuardFlag.parse(doc("""{"mapID":1453,"gpoi":{"m":1415,"x":0.45,"y":0.75,"hx":0.5,"hy":0.52,"id":7,"tex":13}}"""))!!
+        val f = GuardFlag.parse(doc("""{"mapID":1453,"gpoi":{"m":1415,"x":0.45,"y":0.75,"hx":0.5,"hy":0.52,"h":1453,"id":7,"tex":13}}"""))!!
         assertArrayEquals(doubleArrayOf(0.45, 0.75), f.on(1415), 1e-9)          // the Map room's continent
         assertArrayEquals(doubleArrayOf(0.5, 0.52), f.on(1453), 1e-9)           // Home's map: the carried copy
         assertNull(f.on(1429))                                                   // walked into another zone before the next snapshot
+        // gp2: a position tick moved the document's mapID to the new zone: the carried copy stays on the map it was carried to
+        val moved = GuardFlag.parse(doc("""{"mapID":1429,"gpoi":{"m":1415,"x":0.45,"y":0.75,"hx":0.5,"hy":0.52,"h":1453,"id":7}}"""))!!
+        assertNull(moved.on(1429))
+        assertArrayEquals(doubleArrayOf(0.5, 0.52), moved.on(1453), 1e-9)
+        // an older add-on (no h): the carried copy is not trusted on any map
+        assertNull(GuardFlag.parse(doc("""{"mapID":1429,"gpoi":{"m":1415,"x":0.45,"y":0.75,"hx":0.5,"hy":0.52,"id":7}}"""))!!.on(1429))
     }
 
     @Test fun noCutFromTheGameMeansTheGamesGrid() {
@@ -63,6 +69,8 @@ class GuardFlagTest {
         assertFalse(arr.wants(bank, 0.5, 0.505, 0.5, 0.5, w, h))                // 5 yd: arrived
         assertFalse(arr.wants(bank, 0.2, 0.2, 0.5, 0.5, w, h))                  // walked away again: stays away for this flag
         val inn = GuardFlag.parse(doc("""{"mapID":1,"gpoi":{"m":1,"x":0.3,"y":0.3,"id":4}}"""))!!
+        assertFalse(arr.wants(bank, 0.2, 0.2, Double.NaN, Double.NaN, w, h))     // held but off this map: no arrow...
+        assertFalse(arr.wants(bank, 0.2, 0.2, 0.5, 0.5, w, h))                  // ...and the arrival is kept (gp2)
         assertTrue(arr.wants(inn, 0.2, 0.2, 0.3, 0.3, w, h))                    // a new direction: the arrow again
         assertFalse(arr.wants(null, 0.2, 0.2, 0.3, 0.3, w, h))                  // the game cleared it
         assertTrue(arr.wants(bank, 0.2, 0.2, 0.5, 0.5, w, h))                   // asked again after a clear: the arrow again

@@ -808,11 +808,11 @@ WC.traceSample = traceSample          -- for the test harness only
 -- (GossipDataProviderMixin: on DYNAMIC_GOSSIP_POI_UPDATED, GetPoiForUiMapID(the map shown) -> ONE id -> GetPoiInfo -> one pin,
 -- Interface/Minimap/POIIcons cut by C_Minimap.GetPOITextureCoords(textureIndex), 16 x 16) and its engine draws it on the minimap,
 -- which DS Forever hides. So the map document carries it: map.gpoi = {m (the map it was read on), x, y, n (its name), id, tex
--- (textureIndex), tc = {x1, x2, y1, y2} (the game's own cut), hx / hy (carried to the player's map when m is a parent)}.
+-- (textureIndex), tc = {x1, x2, y1, y2} (the game's own cut), hx / hy (carried to the player's map h when m is a parent)}.
 -- No timer of ours: it is whatever the game holds at each snapshot (DYNAMIC_GOSSIP_POI_UPDATED asks for one), so it goes when the
 -- game clears it. Plain values only (a secret answer is dropped); reads, never a write. In a table: the main chunk is at Lua 5.1's
 -- 200-local limit. Harvest.lua's guard probe (/wcpoi) reads through WC.gpoi.read too.
-WC.gpoi = { V = "gp1", UP = 6 }
+WC.gpoi = { V = "gp2", UP = 6 }
 -- 1e-5 of the map: an unchanged flag stays byte-identical across snapshots
 function WC.gpoi.r5(v) return v and math.floor(v * 100000 + 0.5) / 100000 end
 
@@ -860,7 +860,8 @@ function WC.gpoi.collect(id, out)
     local g = { m = m, x = pin.x, y = pin.y, n = pin.name, id = plainNum(pin.id), tex = pin.tex }
     if m ~= pid then
         local hx, hy = mapToMap(m, pin.x, pin.y, pid)
-        if hx then g.hx, g.hy = WC.gpoi.r5(hx), WC.gpoi.r5(hy) end
+        -- h: the map hx / hy are on (a position tick can change the document's mapID before the next snapshot: gp2)
+        if hx then g.hx, g.hy, g.h = WC.gpoi.r5(hx), WC.gpoi.r5(hy), pid end
     end
     if pin.tex and C_Minimap and type(C_Minimap.GetPOITextureCoords) == "function" then
         local okT, a, b, c, d = CALL(function() return C_Minimap.GetPOITextureCoords(pin.tex) end)

@@ -2665,9 +2665,9 @@ class MapView(context: Context) : View(context) {
         if (m == null) return
         val p = f?.on(m.optInt("mapID", 0))
         val r = rect?.takeIf { it.valid }
-        val wants = guardArrival.wants(if (p == null) null else f, m.optDouble("x", Double.NaN), m.optDouble("y", Double.NaN),
+        val wants = guardArrival.wants(f, m.optDouble("x", Double.NaN), m.optDouble("y", Double.NaN),
             p?.get(0) ?: Double.NaN, p?.get(1) ?: Double.NaN, r?.width ?: 0.0, r?.height ?: 0.0)
-        val said = if (f == null) null else "${f.key} ${if (wants) "arrow" else if (p == null) "not on this map" else "arrived"}"
+        val said = if (f == null) null else "${f.key} ${if (p == null) "not on this map" else if (wants) "arrow" else "arrived"}"
         if (said != guardSaid) { guardSaid = said; android.util.Log.i("WCMAP", "guard flag: ${said ?: "none"}") }
         if (!wants || p == null) return
         focusTX = p[0]; focusTY = p[1]; flyStep = false; guardArrow = true

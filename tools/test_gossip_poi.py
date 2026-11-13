@@ -119,7 +119,7 @@ def collect(L):
 
 
 L = world()
-check(L.eval('type(WowCompanion.gpoi) == "table" and WowCompanion.gpoi.V') == 'gp1', "Map.lua carries WC.gpoi, version gp1")
+check(L.eval('type(WowCompanion.gpoi) == "table" and WowCompanion.gpoi.V') == 'gp2', "Map.lua carries WC.gpoi, version gp2")
 check('"DYNAMIC_GOSSIP_POI_UPDATED"' in MAPSRC[MAPSRC.index('local QUEST_MARKER_EVENTS'):MAPSRC.index('local function onQuestMarkerEvent')],
       "DYNAMIC_GOSSIP_POI_UPDATED is in Map.lua's own event list")
 h = MAPSRC[MAPSRC.index('local function onQuestMarkerEvent'):]
@@ -139,7 +139,7 @@ check(g['n'] == 'Stormwind Bank' and g['id'] == 31 and g['tex'] == 5, "its name,
 tc = g['tc']
 check(tc is not None and abs(tc[1] - 5 * 16 / 256) < 1e-9 and abs(tc[2] - 6 * 16 / 256) < 1e-9 and tc[3] == 0 and abs(tc[4] - 1 / 16) < 1e-9,
       "the game's own cut: tc = {x1, x2, y1, y2}", tc and [tc[i] for i in range(1, 5)])
-check(g['hx'] is None, "on the player's map: no carried copy")
+check(g['hx'] is None and g['h'] is None, "on the player's map: no carried copy")
 
 # cleared
 L.execute('FLAG[1453] = nil')
@@ -151,6 +151,7 @@ g = collect(L)
 check(g is not None and g['m'] == 1415 and g['x'] == 0.45, "the flag on the parent map: m = the parent", g and g['m'])
 check(g is not None and abs(g['hx'] - 0.5) < 1e-6 and abs(g['hy'] - 0.5) < 1e-6, "carried onto the player's map: hx / hy",
       g and (g['hx'], g['hy']))
+check(g is not None and g['h'] == 1453, "h names the map the carried copy is on", g and g['h'])
 L.execute('FLAG[1415] = nil')
 
 # secrets

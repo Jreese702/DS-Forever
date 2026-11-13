@@ -59,7 +59,11 @@ object GuardFlag {
         val tc = g.optJSONArray("tc")?.takeIf { it.length() == 4 }?.let { a ->
             FloatArray(4) { a.optDouble(it, Double.NaN).toFloat() }.takeIf { c -> c.none { it.isNaN() } && c[1] > c[0] && c[3] > c[2] }
         }
-        return Flag(m, x, y, doc.optInt("mapID", 0), g.optDouble("hx", Double.NaN), g.optDouble("hy", Double.NaN),
+        // gp2: [here] is the map the add-on carried hx / hy onto (h), never the document's mapID, which a position tick moves on a
+        // zone change before the next snapshot (the carried spot would land on the new zone's map)
+        val hx = g.optDouble("hx", Double.NaN); val hy = g.optDouble("hy", Double.NaN)
+        val here = if (g.has("h")) g.optInt("h", 0) else if (!hx.isNaN()) -1 else m
+        return Flag(m, x, y, here, hx, hy,
             g.optString("n", "").ifEmpty { null }, g.optInt("id", 0), g.optInt("tex", -1), tc)
     }
 
@@ -71,10 +75,12 @@ object GuardFlag {
         var doneKey: String? = null
             private set
 
-        /** true while the arrow should point at [f]: [px] / [py] the player and [fx] / [fy] the flag on one map [w] x [h] yd */
+        /** true while the arrow should point at [f]: [px] / [py] the player and [fx] / [fy] the flag on one map [w] x [h] yd
+         *  ([fx] NaN: the flag is held but not on this map - no arrow, and an arrival already made is kept, gp2) */
         fun wants(f: Flag?, px: Double, py: Double, fx: Double, fy: Double, w: Double, h: Double): Boolean {
             if (f == null) { doneKey = null; return false }
             if (doneKey == f.key) return false
+            if (fx.isNaN() || fy.isNaN()) return false
             doneKey = null
             if (!px.isNaN() && !py.isNaN() && w > 0 && h > 0 && hypot((fx - px) * w, (fy - py) * h) <= ARRIVE_YD) {
                 doneKey = f.key; return false
