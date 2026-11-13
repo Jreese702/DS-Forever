@@ -252,7 +252,15 @@ class PadTabPage(
     /** the tab on show, for [ControllerView] */
     fun currentView(): String = view
     /** a finger chose a tab: shown at once; the addon's echo (its padtab pick) follows */
-    fun showTabLocal(v: String) { view = v; viewUntil = SystemClock.uptimeMillis() + ECHO_MS; tChooser = null; tBox = null; host.invalidate() }
+    fun showTabLocal(v: String) {
+        view = v; viewUntil = SystemClock.uptimeMillis() + ECHO_MS; tChooser = null; tBox = null
+        if (v != "normal" && PadMapModel.isStick(pos)) pos = if (pos == PadMapModel.POS_L3) 4 else 8     // m150: the sticks are WoW Defaults'
+        host.invalidate()
+    }
+    /** m150 STICK BUTTONS (GitHub #78): L3 / R3 are WoW Defaults' only (In combat, the radial and Party show the eight) */
+    private fun sticksShown() = view == "normal"
+    /** the chosen button is a stick (its chooser: the game bindings alone) */
+    private fun stickHere() = sticksShown() && PadMapModel.isStick(pos)
 
     // ---------------------------------------------------------------- data in
 
@@ -295,6 +303,7 @@ class PadTabPage(
         if (c.note == "bind-fixed") say("The game keeps that button for itself")
         if (c.note == "bind-form") say("A form's set has no game key of its own")                  // p43
         if (c.note == "bind-move") say("It rides the key, not the bar: clear it and choose it where you want it")
+        if (c.note == "stick-binds") say("Game keys only")                                          // m150 / p49
         if (c.note == "move-refused") say("The game did not move it")
         if (c.note == "not-on-radial") say("The spell radial takes spells only")
         if (c.note == "paused") say(PAUSED_LINE)                            // m40 / p18
@@ -345,6 +354,7 @@ class PadTabPage(
             // m41 / m43: the plain D-pad is the DS toolbar's while it is on; a game binding rides that key
             "dpad bar" -> "The DS toolbar has the plain D-pad: hold a trigger, or turn the toolbar off"
             "bind" -> "A game key rides this button: clear it first"
+            "stick taken" -> "The game took the stick back"                                       // m150
             else -> srWord(a.why) ?: ("The game did not take it" + (a.why?.let { " ($it)" } ?: ""))
         })
         host.invalidate()
@@ -480,6 +490,7 @@ class PadTabPage(
     private fun setWord(s: Int): String = triggers().let { (l, r) -> when (s) { 2 -> l; 3 -> r; 4 -> "$l + $r"; else -> "None" } }
     private fun buttonWord(p: Int): String = when (p) {
         1 -> "D-pad Left"; 2 -> "D-pad Up"; 3 -> "D-pad Right"; 4 -> "D-pad Down"
+        PadMapModel.POS_L3, PadMapModel.POS_R3 -> PadMapModel.stickWord(p)                            // m150
         else -> {
             val key = when (p) { 5 -> "x"; 6 -> "y"; 7 -> "b"; else -> "a" }
             if (style() == SpellsModel.PadStyle.SHP)
@@ -542,7 +553,7 @@ class PadTabPage(
         ChooserTabs.spellsOnly(view, combatButton = slotOf(m, shown(), pos)?.kind == PadMapModel.Kind.COMBAT)
 
     /** p11 the chooser's tabs (the user 2026-10-07: "in the controller menu, when assigning a spell, the spell menu needs some tabs. start on spells, then general (including professions), then extra"); a fight spell's chooser has no Extra */
-    private fun chooserTabs(m: PadMapModel.Map) = ChooserTabs.keys(onlySpells(m))  // p14; p34: the DS tab ("dstool"); p39: In combat too
+    private fun chooserTabs(m: PadMapModel.Map) = ChooserTabs.keys(onlySpells(m), stick = stickHere())   // m150: a stick: Extra alone  // p14; p34: the DS tab ("dstool"); p39: In combat too
     /** p34 (the user 2026-11-10: "add a 4th skill assignment category where we can add the DS toolbar buttons to any button slot"): DS
      *  Forever's own commands (keys "DS..."), the chooser's DS tab, out of Extra; each keeps its place in the padmap doc's list (the
      *  "extra" pad row counts by it) */
@@ -554,6 +565,8 @@ class PadTabPage(
     private fun cmdIcon(c: PadMapModel.Command?) = if (c?.key == PadMapModel.HOME_KEY) UiKit.tex("home_live_base") else c?.let { Icons.get(it.icon) }
 
     private fun rowsOf(list: String, book: SpellsModel.Book?, m: PadMapModel.Map): List<Thing> {
+        // m150 / p49: a stick lists the four game bindings, by their places in the Extra list (the "extra" row counts by it)
+        if (stickHere()) return m.binds.mapIndexed { j, b -> Thing.Binding(b, m.commands.size + j) }
         if ((list != "extra" && list != "dstool") || onlySpells(m)) {
             val which = if (list == "extra" || list == "dstool") "spells" else list
             // the combat view leaves out the spells already on the button (the same spell in and out of a fight only spends a macro)
@@ -689,10 +702,11 @@ class PadTabPage(
         }
         drawForms(c, m, book)
         val carry = carryNow()
-        for (p in 1..8) drawButton(c, m, s, p)
+        val places = if (sticksShown()) (1..8) + PadMapModel.STICKS else (1..8).toList()       // m150: L3 / R3 on WoW Defaults
+        for (p in places) drawButton(c, m, s, p)
         // the glyphs over ALL the buttons: drawn with its own button, the bottom face button's was half hidden by the next one's frame
         // (it read as a lowercase "b"; UI Art 2026-10-01)
-        for (p in 1..8) square(p).let { r -> UiKit.pad(c, glyph(p), r.centerX() + 36f, r.centerY() - 36f, 40f) }
+        for (p in places) square(p).let { r -> UiKit.pad(c, glyph(p), r.centerX() + 36f, r.centerY() - 36f, 40f) }
         // p9 CARRYING: the place it left, a faint ghost; what is under the cursor shows the game's swap mark when it is taken
         if (carry != null && carry.set == s) {
             val r = square(carry.pos)
@@ -982,6 +996,7 @@ class PadTabPage(
             fixed && sl?.fight != null -> "Out of combat the game keeps this button for itself. In a fight it casts ${sl.fight.name} (In combat, above)."
             PadMapModel.isFace(sl) -> "Out of combat the game keeps this button for itself. In combat (above) it can cast a spell in fights."
             fixed -> "The game keeps this button for itself in the base set: it cannot change. Hold $l or $r for buttons you can set."
+            sl?.stick != null -> "Jump, Interact, Auto Run or Walk / Run"                          // m150: the stick's four (terse)
             else -> "Change puts a spell from your book, or one of the game's commands, on this button."
         }
         val pd = TextPaint(UiKit.inkPaint(24f))
@@ -994,12 +1009,13 @@ class PadTabPage(
         val filled = sl != null && sl.kind != PadMapModel.Kind.NONE && !fixed
         val above = if (filled) moveRect(w, h).top else act.top
         // m41: no macro count any more: nothing here spends one of the player's macros (the user's no-trace ruling 2026-10-09)
-        val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && !fixed) COMBAT else null
+        val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && !fixed) COMBAT
+            else if (sl?.taken == true) "The game keeps this key" else null                          // m150: a stick taken back
         note?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
             c.drawText(Tr.t(it), act.centerX(), above - 64f, pw)
         }
-        val off = m.combat || sl?.storage == null
+        val off = m.combat || (sl?.storage == null && sl?.stick == null)                       // m150: a stick has no bar slot
         val moveOff = off || sl?.kind == PadMapModel.Kind.BIND                              // m34: a binding rides the key, not the bar
         if (filled) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
             moveOff -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
@@ -1614,6 +1630,7 @@ class PadTabPage(
                 sl == null -> {}
                 sl.kind == PadMapModel.Kind.FIXED && !(view == "combat" && PadMapModel.isFace(sl)) -> {}
                 m.combat -> say(COMBAT)
+                stickHere() -> { tLock = shown(); tChooser = "extra"; scroll = 0f }             // m150: the game bindings
                 sl.kind != PadMapModel.Kind.FIXED && sl.storage == null -> {}
                 view == "combat" && m.paused && !PadMapModel.isFace(sl) -> say(PAUSED_LINE)          // m40
                 // b-bind-hold-triggers: the set on show NOW (a trigger held) is the one it goes on, released or not
@@ -1650,6 +1667,14 @@ class PadTabPage(
             if (x >= r.left - 10f && x <= r.right + 10f && y >= r.top - 10f && y <= r.bottom + 10f) {
                 fingerOnButton = true
                 pick(set, p); tap(listOf(PadMapModel.ROW to PadMapModel.colPos(p))); return
+            }
+        }
+        // m150: L3 / R3 (WoW Defaults): the one-shot talentn 38 pick + the button code, a pick (no game action)
+        if (sticksShown()) for (p in PadMapModel.STICKS) {
+            val r = square(p)
+            if (x >= r.left - 10f && x <= r.right + 10f && y >= r.top - 10f && y <= r.bottom + 10f) {
+                fingerOnButton = true
+                pick(set, p); tap(PadMapModel.stickCells(p)); return
             }
         }
         val cy = h - 70f

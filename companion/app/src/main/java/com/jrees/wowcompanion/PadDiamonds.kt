@@ -19,6 +19,9 @@ object PadDiamonds {
 
     /** position [p]'s centre (the router's 1-8: 1-4 the D-pad, 5-8 the faces) as drawn for the layout ([swap] = Nintendo's face diamond) */
     fun centre(p: Int, swap: Boolean): Pair<Float, Float> {
+        // m150 STICK BUTTONS (GitHub #78): L3 / R3 low between the two diamonds (their inner bottom corners), as a pad's two sticks
+        if (p == PadMapModel.POS_L3) return 290f to 690f
+        if (p == PadMapModel.POS_R3) return 456f to 690f
         val cx = if (p <= 4) 190f else 556f; val cy = 590f
         return when (PadMapModel.drawnSpot(p, swap)) { 0 -> cx - 100f to cy; 1 -> cx to cy - 100f; 2 -> cx + 100f to cy; else -> cx to cy + 100f }
     }

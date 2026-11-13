@@ -49,7 +49,11 @@ object PadMapModel {
                     /** m43: a [Kind.COMBAT] button whose fight spell is the OVERLAY's (no macro; [otherwise] = what the button holds) */
                     val ov: Boolean = false,
                     /** m146: the In combat tab's Smart Range box is checked here (also with no spell yet) */
-                    val smart: Boolean = false)
+                    val smart: Boolean = false,
+                    /** m150 STICK BUTTONS (GitHub #78): "L3" / "R3" on a stick's place (positions 9 / 10), null on the eight buttons */
+                    val stick: String? = null,
+                    /** m150: the game took this stick's key back twice: the add-on no longer binds it (the room says so) */
+                    val taken: Boolean = false)
     /** m13 START ATTACK ON CAST (the user 2026-10-01): [on]; [n] buttons converted; [full] / [user] / [refused] buttons left plain (no
      *  Character Macro free / a macro of that name is the user's own / the game refused); [pending] waits for the fight to end; [colOn] /
      *  [colOff] the `spells` row's columns Home's Settings room taps (no-action notes, idempotent) */
@@ -120,6 +124,8 @@ object PadMapModel {
         val faceCcColOff: Int? = null,
         /** m33 the Extra tab's mounts and bag items, after the commands, in the addon's order (the "extra" pad row counts alike) */
         val binds: List<Bind> = emptyList(),               // m34: after the commands
+        /** m150 STICK BUTTONS: L3 / R3 of the bare set and ZL (the document's `sticks`, each with its set) */
+        val sticks: List<PadSet> = emptyList(),
         val mounts: List<Extra> = emptyList(),
         val items: List<Extra> = emptyList(),
         /** m49 A / X / Y's FIGHT SWITCH (an attack / auto-repeat running, or combat; the user on test20: the D-pad's In-combat picture
@@ -208,6 +214,12 @@ object PadMapModel {
                 if (key.isEmpty()) null
                 else Command(key, o.optString("n", key), o.optInt("i", 0), o.optBoolean("made", false), intOrNull(o, "mi"), textOrNull(o, "b"))
             },
+            sticks = objects(m.optJSONArray("sticks")).mapNotNull { o ->
+                val p = o.optInt("pos", 0); val st = o.optInt("set", 0)
+                if (!isStick(p) || st !in 1..2) null
+                else PadSet(st, listOf(Slot(p, null, kind(o.optString("kind", "")), null, textOrNull(o, "n"), o.optInt("i", 0),
+                    key = textOrNull(o, "key"), stick = textOrNull(o, "stick") ?: stickWord(p), taken = o.optString("st", "") == "taken")))
+            }.groupBy { it.set }.map { (st, l) -> PadSet(st, l.flatMap { it.slots }) },
             binds = objects(m.optJSONArray("binds")).mapNotNull { o ->
                 o.optString("key", "").takeIf { it.isNotEmpty() }?.let { Bind(it, o.optString("n", it), o.optInt("i", 0)) }
             },
@@ -334,7 +346,20 @@ object PadMapModel {
     }
 
     /** The button at a set (1-4) and position (1-8); null off the map. */
-    fun slot(map: Map, set: Int, pos: Int): Slot? = map.sets.firstOrNull { it.set == set }?.slots?.firstOrNull { it.pos == pos }
+    fun slot(map: Map, set: Int, pos: Int): Slot? =
+        if (isStick(pos)) map.sticks.firstOrNull { it.set == set }?.slots?.firstOrNull { it.pos == pos } ?: Slot(pos, null, Kind.NONE, null, null, 0, stick = stickWord(pos))
+        else map.sets.firstOrNull { it.set == set }?.slots?.firstOrNull { it.pos == pos }
+
+    /** m150 STICK BUTTONS (GitHub #78, PadMap m150 / PadTabCtl p49): L3 = position 9, R3 = 10 (WoW Defaults only; game bindings only) */
+    const val POS_L3 = 9
+    const val POS_R3 = 10
+    val STICKS = listOf(POS_L3, POS_R3)
+    fun isStick(pos: Int) = pos == POS_L3 || pos == POS_R3
+    fun stickWord(pos: Int) = if (pos == POS_L3) "L3" else "R3"
+    /** the game's glyph for a stick press */
+    fun stickGlyph(pos: Int) = if (pos == POS_L3) "gen_lstickin" else "gen_rstickin"
+    /** a finger's pick of stick [pos]: the one-shot talentn 38 pick, then button code 1 / 2 (PadTabCtl p49 reads them as 9 / 10) */
+    fun stickCells(pos: Int): List<Pair<String, Int>> = listOf(ROW_LAYOUT to COL_COMMANDS_FROM_12, ROW to colPos(pos - 8))
 
     /** The button can be changed: not one of the game's fixed four, and no fight on. */
     fun changeable(map: Map, set: Int, pos: Int): Boolean =
@@ -485,7 +510,7 @@ object PadMapModel {
             focus = c.optString("focus", "buttons").ifEmpty { "buttons" },
             set = c.optInt("set", 1).coerceIn(1, 4),
             shown = c.optInt("shown", c.optInt("set", 1)).coerceIn(1, 4),
-            pos = c.optInt("pos", 1).coerceIn(1, 8),
+            pos = c.optInt("pos", 1).coerceIn(1, 10),             // m150: 9 / 10 = L3 / R3
             page = c.optInt("page", 1).coerceIn(1, 3),
             chooser = ch?.let { Chooser(it.optString("list", "spells").let { l -> if (l == "commands") "extra" else l },
                 it.optInt("row", 1).coerceAtLeast(1), textOrNull(it, "id"), it.optBoolean("tabs", false),
@@ -526,6 +551,7 @@ object PadMapModel {
      */
     fun drawnSpot(pos: Int, swap: Boolean): Int = when {
         pos <= 4 -> pos - 1
+        pos > 8 -> 3                                                    // m150: L3 / R3 sit low (PadDiamonds places them itself)
         !swap -> pos - 5
         else -> intArrayOf(1, 0, 3, 2)[pos - 5]
     }
