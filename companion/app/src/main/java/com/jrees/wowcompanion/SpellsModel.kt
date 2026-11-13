@@ -172,7 +172,8 @@ object SpellsModel {
         val pad = p?.let {
             val st = it.optInt("s", 0); val pg = it.optInt("pg", 0); val b = it.optInt("b", 0); val ps = it.optInt("p", 0)
             val fight = it.optBoolean("fight", false)                       // b37: an In combat bind has no game slot
-            if ((st > 0 || fight) && pg in 1..3 && b in 1..4 && ps in 1..8) PadSlot(st, pg, b, ps) else null
+            // Book b57: L3 / R3 (9 / 10) have no bar slot (PadMap m157: the stick's own button)
+            if ((st > 0 || fight || PadMapModel.isStick(ps)) && pg in 1..3 && b in 1..4 && ps in 1..10) PadSlot(st, pg, b, ps) else null
         }
         val ok = msg.optBoolean("ok", false) && pad != null
         return BindResult(id, ok, if (ok) null else msg.optString("why", "failed").ifEmpty { "failed" }, pad,

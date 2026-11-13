@@ -143,7 +143,7 @@ def errs(L):
 comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); return e end')
 e = comp(SRC["book"], "book")
 check(e is None, "Lua 5.1 compiles Book.lua", e or '')
-check('local BV = "b57"' in SRC["book"], "the version: Book b57 (b50 issues #18 / #20 / #31, b51 rank up, b52 Smart Range, b53 cast bar, b57 eight cast bar slots)")
+check('local BV = "b58"' in SRC["book"], "the version: Book b57 (b50 issues #18 / #20 / #31, b51 rank up, b52 Smart Range, b53 cast bar, b57 eight cast bar slots, b57b L3 / R3, b58 merge)")
 check("Any modifier key binding doesn't work" in SRC["book"] and "doesnt show up on bottom screen" in SRC["book"],
       "Book.lua's header note quotes the reports")
 

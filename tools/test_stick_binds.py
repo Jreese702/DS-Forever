@@ -7,7 +7,8 @@ The 1.0.18 player report: "No way to remap auto run to L3 on contrller". The Con
 by the router's SetOverrideBinding on its own header out of combat. Proven here:
   1 Auto Run on bare L3, Jump on ZL + L3, Interact on R3, Walk / Run on ZL + R3: the chords, the owner (our header), the store keys
     ("1:9" ... per name-realm), the document's `sticks`; carried into a fight (no breach), the same after it;
-  2 the rules: ZR / ZL + ZR refuse ("layer"); a spell, a command, an item, a Move onto a stick refuse; in combat refused;
+  2 the rules: ZR / ZL + ZR refuse ("layer"); a Move onto a stick refuses; in combat refused (m157: a spell / command / item /
+    mount on a stick is allowed now: tools/test_sticks_any.py);
   3 per character: another character has none (a fresh load), the owner's comes back;
   4 Clear: the store entry and the override go; the key is the game's again;
   5 a room holding the pad (Map's L3 pin): no stick override while it holds; back when it lets go;
@@ -15,9 +16,9 @@ by the router's SetOverrideBinding on its own header out of combat. Proven here:
   7 the game takes the stick back: ONE more bind (the fallback, read in both layers), taken again -> "taken": no longer bound, the
     document says st = "taken", the padack says "stick taken", the check stops; a fresh put starts again; a refused first bind -> one
     retry, then taken;
-  8 the room (PadTabCtl): the cursor walks onto L3 / R3 on WoW Defaults only (not In combat), A opens the chooser on Extra with the
-    four bindings and nothing else (one tab), choosing Auto Run binds it; by touch: talentn 38 + button code 1 = L3; a spell / a
-    command by touch refused there; p51: the pair sits below the diamonds (Down from D-pad Down = L3, from the face bottom = R3);
+  8 the room (PadTabCtl): the cursor walks onto L3 / R3 on WoW Defaults only (not In combat), A opens the chooser (p52: on Spells,
+    all five tabs), Extra's Auto Run binds it; by touch: talentn 38 + button code 1 = L3; p51: the pair sits below the diamonds
+    (Down from D-pad Down = L3, from the face bottom = R3);
   9 m155: an empty stick carries the game's own binding (gd / gn / gi: the gamepad context, then the plain layer, overrides left
     out; out of combat only, a fight keeps the last read); one of ours wins; read only;
 plus no spied call (no SetBinding, SaveBindings, macro, CVar or bar write). Needs lupa. Exit code 1 on any failure."""
@@ -170,7 +171,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m157"' in SRC["padmap"] and 'local CV = "p51"' in SRC["padtabctl"], "the versions: PadMap m150, PadTabCtl p49 (stick buttons)")
+check('local PV = "m158"' in SRC["padmap"] and 'local CV = "p52"' in SRC["padtabctl"], "the versions: PadMap m157, PadTabCtl p52 (stick buttons)")
 STK = "\n".join(l.split("--", 1)[0] for l in
                 SRC["padmap"].split('-- m150 STICK BUTTONS (GitHub #78)\n', 1)[1].split('\nWC.padMap = {', 1)[0].splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', STK) and 'SaveBindings' not in STK and 'SetOverrideBinding' in STK,
@@ -216,10 +217,7 @@ r = W.eval(pm + '.putBind(1, 4, 10, "JUMP")')
 check(isinstance(r, tuple) and r[1] == "layer", "ZL + ZR + R3 refused (layer)", r)
 r = W.eval(pm + '.putBind(1, 1, 9, "STARTATTACK")')
 check(isinstance(r, tuple) and r[1] == "unknown" and bind(W, "PADLSTICK") == "TOGGLEAUTORUN", "a command is no stick binding (unknown)", r)
-r = W.eval(pm + '.putCommand(1, 1, 9, "DSMAP")')
-check(isinstance(r, tuple) and r[0] is False, "putCommand on a stick refused (no bar slot)", r)
-r = W.eval(pm + '.putSpell(1, 1, 9, 1)')
-check(isinstance(r, tuple) and r[0] is False, "putSpell on a stick refused", r)
+# (m157: a spell / a command / an item / a mount on a stick is no refusal any more: tools/test_sticks_any.py)
 r = W.eval(pm + '.move(1, 1, 9, 1, 1, 1)')
 check((isinstance(r, tuple) and r[0] is False) or r is False, "Move from a stick refused", r)
 check(W.eval(pm + '.bindAllowed(1, 9)') is True and W.eval(pm + '.bindAllowed(2, 10)') is True,
@@ -335,17 +333,12 @@ R.execute('pp("PADDRIGHT")')
 check(ctl_doc(R).get('pos') == 7, "p51: Right from R3: back to the face diamond's bottom", ctl_doc(R).get('pos'))
 R.execute('WowCompanion.padTabCtl.touchPos(4); pp("PADDDOWN"); pp("PAD1")')
 c = ctl_doc(R)
-check(c.get('chooser') and c['chooser'].get('list') == 'extra', "A on L3: the chooser opens on Extra", c.get('chooser'))
-rows = R.eval('(function() local t = {} for _ = 1, 9 do pp("PADDDOWN") end return true end)()')
-R.execute('for _ = 1, 9 do pp("PADDUP") end; pp("PADDDOWN")')
-c = ctl_doc(R)
-check(c['chooser'].get('id') in ("JUMP", "INTERACTTARGET", "TOGGLEAUTORUN", "TOGGLERUN"),
-      "the chooser's rows are the game bindings (row 1 / 2 is one of the four)", c['chooser'])
-R.execute('pp("PADDLEFT"); pp("PADDRIGHT")')
-check(ctl_doc(R)['chooser'].get('list') == 'extra', "Extra is its only tab (Left / Right change nothing)", ctl_doc(R)['chooser'])
-# walk to Auto Run (rows in the doc's order: Jump, Interact, Auto Run, Walk / Run) and choose it
-R.execute('pp("PADDUP"); pp("PADDDOWN")')
-for _ in range(6):
+check(c.get('chooser') and c['chooser'].get('list') == 'spells', "A on L3: the chooser opens on Spells (m157 / p52: all five tabs)",
+      c.get('chooser'))
+R.execute('pp("PADDRIGHT"); pp("PADDRIGHT"); pp("PADDRIGHT")')
+check(ctl_doc(R)['chooser'].get('list') == 'extra', "Right x3: the Extra tab (its game bindings among the commands)", ctl_doc(R)['chooser'])
+# walk to Auto Run (Extra's rows: the commands, then Jump, Interact, Auto Run, Walk / Run) and choose it
+for _ in range(60):
     if ctl_doc(R)['chooser'].get('id') == 'TOGGLEAUTORUN':
         break
     R.execute('pp("PADDDOWN")')
@@ -366,10 +359,7 @@ check(ctl_doc(R).get('pos') == 10, "by touch: the one-shot talentn 38 pick + but
 R.execute('WowCompanion.padTabCtl.touchPos(2)')
 check(ctl_doc(R).get('pos') == 2, "... without the pick, code 2 is D-pad Up as before", ctl_doc(R).get('pos'))
 R.execute('WowCompanion.padTabCtl.commandsFrom12(); WowCompanion.padTabCtl.touchPos(2)')
-R.execute('WowCompanion.padTabCtl.touchSpell(331)')
-check(ctl_doc(R).get('note') == 'stick-binds' and "1:10" not in store(R), "a spell by touch on R3: refused (stick-binds)", ctl_doc(R).get('note'))
-R.execute('WowCompanion.padTabCtl.touchCommand(1)')
-check(ctl_doc(R).get('note') == 'stick-binds' and "1:10" not in store(R), "a command by touch on R3: refused", ctl_doc(R).get('note'))
+# (m157 / p52: a spell / a command by touch on a stick goes on it: tools/test_sticks_any.py section 8)
 idx = R.eval('(function() for i, x in ipairs(WowCompanion.padMap.extraList()) do if x.kind == "bind" and x.key == "TOGGLERUN" then return i end end end)()')
 R.execute('WowCompanion.padTabCtl.touchExtraPage(0)')
 okx = R.eval('WowCompanion.padTabCtl.touchExtra(%d)' % (idx - 1))

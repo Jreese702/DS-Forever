@@ -43,7 +43,9 @@ class ChooserTabsTest {
             assertEquals("ZR + $p", "layer", ChooserTabs.bindBlock(3, p, toolbar = false, form = false))
             assertEquals("ZL + ZR + $p", "layer", ChooserTabs.bindBlock(4, p, toolbar = false, form = false))
         }
-        assertEquals("a stick's chooser: Extra alone", listOf("extra"), ChooserTabs.keys(false, stick = true))
+        // p52 / m157 (the user, 2026-11-13: "any of those 5 controller tabs should be able to bind here"): all five on a stick
+        assertEquals("a stick's chooser: all five tabs", five, ChooserTabs.keys(false, stick = true))
+        assertEquals("Spells, General, Professions, Extra, DS", listOf("spells", "general", "professions", "extra", "dstool"), ChooserTabs.STICK_TABS)
         assertEquals("the eight as before", five, ChooserTabs.keys(false))
     }
 

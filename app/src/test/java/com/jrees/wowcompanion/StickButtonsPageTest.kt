@@ -19,8 +19,7 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * m150 / p49 STICK BUTTONS (GitHub #78, the 1.0.18 player report: "No way to remap auto run to L3 on contrller"): the Controller tab's
  * WoW Defaults draws L3 / R3 low between the diamonds; a finger's pick is the one-shot talentn 38 pick + button code 1 / 2 (PadTabCtl
- * p49 reads 9 / 10); Change opens the chooser on Extra with the four game bindings alone, a row is the "extra" row's ONE put; In combat
- * has no sticks; a taken stick draws (the add-on's st = "taken"). tools/test_stick_binds.py proves the add-on side.
+ * p49 reads 9 / 10); p52 / m157: Change opens the eight's chooser (all five tabs); a stick never Moves; In combat has no sticks; a taken stick draws (the add-on's st = "taken"). tools/test_stick_binds.py proves the add-on side.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -85,14 +84,62 @@ class StickButtonsPageTest {
         assertEquals(listOf(listOf("talentn" to 38, "talents" to 16)), r.cells)
     }
 
-    @Test fun changeOnAStickOpensTheBindingsAndARowIsTheExtraPut() {
+    /** p52 / m157 (the user, 2026-11-13: "looking good, except people also want to be able to bind any of their spells and stuff to
+     *  these, so any of those 5 controller tabs should be able to bind here"): Change on a stick opens the eight's chooser (Spells
+     *  first, all five tabs); a spell row is that spell's ONE Bind tap, an Extra row the "extra" row's put, as on any button */
+    @Test fun changeOnAStickOpensAllFiveTabs() {
         val r = Rig(map(empty), ctl(9))
         r.tap(change.first, change.second)
         assertTrue("Choose on an empty L3 opens the chooser", r.page.chooserOpen())
-        // the rows: Jump, Interact, Auto Run, Walk / Run (no headers, no spells): Auto Run is the 3rd (list top 296, 92 a row)
-        r.tap(990f, 296f + 2 * 92f + 46f)
-        assertEquals(listOf(PadMapModel.extraCells(2)), r.cells)
-        assertFalse(r.page.chooserOpen())
+        assertEquals("the chooser opens on Spells", "spells", r.page.chooserTab())
+        assertEquals(ChooserTabs.ALL_TABS, ChooserTabs.keys(false, stick = true))
+    }
+
+    @Test fun aStickHoldingASpellReadsAsOne() {
+        val spell = """{"pos":10,"set":2,"kind":"spell","id":403,"n":"Lightning Bolt","i":136048,"stick":"R3"}"""
+        val cmd = """{"pos":9,"set":1,"kind":"command","key":"DSMAP","n":"Open Map","i":134269,"stick":"L3","ov":true}"""
+        val m = map("$cmd,$spell")
+        val zr3 = PadMapModel.slot(m, 2, PadMapModel.POS_R3)!!
+        assertEquals(PadMapModel.Kind.SPELL, zr3.kind)
+        assertEquals("the stick's spell id is read (m157)", 403, zr3.id)
+        assertEquals("Lightning Bolt", zr3.name)
+        val l3 = PadMapModel.slot(m, 1, PadMapModel.POS_L3)!!
+        assertEquals(PadMapModel.Kind.COMMAND, l3.kind)
+        assertEquals("DSMAP", l3.key)
+        assertTrue(l3.ov)
+        assertTrue("a stick's spell is something a put replaces (its Replace box)", PadMapModel.replaces(m, 2, PadMapModel.POS_R3) != null)
+        val r = Rig(m, ctl(9))
+        r.draw()
+    }
+
+    @Test fun moveIsNeverOnAStick() {
+        val spell = """{"pos":9,"set":1,"kind":"spell","id":403,"n":"Lightning Bolt","i":136048,"stick":"L3"}"""
+        val r = Rig(map(spell), ctl(9))
+        r.tap(990f, h - 206f)                                // the Move button (h-252..h-160)
+        assertTrue("no Move tap goes out from a stick: ${r.cells}", r.cells.none { it == listOf(PadMapModel.ROW_PADTAB to PadMapModel.COL_CARRY) })
+    }
+
+    /** Book b57: the Spellbook's Bind box answers a stick press with p = 9 / 10 and no bar slot; its combo is the stick's glyph */
+    @Test fun theBindBoxAnswerNamesAStick() {
+        val r = SpellsModel.parseBind(JSONObject("""{"type":"spellsack","op":"bind","v":"b57","id":403,"ok":true,"pad":{"pg":1,"b":2,"p":10}}"""))!!
+        assertTrue("a stick answer with no bar slot is a bind that took", r.ok)
+        assertEquals(10, r.pad!!.pos)
+        assertEquals(2, r.pad!!.bar)
+        assertEquals("gen_rstickin", SpellsModel.combo(r.pad!!, SpellsModel.PadStyle.REV).button)
+        val face = SpellsModel.parseBind(JSONObject("""{"type":"spellsack","op":"bind","v":"b57","id":403,"ok":true,"pad":{"pg":1,"b":1,"p":5}}"""))!!
+        assertFalse("a bar button with no slot is still no answer", face.ok)
+    }
+
+    /** Book b57: the Bind box's L3 / R3 tiles stand beside the trigger chips (ZL w/2-106..-22, ZR w/2+22..+106), inside the box */
+    @Test fun theBindBoxSticksSitBesideTheChips() {
+        val o = SpellsOverlay(RuntimeEnvironment.getApplication())
+        val w = 1240f; val cy = 934f - 92f
+        val l3 = o.stickRect(PadMapModel.POS_L3, w, cy)
+        val r3 = o.stickRect(PadMapModel.POS_R3, w, cy)
+        assertTrue("L3 left of ZL's chip: $l3", l3.right <= w / 2f - 106f - 8f)
+        assertTrue("R3 right of ZR's chip: $r3", r3.left >= w / 2f + 106f + 8f)
+        assertTrue("inside the box's foot (934)", l3.bottom <= 934f - 16f && r3.bottom <= 934f - 16f)
+        assertEquals(l3.width(), r3.width(), 0.01f)
     }
 
     @Test fun inCombatHasNoSticks() {
