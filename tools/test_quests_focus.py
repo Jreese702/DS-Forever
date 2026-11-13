@@ -227,7 +227,7 @@ words = sorted(need.words.values()) if need is not None else None
 check(words is not None and 'wolf meat: 3/8' in words and 'gnoll paw: 0/6' in words and not any('wolves' in w for w in words),
       "q56: the item objectives' words of every quest in the log, nothing else", words)
 check(need is not None and len(list(need.ids.keys())) == 0, "q56: no QuestieDB: no ids")
-check('local QV = "q59"' in open(QUESTS, encoding='utf-8').read(), "Quests.lua says q56")
+check('local QV = "q60"' in open(QUESTS, encoding='utf-8').read(), "Quests.lua says q60")
 
 print("ALL PASS" if fails == 0 else ("%d FAILED" % fails))
 sys.exit(1 if fails else 0)
