@@ -256,6 +256,13 @@ W.execute('HOLDER = "map"; step()')
 check(bind(W, "PADLSTICK") in (None, ""), "the Map room holds the pad: no stick override (its L3 pin wins)", bind(W, "PADLSTICK"))
 W.execute('HOLDER = nil; step()')
 check(bind(W, "PADLSTICK") == "TOGGLEAUTORUN", "the room lets go: L3 is Auto Run again", bind(W, "PADLSTICK"))
+# review: a room let go is no re-take by the game (the stick was stepped aside, not bound): three visits in 30 s stay bound
+for _ in range(3):
+    W.execute('HOLDER = "map"; step()')
+    W.execute('HOLDER = nil; step()')
+check(bind(W, "PADLSTICK") == "TOGGLEAUTORUN" and sticks(W)[(1, 9)].get('st') is None,
+      "three room visits within the window: L3 still Auto Run, never \"taken\"", (bind(W, "PADLSTICK"), sticks(W)[(1, 9)].get('st')))
+check(not any(a.get('why') == 'stick taken' for a in acks(W)), "... and no \"stick taken\" padack")
 clean(W, "5")
 
 # ================================================================ 6. Party mode

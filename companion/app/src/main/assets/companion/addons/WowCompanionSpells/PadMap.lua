@@ -2155,6 +2155,9 @@ local function routerBind(why, fightStart)
     end
     -- m34 THE BINDINGS ON A BUTTON: the chord points at the game's binding (Jump, Interact, Auto Run, Walk / Run)
     R.cbound = {}
+    -- m150 (review): a stick is "bound fine" (st "ok") only from the bind just below; one stepped aside (a room / a window / Party
+    -- mode) is NOT bound, so the check's first read after it lets go is no re-take by the game (else two room visits = "taken")
+    for c in pairs(OV.stk.chord) do OV.stk.st[c] = nil end
     -- m77: not while Party mode is on (a ZL+A binding would beat the chord the party pad reads); m132: nor for a fight that starts
     -- with Party mode allowed and grouped (it may be turned on mid-fight, when no binding can change: the party layers win)
     if not aside and not (OV.pm and OV.pm.on()) and not pmFight then
