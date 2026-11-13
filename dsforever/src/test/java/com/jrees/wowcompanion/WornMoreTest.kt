@@ -146,4 +146,23 @@ class WornMoreTest {
         m.update(JSONObject().put("type", "character").put("c", JSONObject().put("eqs", JSONObject().put("row", "auracancel").put("ask", false))))
         assertNull(m.setPad!!.unequip); assertFalse(m.setPad!!.more)
     }
+
+    /** b-fix (the user on 1462: "pressing B in the more menu closes the character page and leaves the menu open."): B goes Home only when
+     *  nothing of the room's own is open, or B still reaches the game's window (the pass refused in a fight); never over the game's question */
+    @Test fun bLeadsHomeOnlyWithNothingOpen() {
+        assertTrue(WornMore.bLeadsHome(open = false, gameAsks = false, bToGame = false))
+        assertFalse(WornMore.bLeadsHome(open = true, gameAsks = false, bToGame = false))      // the menu / a list / the question: one step back
+        assertTrue(WornMore.bLeadsHome(open = true, gameAsks = false, bToGame = true))        // a fight: B still closes the game's window
+        assertFalse(WornMore.bLeadsHome(open = false, gameAsks = true, bToGame = false))      // the game's question: B answers it
+        assertFalse(WornMore.bLeadsHome(open = true, gameAsks = true, bToGame = true))
+    }
+
+    @Test fun theModelReadsTheC18BFlags() {
+        val m = CharacterModel()
+        m.update(JSONObject().put("type", "character").put("c", JSONObject().put("eqs", JSONObject()
+            .put("row", "auracancel").put("more", true).put("gask", true).put("bgo", true).put("ask", false))))
+        assertTrue(m.setPad!!.gameAsks); assertTrue(m.setPad!!.bToGame)
+        m.update(JSONObject().put("type", "character").put("c", JSONObject().put("eqs", JSONObject().put("row", "auracancel").put("ask", false))))
+        assertFalse(m.setPad!!.gameAsks); assertFalse(m.setPad!!.bToGame)               // an older add-on: B as before
+    }
 }

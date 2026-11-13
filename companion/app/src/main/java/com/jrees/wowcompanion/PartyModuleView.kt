@@ -259,7 +259,8 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     private var longFired = false
     private val longPress = Runnable {
         val k = downCell
-        if (k >= 0) { longFired = true; unitOf(k)?.let { onCellLong?.invoke(it) } }
+        // m157: only a plate whose hold opens a wheel asks for one (a dead pet's long hold: nothing, as before)
+        if (k >= 0) { longFired = true; if (pressFills && pressCell == k) unitOf(k)?.let { onCellLong?.invoke(it) } }
     }
 
     /** m150: the drawn entry [k]'s unit index (the dead pet entry: the pet's, 5) */
@@ -273,7 +274,8 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     private var pressFills = false
     private fun pressStart(k: Int) {
         pressCell = k; pressDownAt = SystemClock.uptimeMillis(); pressUpAt = null
-        pressFills = PartyLayout.holdOpens(unitOf(k)); invalidate()
+        val mem = live.party?.view?.getOrNull(k)
+        pressFills = PartyLayout.holdOpens(mem?.i, mem?.dead == true, live.cfg?.pad?.pmenu != null); invalidate()
     }
     /** THE HOLD FILL of the pressed plate at [now] (0 = none): JVM-tested with the touch route (PartyHoldFillTest) */
     fun fillAt(now: Long = SystemClock.uptimeMillis()): Float =

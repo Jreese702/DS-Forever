@@ -137,8 +137,15 @@ object PartyLayout {
     }
     /** the filled part of plate [b] at fill [f] (left to right) */
     fun fillBox(b: Box, f: Float): Box = Box(b.l, b.t, b.l + b.w * f.coerceIn(0f, 1f), b.b)
-    /** a hold on unit [unit] opens a radial (PartyTaps.menu's units: you and party1..4; the pet's hold opens nothing, so no fill) */
-    fun holdOpens(unit: Int?): Boolean = unit != null && unit in 0..4
+    /** a hold on unit [unit] opens a radial (PartyTaps.menu's units: you and party1..4; PadMap m157, the user on 1462: "holding on the
+     *  pet bar does not open the pet inspect": the pet too while it is alive and the add-on has its menu cell [petMenu]; a DEAD pet's
+     *  slot keeps its Smart Res tap alone - its wheel would offer nothing, Revive Pet is never on a wheel) */
+    fun holdOpens(unit: Int?, dead: Boolean = false, petMenu: Boolean = true): Boolean = when (unit) {
+        null -> false
+        in 0..4 -> true
+        PartyModel.PET_I -> petMenu && !dead
+        else -> false
+    }
 
     // ------------------------------------------------------------------------------------------------ the Select tab
 

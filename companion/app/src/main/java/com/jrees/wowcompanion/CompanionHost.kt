@@ -1396,10 +1396,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 else -> {}
             }
         }
+        // m157 (the user on 1462: "pressing B in a player inspect radial opened from party mode does not close the radial"; "holding on
+        // the pet bar does not open the pet inspect"): the hold's batch is MENU HOLD + the menu read (PartyTaps.hold; the pet: its own
+        // menu cell). With Party mode on the pad then hands the wheel every press (B = its back / close, never Party mode off); with it
+        // off nothing of ours holds the pad, so the wheel reads the presses itself
         homeView.onPartyLong = { i ->
-            val cells = PartyTaps.menu(live.cfg, i)
-            if (cells != null && live.tapsAllowed(SystemClock.uptimeMillis()) && TapBridge.taps(this, questsPad, cells) { }) {
-                partyWheel(i, byPad = false)
+            // a wheel of the party's still open closes FIRST (its MENU DONE before this hold's MENU HOLD, never after it)
+            if (partyWheelOpen()) targetRadial.close("another hold")
+            val h = PartyTaps.hold(live.cfg, i)
+            if (h != null && live.tapsAllowed(SystemClock.uptimeMillis()) && TapBridge.taps(this, questsPad, h.first) { }) {
+                partyWheel(i, byPad = false, padKeys = h.second && live.party?.onLive == true, menuHeld = h.second)
             } else Log.i("WCHOME", "party: hold on $i: the menu was not asked")
         }
         // party_design.md E: the Select tab turns Party mode on (off / not bound) or off (on); the look follows the document only
@@ -1439,11 +1445,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     /** Party mode's member menu as the context radial (the user: "no more drop down menus"): the PartyPad's presses drive it ([byPad]:
-     *  its Y opened it; the wheel's close taps MENU DONE), or a finger (a long press) */
-    private fun partyWheel(i: Int, byPad: Boolean) {
+     *  its Y opened it; [padKeys]: m157, a hold with Party mode on put the pad in its menu sub-state; either way the wheel's close taps
+     *  MENU DONE), else (a hold with Party mode off) the wheel's own controller reader (B closes it, as the portrait's wheel).
+     *  [menuHeld]: the hold's MENU HOLD went out, so the close taps MENU DONE whatever drove it (a sub-state never stranded) */
+    private fun partyWheel(i: Int, byPad: Boolean, padKeys: Boolean = false, menuHeld: Boolean = false) {
         val live = PartyModel.live
         val name = live.party?.m?.firstOrNull { it.i == i }?.n ?: ""
-        targetRadial.open("party", TargetRadialView.Input.KEYS, name, { d, who ->
+        val viaPad = byPad || padKeys
+        targetRadial.open("party", if (viaPad) TargetRadialView.Input.KEYS else TargetRadialView.Input.READ, name, { d, who ->
             when (d) {
                 is PlayerMenu.Do.Run -> {
                     if (d.id >= 0) GuestPad.playerMenuRun(questsPad, d.id)?.let { TapBridge.taps(this, questsPad, it) { } }
@@ -1454,7 +1463,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 else -> {}
             }
         }, {
-            if (byPad) PartyTaps.menuDone(live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } }
+            if (viaPad || menuHeld) PartyTaps.menuDone(live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } }
         })
     }
     private fun partyWheelOpen() = tradOpen() && targetRadial.opener == "party"
@@ -1560,6 +1569,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // test51 (the user: "When I'm in a room and I touch the B spiral button to go home, the pause menu opens instead of going home"):
         // while the disc wears its B look (every room; on Home, a step back to take) a touch is B: Home, the room stepping back as B
         // does it. Only the plain blue disc on Home opens the pause wheel
+        // b-fix (rooms the same on every route): the Character room's More menu / its lists / the save question step back one, as its B
+        if (room == Room.CHARACTER && characterView.stepBackByTouch()) {
+            Log.i("WCLOG", "home disc: touched with the B look in CHARACTER: one step back (a menu of the room's closed)")
+            return
+        }
         if (room != Room.HOME || strip.bGoesHome || homeView.bGoesHome()) {
             Log.i("WCLOG", "home disc: touched with the B look in ${room.name}: Home")
             pickRoom(Room.HOME); return

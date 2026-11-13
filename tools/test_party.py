@@ -830,7 +830,8 @@ for col in range(40):
     a = cell(col).a
     t, sp, un, cb = a['type'], a['spell'], a['unit'], a['clickbutton']
     if col <= 5: want = (None, None, None, None)                                            # m130: the pick cells (wrapped, no action at rest; m131 + 5 the pet's)
-    elif col <= 9: want = (None, None, None, None)                                          # m129: the old touch cells retired
+    elif col == 6: want = ("click", None, None, "WowCompanionPartyMenuHold")               # m157: MENU HOLD
+    elif col <= 9: want = (None, None, None, None)                                          # m129: the old touch cells retired (m157: 7 the pet's menu read)
     elif col == 10: want = ("click", None, None, "WowCompanionPartyOn")
     elif col == 11: want = ("click", None, None, "WowCompanionPartyOff")
     elif col <= 16: want = ("focus", None, U[col - 12], None)
@@ -840,7 +841,7 @@ for col in range(40):
     got = (t, sp, un, cb._name if cb is not None else None)
     if got != want:
         bad.append((col, got, want))
-check(not bad, "every party row cell (m130: PICK 0-4 = wrapped cells, m131: 5 the pet's, 6-9 spare, ON 10, OFF 11, FOCUS 12-16, MENU DONE 35)", bad[:3])
+check(not bad, "every party row cell (m130: PICK 0-4 = wrapped cells, m131: 5 the pet's, m157: 6 MENU HOLD, 7 the pet's menu, 8-9 spare, ON 10, OFF 11, FOCUS 12-16, MENU DONE 35)", bad[:3])
 pk = lambda i: cell(i)
 check(all(pk(i).a['wc-pu'] == U[i] and pk(i).a['wc-touch'] == "Lesser Healing Wave" and pk(i).refs['wc-pad'] is not None
           and len(pk(i).wraps['OnClick']) == 1 and len(pk(i).hooks['PostClick']) == 1 for i in range(6)),
@@ -970,6 +971,47 @@ n0 = nsent(W6)
 W6.execute('local c = WowCompanion.pad.rows.party.cells[37]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false)')
 ack = docs(W6, n0, 'partyack')
 check(len(ack) == 1 and ack[0]['ok'] is False and ack[0]['why'] == 'unknown column', "a spare column (37) is refused: unknown column", ack)
+# m157 (the user on build 1462: "pressing B in a player inspect radial opened from party mode does not close the radial as it should."):
+# col 6 = MENU HOLD, the hold's wheel takes the pad's presses while Party mode is on; col 7 = the pet's menu read ("holding on the pet
+# bar does not open the pet inspect")
+def cell6(col):
+    W6.execute('local c = WowCompanion.pad.rows.party.cells[%d]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false); advance(0.3)' % col)
+
+
+W6.execute('rawget(_G, "WowCompanionPartyPad").a["wc-pmenu"] = nil')
+cell6(6)
+check(W6.eval('PADA("wc-pmenu")') is None and W6.eval('PADA("wc-party")') is None, "m157: MENU HOLD with Party mode OFF: no sub-state (the pad is not ours)")
+cell6(10)
+cell6(6)
+check(W6.eval('PADA("wc-pmenu")') is True and W6.eval('PADA("wc-party")') is True, "m157: MENU HOLD with Party mode ON: the menu sub-state (Party mode kept)")
+n0 = nsent(W6)
+a0 = nact(W6)
+W6.execute('hit(7)')
+pb = docs(W6, n0, 'partybox')
+check(W6.eval('PADA("wc-party")') is True and W6.eval('PADA("wc-k")') == "key" and acts(W6, a0) == [] and pb and pb[-1]['b']['k'] == 'key'
+      and pb[-1]['b']['key'] == 'PAD2' and pb[-1]['b']['pm'] is True,
+      "m157: B while the held wheel is open = its key PAD2 (partybox k key, pm), never Party mode off", (W6.eval('PADA("wc-k")'), pb and pb[-1]['b']))
+n0 = nsent(W6)
+cell6(35)
+check(W6.eval('PADA("wc-pmenu")') is None and W6.eval('PADA("wc-party")') is True and not docs(W6, n0, 'partyack'),
+      "m157: MENU DONE (the wheel closed) ends the sub-state, Party mode stays on")
+W6.execute('hit(7)')
+check(W6.eval('PADA("wc-party")') is None, "m157: B afterwards is Party mode off again")
+W6.execute('COMBAT = true')
+cell6(10)
+cell6(6)
+check(W6.eval('PADA("wc-pmenu")') is True, "m157: MENU HOLD in a fight (a secure click): the sub-state too")
+cell6(35)
+cell6(11)
+W6.execute('COMBAT = false')
+W6.execute('PMREAD = nil; PMKEEP = WowCompanion.pmenu; WowCompanion.pmenu = { read = function(u, s) PMREAD = { u = u, s = s } end }')
+n0 = nsent(W6)
+cell6(7)
+got = W6.eval('PMREAD and (PMREAD.u .. "/" .. PMREAD.s) or "none"')
+W6.execute('WowCompanion.pmenu = PMKEEP')
+check(got == "pet/party" and not docs(W6, n0, 'partyack'), "m157: col 7 reads the PET's menu (WC.pmenu.read(\"pet\", \"party\")), no unknown column", got)
+check(W6.eval('#SPY') == 0 and W6.eval('#VIOL') == 0 and W6.eval('#SNIPERR') == 0, "m157: no spied call, no lockdown breach, no snippet error",
+      (W6.eval('#VIOL'), W6.eval('#SNIPERR')))
 
 # ================================================================ m150 SMART RES (the user, 2026-11-13: "There should be an enable smart res
 # toggle setting for party mode to enable pressing dead team members on touch if they are dead and I am playing a class with a res.
@@ -1154,7 +1196,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m", "res", "pd"}     # m150: Smart Res armed, a Hunter's dead pet
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "lv", "rng", "ic"}   # m129: plain facts only (no hp / full / hs / g / hit counts); m134: the pet's ic
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm156' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm157' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1233,7 +1275,7 @@ C_KEYS = {"slots", "yc", "touch", "spells", "sy", "pad"}
 check(set(c) == {"type", "v", "c"} and set(c['c']) <= C_KEYS and {"slots", "spells", "sy", "pad"} <= set(c['c']), "partycfg: c{slots yc? touch? spells sy pad}",
       sorted(c['c']))
 check(c['c']['pad'] == {"row": "party", "pick": 0, "on": 10, "off": 11, "focus": 12, "menu": 17, "resend": 22, "pbsel": 23,
-                        "pbops": {"remove": 31, "up": 32, "down": 33, "add": 34}, "mdone": 35,
+                        "pbops": {"remove": 31, "up": 32, "down": 33, "add": 34}, "mdone": 35, "mhold": 6, "pmenu": 7,
                         "ptab": {"row": "padtab", "tab": 26, "slot0": 27, "none": 37}}, "partycfg.pad = the contract's column map", c['c']['pad'])
 check(set(c['c']['sy']) <= {"on", "list", "known", "pick"} and c['c']['sy']['on'] is False and c['c']['sy']['list'] == [],
       "sy: on (Smart Y off), list (EMPTY at first), known, pick", c['c']['sy'])
@@ -1380,7 +1422,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p51"' in SRC["padtabctl"] and 'local BV = "b56b"' in SRC["book"] and 'local PV = "m156"' in SRC["padmap"],
+check('local CV = "p51"' in SRC["padtabctl"] and 'local BV = "b56b"' in SRC["book"] and 'local PV = "m157"' in SRC["padmap"],
       "the versions: PadMap m146, PadTabCtl p46, Book b52 (b49 stance-bind #179, b50 toolbar D-pad #18/#20, b51 / m143 / m144 rank up, m146 / p46 / b52 Smart Range)")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''

@@ -69,6 +69,7 @@ class PartyFixturesTest {
         assertEquals(12, pad.focus); assertEquals(17, pad.menu); assertEquals(22, pad.resend); assertEquals(23, pad.pbsel)
         assertEquals(31, pad.pbRemove); assertEquals(32, pad.pbUp); assertEquals(33, pad.pbDown); assertEquals(34, pad.pbAdd)
         assertEquals(35, pad.mdone); assertEquals("padtab", pad.tabRow); assertEquals(26, pad.tab); assertEquals(27, pad.slot0); assertEquals(37, pad.none)
+        assertEquals(6, pad.mhold); assertEquals(7, pad.pmenu)                 // m157: MENU HOLD, the pet's menu read
     }
 
     /** `"slots":[]` (an empty Lua table) = every slot Empty, never a failed parse */

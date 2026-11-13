@@ -104,7 +104,10 @@ data class SetPad(val row: String, val yes: Int?, val no: Int?, val ask: SetAsk?
                   val unequip: Int? = null, val moreOn: Int? = null, val moreOff: Int? = null, val more: Boolean = false,
                   /** char-more (add-on c16): the cell that says a More menu's list (Replace / Enchant) is open, and [sub] = the add-on
                    *  holds that list (its B goes one step back to the menu: [sub] false, [more] still true) */
-                  val moreSub: Int? = null, val sub: Boolean = false)
+                  val moreSub: Int? = null, val sub: Boolean = false,
+                  /** b-fix (add-on c18): [gameAsks] = the game's own question over the room holds B (B answers it, the room stays);
+                   *  [bToGame] = something of ours is open but B still reaches the game's window (the capture refused the pass in a fight) */
+                  val gameAsks: Boolean = false, val bToGame: Boolean = false)
 
 /**
  * The pet page's left pane (the Character tab's third small tab in this client; user ruling: the hunter's pet page goes
@@ -270,7 +273,7 @@ class CharacterModel {
             }
             fun cell(k: String) = if (j.has(k)) j.optInt(k) else null
             setPad = SetPad(j.optString("row"), cell("yes"), cell("no"), ask, ack, cell("uq"), cell("mon"), cell("moff"), j.optBoolean("more"),
-                cell("msb"), j.optBoolean("msub"))
+                cell("msb"), j.optBoolean("msub"), j.optBoolean("gask"), j.optBoolean("bgo"))
             changed += "eqs"
         }
         if (c.has("petinfo")) { petInfo = c.optJSONObject("petinfo")?.let { readPet(it) }; changed += "petinfo" }

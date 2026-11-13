@@ -194,7 +194,7 @@ for src, name, addon in ((BAGS, 'Bags.lua', 'WowCompanion'), (CHAR, 'Character.l
 L.execute('WowCompanionDB = {}; fire("PLAYER_LOGIN"); WowCompanion._bagsLayout = { { bag = 0, slots = 4 } }; WowCompanion.bagsPadRows({ { bag = 0, slots = 4 } })')
 
 # ---- Character c16
-check(str(L.eval('WowCompanion.character.version')) == 'c17', "Character's version is bumped (c17)", L.eval('WowCompanion.character.version'))
+check(str(L.eval('WowCompanion.character.version')) == 'c18', "Character's version is bumped (c18)", L.eval('WowCompanion.character.version'))
 d = L.eval('eqs()')
 check(d.msb is not None and d.msb not in (d.uq, d.mon, d.moff) and d.msub is False, "eqs: the moresub cell (its own), msub false", (d.msb, d.uq, d.mon, d.moff))
 L.execute('WowCompanion.character.collect.sets()')
@@ -251,6 +251,45 @@ check(int(L.eval('#PASSES')) == n1 + 1 and L.eval('PASSES[#PASSES]') == '', "...
 L.execute('WowCompanion.character.syncAsk()')
 check(int(L.eval('#PASSES')) == n1 + 1, "nothing asked: nothing passed again")
 L.execute('tapSet("moreoff")')
+
+# c18 (the user on build 1462: "pressing B in the more menu closes the character page and leaves the menu open."): the eqs part says
+# what B does while the menu is up, so the app goes Home on B only when B really leaves (gask: the game's question; bgo: B still
+# reaches the game's window because the capture refused the pass in a fight); a refused pass is tried again on the tick
+check(L.eval('eqs().gask') is False and L.eval('eqs().bgo') is False, "c18: nothing open: gask false, bgo false")
+L.execute('WowCompanion.character.ctl.via = "window"; WowCompanion.character.syncB()')
+n0 = int(L.eval('#PASSES'))
+L.execute('tapSet("moreon")')
+check(int(L.eval('#PASSES')) == n0 + 1 and L.eval('PASSES[#PASSES]') == '' and L.eval('eqs().bgo') is False,
+      "c18: the menu opened from the game's window: B taken off the game (pass none), bgo false", (L.eval('PASSES[#PASSES]'), L.eval('eqs().bgo')))
+L.execute('tapSet("moreoff")')
+check(L.eval('PASSES[#PASSES]') == 'PAD2' and L.eval('eqs().bgo') is False, "c18: closed: B back to the game (its window's B), bgo false")
+L.execute('PASS_REFUSE = true; tapSet("moreon")')
+check(L.eval('eqs().more') is True and L.eval('eqs().bgo') is True, "c18: the pass refused (a fight): bgo true (B still reaches the game's window)")
+n0 = int(L.eval('#PASSES'))
+L.execute('WowCompanion.character.syncB()')
+check(int(L.eval('#PASSES')) == n0 and L.eval('eqs().bgo') is True, "c18: still refused on the tick: bgo stays true")
+L.execute('PASS_REFUSE = false; WowCompanion.character.syncB()')
+check(int(L.eval('#PASSES')) == n0 + 1 and L.eval('PASSES[#PASSES]') == '' and L.eval('eqs().bgo') is False,
+      "c18: the tick tries again: B taken off the game, bgo false", (L.eval('PASSES[#PASSES]'), L.eval('eqs().bgo')))
+L.execute('WowCompanion.character.syncB()')
+check(int(L.eval('#PASSES')) == n0 + 1, "c18: once taken: nothing passed again")
+L.execute('POPUP = "EQUIP_BIND"; WowCompanion.character.syncAsk()')
+check(L.eval('eqs().gask') is True and L.eval('eqs().bgo') is False, "c18: the game's own question up: gask true (B answers it), bgo false")
+L.execute('POPUP = nil; WowCompanion.character.syncAsk()')
+check(L.eval('eqs().gask') is False and L.eval('PASSES[#PASSES]') == '' and L.eval('eqs().bgo') is False,
+      "c18: answered with the menu still open: B the room's again (pass none), gask false", L.eval('PASSES[#PASSES]'))
+L.execute('SPEC.press("PAD2")')
+check(L.eval('eqs().more') is False and L.eval('PASSES[#PASSES]') == 'PAD2' and 'back' not in str(L.eval('WowCompanion.character.ctl.note')),
+      "c18: B closes the menu only (the room keeps the controller; B the game's window's again)", L.eval('WowCompanion.character.ctl.note'))
+L.execute('tapSet("moreon")')
+L.execute('PASS_REFUSE = true; tapSet("moreoff")')
+n0 = int(L.eval('#PASSES'))
+L.execute('PASS_REFUSE = false; WowCompanion.character.syncB()')
+check(int(L.eval('#PASSES')) == n0 + 1 and L.eval('PASSES[#PASSES]') == 'PAD2', "c18: closed while the way back was refused: the tick gives B to the window again",
+      L.eval('PASSES[#PASSES]'))
+L.execute('WowCompanion.character.syncB()')
+check(int(L.eval('#PASSES')) == n0 + 1, "c18: ... once")
+L.execute('WowCompanion.character.ctl.via = "touch"')
 
 # ---- Bags: what Replace may list
 check(L.eval('rowAt(0, 2).nouse') is None, "a wearable belt: no nouse")

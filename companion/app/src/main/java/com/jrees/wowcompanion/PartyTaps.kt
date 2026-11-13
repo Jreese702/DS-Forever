@@ -31,8 +31,25 @@ object PartyTaps {
     fun on(cfg: PartyModel.Cfg?): PartyCells? = cfg?.pad?.let { one(at(it.row, it.on)) }
     /** Home's red disc / leaving Home: Party mode OFF (absolute) */
     fun off(cfg: PartyModel.Cfg?): PartyCells? = cfg?.pad?.let { one(at(it.row, it.off)) }
-    /** a LONG PRESS: read the player menu for member [i] */
-    fun menu(cfg: PartyModel.Cfg?, i: Int): PartyCells? = if (i !in 0..4) null else cfg?.pad?.let { one(at(it.row, it.menu, i)) }
+    /** a LONG PRESS: read the player menu for member [i]; PadMap m157 (the user on 1462: "holding on the pet bar does not open the pet
+     *  inspect"): the pet (i 5) = its own menu cell `pmenu` */
+    fun menu(cfg: PartyModel.Cfg?, i: Int): PartyCells? = when (i) {
+        in 0..4 -> cfg?.pad?.let { one(at(it.row, it.menu, i)) }
+        PartyModel.PET_I -> cfg?.pad?.let { one(at(it.row, it.pmenu)) }
+        else -> null
+    }
+
+    /**
+     * PadMap m157 (the user on 1462: "pressing B in a player inspect radial opened from party mode does not close the radial as it
+     * should."): the hold's ONE batch, MENU HOLD first (Party mode on: the pad's presses become the wheel's `key`, B its back / close,
+     * never Party mode off; MENU DONE ends it with the wheel), then the menu read. Null = no menu for [i]; an add-on with no MENU HOLD
+     * column = the read alone ([holds] false: the app reads the wheel's presses itself)
+     */
+    fun hold(cfg: PartyModel.Cfg?, i: Int): Pair<PartyCells, Boolean>? {
+        val read = menu(cfg, i) ?: return null
+        val mh = cfg?.pad?.let { at(it.row, it.mhold) } ?: return read to false
+        return (listOf(mh) + read) to true
+    }
     /** the player menu's Set Focus on member [i] */
     fun focus(cfg: PartyModel.Cfg?, i: Int): PartyCells? = if (i !in 0..4) null else cfg?.pad?.let { one(at(it.row, it.focus, i)) }
     /** RESEND: partycfg + party + partybox{k=state} */

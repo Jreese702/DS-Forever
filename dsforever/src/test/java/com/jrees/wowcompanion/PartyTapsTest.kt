@@ -27,6 +27,21 @@ class PartyTapsTest {
         assertNull(PartyTaps.menu(cfg, 5)); assertNull(PartyTaps.focus(cfg, 5)); assertNull(PartyTaps.menu(cfg, -1))
     }
 
+    /** PadMap m157 (the user on 1462: "pressing B in a player inspect radial opened from party mode does not close the radial"; "holding
+     *  on the pet bar does not open the pet inspect"): a hold's ONE batch = MENU HOLD first, then the menu read; the pet's own menu cell */
+    @Test fun aHoldIsMenuHoldThenTheRead() {
+        val c = cfg.copy(pad = cfg.pad.copy(mhold = 6, pmenu = 7))
+        assertEquals(listOf("party" to 6, "party" to 19) to true, PartyTaps.hold(c, 2))
+        assertEquals(listOf("party" to 6, "party" to 17) to true, PartyTaps.hold(c, 0))
+        assertEquals(listOf("party" to 7), PartyTaps.menu(c, PartyModel.PET_I))
+        assertEquals(listOf("party" to 6, "party" to 7) to true, PartyTaps.hold(c, PartyModel.PET_I))
+        assertNull(PartyTaps.hold(c, 6)); assertNull(PartyTaps.hold(c, -1))
+        // an older add-on: no MENU HOLD = the read alone (the wheel reads the pad itself); no pet menu cell = no pet hold
+        assertEquals(listOf("party" to 18) to false, PartyTaps.hold(cfg, 1))
+        assertNull(PartyTaps.hold(cfg, PartyModel.PET_I))
+        assertNull(PartyTaps.hold(null, 1))
+    }
+
     @Test fun smartYPartyListOpsAreOneBatch() {
         assertEquals(listOf("party" to 23, "party" to 31), PartyTaps.pbOp(cfg, 1, PbOp.REMOVE))
         assertEquals(listOf("party" to 30, "party" to 32), PartyTaps.pbOp(cfg, 8, PbOp.UP))
