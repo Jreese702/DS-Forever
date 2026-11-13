@@ -36,6 +36,8 @@ namespace DsfDesktop.Ui
         readonly StatusLine host = new StatusLine("Streaming host"), stream = new StatusLine("Stream"), wow = new StatusLine("WoW on this PC"),
                             monitor = new StatusLine("Streamed monitor"), link = new StatusLine("Companion link");
         readonly GoldButton focus = new GoldButton("Focus WoW");
+        readonly Note hostHint = new Note("", 9.25f, Theme.Warn);
+        readonly GoldButton services = new GoldButton("Open Services");
         // game + add-ons
         readonly StatusLine game = new StatusLine("Game folder"), gameLog = new StatusLine("Game log"), addons = new StatusLine("Add-ons");
         readonly Note notices = new Note("", 9.5f, Theme.Warn);
@@ -102,8 +104,11 @@ namespace DsfDesktop.Ui
             // Streaming
             var streamCard = new Card("Streaming");
             foreach (var l in new[] { host, stream, wow, monitor, link }) streamCard.Add(l);
+            hostHint.Visible = services.Visible = false;
+            streamCard.Add(hostHint);
             var sb = new FlowLayoutPanel { AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 8, 0, 0) };
             sb.Controls.Add(focus);
+            sb.Controls.Add(services);
             streamCard.Add(sb);
 
             // Game + add-ons
@@ -180,6 +185,7 @@ namespace DsfDesktop.Ui
                 }
                 Pull();
             };
+            services.Click += (s, e) => act?.OpenServices();
             focus.Click += (s, e) => { var why = act?.FocusWow(); if (why != null) MessageBox.Show(this, why, Text); };
             addonsBtn.Click += (s, e) => { if (act != null) { MessageBox.Show(this, act.InstallAddons(), Text); Pull(); } };
             folderBtn.Click += (s, e) => AskFolder();
@@ -236,6 +242,9 @@ namespace DsfDesktop.Ui
             thorCard.Tag2 = t.Serial != null ? "USB " + t.Serial : "";
 
             host.Set(s.Host, s.HostDot);
+            hostHint.Text = s.HostHint ?? "";
+            hostHint.Visible = !string.IsNullOrEmpty(s.HostHint);
+            services.Visible = s.HostServices;
             stream.Set(s.Stream, s.StreamDot);
             wow.Set(s.Wow, s.WowDot);
             monitor.Set(s.Monitor, Theme.Dim);

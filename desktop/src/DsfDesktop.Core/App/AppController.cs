@@ -44,6 +44,12 @@ namespace DsfDesktop.App
         public AddonStatus Addons { get; private set; }
         public List<string> Notices { get; private set; } = new List<string>();
         public string BridgeStatus { get; private set; } = "starting";
+        /// <summary>the last streaming-port check (a foreign Sunshine on the GameStream ports, ours not listening); null = not yet</summary>
+        public PortReport Ports { get; private set; }
+        /// <summary>what is wrong with streaming on this PC, for the window and the Thor (null = nothing): the port check, or our
+        /// sunshine.exe exiting on its own</summary>
+        public string HostProblem => Sunshine != null && Sunshine.Exited ? "exited" : Ports?.Problem;
+        public string HostWhy => Sunshine != null && Sunshine.Exited ? "pc busy: the streaming host stopped" : Ports?.ThorWhy ?? "";
 
         public event Action Changed;
 
@@ -280,9 +286,10 @@ namespace DsfDesktop.App
             var gs = new List<int> { 47984, 47989 };
             if (sticky > 0) { gs.Add(sticky - 5); gs.Add(sticky); }
             Log.I("sunshine: GameStream ports before start: " + SunshineDiag.Listeners(gs, PortPlanner.TcpFree));
+            CheckPorts("before start");
             Log.I("sunshine: state file: " + SunshineDiag.StateSummaryOfFile(SunshineLayout.State));
             int port = PortPlanner.Pick(Settings.SunshinePort, PortPlanner.TcpFree, PortPlanner.UdpFree);
-            if (port < 0) { Log.I("sunshine: no free port set"); return; }
+            if (port < 0) { Log.I("sunshine: no free port set"); CheckPorts("no free port set"); return; }
             if (sticky > 0 && port != sticky) Log.I("sunshine: port " + sticky + " was busy, moving to " + port + " (a paired Thor learns it from the bridge)");
             if (port != Settings.SunshinePort) { Settings.SunshinePort = port; SaveSettings(); }
             SunshinePort = port;
@@ -295,6 +302,34 @@ namespace DsfDesktop.App
             // issue #54: Sunshine's virtual Xbox pad needs ViGEmBus; without it the Thor's controller does nothing on the PC
             var pad = PadDriver.Now();
             Log.I("controller driver (ViGEmBus): " + pad + (pad == "missing" ? " - the Thor's controller can't reach WoW until it is installed" : ""));
+        }
+
+        string lastPortsKey;
+
+        /// <summary>who holds the GameStream ports (ours / another Sunshine / another program): logged and shown when it changes, and
+        /// the Thor told; never stops or changes the other program</summary>
+        void CheckPorts(string when)
+        {
+            try
+            {
+                var sh = Sunshine;
+                bool up = sh != null && sh.Running;
+                bool settled = up && DateTime.UtcNow - sh.StartedUtc > TimeSpan.FromSeconds(4);
+                var r = PortGuard.Now(SunshinePort, sh?.Pid ?? -1, up, settled, SunshineLayout.ExeDir);
+                Ports = r;
+                var key = (HostProblem ?? "") + "|" + string.Join(",", r.ForeignPorts);
+                if (when != null) Log.I("sunshine: ports " + when + ": " + r.Detail);
+                if (key == lastPortsKey) return;
+                bool first = lastPortsKey == null;
+                lastPortsKey = key;
+                if (when == null) Log.I("sunshine: ports: " + r.Detail);
+                if (HostProblem != null) Log.I("sunshine: " + HostProblem + ": " + r.Line);
+                else if (!first) Log.I("sunshine: the streaming ports are clear again");
+                // the Thor's status line (an existing message: "PC: <text>")
+                if (HostProblem != null) Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = HostWhy });
+                Fire();
+            }
+            catch (Exception e) { Log.I("sunshine: port check: " + e.Message); }
         }
 
         // no prep command: the portable Sunshine can't start ours (error 5, tracking 252f5ec7); the Thor's bridge "focus" covers it
@@ -444,6 +479,8 @@ namespace DsfDesktop.App
             UpdateTick();
             try
             {
+                // the streaming ports: 5 s after the start (ours has bound by then), then every 15 s
+                if (tickN == 5 || tickN % 15 == 0) CheckPorts(null);
                 if (tickN++ % 2 == 0)
                 {
                     if (SunshinePort > 0 && Sunshine != null && Sunshine.Running)
@@ -1021,6 +1058,10 @@ namespace DsfDesktop.App
                 ["https_port"] = SunshinePort > 0 ? SunshinePort - 5 : -1,
                 ["app_name"] = "WoW Forever",
                 ["uniqueid"] = SunshineId,
+                // why streaming can't work on this PC ("other_sunshine" | "other_app" | "not_listening" | "exited"; "" = fine) and
+                // the Thor's line for it ("pc busy: another Sunshine"); an older Thor ignores both
+                ["problem"] = HostProblem ?? "",
+                ["why"] = HostWhy,
             },
             ["stream"] = StreamWord,
             // issue #54: whether Sunshine can make the Thor's controller pad (ViGEmBus): "vigem" / "missing" / "unknown" (an older Thor ignores it)

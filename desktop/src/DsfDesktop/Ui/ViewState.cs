@@ -20,6 +20,10 @@ namespace DsfDesktop.Ui
 
         public string Host = "", Stream = "", Wow = "", Monitor = "", Link = "";
         public Color HostDot = Theme.Dim, StreamDot = Theme.Dim, WowDot = Theme.Dim, LinkDot = Theme.Dim;
+        /// <summary>how to fix what the host line says is wrong (another Sunshine on the ports, ...); "" = nothing wrong</summary>
+        public string HostHint = "";
+        /// <summary>show "Open Services" (another program holds the streaming ports)</summary>
+        public bool HostServices;
 
         public string Game = "", GameLog = "", Addons = "";
         public Color GameDot = Theme.Dim, LogDot = Theme.Dim, AddonsDot = Theme.Dim;
@@ -48,6 +52,7 @@ namespace DsfDesktop.Ui
         Task<string> ThorInstall();
         Task<string> ThorInstallFile(string apk);
         void ThorWatching(bool on);
+        void OpenServices();
         bool AskForFolderOnce();
     }
 
@@ -83,6 +88,20 @@ namespace DsfDesktop.Ui
             else if (!sh.Available) { v.Host = "missing from this copy (reinstall Desktop)"; v.HostDot = Theme.Bad; }
             else if (sh.Running) { v.Host = "ready on port " + c.SunshinePort; v.HostDot = Theme.Ok; }
             else { v.Host = sh.LastStatus; v.HostDot = Theme.Warn; }
+            var pr = c.Ports;
+            if (c.HostProblem == "exited")
+            {
+                v.Host = "stopped on its own: " + sh.LastStatus;
+                v.HostHint = "It restarts by itself. If it keeps stopping, restart DS Forever Desktop.";
+                v.HostDot = Theme.Bad;
+            }
+            else if (pr != null && pr.Problem != null)
+            {
+                v.Host = pr.Line;
+                v.HostHint = pr.Hint;
+                v.HostServices = pr.Services;
+                v.HostDot = Theme.Bad;
+            }
 
             v.Stream = c.Stream == StreamState.Streaming ? "streaming to your Thor" : c.Stream == StreamState.Idle ? "not streaming" : "-";
             v.StreamDot = c.Stream == StreamState.Streaming ? Theme.Gold : Theme.Dim;
@@ -129,6 +148,8 @@ namespace DsfDesktop.Ui
         public Task<string> ThorInstall() => c.Thor.InstallLatest();
         public Task<string> ThorInstallFile(string apk) => c.Thor.InstallLocal(apk);
         public void ThorWatching(bool on) => c.ThorWatching = on;
+        // opens the Services window only; the user stops or disables the other Sunshine there (Desktop never changes a service)
+        public void OpenServices() { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("services.msc") { UseShellExecute = true }); } catch (Exception) { } }
         public bool AskForFolderOnce()
         {
             if (c.Wow != null || c.Settings.AskedForFolder) return false;
