@@ -101,7 +101,10 @@ data class SetAck(val seq: Int, val op: String, val id: Int?, val ok: Boolean, v
 data class SetPad(val row: String, val yes: Int?, val no: Int?, val ask: SetAsk?, val ack: SetAck?,
                   /** uneq1 (add-on c14): the Unequip arm and the More menu's open / close cells on the same row; [more] = the add-on
                    *  holds B for the open menu (false once B closed it there) */
-                  val unequip: Int? = null, val moreOn: Int? = null, val moreOff: Int? = null, val more: Boolean = false)
+                  val unequip: Int? = null, val moreOn: Int? = null, val moreOff: Int? = null, val more: Boolean = false,
+                  /** char-more (add-on c16): the cell that says a More menu's list (Replace / Enchant) is open, and [sub] = the add-on
+                   *  holds that list (its B goes one step back to the menu: [sub] false, [more] still true) */
+                  val moreSub: Int? = null, val sub: Boolean = false)
 
 /**
  * The pet page's left pane (the Character tab's third small tab in this client; user ruling: the hunter's pet page goes
@@ -266,7 +269,8 @@ class CharacterModel {
                 SetAck(a.optInt("seq"), a.optString("op"), if (a.has("id")) a.optInt("id") else null, a.optBoolean("ok"), a.optString("why"))
             }
             fun cell(k: String) = if (j.has(k)) j.optInt(k) else null
-            setPad = SetPad(j.optString("row"), cell("yes"), cell("no"), ask, ack, cell("uq"), cell("mon"), cell("moff"), j.optBoolean("more"))
+            setPad = SetPad(j.optString("row"), cell("yes"), cell("no"), ask, ack, cell("uq"), cell("mon"), cell("moff"), j.optBoolean("more"),
+                cell("msb"), j.optBoolean("msub"))
             changed += "eqs"
         }
         if (c.has("petinfo")) { petInfo = c.optJSONObject("petinfo")?.let { readPet(it) }; changed += "petinfo" }

@@ -73,6 +73,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     }
     private val state = State()
     /** the bags' armor kits / stones / enchants (Bags.lua's `kit` flag): (bag, slot, row), for the Character room's Apply */
+    /** char-more: every bag item, (bag, slot, row) in the bags' order (the Character room's Replace list) */
+    fun bagItems(): List<Triple<Int, Int, JSONObject>> = state.items.entries
+        .map { Triple((it.key shr 16).toInt(), (it.key and 0xFFFF).toInt(), it.value) }
+        .sortedWith(compareBy({ it.first }, { it.second }))
     fun kitItems(): List<Triple<Int, Int, JSONObject>> = state.items.entries
         .filter { it.value.optBoolean("kit") }
         .map { Triple((it.key shr 16).toInt(), (it.key and 0xFFFF).toInt(), it.value) }

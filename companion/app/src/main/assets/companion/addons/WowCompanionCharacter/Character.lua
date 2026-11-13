@@ -51,7 +51,7 @@ local format = string.format
 -- and the core's heartbeat. Set to false when the Character room itself goes to the device.
 local BARS_ONLY = false
 
-local CV = BARS_ONLY and "c15b" or "c15"     -- bump on every change; c15 (uneq2, the user: "Never let a stale bag pick equip anything"): moreon also voids a Bags drag pick; c14 (uneq1): the Unequip route's cells (see THE GEAR SETS' BUTTONS); c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
+local CV = BARS_ONLY and "c17b" or "c17"     -- bump on every change; c17 (char-more2, review of c16; the user: "we should have options there like unequip, replace and enchant"): the game's question keeps A / B until it is gone (a pass the capture refused in a fight is tried again; the menu's own B pass never overrides it); c16 (char-more, the user: "we should have options there like unequip, replace and enchant"): the More menu's lists hold B (moresub: B one step back to the menu) and the game's own questions over the room (bind it to you? Replace enchant?) get A / B; c15 (uneq2, the user: "Never let a stale bag pick equip anything"): moreon also voids a Bags drag pick; c14 (uneq1): the Unequip route's cells (see THE GEAR SETS' BUTTONS); c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
 
 -- ---------------------------------------------------------------- safe reads
 
@@ -441,7 +441,7 @@ local function collectSets()
     end
     -- a deleted set's cells go back to the row (after the pad's quarantine, so a stale tap can never reach another set)
     if WC.pad and type(WC.pad.retain) == "function" then
-        local keep = { yes = true, no = true, uneq = true, moreon = true, moreoff = true }
+        local keep = { yes = true, no = true, uneq = true, moreon = true, moreoff = true, moresub = true }
         for _, r in ipairs(out) do keep["equip:" .. r.id] = true; keep["save:" .. r.id] = true end
         pcall(WC.pad.retain, "eqset", keep)
     end
@@ -1122,8 +1122,11 @@ local function setName(id)
     local ok, name = CALL(function() return C_EquipmentSet.GetEquipmentSetInfo(id) end)
     return ok and PS(name) or nil
 end
+-- c17 (char-more2): the game's own question over the room (gameAsks, below) holds A / B while it shows: passB leaves them alone then
+local gameAsked, gamePassed = nil, false
 -- B is ours while the question is up (capture v2+ passes it to the game while the game's window is open)
 local function passB(on)
+    if gameAsked then return end
     local cap = capture()
     if not (cap and type(cap.pass) == "function" and holderIsMe(cap) and ctl.via == "window") then return end
     if (tonumber(cap.version) or 1) < 2 then return end
@@ -1148,6 +1151,12 @@ local function onSetTap(key)
         eqs.more = true; passB(false); dirty.eqs = true; soon(0); return
     end
     if key == "moreoff" then eqForget(); return end
+    -- c16 (char-more): a list of the menu (Replace / Enchant) is open over it: B goes back to the menu first (onPress), then closes it
+    if key == "moresub" then
+        if type(WC._bagsVoidPick) == "function" then pcall(WC._bagsVoidPick) end
+        if eqs.ask then return end
+        eqs.more = "sub"; passB(false); dirty.eqs = true; soon(0); return
+    end
     if key == "uneq" then
         eqForget()
         if type(WC._bagsUnequipArm) ~= "function" then return eqAck("unequip", nil, false, "unsupported") end
@@ -1183,10 +1192,11 @@ end
 local function collectEqs()
     local pad = WC.pad
     if eqs.ask and inCombat() then eqs.ask = nil end        -- a fight drops the question (the game refuses the save then)
-    local row = { ask = eqs.ask or false, ack = eqs.ack, more = eqs.more or false }
+    local row = { ask = eqs.ask or false, ack = eqs.ack, more = eqs.more and true or false, msub = eqs.more == "sub" }
     if pad and type(pad.slotFor) == "function" then
         row.row = EQ_ROW; row.yes = eqCell("yes"); row.no = eqCell("no")
         row.uq = eqCell("uneq"); row.mon = eqCell("moreon"); row.moff = eqCell("moreoff")      -- c14: the Unequip route
+        row.msb = eqCell("moresub")                                                             -- c16: a list of the More menu
     end
     return row
 end
@@ -1212,11 +1222,56 @@ end
 local function onPress(key)
     if ctl.pend then ctl.pend = nil; note("taken") end      -- a press reaches us: the app's ENTER landed
     if key == "PAD2" then
+        -- c16: a list of the More menu open: back to the menu (the app closes the list when `msub` goes false), the menu stays
+        if eqs.more == "sub" then eqs.more = true; dirty.eqs = true; soon(0); return end
         if eqForget() then return end                       -- the question first: B is one step back
         letGo(); return
     end
     if PAD_KEYS[key] then sendPad(key) end
 end
+-- c16 (char-more, the user: "we should have options there like unequip, replace and enchant"): THE GAME'S OWN QUESTION over the room
+-- (a piece being equipped: "bind it to you?"; a kit's pick: "Replace enchant?" and its kin; read only, StaticPopup1..4's `which`): while
+-- it shows, A and B go to the game (capture pass), whose own controller answers it, as the Bags room does (its bindask / kit asks); once
+-- it is gone the pass is what it was (B to the game while the window holds and nothing of ours asks, else none).
+local GAME_ASKS = { REPLACE_ENCHANT = true, TRADE_REPLACE_ENCHANT = true, BIND_ENCHANT = true, ACTION_WILL_BIND_ITEM = true,
+                    REPLACE_TRADESKILL_ENCHANT = true }
+local function gameAsks()
+    for i = 1, 4 do
+        local f = _G["StaticPopup" .. i]
+        local okS, shown = pcall(function() return f:IsShown() end)
+        if type(f) == "table" and okS and PB(shown) == true then
+            local okW, which = pcall(function() return f.which end)
+            which = okW and PS(which) or nil
+            if type(which) == "string" and (GAME_ASKS[which] or which:find("^EQUIP_BIND")) then return which end
+        end
+    end
+    return nil
+end
+-- c17 (char-more2, review): the pass is kept as a state, not a toggle: the capture refuses a pass in a fight ("combat"), so a refused
+-- one is tried again on the next tick (before, the room kept A / B for the whole question), and the way back is tried until it lands
+local function syncAsk()
+    local cap = capture()
+    if not (ctl.on and not ctl.pend and cap and type(cap.pass) == "function" and (tonumber(cap.version) or 1) >= 2 and holderIsMe(cap)) then
+        gameAsked, gamePassed = nil, false; return
+    end
+    local w = gameAsks()
+    if w then
+        gameAsked = w
+        if gamePassed then return end
+        local ok, done = pcall(cap.pass, "character", { "PAD1", "PAD2" })
+        if ok and done then gamePassed = true; note("game-asks-" .. w) end
+        return
+    end
+    if not gameAsked and not gamePassed then return end
+    gameAsked = nil
+    if gamePassed then
+        local ok, done = pcall(cap.pass, "character", (ctl.via == "window" and not eqs.ask and not eqs.more) and { "PAD2" } or {})
+        if not (ok and done) then return end                 -- refused (a fight): tried again next tick; passB waits for it too
+        gamePassed = false
+    end
+    note("game-answered")
+end
+if not BARS_ONLY and C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(0.25, function() pcall(syncAsk) end) end
 -- capture v8 (interact, the user's ruling: a room KEEPS the controller through a fight; leaving it gives the next press to the game):
 -- a B left to the game becomes the capture's own leave in a fight, lost("B"), and the game's window stays open. The player LEFT:
 -- stay off until that window closes, or the 1 s retake would pull the controller (and the app) back after the fight.
@@ -1494,4 +1549,4 @@ end
 WC.character = { version = CV, barsOnly = BARS_ONLY, emit = emit, collect = COLLECT, standIn = standIn, ctl = ctl,
                   touchOpen = touchOpen, touchClose = touchClose,
                   initOpenCell = initOpenCell, initCloseCell = initCloseCell, onOpenTap = onOpenTap, onCloseTap = onCloseTap,
-                  onSetCell = onSetCell, unequipAck = unequipAck, eqFirst = EQ_FIRST, eqCells = EQ_CELLS }   -- standIn / ctl for tools/test_character.py; the touch pair for Auras.lua
+                  onSetCell = onSetCell, unequipAck = unequipAck, eqFirst = EQ_FIRST, eqCells = EQ_CELLS, syncAsk = syncAsk }   -- standIn / ctl for tools/test_character.py; the touch pair for Auras.lua
