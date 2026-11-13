@@ -8,6 +8,7 @@ Checks: no Radial.lua frame listens to SPELL_UPDATE_COOLDOWN; that event sends n
 `sradialcd` (a moment later) with its cooldown; a secret value sends no `cd`; a spell on no radial sends nothing; the list still comes
 on its events (login, an edit). Works on the single radial (q1b) and on the several radials (q3). Exit code 1 on a failure."""
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -44,7 +45,7 @@ C_Spell.GetSpellInfo = function(id) return { name = SPELLNAME[id], iconID = 1300
     return L
 
 
-SEVERAL = 'local SRV = "q3"' in SRC
+SEVERAL = re.search(r'local SRV = "q([3-9])"', SRC) is not None
 
 
 def put(L, id):
@@ -98,8 +99,28 @@ check(len(docs(L, n0, 'sradialcd')) == 1, "the same spell twice in a moment: one
 n0 = nsent(L)
 L.execute('COMBAT = true; CDS[403] = "secret"; fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-4", 403); runTimers(NOW + 1); COMBAT = false')
 cds = docs(L, n0, 'sradialcd')
-check(len(cds) == 1 and 'cd' not in cds[0] and cds[0].get('fight') is True, "a secret cooldown in a fight: sradialcd with NO cd (fight)", cds)
+# q4 (the user's pick 2026-11-13: "LEARNED LENGTHS in the style of the existing facecd"): 403's 6 s was learned from the plain read in 4.
+check(len(cds) == 1 and cds[0].get('cd', {}).get('d') == 6 and cds[0]['cd'].get('e') is True and 5.5 <= cds[0]['cd'].get('l', 0) <= 6
+      and cds[0].get('fight') is True, "a secret cooldown in a fight: the LEARNED length (cd.e, from the cast), never the secret", cds)
 check(L.eval('ERRS[1]') is None, "no error reading a secret", L.eval('ERRS[1]'))
+learned = L.eval('(function() local t = WowCompanionSpellsDB.cdLearn and WowCompanionSpellsDB.cdLearn["Korvash-Realm"]; return t and t["sLightning Bolt"] end)()')
+check(learned == 6, "the length is kept per character (name-realm) by the spell's name", learned)
+# never learned (324 had no plain read): no number; past the GCD the never-secret isActive dims it (act), or nothing when not active
+if SEVERAL:
+    put(L, 324); L.execute('runTimers(NOW + 1)')
+    n0 = nsent(L)
+    L.execute('COMBAT = true; CDS[324] = { startTime = SECRETV, duration = SECRETV, isActive = true }; '
+              'fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-4b", 324); runTimers(NOW + 0.5)')
+    check(not docs(L, n0, 'sradialcd'), "never learned: nothing at the first read (the GCD could be all it is)", docs(L, n0, 'sradialcd'))
+    L.execute('runTimers(NOW + 2)')
+    cds = docs(L, n0, 'sradialcd')
+    check(len(cds) == 1 and 'cd' not in cds[0] and cds[0].get('act') is True, "never learned, still active past the GCD: act (dim, no number)", cds)
+    n0 = nsent(L)
+    L.execute('CDS[324] = { startTime = SECRETV, duration = SECRETV, isActive = false }; '
+              'fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-4c", 324); runTimers(NOW + 3); COMBAT = false')
+    cds = docs(L, n0, 'sradialcd')
+    check(len(cds) == 1 and 'cd' not in cds[0] and 'act' not in cds[0], "never learned, not active past the GCD: no cd, no act (the app clears)", cds)
+    check(L.eval('ERRS[1]') is None, "no error on the dim path", L.eval('ERRS[1]'))
 
 # ---------------------------------------------------------------- 6. other casts: nothing
 n0 = nsent(L)

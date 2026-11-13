@@ -2544,6 +2544,47 @@ object UiKit {
         return r
     }
 
+    /** one CLOCK EXTRA beside the clock chip (the user's picks 2026-11-13): its icon, its short value under it ("" = icon only), and
+     *  [cooling] = the icon dimmed (the Hearthstone's bright icon when ready, the icon + mm:ss while cooling) */
+    class ClockExtra(val icon: Bitmap?, val value: String, val cooling: Boolean = false)
+    const val EXTRA_W = 56f
+    /** how far an extra cell may borrow the chip's own side padding (the chip's 20 px margin round its text) */
+    private const val EXTRA_IN = 8f
+
+    /**
+     * THE CLOCK EXTRAS (feat/item-cooldowns; the user: "clock extras beside the time/battery on Home ... Place them beside the chip (about
+     * 58 px free each side)"): up to two each side of [chip] (UiKit.clockChip's area), stacked, each an icon with its short value under
+     * it, in the chip's own colours; one on a side stands at the chip's middle. The caller keeps the chip's show / fade rules.
+     */
+    fun clockExtras(c: Canvas, chip: RectF, left: List<ClockExtra>, right: List<ClockExtra>, alpha: Int = 255) {
+        val pv = numberPaint(17f, Theme.text).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha }
+        val pd = numberPaint(17f, Theme.textDim).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha }
+        fun side(list: List<ClockExtra>, x0: Float) {
+            val n = list.size.coerceAtMost(2)
+            if (n == 0) return
+            val cellH = chip.height() / 2f
+            val top0 = if (n == 1) chip.centerY() - cellH / 2f else chip.top
+            for (k in 0 until n) {
+                val e = list[k]
+                val cx = x0 + EXTRA_W / 2f
+                val top = top0 + k * cellH
+                val icon = 24f
+                val iy = if (e.value.isEmpty()) top + (cellH - icon) / 2f else top + 1f
+                val r = RectF(cx - icon / 2f, iy, cx + icon / 2f, iy + icon)
+                e.icon?.let { b ->
+                    pBmp.alpha = if (e.cooling) alpha * 120 / 255 else alpha
+                    c.drawBitmap(b, null, r, pBmp); pBmp.alpha = 255
+                } ?: run { pFlat.style = Paint.Style.FILL; pFlat.color = Theme.bronze; pFlat.alpha = alpha / 2; c.drawRoundRect(r, 4f, 4f, pFlat); pFlat.alpha = 255 }
+                if (e.value.isNotEmpty()) {
+                    val p = if (e.cooling) pv else pd
+                    c.drawText(Tr.t(e.value), cx, r.bottom + 2f - p.ascent(), p)
+                }
+            }
+        }
+        side(left, chip.left + EXTRA_IN - EXTRA_W)
+        side(right, chip.right - EXTRA_IN)
+    }
+
     /** the trigger glyphs' box (LATER 18): where ZL / ZR stand under each bumper plate (no well round them) */
     const val TRIGGER_W = 84f
     const val TRIGGER_H = 56f
@@ -3937,16 +3978,26 @@ object UiKit {
     // SHEET_consumables_v4.png, CLIP_grow_v4.gif). Kit: `rwheel_bg`, `rwheel_on`, `rwheel_band` (the game's controller radial menu,
     // gamepad-radial-menu-wheelbg / -selected / -toptext) and the bar's own `home_live_base / _flare`, `home_live_red_base / _flare`.
 
-    /** one item in a slice of the consumables radial: its icon (Icons.get), name, how many are in the bags, quality (0..7) */
+    /** one item in a slice of the consumables radial: its icon (Icons.get), name, how many are in the bags (-1 = no count: a spell, or
+     *  an item that does not stack / get used up, the user's rule 2026-11-13), quality (0..7) */
     class RadialItem(val icon: Bitmap?, val name: String, val count: Int, val quality: Int = 1,
                      /** PINNED to its slice by the player (the game's gold pin on the icon's top-right corner) */
                      val pinned: Boolean = false,
-                     /** a pin whose item RAN OUT: the icon greyed, the pin grey; it keeps its slice (pass count 0) */
+                     /** a pin whose item RAN OUT: the icon greyed, the pin grey, NO number (the user 2026-11-13); it keeps its slice */
                      val ranOut: Boolean = false,
                      /** m71: a spell the player cannot afford now: the game's blue out-of-mana look */
                      val noMana: Boolean = false,
                      /** q1b: a spell radial's cooldown counted by the app (RadialModel.Cd): seconds left and its whole length, 0 = none */
-                     val cdLeft: Float = 0f, val cdLen: Float = 0f)
+                     val cdLeft: Float = 0f, val cdLen: Float = 0f,
+                     /** r20 / q4: dimmed with no number (a potion held until the fight ends; running in a fight, its length never learned) */
+                     val cdDim: Boolean = false)
+
+    /** r20 / q4: the dim over an icon in [r] with no number (held, or a length never learned): the sweep's dark, whole */
+    fun radialCdDim(c: Canvas, r: RectF, alpha: Int) {
+        if (r.isEmpty) return
+        pCdSweep.alpha = (150 * alpha / 255f).toInt()
+        c.drawRect(r, pCdSweep)
+    }
 
     /** q1b: a cooldown over an icon already drawn in [r]: the game's dark sweep (what is left, clockwise from the top) and the seconds */
     fun radialCd(c: Canvas, r: RectF, left: Float, len: Float, alpha: Int, k: Float) {
@@ -4384,7 +4435,8 @@ object UiKit {
                 c.restoreToCount(save)
             }
             if (k > 0.9f && it.cdLeft > 0f) radialCd(c, r, it.cdLeft, it.cdLen, al, g.k)       // q1b: the app's own countdown
-            if (k > 0.9f && it.count >= 0) {
+            else if (k > 0.9f && it.cdDim) radialCdDim(c, r, al)                                 // r20 / q4: held / length unknown
+            if (k > 0.9f && it.count >= 0 && !it.ranOut) {
                 // the stack's count, the game's way: white, bottom right, a black edge (count -1 = no count: a spell, the spell radial)
                 val bx = r.right - 4f; val by = r.bottom - 2f - counts.descent()
                 counts.style = Paint.Style.STROKE; counts.strokeWidth = 5f * g.k; counts.strokeJoin = Paint.Join.ROUND

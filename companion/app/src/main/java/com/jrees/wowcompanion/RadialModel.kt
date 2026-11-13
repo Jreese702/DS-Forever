@@ -97,7 +97,10 @@ object RadialModel {
                     /** PINNED to its slice by the player (r7) */
                     val pinned: Boolean = false,
                     /** a pin whose item ran out (r7 have = false): greyed, keeps its slice, no cell */
-                    val ranOut: Boolean = false)
+                    val ranOut: Boolean = false,
+                    /** r20 (the user 2026-11-13, rule 1d): the item shows its count (stacks / consumable / reagent / ammo / charges);
+                     *  false = gear, the Hearthstone, toys, single quest tools. An older add-on (no `st`) or an uncached item: true */
+                    val stackable: Boolean = true)
 
     /** a pinnable item (Spells r7 cand[]): its column [k] on the pin row, its name and icon (the chooser shows it) */
     data class Cand(val k: Int, val name: String, val icon: Int)
@@ -170,7 +173,7 @@ object RadialModel {
      * Per app life (a kept list from an earlier life never starts one). The clock is the monotonic one ([clock], ms).
      */
     object Cd {
-        private class E(val endMs: Long, val len: Double)
+        private class E(val endMs: Long, val len: Double, val dim: Boolean = false)
         private val at = HashMap<Int, E>()
         @Volatile var clock: () -> Long = { System.nanoTime() / 1_000_000L }
 
@@ -184,6 +187,7 @@ object RadialModel {
         /** seconds left on [id], 0.0 = ready / unknown */
         @Synchronized fun left(id: Int, now: Long = clock()): Double {
             val e = at[id] ?: return 0.0
+            if (e.dim) return 0.0
             val l = (e.endMs - now) / 1000.0
             if (l <= 0.0) { at.remove(id); return 0.0 }
             return l
@@ -191,13 +195,21 @@ object RadialModel {
         /** the cooldown's whole length in s, 0.0 = none running */
         @Synchronized fun len(id: Int, now: Long = clock()): Double = if (left(id, now) > 0.0) at[id]?.len ?: 0.0 else 0.0
 
-        /** a `sradialcd` (one cast's cooldown): true = it was one */
+        /** q4 (the user 2026-11-13: "if never learned, show the never-secret isActive dim only"): running in a fight, its length never
+         *  learned: dimmed, no number, until the next word on it (a cast, or the list at the fight's end) */
+        @Synchronized fun dim(id: Int): Boolean = at[id]?.dim ?: false
+
+        /** a `sradialcd` (one cast's cooldown; q4: `cd.e` = the learned length, `act` = running, length unknown): true = it was one */
         fun onCast(msg: JSONObject, now: Long = clock()): Boolean {
             if (msg.optString("type") != "sradialcd") return false
             val id = msg.optInt("id", 0)
             if (id <= 0) return false
             val cd = msg.optJSONObject("cd")
-            if (cd == null) clear(id) else note(id, cd.optDouble("d", 0.0), cd.optDouble("l", 0.0), now)
+            when {
+                cd != null -> note(id, cd.optDouble("d", 0.0), cd.optDouble("l", 0.0), now)
+                msg.optBoolean("act", false) -> synchronized(this) { at[id] = E(Long.MAX_VALUE, 0.0, dim = true) }
+                else -> clear(id)
+            }
             return true
         }
 
@@ -218,6 +230,13 @@ object RadialModel {
         }
     }
 
+    /**
+     * THE COUNT RULE (Spells' Radial.lua r20; the user's pick 2026-11-13: "Counts only on stackable consumables/reagents/ammo/items with
+     * charges (rule 1d); spells never show a count (fix the spell-wheel "1"); ran-out pins grey with no number"): the number a slice
+     * draws, -1 = none. [count] itself stays as the game said (the retry check compares it).
+     */
+    fun countShown(spell: Boolean, i: Item): Int = if (spell || i.ranOut || !i.stackable || i.count < 0) -1 else i.count
+
     /** a `radial` document -> its state, or null when it is not one */
     fun parse(msg: JSONObject): Doc? {
         // m62: Smart buffs' OR wheel ("smartor": its buffs at places, its cast cells on Spells' gamemenu row) reads as the spell radial
@@ -233,8 +252,9 @@ object RadialModel {
             val cd = o.optJSONObject("cd")
             items += Item(
                 col = o.optInt("col", -1).takeIf { it >= 0 },     // nil / null (looted in a fight) = no cell
-                id = id, name = o.optString("n", ""), icon = o.optInt("i", 0), count = o.optInt("c", 1),
-                group = o.optInt("g", 4),
+                // a spell (the spell radial, Smart buffs' wheel) has no count: -1 (the user 2026-11-13: fix the spell wheel's "1")
+                id = id, name = o.optString("n", ""), icon = o.optInt("i", 0), count = if (spell) -1 else o.optInt("c", 1),
+                group = o.optInt("g", 4), stackable = !o.has("st") || o.optBoolean("st", true),
                 cdLen = cd?.optDouble("d", 0.0) ?: 0.0, cdLeft = cd?.optDouble("l", 0.0) ?: 0.0)
         }
         val dead = HashSet<Int>()
@@ -253,7 +273,7 @@ object RadialModel {
                     col = if (have) p.optInt("col", -1).takeIf { it >= 0 } else null,
                     id = id, name = p.optString("n", ""), icon = p.optInt("i", 0), count = if (have) p.optInt("c", 1) else 0,
                     group = 0, cdLen = cd?.optDouble("d", 0.0) ?: 0.0, cdLeft = cd?.optDouble("l", 0.0) ?: 0.0,
-                    pinned = true, ranOut = !have)
+                    pinned = true, ranOut = !have, stackable = !p.has("st") || p.optBoolean("st", true))
             }
         }
         val cand = HashMap<Int, Cand>()
@@ -348,8 +368,11 @@ object RadialModel {
      * tap would eat a second piece of food): no `radialuse` for it by the deadline ([acked] false) AND the latest document still shows
      * the item ([before] = it at the tap) with the same count and no cooldown begun. Gone from the list, fewer, or cooling = it was used.
      */
-    fun shouldRetry(before: Item, now: Doc?, acked: Boolean): Boolean {
-        if (acked || now == null) return false
+    fun shouldRetry(before: Item, now: Doc?, acked: Boolean, cdBegan: Boolean = false): Boolean {
+        // r20a (review): the item radial's document carries no cooldown any more (the `itemcd` one does): [cdBegan] = ItemCd shows a
+        // countdown / dim on it that was not there at the tap. Without it a used Hearthstone / toy / quest tool (its count unchanged) was
+        // tapped a second time
+        if (acked || now == null || cdBegan) return false
         val it = now.items.firstOrNull { x -> x.id == before.id } ?: return false
         return it.count == before.count && it.cdLeft <= before.cdLeft && !(before.cdLeft <= 0.0 && it.cdLeft > 0.0)
     }

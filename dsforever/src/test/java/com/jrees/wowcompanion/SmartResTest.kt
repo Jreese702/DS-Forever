@@ -30,7 +30,7 @@ class SmartResTest {
     }
 
     private fun me(cls: String, name: String = "Korvash") = PartyModel.parseParty(JSONObject(
-        """{"type":"party","v":"m153","rs":1,"p":{"on":false,"fight":false,"grp":false,"sel":"off","m":[{"u":"player","i":0,"n":"$name","c":"$cls","dead":false}]}}"""))!!
+        """{"type":"party","v":"m154","rs":1,"p":{"on":false,"fight":false,"grp":false,"sel":"off","m":[{"u":"player","i":0,"n":"$name","c":"$cls","dead":false}]}}"""))!!
 
     @Test fun aClassWithNeitherIsOffAndHidden() {
         GameUi.resetSeenForTest()
@@ -111,7 +111,7 @@ class SmartResTest {
     }
 
     private fun party(extra: String, members: String = PET_LESS) = PartyModel.parseParty(JSONObject(
-        """{"type":"party","v":"m153","rs":3,"p":{"on":true,"box":2,"fight":false,"grp":true,"sel":"bound",$extra"m":[$members]}}"""))!!
+        """{"type":"party","v":"m154","rs":3,"p":{"on":true,"box":2,"fight":false,"grp":true,"sel":"bound",$extra"m":[$members]}}"""))!!
 
     private val PET_LESS = """{"u":"player","i":0,"n":"Korvash","c":"HUNTER","dead":false},
         {"u":"party1","i":1,"n":"Brannoc","c":"WARRIOR","dead":true},{"u":"party2","i":2,"n":"Iselle","c":"MAGE","dead":false}"""

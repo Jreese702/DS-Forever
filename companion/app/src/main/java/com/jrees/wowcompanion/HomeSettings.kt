@@ -171,11 +171,29 @@ object HomeSettings {
             prefs?.edit()?.apply { if (v == null) remove(KEY_CAST_STRIP) else putBoolean(KEY_CAST_STRIP, v) }?.apply()
             for (l in listeners) l()
         }
+    /** THE CLOCK EXTRAS (the user's picks 2026-11-13: "clock extras beside the time/battery on Home, each with its own on/off row in
+     *  Bottom > Home"): the Hearthstone, the class teleport (once known), gold, free bag slots; each on by default (true = shown) */
+    var clockHearth: Boolean
+        get() = prefs?.getBoolean(KEY_CLOCK_HEARTH, true) ?: true
+        set(v) { if (v != clockHearth) { prefs?.edit()?.putBoolean(KEY_CLOCK_HEARTH, v)?.apply(); for (l in listeners) l() } }
+    var clockTeleport: Boolean
+        get() = prefs?.getBoolean(KEY_CLOCK_TELEPORT, true) ?: true
+        set(v) { if (v != clockTeleport) { prefs?.edit()?.putBoolean(KEY_CLOCK_TELEPORT, v)?.apply(); for (l in listeners) l() } }
+    var clockGold: Boolean
+        get() = prefs?.getBoolean(KEY_CLOCK_GOLD, true) ?: true
+        set(v) { if (v != clockGold) { prefs?.edit()?.putBoolean(KEY_CLOCK_GOLD, v)?.apply(); for (l in listeners) l() } }
+    var clockBags: Boolean
+        get() = prefs?.getBoolean(KEY_CLOCK_BAGS, true) ?: true
+        set(v) { if (v != clockBags) { prefs?.edit()?.putBoolean(KEY_CLOCK_BAGS, v)?.apply(); for (l in listeners) l() } }
 
     fun onChange(l: () -> Unit) { listeners.add(l) }
 
     private const val KEY_CAST_STRIP = "castStrip"
     private const val KEY = "rest"
+    private const val KEY_CLOCK_HEARTH = "clockHearth"
+    private const val KEY_CLOCK_TELEPORT = "clockTeleport"
+    private const val KEY_CLOCK_GOLD = "clockGold"
+    private const val KEY_CLOCK_BAGS = "clockBags"
     private const val KEY_COMBAT_GROW = "combatGrow"
     private const val KEY_SWING = "swingTimer"
     private const val KEY_PAUSE_TAP = "pauseTap"
@@ -525,6 +543,15 @@ class HomeSettingsSection(context: Context,
             // the user 2026-10-09: "Above Chat" first; the default stays Above Minimap
             listOf("Above Chat", "Above Minimap"), if (HomeSettings.questOverMap) 1 else 0,
             listOf({ HomeSettings.questOverMap = false }, { HomeSettings.questOverMap = true }))
+        // THE CLOCK EXTRAS (the user's picks 2026-11-13): one On / Off row each, beside the clock on Home
+        y = row(c, y + GAP, "Hearthstone", listOf("Beside the clock."), listOf("On", "Off"), if (HomeSettings.clockHearth) 0 else 1,
+            listOf({ HomeSettings.clockHearth = true }, { HomeSettings.clockHearth = false }))
+        y = row(c, y + GAP, "Class teleport", listOf("Beside the clock, once known."), listOf("On", "Off"), if (HomeSettings.clockTeleport) 0 else 1,
+            listOf({ HomeSettings.clockTeleport = true }, { HomeSettings.clockTeleport = false }))
+        y = row(c, y + GAP, "Gold", listOf("Beside the clock."), listOf("On", "Off"), if (HomeSettings.clockGold) 0 else 1,
+            listOf({ HomeSettings.clockGold = true }, { HomeSettings.clockGold = false }))
+        y = row(c, y + GAP, "Free bag slots", listOf("Beside the clock."), listOf("On", "Off"), if (HomeSettings.clockBags) 0 else 1,
+            listOf({ HomeSettings.clockBags = true }, { HomeSettings.clockBags = false }))
         // START ATTACK ON CAST (Spells' m13): Off / On, from the add-on's word (null = an older add-on: no row); its notes under it
         HomeAttackSwitch.state?.let { s ->
             y = row(c, y + GAP, "Start the attack when a spell is cast",

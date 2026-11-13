@@ -123,6 +123,7 @@ class HomeView(
             else if (lent(castView) && castView.swingOn != HomeSettings.swingTimer)
                 castView.swingOn = HomeSettings.swingTimer                                     // p-swing-timer: switched in a fight
             else if (laidGrow != HomeSettings.combatGrow) { laidGrow = HomeSettings.combatGrow; shown?.let { if (it.takeover) apply(it, animate = isShown) } }
+            invalidate()                                                     // r20: a clock extra switched on / off
         } }
         ThemeLive.bg(this, Tok.INK)
         setWillNotDraw(false)
@@ -885,12 +886,48 @@ class HomeView(
             if (t.isNotEmpty() && (t != zoneText || pvp != zonePvp)) { zoneText = t; zonePvp = pvp; invalidate() }
         }
         val now = System.currentTimeMillis()
+        // r20 THE CLOCK EXTRAS' gold and free bag slots (the user's picks 2026-11-13): from the bags the app already gets
+        msg.optJSONObject("bags")?.let { bg ->
+            val g = if (bg.has("money")) bg.optLong("money") else null
+            val f = if (bg.has("freeGeneral")) bg.optInt("freeGeneral") else if (bg.has("free")) bg.optInt("free") else -1
+            if (g != goldCopper || f != bagFree) { goldCopper = g; bagFree = f; invalidate() }
+        }
         val fight = HomeCombat.fromFull(msg)?.also { grow.noteFight(it, current, now) }
         val attack = HomeGrow.fromFull(msg)?.also { grow.noteAttack(it, current, now) }
         if (fight != null || attack != null) tick()
     }
 
     fun onChat(c: JSONObject) { if (chat.update(c)) chatPane.refresh() }
+
+    /** r20: the purse in copper (null = not said yet) and the free slots in the bags that take anything (-1 = not said yet) */
+    private var goldCopper: Long? = null
+    private var bagFree = -1
+
+    /**
+     * THE CLOCK EXTRAS (feat/item-cooldowns; the user's picks 2026-11-13): beside the clock chip, each by its own Bottom > Home row.
+     * Left: the Hearthstone ("shows ALWAYS: bright icon when ready, icon + mm:ss while cooling") and the class teleport (once known);
+     * right: gold and free bag slots.
+     */
+    private fun clockExtras(): Pair<List<UiKit.ClockExtra>, List<UiKit.ClockExtra>> {
+        val left = ArrayList<UiKit.ClockExtra>(); val right = ArrayList<UiKit.ClockExtra>()
+        if (HomeSettings.clockHearth && ItemCd.hearthHave != false) {
+            val l = ItemCd.left(ItemCd.HEARTH)
+            left += UiKit.ClockExtra(Icons.get(ItemCd.hearthIcon), if (l > 0.0) ItemCd.mmss(l) else "",
+                cooling = l > 0.0 || ItemCd.dim(ItemCd.HEARTH))
+        }
+        val tp = ItemCd.teleport
+        if (HomeSettings.clockTeleport && tp != null) {
+            val l = ItemCd.teleportLeft()
+            left += UiKit.ClockExtra(Icons.get(tp.icon), if (l > 0.0) ItemCd.mmss(l) else "", cooling = l > 0.0 || ItemCd.teleportDim())
+        }
+        val g = goldCopper
+        if (HomeSettings.clockGold && g != null) {
+            val gold = g / 10000L
+            right += UiKit.ClockExtra(Icons.ui("ui-goldicon"), if (gold >= 10000L) "${gold / 1000L}k" else gold.toString())
+        }
+        if (HomeSettings.clockBags && bagFree >= 0) right += UiKit.ClockExtra(Icons.get(133633), bagFree.toString())   // the backpack's icon
+        return left to right
+    }
 
     /** THE WORLD NOTICE over the chat (the user's pick "A: system line"; Chat's chat21 `notice` documents, current only) */
     private var notice: NoticeModel.Notice? = null
@@ -1849,7 +1886,13 @@ class HomeView(
         if (pauseSave >= 0) { c.restoreToCount(pauseSave); c.save(); c.translate(pauseTop[0], pauseTop[1]) }
         if (clockA > 0.01f && barsSeen && clockText.isNotEmpty() && batteryPct >= 0) now[Part.BARS]?.let { b ->
             val save = if (clockA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (clockA * 255).toInt()) else -1
-            UiKit.clockChip(c, b.centerX(), b.top + 10f, clockText, batteryPct, charging)
+            val chip = UiKit.clockChip(c, b.centerX(), b.top + 10f, clockText, batteryPct, charging)
+            // r20: the clock extras beside the chip, under the chip's own show / fade rules
+            val (xl, xr) = clockExtras()
+            if (xl.isNotEmpty() || xr.isNotEmpty()) {
+                UiKit.clockExtras(c, chip, xl, xr)
+                if (xl.any { it.value.isNotEmpty() }) postInvalidateDelayed(1000L)   // the mm:ss counts (as the auras' times); nothing ticks otherwise
+            }
             if (save >= 0) c.restoreToCount(save)
         }
         if (pauseSave >= 0) c.restoreToCount(pauseSave)

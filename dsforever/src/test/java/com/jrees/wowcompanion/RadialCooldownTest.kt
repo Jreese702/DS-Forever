@@ -56,7 +56,7 @@ class RadialCooldownTest {
     }
 
     @Test fun theSeveralRadialsListShapeToo() {
-        RadialModel.Cd.onList(JSONObject("""{"type":"sradial","v":"q3","r":{"list":[{"u":1,"items":[{"id":324,"cd":{"d":12,"l":12}}]}]}}"""), now = 0L)
+        RadialModel.Cd.onList(JSONObject("""{"type":"sradial","v":"q4","r":{"list":[{"u":1,"items":[{"id":324,"cd":{"d":12,"l":12}}]}]}}"""), now = 0L)
         assertEquals(12.0, RadialModel.Cd.left(324, now = 0L), 1e-6)
     }
 
