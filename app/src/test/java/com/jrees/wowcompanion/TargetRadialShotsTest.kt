@@ -69,6 +69,8 @@ class TargetRadialShotsTest {
         val wolf = listOf(pet("Feed Pet", "PetFeed", 5, 132165), pet("Dismiss Pet", "PetDismiss", 6, 136095),
             pet("Mend Pet", "PetMend", 8, 132179), pet("Beast Training", "PetTrain", 9, 132162)) + npc
         shot("target_pet", "Wolf", wolf, 0)
-        shot("target_pet_dead", "Wolf", listOf(pet("Revive Pet", "PetRevive", 7, 132163)) + npc, 0)
+        // q60 (the user, 2026-11-13: "I dont like the res pet being in the player radial, thats silly"): a dead pet's wheel has no
+        // pet rows (Revive Pet is only Smart Res's tap on the dead pet slot in Party mode)
+        shot("target_pet_dead", "Wolf", npc, 0)
     }
 }

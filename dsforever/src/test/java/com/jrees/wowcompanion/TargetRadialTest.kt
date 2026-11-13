@@ -74,6 +74,6 @@ class TargetRadialTest {
         assertEquals(132165, MenuIcons.spec("icon:132165")!!.base)
         assertTrue(!MenuIcons.has("icon:0") && !MenuIcons.has("icon:x") && !MenuIcons.has(null) && MenuIcons.has("whisper"))
         // a pet key is no game menu icon of ours (no mix-up with Dismiss / Trade / Follow)
-        for (k in listOf("PetFeed", "PetDismiss", "PetRevive", "PetMend", "PetTrain")) assertNull(MenuIcons.keyOf(k, k))
+        for (k in listOf("PetFeed", "PetDismiss", "PetMend", "PetTrain")) assertNull(MenuIcons.keyOf(k, k))
     }
 }

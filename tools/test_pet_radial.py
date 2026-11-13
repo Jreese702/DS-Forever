@@ -3,8 +3,8 @@ actions like dismiss or feed pet."), off-device: the REAL TapPad + Quests files 
 
     python tools/test_pet_radial.py
 
-Checks: the pet rows lead the pet's menu (Party mode's pet cell, the target wheel on your pet), only known spells, Mend alive / Revive
-dead, Revive alone on your own menu with no pet and on your dead pet's body, Feed greyed in a fight, each row's icon and pfocus column,
+Checks: the pet rows lead the pet's menu (Party mode's pet cell, the target wheel on your pet), only known spells, Mend alive, NO
+Revive Pet on any wheel (q60: the dead pet, your own menu, yourself, the pet's body), Feed greyed in a fight, each row's icon and pfocus column,
 the secure cells' /cast lines, and the re-read after a cell saying again = 1. Needs lupa. Exit code 1 on any failure."""
 import sys
 
@@ -39,7 +39,7 @@ UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { Ge
 '''
 Q = boot(["safety", "tappad", "quests"], pre=PRE)
 
-check('local QV = "q59"' in SRC["quests"], "Quests says q57")
+check('local QV = "q60"' in SRC["quests"], "Quests says q60")
 
 
 def read(unit, src):
@@ -81,37 +81,23 @@ Q.execute('COMBAT = true')
 check(rows(read("pet", "party"))[0] == ("Feed Pet", 5, 0), "in a fight Feed Pet is greyed (en 0)", rows(read("pet", "party"))[:1])
 Q.execute('COMBAT = false')
 
-# 6. the pet dead (still out): Revive alone
+# 6. q60 (the user, 2026-11-13: "I dont like the res pet being in the player radial, thats silly, I just want it to be done when
+# touching a dead pet slot in the party mode section."): NO wheel offers Revive Pet (Smart Res's tap on the dead pet slot casts it)
 Q.execute('UNITS.pet.alive = false')
-check(rows(read("pet", "party")) == [("Revive Pet", 7, 1)], "the pet dead: Revive Pet alone (pfocus 7)", rows(read("pet", "party")))
+check(rows(read("pet", "party")) == [], "the pet dead (still out): no pet rows, no Revive Pet", rows(read("pet", "party")))
+Q.execute('UNITS.target = UNITS.pet')
+check(rows(read("target", "radial")) == [], "the target wheel on your dead pet: no pet rows", rows(read("target", "radial")))
 
-# 7. the pet gone: your own menu offers Revive; its body (dead, its last name, not a player) too; another dead NPC not
+# 7. the pet gone: your own menu, yourself as the target and the pet's body offer nothing
 Q.execute('UNITS.pet = nil; UNITS.target = { name = "Wolf", alive = false }')
-check(rows(read("player", None)) == [("Revive Pet", 7, 1)], "no pet out: your own menu offers Revive Pet", rows(read("player", None)))
-check(rows(read("target", "radial")) == [("Revive Pet", 7, 1)], "your dead pet's body (its last name): Revive Pet", rows(read("target", "radial")))
-Q.execute('UNITS.target = { name = "Kobold", alive = false }')
-check(rows(read("target", "radial")) == [], "another dead NPC: no pet rows")
-Q.execute('UNITS.target = { name = "Wolf", alive = false, player = true }')
-check(rows(read("target", "radial")) == [], "a dead PLAYER of the pet's name: no pet rows")
-Q.execute('KNOWN[982] = nil')
-check(rows(read("player", None)) == [], "Revive Pet not known: nothing on your own menu")
-Q.execute('KNOWN[982] = true')
-
-# 7b. q57 (review): YOURSELF as the target, no pet out: the target wheel offers Revive too (ctx keeps unit "target" for SELF)
+check(rows(read("player", None)) == [], "no pet out: your own menu has no Revive Pet", rows(read("player", None)))
+check(rows(read("target", "radial")) == [], "your dead pet's body: no Revive Pet", rows(read("target", "radial")))
 Q.execute('UNITS.target = UNITS.player')
-check(rows(read("target", "radial")) == [("Revive Pet", 7, 1)], "yourself as the target, no pet out: Revive Pet", rows(read("target", "radial")))
-
-# 7c. q57 (review): a fresh session (no name kept), the pet seen only by the game's pet event, dies with NO menu read while it
-# lived (the Classic client drops the pet unit): its body still offers Revive
-Q.execute('WowCompanion.pmenu.petLast = nil; UNITS.pet = { name = "Fang", alive = true }; fire("UNIT_PET", "player")')
-check(Q.eval('WowCompanion.pmenu.petLast') == "Fang", "UNIT_PET keeps the pet's name (no menu read)", Q.eval('WowCompanion.pmenu.petLast'))
-Q.execute('UNITS.pet = nil; fire("UNIT_PET", "player"); UNITS.target = { name = "Fang", alive = false }')
-check(rows(read("target", "radial")) == [("Revive Pet", 7, 1)], "the body of a pet never menu-read: Revive Pet", rows(read("target", "radial")))
-Q.execute('WowCompanion.pmenu.petLast = nil; UNITS.pet = { name = "Claw", alive = true }; fire("UNIT_PET", "party1")')
-check(Q.eval('WowCompanion.pmenu.petLast') is None, "another unit's UNIT_PET is ignored")
-Q.execute('fire("PLAYER_ENTERING_WORLD")')
-check(Q.eval('WowCompanion.pmenu.petLast') == "Claw", "PLAYER_ENTERING_WORLD keeps the pet's name (after a login / reload)")
-Q.execute('UNITS.pet = nil; UNITS.target = { name = "Wolf", alive = false }; WowCompanion.pmenu.petLast = "Wolf"')
+check(rows(read("target", "radial")) == [], "yourself as the target, no pet out: no Revive Pet", rows(read("target", "radial")))
+check(Q.eval('WowCompanion.pmenu.petSeen') is None and Q.eval('WowCompanion.pmenu.petLast') is None,
+      "the radial-only pet-name tracking is gone (petSeen / petLast)")
+check(not any(p_ == "PetRevive" for p_ in [Q.eval('WowCompanion.pmenu.PET[%d].k' % i) for i in range(1, 5)])
+      and Q.eval('WowCompanion.pmenu.PET[5]') is None, "WC.pmenu.PET: Feed, Dismiss, Mend, Train only")
 
 # 8. a pet out: your own menu has no pet rows
 Q.execute('UNITS.pet = { name = "Wolf", alive = true }')
@@ -129,8 +115,8 @@ for col = 0, 9 do
     CELLS[col] = b.a
 end''')
 got = {c: (Q.eval('CELLS[%d].type' % c), Q.eval('CELLS[%d].macrotext' % c)) for c in range(5, 10)}
-check(got == {5: ("macro", "/cast Feed Pet"), 6: ("macro", "/cast Dismiss Pet"), 7: ("macro", "/cast Revive Pet"),
-              8: ("macro", "/cast Mend Pet"), 9: ("macro", "/cast Beast Training")}, "pfocus cells 5-9: the game's /cast of each spell", got)
+check(got == {5: ("macro", "/cast Feed Pet"), 6: ("macro", "/cast Dismiss Pet"), 7: (None, None),
+              8: ("macro", "/cast Mend Pet"), 9: ("macro", "/cast Beast Training")}, "pfocus cells 5-9: the game's /cast of each spell, 7 empty (q60)", got)
 check(Q.eval('WowCompanion.pad.rows.pfocus.n') == 10, "the pfocus row has 10 cells")
 check(Q.eval('CELLS[2].macrotext') == "/inspect" and Q.eval('CELLS[4].macrotext') == "/trade" and Q.eval('CELLS[3].type') == "focus",
       "cols 2 / 3 / 4 unchanged (/inspect, focus, /trade)")
