@@ -123,6 +123,23 @@ object PartyLayout {
     else (1f - (now - upAt).toFloat() / PRESS_OUT_MS).coerceIn(0f, 1f) * ((upAt - downAt).toFloat() / PRESS_IN_MS).coerceIn(0f, 1f)
     fun hitTag(m: Module, x: Float, y: Float): Boolean = m.tag.contains(x, y)
 
+    /** THE HOLD FILL (the user, 2026-11-13: "when doing the hold to open radials I want the bar to kind of fill to indicate that its
+     *  opening when holding"): a held member plate fills left to right in the theme's accent over exactly [HOLD_MS] (the long press
+     *  that opens the member's target radial: PartyModuleView.LONG_MS is this value), the radial opens as it completes; let go early
+     *  and it drains in [FILL_DRAIN_MS] (no radial; the tap is unchanged). */
+    const val HOLD_MS = 450L
+    const val FILL_DRAIN_MS = 120L
+    /** the fill 0..1 at [now]: held since [downAt] (rises), or let go at [upAt] (drains from where it stood) */
+    fun holdFill(now: Long, downAt: Long, upAt: Long?): Float {
+        if (upAt == null) return ((now - downAt).toFloat() / HOLD_MS).coerceIn(0f, 1f)
+        val stood = ((upAt - downAt).toFloat() / HOLD_MS).coerceIn(0f, 1f)
+        return stood * (1f - (now - upAt).toFloat() / FILL_DRAIN_MS).coerceIn(0f, 1f)
+    }
+    /** the filled part of plate [b] at fill [f] (left to right) */
+    fun fillBox(b: Box, f: Float): Box = Box(b.l, b.t, b.l + b.w * f.coerceIn(0f, 1f), b.b)
+    /** a hold on unit [unit] opens a radial (PartyTaps.menu's units: you and party1..4; the pet's hold opens nothing, so no fill) */
+    fun holdOpens(unit: Int?): Boolean = unit != null && unit in 0..4
+
     // ------------------------------------------------------------------------------------------------ the Select tab
 
     /**

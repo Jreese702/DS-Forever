@@ -90,13 +90,16 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
             val depth = if (k == pressCell) PartyLayout.pressDepth(now, pressDownAt, pressUpAt) else 0f
             // animating only while it eases in or out (a held plate at full depth draws once)
             if (k == pressCell && ((pressUpAt == null && depth < 1f) || (pressUpAt != null && depth > 0f))) pressing = true
+            // THE HOLD FILL: a held plate whose hold opens the radial fills over PartyLayout.HOLD_MS, draining when let go early
+            val fill = if (k == pressCell) fillAt(now) else 0f
+            if (k == pressCell && pressFills && ((pressUpAt == null && fill < 1f) || (pressUpAt != null && fill > 0f))) pressing = true
             val at = if (depth > 0f) PartyLayout.pressed(cell, depth) else cell
             val save = if (mem.dim) c.saveLayerAlpha(at.l, at.t, at.r, at.b, (255 * PartyModel.DIM).toInt()) else -1
-            drawPlate(c, at, mem, k == boxed, resOn)
+            drawPlate(c, at, mem, k == boxed, resOn, fill)
             if (save >= 0) c.restoreToCount(save)
             if (depth > 0f) pressEdge(c, at, depth)
         }
-        if (pressUpAt != null && PartyLayout.pressDepth(now, pressDownAt, pressUpAt) <= 0f) pressCell = -1
+        if (pressUpAt != null && PartyLayout.pressDepth(now, pressDownAt, pressUpAt) <= 0f && fillAt(now) <= 0f) pressCell = -1
         drawTab(c, m.tag, now)
         noteText?.let { t -> if (now < noteUntil) drawNote(c, m, t) else noteText = null }
         if (tab.moving(now) || pressing || noteText != null) postInvalidateOnAnimation()
@@ -116,6 +119,26 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         pEdge.strokeWidth = 2.5f; pEdge.color = Color.argb(a, 255, 209, 0)
         c.drawRoundRect(RectF(b.l + 1f, b.t + 1f, b.r - 1f, b.b - 1f), 6f, 6f, pEdge)
     }
+    private val pSweep = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val clip = Path()
+    /** THE HOLD FILL: the plate's filled part in the theme's accent (soft), a brighter leading edge, clipped to the plate's round */
+    private fun holdFill(c: Canvas, p: Box, f: Float) {
+        val fb = PartyLayout.fillBox(p, f)
+        if (fb.w <= 0f) return
+        val acc = Theme.gold
+        val rr = Color.red(acc); val gg = Color.green(acc); val bb = Color.blue(acc)
+        c.save()
+        clip.reset(); clip.addRoundRect(r.of(p), 6f, 6f, Path.Direction.CW); c.clipPath(clip)
+        pSweep.shader = null; pSweep.style = Paint.Style.FILL; pSweep.color = Color.argb(64, rr, gg, bb)
+        c.drawRect(fb.l, fb.t, fb.r, fb.b, pSweep)
+        val edge = minOf(FILL_EDGE, fb.w)
+        pSweep.shader = android.graphics.LinearGradient(fb.r - edge, 0f, fb.r, 0f, Color.argb(0, rr, gg, bb), Color.argb(150, rr, gg, bb),
+            android.graphics.Shader.TileMode.CLAMP)
+        c.drawRect(fb.r - edge, fb.t, fb.r, fb.b, pSweep)
+        pSweep.shader = null
+        c.restore()
+    }
+
     private val noteP by lazy { UiKit.bodyPaint(22f, Color.WHITE).apply { textAlign = Paint.Align.CENTER } }
     /** m150: the note, a dark pill over the well's foot */
     private fun drawNote(c: Canvas, m: PartyLayout.Module, t: String) {
@@ -130,10 +153,11 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     private val nameP by lazy { UiKit.bodyPaint(24f, Color.WHITE) }
     private val lvP by lazy { UiKit.bodyPaint(18f, Theme.dim) }
 
-    private fun drawPlate(c: Canvas, p: Box, mem: PartyModel.Member, picked: Boolean, resOn: Boolean) {
+    private fun drawPlate(c: Canvas, p: Box, mem: PartyModel.Member, picked: Boolean, resOn: Boolean, fill: Float = 0f) {
         pFill.shader = null; pFill.colorFilter = null; pFill.style = Paint.Style.FILL
         pFill.color = Color.argb(230, 14, 12, 10)
         c.drawRoundRect(r.of(p), 6f, 6f, pFill)
+        if (fill > 0f) holdFill(c, p, fill)                             // under the stripe, icon and name
         // m134 (the user, 2026-11-11: "the pet should ... not have the green dot"): a person's plate has the class stripe, the pet's none
         val col = if (mem.isPet) Theme.text else classColour(mem)
         if (!mem.isPet) {
@@ -245,7 +269,15 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     private var pressCell = -1
     private var pressDownAt = 0L
     private var pressUpAt: Long? = null
-    private fun pressStart(k: Int) { pressCell = k; pressDownAt = SystemClock.uptimeMillis(); pressUpAt = null; invalidate() }
+    /** the held plate's hold opens a radial (it fills); set with the press */
+    private var pressFills = false
+    private fun pressStart(k: Int) {
+        pressCell = k; pressDownAt = SystemClock.uptimeMillis(); pressUpAt = null
+        pressFills = PartyLayout.holdOpens(unitOf(k)); invalidate()
+    }
+    /** THE HOLD FILL of the pressed plate at [now] (0 = none): JVM-tested with the touch route (PartyHoldFillTest) */
+    fun fillAt(now: Long = SystemClock.uptimeMillis()): Float =
+        if (pressCell < 0 || !pressFills) 0f else PartyLayout.holdFill(now, pressDownAt, pressUpAt)
     private fun pressEnd() { if (pressCell >= 0 && pressUpAt == null) { pressUpAt = SystemClock.uptimeMillis(); invalidate() } }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -284,8 +316,10 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     companion object {
         /** the view's top is the well's (the tab stands inside it now) */
         const val RISE = 0f
-        /** a long press: the class wheel's CLASS_LONG_MS */
-        const val LONG_MS = 450L
+        /** a long press: the class wheel's CLASS_LONG_MS; the hold fill runs over the same time */
+        const val LONG_MS = PartyLayout.HOLD_MS
+        /** the fill's bright leading edge, px */
+        const val FILL_EDGE = 22f
         /** a tap moves no more than this */
         const val SLOP = 24f
         /** m150: the note's time on screen */
