@@ -121,8 +121,11 @@ C_Item = { GetItemNameByID = function(id) return "Item " .. id end, GetItemInfoI
 RETRIEVING_ITEM_INFO = "Retrieving item information"
 -- Interact's tooltip reader, counted per key; TIPMODE[key] = "loading" / "none" for a tooltip the game has not finished
 TIPREADS, TIPMODE, TIPTEXT = {}, {}, {}
-WowCompanion.tipOf = function(key)
+local nwYes, nwNo = 0, 0
+function nwAsked() return nwYes, nwNo end
+WowCompanion.tipOf = function(key, opt)
     TIPREADS[key] = (TIPREADS[key] or 0) + 1
+    if type(opt) == "table" and opt.nw == true then nwYes = nwYes + 1 else nwNo = nwNo + 1 end
     local m = TIPMODE[key]
     if m == "none" then return { key = key, none = true } end
     if m == "loading" then return { key = key, lines = { { t = RETRIEVING_ITEM_INFO, c = "ff2020" } } } end
@@ -265,6 +268,10 @@ check(L.eval('WORNREADS') == L.eval('W3') + 2, "UPDATE_INVENTORY_DURABILITY: the
 L.execute('W4 = WORNREADS; NOW = NOW + 61; WowCompanion.collectEquipped(); WowCompanion.collectEquipped()')
 check(L.eval('WORNREADS') == L.eval('W4') + 2, "after a minute: read again once (timed text)", L.eval('WORNREADS - W4'))
 
+# bags-nocmp1 (the user, 2026-11-13: "the bag items are still showing currently equipped, I dont want to see that"): every tooltip
+# the room reads asks Interact for the compare WITHOUT the worn pieces' tooltips (only the stat changes)
+check(L.eval('(nwAsked())') > 0 and L.eval('select(2, nwAsked())') == 0, "every room read asks for no worn tooltips (nw)",
+      L.eval('nwAsked()'))
 check(int(L.eval('#TRACE')) == 0, "no trace: no SetBinding / SaveBindings / macro / CVar / window call", list(L.eval('TRACE').values()))
 print('ALL PASS (%d checks)' % passes if fails == 0 else '%d FAILED (of %d)' % (fails, fails + passes))
 sys.exit(1 if fails else 0)

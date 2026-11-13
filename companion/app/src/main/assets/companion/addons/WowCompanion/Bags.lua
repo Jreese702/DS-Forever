@@ -95,6 +95,11 @@
 -- the pick is on (the game's item context arriving late, loot), so A answers the ITEM the cursor is on (KIT.key), never the row number:
 -- a row gone since the app last drew the list is not used ("pick-moved", the list is drawn again); a changed pick type reports.
 -- bags-merge1 (the 1.0.30 test build merge, code 1453): bags-act1 / bags-act2 (feat/bags-actions), bags-kit3 (fix/kit-filter) and uneq1 / uneq2 (feat/unequip) side by side, each kept as written.
+-- bags-nocmp1 (the user, 2026-11-13: "the bag items are still showing currently equipped, I dont want to see that, but I do want to see
+-- the stat changes at the bottom of that weapon if I equip it"): the room asks Interact for its tooltips WITHOUT the worn pieces' own
+-- text (WC.tipOf(key, TIP.NW), Interact i159): each compare entry is only the game's stat changes (nw = true). The hover card shows
+-- those changes at the foot of the bag item's own tooltip, no "Currently Equipped" card; the Compare sheet takes the worn pieces' text
+-- from the equipped rows (WORN, read once per gear change). One worn-tooltip read less per slot per item; the cache is unchanged.
 -- uneq1 (the user's picks, 2026-11-13: "Unequip lives in the Character room ... Y = More opens a small menu with 'Unequip' first";
 -- "WEAPONS (slots 16,17,18) MAY be unequipped in combat, armor is refused in combat"; "Never let a stale bag pick equip anything"):
 -- WC.bagsUnequip(slot), reached by Character.lua's arming cell then one bmvq column (WC._bagsUnequipArm / _bagsUnequipTap, after
@@ -863,7 +868,7 @@ function WC._bagsPinTips(items)
             local key = "bag " .. r.bag .. " " .. r.slot .. " " .. r.id
             local lines = pinTips.cache[key]
             if lines == nil then
-                local ok, t = pcall(WC.tipOf, key)
+                local ok, t = pcall(WC.tipOf, key, { nw = true })     -- bags-nocmp1: only the lines are used, no worn tooltips
                 lines = (ok and type(t) == "table" and type(t.lines) == "table") and t.lines or false
             end
             if not r.pending then cache[key] = lines end      -- a name still loading: read it again next time
@@ -1406,7 +1411,7 @@ local menuUsable            -- below: which Y-menu rows can be used
 local EQ = {}               -- below: equipping a bag (after toGrid)
 local BAR = {}              -- below: the cursor on the room's top strip, closed bags (after toGrid)
 -- THE TOOLTIP of the item under the cursor (the user 2026-09-30: no right panel, "reuse some of the tool tip stuff"):
--- Interact's WC.tipOf("bag <bag> <slot> <itemID>") = the game's own bag-item tooltip, with "Currently Equipped" and the
+-- Interact's WC.tipOf("bag <bag> <slot> <itemID>") = the game's own bag-item tooltip, with (bags-nocmp1: only) the
 -- stat changes for gear (cmp: the app shows it by itself, the user's ruling). Never read while an item is in the hand or a menu /
 -- dialog is open. An Interact without WC.tipOf: no tooltip lines (the app falls back to the item's name).
 -- (c) ONLY WHERE THE CURSOR RESTS (tracking 2026-10-22, the bags lag): an item NOT YET READ is read TIP.REST after the cursor
@@ -1425,7 +1430,8 @@ local BAR = {}              -- below: the cursor on the room's top strip, closed
 -- Read-only calls only (C_TooltipInfo through Interact); nothing happens in the game.
 local TIP = { REST = 0.12, FRESH = 8, TICK = 0.1, PER_TICK = 2, MAX = 200, TRIES = 6,
               c = {}, n = 0, want = nil, wait = nil, loading = nil, tries = 0, queue = nil, qFor = nil, ticking = false,
-              again = false, reads = 0, pre = 0, rows = {} }
+              again = false, reads = 0, pre = 0, rows = {},
+              NW = { nw = true } }         -- bags-nocmp1: Interact's compare without the worn pieces' tooltips (only the stat changes)
 local function tipKey()
     -- bags-act1: the compare sheet (mode "compare") keeps the item's tooltip too (its compare is the sheet's right side)
     if not (ctl.on and (ctl.mode == "grid" or ctl.mode == "compare") and not ctl.pick) or type(WC.tipOf) ~= "function" then return nil end
@@ -1458,7 +1464,7 @@ end
 -- read key's tooltip now: (tooltip, kept). A loading one comes back marked loading and is not kept.
 function TIP.read(key, bag, slot)
     TIP.reads = TIP.reads + 1
-    local ok, t = pcall(WC.tipOf, key)
+    local ok, t = pcall(WC.tipOf, key, TIP.NW)
     if not (ok and type(t) == "table") then return nil, false end
     if not TIP.complete(t) then t.loading = true; return t, false end
     if TIP.n >= TIP.MAX then TIP.c, TIP.n = {}, 0 end            -- a long session: start again
@@ -2931,7 +2937,7 @@ end
 --   A = Move (into the hand; then A puts it down, B cancels)
 --   X = the item's action (Use / Equip / ...: the app taps the slot's secure cell)
 --   Y = More (Split Stack / Bind to a Button / Compare / Destroy)
---   gear: "Currently Equipped" shows by itself (the tooltip's cmp from WC.tipOf), no button
+--   gear: its stat changes show by themselves at the tooltip's foot (bags-nocmp1; the tooltip's cmp from WC.tipOf), no button
 -- With an item in the hand only A and B act.
 local function onPress(key)
     local d = key == "PADDUP" or key == "PADDDOWN" or key == "PADDLEFT" or key == "PADDRIGHT"

@@ -16,6 +16,11 @@ import org.json.JSONObject
  *  - an EMPTY slot the item can go in is a card of its own: the slot's name, "Empty", and all of the item's stats as gains;
  *  - a TWO-HANDER counts against BOTH hands: its changes under the main hand (the game's paired ones, `with`, or the app's count
  *    against the pair), the off hand's card marked `pair` with none of its own.
+ *
+ * bags-nocmp1 (the user, 2026-11-13: "the bag items are still showing currently equipped, I dont want to see that, but I do want to see
+ * the stat changes at the bottom of that weapon if I equip it"): the HOVER card shows no worn piece any more, only the changes at the
+ * foot of the bag item's own tooltip ([hover]); the Compare sheet keeps the cards. Interact i159 sends a Bags compare WITHOUT the worn
+ * piece's tooltip (`nw`: its lines are only the game's changes); the card takes that piece's own text from the equipped row ([wornCard]).
  * Pure (org.json only), tested off-device: BagsCompareTest.
  */
 object BagsCompare {
@@ -97,7 +102,14 @@ object BagsCompare {
     fun cards(tip: JSONObject?, row: JSONObject?, worn: Map<Int, JSONObject>, dualWield: Boolean, words: Words = Words()): JSONArray {
         val given = tip?.optJSONArray("cmp")
         val loc = row?.optString("equip")?.takeIf { it.isNotEmpty() }
-        if (row == null || !isGear(loc)) return given ?: JSONArray()
+        if (row == null || !isGear(loc)) {
+            // bags-nocmp1: as it came, a worn piece's own text over a compare sent without it
+            val out = JSONArray()
+            for (i in 0 until (given?.length() ?: 0)) given!!.optJSONObject(i)?.let { e ->
+                out.put(withWorn(copyOf(e), e.optInt("slot", -1), worn[e.optInt("slot", -1)]))
+            }
+            return out
+        }
         val byGame = LinkedHashMap<Int, JSONObject>()
         for (i in 0 until (given?.length() ?: 0)) given!!.optJSONObject(i)?.let { e -> byGame[e.optInt("slot", -1)] = e }
         val base = slotsFor(loc, dualWield)
@@ -112,7 +124,7 @@ object BagsCompare {
             if (two && slot == OFF) {
                 // the off hand under a two-hander: shown when worn, its loss counted under the main hand
                 if (!filled) continue
-                val card = copyOf(e) ?: wornCard(slot, worn[slot]) ?: continue
+                val card = withWorn(copyOf(e), slot, worn[slot]) ?: wornCard(slot, worn[slot]) ?: continue
                 out.put(card.put("pair", MAIN))
                 continue
             }
@@ -120,7 +132,7 @@ object BagsCompare {
             val against = if (two) listOf(MAIN, OFF).filter { has(it) }.map { worn[it]?.optJSONArray("stats") }
                           else if (has(slot)) listOf(worn[slot]?.optJSONArray("stats")) else emptyList()
             val card = when {
-                e != null -> copyOf(e)!!
+                e != null -> withWorn(copyOf(e), slot, worn[slot])!!
                 has(slot) -> wornCard(slot, worn[slot]) ?: continue
                 else -> emptyCard(slot, worn[slot], words)
             }
@@ -138,6 +150,64 @@ object BagsCompare {
             out.put(card)
         }
         return out
+    }
+
+    /**
+     * bags-nocmp1: THE STAT CHANGES FOR THE HOVER CARD, to go at the foot of the bag item's own tooltip: a blank line, the header (the
+     * game's "If you replace this item, ..." or the app's own), then each card's changes (the game's last `dn` lines, else the app's
+     * `mine`). Where more than one piece would be replaced (two rings, two trinkets, a one-hander for a dual wielder) each piece's name
+     * goes over its changes, in grey (an empty slot: its name and "Empty"). A two-hander's off hand (`pair`) has none of its own. Nothing to
+     * show = empty.
+     */
+    fun hover(cards: JSONArray?): List<JSONObject> {
+        if (cards == null) return emptyList()
+        class Part(val name: JSONObject?, val head: JSONObject?, val lines: List<JSONObject>)
+        val parts = ArrayList<Part>()
+        for (i in 0 until cards.length()) {
+            val c = cards.optJSONObject(i) ?: continue
+            if (c.has("pair")) continue
+            val l = c.optJSONArray("lines") ?: continue
+            val n = c.optInt("dn", 0).takeIf { it > 0 } ?: c.optInt("mine", 0)
+            if (n <= 0 || n > l.length()) continue
+            val changes = (l.length() - n until l.length()).mapNotNull { k -> l.optJSONObject(k) }
+            val head = if (l.length() - n - 1 >= 0) l.optJSONObject(l.length() - n - 1) else null
+            val first = l.optJSONObject(0)
+            val name = when {
+                c.optBoolean("empty") -> first?.let { f ->
+                    val e = l.optJSONObject(1)?.optString("t")?.takeIf { it.isNotBlank() }
+                    line(if (e != null) "${f.optString("t")} (${e})" else f.optString("t"), DIM)
+                }
+                // grey, as a label: in its quality's colour an uncommon piece's name read as one more green gain
+                first != null && first !== head -> line(first.optString("t"), DIM)
+                else -> null
+            }
+            parts.add(Part(name, head, changes))
+        }
+        if (parts.isEmpty()) return emptyList()
+        val out = ArrayList<JSONObject>()
+        out.add(line(" "))
+        out.add(parts.first().head?.let { JSONObject(it.toString()) } ?: line("Stat changes", HEAD))
+        for ((k, p) in parts.withIndex()) {
+            if (parts.size > 1) {
+                if (k > 0) out.add(line(" "))
+                p.name?.let { out.add(it) }
+            }
+            for (l in p.lines) out.add(JSONObject(l.toString()))
+        }
+        return out
+    }
+
+    /** bags-nocmp1: a game compare that came without the worn piece's tooltip (`nw`): that piece's own text over the changes */
+    private fun withWorn(card: JSONObject?, slot: Int, w: JSONObject?): JSONObject? {
+        if (card == null || !card.optBoolean("nw")) return card
+        val head = wornCard(slot, w)?.optJSONArray("lines") ?: JSONArray().put(line("Slot $slot"))
+        val l = card.optJSONArray("lines") ?: JSONArray()
+        val merged = JSONArray()
+        for (i in 0 until head.length()) merged.put(head.opt(i))
+        for (i in 0 until l.length()) merged.put(l.opt(i))
+        card.put("lines", merged)
+        card.remove("nw")
+        return card
     }
 
     private fun copyOf(e: JSONObject?): JSONObject? {
