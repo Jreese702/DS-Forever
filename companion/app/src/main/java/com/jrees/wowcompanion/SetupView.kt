@@ -41,11 +41,25 @@ class SetupView(context: Context) : View(context) {
      * ANY one-question prompt in the same look (the D-pad controls' "Use DS Forever D-pad controls?", 2026-10-02): a title, the
      * bullets, one closing line and two buttons, [yes] -> [onYes], [no] -> [onNo]. Touch only, as the setup's.
      */
-    fun ask(p: CompanionSetup.Prompt, yes: String, no: String, onYes: () -> Unit, onNo: () -> Unit, icon: Int = 0) {
+    fun ask(p: CompanionSetup.Prompt, yes: String, no: String, onYes: () -> Unit, onNo: () -> Unit, icon: Int = 0,
+            picture: Picture? = null, cursor: Boolean = false) {
         face = Face.PROMPT; title = p.title; bullets = p.bullets; footer = p.footer; note = ""; promptIcon = icon
         yesLabel = yes; noLabel = no; yesAct = onYes; noAct = onNo; answered = false
+        this.picture = picture; picAt = android.os.SystemClock.uptimeMillis(); this.cursor = cursor; focusYes = true
         visibility = VISIBLE; invalidate()
     }
+
+    /** the cast bar question (the user, 2026-11-13: "show a little picture with the pop up showing how it looks with it animating away
+     *  in combat"): a picture between the title and the buttons, [height] tall, drawn at the time since the prompt opened (ms); an
+     *  animated one redraws only while the prompt shows */
+    class Picture(val height: Float, val animated: Boolean, val draw: (Canvas, RectF, Long) -> Unit)
+    private var picture: Picture? = null
+    private var picAt = 0L
+    /** the cast bar question: the D-pad's left / right move the gold box between the two buttons, A presses the boxed one, B = no */
+    private var cursor = false
+    private var focusYes = true
+    /** the boxed button (tests): true = yes */
+    val focusedYes: Boolean get() = focusYes
     /** rank up (the user 2026-11-12, "Done at once"): the open prompt's answer in ONE line in place of its buttons ("Upgraded on 3
      *  buttons"); A / B / a touch do nothing more; the caller closes it */
     fun answer(line: String) {
@@ -61,7 +75,8 @@ class SetupView(context: Context) : View(context) {
     /** one controller press while [padOn]: A = the yes button, B = the no button (each shows pushed in a moment) */
     fun padKey(k: String) {
         if (!padOn || visibility != VISIBLE || face != Face.PROMPT) return
-        val hit = when (k) { "PAD1" -> "setup"; "PAD2" -> "later"; else -> return }
+        if (cursor && (k == "PADDLEFT" || k == "PADDRIGHT")) { focusYes = k == "PADDLEFT"; invalidate(); return }
+        val hit = when (k) { "PAD1" -> if (!cursor || focusYes) "setup" else "later"; "PAD2" -> "later"; else -> return }
         pressed = hit; invalidate()
         postDelayed({
             if (pressed == hit) { pressed = null; invalidate() }
@@ -82,7 +97,7 @@ class SetupView(context: Context) : View(context) {
     fun refuse(why: String) { note = why; invalidate() }
     fun work(l: String) { face = Face.WORK; line = l; visibility = VISIBLE; invalidate() }
     fun failed(l: String) { face = Face.FAILED; line = l; visibility = VISIBLE; invalidate() }
-    fun close() { visibility = GONE }
+    fun close() { visibility = GONE; picture = null; cursor = false }
 
     override fun onDraw(c: Canvas) {
         hits.clear()
@@ -120,6 +135,8 @@ class SetupView(context: Context) : View(context) {
         val iconBmp = promptIcon.takeIf { it > 0 }?.let { Icons.get(it) }
         var ch = tl.size * 56f + 20f + bl.sumOf { it.size } * 44f + bl.size * 6f + 18f + fl.size * 38f + 40f + 111f
         if (promptIcon > 0) ch += ICON_SZ + 20f
+        val pic = picture
+        if (pic != null) ch += pic.height + 24f
         if (nl.isNotEmpty()) ch += 16f + nl.size * 42f
         val boxH = ch + 2 * 50f + 36f
         val top = maxOf(30f, (h - boxH) / 2f)
@@ -133,6 +150,15 @@ class SetupView(context: Context) : View(context) {
         }
         for (l in tl) { c.drawText(Tr.t(l), cx, y, tp); y += 56f }
         y += 20f
+        if (pic != null) {
+            // the picture under the title, a little clear of it
+            val pr = RectF(box.left + 70f, y - 30f, box.right - 70f, y - 30f + pic.height)
+            c.save(); c.clipRect(pr)
+            pic.draw(c, pr, android.os.SystemClock.uptimeMillis() - picAt)
+            c.restore()
+            y += pic.height + 12f
+            if (pic.animated && isShown) postInvalidateOnAnimation()
+        }
         val left = box.left + 70f
         for (lines in bl) {
             c.drawText(Tr.t("•"), left, y, dp)
@@ -144,13 +170,18 @@ class SetupView(context: Context) : View(context) {
         if (nl.isNotEmpty()) { y += 16f; for (l in nl) { c.drawText(Tr.t(l), cx, y, np); y += 42f } }
         if (answered) return                                            // the answer's line stands where the buttons were
         val by = box.bottom - 50f - 111f
-        button(c, RectF(cx - 20f - 300f, by, cx - 20f, by + 111f), yesLabel, "setup")
-        button(c, RectF(cx + 20f, by, cx + 20f + 300f, by + 111f), noLabel, "later")
+        val yesR = RectF(cx - 20f - 300f, by, cx - 20f, by + 111f); val noR = RectF(cx + 20f, by, cx + 20f + 300f, by + 111f)
+        button(c, yesR, yesLabel, "setup")
+        button(c, noR, noLabel, "later")
+        if (cursor && padOn) UiKit.focus(c, if (focusYes) yesR else noR)     // the gold box on the button A presses
     }
 
     private fun button(c: Canvas, r: RectF, label: String, hit: String) {
         val st = if (pressed == hit) UiKit.Button.DOWN else UiKit.Button.UP
-        val glyph = if (!padOn || face != Face.PROMPT) null else when (hit) { "setup" -> aGlyph(); "later" -> UiKit.backGlyph(); else -> null }
+        // the cast bar question's cursor: A on the boxed button, B on No when the box is on Yes
+        val glyph = if (!padOn || face != Face.PROMPT) null else if (cursor) when (hit) {
+            "setup" -> if (focusYes) aGlyph() else null; "later" -> if (focusYes) UiKit.backGlyph() else aGlyph(); else -> null
+        } else when (hit) { "setup" -> aGlyph(); "later" -> UiKit.backGlyph(); else -> null }
         if (glyph != null) UiKit.button(c, r, label, glyph, st) else UiKit.button(c, r, label, st)
         hits.add(r to hit)
     }
