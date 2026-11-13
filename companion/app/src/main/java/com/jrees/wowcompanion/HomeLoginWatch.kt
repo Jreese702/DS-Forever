@@ -1,12 +1,10 @@
 package com.jrees.wowcompanion
 
 import android.content.Context
-import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.util.Base64
-import android.view.Display
 import java.io.BufferedReader
 import java.io.DataOutputStream
 import java.io.InputStreamReader
@@ -287,14 +285,8 @@ object HomeLoginRunner {
      * The top screen in the pixels `input -d 0` uses: the panel's PHYSICAL mode, landscape (TapBridge's measured rule: the per-app
      * metrics of display 0 intermittently answer the bottom screen's size on the Thor). Null when it cannot be trusted.
      */
-    fun gameSize(ctx: Context): Pair<Int, Int>? = try {
-        val dm = ctx.getSystemService(DisplayManager::class.java)
-        val mode = dm?.getDisplay(Display.DEFAULT_DISPLAY)?.mode
-        val largest = dm?.displays?.maxOfOrNull { it.mode.physicalWidth.toLong() * it.mode.physicalHeight } ?: 0L
-        if (mode == null) null else {
-            val w = maxOf(mode.physicalWidth, mode.physicalHeight)
-            val h = minOf(mode.physicalWidth, mode.physicalHeight)
-            if (w <= 0 || h <= 0 || w.toLong() * h < largest) null else w to h
-        }
-    } catch (_: Throwable) { null }
+    // ONE validated read for the whole app: TapBridge owns the rule, so the auto-login path can never
+    // disagree with the tap path about what display 0 measures (it used to hold its own copy of the
+    // "largest panel" rule, which refused every login tap on a device whose second screen is bigger).
+    fun gameSize(ctx: Context): Pair<Int, Int>? = TapBridge.gamePanel(ctx)?.let { it.x to it.y }
 }

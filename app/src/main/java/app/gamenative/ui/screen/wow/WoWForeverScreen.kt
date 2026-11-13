@@ -1045,7 +1045,43 @@ private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
 private data class GpuProfile(val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String) {
     companion object {
-        fun detect(context: Context) = if (isAdreno8xxDevice(context)) {
+        /**
+         * THE PANEL'S SHAPE WINS (the Nova, 2026-11-13; the user in the world at last: "refused: display 1280x960 does not
+         * match the game's 1280x720").
+         *
+         * Every profile below names a 16:9 size, because every Thor is 16:9. On a 4:3 panel the container is then the wrong
+         * SHAPE, and TapBridge.gamePoint refuses every tap -- correctly: a tap arrives in the game's own pixels, and those
+         * cannot be mapped onto a differently shaped panel, so it would land somewhere else entirely. The guard is right and
+         * the container was wrong.
+         *
+         * So the profile keeps its size whenever that already matches the panel's shape (every Thor, and the add-on in
+         * swapped mode), and otherwise takes the panel's own default -- PluviaApp.getDefaultScreenSize(), which reads the
+         * display the game will be on and answers 1280x960 for a 4:3 one. The Nova then renders 1:1 on its own panel.
+         */
+        fun detect(context: Context): GpuProfile =
+            profileFor(context).let { it.copy(screenSize = fitPanel(it.screenSize)) }
+
+        /** "1280x720" -> 1.78, landscape whichever way round it is written; null when it is not a size */
+        private fun ratio(size: String): Float? {
+            val parts = size.lowercase(java.util.Locale.ROOT).split("x")
+            if (parts.size != 2) return null
+            val a = parts[0].trim().toFloatOrNull() ?: return null
+            val b = parts[1].trim().toFloatOrNull() ?: return null
+            if (a <= 0f || b <= 0f) return null
+            return maxOf(a, b) / minOf(a, b)
+        }
+
+        /** [size] if it is the panel's shape, else the panel's own default. 0.02 is gamePoint's own tolerance */
+        private fun fitPanel(size: String): String {
+            val want = ratio(size) ?: return size
+            val panel = runCatching { PluviaApp.getDefaultScreenSize() }.getOrNull() ?: return size
+            val have = ratio(panel) ?: return size
+            if (kotlin.math.abs(want - have) <= 0.02f) return size
+            Timber.i("Container screen size %s does not fit the panel: using %s", size, panel)
+            return panel
+        }
+
+        private fun profileFor(context: Context) = if (isAdreno8xxDevice(context)) {
             GpuProfile(ADRENO_8XX_DRIVER, "noconform,sysmem", "1280x720", "Adreno 8xx", "Snapdragon 8 Elite / Adreno 8xx")
         } else if (isThorLite(context)) {
             // 1.0.17 (the user: "there are 4 different versions of the ayn thor"; pick "Add a Lite profile now"): the Thor Lite's
