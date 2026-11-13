@@ -3944,7 +3944,32 @@ object UiKit {
                      /** a pin whose item RAN OUT: the icon greyed, the pin grey; it keeps its slice (pass count 0) */
                      val ranOut: Boolean = false,
                      /** m71: a spell the player cannot afford now: the game's blue out-of-mana look */
-                     val noMana: Boolean = false)
+                     val noMana: Boolean = false,
+                     /** q1b: a spell radial's cooldown counted by the app (RadialModel.Cd): seconds left and its whole length, 0 = none */
+                     val cdLeft: Float = 0f, val cdLen: Float = 0f)
+
+    /** q1b: a cooldown over an icon already drawn in [r]: the game's dark sweep (what is left, clockwise from the top) and the seconds */
+    fun radialCd(c: Canvas, r: RectF, left: Float, len: Float, alpha: Int, k: Float) {
+        if (left <= 0f || len <= 0f || r.isEmpty) return
+        val save = c.save()
+        c.clipRect(r)
+        val big = Math.hypot(r.width().toDouble(), r.height().toDouble()).toFloat() / 2f
+        val o = RectF(r.centerX() - big, r.centerY() - big, r.centerX() + big, r.centerY() + big)
+        val frac = (left / len).coerceIn(0f, 1f)
+        pCdSweep.alpha = (170 * alpha / 255f).toInt()
+        c.drawArc(o, -90f + 360f * (1f - frac), 360f * frac, true, pCdSweep)
+        c.restoreToCount(save)
+        if (left >= 1f) {
+            val t = Tr.t(if (left >= 60f) "${kotlin.math.ceil(left / 60f).toInt()}m" else kotlin.math.ceil(left).toInt().toString())
+            val p = numberPaint(30f * k, Color.WHITE, shadow = false).apply { textAlign = Paint.Align.CENTER }
+            val y = r.centerY() - (p.ascent() + p.descent()) / 2f
+            p.style = Paint.Style.STROKE; p.strokeWidth = 5f * k; p.strokeJoin = Paint.Join.ROUND; p.color = Color.BLACK; p.alpha = alpha
+            c.drawText(t, r.centerX(), y, p)
+            p.style = Paint.Style.FILL; p.color = Color.WHITE; p.alpha = alpha
+            c.drawText(t, r.centerX(), y, p)
+        }
+    }
+    private val pCdSweep = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.BLACK }
 
     /** m71: the game's out-of-mana look over an icon already drawn in [r]: its colours times (0.5, 0.5, 1.0), the action button's own */
     fun manaTint(c: Canvas, r: RectF, round: Float = 0f) {
@@ -4345,6 +4370,7 @@ object UiKit {
                 if (shade > 0) { pFlat.color = Color.argb((shade * k * fade).toInt(), 0, 0, 0); c.drawRect(r, pFlat) }
                 c.restoreToCount(save)
             }
+            if (k > 0.9f && it.cdLeft > 0f) radialCd(c, r, it.cdLeft, it.cdLen, al, g.k)       // q1b: the app's own countdown
             if (k > 0.9f && it.count >= 0) {
                 // the stack's count, the game's way: white, bottom right, a black edge (count -1 = no count: a spell, the spell radial)
                 val bx = r.right - 4f; val by = r.bottom - 2f - counts.descent()

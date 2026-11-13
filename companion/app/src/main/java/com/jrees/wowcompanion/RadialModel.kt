@@ -86,6 +86,62 @@ object RadialModel {
                     *  allowed; null = the consumables radial, filled in order */
                    val places: Map<Int, Item>? = null)
 
+    /**
+     * THE SPELL RADIAL'S COOLDOWNS, COUNTED HERE (Spells' Radial.lua q1b, the user's pick 2026-11-13: no cooldown sweep in the add-on, it
+     * was behind the loot window's ADDON_ACTION_FORBIDDEN). The add-on says a spell's cooldown ONCE: in a list it sends on an event, and
+     * in `sradialcd` a moment after each cast of a spell on a radial ({ id, cd = { d, l } }); this counts it down on the app's own clock.
+     * A cast with no `cd` (none worth showing, or a value the game keeps secret in a fight) clears it: no countdown is ever guessed.
+     * Per app life (a kept list from an earlier life never starts one). The clock is the monotonic one ([clock], ms).
+     */
+    object Cd {
+        private class E(val endMs: Long, val len: Double)
+        private val at = HashMap<Int, E>()
+        @Volatile var clock: () -> Long = { System.nanoTime() / 1_000_000L }
+
+        /** spell [id]: [len] s long, [left] s to go, as of [now] (left <= 0 = ready) */
+        @Synchronized fun note(id: Int, len: Double, left: Double, now: Long = clock()) {
+            if (id <= 0) return
+            if (left > 0.0 && len > 0.0) at[id] = E(now + (left * 1000.0).toLong(), len) else at.remove(id)
+        }
+        @Synchronized fun clear(id: Int) { at.remove(id) }
+        @Synchronized fun reset() { at.clear() }
+        /** seconds left on [id], 0.0 = ready / unknown */
+        @Synchronized fun left(id: Int, now: Long = clock()): Double {
+            val e = at[id] ?: return 0.0
+            val l = (e.endMs - now) / 1000.0
+            if (l <= 0.0) { at.remove(id); return 0.0 }
+            return l
+        }
+        /** the cooldown's whole length in s, 0.0 = none running */
+        @Synchronized fun len(id: Int, now: Long = clock()): Double = if (left(id, now) > 0.0) at[id]?.len ?: 0.0 else 0.0
+
+        /** a `sradialcd` (one cast's cooldown): true = it was one */
+        fun onCast(msg: JSONObject, now: Long = clock()): Boolean {
+            if (msg.optString("type") != "sradialcd") return false
+            val id = msg.optInt("id", 0)
+            if (id <= 0) return false
+            val cd = msg.optJSONObject("cd")
+            if (cd == null) clear(id) else note(id, cd.optDouble("d", 0.0), cd.optDouble("l", 0.0), now)
+            return true
+        }
+
+        /** a spell radial list the game sent NOW (not a kept one): each spell's `cd` as of now; out of a fight no `cd` = ready */
+        fun onList(msg: JSONObject, now: Long = clock()) {
+            val r = msg.optJSONObject("r") ?: return
+            val fight = r.optBoolean("fight", false)
+            fun item(o: JSONObject?) {
+                val id = o?.optInt("id", 0) ?: return
+                if (id <= 0) return
+                val cd = o.optJSONObject("cd")
+                if (cd != null) note(id, cd.optDouble("d", 0.0), cd.optDouble("l", 0.0), now) else if (!fight) clear(id)
+            }
+            r.optJSONArray("items")?.let { a -> for (k in 0 until a.length()) item(a.optJSONObject(k)) }
+            r.optJSONArray("list")?.let { l ->
+                for (j in 0 until l.length()) l.optJSONObject(j)?.optJSONArray("items")?.let { a -> for (k in 0 until a.length()) item(a.optJSONObject(k)) }
+            }
+        }
+    }
+
     /** a `radial` document -> its state, or null when it is not one */
     fun parse(msg: JSONObject): Doc? {
         // m62: Smart buffs' OR wheel ("smartor": its buffs at places, its cast cells on Spells' gamemenu row) reads as the spell radial

@@ -18,7 +18,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local RV = "r16"                -- bump on every change; r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
+local RV = "r18"                -- bump on every change; r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
 local ROW, CELLS = "radial", 24 -- the secure pad row: 24 cells = 3 pages of 8
 local PLAYER_BAGS = { 0, 1, 2, 3, 4 }
 local QUARANTINE = 30           -- seconds a freed column stays unused (as the pad's own columns)
@@ -533,7 +533,7 @@ local function spellRadial()
     if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
     local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-    local SRV = "q1"                -- bump on every change
+    local SRV = "q1b"               -- bump on every change; q1b: no SPELL_UPDATE_COOLDOWN sweep, one cooldown per cast (sradialcd)
     local ROW, CELLS = "sradial", 24 -- the secure pad row: 24 cells = 3 pages of 8
     local PLACES = 24
     local QUARANTINE = 30           -- seconds a freed column stays unused (as the consumables radial's)
@@ -707,14 +707,45 @@ local function spellRadial()
         emit = function(now) return emit(true, now) end,
     }
 
+    -- ---------------------------------------------------------------- one cooldown per cast (q1b)
+    -- q1b NO COOLDOWN SWEEP (the user's pick 2026-11-13, after the 1.0.19 bisect: q2's re-send at every SPELL_UPDATE_COOLDOWN was the
+    -- line behind the loot window's ADDON_ACTION_FORBIDDEN SetPreferredGamepadInteractTarget): the list is sent on EVENTS only (login,
+    -- an edit, a spell learned, a fight's start / end). A cooldown is sent ONCE per cast of a spell on the radial: the player's
+    -- UNIT_SPELLCAST_SUCCEEDED, a moment later, ONE read of that spell's cooldown -> { type = "sradialcd", id, cd = { d, l } }; the app
+    -- counts it down by itself. A value the game keeps secret (a fight) is never used: no `cd`, the app shows no countdown.
+    local cdQ = {}                  -- spell id -> true: casts waiting for their one read
+    local cdQueued = false
+    local function cdSend()
+        cdQueued = false
+        local now = GetTime()
+        for id in pairs(cdQ) do
+            cdQ[id] = nil
+            local cd = cdOf(id, now)
+            WC.send(WC.encode({ type = "sradialcd", v = SRV, id = id, cd = cd, fight = inCombat() or nil }))
+        end
+        WC.push()
+    end
+    local function onCast(id)
+        if type(id) ~= "number" or not (WC.isPlain == nil or WC.isPlain(id)) then return end
+        local on = false
+        for s = 1, PLACES do if at(s) == id then on = true end end
+        if not on then return end
+        cdQ[id] = true
+        if cdQueued then return end
+        cdQueued = true
+        C_Timer.After(0.2, function() pcall(cdSend) end)
+    end
+    WC.spellRadialCdQueued = function() local n = 0; for _ in pairs(cdQ) do n = n + 1 end return n end     -- for the tests
+
     -- ---------------------------------------------------------------- events
     local f = CreateFrame("Frame")
-    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "SPELLS_CHANGED", "SPELL_UPDATE_COOLDOWN" }) do
+    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "SPELLS_CHANGED" }) do
         pcall(function() f:RegisterEvent(e) end)
     end
-    f:SetScript("OnEvent", function(_, e)
-        if e == "SPELL_UPDATE_COOLDOWN" then
-            if next(store()) then soon() end                -- a sweep to draw only when something is on the radial
+    pcall(function() f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") end)
+    f:SetScript("OnEvent", function(_, e, unit, _, spellID)
+        if e == "UNIT_SPELLCAST_SUCCEEDED" then
+            if unit == "player" then pcall(onCast, spellID) end
             return
         end
         soon(e ~= "PLAYER_REGEN_DISABLED")

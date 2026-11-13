@@ -188,6 +188,7 @@ class HomeRadialView(
     fun onDoc(msg: JSONObject) {
         val d = RadialModel.parse(msg) ?: return
         val kind = if (msg.optString("type") == "smartor") "smartor" else if (d.places != null) "sradial" else "radial"
+        if (kind == "sradial") RadialModel.Cd.onList(msg)                  // q1b: the cooldowns as of this list (the app counts them)
         docs[kind] = d; trustedOf += kind
         if (kind == "smartor") { if (source == kind) { doc = d; trusted = true; if (isOpen) invalidate() }; return }   // never kept: the game's word is current
         docsMsg[kind] = msg.toString()
@@ -204,6 +205,11 @@ class HomeRadialView(
             else if (now?.col == null || !RadialModel.usable(d, now)) Log.i(TAG, "radial: ${w.id} is not in the game's list now: not used")
             else use(d, RadialModel.Act.Use(now.col, now.id))
         }
+    }
+
+    /** q1b: one cast's cooldown (`sradialcd`, Spells' Radial.lua): counted down here; an open wheel redraws */
+    fun onCast(msg: JSONObject) {
+        if (RadialModel.Cd.onCast(msg) && isOpen) { invalidate(); underRedraw?.invoke() }
     }
 
     /** the game's word that a use landed (`radialuse`): logged; the wheel has already closed */
@@ -386,9 +392,16 @@ class HomeRadialView(
     }
     /** f-settings-previews: the player's own wheel, page 1 (the Settings panel's picture) */
     fun previewItems(spell: Boolean): List<UiKit.RadialItem?> = itemsOf(RadialModel.slices(docs[if (spell) "sradial" else "radial"], 0))
-    private fun itemsOf(src: List<RadialModel.Item?>) =
-        src.map { it?.let { i -> UiKit.RadialItem(Icons.get(i.icon), i.name, i.count, pinned = i.pinned, ranOut = i.ranOut,
-            noMana = source != "radial" && NoMana.has(i.id)) } }        // m71: a spell wheel's spell out of mana
+    private fun itemsOf(src: List<RadialModel.Item?>): List<UiKit.RadialItem?> {
+        val now = RadialModel.Cd.clock()
+        val spell = source != "radial"
+        return src.map { it?.let { i ->
+            // q1b: a spell's cooldown, counted down here from the game's one word per cast (RadialModel.Cd); none = none drawn
+            val left = if (spell) RadialModel.Cd.left(i.id, now) else 0.0
+            UiKit.RadialItem(Icons.get(i.icon), i.name, i.count, pinned = i.pinned, ranOut = i.ranOut,
+                noMana = spell && NoMana.has(i.id),        // m71: a spell wheel's spell out of mana
+                cdLeft = left.toFloat(), cdLen = if (left > 0.0) RadialModel.Cd.len(i.id, now).toFloat() else 0f) } }
+    }
 
     /** the stick goes back only from neutral, or [RadialModel.STICK_BACK_MS] after the close (the user 2026-10-09; the pause wheel's rule) */
     private val mag = DoubleArray(2)
@@ -750,7 +763,7 @@ class HomeRadialView(
             UiKit.asBody(pNote)
             c.drawText(Tr.t("No spells yet: add them in Controller, Spell radial"), width / 2f, 64f, pNote)
         }
-        return moving || closingFrom >= 0f || hubPressAt != 0L || aHeldAt != 0L || slot != null
+        return moving || closingFrom >= 0f || hubPressAt != 0L || aHeldAt != 0L || slot != null || items.any { (it?.cdLeft ?: 0f) > 0f }
     }
 
     /** the bar's Home disc, in this view's coordinates: its middle and its width */
