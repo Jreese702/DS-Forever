@@ -39,7 +39,7 @@ UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { Ge
 '''
 Q = boot(["safety", "tappad", "quests"], pre=PRE)
 
-check('local QV = "q60"' in SRC["quests"], "Quests says q60")
+check('local QV = "q61"' in SRC["quests"], "Quests says q61")
 
 
 def read(unit, src):
@@ -129,6 +129,26 @@ Q.execute('advance(1)')
 pm = docs(Q, n0, 'pmenu')
 check(len(pm) >= 1 and pm[-1].get('again') == 1 and pm[-1].get('unit') == 'pet', "the re-read after a cell: the pet's menu, again = 1",
       pm and {k: pm[-1].get(k) for k in ('unit', 'again')})
+
+# 10b. q61 (the user on build 1462: "holding on the pet bar does not open the pet inspect"): Party mode's pet slot reads the game's PET
+# menu (not a party member's), its own Dismiss hidden (our Dismiss Pet row leads); a party member still reads PARTY
+Q.execute('''
+UnitPopupPetDismissButtonMixin = { GetText = function() return "Dismiss" end }
+UnitPopupRaidTargetIcon1ButtonMixin = { GetText = function() return "Star" end }
+UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which
+    return { GetEntries = function() return { UnitPopupPetDismissButtonMixin, UnitPopupRaidTargetIcon1ButtonMixin } end } end }
+WowCompanion.pmenu.mix = nil''')
+d = read("pet", "party")
+check(Q.eval('MENUWHICH') == "PET" and d.get('which') == "PET", "q61: the pet slot's menu is the game's PET menu", (Q.eval('MENUWHICH'), d.get('which')))
+names = [x['t'] for x in d.get('items', [])]
+check("Dismiss" not in names and "Dismiss Pet" in names and "Star" in names and names[0] == "Feed Pet",
+      "q61: the game's own Dismiss hidden (ours leads), the rest of its menu kept", names)
+Q.execute('UNITS.party1 = { name = "Brannoc", alive = true, player = true }')
+read("party1", "party")
+check(Q.eval('MENUWHICH') == "PARTY", "q61: a party member still reads the PARTY menu", Q.eval('MENUWHICH'))
+check(Q.eval('(function() local c = WowCompanion.pmenu.ctx("pet"); return c.unit .. "/" .. c.which end)()') == "pet/PET", "q61: ctx(pet) = pet / PET")
+Q.execute('''UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { GetEntries = function() return {} end } end }
+WowCompanion.pmenu.mix = nil''')
 
 # 11. no Blizzard menu code / open call in the pet rows' code
 body = SRC["quests"][SRC["quests"].index("WC.pmenu.PET = {"):SRC["quests"].index("function WC.pmenu.read(")]

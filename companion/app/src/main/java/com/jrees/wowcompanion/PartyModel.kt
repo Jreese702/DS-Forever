@@ -93,6 +93,9 @@ object PartyModel {
         val row: String?, val pick: Int?, val on: Int?, val off: Int?, val focus: Int?, val menu: Int?,
         val resend: Int?, val pbsel: Int?, val pbRemove: Int?, val pbUp: Int?, val pbDown: Int?, val pbAdd: Int?, val mdone: Int?,
         val tabRow: String?, val tab: Int?, val slot0: Int?, val none: Int?,
+        /** PadMap m157: [mhold] = MENU HOLD (a wheel opened by a hold takes the pad's presses while Party mode is on), [pmenu] = the
+         *  pet's menu read (the hold on the pet's plate); null = an older add-on: no such action */
+        val mhold: Int? = null, val pmenu: Int? = null,
     )
 
     data class Cfg(
@@ -165,7 +168,7 @@ object PartyModel {
         val pt = po?.optJSONObject("ptab")
         val pad = Pad(po?.str("row"), po?.int("pick"), po?.int("on"), po?.int("off"), po?.int("focus"), po?.int("menu"),
             po?.int("resend"), po?.int("pbsel"), ops?.int("remove"), ops?.int("up"), ops?.int("down"), ops?.int("add"), po?.int("mdone"),
-            pt?.str("row"), pt?.int("tab"), pt?.int("slot0"), pt?.int("none"))
+            pt?.str("row"), pt?.int("tab"), pt?.int("slot0"), pt?.int("none"), po?.int("mhold"), po?.int("pmenu"))
         Cfg(msg.optString("v", ""), slots, spell(c.optJSONObject("yc")), spell(c.optJSONObject("touch")), spells(c.optJSONArray("spells")),
             sy, pad)
     }.getOrNull()

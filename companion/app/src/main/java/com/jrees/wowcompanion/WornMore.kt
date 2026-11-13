@@ -67,6 +67,19 @@ object WornMore {
 
     enum class Act { NONE, CHOOSE, BACK }
 
+    /**
+     * b-fix (the user on build 1462: "pressing B in the more menu closes the character page and leaves the menu open."): does B on the
+     * pad leave the room for Home NOW (the app's own B reader, CompanionHost.bPressed)? Not while something of the room's own is open
+     * ([open]: the More menu, its Replace / Enchant list, the kit list, the save question): the add-on holds B then and closes it, one
+     * step back; the second B leaves. Not while the game's own question is up ([gameAsks]: B answers it). Only when B still reaches the
+     * game's window although a menu is open ([bToGame]: the capture refused to take B off it, in a fight) does it leave as before.
+     */
+    fun bLeadsHome(open: Boolean, gameAsks: Boolean, bToGame: Boolean): Boolean = when {
+        gameAsks -> false
+        open -> bToGame
+        else -> true
+    }
+
     /** a press while the menu is open: Up / Down move (clamped), A chooses, B goes back one step. (new selection, what to do) */
     fun key(sel: Int, n: Int, key: String): Pair<Int, Act> = when (key) {
         "PADDUP" -> (sel - 1).coerceAtLeast(0) to Act.NONE

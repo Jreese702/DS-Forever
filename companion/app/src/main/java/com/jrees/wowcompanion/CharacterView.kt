@@ -41,8 +41,27 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
      *  leave the cursor should take me back to the home by default for everything"). Set by the activity. */
     var onLeave: (() -> Unit)? = null
 
-    /** RC3: B always leaves this room (capture v2 passes it to the game, whose own B closes the window; older captures let go "back") */
-    override fun bLeadsHome(): Boolean = true
+    /** RC3: B leaves this room (capture v2 passes it to the game, whose own B closes the window; older captures let go "back").
+     *  b-fix (the user on 1462: "pressing B in the more menu closes the character page and leaves the menu open."): not while the More
+     *  menu, a list or the save question is open (B closes that, one step back) or the game's own question is up ([WornMore.bLeadsHome]) */
+    override fun bLeadsHome(): Boolean =
+        WornMore.bLeadsHome(ownOpen(), model.setPad?.gameAsks == true, model.setPad?.bToGame == true)
+
+    /** something of the room's own over it: the More menu, a list of it, the kit list, the save question */
+    private fun ownOpen(): Boolean = moreFor != null || kitFor != null || replFor != null || model.setPad?.ask != null
+
+    /** b-fix: a touch on the B disc (Home's swirl wearing B) is B: one step back while something of the room's own is open (true =
+     *  it closed one step here and the room stays), the same as the pad's B and the menu's own Back */
+    fun stepBackByTouch(): Boolean {
+        if (model.setPad?.gameAsks == true) return false
+        return when {
+            kitFor != null -> { closeKits(); invalidate(); true }
+            replFor != null -> { closeSub(); invalidate(); true }
+            moreFor != null -> { closeMore(); invalidate(); true }
+            model.setPad?.ask != null -> { model.setPad?.no?.let { setTap("no", it) }; true }
+            else -> false
+        }
+    }
     private var lastNote = ""
 
     // bags.equipped (Bags' collector): for the doll and the chosen piece's card
@@ -117,6 +136,9 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val g = model.grid
         val cell = g?.leaveCell(gameOpenNow, held) ?: if (g != null && holdSent) g.row to g.close else null
         roomShown = false; openWanted = false; holdSent = false
+        // b-fix (the user on 1462: "... leaves the menu open"): the room left = its More menu / lists are gone with it (never drawn again
+        // on the next visit); the add-on forgets its own when the controller goes (onLost / the leave), so nothing is tapped for it here
+        moreFor = null; kitFor = null; replFor = null; moreSeen = false; subSeen = false
         return tapCell("out", cell)
     }
 

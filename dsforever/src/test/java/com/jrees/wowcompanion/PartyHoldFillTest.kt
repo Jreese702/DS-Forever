@@ -45,7 +45,12 @@ class PartyHoldFillTest {
 
     @Test fun onlyUnitsWhoseHoldOpensTheRadialFill() {
         for (i in 0..4) assertTrue(PartyLayout.holdOpens(i))
-        assertFalse(PartyLayout.holdOpens(5))                                  // the pet: PartyTaps.menu asks nothing
+        // m157 (the user on 1462: "holding on the pet bar does not open the pet inspect"): the live pet's hold opens its wheel too
+        assertTrue(PartyLayout.holdOpens(5))
+        assertFalse(PartyLayout.holdOpens(5, dead = true))                     // a dead pet's slot: its Smart Res tap alone
+        assertFalse(PartyLayout.holdOpens(5, petMenu = false))                 // an older add-on: no pet menu cell, no fill
+        assertTrue(PartyLayout.holdOpens(2, dead = true))                      // a dead member keeps its wheel (as before)
+        assertFalse(PartyLayout.holdOpens(6))
         assertFalse(PartyLayout.holdOpens(null))
     }
 }

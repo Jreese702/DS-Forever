@@ -198,6 +198,14 @@ delegate's action edge). Cols 5-9 are spare. The rows below are the old layout, 
 | 35 | MENU DONE | `type="click"`, `clickbutton=WowCompanionPartyMenuDone` | the app's player menu closed: the PartyPad leaves its menu sub-state (secure, so it works in fights) |
 | 36-39 | spare | `type=nil` | refused with `partyack ok=false why="unknown column"` |
 
+m157 (the user on build 1462: "pressing B in a player inspect radial opened from party mode does not close the radial as it should."; "holding
+on the pet bar does not open the pet inspect"): col 6 = MENU HOLD (`type="click"`, `clickbutton=WowCompanionPartyMenuHold`: with Party
+mode on the pad enters its menu sub-state, so the wheel a HOLD on a plate opened gets every press as `partybox k="key"`, B its back /
+close, never Party mode off; MENU DONE ends it when the wheel closes; with Party mode off it does nothing and the wheel reads the pad
+itself, `TargetRadialView.Input.READ`); col 7 = PET MENU (no action, press): `WC.pmenu.read("pet", "party")`, the game's PET menu with
+Quests' pet rows first (Feed / Dismiss / Mend / Train; no Revive Pet on any wheel). A hold's batch = [mhold, menu+i] or [mhold, pmenu];
+`partycfg.pad` carries `mhold` 6 and `pmenu` 7. A dead pet's slot: no hold fill, no wheel; its tap stays Smart Res.
+
 ### 2.3 The Controller room's Party tab by touch: `padtab` columns 26-37 (Book.lua's plain row, Spells)
 
 `padtab` uses 0-25 today (Book.lua:1316-1336, 1338-1362); 26-39 are free. New codes:
