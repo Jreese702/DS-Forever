@@ -124,7 +124,7 @@ class HomeView(
         for ((_, v) in views) { addView(v); v.visibility = View.GONE }
         addView(partyMenu); partyMenu.visibility = View.GONE; partyMenu.translationZ = PARTY_MENU_Z
         addView(targetMenu); targetMenu.visibility = View.GONE; targetMenu.translationZ = PARTY_MENU_Z
-        mapView.onCompactTap = { if (flow.tapMap()) changed() }
+        mapView.onCompactTap = { touchOpen(HomeModule.MAP) }      // combat-touch: the first touch opens it, in a fight too
         partyView.onCellTap = { i -> onPartyCell?.invoke(i) }
         partyView.onCellLong = { i -> onPartyLong?.invoke(i) }
         partyView.onTag = { on -> onPartyTag?.invoke(on) }
@@ -258,8 +258,9 @@ class HomeView(
      * The Home button shows B: when B would return Home (interact's `bnext`), and while one of Home's modules is full
      * screen (user, 15:08: "use the B glyph on the home button to go back to home").
      */
-    /** a fight is on (Home's combat takeover): the self-setup never closes the game then */
-    fun inFight(): Boolean = flow.takeover
+    /** a fight is on: the self-setup never closes the game then. combat-touch: the takeover OR the fight word, since a module opened
+     *  by touch in a fight drops the takeover while the fight goes on (the setup, CombatKeep's taps and the map's hold retry wait) */
+    fun inFight(): Boolean = fightShown()
     /** m132: the game is fighting as Home shows it - the takeover (Party mode off) or the grow (Party mode on, no takeover) */
     fun fightShown(): Boolean = flow.takeover || grow.fighting(System.currentTimeMillis())
 
@@ -939,7 +940,7 @@ class HomeView(
         if (auras.expire(now)) auraPane.note("No answer from the game")
         if (auraPane.open != null) auraPane.invalidate()                 // time left counts down
         // v17: in a fight with Party mode on there is NO takeover (switched on mid-fight, the takeover shrinks back: COMBAT_SHRINK)
-        if (flow.combat(grow.shown(now) && !partyOnHere())) { if (flow.takeover) grewAt = System.currentTimeMillis(); changed() }
+        if (flow.combat(takeoverWanted(now))) { if (flow.takeover) grewAt = System.currentTimeMillis(); changed() }
         // a fight began / ended with Party mode on (only where the module is placed: not under a full-screen module)
         else if (party.party != null && (flow.full == null || flow.takeover) && partyModeNow(flow.screen) != laidPartyMode) changed()
         val red = grow.red(now) && !flow.takeover && flow.full == null
@@ -1128,7 +1129,31 @@ class HomeView(
 
     /** the D-pad layout's RIGHT (the user, 2026-10-05: "I want right to open that home map module"): the map module opens as a tap on
      *  the small map would (refused in a fight's takeover, as the tap is); false = nothing changed */
-    fun openMapModule(): Boolean = flow.tapMap().also { if (it) changed() }
+    fun openMapModule(): Boolean = touchOpen(HomeModule.MAP)
+
+    /** combat-touch: a module the player opened in this fight; the takeover never comes back over it ([HomeTouch.takeover]) */
+    private var openedInFight = false
+
+    /**
+     * combat-touch (the user, 2026-11-13: "I JUST WANT TOUCHING IT OR CHAT or any of the rooms and elements TO BEHAVE THAT SAME
+     * WAY"): every route that opens a Home module, in a fight too. The takeover shrinks first, B's own change ([HomeTouch.open]); the
+     * guest hold / PadOwnerSync's ENTER follow from apply() and padOwnerStep() exactly as after B. False = nothing changed.
+     */
+    private fun touchOpen(m: HomeModule): Boolean {
+        val now = System.currentTimeMillis()
+        val fighting = flow.takeover || grow.fighting(now)
+        if (!HomeTouch.open(flow, grow, m, now)) return false
+        if (fighting && flow.full != null) openedInFight = true
+        Log.i("WCLOG", "home: $m opened by touch${if (fighting) " (in a fight)" else ""}")
+        changed()
+        return true
+    }
+
+    /** the takeover's word for [now]: the grow, Party mode, and never over a module opened in this fight */
+    private fun takeoverWanted(now: Long): Boolean {
+        openedInFight = HomeTouch.keepOpened(openedInFight, flow.full, grow.fighting(now) || grow.shown(now))
+        return HomeTouch.takeover(grow.shown(now), partyOnHere(), flow.full, openedInFight)
+    }
 
     // ---------------------------------------------------------------- PARTY MODE (PARTY_BUILD.md 4.2)
 
@@ -1168,7 +1193,7 @@ class HomeView(
         val on = p?.onLive == true
         val now = System.currentTimeMillis()
         // Party mode on in a fight: the takeover goes (v17); off again: it comes back
-        val combat = flow.combat(grow.shown(now) && !partyOnHere())
+        val combat = flow.combat(takeoverWanted(now))
         if (combat && flow.takeover) grewAt = now
         val placed = flow.full == null || flow.takeover
         if (shown != null && (combat || placed && (n != laidPartyN || on != laidPartyOn || (p?.pet == true) != laidPartyPet || partyModeNow(flow.screen) != laidPartyMode
@@ -1987,8 +2012,8 @@ class HomeView(
 
         override fun onTouchEvent(e: MotionEvent): Boolean {
             // a tap opens the full CHAT ROOM (the user, 2026-10-05: "Tap Home's chat panel", now that the Controller room has Chat's
-            // spot on the bar); refused in combat as the full-screen chat was (the fight's takeover owns the screen then)
-            if (e.actionMasked == MotionEvent.ACTION_UP && !flow.takeover) openRoom(Room.CHAT)
+            // spot on the bar). combat-touch (2026-11-13): in a fight too, as the D-pad's "chat" does; show() hands over fight-safe
+            if (e.actionMasked == MotionEvent.ACTION_UP) openRoom(Room.CHAT)
             return true
         }
     }
