@@ -8,7 +8,7 @@ package com.jrees.wowcompanion
  * [BUSY_MB] MB a minute before its first read of login.txt (and before the world), and the totals for the report's "Before the login
  * screen" line and the unread file's deletion. Pure: the off-device tests drive it.
  */
-internal class PreLoginTraffic(private val minuteMs: Long = 60_000L) {
+internal class PreLoginTraffic(private val minuteMs: Long = 60_000L, private val phase: String = "before the login screen") {
     var total = 0L; private set
     /** the bytes of the last whole minute (0 until one has passed) */
     var lastMinute = 0L; private set
@@ -25,7 +25,7 @@ internal class PreLoginTraffic(private val minuteMs: Long = 60_000L) {
         var line: String? = null
         if (nowMs - minuteStart >= minuteMs) {
             lastMinute = minute
-            if (minute >= BUSY_MB * MB) line = "before the login screen: the game received ${mb(minute)} MB in the last minute " +
+            if (minute >= BUSY_MB * MB) line = "$phase: the game received ${mb(minute)} MB in the last minute " +
                 "(${mb(total)} MB since it started): it is downloading"
             minute = 0L; minuteStart = nowMs
         }
@@ -98,6 +98,14 @@ internal class PreLoginTraffic(private val minuteMs: Long = 60_000L) {
          * still counts: the deletion line says the cap came first.
          */
         fun counts(read: Boolean, pastLogin: Boolean, reachedWorld: Boolean): Boolean = !read && !pastLogin && !reachedWorld
+
+        /**
+         * DIAGNOSTICS ONLY (issue #215, 1.0.27: "lower screen no lpnger showing just a akground grapoc"; 8.7 GB of data, past the login
+         * screen at 18:31:26, then 0.2-3.7 MB/s every second for 4 min and never the world): the window after the client's read or
+         * past its login screen, before the world. [counts]'s download line never covers it; what the bottom screen drew then is not
+         * in the report, so NativeLogin logs it once a busy minute here. Nothing on screen changes.
+         */
+        fun countsAfter(read: Boolean, pastLogin: Boolean, reachedWorld: Boolean): Boolean = (read || pastLogin) && !reachedWorld
 
         const val BUSY_MB = 10L
         private const val MB = 1L shl 20

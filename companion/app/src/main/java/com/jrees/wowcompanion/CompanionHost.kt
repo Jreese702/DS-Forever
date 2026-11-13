@@ -797,6 +797,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             startView.firstLabel = "Save your Battle.net login"; startView.firstW = 680f      // the longer words
             sweepTrigger()
             NativeLogin.onChange = { if (!shell.hostGone()) { loginShow(); downloadLine() } }
+            NativeLogin.bottomState = { bottomState() }
         }
         loginWatch = HomeLoginWatch(
             // the games whose login screen can be up: GameNative's and WoW Forever's logs, each with the package that writes it
@@ -3226,6 +3227,26 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         else -> null
     }
     private var loginRevealed = false
+
+    /**
+     * issue #215 (diagnostics only, 1.0.27: the bottom screen "just a background graphic" while the game downloaded past its login
+     * screen): what is on show, for NativeLogin's busy-minute line - the start screen and its line (the app's own words), or the room
+     * behind it and whether any current document came. Main thread.
+     */
+    private fun bottomState(): String {
+        if (!::startView.isInitialized) return "not up yet"
+        fun shown(v: View?) = v != null && v.visibility == View.VISIBLE
+        val start = if (shown(startView)) "start screen '${startView.line}' (row ${startView.login.name.lowercase()}${if (loginRevealed) ", for the row" else ""})"
+            else "no start screen${if (reloadAt != 0L) " (reload)" else ""}"
+        val over = buildList {
+            if (::setupView.isInitialized && shown(setupView)) add("setup")
+            if (::setupPanel.isInitialized && shown(setupPanel)) add("setup pop-up")
+            if (::chooserPanel.isInitialized && shown(chooserPanel)) add("chooser")
+            if (::loginPrompt.isInitialized && loginPrompt.isOpen) add("login prompt")
+        }
+        return "$start; room ${room.name.lowercase()}; documents ${if (docFlowSeen) "seen" else "none yet"}" +
+            if (over.isEmpty()) "" else "; over it: ${over.joinToString()}"
+    }
 
     /** issue #132 (the user's pick 2026-11-12): the plain waiting line says "Game downloading" while the game fetches its files */
     private fun downloadLine() {

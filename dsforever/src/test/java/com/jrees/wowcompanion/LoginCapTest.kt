@@ -103,4 +103,25 @@ class LoginCapTest {
         assertEquals("Reloading the game's interface", PreLoginTraffic.waitingLine("Reloading the game's interface", downloading = true))
         assertEquals("Signing in…", PreLoginTraffic.waitingLine("Signing in…", downloading = false))
     }
+
+    /** issue #215 (diagnostics only): the after-login window counts from the read or the login screen until the world, never before */
+    @Test fun afterLoginWindowAndItsLine() {
+        assertFalse(PreLoginTraffic.countsAfter(read = false, pastLogin = false, reachedWorld = false))
+        assertTrue(PreLoginTraffic.countsAfter(read = true, pastLogin = false, reachedWorld = false))
+        assertTrue(PreLoginTraffic.countsAfter(read = true, pastLogin = true, reachedWorld = false))
+        assertTrue(PreLoginTraffic.countsAfter(read = false, pastLogin = true, reachedWorld = false))
+        assertFalse(PreLoginTraffic.countsAfter(read = true, pastLogin = true, reachedWorld = true))
+        // the two windows never overlap
+        for (r in listOf(false, true)) for (p in listOf(false, true)) for (w in listOf(false, true))
+            assertFalse(PreLoginTraffic.counts(r, p, w) && PreLoginTraffic.countsAfter(r, p, w))
+        val t = PreLoginTraffic(minuteMs = minute, phase = "past the login screen, before the world")
+        var line: String? = null
+        for (s in 0..60) t.add(1 * mb, s * 1000L)?.let { line = it }
+        assertEquals("past the login screen, before the world: the game received 60 MB in the last minute (60 MB since it started): it is downloading", line)
+        // the default phase keeps #132's line
+        val pre = PreLoginTraffic(minuteMs = minute)
+        var l2: String? = null
+        for (s in 0..60) pre.add(1 * mb, s * 1000L)?.let { l2 = it }
+        assertTrue(l2!!.startsWith("before the login screen: "))
+    }
 }
