@@ -122,6 +122,10 @@ object NativeLogin {
     @Volatile private var expiredUnread = false
     /** issues #132 / #42 / #57: what the client received before its first read of login.txt (main thread) */
     internal val preLogin = PreLoginTraffic()
+    /** issue #215 (diagnostics only): the client's traffic past its login screen and before the world, a line a busy minute */
+    internal val afterLogin = PreLoginTraffic(phase = "past the login screen, before the world")
+    /** issue #215: what the bottom screen shows (CompanionHost; main thread), added to [afterLogin]'s lines */
+    @Volatile var bottomState: (() -> String)? = null
 
     /** the private shadow root (Wine's G:) */
     fun shadowRoot(ctx: Context) = File(ctx.filesDir, "gameroot")
@@ -135,7 +139,7 @@ object NativeLogin {
         clear()
         consumed = false; firstReadAt = 0L; pastLogin = false; quietFor = 0; quiet = false   // a new client run
         outOfWorld = false; reachedWorld = false; lifeMs = MAX_LIFE_MS; appCtx = ctx.applicationContext; changed()
-        playAt = System.currentTimeMillis(); windowArmed = false; windowSeen = false; expiredUnread = false; main.post { preLogin.reset() }
+        playAt = System.currentTimeMillis(); windowArmed = false; windowSeen = false; expiredUnread = false; main.post { preLogin.reset(); afterLogin.reset() }
         downloading = false; holdFrom = 0L; capHeld = false
         val root = shadowRoot(ctx).apply { mkdirs() }
         val isLinkF = { f: File -> Files.isSymbolicLink(f.toPath()) }
@@ -216,6 +220,10 @@ object NativeLogin {
             worldTraffic(rxBytes); onTrafficSample?.invoke(rxBytes, txBytes)
             val counts = PreLoginTraffic.counts(firstReadAt > 0L, pastLogin, reachedWorld)
             if (counts) preLogin.add(rxBytes, System.currentTimeMillis())?.let { logEvent(it) }
+            // issue #215: past the login screen and still downloading before the world: the minute's line and the bottom screen's state
+            if (PreLoginTraffic.countsAfter(firstReadAt > 0L, pastLogin, reachedWorld)) afterLogin.add(rxBytes, System.currentTimeMillis())?.let {
+                logEvent(it + (runCatching { bottomState?.invoke() }.getOrNull()?.let { s -> "; bottom screen: $s" } ?: ""))
+            }
             // issue #132: downloading before the login screen holds the unread file's cap and says "Game downloading"
             val d = PreLoginTraffic.downloading(counts, preLogin.busy)
             if (d) holdFrom = System.currentTimeMillis()

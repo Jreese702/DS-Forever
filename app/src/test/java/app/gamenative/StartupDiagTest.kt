@@ -74,6 +74,21 @@ class StartupDiagTest {
         assertTrue(text.length <= StartupDiag.MAX)
     }
 
+    @Test fun theReportSaysWhatTheBottomScreenShowedWhenItsPageOpened() {
+        // issue #215 (review): the snapshot taken when the report page opened, in the Start-up screen section
+        StartupDiag.bottomAtReport = null
+        assertEquals("Bottom screen when the report page opened: (not recorded)", StartupDiag.bottomLine(null))
+        val ctx = RuntimeEnvironment.getApplication()
+        assertTrue(StartupDiag.text(ctx, emptyList()).contains("Bottom screen when the report page opened: (not recorded)"))
+        StartupDiag.bottomAtReport = 0L to "no start screen; room home; documents none yet; over it: chooser"
+        try {
+            val text = StartupDiag.text(ctx, emptyList())
+            val section = text.substringAfter("=== Start-up screen ===").substringBefore("\n===")
+            assertTrue(section, section.contains("Bottom screen when the report page opened: ") &&
+                section.contains("no start screen; room home; documents none yet; over it: chooser"))
+        } finally { StartupDiag.bottomAtReport = null }
+    }
+
     @Test fun theStartUpStagesAreNamedAndTimedOnce() {
         val i = SetupFlow.Inputs(path = "/storage/emulated/0/WoW", folderFound = true)
         assertEquals("checks: game version", StartupTrace.stageOf(i, false).first)

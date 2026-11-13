@@ -31,6 +31,17 @@ object StartupDiag {
 
     class Section(val title: String, val lines: List<String>)
 
+    /**
+     * issue #215 (review: the player's "just a background graphic" may describe the screen when the report was made, after Exit game,
+     * not the download): what the bottom screen showed the moment the report page opened (CompanionHost, main thread, before it moves
+     * to Settings), with the time. Diagnostics only.
+     */
+    @Volatile var bottomAtReport: Pair<Long, String>? = null
+
+    /** the Start-up screen section's line for [bottomAtReport] */
+    fun bottomLine(snap: Pair<Long, String>?): String =
+        "Bottom screen when the report page opened: " + (snap?.let { (at, s) -> "${stamp(at)}: $s" } ?: "(not recorded)")
+
     /** our own log tags for the block's log (the start-up path's): the setup, the art, the sign-in, CASC, the launcher's own */
     val LOG_TAGS = setOf("WCSETUP", "WCLOG", "WCHARVEST", "WCLOGIN", "WCCASC", "WCREPORT", "WCUPDATE", "WCINDOOR", "WCINTERIORS", "WCRUNTIME", "DSFORK", "DSF", "DSForever",
         "WoWForeverScreen", "WowClientDownloader", "AppUpdater", "CrashLogs", "XServerScreen", "ContainerManager")
@@ -191,7 +202,7 @@ object StartupDiag {
     }
 
     private fun startScreen(): List<String> {
-        val i = SetupBridge.inputs ?: return listOf("(the start-up screen published nothing in this run)")
+        val i = SetupBridge.inputs ?: return listOf("(the start-up screen published nothing in this run)", bottomLine(bottomAtReport))
         return listOf(
             "Folder found ${i.folderFound}, wrong game ${i.wrongGame}, product ${i.product.ifEmpty { "?" }}, storage ${i.storage}",
             "Login saved ${i.loginSaved}, skipped ${i.loginSkipped}, sign-in ${i.signIn}, restart offered ${i.restartOffered}, restarting ${i.restarting}",
@@ -203,6 +214,7 @@ object StartupDiag {
             "Busy: ${i.busy ?: "no"}; game running ${i.gameRunning}; installed on external storage ${i.installedExternal}",
             "Game closed note: ${i.gameClosed ?: "none"}; saved report: ${i.reportSaved ?: "none"}",
             "The last stage reached: ${StartupTrace.last() ?: "?"}",
+            bottomLine(bottomAtReport),
         )
     }
 
