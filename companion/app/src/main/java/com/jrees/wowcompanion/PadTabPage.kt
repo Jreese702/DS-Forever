@@ -359,6 +359,8 @@ class PadTabPage(
         "same" -> "Already the other half"
         "pick-half" -> "Pick Melee or Range first"
         "form" -> "Not on a form's own set"
+        "class" -> "Needs a next-swing class"                                   // m148: Warrior, Hunter, Druid only
+        "bear" -> "Druids: Bear Form's set only"                                // m148: the user's druid ruling
         "not a spell" -> "Smart Range takes spells only"
         "off" -> "Turn Smart Range on first"
         "carry" -> "Place or cancel the Move first"                    // p47: no box flip / half pick while carrying
@@ -434,8 +436,9 @@ class PadTabPage(
         val f = formNow()
         if (f == null || s != 1 || p == 7) return PadMapModel.slot(m, s, p)
         val r = PadMapModel.formFight(m, f, p)
-        return if (r != null) PadMapModel.Slot(p, null, PadMapModel.Kind.COMBAT, r.id, r.name, r.icon, combat = r, ov = true)
-               else PadMapModel.Slot(p, null, PadMapModel.Kind.NONE, null, null, 0)
+        val box = (f to p) in m.srFormBoxes                                 // m148: a Bear Form place's checked box with no spell yet
+        return if (r != null) PadMapModel.Slot(p, null, PadMapModel.Kind.COMBAT, r.id, r.name, r.icon, combat = r, ov = true, smart = box)
+               else PadMapModel.Slot(p, null, PadMapModel.Kind.NONE, null, null, 0, smart = box)
     }
     /** the form row: Caster, then the forms (between the set row and the buttons) */
     private fun formRect(i: Int) = PadDiamonds.rect(PadDiamonds.formRect(i))
@@ -557,7 +560,11 @@ class PadTabPage(
             val hc = halfChooser()                                          // m146: a half leaves out only its own spell
             val skip = if (hc != null) setOfNotNull(PadMapModel.srHalf(slotOf(m, shown(), pos), hc)?.id)
                        else if (fight()) PadMapModel.onButton(slotOf(m, shown(), pos)) else emptySet()
-            val spells = book?.let { b -> SpellsModel.tabSpells(b, which).filter { (it.spellId ?: it.actionId) !in skip }.map { Thing.Spell(it) } }
+            // m148 / p48 (the user, 2026-11-12: "it should only list the abilities that can work with it in the melee options"): the Melee
+            // half's chooser lists only the next-swing attacks the character knows (the add-on's `sro.sw`; PadTabCtl p48 lists the same)
+            val swing = if (hc == "m") m.srSwing else null
+            val spells = book?.let { b -> SpellsModel.tabSpells(b, which).filter { s -> val id = s.spellId ?: s.actionId
+                id !in skip && (swing == null || id in swing) }.map { Thing.Spell(it) } }
                 ?: emptyList()
             // (m45 / p24: no "suggestion" row - the user: nothing is ever suggested; the add-on's chooser has none either, so rows line up)
             return spells
@@ -1164,9 +1171,17 @@ class PadTabPage(
         val x0 = SPLIT + 40f; val x1 = w - 56f; val mid = (x0 + x1) / 2f
         return if (k == 0) RectF(x0, 470f, mid - 8f, 570f) else RectF(mid + 8f, 470f, x1, 570f)
     }
-    /** Smart Range is offered here: the In combat tab, the caster's set (no form chosen), a base X / Y / A or any button with a slot; never B */
-    private fun srAllowed(sl: PadMapModel.Slot?): Boolean = view == "combat" && formNow() == null && sl != null &&
-        (PadMapModel.isFace(sl) || (sl.kind != PadMapModel.Kind.FIXED && sl.storage != null))
+    /** Smart Range is offered here: the In combat tab, a base X / Y / A or any button with a slot; never B. m148 / p48 (the user, 2026-11-12:
+     *  "this option should only appear for classes with next swing pairs"; "for druid this should only appear for the bear form action
+     *  bar"): only by the add-on's `sro` - the caster's sets for a Warrior / Hunter (`c`), a form's own set it names (`f`: a Druid's Bear
+     *  Form); every other class and place shows the plain assigned spell */
+    private fun srAllowed(sl: PadMapModel.Slot?): Boolean {
+        val m = map ?: return false
+        if (view != "combat" || sl == null) return false
+        val f = formNow()
+        if (f != null) return pos != 7 && f in m.srForms
+        return m.srCaster && (PadMapModel.isFace(sl) || (sl.kind != PadMapModel.Kind.FIXED && sl.storage != null))
+    }
 
     /** under the header: the plate; off = the assigned spell's row and Move / Change combat spell; on = Melee | Range, the hint, Bind / Move */
     private fun drawFightBody(c: Canvas, m: PadMapModel.Map, sl: PadMapModel.Slot?, w: Float, h: Float) {
@@ -1243,7 +1258,7 @@ class PadTabPage(
             c.save(); c.translate(x0 + 8f, if (on) 622f else 556f); prose.draw(c); c.restore()
         }
         val act = actRect(w, h)
-        val moveShown = if (on) picked != null && !face && PadMapModel.srHalf(sl, picked) != null
+        val moveShown = if (on) picked != null && !face && formNow() == null && PadMapModel.srHalf(sl, picked) != null   // m148: no Bear half Move
                         else sl != null && sl.kind != PadMapModel.Kind.NONE && !fixed
         val above = if (moveShown) moveRect(w, h).top else act.top
         val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && (!fixed || face)) COMBAT else null
@@ -1468,6 +1483,12 @@ class PadTabPage(
     private fun boxOpenNow(): Any? = tBox ?: ctlBox()
     /** p11: the chooser is open (LB / RB are its tabs then, not the room's: [ControllerView] hides the room's badges) */
     fun chooserOpen(): Boolean = chooserList() != null
+    /** the open chooser's spell rows by id (tests: m148's Melee half lists only next-swing attacks); empty when none is open */
+    fun chooserSpellIds(book: SpellsModel.Book?): List<Int> {
+        val list = chooserList() ?: return emptyList()
+        val m = map ?: return emptyList()
+        return rowsOf(list, book, m).mapNotNull { (it as? Thing.Spell)?.e?.let { e -> e.spellId ?: e.actionId } }
+    }
 
     private fun pressedAt(x: Float, y: Float, w: Float, h: Float, m: PadMapModel.Map?): Int {
         if (m == null) return DOWN_NONE
@@ -1558,7 +1579,7 @@ class PadTabPage(
                     }
                     val hh = half()
                     if (was == DOWN_MOVE && moveRect(w, h).contains(x, y)) {
-                        if (hh == null || PadMapModel.isFace(sl) || PadMapModel.srHalf(sl, hh) == null) return
+                        if (hh == null || PadMapModel.isFace(sl) || formNow() != null || PadMapModel.srHalf(sl, hh) == null) return
                         if (m.combat) say(COMBAT) else {
                             tap(PadMapModel.srCells(PadMapModel.srCode(hh)) + listOf(PadMapModel.ROW_PADTAB to PadMapModel.COL_CARRY))
                             if (ctl?.on == true) { carryLocal = PadMapModel.Carry(shown(), pos, page(), hh); carryUntil = SystemClock.uptimeMillis() + ECHO_MS }

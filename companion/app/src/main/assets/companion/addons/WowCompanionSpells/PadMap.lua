@@ -24,7 +24,7 @@ local S, SN, CALL = WC.S, WC.SN, WC.CALL
 -- m140 (int/1429): ONE tag over party-combat m132-m134 (party mode in fights, the player / pet row), combat-nav m134-m136 (combat-proof
 -- input, room-mode B, the pull close), ctl-sets m132-m133 (the fight-only layer's chords) and ps-noloc-guide m132 (the Polestar starter
 -- item on Y, reading the one "row holds" word WC.pnav.psOn)
-local PV = "m147"               -- bump on every change; m147 SMART RANGE REVIEW (the user, 2026-11-12: "okay so I was skeptical and so I tried it with a different melee skill, wing clip and it did not work"; the m146 ruling "Hide text and sound"): DSF_SR0 / DSF_SR1 keep and give back the error SOUND too (Sound_EnableSFX: an error that plays a sound kit, not the voice), each the player's own value; the base X / Y / A are re-armed whenever the macro sync changes what is made (a renamed / missing "DSF Y" never left on the face); no macro is made, renamed or deleted before the game has loaded the macros (the first UPDATE_MACROS, or any macro counted), and a second copy of one of ours is deleted; m146 SMART RANGE (the user, 2026-11-12: "revise the right section and remove the "Otherwise spell", and instead move down the assigned spell and make space for an optional checkbox called "Smart Range". when enabled I want two selectable buttons, one for melee and one for range ... this should be per button/ button modifier combo"; "I am completely fine with saving macros for the addon"): a button's In-combat entry may hold a Melee half (a next-swing attack only, OV.srSwing) and a Range half; both = ONE saved character macro per button ("DSF ZR+Up": SR0, melee, range, SR1; OV.srSync, out of combat only, only our own macros touched), the router runs it by name ("wc-ftm-<slot>", the faces' "wc-fight-mname"); one half = that spell, the plain press; DSF_SR0 / DSF_SR1 keep and give back the player's own error-speech value ("Hide text and sound", the one CVar exception); the documents carry sr / h / rg / mn / se and the slot's `sr` box (m145 was the unmerged pair-proof branch); m144 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): rankSync follows the top rank again for every In-combat entry EXCEPT one picked on purpose (`lo`) and one whose new rank is still this load's rank-up prompt (Spells s9 WC.spellsNewsHas; run a moment after SPELLS_CHANGED so the news is in), so a missed prompt never leaves a fight button on the old rank; `lo` is set only by the player's own puts (a backup restore, PadTabCtl p45 keepOn, keeps the entry's earlier mark, never a fresh one) and no longer needs the rank text (any other id of the same name than the top is lower); the router's spell attribute casts the entry's numeric id (the exact rank with no rank text needed); a macro body built while a lower rank's text had not loaded is rebuilt out of combat on SPELL_TEXT_UPDATE / the fight's end; m143 RANK UP ON THE BUTTONS (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): OV.rkRun upgrades every lower copy at the player's A (padtab 38 + the spell's two taps), WC.rankUpList feeds Spells s8 `rk`, Book's deliberate lower ranks (OV.lowdb, `lo`) are never touched; "Keep the exact rank": In-combat spells cast as "Name(Rank N)" (OV.castName) and rankSync no longer repoints an entry whose own id is still a rank of that spell; m142 m142 (review): the default follows a SHOWN stance bar only (OV.barForm: in a form, the game's bonus bar up and its ForActiveStance first slot; Ghost Wolf / Travel Form / a Paladin aura lay no bar, so the plain set stays), formLearn keeps only a shown bar's slot, WC.padMap.stanceShown for Book / PadTabCtl, a stance change with the room open re-syncs it; m142: THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): WC.padMap.formLearn for Book b49's bind (the active form's first slot kept before the place); OV.feSlot takes the game's own ForActiveStance first slot for the ACTIVE form when it is not kept yet (formSlot stays the kept one: Book's own fallback names itself `game`); PadTabCtl p44 defaults the room's form to the active one; m141: THE FIGHT LAYER ON EVERY BUTTON (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button"): putFight takes the base X / Y / A (their fight store faceBy: the router's face button runs the command / item / mount's fight text as its fight action, OV.ftBody) and a form's own set (`form`: formFightBy, "wc-ff-<form>-<pos>" = its fight text); a binding there is refused ("fixed" / "form": no chord of ours); their WoW Defaults untouched; the documents' `cf` / `ff` carry `t` / `key`; OV.fightAt / the rank sync / the state list leave them out (no spell); m140: int/1429, the five branches above in one file; m132 (ps-noloc-guide): AN ITEM THAT STARTS THE POLESTAR STEP'S QUEST ON Y (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): while the app's light blue Polestar row is picked (Map.lua WC.pnav.picked) and Polestar's step is an item-started quest's accept with the item in the bags (pstep it / ih), that item is Y's quest item (wc-qitem-u "bag": used from the bags on a bare Y out of a fight with nothing targeted, no unit - with a target Y keeps the target radial and its glyph; a target's own quest item first); m133 (ctl-sets): THE FIGHT LAYER'S CHORDS FOLLOW THE LIVE SLOT, B AND PARTY MODE (review of m132, 2026-11-11; the user's ruling the same day: "Build a fight-only layer"): one secure body (OV.fbSnip) decides each chord from what the router would do with the press now - the live slot under the chord (its page: "wc-fbs-<slot>" a fight-layer binding, "wc-ft-<slot>" a fight text) and B's give-back; a page with no fight-layer entry and a give-back leave the WoW Defaults binding (Jump) on the chord, never the action button it hides; Party mode (also switched on mid-fight) gives every chord to the router its pad reads (the m77 rule); run by the header's [combat] snippet, at the fight's start (SecureHandlerExecute), on every router key-down, the give-back / re-arm buttons and PARTYFLIP; always the header's own override bindings; m132 (ctl-sets): THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"): the In combat tab's command / binding / item / mount applies ONLY in fights, the button's WoW Defaults assignment stays as it is out of combat; one fight-layer entry per button (fightBy[slot], per character: a fight spell OR a whole-button thing, `t` = command / bind / item / mount, the newer wins); a command / item / mount is the router's pre-armed per-slot fight text (OV.ftBody, "wc-ft-<slot>", switched by the [combat] attribute driver as the fight spells); a binding, and a WoW Defaults binding under a fight-layer entry, flip their CHORD in the header's ONFIGHT state snippet from attributes armed out of combat (OV.fbPlan / fbArm, "wc-fb-*"); putFight, putCombat over a binding allowed, OV.ftRef in the documents (`c.t`, `c.key`, no id); m136: COMBAT NAV STEP 5b (combat_nav_design.md, the user 2026-11-11): a game window open at a fight's start with nothing of ours holding it (not a prompt, not the game menu) gets its NAMED close on B ("wc-pull-close", routerBind): the first bare B is /click <close> then /stopattack and the snippet spends the name; m135: COMBAT NAV STEP 4 (combat_nav_design.md, the user 2026-11-11): in room mode B is the room's own B (Interact's sink, PAD2: the app's B chain), and LT + RT + B is the secure escape - the snippet sends it to "wc-esc" (Interact's leave button), which clears the room mode itself; m134 (combat-nav): COMBAT NAV STEP 2 (combat_nav_design.md; the user's decision 1, 2026-11-11: "those scenarios should be built on the bottom screen. If we are in the game menu though ... it should be locked until the game menu closes. That's the only valid example"): a fight's start carries every key whatever is open (a room, loot, a pop-up, a ready check, a loot roll); only the game menu (R.menuOpen) keeps the router aside then; routerCheck waits from PLAYER_REGEN_DISABLED to the lockdown (fightNow.on), so Interact's fight-start capture change no longer clears the carried keys when PadMap's handler ran first; m134 (party-combat): PLAYER / PET ROW AND HIGHLIGHTING = TARGETING (the user, 2026-11-11, after using 1428: "I think the pet should be to the right of the player and not have the green dot. Also the a button glyph on them needs to be removed since highlighting it should target and a will be whatever spell is bound"): with a pet out you and the pet share the FIRST row (the pet on the right), the party members fill the rows under it by the adaptive rule among themselves (1-2 full rows, 3: the bottom two share, 4: 2x2); no pet: you full width (OV.partyNav(n, box, dir, pet) = the PARTY-NAV snippet body = the app's PartyModel.nav); a D-pad move of the pick and a plate's pick TARGET the new unit in the same secure click (type target, in fights too), the picked plate's tap is the Touch spell, else Target again; the pet's portrait icon (GetPetIcon, plain only) in its member entry (ic); m133: REVIEW OF m132: Smart Y's party pick casts once a fight per member (wc-pb-<unit> cleared by the secure Y, and the party picks by a roster change in a fight; PM.picksSync tells the app); PM.fightKeys counts a pet out, and a fight's start ignores game windows only then (solo with Party mode off keeps the window's navigation); PM.PROMPTS + the controller roll frame and GroupLootFrame2-4, and Interact's "dialogs" capture is a prompt (PM.PROMPT_HOLDERS); m132: PARTY MODE USABLE IN FIGHTS (the user, 2026-11-11, a healer: "Party mode needs to be usable in combat for healers. Locking it is retarded"): a fight's start with Party mode allowed never steps the router aside for a game window (a loot roll / popup at the pull: every key and Select carried), binds Select solo and with an invite waiting too (PM.selWant), and keeps the player's own m34 chords off the party layers while grouped or on (PM.fightKeys); nothing in a fight turns Party mode off (the fight-taker note and its PLAYER_REGEN_ENABLED switch-off gone); out of combat a prompt (GroupLootFrame1, StaticPopup1-4, ReadyCheckFrame: PM.PROMPTS) only suspends it; in a fight Y never opens the player menu: the In combat action, else Smart Y's party buff armed before the fight (wc-pb-<unit>), else Target; partycfg's Smart Y picks in fights too; m131: PARTY MODE'S ADAPTIVE ROWS AND THE PET (the user, 2026-11-11: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate", "WHEN NO PET MAKE THE PLAYER FULL SIZED", "MAKE THE PET A BIT SMALLER"): the pick runs over you, your pet (only while one plainly exists; [@pet,exists] in the secure code) and party1..4 (PM.units, the pick index, the roster's count and its new pet driver, every snippet's unit walk); the D-pad moves the pick GEOMETRICALLY over min(n, 3) rows whose bottom max(0, n - 3) rows hold two cells (Up / Down between rows, Left / Right inside a shared row, no wrap; OV.partyNav = the PARTY-NAV snippet body = the app's PartyModel.nav); the pet's own pick cell (party row col 5), casts / Target / Touch on unit "pet"; the roster's driver keeps the picked unit when it is still there (a pet coming out no longer moves the pick to another person), else clamps; m130: A PLATE'S TAP DECIDES ONCE A PRESS, ON THE CELL ITSELF (review, 2026-11-11): the PARTYPICK snippet is wrapped on the party row's own cells 0-4 (no WowCompanionPartyPick buttons behind a "click" relay, whose own Target / spell could miss its edge), the first edge of a press decides and the later ones re-use it (wc-pdec), one partybox a press (wc-pseq); m129: PARTY MODE, ONE PICK AND ONE COLUMN (party_design.md and the user's decisions 2026-11-11): wc-box is the only pick and every writer sets wc-box + wc-u together (PARTYFLIP on clamps it and sets wc-u; a state driver re-clamps it after a roster change, in fights too; the bottom's plates pick through the hidden WowCompanionPartyPick1..5 buttons, party cols 0-4); the D-pad's Up / Down move the pick in a straight line, Left / Right do nothing (the user: "this will need to support raids at some point" - kept for raid navigation, never assignable); range from ONE place (UnitInRange, checked plainly true: WC.padMap.party.rng, Hub reads it too); NO HEALTH OR MANA FOR THE BOTTOM: the drawn-fill read (m86), the estimate and the hit / cast counts (m79 / m96 / m98), the party UNIT_HEALTH / UNIT_COMBAT registrations and the combat log (m92 / m95-97 / m112) retired - only the give-back of the Advanced Combat Logging we turned on stays (aclOurs / aclReset1); m128: THE MODEL'S EATING / DRINKING RATE FOLLOWS WHAT Y USES (the user's 2026-11-11 order rule, review): OV.smartItem came from the old fixed food-then-drink pick, so with Water above Food Y drank while the drink aura took the FOOD item's (absent) mana rate and an early-stopped drink gave no mana; now each kind keeps the item Y last armed for it (OV.smartEat), and the why line names the step the walk chose; m127: SMART Y v2 (the user, 2026-11-11): TRACKING NEVER ON Y ("I dont think that I want to have the tracking abilities to be selectable here": OV.isTracking, in Manners' pick and press, the Add list and the add, Party mode's chooser); MANNERS A ROW OF ITS OWN that only buffs OTHER players (never you, a bare /use or tracking; at the pick and at the press); ONE ORDERED LIST ("it shouldnt hardcode food and water as first and second, let people move spell priorities above them": typed rows food / drink / manners / { ids }, walked top to bottom by OV.smartWalk; the v2 saved-variable migration in sbdb); m126: THE HIT RULE LOWERS THE MODEL, NOT A 90 S FLOOR (the user, 2026-11-11: "I am consistently getting a food recommendation long after sitting at full hp for a long long while"; the log: "hp 50% via hit rule ... picked food" for 90 s after every fight with a hit): a fight's end with hits takes about 6 % a hit (at most half) off the model's health once; the model's own regen brings it back, and food stops at the 80 % line (plain facts only: the hit count, the class / Spirit regen); m125: A COOLDOWN THAT HAS RUN OUT IS GONE (the user, 2026-11-10: "about 50% of the time when I press a skill and I know it should show a gcd its still not showing a gcd"): a held GCD / cooldown was dropped only by a SPELL_UPDATE_COOLDOWN saying "not active", which the game often skips at the GCD's end; the stale entry then matched the next GCD (same kind, and in a fight no plain time to compare) and the new one was never sent. An entry past its end now counts as none, so every press starts a fresh one; m124: THE IN-COMBAT SPELLS FOLLOW THE RANK THAT CASTS (the user, 2026-11-10: Serpent Sting "its casting but not triggering a gcd or looking like it cast visually and also it doesn't show range properly which seems to be an issue on my shaman as well"; the Thor's log: the entry kept Rank 1's id 1978 while "/cast Serpent Sting" fires Rank 2, 13549): at login and on every SPELLS_CHANGED each entry's id / icon is set to the spell its NAME casts, so the cooldown, cast and range pictures read the rank that fires; m123: Y opens the target radial in a fight too (the user, 2026-11-10: "pressing y in combat is opening the context menu on the top screen. this should open on the bottom screen and hide on top"): the GROW no longer sends a bare Y to the game's Inspect menu; a fight spell / Smart Y on Y still wins, the Y glyph keeps the GROW rule; m122: the "soft" document retired (the LB picture shows no line over you: the user, "Scrap the soft target bit" ... "remove the L target"); m121: the LB picture's top line - what LB ALONE is bound to (lbmap tap / tapn, read from the game) and what you soft-target now (the "soft" document: soft enemy / friend / interact names, on change); m120: the Y in the layout's own glyph set (Nintendo = the white Gamepad_Rev_Y; the user: "why is the Y yellow when im using the nintendo glyphs?"); the game's X over an NPC trumps the Y also when the game will not say it is the same unit (secret reads count as the same); m119: the inspect glyph is the game's Y on every layout (the user: "the inspect glyph is Y not X"); m118: the target bar wears Hub's OWN prompt right of the bar (the user: "it needs to be to the right with our custom Icon"): Spells only says the letter (WC.tgPrompt), no glyph of ours on the bar; m117: the Y glyph over the nameplate again AND a smaller one beside the target bar's name (the user: "the glyphs still need to appear over the name plates"); the GROW rule alone for Hub's nameplate hiding (WC.tgGrown; "the hide name plate needs to have the same rules as the hide glyph"); m116 is the hunt build's; m115: the Y glyph beside the name on Hub's target bar while the bar shows (the user: "it should have the button glyph"); m112: the combat log (m92 / m95-97) ONLY while Party mode is allowed (WC.partyOk; the user, 2026-11-09: "Only while Party mode is on"); our Advanced Combat Logging given back when it is not (aclOurs; once for 1.0.17 / 1.0.18, aclReset1); m111 is the hunt build's; m110: Party mode's picked unit and the LB map for Hub's own party frames (WC.padMap.party.box / .lb, read only); m108: the several spell radials (m105) taken out of 1.0.18 (bisect test21: with them the loot window's close ran SetPreferredGamepadInteractTarget tainted by this add-on); one radial as in 1.0.17; m107: Manners' PreClick / PostClick are never run from our code (its code ran as ours: the taint log's buff frame / gamepad binding stack blamed on WowCompanionSpells); its armed prompt is only read; m106: the Y glyph over the target is OUR texture with the game's atlas (no Blizzard InputIconTextureFrameTemplate: its code ran tainted and tainted the gamepad UI -> SetPreferredGamepadInteractTarget forbidden; the taint log, 2026-11-08); m105: a command per spell radial (DSSRADIAL2..6, shown while that radial exists; WC.padMapDropCommand); m104: the LB party-target map ("lbmap": which LB + button targets you / party1..4, read from the game's own bindings) for the app's LB view; m103: the game's X (interact) glyph over an NPC target trumps our Y glyph (the user, 2026-11-07); Trail's friendly nameplates now follow a friendly target; m102: the target radial and its Y glyph follow the controller's GROW (the user: "I want it to go away when I /startattack, same rules as the button grow animation"): gone while a fight or an attack is on and not given back by B, back after B; m101: THE TARGET RADIAL (the user, 2026-11-07): out of a fight, a bare Y with a target opens the app's radial (wc-kind "tradial", no game action; Quests q51 reads the target's menu) and the game's own Y glyph shows over the target (its nameplate, else beside the target frame); m100: Party mode EXPERIMENTAL, off by default (Hub hub25 WC.partyOk): Select stays the game's key and Party mode ends (out of combat) while it is not allowed; m99: B in a fight - the first press gives the bars back AND stops the attack (the target kept), the next one clears the target; Smart Y's fight buff only when it was missing at the fight's start, once a fight; m98: each member's live CAST count (cs, UNIT_SPELLCAST_SUCCEEDED) for the app's mana estimate (the user: "The mana bars always show 100%"); m97: the combat log's stop and start a moment APART (in the same instant the game wrote nothing - test12 measured 2.5 min late again), a "clog" tick report every 12 stops; m96: each member's live HIT COUNTS (cw wounds, cc crits, ch heals: UNIT_COMBAT, amounts hidden) for the app's calibrated estimate; the combat log written out every 5 s OUT of a fight (in a fight the game ignores it - measured); m95: in a fight the combat log is stopped and started every 3 s (the game writes it only every ~5 min otherwise; the user picked "Try the restart trick"), its chat lines hidden; m94: m93's snippet comment held the word f-u-n-c-t-i-o-n, which the game's secure checker refuses even in a comment - every A / X / Y / B / D-pad press did nothing (the user, test9); m93: SMART Y IN A FIGHT - with no fight spell on Y (or given back by B), Y casts the top buff of your Smart buff list (wc-smarty-cb, armed out of combat); m92: each party member's GUID (g) for the app's combat-log health; Advanced Combat Logging and the combat log switched on at login (the user's ruling 2026-11-07); m91: the party row's column 36 is a secure /startattack cell (WC.atkCell: Hub's Start attack on hostile target); m90: after a fight with hits taken, food is due (90 s, until eating) - the game's eating rule; m89: a hit with a hidden amount counts as 6 % of the max health (Smart Y food by hits taken); m88: UNIT_COMBAT seen / hidden-amount counts in the why line (uc); m87: Y is routed while Smart Y is on, even with no In-combat spell on Y (Smart Y never heard a bare Y before); m86: health read from the DRAWN bar fill (texture width / bar width) when the value is secret; your own cell from the player frame first; m85: a party member's error no longer drops the party document (reported once, probe partyerr); Manners' prompt always hidden; m84: your own party cell takes a plain reading before the vitals' estimate (hs vit:<src>); m83: party members found by the party count / name too (UnitExists may be secret); m82: the party roster looked at again 2 / 5 / 10 s after a login (tokens come late); m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m148"               -- bump on every change; m148 SMART RANGE: WHO HAS IT (the user, 2026-11-12: "this option should only appear for classes with next swing pairs- and it should only list the abilities that can work with it in the melee options"; "for druid this should only appear for the bear form action bar, and that's even if there is ranged attacks that bear druid can use. maybe taunt?"): Smart Range is offered by the player's CLASS (UnitClass's file token: OV.SR_CLASSES) - Warrior and Hunter on their buttons, a Druid ONLY on the Bear Form fight set (formFightBy[who][Bear Form / Dire Bear Form], "DSF Bear <button>", run by the router as the form's "wc-ffm-<form>-<pos>"); every other class and place: no box, srToggle / srPut / srClear / srMove refused ("class" / "bear" / "form"); the padmap doc's `sro` (c = the caster sets, f = the forms, sw = the next-swing attacks the character knows: the Melee chooser lists only those), the ff entries carry the halves and `ffsr` the checked empty form boxes; m147 SMART RANGE REVIEW (the user, 2026-11-12: "okay so I was skeptical and so I tried it with a different melee skill, wing clip and it did not work"; the m146 ruling "Hide text and sound"): DSF_SR0 / DSF_SR1 keep and give back the error SOUND too (Sound_EnableSFX: an error that plays a sound kit, not the voice), each the player's own value; the base X / Y / A are re-armed whenever the macro sync changes what is made (a renamed / missing "DSF Y" never left on the face); no macro is made, renamed or deleted before the game has loaded the macros (the first UPDATE_MACROS, or any macro counted), and a second copy of one of ours is deleted; m146 SMART RANGE (the user, 2026-11-12: "revise the right section and remove the "Otherwise spell", and instead move down the assigned spell and make space for an optional checkbox called "Smart Range". when enabled I want two selectable buttons, one for melee and one for range ... this should be per button/ button modifier combo"; "I am completely fine with saving macros for the addon"): a button's In-combat entry may hold a Melee half (a next-swing attack only, OV.srSwing) and a Range half; both = ONE saved character macro per button ("DSF ZR+Up": SR0, melee, range, SR1; OV.srSync, out of combat only, only our own macros touched), the router runs it by name ("wc-ftm-<slot>", the faces' "wc-fight-mname"); one half = that spell, the plain press; DSF_SR0 / DSF_SR1 keep and give back the player's own error-speech value ("Hide text and sound", the one CVar exception); the documents carry sr / h / rg / mn / se and the slot's `sr` box (m145 was the unmerged pair-proof branch); m144 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): rankSync follows the top rank again for every In-combat entry EXCEPT one picked on purpose (`lo`) and one whose new rank is still this load's rank-up prompt (Spells s9 WC.spellsNewsHas; run a moment after SPELLS_CHANGED so the news is in), so a missed prompt never leaves a fight button on the old rank; `lo` is set only by the player's own puts (a backup restore, PadTabCtl p45 keepOn, keeps the entry's earlier mark, never a fresh one) and no longer needs the rank text (any other id of the same name than the top is lower); the router's spell attribute casts the entry's numeric id (the exact rank with no rank text needed); a macro body built while a lower rank's text had not loaded is rebuilt out of combat on SPELL_TEXT_UPDATE / the fight's end; m143 RANK UP ON THE BUTTONS (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): OV.rkRun upgrades every lower copy at the player's A (padtab 38 + the spell's two taps), WC.rankUpList feeds Spells s8 `rk`, Book's deliberate lower ranks (OV.lowdb, `lo`) are never touched; "Keep the exact rank": In-combat spells cast as "Name(Rank N)" (OV.castName) and rankSync no longer repoints an entry whose own id is still a rank of that spell; m142 m142 (review): the default follows a SHOWN stance bar only (OV.barForm: in a form, the game's bonus bar up and its ForActiveStance first slot; Ghost Wolf / Travel Form / a Paladin aura lay no bar, so the plain set stays), formLearn keeps only a shown bar's slot, WC.padMap.stanceShown for Book / PadTabCtl, a stance change with the room open re-syncs it; m142: THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): WC.padMap.formLearn for Book b49's bind (the active form's first slot kept before the place); OV.feSlot takes the game's own ForActiveStance first slot for the ACTIVE form when it is not kept yet (formSlot stays the kept one: Book's own fallback names itself `game`); PadTabCtl p44 defaults the room's form to the active one; m141: THE FIGHT LAYER ON EVERY BUTTON (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button"): putFight takes the base X / Y / A (their fight store faceBy: the router's face button runs the command / item / mount's fight text as its fight action, OV.ftBody) and a form's own set (`form`: formFightBy, "wc-ff-<form>-<pos>" = its fight text); a binding there is refused ("fixed" / "form": no chord of ours); their WoW Defaults untouched; the documents' `cf` / `ff` carry `t` / `key`; OV.fightAt / the rank sync / the state list leave them out (no spell); m140: int/1429, the five branches above in one file; m132 (ps-noloc-guide): AN ITEM THAT STARTS THE POLESTAR STEP'S QUEST ON Y (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): while the app's light blue Polestar row is picked (Map.lua WC.pnav.picked) and Polestar's step is an item-started quest's accept with the item in the bags (pstep it / ih), that item is Y's quest item (wc-qitem-u "bag": used from the bags on a bare Y out of a fight with nothing targeted, no unit - with a target Y keeps the target radial and its glyph; a target's own quest item first); m133 (ctl-sets): THE FIGHT LAYER'S CHORDS FOLLOW THE LIVE SLOT, B AND PARTY MODE (review of m132, 2026-11-11; the user's ruling the same day: "Build a fight-only layer"): one secure body (OV.fbSnip) decides each chord from what the router would do with the press now - the live slot under the chord (its page: "wc-fbs-<slot>" a fight-layer binding, "wc-ft-<slot>" a fight text) and B's give-back; a page with no fight-layer entry and a give-back leave the WoW Defaults binding (Jump) on the chord, never the action button it hides; Party mode (also switched on mid-fight) gives every chord to the router its pad reads (the m77 rule); run by the header's [combat] snippet, at the fight's start (SecureHandlerExecute), on every router key-down, the give-back / re-arm buttons and PARTYFLIP; always the header's own override bindings; m132 (ctl-sets): THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"): the In combat tab's command / binding / item / mount applies ONLY in fights, the button's WoW Defaults assignment stays as it is out of combat; one fight-layer entry per button (fightBy[slot], per character: a fight spell OR a whole-button thing, `t` = command / bind / item / mount, the newer wins); a command / item / mount is the router's pre-armed per-slot fight text (OV.ftBody, "wc-ft-<slot>", switched by the [combat] attribute driver as the fight spells); a binding, and a WoW Defaults binding under a fight-layer entry, flip their CHORD in the header's ONFIGHT state snippet from attributes armed out of combat (OV.fbPlan / fbArm, "wc-fb-*"); putFight, putCombat over a binding allowed, OV.ftRef in the documents (`c.t`, `c.key`, no id); m136: COMBAT NAV STEP 5b (combat_nav_design.md, the user 2026-11-11): a game window open at a fight's start with nothing of ours holding it (not a prompt, not the game menu) gets its NAMED close on B ("wc-pull-close", routerBind): the first bare B is /click <close> then /stopattack and the snippet spends the name; m135: COMBAT NAV STEP 4 (combat_nav_design.md, the user 2026-11-11): in room mode B is the room's own B (Interact's sink, PAD2: the app's B chain), and LT + RT + B is the secure escape - the snippet sends it to "wc-esc" (Interact's leave button), which clears the room mode itself; m134 (combat-nav): COMBAT NAV STEP 2 (combat_nav_design.md; the user's decision 1, 2026-11-11: "those scenarios should be built on the bottom screen. If we are in the game menu though ... it should be locked until the game menu closes. That's the only valid example"): a fight's start carries every key whatever is open (a room, loot, a pop-up, a ready check, a loot roll); only the game menu (R.menuOpen) keeps the router aside then; routerCheck waits from PLAYER_REGEN_DISABLED to the lockdown (fightNow.on), so Interact's fight-start capture change no longer clears the carried keys when PadMap's handler ran first; m134 (party-combat): PLAYER / PET ROW AND HIGHLIGHTING = TARGETING (the user, 2026-11-11, after using 1428: "I think the pet should be to the right of the player and not have the green dot. Also the a button glyph on them needs to be removed since highlighting it should target and a will be whatever spell is bound"): with a pet out you and the pet share the FIRST row (the pet on the right), the party members fill the rows under it by the adaptive rule among themselves (1-2 full rows, 3: the bottom two share, 4: 2x2); no pet: you full width (OV.partyNav(n, box, dir, pet) = the PARTY-NAV snippet body = the app's PartyModel.nav); a D-pad move of the pick and a plate's pick TARGET the new unit in the same secure click (type target, in fights too), the picked plate's tap is the Touch spell, else Target again; the pet's portrait icon (GetPetIcon, plain only) in its member entry (ic); m133: REVIEW OF m132: Smart Y's party pick casts once a fight per member (wc-pb-<unit> cleared by the secure Y, and the party picks by a roster change in a fight; PM.picksSync tells the app); PM.fightKeys counts a pet out, and a fight's start ignores game windows only then (solo with Party mode off keeps the window's navigation); PM.PROMPTS + the controller roll frame and GroupLootFrame2-4, and Interact's "dialogs" capture is a prompt (PM.PROMPT_HOLDERS); m132: PARTY MODE USABLE IN FIGHTS (the user, 2026-11-11, a healer: "Party mode needs to be usable in combat for healers. Locking it is retarded"): a fight's start with Party mode allowed never steps the router aside for a game window (a loot roll / popup at the pull: every key and Select carried), binds Select solo and with an invite waiting too (PM.selWant), and keeps the player's own m34 chords off the party layers while grouped or on (PM.fightKeys); nothing in a fight turns Party mode off (the fight-taker note and its PLAYER_REGEN_ENABLED switch-off gone); out of combat a prompt (GroupLootFrame1, StaticPopup1-4, ReadyCheckFrame: PM.PROMPTS) only suspends it; in a fight Y never opens the player menu: the In combat action, else Smart Y's party buff armed before the fight (wc-pb-<unit>), else Target; partycfg's Smart Y picks in fights too; m131: PARTY MODE'S ADAPTIVE ROWS AND THE PET (the user, 2026-11-11: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate", "WHEN NO PET MAKE THE PLAYER FULL SIZED", "MAKE THE PET A BIT SMALLER"): the pick runs over you, your pet (only while one plainly exists; [@pet,exists] in the secure code) and party1..4 (PM.units, the pick index, the roster's count and its new pet driver, every snippet's unit walk); the D-pad moves the pick GEOMETRICALLY over min(n, 3) rows whose bottom max(0, n - 3) rows hold two cells (Up / Down between rows, Left / Right inside a shared row, no wrap; OV.partyNav = the PARTY-NAV snippet body = the app's PartyModel.nav); the pet's own pick cell (party row col 5), casts / Target / Touch on unit "pet"; the roster's driver keeps the picked unit when it is still there (a pet coming out no longer moves the pick to another person), else clamps; m130: A PLATE'S TAP DECIDES ONCE A PRESS, ON THE CELL ITSELF (review, 2026-11-11): the PARTYPICK snippet is wrapped on the party row's own cells 0-4 (no WowCompanionPartyPick buttons behind a "click" relay, whose own Target / spell could miss its edge), the first edge of a press decides and the later ones re-use it (wc-pdec), one partybox a press (wc-pseq); m129: PARTY MODE, ONE PICK AND ONE COLUMN (party_design.md and the user's decisions 2026-11-11): wc-box is the only pick and every writer sets wc-box + wc-u together (PARTYFLIP on clamps it and sets wc-u; a state driver re-clamps it after a roster change, in fights too; the bottom's plates pick through the hidden WowCompanionPartyPick1..5 buttons, party cols 0-4); the D-pad's Up / Down move the pick in a straight line, Left / Right do nothing (the user: "this will need to support raids at some point" - kept for raid navigation, never assignable); range from ONE place (UnitInRange, checked plainly true: WC.padMap.party.rng, Hub reads it too); NO HEALTH OR MANA FOR THE BOTTOM: the drawn-fill read (m86), the estimate and the hit / cast counts (m79 / m96 / m98), the party UNIT_HEALTH / UNIT_COMBAT registrations and the combat log (m92 / m95-97 / m112) retired - only the give-back of the Advanced Combat Logging we turned on stays (aclOurs / aclReset1); m128: THE MODEL'S EATING / DRINKING RATE FOLLOWS WHAT Y USES (the user's 2026-11-11 order rule, review): OV.smartItem came from the old fixed food-then-drink pick, so with Water above Food Y drank while the drink aura took the FOOD item's (absent) mana rate and an early-stopped drink gave no mana; now each kind keeps the item Y last armed for it (OV.smartEat), and the why line names the step the walk chose; m127: SMART Y v2 (the user, 2026-11-11): TRACKING NEVER ON Y ("I dont think that I want to have the tracking abilities to be selectable here": OV.isTracking, in Manners' pick and press, the Add list and the add, Party mode's chooser); MANNERS A ROW OF ITS OWN that only buffs OTHER players (never you, a bare /use or tracking; at the pick and at the press); ONE ORDERED LIST ("it shouldnt hardcode food and water as first and second, let people move spell priorities above them": typed rows food / drink / manners / { ids }, walked top to bottom by OV.smartWalk; the v2 saved-variable migration in sbdb); m126: THE HIT RULE LOWERS THE MODEL, NOT A 90 S FLOOR (the user, 2026-11-11: "I am consistently getting a food recommendation long after sitting at full hp for a long long while"; the log: "hp 50% via hit rule ... picked food" for 90 s after every fight with a hit): a fight's end with hits takes about 6 % a hit (at most half) off the model's health once; the model's own regen brings it back, and food stops at the 80 % line (plain facts only: the hit count, the class / Spirit regen); m125: A COOLDOWN THAT HAS RUN OUT IS GONE (the user, 2026-11-10: "about 50% of the time when I press a skill and I know it should show a gcd its still not showing a gcd"): a held GCD / cooldown was dropped only by a SPELL_UPDATE_COOLDOWN saying "not active", which the game often skips at the GCD's end; the stale entry then matched the next GCD (same kind, and in a fight no plain time to compare) and the new one was never sent. An entry past its end now counts as none, so every press starts a fresh one; m124: THE IN-COMBAT SPELLS FOLLOW THE RANK THAT CASTS (the user, 2026-11-10: Serpent Sting "its casting but not triggering a gcd or looking like it cast visually and also it doesn't show range properly which seems to be an issue on my shaman as well"; the Thor's log: the entry kept Rank 1's id 1978 while "/cast Serpent Sting" fires Rank 2, 13549): at login and on every SPELLS_CHANGED each entry's id / icon is set to the spell its NAME casts, so the cooldown, cast and range pictures read the rank that fires; m123: Y opens the target radial in a fight too (the user, 2026-11-10: "pressing y in combat is opening the context menu on the top screen. this should open on the bottom screen and hide on top"): the GROW no longer sends a bare Y to the game's Inspect menu; a fight spell / Smart Y on Y still wins, the Y glyph keeps the GROW rule; m122: the "soft" document retired (the LB picture shows no line over you: the user, "Scrap the soft target bit" ... "remove the L target"); m121: the LB picture's top line - what LB ALONE is bound to (lbmap tap / tapn, read from the game) and what you soft-target now (the "soft" document: soft enemy / friend / interact names, on change); m120: the Y in the layout's own glyph set (Nintendo = the white Gamepad_Rev_Y; the user: "why is the Y yellow when im using the nintendo glyphs?"); the game's X over an NPC trumps the Y also when the game will not say it is the same unit (secret reads count as the same); m119: the inspect glyph is the game's Y on every layout (the user: "the inspect glyph is Y not X"); m118: the target bar wears Hub's OWN prompt right of the bar (the user: "it needs to be to the right with our custom Icon"): Spells only says the letter (WC.tgPrompt), no glyph of ours on the bar; m117: the Y glyph over the nameplate again AND a smaller one beside the target bar's name (the user: "the glyphs still need to appear over the name plates"); the GROW rule alone for Hub's nameplate hiding (WC.tgGrown; "the hide name plate needs to have the same rules as the hide glyph"); m116 is the hunt build's; m115: the Y glyph beside the name on Hub's target bar while the bar shows (the user: "it should have the button glyph"); m112: the combat log (m92 / m95-97) ONLY while Party mode is allowed (WC.partyOk; the user, 2026-11-09: "Only while Party mode is on"); our Advanced Combat Logging given back when it is not (aclOurs; once for 1.0.17 / 1.0.18, aclReset1); m111 is the hunt build's; m110: Party mode's picked unit and the LB map for Hub's own party frames (WC.padMap.party.box / .lb, read only); m108: the several spell radials (m105) taken out of 1.0.18 (bisect test21: with them the loot window's close ran SetPreferredGamepadInteractTarget tainted by this add-on); one radial as in 1.0.17; m107: Manners' PreClick / PostClick are never run from our code (its code ran as ours: the taint log's buff frame / gamepad binding stack blamed on WowCompanionSpells); its armed prompt is only read; m106: the Y glyph over the target is OUR texture with the game's atlas (no Blizzard InputIconTextureFrameTemplate: its code ran tainted and tainted the gamepad UI -> SetPreferredGamepadInteractTarget forbidden; the taint log, 2026-11-08); m105: a command per spell radial (DSSRADIAL2..6, shown while that radial exists; WC.padMapDropCommand); m104: the LB party-target map ("lbmap": which LB + button targets you / party1..4, read from the game's own bindings) for the app's LB view; m103: the game's X (interact) glyph over an NPC target trumps our Y glyph (the user, 2026-11-07); Trail's friendly nameplates now follow a friendly target; m102: the target radial and its Y glyph follow the controller's GROW (the user: "I want it to go away when I /startattack, same rules as the button grow animation"): gone while a fight or an attack is on and not given back by B, back after B; m101: THE TARGET RADIAL (the user, 2026-11-07): out of a fight, a bare Y with a target opens the app's radial (wc-kind "tradial", no game action; Quests q51 reads the target's menu) and the game's own Y glyph shows over the target (its nameplate, else beside the target frame); m100: Party mode EXPERIMENTAL, off by default (Hub hub25 WC.partyOk): Select stays the game's key and Party mode ends (out of combat) while it is not allowed; m99: B in a fight - the first press gives the bars back AND stops the attack (the target kept), the next one clears the target; Smart Y's fight buff only when it was missing at the fight's start, once a fight; m98: each member's live CAST count (cs, UNIT_SPELLCAST_SUCCEEDED) for the app's mana estimate (the user: "The mana bars always show 100%"); m97: the combat log's stop and start a moment APART (in the same instant the game wrote nothing - test12 measured 2.5 min late again), a "clog" tick report every 12 stops; m96: each member's live HIT COUNTS (cw wounds, cc crits, ch heals: UNIT_COMBAT, amounts hidden) for the app's calibrated estimate; the combat log written out every 5 s OUT of a fight (in a fight the game ignores it - measured); m95: in a fight the combat log is stopped and started every 3 s (the game writes it only every ~5 min otherwise; the user picked "Try the restart trick"), its chat lines hidden; m94: m93's snippet comment held the word f-u-n-c-t-i-o-n, which the game's secure checker refuses even in a comment - every A / X / Y / B / D-pad press did nothing (the user, test9); m93: SMART Y IN A FIGHT - with no fight spell on Y (or given back by B), Y casts the top buff of your Smart buff list (wc-smarty-cb, armed out of combat); m92: each party member's GUID (g) for the app's combat-log health; Advanced Combat Logging and the combat log switched on at login (the user's ruling 2026-11-07); m91: the party row's column 36 is a secure /startattack cell (WC.atkCell: Hub's Start attack on hostile target); m90: after a fight with hits taken, food is due (90 s, until eating) - the game's eating rule; m89: a hit with a hidden amount counts as 6 % of the max health (Smart Y food by hits taken); m88: UNIT_COMBAT seen / hidden-amount counts in the why line (uc); m87: Y is routed while Smart Y is on, even with no In-combat spell on Y (Smart Y never heard a bare Y before); m86: health read from the DRAWN bar fill (texture width / bar width) when the value is secret; your own cell from the player frame first; m85: a party member's error no longer drops the party document (reported once, probe partyerr); Manners' prompt always hidden; m84: your own party cell takes a plain reading before the vitals' estimate (hs vit:<src>); m83: party members found by the party count / name too (UnitExists may be secret); m82: the party roster looked at again 2 / 5 / 10 s after a login (tokens come late); m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -467,12 +467,29 @@ function WC.collectPadMap()
             for pos, e in pairs(t) do
                 if type(pos) == "number" and type(e) == "table" and type(e.n) == "string" then
                     local r = OV.ftRef(e)                                   -- m141: a whole-button thing: `t`, `key`, no id
-                    ffl[#ffl + 1] = { f = fid, p = pos, id = r.id, n = e.n, i = e.i, t = r.t, key = r.key }
+                    ffl[#ffl + 1] = { f = fid, p = pos, id = r.id, n = e.n, i = e.i, t = r.t, key = r.key,
+                                      sr = r.sr, h = r.h, rg = r.rg, mn = r.mn, se = r.se }       -- m148: a Bear set's Smart Range halves
                 end
             end
         end
     end
     doc.ff = #ffl > 0 and ffl or nil
+    -- m148 SMART RANGE, WHO HAS IT: `sro` = c (the caster's sets: Warrior / Hunter), f (the forms' own sets: a Druid's Bear Form), sw (the
+    -- next-swing attacks the character knows: the Melee half's chooser lists only these); none = no Smart Range for this class. `ffsr`
+    -- = the form places whose box is checked with no spell yet
+    local how = OV.SR_CLASSES[OV.srClass() or ""]
+    if how then
+        local fl = {}
+        if how == "bear" then for _, fo in ipairs(forms) do if OV.srBear(fo.id) then fl[#fl + 1] = fo.id end end end
+        doc.sro = { c = (how == "all") and 1 or nil, f = #fl > 0 and fl or nil, sw = OV.srSwingList() }
+        local fb = {}
+        for k, v in pairs(OV.srdb()) do
+            local f, p = tostring(k):match("^F(%d+):(%d)$")
+            f, p = tonumber(f), tonumber(p)
+            if v == 1 and f and p and not OV.srGet({ form = f, pos = p }) and OV.srWhere({ form = f, pos = p }) then fb[#fb + 1] = { f = f, p = p } end
+        end
+        doc.ffsr = #fb > 0 and fb or nil
+    end
     -- m59: X fishes while a fishing pole is in the main hand (the player's Fishing spell: id, name, icon); absent = X as it is
     doc.fish = OV.fish and { id = OV.fish.id, n = OV.fish.n, i = OV.fish.i } or nil
     -- m61: Smart Y's pick while it would act on a bare Y (out of combat, nothing targeted): id, name, icon, k = food / drink / both
@@ -1328,7 +1345,7 @@ local PRE = [=[
             local fp = self:GetAttribute("wc-pos")
             if fm and fm ~= 0 and fp then
                 local own = fh:GetAttribute("wc-ff-" .. fm .. "-" .. fp)
-                if own then ft = own; ftm = nil; fight = false
+                if own then ft = own; ftm = fh:GetAttribute("wc-ffm-" .. fm .. "-" .. fp); fight = false     -- m148: a Bear pair's saved macro
                 elseif not ft and not fight then ft = fh:GetAttribute("wc-ffc-" .. fp) end
             end
         end
@@ -1876,7 +1893,13 @@ local function routerMacros()
                 for pos, e in pairs(t) do
                     -- m141: a form's whole-button thing too (its fight text, OV.ftBody)
                     local body = type(pos) == "number" and type(e) == "table" and type(e.n) == "string" and OV.ftBody(e, saOn) or nil
-                    if body and #body <= 1023 then wantFF["wc-ff-" .. idx[fid] .. "-" .. pos] = body end
+                    if body and #body <= 1023 then
+                        wantFF["wc-ff-" .. idx[fid] .. "-" .. pos] = body
+                        -- m148: the Bear Form set's Smart Range pair: its saved macro by name (made and read back), "wc-ffm-<form>-<pos>"
+                        if OV.srPair(e) and type(e.mn) == "string" and OV.srOk[e.mn] and OV.srWhere({ form = fid, pos = pos }) then
+                            wantFF["wc-ffm-" .. idx[fid] .. "-" .. pos] = e.mn
+                        end
+                    end
                 end
             end
         end
@@ -2535,7 +2558,7 @@ function OV.fightAt(pos)
     local f
     for _, fo in ipairs(OV.forms()) do if fo.on then f = fo end end
     -- m141: a form's / the faces' fight-layer command / item / mount is no spell either (nothing of its own to draw)
-    if f then local e = OV.ffAt(f.id, pos); if e then return OV.ftKind(e) == "spell" and e or nil end end
+    if f then local e = OV.ffAt(f.id, pos); if e then return OV.ftKind(e) == "spell" and OV.srShown(e) or nil end end   -- m148: a Bear pair
     if FACE[pos] then
         local c = faceStore()[pos]
         return (type(c) == "table" and type(c.n) == "string" and OV.ftKind(c) == "spell") and OV.srShown(c) or nil
@@ -3452,7 +3475,7 @@ function OV.rankSync()
     local function both(e) fix(e); if type(e) == "table" then if type(e.rg) == "table" then fix(e.rg) end; if type(e.rgOff) == "table" then fix(e.rgOff) end end end
     for _, e in pairs(faceStore()) do both(e) end
     for _, e in pairs(OV.ftdb()) do both(e) end
-    for _, t in pairs(OV.ffdb()) do if type(t) == "table" then for _, e in pairs(t) do fix(e) end end end
+    for _, t in pairs(OV.ffdb()) do if type(t) == "table" then for _, e in pairs(t) do both(e) end end end   -- m148: the Bear set's halves
     return changed
 end
 OV.rkF = CreateFrame("Frame")
@@ -3580,7 +3603,9 @@ function OV.rkCopies(top, name)
     end
     for pos, e in pairs(faceStore()) do fe("face", e, pos); if type(e) == "table" and type(e.rg) == "table" then fe("face", e.rg, pos) end end
     for s, e in pairs(OV.ftdb()) do fe("ft", e, s); if type(e) == "table" and type(e.rg) == "table" then fe("ft", e.rg, s) end end   -- m146
-    for form, t in pairs(OV.ffdb()) do if type(t) == "table" then for pos, e in pairs(t) do fe("ff", e, pos, form) end end end
+    for form, t in pairs(OV.ffdb()) do if type(t) == "table" then for pos, e in pairs(t) do
+        fe("ff", e, pos, form); if type(e) == "table" and type(e.rg) == "table" then fe("ff", e.rg, pos, form) end   -- m148
+    end end end
     return out, kept
 end
 -- the feed's `rk`: for each just-learned spell id that IS the top rank now, how many lower copies an A would upgrade (none = left out)
@@ -3716,6 +3741,54 @@ for _, id in ipairs({ 78, 284, 285, 1608, 11564, 11565, 11566, 11567, 25286, 297
                       6807, 6808, 6809, 8972, 9745, 9880, 9881, 26996, 48479, 48480 }) do OV.SR_SWING_IDS[id] = true end
 OV.SR_SWING_NAMES = { ["Heroic Strike"] = true, ["Cleave"] = true, ["Raptor Strike"] = true, ["Maul"] = true }
 OV.SR_POS = { "Left", "Up", "Right", "Down", "X", "Y", "B", "A" }
+-- m148 WHO HAS IT (the user, 2026-11-12: "this option should only appear for classes with next swing pairs"; "for druid this should only
+-- appear for the bear form action bar, and that's even if there is ranged attacks that bear druid can use. maybe taunt?"): by the CLASS
+-- (UnitClass's file token), not by the spells known: Warrior (Heroic Strike, Cleave) and Hunter (Raptor Strike) on every button they
+-- had before (a stance / form set stays refused: "form"); a Druid (Maul) ONLY on the Bear Form fight set (Bear / Dire Bear Form), never
+-- the caster's buttons, X / Y / A or another form. The Range half takes any spell there (Growl, Faerie Fire (Feral), Feral Charge)
+OV.SR_CLASSES = { WARRIOR = "all", HUNTER = "all", DRUID = "bear" }
+OV.SR_BEAR = { [5487] = true, [9634] = true }
+OV.SR_BEAR_NAMES = { ["Bear Form"] = true, ["Dire Bear Form"] = true }
+function OV.srClass()
+    local ok, _, tok = pcall(UnitClass, "player")
+    if ok and type(tok) == "string" and WC.isPlain(tok) then return tok end
+end
+function OV.srBear(form)
+    if type(form) ~= "number" then return false end
+    if OV.SR_BEAR[form] then return true end
+    local nm = TS(function() return C_Spell.GetSpellName(form) end)
+    return type(nm) == "string" and OV.SR_BEAR_NAMES[nm] == true
+end
+-- a place ({ face } / { s } / { form, pos }) may have Smart Range: true; else false and why ("class" / "bear" / "form")
+function OV.srWhere(r)
+    local how = OV.SR_CLASSES[OV.srClass() or ""]
+    if not how then return false, "class" end
+    if type(r) == "table" and r.form then
+        if how == "bear" and OV.srBear(r.form) and r.pos ~= 7 then return true end
+        return false, "form"
+    end
+    if how == "bear" then return false, "bear" end
+    return true
+end
+-- the next-swing attacks among the spells a chooser lists (the Melee half's chooser: the app and PadTabCtl list only these). A
+-- tooltip read that said no is tried again after 30 s (the tooltip may not have loaded yet)
+OV.srSwC, OV.srSwAt = {}, {}
+function OV.srSwingKnown(id)
+    if type(id) ~= "number" then return false end
+    if OV.srSwC[id] == nil or (OV.srSwC[id] == false and GetTime() - (OV.srSwAt[id] or 0) > 30) then
+        OV.srSwC[id] = OV.srSwing(id) and true or false
+        OV.srSwAt[id] = GetTime()
+    end
+    return OV.srSwC[id]
+end
+function OV.srSwingList()
+    local out = {}
+    if type(WC.spellsBindableList) ~= "function" then return out end
+    local ok, list = pcall(WC.spellsBindableList)
+    if not ok or type(list) ~= "table" then return out end
+    for _, e in ipairs(list) do if type(e) == "table" and OV.srSwingKnown(e.id) then out[#out + 1] = e.id end end
+    return out
+end
 OV.SR_SET = { [2] = "ZL", [3] = "ZR", [4] = "ZLR" }
 OV.srOk = {}                            -- our macro's name -> true: made and read back this load (the router may run it)
 function OV.srSwing(id, name)
@@ -3759,18 +3832,51 @@ function OV.srMine()
     return db.srMacros[k]
 end
 -- a button by its place: the base X / Y / A (set 1's 5 / 6 / 8, faceBy) or a slot's fight layer (fightBy); nil + why
-function OV.srAt(page, set, pos)
-    if set == 1 and FACE[pos] then return { face = pos, page = 1, set = 1, pos = pos } end
-    local s, why = target(page, set, pos)
-    if not s then return nil, why end
-    return { s = s, page = page, set = set, pos = pos }
+-- m148: a form's own set ([form] = its spell id; the Druid's Bear Form only, OV.srWhere): { form, pos }; every place the class may not
+-- have refused ("class" / "bear" / "form")
+function OV.srAt(page, set, pos, form)
+    local r
+    if form ~= nil and form ~= 0 then
+        if type(pos) ~= "number" or pos < 1 or pos > 8 or pos == 7 then return nil, "reserved" end
+        if not OV.formOf(form) then return nil, "no form" end
+        r = { form = form, pos = pos, page = 1, set = 1 }
+    elseif set == 1 and FACE[pos] then r = { face = pos, page = 1, set = 1, pos = pos }
+    else
+        local s, why = target(page, set, pos)
+        if not s then return nil, why end
+        r = { s = s, page = page, set = set, pos = pos }
+    end
+    local ok, why = OV.srWhere(r)
+    if not ok then return nil, why end
+    return r
 end
-function OV.srKey(r) return r.face and ("f" .. r.face) or ("s" .. tostring(r.s)) end
-function OV.srGet(r) if r.face then return faceStore()[r.face] end return OV.ftdb()[r.s] end
-function OV.srPutE(r, e) if r.face then faceStore()[r.face] = e else OV.ftdb()[r.s] = e end end
--- the box is checked: the entry says so, or the side map (no spell yet)
+function OV.srKey(r)
+    if r.form then return "F" .. tostring(r.form) .. ":" .. tostring(r.pos) end
+    return r.face and ("f" .. r.face) or ("s" .. tostring(r.s))
+end
+function OV.srGet(r)
+    if r.form then local t = OV.ffdb()[r.form]; return type(t) == "table" and t[r.pos] or nil end
+    if r.face then return faceStore()[r.face] end
+    return OV.ftdb()[r.s]
+end
+function OV.srPutE(r, e)
+    if r.form then
+        local t = OV.ffdb()
+        if e then
+            if type(t[r.form]) ~= "table" then t[r.form] = {} end
+            t[r.form][r.pos] = e
+        elseif type(t[r.form]) == "table" then
+            t[r.form][r.pos] = nil
+            if next(t[r.form]) == nil then t[r.form] = nil end
+        end
+        return
+    end
+    if r.face then faceStore()[r.face] = e else OV.ftdb()[r.s] = e end
+end
+-- the box is checked: the entry says so, or the side map (no spell yet); m148: never where the class may not have it
 function OV.srFlag(r)
-    if type(r) ~= "table" or (not r.face and type(r.s) ~= "number") then return false end
+    if type(r) ~= "table" or (not r.face and not r.form and type(r.s) ~= "number") then return false end
+    if not OV.srWhere(r) then return false end
     local e = OV.srGet(r)
     if type(e) == "table" and e.sr then return true end
     return OV.srdb()[OV.srKey(r)] == 1
@@ -3798,6 +3904,17 @@ function OV.srNameOf(face, page, set, pos)
     end
     if #n > OV.SR_NAME_MAX then return nil end
     return n
+end
+-- m148: a place's name; the Bear Form set's = "DSF Bear " + the button ("DSF Bear Up")
+function OV.srNameR(r)
+    if r.form then
+        local p = OV.SR_POS[r.pos]
+        if not p then return nil end
+        local n = OV.SR_PREFIX .. "Bear " .. p
+        if #n > OV.SR_NAME_MAX then return nil end
+        return n
+    end
+    return OV.srNameOf(r.face, r.page, r.set, r.pos)
 end
 -- the pair's lines: melee FIRST always (a next-swing attack never uses up the press), each at its exact rank; `show` = the saved macro's
 -- (with #showtooltip), else the router's fight text (the stand-in)
@@ -3838,10 +3955,10 @@ function OV.srSync()
     if not OV.srLoaded() then OV.srWait = true return false end         -- m147: the game has not loaded the macros yet
     OV.srQ, OV.srWait = nil, nil
     local want, names = {}, {}
-    local function add(e, face, page, set, pos)
+    local function add(e, r)
         if type(e) ~= "table" then return end
-        if not OV.srPair(e) then e.mn, e.se = nil, nil return end
-        local name = OV.srNameOf(face, page, set, pos)
+        if not OV.srPair(e) or not OV.srWhere(r) then e.mn, e.se = nil, nil return end   -- m148: only where the class has it
+        local name = OV.srNameR(r)
         local body = OV.srText(e, true)
         e.mn, e.se = name, nil
         if not name then e.se = "name" return end
@@ -3850,8 +3967,13 @@ function OV.srSync()
         want[name] = { b = body, e = e }
         names[#names + 1] = name
     end
-    for pos, e in pairs(faceStore()) do if FACE[pos] then add(e, pos) end end
-    for s, e in pairs(OV.ftdb()) do if type(s) == "number" and type(e) == "table" then add(e, nil, e.page, e.set, e.pos) end end
+    for pos, e in pairs(faceStore()) do if FACE[pos] then add(e, { face = pos, page = 1, set = 1, pos = pos }) end end
+    for s, e in pairs(OV.ftdb()) do if type(s) == "number" and type(e) == "table" then add(e, { s = s, page = e.page, set = e.set, pos = e.pos }) end end
+    for fid, t in pairs(OV.ffdb()) do                                   -- m148: the Bear Form set's pairs ("DSF Bear Up")
+        if type(t) == "table" then
+            for pos, e in pairs(t) do if type(pos) == "number" then add(e, { form = fid, pos = pos, page = 1, set = 1 }) end end
+        end
+    end
     table.sort(names)
     local mine = OV.srMine()
     if #names == 0 and next(mine) == nil and OV.srScanned then OV.srOk = {} return false end
@@ -3931,7 +4053,7 @@ end)
 -- a macro is needed for the new entry [n] (a pair whose macro is not there yet): room for it (a free character macro, or a spare of ours)
 function OV.srNeed(r, n, old)
     if not OV.srPair(n) then return 0 end
-    local name = OV.srNameOf(r.face, r.page, r.set, r.pos)
+    local name = OV.srNameR(r)
     local body, ours = nil, nil
     if name then body, ours = OV.srRead(name) end
     if body ~= nil and ours then return 0 end
@@ -3940,7 +4062,7 @@ function OV.srNeed(r, n, old)
 end
 function OV.srRoom(r, n, old, extra)
     if not OV.srPair(n) then return true end
-    local name = OV.srNameOf(r.face, r.page, r.set, r.pos)
+    local name = OV.srNameR(r)
     if not name then return false, "name" end
     local body = OV.srText(n, true)
     if not body or #body > OV.SR_BODY_MAX then return false, "long" end
@@ -3955,23 +4077,23 @@ function OV.srBuild(r, m, g, old)
     if not top then return nil end
     local n = { id = top.id, n = top.n, i = top.i, lo = top.lo, sr = 1, h = m and "m" or "r" }
     if m and g then n.rg = { id = g.id, n = g.n, i = g.i, lo = g.lo } end
-    if not r.face then n.page, n.set, n.pos = r.page, r.set, r.pos end
+    if not r.face and not r.form then n.page, n.set, n.pos = r.page, r.set, r.pos end     -- m148: a form's entry is keyed by its place
     if type(old) == "table" and type(old.mn) == "string" then n.mn = old.mn end       -- the sync renames it when the place changed
     return n
 end
 function OV.srAfter(r)
     pcall(OV.srSync)
     pcall(routerMacros)
-    if r and r.face then pcall(faceSetup) else pcall(routerBind, "fight layer") end
+    if r and r.face then pcall(faceSetup) elseif not (r and r.form) then pcall(routerBind, "fight layer") end
     soon()
 end
 -- the box on / off (want nil = flip). On: a spell already there joins as its half (a next-swing attack = Melee, anything else = Range;
 -- the Range half kept from before comes back beside a melee one). Off: the Melee half stays as the button's one spell, the Range half is
 -- kept (rgOff) for the next time; our macro goes
-function OV.srToggle(page, set, pos, want)
+function OV.srToggle(page, set, pos, want, form)
     if inCombat() then ack("srange", false, "combat") return false, "combat" end
     if not whoKey() then ack("srange", false, "no character") return false, "no character" end
-    local r, why = OV.srAt(page, set, pos)
+    local r, why = OV.srAt(page, set, pos, form)
     if not r then ack("srange", false, why) return false, why end
     local on = OV.srFlag(r)
     if want == nil then want = not on end
@@ -4037,10 +4159,10 @@ function OV.srPutSpell(r, half, id, name, op)
     ack(op, true, nil, r.s)
     return true
 end
-function OV.srPut(page, set, pos, half, bookSlot)
+function OV.srPut(page, set, pos, half, bookSlot, form)
     if inCombat() then ack("srput", false, "combat") return false, "combat" end
     if not whoKey() then ack("srput", false, "no character") return false, "no character" end
-    local r, why = OV.srAt(page, set, pos)
+    local r, why = OV.srAt(page, set, pos, form)
     if not r then ack("srput", false, why) return false, why end
     if not OV.srFlag(r) then ack("srput", false, "off", r.s) return false, "off" end
     local id, name = bookSpell(bookSlot)
@@ -4048,9 +4170,9 @@ function OV.srPut(page, set, pos, half, bookSlot)
     return OV.srPutSpell(r, half, id, name, "srput")
 end
 -- a half off the button (the other half, if any, stays as the one spell; nothing left: the box stays checked)
-function OV.srClear(page, set, pos, half)
+function OV.srClear(page, set, pos, half, form)
     if inCombat() then ack("srclear", false, "combat") return false, "combat" end
-    local r, why = OV.srAt(page, set, pos)
+    local r, why = OV.srAt(page, set, pos, form)
     if not r then ack("srclear", false, why) return false, why end
     local e = OV.srGet(r)
     local m, g = OV.srHalves(e)
@@ -4159,7 +4281,9 @@ WC.padMapFightSpells = function()
     -- m58 (the user on 1.0.10-test2, a druid: "my Wrath ability on my Y button never shows when it's too low mana to cast, like with other
     -- abilities"): a FORM's own In-combat spell (m55, formFightBy) is what Home draws on that button in the form, and it was never listed,
     -- so it had no state by spell id: no mana blue, no range red. Every form's own ones too (by spell, not by slot: the router casts them)
-    for _, t in pairs(OV.ffdb()) do if type(t) == "table" then for _, e in pairs(t) do add(e) end end end
+    for _, t in pairs(OV.ffdb()) do
+        if type(t) == "table" then for _, e in pairs(t) do add(e); if type(e) == "table" and e.sr and type(e.rg) == "table" then add(e.rg) end end end   -- m148
+    end
     return out
 end
 
@@ -4398,10 +4522,14 @@ WC.padMap = {
         if not whoKey() then ack("cform", false, "no character") return false, "no character" end
         local id, name = bookSpell(bookSlot)
         if not name then ack("cform", false, "bad spell") return false, "bad spell" end
+        -- m148 SMART RANGE: the Bear Form set's checked box takes it into its half (a next-swing attack = Melee, else Range)
+        if OV.srFlag({ form = form, pos = pos }) then return OV.srPutSpell({ form = form, pos = pos, page = 1, set = 1 }, nil, id, name, "cform") end
         local r = spellRef(name) or {}
         local t = OV.ffdb()
         if type(t[form]) ~= "table" then t[form] = {} end
-        t[form][pos] = { id = id, n = name, i = r.i or 0, lo = OV.rkMark(id, name, t[form][pos]) }   -- m143 / m144: below the top on purpose = never upgraded
+        local was = t[form][pos]
+        t[form][pos] = { id = id, n = name, i = r.i or 0, lo = OV.rkMark(id, name, t[form][pos]),   -- m143 / m144: below the top on purpose = never upgraded
+                         rgOff = type(was) == "table" and type(was.rgOff) == "table" and was.rgOff or nil }   -- m148
         pcall(routerMacros)
         ack("cform", true)
         soon()
@@ -4411,6 +4539,7 @@ WC.padMap = {
         if inCombat() then ack("uncform", false, "combat") return false, "combat" end
         local t = OV.ffdb()[form]
         if type(t) == "table" then t[pos] = nil; if next(t) == nil then OV.ffdb()[form] = nil end end
+        OV.srdb()["F" .. tostring(form) .. ":" .. tostring(pos)] = nil        -- m148: the Bear set's box goes with it (its macro: the sync)
         pcall(routerMacros)
         ack("uncform", true)
         soon()
@@ -4458,9 +4587,17 @@ WC.padMap = {
     end,
     faceSetup = function() return faceSetup() end,
     -- m146 SMART RANGE (the In combat tab's box, its Melee / Range halves): each out of combat, each answered by a padack
-    srToggle = function(page, set, pos, want) return OV.srToggle(page, set, pos, want) end,
-    srPut = function(page, set, pos, half, bookSlot) return OV.srPut(page, set, pos, half, bookSlot) end,
-    srClear = function(page, set, pos, half) return OV.srClear(page, set, pos, half) end,
+    srToggle = function(page, set, pos, want, form) return OV.srToggle(page, set, pos, want, form) end,
+    srPut = function(page, set, pos, half, bookSlot, form) return OV.srPut(page, set, pos, half, bookSlot, form) end,
+    srClear = function(page, set, pos, half, form) return OV.srClear(page, set, pos, half, form) end,
+    -- m148: may this place have Smart Range (the class; a Druid's Bear Form set only): true, or false and why; a form place's box
+    srWhere = function(set, pos, form)
+        if form ~= nil and form ~= 0 then return OV.srWhere({ form = form, pos = pos }) end
+        if set == 1 and FACE[pos] then return OV.srWhere({ face = pos }) end
+        return OV.srWhere({ s = 0 })
+    end,
+    srFormFlag = function(form, pos) return OV.srFlag({ form = form, pos = pos }) end,
+    srSwingKnown = function(id) return OV.srSwingKnown(id) end,
     srMove = function(fpage, fset, fpos, half, tpage, tset, tpos) return OV.srMove(fpage, fset, fpos, half, tpage, tset, tpos) end,
     srSwing = function(id) return OV.srSwing(id) end,
     srSync = function() return OV.srSync() end,

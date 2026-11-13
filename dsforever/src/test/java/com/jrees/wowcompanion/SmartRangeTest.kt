@@ -51,6 +51,35 @@ class SmartRangeTest {
             HomeFightFace.trigFights(m, fight = true)[HomeFightFace.cmdKey(3, 2)]?.first)
     }
 
+    // m148 (the user, 2026-11-12: "for druid this should only appear for the bear form action bar"): in Bear Form Home's picture of a
+    // Bear pair follows the press; out of the form the caster's button has none
+    private fun druid(on: Boolean, base: String = "") = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m148","m":{"page":1,"pages":3,
+        "sro":{"f":[5487],"sw":[6807]},"forms":[{"x":1,"id":5487,"n":"Bear Form","i":132276,"on":$on}],
+        "ff":[{"f":5487,"p":2,"n":"Maul","id":6807,"i":132136,"sr":1,"h":"m","mn":"DSF Bear Up","rg":{"n":"Growl","id":6795,"i":132270}},
+              {"f":5487,"p":4,"n":"Swipe","id":779,"i":134296}],
+        "sets":[{"set":1,"slots":[$base]}]}}"""))!!
+
+    @Test fun aBearPairsPictureFollowsThePressInBearFormOnly() {
+        val bear = druid(true)
+        assertEquals(setOf(5487), bear.srForms)
+        assertFalse(bear.srCaster)
+        assertEquals(setOf(6807), bear.srSwing)
+        val pairs = HomeFightFace.smartPairs(bear)
+        val p = pairs.getValue(HomeFightFace.cmdKey(1, 2))
+        assertEquals("in melee range: Maul", "Maul", HomeFightFace.smartPick(p, 1).name)
+        assertEquals("out of melee range: Growl", "Growl", HomeFightFace.smartPick(p, 0).name)
+        assertEquals("the D-pad's In-combat picture in Bear Form is the form's own (Maul, swapped by the state)", 132136,
+            HomeFightFace.dpadIcons(bear, fight = true)[2])
+        assertTrue("both halves' state ids are listed", HomeFightFace.ids(bear, fight = true)[2] == 6807)
+        assertTrue("out of Bear Form: no Bear pair", HomeFightFace.smartPairs(druid(false)).isEmpty())
+        // a form's own single entry on a position hides a caster pair there (the router casts the form's)
+        val withBase = druid(true, """{"pos":4,"s":4,"kind":"combat","ov":true,"sr":true,"c":{"n":"Wrath","id":5176,"i":136006,"sr":1,"h":"m",
+            "rg":{"n":"Moonfire","id":8921,"i":136096}}}""")
+        assertNull(HomeFightFace.smartPairs(withBase)[HomeFightFace.cmdKey(1, 4)])
+        assertTrue("a Paladin's document: no Smart Range at all", PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m148","m":{"page":1,
+            "pages":3,"sets":[]}}"""))!!.let { !it.srCaster && it.srForms.isEmpty() })
+    }
+
     @Test fun theBackupKeepsBothHalvesAndRestoresThemInOrder() {
         val m = map()
         val cur = CombatKeep.current(m)

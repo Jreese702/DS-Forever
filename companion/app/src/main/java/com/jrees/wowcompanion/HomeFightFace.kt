@@ -100,6 +100,14 @@ object HomeFightFace {
             val r = PadMapModel.srRange(sl) ?: continue
             out[cmdKey(st.set, sl.pos)] = m to r
         }
+        // m148 (the user, 2026-11-12: "for druid this should only appear for the bear form action bar"): in a form, the bare set's
+        // positions the form has its own entry for are the FORM's (the router casts those): a Bear Form pair there, else no pair
+        for ((pos, ref) in formOwn(map)) {
+            val key = cmdKey(BASE_SET, pos)
+            val m = ref.takeIf { it.sr && it.half != "r" }
+            val r = m?.range
+            if (m != null && r != null) out[key] = m to r else out.remove(key)
+        }
         return out
     }
 

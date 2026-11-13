@@ -32,7 +32,8 @@ class SmartRangePageTest {
     private val w = 1240f
     private val h = 960f
 
-    private fun map(slot: String) = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m146","m":{"page":1,"pages":3,
+    // m148: a Hunter's document (`sro` c = 1: the caster's sets have Smart Range)
+    private fun map(slot: String) = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m146","m":{"page":1,"pages":3,"sro":{"c":1,"sw":[2973]},
         "sets":[{"set":1,"slots":[$slot]}]}}"""))!!
 
     private fun ctl(pos: Int, extra: String = "") = PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p46","c":{"focus":"buttons",
@@ -92,7 +93,7 @@ class SmartRangePageTest {
     }
 
     @Test fun pickingAHalfThenBindAndMove() {
-        val m = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m146","m":{"page":1,"pages":3,"sets":[{"set":1,"slots":[]},
+        val m = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m146","m":{"page":1,"pages":3,"sro":{"c":1},"sets":[{"set":1,"slots":[]},
             {"set":3,"slots":[$zrPair]}]}}"""))!!
         val c = PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p46","c":{"focus":"buttons","set":3,"shown":3,"pos":2,"page":1,
             "view":"combat","lay":"swap"}}"""))!!
@@ -127,7 +128,7 @@ class SmartRangePageTest {
     // ---------------------------------------------------------------- m147 / p47 (review; the user, 2026-11-12: "okay so I was
     // skeptical and so I tried it with a different melee skill, wing clip and it did not work")
 
-    private fun zrMap() = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m147","m":{"page":1,"pages":3,"sets":[{"set":1,"slots":[]},
+    private fun zrMap() = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m147","m":{"page":1,"pages":3,"sro":{"c":1},"sets":[{"set":1,"slots":[]},
         {"set":3,"slots":[$zrPair]}]}}"""))!!
     private fun zrCtl(extra: String = "") = PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p47","c":{"focus":"buttons","set":3,
         "shown":3,"pos":2,"page":1,"view":"combat","lay":"swap"$extra}}"""))!!
@@ -171,6 +172,87 @@ class SmartRangePageTest {
         assertTrue("the 'no key on Y' prose under the In combat row (y 556-612): $diff pixels differ", diff > 200)
     }
 
+    // ---------------------------------------------------------------- m148 / p48 WHO HAS IT (the user, 2026-11-12: "this option should
+    // only appear for classes with next swing pairs- and it should only list the abilities that can work with it in the melee options";
+    // "for druid this should only appear for the bear form action bar, and that's even if there is ranged attacks that bear druid can use.
+    // maybe taunt?")
+
+    private fun noSro(slot: String) = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m148","m":{"page":1,"pages":3,
+        "sets":[{"set":1,"slots":[$slot]}]}}"""))!!
+
+    @Test fun aClassWithoutNextSwingAttacksHasNoPlate() {
+        // a Paladin's document: no `sro` (an old side-map `sr` ignored by the page too)
+        val r = Rig(noSro("""{"pos":6,"kind":"fixed","n":"Inspect","sr":true,"cf":{"n":"Crusader Strike","id":35395,"i":135891}}"""), ctl(6))
+        r.tap(plate.first, plate.second)
+        r.tap(melee.first, melee.second)
+        assertTrue("no plate, no Melee / Range: nothing sent", r.cells.isEmpty())
+        r.tap(bind.first, bind.second)
+        assertTrue("A is the plain Change combat spell (the app's chooser)", r.page.chooserOpen())
+        assertEquals("the chooser lists every spell (no half)", listOf(6807, 6795), r.page.chooserSpellIds(book()))
+    }
+
+    private val druidForms = """"forms":[{"x":1,"id":5487,"n":"Bear Form","i":132276},{"x":2,"id":768,"n":"Cat Form","i":132115}]"""
+    private val bearUp = """{"f":5487,"p":2,"n":"Maul","id":6807,"i":132136,"sr":1,"h":"m","mn":"DSF Bear Up",
+        "rg":{"n":"Growl","id":6795,"i":132270}}"""
+    private fun druidMap(ff: String = bearUp, ffsr: String = "") = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m148","m":{"page":1,
+        "pages":3,"sro":{"f":[5487],"sw":[6807]},$druidForms,"ff":[$ff]$ffsr,
+        "sets":[{"set":1,"slots":[{"pos":2,"s":2,"kind":"none"},$yOff]}]}}"""))!!
+    private fun druidCtl(form: Int?, pos: Int) = PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p48","c":{"focus":"buttons",
+        "set":1,"shown":1,"pos":$pos,"page":1,"view":"combat","lay":"swap"${form?.let { ""","form":$it""" } ?: ""}}}"""))!!
+    private fun book() = SpellsModel.parse(JSONObject("""{"type":"spells","v":"s9","s":{"lines":[{"k":1,"n":"General"},{"k":2,"n":"Feral"}],
+        "items":[{"n":"Maul","t":1,"id":6807,"a":6807,"sl":1,"ln":2},{"n":"Growl","t":1,"id":6795,"a":6795,"sl":2,"ln":2}]}}"""))
+
+    @Test fun aDruidsCasterButtonsAndCatFormHaveNoPlate() {
+        for ((form, pos) in listOf(null to 6, null to 2, 768 to 2)) {
+            val r = Rig(druidMap(), druidCtl(form, pos))
+            r.tap(plate.first, plate.second)
+            assertTrue("form $form pos $pos: no plate", r.cells.isEmpty())
+        }
+    }
+
+    @Test fun theBearFormSetHasThePlateAndItsHalves() {
+        val m = druidMap()
+        val r = Rig(m, druidCtl(5487, 2))
+        r.tap(plate.first, plate.second)
+        assertEquals("Bear's Up: the plate flips its box", listOf(PadMapModel.srCells(PadMapModel.SR_BOX)), r.cells)
+        r.cells.clear()
+        r.tap(melee.first, melee.second)
+        assertEquals("Melee: the pick", listOf(PadMapModel.srCells(PadMapModel.SR_MELEE)), r.cells)
+        r.cells.clear()
+        r.tap(move.first, move.second)
+        assertTrue("no Move of a Bear half (as the base X / Y / A)", r.cells.isEmpty())
+        r.tap(bind.first, bind.second)
+        assertTrue("Bind on Melee: the chooser", r.page.chooserOpen())
+        assertEquals("the Melee chooser: its own Maul left out, Growl never (not a next-swing attack)", emptyList<Int>(), r.page.chooserSpellIds(book()))
+        val r2 = Rig(druidMap(ff = """{"f":5487,"p":2,"n":"Growl","id":6795,"i":132270,"sr":1,"h":"r"}"""), druidCtl(5487, 2))
+        r2.tap(melee.first, melee.second)
+        r2.tap(bind.first, bind.second)
+        assertEquals("an empty Melee half: the chooser lists only Maul (the add-on's sw)", listOf(6807), r2.page.chooserSpellIds(book()))
+        // the form entry's halves come from the add-on's ff
+        val ff = PadMapModel.formFight(m, 5487, 2)!!
+        assertEquals("DSF Bear Up", ff.macro)
+        assertEquals("Growl", ff.range?.name)
+    }
+
+    @Test fun theRangeChooserListsAnything() {
+        val r = Rig(druidMap(), druidCtl(5487, 2))
+        r.tap(range.first, range.second)
+        r.tap(bind.first, bind.second)
+        assertEquals("the Range half's chooser: every spell but its own (Growl)", listOf(6807), r.page.chooserSpellIds(book()))
+        val r2 = Rig(druidMap(ff = """{"f":5487,"p":2,"n":"Maul","id":6807,"i":132136,"sr":1,"h":"m"}"""), druidCtl(5487, 2))
+        r2.tap(range.first, range.second)
+        r2.tap(bind.first, bind.second)
+        assertEquals("an empty Range half: Maul and Growl", listOf(6807, 6795), r2.page.chooserSpellIds(book()))
+    }
+
+    @Test fun aBearBoxWithNoSpellYetIsChecked() {
+        val m = druidMap(ff = """{"f":768,"p":5,"n":"Claw","id":1082,"i":132140}""", ffsr = ""","ffsr":[{"f":5487,"p":2}]""")
+        assertTrue((5487 to 2) in m.srFormBoxes)
+        val r = Rig(m, druidCtl(5487, 2))
+        r.tap(melee.first, melee.second)
+        assertEquals("the box checked (ffsr): Melee / Range are there", listOf(PadMapModel.srCells(PadMapModel.SR_MELEE)), r.cells)
+    }
+
     @Test fun shots() {
         val out = System.getenv("SR_SHOTS_DIR")?.let { File(it) } ?: return
         val docs = File(out, "docs")
@@ -178,7 +260,7 @@ class SmartRangePageTest {
         System.getenv("CTL_ART_ROOT")?.let { root ->
             val f = ArtHarvest::class.java.getDeclaredField("rootDir"); f.isAccessible = true; f.set(null, File(root))
         }
-        for (name in listOf("off", "on_none", "on_both")) {
+        for (name in listOf("off", "on_none", "on_both", "bear", "bear_melee", "paladin")) {      // m148: a Druid's Bear Form set, a Paladin
             val mf = File(docs, "sr_${name}_map.json"); val cf = File(docs, "sr_${name}_ctl.json")
             if (!mf.isFile || !cf.isFile) continue
             val v = ControllerView(RuntimeEnvironment.getApplication(), { true })

@@ -305,8 +305,8 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl", "book"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m147"' in SRC["padmap"] and 'local CV = "p47"' in SRC["padtabctl"] and 'local BV = "b52"' in SRC["book"],
-      "the versions: PadMap m146, PadTabCtl p46, Book b52")
+check('local PV = "m148"' in SRC["padmap"] and 'local CV = "p48"' in SRC["padtabctl"] and 'local BV = "b52"' in SRC["book"],
+      "the versions: PadMap m148, PadTabCtl p48, Book b52")
 check(all('this should be per button/ button modifier combo' in SRC[k] for k in ("padmap", "padtabctl", "book")),
       "each changed file's header note quotes the user")
 PRE = re.search(r'local PRE = \[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
@@ -521,13 +521,16 @@ Y.execute('pp("PAD1")')
 c = ctl(Y)
 check(c.get('srh') == 'm' and c.get('chooser', {}).get('list') == 'spells' and c.get('srp') is None,
       "l. A on Melee: the chooser for the Melee half (srh m)", c)
-for _ in range(12):
-    if ctl(Y)['chooser']['id'] == 2974:
+# m148 / p48 (the user: "it should only list the abilities that can work with it in the melee options"): the Melee chooser's rows
+seen = []
+for _ in range(16):
+    i = ctl(Y)['chooser']['id']
+    if i in seen:
         break
+    seen.append(i)
     Y.execute('pp("PADDDOWN")')
-Y.execute('pp("PAD1")')
-check(ctl(Y).get('note') == 'sr-swing' and Y.eval('FACEE(6)') is None, "l. Wing Clip chosen for Melee: the note 'sr-swing', nothing put", ctl(Y).get('note'))
-Y.execute('pp("PAD1"); pp("PAD1")')
+check(set(seen) == {2973, 90001, 90004} and 2974 not in seen and 3044 not in seen,
+      "l. p48: the Melee chooser lists ONLY the next-swing attacks known (Raptor Strike, the tooltip 'Next melee' ones): no Wing Clip", seen)
 for _ in range(12):
     if ctl(Y)['chooser']['id'] == 2973:
         break
@@ -581,9 +584,8 @@ clean(Y, "l")
 
 # ================================================================ m. PadMap m147 / PadTabCtl p47: the review of m146 / p46
 # (the user, 2026-11-12: "okay so I was skeptical and so I tried it with a different melee skill, wing clip and it did not work")
-check('local PV = "m147"' in SRC["padmap"] and 'local CV = "p47"' in SRC["padtabctl"]
-      and all('I tried it with a different melee skill, wing clip and it did not work' in SRC[k] for k in ("padmap", "padtabctl")),
-      "m. the versions: PadMap m147, PadTabCtl p47, each with the user's words")
+check(all('I tried it with a different melee skill, wing clip and it did not work' in SRC[k] for k in ("padmap", "padtabctl")),
+      "m. the m147 / p47 notes keep the user's words")
 # m1. a login before the game has loaded the macros: nothing made; the macros arrive: ONE macro (ours read back, never a second copy)
 SER = r"""
 function ser(v)
@@ -669,6 +671,194 @@ e5 = tbl(Z.eval('FT(%d)' % S5))
 check(not ctl(Z).get('box') and e5.get('n') == 'Raptor Strike' and e5.get('rg') is None and Z.eval('body("DSF ZR+Up")') is None,
       "m5. Clear on the Range half: no box; Arcane Shot off, Raptor Strike stays, the pair's macro gone", (ctl(Z).get('box'), e5))
 clean(Z, "m5")
+
+# ================================================================ n. PadMap m148 / PadTabCtl p48: WHO HAS IT (the user, 2026-11-12: "this
+# option should only appear for classes with next swing pairs- and it should only list the abilities that can work with it in the melee
+# options"; "for druid this should only appear for the bear form action bar, and that's even if there is ranged attacks that bear druid
+# can use. maybe taunt?")
+check(all("this option should only appear for classes with next swing pairs" in SRC[k] and "for druid this should only appear for the bear form action bar" in SRC[k]
+          for k in ("padmap", "padtabctl")), "n. the m148 / p48 notes quote the user")
+
+
+def chooser_ids(L):
+    seen = []
+    for _ in range(24):
+        i = ctl(L)['chooser']['id']
+        if i in seen:
+            break
+        seen.append(i)
+        L.execute('pp("PADDDOWN")')
+    return seen
+
+
+def sro(L):
+    L.execute('WowCompanion.padMap.emit(true)')
+    return docs(L, 'padmap')[-1]['m'].get('sro')
+
+
+# n1. a class with no next-swing attack: no box anywhere, every Smart Range call refused, the room's Y / touch say so
+STALE = 'WowCompanionSpellsDB = { srBy = { ["Korvash-Realm"] = { s26 = 1, f6 = 1 } } }'
+for cls in ("PALADIN", "ROGUE", "MAGE", "SHAMAN", "PRIEST", "WARLOCK"):
+    C = boot(pre='CLASS = "%s"; ' % cls + STALE)
+    check(sro(C) is None and slot_doc(C, 3, 2).get('sr') is None and slot_doc(C, 1, 6).get('sr') is None,
+          "n1. %s: no `sro` in the doc, no box on ZR + Up or the base Y (an old side-map box ignored)" % cls, sro(C))
+    a0 = int(C.eval('#SENT'))
+    r1 = C.eval('PM.srToggle(1, 3, 2, true)')
+    r2 = C.eval('PM.srPut(1, 3, 2, "m", bs(2973))')
+    r3 = C.eval('PM.srClear(1, 3, 2, "m")')
+    r4 = C.eval('PM.srToggle(1, 1, 6, true)')
+    whys = [d.get('why') for d in acks(C, a0)]
+    check(r1[0] is False and r1[1] == 'class' and r2[0] is False and r3[0] is False and r4[0] is False and whys == ['class'] * 4,
+          "n1. %s: srToggle / srPut / srClear refused 'class'" % cls, whys)
+    C.execute('PT.enter("buttons"); pp("PADRSHOULDER"); PT.touchSet(3); PT.touchPos(2); pp("PAD4")')
+    n1 = ctl(C).get('note')
+    C.execute('padtab(39); padtab(0)')
+    n2 = ctl(C).get('note')
+    C.execute('padtab(39); padtab(1)')
+    check(n1 == 'sr-class' and n2 == 'sr-class' and ctl(C).get('note') == 'sr-class' and ctl(C).get('srh') is None
+          and slot_doc(C, 3, 2).get('sr') is None, "n1. %s: Y / touch (padtab 39 + code) in the room: 'sr-class', nothing changed" % cls, (n1, n2))
+    C.execute('pp("PAD1")')
+    check(ctl(C).get('srp') is None and ctl(C).get('chooser', {}).get('list') == 'spells',
+          "n1. %s: A on the button is the plain chooser (no Melee / Range picker)" % cls, ctl(C))
+    C.execute('pp("PAD2"); PM.putCombat(1, 3, 2, bs(2973))')
+    e = tbl(C.eval('FT(%d)' % S))
+    check(e.get('n') == 'Raptor Strike' and e.get('sr') is None and C.eval('HDR("wc-ftm-%d")' % S) is None and C.eval('nmac()') == 0
+          and 'sr' not in slot_doc(C, 3, 2).get('c', {}), "n1. %s: a combat spell is the plain assigned spell (no half, no macro)" % cls, e)
+    clean(C, "n1 " + cls)
+    if cls == "PALADIN":
+        C.execute('PT.touchPos(2)')
+        dump(C, "paladin")
+
+# n2. Warrior / Hunter: the box on their buttons; a Warrior's stance set stays refused ("form"); the Melee chooser lists Heroic Strike / Cleave
+WARRIOR = r'''
+CLASS = "WARRIOR"
+SPELLNAME[78] = "Heroic Strike"; SPELLNAME[845] = "Cleave"; SPELLNAME[100] = "Charge"; SPELLNAME[772] = "Rend"; SPELLNAME[2457] = "Battle Stance"
+SUB[78] = "Rank 1"; SUB[845] = "Rank 1"; SUB[100] = "Rank 1"; SUB[772] = "Rank 1"
+BOOK = { 78, 845, 100, 772 }
+GetNumShapeshiftForms = function() return 1 end
+GetShapeshiftFormInfo = function(x) if x == 1 then return 132349, false, true, 2457 end end
+'''
+Wr = boot(pre=WARRIOR)
+check((sro(Wr) or {}).get('c') == 1 and sorted((sro(Wr) or {}).get('sw') or []) == [78, 845] and not (sro(Wr) or {}).get('f'),
+      "n2. Warrior: `sro` c = 1 (its buttons), sw = Heroic Strike + Cleave, no form set", sro(Wr))
+Wr.execute('PT.enter("buttons"); pp("PADRSHOULDER"); PT.touchSet(3); PT.touchPos(2); pp("PAD4")')
+check(ctl(Wr).get('note') == 'sr-toggled' and slot_doc(Wr, 3, 2).get('sr') is True, "n2. Warrior: Y on ZR + Up checks the box", ctl(Wr).get('note'))
+Wr.execute('pp("PAD1"); pp("PAD1")')
+ids = chooser_ids(Wr)
+check(ids == [78, 845], "n2. Warrior: the Melee chooser = Heroic Strike, Cleave (no Charge / Rend)", ids)
+Wr.execute('pp("PAD2"); PT.touchSet(1); PT.touchForm(1); PT.touchPos(2); pp("PAD4")')
+check(ctl(Wr).get('note') == 'sr-form' and Wr.eval('PM.srToggle(1, 1, 2, true, 2457)')[1] == 'form',
+      "n2. Warrior: Battle Stance's own set stays refused ('form': the current build's stance rule)", ctl(Wr).get('note'))
+clean(Wr, "n2")
+H = boot()
+check((sro(H) or {}).get('c') == 1 and set((sro(H) or {}).get('sw') or []) == {2973, 90001, 90004},
+      "n2. Hunter: `sro` c = 1, sw = Raptor Strike + the tooltip 'Next melee' ones (never Wing Clip)", sro(H))
+
+# n3. a Druid: never the caster's buttons / X / Y / A / Cat Form; the Bear Form set only (Maul + Growl), its own saved macro and press
+DRUID = r'''
+CLASS = "DRUID"
+SPELLNAME[5487] = "Bear Form"; SPELLNAME[768] = "Cat Form"; SPELLNAME[6807] = "Maul"; SPELLNAME[6795] = "Growl"; SPELLNAME[5176] = "Wrath"
+SPELLNAME[16857] = "Faerie Fire (Feral)"
+SUB[6807] = "Rank 1"; SUB[6795] = "Rank 1"; SUB[5176] = "Rank 1"; SUB[16857] = "Rank 1"
+BOOK = { 6807, 6795, 5176, 16857, 5487, 768 }
+FORMNOW = 0
+GetNumShapeshiftForms = function() return 2 end
+GetShapeshiftFormInfo = function(x)
+    if x == 1 then return 132276, FORMNOW == 1, true, 5487 end
+    if x == 2 then return 132115, FORMNOW == 2, true, 768 end
+end
+local scop = SecureCmdOptionParse
+function SecureCmdOptionParse(s)
+    local n, rest = s:gsub("^%s+", ""):match("^%[form:(%d+)%]%s*(.*)$")
+    if n then if tonumber(n) == FORMNOW then return rest end return nil end
+    return scop(s)
+end
+function FFE(form, pos) local t = ((WowCompanionSpellsDB.formFightBy or {})[WHOK()] or {})[form]; return t and t[pos] end
+'''
+D = boot(pre=DRUID)
+so = sro(D) or {}
+check(so.get('c') is None and so.get('f') == [5487] and so.get('sw') == [6807],
+      "n3. Druid: `sro` f = Bear Form only (no caster sets), sw = Maul", so)
+D.execute('PT.enter("buttons"); pp("PADRSHOULDER"); PT.touchSet(3); PT.touchPos(2); pp("PAD4")')
+n1 = ctl(D).get('note')
+D.execute('PT.touchSet(1); PT.touchPos(6); pp("PAD4")')
+n2 = ctl(D).get('note')
+D.execute('PT.touchPos(2); pp("PAD4")')
+check(n1 == 'sr-bear' and n2 == 'sr-bear' and ctl(D).get('note') == 'sr-bear' and slot_doc(D, 3, 2).get('sr') is None
+      and slot_doc(D, 1, 6).get('sr') is None, "n3. Druid caster buttons (ZR + Up, base Y, bare Up): no box, 'sr-bear'", (n1, n2))
+check(D.eval('PM.srToggle(1, 3, 2, true)')[1] == 'bear' and D.eval('PM.srToggle(1, 1, 6, true)')[1] == 'bear',
+      "n3. Druid: the add-on refuses the caster's places too ('bear')")
+D.execute('PT.touchForm(2); PT.touchPos(2); pp("PAD4")')
+check(ctl(D).get('note') == 'sr-form' and D.eval('PM.srToggle(1, 1, 2, true, 768)')[1] == 'form', "n3. Druid: Cat Form's set refused ('form')",
+      ctl(D).get('note'))
+D.execute('PT.touchForm(1); PT.touchPos(2)')
+a0 = int(D.eval('#SENT'))
+D.execute('pp("PAD4")')
+D.execute('WowCompanion.padMap.emit(true)')
+m = docs(D, 'padmap')[-1]['m']
+check(ctl(D).get('note') == 'sr-toggled' and {'f': 5487, 'p': 2} in (m.get('ffsr') or []) and D.eval('WowCompanionSpellsDB.srBy[WHOK()]["F5487:2"]') == 1,
+      "n3. Bear Form's Up: Y checks its box (the doc's ffsr, the side map 'F5487:2')", (ctl(D).get('note'), m.get('ffsr')))
+check(len(acks(D, a0, 'srange')) == 1 and acks(D, a0, 'srange')[0]['ok'] is True, "n3. one padack srange ok")
+D.execute('pp("PAD1")')
+check(ctl(D).get('srp') == 1, "n3. A on Bear's Up: the Melee / Range picker", ctl(D))
+D.execute('pp("PAD1")')
+ids = chooser_ids(D)
+check(ctl(D).get('srh') == 'm' and ids == [6807], "n3. the Melee chooser lists ONLY Maul (no Growl / Wrath / Faerie Fire)", ids)
+D.execute('pp("PAD1")')
+e = tbl(D.eval('FFE(5487, 2)'))
+check(e.get('n') == 'Maul' and e.get('sr') == 1 and e.get('h') == 'm' and 'page' not in e and D.eval('nmac()') == 0,
+      "n3. Maul in Bear Up's Melee half (the form's own entry, no macro yet)", e)
+dump(D, "bear_melee", lambda c: c.pop('srh', None))
+D.execute('pp("PAD1"); pp("PADDRIGHT"); pp("PAD1")')
+ids = chooser_ids(D)
+check(ctl(D).get('srh') == 'r' and set(ids) >= {6795, 5176, 16857} and 6807 in ids,
+      "n3. the Range chooser lists anything (Growl, Wrath, Faerie Fire (Feral), Maul)", ids)
+for _ in range(24):
+    if ctl(D)['chooser']['id'] == 6795:
+        break
+    D.execute('pp("PADDUP")')
+D.execute('pp("PAD1")')
+BB = "#showtooltip\n/run DSF_SR0()\n/cast Maul(Rank 1)\n/cast Growl(Rank 1)\n/run DSF_SR1()"
+check(D.eval('body("DSF Bear Up")') == BB and mlog(D) == ["create DSF Bear Up"], "n3. Growl in the Range half: ONE macro 'DSF Bear Up', Maul first",
+      (D.eval('body("DSF Bear Up")'), mlog(D)))
+check(D.eval('HDR("wc-ffm-1-2")') == "DSF Bear Up" and D.eval('HDR("wc-ff-1-2")') == BB[len("#showtooltip\n"):],
+      "n3. the router: wc-ffm-<form>-<pos> = our macro, wc-ff = its lines (the stand-in)", (D.eval('HDR("wc-ffm-1-2")'), D.eval('HDR("wc-ff-1-2")')))
+D.execute('WowCompanion.padMap.emit(true)')
+ff = [x for x in (docs(D, 'padmap')[-1]['m'].get('ff') or []) if x['f'] == 5487 and x['p'] == 2]
+check(ff and ff[0].get('sr') == 1 and ff[0].get('h') == 'm' and ff[0].get('rg', {}).get('n') == 'Growl' and ff[0].get('mn') == 'DSF Bear Up',
+      "n3. the doc's ff entry carries the halves (sr, h, rg) and the macro", ff)
+fs = set(D.eval('WowCompanion.padMapFightSpells()').values())
+check({6807, 6795} <= fs, "n3. the state list has both halves (Home's picture follows the press)", fs)
+dump(D, "bear")
+# the press: in Bear Form a bare Up runs our saved macro; in caster form it does not
+D.execute('FORMNOW = 1; driveAll(); fightOn()')
+r0 = int(D.eval('#RAN'))
+D.execute('hit(2)')
+got = ran(D, r0)
+check(D.eval('router(2).a["wc-kind"]') == "slotfight" and D.eval('router(2).a["macro"]') == "DSF Bear Up" and got[:2] == ["runmacro:DSF Bear Up", "m:/run DSF_SR0()"]
+      and got[2:4] == ["m:/cast Maul(Rank 1)", "m:/cast Growl(Rank 1)"], "n3. in Bear Form, in a fight, Up runs 'DSF Bear Up' (Maul then Growl)", got)
+D.execute('FORMNOW = 0; driveAll()')
+r0 = int(D.eval('#RAN'))
+D.execute('hit(2)')
+check(D.eval('router(2).a["macro"]') is None and "runmacro:DSF Bear Up" not in ran(D, r0), "n3. caster form: Up never runs the Bear macro", ran(D, r0))
+D.execute('fightOff()')
+# no Move of a Bear half; a spell put while the box is on goes into its half (putCombatForm)
+D.execute('PT.touchPos(2); padtab(39); padtab(2); pp("PAD3")')
+check(ctl(D).get('note') == 'locked' and not ctl(D).get('carry'), "n3. X on a Bear half: no Move (as the base X / Y / A)", ctl(D).get('note'))
+ok = D.eval('(PM.srToggle(1, 1, 5, true, 5487))')
+ok2 = D.eval('(PM.putCombatForm(5487, 5, bs(6807)))')
+e5 = tbl(D.eval('FFE(5487, 5)'))
+check(ok is True and ok2 is True and e5.get('sr') == 1 and e5.get('h') == 'm' and e5.get('n') == 'Maul',
+      "n3. Bear's X box on, then the Spellbook / chooser's put: Maul goes into its Melee half", e5)
+a0 = int(D.eval('#SENT'))
+D.eval('PM.srPut(1, 1, 5, "m", bs(6795), 5487)')
+check(acks(D, a0, 'srput')[-1].get('why') == 'swing' and tbl(D.eval('FFE(5487, 5)')).get('n') == 'Maul',
+      "n3. Growl into the Melee half: refused 'swing' (the backstop)", acks(D, a0, 'srput'))
+# clear: the whole entry (its box and macro go)
+D.execute('PM.clearCombatForm(5487, 2)')
+check(D.eval('FFE(5487, 2)') is None and D.eval('body("DSF Bear Up")') is None and D.eval('WowCompanionSpellsDB.srBy[WHOK()]["F5487:2"]') is None
+      and D.eval('HDR("wc-ffm-1-2")') is None, "n3. Clear combat spell on Bear's Up: the pair, its box and 'DSF Bear Up' gone", mlog(D)[-1:])
+clean(D, "n3")
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

@@ -139,6 +139,15 @@ object PadMapModel {
         val qitem: Ref? = null,
         /** m62 Smart buffs: the rows, the self-buffs offered, the cell row (Settings' Smart Y section); null = an add-on before m62 */
         val smartBuffs: SmartYModel.Doc? = null,
+        /** m148 SMART RANGE, WHO HAS IT (the user, 2026-11-12: "this option should only appear for classes with next swing pairs"; "for
+         *  druid this should only appear for the bear form action bar"): the add-on's `sro` - [srCaster] the caster's sets (a Warrior /
+         *  Hunter), [srForms] the forms whose own set has it (a Druid's Bear Form), [srSwing] the next-swing attacks the character knows
+         *  (the Melee half's chooser lists only these); [srFormBoxes] (form, pos) places whose box is checked with no spell yet. No `sro`
+         *  (any other class): Smart Range does not exist on the page */
+        val srCaster: Boolean = false,
+        val srForms: Set<Int> = emptySet(),
+        val srSwing: Set<Int> = emptySet(),
+        val srFormBoxes: Set<Pair<Int, Int>> = emptySet(),
     ) {
         /** m55: the form the character is in now (null: none / caster) */
         val activeForm: Form? get() = forms.firstOrNull { it.on }
@@ -224,10 +233,18 @@ object PadMapModel {
             fish = m.optJSONObject("fish")?.let { o -> textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0)) } },
             formFights = objects(m.optJSONArray("ff")).mapNotNull { o ->
                 val f = o.optInt("f", 0); val p = o.optInt("p", 0)
-                // PadMap m141 (PadTabCtl p43): a form's fight-layer command / item / mount carries `t` / `key` (no id)
-                val r = textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0), layer = textOrNull(o, "t"), key = textOrNull(o, "key")) }
+                // PadMap m141 (PadTabCtl p43): a form's fight-layer command / item / mount carries `t` / `key` (no id); m148: a Bear Form
+                // set's Smart Range halves (sr / h / rg / mn / se), the same fields as a button's `c`
+                val r = ref(o)
                 if (f > 0 && p in 1..8 && r != null) FormFight(f, p, r) else null
             },
+            srCaster = m.optJSONObject("sro")?.optInt("c", 0) == 1,
+            srForms = m.optJSONObject("sro")?.optJSONArray("f")?.let { a -> (0 until a.length()).map { a.optInt(it, 0) }.filter { it > 0 }.toSet() } ?: emptySet(),
+            srSwing = m.optJSONObject("sro")?.optJSONArray("sw")?.let { a -> (0 until a.length()).map { a.optInt(it, 0) }.filter { it > 0 }.toSet() } ?: emptySet(),
+            srFormBoxes = objects(m.optJSONArray("ffsr")).mapNotNull { o ->
+                val f = o.optInt("f", 0); val p = o.optInt("p", 0)
+                if (f > 0 && p in 1..8) f to p else null
+            }.toSet(),
             faceKeys = m.optJSONObject("face")?.optJSONObject("keys")?.let { k ->
                 FACES.mapNotNull { p -> k.optString(p.toString(), "").takeIf { it.isNotEmpty() }?.let { p to it } }.toMap()
             } ?: emptyMap(),
