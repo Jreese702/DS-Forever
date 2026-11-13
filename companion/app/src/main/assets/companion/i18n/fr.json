@@ -1,5 +1,11 @@
 {
 "plain": {
+"Clear this slot": "Vider cet emplacement",
+"Clear this slot?": "Vider cet emplacement ?",
+"Game keys only on buttons": "Touches du jeu : sur les boutons seulement",
+"Mount": "Monture",
+"Command": "Commande",
+"Spells, items, mounts and commands": "Sorts, objets, montures et commandes",
 "Eight spells in one bar under both;": "Huit sorts sur une barre sous les deux ;",
 "swipe left for more.": "balayez vers la gauche pour en voir plus.",
 "Try the new tap-to-cast bar?": "Essayer la nouvelle barre à toucher ?",
@@ -1741,6 +1747,7 @@
 "Bags full": "Sacs pleins"
 },
 "templates": {
+"Cast bar slot %s": "Emplacement %s de la barre",
 "Always %s": "Toujours %s",
 "%s: upgrade on your buttons?": "%s : améliorer sur vos boutons ?",
 "Upgraded on %s buttons": "Amélioré sur %s boutons",

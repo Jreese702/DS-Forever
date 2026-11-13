@@ -538,7 +538,7 @@ object PadMapModel {
             box = bx?.let { b -> textOrNull(b, "kind")?.let { Box(it, textOrNull(b, "what"), textOrNull(b, "thing")) } },
             swap = c.optString("lay", "swap") != "plain",
             note = textOrNull(c, "note"),
-            view = when (c.optString("view", "normal")) { "combat" -> "combat"; "ds" -> "ds"; "radial" -> "radial"; "party" -> "party"; else -> "normal" },
+            view = when (c.optString("view", "normal")) { "combat" -> "combat"; "ds" -> "ds"; "radial" -> "radial"; "party" -> "party"; "castbar" -> "castbar"; else -> "normal" },
             tcur = c.optInt("tcur", 1).coerceIn(1, TABS.size),
             sw = c.optInt("sw", 1).coerceAtLeast(1),
             scur = c.optInt("scur", 2).coerceIn(2, 4),
@@ -569,7 +569,7 @@ object PadMapModel {
     /** A note the addon writes for a TOUCH pick or action (the app's own): the app's open chooser or box stays. Any other note is the
      *  controller's, and the controller wins. */
     fun touchNote(note: String?): Boolean = note == null || note.startsWith("touch-") || note in setOf(
-        "layout", "enter", "leave", "put", "cleared", "spell-not-in-book", "stays-back", "fixed")
+        "layout", "enter", "leave", "put", "cleared", "spell-not-in-book", "stays-back", "fixed", "cb-tab")      // p53: the bar setting
 
     /**
      * Where button [pos] (1-8) is DRAWN in its diamond: 0 left, 1 up, 2 right, 3 down. The D-pad's 1-4 are left / up / right / down; the face
@@ -654,9 +654,9 @@ object PadMapModel {
     const val ROW_EXTRA = "extra"
     fun extraCells(index: Int): List<Pair<String, Int>> = listOf(ROW_PADTAB to 6 + (index / 40).coerceIn(0, 2), ROW_EXTRA to index % 40)
     /** the tab's index (1-4) by its name */
-    fun tabOf(view: String) = when (view) { "ds" -> 2; "combat" -> 3; "radial" -> 4; "party" -> 5; else -> 1 }
-    /** the room's tabs in order (PadTabCtl's TABS; p33: the 5th, Party mode) */
-    val TABS = listOf("normal", "ds", "combat", "radial", "party")
+    fun tabOf(view: String) = when (view) { "ds" -> 2; "combat" -> 3; "radial" -> 4; "party" -> 5; "castbar" -> 6; else -> 1 }
+    /** the room's tabs in order (PadTabCtl's TABS; p33: the 5th, Party mode; p53: the 6th, the Cast bar, opened by padtab 39 then 29) */
+    val TABS = listOf("normal", "ds", "combat", "radial", "party", "castbar")
 
     /** The cells that put command [index] (1-based, the list's order): a pick first for 12 and up, then the ONE action */
     fun commandCells(index: Int): List<Pair<String, Int>> =

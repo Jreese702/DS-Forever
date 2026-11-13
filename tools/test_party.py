@@ -1196,7 +1196,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m", "res", "pd"}     # m150: Smart Res armed, a Hunter's dead pet
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "lv", "rng", "ic"}   # m129: plain facts only (no hp / full / hs / g / hit counts); m134: the pet's ic
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm158' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm159' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1422,7 +1422,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p52"' in SRC["padtabctl"] and 'local BV = "b59"' in SRC["book"] and 'local PV = "m158"' in SRC["padmap"],
+check('local CV = "p53"' in SRC["padtabctl"] and 'local BV = "b60"' in SRC["book"] and 'local PV = "m159"' in SRC["padmap"],
       "the versions: PadMap m146, PadTabCtl p46, Book b52 (b49 stance-bind #179, b50 toolbar D-pad #18/#20, b51 / m143 / m144 rank up, m146 / p46 / b52 Smart Range)")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
@@ -1557,7 +1557,7 @@ W8.execute('ptab(39)')
 pa = docs(W8, n0, 'padack')
 # Book b52 (PadMap m146 SMART RANGE): padtab 39 is the Smart Range pick now (its code 0-4 follows); alone it is no game action
 check(pa == [] and W8.eval('WowCompanion.padTabCtl.srWants()') is True, "padtab 39: the Smart Range pick (Book b52), no game action, no refusal", pa)
-W8.execute('ptab(29); COMBAT = true')
+W8.execute('NOW = NOW + 2.5; ptab(29); COMBAT = true')   # p53: 39 then 29 is the Cast bar tab now: the pick expires first
 n0 = nsent(W8)
 W8.execute('spellTaps(331)')
 ack = docs(W8, n0, 'partyack')

@@ -65,6 +65,11 @@ object UiKit {
     fun titlePaint(size: Float, colour: Int = Theme.gold, shadow: Boolean = true) = paint(title, size, colour, shadow)
     fun bodyPaint(size: Float, colour: Int = Theme.text, shadow: Boolean = true) = paint(body, size, colour, shadow)
     fun numberPaint(size: Float, colour: Int = Theme.text, shadow: Boolean = true) = paint(number, size, colour, shadow)
+    /** cb9: a stack's count in a tile's lower right (the bags' look: the game's white number; 0 = none left, red) */
+    fun stackCount(c: Canvas, r: RectF, n: Int) {
+        val p = numberPaint((r.height() * 0.32f).coerceAtLeast(12f), if (n == 0) Color.rgb(230, 60, 50) else Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
+        c.drawText(n.toString(), r.right - r.width() * 0.10f, r.bottom - r.height() * 0.10f, p)
+    }
 
     /** text for parchment: dark ink, and no shadow (the game draws none on paper) */
     fun inkPaint(size: Float, heading: Boolean = false) =

@@ -27,6 +27,10 @@ import android.view.View
  * than [CastStripModel.TAP_SLOP_PX] never casts; a finger that catches a fling stops it and casts nothing. The scroll is kept for the
  * app's run ([CastStripModel.Live.pos]). A slot waiting for a fight's end is drawn dimmed and takes no tap; the cooldown is the game's
  * dark sweep from the add-on's `castcd` on every slot drawn.
+ * cb9 ANY KIND (the user, 2026-11-13: "in the controller menu we need a Tab for the cast bar if its enabled, where people can assign
+ * anything from the 5 tabs"): an item draws its icon and, for a consumable (or a stack), its count in the corner (none left = dimmed),
+ * its cooldown from the add-on's `itemcd` ([ItemCd]: the same dark sweep; held / unknown = dimmed); a mount its icon; a command its
+ * icon (Home Bar the bar's own swirl, as the Controller room draws it).
  */
 class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(context) {
 
@@ -48,6 +52,8 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
     private var flingFrom = 0f
     private var flingV = 0f
     private var flingAt = -1L
+
+    init { ItemCd.onChange { postInvalidate() } }                // cb9: an item slot's cooldown
 
     /** the place Home laid the bar in (its slots in view and spread) */
     var side: CastStripModel.Side = CastStripModel.Side.LEFT
@@ -145,20 +151,31 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
             val r = slotRect(i)
             val s = b?.slots?.getOrNull(i)
             val live = CastStripModel.tapCell(b, i) != null
-            val alpha = when { s?.id == null -> 110; live -> 255; else -> DIM }
+            val itemId = s?.takeIf { it.kind == CastStripModel.Kind.ITEM }?.id
+            val spent = itemId != null && (s?.count == 0 || ItemCd.dim(itemId))       // cb9: none left, or held till the fight ends
+            val alpha = when { s?.filled != true -> 110; live && !spent -> 255; else -> DIM }
             val down = i == pressedSlot && now < pressedUntil
             UiKit.pressed(c, r, down) {
                 pWell.color = Theme.ink; pWell.alpha = 230
                 c.drawRoundRect(r, 4f, 4f, pWell)
                 // the spell's icon from icons.pak ([Icons], as the Spellbook draws it); the kit's fid_ art only for what the pack lacks
-                val icon = s?.icon?.let { Icons.get(it) ?: UiKit.icon(it) }
+                val icon = if (s?.kind == CastStripModel.Kind.COMMAND && s.key == PadMapModel.HOME_KEY) UiKit.tex("home_live_base")
+                    else s?.icon?.let { Icons.get(it) ?: UiKit.icon(it) }
                 if (icon != null) {
                     val inset = r.width() * 0.07f
                     pIcon.alpha = alpha
                     c.drawBitmap(icon, null, RectF(r.left + inset, r.top + inset, r.right - inset, r.bottom - inset), pIcon)
                     pIcon.alpha = 255
                 }
-                cds[i]?.let { cd ->
+                if (itemId != null) {                                   // cb9: an item's cooldown is the itemcd document's
+                    val len = ItemCd.len(itemId); val l = ItemCd.left(itemId)
+                    if (len > 0.0 && l > 0.0) {
+                        pSweep.color = Color.BLACK; pSweep.alpha = 165
+                        c.drawArc(r, -90f, -360f * (l / len).toFloat().coerceIn(0f, 1f), true, pSweep)
+                        sweeping = true
+                    }
+                }
+                cds[i]?.takeIf { s?.kind == CastStripModel.Kind.SPELL }?.let { cd ->
                     val left = CastStripModel.sweepLeft(cd, cdAt, now)
                     if (left > 0f && s?.id != null) {
                         pSweep.color = Color.BLACK; pSweep.alpha = if (cd.gcd) 120 else 165
@@ -170,6 +187,7 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
                     ringPath.reset(); ringPath.addRoundRect(r, 4f, 4f, Path.Direction.CW)
                     UiKit.ringEdge(c, ringPath, UiKit.RING_W, lit = down, alpha = alpha)
                 }
+                s?.countShown?.let { n -> UiKit.stackCount(c, r, n) }
             }
         }
         return sweeping
