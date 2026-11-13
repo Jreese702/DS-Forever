@@ -651,6 +651,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             return true
         }
         if (gamepad) PadFeed.key(e)                          // DS Forever's own readers: a copy of every press, as in Local
+        com.jrees.wowcompanion.PadDiag.key(e, gamepad, if (screen == Screen.STREAMING) "stream" else "stream's own screens")   // #116
         val down = e.action == KeyEvent.ACTION_DOWN
         if (screen != Screen.STREAMING) {
             if (down && e.repeatCount == 0 && overlayKey(e.keyCode)) return true

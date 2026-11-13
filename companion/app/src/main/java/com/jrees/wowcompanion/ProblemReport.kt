@@ -165,6 +165,7 @@ object ProblemReport {
             runCatching { add("SafePath network: ${ShippedNets.line}") }         // the shipped network's word (its "may be out of date")
             runCatching { add("Game art: ${ArtHarvest.state.javaClass.simpleName}" + ((ArtHarvest.state as? ArtHarvest.State.Failed)?.let { " (${it.why})" } ?: "")) }
             add("Game running: ${LauncherHooks.gameUp()}")
+            runCatching { add(PadDiag.line()) }                 // issues #16 / #84 / #116 / #147: did any press reach DS Forever
             CastDiag.line()?.let { add(it) }                    // p-bars-grey (1.0.8): what Home's bars decided at their last draw
         }
         return Facts(app, addons, game, device, settings)
