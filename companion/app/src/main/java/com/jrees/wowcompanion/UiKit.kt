@@ -2513,8 +2513,12 @@ object UiKit {
      * in", then 2026-10-01: "I don't really like the box around the time and battery"): NO well, centred on [cx] from [top]: the time
      * in the module text colour, under it the battery in the kit's bronze (red only under 20 %; the gold bolt while [charging]) and the
      * percentage, dim. Returns the area it covers (84 high).
+     * [gold] (the user, 2026-11-13: "just list our total gold under the battery (still give it a toggle)"): the whole purse in copper
+     * as one more line under the battery ([ClockBand.GOLD_H] more), 123[g] 45[s] 67[c] with the small coins; null = no line, and the
+     * chip exactly as before (the time + battery never move).
      */
-    fun clockChip(c: Canvas, cx: Float, top: Float, time: String, battery: Int, charging: Boolean = false, alpha: Int = 255): RectF {
+    fun clockChip(c: Canvas, cx: Float, top: Float, time: String, battery: Int, charging: Boolean = false, alpha: Int = 255,
+                  gold: Long? = null): RectF {
         val pt = numberPaint(32f, Theme.text).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha }
         val pp = numberPaint(21f, Theme.textDim).apply { this.alpha = alpha }
         val label = "$battery%"
@@ -2541,19 +2545,52 @@ object UiKit {
         }
         pFlat.alpha = 255
         c.drawText(Tr.t(label), case.right + 12f, case.centerY() - (pp.ascent() + pp.descent()) / 2f, pp)
-        return r
+        if (gold == null) return r
+        val pg = goldPaint(alpha)
+        val gw = coinsWidth(gold, pg, CHIP_COIN, CHIP_COIN_GAP)
+        coins(c, cx - gw / 2f, top + ClockBand.GOLD_Y - (pg.ascent() + pg.descent()) / 2f, gold, pg, CHIP_COIN, CHIP_COIN_GAP, alpha)
+        return RectF(minOf(r.left, cx - gw / 2f - 20f), top, maxOf(r.right, cx + gw / 2f + 20f), top + ClockBand.CHIP_H + ClockBand.GOLD_H)
     }
 
-    /** one item of THE EXTRAS ROW (ClockBand; feat/clock-extras-v2): an icon over its value, or the purse (the clock stays clockChip) */
+    /** the gold line's coins and the gap between two units (px) */
+    private const val CHIP_COIN = 13f
+    private const val CHIP_COIN_GAP = 6f
+
+    /** the gold line's words: the battery line's own (numberPaint 21, dim), tabular digits */
+    fun goldPaint(alpha: Int = 255): Paint = numberPaint(21f, Theme.textDim).apply { this.alpha = alpha; fontFeatureSettings = "tnum" }
+
+    /** the gold line's width ([coins]) */
+    fun coinsWidth(copper: Long, p: Paint, coin: Float = CHIP_COIN, gap: Float = CHIP_COIN_GAP): Float {
+        val parts = ClockBand.coins(copper)
+        return parts.sumOf { (p.measureText(it.first.toString()) + 2f + coin).toDouble() }.toFloat() + gap * (parts.size - 1)
+    }
+
+    /** the purse from [x0] on [baseline]: each amount then its coin (the game's coin art, else a disc in the coin's colour) */
+    private fun coins(c: Canvas, x0: Float, baseline: Float, copper: Long, p: Paint, coin: Float, gap: Float, alpha: Int) {
+        val pl = Paint(p).apply { textAlign = Paint.Align.LEFT }
+        var x = x0
+        val cy = baseline + (pl.ascent() + pl.descent()) / 2f
+        for ((i, part) in ClockBand.coins(copper).withIndex()) {
+            val (amt, kind) = part
+            if (i > 0) x += gap
+            val t = amt.toString()
+            c.drawText(Tr.t(t), x, baseline, pl)
+            x += pl.measureText(t) + 2f
+            val r = RectF(x, cy - coin / 2f, x + coin, cy + coin / 2f)
+            val bmp = Icons.ui(COIN_UI[kind])
+            if (bmp != null) { pBmp.alpha = alpha; c.drawBitmap(bmp, null, r, pBmp); pBmp.alpha = 255 }
+            else { pFlat.style = Paint.Style.FILL; pFlat.color = COIN_RGB[kind]; pFlat.alpha = alpha; c.drawOval(r, pFlat); pFlat.alpha = 255 }
+            x += coin
+        }
+    }
+
+    /** one item of THE EXTRAS ROW (ClockBand; feat/clock-extras-v2): an icon over its value (the clock and the gold line stay clockChip) */
     sealed class BandItem {
         /** an icon over its short value ("" = the icon alone); [cooling] = the icon dimmed; [glow] = the soft ready halo (the Hearthstone) */
         class Icon(val icon: Bitmap?, val value: String, val cooling: Boolean = false, val glow: Boolean = false) : BandItem()
-        /** the whole purse in copper: [icon] over 12[g] 34[s] 56[c] with the game's coins */
-        class Gold(val icon: Bitmap?, val copper: Long) : BandItem()
     }
 
     private const val BAND_VALUE = 18f
-    private const val BAND_COIN = 13f
     /** the value line's baseline in the cell ([ClockBand.CELL_H] high: the icon 0..[ClockBand.ICON], the value under it) */
     private const val BAND_BASE = 45f
 
@@ -2562,12 +2599,6 @@ object UiKit {
     /** an item's width in the band (unscaled px) */
     private fun bandWidth(it: BandItem, pv: Paint): Float = when (it) {
         is BandItem.Icon -> maxOf(ClockBand.ICON, if (it.value.isEmpty()) 0f else pv.measureText(it.value))
-        is BandItem.Gold -> maxOf(ClockBand.ICON, goldWidth(it.copper, pv))
-    }
-
-    private fun goldWidth(copper: Long, pv: Paint): Float {
-        val parts = ClockBand.coins(copper)
-        return parts.sumOf { (pv.measureText(it.first.toString()) + 2f + BAND_COIN).toDouble() }.toFloat() + 5f * (parts.size - 1)
     }
 
     private val COIN_UI = arrayOf("ui-goldicon", "ui-silvericon", "ui-coppericon")
@@ -2594,10 +2625,6 @@ object UiKit {
                 is BandItem.Icon -> {
                     bandIcon(c, w / 2f, it.icon, it.cooling, it.glow, alpha)
                     if (it.value.isNotEmpty()) c.drawText(Tr.t(it.value), w / 2f, BAND_BASE, pv)
-                }
-                is BandItem.Gold -> {
-                    bandIcon(c, w / 2f, it.icon, false, false, alpha)
-                    bandGold(c, w / 2f, it.copper, pv, alpha)
                 }
             }
             c.restore()
@@ -2649,25 +2676,6 @@ object UiKit {
         pFlat.style = Paint.Style.FILL; pFlat.alpha = 255
     }
     private val pBandGlow = Paint(Paint.ANTI_ALIAS_FLAG)
-
-    /** the purse on the value line, centred on [cx]: each amount then its coin (the game's art, else a disc in the coin's colour) */
-    private fun bandGold(c: Canvas, cx: Float, copper: Long, pv: Paint, alpha: Int) {
-        val pl = Paint(pv).apply { textAlign = Paint.Align.LEFT }
-        var x = cx - goldWidth(copper, pv) / 2f
-        val cy = BAND_BASE + (pv.ascent() + pv.descent()) / 2f
-        for ((i, part) in ClockBand.coins(copper).withIndex()) {
-            val (amt, coin) = part
-            if (i > 0) x += 5f
-            val t = amt.toString()
-            c.drawText(Tr.t(t), x, BAND_BASE, pl)
-            x += pl.measureText(t) + 2f
-            val r = RectF(x, cy - BAND_COIN / 2f, x + BAND_COIN, cy + BAND_COIN / 2f)
-            val bmp = Icons.ui(COIN_UI[coin])
-            if (bmp != null) { pBmp.alpha = alpha; c.drawBitmap(bmp, null, r, pBmp); pBmp.alpha = 255 }
-            else { pFlat.style = Paint.Style.FILL; pFlat.color = COIN_RGB[coin]; pFlat.alpha = alpha; c.drawOval(r, pFlat); pFlat.alpha = 255 }
-            x += BAND_COIN
-        }
-    }
 
     /** the trigger glyphs' box (LATER 18): where ZL / ZR stand under each bumper plate (no well round them) */
     const val TRIGGER_W = 84f

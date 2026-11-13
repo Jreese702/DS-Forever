@@ -148,8 +148,8 @@ object SettingsPreview {
             else listOf("No Hearthstone in the row.", "The others space out evenly.")
         "Class teleport" -> if (s.clockTeleport) listOf("Your class teleport in the row,", "once your character knows it.")
             else listOf("No class teleport in the row.", "The others space out evenly.")
-        "Gold" -> if (s.clockGold) listOf("All your money in the row:", "gold, silver and copper.")
-            else listOf("No money in the row.", "The others space out evenly.")
+        "Gold" -> if (s.clockGold) listOf("Your total gold under the battery:", "gold, silver and copper.")
+            else listOf("No gold under the battery.")
         "Free bag slots" -> if (s.clockBags) listOf("How many bag slots are free,", "in the row under the clock.")
             else listOf("No bag count in the row.", "The others space out evenly.")
         "Ammo" -> if (s.clockAmmo) listOf("Your equipped ammo and its count,", "while you have some.")
@@ -242,7 +242,8 @@ object SettingsPreview {
             "Multiplier" -> multiplier(c, r, s, t, live)
             "Flow scale" -> flow(c, r, s.flow, t, live)
             "Build in the background" -> indoor(c, r, s, t, live)
-            "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo" -> extras(c, r, id, s)
+            "Gold" -> goldLine(c, r, s)
+            "Hearthstone", "Class teleport", "Free bag slots", "Ammo" -> extras(c, r, id, s)
             "Tap-to-cast bar" -> castBar(c, r, s.castBar)
             "World map" -> worldMap(c, r, s.worldMapAll)
             "Smart Y" -> smartY(c, r, s, t, glyph)
@@ -999,7 +1000,7 @@ object SettingsPreview {
     // ---- Bottom screen > Home: THE EXTRAS ROW (ClockBand) under the clock chip, between the controller's two groups
 
     private val EXTRA_KIND = mapOf("Hearthstone" to ClockBand.Kind.HEARTH, "Class teleport" to ClockBand.Kind.TELEPORT,
-        "Gold" to ClockBand.Kind.GOLD, "Free bag slots" to ClockBand.Kind.BAGS, "Ammo" to ClockBand.Kind.AMMO)
+        "Free bag slots" to ClockBand.Kind.BAGS, "Ammo" to ClockBand.Kind.AMMO)
 
     /** a stand-in icon drawn here (no icon is asked of the game's art for a picture): an arrow (ammo) or a swirl (a teleport) */
     private val arrowIcon by lazy { drawnIcon { c, p ->
@@ -1021,23 +1022,29 @@ object SettingsPreview {
     private fun bandItem(k: ClockBand.Kind): UiKit.BandItem = when (k) {
         ClockBand.Kind.HEARTH -> UiKit.BandItem.Icon(Icons.get(ItemCd.hearthIcon), "", glow = true)
         ClockBand.Kind.TELEPORT -> UiKit.BandItem.Icon(ItemCd.teleport?.let { Icons.get(it.icon) } ?: swirlIcon, "12:04", cooling = true)
-        ClockBand.Kind.GOLD -> UiKit.BandItem.Gold(Icons.get(HomeView.GOLD_ICON) ?: Icons.ui("ui-goldicon"), 1_234_567L)
         ClockBand.Kind.BAGS -> UiKit.BandItem.Icon(Icons.get(133633), "14")
         ClockBand.Kind.AMMO -> UiKit.BandItem.Icon(arrowIcon, "812")
     }
 
     /**
      * the top of Home in [box]: the controller's two groups, the clock chip centred at the top (as Home has it), the extras row [kinds]
-     * under it (UiKit.clockBand, Home's own drawing), [ring] circled in gold. Home's px, the middle of its width shown.
+     * under it (UiKit.clockBand, Home's own drawing), [ring] circled in gold. Home's px, the middle of its width shown. [gold] = the
+     * chip's gold line under the battery; [ringGold] circles it.
      */
-    private fun band(c: Canvas, box: RectF, kinds: List<ClockBand.Kind>, ring: ClockBand.Kind?) {
+    private fun band(c: Canvas, box: RectF, kinds: List<ClockBand.Kind>, ring: ClockBand.Kind?, gold: Boolean, ringGold: Boolean = false) {
         val x0 = 380f; val x1 = 860f
         val k = box.width() / (x1 - x0)
         c.save(); c.translate(box.left, box.top + (box.height() - 230f * k) / 2f); c.scale(k, k); c.translate(-x0, 0f)
         diamond(c, 300f, 150f, 30f, 64f); diamond(c, 940f, 150f, 30f, 64f)
-        UiKit.clockChip(c, 620f, ClockBand.CHIP_TOP, "12:30", 76)
+        UiKit.clockChip(c, 620f, ClockBand.CHIP_TOP, "12:30", 76, gold = if (gold) PREVIEW_GOLD else null)
+        if (gold && ringGold) {
+            val gw = UiKit.coinsWidth(PREVIEW_GOLD, UiKit.goldPaint())
+            val gy = ClockBand.CHIP_TOP + ClockBand.GOLD_Y
+            pStroke.color = GOLD; pStroke.strokeWidth = 3f / k
+            c.drawRoundRect(RectF(620f - gw / 2f - 9f, gy - 15f, 620f + gw / 2f + 9f, gy + 15f), 8f, 8f, pStroke)
+        }
         val spot = floatArrayOf(440f, 98f, 800f, 210f, 620f, 154f)
-        val floor = ClockBand.CHIP_TOP + ClockBand.CHIP_H + ClockBand.CHIP_PAD
+        val floor = ClockBand.chipBottom(gold) + ClockBand.CHIP_PAD
         val items = kinds.map { bandItem(it) }
         UiKit.clockBand(c, spot, items, floor)
         val i = if (ring == null) -1 else kinds.indexOf(ring)
@@ -1053,8 +1060,17 @@ object SettingsPreview {
         val on = EXTRA_KIND.filter { (row, _) -> extraOn(row, s) }.values.toSet() + me
         val kinds = ClockBand.Kind.values().filter { it in on }
         twoWays(c, r, "On", "Off", extraOn(id, s), 300f) { box, first ->
-            if (first) band(c, box, kinds, me) else band(c, box, kinds - me, null)
+            if (first) band(c, box, kinds, me, s.clockGold) else band(c, box, kinds - me, null, s.clockGold)
         }
+    }
+
+    /** a made-up purse for the pictures: 123g 45s 67c */
+    private const val PREVIEW_GOLD = 1_234_567L
+
+    /** Bottom screen > Home > Gold: the clock chip with the total gold under the battery (On, circled) or the chip alone (Off) */
+    private fun goldLine(c: Canvas, r: RectF, s: State) {
+        val kinds = EXTRA_KIND.filter { (row, _) -> extraOn(row, s) }.values.toSet().let { on -> ClockBand.Kind.values().filter { it in on } }
+        twoWays(c, r, "On", "Off", s.clockGold, 300f) { box, first -> band(c, box, kinds, null, first, ringGold = first) }
     }
 
     // ---- Bottom screen > Tap-to-cast bar: Home in four thumbnails, Off / Left / Right / Both

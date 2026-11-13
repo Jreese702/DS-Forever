@@ -270,6 +270,11 @@ class SettingsPreviewRowsTest {
         for (side in 0..3) assertTrue(SettingsPreview.caption("Tap-to-cast bar", SettingsPreview.State(castBar = side)).isNotEmpty())
         assertEquals("Tap-to-cast bar: Both", SettingsPreview.title("Tap-to-cast bar", SettingsPreview.State(castBar = 3)))
         assertEquals("Ammo: Off", SettingsPreview.title("Ammo", SettingsPreview.State(clockAmmo = false)))
+        // 2026-11-13 (the user: "just list our total gold under the battery (still give it a toggle)"): the Gold row's picture is the gold line
+        assertEquals("Gold: On", SettingsPreview.title("Gold", SettingsPreview.State(clockGold = true)))
+        assertEquals("Gold: Off", SettingsPreview.title("Gold", SettingsPreview.State(clockGold = false)))
+        assertTrue(SettingsPreview.caption("Gold", SettingsPreview.State(clockGold = true)).first().contains("under the battery"))
+        assertEquals(listOf("No gold under the battery."), SettingsPreview.caption("Gold", SettingsPreview.State(clockGold = false)))
         assertEquals("Combat Auto Shot: Smart", SettingsPreview.title("Combat Auto Shot", SettingsPreview.State(autoShot = 2)))
         assertEquals("Smart Y: -", SettingsPreview.title("Smart Y", SettingsPreview.State()))
         for (y in listOf(null, true, false)) for (sh in 0..2) for (b in listOf(true, false)) {

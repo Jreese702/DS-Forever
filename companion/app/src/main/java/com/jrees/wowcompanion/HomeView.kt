@@ -916,16 +916,16 @@ class HomeView(
     /**
      * THE EXTRAS ROW's items (feat/clock-extras-v2; the user's picks 2026-11-13, each by its own Bottom > Home row), in ClockBand's
      * order: the Hearthstone ("shows ALWAYS: bright icon when ready, icon + mm:ss while cooling"; ready = its soft glow), the class
-     * teleport (once known), the whole purse (gold, silver, copper), the free bag slots, the equipped ammo. The clock + battery are
-     * NOT in it: the top clock chip, as before (the user: "the time and Battery still needs to be centered at the top like it was before").
+     * teleport (once known), the free bag slots, the equipped ammo. The clock + battery are NOT in it: the top clock chip, as before
+     * (the user: "the time and Battery still needs to be centered at the top like it was before"); nor the purse: the chip's gold line
+     * under the battery ([chipGold]; the user, 2026-11-13: "lets ditch the Icon for the gold and just list our total gold under the battery").
      */
     private fun bandItems(): List<UiKit.BandItem> {
         val hs = HomeSettings.clockHearth && ItemCd.hearthHave != false
         val tp = ItemCd.teleport.takeIf { HomeSettings.clockTeleport }
-        val g = goldCopper.takeIf { HomeSettings.clockGold }
         val bags = HomeSettings.clockBags && bagFree >= 0
         val am = ammo.takeIf { HomeSettings.clockAmmo }
-        return ClockBand.kinds(hs, tp != null, g != null, bags, am != null).map { k ->
+        return ClockBand.kinds(hs, tp != null, bags, am != null).map { k ->
             when (k) {
                 ClockBand.Kind.HEARTH -> {
                     val l = ItemCd.left(ItemCd.HEARTH); val dim = ItemCd.dim(ItemCd.HEARTH)
@@ -936,12 +936,14 @@ class HomeView(
                     val l = ItemCd.teleportLeft()
                     UiKit.BandItem.Icon(Icons.get(tp!!.icon), if (l > 0.0) ItemCd.mmss(l) else "", cooling = l > 0.0 || ItemCd.teleportDim())
                 }
-                ClockBand.Kind.GOLD -> UiKit.BandItem.Gold(Icons.get(GOLD_ICON) ?: Icons.ui("ui-goldicon"), g!!)
                 ClockBand.Kind.BAGS -> UiKit.BandItem.Icon(Icons.get(133633), bagFree.toString())        // the backpack's icon
                 ClockBand.Kind.AMMO -> UiKit.BandItem.Icon(Icons.get(am!!.icon), ClockBand.count(am.count))
             }
         }
     }
+
+    /** the purse under the battery (the Gold row On and the bags said), else null: no line, the chip as before */
+    private fun chipGold(): Long? = goldCopper.takeIf { HomeSettings.clockGold }
 
     /** feat/clock-extras-v2: the extras row under the triggers (ZL / ZR held = fading out, let go = back), Home's own fade; the clock chip keeps its own rules */
     private var trigHeld = false
@@ -1933,7 +1935,7 @@ class HomeView(
         if (pauseSave >= 0) { c.restoreToCount(pauseSave); c.save(); c.translate(pauseTop[0], pauseTop[1]) }
         if (clockA > 0.01f && barsSeen && clockText.isNotEmpty() && batteryPct >= 0) now[Part.BARS]?.let { b ->
             val save = if (clockA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (clockA * 255).toInt()) else -1
-            UiKit.clockChip(c, b.centerX(), b.top + 10f, clockText, batteryPct, charging)
+            UiKit.clockChip(c, b.centerX(), b.top + 10f, clockText, batteryPct, charging, gold = chipGold())
             if (save >= 0) c.restoreToCount(save)
         }
         // THE EXTRAS ROW (feat/clock-extras-v2): the extras turned on in ONE row where the ZL + ZR join shows (CastBarPlace.clockSpot),
@@ -1947,7 +1949,7 @@ class HomeView(
             if (items.isNotEmpty()) castView.clockSpot()?.let { spot ->
                 for (i in 0 until spot.size - 1) spot[i] += if (i % 2 == 0) b.left else b.top
                 val save = if (bandA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (bandA * 255).toInt()) else -1
-                UiKit.clockBand(c, spot, items, b.top + ClockBand.CHIP_TOP + ClockBand.CHIP_H + ClockBand.CHIP_PAD)
+                UiKit.clockBand(c, spot, items, b.top + ClockBand.chipBottom(chipGold() != null) + ClockBand.CHIP_PAD)
                 // the mm:ss counts (as the auras' times); nothing ticks otherwise
                 if (items.any { it is UiKit.BandItem.Icon && it.value.contains(':') }) postInvalidateDelayed(1000L)
                 if (save >= 0) c.restoreToCount(save)
@@ -2847,8 +2849,6 @@ class HomeView(
         const val ZONE_BAND_BOTTOM = 72f
         /** the page's fade at a move's start (out) and end (in) (HARMONY_SPEC section 3) */
         const val FADE_MS = 120f
-        /** feat/clock-extras-v2: the purse's icon in the clock band (the game's INV_Misc_Coin_01; the gold coin when the pack has none) */
-        const val GOLD_ICON = 133784
         /** the buff button, below the small map's zone bar */
         const val BTN_TOP = ZONE_BAND_BOTTOM + 8f
         /** b129, UI Art: the open map's auras - right-aligned at w - FULL_RIGHT (left of the filter corner and its Start glyph),

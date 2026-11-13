@@ -12,12 +12,21 @@ import org.json.JSONObject
  * as before, with its own show / fade rules; the row stays under it ([CHIP_TOP] + [CHIP_H]). Pure (no android.*): checked off-device.
  */
 object ClockBand {
-    /** the items, left to right: the travel pair, the purse and the packs */
-    enum class Kind { HEARTH, TELEPORT, GOLD, BAGS, AMMO }
+    /** the items, left to right: the travel pair and the packs (the purse is the gold line under the battery, [GOLD_H]) */
+    enum class Kind { HEARTH, TELEPORT, BAGS, AMMO }
 
     /** the top clock chip (UiKit.clockChip at the band's centre x, band top + [CHIP_TOP], [CHIP_H] high; unchanged since LATER 18) */
     const val CHIP_TOP = 10f
     const val CHIP_H = 84f
+    /**
+     * THE GOLD LINE (the user, 2026-11-13: "lets ditch the Icon for the gold and just list our total gold under the battery (still give
+     * it a toggle)"): [GOLD_H] more under the chip's battery, the line's middle [GOLD_Y] from the chip's top; the time + battery unmoved
+     */
+    const val GOLD_H = 24f
+    const val GOLD_Y = 87f
+
+    /** the chip's bottom from the band's top: the time + battery, and the gold line while it shows */
+    fun chipBottom(gold: Boolean): Float = CHIP_TOP + CHIP_H + (if (gold) GOLD_H else 0f)
 
     /** the widest and narrowest gap between two items (px at 1240 wide); under the narrowest the whole row scales down to fit */
     const val GAP_MAX = 40f
@@ -81,7 +90,7 @@ object ClockBand {
         return from + (to - from) * k
     }
 
-    /** the purse the game's way: (amount, 0 gold / 1 silver / 2 copper), the leading zero units left out (34s 56c under a gold; 0c) */
+    /** the purse the game's way (the gold line): (amount, 0 gold / 1 silver / 2 copper), the leading zero units left out (34s 56c under a gold; 0c) */
     fun coins(copper: Long): List<Pair<Long, Int>> {
         val m = copper.coerceAtLeast(0L)
         val g = m / 10000L; val s = (m / 100L) % 100L; val c = m % 100L
@@ -109,11 +118,10 @@ object ClockBand {
     fun count(n: Int): String = if (n >= 10000) "${n / 1000}k" else n.toString()
 
     /** which items show, in order: the player's rows (and the data there); none = no row (the clock chip is apart) */
-    fun kinds(hearth: Boolean, teleport: Boolean, gold: Boolean, bags: Boolean, ammo: Boolean): List<Kind> {
-        val k = ArrayList<Kind>(5)
+    fun kinds(hearth: Boolean, teleport: Boolean, bags: Boolean, ammo: Boolean): List<Kind> {
+        val k = ArrayList<Kind>(4)
         if (hearth) k += Kind.HEARTH
         if (teleport) k += Kind.TELEPORT
-        if (gold) k += Kind.GOLD
         if (bags) k += Kind.BAGS
         if (ammo) k += Kind.AMMO
         return k

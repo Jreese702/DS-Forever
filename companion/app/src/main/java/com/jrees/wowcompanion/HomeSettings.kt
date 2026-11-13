@@ -560,7 +560,7 @@ class HomeSettingsSection(context: Context,
             listOf({ HomeSettings.clockHearth = true }, { HomeSettings.clockHearth = false }))
         y = row(c, y + GAP, "Class teleport", listOf("In the row under the clock, once known."), listOf("On", "Off"), if (HomeSettings.clockTeleport) 0 else 1,
             listOf({ HomeSettings.clockTeleport = true }, { HomeSettings.clockTeleport = false }))
-        y = row(c, y + GAP, "Gold", listOf("In the row under the clock."), listOf("On", "Off"), if (HomeSettings.clockGold) 0 else 1,
+        y = row(c, y + GAP, "Gold", listOf("Total gold under the battery."), listOf("On", "Off"), if (HomeSettings.clockGold) 0 else 1,
             listOf({ HomeSettings.clockGold = true }, { HomeSettings.clockGold = false }))
         y = row(c, y + GAP, "Free bag slots", listOf("In the row under the clock."), listOf("On", "Off"), if (HomeSettings.clockBags) 0 else 1,
             listOf({ HomeSettings.clockBags = true }, { HomeSettings.clockBags = false }))
