@@ -33,10 +33,27 @@ object PadDiag {
     /** a key event as the launcher's game screen (or Streaming's, or the bottom window) got it; [controller] = the launcher's verdict */
     fun key(e: KeyEvent, controller: Boolean, route: String) {
         if (e.action != KeyEvent.ACTION_DOWN || e.repeatCount > 0) return
-        val d = e.device
-        val dev = if (d == null) null else runCatching { Dev(d.id, d.name ?: "", d.vendorId, d.productId, d.sources) }.getOrNull()
-        note(dev, e.keyCode, controller, route)
+        note(dev(e), e.keyCode, controller, route)
     }
+
+    /**
+     * a key event that reached the BOTTOM window (it holds the focus): the launcher never judged this device here, StartKeys reads the
+     * press. Judged by the DEVICE's sources, not the event's (a D-pad press from the Thor's own pad can come as DPAD|KEYBOARD).
+     */
+    fun bottomKey(e: KeyEvent, typing: Boolean) {
+        if (e.action != KeyEvent.ACTION_DOWN || e.repeatCount > 0) return
+        val d = dev(e)
+        note(d, e.keyCode, padDevice(d?.sources ?: e.source), "the bottom window${if (typing) " (typing)" else ""}", judged = false)
+    }
+
+    private fun dev(e: KeyEvent): Dev? {
+        val d = e.device ?: return null
+        return runCatching { Dev(d.id, d.name ?: "", d.vendorId, d.productId, d.sources) }.getOrNull()
+    }
+
+    /** a device whose sources say gamepad or joystick */
+    fun padDevice(sources: Int): Boolean = sources and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD ||
+        sources and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
 
     /** a controller's key code: the buttons and the D-pad (Android's own KeyEvent.isGamepadButton plus the D-pad) */
     fun padKey(code: Int): Boolean = code in KeyEvent.KEYCODE_BUTTON_A..KeyEvent.KEYCODE_BUTTON_MODE ||
@@ -44,8 +61,11 @@ object PadDiag {
         code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_LEFT ||
         code == KeyEvent.KEYCODE_DPAD_RIGHT || code == KeyEvent.KEYCODE_DPAD_CENTER
 
-    /** one press (a key down, no repeat); the line it logged, null = nothing new to say */
-    fun note(dev: Dev?, code: Int, controller: Boolean, route: String, now: Long = System.currentTimeMillis()): String? {
+    /**
+     * one press (a key down, no repeat); the line it logged, null = nothing new to say. [judged] = [controller] is the launcher's verdict
+     * (the game screen, Streaming); false = the bottom window, where [controller] only says what the device's sources are
+     */
+    fun note(dev: Dev?, code: Int, controller: Boolean, route: String, now: Long = System.currentTimeMillis(), judged: Boolean = true): String? {
         if (controller) { presses++; lastPressAt = now }
         if (!controller && !padKey(code)) return null                 // a keyboard's letters: not the controller's business
         val id = "${dev?.id ?: -1}|$route"
@@ -53,10 +73,13 @@ object PadDiag {
         synchronized(lock) {
             if (seen.containsKey(id)) return null
             if (seen.size >= MAX_DEVICES) return null
-            seen[id] = label to controller
+            seen[id] = label to (controller || !judged)
         }
-        val line = "first press from $label (key $code, via $route): " +
-            if (controller) "a controller, DS Forever reads it" else "NOT a controller to the launcher: neither DS Forever nor the game reads it as a pad"
+        val line = "first press from $label (key $code, via $route): " + when {
+            !judged -> "the start-up keys read it here, not the game" + if (controller) "" else " (not a pad device)"
+            controller -> "a controller, DS Forever reads it"
+            else -> "NOT a controller to the launcher: neither DS Forever nor the game reads it as a pad"
+        }
         DiagLog.event("pad", line, now)
         return line
     }

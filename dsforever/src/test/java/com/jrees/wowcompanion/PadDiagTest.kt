@@ -47,6 +47,17 @@ class PadDiagTest {
         assertTrue(PadDiag.line(t0).contains("(not a controller)"))
     }
 
+    @Test fun theBottomWindowNeverGivesTheLaunchersVerdict() {
+        // review: a D-pad press from the Thor's pad as DPAD|KEYBOARD on the bottom window is not "NOT a controller to the launcher"
+        val l = PadDiag.note(odin, 19, PadDiag.padDevice(odin.sources), "the bottom window", t0, judged = false)
+        assertTrue(l!!, l.contains("via the bottom window") && l.contains("the start-up keys read it here") && !l.contains("NOT a controller"))
+        val l2 = PadDiag.note(PadDiag.Dev(4, "Generic HID", 0x1234, 0x5678, 0x00000101), 19, false, "the bottom window", t0, judged = false)
+        assertTrue(l2!!, l2.contains("(not a pad device)") && !l2.contains("NOT a controller"))
+        assertFalse(PadDiag.line(t0).contains("(not a controller)"))
+        assertTrue(PadDiag.padDevice(odin.sources))
+        assertFalse(PadDiag.padDevice(0x00000101 or 0x00000201))       // keyboard | dpad: not a pad device
+    }
+
     @Test fun keyboardLettersAreNotTheControllersBusiness() {
         assertNull(PadDiag.note(kb, 24, controller = false, route = "game screen", now = t0))     // volume up
         assertNull(PadDiag.note(kb, 29, controller = false, route = "game screen", now = t0))     // a letter

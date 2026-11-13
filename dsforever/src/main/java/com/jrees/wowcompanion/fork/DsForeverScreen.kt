@@ -353,8 +353,7 @@ private class HostPresentation(outer: Context, display: Display, private val onR
      */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         // #84 / #147: a press that reaches the bottom window (it holds the focus) never reaches PadFeed or the game
-        com.jrees.wowcompanion.PadDiag.key(event, (event.source and android.view.InputDevice.SOURCE_GAMEPAD) == android.view.InputDevice.SOURCE_GAMEPAD ||
-            (event.source and android.view.InputDevice.SOURCE_JOYSTICK) == android.view.InputDevice.SOURCE_JOYSTICK, "the bottom window${if (typing) " (typing)" else ""}")
+        com.jrees.wowcompanion.PadDiag.bottomKey(event, typing)
         if (com.jrees.wowcompanion.StartKeys.route(event)) return true
         return super.dispatchKeyEvent(event)
     }
