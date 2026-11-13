@@ -28,8 +28,13 @@ object PadMapModel {
     /** [layer] (PadMap m132, THE FIGHT-ONLY LAYER - the user, 2026-11-11: "Build a fight-only layer"): a combat button's In combat entry
      *  that is a whole-button thing - "command" / "bind" / "item" / "mount" - with [key] (the command's / binding's key, "i:<id>" /
      *  "m:<id>"; no [id], so nothing reads it as a spell); null = a spell */
+    /** m146 SMART RANGE (the user, 2026-11-12: "an optional checkbox called "Smart Range". when enabled I want two selectable buttons, one
+     *  for melee and one for range ... this should be per button/ button modifier combo"): [sr] = the entry's box is on; [half] "m" = this
+     *  ref is the Melee half (a next-swing attack) with [range] the Range half (both = ONE saved macro, [macro] its name; [srErr] why it
+     *  is not made: "full" / "taken" / "name" / "long" / "refused"), "r" = this ref is the Range half alone */
     data class Ref(val id: Int?, val name: String, val icon: Int, val item: Boolean = false, val kind: String? = null,
-                   val layer: String? = null, val key: String? = null) {
+                   val layer: String? = null, val key: String? = null, val sr: Boolean = false, val half: String? = null,
+                   val range: Ref? = null, val macro: String? = null, val srErr: String? = null) {
         val manners: Boolean get() = kind == "manners"
     }
 
@@ -42,7 +47,9 @@ object PadMapModel {
                     /** m34: the game binding a [Kind.BIND] button carries ("JUMP", "INTERACTTARGET", ...) */
                     val key: String? = null,
                     /** m43: a [Kind.COMBAT] button whose fight spell is the OVERLAY's (no macro; [otherwise] = what the button holds) */
-                    val ov: Boolean = false)
+                    val ov: Boolean = false,
+                    /** m146: the In combat tab's Smart Range box is checked here (also with no spell yet) */
+                    val smart: Boolean = false)
     /** m13 START ATTACK ON CAST (the user 2026-10-01): [on]; [n] buttons converted; [full] / [user] / [refused] buttons left plain (no
      *  Character Macro free / a macro of that name is the user's own / the game refused); [pending] waits for the fight to end; [colOn] /
      *  [colOff] the `spells` row's columns Home's Settings room taps (no-action notes, idempotent) */
@@ -132,6 +139,15 @@ object PadMapModel {
         val qitem: Ref? = null,
         /** m62 Smart buffs: the rows, the self-buffs offered, the cell row (Settings' Smart Y section); null = an add-on before m62 */
         val smartBuffs: SmartYModel.Doc? = null,
+        /** m148 SMART RANGE, WHO HAS IT (the user, 2026-11-12: "this option should only appear for classes with next swing pairs"; "for
+         *  druid this should only appear for the bear form action bar"): the add-on's `sro` - [srCaster] the caster's sets (a Warrior /
+         *  Hunter), [srForms] the forms whose own set has it (a Druid's Bear Form), [srSwing] the next-swing attacks the character knows
+         *  (the Melee half's chooser lists only these); [srFormBoxes] (form, pos) places whose box is checked with no spell yet. No `sro`
+         *  (any other class): Smart Range does not exist on the page */
+        val srCaster: Boolean = false,
+        val srForms: Set<Int> = emptySet(),
+        val srSwing: Set<Int> = emptySet(),
+        val srFormBoxes: Set<Pair<Int, Int>> = emptySet(),
     ) {
         /** m55: the form the character is in now (null: none / caster) */
         val activeForm: Form? get() = forms.firstOrNull { it.on }
@@ -163,7 +179,9 @@ object PadMapModel {
 
     private fun count(o: JSONObject?): MacroCount? = o?.let { MacroCount(it.optInt("n", 0), intOrNull(it, "max")) }
     private fun ref(o: JSONObject?): Ref? = o?.let { r ->
-        textOrNull(r, "n")?.let { Ref(intOrNull(r, "id"), it, r.optInt("i", 0), r.optBoolean("item", false), layer = textOrNull(r, "t"), key = textOrNull(r, "key")) }
+        textOrNull(r, "n")?.let { Ref(intOrNull(r, "id"), it, r.optInt("i", 0), r.optBoolean("item", false), layer = textOrNull(r, "t"), key = textOrNull(r, "key"),
+            sr = r.optInt("sr", 0) == 1, half = textOrNull(r, "h"), range = ref(r.optJSONObject("rg")), macro = textOrNull(r, "mn"),
+            srErr = textOrNull(r, "se")) }
     }
 
     /** The `padmap` message; null when it is not one. */
@@ -180,7 +198,7 @@ object PadMapModel {
                 PadSet(s.optInt("set", 0), objects(s.optJSONArray("slots")).map { o ->
                     Slot(o.optInt("pos", 0), intOrNull(o, "s"), kind(o.optString("kind", "")), intOrNull(o, "id"), textOrNull(o, "n"), o.optInt("i", 0),
                         ref(o.optJSONObject("c")), ref(o.optJSONObject("o")), ref(o.optJSONObject("cf")), o.optBoolean("sa", false), key = textOrNull(o, "key"),
-                        ov = o.optBoolean("ov", false))
+                        ov = o.optBoolean("ov", false), smart = o.optBoolean("sr", false))
                 })
             },
             general = count(macros?.optJSONObject("general")),
@@ -215,10 +233,18 @@ object PadMapModel {
             fish = m.optJSONObject("fish")?.let { o -> textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0)) } },
             formFights = objects(m.optJSONArray("ff")).mapNotNull { o ->
                 val f = o.optInt("f", 0); val p = o.optInt("p", 0)
-                // PadMap m141 (PadTabCtl p43): a form's fight-layer command / item / mount carries `t` / `key` (no id)
-                val r = textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0), layer = textOrNull(o, "t"), key = textOrNull(o, "key")) }
+                // PadMap m141 (PadTabCtl p43): a form's fight-layer command / item / mount carries `t` / `key` (no id); m148: a Bear Form
+                // set's Smart Range halves (sr / h / rg / mn / se), the same fields as a button's `c`
+                val r = ref(o)
                 if (f > 0 && p in 1..8 && r != null) FormFight(f, p, r) else null
             },
+            srCaster = m.optJSONObject("sro")?.optInt("c", 0) == 1,
+            srForms = m.optJSONObject("sro")?.optJSONArray("f")?.let { a -> (0 until a.length()).map { a.optInt(it, 0) }.filter { it > 0 }.toSet() } ?: emptySet(),
+            srSwing = m.optJSONObject("sro")?.optJSONArray("sw")?.let { a -> (0 until a.length()).map { a.optInt(it, 0) }.filter { it > 0 }.toSet() } ?: emptySet(),
+            srFormBoxes = objects(m.optJSONArray("ffsr")).mapNotNull { o ->
+                val f = o.optInt("f", 0); val p = o.optInt("p", 0)
+                if (f > 0 && p in 1..8) f to p else null
+            }.toSet(),
             faceKeys = m.optJSONObject("face")?.optJSONObject("keys")?.let { k ->
                 FACES.mapNotNull { p -> k.optString(p.toString(), "").takeIf { it.isNotEmpty() }?.let { p to it } }.toMap()
             } ?: emptyMap(),
@@ -442,9 +468,12 @@ object PadMapModel {
         val pright: Int = 0,
         val pset: Int = 1,
         val ptouch: Int = 1,
+        /** m146 / p46 SMART RANGE: the Melee / Range picker A opened (1 Melee, 2 Range; null = closed), the half picked on this button */
+        val srp: Int? = null,
+        val srh: String? = null,
     )
-    /** the button Move carries: its set (1-4), its place (1-8), its bar page */
-    data class Carry(val set: Int, val pos: Int, val page: Int)
+    /** the button Move carries: its set (1-4), its place (1-8), its bar page; [h] (p46) = a Smart Range half ("m" / "r") */
+    data class Carry(val set: Int, val pos: Int, val page: Int, val h: String? = null)
 
     fun parseCtl(msg: JSONObject): Ctl? {
         if (msg.optString("type") != "padtabctl") return null
@@ -470,7 +499,7 @@ object PadMapModel {
             scur = c.optInt("scur", 2).coerceIn(2, 4),
             dpos = c.optInt("dpos", 2).coerceIn(1, 4),
             carry = c.optJSONObject("carry")?.let { Carry(it.optInt("set", 1).coerceIn(1, 4), it.optInt("pos", 1).coerceIn(1, 8),
-                                                         it.optInt("page", 1).coerceIn(1, 3)) },
+                                                         it.optInt("page", 1).coerceIn(1, 3), textOrNull(it, "h")?.takeIf { h -> h == "m" || h == "r" }) },
             rpage = c.optInt("rpage", 1).coerceIn(1, 3),
             rad = c.optJSONArray("rad")?.let { a -> List(minOf(8, a.length())) { i -> a.optInt(i, 0) } } ?: emptyList(),
             form = intOrNull(c, "form")?.takeIf { it > 0 },
@@ -480,6 +509,8 @@ object PadMapModel {
             pright = c.optInt("pright", 0).coerceAtLeast(0),
             pset = c.optInt("pset", 1).coerceIn(1, 4),
             ptouch = c.optInt("ptouch", 1).coerceIn(1, 2),
+            srp = intOrNull(c, "srp")?.takeIf { it == 1 || it == 2 },
+            srh = textOrNull(c, "srh")?.takeIf { it == "m" || it == "r" },
         )
     }
 
@@ -537,6 +568,28 @@ object PadMapModel {
     const val COL_CLEAN_SHARED = 13
     /** b41 / p29 (f-combat-forms): the In combat tab's form row by touch: 15 = Caster, 16-25 = the forms in the game's order (a pick) */
     fun colForm(k: Int) = 15 + k.coerceIn(0, 10)
+    /** m146 / p46 SMART RANGE BY TOUCH (Book b52): padtab 39 is the one-shot pick, the padtab column right after it its code */
+    const val COL_SR = 39
+    const val SR_BOX = 0                                        // flip the chosen button's box
+    const val SR_MELEE = 1                                      // pick its Melee half (no game action)
+    const val SR_RANGE = 2                                      // pick its Range half
+    const val SR_ON = 3                                         // the box on (never off: the backup's restore)
+    fun srCells(code: Int): List<Pair<String, Int>> = listOf(ROW_PADTAB to COL_SR, ROW_PADTAB to code.coerceIn(0, 4))
+    fun srCode(half: String) = if (half == "m") SR_MELEE else SR_RANGE
+    /** the In combat entry a button's view carries: a base X / Y / A's fight spell, an overlay fight entry; null = none */
+    fun fightRef(sl: Slot?): Ref? = when {
+        sl == null -> null
+        isFace(sl) -> sl.fight
+        sl.kind == Kind.COMBAT && sl.ov -> sl.combat
+        else -> null
+    }
+    /** the box is checked (with or without a spell) */
+    fun srOn(sl: Slot?): Boolean = sl?.smart == true || fightRef(sl)?.sr == true
+    /** the Melee half (the entry's top when it is on the melee side), the Range half */
+    fun srMelee(sl: Slot?): Ref? = fightRef(sl)?.takeIf { it.sr && it.half != "r" }
+    fun srRange(sl: Slot?): Ref? = fightRef(sl)?.takeIf { it.sr }?.let { if (it.half == "r") it else it.range }
+    fun srHalf(sl: Slot?, half: String?): Ref? = when (half) { "m" -> srMelee(sl); "r" -> srRange(sl); else -> null }
+
     /** m55: form [form]'s own In-combat spell on bare-set position [pos], or null */
     fun formFight(map: Map, form: Int, pos: Int): Ref? = map.formFights.firstOrNull { it.form == form && it.pos == pos }?.ref
 

@@ -1017,7 +1017,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "lv", "rng", "ic"}   # m129: plain facts only (no hp / full / hs / g / hit counts); m134: the pet's ic
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm144' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm148' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1243,8 +1243,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p45"' in SRC["padtabctl"] and 'local BV = "b51"' in SRC["book"] and 'local PV = "m144"' in SRC["padmap"],
-      "the versions: PadMap m144, PadTabCtl p45, Book b51 (b49 stance-bind #179, b50 toolbar D-pad #18/#20, b51 / m143 / m144 rank up)")
+check('local CV = "p48"' in SRC["padtabctl"] and 'local BV = "b52"' in SRC["book"] and 'local PV = "m148"' in SRC["padmap"],
+      "the versions: PadMap m146, PadTabCtl p46, Book b52 (b49 stance-bind #179, b50 toolbar D-pad #18/#20, b51 / m143 / m144 rank up, m146 / p46 / b52 Smart Range)")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
@@ -1376,7 +1376,8 @@ check(ctlDoc(W8)['note'] == 'pslot-no-pick', "37 with no fresh pick: nothing", c
 n0 = nsent(W8)
 W8.execute('ptab(39)')
 pa = docs(W8, n0, 'padack')
-check(pa and pa[0]['ok'] is False and pa[0]['why'] == 'unknown column', "padtab 39: refused (unknown column; 38 is the spell radials' prefix, Book b49)", pa)
+# Book b52 (PadMap m146 SMART RANGE): padtab 39 is the Smart Range pick now (its code 0-4 follows); alone it is no game action
+check(pa == [] and W8.eval('WowCompanion.padTabCtl.srWants()') is True, "padtab 39: the Smart Range pick (Book b52), no game action, no refusal", pa)
 W8.execute('ptab(29); COMBAT = true')
 n0 = nsent(W8)
 W8.execute('spellTaps(331)')
@@ -1699,6 +1700,15 @@ hits = [(p, ln) for (p, ln) in hits if not (p == r'\bSetCVar\b' and ('STYLE_CVAR
 # PadMap m143 RANK UP (the user, 2026-11-12, "Prompt, A upgrades all"): the player's own A on Home's prompt puts the new rank on the slots that
 # held a lower one - a player-approved bar write exactly like Book's Bind (tools/test_rankup.py proves it runs only after that A)
 hits = [(p, ln) for (p, ln) in hits if not (p == r'\bPlaceAction\b' and ln == 'CALL(function() return PlaceAction(c.s) end)')]
+# PadMap m146 SMART RANGE (the user, 2026-11-12: "I am completely fine with saving macros for the addon"; "Hide text and sound"): OV.srSync
+# makes / rewrites / renames ONLY our own "DSF ..." character macros (name AND body), out of combat; DSF_SR0 / DSF_SR1 turn the error
+# speech off for the press and give the player's own value back (tools/test_smart_range.py proves both)
+SR_OK = {'if body ~= w.b then CALL(function() return EditMacro(name, name, DYNAMIC_ICON, w.b) end); changed = true end',
+         'CALL(function() return EditMacro(old, name, DYNAMIC_ICON, w.b) end); mine[old] = nil; changed = true',
+         'CALL(function() return CreateMacro(name, DYNAMIC_ICON, w.b, true) end); changed = true',
+         'if type(cc) == "table" and type(cc.SetCVar) == "function" then pcall(cc.SetCVar, cv, v) return end',
+         'pcall(SetCVar, cv, v)'}
+hits = [(p, ln) for (p, ln) in hits if ln not in SR_OK]
 check(not hits, "no trace in the new add-on code: no SetBinding / SaveBindings / macros / CVars / bar writes / Blizzard window code",
       hits[:3])
 check(not any('SetOverrideBindingClick' in ln and 'hdr' not in ln and 'owner' not in ln for ln in code),
