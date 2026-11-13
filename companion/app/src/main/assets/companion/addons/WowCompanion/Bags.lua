@@ -1148,7 +1148,7 @@ local BAR = {}              -- below: the cursor on the room's top strip, closed
 -- Read-only calls only (C_TooltipInfo through Interact); nothing happens in the game.
 local TIP = { REST = 0.12, FRESH = 8, TICK = 0.1, PER_TICK = 2, MAX = 200, TRIES = 6,
               c = {}, n = 0, want = nil, wait = nil, loading = nil, tries = 0, queue = nil, qFor = nil, ticking = false,
-              again = false, reads = 0, pre = 0 }
+              again = false, reads = 0, pre = 0, rows = {} }
 local function tipKey()
     if not (ctl.on and ctl.mode == "grid" and not ctl.pick) or type(WC.tipOf) ~= "function" then return nil end
     local id = bagItemID(ctl.bag, ctl.slot)
@@ -1185,7 +1185,7 @@ function TIP.read(key, bag, slot)
     if not TIP.complete(t) then t.loading = true; return t, false end
     if TIP.n >= TIP.MAX then TIP.c, TIP.n = {}, 0 end            -- a long session: start again
     if not TIP.c[key] then TIP.n = TIP.n + 1 end
-    TIP.c[key] = { link = TIP.link(bag, slot), val = t, at = GetTime() }
+    TIP.c[key] = { link = TIP.link(bag, slot), val = t, at = GetTime(), sig = TIP.rows[key] }
     return t, true
 end
 -- read the cursor's item and send it when it says something new (old = the kept one it replaces, if any)
@@ -1243,7 +1243,8 @@ function TIP.step()
     if #TIP.queue > 0 then TIP.ticking = true; C_Timer.After(TIP.TICK, TIP.step) end
 end
 function TIP.ahead()
-    if TIP.ticking then return end
+    -- review: in a fight TIP.step does nothing, so no timer either (_bagsTip runs at every ctl document)
+    if TIP.ticking or InCombatLockdown() then return end
     if TIP.queue and #TIP.queue == 0 and TIP.qFor == (ctl.bag .. " " .. ctl.slot) then return end   -- all read for this spot
     TIP.ticking = true
     C_Timer.After(TIP.TICK, TIP.step)
@@ -1271,10 +1272,17 @@ end
 -- everything forgotten (what is worn or the level changed)
 function WC._bagsTipForget() TIP.c, TIP.n = {}, 0; TIP.want = nil; TIP.wait = nil; TIP.queue = nil end
 -- a bags collect: keep the tooltips of the items still where they were (their links are checked when used)
+-- review: and of the items whose stack, bound state or durability changed with the same link (a stack used up, a death's or a
+-- repair's durability on gear in the bags, a piece gone soulbound): the link does not show those, the tooltip text does
+local function rowSig(r) return tostring(r.count) .. "|" .. tostring(r.bound) .. "|" .. tostring(r.dur) end
 function WC._bagsTipKeep(items)
     local here = {}
-    for _, r in ipairs(items) do here["bag " .. r.bag .. " " .. r.slot .. " " .. r.id] = true end
-    for k in pairs(TIP.c) do if not here[k] then TIP.c[k] = nil; TIP.n = TIP.n - 1 end end
+    for _, r in ipairs(items) do here["bag " .. r.bag .. " " .. r.slot .. " " .. r.id] = rowSig(r) end
+    TIP.rows = here
+    for k, e in pairs(TIP.c) do
+        local sig = here[k]
+        if not sig or (e.sig ~= nil and e.sig ~= sig) then TIP.c[k] = nil; TIP.n = TIP.n - 1 else e.sig = sig end
+    end
     TIP.queue = nil                                      -- the bags changed: the read-ahead looks again
 end
 -- the game finished loading something: the cursor's loading tooltip is read again (at most TIP.TRIES times, once a frame)

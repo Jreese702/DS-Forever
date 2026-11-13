@@ -106,13 +106,13 @@ function SetOverrideBinding() end
 function GetBindingAction() return "" end
 -- the backpack: 8 slots, items in 1..6
 BAG = { [0] = { [1] = 501, [2] = 502, [3] = 503, [4] = 504, [5] = 505, [6] = 506 } }
-LINK = {}
+LINK, STACK = {}, {}
 function linkOf(b, s) local id = BAG[b] and BAG[b][s]; if id then return LINK[b .. ":" .. s] or ("|Hitem:" .. id .. "|h") end end
 C_Container = {
     GetContainerItemID = function(b, s) return BAG[b] and BAG[b][s] end,
     GetContainerNumSlots = function(b) return b == 0 and 8 or 0 end,
     GetContainerNumFreeSlots = function(b) return 2, 0 end,
-    GetContainerItemInfo = function(b, s) local id = BAG[b] and BAG[b][s]; if id then return { itemID = id, iconFileID = 1, quality = 1, stackCount = 1, hyperlink = linkOf(b, s) } end end,
+    GetContainerItemInfo = function(b, s) local id = BAG[b] and BAG[b][s]; if id then return { itemID = id, iconFileID = 1, quality = 1, stackCount = STACK[b .. ":" .. s] or 1, hyperlink = linkOf(b, s) } end end,
     GetContainerItemLink = function(b, s) return linkOf(b, s) end,
     GetContainerItemQuestInfo = function() return {} end,
 }
@@ -201,6 +201,13 @@ check(L.eval('reads("bag 0 2 502")') == 2 and L.eval('lastEmit().ctl.tip.lines[2
 L.execute('N4 = stats().n; BAG[0][6] = nil; fire("BAG_UPDATE_DELAYED"); run(0)')
 check(L.eval('stats().n') == L.eval('N4') - 1, "slot 6 emptied: its tooltip forgotten", (L.eval('N4'), L.eval('stats().n')))
 
+# 4b. (review) the same link, a different stack: read again (the link does not show the count, charges or durability)
+L.execute('N4b = stats().n; STACK["0:3"] = 5; fire("BAG_UPDATE_DELAYED"); run(0)')
+check(L.eval('stats().n') == L.eval('N4b') - 1, "slot 3's stack changed: its tooltip forgotten", (L.eval('N4b'), L.eval('stats().n')))
+L.execute('N4c = stats().n; fire("BAG_UPDATE_DELAYED"); run(0)')
+check(L.eval('stats().n') == L.eval('N4c'), "a collect with nothing changed forgets nothing", (L.eval('N4c'), L.eval('stats().n')))
+L.execute('STACK["0:3"] = nil; fire("BAG_UPDATE_DELAYED"); run(0); run(0.6)')
+
 # 5. what is worn changed: all forgotten (the compare), the cursor's read again
 L.execute('fire("PLAYER_EQUIPMENT_CHANGED")')
 check(L.eval('stats().n') == 0, "PLAYER_EQUIPMENT_CHANGED forgets them all", L.eval('stats().n'))
@@ -238,6 +245,8 @@ check(L.eval('reads("bag 0 3 503")') == L.eval('R8') + 1 and L.eval('emitsN()') 
 L.execute('fire("PLAYER_EQUIPMENT_CHANGED"); run(0); COMBAT = true; A9 = allReads(); press("PADDLEFT"); run(0); run(1.0)')
 check(L.eval('allReads()') == L.eval('A9') + 1 and L.eval('reads("bag 0 2 502")') >= 1 and L.eval('lastEmit().ctl.tip.key') == 'bag 0 2 502',
       "in a fight: only the cursor's item read (and sent)", L.eval('allReads() - A9'))
+L.execute('T9 = #TIMERS; for i = 1, 20 do doc() end')
+check(L.eval('#TIMERS') == L.eval('T9'), "in a fight: no read-ahead timers set by the documents", L.eval('#TIMERS - T9'))
 L.execute('COMBAT = false; press("PADDRIGHT"); run(0); run(1.0)')
 check(L.eval('stats().n') >= 5, "the fight over: the reads ahead go on", L.eval('stats().n'))
 
