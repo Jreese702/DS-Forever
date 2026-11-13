@@ -69,15 +69,11 @@ object SetupPresets {
     fun current(): Now = Now(IDS.associateWith { GameUi.mode(it) }, GameUi.castBarHide(), GameUi.swWant(GameUi.SW_PMODE),
         Settings.questTracking)
 
-    /** the pick: the bundle written (GameUi's part in one write, one reconcile: its taps follow at their own pace), the picker answered */
+    /** the pick: the bundle written (GameUi's part in one write, one reconcile: its taps follow at their own pace) */
     fun apply(p: Preset) {
         val b = bundle(p)
         GameUi.setBundle(b.modes, b.castBarHide, b.partyMode)
         // Vanilla = the Polestar guide off (a guide not asked about yet is answered too: Classic is the game's own way)
         if (b.vanilla && Settings.polestarGuide != PolestarGuide.OFF) PolestarGuide.set(false)
-        Settings.setupAsked = true
     }
-
-    /** B / "Keep current" on the one-time picker: nothing changes, the picker is answered */
-    fun keep() { Settings.setupAsked = true }
 }
