@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q55"    -- bump on every change; q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
+local QV = "q56"    -- bump on every change; q56: WC.questNeedItems, read only - the item ids QuestieDB's item objectives name and the game's item objectives' words for every quest in the log, for the Bags Destroy picker (the user's pick 2026-11-13: Suggested never offers "items a tracked quest objective needs"); q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -526,6 +526,36 @@ WC.questItemTargets = function()
                     if t then e.words[#e.words + 1] = t:lower() end
                 end
                 out[#out + 1] = e
+            end
+        end
+    end
+    return out
+end
+-- q56 (bags-act1, the user's pick 2026-11-13: the Destroy picker's Suggested list never offers "items a tracked quest objective needs"):
+-- READ ONLY. What the quests in the log ask you to carry: the item ids of QuestieDB's item objectives (qo[3]) when it is installed,
+-- and the game's own item objectives' words (lower case, "wolf meat: 3/8") for a name match without it. Every quest in the log
+-- counts, tracked or not (an untracked quest's item is no safer to delete). -> { ids = { [itemID] = true }, words = { "..." } }
+WC.questNeedItems = function()
+    local out = { ids = {}, words = {} }
+    local okN, nEntries = CALL(function() return C_QuestLog.GetNumQuestLogEntries() end)
+    if not (okN and type(nEntries) == "number") then return out end
+    local have = qdbReady()
+    for i = 1, math.min(nEntries, 100) do
+        local ok, info = CALL(function() return C_QuestLog.GetInfo(i) end)
+        local qid = ok and type(info) == "table" and not TB(function() return info.isHeader end) and TN(function() return info.questID end)
+        if qid then
+            if have then
+                local qo = qdbCall(qdb.Q, "objectives", qid)
+                if type(qo) == "table" and type(qo[3]) == "table" then
+                    for _, c in ipairs(qo[3]) do if type(c) == "table" and type(c[1]) == "number" then out.ids[c[1]] = true end end
+                end
+            end
+            local okO, objs = CALL(function() return C_QuestLog.GetQuestObjectives(qid) end)
+            for _, o in ipairs(okO and type(objs) == "table" and objs or {}) do
+                if TS(function() return o.type end) == "item" then
+                    local t = TS(function() return o.text end)
+                    if t then out.words[#out.words + 1] = t:lower() end
+                end
             end
         end
     end

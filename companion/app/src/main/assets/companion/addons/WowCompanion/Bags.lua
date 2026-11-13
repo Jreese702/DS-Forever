@@ -49,6 +49,24 @@
 -- forgets them (only an item gone or changed, or what is worn); only complete tooltips are kept ("Retrieving item information" /
 -- no lines = loading, read again on ITEM_DATA_LOAD_RESULT / TOOLTIP_DATA_UPDATE); the 19 worn tooltips are read only when worn gear
 -- changes (WORN). Read-only calls only; the 0.2 s send limit is unchanged.
+--
+-- bags-act1 (the user's picks, 2026-11-13, on E:/wow-build/bags_design_1113.md: "Compare action in the bag item Y menu (gear only)",
+-- "side by side: bag item left, worn item(s) right", "confirm stays A = Yes, B = No; rare and better stay REFUSED", "never in combat",
+-- "'Suggested' section at the top of the Destroy picker, RANKED MIX", "a two-hander compares vs main hand + off hand together; empty
+-- slot shows all gains"):
+--  * COMPARE (ACT, mode "compare"): a fourth Y-menu row, usable on gear only (the item's equip location, not its tooltip). It opens
+--    the app's compare sheet (the bag item left, what it would replace right, the game's stat changes under each); the room keeps the
+--    item's tooltip in that mode (tipKey). Nothing happens in the game; B = back to the grid; the sheet scrolls in the app (the D-pad
+--    up / down, the right stick, a finger). A finger on the menu's Compare row: bmvq 27, then column 8 (ACT.COMPARE_COL).
+--  * DESTROY HARDENED: the room's delete goes through WC.bagsDestroy (the item still there, never in combat, nothing on the cursor,
+--    a player bag only, legendary refused) - rare and better stay refused by the room (its box: delete it in the game); the delete
+--    is confirmed by the slot again at the next bag update (1.5 s at most), not at once. cursorBusy() asks GetCursorInfo (anything
+--    on the cursor, not only an item). One item per press, from a press only; never the game's pop-up. Destroy is greyed in a fight.
+--  * SUGGESTED (ACT.suggest, mode "dpick"): Destroy opens a picker whose top section is a ranked list - grey / no-value items (the
+--    lowest stack value first), then gear worse than worn (a lower item level or the game's stat changes all losses) or unusable (a
+--    red tooltip line), then the cheapest white stacks - never quest items, items a quest in the log needs (WC.questNeedItems), quest
+--    starters, rare and better, hearthstones, keys or profession tools; the cursor's own item below it ("This item", focused at
+--    first). Select, then A = the same single confirm (B there = back to the picker). No suggestion = the confirm at once, as before.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -315,7 +333,11 @@ local function settling()
     return false
 end
 
+-- bags-act1 (bags_design_1113.md: "Change cursorBusy() to GetCursorInfo() == nil"): ANYTHING on the cursor (a spell, money, a macro
+-- as well as an item) is busy; GetCursorInfo answers a kind string, nil when empty. CursorHasItem stays as the second test.
 local function cursorBusy()
+    local okI, kind = CALL(function() return GetCursorInfo() end)
+    if okI and type(kind) == "string" then return true end
     local ok, busy = CALL(function() return CursorHasItem() end)
     return ok and busy == true
 end
@@ -442,7 +464,19 @@ end
 -- ("rare") unless the window asked its extra "Are you sure?" and passes [rareConfirmed] = true. Legendary and better (not
 -- asked about) stay refused ("legendary"). The Bags room's own Destroy keeps refusing rare and better (its own ruling).
 -- Returns true, or false + why.
-function WC.bagsDestroy(bag, slot, itemID, rareConfirmed)
+-- bags-act1: the slot is confirmed at the game's NEXT BAG UPDATE (BAG_UPDATE_DELAYED, WC._bagsDestroyCheck), 1.5 s at most, not at a
+-- fixed 0.6 s; [done] (optional) is called once with true (the slot no longer holds the item) or false. One delete waits at a time.
+local DESTROYED = { wait = nil, LATEST = 1.5 }
+function WC._bagsDestroyCheck(fromEvent)
+    local w = DESTROYED.wait
+    if not w then return end
+    if fromEvent and GetTime() == w.t then return end           -- a bag update queued before the delete itself: not its answer
+    DESTROYED.wait = nil
+    local still = bagItemID(w.bag, w.slot)
+    WC.emit({ type = "cap", bagsDestroy = { confirm = (still ~= w.id), at = { bag = w.bag, slot = w.slot }, id = w.id } })
+    if w.done then pcall(w.done, still ~= w.id) end
+end
+function WC.bagsDestroy(bag, slot, itemID, rareConfirmed, done)
     local to = { bag = bag, slot = slot }
     local function no(why) WC.emit({ type = "cap", bagsDestroy = { ok = false, why = why, at = to } }); return false, why end
     if type(bag) ~= "number" or type(slot) ~= "number" or not inList(PLAYER_BAGS, bag) then return no("bad") end
@@ -466,10 +500,10 @@ function WC.bagsDestroy(bag, slot, itemID, rareConfirmed)
     -- "the item vanishes and it says refused", 2026-10-02: the same-instant slot check saw it still there), so the slot is
     -- confirmed a moment later, logged, and the call answers true now
     WC.emit({ type = "cap", bagsDestroy = { ok = true, at = to, id = id } })
-    C_Timer.After(0.6, function()
-        local still = bagItemID(bag, slot)
-        WC.emit({ type = "cap", bagsDestroy = { confirm = (still ~= id), at = to, id = id } })
-    end)
+    if DESTROYED.wait then WC._bagsDestroyCheck() end          -- an earlier one still waiting: answered now
+    local w = { bag = bag, slot = slot, id = id, done = done, t = GetTime() }
+    DESTROYED.wait = w
+    C_Timer.After(DESTROYED.LATEST, function() if DESTROYED.wait == w then WC._bagsDestroyCheck() end end)
     return true
 end
 
@@ -837,6 +871,8 @@ if #bagMissing > 0 then
 end
 
 bf:SetScript("OnEvent", function(_, event, a1)
+    -- bags-act1: a delete waiting for its slot to empty is confirmed at the bag update
+    if event == "BAG_UPDATE_DELAYED" and WC._bagsDestroyCheck then pcall(WC._bagsDestroyCheck, true) end
     -- bags-tip1: what is worn changed: every kept bag tooltip (its compare) and the worn ones are read again; durability: the worn ones
     if event == "PLAYER_EQUIPMENT_CHANGED" then
         if WC._bagsTipForget then WC._bagsTipForget() end
@@ -848,6 +884,7 @@ bf:SetScript("OnEvent", function(_, event, a1)
     -- other addons). Only a name WE are waiting for is worth a re-collect. (pcall: the arg is
     -- used as a table key, and nothing has measured whether an event arg can be secret.)
     if event == "GET_ITEM_INFO_RECEIVED" then
+        if WC._bagsDpickLoaded then pcall(WC._bagsDpickLoaded, a1) end      -- bags-act1: a Suggested value that was loading
         local ok, hit = pcall(function() return pending[a1] end)
         if not (ok and hit) then return end
     elseif CTX_OPEN[event] then
@@ -1114,7 +1151,10 @@ do
     end)
 end
 local COLS = 10                   -- the app's grid (v3, the room's full width: 10 to a row): the D-pad walks the same columns
-local MENU = { "split", "bind", "destroy" }    -- USER PICK 2026-09-28 17:05: the destructive one last
+-- USER PICK 2026-09-28 17:05: the destructive one last. bags-act1 (the user's pick 2026-11-13): Compare (gear only) before it
+local MENU = { "split", "bind", "compare", "destroy" }
+-- bags-act1: Compare and the Destroy picker (one table: the main chunk's local count). Filled in below the menu.
+local ACT = { COMPARE_COL = 8, MAX = 40 }
 local ctl = { on = false, mode = "grid", bag = 0, slot = 1, pick = nil, menu = 1, amount = 1,
               seq = 0, note = nil, use = nil, open = false, shut = {} }
 -- a /reload starts seq at 0 again; the app keys "have I tapped this use yet" on (sid, use.seq)
@@ -1150,7 +1190,8 @@ local TIP = { REST = 0.12, FRESH = 8, TICK = 0.1, PER_TICK = 2, MAX = 200, TRIES
               c = {}, n = 0, want = nil, wait = nil, loading = nil, tries = 0, queue = nil, qFor = nil, ticking = false,
               again = false, reads = 0, pre = 0, rows = {} }
 local function tipKey()
-    if not (ctl.on and ctl.mode == "grid" and not ctl.pick) or type(WC.tipOf) ~= "function" then return nil end
+    -- bags-act1: the compare sheet (mode "compare") keeps the item's tooltip too (its compare is the sheet's right side)
+    if not (ctl.on and (ctl.mode == "grid" or ctl.mode == "compare") and not ctl.pick) or type(WC.tipOf) ~= "function" then return nil end
     local id = bagItemID(ctl.bag, ctl.slot)
     if not id then return nil end
     return "bag " .. ctl.bag .. " " .. ctl.slot .. " " .. id
@@ -1252,7 +1293,7 @@ end
 function WC._bagsTip()
     local key = tipKey()
     if not key then return nil end
-    TIP.ahead()
+    if ctl.mode == "grid" then TIP.ahead() end           -- bags-act1: no reads ahead behind the compare sheet
     local e = TIP.get(key, ctl.bag, ctl.slot)
     if e and (GetTime() - e.at) < TIP.FRESH then return e.val end
     if TIP.want ~= key then
@@ -1327,6 +1368,10 @@ function WC._bagsCtlDoc()
         pick = ctl.pick and { bag = ctl.pick.bag, slot = ctl.pick.slot } or nil,
         menu = MENU[ctl.menu], amount = ctl.amount, note = ctl.note, seq = ctl.seq,
         usable = (ctl.mode == "menu") and menuUsable() or nil, rare = ctl.rare,
+        -- bags-act1: the menu's rows by name (usable follows this order), the Destroy picker, and the item a confirm is about
+        menus = (ctl.mode == "menu") and MENU or nil,
+        dpick = (ctl.mode == "dpick") and { list = ACT.list, sel = ctl.dsel or 1 } or nil,
+        dest = (ctl.mode == "destroy" and ctl.dest) and { bag = ctl.dest.bag, slot = ctl.dest.slot } or nil,
         use = ctl.use, sid = ctl.sid, bindReady = BIND_READY, bindMods = BIND_MODS,
         -- a refused bind names what already uses the button (the game's binding command)
         takenBy = ctl.takenBy, takenByName = ctl.takenBy and bindingLabel(ctl.takenBy) or nil,
@@ -1438,7 +1483,7 @@ local function leave(why)
     report("left-" .. why)
 end
 
-local function toGrid(note) ctl.mode = "grid"; ctl.bound = nil; ctl.rare = nil; report(note) end
+local function toGrid(note) ctl.mode = "grid"; ctl.bound = nil; ctl.rare = nil; ctl.dest = nil; ctl.fromPick = nil; report(note) end
 
 -- ---------------------------------------------------------------- ARMOR KITS, STONES, ENCHANTS: "CHOOSE AN ITEM" (the user, 2026-11-07: "there
 -- is no way to apply my light armor kits ... enchants, and sharpening stones ... We need to make a way to use them from both the bags room as
@@ -2105,13 +2150,258 @@ do
 end
 
 -- which Y-menu rows can be used on the cursor's item (UI Art's SPEC 2026-09-28: a row that cannot be
--- used is drawn disabled and the focus skips it). Destroy always can: for rare and better it opens the
+-- used is drawn disabled and the focus skips it). Destroy can out of a fight: for rare and better it opens the
 -- dialog that says why not.
+-- bags-act1: Compare only on gear (its equip location, not its tooltip: that may still be loading); Destroy never in a fight.
 menuUsable = function()
     local info = infoAt(ctl.bag, ctl.slot)
     local n = info and SN(function() return info.stackCount end) or 1
     local cap = capture()
-    return { n > 1, BIND_READY and cap ~= nil and cap.chord ~= nil, true }
+    return { n > 1, BIND_READY and cap ~= nil and cap.chord ~= nil, ACT.isGear(itemAt(ctl.bag, ctl.slot)), not InCombatLockdown() }
+end
+
+-- ---------------------------------------------------------------- bags-act1: COMPARE + THE DESTROY PICKER (see the header)
+-- the item's equip location when it is worn gear (not a bag, a quiver, food ...), else nil
+function ACT.loc(id)
+    if not id then return nil end
+    local ok, _, _, _, loc = CALL(function() return C_Item.GetItemInfoInstant(id) end)
+    loc = ok and S(function() return loc end) or nil
+    if type(loc) ~= "string" or loc == "" or loc:byte(1) <= 3 or NOT_WORN[loc] then return nil end
+    return loc
+end
+function ACT.isGear(id) return ACT.loc(id) ~= nil end
+-- the worn slots an equip location goes in (Interact's EQUIP_SLOTS); a one-hander's off hand only for a class that dual wields
+ACT.SLOTS = {
+    INVTYPE_HEAD = { 1 }, INVTYPE_NECK = { 2 }, INVTYPE_SHOULDER = { 3 }, INVTYPE_BODY = { 4 },
+    INVTYPE_CHEST = { 5 }, INVTYPE_ROBE = { 5 }, INVTYPE_WAIST = { 6 }, INVTYPE_LEGS = { 7 },
+    INVTYPE_FEET = { 8 }, INVTYPE_WRIST = { 9 }, INVTYPE_HAND = { 10 }, INVTYPE_FINGER = { 11, 12 },
+    INVTYPE_TRINKET = { 13, 14 }, INVTYPE_CLOAK = { 15 }, INVTYPE_WEAPON = { 16, 17 },
+    INVTYPE_2HWEAPON = { 16 }, INVTYPE_WEAPONMAINHAND = { 16 }, INVTYPE_WEAPONOFFHAND = { 17 },
+    INVTYPE_SHIELD = { 17 }, INVTYPE_HOLDABLE = { 17 }, INVTYPE_RANGED = { 18 }, INVTYPE_RANGEDRIGHT = { 18 },
+    INVTYPE_THROWN = { 18 }, INVTYPE_RELIC = { 18 }, INVTYPE_TABARD = { 19 },
+}
+function ACT.dualWield()
+    local ok, dw = CALL(function() return CanDualWield() end)
+    dw = ok and S(function() return dw end)
+    return dw == true or dw == 1
+end
+-- never suggested: the hearthstone, profession tools (picks, knives, hammers, rods, spanners, fishing poles ...)
+ACT.KEEP = { [6948] = true, [2901] = true, [7005] = true, [5956] = true, [6219] = true, [6218] = true, [6339] = true, [11130] = true,
+             [11145] = true, [16207] = true, [22461] = true, [22462] = true, [22463] = true, [10498] = true, [9149] = true,
+             [20815] = true, [4471] = true, [5060] = true, [6256] = true, [6365] = true, [6366] = true, [6367] = true, [12225] = true,
+             [19022] = true, [19970] = true, [25978] = true, [756] = true, [778] = true, [1959] = true }
+-- the game's item classes never suggested: reagents (5: a shaman's Ankh), projectiles (6), quest (12), keys (13), profession (19)
+ACT.KEEP_CLASS = { [5] = true, [6] = true, [12] = true, [13] = true, [19] = true }
+ACT.RED = "ff2020"            -- RED_FONT_COLOR: a tooltip line the player does not meet (a level, a skill, an armour type)
+ACT.GAIN = "00ff00"           -- the game's stat-change gain colour (Interact's delta lines)
+-- the stack's sell value in copper (C_Item.GetItemInfo's 11th return); nil while the game is loading it (asked for, re-built then)
+function ACT.value(id, count, noValue)
+    if noValue then return 0 end
+    local ok, v = CALL(function() return select(11, C_Item.GetItemInfo(id)) end)
+    v = ok and SN(function() return v end) or nil
+    if v == nil then
+        ACT.wait = ACT.wait or {}
+        ACT.wait[id] = true
+        CALL(function() return C_Item.RequestLoadItemDataByID(id) end)
+        return nil
+    end
+    return v * (count or 1)
+end
+-- the item's tooltip (kept, or read now: out of a fight only, the picker is never opened in one)
+function ACT.tip(bag, slot, id)
+    local key = "bag " .. bag .. " " .. slot .. " " .. id
+    local e = TIP.get(key, bag, slot)
+    if e then return e.val end
+    if type(WC.tipOf) ~= "function" then return nil end
+    local t = TIP.read(key, bag, slot)
+    return t
+end
+-- a tooltip line in the game's red (not the name line)
+function ACT.unusable(t)
+    if type(t) ~= "table" or type(t.lines) ~= "table" then return false end
+    for i = 2, #t.lines do
+        local l = t.lines[i]
+        if type(l) == "table" and (l.c == ACT.RED or l.rc == ACT.RED) then return true end
+    end
+    return false
+end
+-- the game's stat changes against one worn slot: true = all losses, false = a gain, nil = none given
+function ACT.allLoss(t, slot)
+    if type(t) ~= "table" or type(t.cmp) ~= "table" then return nil end
+    for _, c in ipairs(t.cmp) do
+        if type(c) == "table" and c.slot == slot and type(c.lines) == "table" and type(c.dn) == "number" and c.dn > 0 then
+            local n = #c.lines
+            for i = n - c.dn + 1, n do
+                local l = c.lines[i]
+                if type(l) == "table" and l.c == ACT.GAIN then return false end
+            end
+            return true
+        end
+    end
+    return nil
+end
+-- gear worse than EVERY worn piece it could replace: a lower item level, or the game's stat changes all losses. An empty slot it
+-- could go in = not worse (it is a gain there)
+function ACT.worse(row, t)
+    local slots = ACT.SLOTS[row.loc]
+    if not slots then return false end
+    local any = false
+    for _, sl in ipairs(slots) do
+        if not (row.loc == "INVTYPE_WEAPON" and sl == 17 and not ACT.dualWield()) then
+            local wid = SN(function() return GetInventoryItemID("player", sl) end)
+            if not wid then return false end
+            local wl = ilvlOf(S(function() return GetInventoryItemLink("player", sl) end))
+            local lower = type(row.ilvl) == "number" and type(wl) == "number" and row.ilvl < wl
+            if not (lower or ACT.allLoss(t, sl) == true) then return false end
+            any = true
+        end
+    end
+    return any
+end
+-- what the quests in the log need (Quests' WC.questNeedItems: ids, and the item objectives' own words)
+function ACT.questNeeds()
+    if type(WC.questNeedItems) ~= "function" then return { ids = {}, words = {} } end
+    local ok, q = pcall(WC.questNeedItems)
+    if not (ok and type(q) == "table") then return { ids = {}, words = {} } end
+    q.ids = type(q.ids) == "table" and q.ids or {}
+    q.words = type(q.words) == "table" and q.words or {}
+    return q
+end
+function ACT.needed(q, id, name)
+    if q.ids[id] then return true end
+    local n = type(name) == "string" and name ~= "" and name:lower() or nil
+    if not n then return false end
+    for _, w in ipairs(q.words) do if type(w) == "string" and w:find(n, 1, true) then return true end end
+    return false
+end
+-- one bag item for the Suggested list: { g = 1 junk / 2 gear / 3 cheap white, why, v } or nil (never suggested)
+function ACT.consider(bag, slot, id, info, q)
+    local quality = SN(function() return info.quality end)
+    if quality == nil or quality >= 3 then return nil end                         -- rare and better: never (and unknown)
+    if flag(info, "isLocked") == true or ACT.KEEP[id] then return nil end
+    local okI, _, _, _, loc, _, cls, sub = CALL(function() return C_Item.GetItemInfoInstant(id) end)
+    cls = okI and SN(function() return cls end) or nil
+    sub = okI and SN(function() return sub end) or nil
+    if cls and ACT.KEEP_CLASS[cls] then return nil end
+    if cls == 2 and sub == 20 then return nil end                                -- a fishing pole
+    local okQ, qi = CALL(function() return C_Container.GetContainerItemQuestInfo(bag, slot) end)
+    if okQ and type(qi) == "table" and (flag(qi, "isQuestItem") == true or type(field(qi, "questID")) == "number") then return nil end
+    local okN, nm = CALL(function() return C_Item.GetItemNameByID(id) end)
+    if ACT.needed(q, id, okN and S(function() return nm end) or nil) then return nil end
+    local count = SN(function() return info.stackCount end) or 1
+    local noValue = flag(info, "hasNoValue") == true
+    local v = ACT.value(id, count, noValue)
+    if quality == 0 or noValue then return { g = 1, why = "junk", v = v } end
+    local gl = ACT.loc(id)
+    if gl then
+        local t = ACT.tip(bag, slot, id)
+        if ACT.unusable(t) then return { g = 2, why = "unusable", v = v } end
+        local link = S(function() return C_Container.GetContainerItemLink(bag, slot) end)
+        if ACT.worse({ loc = gl, ilvl = ilvlOf(link) }, t) then return { g = 2, why = "worse", v = v } end
+        return nil                                                               -- an upgrade or a side-grade: kept
+    end
+    loc = okI and S(function() return loc end) or nil
+    if loc == "INVTYPE_BAG" or loc == "INVTYPE_QUIVER" then return nil end
+    if quality == 1 then return { g = 3, why = "cheap", v = v } end
+    return nil
+end
+-- THE PICKER'S LIST: Suggested (sec "s", ranked: junk, then worse / unusable gear, then cheap whites; each the lowest value first)
+function ACT.suggest()
+    local q = ACT.questNeeds()
+    ACT.wait = nil
+    local groups = { {}, {}, {} }
+    for _, bag in ipairs(PLAYER_BAGS) do
+        local n = SN(function() return C_Container.GetContainerNumSlots(bag) end) or 0
+        for slot = 1, n do
+            local info = infoAt(bag, slot)
+            local id = info and SN(function() return info.itemID end) or nil
+            if id then
+                local e = ACT.consider(bag, slot, id, info, q)
+                if e then e.bag, e.slot, e.id = bag, slot, id; table.insert(groups[e.g], e) end
+            end
+        end
+    end
+    local function before(a, b)
+        if (a.v == nil) ~= (b.v == nil) then return b.v == nil end             -- a value still loading goes last in its group
+        if a.v ~= nil and a.v ~= b.v then return a.v < b.v end
+        if a.bag ~= b.bag then return a.bag < b.bag end
+        return a.slot < b.slot
+    end
+    local list = {}
+    for g = 1, 3 do
+        table.sort(groups[g], before)
+        for _, e in ipairs(groups[g]) do
+            if #list < ACT.MAX then list[#list + 1] = { bag = e.bag, slot = e.slot, id = e.id, v = e.v, why = e.why, sec = "s" } end
+        end
+    end
+    return list
+end
+-- the list plus the cursor's own item ("This item", sec "i") when it is not suggested already; its index
+function ACT.withCursor(list)
+    for i, e in ipairs(list) do if e.bag == ctl.bag and e.slot == ctl.slot then return list, i end end
+    local cid = itemAt(ctl.bag, ctl.slot)
+    if not cid then return list, nil end
+    local info = infoAt(ctl.bag, ctl.slot)
+    list[#list + 1] = { bag = ctl.bag, slot = ctl.slot, id = cid, sec = "i",
+                        v = info and ACT.value(cid, SN(function() return info.stackCount end) or 1, flag(info, "hasNoValue") == true) or nil }
+    return list, #list
+end
+-- open the picker for the cursor's item: true = opened; false = nothing suggested (the confirm opens at once, as before)
+function ACT.openPicker()
+    local list = ACT.suggest()
+    if #list == 0 then ACT.list = nil; return false end
+    local sel
+    ACT.list, sel = ACT.withCursor(list)
+    ctl.dsel = sel or 1
+    ctl.mode = "dpick"
+    return true
+end
+-- the list again (a value loaded, an item moved), the selection kept on the same item where it still is
+function ACT.rebuild()
+    local was = ACT.list and ACT.list[ctl.dsel or 1]
+    local list = ACT.withCursor(ACT.suggest())
+    ACT.list = list
+    local sel = 1
+    if was then for i, e in ipairs(list) do if e.bag == was.bag and e.slot == was.slot and e.id == was.id then sel = i end end end
+    ctl.dsel = math.min(sel, math.max(1, #list))
+    if #list == 0 then ACT.list = nil; toGrid("dpick-empty") end
+end
+function WC._bagsDpickLoaded(id)
+    if not (ACT.wait and ACT.wait[id]) or ctl.mode ~= "dpick" then return end
+    ACT.wait[id] = nil
+    if next(ACT.wait) == nil then ACT.rebuild(); if ctl.mode == "dpick" then report(nil) end end
+end
+-- the confirm for one item (bag, slot): rare and better = the box that says why not; from the picker, B goes back to it
+function ACT.confirm(bag, slot, fromPick)
+    local info = infoAt(bag, slot)
+    if not info then if fromPick then ACT.rebuild(); report("moved") else toGrid("empty") end; return end
+    local q = SN(function() return info.quality end) or 0
+    ctl.armId = itemAt(bag, slot)
+    ctl.dest = { bag = bag, slot = slot }
+    ctl.fromPick = fromPick or nil
+    ctl.mode = "destroy"
+    -- the game makes the player TYPE "DELETE" for rare and better: a controller cannot, so the box says to do it in the game
+    if q >= 3 then ctl.rare = true; report("destroy-rare") else ctl.rare = nil; report(nil) end
+end
+-- B / No / Okay on the confirm: back to the picker it came from, else the grid
+function ACT.back(note)
+    if ctl.fromPick and ACT.list then
+        ctl.mode = "dpick"; ctl.dest = nil; ctl.rare = nil; ctl.fromPick = nil
+        ACT.rebuild()
+        if ctl.mode == "dpick" then report(note) end
+    else toGrid(note) end
+end
+-- A / Yes: ONE delete, through WC.bagsDestroy (its guards); the slot is confirmed at the next bag update
+function ACT.destroy()
+    local d = ctl.dest or { bag = ctl.bag, slot = ctl.slot }
+    if itemAt(d.bag, d.slot) ~= ctl.armId then toGrid("moved"); return end
+    if InCombatLockdown() then toGrid("destroy-combat"); fightRefused(); return end
+    local ok, why = WC.bagsDestroy(d.bag, d.slot, ctl.armId, false, function(gone)
+        if ctl.on then report(gone and "destroyed" or "destroy-unsure") end
+    end)
+    if ok then toGrid("destroying"); return end
+    if why == "combat" then fightRefused() end
+    toGrid((why == "cursor" or why == "moved" or why == "empty") and why or ("destroy-" .. tostring(why)))
 end
 local function menuStep(dir)
     local ok = menuUsable()
@@ -2168,7 +2458,7 @@ end
 -- equip", and "when its in my bags it should just always auto compare instead of having to hold a button"):
 --   A = Move (into the hand; then A puts it down, B cancels)
 --   X = the item's action (Use / Equip / ...: the app taps the slot's secure cell)
---   Y = More (Split Stack / Bind to a Button / Destroy)
+--   Y = More (Split Stack / Bind to a Button / Compare / Destroy)
 --   gear: "Currently Equipped" shows by itself (the tooltip's cmp from WC.tipOf), no button
 -- With an item in the hand only A and B act.
 local function onPress(key)
@@ -2218,11 +2508,14 @@ local function onPress(key)
             local info = infoAt(ctl.bag, ctl.slot)
             if not info then toGrid("empty"); return end
             if what == "destroy" then
-                -- the game makes the player TYPE "DELETE" for rare and better: a controller cannot
-                -- (so for those the dialog says it cannot be done here, with one Okay)
-                local q = SN(function() return info.quality end) or 0
-                ctl.armId = itemAt(ctl.bag, ctl.slot); ctl.mode = "destroy"
-                if q >= 3 then ctl.rare = true; report("destroy-rare") else report(nil) end
+                -- bags-act1: never in a fight (greyed there; a press that still lands is refused and says so)
+                if InCombatLockdown() then toGrid("destroy-combat"); fightRefused(); return end
+                -- the picker with its Suggested list first; nothing to suggest = this item's confirm at once, as before
+                if ACT.openPicker() then report(nil) else ACT.confirm(ctl.bag, ctl.slot, false) end
+            elseif what == "compare" then
+                -- bags-act1: the app's compare sheet for this gear; nothing happens in the game
+                if not ACT.isGear(itemAt(ctl.bag, ctl.slot)) then toGrid("compare-none"); return end
+                ctl.armId = itemAt(ctl.bag, ctl.slot); ctl.mode = "compare"; report(nil)
             elseif what == "split" then
                 local n = SN(function() return info.stackCount end) or 1
                 if n < 2 then toGrid("split-single"); return end
@@ -2240,17 +2533,31 @@ local function onPress(key)
         -- asked for, B goes to the capture's cancel instead and the others do nothing.
         if B then toGrid(nil) end
     elseif ctl.mode == "destroy" and ctl.rare then
-        if A or B then toGrid(nil) end                 -- Okay: nothing was destroyed
+        if A or B then ACT.back(nil) end               -- Okay: nothing was destroyed (back to the picker it came from)
     elseif ctl.mode == "destroy" then
-        if B then toGrid("cancelled")
+        if B then ACT.back("cancelled")
         elseif A then
-            -- the confirmation named ONE item: anything else in that slot now is not destroyed
-            if itemAt(ctl.bag, ctl.slot) ~= ctl.armId then toGrid("moved"); return end
-            if cursorBusy() then toGrid("cursor"); return end
-            pickupBag(ctl.bag, ctl.slot)
-            CALL(function() return DeleteCursorItem() end)
-            toGrid(settle() and "destroyed" or "refused")
+            -- bags-act1: the confirmation named ONE item: anything else in that slot now is not destroyed (ACT.destroy checks), and the
+            -- delete itself is WC.bagsDestroy's (never in a fight, nothing on the cursor, a player bag, re-checked at the bag update)
+            ACT.destroy()
         end
+    elseif ctl.mode == "dpick" then
+        -- bags-act1: the Destroy picker. Up / down = the gold row, A = that item's confirm, B = back to the grid
+        local n = ACT.list and #ACT.list or 0
+        if key == "PADDUP" or key == "PADDDOWN" then
+            ctl.dsel = math.max(1, math.min(n, (ctl.dsel or 1) + (key == "PADDUP" and -1 or 1))); report(nil)
+        elseif B then toGrid(nil)
+        elseif A then
+            local e = ACT.list and ACT.list[ctl.dsel or 1]
+            if not e then toGrid("empty"); return end
+            if InCombatLockdown() then toGrid("destroy-combat"); fightRefused(); return end
+            if itemAt(e.bag, e.slot) ~= e.id then ACT.rebuild(); if ctl.mode == "dpick" then report("moved") end; return end
+            ACT.confirm(e.bag, e.slot, true)
+        end
+    elseif ctl.mode == "compare" then
+        -- bags-act1: the compare sheet. B = back to the grid; the D-pad scrolls the sheet in the app (nothing here); the item gone = closed
+        if itemAt(ctl.bag, ctl.slot) ~= ctl.armId then toGrid("moved"); return end
+        if B then toGrid(nil) end
     elseif ctl.mode == "search" then
         -- the companion's keyboard has the presses (BAR.act "search"): nothing of Bags' acts meanwhile
         return
@@ -2493,6 +2800,7 @@ local VIRTUAL = { [22] = "PAD3", [31] = "PAD1", [32] = "PAD4", [33] = "PAD2", [3
                   [37] = "PADDUP", [38] = "PADDDOWN" }
 local CURSOR_NEXT, CURSOR_TTL = 36, 2.0
 local MENU_ROWS = { [19] = 1, [20] = 2, [21] = 3 }
+ACT.ROW_NAME = { [19] = "split", [20] = "bind", [21] = "destroy" }
 local DROP_HELD, FREE = 39, 28
 
 -- an armed chord (the bind sheet asking) is the capture's; a touch Back must disarm it: taking again resets it
@@ -2518,6 +2826,7 @@ function WC._bagsShutTap(col)
     if not ctl.shutAt or (GetTime() - ctl.shutAt) > CURSOR_TTL then return false end
     ctl.shutAt = nil
     if col == BAR.SEARCH_DONE_COL then BAR.searchDone(); return true end      -- the app's keyboard closed
+    if col == ACT.COMPARE_COL then ACT.menuPick("compare"); return true end   -- bags-act1: the menu's Compare row by touch
     for _, e in ipairs(layout()) do
         if e.bag == col then
             report(BAR.toggle(col))
@@ -2533,6 +2842,13 @@ function WC._bagsCursorTap(bag, slot)
     ctl.cursorAt = nil
     if not ctl.on then tryTake() end
     if not ctl.on then return true end            -- not taken (the reason is logged): nothing else happens
+    -- bags-act1: in the Destroy picker a finger on a row is 36 + that item's bmv cell: the gold row goes there (no game action)
+    if ctl.mode == "dpick" then
+        for i, e in ipairs(ACT.list or {}) do
+            if e.bag == bag and e.slot == slot then if WC._bagsHeldNow() then ctl.dsel = i; report(nil) end; break end
+        end
+        return true
+    end
     if ctl.mode ~= "grid" then return true end    -- a menu / dialog is open: its own buttons act
     if not bagIndex(bag) then return true end
     ctl.bag, ctl.slot = bag, slot
@@ -2552,6 +2868,15 @@ local function heldNow()
     return false
 end
 WC._bagsHeldNow = heldNow
+-- bags-act1: a finger on a Y-menu row: that row chosen (A), only if it can be used now
+function ACT.menuPick(name)
+    if not (heldNow() and ctl.mode == "menu") then return end
+    local i
+    for n, w in ipairs(MENU) do if w == name then i = n end end
+    if not i or not menuUsable()[i] then return end
+    ctl.menu = i
+    onPress("PAD1")
+end
 
 function WC._bagsTouch(col)
     if col == TOUCH_IN then
@@ -2589,11 +2914,8 @@ function WC._bagsTouch(col)
     elseif MENU_ROWS[col] and ctl.mode == "barmenu" then
         if heldNow() and MENU_ROWS[col] <= #BAR.MENU then ctl.barMenu = MENU_ROWS[col]; BAR.menuChoose(MENU_ROWS[col]) end
     elseif MENU_ROWS[col] then
-        if not (heldNow() and ctl.mode == "menu") then return end
-        local ok = menuUsable()
-        if not ok[MENU_ROWS[col]] then return end
-        ctl.menu = MENU_ROWS[col]
-        onPress("PAD1")
+        -- bags-act1: the Y menu's rows by NAME (19 Split, 20 Bind, 21 Destroy, as before; Compare = bmvq 27 then column 8)
+        ACT.menuPick(ACT.ROW_NAME[col])
     end
 end
 
@@ -2821,5 +3143,7 @@ function WC.collectEquipped()
         relic = flag(function() return UnitHasRelicSlot("player") end),
         durw = durWarning(),
         alertc = alertColours(),
+        -- bags-act1: the class can wear a one-hander in the off hand too (the app's compare: an empty off hand is a slot then)
+        dw = ACT.dualWield() or nil,
     }
 end
