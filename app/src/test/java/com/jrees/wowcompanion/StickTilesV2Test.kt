@@ -98,8 +98,8 @@ class StickTilesV2Test {
         assertEquals("no icon of ours: the name still", "Frost Nova", page(m, PadMapModel.POS_R3).shownName())
         assertNull("ZL + L3 with nothing of the game's: no game binding", PadMapModel.slot(m, 2, PadMapModel.POS_L3)!!.game)
         assertEquals("an empty stick with nothing there reads Empty", "Empty", page(map(""), PadMapModel.POS_L3).shownName())
-        // the chooser still opens on Extra's four (the game's own is no put of ours: no Clear)
-        assertTrue(ChooserTabs.keys(false, stick = true) == listOf("extra"))
+        // p52 / m157: the chooser has all five tabs (the game's own is no put of ours: no Clear)
+        assertTrue(ChooserTabs.keys(false, stick = true) == ChooserTabs.ALL_TABS)
     }
 
     @Test fun oneOfOursWins() {

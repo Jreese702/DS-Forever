@@ -21,6 +21,11 @@ import android.view.View
  * THE "New spell" CARD IS GONE (the user, 2026-11-12: "along with the Keep/undo I feel like the pop up toasts that appear before that are
  * redundant and should be scrapped"; the pick: scrap ONLY the 4 s card per learned spell): Home's one-at-a-time prompt
  * (CompanionHost.newSpellAsk) asks about each learned spell; the box's green "Bound to" line, its "Put back" line and every refusal stay.
+ *
+ * Book b57 / PadMap m157 L3 / R3 (the user, 2026-11-13: "looking good, except people also want to be able to bind any of their spells
+ * and stuff to these, so any of those 5 controller tabs should be able to bind here"): on the Normal tab, bare or ZL, the box draws the
+ * two sticks beside the trigger chips (what each holds now, from the padmap's `sticks`); pressing one puts the spell on it, lit as any
+ * button. ZR / ZL + ZR or the In combat tab: no stick tiles (the add-on answers "layer" / "stick-normal" and the box keeps waiting).
  */
 class SpellsOverlay(
     context: Context,
@@ -250,6 +255,9 @@ class SpellsOverlay(
                 "reserved" -> "That button cannot be changed" to Theme.unusable
                 "bind" -> "A game key rides that button: clear it first" to Theme.unusable        // b37: In combat
                 "dpad bar" -> "The DS toolbar has the plain D-pad: hold a trigger" to Theme.unusable
+                // Book b57: a stick with ZR / ZL + ZR, or on the In combat tab
+                "layer" -> "Only on a button with no trigger, or with ${SpellsModel.triggerNames(st).first}" to Theme.warn
+                "stick-normal" -> "L3 / R3: on the Normal tab" to Theme.warn
                 "unsure" -> "Press it again" to Theme.warn
                 "form-unknown" -> "Shift into that form once so the game shows its bar" to Theme.warn       // b44
                 // PadMap m146 / Book b52 SMART RANGE: that button's box is on (the spell went to its half)
@@ -332,7 +340,7 @@ class SpellsOverlay(
         } else if (nForm != null && m != null) { p -> m.formBars.firstOrNull { it.form == nForm && it.pos == p }?.icon }
         else null
         if (m != null && m.forms.isNotEmpty() && (f || m.stance != null)) formRow(c, w, box, m, b, st)
-        val drawn = try { drawSet(c, set, dpad, face, lit.takeIf { it > 0 }, icon, fight) } catch (_: Throwable) { false }
+        val drawn = try { drawSet(c, set, dpad, face, lit.takeIf { it in 1..8 }, icon, fight) } catch (_: Throwable) { false }
         if (!drawn) standIns(c, dpad, face, lit, icon, st)
 
         // the way back: B (the user on batch4: "instead of showing the - button as back when no triggers are held it should show B"; a
@@ -348,6 +356,7 @@ class SpellsOverlay(
         val tcy = box.bottom - 92f
         UiKit.triggerChip(c, RectF(w / 2f - 64f - 42f, tcy - 28f, w / 2f - 64f + 42f, tcy + 28f), "${tset}_ltrigger", lt)
         UiKit.triggerChip(c, RectF(w / 2f + 64f - 42f, tcy - 28f, w / 2f + 64f + 42f, tcy + 28f), "${tset}_rtrigger", rt)
+        if (!f && (set == 1 || set == 2)) sticks(c, w, tcy, m, set, lit, icon)        // b57: L3 / R3 beside the chips
         val back = faceGlyph(st, "b")
         if (confirming && r != null && r.ok) {
             // b42 (the user: "a confirm and it closes, b removes it and let's you keep binding"): the game's own question look (its
@@ -392,6 +401,24 @@ class SpellsOverlay(
             if ((fo?.id ?: 0) == chosen) UiKit.focus(c, RectF(r).apply { inset(-3f, -3f) })     // the chosen set, plainly lit
             formHits.add(RectF(r).apply { inset(-5f, -5f) })
             x += step
+        }
+    }
+
+    /** Book b57: stick [p]'s tile, beside the trigger chips on their line [cy] (L3 left of ZL, R3 right of ZR) */
+    fun stickRect(p: Int, w: Float, cy: Float): RectF {
+        val cx = if (p == PadMapModel.POS_L3) w / 2f - STICK_DX else w / 2f + STICK_DX
+        return RectF(cx - STICK_S / 2f, cy - STICK_S / 2f, cx + STICK_S / 2f, cy + STICK_S / 2f)
+    }
+
+    /** Book b57: L3 / R3 in [set] (1 / 2): what each holds now (the padmap's sticks), the one that took the spell lit with it */
+    private fun sticks(c: Canvas, w: Float, cy: Float, m: PadMapModel.Map?, set: Int, lit: Int, litIcon: android.graphics.Bitmap?) {
+        for (p in PadMapModel.STICKS) {
+            val r = stickRect(p, w, cy)
+            val isLit = p == lit
+            val sl = m?.let { PadMapModel.slot(it, set, p) }?.takeIf { it.kind != PadMapModel.Kind.NONE }
+            UiKit.slot(c, if (isLit) litIcon else sl?.let { Icons.get(it.icon) }, r.left, r.top, r.width())
+            if (isLit) UiKit.glow(c, RectF(r).apply { inset(-8f, -8f) }, Color.rgb(60, 255, 60), 0.9f)
+            UiKit.pad(c, PadMapModel.stickGlyph(p), r.right - 8f, r.top + 8f, 32f)
         }
     }
 
@@ -500,5 +527,8 @@ class SpellsOverlay(
         private const val SHOW_MS = 1500L
         /** the box's top (84) + 104: the line the Cast bar tab's slots stand from ([cbSlotRect]) */
         private const val CB_CY = 84f + 104f
+        /** Book b57: the stick tiles' side and their centres' distance from the box's middle (the chips reach 106 from it) */
+        const val STICK_S = 64f
+        const val STICK_DX = 158f
     }
 }

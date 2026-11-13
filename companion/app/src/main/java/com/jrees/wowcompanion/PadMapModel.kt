@@ -220,8 +220,8 @@ object PadMapModel {
             sticks = objects(m.optJSONArray("sticks")).mapNotNull { o ->
                 val p = o.optInt("pos", 0); val st = o.optInt("set", 0)
                 if (!isStick(p) || st !in 1..2) null
-                else PadSet(st, listOf(Slot(p, null, kind(o.optString("kind", "")), null, textOrNull(o, "n"), o.optInt("i", 0),
-                    key = textOrNull(o, "key"), stick = textOrNull(o, "stick") ?: stickWord(p), taken = o.optString("st", "") == "taken",
+                else PadSet(st, listOf(Slot(p, null, kind(o.optString("kind", "")), intOrNull(o, "id"), textOrNull(o, "n"), o.optInt("i", 0),
+                    key = textOrNull(o, "key"), ov = o.optBoolean("ov", false), stick = textOrNull(o, "stick") ?: stickWord(p), taken = o.optString("st", "") == "taken",
                     game = textOrNull(o, "gd")?.takeIf { o.optString("kind", "") == "none" }
                         ?.let { Bind(it, textOrNull(o, "gn") ?: it, o.optInt("gi", 0)) })))
             }.groupBy { it.set }.map { (st, l) -> PadSet(st, l.flatMap { it.slots }) },
@@ -355,7 +355,8 @@ object PadMapModel {
         if (isStick(pos)) map.sticks.firstOrNull { it.set == set }?.slots?.firstOrNull { it.pos == pos } ?: Slot(pos, null, Kind.NONE, null, null, 0, stick = stickWord(pos))
         else map.sets.firstOrNull { it.set == set }?.slots?.firstOrNull { it.pos == pos }
 
-    /** m150 STICK BUTTONS (GitHub #78, PadMap m150 / PadTabCtl p49): L3 = position 9, R3 = 10 (WoW Defaults only; game bindings only) */
+    /** m150 STICK BUTTONS (GitHub #78, PadMap m150 / PadTabCtl p49): L3 = position 9, R3 = 10 (WoW Defaults only); m157 / p52: a spell,
+     *  a command, an item or a mount too (the add-on's own button per stick), as well as the game bindings */
     const val POS_L3 = 9
     const val POS_R3 = 10
     val STICKS = listOf(POS_L3, POS_R3)
