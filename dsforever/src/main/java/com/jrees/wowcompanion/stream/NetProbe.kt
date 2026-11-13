@@ -66,7 +66,7 @@ object NetProbe {
         val here = seen.firstOrNull { it.address == host.address || (host.desktopId.isNotEmpty() && it.desktopId == host.desktopId) }
         return Diagnosis.Probe(
             onWifi = wifi, thorSubnet = subnet(ctx), pcSubnet = host.subnet.ifEmpty { PairedHost.subnetOf(host.address) },
-            sunshine = if (dial) port(host.address, host.httpPort) else Diagnosis.Port.NOT_TRIED,
+            sunshine = if (dial && host.httpPort > 0) port(host.address, host.httpPort) else Diagnosis.Port.NOT_TRIED,
             bridge = if (dial && host.hasBridge) port(host.address, host.bridgePort) else Diagnosis.Port.NOT_TRIED,
             seenSunshine = here?.hasSunshine == true, seenBridge = here?.hasBridge == true,
             expectsBridge = host.hasBridge, notPaired = notPaired, vpnUp = vpn, pcTailscale = Route.tailscale(host.address),

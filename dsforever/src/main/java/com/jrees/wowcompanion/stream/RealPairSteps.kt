@@ -15,6 +15,9 @@ class RealPairSteps(
     private var bridge: BridgeConn? = null
     /** after pair_ok the bridge keeps talking (welcome, backlog, pings) while Moonlight's handshake runs: read here, the confirmation kept */
     private var confirm: java.util.concurrent.CompletableFuture<StreamPairing.Finish>? = null
+    /** Sunshine's ports as Desktop's pair_ok reported them (0 = not said: an older Desktop) */
+    private var armedHttp = 0
+    private var armedHttps = 0
 
     override fun armBridge(pc: FoundPc, code: String): StreamPairing.Arm {
         val c = try { dialer.dial(pc.address, pc.bridgePort, pc.bridgeTls, null) } catch (t: Throwable) {
@@ -34,6 +37,7 @@ class RealPairSteps(
                 }
                 is BridgeMsg.PairOk -> {
                     drain(c)
+                    armedHttp = m.httpPort; armedHttps = m.httpsPort
                     return StreamPairing.Arm.Armed(c.peerFingerprint, m.token, m.hostId, m.pcName, m.moonlightPin, m.httpPort, m.httpsPort)
                 }
                 is BridgeMsg.PairError -> return when (m.error) {
@@ -49,7 +53,11 @@ class RealPairSteps(
     }
 
     override fun moonlightPair(pc: FoundPc, pin: String): StreamPairing.MoonOutcome {
-        val http = NvHttp(pc.address, pc.sunshinePort.takeIf { it > 0 } ?: 47989, identity = identity)
+        // the port Desktop reported, else the advertised one; never the stock 47989 by guess (the user's PC 2026-11-13: another
+        // Sunshine held it)
+        val port = StreamPorts.forPairing(armedHttp, pc)
+        if (port <= 0) return StreamPairing.MoonOutcome(MoonPairing.State.FAILED, why = "the PC hasn't said its streaming port")
+        val http = NvHttp(pc.address, port, StreamPorts.httpsOf(port, if (armedHttp > 0) armedHttps else 0), identity = identity)
         val info = http.serverInfo(false)
         XmlFields.get(info, "HttpsPort")?.toIntOrNull()?.let { if (it > 0) http.httpsPort = it }
         val r = MoonPairing(http, identity).pair(MoonPairing.majorVersion(XmlFields.get(info, "appversion")), pin)
@@ -58,7 +66,7 @@ class RealPairSteps(
             "PC cert ${r.serverCert?.let { Hex.fingerprint(it.encoded).take(12) } ?: "none"}, http ${http.httpPort}, https ${http.httpsPort}, " +
             "PC ${XmlFields.get(info, "appversion") ?: "?"}")
         return StreamPairing.MoonOutcome(r.state, r.serverCert?.let { ClientIdentity.toPem(it.encoded) } ?: "",
-            XmlFields.get(info, "uniqueid").orEmpty(), http.httpsPort, r.why)
+            XmlFields.get(info, "uniqueid").orEmpty(), http.httpsPort, r.why, httpPort = port)
     }
 
     /** ok: the bridge's pair_stream (the session after pair_ok also carries the welcome and the backlog: skipped here) */

@@ -22,6 +22,8 @@ data class FoundPc(
     val bridgeFingerprint: String = "",
     /** the advert's tls=1 (a wss:// bridge); Desktop v1 serves ws:// */
     val bridgeTls: Boolean = false,
+    /** the Sunshine port Desktop's own TXT named (0 = none): it wins over an _nvstream advert ([FoundPcs.merge]) */
+    val desktopSunshine: Int = 0,
 ) {
     val hasSunshine get() = sunshinePort > 0
     val hasBridge get() = bridgePort > 0
@@ -42,12 +44,15 @@ object FoundPcs {
             val t = a.type.trim('.').removeSuffix(".local").trim('.')
             val cur = byAddr[a.address] ?: FoundPc(name = a.name, address = a.address)
             byAddr[a.address] = when {
-                t.startsWith(NVSTREAM) -> cur.copy(sunshinePort = a.port, name = if (cur.hasBridge) cur.name else a.name)
+                // Desktop's TXT names ITS Sunshine: it wins over an _nvstream advert at the same address, which may be another
+                // Sunshine on the PC (the user's PC 2026-11-13: a separate Sunshine service on 47989, Desktop's on 52989)
+                t.startsWith(NVSTREAM) -> cur.copy(sunshinePort = if (cur.desktopSunshine > 0) cur.desktopSunshine else a.port, name = if (cur.hasBridge) cur.name else a.name)
                 t.startsWith(DSFOREVER) -> cur.copy(bridgePort = a.port, name = a.txt["pc"]?.takeIf { it.isNotBlank() } ?: a.name,
                     desktopId = a.txt["id"].orEmpty(), sunshineId = a.txt["sid"].orEmpty(), bridgeFingerprint = a.txt["fp"].orEmpty().lowercase(),
                     bridgeTls = a.txt["tls"] == "1",
                     // Desktop's TXT names Sunshine's port: a PC whose _nvstream advert was missed is still streamable
-                    sunshinePort = if (cur.sunshinePort > 0) cur.sunshinePort else a.txt["sunshine"]?.toIntOrNull() ?: 0)
+                    desktopSunshine = a.txt["sunshine"]?.toIntOrNull()?.takeIf { it > 0 } ?: 0,
+                    sunshinePort = a.txt["sunshine"]?.toIntOrNull()?.takeIf { it > 0 } ?: cur.sunshinePort)
                 else -> cur
             }
         }
@@ -63,7 +68,8 @@ object FoundPcs {
             val base = onLan ?: (if (pc.hasBridge && !cur.hasBridge) pc else cur)
             val other = if (base === cur) pc else cur
             byName[k] = base.copy(
-                sunshinePort = if (base.sunshinePort > 0) base.sunshinePort else other.sunshinePort,
+                sunshinePort = listOf(base.desktopSunshine, other.desktopSunshine, base.sunshinePort, other.sunshinePort).firstOrNull { it > 0 } ?: 0,
+                desktopSunshine = if (base.desktopSunshine > 0) base.desktopSunshine else other.desktopSunshine,
                 bridgePort = if (base.bridgePort > 0) base.bridgePort else other.bridgePort,
                 desktopId = base.desktopId.ifEmpty { other.desktopId }, sunshineId = base.sunshineId.ifEmpty { other.sunshineId },
                 bridgeFingerprint = base.bridgeFingerprint.ifEmpty { other.bridgeFingerprint }, bridgeTls = base.bridgeTls || other.bridgeTls,

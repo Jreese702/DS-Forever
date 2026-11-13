@@ -8,11 +8,11 @@ import java.security.cert.X509Certificate
 
 /** the PC's side of Moonlight's pairing, as the handshake needs it (NvHttp on the device, a fake Sunshine in the tests) */
 interface PairHttp {
-    /** GET http://pc:47989/pair?devicename=..&updateState=1&[args] -> the XML answer. [waitForUser] = no read time-out (the PIN wait) */
+    /** GET http://pc:<http>/pair?devicename=..&updateState=1&[args] -> the XML answer. [waitForUser] = no read time-out (the PIN wait) */
     fun pairCommand(args: String, waitForUser: Boolean): String
     /** GET https://pc:<https>/pair?...&phrase=pairchallenge, TLS pinned to [serverCert] -> the XML answer */
     fun pairChallenge(serverCert: X509Certificate): String
-    /** GET http://pc:47989/unpair (best effort) */
+    /** GET http://pc:<http>/unpair (best effort) */
     fun unpair()
 }
 

@@ -120,7 +120,15 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     /** what the top screen shows over the stream now (StreamCurtain's rule) */
     private fun shows(): StreamCurtain.Shows = StreamCurtain.decide(screen == Screen.STREAMING, host?.hasBridge == true, pc,
-        ((android.os.SystemClock.uptimeMillis() / 500) % 4).toInt(), route?.label.orEmpty(), reachProblem, signIn.working, loginLong(), seen)
+        ((android.os.SystemClock.uptimeMillis() / 500) % 4).toInt(), route?.label.orEmpty(), reachProblem, signIn.working, loginLong(), seen,
+        pcWhy, portsWait != null)
+
+    /** this bridge connection's word on Sunshine's ports (its welcome; null = none yet): [StreamPorts] picks from it, never 47989 by guess */
+    private var ports: StreamPorts.Report? = null
+    /** the PC's reason it can't stream (the welcome's sunshine.problem / why, [StreamCurtain.reason]; "" = none) */
+    private var pcWhy = ""
+    /** a connect that answered and waits for Desktop's Sunshine ports: since when, and its stream mode; null = not waiting */
+    private var portsWait: Pair<Long, StreamMode.Choice>? = null
 
     /** WoW has shown in this stream: losing the front no longer hides it */
     private var seen = false
@@ -252,6 +260,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         netCallback?.let { try { activity.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(it) } catch (_: Throwable) {} }
         netCallback = null
         main.removeCallbacksAndMessages(null)
+        portsWait = null
         PlayModes.set(PlayMode.LOCAL, null, "")
     }
 
@@ -263,8 +272,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             PlayModes.set(PlayMode.STREAM, null, h?.address.orEmpty()); return
         }
         shell.bottom(covers = false, note = "")
-        // a new bridge (a new address): Desktop's word is the new connection's, "PC found" waits for its welcome
+        // a new bridge (a new address): Desktop's word is the new connection's, "PC found" waits for its welcome (its ports and reason too)
         pc = null
+        ports = null
+        pcWhy = ""
         val clientId = store.clientId()
         PlayModes.set(PlayMode.STREAM, { onMsg, onStatus ->
             BridgeLog(h.address, h.bridgePort, h.bridgeTls, h.bridgeFingerprint, h.bridgeToken, clientId, WsClient, onMsg, onStatus,
@@ -282,10 +293,16 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun welcomed(w: BridgeMsg.Welcome) {
         // issue #54 ("on pc stream I cant use my ayn thor to play, input doesnt work"): the PC's word on its controller driver, in the report
         if (w.padDriver != padDriver) { padDriver = w.padDriver; Log.i(TAG, "PC controller driver (ViGEmBus): " + PadNote.driver(w.padDriver)) }
+        // the user, 2026-11-13 (another Sunshine on the stock ports, "PC found" for ever): Desktop's ports and its reason
+        ports = StreamPorts.Report.of(w)
+        val why = StreamCurtain.reason(w.sunProblem, w.sunWhy)
+        if (why != pcWhy) { pcWhy = why; Log.i(TAG, "PC: streaming ${if (why.isEmpty()) "fine" else "problem ${w.sunProblem}: ${w.sunWhy}"}") }
         val h = host ?: return
         var n = Route.reported(h, w.lan, NetProbe.subnet(activity), w.tailscale)
-        if (w.httpPort > 0 && w.httpsPort > 0 && (w.httpPort != n.httpPort || w.httpsPort != n.httpsPort)) n = n.copy(httpPort = w.httpPort, httpsPort = w.httpsPort)
+        if (w.httpPort > 0 && (w.httpPort != n.httpPort || StreamPorts.httpsOf(w.httpPort, w.httpsPort) != n.httpsPort))
+            n = n.copy(httpPort = w.httpPort, httpsPort = StreamPorts.httpsOf(w.httpPort, w.httpsPort))
         if (n != h) { host = n; store.save(n); Log.i(TAG, "${h.name}: home address ${n.lanAddress}, Tailscale ${n.tailnet}, ports ${n.httpPort}/${n.httpsPort}") }
+        if (portsWait != null) { main.removeCallbacks(portsTick); main.post(portsTick) } else applyCurtain()
     }
 
     private fun authLost(why: String) {
@@ -319,6 +336,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (session != null || !surfaceReady || routing) return
         main.removeCallbacks(retryTick)
         main.removeCallbacks(retryRoute)
+        main.removeCallbacks(portsTick); portsWait = null
         show(Screen.CONNECTING)
         status.show("Connecting to ${h.name}…", quality.label, "", withButtons = false)
         val thorNet = NetProbe.subnet(activity)
@@ -356,7 +374,42 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 if (n != h) { host = n; store.save(n) }
                 if (n.address != h.address) applyMode()          // the bridge dials the address that answered (same pin)
                 applyCurtain()
-                startSession(n, StreamMode.choose(ok, thorNet, vpn))
+                portsWait = System.currentTimeMillis() to StreamMode.choose(ok, thorNet, vpn)
+                portsTick.run()
+            }
+        }
+    }
+
+    /**
+     * The PC answered: the stream starts on the Sunshine ports Desktop reported ([StreamPorts]; never the stock 47989/47984 by guess:
+     * the user's PC 2026-11-13 had another, unpaired Sunshine there). Until they are known the curtain says "Waiting for the PC" (or
+     * the PC's reason); after [StreamPorts.GIVE_UP_MS] the problem screen, retrying by the policy.
+     */
+    private val portsTick: Runnable = object : Runnable {
+        override fun run() {
+            main.removeCallbacks(this)
+            val (since, mode) = portsWait ?: return
+            val h = host
+            // "Stream quality" opened meanwhile keeps the wait (it returns to CONNECTING); Pair again / a problem ends it
+            if (h == null || !isOpen || session != null || (screen != Screen.CONNECTING && screen != Screen.QUALITY)) { portsWait = null; applyCurtain(); return }
+            val waited = System.currentTimeMillis() - since
+            when (val p = StreamPorts.pick(h, ports, waited)) {
+                is StreamPorts.Pick.Use -> {
+                    portsWait = null
+                    Log.i(TAG, "sunshine ports ${p.http}/${p.https} (${p.from})")
+                    applyCurtain()
+                    startSession(h.copy(httpPort = p.http, httpsPort = p.https), mode)
+                }
+                StreamPorts.Pick.Wait -> {
+                    if (waited >= StreamPorts.GIVE_UP_MS && screen == Screen.CONNECTING) {
+                        portsWait = null
+                        Log.i(TAG, "sunshine ports: none from the PC in ${waited / 1000} s (welcome ${if (ports == null) "none" else "without a port"})")
+                        problem(StreamCurtain.WAITING, pcWhy.ifEmpty { "DS Forever Desktop hasn't said its streaming port." }, auto = true)
+                        return
+                    }
+                    applyCurtain()
+                    main.postDelayed(this, 500L)
+                }
             }
         }
     }
@@ -373,7 +426,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 if (session != null || !surfaceReady || !isOpen) return@post
                 val video = VideoDecoder(surface.holder.surface)
                 session = StreamSession(h, id, q, video, AudioOut(q.audioOnThor), events, mode = mode,
-                    httpPort = { host?.httpPort ?: h.httpPort }).also { it.start() }
+                    httpPort = { host?.httpPort?.takeIf { it > 0 } ?: h.httpPort }).also { it.start() }
             }
         }
     }
@@ -494,7 +547,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                     AddressPolicy.Move.PROBE_FIRST -> if (!probingMove) {
                         probingMove = true
                         worker.execute {
-                            val ok = NetProbe.port(h.address, h.httpPort) == Diagnosis.Port.OPEN
+                            val ok = NetProbe.port(h.address, h.httpPort.takeIf { it > 0 } ?: if (h.hasBridge) h.bridgePort else StreamPorts.STOCK_HTTP) == Diagnosis.Port.OPEN
                             main.post {
                                 probingMove = false
                                 if (ok) Log.i(TAG, "${h.name}: staying on the LAN address ${h.address} (seen also at ${same.address})")

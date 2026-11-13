@@ -49,7 +49,12 @@ sealed class BridgeMsg {
                        val tailscale: List<String> = emptyList(),
                        /** issue #54: whether the PC's Sunshine can make the controller's Xbox pad (ViGEmBus): "vigem" / "missing" /
                         *  "unknown"; empty from an older Desktop */
-                       val padDriver: String = "") : BridgeMsg()
+                       val padDriver: String = "",
+                       /** the welcome carries no sunshine.http_port: an older Desktop that never reports its Sunshine ports ([StreamPorts]) */
+                       val oldDesktop: Boolean = false,
+                       /** Desktop 0.2.27: why streaming can't work on the PC ("other_sunshine" | "other_app" | "not_listening" | "exited";
+                        *  "" = fine) and its line for the Thor ("pc busy: another Sunshine"); empty from an older Desktop */
+                       val sunProblem: String = "", val sunWhy: String = "") : BridgeMsg()
     /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed"; [pc] = all of it (0.2.1) */
     data class Wow(val state: String, val why: String, val pc: PcWow? = null) : BridgeMsg()
     data class Error(val code: String, val detail: String = "") : BridgeMsg()
@@ -127,7 +132,8 @@ object BridgeProtocol {
                 o.optJSONObject("wow")?.optBoolean("running") ?: false, sun?.optInt("http_port", 0) ?: 0, sun?.optInt("https_port", 0) ?: 0,
                 o.optJSONObject("wow")?.optString("state").orEmpty(), o.optJSONObject("wow")?.optString("why").orEmpty(),
                 PcWow.of(o.optJSONObject("wow")),
-                strings(o.optJSONArray("lan")), strings(o.optJSONArray("tailscale")), o.optString("pad_driver"))
+                strings(o.optJSONArray("lan")), strings(o.optJSONArray("tailscale")), o.optString("pad_driver"),
+                sun?.has("http_port") != true, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty())
             "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"), PcWow.of(o))
             "error" -> BridgeMsg.Error(o.err(), o.optString("detail"))
             "doc" -> BridgeMsg.Doc(o.optInt("seq", -1), o.optLong("gt", -1L), o.optString("doc"))

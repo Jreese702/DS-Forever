@@ -98,6 +98,6 @@ class StreamAwayTest {
     @Test fun noVideoNamesDesktopsPorts() {
         assertTrue(StreamSession.terminationText(MoonBridge.ML_ERROR_NO_VIDEO_TRAFFIC, 52989).contains("UDP 52998-53000"))
         assertTrue(StreamSession.terminationText(MoonBridge.ML_ERROR_NO_VIDEO_TRAFFIC, 47989).contains("UDP 47998-48000"))
-        assertEquals("UDP 47998-48000", StreamSession.udpPorts(0))                // unknown: Moonlight's default
+        assertEquals("its UDP stream ports", StreamSession.udpPorts(0))           // unknown: never the stock ports (2026-11-13)
     }
 }

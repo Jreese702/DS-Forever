@@ -1,5 +1,11 @@
 {
 "plain": {
+"Waiting for the PC": "En attente du PC",
+"PC busy: another Sunshine is running": "PC occupé : un autre Sunshine est lancé",
+"PC busy: another program has the streaming ports": "PC occupé : un autre programme utilise les ports de streaming",
+"PC busy: its streaming host isn't listening": "PC occupé : son serveur de streaming n'écoute pas",
+"PC busy: its streaming host stopped": "PC occupé : son serveur de streaming s'est arrêté",
+"DS Forever Desktop hasn't said its streaming port.": "DS Forever Desktop n'a pas indiqué son port de streaming.",
 "Stay": "Garder",
 "Hide: the bar fades out in a fight.": "Masquer : la barre s'efface en combat.",
 "Cast bar in combat: Hide": "Barre en combat : masquer",
