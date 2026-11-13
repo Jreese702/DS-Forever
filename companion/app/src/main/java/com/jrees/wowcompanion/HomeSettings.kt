@@ -162,8 +162,19 @@ object HomeSettings {
             for (l in listeners) l()
         }
 
+    /** GitHub #43: THE TAP-TO-CAST BAR on Home: true / false = the player's choice; null = never chosen, and then it shows only while
+     *  the character's bar has spells ([CastStripModel.shown]) */
+    var castStrip: Boolean?
+        get() = prefs?.takeIf { it.contains(KEY_CAST_STRIP) }?.getBoolean(KEY_CAST_STRIP, true)
+        set(v) {
+            if (v == castStrip && (v == null) == (prefs?.contains(KEY_CAST_STRIP) != true)) return
+            prefs?.edit()?.apply { if (v == null) remove(KEY_CAST_STRIP) else putBoolean(KEY_CAST_STRIP, v) }?.apply()
+            for (l in listeners) l()
+        }
+
     fun onChange(l: () -> Unit) { listeners.add(l) }
 
+    private const val KEY_CAST_STRIP = "castStrip"
     private const val KEY = "rest"
     private const val KEY_COMBAT_GROW = "combatGrow"
     private const val KEY_SWING = "swingTimer"
@@ -448,6 +459,7 @@ class HomeSettingsSection(context: Context,
         // the attack switch appears / its words change: the section's height may change too
         HomeAttackSwitch.onChange { post { requestLayout(); invalidate() } }
         GameBars.onChange { post { requestLayout(); invalidate() } }               // f-class-radial: the rows appear / change
+        CastStripModel.Live.onChange { post { invalidate() } }                    // GitHub #43: the default follows the bar's spells
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
@@ -504,6 +516,10 @@ class HomeSettingsSection(context: Context,
             y = row(c, y + GAP, GameBars.petTitle ?: "Pet bar", listOf("$v. Change it in the game's Controller settings."),
                 emptyList(), -1, null)
         }
+        // GitHub #43: the tap-to-cast bar on Home (never chosen: shown while the character's bar has spells)
+        y = row(c, y + GAP, "Tap-to-cast bar", listOf("Your Spellbook picks, one tap each."),
+            listOf("On", "Off"), if (CastStripModel.shown(HomeSettings.castStrip, CastStripModel.Live.bar)) 0 else 1,
+            listOf({ HomeSettings.castStrip = true }, { HomeSettings.castStrip = false }))
         // the focused quest's place (the user 2026-10-09): over the minimap (today's) or at the top of the chat
         y = row(c, y + GAP, "Focused quest", listOf("Where Home shows the quest you focus. Tap it to fold it."),
             // the user 2026-10-09: "Above Chat" first; the default stays Above Minimap

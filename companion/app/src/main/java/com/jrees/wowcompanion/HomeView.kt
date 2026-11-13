@@ -71,7 +71,7 @@ class HomeView(
     /** the controller layout has come at least once: until then the Cast view says "Waiting" where the clock would stand */
     private var barsSeen = false
 
-    private enum class Part { BARS, QUESTS, CHAT, PARTY, MAP, AURAS, CHAT_FULL }
+    private enum class Part { BARS, QUESTS, CHAT, PARTY, MAP, AURAS, STRIP, CHAT_FULL }
 
     private val questPane = QuestPane(context)
     private val chatPane = ChatPane(context)
@@ -93,10 +93,13 @@ class HomeView(
      * requestLayout every frame was what made the combat switch lag the game).
      */
     private val chatGlideBox = RectF()
+    /** THE TAP-TO-CAST BAR (GitHub #43, [CastStripModel]): 2 rows of 6 at the foot of the left column, above the bottom bar; shown by
+     *  Settings > Home "Tap-to-cast bar" (never chosen: only while it has spells); a tap = ONE pad tap on the add-on's "castbar" row */
+    private val castStrip = CastStripView(context) { i -> castStripTap(i) }
     // CLOSE is added last, so it is drawn above the module it closes
     private val views: Map<Part, View> = linkedMapOf(
         Part.BARS to barsSlot, Part.QUESTS to questPane, Part.CHAT to chatPane, Part.PARTY to partyView, Part.MAP to mapSlot,
-        Part.AURAS to auraPane, Part.CHAT_FULL to chatSlot,
+        Part.AURAS to auraPane, Part.STRIP to castStrip, Part.CHAT_FULL to chatSlot,
     )
 
     /** where each part is now, in px of the frame; animated towards the state's places */
@@ -110,6 +113,7 @@ class HomeView(
         // the thin row or the diamonds at rest: the user's switch in Settings (HomeSettings; the diamonds until changed)
         HomeSettings.init(context)
         flow.setRest(HomeSettings.rest)
+        HomeSettings.onChange { post { castStripRelay() } }               // GitHub #43: the tap-to-cast bar's own choice
         HomeSettings.onChange { post {
             if (flow.setRest(HomeSettings.rest)) changed()
             // the focused quest moved (Settings > Home): the parts go to their new places
@@ -1265,8 +1269,49 @@ class HomeView(
 
     private fun places(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
         val base = placesBase(s, w, h)
-        if (s.full != null && !s.takeover) return base
-        return withParty(base, s, w)
+        if (s.full != null && !s.takeover) { laidStrip = false; return base }
+        return withStrip(withParty(base, s, w), w, h)
+    }
+
+    /** the tap-to-cast bar laid by the last [places] (a change of the choice or of the bar's spells lays the page again) */
+    private var laidStrip = false
+
+    /**
+     * GitHub #43: THE TAP-TO-CAST BAR's place, at rest and in a fight alike (the bar is most use in one): the foot of the left column,
+     * above the bottom bar, [CastStripView.HEIGHT] tall; the chat (or the party module's chat) ends a gap above it. The map keeps its
+     * whole column. A module full screen has no strip (its own page).
+     */
+    private fun withStrip(base: Map<Part, RectF>, w: Float, h: Float): Map<Part, RectF> {
+        laidStrip = CastStripModel.shown(HomeSettings.castStrip, CastStripModel.Live.bar)
+        if (!laidStrip) return base
+        val g = UiKit.MODULE_GAP
+        val top = h - g - CastStripView.HEIGHT
+        val out = LinkedHashMap(base)
+        out[Part.STRIP] = RectF(g, top, w / 2f - 4f, h - g)
+        base[Part.CHAT]?.let { ch -> out[Part.CHAT] = RectF(ch.left, ch.top, ch.right, maxOf(ch.top + 1f, top - g)) }
+        return out
+    }
+
+    /** a finger on slot [i]: the slot's cell on the "castbar" row (nothing for an empty / waiting slot) */
+    private fun castStripTap(i: Int) {
+        val cell = CastStripModel.tapCell(CastStripModel.Live.bar, i) ?: return
+        val sent = pad != null && TapBridge.tap(context, pad, cell.first, cell.second) { }
+        Log.i(TAG, "cast bar: slot ${i + 1} -> ${cell.first} ${cell.second} ${if (sent) "tapped" else "not sent"}")
+    }
+
+    /** every `castbar` document (the host keeps [CastStripModel.Live]): the slots, and the page again when the strip comes or goes */
+    fun onCastBar(b: CastStripModel.Bar) {
+        castStrip.update(b)
+        castStripRelay()
+    }
+
+    /** every CURRENT `castcd` (ActionBar cb1, the whole state): the slots' sweeps on the app's clock */
+    fun onCastCd(m: Map<Int, PadMapModel.FaceCd>) = castStrip.onCd(m)
+
+    private fun castStripRelay() {
+        val s = shown ?: return
+        if (s.full != null && !s.takeover) return
+        if (CastStripModel.shown(HomeSettings.castStrip, CastStripModel.Live.bar) != laidStrip) apply(s, animate = false)
     }
 
     private fun placesBase(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
@@ -1737,7 +1782,7 @@ class HomeView(
         for ((p, v) in views) {
             val o = when (p) {
                 Part.BARS -> pauseTop
-                Part.CHAT, Part.CHAT_FULL, Part.PARTY -> left
+                Part.CHAT, Part.CHAT_FULL, Part.PARTY, Part.STRIP -> left
                 Part.QUESTS -> if (cardOverMap()) pauseMap else left
                 Part.MAP, Part.AURAS -> pauseMap
             }

@@ -9,6 +9,8 @@
 -- (WC.padGlyphAtlas), the faces at the ABXY location (swap: Y left, X top, A right, B bottom, as CastView); an atlas this client refuses
 -- falls to the next / the letter (WC.prd.atlasOn); ours follows the stock bar's visibility and scale (UI_SCALE_CHANGED /
 -- DISPLAY_SIZE_CHANGED, a window taking the pad) and keeps its last spot when a fight hides the centre.
+-- cb1 (GitHub #43, the tap-to-cast bar): one secure pad row "castbar" (12 spell cells + the Spellbook's pick), the character's own
+-- slots (WowCompanionSpellsDB.castBar[name-realm]), a fight's edits queued to its end; documents "castbar" / "castcd". At "THE TAP-TO-CAST BAR".
 -- The CAST room's data. Two feeds live here:
 --
 --  1. LEGACY keyboard-slot rows (`slots`, slots 1-12 + their ACTIONBUTTONn keys). Unchanged; the app
@@ -777,6 +779,315 @@ local function crSync(ca)
     -- b-game-wheel-shut: the app's tap cell, only while it is built as the shut
     if ca and want[GF_COL] and CR.frozen[GF_COL] == want[GF_COL].sig then ca.gf = GF_COL end
 end
+
+-- CASTBAR-BEGIN (cb1; tools/test_cast_bar.py runs this block on its own: it uses only WC's readers and the game's globals)
+-- cb1 THE TAP-TO-CAST BAR (GitHub #43, "a dedicated cast bar on the companion (bottom) screen"; E:/wow-build/feature_notes_1113.txt, the
+-- recommended picks: on Home above the bottom bar, 12 slots in 2 rows of 6, spells only, a fight's edits queued and the slot dimmed).
+-- ONE secure pad row "castbar", 13 cells, next to "classr" and built the same way: cells 0-11 = slots 1-12, each the game's own cast
+-- (type spell, the spell's id) on OUR OWN button - the player's bars, macros and bindings are never touched (leave no trace), no game
+-- window is opened or closed. Set out of combat only, frozen in a fight as every secure cell. Cell 12 = the Spellbook's "Cast bar" pick
+-- (no action, fires on the press): the spell's two taps on the spells row that follow within CB_PICK_S put that spell on the first free
+-- slot, or take it off when it is already there (Book b53 hands the spell to WC.castBarSpell).
+-- THE STORE is the character's (the per-character ruling): WowCompanionSpellsDB.castBar[name-realm] = { [slot] = spellID }. An edit made
+-- in a fight waits in CB.queue until PLAYER_REGEN_ENABLED; the slot it changes is sent dimmed (q) and with no cell meanwhile.
+-- THE DOCUMENTS: "castbar" (the slots: s, id, i icon, c the cell while it is built to that spell, q dimmed; pick = cell 12) on every
+-- change; "castcd" (facecd's shape: k = { [slot] = { d, l, g, e } }) for the running cooldowns. The cooldown reads ONLY what the game
+-- leaves plain: C_Spell.GetSpellCooldown's isActive / isOnGCD (never secret), inside SPELL_UPDATE_COOLDOWN (the one time isOnGCD is
+-- trusted); its length only when it reads plainly (out of a fight, then learned), else the learned one, else 1.5 s for the GCD. A secret
+-- value is never compared, indexed or kept (S / SN answer a sentinel / nil for it).
+do
+local CBV = "cb1"
+local CB_N, CB_PICK_COL, CB_PICK_S = 12, 12, 2
+local S, SN, CALL = WC.S, WC.SN, WC.CALL
+local CB = { want = {}, frozen = {}, row = nil, sig = nil, pick = nil, queue = {}, ready = false, cd = {}, learned = {}, last = nil }
+WC.castBar = CB
+local function cbReal(v) return v ~= nil and v ~= WC.ABSENT and v ~= WC.SECRET and v ~= WC.THREW end
+local function cbStr(fn) local v = S(fn); if type(v) == "string" and cbReal(v) and v ~= "" then return v end end
+local function cbFight() return S(InCombatLockdown) ~= false end           -- unknown counts as a fight (nothing secure is touched)
+local function cbNow() return SN(GetTime) or 0 end
+local function cbSpellApi(name) local t = rawget(_G, "C_Spell"); return type(t) == "table" and t[name] or nil end
+
+-- the character: name-realm (every per-character store's key)
+local function cbWho()
+    local n = cbStr(function() return UnitName("player") end)
+    if not n then return nil end
+    return n .. "-" .. (cbStr(function() return GetRealmName() end) or "?")
+end
+-- this character's slots table; create = make it (only after the login: the saved table is loaded by then)
+local function cbStore(create)
+    local key = cbWho()
+    if not key then return nil end
+    local db = rawget(_G, "WowCompanionSpellsDB")
+    if type(db) ~= "table" then
+        if not (create and CB.ready) then return nil end
+        db = {}
+        _G.WowCompanionSpellsDB = db
+    end
+    if type(db.castBar) ~= "table" then
+        if not create then return nil end
+        db.castBar = {}
+    end
+    local s = db.castBar[key]
+    if type(s) ~= "table" then
+        if not create then return nil end
+        s = {}
+        db.castBar[key] = s
+    end
+    return s
+end
+-- the stored slots, 1..12 (a bad entry reads as empty)
+local function cbSlots()
+    local out, s = {}, cbStore(false)
+    if s then
+        for i = 1, CB_N do
+            local id = rawget(s, i)
+            if type(id) == "number" and id > 0 and id == math.floor(id) then out[i] = id end
+        end
+    end
+    return out
+end
+-- the toggle on a copy: the spell off its slot when it is on the bar, else on the first free slot
+local function cbApply(slots, id)
+    for i = 1, CB_N do if slots[i] == id then slots[i] = nil; return "remove", i end end
+    for i = 1, CB_N do if slots[i] == nil then slots[i] = id; return "add", i end end
+    return nil, nil, "full"
+end
+-- the slots as they will be once the queue is applied, and the slots the queue changes (q)
+local function cbView()
+    local v, q = {}, {}
+    local base = cbSlots()
+    for i = 1, CB_N do v[i] = base[i] end
+    for _, id in ipairs(CB.queue) do
+        local _, i = cbApply(v, id)
+        if i then q[i] = true end
+    end
+    return v, q
+end
+
+-- the cells: 0-11 the slots' casts, 12 the pick (no action: it runs on the press, as a plain cell)
+local function cbInit(btn, col)
+    local w = CB.want[col]
+    btn:SetAttribute("type", w and "spell" or nil)
+    btn:SetAttribute("spell", w and w.id or nil)
+    CB.frozen[col] = w and w.sig or nil
+    -- review: TapPad runs init only once the pad has its place, which may be long after CB.sync (a late layout, a fight's queue):
+    -- the document's cells follow the cells really built, so it goes out again just after (once per build, CB.send drops a repeat)
+    if not CB.resend and C_Timer and type(C_Timer.After) == "function" then
+        CB.resend = true
+        C_Timer.After(0, function() CB.resend = nil; if type(CB.send) == "function" then pcall(CB.send) end end)
+    end
+end
+local function cbClick(col)
+    if col == CB_PICK_COL then CB.pick = cbNow() end
+end
+-- (re)build the row when the stored slots changed; out of combat only. The pick cell is there even with an empty bar.
+function CB.sync()
+    if cbFight() then return false end
+    local pad = WC.pad
+    if type(pad) ~= "table" or type(pad.secureRow) ~= "function" then return false end
+    local slots = cbSlots()
+    local want, parts = {}, {}
+    for i = 1, CB_N do
+        local id = slots[i]
+        if id then want[i - 1] = { id = id, sig = "s" .. id }; parts[#parts + 1] = (i - 1) .. "=" .. id end
+    end
+    local sig = table.concat(parts, ",")
+    if CB.row and sig == CB.sig then return true end
+    CB.want = want
+    local ok, row = pcall(pad.secureRow, "castbar", CB_N + 1, cbInit, cbClick, { onPress = true })
+    CB.row = (ok and type(row) == "number") and row or nil
+    CB.sig = CB.row and sig or nil
+    if not CB.row then CB.frozen = {} end
+    return CB.row ~= nil
+end
+
+function CB.doc()
+    local v, q = cbView()
+    local e = {}
+    for i = 1, CB_N do
+        local id = v[i]
+        local col = i - 1
+        local w = CB.want[col]
+        local built = id ~= nil and w ~= nil and w.id == id and CB.frozen[col] == w.sig
+        if id then
+            local icon = SN(function() return cbSpellApi("GetSpellTexture")(id) end)
+            e[#e + 1] = { s = i, id = id, i = icon, c = (built and not q[i]) and col or nil, q = (q[i] or not built) and 1 or nil }
+        elseif q[i] then
+            e[#e + 1] = { s = i, q = 1 }                 -- emptied by a queued edit: dimmed until the fight ends
+        end
+    end
+    return { type = "castbar", v = CBV, n = CB_N, pick = CB.row and CB_PICK_COL or nil, fight = cbFight() or nil,
+             nopad = (not CB.row) and 1 or nil, e = e }
+end
+function CB.send(force)
+    if type(WC.encode) ~= "function" or type(WC.send) ~= "function" then return end
+    local ok, line = pcall(WC.encode, CB.doc())
+    if not ok or type(line) ~= "string" then return end
+    if not force and line == CB.last then return end
+    CB.last = line
+    WC.send(line)
+    if type(WC.push) == "function" then WC.push() end
+end
+local function cbAck(ok, why, op, slot, queued)
+    if type(WC.encode) ~= "function" or type(WC.send) ~= "function" then return ok end
+    WC.send(WC.encode({ type = "castbarack", v = CBV, ok = ok and true or false, why = why, op = op, s = slot, q = queued and 1 or nil }))
+    return ok
+end
+
+-- ONE edit: the spell on the bar or off it. Spells only (a known, active spell's id); in a fight it waits for the fight's end.
+function CB.toggle(id)
+    if type(id) ~= "number" or id <= 0 then return cbAck(false, "spell") end
+    if not cbStr(function() return cbSpellApi("GetSpellName")(id) end) then return cbAck(false, "spell") end
+    local passive = cbSpellApi("IsSpellPassive") or rawget(_G, "IsPassiveSpell")
+    if type(passive) == "function" and S(passive, id) == true then return cbAck(false, "passive") end
+    if not cbWho() then return cbAck(false, "character") end
+    if cbFight() then
+        local v = cbView()
+        local op, i, why = cbApply(v, id)
+        if not op then return cbAck(false, why) end
+        CB.queue[#CB.queue + 1] = id
+        cbAck(true, nil, op, i, true)
+        CB.send()
+        return true
+    end
+    local s = cbStore(true)
+    if not s then return cbAck(false, "character") end
+    local v = cbSlots()
+    local op, i, why = cbApply(v, id)
+    if not op then return cbAck(false, why) end
+    s[i] = v[i]
+    CB.sync()
+    cbAck(true, nil, op, i)
+    CB.send()
+    return true
+end
+-- the fight is over: the queued edits go into the store in their order, the cells are built again
+function CB.flushQueue()
+    if cbFight() or #CB.queue == 0 then return false end
+    local s = cbStore(true)
+    local q = CB.queue
+    CB.queue = {}
+    if s then
+        local v = cbSlots()
+        for _, id in ipairs(q) do cbApply(v, id) end
+        for i = 1, CB_N do s[i] = v[i] end
+    end
+    return true
+end
+
+-- Book b53: the Spellbook's pick was tapped just before (fresh CB_PICK_S): the spell's two taps that follow are ours
+function WC.castBarWants()
+    local p = CB.pick
+    return p ~= nil and cbNow() - p <= CB_PICK_S
+end
+function WC.castBarSpell(id)
+    CB.pick = nil
+    return CB.toggle(id)
+end
+
+-- ---------------------------------------------------------------- the cooldowns ("castcd")
+local function cbLearned(id)
+    local v = CB.learned[id]
+    if v then return v end
+    local n = cbStr(function() return cbSpellApi("GetSpellName")(id) end)
+    local db = rawget(_G, "WowCompanionSpellsDB")
+    local fc = type(db) == "table" and type(db.faceCd) == "table" and n and rawget(db.faceCd, n)   -- PadMap's learned lengths, read only
+    if type(fc) == "number" and fc > 0 then return fc end
+    return nil
+end
+local function cbCdSend()
+    if type(WC.encode) ~= "function" or type(WC.send) ~= "function" then return end
+    local k, now = {}, cbNow()
+    for i, c in pairs(CB.cd) do
+        local left = c.d - (now - c.t0)
+        if left > 0 then k[tostring(i)] = { d = c.d, l = math.floor(left * 1000 + 0.5) / 1000, g = c.g, e = c.e } end
+    end
+    WC.send(WC.encode({ type = "castcd", v = CBV, k = next(k) and k or nil }))
+    if type(WC.push) == "function" then WC.push() end
+end
+-- SPELL_UPDATE_COOLDOWN: each slot's spell, its flags now
+function CB.cooldowns()
+    local now, changed = cbNow(), false
+    local v = cbView()
+    local get = cbSpellApi("GetSpellCooldown")
+    for i = 1, CB_N do
+        local id, cur = v[i], CB.cd[i]
+        if cur and (cur.id ~= id or now >= cur.t0 + cur.d) then CB.cd[i] = nil; cur = nil; changed = true end
+        if id then
+            local ok, t = CALL(get, id)
+            local tab = ok and type(t) == "table"
+            local active = tab and S(function() return t.isActive end) == true
+            local gcd = tab and S(function() return t.isOnGCD end) == true
+            local held = cur and cur.cast and now < cur.t0 + cur.d - 0.2 and (not active or gcd)
+            if held then
+            elseif not active then
+                if cur then CB.cd[i] = nil; changed = true end
+            else
+                local dur = SN(function() return t.duration end)
+                local st = SN(function() return t.startTime end)
+                local plain = dur ~= nil and dur > 0
+                if plain then if gcd then CB.learned["@gcd"] = dur else CB.learned[id] = dur end end
+                if not cur or (cur.g or false) ~= gcd or (plain and math.abs((cur.t0 + cur.d) - ((st or now) + dur)) > 0.05) then
+                    local d = plain and dur or (gcd and (CB.learned["@gcd"] or 1.5) or cbLearned(id))
+                    local t0 = (plain and st) or now
+                    if not plain and not gcd and cur and cur.g and now - cur.t0 < cur.d then t0 = cur.t0 end
+                    if d and d > 0 then CB.cd[i] = { id = id, d = d, t0 = t0, g = gcd or nil, e = (not plain) or nil }
+                    else CB.cd[i] = nil end                  -- running, length unknown: nothing drawn rather than a guess
+                    changed = true
+                end
+            end
+        elseif cur then
+            CB.cd[i] = nil; changed = true
+        end
+    end
+    if changed then cbCdSend() end
+end
+-- a cast that landed starts its slot's own cooldown (a next-swing spell's lands late), with its learned length, over 1.5 s only
+function CB.castLanded(spellID)
+    local id = SN(function() return spellID end)
+    if not id then return end
+    local now, hit = cbNow(), false
+    local v = cbView()
+    for i = 1, CB_N do
+        if v[i] == id then
+            local d = cbLearned(id)
+            if d and d > 1.5 then CB.cd[i] = { id = id, d = d, t0 = now, e = true, cast = true }; hit = true end
+        end
+    end
+    if hit then cbCdSend() end
+end
+
+local cbF = CreateFrame("Frame")
+for _, ev in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
+                      "SPELL_UPDATE_COOLDOWN", "SPELLS_CHANGED" }) do pcall(cbF.RegisterEvent, cbF, ev) end
+pcall(function() cbF:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") end)
+cbF:SetScript("OnEvent", function(_, ev, a1, a2, a3)
+    pcall(function()
+        if ev == "PLAYER_LOGIN" or ev == "PLAYER_ENTERING_WORLD" then
+            CB.ready = true
+            CB.sync()
+            CB.send(true)
+            -- the pad may get its place a moment later (its cells are built then): the document again, once it can say so
+            if C_Timer and type(C_Timer.After) == "function" then C_Timer.After(3, function() pcall(CB.sync); pcall(CB.send) end) end
+        elseif ev == "PLAYER_REGEN_ENABLED" then
+            CB.flushQueue()
+            CB.sync()
+            CB.send()
+            CB.cooldowns()
+        elseif ev == "PLAYER_REGEN_DISABLED" then
+            CB.send()
+        elseif ev == "SPELL_UPDATE_COOLDOWN" then
+            CB.cooldowns()
+        elseif ev == "SPELLS_CHANGED" then
+            if not cbFight() then CB.sync() end
+            CB.send()
+        elseif ev == "UNIT_SPELLCAST_SUCCEEDED" then
+            CB.castLanded(a3)
+        end
+    end)
+end)
+end
+-- CASTBAR-END
 
 -- 1.0.19 TOUCH CAST (the user, 2026-11-09: "When touching the top controller stuff I don't want it to open the old controller room.
 -- Its time to retire that. Instead the buttons should touch cast the skills"): one secure pad row "tcast" (32 cells = the 4 state
