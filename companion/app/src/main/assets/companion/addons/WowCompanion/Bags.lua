@@ -67,6 +67,15 @@
 --    red tooltip line), then the cheapest white stacks - never quest items, items a quest in the log needs (WC.questNeedItems), quest
 --    starters, rare and better, hearthstones, keys or profession tools; the cursor's own item below it ("This item", focused at
 --    first). Select, then A = the same single confirm (B there = back to the picker). No suggestion = the confirm at once, as before.
+-- bags-act2 (review of bags-act1; the user's rulings quoted there: "never in combat", "rare and better stay REFUSED"):
+--  * the delete's slot check: a bag update that still shows the item (the lock, before the server's answer) keeps waiting; only the
+--    slot gone answers at once, the 1.5 s deadline answers either way (it said "destroy-unsure" at the first bag update before).
+--  * "worse than worn" by the game's changes needs EVERY change line to be a loss ("-..."): a line in another colour or without a
+--    sign is not a loss (an upgrade whose gains came in another colour was offered as worse).
+--  * never suggested also: a shaman's totems (5175-5178) and soul shards (6265) - no sell value, so they ranked as junk first.
+--  * in a fight the picker's re-rank (a value loading, B from the confirm) reads no tooltips: the kept ones only.
+--  * the picker's gold row, when its item is gone: onto the cursor's own item ("This item"), never the first suggestion.
+--  * the compare sheet closes ("moved") at the bag update when its item left the slot, not only at the next press.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -471,8 +480,11 @@ function WC._bagsDestroyCheck(fromEvent)
     local w = DESTROYED.wait
     if not w then return end
     if fromEvent and GetTime() == w.t then return end           -- a bag update queued before the delete itself: not its answer
-    DESTROYED.wait = nil
     local still = bagItemID(w.bag, w.slot)
+    -- bags-act2: a bag update that still shows the item (its lock, the server not answered yet) is not the answer: wait on (the
+    -- deadline answers either way)
+    if fromEvent and still == w.id then return end
+    DESTROYED.wait = nil
     WC.emit({ type = "cap", bagsDestroy = { confirm = (still ~= w.id), at = { bag = w.bag, slot = w.slot }, id = w.id } })
     if w.done then pcall(w.done, still ~= w.id) end
 end
@@ -873,6 +885,8 @@ end
 bf:SetScript("OnEvent", function(_, event, a1)
     -- bags-act1: a delete waiting for its slot to empty is confirmed at the bag update
     if event == "BAG_UPDATE_DELAYED" and WC._bagsDestroyCheck then pcall(WC._bagsDestroyCheck, true) end
+    -- bags-act2: the compare sheet's item left its slot: the sheet closes (it showed whatever came there)
+    if event == "BAG_UPDATE_DELAYED" and WC._bagsCompareCheck then pcall(WC._bagsCompareCheck) end
     -- bags-tip1: what is worn changed: every kept bag tooltip (its compare) and the worn ones are read again; durability: the worn ones
     if event == "PLAYER_EQUIPMENT_CHANGED" then
         if WC._bagsTipForget then WC._bagsTipForget() end
@@ -2189,7 +2203,9 @@ end
 ACT.KEEP = { [6948] = true, [2901] = true, [7005] = true, [5956] = true, [6219] = true, [6218] = true, [6339] = true, [11130] = true,
              [11145] = true, [16207] = true, [22461] = true, [22462] = true, [22463] = true, [10498] = true, [9149] = true,
              [20815] = true, [4471] = true, [5060] = true, [6256] = true, [6365] = true, [6366] = true, [6367] = true, [12225] = true,
-             [19022] = true, [19970] = true, [25978] = true, [756] = true, [778] = true, [1959] = true }
+             [19022] = true, [19970] = true, [25978] = true, [756] = true, [778] = true, [1959] = true,
+             -- bags-act2: a shaman's Earth / Fire / Water / Air totems and soul shards (no sell value: they ranked as junk)
+             [5175] = true, [5176] = true, [5177] = true, [5178] = true, [6265] = true }
 -- the game's item classes never suggested: reagents (5: a shaman's Ankh), projectiles (6), quest (12), keys (13), profession (19)
 ACT.KEEP_CLASS = { [5] = true, [6] = true, [12] = true, [13] = true, [19] = true }
 ACT.RED = "ff2020"            -- RED_FONT_COLOR: a tooltip line the player does not meet (a level, a skill, an armour type)
@@ -2212,7 +2228,8 @@ function ACT.tip(bag, slot, id)
     local key = "bag " .. bag .. " " .. slot .. " " .. id
     local e = TIP.get(key, bag, slot)
     if e then return e.val end
-    if type(WC.tipOf) ~= "function" then return nil end
+    -- bags-act2: a re-rank in a fight (a value loaded, B from the confirm) reads no tooltips: the kept ones only
+    if type(WC.tipOf) ~= "function" or InCombatLockdown() then return nil end
     local t = TIP.read(key, bag, slot)
     return t
 end
@@ -2233,7 +2250,8 @@ function ACT.allLoss(t, slot)
             local n = #c.lines
             for i = n - c.dn + 1, n do
                 local l = c.lines[i]
-                if type(l) == "table" and l.c == ACT.GAIN then return false end
+                -- bags-act2: every line must read as a loss ("-3 Stamina", not the gain colour); anything else = not all losses
+                if type(l) ~= "table" or l.c == ACT.GAIN or type(l.t) ~= "string" or not l.t:match("^%s*%-") then return false end
             end
             return true
         end
@@ -2361,10 +2379,17 @@ function ACT.rebuild()
     local was = ACT.list and ACT.list[ctl.dsel or 1]
     local list = ACT.withCursor(ACT.suggest())
     ACT.list = list
-    local sel = 1
+    local sel
     if was then for i, e in ipairs(list) do if e.bag == was.bag and e.slot == was.slot and e.id == was.id then sel = i end end end
+    -- bags-act2: its item gone: onto the cursor's own item ("This item"), never silently onto the first suggestion
+    if not sel then for i, e in ipairs(list) do if e.bag == ctl.bag and e.slot == ctl.slot then sel = i end end end
+    sel = sel or 1
     ctl.dsel = math.min(sel, math.max(1, #list))
     if #list == 0 then ACT.list = nil; toGrid("dpick-empty") end
+end
+-- bags-act2: at the bag update, the compare sheet whose item left its slot closes
+function WC._bagsCompareCheck()
+    if ctl.on and ctl.mode == "compare" and itemAt(ctl.bag, ctl.slot) ~= ctl.armId then toGrid("moved") end
 end
 function WC._bagsDpickLoaded(id)
     if not (ACT.wait and ACT.wait[id]) or ctl.mode ~= "dpick" then return end

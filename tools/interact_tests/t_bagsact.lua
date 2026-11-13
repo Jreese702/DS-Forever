@@ -22,6 +22,7 @@ local PAIRED = true          -- this build has the paired form
 C_TooltipComparison = { GetItemComparisonDelta = function(item, worn, paired, add)
     CALLS[#CALLS + 1] = { worn = worn and worn.hyperlink, paired = paired and paired.hyperlink, add = add }
     if paired and not PAIRED then error("Usage: GetItemComparisonDelta(comparisonItem, equippedItem)") end
+    if paired and PAIRED == "ignored" then return { "|cff00ff00+9|r Strength" } end   -- a build that ignores the extra arguments
     if paired then return { "|cff00ff00+5|r Strength", "|cffff2020-200|r Armor" } end
     return { "|cff00ff00+9|r Strength" }
 end }
@@ -38,7 +39,7 @@ local c = t and t.cmp or {}
 chk("2H: both worn hands compared", #c == 2 and c[1].slot == 16 and c[2].slot == 17)
 chk("2H: the pair's changes under the main hand (with = 17, dn = 2)", c[1] and c[1].with == 17 and c[1].dn == 2
     and c[1].lines[#c[1].lines].t == "-200 Armor" and c[1].lines[#c[1].lines].c == "ff2020")
-chk("2H: the game asked for the pair (the off hand's link, addPairedStats)", #CALLS == 1 and CALLS[1].worn == "|Hitem:801|h"
+chk("2H: the game asked for the pair (the off hand's link, addPairedStats), then the plain form to tell an ignored pair (i158)", #CALLS == 2 and CALLS[2].paired == nil and CALLS[1].worn == "|Hitem:801|h"
     and CALLS[1].paired == "|Hitem:802|h" and CALLS[1].add == true)
 chk("2H: the off hand marked pair, no changes of its own", c[2] and c[2].pair == 16 and c[2].dn == nil and #c[2].lines == 1)
 
@@ -46,6 +47,11 @@ chk("2H: the off hand marked pair, no changes of its own", c[2] and c[2].pair ==
 PAIRED = false; CALLS = {}
 t = WC.tipOf("bag 0 1 500"); c = t and t.cmp or {}
 chk("no paired form: the main hand with = 17 and no dn (the app counts)", c[1] and c[1].with == 17 and c[1].dn == nil and #c[1].lines == 1)
+-- i158: a build that ignores the extra arguments (the same lines as the plain form): not the pair's, nothing given
+PAIRED = "ignored"; CALLS = {}
+t = WC.tipOf("bag 0 1 500"); c = t and t.cmp or {}
+chk("paired args ignored: the main hand's lines are not taken for the pair's (no dn)", c[1] and c[1].with == 17 and c[1].dn == nil
+    and #c[1].lines == 1)
 PAIRED = true
 
 -- 3. a two-hander with only a main hand worn: one compare, the plain form
@@ -67,5 +73,5 @@ chk("a shield vs an empty off hand: no compare from the game", t and t.cmp == ni
 WORN = { [5] = 900 }
 t = WC.tipOf("bag 0 3 502"); c = t and t.cmp or {}
 chk("a chest: one compare, dn = 1", #c == 1 and c[1].slot == 5 and c[1].dn == 1 and c[1].pair == nil and c[1].with == nil)
-chk("the version is i157 or later", tonumber(WC.interactIV:match("^i(%d+)$")) >= 157)
+chk("the version is i158 or later", tonumber(WC.interactIV:match("^i(%d+)$")) >= 158)
 return table.concat(out, "\n")

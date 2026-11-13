@@ -314,6 +314,51 @@ ids = lst(L.eval('listIds()'))
 check(ids[:6] == [602, 601, 603, 604, 606, 607], "loaded (2 c): ranked again among the whites", ids)
 L.execute('press("PAD2")')
 
+# 9. bags-act2 (review): totems / soul shards kept; "worse" needs every change line a loss; the delete waits past a bag update that
+# still shows the item; the gold row falls back onto "This item"; the compare sheet closes when its item leaves; no reads in a fight
+L.execute(r'''
+ITEMS[5175] = { q = 1, v = 0 }; ITEMS[6265] = { q = 1, v = 0 }
+ITEMS[620] = { q = 1, v = 9, loc = "INVTYPE_HEAD", cls = 4, sub = 1, ilvl = 50 }   -- helm, ilvl above the worn 40: changes decide
+ITEMS[621] = { q = 1, v = 8, loc = "INVTYPE_HEAD", cls = 4, sub = 1, ilvl = 50 }
+CMP = { [620] = { t = "+5 Stamina", c = "20ff20" }, [621] = { t = "-5 Stamina", c = "ff2020" } }
+TIPREADS = 0
+local tip0 = WowCompanion.tipOf
+WowCompanion.tipOf = function(key)
+    TIPREADS = TIPREADS + 1
+    local t = tip0(key); local id = tonumber(key:match("(%d+)$"))
+    if CMP[id] then t.cmp = { { slot = 1, dn = 1, lines = { { t = "Worn helm" }, { t = " " }, { t = "If you replace", c = "ffd100" }, CMP[id] } } } end
+    return t
+end
+SAVED2 = BAG[0]; BAG[0] = { 5175, 6265, 620, 621, 601, 614 }; WowCompanion._bagsLayout = WowCompanion.collectBags().bags
+to(6); press("PAD4"); WowCompanion._bagsTouch(21); run(0)
+''')
+ids = lst(L.eval('listIds()'))
+check(5175 not in ids and 6265 not in ids, "never suggested: a shaman's totem, a soul shard", ids)
+check(621 in ids and 620 not in ids, "worse by the changes only when every line is a loss (a '+' line in another colour = kept)", ids)
+check(L.eval('doc().mode') == 'dpick' and L.eval('doc().dpick.list[doc().dpick.sel].slot') == 6, "the gold row on This item")
+L.execute('while doc().dpick.list[doc().dpick.sel].id ~= 601 do press("PADDUP") end; BAG[0][5] = nil; press("PAD1")')
+check(L.eval('doc().mode') == 'dpick' and L.eval('doc().dpick.list[doc().dpick.sel].slot') == 6,
+      "its item gone: the gold row onto This item, not the first suggestion", L.eval('doc().dpick.list[doc().dpick.sel].slot'))
+L.execute('BAG[0][5] = 601; press("PAD1")')                  # This item's confirm (out of a fight)
+check(L.eval('doc().mode') == 'destroy', "This item's confirm")
+L.execute('BAG[0][7] = 621; COMBAT = true; TIPREADS = 0; press("PAD2")')   # B in a fight: the re-rank, a gear item never read
+check(L.eval('doc().mode') == 'dpick' and L.eval('TIPREADS') == 0, "a re-rank in a fight reads no tooltips", L.eval('TIPREADS'))
+L.execute('COMBAT = false; BAG[0][7] = nil; press("PAD2")')
+# the delete's answer: a bag update with the item still there (its lock) waits; the slot empty = destroyed
+L.execute('to(5); press("PAD4"); WowCompanion._bagsTouch(21); run(0)')
+L.execute('while doc().dpick.list[doc().dpick.sel].slot ~= 5 do press("PADDUP") end')
+L.execute('D0 = deletes(); press("PAD1"); press("PAD1"); BAG[0][5] = 601; NOW = NOW + 0.1; fire("BAG_UPDATE_DELAYED"); run(0)')
+check(L.eval('deletes()') == L.eval('D0') + 1 and L.eval('doc().note') == 'destroying',
+      "a bag update that still shows the item: still destroying (not unsure)", L.eval('doc().note'))
+L.execute('BAG[0][5] = nil; NOW = NOW + 0.1; fire("BAG_UPDATE_DELAYED"); run(0)')
+check(L.eval('doc().note') == 'destroyed', "the slot empty at the next one: destroyed", L.eval('doc().note'))
+# the compare sheet: its item leaves the slot -> closed at the bag update
+L.execute('to(3); press("PAD4"); menuTo("compare"); press("PAD1"); run(0)')
+check(L.eval('doc().mode') == 'compare', "the sheet open on the helm")
+L.execute('BAG[0][3] = 614; fire("BAG_UPDATE_DELAYED"); run(0)')
+check(L.eval('doc().mode') == 'grid' and L.eval('doc().note') == 'moved', "its item gone: the sheet closes (moved)", L.eval('doc().mode'))
+L.execute('BAG[0] = SAVED2; WowCompanion._bagsLayout = WowCompanion.collectBags().bags')
+
 check(int(L.eval('#TRACE')) == 0, "no trace: no StaticPopup / SetBinding / SaveBindings / macro / CVar / window call",
       list(L.eval('TRACE').values()))
 print('ALL PASS (%d checks)' % passes if fails == 0 else '%d FAILED (of %d)' % (fails, fails + passes))
