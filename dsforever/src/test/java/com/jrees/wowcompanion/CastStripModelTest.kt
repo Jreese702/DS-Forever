@@ -12,9 +12,9 @@ import org.junit.Test
 
 /**
  * GitHub #43, THE TAP-TO-CAST BAR (the app half; the add-on half is ActionBar.lua cb1-cb3 and Book.lua b53-b56, proven by
- * tools/test_cast_bar.py): the `castbar` document (cb3: 6 slots), the `castcd` cooldowns, the ONE tap per slot, cb3's setting (Off /
+ * tools/test_cast_bar.py): the `castbar` document (cb6: 8 slots, the user's "8 total, 4 per side"), the `castcd` cooldowns, the ONE tap per slot, cb3's setting (Off /
  * Left / Right / Both, Off by default, the old Home row's On -> Left), its place on Home per mode, cb5's scroll bar (Left / Right a
- * strip of 6 with 4 in view at Both's size, stopping anywhere, a light fling, edge arrows by the scroll; a tap casts the slot under the finger), the Bind box's Cast bar tab (only while the setting is on), and the rules the page keeps (no page text, menus translated).
+ * strip of 8 with 4 in view at Both's size; cb6 Both = 4 under each column at Left's / Right's places, stopping anywhere, a light fling, edge arrows by the scroll; a tap casts the slot under the finger), the Bind box's Cast bar tab (only while the setting is on), and the rules the page keeps (no page text, menus translated).
  */
 class CastStripModelTest {
     private fun bar(json: String) = CastStripModel.parse(JSONObject(json))!!
@@ -23,26 +23,29 @@ class CastStripModelTest {
     private val BOTH = CastStripModel.Side.BOTH
     private val OFF = CastStripModel.Side.OFF
 
-    private val two = """{"type":"castbar","v":"cb3","n":6,"pick":6,"pp":[39,19],"e":[{"s":1,"id":403,"i":136048,"c":0},
+    private val two = """{"type":"castbar","v":"cb6","n":8,"pick":8,"pp":[39,19],"e":[{"s":1,"id":403,"i":136048,"c":0},
         {"s":3,"id":331,"i":136052,"q":1},{"s":5,"q":1}]}"""
 
     @After fun down() { HomeSettings.startForTest(null) }
 
-    @Test fun theDocumentReadsSixSlots() {
+    @Test fun theDocumentReadsEightSlots() {
         val b = bar(two)
-        assertEquals(6, b.slots.size)
+        assertEquals(8, b.slots.size)
         assertEquals(CastStripModel.Slot(0, 403, 136048, 0, false), b.slots[0])
         assertEquals(CastStripModel.Slot(2, 331, 136052, null, true), b.slots[2])
         assertEquals(CastStripModel.Slot(4, null, null, null, true), b.slots[4])        // emptied by a queued edit: dimmed
         assertEquals(CastStripModel.Slot(1, null, null, null, false), b.slots[1])
-        assertEquals(6, b.pick)
+        assertEquals(8, b.pick)
         assertTrue(b.hasSpells); assertTrue(b.has(403)); assertTrue(b.has(331)); assertFalse(b.has(324)); assertFalse(b.full)
-        assertEquals("cb3", b.version)
+        assertEquals("cb6", b.version)
         assertEquals(2, b.slotOf(0, 331)); assertEquals(0, b.slotOf(403, 77777)); assertEquals(-1, b.slotOf(324, null))
         assertNull(CastStripModel.parse(JSONObject("""{"type":"facecd"}""")))
-        // an older add-on's 12: slots past 6 are dropped, never shifted onto another slot
+        // an older add-on's 12: slots past 8 are dropped, never shifted onto another slot
         val old = bar("""{"type":"castbar","v":"cb2b","n":12,"pick":12,"e":[{"s":2,"id":5,"c":1},{"s":9,"id":7,"c":8}]}""")
-        assertEquals(listOf(null, 5, null, null, null, null), old.slots.map { it.id })
+        assertEquals(listOf(null, 5, null, null, null, null, null, null), old.slots.map { it.id })
+        // cb6: slots 7 and 8 are read, their cells 6 and 7
+        val eight = bar("""{"type":"castbar","v":"cb6","n":8,"pick":8,"e":[{"s":7,"id":11,"c":6},{"s":8,"id":12,"c":7}]}""")
+        assertEquals("castbar" to 6, CastStripModel.tapCell(eight, 6)); assertEquals("castbar" to 7, CastStripModel.tapCell(eight, 7))
     }
 
     @Test fun anEmptyBarOrNoPadRow() {
@@ -52,7 +55,7 @@ class CastStripModelTest {
         assertNull(noPad.pick)
         assertNull(CastStripModel.tapCell(noPad, 0))
         assertTrue(noPad.pickable)
-        val bad = bar("""{"type":"castbar","pick":6,"e":[{"s":0,"id":1,"c":0},{"s":7,"id":2,"c":6},{"s":2,"id":5,"c":40}]}""")
+        val bad = bar("""{"type":"castbar","pick":6,"e":[{"s":0,"id":1,"c":0},{"s":9,"id":2,"c":8},{"s":2,"id":5,"c":40}]}""")
         assertEquals(listOf(null, 5), bad.slots.take(2).map { it.id })
         assertNull(bad.slots[1].cell)
     }
@@ -64,6 +67,7 @@ class CastStripModelTest {
         assertNull(CastStripModel.tapCell(b, 2))           // waiting for the fight's end
         assertNull(CastStripModel.tapCell(b, 4))
         assertNull(CastStripModel.tapCell(b, 6))
+        assertNull(CastStripModel.tapCell(b, 8))
         assertNull(CastStripModel.tapCell(null, 0))
     }
 
@@ -114,8 +118,8 @@ class CastStripModelTest {
         assertTrue(CastStripModel.cutsLeft(L) && !CastStripModel.cutsRight(L))
         assertTrue(CastStripModel.cutsRight(R) && !CastStripModel.cutsLeft(R))
         assertTrue(CastStripModel.cutsLeft(BOTH) && CastStripModel.cutsRight(BOTH))
-        // cb5: Left / Right a strip of all 6 with 4 in view, Both all 6; every mode's slots ONE size (the user: "the same size as the both option")
-        assertEquals(4, CastStripModel.visible(L)); assertEquals(4, CastStripModel.visible(R)); assertEquals(6, CastStripModel.visible(BOTH))
+        // cb5 / cb6: Left / Right a strip of all 8 with 4 in view, Both all 8 (4 a column); every mode's slots ONE size (the user: "the same size as the both option")
+        assertEquals(4, CastStripModel.visible(L)); assertEquals(4, CastStripModel.visible(R)); assertEquals(8, CastStripModel.visible(BOTH))
         assertEquals(0, CastStripModel.visible(OFF))
         assertTrue(CastStripModel.scrolls(L) && CastStripModel.scrolls(R)); assertFalse(CastStripModel.scrolls(BOTH) || CastStripModel.scrolls(OFF))
         assertEquals(l.h, b.h, 0.01f)                                         // no dots band any more: one height
@@ -125,8 +129,8 @@ class CastStripModelTest {
         assertEquals(CastStripModel.MAX_SIDE, sb.w, 0.01f)
         assertEquals(sb.w, sl.w, 0.01f); assertEquals(sb.w, sr.w, 0.01f); assertEquals(sb.h, sl.h, 0.01f)
         assertEquals(CastStripModel.PAD, sl.t, 0.01f)
-        for (side in listOf(L, R, BOTH)) {
-            val box = if (side == L) l else if (side == R) r else b
+        for (side in listOf(L, R)) {
+            val box = if (side == L) l else r
             val n = CastStripModel.visible(side)
             val slots = (0 until n).map { CastStripModel.slotBox(side, it, box.w, box.h) }
             for (s in slots) { assertEquals(slots[0].t, s.t, 0f); assertTrue(s.l >= 0f && s.r <= box.w && s.t >= 0f && s.b <= box.h) }
@@ -137,10 +141,37 @@ class CastStripModelTest {
             assertEquals("$side", between, (box.w - CastStripModel.PAD - slots[n - 1].r) * 2f, 0.01f)
             for (i in 2 until n) assertEquals("$side even", between, slots[i].l - slots[i - 1].r, 0.01f)
         }
-        // the 5th and 6th wait off the right edge, beyond the window
+        // the 5th to 8th wait off the right edge, beyond the window
         assertTrue(CastStripModel.slotBox(L, 4, l.w, l.h).l >= CastStripModel.window(l.w).second)
         assertEquals(listOf(0, 1, 2, 3), CastStripModel.inView(L, l.w, l.h, 0f))
-        assertEquals((0 until 6).toList(), CastStripModel.inView(BOTH, b.w, b.h, 0f))
+        assertEquals((0 until 8).toList(), CastStripModel.inView(BOTH, b.w, b.h, 0f))
+    }
+
+    /** cb6 (the user: "8 total, 4 per side"): Both = two wells, exactly Left's and Right's bars; slots 1-4 where Left's slots lie at
+     *  rest, 5-8 where Right's do; the room between the wells takes no tap */
+    @Test fun bothIsFourUnderEachColumnAtLeftsAndRightsPlaces() {
+        val l = CastStripModel.place(L, W, H, G)!!
+        val r = CastStripModel.place(R, W, H, G)!!
+        val b = CastStripModel.place(BOTH, W, H, G)!!
+        val ws = CastStripModel.wells(BOTH, b.w)
+        assertEquals(2, ws.size)
+        assertEquals(l.l, b.l + ws[0].first, 0.01f); assertEquals(l.r, b.l + ws[0].second, 0.01f)
+        assertEquals(r.l, b.l + ws[1].first, 0.01f); assertEquals(r.r, b.l + ws[1].second, 0.01f)
+        assertEquals(1, CastStripModel.wells(L, l.w).size)
+        for (i in 0 until 4) {
+            val sb = CastStripModel.slotBox(BOTH, i, b.w, b.h); val sl = CastStripModel.slotBox(L, i, l.w, l.h)
+            assertEquals("slot ${i + 1}", l.l + sl.l, b.l + sb.l, 0.01f); assertEquals(sl.w, sb.w, 0.01f); assertEquals(sl.t, sb.t, 0.01f)
+            val sb2 = CastStripModel.slotBox(BOTH, i + 4, b.w, b.h); val sr = CastStripModel.slotBox(R, i, r.w, r.h)
+            assertEquals("slot ${i + 5}", r.l + sr.l, b.l + sb2.l, 0.01f); assertEquals(sr.w, sb2.w, 0.01f)
+            assertEquals(0, CastStripModel.wellOf(BOTH, i)); assertEquals(1, CastStripModel.wellOf(BOTH, i + 4))
+        }
+        for (i in 0 until 8) {
+            val s = CastStripModel.slotBox(BOTH, i, b.w, b.h)
+            assertEquals(i, CastStripModel.slotAt(BOTH, (s.l + s.r) / 2f, (s.t + s.b) / 2f, b.w, b.h, 0f))
+        }
+        assertEquals(-1, CastStripModel.slotAt(BOTH, b.w / 2f, b.h / 2f, b.w, b.h, 0f))      // between the two wells
+        assertEquals(0f, CastStripModel.maxScroll(BOTH, b.w), 0f)
+        assertEquals(CastStripModel.slotBox(BOTH, 5, b.w, b.h), CastStripModel.slotBox(BOTH, 5, b.w, b.h, 300f))   // no scroll
     }
 
     // ---------------------------------------------------------------- cb5: the scroll bar (any place, no pages), its arrows, the tap
@@ -151,22 +182,22 @@ class CastStripModelTest {
     @Test fun theStripScrollsToAnyPlaceAndHoldsAtItsEnds() {
         val p = CastStripModel.pitch(L, bw)
         assertEquals((bw - 2 * CastStripModel.PAD) / 4f, p, 0.001f)
-        assertEquals(2 * p, CastStripModel.maxScroll(L, bw), 0.001f)          // two slots hidden at the start
+        assertEquals(4 * p, CastStripModel.maxScroll(L, bw), 0.001f)          // four slots hidden at the start (cb6: 8 in all)
         assertEquals(0f, CastStripModel.maxScroll(BOTH, 1224f), 0f)           // Both does not scroll
         assertEquals(0f, CastStripModel.maxScroll(L, 0f), 0f)                 // not laid out yet: no scroll, no throw
         assertEquals(0f, CastStripModel.clampScroll(L, bw, -50f), 0f)
-        assertEquals(2 * p, CastStripModel.clampScroll(L, bw, 9999f), 0.001f)
+        assertEquals(4 * p, CastStripModel.clampScroll(L, bw, 9999f), 0.001f)
         // an arbitrary place between slots stays where it is (no snapping): every slot moves by exactly the scroll
         val o = 0.37f * p + 11f
         assertEquals(o, CastStripModel.clampScroll(L, bw, o), 0f)
-        for (i in 0 until 6)
+        for (i in 0 until 8)
             assertEquals(CastStripModel.slotBox(L, i, bw, bh).l - o, CastStripModel.slotBox(L, i, bw, bh, o).l, 0.001f)
         assertEquals(listOf(0, 1, 2, 3, 4), CastStripModel.inView(L, bw, bh, o))      // part of slot 5 has come in
-        // the end: slots 3-6 in view spread evenly, as slots 1-4 were at the start
+        // the end: slots 5-8 in view spread evenly, as slots 1-4 were at the start
         val e = CastStripModel.maxScroll(L, bw)
-        assertEquals(listOf(2, 3, 4, 5), CastStripModel.inView(L, bw, bh, e))
-        assertEquals(CastStripModel.slotBox(L, 0, bw, bh).l, CastStripModel.slotBox(L, 2, bw, bh, e).l, 0.001f)
-        assertEquals(CastStripModel.slotBox(L, 3, bw, bh).r, CastStripModel.slotBox(L, 5, bw, bh, e).r, 0.001f)
+        assertEquals(listOf(4, 5, 6, 7), CastStripModel.inView(L, bw, bh, e))
+        assertEquals(CastStripModel.slotBox(L, 0, bw, bh).l, CastStripModel.slotBox(L, 4, bw, bh, e).l, 0.001f)
+        assertEquals(CastStripModel.slotBox(L, 3, bw, bh).r, CastStripModel.slotBox(L, 7, bw, bh, e).r, 0.001f)
         // the drag follows the finger (left brings the right-hand slots in), held to the ends
         assertEquals(40f, CastStripModel.dragScroll(L, bw, 0f, -40f), 0f)
         assertEquals(0f, CastStripModel.dragScroll(L, bw, 10f, 300f), 0f)
@@ -175,7 +206,7 @@ class CastStripModelTest {
         // the scroll kept for the app's run as slots' shares: the same place after a new layout
         assertEquals(1.25f, CastStripModel.toPos(L, bw, 1.25f * p), 0.0001f)
         assertEquals(1.25f * CastStripModel.pitch(R, 600f), CastStripModel.fromPos(R, 600f, 1.25f), 0.001f)
-        assertEquals(2f, CastStripModel.toPos(L, bw, 1e6f), 0.0001f)
+        assertEquals(4f, CastStripModel.toPos(L, bw, 1e6f), 0.0001f)
     }
 
     @Test fun theArrowsShowWhereSlotsAreHidden() {
@@ -197,21 +228,21 @@ class CastStripModelTest {
     @Test fun aTapCastsTheSlotUnderTheFingerAtAnyScroll() {
         val p = CastStripModel.pitch(L, bw)
         fun centre(i: Int, o: Float) = CastStripModel.slotBox(L, i, bw, bh, o).let { (it.l + it.r) / 2f to (it.t + it.b) / 2f }
-        for (o in listOf(0f, 0.37f * p, p, 1.61f * p, 2 * p)) for (i in CastStripModel.inView(L, bw, bh, o)) {
+        for (o in listOf(0f, 0.37f * p, p, 1.61f * p, 2 * p, 3.3f * p, 4 * p)) for (i in CastStripModel.inView(L, bw, bh, o)) {
             val (x, y) = centre(i, o)
             if (x < CastStripModel.window(bw).first || x > CastStripModel.window(bw).second) continue
             assertEquals("scroll $o slot $i", i, CastStripModel.slotAt(L, x, y, bw, bh, o))
         }
-        // at the end, the leftmost place in view is slot 3, the rightmost slot 6
+        // at the end, the leftmost place in view is slot 5, the rightmost slot 8
         val e = CastStripModel.maxScroll(L, bw)
-        assertEquals(2, CastStripModel.slotAt(L, 40f, bh / 2f, bw, bh, e))
-        assertEquals(5, CastStripModel.slotAt(L, bw - 40f, bh / 2f, bw, bh, e))
+        assertEquals(4, CastStripModel.slotAt(L, 40f, bh / 2f, bw, bh, e))
+        assertEquals(7, CastStripModel.slotAt(L, bw - 40f, bh / 2f, bw, bh, e))
         assertEquals(-1, CastStripModel.slotAt(L, 2f, bh / 2f, bw, bh, 0f))           // outside the window: nothing
         assertEquals(-1, CastStripModel.slotAt(L, 100f, 0.5f, bw, bh, 0f))            // above the slots' row: nothing
         assertEquals(-1, CastStripModel.slotAt(OFF, 100f, bh / 2f, bw, bh, 0f))
-        val b = bar("""{"type":"castbar","v":"cb3","n":6,"pick":6,"pp":[39,19],"e":[{"s":1,"id":403,"i":136048,"c":0},
-            {"s":4,"id":8042,"i":136026,"c":3},{"s":6,"id":2484,"i":136102,"c":5}]}""")
-        assertEquals("castbar" to 5, CastStripModel.tapCell(b, CastStripModel.slotAt(L, bw - 40f, bh / 2f, bw, bh, e)))
+        val b = bar("""{"type":"castbar","v":"cb6","n":8,"pick":8,"pp":[39,19],"e":[{"s":1,"id":403,"i":136048,"c":0},
+            {"s":4,"id":8042,"i":136026,"c":3},{"s":8,"id":2484,"i":136102,"c":7}]}""")
+        assertEquals("castbar" to 7, CastStripModel.tapCell(b, CastStripModel.slotAt(L, bw - 40f, bh / 2f, bw, bh, e)))
         // a finger that wobbles is still a tap; one that moved more than 24 px is a drag (never a cast)
         assertFalse(CastStripModel.leftTap(6f, 3f)); assertFalse(CastStripModel.leftTap(24f, 0f))
         assertTrue(CastStripModel.leftTap(25f, 0f)); assertTrue(CastStripModel.leftTap(18f, 18f))
@@ -270,10 +301,19 @@ class CastStripModelTest {
         assertFalse(CastStripModel.bindTab(L, null))                         // no document yet
         val older = bar("""{"type":"castbar","v":"cb2b","n":12,"pick":12,"pp":[39,19],"e":[]}""")
         assertFalse(older.slotPick); assertFalse(CastStripModel.bindTab(L, older))     // an older add-on takes no slot pick
+        val six = bar("""{"type":"castbar","v":"cb3","n":6,"pick":6,"pp":[39,19],"e":[]}""")
+        assertFalse(six.slotPick)                                             // cb3's 6: its Book knows no 27-28 (cb6 only)
         assertEquals(listOf("padtab" to 39, "padtab" to 26), CastStripModel.tabCells())
         assertEquals(listOf("padtab" to 39, "padtab" to 20), CastStripModel.slotCells(0))
         assertEquals(listOf("padtab" to 39, "padtab" to 25), CastStripModel.slotCells(5))
-        assertNull(CastStripModel.slotCells(6)); assertNull(CastStripModel.slotCells(-1))
+        // cb6 / Book b57: slots 7-8 are 27-28 (26 stays the tab)
+        assertEquals(listOf("padtab" to 39, "padtab" to 27), CastStripModel.slotCells(6))
+        assertEquals(listOf("padtab" to 39, "padtab" to 28), CastStripModel.slotCells(7))
+        assertNull(CastStripModel.slotCells(8)); assertNull(CastStripModel.slotCells(-1))
+        val codes = (0 until 8).map { CastStripModel.slotCode(it) }
+        assertEquals(listOf(20, 21, 22, 23, 24, 25, 27, 28), codes)
+        // no collision with the pick's other codes: 0-4 Smart Range, 5-18 the radial ops, 19 the pick, 26 the tab
+        for (k in codes) assertFalse("$k", k in 0..19 || k == CastStripModel.TAB_CODE || k == CastStripModel.PICK)
         // LB / RB walk Normal | In combat | Cast bar, no wrap; two tabs only while it is off
         assertEquals(2, CastStripModel.stepTab(1, 1, true)); assertEquals(2, CastStripModel.stepTab(2, 1, true))
         assertEquals(1, CastStripModel.stepTab(2, -1, true)); assertEquals(0, CastStripModel.stepTab(0, -1, true))
@@ -283,14 +323,16 @@ class CastStripModelTest {
     @Test fun theBindTabReadsTheAddonsCursor() {
         val c = SpellsModel.parseCtl(JSONObject("""{"type":"spellsctl","v":"b56","ctl":{"on":true,"mode":"bind","bind":403,"bcb":3}}"""))
         assertEquals(3, c?.bindCb)
+        val eighth = SpellsModel.parseCtl(JSONObject("""{"type":"spellsctl","v":"b57","ctl":{"on":true,"mode":"bind","bind":403,"bcb":8}}"""))
+        assertEquals(8, eighth?.bindCb)
         val none = SpellsModel.parseCtl(JSONObject("""{"type":"spellsctl","v":"b56","ctl":{"on":true,"mode":"bind","bind":403,"bcb":9}}"""))
         assertNull(none?.bindCb)
     }
 
     @Test fun theCooldowns() {
         val m = CastStripModel.parseCd(JSONObject("""{"type":"castcd","v":"cb3","k":{"1":{"d":1.5,"l":1.5,"g":true},
-            "3":{"d":8,"l":6,"e":true},"7":{"d":4,"l":2},"4":{"d":4,"l":9}}}"""))!!
-        assertEquals(setOf(0, 2), m.keys)
+            "3":{"d":8,"l":6,"e":true},"9":{"d":4,"l":2},"4":{"d":4,"l":9},"8":{"d":4,"l":2}}}"""))!!
+        assertEquals(setOf(0, 2, 7), m.keys)
         assertTrue(m[0]!!.gcd); assertFalse(m[0]!!.estimated)
         assertTrue(m[2]!!.estimated)
         assertEquals(emptyMap<Int, PadMapModel.FaceCd>(), CastStripModel.parseCd(JSONObject("""{"type":"castcd","v":"cb3"}""")))
@@ -340,7 +382,7 @@ class CastStripModelTest {
             .map { java.io.File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) {
             Tr.load(l, java.io.File(dir, "$l.json").readText(Charsets.UTF_8))
-            for (w in listOf("Tap-to-cast bar", "Six spells, one tap each.", "Cast bar", "Off", "Left", "Right", "Both", "Place",
+            for (w in listOf("Tap-to-cast bar", "Eight spells, one tap each.", "Eight spells, four under each column;", "Cast bar", "Off", "Left", "Right", "Both", "Place",
                 "Four spells under the chat;", "Four spells under the minimap;", "swipe for more."))
                 assertTrue("$l: $w", Tr.t(w, l) != w)
         }

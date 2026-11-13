@@ -1422,7 +1422,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p51"' in SRC["padtabctl"] and 'local BV = "b56b"' in SRC["book"] and 'local PV = "m157"' in SRC["padmap"],
+check('local CV = "p51"' in SRC["padtabctl"] and 'local BV = "b57"' in SRC["book"] and 'local PV = "m157"' in SRC["padmap"],
       "the versions: PadMap m146, PadTabCtl p46, Book b52 (b49 stance-bind #179, b50 toolbar D-pad #18/#20, b51 / m143 / m144 rank up, m146 / p46 / b52 Smart Range)")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''

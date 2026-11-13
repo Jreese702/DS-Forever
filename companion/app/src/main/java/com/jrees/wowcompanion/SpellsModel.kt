@@ -75,7 +75,7 @@ object SpellsModel {
         val ranks: Int? = null,             // b23: how many ranks the family has
         val bindFight: Boolean = false,     // b37: the Bind box puts the spell on the In combat layout (b-bind-combat-toggle)
         val bindForm: Int? = null,          // b43: the In combat bind goes to this form's own set (its spell id); null = the caster's
-        val bindCb: Int? = null,            // b56 (GitHub #43 cb3): the Bind box's Cast bar tab is shown, its cursor on this slot (1-6)
+        val bindCb: Int? = null,            // b56 (GitHub #43 cb3): the Bind box's Cast bar tab is shown, its cursor on this slot (1-8, cb6)
     ) {
         val bindOpen get() = binding != null
     }

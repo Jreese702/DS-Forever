@@ -56,10 +56,11 @@ class CastBarScrollShotsTest {
         f.set(null, File(root))
     }
 
-    /** six spells (a level-6 Shaman's and a few more), slot 5 waiting for the fight's end, slot 2 cooling */
-    private val doc = JSONObject("""{"type":"castbar","v":"cb3","n":6,"pick":6,"pp":[39,19],"e":[
+    /** eight spells (cb6; a level-6 Shaman's and a few more), slot 5 waiting for the fight's end, slot 2 cooling */
+    private val doc = JSONObject("""{"type":"castbar","v":"cb6","n":8,"pick":8,"pp":[39,19],"e":[
         {"s":1,"id":403,"i":136048,"c":0},{"s":2,"id":8042,"i":136026,"c":1},{"s":3,"id":331,"i":136052,"c":2},
-        {"s":4,"id":324,"i":136051,"c":3},{"s":5,"id":8017,"i":136086,"q":1},{"s":6,"id":2484,"i":136102,"c":5}]}""")
+        {"s":4,"id":324,"i":136051,"c":3},{"s":5,"id":8017,"i":136086,"q":1},{"s":6,"id":2484,"i":136102,"c":5},
+        {"s":7,"id":8018,"i":136015,"c":6},{"s":8,"id":5730,"i":135824,"c":7}]}""")
     private val bar get() = CastStripModel.parse(doc)!!
 
     private fun lay(v: View, w: Int, h: Int) {
@@ -125,16 +126,17 @@ class CastBarScrollShotsTest {
         assertEquals(2, i)
         tap(r.v, 2)
         assertEquals(listOf(2), r.taps)
-        // to the end, held there: slot 6 casts, the queued slot 5 does not
+        // to the end, held there (cb6: slots 5-8 in view): slots 8 and 6 cast, the queued slot 5 does not
         drag(r.v, -600f, hold = true)
         assertEquals(CastStripModel.maxScroll(L, r.v.width.toFloat()), r.v.scroll, 0.01f)
-        tap(r.v, 5); tap(r.v, 4)
-        assertEquals(listOf(2, 5), r.taps)
+        assertEquals(listOf(4, 5, 6, 7), CastStripModel.inView(L, r.v.width.toFloat(), r.v.height.toFloat(), r.v.scroll))
+        tap(r.v, 7); tap(r.v, 5); tap(r.v, 4)
+        assertEquals(listOf(2, 7, 5), r.taps)
         // back to the start
         drag(r.v, 900f, hold = true)
         assertEquals(0f, r.v.scroll, 0f)
         tap(r.v, 0)
-        assertEquals(listOf(2, 5, 0), r.taps)
+        assertEquals(listOf(2, 7, 5, 0), r.taps)
     }
 
     @Test fun aFlingGlidesAndAFingerStopsItWithoutACast() {
@@ -225,14 +227,15 @@ class CastBarScrollShotsTest {
             c.save(); c.translate(0f, (1080 - Strip.HEIGHT).toFloat()); strip.draw(c); c.restore()
             if (pass == 0) settle()
         }
-        save(b, "scroll_$name.png")
+        save(b, "eight_$name.png")
         val box = CastStripModel.place(side, 1240f, 1080f - Strip.HEIGHT, UiKit.MODULE_GAP)!!
         val crop = Bitmap.createBitmap(b, maxOf(0, box.l.toInt() - 8), maxOf(0, box.t.toInt() - 8),
             minOf(1240, box.r.toInt() + 8) - maxOf(0, box.l.toInt() - 8), minOf(1080 - Strip.HEIGHT, box.b.toInt() + 8) - maxOf(0, box.t.toInt() - 8))
-        save(Bitmap.createScaledBitmap(crop, crop.width * 2, crop.height * 2, true), "scroll_${name}_bar.png")
+        save(Bitmap.createScaledBitmap(crop, crop.width * 2, crop.height * 2, true), "eight_${name}_bar.png")
     }
 
-    /** the Bind box's Cast bar tab: the bar's 6 slots with their spells' icons, the cursor on slot 3 with the box's spell */
+    /** the Bind box's Cast bar tab: the bar's 8 slots (cb6: one row, two groups of 4) with their spells' icons, the cursor on slot 7
+     *  with the box's spell */
     private fun bindTab() {
         val d = out ?: return
         ShadowSystemClock.advanceBy(Duration.ofSeconds(10))                    // past the box's 1.5 s notes (the clock starts near 0)
@@ -242,11 +245,11 @@ class CastBarScrollShotsTest {
         val o = SpellsOverlay(app, otherReader = { true })
         o.onBook(SpellsModel.parse(JSONObject("""{"type":"spells","v":"s8","s":{"lvl":6,"lines":[{"k":1,"n":"Elemental","i":136048}],
             "items":[{"t":1,"n":"Earth Shock","id":8042,"a":8042,"i":136026,"ln":1},{"t":1,"n":"Rockbiter Weapon","id":8017,"a":8017,"i":136086,"ln":1}]}}"""))!!)
-        o.onCtl(SpellsModel.parseCtl(JSONObject("""{"type":"spellsctl","v":"b56","ctl":{"on":true,"mode":"bind","bind":8017,"bcb":3}}"""))!!)
+        o.onCtl(SpellsModel.parseCtl(JSONObject("""{"type":"spellsctl","v":"b56","ctl":{"on":true,"mode":"bind","bind":8017,"bcb":7}}"""))!!)
         lay(o, 1240, 1080 - Strip.HEIGHT)
         val b = Bitmap.createBitmap(1240, 1080 - Strip.HEIGHT, Bitmap.Config.ARGB_8888)
         for (pass in 0..1) { val c = Canvas(b); c.drawColor(Theme.ink); o.draw(c); if (pass == 0) settle() }
-        save(b, "scroll_bind_tab.png")
+        save(b, "eight_bind_tab.png")
     }
 
     private fun settings(side: Int, name: String) {
@@ -255,7 +258,7 @@ class CastBarScrollShotsTest {
         val c = Canvas(b); c.drawColor(Theme.ink)
         SettingsPreview.draw(c, RectF(10f, 10f, 610f, 690f), "Tap-to-cast bar", SettingsPreview.State(castBar = side), 0L,
             SettingsPreview.Glyph { _, _, _, _, _, _ -> })
-        save(b, "scroll_settings_$name.png")
+        save(b, "eight_settings_$name.png")
     }
 
     @Test fun shots() {
@@ -263,7 +266,7 @@ class CastBarScrollShotsTest {
         artRoot()
         shot(L, 0f, "left_start")
         shot(L, 1.45f, "left_mid")                                             // stopped between slots
-        shot(L, 2f, "left_end")
+        shot(L, 4f, "left_end")
         shot(R, 0f, "right_start")
         shot(BOTH, 0f, "both")
         bindTab()

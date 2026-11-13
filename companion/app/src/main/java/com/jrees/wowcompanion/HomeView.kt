@@ -93,9 +93,10 @@ class HomeView(
      * requestLayout every frame was what made the combat switch lag the game).
      */
     private val chatGlideBox = RectF()
-    /** THE TAP-TO-CAST BAR (GitHub #43 cb3, [CastStripModel]): 6 slots, under the chat (Left) or under the minimap (Right) a strip
-     *  with 4 in view that scrolls freely (cb5: no pages; edge arrows where slots are hidden), all six under both (Both), by Settings >
-     *  Bottom screen > Tap-to-cast bar (Off by default); a tap = ONE pad tap on the add-on's "castbar" row (the scroll never moves the bar) */
+    /** THE TAP-TO-CAST BAR (GitHub #43 cb3, [CastStripModel]): 8 slots (cb6), under the chat (Left) or under the minimap (Right) a
+     *  strip with 4 in view that scrolls freely (cb5: no pages; edge arrows where slots are hidden), 4 under each column (Both), by
+     *  Settings > Bottom screen > Tap-to-cast bar (Off by default); a tap = ONE pad tap on the add-on's "castbar" row (the scroll never
+     *  moves the bar). cb7: Hide in combat slides it down behind Home's bottom bar and gives its room back to the column(s) */
     private val castStrip = CastStripView(context) { i -> castStripTap(i) }
     // CLOSE is added last, so it is drawn above the module it closes
     private val views: Map<Part, View> = linkedMapOf(
@@ -1342,23 +1343,31 @@ class HomeView(
 
     /** the tap-to-cast bar's place laid by the last [places] (a change of the choice lays the page again) */
     private var laidSide = CastStripModel.Side.OFF
+    /** cb7: the last [places] laid the bar slid away (Hide in combat, a fight shown); a change lays the page again with the one motion */
+    private var laidHidden = false
 
     /**
      * GitHub #43 cb3: THE TAP-TO-CAST BAR's place, at rest and in a fight alike (the bar is most use in one), above the page's foot:
      * LEFT under the chat (the chat, the quest card above it and the party module end a gap above it), RIGHT under the minimap (the map,
      * its auras and the card over it end above it), BOTH one bar under both columns ([CastStripModel.place]). A module full screen has
-     * no bar (its own page).
+     * no bar (its own page). cb7 (the user, 2026-11-13: "it should slide down behind the home bar out of view, not fade out and give
+     * that space back to the map or chat"): with Hide in combat and a fight shown, the bar's box lies below the page (behind Home's
+     * bottom bar, [CastStripModel.hiddenBox]) and no column is cut; [apply]'s one motion carries the bar and the columns together.
      */
     private fun withStrip(base: Map<Part, RectF>, w: Float, h: Float): Map<Part, RectF> {
         val side = HomeSettings.castBarSide
         laidSide = side
-        val b = CastStripModel.place(side, w, h, UiKit.MODULE_GAP) ?: return base
+        val b0 = CastStripModel.place(side, w, h, UiKit.MODULE_GAP) ?: return base.also { laidHidden = false }
         castStrip.side = side
+        val hidden = castHiddenNow()
+        laidHidden = hidden
+        val b = if (hidden) CastStripModel.hiddenBox(b0, h) else b0
         val g = UiKit.MODULE_GAP
-        val top = b.t
+        val top = b0.t
         val out = LinkedHashMap(base)
         out[Part.STRIP] = RectF(b.l, b.t, b.r, b.b)
-        fun cut(p: Part) { base[p]?.let { r -> if (r.bottom > top - g) out[p] = RectF(r.left, r.top, r.right, maxOf(r.top + 1f, top - g)) } }
+        fun cut(p: Part) { base[p]?.let { r -> if (r.bottom > top - g)
+            out[p] = RectF(r.left, r.top, r.right, CastStripModel.columnBottom(maxOf(r.top + 1f, top - g), r.bottom, hidden)) } }
         val c = w / 2f
         for (p in listOf(Part.CHAT, Part.QUESTS, Part.PARTY, Part.MAP, Part.AURAS)) {
             val r = out[p] ?: continue
@@ -1387,10 +1396,23 @@ class HomeView(
     /**
      * THE BAR IN A FIGHT (Settings > Tap-to-cast bar > In combat; the user 2026-11-13: "a settings toggle to make them Hide/stay in
      * combat", Hide the default): the fight is Home's own ([fightShown]: the takeover with Party mode off, the grow's fight with it on).
-     * Hide fades the bar out (no touches) and back at the fight's end; Stay keeps it, laid and tappable as at rest. The bar keeps its
-     * place either way (no re-lay in a fight).
+     * cb7: Hide slides the bar down behind Home's bottom bar (no touches while hidden or on its way) and its column(s) take the room,
+     * both back at the fight's end, on the page's one motion ([withStrip], [apply]); Stay keeps it, laid and tappable as at rest.
      */
-    private fun castStripFight() = castStrip.fight(HomeSettings.castBarCombat, fightShown())
+    private fun castStripFight() {
+        castStripGate()
+        // cb7: hidden changed: the page again with the one motion (the bar slides down / up, its column(s) grow / shrink with it)
+        val s = shown ?: return
+        if (s.full != null && !s.takeover) return
+        if (laidSide == CastStripModel.Side.OFF || castHiddenNow() == laidHidden) return
+        apply(s, animate = isShown)
+    }
+
+    /** the bar's touch gate for Home's fight now (no re-lay: [apply] calls this before it lays the page) */
+    private fun castStripGate() { castStrip.fight(HomeSettings.castBarCombat, fightShown()) }
+
+    /** cb7: the bar is slid away now (Hide in combat and Home shows a fight) */
+    private fun castHiddenNow(): Boolean = CastStripModel.hiddenIn(HomeSettings.castBarCombat, fightShown())
 
     private fun castStripRelay() {
         val s = shown ?: return
@@ -1532,7 +1554,7 @@ class HomeView(
             castView.triggerStrip = true
         }
         partyStripSync(s)
-        castStripFight()
+        castStripGate()
         if (lent(mapView)) {
             mapView.compact = !(s.full == HomeModule.MAP && !s.takeover)
             // the small map's + and - step Settings' "Minimap zoom" itself (user, 09-29 16:35: "these buttons should directly
@@ -1564,6 +1586,7 @@ class HomeView(
             chatReturn()
             now.clear(); for ((p, r) in to) now[p] = RectF(r)
             for ((p, v) in views) if (!to.containsKey(p)) v.visibility = View.GONE
+            castStrip.sliding = false
             settled = true
             requestLayout(); invalidate(); return
         }
@@ -1612,6 +1635,8 @@ class HomeView(
         }
         // only a part whose box changes needs a layout per frame (a fade alone does not)
         val moving = from.any { (p, f) -> to[p]?.let { t -> t != f } == true }
+        // cb7: the bar on its way (slid down / up with the page's motion): no touch until it lands
+        castStrip.sliding = from[Part.STRIP]?.let { f -> to[Part.STRIP]?.let { t -> t.top != f.top } } == true
         questPane.cardHidden = card != null
         // the zone band and the clock fade with the page (Map's recording: they vanished at frame 0 on open, popped back at a close's end)
         overlayFrom = overlayOf(before); overlayTo = overlayOf(s); overlayOut = 1f; overlayIn = 0f
@@ -1653,6 +1678,7 @@ class HomeView(
                     overlayFrom = overlayTo; overlayOut = 1f; overlayIn = 1f
                     for (p in coming) views[p]?.alpha = 1f
                     for (p in gone) { views[p]?.visibility = View.GONE; views[p]?.alpha = 1f; now.remove(p) }
+                    castStrip.sliding = false
                     settled = true
                     requestLayout()                                  // one full pass where it lands
                     invalidate()

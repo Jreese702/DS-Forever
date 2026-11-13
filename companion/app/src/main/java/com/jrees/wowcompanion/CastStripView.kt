@@ -17,11 +17,12 @@ import android.view.View
  * icon inside the controller buttons' ring in its square form (the kit's `ring_square`, the HUD ring edge every Home module wears,
  * [UiKit.ringBox]; the drawn ring without the picture). Under the chat (LEFT) or under the minimap (RIGHT): A SCROLL BAR (cb5, the user
  * 2026-11-13: "I dont want them shown as pages, I want it to be a literal scroll bar that can stop in any position"; the picks: 4 in
- * view, "4 with an arrow on the sides indicating if there are abilities that way"): all 6 slots on one strip at BOTH's size, 4 in view
+ * view, "4 with an arrow on the sides indicating if there are abilities that way"): all 8 slots (cb6) on one strip at BOTH's size, 4 in view
  * spread evenly, clipped to the well; the strip follows the finger and stops wherever it is let go (a light fling with friction, no
- * snapping); a small gold arrow at an edge (fading with the scroll) where slots are hidden that way. Spread under both (BOTH): all 6,
- * no scroll. [side]. No page text (labels + icons only: nothing written at all). A finger on a slot is ONE tap through [onTap] (the
- * host's TapBridge on the add-on's "castbar" row; the slot index 0..5 under the finger at the scroll it is at). A finger that moves more
+ * snapping); a small gold arrow at an edge (fading with the scroll) where slots are hidden that way. Under both (BOTH, cb6, the user:
+ * "8 total, 4 per side"): two wells, slots 1-4 under the chat and 5-8 under the minimap, each at LEFT's / RIGHT's place, no scroll.
+ * [side]. No page text (labels + icons only: nothing written at all). A finger on a slot is ONE tap through [onTap] (the
+ * host's TapBridge on the add-on's "castbar" row; the slot index 0..7 under the finger at the scroll it is at). A finger that moves more
  * than [CastStripModel.TAP_SLOP_PX] never casts; a finger that catches a fling stops it and casts nothing. The scroll is kept for the
  * app's run ([CastStripModel.Live.pos]). A slot waiting for a fight's end is drawn dimmed and takes no tap; the cooldown is the game's
  * dark sweep from the add-on's `castcd` on every slot drawn.
@@ -59,23 +60,34 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
             if (p != CastStripModel.Live.pos) { CastStripModel.Live.pos = p; invalidate() }
         }
 
-    /** THE BAR IN A FIGHT (Settings > Tap-to-cast bar > In combat): Hide fades the bar out while Home shows a fight; it takes no touch
-     *  while hidden ([CastStripModel.FightFade]). Home calls [fight] on every tick and every settings change. */
-    private val fightFade = CastStripModel.FightFade()
+    /** THE BAR IN A FIGHT (Settings > Tap-to-cast bar > In combat): cb7, Hide SLIDES the bar down behind Home's bottom bar while Home
+     *  shows a fight (Home moves its box: [CastStripModel.hiddenBox]); it takes no touch while hidden or on its way
+     *  ([CastStripModel.FightGate]). Home calls [fight] on every tick, apply and settings change, and sets [sliding] for its motion. */
+    private val fightGate = CastStripModel.FightGate()
 
-    /** Home's fight now ([fighting] = HomeView.fightShown()) with the choice [mode]; the bar fades out / in on a change */
-    fun fight(mode: CastStripModel.Combat, fighting: Boolean, now: Long = SystemClock.uptimeMillis()) {
-        if (!fightFade.note(mode, fighting, now)) return
-        if (fightFade.hidden) { if (downAt >= 0 || moved) parent?.requestDisallowInterceptTouchEvent(false)
-            downAt = -1; moved = false; caught = false; pressedUntil = 0L; flingAt = -1L }
+    /** Home's fight now ([fighting] = HomeView.fightShown()) with the choice [mode]; true = hidden changed (Home lays the page again) */
+    fun fight(mode: CastStripModel.Combat, fighting: Boolean): Boolean {
+        if (!fightGate.note(mode, fighting)) return false
+        if (fightGate.hidden) dropTouch()
         invalidate()
+        return true
+    }
+
+    /** the bar's box is on its way (Home's motion): no touch */
+    var sliding: Boolean
+        get() = fightGate.sliding
+        set(v) { if (fightGate.sliding != v) { fightGate.sliding = v; if (v) dropTouch(); invalidate() } }
+
+    private fun dropTouch() {
+        if (downAt >= 0 || moved) parent?.requestDisallowInterceptTouchEvent(false)
+        downAt = -1; moved = false; caught = false; pressedUntil = 0L; flingAt = -1L
     }
 
     /** hidden by the fight (Hide in combat): no touch reaches the slots */
-    val fightHidden: Boolean get() = fightFade.hidden
+    val fightHidden: Boolean get() = fightGate.hidden
 
-    /** the bar's strength now (1 = full, 0 = faded out) */
-    fun fightVis(now: Long = SystemClock.uptimeMillis()): Float = fightFade.vis(now)
+    /** a touch reaches the slots now (not hidden, not sliding) */
+    val takesTouch: Boolean get() = fightGate.takesTouch()
 
     /** a fling is running */
     val flinging: Boolean get() = flingAt >= 0L
@@ -85,7 +97,7 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
     /** a `castcd` document: the whole state (a slot not in it has none) */
     fun onCd(m: Map<Int, PadMapModel.FaceCd>) { cds = m; cdAt = SystemClock.elapsedRealtime(); invalidate() }
 
-    /** slot [i]'s box (0..5) in this view's px at the scroll now */
+    /** slot [i]'s box (0..7) in this view's px at the scroll now */
     fun slotRect(i: Int): RectF {
         val b = CastStripModel.slotBox(side, i, width.toFloat(), height.toFloat(), scroll)
         return RectF(b.l, b.t, b.r, b.b)
@@ -101,36 +113,36 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
-        val upNow = SystemClock.uptimeMillis()
-        val vis = fightFade.vis(upNow)
-        if (fightFade.fading(upNow)) postInvalidateDelayed(FRAME_MS)
-        if (vis <= 0f) return                                                           // hidden in a fight: nothing drawn
-        val layer = if (vis < 1f) c.saveLayerAlpha(0f, 0f, w, h, (255 * vis).toInt()) else -1
+        if (fightGate.gone) return                                // cb7: slid away below the page in a fight: nothing drawn (no fade)
         drawBar(c, w, h)
-        if (layer >= 0) c.restoreToCount(layer)
     }
 
     private fun drawBar(c: Canvas, w: Float, h: Float) {
-        UiKit.module(c, RectF(0f, 0f, w, h))
         val now = SystemClock.elapsedRealtime()
         stepFling(SystemClock.uptimeMillis())
         val o = scroll
-        val (wl, wr) = CastStripModel.window(w)
-        c.save()
-        c.clipRect(wl, 0f, wr, h)                                                       // the strip scrolls inside the well
-        val sweeping = drawSlots(c, o, now)
-        c.restore()
+        var sweeping = false
+        // cb6: one well (LEFT / RIGHT, the strip scrolling inside it) or BOTH's two (slots 1-4 under the chat, 5-8 under the minimap)
+        for ((k, well) in CastStripModel.wells(side, w).withIndex()) {
+            UiKit.module(c, RectF(well.first, 0f, well.second, h))
+            val (wl, wr) = CastStripModel.windowOf(side, w, k)
+            c.save()
+            c.clipRect(wl, 0f, wr, h)                                                   // the strip scrolls inside the well
+            if (drawSlots(c, o, now, k)) sweeping = true
+            c.restore()
+        }
         val (al, ar) = CastStripModel.arrows(side, w, o)
         if (al > 0f) edge(c, true, al, w, h)
         if (ar > 0f) edge(c, false, ar, w, h)
         if (sweeping || now < pressedUntil || flinging) postInvalidateDelayed(FRAME_MS)
     }
 
-    /** the slots in view at scroll [o]; true = a cooldown sweep runs on one of them */
-    private fun drawSlots(c: Canvas, o: Float, now: Long): Boolean {
+    /** the slots in view at scroll [o] in well [well]; true = a cooldown sweep runs on one of them */
+    private fun drawSlots(c: Canvas, o: Float, now: Long, well: Int): Boolean {
         val b = bar
         var sweeping = false
         for (i in CastStripModel.inView(side, width.toFloat(), height.toFloat(), o)) {
+            if (CastStripModel.wellOf(side, i) != well) continue
             val r = slotRect(i)
             val s = b?.slots?.getOrNull(i)
             val live = CastStripModel.tapCell(b, i) != null
@@ -204,8 +216,8 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
     }
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
-        // hidden in a fight: no touch at all (the finger goes to what is under the faded bar)
-        if (!fightFade.takesTouch()) return false
+        // hidden in a fight or sliding (cb7): no touch at all (the finger goes to what is under the bar)
+        if (!fightGate.takesTouch()) return false
         val w = width.toFloat()
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
