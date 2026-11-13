@@ -165,7 +165,7 @@ def main():
 
     src = open(HUB, encoding="utf-8").read()
     chk("hub42: the version tag (hub38 the player / pet row, the game's side tab; hub40 the bars one column wide; hub41 pitch 64; hub42 the "
-        "left column / the grid under the HUD, the fade, the tab beside the grid)", 'local HV = "hub49"' in src and "hub47:" in src and "hub45:" in src and "hub44:" in src and "hub42:" in src and "hub43:" in src)
+        "left column / the grid under the HUD, the fade, the tab beside the grid)", 'local HV = "hub50"' in src and "hub49:" in src and "hub47:" in src and "hub45:" in src and "hub44:" in src and "hub42:" in src and "hub43:" in src)
     chk("hub34: the combat log's switch calls are gone (PadMap m129)", 'WC.clogSync' not in src and 'WC.clogTicker' not in src)
     chk("hub42: the fade runs every frame from the driver (PF.fadeTick on drv's OnUpdate), alpha only, FADE_S %s s" % PF.FADE_S,
         'pcall(UF.pf.fadeTick, el)' in src and 0.15 <= PF.FADE_S <= 0.25)
@@ -617,7 +617,7 @@ def main():
     import render_target_bar as rtb
     _, tint, hp, cast, cp, ufv, atv = rtb.shoot(None, None, dict(tint=True, cast=True, pips=True))
     k = (hp[3] - hp[1]) / 8
-    chk("uf19: UF.V uf19 (uf18 the target plate pass, uf19 the snapped spot, uf20 the smooth rim), at9 (the tint waits for the fly); uf17: UF.V uf17 (issue #195 the duration-object sweeps; uf16 issue #181), at8: rings V at8 (%s / %s)" % (ufv, atv), ufv == "uf20" and atv == "at9")
+    chk("uf19: UF.V uf19 (uf18 the target plate pass, uf19 the snapped spot, uf20 the smooth rim, uf21 its old notched corner), at9 (the tint waits for the fly); uf17: UF.V uf17 (issue #195 the duration-object sweeps; uf16 issue #181), at8: rings V at8 (%s / %s)" % (ufv, atv), ufv == "uf21" and atv == "at9")
     chk("uf15: the pips' top %.1f px under the bar (>= the lip %.0f + 4), the cast below them %.1f" % (hp[1] - cp[3], 4 * k, cp[1] - cast[3]),
         hp[1] - cp[3] >= 4 * k + 4 and cp[1] - cast[3] >= 4)
     _, _, hp2, cast2, _, _, _ = rtb.shoot(None, None, dict(cast=True))

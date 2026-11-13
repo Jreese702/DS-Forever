@@ -19,6 +19,8 @@ every region's rect resolved from its anchors, SetScale honoured) with render_ta
         NEAREST; every rim piece (target bar, level box, target of target, party rows' bars + level boxes) is our hud_rim_<s> art, LINEAR,
         and at 720 / 1080 / 1440 lines every piece's art has at least one texture pixel per screen pixel across the rim (corners both
         ways), at most 2 (no skipped texels) once a texel is a pixel or more; the pieces' sizes on whole pixels; the Media files exist
+  uf21  the old corner shape, smooth (the user, 2026-11-13: "Square-notched, smooth"): the Media files' md5 + size; the corner cut at
+        45 degrees (not rounded), its edge anti-aliased, the corner piece seamless against the lip piece
 Needs lupa. Exit code 1 on any failure."""
 import os
 import sys
@@ -96,7 +98,7 @@ WowCompanionDB.npFriends = { orig = { nameplateShowFriendlyPlayers = "0", namepl
     rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
     fly = UF.fly
     fly.tick(G.GAME.t + 10)
-    chk("uf20: the version tag", UF.V == "uf20", UF.V)
+    chk("uf21: the version tag", UF.V == "uf21", UF.V)
     plateUF = G.PLATE.UnitFrame
     chk("uf18: a hostile target's plate hidden while targeted (alpha 0; no attack needed)", plateUF.alpha == 0, plateUF.alpha)
     rig.fire("PLAYER_TARGET_CHANGED")
@@ -247,7 +249,7 @@ function R0:SetShadowOffset(x, y) rawset(self, "shadow", { x, y }) end
     chk("uf20: none of the game's 19-texel HUD art left on the target bar (%d)" % len(old), len(old) == 0)
     hub_src = open(rt.HUB, encoding="utf-8").read()
     chk("uf20: no NEAREST filter in Hub.lua's code (crispTex / TB.FILTER gone)",
-        '"NEAREST"' not in hub_src and "crispTex" not in hub_src and 'local HV = "hub49"' in hub_src)
+        '"NEAREST"' not in hub_src and "crispTex" not in hub_src and 'local HV = "hub50"' in hub_src)
 
     # ------------------------------------------------------------------ uf20: the smooth rim at 720 / 1080 / 1440 lines
     media = os.path.join(rt.ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanion", "Media")
@@ -258,6 +260,29 @@ function R0:SetShadowOffset(x, y) rawset(self, "shadow", { x, y }) end
         sizes[lv] = Image.open(f).size if os.path.exists(f) else None
     chk("uf20: the Media files hud_rim_2/4/8/16.tga, power-of-two, 16 x 32 art texels each (%s)" % sizes,
         all(sizes[lv] == (16 * lv, 32 * lv) for lv in sizes))
+    # uf21 (the user, 2026-11-13, picking the corner: "Square-notched, smooth"): the files are tools/make_hud_rim.py's output as committed
+    import hashlib
+    RIM_MD5 = {2: ("be6cb6c7a421712b67590d37c3902a04", 8236), 4: ("7049448be55e975fc1fdb7d089a1d547", 32812),
+               8: ("9ce20dc4881030cbf82f26439af3b027", 131116), 16: ("5648b662e55d9658c707f5707d844969", 524332)}
+    got = {}
+    for lv in RIM_MD5:
+        f = os.path.join(media, "hud_rim_%d.tga" % lv)
+        got[lv] = (hashlib.md5(open(f, "rb").read()).hexdigest(), os.path.getsize(f)) if os.path.exists(f) else None
+    chk("uf21: hud_rim_2/4/8/16.tga are the notched art (md5 + size) %s" % {lv: got[lv] for lv in got if got[lv] != RIM_MD5[lv]},
+        got == RIM_MD5)
+    # the corner's shape and finish, read off the art: the corner texel cut away, the 45-degree edge anti-aliased (many partial alphas
+    # along it, no hard 0 / 255 step), no round bulge (the cut's midpoint is outside), the corner piece meets the lip piece with no seam
+    im16 = Image.open(os.path.join(media, "hud_rim_16.tga")).convert("RGBA")
+    A16 = [[im16.getpixel((x, y))[3] for x in range(64)] for y in range(64)]
+    cut_mid = A16[int(1.5 * 16) - 4][int(1.5 * 16) - 4]           # inside x + y < 3 by about 0.5 texel: transparent when cut straight
+    diag = [A16[i][47 - i] for i in range(48)]                   # across the 45-degree edge (x + y = 3 texels)
+    partial = len({v for v in diag if 0 < v < 255})
+    chk("uf21: the rim's corner is cut at 45 degrees, not rounded (corner %d, inside the cut %d, on the straight side %d)"
+        % (A16[0][0], cut_mid, A16[8][60]), A16[0][0] == 0 and cut_mid == 0 and A16[8][60] >= 150)
+    chk("uf21: the cut edge is anti-aliased (%d partial alphas across the diagonal)" % partial, partial >= 6)
+    # where the corner piece ends (x = 3 texels) the art is the straight lip's own: every band's diagonal ends on that edge
+    seam = max(abs(im16.getpixel((48, y))[c] - im16.getpixel((64, y))[c]) for y in range(48) for c in range(4))
+    chk("uf21: the art at the corner piece's edge (x = 3 texels) is the lip's own (seamless nine-slice, max diff %d)" % seam, seam <= 2)
     THIN_X = {(0, 3), (3, 0), (9, 16)}
     THIN_Y = {(0, 3), (3, 0), (11, 19)}
     for ph in (720, 1080, 1440):

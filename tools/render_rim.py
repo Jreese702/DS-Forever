@@ -1,7 +1,7 @@
 """THE RIM AT REAL PIXELS, before / after (Hub hub49 / uf20; the user, 2026-11-13: "The shaper bar still looks so fucking pixelated on
 the corners").
 
-    python tools/render_rim.py [--out DIR] [--before REV]
+    python tools/render_rim.py [--out DIR] [--before REV] [--rounded REV --suffix _notched]
 
 The rig of tools/render_target_bar.py (Trail.lua + Hub.lua in one lupa runtime, every region's rect resolved from its anchors) with a
 768-unit UIParent on a 720 / 1080 / 1440-line screen (GetPhysicalScreenSize), drawn at ONE PHYSICAL PIXEL per image pixel with the
@@ -10,7 +10,11 @@ GPU's own sampling (render_target_bar.gpu_sample: bilinear at each pixel's centr
     rim_<tag>_<ph>_corner4x.png  the level box and the bar's left end, 4x (each screen pixel a 4 x 4 block)
     rim_sheet.png                every corner crop: before above, after below, one column per screen height
 BEFORE = the given rev's Hub.lua (default feat/ui1113-plates: uf19, the game's 19-texel art NEAREST, from
-E:/safepath-work/design/prd/game_art2), AFTER = the working tree (our own hud_rim_<s>.tga, LINEAR)."""
+E:/safepath-work/design/prd/game_art2), AFTER = the working tree (our own hud_rim_<s>.tga, LINEAR).
+uf21 (hub50; the user, 2026-11-13: "Square-notched, smooth"): --rounded REV adds a middle row, that rev's Hub.lua / Trail.lua AND its
+hud_rim_<s>.tga (uf20's rounded corners, read with git show into OUT/_media_<rev>), and the rows are named OLD / ROUNDED / NOTCHED;
+--suffix goes on every file this run writes (rim_<tag>_<ph><suffix>.png, rim_<tag>_<ph>_corner4x<suffix>.png, rim_sheet<suffix>.png)."""
+import subprocess
 import os
 import sys
 
@@ -89,6 +93,21 @@ def shoot(hub_src, trail_src, ph):
     return items, hp, sh, party, px, str(rig.UF.V), files
 
 
+SUFFIX = ""
+
+
+def media_at(rev):
+    """The rev's hud_rim_<s>.tga in a folder of their own (the render rig reads the rim art from rtb.MEDIA_DIR)."""
+    d = os.path.join(OUT, "_media_%s" % rev.replace("/", "_"))
+    os.makedirs(d, exist_ok=True)
+    rel = "companion/app/src/main/assets/companion/addons/WowCompanion/Media/hud_rim_%d.tga"
+    for s in (2, 4, 8, 16):
+        blob = subprocess.run(["git", "-C", rtb.ROOT, "show", "%s:%s" % (rev, rel % s)], capture_output=True, check=True).stdout
+        with open(os.path.join(d, "hud_rim_%d.tga" % s), "wb") as fh:
+            fh.write(blob)
+    return d
+
+
 def render(tag, hub_src, trail_src, ph):
     from PIL import Image
     items, hp, sh, party, px, ufv, files = shoot(hub_src, trail_src, ph)
@@ -99,7 +118,7 @@ def render(tag, hub_src, trail_src, ph):
     bottom = min(hp[1] - 40, (party[1] - 20) if party else hp[1] - 40)
     box = (left, bottom, right, top)
     pads = (0, 0, 0)
-    path = os.path.join(OUT, "rim_%s_%d.png" % (tag, ph))
+    path = os.path.join(OUT, "rim_%s_%d%s.png" % (tag, ph, SUFFIX))
     filt = sorted({it.get("filter") or "-" for it in items if it.get("coord") is not None})
     rtb.draw(items, None, box, path, "%s  %d lines  %s  %s" % (tag, ph, ufv, ",".join(files) or "game art " + "/".join(filt)), [],
              pads=pads, phys=px)
@@ -116,7 +135,7 @@ def render(tag, hub_src, trail_src, ph):
     cx1, cy1 = int(x1 + 26 * ph / 1080), int(y1 + 14 * ph / 1080)
     crop = im.crop((cx0, cy0, cx1, cy1))
     crop = crop.resize((crop.width * ZOOM, crop.height * ZOOM), Image.NEAREST)
-    cp = os.path.join(OUT, "rim_%s_%d_corner4x.png" % (tag, ph))
+    cp = os.path.join(OUT, "rim_%s_%d_corner4x%s.png" % (tag, ph, SUFFIX))
     crop.save(cp)
     return path, cp, files
 
@@ -151,19 +170,31 @@ def sheet(rows, out):
 
 def main():
     a = sys.argv[1:]
-    global OUT
+    global OUT, SUFFIX
     OUT = a[a.index("--out") + 1] if "--out" in a else OUT
+    SUFFIX = a[a.index("--suffix") + 1] if "--suffix" in a else ""
     before = a[a.index("--before") + 1] if "--before" in a else "feat/ui1113-plates"
+    rounded = a[a.index("--rounded") + 1] if "--rounded" in a else None
     os.makedirs(OUT, exist_ok=True)
     rows = []
-    for tag, hub, trail in (("before", rtb.git_show(before, rt.HUB_REL), rtb.git_show(before, rtb.TRAIL_REL)), ("after", None, None)):
+    work = rtb.MEDIA_DIR
+    runs = [("before", rtb.git_show(before, rt.HUB_REL), rtb.git_show(before, rtb.TRAIL_REL), work), ("after", None, None, work)]
+    if rounded:
+        runs = [("old", runs[0][1], runs[0][2], work),
+                ("rounded", rtb.git_show(rounded, rt.HUB_REL), rtb.git_show(rounded, rtb.TRAIL_REL), media_at(rounded)),
+                ("notched", None, None, work)]
+    for tag, hub, trail, media in runs:
+        rtb.MEDIA_DIR = media
+        rtb._art.clear()
         corners = []
         for ph in HEIGHTS:
             p, cp, files = render(tag, hub, trail, ph)
             print(p, cp, files)
             corners.append(cp)
         rows.append((tag.upper(), corners))
-    print(sheet(rows, os.path.join(OUT, "rim_sheet.png")))
+    rtb.MEDIA_DIR = work
+    rtb._art.clear()
+    print(sheet(rows, os.path.join(OUT, "rim_sheet%s.png" % SUFFIX)))
 
 
 if __name__ == "__main__":
