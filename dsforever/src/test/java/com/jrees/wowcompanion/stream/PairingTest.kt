@@ -124,6 +124,33 @@ class PairingTest {
         assertEquals(1, liar.unpaired)
     }
 
+    /** issue #219: the PC takes the code (step 5) but its https port answers 401 to the final check */
+    @Test fun aRefusedCertificateAtTheFinalCheckSaysSoAndUnpairs() {
+        val inner = FakeSunshine("482913", server)
+        val pc = object : PairHttp by inner {
+            override fun pairChallenge(serverCert: X509Certificate): String =
+                throw HostHttpException(401, "pair: The client is not authorized. Certificate verification failed.")
+        }
+        val r = MoonPairing(pc, client).pair(7, "482913")
+        assertEquals(MoonPairing.State.FAILED, r.state)
+        assertEquals(MoonPairing.CERT_REFUSED, r.why)
+        // the PC's own message survives for the log (a different host's 401 must stay tellable apart)
+        assertEquals("401: pair: The client is not authorized. Certificate verification failed.", r.detail)
+        assertEquals(1, inner.unpaired)
+    }
+
+    /** issue #219 review: a non-401 TLS failure keeps the PC's message in the reason and has no detail */
+    @Test fun aNon401FinalCheckFailureKeepsThePcsMessage() {
+        val inner = FakeSunshine("482913", server)
+        val pc = object : PairHttp by inner {
+            override fun pairChallenge(serverCert: X509Certificate): String = throw HostHttpException(403, "forbidden here")
+        }
+        val r = MoonPairing(pc, client).pair(7, "482913")
+        assertEquals(MoonPairing.State.FAILED, r.state)
+        assertEquals("TLS check failed: forbidden here", r.why)
+        assertEquals("", r.detail)
+    }
+
     @Test fun versionParsing() {
         assertEquals(7, MoonPairing.majorVersion("7.1.431.0"))
         assertEquals(0, MoonPairing.majorVersion(null))
