@@ -199,9 +199,10 @@ class DialogView(context: Context) : View(context) {
 
     /**
      * NEVER PRESSED BY US (the user's standing ruling: never press "Exit Now"; test50: the d20 fallback tapped the QUIT countdown's "Exit
-     * now" during the safe close): the QUIT dialog's button 1. The add-on (Dialogs d22) no longer mirrors it; this refuses it anyway.
+     * now" during the safe close): the QUIT dialog's button 1. The add-on mirrors it again (Dialogs d32, camp-exit: the player's finger
+     * may press it, as on the game's own box), so every press the APP makes by itself - the controller's fallback tap - refuses it.
      */
-    private fun neverPress(d: Dlg, hit: String) = d.which == "QUIT" && hit == "b1"
+    private fun neverPress(d: Dlg, hit: String) = hit.startsWith("b") && !DialogPad.mayPress(d.which, hit.substring(1).toIntOrNull() ?: 0, finger = false)
 
     /** a new document: was the controller's press refused? then its cell, once */
     private fun padRefused() {
@@ -468,7 +469,10 @@ class DialogView(context: Context) : View(context) {
             hit == "extra" -> if (send(d.extra ?: "extra", d.extraCell)) chose(hit, d)
             hit.startsWith("b") -> {
                 val b = d.buttons.firstOrNull { "b${it.k}" == hit } ?: return
-                if (neverPress(d, hit)) { android.util.Log.w("WCDLG", "press on ${d.which} $hit refused (Exit now)"); return }
+                // camp-exit (build 1462, the user: "when exiting the game and the timer pops up it doesnt have the 'exit now' option that
+                // it normally should"): the QUIT countdown's "Exit Now" is the player's own finger here, as on the game's box (Dialogs d32);
+                // only the app's own presses refuse it (neverPress: the controller's fallback, the safe close)
+                if (neverPress(d, hit)) android.util.Log.i("WCDLG", "finger on ${d.which} $hit: Exit Now, the player's own press")
                 if (!b.on || secondsOf(d.delay) > 0) {
                     android.util.Log.i("WCDLG", "press '${b.label}' of ${d.which}: the game has it ${if (!b.on) "greyed out" else "waiting ${secondsOf(d.delay)} s"}")
                     return

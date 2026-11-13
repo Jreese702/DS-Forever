@@ -1,7 +1,9 @@
 package com.jrees.wowcompanion
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** the user's decision 1 (2026-11-11): pop-ups and loot rolls in a fight are answered on the bottom screen with the pad */
@@ -31,6 +33,17 @@ class DialogPadTest {
         assertEquals(2, DialogPad.dialogButton("PAD2", qs, delayed = false, quit = false))
         assertEquals(QuestStartPrompt.START, QuestStartPrompt.label(1, "x")); assertEquals(QuestStartPrompt.LATER, QuestStartPrompt.label(2, "x"))
         assertNull("a cell of the leave range is never the prompt's", qs.firstOrNull { it.cell in 33..39 })
+    }
+
+    /** camp-exit (build 1462, the user: "when exiting the game and the timer pops up it doesnt have the 'exit now' option that it
+     *  normally should"): the QUIT countdown's "Exit Now" is mirrored (Dialogs d32) and a FINGER may press it; the app by itself never */
+    @Test fun exitNowIsTheFingersOnly() {
+        assertTrue("a finger on Exit Now", DialogPad.mayPress("QUIT", 1, finger = true))
+        assertFalse("the app's own press (fallback / safe close) on Exit Now", DialogPad.mayPress("QUIT", 1, finger = false))
+        assertTrue("QUIT's Cancel, any route", DialogPad.mayPress("QUIT", 2, finger = false))
+        assertTrue("CAMP's Cancel", DialogPad.mayPress("CAMP", 2, finger = false))
+        assertTrue("another dialog's first button", DialogPad.mayPress("DEATH", 1, finger = false))
+        assertNull("A never answers Exit Now with the pad", DialogPad.dialogButton("PAD1", two, delayed = false, quit = true))
     }
 
     @Test fun theRollKeys() {

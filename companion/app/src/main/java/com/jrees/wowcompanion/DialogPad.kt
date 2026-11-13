@@ -20,6 +20,14 @@ object DialogPad {
         return if (b.on && b.cell >= 0) k else null
     }
 
+    /**
+     * camp-exit (build 1462, the user: "when exiting the game and the timer pops up it doesnt have the 'exit now' option that it normally
+     * should"): the QUIT countdown's "Exit Now" (its button 1, the game's ForceQuit) is the player's alone. [finger] = a finger on its
+     * drawn button (Dialogs d32 mirrors it with its cell, as the game shows it): yes. Any press the APP makes by itself (the controller's
+     * fallback tap, a pad answer in a fight, the safe close): never - the user's standing ruling "never press Exit Now" for the player.
+     */
+    fun mayPress(which: String?, k: Int, finger: Boolean): Boolean = finger || !(which == "QUIT" && k == 1)
+
     /** the roll kind [key] answers on a roll that allows [need] / [greed] / [transmog], or null */
     fun rollKind(key: String, need: Boolean, greed: Boolean, transmog: Boolean): String? = when (key) {
         "PAD1" -> if (need) "need" else null
