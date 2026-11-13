@@ -6,7 +6,10 @@ stand-in game functions (anything not given is a harmless stub) and checks the p
   - Disenchant (SpellIsTargeting + IsCurrentSpell 13262): only the bags' weapons / armour of quality >= 2 (issues #126 / #39)
   - binv col 19 stops the pick with the game's own /stopspelltarget (SpellStopTargeting is FORBIDDEN to add-ons: the user's error)
   - the pick watcher: an "itarget" document when the game starts / ends "pick an item", the used item named and learned
-  - the list: worn gear first (chest, legs, hands, feet first), then the bags' gear; while ENCHANTING the game's own check greys
+  - the list: worn gear first (chest, legs, hands, feet first), then the bags' gear
+  - bags-kit3 (the user's picks 2026-11-13: "items a pick can't go on are HIDDEN"): the pick's type from the game (KIT.ctx: de / feed /
+    enchant / cond / spell); enchant / cond list only what fits (a fitting row with no cell in a fight greyed); Feed Pet only what
+    C_PetInfo.CanPetEatItem allows, highest item level first (as before if the call fails); the itarget document's wornOk / ctx / cx
 Run: python -B tools/test_kits.py
 """
 import os
@@ -132,7 +135,9 @@ check(all(r.ok is True for r in rows) and rows[0].name == 'Rugged Leather Vest',
 L.execute('ENCHANTING = true; FITS = { inv10 = true }')
 lst = L.eval('WowCompanion._kit.list()')
 rows = [lst[i + 1] for i in range(len(lst))]
-check([r.ok for r in rows] == [None, True, None], "enchanting: only what the game's own check allows (the gloves)", [r.ok for r in rows])
+check([(r.src, r.slot if r.src == 'inv' else r.s, r.ok) for r in rows] == [('inv', 10, True)],
+      "bags-kit3 enchanting: ONLY what the game's own check allows is listed (the gloves); the rest hidden, not greyed",
+      [(r.src, r.slot if r.src == 'inv' else r.s, r.ok) for r in rows])
 L.execute('ENCHANTING = false')
 
 # (issue 90, the player: "feed pet brings up item select, but doesnt show consumables"): a pick a SPELL started (Feed Pet: no bag item
@@ -148,6 +153,92 @@ L.execute('ENCHANTING = true')
 lst = L.eval('WowCompanion._kit.list()')
 check(all(lst[i + 1].src == 'inv' or lst[i + 1].s == 2 for i in range(len(lst))), "an enchant's pick: gear only (no consumables)")
 L.execute('ENCHANTING = false; NOW = 100')
+
+# bags-kit3 (the user's picks, 2026-11-13): the pick's type from the game, from every route (no bag item used just now)
+L.execute(r'''
+NOW = NOW + 30; COND, CONDOK = false, {}
+C_Spell.TargetSpellChecksItemCondition = function() return COND end
+C_Item.DoesItemMatchSpellItemCondition = function(loc) return CONDOK[loc.k] == true end
+''')
+def rowsOf(lst, ok=False):
+    out = []
+    for i in range(len(lst)):
+        r = lst[i + 1]
+        k = (r.src, r.slot if r.src == 'inv' else r.s)
+        out.append(k + (r.ok,) if ok else k)
+    return out
+check(L.eval('WowCompanion._kit.ctx()') == 'spell', "a pick the game says nothing of: ctx spell")
+L.execute('ENCHANTING = true; FITS = { inv5 = true, ["bag0:2"] = true }')
+check(L.eval('WowCompanion._kit.ctx()') == 'enchant', "an enchant from the action bar (no KIT.last): ctx enchant")
+got = rowsOf(L.eval('WowCompanion._kit.list()'), True)
+check(got == [('inv', 5, True), ('bag', 2, True)], "an enchant from the bar: only the fitting chest + belt, no consumables", got)
+L.execute('ENCHANTING = false; COND = true; CONDOK = { inv10 = true }')
+check(L.eval('WowCompanion._kit.ctx()') == 'cond', "a kit / stone the game marks (TargetSpellChecksItemCondition): ctx cond")
+got = rowsOf(L.eval('WowCompanion._kit.list()'))
+check(got == [('inv', 10)], "a kit from the Character room / bar (cond): only the gloves (DoesItemMatchSpellItemCondition)", got)
+check(L.eval('WowCompanion._kit.wornOk("cond")') == ',10,', "wornOk: the worn slots it can go on", L.eval('WowCompanion._kit.wornOk("cond")'))
+L.execute('C_Item.DoesItemMatchSpellItemCondition = function() error("no") end')
+got = rowsOf(L.eval('WowCompanion._kit.list()'), True)
+check(got == [('inv', 5, True), ('inv', 10, True), ('bag', 2, True)],
+      "the item check cannot answer: every gear row offered (the game decides)", got)
+L.execute('C_Item.DoesItemMatchSpellItemCondition = function(loc) return CONDOK[loc.k] == true end; COND = false')
+lst = L.eval('WowCompanion._kit.list()')
+got = rowsOf(lst)
+check(got[-3:] == [('inv', 5), ('inv', 10), ('bag', 2)] and all(lst[i + 1].ok is True for i in range(len(lst))),
+      "a kit the game gives no context for (cond false on the device): worn + bag gear unfiltered, as before", got)
+L.execute('WowCompanion._kit.used(0, 1)')
+got = rowsOf(L.eval('WowCompanion._kit.list()'))
+check(got == [('inv', 5), ('inv', 10), ('bag', 2)], "... and right after the Bags room's X on it: gear only", got)
+L.execute('NOW = NOW + 30')
+
+# a fight: a FITTING bag item with no free cell stays, greyed; what does not fit is hidden
+L.execute(r'''
+COMBAT0 = InCombatLockdown; function InCombatLockdown() return true end
+COND = true; CONDOK = { ["bag0:2"] = true }; WowCompanion._kit.byKey = {}
+''')
+got = rowsOf(L.eval('WowCompanion._kit.list()'), True)
+check(got == [('bag', 2, None)], "in a fight a fitting belt with no cell: listed, greyed (the only grey case); worn not fitting: hidden", got)
+L.execute('InCombatLockdown = COMBAT0; COND = false')
+
+# Feed Pet: only what C_PetInfo.CanPetEatItem allows, highest item level first, no gear
+L.execute(r'''
+TSID = 6991; EAT = { [117] = true, [118] = false, [119] = true, [2304] = false, [2580] = false, [2584] = false, [4239] = false }
+C_Spell.GetTargetSpellID = function() return TSID end
+C_PetInfo = { CanPetEatItem = function(id) return EAT[id] == true end }
+ILVL = { [117] = 15, [119] = 35 }
+function GetItemInfo(id) return NAMES[id], nil, 1, ILVL[id] or 0 end
+function GetSpellInfo(id) if id == 6991 then return "Feed Pet", nil, 132165 end end
+NAMES[119] = "Mutton Chop"; CLS[119] = { 0, 5 }; BAG[0][5] = 119
+C_Container.GetContainerNumSlots = function(b) return b == 0 and 5 or 0 end; WowCompanion._bagsLayout = { { bag = 0, slots = 5 } }
+''')
+check(L.eval('WowCompanion._kit.ctx()') == 'feed', "Feed Pet (GetTargetSpellID 6991): ctx feed")
+got = rowsOf(L.eval('WowCompanion._kit.list()'), True)
+check(got == [('bag', 5, True), ('bag', 3, True)], "Feed Pet: only what the pet can eat, highest item level first (no gear, no potion)", got)
+check(L.eval('WowCompanion._kit.kitDoc().name') == 'Feed Pet', "Feed Pet: the list names the spell")
+check(L.eval('WowCompanion._kit.wornOk("feed")') == ',', "Feed Pet: no worn slot")
+L.execute('EAT[119] = nil; EAT[117] = nil')
+check(len(L.eval('WowCompanion._kit.list()')) == 0, "Feed Pet with nothing edible: an empty list (\"Nothing here can take it\")")
+L.execute(r'''
+BIG = {}
+for s = 1, 60 do BIG[s] = 117 end; BAG[1] = BIG; EAT[117] = true
+C_Container.GetContainerNumSlots = function(b) return b == 0 and 5 or (b == 1 and 60 or 0) end
+WowCompanion._bagsLayout = { { bag = 0, slots = 5 }, { bag = 1, slots = 60 } }
+''')
+check(len(L.eval('WowCompanion._kit.list()')) == 40, "Feed Pet: up to KIT.MAX (40) rows of food, no 10-row gear reserve")
+L.execute('C_PetInfo = { CanPetEatItem = function() error("not in this client") end }; BAG[1] = nil')
+got = rowsOf(L.eval('WowCompanion._kit.list()'))
+check(got[:2] == [('bag', 3), ('bag', 5)] and ('inv', 5) in got, "CanPetEatItem fails: the list as before (food first, then the rest)", got)
+# the itarget document carries the pick's type (the Character room's check; the device check of cond)
+L.execute('C_PetInfo = nil; TSID = 0; COND = true; CONDOK = { inv5 = true }; WowCompanion._kit.was = false; PICKING = true')
+step()
+e = L.eval('EMITS[#EMITS]')
+check(e.type == 'itarget' and e.on is True and e.ctx == 'cond' and e.wornOk == ',5,' and e.cx.c is True and e.cx.id == 0,
+      "itarget: ctx, wornOk and the game's answers (cx) for the report", e and (e.ctx, e.wornOk))
+L.execute(r'''
+COND = false; C_Spell.GetTargetSpellID = nil; BAG[0][5] = nil; GetItemInfo = nil; GetSpellInfo = nil
+C_Container.GetContainerNumSlots = function(b) return b == 0 and 4 or 0 end; WowCompanion._bagsLayout = { { bag = 0, slots = 4 } }
+WowCompanion._kit.was = true; NOW = 100
+''')
 
 # DISENCHANT (issues #126 / #39, the player 2026-11-11: "disenchantment of items not possible. Game tries to equip instead. Items
 # specifically for disenchanting don't get listed at all"): SpellIsTargeting while Disenchant (13262) is the current spell

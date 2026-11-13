@@ -229,10 +229,12 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     }
 
     /** Bags.lua's `itarget`: the game's "pick an item" started (or ended); a kit used from here goes on its slot now */
-    fun onItarget(on: Boolean) {
+    fun onItarget(on: Boolean, doc: JSONObject? = null) {
         val w = kitWait ?: return
         if (!on) return
         kitWait = null
+        // bags-kit3 (the user's pick, 2026-11-13): the slot only when it is a row of the Bags room's list, else the game's /stopspelltarget
+        if (!KitTarget.slotFits(doc, w.first)) { tapPad("binv", KitTarget.STOP_COL); kitSay("It can't go there"); return }
         tapPad("binv", w.first - 1)
     }
 

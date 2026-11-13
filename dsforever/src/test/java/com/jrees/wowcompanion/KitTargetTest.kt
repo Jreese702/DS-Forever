@@ -23,4 +23,15 @@ class KitTargetTest {
         assertNull(KitTarget.ofUse(JSONObject("""{"bag":0,"slot":3,"seq":7}""")))    // a plain use: the caller's bag cell
         assertNull(KitTarget.ofUse(JSONObject("""{"cell":3,"seq":7}""")))            // never a worn-slot cell by a stray number
     }
+
+    /** bags-kit3 (the user's pick, 2026-11-13: "the Character room taps a slot only if it is a matching row") */
+    @Test fun theCharacterRoomTapsOnlyAListedSlot() {
+        val doc = JSONObject("""{"type":"itarget","on":true,"ctx":"cond","wornOk":",5,10,"}""")
+        assertEquals(true, KitTarget.slotFits(doc, 5))
+        assertEquals(true, KitTarget.slotFits(doc, 10))
+        assertEquals(false, KitTarget.slotFits(doc, 1))          // the head: not a row, never ",1," inside ",10,"
+        assertEquals(false, KitTarget.slotFits(JSONObject("""{"wornOk":","}"""), 7))   // Feed Pet: no worn slot
+        assertEquals(true, KitTarget.slotFits(JSONObject("""{"on":true}"""), 7))       // an older add-on: the game decides
+        assertEquals(true, KitTarget.slotFits(null, 7))
+    }
 }

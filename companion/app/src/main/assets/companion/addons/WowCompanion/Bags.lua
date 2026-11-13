@@ -49,6 +49,10 @@
 -- forgets them (only an item gone or changed, or what is worn); only complete tooltips are kept ("Retrieving item information" /
 -- no lines = loading, read again on ITEM_DATA_LOAD_RESULT / TOOLTIP_DATA_UPDATE); the 19 worn tooltips are read only when worn gear
 -- changes (WORN). Read-only calls only; the 0.2 s send limit is unchanged.
+--
+-- bags-kit3 (the user's picks, 2026-11-13: "items a pick can't go on are HIDDEN (only 'fits but no free cell in a fight' stays greyed);
+-- Feed Pet lists only what C_PetInfo.CanPetEatItem allows ... already-enchanted gear is shown ... the Bags room's target list serves every
+-- route"): "Choose an item" lists only what the pick can go on, from every route; KIT.ctx below.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -1341,7 +1345,8 @@ function WC._bagsCtlDoc()
         bar = (ctl.zone == "bar" and ctl.mode == "grid") and BAR.items()[ctl.barAt or 1] or nil,
         act = ctl.act,
         barmenu = BAR.menuDoc(),
-        target = (ctl.mode == "target" and WC._kit) and { kit = WC._kit.kitDoc(), list = WC._kit.list(), sel = ctl.tsel or 1 } or nil,
+        target = (ctl.mode == "target" and WC._kit) and { kit = WC._kit.kitDoc(), list = WC._kit.list(), sel = ctl.tsel or 1,
+                                                     cx = WC._kit.probe() } or nil,   -- bags-kit3: the pick type, for the report
     }
 end
 
@@ -1462,19 +1467,40 @@ local function toGrid(note) ctl.mode = "grid"; ctl.bound = nil; ctl.rare = nil; 
 -- (review 2026-11-11) a cell is held per (bag, slot) for the whole pick (KIT.byKey "/use <bag> <slot>" -> col): the list is built again on
 -- every report and press, and a cell picked by the row's place would move to another item when the bags change mid-pick (loot), so a
 -- tap on the list the app last had could disenchant a different item. New pairs take free cells; the hold ends when the pick does.
-local KIT = { was = false, last = nil, DE = 13262, CELL0 = 20, CELLS = 40, MAX = 40, cells = {}, mt = {}, byKey = {}, STOP_HOLD = 1.5 }
+-- bags-kit3 (the user's picks, 2026-11-13, filter_design.md: "items a pick can't go on are HIDDEN (only 'fits but no free cell in a fight'
+-- stays greyed); Feed Pet lists only what C_PetInfo.CanPetEatItem allows and trusts the game for too-low food; already-enchanted gear is
+-- shown and the game's Replace enchant? popup is answered with A/B as today; the Bags room's target list serves every route"): the PICK
+-- TYPE is worked out from the game on every step (KIT.ctx: de / feed / enchant / cond / spell), not from "an item used in the last 2 s",
+-- so a kit or enchant applied from the Character room or the action bar gets the same filtered list as one from the Bags room's X.
+--   enchant = C_Spell.TargetSpellIsEnchanting: only what C_Item.DoesItemMatchTargetEnchantingSpell allows, worn first, no consumables
+--   cond    = C_Spell.TargetSpellChecksItemCondition (kits, stones, oils if the client marks them): C_Item.DoesItemMatchSpellItemCondition
+--   feed    = Feed Pet (6991, C_Spell.GetTargetSpellID or the current spell): only the bags' items C_PetInfo.CanPetEatItem allows, highest
+--             item level first, up to KIT.MAX; if that call fails, the list as before (food first)
+--   de      = Disenchant, unchanged; spell = any other pick, unchanged (consumables + gear; gear only right after a bag item's use)
+-- A kit whose pick says neither enchant nor cond (not known yet on the device) stays "spell": worn + bag gear, unfiltered. The values
+-- ride on the itarget document and the target list (cx) for a later device check. Read-only; UPDATE_SPELL_TARGET_ITEM_CONTEXT and
+-- ENCHANT_SPELL_SELECTED are listened to as well as the 0.25 s step.
+local KIT = { was = false, last = nil, DE = 13262, FEED = 6991, CELL0 = 20, CELLS = 40, MAX = 40, cells = {}, mt = {}, byKey = {},
+              STOP_HOLD = 1.5, evt = nil, evtN = 0 }
 WC._kit = KIT                                   -- the room's document (above) reads it
 WC._kitLearned = WC._kitLearned or {}           -- item ids seen to start a pick (the bag rows' `kit` flag: the Character room's list)
--- Disenchant is waiting for its item (issue #126): the game is targeting and Disenchant is the current spell
-function KIT.de()
+-- the game is targeting and the spell `id` (or a spell of its name) is the current spell
+function KIT.isCurrent(id)
     local okT, t = CALL(function() return SpellIsTargeting() end)
     if not (okT and t == true) then return false end
-    local okC, c = CALL(function() return IsCurrentSpell(KIT.DE) end)
+    local okC, c = CALL(function() return IsCurrentSpell(id) end)
     if okC and c == true then return true end
-    local okN, name = CALL(function() return GetSpellInfo(KIT.DE) end)
+    local okN, name = CALL(function() return GetSpellInfo(id) end)
     if not (okN and type(name) == "string" and WC.isPlain(name)) then return false end
     okC, c = CALL(function() return IsCurrentSpell(name) end)
     return okC and c == true
+end
+-- Disenchant is waiting for its item (issue #126): the game is targeting and Disenchant is the current spell
+function KIT.de() return KIT.isCurrent(KIT.DE) end
+-- Feed Pet is waiting for its item (bags-kit3): the game's target spell, else the current spell as for Disenchant
+function KIT.feed()
+    if SN(function() return C_Spell.GetTargetSpellID() end) == KIT.FEED then return true end
+    return KIT.isCurrent(KIT.FEED)
 end
 -- a pick is on now
 function KIT.on()
@@ -1483,6 +1509,23 @@ function KIT.on()
     ok, v = CALL(function() return SpellCanTargetItemID() end)
     if ok and v == true then return true end
     return KIT.de()
+end
+-- bags-kit3: the pick's type (nil = no pick). The named spells first (most specific), then what the game says of the pick
+function KIT.ctx()
+    if not KIT.on() then return nil end
+    if KIT.de() then return "de" end
+    if KIT.feed() then return "feed" end
+    if S(function() return C_Spell.TargetSpellIsEnchanting() end) == true then return "enchant" end
+    if S(function() return C_Spell.TargetSpellChecksItemCondition() end) == true then return "cond" end
+    return "spell"
+end
+-- what the game said of the pick, for the report (bags-kit3 device check): e / c = enchanting / checks item condition (nil = no answer),
+-- id = the target spell, ev / evn = the last pick event heard and how many
+function KIT.probe()
+    local e = S(function() return C_Spell.TargetSpellIsEnchanting() end)
+    local c = S(function() return C_Spell.TargetSpellChecksItemCondition() end)
+    return { ctx = KIT.ctx(), e = (e == true or e == false) and e or nil, c = (c == true or c == false) and c or nil,
+             id = SN(function() return C_Spell.GetTargetSpellID() end), ev = KIT.evt, evn = KIT.evtN }
 end
 -- a bag gear row's target cell (issue #126): the cell this pick holds for (bag, slot), else a free one of binv CELL0..CELLS-1 with its
 -- macrotext "/use <bag> <slot>" set now (out of combat only); nil when every cell is held or the fight keeps it from being set
@@ -1507,35 +1550,88 @@ end
 function KIT.rowOf(bag, slot)
     for i, e in ipairs(KIT.list()) do if e.src == "bag" and e.bag == bag and e.s == slot then return i end end
 end
--- the game's own check while ENCHANTING (C_Item.DoesItemMatchTargetEnchantingSpell; paperdollframe.lua's CanApplyItemEnchant); other
--- picks (armor kits, stones) the game checks on the click itself
-function KIT.fits(loc)
-    local okE, ench = CALL(function() return C_Spell.TargetSpellIsEnchanting() end)
-    if not (okE and ench == true) or not loc then return true end
-    local okM, m = CALL(function() return C_Item.DoesItemMatchTargetEnchantingSpell(loc) end)
-    if okM and type(m) == "boolean" then return m end
+-- bags-kit3: can the pick go on the item at `loc`? The game's own checks, called directly (never ItemButtonUtil's, which answers for the
+-- bank while it is open): enchant = DoesItemMatchTargetEnchantingSpell (paperdollframe.lua's CanApplyItemEnchant), cond =
+-- DoesItemMatchSpellItemCondition; other picks the game checks on the click itself. No answer = offered (the game still says no)
+function KIT.match(loc, ctx)
+    if not loc then return true end
+    local fn
+    if ctx == "enchant" then fn = function() return C_Item.DoesItemMatchTargetEnchantingSpell(loc) end
+    elseif ctx == "cond" then fn = function() return C_Item.DoesItemMatchSpellItemCondition(loc) end
+    else return true end
+    local m = S(fn)
+    if m == true or m == false then return m end
     return true
 end
 local INV_ORDER = { 5, 7, 10, 8, 6, 3, 1, 9, 16, 17, 18, 15, 2, 11, 12, 13, 14, 4, 19 }   -- chest, legs, hands, feet first (kits)
-function KIT.list()
+-- the worn gear the pick can go on (bags-kit3: what does not fit is left out); none for Disenchant / Feed Pet (bag items only)
+function KIT.worn(ctx)
     local out = {}
-    local de = KIT.de()
-    for _, slot in ipairs(de and {} or INV_ORDER) do                -- Disenchant: never worn gear (the game takes bag items only)
+    if ctx == "de" or ctx == "feed" then return out end
+    for _, slot in ipairs(INV_ORDER) do
         local id = SN(function() return GetInventoryItemID("player", slot) end)
         if id then
             local loc = CALL(function() return ItemLocation end) and select(2, CALL(function() return ItemLocation:CreateFromEquipmentSlot(slot) end)) or nil
-            out[#out + 1] = { src = "inv", slot = slot, id = id,
-                name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
-                icon = SN(function() return GetInventoryItemTexture("player", slot) end),
-                q = SN(function() return GetInventoryItemQuality("player", slot) end), ok = KIT.fits(loc) or nil }
+            if KIT.match(loc, ctx) then
+                out[#out + 1] = { src = "inv", slot = slot, id = id,
+                    name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
+                    icon = SN(function() return GetInventoryItemTexture("player", slot) end),
+                    q = SN(function() return GetInventoryItemQuality("player", slot) end), ok = true }
+            end
         end
     end
+    return out
+end
+-- the worn slots the pick can go on, as ",5,10," (the itarget document: the Character room taps its slot only when it is listed)
+function KIT.wornOk(ctx)
+    local s = ","
+    for _, r in ipairs(KIT.worn(ctx)) do s = s .. r.slot .. "," end
+    return s
+end
+-- bags-kit3 Feed Pet: the bags' items the pet can eat (the game's own gamepad Feed Pet check, containerframe.lua), highest item level
+-- first, at most KIT.MAX; nil when the check cannot be asked (the caller lists as before). Too-low food: the game's own error
+function KIT.food()
+    local okF, f = CALL(function() return C_PetInfo.CanPetEatItem end)
+    if not (okF and type(f) == "function") then return nil end
+    local rows = {}
+    for _, e in ipairs(layout()) do
+        local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
+        for s = 1, n do
+            local id = bagItemID(e.bag, s)
+            if id then
+                local v = S(function() return C_PetInfo.CanPetEatItem(id) end)
+                if v == true then
+                    local info = infoAt(e.bag, s)
+                    local okI, _, _, _, il = CALL(function() return GetItemInfo(id) end)
+                    rows[#rows + 1] = { src = "bag", bag = e.bag, s = s, id = id,
+                        name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
+                        icon = info and SN(function() return info.iconFileID end) or nil,
+                        q = info and SN(function() return info.quality end) or nil, ok = true,
+                        il = okI and SN(function() return il end) or 0, at = #rows + 1 }
+                elseif v ~= false then
+                    return nil                                       -- no plain answer: the list as before
+                end
+            end
+        end
+    end
+    table.sort(rows, function(a, b) if a.il ~= b.il then return a.il > b.il end return a.at < b.at end)
+    for i = #rows, KIT.MAX + 1, -1 do rows[i] = nil end
+    for _, r in ipairs(rows) do r.at = nil end
+    return rows
+end
+function KIT.list(ctx)
+    ctx = ctx or KIT.ctx() or "spell"
+    if ctx == "feed" then
+        local f = KIT.food()
+        if f then return f end
+        ctx = "spell"                                                -- CanPetEatItem could not be asked: the list as before
+    end
+    local de = ctx == "de"
+    local out = KIT.worn(ctx)                                        -- Disenchant: never worn gear (the game takes bag items only)
     -- (the player's report, 2026-11-10, issue 90: "feed pet brings up item select, but doesnt show consumables"): a pick a SPELL started
-    -- (Feed Pet, not an armor kit or stone used from the bags just now) and not an enchant lists the bags' consumables too, food and
-    -- drink first; the game itself says no on the click to anything the spell cannot take
-    local spellPick = not (KIT.last and GetTime() - KIT.last.t < 2)
-    local okE, ench = CALL(function() return C_Spell.TargetSpellIsEnchanting() end)
-    if spellPick and not (okE and ench == true) and not de then
+    -- (not an armor kit or stone used from the bags just now) and not an enchant / item-condition pick lists the bags' consumables too,
+    -- food and drink first; the game itself says no on the click to anything the spell cannot take
+    if ctx == "spell" and not (KIT.last and GetTime() - KIT.last.t < 2) then
         local food, other = {}, {}
         for _, e in ipairs(layout()) do
             local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
@@ -1577,11 +1673,15 @@ function KIT.list()
                     -- Disenchant: weapons (2) and armour (4) of quality 2 or better only
                     if not de or ((cls == 2 or cls == 4) and type(q) == "number" and q >= 2) then
                         local il = select(2, CALL(function() return ItemLocation:CreateFromBagAndSlot(e.bag, s) end))
-                        local cell = KIT.cellFor(e.bag, s)          -- its /use cell: the item-target click, never the bag cell's equip
-                        out[#out + 1] = { src = "bag", bag = e.bag, s = s, id = id, cell = cell,
-                            name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
-                            icon = info and SN(function() return info.iconFileID end) or nil,
-                            q = q, ok = (cell and (de or KIT.fits(il))) and true or nil }
+                        -- bags-kit3: what the pick cannot go on is left out (before a cell is held for it)
+                        if de or KIT.match(il, ctx) then
+                            local cell = KIT.cellFor(e.bag, s)      -- its /use cell: the item-target click, never the bag cell's equip
+                            -- the one grey row left: it fits, but a fight keeps its cell from being set
+                            out[#out + 1] = { src = "bag", bag = e.bag, s = s, id = id, cell = cell,
+                                name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
+                                icon = info and SN(function() return info.iconFileID end) or nil,
+                                q = q, ok = cell and true or nil }
+                        end
                     end
                 end
             end
@@ -1589,12 +1689,14 @@ function KIT.list()
     end
     return out
 end
--- what is being applied (the last item used from the bags, if it was just now)
+-- what is being applied: a named spell's own name (Disenchant, Feed Pet), else the last item used from the bags, if it was just now
+local function spellDoc(id)
+    local ok, name, _, icon = CALL(function() return GetSpellInfo(id) end)
+    if ok and type(name) == "string" and WC.isPlain(name) then return { spell = id, name = name, icon = SN(function() return icon end) } end
+end
 function KIT.kitDoc()
-    if KIT.de() then                                                 -- issue #126: the spell's own name over the list
-        local ok, name, _, icon = CALL(function() return GetSpellInfo(KIT.DE) end)
-        if ok and type(name) == "string" and WC.isPlain(name) then return { spell = KIT.DE, name = name, icon = SN(function() return icon end) } end
-    end
+    if KIT.de() then local d = spellDoc(KIT.DE); if d then return d end end              -- issue #126: the spell's own name over the list
+    if KIT.on() and KIT.feed() then local d = spellDoc(KIT.FEED); if d then return d end end   -- bags-kit3: Feed Pet named too
     local l = KIT.last
     if not l or GetTime() - l.t > 30 then return nil end
     return { id = l.id, name = S(function() return (C_Item.GetItemNameByID(l.id)) end) or S(function() return (GetItemInfo(l.id)) end),
@@ -1633,7 +1735,11 @@ function KIT.step()
     if on ~= KIT.was then
         KIT.was = on
         if on and KIT.last and GetTime() - KIT.last.t < 2 then WC._kitLearned[KIT.last.id] = true end
-        WC.emit({ type = "itarget", on = on, kit = on and KIT.kitDoc() or nil })
+        -- bags-kit3: the pick's type and the worn slots it can go on (the Character room taps its slot only when listed), and what
+        -- the game said of the pick (cx: the device check of TargetSpellChecksItemCondition for kits)
+        local cx = on and KIT.probe() or nil
+        WC.emit({ type = "itarget", on = on, kit = on and KIT.kitDoc() or nil, ctx = cx and cx.ctx or nil,
+                  wornOk = cx and KIT.wornOk(cx.ctx) or nil, cx = cx })
         if ctl.on and not on and ctl.mode == "target" then toGrid(ctl.applied and "applied" or "pick-ended"); ctl.applied = nil end
     end
     -- (review 2026-11-11, issue #126) the room's grid while a pick is on goes to the list on EVERY step, not only as the pick starts: a
@@ -1644,6 +1750,12 @@ function KIT.step()
     end
 end
 C_Timer.NewTicker(0.25, function() pcall(KIT.step) end)
+-- bags-kit3: the game's own word that the pick's item context changed (read-only listeners; the step above still runs every 0.25 s)
+do
+    local kf = CreateFrame("Frame")
+    for _, e in ipairs({ "UPDATE_SPELL_TARGET_ITEM_CONTEXT", "ENCHANT_SPELL_SELECTED" }) do pcall(kf.RegisterEvent, kf, e) end
+    kf:SetScript("OnEvent", function(_, e) KIT.evt = e; KIT.evtN = KIT.evtN + 1; pcall(KIT.step) end)
+end
 -- worn gear as a pick's target: the secure row "binv", one cell per slot (type item, item = the slot: the game's /use <slot>)
 -- col 19 = STOP THE PICK: the game's own /stopspelltarget (a secure macro attribute, the cancel the add-on itself may not make)
 -- cols 20..39 = the pick's BAG GEAR rows (issue #126): type macro, "/use <bag> <slot>" set out of combat by KIT.cellFor
