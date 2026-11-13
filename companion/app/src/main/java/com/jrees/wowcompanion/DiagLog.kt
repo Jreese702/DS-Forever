@@ -127,23 +127,47 @@ object DiagLog {
 
     private val stampFmt = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US) }
 
-    private fun append(now: Long, tag: String, text: String) = synchronized(lock) {
-        val d = dir ?: return@synchronized
+    /**
+     * 1.0.29 key-lag review: the line is made here and WRITTEN on the background writer (BgAppend.EXEC: one thread, so the order holds).
+     * Callers on the main thread (a room's press -> CastView's "bar: press", the first press per device, a hitch, every changed add-on
+     * document) no longer wait on a file append in front of the next input event.
+     */
+    private fun append(now: Long, tag: String, text: String) {
+        val d = synchronized(lock) { dir } ?: return
+        val line = "${stampFmt.get()!!.format(Date(now))} $now $tag: ${text.replace('\n', ' ')}\n"
+        if (onWriter()) { write(d, line); return }
+        try { BgAppend.EXEC.execute { write(d, line) } } catch (_: Throwable) { write(d, line) }
+    }
+
+    private val fileLock = Any()
+    private fun write(d: File, line: String) = synchronized(fileLock) {
         runCatching {
             var cur = File(d, "diag-0.log")
             if (cur.length() >= FILE_BYTES) {
                 val old = File(d, "diag-1.log"); old.delete(); cur.renameTo(old); cur = File(d, "diag-0.log")
             }
-            cur.appendText("${stampFmt.get()!!.format(Date(now))} $now $tag: ${text.replace('\n', ' ')}\n")
+            cur.appendText(line)
         }
     }
 
+    private fun onWriter(): Boolean = Thread.currentThread().name == BgAppend.WRITER
+
+    /** the lines already handed to the writer reach the file first (never waits on the writer's own thread) */
+    private fun awaitWriter() {
+        if (onWriter()) return
+        runCatching { BgAppend.EXEC.submit { }.get(2, java.util.concurrent.TimeUnit.SECONDS) }
+    }
+
     /** the lines of the last [windowMs] (older file first), raw: the report redacts them */
-    fun lines(windowMs: Long, now: Long = System.currentTimeMillis()): List<String> = synchronized(lock) {
-        val d = dir ?: return@synchronized emptyList()
+    fun lines(windowMs: Long, now: Long = System.currentTimeMillis()): List<String> {
+        awaitWriter()
+        val d = synchronized(lock) { dir } ?: return emptyList()
+        return synchronized(fileLock) { linesIn(d, windowMs, now) }
+    }
+
+    private fun linesIn(d: File, windowMs: Long, now: Long): List<String> =
         listOf(File(d, "diag-1.log"), File(d, "diag-0.log")).filter { it.isFile }.flatMap { it.readLines() }.filter { l ->
             val ms = l.split(' ').getOrNull(2)?.toLongOrNull() ?: return@filter false
             ms >= now - windowMs
         }.map { l -> l.split(' ', limit = 4).let { p -> if (p.size == 4) "${p[0]} ${p[1]} ${p[3]}" else l } }   // the ms column goes
-    }
 }

@@ -137,4 +137,50 @@ class KeyLagFixTest {
         KeyLag.reset()
         assertEquals("Key lag to the game: no gamepad key press this run", KeyLag.line())
     }
+
+    @Test fun releasesAreCountedApartFromPresses() {
+        KeyLag.reset()
+        for (i in 0 until KeyLag.WINDOW - 1) assertNull(KeyLag.note(2L, 40_000L + i))
+        assertEquals("a slow release has its own line at once", "keylag over 1 release: avg 900 ms, max 900 ms, 1 over 100 ms",
+            KeyLag.noteUp(900L, 40_100L))
+        assertNull("rate-limited per kind", KeyLag.noteUp(800L, 41_000L))
+        assertEquals("keylag over 32 presses: avg 2 ms, max 2 ms, 0 over 100 ms", KeyLag.note(2L, 41_000L))
+        assertEquals("Key lag to the game: 32 presses, avg 2 ms, max 2 ms, 0 over 100 ms; 2 releases, avg 850 ms, max 900 ms, 2 over 100 ms",
+            KeyLag.line())
+        assertEquals(2L, KeyLag.releases); assertEquals(900L, KeyLag.worstRelease)
+        KeyLag.reset()
+    }
+
+    @Test fun aSlowSubscriberIsNamedAndRateLimited() {
+        PadSlow.reset()
+        assertNull("quick deliveries say nothing", PadSlow.note("HomeView", PadSlow.SLOW_MS - 1, 10_000L))
+        assertEquals("pad slow: DirectPad:chat 23 ms", PadSlow.note("DirectPad:chat", 23L, 10_000L))
+        assertNull(PadSlow.note("CastView", 41L, 11_000L))
+        assertNull(PadSlow.note("HomeView", 9L, 12_000L))
+        assertEquals("pad slow: PressFeedback 12 ms (3 slow, worst 41 ms by CastView since the last line)",
+            PadSlow.note("PressFeedback", 12L, 15_000L))
+        assertEquals("Pad deliveries over 8 ms: 4 this run, worst 41 ms (CastView)", PadSlow.line())
+        PadSlow.reset()
+        assertEquals("Pad deliveries over 8 ms: none this run", PadSlow.line())
+    }
+
+    @Test fun aSubscribersNameIsItsCallbacksClass() {
+        assertEquals("KeyLagFixTest", PadSlow.nameOf({ x: Int -> x + 1 }))
+        assertEquals("String", PadSlow.nameOf("x"))
+        assertEquals("?", PadSlow.nameOf(null))
+    }
+
+    @Test fun diagLogNeverWritesOnTheCallersThread() {
+        DiagLog.useDir(tmp())
+        val gate = CountDownLatch(1)
+        BgAppend.EXEC.execute { gate.await(10, TimeUnit.SECONDS) }        // the writer stuck in a slow write
+        val t0 = System.nanoTime()
+        repeat(200) { DiagLog.event("pad", "press $it") }
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        assertTrue("200 events took $ms ms while the writer hung", ms < 200)
+        gate.countDown()
+        val lines = DiagLog.lines(60_000L)                                  // waits for the writer, then reads
+        assertEquals(200, lines.count { it.contains("pad: press ") })
+        assertTrue(lines.last().endsWith("pad: press 199"))
+    }
 }

@@ -73,6 +73,11 @@ class PadInput(
 
     private var active = false
 
+    /** the subscriber's name for PadSlow (its callbacks' class, "HomeView"); worked out only when a delivery was slow */
+    internal val who: String by lazy(LazyThreadSafetyMode.NONE) {
+        listOf<Any>(onButtons, onPad, onStickVector, onStick, onLeftStick).map { PadSlow.nameOf(it) }.firstOrNull { it != "PadInput" } ?: "PadInput"
+    }
+
     /** D-pad / face slots held right now (0 while stopped). Main thread. */
     val buttons: Int get() = if (active) PadHub.buttons else 0
 
@@ -138,21 +143,24 @@ internal object PadHub {
     private var status: Pair<Boolean, String>? = null
 
     private val reader = PadReader(
-        onPad = { a, b, c, d -> lt = a; rt = b; lb = c; rb = d; for (s in subs.toList()) s.pad(a, b, c, d) },
-        onStatus = { ok, m -> status = ok to m; for (s in subs.toList()) s.status(ok, m) },
-        onButtons = { h -> buttons = h; for (s in subs.toList()) s.held(h) },
-        onStick = { v -> stick = v; for (s in subs.toList()) s.stick(v) },
-        onLeftStick = { v -> leftStick = v; for (s in subs.toList()) s.leftStick(v) },
-        onStickVector = { st, x, y -> vec[st * 2] = x; vec[st * 2 + 1] = y; for (s in subs.toList()) s.vector(st, x, y) },
+        onPad = { a, b, c, d -> lt = a; rt = b; lb = c; rb = d; each { s -> s.pad(a, b, c, d) } },
+        onStatus = { ok, m -> status = ok to m; each { s -> s.status(ok, m) } },
+        onButtons = { h -> buttons = h; each { s -> s.held(h) } },
+        onStick = { v -> stick = v; each { s -> s.stick(v) } },
+        onLeftStick = { v -> leftStick = v; each { s -> s.leftStick(v) } },
+        onStickVector = { st, x, y -> vec[st * 2] = x; vec[st * 2 + 1] = y; each { s -> s.vector(st, x, y) } },
     )
     private var readerOn = false
 
+    /** 1.0.29 key-lag review: every subscriber's delivery timed; a slow one is named in PadSlow's line (room work on the main thread) */
+    private inline fun each(f: (PadInput) -> Unit) { for (s in subs.toList()) PadSlow.timed({ s.who }) { f(s) } }
+
     // THE LAUNCHER'S COPY (PadFeed, the private fork's 3c): the same deliveries the reader makes, when there is no reader (no root)
-    fun feedPad(a: Boolean, b: Boolean, c: Boolean, d: Boolean) { lt = a; rt = b; lb = c; rb = d; for (s in subs.toList()) s.pad(a, b, c, d) }
-    fun feedButtons(h: Int) { buttons = h; for (s in subs.toList()) s.held(h) }
-    fun feedStick(v: Int) { stick = v; for (s in subs.toList()) s.stick(v) }
-    fun feedLeftStick(v: Int) { leftStick = v; for (s in subs.toList()) s.leftStick(v) }
-    fun feedVector(st: Int, x: Float, y: Float) { vec[st * 2] = x; vec[st * 2 + 1] = y; for (s in subs.toList()) s.vector(st, x, y) }
+    fun feedPad(a: Boolean, b: Boolean, c: Boolean, d: Boolean) { lt = a; rt = b; lb = c; rb = d; each { s -> s.pad(a, b, c, d) } }
+    fun feedButtons(h: Int) { buttons = h; each { s -> s.held(h) } }
+    fun feedStick(v: Int) { stick = v; each { s -> s.stick(v) } }
+    fun feedLeftStick(v: Int) { leftStick = v; each { s -> s.leftStick(v) } }
+    fun feedVector(st: Int, x: Float, y: Float) { vec[st * 2] = x; vec[st * 2 + 1] = y; each { s -> s.vector(st, x, y) } }
 
     private val stopLater = Runnable { if (subs.isEmpty() && readerOn) { readerOn = false; reader.stop(); status = null } }
 

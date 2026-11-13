@@ -7,6 +7,7 @@ package com.jrees.wowcompanion
  *   click x,y / key k  DS Forever's input reached the launcher's X server (InputSink)
  *   doc <type> gt=<_gt> an answer document from the add-on was read (CompanionHost)
  *   keylag ...         the game's own key presses: event time -> the launcher's game handler (KeyLag)
+ *   padslow ...        a room's pad delivery that held the main thread [PadSlow.SLOW_MS] or more, named (PadSlow)
  * Read once after a play session, the gaps give each stage's time. Off in the app ([on] is set only by the launcher's glue).
  *
  * 1.0.29 key-lag fix (the user: "insane input lag on my face buttons"): [mark] ran on the main thread for every pad key BEFORE the

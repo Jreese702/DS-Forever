@@ -76,15 +76,16 @@ object DirectPad {
     private fun key(k: String, down: Boolean) {
         val r = regs.values.firstOrNull { k in it.keys && active(it.id) } ?: run {
             if (!down) stopRepeat(k)
-            if (healthy) unclaimed?.invoke(k, down)
+            if (healthy) unclaimed?.let { u -> PadSlow.timed({ "DirectPad:unclaimed" }) { u(k, down) } }
             return
         }
+        // 1.0.29 key-lag review: each room's press timed; a slow one is named ("DirectPad:chat") in PadSlow's line
         if (down) {
-            r.onKey(k, true, false)
+            PadSlow.timed({ "DirectPad:${r.id}" }) { r.onKey(k, true, false) }
             if (k in r.repeat) startRepeat(r, k)
         } else {
             stopRepeat(k)
-            if (r.wantsRelease) r.onKey(k, false, false)
+            if (r.wantsRelease) PadSlow.timed({ "DirectPad:${r.id}" }) { r.onKey(k, false, false) }
         }
     }
 
@@ -92,7 +93,7 @@ object DirectPad {
         override fun run() {
             val (r, k) = repeating ?: return
             if (!active(r.id)) { repeating = null; return }
-            r.onKey(k, true, true)
+            PadSlow.timed({ "DirectPad:${r.id}" }) { r.onKey(k, true, true) }
             main.postDelayed(this, DirectPadKeys.REPEAT_MS)
         }
     }

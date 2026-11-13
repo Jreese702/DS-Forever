@@ -59,8 +59,10 @@ class BgAppend(
     companion object {
         /** the one writer thread of every [BgAppend] (and other small background log work) */
         val EXEC: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r ->
-            Thread(r, "WCLOGW").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }
+            Thread(r, WRITER).apply { isDaemon = true; priority = Thread.MIN_PRIORITY }
         }
+        /** the writer thread's name (DiagLog writes at once when it is already on it) */
+        const val WRITER = "WCLOGW"
 
         /** append [lines] in one buffered write; past [rotateAt] bytes the file goes to <name>.1 first */
         fun appendLines(f: File, lines: List<String>, rotateAt: Long) {

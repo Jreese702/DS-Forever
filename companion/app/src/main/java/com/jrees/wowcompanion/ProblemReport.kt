@@ -167,6 +167,7 @@ object ProblemReport {
             add("Game running: ${LauncherHooks.gameUp()}")
             runCatching { add(PadDiag.line()) }                 // issues #16 / #84 / #116 / #147: did any press reach DS Forever
             runCatching { add(KeyLag.line()) }                  // 1.0.29 "insane input lag on my face buttons": how late the game got them
+            runCatching { add(PadSlow.line()) }                 // the 1.0.29 review: a room's press work on the main thread, named
             CastDiag.line()?.let { add(it) }                    // p-bars-grey (1.0.8): what Home's bars decided at their last draw
         }
         return Facts(app, addons, game, device, settings)
