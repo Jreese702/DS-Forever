@@ -57,6 +57,41 @@ object RadialModel {
         return ((a + 22.5) / 45.0).toInt() % 8
     }
 
+    /**
+     * THE EVEN LAYOUT (the spell radials; the user 2026-11-08: "The radicals should not have empty slots, but instead have things evenly
+     * distributed by how many items are in it. So a radial with two things would have one on the left and one on the right"; the pick
+     * "Flat top"): slice [i] of [n]'s middle in degrees clockwise from UP. An even count never puts one straight up (2 = left / right,
+     * 4 = the diagonals, 8 = flat top); an odd count has its first at the top. n <= 0: 0.
+     */
+    fun evenCenter(i: Int, n: Int): Double = if (n <= 0) 0.0 else (if (n % 2 == 0) -180.0 / n else 0.0) + i * 360.0 / n
+
+    /** the slice of [n] (even layout) at direction [deg] (clockwise from up); [current] holds within its half width + the hysteresis */
+    fun evenSliceAt(deg: Double, current: Int, n: Int): Int {
+        if (n <= 0) return -1
+        val w = 360.0 / n
+        if (current in 0 until n) {
+            var d = kotlin.math.abs(deg - evenCenter(current, n)) % 360.0
+            if (d > 180.0) d = 360.0 - d
+            if (d <= w / 2.0 + minOf(HYST_DEG, w / 4.0)) return current
+        }
+        var r = (deg - evenCenter(0, n) + w / 2.0) % 360.0
+        if (r < 0) r += 360.0
+        return (r / w).toInt().coerceIn(0, n - 1)
+    }
+
+    /** [aimOf] for an even wheel of [n]: [x] right +, [y] UP + -> slice 0..n-1, or -1 = the middle */
+    fun aimEven(x: Double, y: Double, current: Int, n: Int): Int {
+        if (n <= 0) return -1
+        val m = kotlin.math.hypot(x, y)
+        if (m < (if (current >= 0) DEAD_OUT else DEAD_IN)) return -1
+        var a = Math.toDegrees(kotlin.math.atan2(x, y))
+        if (a < 0) a += 360.0
+        return evenSliceAt(a, current, n)
+    }
+
+    /** how many slices the wheel of [doc] has: an even wheel its items' count, else [PER_PAGE] */
+    fun sliceCount(doc: Doc?): Int = if (doc?.even == true) doc.items.size else PER_PAGE
+
     data class Item(val col: Int?, val id: Int, val name: String, val icon: Int, val count: Int, val group: Int,
                     val cdLen: Double = 0.0, val cdLeft: Double = 0.0,
                     /** PINNED to its slice by the player (r7) */
@@ -84,7 +119,104 @@ object RadialModel {
                    val prow: String? = null,
                    /** the SPELL radial (`sradial`, Spells' contract 2026-10-07): items at fixed places 0-23 (the doc's s - 1), gaps
                     *  allowed; null = the consumables radial, filled in order */
-                   val places: Map<Int, Item>? = null)
+                   val places: Map<Int, Item>? = null,
+                   /** a SPELL RADIAL of q2 (several, the user 2026-11-08): its items in order, spread evenly ([evenCenter]); one page */
+                   val even: Boolean = false)
+
+    /**
+     * THE SPELL RADIALS (Spells' Radial.lua q2; the user's picks 2026-11-08: several, each its own bar command, up to 8 spells, no gaps):
+     * r = { list = [{ u = slot 1..6, items = [{ id, col, n, i, cd }] }], max, per, row, cells, pad / nopad, dead, fight }. [bySlot] = each
+     * radial's wheel ([Doc] with [Doc.even]), by its slot.
+     */
+    data class SpellRadials(val bySlot: Map<Int, Doc>) {
+        val slots: List<Int> get() = bySlot.keys.sorted()
+        fun of(slot: Int): Doc? = bySlot[slot]
+    }
+
+    /** a q2 `sradial` document -> the radials, or null (not one, or q1's single radial: [parse] reads that) */
+    fun parseSpellRadials(msg: JSONObject): SpellRadials? {
+        if (msg.optString("type") != "sradial") return null
+        val r = msg.optJSONObject("r") ?: return null
+        val list = r.optJSONArray("list") ?: return null
+        val dead = HashSet<Int>()
+        r.optJSONArray("dead")?.let { d -> for (k in 0 until d.length()) dead += d.optInt(k) }
+        val out = LinkedHashMap<Int, Doc>()
+        for (k in 0 until list.length()) {
+            val o = list.optJSONObject(k) ?: continue
+            val u = o.optInt("u", 0).takeIf { it in 1..6 } ?: continue
+            val items = ArrayList<Item>()
+            o.optJSONArray("items")?.let { a ->
+                for (j in 0 until a.length()) {
+                    val it = a.optJSONObject(j) ?: continue
+                    val id = it.optInt("id", 0)
+                    if (id <= 0 || items.size >= PER_PAGE) continue
+                    val cd = it.optJSONObject("cd")
+                    items += Item(col = it.optInt("col", -1).takeIf { c -> c >= 0 }, id = id, name = it.optString("n", ""),
+                        icon = it.optInt("i", 0), count = -1, group = 0,
+                        cdLen = cd?.optDouble("d", 0.0) ?: 0.0, cdLeft = cd?.optDouble("l", 0.0) ?: 0.0)
+                }
+            }
+            out[u] = Doc(items, 0, dead, r.optBoolean("fight", false), r.optString("row", "sradial"),
+                cells = r.optBoolean("pad", false), noPad = r.optBoolean("nopad", false), even = true)
+        }
+        return SpellRadials(out)
+    }
+
+    /**
+     * THE SPELL RADIAL'S COOLDOWNS, COUNTED HERE (Spells' Radial.lua q1b, the user's pick 2026-11-13: no cooldown sweep in the add-on, it
+     * was behind the loot window's ADDON_ACTION_FORBIDDEN). The add-on says a spell's cooldown ONCE: in a list it sends on an event, and
+     * in `sradialcd` a moment after each cast of a spell on a radial ({ id, cd = { d, l } }); this counts it down on the app's own clock.
+     * A cast with no `cd` (none worth showing, or a value the game keeps secret in a fight) clears it: no countdown is ever guessed.
+     * Per app life (a kept list from an earlier life never starts one). The clock is the monotonic one ([clock], ms).
+     */
+    object Cd {
+        private class E(val endMs: Long, val len: Double)
+        private val at = HashMap<Int, E>()
+        @Volatile var clock: () -> Long = { System.nanoTime() / 1_000_000L }
+
+        /** spell [id]: [len] s long, [left] s to go, as of [now] (left <= 0 = ready) */
+        @Synchronized fun note(id: Int, len: Double, left: Double, now: Long = clock()) {
+            if (id <= 0) return
+            if (left > 0.0 && len > 0.0) at[id] = E(now + (left * 1000.0).toLong(), len) else at.remove(id)
+        }
+        @Synchronized fun clear(id: Int) { at.remove(id) }
+        @Synchronized fun reset() { at.clear() }
+        /** seconds left on [id], 0.0 = ready / unknown */
+        @Synchronized fun left(id: Int, now: Long = clock()): Double {
+            val e = at[id] ?: return 0.0
+            val l = (e.endMs - now) / 1000.0
+            if (l <= 0.0) { at.remove(id); return 0.0 }
+            return l
+        }
+        /** the cooldown's whole length in s, 0.0 = none running */
+        @Synchronized fun len(id: Int, now: Long = clock()): Double = if (left(id, now) > 0.0) at[id]?.len ?: 0.0 else 0.0
+
+        /** a `sradialcd` (one cast's cooldown): true = it was one */
+        fun onCast(msg: JSONObject, now: Long = clock()): Boolean {
+            if (msg.optString("type") != "sradialcd") return false
+            val id = msg.optInt("id", 0)
+            if (id <= 0) return false
+            val cd = msg.optJSONObject("cd")
+            if (cd == null) clear(id) else note(id, cd.optDouble("d", 0.0), cd.optDouble("l", 0.0), now)
+            return true
+        }
+
+        /** a spell radial list the game sent NOW (not a kept one): each spell's `cd` as of now; out of a fight no `cd` = ready */
+        fun onList(msg: JSONObject, now: Long = clock()) {
+            val r = msg.optJSONObject("r") ?: return
+            val fight = r.optBoolean("fight", false)
+            fun item(o: JSONObject?) {
+                val id = o?.optInt("id", 0) ?: return
+                if (id <= 0) return
+                val cd = o.optJSONObject("cd")
+                if (cd != null) note(id, cd.optDouble("d", 0.0), cd.optDouble("l", 0.0), now) else if (!fight) clear(id)
+            }
+            r.optJSONArray("items")?.let { a -> for (k in 0 until a.length()) item(a.optJSONObject(k)) }
+            r.optJSONArray("list")?.let { l ->
+                for (j in 0 until l.length()) l.optJSONObject(j)?.optJSONArray("items")?.let { a -> for (k in 0 until a.length()) item(a.optJSONObject(k)) }
+            }
+        }
+    }
 
     /** a `radial` document -> its state, or null when it is not one */
     fun parse(msg: JSONObject): Doc? {
@@ -132,6 +264,8 @@ object RadialModel {
                 if (o.optInt("id", 0) > 0 && col > UNPIN_COL) cand[o.optInt("id")] = Cand(col, o.optString("n", ""), o.optInt("i", 0))
             }
         }
+        // q2: several spell radials; this one call gives the first (the view reads them all through [parseSpellRadials])
+        if (msg.optString("type") == "sradial" && r.has("list")) return parseSpellRadials(msg)?.let { sr -> sr.slots.firstOrNull()?.let { sr.of(it) } }
         if (spell) {
             // each item at its own place s (1-24); an item without one, or two on one place, is left out
             val places = HashMap<Int, Item>()
@@ -156,7 +290,7 @@ object RadialModel {
     private fun free0(doc: Doc): List<Int> = (0 until PER_PAGE).filter { it !in doc.pins && !(plusOn(doc) && it == PLUS) }
 
     fun pages(doc: Doc?): Int {
-        if (doc == null || doc.items.isEmpty()) return 1
+        if (doc == null || doc.items.isEmpty() || doc.even) return 1
         doc.places?.let { p -> return ((p.keys.maxOrNull() ?: 0) / PER_PAGE) + 1 }
         if (!plusOn(doc)) return (doc.items.size + PER_PAGE - 1) / PER_PAGE
         val rest = doc.items.size - free0(doc).size
@@ -169,6 +303,7 @@ object RadialModel {
      */
     fun slices(doc: Doc?, page: Int): List<Item?> {
         val items = doc?.items ?: emptyList()
+        if (doc?.even == true) return items                                  // q2: the radial's spells, evenly spread
         doc?.places?.let { p -> return List(PER_PAGE) { k -> p[page * PER_PAGE + k] } }
         if (doc == null || !plusOn(doc)) return List(PER_PAGE) { k -> items.getOrNull(page * PER_PAGE + k) }
         val free = free0(doc)
@@ -296,7 +431,7 @@ object RadialModel {
         /** the stick's vector (x right +, y up +) at [now]: through the dead-zone and the hysteresis into [stick] */
         fun vector(doc: Doc?, x: Double, y: Double, now: Long): Act {
             if (!aiming && kotlin.math.hypot(x, y) < NEUTRAL) sawNeutral = true
-            val s = aimOf(x, y, if (aiming) pointed else -1)
+            val s = if (doc?.even == true) aimEven(x, y, if (aiming) pointed else -1, doc.items.size) else aimOf(x, y, if (aiming) pointed else -1)
             if (s == (if (aiming) pointed else -1)) return Act.None
             return stick(doc, s, now)
         }
@@ -323,12 +458,15 @@ object RadialModel {
         fun point(s: Int) { if (s in 0 until PER_PAGE) pointed = s }
 
         /** the D-pad: up / right step clockwise, down / left back (the fallback pointer) */
-        fun step(by: Int) { pointed = if (pointed < 0) 0 else ((pointed + by) % PER_PAGE + PER_PAGE) % PER_PAGE }
+        fun step(by: Int, n: Int = PER_PAGE) {
+            if (n <= 0) { pointed = -1; return }
+            pointed = if (pointed < 0) 0 else ((pointed + by) % n + n) % n
+        }
 
         /** a finger on slice [slice] (UiKit.consumableRadialHit; [HUB] = the hub): uses it; the hub closes */
         fun touch(doc: Doc?, slice: Int): Act = when {
             slice == HUB -> Act.Close
-            slice in 0 until PER_PAGE -> { pointed = slice; useAt(doc, slice) }
+            slice in 0 until sliceCount(doc) -> { pointed = slice; useAt(doc, slice) }
             else -> Act.None
         }
 
@@ -336,7 +474,7 @@ object RadialModel {
         fun clamp(doc: Doc?) { if (page >= pages(doc)) page = pages(doc) - 1 }
 
         private fun useAt(doc: Doc?, slice: Int): Act {
-            if (slice !in 0 until PER_PAGE) return Act.None
+            if (slice !in 0 until sliceCount(doc)) return Act.None
             if (page == 0 && slice == PLUS && plusOn(doc)) return Act.Plus
             val it = slices(doc, page)[slice]
             return if (usable(doc, it)) Act.Use(it!!.col!!, it.id) else Act.None

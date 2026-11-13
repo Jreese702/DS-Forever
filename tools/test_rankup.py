@@ -172,8 +172,8 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "book", "spells"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m152"' in SRC["padmap"] and 'local BV = "b53"' in SRC["book"] and 'local SV = "s9"' in SRC["spells"]
-      and 'local CV = "p49"' in SRC["padtabctl"], "the versions: PadMap m146, Book b52, Spells s9, PadTabCtl p46 (Smart Range after rank up)")
+check('local PV = "m153"' in SRC["padmap"] and 'local BV = "b54"' in SRC["book"] and 'local SV = "s9"' in SRC["spells"]
+      and 'local CV = "p50"' in SRC["padtabctl"], "the versions: PadMap m146, Book b52, Spells s9, PadTabCtl p46 (Smart Range after rank up)")
 QUOTE = "I know we have something in place to rank up abilities on login"
 check(all(QUOTE in SRC[k] for k in ("padmap", "book", "spells", "padtabctl")), "each changed file's header note quotes the user")
 check('WC.rankUpList' in SRC["spells"] and 'doc.rk = rk' in SRC["spells"], "Spells s8: the feed's `rk` comes from WC.rankUpList (read only)")
@@ -184,7 +184,7 @@ check(errs(A) == [], "a. the world loads (a Mage: Frostbolt Rank 1 and 2 known)"
 S1, S2, KB = A.eval('BK.storageFor(1, 3, 1)'), A.eval('BK.storageFor(1, 4, 6)'), 7
 A.execute('ACTIONINFO[%d] = { "spell", 205 }; ACTIONINFO[%d] = { "spell", 205 }; ACTIONINFO[%d] = { "spell", 205 }' % (S1, S2, KB))
 A.execute('ACTIONINFO[%d] = { "spell", 133 }' % (KB + 1))                    # another spell: never touched
-check(A.eval('WowCompanion.spellRadial.put(3, 205)') is True, "a. Frostbolt Rank 2 on the spell radial's place 3")
+check(A.eval('WowCompanion.spellRadial.put(1, 1, 205)') is True, "a. Frostbolt Rank 2 on the spell radial 1's place 1 (Radial.lua q3)")
 FTS = A.eval('BK.storageFor(1, 2, 3)')
 check(A.eval('WowCompanion.padMap.putCombat(1, 2, 3, bookSlot(205))') is True and A.eval('FT(%d).lo' % FTS) is None,
       "a. Frostbolt Rank 2 (the top) as ZL + D-pad Right's In-combat spell: not marked deliberate")
@@ -214,7 +214,7 @@ got = rk(A, [837])
 check(got == [{'id': 837, 'n': 7, 'kept': 2}], "c. Rank 3 learned: 7 lower copies (2 controller + 1 keyboard + ZL + D-pad Down, the radial, "
       "the fight layer, Y), 2 kept on purpose", got)
 check(int(A.eval('#PLACED')) == n0 and A.eval('FT(%d).id' % FTS) == 205 and A.eval('FACE(6).id') == 205
-      and A.eval('WowCompanion.spellRadial.get(3)') == 205, "c. NOTHING written before the player's A (no PlaceAction, the entries as they were)")
+      and A.eval('WowCompanion.spellRadial.get(1, 1)') == 205, "c. NOTHING written before the player's A (no PlaceAction, the entries as they were)")
 check(A.eval('HDR("wc-ft-%d")' % FTS) == "/cast Frostbolt(Rank 2)" and A.eval('YSPELL()') == 205,
       "c. while Rank 3 is this load's prompt, SPELLS_CHANGED's rankSync does not repoint them: still Rank 2 exactly", (A.eval('HDR("wc-ft-%d")' % FTS), A.eval('YSPELL()')))
 check(rk(A, [205]) is None and rk(A, [133]) is None, "c. a rank that is not the top now / a spell with no lower copy: no candidate")
@@ -243,7 +243,7 @@ check(len(acks) == 1 and acks[0]['ok'] is True and acks[0].get('idx') == 7 and a
       "e. A (padtab 38 + the spell's key): one padack op rankup, idx 7 (\"Upgraded on 7 buttons\")", acks)
 check(all(A.eval('ACTIONINFO[%d][2]' % s) == 837 for s in (S1, S2, KB, TOPB)), "e. the controller slots, the keyboard bar slot: Rank 3")
 check(A.eval('ACTIONINFO[%d][2]' % (KB + 1)) == 133, "e. another spell's slot untouched")
-check(A.eval('WowCompanion.spellRadial.get(3)') == 837 and A.eval('FT(%d).id' % FTS) == 837 and A.eval('FACE(6).id') == 837,
+check(A.eval('WowCompanion.spellRadial.get(1, 1)') == 837 and A.eval('FT(%d).id' % FTS) == 837 and A.eval('FACE(6).id') == 837,
       "e. the radial place, the fight layer, Y: Rank 3")
 check(A.eval('ACTIONINFO[%d][2]' % DEL) == 116 and A.eval('FT(%d).id' % LOS) == 116, "e. the deliberate Rank 1 slot and In-combat entry: untouched")
 check(A.eval('HDR("wc-ft-%d")' % FTS) == "/cast Frostbolt(Rank 3)" and A.eval('YSPELL()') == 837
@@ -318,6 +318,24 @@ check(J.eval('HDR("wc-ft-%d")' % JL) == "/cast Frostbolt" and J.eval('#VIOL') ==
 J.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); runTimers(NOW + 3)')
 check(J.eval('HDR("wc-ft-%d")' % JL) == "/cast Frostbolt(Rank 1)", "j. the fight's end: rebuilt", J.eval('HDR("wc-ft-%d")' % JL))
 check(errs(J) == [] and J.eval('#VIOL') == 0, "j. no Lua error, no lockdown breach", errs(J)[:2])
+
+# ================================================================ k. SEVERAL spell radials (Radial.lua q3, PadMap m150): every radial's copy
+K = boot()
+K.execute('WowCompanion.spellRadial.put(1, 1, 205)')
+R2 = K.eval('WowCompanion.spellRadial.new()')
+check(R2 == 2 and K.eval('WowCompanion.spellRadial.put(2, 1, 133)') is True and K.eval('WowCompanion.spellRadial.put(2, 2, 205)') is True,
+      "k. radial 2 made: Fireball, then Frostbolt Rank 2 (radial 1 has Rank 2 too)", R2)
+K.execute('learn(837)')
+got = rk(K, [837])
+check(got is not None and got[0]['n'] == 2, "k. Rank 3 learned: the two radials' copies are 2 lower copies", got)
+K.execute('BK.ctl.mode = "book"; BK.ctl.bind = nil; NOW = NOW + 3')
+k0 = int(K.eval('#SENT'))
+K.execute('WowCompanion.pad.rows["padtab"].handler(nil, 38); WowCompanion._spellsBookKey(837); runTimers(NOW + 1)')
+acks = rankacks(K, k0)
+check(len(acks) == 1 and acks[0]['ok'] is True and acks[0].get('idx') == 2, "k. A: both radials upgraded (idx 2)", acks)
+check(K.eval('WowCompanion.spellRadial.get(1, 1)') == 837 and K.eval('WowCompanion.spellRadial.get(2, 2)') == 837
+      and K.eval('WowCompanion.spellRadial.get(2, 1)') == 133, "k. radial 1 place 1 and radial 2 place 2: Rank 3; Fireball untouched")
+check(errs(K) == [], "k. no Lua error", errs(K)[:2])
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

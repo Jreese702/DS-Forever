@@ -1154,7 +1154,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m", "res", "pd"}     # m150: Smart Res armed, a Hunter's dead pet
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "lv", "rng", "ic"}   # m129: plain facts only (no hp / full / hs / g / hit counts); m134: the pet's ic
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm152' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm153' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1380,7 +1380,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p49"' in SRC["padtabctl"] and 'local BV = "b53"' in SRC["book"] and 'local PV = "m152"' in SRC["padmap"],
+check('local CV = "p50"' in SRC["padtabctl"] and 'local BV = "b54"' in SRC["book"] and 'local PV = "m153"' in SRC["padmap"],
       "the versions: PadMap m146, PadTabCtl p46, Book b52 (b49 stance-bind #179, b50 toolbar D-pad #18/#20, b51 / m143 / m144 rank up, m146 / p46 / b52 Smart Range)")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
@@ -1818,6 +1818,17 @@ except Exception as e:                                                    # no g
     diff = ''
     print('NOTE no git diff: ' + str(e))
 added = [ln[1:] for ln in diff.splitlines() if ln.startswith('+') and not ln.startswith('+++')]
+# 1.0.30 test build merge (code 1453): the default diff can pair a merged file's lines differently and show an old line as "added"
+# with its twin "removed" elsewhere; a line the base already had as often is not new code (multiset: added minus removed)
+from collections import Counter
+_gone = Counter(ln[1:].strip() for ln in diff.splitlines() if ln.startswith('-') and not ln.startswith('---'))
+_kept = []
+for ln in added:
+    if _gone[ln.strip()] > 0:
+        _gone[ln.strip()] -= 1
+    else:
+        _kept.append(ln)
+added = _kept
 code = [re.sub(r'--.*$', '', ln) for ln in added]
 # m132 (the user, 2026-11-11: "Build a fight-only layer"): `self:SetBinding(` inside the header's own secure state snippet is the
 # restricted handle's OVERRIDE binding on that header (never saved, cleared with it), not the game's saved SetBinding; m133: the same

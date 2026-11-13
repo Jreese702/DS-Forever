@@ -112,6 +112,7 @@ class HomeView(
         applyHideRuling(context)
         // the thin row or the diamonds at rest: the user's switch in Settings (HomeSettings; the diamonds until changed)
         HomeSettings.init(context)
+        RadialMeta.init(context)
         flow.setRest(HomeSettings.rest)
         HomeSettings.onChange { post { castStripRelay() } }               // GitHub #43: the tap-to-cast bar's own choice
         HomeSettings.onChange { post {

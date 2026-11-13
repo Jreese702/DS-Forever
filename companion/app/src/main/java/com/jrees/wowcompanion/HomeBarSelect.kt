@@ -348,7 +348,8 @@ class HomeBarSelect(
             "home" -> openOnHome(shown, blocked)
             // + "pause": Spells' router's Start on plain Home (the radial pause menu, the user 2026-10-08)
             // test24: every host key from ONE list (BarCommands; "sradial" was missing: the spell radial never opened)
-            in BarCommands.HOST -> { if (open) close(); if (!blocked) onDpad?.invoke(k) }
+            // hub26: a spell radial's own button names which one ("r" 2..6; none = the first): "sradial:<r>" to the host
+            in BarCommands.HOST -> { if (open) close(); if (!blocked) onDpad?.invoke(if (k == "sradial") "sradial:${msg.optInt("r", 1)}" else k) }
             else -> Log.i(TAG, "bar: command $k has no route")
         }
     }
