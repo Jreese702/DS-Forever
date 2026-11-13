@@ -543,10 +543,10 @@ class PadTabPage(
         else -> null
     }
 
-    /** m155 (the user, 2026-11-13: "L3 and R3 should show the wow default options on them by default"): the game's own binding on an
-     *  empty stick (WoW Defaults only), or null: one of ours wins, and the eight never have one */
     /** the chosen button's name on the right page (tests: m155's game binding on an empty stick) */
     fun shownName(): String? = map?.let { m -> nameOf(m, slotOf(m, shown(), pos)) }
+    /** m155 (the user, 2026-11-13: "L3 and R3 should show the wow default options on them by default"): the game's own binding on an
+     *  empty stick (WoW Defaults only), or null: one of ours wins, and the eight never have one */
     private fun gameOn(sl: PadMapModel.Slot?) = sl?.game?.takeIf { sticksShown() && sl.kind == PadMapModel.Kind.NONE && sl.stick != null }
 
     private fun iconOf(m: PadMapModel.Map, sl: PadMapModel.Slot?, p: Int) = when {
