@@ -12,6 +12,7 @@
 -- cb1 (GitHub #43, the tap-to-cast bar): one secure pad row "castbar" (12 spell cells + the Spellbook's pick), the character's own
 -- slots (WowCompanionSpellsDB.castBar[name-realm]), a fight's edits queued to its end; documents "castbar" / "castcd". At "THE TAP-TO-CAST BAR".
 -- cb2 (1.0.30 code 1454): the row "castbar" only once the character's bar has a spell (bmv4 kept on a full pad); the Spellbook's pick on padtab 39 + 19.
+-- cb2b (review, code 1455): a castbar row registered mid-session asks for the quests document again (WC.questsSoon, Quests q59): Home's pad.
 -- The CAST room's data. Two feeds live here:
 --
 --  1. LEGACY keyboard-slot rows (`slots`, slots 1-12 + their ACTIONBUTTONn keys). Unchanged; the app
@@ -803,7 +804,7 @@ end
 -- until the next /reload or login. THE SPELLBOOK'S PICK no longer needs the row: Book b55 takes it on the padtab row, Smart Range's
 -- one-shot pick (padtab 39) then code 19 (WC.castBarPick); the document says so (pp = { 39, 19 }). The row's own pick cell 12 stays.
 do
-local CBV = "cb2"
+local CBV = "cb2b"
 local CB_PADTAB_PICK = { 39, 19 }        -- cb2: padtab 39 (the one-shot pick) then 19 (its cast bar code): Book b55 -> WC.castBarPick
 local CB_N, CB_PICK_COL, CB_PICK_S = 12, 12, 2
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
@@ -907,8 +908,11 @@ function CB.sync()
         return false
     end
     CB.want = want
+    local fresh = CB.row == nil
     local ok, row = pcall(pad.secureRow, "castbar", CB_N + 1, cbInit, cbClick, { onPress = true })
     CB.row = (ok and type(row) == "number") and row or nil
+    -- cb2b (review): a row registered mid-session is not in Home's pad copy (it rides on the quests document) until that is sent again
+    if fresh and CB.row and type(WC.questsSoon) == "function" then pcall(WC.questsSoon) end
     CB.sig = CB.row and sig or nil
     if not CB.row then CB.frozen = {} end
     return CB.row ~= nil
