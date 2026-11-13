@@ -26,6 +26,40 @@ public final class CursorCanvas {
 
     public ByteBuffer buffer() { return canvas; }
 
+    /** The JNI upload, as a seam for tests: nativeUpdateCursorImage(handle, px, w, h, hotX, hotY). */
+    public interface Upload { void send(long handle, ByteBuffer px, short w, short h, short hotX, short hotY); }
+
+    /** Creates the native renderer context and returns its handle (0 on failure). */
+    public interface Init { long create(); }
+
+    /**
+     * Review follow-up (first cursor creation still raced the render thread): creates the native context,
+     * then, BEFORE the handle is returned (so before any other thread can reach it), uploads one fully
+     * transparent SIZE x SIZE cursor so native ensureCursorTex makes the cursor image + view while no frame
+     * can be recording. Why that is safe, from VulkanRendererContext.cpp: renderLoop (:1066) sleeps on dirtyCV
+     * until needsRender / fbResized / cursorMoved is set; all three start false (VulkanRendererContext.h) and
+     * the constructor (:15-26) never sets them; only JNI calls do, and nobody else has the handle yet. So the
+     * first frame can only start after this upload's own notify (:1606), with the texture already built under
+     * renderMutex. Every later upload is the same size, so ensureCursorTex (:758) never recreates it.
+     */
+    public static long initPrimed(Init init, CursorCanvas canvas, Upload upload) {
+        long h = init.create();
+        if (h != 0) upload.send(h, canvas.blank(), (short) SIZE, (short) SIZE, (short) 0, (short) 0);
+        return h;
+    }
+
+    /** Clears the whole canvas to transparent and returns it (position 0). */
+    public synchronized ByteBuffer blank() {
+        byte[] zero = new byte[SIZE * 4];
+        canvas.clear();
+        for (int y = 0; y < SIZE; y++) canvas.put(zero);
+        canvas.clear();
+        return canvas;
+    }
+
+    /** A hotspot inside the canvas: a cursor larger than SIZE is clipped, so its hotspot is kept on the canvas. */
+    public static short clampHot(int v) { return (short) Math.max(0, Math.min(v, SIZE - 1)); }
+
     /**
      * Source row stride in pixels: the same estimate the scanout path uses (capacity / (h*4)),
      * never less than the width.

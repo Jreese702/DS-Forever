@@ -58,4 +58,33 @@ class CursorCanvasTest {
         assertNull(c.fill(img(4, 4), 8, 8, 8)) // buffer too small
         assertNotNull(c.fill(img(4, 4), 4, 4, 4))
     }
+
+    @Test fun initPrimesBlankCursorBeforeHandleIsReturned() {
+        val c = CursorCanvas()
+        c.fill(img(16, 16), 16, 16, 16) // leftover pixels must not leak into the prime
+        val events = mutableListOf<String>()
+        var published = 0L
+        val h = CursorCanvas.initPrimed({ events += "init"; 42L }, c) { handle, px, w, hh, hx, hy ->
+            assertEquals(0L, published) // the handle is not visible to anyone else yet
+            events += "upload $handle ${w}x$hh hot=$hx,$hy"
+            assertEquals(0, px.position())
+            for (i in 0 until CursorCanvas.SIZE * CursorCanvas.SIZE) assertEquals(0, px.getInt(i * 4))
+        }
+        published = h
+        assertEquals(42L, h)
+        assertEquals(listOf("init", "upload 42 ${CursorCanvas.SIZE}x${CursorCanvas.SIZE} hot=0,0"), events)
+    }
+
+    @Test fun failedInitSendsNothing() {
+        var sent = 0
+        assertEquals(0L, CursorCanvas.initPrimed({ 0L }, CursorCanvas()) { _, _, _, _, _, _ -> sent++ })
+        assertEquals(0, sent)
+    }
+
+    @Test fun hotspotClampedIntoCanvas() {
+        assertEquals(0.toShort(), CursorCanvas.clampHot(-3))
+        assertEquals(5.toShort(), CursorCanvas.clampHot(5))
+        assertEquals((CursorCanvas.SIZE - 1).toShort(), CursorCanvas.clampHot(CursorCanvas.SIZE))
+        assertEquals((CursorCanvas.SIZE - 1).toShort(), CursorCanvas.clampHot(300))
+    }
 }

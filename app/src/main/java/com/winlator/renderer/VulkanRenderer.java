@@ -200,7 +200,11 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                         return;
                     }
                 }
-                nativeHandle = nativeInit(surface, xServer.screenInfo.width, xServer.screenInfo.height, driverPath, driverLibraryName, nativeLibDir, frameGenArmed);
+                // Review follow-up to the 11-12 cursor crash: build the cursor texture (blank 128x128) BEFORE the
+                // handle is published, so the render thread is still asleep when ensureCursorTex runs.
+                nativeHandle = CursorCanvas.initPrimed(
+                    () -> nativeInit(surface, xServer.screenInfo.width, xServer.screenInfo.height, driverPath, driverLibraryName, nativeLibDir, frameGenArmed),
+                    cursorCanvas, this::nativeUpdateCursorImage);
                 if (nativeHandle != 0) {
                     nativeSetPresentMode(nativeHandle, pendingPresentMode);
                     nativeSetFilterMode(nativeHandle, pendingFilterMode);
@@ -487,7 +491,8 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                     CursorCanvas.strideOf(src, cd.width, cd.height));
                 logCursorChange(cd, cd == rootCursorDrawable, hotX, hotY);
                 if (padded != null)
-                    nativeUpdateCursorImage(nativeHandle, padded, (short) CursorCanvas.SIZE, (short) CursorCanvas.SIZE, hotX, hotY);
+                    nativeUpdateCursorImage(nativeHandle, padded, (short) CursorCanvas.SIZE, (short) CursorCanvas.SIZE,
+                        CursorCanvas.clampHot(hotX), CursorCanvas.clampHot(hotY));
                 if (nativeMode) {
                     java.nio.ByteBuffer buf = cd.getBuffer();
                     short stride = (short)(buf.capacity() / (cd.height * 4));
