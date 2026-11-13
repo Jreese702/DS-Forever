@@ -93,4 +93,14 @@ class ChatSendRefusalTest {
         assertFalse(good.first)
         assertEquals("our add-ons: 10 loaded; controller capture v20; Interact.lua ran i153", good.second)
     }
+
+    /** chat35 (issue #29): the error frame hook - "hook" is quiet, "none" says errors were not caught (no warning on its own) */
+    @Test fun theOursProbeSaysWhenErrorsAreNotCaught() {
+        val hooked = oursProbeLine(JSONObject("""{"probe":"ours","loaded":10,"off":{},"capv":20,"errs":{},"istage":"end","iv":"i153","eh":"hook"}"""))!!
+        assertFalse(hooked.first)
+        assertEquals("our add-ons: 10 loaded; controller capture v20; Interact.lua ran i153", hooked.second)
+        val none = oursProbeLine(JSONObject("""{"probe":"ours","loaded":10,"off":{},"capv":20,"errs":{},"istage":"end","iv":"i153","eh":"none"}"""))!!
+        assertFalse(none.first)
+        assertTrue(none.second, none.second.endsWith("; Lua errors not caught (no error frame hook)"))
+    }
 }

@@ -6,7 +6,8 @@ REAL Chat.lua (with Safety.lua and TapPad.lua) under tools/wowstub.py, through t
 - with NO shared capture at all (DS Forever: Interact never ran, #183's log: every room's hold "no controller capture"), the refusal
   says "Interact add-on not running" and nothing is sent;
 - the login's "ours" probe names each of our add-ons the game did not load with the game's reason, the capture's version (0: none) and
-  the first Lua errors from our own files, caught by the wrapped error handler (the game's own handler still gets every error first);
+  the first Lua errors from our own files, seen by a secure post-hook on the game's error frame (chat35, issue #29: the game's error
+  handler is never wrapped or replaced - a wrapper ran the error frame, and the gamepad UI focus it takes, as our code);
 - nothing here is a trace: no SetBinding / SetCVar / macro / bar write (the stub's spies stay empty).
 """
 import json
@@ -35,17 +36,19 @@ C_AddOns = {
     IsAddOnLoaded = function(a) return NOT_LOADED[a] == nil end,
     GetAddOnInfo = function(a) return a, a, "", false, NOT_LOADED[a] end,
 }
--- the game's error handler
+-- the game's error handler and its error frame (the handler hands every message to the frame's OnError)
 GAMEERR = {}
-local handler = function(msg) GAMEERR[#GAMEERR + 1] = msg end
+ScriptErrorsFrame = { OnError = function(self, msg) GAMEERR[#GAMEERR + 1] = msg end }
+GAME_HANDLER = function(msg) return ScriptErrorsFrame:OnError(msg) end
+local handler = GAME_HANDLER
 function geterrorhandler() return handler end
-function seterrorhandler(fn) handler = fn end
+function seterrorhandler(fn) SETEH = (rawget(_G, "SETEH") or 0) + 1; handler = fn end
 function raise(msg) return handler(msg) end
 '''
 
 
-def world(capture=True, holder="pad:chat"):
-    pre = PRE
+def world(capture=True, holder="pad:chat", pre_extra=""):
+    pre = PRE + "\n" + pre_extra + "\n"
     if not capture:
         pre += "\nWowCompanion.capture = nil\n"
     L = boot(["safety", "tappad"], pre=pre)
@@ -176,15 +179,18 @@ L2 = world()
 L2.execute('NOT_LOADED = {}; fire("PLAYER_LOGIN"); runTimers(NOW + 3)')
 p2 = [d for d in docs(L2) if d.get("probe") == "ours"][-1]
 ok(p2["capv"] == 13 and p2["missing"] == 0 and p2["errN"] == 0, "all loaded: %r" % p2)
-ok(p2["istage"] == "none" and p2["eh"] == "ours", "no Interact file here: never ran, the handler ours: %r" % p2)
+ok(p2["istage"] == "none" and p2["eh"] == "hook", "no Interact file here: never ran, errors caught by the frame hook: %r" % p2)
+# chat35 (issue #29): the game's own error handler stays the game's (never wrapped, never replaced)
+ok(L2.eval("geterrorhandler() == GAME_HANDLER") is True and L2.eval("rawget(_G, \"SETEH\")") is None, "the game's error handler untouched")
 
 # chat34 (#183 review): how far Interact.lua ran, and whether the error handler is still ours
 L2.execute('WowCompanion.interactStage = "guard"; fire("PLAYER_LOGIN"); runTimers(NOW + 3)')
 p2 = [d for d in docs(L2) if d.get("probe") == "ours"][-1]
 ok(p2["istage"] == "guard", "a file that stopped halfway is named: %r" % p2)
-L2.execute('seterrorhandler(function() end); fire("PLAYER_LOGIN"); runTimers(NOW + 3)')
-p2 = [d for d in docs(L2) if d.get("probe") == "ours"][-1]
-ok(p2["eh"] == "other", "a handler another add-on set later is reported: %r" % p2)
+# a client with no error frame method: nothing hooked, the probe says errors are not caught
+L4 = world(pre_extra="ScriptErrorsFrame = nil")
+p4 = [d for d in docs(L4) if d.get("probe") == "ours"][-1]
+ok(p4["eh"] == "none" and L4.eval("geterrorhandler() == GAME_HANDLER") is True, "no error frame: eh none, handler untouched: %r" % p4)
 
 # the REAL Interact.lua marks its stages: with no WowCompanion.S it stops at its guard ("top"); its last line is the end marker
 INTERACT = open(os.path.join(ADDONS, "WowCompanionInteract", "Interact.lua"), encoding="utf-8").read()

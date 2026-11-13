@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat34"     -- chat34 (#183 review): the "ours" probe also says how far Interact.lua ran (istage: none / top / guard / cap / end, Interact i153) and its version, and whether the error handler is still ours (eh: ours / other / unset), so "loaded, no capture, no errors" is no longer one answer; chat33 (#183, 1.0.25: "Not able to send messages in chat/guild/whisper/party/etc"; its log: every key, type and send answered ok=0, every room's hold "no controller capture", no Interact document in 15 min): the game never ran DS Forever: Interact, so no room could hold the controller and the chat refused all with "the chat is not open". A refusal now says so ("Interact add-on not running"), and one probe per login ("ours") names each DS Forever add-on the game did not load, with the game's reason, and the first Lua errors from our own files (why it did not load is not in that report); chat32: any /command from the composer runs (the secure cell chcmd, armed at the check); chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
+local CHATV = "chat35"     -- chat35 (issue #29, streaming: "WowCompanion has been blocked from an action only available to the Blizzard UI" - SetPreferredGamepadInteractTarget(), after a Lua error opened the game's error frame): the game's error handler is NOT wrapped any more. chat33's wrapper made the game's own handler run inside a WowCompanion function for EVERY Lua error (anyone's), so the error frame it opens took the gamepad UI's focus as our code - the chain #29's reporter traced to the blocked gamepad bar. Our errors are now read with a secure post-hook on the error frame's own method (hooksecurefunc: the game's code stays the game's); the probe's eh says "hook" (caught) or "none" (no such method on this client: errors not caught); chat34 (#183 review): the "ours" probe also says how far Interact.lua ran (istage: none / top / guard / cap / end, Interact i153) and its version, and whether the error handler is still ours (eh: ours / other / unset), so "loaded, no capture, no errors" is no longer one answer; chat33 (#183, 1.0.25: "Not able to send messages in chat/guild/whisper/party/etc"; its log: every key, type and send answered ok=0, every room's hold "no controller capture", no Interact document in 15 min): the game never ran DS Forever: Interact, so no room could hold the controller and the chat refused all with "the chat is not open". A refusal now says so ("Interact add-on not running"), and one probe per login ("ours") names each DS Forever add-on the game did not load, with the game's reason, and the first Lua errors from our own files (why it did not load is not in that report); chat32: any /command from the composer runs (the secure cell chcmd, armed at the check); chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -31,25 +31,32 @@ local dirty = false
 -- The app keeps its own history and appends by (s, i); a new s tells it the numbering restarted.
 local session = SN(function() return time() end) or math.floor(GetTime())
 
--- chat33 (#183): THE FIRST LUA ERRORS FROM OUR OWN FILES, kept for the login's "ours" probe (below). The game's error handler is
--- wrapped HERE, in WowCompanion, so it is in place before every add-on that depends on us loads (a load error in Interact.lua left
--- WC.capture unset and nobody saw why). The game's own handler still runs for every error, first; nothing is saved; another add-on
--- that sets its own handler later simply takes over. Only messages naming a WowCompanion file are kept, three at most, 300 bytes each.
+-- chat33 (#183): THE FIRST LUA ERRORS FROM OUR OWN FILES, kept for the login's "ours" probe (below). Only messages naming a WowCompanion
+-- file are kept, three at most, 300 bytes each; nothing is saved.
+-- chat35 (issue #29): the game's error handler is never replaced or wrapped. A wrapper ran the game's own handler - and the error frame
+-- it opens, which takes the gamepad UI's focus - as OUR code, and the gamepad bar's SetPreferredGamepadInteractTarget() was blocked from
+-- then on. Instead a secure post-hook (hooksecurefunc) on the error frame's own method sees each message after the game handled it.
 WC.ourErrors = WC.ourErrors or {}
-local ourHandler       -- chat34: kept so the probe can say whether a later add-on replaced it (then errors may be unseen)
-do
-    local okG, prev = pcall(function() return geterrorhandler() end)
-    if okG and type(prev) == "function" and type(seterrorhandler) == "function" then
-        ourHandler = function(msg, ...)
-            pcall(function()
-                local e = WC.ourErrors
-                if #e < 3 and type(msg) == "string" and isPlain(msg) and msg:find("WowCompanion", 1, true) then e[#e + 1] = msg:sub(1, 300) end
-            end)
-            return prev(msg, ...)
+local ehHook       -- chat35: the error frame's method we hook ("OnError" ...), nil = not hooked (yet)
+local function keepError(_, msg)
+    pcall(function()
+        local e = WC.ourErrors
+        if #e < 3 and type(msg) == "string" and isPlain(msg) and msg:find("WowCompanion", 1, true) then e[#e + 1] = msg:sub(1, 300) end
+    end)
+end
+local function hookErrors()
+    if ehHook then return end
+    local fr = rawget(_G, "ScriptErrorsFrame")
+    if type(fr) ~= "table" or type(hooksecurefunc) ~= "function" then return end
+    for _, m in ipairs({ "OnError", "DisplayMessage", "DisplayMessageInternal" }) do
+        local okM, fn = pcall(function() return fr[m] end)
+        if okM and type(fn) == "function" then
+            if pcall(hooksecurefunc, fr, m, keepError) then ehHook = m end
+            return
         end
-        pcall(seterrorhandler, ourHandler)
     end
 end
+pcall(hookErrors)
 
 -- event -> the short channel tag the room displays
 local CHANNELS = {
@@ -1658,12 +1665,9 @@ function WC.oursProbe()
     end
     local c = WC.capture
     local capv = (type(c) == "table" and type(c.take) == "function") and (num(c.version) or 1) or 0
-    -- chat34: how far Interact.lua ran (nil = never: unreadable, or a copy older than i153) and who owns the error handler now
-    local eh = "unset"
-    if ourHandler then
-        local okH, h = pcall(function() return geterrorhandler() end)
-        eh = (okH and h == ourHandler) and "ours" or "other"
-    end
+    -- chat34: how far Interact.lua ran (nil = never: unreadable, or a copy older than i153); chat35: whether our errors are caught
+    pcall(hookErrors)
+    local eh = ehHook and "hook" or "none"
     return { type = "cap", probe = "ours", v = CHATV, loaded = loaded, missing = #off, off = off, capv = capv,
              errN = #WC.ourErrors, errs = WC.ourErrors, istage = str(WC.interactStage) or "none", iv = str(WC.interactIV), eh = eh }
 end
