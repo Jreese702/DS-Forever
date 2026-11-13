@@ -39,6 +39,15 @@ object MenuIcons {
         "uninvite" to Spec(134148, badgeKit = "icon_redx"),           // inv_misc_grouplooking + the red X
     ) + (1..8).associate { n -> "raid$n" to Spec(137000 + n, whole = true) }   // the game's raid markers (TargetingFrame/UI-RaidTargetingIcon_n)
 
+    /** an entry's OWN game icon (Quests q56 `ic`: a pet action's spell icon) as a key: "icon:<fileDataID>", drawn on the same plate */
+    fun iconKey(fid: Int): String = "icon:$fid"
+
+    /** the spec for [key]: one of [SPECS], or an entry's own icon ([iconKey]) */
+    fun spec(key: String): Spec? = SPECS[key] ?: key.takeIf { it.startsWith("icon:") }?.substring(5)?.toIntOrNull()?.takeIf { it > 0 }?.let { Spec(it) }
+
+    /** [key] is one [draw] can draw */
+    fun has(key: String?): Boolean = key != null && spec(key) != null
+
     /** a menu entry's icon key from its key (the game's mixin name) or its words; null = none of ours */
     fun keyOf(entryKey: String?, text: String): String? {
         val k = (entryKey ?: text).lowercase().replace(" ", "")
@@ -82,7 +91,7 @@ object MenuIcons {
 
     /** the icon [key] in [r] (a square); [alpha] 0..255, [dim] = greyed (a greyed entry); false when the key is not ours */
     fun draw(c: Canvas, r: RectF, key: String, alpha: Int = 255, dim: Boolean = false): Boolean {
-        val spec = SPECS[key] ?: return false
+        val spec = spec(key) ?: return false
         val s = minOf(r.width(), r.height())
         val cx = r.centerX(); val cy = r.centerY()
         pBmp.alpha = alpha

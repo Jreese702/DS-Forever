@@ -24,8 +24,9 @@ object TargetRadial {
     data class Slice(val label: String, val icon: String, val entry: PlayerMenu.Entry?, val next: Page? = null) {
         val more get() = next != null && entry == null
         val enabled: Boolean get() = next != null || entry?.enabled == true
-        /** the context menu's icon mixed from game art (MenuIcons), when it has one */
-        val menu: String? get() = if (more) "more" else entry?.let { MenuIcons.keyOf(it.key, it.text) }
+        /** the context menu's icon mixed from game art (MenuIcons), when it has one; an entry's own game icon first (Quests q56: the
+         *  pet's actions - the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet") */
+        val menu: String? get() = if (more) "more" else entry?.let { e -> e.icon?.let { MenuIcons.iconKey(it) } ?: MenuIcons.keyOf(e.key, e.text) }
     }
 
     /** the preferred places: the entry key's words (the mixin's name, lower case) and the slice's kit picture (the wheel's ricon_*) */

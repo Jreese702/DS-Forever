@@ -63,5 +63,12 @@ class TargetRadialShotsTest {
         // an NPC targeted (the TARGET menu)
         val npc = listOf(e("Set Focus", "SetFocus"), e("Raid Target Icon", "RaidTarget", sub = raid))
         shot("target_npc", "Kobold Tunneler", npc, -1)
+        // q56 (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet"): your pet
+        // targeted - its actions first (secure pfocus cells, their spell icons), then the game's own entries
+        fun pet(t: String, k: String, col: Int, fid: Int) = PlayerMenu.Entry(t, null, true, null, false, null, secure = col, key = k, icon = fid)
+        val wolf = listOf(pet("Feed Pet", "PetFeed", 5, 132165), pet("Dismiss Pet", "PetDismiss", 6, 136095),
+            pet("Mend Pet", "PetMend", 8, 132179), pet("Beast Training", "PetTrain", 9, 132162)) + npc
+        shot("target_pet", "Wolf", wolf, 0)
+        shot("target_pet_dead", "Wolf", listOf(pet("Revive Pet", "PetRevive", 7, 132163)) + npc, 0)
     }
 }

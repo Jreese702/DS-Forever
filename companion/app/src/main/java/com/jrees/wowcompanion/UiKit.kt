@@ -2754,7 +2754,7 @@ object UiKit {
         if (selected) focus(c, RectF(r.left + 6f, r.top + 8f, r.right - 6f, r.bottom - 8f))   // THE one highlight (LATER 19)
         val cy = r.centerY()
         if (glyph != null) pad(c, glyph, r.left + 48f, cy, 56f, if (enabled) 255 else 110)
-        else if (menuIcon != null && MenuIcons.SPECS.containsKey(menuIcon)) {
+        else if (menuIcon != null && MenuIcons.has(menuIcon)) {
             val h = minOf(68f, r.height() - 8f)
             MenuIcons.draw(c, RectF(r.left + 48f - h / 2f, cy - h / 2f, r.left + 48f + h / 2f, cy + h / 2f), menuIcon, if (enabled) 255 else 140, dim = !enabled)
         }
@@ -4776,7 +4776,7 @@ object UiKit {
             val pull = 12f                                        // the icon on its segment's centre, the label under it (the game's)
             val ri = (150f - pull) * g.s
             val ix = g.cx + ri * Math.cos(a).toFloat(); val iy = g.cy - ri * Math.sin(a).toFloat()
-            val menuIcon = sl.menu != null && MenuIcons.SPECS.containsKey(sl.menu)
+            val menuIcon = MenuIcons.has(sl.menu)
             if (art != null || menuIcon) {
                 val fit = (if (plain) 38f else 57f) * g.s * (0.6f + 0.4f * k)
                 val aw: Float; val ah: Float
