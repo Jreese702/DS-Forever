@@ -39,7 +39,7 @@ UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { Ge
 '''
 Q = boot(["safety", "tappad", "quests"], pre=PRE)
 
-check('local QV = "q56"' in SRC["quests"], "Quests says q56")
+check('local QV = "q57"' in SRC["quests"], "Quests says q57")
 
 
 def read(unit, src):
@@ -97,9 +97,27 @@ Q.execute('KNOWN[982] = nil')
 check(rows(read("player", None)) == [], "Revive Pet not known: nothing on your own menu")
 Q.execute('KNOWN[982] = true')
 
+# 7b. q57 (review): YOURSELF as the target, no pet out: the target wheel offers Revive too (ctx keeps unit "target" for SELF)
+Q.execute('UNITS.target = UNITS.player')
+check(rows(read("target", "radial")) == [("Revive Pet", 7, 1)], "yourself as the target, no pet out: Revive Pet", rows(read("target", "radial")))
+
+# 7c. q57 (review): a fresh session (no name kept), the pet seen only by the game's pet event, dies with NO menu read while it
+# lived (the Classic client drops the pet unit): its body still offers Revive
+Q.execute('WowCompanion.pmenu.petLast = nil; UNITS.pet = { name = "Fang", alive = true }; fire("UNIT_PET", "player")')
+check(Q.eval('WowCompanion.pmenu.petLast') == "Fang", "UNIT_PET keeps the pet's name (no menu read)", Q.eval('WowCompanion.pmenu.petLast'))
+Q.execute('UNITS.pet = nil; fire("UNIT_PET", "player"); UNITS.target = { name = "Fang", alive = false }')
+check(rows(read("target", "radial")) == [("Revive Pet", 7, 1)], "the body of a pet never menu-read: Revive Pet", rows(read("target", "radial")))
+Q.execute('WowCompanion.pmenu.petLast = nil; UNITS.pet = { name = "Claw", alive = true }; fire("UNIT_PET", "party1")')
+check(Q.eval('WowCompanion.pmenu.petLast') is None, "another unit's UNIT_PET is ignored")
+Q.execute('fire("PLAYER_ENTERING_WORLD")')
+check(Q.eval('WowCompanion.pmenu.petLast') == "Claw", "PLAYER_ENTERING_WORLD keeps the pet's name (after a login / reload)")
+Q.execute('UNITS.pet = nil; UNITS.target = { name = "Wolf", alive = false }; WowCompanion.pmenu.petLast = "Wolf"')
+
 # 8. a pet out: your own menu has no pet rows
 Q.execute('UNITS.pet = { name = "Wolf", alive = true }')
 check(rows(read("player", None)) == [], "a pet out: your own menu has no pet rows")
+Q.execute('UNITS.target = UNITS.player')
+check(rows(read("target", "radial")) == [], "a pet out: yourself as the target has no pet rows")
 
 # 9. the secure cells: /cast by the spell's name (top rank: no rank id), set by the row's init (out of combat, TapPad's build)
 Q.execute('''

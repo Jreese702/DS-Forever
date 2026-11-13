@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q56"    -- bump on every change; q56: THE PET'S WHEEL CARRIES ITS ACTIONS (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet."; the picker: Feed Pet, Dismiss Pet, Revive / Mend Pet, Train pet): the pet's menu (Party mode's pet cell, unit "pet"; the target wheel on your pet) gains our own rows first - Feed Pet (greyed in a fight), Dismiss Pet, Mend Pet (alive) or Revive Pet (dead), Beast Training - each only when the character knows the spell, each a plain /cast on our own secure pfocus cells 5-9 (set up out of combat; the game opens its own training window); Revive Pet alone on your own wheel with no pet out and on your dead pet's body (its name as last seen); each row carries its spell's icon (`ic`); the re-read after a pfocus cell says again = 1 (q54's rule: the wheel is never opened again by it); q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
+local QV = "q57"    -- bump on every change; q57: THE PET'S WHEEL, TWO HOLES (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet."): Revive Pet also on the wheel of YOURSELF as the target (UnitIsUnit target / player), and the pet's name kept from the game's pet events (UNIT_PET / PET_BAR_UPDATE / PLAYER_ENTERING_WORLD / UNIT_NAME_UPDATE), not only from a menu read, so its body offers Revive after a login with no menu opened; q56: THE PET'S WHEEL CARRIES ITS ACTIONS (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet."; the picker: Feed Pet, Dismiss Pet, Revive / Mend Pet, Train pet): the pet's menu (Party mode's pet cell, unit "pet"; the target wheel on your pet) gains our own rows first - Feed Pet (greyed in a fight), Dismiss Pet, Mend Pet (alive) or Revive Pet (dead), Beast Training - each only when the character knows the spell, each a plain /cast on our own secure pfocus cells 5-9 (set up out of combat; the game opens its own training window); Revive Pet alone on your own wheel with no pet out and on your dead pet's body (its name as last seen); each row carries its spell's icon (`ic`); the re-read after a pfocus cell says again = 1 (q54's rule: the wheel is never opened again by it); q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2260,19 +2260,27 @@ function WC.pmenu.petKnows(p)
     end
     return false
 end
-function WC.pmenu.petRows(unit)
-    local P = WC.pmenu
+-- q57: the pet's name as last seen out, kept from the game's pet events too (a plain read), so its body is known after a login / reload
+-- with no menu read while it lived (the Classic client drops the pet unit when the pet dies)
+function WC.pmenu.petSeen()
     local out = T(function() return UnitExists("pet") end) == true
     local nm = out and TS(function() return (UnitName("pet")) end) or nil
-    if nm then P.petLast = nm end
-    local isPet = unit == "pet" or (unit ~= "player" and T(function() return UnitIsUnit(unit, "pet") end) == true)
+    if nm and nm ~= "" then WC.pmenu.petLast = nm end
+    return out, nm
+end
+function WC.pmenu.petRows(unit)
+    local P = WC.pmenu
+    local out = P.petSeen()
+    -- q57: yourself as the target counts as your own menu (ctx keeps unit "target" for SELF)
+    local me = unit == "player" or T(function() return UnitIsUnit(unit, "player") end) == true
+    local isPet = unit == "pet" or ((not me) and T(function() return UnitIsUnit(unit, "pet") end) == true)
     local dead = out and T(function() return UnitIsDeadOrGhost("pet") end) == true
     local want
     if isPet and out then
         want = dead and { PetRevive = true } or { PetFeed = true, PetDismiss = true, PetMend = true, PetTrain = true }
-    elseif unit == "player" and not out then
+    elseif me and not out then
         want = { PetRevive = true }
-    elseif not out and P.petLast and unit ~= "player" and T(function() return UnitIsDeadOrGhost(unit) end) == true
+    elseif not out and P.petLast and not me and T(function() return UnitIsDeadOrGhost(unit) end) == true
         and T(function() return UnitIsPlayer(unit) end) ~= true and TS(function() return (UnitName(unit)) end) == P.petLast then
         want = { PetRevive = true }                                     -- your dead pet's body
     end
@@ -2287,6 +2295,16 @@ function WC.pmenu.petRows(unit)
         end
     end
     return #rows > 0 and rows or nil
+end
+do
+    local pw = CreateFrame("Frame")
+    pw:SetScript("OnEvent", function(_, ev, u)
+        if (ev == "UNIT_PET" and u ~= "player") or (ev == "UNIT_NAME_UPDATE" and u ~= "pet") then return end
+        pcall(WC.pmenu.petSeen)
+    end)
+    for _, e in ipairs({ "UNIT_PET", "PET_BAR_UPDATE", "PLAYER_ENTERING_WORLD", "UNIT_NAME_UPDATE" }) do
+        pcall(function() pw:RegisterEvent(e) end)
+    end
 end
 function WC.pmenu.read(unit, src, again)
     local P = WC.pmenu
