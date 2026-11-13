@@ -8,9 +8,9 @@ import org.json.JSONObject
  * game's own empty-slot art for a blank, the worn item's icon with its quality frame, and the game's
  * red for badly worn gear. ICONS ONLY (user ruling 2026-09-28).
  *
- * OWNER: the bags session. The Bags room draws it in its item panel (and adds its own drag glows on
- * top); the Character room draws it in its left pane (display + select only). Both give it the
- * rectangle; the doll knows only the game's order.
+ * OWNER: the bags session. Only the Character room draws it now, in its left pane (select; a chosen
+ * piece's card has Apply and, uneq1, More > Unequip); the Bags room uses it only for the durability
+ * tint, and Home for its warning. The caller gives it the rectangle; the doll knows only the game's order.
  *
  *   val l = Doll.layout(leftX, rightX, top, slot, pitch, weaponsY, weaponsCx, weaponGap, ammo = eq.ammoNeeded)
  *   Doll.draw(c, l, worn, ammo = eq.ammo, relic = eq.relic)

@@ -98,7 +98,10 @@ data class GearSet(val id: Int, val name: String, val icon: Int, val equipped: B
  */
 data class SetAsk(val id: Int, val name: String, val text: String)
 data class SetAck(val seq: Int, val op: String, val id: Int?, val ok: Boolean, val why: String)
-data class SetPad(val row: String, val yes: Int?, val no: Int?, val ask: SetAsk?, val ack: SetAck?)
+data class SetPad(val row: String, val yes: Int?, val no: Int?, val ask: SetAsk?, val ack: SetAck?,
+                  /** uneq1 (add-on c14): the Unequip arm and the More menu's open / close cells on the same row; [more] = the add-on
+                   *  holds B for the open menu (false once B closed it there) */
+                  val unequip: Int? = null, val moreOn: Int? = null, val moreOff: Int? = null, val more: Boolean = false)
 
 /**
  * The pet page's left pane (the Character tab's third small tab in this client; user ruling: the hunter's pet page goes
@@ -262,7 +265,8 @@ class CharacterModel {
             val ack = j.optJSONObject("ack")?.let { a ->
                 SetAck(a.optInt("seq"), a.optString("op"), if (a.has("id")) a.optInt("id") else null, a.optBoolean("ok"), a.optString("why"))
             }
-            setPad = SetPad(j.optString("row"), if (j.has("yes")) j.optInt("yes") else null, if (j.has("no")) j.optInt("no") else null, ask, ack)
+            fun cell(k: String) = if (j.has(k)) j.optInt(k) else null
+            setPad = SetPad(j.optString("row"), cell("yes"), cell("no"), ask, ack, cell("uq"), cell("mon"), cell("moff"), j.optBoolean("more"))
             changed += "eqs"
         }
         if (c.has("petinfo")) { petInfo = c.optJSONObject("petinfo")?.let { readPet(it) }; changed += "petinfo" }
