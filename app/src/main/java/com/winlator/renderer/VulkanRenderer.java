@@ -448,6 +448,26 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
         nativeSetRenderList(nativeHandle, ids, xs, ys, n);
     }
 
+    private final CursorCanvas cursorCanvas = new CursorCanvas();
+    private int lastCursorW = -1, lastCursorH = -1;
+    private long lastCursorLogMs = 0;
+    private int cursorSizeChanges = 0;
+
+    /** Diagnostics for the 11-12 cursor-texture crash: log every cursor SIZE change (rate-limited, 1 per 250 ms). */
+    private void logCursorChange(Drawable cd, boolean root, short hotX, short hotY) {
+        if (cd.width == lastCursorW && cd.height == lastCursorH) return;
+        cursorSizeChanges++;
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - lastCursorLogMs >= 250) {
+            lastCursorLogMs = now;
+            android.util.Log.i("VulkanRenderer", "cursor size " + lastCursorW + "x" + lastCursorH + " -> "
+                + cd.width + "x" + cd.height + " hot=" + hotX + "," + hotY + " root=" + root
+                + " force=" + forceCursor + " sent=" + CursorCanvas.SIZE + "x" + CursorCanvas.SIZE
+                + " changes=" + cursorSizeChanges + " thread=" + Thread.currentThread().getName() + " t=" + now);
+        }
+        lastCursorW = cd.width; lastCursorH = cd.height;
+    }
+
     private void sendCursorToNative(Cursor cursor) {
         if (nativeHandle == 0) return;
         Drawable cd; short hotX = 0, hotY = 0;
@@ -460,7 +480,14 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
         nativeSetCursorVisible(nativeHandle, effVis);
         if (effVis && cd != null && cd.getBuffer() != null) {
             synchronized (cd.renderLock) {
-                nativeUpdateCursorImage(nativeHandle, cd.getBuffer(), cd.width, cd.height, hotX, hotY);
+                // Crash 11-12 (SIGSEGV 0x80 in vkCmdCopyBufferToImage): a different cursor size makes the
+                // native side destroy the cursor image mid-record. Always send one fixed-size canvas.
+                java.nio.ByteBuffer src = cd.getBuffer();
+                java.nio.ByteBuffer padded = cursorCanvas.fill(src, cd.width, cd.height,
+                    CursorCanvas.strideOf(src, cd.width, cd.height));
+                logCursorChange(cd, cd == rootCursorDrawable, hotX, hotY);
+                if (padded != null)
+                    nativeUpdateCursorImage(nativeHandle, padded, (short) CursorCanvas.SIZE, (short) CursorCanvas.SIZE, hotX, hotY);
                 if (nativeMode) {
                     java.nio.ByteBuffer buf = cd.getBuffer();
                     short stride = (short)(buf.capacity() / (cd.height * 4));
@@ -650,6 +677,8 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
      * draws the launcher's own arrow (R.drawable.cursor, the root cursor) at the X pointer instead. Nothing is sent to the game. */
     @Override
     public void setForceCursor(boolean force) {
+        if (forceCursor != force) android.util.Log.i("VulkanRenderer", "forceCursor " + forceCursor + " -> " + force
+            + " t=" + android.os.SystemClock.uptimeMillis());
         forceCursor = force;
         synchronized (lock) {
             if (nativeHandle == 0) return;
