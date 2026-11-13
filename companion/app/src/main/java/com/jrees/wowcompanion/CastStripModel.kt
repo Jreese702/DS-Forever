@@ -27,7 +27,13 @@ object CastStripModel {
         val hasSpells: Boolean get() = slots.any { it.id != null }
         fun has(spellId: Int?): Boolean = spellId != null && slots.any { it.id == spellId }
         val full: Boolean get() = slots.all { it.id != null }
+        /** a Spellbook entry is on the bar: the add-on keeps the id Book's two taps hand it (the book item's action id, Spells `a`),
+         *  which is not the entry's [SpellsModel.Entry.spellId] for an overridden spell, so either one counts */
+        fun hasEntry(actionId: Int?, spellId: Int?): Boolean = has(actionId?.takeIf { it > 0 }) || has(spellId)
     }
+
+    /** the id the add-on stores for a Spellbook entry: Book's taps carry the book item's action id (Spells `a`), else its spell id */
+    fun entryId(actionId: Int?, spellId: Int?): Int? = actionId?.takeIf { it > 0 } ?: spellId
 
     fun parse(msg: JSONObject): Bar? {
         if (msg.optString("type") != "castbar") return null

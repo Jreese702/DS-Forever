@@ -3411,16 +3411,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         TapBridge.tap(this, spellsPad, "spells", col)
     }
 
-    /** b-druid-forms-bind: a spell's Bind by touch, its taps from the book on show (Book b38's two, or an older add-on's one) in ONE batch */
     /** GitHub #43: the Spellbook's "Cast bar" for [e]: ONE edit (on the bar, or off it), through the freshest pad that has the row */
     private fun castBarToggle(e: SpellsModel.Entry) {
-        val cells = CastStripModel.toggleCells(CastStripModel.Live.bar, e.spellId, lastBook?.let { SpellsModel.bindCells(it, e) })
+        val cells = CastStripModel.toggleCells(CastStripModel.Live.bar, CastStripModel.entryId(e.actionId, e.spellId), lastBook?.let { SpellsModel.bindCells(it, e) })
         if (cells == null) { Log.i(HomeView.TAG, "cast bar: ${e.spellId} not sent (no row, full, or no taps for it)"); return }
         val pad = listOf(questsPad, spellsPad).firstOrNull { it?.optJSONObject("rows")?.has(CastStripModel.ROW) == true } ?: spellsPad
         val sent = TapBridge.taps(this, pad, cells) { why -> Log.i(HomeView.TAG, "cast bar: refused ($why)") }
         Log.i(HomeView.TAG, "cast bar: toggle ${e.spellId} ${if (sent) "tapped" else "not sent"}")
     }
 
+    /** b-druid-forms-bind: a spell's Bind by touch, its taps from the book on show (Book b38's two, or an older add-on's one) in ONE batch */
     private fun spellsCells(e: SpellsModel.Entry) {
         val cells = lastBook?.let { SpellsModel.bindCells(it, e) } ?: return
         TapBridge.taps(this, spellsPad, cells)

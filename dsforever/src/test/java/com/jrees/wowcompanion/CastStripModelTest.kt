@@ -3,6 +3,7 @@ package com.jrees.wowcompanion
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -66,6 +67,18 @@ class CastStripModelTest {
         assertTrue(full.full)
         assertNull(CastStripModel.toggleCells(full, 324, spell))                                       // full: nothing to put it on
         assertEquals(listOf("castbar" to 12) + spell, CastStripModel.toggleCells(full, 1003, spell))   // but one on it can come off
+    }
+
+    // review: the add-on stores the id Book's taps carry (the book item's action id); an overridden spell's spellID differs from it
+    @Test fun anOverriddenSpellIsFoundByItsActionId() {
+        val b = bar(two)
+        assertEquals(403, CastStripModel.entryId(403, 77777))
+        assertEquals(77777, CastStripModel.entryId(0, 77777))
+        assertTrue(b.hasEntry(403, 77777))
+        assertTrue(b.hasEntry(0, 403))
+        assertFalse(b.hasEntry(324, 77777))
+        val full = bar("""{"type":"castbar","pick":12,"e":[${(1..12).joinToString(",") { """{"s":$it,"id":${1000 + it},"c":${it - 1}}""" }}]}""")
+        assertNotNull(CastStripModel.toggleCells(full, CastStripModel.entryId(1003, 88888), listOf("spells" to 20, "spells" to 31)))
     }
 
     @Test fun theSettingsDefaultFollowsTheSpells() {

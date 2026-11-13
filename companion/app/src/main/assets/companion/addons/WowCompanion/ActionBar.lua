@@ -870,6 +870,12 @@ local function cbInit(btn, col)
     btn:SetAttribute("type", w and "spell" or nil)
     btn:SetAttribute("spell", w and w.id or nil)
     CB.frozen[col] = w and w.sig or nil
+    -- review: TapPad runs init only once the pad has its place, which may be long after CB.sync (a late layout, a fight's queue):
+    -- the document's cells follow the cells really built, so it goes out again just after (once per build, CB.send drops a repeat)
+    if not CB.resend and C_Timer and type(C_Timer.After) == "function" then
+        CB.resend = true
+        C_Timer.After(0, function() CB.resend = nil; if type(CB.send) == "function" then pcall(CB.send) end end)
+    end
 end
 local function cbClick(col)
     if col == CB_PICK_COL then CB.pick = cbNow() end

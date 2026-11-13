@@ -253,7 +253,7 @@ class SpellbookView(
     private fun castable(b: SpellsModel.Book, e: SpellsModel.Entry): Boolean {
         val bar = CastStripModel.Live.bar ?: return false
         return e.spellId != null && SpellsModel.status(b, e) == SpellsModel.Status.KNOWN && SpellsModel.bindable(b, e) &&
-            (bar.has(e.spellId) || !bar.full)
+            (bar.hasEntry(e.actionId, e.spellId) || !bar.full)
     }
     private var castDown = false
 
@@ -495,7 +495,7 @@ class SpellbookView(
         // GitHub #43: Cast bar, beside Bind; in a fight too (the add-on queues the edit to the fight's end)
         if (castOn() && canBind) {
             val cr = castRect(w, h)
-            val on = CastStripModel.Live.bar?.has(e.spellId) == true
+            val on = CastStripModel.Live.bar?.hasEntry(e.actionId, e.spellId) == true
             UiKit.button(c, cr, "Cast bar", when { !castable(b, e) -> UiKit.Button.DISABLED; castDown || on -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
         }
         // the controller's A works Bind right now (the addon's book page, its glow on a spell): its press pushes the button in at once
