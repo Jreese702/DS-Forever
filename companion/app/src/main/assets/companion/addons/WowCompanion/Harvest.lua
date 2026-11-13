@@ -423,37 +423,19 @@ if C_GossipInfo and type(C_GossipInfo.SelectOption) == "function" and hooksecure
     end)
 end
 
+-- hv2 (the user, 2026-11-13: "when asking a guard for directions, it does not put the arrow and flag to what I am looking for on our
+-- map"): the read moved to Map.lua (WC.gpoi.read, the same plain-number checks, both position forms, the single id), and the flag
+-- is now DRAWN: map.gpoi on Home's map and the Map room, the arrow at it. This probe keeps its cap line (v = "hv2").
 local function readGossipPoi(mapID)
-    local ok, res = CALL(function() return C_GossipInfo.GetPoiForUiMapID(mapID) end)
-    local ids = {}
-    if ok and type(res) == "number" then ids[1] = res
-    elseif ok and type(res) == "table" then for _, v in ipairs(res) do ids[#ids + 1] = v end end
-    local pois = {}
-    for _, poiID in ipairs(ids) do
-        local oki, info = CALL(function() return C_GossipInfo.GetPoiInfo(mapID, poiID) end)
-        if oki and type(info) == "table" then
-            local px, py
-            local okxy, a, b = CALL(function() return info.position:GetXY() end)
-            if okxy then px, py = plainNum(a), plainNum(b) else
-                px = SN(function() return info.position and info.position.x end)
-                py = SN(function() return info.position and info.position.y end)
-            end
-            pois[#pois + 1] = {
-                id = SN(function() return poiID end),
-                name = S(function() return info.name end),
-                x = r5(px), y = r5(py),
-                tex = SN(function() return info.textureIndex end),
-            }
-        end
-    end
-    return ok, res, pois
+    if not (WC.gpoi and WC.gpoi.read) then return false, nil, {} end
+    return WC.gpoi.read(mapID)
 end
 
 local function reportGossipPoi(trigger)
     local mapID = SN(function() return C_Map.GetBestMapForUnit("player") end)
     local ok, res, pois = readGossipPoi(mapID)
     WC.emit({
-        type = "cap", probe = "gossipPoi", trigger = trigger, mapID = mapID,
+        type = "cap", probe = "gossipPoi", v = "hv2", trigger = trigger, mapID = mapID,
         callOK = ok, ret = type(res), pick = lastPick, pois = pois,
     })
     return ok, pois

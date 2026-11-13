@@ -11,6 +11,8 @@
 --   quests; present in the string table, UNPROVEN on the device -- map.availN is the probe)
 --   C_SuperTrack.GetSuperTrackedQuestID (C_SuperTrack's, not C_QuestLog's, on this build)
 --   C_VignetteInfo.GetVignettes/GetVignetteInfo/GetVignettePosition
+--   C_GossipInfo.GetPoiForUiMapID/GetPoiInfo + DYNAMIC_GOSSIP_POI_UPDATED (gp1, the guard's flag; the user, 2026-11-13: "when
+--   asking a guard for directions, it does not put the arrow and flag to what I am looking for on our map") -- see THE GUARD'S FLAG
 --
 -- WHAT IS NOT, AND CANNOT BE REBUILT:
 --   Minimap tracking blips (herbs, ore, vendors, trainers). GetMinimapBlip,
@@ -800,6 +802,74 @@ local function traceSample(mapId, wx, wy)
 end
 WC.traceSample = traceSample          -- for the test harness only
 
+-- ---------------------------------------------------------------- THE GUARD'S FLAG (gp1)
+-- gp1 (the user, 2026-11-13: "when asking a guard for directions, it does not put the arrow and flag to what I am looking for on
+-- our map"). A guard's directions make the SERVER hold one map flag (C_GossipInfo's gossip POI); the game's world map draws it
+-- (GossipDataProviderMixin: on DYNAMIC_GOSSIP_POI_UPDATED, GetPoiForUiMapID(the map shown) -> ONE id -> GetPoiInfo -> one pin,
+-- Interface/Minimap/POIIcons cut by C_Minimap.GetPOITextureCoords(textureIndex), 16 x 16) and its engine draws it on the minimap,
+-- which DS Forever hides. So the map document carries it: map.gpoi = {m (the map it was read on), x, y, n (its name), id, tex
+-- (textureIndex), tc = {x1, x2, y1, y2} (the game's own cut), hx / hy (carried to the player's map when m is a parent)}.
+-- No timer of ours: it is whatever the game holds at each snapshot (DYNAMIC_GOSSIP_POI_UPDATED asks for one), so it goes when the
+-- game clears it. Plain values only (a secret answer is dropped); reads, never a write. In a table: the main chunk is at Lua 5.1's
+-- 200-local limit. Harvest.lua's guard probe (/wcpoi) reads through WC.gpoi.read too.
+WC.gpoi = { V = "gp1", UP = 6 }
+-- 1e-5 of the map: an unchanged flag stays byte-identical across snapshots
+function WC.gpoi.r5(v) return v and math.floor(v * 100000 + 0.5) / 100000 end
+
+-- the flag on map [m]: ok (the call ran), what it returned, and the pins read {id, name, x, y, tex} (plain values only; a pin
+-- without a plain position is left out). MEASURED FROM THE BINARY: GetPoiForUiMapID returns ONE id, not a list.
+function WC.gpoi.read(m)
+    local ok, res = CALL(function() return C_GossipInfo.GetPoiForUiMapID(m) end)
+    local ids = {}
+    if ok and plainNum(res) then ids[1] = res
+    elseif ok and type(res) == "table" and WC.isPlain(res) then for _, v in ipairs(res) do if plainNum(v) then ids[#ids + 1] = v end end end
+    local pins = {}
+    for _, poiID in ipairs(ids) do
+        local oki, info = CALL(function() return C_GossipInfo.GetPoiInfo(m, poiID) end)
+        if oki and type(info) == "table" and WC.isPlain(info) then
+            local px, py
+            local okxy, a, b = CALL(function() return info.position:GetXY() end)
+            if okxy then px, py = plainNum(a), plainNum(b) end
+            if not (px and py) then
+                px = plainNum(SN(function() return info.position and info.position.x end))
+                py = plainNum(SN(function() return info.position and info.position.y end))
+            end
+            if px and py then
+                pins[#pins + 1] = { id = poiID, name = WC.plainStr(S(function() return info.name end)),
+                                    x = WC.gpoi.r5(px), y = WC.gpoi.r5(py), tex = plainNum(SN(function() return info.textureIndex end)) }
+            end
+        end
+    end
+    return ok, res, pins
+end
+
+-- map.gpoi for the player's map [id]: read there, else on its parent maps (the game's map asks whatever map it shows; opened, that
+-- is the player's), the first answer kept
+function WC.gpoi.collect(id, out)
+    local pid = plainNum(id)
+    if not pid or not (C_GossipInfo and type(C_GossipInfo.GetPoiForUiMapID) == "function") then return end
+    local m, pin = pid, nil
+    for _ = 0, WC.gpoi.UP do
+        local _, _, pins = WC.gpoi.read(m)
+        pin = pins[1]
+        if pin then break end
+        m = parentMap(m)
+        if not m or m == 0 then return end
+    end
+    if not pin then return end
+    local g = { m = m, x = pin.x, y = pin.y, n = pin.name, id = plainNum(pin.id), tex = pin.tex }
+    if m ~= pid then
+        local hx, hy = mapToMap(m, pin.x, pin.y, pid)
+        if hx then g.hx, g.hy = WC.gpoi.r5(hx), WC.gpoi.r5(hy) end
+    end
+    if pin.tex and C_Minimap and type(C_Minimap.GetPOITextureCoords) == "function" then
+        local okT, a, b, c, d = CALL(function() return C_Minimap.GetPOITextureCoords(pin.tex) end)
+        a, b, c, d = plainNum(a), plainNum(b), plainNum(c), plainNum(d)
+        if okT and a and b and c and d then g.tc = { a, b, c, d } end
+    end
+    out.gpoi = g
+end
+
 function WC.collectMap()
     local id = mapID()
     if not id then
@@ -938,6 +1008,8 @@ function WC.collectMap()
             if okS and type(st) == "boolean" and WC.isPlain(st) and st then out.uwp.st = 1 end   -- proven plain first
         end
     end
+    -- THE GUARD'S FLAG (gp1): the gossip POI the game holds now, for Home's map, the Map room and the arrow (see WC.gpoi)
+    pcall(WC.gpoi.collect, id, out)
     if plainId then traceNote(plainId, out.quests) end   -- the quest-area tracer's list
     -- This snapshot now carries this readiness, so the QUEST_LOG_UPDATE check need not.
     if plainId then rdy.map, rdy.n, rdy.sum, rdy.sq = plainId, rn, rsum, rsq end
@@ -1557,6 +1629,7 @@ local QUEST_MARKER_EVENTS = {
     "MINIMAP_UPDATE_TRACKING",  -- Find Herbs / Minerals switched: the node spots follow at once
     "MAP_EXPLORATION_UPDATED",  -- a new area discovered: the Map room's painted overlays follow (mapexpl)
     "USER_WAYPOINT_UPDATED",    -- the map pin placed / moved / cleared: uwp rides the map snapshot
+    "DYNAMIC_GOSSIP_POI_UPDATED", -- gp1: a guard's directions set / cleared the flag: gpoi rides the map snapshot
     "TAXIMAP_OPENED",           -- a flight master's map: which known nodes connect (taxinet; b-route-unknown-taxi)
 }
 
@@ -1591,6 +1664,8 @@ local function onQuestMarkerEvent(_, event, a1)
         pcall(WC.taxiNet)           -- read only: the flight master's own answer on what connects
     elseif event == "USER_WAYPOINT_UPDATED" then
         snapshotSoon("waypoint")    -- map.uwp rides the map snapshot
+    elseif event == "DYNAMIC_GOSSIP_POI_UPDATED" then
+        snapshotSoon("gossip")      -- gp1: map.gpoi rides the map snapshot (the game's world map refreshes its pin on this)
     elseif event == "PLAYER_LEVEL_UP" then
         resetCaps()
         requestSoon()               -- new givers appear on level-up (and low ones turn grey)
