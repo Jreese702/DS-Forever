@@ -123,8 +123,11 @@ function F:GetEffectiveScale() return 1 end
 function F:SetTexture(t) self.tex = t; self.atlas = nil end
 function F:SetAtlas(a)
     if NOATLAS then error("no atlas") end
+    if REFUSED and REFUSED[a] then return false end       -- the real client: an unknown atlas is refused WITHOUT raising
     self.atlas = a; self.tex = nil
+    return true
 end
+function F:SetScale(k) self.scale = k end
 function F:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
 function F:SetVertexColor(r, g, b) self.vc = { r, g, b } end
 function F:SetDesaturated(d) self.desat = d end
@@ -150,7 +153,7 @@ DEFAULT_CHAT_FRAME = nil
 BLIZ = {}
 local ALLOW = { SetAlpha = true, GetAlpha = true, HookScript = true, IsShown = true, IsEnabled = true, GetID = true, GetName = true,
                 GetCurrentPage = true, GetActiveBar = true, IsBarActivelyOverridingActionBar = true, GetCenter = true,
-                GetEffectiveScale = true, GetTexture = true, GetAtlas = true, GetWidth = true, SetCurrentPage = true }
+                GetEffectiveScale = true, GetTexture = true, GetAtlas = true, GetWidth = true, SetCurrentPage = true, IsVisible = true }
 local function proxy(name, t)
     t._name = name
     local mt = {}
@@ -201,8 +204,10 @@ meth(GamepadMainActionBarFrame, "SetAlpha", function(self, a) rawset(self, "alph
 meth(GamepadMainActionBarFrame, "GetAlpha", function(self) return rawget(self, "alpha") end)
 meth(GamepadMainActionBarFrame, "IsShown", function() return true end)
 meth(GamepadMainActionBarFrame, "HookScript", function() end)
-meth(GamepadMainActionBarFrame, "GetCenter", function() if COMBAT then return SECRET(), SECRET() end return 960, 96 end)
-meth(GamepadMainActionBarFrame, "GetEffectiveScale", function() return 1 end)
+MFX, MFY, MFSCALE, MFVIS = 960, 96, 1, true
+meth(GamepadMainActionBarFrame, "GetCenter", function() if COMBAT then return SECRET(), SECRET() end return MFX, MFY end)
+meth(GamepadMainActionBarFrame, "GetEffectiveScale", function() return MFSCALE end)
+meth(GamepadMainActionBarFrame, "IsVisible", function() return MFVIS end)
 GamepadPersistentInputLegend = proxy("GamepadPersistentInputLegend", { alpha = 1 })
 meth(GamepadPersistentInputLegend, "SetAlpha", function(self, a) rawset(self, "alpha", a) end)
 meth(GamepadPersistentInputLegend, "GetAlpha", function(self) return rawget(self, "alpha") end)
@@ -281,11 +286,14 @@ ROWS = {}
 WowCompanion.pad = { op = function(name, ns, fn) ROWS[name] = fn; return name end, describe = function() return {} end,
                      onLayout = function() end }
 -- PadMap's views (WowCompanionSpells): set -> pos -> view
-PADMAP, DPAD_ON = {}, true
+PADMAP, DPAD_ON, CC_ON, FORMS, FORMFIGHT = {}, true, true, {}, {}
 function PADMAP_ON()
     WowCompanion.padMap = {
         slotAt = function(page, set, pos) local s = PADMAP[set]; local v = s and s[pos]; if v then return v end; return { kind = "spell" } end,
         dpadState = function() return { on = DPAD_ON } end,
+        combatOn = function() return CC_ON end,
+        forms = function() return FORMS end,
+        formFight = function(form, pos) local t = FORMFIGHT[form]; return t and t[pos] or nil end,
     }
 end
 '''
@@ -394,11 +402,12 @@ def main():
     L = boot()
     G = L.globals()
     WC = G.WowCompanion
-    chk("nbar1: the version tag", WC.nbar is not None and WC.nbar.V == "nbar1")
+    chk("nbar2: the version tag", WC.nbar is not None and WC.nbar.V == "nbar2")
     abs_src = open(AB, encoding="utf-8").read()
     hub_src = open(HUB, encoding="utf-8").read()
-    chk("nbar1 / hub45 / uf17: the header notes quote the issue", "issue #195" in abs_src.split("\n", 6)[1] + abs_src.split("\n", 6)[2]
-        and 'local HV = "hub45"' in hub_src and "hub45: THE NINTENDO BAR" in hub_src and 'V = "uf17"' in hub_src)
+    chk("nbar2 / hub46 / uf17: the header notes quote the issue", "issue #195" in abs_src.split("\n", 6)[1] + abs_src.split("\n", 6)[2]
+        and "nbar2 (review of nbar1, issue #195" in abs_src and 'local HV = "hub46"' in hub_src and "hub45: THE NINTENDO BAR" in hub_src
+        and "hub46: ONE GLYPH RULE (issue #195" in hub_src and 'V = "uf17"' in hub_src)
     # ------------------------------------------------------------ the switch round trip (Hub's "uisw")
     sw_row = G.ROWS["uisw"]
     chk("hub45: Hub registered its switch row", sw_row is not None)
@@ -431,9 +440,15 @@ def main():
         [x["icon"] for x in s[:4]] == [134332, 134829, 134269, "tex:Interface\\AddOns\\WowCompanion\\Media\\ds_forever_icon"], [x["icon"] for x in s[:4]])
     chk("plain layer: the faces the game's fixed four out of a fight (Interact / Inspect - its live crosshair with a target - / Back / Jump)",
         [x["icon"] for x in s[4:]] == [136243, "atlas:crosshair_inspect_32", 136245, 136246], [x["icon"] for x in s[4:]])
-    chk("glyphs: the Nintendo layout (swap): D-pad arrows, faces Rev_Y / Rev_X / Rev_A / Rev_B",
+    chk("glyphs (nbar2): the Nintendo layout (swap): D-pad arrows, each face its own letter (PAD3 X / PAD4 Y / PAD2 B / PAD1 A, m119)",
         [x["atlas"] for x in s] == ["Gamepad_Gen_Left_64", "Gamepad_Gen_Up_64", "Gamepad_Gen_Right_64", "Gamepad_Gen_Down_64",
-                                    "Gamepad_Rev_Y_64", "Gamepad_Rev_X_64", "Gamepad_Rev_A_64", "Gamepad_Rev_B_64"], [x["atlas"] for x in s])
+                                    "Gamepad_Rev_X_64", "Gamepad_Rev_Y_64", "Gamepad_Rev_B_64", "Gamepad_Rev_A_64"], [x["atlas"] for x in s])
+    O, D = WC.nbar.OFF, WC.nbar.DX
+    at = [(f.btn[p].pts[1][4], f.btn[p].pts[1][5]) for p in range(5, 9)]
+    chk("ABXY location swap (nbar2, CastView's Nintendo arrangement): X top, Y left, B bottom, A right",
+        at == [(D, O), (D - O, 0), (D, -O), (D + O, 0)], at)
+    chk("one glyph rule: Hub's glyphs take WC.padGlyphAtlas (Back = Rev_B)", list(WC.padGlyphAtlas("PAD2").values()) == ["Gamepad_Rev_B_64"]
+        and list(WC.padGlyphAtlas("PAD4").values()) == ["Gamepad_Rev_Y_64"])
     G.RT = True
     WC.nbar.tick(0.06)
     chk("ZR held: the tick picks it up in one poll (set 3) and the layer word says ZR", WC.nbar.set == 3 and f.layer.text == "ZR",
@@ -493,7 +508,7 @@ def main():
     chk("fight: the charges secret -> no count drawn (never compared)", s[4]["count"] == "", s[4]["count"])
     caps = [c for c in sent(G, "cap") if c.probe == "nbarcd"]
     chk("probe nbarcd: once out of a fight and once in one, route dur, plain values", len(caps) == 2 and {c["fight"] for c in caps} == {True, False}
-        and all(c.route == "dur" and c.v == "nbar1" and c.have.acd and c.have.set for c in caps), caps)
+        and all(c.route == "dur" and c.v == "nbar2" and c.have.acd and c.have.set for c in caps), caps)
     for _ in range(5):
         WC.nbar.refresh()
     chk("probe nbarcd: never again in the same state", len([c for c in sent(G, "cap") if c.probe == "nbarcd"]) == 2)
@@ -513,6 +528,8 @@ def main():
     s = shown(L)
     chk("the plain layout: Ltr_X / Ltr_Y / Ltr_B / Ltr_A on the faces", [x["atlas"] for x in s[4:]] == ["Gamepad_Ltr_X_64", "Gamepad_Ltr_Y_64",
         "Gamepad_Ltr_B_64", "Gamepad_Ltr_A_64"], [x["atlas"] for x in s[4:]])
+    at = [(f.btn[p].pts[1][4], f.btn[p].pts[1][5]) for p in range(5, 9)]
+    chk("the plain ABXY location: X left, Y top, B right, A bottom", at == [(D - O, 0), (D, O), (D + O, 0), (D, -O)], at)
     G.WowCompanionSpellsDB = None
     # off again
     G.SENT = L.table()
@@ -577,7 +594,8 @@ def main():
     G5 = L5.globals()
     G5.ROWS["uisw"](None, 35)
     s = shown(L5)
-    chk("no atlas on the client: the Nintendo letters (Y / X / A / B) as words", [x["word"] for x in s[4:]] == ["Y", "X", "A", "B"], [x["word"] for x in s[4:]])
+    chk("no atlas on the client: each button's own letter (X / Y / B / A) as words", [x["word"] for x in s[4:]] == ["X", "Y", "B", "A"], [x["word"] for x in s[4:]])
+    review_checks(chk)
     # ------------------------------------------------------------ the renders
     if "--shots" in sys.argv or os.environ.get("NBAR_SHOTS") == "1":
         render(shots)
@@ -585,6 +603,122 @@ def main():
     aura_checks(chk)
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
+
+
+def review_checks(chk):
+    """nbar2: the review of nbar1 (issue #195): a form's own fight spells, Combat controls off, the bare D-pad's commands / bindings,
+    the router's own switch, a refused atlas, the stock bar's visibility / scale / spot"""
+    def on(L):
+        G = L.globals()
+        G.ROWS["uisw"](None, 35)
+        return G, G.WowCompanion
+    # a form's own In-combat spells (PadMap m55): Cat Form on, its D-pad up = Shred, its X (pos 5) = Claw; its Y none -> the face's own
+    L = boot(pre="FORMS = { { x = 1, id = 768, on = true } }; FORMFIGHT[768] = { [2] = { n = 'Shred', id = 5221, i = 136231 }, "
+                 "[5] = { n = 'Claw', id = 1082, i = 132140 } }")
+    G, W = on(L)
+    G.COMBAT = True
+    W.nbar.refresh()
+    s = shown(L)
+    chk("nbar2 form: in a fight the form's own D-pad up (Shred) and X (Claw); Y keeps the face's own (Healing Wave)",
+        s[1]["id"] == 5221 and s[4]["id"] == 1082 and s[5]["id"] == 331, [x["id"] for x in s])
+    G.FORMS = L.eval("{ { x = 1, id = 768, on = false } }")
+    W.nbar.refresh()
+    s = shown(L)
+    chk("nbar2 form: not in the form -> the caster's (Lightning Bolt up, Earth Shock on X)", s[1]["id"] == 403 and s[4]["id"] == 8042,
+        [x["id"] for x in s])
+    G.FORMS = L.eval("{ { x = 1, id = 768, on = true } }")
+    G.RT = True
+    W.nbar.tick(0.06)
+    s = shown(L)
+    chk("nbar2 form: a trigger layer never takes the form's bare set (ZR = slots 25-)", s[1]["s"] == 26 and s[1]["kind"] == "slot", s[1])
+    G.RT = False
+    G.COMBAT = False
+    W.nbar.tick(0.06)
+    W.nbar.refresh()
+    s = shown(L)
+    chk("nbar2 form: out of a fight no fight pictures (the toolbar, the fixed faces)", s[1]["icon"] == 134829 and s[4]["icon"] == 136243,
+        [x["icon"] for x in s])
+    # Combat controls off: the router arms no fight text, a press casts the slot
+    L = boot(pre="CC_ON = false")
+    G, W = on(L)
+    G.COMBAT = True
+    W.nbar.refresh()
+    s = shown(L)
+    chk("nbar2 Combat controls off: in a fight the D-pad keeps the toolbar, the faces the game's four (no fight spells)",
+        s[1]["icon"] == 134829 and s[4]["icon"] == 136243 and s[5]["kind"] != "spell" and s[7]["icon"] == 136246, [x["icon"] for x in s])
+    G.LT = True
+    W.nbar.tick(0.06)
+    s = shown(L)
+    chk("nbar2 Combat controls off: ZL's In-combat place is the bar's own slot 15", s[2]["kind"] == "slot" and s[2]["s"] == 15, s[2])
+    # the bare D-pad without the DS toolbar: a command and a binding there are drawn (bindAllowed lets them on)
+    L = boot(pre="DPAD_ON = false")
+    L.execute("PADMAP[1][3] = { kind = 'command', key = 'DSMAP', i = 134269 }; PADMAP[1][4] = { kind = 'bind', key = 'TOGGLEWORLDMAP', i = 137176 }; "
+              "PADMAP[1][1] = { kind = 'combat', ov = true, base = 'bind', c = { n = 'Purge', id = 370, i = 136075 }, o = { n = 'Bags', i = 133633 } }")
+    G, W = on(L)
+    W.nbar.refresh()
+    s = shown(L)
+    chk("nbar2 bare D-pad (no toolbar): the command's and the binding's icons; a fight-layer entry's Otherwise binding out of a fight",
+        s[2]["icon"] == 134269 and s[3]["icon"] == 137176 and s[0]["icon"] == 133633 and s[1]["s"] == 2, [x["icon"] for x in s[:4]])
+    G.COMBAT = True
+    W.nbar.refresh()
+    s = shown(L)
+    chk("nbar2 bare D-pad in a fight: the fight-layer spell (Purge) over the binding, the In-combat spell up", s[0]["id"] == 370 and s[1]["id"] == 403,
+        [x["id"] for x in s[:4]])
+    # the router's own switch (WC.tgGrown = PadMap's sw): an attack armed before the lockdown arms the faces; B's give-back drops them
+    L = boot()
+    G, W = on(L)
+    L.execute("WowCompanion.tgGrown = function() return GROWN end; GROWN = true")
+    W.nbar.refresh()
+    s = shown(L)
+    chk("nbar2 router switch: an auto-attack armed out of the lockdown -> the faces' fight spells, as a press casts",
+        [s[4]["id"], s[5]["id"], s[7]["id"]] == [8042, 331, 403], [x["id"] for x in s[4:]])
+    G.GROWN, G.COMBAT = False, True
+    W.nbar.refresh()
+    s = shown(L)
+    chk("nbar2 router switch: given back by B in a fight -> the game's four again, the toolbar up", s[4]["icon"] == 136243 and s[1]["icon"] == 134829,
+        [x["icon"] for x in s])
+    L.execute("GROWN = nil")
+    W.nbar.refresh()
+    s = shown(L)
+    chk("nbar2 router switch: not routed (nil) -> the fight itself", s[4]["id"] == 8042, s[4])
+    # a refused atlas (SetAtlas returns false, no error): the next candidate, then the letter
+    L = boot(pre="REFUSED = { Gamepad_Gen_Left_64 = true, Gamepad_Rev_X_64 = true }")
+    G, W = on(L)
+    s = shown(L)
+    chk("nbar2 atlas refused (no raise): D-pad left takes the next candidate (Gamepad_Gen_DPadLeft_64)", s[0]["atlas"] == "Gamepad_Gen_DPadLeft_64", s[0])
+    chk("nbar2 atlas refused: X's only atlas refused -> its letter X", s[4]["atlas"] is None and s[4]["word"] == "X", s[4])
+    L = boot(pre="REFUSED = {}")
+    L.execute("WowCompanion.prd = { atlasOn = function(t, a) PRDN = (PRDN or 0) + 1; if a == 'Gamepad_Rev_A_64' then return false end; t:SetAtlas(a); return true end }")
+    G, W = on(L)
+    s = shown(L)
+    chk("nbar2 atlas: Trail's PRD.atlasOn decides when present (its refusal -> the letter A)", (G.PRDN or 0) >= 8 and s[7]["word"] == "A"
+        and s[6]["atlas"] == "Gamepad_Rev_B_64", (G.PRDN, s[7]))
+    # the stock bar's visibility, scale and spot
+    L = boot(pre="MFSCALE = 0.8")
+    G, W = on(L)
+    f = W.nbar.f
+    chk("nbar2 scale: ours at the stock bar's scale (0.8), its centre in its own units", f.scale == 0.8 and f.pts[1][4] == 960 and f.pts[1][5] == 96,
+        (f.scale, list(f.pts[1].values())))
+    G.MFSCALE = 1.25
+    L.execute('for _, x in ipairs(EVENTS["UI_SCALE_CHANGED"] or {}) do if x.onOnEvent then x.onOnEvent(x, "UI_SCALE_CHANGED") end end')
+    chk("nbar2 scale: UI_SCALE_CHANGED places it again (1.25)", f.scale == 1.25, f.scale)
+    G.MFVIS = False
+    W.nbar.refresh()
+    chk("nbar2 visibility: the stock bar not visible (pet battle / cinematic) -> ours at alpha 0, still ticking", f.alpha == 0 and f.shown is True)
+    G.MFVIS = True
+    W.nbar.refresh()
+    chk("nbar2 visibility: back -> alpha 1", f.alpha == 1)
+    G.COMBAT = True
+    W.nbar.place()
+    chk("nbar2 spot: a fight's secret centre keeps the last spot (never the default mid-fight)", W.nbar.at == "stock" and f.pts[1][4] == 960,
+        list(f.pts[1].values()))
+    G.COMBAT = False
+    G.MFX, G.CORE_ONLY = 700, False
+    W.nbar.tick(0.06)
+    chk("nbar2 spot: a window taking the pad (barsUsable flips) places it again", f.pts[1][4] == 700, list(f.pts[1].values()))
+    G.CORE_ONLY = True
+    bliz = sorted(set(G.BLIZ.values()))
+    chk("nbar2: still only reads and SetAlpha on Blizzard frames, nothing raised", bliz == [] and G.RAISED == 0 and len(G.SPY) == 0, (bliz, G.RAISED))
 
 
 def aura_checks(chk):

@@ -2,6 +2,13 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar2 (review of nbar1, issue #195: "exactly what a press casts"): a form's own In-combat spell first in a fight (PadMap m55 formFight);
+-- the fight pictures only while Combat controls are on (WC.padMap.combatOn) and on the ROUTER's own switch (WC.tgGrown: the fight or an
+-- attack / auto-repeat armed, not given back by B - PadMap's "sw"); commands and bindings on the bare D-pad drawn; the glyphs by the
+-- button's own letter (PadMap m119 / m120, the user: "the inspect glyph is Y not X"; the app's rev_* art) in ONE helper Hub shares
+-- (WC.padGlyphAtlas), the faces at the ABXY location (swap: Y left, X top, A right, B bottom, as CastView); an atlas this client refuses
+-- falls to the next / the letter (WC.prd.atlasOn); ours follows the stock bar's visibility and scale (UI_SCALE_CHANGED /
+-- DISPLAY_SIZE_CHANGED, a window taking the pad) and keeps its last spot when a fight hides the centre.
 -- The CAST room's data. Two feeds live here:
 --
 --  1. LEGACY keyboard-slot rows (`slots`, slots 1-12 + their ACTIONBUTTONn keys). Unchanged; the app
@@ -1466,32 +1473,65 @@ end
 -- and pcall'd; without them (or refused) the button is dimmed while its NeverSecret isActive says it cools (no sweep). The route that
 -- worked rides one "cap" line (probe "nbarcd") out of a fight and one in a fight per login. A secret is never compared or computed.
 ---------------------------------------------------------------------------------------------------
-local NB = { V = "nbar1", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64,
+local NB = { V = "nbar2", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
              -- the button a position is, by the game's binding (bar.actionButtons order: D-pad L / U / R / D, face left / top / right / bottom)
              KEY_OF = { "PADDLEFT", "PADDUP", "PADDRIGHT", "PADDDOWN", "PAD3", "PAD4", "PAD2", "PAD1" },
              -- the place of each position in its diamond (D-pad diamond left, face diamond right)
              AT = { { -1, 0 }, { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 }, { 0, 1 }, { 1, 0 }, { 0, -1 } },
+             -- nbar2: the ABXY location "swap" (the Nintendo arrangement, CastView's NINTENDO_FACE_SWAP): X (PAD3) on top, Y (PAD4) on
+             -- the left, B (PAD2) at the bottom, A (PAD1) on the right; the D-pad unchanged
+             AT_SWAP = { [5] = { 0, 1 }, [6] = { -1, 0 }, [7] = { 0, -1 }, [8] = { 1, 0 } },
              -- PadMap m29's DS toolbar on the bare D-pad (left chat, up radial, right map, down Home's bar): the commands' own icons
              TOOLBAR = { 134332, 134829, 134269, "tex:Interface\\AddOns\\WowCompanion\\Media\\ds_forever_icon" } }
 WC.nbar = NB
 WC.nbarOn = false
 
--- the game's controller glyph atlases for a button in the player's layout (Hub.lua's glyphAtlas rule: "plain" = lettered, else the
--- Nintendo diamond's own letters, Rev_*)
-function NB.glyphAtlas(key)
+-- nbar2 THE ONE GLYPH RULE (NB and Hub share it; PadMap m119 / m120 draw the same): a face button wears ITS OWN letter (PAD1 A, PAD2 B,
+-- PAD3 X, PAD4 Y - the user, m119: "the inspect glyph is Y not X"; the app's harvested rev_a / rev_b / rev_x / rev_y art is keyed the
+-- same, Back = rev_b); the layout setting picks the set: "plain" the lettered Ltr_*, else the white Nintendo Rev_* (m120). Where the
+-- letter is drawn is the ABXY location (NB.AT_SWAP), never a relabel. The D-pad: the generic arrows.
+function WC.padGlyphAtlas(key)
     local db = rawget(_G, "WowCompanionSpellsDB")
-    local plain = type(db) == "table" and db.padLayout == "plain"
-    local face = plain and { PAD1 = "Ltr_A", PAD2 = "Ltr_B", PAD3 = "Ltr_X", PAD4 = "Ltr_Y" }
-                       or { PAD1 = "Rev_B", PAD2 = "Rev_A", PAD3 = "Rev_Y", PAD4 = "Rev_X" }
-    if face[key] then return { "Gamepad_" .. face[key] .. "_64" } end
+    local set = (type(db) == "table" and db.padLayout == "plain") and "Ltr_" or "Rev_"
+    local letter = ({ PAD1 = "A", PAD2 = "B", PAD3 = "X", PAD4 = "Y" })[key]
+    if letter then return { "Gamepad_" .. set .. letter .. "_64" } end
     local d = ({ PADDUP = "Up", PADDDOWN = "Down", PADDLEFT = "Left", PADDRIGHT = "Right" })[key]
     if d then return { "Gamepad_Gen_" .. d .. "_64", "Gamepad_Gen_DPad" .. d .. "_64", "Gamepad_Ltr_" .. d .. "_64" } end
     return {}
 end
+NB.glyphAtlas = WC.padGlyphAtlas
 NB.GLYPH_WORD = { PAD1 = "A", PAD2 = "B", PAD3 = "X", PAD4 = "Y", PADDUP = "^", PADDDOWN = "v", PADDLEFT = "<", PADDRIGHT = ">" }
-NB.GLYPH_WORD_SWAP = { PAD1 = "B", PAD2 = "A", PAD3 = "Y", PAD4 = "X" }
+-- nbar2: an atlas this client really has (Trail's PRD.atlasOn: GetAtlasInfo knows it and SetAtlas did not return false; a pcall alone
+-- counts a refused atlas as drawn)
+function NB.atlasOn(tex, a)
+    local prd = rawget(WC, "prd")
+    if type(prd) == "table" and type(prd.atlasOn) == "function" then
+        local ok, r = pcall(prd.atlasOn, tex, a)
+        return ok and r == true
+    end
+    local CT = rawget(_G, "C_Texture")
+    if type(CT) == "table" and type(CT.GetAtlasInfo) == "function" then
+        local okI, info = pcall(CT.GetAtlasInfo, a)
+        if not (okI and type(info) == "table") then return false end
+    end
+    local ok, r = pcall(function() return tex:SetAtlas(a) end)
+    return ok and r ~= false
+end
+function NB.layout()
+    local db = rawget(_G, "WowCompanionSpellsDB")
+    return (type(db) == "table" and db.padLayout == "plain") and "plain" or "swap"
+end
+-- a button's place in its diamond for the layout (the faces move with the ABXY location)
+function NB.anchor(b, lay)
+    local p = b.p
+    local a = (lay == "swap" and NB.AT_SWAP[p]) or NB.AT[p]
+    local cx = (p <= 4) and -NB.DX or NB.DX
+    pcall(b.ClearAllPoints, b)
+    b:SetPoint("CENTER", b.nbParent, "CENTER", cx + a[1] * NB.OFF, a[2] * NB.OFF)
+    b.alay = lay
+end
 
 -- THE LIVE LAYER: 1 none, 2 ZL, 3 ZR, 4 both, from the controller's own state (addon code reads C_GamePad.GetDeviceMappedState; the
 -- buttons indexed as the router's, ButtonBindingToIndex + 1); while a window owns the pad the game draws the base bar alone
@@ -1536,7 +1576,7 @@ function NB.button(parent, p)
     local b = CreateFrame("Frame", nil, parent)
     b:SetSize(NB.B, NB.B)
     pcall(b.EnableMouse, b, false)
-    b.p = p
+    b.p, b.nbParent = p, parent
     b.bg = b:CreateTexture(nil, "BACKGROUND")
     b.bg:SetAllPoints(b)
     pcall(b.bg.SetColorTexture, b.bg, 0, 0, 0, 0.45)
@@ -1577,9 +1617,7 @@ function NB.build()
     f.btn = {}
     for p = 1, 8 do
         local b = NB.button(f, p)
-        local a = NB.AT[p]
-        local cx = (p <= 4) and -NB.DX or NB.DX
-        b:SetPoint("CENTER", f, "CENTER", cx + a[1] * NB.OFF, a[2] * NB.OFF)
+        NB.anchor(b, NB.layout())                 -- nbar2: the faces at the layout's ABXY location
         f.btn[p] = b
     end
     -- the layer held now, over the bar's middle (none for the bare layer)
@@ -1587,6 +1625,10 @@ function NB.build()
     f.layer:SetPoint("CENTER", f, "CENTER", 0, 0)
     f:Hide()
     f:SetScript("OnUpdate", function(_, el) NB.tick(el) end)
+    -- nbar2: the stock bar's spot / scale again when the UI scale or the screen changes
+    pcall(f.RegisterEvent, f, "UI_SCALE_CHANGED")
+    pcall(f.RegisterEvent, f, "DISPLAY_SIZE_CHANGED")
+    f:SetScript("OnEvent", function() if NB.on then pcall(NB.place) end end)
     NB.f, NB.built = f, true
     NB.place()
     return f
@@ -1604,10 +1646,19 @@ function NB.place()
     end
     local es = num(MS(mf, "GetEffectiveScale"))
     local us = num(MS(UIParent, "GetEffectiveScale"))
+    local k = (es and us and us > 0 and es > 0) and es / us or nil
+    if not (cx and cy and cx > 0 and cy > 0) and NB.lastC then
+        -- nbar2: a fight hides the centre (secret): the last spot read stays (never moved to the default mid-fight)
+        cx, cy, k = NB.lastC[1], NB.lastC[2], k or NB.lastC[3]
+    end
+    k = k or 1
+    -- nbar2: the stock bar's own scale on ours (its buttons the stock size); the offsets then in its own units
+    pcall(f.SetScale, f, k)
+    NB.scale = k
     pcall(f.ClearAllPoints, f)
     if cx and cy and cx > 0 and cy > 0 then
-        local k = (es and us and us > 0) and es / us or 1
-        f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx * k, cy * k)
+        NB.lastC = { cx, cy, k }
+        f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx, cy)
         NB.at = "stock"
     else
         f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, NB.Y_DEF)
@@ -1646,7 +1697,9 @@ end
 NB.refEntry, NB.slotEntry = refEntry, slotEntry
 
 -- WHAT A PRESS DOES at (set, p) now -> an entry { kind = "slot" (d) / "spell" (id) / "icon" / "empty", icon }
-function NB.resolve(set, p, lay, page, fight, dpadOn, hasTarget)
+-- `fight` = the ROUTER's fight switch with Combat controls on (NB.fightCtx: off, no fight text is armed and a press casts the slot);
+-- `form` = the active form's spell id (its own In-combat set on the bare layer, PadMap m55: the router's "wc-ff-<form>-<pos>")
+function NB.resolve(set, p, lay, page, fight, dpadOn, hasTarget, form)
     local d = lay and lay.d and lay.d[p] or nil
     local v = nil
     local pm = rawget(WC, "padMap")
@@ -1654,27 +1707,59 @@ function NB.resolve(set, p, lay, page, fight, dpadOn, hasTarget)
         local ok, r = pcall(pm.slotAt, page, set, p)
         if ok and type(r) == "table" then v = r end
     end
+    -- nbar2: what the button holds outside the fight pictures: a command / binding (also under a fight-layer entry: its Otherwise)
+    local function base()
+        if v then
+            if v.kind == "command" or v.kind == "bind" then return { kind = "icon", icon = v.i } end
+            if v.kind == "combat" and v.ov and (v.base == "bind" or v.base == "command") and type(v.o) == "table" then
+                return { kind = "icon", icon = v.o.i }
+            end
+        end
+        return slotEntry(d, hasTarget)
+    end
+    if set == 1 and fight and form and type(pm) == "table" and type(pm.formFight) == "function" then
+        -- nbar2: in a form, its own In-combat spell (or whole-button thing) wins on the bare layer, as the router and Home (OV.fightAt)
+        local ok, e = pcall(pm.formFight, form, p)
+        if ok and type(e) == "table" then return refEntry(e) end
+    end
     if set == 1 and p <= 4 then
         -- the bare D-pad: the fight layer's In-combat spell in a fight, else DS Forever's toolbar while the router holds it
         if fight and v and v.kind == "combat" and v.ov and type(v.c) == "table" then return refEntry(v.c) end
         if dpadOn then return { kind = "icon", icon = NB.TOOLBAR[p] } end
-        return slotEntry(d, hasTarget)
+        return base()                                   -- nbar2: a command / binding on the bare D-pad (no toolbar) too
     end
     if set == 1 then
         -- the bare faces: the game's fixed four; a face's own fight spell (PadMap's FACE: X / Y / A) in a fight
         if fight and v and type(v.cf) == "table" then return refEntry(v.cf) end
         return slotEntry(d, hasTarget)
     end
-    if v then
-        if v.kind == "combat" and v.ov then
-            if fight and type(v.c) == "table" then return refEntry(v.c) end
-            if (v.base == "bind" or v.base == "command") and type(v.o) == "table" then return { kind = "icon", icon = v.o.i } end
-            return slotEntry(d, hasTarget)
-        elseif v.kind == "command" or v.kind == "bind" then
-            return { kind = "icon", icon = v.i }
+    if fight and v and v.kind == "combat" and v.ov and type(v.c) == "table" then return refEntry(v.c) end
+    return base()
+end
+
+-- nbar2: the fight switch as the ROUTER has it, and the form now. The router's own switch (PadMap's sw: the fight or an attack /
+-- auto-repeat armed, not given back by B) is WC.tgGrown (the Y router button's attributes: true / false, nil = not routed: then the
+-- fight itself); nothing of it while Combat controls are off (no fight text armed: a press casts the slot)
+function NB.fightCtx(fight)
+    local pm = rawget(WC, "padMap")
+    if type(pm) == "table" and type(pm.combatOn) == "function" then
+        local ok, on = pcall(pm.combatOn)
+        if ok and on == false then return false, nil end
+    end
+    local sw = fight
+    if type(WC.tgGrown) == "function" then
+        local ok, g = pcall(WC.tgGrown)
+        if ok and (g == true or g == false) then sw = g end
+    end
+    if not sw then return false, nil end
+    local form = nil
+    if type(pm) == "table" and type(pm.forms) == "function" then
+        local ok, fs = pcall(pm.forms)
+        if ok and type(fs) == "table" then
+            for _, fo in ipairs(fs) do if type(fo) == "table" and fo.on == true and type(fo.id) == "number" then form = fo.id end end
         end
     end
-    return slotEntry(d, hasTarget)
+    return true, form
 end
 
 -- the spell's own NeverSecret "active" flag (the fallback's dim), not the GCD's
@@ -1743,15 +1828,16 @@ end
 
 function NB.glyph(b)
     local key = NB.KEY_OF[b.p]
-    local db = rawget(_G, "WowCompanionSpellsDB")
-    local lay = (type(db) == "table" and db.padLayout == "plain") and "plain" or "swap"
+    local lay = NB.layout()
+    if b.alay ~= lay then NB.anchor(b, lay) end          -- nbar2: the faces follow the ABXY location
     if b.gkey == key and b.glay == lay then return end
     b.gkey, b.glay = key, lay
     for _, a in ipairs(NB.glyphAtlas(key)) do
-        if pcall(b.glyph.SetAtlas, b.glyph, a) then b.glyph:Show(); b.word:SetText(""); b.atlas = a; return end
+        -- nbar2: only an atlas the client really has (a refused one falls to the next, then the letter)
+        if NB.atlasOn(b.glyph, a) then b.glyph:Show(); b.word:SetText(""); b.atlas = a; return end
     end
     b.glyph:Hide(); b.atlas = nil
-    b.word:SetText((lay == "swap" and NB.GLYPH_WORD_SWAP[key]) or NB.GLYPH_WORD[key] or "")
+    b.word:SetText(NB.GLYPH_WORD[key] or "")
 end
 
 -- one full redraw of the live layer
@@ -1761,6 +1847,13 @@ function NB.refresh()
     local combat = S(InCombatLockdown) == true
     local fight = combat or S(UnitAffectingCombat, "player") == true
     local hasTarget = S(UnitExists, "target") == true
+    -- nbar2: hidden with the stock bar (a pet battle, a cinematic, out of gamepad mode: the game's own IsVisible, a plain read);
+    -- our own frame's alpha, so the tick keeps watching
+    local mf = mainFrame()
+    local vis = mf ~= nil and MS(mf, "IsVisible") ~= false
+    pcall(f.SetAlpha, f, vis and 1 or 0)
+    NB.vis = vis
+    local fightSw, form = NB.fightCtx(fight)
     local bu = barsUsable()
     local set = (bu == false) and 1 or NB.heldSet()
     NB.set = set
@@ -1779,7 +1872,7 @@ function NB.refresh()
     NB.shown = {}
     for p = 1, 8 do
         local b = f.btn[p]
-        local e = NB.resolve(set, p, lay, page, fight, dpadOn, hasTarget)
+        local e = NB.resolve(set, p, lay, page, fightSw, dpadOn, hasTarget, form)
         NB.glyph(b)
         local st = nil
         if e.kind == "slot" then st = buttonState(e.d, combat, hasTarget)
@@ -1824,6 +1917,10 @@ function NB.tick(el)
     if NB.acc < NB.POLL_S then return end
     NB.acc = 0
     local bu = barsUsable()
+    if bu ~= NB.bu then                                 -- nbar2: a window taking / giving back the pad collapses the stock bar
+        NB.bu = bu
+        pcall(NB.place)
+    end
     local set = (bu == false) and 1 or NB.heldSet()
     if set ~= NB.set or NB.accS >= NB.STATE_S then
         NB.accS = 0

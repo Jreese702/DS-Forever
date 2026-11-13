@@ -55,7 +55,7 @@ function Frame:SetScript(k, fn) self[k] = fn end
 CHILD = {}
 function CreateFrame(kind, name, parent) local f = mk(kind, name); f.parent = parent; if name then _G[name] = f end; MADE[#MADE + 1] = f; return f end
 MADE = {}
-ATLAS = { ["Gamepad_Rev_Minus_64"] = true, ["Gamepad_Rev_A_64"] = true, ["Gamepad_Gen_Up_64"] = true, ["Gamepad_Gen_Down_64"] = true }
+ATLAS = { ["Gamepad_Rev_Minus_64"] = true, ["Gamepad_Rev_B_64"] = true, ["Gamepad_Gen_Up_64"] = true, ["Gamepad_Gen_Down_64"] = true }
 -- hub38: the game's side tab pieces (the kit's side_tab / side_tab_on: 110 x 120 on their sheet)
 C_Texture = { GetAtlasInfo = function(a)
     if a == "common-sidetab-c60-2x" or a == "common-sidetab-selected-c60-2x" then
@@ -165,7 +165,7 @@ def main():
 
     src = open(HUB, encoding="utf-8").read()
     chk("hub42: the version tag (hub38 the player / pet row, the game's side tab; hub40 the bars one column wide; hub41 pitch 64; hub42 the "
-        "left column / the grid under the HUD, the fade, the tab beside the grid)", 'local HV = "hub45"' in src and "hub44:" in src and "hub42:" in src and "hub43:" in src)
+        "left column / the grid under the HUD, the fade, the tab beside the grid)", 'local HV = "hub46"' in src and "hub45:" in src and "hub44:" in src and "hub42:" in src and "hub43:" in src)
     chk("hub34: the combat log's switch calls are gone (PadMap m129)", 'WC.clogSync' not in src and 'WC.clogTicker' not in src)
     chk("hub42: the fade runs every frame from the driver (PF.fadeTick on drv's OnUpdate), alpha only, FADE_S %s s" % PF.FADE_S,
         'pcall(UF.pf.fadeTick, el)' in src and 0.15 <= PF.FADE_S <= 0.25)
