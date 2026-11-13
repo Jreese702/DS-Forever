@@ -113,7 +113,7 @@ class DialogView(context: Context) : View(context) {
                 // the game answers only the dialog it focuses, with the key it gives each button
                 if (!d.focus || foldOf(d) > 0f) continue
                 val delayed = secondsOf(d.delay) > 0
-                val b = d.buttons.firstOrNull { it.key == key && it.on && !(delayed && it.k == 1) }
+                val b = d.buttons.firstOrNull { it.key == key && it.on && !(delayed && it.k == 1) && DialogPad.mayPress(d.which, it.k, finger = false) }   // camp-exit merge: a key on Exit Now (no guard yet) is never ours
                 val hit = when {
                     b != null -> "b${b.k}"
                     d.extra != null && d.extraKey == key -> "extra"
