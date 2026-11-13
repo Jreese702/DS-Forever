@@ -303,7 +303,7 @@ class SpellsOverlay(
             for (i in 0 until CastStripModel.SLOTS) {
                 val sr = cbSlotRect(i, w, cy)
                 val sl = bar?.slots?.getOrNull(i)
-                val bmp = if (i == at && here != i) e?.let { Icons.get(it.icon) } else sl?.icon?.let { UiKit.icon(it) }
+                val bmp = if (i == at && here != i) e?.let { Icons.get(it.icon) } else sl?.icon?.let { Icons.get(it) ?: UiKit.icon(it) }
                 UiKit.slot(c, bmp, sr.left, sr.top, sr.width())
                 if (i == here) UiKit.glow(c, RectF(sr).apply { inset(-10f, -10f) }, Color.rgb(60, 255, 60), 0.9f)
                 if (i == at) UiKit.focus(c, RectF(sr).apply { inset(-6f, -6f) })

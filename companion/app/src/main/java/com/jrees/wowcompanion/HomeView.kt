@@ -93,10 +93,10 @@ class HomeView(
      * requestLayout every frame was what made the combat switch lag the game).
      */
     private val chatGlideBox = RectF()
-    /** THE TAP-TO-CAST BAR (GitHub #43 cb3, [CastStripModel]): 6 slots, three at a time under the chat (Left) or under the minimap
-     *  (Right), all six under both (Both), by Settings > Bottom screen > Tap-to-cast bar (Off by default); a tap = ONE pad tap on the
-     *  add-on's "castbar" row, a swipe on a Left / Right bar flips to the other three (cb4: it no longer moves the bar) */
-    private val castStrip = CastStripView(context, { i -> castStripTap(i) }) { p -> Log.i(TAG, "cast bar: page ${p + 1}") }
+    /** THE TAP-TO-CAST BAR (GitHub #43 cb3, [CastStripModel]): 6 slots, under the chat (Left) or under the minimap (Right) a strip
+     *  with 4 in view that scrolls freely (cb5: no pages; edge arrows where slots are hidden), all six under both (Both), by Settings >
+     *  Bottom screen > Tap-to-cast bar (Off by default); a tap = ONE pad tap on the add-on's "castbar" row (the scroll never moves the bar) */
+    private val castStrip = CastStripView(context) { i -> castStripTap(i) }
     // CLOSE is added last, so it is drawn above the module it closes
     private val views: Map<Part, View> = linkedMapOf(
         Part.BARS to barsSlot, Part.QUESTS to questPane, Part.CHAT to chatPane, Part.PARTY to partyView, Part.MAP to mapSlot,
