@@ -431,6 +431,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
 
     private fun word(m: UiMode) = when (m) {
         UiMode.ON -> "On"; UiMode.OFF -> "Off"; UiMode.DYNAMIC -> "Dynamic"; UiMode.TRACKING -> "Tracking"
+        UiMode.NINTENDO -> "Nintendo"                                     // issue #195
     }
 
     private fun explain(r: GameUi.Row): String {
@@ -478,6 +479,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             UiMode.DYNAMIC -> if (UiElements.of(r.id)?.onHome == true)
                 "Hidden only while the $room room or Home is showing." else "Hidden only while the $room room is showing."
             UiMode.TRACKING -> "Shown while Find Herbs, Minerals or Treasure is on."
+            UiMode.NINTENDO -> "DS Forever's bar replaces the game's on the top screen: the layer you hold, Nintendo buttons, cooldowns."
         }
     }
 
@@ -594,6 +596,11 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                     moveTo(X(9f), Y(15f)); cubicTo(X(9f), Y(9f), X(13f), Y(8f), X(16f), Y(8f))
                     cubicTo(X(16f), Y(12f), X(14f), Y(15f), X(9f), Y(15f)); close()
                 }, p)
+            }
+            // issue #195: the Nintendo diamond, four buttons
+            UiMode.NINTENDO -> {
+                c.drawCircle(X(12f), Y(5f), 3f * s, p); c.drawCircle(X(12f), Y(19f), 3f * s, p)
+                c.drawCircle(X(5f), Y(12f), 3f * s, p); c.drawCircle(X(19f), Y(12f), 3f * s, p)
             }
             UiMode.DYNAMIC -> {
                 c.drawRoundRect(RectF(X(3f), Y(3f), X(21f), Y(11f)), 2f, 2f, p)

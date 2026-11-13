@@ -3190,7 +3190,13 @@ end
 -- indexed, a secret icon handed straight to SetTexture (it takes one), and when the index loop throws or gives only secret tables,
 -- the instance-ID route (GetUnitAuraInstanceIDs, plain in a fight) as Auras.lua reads them. What a fight's reads gave is reported
 -- once per kind (probe "aurasec": the app logs it under WCLOG, so the next issue report carries it).
-WC.prd = { V = "prd16", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
+-- prd17 (issue #195, the user 2026-11-12, "Yes, fix them too"): in a fight the aura times are secret and the swipe's
+-- SetCooldownFromExpirationTime is AllowedWhenUntainted (an add-on's call with a secret fails: a blank swipe). This client's docs give
+-- the aura's DURATION OBJECT (C_UnitAuras.GetAuraDuration(unit, auraInstanceID)) for Cooldown:SetCooldownFromDurationObject, as
+-- Blizzard's own aura buttons do: P.auraSweep hands it straight over (never read or compared) for the HUD's row and Hub's target bar;
+-- without the functions, or refused, the old route as before. Feature-detected; the route that worked rides one "cap" line (probe
+-- "aurasweep") per route a login.
+WC.prd = { V = "prd17", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
            PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
@@ -3811,7 +3817,7 @@ do
             local dur, exp = a.dur, a.exp
             if a.secret then
                 ab.sec = ab.sec + 1                                          -- (c) shown, after the plain ones; no seconds
-                sb[#sb + 1] = { icon = a.icon, sicon = a.sicon, sdur = a.sdur, sexp = a.sexp, secret = true }
+                sb[#sb + 1] = { id = a.id, icon = a.icon, sicon = a.sicon, sdur = a.sdur, sexp = a.sexp, secret = true }
             elseif not (dur and exp and dur > 0) then ab.nodur = ab.nodur + 1
             elseif dur > P.BUFF_DUR then ab.long = ab.long + 1
             elseif #b < P.BUFF_MAX then
@@ -3824,7 +3830,7 @@ do
         for _, a in ipairs(dl) do
             local dur, exp = a.dur, a.exp
             if a.secret then
-                sd[#sd + 1] = { icon = a.icon, sicon = a.sicon, sdur = a.sdur, sexp = a.sexp, secret = true, kind = a.kind }
+                sd[#sd + 1] = { id = a.id, icon = a.icon, sicon = a.sicon, sdur = a.sdur, sexp = a.sexp, secret = true, kind = a.kind }
             elseif dur and exp and dur > 0 and #d < P.DEBUFF_MAX then
                 d[#d + 1] = { icon = a.icon, sicon = a.sicon, dur = dur, exp = exp, n = a.n, kind = a.kind }
             end
@@ -3835,6 +3841,30 @@ do
         P.ab = ab
         pcall(P.auraProbe, "player", hl, { dgh, dgd })
         return b, d
+    end
+    -- prd17: an aura's swipe from its duration object (unit + a PLAIN auraInstanceID): true = set; false = no route here (the caller
+    -- falls back). The object is never read, compared or computed: straight to the widget's setter
+    P.sweepSeen = {}
+    function P.auraSweep(cd, unit, a)
+        local CU = type(C_UnitAuras) == "table" and C_UnitAuras or nil
+        local get = CU and CU.GetAuraDuration
+        local route
+        if type(get) ~= "function" or type(cd) ~= "table" or type(cd.SetCooldownFromDurationObject) ~= "function" then route = "none"
+        elseif type(a) ~= "table" or type(a.id) ~= "number" or secret(a.id) then route = "noid"
+        else
+            local ok, obj = pcall(get, unit, a.id)
+            if ok and type(obj) ~= "nil" and pcall(cd.SetCooldownFromDurationObject, cd, obj, true) then route = "dur"
+            else route = "refused" end
+        end
+        if not P.sweepSeen[route] then
+            P.sweepSeen[route] = true
+            if WC.send and WC.encode then
+                local okC, c = pcall(InCombatLockdown)
+                pcall(function() WC.send(WC.encode({ type = "cap", probe = "aurasweep", v = P.V, route = route, u = unit,
+                                                     fight = okC and c == true })) end)
+            end
+        end
+        return route == "dur"
     end
     -- the BuffFrame's own way: "2 m" / "8 s"
     local function secs(left)
@@ -3878,7 +3908,10 @@ do
                         -- (c) the secret times straight to the swipe (a widget setter takes them), no arithmetic, no seconds
                         -- prd16: a secret is never compared: handed again once per re-read of the list (P.auraAt, plain)
                         if o.sAt ~= P.auraAt or not o.sexp then
-                            if not pcall(function() o.cd:SetCooldownFromExpirationTime(a.sexp, a.sdur) end) then pcall(function() o.cd:Clear() end) end
+                            -- prd17: the duration object first (issue #195's "Yes, fix them too"), the secret times as before without it
+                            if not P.auraSweep(o.cd, "player", a) and not pcall(function() o.cd:SetCooldownFromExpirationTime(a.sexp, a.sdur) end) then
+                                pcall(function() o.cd:Clear() end)
+                            end
                             o.sexp, o.exp, o.dur, o.sAt = true, nil, nil, P.auraAt
                         end
                     elseif o.exp ~= a.exp or o.dur ~= a.dur then

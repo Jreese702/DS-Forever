@@ -1,4 +1,14 @@
 -- WowCompanion / ActionBar.lua
+-- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
+-- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
+-- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar2 (review of nbar1, issue #195: "exactly what a press casts"): a form's own In-combat spell first in a fight (PadMap m55 formFight);
+-- the fight pictures only while Combat controls are on (WC.padMap.combatOn) and on the ROUTER's own switch (WC.tgGrown: the fight or an
+-- attack / auto-repeat armed, not given back by B - PadMap's "sw"); commands and bindings on the bare D-pad drawn; the glyphs by the
+-- button's own letter (PadMap m119 / m120, the user: "the inspect glyph is Y not X"; the app's rev_* art) in ONE helper Hub shares
+-- (WC.padGlyphAtlas), the faces at the ABXY location (swap: Y left, X top, A right, B bottom, as CastView); an atlas this client refuses
+-- falls to the next / the letter (WC.prd.atlasOn); ours follows the stock bar's visibility and scale (UI_SCALE_CHANGED /
+-- DISPLAY_SIZE_CHANGED, a window taking the pad) and keeps its last spot when a fight hides the centre.
 -- The CAST room's data. Two feeds live here:
 --
 --  1. LEGACY keyboard-slot rows (`slots`, slots 1-12 + their ACTIONBUTTONn keys). Unchanged; the app
@@ -1394,7 +1404,7 @@ local hookedShow, hookedPage, wrapped = false, false, false
 local lastHookPage = nil
 
 local function onShowHook(frame)
-    if WC.hudHidden then setAlpha(frame, 0) end
+    if WC.hudHidden or WC.nbarOn then setAlpha(frame, 0) end      -- nbar1: the Nintendo bar keeps the stock bar at 0 too
 end
 
 local function onPageHook()
@@ -1430,16 +1440,517 @@ end
 
 function WC.hudShow()
     WC.hudHidden = false                      -- flag FIRST, then restore
-    setAlpha(mainFrame(), 1)
-    setAlpha(_G.GamepadPersistentInputLegend, 1)
+    -- nbar1: while the Nintendo bar stands in, the stock bar stays at alpha 0 (its own switch gives it back)
+    setAlpha(mainFrame(), WC.nbarOn and 0 or 1)
+    setAlpha(_G.GamepadPersistentInputLegend, WC.nbarOn and 0 or 1)
     layoutSoon(0)
 end
 
 local function reapplyAlpha()
-    if WC.hudHidden then
+    if WC.hudHidden or WC.nbarOn then         -- nbar1: the Nintendo bar's stand-in too
         setAlpha(mainFrame(), 0)
         setAlpha(_G.GamepadPersistentInputLegend, 0)
     end
+end
+
+---------------------------------------------------------------------------------------------------
+-- nbar1 THE NINTENDO BAR ON THE TOP SCREEN (issue #195, "Adaptative layout for action bars port to main screen": the top screen's
+-- action bar set On shows the stock gamepad bar with the stock glyphs; the player wants DS Forever's Nintendo-layout bar there). The
+-- user's picks (2026-11-12): a new choice "Nintendo" beside On / Off / Dynamic for the top screen's controller bars (the app's "hud"
+-- element; Hub.lua taps "uisw" NBAR_OFF / NBAR_ON -> WC.nbarSet); it REPLACES the stock bar in the same spot - the stock bar at alpha 0
+-- (SetAlpha only: the controller keeps casting through it exactly as before), ours shown; the LIVE LAYER only (plain / ZL / ZR /
+-- ZL+ZR, switching as the triggers are held, read from the controller's own state as Book.lua's padSet does); each button resolved as
+-- a press resolves it (the stock bar's own layer, so a stance / form bar's override is the picture; PadMap's overlay over it where the
+-- router casts: the D-pad's DS toolbar, the fight layer's In-combat spells, the faces' fight spells, commands and bindings); display
+-- only: plain frames, EnableMouse(false), no secure template, nothing of Blizzard's changed. Each button: its icon, its Nintendo glyph
+-- (the game's own Gamepad_Rev_* atlas for the swap layout, Ltr_* for the plain one: the layout setting applies, as Hub's party glyphs),
+-- the cooldown and charge sweeps, and the tints of the bars' own state (buttonState / spellState): unusable grey, not enough mana blue
+-- (never red), out of range = the GLYPH red (the user's ruling: red is range only).
+-- COOLDOWNS IN A FIGHT: GetActionCooldown / GetActionCharges are SecretWhenCooldownsRestricted and Cooldown:SetCooldown /
+-- SetCooldownFromExpirationTime are AllowedWhenUntainted (an add-on's call fails); this client's docs give duration OBJECTS for both
+-- (C_ActionBar.GetActionCooldownDuration / GetActionChargeDuration, C_Spell.GetSpellCooldownDuration / GetSpellChargeDuration ->
+-- Cooldown:SetCooldownFromDurationObject, as Blizzard's own aura buttons do). Not proven on the device: every function feature-detected
+-- and pcall'd; without them (or refused) the button is dimmed while its NeverSecret isActive says it cools (no sweep). The route that
+-- worked rides one "cap" line (probe "nbarcd") out of a fight and one in a fight per login. A secret is never compared or computed.
+---------------------------------------------------------------------------------------------------
+local NB = { V = "nbar2", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64,
+             POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
+             LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
+             -- the button a position is, by the game's binding (bar.actionButtons order: D-pad L / U / R / D, face left / top / right / bottom)
+             KEY_OF = { "PADDLEFT", "PADDUP", "PADDRIGHT", "PADDDOWN", "PAD3", "PAD4", "PAD2", "PAD1" },
+             -- the place of each position in its diamond (D-pad diamond left, face diamond right)
+             AT = { { -1, 0 }, { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 }, { 0, 1 }, { 1, 0 }, { 0, -1 } },
+             -- nbar2: the ABXY location "swap" (the Nintendo arrangement, CastView's NINTENDO_FACE_SWAP): X (PAD3) on top, Y (PAD4) on
+             -- the left, B (PAD2) at the bottom, A (PAD1) on the right; the D-pad unchanged
+             AT_SWAP = { [5] = { 0, 1 }, [6] = { -1, 0 }, [7] = { 0, -1 }, [8] = { 1, 0 } },
+             -- PadMap m29's DS toolbar on the bare D-pad (left chat, up radial, right map, down Home's bar): the commands' own icons
+             TOOLBAR = { 134332, 134829, 134269, "tex:Interface\\AddOns\\WowCompanion\\Media\\ds_forever_icon" } }
+WC.nbar = NB
+WC.nbarOn = false
+
+-- nbar2 THE ONE GLYPH RULE (NB and Hub share it; PadMap m119 / m120 draw the same): a face button wears ITS OWN letter (PAD1 A, PAD2 B,
+-- PAD3 X, PAD4 Y - the user, m119: "the inspect glyph is Y not X"; the app's harvested rev_a / rev_b / rev_x / rev_y art is keyed the
+-- same, Back = rev_b); the layout setting picks the set: "plain" the lettered Ltr_*, else the white Nintendo Rev_* (m120). Where the
+-- letter is drawn is the ABXY location (NB.AT_SWAP), never a relabel. The D-pad: the generic arrows.
+function WC.padGlyphAtlas(key)
+    local db = rawget(_G, "WowCompanionSpellsDB")
+    local set = (type(db) == "table" and db.padLayout == "plain") and "Ltr_" or "Rev_"
+    local letter = ({ PAD1 = "A", PAD2 = "B", PAD3 = "X", PAD4 = "Y" })[key]
+    if letter then return { "Gamepad_" .. set .. letter .. "_64" } end
+    local d = ({ PADDUP = "Up", PADDDOWN = "Down", PADDLEFT = "Left", PADDRIGHT = "Right" })[key]
+    if d then return { "Gamepad_Gen_" .. d .. "_64", "Gamepad_Gen_DPad" .. d .. "_64", "Gamepad_Ltr_" .. d .. "_64" } end
+    return {}
+end
+NB.glyphAtlas = WC.padGlyphAtlas
+NB.GLYPH_WORD = { PAD1 = "A", PAD2 = "B", PAD3 = "X", PAD4 = "Y", PADDUP = "^", PADDDOWN = "v", PADDLEFT = "<", PADDRIGHT = ">" }
+-- nbar2: an atlas this client really has (Trail's PRD.atlasOn: GetAtlasInfo knows it and SetAtlas did not return false; a pcall alone
+-- counts a refused atlas as drawn)
+function NB.atlasOn(tex, a)
+    local prd = rawget(WC, "prd")
+    if type(prd) == "table" and type(prd.atlasOn) == "function" then
+        local ok, r = pcall(prd.atlasOn, tex, a)
+        return ok and r == true
+    end
+    local CT = rawget(_G, "C_Texture")
+    if type(CT) == "table" and type(CT.GetAtlasInfo) == "function" then
+        local okI, info = pcall(CT.GetAtlasInfo, a)
+        if not (okI and type(info) == "table") then return false end
+    end
+    local ok, r = pcall(function() return tex:SetAtlas(a) end)
+    return ok and r ~= false
+end
+function NB.layout()
+    local db = rawget(_G, "WowCompanionSpellsDB")
+    return (type(db) == "table" and db.padLayout == "plain") and "plain" or "swap"
+end
+-- a button's place in its diamond for the layout (the faces move with the ABXY location)
+function NB.anchor(b, lay)
+    local p = b.p
+    local a = (lay == "swap" and NB.AT_SWAP[p]) or NB.AT[p]
+    local cx = (p <= 4) and -NB.DX or NB.DX
+    pcall(b.ClearAllPoints, b)
+    b:SetPoint("CENTER", b.nbParent, "CENTER", cx + a[1] * NB.OFF, a[2] * NB.OFF)
+    b.alay = lay
+end
+
+-- THE LIVE LAYER: 1 none, 2 ZL, 3 ZR, 4 both, from the controller's own state (addon code reads C_GamePad.GetDeviceMappedState; the
+-- buttons indexed as the router's, ButtonBindingToIndex + 1); while a window owns the pad the game draws the base bar alone
+function NB.padIdx(name)
+    local gp = rawget(_G, "C_GamePad")
+    if type(gp) ~= "table" or type(gp.ButtonBindingToIndex) ~= "function" then return nil end
+    local v = num(S(gp.ButtonBindingToIndex, name))
+    return (v and v >= 0) and math.floor(v) + 1 or nil
+end
+function NB.heldSet()
+    local gp = rawget(_G, "C_GamePad")
+    if type(gp) ~= "table" or type(gp.GetDeviceMappedState) ~= "function" then return 1 end
+    local dev = nil
+    if type(gp.GetActiveDeviceID) == "function" then dev = num(S(gp.GetActiveDeviceID)) end
+    if dev == nil and type(gp.GetCombinedDeviceID) == "function" then dev = num(S(gp.GetCombinedDeviceID)) end
+    local ok, st = pcall(gp.GetDeviceMappedState, dev)
+    if not ok or type(st) ~= "table" or not WC.isPlain(st) then return 1 end
+    local bt = field(st, "buttons")
+    if type(bt) ~= "table" or not WC.isPlain(bt) then return 1 end
+    local li, ri = NB.padIdx("PADLTRIGGER"), NB.padIdx("PADRTRIGGER")
+    if not li or not ri then return 1 end
+    local lt = S(function() return bt[li] end) == true
+    local rt = S(function() return bt[ri] end) == true
+    if lt and rt then return 4 elseif lt then return 2 elseif rt then return 3 end
+    return 1
+end
+
+-- a texture value (a file id, "atlas:<name>", "tex:<path>") onto a texture; false = nothing to show
+function NB.paint(tx, v)
+    if v == nil or v == false then pcall(tx.SetTexture, tx, nil); return false end
+    if type(v) == "number" then return (pcall(tx.SetTexture, tx, v)) end
+    if type(v) == "string" then
+        if v:sub(1, 6) == "atlas:" then return (pcall(tx.SetAtlas, tx, v:sub(7))) end
+        if v:sub(1, 4) == "tex:" then return (pcall(tx.SetTexture, tx, v:sub(5))) end
+        return (pcall(tx.SetTexture, tx, v))
+    end
+    return false
+end
+
+-- one button of our bar: plain frames only (no template but the game's plain cooldown swipe), never the mouse
+function NB.button(parent, p)
+    local b = CreateFrame("Frame", nil, parent)
+    b:SetSize(NB.B, NB.B)
+    pcall(b.EnableMouse, b, false)
+    b.p, b.nbParent = p, parent
+    b.bg = b:CreateTexture(nil, "BACKGROUND")
+    b.bg:SetAllPoints(b)
+    pcall(b.bg.SetColorTexture, b.bg, 0, 0, 0, 0.45)
+    b.icon = b:CreateTexture(nil, "ARTWORK")
+    b.icon:SetPoint("TOPLEFT", b, "TOPLEFT", 2, -2)
+    b.icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 2)
+    b.cd = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
+    b.cd:SetAllPoints(b.icon)
+    pcall(b.cd.EnableMouse, b.cd, false)
+    pcall(b.cd.SetDrawEdge, b.cd, false)
+    -- the charge sweep: the edge alone, as the game's own buttons draw a recharge
+    b.ch = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
+    b.ch:SetAllPoints(b.icon)
+    pcall(b.ch.EnableMouse, b.ch, false)
+    pcall(b.ch.SetDrawSwipe, b.ch, false)
+    pcall(b.ch.SetDrawEdge, b.ch, true)
+    -- the fallback's "cooling" dim (no sweep: the times are secret in a fight)
+    b.dim = b:CreateTexture(nil, "OVERLAY")
+    b.dim:SetAllPoints(b.icon)
+    pcall(b.dim.SetColorTexture, b.dim, 0, 0, 0, 0.6)
+    b.dim:Hide()
+    b.glyph = b:CreateTexture(nil, "OVERLAY", nil, 2)
+    b.glyph:SetSize(NB.GLYPH, NB.GLYPH)
+    b.glyph:SetPoint("CENTER", b, "BOTTOMRIGHT", -3, 3)
+    b.word = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    b.word:SetPoint("CENTER", b.glyph, "CENTER", 0, 0)
+    b.count = b:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    b.count:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 3, 3)
+    return b
+end
+
+function NB.build()
+    if NB.built then return NB.f end
+    local f = CreateFrame("Frame", "WowCompanionNintendoBar", UIParent)
+    pcall(f.EnableMouse, f, false)
+    pcall(f.SetFrameStrata, f, "MEDIUM")
+    f:SetSize(2 * NB.DX + 2 * NB.OFF + NB.B, 2 * NB.OFF + NB.B)
+    f.btn = {}
+    for p = 1, 8 do
+        local b = NB.button(f, p)
+        NB.anchor(b, NB.layout())                 -- nbar2: the faces at the layout's ABXY location
+        f.btn[p] = b
+    end
+    -- the layer held now, over the bar's middle (none for the bare layer)
+    f.layer = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    f.layer:SetPoint("CENTER", f, "CENTER", 0, 0)
+    f:Hide()
+    f:SetScript("OnUpdate", function(_, el) NB.tick(el) end)
+    -- nbar2: the stock bar's spot / scale again when the UI scale or the screen changes
+    pcall(f.RegisterEvent, f, "UI_SCALE_CHANGED")
+    pcall(f.RegisterEvent, f, "DISPLAY_SIZE_CHANGED")
+    f:SetScript("OnEvent", function() if NB.on then pcall(NB.place) end end)
+    NB.f, NB.built = f, true
+    NB.place()
+    return f
+end
+
+-- the stock bar's spot: its centre, read only (a plain number out of a fight), else bottom centre
+function NB.place()
+    local f = NB.f
+    if not f then return end
+    local mf = mainFrame()
+    local cx, cy = nil, nil
+    if mf ~= nil and type(field(mf, "GetCenter")) == "function" then
+        local r = PCALL(mf.GetCenter, mf)
+        if r[1] then cx, cy = num(SV(r[2])), num(SV(r[3])) end
+    end
+    local es = num(MS(mf, "GetEffectiveScale"))
+    local us = num(MS(UIParent, "GetEffectiveScale"))
+    local k = (es and us and us > 0 and es > 0) and es / us or nil
+    if not (cx and cy and cx > 0 and cy > 0) and NB.lastC then
+        -- nbar2: a fight hides the centre (secret): the last spot read stays (never moved to the default mid-fight)
+        cx, cy, k = NB.lastC[1], NB.lastC[2], k or NB.lastC[3]
+    end
+    k = k or 1
+    -- nbar2: the stock bar's own scale on ours (its buttons the stock size); the offsets then in its own units
+    pcall(f.SetScale, f, k)
+    NB.scale = k
+    pcall(f.ClearAllPoints, f)
+    if cx and cy and cx > 0 and cy > 0 then
+        NB.lastC = { cx, cy, k }
+        f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx, cy)
+        NB.at = "stock"
+    else
+        f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, NB.Y_DEF)
+        NB.at = "default"
+    end
+end
+
+-- a ref from PadMap's views ({ n, id, i } a spell; { n, i, t, key } a whole-button thing) -> an entry
+local function refEntry(ref)
+    if type(ref) ~= "table" then return { kind = "empty" } end
+    if ref.t ~= nil then return { kind = "icon", icon = ref.i } end
+    local id = num(ref.id)
+    local ic = ref.i
+    if ic == nil and id then ic = num(S(api("C_Spell", "GetSpellTexture"), id)) end
+    return { kind = "spell", id = id, icon = ic }
+end
+-- the stock bar's own button at this place (its layer follows a stance / form / possess bar's override)
+local function slotEntry(d, hasTarget)
+    if d == nil or d.k == "" then return { kind = "empty" } end
+    if d.k == "fixed" then
+        local ic = d.live and liveIcon(d, hasTarget) or iconOf(d.btn)
+        return { kind = "icon", icon = ic }
+    end
+    if d.k == "pet" then
+        local r = PCALL(_G.GetPetActionInfo, d.s)
+        local ic = nil
+        if r[1] then
+            local name, tex = realStr(SV(r[2])), SV(r[3])
+            if type(WC.petTok) == "table" and WC.petTok.isToken(SV(r[4]), name) then ic = WC.petTok.icon(tex) or texVal(tex)
+            else ic = texVal(tex) end
+        end
+        return { kind = "slot", d = d, icon = ic or iconOf(d.btn) }
+    end
+    return { kind = "slot", d = d, icon = texVal(S(A("GetActionTexture"), d.s)) or iconOf(d.btn) }
+end
+NB.refEntry, NB.slotEntry = refEntry, slotEntry
+
+-- WHAT A PRESS DOES at (set, p) now -> an entry { kind = "slot" (d) / "spell" (id) / "icon" / "empty", icon }
+-- `fight` = the ROUTER's fight switch with Combat controls on (NB.fightCtx: off, no fight text is armed and a press casts the slot);
+-- `form` = the active form's spell id (its own In-combat set on the bare layer, PadMap m55: the router's "wc-ff-<form>-<pos>")
+function NB.resolve(set, p, lay, page, fight, dpadOn, hasTarget, form)
+    local d = lay and lay.d and lay.d[p] or nil
+    local v = nil
+    local pm = rawget(WC, "padMap")
+    if type(pm) == "table" and type(pm.slotAt) == "function" then
+        local ok, r = pcall(pm.slotAt, page, set, p)
+        if ok and type(r) == "table" then v = r end
+    end
+    -- nbar2: what the button holds outside the fight pictures: a command / binding (also under a fight-layer entry: its Otherwise)
+    local function base()
+        if v then
+            if v.kind == "command" or v.kind == "bind" then return { kind = "icon", icon = v.i } end
+            if v.kind == "combat" and v.ov and (v.base == "bind" or v.base == "command") and type(v.o) == "table" then
+                return { kind = "icon", icon = v.o.i }
+            end
+        end
+        return slotEntry(d, hasTarget)
+    end
+    if set == 1 and fight and form and type(pm) == "table" and type(pm.formFight) == "function" then
+        -- nbar2: in a form, its own In-combat spell (or whole-button thing) wins on the bare layer, as the router and Home (OV.fightAt)
+        local ok, e = pcall(pm.formFight, form, p)
+        if ok and type(e) == "table" then return refEntry(e) end
+    end
+    if set == 1 and p <= 4 then
+        -- the bare D-pad: the fight layer's In-combat spell in a fight, else DS Forever's toolbar while the router holds it
+        if fight and v and v.kind == "combat" and v.ov and type(v.c) == "table" then return refEntry(v.c) end
+        if dpadOn then return { kind = "icon", icon = NB.TOOLBAR[p] } end
+        return base()                                   -- nbar2: a command / binding on the bare D-pad (no toolbar) too
+    end
+    if set == 1 then
+        -- the bare faces: the game's fixed four; a face's own fight spell (PadMap's FACE: X / Y / A) in a fight
+        if fight and v and type(v.cf) == "table" then return refEntry(v.cf) end
+        return slotEntry(d, hasTarget)
+    end
+    if fight and v and v.kind == "combat" and v.ov and type(v.c) == "table" then return refEntry(v.c) end
+    return base()
+end
+
+-- nbar2: the fight switch as the ROUTER has it, and the form now. The router's own switch (PadMap's sw: the fight or an attack /
+-- auto-repeat armed, not given back by B) is WC.tgGrown (the Y router button's attributes: true / false, nil = not routed: then the
+-- fight itself); nothing of it while Combat controls are off (no fight text armed: a press casts the slot)
+function NB.fightCtx(fight)
+    local pm = rawget(WC, "padMap")
+    if type(pm) == "table" and type(pm.combatOn) == "function" then
+        local ok, on = pcall(pm.combatOn)
+        if ok and on == false then return false, nil end
+    end
+    local sw = fight
+    if type(WC.tgGrown) == "function" then
+        local ok, g = pcall(WC.tgGrown)
+        if ok and (g == true or g == false) then sw = g end
+    end
+    if not sw then return false, nil end
+    local form = nil
+    if type(pm) == "table" and type(pm.forms) == "function" then
+        local ok, fs = pcall(pm.forms)
+        if ok and type(fs) == "table" then
+            for _, fo in ipairs(fs) do if type(fo) == "table" and fo.on == true and type(fo.id) == "number" then form = fo.id end end
+        end
+    end
+    return true, form
+end
+
+-- the spell's own NeverSecret "active" flag (the fallback's dim), not the GCD's
+local function spellCooling(id)
+    local ok, t = CALL(api("C_Spell", "GetSpellCooldown"), id)
+    if not ok or type(t) ~= "table" or not WC.isPlain(t) then return nil end
+    if tfield(t, "isActive") ~= true then return false end
+    return tfield(t, "isOnGCD") ~= true
+end
+
+-- THE SWEEPS: a duration object straight to the swipe (never read, compared or computed); else the dim. -> the route used
+function NB.cool(b, e, st)
+    local cdf, chf = b.cd, b.ch
+    local setDur = type(field(cdf, "SetCooldownFromDurationObject")) == "function"
+    local getCd, getCh, arg = nil, nil, nil
+    if e.kind == "slot" and e.d and e.d.k ~= "pet" and (e.d.s or 0) > 0 then
+        getCd, getCh, arg = api("C_ActionBar", "GetActionCooldownDuration"), api("C_ActionBar", "GetActionChargeDuration"), e.d.s
+    elseif e.kind == "spell" and e.id then
+        getCd, getCh, arg = api("C_Spell", "GetSpellCooldownDuration"), api("C_Spell", "GetSpellChargeDuration"), e.id
+    end
+    local stats = NB.stats
+    if arg == nil then
+        pcall(cdf.Clear, cdf); pcall(chf.Clear, chf); b.dim:Hide()
+        return nil
+    end
+    local route = nil
+    if setDur and getCd then
+        local ok, obj = pcall(getCd, arg, false)
+        if ok and type(obj) ~= "nil" and pcall(cdf.SetCooldownFromDurationObject, cdf, obj, true) then
+            route = "dur"
+            if stats then stats.ok = stats.ok + 1 end
+        elseif stats then stats.fail = stats.fail + 1 end
+    end
+    local chOk = false
+    if setDur and getCh then
+        local ok, obj = pcall(getCh, arg)
+        if ok and type(obj) ~= "nil" and pcall(chf.SetCooldownFromDurationObject, chf, obj, true) then chOk = true end
+    end
+    if not chOk then pcall(chf.Clear, chf) end
+    if stats and chOk then stats.ch = stats.ch + 1 end
+    if route == "dur" then b.dim:Hide(); return "dur" end
+    pcall(cdf.Clear, cdf)
+    -- the fallback: dimmed while the game's NeverSecret flag says it cools (the bars' own cd, the GCD left out)
+    local cooling
+    if e.kind == "slot" then cooling = st ~= nil and st.cd == 1 else cooling = spellCooling(arg) end
+    if cooling then b.dim:Show() else b.dim:Hide() end
+    return "dim"
+end
+
+-- the tints: unusable grey, not enough mana blue (never red); out of range = the glyph red (range only, the user's ruling)
+function NB.tint(b, st)
+    local u, m, r = st and st.u, st and st.m, st and st.r
+    if m == 1 then
+        pcall(b.icon.SetDesaturated, b.icon, false); b.icon:SetVertexColor(0.45, 0.55, 1)
+        b.look = "mana"
+    elseif u == 0 then
+        pcall(b.icon.SetDesaturated, b.icon, true); b.icon:SetVertexColor(0.45, 0.45, 0.45)
+        b.look = "unusable"
+    else
+        pcall(b.icon.SetDesaturated, b.icon, false); b.icon:SetVertexColor(1, 1, 1)
+        b.look = "ok"
+    end
+    if r == 0 then b.glyph:SetVertexColor(1, 0.2, 0.2); b.word:SetTextColor(1, 0.2, 0.2); b.range = false
+    else b.glyph:SetVertexColor(1, 1, 1); b.word:SetTextColor(1, 1, 1); b.range = true end
+end
+
+function NB.glyph(b)
+    local key = NB.KEY_OF[b.p]
+    local lay = NB.layout()
+    if b.alay ~= lay then NB.anchor(b, lay) end          -- nbar2: the faces follow the ABXY location
+    if b.gkey == key and b.glay == lay then return end
+    b.gkey, b.glay = key, lay
+    for _, a in ipairs(NB.glyphAtlas(key)) do
+        -- nbar2: only an atlas the client really has (a refused one falls to the next, then the letter)
+        if NB.atlasOn(b.glyph, a) then b.glyph:Show(); b.word:SetText(""); b.atlas = a; return end
+    end
+    b.glyph:Hide(); b.atlas = nil
+    b.word:SetText(NB.GLYPH_WORD[key] or "")
+end
+
+-- one full redraw of the live layer
+function NB.refresh()
+    local f = NB.f
+    if not f or not NB.on then return end
+    local combat = S(InCombatLockdown) == true
+    local fight = combat or S(UnitAffectingCombat, "player") == true
+    local hasTarget = S(UnitExists, "target") == true
+    -- nbar2: hidden with the stock bar (a pet battle, a cinematic, out of gamepad mode: the game's own IsVisible, a plain read);
+    -- our own frame's alpha, so the tick keeps watching
+    local mf = mainFrame()
+    local vis = mf ~= nil and MS(mf, "IsVisible") ~= false
+    pcall(f.SetAlpha, f, vis and 1 or 0)
+    NB.vis = vis
+    local fightSw, form = NB.fightCtx(fight)
+    local bu = barsUsable()
+    local set = (bu == false) and 1 or NB.heldSet()
+    NB.set = set
+    local pu = pageUnit()
+    local layers = resolveAll(pu)
+    local lay = layers[NB.LAYER_OF[set]]
+    local page = currentPage(pu) or 1
+    local dpadOn = false
+    local pm = rawget(WC, "padMap")
+    if type(pm) == "table" and type(pm.dpadState) == "function" then
+        local ok, ds = pcall(pm.dpadState)
+        dpadOn = ok and type(ds) == "table" and ds.on == true
+    end
+    f.layer:SetText(NB.LAYER_WORD[set] or "")
+    NB.stats = { ok = 0, fail = 0, ch = 0, dim = 0, n = 0 }
+    NB.shown = {}
+    for p = 1, 8 do
+        local b = f.btn[p]
+        local e = NB.resolve(set, p, lay, page, fightSw, dpadOn, hasTarget, form)
+        NB.glyph(b)
+        local st = nil
+        if e.kind == "slot" then st = buttonState(e.d, combat, hasTarget)
+        elseif e.kind == "spell" and e.id then st = spellState(e.id, hasTarget) end
+        if e.kind == "empty" or not NB.paint(b.icon, e.icon) then
+            b.icon:Hide()
+        else
+            b.icon:Show()
+        end
+        NB.tint(b, st)
+        local route = NB.cool(b, e, st)
+        if route then NB.stats.n = NB.stats.n + 1 end
+        if route == "dim" then NB.stats.dim = NB.stats.dim + 1 end
+        -- an item's count (consumables), else a multi-charge spell's charges (both plain or absent: buttonState's own reads)
+        local cnt = st and (num(st.cnt) or num(st.ch)) or nil
+        b.count:SetText(cnt and tostring(cnt) or "")
+        b.kind = e.kind
+        NB.shown[p] = { kind = e.kind, icon = e.icon, id = e.id, s = e.d and e.d.s or nil, route = route }
+    end
+    NB.probe(fight)
+end
+
+-- probe "nbarcd": which cooldown route is live, once out of a fight and once in one per login (plain values only)
+function NB.probe(fight)
+    local key = fight and "fight" or "calm"
+    local s = NB.stats
+    if NB.probed[key] or not s or s.n == 0 then return end
+    NB.probed[key] = true
+    local cdf = NB.f and NB.f.btn[1] and NB.f.btn[1].cd
+    local have = { acd = api("C_ActionBar", "GetActionCooldownDuration") ~= nil, ach = api("C_ActionBar", "GetActionChargeDuration") ~= nil,
+                   scd = api("C_Spell", "GetSpellCooldownDuration") ~= nil, sch = api("C_Spell", "GetSpellChargeDuration") ~= nil,
+                   set = type(field(cdf, "SetCooldownFromDurationObject")) == "function" }
+    local route = (s.ok > 0 and s.fail == 0 and "dur") or (s.ok > 0 and "mixed") or "dim"
+    NB.route = route
+    pcall(function() WC.emit({ type = "cap", probe = "nbarcd", v = NB.V, fight = fight, route = route, n = s.n, ok = s.ok, fail = s.fail,
+                               dim = s.dim, ch = s.ch, have = have, at = NB.at }) end)
+end
+
+function NB.tick(el)
+    if not NB.on then return end
+    NB.acc, NB.accS = NB.acc + (el or 0), NB.accS + (el or 0)
+    if NB.acc < NB.POLL_S then return end
+    NB.acc = 0
+    local bu = barsUsable()
+    if bu ~= NB.bu then                                 -- nbar2: a window taking / giving back the pad collapses the stock bar
+        NB.bu = bu
+        pcall(NB.place)
+    end
+    local set = (bu == false) and 1 or NB.heldSet()
+    if set ~= NB.set or NB.accS >= NB.STATE_S then
+        NB.accS = 0
+        local ok, err = pcall(NB.refresh)
+        if not ok then noteError(err) end
+    end
+end
+
+-- Hub.lua's switch (the app's "Nintendo" choice): our bar shown and the stock bar at alpha 0, or the stock bar back (unless the
+-- controller bars are hidden by their own element)
+function WC.nbarSet(on)
+    on = on == true
+    NB.on, WC.nbarOn = on, on
+    if on then
+        setAlpha(mainFrame(), 0)
+        setAlpha(_G.GamepadPersistentInputLegend, 0)
+        NB.build()
+        NB.place()
+        NB.f:Show()
+        NB.set = 0                                -- the first tick redraws
+        local ok, err = pcall(NB.refresh)
+        if not ok then noteError(err) end
+    else
+        if not WC.hudHidden then
+            setAlpha(mainFrame(), 1)
+            setAlpha(_G.GamepadPersistentInputLegend, 1)
+        end
+        if NB.f then NB.f:Hide() end
+    end
+    return true
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -1738,6 +2249,7 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
     elseif event == "PLAYER_ENTERING_WORLD" then
         onLogin()
         reapplyAlpha()                  -- /reload and relog recreate the frame at alpha 1
+        if WC.nbar and WC.nbar.on then pcall(WC.nbar.place) end      -- nbar1: the stock bar's spot again
         installHooks()
         trySetupKeys()
         updateRangePoll()
