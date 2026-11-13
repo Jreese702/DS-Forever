@@ -13,8 +13,11 @@ object BagsMoveRoute {
     const val ROW = "bmv"
     const val NAME_ROW = "bagsort"
     const val BASE = 10
-    /** ms between the taps of a batch that may press the SAME cell twice (a drag within one bag names it twice): TapPad's REPEAT is 0.25 s */
-    const val GAP_MS = 150L
+    /** ms between the taps of a batch that may press the SAME cell twice (a drag within one bag names it twice): TapPad's REPEAT is 0.25 s.
+     *  bags-onerow2 (review): 200, not 150. The same cell comes two taps apart (2 x (GAP_MS + the launcher's 20 ms tap rest) = 440 ms), and
+     *  TapPad stamps a press when a frame handles it, so a slow frame (TapSpacing.FRAME_MS, 150 ms in a fight) eats into that: 150 left
+     *  340 - 150 = 190 ms < 250 and the second name was dropped; 200 leaves 290 ms. Across batches TapSpacing spaces these rows too. */
+    const val GAP_MS = 200L
 
     /**
      * The cells that press bag [bag] slot [slot] (1-based) on [pad] (the add-on's pad document: rows + sizes), or null when the pad

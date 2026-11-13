@@ -21,8 +21,9 @@ object TapSpacing {
     const val MIN_MS = 400L
     /** the slowest frame [MIN_MS] is sized for (ms) */
     const val FRAME_MS = 150L
-    /** the rows spaced (by name): Map.lua's "pnav" (PolestarNav.ROW) */
-    val ROWS: Set<String> = setOf(PolestarNav.ROW)
+    /** the rows spaced (by name): Map.lua's "pnav" (PolestarNav.ROW); bags-onerow2: Bags' name row "bagsort" and shared drag row
+     *  "bmv" (BagsMoveRoute: two quick taps on slots of ONE bag name it twice ~one batch apart; a dropped second name voids that tap) */
+    val ROWS: Set<String> = setOf(PolestarNav.ROW, BagsMoveRoute.NAME_ROW, BagsMoveRoute.ROW)
     /** the least rest a batch takes after its last tap (InputSink's TAIL_REST_MS 30; a shell's "sleep 0.08" is longer) */
     const val TAIL_MIN_MS = 30L
 

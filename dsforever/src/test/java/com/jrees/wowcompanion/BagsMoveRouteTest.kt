@@ -27,7 +27,20 @@ class BagsMoveRouteTest {
         assertEquals(listOf("bagsort" to 10, "bmv" to 2, "bagsort" to 12, "bmv" to 0), BagsMoveRoute.drag(shared, 0, 3, 2, 1))
         // within one bag: the same name cell twice, so the batch is spaced past TapPad's 0.25 s repeat guard (two taps apart)
         assertEquals(listOf("bagsort" to 11, "bmv" to 0, "bagsort" to 11, "bmv" to 4), BagsMoveRoute.drag(shared, 1, 1, 1, 5))
-        assertTrue(2 * BagsMoveRoute.GAP_MS > 250)
+        // two taps apart, less one slow frame (TapPad stamps the press when the frame handles it), still past the 0.25 s guard
+        assertTrue(2 * BagsMoveRoute.GAP_MS - TapSpacing.FRAME_MS >= 250)
+    }
+
+    @Test fun nameAndDragRowsAreSpacedAcrossBatches() {
+        // bags-onerow2: two quick taps on slots of one bag are two batches that name the same cell; the later one waits
+        assertTrue(BagsMoveRoute.NAME_ROW in TapSpacing.ROWS && BagsMoveRoute.ROW in TapSpacing.ROWS)
+        val c = TapSpacing.Clock()
+        val first = listOf("bmvq" to 36) + BagsMoveRoute.cells(shared, 2, 3)!!
+        TapSpacing.ran(c, 1_000L, first, 0L)
+        val second = listOf("bmvq" to 36) + BagsMoveRoute.cells(shared, 2, 7)!!
+        val lead = TapSpacing.lead(c, 1_050L, second, 0L)
+        assertTrue(lead > 0L)
+        assertTrue(1_050L + lead - c.lastAt["bagsort" to 12]!! >= TapSpacing.MIN_MS)
     }
 
     @Test fun anOldAddOnKeepsItsPerBagRows() {
