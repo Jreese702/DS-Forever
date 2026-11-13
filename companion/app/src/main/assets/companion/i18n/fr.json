@@ -1742,6 +1742,8 @@
 "Your group already has the maximum number of members (%s) for this activity.": "Votre groupe a déjà le nombre maximum de membres (%s) pour cette activité.",
 "Your problem report was saved (%s)": "Votre rapport de problème a été enregistré (%s)",
 "Your problem report was sent (%s, issue #%s)": "Votre rapport de problème a été envoyé (%s, ticket #%s)",
-"Choose an icon for %s": "Choisir une icône pour %s"
+"Choose an icon for %s": "Choisir une icône pour %s",
+"Cleared %s": "Effacé : %s",
+"Press %s again to clear it": "Appuyez encore sur %s pour l’effacer"
 }
 }

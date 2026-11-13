@@ -981,9 +981,13 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 "bind-unheard" -> "That button cannot be bound"
                 "bind-notready", "bind-failed" -> "Not ready yet, press it again"
                 "bound" -> "Bound to " + (bindKeyName(ctl.optString("bound")) ?: ctl.optString("bound"))
-                else -> "Press the button you want for this item"
+                // bags-unbind1 (issue #213): the item's own button pressed again lets it go (Bags.lua BB.clear)
+                "unbound" -> "Cleared " + (bindKeyName(ctl.optString("unbound")) ?: ctl.optString("unbound"))
+                else -> ctl.optJSONArray("mine")?.optString(0)?.takeIf { k -> k.isNotEmpty() }
+                    ?.let { k -> "Press " + (bindKeyName(k) ?: k) + " again to clear it" }
+                    ?: "Press the button you want for this item"
             }
-            val colour = when (note) { null -> Color.WHITE; "bound" -> Theme.questGreen; else -> Theme.unusable }
+            val colour = when (note) { null -> Color.WHITE; "bound", "unbound" -> Theme.questGreen; else -> Theme.unusable }
             c.drawText(Tr.t(line), cx, 232f, UiKit.bodyPaint(36f, colour).apply { textAlign = Paint.Align.CENTER })
             val keys = ctl.optJSONArray("keys")
             val bound = ctl.optString("bound")
@@ -1002,7 +1006,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 UiKit.keyChip(c, RectF(x, y, x + 500f, y + 104f), KEY_GLYPH[name] ?: "gen_rstickin", label, a == null, mark)
             }
             c.drawText(Tr.t("A, B, X and Y cannot be bound."), cx, 660f, UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER })
-            val hs = UiKit.hints(c, r.right - 70f, 654f, "rev_b" to if (note == "bound") "Close" else "Cancel")
+            val hs = UiKit.hints(c, r.right - 70f, 654f, "rev_b" to if (note == "bound" || note == "unbound") "Close" else "Cancel")
             c.restore()
             if (f >= 1f) hits.add(RectF(hs - 20f, 654f - 44f + top + 60f, r.right - 50f, 654f + 44f + top + 60f) to 33)
         }

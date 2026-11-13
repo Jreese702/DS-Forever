@@ -33,6 +33,14 @@
 -- empty gets type nil for the whole fight; PLAYER_REGEN_ENABLED puts "item" back. Cost: an item looted into an empty slot mid-fight
 -- cannot be used by tap until the fight ends (a no-op, never an error). A slot that empties DURING the fight (the last potion used)
 -- keeps its "item" and can still raise; its tap proof says emptyFight without fightOff, so a next report shows whether that is hit.
+--
+-- bags-unbind1 (issue #213, 1.0.27: "I cannot clear a binding made through the bag screen. I binded an item to left stick and can no
+-- longer remove it."): BB.set was the only writer of BB.binds, so a Bind to a Button could be replaced but never let go, and BB.load
+-- put it back at every login. Now, on the bind sheet, pressing the button THIS item is already bound to clears it (BB.clear: the
+-- record dropped + saved, the override let go by BB.apply; out of combat only, refused in a fight as bind-combat). Note "unbound",
+-- ctl.unbound = the chord. The sheet is told the item's own buttons (ctl.mine) and every item bind of this character (ctl.bbinds,
+-- diagnostics), so a next report shows what is held. A button held by an item no longer in the bags: bind any item over it, then
+-- press it again. Overrides only, as before: nothing of the player's is touched.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -1015,6 +1023,8 @@ function BB.apply()
     for k in pairs(BB.applied) do
         if not BB.binds[k] then CALL(function() return SetOverrideBinding(BB.owner, false, k, nil) end); BB.applied[k] = nil end
     end
+    -- bags-unbind1 (issue #213): a let-go button holds no item any more (out of combat here)
+    for k, b in pairs(BB.buttons) do if not BB.binds[k] then pcall(b.SetAttribute, b, "item", nil) end end
     for k, id in pairs(BB.binds) do
         local b = BB.button(k)
         b:SetAttribute("item", "item:" .. id)
@@ -1025,6 +1035,19 @@ function BB.apply()
 end
 
 function BB.set(chord, id) BB.binds[chord] = id; BB.save(); return BB.apply() end
+-- bags-unbind1 (issue #213): the one way to let a bind go. Out of combat only (an override cannot change in a fight)
+function BB.clear(chord)
+    if InCombatLockdown() or BB.binds[chord] == nil then return false end
+    BB.binds[chord] = nil; BB.save(); return BB.apply()
+end
+-- the chords this item is bound to (sorted, for the sheet), or nil
+function BB.chordsOf(id)
+    if not id then return nil end
+    local out = {}
+    for k, v in pairs(BB.binds) do if v == id then out[#out + 1] = k end end
+    table.sort(out)
+    return out[1] and out or nil
+end
 
 function BB.ours(cmd) return type(cmd) == "string" and (cmd:sub(1, 26) == "CLICK WowCompanionBagBind_" or cmd:sub(1, 10) == "MACRO WCB ") end
 
@@ -1140,8 +1163,11 @@ function WC._bagsCtlDoc()
         use = ctl.use, sid = ctl.sid, bindReady = BIND_READY, bindMods = BIND_MODS,
         -- a refused bind names what already uses the button (the game's binding command)
         takenBy = ctl.takenBy, takenByName = ctl.takenBy and bindingLabel(ctl.takenBy) or nil,
-        bound = ctl.bound, chord = ctl.chord,
+        bound = ctl.bound, chord = ctl.chord, unbound = ctl.unbound,
         keys = (ctl.mode == "bind") and ctl.keys or nil,
+        -- bags-unbind1 (issue #213): this item's own buttons (pressing one clears it), and every item bind of this character
+        mine = (ctl.mode == "bind") and BB.chordsOf(ctl.bindId) or nil,
+        bbinds = next(BB.binds) and BB.binds or nil,
         tip = WC._bagsTip(),
         eq = EQ.doc and EQ.doc() or nil,
         shut = BAR.shutList(),
@@ -1936,6 +1962,14 @@ local armBind
 local function onChord(chord, id)
     ctl.chord = chord
     local why = chordRefusal(chord)
+    -- bags-unbind1 (issue #213): the button this item is already bound to, pressed again = let it go
+    if not why and BB.binds[chord] ~= nil and BB.binds[chord] == id then
+        if InCombatLockdown() then why = "bind-combat"
+        elseif BB.clear(chord) then
+            ctl.bound = nil; ctl.unbound = chord; ctl.keys = bindableNow(); report("unbound")
+            return
+        else why = "bind-failed" end
+    end
     if not why then
         local taken = S(function() return GetBindingAction(chord, true) end)
         if type(taken) == "string" and taken ~= "" and taken:byte(1) > 3
@@ -1947,7 +1981,7 @@ local function onChord(chord, id)
         -- OURS ONLY (the user's ruling 2026-10-09): our secure item button + an override, never the player's macros or set (BB)
         if InCombatLockdown() then why = "bind-combat"
         elseif BB.set(chord, id) then
-            ctl.bound = chord; ctl.keys = bindableNow(); report("bound")
+            ctl.bound = chord; ctl.unbound = nil; ctl.keys = bindableNow(); report("bound")
             return
         else why = "bind-failed" end
     end
@@ -1957,6 +1991,7 @@ end
 armBind = function(id)
     local cap = capture()
     if not (cap and cap.chord) then return false end
+    ctl.bindId = id                                     -- bags-unbind1: the sheet's item (its own buttons, ctl.mine)
     local okC, armed = pcall(cap.chord, "bags", function(chord) onChord(chord, id) end,
         function() toGrid("bind-cancelled") end)
     return okC and armed == true
@@ -2030,7 +2065,7 @@ local function onPress(key)
                 if InCombatLockdown() then toGrid("bind-combat"); fightRefused(); return end
                 if not BIND_READY or not (cap and cap.chord) then toGrid("bind-notready"); return end
                 if not armBind(itemAt(ctl.bag, ctl.slot)) then toGrid("bind-notready"); return end
-                ctl.chord = nil; ctl.bound = nil; ctl.keys = bindableNow(); ctl.mode = "bind"; report(nil)
+                ctl.chord = nil; ctl.bound = nil; ctl.unbound = nil; ctl.keys = bindableNow(); ctl.mode = "bind"; report(nil)
             end
         end
     elseif ctl.mode == "bind" then

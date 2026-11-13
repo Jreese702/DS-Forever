@@ -1764,6 +1764,8 @@
 "Your group already has the maximum number of members (%s) for this activity.": "Tu grupo ya tiene el número máximo de miembros (%s) para esta actividad.",
 "Your problem report was saved (%s)": "Tu informe de problema se guardó (%s)",
 "Your problem report was sent (%s, issue #%s)": "Tu informe de problema se envió (%s, incidencia #%s)",
-"Choose an icon for %s": "Elige un icono para %s"
+"Choose an icon for %s": "Elige un icono para %s",
+"Cleared %s": "Borrado %s",
+"Press %s again to clear it": "Pulsa %s otra vez para borrarlo"
 }
 }
