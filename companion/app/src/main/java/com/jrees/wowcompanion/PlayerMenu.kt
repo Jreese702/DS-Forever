@@ -14,10 +14,11 @@ import org.json.JSONObject
 class PlayerMenu(private val runs: Boolean = RUNS, private val greyKeys: Set<String> = emptySet()) {
     /** [confirm]: the question the game would ask first (asked here, on the bottom screen); [secure]: a column of the add-on's secure
      *  row [secureRow] (Quests' "pfocus": Set / Clear Focus; Party mode's "party": Set Focus on that member, q49 `scr`) instead of an
-     *  [id]; [app]: what the APP does after the entry runs (q49 `ap`: "whisper" = the Chat room, replying to the member) */
+     *  [id]; [app]: what the APP does after the entry runs (q49 `ap`: "whisper" = the Chat room, replying to the member);
+     *  [icon]: a game icon's fileDataID for the entry (Quests q56 `ic`: the pet's actions carry their spell's icon) */
     data class Entry(val text: String, val id: Int?, val enabled: Boolean, val checked: Boolean?, val title: Boolean, val sub: List<Entry>?,
                      val confirm: String? = null, val secure: Int? = null, val secureRow: String = "pfocus", val app: String? = null,
-                     val key: String? = null)
+                     val key: String? = null, val icon: Int? = null)
 
     sealed class Do {
         object None : Do()
@@ -165,7 +166,8 @@ class PlayerMenu(private val runs: Boolean = RUNS, private val greyKeys: Set<Str
                     if (o.has("ck")) o.optInt("ck") == 1 else null, o.optInt("ttl", 0) == 1,
                     if (o.has("sub")) parse(o.optJSONArray("sub"), greyKeys) else null,
                     o.optString("cf", "").ifEmpty { null }, if (o.has("sc")) o.optInt("sc") else null,
-                    o.optString("scr", "").ifEmpty { "pfocus" }, o.optString("ap", "").ifEmpty { null }, k))
+                    o.optString("scr", "").ifEmpty { "pfocus" }, o.optString("ap", "").ifEmpty { null }, k,
+                    o.optInt("ic", 0).takeIf { it > 0 }))
             }
             return out
         }

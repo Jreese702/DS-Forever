@@ -54,4 +54,26 @@ class TargetRadialTest {
         assertNull(MenuIcons.keyOf("ClearFocus", "Clear Focus"))
         assertEquals("setfocus", MenuIcons.keyOf("SetFocus", "Set Focus"))
     }
+
+    /** Quests q56 (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet") */
+    @Test fun thePetsActionsLeadItsWheelWithTheirOwnIcons() {
+        val doc = org.json.JSONArray(
+            """[{"t":"Feed Pet","k":"PetFeed","sc":5,"en":1,"ic":132165},{"t":"Dismiss Pet","k":"PetDismiss","sc":6,"en":1,"ic":136095},""" +
+            """{"t":"Mend Pet","k":"PetMend","sc":8,"en":1,"ic":132179},{"t":"Beast Training","k":"PetTrain","sc":9,"en":0,"ic":132162},""" +
+            """{"t":"Set Focus","k":"SetFocus","sc":3,"en":1}]""")
+        val items = PlayerMenu.parse(doc)
+        assertEquals(listOf(132165, 136095, 132179, 132162, null), items.map { it.icon })
+        assertEquals(listOf(5, 6, 8, 9, 3), items.map { it.secure })
+        assertEquals("pfocus", items[0].secureRow)
+        val root = TargetRadial.slices(items)!!
+        assertEquals(listOf("Feed Pet", "Dismiss Pet", "Mend Pet", "Beast Training", "Set Focus", null, null, null), labels(root))
+        assertEquals("icon:132165", root[0]!!.menu)
+        assertEquals("setfocus", root[4]!!.menu)
+        assertEquals(false, root[3]!!.enabled)
+        assertTrue(MenuIcons.has("icon:132165"))
+        assertEquals(132165, MenuIcons.spec("icon:132165")!!.base)
+        assertTrue(!MenuIcons.has("icon:0") && !MenuIcons.has("icon:x") && !MenuIcons.has(null) && MenuIcons.has("whisper"))
+        // a pet key is no game menu icon of ours (no mix-up with Dismiss / Trade / Follow)
+        for (k in listOf("PetFeed", "PetDismiss", "PetRevive", "PetMend", "PetTrain")) assertNull(MenuIcons.keyOf(k, k))
+    }
 }
