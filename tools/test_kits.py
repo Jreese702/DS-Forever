@@ -348,6 +348,60 @@ BAG[0][5] = nil; BAG[0][6] = nil; WowCompanion._bagsLayout = { { bag = 0, slots 
 C_Container.GetContainerNumSlots = function(b) return b == 0 and 4 or 0 end
 ''')
 
+# bags-kit3 review: the list can change under the cursor (the game's item context came late, loot); A answers the ITEM the cursor
+# is on, never the row number: a gone item is not used ("pick-moved"), the list is drawn again
+L.execute(r"""
+TARGETING, CURRENT, PICKING, COMBAT = true, 13262, false, false
+BAG[0][5] = 5001; BAG[0][6] = 5002
+C_Container.GetContainerNumSlots = function(b) return b == 0 and 6 or 0 end; WowCompanion._bagsLayout = { { bag = 0, slots = 6 } }
+""")
+step()
+doc = L.eval('WowCompanion._bagsCtlDoc()')
+tl = doc.target.list
+check(doc.mode == 'target' and [tl[i + 1].s for i in range(len(tl))] == [5, 6] and doc.target.sel == 1,
+      "review: Disenchant list sword, vest; cursor on the sword", doc.mode)
+vest_cell = tl[2].cell
+L.eval('WowCompanion._bagsTouch')(38)                             # down: the vest
+check(L.eval('WowCompanion._bagsCtlDoc()').target.sel == 2, "review: down puts the cursor on the vest")
+L.execute('BAG[0][5] = nil')                                       # the sword leaves: the vest is row 1 now
+L.eval('WowCompanion._bagsTouch')(31)                             # A
+doc = L.eval('WowCompanion._bagsCtlDoc()')
+check(doc.note == 'apply' and doc.use.cell == vest_cell,
+      "review: a row above leaves, A still answers the vest (its own cell), not the row number", (doc.note, doc.use and dict(doc.use)))
+L.execute('TARGETING, CURRENT = false, nil'); step()
+L.execute('TARGETING, CURRENT = true, 13262; BAG[0][5] = 5001; NOW = NOW + 2'); step()
+doc = L.eval('WowCompanion._bagsCtlDoc()')
+check(doc.mode == 'target' and doc.target.sel == 1 and doc.target.list[1].s == 5, "review: a new pick, cursor on the sword", doc.mode)
+seq0 = doc.use and doc.use.seq
+L.execute('BAG[0][5] = nil')                                       # the sword leaves before the app drew the list again
+L.eval('WowCompanion._bagsTouch')(31)
+doc = L.eval('WowCompanion._bagsCtlDoc()')
+check(doc.note == 'pick-moved' and (doc.use and doc.use.seq) == seq0,
+      "review: the item under the cursor is gone: A uses NOTHING (pick-moved), never the vest that slid into its row",
+      (doc.note, doc.use and dict(doc.use)))
+check(doc.target.sel == 1 and doc.target.list[1].s == 6, "review: the list drawn again, cursor on the vest")
+L.eval('WowCompanion._bagsTouch')(31)
+doc = L.eval('WowCompanion._bagsCtlDoc()')
+check(doc.note == 'apply' and doc.use.cell is not None and L.eval('CELLS[%d].a.macrotext' % doc.use.cell) == '/use 0 6',
+      "review: A again (the vest now drawn): the vest", (doc.note, doc.use and dict(doc.use)))
+# the pick's type changes while the list is up: the room reports (the app draws the filtered list)
+L.execute('TARGETING, CURRENT = false, nil'); step()
+L.execute(r"""
+PICKING = true; ENCHANTING = false; COND = false; NOW = NOW + 2
+""")
+step()
+seqA = int(L.eval('WowCompanion._bagsCtlDoc().seq'))
+L.execute('COND = true; CONDOK = { inv5 = true }'); step()
+doc = L.eval('WowCompanion._bagsCtlDoc()')
+check(doc.mode == 'target' and int(doc.seq) > seqA and doc.target.cx.ctx == 'cond',
+      "review: spell -> cond mid-pick: reported again (the filtered list)", (doc.mode, doc.seq, seqA))
+L.execute(r"""
+COND = false; PICKING = false; BAG[0][6] = nil; WowCompanion._bagsLayout = { { bag = 0, slots = 4 } }
+C_Container.GetContainerNumSlots = function(b) return b == 0 and 4 or 0 end
+""")
+step()
+L.execute('PICKING = true'); step()                       # a pick on, so the end below is a real change
+
 # the end of the pick, and the stop
 L.execute('PICKING = false')                                       # the game's /stopspelltarget ran (binv 19)
 step()

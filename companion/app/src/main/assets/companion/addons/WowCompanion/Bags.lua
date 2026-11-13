@@ -53,6 +53,9 @@
 -- bags-kit3 (the user's picks, 2026-11-13: "items a pick can't go on are HIDDEN (only 'fits but no free cell in a fight' stays greyed);
 -- Feed Pet lists only what C_PetInfo.CanPetEatItem allows ... already-enchanted gear is shown ... the Bags room's target list serves every
 -- route"): "Choose an item" lists only what the pick can go on, from every route; KIT.ctx below.
+-- bags-kit3 review (2026-11-13, the same picks: "items a pick can't go on are HIDDEN"): the list can now change under the cursor while
+-- the pick is on (the game's item context arriving late, loot), so A answers the ITEM the cursor is on (KIT.key), never the row number:
+-- a row gone since the app last drew the list is not used ("pick-moved", the list is drawn again); a changed pick type reports.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -1345,8 +1348,7 @@ function WC._bagsCtlDoc()
         bar = (ctl.zone == "bar" and ctl.mode == "grid") and BAR.items()[ctl.barAt or 1] or nil,
         act = ctl.act,
         barmenu = BAR.menuDoc(),
-        target = (ctl.mode == "target" and WC._kit) and { kit = WC._kit.kitDoc(), list = WC._kit.list(), sel = ctl.tsel or 1,
-                                                     cx = WC._kit.probe() } or nil,   -- bags-kit3: the pick type, for the report
+        target = (ctl.mode == "target" and WC._kit) and WC._kit.targetDoc() or nil,   -- bags-kit3: the pick type (cx), for the report
     }
 end
 
@@ -1550,6 +1552,31 @@ end
 function KIT.rowOf(bag, slot)
     for i, e in ipairs(KIT.list()) do if e.src == "bag" and e.bag == bag and e.s == slot then return i end end
 end
+-- bags-kit3 review: a row's item (where + what), so the cursor stays on the item the player sees when the list changes under it
+function KIT.key(e)
+    if not e then return nil end
+    if e.src == "inv" then return "i" .. tostring(e.slot) .. ":" .. tostring(e.id) end
+    return "b" .. tostring(e.bag) .. ":" .. tostring(e.s) .. ":" .. tostring(e.id)
+end
+function KIT.find(list, key)
+    if not key then return nil end
+    for i, e in ipairs(list) do if KIT.key(e) == key then return i end end
+end
+-- the room's cursor in `list`: on its item if still listed, else the same place (clamped) and that row's item from now on
+function KIT.syncSel(list)
+    local i = KIT.find(list, ctl.tkey)
+    if not i then
+        i = math.max(1, math.min(#list, ctl.tsel or 1))
+        ctl.tkey = KIT.key(list[i])
+    end
+    ctl.tsel = i
+    return i
+end
+-- the room's target document: the list as the app will draw it, the cursor on its item (the item A then answers)
+function KIT.targetDoc()
+    local list = KIT.list()
+    return { kit = KIT.kitDoc(), list = list, sel = KIT.syncSel(list), cx = KIT.probe() }
+end
 -- bags-kit3: can the pick go on the item at `loc`? The game's own checks, called directly (never ItemButtonUtil's, which answers for the
 -- bank while it is open): enchant = DoesItemMatchTargetEnchantingSpell (paperdollframe.lua's CanApplyItemEnchant), cond =
 -- DoesItemMatchSpellItemCondition; other picks the game checks on the click itself. No answer = offered (the game still says no)
@@ -1732,6 +1759,13 @@ function KIT.step()
     end
     local on = KIT.on()
     if not on and next(KIT.byKey) ~= nil and not InCombatLockdown() then KIT.byKey = {} end    -- the pick's cells free again
+    -- bags-kit3 review: the pick's type changed while the list is up (the game's item context came late): the app draws it again
+    local cxNow = on and KIT.ctx() or nil
+    if cxNow ~= KIT.ctxWas then
+        local was = KIT.ctxWas
+        KIT.ctxWas = cxNow
+        if was and cxNow and ctl.on and ctl.mode == "target" then report(nil) end
+    end
     if on ~= KIT.was then
         KIT.was = on
         if on and KIT.last and GetTime() - KIT.last.t < 2 then WC._kitLearned[KIT.last.id] = true end
@@ -1746,7 +1780,7 @@ function KIT.step()
     -- room taken mid-pick (Disenchant cast from the bar, then the Bags room) stayed on the grid, and its X / Use tapped the bag's own
     -- cell, which EQUIPS gear. Not in the moments after B's /stopspelltarget (the pick is ending)
     if ctl.on and on and ctl.mode == "grid" and not ctl.pick and not (KIT.stopT and GetTime() - KIT.stopT < KIT.STOP_HOLD) then
-        ctl.mode = "target"; ctl.tsel = 1; report("pick-item")
+        ctl.mode = "target"; ctl.tsel = 1; ctl.tkey = nil; report("pick-item")
     end
 end
 C_Timer.NewTicker(0.25, function() pcall(KIT.step) end)
@@ -2309,7 +2343,7 @@ local function onPress(key)
             if ctl.pick then return end                       -- in the hand: only A / B
             if not id then report("empty"); return end
             -- (review 2026-11-11, issue #126) a pick is on: never the bag cell (it EQUIPS gear); the list, on this item's row
-            if KIT.on() then ctl.mode = "target"; ctl.tsel = KIT.rowOf(ctl.bag, ctl.slot) or 1; report("pick-item"); return end
+            if KIT.on() then ctl.mode = "target"; ctl.tsel = KIT.rowOf(ctl.bag, ctl.slot) or 1; ctl.tkey = nil; report("pick-item"); return end
             -- a BAG: into the hand, and the cursor up to the bag bar to choose its slot (EQ, the user 2026-10-06)
             if EQ.slotsFor(id) then EQ.begin(id); return end
             -- USE is protected: the app taps this slot's secure cell once per new use.seq
@@ -2386,13 +2420,18 @@ local function onPress(key)
         if (A or B) and KIT.asking() then ctl.passing = false; report("pick-ask-" .. key); return end
         local list = KIT.list()
         if key == "PADDUP" or key == "PADDDOWN" then
-            ctl.tsel = math.max(1, math.min(#list, (ctl.tsel or 1) + (key == "PADDUP" and -1 or 1))); report(nil)
+            local at = KIT.find(list, ctl.tkey) or ctl.tsel or 1                -- bags-kit3 review: from the item the cursor is on
+            ctl.tsel = math.max(1, math.min(#list, at + (key == "PADDUP" and -1 or 1))); ctl.tkey = KIT.key(list[ctl.tsel]); report(nil)
         elseif B then
             -- B: the app taps binv 19 (/stopspelltarget) for this use.seq; the list closes now
             ctl.use = { stop = true, seq = ctl.seq + 1 }; KIT.stopT = GetTime(); toGrid("cancelled")
         elseif A then
-            local e = list[ctl.tsel or 1]
-            if not e then report("empty"); return end
+            if #list == 0 then report("empty"); return end
+            -- bags-kit3 review: the item the cursor is on, wherever its row is now; gone (or not yet drawn) = not used, drawn again
+            local at = KIT.find(list, ctl.tkey)
+            if not at then ctl.tkey = nil; report("pick-moved"); return end
+            ctl.tsel = at
+            local e = list[at]
             if e.ok == nil then report("pick-cannot"); return end
             ctl.applied = true
             if e.src == "inv" then ctl.use = { inv = e.slot, seq = ctl.seq + 1 }
@@ -2491,7 +2530,7 @@ local function tryTake(viaWindow)
     if ok and got then
         ctl.on = true; ctl.mode = "grid"; ctl.pick = nil; ctl.left = nil
         -- (review 2026-11-11, issue #126) taken while a pick is on (Disenchant cast from the bar): straight to its list, never the grid
-        if KIT.on() then ctl.mode = "target"; ctl.tsel = 1 end
+        if KIT.on() then ctl.mode = "target"; ctl.tsel = 1; ctl.tkey = nil end
         -- capture v11 (Interact i82): a take that finds another holder is QUEUED (ok, "queued"), granted when that holder
         -- lets go; no presses before the hand-over. Bags shows the room meanwhile and says so in its note
         ctl.pending = (why == "pending" or why == "queued") or nil
