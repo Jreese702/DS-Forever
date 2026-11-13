@@ -153,7 +153,7 @@ class PolestarGuideTest {
     }
 
     @Test fun yesAndNoSetTheChoiceAndTheMode() {
-        start()                                                              // a new install: asked
+        start("setupAsked170" to true)                                       // a new install: asked (#170's Setup picker answered)
         SetupBridge.publish(ready())
         assertEquals("polestar", SetupBridge.screen(gameRunning = false)?.prompt?.id)
         SetupBridge.press(SetupFlow.Action.POLESTAR_NO)
