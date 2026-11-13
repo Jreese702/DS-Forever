@@ -32,10 +32,4 @@ class ButtonNamesTest {
         assertEquals("A bottom, B right, X left, Y top", SettingsView.abxyLine(swap = false, layout = XBOX))
         assertEquals("Cross bottom, Circle right, Square left, Triangle top", SettingsView.abxyLine(swap = false, layout = PLAYSTATION))
     }
-
-    @Test fun bagsBindableButtonsAreNamedAndOthersAreNot() {
-        assertEquals("Minus", BagsView.bindKeyName("PADBACK"))
-        assertEquals("ZR", BagsView.bindKeyName("PADRTRIGGER"))
-        assertEquals(null, BagsView.bindKeyName("PADSTART"))
-    }
 }

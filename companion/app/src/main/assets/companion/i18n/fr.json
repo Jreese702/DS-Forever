@@ -1915,6 +1915,8 @@
 "Your problem report was sent (%s, issue #%s)": "Votre rapport de problème a été envoyé (%s, ticket #%s)",
 "Choose an icon for %s": "Choisir une icône pour %s",
 "Cleared %s": "Effacé : %s",
-"Press %s again to clear it": "Appuyez encore sur %s pour l’effacer"
+"Press %s again to clear it": "Appuyez encore sur %s pour l’effacer",
+"Cleared from": "Retiré de",
+"Keep it cleared?": "Le laisser retiré ?"
 }
 }

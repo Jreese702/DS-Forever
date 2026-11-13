@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b58"               -- bump on every change; b58 THE 1.0.30 TEST BUILD MERGE (code 1463): feat/castbar-8 and feat/sticks-bind-any both tagged b57, both kept (cast bar = b57, sticks = b57b); b57 EIGHT CAST BAR SLOTS (the user, 2026-11-13: "only see 6 slots instead of 8 when using both, I think that you misunderstood and kept 6 total slots on both side even with the slide for more."; the pick: "8 total, 4 per side"; ActionBar cb6): padtab 39 then 27-28 = slot 7-8 (20-25 stay slot 1-6, 26 the box's tab: no code moved), the Bind box's Cast bar tab walks all 8 with the D-pad left / right; b57b L3 / R3 IN THE BIND BOX (the user, 2026-11-13: "looking good, except people also want to be able to bind any of their spells and stuff to these, so any of those 5 controller tabs should be able to bind here"): while the box is up the capture also hands us L3 / R3 (its extra keys); on the Normal tab L3 / R3 (bare or ZL) take the spell (PadMap m157: the stick's own button, WC.padMap.putSpell on position 9 / 10), the answer's pad names the stick (p = 9 / 10, no bar slot), B's undo puts back what the stick held (stickSaved / stickRestore); ZR / ZL + ZR + a stick: "layer", the box waits; the In combat tab: "stick-normal" (the sticks are no fight layer), the box waits; b56b (review): the Cast bar tab hands the bar the book item's action id (`a`, as the spell's two taps do), not its spell id; b56 THE BIND BOX'S CAST BAR TAB (the user, 2026-11-13: "to assign to the bar, in the bind menu, where there is the L and R tabs, we will add a third tab if this setting is turned on, showing the 6 slots on that bar"; ActionBar cb3): padtab 39 then 26 = the box's third tab (ctl.bind.cb: the D-pad left / right walks the 6 slots, A puts the spell there, B backs out, no button is bound meanwhile); 39 then 20-25 = slot 1-6 (WC.castBarPick(slot)): with the box waiting, its spell goes there at once and the box closes; bf-on / bf-off leave the tab; the box's `bcb` = the slot the cursor is on; b55 THE LAZY CAST BAR ROW (1.0.30 code 1454, ActionBar cb2): padtab 39 then 19 = the cast bar's pick (WC.castBarPick), so the Spellbook's "Cast bar" works before the castbar row exists; b54 THE 1.0.30 TEST BUILD MERGE (code 1453): feat/multi-radial-v2's b53b next to b53, both kept; b53b SEVERAL SPELL RADIALS back (feat/multi-radial-v2; b49 of 1.0.18): the radial ops ride Smart Range's pick: padtab 39 then code 5-18 = radial op 0-13 (PadTabCtl p49 touchRadial; 38 is rank up now, so b49's prefix 38 is gone); b52 SMART RANGE (the user, 2026-11-12: "when enabled I want two selectable buttons, one for melee and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button modifier combo"): padtab column 39 is the one-shot Smart Range pick (PadTabCtl p46 srPick, fresh 2 s) and the padtab column right after it is its code (0 the box, 1 Melee, 2 Range, 3 the box on, 4 off), in the room or the restore's quiet enter; b51 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): padtab column 38 is the rank-up pick (PadMap m143 WC.rankUpPick), the spell's two taps after it upgrade that spell's lower copies (WC.rankUpSpell); a Bind that places a rank below the top remembers it as picked on purpose (WC.rankPicked: never upgraded); b50 b50: THE BARE D-PAD IS THE DS WoW TOOLBAR'S IN THE BIND BOX TOO (issues #18 / #20, 1.0.15: "Trying to bind an attack, doesnt show up on bottom screen and or the button display for attacks on the buton layout"; a second player on #20: "When I disabled the DS shortcuts (dpad) it allowed me to bind abilities to the Dpad. But only there. Any modifier key binding doesn't work."; #31, 1.0.16: "i cant bind new spells to anything"): with the toolbar on (PadMap dpadWant), a bare D-pad press placed the spell on the plain D-pad slot the router's toolbar keys cover, so it never cast and Home drew the toolbar there; now it answers "dpad bar" (nothing placed, the box keeps waiting) as the Controller room does (PadTabCtl p34 toolbarHas); the In combat tab's bare D-pad still takes a fight spell (p36); b49 (review): the default is the active form only while the game SHOWS its stance bar (WC.padMap.stanceShown); a form with no bar (Ghost Wolf, Travel Form, an aura) keeps the caster path; b49: A STANCE-COVERED BUTTON BINDS TO THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): a Warrior in Battle Stance bound Charge on ZR + B page 1, the game lays the stance bar over RT there, the box's form defaulted to the caster and the plain RT slot (199) took it while the game, the router and Home read the stance bar's; now the box's form is "not chosen" (nil) until the player picks one, and then the active form's bar is the default (bform reports it, so the app's form row lights it); 0 = the caster picked on purpose (the old path); the ack's probe.slotSrc says where the slot came from (stance / form / game / button / formula); b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits); b53 THE TAP-TO-CAST BAR (GitHub #43; ActionBar cb1): the castbar row's pick (cell 12, fresh 2 s) just before a spell's two taps puts that spell on the character's cast bar or takes it off (WC.castBarSpell), first of every pick, in a fight too (ActionBar queues it); b52 SMART RANGE (the user, 2026-11-12: "when enabled I want two selectable buttons, one for melee and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button modifier combo"): padtab column 39 is the one-shot Smart Range pick (PadTabCtl p46 srPick, fresh 2 s) and the padtab column right after it is its code (0 the box, 1 Melee, 2 Range, 3 the box on, 4 off), in the room or the restore's quiet enter; b51 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): padtab column 38 is the rank-up pick (PadMap m143 WC.rankUpPick), the spell's two taps after it upgrade that spell's lower copies (WC.rankUpSpell); a Bind that places a rank below the top remembers it as picked on purpose (WC.rankPicked: never upgraded); b50 b50: THE BARE D-PAD IS THE DS WoW TOOLBAR'S IN THE BIND BOX TOO (issues #18 / #20, 1.0.15: "Trying to bind an attack, doesnt show up on bottom screen and or the button display for attacks on the buton layout"; a second player on #20: "When I disabled the DS shortcuts (dpad) it allowed me to bind abilities to the Dpad. But only there. Any modifier key binding doesn't work."; #31, 1.0.16: "i cant bind new spells to anything"): with the toolbar on (PadMap dpadWant), a bare D-pad press placed the spell on the plain D-pad slot the router's toolbar keys cover, so it never cast and Home drew the toolbar there; now it answers "dpad bar" (nothing placed, the box keeps waiting) as the Controller room does (PadTabCtl p34 toolbarHas); the In combat tab's bare D-pad still takes a fight spell (p36); b49 (review): the default is the active form only while the game SHOWS its stance bar (WC.padMap.stanceShown); a form with no bar (Ghost Wolf, Travel Form, an aura) keeps the caster path; b49: A STANCE-COVERED BUTTON BINDS TO THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): a Warrior in Battle Stance bound Charge on ZR + B page 1, the game lays the stance bar over RT there, the box's form defaulted to the caster and the plain RT slot (199) took it while the game, the router and Home read the stance bar's; now the box's form is "not chosen" (nil) until the player picks one, and then the active form's bar is the default (bform reports it, so the app's form row lights it); 0 = the caster picked on purpose (the old path); the ack's probe.slotSrc says where the slot came from (stance / form / game / button / formula); b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
+local BV = "b59"               -- bump on every change; b59 AN ITEM IN THE BIND BOX (the user, 2026-11-13: "when doing bind to a button from bags it should open the normal spell binding menu"): WC.spellsBindItem(itemID, host) opens THIS box for a bag item, HOSTED by the room that holds the controller (Bags keeps its capture and hands every press on: WC.spellsBindHosted.press; the extra keys Select / L3 / R3 are asked under the host's name, host.extra); same tabs (Normal | In combat; no Cast bar tab: spells only), same keep / undo, same refusals; Normal = the game's own PickupItem + PlaceAction on the slot the press names (forms / stances as for a spell), L3 / R3 = WC.padMap.putItem (PadMap m157's stick entry, "/use item:<id>"), In combat = WC.padMap.putFight(..., "item", id, form); pressing the button the item is already on CLEARS it (issue #213's rule, the answer's clr = true), keep / undo as for a bind; the box ending (kept, cancelled, its answer closed) hands back to the host (host.done) and the room is where it was; spellsctl carries bitem { id, n, i } and via "bags"; b58 THE 1.0.30 TEST BUILD MERGE (code 1463): feat/castbar-8 and feat/sticks-bind-any both tagged b57, both kept (cast bar = b57, sticks = b57b); b57 EIGHT CAST BAR SLOTS (the user, 2026-11-13: "only see 6 slots instead of 8 when using both, I think that you misunderstood and kept 6 total slots on both side even with the slide for more."; the pick: "8 total, 4 per side"; ActionBar cb6): padtab 39 then 27-28 = slot 7-8 (20-25 stay slot 1-6, 26 the box's tab: no code moved), the Bind box's Cast bar tab walks all 8 with the D-pad left / right; b57b L3 / R3 IN THE BIND BOX (the user, 2026-11-13: "looking good, except people also want to be able to bind any of their spells and stuff to these, so any of those 5 controller tabs should be able to bind here"): while the box is up the capture also hands us L3 / R3 (its extra keys); on the Normal tab L3 / R3 (bare or ZL) take the spell (PadMap m157: the stick's own button, WC.padMap.putSpell on position 9 / 10), the answer's pad names the stick (p = 9 / 10, no bar slot), B's undo puts back what the stick held (stickSaved / stickRestore); ZR / ZL + ZR + a stick: "layer", the box waits; the In combat tab: "stick-normal" (the sticks are no fight layer), the box waits; b56b (review): the Cast bar tab hands the bar the book item's action id (`a`, as the spell's two taps do), not its spell id; b56 THE BIND BOX'S CAST BAR TAB (the user, 2026-11-13: "to assign to the bar, in the bind menu, where there is the L and R tabs, we will add a third tab if this setting is turned on, showing the 6 slots on that bar"; ActionBar cb3): padtab 39 then 26 = the box's third tab (ctl.bind.cb: the D-pad left / right walks the 6 slots, A puts the spell there, B backs out, no button is bound meanwhile); 39 then 20-25 = slot 1-6 (WC.castBarPick(slot)): with the box waiting, its spell goes there at once and the box closes; bf-on / bf-off leave the tab; the box's `bcb` = the slot the cursor is on; b55 THE LAZY CAST BAR ROW (1.0.30 code 1454, ActionBar cb2): padtab 39 then 19 = the cast bar's pick (WC.castBarPick), so the Spellbook's "Cast bar" works before the castbar row exists; b54 THE 1.0.30 TEST BUILD MERGE (code 1453): feat/multi-radial-v2's b53b next to b53, both kept; b53b SEVERAL SPELL RADIALS back (feat/multi-radial-v2; b49 of 1.0.18): the radial ops ride Smart Range's pick: padtab 39 then code 5-18 = radial op 0-13 (PadTabCtl p49 touchRadial; 38 is rank up now, so b49's prefix 38 is gone); b52 SMART RANGE (the user, 2026-11-12: "when enabled I want two selectable buttons, one for melee and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button modifier combo"): padtab column 39 is the one-shot Smart Range pick (PadTabCtl p46 srPick, fresh 2 s) and the padtab column right after it is its code (0 the box, 1 Melee, 2 Range, 3 the box on, 4 off), in the room or the restore's quiet enter; b51 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): padtab column 38 is the rank-up pick (PadMap m143 WC.rankUpPick), the spell's two taps after it upgrade that spell's lower copies (WC.rankUpSpell); a Bind that places a rank below the top remembers it as picked on purpose (WC.rankPicked: never upgraded); b50 b50: THE BARE D-PAD IS THE DS WoW TOOLBAR'S IN THE BIND BOX TOO (issues #18 / #20, 1.0.15: "Trying to bind an attack, doesnt show up on bottom screen and or the button display for attacks on the buton layout"; a second player on #20: "When I disabled the DS shortcuts (dpad) it allowed me to bind abilities to the Dpad. But only there. Any modifier key binding doesn't work."; #31, 1.0.16: "i cant bind new spells to anything"): with the toolbar on (PadMap dpadWant), a bare D-pad press placed the spell on the plain D-pad slot the router's toolbar keys cover, so it never cast and Home drew the toolbar there; now it answers "dpad bar" (nothing placed, the box keeps waiting) as the Controller room does (PadTabCtl p34 toolbarHas); the In combat tab's bare D-pad still takes a fight spell (p36); b49 (review): the default is the active form only while the game SHOWS its stance bar (WC.padMap.stanceShown); a form with no bar (Ghost Wolf, Travel Form, an aura) keeps the caster path; b49: A STANCE-COVERED BUTTON BINDS TO THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): a Warrior in Battle Stance bound Charge on ZR + B page 1, the game lays the stance bar over RT there, the box's form defaulted to the caster and the plain RT slot (199) took it while the game, the router and Home read the stance bar's; now the box's form is "not chosen" (nil) until the player picks one, and then the active form's bar is the default (bform reports it, so the app's form row lights it); 0 = the caster picked on purpose (the old path); the ack's probe.slotSrc says where the slot came from (stance / form / game / button / formula); b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits); b53 THE TAP-TO-CAST BAR (GitHub #43; ActionBar cb1): the castbar row's pick (cell 12, fresh 2 s) just before a spell's two taps puts that spell on the character's cast bar or takes it off (WC.castBarSpell), first of every pick, in a fight too (ActionBar queues it); b52 SMART RANGE (the user, 2026-11-12: "when enabled I want two selectable buttons, one for melee and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button modifier combo"): padtab column 39 is the one-shot Smart Range pick (PadTabCtl p46 srPick, fresh 2 s) and the padtab column right after it is its code (0 the box, 1 Melee, 2 Range, 3 the box on, 4 off), in the room or the restore's quiet enter; b51 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): padtab column 38 is the rank-up pick (PadMap m143 WC.rankUpPick), the spell's two taps after it upgrade that spell's lower copies (WC.rankUpSpell); a Bind that places a rank below the top remembers it as picked on purpose (WC.rankPicked: never upgraded); b50 b50: THE BARE D-PAD IS THE DS WoW TOOLBAR'S IN THE BIND BOX TOO (issues #18 / #20, 1.0.15: "Trying to bind an attack, doesnt show up on bottom screen and or the button display for attacks on the buton layout"; a second player on #20: "When I disabled the DS shortcuts (dpad) it allowed me to bind abilities to the Dpad. But only there. Any modifier key binding doesn't work."; #31, 1.0.16: "i cant bind new spells to anything"): with the toolbar on (PadMap dpadWant), a bare D-pad press placed the spell on the plain D-pad slot the router's toolbar keys cover, so it never cast and Home drew the toolbar there; now it answers "dpad bar" (nothing placed, the box keeps waiting) as the Controller room does (PadTabCtl p34 toolbarHas); the In combat tab's bare D-pad still takes a fight spell (p36); b49 (review): the default is the active form only while the game SHOWS its stance bar (WC.padMap.stanceShown); a form with no bar (Ghost Wolf, Travel Form, an aura) keeps the caster path; b49: A STANCE-COVERED BUTTON BINDS TO THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): a Warrior in Battle Stance bound Charge on ZR + B page 1, the game lays the stance bar over RT there, the box's form defaulted to the caster and the plain RT slot (199) took it while the game, the router and Home read the stance bar's; now the box's form is "not chosen" (nil) until the player picks one, and then the active form's bar is the default (bform reports it, so the app's form row lights it); 0 = the caster picked on purpose (the old path); the ack's probe.slotSrc says where the slot came from (stance / form / game / button / formula); b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -233,7 +233,7 @@ end
 -- capture starts every fresh take at "home"; this tells it only the changes. Versions 1 and 2 have no bnext: nothing is told.
 local toldB = nil
 local function tellB()
-    if not ctl.on then toldB = nil return end
+    if not ctl.on then toldB = nil return end           -- b59: a hosted box tells nothing (the host's own B rules)
     local cap = capture()
     if not cap or (cap.version or 0) < 3 or type(cap.bnext) ~= "function" then return end
     -- opened from a TRAINER (the user 2026-09-30: "Y opens the Spellbook room; B comes back"): the last B leads back to it, not Home
@@ -273,13 +273,15 @@ local function report(note)
     local cur = T[ctl.tab]
     local e = cur and entryAt(cur, ctl.page, ctl.idx)
     local p, ri = picked(e)
+    local bi = ctl.boxItem
     WC.send(WC.encode({ type = "spellsctl", v = BV, ctl = {
-        on = ctl.on, via = ctl.via, line = cur and cur.k or nil, page = ctl.page, idx = ctl.idx, tabs = ctl.onTabs or nil,
+        on = ctl.on or (ctl.host ~= nil), via = ctl.host and ctl.host.name or ctl.via,   -- b59: a hosted box (an item from Bags)
+        bitem = bi and (ctl.mode == "bind" or ctl.mode == "confirm" or ctl.mode == "result") and { id = bi.id, n = bi.n, i = bi.i } or nil, line = cur and cur.k or nil, page = ctl.page, idx = ctl.idx, tabs = ctl.onTabs or nil,
         pages = cur and pagesOf(cur) or 1,
         rk = ri, rks = e and e.ranks and #e.ranks or nil,
         sel = p and (p.id or p.a) or nil, mode = ctl.mode, bind = ctl.bind and ctl.bind.id or nil, pg = ctl.pg, ctrl = ctl.ctrlTab or nil,
         bf = ctl.bind and ctl.bind.fight or nil,                    -- b37: the Bind box puts it on the In combat layout
-        bcb = ctl.bind and ctl.bind.cb and (ctl.bind.cbSlot or 1) or nil,   -- b56: the box's Cast bar tab, its cursor's slot (b57: 1-8)
+        bcb = ctl.bind and ctl.bind.cb and not ctl.bind.item and (ctl.bind.cbSlot or 1) or nil,   -- b56: the box's Cast bar tab, its cursor's slot (b57: 1-8)
         bform = (function() local f = bindFormNow(); return (f and f ~= 0) and f or nil end)(),   -- b43 / b49: the chosen (or default) form
         bk = extraOn and "select" or nil, croom = ctl.croom or nil,
         tn = ctl.croom and (ctl.tn or 0) or nil, pn = ctl.croom and (ctl.pn or 0) or nil, note = ctl.note } }))
@@ -290,11 +292,16 @@ end
 -- the Spells rooms BECAUSE OF THE FIGHT tells the capture, which pulses Home's red flash once. Harmless out of a fight or when another
 -- room holds ("no fight" / "not the holder"). One name for the Spellbook, Talents and the Controller tab: our guest name.
 WC.spellsRefusedCombat = function()
-    if type(WC.capture) == "table" and type(WC.capture.refused) == "function" then pcall(WC.capture.refused, GUEST) end
+    -- b59: a hosted box's refusal is the HOST's (it holds the controller: the capture flashes for its holder only)
+    local who = (ctl.host and ctl.host.name) or GUEST
+    if type(WC.capture) == "table" and type(WC.capture.refused) == "function" then pcall(WC.capture.refused, who) end
 end
 
-local function ack(ok, id, why, pad, probe)
-    WC.send(WC.encode({ type = "spellsack", op = "bind", v = BV, id = id, ok = ok and true or false, why = why, pad = pad, probe = probe }))
+local function ack(ok, id, why, pad, probe, clr)
+    -- b59: `item` = the box is a bag item's (id = the item's id), `clr` = the press cleared the item from that button (issue #213's rule)
+    local item = (ctl.bind and ctl.bind.item) and true or nil
+    WC.send(WC.encode({ type = "spellsack", op = "bind", v = BV, id = id, ok = ok and true or false, why = why, pad = pad, probe = probe,
+                        item = item, clr = clr and true or nil }))
     WC.push()
 end
 
@@ -517,7 +524,11 @@ function UNDO.put(u)
         local pm = WC.padMap
         if type(pm) ~= "table" then return false, "failed" end
         local okp, ok
-        if u.prevFight then
+        if u.prevT then
+            -- b59: a whole-button thing was there (an item, a command, a mount, a binding): back by PadMap's own fight-layer put
+            if type(pm.putFight) ~= "function" then return false, "failed" end
+            okp, ok = pcall(pm.putFight, u.page or 1, u.set or 1, u.pos, u.prevT, u.prevV, u.form)
+        elseif u.prevFight then
             local bs = type(WC.spellsBookSlotOf) == "function" and WC.spellsBookSlotOf(u.prevFight) or nil
             if not bs then return false, "failed" end
             if u.form then okp, ok = pcall(pm.putCombatForm, u.form, u.pos, bs)
@@ -547,6 +558,109 @@ function UNDO.put(u)
     CALL(function() return ClearCursor() end)
     local now = UNDO.read(s)
     return now.kind == was.kind, nil
+end
+
+-- ---------------------------------------------------------------- b59: A BAG ITEM IN THE BIND BOX (hash fields of UNDO: no new main-chunk local)
+-- what a fight-layer reference holds, for B's undo: (kind, value) for a whole-button thing (PadMap's putFight takes it back), or
+-- (nil, nil, spell id) for a fight spell (its book slot at undo time, as before)
+function UNDO.thing(r)
+    if type(r) ~= "table" then return nil end
+    local t = r.t
+    if t == nil then return nil, nil, (type(r.id) == "number" and r.id or nil) end
+    if t == "item" or t == "mount" then
+        local id = type(r.id) == "number" and r.id or tonumber(type(r.key) == "string" and r.key:match("^[im]:(%d+)$") or "")
+        if id then return t, id end
+        return nil
+    end
+    if (t == "command" or t == "bind") and type(r.key) == "string" then return t, r.key end
+end
+-- L3 / R3 (bare or ZL): the item onto the stick (PadMap m157's stick entry, "/use item:<id>"), or OFF it when it is already there
+function UNDO.itemStick(b, set, pos, probe)
+    local pm = WC.padMap
+    if type(pm.putItem) ~= "function" or type(pm.stickRestore) ~= "function" then ack(false, b.id, "failed", nil, probe) return "failed" end
+    local okw, was = pcall(pm.stickSaved, set, pos)
+    was = (okw and type(was) == "table") and was or {}
+    local pad = { pg = gamePage(), b = set, p = pos }
+    if type(was.e) == "table" and was.e.t == "item" and was.e.id == b.item then
+        local okc, ok = pcall(pm.stickRestore, set, pos, {})              -- {} = nothing there: the stick's entry goes
+        if okc and ok then
+            ctl.undo = { stick = true, set = set, pos = pos, was = was, bind = b, clr = true }
+            ack(true, b.id, nil, pad, probe, true) return nil
+        end
+        ack(false, b.id, "failed", nil, probe) return "failed"
+    end
+    local okp, ok, why = pcall(pm.putItem, gamePage(), set, pos, b.item)
+    if okp and ok then
+        ctl.undo = { stick = true, set = set, pos = pos, was = was, bind = b }
+        ack(true, b.id, nil, pad, probe) return nil
+    end
+    why = okp and why or nil
+    local w = (why == "combat" or why == "layer") and why or "failed"
+    ack(false, b.id, w, nil, probe) return w
+end
+-- the In combat tab: the item becomes that button's FIGHT thing (PadMap m132 / m141 putFight: the overlay, a base X / Y / A's fight
+-- action, a chosen form's own set), or comes OFF it when it is already there; what was there is B's undo
+function UNDO.itemFight(b, set, pos, probe)
+    local pm = WC.padMap
+    if type(pm.putFight) ~= "function" then ack(false, b.id, "failed", nil, probe) return "failed" end
+    if set == 1 and pos == 7 then ack(false, b.id, "reserved", nil, probe) return "reserved" end      -- B alone stays the game's Back
+    local page = gamePage()
+    local form = ctl.bindForm
+    if not (form and form ~= 0 and set == 1) then form = nil end
+    local face = form == nil and set == 1 and pos >= FIRST_RESERVED
+    local prev
+    if form then
+        local okw, w = pcall(pm.formFight, form, pos)
+        prev = okw and type(w) == "table" and w or nil
+    else
+        local okv, v = pcall(pm.slotAt, page, set, pos)
+        prev = okv and type(v) == "table" and ((face and v.cf) or (not face and v.kind == "combat" and v.c)) or nil
+    end
+    local pt, pv, pf = UNDO.thing(prev)
+    local u = { fight = true, form = form, face = face, page = page, set = set, pos = pos, prevT = pt, prevV = pv, prevFight = pf, bind = b }
+    local pad = { pg = page, b = set, p = pos, fight = true, form = form }
+    if pt == "item" and pv == b.item then
+        local okc, ok
+        if form then okc, ok = pcall(pm.clearCombatForm, form, pos)
+        elseif face then okc, ok = pcall(pm.clearCombatFace, pos)
+        else okc, ok = pcall(pm.clearCombat, page, set, pos) end
+        if okc and ok then
+            u.clr, u.prevT, u.prevV, u.prevFight = true, "item", b.item, nil         -- B's undo puts the item back
+            ctl.undo = u; ack(true, b.id, nil, pad, probe, true) return nil
+        end
+        ack(false, b.id, "failed", nil, probe) return "failed"
+    end
+    local okp, ok, why = pcall(pm.putFight, page, set, pos, "item", b.item, form)
+    if okp and ok then ctl.undo = u; ack(true, b.id, nil, pad, probe) return nil end
+    why = okp and why or nil
+    local w = (why == "combat" or why == "bind" or why == "dpad bar" or why == "reserved") and why or "failed"
+    ack(false, b.id, w, nil, probe) return w
+end
+-- Normal: the game's own way onto the slot the press names (PadMap m33's putItem road: pick it up by its id, place, read the slot
+-- back), or OFF it when the slot holds this item already; what was there is B's undo (UNDO.put picks an item up by its id too)
+function UNDO.itemPlace(b, storage, page, set, pos, probe)
+    local was = UNDO.read(storage)
+    local pad = { s = storage, pg = page, b = set, p = pos }
+    CALL(function() return ClearCursor() end)
+    if was.kind == "item" and was.id == b.item then
+        CALL(function() return PickupAction(storage) end)
+        CALL(function() return ClearCursor() end)
+        if UNDO.read(storage).kind ~= "none" then ack(false, b.id, "failed", nil, probe) return "failed" end
+        ctl.undo = { storage = storage, was = was, page = page, set = set, pos = pos, bind = b, clr = true }
+        ack(true, b.id, nil, pad, probe, true) return nil
+    end
+    CALL(function() if type(PickupItem) == "function" then return PickupItem(b.item) end return C_Item.PickupItem(b.item) end)
+    if cursorKey() == nil then
+        CALL(function() return ClearCursor() end)
+        ack(false, b.id, "failed", nil, probe) return "failed"
+    end
+    CALL(function() return PlaceAction(storage) end)
+    CALL(function() return ClearCursor() end)
+    local now = UNDO.read(storage)
+    if not (now.kind == "item" and now.id == b.item) then ack(false, b.id, "failed", nil, probe) return "failed" end
+    ctl.undo = { storage = storage, was = was, page = page, set = set, pos = pos, bind = b }
+    ack(true, b.id, nil, pad, probe)
+    return nil
 end
 
 -- the press that answers the Bind box. Returns nil when the spell was placed, else the reason (the answer is sent here).
@@ -581,6 +695,7 @@ local function bindPress(key)
         if type(pm) ~= "table" or type(pm.putSpell) ~= "function" or type(pm.stickSaved) ~= "function" then
             ack(false, b.id, "failed", nil, probe) return "failed"
         end
+        if b.item then return UNDO.itemStick(b, set, pos, probe) end                -- b59: a bag item
         local okb, info = CALL(function() return C_SpellBook.GetSpellBookItemInfo(b.slot, BOOK_BANK) end)
         local nowId = okb and type(info) == "table" and (TN(function() return info.spellID end) or TN(function() return info.actionID end))
         if nowId ~= b.id then ack(false, b.id, "unknown", nil, probe) return "unknown" end
@@ -600,6 +715,7 @@ local function bindPress(key)
     if b.fight then
         local pm = WC.padMap
         if type(pm) ~= "table" then ack(false, b.id, "failed", nil, probe) return "failed" end
+        if b.item then return UNDO.itemFight(b, set, pos, probe) end                -- b59: a bag item
         local okp, ok, fwhy
         -- b43 (the user: "We need to add this to the actual bind pop up in the spell book"): a FORM chosen in the box's form row = that
         -- form's own In-combat set (PadMap m55: the bare set, B never); its spell there before is B's undo
@@ -676,6 +792,7 @@ local function bindPress(key)
         local valid = storage and TB(function() return C_GamepadUI.IsValidGamepadActionStorageSlotIndex(storage) end)
         if not valid then ack(false, b.id, "failed", nil, probe) return "failed" end
     end
+    if b.item then return UNDO.itemPlace(b, storage, page, set, pos, probe) end     -- b59: a bag item (no book place)
     -- the spell must still be at that place in the book (a spell learned meanwhile moves the slots)
     local ok, info = CALL(function() return C_SpellBook.GetSpellBookItemInfo(b.slot, BOOK_BANK) end)
     local now = ok and type(info) == "table" and (TN(function() return info.spellID end) or TN(function() return info.actionID end))
@@ -720,6 +837,15 @@ local function shoulders()
     return out
 end
 local function extraApply()
+    local h = ctl.host
+    if h then                                           -- b59: a hosted box: the holder asks the capture under its own name
+        local want = selWant and { SELECT, "PADLSTICK", "PADRSTICK" } or {}
+        local key = table.concat(want, ",")
+        if key == extraSent then return end
+        local ok, got = pcall(h.extra, want)
+        if ok and got then extraSent = key; extraOn = selWant elseif not selWant then extraOn = false; extraSent = nil end
+        return
+    end
     local cap = capture()
     if not (ctl.on and cap and (cap.version or 0) >= 4 and type(cap.extra) == "function") then extraOn = false; extraSent = nil return end
     local list = {}
@@ -874,17 +1000,68 @@ local function backFor(boxOpen)
     if ok and got then ctl.back = spec.back ~= nil end
 end
 
+-- b59 THE BOX FOR A BAG ITEM, HOSTED (the user, 2026-11-13: "when doing bind to a button from bags it should open the normal spell binding
+-- menu"). The room that holds the controller (Bags) stays the holder: it hands each press on (WC.spellsBindHosted.press) and the box
+-- asks the capture for Select / L3 / R3 through it (host.extra(list) -> true when asked). host = { name = "bags", extra = fn(list),
+-- done = fn(note) }: done runs once when the box ends (kept, cancelled, its answer closed), so the host's room is back where it was.
+-- The box's end, for a hosted box: the host gets the room back (one report first: the box is gone for the app)
+function UNDO.closed(note)
+    local h = ctl.host
+    if not h then report(note) return end
+    ctl.host, ctl.boxItem, ctl.undo, ctl.bind = nil, nil, nil, nil
+    extraSent, extraOn, selWant = nil, false, false
+    report(note)
+    pcall(h.done, note)
+end
+WC.spellsBindItem = function(itemID, host)
+    if type(itemID) ~= "number" or type(host) ~= "table" or type(host.extra) ~= "function" or type(host.done) ~= "function" then
+        return false, "bad"
+    end
+    if ctl.on or ctl.host then return false, "busy" end           -- the Spells rooms hold the controller, or a box is up already
+    if TB(function() return InCombatLockdown() end) then report("bind-combat") return false, "combat" end
+    local n = TS(function() return C_Item.GetItemNameByID(itemID) end)
+    if not n then return false, "no item" end
+    local i = TN(function() return C_Item.GetItemIconByID(itemID) end)
+    ctl.host = { name = type(host.name) == "string" and host.name or "bags", extra = host.extra, done = host.done }
+    ctl.boxItem = { id = itemID, n = n, i = i }
+    ctl.bind = { item = itemID, id = itemID }
+    ctl.bindForm, ctl.undo = nil, nil
+    ctl.mode = "bind"
+    extraSent = nil
+    extraFor(true)
+    report("bind-wait")
+    return true
+end
+-- the host's half: its presses while the box shows (true = the box took it); abort = the host lost the controller (the box goes quietly)
+WC.spellsBindHosted = {
+    up = function() return ctl.host ~= nil end,
+    press = function(key)
+        if not ctl.host then return false end
+        onPress(key)
+        return true
+    end,
+    abort = function(why)
+        local h = ctl.host
+        if not h then return false end
+        if selWant then pcall(h.extra, {}) end                 -- the host may still hold: Select / L3 / R3 back to the game
+        ctl.host, ctl.boxItem, ctl.undo, ctl.bind, ctl.mode = nil, nil, nil, nil, "book"
+        extraSent, extraOn, selWant = nil, false, false
+        report("bind-lost-" .. tostring(why))
+        return true
+    end,
+}
+
 -- b56 THE BIND BOX'S CAST BAR TAB: the box's spell onto cast bar slot [slot] (ActionBar cb3's slot pick, then the spell, as the padtab
 -- route's two taps would hand it), then the box closes back to the book. ActionBar queues an edit made in a fight (the box never opens in one)
 local function bindToCastBar(slot)
     local b = ctl.bind
-    if ctl.mode ~= "bind" or not b or type(b.id) ~= "number" then return false end
+    if ctl.mode ~= "bind" or not b or type(b.id) ~= "number" or b.item then return false end   -- b59: spells only
     if type(WC.castBarPick) ~= "function" or type(WC.castBarSpell) ~= "function" then report("castbar-none") return false end
     pcall(WC.castBarPick, slot)
     -- b56b (review): the id the spell's own two taps hand the bar (Spells numbers `a`, the action id): an overridden spell's two ids
     -- would otherwise sit on two slots, and the app's slot / hasEntry reads both
     pcall(WC.castBarSpell, (type(b.a) == "number" and b.a > 0) and b.a or b.id)
-    ctl.bind, ctl.mode = nil, "book"; backFor(false); report("castbar-placed")
+    ctl.bind, ctl.mode = nil, "book"; backFor(false); UNDO.closed("castbar-placed")
     return true
 end
 local function castBarSlots() return (type(WC.castBarSlots) == "number" and WC.castBarSlots) or 6 end
@@ -911,7 +1088,9 @@ setPage = function(pg)
 end
 
 onPress = function(key)
-    if not ctl.on then return end
+    if not ctl.on and not ctl.host then return end
+    -- b59: a hosted box (an item from Bags): only the box's own presses; nothing of the book's
+    if ctl.host and not (ctl.mode == "bind" or ctl.mode == "confirm" or ctl.mode == "result") then return end
     -- THE TALENTS PAGE: its controller half first; a press it does not use is B, and B hands the controller back (Home)
     if ctl.pg == "talents" then
         local tcl = WC.talentsCtl
@@ -946,7 +1125,7 @@ onPress = function(key)
         end
         if key == SELECT or key == "PADLSHOULDER" or key == "PADRSHOULDER" then return end
         if (key == "PAD2" and plainNow()) or (key == backKey() and key ~= SELECT) then
-            ctl.bind, ctl.mode = nil, "book"; backFor(false); report("bind-cancel") return
+            ctl.bind, ctl.mode = nil, "book"; backFor(false); UNDO.closed("bind-cancel") return
         end
         -- b56: the Cast bar tab: the D-pad left / right walks the slots, A puts the spell on the lit one; nothing else binds meanwhile
         if ctl.bind and ctl.bind.cb then
@@ -967,17 +1146,17 @@ onPress = function(key)
         local n = ctl.resultN
         report(why and ("bind-" .. why) or "bound")
         C_Timer.After(1.5, function()
-            if ctl.on and ctl.mode == "result" and ctl.resultN == n then ctl.mode = "book"; backFor(false); report("result-closed") end
+            if (ctl.on or ctl.host) and ctl.mode == "result" and ctl.resultN == n then ctl.mode = "book"; backFor(false); UNDO.closed("result-closed") end
         end)
         return
     end
     if ctl.mode == "confirm" then
         local u = ctl.undo
         if key == "PAD1" then
-            ctl.undo, ctl.mode = nil, "book"; backFor(false); report("bind-kept") return
+            ctl.undo, ctl.mode = nil, "book"; backFor(false); UNDO.closed("bind-kept") return
         end
         if (key == "PAD2" and plainNow()) or key == backKey() then
-            if not u then ctl.mode = "book"; backFor(false); report("bind-kept") return end
+            if not u then ctl.mode = "book"; backFor(false); UNDO.closed("bind-kept") return end
             local ok, why = UNDO.put(u)
             if ok then
                 ctl.undo, ctl.bind, ctl.mode = nil, u.bind, "bind"; backFor(true)
@@ -993,7 +1172,7 @@ onPress = function(key)
         return
     end
     if ctl.mode == "result" then
-        if key == backKey() or (key == "PAD2" and plainNow()) then ctl.mode = "book"; backFor(false); report("result-closed") end
+        if key == backKey() or (key == "PAD2" and plainNow()) then ctl.mode = "book"; backFor(false); UNDO.closed("result-closed") end
         return
     end
     -- THE CONTROLLER TAB: its half first; "up" = back to the tab row; a press it does not use is B (Home)
@@ -1484,7 +1663,7 @@ if type(pad) == "table" and type(pad.op) == "function" then
             end
             if col == 26 then
                 if type(pt.srDrop) == "function" then pcall(pt.srDrop) end
-                if ctl.mode == "bind" and ctl.bind and type(WC.castBarPick) == "function" then
+                if ctl.mode == "bind" and ctl.bind and not ctl.bind.item and type(WC.castBarPick) == "function" then   -- b59: spells only
                     ctl.bind.cb, ctl.bind.fight = true, nil; ctl.bind.cbSlot = ctl.bind.cbSlot or 1; report("bind-cb")
                 end
                 return

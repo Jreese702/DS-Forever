@@ -837,7 +837,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the Bind box's controller picture, drawn by the Cast room as it draws its own sets (false = no layout yet: stand-ins)
             drawSet = { c, set, dpad, face, lit, icon, fight -> castView.drawSet(c, set, dpad, face, lit, icon, fight) },
             onTap = { col -> spellsTap(col) },                    // b37: the Bind box's Normal / In combat
-            onCastBarTaps = { cells -> castBarTaps(cells) })        // GitHub #43 cb3: the box's Cast bar tab and its slots
+            onCastBarTaps = { cells -> castBarTaps(cells) },        // GitHub #43 cb3: the box's Cast bar tab and its slots
+            // Book b59 / bags-bindbox1: a finger's Keep / Undo / Back in the box the Bags room hosts (a bag item's): Bags' own A / B
+            onHostKey = { k -> if (::bagsView.isInitialized) bagsView.boxKey(k) })
         spellsOverlay.visibility = View.GONE
         radialView = HomeRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pinPicker = BagsPinPicker(this)
@@ -2427,7 +2429,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // would tap close). Home's finding, AGENT_LOG 9596d1a. The book, the tree and the chosen talent replay: the last known state shows.
             "spellsctl" -> if (current) SpellsModel.parseCtl(msg)?.let { c ->
                 spellbookView.onCtl(c); controllerView.onCtl(c); spellsOverlay.onCtl(c)
-                newSpellBindCtl(c)   // f-new-spell-prompt: the Bind box closed, kept or undid (SpellsModel.bindStepCtl)
+                if (!c.hosted) newSpellBindCtl(c)   // f-new-spell-prompt: the Bind box closed, kept or undid (SpellsModel.bindStepCtl); b59: not a bag item's
                 // the page the controller drives (Book.lua b3 `pg`) picks the room: the game's own Talents / Spellbook buttons bring theirs
                 // up; between the two rooms the page follows the bar (no taps here: see pickRoom)
                 // (the Talents page flag BEFORE the jump: show()'s hand-over reads it, so a page the game moved is not moved again)
@@ -2455,7 +2457,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // new-spell flow, or the player is sent Home before pressing again; the box's close (bind-cancel / result-closed) and the
                 // 120 s timeout still end it
                 // the user 2026-11-12 ("Wait for keep/undo"): a bind that TOOK does not end it either: the box asks keep / undo first
-                SpellsModel.parseBind(msg)?.let { spellsOverlay.onBind(it); spellbookView.invalidate(); newSpellBindStep(SpellsModel.bindStepAck(it)) }
+                // Book b59: a bag item's box (hosted by Bags) is never the new-spell flow's
+                SpellsModel.parseBind(msg)?.let { spellsOverlay.onBind(it); spellbookView.invalidate(); if (!it.item) newSpellBindStep(SpellsModel.bindStepAck(it)) }
             }
             // the Professions room (professions session): the professions, the open one's recipes, the answers to its taps
             "prof" -> msg.optJSONObject("p")?.let { p ->

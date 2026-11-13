@@ -124,10 +124,21 @@
 -- to you?" waits (BINDWAIT.on) the Bags room hands A / B to the game as well (syncPass, as for "bindask"): before, only the Character
 -- room did, so a drag in the Bags room left the piece on the cursor with no pad answer for up to BINDWAIT.MAX.
 
+-- bags-bindbox1 (the user, 2026-11-13: "when doing bind to a button from bags it should open the normal spell binding menu"): the Y menu's
+-- Bind to a Button opens the SPELLBOOK'S Bind box (Book b59 WC.spellsBindItem) for the item, hosted: Bags keeps the controller and hands
+-- every press to the box (mode "bindbox", WC.spellsBindHosted.press), the box asks the capture for Select / L3 / R3 through Bags
+-- (ACT.host.extra), and when the box ends (kept, cancelled, its answer closed) Bags is back on the grid on the same slot (ACT.host.done).
+-- The box's tabs, keep / undo and refusals are the spell box's; the item goes where a spell would (Normal: the game's own PlaceAction
+-- on that slot; L3 / R3: PadMap's stick entry; In combat: PadMap's fight layer), and pressing the button it is already on clears it
+-- (issue #213's rule, now inside the box). The old bind sheet (the capture's chord, onChord / armBind) is gone. Binds it made before:
+-- BB still applies them at login (RB / RT / Select as before); one on L3 / R3 MOVES into PadMap's stick entry for that stick (BB.migrate:
+-- the same "/use item" on the same button, now shown and cleared in the box), or is let go when that stick has something of its own
+-- already (the router's priority binding hid it). A lost controller closes the box quietly (abort). No new game call of Bags' own.
+
 local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
-local BB = { binds = {}, buttons = {}, applied = {} }   -- Bind to a Button, the companion's own (its functions after bindableNow)
+local BB = { binds = {}, buttons = {}, applied = {} }   -- the old Bind to a Button's binds (bags-bindbox1: applied, migrated; after chordRefusal)
 
 -- CAPTURE v8 (Interact i74, the user's ruling): a room KEEPS the controller through a fight and flashes red. Wherever Bags
 -- refuses an action because of the fight, it says so: capture.refused("bags") bumps the fight count and Home pulses the
@@ -1209,7 +1220,6 @@ end)
 -- never a chord and always go on to the game. A chord WITH a modifier held ("SHIFT-PADRSHOULDER") has
 -- not been pressed by anyone yet -- whether the game reports the modifier while the capture frame has
 -- the press is unknown -- so those stay behind BIND_MODS until one is measured.
-local BIND_READY = true
 local BIND_MODS = false
 local HEARD = { PADRSHOULDER = true, PADRTRIGGER = true, PADLSTICK = true, PADRSTICK = true,
                 PADBACK = true }
@@ -1224,36 +1234,6 @@ local function chordRefusal(chord)
     if not HEARD[base] then return "bind-unheard" end
     if chord:find("-", 1, true) and not BIND_MODS then return "bind-modifier" end
     return nil
-end
-
--- a binding command as the player reads it: the game's own BINDING_NAME_<command> text ("Action
--- Button 7"), or for one of our item binds the item's name. nil when the game has no name for it (a
--- CLICK binding, say): the overlay then shows the command itself.
-local function bindingLabel(cmd)
-    if type(cmd) ~= "string" or cmd == "" then return nil end
-    local g = S(function() return _G["BINDING_NAME_" .. cmd] end)
-    if type(g) == "string" and g ~= "" and g:byte(1) > 3 then return g end
-    -- ours: our own secure button for that chord (CLICK WowCompanionBagBind_<chord>), or an old item macro (MACRO WCB <id>)
-    local chord = cmd:match("^CLICK WowCompanionBagBind_(.+):LeftButton$")
-    local id = (chord and BB.binds[chord]) or tonumber(cmd:match("^MACRO WCB (%d+)$") or "")
-    if id then
-        local okN, nm = CALL(function() return C_Item.GetItemNameByID(id) end)
-        nm = okN and S(function() return nm end)
-        if type(nm) == "string" and nm ~= "" and nm:byte(1) > 3 then return nm end
-    end
-    return cmd:match("^MACRO (.+)$")               -- another macro: its name
-end
-
--- what each bindable button does now, for the overlay (read-only; sent only while it is open)
-local function bindableNow()
-    local out = {}
-    for _, k in ipairs(HEARD_ORDER) do
-        local a = S(function() return GetBindingAction(k, true) end)
-        if type(a) ~= "string" or (a ~= "" and a:byte(1) <= 3) then a = nil end
-        a = (a ~= "" and a) or nil
-        out[#out + 1] = { k = k, a = a, n = a and bindingLabel(a) or nil }
-    end
-    return out
 end
 
 -- ---------------------------------------------------------------- BIND TO A BUTTON: THE COMPANION'S OWN (the user's RULING 2026-10-09)
@@ -1328,22 +1308,37 @@ function BB.apply()
     return true
 end
 
-function BB.set(chord, id) BB.binds[chord] = id; BB.save(); return BB.apply() end
 -- bags-unbind1 (issue #213): the one way to let a bind go. Out of combat only (an override cannot change in a fight)
 function BB.clear(chord)
     if InCombatLockdown() or BB.binds[chord] == nil then return false end
     BB.binds[chord] = nil; BB.save(); return BB.apply()
 end
--- the chords this item is bound to (sorted, for the sheet), or nil
-function BB.chordsOf(id)
-    if not id then return nil end
-    local out = {}
-    for k, v in pairs(BB.binds) do if v == id then out[#out + 1] = k end end
-    table.sort(out)
-    return out[1] and out or nil
+-- bags-bindbox1: a bind on L3 / R3 moves into PadMap's stick entry (m157: "/use item:<id>" on the stick's own button, shown and cleared
+-- in the Bind box), out of combat; a stick that holds something of its own already keeps it (the router's priority binding hid ours,
+-- so ours goes). RB / RT / Select stay BB's. Not ready (no PadMap, the item's name not loaded yet): tried again later (BB.migrate).
+BB.STICK = { PADLSTICK = 9, PADRSTICK = 10 }
+function BB.migrate()
+    if InCombatLockdown() then BB.pending = true; BB.migrated = false; return false end
+    local pm = WC.padMap
+    if type(pm) ~= "table" or type(pm.putItem) ~= "function" or type(pm.stickSaved) ~= "function" then BB.migrated = false; return false end
+    local left, changed = false, false
+    for chord, pos in pairs(BB.STICK) do
+        local id = BB.binds[chord]
+        if id then
+            local okw, sv = pcall(pm.stickSaved, 1, pos)
+            if okw and type(sv) == "table" and (sv.bind or sv.e) then
+                BB.binds[chord] = nil; changed = true                         -- the stick's own wins, as it did
+            elseif okw and type(sv) == "table" then
+                local page = type(pm.page) == "function" and pm.page() or 1
+                local okp, ok = pcall(pm.putItem, page, 1, pos, id)
+                if okp and ok then BB.binds[chord] = nil; changed = true else left = true end
+            else left = true end
+        end
+    end
+    if changed then BB.save(); BB.apply() end
+    BB.migrated = not left
+    return not left
 end
-
-function BB.ours(cmd) return type(cmd) == "string" and (cmd:sub(1, 26) == "CLICK WowCompanionBagBind_" or cmd:sub(1, 10) == "MACRO WCB ") end
 
 -- the old binds and macros (see above): { binds = { {k, id} }, macros = { name } }, or nil when there are none
 function BB.old()
@@ -1388,8 +1383,14 @@ do
     bf:RegisterEvent("PLAYER_LOGIN")
     bf:RegisterEvent("PLAYER_REGEN_ENABLED")
     bf:SetScript("OnEvent", function(_, e)
-        if e == "PLAYER_LOGIN" then BB.load(); BB.apply(); BB.oldDoc = BB.old()
-        elseif BB.pending then BB.apply() end
+        if e == "PLAYER_LOGIN" then
+            BB.load(); BB.apply(); BB.oldDoc = BB.old()
+            BB.migrated = nil
+            for n = 1, 3 do C_Timer.After(2 * n, function() if not BB.migrated then BB.migrate() end end) end   -- bags-bindbox1
+        else                                            -- a fight's end: what waited for it, and an old stick bind not moved yet
+            if BB.pending then BB.apply() end
+            if BB.migrated == false then BB.migrate() end
+        end
     end)
 end
 local COLS = 10                   -- the app's grid (v3, the room's full width: 10 to a row): the D-pad walks the same columns
@@ -1615,13 +1616,9 @@ function WC._bagsCtlDoc()
         menus = (ctl.mode == "menu") and MENU or nil,
         dpick = (ctl.mode == "dpick") and { list = ACT.list, sel = ctl.dsel or 1 } or nil,
         dest = (ctl.mode == "destroy" and ctl.dest) and { bag = ctl.dest.bag, slot = ctl.dest.slot } or nil,
-        use = ctl.use, sid = ctl.sid, bindReady = BIND_READY, bindMods = BIND_MODS,
-        -- a refused bind names what already uses the button (the game's binding command)
-        takenBy = ctl.takenBy, takenByName = ctl.takenBy and bindingLabel(ctl.takenBy) or nil,
-        bound = ctl.bound, chord = ctl.chord, unbound = ctl.unbound,
-        keys = (ctl.mode == "bind") and ctl.keys or nil,
-        -- bags-unbind1 (issue #213): this item's own buttons (pressing one clears it), and every item bind of this character
-        mine = (ctl.mode == "bind") and BB.chordsOf(ctl.bindId) or nil,
+        use = ctl.use, sid = ctl.sid,
+        -- bags-bindbox1: the item the Spellbook's Bind box is open for (mode "bindbox"); the old binds still applied (diagnostics)
+        boxItem = (ctl.mode == "bindbox") and ctl.armId or nil,
         bbinds = next(BB.binds) and BB.binds or nil,
         tip = WC._bagsTip(),
         eq = EQ.doc and EQ.doc() or nil,
@@ -1661,10 +1658,13 @@ end
 
 WC._bagsSyncPass = function() syncPass() end      -- char-more2: for the drag's bind wait (above syncPass in the file)
 local function report(note)
+    -- bags-bindbox1: the Bind box is Bags' only while Bags is in "bindbox" and holds: anything else that moved the room on closes it
+    if ACT.boxUp and not (ctl.on and ctl.mode == "bindbox") then
+        ACT.boxUp = nil
+        if type(WC.spellsBindHosted) == "table" then pcall(WC.spellsBindHosted.abort, note or "left") end
+    end
     syncPass()
     ctl.note = note; ctl.seq = ctl.seq + 1
-    if note ~= "bind-taken" then ctl.takenBy = nil end
-    if note == nil or not note:find("^bind") and note ~= "bound" then ctl.chord = nil end
     sendCtlSoon()
 end
 
@@ -1726,10 +1726,11 @@ local function leave(why)
     end
     ctl.on = false; ctl.pick = nil; ctl.mode = "grid"; ctl.passing = false; ctl.pending = nil; ctl.zone = nil
     ctl.left = why                      -- the 1 s check takes it back only after a window, never after the player left
+    -- bags-bindbox1: report() below sees the room off and closes a Bind box that was up (abort)
     report("left-" .. why)
 end
 
-local function toGrid(note) ctl.mode = "grid"; ctl.bound = nil; ctl.rare = nil; ctl.dest = nil; ctl.fromPick = nil; report(note) end
+local function toGrid(note) ctl.mode = "grid"; ctl.rare = nil; ctl.dest = nil; ctl.fromPick = nil; report(note) end
 
 -- ---------------------------------------------------------------- ARMOR KITS, STONES, ENCHANTS: "CHOOSE AN ITEM" (the user, 2026-11-07: "there
 -- is no way to apply my light armor kits ... enchants, and sharpening stones ... We need to make a way to use them from both the bags room as
@@ -2608,7 +2609,7 @@ menuUsable = function()
     local info = infoAt(ctl.bag, ctl.slot)
     local n = info and SN(function() return info.stackCount end) or 1
     local cap = capture()
-    return { n > 1, BIND_READY and cap ~= nil and cap.chord ~= nil, ACT.isGear(itemAt(ctl.bag, ctl.slot)), not InCombatLockdown() }
+    return { n > 1, cap ~= nil and type(WC.spellsBindItem) == "function", ACT.isGear(itemAt(ctl.bag, ctl.slot)), not InCombatLockdown() }
 end
 
 -- ---------------------------------------------------------------- bags-act1: COMPARE + THE DESTROY PICKER (see the header)
@@ -2890,46 +2891,35 @@ local function menuStep(dir)
     end
 end
 
--- BIND (user pick 2026-09-28 17:05, UI Art's B5 sheets "as drawn"): the sheet stays open until B.
--- A refused button says why and the next press is asked for again; a bound one shows "Bound to ..."
--- and is NOT asked again, so B (a plain press then) closes the sheet.
-local armBind
-local function onChord(chord, id)
-    ctl.chord = chord
-    local why = chordRefusal(chord)
-    -- bags-unbind1 (issue #213): the button this item is already bound to, pressed again = let it go
-    if not why and BB.binds[chord] ~= nil and BB.binds[chord] == id then
-        if InCombatLockdown() then why = "bind-combat"
-        elseif BB.clear(chord) then
-            ctl.bound = nil; ctl.unbound = chord; ctl.keys = bindableNow(); report("unbound")
-            return
-        else why = "bind-failed" end
+-- bags-bindbox1 BIND TO A BUTTON = THE SPELLBOOK'S BIND BOX for the item (Book b59), hosted by Bags: Bags keeps the controller, the box
+-- gets every press (mode "bindbox"), asks the capture for its extra keys through Bags, and hands the room back when it ends
+ACT.host = {
+    name = "bags",
+    extra = function(list)
+        local cap = capture()
+        if not (cap and type(cap.extra) == "function" and (tonumber(cap.version) or 1) >= 4) then return false end
+        local ok, got = pcall(cap.extra, "bags", list)
+        return ok and got and true or false
+    end,
+    -- the box ended (kept, cancelled, its answer closed): the grid, on the same slot
+    done = function(note)
+        ACT.boxUp = nil
+        if ctl.on and ctl.mode == "bindbox" then toGrid(note) end
+    end,
+}
+function ACT.bindBox()
+    if InCombatLockdown() then toGrid("bind-combat"); fightRefused(); return end
+    local id = itemAt(ctl.bag, ctl.slot)
+    if not id then toGrid("empty"); return end
+    if type(WC.spellsBindItem) ~= "function" then toGrid("bind-notready"); return end
+    ctl.armId = id; ctl.mode = "bindbox"; ACT.boxUp = true
+    local ok, opened, why = pcall(WC.spellsBindItem, id, ACT.host)
+    if not (ok and opened) then
+        ACT.boxUp = nil
+        toGrid((ok and why == "combat") and "bind-combat" or "bind-notready")
+        return
     end
-    if not why then
-        local taken = S(function() return GetBindingAction(chord, true) end)
-        if type(taken) == "string" and taken ~= "" and taken:byte(1) > 3
-           and not BB.ours(taken) then                  -- an earlier item bind of ours may be replaced
-            ctl.takenBy = taken; why = "bind-taken"
-        end
-    end
-    if not why then
-        -- OURS ONLY (the user's ruling 2026-10-09): our secure item button + an override, never the player's macros or set (BB)
-        if InCombatLockdown() then why = "bind-combat"
-        elseif BB.set(chord, id) then
-            ctl.bound = chord; ctl.unbound = nil; ctl.keys = bindableNow(); report("bound")
-            return
-        else why = "bind-failed" end
-    end
-    report(why)
-    if not armBind(id) then toGrid("bind-notready") end
-end
-armBind = function(id)
-    local cap = capture()
-    if not (cap and cap.chord) then return false end
-    ctl.bindId = id                                     -- bags-unbind1: the sheet's item (its own buttons, ctl.mine)
-    local okC, armed = pcall(cap.chord, "bags", function(chord) onChord(chord, id) end,
-        function() toGrid("bind-cancelled") end)
-    return okC and armed == true
+    report("bindbox")
 end
 
 -- THE GRID'S BUTTONS (the user's FINAL word 2026-09-30, after trying "b": "I want a to move, you for more and x to use or
@@ -2999,17 +2989,15 @@ local function onPress(key)
                 if n < 2 then toGrid("split-single"); return end
                 ctl.armId = itemAt(ctl.bag, ctl.slot); ctl.amount = 1; ctl.mode = "split"; report(nil)
             elseif what == "bind" then
-                local cap = capture()
-                if InCombatLockdown() then toGrid("bind-combat"); fightRefused(); return end
-                if not BIND_READY or not (cap and cap.chord) then toGrid("bind-notready"); return end
-                if not armBind(itemAt(ctl.bag, ctl.slot)) then toGrid("bind-notready"); return end
-                ctl.chord = nil; ctl.bound = nil; ctl.unbound = nil; ctl.keys = bindableNow(); ctl.mode = "bind"; report(nil)
+                ACT.bindBox()                                   -- bags-bindbox1: the Spellbook's Bind box for this item
             end
         end
-    elseif ctl.mode == "bind" then
-        -- only after a bind (nothing asked any more): B closes the sheet. While a button is being
-        -- asked for, B goes to the capture's cancel instead and the others do nothing.
-        if B then toGrid(nil) end
+    elseif ctl.mode == "bindbox" then
+        -- bags-bindbox1: every press is the Bind box's (B backs out there, and the box hands the grid back); no box = the grid again
+        local hb = WC.spellsBindHosted
+        local ok, took = false, false
+        if type(hb) == "table" and type(hb.press) == "function" then ok, took = pcall(hb.press, key) end
+        if not (ok and took) then ACT.boxUp = nil; toGrid("bind-gone") end
     elseif ctl.mode == "destroy" and ctl.rare then
         if A or B then ACT.back(nil) end               -- Okay: nothing was destroyed (back to the picker it came from)
     elseif ctl.mode == "destroy" then
@@ -3098,6 +3086,7 @@ local function onPress(key)
 end
 
 local function onLost(why)
+    if ACT.boxUp then ACT.boxUp = nil; if type(WC.spellsBindHosted) == "table" then pcall(WC.spellsBindHosted.abort, why) end end
     ctl.on = false; ctl.pick = nil; ctl.mode = "grid"; ctl.passing = false; ctl.zone = nil
     -- capture v8: a B Bags leaves to the game (pass) cannot reach the game in a fight, so the capture releases Bags with
     -- lost("B"): that is the player's own B (the app goes Home, and the 1 s check does not take it back)
@@ -3286,12 +3275,6 @@ local MENU_ROWS = { [19] = 1, [20] = 2, [21] = 3 }
 ACT.ROW_NAME = { [19] = "split", [20] = "bind", [21] = "destroy" }
 local DROP_HELD, FREE = 39, 28
 
--- an armed chord (the bind sheet asking) is the capture's; a touch Back must disarm it: taking again resets it
-local function disarm()
-    local cap = capture()
-    if ctl.mode == "bind" and cap and ctl.spec then pcall(cap.take, "bags", ctl.spec) end
-end
-
 -- right after a "target" tap (col 26): bmvq column t = the bag slot t, the target of the bag in the hand (EQ). True = taken
 -- (never a worn-slot action then, even outside the equip mode)
 function WC._bagsTargetTap(col)
@@ -3404,7 +3387,6 @@ function WC._bagsTouch(col)
         if not ctl.on then tryTake() end
         if not heldNow() then return end
         local key = VIRTUAL[col]
-        if key == "PAD2" and ctl.mode == "bind" then disarm() end
         onPress(key)
     elseif MENU_ROWS[col] and ctl.mode == "barmenu" then
         if heldNow() and MENU_ROWS[col] <= #BAR.MENU then ctl.barMenu = MENU_ROWS[col]; BAR.menuChoose(MENU_ROWS[col]) end
