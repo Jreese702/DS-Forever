@@ -143,6 +143,13 @@ L.execute('ITEMCD[118] = { 0, 120, 0 }; fire("BAG_UPDATE_COOLDOWN"); runTimers(N
 d = last(L, n0, 'itemcd')
 check(d and d.get('t', {}).get('118') == {"h": True}, "a held potion (enable 0): { h = true }", d and d.get('t'))
 
+# r20a (review): enable 0 with NO length (an item with no cooldown) is not held: never dimmed for good (the game's own duration > 0 rule)
+L.execute('ITEMCD[4540] = { 0, 0, 0 }; fire("BAG_UPDATE_COOLDOWN"); runTimers(NOW + 1)')
+d = last(L, 0, 'itemcd')
+check(d and '4540' not in d.get('t', {}), "enable 0 with no length: not held (no dim)", d and d.get('t'))
+L.execute('ITEMCD[4540] = nil')
+check(d and d.get('who') == 'Korvash-Realm', "r20a: the itemcd doc says whose it is (who, name-realm)", d and d.get('who'))
+
 # ---------------------------------------------------------------- 4. a fight: secret values
 L.execute('ITEMCD[118] = { NOW, 120, 1 }; fire("BAG_UPDATE_COOLDOWN"); runTimers(NOW + 1)')        # the potion learned: 120 s
 L.execute('ITEMCD[118] = nil; fire("BAG_UPDATE_COOLDOWN"); runTimers(NOW + 1)')                    # ready again (a plain read)

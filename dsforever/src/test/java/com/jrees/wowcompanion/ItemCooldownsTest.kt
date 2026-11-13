@@ -85,6 +85,33 @@ class ItemCooldownsTest {
         assertNull(kept["hs:Korvash-Realm"])
     }
 
+    // r20a (review): a switch to another character in ONE app life (a relog) never shows or keeps the old one's countdowns as the new one's
+    @Test fun aCharacterSwitchInOneAppLifeKeepsNothingUnderTheWrongName() {
+        ItemCd.character("Korvash-Realm", now = 0L)
+        ItemCd.onDoc(doc("""{"type":"itemcd","who":"Korvash-Realm","t":{"6948":{"d":1800,"l":600},"118":{"d":120,"l":60}}}"""), now = 0L)
+        val korvash = kept["hs:Korvash-Realm"]
+        // the new character's document comes BEFORE its padmap: Korvash's kept time stays Korvash's, nothing of his counts for Other
+        ItemCd.onDoc(doc("""{"type":"itemcd","who":"Other-Realm","fight":true,"hs":{"have":true}}"""), now = 1_000L)
+        assertEquals(korvash, kept["hs:Korvash-Realm"])
+        assertEquals(0.0, ItemCd.left(ItemCd.HEARTH, now = 1_000L), 1e-6)
+        assertEquals(0.0, ItemCd.left(118, now = 1_000L), 1e-6)
+        assertNull(kept["hs:Other-Realm"])
+        ItemCd.character("Other-Realm", now = 1_000L)
+        assertEquals(korvash, kept["hs:Korvash-Realm"])
+        // back to Korvash, the padmap first: his kept time counts again, the other's word is not written under his name
+        ItemCd.character("Korvash-Realm", now = 2_000L)
+        assertEquals(korvash, kept["hs:Korvash-Realm"])
+        assertEquals(600.0, ItemCd.left(ItemCd.HEARTH, now = 2_000L), 1e-3)   // the test wall clock stands still
+    }
+
+    // r20a (review): the item radial's doc has no cd any more: a cooldown begun since the tap (ItemCd) says the use happened
+    @Test fun noRetryWhenTheItemsCooldownBegan() {
+        val d = RadialModel.parse(doc("""{"type":"radial","r":{"fight":true,"items":[{"col":0,"id":6948,"c":1,"g":4,"st":false}]}}"""))!!
+        val it = d.items[0]
+        assertTrue(RadialModel.shouldRetry(it, d, acked = false))
+        assertFalse(RadialModel.shouldRetry(it, d, acked = false, cdBegan = true))
+    }
+
     @Test fun theClassTeleportOnceKnown() {
         ItemCd.onDoc(doc("""{"type":"itemcd","tp":{"id":556,"n":"Astral Recall","i":136010,"cd":{"d":900,"l":300}}}"""), now = 0L)
         assertEquals(556, ItemCd.teleport?.id)

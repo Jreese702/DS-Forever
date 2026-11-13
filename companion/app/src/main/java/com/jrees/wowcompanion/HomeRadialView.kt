@@ -552,10 +552,14 @@ class HomeRadialView(
         // second piece of food): the lost release is a fight's freelook problem (Quests); there the deadline is [RETRY_MS]
         if (sent && before != null && d.fight) {
             pendingUse = a.col; tappedAt = SystemClock.uptimeMillis()
+            // r20a: the item's cooldown at the tap (ItemCd, the `itemcd` document): one begun since = it was used
+            val item = source == "radial"
+            val coolAtTap = item && (ItemCd.left(a.id) > 0.0 || ItemCd.dim(a.id))
             postDelayed({
                 val acked = pendingUse != a.col
                 if (!acked) pendingUse = -1
-                if (RadialModel.shouldRetry(before, doc, acked))
+                val began = item && !coolAtTap && (ItemCd.left(a.id) > 0.0 || ItemCd.dim(a.id))
+                if (RadialModel.shouldRetry(before, doc, acked, began))
                     Log.i(TAG, "radial: no sign of cell ${a.col}: one more tap ${if (tapCell(d.row, a.col)) "sent" else "NOT sent"}")
                 else if (!acked) Log.i(TAG, "radial: no ack for cell ${a.col}, but the item changed: no retry")
             }, RETRY_MS)

@@ -368,8 +368,11 @@ object RadialModel {
      * tap would eat a second piece of food): no `radialuse` for it by the deadline ([acked] false) AND the latest document still shows
      * the item ([before] = it at the tap) with the same count and no cooldown begun. Gone from the list, fewer, or cooling = it was used.
      */
-    fun shouldRetry(before: Item, now: Doc?, acked: Boolean): Boolean {
-        if (acked || now == null) return false
+    fun shouldRetry(before: Item, now: Doc?, acked: Boolean, cdBegan: Boolean = false): Boolean {
+        // r20a (review): the item radial's document carries no cooldown any more (the `itemcd` one does): [cdBegan] = ItemCd shows a
+        // countdown / dim on it that was not there at the tap. Without it a used Hearthstone / toy / quest tool (its count unchanged) was
+        // tapped a second time
+        if (acked || now == null || cdBegan) return false
         val it = now.items.firstOrNull { x -> x.id == before.id } ?: return false
         return it.count == before.count && it.cdLeft <= before.cdLeft && !(before.cdLeft <= 0.0 && it.cdLeft > 0.0)
     }

@@ -39,7 +39,10 @@ object ItemCd {
     interface Store { fun get(key: String): String?; fun put(key: String, v: String?) }
     @Volatile var store: Store? = null
     private var who: String? = null
-    private var live = false                         // a live document came this app life (then the kept end time is not used)
+    /** whose the last LIVE document was (name-realm; review r20a: only then is the Hearthstone kept under [who]'s name). A switch to
+     *  another character in one app life drops what was counted (the old character's countdowns are not the new one's) */
+    private var liveWho: String? = null
+    private const val ANON = "?anon"
 
     private val listeners = ArrayList<() -> Unit>()
     fun onChange(l: () -> Unit) { synchronized(listeners) { listeners.add(l) } }
@@ -54,7 +57,13 @@ object ItemCd {
         }
     }
 
-    @Synchronized fun reset() { at.clear(); tpE = null; teleport = null; hearthHave = null; hearthIcon = HEARTH_ICON; who = null; live = false }
+    @Synchronized fun reset() { at.clear(); tpE = null; teleport = null; hearthHave = null; hearthIcon = HEARTH_ICON; who = null; liveWho = null }
+
+    /** another character than the one counted: everything counted was the old one's (review r20a: never shown or kept as the new one's) */
+    private fun switchTo(key: String) {
+        if (who != null && who != key) { at.clear(); tpE = null; teleport = null; hearthHave = null; hearthIcon = HEARTH_ICON }
+        who = key
+    }
 
     private fun entry(o: JSONObject, now: Long): E? = when {
         o.optBoolean("h", false) -> E(Long.MAX_VALUE, 0.0, held = true)
@@ -70,7 +79,10 @@ object ItemCd {
         if (msg.optString("type") != "itemcd") return false
         if (!current) return true
         synchronized(this) {
-            live = true
+            // r20a: the doc says whose it is (Radial r20a `who`); a different character than counted = a switch first
+            val dw = msg.optString("who", "")
+            if (dw.isNotEmpty() && dw != who) switchTo(dw)
+            liveWho = if (dw.isNotEmpty()) dw else (who ?: ANON)   // no name said and none known yet: the next character named owns it
             val fight = msg.optBoolean("fight", false)
             val t = msg.optJSONObject("t")
             val seen = HashSet<Int>()
@@ -136,8 +148,9 @@ object ItemCd {
     fun character(key: String, now: Long = clock()) {
         synchronized(this) {
             if (key == who) return
-            who = key
-            if (live) { keepHearth(now); return }            // the game's word this life is this character's: kept under its name
+            val prev = who
+            switchTo(key)
+            if (liveWho == key || (prev == null && liveWho == ANON)) { liveWho = key; keepHearth(now); return }  // the game's word this life is this character's: kept under its name
             at.remove(HEARTH)
             val s = store?.get(hsKey(key)) ?: return
             val parts = s.split(',')
@@ -151,6 +164,7 @@ object ItemCd {
 
     private fun keepHearth(now: Long) {
         val k = who ?: return
+        if (liveWho != k) return                           // r20a: only the game's own word for THIS character is kept under its name
         val e = at[HEARTH]
         val l = leftOf(e, now) { }
         store?.put(hsKey(k), if (e != null && l > 0.0) "${wall() + (l * 1000.0).toLong()},${e.len}" else null)

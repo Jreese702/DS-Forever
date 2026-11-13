@@ -19,7 +19,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local RV = "r20"                -- bump on every change; r20: ITEM COOLDOWNS (feat/item-cooldowns; the user's picks 2026-11-13: "cooldowns on radial slices AND bag slots: dark pie sweep + seconds"; "LEARNED LENGTHS in the style of the existing facecd"; "Counts only on stackable consumables/reagents/ammo/items with charges"): the `itemcd` document (event-driven only, change-only, never collect / pad.retain / buildCells), BAG_UPDATE_COOLDOWN off the radial's rebuild list, the radial doc's items / pins carry `st` (stackable) and no `cd`; r19: SEVERAL SPELL RADIALS back (feat/multi-radial-v2): q3 = 1.0.18's q2 (6 radials x 8, 40 shared cells, the radial buttons 2..6 armed) with r17e's guard (the row rebuilt only on a change) and NO cooldown sweep (r18 / q1b: one sradialcd per cast); r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r17 (1.0.18, reverted): the spell radials (q2); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
+local RV = "r20a"               -- bump on every change; r20a (review of feat/item-cooldowns; the user 2026-11-13: "honour enable=0 (held potion: dim, no number)", "Persist the hearthstone end time per name-realm"): held only with a length (the game's duration > 0 and enable 0; an item with no cooldown never dims), the itemcd doc says whose it is (`who`, name-realm: the app never keeps one character's Hearthstone under another's name); r20: ITEM COOLDOWNS (feat/item-cooldowns; the user's picks 2026-11-13: "cooldowns on radial slices AND bag slots: dark pie sweep + seconds"; "LEARNED LENGTHS in the style of the existing facecd"; "Counts only on stackable consumables/reagents/ammo/items with charges"): the `itemcd` document (event-driven only, change-only, never collect / pad.retain / buildCells), BAG_UPDATE_COOLDOWN off the radial's rebuild list, the radial doc's items / pins carry `st` (stackable) and no `cd`; r19: SEVERAL SPELL RADIALS back (feat/multi-radial-v2): q3 = 1.0.18's q2 (6 radials x 8, 40 shared cells, the radial buttons 2..6 armed) with r17e's guard (the row rebuilt only on a change) and NO cooldown sweep (r18 / q1b: one sradialcd per cast); r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r17 (1.0.18, reverted): the spell radials (q2); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
 local ROW, CELLS = "radial", 24 -- the secure pad row: 24 cells = 3 pages of 8
 local PLAYER_BAGS = { 0, 1, 2, 3, 4 }
 local QUARANTINE = 30           -- seconds a freed column stays unused (as the pad's own columns)
@@ -338,7 +338,13 @@ local function itemRead(id)
     local okC, st, dur, en = CALL(function() return C_Container.GetItemCooldown(id) end)
     if not okC then return nil end
     local sv, dv, ev = S(function() return st end), S(function() return dur end), S(function() return en end)
-    if ev == false or ev == 0 then return "held" end                -- held first: a potion used in a fight waits for its end
+    -- r20a (review; the user's pick "honour enable=0 (held potion: dim, no number)"): HELD the game's own way (ContainerFrame: duration > 0
+    -- and enable 0): an item with no cooldown can say enable 0 too, and was dimmed for good; a secret length with enable 0 = "heldq"
+    -- (held only when we know it was used / is counting: cdScan)
+    if ev == false or ev == 0 then
+        if type(dv) == "number" and dv > 0 then return "held" end
+        if dv == WC.SECRET then return "heldq" end
+    end
     if sv == WC.SECRET or dv == WC.SECRET then return "secret" end
     if type(sv) == "number" and type(dv) == "number" and dv > 1.5 and sv > 0 and sv + dv > GetTime() then return { t0 = sv, d = dv } end
     return nil
@@ -490,9 +496,9 @@ local function cdScan(now)
         if type(r) == "table" then
             itemRun[id] = { t0 = r.t0, d = r.d }
             if learn then learn["i" .. id] = r1(r.d) end
-        elseif r == "held" then
+        elseif r == "held" or (r == "heldq" and ((cur and cur.held) or (usedAt[id] and now - usedAt[id] < 3))) then
             itemRun[id] = { held = true }
-        elseif r == "secret" then
+        elseif r == "secret" or r == "heldq" then
             -- the game keeps it secret (a fight): a running countdown stays; a use just now starts its learned length, else the dim
             local used = usedAt[id]
             if used and now - used < 3 and not (cur and cur.d and cur.t0 >= used - 0.5) then
@@ -567,7 +573,7 @@ local function cdEmit(force)
     local key = table.concat(sig, ",")
     if key == cdLastKey and not force then return false end
     cdLastKey = key
-    WC.send(WC.encode({ type = "itemcd", v = RV, t = next(t) and t or nil, hs = hs, tp = tpDoc, fight = fight or nil }))
+    WC.send(WC.encode({ type = "itemcd", v = RV, who = whoKey(), t = next(t) and t or nil, hs = hs, tp = tpDoc, fight = fight or nil }))
     WC.push()
     return true
 end
