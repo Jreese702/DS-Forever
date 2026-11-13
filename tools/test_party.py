@@ -974,8 +974,8 @@ check(len(ack) == 1 and ack[0]['ok'] is False and ack[0]['why'] == 'unknown colu
 # ================================================================ m150 SMART RES (the user, 2026-11-13: "There should be an enable smart res
 # toggle setting for party mode to enable pressing dead team members on touch if they are dead and I am playing a class with a res.
 # Similarly a revive pet would be neat."; the pick "Tap the dead member")
-def sres_world(cls, book, on=True):
-    L = world(pre='CLASS = "%s"; SPELLNAME[2008] = "Ancestral Spirit"; SPELLNAME[2006] = "Resurrection"; SPELLNAME[20484] = "Rebirth"; '
+def sres_world(cls, book, on=True, extra=''):
+    L = world(pre=extra + 'CLASS = "%s"; SPELLNAME[2008] = "Ancestral Spirit"; SPELLNAME[2006] = "Resurrection"; SPELLNAME[20484] = "Rebirth"; '
                   'SPELLNAME[982] = "Revive Pet"; SPELLNAME[883] = "Call Pet"; BOOK = { %s }; WowCompanion.smartRes = %s'
                   % (cls, ", ".join(str(b) for b in book), "true" if on else "nil"))
     L.eval('party')(L.table_from([L.table_from(m) for m in [["Brannoc", "WARRIOR", False, "TANK"], ["Iselle", "MAGE"]]]))
@@ -1069,7 +1069,40 @@ SH.execute('COMBAT = false; UNITS.pet = { name = "Wolf", alive = true }; fire("U
 check('pd' not in docs(SH, 0, 'party')[-1]['p'], "m150: the pet back alive: no dead pet entry")
 SH.execute('UNITS.pet = nil; fire("UNIT_PET", "player"); advance(1)')
 check('pd' not in docs(SH, 0, 'party')[-1]['p'], "m150: a pet dismissed alive: no dead pet entry")
-for L in (SR, SD, SP, SH):
+# m151 (review): the dead pet kept per character across a /reload / login; a pet that leaves in a fight counts as dead
+SK = sres_world("HUNTER", [982, 883])
+SK.execute('UNITS.pet = { name = "Wolf", alive = true }; fire("UNIT_PET", "player"); advance(1)')
+SK.execute('UNITS.pet.alive = false; fire("UNIT_HEALTH", "pet"); advance(1)')
+check(SK.eval('WowCompanionSpellsDB.petDeadBy["Korvash-Realm"].n') == "Wolf", "m151: the pet seen dead: kept per character (petDeadBy[name-realm])",
+      SK.eval('WowCompanionSpellsDB.petDeadBy["Korvash-Realm"]'))
+SK.execute('UNITS.pet = { name = "Wolf", alive = true }; fire("UNIT_PET", "player"); advance(1.5)')
+check(SK.eval('WowCompanionSpellsDB.petDeadBy["Korvash-Realm"]') is None, "m151: a live pet seen: the kept record cleared")
+SL = sres_world("HUNTER", [982, 883], extra='WowCompanionSpellsDB = { petDeadBy = { ["Korvash-Realm"] = { n = "Wolf", ic = 132 } } }; ')
+SL.execute('advance(1.5)')
+p = docs(SL, 0, 'party')[-1]['p']
+check((p.get('pd') or {}).get('n') == "Wolf" and (p.get('pd') or {}).get('ic') == 132, "m151: after a /reload / login with the pet dead and gone: pd from the kept record", p.get('pd'))
+got, k = sres_tap(SL, 5)
+check(got == [("spell", "Revive Pet", None)] and k == "res", "m151: ... and its cell casts Revive Pet", (got, k))
+SO = sres_world("HUNTER", [982, 883], extra='WowCompanionSpellsDB = { petDeadBy = { ["Alt-Realm"] = { n = "Cat" } } }; ')
+SO.execute('advance(1.5)')
+check('pd' not in docs(SO, 0, 'party')[-1]['p'], "m151: another character's dead pet never shows")
+SF = sres_world("HUNTER", [982, 883])
+SF.execute('UNITS.pet = { name = "Boar", alive = true }; fire("UNIT_PET", "player"); advance(1)')
+SF.execute('COMBAT = true; UNITS.pet = nil; fire("UNIT_PET", "player"); advance(1)')
+p = docs(SF, 0, 'party')[-1]['p']
+check((p.get('pd') or {}).get('n') == "Boar" and SF.eval('WowCompanionSpellsDB.petDeadBy["Korvash-Realm"].n') == "Boar",
+      "m151: a live pet's unit gone IN a fight (never seen dead): the dead pet entry, kept", p.get('pd'))
+SF.execute('COMBAT = false; UNITS.pet = { name = "Boar", alive = true }; fire("UNIT_PET", "player"); advance(1.5)')
+check('pd' not in docs(SF, 0, 'party')[-1]['p'], "m151: ... the pet called back: gone")
+SF.execute('COMBAT = true; UNITS.player.alive = false; UNITS.pet = nil; fire("UNIT_PET", "player"); advance(1)')
+check('pd' not in docs(SF, 0, 'party')[-1]['p'], "m151: the pet gone in a fight because YOU died: no dead pet entry")
+SF.execute('COMBAT = false; UNITS.player.alive = true')
+SG = sres_world("SHAMAN", [403, 331, 2008])
+SG.execute('UNITS.pet = { name = "Wolf", alive = true }; fire("UNIT_PET", "player"); advance(1); COMBAT = true; UNITS.pet = nil; fire("UNIT_PET", "player"); advance(1)')
+check('pd' not in docs(SG, 0, 'party')[-1]['p'] and SG.eval('(WowCompanionSpellsDB.petDeadBy or {})["Korvash-Realm"]') is None,
+      "m151: no Revive Pet (a Shaman's wolf gone in a fight): no dead pet entry")
+SG.execute('COMBAT = false')
+for L in (SR, SD, SP, SH, SK, SL, SO, SF, SG):
     check(L.eval('#SNIPERR') == 0 and L.eval('#SPY') == 0, "m150: no snippet error, no spied call", L.eval('SNIPERR[1]'))
 
 # ================================================================ 5. THE COMBAT LOCKDOWN (secure work from insecure code in a fight errors)
@@ -1121,7 +1154,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m", "res", "pd"}     # m150: Smart Res armed, a Hunter's dead pet
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "lv", "rng", "ic"}   # m129: plain facts only (no hp / full / hs / g / hit counts); m134: the pet's ic
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm150' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm151' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1347,7 +1380,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p48"' in SRC["padtabctl"] and 'local BV = "b52"' in SRC["book"] and 'local PV = "m150"' in SRC["padmap"],
+check('local CV = "p48"' in SRC["padtabctl"] and 'local BV = "b52"' in SRC["book"] and 'local PV = "m151"' in SRC["padmap"],
       "the versions: PadMap m146, PadTabCtl p46, Book b52 (b49 stance-bind #179, b50 toolbar D-pad #18/#20, b51 / m143 / m144 rank up, m146 / p46 / b52 Smart Range)")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
