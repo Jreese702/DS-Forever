@@ -664,7 +664,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // each is reached from the bar
         spellbookView = SpellbookView(this, onBind = { e -> spellsCells(e) },
             // the Controller tab (spells session): its cells on spells' own pad rows; it reads ZL / ZR only while no other reader runs
-            onPadTab = { cells -> padTabTap(cells) }, otherReader = { castView.isShown })
+            onPadTab = { cells -> padTabTap(cells) }, otherReader = { castView.isShown },
+            // GitHub #43: the selected spell on / off the tap-to-cast bar (ActionBar cb1's pick, then the spell's two taps)
+            onCastBar = { e -> castBarToggle(e) })
         // the Controller room: the same "spells" guest on its own page (b17 croom), the same wiring as the Spellbook's tab
         controllerView = ControllerView(this, onPadCells = { cells -> padTabTap(cells) }, onBind = { e -> spellsCells(e) },
             otherReader = { castView.isShown })
@@ -2490,6 +2492,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current) dpadAsk(d)
                 }
             }
+            // GitHub #43 THE TAP-TO-CAST BAR (ActionBar cb1): the slots (a state: a replayed one counts, the last one wins); its cooldowns
+            // current only (as facecd); the edit's answer only logged (the next castbar document shows it)
+            "castbar" -> CastStripModel.parse(msg)?.let { CastStripModel.Live.set(it); homeView.onCastBar(it) }
+            "castcd" -> if (current) CastStripModel.parseCd(msg)?.let { homeView.onCastCd(it) }
+            "castbarack" -> if (current) Log.i(HomeView.TAG, "cast bar: ${msg.optString("op")} ok=${msg.optBoolean("ok")} slot=${msg.optInt("s")} " +
+                "queued=${msg.optInt("q") == 1} ${msg.optString("why")}")
             // the fight faces' cooldowns (Spells' m12): current only - a replayed one would start a sweep that already ran out
             "facecd" -> if (current) PadMapModel.parseCd(msg)?.let { homeView.onFaceCd(it) }
             // the fight flag also from Spells' facewatch (Tracking after test18): Home's D-pad picture follows the newest word
@@ -3404,6 +3412,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     /** b-druid-forms-bind: a spell's Bind by touch, its taps from the book on show (Book b38's two, or an older add-on's one) in ONE batch */
+    /** GitHub #43: the Spellbook's "Cast bar" for [e]: ONE edit (on the bar, or off it), through the freshest pad that has the row */
+    private fun castBarToggle(e: SpellsModel.Entry) {
+        val cells = CastStripModel.toggleCells(CastStripModel.Live.bar, e.spellId, lastBook?.let { SpellsModel.bindCells(it, e) })
+        if (cells == null) { Log.i(HomeView.TAG, "cast bar: ${e.spellId} not sent (no row, full, or no taps for it)"); return }
+        val pad = listOf(questsPad, spellsPad).firstOrNull { it?.optJSONObject("rows")?.has(CastStripModel.ROW) == true } ?: spellsPad
+        val sent = TapBridge.taps(this, pad, cells) { why -> Log.i(HomeView.TAG, "cast bar: refused ($why)") }
+        Log.i(HomeView.TAG, "cast bar: toggle ${e.spellId} ${if (sent) "tapped" else "not sent"}")
+    }
+
     private fun spellsCells(e: SpellsModel.Entry) {
         val cells = lastBook?.let { SpellsModel.bindCells(it, e) } ?: return
         TapBridge.taps(this, spellsPad, cells)

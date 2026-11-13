@@ -63,7 +63,7 @@ class SettingsTabsTest {
             G.LOOK to listOf("Theme", "Language"),
             G.ACCOUNT to listOf("Battle.net login"),
             G.HELP to listOf("Problem report", "Reload game UI", "Status"),
-            G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Focused quest", "DS WoW toolbar"),
+            G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Tap-to-cast bar", "Focused quest", "DS WoW toolbar"),
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
             G.CHAT to listOf("Message input"),
             G.HUD to listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale"),
@@ -117,7 +117,9 @@ class SettingsTabsTest {
                 "Build in the background", "Progress", "Route data", "Language", "Reload game UI", "Battle.net login", "Problem report",
                 "Lighter mode", "Low-memory graphics", "Stream settings", "Status") +
             // drawn before but in no block's list: GameUiSection's QOL Combat / Party groups, Add-ons > Polestar's top-screen row
-            listOf("Start attack on hostile target", "Combat Auto Shot", "Party mode", "Polestar on the top screen")
+            listOf("Start attack on hostile target", "Combat Auto Shot", "Party mode", "Polestar on the top screen") +
+            // added since: GitHub #43's tap-to-cast bar (Bottom screen > Home)
+            listOf("Tap-to-cast bar")
         val now = B.values().flatMap { it.rows }
         assertEquals(before.toSet(), now.toSet())
         assertEquals("a row in two places", now.size, now.toSet().size)

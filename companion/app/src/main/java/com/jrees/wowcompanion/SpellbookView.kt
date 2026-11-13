@@ -39,6 +39,8 @@ class SpellbookView(
     onPadTab: (List<Pair<String, Int>>) -> Boolean = { false },
     /** another view reads the controller now (one reader at a time): the tab does not read the triggers then */
     otherReader: () -> Boolean = { false },
+    /** GitHub #43: "Cast bar" was touched for this spell (the host taps the castbar row's pick, then the spell's two taps); null = none */
+    private val onCastBar: ((SpellsModel.Entry) -> Unit)? = null,
 ) : View(context), BLeadsHome {
 
     private var book: SpellsModel.Book? = null
@@ -49,7 +51,7 @@ class SpellbookView(
     private var descScroll = 0f
     private var descMax = 0f
 
-    init { CastSettings.init(context) }
+    init { CastSettings.init(context); CastStripModel.Live.onChange { postInvalidate() } }
 
     /** true while the addon holds the controller for this room */
     val held: Boolean get() = ctl?.on == true
@@ -239,7 +241,21 @@ class SpellbookView(
         val x = 26f + (i % 2) * CW; val y = Y0 + (i / 2) * rh(h)
         return RectF(x, y, x + CW - 8f, y + rh(h))
     }
-    private fun bindRect(w: Float, h: Float) = RectF(SPLIT + 40f, h - 30f - 111f, w - 56f, h - 30f)
+    private fun bindRect(w: Float, h: Float) =
+        if (castOn()) RectF(SPLIT + 40f, h - 30f - 111f, actionMid(w) - 6f, h - 30f) else RectF(SPLIT + 40f, h - 30f - 111f, w - 56f, h - 30f)
+
+    // GitHub #43 THE CAST BAR ACTION: the selected spell's second action beside Bind (the one-action select flow: no per-row button), only
+    // while the add-on has the castbar row; the button stays pushed in while the spell is on the bar, and a tap takes it off again
+    private fun castOn() = onCastBar != null && CastStripModel.Live.bar?.pick != null
+    private fun actionMid(w: Float) = (SPLIT + 40f + w - 56f) / 2f
+    private fun castRect(w: Float, h: Float) = RectF(actionMid(w) + 6f, h - 30f - 111f, w - 56f, h - 30f)
+    /** the spell can go on the bar (or off it): a known spell you cast, with an id, and room on the bar unless it is there */
+    private fun castable(b: SpellsModel.Book, e: SpellsModel.Entry): Boolean {
+        val bar = CastStripModel.Live.bar ?: return false
+        return e.spellId != null && SpellsModel.status(b, e) == SpellsModel.Status.KNOWN && SpellsModel.bindable(b, e) &&
+            (bar.has(e.spellId) || !bar.full)
+    }
+    private var castDown = false
 
     // ---------------------------------------------------------------- drawing
 
@@ -476,6 +492,12 @@ class SpellbookView(
                 c.drawText(Tr.t("Not while in combat"), bind.centerX(), bind.top - 22f, pw)
             } else UiKit.button(c, bind, "Bind", glyph, if (bindDown || press.isDown("bind")) UiKit.Button.DOWN else UiKit.Button.UP)
         }
+        // GitHub #43: Cast bar, beside Bind; in a fight too (the add-on queues the edit to the fight's end)
+        if (castOn() && canBind) {
+            val cr = castRect(w, h)
+            val on = CastStripModel.Live.bar?.has(e.spellId) == true
+            UiKit.button(c, cr, "Cast bar", when { !castable(b, e) -> UiKit.Button.DISABLED; castDown || on -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
+        }
         // the controller's A works Bind right now (the addon's book page, its glow on a spell): its press pushes the button in at once
         bindLive = canBind && !b.combat && ctl?.on == true && ctl?.mode == "book" && ctl?.onTabs == false && ctl?.talentsPage != true
 
@@ -539,6 +561,8 @@ class SpellbookView(
             MotionEvent.ACTION_DOWN -> {
                 downX = ev.x; downY = ev.y; lastY = ev.y; dragging = DRAG_NONE
                 bindDown = bindRect(w, h).contains(ev.x, ev.y)
+                castDown = castOn() && castRect(w, h).contains(ev.x, ev.y)
+                if (castDown) invalidate()
                 rankDown = if (rankFam.size > 1 && rankRow.contains(ev.x, ev.y)) (if (ev.x < rankRow.centerX()) "rkL" else "rkR") else null
                 press.finger(if (bindDown) "bind" else rankDown)
                 doorDown = onDoor != null && RectF(w - 136f, 62f, w - 12f, 173f).contains(ev.x, ev.y)
@@ -553,7 +577,7 @@ class SpellbookView(
                         downX < SPLIT && downY > 190f && abs(dx) > abs(dy) -> DRAG_SWIPE
                         else -> DRAG_OTHER
                     }
-                    if (bindDown || doorDown) { bindDown = false; doorDown = false; invalidate() }
+                    if (bindDown || doorDown || castDown) { bindDown = false; doorDown = false; castDown = false; invalidate() }
                     rankDown = null
                     press.finger(null)
                 }
@@ -565,13 +589,14 @@ class SpellbookView(
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                val wasBind = bindDown; val wasDoor = doorDown; val wasRank = rankDown
+                val wasBind = bindDown; val wasDoor = doorDown; val wasRank = rankDown; val wasCast = castDown
+                castDown = false
                 press.lift(dragging == DRAG_NONE && ((wasBind && bindRect(w, h).contains(ev.x, ev.y)) ||
                     (wasRank != null && rankRow.contains(ev.x, ev.y))))
                 bindDown = false; doorDown = false; rankDown = null
                 when (dragging) {
                     DRAG_SWIPE -> turn(if (ev.x < downX) +1 else -1)
-                    DRAG_NONE -> tap(ev.x, ev.y, w, h, wasBind, wasDoor, wasRank)
+                    DRAG_NONE -> tap(ev.x, ev.y, w, h, wasBind, wasDoor, wasRank, wasCast)
                     else -> {}
                 }
                 dragging = DRAG_NONE
@@ -579,13 +604,13 @@ class SpellbookView(
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                bindDown = false; doorDown = false; rankDown = null; dragging = DRAG_NONE; press.finger(null); invalidate(); return true
+                bindDown = false; doorDown = false; rankDown = null; castDown = false; dragging = DRAG_NONE; press.finger(null); invalidate(); return true
             }
         }
         return super.onTouchEvent(ev)
     }
 
-    private fun tap(x: Float, y: Float, w: Float, h: Float, wasBind: Boolean, wasDoor: Boolean, wasRank: String? = null) {
+    private fun tap(x: Float, y: Float, w: Float, h: Float, wasBind: Boolean, wasDoor: Boolean, wasRank: String? = null, wasCast: Boolean = false) {
         // the door needs no book: before the first `spells` document it must still lead to Talents
         if (wasDoor) { onDoor?.invoke(); return }
         // b23 the rank picker's arrows: a rank lower (left) / higher (right), no wrap; the room's own choice (no game action)
@@ -624,6 +649,12 @@ class SpellbookView(
                 if (chosenId != idOf(e)) { chosenId = idOf(e); descScroll = 0f }
                 return
             }
+        }
+        // GitHub #43: Cast bar (on or off the bar: ONE edit)
+        if (wasCast && castOn() && castRect(w, h).contains(x, y)) {
+            val e = tab.entries.firstOrNull { idOf(it) == chosenId } ?: return
+            if (castable(b, e)) onCastBar?.invoke(e)
+            return
         }
         // Bind
         if (wasBind && bindRect(w, h).contains(x, y)) {
