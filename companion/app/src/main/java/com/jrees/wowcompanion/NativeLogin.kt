@@ -397,12 +397,19 @@ object NativeLogin {
     fun logEvent(s: String) {
         Log.i(TAG, s)
         DiagLog.event("signin", s)            // the sign-in's step names only (never anything typed): the problem report's log
-        try {
-            val f = File("/sdcard/WowCompanion/logs/login.log")
-            f.appendText("${stamp(System.currentTimeMillis())} $s\n")
-            if (++logWrites % 25 == 0) cap(f)
-        } catch (_: Throwable) {}
+        // issue #230 (1.0.28 ANR while the game loaded, right after "sign-in: keyboard (bottom) closed" was logged on the main thread):
+        // the append went through FUSE (/sdcard) on the caller's thread, often the main one, while the game read its data through the
+        // same FUSE. Now the line is queued and the background log writer appends it (BgAppend, as lat.log / taps.log in 1.0.29)
+        runCatching { loginLog.add("${stamp(System.currentTimeMillis())} $s") }
     }
+
+    /** login.log's writer: appends on BgAppend's thread, the cap kept there */
+    private val loginLog = BgAppend({ File("/sdcard/WowCompanion/logs/login.log") }, write = { f, lines, _ ->
+        f.parentFile?.let { if (!it.isDirectory) it.mkdirs() }
+        f.appendText(lines.joinToString("\n", postfix = "\n"))
+        logWrites += lines.size
+        if (logWrites >= 25) { logWrites = 0; cap(f) }
+    })
 
     /** the user's ruling 2026-10-12 ("Keep it, capped"): past [LOG_MAX] lines the file keeps its last [LOG_KEEP] (atomic swap) */
     private const val LOG_MAX = 400

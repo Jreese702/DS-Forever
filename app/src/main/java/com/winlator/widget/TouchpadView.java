@@ -353,8 +353,19 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
     /** DS Forever (CursorPolicy): told of every touch-down on the top screen; the launcher decides whether it was the player's */
     public static volatile Runnable onTouchDown = null;
 
+    /** DS Forever (issue #230, an input ANR with the main thread inside this view's pointer move): each touch's age and handling time */
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        long start = android.os.SystemClock.uptimeMillis();
+        try {
+            return onTouchEventTimed(event);
+        } finally {
+            try { com.jrees.wowcompanion.TouchLag.note(event.getActionMasked(), event.getEventTime(), start, android.os.SystemClock.uptimeMillis()); }
+            catch (Throwable ignored) {}
+        }
+    }
+
+    private boolean onTouchEventTimed(MotionEvent event) {
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) { Runnable r = onTouchDown; if (r != null) r.run(); }
         boolean isStylus = isEventTriggeredByStylus(event);
         if (touchscreenMouseDisabled

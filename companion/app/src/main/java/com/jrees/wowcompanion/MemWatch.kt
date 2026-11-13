@@ -71,11 +71,21 @@ object MemWatch {
         val fast = object : Runnable {
             override fun run() {
                 runCatching { sampleFree() }
-                runCatching { checkStall(main) }
                 h.postDelayed(this, FAST_MS)
             }
         }
         h.postDelayed(fast, FAST_MS)
+        // issue #230 (1.0.28): the beat shared this thread with the line's own work (Debug.getMemoryInfo, the game's /proc walk, the
+        // FUSE write), so a slow line could hide a stall. Now its own thread, every [BEAT_MS]; the stall line is written by this one
+        val b = Handler(HandlerThread("WCBEAT").also { it.start() }.looper)
+        val beatTick = object : Runnable {
+            override fun run() {
+                runCatching { checkStall(main, h) }
+                b.postDelayed(this, BEAT_MS)
+            }
+        }
+        b.postDelayed(beatTick, BEAT_MS)
+        TouchLag.beatAge = { if (beat == 0L) -1L else SystemClock.uptimeMillis() - beat }
         ctx?.applicationContext?.registerComponentCallbacks(object : ComponentCallbacks2 {
             override fun onTrimMemory(level: Int) { trimmed(level) }
             override fun onConfigurationChanged(newConfig: Configuration) {}
@@ -139,17 +149,32 @@ object MemWatch {
     @Volatile private var beat = 0L
     @Volatile private var stallOf = -1L
     @Volatile private var beatPosted = false
-    private fun checkStall(main: Handler) {
+    /** issue #230: the beat's checks run every [BEAT_MS] on their own thread (WCBEAT) */
+    const val BEAT_MS = 250L
+    /** issue #230: a second stack of the same stall at this age, just before Android's 5 s (what it was doing when the ANR fired) */
+    const val STALL2_MS = 4_250L
+    @Volatile private var stall2Of = -1L
+    /** the longest beat gap since the last line (issue #230: a stall under [STALL_MS] said nothing at all) */
+    @Volatile private var beatMax = 0L
+    private fun checkStall(main: Handler, writer: Handler) {
         val now = SystemClock.uptimeMillis()
         if (beat == 0L) beat = now
         if (!beatPosted) { beatPosted = true; main.post { beat = SystemClock.uptimeMillis(); beatPosted = false } }
         val blocked = now - beat
-        if (stalled(blocked, beat, stallOf)) {
-            stallOf = beat
+        if (blocked > beatMax) beatMax = blocked
+        val first = stalled(blocked, beat, stallOf)
+        val second = !first && blocked >= STALL2_MS && stall2Of != beat
+        if (first || second) {
+            if (first) stallOf = beat else stall2Of = beat
             val l = stallLine(blocked, Looper.getMainLooper().thread.stackTrace.map { it.toString() })
-            Log.w(TAG, l); keep(l)
+            Log.w(TAG, l)
+            runCatching { DiagLog.event("stall", l.take(1500)) }          // queued (the report's log), never waits here
+            writer.post { keep(l) }                                       // mem.log is WCMEM's to write
         }
     }
+    /** "main beat max 1.4 s" when the main thread was [BEAT_NOTE_MS] or more late to its beat since the last line, else "" (pure) */
+    fun beatNote(maxMs: Long): String = if (maxMs >= BEAT_NOTE_MS) "main beat max ${maxMs / 100 / 10.0} s" else ""
+    const val BEAT_NOTE_MS = 1_000L
     /** a stall worth its one line: blocked [STALL_MS] or more, and not this beat's stall again */
     fun stalled(blockedMs: Long, beat: Long, reportedBeat: Long): Boolean = blockedMs >= STALL_MS && reportedBeat != beat
     /** "stall: the main thread blocked 3.0 s: at a.b(F.kt:1) <- at c.d(...)": [frames] innermost first, at most [max] */
@@ -247,6 +272,9 @@ object MemWatch {
         val low = lowKb; lowKb = -1L                                  // the low since the last line, then the next window
         val more = extras(low, rt.totalMemory() - rt.freeMemory(), rt.maxMemory(), gpuBytes(), trimLevel,
             if (trimAt > 0L) SystemClock.uptimeMillis() - trimAt else 0L)
+        val bm = beatMax; beatMax = 0L                                // issue #230: the main thread's worst beat and touch since the last line
+        val lag = listOf(beatNote(bm), runCatching { TouchLag.take() }.getOrDefault("")).filter { it.isNotEmpty() }.joinToString(", ")
+        if (lag.isNotEmpty()) return "pss ${mb(pss)} MB ($parts) $heap | ${device()} | $caches | $doing | $more, $lag"
         return "pss ${mb(pss)} MB ($parts) $heap | ${device()} | $caches | $doing | $more"
     }
 
