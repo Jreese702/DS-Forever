@@ -377,7 +377,7 @@ def main():
     G3.ROWS.uisw(None, SW3.UFT_OFF)
     chk("hub32: our bar off again: lifted again (%s)" % G3.ComboFrame.ipa, G3.ComboFrame.ipa is True)
     hubsrc = open(HUB, encoding="utf-8").read()
-    chk("hub40: the version tag (hub38 the player / pet row + side tab art; hub39 int/1429; hub40 the party bars one column wide; hub41 the tab on a K change, pitch 64; hub42 the left column / the grid under the HUD)", 'local HV = "hub46"' in hubsrc and "hub45:" in hubsrc and "hub44:" in hubsrc and "hub42:" in hubsrc and "hub43:" in hubsrc
+    chk("hub40: the version tag (hub38 the player / pet row + side tab art; hub39 int/1429; hub40 the party bars one column wide; hub41 the tab on a K change, pitch 64; hub42 the left column / the grid under the HUD)", 'local HV = "hub48"' in hubsrc and "hub47:" in hubsrc and "hub46:" in hubsrc and "hub45:" in hubsrc and "hub44:" in hubsrc and "hub42:" in hubsrc and "hub43:" in hubsrc
         and "Mark pull keeps Auto Shot" in hubsrc)
     # hub31 / hub36 POLESTAR ON THE TOP SCREEN (the user, 2026-11-11, the switch on: "The polestar window randomly reappears a lot"):
     # Polestar 0.2.5 fades its windows back by itself with no Show (every fight's start / end: UI/GuideFrame.lua:2528-2540 ->

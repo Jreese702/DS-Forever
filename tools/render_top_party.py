@@ -80,6 +80,13 @@ function R:SetAllPoints(t)
     self:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0); self:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, 0)
 end
 function R:SetSize(w, h) self.w, self.h = w, h end
+function R:SetScale(k) self.scale = k end
+-- uf18: a frame's scale relative to UIParent (its own SetScale times its parents'): its size and its offsets are in those units
+function ESCALE(r)
+    local s, o = 1, r
+    while o and not rawequal(o, UIParent) do local k = tonumber(rawget(o, "scale")); if k then s = s * k end; o = o.parent end
+    return s
+end
 function R:SetWidth(w) self.w = w end
 function R:SetHeight(h) self.h = h end
 local sbt = R.SetStatusBarTexture
@@ -131,6 +138,8 @@ function RECT(r)
         return cache[r]
     end
     local w, h = natural(r)
+    local es = ESCALE(r)
+    w, h = w * es, h * es
     local an = rawget(r, "anch")
     if not an or #an == 0 then
         if r.kind == "tex" or r.kind == "fs" then cache[r] = { 0, 0, 0, 0 }; r.unplaced = true; return cache[r] end
@@ -142,8 +151,8 @@ function RECT(r)
     for _, a in ipairs(an) do
         local rr = RECT(a[2] or r.parent)
         local q, s = PT[a[3]], PT[a[1]]
-        local px = rr[1] + (rr[3] - rr[1]) * q[1] + (plain(a[4]) or 0)
-        local py = rr[2] + (rr[4] - rr[2]) * q[2] + (plain(a[5]) or 0)
+        local px = rr[1] + (rr[3] - rr[1]) * q[1] + (plain(a[4]) or 0) * es
+        local py = rr[2] + (rr[4] - rr[2]) * q[2] + (plain(a[5]) or 0) * es
         hx[#hx + 1] = { s[1], px }; vy[#vy + 1] = { s[2], py }
     end
     local function solve(cs, size)
@@ -193,7 +202,7 @@ function COLLECT(roots)
                     local own = rawget(r, "sbOwner")
                     out[#out + 1] = { kind = r.kind, root = root, l = q[1], b = q[2], r = q[3], t = q[4], alpha = alpha,
                         ct = rawget(r, "colortex"), col = rawget(r, "col"), tcol = rawget(r, "tcolor"), atlas = rawget(r, "atlas"),
-                        tex = rawget(r, "tex"), text = rawget(r, "text"), fsize = rawget(r, "fsize"), jh = rawget(r, "jh"),
+                        tex = rawget(r, "tex"), text = rawget(r, "text"), fsize = (tonumber(rawget(r, "fsize")) or 12) * ESCALE(r), jh = rawget(r, "jh"),
                         sbc = own and rawget(own, "color") or nil, layer = r.layer, grad = rawget(r, "grad"),
                         key = strata(f) * 1e9 + level(f) * 1e6 + (LAYER[r.layer or "ARTWORK"] or 2) * 1e4 + ((tonumber(r.sub) or 0) + 8) * 1e2,
                         seq = r.seq }

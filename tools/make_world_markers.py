@@ -11,11 +11,16 @@
   (marker_ring / marker_beam: cp21's, unused since cp22)
   WowCompanion/Media/tint_glow.tga    (at3, the aggro tint) the outline of Forever's nameplate health bar (chamfered corners, ~3 px
                                       out) with a soft glow outside, white for the add-on's tint; TINT_H of its 64 rows used
+  WowCompanion/Media/target_arrow.tga (Hub uf18, the user's pick "Bobbing red arrow", 2026-11-13) a RED down-arrow, drawn in its
+                                      colour (no tint): a square shaft over a wide head, its TIP at the texture's bottom middle, lit
+                                      from the top left, a dark rim and a soft dark shadow so it reads over sky and grass alike
 
-    python tools/make_world_markers.py
+    python tools/make_world_markers.py            (every texture)
+    python tools/make_world_markers.py arrow      (only the named ones)
 """
 import math
 import os
+import sys
 
 from PIL import Image
 
@@ -222,6 +227,55 @@ def diamond():
     return out
 
 
+ARROW_RGB = (236, 40, 30)                         # the pointer's red (the aggro tint's "inside" red, a touch brighter)
+
+
+def arrow():
+    """64 x 64: the shaft (x 0.36..0.64 of the width) from y 0.06 to 0.46, the head from y 0.40 (x 0.08..0.92) to its tip at y 0.97."""
+    n, ss = 64, 4
+    N = n * ss
+    big = Image.new("RGBA", (N, N), (0, 0, 0, 0))
+    px = big.load()
+
+    def sd(x, y, grow):
+        # the signed distance (texture units, > 0 outside) to the arrow, grown by [grow]
+        u, v = x / N, y / N
+        shaft = max(abs(u - 0.5) - 0.14, abs(v - 0.26) - 0.20)
+        # the head: a triangle with its top edge at v 0.40 from u 0.08..0.92, the tip at (0.5, 0.97)
+        top = 0.40 - v
+        hw = 0.42 * (0.97 - v) / 0.57                                       # the half width at v
+        side = (abs(u - 0.5) - hw) * 0.57 / math.hypot(0.57, 0.42)
+        head = max(top, side, v - 0.97)
+        return min(shaft, head) * n - grow
+
+    for q in range(N):
+        for p in range(N):
+            x, y = p + 0.5, q + 0.5
+            d = sd(x, y, 0)
+            if d > 0:
+                # the shadow: a soft dark halo, a little down-right
+                ds = sd(x - 1.2 * ss, y - 1.6 * ss, 0)
+                a = 0.55 * math.exp(-max(0.0, ds) / 1.6) if ds < 6 else 0.0
+                if a > 0.004:
+                    px[p, q] = (0, 0, 0, int(round(255 * a)))
+                continue
+            if d > -1.6:
+                c = (60, 6, 4)                                               # the dark rim
+            else:
+                u, v = x / N, y / N
+                lit = 1.18 - 0.55 * (u + v)                                  # lit from the top left
+                if d > -3.2:
+                    lit += 0.22                                              # a bright inner edge
+                c = tuple(max(0, min(255, int(round(ch * lit)))) for ch in ARROW_RGB)
+            px[p, q] = c + (255,)
+    img = big.resize((n, n), Image.BOX)
+    out = os.path.join(MEDIA, "target_arrow.tga")
+    img.save(out, compression=None)
+    return out
+
+
 if __name__ == "__main__":
-    for p in (ring(), beam(), tint(), pin(), disc(), diamond()):
+    ALL = {"ring": ring, "beam": beam, "tint": tint, "pin": pin, "disc": disc, "diamond": diamond, "arrow": arrow}
+    for nm in (sys.argv[1:] or list(ALL)):
+        p = ALL[nm]()
         print(p, os.path.getsize(p))
