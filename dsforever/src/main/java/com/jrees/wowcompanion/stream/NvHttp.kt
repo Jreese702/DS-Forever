@@ -116,8 +116,9 @@ object HttpOnce {
  */
 class NvHttp(
     val address: String,
-    val httpPort: Int = 47989,
-    var httpsPort: Int = 47984,
+    /** Sunshine's ports: always the ones Desktop reported or the pairing stored, no stock default ([StreamPorts]) */
+    val httpPort: Int,
+    var httpsPort: Int,
     private val identity: ClientIdentity,
     @Volatile var serverCert: X509Certificate? = null,
     private val deviceName: String = "DSForever",

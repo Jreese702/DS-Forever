@@ -197,14 +197,11 @@ class StreamSession(
         const val PACKET_SIZE = 1392
 
         /** Sunshine's stream ports from its base (http) port: video, control and audio are UDP base+9..base+11 (SunshineOptions.Port) */
-        fun udpPorts(httpPort: Int): String {
-            val base = if (httpPort > 0) httpPort else 47989
-            return "UDP ${base + 9}-${base + 11}"
-        }
+        fun udpPorts(httpPort: Int): String = if (httpPort > 0) "UDP ${httpPort + 9}-${httpPort + 11}" else "its UDP stream ports"
 
         /** [httpPort] = the base port Desktop reported (it may pick 52989 and up, not Moonlight's 47989: the user, 2026-11-11: streaming
          *  away fixes) */
-        fun terminationText(code: Int, httpPort: Int = 47989): String = when (code) {
+        fun terminationText(code: Int, httpPort: Int): String = when (code) {
             MoonBridge.ML_ERROR_GRACEFUL_TERMINATION -> "The PC ended the stream."
             MoonBridge.ML_ERROR_NO_VIDEO_TRAFFIC -> "No video arrived: the PC's firewall may block the stream (${udpPorts(httpPort)})."
             MoonBridge.ML_ERROR_NO_VIDEO_FRAME -> "The stream stopped sending pictures."

@@ -34,7 +34,9 @@ class StreamPairing(private val steps: Steps, private val onState: (State) -> Un
         data class Unreachable(val why: String) : Arm()
     }
 
-    data class MoonOutcome(val state: MoonPairing.State, val serverCertPem: String = "", val uuid: String = "", val httpsPort: Int = 47984, val why: String = "")
+    /** [httpPort] / [httpsPort] = the Sunshine ports the handshake used (0 = not said) */
+    data class MoonOutcome(val state: MoonPairing.State, val serverCertPem: String = "", val uuid: String = "", val httpsPort: Int = 0, val why: String = "",
+                           val httpPort: Int = 0)
 
     sealed class Finish {
         object Confirmed : Finish()
@@ -82,9 +84,10 @@ class StreamPairing(private val steps: Steps, private val onState: (State) -> Un
             // Moonlight said PAIRED, so Sunshine took the PIN: the bridge's own word is a confirmation, not a condition
             val f = try { steps.finishBridge(true, null) } catch (t: Throwable) { Finish.Failed(t.message ?: "no answer") }
             if (f is Finish.Failed) try { android.util.Log.i("DSFSTREAM", "pairing: the bridge didn't confirm (${f.why}); Moonlight paired") } catch (_: Throwable) {}
+            val http = moon.httpPort.takeIf { it > 0 } ?: StreamPorts.forPairing(armed.httpPort, pc)
             val host = PairedHost(
                 name = armed.name.ifEmpty { pc.name }, address = pc.address,
-                httpPort = armed.httpPort.takeIf { it > 0 } ?: pc.sunshinePort, httpsPort = moon.httpsPort,
+                httpPort = http, httpsPort = StreamPorts.httpsOf(http, moon.httpsPort),
                 uuid = moon.uuid, serverCertPem = moon.serverCertPem, bridgePort = pc.bridgePort, bridgeTls = pc.bridgeTls,
                 bridgeFingerprint = armed.fingerprint, bridgeToken = armed.token, desktopId = armed.desktopId.ifEmpty { pc.desktopId },
                 subnet = thorSubnet, lastSeenMs = System.currentTimeMillis(),
@@ -105,7 +108,8 @@ class StreamPairing(private val steps: Steps, private val onState: (State) -> Un
             val moon = steps.moonlightPair(pc, pin)
             if (moon.state != MoonPairing.State.PAIRED) emit(State.Failed(if (moon.state == MoonPairing.State.PIN_WRONG)
                 "Sunshine didn't take the PIN. Try again." else "Pairing failed${if (moon.why.isNotEmpty()) ": ${moon.why}" else ""}."))
-            else emit(State.Paired(PairedHost(name = pc.name, address = pc.address, httpPort = pc.sunshinePort, httpsPort = moon.httpsPort,
+            else emit(State.Paired(PairedHost(name = pc.name, address = pc.address, httpPort = moon.httpPort.takeIf { it > 0 } ?: pc.sunshinePort,
+                httpsPort = StreamPorts.httpsOf(moon.httpPort.takeIf { it > 0 } ?: pc.sunshinePort, moon.httpsPort),
                 uuid = moon.uuid, serverCertPem = moon.serverCertPem, subnet = thorSubnet, lastSeenMs = System.currentTimeMillis())))
         } catch (t: Throwable) { emit(State.Failed("Pairing stopped: ${t.message ?: t.javaClass.simpleName}")) }
     }

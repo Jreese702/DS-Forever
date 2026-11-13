@@ -7,6 +7,8 @@ import android.graphics.Paint
 import android.view.View
 import com.jrees.wowcompanion.stream.PcWow
 import com.jrees.wowcompanion.stream.StreamCurtain
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -26,10 +28,10 @@ import java.io.File
 class StreamCurtainShotsTest {
     private val out: File? = System.getenv("LOADING_SHOTS_DIR")?.let { File(it) }
 
-    private fun shot(name: String, t: Float, connected: Boolean, pc: PcWow?) {
+    private fun shot(name: String, t: Float, connected: Boolean, pc: PcWow?, pcWhy: String = "") {
         val d = out ?: return
         LoadingScene.pin(t, 11L, 1)
-        val shows = StreamCurtain.decide(connected, true, pc)
+        val shows = StreamCurtain.decide(connected, true, pc, pcWhy = pcWhy)
         val b = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
         when (shows) {
@@ -69,5 +71,27 @@ class StreamCurtainShotsTest {
         shot("S5_login_error", 4.0f, true, PcWow(state = "running", screen = "login", focused = true, bnet = "signed_in", loginError = "308"))
         shot("S6_needs_you_lifted", 4.4f, true, PcWow(state = "running", screen = "login", focused = true, bnet = "signed_in", needsYou = true))
         shot("S7_signed_in_stream", 5.0f, true, PcWow(state = "running", screen = "charselect", focused = true, bnet = "signed_in"))
+        shot("S8_pc_busy", 1.0f, false, PcWow(state = "running", screen = "charselect", bnet = "signed_in"), StreamCurtain.BUSY_SUNSHINE)
+    }
+
+    /** the user, 2026-11-13: another Sunshine on the PC's stock ports; the curtain says why (es / fr too) instead of "PC found" for ever */
+    @Test fun theCurtainSaysWhyThePcIsBusyInEveryLanguage() {
+        for (l in listOf("es", "fr")) {
+            val f = listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json")).first { it.canRead() }
+            Tr.load(l, f.readText())
+        }
+        val pc = PcWow(state = "running", screen = "charselect", bnet = "signed_in")
+        val c = StreamCurtain.decide(false, true, pc, pcWhy = StreamCurtain.reason("other_sunshine", "pc busy: another Sunshine")) as StreamCurtain.Shows.Curtain
+        assertEquals("PC busy: another Sunshine is running", c.line)
+        for (line in listOf(StreamCurtain.WAITING, StreamCurtain.BUSY_SUNSHINE, StreamCurtain.BUSY_PROGRAM, StreamCurtain.BUSY_LISTENING,
+                StreamCurtain.BUSY_STOPPED, "DS Forever Desktop hasn't said its streaming port."))
+            for (l in listOf("es", "fr")) assertNotEquals("$line ($l)", line, Tr.t(line, l))
+        assertEquals("PC ocupado: hay otro Sunshine en marcha", Tr.t(c.line, "es"))
+        assertEquals("PC occupé : un autre Sunshine est lancé", Tr.t(c.line, "fr"))
+        // the box draws it
+        val v = LoadingTopView(RuntimeEnvironment.getApplication()).apply { curtain = { c.rows to c.line } }
+        v.measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY))
+        v.layout(0, 0, 1920, 1080)
+        v.draw(Canvas(Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888)))
     }
 }

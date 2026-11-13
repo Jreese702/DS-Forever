@@ -11,8 +11,10 @@ import org.json.JSONObject
 data class PairedHost(
     val name: String,
     val address: String,
-    val httpPort: Int = 47989,
-    val httpsPort: Int = 47984,
+    /** Sunshine's http (base) and https ports as pairing or Desktop's welcome last gave them; 0 = not known (never guessed: the user's
+     *  PC 2026-11-13 had a separate Sunshine on the stock 47989/47984 and ours on 52989, see [StreamPorts]) */
+    val httpPort: Int = 0,
+    val httpsPort: Int = 0,
     /** Sunshine's uniqueid (serverinfo), "" when unknown */
     val uuid: String = "",
     /** Sunshine's certificate from the pairing (PEM): every https call is pinned to it */
@@ -51,7 +53,7 @@ data class PairedHost(
             if (address.isEmpty() || cert.isEmpty()) return null
             return PairedHost(
                 name = o.optString("name", address), address = address,
-                httpPort = o.optInt("httpPort", 47989), httpsPort = o.optInt("httpsPort", 47984),
+                httpPort = o.optInt("httpPort", 0), httpsPort = o.optInt("httpsPort", 0),
                 uuid = o.optString("uuid"), serverCertPem = cert,
                 bridgePort = o.optInt("bridgePort", 0), bridgeTls = o.optBoolean("bridgeTls", false), bridgeFingerprint = o.optString("bridgeFp"),
                 bridgeToken = o.optString("bridgeToken"), desktopId = o.optString("desktopId"),
@@ -199,5 +201,65 @@ object Route {
     fun unreachable(tried: List<String>, vpnUp: Boolean): String {
         val base = "Can't reach your PC - is DS Forever Desktop running?"
         return if (!vpnUp && tried.any(::tailscale) && tried.none { privateLan(it) }) "$base (Tailscale is off)" else base
+    }
+}
+
+/**
+ * WHICH SUNSHINE PORTS A STREAM DIALS (the user, 2026-11-13: streaming worked once, then sat on "PC found"; a separately installed
+ * Sunshine held the stock 47984/47989 while DS Forever Desktop's own Sunshine moved to 52989, and the Thor's 47989 fallback reached the
+ * foreign, unpaired one. The user's pick: "Yes, add it" - never fall back to the stock ports, use the ports Desktop reports). Pure.
+ *  - a PC with Desktop's bridge: the ports its welcome reported win; a welcome without a port yet (its Sunshine not up): wait. No
+ *    welcome yet: wait [WAIT_MS], then the ports this pairing stored (a saved pairing keeps working when the bridge is late), else keep
+ *    waiting with "Waiting for the PC" - never 47989;
+ *  - an older Desktop whose welcome carries no sunshine.http_port: today's behaviour (the stored port, else the stock one);
+ *  - a plain Sunshine (no Desktop): the stored port, else the stock one (it IS a stock Sunshine).
+ */
+object StreamPorts {
+    const val STOCK_HTTP = 47989
+    const val STOCK_HTTPS = 47984
+    /** how long a connect waits for Desktop's welcome before it uses the stored ports */
+    const val WAIT_MS = 10_000L
+    /** no usable port by then: the problem screen (it retries by the policy) */
+    const val GIVE_UP_MS = 20_000L
+
+    /** Desktop's welcome on its Sunshine: [said] = it carries sunshine.http_port (an older Desktop: false); [http] / [https] > 0 = known */
+    data class Report(val said: Boolean, val http: Int, val https: Int) {
+        val known get() = said && http > 0
+        companion object { fun of(w: BridgeMsg.Welcome) = Report(!w.oldDesktop, w.httpPort, w.httpsPort) }
+    }
+
+    sealed class Pick {
+        /** dial these; [from] for the log */
+        data class Use(val http: Int, val https: Int, val from: String) : Pick()
+        /** not known yet: wait for Desktop's word */
+        object Wait : Pick()
+    }
+
+    /** https from http when not said: Sunshine's https = http - 5 */
+    fun httpsOf(http: Int, https: Int) = if (https > 0) https else if (http > 5) http - 5 else 0
+
+    /**
+     * The port Moonlight's pairing dials: the one Desktop's pair_ok reported ([reportedHttp]), else the PC's advertised one (Desktop's
+     * TXT wins over an _nvstream advert at the same address: [FoundPcs.merge]) when pair_ok said nothing (0: an older Desktop); a
+     * pair_ok that said "no port" (-1: its Sunshine isn't up) gives 0 too, as does nothing at all (never the stock port by guess)
+     */
+    fun forPairing(reportedHttp: Int, pc: FoundPc): Int = when {
+        reportedHttp > 0 -> reportedHttp
+        reportedHttp < 0 -> 0
+        else -> pc.sunshinePort.coerceAtLeast(0)
+    }
+
+    /** [r] = this bridge connection's welcome (null = none yet), [waitedMs] = since the connect began waiting */
+    fun pick(h: PairedHost, r: Report?, waitedMs: Long): Pick {
+        fun stored(why: String) = Pick.Use(h.httpPort, httpsOf(h.httpPort, h.httpsPort), why)
+        fun storedOrStock(why: String) = if (h.httpPort > 0) stored(why) else Pick.Use(STOCK_HTTP, STOCK_HTTPS, "$why, stock")
+        if (!h.hasBridge) return storedOrStock("plain Sunshine")
+        if (r != null && r.known) return Pick.Use(r.http, httpsOf(r.http, r.https), "Desktop")
+        if (r != null && !r.said) return storedOrStock("older Desktop")
+        // Desktop said its Sunshine has no port yet: its word stands (the stored port may be another Sunshine's now)
+        if (r != null) return Pick.Wait
+        // no welcome yet: wait; a saved pairing's own port after the wait (the bridge late or down)
+        if (waitedMs >= WAIT_MS && h.httpPort > 0) return stored("stored")
+        return Pick.Wait
     }
 }

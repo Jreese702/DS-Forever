@@ -39,6 +39,30 @@ object StreamCurtain {
     const val UPDATE = "Update WoW in Battle.net"
     const val CRASHED = "WoW crashed on your PC"
     const val LOGIN_SHOW_MS = 10_000L
+    /** Desktop's word on Sunshine's ports hasn't come yet ([StreamPorts]: never the stock ports by guess) */
+    const val WAITING = "Waiting for the PC"
+    const val BUSY_SUNSHINE = "PC busy: another Sunshine is running"
+    const val BUSY_PROGRAM = "PC busy: another program has the streaming ports"
+    const val BUSY_LISTENING = "PC busy: its streaming host isn't listening"
+    const val BUSY_STOPPED = "PC busy: its streaming host stopped"
+
+    /**
+     * Desktop 0.2.27's reason streaming can't work (the welcome's sunshine.problem / sunshine.why: the user's PC 2026-11-13, another
+     * Sunshine on the stock ports) as the curtain's terse line; "" = none. Its known problems are fixed lines (translated); any
+     * other why as Desktop said it.
+     */
+    fun reason(problem: String, why: String): String = when (problem) {
+        "other_sunshine" -> BUSY_SUNSHINE
+        "other_app" -> BUSY_PROGRAM
+        "not_listening" -> BUSY_LISTENING
+        "exited" -> BUSY_STOPPED
+        else -> why.trim().let { w -> when {
+            w.isEmpty() -> ""
+            w.startsWith("pc busy: another Sunshine", ignoreCase = true) -> BUSY_SUNSHINE
+            w.startsWith("pc busy:", ignoreCase = true) -> "PC busy:" + w.substring(8)
+            else -> w.replaceFirstChar { it.uppercase() }
+        } }
+    }
 
     /** WoW is up and between its login screen and character select */
     fun atLogin(pc: PcWow?) = pc != null && (pc.screen == "login" || pc.screen == "signing_in")
@@ -49,7 +73,9 @@ object StreamCurtain {
      * "Loading" while nothing more precise is known.
      */
     fun decide(connected: Boolean, bridged: Boolean, pc: PcWow?, dots: Int = 3, route: String = "", problem: String? = null,
-               signingIn: Boolean = false, atLoginLong: Boolean = false, seen: Boolean = false): Shows {
+               signingIn: Boolean = false, atLoginLong: Boolean = false, seen: Boolean = false,
+               /** [reason]'s line for the PC's problem ("" = none) */ pcWhy: String = "",
+               /** the connect waits for Desktop's Sunshine ports ([StreamPorts.Pick.Wait]) */ waiting: Boolean = false): Shows {
         // "PC found" only once the PC ANSWERED (the bridge's welcome: [pc] set; Sunshine alone: the stream up), with the way it was
         // reached ([route]: "home Wi-Fi" / "Tailscale"); before that "Looking for your PC" (party3 said "PC found" while the PC never
         // got a connection: the Thor's Tailscale was off); [problem] = why no address answered (Route.unreachable)
@@ -57,7 +83,11 @@ object StreamCurtain {
         if (!bridged) return if (connected) Shows.Stream
             else curtain(listOf(row(LOOKING, false)), problem ?: "Connecting to your PC")
         if (pc == null) return if (connected) curtain(listOf(row(found, true)), loading(dots))      // the stream answered, Desktop not yet
-            else curtain(listOf(row(LOOKING, false)), problem ?: "Connecting to your PC")
+            else curtain(listOf(row(LOOKING, false)), problem ?: if (waiting) WAITING else "Connecting to your PC")
+        // the PC answered but can't stream (another Sunshine holds the streaming ports, ...): its reason, not "PC found" for ever (the
+        // user, 2026-11-13); and while its Sunshine ports aren't known yet, the wait says so
+        if (!connected && pcWhy.isNotEmpty()) return curtain(listOf(row(found, true)), pcWhy)
+        if (!connected && waiting) return curtain(listOf(row(found, true)), WAITING)
         // WoW itself is up and refused the sign-in: the whole of WoW, its own message and its buttons (the user, 2026-10-30: "why doesn't
         // it show the full wow window when it shows this login error?"), not Battle.net's window
         if (connected && atLogin(pc) && pc.loginError.isNotEmpty() && pc.needsYou && pc.crash.isEmpty() && pc.bnet != "signin_needed")
