@@ -13,7 +13,8 @@ import android.view.View
  * picture of the row the cursor is on (or the last row touched), at the setting's value now ([SettingsPreview]). It moves only
  * while it shows and its picture is an animated one; a setting changed redraws it (an ABXY change glides).
  */
-class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean?) : View(context) {
+class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean?,
+                          private val smartYOn: () -> Boolean? = { null }) : View(context) {
     /** the row shown (SettingsPreview's id = the row's words); null = nothing yet */
     var id: String? = null
         set(v) { if (field != v) { field = v; invalidate() } }
@@ -32,9 +33,9 @@ class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean
     /** the button pictures, in the chosen set (UiKit.pad: the kit's glyphs) */
     private val glyph = SettingsPreview.Glyph { c, action, set, cx, cy, size ->
         val name = when (set) {
-            1 -> "ltr_$action"
-            2 -> "shp_" + when (action) { "a" -> "cross"; "b" -> "circle"; "x" -> "square"; "y" -> "triangle"; else -> action }
-            else -> "rev_$action"
+            1 -> if (action == "select") "ltr_view" else "ltr_$action"
+            2 -> "shp_" + when (action) { "a" -> "cross"; "b" -> "circle"; "x" -> "square"; "y" -> "triangle"; "select" -> "share"; else -> action }
+            else -> if (action == "select") "rev_minus" else "rev_$action"
         }
         UiKit.pad(c, name, cx, cy, size)
     }
@@ -52,7 +53,7 @@ class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean
 
     init {
         HomeSettings.onChange(changed); Settings.onChange(changed); FrameGen.onChange(changed); CastSettings.onChange(changed)
-        HomeAttackSwitch.onChange(changed)
+        HomeAttackSwitch.onChange(changed); GameUi.onChange(changed)
     }
 
     /** the values now (the room's settings objects) */
@@ -65,7 +66,12 @@ class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean
         classTapL = HomeSettings.classTapL, classPickAL = HomeSettings.classPickAL, classTapR = HomeSettings.classTapR,
         classPickAR = HomeSettings.classPickAR, miniOutYd = Settings.minimapYd, miniInYd = Settings.minimapIndoorYd,
         quickChat = Settings.chatDefaultInput == "quick", fpsLimit = FrameGen.fpsLimit, frameGen = FrameGen.enabled && FrameGen.hasDll(),
-        multiplier = FrameGen.multiplier, flow = FrameGen.flowScale, indoorBuild = Settings.indoorBuild)
+        multiplier = FrameGen.multiplier, flow = FrameGen.flowScale, indoorBuild = Settings.indoorBuild,
+        clockHearth = HomeSettings.clockHearth, clockTeleport = HomeSettings.clockTeleport, clockGold = HomeSettings.clockGold,
+        clockBags = HomeSettings.clockBags, clockAmmo = HomeSettings.clockAmmo,
+        castBar = CastStripModel.Side.values().indexOf(HomeSettings.castBarSide), worldMapAll = Settings.worldMapFog == "all",
+        smartY = smartYOn(), partyMode = GameUi.swWant(GameUi.SW_PMODE), smartRes = GameUi.swWant(GameUi.SW_SRES),
+        attackHostile = GameUi.swWant(GameUi.SW_ATK), autoShot = GameUi.shotMode())
 
     override fun onDraw(c: Canvas) {
         UiKit.asBody(pLabel); UiKit.asTitle(pTitle); UiKit.asBody(pCap)

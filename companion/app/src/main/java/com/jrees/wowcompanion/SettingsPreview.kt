@@ -34,6 +34,11 @@ object SettingsPreview {
         val classTapL: Boolean = false, val classPickAL: Boolean = false, val classTapR: Boolean = false, val classPickAR: Boolean = false,
         val miniOutYd: Int = 80, val miniInYd: Int = 60, val quickChat: Boolean = true,
         val fpsLimit: Int = 40, val frameGen: Boolean = false, val multiplier: Int = 2, val flow: Float = 0.8f, val indoorBuild: Boolean = true,
+        // 2026-11-13 (the user: "a lot of these new options and settings need visuals"): the extras row, the cast bar, the world map, the
+        // Controller tab's helpers. [castBar] = CastStripModel.Side's index (Off, Left, Right, Both); [autoShot] = GameUi.SHOT_WORDS' index
+        val clockHearth: Boolean = true, val clockTeleport: Boolean = true, val clockGold: Boolean = true, val clockBags: Boolean = true,
+        val clockAmmo: Boolean = true, val castBar: Int = 0, val worldMapAll: Boolean = true, val smartY: Boolean? = null,
+        val partyMode: Boolean = true, val smartRes: Boolean = true, val attackHostile: Boolean = false, val autoShot: Int = 1,
     )
 
     /**
@@ -53,18 +58,20 @@ object SettingsPreview {
         fun keyboard(c: Canvas, w: Float, h: Float) {}
     }
 
-    /** a button picture: [action] "a" "b" "x" "y" "start", in glyph set [set] (0 Nintendo, 1 Xbox, 2 PlayStation), centred, [size] px */
+    /** a button picture: [action] "a" "b" "x" "y" "start" "select", in glyph set [set] (0 Nintendo, 1 Xbox, 2 PlayStation), centred, [size] px */
     fun interface Glyph { fun draw(c: Canvas, action: String, set: Int, cx: Float, cy: Float, size: Float) }
 
     /** the rows with a picture, in the tabs' order; the value says whether it moves */
     val ROWS: Map<String, Boolean> = linkedMapOf(
         "Controller on Home" to false, "Combat layout" to true, "Swing timer" to true, "Focused quest" to false,
-        "Start the attack when a spell is cast" to true, "DS WoW toolbar" to false,
+        "Hearthstone" to false, "Class teleport" to false, "Gold" to false, "Free bag slots" to false, "Ammo" to false,
+        "Start the attack when a spell is cast" to true, "DS WoW toolbar" to false, "Tap-to-cast bar" to false,
         "ABXY location" to true, "Button glyphs" to false,
         "Pause menu: open" to true, "Pause menu: pick" to true, "Item wheel: open" to true, "Item wheel: pick" to true,
         "Spell wheel: open" to true, "Spell wheel: pick" to true,
         "Left class radial: open" to true, "Left class radial: pick" to true, "Right class radial: open" to true, "Right class radial: pick" to true,
-        "Minimap zoom outdoors" to false, "Minimap zoom indoors" to false, "Message input" to false,
+        "Smart Y" to true, "Party mode" to true, "Smart Res" to true, "Start attack on hostile target" to true, "Combat Auto Shot" to true,
+        "Minimap zoom outdoors" to false, "Minimap zoom indoors" to false, "World map" to false, "Message input" to false,
         "Frame limit" to true, "Frame generation" to true, "Multiplier" to true, "Flow scale" to true, "Build in the background" to true)
 
     fun has(id: String?): Boolean = id != null && id in ROWS
@@ -92,11 +99,19 @@ object SettingsPreview {
         "Multiplier" -> "${s.multiplier}x"
         "Flow scale" -> "${Math.round(s.flow * 100)}%"
         "Build in the background" -> onOff(s.indoorBuild)
+        "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo" -> onOff(extraOn(id, s))
+        "Tap-to-cast bar" -> SIDE_WORDS[s.castBar.coerceIn(0, 3)]
+        "World map" -> if (s.worldMapAll) "Show all" else "Explored only"
+        "Smart Y" -> s.smartY?.let { onOff(it) } ?: "-"
+        "Party mode" -> onOff(s.partyMode)
+        "Smart Res" -> onOff(s.smartRes)
+        "Start attack on hostile target" -> onOff(s.attackHostile)
+        "Combat Auto Shot" -> SHOT_NAMES[s.autoShot.coerceIn(0, 2)]
         else -> ""
     }.let { v -> val n = SHORT[id] ?: id; if (v.isEmpty()) n else "$n: $v" }
 
     /** a row's name in the picture's title when the row's own words are too long for the panel */
-    private val SHORT = mapOf("Start the attack when a spell is cast" to "Start the attack")
+    private val SHORT = mapOf("Start the attack when a spell is cast" to "Start the attack", "Start attack on hostile target" to "Start attack")
 
     /** two or three short lines under the picture */
     fun caption(id: String, s: State): List<String> = when (id) {
@@ -129,12 +144,49 @@ object SettingsPreview {
         "Flow scale" -> listOf("How much detail the made frames keep:", "lower is faster, higher is sharper.")
         "Build in the background" -> if (s.indoorBuild) listOf("Indoor maps are built while you stand", "still and the device is cool; walking pauses.")
             else listOf("Nothing is built; ready maps still show.")
+        "Hearthstone" -> if (s.clockHearth) listOf("Your Hearthstone in the row under the", "clock; it glows when ready.")
+            else listOf("No Hearthstone in the row.", "The others space out evenly.")
+        "Class teleport" -> if (s.clockTeleport) listOf("Your class teleport in the row,", "once your character knows it.")
+            else listOf("No class teleport in the row.", "The others space out evenly.")
+        "Gold" -> if (s.clockGold) listOf("All your money in the row:", "gold, silver and copper.")
+            else listOf("No money in the row.", "The others space out evenly.")
+        "Free bag slots" -> if (s.clockBags) listOf("How many bag slots are free,", "in the row under the clock.")
+            else listOf("No bag count in the row.", "The others space out evenly.")
+        "Ammo" -> if (s.clockAmmo) listOf("Your equipped ammo and its count,", "while you have some.")
+            else listOf("No ammo in the row.", "The others space out evenly.")
+        "Tap-to-cast bar" -> when (s.castBar) {
+            1 -> listOf("Six spells under the chat;", "one tap casts each.")
+            2 -> listOf("Six spells under the minimap;", "one tap casts each.")
+            3 -> listOf("One bar under both columns;", "one tap casts each.")
+            else -> listOf("No tap-to-cast bar on Home.") }
+        "World map" -> if (s.worldMapAll) listOf("The Map room's continents show", "every zone, revealed.")
+            else listOf("The Map room's continents show only", "what you have explored.")
+        "Smart Y" -> when (s.smartY) {
+            null -> listOf("Needs the game running.")
+            true -> listOf("Out of combat, nothing targeted:", "Y casts from your list, top first.")
+            false -> listOf("Y keeps its own action.") }
+        "Party mode" -> if (s.partyMode) listOf("Select turns Party mode on:", "your party's plates on Home.")
+            else listOf("Select does not turn Party mode on.")
+        "Smart Res" -> if (s.smartRes) listOf("A tap on a dead member casts your", "res (not in a fight).")
+            else listOf("A tap on a dead member does not res.")
+        "Start attack on hostile target" -> if (s.attackHostile) listOf("Targeting an enemy starts", "your auto-attack.")
+            else listOf("Targeting an enemy does not start", "your auto-attack.")
+        "Combat Auto Shot" -> when (s.autoShot) {
+            0 -> listOf("No Auto Shot in a fight.")
+            2 -> listOf("As On, but off for a plain attack", "you start yourself.")
+            else -> listOf("In a fight: Auto Shot at range,", "auto attack up close.") }
         else -> emptyList()
     }
 
     // ------------------------------------------------------------------ drawing
 
     private val SET_NAMES = listOf("Nintendo", "Xbox", "PlayStation")
+    /** CastStripModel.Side's words and GameUi.SHOT_WORDS (kept here so this file draws on its own, for the off-device renders) */
+    private val SIDE_WORDS = listOf("Off", "Left", "Right", "Both")
+    private val SHOT_NAMES = listOf("Off", "On", "Smart")
+    private fun extraOn(id: String, s: State) = when (id) {
+        "Hearthstone" -> s.clockHearth; "Class teleport" -> s.clockTeleport; "Gold" -> s.clockGold; "Free bag slots" -> s.clockBags
+        else -> s.clockAmmo }
     // FrameGen's values (kept here so this file draws on its own, for the off-device renders)
     private val MULTIPLIERS = listOf(2, 3, 4)
     private const val FLOW_MIN = 0.25f
@@ -190,6 +242,14 @@ object SettingsPreview {
             "Multiplier" -> multiplier(c, r, s, t, live)
             "Flow scale" -> flow(c, r, s.flow, t, live)
             "Build in the background" -> indoor(c, r, s, t, live)
+            "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo" -> extras(c, r, id, s)
+            "Tap-to-cast bar" -> castBar(c, r, s.castBar)
+            "World map" -> worldMap(c, r, s.worldMapAll)
+            "Smart Y" -> smartY(c, r, s, t, glyph)
+            "Party mode" -> partyMode(c, r, s.partyMode, t, glyph, s.glyphSet)
+            "Smart Res" -> smartRes(c, r, s.smartRes, t)
+            "Start attack on hostile target" -> attackHostile(c, r, s.attackHostile, t)
+            "Combat Auto Shot" -> autoShot(c, r, s.autoShot, t)
         }
     }
 
@@ -916,5 +976,313 @@ object SettingsPreview {
         chip(c, r.left + 210f, cy, "Walking", walking)
         gText(c, when { !on -> "Off"; walking -> "Paused: walking"; fill >= 1f -> "Built"; else -> "Building" },
             r.centerX(), cy + 76f, 26f, when { !on -> DIMC; walking -> Theme.warn; else -> GOLD }, Paint.Align.CENTER, 0)
+    }
+
+    // ---- 2026-11-13 (the user: "a lot of these new options and settings need visuals to accompany them in the settings menus")
+
+    /** two choices stacked, each drawn by [draw] into its own framed box under its word; the chosen one lit gold, the other dimmed */
+    private fun twoWays(c: Canvas, r: RectF, aWord: String, bWord: String, aChosen: Boolean, boxH: Float, draw: (RectF, Boolean) -> Unit) {
+        val label = 26f; val gap = 16f
+        val h = minOf(boxH, (r.height() - gap) / 2f - label)
+        for (i in 0..1) {
+            val top = r.top + i * (label + h + gap)
+            val chosen = (i == 0) == aChosen
+            text(c, if (i == 0) aWord else bWord, r.left + 10f, top + 19f, 19f, if (chosen) GOLD else DIMC, Paint.Align.LEFT)
+            val box = RectF(r.left + 10f, top + label, r.right - 10f, top + label + h)
+            frame(c, box, Color.rgb(90, 76, 52), 1.5f, Color.rgb(20, 16, 10))
+            c.save(); c.clipRect(box); draw(box, i == 0); c.restore()
+            if (!chosen) c.drawRect(box, pDim)
+            frame(c, box, if (chosen) GOLD else Color.rgb(90, 76, 52), if (chosen) 3f else 1.5f)
+        }
+    }
+
+    // ---- Bottom screen > Home: THE EXTRAS ROW (ClockBand) under the clock chip, between the controller's two groups
+
+    private val EXTRA_KIND = mapOf("Hearthstone" to ClockBand.Kind.HEARTH, "Class teleport" to ClockBand.Kind.TELEPORT,
+        "Gold" to ClockBand.Kind.GOLD, "Free bag slots" to ClockBand.Kind.BAGS, "Ammo" to ClockBand.Kind.AMMO)
+
+    /** a stand-in icon drawn here (no icon is asked of the game's art for a picture): an arrow (ammo) or a swirl (a teleport) */
+    private val arrowIcon by lazy { drawnIcon { c, p ->
+        p.color = Color.rgb(200, 170, 110); p.strokeWidth = 5f; c.drawLine(14f, 50f, 48f, 16f, p)
+        p.style = Paint.Style.FILL; c.drawPath(Path().apply { moveTo(52f, 12f); lineTo(36f, 18f); lineTo(46f, 28f); close() }, p)
+        p.color = Color.rgb(230, 230, 230); c.drawPath(Path().apply { moveTo(14f, 50f); lineTo(10f, 40f); lineTo(20f, 46f); close() }, p) } }
+    private val swirlIcon by lazy { drawnIcon { c, p ->
+        p.color = Color.rgb(140, 170, 255); p.strokeWidth = 4f
+        for (i in 0..2) c.drawArc(RectF(12f + i * 6f, 12f + i * 6f, 52f - i * 6f, 52f - i * 6f), i * 120f, 250f, false, p) } }
+    private fun drawnIcon(paint: (Canvas, Paint) -> Unit): Bitmap {
+        val b = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        c.drawColor(Color.rgb(36, 30, 24))
+        paint(c, Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND })
+        return b
+    }
+
+    /** one extras item as Home draws it, with a made-up value: the Hearthstone ready (its glow), the teleport cooling, a purse... */
+    private fun bandItem(k: ClockBand.Kind): UiKit.BandItem = when (k) {
+        ClockBand.Kind.HEARTH -> UiKit.BandItem.Icon(Icons.get(ItemCd.hearthIcon), "", glow = true)
+        ClockBand.Kind.TELEPORT -> UiKit.BandItem.Icon(ItemCd.teleport?.let { Icons.get(it.icon) } ?: swirlIcon, "12:04", cooling = true)
+        ClockBand.Kind.GOLD -> UiKit.BandItem.Gold(Icons.get(HomeView.GOLD_ICON) ?: Icons.ui("ui-goldicon"), 1_234_567L)
+        ClockBand.Kind.BAGS -> UiKit.BandItem.Icon(Icons.get(133633), "14")
+        ClockBand.Kind.AMMO -> UiKit.BandItem.Icon(arrowIcon, "812")
+    }
+
+    /**
+     * the top of Home in [box]: the controller's two groups, the clock chip centred at the top (as Home has it), the extras row [kinds]
+     * under it (UiKit.clockBand, Home's own drawing), [ring] circled in gold. Home's px, the middle of its width shown.
+     */
+    private fun band(c: Canvas, box: RectF, kinds: List<ClockBand.Kind>, ring: ClockBand.Kind?) {
+        val x0 = 380f; val x1 = 860f
+        val k = box.width() / (x1 - x0)
+        c.save(); c.translate(box.left, box.top + (box.height() - 230f * k) / 2f); c.scale(k, k); c.translate(-x0, 0f)
+        diamond(c, 300f, 150f, 30f, 64f); diamond(c, 940f, 150f, 30f, 64f)
+        UiKit.clockChip(c, 620f, ClockBand.CHIP_TOP, "12:30", 76)
+        val spot = floatArrayOf(440f, 98f, 800f, 210f, 620f, 154f)
+        val floor = ClockBand.CHIP_TOP + ClockBand.CHIP_H + ClockBand.CHIP_PAD
+        val items = kinds.map { bandItem(it) }
+        UiKit.clockBand(c, spot, items, floor)
+        val i = if (ring == null) -1 else kinds.indexOf(ring)
+        if (i >= 0) UiKit.clockBandBoxes(spot, items, floor).getOrNull(i)?.let { b ->
+            pStroke.color = GOLD; pStroke.strokeWidth = 3f / k
+            c.drawRoundRect(RectF(b.left - 9f, b.top - 7f, b.right + 9f, b.bottom + 5f), 8f, 8f, pStroke)
+        }
+        c.restore()
+    }
+
+    private fun extras(c: Canvas, r: RectF, id: String, s: State) {
+        val me = EXTRA_KIND.getValue(id)
+        val on = EXTRA_KIND.filter { (row, _) -> extraOn(row, s) }.values.toSet() + me
+        val kinds = ClockBand.Kind.values().filter { it in on }
+        twoWays(c, r, "On", "Off", extraOn(id, s), 300f) { box, first ->
+            if (first) band(c, box, kinds, me) else band(c, box, kinds - me, null)
+        }
+    }
+
+    // ---- Bottom screen > Tap-to-cast bar: Home in four thumbnails, Off / Left / Right / Both
+
+    private fun castBar(c: Canvas, r: RectF, side: Int) {
+        val gap = 14f; val label = 26f
+        val w = (r.width() - 20f - gap) / 2f
+        val h = minOf(w * 1.3f, (r.height() - gap) / 2f - label)
+        for (i in 0..3) {
+            val x = r.left + 10f + (i % 2) * (w + gap); val top = r.top + (i / 2) * (label + h + gap)
+            val chosen = i == side
+            text(c, SIDE_WORDS[i], x, top + 19f, 19f, if (chosen) GOLD else DIMC, Paint.Align.LEFT)
+            val box = RectF(x, top + label, x + w, top + label + h)
+            homeThumb(c, box, i)
+            if (!chosen) c.drawRect(box, pDim)
+            frame(c, box, if (chosen) GOLD else Color.rgb(90, 76, 52), if (chosen) 3f else 1.5f)
+        }
+    }
+
+    /** a small Home: the controller band on top, the chat left, the minimap right, the bar of six under one column or both */
+    private fun homeThumb(c: Canvas, b: RectF, side: Int) {
+        frame(c, b, BRONZE, 1.5f, Color.rgb(20, 16, 10))
+        val g = 5f; val bandB = b.top + b.height() * 0.3f
+        diamond(c, b.left + b.width() * 0.22f, (b.top + bandB) / 2f, 6f, 13f); diamond(c, b.right - b.width() * 0.22f, (b.top + bandB) / 2f, 6f, 13f)
+        val mid = b.centerX()
+        val slot = minOf((b.width() / 2f - 2f * g) / 6.6f, 22f)
+        val barH = slot + 8f
+        val leftBar = side == 1 || side == 3; val rightBar = side == 2 || side == 3
+        val chat = RectF(b.left + g, bandB + g, mid - g / 2f, b.bottom - g - (if (leftBar) barH + g else 0f))
+        val map = RectF(mid + g / 2f, bandB + g, b.right - g, b.bottom - g - (if (rightBar) barH + g else 0f))
+        frame(c, chat, Theme.bronzeDim, 1.5f, Color.rgb(28, 22, 15))
+        pFill.color = DIMC
+        for (j in 0 until 3) { val y = chat.bottom - 10f - j * 10f; if (y > chat.top + 6f) c.drawRect(chat.left + 6f, y - 3f, chat.right - 6f - j * 10f, y, pFill) }
+        frame(c, map, Theme.bronzeDim, 1.5f, Color.rgb(28, 22, 15))
+        val mr = minOf(map.width(), map.height()) / 2f - 5f
+        pFill.color = Color.rgb(60, 82, 52); c.drawCircle(map.centerX(), map.centerY(), mr, pFill)
+        pStroke.color = BRONZE; pStroke.strokeWidth = 1.5f; c.drawCircle(map.centerX(), map.centerY(), mr, pStroke)
+        fun bar(l: Float, rr: Float) {
+            val well = RectF(l, b.bottom - g - barH, rr, b.bottom - g)
+            frame(c, well, GOLD, 1.5f, Color.rgb(36, 28, 18))
+            val s = minOf((well.width() - 8f) / 6f - 3f, well.height() - 8f)
+            val x0 = well.centerX() - (6f * s + 5f * 3f) / 2f
+            for (j in 0 until 6) { pFill.color = SPELLS[j]; c.drawRect(x0 + j * (s + 3f), well.centerY() - s / 2f, x0 + j * (s + 3f) + s, well.centerY() + s / 2f, pFill) }
+        }
+        when (side) { 1 -> bar(chat.left, chat.right); 2 -> bar(map.left, map.right); 3 -> bar(chat.left, map.right) }
+    }
+
+    // ---- Bottom screen > Map > World map: the stitched continent, every zone or only the explored ones
+
+    private fun worldMap(c: Canvas, r: RectF, all: Boolean) {
+        twoWays(c, r, "Show all", "Explored only", all, 320f) { box, first -> continent(c, box, first) }
+    }
+
+    /** a made-up continent of zones on parchment; [all] false = the zones not yet explored under the fog */
+    private fun continent(c: Canvas, box: RectF, all: Boolean) {
+        UiKit.parchment(c, RectF(box.left + 2f, box.top + 2f, box.right - 2f, box.bottom - 2f), 14f)
+        val cols = 6; val rows = 4
+        val inner = RectF(box.left + 24f, box.top + 18f, box.right - 24f, box.bottom - 18f)
+        val cw = inner.width() / cols; val ch = inner.height() / rows
+        val land = Path()
+        land.addOval(RectF(inner.left, inner.top, inner.centerX() + cw, inner.bottom), Path.Direction.CW)
+        land.addOval(RectF(inner.centerX() - cw * 1.4f, inner.top + ch * 0.3f, inner.right, inner.bottom - ch * 0.2f), Path.Direction.CW)
+        c.save(); c.clipPath(land)
+        val greens = intArrayOf(Color.rgb(96, 120, 70), Color.rgb(130, 120, 74), Color.rgb(84, 104, 66), Color.rgb(146, 110, 70), Color.rgb(110, 130, 86))
+        // the explored ones: round the start zone (left middle)
+        val explored = setOf(6, 7, 12, 13, 14, 8)
+        for (j in 0 until rows) for (i in 0 until cols) {
+            val n = j * cols + i
+            val jx = ((n * 37) % 11 - 5) * 1.6f; val jy = ((n * 53) % 9 - 4) * 1.6f
+            val cell = RectF(inner.left + i * cw + jx, inner.top + j * ch + jy, inner.left + (i + 1) * cw + jx + 2f, inner.top + (j + 1) * ch + jy + 2f)
+            pFill.color = greens[n % greens.size]; c.drawRect(cell, pFill)
+            pStroke.color = Color.argb(150, 70, 50, 30); pStroke.strokeWidth = 1.5f; c.drawRect(cell, pStroke)
+            if (!all && n !in explored) { pFill.color = Color.argb(215, 22, 18, 14); c.drawRect(cell, pFill) }
+        }
+        c.restore()
+        pStroke.color = Color.rgb(90, 70, 40); pStroke.strokeWidth = 2.5f; c.drawPath(land, pStroke)
+        // the player: the map's gold arrow in the start zone
+        val px = inner.left + cw * 1.5f; val py = inner.top + ch * 1.6f
+        pFill.color = Color.rgb(255, 230, 120)
+        c.drawPath(Path().apply { moveTo(px, py - 10f); lineTo(px - 8f, py + 9f); lineTo(px + 8f, py + 9f); close() }, pFill)
+    }
+
+    // ---- Controller > Smart Y: Y out of combat with nothing targeted casts the list's buffs, top first
+
+    private fun smartY(c: Canvas, r: RectF, s: State, t: Float, glyph: Glyph) {
+        val on = s.smartY == true
+        val period = 6f; val k = t % period
+        val press = (k % 2f) < 0.3f
+        val step = (k / 2f).toInt()                                  // 0, 1, 2: the press casts the list's next one
+        chip(c, r.left + 20f, r.top + 10f, "Out of combat", on)
+        chip(c, r.left + 210f, r.top + 10f, "Nothing targeted", on)
+        val cy = r.top + maxOf(150f, r.height() * 0.32f)
+        glyph.draw(c, "y", s.glyphSet, r.left + 70f, cy, if (press && on) 74f else 62f)
+        pStroke.color = DIMC; pStroke.strokeWidth = 3f
+        c.drawLine(r.left + 120f, cy, r.left + 180f, cy, pStroke)
+        c.drawLine(r.left + 180f, cy, r.left + 168f, cy - 10f, pStroke); c.drawLine(r.left + 180f, cy, r.left + 168f, cy + 10f, pStroke)
+        val names = listOf("1st on your list", "2nd", "3rd")
+        for ((i, n) in names.withIndex()) {
+            val row = RectF(r.left + 200f, cy - 100f + i * 72f, r.right - 10f, cy - 44f + i * 72f)
+            val now = on && i == step && (k % 2f) in 0.2f..1.7f
+            val done = on && (i < step || (i == step && (k % 2f) >= 0.2f))
+            frame(c, row, if (now) GOLD else Color.rgb(70, 60, 45), if (now) 3f else 1.5f, if (now) Color.rgb(46, 36, 17) else Color.rgb(24, 20, 16))
+            pFill.color = SPELLS[(i + 3) % SPELLS.size]; c.drawRect(row.left + 8f, row.top + 8f, row.left + 8f + row.height() - 16f, row.bottom - 8f, pFill)
+            text(c, n, row.left + row.height() + 6f, row.centerY() + 7f, 18f, if (done) GOLD else DIMC, Paint.Align.LEFT)
+        }
+        text(c, if (on) "each press: the next one you lack" else if (s.smartY == false) "Y: its own action" else "needs the game running",
+            r.centerX(), cy + 190f, 19f, if (on) GOLD else DIMC)
+    }
+
+    // ---- Controller > Combat helpers
+
+    /** a party plate: the member's class stripe, the health fill (0 = dead: grey, a skull mark) */
+    private fun plate(c: Canvas, b: RectF, hp: Float, cls: Int, edge: Int? = null) {
+        frame(c, b, edge ?: Color.rgb(70, 60, 45), if (edge != null) 3f else 1.5f, Color.rgb(24, 20, 16))
+        pFill.color = cls; c.drawRect(b.left + 4f, b.top + 4f, b.left + 10f, b.bottom - 4f, pFill)
+        val bar = RectF(b.left + 16f, b.top + 6f, b.right - 6f, b.bottom - 6f)
+        pFill.color = Color.rgb(40, 34, 28); c.drawRect(bar, pFill)
+        if (hp > 0f) { pFill.color = Color.rgb(60, 170, 60); c.drawRect(bar.left, bar.top, bar.left + bar.width() * hp, bar.bottom, pFill) }
+        else {
+            pStroke.color = Color.rgb(170, 170, 170); pStroke.strokeWidth = 3f
+            val cx = bar.centerX(); val cy = bar.centerY(); val d = minOf(8f, bar.height() / 2f - 1f)
+            c.drawLine(cx - d, cy - d, cx + d, cy + d, pStroke); c.drawLine(cx - d, cy + d, cx + d, cy - d, pStroke)
+        }
+    }
+    private val CLASS_RGB by lazy { intArrayOf(Color.rgb(196, 30, 58), Color.rgb(255, 255, 255), Color.rgb(63, 199, 235), Color.rgb(170, 211, 114)) }
+
+    /** Party mode: Select brings the party's plates up on Home (On); nothing (Off) */
+    private fun partyMode(c: Canvas, r: RectF, on: Boolean, t: Float, glyph: Glyph, set: Int) {
+        val k = t % 4f
+        val press = k < 0.3f || k in 3.4f..3.7f
+        val shown = on && k in 0.3f..3.4f
+        val h = RectF(r.left + 10f, r.top + 10f, r.right - 10f, r.top + 10f + (r.width() - 20f) * 0.82f)
+        val (_, chat, ctl) = miniHome(c, h)
+        diamond(c, ctl.centerX(), ctl.centerY(), min(ctl.height() / 6.5f, 18f), min(ctl.height() / 3.2f, 36f))
+        if (shown) {
+            val a = ((k - 0.3f) / 0.25f).coerceIn(0f, 1f)
+            val col = RectF(chat.left, chat.top - 6f, chat.right, chat.top - 6f + 4 * 34f)
+            c.saveLayerAlpha(col.left - 4f, col.top - 4f, col.right + 4f, col.bottom + 4f, (255 * a).toInt())
+            for (i in 0 until 4) plate(c, RectF(col.left, col.top + i * 34f, col.right, col.top + i * 34f + 30f), 1f - i * 0.18f, CLASS_RGB[i])
+            c.restore()
+        }
+        val y = h.bottom + 50f
+        glyph.draw(c, "select", set, r.left + 60f, y, if (press) 58f else 48f)
+        text(c, "Select", r.left + 100f, y + 7f, 19f, if (press) GOLD else DIMC, Paint.Align.LEFT)
+        text(c, if (!on) "nothing" else if (shown) "Party mode on" else "Party mode off", r.right - 20f, y + 7f, 19f,
+            if (shown) GOLD else DIMC, Paint.Align.RIGHT)
+    }
+
+    /** Smart Res: a tap on a dead member's plate casts the res (On: its soft green edge while armed); a tap only (Off) */
+    private fun smartRes(c: Canvas, r: RectF, on: Boolean, t: Float) {
+        val k = t % 4.4f
+        val tapped = k in 0.5f..0.8f
+        val cast = if (on) ((k - 0.8f) / 1.6f).coerceIn(0f, 1f) else 0f
+        val alive = on && k >= 2.4f
+        val top = r.top + 20f; val ph = minOf(72f, (r.height() - 200f) / 4f - 10f)
+        for (i in 0 until 4) {
+            val b = RectF(r.left + 30f, top + i * (ph + 10f), r.right - 30f, top + i * (ph + 10f) + ph)
+            val dead = i == 2
+            val hp = if (!dead) 1f - i * 0.15f else if (alive) ((k - 2.4f) / 0.4f).coerceIn(0.05f, 1f) else 0f
+            plate(c, b, hp, CLASS_RGB[i], if (dead && on && !alive) Color.rgb(90, 200, 110) else null)
+            if (dead && tapped) {
+                pStroke.color = GOLD; pStroke.strokeWidth = 4f
+                c.drawCircle(b.centerX(), b.centerY(), 18f + 40f * ((k - 0.5f) / 0.3f), pStroke)
+            }
+        }
+        val y = top + 4 * (ph + 10f) + 30f
+        text(c, "a tap on the dead member", r.left + 30f, y, 18f, if (tapped) GOLD else DIMC, Paint.Align.LEFT)
+        if (on) {
+            UiKit.standing(c, RectF(r.left + 30f, y + 20f, r.right - 30f, y + 54f), Color.rgb(90, 200, 110), cast, if (cast > 0f) "your res" else "", 18f)
+            text(c, if (alive) "back on their feet" else "", r.centerX(), y + 86f, 19f, GOLD)
+        } else text(c, "no res", r.centerX(), y + 40f, 19f, DIMC)
+    }
+
+    /** Start attack on hostile target: an enemy targeted, then the crossed swords light (On) or stay dark (Off) */
+    private fun attackHostile(c: Canvas, r: RectF, on: Boolean, t: Float) {
+        val k = t % 2.8f
+        val targeted = k >= 0.4f && k < 2.5f
+        val cx = r.centerX(); val cy = r.top + r.height() * 0.38f
+        val mx = cx - 100f
+        // the enemy: a red body under a red nameplate; the target's ring under it once targeted
+        if (targeted) { pStroke.color = Color.rgb(230, 60, 40); pStroke.strokeWidth = 4f; c.drawOval(RectF(mx - 46f, cy + 22f, mx + 46f, cy + 48f), pStroke) }
+        pFill.color = Color.rgb(150, 50, 40); c.drawCircle(mx, cy, 30f, pFill)
+        val np = RectF(mx - 50f, cy - 62f, mx + 50f, cy - 48f)
+        pFill.color = Color.rgb(40, 20, 16); c.drawRect(np, pFill)
+        pFill.color = Color.rgb(200, 40, 30); c.drawRect(np.left + 2f, np.top + 2f, np.right - 2f, np.bottom - 2f, pFill)
+        text(c, if (targeted) "an enemy targeted" else "an enemy", mx, cy + 84f, 18f, if (targeted) GOLD else DIMC)
+        pStroke.color = DIMC; pStroke.strokeWidth = 3f
+        c.drawLine(cx - 40f, cy, cx + 40f, cy, pStroke)
+        c.drawLine(cx + 40f, cy, cx + 28f, cy - 10f, pStroke); c.drawLine(cx + 40f, cy, cx + 28f, cy + 10f, pStroke)
+        val lit = on && targeted && k >= 0.6f
+        val sw = UiKit.tex("combat_swords")
+        if (sw != null) {
+            pPic.alpha = if (lit) 255 else 90
+            c.drawBitmap(sw, null, RectF(cx + 70f, cy - 36f, cx + 150f, cy + 36f), pPic)
+            pPic.alpha = 255
+        } else swords(c, cx + 110f, cy, 34f, if (lit) GOLD else Theme.bronzeDim)
+        text(c, if (on) "your auto-attack starts" else "no auto-attack", cx + 110f, cy + 84f, 18f, if (lit) GOLD else DIMC)
+    }
+
+    /** Combat Auto Shot: at range the shot flies (On, Smart), up close the swords; the three choices, the chosen one lit */
+    private fun autoShot(c: Canvas, r: RectF, mode: Int, t: Float) {
+        val shoots = mode >= 1
+        // at range: the player, an arrow flying to a far enemy
+        val sp = maxOf(1f, r.height() / 560f)
+        val y1 = r.top + 60f * sp; val y2 = r.top + 170f * sp
+        val px = r.left + 50f
+        fun player(y: Float) { pFill.color = Color.rgb(255, 230, 120); c.drawCircle(px, y, 14f, pFill) }
+        fun enemy(x: Float, y: Float) { pFill.color = Color.rgb(150, 50, 40); c.drawCircle(x, y, 18f, pFill) }
+        player(y1); enemy(r.right - 50f, y1)
+        if (shoots) {
+            val u = (t % 1.2f) / 1.2f
+            val ax = px + 24f + (r.right - 124f - px) * u
+            pStroke.color = GOLD; pStroke.strokeWidth = 3f
+            c.drawLine(ax - 26f, y1, ax, y1, pStroke); c.drawLine(ax, y1, ax - 9f, y1 - 7f, pStroke); c.drawLine(ax, y1, ax - 9f, y1 + 7f, pStroke)
+        }
+        text(c, if (shoots) "at range: Auto Shot" else "at range: no Auto Shot", r.centerX(), y1 + 44f, 18f, if (shoots) GOLD else DIMC)
+        // up close: the enemy beside the player, the swords
+        player(y2); enemy(px + 50f, y2)
+        swords(c, px + 150f, y2, 20f, if (shoots) GOLD else Theme.bronzeDim)
+        text(c, "up close: auto attack", px + 190f, y2 + 7f, 18f, if (shoots) GOLD else DIMC, Paint.Align.LEFT)
+        // the three choices
+        val words = listOf("No Auto Shot", "Auto Shot in a fight", "Off for an attack you start")
+        for (i in 0..2) {
+            val top = r.top + 230f * sp + i * 72f
+            val chosen = i == mode
+            choiceRow(c, r, top, 56f, chosen)
+            gText(c, SHOT_NAMES[i], r.left + 24f, top + 37f, 24f, if (chosen) GOLD else DIMC, kind = 0)
+            gText(c, words[i], r.right - 20f, top + 36f, 18f, if (chosen) TEXT else DIMC, Paint.Align.RIGHT)
+        }
     }
 }

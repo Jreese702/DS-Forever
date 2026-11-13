@@ -134,6 +134,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         Part.COMPANION -> emptyList()
         else -> GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
     }
+    /** the row drawn at ([x], [y]), by its words (the Settings room's "What it does" panel follows it), or null */
+    fun rowAt(x: Float, y: Float): String? = rowBoxes.firstOrNull { it.first.contains(x, y) }?.second?.let { id -> rows.firstOrNull { it.id == id }?.label }
     /** the rows this part draws now, by their words (the room's tests) */
     fun rowLabels(): List<String> = rows.filter { !it.id.startsWith("#") }.map { it.label }
     /** a heading row ("#" + its words) over [rows], none when the group is empty */

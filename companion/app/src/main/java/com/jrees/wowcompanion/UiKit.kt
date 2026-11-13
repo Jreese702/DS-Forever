@@ -2584,12 +2584,9 @@ object UiKit {
     fun clockBand(c: Canvas, spot: FloatArray, items: List<BandItem>, floor: Float = Float.NEGATIVE_INFINITY, alpha: Int = 255) {
         if (items.isEmpty() || alpha <= 0) return
         val pv = bandPaint(alpha)
-        val fit = ((spot[3] - spot[1]) / ClockBand.CELL_H).coerceAtMost(1f)          // a shorter band: the row shrinks to its height
+        val (pl, fit, top) = bandLayout(spot, items, floor, pv)
         val widths = FloatArray(items.size) { bandWidth(items[it], pv) * fit }
-        val pl = ClockBand.place(widths, spot[0], spot[2], spot[4])
         val k = fit * pl.scale
-        val whole = pl.lefts.last() + widths.last() * pl.scale - pl.lefts[0]
-        val top = ClockBand.rowTop(spot, pl.lefts[0], pl.lefts[0] + whole, ClockBand.CELL_H * k, floor)
         for ((i, it) in items.withIndex()) {
             val w = widths[i] / fit
             c.save(); c.translate(pl.lefts[i], top); c.scale(k, k)
@@ -2604,6 +2601,28 @@ object UiKit {
                 }
             }
             c.restore()
+        }
+    }
+
+    /** the extras row's placement, its fit to the band's height and its top (shared by [clockBand] and [clockBandBoxes]) */
+    private fun bandLayout(spot: FloatArray, items: List<BandItem>, floor: Float, pv: Paint): Triple<ClockBand.Placement, Float, Float> {
+        val fit = ((spot[3] - spot[1]) / ClockBand.CELL_H).coerceAtMost(1f)          // a shorter band: the row shrinks to its height
+        val widths = FloatArray(items.size) { bandWidth(items[it], pv) * fit }
+        val pl = ClockBand.place(widths, spot[0], spot[2], spot[4])
+        val whole = pl.lefts.last() + widths.last() * pl.scale - pl.lefts[0]
+        val top = ClockBand.rowTop(spot, pl.lefts[0], pl.lefts[0] + whole, ClockBand.CELL_H * fit * pl.scale, floor)
+        return Triple(pl, fit, top)
+    }
+
+    /** where [clockBand] puts each item (the Settings pictures ring the one a row is about) */
+    fun clockBandBoxes(spot: FloatArray, items: List<BandItem>, floor: Float = Float.NEGATIVE_INFINITY): List<RectF> {
+        if (items.isEmpty()) return emptyList()
+        val pv = bandPaint(255)
+        val (pl, fit, top) = bandLayout(spot, items, floor, pv)
+        val k = fit * pl.scale
+        return items.indices.map { i ->
+            val w = bandWidth(items[i], pv) * fit * pl.scale
+            RectF(pl.lefts[i], top, pl.lefts[i] + w, top + ClockBand.CELL_H * k)
         }
     }
 

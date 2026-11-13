@@ -555,16 +555,16 @@ class HomeSettingsSection(context: Context,
             // the user 2026-10-09: "Above Chat" first; the default stays Above Minimap
             listOf("Above Chat", "Above Minimap"), if (HomeSettings.questOverMap) 1 else 0,
             listOf({ HomeSettings.questOverMap = false }, { HomeSettings.questOverMap = true }))
-        // THE CLOCK EXTRAS (the user's picks 2026-11-13): one On / Off row each, beside the clock on Home
-        y = row(c, y + GAP, "Hearthstone", listOf("Beside the clock."), listOf("On", "Off"), if (HomeSettings.clockHearth) 0 else 1,
+        // THE CLOCK EXTRAS (the user's picks 2026-11-13): one On / Off row each, in the row under the clock on Home (the ZL / ZR spot)
+        y = row(c, y + GAP, "Hearthstone", listOf("In the row under the clock."), listOf("On", "Off"), if (HomeSettings.clockHearth) 0 else 1,
             listOf({ HomeSettings.clockHearth = true }, { HomeSettings.clockHearth = false }))
-        y = row(c, y + GAP, "Class teleport", listOf("Beside the clock, once known."), listOf("On", "Off"), if (HomeSettings.clockTeleport) 0 else 1,
+        y = row(c, y + GAP, "Class teleport", listOf("In the row under the clock, once known."), listOf("On", "Off"), if (HomeSettings.clockTeleport) 0 else 1,
             listOf({ HomeSettings.clockTeleport = true }, { HomeSettings.clockTeleport = false }))
-        y = row(c, y + GAP, "Gold", listOf("Beside the clock."), listOf("On", "Off"), if (HomeSettings.clockGold) 0 else 1,
+        y = row(c, y + GAP, "Gold", listOf("In the row under the clock."), listOf("On", "Off"), if (HomeSettings.clockGold) 0 else 1,
             listOf({ HomeSettings.clockGold = true }, { HomeSettings.clockGold = false }))
-        y = row(c, y + GAP, "Free bag slots", listOf("Beside the clock."), listOf("On", "Off"), if (HomeSettings.clockBags) 0 else 1,
+        y = row(c, y + GAP, "Free bag slots", listOf("In the row under the clock."), listOf("On", "Off"), if (HomeSettings.clockBags) 0 else 1,
             listOf({ HomeSettings.clockBags = true }, { HomeSettings.clockBags = false }))
-        y = row(c, y + GAP, "Ammo", listOf("Beside the clock."), listOf("On", "Off"), if (HomeSettings.clockAmmo) 0 else 1,
+        y = row(c, y + GAP, "Ammo", listOf("In the row under the clock."), listOf("On", "Off"), if (HomeSettings.clockAmmo) 0 else 1,
             listOf({ HomeSettings.clockAmmo = true }, { HomeSettings.clockAmmo = false }))
         // START ATTACK ON CAST (Spells' m13): Off / On, from the add-on's word (null = an older add-on: no row); its notes under it
         HomeAttackSwitch.state?.let { s ->

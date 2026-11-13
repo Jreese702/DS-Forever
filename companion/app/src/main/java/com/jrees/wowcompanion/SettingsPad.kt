@@ -33,7 +33,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     val gameUis = ArrayList<GameUiSection>()
     val tabBar = SettingsTabBar(context) { t -> show(t) }
     /** "What it does" (phase 2): the row's picture, right of the page, on the tabs that have pictures */
-    val preview = SettingsPreviewView(context) { homeSection.dpadState()?.want }
+    val preview = SettingsPreviewView(context, { homeSection.dpadState()?.want }, { view.smartDoc()?.on })
     private val scroll = ScrollView(context).apply { ThemeLive.bg(this, Tok.INK) }
     private val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     val pad: SettingsPad
@@ -198,7 +198,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
 
     /** the row at ([x], [y]) of section [v] (its own coordinates) shows in the panel, when it has a picture */
     private fun rowOf(v: View, x: Float, y: Float) {
-        val id = when (v) { is SettingsView -> v.rowAt(x, y); is HomeSettingsSection -> v.rowAt(x, y); else -> null }
+        val id = when (v) { is SettingsView -> v.rowAt(x, y); is HomeSettingsSection -> v.rowAt(x, y); is GameUiSection -> v.rowAt(x, y); else -> null }
         if (SettingsPreview.has(id)) preview.id = id
     }
 

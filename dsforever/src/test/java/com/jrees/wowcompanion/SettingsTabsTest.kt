@@ -256,6 +256,32 @@ class SettingsPreviewRowsTest {
     @Test fun noPictureOnTheTopScreensShowHide() =
         assertTrue(SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP }.flatMap { it.rows }.none { SettingsPreview.has(it) })
 
+    /** 2026-11-13 (the user: "a lot of these new options and settings need visuals to accompany them in the settings menus"): every
+     *  Bottom screen row has its picture (a new row there needs one), and the Controller tab's combat helpers have theirs */
+    @Test fun everyBottomScreenRowHasAPicture() {
+        val missing = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.BOTTOM }.flatMap { it.rows }.filter { !SettingsPreview.has(it) }
+        assertTrue("Bottom screen rows with no picture: $missing", missing.isEmpty())
+        for (r in listOf("Smart Y", "Party mode", "Smart Res", "Start attack on hostile target", "Combat Auto Shot"))
+            assertTrue("$r has a picture", SettingsPreview.has(r))
+    }
+
+    /** every value of the new rows has its title and words (the panel shows the one chosen) */
+    @Test fun theNewRowsWordsFollowTheValue() {
+        for (side in 0..3) assertTrue(SettingsPreview.caption("Tap-to-cast bar", SettingsPreview.State(castBar = side)).isNotEmpty())
+        assertEquals("Tap-to-cast bar: Both", SettingsPreview.title("Tap-to-cast bar", SettingsPreview.State(castBar = 3)))
+        assertEquals("Ammo: Off", SettingsPreview.title("Ammo", SettingsPreview.State(clockAmmo = false)))
+        assertEquals("Combat Auto Shot: Smart", SettingsPreview.title("Combat Auto Shot", SettingsPreview.State(autoShot = 2)))
+        assertEquals("Smart Y: -", SettingsPreview.title("Smart Y", SettingsPreview.State()))
+        for (y in listOf(null, true, false)) for (sh in 0..2) for (b in listOf(true, false)) {
+            val s = SettingsPreview.State(smartY = y, autoShot = sh, clockHearth = b, clockTeleport = b, clockGold = b, clockBags = b,
+                clockAmmo = b, worldMapAll = b, partyMode = b, smartRes = b, attackHostile = b)
+            for (id in SettingsPreview.ROWS.keys) {
+                assertTrue(id, SettingsPreview.title(id, s).length in 3..40)
+                assertTrue(id, SettingsPreview.caption(id, s).isNotEmpty() && SettingsPreview.caption(id, s).all { it.length <= 46 })
+            }
+        }
+    }
+
     @Test fun everyPictureHasATitleAndWords() {
         val s = SettingsPreview.State(startAttack = true, toolbar = true)
         for (id in SettingsPreview.ROWS.keys) {
@@ -264,8 +290,8 @@ class SettingsPreviewRowsTest {
         }
     }
 
-    @Test fun twentyTwoRowsAndTheMovingOnes() {          // f-radial-settings: + the spell wheel's own pair
-        assertEquals(26, SettingsPreview.ROWS.size)
+    @Test fun twentyTwoRowsAndTheMovingOnes() {          // f-radial-settings: + the spell wheel's own pair; 2026-11-13: + 12
+        assertEquals(38, SettingsPreview.ROWS.size)
         assertTrue(SettingsPreview.animated("Swing timer") && SettingsPreview.animated("Frame limit") && !SettingsPreview.animated("Button glyphs"))
     }
 }
