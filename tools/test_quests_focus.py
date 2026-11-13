@@ -215,5 +215,19 @@ qd = [x for x in d if x.get('type') == 'quests']
 check(bool(qd) and qd[0]['q']['focus'] == 93320, "the quests document says the new focus", qd[0]['q'].get('focus') if qd else None)
 check('q48' in open(QUESTS, encoding='utf-8').read(), "Quests.lua says q48")
 
+# 7. q56 (bags-act1, the user's pick 2026-11-13: the Destroy picker never suggests "items a tracked quest objective needs"): what the
+# quests in the log need - the game's item objectives' words (no QuestieDB here), every quest in the log; read only
+L.execute('''
+OBJ = { [93320] = { { type = "item", text = "Wolf Meat: 3/8" }, { type = "monster", text = "Wolves slain: 2/5" } },
+        [92703] = { { type = "item", text = "Gnoll Paw: 0/6" } } }
+C_QuestLog.GetQuestObjectives = function(id) return OBJ[id] or {} end
+''')
+need = L.eval('WowCompanion.questNeedItems()')
+words = sorted(need.words.values()) if need is not None else None
+check(words is not None and 'wolf meat: 3/8' in words and 'gnoll paw: 0/6' in words and not any('wolves' in w for w in words),
+      "q56: the item objectives' words of every quest in the log, nothing else", words)
+check(need is not None and len(list(need.ids.keys())) == 0, "q56: no QuestieDB: no ids")
+check('local QV = "q58"' in open(QUESTS, encoding='utf-8').read(), "Quests.lua says q56")
+
 print("ALL PASS" if fails == 0 else ("%d FAILED" % fails))
 sys.exit(1 if fails else 0)

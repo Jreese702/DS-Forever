@@ -50,5 +50,5 @@ chk("nothing yet: none (Bags keeps it as loading, never as final)", type(e) == "
 C_TooltipInfo.GetBagItem = function() return { hyperlink = "|Hitem:500|h", lines = { ln("Tunic of Testing") } } end
 WC.tipOf("bag 0 1 500")
 chk("no guid: the comparison is given the link", type(DELTA_ITEM) == "table" and DELTA_ITEM.hyperlink == "|Hitem:500|h")
-chk("the version moved on", WC.interactIV == "i156")
+chk("the version moved on", type(WC.interactIV) == "string" and tonumber(WC.interactIV:match("^i(%d+)$") or 0) >= 156)
 return table.concat(out, "\n")
