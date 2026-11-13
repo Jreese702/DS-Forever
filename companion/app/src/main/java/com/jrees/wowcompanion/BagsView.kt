@@ -1018,6 +1018,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
      * toward a tap, and the cursor is not drawn from it. The "tap once per use request" baseline is taken on the first
      * CURRENT document, so a request served before an app restart is never tapped again.
      */
+    /** r20: an `itemcd` document came (ItemCd): the slots' cooldowns redraw */
+    fun cooldowns() { grid.invalidate() }
+
     fun update(bags: JSONObject, current: Boolean = true) {
         head.set(bags.optInt("free", 0), bags.optInt("total", 0),
             if (bags.has("money")) bags.optLong("money") else null)
@@ -1326,6 +1329,14 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 if (it.optString("itype") == "Quest") Icons.ui("ui-icon-questborder")?.let { b ->
                     cv.drawBitmap(b, null, box, bmpPaint)
                 }
+            }
+            // r20 (the user 2026-11-13: "cooldowns on radial slices AND bag slots: dark pie sweep + seconds ... bags always on"): the item's
+            // cooldown from the `itemcd` document (ItemCd), the radial's own look clipped to the square slot; held / length unknown = dim
+            if (!dimmed && it != null && iconOverride == null) {
+                val id = it.optInt("id", 0)
+                val left = if (id > 0) ItemCd.left(id) else 0.0
+                if (left > 0.0) UiKit.radialCd(cv, inset, left.toFloat(), ItemCd.len(id).toFloat(), 255, inset.width() / 100f)
+                else if (id > 0 && ItemCd.dim(id)) UiKit.radialCdDim(cv, inset, 255)
             }
             if (selected) drawGlow(cv, box, p)
             val n = it?.optInt("count", 1) ?: 1
@@ -1820,6 +1831,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         override fun onDraw(cv: Canvas) {
             fonts()
             tiles.clear()
+            // r20: a cooldown counting on a slot: the seconds move (a redraw a few times a second while any runs; nothing ticks otherwise)
+            if (ItemCd.anyRunning()) postInvalidateDelayed(250L)
             val cur = st.ctlCur(); val pick = st.ctlPick()
             val inHand = st.ctlEq()?.let { it.optInt("bag", -1) to it.optInt("slot", -1) }     // a bag being equipped
             var curBox: RectF? = null

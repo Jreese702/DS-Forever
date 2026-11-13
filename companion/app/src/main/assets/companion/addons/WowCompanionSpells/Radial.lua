@@ -4,7 +4,8 @@
 --      flasks, 3 bandages, 4 other usable (the Hearthstone, scrolls, quest items with a Use) -- by Bags' filters (food 0/5; potion
 --      0/1, elixir 0/2, flask 0/3; bandage 0/7; other = a Use and (class 12 Quest, a quest item, or any class but 2 Weapon / 4
 --      Armor)); within a group, bag order; ONE entry per item id (its stacks counted together); at most 24 (3 pages of 8, LB / RB),
---      the rest counted in `more`. Each entry: col (its tap cell), id, n, i, c (count), g (group), cd { d, l } while cooling down.
+--      the rest counted in `more`. Each entry: col (its tap cell), id, n, i, c (count), g (group), st (r20: it stacks / gets used up: the
+--      app shows its count; nil = not known yet). r20: no `cd`: the cooldowns ride the `itemcd` document (below).
 --   2. ONE TAP = ONE USE, IN FIGHTS TOO: the secure pad row "radial" (TapPad's secureRow): each cell a SecureActionButton with
 --      type "item" / item "item:<id>". Using an item is a PROTECTED action: only a secure click with a hardware event does it, and
 --      the app's tap is one (a real touch). Cells are set OUT of combat only, so the set FREEZES at a fight's start: an item used up
@@ -18,7 +19,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local RV = "r19"                -- bump on every change; r19: SEVERAL SPELL RADIALS back (feat/multi-radial-v2): q3 = 1.0.18's q2 (6 radials x 8, 40 shared cells, the radial buttons 2..6 armed) with r17e's guard (the row rebuilt only on a change) and NO cooldown sweep (r18 / q1b: one sradialcd per cast); r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r17 (1.0.18, reverted): the spell radials (q2); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
+local RV = "r20"                -- bump on every change; r20: ITEM COOLDOWNS (feat/item-cooldowns; the user's picks 2026-11-13: "cooldowns on radial slices AND bag slots: dark pie sweep + seconds"; "LEARNED LENGTHS in the style of the existing facecd"; "Counts only on stackable consumables/reagents/ammo/items with charges"): the `itemcd` document (event-driven only, change-only, never collect / pad.retain / buildCells), BAG_UPDATE_COOLDOWN off the radial's rebuild list, the radial doc's items / pins carry `st` (stackable) and no `cd`; r19: SEVERAL SPELL RADIALS back (feat/multi-radial-v2): q3 = 1.0.18's q2 (6 radials x 8, 40 shared cells, the radial buttons 2..6 armed) with r17e's guard (the row rebuilt only on a change) and NO cooldown sweep (r18 / q1b: one sradialcd per cast); r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r17 (1.0.18, reverted): the spell radials (q2); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
 local ROW, CELLS = "radial", 24 -- the secure pad row: 24 cells = 3 pages of 8
 local PLAYER_BAGS = { 0, 1, 2, 3, 4 }
 local QUARANTINE = 30           -- seconds a freed column stays unused (as the pad's own columns)
@@ -56,11 +57,45 @@ local function itemClass(id)
     if cs[1] ~= nil then classOf[id] = cs end
     return cs
 end
+local useItemOf = {}            -- r20: an item's Use spell id -> the item id (a cast of it = that item used: the learned length starts)
 local function hasUse(id)
     if useOf[id] then return true end
-    local ok, sp = CALL(function() return C_Item.GetItemSpell(id) end)
-    if ok and type(sp) == "string" and WC.isPlain(sp) then useOf[id] = true return true end
+    local ok, sp, sid = CALL(function() return C_Item.GetItemSpell(id) end)
+    if ok and type(sp) == "string" and WC.isPlain(sp) then
+        useOf[id] = true
+        if type(sid) == "number" and WC.isPlain(sid) then useItemOf[sid] = id end
+        return true
+    end
     return false
+end
+
+-- r20 THE COUNT RULE (the user's pick 2026-11-13: "Counts only on stackable consumables/reagents/ammo/items with charges"; rule 1d):
+-- an item shows its count when the game calls it consumable (C_Item.IsConsumableItem, or the old global), or it stacks (GetItemInfo's
+-- 8th return above 1), or its class is 0 Consumable / 5 Reagent / 6 Projectile. Gear, the Hearthstone, toys and single quest tools: none.
+-- true / false once known (kept per item id: never changes); nil = not known yet (the item not cached): the count shows, asked again
+local stackOf = {}
+local function consumableFn()
+    if type(C_Item) == "table" and type(C_Item.IsConsumableItem) == "function" then return C_Item.IsConsumableItem end
+    if type(_G.IsConsumableItem) == "function" then return _G.IsConsumableItem end
+end
+local function itemInfoFn()
+    if type(C_Item) == "table" and type(C_Item.GetItemInfo) == "function" then return C_Item.GetItemInfo end
+    if type(_G.GetItemInfo) == "function" then return _G.GetItemInfo end
+end
+local function stackable(id)
+    local v = stackOf[id]
+    if v ~= nil then return v end
+    local cs = itemClass(id)
+    if cs and (cs[1] == 0 or cs[1] == 5 or cs[1] == 6) then stackOf[id] = true return true end
+    local cf = consumableFn()
+    if cf and S(function() return cf(id) end) == true then stackOf[id] = true return true end
+    local gi = itemInfoFn()
+    if gi then
+        local ok, _, _, _, _, _, _, _, maxStack = CALL(function() return gi(id) end)
+        local ms = ok and SN(function() return maxStack end) or nil
+        if ms then stackOf[id] = ms > 1 return ms > 1 end
+    end
+    return nil
 end
 
 -- the bags, in bag order: every radial item once (stacks counted together), sorted by group then first place
@@ -143,10 +178,12 @@ local function cellInit(btn, col)
     end
     frozen[col] = id
 end
+local usedAt = {}               -- r20: item id -> when it was used (our cell's tap, or its Use spell's cast): a secret read then starts its learned length
 local function onCell(col)
     -- a tap landed (after the game's own use): said, for the app and for the proof. r5 (Home's latency study: item use -> radialuse
     -- ~1.08 s): flushed AT ONCE, not at the next frame through the 0.2 s throttle -- the player is waiting on it (Sink's own rule), and
     -- a use comes at most about once a second
+    if frozen[col] then usedAt[frozen[col]] = GetTime() end
     WC.send(WC.encode({ type = "radialuse", v = RV, col = col, id = frozen[col], fight = inCombat() or nil }))
     if type(WC.flush) == "function" then pcall(WC.flush) else WC.push() end
 end
@@ -293,19 +330,27 @@ end
 
 -- ---------------------------------------------------------------- the document
 local lastKey
-local function cdOf(id, now)
-    local okC, st, dur = CALL(function() return C_Container.GetItemCooldown(id) end)
-    st, dur = okC and SN(function() return st end), okC and SN(function() return dur end)
-    if st and dur and dur > 0 and st > 0 then
-        local left = st + dur - now
-        if left > 0 then return { d = math.floor(dur * 10 + 0.5) / 10, l = math.floor(left * 10 + 0.5) / 10 } end
-    end
+local HEARTH = 6948             -- r20: the Hearthstone (Home's clock extra; always watched)
+local cdWatch = { [HEARTH] = true } -- r20: the item ids the `itemcd` document reads: set by collect() (usable bag items, worn, toys, pins)
+-- r20: ONE item's cooldown read (C_Container.GetItemCooldown through CALL / S: a secret value is never compared or used):
+-- { t0, d } running | "held" (enable = 0: a potion held until the fight ends) | "secret" | nil (ready / none / unreadable)
+local function itemRead(id)
+    local okC, st, dur, en = CALL(function() return C_Container.GetItemCooldown(id) end)
+    if not okC then return nil end
+    local sv, dv, ev = S(function() return st end), S(function() return dur end), S(function() return en end)
+    if ev == false or ev == 0 then return "held" end                -- held first: a potion used in a fight waits for its end
+    if sv == WC.SECRET or dv == WC.SECRET then return "secret" end
+    if type(sv) == "number" and type(dv) == "number" and dv > 1.5 and sv > 0 and sv + dv > GetTime() then return { t0 = sv, d = dv } end
+    return nil
 end
 local function collect()
     local all = scan()
     local usable, byUse = scanUsable()
     local pins = pinsFor(false) or {}
-    local now = GetTime()
+    -- r20: the ids the itemcd document reads (it never calls this function: it reads only this set)
+    for id in pairs(cdWatch) do if id ~= HEARTH then cdWatch[id] = nil end end
+    for _, u in ipairs(usable) do cdWatch[u.id] = true end
+    for _, id in pairs(pins) do if type(id) == "number" then cdWatch[id] = true end end
     -- r7: the pinned items first (those in the bags or worn get the cells first), then the auto list without them
     local pinned, pinnedSet = {}, {}
     for sl = 0, PIN_SLICES - 1 do
@@ -338,7 +383,7 @@ local function collect()
     end
     local pinDoc = {}
     for _, p in ipairs(pinned) do
-        local d = { id = p.id, c = p.c, have = p.c > 0, src = p.src, i = p.i, col = p.c > 0 and cellFor(p.id) or nil, cd = cdOf(p.id, now) }
+        local d = { id = p.id, c = p.c, have = p.c > 0, src = p.src, i = p.i, col = p.c > 0 and cellFor(p.id) or nil, st = stackable(p.id) }
         d.n = TS(function() return C_Item.GetItemNameByID(p.id) end)
         if not d.i then d.i = TN(function() return C_Item.GetItemIconByID(p.id) end) end
         pinDoc[tostring(p.s)] = d
@@ -360,7 +405,7 @@ local function collect()
     end
     local items = {}
     for _, e in ipairs(autoShown) do
-        local d = { col = cellFor(e.id), id = e.id, c = e.c, g = e.g, i = e.i, cd = cdOf(e.id, now) }
+        local d = { col = cellFor(e.id), id = e.id, c = e.c, g = e.g, i = e.i, st = stackable(e.id) }
         d.n = TS(function() return C_Item.GetItemNameByID(e.id) end)
         if not d.i then d.i = TN(function() return C_Item.GetItemIconByID(e.id) end) end
         items[#items + 1] = d
@@ -397,6 +442,163 @@ local function soon(force)
     if queued then return end
     queued = true
     C_Timer.After(0.3, function() queued = false; pcall(emit, force) end)
+end
+
+-- ---------------------------------------------------------------- r20: THE ITEM COOLDOWNS (`itemcd`)
+-- The user's picks 2026-11-13 (feat/item-cooldowns): "cooldowns on radial slices AND bag slots: dark pie sweep + seconds"; the clock
+-- extras on Home ("Hearthstone, class teleport (Astral Recall etc., only once known), gold, free bag slots"); in combat "LEARNED LENGTHS
+-- in the style of the existing facecd ... if never learned, show the never-secret isActive dim only. Also: a countdown that started before
+-- the fight keeps running"; "itemcd document per 1a: event-driven only ... 0.3 s merge, change-only, NEVER calls collect()/pad.retain/
+-- buildCells"; "honour enable=0 (held potion: dim, no number)".
+--   { type = "itemcd", v, t = { ["<item id>"] = { d, l, e? } | { h = true } (held) | { x = true } (running, length unknown) },
+--     hs = { have, i } (the Hearthstone), tp = { id, n, i, cd = { d, l, e? } | x } (the class teleport the player knows), fight }
+-- An id that is not in `t` is ready (out of a fight; in a fight the app keeps what it counts). It reads ONLY the ids collect() left in
+-- cdWatch (and the Hearthstone): no bag walk, no cell, no pad call. Sent on BAG_UPDATE_COOLDOWN / PLAYER_REGEN_ENABLED / _DISABLED /
+-- PLAYER_ENTERING_WORLD, and on the player's cast of an item's Use spell or the teleport (the read that starts a learned length), 0.3 s
+-- merged, and only when an (id, start, length, state) changed. Nothing ticks.
+-- LEARNED LENGTHS (facecd's way, PadMap m81): every plain read learns the cooldown's length, per character (name-realm), in
+-- WowCompanionSpellsDB.cdLearn[who]: ["i<item id>"] / ["s<spell name>"] = seconds. A secret read right after a use starts the learned
+-- length (e = true, estimated); never learned = { x = true } (dimmed, no number); a countdown already running is kept.
+local function learnDb()
+    local k = whoKey()
+    if not k then return nil end
+    if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+    local db = _G.WowCompanionSpellsDB
+    if type(db.cdLearn) ~= "table" then db.cdLearn = {} end
+    if type(db.cdLearn[k]) ~= "table" then db.cdLearn[k] = {} end
+    return db.cdLearn[k]
+end
+local TELEPORTS = { 556, 18960, 193753, 50977, 126892 }   -- Astral Recall, Teleport: Moonglade, Dreamwalk, Death Gate, Zen Pilgrimage
+local function knows(id)
+    return S(function() return IsPlayerSpell(id) end) == true or S(function() return IsSpellKnown(id) end) == true
+end
+local function teleportNow()
+    for _, id in ipairs(TELEPORTS) do if knows(id) then return id end end
+    return nil
+end
+local itemRun = {}              -- item id -> { t0, d, e? } | { held = true } | { dim = true }
+local tpRun = nil               -- the teleport's: { id, t0, d, e? } | { id, dim = true }
+local tpCastAt = nil            -- when the teleport was last cast (a secret read then starts its learned length)
+local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
+local function cdScan(now)
+    local fight = inCombat()
+    local learn = learnDb()
+    for id in pairs(cdWatch) do
+        local cur = itemRun[id]
+        if cur and cur.d and now >= cur.t0 + cur.d then itemRun[id] = nil; cur = nil end
+        local r = itemRead(id)
+        if type(r) == "table" then
+            itemRun[id] = { t0 = r.t0, d = r.d }
+            if learn then learn["i" .. id] = r1(r.d) end
+        elseif r == "held" then
+            itemRun[id] = { held = true }
+        elseif r == "secret" then
+            -- the game keeps it secret (a fight): a running countdown stays; a use just now starts its learned length, else the dim
+            local used = usedAt[id]
+            if used and now - used < 3 and not (cur and cur.d and cur.t0 >= used - 0.5) then
+                local d = learn and learn["i" .. id]
+                itemRun[id] = (type(d) == "number" and d > 0) and { t0 = used, d = d, e = true } or { dim = true }
+            end
+        elseif not (fight and cur) then
+            itemRun[id] = nil                                       -- a plain "ready" (in a fight a missing read keeps what runs)
+        end
+    end
+    for id in pairs(itemRun) do if not cdWatch[id] then itemRun[id] = nil end end
+    -- the class teleport (a spell): its own read; the same learned / secret rule by its name
+    local tp = teleportNow()
+    if not tp then tpRun = nil
+    else
+        if tpRun and (tpRun.id ~= tp or (tpRun.d and now >= tpRun.t0 + tpRun.d)) then tpRun = nil end
+        local ok, cd = CALL(function() return C_Spell.GetSpellCooldown(tp) end)
+        local st = ok and type(cd) == "table" and S(function() return cd.startTime end) or nil
+        local du = ok and type(cd) == "table" and S(function() return cd.duration end) or nil
+        local nm = TS(function() return C_Spell.GetSpellName(tp) end)
+        if st == WC.SECRET or du == WC.SECRET then
+            if tpCastAt and now - tpCastAt < 3 and not (tpRun and tpRun.d and tpRun.t0 >= tpCastAt - 0.5) then
+                local d = learn and nm and learn["s" .. nm]
+                local active = S(function() return cd.isActive end) == true                 -- isActive is never secret
+                if type(d) == "number" and d > 0 then tpRun = { id = tp, t0 = tpCastAt, d = d, e = true }
+                elseif active then tpRun = { id = tp, dim = true } end
+            end
+        elseif type(st) == "number" and type(du) == "number" and du > 1.5 and st > 0 and st + du > now then
+            tpRun = { id = tp, t0 = st, d = du }
+            if learn and nm then learn["s" .. nm] = r1(du) end
+        elseif not (fight and tpRun) then
+            tpRun = nil
+        end
+    end
+    return tp, fight
+end
+local cdLastKey = nil
+local function cdEmit(force)
+    local now = GetTime()
+    local tp, fight = cdScan(now)
+    local t, sig = {}, {}
+    for id, e in pairs(itemRun) do
+        local k = tostring(id)
+        if e.held then t[k] = { h = true }; sig[#sig + 1] = k .. "h"
+        elseif e.dim then t[k] = { x = true }; sig[#sig + 1] = k .. "x"
+        else
+            local left = e.t0 + e.d - now
+            if left > 0 then
+                t[k] = { d = r1(e.d), l = r1(left), e = e.e or nil }
+                sig[#sig + 1] = k .. ":" .. r1(e.t0) .. ":" .. r1(e.d)
+            end
+        end
+    end
+    table.sort(sig)
+    local tpDoc = nil
+    if tp then
+        tpDoc = { id = tp, n = TS(function() return C_Spell.GetSpellName(tp) end), i = TN(function() return C_Spell.GetSpellTexture(tp) end) }
+        if tpRun and tpRun.dim then tpDoc.x = true; sig[#sig + 1] = "tpx"
+        elseif tpRun and tpRun.d and tpRun.t0 + tpRun.d > now then
+            tpDoc.cd = { d = r1(tpRun.d), l = r1(tpRun.t0 + tpRun.d - now), e = tpRun.e or nil }
+            sig[#sig + 1] = "tp:" .. r1(tpRun.t0) .. ":" .. r1(tpRun.d)
+        end
+        sig[#sig + 1] = "tp" .. tp
+    end
+    local have = TN(function()
+        if type(C_Item) == "table" and type(C_Item.GetItemCount) == "function" then return C_Item.GetItemCount(HEARTH) end
+        return GetItemCount(HEARTH)
+    end)
+    local hs = { i = TN(function() return C_Item.GetItemIconByID(HEARTH) end) }
+    if have ~= nil then hs.have = have > 0 end                       -- nil = not readable now (the app shows it)
+    sig[#sig + 1] = "hs" .. tostring(hs.have) .. (fight and "f" or "")
+    local key = table.concat(sig, ",")
+    if key == cdLastKey and not force then return false end
+    cdLastKey = key
+    WC.send(WC.encode({ type = "itemcd", v = RV, t = next(t) and t or nil, hs = hs, tp = tpDoc, fight = fight or nil }))
+    WC.push()
+    return true
+end
+local cdQueued, cdForce = false, false
+local function cdSoon(force)
+    if force then cdForce = true end
+    if cdQueued then return end
+    cdQueued = true
+    C_Timer.After(0.3, function() cdQueued = false; local fo = cdForce; cdForce = false; pcall(cdEmit, fo) end)
+end
+local cdFrame = CreateFrame("Frame")
+for _, e in ipairs({ "BAG_UPDATE_COOLDOWN", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ENTERING_WORLD" }) do
+    pcall(function() cdFrame:RegisterEvent(e) end)
+end
+pcall(function() cdFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") end)
+cdFrame:SetScript("OnEvent", function(_, e, unit, _, spellID)
+    if e == "UNIT_SPELLCAST_SUCCEEDED" then
+        if unit ~= "player" then return end
+        local sid = SN(function() return spellID end)
+        if not sid then return end
+        local item = useItemOf[sid]
+        if item then usedAt[item] = GetTime(); cdSoon(false)
+        else
+            for _, tp in ipairs(TELEPORTS) do if tp == sid then tpCastAt = GetTime(); cdSoon(false) end end
+        end
+        return
+    end
+    cdSoon(e ~= "BAG_UPDATE_COOLDOWN")
+end)
+if type(WC.snapshot) == "function" and type(hooksecurefunc) == "function" then
+    pcall(hooksecurefunc, WC, "snapshot", function(reason) if reason == "login" or reason == "manual" then cdSoon(true) end end)
 end
 
 -- ---------------------------------------------------------------- r3: THE STICK CATCH
@@ -505,7 +707,9 @@ f:SetScript("OnEvent", function(_, e)
     elseif e == "PLAYER_REGEN_ENABLED" then soon(true); pcall(enableSticks)   -- the cells catch up; r3: the stick catch if a fight delayed it
     else soon(false) end
 end)
-for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "BAG_UPDATE_DELAYED", "BAG_UPDATE_COOLDOWN", "GET_ITEM_INFO_RECEIVED",
+-- r20: NO BAG_UPDATE_COOLDOWN here (the user's pick 2026-11-13, rule 1a: a cooldown event never rebuilds the list or the cells, the
+-- class of v2's ADDON_ACTION_FORBIDDEN): the cooldowns ride the `itemcd` document above
+for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "BAG_UPDATE_DELAYED", "GET_ITEM_INFO_RECEIVED",
                      "PLAYER_EQUIPMENT_CHANGED", "TOYS_UPDATED",
                      "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED" }) do
     pcall(function() f:RegisterEvent(e) end)
@@ -513,7 +717,9 @@ end
 
 WC.radial = { version = RV, emit = function(force) return emit(force) end, collect = collect, groupOf = groupOf,
               colOf = colOf, frozen = frozen, catch = catch, stickSync = function() return stickSync() end,
-              pinTap = function(key) return onPinTap(key) end }
+              pinTap = function(key) return onPinTap(key) end,
+              -- r20: the item cooldowns (Home's clock extras, the item wheel, the bags) and the count rule
+              itemcd = function(force) return cdEmit(force) end, cdWatch = cdWatch, stackable = function(id) return stackable(id) end }
 
 -- ==================================================================== THE SPELL RADIALS (q2) =====
 -- r9 (Home, 2026-10-07: WoW loads a NEW file of a TOC only when the game starts, never on /reload): the spell radial rides this
@@ -535,7 +741,7 @@ local function spellRadial()
     if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
     local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-    local SRV = "q3"                -- bump on every change; q3: q2 back with r17e's row guard and no SPELL_UPDATE_COOLDOWN sweep (q1b's sradialcd)
+    local SRV = "q4"                -- bump on every change; q4 (feat/item-cooldowns; the user 2026-11-13: "LEARNED LENGTHS in the style of the existing facecd ... if never learned, show the never-secret isActive dim only"): every plain read learns the spell's length (per character, Radial r20's cdLearn), a secret read after a cast starts it (cd.e), never learned = act (dim); q3: q2 back with r17e's row guard and no SPELL_UPDATE_COOLDOWN sweep (q1b's sradialcd)
     local ROW, CELLS = "sradial", 40 -- the secure pad row: 40 cells, shared by every radial
     local MAX, PER = 6, 8
     local QUARANTINE = 30           -- seconds a freed column stays unused (as the consumables radial's)
@@ -645,13 +851,23 @@ local function spellRadial()
     end
 
     -- ---------------------------------------------------------------- the document
+    -- q4: the spell's name (the learned length's key: every rank shares it, as facecd's)
+    local function nameOf(id) return TS(function() return C_Spell.GetSpellName(id) end) end
+    -- -> cd { d, l } or nil; secret (the game keeps the value from us now); active (isActive, never secret)
     local function cdOf(id, now)
         local ok, cd = CALL(function() return C_Spell.GetSpellCooldown(id) end)
         if not ok or type(cd) ~= "table" then return nil end
-        local st, dur = SN(function() return cd.startTime end), SN(function() return cd.duration end)
+        local sv, dv = S(function() return cd.startTime end), S(function() return cd.duration end)
+        if sv == WC.SECRET or dv == WC.SECRET then return nil, true, S(function() return cd.isActive end) == true end
+        local st, dur = type(sv) == "number" and sv or nil, type(dv) == "number" and dv or nil
         if st and dur and dur > 1.5 and st > 0 then                -- the global cooldown is not a cooldown worth a sweep
             local left = st + dur - now
-            if left > 0 then return { d = math.floor(dur * 10 + 0.5) / 10, l = math.floor(left * 10 + 0.5) / 10 } end
+            if left > 0 then
+                -- q4: a plain read LEARNS the length (per character; the facecd way)
+                local n, learn = nameOf(id), learnDb()
+                if n and learn then learn["s" .. n] = math.floor(dur * 10 + 0.5) / 10 end
+                return { d = math.floor(dur * 10 + 0.5) / 10, l = math.floor(left * 10 + 0.5) / 10 }
+            end
         end
     end
     -- r17e (the loot-close taint hunt, 1.0.19-test11): the row is rebuilt ONLY when its spells / cells change; a row the pad has no place
@@ -803,22 +1019,51 @@ local function spellRadial()
     -- an edit, a spell learned, a fight's start / end). A cooldown is sent ONCE per cast of a spell on the radial: the player's
     -- UNIT_SPELLCAST_SUCCEEDED, a moment later, ONE read of that spell's cooldown -> { type = "sradialcd", id, cd = { d, l } }; the app
     -- counts it down by itself. A value the game keeps secret (a fight) is never used: no `cd`, the app shows no countdown.
-    local cdQ = {}                  -- spell id -> true: casts waiting for their one read
+    -- q4 LEARNED LENGTHS (the user's pick 2026-11-13, facecd's way): a secret read after a cast starts the length learned from the
+    -- spell's last plain read (cd.e = true, estimated, counted from the cast); never learned: `act` = true when the never-secret isActive
+    -- says one runs, read once more past the global cooldown (GCD_S) so the GCD alone never dims a spell (the app dims it, no number)
+    local GCD_S = 1.6
+    local cdQ = {}                  -- spell id -> when it was cast: casts waiting for their one read
     local cdQueued = false
+    local actQ = {}                 -- spell id -> when it was cast: secret, never learned, waiting for the read past the GCD
+    local function actSend()
+        local now = GetTime()
+        for id, at in pairs(actQ) do
+            if now - at >= GCD_S - 0.05 then
+                actQ[id] = nil
+                local cd, secret, active = cdOf(id, now)
+                WC.send(WC.encode({ type = "sradialcd", v = SRV, id = id, cd = cd, act = (not cd and secret and active) or nil, fight = inCombat() or nil }))
+            end
+        end
+        WC.push()
+    end
     local function cdSend()
         cdQueued = false
         local now = GetTime()
-        for id in pairs(cdQ) do
+        for id, at in pairs(cdQ) do
             cdQ[id] = nil
-            local cd = cdOf(id, now)
-            WC.send(WC.encode({ type = "sradialcd", v = SRV, id = id, cd = cd, fight = inCombat() or nil }))
+            local cd, secret = cdOf(id, now)
+            if not cd and secret then
+                local n, learn = nameOf(id), learnDb()
+                local d = n and learn and learn["s" .. n]
+                if type(d) == "number" and d > 1.5 then
+                    local left = d - (now - (type(at) == "number" and at or now))
+                    if left > 0 then cd = { d = d, l = math.floor(left * 10 + 0.5) / 10, e = true } end
+                else
+                    actQ[id] = type(at) == "number" and at or now            -- never learned: the dim's read comes past the GCD
+                    C_Timer.After(GCD_S, function() pcall(actSend) end)
+                end
+            end
+            if cd or not actQ[id] then
+                WC.send(WC.encode({ type = "sradialcd", v = SRV, id = id, cd = cd, fight = inCombat() or nil }))
+            end
         end
         WC.push()
     end
     local function onCast(id)
         if type(id) ~= "number" or not (WC.isPlain == nil or WC.isPlain(id)) then return end
         if not wanted()[id] then return end
-        cdQ[id] = true
+        cdQ[id] = GetTime()
         if cdQueued then return end
         cdQueued = true
         C_Timer.After(0.2, function() pcall(cdSend) end)

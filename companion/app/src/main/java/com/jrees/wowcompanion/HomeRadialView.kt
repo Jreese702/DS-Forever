@@ -425,12 +425,16 @@ class HomeRadialView(
     private fun itemsOf(src: List<RadialModel.Item?>): List<UiKit.RadialItem?> {
         val now = RadialModel.Cd.clock()
         val spell = source != "radial"
+        val nowI = ItemCd.clock()
         return src.map { it?.let { i ->
-            // q1b: a spell's cooldown, counted down here from the game's one word per cast (RadialModel.Cd); none = none drawn
-            val left = if (spell) RadialModel.Cd.left(i.id, now) else 0.0
-            UiKit.RadialItem(Icons.get(i.icon), i.name, i.count, pinned = i.pinned, ranOut = i.ranOut,
+            // q1b: a spell's cooldown, counted down here from the game's one word per cast (RadialModel.Cd); none = none drawn.
+            // r20 (the user 2026-11-13: "cooldowns on radial slices AND bag slots"): an item's from the `itemcd` document (ItemCd)
+            val left = if (spell) RadialModel.Cd.left(i.id, now) else ItemCd.left(i.id, nowI)
+            val len = if (left <= 0.0) 0.0 else if (spell) RadialModel.Cd.len(i.id, now) else ItemCd.len(i.id, nowI)
+            val dim = left <= 0.0 && (if (spell) RadialModel.Cd.dim(i.id) else ItemCd.dim(i.id))
+            UiKit.RadialItem(Icons.get(i.icon), i.name, RadialModel.countShown(spell, i), pinned = i.pinned, ranOut = i.ranOut,
                 noMana = spell && NoMana.has(i.id),        // m71: a spell wheel's spell out of mana
-                cdLeft = left.toFloat(), cdLen = if (left > 0.0) RadialModel.Cd.len(i.id, now).toFloat() else 0f) } }
+                cdLeft = left.toFloat(), cdLen = len.toFloat(), cdDim = dim) } }
     }
 
     /** the stick goes back only from neutral, or [RadialModel.STICK_BACK_MS] after the close (the user 2026-10-09; the pause wheel's rule) */

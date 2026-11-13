@@ -452,6 +452,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             onShowOnMap = { _ -> show(Room.MAP) })
         PoiHarvest.init(this) { refreshServices() }
         castView = CastView(this) { key -> GameInput.key(key) }
+        ItemCd.init(this)                                   // r20: the Hearthstone's kept end time (per character)
         bagsView = BagsView(this)
         // bags controller mode (bags session, AGENT_LOG 2026-09-28): the Bags room while the addon holds the controller
         bagsView.onController = { on, why -> onBagsController(on, why) }
@@ -2153,6 +2154,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "radialuse", "sradialuse" -> if (current) radialView.onUse(msg)
             // q1b: one cast's cooldown for the spell radial (no sweep in the add-on: the app counts it down); a replayed one is stale
             "sradialcd" -> if (current) radialView.onCast(msg)
+            // r20 (feat/item-cooldowns): the item cooldowns (Spells' Radial.lua `itemcd`): the item wheel, the bags, Home's clock extras.
+            // Only a live one counts (ItemCd ignores a replay: an old life's countdowns)
+            "itemcd" -> if (ItemCd.onDoc(msg, current) && current) {
+                radialView.invalidate(); radialView.underRedraw?.invoke(); bagsView.cooldowns(); homeView.invalidate()
+            }
             // m71: the spells out of mana now (Spells' PadMap): the app's spell pictures wear the game's blue
             "nomana" -> if (current && NoMana.onDoc(msg)) {
                 spellbookView.invalidate(); radialView.invalidate(); castView.invalidate(); homeView.wheelRedraw(); settingsView.invalidate()
@@ -2484,6 +2490,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 it.dpad?.let { d ->
                     // the character now: the wheels' kept lists of another character go (the per-character ruling)
                     if (current && !d.name.isNullOrEmpty() && ::radialView.isInitialized) radialView.character("${d.name}-${d.realm ?: ""}")
+                    // r20: the Hearthstone's kept end time is the character's (per name-realm)
+                    if (current && !d.name.isNullOrEmpty()) ItemCd.character("${d.name}-${d.realm ?: ""}")
                     if (current && !d.name.isNullOrEmpty()) RadialMeta.who = "${d.name}-${d.realm ?: ""}"     // the spell radials' own settings
                     if (current && !d.name.isNullOrEmpty()) QuestWatchKeep.character("${d.name}-${d.realm ?: ""}")
                     if (!d.name.isNullOrEmpty()) TaxiNet.character("${d.name}-${d.realm ?: ""}")

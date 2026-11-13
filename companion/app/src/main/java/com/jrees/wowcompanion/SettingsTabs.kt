@@ -53,7 +53,9 @@ object SettingsTabs {
         // ---- Bottom screen (the old Home tab)
         HOME_SECTION(Group.HOME, "Home", listOf("Controller on Home", "Combat layout", "Swing timer",
             // "Stance bar", "Pet bar": hidden for now (test40, the user: "hide the settings that don't do anything for now")
-            "Focused quest", "DS WoW toolbar"), Drawer.HOME),
+            "Focused quest",
+            // the clock extras (the user's picks 2026-11-13): one row each
+            "Hearthstone", "Class teleport", "Gold", "Free bag slots", "DS WoW toolbar"), Drawer.HOME),
         MAP(Group.MAP, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map")),
         CHAT(Group.CHAT, "Chat", listOf("Message input")),
         // ---- Top screen (GameUiSection's parts: the same rows, ids, taps and channels as on QOL / Top screen before)
