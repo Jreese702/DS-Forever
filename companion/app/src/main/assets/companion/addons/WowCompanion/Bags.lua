@@ -49,6 +49,11 @@
 -- forgets them (only an item gone or changed, or what is worn); only complete tooltips are kept ("Retrieving item information" /
 -- no lines = loading, read again on ITEM_DATA_LOAD_RESULT / TOOLTIP_DATA_UPDATE); the 19 worn tooltips are read only when worn gear
 -- changes (WORN). Read-only calls only; the 0.2 s send limit is unchanged.
+--
+-- uneq1 (the user's picks, 2026-11-13: "Unequip lives in the Character room ... Y = More opens a small menu with 'Unequip' first";
+-- "WEAPONS (slots 16,17,18) MAY be unequipped in combat, armor is refused in combat"; "Never let a stale bag pick equip anything"):
+-- WC.bagsUnequip(slot), reached by Character.lua's arming cell then one bmvq column (WC._bagsUnequipArm / _bagsUnequipTap, after
+-- WC.bagsMove). The game's own pick-up and put-down into the first free plain bag slot; a blocked pick-up in a fight = "combat".
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -435,6 +440,106 @@ function WC.bagsMove(fromBag, fromSlot, toBag, toSlot)
     return false, "refused"
 end
 
+-- uneq1 UNEQUIP FROM THE CHARACTER ROOM (the user found it: "no way to unequip gear"; the user's picks 2026-11-13, E:/wow-build unequip
+-- design C: "Unequip lives in the Character room: choose a worn slot, Y = More opens a small menu with 'Unequip' first"; "WEAPONS
+-- (slots 16,17,18) MAY be unequipped in combat, armor is refused in combat"; "Target: first free plain-bag slot, backpack first; bags
+-- full -> row disabled 'Bags full'; ammo (slot 0) not offered"; "Never let a stale bag pick equip anything").
+-- ONE CALL = the game's own pick-up of the worn piece and its put-down in the first free plain bag slot (the game's paper doll does
+-- PickupInventoryItem, then a click on a bag slot), so nothing is left on the cursor. No window opened or closed, nothing written.
+-- THE ROUTE: Character.lua's arming cell "uneq" (its `eqset` namespace on Auras' row auracancel: no new pad row) calls
+-- WC._bagsUnequipArm; the NEXT bmvq column 0..18 within UQ.TTL names the worn slot (column = slot - 1) and is taken here, never by
+-- onInvCell, so a drag pick left by the Bags room can never be dropped (= equipped) by it: the arm also voids that pick. A slot tap
+-- arriving later (up to PICK_TTL) is swallowed ("late"), and the doubled press the input path adds is swallowed for SETTLE.
+-- IN A FIGHT: armour is refused (fightRefused, the game's own rule); a weapon (16 main hand, 17 off hand, 18 ranged / relic) is tried.
+-- No secure route exists for this (the secure templates' "item" action only equips or uses; type=macro is ruled out: no macros), so
+-- the pick-up is the insecure call itself, watched: if the game blocks it (ADDON_ACTION_BLOCKED / FORBIDDEN naming our add-on) or the
+-- piece never reaches the cursor, the cursor is cleared (the piece goes back on) and the answer is "combat" (the app: "In combat").
+-- UNMEASURED on the device: whether the game allows it in a fight (decision 2's measurement, a device check).
+local UQ = { at = nil, TTL = 2.0, WEAPON = { [16] = true, [17] = true, [18] = true }, watchAt = nil, blocked = nil,
+             swallowCol = nil, swallowUntil = 0, WATCH = 0.5 }
+function UQ.reply(t)
+    t.by = "unequip"
+    mvReply(t)
+    local C = WC.character
+    if type(C) == "table" and type(C.unequipAck) == "function" then pcall(C.unequipAck, t) end
+end
+-- the game's blocked / forbidden events: ours during an unequip's pick-up (synchronous, or a moment after it)
+do
+    local bf = CreateFrame("Frame")
+    pcall(function() bf:RegisterEvent("ADDON_ACTION_BLOCKED"); bf:RegisterEvent("ADDON_ACTION_FORBIDDEN") end)
+    pcall(bf.SetScript, bf, "OnEvent", function(_, event, addon, what)
+        if event ~= "ADDON_ACTION_BLOCKED" and event ~= "ADDON_ACTION_FORBIDDEN" then return end
+        if not UQ.watchAt or (GetTime() - UQ.watchAt) > UQ.WATCH then return end
+        if addon ~= nil and addon ~= ADDON then return end
+        UQ.blocked = tostring(what or event)
+        if UQ.done then                                  -- it came after the call had answered: put the piece back, say so
+            UQ.done = nil
+            settle()
+            fightRefused()
+            UQ.reply({ ok = false, why = "combat", to = UQ.done_at, late = true, blocked = UQ.blocked })
+        end
+    end)
+end
+
+-- Unequip worn [slot] (1..19) into the first free plain bag slot. Returns true, or false + why
+-- (bad / empty / settle / combat / cursor / full / refused). Confirmed 0.6 s later (the slot empties on the next bag update).
+function WC.bagsUnequip(slot)
+    local at = { inv = slot }
+    local function no(why) UQ.reply({ ok = false, why = why, to = at }); return false, why end
+    if type(slot) ~= "number" or slot < 1 or slot > 19 or slot % 1 ~= 0 then return no("bad") end    -- 0 = ammo: not offered
+    local id = invItemID(slot)
+    if not id then return no("empty") end
+    if (GetTime() - movedAt) < SETTLE then return no("settle") end
+    local fight = InCombatLockdown() and true or false
+    if fight and not UQ.WEAPON[slot] then fightRefused(); return no("combat") end
+    if cursorBusy() then return no("cursor") end
+    picked = nil                                   -- a half-done drag of the Bags room is void now
+    local bag, s = WC.bagsFirstEmpty("bags", id)
+    if not bag then return no("full") end
+    UQ.blocked, UQ.done = nil, nil
+    UQ.watchAt = GetTime()
+    CALL(function() return PickupInventoryItem(slot) end)
+    if UQ.blocked or not cursorBusy() then         -- blocked, or nothing came onto the cursor: nothing moved
+        settle(); movedAt = GetTime()
+        if fight then fightRefused() end
+        return no(fight and "combat" or "refused")
+    end
+    pickupBag(bag, s)
+    local clean = settle()
+    movedAt = GetTime()
+    if UQ.blocked or not clean then                -- the put-down refused: settle() put the piece back on
+        if fight then fightRefused() end
+        return no(fight and "combat" or "refused")
+    end
+    UQ.done, UQ.done_at = true, at                 -- a blocked event still to come is answered by the watcher
+    UQ.reply({ ok = true, from = at, to = { bag = bag, slot = s }, id = id, fight = fight or nil })
+    C_Timer.After(UQ.WATCH, function() UQ.done = nil end)
+    C_Timer.After(0.6, function()
+        UQ.reply({ confirm = (invItemID(slot) ~= id), at = at, id = id })
+    end)
+    return true
+end
+
+-- the arming tap (Character.lua's "uneq" cell): the next bmvq column 0..18 names the slot
+function WC._bagsUnequipArm()
+    UQ.at = GetTime()
+    picked = nil                                   -- never a drop: a stale bag pick is void from here
+end
+
+-- a bmvq column 0..18: taken (true) right after the arm, or as its late / doubled press; never reaches onInvCell then
+function WC._bagsUnequipTap(col)
+    local now = GetTime()
+    if UQ.swallowCol == col and now < UQ.swallowUntil then return true end      -- the input path's second press
+    if not UQ.at then return false end
+    local age = now - UQ.at
+    UQ.at = nil
+    if age > PICK_TTL then return false end
+    UQ.swallowCol, UQ.swallowUntil = col, now + SETTLE
+    if age > UQ.TTL then UQ.reply({ ok = false, why = "late", to = { inv = col + 1 } }); return true end
+    WC.bagsUnequip(col + 1)
+    return true
+end
+
 -- ONE DELETE for another window: Interact's bags-full loot screen (the user, 2026-10-01: "it asks me what I would like to
 -- delete to make space"). The player picks the item AND confirms in that window; this call is the one game action.
 -- Never automatic. The slot must still hold [itemID] ("moved"), not in combat, nothing on the cursor, a player bag only.
@@ -561,6 +666,8 @@ function WC.bagsMoveRows(bagList)
         pcall(WC.pad.op, "bmvq", "bmvq", function(_, col)
             col = col or 0
             if col >= 19 then if WC._bagsTouch then WC._bagsTouch(col) end; return end
+            -- uneq1: right after the Character room's Unequip arm, the column names the worn slot to take off (first: never a drop)
+            if WC._bagsUnequipTap and WC._bagsUnequipTap(col) then return end
             -- right after a "target" tap (col 26) a column 1..5 names the bag slot for the bag in the hand (EQ)
             if WC._bagsTargetTap and WC._bagsTargetTap(col) then return end
             if WC._bagsShutTap and WC._bagsShutTap(col) then return end

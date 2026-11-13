@@ -1564,7 +1564,8 @@
 "Percent of health": "Pourcentage de santé",
 "Health and its maximum": "Santé et son maximum",
 "What the target bar writes on its health. For this character.": "Ce que la barre de cible écrit sur sa santé. Pour ce personnage.",
-"The game's own target frame, by its switch below. For this character.": "Le cadre de cible du jeu, selon son interrupteur ci-dessous. Pour ce personnage."
+"The game's own target frame, by its switch below. For this character.": "Le cadre de cible du jeu, selon son interrupteur ci-dessous. Pour ce personnage.",
+"Bags full": "Sacs pleins"
 },
 "templates": {
 "Always %s": "Toujours %s",

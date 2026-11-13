@@ -51,7 +51,7 @@ local format = string.format
 -- and the core's heartbeat. Set to false when the Character room itself goes to the device.
 local BARS_ONLY = false
 
-local CV = BARS_ONLY and "c13b" or "c13"     -- bump on every change; c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
+local CV = BARS_ONLY and "c14b" or "c14"     -- bump on every change; c14 (uneq1): the Unequip route's cells (see THE GEAR SETS' BUTTONS); c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
 
 -- ---------------------------------------------------------------- safe reads
 
@@ -441,7 +441,7 @@ local function collectSets()
     end
     -- a deleted set's cells go back to the row (after the pad's quarantine, so a stale tap can never reach another set)
     if WC.pad and type(WC.pad.retain) == "function" then
-        local keep = { yes = true, no = true }
+        local keep = { yes = true, no = true, uneq = true, moreon = true, moreoff = true }
         for _, r in ipairs(out) do keep["equip:" .. r.id] = true; keep["save:" .. r.id] = true end
         pcall(WC.pad.retain, "eqset", keep)
     end
@@ -1100,7 +1100,17 @@ end
 --               `no` or B forgets it. While it asks, B is the room's (the capture's pass is lifted), so B is one step back.
 -- Both refused in a fight, as the game refuses changing armour then (its words: ERR_NOT_IN_COMBAT). Every tap is answered
 -- (`eqs.ack`, numbered) so the app can say why nothing happened.
-local eqs = { ask = nil, ack = nil, seq = 0 }
+--
+-- c14 / uneq1 (the user's picks, 2026-11-13: "Unequip lives in the Character room: choose a worn slot, Y = More opens a small menu with
+-- 'Unequip' first (A does it, B back, Up/Down moves; touch: a More card button with the Y glyph)"; "WEAPONS (slots 16,17,18) MAY be
+-- unequipped in combat, armor is refused in combat"): three more keys on the same `eqset` cells (no new pad row; 5 fixed keys + 2 per
+-- set, well inside the row's 37):
+--   moreon / moreoff  the app's More menu opened / closed: while it is open B is the room's (as for the save question), so B is one
+--                     step back (the menu closes: `eqs.more` false), then the game's / Home's as before
+--   uneq              the ARM of Bags.lua's unequip (WC._bagsUnequipArm): the app's next tap, bmvq column slot - 1, names the worn
+--                     slot; Bags does the move and its answer comes back here as the ack `unequip` (unequipAck). Not refused here in a
+--                     fight: Bags refuses armour then and tries a weapon (the user's pick)
+local eqs = { ask = nil, ack = nil, seq = 0, more = nil }
 local function eqWords(g, fallback) local v = PS(_G[g]); return (v and v ~= "") and v or fallback end
 local function eqAck(op, id, ok, why)
     eqs.seq = eqs.seq + 1
@@ -1120,8 +1130,8 @@ local function passB(on)
     pcall(cap.pass, "character", on and { "PAD2" } or {})
 end
 local function eqForget()
-    if not eqs.ask then return false end
-    eqs.ask = nil
+    if not eqs.ask and not eqs.more then return false end
+    eqs.ask, eqs.more = nil, nil
     passB(true)
     dirty.eqs = true
     soon(0)
@@ -1132,6 +1142,17 @@ local function onSetTap(key)
     local op, sid = key:match("^(%a+):(%d+)$")
     sid = tonumber(sid)
     if key == "no" then if not eqForget() then eqAck("no", nil, false, "nothing asked") end return end
+    if key == "moreon" then
+        if eqs.ask then return end                          -- the save question is up: its own buttons answer
+        eqs.more = true; passB(false); dirty.eqs = true; soon(0); return
+    end
+    if key == "moreoff" then eqForget(); return end
+    if key == "uneq" then
+        eqForget()
+        if type(WC._bagsUnequipArm) ~= "function" then return eqAck("unequip", nil, false, "unsupported") end
+        WC._bagsUnequipArm()
+        return
+    end
     if inCombat() then eqForget(); return eqAck(op or key, sid, false, eqWords("ERR_NOT_IN_COMBAT", "You can't do that while in combat")) end
     if key == "yes" then
         local a = eqs.ask
@@ -1161,15 +1182,26 @@ end
 local function collectEqs()
     local pad = WC.pad
     if eqs.ask and inCombat() then eqs.ask = nil end        -- a fight drops the question (the game refuses the save then)
-    local row = { ask = eqs.ask or false, ack = eqs.ack }
+    local row = { ask = eqs.ask or false, ack = eqs.ack, more = eqs.more or false }
     if pad and type(pad.slotFor) == "function" then
         row.row = EQ_ROW; row.yes = eqCell("yes"); row.no = eqCell("no")
+        row.uq = eqCell("uneq"); row.mon = eqCell("moreon"); row.moff = eqCell("moreoff")      -- c14: the Unequip route
     end
     return row
 end
 COLLECT.eqs = collectEqs
 if not BARS_ONLY then PARTS[#PARTS + 1] = "eqs"; dirty.eqs = true end
 -- a tap on one of the gear sets' cells of "auracancel" (Auras.lua's onClick hands it here): the key that cell holds
+-- c14: Bags.lua's answer to an unequip (UQ.reply): one ack; its later confirm only when the slot did not empty after all
+local function unequipAck(t)
+    if type(t) ~= "table" then return end
+    local at = type(t.to) == "table" and t.to.inv or (type(t.from) == "table" and t.from.inv) or (type(t.at) == "table" and t.at.inv) or nil
+    if t.confirm ~= nil then
+        if t.confirm == false then eqAck("unequip", at, false, "refused") end
+        return
+    end
+    eqAck("unequip", at, t.ok == true, t.ok == true and nil or t.why)
+end
 local function onSetCell(col)
     local t = WC.pad and WC.pad.ns and WC.pad.ns.eqset
     local key = t and type(col) == "number" and t.byCol[col - EQ_FIRST] or nil
@@ -1461,4 +1493,4 @@ end
 WC.character = { version = CV, barsOnly = BARS_ONLY, emit = emit, collect = COLLECT, standIn = standIn, ctl = ctl,
                   touchOpen = touchOpen, touchClose = touchClose,
                   initOpenCell = initOpenCell, initCloseCell = initCloseCell, onOpenTap = onOpenTap, onCloseTap = onCloseTap,
-                  onSetCell = onSetCell, eqFirst = EQ_FIRST, eqCells = EQ_CELLS }   -- standIn / ctl for tools/test_character.py; the touch pair for Auras.lua
+                  onSetCell = onSetCell, unequipAck = unequipAck, eqFirst = EQ_FIRST, eqCells = EQ_CELLS }   -- standIn / ctl for tools/test_character.py; the touch pair for Auras.lua
