@@ -123,6 +123,44 @@ object CastStripModel {
 
     fun shown(side: Side): Boolean = side != Side.OFF
 
+    // ---------------------------------------------------------------- the bar in a fight
+
+    /** THE BAR IN A FIGHT (the user, 2026-11-13: "there should be a settings toggle to make them Hide/stay in combat"; the picks: the
+     *  Tap-to-cast bar's own section, "Hide in combat" the default): HIDE = the bar fades out while Home shows a fight and back when it
+     *  ends, taking no touches while hidden; STAY = today's (seen and tappable in a fight, Party mode on or off) */
+    enum class Combat(val label: String) { HIDE("Hide"), STAY("Stay") }
+
+    /** the saved choice by name; never chosen (or unknown) = HIDE, the default */
+    fun combatOf(saved: String?): Combat = saved?.let { n -> Combat.values().firstOrNull { it.name == n } } ?: Combat.HIDE
+
+    /** the bar is hidden now: HIDE and Home shows a fight ([fighting] = HomeView.fightShown(): the takeover or the grow's fight) */
+    fun hiddenIn(mode: Combat, fighting: Boolean): Boolean = mode == Combat.HIDE && fighting
+
+    /** the fade in / out (ms) */
+    const val FIGHT_FADE_MS = 180f
+
+    /**
+     * The bar's fight fade, off-device: [note] the choice and the fight on every tick, [vis] the bar's strength (0 = gone, 1 = full) at
+     * a time, [takesTouch] false while hidden (a finger on a faded bar never casts). A fade reverses from where it is.
+     */
+    class FightFade(private val ms: Float = FIGHT_FADE_MS) {
+        var hidden = false
+            private set
+        private var from = 1f
+        private var at = 0L
+        /** true = the hidden state changed (the view redraws its fade) */
+        fun note(mode: Combat, fighting: Boolean, now: Long): Boolean {
+            val h = hiddenIn(mode, fighting)
+            if (h == hidden) return false
+            from = vis(now); hidden = h; at = now
+            return true
+        }
+        fun vis(now: Long): Float = ClockBand.fade(from, hidden, now - at, ms)
+        /** the fade is still running at [now] */
+        fun fading(now: Long): Boolean = vis(now) != (if (hidden) 0f else 1f)
+        fun takesTouch(): Boolean = !hidden
+    }
+
     // ---------------------------------------------------------------- cb3: the place on Home
 
     /** a box in Home's px (plain numbers: the off-device tests have no android.graphics) */

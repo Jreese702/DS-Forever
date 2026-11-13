@@ -24,9 +24,9 @@ import org.json.JSONObject
  */
 class SettingsRoom(context: Context, private val view: SettingsView, padSource: () -> JSONObject?) : LinearLayout(context) {
     /** Bottom screen > Home's rows (the host wires its DS WoW toolbar) */
-    val homeSection = HomeSettingsSection(context) { it != ATTACK_CAST && it != CAST_BAR }
+    val homeSection = HomeSettingsSection(context) { it != ATTACK_CAST && it !in CAST_BAR_ROWS }
     /** GitHub #43 cb3: Bottom screen > Tap-to-cast bar (Home's section's row, its own group) */
-    private val castBarSection = HomeSettingsSection(context) { it == CAST_BAR }
+    private val castBarSection = HomeSettingsSection(context) { it in CAST_BAR_ROWS }
     /** Controller > Combat helpers' "Start the attack when a spell is cast" (Home's section's row, drawn here) */
     private val attackSection = HomeSettingsSection(context) { it == ATTACK_CAST }
     /** every GameUiSection part (B closes an open On / Off bar of any of them first) */
@@ -223,7 +223,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     private companion object {
         const val PREVIEW_W = 470
         const val ATTACK_CAST = "Start the attack when a spell is cast"
-        const val CAST_BAR = "Tap-to-cast bar"
+        /** the Tap-to-cast bar group's rows: its place, and the bar in a fight (Hide / Stay) */
+        val CAST_BAR_ROWS = SettingsTabs.Block.CAST_BAR.rows.toSet()
     }
 }
 

@@ -69,7 +69,8 @@ class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean
         multiplier = FrameGen.multiplier, flow = FrameGen.flowScale, indoorBuild = Settings.indoorBuild,
         clockHearth = HomeSettings.clockHearth, clockTeleport = HomeSettings.clockTeleport, clockGold = HomeSettings.clockGold,
         clockBags = HomeSettings.clockBags, clockAmmo = HomeSettings.clockAmmo,
-        castBar = CastStripModel.Side.values().indexOf(HomeSettings.castBarSide), worldMapAll = Settings.worldMapFog == "all",
+        castBar = CastStripModel.Side.values().indexOf(HomeSettings.castBarSide),
+        castCombatHide = HomeSettings.castBarCombat == CastStripModel.Combat.HIDE, worldMapAll = Settings.worldMapFog == "all",
         smartY = smartYOn(), partyMode = GameUi.swWant(GameUi.SW_PMODE), smartRes = GameUi.swWant(GameUi.SW_SRES),
         attackHostile = GameUi.swWant(GameUi.SW_ATK), autoShot = GameUi.shotMode())
 

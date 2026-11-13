@@ -60,7 +60,8 @@ object SettingsTabs {
             // the clock extras (the user's picks 2026-11-13): one row each
             "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo", "DS WoW toolbar"), Drawer.HOME),
         // GitHub #43 cb3: Off / Left / Right / Both (Home's section draws it, as it drew the old Home row)
-        CAST_BAR(Group.CAST_BAR, "Tap-to-cast bar", listOf("Tap-to-cast bar"), Drawer.HOME),
+        // the bar in a fight (the user 2026-11-13: "a settings toggle to make them Hide/stay in combat"): Hide (the default) / Stay
+        CAST_BAR(Group.CAST_BAR, "Tap-to-cast bar", listOf("Tap-to-cast bar", "In combat"), Drawer.HOME),
         MAP(Group.MAP, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map")),
         CHAT(Group.CHAT, "Chat", listOf("Message input")),
         // ---- Top screen (GameUiSection's parts: the same rows, ids, taps and channels as on QOL / Top screen before)

@@ -115,7 +115,7 @@ class HomeView(
         HomeSettings.init(context)
         RadialMeta.init(context)
         flow.setRest(HomeSettings.rest)
-        HomeSettings.onChange { post { castStripRelay() } }               // GitHub #43: the tap-to-cast bar's own choice
+        HomeSettings.onChange { post { castStripRelay(); castStripFight() } }  // GitHub #43: the tap-to-cast bar's own choices
         HomeSettings.onChange { post {
             if (flow.setRest(HomeSettings.rest)) changed()
             // the focused quest moved (Settings > Home): the parts go to their new places
@@ -1013,6 +1013,7 @@ class HomeView(
         if (flow.combat(takeoverWanted(now))) { if (flow.takeover) grewAt = System.currentTimeMillis(); changed() }
         // a fight began / ended with Party mode on (only where the module is placed: not under a full-screen module)
         else if (party.party != null && (flow.full == null || flow.takeover) && partyModeNow(flow.screen) != laidPartyMode) changed()
+        castStripFight()                                                  // the tap-to-cast bar's Hide in combat follows the fight
         val red = grow.red(now) && !flow.takeover && flow.full == null
         if (red != redShown) {
             redShown = red
@@ -1383,6 +1384,14 @@ class HomeView(
     /** every CURRENT `castcd` (ActionBar cb1, the whole state): the slots' sweeps on the app's clock */
     fun onCastCd(m: Map<Int, PadMapModel.FaceCd>) = castStrip.onCd(m)
 
+    /**
+     * THE BAR IN A FIGHT (Settings > Tap-to-cast bar > In combat; the user 2026-11-13: "a settings toggle to make them Hide/stay in
+     * combat", Hide the default): the fight is Home's own ([fightShown]: the takeover with Party mode off, the grow's fight with it on).
+     * Hide fades the bar out (no touches) and back at the fight's end; Stay keeps it, laid and tappable as at rest. The bar keeps its
+     * place either way (no re-lay in a fight).
+     */
+    private fun castStripFight() = castStrip.fight(HomeSettings.castBarCombat, fightShown())
+
     private fun castStripRelay() {
         val s = shown ?: return
         if (s.full != null && !s.takeover) return
@@ -1523,6 +1532,7 @@ class HomeView(
             castView.triggerStrip = true
         }
         partyStripSync(s)
+        castStripFight()
         if (lent(mapView)) {
             mapView.compact = !(s.full == HomeModule.MAP && !s.takeover)
             // the small map's + and - step Settings' "Minimap zoom" itself (user, 09-29 16:35: "these buttons should directly

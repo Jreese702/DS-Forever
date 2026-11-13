@@ -67,7 +67,7 @@ class SettingsTabsTest {
             // the clock extras (the user's picks 2026-11-13, feat/item-cooldowns): one row each, before the toolbar
             G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Focused quest", "Hearthstone", "Class teleport", "Gold",
                 "Free bag slots", "Ammo", "DS WoW toolbar"),          // feat/clock-extras-v2: Ammo
-            G.CAST_BAR to listOf("Tap-to-cast bar"),
+            G.CAST_BAR to listOf("Tap-to-cast bar", "In combat"),
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
             G.CHAT to listOf("Message input"),
             G.HUD to listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale"),
@@ -127,6 +127,8 @@ class SettingsTabsTest {
             listOf("Smart Res") +
             // added since: GitHub #43's tap-to-cast bar (Bottom screen > Home; cb3: its own group, Bottom screen > Tap-to-cast bar)
             listOf("Tap-to-cast bar") +
+            // the user 2026-11-13 ("a settings toggle to make them Hide/stay in combat"): Bottom screen > Tap-to-cast bar > In combat
+            listOf("In combat") +
             // new since the six tabs: General > Account > Game account (#47)
             listOf("Game account") +
             // added since: the clock extras (feat/item-cooldowns)
@@ -269,6 +271,10 @@ class SettingsPreviewRowsTest {
     @Test fun theNewRowsWordsFollowTheValue() {
         for (side in 0..3) assertTrue(SettingsPreview.caption("Tap-to-cast bar", SettingsPreview.State(castBar = side)).isNotEmpty())
         assertEquals("Tap-to-cast bar: Both", SettingsPreview.title("Tap-to-cast bar", SettingsPreview.State(castBar = 3)))
+        // the bar in a fight: Hide (the default) / Stay, each with its own words
+        assertEquals("Cast bar in combat: Hide", SettingsPreview.title("In combat", SettingsPreview.State()))
+        assertEquals("Cast bar in combat: Stay", SettingsPreview.title("In combat", SettingsPreview.State(castCombatHide = false)))
+        assertTrue(SettingsPreview.caption("In combat", SettingsPreview.State()) != SettingsPreview.caption("In combat", SettingsPreview.State(castCombatHide = false)))
         assertEquals("Ammo: Off", SettingsPreview.title("Ammo", SettingsPreview.State(clockAmmo = false)))
         // 2026-11-13 (the user: "just list our total gold under the battery (still give it a toggle)"): the Gold row's picture is the gold line
         assertEquals("Gold: On", SettingsPreview.title("Gold", SettingsPreview.State(clockGold = true)))
@@ -279,7 +285,7 @@ class SettingsPreviewRowsTest {
         assertEquals("Smart Y: -", SettingsPreview.title("Smart Y", SettingsPreview.State()))
         for (y in listOf(null, true, false)) for (sh in 0..2) for (b in listOf(true, false)) {
             val s = SettingsPreview.State(smartY = y, autoShot = sh, clockHearth = b, clockTeleport = b, clockGold = b, clockBags = b,
-                clockAmmo = b, worldMapAll = b, partyMode = b, smartRes = b, attackHostile = b)
+                clockAmmo = b, worldMapAll = b, partyMode = b, smartRes = b, attackHostile = b, castCombatHide = b)
             for (id in SettingsPreview.ROWS.keys) {
                 assertTrue(id, SettingsPreview.title(id, s).length in 3..40)
                 assertTrue(id, SettingsPreview.caption(id, s).isNotEmpty() && SettingsPreview.caption(id, s).all { it.length <= 46 })
@@ -295,9 +301,10 @@ class SettingsPreviewRowsTest {
         }
     }
 
-    @Test fun twentyTwoRowsAndTheMovingOnes() {          // f-radial-settings: + the spell wheel's own pair; 2026-11-13: + 12
-        assertEquals(38, SettingsPreview.ROWS.size)
+    @Test fun twentyTwoRowsAndTheMovingOnes() {          // f-radial-settings: + the spell wheel's own pair; 2026-11-13: + 12, + the cast bar's In combat
+        assertEquals(39, SettingsPreview.ROWS.size)
         assertTrue(SettingsPreview.animated("Swing timer") && SettingsPreview.animated("Frame limit") && !SettingsPreview.animated("Button glyphs"))
+        assertTrue(SettingsPreview.animated("In combat"))                // the bar fading out in a fight
     }
 }
 

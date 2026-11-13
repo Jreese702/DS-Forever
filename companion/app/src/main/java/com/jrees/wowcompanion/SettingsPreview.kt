@@ -3,6 +3,7 @@ package com.jrees.wowcompanion
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -39,6 +40,8 @@ object SettingsPreview {
         val clockHearth: Boolean = true, val clockTeleport: Boolean = true, val clockGold: Boolean = true, val clockBags: Boolean = true,
         val clockAmmo: Boolean = true, val castBar: Int = 0, val worldMapAll: Boolean = true, val smartY: Boolean? = null,
         val partyMode: Boolean = true, val smartRes: Boolean = true, val attackHostile: Boolean = false, val autoShot: Int = 1,
+        // the tap-to-cast bar in a fight: Hide (the default, true) / Stay
+        val castCombatHide: Boolean = true,
     )
 
     /**
@@ -65,7 +68,7 @@ object SettingsPreview {
     val ROWS: Map<String, Boolean> = linkedMapOf(
         "Controller on Home" to false, "Combat layout" to true, "Swing timer" to true, "Focused quest" to false,
         "Hearthstone" to false, "Class teleport" to false, "Gold" to false, "Free bag slots" to false, "Ammo" to false,
-        "Start the attack when a spell is cast" to true, "DS WoW toolbar" to false, "Tap-to-cast bar" to false,
+        "Start the attack when a spell is cast" to true, "DS WoW toolbar" to false, "Tap-to-cast bar" to false, "In combat" to true,
         "ABXY location" to true, "Button glyphs" to false,
         "Pause menu: open" to true, "Pause menu: pick" to true, "Item wheel: open" to true, "Item wheel: pick" to true,
         "Spell wheel: open" to true, "Spell wheel: pick" to true,
@@ -101,6 +104,7 @@ object SettingsPreview {
         "Build in the background" -> onOff(s.indoorBuild)
         "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo" -> onOff(extraOn(id, s))
         "Tap-to-cast bar" -> SIDE_WORDS[s.castBar.coerceIn(0, 3)]
+        "In combat" -> if (s.castCombatHide) "Hide" else "Stay"
         "World map" -> if (s.worldMapAll) "Show all" else "Explored only"
         "Smart Y" -> s.smartY?.let { onOff(it) } ?: "-"
         "Party mode" -> onOff(s.partyMode)
@@ -111,7 +115,7 @@ object SettingsPreview {
     }.let { v -> val n = SHORT[id] ?: id; if (v.isEmpty()) n else "$n: $v" }
 
     /** a row's name in the picture's title when the row's own words are too long for the panel */
-    private val SHORT = mapOf("Start the attack when a spell is cast" to "Start the attack", "Start attack on hostile target" to "Start attack")
+    private val SHORT = mapOf("In combat" to "Cast bar in combat", "Start the attack when a spell is cast" to "Start the attack", "Start attack on hostile target" to "Start attack")
 
     /** two or three short lines under the picture */
     fun caption(id: String, s: State): List<String> = when (id) {
@@ -159,6 +163,8 @@ object SettingsPreview {
             2 -> listOf("Four spells under the minimap;", "swipe for more.")
             3 -> listOf("One bar under both columns;", "one tap casts each.")
             else -> listOf("No tap-to-cast bar on Home.") }
+        "In combat" -> if (s.castCombatHide) listOf("In a fight the tap-to-cast bar fades", "out; it comes back when the fight ends.")
+            else listOf("In a fight the tap-to-cast bar stays,", "one tap casts each.")
         "World map" -> if (s.worldMapAll) listOf("The Map room's continents show", "every zone, revealed.")
             else listOf("The Map room's continents show only", "what you have explored.")
         "Smart Y" -> when (s.smartY) {
@@ -245,6 +251,7 @@ object SettingsPreview {
             "Gold" -> goldLine(c, r, s)
             "Hearthstone", "Class teleport", "Free bag slots", "Ammo" -> extras(c, r, id, s)
             "Tap-to-cast bar" -> castBar(c, r, s.castBar)
+            "In combat" -> castCombat(c, r, s, t)
             "World map" -> worldMap(c, r, s.worldMapAll)
             "Smart Y" -> smartY(c, r, s, t, glyph)
             "Party mode" -> partyMode(c, r, s.partyMode, t, glyph, s.glyphSet)
@@ -1090,9 +1097,31 @@ object SettingsPreview {
         }
     }
 
+    /** Bottom screen > Tap-to-cast bar > In combat: Home in a fight (the red edge) twice - Hide: the bar fading out (a dashed well
+     *  where it was), Stay: the bar there, a tap casting; the chosen one lit. The side is the player's (Left when the bar is Off) */
+    private fun castCombat(c: Canvas, r: RectF, s: State, t: Float) {
+        val side = if (s.castBar in 1..3) s.castBar else 1
+        val k = (t % 2.4f) / 2.4f
+        twoWays(c, r, "Hide: the bar fades out", "Stay: the bar stays", s.castCombatHide, 300f) { box, hide ->
+            val tw = minOf(box.width() * 0.5f, (box.height() - 16f) * 1.35f)
+            val th = minOf(box.height() - 16f, tw / 1.35f)
+            val tb = RectF(box.left + 12f, box.centerY() - th / 2f, box.left + 12f + tw, box.centerY() + th / 2f)
+            // the bar's strength: Hide fades it out over the first half and leaves it gone; Stay keeps it
+            val barA = if (hide) (255 * (1f - (k * 2f).coerceIn(0f, 1f))).toInt() else 255
+            homeThumb(c, tb, side, barA)
+            UiKit.combatGlow(c, tb, 0.8f, 18f)
+            val tx = tb.right + 18f; val cy = box.centerY()
+            val sw = UiKit.tex("combat_swords")
+            if (sw != null) c.drawBitmap(sw, null, RectF(tx, cy - 64f, tx + 56f, cy - 16f), pPic)
+            else swords(c, tx + 28f, cy - 40f, 22f, GOLD)
+            text(c, "In a fight:", tx, cy + 14f, 18f, DIMC, Paint.Align.LEFT)
+            text(c, if (hide) "no bar, no taps" else "tap to cast", tx, cy + 40f, 18f, if (hide) DIMC else GOLD, Paint.Align.LEFT)
+        }
+    }
+
     /** a small Home: the controller band on top, the chat left, the minimap right, the bar under one column (cb5: four in view of a
      *  strip that scrolls, the gold arrow at the edge where more wait) or under both (all six), the slots one size in every mode */
-    private fun homeThumb(c: Canvas, b: RectF, side: Int) {
+    private fun homeThumb(c: Canvas, b: RectF, side: Int, barAlpha: Int = 255) {
         frame(c, b, BRONZE, 1.5f, Color.rgb(20, 16, 10))
         val g = 5f; val bandB = b.top + b.height() * 0.3f
         diamond(c, b.left + b.width() * 0.22f, (b.top + bandB) / 2f, 6f, 13f); diamond(c, b.right - b.width() * 0.22f, (b.top + bandB) / 2f, 6f, 13f)
@@ -1111,6 +1140,12 @@ object SettingsPreview {
         pStroke.color = BRONZE; pStroke.strokeWidth = 1.5f; c.drawCircle(map.centerX(), map.centerY(), mr, pStroke)
         fun bar(l: Float, rr: Float, n: Int) {
             val well = RectF(l, b.bottom - g - barH, rr, b.bottom - g)
+            if (barAlpha < 255) {                                               // In combat: Hide - a dashed well where the bar fades out
+                pStroke.color = Theme.bronzeDim; pStroke.strokeWidth = 1.5f; pStroke.pathEffect = DashPathEffect(floatArrayOf(6f, 5f), 0f)
+                c.drawRoundRect(well, 4f, 4f, pStroke); pStroke.pathEffect = null
+                if (barAlpha <= 0) return
+            }
+            val layer = if (barAlpha < 255) c.saveLayerAlpha(well.left - 2f, well.top - 2f, well.right + 2f, well.bottom + 2f, barAlpha) else -1
             frame(c, well, GOLD, 1.5f, Color.rgb(36, 28, 18))
             val gap = (well.width() - 8f - n * slot) / n                       // spread evenly, as on Home
             val cy = well.centerY()
@@ -1124,6 +1159,7 @@ object SettingsPreview {
                 val tri = Path().apply { moveTo(ax - aw / 2f, cy - ah / 2f); lineTo(ax + aw / 2f, cy); lineTo(ax - aw / 2f, cy + ah / 2f); close() }
                 pFill.color = GOLD; c.drawPath(tri, pFill)
             }
+            if (layer >= 0) c.restoreToCount(layer)
         }
         when (side) { 1 -> bar(chat.left, chat.right, 4); 2 -> bar(map.left, map.right, 4); 3 -> bar(chat.left, map.right, 6) }
     }

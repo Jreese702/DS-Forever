@@ -1,5 +1,17 @@
 {
 "plain": {
+"Stay": "Garder",
+"Hide: the bar fades out in a fight.": "Masquer : la barre s'efface en combat.",
+"Cast bar in combat: Hide": "Barre en combat : masquer",
+"Cast bar in combat: Stay": "Barre en combat : garder",
+"In a fight the tap-to-cast bar fades": "En combat la barre à toucher s'efface",
+"out; it comes back when the fight ends.": "et revient à la fin du combat.",
+"In a fight the tap-to-cast bar stays,": "En combat la barre à toucher reste,",
+"Hide: the bar fades out": "Masquer : la barre s'efface",
+"Stay: the bar stays": "Garder : la barre reste",
+"In a fight:": "En combat :",
+"no bar, no taps": "pas de barre, pas de touche",
+"tap to cast": "touchez pour lancer",
 "In the row under the clock.": "Dans la rangée sous l'horloge.",
 "In the row under the clock, once known.": "Dans la rangée sous l'horloge, une fois appris.",
 "Hearthstone: On": "Pierre de foyer : activé",

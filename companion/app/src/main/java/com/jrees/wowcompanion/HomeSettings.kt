@@ -176,6 +176,15 @@ object HomeSettings {
             prefs?.edit()?.putString(KEY_CAST_SIDE, v.name)?.remove(KEY_CAST_STRIP)?.apply()
             for (l in listeners) l()
         }
+    /** THE TAP-TO-CAST BAR IN A FIGHT (the user, 2026-11-13: "there should be a settings toggle to make them Hide/stay in combat"; the
+     *  picks: its own section's row, "Hide in combat" by default): HIDE fades the bar out while Home shows a fight, STAY keeps it */
+    var castBarCombat: CastStripModel.Combat
+        get() = CastStripModel.combatOf(prefs?.getString(KEY_CAST_COMBAT, null))
+        set(v) {
+            if (v == castBarCombat && prefs?.contains(KEY_CAST_COMBAT) == true) return
+            prefs?.edit()?.putString(KEY_CAST_COMBAT, v.name)?.apply()
+            for (l in listeners) l()
+        }
     /** THE CLOCK EXTRAS (the user's picks 2026-11-13: "clock extras beside the time/battery on Home, each with its own on/off row in
      *  Bottom > Home"): the Hearthstone, the class teleport (once known), gold, free bag slots; each on by default (true = shown) */
     var clockHearth: Boolean
@@ -200,6 +209,7 @@ object HomeSettings {
     /** cb2's On / Off Home row (read once for cb3's migration, then removed) */
     private const val KEY_CAST_STRIP = "castStrip"
     private const val KEY_CAST_SIDE = "castBarSide"
+    private const val KEY_CAST_COMBAT = "castBarCombat"
     private const val KEY = "rest"
     private const val KEY_CLOCK_HEARTH = "clockHearth"
     private const val KEY_CLOCK_TELEPORT = "clockTeleport"
@@ -550,6 +560,10 @@ class HomeSettingsSection(context: Context,
         val sides = CastStripModel.Side.values()
         y = row(c, y + GAP, "Tap-to-cast bar", listOf("Six spells, one tap each."),
             sides.map { it.label }, sides.indexOf(HomeSettings.castBarSide), sides.map { sd -> { HomeSettings.castBarSide = sd } })
+        // the bar in a fight (the user 2026-11-13: "a settings toggle to make them Hide/stay in combat"): Hide (the default) / Stay
+        val modes = CastStripModel.Combat.values()
+        y = row(c, y + GAP, "In combat", listOf("Hide: the bar fades out in a fight."),
+            modes.map { it.label }, modes.indexOf(HomeSettings.castBarCombat), modes.map { m -> { HomeSettings.castBarCombat = m } })
         // the focused quest's place (the user 2026-10-09): over the minimap (today's) or at the top of the chat
         y = row(c, y + GAP, "Focused quest", listOf("Where Home shows the quest you focus. Tap it to fold it."),
             // the user 2026-10-09: "Above Chat" first; the default stays Above Minimap

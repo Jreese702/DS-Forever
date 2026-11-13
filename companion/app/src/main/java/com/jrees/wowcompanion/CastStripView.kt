@@ -59,6 +59,24 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
             if (p != CastStripModel.Live.pos) { CastStripModel.Live.pos = p; invalidate() }
         }
 
+    /** THE BAR IN A FIGHT (Settings > Tap-to-cast bar > In combat): Hide fades the bar out while Home shows a fight; it takes no touch
+     *  while hidden ([CastStripModel.FightFade]). Home calls [fight] on every tick and every settings change. */
+    private val fightFade = CastStripModel.FightFade()
+
+    /** Home's fight now ([fighting] = HomeView.fightShown()) with the choice [mode]; the bar fades out / in on a change */
+    fun fight(mode: CastStripModel.Combat, fighting: Boolean, now: Long = SystemClock.uptimeMillis()) {
+        if (!fightFade.note(mode, fighting, now)) return
+        if (fightFade.hidden) { if (downAt >= 0 || moved) parent?.requestDisallowInterceptTouchEvent(false)
+            downAt = -1; moved = false; caught = false; pressedUntil = 0L; flingAt = -1L }
+        invalidate()
+    }
+
+    /** hidden by the fight (Hide in combat): no touch reaches the slots */
+    val fightHidden: Boolean get() = fightFade.hidden
+
+    /** the bar's strength now (1 = full, 0 = faded out) */
+    fun fightVis(now: Long = SystemClock.uptimeMillis()): Float = fightFade.vis(now)
+
     /** a fling is running */
     val flinging: Boolean get() = flingAt >= 0L
 
@@ -83,6 +101,16 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
+        val upNow = SystemClock.uptimeMillis()
+        val vis = fightFade.vis(upNow)
+        if (fightFade.fading(upNow)) postInvalidateDelayed(FRAME_MS)
+        if (vis <= 0f) return                                                           // hidden in a fight: nothing drawn
+        val layer = if (vis < 1f) c.saveLayerAlpha(0f, 0f, w, h, (255 * vis).toInt()) else -1
+        drawBar(c, w, h)
+        if (layer >= 0) c.restoreToCount(layer)
+    }
+
+    private fun drawBar(c: Canvas, w: Float, h: Float) {
         UiKit.module(c, RectF(0f, 0f, w, h))
         val now = SystemClock.elapsedRealtime()
         stepFling(SystemClock.uptimeMillis())
@@ -176,6 +204,8 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
     }
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
+        // hidden in a fight: no touch at all (the finger goes to what is under the faded bar)
+        if (!fightFade.takesTouch()) return false
         val w = width.toFloat()
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {

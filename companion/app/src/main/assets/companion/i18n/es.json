@@ -1,5 +1,17 @@
 {
 "plain": {
+"Stay": "Mantener",
+"Hide: the bar fades out in a fight.": "Ocultar: la barra se desvanece en combate.",
+"Cast bar in combat: Hide": "Barra en combate: ocultar",
+"Cast bar in combat: Stay": "Barra en combate: mantener",
+"In a fight the tap-to-cast bar fades": "En combate la barra de toque se desvanece",
+"out; it comes back when the fight ends.": "y vuelve cuando termina el combate.",
+"In a fight the tap-to-cast bar stays,": "En combate la barra de toque se queda,",
+"Hide: the bar fades out": "Ocultar: la barra se desvanece",
+"Stay: the bar stays": "Mantener: la barra se queda",
+"In a fight:": "En combate:",
+"no bar, no taps": "sin barra, sin toques",
+"tap to cast": "toca para lanzar",
 "In the row under the clock.": "En la fila bajo el reloj.",
 "In the row under the clock, once known.": "En la fila bajo el reloj, cuando lo conozcas.",
 "Hearthstone: On": "Piedra de hogar: activado",
