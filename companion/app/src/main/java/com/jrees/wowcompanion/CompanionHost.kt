@@ -2036,7 +2036,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the game's player menu, read for the map module's bottom-screen copy (Quests q41): only a current one is the game's now
             // ... and Party mode's menu for a party member (q49 src = "party"): its own view over Home's left column
             // Bags.lua: the game's "pick an item" (an armor kit / stone / enchant) started or ended: a kit used from the Character room
-            "itarget" -> if (current) characterView.onItarget(msg.optBoolean("on"))
+            "itarget" -> if (current) {
+                // bags-kit3: the pick's type and what the game said of it (cx), for a later device check of kits / stones
+                if (msg.optBoolean("on")) Log.i("WCKIT", "itarget: ctx=${msg.optString("ctx")} wornOk=${msg.optString("wornOk")} cx=${msg.optJSONObject("cx")}")
+                characterView.onItarget(msg.optBoolean("on"), msg)
+            }
             // PadMap m104: which LB button targets whom, from the game's own bindings (the LB picture)
             "lbmap" -> LbMap.update(msg)
             "pmenu" -> if (current) {

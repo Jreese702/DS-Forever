@@ -35,4 +35,14 @@ object KitTarget {
         if (cell >= CELL0) return ROW to cell
         return null
     }
+
+    /**
+     * bags-kit3 (the user's pick, 2026-11-13: "the Character room taps a slot only if it is a matching row"): may the worn [slot] take
+     * the pick the add-on's `itarget` document [doc] says started? Its `wornOk` lists the worn slots of the Bags room's target list
+     * (",5,10,"); a document without it (an older add-on) leaves the game to decide, as before.
+     */
+    fun slotFits(doc: JSONObject?, slot: Int): Boolean {
+        if (doc == null || !doc.has("wornOk")) return true
+        return doc.optString("wornOk").contains(",$slot,")
+    }
 }
