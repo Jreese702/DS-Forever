@@ -8,6 +8,8 @@ import android.view.View
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -35,11 +37,18 @@ class CastBarAskShotsTest {
     private val app get() = RuntimeEnvironment.getApplication()
     private val W = 1240; private val H = 1080 - Strip.HEIGHT
 
-    private fun prompt(answers: MutableList<Boolean>): SetupView {
+    private val PIC_H = 400f
+
+    /** the picture's spells: a level-6 Shaman's book (the player's own bar empty: their first known spells) */
+    private val known = listOf(403 to 136048, 8042 to 136026, 331 to 136052, 324 to 136051, 8017 to 136086, 2484 to 136102,
+        8018 to 136015, 5730 to 135824)
+
+    private fun prompt(answers: MutableList<Boolean>, frames: PreviewStage.AskFrames? = null): SetupView {
         val v = SetupView(app)
+        val f = frames ?: PreviewStage.AskFrames(app, CastBarAsk.pictureBar(null, known, { true }), PIC_H / 1080f)
         v.ask(CompanionSetup.Prompt(Tr.t(CastBarAsk.TITLE), emptyList(), ""), "Yes", "No",
             onYes = { answers.add(true) }, onNo = { answers.add(false) },
-            picture = SetupView.Picture(330f, animated = true) { c, r, t -> SettingsPreview.askPicture(c, r, t) }, cursor = true)
+            picture = SetupView.Picture(PIC_H, animated = true) { c, r, t -> f.draw(c, r, t) }, cursor = true)
         v.measure(View.MeasureSpec.makeMeasureSpec(W, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(H, View.MeasureSpec.EXACTLY))
         v.layout(0, 0, W, H)
         return v
@@ -101,17 +110,70 @@ class CastBarAskShotsTest {
 
     private fun idle() { ShadowSystemClock.advanceBy(Duration.ofMillis(200)); ShadowLooper.idleMainLooper() }
 
+    private fun artRoot() {
+        val root = System.getenv("CLOCK_ART_ROOT") ?: return
+        ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, File(root))
+    }
+
+    /** the game's documents as the stage gets them on the device: the full one (the controller's eight spells, the minimap's place in
+     *  Durotar, the bags), a few chat lines */
+    private fun feedStage() {
+        val icons = listOf(136048, 136026, 135990, 136052, 135813, 136015, 135824, 136075)
+        val n = JSONArray()
+        for (p in 1..8) n.put(JSONObject().put("p", p).put("k", "spell").put("id", 400 + p).put("i", icons[p - 1]))
+        PreviewStage.feedFull(JSONObject().put("type", "full")
+            .put("actionbar", JSONObject().put("hud", JSONObject().put("ok", true).put("page", 1)
+                .put("pages", JSONArray().put(true).put(true).put(true)).put("L", JSONObject().put("n", n)))
+                .put("hudS", JSONObject().put("c", false).put("g", 1000.0)))
+            .put("map", JSONObject().put("ok", true).put("mapID", 1411).put("zone", "Durotar").put("subzone", "Razor Hill")
+                .put("rect", JSONObject().put("c", 1).put("t", 1808.33).put("b", -1716.67).put("l", -1962.5).put("r", -7250.0))
+                .put("x", 0.5177).put("y", 0.4279).put("wx", 300.0).put("wy", -4700.0).put("facing", 2.11))
+            .put("bags", JSONObject().put("money", 1_234_567L).put("freeGeneral", 14).put("free", 14).put("total", 66)))
+        val lines = JSONArray()
+        for ((ch, who, text) in listOf(Triple("say", "Grukk", "anyone up for Burning Blade Coven?"), Triple("guild", "Zalaya", "grats on 6!"),
+                Triple("party", "Mogra", "I'll tank, pull on 3"), Triple("system", "", "You have learned a new spell: Earth Shock."),
+                Triple("say", "Torrik", "lfg Razor Hill quests"))) lines.put(JSONObject().put("ch", ch).put("who", who).put("text", text).put("i", lines.length() + 1))
+        PreviewStage.feedChat(JSONObject().put("lines", lines).put("s", 1))
+    }
+
+    private fun settle() { ShadowLooper.idleMainLooper(); Thread.sleep(300); ShadowSystemClock.advanceBy(Duration.ofMillis(300)); ShadowLooper.idleMainLooper() }
+
+    /** the real Home's frames: every one drawn (both passes), the minimap's tiles decoded between them */
+    @Test fun theFramesAreTheRealHome() {
+        artRoot(); feedStage()
+        val f = PreviewStage.AskFrames(app, CastBarAsk.pictureBar(null, known, { true }), PIC_H / 1080f)
+        var n = 0
+        while (!f.finished && n < 100) { assertTrue(f.advance()); n++; if (n % 6 == 0) settle() }
+        assertTrue(f.done)
+        assertTrue(f.frames.all { it != null })
+        assertEquals((1240 * PIC_H / 1080f).toInt(), f.frames[0]!!.width)
+        // rest and slid away differ (the bar went, the columns grew)
+        assertFalse(f.frames[0]!!.sameAs(f.frames[f.frames.size - 1]))
+    }
+
     @Test fun shots() {
         val d = out ?: return
         d.mkdirs()
-        val v = prompt(ArrayList())
+        artRoot(); feedStage()
+        val f = PreviewStage.AskFrames(app, CastBarAsk.pictureBar(null, known, { true }), PIC_H / 1080f)
+        var n = 0
+        while (!f.finished && n < 100) { f.advance(); n++; if (n % 6 == 0) settle() }
+        settle()
+        val v = prompt(ArrayList(), f)
         v.padOn = true
         val start = SystemClock.uptimeMillis()
-        for ((ms, tag) in listOf(200L to "rest", 1_275L to "mid", 2_000L to "hidden", 2_900L to "back")) {
+        for ((ms, tag) in listOf(200L to "rest", 900L to "fight", 1_275L to "mid", 2_000L to "hidden", 2_900L to "back")) {
             ShadowSystemClock.advanceBy(Duration.ofMillis(start + ms - SystemClock.uptimeMillis()))
             val b = render(v)
             File(d, "ask_prompt_$tag.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
             if (tag == "rest") File(d, "ask_prompt.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        // the picture alone at full size (Home's 1240 x 1080), rest and slid away
+        for ((i, tag) in listOf(0 to "rest", f.frames.size - 1 to "hidden")) {
+            val big = PreviewStage.AskFrames(app, CastBarAsk.pictureBar(null, known, { true }), 1f)
+            var m = 0
+            while (!big.finished && m < 100) { big.advance(); m++; if (m % 6 == 0) settle() }
+            big.frames[i]?.let { b -> File(d, "ask_picture_full_$tag.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
         }
     }
 }

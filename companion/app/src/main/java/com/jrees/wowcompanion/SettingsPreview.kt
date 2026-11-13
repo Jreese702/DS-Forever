@@ -1119,27 +1119,8 @@ object SettingsPreview {
         }
     }
 
-    /** THE ONE-TIME "TRY THE NEW TAP-TO-CAST BAR?" PICTURE (the user, 2026-11-13: "show a little picture with the pop up showing how it
-     *  looks with it animating away in combat"): the same small Home as the In combat row, the bar under BOTH columns (Yes's choice),
-     *  one [ASK_LOOP_S] loop - at rest, a fight starts (the red edge, the swords), the bar slides down behind the page's foot while the
-     *  columns grow into its room, the fight ends and it slides back up. [tMs] the time since the prompt opened */
-    fun askPicture(c: Canvas, r: RectF, tMs: Long) {
-        val p = askPhase(tMs)
-        val th = r.height(); val tw = minOf(r.width(), th * 1.35f)
-        val tb = RectF(r.centerX() - tw / 2f, r.top, r.centerX() + tw / 2f, r.top + th)
-        homeThumb(c, tb, 3, slide = p.slide)
-        if (p.fight > 0f) {
-            UiKit.combatGlow(c, tb, 0.8f * p.fight, 18f)
-            val s = minOf(tb.height() * 0.16f, 44f)
-            val sw = UiKit.tex("combat_swords")
-            pPic.alpha = (255 * p.fight).toInt()
-            val cx = tb.centerX(); val cy = tb.top + tb.height() * 0.15f
-            if (sw != null) c.drawBitmap(sw, null, RectF(cx - s, cy - s * 0.85f, cx + s, cy + s * 0.85f), pPic)
-            else swords(c, cx, cy, s * 0.8f, Color.argb((255 * p.fight).toInt(), Color.red(GOLD), Color.green(GOLD), Color.blue(GOLD)))
-            pPic.alpha = 255
-        }
-    }
-
+    /** THE ONE-TIME "TRY THE NEW TAP-TO-CAST BAR?" PICTURE's loop (the user, 2026-11-13: "show a little picture with the pop up showing
+     *  how it looks with it animating away in combat"; the frames are the real Home's: PreviewStage.AskFrames) */
     /** the ask picture's loop length (s) */
     const val ASK_LOOP_S = 3.6f
 

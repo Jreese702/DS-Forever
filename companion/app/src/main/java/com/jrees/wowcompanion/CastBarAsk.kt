@@ -40,6 +40,26 @@ object CastBarAsk {
         HomeSettings.castBarAsked = true
     }
 
+    // ---------------------------------------------------------------- the picture's spells (the user, 2026-11-13: "make sure that this
+    // pop up uses realistic visuals instead of the renders"): the real Home draws the bar, with real spell icons
+
+    /** a few of the game's own spell icons (fileIDs) for a player with no bar and no Spellbook word yet */
+    val GENERIC_ICONS = listOf(135824, 136048, 136026, 136052, 136051, 136086, 136102, 136015)
+
+    /** the bar the picture shows: the player's own when it has a spell; else their first known spells ([known]: spell id to icon
+     *  fileID, the Spellbook's order); else [generic] icons. [has] = the icon can be drawn on this device (only those are used) */
+    fun pictureBar(live: CastStripModel.Bar?, known: List<Pair<Int, Int>>, has: (Int) -> Boolean,
+                   generic: List<Int> = GENERIC_ICONS): CastStripModel.Bar {
+        if (live != null && live.slots.any { it.id != null && it.icon != null }) return live
+        val n = CastStripModel.SLOTS
+        val picks = known.filter { it.second > 0 && has(it.second) }.take(n).ifEmpty { generic.filter(has).map { it to it }.take(n) }
+            .ifEmpty { generic.take(n).map { it to it } }
+        // a cell of its own (as a built slot: drawn lit, not waiting); the picture's Home never taps (the stage has no tap pad)
+        val slots = (0 until n).map { i -> picks.getOrNull(i)?.let { CastStripModel.Slot(i, it.first, it.second, i, false) }
+            ?: CastStripModel.Slot(i, null, null, null, false) }
+        return CastStripModel.Bar(slots, null, false, "ask", null, n)
+    }
+
     /** the question's words (English; the host translates) */
     const val TITLE = "Try the new tap-to-cast bar?"
 }

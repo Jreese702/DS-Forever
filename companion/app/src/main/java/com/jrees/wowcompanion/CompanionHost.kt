@@ -3629,6 +3629,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var castAskOpen = false          // the question shows, or waits for the controller
     private var castAskReadySince = 0L       // when Home last became ready to ask (0 = not ready)
     private var castAskWaitId = 0
+    private var castAskFrames: PreviewStage.AskFrames? = null   // the picture's frames while it shows (dropped when it closes)
 
     private fun castBarAsk() {
         if (!::setupView.isInitialized || !::startView.isInitialized) return
@@ -3638,13 +3639,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             if (CastBarAsk.hideNow(true, fight, onHome)) {
                 Log.i(HomeView.TAG, "cast bar ask: put away (${if (fight) "a fight" else "Home left"}), asked again later")
                 castAskOpen = false; castAskReadySince = 0L; castAskWaitId++
-                setupView.close(); setupPadOff()
+                setupView.close(); setupPadOff(); castAskFrames?.drop(); castAskFrames = null
             }
             return
         }
         val busy = setupView.visibility == View.VISIBLE || setupWaiting != null || setupBusy || setupLoading ||
             startView.visibility == View.VISIBLE || reloadAt != 0L || loginPrompt.isOpen || newSpellAsking != 0 || newSpellBinding != 0 ||
-            interactView.visibility == View.VISIBLE || dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE
+            interactView.visibility == View.VISIBLE || dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE ||
+            !PreviewStage.ready                                               // the picture is the real Home: the game's documents first
         val inWorld = docCurrent && (GameLife.worldNow || LauncherHooks.pkg == null)
         val now = SystemClock.uptimeMillis()
         if (!CastBarAsk.ready(inWorld, onHome, busy, fight)) castAskReadySince = 0L
@@ -3658,9 +3660,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         castAskOpen = true
         val show = {
+            // the user, 2026-11-13: "make sure that this pop up uses realistic visuals instead of the renders": the real Home in
+            // miniature (PreviewStage's own, fed the game's documents), the bar on Both with the player's spells
+            val known = lastBook?.let { b -> SpellsModel.tabSpells(b).filter { !it.passive && it.icon > 0 }.map { (it.spellId ?: it.actionId) to it.icon } }
+                ?: emptyList()
+            val frames = PreviewStage.AskFrames(this, CastBarAsk.pictureBar(CastStripModel.Live.bar, known, { Icons.get(it) != null }),
+                CAST_ASK_PIC_H / 1080f)
+            castAskFrames = frames
             setupView.ask(CompanionSetup.Prompt(Tr.t(CastBarAsk.TITLE), emptyList(), ""), "Yes", "No",
                 onYes = { castBarAnswer(true) }, onNo = { castBarAnswer(false) },
-                picture = SetupView.Picture(CAST_ASK_PIC_H, animated = true) { c, r, t -> SettingsPreview.askPicture(c, r, t) },
+                picture = SetupView.Picture(CAST_ASK_PIC_H, animated = true) { c, r, t -> frames.draw(c, r, t) },
                 cursor = true)
         }
         // as the new spell question: it shows once the game hands Home the controller (setupHoldAck runs [setupWaiting]), so an A
@@ -3678,10 +3687,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         castAskOpen = false; castAskWaitId++
         CastBarAsk.answer(yes)
         Log.i(HomeView.TAG, "cast bar ask: ${if (yes) "Yes - the bar on Both, Hide in combat" else "No - the bar stays Off"}")
-        setupView.close(); setupPadOff()
+        setupView.close(); setupPadOff(); castAskFrames?.drop(); castAskFrames = null
     }
 
-    private val CAST_ASK_PIC_H = 330f
+    private val CAST_ASK_PIC_H = 400f
 
     /** once a second until the question has been answered (or was never owed); then it stops for good */
     private val castAskTick = object : Runnable {

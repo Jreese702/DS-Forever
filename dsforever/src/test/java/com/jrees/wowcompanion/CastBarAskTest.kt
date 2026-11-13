@@ -137,6 +137,23 @@ class CastBarAskTest {
         assertEquals(hid.slide, again.slide, 0.01f)
     }
 
+    /** the picture's spells (the user: "make sure that this pop up uses realistic visuals"): the player's own bar when it has a spell,
+     *  else their first known spells, else the game's generic icons; only icons this device can draw */
+    @Test fun thePicturesSpells() {
+        val own = CastStripModel.Bar((0 until 8).map { CastStripModel.Slot(it, if (it == 2) 403 else null, if (it == 2) 136048 else null, it, false) },
+            8, false, "cb6")
+        assertEquals(own, CastBarAsk.pictureBar(own, listOf(1 to 2), { true }))
+        val empty = CastStripModel.Bar((0 until 8).map { CastStripModel.Slot(it, null, null, null, false) }, 8, false, "cb6")
+        val known = (1..10).map { 100 + it to 1000 + it }
+        val b = CastBarAsk.pictureBar(empty, known, { it != 1003 })
+        assertEquals(listOf(1001, 1002, 1004, 1005, 1006, 1007, 1008, 1009), b.slots.map { it.icon })
+        assertEquals(8, b.slots.size); assertEquals((0 until 8).toList(), b.slots.map { it.cell })     // drawn lit, as built slots
+        val few = CastBarAsk.pictureBar(null, listOf(7 to 70), { true })
+        assertEquals(listOf(70, null, null), few.slots.take(3).map { it.icon })
+        val none = CastBarAsk.pictureBar(null, emptyList(), { it != CastBarAsk.GENERIC_ICONS[0] })
+        assertEquals(CastBarAsk.GENERIC_ICONS.drop(1), none.slots.mapNotNull { it.icon })
+    }
+
     private class Prefs(val m: HashMap<String, Any?> = HashMap()) : SharedPreferences {
         override fun getAll(): MutableMap<String, *> = m
         override fun getString(k: String?, d: String?) = m[k] as? String ?: d
