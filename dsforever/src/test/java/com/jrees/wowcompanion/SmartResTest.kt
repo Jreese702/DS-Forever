@@ -33,6 +33,7 @@ class SmartResTest {
         """{"type":"party","v":"m151","rs":1,"p":{"on":false,"fight":false,"grp":false,"sel":"off","m":[{"u":"player","i":0,"n":"$name","c":"$cls","dead":false}]}}"""))!!
 
     @Test fun aClassWithNeitherIsOffAndHidden() {
+        GameUi.resetSeenForTest()
         try {
             GameUi.character = "Korvash-Realm"
             assertNull(GameUi.playerClass)
@@ -53,17 +54,41 @@ class SmartResTest {
             GameUi.partySeen(me("WARRIOR"))
             GameUi.character = "Brannoc-Realm"
             assertNull(GameUi.playerClass)
-        } finally { GameUi.character = null }
+        } finally { GameUi.character = null; GameUi.resetSeenForTest() }
         assertNull(GameUi.playerClass)
     }
 
+    /** review 2026-11-13: the party document can come before the padmap's word for the character (a login, a switch) */
+    @Test fun aDocumentBeforeTheCharacterStillCounts() {
+        GameUi.resetSeenForTest()
+        try {
+            GameUi.character = null
+            GameUi.partySeen(me("WARRIOR"))
+            assertNull(GameUi.playerClass)
+            GameUi.character = "Korvash-Realm"
+            assertEquals("WARRIOR", GameUi.playerClass)
+            assertEquals(false, GameUi.swWant(GameUi.SW_SRES))
+            assertNull(GameUi.smartResRow())
+            // a switch to another character: that document is not theirs
+            GameUi.character = "Iselle-Realm"
+            assertNull(GameUi.playerClass)
+            // and the new character's document before a switch back is taken on the switch
+            GameUi.partySeen(me("PRIEST", "Brannoc"))
+            assertNull(GameUi.playerClass)
+            GameUi.character = "Brannoc-Realm"
+            assertEquals("PRIEST", GameUi.playerClass)
+            assertEquals(true, GameUi.swWant(GameUi.SW_SRES))
+        } finally { GameUi.character = null; GameUi.resetSeenForTest() }
+    }
+
     @Test fun aWarriorIsTappedOff() {
+        GameUi.resetSeenForTest()
         val s = GameUi.Sw("uisw", cols, false, false, true, true, allSet + ("sres" to true), sres = true)
         try {
             GameUi.character = "Korvash-Realm"
             GameUi.partySeen(me("WARRIOR"))
             assertEquals(GameUi.SW_SRES to false, GameUi.swNext(s) { if (it == GameUi.SW_SRES) GameUi.swWant(it) else defaults[it]!! })
-        } finally { GameUi.character = null }
+        } finally { GameUi.character = null; GameUi.resetSeenForTest() }
     }
 
     @Test fun itsOwnColumns() {

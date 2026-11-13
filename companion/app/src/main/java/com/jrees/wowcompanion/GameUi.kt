@@ -44,7 +44,7 @@ object GameUi {
     private var hudHTapN = -1
     /** the character now ("Name-Realm", the host's from the padmap); null = not known yet: no HUD row */
     @Volatile var character: String? = null
-        set(v) { if (field != v) { field = v; playerClass = null; reconcile(); changed() } }    // Smart Res: the new character's class comes with its party document
+        set(v) { if (field != v) { field = v; playerClass = classFor(v); reconcile(); changed() } }    // Smart Res: the new character's class (its party document, before or after)
     /** the hub document's cb.hidden; null = an add-on without it (no row) */
     @Volatile private var castBarHidden: Boolean? = null
     /** LATER 25: one of the game's tracking abilities is on (the map document's track: h / m / t = 1) */
@@ -168,10 +168,23 @@ object GameUi {
     /** the host's current party document: you are its "player" entry; a class for another name (a stale document) is not taken */
     fun partySeen(p: PartyModel.Party) {
         val me = p.m.firstOrNull { it.u == "player" } ?: return
+        // review 2026-11-13: kept even with no character yet: a party document that comes before the padmap's word (a login, a character
+        // switch) would otherwise leave the class unknown (the row shown On for a Warrior) until the add-on's next party document
+        seenMe = me.n to me.c
         val who = character ?: return
-        val cls = if (me.n == who.substringBefore('-')) me.c.takeIf { it.isNotBlank() } else null
+        val cls = classFor(who)
         if (cls != playerClass) { playerClass = cls; reconcile(); changed() }
     }
+    /** the last current party document's own entry (name, class token); null = none seen */
+    @Volatile private var seenMe: Pair<String, String>? = null
+    /** [who]'s class from that entry: only when its name is [who]'s (a stale document for another character says nothing) */
+    private fun classFor(who: String?): String? {
+        val me = seenMe ?: return null
+        if (who == null || me.first != who.substringBefore('-')) return null
+        return me.second.takeIf { it.isNotBlank() }
+    }
+    /** tests: forget the party document's entry */
+    fun resetSeenForTest() { seenMe = null; playerClass = null }
     // hub19: the party frames; ON by default since 2026-11-05 (the game hides health from add-ons: its own frames are the real health)
     private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true, SW_WM to false, SW_PARTY to true,
         // hub22: start attack off until chosen; Auto Shot follows the game's own default (on) unless chosen
