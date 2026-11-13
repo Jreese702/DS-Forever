@@ -17,8 +17,13 @@ import org.json.JSONObject
  * itself should have 6 slots for abilities. if its sitting on the right or left, the player should be able to swipe on the bar to move it
  * to the other [side]. to assign to the bar, in the bind menu, where there is the L and R tabs, we will add a third tab if this setting
  * is turned on, showing the 6 slots on that bar."; the pick: 6 abilities in all, the Bind tab shows only those 6): ONE row of 6
- * ([CastStripView]) placed by [Side] ([place]); a swipe toward the other side moves it there ([swipeTo]); the Bind box's Cast bar tab
+ * ([CastStripView]) placed by [Side] ([place]); the Bind box's Cast bar tab
  * ([tabCells], [slotCells]: padtab 39 then 26 / 20-25, Book b56). The Spellbook's own "Cast bar" button is gone (the tab replaces it).
+ * cb4 THREE AT A TIME (the user, 2026-11-13: "make them only show 3 abilities at a time for left or right, and swipe to the other 3. they
+ * should be the same size as the both option"): LEFT / RIGHT show slots 1-3 or 4-6 ([perPage], [slotIndex]) at BOTH's size and spacing
+ * ([slotSide], [slotBox]), two page dots in the well's foot ([dots]); a sideways swipe flips the page either way ([flipTo], the slide
+ * [dragOffset] .. [slideAt]) and no longer moves the bar (the side is set in Settings only). BOTH is unchanged (all 6). The page is kept
+ * for the app's run ([Live.page]).
  * The logic, without the look (unit-tested in dsforever: CastStripModelTest).
  */
 object CastStripModel {
@@ -121,17 +126,39 @@ object CastStripModel {
         val h: Float get() = b - t
     }
 
-    /** slot side, gap and the well's padding for [side] at a bar [barW] wide: LEFT / RIGHT fill their column, BOTH spreads them wider */
-    fun slotSide(side: Side, barW: Float): Float {
-        val max = if (side == Side.BOTH) MAX_SIDE_BOTH else MAX_SIDE_ONE
-        return ((barW - 2 * PAD - GAP * (SLOTS - 1)) / SLOTS).coerceIn(MIN_SIDE, max)
+    // ---------------------------------------------------------------- cb4: the pages (Left / Right show 3 at a time)
+
+    /** cb4: the slots one page shows: LEFT / RIGHT 3 (slots 1-3 or 4-6), BOTH all 6, OFF none */
+    fun perPage(side: Side): Int = when (side) { Side.LEFT, Side.RIGHT -> PAGE; Side.BOTH -> SLOTS; Side.OFF -> 0 }
+
+    /** cb4: the pages [side] has: LEFT / RIGHT 2, BOTH 1 (all 6 at once), OFF 0 */
+    fun pages(side: Side): Int = if (side == Side.OFF) 0 else SLOTS / perPage(side)
+
+    /** cb4: the slot index (0..5) at place [k] (0 = leftmost) on [page] of [side]; -1 = no such place */
+    fun slotIndex(side: Side, page: Int, k: Int): Int {
+        val n = perPage(side)
+        if (k !in 0 until n) return -1
+        return page.coerceIn(0, maxOf(0, pages(side) - 1)) * n + k
     }
 
-    /** the bar's height for [side] on a page [w] wide (0 = none) */
+    /** cb4: the page slot [i] (0..5) is on */
+    fun pageOf(side: Side, i: Int): Int = perPage(side).let { n -> if (n == 0) 0 else (i / n).coerceIn(0, pages(side) - 1) }
+
+    /** the slot side for [side] at a bar [barW] wide: every mode the same size (cb4, the user: "they should be the same size as the both
+     *  option"), at most [MAX_SIDE], smaller only when the bar is too narrow for its row */
+    fun slotSide(side: Side, barW: Float): Float {
+        val n = maxOf(1, perPage(side))
+        return ((barW - 2 * PAD - GAP * (n - 1)) / n).coerceIn(MIN_SIDE, MAX_SIDE)
+    }
+
+    /** the bar's height for [side] on a page [w] wide (0 = none): the slots' row, and on a paged bar the dots' band under it */
     fun height(side: Side, w: Float, gap: Float): Float {
         if (side == Side.OFF) return 0f
-        return slotSide(side, barBox(side, w, 1000f, gap).w) + 2 * PAD
+        return slotSide(side, barBox(side, w, 1000f, gap).w) + 2 * PAD + dotsBand(side)
     }
+
+    /** cb4: the band under a paged bar's slots that holds its dots (0 = one page) */
+    fun dotsBand(side: Side): Float = if (pages(side) > 1) DOTS_H else 0f
 
     /** the bar's box: [side]'s column (LEFT under the chat, RIGHT under the minimap, BOTH under both) above the page's foot */
     private fun barBox(side: Side, w: Float, h: Float, gap: Float): Box {
@@ -156,35 +183,40 @@ object CastStripModel {
     /** the right column (the minimap, its auras, the quest card over it) ends above the bar */
     fun cutsRight(side: Side): Boolean = side == Side.RIGHT || side == Side.BOTH
 
-    /** slot [i]'s box inside a bar [bw] x [bh] (the bar's own px): LEFT / RIGHT packed in the middle, BOTH spread evenly across */
-    fun slotBox(side: Side, i: Int, bw: Float, bh: Float): Box {
-        val s = minOf(slotSide(side, bw), bh - 2 * PAD).coerceAtLeast(MIN_SIDE)
-        val y0 = (bh - s) / 2f
-        val x = if (side == Side.BOTH) {
-            val g = (bw - 2 * PAD - SLOTS * s) / SLOTS                        // an even share each side of every slot
-            PAD + g / 2f + i * (s + g)
-        } else {
-            val gw = s * SLOTS + GAP * (SLOTS - 1)
-            (bw - gw) / 2f + i * (s + GAP)
-        }
+    /** place [k]'s box (0 = leftmost of the page's [perPage]) inside a bar [bw] x [bh] (the bar's own px): spread evenly across, the
+     *  same room at each end as half the room between two (BOTH's look; cb4: LEFT / RIGHT alike) */
+    fun slotBox(side: Side, k: Int, bw: Float, bh: Float): Box {
+        val n = maxOf(1, perPage(side))
+        val row = bh - dotsBand(side)
+        val s = minOf(slotSide(side, bw), row - 2 * PAD).coerceAtLeast(MIN_SIDE)
+        val y0 = (row - s) / 2f
+        val g = (bw - 2 * PAD - n * s) / n                                   // an even share each side of every slot
+        val x = PAD + g / 2f + k * (s + g)
         return Box(x, y0, x + s, y0 + s)
     }
 
-    // ---------------------------------------------------------------- cb3: the swipe
+    /** cb4: the page dots' centres (y, then one x per page) in a bar [bw] x [bh]: in the band under the slots, under the middle;
+     *  null = one page */
+    fun dots(side: Side, bw: Float, bh: Float): Pair<Float, List<Float>>? {
+        val n = pages(side)
+        if (n < 2) return null
+        val y = bh - PAD - dotsBand(side) / 2f + 4f
+        val x0 = bw / 2f - (n - 1) * DOT_STEP / 2f
+        return y to (0 until n).map { x0 + it * DOT_STEP }
+    }
+
+    // ---------------------------------------------------------------- cb4: the swipe flips the page
 
     /**
-     * a finger that went [dx], [dy] px in [ms]: the side the bar moves to, or null (a tap, a slow drag, an upward / downward one, BOTH or
-     * OFF: nothing moves). Only toward the other side: LEFT moves right, RIGHT moves left. A swipe is a mostly-sideways move of at least
-     * [SWIPE_MIN_PX], or a quick flick (at least [FLICK_PX] at [FLICK_PX_PER_MS] or faster)
+     * a finger that went [dx], [dy] px in [ms] on a bar showing [page]: the page it flips to, or null (a tap, a slow drag, an upward /
+     * downward one, BOTH or OFF: nothing flips). Either way flips (there are two pages); it NEVER moves the bar (cb4: the side is set in
+     * Settings only). A swipe is a mostly-sideways move of at least [SWIPE_MIN_PX], or a quick flick (at least [FLICK_PX] at
+     * [FLICK_PX_PER_MS] or faster)
      */
-    fun swipeTo(side: Side, dx: Float, dy: Float, ms: Long): Side? {
-        if (side != Side.LEFT && side != Side.RIGHT) return null
+    fun flipTo(side: Side, page: Int, dx: Float, dy: Float, ms: Long): Int? {
+        if (pages(side) < 2) return null
         if (!isSwipe(dx, dy, ms)) return null
-        return when {
-            side == Side.LEFT && dx > 0 -> Side.RIGHT
-            side == Side.RIGHT && dx < 0 -> Side.LEFT
-            else -> null
-        }
+        return (page.coerceIn(0, pages(side) - 1) + 1) % pages(side)
     }
 
     /** the move is a swipe, not a tap (a tap may wander up to [TAP_SLOP_PX]) */
@@ -197,6 +229,19 @@ object CastStripModel {
 
     /** the finger is not a tap any more (the slot's cast is not sent on its release) */
     fun leftTap(dx: Float, dy: Float): Boolean = kotlin.math.hypot(dx, dy) > TAP_SLOP_PX
+
+    /** cb4, the slide: the shown page's offset while a finger drags it [dx] on a bar [bw] wide (it follows the finger, at most a page) */
+    fun dragOffset(dx: Float, bw: Float): Float = dx.coerceIn(-bw, bw)
+
+    /** cb4, the slide: where the NEW page starts after a flip released at [offset] (the old one goes on the way the finger did, the new
+     *  one comes in behind it from the other end), sliding to 0 */
+    fun flipStart(offset: Float, bw: Float): Float = if (offset < 0f) offset + bw else if (offset > 0f) offset - bw else bw
+
+    /** cb4, the slide: the other page's offset beside the shown one's [offset] (to its right while the shown one goes left) */
+    fun otherOffset(offset: Float, bw: Float): Float = if (offset <= 0f) offset + bw else offset - bw
+
+    /** cb4, the slide: the offset at [t] (0..1) from [from] to 0, eased out */
+    fun slideAt(from: Float, t: Float): Float { val u = 1f - t.coerceIn(0f, 1f); return from * u * u * u }
 
     // ---------------------------------------------------------------- cb3: the Bind box's Cast bar tab (Book b56)
 
@@ -219,8 +264,15 @@ object CastStripModel {
         return (1f - (nowMs - start).toFloat() / dur.toFloat()).coerceIn(0f, 1f)
     }
 
-    const val MAX_SIDE_ONE = 84f        // LEFT / RIGHT: a column's six (cb2's 2 x 6 were 56)
-    const val MAX_SIDE_BOTH = 112f      // BOTH: bigger still, spread across the page
+    /** cb4: a LEFT / RIGHT page's slots (slots 1-3, then 4-6) */
+    const val PAGE = 3
+    /** every mode's slot side (cb4: LEFT / RIGHT the same as BOTH's; cb3's LEFT / RIGHT were 84 at most, 78 on the Thor) */
+    const val MAX_SIDE = 112f
+    const val DOT_R = 3.5f
+    /** cb4: the dots' band under a LEFT / RIGHT bar's slots (the slots keep BOTH's size; the bar is this much taller) */
+    const val DOTS_H = 12f
+    const val DOT_STEP = 14f
+    const val SLIDE_MS = 220L
     const val MIN_SIDE = 8f
     const val GAP = 8f
     const val PAD = 10f
@@ -231,6 +283,8 @@ object CastStripModel {
 
     /** the live bar (the host sets it from every `castbar` document); listeners hear each change */
     object Live {
+        /** cb4: the LEFT / RIGHT page shown (0 = slots 1-3, 1 = 4-6), kept for the app's run (not saved: a new run starts on 1-3) */
+        @Volatile var page: Int = 0
         @Volatile var bar: Bar? = null
             private set
         private val listeners = ArrayList<() -> Unit>()

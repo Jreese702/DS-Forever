@@ -93,10 +93,10 @@ class HomeView(
      * requestLayout every frame was what made the combat switch lag the game).
      */
     private val chatGlideBox = RectF()
-    /** THE TAP-TO-CAST BAR (GitHub #43 cb3, [CastStripModel]): ONE row of 6 under the chat (Left), under the minimap (Right) or under
-     *  both (Both), by Settings > Bottom screen > Tap-to-cast bar (Off by default); a tap = ONE pad tap on the add-on's "castbar" row,
-     *  a swipe on a Left / Right bar moves it to the other side (the setting follows) */
-    private val castStrip = CastStripView(context, { i -> castStripTap(i) }) { to -> castStripSwipe(to) }
+    /** THE TAP-TO-CAST BAR (GitHub #43 cb3, [CastStripModel]): 6 slots, three at a time under the chat (Left) or under the minimap
+     *  (Right), all six under both (Both), by Settings > Bottom screen > Tap-to-cast bar (Off by default); a tap = ONE pad tap on the
+     *  add-on's "castbar" row, a swipe on a Left / Right bar flips to the other three (cb4: it no longer moves the bar) */
+    private val castStrip = CastStripView(context, { i -> castStripTap(i) }) { p -> Log.i(TAG, "cast bar: page ${p + 1}") }
     // CLOSE is added last, so it is drawn above the module it closes
     private val views: Map<Part, View> = linkedMapOf(
         Part.BARS to barsSlot, Part.QUESTS to questPane, Part.CHAT to chatPane, Part.PARTY to partyView, Part.MAP to mapSlot,
@@ -1363,12 +1363,6 @@ class HomeView(
             if ((leftCol && CastStripModel.cutsLeft(side)) || (!leftCol && CastStripModel.cutsRight(side))) cut(p)
         }
         return out
-    }
-
-    /** cb3: a swipe on a Left / Right bar: the setting follows (Left <-> Right); the bar then slides over ([castStripRelay]) */
-    private fun castStripSwipe(to: CastStripModel.Side) {
-        Log.i(TAG, "cast bar: swiped to $to")
-        HomeSettings.castBarSide = to
     }
 
     /** a finger on slot [i]: the slot's cell on the "castbar" row (nothing for an empty / waiting slot) */
