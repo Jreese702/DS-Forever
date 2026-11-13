@@ -188,7 +188,12 @@ class DsForeverScreen(private val context: Context) {
     private fun update() {
         if (!running || hidden) return
         val game = gameDisplay()
-        val target = dm?.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)?.firstOrNull { it.isValid && it.displayId != game }
+        val all = dm?.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)?.filter { it.isValid }.orEmpty()
+        val screens = all.map { Screen(it.displayId, builtIn(it), it.name ?: "") }
+        val pickId = pickScreen(screens, game, shown?.display?.displayId)
+        val target = all.firstOrNull { it.displayId == pickId }
+        // issue #196: every screen seen, so a docked report shows what Android offered and what was picked
+        Log.i(TAG, "screens ${screens.joinToString { "${it.id}:${if (it.builtIn == null) "?" else if (it.builtIn) "in" else "ext"}:${it.name}" }} game $game -> $pickId")
         if (target == null) { shown?.dismiss(); shown = null; Log.i(TAG, "no other screen than the game's ($game)"); return }
         if (shown?.display?.displayId == target.displayId) return
         shown?.dismiss()
@@ -199,8 +204,36 @@ class DsForeverScreen(private val context: Context) {
     /** the host asked to start over (its recreate, e.g. after a permission): a fresh Presentation */
     private fun rebuild() { main.post { shown?.dismiss(); shown = null; update() } }
 
+    /**
+     * issue #196 ("When I connect the Thor to the TV ... it moves the bottom screen to the TV"): since Android 12 the PRESENTATION
+     * list puts EXTERNAL displays (HDMI / USB-C) BEFORE the built-in ones, so the first entry was the TV once one was plugged in, and
+     * the display listener moved DS Forever there. A built-in panel's type through Display.getType() (hidden, read by reflection);
+     * null = unknown, then the name decides (an "HDMI" / "external" / "DisplayPort" / "USB" / "wireless" name = not built in).
+     */
+    private fun builtIn(d: Display): Boolean? {
+        val type = runCatching { Display::class.java.getMethod("getType").invoke(d) as Int }.getOrNull()
+        if (type != null) return type == TYPE_INTERNAL
+        return if (EXTERNAL_NAME.containsMatchIn(d.name ?: "")) false else null
+    }
+
     companion object {
         const val TAG = "DSFORK"
+        /** android.view.Display.TYPE_INTERNAL (hidden constant) */
+        const val TYPE_INTERNAL = 1
+        private val EXTERNAL_NAME = Regex("hdmi|external|displayport|usb|wireless|wifi|cast", RegexOption.IGNORE_CASE)
+
+        /** one presentation display as [pickScreen] sees it; builtIn null = unknown */
+        data class Screen(val id: Int, val builtIn: Boolean?, val name: String)
+
+        /**
+         * the bottom screen's display (issue #196), pure for the tests: never the game's; the one already showing DS Forever while it is
+         * still there (a TV plugged in later never takes it away); else a built-in panel, then an unknown one, an external one last.
+         */
+        fun pickScreen(screens: List<Screen>, game: Int, current: Int?): Int? {
+            val others = screens.filter { it.id != game }
+            if (current != null && others.any { it.id == current }) return current
+            return others.minWithOrNull(compareBy<Screen> { when (it.builtIn) { true -> 0; null -> 1; false -> 2 } }.thenBy { it.id })?.id
+        }
         /** the one DS Forever of the launcher's activity (S5) */
         @Volatile var current: DsForeverScreen? = null; private set
         fun begin(activity: Activity) { if (current == null) current = DsForeverScreen(activity).also { it.start() } }
