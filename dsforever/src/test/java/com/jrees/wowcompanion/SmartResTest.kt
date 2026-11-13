@@ -11,16 +11,60 @@ import org.junit.Test
  * m150 / hub47 SMART RES (the user, 2026-11-13: "There should be an enable smart res toggle setting for party mode to enable pressing
  * dead team members on touch if they are dead and I am playing a class with a res. Similarly a revive pet would be neat." and "Touching
  * the party members lacks any visual feedback making it feel uncertain who im even touching or holding a press for."): the switch on
- * "uisw" 36 / 37 (off by default, its own branch everywhere), the party document's `res` / `pd` (a Hunter's dead pet entry, drawn but
+ * "uisw" 36 / 37 (on by default since the user's pick 2026-11-13: "Smart Res is ON by default, still saved per character (for
+ * classes with a res or Revive Pet; a character whose class has neither shows it off/hidden)"; its own branch everywhere), the party document's `res` / `pd` (a Hunter's dead pet entry, drawn but
  * never counted in the add-on's pick walk), and the press's dip (pure geometry).
  */
 class SmartResTest {
     private val cols = mapOf("PLAYER_SHOW" to 0, "PLAYER_HIDE" to 1, "TARGET_SHOW" to 2, "TARGET_HIDE" to 3, "NP_OFF" to 4, "NP_ON" to 5,
         "PRD_OFF" to 6, "PRD_ON" to 7, "SRES_OFF" to 36, "SRES_ON" to 37)
-    private val defaults = mapOf(GameUi.SW_PLAYER to false, GameUi.SW_TARGET to false, GameUi.SW_NP to true, GameUi.SW_PRD to true, GameUi.SW_SRES to false)
+    private val defaults = mapOf(GameUi.SW_PLAYER to false, GameUi.SW_TARGET to false, GameUi.SW_NP to true, GameUi.SW_PRD to true, GameUi.SW_SRES to true)
     private val allSet = mapOf("player" to true, "target" to true, "np" to true, "prd" to true)
 
-    @Test fun offByDefault() = assertEquals(false, GameUi.swWant(GameUi.SW_SRES))
+    @Test fun onByDefault() = assertEquals(true, GameUi.swWant(GameUi.SW_SRES))
+
+    @Test fun theClassesWithAResOrRevivePet() {
+        for (c in listOf("PRIEST", "PALADIN", "SHAMAN", "DRUID", "HUNTER")) assertEquals(c, true, GameUi.sresClass(c))
+        for (c in listOf("WARRIOR", "ROGUE", "MAGE", "WARLOCK", "DEATHKNIGHT", "MONK", "DEMONHUNTER", "EVOKER")) assertEquals(c, false, GameUi.sresClass(c))
+        assertNull(GameUi.sresClass(null)); assertNull(GameUi.sresClass(""))
+    }
+
+    private fun me(cls: String, name: String = "Korvash") = PartyModel.parseParty(JSONObject(
+        """{"type":"party","v":"m151","rs":1,"p":{"on":false,"fight":false,"grp":false,"sel":"off","m":[{"u":"player","i":0,"n":"$name","c":"$cls","dead":false}]}}"""))!!
+
+    @Test fun aClassWithNeitherIsOffAndHidden() {
+        try {
+            GameUi.character = "Korvash-Realm"
+            assertNull(GameUi.playerClass)
+            GameUi.partySeen(me("WARRIOR"))
+            assertEquals("WARRIOR", GameUi.playerClass)
+            assertEquals(false, GameUi.swWant(GameUi.SW_SRES))
+            assertNull(GameUi.smartResRow())
+            // with Party mode off too: the party document's own entry says the class
+            GameUi.partySeen(me("PRIEST"))
+            assertEquals(true, GameUi.swWant(GameUi.SW_SRES))
+            GameUi.partySeen(me("HUNTER"))
+            assertEquals(true, GameUi.swWant(GameUi.SW_SRES))
+            // a document for another name (a stale one) says nothing: back to not known, the default
+            GameUi.partySeen(me("WARRIOR", "Iselle"))
+            assertNull(GameUi.playerClass)
+            assertEquals(true, GameUi.swWant(GameUi.SW_SRES))
+            // a new character forgets the old one's class
+            GameUi.partySeen(me("WARRIOR"))
+            GameUi.character = "Brannoc-Realm"
+            assertNull(GameUi.playerClass)
+        } finally { GameUi.character = null }
+        assertNull(GameUi.playerClass)
+    }
+
+    @Test fun aWarriorIsTappedOff() {
+        val s = GameUi.Sw("uisw", cols, false, false, true, true, allSet + ("sres" to true), sres = true)
+        try {
+            GameUi.character = "Korvash-Realm"
+            GameUi.partySeen(me("WARRIOR"))
+            assertEquals(GameUi.SW_SRES to false, GameUi.swNext(s) { if (it == GameUi.SW_SRES) GameUi.swWant(it) else defaults[it]!! })
+        } finally { GameUi.character = null }
+    }
 
     @Test fun itsOwnColumns() {
         val s = GameUi.Sw("uisw", cols, false, false, true, true, allSet, sres = false)
@@ -31,11 +75,12 @@ class SmartResTest {
 
     @Test fun tappedOnceAfterAReloadThenSettled() {
         val fresh = GameUi.Sw("uisw", cols, false, false, true, true, allSet, sres = false)
-        assertEquals(GameUi.SW_SRES to false, GameUi.swNext(fresh) { defaults[it]!! })
-        val done = fresh.copy(set = allSet + ("sres" to true))
+        // on by default: the add-on's "off before any tap" is tapped on
+        assertEquals(GameUi.SW_SRES to true, GameUi.swNext(fresh) { defaults[it]!! })
+        val done = fresh.copy(sres = true, set = allSet + ("sres" to true))
         assertNull(GameUi.swNext(done) { defaults[it]!! })
-        val on = GameUi.swNext(done) { if (it == GameUi.SW_SRES) true else defaults[it]!! }
-        assertEquals(GameUi.SW_SRES to true, on)
+        val off = GameUi.swNext(done) { if (it == GameUi.SW_SRES) false else defaults[it]!! }
+        assertEquals(GameUi.SW_SRES to false, off)
         // an older add-on with no switch: never tapped
         assertNull(GameUi.swNext(fresh.copy(sres = null, set = allSet)) { if (it == GameUi.SW_SRES) true else defaults[it]!! })
     }

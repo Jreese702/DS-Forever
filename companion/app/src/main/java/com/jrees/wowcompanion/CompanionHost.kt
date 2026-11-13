@@ -1470,6 +1470,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // 2026-11-04 (the user: logged in on another character, "it showed my hunter as myself in the party"): a party document from the
         // log's history may be another character's; only a CURRENT one is shown (the add-on sends its own within seconds of a login)
         if (!current) return
+        GameUi.partySeen(p)                                                 // Smart Res: this character's class (shown / hidden)
         val live = PartyModel.live
         val wasOn = live.party?.on == true
         if (live.onParty(p, current, SystemClock.uptimeMillis())) partyRedraw()

@@ -44,7 +44,7 @@ object GameUi {
     private var hudHTapN = -1
     /** the character now ("Name-Realm", the host's from the padmap); null = not known yet: no HUD row */
     @Volatile var character: String? = null
-        set(v) { if (field != v) { field = v; reconcile(); changed() } }
+        set(v) { if (field != v) { field = v; playerClass = null; reconcile(); changed() } }    // Smart Res: the new character's class comes with its party document
     /** the hub document's cb.hidden; null = an add-on without it (no row) */
     @Volatile private var castBarHidden: Boolean? = null
     /** LATER 25: one of the game's tracking abilities is on (the map document's track: h / m / t = 1) */
@@ -154,17 +154,35 @@ object GameUi {
     const val SW_NBAR = "nbar"
     /** hub47 SMART RES (the user, 2026-11-13: "There should be an enable smart res toggle setting for party mode to enable pressing dead
      *  team members on touch if they are dead and I am playing a class with a res. Similarly a revive pet would be neat."): a tap on a dead
-     *  party member casts the class's res (PadMap m150); per character (the res is the class's), off by default */
+     *  party member casts the class's res (PadMap m150); per character (the res is the class's). ON BY DEFAULT since 2026-11-13 (the
+     *  user's pick: "Smart Res is ON by default, still saved per character (for classes with a res or Revive Pet; a character whose
+     *  class has neither shows it off/hidden)"); in Party mode or not, as built */
     const val SW_SRES = "sres"
+    /** the classes Smart Res has something for: a res (Priest, Paladin, Shaman, Druid's Rebirth) or Revive Pet (Hunter); PadMap's RES_BY */
+    val SRES_CLASSES = setOf("PRIEST", "PALADIN", "SHAMAN", "DRUID", "HUNTER")
+    /** the class (UnitClass's file token) of [character] from the CURRENT party document's own entry; null = not known yet */
+    @Volatile var playerClass: String? = null
+        private set
+    /** Smart Res for [cls]: true = a res / Revive Pet, false = neither (the row hidden, the switch off), null = the class not known */
+    fun sresClass(cls: String?): Boolean? = cls?.takeIf { it.isNotBlank() }?.let { it.uppercase() in SRES_CLASSES }
+    /** the host's current party document: you are its "player" entry; a class for another name (a stale document) is not taken */
+    fun partySeen(p: PartyModel.Party) {
+        val me = p.m.firstOrNull { it.u == "player" } ?: return
+        val who = character ?: return
+        val cls = if (me.n == who.substringBefore('-')) me.c.takeIf { it.isNotBlank() } else null
+        if (cls != playerClass) { playerClass = cls; reconcile(); changed() }
+    }
     // hub19: the party frames; ON by default since 2026-11-05 (the game hides health from add-ons: its own frames are the real health)
     private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true, SW_WM to false, SW_PARTY to true,
         // hub22: start attack off until chosen; Auto Shot follows the game's own default (on) unless chosen
         SW_ATK to false, SW_SHOT to true, SW_PMODE to true, SW_UFP to true, SW_UFT to true, SW_UFTOT to false, SW_UFHPP to false, SW_UFHPT to false, SW_SHOTF to false, SW_PS to false,
-        SW_PET to true, SW_SRES to false)
+        SW_PET to true, SW_SRES to true)
     /** this character's choice for [part] (its default until one is made); the resource bar's old "HUD mode" choice carries over */
     fun swWant(part: String): Boolean {
         if (part == SW_PMODE) return prefs?.getBoolean("sw.$SW_PMODE", true) ?: true
         if (part == SW_NBAR) return nbarWanted(mode("hud"))
+        // 2026-11-13 (the user's pick): a class with neither a res nor Revive Pet: off, whatever was saved
+        if (part == SW_SRES && sresClass(playerClass) == false) return false
         val who = character ?: return SW_DEFAULT[part] ?: false
         val def = if (part == SW_PRD) prefs?.getBoolean("hud.$who", true) ?: true else SW_DEFAULT[part] ?: false
         return prefs?.getBoolean("sw.$part.$who", def) ?: def
@@ -279,8 +297,9 @@ object GameUi {
     /** QOL > Party (hub25): Party mode, on by default since 1.0.26 */
     fun partyModeRow(): Row? = swRow(PMODE_ID, SW_PMODE, "Party mode", "On: Select turns Party mode on", "Off")
     const val PMODE_ID = "partymode"
-    /** hub47: Controller > Combat helpers, under Party mode: Smart Res (per character, off by default) */
-    fun smartResRow(): Row? = swRow(SRES_ID, SW_SRES, "Smart Res", "On: tap a dead member to res", "Off")
+    /** hub47: Controller > Combat helpers, under Party mode: Smart Res (per character, on by default since 2026-11-13); hidden for a
+     *  class with neither a res nor Revive Pet */
+    fun smartResRow(): Row? = if (sresClass(playerClass) == false) null else swRow(SRES_ID, SW_SRES, "Smart Res", "On: tap a dead member to res", "Off")
     const val SRES_ID = "smartres"
     /** Party mode allowed: Home draws its party module only then */
     fun partyModeOn(): Boolean = swWant(SW_PMODE)
