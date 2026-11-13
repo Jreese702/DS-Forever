@@ -121,6 +121,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segTheme = Array(Theme.presets.size) { RectF() }    // 2026-11-12: Settings > System > Theme (one tile a preset)
     private val segLight = Array(2) { RectF() }
     private val segLowGfx = Array(2) { RectF() }                      // 2026-11-08: Settings > System > Low-memory graphics                       // 1.0.17: Settings > Performance > Lighter mode
+    private val segGameAcct = Array(2) { RectF() }                    // #47: Settings > General > Game account, Ask each time / Remembered
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
     private val segIndoor = Array(2) { RectF() }
     /**
@@ -258,7 +259,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPsTop.toList() + segPq.flatMap { it.toList() } + segDanger.toList() + segFog.toList() + segChat.toList() +
-            segTheme.toList() + segLang.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
+            segTheme.toList() + segLang.toList() + segGameAcct.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
             segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
@@ -293,7 +294,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segLight,
+                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segLight, segGameAcct,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -344,6 +345,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.THEME -> themeGridH()
         SettingsTabs.Block.LIGHTER -> ROW_H + 10f + ROW_H
         SettingsTabs.Block.ACCOUNT -> if (loginRow) ROW_H else 0f
+        SettingsTabs.Block.GAME_ACCOUNT -> ROW_H
         SettingsTabs.Block.HELP -> ROW_H + 10f + ROW_H
         SettingsTabs.Block.STREAMING -> ROW_H
         // zoom out, zoom in, World map (Quest tracking moved to Add-ons > Polestar, 2026-11-12)
@@ -485,6 +487,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 }
                 val lti = segLight.indexOfFirst { it.contains(x, y) }
                 if (lti >= 0) { Settings.lighterMode = lti == 0; invalidate(); return }
+                val gai = segGameAcct.indexOfFirst { it.contains(x, y) }
+                if (gai >= 0) { Settings.gameAccountAsk = gai == 0; invalidate(); return }
                 val lgx = segLowGfx.indexOfFirst { it.contains(x, y) }
                 if (lgx >= 0) { Settings.lowMemGraphics = lgx == 0; invalidate(); return }
                 val thi = segTheme.indexOfFirst { it.contains(x, y) }
@@ -542,6 +546,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 SettingsTabs.Block.THEME -> drawTheme(c, y)
                 SettingsTabs.Block.LIGHTER -> drawLighter(c, y)
                 SettingsTabs.Block.ACCOUNT -> drawAccount(c, y)
+                SettingsTabs.Block.GAME_ACCOUNT -> drawGameAccount(c, y)
                 SettingsTabs.Block.HELP -> drawHelp(c, y)
                 SettingsTabs.Block.STREAMING -> drawStreaming(c, y)
                 SettingsTabs.Block.MAP -> drawMap(c, y)
@@ -697,6 +702,24 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             enabled = true) { box ->
             val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             UiKit.button(c, b, if (saved) "Change" else "Save", UiKit.Button.UP)
+            b
+        }
+        return top + ROW_H
+    }
+
+    /**
+     * General > Account > Game account (#47): Ask each time / Remembered (Settings.gameAccountAsk). Ask = the game's own account picker
+     * at every start (GameConfigWtf clears its remembered pick); never an account name on the row
+     */
+    private fun drawGameAccount(c: Canvas, top: Float): Float {
+        val labels = listOf(Tr.t("Ask each time"), Tr.t("Remembered"))
+        val sw = segW()
+        pBtn.textSize = SEG_TEXT
+        val w = maxOf(sw, labels.maxOf { pBtn.measureText(it) } + SEG_PAD)
+        pBtn.textSize = 27f
+        row(c, top, "Game account", Tr.t("From the next game start"), enabled = true) { box ->
+            val b = RectF(box.right - 16f - w * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, labels, if (Settings.gameAccountAsk) 0 else 1, segGameAcct)
             b
         }
         return top + ROW_H

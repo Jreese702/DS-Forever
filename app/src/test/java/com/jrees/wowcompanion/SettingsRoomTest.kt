@@ -160,25 +160,35 @@ class SettingsRoomTest {
 
     // ---------------------------------------------------------------- the review's findings (2026-11-12)
 
-    /** 1: a part shrunk to 0 px keeps no pressable boxes, and the cursor never stops in it */
+    /**
+     * 1: a part shrunk to 0 px keeps no pressable boxes, and the cursor never stops in it. #47: the Account group always has its Game
+     * account row now, so the group's slice loses the login row and keeps the Game account's two segments; the 0 px case is a slice of
+     * the login block alone
+     */
     @Test fun zeroHeightPartsAreNoStops() {
         val r = room()
         r.show(SettingsTabs.Tab.GENERAL); r.toggle(SettingsTabs.Group.ACCOUNT); lay(r)
         val slice = box(r, SettingsTabs.Group.ACCOUNT).parts.single() as SettingsView
-        val loginBox = slice.focusTargets().single()
+        val before = slice.focusTargets()
+        assertEquals("the login button, then Ask each time / Remembered", 3, before.size)
+        val loginBox = before.first()
         assertTrue(r.pad.targetBoxes().any { it.top >= headBox(r, SettingsTabs.Group.ACCOUNT).bottom && it.height() == loginBox.height() })
-        // the host takes the login row away: measured again (no idle: the group's refresh has not run yet), the slice is 0 px
         val host = SettingsView::class.java.getDeclaredField("hub").apply { isAccessible = true }.get(slice) as SettingsView
+        // a slice of the login block alone: the host takes the login row away, measured again it is 0 px with no stale box
+        val loginOnly = host.slice(setOf(SettingsTabs.Block.ACCOUNT))
+        lay(loginOnly)
+        assertEquals(1, loginOnly.focusTargets().size)
         host.loginRow = false
-        r.measure(View.MeasureSpec.makeMeasureSpec(1240, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1080 - Strip.HEIGHT, View.MeasureSpec.EXACTLY))
-        r.layout(0, 0, 1240, 1080 - Strip.HEIGHT)
-        assertEquals(0, slice.height)
-        assertTrue("no stale login box", slice.focusTargets().isEmpty())
-        val acc = headBox(r, SettingsTabs.Group.ACCOUNT)
-        assertTrue(r.pad.targetBoxes().none { it.top >= acc.bottom && it.bottom <= acc.bottom + 4f })
-        // and once the refresh runs, the empty group is gone with its heading
+        loginOnly.measure(View.MeasureSpec.makeMeasureSpec(1240, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1080 - Strip.HEIGHT, View.MeasureSpec.EXACTLY))
+        loginOnly.layout(0, 0, 1240, loginOnly.measuredHeight)
+        assertEquals(0, loginOnly.height)
+        assertTrue("no stale login box", loginOnly.focusTargets().isEmpty())
+        // the room's Account group: the login row is gone, the Game account row stays (its group and heading with it)
         lay(r)
-        assertEquals(View.GONE, box(r, SettingsTabs.Group.ACCOUNT).box.visibility)
+        val after = slice.focusTargets()
+        assertEquals(2, after.size)
+        assertTrue("no stale login box", after.none { it == loginBox })
+        assertEquals(View.VISIBLE, box(r, SettingsTabs.Group.ACCOUNT).box.visibility)
         assertEquals("no stops on General headings", 0, headingStops(r))
     }
 

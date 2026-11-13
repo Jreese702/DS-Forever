@@ -48,6 +48,8 @@ object SettingsTabs {
         THEME(Group.LOOK, "Theme", listOf("Theme")),
         LANGUAGE(Group.LOOK, "Language", listOf("Language")),
         ACCOUNT(Group.ACCOUNT, "Battle.net login", listOf("Battle.net login")),
+        // #47: several game accounts on one Battle.net login - the game's own picker each time, or its remembered pick
+        GAME_ACCOUNT(Group.ACCOUNT, "Game account", listOf("Game account")),
         HELP(Group.HELP, "Help", listOf("Problem report", "Reload game UI")),
         COMPANION(Group.HELP, "Companion", listOf("Status"), Drawer.GAME_UI),
         // ---- Bottom screen (the old Home tab)

@@ -61,7 +61,7 @@ class SettingsTabsTest {
     @Test fun everyRowInItsApprovedGroup() {
         val want: Map<G, List<String>> = mapOf(
             G.LOOK to listOf("Theme", "Language"),
-            G.ACCOUNT to listOf("Battle.net login"),
+            G.ACCOUNT to listOf("Battle.net login", "Game account"),
             G.HELP to listOf("Problem report", "Reload game UI", "Status"),
             G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Focused quest", "DS WoW toolbar"),
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
@@ -117,7 +117,9 @@ class SettingsTabsTest {
                 "Build in the background", "Progress", "Route data", "Language", "Reload game UI", "Battle.net login", "Problem report",
                 "Lighter mode", "Low-memory graphics", "Stream settings", "Status") +
             // drawn before but in no block's list: GameUiSection's QOL Combat / Party groups, Add-ons > Polestar's top-screen row
-            listOf("Start attack on hostile target", "Combat Auto Shot", "Party mode", "Polestar on the top screen")
+            listOf("Start attack on hostile target", "Combat Auto Shot", "Party mode", "Polestar on the top screen") +
+            // new since the six tabs: General > Account > Game account (#47)
+            listOf("Game account")
         val now = B.values().flatMap { it.rows }
         assertEquals(before.toSet(), now.toSet())
         assertEquals("a row in two places", now.size, now.toSet().size)
@@ -191,7 +193,7 @@ class SettingsTabsTest {
     }
 
     @Test fun settingsViewDrawsItsOwnBlocksOnly() {
-        assertEquals(listOf(B.THEME, B.LANGUAGE, B.ACCOUNT, B.HELP), SettingsTabs.viewBlocks(T.GENERAL))   // + the status (GameUiSection)
+        assertEquals(listOf(B.THEME, B.LANGUAGE, B.ACCOUNT, B.GAME_ACCOUNT, B.HELP), SettingsTabs.viewBlocks(T.GENERAL))   // + the status (GameUiSection)
         assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.BOTTOM))                            // under Home's section
         assertEquals(listOf(B.POLESTAR_TOP), SettingsTabs.viewBlocks(T.TOP))                              // the rest: GameUiSection
         assertEquals(listOf(B.CONTROLLER, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT, B.SMART_Y),

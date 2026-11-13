@@ -190,6 +190,16 @@ object Settings {
         get() = prefs?.takeIf { it.contains("lowMemGraphics") }?.getBoolean("lowMemGraphics", false) ?: DeviceTier.lowMemory()
         set(v) { prefs?.edit()?.putBoolean("lowMemGraphics", v)?.apply(); changed() }
 
+    /**
+     * GAME ACCOUNT (GitHub #47, 1.0.16 report: "i have more than1 account linked to my battle netaccount and cannot change which one to
+     * use"): true = "Ask each time" - before every start GameConfigWtf clears the game's remembered game-account choice in Config.wtf,
+     * so the game's own account-select screen comes up and the player picks there with the pad. False (the default) = "Remembered":
+     * Config.wtf as the game left it. No account name is ever read into, stored in or logged by DS Forever.
+     */
+    var gameAccountAsk: Boolean
+        get() = prefs?.getBoolean("gameAccountAsk", false) ?: false
+        set(v) { if (v != gameAccountAsk) { prefs?.edit()?.putBoolean("gameAccountAsk", v)?.apply(); changed() } }
+
     var indoorBuild: Boolean
         get() = prefs?.getBoolean("indoorBuild", true) ?: true
         set(v) { if (v != indoorBuild) { prefs?.edit()?.putBoolean("indoorBuild", v)?.apply(); changed() } }
