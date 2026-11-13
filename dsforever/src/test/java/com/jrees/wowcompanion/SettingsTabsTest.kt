@@ -48,7 +48,7 @@ class SettingsTabsTest {
 
     /** every group in its tab, in the approved order (QuestTrail's only while a copy is installed, as before) */
     @Test fun groupsInTheApprovedOrder() {
-        assertEquals(listOf("Look", "Account", "Help"), SettingsTabs.groups(T.GENERAL).map { it.heading })
+        assertEquals(listOf("Setup", "Look", "Account", "Help"), SettingsTabs.groups(T.GENERAL).map { it.heading })
         assertEquals(listOf("Home", "Map", "Chat"), SettingsTabs.groups(T.BOTTOM).map { it.heading })
         assertEquals(listOf("Your HUD", "Target", "Party", "Navigation", "Game windows"), SettingsTabs.groups(T.TOP).map { it.heading })
         assertEquals(listOf("Buttons", "Wheels", "Smart Y", "Combat helpers"), SettingsTabs.groups(T.CONTROLLER).map { it.heading })
@@ -60,6 +60,7 @@ class SettingsTabsTest {
     /** every row's tab and group, exactly as approved (the D-pad walks them in this order) */
     @Test fun everyRowInItsApprovedGroup() {
         val want: Map<G, List<String>> = mapOf(
+            G.SETUP to listOf("Setup"),
             G.LOOK to listOf("Theme", "Language"),
             G.ACCOUNT to listOf("Battle.net login"),
             G.HELP to listOf("Problem report", "Reload game UI", "Status"),
@@ -87,7 +88,7 @@ class SettingsTabsTest {
             G.STREAMING to listOf("Stream settings"))
         for (g in G.values()) assertEquals(g.heading, want[g], B.values().filter { it.group == g }.flatMap { it.rows })
         // and each group's tab
-        val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP), T.BOTTOM to listOf(G.HOME, G.MAP, G.CHAT),
+        val tabOf = mapOf(T.GENERAL to listOf(G.SETUP, G.LOOK, G.ACCOUNT, G.HELP), T.BOTTOM to listOf(G.HOME, G.MAP, G.CHAT),
             T.TOP to listOf(G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
             T.ADDONS to listOf(G.POLESTAR, G.SPOKEN, G.QUESTTRAIL, G.MANNERS), T.PERFORMANCE to listOf(G.FRAMES, G.MEMORY, G.INDOOR, G.STREAMING))
         for ((t, gs) in tabOf) assertEquals(t.label, gs, G.values().filter { it.tab == t })
@@ -117,7 +118,9 @@ class SettingsTabsTest {
                 "Build in the background", "Progress", "Route data", "Language", "Reload game UI", "Battle.net login", "Problem report",
                 "Lighter mode", "Low-memory graphics", "Stream settings", "Status") +
             // drawn before but in no block's list: GameUiSection's QOL Combat / Party groups, Add-ons > Polestar's top-screen row
-            listOf("Start attack on hostile target", "Combat Auto Shot", "Party mode", "Polestar on the top screen")
+            listOf("Start attack on hostile target", "Combat Auto Shot", "Party mode", "Polestar on the top screen") +
+            // #170: new since (the Setup presets' tiles)
+            listOf("Setup")
         val now = B.values().flatMap { it.rows }
         assertEquals(before.toSet(), now.toSet())
         assertEquals("a row in two places", now.size, now.toSet().size)
@@ -143,7 +146,7 @@ class SettingsTabsTest {
         for (t in T.values()) if (t.folds) assertEquals(t.label, setOf(SettingsTabs.groups(t).first()), SettingsTabs.openOnShow(t))
         // the user, 2026-11-12: "the general tab doesnt need the folding sections": every General group always open
         assertEquals(false, T.GENERAL.folds)
-        assertEquals(setOf(G.LOOK, G.ACCOUNT, G.HELP), SettingsTabs.openOnShow(T.GENERAL))
+        assertEquals(setOf(G.SETUP, G.LOOK, G.ACCOUNT, G.HELP), SettingsTabs.openOnShow(T.GENERAL))
         assertEquals(T.values().filter { it != T.GENERAL }, T.values().filter { it.folds })
         assertEquals(setOf(G.HUD), SettingsTabs.openOnShow(T.TOP))
     }
@@ -191,7 +194,7 @@ class SettingsTabsTest {
     }
 
     @Test fun settingsViewDrawsItsOwnBlocksOnly() {
-        assertEquals(listOf(B.THEME, B.LANGUAGE, B.ACCOUNT, B.HELP), SettingsTabs.viewBlocks(T.GENERAL))   // + the status (GameUiSection)
+        assertEquals(listOf(B.SETUP, B.THEME, B.LANGUAGE, B.ACCOUNT, B.HELP), SettingsTabs.viewBlocks(T.GENERAL))   // + the status (GameUiSection)
         assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.BOTTOM))                            // under Home's section
         assertEquals(listOf(B.POLESTAR_TOP), SettingsTabs.viewBlocks(T.TOP))                              // the rest: GameUiSection
         assertEquals(listOf(B.CONTROLLER, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT, B.SMART_Y),

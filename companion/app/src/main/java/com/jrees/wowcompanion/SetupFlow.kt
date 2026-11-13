@@ -82,6 +82,8 @@ object SetupFlow {
         val lastCrash: String? = null,
         /** the Polestar quest guide has not been answered yet (PolestarGuide.ask; the user, 2026-11-12): its one question */
         val polestarAsk: Boolean = false,
+        /** #170: the one-time Setup picker is owed (Settings.setupAsked not set): Classic / Balanced / Full / Keep current */
+        val setupAsk: Boolean = false,
     )
 
     enum class Action {
@@ -106,10 +108,13 @@ object SetupFlow {
         /** the saved report's note: open its GitHub issue, or dismiss it */
         REPORT_OPEN, REPORT_DISMISS,
         /** 2026-11-12 (the user: "give a prompt asking players if they want to use the new polestar quest guide integration"): Yes / No */
-        POLESTAR_YES, POLESTAR_NO
+        POLESTAR_YES, POLESTAR_NO,
+        /** #170 (a player's "juste milieu"): the one-time Setup picker - a preset (SetupPresets), or Keep current (B too) */
+        SETUP_CLASSIC, SETUP_BALANCED, SETUP_FULL, SETUP_KEEP
     }
     data class Button(val label: String, val action: Action, val enabled: Boolean = true)
-    data class Prompt(val id: String, val title: String, val text: String, val buttons: List<Button>)
+    /** [back] = what B presses on this pop-up (null: B goes back to the start-up chooser, as everywhere else) */
+    data class Prompt(val id: String, val title: String, val text: String, val buttons: List<Button>, val back: Action? = null)
     /** [play] null = no Play (the game runs); [line] = one status line under it; [report] = the small "Report a problem" with Play */
     data class Screen(val prompt: Prompt?, val play: Button?, val line: String, val report: Button? = null)
 
@@ -262,6 +267,14 @@ object SetupFlow {
         else -> null
     }
 
+    const val SETUP_TITLE = "Choose your setup"
+    val SETUP_BUTTONS = listOf(Button("Classic", Action.SETUP_CLASSIC), Button("Balanced", Action.SETUP_BALANCED),
+        Button("Full", Action.SETUP_FULL), Button("Keep current", Action.SETUP_KEEP))
+    /** the preset a Setup button picks (null: Keep current, or not a Setup button) */
+    fun setupPreset(a: Action): SetupPresets.Preset? = when (a) {
+        Action.SETUP_CLASSIC -> SetupPresets.Preset.CLASSIC; Action.SETUP_BALANCED -> SetupPresets.Preset.BALANCED
+        Action.SETUP_FULL -> SetupPresets.Preset.FULL; else -> null }
+
     fun screen(i: Inputs): Screen {
         if (i.gameRunning) return Screen(signInPrompt(i), null, "")
         // TEST8 13:24:46: during a restart the bottom's Play came back with the launcher and a launch started before the restart's own
@@ -306,6 +319,9 @@ object SetupFlow {
             !i.loginSaved && !i.loginSkipped -> Prompt("login", "Your Battle.net login",
                 "Save it once and the game signs you in by itself. It stays encrypted on this device.",
                 listOf(Button("Enter login", Action.ENTER_LOGIN), Button("Play without", Action.SKIP_LOGIN)))
+            // #170: the Setup picker, asked once, before the Polestar question (Classic answers it: Vanilla); never holds Play.
+            // Not answered: nothing changes and it comes back at the next start. Terse: a title and the buttons; B = Keep current
+            i.setupAsk -> Prompt("setup", SETUP_TITLE, "", SETUP_BUTTONS, back = Action.SETUP_KEEP)
             // the user, 2026-11-12: the Polestar quest guide, asked once (a title and two buttons: the terse rule); never holds Play.
             // Not answered: Polestar stays as it is (fetched ahead, not moved in) and the question comes back at the next start
             i.polestarAsk -> Prompt("polestar", PolestarGuide.TITLE, "",

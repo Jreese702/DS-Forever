@@ -190,6 +190,14 @@ object Settings {
         get() = prefs?.takeIf { it.contains("lowMemGraphics") }?.getBoolean("lowMemGraphics", false) ?: DeviceTier.lowMemory()
         set(v) { prefs?.edit()?.putBoolean("lowMemGraphics", v)?.apply(); changed() }
 
+    /**
+     * #170: the one-time Setup picker (SetupFlow's "setup" prompt) was answered - a preset picked (here or in Settings > General) or
+     * kept with B. No prefs (the off-device tests without their own) = answered: no prompt
+     */
+    var setupAsked: Boolean
+        get() = prefs?.getBoolean("setupAsked170", false) ?: true
+        set(v) { if (v != setupAsked) { prefs?.edit()?.putBoolean("setupAsked170", v)?.apply(); changed() } }
+
     var indoorBuild: Boolean
         get() = prefs?.getBoolean("indoorBuild", true) ?: true
         set(v) { if (v != indoorBuild) { prefs?.edit()?.putBoolean("indoorBuild", v)?.apply(); changed() } }

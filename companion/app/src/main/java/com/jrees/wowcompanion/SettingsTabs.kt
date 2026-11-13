@@ -26,7 +26,8 @@ object SettingsTabs {
 
     /** a heading that folds (the user's pick: a tab opens with its FIRST group open, the rest folded) */
     enum class Group(val tab: Tab, val heading: String) {
-        LOOK(Tab.GENERAL, "Look"), ACCOUNT(Tab.GENERAL, "Account"), HELP(Tab.GENERAL, "Help"),
+        // #170: the Setup presets first (a player who gets lost starts here)
+        SETUP(Tab.GENERAL, "Setup"), LOOK(Tab.GENERAL, "Look"), ACCOUNT(Tab.GENERAL, "Account"), HELP(Tab.GENERAL, "Help"),
         HOME(Tab.BOTTOM, "Home"), MAP(Tab.BOTTOM, "Map"), CHAT(Tab.BOTTOM, "Chat"),
         HUD(Tab.TOP, "Your HUD"), TARGET(Tab.TOP, "Target"), PARTY(Tab.TOP, "Party"), NAVIGATION(Tab.TOP, "Navigation"),
         WINDOWS(Tab.TOP, "Game windows"),
@@ -44,6 +45,8 @@ object SettingsTabs {
     enum class Block(val group: Group, val heading: String, val rows: List<String>, val drawer: Drawer = Drawer.VIEW,
                      val subHead: Boolean = false) {
         // ---- General
+        // #170 (a player's "juste milieu" between the launcher and full DS Forever): Classic / Balanced / Full, the theme's tiles
+        SETUP(Group.SETUP, "Setup", listOf("Setup")),
         // 2026-11-12 (the user: "an oled theme, but different color variations for menus"): the theme picker, the language under it
         THEME(Group.LOOK, "Theme", listOf("Theme")),
         LANGUAGE(Group.LOOK, "Language", listOf("Language")),

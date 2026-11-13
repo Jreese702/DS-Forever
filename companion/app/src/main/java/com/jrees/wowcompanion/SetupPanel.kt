@@ -29,6 +29,7 @@ class SetupPanel(context: Context) : View(context) {
     private val refresh: () -> Unit = { post { update() } }
 
     init {
+        SetupPresets.init(context)            // #170: the Setup picker's pick writes GameUi's and Settings' stores
         androidx.core.view.ViewCompat.addAccessibilityAction(this, SPEAKER_LABEL) { _, _ ->
             screen?.report?.takeIf { it.enabled }?.let { SetupBridge.press(it.action); true } ?: false
         }
@@ -207,6 +208,14 @@ class SetupPanel(context: Context) : View(context) {
     /** one key from a game controller (before Play: the launcher's activity; true = the panel's) */
     fun key(code: Int, down: Boolean): Boolean {
         if (visibility != VISIBLE) return false
+        // #170: a pop-up with its own B (the Setup picker's Keep current) takes B, its press and its release, instead of the chooser's back
+        if (code == KeyEvent.KEYCODE_BUTTON_B) {
+            val back = screen?.takeIf { SetupFlow.padDriven(it) }?.prompt?.back ?: return false
+            if (down) {
+                buttons.indexOfFirst { it.second.action == back }.takeIf { it >= 0 }?.let { act(it) } ?: SetupBridge.press(back)
+            }
+            return true
+        }
         val handled = code in KEYS
         if (!handled || !down) return handled
         val live = live()
