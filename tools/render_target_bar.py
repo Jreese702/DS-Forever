@@ -15,7 +15,10 @@ frame the code places: Trail.lua's WC.rings.barAnchor (at8 on), else at7's offse
 uf18 (2026-11-13) adds: prompt (the Y glyph prompt right of the bar), icons (Trail's skull + '!' on the bar), and three SCENE shots with a
 stand-in nameplate low on the screen: fly_0 (the plate's first frame: the copy over it, the plate hidden), fly_50 (half way, FLY_S / 2),
 landed (the bar shown, the bobbing red arrow where the plate was, PadMap's floating Y glyph with Hub's corner spyglass). The rim pieces
-drawn NEAREST when the code asks for that filter (uf18's crisp pass), else BILINEAR; atlases without art are labelled placeholders."""
+drawn NEAREST when the code asks for that filter (uf18's crisp pass), else BILINEAR; atlases without art are labelled placeholders.
+uf20 (hub49, the smooth rim): our own rim art (WowCompanion/Media/hud_rim_<s>.tga) is drawn from the Media file; draw(..., phys=PX) draws
+at ONE PHYSICAL PIXEL per image pixel (the crop on the pixel grid) and samples every texture the way the GPU does (bilinear at each
+pixel's centre with no mipmaps, or NEAREST), so a magnified or a stair-stepped rim shows as it would on the screen (tools/render_rim.py)."""
 import os
 import subprocess
 import sys
@@ -240,9 +243,20 @@ def shoot(hub_src, trail_src, opts):
 _art = {}
 
 
+MEDIA_DIR = os.path.dirname(TINT_TGA)
+
+
+def is_art(name):
+    return name in ART or "hud_rim_" in name
+
+
 def art(name):
     if name not in _art:
         from PIL import Image
+        if "hud_rim_" in name:                                       # uf20: our own rim, from the Media folder
+            p = os.path.join(MEDIA_DIR, name.split("\\")[-1] + ".tga")
+            _art[name] = Image.open(p).convert("RGBA") if os.path.exists(p) else None
+            return _art[name]
         p = os.path.join(ART_DIR, ART.get(name, "-"))
         _art[name] = Image.open(p).convert("RGBA") if os.path.exists(p) else None
     return _art[name]
@@ -257,17 +271,55 @@ def lua4(t):
         return None
 
 
-def draw(items, tint, hp, path, title, notes, pads=(120, 70, 130), scale=None):
+def gpu_sample(src, w, h, nearest, ox=0.0, oy=0.0):
+    """src (a PIL RGBA piece) drawn over w x h screen pixels as the GPU does: each pixel's centre mapped into the piece, then NEAREST
+    or bilinear between the four texels round it (clamped at the piece's edge), no mipmaps; premultiplied. ox / oy: the rect's fraction
+    of a pixel (a rect off the grid)."""
+    import numpy as np
+    from PIL import Image
+    a = np.asarray(src, dtype=np.float64) / 255.0
+    a[..., :3] *= a[..., 3:4]
+    ph_, pw_ = a.shape[:2]
+    u = (np.arange(w) + 0.5 - ox) / max(w, 1e-9) * pw_
+    v = (np.arange(h) + 0.5 - oy) / max(h, 1e-9) * ph_
+    if nearest:
+        xi = np.clip(np.floor(u).astype(int), 0, pw_ - 1)
+        yi = np.clip(np.floor(v).astype(int), 0, ph_ - 1)
+        out = a[yi][:, xi]
+    else:
+        u, v = u - 0.5, v - 0.5
+        x0 = np.floor(u).astype(int)
+        y0 = np.floor(v).astype(int)
+        fx = (u - x0)[None, :, None]
+        fy = (v - y0)[:, None, None]
+        xa, xb = np.clip(x0, 0, pw_ - 1), np.clip(x0 + 1, 0, pw_ - 1)
+        ya, yb = np.clip(y0, 0, ph_ - 1), np.clip(y0 + 1, 0, ph_ - 1)
+        out = (a[ya][:, xa] * (1 - fx) * (1 - fy) + a[ya][:, xb] * fx * (1 - fy)
+               + a[yb][:, xa] * (1 - fx) * fy + a[yb][:, xb] * fx * fy)
+    al = out[..., 3:4]
+    rgb = np.where(al > 1e-6, out[..., :3] / np.maximum(al, 1e-6), 0)
+    return Image.fromarray(np.clip(np.round(np.concatenate([rgb, al], axis=2) * 255), 0, 255).astype(np.uint8), "RGBA")
+
+
+def draw(items, tint, hp, path, title, notes, pads=(120, 70, 130), scale=None, phys=None):
     from PIL import Image, ImageDraw, ImageFont
     pad_x, pad_top, pad_bot = pads
     L0, T0 = hp[0] - pad_x, hp[3] + pad_top                          # the crop's top-left in UI units (y up)
     Wc, Hc = int(hp[2] - hp[0] + 2 * pad_x), int(pad_top + (hp[3] - hp[1]) + pad_bot)
     S = scale or SCALE
-    img = Image.new("RGBA", (Wc * S, Hc * S))
+    if phys:                                                         # uf20: one physical pixel per image pixel, the crop on the grid
+        S = 1.0 / phys
+        L0 = round(L0 / phys) * phys
+        T0 = round(T0 / phys) * phys
+        Wc, Hc = int(round(Wc * S)), int(round(Hc * S))
+        S_img = 1
+    else:
+        S_img = S
+    img = Image.new("RGBA", (Wc * S_img, Hc * S_img))
     g = ImageDraw.Draw(img)
-    for y in range(Hc * S):
-        k = y / (Hc * S)
-        g.line([(0, y), (Wc * S, y)], fill=(int(46 + 20 * k), int(60 + 22 * k), int(52 + 6 * k), 255))
+    for y in range(Hc * S_img):
+        k = y / (Hc * S_img)
+        g.line([(0, y), (Wc * S_img, y)], fill=(int(46 + 20 * k), int(60 + 22 * k), int(52 + 6 * k), 255))
 
     def px(x, y):
         return ((x - L0) * S, (T0 - y) * S)
@@ -278,7 +330,10 @@ def draw(items, tint, hp, path, title, notes, pads=(120, 70, 130), scale=None):
         w, h = int(round(x1 - x0)), int(round(y1 - y0))
         if w <= 0 or h <= 0 or src is None:
             return
-        im = src.resize((w, h), Image.NEAREST if nearest else Image.BILINEAR)
+        if phys:                                                     # the GPU's own sampling, the rect where the code put it
+            im = gpu_sample(src, w, h, nearest)
+        else:
+            im = src.resize((w, h), Image.NEAREST if nearest else Image.BILINEAR)
         if tintc is not None or alpha < 1:
             rr, gg, bb, aa = im.split()
             if tintc is not None:
@@ -322,14 +377,14 @@ def draw(items, tint, hp, path, title, notes, pads=(120, 70, 130), scale=None):
             tw = od.textlength(tx, font=fz)
             jh = it.get("jh") or "CENTER"
             x = x0 if jh == "LEFT" else (x1 - tw if jh == "RIGHT" else (x0 + x1 - tw) / 2)
-            od.text((x, (y0 + y1) / 2), tx, font=fz, fill=col, anchor="lm", stroke_width=S, stroke_fill=(0, 0, 0, col[3]))
+            od.text((x, (y0 + y1) / 2), tx, font=fz, fill=col, anchor="lm", stroke_width=max(1, int(round(S))), stroke_fill=(0, 0, 0, col[3]))
             continue
         tintc = rt._lua_list(it.get("col")) or rt._lua_list(it.get("sbc"))
         ct, at, tex = rt._lua_list(it.get("ct")), it.get("atlas"), it.get("tex")
         name = str(at or tex or "")
         if name.startswith("atlas:"):
             name = name[6:]
-        src = art(name) if name in ART else None
+        src = art(name) if is_art(name) else None
         coord = lua4(it.get("coord"))
         if ct:
             c = list(ct)

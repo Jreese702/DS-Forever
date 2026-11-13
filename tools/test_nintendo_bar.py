@@ -406,8 +406,8 @@ def main():
     abs_src = open(AB, encoding="utf-8").read()
     hub_src = open(HUB, encoding="utf-8").read()
     chk("nbar2 / hub46 / uf17: the header notes quote the issue", "issue #195" in abs_src.split("\n", 6)[1] + abs_src.split("\n", 6)[2]
-        and "nbar2 (review of nbar1, issue #195" in abs_src and 'local HV = "hub48"' in hub_src and "hub47:" in hub_src and "hub45: THE NINTENDO BAR" in hub_src
-        and "hub46: ONE GLYPH RULE (issue #195" in hub_src and 'V = "uf19"' in hub_src)
+        and "nbar2 (review of nbar1, issue #195" in abs_src and 'local HV = "hub49"' in hub_src and "hub47:" in hub_src and "hub45: THE NINTENDO BAR" in hub_src
+        and "hub46: ONE GLYPH RULE (issue #195" in hub_src and 'V = "uf20"' in hub_src)
     # ------------------------------------------------------------ the switch round trip (Hub's "uisw")
     sw_row = G.ROWS["uisw"]
     chk("hub45: Hub registered its switch row", sw_row is not None)
