@@ -106,6 +106,17 @@ class HomeRadialView(
     var onClosed: (() -> Unit)? = null
     var underRedraw: (() -> Unit)? = null
     private var slot: RectF? = null
+    /**
+     * fix/radials-clip-castbar (the user on 1.0.32-1469: "The spells and ds tool bar radials both also clip that bar"): Home laid its page
+     * again under the open wheel (a fight began or ended) and fitted the wheel anew ([r], this view's coordinates): above Both's bar,
+     * the bar in Left / Right parted away with its column. Only while the wheel is open in Home's slot.
+     */
+    fun reslot(r: RectF) {
+        if (!isOpen || slot == null) return
+        slot = RectF(r)
+        invalidate(); underRedraw?.invoke()
+    }
+
     /** the wheel sliding back down into the bar after it has gone (the controller already let go): since (uptime ms), in that slot */
     private var leaveAt = 0L
     private var leaveSlot: RectF? = null
