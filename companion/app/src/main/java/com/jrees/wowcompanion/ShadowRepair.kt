@@ -99,6 +99,20 @@ object ShadowRepair {
      *  in the shadow, as a private folder of links - never a link to a shared flavor folder) */
     fun rootLinks(gameRoot: File, flavors: Set<String>): List<File> = gameRoot.listFiles()?.filter { it.name !in flavors }.orEmpty()
 
+    /**
+     * THE ENTRIES THE GAME MAKES ITSELF, MADE SHARED FIRST (the user relaying a player, 2026-11-13: "the buttons and map show 'waiting for
+     * game' and are blank"; issue #231's "shadow Logs: REAL dir"): the shadow links only what the shared flavor folder HAS when the game
+     * starts. A folder without Logs (a fresh install, a folder copied from a PC without it) had the client make Logs as a REAL private
+     * folder: General.log went there, the companion's reader (the shared Logs/General.log) never saw an add-on document that run, and the
+     * bottom screen waited for the game. So the shared flavor folder gets these (empty) folders before the links are made: Logs (the
+     * companion's channel), WTF (the saved settings, test22) and Interface (the add-ons). Returns the names made.
+     */
+    val ALWAYS_SHARED = listOf("Logs", "WTF", "Interface")
+    fun ensureShared(sharedFlavor: File): List<String> = ALWAYS_SHARED.filter { n ->
+        val f = File(sharedFlavor, n)
+        !f.exists() && f.mkdirs()
+    }
+
     /** the backup folder for a repair started at [nowMs] */
     fun backupRoot(documents: File, nowMs: Long): File =
         File(documents, "WoW-AddOns-backup/shadow-" + java.text.SimpleDateFormat("yyyy-MM-dd_HHmmss", java.util.Locale.US).format(java.util.Date(nowMs)))

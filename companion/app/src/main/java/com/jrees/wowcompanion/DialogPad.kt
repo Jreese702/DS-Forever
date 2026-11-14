@@ -13,8 +13,10 @@ object DialogPad {
     class B(val k: Int, val on: Boolean, val cell: Int)
 
     /** the button number [key] answers on a dialog, or null */
-    fun dialogButton(key: String, buttons: List<B>, delayed: Boolean, quit: Boolean): Int? {
-        val k = when (key) { "PAD1" -> 1; "PAD2" -> 2; else -> return null }
+    fun dialogButton(key: String, buttons: List<B>, delayed: Boolean, quit: Boolean, safe: Int = 0, never: Int = 0): Int? {
+        // d33: a pop-up with a safe answer: A and B are that answer, the never-button is no answer at all
+        val k = if (safe > 0 && (key == "PAD1" || key == "PAD2")) safe else when (key) { "PAD1" -> 1; "PAD2" -> 2; else -> return null }
+        if (k == never) return null
         if (k == 1 && (delayed || quit)) return null
         val b = buttons.firstOrNull { it.k == k } ?: return null
         return if (b.on && b.cell >= 0) k else null
@@ -26,7 +28,17 @@ object DialogPad {
      * drawn button (Dialogs d32 mirrors it with its cell, as the game shows it): yes. Any press the APP makes by itself (the controller's
      * fallback tap, a pad answer in a fight, the safe close): never - the user's standing ruling "never press Exit Now" for the player.
      */
-    fun mayPress(which: String?, k: Int, finger: Boolean): Boolean = finger || !(which == "QUIT" && k == 1)
+    fun mayPress(which: String?, k: Int, finger: Boolean, never: Int = 0): Boolean = k != never && (finger || !(which == "QUIT" && k == 1))
+
+    /**
+     * Issue #278 (the user's pick "Yes, protect", 2026-11-13): the game's "<a DS Forever add-on> has been blocked from an action" pop-up
+     * (ADDON_ACTION_FORBIDDEN / ADDON_ACTION_BLOCKED) has Disable as button 1 - the game's own C_AddOns.DisableAddOn + ReloadUI - and A
+     * on it switched a player's Spells off for good. Dialogs d33 sends such a pop-up for OUR add-ons with [safe] (2: Ignore) and [never]
+     * (1: Disable): A and B press the safe button, and DS Forever never presses Disable (its copy refuses a finger on it too; the game's
+     * AddOns list stays the player's way to turn an add-on off). The words a finger on Disable gets.
+     */
+    const val NEVER_NOTE = "Turn add-ons off in AddOns at character select."
+
 
     /** the roll kind [key] answers on a roll that allows [need] / [greed] / [transmog], or null */
     fun rollKind(key: String, need: Boolean, greed: Boolean, transmog: Boolean): String? = when (key) {

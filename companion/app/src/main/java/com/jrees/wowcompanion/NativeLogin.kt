@@ -87,6 +87,18 @@ object NativeLogin {
     /** issue #231 (diagnostics only): this run's shadow Logs entry, for the add-ons' silence line */
     fun shadowLogsLine(): String = AddonSilence.shadowLogs(flavorDir?.let { File(it, "Logs") },
         { f -> Files.isSymbolicLink(f.toPath()) }, System.currentTimeMillis())
+    /** the user relaying a player (2026-11-13): this run's shadow Interface entry ("link" = the game loads the shared add-ons) */
+    fun shadowIfaceLine(): String {
+        val f = flavorDir?.let { File(it, "Interface") } ?: return "shadow Interface: no shadow this run"
+        return runCatching {
+            when {
+                Files.isSymbolicLink(f.toPath()) -> "shadow Interface: link"
+                !f.exists() -> "shadow Interface: missing"
+                f.isDirectory -> "shadow Interface: REAL dir (the game loads a private add-on copy)"
+                else -> "shadow Interface: a file"
+            }
+        }.getOrElse { "shadow Interface: unreadable (${it.javaClass.simpleName})" }
+    }
     private val main = Handler(Looper.getMainLooper())
     private var lifeMs = MAX_LIFE_MS
     private val timeout = Runnable { capCheck() }
@@ -170,8 +182,14 @@ object NativeLogin {
         removeLinks(root, keep = flavor)
         removeLinks(fl, keep = null)
         ShadowRepair.rootLinks(gameRoot, FLAVORS).forEach { e -> link(e, File(root, e.name)) }      // never a shared flavor folder (test57)
+        // the user relaying a player (2026-11-13, "waiting for game"): Logs / WTF / Interface exist in the shared folder before the
+        // links, so the client never makes them private (General.log out of the companion's reach for the whole run)
+        runCatching { ShadowRepair.ensureShared(File(gameRoot, flavor)) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let {
+            logEvent("shadow: made shared ${it.joinToString()} first (the game had none yet)"); Log.i(TAG, "shared folders made: ${it.joinToString()}")
+        }
         File(gameRoot, flavor).listFiles()?.forEach { e -> if (e.name != FILE) link(e, File(fl, e.name)) }
         flavorDir = fl
+        shadowIfaceLine().takeIf { !it.endsWith(": link") }?.let { logEvent(it); Log.w(TAG, it) }
         val login = HomeLoginStore.forAutoLogin(ctx)
         if (login != null) {
             val f = File(fl, FILE)

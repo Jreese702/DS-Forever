@@ -41,6 +41,9 @@ object SetupFlow {
         val artWhy: String = "",
         /** our bundled add-ons are in the game's AddOns folder */
         val addonsInstalled: Boolean = false,
+        /** the add-on install's problem in terse words (LauncherSetup.problem: a failed install, or the set removed again and again;
+         *  the user relaying a player 2026-11-13, "it keeps reinstalling"); null = fine */
+        val addonsProblem: String? = null,
         /** the dependency add-ons' line (QuestieDB ...), null = not checked yet */
         val dependencies: String? = null,
         /** the optional interiors step's line, null = no such step registered (the release ships without it) */
@@ -375,8 +378,9 @@ object SetupFlow {
             Art.READY -> Check("Game art: ready", Mark.OK)
             Art.FAILED -> Check("Game art: failed - ${i.artWhy.ifEmpty { "unknown reason" }}", Mark.BAD)
         })
-        add(Check("Add-ons: ${if (i.addonsInstalled) "installed" else "installed with the first Play"}" +
-            (i.dependencies?.let { "; $it" } ?: ""), if (i.addonsInstalled) Mark.OK else Mark.WAIT))
+        add(i.addonsProblem?.let { Check(it + (i.dependencies?.let { d -> "; $d" } ?: ""), Mark.BAD) }
+            ?: Check("Add-ons: ${if (i.addonsInstalled) "installed" else "installed with the first Play"}" +
+                (i.dependencies?.let { "; $it" } ?: ""), if (i.addonsInstalled) Mark.OK else Mark.WAIT))
         i.indoor?.let { add(Check("Indoor maps (builds while playing): $it", Mark.OPTIONAL)) }
         i.client?.let { add(Check("Client build: $it", if (i.gameOutdated == null) Mark.OK else Mark.BAD)) }
         // the app's own update: optional, never a warning (an update waits for the player's press on the bottom screen)

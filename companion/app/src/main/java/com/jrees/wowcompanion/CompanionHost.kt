@@ -629,6 +629,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the spell radials' own names / icons (RadialMeta): the bars and the Controller room show a change at once
         RadialMeta.init(this)
         RadialMeta.onChange { lastPadMap?.let { m -> homeView.onPadMap(m); controllerView.onPadMap(m); spellbookView.onPadMap(m) } }
+        // the user's pick 2026-11-13: Start over game windows - a change is told to the add-on at once (the next padmap confirms it)
+        var pauseOverSeen = HomeSettings.pauseOverGame
+        HomeSettings.onChange { ui.post {
+            if (!shell.hostGone() && HomeSettings.pauseOverGame != pauseOverSeen) {
+                pauseOverSeen = HomeSettings.pauseOverGame; pauseOverSentAt = 0L; pauseOverTell(lastPadMap, "the setting")
+            }
+        } }
         homeView.onPartyLeaveRest = { partyLeaveHome("a Home module full screen") }
         // Home's controller reader passes each held mask to Interact's pop-up while it shows: its Make Space ring follows the real A
         // press (display only; one getevent). In a room no reader of Home's runs: the ring falls back to Interact's document
@@ -783,6 +790,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         ui.postDelayed(guardTick, 3000L)                                 // the exit guard: no room ever without a working B
         hostUpAt = SystemClock.elapsedRealtime(); ui.postDelayed(silenceCheck, AddonSilence.AFTER_MS)   // #147: the add-ons' silence
+        // the user relaying a player (2026-11-13, "it keeps reinstalling ... 'waiting for game'"): an add-on install that failed at this
+        // Play (LauncherSetup) is said on Home at once, with the reason; the add-ons' own documents hide nothing here (none will come)
+        // (a failed UPDATE keeps the old set in place, which still runs: only the silence check speaks then)
+        ui.postDelayed({
+            val l = LauncherSetup.last
+            if (!shell.hostGone() && l != null && !l.ok && l.action == "install" && !docFlowSeen) addonsNotice("the add-on install failed")
+        }, 4000L)
         // the saved login is changed in Settings (the user 2026-10-08: "Change saved login" moves there)
         settingsView.loginSaved = { HomeLoginStore.has(this) }
         settingsView.onLogin = { loginPrompt.open() }
@@ -1833,10 +1847,28 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val detail = if (docFlowSeen) null else readerDetail()
         AddonSilence.line(docFlowSeen, LauncherHooks.gameUp(), SystemClock.elapsedRealtime() - hostUpAt, gameMs, detail)?.let {
             Log.w("WCSETUP", it); DiagLog.event("addons", it)
+            // 2026-11-13: a known cause (a failed install, the log or the add-ons gone private) is said on Home; none known = the
+            // notice waits for a Start press (the player may still be at character select)
+            if (addonsCause() != null) addonsNotice("the add-ons' silence")
         }
     }
+    /** the add-ons' likely cause in terse words (AddonSilence.cause), null = none known */
+    private fun addonsCause(): String? = runCatching {
+        AddonSilence.cause(LauncherSetup.problem(this), NativeLogin.shadowLogsLine(), NativeLogin.shadowIfaceLine(), tail?.diag(), oursOff)
+    }.getOrNull()
+    /** issue #278: the last login probe's add-ons the game did NOT load ("<folder>:<reason>"); empty = all loaded / not told */
+    private var oursOff: List<String> = emptyList()
+    /** Home's add-ons notice (ReportNotice.State.AddonsOff), never over another of the notice's cards */
+    private fun addonsNotice(why: String) {
+        if (!::reportNotice.isInitialized || shell.hostGone()) return
+        if (reportNotice.state != null && reportNotice.state !is ReportNotice.State.AddonsOff) return
+        val cause = addonsCause()
+        Log.i("WCSETUP", "add-ons notice ($why): ${cause ?: "the default (enable them in AddOns)"}")
+        DiagLog.event("addons", "notice shown ($why): ${cause ?: "default"}")
+        noticeShow(ReportNotice.State.AddonsOff(cause))
+    }
     /** issue #231: the log reader's and the shadow's Logs state in one line (main thread) */
-    private fun readerDetail(): String? = runCatching { listOfNotNull(tail?.diag(), NativeLogin.shadowLogsLine()).joinToString("; ") }.getOrNull()
+    private fun readerDetail(): String? = runCatching { listOfNotNull(tail?.diag(), NativeLogin.shadowLogsLine(), NativeLogin.shadowIfaceLine()).joinToString("; ") }.getOrNull()
     /**
      * The game's bag button handed the controller to Bags: show that room. Bags letting go while its room shows ends it as every room
      * ends: HOME (USER RULING 2026-09-28 23:12, B goes Home everywhere; 2026-10-01 "the EXACT same for all rooms" - no more going back
@@ -1959,11 +1991,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val current = GameInput.note(msg)
         docCurrent = current
         if (current) lastAddonAt = SystemClock.elapsedRealtime()           // the clean exit's "past the login screen"
+        if (current) docLiveAt = System.currentTimeMillis()                // StartRoute: the add-ons speak in this game run
         // the re-login: the world is back, so a waiting login.txt goes (NativeLogin.rearm wrote it when the world closed)
         if (current && LauncherHooks.pkg != null) NativeLogin.worldSeen()
         // smoothness A: an answer document's arrival, for the latency chain (inside the launcher only)
         if (LatLog.on) msg.optString("type").let { t -> if (t.endsWith("ack") || t.endsWith("use")) LatLog.mark("doc", "$t gt=${msg.optLong("_gt", -1L)}") }
-        if (current && !docFlowSeen) { docFlowSeen = true; Log.i("WCHOME", "docs: first current document (${msg.optString("type")})") }
+        if (current && !docFlowSeen) {
+            docFlowSeen = true; Log.i("WCHOME", "docs: first current document (${msg.optString("type")})")
+            // the add-ons speak after all: their notice goes
+            if (::reportNotice.isInitialized && reportNotice.state is ReportNotice.State.AddonsOff) { reportNotice.hide(); SetupBridge.noticeAsking = false }
+        }
         if (current) partyAsk(PartyModel.Ask.FIRST_DOC)
         if (current) GameLife.inWorld()                      // issue #12: the first current document = the game is in the world
         // the interiors bake (Track C) runs while the game is there and quiet; it waits while it fights or loads
@@ -1990,6 +2027,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (msg.optString("probe") == "ours") oursProbeLine(msg)?.let { (warn, line) ->
             if (warn) Log.w("WCSETUP", line) else Log.i("WCSETUP", line)
             DiagLog.event("addons", line)                    // #84 / #147: also in the rolling file (logcat's lines go within minutes)
+            // issue #278 ("says waitin on wow controller. i press start and the wheel only pops up on top screen"; the probe: "NOT loaded:
+            // WowCompanionSpells:DISABLED"): the app knew and said nothing on screen. Now Home names the add-on that is off - unless the
+            // switch-back-on (TapPad pad20's "addonsoff") has the reload under way: the probe after it decides
+            if (current) {
+                oursOff = msg.optJSONArray("off")?.let { a -> List(a.length()) { a.optString(it) }.filter { it.isNotEmpty() } } ?: emptyList()
+                if (oursOff.isNotEmpty() && reloadAt == 0L) addonsNotice("the login probe: ${oursOff.joinToString()}")
+                // all loaded now (after the switch-back-on's reload): a card from an earlier probe goes
+                if (oursOff.isEmpty() && ::reportNotice.isInitialized && reportNotice.state is ReportNotice.State.AddonsOff) {
+                    reportNotice.hide(); SetupBridge.noticeAsking = false
+                }
+            }
         }
         // hub21: the frames standing where the bottom-left bar is (one probe per login)
         if (msg.optString("probe") == "barprobe") Log.i("WCHUB", "bar probe (${msg.optInt("scanned")} frames): ${msg.optJSONArray("frames")}")
@@ -2518,6 +2566,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // controller is and the answers (control documents: current only)
             // every padmap also to Home: Cast's fight faces (armed buttons only) and B's give-back cell (HomeView.onPadMap)
             "padmap" -> PadMapModel.parse(msg)?.let {
+                // 2026-11-13 (StartRoute): Start's state only from a padmap OF THIS GAME RUN: current, or replayed from this run's own
+                // backlog (its `_gt` stamp after the game's start: a host that came up mid-game); an older run's says nothing about now
+                if (current || padmapOfThisRun(msg.optLong("_gt", -1L))) { padmapRunAt = System.currentTimeMillis(); runStart = it.start }
+                if (current) pauseOverTell(it, "padmap")                // the user's pick: Start over game windows, told when it differs
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
                 spellbookView.onPadMap(it); controllerView.onPadMap(it); homeView.onPadMap(it); spellsOverlay.onPadMap(it)
@@ -2756,13 +2808,21 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         tailLog = log
         tail?.stop()
         // inside the launcher there is only its own game: no GameNative log ahead of it
-        val follow = if (BuildConfig.SHARE || LauncherHooks.pkg != null) listOf(log) else listOf(LogTail.DEFAULT_PATH, log)
+        // the user relaying a player (2026-11-13, "the buttons and map show 'waiting for game'"; issue #231's "shadow Logs: REAL dir"):
+        // inside the launcher the shadow's own Logs/General.log is a second candidate. While it is a link it IS the shared file (the same
+        // time: no switch, LogFollow); when the client made it a REAL private folder, it is the one written now and the reader follows
+        // it, so the add-ons' documents still arrive
+        val shadowLog = if (LauncherHooks.pkg != null && !streaming) runCatching {
+            java.io.File(NativeLogin.shadowRoot(this), "${WowProduct.of(GameFiles.gameRoot(this)).flavorDir}/Logs/General.log").path
+        }.getOrNull() else null
+        val follow = if (BuildConfig.SHARE || LauncherHooks.pkg != null) listOfNotNull(log, shadowLog) else listOf(LogTail.DEFAULT_PATH, log)
         Log.i("WCLOG", "game log: $log (located ${game?.root ?: "none"}, share ${BuildConfig.SHARE}, mode ${PlayModes.current})")
         val onMessage: (org.json.JSONObject) -> Unit = { msg -> ui.post { handleMessage(msg) } }
         val onStatus: (String) -> Unit = { s -> ui.post {
             status.text = s.take(110)
             // the other game started: is IT set up for the companion?
-            if (s.startsWith("following the game's log")) ui.postDelayed({ setupCheck() }, 3_000L)
+            // (not inside the launcher: there the second candidate is the same game's private log, never another game)
+            if (s.startsWith("following the game's log") && LauncherHooks.pkg == null) ui.postDelayed({ setupCheck() }, 3_000L)
         } }
         tail = PlayModes.pick(PlayModes.current, PlayModes.bridgeLog, onMessage, onStatus) {
             LogTail(follow.first(), onMessage = onMessage, onStatus = onStatus, follow = follow)
@@ -2957,10 +3017,50 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         if (room == Room.BAGS && bagsView.ownsStart()) return          // bagsView.onPadKey already had it (the unclaimed route)
         if (::interactView.isInitialized && interactView.ownsStart()) return   // an NPC window's keyboard: its Done (onPadKey had it)
-        if (lastDpad?.want != true) return                              // the toolbar off: Start is the game's own wheel
+        // the user relaying a player (2026-11-13: "the pause radial is appearing on the top and bottom ..."): the wheel only while a
+        // CURRENT padmap of this game run says Start is ours (or a guest's); else the press is the game's alone (its own radial), and
+        // with the add-ons silent Home says so (StartRoute)
+        val gameStart = LauncherHooks.gameStartSec * 1000
+        val docsLive = docLiveAt > 0 && docLiveAt >= gameStart
+        val runPadmap = padmapRunAt > 0 && padmapRunAt >= gameStart
+        val gameUpMs = if (gameStart > 0) System.currentTimeMillis() - gameStart else SystemClock.elapsedRealtime() - hostUpAt
+        val r = StartRoute.decide(lastDpad?.want, docsLive, runPadmap, if (runPadmap) runStart else null, capHolder, gameUpMs,
+            spellsOff = oursOff.any { it.startsWith("WowCompanionSpells:") })
+        lastStartRoute = "${r.kind.name.lowercase()}: ${r.why}"
+        if (r.kind != StartRoute.Kind.WHEEL) {
+            Log.i("WCHOME", "Start: not Home's wheel (${r.why})")
+            // (never over the start screen / setup / the login prompt: character select and the login are theirs)
+            if (r.kind == StartRoute.Kind.NOTICE && startView.visibility != View.VISIBLE && setupView.visibility != View.VISIBLE &&
+                !loginPrompt.isOpen) addonsNotice("Start with the add-ons silent")
+            return
+        }
         startReadAt = SystemClock.uptimeMillis()
         openPause("Start", byStart = true)
     }
+    /** the user's pick 2026-11-13 ("Make it a setting toggle defaulted to our wheel"): the add-on told the app's Start-over-windows value
+     *  whenever a current padmap says another (PauseOver), and at once on a change (HomeSettings' listener) */
+    private var pauseOverSentAt = 0L
+    private fun pauseOverTell(m: PadMapModel.Map?, why: String) {
+        val game = HomeSettings.pauseOverGame
+        if (m == null || !PauseOver.needsTell(game, m.start, PauseOver.knows(m.version), pauseOverSentAt, SystemClock.elapsedRealtime())) return
+        val sent = padTabTap(PauseOver.cells(game))
+        if (sent) pauseOverSentAt = SystemClock.elapsedRealtime()
+        Log.i("WCHOME", "start over game windows: ${if (game) "game's wheel" else "our wheel"} told ($why)${if (sent) "" else ": not sent"}")
+    }
+    /** StartRoute: the last current document's wall time; the last padmap of this game run's wall time and its Start state (0 = none) */
+    private var docLiveAt = 0L
+    private var padmapRunAt = 0L
+    private var runStart: PadMapModel.StartState? = null
+    /** a replayed document stamped [gt] (`_gt`, ms into the year) was written after this game run started */
+    private fun padmapOfThisRun(gt: Long): Boolean {
+        if (gt < 0) return false
+        val start = LauncherHooks.gameStartSec * 1000
+        val sinceStart = if (start > 0) System.currentTimeMillis() - start else SystemClock.elapsedRealtime() - hostUpAt
+        val age = GameInput.wallYearMs() - gt
+        return age in 0..(sinceStart + 5_000L)
+    }
+    /** the last Start press's route, for the problem report */
+    private var lastStartRoute = "no Start press yet"
 
     /** the pause wheel over the room on show (Start, or the bar's swirl): one route */
     private fun openPause(why: String, byStart: Boolean) {
@@ -3314,8 +3414,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         // issue #231 (review): at report time, with no document yet, the reader's state NOW (the silence line's is from 2 min in)
         val docs = AddonSilence.atReport(docFlowSeen, if (atReport && !docFlowSeen) readerDetail() else null)
+        val setup = if (atReport) "; ${runCatching { LauncherSetup.reportLine(this) }.getOrDefault("add-on setup: ?")}; Start $lastStartRoute" else ""
         return "$start; room ${room.name.lowercase()}; documents ${if (docFlowSeen) "seen" else "none yet"}$docs" +
-            if (over.isEmpty()) "" else "; over it: ${over.joinToString()}"
+            (if (over.isEmpty()) "" else "; over it: ${over.joinToString()}") + setup
     }
 
     /** issue #132 (the user's pick 2026-11-12): the plain waiting line says "Game downloading" while the game fetches its files */

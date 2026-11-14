@@ -2,6 +2,7 @@ package com.jrees.wowcompanion
 
 import android.content.Context
 import android.util.Log
+import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 
@@ -12,14 +13,31 @@ import java.security.MessageDigest
  *  - the add-on set ships in the app's assets (companion/manifest.txt + companion/addons/...);
  *  - it installs when a folder is MISSING, or updates when the game's set stamp is OLDER than the app's and files differ; an install
  *    whose files differ but carry no older stamp is left alone (the owners push ahead of the app between builds);
- *  - a backup first (/sdcard/WowCompanion/setup/launcher-<time>), every copied file checked, the old set put back on any failure;
  *  - Config.wtf: the required keys (developerLog, InputDeviceInterfaceStyle = 1) and the defaults only where the game has none.
  *  - NO container edits: the launcher's X input needs no touch mode.
+ *
+ * INSTALL ONCE, VERIFY, NEVER LOOP (the user relaying a player, 2026-11-13: "they let everything install and it keeps reinstalling, and
+ * the buttons and map show 'waiting for game' and are blank"). Up to 1.0.32 a failure after the copy began (no room on a full device,
+ * a file that did not read back, the stamp not written) "restored" by DELETING every DS Forever folder and copying the backup back: on
+ * a first install there was no backup, so the game was left with NO add-ons - and the next Play found them missing and did it all
+ * again, every start, with the bottom screen waiting for add-ons that never loaded. Now ([install], pure java.io):
+ *  - room first: not enough free space = nothing touched, the reason said;
+ *  - every new file is written beside its old one ("<name>.dsfnew"), read back and checked against the set's md5 BEFORE anything is
+ *    replaced: a failure removes only the new copies, the working set stays as it was;
+ *  - then the swap (rename over), the set's leftovers go, the whole set is checked again, the stamp written AND read back;
+ *  - the outcome is kept ([STATE] in the app's own storage): a set this app already installed and verified that is missing or changed
+ *    at a later start was removed by something else - said ("removed since ..."), counted, and named as the cause after the second time;
+ *  - [problem] is the one terse line for the launcher's Add-ons row, Home's add-ons notice and the problem report.
  * Returns one line for the launcher's status / log.
  */
 object LauncherSetup {
     private const val TAG = "WCSETUP"
     private const val STAMP = ".companion_set"
+    internal const val NEW = ".dsfnew"
+    /** the outcome of the last runs (the app's own files dir): set, ok, why, at, the re-install count */
+    const val STATE = "addon_setup.json"
+    /** free room kept beyond the set's own size */
+    internal const val MARGIN = 2L * 1024 * 1024
     private val REQ = listOf("developerLog", "InputDeviceInterfaceStyle")
     private val DEFAULTS = listOf("GamepadDisableTooltips" to "1", "GamePadTurnWithCamera" to "1")
     /**
@@ -30,8 +48,20 @@ object LauncherSetup {
      */
     private val FPS_PAIR = listOf("useMaxFPS" to "1", "maxFPS" to "40")
 
+    /** the last run's outcome in this process (null = not run since the app started: [problem] reads the kept state) */
+    @Volatile var last: Outcome? = null
+
+    /**
+     * [ok] the game's AddOns hold the app's set now (verified); [line] the log / status line; [why] the terse reason when not ([problem]);
+     * [action] "none" / "install" / "update"; [again] how many times in a row a set this app had verified was found removed or changed.
+     */
+    data class Outcome(val ok: Boolean, val line: String, val why: String? = null, val action: String = "none", val again: Int = 0)
+
     fun run(ctx: Context, flavorRoot: File): String = try { work(ctx, flavorRoot) } catch (t: Throwable) {
-        Log.w(TAG, "launcher setup: ${t.message}"); "DS Forever setup failed: ${t.message}"
+        Log.w(TAG, "launcher setup: ${t.message}")
+        val o = Outcome(false, "DS Forever setup failed: ${t.message}", "Add-ons not installed: ${reason(t)}")
+        last = o; runCatching { keep(File(ctx.filesDir, STATE), o, null, System.currentTimeMillis()) }
+        o.line
     }
 
     private fun work(ctx: Context, root: File): String {
@@ -39,39 +69,155 @@ object LauncherSetup {
         val appSet = manifest.firstOrNull { it.startsWith("set ") }?.removePrefix("set ")?.trim()?.toIntOrNull()
         if (appSet != null) com.jrees.wowcompanion.stream.BridgeProtocol.addonSet = appSet   // told to Desktop on hello (its update check)
         val want = manifest.filter { it.length > 34 && !it.startsWith("set ") }.map { it.substring(0, 32) to it.substring(34).trim() }
-        val addons = File(root, "Interface/AddOns")
+        val state = File(ctx.filesDir, STATE)
+        val o = install(File(root, "Interface/AddOns"), want, appSet, state, System.currentTimeMillis(),
+            backup = { File("/sdcard/WowCompanion/setup/launcher-${System.currentTimeMillis()}") }) { rel ->
+            ctx.assets.open("companion/addons/$rel").use { it.readBytes() }
+        }
+        last = o
+        val line = o.line + "; " + config(File(root, "WTF/Config.wtf"))
+        if (o.ok) Log.i(TAG, line) else Log.w(TAG, line)
+        return line
+    }
+
+    /**
+     * The install itself (pure java.io: dsforever's PauseDupTest runs it). [addons] the game's Interface/AddOns; [want] (md5,
+     * relative path) per file; [read] a file of the app's set; [state] the kept outcome; [backup] where the old folders are copied
+     * before an UPDATE (best effort: the old set is never deleted before the new one is whole, so a backup that fails stops nothing).
+     */
+    fun install(addons: File, want: List<Pair<String, String>>, appSet: Int?, state: File, now: Long,
+                backup: (() -> File)? = null, read: (String) -> ByteArray): Outcome {
         val folders = want.map { it.second.substringBefore('/') }.toSet()
-        val missing = folders.any { !File(addons, it).isDirectory }
-        val stamp = File(addons, "WowCompanion/$STAMP").takeIf { it.isFile }?.readText()?.trim()?.toIntOrNull()
-        val diff = want.count { (md5, rel) -> md5Of(File(addons, rel)) != md5 }
-        val update = appSet != null && stamp != null && stamp < appSet && diff > 0
-        var line = "DS Forever add-ons: set ${stamp ?: "none"}, app set $appSet, $diff differ"
-        if (missing || update) {
-            val backup = File("/sdcard/WowCompanion/setup/launcher-${System.currentTimeMillis()}").apply { mkdirs() }
-            for (f in folders) File(addons, f).takeIf { it.isDirectory }?.copyRecursively(File(backup, "addons/$f"), overwrite = true)
-            try {
-                for ((_, rel) in want) {
-                    val to = File(addons, rel); to.parentFile?.mkdirs()
-                    ctx.assets.open("companion/addons/$rel").use { i -> to.outputStream().use { o -> i.copyTo(o) } }
-                }
-                // what the set no longer has goes (inside its own folders only)
-                val keep = want.map { it.second }.toSet()
-                for (f in folders) File(addons, f).walkTopDown().filter { it.isFile && it.name != STAMP }.forEach { file ->
-                    if (file.relativeTo(addons).path.replace('\\', '/') !in keep) file.delete()
-                }
-                val bad = want.count { (md5, rel) -> md5Of(File(addons, rel)) != md5 }
-                check(bad == 0) { "$bad copied files do not match the set" }
-                appSet?.let { File(addons, "WowCompanion/$STAMP").writeText("$it\n") }
-                line = "DS Forever add-ons ${if (missing) "installed" else "updated"}: set $appSet, ${want.size} files"
-            } catch (t: Throwable) {
-                // the old set back, as the script's restore
-                for (f in folders) { File(addons, f).deleteRecursively(); File(backup, "addons/$f").takeIf { it.isDirectory }?.copyRecursively(File(addons, f)) }
-                line = "DS Forever add-ons NOT installed (${t.message}); the old set is back"
+        // a run stopped part-way (the app killed mid-copy) left new copies beside the old files: never read as the set, gone now
+        for (f in folders) File(addons, f).takeIf { it.isDirectory }?.walkTopDown()?.filter { it.isFile && it.name.endsWith(NEW) }?.forEach { it.delete() }
+        // a folder is MISSING without its .toc too (an empty folder left by anything: the game loads nothing from it)
+        val tocs = want.map { it.second }.filter { it.endsWith(".toc", ignoreCase = true) }.groupBy { it.substringBefore('/') }
+        val missing = folders.filter { f -> !File(addons, f).isDirectory || tocs[f].orEmpty().any { !File(addons, it).isFile } }
+        val stamp = readStamp(addons)
+        val differ = want.filter { (md5, rel) -> md5Of(File(addons, rel)) != md5 }
+        val update = appSet != null && stamp != null && stamp < appSet && differ.isNotEmpty()
+        val kept = runCatching { JSONObject(state.readText()) }.getOrNull()
+        if (missing.isEmpty() && !update) {
+            val o = Outcome(true, "DS Forever add-ons: set ${stamp ?: "none"}, app set $appSet, ${differ.size} differ")
+            // a verified set still in place: the re-install count starts again (a failure before stays the problem until it is whole)
+            if (kept == null || kept.optInt("set") != appSet || !kept.optBoolean("ok") || kept.optInt("again") != 0) keep(state, o, appSet, now, kept)
+            return o
+        }
+        val action = if (missing.isNotEmpty()) "install" else "update"
+        // THE LOOP'S OWN EVIDENCE: this app installed and verified THIS set before, and it is missing / changed again now
+        val gone = kept != null && kept.optBoolean("ok") && kept.optInt("set") == appSet && appSet != null && kept.optLong("at") > 0
+        val again = if (gone) kept!!.optInt("again") + 1 else 0
+        val since = if (gone) " (installed and checked ${GameLife.minutes((now - kept!!.optLong("at")).coerceAtLeast(0L))} ago; " +
+            "${if (missing.isNotEmpty()) "missing now: ${missing.joinToString()}" else "${differ.size} files changed"}: removed by something else, time $again)" else ""
+        fun fail(why: String, line: String, touched: Boolean = false): Outcome {
+            val o = Outcome(false, "DS Forever add-ons NOT ${if (action == "install") "installed" else "updated"} ($line)$since; " +
+                (if (touched) "tried again at the next Play" else "the files in the game folder were not touched"), why, action, again)
+            keep(state, o, appSet, now, kept); return o
+        }
+        // 1. the app's own files, checked against its own manifest (an APK whose set does not match: nothing goes in)
+        val bytes = HashMap<String, ByteArray>()
+        for ((md5, rel) in want) {
+            val b = runCatching { read(rel) }.getOrElse { return fail("Add-ons not installed: the app's copy is damaged. Reinstall DS Forever.", "the app's $rel: ${it.message}") }
+            if (md5(b) != md5) return fail("Add-ons not installed: the app's copy is damaged. Reinstall DS Forever.", "the app's $rel does not match its set")
+            bytes[rel] = b
+        }
+        // 2. room: the new copies sit beside the old ones until the swap
+        val toWrite = want.filter { (md5, rel) -> md5Of(File(addons, rel)) != md5 }
+        val need = toWrite.sumOf { bytes.getValue(it.second).size.toLong() } + MARGIN
+        addons.mkdirs()
+        if (!addons.isDirectory) return fail("Add-ons not installed: the game folder can't be written.", "no AddOns folder: ${addons.path} could not be made")
+        val free = runCatching { addons.usableSpace }.getOrDefault(-1L)
+        if (free in 1 until need) return fail("Add-ons not installed: needs ${mb(need)} free (${mb(free)} free).", "needs ${mb(need)} free, ${mb(free)} free")
+        // 3. the old set kept aside before an update (best effort)
+        if (action == "update" && backup != null) runCatching {
+            val bak = backup().apply { mkdirs() }
+            for (f in folders) File(addons, f).takeIf { it.isDirectory }?.copyRecursively(File(bak, "addons/$f"), overwrite = true)
+        }
+        // 4. every new file beside the old one, read back and checked, BEFORE anything is replaced
+        val staged = ArrayList<Pair<File, File>>()
+        // a failure: only the new copies go, and a folder this run made that holds nothing else (never an empty folder left behind:
+        // it would read as installed at the next start)
+        fun undo() {
+            for ((tmp, _) in staged) tmp.delete()
+            for (f in missing) File(addons, f).takeIf { d -> d.isDirectory && d.walkTopDown().none { it.isFile } }?.deleteRecursively()
+        }
+        try {
+            for ((md5, rel) in toWrite) {
+                val to = File(addons, rel); to.parentFile?.mkdirs()
+                val tmp = File(to.path + NEW)
+                staged += tmp to to                                         // before the write: a part-written copy goes too
+                tmp.writeBytes(bytes.getValue(rel))
+                check(md5Of(tmp) == md5) { "$rel did not read back as written" }
+            }
+        } catch (t: Throwable) {
+            undo()
+            return fail("Add-ons not installed: ${reason(t)}.", "writing: ${t.message}")
+        }
+        // 5. the swap; the set's leftovers go (inside its own folders only)
+        for ((tmp, to) in staged) {
+            if (!tmp.renameTo(to) && !(to.delete() && tmp.renameTo(to))) {
+                undo()
+                return fail("Add-ons not installed: a file in the game folder could not be replaced.", "replacing ${to.relativeTo(addons).path}", touched = true)
             }
         }
-        line += "; " + config(File(root, "WTF/Config.wtf"))
-        Log.i(TAG, line)
-        return line
+        val keep = want.map { it.second }.toSet()
+        for (f in folders) File(addons, f).walkTopDown().filter { it.isFile && it.name != STAMP }.forEach { file ->
+            if (file.relativeTo(addons).path.replace('\\', '/') !in keep) file.delete()
+        }
+        // 6. the whole set checked again, the stamp written and read back
+        val bad = want.count { (md5, rel) -> md5Of(File(addons, rel)) != md5 }
+        if (bad > 0) return fail("Add-ons not installed: $bad files did not stay as written.", "$bad files do not match the set after the copy", touched = true)
+        if (appSet != null) {
+            runCatching { File(addons, "WowCompanion/$STAMP").writeText("$appSet\n") }
+            if (readStamp(addons) != appSet) return fail("Add-ons not installed: the game folder can't be written.", "the set stamp did not read back", touched = true)
+        }
+        val o = Outcome(true, "DS Forever add-ons ${if (action == "install") "installed" else "updated"}: set $appSet, ${want.size} files " +
+            "(${toWrite.size} written, checked)$since", if (again >= 2) "Add-ons keep disappearing from the game folder." else null, action, again)
+        keep(state, o, appSet, now, kept)
+        return o
+    }
+
+    /**
+     * The one terse line while the add-ons are not right, from this run ([last]) or the kept state ([STATE]): an install that failed,
+     * or a set removed again and again (the loop). Null = fine / not known.
+     */
+    fun problem(ctx: Context): String? {
+        last?.let { return it.why }
+        return runCatching { problemOf(JSONObject(File(ctx.filesDir, STATE).readText())) }.getOrNull()
+    }
+    internal fun problemOf(kept: JSONObject?): String? = kept?.optString("why", "")?.ifEmpty { null }
+
+    /** the report's line: the kept outcome in words */
+    fun reportLine(ctx: Context): String {
+        val l = last
+        if (l != null) return "add-on setup: ${if (l.ok) "ok" else "FAILED"} (${l.action}${if (l.again > 0) ", removed again ${l.again}x" else ""}): ${l.line}"
+        val kept = runCatching { JSONObject(File(ctx.filesDir, STATE).readText()) }.getOrNull() ?: return "add-on setup: not run yet"
+        return "add-on setup (an earlier start): ${if (kept.optBoolean("ok")) "ok" else "FAILED"}: ${kept.optString("line")}"
+    }
+
+    private fun keep(state: File, o: Outcome, appSet: Int?, now: Long, kept: JSONObject? = null) {
+        runCatching {
+            val j = JSONObject().put("set", appSet ?: 0).put("ok", o.ok).put("line", o.line).put("action", o.action).put("again", o.again)
+            o.why?.let { j.put("why", it) }
+            // [at] = when a set was last verified in place by this app (a failure keeps the earlier one: the loop's clock)
+            j.put("at", if (o.ok) now else kept?.optLong("at") ?: 0L)
+            state.parentFile?.mkdirs(); state.writeText(j.toString())
+        }
+    }
+
+    private fun readStamp(addons: File): Int? = runCatching { File(addons, "WowCompanion/$STAMP").takeIf { it.isFile }?.readText()?.trim()?.toIntOrNull() }.getOrNull()
+
+    private fun mb(b: Long) = "${(b + 1024 * 1024 - 1) / (1024 * 1024)} MB"
+
+    /** a failure in plain words (no space, no permission, else the message) */
+    internal fun reason(t: Throwable): String {
+        val m = generateSequence(t) { it.cause }.mapNotNull { it.message }.joinToString(" ")
+        return when {
+            m.contains("ENOSPC", true) || m.contains("No space", true) -> "no room left on the storage"
+            m.contains("EACCES", true) || m.contains("Permission denied", true) || m.contains("EPERM", true) -> "no permission to write the game folder"
+            m.contains("EROFS", true) || m.contains("Read-only", true) -> "the game folder is read-only"
+            else -> t.message ?: t.javaClass.simpleName
+        }
     }
 
     /** the required keys set to 1 and the defaults where missing; the file's own line ending kept (the game writes CRLF) */
@@ -90,5 +236,6 @@ object LauncherSetup {
         return "Config.wtf: $n set"
     }
 
-    private fun md5Of(f: File): String? = if (!f.isFile) null else MessageDigest.getInstance("MD5").digest(f.readBytes()).joinToString("") { "%02x".format(it) }
+    private fun md5(b: ByteArray): String = MessageDigest.getInstance("MD5").digest(b).joinToString("") { "%02x".format(it) }
+    private fun md5Of(f: File): String? = if (!f.isFile) null else runCatching { md5(f.readBytes()) }.getOrNull()
 }

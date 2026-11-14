@@ -141,7 +141,8 @@ object GameInput {
         }
     }
 
-    private fun wallYearMs(): Long {
+    /** the documents' own clock (`_gt`: ms into the year, the add-on's stamp) for this moment */
+    fun wallYearMs(): Long {
         val c = Calendar.getInstance()
         return InputGate.yearMs(
             c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH), c.get(Calendar.HOUR_OF_DAY),

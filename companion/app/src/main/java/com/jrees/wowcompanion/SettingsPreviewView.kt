@@ -61,7 +61,7 @@ class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean
         diamonds = HomeSettings.rest == HomeRest.DIAMONDS, combatGrow = HomeSettings.combatGrow, swing = HomeSettings.swingTimer,
         questOverMap = HomeSettings.questOverMap, startAttack = HomeAttackSwitch.state?.on, toolbar = toolbarOn(),
         abxyNintendo = CastSettings.faceSwap, glyphSet = CastSettings.ButtonLayout.values().indexOf(CastSettings.buttonLayout),
-        pauseTap = HomeSettings.pauseTap, pausePickA = HomeSettings.pausePickA, radialTap = HomeSettings.radialTap,
+        pauseTap = HomeSettings.pauseTap, pausePickA = HomeSettings.pausePickA, pauseOverGame = HomeSettings.pauseOverGame, radialTap = HomeSettings.radialTap,
         radialPickA = HomeSettings.radialPickA, spellTap = HomeSettings.spellTap, spellPickA = HomeSettings.spellPickA,
         classTapL = HomeSettings.classTapL, classPickAL = HomeSettings.classPickAL, classTapR = HomeSettings.classTapR,
         classPickAR = HomeSettings.classPickAR, miniOutYd = Settings.minimapYd, miniInYd = Settings.minimapIndoorYd,

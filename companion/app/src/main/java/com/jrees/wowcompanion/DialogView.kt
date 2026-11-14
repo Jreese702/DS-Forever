@@ -37,7 +37,7 @@ class DialogView(context: Context) : View(context) {
         val extra: String?, val extraKey: String?, val extraCell: Int, val x: Boolean, val xCell: Int,
         val left: Int, val dur: Float, val bar: Boolean, val delay: Int, val alert: String?,
         val item: JSONObject?, val money: Long, val focus: Boolean, val top: String?, val hid: Boolean,
-        val fkey: String?)
+        val fkey: String?, val safe: Int = 0, val never: Int = 0)
 
     private var doc: JSONObject? = null
     private var docGt = -1L
@@ -113,7 +113,7 @@ class DialogView(context: Context) : View(context) {
                 // the game answers only the dialog it focuses, with the key it gives each button
                 if (!d.focus || foldOf(d) > 0f) continue
                 val delayed = secondsOf(d.delay) > 0
-                val b = d.buttons.firstOrNull { it.key == key && it.on && !(delayed && it.k == 1) && DialogPad.mayPress(d.which, it.k, finger = false) }   // camp-exit merge: a key on Exit Now (no guard yet) is never ours
+                val b = d.buttons.firstOrNull { it.key == key && it.on && !(delayed && it.k == 1) && DialogPad.mayPress(d.which, it.k, finger = false, never = d.never) }   // camp-exit merge: a key on Exit Now (no guard yet) is never ours
                 val hit = when {
                     b != null -> "b${b.k}"
                     d.extra != null && d.extraKey == key -> "extra"
@@ -158,7 +158,7 @@ class DialogView(context: Context) : View(context) {
         if (d != null) {
             if (foldOf(d) > 0f) return false
             val delayed = secondsOf(d.delay) > 0
-            val k = DialogPad.dialogButton(key, d.buttons.map { DialogPad.B(it.k, it.on, it.cell) }, delayed, d.which == "QUIT") ?: return false
+            val k = DialogPad.dialogButton(key, d.buttons.map { DialogPad.B(it.k, it.on, it.cell) }, delayed, d.which == "QUIT", d.safe, d.never) ?: return false
             val b = d.buttons.firstOrNull { it.k == k } ?: return false
             padHit = "b$k"; padKey = key
             android.util.Log.i("WCDLG", "controller $key on '${b.label}' of dialog ${d.i} ${d.which}: the app has the pad (a fight), its cell now")
@@ -202,7 +202,7 @@ class DialogView(context: Context) : View(context) {
      * now" during the safe close): the QUIT dialog's button 1. The add-on mirrors it again (Dialogs d32, camp-exit: the player's finger
      * may press it, as on the game's own box), so every press the APP makes by itself - the controller's fallback tap - refuses it.
      */
-    private fun neverPress(d: Dlg, hit: String) = hit.startsWith("b") && !DialogPad.mayPress(d.which, hit.substring(1).toIntOrNull() ?: 0, finger = false)
+    private fun neverPress(d: Dlg, hit: String) = hit.startsWith("b") && !DialogPad.mayPress(d.which, hit.substring(1).toIntOrNull() ?: 0, finger = false, never = d.never)
 
     /** a new document: was the controller's press refused? then its cell, once */
     private fun padRefused() {
@@ -273,7 +273,7 @@ class DialogView(context: Context) : View(context) {
                         d.optInt("left", 0), d.optDouble("dur", 0.0).toFloat(), d.optBoolean("bar"),
                         d.optInt("delay", 0), str(d, "alert"), d.optJSONObject("item"),
                         d.optLong("money", -1L), d.optBoolean("focus"), str(d, "top"), d.optBoolean("hid"),
-                        str(d, "fkey")))
+                        str(d, "fkey"), d.optInt("safe", 0), d.optInt("never", 0)))
         }
         list = out
         if (current) padRefused() else padPress = null
@@ -472,6 +472,11 @@ class DialogView(context: Context) : View(context) {
                 // camp-exit (build 1462, the user: "when exiting the game and the timer pops up it doesnt have the 'exit now' option that
                 // it normally should"): the QUIT countdown's "Exit Now" is the player's own finger here, as on the game's box (Dialogs d32);
                 // only the app's own presses refuse it (neverPress: the controller's fallback, the safe close)
+                // d33 (issue #278, "Yes, protect"): our add-on's "has been blocked" Disable is never pressed, not even by a finger here
+                if (!DialogPad.mayPress(d.which, b.k, finger = true, never = d.never)) {
+                    android.util.Log.i("WCDLG", "finger on ${d.which} $hit: never pressed (our add-on's Disable)")
+                    note(DialogPad.NEVER_NOTE); return
+                }
                 if (neverPress(d, hit)) android.util.Log.i("WCDLG", "finger on ${d.which} $hit: Exit Now, the player's own press")
                 if (!b.on || secondsOf(d.delay) > 0) {
                     android.util.Log.i("WCDLG", "press '${b.label}' of ${d.which}: the game has it ${if (!b.on) "greyed out" else "waiting ${secondsOf(d.delay)} s"}")

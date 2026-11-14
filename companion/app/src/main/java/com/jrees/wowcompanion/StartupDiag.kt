@@ -207,7 +207,7 @@ object StartupDiag {
             "Folder found ${i.folderFound}, wrong game ${i.wrongGame}, product ${i.product.ifEmpty { "?" }}, storage ${i.storage}",
             "Login saved ${i.loginSaved}, skipped ${i.loginSkipped}, sign-in ${i.signIn}, restart offered ${i.restartOffered}, restarting ${i.restarting}",
             "Art ${i.art} ${i.artPercent}%${if (i.artWhat.isNotBlank()) " (${i.artWhat})" else ""}${if (i.artWhy.isNotBlank()) ", why: ${i.artWhy}" else ""}",
-            "Add-ons installed ${i.addonsInstalled}; dependencies: ${i.dependencies ?: "(not checked)"}",
+            "Add-ons installed ${i.addonsInstalled}; problem: ${i.addonsProblem ?: "none"}; dependencies: ${i.dependencies ?: "(not checked)"}",
             "Interiors: ${i.indoor ?: "(no step)"}; icons: ${i.iconsLine ?: "?"}",
             "Client: ${i.client ?: "(not checked yet)"}; newer game build: ${i.gameOutdated ?: "none"}; stale data: ${i.staleData ?: "no"}",
             "App: ${i.appLine ?: "?"}; update offered: ${i.appUpdate ?: "none"}",

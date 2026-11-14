@@ -38,7 +38,7 @@ local S = WC.S
 
 -- d30 (int/1429): combat-nav d27-d28 (the idlg leave cells 33-39, WC.dialogs.mirrored) + starter-prompt d27-d29 (the quest starter
 -- prompt, its Start / Not now now on the charter's Sign / Offer cells 28 / 29: the row stays 40 columns)
-local DV = "d32"         -- bump on every change; d32 (issue camp-exit, build 1462, the user: "when exiting the game and the timer pops up it doesnt have the 'exit now' option that it normally should"): the QUIT countdown's "Exit Now" (the game's button 1, its OnAccept = ForceQuit in the game's own code) is mirrored again with its touch cell, a secure click on the game's own button; A stays bound to nothing on it (d22's guard: never pressed by the controller, the app's fallback or the safe close); CAMP has no button 1, so it still shows Cancel alone; d31 (issue #69, 1.0.18: "tried to sign a guild chart didnt work"; the offline harness signs by touch and by A, the report's log has no trace of the charter): DIAGNOSTICS ONLY, nothing pressed or written - the charter's Sign is followed for 4 s and one "cap" document says what came of it (petSign: by touch / A, signatures before / after, the window closed, the game's UI error id, which petition system message by its place in D.PETMSG, a pop-up shown), numbers only; d30 int/1429: the quest starter's Start / Not now SHARE the charter's Sign / Offer cells (idlg 28 / 29: the prompt never shows with the charter open, PETITION_SHOW disarms it and gives the cells back), so the row keeps combat-nav's seven leave cells (33-39) at 40 columns; d29 (starter-prompt): the quest starter prompt ONLY when a starter is NEWLY LOOTED this session (the user, 2026-11-11, asked how long "Not now" lasts: "Only when newly looted"): a baseline of the bags' item counts at login / reload, a prompt only for a count rising above it (never for what was already there, a /reload or a move between bags), Not now = that one prompt; d28 (starter-prompt): the quest starter's Start is DISARMED on the very event a vendor / bank / mail / trade / NPC window opens (a bag item used at a vendor is sold) and aimed by item id, not bag and slot; a Start on a disarmed button is no answer; d27 (starter-prompt): A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d28 (combat-nav): WC.dialogs.mirrored() - the pop-ups the app shows as its box (Interact's fight sink leaves A / B to the app while one shows: the review of combat_nav, the user's decision 1, 2026-11-11); d27 (combat-nav): the idlg row's last seven columns (33-39, the row grows to 40: no new row) are the capture's per-window leave cells (combat_nav_design Step 5c, the user 2026-11-11), aimed by Interact (WC.dialogs.leaveCell); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
+local DV = "d33"         -- bump on every change; d33 (issue #278, the user's pick "Yes, protect", 2026-11-13): the game's "<a DS Forever add-on> has been blocked from an action" pop-up (ADDON_ACTION_FORBIDDEN / ADDON_ACTION_BLOCKED, button 1 = Disable: C_AddOns.DisableAddOn + ReloadUI in the game's own code) is GUARDED for our own add-ons: A and B press Ignore (button 2), Disable is never pressed by DS Forever (not A, not our copy, not a finger on our copy; the AddOns list stays the player's); d32 (issue camp-exit, build 1462, the user: "when exiting the game and the timer pops up it doesnt have the 'exit now' option that it normally should"): the QUIT countdown's "Exit Now" (the game's button 1, its OnAccept = ForceQuit in the game's own code) is mirrored again with its touch cell, a secure click on the game's own button; A stays bound to nothing on it (d22's guard: never pressed by the controller, the app's fallback or the safe close); CAMP has no button 1, so it still shows Cancel alone; d31 (issue #69, 1.0.18: "tried to sign a guild chart didnt work"; the offline harness signs by touch and by A, the report's log has no trace of the charter): DIAGNOSTICS ONLY, nothing pressed or written - the charter's Sign is followed for 4 s and one "cap" document says what came of it (petSign: by touch / A, signatures before / after, the window closed, the game's UI error id, which petition system message by its place in D.PETMSG, a pop-up shown), numbers only; d30 int/1429: the quest starter's Start / Not now SHARE the charter's Sign / Offer cells (idlg 28 / 29: the prompt never shows with the charter open, PETITION_SHOW disarms it and gives the cells back), so the row keeps combat-nav's seven leave cells (33-39) at 40 columns; d29 (starter-prompt): the quest starter prompt ONLY when a starter is NEWLY LOOTED this session (the user, 2026-11-11, asked how long "Not now" lasts: "Only when newly looted"): a baseline of the bags' item counts at login / reload, a prompt only for a count rising above it (never for what was already there, a /reload or a move between bags), Not now = that one prompt; d28 (starter-prompt): the quest starter's Start is DISARMED on the very event a vendor / bank / mail / trade / NPC window opens (a bag item used at a vendor is sold) and aimed by item id, not bag and slot; a Start on a disarmed button is no answer; d27 (starter-prompt): A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d28 (combat-nav): WC.dialogs.mirrored() - the pop-ups the app shows as its box (Interact's fight sink leaves A / B to the app while one shows: the review of combat_nav, the user's decision 1, 2026-11-11); d27 (combat-nav): the idlg row's last seven columns (33-39, the row grows to 40: no new row) are the capture's per-window leave cells (combat_nav_design Step 5c, the user 2026-11-11), aimed by Interact (WC.dialogs.leaveCell); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -157,6 +157,14 @@ local function readItem(f)
     return it
 end
 
+-- d33: the "has been blocked from an action" pop-ups (the game's ADDON_ACTION_FORBIDDEN / ADDON_ACTION_BLOCKED: button1 DISABLE,
+-- button2 IGNORE_DIALOG, gamedialogdefs.lua) and whether this one names a DS Forever add-on (WowCompanion*)
+D.PROTECT = { ADDON_ACTION_FORBIDDEN = true, ADDON_ACTION_BLOCKED = true }
+function D.ours(f, text)
+    local data = TS(function() return f.data end)
+    if type(data) == "string" and data:find("^WowCompanion") then return true end
+    return type(text) == "string" and text:find("WowCompanion", 1, true) ~= nil
+end
 local function read(i, f)
     local d = { i = i, which = TS(function() return f.which end) }
     d.text = TS(function() return f.Text:GetText() end)
@@ -177,6 +185,11 @@ local function read(i, f)
     -- none), with its touch cell: a finger on it is one secure click on the game's own button (its OnAccept, ForceQuit, runs in the
     -- game's code). It carries no key (A is not its key), and the app never taps it by itself (DialogView.neverPress)
     if d.which == "QUIT" then d.guard = true end
+    -- d33 (issue #278: a player's Spells came up DISABLED; the game's "WowCompanionSpells has been blocked from an action" pop-up has
+    -- Disable as its button 1, so the controller's A switched our own add-on off and reloaded): for OUR add-ons (the dialog's data is
+    -- the add-on's name, the text names it too) it is guarded like QUIT, with Ignore (button 2) as its safe answer: `safe` = the button A
+    -- and B press, `never` = the button DS Forever never presses (the app's copy refuses it, a finger too)
+    if D.PROTECT[d.which] and D.ours(f, d.text) and shown(buttonOf(f, 2)) then d.guard, d.safe, d.never = true, 2, 1 end
     if shown(f.ExtraButton) then
         d.extra = TS(function() return f.ExtraButton:GetText() end) or ""
         d.extraKey = keyOf(f, f.ExtraButton)
@@ -710,6 +723,10 @@ function D.padSync(list)
             if (not d.focus or d.guard) and d.top == nil and #d.buttons >= 1 then target = d; break end
         end
     end
+    -- d33: our add-on's "has been blocked" pop-up is guarded whether or not the app draws dialogs now (the game's own A would be Disable)
+    if not target and not fight and type(cap) == "table" and (cap.version or 0) >= 19 then
+        for _, d in ipairs(list) do if d.safe and d.top == nil then target = d; break end end
+    end
     if not target then
         if D.held or D.queued then
             D.held, D.queued = nil, nil
@@ -733,8 +750,10 @@ function D.padSync(list)
                 end)
             end
             -- d22: a guarded dialog (QUIT) binds A to nothing: its button 1 ("Exit now") is never pressed by the controller
+            -- d33: a guarded dialog with a SAFE answer (our "has been blocked" pop-up): A is that answer too (Ignore), as B
             local spec = { press = function() end, lost = function() D.held, D.queued = nil, nil end,
-                           a = qs and D.QS.use or ((not target.guard) and "WowCompanionDlgA" or nil),
+                           a = qs and D.QS.use or (target.safe == 2 and shown(b2) and "WowCompanionDlgB")
+                               or ((not target.guard) and "WowCompanionDlgA" or nil),
                            back = qs and D.QS.no or (shown(b2) and "WowCompanionDlgB" or nil), noFight = true, pass = DLG_PASS }
             local ok, got, why = pcall(cap.take, "dialogs", spec)
             if ok and got and why == nil then D.held = want
@@ -746,6 +765,7 @@ function D.padSync(list)
     target.focus, target.fkey, target.padAB = true, nil, true
     for _, b in ipairs(target.buttons) do
         if b.k == 1 and not target.guard then b.key = "PAD1" elseif b.k == 2 and shown(b2) then b.key = "PAD2" else b.key = nil end
+        if target.safe == 2 and b.k == 2 and shown(b2) then b.key = "PAD1" end          -- d33: A's glyph on Ignore (B presses it too)
     end
 end
 

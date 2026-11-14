@@ -21,6 +21,9 @@ class ReportNotice(c: Context) : View(c) {
         data class SendFailed(val why: String, val path: String, val url: String) : State()
         data class Ready(val path: String, val url: String) : State()
         data class Failed(val why: String) : State()
+        /** the user relaying a player (2026-11-13: "the pause radial is appearing on the top and bottom ..."): the add-ons are silent
+         *  (StartRoute NOTICE, or the add-on install failed); [cause] AddonSilence.cause's words (null = the default); [how] the steps shown */
+        data class AddonsOff(val cause: String?, val how: Boolean = false) : State()
     }
 
     /** the words and buttons for a state (pure: the tests read it) */
@@ -29,6 +32,10 @@ class ReportNotice(c: Context) : View(c) {
     companion object {
         const val OPEN = "Open issue"
         const val OK = "OK"
+        const val HOW = "How"
+        const val ADDONS_TITLE = "DS Forever add-ons aren't running"
+        const val ADDONS_DEFAULT = "Enable them in AddOns at character select."
+        const val ADDONS_HOW = "Character select: AddOns, tick every DS Forever add-on and Load out of date AddOns, then Okay."
         fun card(s: State): Card = when (s) {
             State.Compiling -> Card("Compiling your report…", "You can keep playing.", emptyList())
             State.Sending -> Card("Sending your report…", "You can keep playing.", emptyList())
@@ -36,6 +43,8 @@ class ReportNotice(c: Context) : View(c) {
             is State.SendFailed -> Card("Couldn't send the report", "${s.why}. Saved to Documents/DS Forever/reports.", listOf(OPEN, OK))
             is State.Ready -> Card("Report ready", "Saved in Documents/DS Forever/reports. Open the GitHub issue to post it.", listOf(OPEN, OK))
             is State.Failed -> Card("Couldn't save the report", s.why, listOf(OK))
+            is State.AddonsOff -> if (s.how) Card(ADDONS_TITLE, ADDONS_HOW, listOf(OK))
+                else Card(ADDONS_TITLE, s.cause ?: ADDONS_DEFAULT, listOf(HOW, OK))
         }
     }
 
@@ -59,6 +68,7 @@ class ReportNotice(c: Context) : View(c) {
 
     private fun pressed(label: String) {
         val s = state ?: return
+        if (label == HOW && s is State.AddonsOff) { show(s.copy(how = true)); return }      // the steps, on the same card
         if (label == OPEN && s is State.Ready) onOpen(s)
         if (label == OPEN && s is State.SendFailed) onOpenUrl(s.url)
         // the user before 1.0.7: dismissing here clears the note in Settings and on the setup screen too (ReportFlow is the one state)
@@ -110,7 +120,8 @@ class ReportNotice(c: Context) : View(c) {
         c.drawText(Tr.t(card.title), r.centerX(), r.top + 56f, title)
         val body = UiKit.bodyPaint(24f, Theme.textDim).apply { textAlign = android.graphics.Paint.Align.CENTER }
         var y = r.top + 96f
-        for (line in SetupPanel.wrap(card.text, body, cw - 60f).take(2)) { c.drawText(Tr.t(line), r.centerX(), y, body); y += 32f }
+        // the whole text translated first, then wrapped (a wrapped half is no key of the word lists)
+        for (line in SetupPanel.wrap(Tr.t(card.text), body, cw - 60f).take(2)) { c.drawText(line, r.centerX(), y, body); y += 32f }
         boxes.clear()
         if (card.buttons.isNotEmpty()) {
             val bw = 260f; val gap = 24f
