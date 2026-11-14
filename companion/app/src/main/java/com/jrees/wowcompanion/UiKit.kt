@@ -4179,6 +4179,9 @@ object UiKit {
         return CrGeo(s, k, d, screen.centerX(), screen.bottom - rim, rim)
     }
 
+    /** the wheel's painted box in Home's middle [slot] (its bronze rim) */
+    fun consumableRadialBox(slot: RectF): RectF = crGeo(RectF(slot), slot).let { RectF(it.hx - it.rim, it.hy - it.rim, it.hx + it.rim, it.hy + it.rim) }
+
     /** the hub's middle when open (Home: where the stick's "middle" is, for its own drawing) */
     fun consumableRadialHub(screen: RectF): android.graphics.PointF = crGeo(screen).let { android.graphics.PointF(it.hx, it.hy) }
 

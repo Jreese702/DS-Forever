@@ -517,22 +517,47 @@ class HomeView(
         if (open && (width == 0 || flow.screen.full != null)) return null            // the host asks only while Home is the room
         if (open == wheelOpen) return if (open) RectF(wheelRect) else null
         wheelOpen = open
+        if (open) wheelFit(now)
+        wheelPart(now, open)
+        return if (open) RectF(wheelRect) else null
+    }
+    /**
+     * the middle wheel's square for the page laid as [places]: as tall as the space under the bars allows (the user on test18: "I want
+     * the dpad up radial to be about the same size as the pause menu radial"; the pause wheel fills the same height); no longer held to
+     * the chat column's width (it rises from below, behind the parting columns). fix/castbar-slides: Both's bar stays where it is (it is
+     * neither column's), so the wheel sits above it
+     */
+    private fun wheelFit(places: Map<Part, RectF>) {
         val w = width.toFloat(); val h = height.toFloat()
         val g = UiKit.MODULE_GAP
-        if (open) {
-            // the user on test18: "I want the dpad up radial to be about the same size as the pause menu radial": as tall as the space
-            // under the bars allows (the pause wheel fills the same height); no longer held to the chat column's width (it rises from
-            // below now, behind the parting columns)
-            // fix/castbar-slides: Both's bar stays where it is (it is neither column's), so the wheel sits above it
-            val s = ClassSlot.middle(w, h, now[Part.BARS]?.bottom ?: 0f, g, w * WHEEL_SLOT_MAX,
-                bottom = HomeSlide.middleBottom(laidSide, laidHidden, now[Part.STRIP]?.top, h, g))
-            wheelRect.set(s.left, s.top, s.left + s.side, s.top + s.side)
-            wheelPush = s.push
-        }
+        val s = ClassSlot.middle(w, h, places[Part.BARS]?.bottom ?: 0f, g, w * WHEEL_SLOT_MAX,
+            bottom = HomeSlide.middleBottom(laidSide, laidHidden, places[Part.STRIP]?.top, h, g))
+        wheelRect.set(s.left, s.top, s.left + s.side, s.top + s.side)
+        wheelPush = s.push
+    }
+    /**
+     * fix/radials-clip-castbar (the user on 1.0.32-1469: "The spells and ds tool bar radials both also clip that bar"): the page laid
+     * again UNDER an open middle wheel (a fight beginning or ending: the bar slid away by Hide in combat comes back up, the controller
+     * grows or shrinks) re-fits the wheel and parts the columns again by the page as it now is - the bar back in Left / Right goes with
+     * its column, the wheel moves above Both's bar. It was fitted once, at its open: a spell radial opened in a fight (the bar hidden =
+     * no column's) left the bar where the fight's end laid it back, under the wheel. [onWheelSlot] hands the wheel its new square.
+     */
+    private fun wheelRefit(places: Map<Part, RectF>) {
+        if (!wheelOpen || width == 0) return
+        val was = RectF(wheelRect)
+        wheelFit(places)
+        wheelPart(places, true)
+        if (was != wheelRect) onWheelSlot?.invoke(RectF(wheelRect))
+    }
+    /** fix/radials-clip-castbar: the open wheel's square changed ([wheelRefit]), in Home's coordinates */
+    var onWheelSlot: ((RectF) -> Unit)? = null
+    /** the columns part for the middle wheel ([open]) by [places], or come back */
+    private fun wheelPart(places: Map<Part, RectF>, open: Boolean) {
+        val w = width.toFloat()
         for ((p, v) in views) {
             if (p == Part.BARS) continue
             if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f }; continue }
-            val r = now[p] ?: continue
+            val r = places[p] ?: continue
             val to = if (!open) 0f else HomeSlide.dx(halfOf(p, r, w), wheelPush)
             v.animate().cancel()
             val a = v.animate().translationX(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
@@ -542,7 +567,6 @@ class HomeView(
             a.setListener(null)
             a.start()
         }
-        return if (open) RectF(wheelRect) else null
     }
     /**
      * f-radial-behind (1.0.9, the user: "the radial needs to look like its behind the Map and Chat modules, not slide up in front of it"):
@@ -1602,6 +1626,8 @@ class HomeView(
             if (v.visibility != View.VISIBLE && !classOpen && pauseT == 0f) { v.animate().cancel(); v.translationX = 0f; v.translationZ = restZ(p) }
             v.visibility = View.VISIBLE; v.alpha = 1f
         }
+        // fix/radials-clip-castbar: an open middle wheel follows the page laid again (a fight's start / end), never over the bar
+        if (s.full == null || s.takeover) wheelRefit(to)
         if (!animate || before == null) {
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
             flightClip(false)

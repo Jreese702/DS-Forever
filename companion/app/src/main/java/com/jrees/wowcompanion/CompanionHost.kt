@@ -867,6 +867,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         radialView.underRedraw = { homeView.wheelRedraw() }
+        // fix/radials-clip-castbar: Home re-fitted the open wheel (its page laid again under it: a fight began or ended), mapped as above
+        homeView.onWheelSlot = { r ->
+            val a = IntArray(2); val b = IntArray(2)
+            homeView.getLocationOnScreen(a); radialView.getLocationOnScreen(b)
+            r.offset((a[0] - b[0]).toFloat(), (a[1] - b[1]).toFloat())
+            radialView.reslot(r)
+        }
+
         // test26 (the user: "Same thing with the top radial button exactly"): the item / spell wheel shares the pause's guest ("radial"),
         // so its close is made final the same way: B dropped, the guest's late "home" muted, the disc blue before it shows again
         radialView.onClosed = {
