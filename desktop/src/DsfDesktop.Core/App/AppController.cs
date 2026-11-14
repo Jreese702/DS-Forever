@@ -421,24 +421,98 @@ namespace DsfDesktop.App
             catch (Exception e) { Log.I("closing WoW after the stream: " + e.Message); }
         }
 
+        // ---------------------------------------------------------------- Desktop's own update (DesktopUpdate, UpdateGate)
+
         DsfDesktop.Thor.DesktopUpdate update;
         DateTime nextUpdateCheck = DateTime.UtcNow.AddSeconds(DsfDesktop.Thor.DesktopUpdate.FirstCheckS);
+        DateTime quietSince = DateTime.UtcNow, lastAskedCheck = DateTime.MinValue;
+        DateTime? goSince;
+        string appWritable = "";   // "" = not looked yet, null = writable
+        string updateNote = "";
+        (bool ok, string version, DateTime at, string why)? lastResult;
+
+        /// <summary>the window's update line: "up to date", "0.2.29 ready: after the stream", "Updating to 0.2.29", ...</summary>
+        public string UpdateLine { get; private set; } = "";
+        /// <summary>a line for the tray balloon once (the last update went in / failed); null after it is read</summary>
+        public string TakeUpdateNote() { var n = updateNote; updateNote = null; return string.IsNullOrEmpty(n) ? null : n; }
+
+        DsfDesktop.Thor.DesktopUpdate Updater()
+        {
+            if (update != null) return update;
+            update = new DsfDesktop.Thor.DesktopUpdate(Paths.DataDir);
+            var last = lastResult = update.LastResult();
+            if (last.HasValue && (DateTime.UtcNow - last.Value.at).TotalMinutes < 30)
+            {
+                var r = last.Value;
+                updateNote = r.ok ? (DsfDesktop.Thor.Versions.Compare(r.version, Version) == 0 ? "Updated to " + Version : "") : "Update to " + r.version + " failed: " + r.why;
+            }
+            update.CleanUp(Paths.AppDir);
+            return update;
+        }
+
+        /// <summary>ask for a check now (a Thor connected, or it runs a newer add-on set); [force] skips the 10-minute spacing</summary>
+        public void RequestUpdateCheck(string why, bool force = false)
+        {
+            if (DsfDesktop.Thor.DesktopUpdate.Disabled) return;
+            if (!force && DateTime.UtcNow - lastAskedCheck < TimeSpan.FromMinutes(10)) return;
+            if (force && DateTime.UtcNow - lastAskedCheck < TimeSpan.FromMinutes(2)) return;
+            lastAskedCheck = DateTime.UtcNow;
+            Log.I("update: checking now (" + why + ")");
+            nextUpdateCheck = DateTime.UtcNow;
+        }
+
+        void OnThorAddonSet(int thorSet)
+        {
+            var mine = Addons?.AppSet;
+            if (mine.HasValue && thorSet > mine.Value) RequestUpdateCheck("the Thor runs add-on set " + thorSet + ", this Desktop bundles " + mine.Value, true);
+        }
+
+        bool WowFromDesktop()
+        {
+            if (Starter.State == WowState.Starting) return true;
+            bool thor = Bridge != null && Bridge.Sessions().Count > 0;
+            return (thor || thorWasHere) && WowUp();
+        }
 
         void UpdateTick()
         {
-            if (DateTime.UtcNow < nextUpdateCheck) return;
-            nextUpdateCheck = DateTime.UtcNow.AddSeconds(DsfDesktop.Thor.DesktopUpdate.CheckEveryS);
-            if (update == null) update = new DsfDesktop.Thor.DesktopUpdate(Paths.DataDir);
-            var u = update;
-            Task.Run(async () =>
+            if (DsfDesktop.Thor.DesktopUpdate.Disabled) { UpdateLine = "updates off"; return; }
+            var u = Updater();
+            if (appWritable == "") appWritable = DsfDesktop.Thor.SwapPlan.CanWrite(Paths.AppDir);
+            if (DateTime.UtcNow >= nextUpdateCheck)
             {
-                try { await u.Check(Version, CancellationToken.None).ConfigureAwait(false); }
-                catch (Exception e) { Log.I("update: " + e.Message); }
-            });
+                nextUpdateCheck = DateTime.UtcNow.AddSeconds(DsfDesktop.Thor.DesktopUpdate.CheckEveryS);
+                Task.Run(() => u.Check(Version, CancellationToken.None));
+            }
+            bool streaming = Stream == StreamState.Streaming, wow = false;
+            try { wow = WowFromDesktop(); } catch (Exception) { }
+            if (streaming || wow) quietSince = DateTime.UtcNow;
+            var last = lastResult;
+            var gate = new DsfDesktop.Thor.GateInput
+            {
+                ReadyVersion = u.ReadyVersion, Writable = appWritable, Streaming = streaming, WowFromDesktop = wow,
+                IdleForS = (DateTime.UtcNow - quietSince).TotalSeconds,
+                FailedVersion = last.HasValue && !last.Value.ok ? last.Value.version : null,
+                FailedAgoS = last.HasValue ? (DateTime.UtcNow - last.Value.at).TotalSeconds : double.MaxValue,
+            };
+            var d = DsfDesktop.Thor.UpdateGate.Decide(gate);
+            goSince = d.go ? goSince ?? DateTime.UtcNow : (DateTime?)null;
+            if (d.line.Length > 0) UpdateLine = d.line;
+            else if (u.Status.Length > 0) UpdateLine = u.Status;
+            else if (appWritable != null) UpdateLine = "can't update in this folder: unzip Desktop to Documents";
+            else UpdateLine = u.LastCheck.HasValue ? "up to date" : "";
         }
 
-        /// <summary>a verified new Desktop and no Thor connected: the swap is started and the app must quit (the tray asks, on the UI thread)</summary>
-        public bool StartPendingUpdate() => update != null && update.Ready && (Bridge == null || Bridge.Sessions().Count == 0) && update.Begin();
+        /// <summary>a verified new Desktop and the PC idle for a minute, shown as "Updating to x" for 3 s: the helper is started and the
+        /// app must quit (the tray asks every 3 s, on the UI thread)</summary>
+        public bool StartPendingUpdate()
+        {
+            if (update == null || !update.Ready || !goSince.HasValue || DateTime.UtcNow - goSince.Value < TimeSpan.FromSeconds(3)) return false;
+            if (update.Begin(Paths.AppDir)) return true;
+            goSince = null;
+            lastResult = update.LastResult();
+            return false;
+        }
 
         DateTime? loginFileAt, signInSeenAt;
         bool loginFileSwept;
@@ -946,6 +1020,8 @@ namespace DsfDesktop.App
                     cert = cert ?? BridgeCert.LoadOrCreate(Paths.DataDir, Settings.HostId);
                     Bridge = new BridgeServer(this, cert, Settings.BridgePort + i, Loopback ? IPAddress.Loopback : IPAddress.Any);
                     Bridge.SessionsChanged += Fire;
+                    Bridge.ThorConnected += () => RequestUpdateCheck("a Thor connected");
+                    Bridge.ThorAddonSet += OnThorAddonSet;
                     Bridge.Start();
                     BridgeStatus = "listening on port " + Bridge.Port;
                     return;

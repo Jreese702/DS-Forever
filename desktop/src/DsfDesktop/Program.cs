@@ -11,22 +11,27 @@ namespace DsfDesktop.Ui
 {
     static class Program
     {
-        static readonly string PipeName = "DSForeverDesktop-" + Environment.UserName;
+        /// <summary>DSF_INSTANCE=&lt;name&gt;: a second, separate instance (a test copy beside the real one: its own mutex and pipe)</summary>
+        static readonly string Instance = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DSF_INSTANCE")) ? "" : "-" + Environment.GetEnvironmentVariable("DSF_INSTANCE").Trim();
+        static readonly string PipeName = "DSForeverDesktop-" + Environment.UserName + Instance;
 
         /// <summary>
         /// DsForeverDesktop.exe [--tray]           the app (--tray: start hidden, as Start with Windows does)
+        /// DsForeverDesktop.exe --apply-update ...  the update helper (DesktopUpdate.Begin starts it)
         /// DsForeverDesktop.exe --event &lt;name&gt;    hands an event to the running app and exits (Sunshine's prep commands:
         ///                                          stream-start / stream-stop)
         /// </summary>
         [STAThread]
         static int Main(string[] args)
         {
+            // the update helper (a copy of the new exe in DataDir\update\helper): swaps the files once this app has closed
+            if (args.Contains(DsfDesktop.Thor.UpdateHelper.Flag)) return DsfDesktop.Thor.UpdateHelper.Run(args);
             string evt = null;
             int i = Array.IndexOf(args, "--event");
             if (i >= 0 && i + 1 < args.Length) evt = args[i + 1];
             bool tray = args.Contains("--tray");
 
-            using (var mutex = new Mutex(true, @"Local\DSForeverDesktop", out bool first))
+            using (var mutex = new Mutex(true, @"Local\DSForeverDesktop" + Instance, out bool first))
             {
                 if (!first) { Send(evt != null ? "event " + evt : "show"); return 0; }
                 if (evt != null) return 0;   // an event with no app running: nothing to tell

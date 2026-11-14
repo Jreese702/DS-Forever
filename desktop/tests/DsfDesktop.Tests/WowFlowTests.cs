@@ -198,60 +198,6 @@ namespace DsfDesktop.Tests
             A.True(!DsfDesktop.Thor.DesktopUpdate.Newer(r, "0.2.10"), "no zip in the release");
         }
 
-        static void DeleteSoon(string dir)     // the fake exe the script started may still be closing
-        {
-            for (int i = 0; i < 20 && Directory.Exists(dir); i++)
-            {
-                try { Directory.Delete(dir, true); } catch (Exception) { System.Threading.Thread.Sleep(250); }
-            }
-        }
-
-        static void RunUpdateScript(string root, string app, string next)
-        {
-            var script = Path.Combine(root, "apply.cmd");
-            File.WriteAllText(script, DsfDesktop.Thor.DesktopUpdate.Script(999999, next, app), new System.Text.UTF8Encoding(false));
-            using (var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c \"\"" + script + "\"\"") { UseShellExecute = false, CreateNoWindow = true }))
-                A.True(p.WaitForExit(60000), "the script ended");
-        }
-
-        [Test]
-        public static void TheUpdateSwapsTheFolders()
-        {
-            var root = Path.Combine(Path.GetTempPath(), "dsf update " + Guid.NewGuid().ToString("N"));
-            var app = Path.Combine(root, "DsForeverDesktop"); var next = Path.Combine(root, "next");
-            var fake = Path.Combine(Environment.SystemDirectory, "hostname.exe");
-            Directory.CreateDirectory(app); Directory.CreateDirectory(Path.Combine(next, "sunshine"));
-            File.WriteAllText(Path.Combine(app, "old.txt"), "old");
-            File.Copy(fake, Path.Combine(app, "DsForeverDesktop.exe"));
-            File.Copy(fake, Path.Combine(next, "DsForeverDesktop.exe"));
-            File.WriteAllText(Path.Combine(next, "sunshine", "new.txt"), "new");
-            try
-            {
-                RunUpdateScript(root, app, next);
-                A.True(File.Exists(Path.Combine(app, "sunshine", "new.txt")), "the new folder is in");
-                A.True(!File.Exists(Path.Combine(app, "old.txt")), "the old one is gone");
-                A.True(!Directory.Exists(app + ".old") && !Directory.Exists(app + ".new") && !Directory.Exists(next), "nothing left over");
-            }
-            finally { DeleteSoon(root); }
-        }
-
-        [Test]
-        public static void TheOldFolderStaysWhenTheCopyFails()
-        {
-            var root = Path.Combine(Path.GetTempPath(), "dsf update " + Guid.NewGuid().ToString("N"));
-            var app = Path.Combine(root, "DsForeverDesktop");
-            Directory.CreateDirectory(app);
-            File.WriteAllText(Path.Combine(app, "old.txt"), "old");
-            File.WriteAllBytes(Path.Combine(app, "DsForeverDesktop.exe"), File.ReadAllBytes(Path.Combine(Environment.SystemDirectory, "hostname.exe")));
-            try
-            {
-                RunUpdateScript(root, app, Path.Combine(root, "missing"));
-                A.True(File.Exists(Path.Combine(app, "old.txt")), "nothing changed");
-                A.True(!Directory.Exists(app + ".new"));
-            }
-            finally { DeleteSoon(root); }
-        }
-
         [Test]
         public static void WowIsAskedForwardForAMinuteAtMost()
         {

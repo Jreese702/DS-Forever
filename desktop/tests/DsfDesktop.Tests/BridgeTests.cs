@@ -294,6 +294,33 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
+        public static void TheThorsAddonSetAsksForAnUpdateCheck()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            {
+                var sets = new System.Collections.Concurrent.ConcurrentQueue<int>();
+                int connects = 0;
+                s.ThorAddonSet += n => sets.Enqueue(n);
+                s.ThorConnected += () => System.Threading.Interlocked.Increment(ref connects);
+                var token = h.Devices.Issue("thor-1", "Thor");
+                using (var c = new Client(s.Port))
+                {
+                    var hello = Hello("thor-1", token);
+                    hello["addon_set"] = 391;
+                    c.Send(hello);
+                    c.Until("backlog_end");
+                    c.Send(new Dictionary<string, object> { ["t"] = "addons_status" });   // an older Thor: no set
+                    c.Until("addons");
+                    c.Send(new Dictionary<string, object> { ["t"] = "addons_status", ["addon_set"] = 392 });
+                    c.Until("addons");
+                }
+                A.Eq(1, connects);
+                A.Eq("391,392", string.Join(",", sets));
+            }
+        }
+
+        [Test]
         public static void HelloWithTokenGetsBacklogThenLive()
         {
             using (var h = new FakeHost())

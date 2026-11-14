@@ -25,6 +25,27 @@ namespace DsfDesktop.Thor
     {
         public const string LatestUrl = "https://api.github.com/repos/Jreese702/DS-Forever/releases/latest";
         static readonly HttpClient Http = MakeClient();
+        readonly string latestUrl;
+
+        /// <summary>[latestUrl]: GitHub's latest-release API (the default), or for a test a local JSON file whose asset URLs may be
+        /// local files too (DSF_UPDATE_FEED)</summary>
+        public ReleaseFeed(string latestUrl = null) { this.latestUrl = string.IsNullOrWhiteSpace(latestUrl) ? LatestUrl : latestUrl; }
+
+        /// <summary>a path or file:// URI rather than http(s)</summary>
+        public static bool IsLocal(string url) =>
+            url != null && !url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+        static string LocalPath(string url) => url.StartsWith("file:", StringComparison.OrdinalIgnoreCase) ? new Uri(url).LocalPath : url;
+
+        static async Task<string> GetString(string url, CancellationToken ct)
+        {
+            if (IsLocal(url)) return File.ReadAllText(LocalPath(url));
+            using (var r = await Http.GetAsync(url, ct).ConfigureAwait(false))
+            {
+                r.EnsureSuccessStatusCode();
+                return await r.Content.ReadAsStringAsync().ConfigureAwait(false);
+            }
+        }
 
         static HttpClient MakeClient()
         {
@@ -83,14 +104,7 @@ namespace DsfDesktop.Thor
             return got == want ? null : "checksum mismatch (" + got.Substring(0, 12) + " vs " + want.Substring(0, 12) + ")";
         }
 
-        public async Task<Release> Latest(CancellationToken ct)
-        {
-            using (var r = await Http.GetAsync(LatestUrl, ct).ConfigureAwait(false))
-            {
-                r.EnsureSuccessStatusCode();
-                return ParseLatest(await r.Content.ReadAsStringAsync().ConfigureAwait(false));
-            }
-        }
+        public async Task<Release> Latest(CancellationToken ct) => ParseLatest(await GetString(latestUrl, ct).ConfigureAwait(false));
 
         /// <summary>the verified APK in cacheDir (downloaded or resumed as needed); throws when it can't be verified</summary>
         public Task<string> EnsureApk(Release rel, string cacheDir, Action<long, long> progress, CancellationToken ct) =>
@@ -102,16 +116,20 @@ namespace DsfDesktop.Thor
         {
             if (sumsUrl == null) throw new InvalidOperationException("the release has no SHA256SUMS: not installing an unverified file");
             Directory.CreateDirectory(cacheDir);
-            string sums;
-            using (var r = await Http.GetAsync(sumsUrl, ct).ConfigureAwait(false))
-            {
-                r.EnsureSuccessStatusCode();
-                sums = await r.Content.ReadAsStringAsync().ConfigureAwait(false);
-            }
+            var sums = await GetString(sumsUrl, ct).ConfigureAwait(false);
             var file = Path.Combine(cacheDir, name);
             if (Verify(file, sums, name) == null) return file;
 
             var part = file + ".part";
+            if (IsLocal(url))
+            {
+                File.Copy(LocalPath(url), part, true);
+                var bad = Verify(part, sums, name);
+                if (bad != null) { File.Delete(part); throw new InvalidDataException("the download failed its SHA256SUMS check: " + bad); }
+                if (File.Exists(file)) File.Delete(file);
+                File.Move(part, file);
+                return file;
+            }
             for (int attempt = 0; attempt < 2; attempt++)
             {
                 long have = File.Exists(part) ? new FileInfo(part).Length : 0;

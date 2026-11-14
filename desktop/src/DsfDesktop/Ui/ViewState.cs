@@ -13,6 +13,8 @@ namespace DsfDesktop.Ui
     public sealed class ViewState
     {
         public string Version = "";
+        /// <summary>Desktop's own update: "up to date", "0.2.29 ready: after the stream", "Updating to 0.2.29", ... ("" = not checked yet)</summary>
+        public string Update = "";
         public string Code = "", CodeHint = "";
         public bool CodeLocked;
         public List<DeviceRow> Devices = new List<DeviceRow>();
@@ -67,7 +69,7 @@ namespace DsfDesktop.Ui
 
         public static ViewState From(AppController c)
         {
-            var v = new ViewState { Version = AppController.Version, BridgePort = c.Bridge?.Port ?? 0 };
+            var v = new ViewState { Version = AppController.Version, Update = c.UpdateLine, BridgePort = c.Bridge?.Port ?? 0 };
             if (c.Codes.Locked) { v.CodeLocked = true; v.Code = "paused"; v.CodeHint = "Too many wrong codes. Press New code to start pairing again."; }
             else
             {

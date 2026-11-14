@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,21 +9,38 @@ using System.Threading.Tasks;
 namespace DsfDesktop.Thor
 {
     /// <summary>
-    /// DESKTOP UPDATES ITSELF (the user 2026-11-01: "Can we add an auto update feature to the desktop app?"): the zip of the latest public
-    /// release, checked against its SHA256SUMS like the APK, unpacked beside the data; it goes in once no Thor is connected. A small script
-    /// outlives the app, swaps the folders and starts the new one; anything going wrong starts the old folder again. Settings and pairing
-    /// live in DataDir, so they stay.
+    /// DESKTOP UPDATES ITSELF (the user 2026-11-01, and 11-13 "we need this shit to have an auto update feature"): the zip of the latest
+    /// public release, checked against its SHA256SUMS, unpacked to DataDir\update\next. It goes in on its own once no stream is on and
+    /// Desktop's WoW is closed (UpdateGate): a copy of the NEW exe runs from DataDir\update\helper, waits for this one and its Sunshine
+    /// to exit, swaps the files one by one (SwapPlan) and starts Desktop again. Settings, pairings and Sunshine's state live in DataDir,
+    /// so they stay. DSF_UPDATE_FEED points the check at another latest-release JSON (a local file for a test); DSF_NO_UPDATE=1 turns
+    /// it off.
     /// </summary>
     public sealed class DesktopUpdate
     {
-        public const double CheckEveryS = 6 * 3600, FirstCheckS = 60;
-        const string Exe = "DsForeverDesktop.exe";
+        public const double CheckEveryS = 3 * 3600, FirstCheckS = 20;
+        const string Exe = UpdateHelper.Exe;
 
-        readonly string dir;
-        readonly ReleaseFeed feed = new ReleaseFeed();
-        volatile string ready;
+        readonly string dataDir, dir;
+        readonly ReleaseFeed feed;
+        volatile string ready, readyVersion;
+        volatile string status = "";
 
-        public DesktopUpdate(string dataDir) { dir = Path.Combine(dataDir, "update"); }
+        public DesktopUpdate(string dataDir, string feedUrl = null)
+        {
+            this.dataDir = dataDir;
+            dir = Path.Combine(dataDir, "update");
+            feed = new ReleaseFeed(feedUrl ?? Environment.GetEnvironmentVariable("DSF_UPDATE_FEED"));
+        }
+
+        public static bool Disabled => Environment.GetEnvironmentVariable("DSF_NO_UPDATE") == "1";
+
+        public string UpdateDir => dir;
+        /// <summary>what the last check found or did ("" = up to date / not checked yet)</summary>
+        public string Status => status;
+        public bool Ready => ready != null;
+        public string ReadyVersion => readyVersion;
+        public DateTime? LastCheck { get; private set; }
 
         /// <summary>the version in the zip's name; null = not one of ours</summary>
         public static string ZipVersion(string name)
@@ -36,57 +52,84 @@ namespace DsfDesktop.Thor
         public static bool Newer(Release rel, string mine) =>
             rel?.DesktopName != null && Versions.Compare(ZipVersion(rel.DesktopName), mine) > 0;
 
-        /// <summary>one look at GitHub: a newer verified build unpacked and waiting. Failures wait for the next look</summary>
+        int busy;
+
+        /// <summary>one look at the feed: a newer verified build unpacked and waiting. Failures wait for the next look</summary>
         public async Task Check(string mine, CancellationToken ct)
         {
-            if (ready != null) return;
-            var rel = await feed.Latest(ct).ConfigureAwait(false);
-            if (!Newer(rel, mine)) return;
-            Log.I("update: Desktop " + ZipVersion(rel.DesktopName) + " found, downloading");
-            var zip = await feed.EnsureFile(rel.DesktopName, rel.DesktopUrl, rel.DesktopSize, rel.SumsUrl, dir, "*.zip", null, ct).ConfigureAwait(false);
-            var next = Path.Combine(dir, "next");
-            if (Directory.Exists(next)) Directory.Delete(next, true);
-            ZipFile.ExtractToDirectory(zip, next);
-            if (!File.Exists(Path.Combine(next, Exe))) { Directory.Delete(next, true); throw new InvalidDataException("the zip has no " + Exe); }
-            ready = next;
-            Log.I("update: ready, it goes in when no Thor is connected");
+            if (Interlocked.Exchange(ref busy, 1) == 1) return;
+            try
+            {
+                LastCheck = DateTime.UtcNow;
+                var rel = await feed.Latest(ct).ConfigureAwait(false);
+                if (!Newer(rel, mine)) { if (ready == null) status = ""; return; }
+                var ver = ZipVersion(rel.DesktopName);
+                if (ready != null && Versions.Compare(readyVersion, ver) >= 0) return;
+                Log.I("update: Desktop " + ver + " found, downloading");
+                status = "downloading " + ver;
+                var zip = await feed.EnsureFile(rel.DesktopName, rel.DesktopUrl, rel.DesktopSize, rel.SumsUrl, dir, "*.zip",
+                    (done, total) => { if (total > 0) status = "downloading " + ver + " (" + (100 * done / total) + "%)"; }, ct).ConfigureAwait(false);
+                var next = Path.Combine(dir, "next");
+                if (Directory.Exists(next)) Directory.Delete(next, true);
+                ZipFile.ExtractToDirectory(zip, next);
+                // a zip with everything in one top folder (DsForeverDesktop\...) is taken from that folder
+                if (!File.Exists(Path.Combine(next, Exe)))
+                {
+                    var subs = Directory.GetDirectories(next);
+                    if (subs.Length == 1 && File.Exists(Path.Combine(subs[0], Exe)) && Directory.GetFiles(next).Length == 0)
+                    {
+                        var tmp = next + "-x";
+                        if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
+                        Directory.Move(subs[0], tmp);
+                        Directory.Delete(next, true);
+                        Directory.Move(tmp, next);
+                    }
+                }
+                if (!File.Exists(Path.Combine(next, Exe))) { Directory.Delete(next, true); throw new InvalidDataException("the zip has no " + Exe); }
+                readyVersion = ver;
+                ready = next;
+                status = ver + " ready";
+                Log.I("update: " + ver + " verified and unpacked; it goes in when no stream is on and WoW is closed");
+            }
+            catch (Exception e) { Log.I("update: " + e.Message); if (ready == null) status = "update check failed"; }
+            finally { Interlocked.Exchange(ref busy, 0); }
         }
 
-        public bool Ready => ready != null;
-
-        /// <summary>starts the script that waits for this process to end; true = the app must now quit</summary>
-        public bool Begin()
+        /// <summary>copies the new exe out as the helper and starts it; true = the app must now quit</summary>
+        public bool Begin(string appDir)
         {
             try
             {
+                var helper = Path.Combine(dir, "helper");
+                if (Directory.Exists(helper)) try { Directory.Delete(helper, true); } catch (Exception) { }
+                Directory.CreateDirectory(helper);
+                foreach (var f in Directory.GetFiles(ready))
+                {
+                    var n = Path.GetFileName(f);
+                    if (n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || n.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || n.EndsWith(".config", StringComparison.OrdinalIgnoreCase))
+                        File.Copy(f, Path.Combine(helper, n), true);
+                }
                 var me = Process.GetCurrentProcess();
-                var script = Path.Combine(dir, "apply.cmd");
-                File.WriteAllText(script, Script(me.Id, ready, Path.GetDirectoryName(me.MainModule.FileName)), new UTF8Encoding(false));
-                Process.Start(new ProcessStartInfo("cmd.exe", "/c \"\"" + script + "\"\"") { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = dir })?.Dispose();
-                Log.I("update: restarting into the new Desktop");
+                var args = UpdateHelper.Quote(UpdateHelper.Args(me.Id, ready, appDir, dataDir, readyVersion));
+                Process.Start(new ProcessStartInfo(Path.Combine(helper, Exe), args) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = helper })?.Dispose();
+                Log.I("update: closing for " + readyVersion + " (helper " + helper + ")");
                 return true;
             }
-            catch (Exception e) { Log.I("update: " + e.Message); ready = null; return false; }
+            catch (Exception e)
+            {
+                Log.I("update: helper didn't start: " + e.Message);
+                UpdateHelper.WriteResult(dir, false, readyVersion, "helper didn't start: " + e.Message);
+                return false;
+            }
         }
 
-        /// <summary>the swap: the new folder is copied beside the app first, so the renames cannot be left half done across drives</summary>
-        public static string Script(int pid, string next, string app)
+        /// <summary>at start: what the last helper run did (null = nothing new to say), and its leftovers cleaned</summary>
+        public (bool ok, string version, DateTime at, string why)? LastResult() => UpdateHelper.ReadResult(dir);
+
+        public void CleanUp(string appDir)
         {
-            Func<string, string> q = s => s.TrimEnd('\\').Replace("%", "%%");
-            var name = Path.GetFileName(app.TrimEnd('\\')).Replace("%", "%%");
-            var s2 = new StringBuilder();
-            s2.Append("@echo off\r\nchcp 65001 >nul\r\n");
-            s2.Append("set \"APP=" + q(app) + "\"\r\nset \"NEXT=" + q(next) + "\"\r\nset \"NAME=" + name + "\"\r\n");
-            s2.Append("cd /d \"%~dp0\"\r\n");
-            s2.Append(":wait\r\ntasklist /FI \"PID eq " + pid + "\" /NH | find \" " + pid + " \" >nul && (ping -n 2 127.0.0.1 >nul & goto wait)\r\n");
-            s2.Append("if exist \"%APP%.new\" rmdir /s /q \"%APP%.new\"\r\nif exist \"%APP%.old\" rmdir /s /q \"%APP%.old\"\r\n");
-            s2.Append("robocopy \"%NEXT%\" \"%APP%.new\" /E /R:2 /W:1 >nul\r\nif errorlevel 8 goto fail\r\n");
-            s2.Append("set /a TRIES=0\r\n:swap\r\nren \"%APP%\" \"%NAME%.old\" 2>nul && goto swapped\r\n");
-            s2.Append("set /a TRIES+=1\r\nif %TRIES% geq 30 goto fail\r\nping -n 2 127.0.0.1 >nul\r\ngoto swap\r\n");
-            s2.Append(":swapped\r\nren \"%APP%.new\" \"%NAME%\" 2>nul && goto done\r\nren \"%APP%.old\" \"%NAME%\"\r\n");
-            s2.Append(":fail\r\nif exist \"%APP%.new\" rmdir /s /q \"%APP%.new\"\r\nstart \"\" \"%APP%\\" + Exe + "\" --tray\r\nexit /b 1\r\n");
-            s2.Append(":done\r\nstart \"\" \"%APP%\\" + Exe + "\" --tray\r\nrmdir /s /q \"%NEXT%\"\r\nrmdir /s /q \"%APP%.old\"\r\nexit /b 0\r\n");
-            return s2.ToString();
+            try { var h = Path.Combine(dir, "helper"); if (Directory.Exists(h)) Directory.Delete(h, true); } catch (Exception) { }
+            SwapPlan.CleanOld(appDir);
         }
     }
 }

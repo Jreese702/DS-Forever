@@ -18,8 +18,11 @@ stream WoW Forever from this PC. One tray app that
   Never uninstalls, never clears data. A file picker installs a tester's own APK.
 - Looks like DS Forever on the Thor (dark panels, bronze frames, the game's gold, the gold box cursor; DS Forever's own mark).
 
-- **Updates itself** from the latest public release (the `DsForeverDesktop-<version>-win-x64.zip` listed in SHA256SUMS), once no Thor
-  is connected; a failed swap starts the old folder again.
+- **Updates itself** from the latest public release (the `DsForeverDesktop-<version>-win-x64.zip` listed in SHA256SUMS): checked at
+  start, every 3 hours and when a Thor connects (or reports a newer add-on set), downloaded and verified in the background, and put in
+  after a quiet minute with no stream and Desktop's WoW closed. A helper (a copy of the new exe in
+  `%LOCALAPPDATA%\DSForeverDesktop\update\helper`) swaps the files one by one in whatever folder Desktop was unzipped to, keeps
+  Sunshine's config, puts everything back if a copy fails, and starts Desktop again. The header shows the version and update state.
 - **Signs in with the Thor's saved login:** WoW's own `login.txt`, short-lived and readable by this Windows user only. No keys are typed.
 
 ## Build
@@ -40,7 +43,8 @@ Sunshine and adb are never committed: `scripts/fetch_sunshine.ps1` and `scripts/
 pinned in `scripts/sunshine.lock` / `scripts/platform-tools.lock` and check their SHA-256. `installer/DsForeverDesktop.iss` (Inno Setup 6) makes a per-user installer from the staged folder.
 
 Development switches: `DSF_LOOPBACK=1` (bridge and Sunshine on 127.0.0.1, no mDNS: no firewall prompt), `DSF_DESKTOP_DATA`,
-`DSF_SUNSHINE_DIR`, `DSF_ADDON_SOURCE`. The bridge's test page is `http://localhost:48210/test` (this PC only).
+`DSF_SUNSHINE_DIR`, `DSF_ADDON_SOURCE`, `DSF_UPDATE_FEED` (another latest-release JSON, e.g. a local file whose asset URLs are
+local paths), `DSF_NO_UPDATE=1`, `DSF_INSTANCE=<name>` (a separate instance beside the real one: its own mutex and pipe). The bridge's test page is `http://localhost:48210/test` (this PC only).
 
 ## Licence
 

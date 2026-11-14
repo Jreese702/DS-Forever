@@ -13,6 +13,7 @@ namespace DsfDesktop.Ui
         readonly NotifyIcon icon;
         readonly MainForm form;
         readonly Control invoker;
+        bool said;
 
         public TrayContext(AppController ctl, bool show)
         {
@@ -38,8 +39,13 @@ namespace DsfDesktop.Ui
             var hover = new Timer { Interval = 3000 };
             hover.Tick += (s, e) =>
             {
+                var note = ctl.TakeUpdateNote();
+                if (note != null) icon.ShowBalloonTip(4000, "DS Forever Desktop", note, ToolTipIcon.None);
+                bool updating = ctl.UpdateLine.StartsWith("Updating to");
+                if (updating && !said) { said = true; icon.ShowBalloonTip(3000, "DS Forever Desktop", ctl.UpdateLine, ToolTipIcon.None); }
                 if (ctl.StartPendingUpdate()) { hover.Stop(); Quit(); return; }
-                var t = ctl.Stream == App.StreamState.Streaming ? "streaming to your Thor" : (ctl.Bridge?.Sessions().Count ?? 0) > 0 ? "your Thor is connected" : "ready";
+                if (!updating) said = false;
+                var t = updating ? "updating" : ctl.Stream == App.StreamState.Streaming ? "streaming to your Thor" : (ctl.Bridge?.Sessions().Count ?? 0) > 0 ? "your Thor is connected" : "ready";
                 icon.Text = "DS Forever Desktop: " + t;
             };
             hover.Start();

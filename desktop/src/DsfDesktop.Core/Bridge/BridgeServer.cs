@@ -123,6 +123,17 @@ namespace DsfDesktop.Bridge
         /// <summary>no frame at all for this long (the Thor pings when idle 15 s) closes a session</summary>
         public int IdleMs = 60_000;
         public event Action SessionsChanged;
+        /// <summary>the add-on set a Thor says it runs (an optional "addon_set" on hello / addons_install / addons_status; an older Thor
+        /// sends none): Desktop checks for its own update when the Thor's is newer than its bundled one</summary>
+        public event Action<int> ThorAddonSet;
+        /// <summary>a Thor signed in (a new session)</summary>
+        public event Action ThorConnected;
+
+        void SawAddonSet(Dictionary<string, object> m)
+        {
+            var set = m.Long("addon_set", 0);
+            if (set > 0 && set < int.MaxValue) try { ThorAddonSet?.Invoke((int)set); } catch (Exception) { }
+        }
         public int Port { get; private set; }
         public bool Tls => cert != null;
         public string Fingerprint => cert == null ? null : BridgeCert.Fingerprint(cert);
@@ -319,6 +330,8 @@ namespace DsfDesktop.Bridge
                             }
                             var dev = host.Devices.All().FirstOrDefault(d => d.Id == id);
                             s = Authenticate(ws, st, id, dev?.Name ?? id, peer);
+                            try { ThorConnected?.Invoke(); } catch (Exception) { }
+                            SawAddonSet(m);
                         }
                         else if (t == "pair_hello")
                         {
@@ -398,8 +411,9 @@ namespace DsfDesktop.Bridge
                             var pw = m.Str("password");
                             Task.Run(() => host.LoginFile(em, pw));
                             break;
-                        case "addons_status": s.Enqueue(With("addons", host.AddonsStatus())); break;
+                        case "addons_status": SawAddonSet(m); s.Enqueue(With("addons", host.AddonsStatus())); break;
                         case "addons_install":
+                            SawAddonSet(m);
                             var sa = s;
                             Task.Run(() => sa.Enqueue(With("addons", host.AddonsInstall())));
                             break;

@@ -139,7 +139,7 @@ namespace DsfDesktop.Ui
 
             Controls.Add(grid);
             Controls.Add(footer);
-            Controls.Add(new Header(this));
+            Controls.Add(header = new Header(this));
 
             Wire();
             tick.Tick += (s, e) => Pull();
@@ -218,10 +218,15 @@ namespace DsfDesktop.Ui
             try { Apply(state()); } catch (Exception) { }
         }
 
+        Header header;
+        string shownUpdate;
+
         /// <summary>shows a snapshot (also how the mockups are drawn)</summary>
+
         public void Apply(ViewState s)
         {
             v = s;
+            if (header != null && s.Update != shownUpdate) { shownUpdate = s.Update; header.Invalidate(); }
             applying = true;
             SuspendLayout();
             code.Text = s.Code;
@@ -329,6 +334,17 @@ namespace DsfDesktop.Ui
                     var ver = "version " + form.v.Version;
                     var sz = g.MeasureString(ver, f);
                     g.DrawString(ver, f, dim, Width - sz.Width - 26, 20);
+                    var up = form.v.Update ?? "";
+                    if (up.Length > 0)
+                    {
+                        bool bad = up.Contains("failed") || up.Contains("can't");
+                        bool hot = up.StartsWith("Updating") || up.Contains("ready") || up.Contains("downloading");
+                        using (var b = new SolidBrush(bad ? Theme.Warn : hot ? Theme.Gold : Theme.Dim))
+                        {
+                            var usz = g.MeasureString(up, f);
+                            g.DrawString(up, f, b, Width - usz.Width - 26, 40);
+                        }
+                    }
                 }
                 using (var b = new LinearGradientBrush(new Rectangle(0, Height - 2, Width, 2), Color.FromArgb(0, 255, 209, 0), Theme.Gold, LinearGradientMode.Horizontal))
                 {
