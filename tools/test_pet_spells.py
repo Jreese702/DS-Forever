@@ -86,6 +86,14 @@ IMP = {
     { name = "Blood Pact", actionID = 0xC1 * H + 6307, spellID = 6307, itemType = 3, iconID = 136168, subName = "Rank 1", ac = true },
     { name = "Phase Shift", actionID = 0x81 * H + 4511, spellID = 4511, itemType = 3, iconID = 136164, ac = true },
 }
+-- (review, Spells s10b) a succubus: Seduction cannot auto-cast, so the server packs it with state 1 (its "ACT_PASSIVE": 0x81 / 0xC1 are
+-- 1 | the auto-cast bits) - an ACTIVE spell the game's book shows and casts; Lash of Pain auto-casts; Soothing Aura a true passive
+SUCCUBUS = {
+    { name = "Attack", actionID = 7 * H + 2, itemType = 3, iconID = 132152 },
+    { name = "Seduction", actionID = 1 * H + 6358, spellID = 6358, itemType = 3, iconID = 136175, subName = "" },
+    { name = "Lash of Pain", actionID = 0xC1 * H + 7814, spellID = 7814, itemType = 3, iconID = 136136, subName = "Rank 1", ac = true, ae = true },
+    { name = "Soothing Aura", actionID = 1 * H + 20000, spellID = 20000, itemType = 3, iconID = 136100, pas = true },
+}
 '''
 
 EXTRA = r'''
@@ -97,6 +105,7 @@ SPELLNAME[1978] = "Serpent Sting"; SPELLNAME[13165] = "Aspect of the Hawk"; SPEL
 SPELLNAME[2649] = "Growl"; SPELLNAME[17253] = "Bite"; SPELLNAME[4187] = "Great Stamina"
 SPELLNAME[3110] = "Firebolt"; SPELLNAME[6307] = "Blood Pact"; SPELLNAME[4511] = "Phase Shift"
 SPELLNAME[686] = "Shadow Bolt"
+SPELLNAME[6358] = "Seduction"; SPELLNAME[7814] = "Lash of Pain"; SPELLNAME[20000] = "Soothing Aura"
 HARMFUL = { [1978] = true, [3044] = true, [2973] = true, [17253] = true, [3110] = true, [686] = true }
 C_Spell.IsSpellHarmful = function(x) local id = x; if type(x) == "string" then for k, n in pairs(SPELLNAME) do if n == x then id = k end end end return HARMFUL[id] == true end
 C_Spell.GetSpellInfo = function(x)
@@ -156,7 +165,7 @@ ACTIONINFO = {}
 function GetActionInfo(s) local a = ACTIONINFO[s]; if a then return a[1], a[2], a[3] end end
 function GetActionTexture(s) local a = ACTIONINFO[s]; return a and 130000 + a[2] or nil end
 function HasAction(s) return ACTIONINFO[s] ~= nil end
-local function spellOfAction(a) for _, b in ipairs({ HUNTER_PET, IMP }) do for _, e in ipairs(b) do if e.actionID == a then return e.spellID end end end end
+local function spellOfAction(a) for _, b in ipairs({ HUNTER_PET, IMP, SUCCUBUS }) do for _, e in ipairs(b) do if e.actionID == a then return e.spellID end end end end
 C_ActionBar = { HasBonusActionBar = function() return false end,
     FindSpellActionButtons = function(id) local out = {}; for s, a in pairs(ACTIONINFO) do if a[1] == "spell" and a[2] == id and a[3] == nil then out[#out + 1] = s end end; table.sort(out); return out end,
     FindPetActionButtons = function(pa) local sid = spellOfAction(pa); local out = {}
@@ -164,7 +173,7 @@ C_ActionBar = { HasBonusActionBar = function() return false end,
     GetPetActionPetBarIndices = function(pa) local sid = spellOfAction(pa); for i, x in pairs(PETBAR) do if x == sid then return { i } end end return {} end }
 PETBAR = {}                                        -- the pet bar: index -> spell id
 function GetPetActionInfo(i) local sid = PETBAR[i]; if sid then return SPELLNAME[sid], 130000 + sid, false, false, true, false, sid end end
-C_PetInfo = { IsPetActionPassive = function(a) for _, b in ipairs({ HUNTER_PET, IMP }) do for _, e in ipairs(b) do if e.actionID == a and a ~= 0 then return e.pas == true end end end return false end,
+C_PetInfo = { IsPetActionPassive = function(a) for _, b in ipairs({ HUNTER_PET, IMP, SUCCUBUS }) do for _, e in ipairs(b) do if e.actionID == a and a ~= 0 then return e.pas == true end end end return false end,
               GetSpellForPetAction = function(a) return spellOfAction(a) end }
 function GetPetIcon() return 132270 end
 function GetNumShapeshiftForms() return 0 end
@@ -255,7 +264,7 @@ def feed(L):
 
 def keep_spells(name, L):
     """the whole `spells` document as the feed sends it (Spells.lua emitSpells: type, v, s)"""
-    FIX[name] = L.eval('WowCompanion.encode({ type = "spells", v = "s10a", s = WowCompanion.collectSpells() })')
+    FIX[name] = L.eval('WowCompanion.encode({ type = "spells", v = "s10b", s = WowCompanion.collectSpells() })')
 
 
 def keep_last(name, L, typ):
@@ -324,9 +333,9 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap", "radial"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local SV = "s10a"' in SRC["spells"] and 'local BV = "b63a"' in SRC["book"] and 'local PV = "m163a"' in SRC["padmap"]
+check('local SV = "s10b"' in SRC["spells"] and 'local BV = "b63a"' in SRC["book"] and 'local PV = "m163a"' in SRC["padmap"]
       and 'local RV = "r21"' in SRC["radial"] and 'local SRV = "q5"' in SRC["radial"] and 'local CBV = "cb10"' in CASTBAR,
-      "the versions: Spells s10a, Book b63a, PadMap m163a (the review), Radial r21 / q5, ActionBar cb10")
+      "the versions: Spells s10b, Book b63a, PadMap m163a (the review), Radial r21 / q5, ActionBar cb10")
 check(all('#234, the user: "build it"' in s for s in (SRC["spells"], SRC["book"], SRC["padmap"], SRC["radial"], CASTBAR)),
       "each changed file's header note quotes the user (#234: \"build it\")")
 
@@ -564,7 +573,34 @@ P = boot(pre='CVARB.spellBookHidePassives = true')
 i, entries = pet_tab(P)
 check(i is not None and "Great Stamina" not in [e[0] for e in entries] and len(entries) == 6, "l. passives hidden: the Pet tab without Great Stamina")
 
-# ================================================================ m-o. the review (Spells s10a, Book b63a, PadMap m163a)
+# ================================================================ m-p. the review (Spells s10a / s10b, Book b63a, PadMap m163a)
+# p. (s10b) PASSIVE is the game's own Spellbook word, never the pet bar's state: Seduction (packed with state 1, it cannot auto-cast) is an
+#    ACTIVE spell - numbered, bindable, kept by name, listed with Hide Passives on - even where IsPetActionPassive reads the state
+#    (the strictest stub: state 1 = "passive"); Soothing Aura, a true passive (IsSpellBookItemPassive), stays without Bind
+for hide in (False, True):
+    Pp = boot(pre='CLASS = "WARLOCK"; BOOK = { 686 }; LINES = { { name = "General", iconID = 1, itemIndexOffset = 0, numSpellBookItems = 1 } }; '
+                  'C_PetInfo.IsPetActionPassive = function(a) return type(a) == "number" and math.floor(a / 16777216) % 256 == 1 end'
+                  + ('; CVARB.spellBookHidePassives = true' if hide else ''), pet='SUCCUBUS')
+    d = feed(Pp)
+    si = {it['n']: it for it in d['pet']['items']}
+    i, entries = pet_tab(Pp)
+    names = [e[0] for e in entries]
+    tag = "Hide Passives on" if hide else "Hide Passives off"
+    check(si["Seduction"].get('bind') is True and 'pas' not in si["Seduction"] and isinstance(si["Seduction"].get('pv'), int),
+          "p. %s: Seduction (state 1, no auto-cast) is an active spell: bind, a number, not passive" % tag,
+          {k: si["Seduction"].get(k) for k in ('bind', 'pas', 'pv')})
+    check(si["Soothing Aura"].get('pas') is True and not si["Soothing Aura"].get('bind'), "p. %s: Soothing Aura (a true passive) has no Bind" % tag)
+    check(("Seduction" in names) and (("Soothing Aura" in names) != hide), "p. %s: the Pet tab lists Seduction; Soothing Aura only with passives shown" % tag,
+          names)
+    if not hide:
+        check(Pp.eval('WowCompanion.spellsPetName(6358)') == "Seduction", "p. Seduction's name is kept (our buttons cast it by name)")
+        ack, placed, mode = bind(Pp, "Seduction", "LT", "PAD3")
+        sx = int(Pp.eval('BK.storageFor(1, 2, 5)'))
+        check(ack.get('ok') is True and list(Pp.eval('ACTIONINFO[%d]' % sx).values()) == ["spell", 6358, "pet"],
+              "p. ZL + X: Seduction placed the game's own way", (ack, placed))
+        keep(Pp)
+    check(errs(Pp) == [] and Pp.eval('#SPY') == 0 and Pp.eval('#VIOL') == 0, "p. %s: no Lua error, no spied call" % tag, errs(Pp)[:2])
+
 # m. a charmed / possessed unit (Mind Control, Enslave): HasPetSpells() answers, PetHasSpellbook() does not - the game shows no Pet tab,
 #    so its spells are never this character's pet spells (a mob's spell sharing an id with the player's own would be cast by bare name)
 M = boot(pre='PETHASBOOK = false')
@@ -645,7 +681,7 @@ if os.environ.get("PET_DUMP"):
                     fh.write(t)
                 break
     with open(os.path.join(dd, "spells_croom.json"), 'w', encoding='utf-8', newline='\n') as fh:
-        fh.write(C.eval('WowCompanion.encode({ type = "spells", v = "s10a", s = WowCompanion.collectSpells() })'))
+        fh.write(C.eval('WowCompanion.encode({ type = "spells", v = "s10b", s = WowCompanion.collectSpells() })'))
 
 # ================================================================ the fixtures
 os.makedirs(FIXDIR, exist_ok=True)
