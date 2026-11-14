@@ -28,6 +28,12 @@ namespace DsfDesktop.Sunshine
         /// <summary>our sunshine.exe's pid, -1 when not running (issue #219 diagnostics: telling ours from a stale one)</summary>
         public int Pid { get { lock (gate) { try { return proc != null && !proc.HasExited ? proc.Id : -1; } catch (Exception) { return -1; } } } }
 
+        /// <summary>when our sunshine.exe last started (UTC; MinValue = never): the port check gives it a few seconds to bind</summary>
+        public DateTime StartedUtc { get; private set; } = DateTime.MinValue;
+        /// <summary>it died on its own and waits for its restart (not stopped by us)</summary>
+        public bool Exited { get { lock (gate) return wanted && (proc == null || proc.HasExited) && crashes > 0; } }
+        public int Crashes { get { lock (gate) return crashes; } }
+
         public SunshineHost(SunshineLayout layout) { this.layout = layout; }
 
         void Say(string s) { LastStatus = s; Log.I("sunshine: " + s); try { Status?.Invoke(s); } catch (Exception) { } }
@@ -76,6 +82,7 @@ namespace DsfDesktop.Sunshine
                     p.BeginErrorReadLine();
                     AddToJob(p);
                     proc = p;
+                    StartedUtc = DateTime.UtcNow;
                     Say("running (pid " + p.Id + ")");
                 }
                 catch (Exception e) { Say("failed to start: " + e.Message); }

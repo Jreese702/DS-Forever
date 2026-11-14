@@ -21,11 +21,12 @@ namespace DsfDesktop.Tests
         public DeviceStore Devices { get; }
         public readonly List<string> Pins = new List<string>();
         public string StreamPairResult;   // null = the Sunshine side succeeds
+        public string SunWhy = "";        // the PC can't stream: the Thor's reason ("pc busy: another Sunshine")
         public FakeHost() { Devices = new DeviceStore(T.P("devices.json")); }
         public Dictionary<string, object> Info() => new Dictionary<string, object>
         {
             ["host_id"] = "0123456789abcdef0123456789abcdef", ["pc_name"] = "TESTPC",
-            ["sunshine"] = new Dictionary<string, object> { ["running"] = true, ["http_port"] = 52989, ["https_port"] = 52984 },
+            ["sunshine"] = new Dictionary<string, object> { ["running"] = true, ["http_port"] = 52989, ["https_port"] = 52984, ["why"] = SunWhy },
         };
         public void StreamPair(string deviceId, string name, string pin, string peerIp, Action<string> done)
         {
@@ -186,6 +187,32 @@ namespace DsfDesktop.Tests
                 A.Eq("{\"t\":\"pos\"}", doc.Str("doc"));
                 A.Eq(5L, doc.Long("seq"));
                 A.Eq(123L, doc.Long("gt"));
+            }
+        }
+
+        /// <summary>another Sunshine holds the GameStream ports: right after the welcome the Thor's status line says so</summary>
+        [Test]
+        public static void WelcomeSaysThePcIsBusy()
+        {
+            using (var h = new FakeHost { SunWhy = "pc busy: another Sunshine" })
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-busy", stream: false);
+                var msgs = c.Until("status");
+                A.Eq("welcome", msgs[0].Str("t"));
+                A.Eq("pc busy: another Sunshine", ((Dictionary<string, object>)msgs[0]["sunshine"]).Str("why"));
+                A.Eq("pc busy: another Sunshine", msgs.Last().Str("text"));
+            }
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-fine", stream: false);
+                var msgs = c.Until("backlog_end");
+                A.False(msgs.Any(m => m.Str("t") == "status"), "no status when the PC is fine");
+                s.Publish(new Dictionary<string, object> { ["t"] = "ping_marker" });
+                A.Eq("ping_marker", c.Next().Str("t"), "nothing queued between backlog_end and the next message");
             }
         }
 
