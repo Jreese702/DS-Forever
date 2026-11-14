@@ -94,7 +94,13 @@ end
 -- quest is focused, in the log, or our GO is the one Polestar follows; cp35's guess from the GO alone stays for an app that never says.
 -- cp39 (int/1429): ps-compass cp36-cp38 (the Polestar path marker, its goal whenever the row holds) on the one "row holds" word
 -- (Map.lua WC.pnav.psOn, shared with ps-noloc-guide's starter item)
-WC.compass = { V = "cp39" }
+-- cp40 THE JITTER (the user, 2026-11-13: "For some reason the compass has been spazzing out jittering right and left all crazy for
+-- the last few updates"): cp5's eased heading (C.ease) stepped its spring with plain Euler steps, which only holds while a frame is
+-- shorter than ~37 ms (OMEGA x dt under 0.83). Under ~27 fps, or on any slow frame (a hitch up to the 0.1 s cap), every step
+-- overshot the facing by more than it corrected, so the bar swung left and right a little wider each frame, up to whole-bar
+-- swings and the 2.5 rad reset. Now each step is the spring's EXACT solution over dt (closed form, the same 0.2 s settle):
+-- stable at any frame time, never overshooting, the letters still placed at sub-pixel offsets (no snapping of a moving offset).
+WC.compass = { V = "cp40" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -450,9 +456,13 @@ do
         dt = math.min(dt, 0.1)
         local err = C.wrap(raw - C.h)
         if math.abs(err) > 2.5 then C.h, C.hv = raw, 0; return C.h end      -- a teleport / a load: no spin across the bar
+        -- cp40: the critically damped spring's exact step (x = shown - target, held for this frame): x(t) = (x0 + (v0 + w x0) t) e^-wt,
+        -- v(t) = (v0 - w (v0 + w x0) t) e^-wt. Stable for any dt (the old Euler step blew up past w dt = 0.83, under ~27 fps).
         local w = C.OMEGA
-        C.hv = C.hv + (w * w * err - 2 * w * C.hv) * dt
-        C.h = C.wrap(C.h + C.hv * dt)
+        local x0, v0 = -err, C.hv
+        local c, e = v0 + w * x0, math.exp(-w * dt)
+        C.hv = (v0 - w * c * dt) * e
+        C.h = C.wrap(raw + (x0 + c * dt) * e)
         return C.h
     end
 

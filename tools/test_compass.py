@@ -299,12 +299,50 @@ def main():
         hs.append(C.h)
     chk("eases to the new facing in ~0.3 s (%.3f after 18 frames, %.4f after 60)" % (hs[17], hs[59]), abs(hs[59] - 1.5) < 0.005 and 1.3 < hs[17] < 1.5)
     chk("critically damped: never overshoots", max(hs) <= 1.5 + 1e-6)
-    chk("moves every frame, no throttle (60 different headings)", len(set(round(h, 6) for h in hs)) >= 55)
+    chk("moves every frame, no throttle (different headings over the ease; cp40: the exact step settles by ~0.35 s)", len(set(round(h, 9) for h in hs)) >= 40)
     nk2 = len([1 for i in range(1, len(f.kids) + 1)])
     chk("no new pieces per frame (%d before, %d after 60 frames)" % (nk, nk2), nk == nk2)
     chk("no SetFont per frame while nothing lifts (%d calls)" % (L.globals().FONTSETS - fonts0), L.globals().FONTSETS - fonts0 <= 4)
     xs = [k.point[4] for k in [f.kids[i] for i in range(1, len(f.kids) + 1)] if k.kind == "fs" and k.shown and k.point and k.text == "N"]
     chk("sub-pixel placement (an x offset like %.3f)" % (xs[0] if xs else -1), xs and abs(xs[0] - round(xs[0])) > 1e-6)
+    # cp40 (the user: "the compass has been spazzing out jittering right and left all crazy"): the eased heading must stay smooth at
+    # ANY frame time. cp5's Euler spring blew up under ~27 fps (OMEGA x dt > 0.83) and on every slow frame: the same slow turn at 25 fps
+    # went back and forth, whole-bar swings at 20 fps. A slowly turning player (45 deg/s): the shown heading only ever moves forward.
+    def old_euler(dts, rate):                            # (the cp5 step, re-done here: the bug's own picture)
+        h, hv, fac, out = 1.0, 0.0, 1.0, []
+        for dt in dts:
+            fac += rate * dt
+            dt = min(dt, 0.1); err = fac - h; w = 22
+            hv += (w * w * err - 2 * w * hv) * dt; h += hv * dt
+            out.append(h)
+        return out
+    patterns = [("60 fps", [1 / 60] * 240), ("40 fps", [1 / 40] * 160), ("25 fps", [1 / 25] * 100), ("20 fps", [1 / 20] * 80),
+                ("12 fps", [1 / 12] * 48), ("40 fps + a 100 ms hitch each 0.5 s", ([1 / 40] * 19 + [0.1]) * 8),
+                ("uneven 16 / 50 ms", [1 / 60, 0.05] * 60), ("a 0.3 s freeze", [1 / 40] * 20 + [0.3] + [1 / 40] * 40)]
+    rate = math.radians(45)
+    for name, dts in patterns:
+        G.facing = 1.0; C.draw()
+        fac, hs = 1.0, []
+        for dt in dts:
+            fac += rate * dt
+            G.facing = fac
+            step(f, dt)
+            hs.append(C.wrap(C.h))
+        d = [C.wrap(hs[i] - hs[i - 1]) for i in range(1, len(hs))]
+        back = sum(1 for x in d if x < -1e-9)
+        lag = C.wrap(fac - hs[-1])
+        chk("cp40: a slow turn at %s: the heading never steps back (%d back steps, largest step %.3f rad, %.1f deg behind)"
+            % (name, back, max(abs(x) for x in d), math.degrees(lag)), back == 0 and max(abs(x) for x in d) < 0.25 and 0 <= lag < math.radians(5))
+    ob = old_euler([1 / 20] * 80, rate)
+    chk("cp40: (the bug's picture) cp5's Euler step at 20 fps did swing back and forth", any(ob[i] < ob[i - 1] for i in range(1, len(ob))))
+    for fps in (60, 25, 15):
+        G.facing = 1.0; C.draw(); G.facing = 1.5
+        hs = []
+        for i in range(fps):
+            step(f, 1 / fps)
+            hs.append(C.h)
+        chk("cp40: a step turn at %d fps settles without overshoot (%.4f after 1 s, max %.4f)" % (fps, hs[-1], max(hs)),
+            max(hs) <= 1.5 + 1e-6 and abs(hs[-1] - 1.5) < 0.005)
     G.facing = 6.2; C.draw()
     G.facing = 0.1
     path = []
