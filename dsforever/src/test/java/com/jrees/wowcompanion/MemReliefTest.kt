@@ -57,10 +57,30 @@ class MemReliefTest {
         assertEquals(ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW, MemWatch.RELIEF_LEVEL)   // the relief lets go what a running-low trim does
     }
 
+    @Test fun theWorldReliefWaitsPastTheLoadingPicturesShortIdle() {
+        // the start screen closes on the first current document; the relief must find its pictures idle (Scene's trim rule) ...
+        assertTrue(GameLife.WORLD_RELIEF_MS > Scene.TRIM_IDLE_MS)
+        // ... and still come well before the reports' quickest kills after the world (#254 7 s, #250 8 s)
+        assertTrue(GameLife.WORLD_RELIEF_MS <= 3_000L)
+    }
+
+    @Test fun theReportsMinutesInEndAtTheKillNotAtTheNextStart() {
+        val min = 60_000L
+        val start = 1_000_000_000_000L
+        // #258: the game 17 min in at the kill, DS Forever opened again 6 h later: "17 min in", not "385 min in"
+        assertEquals(17 * min, LastRun.ranMs(start, start + 17 * min, start + 385 * min))
+        // no exit record of the game's own run (older than the mark): to now, as before
+        assertEquals(5 * min, LastRun.ranMs(start, start - min, start + 5 * min))
+        assertEquals(5 * min, LastRun.ranMs(start, 0L, start + 5 * min))
+        assertEquals(0L, LastRun.ranMs(0L, start, start + min))                       // no game mark
+        assertEquals(0L, LastRun.ranMs(start, 0L, start - min))                       // a clock set back: never negative
+    }
+
     @Test fun aReliefWithoutTheWatchIsNothing() {
         var got = -1
         MemWatch.onTrim("relief-test") { level -> got = level; 0L }
         MemWatch.relieve("game start")                                    // the watch never started here: no trim, no collection, no throw
+        MemWatch.relieve("world", GameLife.WORLD_RELIEF_MS)
         assertEquals(-1, got)
         MemWatch.onTrim("relief-test") { 0L }
     }

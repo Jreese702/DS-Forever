@@ -165,14 +165,15 @@ object MemWatch {
     /** a trim worth a collection: running-low or worse while shown, any background level, Android's onLowMemory */
     fun collects(level: Int): Boolean = level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW
 
-    /** [why] the game is about to take memory: let go and collect (any thread); nothing before [start] (the tests, no watch) */
-    fun relieve(why: String) {
+    /** [why] the game is about to take memory: let go and collect (any thread), after [delayMs] (GameLife's world relief waits for the
+     *  start screen to stop drawing the loading pictures); nothing before [start] (the tests, no watch) */
+    fun relieve(why: String, delayMs: Long = 0L) {
         val h = handler ?: return
         runCatching {
-            Handler(Looper.getMainLooper()).post {
+            Handler(Looper.getMainLooper()).postDelayed({
                 val freed = letGo(RELIEF_LEVEL)
                 h.post { runCatching { val l = trimLine("relief ($why)", freed, collect(), psiNow()); Log.i(TAG, l); keep(l) } }
-            }
+            }, delayMs.coerceAtLeast(0L))
         }
     }
 

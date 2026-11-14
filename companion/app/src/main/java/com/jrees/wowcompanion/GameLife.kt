@@ -75,10 +75,15 @@ object GameLife {
         worldSeen = true
         DiagLog.event("game", "in the world after ${minutes(now - startedAt)}")
         LastRun.gameInWorld()
-        // issue triage 2026-11-14: the reports' kills came 2 - 30 s after this, the game still loading the world: the same relief
-        // (the loading pictures go too once the start screen stops drawing them: Scene)
-        MemWatch.relieve("world")
+        // issue triage 2026-11-14: the reports' kills came 7 - 36 s after this, the game still loading the world: the same relief.
+        // Verification of the fix (the user, 2026-11-13: "yes on the triage things"): the start screen that draws the loading pictures
+        // closes on this same document, so a relief at once found them drawn under Scene's 2 s and kept them until its own 15 s idle
+        // (no collection then: #250 and #254 were killed 8 s and 7 s after this). [WORLD_RELIEF_MS] later they go, and the one collection
+        // frees them
+        MemWatch.relieve("world", WORLD_RELIEF_MS)
     }
+    /** the world relief's wait: past Scene's [Scene.TRIM_IDLE_MS] after the start screen closes, well before the reports' first kills */
+    const val WORLD_RELIEF_MS = Scene.TRIM_IDLE_MS + 500L
 
     /** the guest program ended with [status] (XServerScreen's termination callback) */
     fun ended(status: Int, now: Long = System.currentTimeMillis()) {
