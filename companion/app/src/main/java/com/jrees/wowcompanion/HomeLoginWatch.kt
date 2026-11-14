@@ -54,6 +54,16 @@ class HomeLoginWatch(
     private var connOffset = -1L
     private var connCarry = ""
     private var clientStartSec = 0L
+    /** the login triage (2026-11-13): the sign-in trail's lines already logged in this client run (both logs carry the same lines) */
+    private val trailSeen = LinkedHashSet<String>()
+
+    /** one line of either log: its trail line ([HomeLogin.trail]) to the sign-in log, once per client run */
+    private fun trail(line: String) {
+        val t = HomeLogin.trail(line) ?: return
+        if (!trailSeen.add(t)) return
+        while (trailSeen.size > TRAIL_KEEP) trailSeen.remove(trailSeen.first())
+        NativeLogin.logEvent(t)
+    }
 
     fun start() {
         if (running) return
@@ -117,7 +127,7 @@ class HomeLoginWatch(
         val size = b[2]
         if (p != path || pid != client) {                  // another game, or a new run of its client (its log starts empty)
             path = p; client = pid; carry = ""; state.reset(); clientSeenAt = android.os.SystemClock.elapsedRealtime(); outPolls = 0
-            connOffset = -1L; connCarry = ""; clientStartSec = b[6]
+            connOffset = -1L; connCarry = ""; clientStartSec = b[6]; trailSeen.clear()
             // A LOG OLDER THAN THIS CLIENT is the previous run's (2026-10-05 22:01, b46: the new client was seen ~5 s before it emptied
             // the log, the old in-world log was read, and "in the world" latched for the new run - no Login row): skipped, and it does
             // not count as size, until the client empties it (then everything in it is this run's)
@@ -156,6 +166,7 @@ class HomeLoginWatch(
         if (cut < 0) return
         var changed = false
         for (line in text.substring(0, cut).split('\n')) {
+            trail(line)
             val e = HomeLogin.parse(line) ?: continue
             if (e is HomeLogin.Event.Authenticator && state.phase != HomeLogin.Phase.AUTH) NativeLogin.logEvent("sign-in: authenticator line read from General.log")
             if (state.note(e)) changed = true
@@ -182,6 +193,7 @@ class HomeLoginWatch(
         connCarry = if (cut < 0) text.takeLast(4096) else text.substring(cut + 1).takeLast(4096)
         if (cut < 0) return
         var changed = false
+        text.substring(0, cut).split('\n').forEach { trail(it) }
         for (e in HomeLogin.connectionEvents(text.substring(0, cut))) {
             if (e is HomeLogin.Event.Authenticator && state.phase != HomeLogin.Phase.AUTH) NativeLogin.logEvent("sign-in: authenticator line read from Connection.log")
             if (state.note(e)) changed = true
@@ -238,6 +250,8 @@ class HomeLoginWatch(
         const val TICK_MS = 1_000L
         const val WORLD_TICK_MS = 5_000L
         const val MAX_READ = 256L * 1024
+        /** the trail lines remembered per client run (a sign-in writes ~10; a run with many retries stays bounded) */
+        const val TRAIL_KEEP = 200
     }
 }
 

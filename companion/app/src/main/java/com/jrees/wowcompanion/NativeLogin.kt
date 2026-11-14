@@ -52,6 +52,16 @@ object NativeLogin {
      * character select 32-38 KB/s (22:31:32-34). No root: /proc/net is closed, so the watcher's realm connection never comes here.
      */
     @Volatile var pastLogin = false; private set
+    /**
+     * THE LOGIN TRIAGE (2026-11-13): the game was downloading as it read this run's file ([PreLoginTraffic.busyAtRead]), so neither a
+     * burst nor two-way keepalives are its sign-in (a streamed install's data said "past the login screen" at the authenticator,
+     * the captcha and the experience screen); only the world's documents set [pastLogin] then. Set at the first read.
+     */
+    @Volatile var downloadAtRead = false; private set
+    /** the last second of at least [PAST_LOGIN_BYTES] before this run's first read (epoch ms; 0 = none) */
+    @Volatile private var lastHeavyAt = 0L
+    /** the "not taken for the sign-in" line once per read */
+    @Volatile private var heavyNoted = false
     /** told (main thread) when [firstReadAt], [pastLogin] or [active] changes: the one app's row follows this run */
     var onChange: (() -> Unit)? = null
     /**
@@ -126,7 +136,8 @@ object NativeLogin {
     /** issues #132 / #42 / #57: what the client received before its first read of login.txt (main thread) */
     internal val preLogin = PreLoginTraffic()
     /** issue #215 (diagnostics only): the client's traffic past its login screen and before the world, a line a busy minute */
-    internal val afterLogin = PreLoginTraffic(phase = "past the login screen, before the world")
+    // the login triage: after the read the run may still be signing in (a downloading read never says "past the login screen")
+    internal val afterLogin = PreLoginTraffic(phase = "signing in or past the login screen, before the world")
     /** issue #215: what the bottom screen shows (CompanionHost; main thread), added to [afterLogin]'s lines */
     @Volatile var bottomState: (() -> String)? = null
 
@@ -144,6 +155,7 @@ object NativeLogin {
         outOfWorld = false; reachedWorld = false; lifeMs = MAX_LIFE_MS; appCtx = ctx.applicationContext; changed()
         playAt = System.currentTimeMillis(); windowArmed = false; windowSeen = false; expiredUnread = false; main.post { preLogin.reset(); afterLogin.reset() }
         downloading = false; holdFrom = 0L; capHeld = false
+        downloadAtRead = false; lastHeavyAt = 0L; heavyNoted = false
         val root = shadowRoot(ctx).apply { mkdirs() }
         val isLinkF = { f: File -> Files.isSymbolicLink(f.toPath()) }
         // test57: a flavor folder in the shadow that is a LINK into the shared game folder is unlinked first, and one that still resolves
@@ -215,10 +227,17 @@ object NativeLogin {
      */
     private const val NO_FILE_GRACE_S = 60L
     private fun signInTraffic(): Boolean = PreLoginTraffic.trafficIsSignIn(consumed, active, windowSeen, expiredUnread,
-        if (LauncherHooks.gameStartSec > 0) System.currentTimeMillis() / 1000 - LauncherHooks.gameStartSec else -1L, NO_FILE_GRACE_S)
+        if (LauncherHooks.gameStartSec > 0) System.currentTimeMillis() / 1000 - LauncherHooks.gameStartSec else -1L, NO_FILE_GRACE_S,
+        downloadAtRead)
 
     /** one second's received bytes of the game (the launcher's traffic loop): only [pastLogin]; the delete is [AFTER_READ_MS]'s */
     fun onTraffic(rxBytes: Long, txBytes: Long = -1L) {
+        // the login triage: a heavy second before this run's read makes that read a downloading one ([downloadAtRead])
+        if (firstReadAt == 0L && rxBytes >= PAST_LOGIN_BYTES) lastHeavyAt = System.currentTimeMillis()
+        if (!pastLogin && consumed && downloadAtRead && rxBytes >= PAST_LOGIN_BYTES && !heavyNoted) {
+            heavyNoted = true
+            main.post { logEvent("heavy traffic after the game's read ($rxBytes B/s): it was downloading as it read, not taken for past the login screen") }
+        }
         main.post {
             worldTraffic(rxBytes); onTrafficSample?.invoke(rxBytes, txBytes)
             val counts = PreLoginTraffic.counts(firstReadAt > 0L, pastLogin, reachedWorld)
@@ -232,7 +251,12 @@ object NativeLogin {
             if (d) holdFrom = System.currentTimeMillis()
             if (d != downloading) {
                 downloading = d
-                logEvent(if (d) "the game is downloading before its login screen" else "the game's download before its login screen ended")
+                // the login triage: the read itself ends this line's window, not the download (#248 went on at 500 MB a minute)
+                logEvent(when {
+                    d -> "the game is downloading before its login screen"
+                    firstReadAt > 0L -> "the game reached its login screen while downloading (the download may go on past it)"
+                    else -> "the game's download before its login screen ended"
+                })
                 onChange?.invoke()
             }
         }
@@ -259,13 +283,18 @@ object NativeLogin {
                 if (event and CLOSE_NOWRITE != 0 && !active) { logEvent("login.txt read while none was written by us"); return }
                 if (event and CLOSE_NOWRITE != 0) {
                     val first = !consumed
+                    val readAt = System.currentTimeMillis()
+                    // the login triage: this read's download verdict BEFORE [consumed], so the traffic thread's burst check never sees
+                    // a read without it
+                    if (first) { downloadAtRead = PreLoginTraffic.busyAtRead(downloading, lastHeavyAt, readAt); heavyNoted = false }
                     consumed = true
                     if (first) pastLogin = false          // a return's sign-in: past its login screen again only on the next character select
                     Log.i(TAG, "login.txt read by the client")
                     // timed from the FIRST read only: later reads (the form submission) must not push it further out
                     if (first) {
-                        firstReadAt = System.currentTimeMillis()
+                        firstReadAt = readAt
                         logEvent("login.txt read by the client, ${(firstReadAt - writtenAt) / 1000} s after it was written")
+                        if (downloadAtRead) logEvent("the game was downloading as it read the saved sign-in: its traffic is not taken for past the login screen")
                         main.post { main.postDelayed(afterRead, AFTER_READ_MS); onChange?.invoke() }
                     }
                 }
@@ -305,6 +334,7 @@ object NativeLogin {
             Os.chmod(f.absolutePath, 384)          // 0600: this app only
         } catch (t: Throwable) { Log.w(TAG, "re-login file failed: ${t.message}"); clear(); return }
         active = true; consumed = false; firstReadAt = 0L; writtenAt = System.currentTimeMillis(); capHeld = false
+        downloadAtRead = false; lastHeavyAt = 0L; heavyNoted = false          // the login triage: the world's traffic is not a download
         lifeMs = REARM_LIFE_MS
         main.postDelayed(timeout, REARM_LIFE_MS)
         logEvent("login.txt written again ($why): waiting for the return to the login screen")
@@ -341,6 +371,7 @@ object NativeLogin {
             Os.chmod(f.absolutePath, 384)          // 0600: this app only
         } catch (t: Throwable) { Log.w(TAG, "window file failed: ${t.message}"); clear(); return@post }
         active = true; consumed = false; firstReadAt = 0L; writtenAt = System.currentTimeMillis(); lifeMs = MAX_LIFE_MS; capHeld = false
+        downloadAtRead = false
         main.postDelayed(timeout, MAX_LIFE_MS)
         logEvent("login.txt written (game window up, ${(writtenAt - playAt) / 1000} s after Play)")
         changed()
@@ -353,7 +384,7 @@ object NativeLogin {
      */
     fun preLoginLine(): String =
         "window up $windowSeen; login.txt written $active, read ${firstReadAt > 0L}, deleted unread at its cap $expiredUnread; " +
-            "past the login screen $pastLogin; received before the read: ${PreLoginTraffic.mb(preLogin.total)} MB " +
+            "past the login screen $pastLogin; downloading as it read $downloadAtRead; received before the read: ${PreLoginTraffic.mb(preLogin.total)} MB " +
             "(${PreLoginTraffic.mb(preLogin.lastMinute)} MB in the last whole minute)"
 
     /** the add-on's documents are current: the run is in the world (a re-login may follow a later logout / disconnect) */

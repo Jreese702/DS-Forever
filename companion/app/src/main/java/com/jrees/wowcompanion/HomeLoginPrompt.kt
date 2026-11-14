@@ -95,7 +95,7 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
         if (why != null) { error = why; panel.invalidate(); return }
         val login = HomeLoginStore.Login(e, p)
         if (!HomeLoginStore.save(context, login)) { error = "The login could not be saved on this device"; panel.invalidate(); return }
-        GameRegion.choose(context, region)            // the game's portal at its next start (GameConfigWtf.ensure)
+        GameRegion.choose(context, region, GameRegion.BY_PROMPT)      // the game's portal at its next start (GameConfigWtf.ensure)
         close()
         onSaved(login)
     }

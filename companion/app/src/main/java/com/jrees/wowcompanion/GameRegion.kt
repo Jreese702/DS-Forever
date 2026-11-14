@@ -38,16 +38,61 @@ object GameRegion {
 
     private const val PREFS = "dsf_region"
     private const val KEY = "region"
+    private const val KEY_BY = "region_by"
+    private const val KEY_AT = "region_at"
 
     /** the region the player chose, or null when none was chosen (the install's own region stands) */
     fun chosen(ctx: Context): String? =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)?.takeIf { c -> ALL.any { it.code == c } }
 
-    fun choose(ctx: Context, code: String) {
+    /** where the choice was made: the login prompt's Region row, or the Start menu's Region button (one press steps to the next) */
+    const val BY_PROMPT = "the login prompt"
+    const val BY_MENU = "the Start menu"
+
+    /**
+     * [by]: where it was made ([BY_PROMPT] / [BY_MENU]). The login triage (2026-11-13, #248: a US install on a US-zoned Thor signing in
+     * to the EU portal, "i cant get pass choosing experience type"; nothing said who set EU or when): a CHANGE is logged with its source
+     * and kept with its time for the report's Region line ([reportLine]). Saving the prompt with the same region changes nothing.
+     */
+    fun choose(ctx: Context, code: String, by: String = "") {
         if (ALL.none { it.code == code }) return
         val was = chosen(ctx)
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, code).apply()
-        if (was != code) listeners.forEach { runCatching { it(code) } }
+        val e = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, code)
+        if (was != code) e.putString(KEY_BY, by).putLong(KEY_AT, System.currentTimeMillis())
+        e.apply()
+        if (was != code) {
+            runCatching { NativeLogin.logEvent("region: ${was ?: "none chosen"} -> $code" + if (by.isNotEmpty()) " ($by)" else "") }
+            listeners.forEach { runCatching { it(code) } }
+        }
+    }
+
+    /** who made the current choice and when (epoch ms; 0 = before this was kept), or null with no choice made */
+    fun choiceSource(ctx: Context): Pair<String, Long>? {
+        val p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (chosen(ctx) == null) return null
+        return (p.getString(KEY_BY, null) ?: "") to p.getLong(KEY_AT, 0L)
+    }
+
+    /**
+     * THE REPORT'S REGION LINE (the login triage, #248). An account belongs to ONE region and the game signs in at the portal its
+     * Config.wtf names, so the line puts side by side: the portal the game will sign in at ([configPortal], the Config.wtf's; else what the
+     * choice or the install's branch makes it), the choice ([chosen], [by], [at] written by [stamp]), the install's .build.info
+     * [branch] and the device's [country] (its region by [guess]). When the portal is neither the install's nor the device's region it
+     * says so in plain words (a region picked by mistake signs a US account in to EU: an empty account, no realms, BLZ errors).
+     * Names and codes only. Pure.
+     */
+    fun reportLine(chosen: String?, by: String?, at: Long, branch: String?, configPortal: String?, country: String, stamp: (Long) -> String): String {
+        val b = branch?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() }
+        val signsAt = configPortal?.lowercase(Locale.ROOT) ?: (chosen ?: b)?.let { portal(it) }
+        val device = guess(country)
+        val choice = if (chosen == null) "none (the install's own region stands)"
+            else chosen + " (" + listOfNotNull(by?.takeIf { it.isNotEmpty() } ?: "source not kept by an older version", at.takeIf { it > 0L }?.let(stamp)).joinToString(", ") + ")"
+        val line = "Region: the game signs in at ${signsAt ?: "?"}; chosen $choice; the install's branch ${b ?: "?"}; " +
+            "the device's country ${country.ifEmpty { "?" }} (${device})"
+        val matches = { r: String? -> r != null && portal(r) == signsAt }
+        return if (signsAt != null && b != null && !matches(b) && !matches(device))
+            "$line; DIFFERS: the game signs in at $signsAt while the install and the device say ${if (b == device) b else "$b / $device"}"
+        else line
     }
 
     /** what the prompt shows first: the choice, else the game folder's own region ([regionOf]), else the device's country's region */

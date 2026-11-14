@@ -184,6 +184,12 @@ object StartupDiag {
             val p = choice?.product ?: WowProduct.of(root)
             GameConfigWtf.reportLine(File(root, "${p.flavorDir}/WTF/Config.wtf").takeIf { it.isFile }?.readText())
         }.getOrElse { "? (${it.message})" }
+        // the login triage (2026-11-13, #248): the portal the game signs in at beside the choice, the install's branch and the device
+        out += runCatching {
+            val src = GameRegion.choiceSource(ctx)
+            GameRegion.reportLine(GameRegion.chosen(ctx), src?.first, src?.second ?: 0L, choice?.row?.get("Branch"),
+                GameRegion.portalOf(root), Locale.getDefault().country) { stamp(it) }
+        }.getOrElse { "Region: ? (${it.message})" }
         out += "Active build (GameFiles): ${runCatching { GameFiles.activeBuild(root)?.let { "${it.first} ${it.second}" } }.getOrNull() ?: "none"}"
         out += "Last open problem: ${GameFiles.lastWhy ?: "(none)"}"
         return out

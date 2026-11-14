@@ -84,12 +84,28 @@ internal class PreLoginTraffic(private val minuteMs: Long = 60_000L, private val
          * file was deleted at its cap. So without a read: only once the window is up, never after an unread file's cap, and [graceS]
          * after the game screen came up ([sinceStartS], -1 = not up). The world's documents stay the hard backstop.
          */
-        fun trafficIsSignIn(consumed: Boolean, active: Boolean, windowSeen: Boolean, expiredUnread: Boolean, sinceStartS: Long, graceS: Long): Boolean = when {
-            consumed -> true
+        fun trafficIsSignIn(consumed: Boolean, active: Boolean, windowSeen: Boolean, expiredUnread: Boolean, sinceStartS: Long, graceS: Long,
+                            downloadAtRead: Boolean = false): Boolean = when {
+            consumed -> !downloadAtRead
             active -> false
             !windowSeen || expiredUnread -> false
             else -> sinceStartS >= graceS
         }
+
+        /**
+         * WAS THE GAME DOWNLOADING AS IT READ THE SAVED SIGN-IN (the login triage, 2026-11-13; the user: "yes on the triage things")? A
+         * direct install streams its data at 1-10 MB/s right through its login screen, and that traffic said "past the login screen"
+         * within a second of the read in #248 (7.6 MB/s, 0.4 s after it), #237 (7.7 MB/s), #235 (1.3 MB/s), #247 (4.4 MB/s, 73 ms
+         * after) and #271 - while those players were still at the authenticator, the captcha or the experience screen. Yes = the
+         * download line was on ([downloading]), or a second of at least the burst's size came in the [windowMs] before the read
+         * ([lastHeavyAt], 0 = none). Then no traffic speaks for that sign-in ([trafficIsSignIn]'s [downloadAtRead], and the two-way
+         * keepalives: a download is two-way every second); the world's documents still do.
+         */
+        fun busyAtRead(downloading: Boolean, lastHeavyAt: Long, readAt: Long, windowMs: Long = HEAVY_BEFORE_READ_MS): Boolean =
+            downloading || (lastHeavyAt > 0L && readAt >= lastHeavyAt && readAt - lastHeavyAt <= windowMs)
+
+        /** a heavy second this close before the read makes it a downloading read ([busyAtRead]); the login screen itself is <= 2 KB/s */
+        const val HEAVY_BEFORE_READ_MS = 10_000L
 
         /**
          * Is this second's traffic still "before the login screen"? Not after the client's first read, not once the run is past the

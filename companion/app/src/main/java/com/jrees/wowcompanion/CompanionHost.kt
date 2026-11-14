@@ -725,7 +725,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the Menu's Region: read once (Config.wtf on disk), then the choice; GameConfigWtf.ensure writes it as the portal at the next start
         var regionNow: String? = null
         StartMenu.region = { GameRegion.chosen(this) ?: regionNow ?: runCatching { GameRegion.current(this, GameFiles.gameRoot(this)) }.getOrDefault("us").also { regionNow = it } }
-        StartMenu.onRegion = { code -> GameRegion.choose(this, code); regionNow = code }
+        StartMenu.onRegion = { code -> GameRegion.choose(this, code, GameRegion.BY_MENU); regionNow = code }
         startView.onLoginButton = { gear -> if (gear || LauncherHooks.pkg != null) loginPrompt.open() else signIn() }
         loginPrompt = HomeLoginPrompt(this) { login ->
             settingsView.invalidate()
@@ -2659,7 +2659,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the keepalives say it got through (no burst needed): past the login screen for everything that watches it
             // the authenticator code box (the log's authenticatorRequired="true"): no traffic verdict until the log moves on
             signInCheck.authenticator(loginWatch.state.phase == HomeLogin.Phase.AUTH)
-            if (signInCheck.signedIn && !NativeLogin.pastLogin) NativeLogin.markPastLogin("two-way keepalives after the sign-in")
+            // the login triage (2026-11-13): not when the game was downloading as it read (a download is two-way every second)
+            if (signInCheck.signedIn && !NativeLogin.pastLogin && !NativeLogin.downloadAtRead) NativeLogin.markPastLogin("two-way keepalives after the sign-in")
             signInCheck.tick(now, NativeLogin.firstReadAt, NativeLogin.pastLogin, noFile)
         } else SetupFlow.SignIn.NONE
         // p-auth-keyboard: a traffic-only FAILED in the first 25 s is "Check the game screen"; the log's AUTH / failure replaces it
