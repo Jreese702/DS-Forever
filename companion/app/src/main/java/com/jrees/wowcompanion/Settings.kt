@@ -200,6 +200,14 @@ object Settings {
         get() = prefs?.getBoolean("gameAccountAsk", false) ?: false
         set(v) { if (v != gameAccountAsk) { prefs?.edit()?.putBoolean("gameAccountAsk", v)?.apply(); changed() } }
 
+    /**
+     * SWAP SCREENS (GitHub #232; ScreenSwap): true = the game on the second screen, DS Forever on the main one (display 0). Off by
+     * default (the Thor's arrangement). Applies from a start of DS Forever (ScreenSwap.inUse latches it per run).
+     */
+    var swapScreens: Boolean
+        get() = prefs?.getBoolean(ScreenSwap.PREF, false) ?: false
+        set(v) { if (v != swapScreens) { prefs?.edit()?.putBoolean(ScreenSwap.PREF, v)?.apply(); changed() } }
+
     var indoorBuild: Boolean
         get() = prefs?.getBoolean("indoorBuild", true) ?: true
         set(v) { if (v != indoorBuild) { prefs?.edit()?.putBoolean("indoorBuild", v)?.apply(); changed() } }

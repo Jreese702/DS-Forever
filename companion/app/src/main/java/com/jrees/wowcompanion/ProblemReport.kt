@@ -165,6 +165,7 @@ object ProblemReport {
             runCatching { add("SafePath network: ${ShippedNets.line}") }         // the shipped network's word (its "may be out of date")
             runCatching { add("Game art: ${ArtHarvest.state.javaClass.simpleName}" + ((ArtHarvest.state as? ArtHarvest.State.Failed)?.let { " (${it.why})" } ?: "")) }
             add("Game running: ${LauncherHooks.gameUp()}")
+            runCatching { add(ScreenSwap.line(Settings.swapScreens)) }   // #232: Swap screens and the display ids chosen
             runCatching { add(PadDiag.line()) }                 // issues #16 / #84 / #116 / #147: did any press reach DS Forever
             runCatching { add(KeyLag.line()) }                  // 1.0.29 "insane input lag on my face buttons": how late the game got them
             runCatching { add(PadSlow.line()) }                 // the 1.0.29 review: a room's press work on the main thread, named

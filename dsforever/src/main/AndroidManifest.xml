@@ -11,6 +11,17 @@
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density" />
+        <!-- Settings > Swap screens (#232): DS Forever's window on display 0 when the game is on the second screen (display 0 takes no
+             Presentation). Its own task (no affinity, never in Recents), opened and closed only by DsForeverScreen -->
+        <activity
+            android:name="com.jrees.wowcompanion.fork.CompanionScreenActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:resizeableActivity="true"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|layoutDirection|locale" />
         <!-- Settings > Frame generation: picks the player's own Lossless.dll (FrameGenPickActivity.kt) -->
         <activity
             android:name="com.jrees.wowcompanion.FrameGenPickActivity"
