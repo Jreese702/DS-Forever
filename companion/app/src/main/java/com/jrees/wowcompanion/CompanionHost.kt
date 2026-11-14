@@ -508,7 +508,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             val restart = SetupBridge.restartGame
             Log.i("WCSETUP", "restart from Settings: pressed in $room; launcher hook ${if (restart != null) "present" else "MISSING"}" +
                 "; restarting already ${SetupBridge.restarting}")
-            SetupBridge.log?.invoke("restart: from Settings (frame generation / add-ons)")
+            // review of feat/windows-id-switch: General > Account > Windows ID's restart row comes here too (the sign-in trail says so)
+            SetupBridge.log?.invoke("restart: from Settings (frame generation / add-ons / Windows ID)")
             if (room != Room.HOME) show(Room.HOME)
             if (restart == null) Log.w("WCSETUP", "restart from Settings: no launcher hook, nothing restarts")
             else {

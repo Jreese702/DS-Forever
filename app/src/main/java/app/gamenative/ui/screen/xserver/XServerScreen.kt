@@ -4208,6 +4208,7 @@ private suspend fun setupWineSystemFiles(
     // DS Forever (the user, 2026-11-11: BLZ51914400 identity fix, upstream PR jaredgei/wow-forever-android#65):
     // own stable machine identity (MachineGuid, computer name, volume serial) in the WoW prefix. After
     // everything above, so refreshSkeleton / component extraction can never leave the shared defaults.
+    // The user, 2026-11-14 ("build it"): Settings > Windows ID picks which identity (Per install / Original, v2.3.3's shared one).
     MachineIdentityApply.applyToContainer(context, container)
 
     if (containerDataChanged) container.saveData()

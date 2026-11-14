@@ -208,6 +208,27 @@ object Settings {
         get() = prefs?.getBoolean(ScreenSwap.PREF, false) ?: false
         set(v) { if (v != swapScreens) { prefs?.edit()?.putBoolean(ScreenSwap.PREF, v)?.apply(); changed() } }
 
+    /**
+     * WINDOWS ID (the user, 2026-11-14: "build it"; the BLZ51914400 wave): which Windows machine identity the game's container shows,
+     * from the next game start - "per_install" (the default, 1.0.25's own identity per install) or "original" (v2.3.3's shared prebuilt
+     * one). See [WindowsId]; the launcher reads it at each start (MachineIdentityApply).
+     */
+    var windowsId: String
+        get() = WindowsId.sanitize(prefs?.getString(WindowsId.KEY, null))
+        set(v) { val s = WindowsId.sanitize(v); if (s != windowsId) { prefs?.edit()?.putString(WindowsId.KEY, s)?.apply(); changed() } }
+
+    /** what the last game start used (the launcher writes it; the report reads it): (mode, time ms, applied ok); null = none yet */
+    var windowsIdRan: Triple<String, Long, Boolean>?
+        get() = prefs?.takeIf { it.contains(WindowsId.KEY_RAN) }?.let { p ->
+            Triple(WindowsId.sanitize(p.getString(WindowsId.KEY_RAN, null)), p.getLong(WindowsId.KEY_RAN_AT, 0L), p.getBoolean(WindowsId.KEY_RAN_OK, true))
+        }
+        set(v) {
+            val e = prefs?.edit() ?: return
+            if (v == null) e.remove(WindowsId.KEY_RAN).remove(WindowsId.KEY_RAN_AT).remove(WindowsId.KEY_RAN_OK)
+            else e.putString(WindowsId.KEY_RAN, WindowsId.sanitize(v.first)).putLong(WindowsId.KEY_RAN_AT, v.second).putBoolean(WindowsId.KEY_RAN_OK, v.third)
+            e.apply()
+        }
+
     var indoorBuild: Boolean
         get() = prefs?.getBoolean("indoorBuild", true) ?: true
         set(v) { if (v != indoorBuild) { prefs?.edit()?.putBoolean("indoorBuild", v)?.apply(); changed() } }

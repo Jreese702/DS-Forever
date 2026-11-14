@@ -170,7 +170,8 @@ class SettingsRoomTest {
         r.show(SettingsTabs.Tab.GENERAL); r.toggle(SettingsTabs.Group.ACCOUNT); lay(r)
         val slice = box(r, SettingsTabs.Group.ACCOUNT).parts.single() as SettingsView
         val before = slice.focusTargets()
-        assertEquals("the login button, then Ask each time / Remembered", 3, before.size)
+        // the user, 2026-11-14 ("build it"): + Windows ID's Per install / Original (no game here: no restart row)
+        assertEquals("the login button, then Ask each time / Remembered, then Per install / Original", 5, before.size)
         val loginBox = before.first()
         assertTrue(r.pad.targetBoxes().any { it.top >= headBox(r, SettingsTabs.Group.ACCOUNT).bottom && it.height() == loginBox.height() })
         val host = SettingsView::class.java.getDeclaredField("hub").apply { isAccessible = true }.get(slice) as SettingsView
@@ -186,7 +187,7 @@ class SettingsRoomTest {
         // the room's Account group: the login row is gone, the Game account row stays (its group and heading with it)
         lay(r)
         val after = slice.focusTargets()
-        assertEquals(2, after.size)
+        assertEquals(4, after.size)
         assertTrue("no stale login box", after.none { it == loginBox })
         assertEquals(View.VISIBLE, box(r, SettingsTabs.Group.ACCOUNT).box.visibility)
         assertEquals("no stops on General headings", 0, headingStops(r))
