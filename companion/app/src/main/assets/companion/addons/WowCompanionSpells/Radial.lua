@@ -19,7 +19,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local RV = "r20a"               -- bump on every change; r20a (review of feat/item-cooldowns; the user 2026-11-13: "honour enable=0 (held potion: dim, no number)", "Persist the hearthstone end time per name-realm"): held only with a length (the game's duration > 0 and enable 0; an item with no cooldown never dims), the itemcd doc says whose it is (`who`, name-realm: the app never keeps one character's Hearthstone under another's name); r20: ITEM COOLDOWNS (feat/item-cooldowns; the user's picks 2026-11-13: "cooldowns on radial slices AND bag slots: dark pie sweep + seconds"; "LEARNED LENGTHS in the style of the existing facecd"; "Counts only on stackable consumables/reagents/ammo/items with charges"): the `itemcd` document (event-driven only, change-only, never collect / pad.retain / buildCells), BAG_UPDATE_COOLDOWN off the radial's rebuild list, the radial doc's items / pins carry `st` (stackable) and no `cd`; r19: SEVERAL SPELL RADIALS back (feat/multi-radial-v2): q3 = 1.0.18's q2 (6 radials x 8, 40 shared cells, the radial buttons 2..6 armed) with r17e's guard (the row rebuilt only on a change) and NO cooldown sweep (r18 / q1b: one sradialcd per cast); r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r17 (1.0.18, reverted): the spell radials (q2); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
+local RV = "r21"                -- bump on every change; r21 PET SPELLS (#234, the user: "build it"): the spell radials' cells cast a PET spell by its NAME (q5); r20a (review of feat/item-cooldowns; the user 2026-11-13: "honour enable=0 (held potion: dim, no number)", "Persist the hearthstone end time per name-realm"): held only with a length (the game's duration > 0 and enable 0; an item with no cooldown never dims), the itemcd doc says whose it is (`who`, name-realm: the app never keeps one character's Hearthstone under another's name); r20: ITEM COOLDOWNS (feat/item-cooldowns; the user's picks 2026-11-13: "cooldowns on radial slices AND bag slots: dark pie sweep + seconds"; "LEARNED LENGTHS in the style of the existing facecd"; "Counts only on stackable consumables/reagents/ammo/items with charges"): the `itemcd` document (event-driven only, change-only, never collect / pad.retain / buildCells), BAG_UPDATE_COOLDOWN off the radial's rebuild list, the radial doc's items / pins carry `st` (stackable) and no `cd`; r19: SEVERAL SPELL RADIALS back (feat/multi-radial-v2): q3 = 1.0.18's q2 (6 radials x 8, 40 shared cells, the radial buttons 2..6 armed) with r17e's guard (the row rebuilt only on a change) and NO cooldown sweep (r18 / q1b: one sradialcd per cast); r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r17 (1.0.18, reverted): the spell radials (q2); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
 local ROW, CELLS = "radial", 24 -- the secure pad row: 24 cells = 3 pages of 8
 local PLAYER_BAGS = { 0, 1, 2, 3, 4 }
 local QUARANTINE = 30           -- seconds a freed column stays unused (as the pad's own columns)
@@ -747,7 +747,7 @@ local function spellRadial()
     if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
     local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-    local SRV = "q4"                -- bump on every change; q4 (feat/item-cooldowns; the user 2026-11-13: "LEARNED LENGTHS in the style of the existing facecd ... if never learned, show the never-secret isActive dim only"): every plain read learns the spell's length (per character, Radial r20's cdLearn), a secret read after a cast starts it (cd.e), never learned = act (dim); q3: q2 back with r17e's row guard and no SPELL_UPDATE_COOLDOWN sweep (q1b's sradialcd)
+    local SRV = "q5"                -- bump on every change; q5 PET SPELLS (#234, the user: "build it"): a pet's spell on a radial (the Controller room's chooser lists them, Spells s10) is cast by its NAME - type "spell" with the name is CastSpellByName, the call the game's own /cast makes, and the pet's best rank; a number would be CastSpellByID (WC.spellsPetName, kept per character so a pet that is not out keeps its cell); the frozen record and the use answer keep the spell id; q4 (feat/item-cooldowns; the user 2026-11-13: "LEARNED LENGTHS in the style of the existing facecd ... if never learned, show the never-secret isActive dim only"): every plain read learns the spell's length (per character, Radial r20's cdLearn), a secret read after a cast starts it (cd.e), never learned = act (dim); q3: q2 back with r17e's row guard and no SPELL_UPDATE_COOLDOWN sweep (q1b's sradialcd)
     local ROW, CELLS = "sradial", 40 -- the secure pad row: 40 cells, shared by every radial
     local MAX, PER = 6, 8
     local QUARANTINE = 30           -- seconds a freed column stays unused (as the consumables radial's)
@@ -833,8 +833,9 @@ local function spellRadial()
     local frozen = {}               -- col -> spell id as the cells were last set (what a tap really casts)
     local function cellInit(btn, col)
         local id = spellAt[col]
+        local pn = id and type(WC.spellsPetName) == "function" and WC.spellsPetName(id) or nil     -- q5: a pet's spell, by its name
         btn:SetAttribute("type", id and "spell" or nil)
-        btn:SetAttribute("spell", id)
+        btn:SetAttribute("spell", pn or id)
         frozen[col] = id
     end
     local function onCell(col)

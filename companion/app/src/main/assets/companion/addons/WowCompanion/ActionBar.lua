@@ -834,7 +834,7 @@ end
 -- queue as the Spellbook's toggles always did. The document says each slot's kind (`k`, none = a spell, as before), its name (`n`, not
 -- for a spell: the app has the book), an item's count (`ct`, `cons` = 1 for a consumable) and `any` = 1 (this bar takes every kind).
 do
-local CBV = "cb9"
+local CBV = "cb10"     -- cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
 local CB_PADTAB_PICK = { 39, 19 }        -- cb2: padtab 39 (the one-shot pick) then 19 (its cast bar code): Book b55 -> WC.castBarPick
 local CB_N, CB_PICK_COL, CB_PICK_S = 8, 8, 2   -- cb6: 8 slots (cells 0-7), the pick cell 8
 local CB_OLD_N = 12                      -- cb3: the slots a cb1 / cb2 store may hold (cb6: migrated to the first 8)
@@ -1017,7 +1017,12 @@ local function cbInit(btn, col)
     local w = CB.want[col]
     local e = w and w.e
     local typ, spell, item, mt = nil, nil, nil, nil
-    if e and e.k == "spell" then typ, spell = "spell", e.id
+    if e and e.k == "spell" then
+        typ, spell = "spell", e.id
+        local fn = rawget(WC, "spellsPetName")                         -- cb10: a pet's spell, by its name
+        local okn, pn = false, nil
+        if type(fn) == "function" then okn, pn = pcall(fn, e.id) end
+        if okn and type(pn) == "string" then spell = pn end
     elseif e and e.k == "item" then typ, item = "item", "item:" .. e.id
     elseif e and w.line then typ, mt = "macro", w.line end
     btn:SetAttribute("type", typ)

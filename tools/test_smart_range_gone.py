@@ -271,7 +271,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl", "book"):
     e = comp(SRC[k], k)
     check(e is None, "a. Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m162"' in SRC["padmap"] and 'local CV = "p54"' in SRC["padtabctl"] and 'local BV = "b62"' in SRC["book"],
+check('local PV = "m163"' in SRC["padmap"] and 'local CV = "p54"' in SRC["padtabctl"] and 'local BV = "b63"' in SRC["book"],
       "a. the versions: PadMap m162, PadTabCtl p54, Book b62 (m160b / b61b + the 1.0.32 merge)")
 check(all('"Lets scrap the smart ranged attack"' in SRC[k] for k in ("padmap", "padtabctl", "book")),
       "a. each changed file's header note quotes the user")

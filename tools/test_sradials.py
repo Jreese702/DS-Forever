@@ -125,7 +125,7 @@ check(ok is True, "the same spell on a second radial shares its cell", ok)
 # ---------------------------------------------------------------- 3. the document
 W.execute('runTimers(NOW + 5); %s.emit(true)' % SR)
 d = last(W, 'sradial')
-check(d is not None and d.get('v') == 'q4' and isinstance(d['r'].get('list'), list), "the sradial document has the list", d and d.get('v'))
+check(d is not None and d.get('v') == 'q5' and isinstance(d['r'].get('list'), list), "the sradial document has the list", d and d.get('v'))
 lst = d['r']['list']
 check([x['u'] for x in lst] == [1, 2, 3, 4, 5, 6] and [i['id'] for i in lst[0]['items']] == [403, 331],
       "each radial by slot, its items in order", [x['u'] for x in lst])

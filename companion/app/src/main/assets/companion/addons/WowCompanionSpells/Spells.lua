@@ -30,7 +30,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local SV = "s9"     -- bump on every change; s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
+local SV = "s10"    -- bump on every change; s10 PET SPELLS (#234, the user: "build it"): the pet book's SPELLS get numbers (`pv`, after the player's top ranks, before the lower ranks), never its passives or its commands (Attack / Follow / Stay ... have their homes); each pet item says `cmd` (a command), `bind` (a spell that can go on a button) and `pb` (on the pet bar), its bars are the game's own FindPetActionButtons; the Pet tab is line WC.SPELLS_PET_LINE (101); a pet book slot k travels as WC.SPELLS_PET_SLOT0 + k (5000 + k) through the Bind box and the Controller room's puts (WC.spellsPetAt / WC.spellsBankSlot read it back); WC.spellsPetName(id) = the name our own secure buttons cast a pet spell by (CastSpellByName, the game's /cast), remembered per character (WowCompanionSpellsDB.petSpellBy[name-realm]); s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
 
 local MAX_LINES = 24        -- skill lines read (the game has General + class + a few)
 local MAX_ITEMS = 400       -- book entries read, all lines together
@@ -244,6 +244,169 @@ local function clip(s, n)
     return s
 end
 
+-- ---------------------------------------------------------------- s10 THE PET'S BOOK (#234, the user: "build it")
+-- The game's own Pet tab (blizzard_playerspells SpellBookPetCategoryMixin: shown while C_SpellBook.HasPetSpells() and PetHasSpellbook(),
+-- bank Enum.SpellBookSpellBank.Pet), a hunter's pet and a warlock's demon alike. Its entries are the pet's SPELLS (Growl, Bite, Firebolt
+-- ...), its passives and its COMMANDS (Attack, Follow, Stay, the stances: the pet bar's tokens). A SPELL gets a number and Bind; a
+-- passive and a command get neither (the commands have their homes: the Controller room's Extra tab, the class radial). How each is told
+-- apart, every reading the client offers (any one is enough):
+--   command: no spell behind it (spellID / C_PetInfo.GetSpellForPetAction nil or 0), a token name (PET_ACTION_* / PET_MODE_*, as this
+--            client answers GetPetActionInfo: ActionBar b-pet-tokens), the game's own word for one (_G.PET_ACTION_ATTACK ...), the pet bar's
+--            packing (the action id's high byte 7 = a command, 6 = a stance), or a spell id the client cannot name;
+--   passive: info.isPassive, C_SpellBook.IsSpellBookItemPassive(slot, Pet), C_PetInfo.IsPetActionPassive (the game's own action bar
+--            status check, actionbuttonutil.lua), the packing's high byte 1, C_Spell.IsSpellPassive.
+-- READ ONLY, like the rest of this file; Book.lua lists the very same entries (WC.spellsPetBook), so the room and the controller agree.
+WC.SPELLS_PET_LINE = 101
+WC.SPELLS_PET_SLOT0 = 5000
+local PB = { WORDS = { "PET_ACTION_ATTACK", "PET_ACTION_FOLLOW", "PET_ACTION_WAIT", "PET_ACTION_MOVE_TO", "PET_ACTION_DISMISS",
+                        "PET_MODE_AGGRESSIVE", "PET_MODE_DEFENSIVE", "PET_MODE_DEFENSIVEASSIST", "PET_MODE_PASSIVE", "PET_MODE_ASSIST",
+                        "PET_DISMISS" }, live = {} }
+function PB.high(a) return (type(a) == "number" and a > 16777215) and (math.floor(a / 16777216) % 256) or nil end
+function PB.command(name, id, a)
+    if not id or id <= 0 then return true end
+    if name:find("^PET_ACTION_") or name:find("^PET_MODE_") then return true end
+    local hi = PB.high(a)
+    if hi == 6 or hi == 7 then return true end
+    for _, g in ipairs(PB.WORDS) do
+        local w = rawget(_G, g)
+        if type(w) == "string" and w ~= "" and w == name then return true end
+    end
+    return TS(function() return C_Spell.GetSpellName(id) end) == nil
+end
+-- one entry of the pet's book: { slot, vs, t, a, id, n, i, pas, low, cmd, bind, pet = true }, or nil
+function PB.entry(slot)
+    local ok, info = CALL(function() return C_SpellBook.GetSpellBookItemInfo(slot, BANK_PET) end)
+    if not ok or type(info) ~= "table" then return nil end
+    local n = TS(function() return info.name end)
+    if not n then return nil end
+    local a = TN(function() return info.actionID end)
+    local id = TN(function() return info.spellID end)
+    if (not id or id <= 0) and a and C_PetInfo and type(C_PetInfo.GetSpellForPetAction) == "function" then
+        id = TN(function() return C_PetInfo.GetSpellForPetAction(a) end)
+    end
+    if id and id <= 0 then id = nil end
+    local t = TN(function() return info.itemType end)
+    local pas = TB(function() return info.isPassive end) == true
+        or TB(function() return C_SpellBook.IsSpellBookItemPassive(slot, BANK_PET) end) == true
+        or (a and C_PetInfo and type(C_PetInfo.IsPetActionPassive) == "function"
+            and TB(function() return C_PetInfo.IsPetActionPassive(a) end) == true)
+        or PB.high(a) == 1
+        or (id and C_Spell and type(C_Spell.IsSpellPassive) == "function" and TB(function() return C_Spell.IsSpellPassive(id) end) == true)
+        or false
+    local cmd = PB.command(n, id, a)
+    local e = { slot = slot, vs = WC.SPELLS_PET_SLOT0 + slot, t = t, a = a, id = (not cmd) and id or nil, n = n,
+                i = TN(function() return info.iconID end), pas = yes(pas), cmd = yes(cmd), pet = true,
+                low = yes(TB(function() return C_SpellBook.IsSpellBookItemLowRank(slot, BANK_PET) end)) }
+    e.bind = yes(not cmd and not pas and e.id ~= nil and t ~= T_FUTURE and t ~= T_FLYOUT)
+    return e
+end
+-- the standard bar slots that hold a pet spell: the game's own C_ActionBar.FindPetActionButtons (its action id), else the spell's own
+-- lookup (such a slot reads "spell", id, "pet": actionbareditframe.lua)
+function PB.bars(e)
+    local out, seen = {}, {}
+    local function add(slots)
+        if type(slots) ~= "table" then return end
+        for _, s in ipairs(slots) do
+            local n = SN(function() return s end)
+            if n and not seen[n] and #out < MAX_BARS then seen[n] = true; out[#out + 1] = n end
+        end
+    end
+    if e.a and C_ActionBar and type(C_ActionBar.FindPetActionButtons) == "function" then
+        local ok, slots = CALL(function() return C_ActionBar.FindPetActionButtons(e.a) end)
+        if ok then add(slots) end
+    end
+    if #out == 0 then add(barsFor(e.id)) end
+    if #out > 0 then return out end
+end
+-- the pet spell is on the pet bar (the game's own check, actionbuttonutil.lua GetPetActionPetBarIndices; else the bar's own slots)
+function PB.onPetBar(e)
+    if e.a and C_ActionBar and type(C_ActionBar.GetPetActionPetBarIndices) == "function" then
+        local ok, slots = CALL(function() return C_ActionBar.GetPetActionPetBarIndices(e.a) end)
+        if ok and type(slots) == "table" and #slots > 0 then return true end
+    end
+    if type(GetPetActionInfo) ~= "function" then return nil end
+    for i = 1, 10 do
+        local ok, name, _, _, _, _, _, sid = CALL(function() return GetPetActionInfo(i) end)
+        if ok and WC.isPlain(sid) and sid == e.id then return true end
+        if ok and WC.isPlain(name) and name == e.n then return true end
+    end
+    return nil
+end
+-- PetHasSpellbook() as the game reads it (its spellbook category and the vanilla / cata frames test it TRUTHY: a 1 counts as true)
+function PB.hasBook()
+    local v = S(function() return PetHasSpellbook() end)
+    return v ~= nil and v ~= false and v ~= WC.ABSENT and v ~= WC.SECRET and v ~= WC.THREW
+end
+-- the pet's book as the game's Pet tab holds it (nil when it has none): its entries, the pet's name token, PetHasSpellbook()
+function WC.spellsPetBook()
+    local okp, nPet, token = CALL(function() return C_SpellBook.HasPetSpells() end)
+    if not (okp and type(nPet) == "number" and WC.isPlain(nPet) and nPet > 0) then PB.live = {} return nil end
+    local list, live = {}, {}
+    for slot = 1, math.min(nPet, MAX_PET) do
+        local e = PB.entry(slot)
+        if e then
+            list[#list + 1] = e
+            if e.bind then live[e.id] = e end
+        end
+    end
+    PB.live = live
+    return list, (WC.isPlain(token) and type(token) == "string") and token or nil, PB.hasBook()
+end
+-- this character's pet spells by id -> name, kept (a warlock's demon or a hunter's pet that is not out keeps its spells' names)
+function PB.db(create)
+    local who = TS(function() return UnitName("player") end)
+    if not who then return nil end
+    who = who .. "-" .. (TS(function() return GetRealmName() end) or "?")
+    local db = rawget(_G, "WowCompanionSpellsDB")
+    if type(db) ~= "table" then
+        if not create then return nil end
+        db = {}
+        _G.WowCompanionSpellsDB = db
+    end
+    if type(db.petSpellBy) ~= "table" then
+        if not create then return nil end
+        db.petSpellBy = {}
+    end
+    if type(db.petSpellBy[who]) ~= "table" then
+        if not create then return nil end
+        db.petSpellBy[who] = {}
+    end
+    return db.petSpellBy[who]
+end
+-- the name our own secure buttons cast pet spell [id] by: type "spell" with the NAME is CastSpellByName, the very call the game's own /cast
+-- makes (slashcommands.lua), and the pet's best rank of it; a number there would be CastSpellByID. nil = not a pet spell of this character
+function WC.spellsPetName(id)
+    if type(id) ~= "number" then return nil end
+    local e = PB.live[id]
+    if e then return e.n end
+    local db = PB.db(false)
+    local n = db and rawget(db, id)
+    return type(n) == "string" and n or nil
+end
+-- a slot as it travels (the Bind box, the Controller room's rows): the pet's book slot k is PET_SLOT0 + k -> (k, the pet bank)
+function WC.spellsBankSlot(vs)
+    if type(vs) == "number" and vs > WC.SPELLS_PET_SLOT0 and vs <= WC.SPELLS_PET_SLOT0 + MAX_PET then
+        return vs - WC.SPELLS_PET_SLOT0, BANK_PET
+    end
+    return vs, BANK_PLAYER
+end
+-- what a travelling pet slot holds now: (spell id, name) of a spell that can go on a button; false = a pet slot without one; nil = not a
+-- pet slot (the player's book)
+function WC.spellsPetAt(vs)
+    local slot, bank = WC.spellsBankSlot(vs)
+    if bank ~= BANK_PET then return nil end
+    local e = PB.entry(slot)
+    if not (e and e.bind) then return false end
+    return e.id, e.n
+end
+-- the travelling slot of pet spell [id] in the pet's book now (nil = the pet does not have it)
+function WC.spellsPetSlotOf(id)
+    local e = type(id) == "number" and PB.live[id]
+    if e then local now = PB.entry(e.slot); if now and now.id == id then return e.vs end end
+    local list = WC.spellsPetBook()
+    for _, x in ipairs(list or {}) do if x.bind and x.id == id then return x.vs end end
+end
+
 -- One book entry. `bank` is the player's or the pet's book.
 local function readItem(slot, bank)
     local ok, info = CALL(function() return C_SpellBook.GetSpellBookItemInfo(slot, bank) end)
@@ -261,6 +424,9 @@ local function readItem(slot, bank)
         ln = TN(function() return info.skillLineIndex end),
     }
     if not it.n then return nil end
+    -- s10: a pet entry's spell as PB.entry reads it (a command has none: its facts, rank and description are not a spell's)
+    local pe = bank == BANK_PET and PB.entry(slot) or nil
+    if pe then it.id, it.pas = pe.id, pe.pas end
     -- The rank often arrives after the name (SPELL_TEXT_UPDATE re-reads it). The game shows
     -- "Passive" for a passive spell with no sub-name; that word is the app's to write.
     if (not it.sub or it.sub == "") and it.id then
@@ -299,6 +465,17 @@ local function readItem(slot, bank)
             it.ac = yes(allowed == true)
             it.ae = yes(enabled == true)
         end
+        -- s10: the pet's entry as Book lists it: a command or a passive has no number and no Bind; a spell's bars are the game's own pet
+        -- action lookup (the standard slots holding it) and `pb` = it is on the pet bar (the game's "not missing from the bars")
+        if pe then
+            it.id, it.pas, it.cmd, it.bind = pe.id, pe.pas, pe.cmd, pe.bind
+            if pe.bind then
+                it.bars = PB.bars(pe)
+                it.pad = padOf(it.bars)
+                it.pb = PB.onPetBar(pe)
+            end
+        end
+        return it
     end
     -- a flyout's actionID is a flyout id, not a spell: no bar lookup for it (nor for a future spell or a passive)
     if it.t ~= T_FUTURE and it.t ~= T_FLYOUT and not it.pas then
@@ -429,6 +606,30 @@ function WC.collectSpells()
         end
     end
 
+    -- THE PET'S BOOK: the game's Pet tab exists only while a pet with a book is out.
+    -- s10: read before the numbers (its spells get some); k = the Pet tab's line (the room's controller reports it as `line`)
+    local okp, nPet, token = CALL(function() return C_SpellBook.HasPetSpells() end)
+    if okp and type(nPet) == "number" and WC.isPlain(nPet) and nPet > 0 then
+        local hasBook = PB.hasBook()                     -- s10: truthy, as the game reads it (the app needs a true)
+        -- the game's Pet tab: its name is the global PET, its icon GetPetIcon()
+        doc.pet = { tok = WC.isPlain(token) and type(token) == "string" and token or nil, book = hasBook, k = WC.SPELLS_PET_LINE,
+                    n = TS(function() return PET end), i = TN(function() return GetPetIcon() end), items = {} }
+        local names = {}
+        for slot = 1, math.min(nPet, MAX_PET) do
+            local it = readItem(slot, BANK_PET)
+            if it then
+                doc.pet.items[#doc.pet.items + 1] = it
+                if it.bind and it.id then names[it.id] = it.n end
+            end
+        end
+        -- s10: the pet's spells' names kept for this character (WC.spellsPetName: our buttons cast them by name, the pet out or not)
+        local db = next(names) and PB.db(true) or nil
+        if db then for id, n in pairs(names) do if rawget(db, id) ~= n then db[id] = n end end end
+        pcall(WC.spellsPetBook)                           -- PB.live follows the book just read
+    else
+        PB.live = {}
+    end
+
     -- THE PAD COLUMNS for Bind by touch (Book.lua owns the row): one stable column per spell that can go on a button
     -- b38 (Book): every spell has a NUMBER (`pv`): a touch is two taps, its group then its offset (the columns ride `win`)
     if type(WC.spellsPadNumbers) == "function" then
@@ -440,25 +641,20 @@ function WC.collectSpells()
                 -- numbers too - Book b48 already lists them, so Smart buffs offered them with no tap way and Pick sent nothing
                 if it.t == T_SPELL and not it.pas and it.a and (it.low and 2 or 1) == pass then ids[#ids + 1] = it.a end
             end
+            -- s10 (#234): the pet's SPELLS after the player's top ranks, before the lower ranks; by their spell id (a pet action id
+            -- carries the auto-cast state in its high byte, so it changes when auto-cast is toggled)
+            if pass == 1 and doc.pet then
+                for _, it in ipairs(doc.pet.items) do if it.bind and it.id then ids[#ids + 1] = it.id end end
+            end
         end
         local okc, nums = pcall(WC.spellsPadNumbers, ids)
         if okc and type(nums) == "table" then
             for _, it in ipairs(doc.items) do
                 if it.a and nums[it.a] then it.pv = nums[it.a] end
             end
-        end
-    end
-
-    -- THE PET'S BOOK: the game's Pet tab exists only while a pet with a book is out.
-    local okp, nPet, token = CALL(function() return C_SpellBook.HasPetSpells() end)
-    if okp and type(nPet) == "number" and WC.isPlain(nPet) and nPet > 0 then
-        local hasBook = TB(function() return PetHasSpellbook() end)
-        -- the game's Pet tab: its name is the global PET, its icon GetPetIcon()
-        doc.pet = { tok = WC.isPlain(token) and type(token) == "string" and token or nil, book = hasBook,
-                    n = TS(function() return PET end), i = TN(function() return GetPetIcon() end), items = {} }
-        for slot = 1, math.min(nPet, MAX_PET) do
-            local it = readItem(slot, BANK_PET)
-            if it then doc.pet.items[#doc.pet.items + 1] = it end
+            if doc.pet then
+                for _, it in ipairs(doc.pet.items) do if it.bind and it.id and nums[it.id] then it.pv = nums[it.id] end end
+            end
         end
     end
 
