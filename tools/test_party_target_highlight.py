@@ -300,7 +300,7 @@ def main():
     chk("... and drawn once the party is shown again (vis %s)" % vis(late), vis(late) == 1)
 
     # the version tag and the header note
-    chk("hub53: the version tag and the header note quote the user", 'local HV = "hub53"' in src
+    chk("hub53: the version tag and the header note quote the user", 'local HV = "hub54"' in src
         and "there is a bug when targeting a party member, there is a highlight where the" in src and "hub53 THE PARTY TARGET HIGHLIGHT" in src)
     # leave no trace: no CVar / binding / macro writes in the new block
     blk = src[src.index("\n-- hub53 THE PARTY TARGET HIGHLIGHT"):src.index('-- hub17: one switch column of the row "uisw"')]

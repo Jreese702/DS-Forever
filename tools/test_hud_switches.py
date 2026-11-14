@@ -3,7 +3,7 @@ game, Trail.lua under the compass tests' stub for the nameplate and personal-bar
 
     python tools/test_hud_switches.py
 
-Checks each switch alone (the player frame with the pet's, the target frame with its target's, the enemy nameplates, the personal bar;
+hub54 (issue #267): a frame shown again is visible even when the game's Edit Mode opacity call sets nothing. Checks each switch alone (the player frame with the pet's, the target frame with its target's, the enemy nameplates, the personal bar;
 hub33: the pet's strip, and the game's pet frame as its own group - as the player frame, never hidden by our strip alone),
 absolute taps (a repeat changes nothing), alpha only (never Show / Hide), the bundle's old columns 34 / 35 still moving every part, a
 switch once set winning over the bundle, the hub document's sw (the row, the columns, the state), and the app's defaults applied as
@@ -390,7 +390,7 @@ def main():
     G3.ROWS.uisw(None, SW3.UFT_OFF)
     chk("hub32: our bar off again: lifted again (%s)" % G3.ComboFrame.ipa, G3.ComboFrame.ipa is True)
     hubsrc = open(HUB, encoding="utf-8").read()
-    chk("hub40: the version tag (hub38 the player / pet row + side tab art; hub39 int/1429; hub40 the party bars one column wide; hub41 the tab on a K change, pitch 64; hub42 the left column / the grid under the HUD)", 'local HV = "hub53"' in hubsrc and "hub51 THE 1.0.30 TEST BUILD MERGE (code 1454)" in hubsrc and "rim hub50 / THE RIM'S OLD CORNER" in hubsrc and "hub49:" in hubsrc and "hub48:" in hubsrc and "hub47b: SMART RES" in hubsrc and "hub47:" in hubsrc and "hub46:" in hubsrc and "hub45:" in hubsrc and "hub44:" in hubsrc and "hub42:" in hubsrc and "hub43:" in hubsrc
+    chk("hub40: the version tag (hub38 the player / pet row + side tab art; hub39 int/1429; hub40 the party bars one column wide; hub41 the tab on a K change, pitch 64; hub42 the left column / the grid under the HUD)", 'local HV = "hub54"' in hubsrc and "hub54 ISSUE #267" in hubsrc and "hub53 THE PARTY TARGET HIGHLIGHT" in hubsrc and "hub51 THE 1.0.30 TEST BUILD MERGE (code 1454)" in hubsrc and "rim hub50 / THE RIM'S OLD CORNER" in hubsrc and "hub49:" in hubsrc and "hub48:" in hubsrc and "hub47b: SMART RES" in hubsrc and "hub47:" in hubsrc and "hub46:" in hubsrc and "hub45:" in hubsrc and "hub44:" in hubsrc and "hub42:" in hubsrc and "hub43:" in hubsrc
         and "Mark pull keeps Auto Shot" in hubsrc)
     # hub31 / hub36 POLESTAR ON THE TOP SCREEN (the user, 2026-11-11, the switch on: "The polestar window randomly reappears a lot"):
     # Polestar 0.2.5 fades its windows back by itself with no Show (every fight's start / end: UI/GuideFrame.lua:2528-2540 ->
@@ -484,6 +484,55 @@ def main():
     G4.ROWS.uisw(None, SW4.PS_HIDE)
     L4.execute("FADE(GF, 0, 1)")
     chk("hub36: on again: the hooks still hold (%s)" % G4.GF.alpha, G4.GF.alpha == 0)
+    # hub54 (issue #267, reopening #197: "Turning it on does hide your target health bar but does not bring og one back"): the game's
+    # Target / Player / Pet frames have Edit Mode's UpdateSystemSettingOpacity, which sets NOTHING for a system without an Opacity setting
+    # (EditModeUnitFrameSystemMixin: only when ShouldShowSetting(Opacity); the presets give it to the party / raid frames alone). The stub
+    # above has no such method (the SetAlpha(1) fallback), so here the frames carry the game's: a no-op on those three, Edit Mode's 80 %
+    # on the raid-style party frame
+    L5 = tc.lupa.LuaRuntime()
+    L5.execute(STUB + r'''
+        MADE = {}
+        local base = CreateFrame
+        function CreateFrame(...) local f = base(...); MADE[#MADE + 1] = f; return f end
+        OPACITY_CALLS = 0
+        for _, n in ipairs({ "PlayerFrame", "PetFrame", "TargetFrame" }) do
+            _G[n].UpdateSystemSettingOpacity = function(self) OPACITY_CALLS = OPACITY_CALLS + 1 end
+        end
+        CompactPartyFrame = setmetatable({ alpha = 1 }, Frame)
+        CompactPartyFrame.UpdateSystemSettingOpacity = function(self) self:SetAlpha(0.8) end
+    ''')
+    L5.execute(open(HUB, encoding="utf-8").read().replace("local ADDON = ...", "local ADDON = 'WowCompanionHub'", 1))
+    G5 = L5.globals()
+    for i in range(1, len(G5.MADE) + 1):
+        f = G5.MADE[i]
+        if f.OnEvent:
+            f.OnEvent(f, "PLAYER_LOGIN")
+    sw5, SW5 = G5.ROWS.uisw, G5.WowCompanion.hub.SW
+
+    def a5(n):
+        return G5[n].alpha
+    # a login with the game's target frame chosen and our target bar on (its default) until the app's taps reach it: the first tap of
+    # the session (the player frame's, first in the app's order) already hides the game's target frame under our bar
+    sw5(None, SW5.PLAYER_SHOW)
+    t0 = a5("TargetFrame")
+    sw5(None, SW5.TARGET_SHOW)
+    sw5(None, SW5.UFT_OFF)
+    chk("hub54 #267: our target bar off, the game's target frame chosen: shown again (%s -> %s; the game's opacity call made %d times "
+        "and set nothing)" % (t0, a5("TargetFrame"), G5.OPACITY_CALLS), t0 == 0 and a5("TargetFrame") == 1 and G5.OPACITY_CALLS > 0)
+    sw5(None, SW5.PLAYER_HIDE)
+    p0 = a5("PlayerFrame")
+    sw5(None, SW5.PLAYER_SHOW)
+    chk("hub54: the player frame hidden then shown in one session: back at 1 (%s -> %s), the pet's with it (%s)"
+        % (p0, a5("PlayerFrame"), a5("PetFrame")), p0 == 0 and a5("PlayerFrame") == 1 and a5("PetFrame") == 1)
+    sw5(None, SW5.UFT_ON)
+    chk("hub54: our target bar on again: the game's frame hidden (%s)" % a5("TargetFrame"), a5("TargetFrame") == 0)
+    sw5(None, SW5.UFP_OFF)
+    sw5(None, SW5.PARTY_HIDE)
+    q0 = a5("CompactPartyFrame")
+    sw5(None, SW5.PARTY_SHOW)
+    chk("hub54: a frame whose Edit Mode opacity applies keeps it (%s -> %s, not forced to 1)" % (q0, a5("CompactPartyFrame")),
+        q0 == 0 and abs(a5("CompactPartyFrame") - 0.8) < 1e-9)
+    chk("hub54: alpha only (no Show / Hide: %d / %d)" % (G5.CALLS.show, G5.CALLS.hide), G5.CALLS.show == 0 and G5.CALLS.hide == 0)
     # TRAIL.LUA's consumers: the nameplate wish and the personal bar follow their own switches, else the bundle
     LT = tc.run()
     T = LT.globals()

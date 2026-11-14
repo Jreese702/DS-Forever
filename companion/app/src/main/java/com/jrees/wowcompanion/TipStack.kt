@@ -21,6 +21,7 @@ import kotlin.math.min
  * (or the D-pad's while X is held), clipped to the room.
  *
  * The game's own colour codes never reach the page: a line coloured inside ("|cff00ff00+129|r Armor") takes that colour.
+ * Issue #233: a line with "m" (the game's sell price, Interact i160) shows that copper as the game's coins after its words.
  */
 class TipStack(private val view: View) {
 
@@ -80,6 +81,63 @@ class TipStack(private val view: View) {
         return Drawn(RectF(box), foot, a)
     }
 
+    /**
+     * ISSUE #233 (a player at a vendor: "when I try to read the information for the items at the bottom of the screen, the tooltip
+     * disappears"): a tooltip never took a touch, so a finger on it landed on the item tile UNDER it (the vendor's other column; for a
+     * bottom row the tooltip is lifted over several tiles) and selected that item instead - the tooltip went, and a cut-off tooltip could
+     * only be scrolled by the right stick. Now a finger that lands on a shown tooltip is the tooltip's: nothing under it is pressed, and
+     * dragging it up / down scrolls it ([STEP] px per step, added to the right stick's). Pure: the view tells it where the tooltip was
+     * drawn this frame ([shown]; [clear] each frame), the touch goes through [down] / [move] / [up]; a new tooltip starts unscrolled.
+     */
+    class Touch {
+        private var on = false
+        private var l = 0f; private var t = 0f; private var r = 0f; private var b = 0f
+        private var key: String? = null
+        private var downY = 0f
+        private var from = 0
+        /** the finger's own steps for the tooltip shown now */
+        var steps = 0
+            private set
+        /** a finger is on the tooltip (from its down to its up) */
+        var held = false
+            private set
+
+        /** a new frame: no tooltip taken a touch until one is drawn again */
+        fun clear() { on = false }
+
+        /** the steps to draw [k] with: 0 again for a new tooltip */
+        fun stepsFor(k: String?): Int {
+            if (k != key) { key = k; steps = 0 }
+            return steps
+        }
+
+        /** the tooltip [k] was drawn at [left]..[right] x [top]..[bottom] this frame */
+        fun shown(k: String?, left: Float, top: Float, right: Float, bottom: Float) {
+            stepsFor(k)
+            on = right > left && bottom > top
+            l = left; t = top; r = right; b = bottom
+        }
+
+        /** a finger came down at ([x], [y]): true = it is on the tooltip (the tooltip's touch: nothing under it is pressed) */
+        fun down(x: Float, y: Float): Boolean {
+            held = on && x >= l && x <= r && y >= t && y <= b
+            if (held) { downY = y; from = steps }
+            return held
+        }
+
+        /** the finger moved to [y]: true while it is the tooltip's (dragging up reads further down) */
+        fun move(y: Float): Boolean {
+            if (!held) return false
+            steps = (from + ((downY - y) / STEP).toInt()).coerceIn(0, MAX_STEPS)
+            return true
+        }
+
+        /** the finger left: true when it was the tooltip's (no tap for what is under it) */
+        fun up(): Boolean { val h = held; held = false; return h }
+
+        companion object { const val MAX_STEPS = 60 }
+    }
+
     companion object {
         const val STEP = 60f                     // one step of the stick: about two lines
         private val CODES = Regex("""\|c[0-9a-fA-F]{8}|\|r""")
@@ -108,7 +166,9 @@ class TipStack(private val view: View) {
                 val inner = CODE_COLOUR.find(raw)?.groupValues?.get(1)
                 val c = str(l, "c")?.takeUnless { inner != null && it.equals("ffffff", true) } ?: inner
                 val r = str(l, "r")?.let { strip(it) }
-                out.add(UiKit.TipLine(strip(raw), colour(c, Color.WHITE), r, colour(str(l, "rc"), Color.WHITE)))
+                // issue #233 (Interact i160): the game's sell price line carries its copper in "m", drawn as coins after the words
+                val m = if (l.has("m")) l.optLong("m", -1L) else -1L
+                out.add(UiKit.TipLine(strip(raw), colour(c, Color.WHITE), r, colour(str(l, "rc"), Color.WHITE), money = m))
             }
             return out
         }

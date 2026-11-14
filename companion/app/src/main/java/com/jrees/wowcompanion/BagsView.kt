@@ -1357,6 +1357,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         const val KB_REPEAT_MS = 70L
         const val HOLD_GRACE_MS = 2000L          // a press this soon after touchedIn shows pushed before ctl.on arrives
 
+        /** issue #252: the action word for an item that begins a quest (Bags.lua bags-qstart1 `qstart`) */
+        const val START_QUEST = "Start Quest"
+
         /**
          * What a right-click on this item does in the game right now -- the ONE action the panel
          * offers. null = no right-click action, so the panel shows no button at all.
@@ -1369,6 +1372,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             "trade" -> "Trade" to true
             "auction" -> "Auction" to true
             else -> when {
+                // issue #252 (bags-qstart1): an item that begins a quest not taken yet - its right-click opens the game's quest page
+                it.optBoolean("qstart") -> START_QUEST to true
                 it.optBoolean("readable") -> "Read" to true
                 it.optBoolean("use") -> "Use" to true
                 // an addon older than 46b0d1c sends "INVTYPE_NON_EQUIP_IGNORE" for food and quest
