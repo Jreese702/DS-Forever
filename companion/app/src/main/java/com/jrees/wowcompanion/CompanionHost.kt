@@ -705,6 +705,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             onLeave = { roomLeft(Room.CALENDAR) }
             // TapPad pad21: its row is shared with the Macros room's; asked back on the spells / quests documents' grid (Book b65)
             padSource = { listOf(talentsPad, spellsPad, questsPad).firstOrNull { it?.optJSONObject("rows")?.has("padtab") == true } ?: spellsPad ?: questsPad }
+            // the cross-branch review: while the Macros room's row is this row's guest (its document's `sh`), asked back on every showing
+            rowShared = { ::macrosView.isInitialized && macrosView.state?.shared == true }
         }
         // the Macros room (Spells s10): B at its grid goes HOME (the add-on's macpad BACK); its lazy row is asked on the spells / quests
         // documents' shared grid (Book b63's padtab pick)

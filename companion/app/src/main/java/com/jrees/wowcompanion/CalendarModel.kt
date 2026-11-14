@@ -30,6 +30,25 @@ object CalendarModel {
     const val ROW_BACK = 35
     fun rowBackCells(): List<Pair<String, Int>> = listOf("padtab" to PICK, "padtab" to ROW_BACK)
 
+    /** what the room taps as it comes on the screen ([showing]) */
+    enum class Showing { ASK, ASK_HOLD, HOLD }
+
+    /**
+     * THE SHARED ROW ON EVERY SHOWING (the cross-branch review of 1.0.32 code 1472): what the room taps as it comes on the screen.
+     * [padRow] = the last document lists this room's row (null: no document yet); [shared] = the Macros room's document says its row
+     * is this row's guest (`sh`). The Macros room asks for the row on every showing; this room did only when its document said the
+     * row was gone, so a document a moment old (the Macros room took the row less than a document ago) or a Macros room's ask that
+     * waits for a fight's end sent the hold - and the finger's taps - onto the Macros room's cells. Now, while the row is shared, the
+     * row is asked back FIRST on every showing ([ASK_HOLD]: one tap queue, so the add-on takes the ask before the hold; in a fight
+     * the ask also cancels a Macros room's lease still waiting for the fight's end); with the row gone, the ask alone and the hold on
+     * the document that lists it ([ASK]); with no Macros guest, the hold alone, as before ([HOLD]). Pure.
+     */
+    fun showing(padRow: Boolean?, shared: Boolean): Showing = when {
+        padRow == false -> Showing.ASK
+        shared -> Showing.ASK_HOLD
+        else -> Showing.HOLD
+    }
+
     /** the six filters of this client's calendar, in the game's order (camelot/calendarfilterdata.lua) */
     val FILTERS = listOf(
         "calendarShowHolidays" to "CALENDAR_FILTER_HOLIDAYS",

@@ -230,4 +230,17 @@ class MacrosRoomTest {
         // the Calendar's own code 35 never collides with the Macros room's 34
         assertTrue(CalendarModel.ROW_BACK != MacrosModel.ROW_CODE && CalendarModel.PICK == MacrosModel.PICK)
     }
+
+    @Test fun theCalendarAsksItsSharedRowOnEveryShowing() {
+        // the cross-branch review: while the Macros room's row is the Calendar's guest, the Calendar asks its row back on EVERY showing,
+        // the hold right behind the ask (one tap queue) - a document a moment old that still lists the row never sends the hold alone
+        assertEquals(CalendarModel.Showing.ASK_HOLD, CalendarModel.showing(padRow = true, shared = true))
+        assertEquals(CalendarModel.Showing.ASK_HOLD, CalendarModel.showing(padRow = null, shared = true))
+        // the row gone: the ask alone, the hold on the document that lists the row again (as before)
+        assertEquals(CalendarModel.Showing.ASK, CalendarModel.showing(padRow = false, shared = true))
+        assertEquals(CalendarModel.Showing.ASK, CalendarModel.showing(padRow = false, shared = false))
+        // no Macros guest (the room never opened, or its own row): the hold alone, exactly as before the shared row
+        assertEquals(CalendarModel.Showing.HOLD, CalendarModel.showing(padRow = true, shared = false))
+        assertEquals(CalendarModel.Showing.HOLD, CalendarModel.showing(padRow = null, shared = false))
+    }
 }

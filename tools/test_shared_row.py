@@ -271,6 +271,20 @@ check("mac" in described(Ld) and "cal" not in described(Ld) and shown_cells(Ld, 
       "d. the fight's end: the lease happens, mac on the row")
 check(mdoc(Ld).get('keys') is not None, "d. ... and the macros document has its keys")
 check(lua_errors(Ld, errs_d) == [], "d. clean", lua_errors(Ld, errs_d)[:3])
+# the cross-branch review: the Macros room asked in a fight (its lease waits), then the Calendar room came on the screen in the same
+# fight - its ask (39 then 35, which it now sends on every showing while the row is shared) cancels the waiting lease, so the fight's
+# end never takes the row from under the Calendar room on show
+Ld2, errs_d2 = world(126.6)
+padtab(Ld2, 34)
+padtab(Ld2, 35)
+Ld2.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.2)')
+padtab(Ld2, 34)
+padtab(Ld2, 35)
+Ld2.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1); runTimers(NOW + 2)')
+check("cal" in described(Ld2) and "mac" not in described(Ld2) and shown_cells(Ld2, "cal") == 40 and shown_cells(Ld2, "mac") == 0,
+      "d. a Macros ask waiting in a fight, then the Calendar's own ask: the fight's end leaves the row the Calendar's",
+      sorted(k for k in described(Ld2) if k in ("cal", "mac")))
+check(lua_errors(Ld2, errs_d2) == [], "d. clean (the cancelled lease)", lua_errors(Ld2, errs_d2)[:3])
 
 # ================================================================ e. the game's macro window alone never takes the row
 Le, errs_e = world(126.6)

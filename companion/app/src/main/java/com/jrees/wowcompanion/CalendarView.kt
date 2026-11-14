@@ -82,6 +82,8 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
     private var holdSent = false
     /** the shared grid for the row-back ask (padtab: the spells / quests documents' row; CompanionHost sets it) */
     var padSource: () -> JSONObject? = { null }
+    /** the row is shared with the Macros room's (its document's `sh`; CompanionHost sets it): asked back on every showing */
+    var rowShared: () -> Boolean = { false }
     /** the row-back asks this showing ([askRow]) */
     private var rowAskedAt = -1_000_000L
     private var rowTries = 0
@@ -136,8 +138,13 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         focus = dayKey(chosenDay)
         holdSent = false
         rowTries = 0; rowAskedAt = -1_000_000L
-        // the shared row (TapPad pad21): the Macros room had it - ask it back first; the hold goes on the document that lists it
-        if (state?.padRow == false) askRow("shown") else sendHold("shown")
+        // the shared row (TapPad pad21): the Macros room had it - ask it back first; the hold goes on the document that lists it.
+        // While the row is shared it is asked back on EVERY showing, the hold right behind the ask (CalendarModel.showing)
+        when (CalendarModel.showing(state?.padRow, rowShared())) {
+            CalendarModel.Showing.ASK -> askRow("shown")
+            CalendarModel.Showing.ASK_HOLD -> { askRow("shown, shared"); sendHold("shown") }
+            CalendarModel.Showing.HOLD -> sendHold("shown")
+        }
         reconcileLater()
         invalidate()
     }
