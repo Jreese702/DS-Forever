@@ -53,7 +53,7 @@ def settle(L):
 
 OURS = "CLICK WowCompanionFaceStart:LeftButton"
 
-check('local PV = "m161"' in SRC["padmap"], "PadMap says m161")
+check('local PV = "m162"' in SRC["padmap"], "PadMap says m162 (m161 + the 1.0.32 merge)")
 check('function R.startWanted(aside, holder)' in SRC["padmap"] and SRC["padmap"].count('R.startWanted(aside, holder) and rbOn') == 1
       and SRC["padmap"].count('R.startWanted(aside, roomHolder())') == 1,
       "routerBind and routerCheck both ask R.startWanted (one rule for the bind and its check)")
@@ -158,7 +158,7 @@ F.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.3); MerchantF
 settle(F)
 
 # ---------------------------------------------------------------- m161: the setting (the user: "Make it a setting toggle defaulted to our wheel")
-check('local BV = "b61"' in SRC["book"] and 'local PV = "m161"' in SRC["padmap"], "Book b61, PadMap m161")
+check('local BV = "b62"' in SRC["book"] and 'local PV = "m162"' in SRC["padmap"], "Book b62, PadMap m162 (b61 / m161 + the 1.0.32 merge)")
 
 
 def padtab(L, *cols):

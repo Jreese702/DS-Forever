@@ -367,7 +367,7 @@ class CastStripModelTest {
         assertNull(CastStripModel.slotCells(8)); assertNull(CastStripModel.slotCells(-1))
         val codes = (0 until 8).map { CastStripModel.slotCode(it) }
         assertEquals(listOf(20, 21, 22, 23, 24, 25, 27, 28), codes)
-        // no collision with the pick's other codes: 0-4 Smart Range, 5-18 the radial ops, 19 the pick, 26 the tab
+        // no collision with the pick's other codes: 0-4 unused (Smart Range's, gone), 5-18 the radial ops, 19 the pick, 26 the tab
         for (k in codes) assertFalse("$k", k in 0..19 || k == CastStripModel.TAB_CODE || k == CastStripModel.PICK)
         // LB / RB walk Normal | In combat | Cast bar, no wrap; two tabs only while it is off
         assertEquals(2, CastStripModel.stepTab(1, 1, true)); assertEquals(2, CastStripModel.stepTab(2, 1, true))

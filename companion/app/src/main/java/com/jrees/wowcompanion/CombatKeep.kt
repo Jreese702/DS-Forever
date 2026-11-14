@@ -19,9 +19,8 @@ import org.json.JSONObject
  * Pure (org.json only): tools/padmap_test runs it.
  */
 object CombatKeep {
-    /** one setting: [face] = a base X / Y / A fight spell (not per page: [page] 0), else the overlay fight spell of button [set]/[pos] on [page];
-     *  [half] (PadMap m146 SMART RANGE): "m" / "r" = that button's Melee / Range half (its box on), null = the button's one fight spell */
-    data class Entry(val page: Int, val set: Int, val pos: Int, val id: Int, val name: String, val face: Boolean, val half: String? = null)
+    /** one setting: [face] = a base X / Y / A fight spell (not per page: [page] 0), else the overlay fight spell of button [set]/[pos] on [page] */
+    data class Entry(val page: Int, val set: Int, val pos: Int, val id: Int, val name: String, val face: Boolean)
     data class Backup(val who: String, val entries: List<Entry>)
 
     /** the character the add-on's padmap names (its name-realm key, as the add-on's own per-character stores), or null */
@@ -39,11 +38,7 @@ object CombatKeep {
             } ?: continue
             val id = ref.id ?: continue
             if (ref.item) continue
-            val pg = if (face) 0 else map.page
-            if (ref.sr) {                                                   // m146: each half its own setting (the box on with it)
-                out += Entry(pg, st.set, sl.pos, id, ref.name, face, if (ref.half == "r") "r" else "m")
-                ref.range?.takeIf { ref.half != "r" }?.let { g -> g.id?.let { out += Entry(pg, st.set, sl.pos, it, g.name, face, "r") } }
-            } else out += Entry(pg, st.set, sl.pos, id, ref.name, face)
+            out += Entry(if (face) 0 else map.page, st.set, sl.pos, id, ref.name, face)
         }
         return out.sortedWith(ORDER)
     }
@@ -63,7 +58,7 @@ object CombatKeep {
     fun safeMerge(old: Backup?, map: PadMapModel.Map, armed: Boolean): Backup? {
         val now = merge(old, map) ?: return null
         if (armed || old == null || old.who != now.who) return now
-        val key = { e: Entry -> Triple(e.page, e.set, e.pos) to (e.face to e.half) }      // m146: a button's two halves are two settings
+        val key = { e: Entry -> Triple(e.page, e.set, e.pos) to e.face }
         val have = now.entries.map(key).toSet()
         return now.copy(entries = (now.entries + old.entries.filter { key(it) !in have }).sortedWith(ORDER))
     }
@@ -83,12 +78,10 @@ object CombatKeep {
         for (e in backup.entries) {
             val cells = column(e.id)
             if (cells.isNullOrEmpty()) { skipped += e; continue }
-            // m146 SMART RANGE: a half puts its button's box on first (padtab 39 + 3, never off), then picks that half (39 + 1 / 2)
-            val half = e.half?.let { h -> PadMapModel.srCells(PadMapModel.SR_ON) + PadMapModel.srCells(PadMapModel.srCode(h)) } ?: emptyList()
             batches += listOf(
                 PadMapModel.ROW to PadMapModel.colPage(if (e.face) page else e.page),
                 PadMapModel.ROW to PadMapModel.colSet(e.set),
-                PadMapModel.ROW to PadMapModel.colPos(e.pos)) + half + listOf(
+                PadMapModel.ROW to PadMapModel.colPos(e.pos),
                 PadMapModel.ROW_LAYOUT to PadMapModel.COL_COMBAT_LAYER) + cells
             done += e
         }
@@ -99,29 +92,34 @@ object CombatKeep {
     /** Book b35: the Controller tab opened for touch without the room or the controller */
     const val COL_QUIET_ENTER = 14
 
-    /** the backup's order: page, set, button, then the Melee half before the Range half (the restore puts Melee first) */
-    private val ORDER: Comparator<Entry> = compareBy({ it.page }, { it.set }, { it.pos }, { if (it.half == "r") 1 else 0 })
+    /** the backup's order: page, set, button */
+    private val ORDER: Comparator<Entry> = compareBy({ it.page }, { it.set }, { it.pos })
 
     /** the settings of [b] the add-on does NOT show after a restore (on the page on show and the faces): what did not take */
     fun missing(b: Backup, map: PadMapModel.Map): List<Entry> {
-        val now = current(map).map { Triple(it.set, it.pos, it.id) to (it.face to it.half) }.toSet()
-        return b.entries.filter { (it.face || it.page == map.page) && (Triple(it.set, it.pos, it.id) to (it.face to it.half)) !in now }
+        val now = current(map).map { Triple(it.set, it.pos, it.id) to it.face }.toSet()
+        return b.entries.filter { (it.face || it.page == map.page) && (Triple(it.set, it.pos, it.id) to it.face) !in now }
     }
 
     fun toJson(b: Backup): String = JSONObject().put("v", 1).put("who", b.who).put("entries", JSONArray().apply {
         for (e in b.entries) put(JSONObject().put("page", e.page).put("set", e.set).put("pos", e.pos).put("id", e.id).put("n", e.name)
-            .apply { if (e.face) put("face", true); e.half?.let { put("h", it) } })
+            .apply { if (e.face) put("face", true) })
     }).toString()
 
     fun fromJson(s: String?): Backup? = if (s == null) null else try {
         val o = JSONObject(s)
         val a = o.optJSONArray("entries") ?: JSONArray()
-        val es = (0 until a.length()).mapNotNull { i ->
+        val rows = (0 until a.length()).mapNotNull { i ->
             val e = a.optJSONObject(i) ?: return@mapNotNull null
             val id = e.optInt("id", 0).takeIf { it > 0 } ?: return@mapNotNull null
-            Entry(e.optInt("page", 1), e.optInt("set", 1), e.optInt("pos", 1), id, e.optString("n", ""), e.optBoolean("face", false),
-                e.optString("h", "").takeIf { it == "m" || it == "r" })
+            Entry(e.optInt("page", 1), e.optInt("set", 1), e.optInt("pos", 1), id, e.optString("n", ""), e.optBoolean("face", false)) to
+                e.optString("h", "")
         }
+        // m160 SMART RANGE IS GONE (the user, 2026-11-13: "Lets scrap the smart ranged attack"): a backup written by 1.0.28-1.0.32 may
+        // hold a pair's two halves ("h" m / r) for one button. The add-on keeps the top spell (the Melee half), so the Range half of a
+        // pair is dropped here (a restore would put it over the Melee one); a Range-only box ("r" alone) was that button's one spell
+        val melee = rows.filter { it.second == "m" }.map { (e, _) -> Triple(e.page, e.set, e.pos) to e.face }.toSet()
+        val es = rows.filter { (e, h) -> !(h == "r" && (Triple(e.page, e.set, e.pos) to e.face) in melee) }.map { it.first }
         o.optString("who").takeIf { it.isNotEmpty() }?.let { Backup(it, es) }
     } catch (_: Throwable) { null }
 

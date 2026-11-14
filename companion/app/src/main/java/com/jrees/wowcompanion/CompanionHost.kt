@@ -2572,6 +2572,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (current) pauseOverTell(it, "padmap")                // the user's pick: Start over game windows, told when it differs
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
+                // PadMap m160: the Smart Range clean-up's counts (the problem report's line), one log line when they change
+                if (current && SmartRangeGone.note(it.srGone)) Log.i("WCSETUP", SmartRangeGone.line() ?: "")
                 spellbookView.onPadMap(it); controllerView.onPadMap(it); homeView.onPadMap(it); spellsOverlay.onPadMap(it)
                 if (current) mapView.qitemArmed = it.qitem?.id ?: 0          // ps4: the light blue row's Y glyph (PadMap m132)
                 if (current) { newSpellMap = it; it.dpad?.name?.takeIf { n -> n.isNotEmpty() }?.let { n -> newSpellWho = "$n-${it.dpad.realm ?: ""}" } }

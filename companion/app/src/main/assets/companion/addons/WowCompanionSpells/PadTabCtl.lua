@@ -34,7 +34,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
 -- p42 (int/1429): ctl-sets p39-p41 (the In combat chooser's five tabs, the fight-only layer) merged with party-combat / combat-nav
-local CV = "p53"                -- bump on every change; p53 THE CAST BAR TAB (the user, 2026-11-13: "in the controller menu we need a Tab for the cast bar if its enabled, where people can assign anything from the 5 tabs"): a 6th tab "castbar" (shown only while the app's Tap-to-cast bar setting is not Off: Book b60's padtab 39 then 30 / 31 say so, kept in WowCompanionSpellsDB.castBarTab; 39 then 29 opens it by touch): its 8 slots in one row (Left / Right, Up the tab row), A = the chooser with all five tabs (the game bindings left out: a key is no cast), a pick puts it on the slot (ActionBar cb9 CB.put), Clear empties it, X moves it (CB.move: a swap onto a filled slot); the touch routes are the eight's own (button codes 1-8 = slots 1-8, the spell's two taps, the "extra" row, Clear, padtab 3 / 4 / 5); p52 p52 STICKS TAKE ANYTHING (the user, 2026-11-13: "looking good, except people also want to be able to bind any of their spells and stuff to these, so any of those 5 controller tabs should be able to bind here"): L3 / R3 on WoW Defaults open the chooser with all five tabs (Spells, General, Professions, Extra, DS), the same rows as the eight, and every put goes on the stick (PadMap m157: its own secure button); X (Move) still refused (no bar slot: "bind-move"); a fight-layer pick by touch onto a stick is refused ("stick-normal": the sticks are WoW Defaults' only); p51 STICKS APART (the user, 2026-11-13: "L3 and R3 should show the wow default options on them by default, I also want those to be slightly smaller and moved away from the other two cross's to make it clear what they are."): L3 / R3 sit as a small pair of their own, centred below and between the two diamonds (the app draws them 64 px at 323 / 423, 790); their grid places follow (GRIDS 9 / 10 = { 2.2, 3 } / { 2.8, 3 }: the drawn x on the grid's columns, the 166 px between the diamonds one column): Down from the D-pad's Down = L3, Down from the face diamond's bottom = R3, L3 / R3 Left / Right between them; p50 THE 1.0.30 TEST BUILD MERGE (code 1453): feat/multi-radial-v2's p49b next to p49, both kept; p49b: SEVERAL SPELL RADIALS back (feat/multi-radial-v2; p40 of 1.0.18): the plates = the radials + New, A on one = its settings (Name / Icon / Opening / Delete), the wheel = its spells + "+", no pages; the radial ops ride Book's padtab 39 + code 5-18 (38 / 39 are rank up / Smart Range now); p48 SMART RANGE: WHO HAS IT (PadMap m148; the user, 2026-11-12: "this option should only appear for classes with next swing pairs- and it should only list the abilities that can work with it in the melee options"; "for druid this should only appear for the bear form action bar, and that's even if there is ranged attacks that bear druid can use. maybe taunt?"): Y / A / touch offer Smart Range only where PadMap's srWhere says (the class; a Druid's Bear Form set, its form passed on to srToggle / srPut / srClear: the "sr-class" / "sr-bear" / "sr-form" notes elsewhere); the Melee half's chooser lists only the next-swing attacks the character knows; a form set's button carries its halves and box (here); no Move of a form's half; p47 SMART RANGE REVIEW (the user, 2026-11-12: "okay so I was skeptical and so I tried it with a different melee skill, wing clip and it did not work"): a Smart Range half's Clear goes straight off like its put (no box: the Clear box named the button's other half and said the wrong result); the box flip and the Melee / Range pick are refused while a button is carried (a stray tap on the Move page changed the hidden target button: "sr-carry"); p46 SMART RANGE (the user, 2026-11-12: "revise the right section and remove the "Otherwise spell", and instead move down the assigned spell and make space for an optional checkbox called "Smart Range". when enabled I want two selectable buttons, one for melee and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button modifier combo"): on the In combat tab Y (PAD4) flips the button's Smart Range box (PadMap m146 srToggle); with it on, A first asks Melee or Range (the small picker, `srp`), then the chooser opens for that half (spells only; its Clear row clears that half); X moves the picked half (onto the target's same half, PadMap srMove); the picked half is `srh` in the doc; by touch padtab 39 is the one-shot Smart Range pick and the padtab column after it says what (0 the box, 1 Melee, 2 Range, 3 the box on: the restore); p45 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): keepOn() for PadMap m144 (a backup restore's puts never mark a rank "picked on purpose"); p44 (review): the auto form only while the game SHOWS a stance bar (PadMap stanceShown: Ghost Wolf / Travel Form / an aura keep the plain set); a fresh open forgets ANY pick (form, cursor, auto); p44: THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): until the player picks a form in the row (tc.formPicked), WoW Defaults' form is the one the player is in while the game lays a stance bar over a set (PadMap m142's OV.fe follows), so that set shows and edits the bar the game presses; the caster picked on purpose stays the caster; In combat keeps the caster until a pick (as before); a fresh room open forgets the pick; p43: ALL FIVE TABS ON EVERY In combat BUTTON (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button"): a base X / Y / A, a form's own set and the bare D-pad with the DS WoW toolbar on too; an Extra / DS entry there goes on the fight layer (PadMap m141 putFight: the face store, the form's set, the slot), WoW Defaults untouched; a binding where no chord of ours can go (a base face, a form's set, the toolbar's D-pad) is refused with its reason (bind-fixed / bind-form / bind-dpad bar); spells only on the radial and out of combat's combat button; p41: THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; PadMap m132): an Extra / DS entry on the In combat tab goes on the button's fight layer only (PadMap.putFight), the WoW Defaults assignment stays out of combat; its box is a plain Set / Replace on the fight layer (Replace only when a fight spell / fight-layer entry is there, naming it; p40's "replace both" retired); Clear combat spell removes it; p40: an Extra / DS entry on the In combat tab always asks first (Replace, an empty button too): it changes the button out of combat as well, and the box says so; p39: THE IN COMBAT TAB'S CHOOSER HAS ALL FIVE TABS (the user, 2026-11-11, on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3"): Extra and DS on In combat too (a command, binding, mount or item goes on the button itself, a fight spell there gives way); the three spell tabs only where nothing but a fight spell can go (a base X / Y / A, a form's own set, the bare D-pad the DS WoW toolbar holds, the radial; out of combat a combat button, as before); p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars); p49 STICK BUTTONS (GitHub #78; PadMap m150): WoW Defaults shows L3 / R3 (positions 9 / 10, under the diamonds, between them: GRIDS 9 / 10) for the game bindings only; A on one opens the chooser on Extra with the bindings alone (its only tab), Clear at the end; no Move, no spell, no command (said: "stick-binds"); In combat, the radial and Party never show them (the cursor walks 1-8 there; a tab change off WoW Defaults puts the cursor back on a button); by touch the one-shot talentn 38 pick before a button code 1 / 2 = L3 / R3; p48 SMART RANGE: WHO HAS IT (PadMap m148; the user, 2026-11-12: "this option should only appear for classes with next swing pairs- and it should only list the abilities that can work with it in the melee options"; "for druid this should only appear for the bear form action bar, and that's even if there is ranged attacks that bear druid can use. maybe taunt?"): Y / A / touch offer Smart Range only where PadMap's srWhere says (the class; a Druid's Bear Form set, its form passed on to srToggle / srPut / srClear: the "sr-class" / "sr-bear" / "sr-form" notes elsewhere); the Melee half's chooser lists only the next-swing attacks the character knows; a form set's button carries its halves and box (here); no Move of a form's half; p47 SMART RANGE REVIEW (the user, 2026-11-12: "okay so I was skeptical and so I tried it with a different melee skill, wing clip and it did not work"): a Smart Range half's Clear goes straight off like its put (no box: the Clear box named the button's other half and said the wrong result); the box flip and the Melee / Range pick are refused while a button is carried (a stray tap on the Move page changed the hidden target button: "sr-carry"); p46 SMART RANGE (the user, 2026-11-12: "revise the right section and remove the "Otherwise spell", and instead move down the assigned spell and make space for an optional checkbox called "Smart Range". when enabled I want two selectable buttons, one for melee and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button modifier combo"): on the In combat tab Y (PAD4) flips the button's Smart Range box (PadMap m146 srToggle); with it on, A first asks Melee or Range (the small picker, `srp`), then the chooser opens for that half (spells only; its Clear row clears that half); X moves the picked half (onto the target's same half, PadMap srMove); the picked half is `srh` in the doc; by touch padtab 39 is the one-shot Smart Range pick and the padtab column after it says what (0 the box, 1 Melee, 2 Range, 3 the box on: the restore); p45 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): keepOn() for PadMap m144 (a backup restore's puts never mark a rank "picked on purpose"); p44 (review): the auto form only while the game SHOWS a stance bar (PadMap stanceShown: Ghost Wolf / Travel Form / an aura keep the plain set); a fresh open forgets ANY pick (form, cursor, auto); p44: THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): until the player picks a form in the row (tc.formPicked), WoW Defaults' form is the one the player is in while the game lays a stance bar over a set (PadMap m142's OV.fe follows), so that set shows and edits the bar the game presses; the caster picked on purpose stays the caster; In combat keeps the caster until a pick (as before); a fresh room open forgets the pick; p43: ALL FIVE TABS ON EVERY In combat BUTTON (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button"): a base X / Y / A, a form's own set and the bare D-pad with the DS WoW toolbar on too; an Extra / DS entry there goes on the fight layer (PadMap m141 putFight: the face store, the form's set, the slot), WoW Defaults untouched; a binding where no chord of ours can go (a base face, a form's set, the toolbar's D-pad) is refused with its reason (bind-fixed / bind-form / bind-dpad bar); spells only on the radial and out of combat's combat button; p41: THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; PadMap m132): an Extra / DS entry on the In combat tab goes on the button's fight layer only (PadMap.putFight), the WoW Defaults assignment stays out of combat; its box is a plain Set / Replace on the fight layer (Replace only when a fight spell / fight-layer entry is there, naming it; p40's "replace both" retired); Clear combat spell removes it; p40: an Extra / DS entry on the In combat tab always asks first (Replace, an empty button too): it changes the button out of combat as well, and the box says so; p39: THE IN COMBAT TAB'S CHOOSER HAS ALL FIVE TABS (the user, 2026-11-11, on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3"): Extra and DS on In combat too (a command, binding, mount or item goes on the button itself, a fight spell there gives way); the three spell tabs only where nothing but a fight spell can go (a base X / Y / A, a form's own set, the bare D-pad the DS WoW toolbar holds, the radial; out of combat a combat button, as before); p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
+local CV = "p54"                -- bump on every change; p54 SMART RANGE IS GONE (the user, 2026-11-13: "Lets scrap the smart ranged attack"): p46-p48 are out - the In combat tab's box, Y's flip (Y does nothing on the tab again, as before p46), A's Melee / Range picker, the half chooser / Clear / Move, the padtabctl doc's srp / srh and the carry's h; padtab 39's codes 0-4 (touchSr) are gone and stay unused, the one-shot pick itself (srPick / srWants / srDrop) stays for the radial ops (5-18) and the cast bar (19-31); p53 THE CAST BAR TAB (the user, 2026-11-13: "in the controller menu we need a Tab for the cast bar if its enabled, where people can assign anything from the 5 tabs"): a 6th tab "castbar" (shown only while the app's Tap-to-cast bar setting is not Off: Book b60's padtab 39 then 30 / 31 say so, kept in WowCompanionSpellsDB.castBarTab; 39 then 29 opens it by touch): its 8 slots in one row (Left / Right, Up the tab row), A = the chooser with all five tabs (the game bindings left out: a key is no cast), a pick puts it on the slot (ActionBar cb9 CB.put), Clear empties it, X moves it (CB.move: a swap onto a filled slot); the touch routes are the eight's own (button codes 1-8 = slots 1-8, the spell's two taps, the "extra" row, Clear, padtab 3 / 4 / 5); p52 p52 STICKS TAKE ANYTHING (the user, 2026-11-13: "looking good, except people also want to be able to bind any of their spells and stuff to these, so any of those 5 controller tabs should be able to bind here"): L3 / R3 on WoW Defaults open the chooser with all five tabs (Spells, General, Professions, Extra, DS), the same rows as the eight, and every put goes on the stick (PadMap m157: its own secure button); X (Move) still refused (no bar slot: "bind-move"); a fight-layer pick by touch onto a stick is refused ("stick-normal": the sticks are WoW Defaults' only); p51 STICKS APART (the user, 2026-11-13: "L3 and R3 should show the wow default options on them by default, I also want those to be slightly smaller and moved away from the other two cross's to make it clear what they are."): L3 / R3 sit as a small pair of their own, centred below and between the two diamonds (the app draws them 64 px at 323 / 423, 790); their grid places follow (GRIDS 9 / 10 = { 2.2, 3 } / { 2.8, 3 }: the drawn x on the grid's columns, the 166 px between the diamonds one column): Down from the D-pad's Down = L3, Down from the face diamond's bottom = R3, L3 / R3 Left / Right between them; p50 THE 1.0.30 TEST BUILD MERGE (code 1453): feat/multi-radial-v2's p49b next to p49, both kept; p49b: SEVERAL SPELL RADIALS back (feat/multi-radial-v2; p40 of 1.0.18): the plates = the radials + New, A on one = its settings (Name / Icon / Opening / Delete), the wheel = its spells + "+", no pages; the radial ops ride Book's padtab 39 + code 5-18 (38 / 39 are rank up / Smart Range now); p48 SMART RANGE: WHO HAS IT (PadMap m148; the user, 2026-11-12: "this option should only appear for classes with next swing pairs- and it should only list the abilities that can work with it in the melee options"; "for druid this should only appear for the bear form action bar, and that's even if there is ranged attacks that bear druid can use. maybe taunt?"): Y / A / touch offer Smart Range only where PadMap's srWhere says (the class; a Druid's Bear Form set, its form passed on to srToggle / srPut / srClear: the "sr-class" / "sr-bear" / "sr-form" notes elsewhere); the Melee half's chooser lists only the next-swing attacks the character knows; a form set's button carries its halves and box (here); no Move of a form's half; p47 SMART RANGE REVIEW (the user, 2026-11-12: "okay so I was skeptical and so I tried it with a different melee skill, wing clip and it did not work"): a Smart Range half's Clear goes straight off like its put (no box: the Clear box named the button's other half and said the wrong result); the box flip and the Melee / Range pick are refused while a button is carried (a stray tap on the Move page changed the hidden target button: "sr-carry"); p46 SMART RANGE (the user, 2026-11-12: "revise the right section and remove the "Otherwise spell", and instead move down the assigned spell and make space for an optional checkbox called "Smart Range". when enabled I want two selectable buttons, one for melee and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button modifier combo"): on the In combat tab Y (PAD4) flips the button's Smart Range box (PadMap m146 srToggle); with it on, A first asks Melee or Range (the small picker, `srp`), then the chooser opens for that half (spells only; its Clear row clears that half); X moves the picked half (onto the target's same half, PadMap srMove); the picked half is `srh` in the doc; by touch padtab 39 is the one-shot Smart Range pick and the padtab column after it says what (0 the box, 1 Melee, 2 Range, 3 the box on: the restore); p45 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): keepOn() for PadMap m144 (a backup restore's puts never mark a rank "picked on purpose"); p44 (review): the auto form only while the game SHOWS a stance bar (PadMap stanceShown: Ghost Wolf / Travel Form / an aura keep the plain set); a fresh open forgets ANY pick (form, cursor, auto); p44: THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): until the player picks a form in the row (tc.formPicked), WoW Defaults' form is the one the player is in while the game lays a stance bar over a set (PadMap m142's OV.fe follows), so that set shows and edits the bar the game presses; the caster picked on purpose stays the caster; In combat keeps the caster until a pick (as before); a fresh room open forgets the pick; p43: ALL FIVE TABS ON EVERY In combat BUTTON (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button"): a base X / Y / A, a form's own set and the bare D-pad with the DS WoW toolbar on too; an Extra / DS entry there goes on the fight layer (PadMap m141 putFight: the face store, the form's set, the slot), WoW Defaults untouched; a binding where no chord of ours can go (a base face, a form's set, the toolbar's D-pad) is refused with its reason (bind-fixed / bind-form / bind-dpad bar); spells only on the radial and out of combat's combat button; p41: THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; PadMap m132): an Extra / DS entry on the In combat tab goes on the button's fight layer only (PadMap.putFight), the WoW Defaults assignment stays out of combat; its box is a plain Set / Replace on the fight layer (Replace only when a fight spell / fight-layer entry is there, naming it; p40's "replace both" retired); Clear combat spell removes it; p40: an Extra / DS entry on the In combat tab always asks first (Replace, an empty button too): it changes the button out of combat as well, and the box says so; p39: THE IN COMBAT TAB'S CHOOSER HAS ALL FIVE TABS (the user, 2026-11-11, on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3"): Extra and DS on In combat too (a command, binding, mount or item goes on the button itself, a fight spell there gives way); the three spell tabs only where nothing but a fight spell can go (a base X / Y / A, a form's own set, the bare D-pad the DS WoW toolbar holds, the radial; out of combat a combat button, as before); p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars); p49 STICK BUTTONS (GitHub #78; PadMap m150): WoW Defaults shows L3 / R3 (positions 9 / 10, under the diamonds, between them: GRIDS 9 / 10) for the game bindings only; A on one opens the chooser on Extra with the bindings alone (its only tab), Clear at the end; no Move, no spell, no command (said: "stick-binds"); In combat, the radial and Party never show them (the cursor walks 1-8 there; a tab change off WoW Defaults puts the cursor back on a button); by touch the one-shot talentn 38 pick before a button code 1 / 2 = L3 / R3; p48 SMART RANGE: WHO HAS IT (PadMap m148; the user, 2026-11-12: "this option should only appear for classes with next swing pairs- and it should only list the abilities that can work with it in the melee options"; "for druid this should only appear for the bear form action bar, and that's even if there is ranged attacks that bear druid can use. maybe taunt?"): Y / A / touch offer Smart Range only where PadMap's srWhere says (the class; a Druid's Bear Form set, its form passed on to srToggle / srPut / srClear: the "sr-class" / "sr-bear" / "sr-form" notes elsewhere); the Melee half's chooser lists only the next-swing attacks the character knows; a form set's button carries its halves and box (here); no Move of a form's half; p47 SMART RANGE REVIEW (the user, 2026-11-12: "okay so I was skeptical and so I tried it with a different melee skill, wing clip and it did not work"): a Smart Range half's Clear goes straight off like its put (no box: the Clear box named the button's other half and said the wrong result); the box flip and the Melee / Range pick are refused while a button is carried (a stray tap on the Move page changed the hidden target button: "sr-carry"); p46 SMART RANGE (the user, 2026-11-12: "revise the right section and remove the "Otherwise spell", and instead move down the assigned spell and make space for an optional checkbox called "Smart Range". when enabled I want two selectable buttons, one for melee and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button modifier combo"): on the In combat tab Y (PAD4) flips the button's Smart Range box (PadMap m146 srToggle); with it on, A first asks Melee or Range (the small picker, `srp`), then the chooser opens for that half (spells only; its Clear row clears that half); X moves the picked half (onto the target's same half, PadMap srMove); the picked half is `srh` in the doc; by touch padtab 39 is the one-shot Smart Range pick and the padtab column after it says what (0 the box, 1 Melee, 2 Range, 3 the box on: the restore); p45 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): keepOn() for PadMap m144 (a backup restore's puts never mark a rank "picked on purpose"); p44 (review): the auto form only while the game SHOWS a stance bar (PadMap stanceShown: Ghost Wolf / Travel Form / an aura keep the plain set); a fresh open forgets ANY pick (form, cursor, auto); p44: THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): until the player picks a form in the row (tc.formPicked), WoW Defaults' form is the one the player is in while the game lays a stance bar over a set (PadMap m142's OV.fe follows), so that set shows and edits the bar the game presses; the caster picked on purpose stays the caster; In combat keeps the caster until a pick (as before); a fresh room open forgets the pick; p43: ALL FIVE TABS ON EVERY In combat BUTTON (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button"): a base X / Y / A, a form's own set and the bare D-pad with the DS WoW toolbar on too; an Extra / DS entry there goes on the fight layer (PadMap m141 putFight: the face store, the form's set, the slot), WoW Defaults untouched; a binding where no chord of ours can go (a base face, a form's set, the toolbar's D-pad) is refused with its reason (bind-fixed / bind-form / bind-dpad bar); spells only on the radial and out of combat's combat button; p41: THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; PadMap m132): an Extra / DS entry on the In combat tab goes on the button's fight layer only (PadMap.putFight), the WoW Defaults assignment stays out of combat; its box is a plain Set / Replace on the fight layer (Replace only when a fight spell / fight-layer entry is there, naming it; p40's "replace both" retired); Clear combat spell removes it; p40: an Extra / DS entry on the In combat tab always asks first (Replace, an empty button too): it changes the button out of combat as well, and the box says so; p39: THE IN COMBAT TAB'S CHOOSER HAS ALL FIVE TABS (the user, 2026-11-11, on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3"): Extra and DS on In combat too (a command, binding, mount or item goes on the button itself, a fight spell there gives way); the three spell tabs only where nothing but a fight spell can go (a base X / Y / A, a form's own set, the bare D-pad the DS WoW toolbar holds, the radial; out of combat a combat button, as before); p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 }, { 2.2, 3 }, { 2.8, 3 } },   -- 5-8 left / top / right / bottom; p51: 9 / 10 the sticks, below
@@ -147,7 +147,6 @@ shownSet = function()
 end
 
 local rows                      -- below: the chooser's rows (the report names the one under the cursor)
-local srHalfNow                 -- p46 below: the Smart Range half picked on the button under the cursor
 local fightView     -- p26 below: the chooser's layout (p28: the tab's own; the user's pick "No flip in the chooser")
 -- p40 the radial on show (tc.rpage = its slot): its spells in order
 local function radialPage()
@@ -207,8 +206,7 @@ local function report(note)
         on = tc.on or nil, focus = tc.focus, set = tc.set, shown = shownSet(), pos = tc.pos, page = pm and pm.page() or 1,
         chooser = ch, box = box, lay = layout(), view = tc.view, note = tc.note,
         tcur = tc.tcur, sw = tc.sw, scur = tc.scur, dpos = tc.dpos,
-        carry = tc.carry and { set = tc.carry.set, pos = tc.carry.pos, page = tc.carry.page, h = tc.carry.h } or nil,
-        srp = tc.srp, srh = (srHalfNow and srHalfNow()) or nil,         -- p46: the Smart Range picker's cursor, the picked half
+        carry = tc.carry and { set = tc.carry.set, pos = tc.carry.pos, page = tc.carry.page } or nil,
         rpage = tc.view == "radial" and tc.rpage or nil, rad = tc.view == "radial" and radialPage() or nil,
         -- p40: the radials (slots), the plate cursor, the settings row, an open Name / Icon box, the last event, a Delete waiting
         rslots = tc.view == "radial" and rSlots() or nil, rplate = tc.view == "radial" and tc.rplate or nil,
@@ -240,12 +238,8 @@ local function here()
     -- p29: a FORM chosen on the In combat tab: the bare set's buttons are that form's own In-combat spells (B stays the game's Back)
     if tc.view == "combat" and tc.form ~= 0 and shownSet() == 1 and tc.pos ~= 7 and type(pm.formFight) == "function" then
         local e = pm.formFight(tc.form, tc.pos)
-        -- p48 (PadMap m148): a Bear Form set's Smart Range halves (sr / h / rg) and its box
-        local rg = e and type(e.rg) == "table" and { id = e.rg.id, n = e.rg.n, i = e.rg.i } or nil
         return { kind = e and "combat" or "none", form = tc.form, pos = tc.pos,
-                 sr = (type(pm.srFormFlag) == "function" and pm.srFormFlag(tc.form, tc.pos)) or nil,
-                 c = e and { id = (e.t == nil) and e.id or nil, n = e.n, i = e.i, t = e.t, key = e.key,
-                             sr = e.sr, h = e.h, rg = rg } or nil }   -- p43: `t` / `key`
+                 c = e and { id = (e.t == nil) and e.id or nil, n = e.n, i = e.i, t = e.t, key = e.key } or nil }   -- p43: `t` / `key`
     end
     return pm.slotAt(pm.page(), shownSet(), tc.pos)
 end
@@ -271,7 +265,6 @@ local function isFace(slot) return slot and slot.kind == "fixed" and slot.face =
 -- spells) and, out of combat, a combat button (its Otherwise spell). The app's ChooserTabs.spellsOnly is this same rule, same inputs
 local function onlySpells()
     if tc.view == "radial" then return true end
-    if tc.chooser and tc.chooser.srh then return true end              -- p46: a Smart Range half takes spells only
     if fightView() then return false end
     return isCombat(here())
 end
@@ -310,12 +303,7 @@ rows = function()
     -- the combat view leaves out the spells already on the button (its own spell, its combat and its otherwise spell): the same spell
     -- in and out of combat would only spend a macro
     local skip = {}
-    local srh = tc.chooser and tc.chooser.srh or nil                    -- p46: the Smart Range half the chooser fills
-    if fightView() and h and srh then
-        local c = (h.kind == "fixed" and h.cf) or (h.kind == "combat" and h.c) or nil
-        local half = c and c.sr and ((srh == "m" and c.h ~= "r" and c) or (srh == "r" and (c.h == "r" and c or c.rg))) or nil
-        if half and half.id then skip[half.id] = true end
-    elseif fightView() and h then
+    if fightView() and h then
         if h.kind == "spell" and h.id then skip[h.id] = true end
         if h.c and h.c.id then skip[h.c.id] = true end
         if h.o and h.o.id and not h.o.item then skip[h.o.id] = true end
@@ -328,11 +316,8 @@ rows = function()
         if type(WC.spellsBindableList) == "function" then
             for _, e in ipairs(WC.spellsBindableList()) do
                 local tab = e.prof and "professions" or e.gen and "general" or "spells"
-                -- p48 (the user: "it should only list the abilities that can work with it in the melee options"): the Melee half's
-                -- chooser lists only next-swing attacks (PadMap's srSwingKnown; the put still refuses any other: "swing")
-                local swingOk = srh ~= "m" or (fightView() and type(PM().srSwingKnown) == "function" and PM().srSwingKnown(e.id))
-                if not skip[e.id] and tab == list and swingOk then
-                    out[#out + 1] = { kind = spellKind, id = e.id, slot = e.slot, srh = srh }
+                if not skip[e.id] and tab == list then
+                    out[#out + 1] = { kind = spellKind, id = e.id, slot = e.slot }
                 end
             end
         end
@@ -351,11 +336,7 @@ rows = function()
             else out[#out + 1] = { kind = x.kind, id = x.id, key = (x.kind == "mount" and "m:" or "i:") .. tostring(x.id), n = x.n } end
         end
     end
-    if fightView() and srh then
-        local c = h and ((h.kind == "fixed" and h.cf) or (h.kind == "combat" and h.c)) or nil
-        local filledHalf = c and c.sr and ((srh == "m" and c.h ~= "r") or (srh == "r" and (c.h == "r" or c.rg ~= nil)))
-        if filledHalf then out[#out + 1] = { kind = isFace(h) and "uncface" or "uncombat", srh = srh } end
-    elseif fightView() then
+    if fightView() then
         if isCombat(h) then out[#out + 1] = { kind = "uncombat" }
         elseif isFace(h) and h.cf then out[#out + 1] = { kind = "uncface" } end
     elseif filled(here()) then out[#out + 1] = { kind = "clear" } end
@@ -390,18 +371,6 @@ local function act(thing, fightTouch)
     local pm = PM()
     if not pm then return end
     local page, set, pos = pm.page(), shownSet(), tc.pos
-    -- p46 SMART RANGE: the picked half takes the spell (or is cleared); a refusal is the room's note ("Melee needs a next-swing attack")
-    if thing.srh and type(pm.srPut) == "function" and (thing.kind == "combat" or thing.kind == "cface" or thing.kind == "uncombat"
-        or thing.kind == "uncface") then
-        local ok, why
-        local hf = here()                                                -- p48: a Bear Form set's place (its form)
-        local form = hf and hf.form or nil
-        if thing.kind == "uncombat" or thing.kind == "uncface" then ok, why = pm.srClear(page, set, pos, thing.srh, form)
-        else ok, why = pm.srPut(page, set, pos, thing.srh, thing.slot, form) end
-        tc.srNote = (not ok) and ("sr-" .. tostring(why)) or nil
-        tc.box, tc.chooser, tc.focus = nil, nil, "buttons"
-        return
-    end
     -- p29: with a form chosen (the In combat tab, the bare set) a fight spell is THAT form's own (PadMap m55)
     local h = here()
     local whole = thing.kind == "command" or thing.kind == "bind" or thing.kind == "item" or thing.kind == "mount"
@@ -446,7 +415,6 @@ local function boxFor(thing, afterReplace)
         if thing.kind == "clear" then return "clear" end
         return (not afterReplace and filled(here())) and "replace" or nil
     end
-    if thing.srh then return nil end                                   -- p46: a Smart Range half's spell goes straight on; p47: its Clear too
     if thing.kind == "clear" or thing.kind == "uncombat" or thing.kind == "uncface" then return "clear" end
     -- a face button's fight spell: its own box the first time (it changes what X / Y / A do in every fight), Replace after
     if thing.kind == "cface" then
@@ -499,7 +467,7 @@ local function choose(thing)
     if not bindHere(thing) then return end
     local kind = boxFor(thing, false)
     if kind then tc.box = { kind = kind, thing = thing }; report("box-" .. kind)
-    else act(thing); report(tc.srNote or "put"); tc.srNote = nil end
+    else act(thing); report("put") end
 end
 
 local function confirm()
@@ -527,70 +495,7 @@ local function confirm()
         if nextKind then tc.box = { kind = nextKind, thing = b.thing }; report("box-" .. nextKind) return end
     end
     act(b.thing)
-    report(tc.srNote or (b.kind == "clear" and "cleared" or "put"))
-    tc.srNote = nil
-end
-
--- ---------------------------------------------------------------- p46 SMART RANGE (PadMap m146)
--- the button's place for Smart Range (the In combat tab; a form's own set and B are not offered): page, set, pos; else nil, the note
--- p48 (PadMap m148): the form whose own set is on show (0 = none); a Smart Range place is page, set, pos and this form
-local function srFormHere()
-    if tc.view == "combat" and tc.form ~= 0 and shownSet() == 1 and not keepOn() then return tc.form end
-    return 0
-end
-local function srCur()
-    if tc.view ~= "combat" and not keepOn() then return nil, "sr-view" end
-    if shownSet() == 1 and tc.pos == 7 then return nil, "stays-back" end
-    local pm = PM()
-    if not pm or type(pm.srToggle) ~= "function" then return nil, "sr-old" end
-    local form = srFormHere()
-    if type(pm.srWhere) == "function" then
-        local ok, why = pm.srWhere(shownSet(), tc.pos, form)
-        if not ok then return nil, "sr-" .. tostring(why) end
-    elseif form ~= 0 then return nil, "sr-form" end
-    return pm.page(), shownSet(), tc.pos, form ~= 0 and form or nil
-end
-local function srOn(h) return h ~= nil and h.sr == true end
-srHalfNow = function()
-    local s, pm = tc.srh, PM()
-    if s and pm and s.page == pm.page() and s.set == shownSet() and s.pos == tc.pos and (s.f or 0) == srFormHere() then return s.h end
-    return nil
-end
--- the halves a button's view carries: melee, range (the documents' refs), nil when the box is off
-local function srHalves(h)
-    local c = h and ((h.kind == "fixed" and h.cf) or (h.kind == "combat" and h.c)) or nil
-    if not (c and c.sr) then return nil, nil end
-    if c.h == "r" then return nil, c end
-    return c, c.rg
-end
--- the half picked on THIS button ("m" / "r"), nil = none
-local function srHalf() return srHalfNow() end
-local function srToggle(want)
-    if inCombat() then refusedCombat() return end
-    if tc.carry then report("sr-carry") return end                     -- p47: never the carried-to button, unseen
-    local page, set, pos, form = srCur()
-    if not page then report(set) return end
-    local ok, why = PM().srToggle(page, set, pos, want, form)
-    tc.srh, tc.srp = nil, nil
-    report(ok and "sr-toggled" or ("sr-" .. tostring(why)))
-end
--- the small Melee / Range picker A opens (1 Melee, 2 Range): A picks and opens the chooser for that half, B closes it
-local function pressSrPick(key)
-    if key == "PADDLEFT" or key == "PADDRIGHT" then tc.srp = key == "PADDLEFT" and 1 or 2; report("sr-picker")
-    elseif key == "PAD1" then
-        local page, set, pos, form = srCur()
-        tc.srp = (tc.srp == 2) and 2 or 1
-        if not page then tc.srp = nil; report(set) return true end
-        tc.srh = { page = page, set = set, pos = pos, h = tc.srp == 1 and "m" or "r", f = form }
-        tc.srp = nil
-        if inCombat() then refusedCombat() return true end
-        tc.lock = shownSet()
-        tc.chooser = { list = "spells", row = 1, srh = tc.srh.h }
-        report("chooser")
-    elseif key == "PAD2" then tc.srp = nil; report("sr-picker-closed")
-    elseif key == "PADLSHOULDER" or key == "PADRSHOULDER" then tc.srp = nil; return false
-    end
-    return true
+    report(b.kind == "clear" and "cleared" or "put")
 end
 
 -- ---------------------------------------------------------------- p9: tabs, switches, Move
@@ -599,7 +504,7 @@ local function setTab(v)
     if hidden(v) then v = "normal" end                                   -- p34: an old padtab 1 (the DS tab) opens WoW Defaults
     tc.view = v
     if v ~= "normal" and GRIDS.STICK[tc.pos] then tc.pos = tc.pos == 9 and 4 or 8 end     -- p49: the sticks are WoW Defaults' only
-    tc.carry, tc.chooser, tc.box, tc.srp = nil, nil, nil, nil
+    tc.carry, tc.chooser, tc.box = nil, nil, nil
     tc.tcur, tc.sw = tabIndex(v), 1
     if tc.focus ~= "tabs" then tc.focus = HOME_FOCUS[v] end
     report("tab")
@@ -670,18 +575,6 @@ local function carryStart()
         return
     end
     if h and (h.kind == "bind" or h.stick) then report("bind-move") return end   -- p15: a binding rides the key, not the bar; p52: a stick
-    if tc.view == "combat" and srOn(h) then                             -- p46: X moves the PICKED half (a base X / Y / A's stay: no Move there)
-        if isFace(h) or h.form then report("locked") return end            -- p48: nor a Bear Form set's half
-        local hh = srHalf()
-        if not hh then report("sr-pick-half") return end
-        local m, g = srHalves(h)
-        if not ((hh == "m" and m) or (hh == "r" and g)) then report("nothing-to-move") return end
-        if inCombat() then refusedCombat() return end
-        local pm = PM()
-        tc.carry = { page = pm and pm.page() or 1, set = shownSet(), pos = tc.pos, h = hh }
-        report("carry")
-        return
-    end
     if not filled(h) then report(h and h.kind == "fixed" and "locked" or "nothing-to-move") return end
     if inCombat() then refusedCombat() return end
     local pm = PM()
@@ -719,18 +612,6 @@ local function carryPlace()
     if not pm then return end
     local h = here()
     if not h then return end
-    if c.h and type(pm.srMove) == "function" then                      -- p46: a Smart Range half onto this button's same half
-        local page, set = pm.page(), shownSet()
-        if c.page == page and c.set == set and c.pos == tc.pos then tc.carry = nil; report("carry-cancel") return end
-        if set == 1 and tc.pos == 7 then report("locked") return end
-        if inCombat() then refusedCombat() return end
-        local swap = select(c.h == "m" and 1 or 2, srHalves(h)) ~= nil
-        local ok, why = pm.srMove(c.page, c.set, c.pos, c.h, page, set, tc.pos)
-        tc.carry = nil
-        if ok then tc.srh = { page = page, set = set, pos = tc.pos, h = c.h } end
-        report(ok and (swap and "swapped" or "moved") or ("sr-" .. tostring(why)))
-        return
-    end
     if h.kind == "fixed" then report("locked") return end
     if h.kind == "bind" or h.stick then report("bind-move") return end    -- p15; p49: nothing is carried onto a stick
     local page, set = pm.page(), shownSet()
@@ -790,13 +671,6 @@ local function pressButtons(key)
         if tc.carry then carryPlace() return true end
         local h = here()
         if not h then return true end
-        -- p46 SMART RANGE: a checked box asks Melee or Range first (the picker), then the chooser for that half
-        if tc.view == "combat" and srOn(h) and srCur() then
-            if inCombat() then refusedCombat() return true end
-            tc.srp = (srHalf() == "r") and 2 or 1
-            report("sr-picker")
-            return true
-        end
         if h.kind == "fixed" then
             if tc.view == "combat" and isFace(h) then
                 if not inCombat() then tc.lock = shownSet(); tc.chooser = { list = "spells", row = 1 }; report("chooser") else refusedCombat() end
@@ -812,10 +686,7 @@ local function pressButtons(key)
         if not tc.carry then carryStart() end
         return true
     end
-    if key == "PAD4" then                               -- p46: Y flips the button's Smart Range box (In combat tab)
-        if tc.view == "combat" and not tc.carry then srToggle(nil) end
-        return true
-    end
+    if key == "PAD4" then return true end               -- p54: Y does nothing here (p46's Smart Range flip is gone)
     return false
 end
 
@@ -1025,20 +896,19 @@ WC.padTabCtl = {
         report("enter")
     end,
     leave = function()
-        tc.on, tc.chooser, tc.box, tc.carry, tc.srp = false, nil, nil, nil, nil
+        tc.on, tc.chooser, tc.box, tc.carry = false, nil, nil, nil
         report("leave")
     end,
     isOn = function() return tc.on end,
     -- the room is shown but not entered: its chosen set / button / page are sent, so the app shows (and touch changes) the same button
     sync = function() report("sync") end,
     -- a chooser, a box or a carried button: B goes back inside the room, not Home
-    boxOpen = function() return tc.chooser ~= nil or tc.box ~= nil or tc.carry ~= nil or tc.srp ~= nil end,
+    boxOpen = function() return tc.chooser ~= nil or tc.box ~= nil or tc.carry ~= nil end,
     state = function() return tc end,
     press = function(key)
         if not tc.on then return false end
         if tc.box then return pressBox(key) end
         if tc.chooser then return pressChooser(key) end
-        if tc.srp and pressSrPick(key) then return true end               -- p46: the Melee / Range picker
         if key == "PADLSHOULDER" or key == "PADRSHOULDER" then                    -- p9: LB / RB = the tabs
             local i = tabStep(tabIndex(tc.view), key == "PADLSHOULDER" and -1 or 1)     -- p34: over the hidden tab
             if i then setTab(TABS[i]) end
@@ -1149,7 +1019,7 @@ WC.padTabCtl = {
         end
     end,
     touchCarry = function() if not tc.carry then carryStart() end end,
-    -- p40 / p49 RADIAL OPS BY TOUCH (Book b53: padtab 39, Smart Range's one-shot pick, then code 5 + c = radial op c): 0-5 show radial
+    -- p40 / p49 RADIAL OPS BY TOUCH (Book b53: padtab 39, the one-shot pick, then code 5 + c = radial op c): 0-5 show radial
     -- slot c + 1 (a pick), 6 New, 7 its settings (a pick), 10 DELETE the radial shown (the app asked "Tap again" first), 11 / 12 the
     -- Name / Icon box opened by a finger (the controller's presses go to the app), 13 that box done (the controller back)
     touchRadial = function(c)
@@ -1200,32 +1070,17 @@ WC.padTabCtl = {
     end,
     -- the touch's one-shot "combat layer" pick (talentn 39, the app sends it in the same touch, before the ONE action)
     combatLayer = function() tc.combatAt = GetTime() end,
-    -- p46 SMART RANGE BY TOUCH (Book b52): padtab 39 = the one-shot pick (fresh 2 s); the padtab column after it is the code: 0 the box
-    -- (flip), 1 pick Melee, 2 pick Range, 3 the box on (the restore: never off), 4 the box off
+    -- p46 THE ONE-SHOT PICK BY TOUCH (Book b52): padtab 39 = the pick (fresh 2 s); the padtab column after it is its code (Book: the
+    -- radial ops 5-18, the cast bar 19-31). p54: Smart Range's codes 0-4 (touchSr) are gone; those numbers stay unused
     srPick = function() tc.srAt = GetTime() end,
     srWants = function() return tc.srAt ~= nil and GetTime() - tc.srAt <= 2 end,
     srDrop = function() tc.srAt = nil end,
-    touchSr = function(code)
-        tc.srAt = nil
-        if tc.carry then report("sr-carry") return end                 -- p47: a tap on the Move page changes nothing
-        if code == 0 then srToggle(nil)
-        elseif code == 3 or code == 4 then srToggle(code == 3)
-        elseif code == 1 or code == 2 then
-            local page, set, pos, form = srCur()
-            if not page then report(set) return end
-            tc.srh = { page = page, set = set, pos = pos, h = code == 1 and "m" or "r", f = form }
-            tc.srp = nil
-            report("touch-sr-half")
-        else report("sr-code") end
-    end,
     touchClear = function()
         if keepOn() then report("keep-refused") return end                                 -- p25: a restore never clears
         local combat = tc.combatAt and GetTime() - tc.combatAt <= COMBAT_PICK_S
         tc.combatAt = nil
         local h = here()
-        if combat and srOn(h) and srHalf() then                          -- p46: the picked Smart Range half
-            act({ kind = isFace(h) and "uncface" or "uncombat", srh = srHalf() }); report(tc.srNote or "cleared"); tc.srNote = nil
-        elseif combat then
+        if combat then
             if isCombat(h) then act({ kind = "uncombat" }); report("cleared")
             elseif isFace(h) and h.cf then act({ kind = "uncface" }); report("cleared") end
         elseif filled(h) then act({ kind = "clear" }); report("cleared") end
@@ -1267,9 +1122,7 @@ WC.padTabCtl = {
         local kind = tc.view == "radial" and "rspell"
             or combat and (isFace(h) and "cface" or "combat") or (isCombat(h) and "otherwise" or "spell")
         if kind == "rspell" and inCombat() then refusedCombat() return end              -- p16: the cells freeze in a fight
-        -- p46 SMART RANGE: a checked box's picked half takes it (none picked: PadMap puts it in the half it is for)
-        local srh = (combat and srOn(h)) and srHalf() or nil
-        act({ kind = kind, id = id, slot = slot, srh = srh }); report(tc.srNote or "put"); tc.srNote = nil
+        act({ kind = kind, id = id, slot = slot }); report("put")
     end,
     -- p12 THE "extra" PAD ROW (the pad owner's YES 2026-10-07, with ONE mandatory rule): every extra tap needs a FRESH page pick first
     -- (padtab 6 / 7 / 8 = entries from 0 / 40 / 80; one-shot, stale after PICK_S), so a lost pick never puts a wrong entry. The tap then puts

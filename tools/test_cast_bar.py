@@ -15,7 +15,7 @@ REAL cast-bar block of ActionBar.lua (CASTBAR-BEGIN .. CASTBAR-END) under tools/
   f the cooldowns ("castcd"): the GCD / a cooldown from isActive / isOnGCD only; a secret length is never read (the learned one, else
     1.5 s for the GCD); a cooldown that ran out is gone;
   g the pick is stale after 2 s; Book hands the spell to the bar first (b53), in a full world load; Book b55: padtab 39 then 19 is the
-    pick with no castbar row yet (the row then registered), 39 then another code stays Smart Range's;
+    pick with no castbar row yet (the row then registered), 39 then another code spends the pick;
   h no trace: no SetBinding / SaveBindings / macro / CVar / PlaceAction, no Blizzard window call;
   i cb3: an old 12-slot store keeps its first 6 spells; the slot pick (WC.castBarPick(k)) puts a spell on slot k (moved off another,
     the same spell there comes off), queued in a fight; Book b56: the Bind box's third tab (padtab 39 then 26), its D-pad cursor and A,
@@ -248,7 +248,7 @@ W.execute('fire("PLAYER_LOGIN"); fire("PLAYER_ENTERING_WORLD", true, false); Wow
 check(W.eval('WowCompanion.pad.rows.castbar') is None, "the world: an empty bar, no castbar row")
 W.execute('WowCompanion.pad.rows["padtab"].handler(nil, 39); WowCompanion.pad.rows["padtab"].handler(nil, 19); NOW = NOW + 0.3')
 check(W.eval('WowCompanion.castBarWants()') is True and W.eval('WowCompanion.padTabCtl.srWants()') is False,
-      "Book b55: padtab 39 then 19 = the cast bar's pick (Smart Range's pick spent)")
+      "Book b55: padtab 39 then 19 = the cast bar's pick (the one-shot pick spent)")
 W.execute('WowCompanion._spellsBookKey(403)')
 check(store(W) == {1: 403}, "the pick, then the spells row's tap for Lightning Bolt: on the cast bar (not a Bind)", store(W))
 check(W.eval('WowCompanion.pad.rows.castbar') is not None, "the castbar row registered by that first spell")
