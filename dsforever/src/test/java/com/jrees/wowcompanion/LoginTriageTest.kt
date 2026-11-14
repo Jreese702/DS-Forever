@@ -89,6 +89,15 @@ class LoginTriageTest {
             "DIFFERS: the game signs in at eu while the install and the device say us", l)
     }
 
+    @Test fun anUntouchedPromptRowIsNotCalledAPick() {
+        // the verify pass: saving the prompt with its pre-filled Region row is a choice too, but the line says it was not changed
+        assertTrue(GameRegion.reportLine("eu", GameRegion.BY_PROMPT_PREFILLED, 7L, "us", "eu", "US", stamp)
+            .startsWith("Region: the game signs in at eu; chosen eu (the login prompt, row as pre-filled, T7);"))
+        // and it survives the report's privacy pass whole
+        val l = GameRegion.reportLine("eu", GameRegion.BY_PROMPT_PREFILLED, 7L, "us", "eu", "US", stamp)
+        assertEquals(l, StartupDiag.sanitize(l, emptyList()))
+    }
+
     @Test fun matchingRegionsAreJustListed() {
         assertEquals("Region: the game signs in at eu; chosen none (the install's own region stands); the install's branch eu; the device's country DE (eu)",
             GameRegion.reportLine(null, null, 0L, "eu", "eu", "DE", stamp))
@@ -110,6 +119,21 @@ class LoginTriageTest {
         assertTrue(PreLoginTraffic.busyAtRead(false, lastHeavyAt = read - PreLoginTraffic.HEAVY_BEFORE_READ_MS, readAt = read))
         assertFalse(PreLoginTraffic.busyAtRead(false, lastHeavyAt = read - PreLoginTraffic.HEAVY_BEFORE_READ_MS - 1L, readAt = read))
         assertFalse(PreLoginTraffic.busyAtRead(false, lastHeavyAt = 0L, readAt = read))                        // a quiet login screen
+    }
+
+    @Test fun aHeavySecondRightAfterTheReadIsNotTheSignIn() {
+        // the verify pass, #271 20:22:41.484 read -> 20:22:42.028 419 KB ("past the login screen"), then 4 MB/s at the captcha:
+        // nothing heavy before the read, so only the after-read window catches it
+        val read = 1_000_000L
+        assertFalse(PreLoginTraffic.busyAtRead(downloading = false, lastHeavyAt = 0L, readAt = read))
+        assertTrue(PreLoginTraffic.heavyRightAfterRead(read, read + 544L))
+        assertTrue(PreLoginTraffic.heavyRightAfterRead(read, read + PreLoginTraffic.HEAVY_AFTER_READ_MS))
+        // a real sign-in's character select comes >= ~4 s after the read: still a burst that counts
+        assertFalse(PreLoginTraffic.heavyRightAfterRead(read, read + PreLoginTraffic.HEAVY_AFTER_READ_MS + 1L))
+        assertFalse(PreLoginTraffic.heavyRightAfterRead(read, read + 4_000L))
+        // no read yet, or a sample stamped before it: not this rule's (busyAtRead's lookback has those)
+        assertFalse(PreLoginTraffic.heavyRightAfterRead(0L, read))
+        assertFalse(PreLoginTraffic.heavyRightAfterRead(read, read - 1L))
     }
 
     @Test fun aDownloadingReadsBurstIsNotTheSignIn() {

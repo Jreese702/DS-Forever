@@ -104,8 +104,25 @@ internal class PreLoginTraffic(private val minuteMs: Long = 60_000L, private val
         fun busyAtRead(downloading: Boolean, lastHeavyAt: Long, readAt: Long, windowMs: Long = HEAVY_BEFORE_READ_MS): Boolean =
             downloading || (lastHeavyAt > 0L && readAt >= lastHeavyAt && readAt - lastHeavyAt <= windowMs)
 
-        /** a heavy second this close before the read makes it a downloading read ([busyAtRead]); the login screen itself is <= 2 KB/s */
+        /**
+         * a heavy second this close before the read makes it a downloading read ([busyAtRead]). NOT "the login screen is <= 2 KB/s" on
+         * 1.60.1: a one-off ~410 KB second comes as the login screen appears (#274 17:47:37 and 17:49:36, #271 20:24:40, #237 11:51:01),
+         * so a quiet install's read is flagged too when that second lands here - harmless (the world's documents still say past it)
+         */
         const val HEAVY_BEFORE_READ_MS = 10_000L
+
+        /**
+         * THE SAME SECOND JUST AFTER THE READ (the login triage's verify pass, 2026-11-13; the user: "yes on the triage things"). The
+         * sign-in starts ~2.2 s after the client's first read and takes ~2.2 s more (NativeLogin's 10-08 device tests), so a heavy
+         * second within [windowMs] of the read is never its character select: it is that one-off login-screen second or a download.
+         * #271 20:22:41: read, 419 KB 0.5 s later said "past the login screen", then 4 MB/s while the player sat at the captcha -
+         * [busyAtRead] missed it (nothing heavy BEFORE the read). Yes = the run's traffic is not taken for the sign-in either.
+         */
+        fun heavyRightAfterRead(readAt: Long, sampleAt: Long, windowMs: Long = HEAVY_AFTER_READ_MS): Boolean =
+            readAt > 0L && sampleAt >= readAt && sampleAt - readAt <= windowMs
+
+        /** [heavyRightAfterRead]'s window: inside the ~4.4 s a real sign-in needs from the read to its character select */
+        const val HEAVY_AFTER_READ_MS = 2_000L
 
         /**
          * Is this second's traffic still "before the login screen"? Not after the client's first read, not once the run is past the

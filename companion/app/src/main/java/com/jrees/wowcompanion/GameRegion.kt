@@ -48,6 +48,9 @@ object GameRegion {
     /** where the choice was made: the login prompt's Region row, or the Start menu's Region button (one press steps to the next) */
     const val BY_PROMPT = "the login prompt"
     const val BY_MENU = "the Start menu"
+    /** the verify pass (#248): saved with the prompt's Region row as it was pre-filled (the choice, the folder's portal or the device's
+     *  country), so a report tells an untouched default from a pick */
+    const val BY_PROMPT_PREFILLED = "the login prompt, row as pre-filled"
 
     /**
      * [by]: where it was made ([BY_PROMPT] / [BY_MENU]). The login triage (2026-11-13, #248: a US install on a US-zoned Thor signing in

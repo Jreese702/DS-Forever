@@ -33,6 +33,8 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
     private var error = ""
     /** 2026-11-07 (the user: "a region select prompt with the login credentials ... to let people from EU log in"): the region row */
     private var region = "us"
+    /** the login triage's verify pass (#248): the row as the prompt pre-filled it, so the report tells a pick from an untouched default */
+    private var regionAtOpen = "us"
     private val panel = Panel(ctx)
 
     init {
@@ -57,7 +59,7 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
     fun open() {
         email.setText(""); password.setText(""); error = ""; shown = false
         email.hint = Tr.t("Email"); password.hint = Tr.t("Password")              // the language may have changed since
-        region = runCatching { GameRegion.current(context, GameFiles.gameRoot(context)) }.getOrDefault("us")
+        region = runCatching { GameRegion.current(context, GameFiles.gameRoot(context)) }.getOrDefault("us"); regionAtOpen = region
         password.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         password.typeface = UiKit.body                    // setting the input type resets it to monospace
         // NO SCREENSHOTS while it is open (and no frame of it in Recents): the review - captures of the bottom screen are routine
@@ -95,7 +97,8 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
         if (why != null) { error = why; panel.invalidate(); return }
         val login = HomeLoginStore.Login(e, p)
         if (!HomeLoginStore.save(context, login)) { error = "The login could not be saved on this device"; panel.invalidate(); return }
-        GameRegion.choose(context, region, GameRegion.BY_PROMPT)      // the game's portal at its next start (GameConfigWtf.ensure)
+        // the game's portal at its next start (GameConfigWtf.ensure); the source says whether the player changed the pre-filled row
+        GameRegion.choose(context, region, if (region == regionAtOpen) GameRegion.BY_PROMPT_PREFILLED else GameRegion.BY_PROMPT)
         close()
         onSaved(login)
     }
