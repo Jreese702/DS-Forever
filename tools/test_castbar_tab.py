@@ -133,8 +133,8 @@ def clean(L, name):
           (L.eval('SPY[1]'), L.eval('VIOL[1]'), L.eval('SNIPERR[1]'), list(L.eval('ERRS').values())[:2]))
 
 
-check('local CV = "p54"' in SRC["padtabctl"] and 'local BV = "b63"' in SRC["book"] and 'local PV = "m163"' in SRC["padmap"]
-      and 'local CBV = "cb9"' in BLOCK, "the versions: PadTabCtl p53, Book b60, PadMap m159, ActionBar cb9")
+check('local CV = "p54"' in SRC["padtabctl"] and 'local BV = "b64"' in SRC["book"] and 'local PV = "m164"' in SRC["padmap"]
+      and 'local CBV = "cb10"' in BLOCK, "the versions: PadTabCtl p53, Book b60, PadMap m159, ActionBar cb9")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', code) and 'SaveBindings' not in code and 'CreateMacro' not in code
       and 'EditMacro' not in code and 'PlaceAction' not in code and 'SetCVar' not in code and 'PickupAction' not in code,
@@ -237,7 +237,7 @@ if bi is not None:
     W.eval('WowCompanion.padTabCtl.touchExtra(%d)' % (bi % 40))
     check(store(W).get(8) is None and ctl(W).get('note') == 'cb-bind', "a game binding by touch is refused (cb-bind)", ctl(W).get('note'))
 e, d = bar(W)
-check(d.get('v') == 'cb9' and d.get('any') == 1, "the document: cb9, any = 1", d.get('v'))
+check(d.get('v') == 'cb10' and d.get('any') == 1, "the document: cb9, any = 1", d.get('v'))
 check(e[1].get('id') == 403 and 'k' not in e[1] and e[1].get('c') == 0, "slot 1: a spell as before (no k)", e[1])
 check(e[3].get('k') == 'command' and e[3].get('key') == 'TARGETNEARESTENEMY' and e[3].get('n') and e[3].get('i') == 132212 and e[3].get('c') == 2,
       "slot 3: kind command, key, name, icon, its cell", e[3])

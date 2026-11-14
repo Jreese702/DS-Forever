@@ -49,6 +49,12 @@ object SpellsModel {
         val prof: String? = null,   // s3: a PROFESSION's spell (the game's Professions book), the profession's name; it closes the General tab
         /** Book b38 (b-druid-forms-bind): the spell's NUMBER on the `spells` row's two taps (its group, then its offset); see [bindCells] */
         val padNumber: Int? = null,
+        /** Spells s10 (#234, the user: "build it"): a PET's entry that is one of its commands (Attack, Follow, Stay, a stance): never bound */
+        val command: Boolean = false,
+        /** Spells s10: a pet's SPELL the Bind box takes (not a passive, not a command); false from an older add-on (it bound no pet spell) */
+        val petBind: Boolean = false,
+        /** Spells s10: the pet's spell is on the pet bar (the game's own "not missing from the bars" for a pet action) */
+        val onPetBar: Boolean = false,
     )
 
     /** Who holds the controller for the Spellbook, and where the gold glow is (`spellsctl`, addon Book.lua). */
@@ -380,9 +386,10 @@ object SpellsModel {
 
     /** false for a KNOWN spell on no bar at all (the game's gold glow). A keyboard-only slot is still "on a bar". */
     fun onBar(book: Book, e: Entry): Boolean =
-        e.pet || e.kind == Kind.FLYOUT || status(book, e) != Status.KNOWN || e.passive || e.bars.isNotEmpty()
-    // (a pet's action lives on the pet bar, which the first build does not track, and a flyout is not bound in the first build:
-    // neither glows)
+        if (e.pet) !bindable(book, e) || e.onPetBar || e.bars.isNotEmpty()
+        else e.kind == Kind.FLYOUT || status(book, e) != Status.KNOWN || e.passive || e.bars.isNotEmpty()
+    // (a flyout is not bound in the first build: it never glows. Spells s10: a pet's SPELL glows like the game's when it is on no bar
+    // and not on the pet bar - the game's GetActionBarStatusForPetAction; a command, a passive, an older add-on's pet entry never)
 
     /** A pet's spell and auto-cast, as the kit draws it (UiKit.spell / bookEntry `autoCast`): 0 = it cannot cast itself, 1 = it may
      *  (the game's quiet gold corners), 2 = it does (bright corners and the ring). Hunter pets and warlock demons alike. */
@@ -392,8 +399,17 @@ object SpellsModel {
         else -> 1
     }
 
-    /** Bind is offered for a known, active spell of the player's own book. */
-    fun bindable(book: Book, e: Entry): Boolean = !e.pet && e.kind == Kind.SPELL && !e.passive
+    /** Bind is offered for a known, active spell of the player's own book, and (Spells s10 / Book b63, #234: "build it") for a pet's
+     *  SPELL - never its passives, never its commands (Attack / Follow / Stay have their homes: the Controller room's Extra tab) */
+    fun bindable(book: Book, e: Entry): Boolean =
+        if (e.pet) e.petBind && !e.passive && !e.command && e.spellId != null
+        else e.kind == Kind.SPELL && !e.passive
+
+    /** Spells s10: the Pet tab's line as the add-on's controller reports it (`spellsctl` line), the room's "pet" tab */
+    const val PET_LINE = 101
+
+    /** the room's tab key for the add-on's `line` (Book b63: 101 = the Pet tab) */
+    fun tabKeyOfLine(line: Int): String = if (line == PET_LINE) "pet" else "line:$line"
 
     /**
      * THE TAPS THAT OPEN BIND FOR [e] by touch on the `spells` row (b-druid-forms-bind, a player: "they don't have the ability to bind
@@ -567,6 +583,9 @@ object SpellsModel {
             reagents = need("rg"),
             tools = need("tl"),
             prof = o.optString("pf", "").takeIf { it.isNotEmpty() },
+            command = pet && o.optBoolean("cmd", false),
+            petBind = pet && o.optBoolean("bind", false),
+            onPetBar = pet && o.optBoolean("pb", false),
         )
     }
 

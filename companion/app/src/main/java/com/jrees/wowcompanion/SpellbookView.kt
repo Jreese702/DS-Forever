@@ -174,7 +174,7 @@ class SpellbookView(
             tabOpen && was?.ctrlTab == true && c.note != "ctrl-left" && SystemClock.uptimeMillis() >= tabGuardUntil -> closeTab(false)
         }
         if (c.on) {
-            c.line?.let { tabKey = "line:$it" }
+            c.line?.let { tabKey = SpellsModel.tabKeyOfLine(it) }     // Book b63: 101 = the Pet tab
             page = c.page
             // the addon's glow: its spell, found in OUR list (both follow the game's filter)
             c.selected?.let { chosenId = it }
@@ -325,7 +325,9 @@ class SpellbookView(
 
         // the button line: the known spells on no button (the game's gold glow), or all on one
         val st = tab.entries.map { SpellsModel.status(b, it) }
-        val bindable = tab.entries.filterIndexed { i, e -> st[i] == SpellsModel.Status.KNOWN && !e.passive && !e.pet && e.kind != SpellsModel.Kind.FLYOUT }
+        // Spells s10 / Book b63 (#234): a pet's SPELLS count too (never its commands or passives)
+        val bindable = tab.entries.filterIndexed { i, e -> st[i] == SpellsModel.Status.KNOWN &&
+            (if (e.pet) SpellsModel.bindable(b, e) else !e.passive && e.kind != SpellsModel.Kind.FLYOUT) }
         val off = bindable.count { !SpellsModel.onBar(b, it) }
         val pOn = UiKit.inkPaint(28f)
         val cy = top + 166f
@@ -394,7 +396,10 @@ class SpellbookView(
         when {
             // a pet's spell: in place of the button line "Casts itself" while its auto-cast is on, nothing otherwise (UI Art, cf8b5db;
             // the game has no words for the state, only "Toggle Auto Cast", so these are the room's own)
-            e.pet -> if (SpellsModel.autoCast(e) == 2) c.drawText(Tr.t("Casts itself"), x0 + 8f, textY, pOn)
+            // Spells s10 / Book b63 (#234, the user: "build it"): a pet's SPELL on a controller button shows that button like any
+            // spell; on no bar at all (nor the pet bar) "Not on a button" below; a command / a passive keeps the old line
+            e.pet && e.pad.isEmpty() && (SpellsModel.autoCast(e) == 2 || SpellsModel.onBar(b, e)) ->
+                if (SpellsModel.autoCast(e) == 2) c.drawText(Tr.t("Casts itself"), x0 + 8f, textY, pOn)
             // a passive stands on no bar; a flyout is not bound (not in the first build)
             e.passive || e.kind == SpellsModel.Kind.FLYOUT -> {}
             st != SpellsModel.Status.KNOWN -> c.drawText(Tr.t(SpellsModel.sub(b, e) ?: ""), x0 + 8f, textY, pOn)
