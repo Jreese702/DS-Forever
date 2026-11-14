@@ -98,6 +98,38 @@ object GameRegion {
         else line
     }
 
+    /**
+     * THE START SCREEN'S REGION LINE (the user's pick 2026-11-13, "Show region when it differs"; #248: a US install signing in to the EU
+     * portal, and nothing on screen said so). [signsIn]: the region the game signs in at (the choice, else the folder's portal); [install]:
+     * the install's region (.build.info Branch). Shown only when their login portals differ (Taiwan through the Korean portal is no
+     * difference), as one terse line; no question asked.
+     */
+    data class Note(val signsIn: String, val install: String) {
+        /** "Region: EU (this install is US)"; [tr] gives the regions' names in the language in use first (Korea, Taiwan) */
+        fun line(tr: (String) -> String = { it }): String = "Region: ${tr(signsIn)} (this install is ${tr(install)})"
+    }
+
+    /** the line's names when the region [signsIn] signs in at another portal than the install's [branch]; null when it does not, or either is not a region. Pure */
+    fun note(signsIn: String?, branch: String?): Note? {
+        val s = signsIn?.lowercase(Locale.ROOT)?.let { c -> ALL.firstOrNull { it.code == c } } ?: return null
+        val b = branch?.lowercase(Locale.ROOT)?.let { c -> ALL.firstOrNull { it.code == c } } ?: return null
+        return if (s.portal == b.portal) null else Note(s.label, b.label)
+    }
+
+    /**
+     * [note] for the game folder [root]: where the game signs in (the choice, which GameConfigWtf.ensure writes as the portal at every
+     * start, else the folder's own region, [regionOf]) against its .build.info Branch. None for a client with a portal of its own (the
+     * beta's "test"). Reads two small files: off the main thread.
+     */
+    fun note(ctx: Context, root: File): Note? = noteFor(chosen(ctx), root)
+
+    /** [note] for the folder [root] with the choice [chosen] (null = none made) */
+    fun noteFor(chosen: String?, root: File): Note? {
+        val c = runCatching { WowProduct.choose(root) }.getOrNull() ?: return null
+        if (c.product?.portal != null) return null
+        return note(chosen ?: regionOf(root), c.row["Branch"])
+    }
+
     /** what the prompt shows first: the choice, else the game folder's own region ([regionOf]), else the device's country's region */
     fun current(ctx: Context, root: File? = null): String {
         chosen(ctx)?.let { return it }

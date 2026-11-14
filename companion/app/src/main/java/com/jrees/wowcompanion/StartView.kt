@@ -46,6 +46,14 @@ class StartView(context: Context) : View(context) {
     var firstW = FIRST_W
         set(v) { if (field != v) { field = v; invalidate() } }
 
+    /**
+     * THE REGION LINE (the user's pick 2026-11-13, "Show region when it differs"): where the game signs in when that is not the install's
+     * own region, e.g. "Region: EU (this install is US)" - one terse line over the status panel (over the sign-in row when it shows),
+     * no question asked. null = no line (the same region, Streaming, or past the world in this run: CompanionHost).
+     */
+    var region: GameRegion.Note? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+
     /** the Menu ([StartMenu]), in place of Report at the bottom left */
     var menuOpen: Boolean
         get() = StartMenu.open
@@ -93,8 +101,16 @@ class StartView(context: Context) : View(context) {
             UiKit.button(c, keys, "Keyboard", if (pressed == CURSOR_KEYS) UiKit.Button.DOWN else UiKit.Button.UP)
             hits += keys to CURSOR_KEYS
         }
-        if (!row) return
         val top = sideTop - GAP - BUTTON_H
+        // the region line just over the panel, or over the sign-in row (its words translated where they are drawn: UiKit.outlined)
+        region?.let { n ->
+            val text = n.line { Tr.t(it) }
+            var size = REGION_SIZE
+            val p = UiKit.bodyPaint(size)
+            while (p.measureText(Tr.t(text)) > width - SIDE_M * 2 && size > LINE_MIN) { size -= 1f; p.textSize = size }
+            UiKit.outlined(c, text, cx, (if (row) top else sideTop) - REGION_GAP - size / 2f, size, Theme.gold)
+        }
+        if (!row) return
         if (login == Login.FIRST) {
             val r = RectF(cx - firstW / 2f, top, cx + firstW / 2f, top + BUTTON_H)
             // the one button, with the A that presses it (no gold box on this row: the user, 2026-10-05)
@@ -171,6 +187,9 @@ class StartView(context: Context) : View(context) {
         const val LINE_SIZE = 34f
         const val LINE_MIN = 22f
         const val LINE_PAD = 32f
+        /** the region line: its size, and its room over the panel (or the row) */
+        const val REGION_SIZE = 30f
+        const val REGION_GAP = 18f
         // the sign-in row (LATER 29): buttons 111 px high (48 dp on the Thor's bottom screen, the touch minimum), 40 px off the bottom;
         // the swirl and the line move up 60 / 30 px to make room
         const val BUTTON_H = 111f
