@@ -2,6 +2,20 @@
 local ADDON = ...
 local WC = _G.WowCompanion
 
+-- core1 THE LOADING SCREENS (memory relief 2; the user's picks, 2026-11-14: "RELIEF AT ZONE CHANGES: the add-on reports loading
+-- screens (LOADING_SCREEN_ENABLED / DISABLED, plain events, a tiny doc or an existing doc field; no polling) and the app runs
+-- MemWatch.relieve at each loading screen"): the issue triage's low-memory kills came while the GAME loaded (Play, the world, a zone),
+-- and only Play and the world told the app. Now each loading screen is one tiny document, {"type":"load","on":true|false,"v":COREV},
+-- from the game's own two events (no payload, nothing read, no timer). The start is FLUSHED in the event itself (WC.flush, not the
+-- throttled push: the push's C_Timer may not run until the load is over, which is the moment the app must hear it before); the end
+-- goes out with the next push. One extra pad burst per loading screen. Nothing is written to the game (no binding, CVar, macro).
+-- (Core.lua had no version tag before core1; it is sent in the document so a stale build is visible in the app's log.)
+local COREV = "core1"
+function WC.onLoadingScreen(on)
+    WC.send(WC.encode({ type = "load", on = on and true or false, v = COREV }))
+    if on then WC.flush() else WC.push() end
+end
+
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
 end
@@ -191,6 +205,8 @@ f:SetScript("OnEvent", function(_, event, a1, a2, a3, a4, a5, a6, a7, a8, a9, a1
         WC.onInteract(event)
     elseif CHAT_EVENT[event] then
         WC.onChatRaw(event, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12)  -- buffered
+    elseif event == "LOADING_SCREEN_ENABLED" or event == "LOADING_SCREEN_DISABLED" then
+        pcall(WC.onLoadingScreen, event == "LOADING_SCREEN_ENABLED")             -- core1: never a snapshot (see the top)
     elseif started then
         WC.snapshot(event)
     end
@@ -204,6 +220,7 @@ local WANT = {
     "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
     "ACTIONBAR_UPDATE_USABLE", "ACTIONBAR_UPDATE_STATE",
     "UPDATE_BINDINGS", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
+    "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED",                         -- core1 (a build without them: in missingEvents)
 }
 local missing = {}
 for _, e in ipairs(WC.CHAT_EVENTS or {}) do WANT[#WANT + 1] = e end

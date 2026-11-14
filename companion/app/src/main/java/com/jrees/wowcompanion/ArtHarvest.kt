@@ -48,7 +48,8 @@ object ArtHarvest {
 
     /** what a step works with: the game's files, the output folder, its recipe and the progress line */
     class Job internal constructor(val ctx: Context, val game: GameFiles, val out: File, private val stepId: String,
-                                   private val onProgress: (Float, String) -> Unit) {
+                                   private val onProgress: (Float, String) -> Unit,
+                                   private val stop: () -> Unit = {}, private val asked: () -> Boolean = { false }) {
         var inputKey: String? = null
         /** #35 #36 #38 review (2026-11-11): this is the step's last try in this run (HarvestRetry): a failed download is kept degraded now */
         var lastTry: Boolean = true
@@ -67,6 +68,18 @@ object ArtHarvest {
          * report, at the same place of the bar ([done] of [total]), so the pause comes within one read.
          */
         fun yieldPoint(done: Int, total: Int, what: String = "") = progress(done, total, what)
+
+        /**
+         * MEMORY RELIEF 2 (the user's picks, 2026-11-14: "STOP ART WORK SOONER: when Play is pressed, a running background art step lets
+         * go of the game files within one file (check per file / per download batch, not per pack; #254 kept ~470 MB for 39 s)"): #254's
+         * all-icons step reported once per PACK (1000 icons, ~40 s on a Thor), so the launch waited that long with the game files open.
+         * [checkpoint]: the same stop as a report (the pause for the game, the update, a required step due) without touching the bar,
+         * cheap enough for every file; it acts only on the art run's own thread (elsewhere nothing: a pool thread never throws the pause,
+         * #138). [letGoAsked]: the run is asked to let go now, on ANY thread (cheap): a step's pool threads stop taking files, and the
+         * run's own thread then stops at its next [checkpoint].
+         */
+        fun checkpoint() = stop()
+        fun letGoAsked(): Boolean = asked()
 
         /**
          * RESUME (issue #11, 1.0.9: "stuck on 68% EPL, then reopened stuck on 8% EPL"): the parts of this step finished for THIS game
@@ -340,6 +353,22 @@ object ArtHarvest {
         if (PlayGate.artMustPause(bgPhase, PlayGate.gameActiveNow(), onWorker = Thread.currentThread() === worker)) throw PausedForGame()
     }
 
+    /** memory relief 2: [checkStop] on the run's own thread only (Job.checkpoint: a step's pool threads never throw it) */
+    private fun checkpoint() { if (Thread.currentThread() === worker) checkStop() }
+    /** memory relief 2: the run is asked to let go of the game files now (any thread; Job.letGoAsked) */
+    private fun letGoAsked(): Boolean = letGo(stopping, yieldBg, bgPhase, PlayGate.gameActiveNow())
+    /** [checkStop]'s three stops as one answer: the update, a required step due (background only), the game up or launching
+     *  (background only). Pure (the tests) */
+    internal fun letGo(stopping: Boolean, yieldBg: Boolean, bgPhase: Boolean, gameActive: Boolean): Boolean =
+        stopping || (bgPhase && (yieldBg || gameActive))
+
+    /**
+     * [f]'s failure is not the step's (a prefetch only speeds the reads up: before, runCatching) - but the run's own stops (the pause
+     * for the game, the update, a required step due: InterruptedException) still stop it (memory relief 2: runCatching swallowed
+     * them, so a stop asked during a fetch waited for the next report)
+     */
+    internal inline fun <T> tolerant(f: () -> T): T? = try { f() } catch (e: Throwable) { if (e is InterruptedException) throw e; null }
+
     /**
      * The worker waits outside the game files for the game to close ([PausedForGame]); [state] still says Running then (the launcher's
      * progress line), so the indoor maps' "an art run first" asks [workingNow] instead (review of this fix, 2026-11-11: a parked run
@@ -395,6 +424,13 @@ object ArtHarvest {
                         val at = LauncherHooks.launchAtMs
                         val lag = if (at > 0L) "${(System.currentTimeMillis() - at) / 1000} s after the launch" else "no launch time"
                         Log.i(TAG, "harvest: paused while the game runs (${DeviceTier.model()}), the game files let go (step ${currentStep ?: "-"}, $lag)")
+                        // memory relief 2 (the user's picks, 2026-11-14: "... lets go of the game files within one file ... and frees its
+                        // buffers"): the game files closed as the run left (GameFiles.close: CascLib's ~450 MB of index tables); the step's
+                        // own buffers (its pictures, the pack's pieces) are garbage now: one collection at once and the trim registrations'
+                        // let-go, as at Play, kept in mem.log ("relief (art let go: allicons, 3 s after the launch)")
+                        // (only a pass that had them open: one that never opened them, the game already up, has nothing to free)
+                        if (openedFiles) MemWatch.relieve("art let go: ${currentStep ?: "-"}, $lag", collectNow = true)
+                        openedFiles = false
                         bgPhase = false; currentStep = null
                         parkedForGame = true
                         try {
@@ -451,7 +487,11 @@ object ArtHarvest {
         for (w in ws) runCatching { w(r) }
     }
 
+    /** memory relief 2: this pass of the worker opened the game files (its pause then frees what the step held) */
+    @Volatile private var openedFiles = false
+
     private fun work(ctx: Context, onBeforePlayDone: (Boolean) -> Unit) {
+        openedFiles = false
         if (GameFiles.activeBuild(GameFiles.gameRoot(ctx)) == null) {
             set(State.Failed("no game files found in ${GameFiles.gameRoot(ctx).path}"))
             onBeforePlayDone(false)
@@ -486,6 +526,7 @@ object ArtHarvest {
             onBeforePlayDone(first.isEmpty())
             return
         }
+        openedFiles = true
         game.use { g ->
             val okFirst = runAll(ctx, g, first, beforePlay = true)
             // Publish the nonblocking phase before waking launch waiters.
@@ -527,7 +568,8 @@ object ArtHarvest {
             }
             g.log = ArtFingerprint.Log()
             currentStep = s.id; stepLog[s.id] = "running (started ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date(t0))})"
-            var job = Job(ctx, g, root(ctx), s.id) { f, what -> checkStop(); set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
+            var job = Job(ctx, g, root(ctx), s.id, { f, what -> checkStop(); set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) },
+                stop = { checkpoint() }, asked = { letGoAsked() })
             var tries = 0
             // a failure (often a CDN hiccup on a table) is tried again before the art says so (HarvestRetry); the last reason is shown
             val result = HarvestRetry.run(onRetry = { n, d, why ->
@@ -535,7 +577,8 @@ object ArtHarvest {
                 stepLog[s.id] = "retry ${n + 1} after: $why"
                 set(State.Running(beforePlay, base / total, "${s.id}: trying again in ${d / 1000} s"))
             }) {
-                job = Job(ctx, g, root(ctx), s.id) { f, what -> checkStop(); set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
+                job = Job(ctx, g, root(ctx), s.id, { f, what -> checkStop(); set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) },
+                    stop = { checkpoint() }, asked = { letGoAsked() })
                 job.lastTry = ++tries > HarvestRetry.DELAYS_MS.size
                 s.run(job)
             }.onFailure { Log.w(TAG, "harvest step ${s.id} failed", it) }

@@ -23,18 +23,27 @@ object AllIconsStep : ArtHarvest.Step {
         val parts = AllIcons.chunks(ids)
         // 2026-11-07 (ArtFingerprint): a pack is named by its icons' CASC content keys, not the game build, so a new build keeps every
         // pack whose icons did not change (a few changed icons = their pack only)
+        // (memory relief 2: the stop checked at each icon's key too - 30,000 lookups in the index)
         val names = parts.mapIndexed { i, c ->
-            AllIcons.chunkName(ArtFingerprint.of(c, emptyList(), { job.game.contentKey(it) }, { null }), i, c)
+            AllIcons.chunkName(ArtFingerprint.of(c, emptyList(), { job.checkpoint(); job.game.contentKey(it) }, { null }), i, c)
         }
         val dir = job.file("${AllIcons.DIR}/.keep").parentFile!!
         AllIcons.progress(0, ids.size); AllIcons.finish(false)
-        val kit = KitBuild(read = { fid -> synchronized(job.game) { job.game.read(fid) } }, write = { _, _ -> }, asset = { null })
+        // MEMORY RELIEF 2 (the user's picks, 2026-11-14: "STOP ART WORK SOONER: when Play is pressed, a running background art step lets
+        // go of the game files within one file (check per file / per download batch, not per pack; #254 kept ~470 MB for 39 s), and frees
+        // its buffers"): #254's run reported once a PACK (1000 icons, ~40 s on a Thor), so the launch waited that long with the game files
+        // open. Now the stop is checked before every icon (KitBuild.icons: its threads take no further file once asked) and every download
+        // of the pack's prefetch (GameFiles.prefetch), and the wait for a fight's end no longer sits inside the files
+        val kit = KitBuild(read = { fid -> synchronized(job.game) { job.game.read(fid) } }, write = { _, _ -> }, asset = { null },
+            letGo = { job.letGoAsked() }, checkpoint = { job.checkpoint() })
         parts.forEachIndexed { i, c ->
             val f = File(dir, names[i])
             if (!f.isFile) {
-                while (AllIcons.busy()) Thread.sleep(2_000)
-                // the pack's missing game files fetched several at once first (a partial / streamed Data folder: one by one was minutes)
-                runCatching { job.game.prefetch(c) }
+                while (AllIcons.busy()) { job.checkpoint(); Thread.sleep(2_000) }
+                // the pack's missing game files fetched several at once first (a partial / streamed Data folder: one by one was minutes);
+                // a failed fetch is not the step's (the reads fetch again), a stop is (ArtHarvest.tolerant)
+                ArtHarvest.tolerant { job.game.prefetch(c, letGo = { job.letGoAsked() }) }
+                job.checkpoint()                                    // a stop asked during the fetch: here, before any icon is read
                 val n = kit.icons(JSONObject().put("fids", JSONArray(c)), f, lenient = true, encode = KitSteps::webp)
                 Log.i("WCHARVEST", "all icons: pack ${i + 1} / ${parts.size}: $n of ${c.size}")
                 Icons.refresh()                                     // the new pack is read at once (and blank toolbar icons ask again)

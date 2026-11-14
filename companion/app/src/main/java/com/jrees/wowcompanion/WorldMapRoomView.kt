@@ -65,6 +65,26 @@ class WorldMapRoomView(context: Context) : View(context) {
     // 1.0.28 (the low-memory kill #173: 70 - 72 MB of this room's pictures held in the killed run's last 5 minutes, the game at
     // 3.6 GB): Android's running-low warning lets them go while the room is not on screen (they are read again when it opens)
     init { MemWatch.onTrim("worldroom") { level -> if (MemWatch.hiddenLetsGo(level, isShown)) bmps.size().toLong().also { bmps.evictAll() } else 0L } }
+
+    /**
+     * FREE MAP PICTURES (memory relief 2; the user's picks, 2026-11-14: "FREE MAP PICTURES: the World map room's pictures (43-72 MB)
+     * are released about a minute after the player leaves the map room (not only at Android's warning); reopening decodes again"):
+     * the triage's reports held them all session once the room had been opened, next to a game loading 1 - 2 GB. [onHidden] (every
+     * route out: the host's show()) arms [MapRoomLetGo.AFTER_MS]; [onShown] disarms it. When it fires with the room still left, the
+     * cache goes ("map pictures let go (N MB): the Map room left 60 s ago" in mem.log); the next draw decodes what it needs again, as
+     * after a trim. Android's running-low trim above still lets them go at once.
+     */
+    private val letGoClock = android.os.Handler(android.os.Looper.getMainLooper())
+    @Volatile private var roomOn = false
+    private val letGoLater = Runnable {
+        if (roomOn) return@Runnable
+        val b = bmps.size().toLong()
+        if (b <= 0L) return@Runnable
+        bmps.evictAll()
+        MemWatch.note(MapRoomLetGo.line(b))
+    }
+    /** the pictures held now, bytes (the tests; MemWatch's "worldroom") */
+    val pictureBytes: Long get() = bmps.size().toLong()
     @Volatile private var artReady = false
     private var artNote: String? = null
     private fun artDir() = ArtHarvest.dir("worldmap")
@@ -97,7 +117,9 @@ class WorldMapRoomView(context: Context) : View(context) {
         }
     }
 
-    private fun bmp(key: String): Bitmap? {
+    /** a picture of the art set by its key ("<uiMap>/base", "<uiMap>/ov_<id>"): the cached one, else null and decoded off the UI thread
+     *  (the draw that follows shows it); public for the app module's tests (memory relief 2: reopening decodes again) */
+    fun bmp(key: String): Bitmap? {
         bmps.get(key)?.let { return it }
         if (key in inFlight) return null
         inFlight.add(key)
@@ -1245,6 +1267,7 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     /** the room opened (MainActivity): the player's zone, whole, nothing browsed yet */
     fun onShown() {
+        roomOn = true; letGoClock.removeCallbacks(letGoLater)         // memory relief 2: back within the minute: the pictures stay
         history.clear()
         cursor = null; menuOpen = false; crumbMenu = null
         jumpTo(startMap())
@@ -1273,6 +1296,8 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
 
     fun onHidden() {
+        // memory relief 2: the pictures go [MapRoomLetGo.AFTER_MS] after the room is left (unless it is opened again before)
+        roomOn = false; letGoClock.removeCallbacks(letGoLater); letGoClock.postDelayed(letGoLater, MapRoomLetGo.AFTER_MS)
         held = false
         holdAsk.hidden(); removeCallbacks(holdTick)     // the let-go itself is the hand-over's (touchedOut)
         stopStick()
@@ -2725,4 +2750,15 @@ class WorldMapRoomView(context: Context) : View(context) {
         const val EDGE_EPS = 0.002f       // the world hands its canvas to a continent that covers the view to this much
         val UNIT_R = RectF(0f, 0f, 1f, 1f)
     }
+}
+
+/**
+ * FREE MAP PICTURES (memory relief 2; the user's picks, 2026-11-14: "the World map room's pictures (43-72 MB) are released about a
+ * minute after the player leaves the map room"): the wait and the mem.log line (WorldMapRoomView's letGoLater). Pure (the tests).
+ */
+object MapRoomLetGo {
+    /** how long after the room is left its pictures go */
+    const val AFTER_MS = 60_000L
+    /** "map pictures let go (43 MB): the Map room left 60 s ago" */
+    fun line(bytes: Long): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): the Map room left ${AFTER_MS / 1000} s ago"
 }

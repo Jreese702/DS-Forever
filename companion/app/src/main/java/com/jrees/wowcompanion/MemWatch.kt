@@ -166,22 +166,36 @@ object MemWatch {
     fun collects(level: Int): Boolean = level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW
 
     /** [why] the game is about to take memory: let go and collect (any thread), after [delayMs] (GameLife's world relief waits for the
-     *  start screen to stop drawing the loading pictures); nothing before [start] (the tests, no watch) */
-    fun relieve(why: String, delayMs: Long = 0L) {
+     *  start screen to stop drawing the loading pictures); nothing before [start] (the tests, no watch).
+     *  Memory relief 2 (the user's picks, 2026-11-14: "STOP ART WORK SOONER ... and frees its buffers"): [collectNow] = the collection
+     *  runs whatever the last one was and does not count against [GC_EVERY_MS] (the art run that let go of the game files at the launch:
+     *  its buffers are garbage now, and the game start's own relief seconds later still gets its collection, as before) */
+    fun relieve(why: String, delayMs: Long = 0L, collectNow: Boolean = false) {
         val h = handler ?: return
         runCatching {
             Handler(Looper.getMainLooper()).postDelayed({
                 val freed = letGo(RELIEF_LEVEL)
-                h.post { runCatching { val l = trimLine("relief ($why)", freed, collect(), psiNow()); Log.i(TAG, l); keep(l) } }
+                h.post { runCatching { val l = trimLine("relief ($why)", freed, collect(collectNow), psiNow()); Log.i(TAG, l); keep(l) } }
             }, delayMs.coerceAtLeast(0L))
         }
     }
 
-    /** one Java collection when due (this watch's thread): "java 140 -> 31 MB", "" = not due */
-    private fun collect(): String {
+    /**
+     * ONE LINE INTO mem.log (memory relief 2, the user's picks 2026-11-14: "logged to mem.log"): the end of a loading screen, the Map
+     * room's pictures let go a minute after it was left. Written on this watch's thread (mem.log is WCMEM's to write); logcat only
+     * before [start] (the tests, no watch). Any thread.
+     */
+    fun note(l: String) {
+        runCatching { Log.i(TAG, l) }                               // (the off-device tests have no logcat)
+        val h = handler ?: return
+        runCatching { h.post { keep(l) } }
+    }
+
+    /** one Java collection when due, or at once when [force] (this watch's thread): "java 140 -> 31 MB", "" = not due */
+    private fun collect(force: Boolean = false): String {
         val now = SystemClock.uptimeMillis()
-        if (!gcDue(now, gcAt)) return ""
-        gcAt = now
+        if (!force && !gcDue(now, gcAt)) return ""
+        if (!force) gcAt = now
         val rt = Runtime.getRuntime()
         val before = rt.totalMemory() - rt.freeMemory()
         rt.gc()

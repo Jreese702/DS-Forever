@@ -84,6 +84,9 @@ class ArtYieldPointsTest {
         // checkStop runs from the report: a yield point that only logged would not pause anything
         val a = File(src, "ArtHarvest.kt").readText()
         assertTrue(a.contains("fun yieldPoint(done: Int, total: Int, what: String = \"\") = progress(done, total, what)"))
-        assertTrue(a.contains("Job(ctx, g, root(ctx), s.id) { f, what -> checkStop();"))
+        assertTrue(a.contains("Job(ctx, g, root(ctx), s.id, { f, what -> checkStop();"))
+        // memory relief 2 (the user's picks, 2026-11-14: "within one file"): every Job also carries the per-file stop and the ask
+        assertTrue(Regex("Job\\(ctx, g, root\\(ctx\\), s.id, \\{").findAll(a).count() ==
+            Regex("stop = \\{ checkpoint\\(\\) \\}, asked = \\{ letGoAsked\\(\\) \\}\\)").findAll(a).count())
     }
 }

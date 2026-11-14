@@ -67,17 +67,22 @@ object MapHarvestSteps {
         compress(fmt, 100, s)
     }.toByteArray()
 
-    /** tiles at (col * [tile], row * [tile]) on one canvas, cropped to [w] x [h]; null when not one tile could be read */
-    private fun stitch(game: GameFiles, tiles: List<MapHarvest.Tile>, tile: Int, w: Int, h: Int): Bitmap? {
+    /** tiles at (col * [tile], row * [tile]) on one canvas, cropped to [w] x [h]; null when not one tile could be read. Memory relief 2
+     *  (the user's picks, 2026-11-14: "lets go of the game files within one file ... and frees its buffers"): [check] before each tile's
+     *  read (Job.checkpoint: it may stop the run); a stop frees the picture made so far at once (its pixels are native) */
+    private fun stitch(game: GameFiles, tiles: List<MapHarvest.Tile>, tile: Int, w: Int, h: Int, check: () -> Unit = {}): Bitmap? {
         val cols = (w + tile - 1) / tile; val rows = (h + tile - 1) / tile
         val canvas = Bitmap.createBitmap(maxOf(1, cols * tile), maxOf(1, rows * tile), Bitmap.Config.ARGB_8888)
         val cv = Canvas(canvas)
         var got = 0
-        for (t in tiles) {
-            val b = game.blp(t.fid) ?: continue
-            cv.drawBitmap(b, (t.col * tile).toFloat(), (t.row * tile).toFloat(), null)
-            b.recycle(); got++
-        }
+        try {
+            for (t in tiles) {
+                check()
+                val b = game.blp(t.fid) ?: continue
+                cv.drawBitmap(b, (t.col * tile).toFloat(), (t.row * tile).toFloat(), null)
+                b.recycle(); got++
+            }
+        } catch (e: Throwable) { canvas.recycle(); throw e }
         if (got == 0) { canvas.recycle(); return null }
         if (canvas.width == w && canvas.height == h) return canvas
         val out = Bitmap.createBitmap(canvas, 0, 0, minOf(w, canvas.width), minOf(h, canvas.height))
@@ -118,16 +123,17 @@ object MapHarvestSteps {
                 job.progress(i, maps.size, m.name)
                 // its game files fetched together, several at a time, when many are missing (after a game update; issue #10 / #11)
                 val fids = m.tiles.map { it.fid } + m.overlays.flatMap { o -> o.tiles.map { it.fid } } + listOfNotNull(m.hl.takeIf { it != 0 })
-                g.prefetch(fids) { d, n -> job.progress(i, maps.size, "${m.name}: game files $d of $n") }
+                g.prefetch(fids, letGo = { job.letGoAsked() }) { d, n -> job.progress(i, maps.size, "${m.name}: game files $d of $n") }
                 // issues #243 #262 #263 #264: the maps now run first in the background, so a Play press usually meets this step: a yield
                 // point before each picture's reads (#207's rule), so the game files let go within one picture; a map paused part-way
                 // is made again on the next pass (its resume mark comes only once it is whole)
                 job.yieldPoint(i, maps.size, m.name)
-                stitch(g, m.tiles, m.tile, m.w, m.h)?.let { job.writeWebp("$dir/base.webp", it, 88); it.recycle() }
+                // memory relief 2: and before each of its tiles (a continent's base is dozens of them)
+                stitch(g, m.tiles, m.tile, m.w, m.h) { job.checkpoint() }?.let { job.writeWebp("$dir/base.webp", it, 88); it.recycle() }
                 val ovs = JSONArray()
                 for (o in m.overlays) {
                     job.yieldPoint(i, maps.size, m.name)
-                    val b = stitch(g, o.tiles, MapHarvest.OVERLAY_TILE_PX, o.w, o.h) ?: continue
+                    val b = stitch(g, o.tiles, MapHarvest.OVERLAY_TILE_PX, o.w, o.h) { job.checkpoint() } ?: continue
                     job.writeWebp("$dir/ov_${o.id}.webp", b, 88); b.recycle()
                     ovs.put(JSONObject().put("id", o.id).put("fid", o.fid).put("fids", JSONArray(o.tiles.map { it.fid }))
                         .put("x", o.x).put("y", o.y).put("w", o.w).put("h", o.h).put("hit", JSONArray(o.hit.toList())))
@@ -362,10 +368,11 @@ object MapHarvestSteps {
                 val col = MapHarvest.colOf(k); val row = MapHarvest.rowOf(k)
                 val name = "$c/${col}_$row"
                 // 1.0.17: the next tiles' missing game files fetched several at once (a partial Data folder fetched them one by one)
-                if (i % PREFETCH_TILES == 0) runCatching {
+                // memory relief 2: each download of the batch asks the stop first; a stop is the run's (ArtHarvest.tolerant), not swallowed
+                if (i % PREFETCH_TILES == 0) ArtHarvest.tolerant {
                     g.prefetch(order.subList(i, minOf(order.size, i + PREFETCH_TILES)).mapNotNull { (cc, kk) ->
                         if ("$cc/${MapHarvest.colOf(kk)}_${MapHarvest.rowOf(kk)}" in done) null else maid[cc]?.get(kk)
-                    })
+                    }, letGo = { job.letGoAsked() })
                 }
                 if (name !in done) {
                     // issues #243 #262 #263 #264: Home's map is the second background step now (the maps first), so a Play press

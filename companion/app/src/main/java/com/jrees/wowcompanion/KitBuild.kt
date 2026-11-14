@@ -30,6 +30,14 @@ class KitBuild(
     private val why: () -> String? = { null },
     /** why [read] of one fid came back null, kept per fid (the icons read on several threads: [why] is the last read's, any thread's) */
     private val whyFor: (Int) -> String? = { null },
+    /**
+     * MEMORY RELIEF 2 (the user's picks, 2026-11-14: "a running background art step lets go of the game files within one file (check per
+     * file ..., not per pack; #254 kept ~470 MB for 39 s)"), used by [icons]: [letGo] = the build is asked to stop now (any thread,
+     * cheap: ArtHarvest.Job.letGoAsked): the pack's threads take no further file; [checkpoint] = before each icon, on the CALLING thread
+     * only, may throw to stop the build (Job.checkpoint). Defaults: never (the PC tools).
+     */
+    private val letGo: () -> Boolean = { false },
+    private val checkpoint: () -> Unit = {},
 ) {
     /** Missing recipe outputs; required steps call [requireComplete] before accepting their stamp. */
     val missing = ArrayList<String>()
@@ -422,22 +430,28 @@ class KitBuild(
         val blobs = File(out.path + ".blobs")
         val ids = ArrayList<Int>(fids.size); val lens = ArrayList<Int>(fids.size)
         var miss = 0; var bad = 0
+        // one icon: its bytes (encoded), null = not in the game's files, false = undecodable
+        fun one(fid: Int): Any? {
+            val d = read(fid) ?: return null
+            var im = Blp.decode(d)?.let { KitImage.of(it) } ?: return false
+            if (im.w != tile || im.h != tile) im = im.resize(tile, tile)
+            return encode(im, q) ?: false
+        }
         // decoded and encoded on a few threads (the reads queue on the game's one handle), packed in fileDataID order
         val pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors().coerceIn(1, 4), BgThreads.factory("kit-pack"))
+        var whole = false
         try {
             blobs.outputStream().buffered(1 shl 16).use { o ->
                 var done = 0
                 for (chunk in fids.toList().chunked(256)) {
-                    val jobs = chunk.map { fid ->
-                        pool.submit(Callable<Any?> {
-                            val d = read(fid) ?: return@Callable null
-                            var im = Blp.decode(d)?.let { KitImage.of(it) } ?: return@Callable false
-                            if (im.w != tile || im.h != tile) im = im.resize(tile, tile)
-                            encode(im, q) ?: false
-                        })
-                    }
+                    // memory relief 2: a thread asked to let go takes no further file ([LET_GO]); the icons in hand finish
+                    val jobs = chunk.map { fid -> pool.submit(Callable<Any?> { if (letGo()) LET_GO else one(fid) }) }
                     for ((k, j) in jobs.withIndex()) {
-                        when (val r = j.get()) {
+                        checkpoint()                                  // memory relief 2: the stop within one icon, on this thread
+                        var r = j.get()
+                        // asked, but this thread was not stopped (the game closed meanwhile, or no run's thread): the icon read here
+                        if (r === LET_GO) { checkpoint(); r = one(chunk[k]) }
+                        when (r) {
                             null -> {
                                 miss++
                                 val why = whyFor(chunk[k])
@@ -452,7 +466,13 @@ class KitBuild(
                     progress(done, fids.size, "the icons")
                 }
             }
-        } finally { pool.shutdown() }
+            whole = true
+        } finally {
+            // memory relief 2: a stop mid-chunk leaves files queued: they never start, and the ones in hand finish HERE, before the run
+            // closes the game files (a read on a closed handle is native memory freed under it); the pack's pieces so far go
+            if (whole) pool.shutdown() else { pool.shutdownNow(); blobs.delete() }
+            runCatching { pool.awaitTermination(POOL_WAIT_S, java.util.concurrent.TimeUnit.SECONDS) }
+        }
         val count = ids.size
         log("icons: $count packed, $miss not in the game's files, $bad undecodable" +
             if (missing.isEmpty()) "" else ": ${missing.joinToString("; ")}")
@@ -501,6 +521,11 @@ class KitBuild(
 
         /** more than this share of the pictures lost = the game's files are broken (a wrong or half-copied Data folder), not one texture */
         const val TOO_MANY = 0.5
+
+        /** memory relief 2: a pack thread asked to let go answers this instead of an icon ([icons]) */
+        private val LET_GO = Any()
+        /** memory relief 2: how long [icons] waits for its threads' icons in hand after a stop (one file each; seconds) */
+        const val POOL_WAIT_S = 60L
 
         /** GameFiles.lastReadWhy's words for a game file that is not on the device and could not be downloaded (a temporary loss) */
         const val FETCH_FAILED = "downloading it failed"
