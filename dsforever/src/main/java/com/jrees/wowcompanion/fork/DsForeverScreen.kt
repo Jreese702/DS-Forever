@@ -68,12 +68,15 @@ class DsForeverScreen(private val context: Context) {
     fun start() {
         RootPolicy.allowed = false
         com.jrees.wowcompanion.LatLog.on = true          // smoothness A: the stage timestamps (lat.log), inside the launcher only
-        // display 0's panel as TapBridge sizes it (landscape), so a tap's pixels turn back into a fraction of the game's screen
-        // (#232: with Swap screens in use, the game's own screen)
-        val sizeOf = if (ScreenSwap.inUse(context)) gameDisplay() else Display.DEFAULT_DISPLAY
-        dm?.getDisplay(sizeOf)?.mode?.let { m ->
+        // display 0's panel as TapBridge sizes it (landscape), so a tap's pixels turn back into a fraction of the game's screen.
+        // #232 review: display 0 ALWAYS, Swap screens or not ([TAP_SPACE_DISPLAY]): TapBridge (the tap-pad cells) and HomeLoginWatch
+        // (the sign-in's fields) make a tap's pixels in display 0's space, so the fraction is right only over that same size. Sized from
+        // the game's own screen, every cell missed when the panels differ (the Thor: 1920 wide pixels over 1240 = 0.77 for the middle)
+        dm?.getDisplay(TAP_SPACE_DISPLAY)?.mode?.let { m ->
             InputSink.displayW = maxOf(m.physicalWidth, m.physicalHeight); InputSink.displayH = minOf(m.physicalWidth, m.physicalHeight)
         }
+        // #232: Streaming and the report's browser open on the game's screen from the start (update() keeps it, a moment later)
+        ScreenSwap.gameDisplay = if (ScreenSwap.inUse(context)) gameDisplay() else Display.DEFAULT_DISPLAY
         // what the sign-in watcher would ask the system for, from the launcher itself (S4)
         LauncherHooks.pkg = context.packageName
         LauncherHooks.gameUp = { gameOn }
@@ -301,7 +304,11 @@ class DsForeverScreen(private val context: Context) {
         return true
     }
 
-    /** the activity went: by our [AskedActivity.close], or by Android (then the next show / screen change opens it again) */
+    /**
+     * the activity went: by our [AskedActivity.close], or by Android. #232 review: Android's close (a configuration change it rebuilt the
+     * activity for, a Back it took) is asked again at once - the launcher stays resumed while the game runs, so waiting for its next
+     * resume left display 0 without DS Forever for the whole game. The start guard ([startAllowed]) stops a loop.
+     */
     internal fun released(a: CompanionScreenActivity) {
         val w = shown as? AskedActivity ?: return
         if (w.activity !== a) return
@@ -309,16 +316,19 @@ class DsForeverScreen(private val context: Context) {
         if (!w.closed) {
             shown = null
             com.jrees.wowcompanion.DiagLog.event("app", "Swap screens: the bottom screen's activity was closed by Android")
+            main.post { update() }
         }
     }
 
     /**
      * the launcher's task (the game) to the front: its display becomes the top one again, so the controller's keys go to the game and
-     * not to display 0 (a display whose top activity has no focusable window would hold them). AppTask: our own task, no permission
+     * not to display 0 (a display whose top activity has no focusable window would hold them). AppTask: our own task, no permission.
+     * #232 review: never while the launcher is going away ([frontWanted]): the bottom activity's typing ends in its onStop, and that
+     * moved the launcher back over the home screen the player had just pressed Home for
      */
     internal fun gameToFront(why: String) {
         val a = context as? Activity ?: return
-        if (a.isFinishing) return
+        if (!frontWanted(running, hidden, a.isFinishing)) { Log.i(TAG, "Swap screens: the game's task stays ($why; the launcher is away)"); return }
         runCatching {
             a.getSystemService(android.app.ActivityManager::class.java)?.appTasks?.firstOrNull { it.taskInfo.taskId == a.taskId }?.moveToFront()
         }.onFailure { Log.w(TAG, "game to the front: ${it.message}") }
@@ -373,8 +383,9 @@ class DsForeverScreen(private val context: Context) {
 
         /**
          * #232 SWAP SCREENS, pure for the tests: the display the launcher's activity (the game) belongs on. Off = display 0, as always.
-         * On = the second screen [pickScreen] would give DS Forever (built-in first: a TV never takes the game, #196; the one the game
-         * is on already kept), display 0 when there is none (a single screen: nothing to swap).
+         * On = the second screen [pickScreen] would give DS Forever (built-in first: a TV never takes the game from a built-in second
+         * screen, #196; the one the game is on already kept; a TV only when it is the only other screen, as it takes DS Forever with Off),
+         * display 0 when there is none (a single screen: nothing to swap).
          */
         fun gameScreen(screens: List<Screen>, swap: Boolean, current: Int? = null): Int =
             if (!swap) Display.DEFAULT_DISPLAY else pickScreen(screens, Display.DEFAULT_DISPLAY, current) ?: Display.DEFAULT_DISPLAY
@@ -392,6 +403,19 @@ class DsForeverScreen(private val context: Context) {
                 return Bottom(Display.DEFAULT_DISPLAY, activity = screens.none { it.id == Display.DEFAULT_DISPLAY })
             return pickScreen(screens, game, current)?.let { Bottom(it, activity = false) }
         }
+
+        /**
+         * #232 review, pure for the tests: the game's task is brought to the front only while this DS Forever runs and shows, never while
+         * the launcher is hidden (its pause / stop / Home) or finishing
+         */
+        fun frontWanted(running: Boolean, hidden: Boolean, launcherFinishing: Boolean): Boolean = running && !hidden && !launcherFinishing
+
+        /**
+         * #232 review: the display whose panel sizes InputSink's tap pixels - display 0 ALWAYS, Swap screens or not. TapBridge (the
+         * tap-pad cells) and HomeLoginWatch (the sign-in's fields) make a tap's pixels in display 0's space; InputSink turns them back
+         * into a fraction of the game's screen over this same size
+         */
+        const val TAP_SPACE_DISPLAY = Display.DEFAULT_DISPLAY
 
         /** #232: the bottom screen's activity is started at most [START_GUARD_N] times in [START_GUARD_MS] (no loop if it keeps closing) */
         fun startAllowed(recent: List<Long>, now: Long): Boolean = recent.count { now - it < START_GUARD_MS } < START_GUARD_N

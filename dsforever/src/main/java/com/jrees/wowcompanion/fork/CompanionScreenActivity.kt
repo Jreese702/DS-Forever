@@ -61,6 +61,11 @@ class CompanionScreenActivity : Activity(), HostShell {
             it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         board(s.boardWanted)
+        // #232 review: a Back that reaches this window (it holds the focus while a text field types) never closes it. onBackPressed
+        // below covers Android 13-15; from Android 16 an app targeting API 36 gets no onBackPressed and the system would finish it
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) runCatching {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { }
+        }
         Log.i(DsForeverScreen.TAG, "Swap screens: DS Forever's activity up on display $here")
     }
 

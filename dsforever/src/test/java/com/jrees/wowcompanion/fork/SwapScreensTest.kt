@@ -98,6 +98,59 @@ class SwapScreensTest {
         assertTrue(DsForeverScreen.startAllowed(listOf(now - DsForeverScreen.START_GUARD_MS, now - 20_000, now - 500), now))
     }
 
+    // ---- the review's fixes (#232 review, 2026-11-14)
+
+    /**
+     * the tap-pad's taps (and the sign-in's field taps) land on the same game pixel with Swap screens on: TapBridge makes a cell's
+     * pixels in display 0's space (the Thor: 1920 x 1080), InputSink divides by ITS size - display 0's again, never the game's own
+     * screen (the Thor's other panel is 1240 x 1080: the middle of the game would have gone to 0.77 of its width)
+     */
+    @Test fun tapsKeepDisplay0sSpaceWithSwapOn() {
+        assertEquals(MAIN, DsForeverScreen.TAP_SPACE_DISPLAY)
+        val panels = mapOf(MAIN to (1920 to 1080), 4 to (1240 to 1080))
+        val pw = 960.0                                                  // the game's own width (the pad's pw)
+        for (gx in listOf(0.0, 123.5, 480.0, 959.0)) {
+            val tapX = gx * panels.getValue(MAIN).first / pw            // TapBridge.gamePoint
+            val sw = panels.getValue(DsForeverScreen.TAP_SPACE_DISPLAY).first
+            assertEquals("game x $gx", gx / pw, tapX / sw, 1e-9)        // InputSink.play: the fraction the X server gets
+        }
+        // the game's own screen's size would have sent the middle of the game to 0.77 of its width
+        assertEquals(0.774, 480.0 * 1920 / pw / panels.getValue(4).first, 1e-3)
+        // and the launcher's start sizes InputSink from it, whatever Swap screens says
+        val start = source().substringAfter("fun start() {").substringBefore("fun stop() {")
+        assertTrue(start.contains("dm?.getDisplay(TAP_SPACE_DISPLAY)?.mode"))
+        assertFalse("never the game's own screen", start.contains("getDisplay(gameDisplay())") || start.contains("getDisplay(sizeOf)"))
+    }
+
+    /** the game's task comes to the front only while DS Forever runs and shows: never pulls the launcher back over a Home press */
+    @Test fun theGameIsBroughtForwardOnlyWhileTheLauncherShows() {
+        assertTrue(DsForeverScreen.frontWanted(running = true, hidden = false, launcherFinishing = false))
+        assertFalse(DsForeverScreen.frontWanted(running = true, hidden = true, launcherFinishing = false))      // Home / pause: hide()
+        assertFalse(DsForeverScreen.frontWanted(running = true, hidden = false, launcherFinishing = true))      // the restart, a close
+        assertFalse(DsForeverScreen.frontWanted(running = false, hidden = false, launcherFinishing = false))   // stopped
+        val fn = source().substringAfter("internal fun gameToFront(").substringBefore("private val restartHook")
+        assertTrue(fn.contains("frontWanted(running, hidden, a.isFinishing)"))
+    }
+
+    /** Android's own close of the bottom activity asks for it again (the start guard stops a loop); our close does not */
+    @Test fun anAndroidCloseIsAskedAgain() {
+        val fn = source().substringAfter("internal fun released(").substringBefore("internal fun gameToFront(")
+        val androids = fn.substringAfter("if (!w.closed) {")
+        assertTrue(androids.contains("main.post { update() }"))
+        assertTrue(source().substringAfter("private fun openActivity(").substringBefore("internal fun adopt(").contains("startAllowed(starts, now)"))
+    }
+
+    /** a Back that reaches the bottom activity (typing) never closes it, on Android 16 too (no onBackPressed there for API 36 apps) */
+    @Test fun backNeverClosesTheBottomActivity() {
+        val a = source("CompanionScreenActivity.kt")
+        assertTrue(a.contains("override fun onBackPressed() {}"))
+        assertTrue(a.contains("registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { }"))
+    }
+
+    private fun source(name: String = "DsForeverScreen.kt"): String =
+        listOf("src/main/java/com/jrees/wowcompanion/fork/$name", "dsforever/src/main/java/com/jrees/wowcompanion/fork/$name")
+            .map { java.io.File(it) }.first { it.canRead() }.readText()
+
     // ---- the Settings row's Restart (ScreenSwap)
 
     @Test fun restartRowOnlyWhenTheChoiceIsNotTheOneInUse() {
