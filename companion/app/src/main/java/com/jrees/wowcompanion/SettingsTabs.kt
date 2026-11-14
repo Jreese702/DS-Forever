@@ -48,6 +48,9 @@ object SettingsTabs {
         // 2026-11-12 (the user: "an oled theme, but different color variations for menus"): the theme picker, the language under it
         THEME(Group.LOOK, "Theme", listOf("Theme")),
         LANGUAGE(Group.LOOK, "Language", listOf("Language")),
+        // GitHub #232 (the user, 2026-11-14: build it): which screen has the game; only with a second screen, Restart under it after a
+        // change (ScreenSwap)
+        SCREENS(Group.LOOK, "Screens", listOf("Swap screens", "Restart DS Forever")),
         ACCOUNT(Group.ACCOUNT, "Battle.net login", listOf("Battle.net login")),
         // #47: several game accounts on one Battle.net login - the game's own picker each time, or its remembered pick
         GAME_ACCOUNT(Group.ACCOUNT, "Game account", listOf("Game account")),

@@ -122,6 +122,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segLight = Array(2) { RectF() }
     private val segLowGfx = Array(2) { RectF() }                      // 2026-11-08: Settings > System > Low-memory graphics                       // 1.0.17: Settings > Performance > Lighter mode
     private val segGameAcct = Array(2) { RectF() }                    // #47: Settings > General > Game account, Ask each time / Remembered
+    private val segSwap = Array(2) { RectF() }                        // #232: Settings > General > Swap screens, On / Off
+    private var btnSwapRestart = RectF()                              // its Restart DS Forever (the choice applies from a start)
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
     private val segIndoor = Array(2) { RectF() }
     /**
@@ -261,7 +263,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPsTop.toList() + segPq.flatMap { it.toList() } + segDanger.toList() + segFog.toList() + segChat.toList() +
-            segTheme.toList() + segLang.toList() + segGameAcct.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segPauseOver.toList() + segOpen.toList() + segPick.toList() +
+            segTheme.toList() + segLang.toList() + segSwap.toList() + listOf(btnSwapRestart) + segGameAcct.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segPauseOver.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
             segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
@@ -294,9 +296,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty(); addonSettingsBtn.clear()
         btnGuidePending.setEmpty(); for (r in segGuide) r.setEmpty()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
-                         btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
+                         btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart, btnSwapRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segPauseOver, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segLight, segGameAcct,
+                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segLight, segGameAcct, segSwap,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -344,6 +346,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** a block's rows' height (from its first row's top to its last row's bottom), laid out exactly as its draw function lays it out */
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.LANGUAGE -> ROW_H
+        // #232: only with a second screen; Restart under it while the saved choice is not the one in use
+        SettingsTabs.Block.SCREENS -> if (!ScreenSwap.offered) 0f else ROW_H + (if (swapPending() == ScreenSwap.Pending.NONE) 0f else 10f + ROW_H)
         SettingsTabs.Block.THEME -> themeGridH()
         SettingsTabs.Block.LIGHTER -> ROW_H + 10f + ROW_H
         SettingsTabs.Block.ACCOUNT -> if (loginRow) ROW_H else 0f
@@ -490,6 +494,14 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                     val pi = segs.indexOfFirst { it.contains(x, y) }
                     if (pi >= 0) { PolestarQol.set(GameUi.character, listOf(PolestarQol.QUEST, PolestarQol.VENDOR, PolestarQol.REPAIR)[k], pi == 0); invalidate(); return }
                 }
+                // #232: On / Off saved (it applies from a start: the Restart row comes or goes, so the slice is measured again)
+                val swi = segSwap.indexOfFirst { it.contains(x, y) }
+                if (swi >= 0) {
+                    Settings.swapScreens = swi == 0
+                    DiagLog.event("app", "Swap screens set ${if (swi == 0) "on" else "off"} (in use: ${ScreenSwap.inUseNow})")
+                    requestLayout(); invalidate(); return
+                }
+                if (!btnSwapRestart.isEmpty && btnSwapRestart.contains(x, y)) { btnSwapRestart = RectF(); ScreenSwap.restart?.invoke(); invalidate(); return }
                 val lti = segLight.indexOfFirst { it.contains(x, y) }
                 if (lti >= 0) { Settings.lighterMode = lti == 0; invalidate(); return }
                 val gai = segGameAcct.indexOfFirst { it.contains(x, y) }
@@ -548,6 +560,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             }
             y = when (b) {
                 SettingsTabs.Block.LANGUAGE -> drawLanguage(c, y)
+                SettingsTabs.Block.SCREENS -> drawScreens(c, y)
                 SettingsTabs.Block.THEME -> drawTheme(c, y)
                 SettingsTabs.Block.LIGHTER -> drawLighter(c, y)
                 SettingsTabs.Block.ACCOUNT -> drawAccount(c, y)
@@ -675,6 +688,37 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             b
         }
         return top + ROW_H
+    }
+
+    /** #232: the Restart row's state now (ScreenSwap.pending: the saved choice against the one this run uses) */
+    private fun swapPending(): ScreenSwap.Pending =
+        ScreenSwap.pending(Settings.swapScreens, ScreenSwap.inUseNow, gameRunning(), ScreenSwap.restart != null)
+
+    /**
+     * GitHub #232 SWAP SCREENS (the user, 2026-11-14: "build it"): On / Off (Off, the default = the Thor's arrangement). Shown only
+     * with a second screen ([ScreenSwap.offered]). The choice applies from a start, so a change brings "Restart DS Forever" under it:
+     * its Restart button with no game, only "After the game closes" while the game runs (a restart would end it)
+     */
+    private fun drawScreens(c: Canvas, top: Float): Float {
+        btnSwapRestart = RectF()
+        if (!ScreenSwap.offered) { for (r in segSwap) r.setEmpty(); return top }
+        val segW = segW()
+        row(c, top, "Swap screens", "The game and DS Forever trade screens", enabled = true) { box ->
+            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, listOf(Tr.t("On"), Tr.t("Off")), if (Settings.swapScreens) 0 else 1, segSwap)
+            b
+        }
+        val pending = swapPending()
+        if (pending == ScreenSwap.Pending.NONE) return top + ROW_H
+        val t2 = top + ROW_H + 10f
+        val now = pending == ScreenSwap.Pending.RESTART
+        val hit = row(c, t2, "Restart DS Forever", if (now) "To swap the screens" else "After the game closes", enabled = now) { box ->
+            val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            UiKit.button(c, b, "Restart", if (now) UiKit.Button.UP else UiKit.Button.DISABLED)
+            b
+        }
+        if (now) btnSwapRestart = hit
+        return t2 + ROW_H
     }
 
     /** 1.0.17: Lighter mode On / Off (off by default; the 8 / 12 GB Thors are always lighter: DeviceTier) */

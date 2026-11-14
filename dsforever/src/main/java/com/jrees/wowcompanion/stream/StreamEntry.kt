@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
-import android.view.Display
 
 /**
  * HOW THE APP ENTERS STREAMING.
@@ -23,10 +22,11 @@ object Streaming {
     fun isPaired(context: Context) = HostStore(context).host() != null
     fun pairedName(context: Context) = HostStore(context).host()?.name
 
-    /** Streaming in its own activity on the TOP screen (display 0, where the container's game renders in Local) */
+    /** Streaming in its own activity on the TOP screen (display 0, where the container's game renders in Local; #232: the game's
+     *  display, the second screen with Swap screens in use) */
     fun open(activity: Activity, fromShortcut: Boolean = false) {
         val i = Intent(activity, StreamActivity::class.java).putExtra(StreamActivity.EXTRA_FROM_SHORTCUT, fromShortcut)
-        val top = ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY).toBundle()
+        val top = ActivityOptions.makeBasic().setLaunchDisplayId(com.jrees.wowcompanion.ScreenSwap.gameDisplay).toBundle()
         try { activity.startActivity(i, top) } catch (_: Throwable) { activity.startActivity(i) }
     }
 

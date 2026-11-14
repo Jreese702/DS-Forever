@@ -240,11 +240,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         reportPage.open(sendNow)
     }
 
-    /** GitHub's pre-filled issue in the browser, on the TOP screen (a browser on the bottom one would sit under this window) */
+    /** GitHub's pre-filled issue in the browser, on the TOP screen (a browser on the bottom one would sit under this window; #232: the
+     *  game's screen, the second one with Swap screens in use) */
     private fun openUrlOnTop(url: String): Boolean = runCatching {
         startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-            android.app.ActivityOptions.makeBasic().setLaunchDisplayId(android.view.Display.DEFAULT_DISPLAY).toBundle())
+            android.app.ActivityOptions.makeBasic().setLaunchDisplayId(ScreenSwap.gameDisplay).toBundle())
     }.onFailure { android.util.Log.w("WCREPORT", "browser: ${it.message}") }.isSuccess
 
     /**
