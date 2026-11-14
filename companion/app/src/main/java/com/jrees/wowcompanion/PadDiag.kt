@@ -301,10 +301,14 @@ object AddonSilence {
      * the sign-in row shows; [signedIn] past the login screen; [downloading] the game fetches files; [silent] no word from the add-ons
      * this clock ([Watch]); [inWorld] the game's memory says the world ([WorldByMemory]). ADDONS = the line's panel says what the card
      * would (its text, with How); WORLD_LINE = the plain waiting line becomes the existing "Waiting for the world."; KEEP = as it is.
+     * The review (2026-11-14): a normal logout to character select is a bye with no hello too, and the game's memory may stay over
+     * [IN_WORLD_MB] there, so [trafficQuiet] (NativeLogin.trafficQuiet: the game's traffic stopped, which the world's never does) holds
+     * a NEW word back; one already on show ([shown]) stays - character select is where the player switches them back on.
      */
-    fun startMode(line: String, rowUp: Boolean, signedIn: Boolean, downloading: Boolean, silent: Boolean, inWorld: Boolean): StartMode = when {
+    fun startMode(line: String, rowUp: Boolean, signedIn: Boolean, downloading: Boolean, silent: Boolean, inWorld: Boolean,
+                  trafficQuiet: Boolean = false, shown: Boolean = false): StartMode = when {
         line !in WAIT_LINES || rowUp -> StartMode.KEEP
-        silent && inWorld -> StartMode.ADDONS
+        silent && inWorld && (!trafficQuiet || shown) -> StartMode.ADDONS
         signedIn && !downloading && line == PreLoginTraffic.WAITING_LINE -> StartMode.WORLD_LINE
         else -> StartMode.KEEP
     }

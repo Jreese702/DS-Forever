@@ -276,6 +276,26 @@ class AddonsReenableTest {
             assertEquals(l, S.KEEP, AddonSilence.startMode(l, false, true, false, true, true))
     }
 
+    @Test fun characterSelectAfterALogoutHoldsANewWordBack() {
+        // the review: a normal logout is a bye with no hello too, and the game's memory may stay over 2.5 GB at character select; the
+        // game's traffic stopped there (the world's never does), so no NEW add-ons word - the waiting line stays
+        val world = AddonSilence.WORLD_LINE
+        assertEquals(S.KEEP, AddonSilence.startMode(world, false, true, false, silent = true, inWorld = true, trafficQuiet = true))
+        assertEquals(S.KEEP, AddonSilence.startMode(PreLoginTraffic.WAITING_LINE, false, signedIn = false, downloading = false, silent = true,
+            inWorld = true, trafficQuiet = true))
+        // the world's traffic (a Disable + ReloadUI in the world): the word shows
+        assertEquals(S.ADDONS, AddonSilence.startMode(world, false, true, false, silent = true, inWorld = true, trafficQuiet = false))
+        // one already on show stays at character select (where the player switches them back on)
+        assertEquals(S.ADDONS, AddonSilence.startMode(world, false, true, false, silent = true, inWorld = true, trafficQuiet = true, shown = true))
+        // ... but never once they speak, over another line, or with the sign-in row up
+        assertEquals(S.KEEP, AddonSilence.startMode(world, false, true, false, silent = false, inWorld = true, trafficQuiet = true, shown = true))
+        assertEquals(S.KEEP, AddonSilence.startMode("Reloading the game's interface", false, true, false, true, true, trafficQuiet = false, shown = true))
+        assertEquals(S.KEEP, AddonSilence.startMode(world, rowUp = true, signedIn = true, downloading = false, silent = true, inWorld = true, shown = true))
+        // the memory alone never decides "the world" while the traffic is quiet: the plain line still becomes "Waiting for the world."
+        assertEquals(S.WORLD_LINE, AddonSilence.startMode(PreLoginTraffic.WAITING_LINE, false, signedIn = true, downloading = false, silent = true,
+            inWorld = true, trafficQuiet = true))
+    }
+
     @Test fun theStartScreenSaysWhatTheCardSays() {
         val c = ReportNotice.card(ReportNotice.State.AddonsOff(null))
         assertEquals(ReportNotice.ADDONS_TITLE, c.title); assertEquals(ReportNotice.ADDONS_DEFAULT, c.text)

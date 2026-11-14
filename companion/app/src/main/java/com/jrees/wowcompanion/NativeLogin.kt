@@ -446,6 +446,12 @@ object NativeLogin {
 
     private var quietFor = 0
     private var quiet = false
+    /**
+     * the game's traffic has stopped since past its login screen (under 200 B/s for 5 s, not back over 1 KB/s): character select or a
+     * disconnect, never the world (where it never drops under ~2 KB/s). The review of the add-ons-silent triage (2026-11-14): a normal
+     * logout to character select keeps the game's memory high, so the start screen's add-ons word waits while this holds. Main thread.
+     */
+    val trafficQuiet: Boolean get() = quiet
 
     /** the game's traffic stopping after the world (a disconnect: in the world it never drops under ~2 KB/s) writes the re-login file */
     private fun worldTraffic(rx: Long) {
