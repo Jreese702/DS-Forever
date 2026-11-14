@@ -252,7 +252,7 @@ function R0:SetShadowOffset(x, y) rawset(self, "shadow", { x, y }) end
     chk("uf20: none of the game's 19-texel HUD art left on the target bar (%d)" % len(old), len(old) == 0)
     hub_src = open(rt.HUB, encoding="utf-8").read()
     chk("uf20: no NEAREST filter in Hub.lua's code (crispTex / TB.FILTER gone)",
-        '"NEAREST"' not in hub_src and "crispTex" not in hub_src and 'local HV = "hub53"' in hub_src)
+        '"NEAREST"' not in hub_src and "crispTex" not in hub_src and 'local HV = "hub54"' in hub_src)
 
     # ------------------------------------------------------------------ uf20: the smooth rim at 720 / 1080 / 1440 lines
     media = os.path.join(rt.ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanion", "Media")

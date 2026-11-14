@@ -457,8 +457,17 @@ class InteractView(context: Context) : View(context) {
      * cursor is on"; the picture SHEET_tooltip_side.png, "Yes, build it"), same width, same top.
      */
     private fun drawTip(c: Canvas, x: Float, yRow: Float, w: Float, name: String, q: Int, t: JSONObject,
-                        top: Float, bottom: Float, cmpX: Float) =
-        tipStack.draw(c, x, yRow, w, name, q, t, top, bottom, cmpX, tipCompare, tipTs)
+                        top: Float, bottom: Float, cmpX: Float, takesTouch: Boolean = false): TipStack.Drawn {
+        // issue #233 ([takesTouch]: the vendor's list): a finger on the tooltip reads it (drags scroll it), never the tile under it
+        val key = t.optString("key")
+        val stick = tipTs
+        val d = tipStack.draw(c, x, yRow, w, name, q, t, top, bottom, cmpX, tipCompare, stick + (if (takesTouch) tipTouch.stepsFor(key) else 0))
+        // (review: a drag stops at the tooltip's end, so dragging back moves it at once; the stick's own steps count toward that end)
+        if (takesTouch && d.alpha > 0) tipTouch.shown(key, d.box.left, max(d.box.top, top), d.box.right, min(d.box.bottom, bottom),
+            max(0, d.maxSteps - stick))
+        return d
+    }
+    private val tipTouch = TipStack.Touch()
 
     private val tipStack by lazy { TipStack(this) }
 
@@ -825,6 +834,12 @@ class InteractView(context: Context) : View(context) {
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (e.actionMasked == MotionEvent.ACTION_DOWN && (lootCompact || lootClosing()) && !lootRect.contains(e.x, e.y)
             && hits.none { it.first.contains(e.x, e.y) }) return false
+        // issue #233: a finger on a shown tooltip is the tooltip's - a drag scrolls it, a tap selects nothing under it
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> if (tipTouch.down(e.x, e.y)) { pressed = ""; dragging = false; invalidate(); return true }
+            MotionEvent.ACTION_MOVE -> if (tipTouch.move(e.y)) { invalidate(); return true }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (tipTouch.up()) { pressed = ""; invalidate(); return true }
+        }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = e.x; downY = e.y; lastY = e.y; dragging = false
@@ -1176,6 +1191,7 @@ class InteractView(context: Context) : View(context) {
         if (kind == Kind.NONE && !lootClosing() && landing == null) { refresh(); return }
         if (!(lootCompact || growing || landing != null || (kind == Kind.NONE && lootClosing()))) c.drawColor(Theme.ink)
         hits.clear(); glyphHits.clear(); ownPress.clear(); ownPrefix.clear(); goCmd = null; goWhy = null
+        tipTouch.clear()                                  // issue #233: only a tooltip drawn this frame takes a touch
         if (landing != null) {
             if (drawLanding(c, r, now)) { postInvalidateOnAnimation(); return }
             refresh()
@@ -5014,7 +5030,7 @@ class InteractView(context: Context) : View(context) {
             val ty0 = rowTop.coerceIn(ly0, max(ly0, ly1 - TIP_MIN_ROOM))
             val curLeft = inner.left + 4f + (ti % 2) * (cw + 14f)
             val cx0 = if (ti % 2 == 0) curLeft + cw - tw else curLeft
-            drawTip(c, tx, ty0, tw, o.optString("name", "Item"), o.optInt("q", 1), t, ly0, ly1, cx0)
+            drawTip(c, tx, ty0, tw, o.optString("name", "Item"), o.optInt("q", 1), t, ly0, ly1, cx0, takesTouch = true)
         }
 
         // ---- the strip: what can be done. Repair and junk on the left, the ONE action on the right.

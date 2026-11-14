@@ -134,6 +134,14 @@
 -- BB still applies them at login (RB / RT / Select as before); one on L3 / R3 MOVES into PadMap's stick entry for that stick (BB.migrate:
 -- the same "/use item" on the same button, now shown and cleared in the box), or is let go when that stick has something of its own
 -- already (the router's priority binding hid it). A lost controller closes the box quietly (abort). No new game call of Bags' own.
+--
+-- bags-qstart1 (issue #252, 1.0.29: "Items with quests attached to them cannot be started from the bag menu"; the user, 2026-11-13:
+-- "yes on the triage things"): an item that BEGINS a quest (the game's "This Item Begins a Quest": C_Container.GetContainerItemQuestInfo
+-- gives a quest id, not active) has no "Use:" spell, is not readable and is not worn, so its row carried none of use / readable / equip
+-- and the room's tooltip offered no action at all - after the pick-up prompt's "Not now" (Dialogs d27) it could not be started from the
+-- bags. Its row now says qstart = true while that quest is neither in the log nor done (the prompt's own test, D.qsAt), and the app
+-- offers "Start Quest" on X: the slot's own secure item cell, the game's right-click, which opens the game's quest page. Read-only
+-- calls only (C_QuestLog.IsOnQuest / IsQuestFlaggedCompleted); nothing else changes.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -998,6 +1006,11 @@ function WC.collectBags()
                     local okQ, qi = CALL(function() return C_Container.GetContainerItemQuestInfo(bag, slot) end)
                     if okQ and type(qi) == "table" then
                         if flag(qi, "isQuestItem") == true or type(field(qi, "questID")) == "number" then row.quest = true end
+                        -- bags-qstart1 (issue #252): a starter whose quest is neither taken nor done - its right-click starts it
+                        local qid = field(qi, "questID")
+                        if type(qid) == "number" and qid > 0 and flag(qi, "isActive") ~= true
+                           and S(function() return C_QuestLog.IsOnQuest(qid) end) ~= true
+                           and S(function() return C_QuestLog.IsQuestFlaggedCompleted(qid) end) ~= true then row.qstart = true end
                     end
 
                     local okNm, nm = CALL(function() return C_Item.GetItemNameByID(id) end)
