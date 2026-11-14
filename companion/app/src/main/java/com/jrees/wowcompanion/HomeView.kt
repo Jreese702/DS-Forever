@@ -448,10 +448,11 @@ class HomeView(
         if (open) classLeft = !lent(castView) || castView.classRadialLeft()
         val left = classLeft
         val col = ArrayList<Pair<View, RectF>>()
+        val half = if (left) HomeSlide.Half.LEFT else HomeSlide.Half.RIGHT
         for ((p, v) in views) {
             if (p == Part.BARS) continue
             val r = now[p] ?: continue
-            if ((r.centerX() < w / 2f) == left) col += v to r
+            if (halfOf(p, r, w) == half) col += v to r
         }
         val area = ClassSlot.column(col.filter { it.first.visibility == View.VISIBLE }.map { (_, r) -> ClassSlot.Area(r.left, r.top, r.right, r.bottom) },
             now[Part.BARS]?.bottom ?: 0f, h, g, left, w)
@@ -461,7 +462,7 @@ class HomeView(
         // slides back OVER it (the frozen picture rides it out, CastView), and the wheel goes when it is covered
         for ((p, v) in views) if (p != Part.BARS) {
             val r = now[p]
-            v.translationZ = if (r != null && (r.centerX() < w / 2f) == left && (open || classLayer.visibility == View.VISIBLE)) CLASS_COVER_Z else restZ(p)
+            v.translationZ = if (r != null && halfOf(p, r, w) == half && (open || classLayer.visibility == View.VISIBLE)) CLASS_COVER_Z else restZ(p)
         }
         if (open) {
             classLayer.visibility = View.VISIBLE
@@ -501,6 +502,9 @@ class HomeView(
     }
     /** the side the open wheel took (true = the left column's) */
     private var classLeft = true
+    /** fix/castbar-slides: the half a laid part belongs to for a side slide: the cast bar by its side (Both = neither), any other part by
+     *  its centre ([HomeSlide.half]) */
+    private fun halfOf(p: Part, r: RectF, w: Float): HomeSlide.Half = HomeSlide.half(p == Part.STRIP, laidSide, laidHidden, r.centerX(), w)
 
     /**
      * f-radial-middle (1.0.9, the user: "The Dpad up radial, and spell radial should slideup between the middle of the modules like the
@@ -519,7 +523,9 @@ class HomeView(
             // the user on test18: "I want the dpad up radial to be about the same size as the pause menu radial": as tall as the space
             // under the bars allows (the pause wheel fills the same height); no longer held to the chat column's width (it rises from
             // below now, behind the parting columns)
-            val s = ClassSlot.middle(w, h, now[Part.BARS]?.bottom ?: 0f, g, w * WHEEL_SLOT_MAX)
+            // fix/castbar-slides: Both's bar stays where it is (it is neither column's), so the wheel sits above it
+            val s = ClassSlot.middle(w, h, now[Part.BARS]?.bottom ?: 0f, g, w * WHEEL_SLOT_MAX,
+                bottom = HomeSlide.middleBottom(laidSide, laidHidden, now[Part.STRIP]?.top, h, g))
             wheelRect.set(s.left, s.top, s.left + s.side, s.top + s.side)
             wheelPush = s.push
         }
@@ -527,7 +533,7 @@ class HomeView(
             if (p == Part.BARS) continue
             if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f }; continue }
             val r = now[p] ?: continue
-            val to = if (!open) 0f else if (r.centerX() < w / 2f) -wheelPush else wheelPush
+            val to = if (!open) 0f else HomeSlide.dx(halfOf(p, r, w), wheelPush)
             v.animate().cancel()
             val a = v.animate().translationX(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
                 .setInterpolator(Motion.curve()).withLayer()
@@ -1937,7 +1943,12 @@ class HomeView(
             if (sidePx > 0f && p != Part.BARS) {
                 val e = (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
                 val ee = 1f - (1f - e) * (1f - e)
-                v.translationX = (if (o === left) -1f else 1f) * sidePx * ee; v.translationY = 0f
+                // fix/castbar-slides (the user on 1.0.31: "it should only slide the direction if its on that half. If its set to both it
+                // can stay in place"): the cast bar by its side (Left with the chat, Right with the minimap), Both's bar stays
+                val r = now[p]
+                v.translationX = if (p == Part.STRIP && r != null) HomeSlide.dx(halfOf(p, r, width.toFloat()), sidePx * ee)
+                    else (if (o === left) -1f else 1f) * sidePx * ee
+                v.translationY = 0f
                 if (v.visibility == View.VISIBLE) v.alpha = 1f - 0.35f * ee
             }
         }
@@ -2972,8 +2983,8 @@ internal object ClassSlot {
      * how far each column parts (half the wheel and a gap)
      */
     data class Middle(val left: Float, val top: Float, val side: Float, val push: Float)
-    fun middle(w: Float, h: Float, barsBottom: Float, gap: Float, maxSide: Float): Middle {
-        val avail = (h - gap) - (barsBottom + gap)
+    fun middle(w: Float, h: Float, barsBottom: Float, gap: Float, maxSide: Float, bottom: Float = h - gap): Middle {
+        val avail = bottom - (barsBottom + gap)
         val side = minOf(avail, maxSide).coerceAtLeast(1f)
         val top = barsBottom + gap + (avail - side) / 2f
         return Middle((w - side) / 2f, top, side, side / 2f + gap)
@@ -2981,6 +2992,32 @@ internal object ClassSlot {
     /** how far a part of the column slides to be wholly off its own edge ([w] the page's width) */
     fun away(left: Boolean, partLeft: Float, partRight: Float, w: Float, gap: Float): Float =
         if (left) -(partRight + gap) else (w - partLeft + gap)
+}
+
+/**
+ * fix/castbar-slides (the user on 1.0.31: "When holding LB it slides right but it should only slide the direction if its on that half. If
+ * its set to both it can stay in place. The rb plus l2 class pet attack bar is also behaving weird now with the right side menu stuff
+ * sliding the both bar to the right and the circle going the full screen size"): which half of Home a part belongs to for the side
+ * slides (the LB picture, the class wheels, the middle wheel). Every part was put on a half by its centre; Both's bar spans the whole
+ * width, its centre is the page's middle (not left of it), so it counted as the RIGHT column: RB + RT's wheel took the union of the right
+ * column AND the full-width bar as its area (a square as tall as the page) and slid the bar away with the map. Now the cast bar's half
+ * is its side: Left goes with the chat, Right with the minimap, Both with neither (it stays); a bar slid away for a fight is no
+ * column's (it is below the page). The pause wheel's full slide keeps cb3's choice (Both goes left with the chat, pauseSlide).
+ */
+internal object HomeSlide {
+    enum class Half { LEFT, RIGHT, NONE }
+    fun half(strip: Boolean, side: CastStripModel.Side, hidden: Boolean, centerX: Float, w: Float): Half = when {
+        !strip -> if (centerX < w / 2f) Half.LEFT else Half.RIGHT
+        hidden -> Half.NONE
+        side == CastStripModel.Side.LEFT -> Half.LEFT
+        side == CastStripModel.Side.RIGHT -> Half.RIGHT
+        else -> Half.NONE
+    }
+    /** a side slide's offset for [h]: the left half goes left [px], the right half right, a part of neither stays */
+    fun dx(h: Half, px: Float): Float = when (h) { Half.LEFT -> -px; Half.RIGHT -> px; Half.NONE -> 0f }
+    /** the middle wheel's lowest edge: above Both's laid bar (it stays), else the page's foot */
+    fun middleBottom(side: CastStripModel.Side, hidden: Boolean, stripTop: Float?, h: Float, gap: Float): Float =
+        if (side == CastStripModel.Side.BOTH && !hidden && stripTop != null) minOf(h - gap, stripTop - gap) else h - gap
 }
 
 /** p-card-invisible: the quest card's state in words, for the WCHOME "quest card:" line (pure, so the JVM tests read it) */
