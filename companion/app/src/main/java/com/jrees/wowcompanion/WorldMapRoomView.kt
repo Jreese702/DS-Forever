@@ -69,6 +69,13 @@ class WorldMapRoomView(context: Context) : View(context) {
     private var artNote: String? = null
     private fun artDir() = ArtHarvest.dir("worldmap")
 
+    /**
+     * Issues #243 #262 #263 #264 (1.0.29, "the world map pictures wont load"): the manifest was read ONCE, at the host's start, so a
+     * world map the art built later (the player waiting on the start screen, the game closed) still showed the note. The host calls
+     * this when the art's world-map step is done; nothing happens when the room already has its art.
+     */
+    fun reloadArtIfMissing() { if (!artReady) loadArt() }
+
     /** read the art set's manifest and indexes off the UI thread (60 small files) */
     fun loadArt() {
         laysFor = -1; seamZones.clear()                 // the layers follow the art read again
@@ -84,7 +91,7 @@ class WorldMapRoomView(context: Context) : View(context) {
                     if (f.canRead()) post { model.addIndex(JSONObject(f.readText())) }
                 }
                 null
-            } catch (t: Throwable) { "The world map pictures are not on this device yet" }
+            } catch (t: Throwable) { NO_ART_NOTE }
             post { artNote = note; artReady = note == null; if (canvas == 0) jumpTo(startMap()); invalidate() }
             restoreKept()          // the last exploration / highlight boxes / zones' quests, until the game sends new ones
         }
@@ -2666,6 +2673,11 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
 
     private companion object {
+        /**
+         * The room's one line while the world map is not built (issues #243 #262 #263 #264: "not on this device yet" never said
+         * what to do; the background art builds only while the game is closed - PlayGate, every Thor). Tr: es / fr in i18n.
+         */
+        const val NO_ART_NOTE = "Map pictures build while the game is closed"
         /** pk1: Polestar's light blue (Home's row, MapView.psBlue) */
         val PS_BLUE = Color.rgb(120, 200, 255)
         const val SPAWN_PX = 26f          // UI Art: on painted maps a spawn spot is the ghost PICTURE (24 px and up), never the dot

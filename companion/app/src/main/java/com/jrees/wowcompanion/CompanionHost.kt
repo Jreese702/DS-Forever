@@ -176,6 +176,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     @Volatile private var game: GameLocator.Found? = null
         set(v) { field = v; if (::setupRunner.isInitialized) setupRunner.wowForever = v }
     private val ui = Handler(Looper.getMainLooper())
+    /** issues #243 #262 #263 #264: a world map built while this host is up is read by the Map room then (it read the art at start) */
+    private val mapArtDone: (String) -> Unit = { id ->
+        if (id == "worldmap") ui.post { if (::worldMapRoom.isInitialized) worldMapRoom.reloadArtIfMissing() }
+    }
     private val iconArtState: (ArtHarvest.State) -> Unit = { state ->
         ui.post {
             if (state is ArtHarvest.State.Ready) {
@@ -446,6 +450,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
         mapView = MapView(this)
         worldMapRoom = WorldMapRoomView(this).apply { loadArt() }
+        ArtHarvest.onStepDone(mapArtDone)
         questsView = QuestsView(this,
             where = { lastMap },
             // TODO(map session): centre the map on the quest once MapView has a focusOn(x, y)
@@ -2823,6 +2828,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
         ui.removeCallbacks(silenceCheck)
         ArtHarvest.offState(iconArtState)
+        ArtHarvest.offStepDone(mapArtDone)
         IndoorSchedulerStep.stop()
         ui.removeCallbacks(signInTick)
         NativeLogin.onTrafficSample = null
