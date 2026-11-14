@@ -1,5 +1,16 @@
 {
 "plain": {
+"DS Forever add-ons aren't running": "Les add-ons DS Forever ne tournent pas",
+"Enable them in AddOns at character select.": "Activez-les dans AddOns, à la sélection du personnage.",
+"How": "Comment",
+"Character select: AddOns, tick every DS Forever add-on and Load out of date AddOns, then Okay.": "Sélection du personnage : AddOns, cochez chaque add-on DS Forever et Charger les AddOns périmés, puis Okay.",
+"The game loads an old private copy of the add-ons. Restart the game from DS Forever.": "Le jeu charge une ancienne copie privée des add-ons. Relancez le jeu depuis DS Forever.",
+"The game's log went to a private folder. Restart the game from DS Forever.": "Le journal du jeu est allé dans un dossier privé. Relancez le jeu depuis DS Forever.",
+"The game's log isn't there yet. Restart the game from DS Forever.": "Le journal du jeu n'est pas encore là. Relancez le jeu depuis DS Forever.",
+"Add-ons not installed: the app's copy is damaged. Reinstall DS Forever.": "Add-ons non installés : la copie de l'app est abîmée. Réinstallez DS Forever.",
+"Add-ons not installed: the game folder can't be written.": "Add-ons non installés : impossible d'écrire dans le dossier du jeu.",
+"Add-ons not installed: a file in the game folder could not be replaced.": "Add-ons non installés : un fichier du dossier du jeu n'a pas pu être remplacé.",
+"Add-ons keep disappearing from the game folder.": "Les add-ons disparaissent sans cesse du dossier du jeu.",
 "Clear this slot": "Vider cet emplacement",
 "Clear this slot?": "Vider cet emplacement ?",
 "Game keys only on buttons": "Touches du jeu : sur les boutons seulement",
@@ -1747,6 +1758,13 @@
 "Bags full": "Sacs pleins"
 },
 "templates": {
+"%s isn't loaded yet. Restart the game from DS Forever.": "%s n'est pas encore chargé. Relancez le jeu depuis DS Forever.",
+"%s is out of date. Tick Load out of date AddOns at character select.": "%s est périmé. Cochez Charger les AddOns périmés à la sélection du personnage.",
+"%s needs DS Forever. Turn both on in AddOns at character select.": "%s a besoin de DS Forever. Activez les deux dans AddOns, à la sélection du personnage.",
+"%s is damaged. Restart the game from DS Forever.": "%s est abîmé. Relancez le jeu depuis DS Forever.",
+"%s is turned off in AddOns. Turn it on at character select.": "%s est désactivé dans AddOns. Activez-le à la sélection du personnage.",
+"Add-ons not installed: needs %s free (%s free).": "Add-ons non installés : il faut %s libres (%s libres).",
+"Add-ons not installed: %s.": "Add-ons non installés : %s.",
 "Cast bar slot %s": "Emplacement %s de la barre",
 "Always %s": "Toujours %s",
 "%s: upgrade on your buttons?": "%s : améliorer sur vos boutons ?",

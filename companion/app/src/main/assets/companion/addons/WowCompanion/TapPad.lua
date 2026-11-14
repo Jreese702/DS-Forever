@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad19"     -- pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad20"     -- pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -793,28 +793,56 @@ end
 -- Smart Y, no Party mode, its settings gone - and the app's install does not touch the game's per-character add-on list). At each login
 -- every DS Forever add-on the game has OFF is switched ON (for every character), and the app is told (cap probe "addonsoff"); it reloads
 -- the game's interface once so they load. Never another add-on's state.
+-- pad20 (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on
+-- top screen"): the login probe (Chat.lua's "ours") said WowCompanionSpells:DISABLED, yet pad15 found nothing off - its only test was
+-- GetAddOnEnableState(name, character) == 0, which that client did not answer so (an argument order / a per-character state it does
+-- not report). OFF is now ALSO the game's own reason (GetAddOnInfo's "DISABLED": what the probe read), the state asked both ways and
+-- for every character; ON is EnableAddOn for every character and for this one; the probe says how each was found and what the game
+-- reports after (`after`: the reason now, "" = loadable), so a report shows whether the switch took.
 do
     local OURS = { "WowCompanionSpells", "WowCompanionHub", "WowCompanionQuests", "WowCompanionInteract", "WowCompanionCharacter",
                    "WowCompanionSocial", "WowCompanionCalendar", "WowCompanionGroupFinder", "WowCompanionProfessions", "WowCompanionPvp" }
+    local function num(fn) local ok, v = pcall(fn); if ok and type(v) == "number" and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) then return v end end
+    local function reasonOf(a)
+        local info = (type(C_AddOns) == "table" and C_AddOns.GetAddOnInfo) or rawget(_G, "GetAddOnInfo")
+        if type(info) ~= "function" then return nil end
+        local ok, _, _, _, _, reason = pcall(info, a)
+        return ok and type(reason) == "string" and (type(WC.isPlain) ~= "function" or WC.isPlain(reason)) and reason or (ok and "" or nil)
+    end
+    -- why [a] is off ("state" = the enable state 0, "reason" = the game's DISABLED), nil = on
+    local function offWhy(a, me)
+        local A = C_AddOns
+        if num(function() return A.GetAddOnEnableState(a, me) end) == 0 then return "state" end
+        if num(function() return A.GetAddOnEnableState(a) end) == 0 then return "state" end
+        if reasonOf(a) == "DISABLED" then return "reason" end
+        return nil
+    end
+    function WC.addonsOn()
+        if type(C_AddOns) ~= "table" or type(C_AddOns.EnableAddOn) ~= "function" then return nil end
+        local me = UnitName("player")
+        local off, how, after = {}, {}, {}
+        for _, a in ipairs(OURS) do
+            local why = offWhy(a, me)
+            if why then
+                local ok1 = pcall(C_AddOns.EnableAddOn, a)                       -- every character
+                local ok2 = me and pcall(C_AddOns.EnableAddOn, a, me) or false   -- and this one
+                if ok1 or ok2 then
+                    off[#off + 1] = a; how[#how + 1] = why
+                    after[#after + 1] = reasonOf(a) or "?"
+                end
+            end
+        end
+        if #off > 0 then
+            pcall(function() if type(C_AddOns.SaveAddOns) == "function" then C_AddOns.SaveAddOns() end end)
+            WC.send(WC.encode({ type = "cap", probe = "addonsoff", v = PADV, list = off, how = how, after = after }))
+            WC.push()
+        end
+        return off
+    end
     local ev = CreateFrame("Frame")
     ev:RegisterEvent("PLAYER_ENTERING_WORLD")
     ev:SetScript("OnEvent", function()
         ev:UnregisterEvent("PLAYER_ENTERING_WORLD")
-        pcall(function()
-            if type(C_AddOns) ~= "table" or type(C_AddOns.EnableAddOn) ~= "function" then return end
-            local me = UnitName("player")
-            local off = {}
-            for _, a in ipairs(OURS) do
-                local okS, st = pcall(C_AddOns.GetAddOnEnableState, a, me)
-                if okS and type(st) == "number" and (type(WC.isPlain) ~= "function" or WC.isPlain(st)) and st == 0 then
-                    if pcall(C_AddOns.EnableAddOn, a) then off[#off + 1] = a end
-                end
-            end
-            if #off > 0 then
-                pcall(function() if type(C_AddOns.SaveAddOns) == "function" then C_AddOns.SaveAddOns() end end)
-                WC.send(WC.encode({ type = "cap", probe = "addonsoff", v = PADV, list = off }))
-                WC.push()
-            end
-        end)
+        pcall(WC.addonsOn)
     end)
 end

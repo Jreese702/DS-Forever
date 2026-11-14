@@ -131,6 +131,8 @@ fun WoWForeverScreen(
     // an auto-start / restart / after-game-update launch held by the "DS Forever vX is out" pop-up: "Later" lets it go on
     var launchAfterAppChoice by remember { mutableStateOf(false) }
     var addonsInstalled by remember { mutableStateOf(false) }
+    /** the add-on install's problem (LauncherSetup.problem: a failed install, or the set removed again and again); null = fine */
+    var addonsProblem by remember { mutableStateOf<String?>(null) }
     /** a required-art failure's reason: the bottom's "Try again" (nothing retries by itself after a failure) */
     var artFailed by remember { mutableStateOf<String?>(null) }
     /** the dependency add-ons' line (QuestieDB, M4); null = not checked in this launcher run */
@@ -243,6 +245,7 @@ fun WoWForeverScreen(
         artReady = runCatching { com.jrees.wowcompanion.ArtHarvest.beforePlayReady(context) }.getOrDefault(false)
         loginSaved = com.jrees.wowcompanion.HomeLoginStore.has(context)
         addonsInstalled = File(WowClientDownloader.flavorDir(File(gamePath)), "Interface/AddOns/WowCompanion").isDirectory
+        addonsProblem = runCatching { com.jrees.wowcompanion.LauncherSetup.problem(context) }.getOrNull()
         if (files.isWrongGame) {
             errorMessage = "Incompatible game (${files.product}). DS Forever needs " +
                 WowProduct.values().joinToString(" or ") { "${it.title} (${it.code})" } + "."
@@ -833,6 +836,7 @@ fun WoWForeverScreen(
         artWhat = (harvestState as? com.jrees.wowcompanion.ArtHarvest.State.Running)?.what.orEmpty(),
         artWhy = artFailed.orEmpty(),
         addonsInstalled = addonsInstalled,
+        addonsProblem = addonsProblem,
         dependencies = dependencies,
         indoor = interiors.label.substringAfter(": "),
         client = versionStatus?.let { if (it.isOutdated) "${it.localVersion} (${it.remoteVersion} needed)" else "${it.localVersion} (up to date)" },

@@ -172,7 +172,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "book", "spells"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m159"' in SRC["padmap"] and 'local BV = "b60"' in SRC["book"] and 'local SV = "s9"' in SRC["spells"]
+check('local PV = "m160"' in SRC["padmap"] and 'local BV = "b60"' in SRC["book"] and 'local SV = "s9"' in SRC["spells"]
       and 'local CV = "p53"' in SRC["padtabctl"], "the versions: PadMap m146, Book b52, Spells s9, PadTabCtl p46 (Smart Range after rank up)")
 QUOTE = "I know we have something in place to rank up abilities on login"
 check(all(QUOTE in SRC[k] for k in ("padmap", "book", "spells", "padtabctl")), "each changed file's header note quotes the user")

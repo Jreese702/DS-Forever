@@ -145,6 +145,45 @@ object AddonSilence {
             (if (detail.isNullOrBlank()) "" else "; $detail")
     }
 
+    /**
+     * THE LIKELY CAUSE, for Home's add-ons notice (the user relaying players, 2026-11-13: "the pause radial is appearing on the top and
+     * bottom ..." and "they let everything install and it keeps reinstalling, and the buttons and map show 'waiting for game'"): terse
+     * words for the card, null = none known (then the card's default: enable them in AddOns). [setup] the add-on install's failure or
+     * loop (LauncherSetup.problem); [shadowLogs] / [shadowIface] the shadow's entries ([shadowLogs]); [reader] the log reader's line.
+     */
+    fun cause(setup: String?, shadowLogs: String?, shadowIface: String?, reader: String?, off: List<String> = emptyList()): String? = when {
+        !setup.isNullOrBlank() -> setup
+        off.isNotEmpty() -> offCause(off)
+        shadowIface?.contains("REAL dir") == true -> "The game loads an old private copy of the add-ons. Restart the game from DS Forever."
+        shadowLogs?.contains("REAL dir") == true -> "The game's log went to a private folder. Restart the game from DS Forever."
+        reader?.contains(" not there") == true -> "The game's log isn't there yet. Restart the game from DS Forever."
+        else -> null
+    }
+
+    /**
+     * Issue #278 (1.0.31: "says waitin on wow controller. i press start and the wheel only pops up on top screen"; its login probe:
+     * "NOT loaded: WowCompanionSpells:DISABLED"): the add-ons the game did NOT load (the "ours" probe's `off`, "<folder>:<reason>") in
+     * the game's own AddOns words, the first one named. Null = none.
+     */
+    fun offCause(off: List<String>): String? {
+        val first = off.firstOrNull { it.isNotBlank() } ?: return null
+        val name = TITLES[first.substringBefore(':')] ?: first.substringBefore(':')
+        val more = if (off.size > 1) " (+${off.size - 1})" else ""
+        return when (first.substringAfter(':', "")) {
+            "INTERFACE_VERSION" -> "$name$more is out of date. Tick Load out of date AddOns at character select."
+            "DEP_MISSING", "DEP_DISABLED", "DEP_DEMAND_LOADED" -> "$name$more needs DS Forever. Turn both on in AddOns at character select."
+            "MISSING", "CORRUPT", "BANNED", "INSECURE" -> "$name$more is damaged. Restart the game from DS Forever."
+            // switched on at this login (TapPad pad20) but the reload that loads it did not come
+            "LOADABLE", "DEMAND_LOADED" -> "$name$more isn't loaded yet. Restart the game from DS Forever."
+            else -> "$name$more is turned off in AddOns. Turn it on at character select."
+        }
+    }
+    /** our folders by the names the game's AddOns list shows (their .toc Titles) */
+    val TITLES = mapOf("WowCompanion" to "DS Forever", "WowCompanionSpells" to "DS Forever: Spells", "WowCompanionHub" to "DS Forever: Hub",
+        "WowCompanionQuests" to "DS Forever: Quests", "WowCompanionInteract" to "DS Forever: Interact", "WowCompanionCharacter" to "DS Forever: Character",
+        "WowCompanionSocial" to "DS Forever: Social", "WowCompanionCalendar" to "DS Forever: Calendar", "WowCompanionGroupFinder" to "DS Forever: Group Finder",
+        "WowCompanionProfessions" to "DS Forever: Professions", "WowCompanionPvp" to "DS Forever: PvP")
+
     /** issue #231 (review): the report's bottom-screen line, when no document came, carries the reader's state at report time */
     fun atReport(docSeen: Boolean, detail: String?): String = if (docSeen || detail.isNullOrBlank()) "" else " ($detail)"
 
