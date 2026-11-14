@@ -46,6 +46,19 @@ class StartView(context: Context) : View(context) {
     var firstW = FIRST_W
         set(v) { if (field != v) { field = v; invalidate() } }
 
+    /**
+     * THE ADD-ONS' WORD ON THE START SCREEN (the add-ons-silent triage, 2026-11-14: the "add-ons aren't running" card never shows over the
+     * start screen, which stays up while the add-ons say nothing): the card's title over its text in the line's own panel, in place of a
+     * plain waiting line ([AddonSilence.WAIT_LINES] only: a reload's, a restart's or a sign-in's line always shows); the card's How (touch
+     * only: the game has the pad's A) in the row's place. Null = the line. Set by the host ([AddonSilence.startMode]).
+     */
+    var addons: ReportNotice.Card? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+    /** How pressed: the host shows the card's steps */
+    var onHow: (() -> Unit)? = null
+    /** the add-ons' word is on show now (the report's bottom-screen line) */
+    val addonsShown: Boolean get() = addons != null && line in AddonSilence.WAIT_LINES
+
     /** the Menu ([StartMenu]), in place of Report at the bottom left */
     var menuOpen: Boolean
         get() = StartMenu.open
@@ -82,9 +95,12 @@ class StartView(context: Context) : View(context) {
         val sideTop = height - ROW_DOWN - BUTTON_H
         val panel = RectF(SIDE_M + SIDE_W + GAP, sideTop, width - SIDE_M - SIDE_W - GAP, sideTop + BUTTON_H)
         UiKit.module(c, panel)
-        val words = UiKit.bodyPaint(LINE_SIZE)
-        while (words.measureText(line) > panel.width() - LINE_PAD * 2 && words.textSize > LINE_MIN) words.textSize -= 1f
-        UiKit.outlined(c, line, cx, panel.centerY() - (words.ascent() + words.descent()) / 2f, words.textSize, Theme.text)
+        val card = addons?.takeIf { addonsShown }
+        if (card != null) drawCard(c, panel, card) else {
+            val words = UiKit.bodyPaint(LINE_SIZE)
+            while (words.measureText(line) > panel.width() - LINE_PAD * 2 && words.textSize > LINE_MIN) words.textSize -= 1f
+            UiKit.outlined(c, line, cx, panel.centerY() - (words.ascent() + words.descent()) / 2f, words.textSize, Theme.text)
+        }
         val report = RectF(SIDE_M, sideTop, SIDE_M + SIDE_W, sideTop + BUTTON_H)
         UiKit.button(c, report, "Menu", if (pressed == CURSOR_REPORT) UiKit.Button.DOWN else UiKit.Button.UP)
         hits += report to CURSOR_REPORT
@@ -93,8 +109,16 @@ class StartView(context: Context) : View(context) {
             UiKit.button(c, keys, "Keyboard", if (pressed == CURSOR_KEYS) UiKit.Button.DOWN else UiKit.Button.UP)
             hits += keys to CURSOR_KEYS
         }
-        if (!row) return
         val top = sideTop - GAP - BUTTON_H
+        if (!row) {
+            // the card's one action, touch only, where the sign-in row would be (never with the row: the line is a plain waiting one then)
+            if (card != null && ReportNotice.HOW in card.buttons) {
+                val r = RectF(cx - HOW_W / 2f, top, cx + HOW_W / 2f, top + BUTTON_H)
+                UiKit.button(c, r, ReportNotice.HOW, if (pressed == CURSOR_HOW) UiKit.Button.DOWN else UiKit.Button.UP)
+                hits += r to CURSOR_HOW
+            }
+            return
+        }
         if (login == Login.FIRST) {
             val r = RectF(cx - firstW / 2f, top, cx + firstW / 2f, top + BUTTON_H)
             // the one button, with the A that presses it (no gold box on this row: the user, 2026-10-05)
@@ -116,6 +140,29 @@ class StartView(context: Context) : View(context) {
         else UiKit.button(c, go, "Login", GLYPH_A, if (pressed == CURSOR_LOGIN) UiKit.Button.DOWN else UiKit.Button.UP)
         hits += gear to CURSOR_GEAR
         hits += go to CURSOR_LOGIN
+    }
+
+    /**
+     * The card in the line's panel: its title, then its text translated whole and wrapped (a wrapped half is no key of the word lists),
+     * both shrunk until they fit the panel (at most [CARD_LINES] lines of text). Main thread.
+     */
+    private fun drawCard(c: Canvas, panel: RectF, card: ReportNotice.Card) {
+        val w = panel.width() - LINE_PAD * 2
+        val title = Tr.t(card.title)
+        val tp = UiKit.bodyPaint(CARD_TITLE)
+        while (tp.measureText(title) > w && tp.textSize > CARD_MIN) tp.textSize -= 1f
+        val bp = UiKit.bodyPaint(CARD_TEXT)
+        val text = Tr.t(card.text)
+        var lines = SetupPanel.wrap(text, bp, w)
+        while (bp.textSize > CARD_MIN && (lines.size > CARD_LINES || tp.textSize * 1.15f + lines.size * bp.textSize * 1.2f > panel.height() - 10f)) {
+            bp.textSize -= 1f; lines = SetupPanel.wrap(text, bp, w)
+        }
+        lines = lines.take(CARD_LINES)
+        val th = tp.textSize * 1.15f; val lh = bp.textSize * 1.2f
+        var y = panel.centerY() - (th + lines.size * lh) / 2f + th / 2f
+        UiKit.outlined(c, title, panel.centerX(), y, tp.textSize, Theme.gold)
+        y += th / 2f + lh / 2f
+        for (l in lines) { UiKit.outlined(c, l, panel.centerX(), y, bp.textSize, Theme.text); y += lh }
     }
 
     /**
@@ -147,6 +194,7 @@ class StartView(context: Context) : View(context) {
                 else if (was >= 0 && was == hit) when (hit) {
                     CURSOR_REPORT -> menuOpen = true
                     CURSOR_KEYS -> SetupBridge.openPcKeyboard?.invoke()
+                    CURSOR_HOW -> onHow?.invoke()
                     CURSOR_GEAR -> onLoginButton?.invoke(true)
                     else -> if (!loginBusy) onLoginButton?.invoke(false)
                 }
@@ -164,6 +212,14 @@ class StartView(context: Context) : View(context) {
         const val CURSOR_LOGIN = 1
         const val CURSOR_REPORT = 2
         const val CURSOR_KEYS = 3
+        const val CURSOR_HOW = 4
+        /** the add-ons' card in the line's panel: the title's and the text's sizes, the smallest either shrinks to, the text's lines;
+         *  the How button's width (ReportNotice's) */
+        const val CARD_TITLE = 30f
+        const val CARD_TEXT = 24f
+        const val CARD_MIN = 18f
+        const val CARD_LINES = 3
+        const val HOW_W = 260f
         /** Report and Keyboard, in the row's line at the screen's two ends */
         const val SIDE_M = 40f
         const val SIDE_W = 220f

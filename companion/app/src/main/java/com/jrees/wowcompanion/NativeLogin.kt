@@ -52,6 +52,8 @@ object NativeLogin {
      * character select 32-38 KB/s (22:31:32-34). No root: /proc/net is closed, so the watcher's realm connection never comes here.
      */
     @Volatile var pastLogin = false; private set
+    /** when [pastLogin] was last set (epoch ms; 0 = not this run): the add-ons' silence clock starts there (AddonSilence.Watch) */
+    @Volatile var pastLoginAt = 0L; private set
     /**
      * THE LOGIN TRIAGE (2026-11-13): the game was downloading as it read this run's file ([PreLoginTraffic.busyAtRead]), so neither a
      * burst nor two-way keepalives are its sign-in (a streamed install's data said "past the login screen" at the authenticator,
@@ -165,7 +167,7 @@ object NativeLogin {
      */
     fun prepare(ctx: Context, gameRoot: File, flavor: String): File? = try {
         clear()
-        consumed = false; firstReadAt = 0L; pastLogin = false; quietFor = 0; quiet = false   // a new client run
+        consumed = false; firstReadAt = 0L; pastLogin = false; pastLoginAt = 0L; quietFor = 0; quiet = false   // a new client run
         outOfWorld = false; reachedWorld = false; lifeMs = MAX_LIFE_MS; appCtx = ctx.applicationContext; changed()
         playAt = System.currentTimeMillis(); windowArmed = false; windowSeen = false; expiredUnread = false; main.post { preLogin.reset(); afterLogin.reset() }
         downloading = false; holdFrom = 0L; capHeld = false
@@ -290,7 +292,7 @@ object NativeLogin {
         }
         if (!pastLogin && rxBytes >= PAST_LOGIN_BYTES && signInTraffic()) main.post {
             if (!pastLogin) {
-                pastLogin = true
+                pastLogin = true; pastLoginAt = System.currentTimeMillis()
                 logEvent("past the login screen ($rxBytes B/s${if (!consumed) ", no login.txt read" else ""})"); onChange?.invoke()
             }
         }
@@ -377,7 +379,7 @@ object NativeLogin {
      */
     fun markPastLogin(why: String) {
         if (pastLogin) return
-        pastLogin = true
+        pastLogin = true; pastLoginAt = System.currentTimeMillis()
         logEvent("past the login screen ($why)"); onChange?.invoke()
     }
 

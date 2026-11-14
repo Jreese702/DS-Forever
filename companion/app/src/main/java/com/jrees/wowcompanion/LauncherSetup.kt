@@ -28,6 +28,7 @@ import java.security.MessageDigest
  *  - the outcome is kept ([STATE] in the app's own storage): a set this app already installed and verified that is missing or changed
  *    at a later start was removed by something else - said ("removed since ..."), counted, and named as the cause after the second time;
  *  - [problem] is the one terse line for the launcher's Add-ons row, Home's add-ons notice and the problem report.
+ * And DS Forever's own add-ons switched off in the game's AddOns list go back on ([reenable], the user's pick 2026-11-14).
  * Returns one line for the launcher's status / log.
  */
 object LauncherSetup {
@@ -57,11 +58,134 @@ object LauncherSetup {
      */
     data class Outcome(val ok: Boolean, val line: String, val why: String? = null, val action: String = "none", val again: Int = 0)
 
-    fun run(ctx: Context, flavorRoot: File): String = try { work(ctx, flavorRoot) } catch (t: Throwable) {
-        Log.w(TAG, "launcher setup: ${t.message}")
-        val o = Outcome(false, "DS Forever setup failed: ${t.message}", "Add-ons not installed: ${reason(t)}")
-        last = o; runCatching { keep(File(ctx.filesDir, STATE), o, null, System.currentTimeMillis()) }
-        o.line
+    fun run(ctx: Context, flavorRoot: File): String {
+        val line = try { work(ctx, flavorRoot) } catch (t: Throwable) {
+            Log.w(TAG, "launcher setup: ${t.message}")
+            val o = Outcome(false, "DS Forever setup failed: ${t.message}", "Add-ons not installed: ${reason(t)}")
+            last = o; runCatching { keep(File(ctx.filesDir, STATE), o, null, System.currentTimeMillis()) }
+            o.line
+        }
+        // the user's pick (2026-11-14): DS Forever's own add-ons switched off in the game's AddOns list go back on, with the game stopped
+        val r = runCatching { reenable(File(flavorRoot, "WTF"), { DependencyAddons.gameRunning() }) }
+            .getOrElse { Reenable(skipped = "not checked (${it.javaClass.simpleName})") }
+        lastReenable = r
+        if (r.lines > 0 || r.failed > 0) Log.w(TAG, "AddOns.txt: ${r.line()}") else Log.i(TAG, "AddOns.txt: ${r.line()}")
+        runCatching { DiagLog.event("addons", "AddOns.txt before Play: ${r.line()}") }
+        runCatching { File(ctx.filesDir, REENABLE_STATE).writeText(JSONObject().put("at", System.currentTimeMillis()).put("line", r.line()).toString()) }
+        return if (r.lines > 0 || r.failed > 0) "$line; AddOns.txt: ${r.short()}" else line
+    }
+
+    // ------------------------------------------------------------------ DS Forever's own add-ons switched back on (AddOns.txt)
+
+    /**
+     * DS FOREVER'S ADD-ONS SWITCHED OFF IN THE GAME'S ADDONS LIST GO BACK ON (the user's pick, 2026-11-14: "When the app finds DS Forever's
+     * own add-ons switched off in the game's AddOns list: switch them back on"). The game keeps what its AddOns list switched off in
+     * AddOns.txt, one per character (WTF/Account/<account>/<realm>/<character>/AddOns.txt) and, when the client keeps one, one for the
+     * account (WTF/Account/<account>/AddOns.txt), a line per add-on: "<folder>: enabled" / "<folder>: disabled". A "has been blocked"
+     * pop-up's Disable (a Disable + ReloadUI) or an untick there leaves ours "disabled": the game then loads none of them, TapPad's own
+     * switch-back-on (pad20) never runs, and the bottom screen waits for add-ons that never speak.
+     * Before Play, with the game stopped ([run], from the launcher's prepareLaunch):
+     *  - ONLY our own lines change ("WowCompanion<letters>" at the line's start, as each of our folders is named, the case exact),
+     *    "disabled" to "enabled"; every
+     *    other line - another add-on's, ours already on, anything not in that form - stays byte for byte, the line endings and a BOM too;
+     *  - a file without one of ours switched off is not written at all; one that is: written beside it ([NEW]), read back, then renamed
+     *    over it (a stop part-way leaves the old file whole; the next run removes a leftover copy);
+     *  - nothing when [gameRunning] says the game runs (checked before the walk and again before each write);
+     *  - the account, realm and character names are never read into anything: the walk holds only File objects, the result is counts.
+     * Pure java.io (dsforever's AddonsReenableTest).
+     */
+    fun reenable(wtf: File, gameRunning: () -> Boolean): Reenable {
+        if (gameRunning()) return Reenable(skipped = "not checked: the game is running")
+        val account = File(wtf, "Account")
+        if (!account.isDirectory) return Reenable(skipped = "none yet (no WTF/Account)")
+        var files = 0; var accountWide = 0; var off = 0; var lines = 0; var written = 0; var failed = 0
+        val why = LinkedHashSet<String>()
+        fun dirs(d: File): List<File> = d.listFiles()?.filter { it.isDirectory && !isLink(it) && !it.name.equals("SavedVariables", true) }.orEmpty()
+        fun one(f: File, wide: Boolean) {
+            File(f.path + NEW).takeIf { it.isFile }?.delete()                // a copy left by a run stopped part-way
+            if (!f.isFile || isLink(f)) return
+            files++; if (wide) accountWide++
+            try {
+                val raw = f.readBytes()
+                val (text, n) = switchOn(String(raw, Charsets.ISO_8859_1))      // byte for byte: every other byte stays as it was
+                if (n == 0) return
+                off++
+                if (gameRunning()) { failed++; why += "the game started"; return }
+                val bytes = text.toByteArray(Charsets.ISO_8859_1)
+                val tmp = File(f.path + NEW)
+                try {
+                    tmp.writeBytes(bytes)
+                    check(tmp.readBytes().contentEquals(bytes)) { "did not read back" }
+                    val moved = runCatching { java.nio.file.Files.move(tmp.toPath(), f.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING); true }.getOrElse { tmp.renameTo(f) }
+                    check(moved) { "not replaced" }
+                    written++; lines += n
+                } finally { if (tmp.exists()) tmp.delete() }
+            } catch (t: Throwable) {
+                failed++; why += reasonShort(t)                               // never the message: it can carry the path (the names)
+            }
+        }
+        for (acct in dirs(account)) {
+            one(File(acct, ADDONS_TXT), wide = true)
+            for (realm in dirs(acct)) for (ch in dirs(realm)) one(File(ch, ADDONS_TXT), wide = false)
+        }
+        return Reenable(files, accountWide, off, lines, written, failed, why.joinToString(", ").ifEmpty { null })
+    }
+
+    /**
+     * [files] AddOns.txt files read ([accountWide] of them the account's own), [off] those with one of ours switched off, [lines] our
+     * lines switched back on (in the files [written]), [failed] files not written ([failWhy]); [skipped] why nothing was checked. Counts
+     * only.
+     */
+    data class Reenable(val files: Int = 0, val accountWide: Int = 0, val off: Int = 0, val lines: Int = 0, val written: Int = 0,
+                        val failed: Int = 0, val failWhy: String? = null, val skipped: String? = null) {
+        fun line(): String {
+            skipped?.let { return it }
+            val read = "$files checked" + if (accountWide > 0) " ($accountWide account-wide)" else ""
+            if (off == 0) return "$read; DS Forever's add-ons on in every one"
+            return "$read; DS Forever's add-ons were switched off in $off: $lines switched back on in $written" +
+                if (failed > 0) ", $failed NOT written (${failWhy ?: "?"})" else ""
+        }
+        /** the launcher's status line: only when something was switched or failed */
+        fun short(): String = if (failed > 0) "$lines of DS Forever's switched back on, $failed files not written" else "$lines of DS Forever's switched back on"
+    }
+
+    /** the file's text with every one of OUR lines that says "disabled" saying "enabled" (the line's own spacing, ending, a BOM kept),
+     *  and how many changed */
+    internal fun switchOn(text: String): Pair<String, Int> {
+        var n = 0
+        val out = StringBuilder(text.length + 16)
+        var start = 0
+        while (start <= text.length) {
+            val nl = text.indexOf('\n', start)
+            val end = if (nl < 0) text.length else nl
+            val cr = end > start && text[end - 1] == '\r'
+            val body = text.substring(start, if (cr) end - 1 else end)
+            val m = OURS_OFF.matchEntire(body)
+            if (m != null) { out.append(m.groupValues[1]).append("enabled").append(m.groupValues[2]); n++ } else out.append(body)
+            if (cr) out.append('\r')
+            if (nl < 0) break
+            out.append('\n'); start = nl + 1
+        }
+        return out.toString() to n
+    }
+
+    /** one of OUR lines switched off: a BOM (as Latin-1 bytes) at the file's start, spaces, "WowCompanion<more>", the colon, "disabled" */
+    private val OURS_OFF = Regex("""^((?:\u00EF\u00BB\u00BF)?[ \t]*WowCompanion[A-Za-z0-9_]*[ \t]*:[ \t]*)disabled([ \t]*)$""")
+    private const val ADDONS_TXT = "AddOns.txt"
+    /** the last before-Play re-enable's counts (the report's line: [reportLine]) */
+    const val REENABLE_STATE = "addons_txt.json"
+    @Volatile var lastReenable: Reenable? = null
+
+    private fun isLink(f: File) = runCatching { java.nio.file.Files.isSymbolicLink(f.toPath()) }.getOrDefault(true)
+    private fun reasonShort(t: Throwable): String {
+        val m = generateSequence(t) { it.cause }.mapNotNull { it.message }.joinToString(" ")
+        return when {
+            m.contains("ENOSPC", true) || m.contains("No space", true) -> "no room"
+            m.contains("EACCES", true) || m.contains("Permission denied", true) || m.contains("EPERM", true) -> "no permission"
+            m.contains("EROFS", true) || m.contains("Read-only", true) -> "read-only"
+            else -> t.javaClass.simpleName
+        }
     }
 
     private fun work(ctx: Context, root: File): String {
@@ -190,9 +314,11 @@ object LauncherSetup {
     /** the report's line: the kept outcome in words */
     fun reportLine(ctx: Context): String {
         val l = last
-        if (l != null) return "add-on setup: ${if (l.ok) "ok" else "FAILED"} (${l.action}${if (l.again > 0) ", removed again ${l.again}x" else ""}): ${l.line}"
+        if (l != null) return "add-on setup: ${if (l.ok) "ok" else "FAILED"} (${l.action}${if (l.again > 0) ", removed again ${l.again}x" else ""}): ${l.line}" +
+            "; AddOns.txt: ${lastReenable?.line() ?: "?"}"
         val kept = runCatching { JSONObject(File(ctx.filesDir, STATE).readText()) }.getOrNull() ?: return "add-on setup: not run yet"
-        return "add-on setup (an earlier start): ${if (kept.optBoolean("ok")) "ok" else "FAILED"}: ${kept.optString("line")}"
+        return "add-on setup (an earlier start): ${if (kept.optBoolean("ok")) "ok" else "FAILED"}: ${kept.optString("line")}; AddOns.txt: " +
+            (runCatching { JSONObject(File(ctx.filesDir, REENABLE_STATE).readText()).optString("line") }.getOrNull()?.ifEmpty { null } ?: "?")
     }
 
     private fun keep(state: File, o: Outcome, appSet: Int?, now: Long, kept: JSONObject? = null) {
