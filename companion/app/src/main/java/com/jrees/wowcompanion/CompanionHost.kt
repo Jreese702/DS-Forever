@@ -164,8 +164,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private lateinit var professionsView: ProfessionsView
     /** the Calendar room (calendar session): the game's month calendar, look and answer */
     private lateinit var calendarView: CalendarView
+    /** the Macros room (Spells s10; the user, 2026-11-13: "start building a macro room ... Use the room slot for macros") */
+    private lateinit var macrosView: MacrosView
     /** the game's own calendar window was open at the last `calendar` document; null until the first (no room jump at start) */
     private var calWin: Boolean? = null
+    /** the game's own macro window open at the last macros document (D2: its OPENING brings the Macros room up) */
+    private var macWin: Boolean? = null
     /** the Talents room (spells session): its OWN room on the bar (the user 2026-09-30: "replace it with a button for the talents") */
     private lateinit var talentsView: TalentsView
     /** the bar selector (home session, LATER item 7): Select puts a controller cursor on the bar */
@@ -696,7 +700,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         professionsView = ProfessionsView(this).apply { onLeave = { roomLeft(Room.PROFESSIONS) }; lastHandOverAt = { capHolderAt } }
         // the Calendar room (calendar session). B that leaves it goes HOME (user ruling)
         calendarView = CalendarView(this).apply { onLeave = { roomLeft(Room.CALENDAR) } }
-        for (v in listOf<View>(homeView, mapView, worldMapRoom, questsView, castView, spellbookView, controllerView, talentsView, professionsView, groupFinderView, characterView, bagsView, chatView, socialView, calendarView, settingsRoom)) {
+        // the Macros room (Spells s10): B at its grid goes HOME (the add-on's macpad BACK); its lazy row is asked on the spells / quests
+        // documents' shared grid (Book b63's padtab pick)
+        macrosView = MacrosView(this).apply {
+            onLeave = { roomLeft(Room.MACROS) }
+            padSource = { listOf(talentsPad, spellsPad, questsPad).firstOrNull { it?.optJSONObject("rows")?.has("padtab") == true } ?: spellsPad ?: questsPad }
+        }
+        // THE CALENDAR BUTTON (the user, 2026-11-13: "The calender can be moved up to a button on the right side of the map name make it
+        // small"): the small button at the right end of Home's map-name band opens the Calendar room, on the first touch in a fight too
+        homeView.onCalendar = { if (room != Room.CALENDAR) show(Room.CALENDAR) }
+        for (v in listOf<View>(homeView, mapView, worldMapRoom, questsView, castView, spellbookView, controllerView, talentsView, professionsView, groupFinderView, characterView, bagsView, chatView, socialView, calendarView, macrosView, settingsRoom)) {
             content.addView(v, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             v.visibility = View.GONE
@@ -858,7 +871,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             onTap = { col -> spellsTap(col) },                    // b37: the Bind box's Normal / In combat
             onCastBarTaps = { cells -> castBarTaps(cells) },        // GitHub #43 cb3: the box's Cast bar tab and its slots
             // Book b59 / bags-bindbox1: a finger's Keep / Undo / Back in the box the Bags room hosts (a bag item's): Bags' own A / B
-            onHostKey = { k -> if (::bagsView.isInitialized) bagsView.boxKey(k) })
+            onHostKey = { k -> if (room == Room.MACROS && ::macrosView.isInitialized) macrosView.boxKey(k) else if (::bagsView.isInitialized) bagsView.boxKey(k) })
         spellsOverlay.visibility = View.GONE
         radialView = HomeRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pinPicker = BagsPinPicker(this)
@@ -1193,6 +1206,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the Calendar room holds the controller while it shows (a guest of the shared capture): `f` on leaving, `h` on entering
         val calIn = r == Room.CALENDAR && room != Room.CALENDAR
         if (room == Room.CALENDAR && r != Room.CALENDAR) calendarView.onHidden()
+        // the Macros room holds the controller while it shows (its own guest "macros"): `f` / `fb` on leaving, `h` on entering
+        val macIn = r == Room.MACROS && room != Room.MACROS
+        if (room == Room.MACROS && r != Room.MACROS) macrosView.onHidden()
         // THE CHAT ROOM'S GLIDE (b-chat-slide): a glide still running lands at once; Home's picture is taken BEFORE it gives the map
         // and the bars back (after that its slots are empty)
         chatGlideEnd()
@@ -1257,6 +1273,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Room.CONTROLLER -> controllerView
             Room.SOCIAL -> socialView
             Room.CALENDAR -> calendarView
+            Room.MACROS -> macrosView
             Room.SETTINGS -> settingsRoom
         }
         shownView?.takeIf { it !== v }?.let { it.alpha = 1f; it.scaleX = 1f; it.scaleY = 1f }
@@ -1275,6 +1292,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         if (gfIn) groupFinderView.onShown()
         if (calIn) calendarView.onShown()
+        if (macIn) macrosView.onShown()
         // ... and the same rooms take the controller here, for every route that brings them up (each tap guarded on the room not
         // holding already: a room the GAME opened holds before its jump lands here, so nothing is tapped then - the trainer lend too)
         touchRoomsEnter(was, r)
@@ -1729,6 +1747,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // drawn button at once; display only (Bags ignores other keys, and keys while it does not hold the controller)
             if (room == Room.BAGS) bagsView.onPadKey(k, down)
             if (::interactView.isInitialized) interactView.onPadKey(k, down)     // 1.0.8: its keyboard, only while it is up
+            if (room == Room.MACROS) macrosView.onPadKey(k, down)               // the Macros room's keyboard, only while it is up
             if (k == "PADFORWARD" && down) startPressed()
             if (k == "PAD2" && down) bPressed()
             // p35 (the user 2026-11-10: "When pressing down on the Dpad without the DS toolbar enabled the home button is lighting up for
@@ -1779,6 +1798,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         mapOf(
             "character" to Pair({ room == Room.CHARACTER }, { characterView.freeAgain() }),
             "calendar" to Pair({ room == Room.CALENDAR }, { calendarView.freeAgain() }),
+            "macros" to Pair({ room == Room.MACROS }, { macrosView.freeAgain() }),
             "professions" to Pair({ room == Room.PROFESSIONS }, { professionsView.freeAgain() }),
             "groupfinder" to Pair({ room == Room.GROUPFINDER }, { groupFinderView.freeAgain() }),
             "social" to Pair({ room == Room.SOCIAL }, { socialView.freeAgain() }),
@@ -2184,6 +2204,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "chatt", "chatq", "chatlink" -> {
                 chatView.onDoc(msg)      // Chat's rework: typed / quick chat answers, link tooltips
                 if (current && ::interactView.isInitialized) interactView.onChatAnswer(msg)     // 1.0.8: an NPC window's field (chat22)
+                if (current && ::macrosView.isInitialized) macrosView.onChatAnswer(msg)           // the Macros room's field (chat22)
             }
             "quests" -> msg.optJSONObject("q")?.let {
                 it.optJSONObject("pad")?.let { p -> questsPad = p }
@@ -2553,6 +2574,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 calendarView.onDoc(msg, current)
                 val s = calendarView.state
                 strip.mark(Room.CALENDAR.label, (s?.pending ?: 0) > 0)
+                homeView.calPending = (s?.pending ?: 0) > 0              // the invite mark now rides Home's Calendar button
                 val win = s?.shown == true
                 // only on a CURRENT document: a change inside the backlog LogTail replays at start is history, and the jump
                 // would send the room's `hold` tap into a game that may not be live (Home's finding, AGENT_LOG 9596d1a)
@@ -2560,6 +2582,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 calWin = win
             }
             "calack" -> calendarView.onDoc(msg, current)
+            // the Macros room (Spells s10): its document and answers; the controller's BACK while it shows. D2 (the user's pick): the
+            // GAME'S own macro window opening brings the room up (only on a CURRENT document); the room then closes it once
+            "macros" -> {
+                macrosView.onDoc(msg, current)
+                val win = macrosView.state?.win == true
+                if (current && macWin == false && win && room != Room.MACROS) show(Room.MACROS)
+                macWin = win
+            }
+            "macack" -> macrosView.onDoc(msg, current)
+            "macpad" -> if (current) { if (room == Room.MACROS) macrosView.onPad(msg) else if (!msg.has("lost")) freeHidden("macros", press = true) }
             // a press while the room is hidden means Calendar still holds: free it (the one rule for every room)
             "calpad" -> if (current) { if (room == Room.CALENDAR) calendarView.onPad(msg) else if (!msg.has("lost")) freeHidden("calendar", press = true) }
             // the Talents page (spells session): the tree, the chosen talent, the controller's place, the answers
@@ -3026,6 +3058,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         if (room == Room.BAGS && bagsView.ownsStart()) return          // bagsView.onPadKey already had it (the unclaimed route)
         if (::interactView.isInitialized && interactView.ownsStart()) return   // an NPC window's keyboard: its Done (onPadKey had it)
+        if (room == Room.MACROS && macrosView.ownsStart()) return      // the Macros room's keyboard: its Done (onPadKey had it)
         // the user relaying a player (2026-11-13: "the pause radial is appearing on the top and bottom ..."): the wheel only while a
         // CURRENT padmap of this game run says Start is ours (or a guest's); else the press is the game's alone (its own radial), and
         // with the add-ons silent Home says so (StartRoute)

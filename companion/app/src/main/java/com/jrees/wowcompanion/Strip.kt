@@ -576,6 +576,9 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
             c.drawBitmap(bmp, null, RectF(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f), if (active) pArtDown else pArtDim)
             return true
         }
+        // the Macros room (Spells s10; D7, the user's pick: stand-ins now): the game's question-mark macro icon in the radial's ring until
+        // UI Art crops the game's own macro window portrait (no kit picture of its own yet)
+        if (r == Room.MACROS && UiKit.tex("icon_macros") == null) { UiKit.macroRing(c, cx, cy, size * 0.92f, active, if (active) 255 else 215); return true }
         val bmp = UiKit.tex("icon_" + r.label.lowercase()) ?: return false
         val box = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
         c.drawBitmap(bmp, null, box, if (active) pArtDown else pArtDim)

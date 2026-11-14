@@ -53,7 +53,7 @@ ACT_ON_DOWN = true                 -- the game's ActionButtonUseKeyDown
 
 -- the spies: none of these may ever be called (no trace: feedback_wow_no_trace; no Blizzard window code: taint)
 SPY = {}
-for _, n in ipairs({ "SetBinding", "SaveBindings", "CreateMacro", "EditMacro", "SetCVar", "PlaceAction", "PickupAction",
+for _, n in ipairs({ "SetBinding", "SaveBindings", "CreateMacro", "EditMacro", "DeleteMacro", "SetCVar", "PlaceAction", "PickupAction",
                      "PickupSpell", "PickupMacro", "ShowUIPanel", "HideUIPanel", "ToggleFrame", "CloseAllBags", "OpenAllBags",
                      "ToggleSpellBook", "InspectUnit", "TargetFrame_OpenMenu", "UnitPopup_OpenMenu", "ToggleGameMenu",
                      "ToggleCharacter", "ToggleFriendsFrame", "CastSpellByName", "TargetUnit", "FocusUnit" }) do

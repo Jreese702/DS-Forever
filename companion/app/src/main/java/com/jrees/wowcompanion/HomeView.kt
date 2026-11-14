@@ -629,6 +629,15 @@ class HomeView(
 
     /** B took a full module or the buff list back to Home's rest while the disc showed B: the disc's press (MainActivity: strip.homePressed) */
     var onBHome: (() -> Unit)? = null
+    /**
+     * THE CALENDAR BUTTON (the user, 2026-11-13: "The calender can be moved up to a button on the right side of the map name make it
+     * small"; HomeCalendarButton): its touch (at rest and in a fight, the first touch) and the open map module cursor's A open the
+     * Calendar room (the host's show)
+     */
+    var onCalendar: (() -> Unit)? = null
+    /** an invitation waits (the calendar document's `pend`): the game's mark on the button */
+    var calPending = false
+        set(v) { if (field != v) { field = v; invalidate(); auraPane.invalidate() } }
 
     // ---------------------------------------------------------------- the fight faces and B's give-back
 
@@ -2005,9 +2014,13 @@ class HomeView(
         if (zoneA > 0.01f && zoneText.isNotEmpty()) now[Part.MAP]?.let { m ->
             // the name is half the bar's height (UiKit.zoneBand): a 64 px bar = 32 px text (user 09-30: "the map name is SUPER
             // small and hard to read"); map's arrow keeps below ZONE_BAND_BOTTOM
-            val band = RectF(m.left + 8f, m.top + ZONE_BAND_TOP, m.right - 8f, m.top + ZONE_BAND_BOTTOM)
-            val save = if (zoneA < 0.99f) c.saveLayerAlpha(band.left - 4f, band.top - 4f, band.right + 4f, band.bottom + 4f, (zoneA * 255).toInt()) else -1
+            // THE CALENDAR BUTTON (the user, 2026-11-13: "a button on the right side of the map name make it small"): the band ends
+            // before it, and both fade and slide together
+            val band = RectF(m.left + 8f, m.top + ZONE_BAND_TOP, HomeCalendarButton.bandRight(m.right), m.top + ZONE_BAND_BOTTOM)
+            val cb = HomeCalendarButton.box(m.right, m.top)
+            val save = if (zoneA < 0.99f) c.saveLayerAlpha(band.left - 4f, band.top - 4f, cb[2] + 4f, band.bottom + 4f, (zoneA * 255).toInt()) else -1
             UiKit.zoneBand(c, band, zoneText, Theme.zoneColour(zonePvp))
+            UiKit.calendarButton(c, RectF(cb[0], cb[1], cb[2], cb[3]), calPending, down = auraPane.calDown)
             if (save >= 0) c.restoreToCount(save)
         }
         if (slideSave >= 0) c.restoreToCount(slideSave)
@@ -2409,7 +2422,7 @@ class HomeView(
             // (the user on the test build, 2026-10-12: "The quest arrow is getting stuck on the + and - buttons. It should show on
             // the edge of the screen for those"): the arrow keeps the true edge there, under the buttons, which rest at ZOOM_MIN
             if (lent(mapView) && !fullMap()) mapView.rimKeepOut = if (!mapView.compact) emptyList()
-                else listOf(buffBox, debuffBox, panel, warnBox).filter { !it.isEmpty }
+                else listOf(buffBox, debuffBox, panel, warnBox, calBox()).filter { !it.isEmpty }
             // Map 2026-10-09 (the user: the quest arrow under the card; the player lower): how far down the card covers the map now
             if (lent(mapView) && !fullMap()) mapView.compactCover = cardCover()
         }
@@ -2445,27 +2458,42 @@ class HomeView(
         // buffs' rows (8 a row, growing leftward, the first at the right), the debuffs' row under them; the cursor is the kit's
         // slot box; Right from the map enters on the buff row's LEFTMOST icon (nearest the map)
         private var fullCur: Pair<Boolean, Int>? = null              // (debuff, index in its list: 0 = rightmost)
-        val fullCursorOn get() = fullCur != null
+        val fullCursorOn get() = fullCur != null || calCur
         private val buffRects = ArrayList<RectF>(); private val debuffRects = ArrayList<RectF>()
 
         /** the open map closed: the cursor leaves the auras */
-        fun leaveFull() { fullCur = null; close(); if (lent(mapView)) mapView.hostZoomHidden = false }
+        fun leaveFull() { fullCur = null; calCur = false; close(); if (lent(mapView)) mapView.hostZoomHidden = false }
 
         /** D-pad Right from the map: onto the buffs' leftmost icon on their first line (the debuffs' when there are no buffs) */
         fun enterFull() {
             val nb = minOf(auras.shownBuffs.size, FULL_PER); val nd = minOf(auras.shownDebuffs.size, FULL_PER)
             fullCur = when { nb > 0 -> false to nb - 1; nd > 0 -> true to nd - 1; else -> null }
+            // the Calendar button (HomeCalendarButton): with no auras the cursor goes straight onto it
+            calCur = fullCur == null && calShows()
             invalidate()
         }
 
-        /** one press while the cursor is on an aura */
+        /** one press while the cursor is on an aura (or on the Calendar button) */
         fun fullKey(k: String) {
+            if (calCur) {
+                when (k) {
+                    // Left: the buffs' first row's right end (the debuffs' when there are no buffs), else back to the map
+                    "PADDLEFT" -> {
+                        calCur = false
+                        fullCur = when { auras.shownBuffs.isNotEmpty() -> false to 0; auras.shownDebuffs.isNotEmpty() -> true to 0; else -> null }
+                    }
+                    "PAD1" -> { calCur = false; onCalendar?.invoke() }          // A: the Calendar room
+                    "PAD2" -> calCur = false                                       // B: back to the map
+                }
+                invalidate(); return
+            }
             val (deb, i) = fullCur ?: return
             val n = (if (deb) auras.shownDebuffs else auras.shownBuffs).size
             val other = (if (deb) auras.shownBuffs else auras.shownDebuffs).size
             when (k) {
                 "PADDLEFT" -> fullCur = if (i + 1 < n && (i + 1) % FULL_PER != 0) deb to i + 1 else null      // past the leftmost: the map
                 "PADDRIGHT" -> if (i % FULL_PER > 0) fullCur = deb to i - 1
+                    else if (i < FULL_PER && (!deb || auras.shownBuffs.isEmpty()) && calShows()) { fullCur = null; calCur = true }   // the Calendar button
                 "PADDDOWN" -> if (!deb && i + FULL_PER < minOf(n, FULL_PER * ROW_LINES)) fullCur = false to i + FULL_PER
                     else if (!deb && other > 0) fullCur = true to minOf(i % FULL_PER, other - 1)
                 "PADDUP" -> if (deb && other > 0) fullCur = false to minOf(i % FULL_PER + FULL_PER * ((minOf(other, FULL_PER * ROW_LINES) - 1) / FULL_PER), other - 1)
@@ -2479,7 +2507,9 @@ class HomeView(
         private fun drawFull(c: Canvas, w: Float, h: Float, now: Long) {
             val nb = auras.shownBuffs.size; val nd = auras.shownDebuffs.size
             buffRects.clear(); debuffRects.clear()
-            val right = w - FULL_RIGHT
+            // the Calendar button has the corner (HomeCalendarButton.fullBox): the rows end left of it
+            val right = w - FULL_RIGHT - (if (calShows()) HomeCalendarButton.FULL_SHIFT else 0f)
+            if (calShows()) calBox().let { b -> UiKit.calendarButton(c, b, calPending, focus = calCur && open == null, down = calDown) }
             if (nb > 0) auraRow(c, auras.shownBuffs, false, FULL_TOP, right, buffBox, now, fromRight = true, rects = buffRects)
             var dTop = if (nb > 0) buffBox.bottom + 8f else FULL_TOP
             // the game's durability warning between the buffs and the debuffs (the user's pick): the debuffs make room for it
@@ -2765,9 +2795,58 @@ class HomeView(
 
         private var coverWas = false
 
+        // ---- THE CALENDAR BUTTON (HomeCalendarButton): its touch box here (the pane lies exactly over the map), its stop on the open
+        // map's cursor
+        /** a finger is down on it (its press look) */
+        var calDown = false
+            private set
+        private var calTracking = false
+        /** where the button shows in the pane: the band's corner at rest / in a fight, the corner by the buffs in the open map */
+        private fun calShows(): Boolean = shown?.let { it.full == null || it.takeover || fullMap() } == true && zoneText.isNotEmpty()
+        /** its box in the pane (the compact map: under the band's end; the open map: [HomeCalendarButton.fullBox]); empty = not shown */
+        fun calBox(): RectF {
+            if (!calShows() || width <= 0) return RectF()
+            val b = if (fullMap()) HomeCalendarButton.fullBox(width.toFloat(), FULL_RIGHT, FULL_TOP)
+                else HomeCalendarButton.box(width.toFloat(), 0f)
+            return RectF(b[0], b[1], b[2], b[3])
+        }
+        private fun calHit(x: Float, y: Float): Boolean {
+            if (!calShows() || open != null) return false
+            if (fullMap()) return HomeCalendarButton.inBox(x, y, HomeCalendarButton.fullBox(width.toFloat(), FULL_RIGHT, FULL_TOP), 12f)
+            return HomeCalendarButton.inHit(x, y, width.toFloat())
+        }
+        private fun calTouch(e: MotionEvent): Boolean {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    calTracking = calHit(e.x, e.y)
+                    if (calTracking) { calDown = true; this@HomeView.invalidate(); invalidate() }
+                    return calTracking
+                }
+                MotionEvent.ACTION_MOVE -> if (calTracking) {
+                    val d = calHit(e.x, e.y)
+                    if (d != calDown) { calDown = d; this@HomeView.invalidate(); invalidate() }
+                    return true
+                }
+                MotionEvent.ACTION_UP -> if (calTracking) {
+                    calTracking = false
+                    val go = calDown && calHit(e.x, e.y)
+                    calDown = false; this@HomeView.invalidate(); invalidate()
+                    if (go) { Log.i(TAG, "home: the Calendar button touched${if (grow.fighting(System.currentTimeMillis())) " (in a fight)" else ""}"); onCalendar?.invoke() }
+                    return true
+                }
+                MotionEvent.ACTION_CANCEL -> if (calTracking) { calTracking = false; calDown = false; this@HomeView.invalidate(); invalidate(); return true }
+            }
+            return false
+        }
+        /** the open map's cursor is on the button (Right from the buffs' first row's right end; straight on with no auras) */
+        var calCur = false
+            private set
+
         override fun onTouchEvent(e: MotionEvent): Boolean {
             // a touch on the open quest panel is the panel's (the map below takes it), never a buff's
             if (e.actionMasked == MotionEvent.ACTION_DOWN && fullMap() && lent(mapView) && mapView.panelCover()?.contains(e.x, e.y) == true) return false
+            // THE CALENDAR BUTTON's touch (HomeCalendarButton): the first touch opens the Calendar room, in a fight too (D8)
+            if (calTouch(e)) return true
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     zoomDown = when { zoomIn.contains(e.x, e.y) -> -1; zoomOut.contains(e.x, e.y) -> +1; else -> 0 }

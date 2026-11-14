@@ -806,11 +806,14 @@ check(clean(W) == {}, "R4 no lockdown breach, no spied call, no handle / snippet
 from wowstub import ADDONS, ADDON_OF, SRC as _SRC
 for _k, (_d, _f) in {"bags": ("WowCompanion", "Bags.lua"), "character": ("WowCompanionCharacter", "Character.lua"),
                      "social": ("WowCompanionSocial", "Social.lua"), "calendar": ("WowCompanionCalendar", "Calendar.lua"),
-                     "gfinder": ("WowCompanionGroupFinder", "GroupFinder.lua"), "prof": ("WowCompanionProfessions", "Professions.lua")}.items():
+                     "gfinder": ("WowCompanionGroupFinder", "GroupFinder.lua"), "prof": ("WowCompanionProfessions", "Professions.lua"),
+                     "spellsroom": ("WowCompanionSpells", "Spells.lua")}.items():
     F[_k] = os.path.join(ADDONS, _d, _f)
     _SRC[_k] = open(F[_k], encoding="utf-8").read()
     ADDON_OF[_k] = _d
-ROOM_FILES = tuple(list(WORLD_FILES[:2]) + ["bags"] + list(WORLD_FILES[2:]) + ["character", "social", "calendar", "gfinder", "prof"])
+# (Spells s10: the Macros room's block lives in Spells.lua, loaded before Book as the game's .toc does)
+ROOM_FILES = tuple(list(WORLD_FILES[:2]) + ["bags"] + list(WORLD_FILES[2:7]) + ["spellsroom"] + list(WORLD_FILES[7:]) +
+                   ["character", "social", "calendar", "gfinder", "prof"])
 ROOM_LOGIN = ('for _, a in ipairs({ "WowCompanion", "WowCompanionQuests", "WowCompanionHub", "WowCompanionInteract", "WowCompanionSpells", '
               '"WowCompanionCharacter", "WowCompanionSocial", "WowCompanionCalendar", "WowCompanionGroupFinder", "WowCompanionProfessions" }) do '
               'fire("ADDON_LOADED", a) end; fire("PLAYER_LOGIN"); fire("PLAYER_ENTERING_WORLD", true, false); runTimers(NOW + 10)')
@@ -831,6 +834,8 @@ def room_world():
     for e in errs:
         L.eval('function(s) LOADERRS[#LOADERRS + 1] = s end')(e)
     L.execute('__IN.ACT.trust(); advance(1); __IN.N.setMode(true); advance(1)')
+    # the Macros room's lazy row, made out of combat as the app's first open makes it (Book's padtab pick 39 then 34)
+    L.execute('if WowCompanion.macroRoom then WowCompanion.macroRoom.ensure() end; advance(0.5)')
     return L
 
 
@@ -862,6 +867,8 @@ ROOMS = [
     ("SPELLBOOK", "spells", lambda L: rtap(L, "spells", L.eval('WowCompanion.spellsWinCols.open')), None, None),
     ("TALENTS", "spells", lambda L: rtap(L, "spells", L.eval('WowCompanion.spellsWinCols.topen')), None, None),
     ("CALENDAR", "calendar", lambda L: rtap(L, "cal", slot(L, "cal", "h")), None, ('calpad', ("cal", "fb"))),
+    # the Macros room (Spells s10): its own Lua B chain - B at the grid lets go with "B" (in a fight: Interact's fightHome)
+    ("MACROS", "macros", lambda L: rtap(L, "mac", 0), None, None),
     ("GROUPFINDER", "groupfinder", lambda L: rtap(L, "gf", slot(L, "gf", "h")), None, ('gfpad', ("gf", "fb"))),
     ("SOCIAL", "social", lambda L: rtap(L, "sact", SOCIAL_COL["hold"]), None, ('socialpad', None)),
     ("PROFESSIONS", "professions", lambda L: rtap(L, "prof", slot(L, "profctl", "book")), None, ('profpad', None)),
@@ -953,6 +960,8 @@ def bagwin_world():
     for e in errs:
         L.eval('function(s) LOADERRS[#LOADERRS + 1] = s end')(e)
     L.execute('__IN.ACT.trust(); advance(1); __IN.N.setMode(true); advance(1)')
+    # the Macros room's lazy row, made out of combat as the app's first open makes it (Book's padtab pick 39 then 34)
+    L.execute('if WowCompanion.macroRoom then WowCompanion.macroRoom.ensure() end; advance(0.5)')
     return L
 
 

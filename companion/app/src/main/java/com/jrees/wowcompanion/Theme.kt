@@ -215,6 +215,11 @@ enum class Room(val label: String, val onBar: Boolean = true) {
     // feel like it should actually be a home tab ... remove the Chat tab in favor of this controller one"); CHAT stays a room, off
     // the bar, opened from Home's chat panel ("Tap Home's chat panel") and the game's chat key
     BAGS("BAGS"), CONTROLLER("CONTROLLER"), CHAT("CHAT", onBar = false), SOCIAL("SOCIAL"),
-    CALENDAR("CALENDAR"),         // calendar session: the last room before Settings (the kit's icon_calendar)
+    // THE MACROS ROOM TAKES THE CALENDAR'S SLOT (the user, 2026-11-13: "Lets scrap the smart ranged attack and start building a macro
+    // room. The calender can be moved up to a button on the right side of the map name make it small. Use the room slot for macros."):
+    // CALENDAR stays a room, off the bar (Chat's precedent), opened from the small button at the right end of Home's map-name band
+    // (HomeCalendarButton) and the game's own calendar window; MACROS is where it stood, the last room before Settings
+    CALENDAR("CALENDAR", onBar = false),
+    MACROS("MACROS"),             // Spells s10's Macros room (the game's macro window rebuilt)
     SETTINGS("SETTINGS")          // keep last: the strip lays rooms out in this order
 }

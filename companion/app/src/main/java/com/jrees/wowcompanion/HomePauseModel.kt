@@ -43,6 +43,9 @@ object HomePauseModel {
         return out
     }
 
+    /** the Macros room (Spells s10): page 3's slice where Calendar stood, and the Game Menu's own "Macros" entry (HomePauseView) */
+    val MACROS = Slice("macros", "Macros", Kind.ROOM, room = "MACROS")
+
     /** pk1: Polestar's Skip step / Previous step (Home picks: MapView.polestarSkip) */
     val PS_SKIP = Slice(PolestarSkip.KEY_SKIP, PolestarSkip.SKIP_WORD, Kind.HOME)
     val PS_PREV = Slice(PolestarSkip.KEY_PREV, PolestarSkip.PREV_WORD, Kind.HOME)
@@ -78,9 +81,12 @@ object HomePauseModel {
         // page 3 (RIGHT): three slices, the rest empty (hidden), as in the game; pk1 (the user, 2026-11-12: "we need to make a way to
         // skip a polestar objective"; the pick: the pause wheel too): Skip step (N) and Previous step (NW), shown only while a Polestar
         // step is ([Flow.psSkip]), Previous greyed with nothing to undo ([Flow.psPrev])
+        // THE MACROS ROOM TAKES THE CALENDAR'S SLICE as it takes its bar slot (the user, 2026-11-13: "The calender can be moved up to
+        // a button on the right side of the map name make it small. Use the room slot for macros."): the Calendar is Home's map-name
+        // button now (HomeCalendarButton: by touch, and on the open map module's cursor)
         kitOrder(listOf(
             later("time", "Clock"),
-            room("calendar", "Calendar", "CALENDAR"),
+            MACROS,
             PS_SKIP, PS_PREV,
             game("pvp", "PvP", "pvp", confirm = true),
             null, null, null,

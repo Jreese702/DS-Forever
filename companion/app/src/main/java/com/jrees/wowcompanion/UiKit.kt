@@ -472,8 +472,83 @@ object UiKit {
             pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Theme.bronzeDim; c.drawRect(r, pFlat)
         }
         val p = bodyPaint(r.height() * 0.5f, colour).apply { textAlign = Paint.Align.CENTER }
-        val shown = TextUtils.ellipsize(Tr.t(zone), p, r.width() - 40f, TextUtils.TruncateAt.END).toString()
-        c.drawText(Tr.t(shown), r.centerX(), r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        // the zone's name is the GAME's text (GetZoneText): never through Tr.t, the menus' translator (the user's ruling 2026-11-07:
+        // "menus only"; fixed with the Calendar button, the Macros room's change)
+        val shown = fitEnd(zone, p, r.width() - 40f)
+        c.drawText(shown, r.centerX(), r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+    }
+
+    /** [text] cut to [maxW] with an ellipsis (Paint.breakText: the device's and the off-device canvas's measure alike) */
+    fun fitEnd(text: String, p: Paint, maxW: Float): String {
+        if (p.measureText(text) <= maxW) return text
+        val n = p.breakText(text, true, (maxW - p.measureText("…")).coerceAtLeast(0f), null)
+        return text.take(n).trimEnd() + "…"
+    }
+
+    /**
+     * THE CALENDAR BUTTON at the right end of Home's map-name band (the user, 2026-11-13: "The calender can be moved up to a button on
+     * the right side of the map name make it small"), [r] square, the band's height: the band's own plate, the kit's small calendar
+     * picture on it (D7: a stand-in, our icon_calendar), the game's invitation mark at its top right while one waits ([pending]),
+     * the gold box while the open map module's cursor is on it ([focus]).
+     */
+    fun calendarButton(c: Canvas, r: RectF, pending: Boolean, focus: Boolean = false, down: Boolean = false) {
+        pressed(c, r, down) {
+            val t = tex("zone_band")
+            if (t != null) {
+                val k = r.height() / t.height
+                val cap = 12
+                val cw = cap * k
+                c.drawBitmap(t, Rect(0, 0, cap, t.height), RectF(r.left, r.top, r.left + cw, r.bottom), pBmp)
+                c.drawBitmap(t, Rect(cap, 0, t.width - cap, t.height), RectF(r.left + cw, r.top, r.right - cw, r.bottom), pBmp)
+                c.drawBitmap(t, Rect(t.width - cap, 0, t.width, t.height), RectF(r.right - cw, r.top, r.right, r.bottom), pBmp)
+            } else {
+                pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(20, 18, 14); c.drawRect(r, pFlat)
+                pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Theme.bronzeDim; c.drawRect(r, pFlat)
+            }
+            val pic = tex("icon_calendar") ?: tex("ricon_calendar")
+            val s = r.height() * 0.7f
+            val box = RectF(r.centerX() - s / 2f, r.centerY() - s / 2f, r.centerX() + s / 2f, r.centerY() + s / 2f)
+            if (pic != null) {
+                val k = minOf(box.width() / pic.width, box.height() / pic.height)
+                val w = pic.width * k; val h = pic.height * k
+                c.drawBitmap(pic, null, RectF(r.centerX() - w / 2f, r.centerY() - h / 2f, r.centerX() + w / 2f, r.centerY() + h / 2f), pBmp)
+            } else {
+                // a page with two rings (no art on the device yet)
+                pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3f; pFlat.color = Theme.gold
+                c.drawRect(box.left + 4f, box.top + 8f, box.right - 4f, box.bottom - 4f, pFlat)
+                c.drawLine(box.left + 4f, box.top + 20f, box.right - 4f, box.top + 20f, pFlat)
+            }
+            if (pending) {
+                val m = tex("cal_invite")
+                val q = r.height() * 0.46f
+                if (m != null) c.drawBitmap(m, null, RectF(r.right - q, r.top - q * 0.2f, r.right + q * 0.12f, r.top + q * 0.92f), pBmp)
+                else { pFlat.style = Paint.Style.FILL; pFlat.color = Theme.gold; c.drawCircle(r.right - q * 0.35f, r.top + q * 0.3f, q * 0.26f, pFlat) }
+            }
+        }
+        if (focus) focus(c, r)
+    }
+
+    /** D7's stand-in for the Macros room's picture: the game's question-mark icon (134400) in the radial menu's dark disc and bronze ring */
+    fun macroRing(c: Canvas, cx: Float, cy: Float, size: Float, active: Boolean = false, alpha: Int = 255) {
+        pFlat.style = Paint.Style.FILL; pFlat.color = if (active) Theme.ink else Theme.raised; pFlat.alpha = alpha
+        c.drawCircle(cx, cy, size * 0.52f, pFlat)
+        val q = Icons.get(Icons.QUESTION_MARK)
+        if (q != null) {
+            val s = size * 0.72f
+            c.save()
+            c.clipPath(android.graphics.Path().apply { addCircle(cx, cy, s / 2f, android.graphics.Path.Direction.CW) })
+            pBmp.alpha = alpha
+            c.drawBitmap(q, null, RectF(cx - s / 2f, cy - s / 2f, cx + s / 2f, cy + s / 2f), pBmp)
+            pBmp.alpha = 255
+            c.restore()
+        } else {
+            val p = titlePaint(size * 0.6f, Theme.gold).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha }
+            c.drawText("?", cx, cy - (p.ascent() + p.descent()) / 2f, p)
+        }
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2.5f
+        pFlat.color = if (active) Theme.bronzeDim else metal(Color.rgb(150, 122, 72)); pFlat.alpha = alpha
+        c.drawCircle(cx, cy, size * 0.52f, pFlat)
+        pFlat.alpha = 255
     }
 
     /**
@@ -5010,6 +5085,13 @@ object UiKit {
             val a = Math.toRadians(45.0 * i)
             val off = if (!sl.enabled) tex(icon + "_off") else null
             val art = off ?: tex(icon)
+            // the Macros room's slice (Spells s10; D7's stand-in): the question-mark icon in the ring while the kit has no ricon_macros
+            if (art == null && sl.key == "macros" && k > 0.01f) {
+                val ri0 = (150f - 12f) * g.s
+                val a0 = Math.toRadians(45.0 * i)
+                macroRing(c, g.cx + ri0 * Math.cos(a0).toFloat(), g.cy - ri0 * Math.sin(a0).toFloat(), 57f * g.s * (0.6f + 0.4f * k),
+                    alpha = (255 * k).toInt())
+            }
             // the game's SetIcon pulls an atlas icon 50 units toward the hub IN ITS OWN SCALED SPACE (SetScale(57 / its size), ~0.45
             // for the 128 px icons): ~23 units, so it sits mid-slice (r ~127) and its label near the rim (v1 pulled the full 50: the
             // icons sat against the hub; the user 2026-10-09, "the proportions on the pause wheel dont look right", picked 1C)

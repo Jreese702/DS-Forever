@@ -942,7 +942,7 @@ class HomeBack {
 
         /** the capture ids that hold the controller for room [roomName] (the inverse of [roomsOf]) */
         fun idsOf(roomName: String): Set<String> =
-            listOf("bags", "spells", "character", "calendar", "professions", "groupfinder", "social", "map",
+            listOf("bags", "spells", "character", "calendar", "macros", "professions", "groupfinder", "social", "map",
                 "pad:settings", "pad:quests", "pad:map", "pad:chat").filter { roomName in roomsOf(it) }.toSet()
 
         /** the rooms (Room names) a capture id holds the controller for; empty = no room (Interact's "npc", Home's own, the bar) */
@@ -951,6 +951,7 @@ class HomeBack {
             "spells" -> setOf("SPELLBOOK", "TALENTS", "CONTROLLER")     // the Controller room is the same guest's page (b17 croom)
             "character" -> setOf("CHARACTER")
             "calendar" -> setOf("CALENDAR")
+            "macros" -> setOf("MACROS")              // Spells s10: the Macros room's own guest
             "professions" -> setOf("PROFESSIONS")
             "groupfinder" -> setOf("GROUPFINDER")
             "social" -> setOf("SOCIAL")
