@@ -9,7 +9,7 @@ import org.json.JSONObject
  * it cannot be tapped meanwhile. The cooldowns come from the add-on's `castcd` (facecd's shape: only what the game leaves plain, the
  * length estimated in a fight), never read off the screen.
  * cb2 THE LAZY ROW (1.0.30 code 1454): the add-on registers the castbar row only once the bar has a spell (TapPad's 56 rows are
- * over-subscribed), so a pick goes by the padtab row instead: the document's [Bar.padPick] (pp = [39, 19]: Smart Range's one-shot pick,
+ * over-subscribed), so a pick goes by the padtab row instead: the document's [Bar.padPick] (pp = [39, 19]: the padtab one-shot pick,
  * then the cast bar's code; Book b55).
  * cb3 SIX SLOTS ON ITS OWN SETTING (the user, 2026-11-13: "the tap to cast bar should get its own bottom screen section. the buttons
  * inside of it are too small, so I want to propose this- for options to turn it on, left right or both, which basically makes it a
@@ -53,7 +53,7 @@ object CastStripModel {
     const val PADTAB = "padtab"
     /** cb6: eight slots in all, four per side (the user's pick: "8 total, 4 per side"; cb3's was six) */
     const val SLOTS = 8
-    /** cb2: padtab 39 = Smart Range's one-shot pick (PadTabCtl p46), then the cast bar's code */
+    /** cb2: padtab 39 = the one-shot pick (PadTabCtl p46; its old codes 0-4, Smart Range's, stay unused: PadTabCtl p54), then the cast bar's code */
     const val PICK = 39
     /** b56: the code after [PICK] that opens the Bind box's Cast bar tab */
     const val TAB_CODE = 26

@@ -1,6 +1,6 @@
 """Several spell radials (Radial.lua q4 (q3 + learned lengths), PadTabCtl p49, Book b53, PadMap m150, Hub hub47; first q2 / p40 / b49 / m105 / hub26 in 1.0.18),
 off-device: the REAL add-on files under tools/wowstub.py's stubbed game and test_party.py's WORLD_HELPERS, Lua 5.1 as the game's.
-The radial ops by touch: padtab 39 (Smart Range's pick) then code 5 + op (Book b53; 38 is rank up now).
+The radial ops by touch: padtab 39 (the one-shot pick) then code 5 + op (Book b53; 38 is rank up now).
 
     python tools/test_sradials.py
 
@@ -222,7 +222,7 @@ W6.execute('local ctl = WowCompanion._spellsBook.ctl; ctl.croom, ctl.ctrlTab, ct
 n_slots = lua_list(W6.eval(SR + '.slots()'))
 W6.execute('WowCompanion.pad.rows.padtab.handler(nil, 39); WowCompanion.pad.rows.padtab.handler(nil, 2)')
 check(W6.eval('WowCompanion.padTabCtl.srWants()') is not True and lua_list(W6.eval(SR + '.slots()')) == n_slots,
-      "39 then a Smart Range code (0-4) is Smart Range's: the pick spent, no radial op")
+      "39 then 0-4 (Smart Range's old codes, unused since Book b61): the pick spent, no radial op")
 W6.execute('WowCompanion.pad.rows.padtab.handler(nil, 11)')
 check(lua_list(W6.eval(SR + '.slots()')) == n_slots, "a lone code 11 with no fresh pick is NOT a radial New", lua_list(W6.eval(SR + '.slots()')))
 W6.execute('WowCompanion.pad.rows.padtab.handler(nil, 39); NOW = NOW + 3; WowCompanion.pad.rows.padtab.handler(nil, 11)')

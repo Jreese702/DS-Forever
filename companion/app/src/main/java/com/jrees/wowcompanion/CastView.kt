@@ -446,7 +446,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
     private fun dpadFightOverride(li: Int, src: Int): Btn? {
         if (li != N || src > 3) return null
-        val icon = fightDpad?.get(src + 1)?.takeIf { it > 0 }?.let { smartNow(HomeFightFace.cmdKey(1, src + 1))?.first ?: it } ?: return null   // m146
+        val icon = fightDpad?.get(src + 1)?.takeIf { it > 0 } ?: return null
         val cached = dpadFightBtns[src]
         if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, false); return cached }
         val b = Btn().apply { p = src + 1; k = "spell"; this.icon = icon; e = true }
@@ -473,7 +473,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private fun trigFightOverride(li: Int, src: Int): Btn? {
         if (li !in 1 until STATE_LAYERS) return null
         val at = li * 8 + src
-        val icon = trigFights?.get(at)?.first?.takeIf { it > 0 }?.let { smartNow(at)?.first ?: it } ?: return null   // m146: the half the press casts
+        val icon = trigFights?.get(at)?.first?.takeIf { it > 0 } ?: return null
         val cached = trigBtns[at]
         if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, src >= 4); return cached }
         val b = Btn().apply { p = src + 1; k = "spell"; this.icon = icon; e = true }
@@ -511,23 +511,14 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      */
     var fightIds: Map<Int, Int>? = null
         set(v) { if (field != v) { field = v; invalidate() } }
-    /** m146 SMART RANGE: [HomeFightFace.smartPairs] - the buttons with a Melee and a Range half; their picture follows the press */
-    var smartPairs: Map<Int, Pair<PadMapModel.Ref, PadMapModel.Ref>>? = null
-        set(v) { if (field != v) { field = v; invalidate() } }
-    /** the half a pair's press casts now ([HomeFightFace.smartPick] by the Melee spell's range state): (icon, spell id); null = no pair */
-    private fun smartNow(key: Int): Pair<Int, Int>? {
-        val p = smartPairs?.get(key) ?: return null
-        val r = HomeFightFace.smartPick(p, p.first.id?.let { fightStates[it]?.r })
-        return r.icon to (r.id ?: 0)
-    }
     private val fightStates = HashMap<Int, St>()
     private val fightCt = HashMap<Int, Int>()
     private fun fightStateOf(fb: Btn?, src: Int): St? {
         if (fb == null || fb.k != "spell") return null
         val ti = trigBtns.indexOfFirst { it === fb }
-        if (ti >= 0) return (smartNow(ti)?.second ?: trigFights?.get(ti)?.second)?.takeIf { it > 0 }?.let { fightStates[it] }
+        if (ti >= 0) return trigFights?.get(ti)?.second?.takeIf { it > 0 }?.let { fightStates[it] }
         if (fb !== fightBtns.getOrNull(src) && fb !== dpadFightBtns.getOrNull(src)) return null
-        val id = smartNow(HomeFightFace.cmdKey(1, src + 1))?.second ?: fightIds?.get(src + 1) ?: return null   // m146: the half shown
+        val id = fightIds?.get(src + 1) ?: return null
         return fightStates[id]
     }
 
@@ -593,7 +584,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     /** the fight spell drawn over base-layer face slot [src] (0-based), or null to draw the game's own button */
     private fun fightOverride(li: Int, src: Int): Btn? {
         if (!fightFaceOn || li != N || src < 4 || src == 6) return null
-        val icon = fightFace?.get(src + 1)?.let { smartNow(HomeFightFace.cmdKey(1, src + 1))?.first ?: it } ?: return null   // m146
+        val icon = fightFace?.get(src + 1) ?: return null
         if (icon <= 0) return null
         val cached = fightBtns[src]
         if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, true); return cached }
