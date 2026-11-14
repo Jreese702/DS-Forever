@@ -101,6 +101,16 @@ class PetSpellsShotsTest {
         draw(a.v, 1240, 960)
         tap(a.v, bindAt.first, bindAt.second)
         assertTrue("Attack is a command: no Bind", a.binds.isEmpty())
+        // review (Spells s10b): Seduction cannot auto-cast (the pet bar's state 1) - still a spell a finger binds; Soothing Aura is passive
+        val succ = book("spells_succubus")
+        val s = room(succ, ctl("spellsctl_pet_book") { it.put("sel", 6358); it.put("idx", 2) })
+        draw(s.v, 1240, 960)
+        tap(s.v, bindAt.first, bindAt.second)
+        assertEquals(listOf("Seduction"), s.binds.map { it.name })
+        val p = room(succ, ctl("spellsctl_pet_book") { it.put("sel", 20000); it.put("idx", 4) })
+        draw(p.v, 1240, 960)
+        tap(p.v, bindAt.first, bindAt.second)
+        assertTrue("Soothing Aura is passive: no Bind", p.binds.isEmpty())
     }
 
     @Test fun shots() {
@@ -120,6 +130,9 @@ class PetSpellsShotsTest {
         // a Warlock's imp, Firebolt chosen
         val lock = book("spells_warlock")
         save(draw(room(lock, ctl("spellsctl_pet_book") { it.put("sel", 3110); it.put("idx", 3) }).v, 1240, 960), "pet_tab_warlock_firebolt.png")
+        // review (Spells s10b): a succubus, Seduction chosen - a spell that cannot auto-cast is still an active spell with Bind
+        val succ = book("spells_succubus")
+        save(draw(room(succ, ctl("spellsctl_pet_book") { it.put("sel", 6358); it.put("idx", 2) }).v, 1240, 960), "pet_tab_succubus_seduction.png")
         // the Shaman (no pet): the book as before, no Pet tab
         save(draw(room(book("spells_shaman"), null).v, 1240, 960), "shaman_no_pet_tab.png")
         // the Controller room's chooser on the Spells tab, the glow on Growl: the class's spells, then the pet's (tools/test_pet_spells.py

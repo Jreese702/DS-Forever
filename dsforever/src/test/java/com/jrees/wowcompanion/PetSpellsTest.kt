@@ -97,6 +97,23 @@ class PetSpellsTest {
         assertEquals("pet", SpellsModel.tabs(b).last().key)
     }
 
+    /** review (Spells s10b): Seduction cannot auto-cast, so the server packs it with the pet bar's state 1 ("ACT_PASSIVE"); it is an
+     *  ACTIVE spell all the same (the game's book shows and casts it): Bind, its two taps, the chooser. Soothing Aura is a true passive. */
+    @Test fun aSpellThatCannotAutoCastIsStillBindable() {
+        val b = book("spells_succubus")
+        val sed = pet(b, "Seduction")
+        assertFalse(sed.passive)
+        assertTrue(SpellsModel.bindable(b, sed))
+        assertNotNull(SpellsModel.bindCells(b, sed))
+        assertEquals(listOf("Seduction", "Lash of Pain"), SpellsModel.tabSpells(b, "spells").filter { it.pet }.map { it.name })
+        assertTrue(SpellsModel.onBar(b, sed))                     // on ZL + X (the fixture's bind)
+        assertFalse(SpellsModel.onBar(b, pet(b, "Lash of Pain")))  // on no bar: the gold glow
+        val aura = pet(b, "Soothing Aura")
+        assertTrue(aura.passive)
+        assertFalse(SpellsModel.bindable(b, aura))
+        assertTrue(pet(b, "Attack").command)
+    }
+
     @Test fun theShamanHasNoPetTab() {
         val b = book("spells_shaman")
         assertTrue(b.petItems.isEmpty())

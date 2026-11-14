@@ -599,6 +599,7 @@ for hide in (False, True):
         check(ack.get('ok') is True and list(Pp.eval('ACTIONINFO[%d]' % sx).values()) == ["spell", 6358, "pet"],
               "p. ZL + X: Seduction placed the game's own way", (ack, placed))
         keep(Pp)
+        keep_spells("spells_succubus", Pp)
     check(errs(Pp) == [] and Pp.eval('#SPY') == 0 and Pp.eval('#VIOL') == 0, "p. %s: no Lua error, no spied call" % tag, errs(Pp)[:2])
 
 # m. a charmed / possessed unit (Mind Control, Enslave): HasPetSpells() answers, PetHasSpellbook() does not - the game shows no Pet tab,
@@ -694,7 +695,7 @@ for name, text in sorted(FIX.items()):
             fh.write(text)
     elif old != text:
         stale.append(name)
-check(len(FIX) == 6 and not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX),
+check(len(FIX) == 7 and not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX),
       stale[:4])
 
 print("%d passed, %d failed" % (passes, fails))
