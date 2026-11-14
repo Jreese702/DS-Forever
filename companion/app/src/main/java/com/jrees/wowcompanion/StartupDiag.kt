@@ -262,7 +262,9 @@ object StartupDiag {
         "Readiness: ${runCatching { IndoorSchedulerStep.readiness(ctx).let { "${it.label} (done ${it.done})" } }.getOrDefault("?")}",
         "Status: ${runCatching { IndoorSchedulerStep.status(ctx)?.toString()?.take(600) }.getOrNull() ?: "(none)"}",
         "Indoor maps in the background: ${runCatching { Settings.init(ctx); Settings.indoorBuild }.getOrDefault("?")}",
-        "Thor model: ${runCatching { DeviceTier.init(ctx); DeviceTier.model() }.getOrDefault("?")}; lighter mode ${runCatching { DeviceTier.lowMemory() }.getOrDefault(false)}",
+        // issue triage 2026-11-14 (the low-memory cluster #236 - #276): the reports could not say whether the game's smaller textures were on
+        "Thor model: ${runCatching { DeviceTier.init(ctx); DeviceTier.model() }.getOrDefault("?")}; lighter mode ${runCatching { DeviceTier.lowMemory() }.getOrDefault(false)}; " +
+            "low-memory graphics ${runCatching { Settings.init(ctx); if (Settings.lowMemGraphics) "on" else "off" }.getOrDefault("?")}",
     )
 
     private fun crashes(ctx: Context, now: Long): List<String> {

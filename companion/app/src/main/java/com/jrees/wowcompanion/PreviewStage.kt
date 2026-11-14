@@ -71,6 +71,21 @@ object PreviewStage {
     private val cache = HashMap<String, Bitmap>()
     private var cachedAt = 0L
 
+    /**
+     * THE MINIATURES GO WHEN SETTINGS IS NOT ON SHOW (issue triage 2026-11-14, the 1.0.29 - 1.0.31 low-memory cluster; the user,
+     * 2026-11-13: "yes on the triage things"): each look's half-size Home is 1.2 MB and the cache was kept after the panel closed, for
+     * the rest of the run. At Android's running-low trims and at MemWatch's relief (the game starting, the world loading) they go
+     * unless Settings is the room on show; the panel draws them again when it opens. Main thread (MemWatch runs trims there).
+     */
+    fun cacheLetsGo(level: Int, room: String): Boolean =
+        level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW && room != Room.SETTINGS.name.lowercase()
+    init {
+        MemWatch.onTrim("preview") { level ->
+            if (!cacheLetsGo(level, MemWatch.room) || cache.isEmpty()) 0L
+            else cache.values.sumOf { it.byteCount.toLong() }.also { cache.clear(); cachedAt = 0L }
+        }
+    }
+
     /** the width of a miniature; Home's own frame is 1240 x (1080 - the bar) */
     private const val W = 1240
     private val H get() = 1080 - Strip.HEIGHT

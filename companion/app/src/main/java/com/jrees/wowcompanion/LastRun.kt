@@ -89,6 +89,7 @@ object LastRun {
         val world = p.getBoolean("world", false)
         p.edit().remove("running").remove("world").apply()
         var exit: String? = null
+        var exitAt = 0L
         if (android.os.Build.VERSION.SDK_INT >= 30) {
             val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             val seen = p.getLong("exitSeen", 0L)
@@ -96,14 +97,27 @@ object LastRun {
                 .filter { it.processName == ctx.packageName }.maxByOrNull { it.timestamp }
             if (last != null && last.timestamp > seen) {
                 p.edit().putLong("exitSeen", last.timestamp).apply()
+                exitAt = last.timestamp
                 val worth = offer(last.reason, last.importance, last.pss, runningAt > 0L)
                 exit = if (worth) badReason(last.reason) else null
                 android.util.Log.i("WCLASTRUN", "last exit: reason ${last.reason} (${last.description ?: "-"}), importance ${last.importance}, " +
                     "pss ${last.pss / 1024} MB; game running $runningAt${if (worth) "" else "; no report (a background clean-up)"}")
             }
         }
-        pending = words(exit, runningAt > 0L, world, if (runningAt > 0L) System.currentTimeMillis() - runningAt else 0L)
+        pending = words(exit, runningAt > 0L, world, ranMs(runningAt, exitAt, System.currentTimeMillis()))
         pending?.let { DiagLog.event("last run", it) }
+    }
+
+    /**
+     * HOW LONG THE GAME HAD RUN WHEN THE LAST RUN ENDED (verification of the low-memory cluster triage, 2026-11-14; the user, 2026-11-13:
+     * "yes on the triage things"): to Android's exit record when it is the game's ([exitAt] at or after [runningAt]), else to [now]; 0 = no
+     * game mark. It was always to now, the next start: #258's "385 min in" was about 17 min (DS Forever opened again 6 h after the kill),
+     * #273's "284 min" about 219, #238's "37 min" under 1. Pure (the tests).
+     */
+    fun ranMs(runningAt: Long, exitAt: Long, now: Long): Long = when {
+        runningAt <= 0L -> 0L
+        exitAt >= runningAt -> exitAt - runningAt
+        else -> (now - runningAt).coerceAtLeast(0L)
     }
 
     const val TITLE = "Your last session ended unexpectedly"
