@@ -342,6 +342,7 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
         envVars.put("LD_PRELOAD", ld_preload);
         // DS Forever (the user, 2026-11-11: BLZ51914400 identity fix, upstream PR jaredgei/wow-forever-android#65):
         // WoW container: stable own host name for the DNS shim (gethostname), see MachineIdentity.
+        // The user, 2026-11-14 ("build it"): none with Settings > Windows ID = Original (v2.3.3: the shim reports the address).
         String wowHostname = MachineIdentityApply.shimHostname(context, container);
         if (wowHostname != null) envVars.put(MachineIdentity.ENV_HOSTNAME, wowHostname);
         envVars.put("EVSHIM_WINE", 1);

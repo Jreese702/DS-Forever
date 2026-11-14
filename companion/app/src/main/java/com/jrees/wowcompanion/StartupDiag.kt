@@ -86,7 +86,7 @@ object StartupDiag {
     fun collect(ctx: Context, now: Long = System.currentTimeMillis()): List<Section> = listOf(
         sec("App") { app(ctx, now) },
         sec("Device") { device(ctx) },
-        sec("GPU and container") { container() },
+        sec("GPU and container") { container(ctx) },
         sec("Game folder") { gameFolder(ctx) },
         sec("Start-up screen") { startScreen() },
         sec("Start-up stages (time since the app started)") { StartupTrace.lines().ifEmpty { listOf("(none recorded in this run)") } },
@@ -150,14 +150,23 @@ object StartupDiag {
         )
     }
 
-    private fun container(): List<String> = listOf(
+    private fun container(ctx: Context): List<String> = listOf(
         "GPU profile: ${LauncherHooks.gpuLine.ifEmpty { "(not picked yet in this run)" }}",
         "Launch: ${LauncherHooks.launchState.ifEmpty { "(no launch in this run)" }}",
         "Game screen up: ${LauncherHooks.gameUp()}" + (if (LauncherHooks.gameStartSec > 0) ", since ${stamp(LauncherHooks.gameStartSec * 1000)}" else ""),
         "Last clean exit: ${LauncherHooks.lastCleanExit.ifEmpty { "(none)" }}",
         // issues #132 / #42 / #57: downloading before the login screen, or a login screen that never read login.txt
         "Before the login screen: ${runCatching { NativeLogin.preLoginLine() }.getOrElse { "? (${it.message})" }}",
+        // the user, 2026-11-14 ("build it", the BLZ51914400 wave): which Windows identity the game started with (the mode, never a value)
+        line { Settings.init(ctx); windowsIdLine() },
     )
+
+    /** the report's Windows ID line: the choice, this run's game start or the last recorded one */
+    internal fun windowsIdLine(): String {
+        val ran = Settings.windowsIdRan
+        return WindowsId.reportLine(Settings.windowsId, WindowsId.launched, WindowsId.launchedAtMs, WindowsId.launchedResult,
+            ran?.first, ran?.second ?: 0L, ran?.third) { stamp(it) }
+    }
 
     private fun gameFolder(ctx: Context): List<String> {
         val root = GameFiles.gameRoot(ctx)

@@ -51,6 +51,9 @@ object SettingsTabs {
         ACCOUNT(Group.ACCOUNT, "Battle.net login", listOf("Battle.net login")),
         // #47: several game accounts on one Battle.net login - the game's own picker each time, or its remembered pick
         GAME_ACCOUNT(Group.ACCOUNT, "Game account", listOf("Game account")),
+        // the user, 2026-11-14 ("build it", the BLZ51914400 wave): Per install / Original, from the next game start; while the running game
+        // started with the other one, a "Restart the game" row under it (Frames' words: the same launcher restart, so not listed again)
+        WINDOWS_ID(Group.ACCOUNT, WindowsId.ROW_ID, listOf(WindowsId.ROW_ID)),
         HELP(Group.HELP, "Help", listOf("Problem report", "Reload game UI")),
         COMPANION(Group.HELP, "Companion", listOf("Status"), Drawer.GAME_UI),
         // ---- Bottom screen (the old Home tab)
