@@ -87,8 +87,13 @@ object BridgeProtocol {
     /** the WebSocket close code for an unknown device / token */
     const val CLOSE_UNAUTHORIZED = 4401
 
+    /** the add-on set this APK carries (companion/manifest.txt "set N"; 0 = unknown), sent on hello so Desktop 0.2.28+ checks for its
+     *  own update at once when the Thor is ahead (the user, 2026-11-13: "we need this shit to have an auto update feature") */
+    @Volatile var addonSet: Int = 0
+
     fun hello(deviceId: String, token: String): String =
-        JSONObject().put("t", "hello").put("proto", PROTO).put("device_id", deviceId).put("token", token).toString()
+        JSONObject().put("t", "hello").put("proto", PROTO).put("device_id", deviceId).put("token", token)
+            .apply { if (addonSet > 0) put("addon_set", addonSet) }.toString()
 
     fun pairHello(deviceId: String, name: String): String =
         JSONObject().put("t", "pair_hello").put("proto", PROTO).put("device_id", deviceId).put("name", name).put("stream", true).toString()

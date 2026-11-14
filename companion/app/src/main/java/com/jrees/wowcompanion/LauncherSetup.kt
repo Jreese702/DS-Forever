@@ -37,6 +37,7 @@ object LauncherSetup {
     private fun work(ctx: Context, root: File): String {
         val manifest = ctx.assets.open("companion/manifest.txt").use { it.readBytes().toString(Charsets.UTF_8) }.lines()
         val appSet = manifest.firstOrNull { it.startsWith("set ") }?.removePrefix("set ")?.trim()?.toIntOrNull()
+        if (appSet != null) com.jrees.wowcompanion.stream.BridgeProtocol.addonSet = appSet   // told to Desktop on hello (its update check)
         val want = manifest.filter { it.length > 34 && !it.startsWith("set ") }.map { it.substring(0, 32) to it.substring(34).trim() }
         val addons = File(root, "Interface/AddOns")
         val folders = want.map { it.second.substringBefore('/') }.toSet()

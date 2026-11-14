@@ -253,6 +253,9 @@ class StreamPartsTest {
         assertNull(BridgeProtocol.parse("[1,2]"))
         val hello = JSONObject(BridgeProtocol.hello("c1", "tok"))
         assertEquals("hello", hello.getString("t")); assertEquals("c1", hello.getString("device_id")); assertEquals("tok", hello.getString("token"))
+        assertFalse(hello.has("addon_set"))                                   // unknown set: not sent
+        BridgeProtocol.addonSet = 391
+        try { assertEquals(391, JSONObject(BridgeProtocol.hello("c1", "tok")).getInt("addon_set")) } finally { BridgeProtocol.addonSet = 0 }
         val ph = JSONObject(BridgeProtocol.pairHello("c1", "AYN Thor"))
         assertEquals("pair_hello", ph.getString("t")); assertEquals("AYN Thor", ph.getString("name")); assertTrue(ph.getBoolean("stream"))
         // the proof as Desktop's PairingCodes.Proof computes it: HMAC-SHA256(code, "dsf-pair-v1|nonce|device"), lower-case hex
