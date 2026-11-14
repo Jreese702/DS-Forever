@@ -26,8 +26,18 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
     @Volatile var lastReadWhy: String? = null
         private set
 
+    /**
+     * MEMORY RELIEF 2 REVIEW (2026-11-14; the user's pick "lets go of the game files within one file"): a pack's icon threads now stop
+     * mid-pack, and KitBuild.icons waits for the ones in hand at most [KitBuild.POOL_WAIT_S] before the run closes these files. A
+     * thread that outlived that wait (a stalled CDN download held the lock past it) then read through a FREED native handle. Set under
+     * [accessLock] by [close]; every native call checks it under the same lock, so a read after the close is a plain null, never CascLib
+     * on freed memory (and a second close is nothing).
+     */
+    @Volatile private var closed = false
+
     private fun readAsset(label: String, load: () -> ByteArray?): ByteArray? = synchronized(accessLock) {
         lastReadWhy = null
+        if (closed) { lastReadWhy = "$label: the game files are closed (the art run let go)"; return@synchronized null }
         for (attempt in 0..4) {
             CascNative.takeNeed()
             val bytes = load()
@@ -68,7 +78,8 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
         // not per pack ...)"): [letGo] (the art run's Job.letGoAsked) is asked before each probe read and each download; once it says
         // so the probe ends and no further download starts (the ones in flight finish), and the caller's next checkpoint stops the run
         val needs = synchronized(accessLock) {
-            probeNeeds(fids, letGo) { fid -> CascNative.takeNeed(); if (CascNative.read(handle, fid) == null) CascNative.takeNeed() else null }
+            if (closed) LinkedHashSet()
+            else probeNeeds(fids, letGo) { fid -> CascNative.takeNeed(); if (CascNative.read(handle, fid) == null) CascNative.takeNeed() else null }
         }
         if (needs.isEmpty() || letGo()) return 0
         val total = needs.size
@@ -84,7 +95,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
     }
 
     /** Track B (interiors): the file's CASC content key without reading it, or null; digests a building's inputs. */
-    fun contentKey(fid: Int): ByteArray? = synchronized(accessLock) { IndoorGeneratorCasc.contentKey(handle, fid) }
+    fun contentKey(fid: Int): ByteArray? = synchronized(accessLock) { if (closed) null else IndoorGeneratorCasc.contentKey(handle, fid) }
     /** a BLP texture (top mip) as a Bitmap, or null */
     fun blp(fid: Int): Bitmap? = read(fid)?.let { toBitmap(Blp.decode(it)) }
     fun blpName(path: String): Bitmap? = readName(path)?.let { toBitmap(Blp.decode(it)) }
@@ -113,7 +124,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
         count
     }
 
-    override fun close() { synchronized(accessLock) { CascNative.close(handle) } }
+    override fun close() { synchronized(accessLock) { if (!closed) { closed = true; CascNative.close(handle) } } }
 
     companion object {
         // CascLib's cache destination and missing-file request are process globals, not handle-local.
