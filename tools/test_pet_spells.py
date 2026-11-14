@@ -255,7 +255,7 @@ def feed(L):
 
 def keep_spells(name, L):
     """the whole `spells` document as the feed sends it (Spells.lua emitSpells: type, v, s)"""
-    FIX[name] = L.eval('WowCompanion.encode({ type = "spells", v = "s10", s = WowCompanion.collectSpells() })')
+    FIX[name] = L.eval('WowCompanion.encode({ type = "spells", v = "s10a", s = WowCompanion.collectSpells() })')
 
 
 def keep_last(name, L, typ):
@@ -324,9 +324,9 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap", "radial"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local SV = "s10"' in SRC["spells"] and 'local BV = "b63"' in SRC["book"] and 'local PV = "m163"' in SRC["padmap"]
+check('local SV = "s10a"' in SRC["spells"] and 'local BV = "b63a"' in SRC["book"] and 'local PV = "m163a"' in SRC["padmap"]
       and 'local RV = "r21"' in SRC["radial"] and 'local SRV = "q5"' in SRC["radial"] and 'local CBV = "cb10"' in CASTBAR,
-      "the versions: Spells s10, Book b63, PadMap m163, Radial r21 / q5, ActionBar cb10")
+      "the versions: Spells s10a, Book b63a, PadMap m163a (the review), Radial r21 / q5, ActionBar cb10")
 check(all('#234, the user: "build it"' in s for s in (SRC["spells"], SRC["book"], SRC["padmap"], SRC["radial"], CASTBAR)),
       "each changed file's header note quotes the user (#234: \"build it\")")
 
@@ -564,6 +564,62 @@ P = boot(pre='CVARB.spellBookHidePassives = true')
 i, entries = pet_tab(P)
 check(i is not None and "Great Stamina" not in [e[0] for e in entries] and len(entries) == 6, "l. passives hidden: the Pet tab without Great Stamina")
 
+# ================================================================ m-o. the review (Spells s10a, Book b63a, PadMap m163a)
+# m. a charmed / possessed unit (Mind Control, Enslave): HasPetSpells() answers, PetHasSpellbook() does not - the game shows no Pet tab,
+#    so its spells are never this character's pet spells (a mob's spell sharing an id with the player's own would be cast by bare name)
+M = boot(pre='PETHASBOOK = false')
+d = feed(M)
+mi = {it['n']: it for it in (d.get('pet') or {}).get('items', [])}
+check(d.get('pet', {}).get('book') is not True and pet_tab(M)[0] is None, "m. a charmed unit: no book, no Pet tab")
+check(M.eval('WowCompanion.spellsPetName(2649)') is None and M.eval('(WowCompanionSpellsDB.petSpellBy or {})[WHOK]') is None,
+      "m. its spells are not kept as this character's pet spells (no name, nothing stored)")
+check(all('pv' not in it for it in mi.values()), "m. its spells get no numbers", {n: it.get('pv') for n, it in mi.items()})
+check(M.eval('WowCompanion.spellsPetAt(5004)') is False and M.eval('WowCompanion.spellsPetSlotOf(2649)') is None,
+      "m. a travelling pet slot reads nothing then (no pickup from a charmed unit's book)")
+check(all(M.eval('WowCompanion.spellsBindableList()')[k].pet is None for k in range(1, len(M.eval('WowCompanion.spellsBindableList()')) + 1)),
+      "m. the chooser lists none of its spells")
+check(errs(M) == [] and M.eval('#SPY') == 0, "m. no Lua error, no spied call", errs(M)[:2])
+
+# n. another pet / demon out while the Bind box waits: no route puts the new pet's spell (the box's slot 4 is the imp's Blood Pact now)
+N = boot()
+NFS = int(N.eval('BK.storageFor(1, 2, 1)'))
+for fight, trig, key in ((True, "LT", "PADDLEFT"), (False, "RT", "PAD1"), (False, None, "PADLSTICK")):
+    pick(N, "Growl")
+    N.execute('BK.press("PAD1")')
+    if fight:
+        N.execute('BK.ctl.bind.fight = true')
+    N.execute('PETBOOK = { IMP[1], IMP[2], IMP[4], IMP[4], IMP[5] }')          # slot 4 = Blood Pact (6307)
+    p0, n0, a0 = int(N.eval('#PICKS')), int(N.eval('#PLACED')), int(N.eval('#SENT'))
+    N.execute('hold(%s); BK.press("%s"); hold(nil)' % ('nil' if trig is None else '"%s"' % trig, key))
+    a = acks(N, a0)
+    route = "In combat" if fight else ("L3" if key == "PADLSTICK" else "Normal")
+    check(a and a[-1].get('ok') is False and a[-1].get('why') == "unknown" and int(N.eval('#PICKS')) == p0 and int(N.eval('#PLACED')) == n0,
+          "n. %s: the box's pet slot holds another spell now -> refused (unknown), nothing picked up or placed" % route, a and a[-1])
+    N.execute('BK.ctl.mode = "book"; BK.ctl.bind = nil; BK.ctl.undo = nil; PETBOOK = HUNTER_PET')
+check(N.eval('FT(%d)' % NFS) is None and N.eval('STK("1:9")') is None, "n. no fight-layer entry and no stick entry was stored")
+check(errs(N) == [] and N.eval('#VIOL') == 0 and N.eval('#SPY') == 0, "n. no Lua error, no breach, no spied call", errs(N)[:2])
+
+# o. a pet's In-combat spell keeps ITS id and picture with the pet away: this client's name lookup (C_Spell.GetSpellInfo by name) finds a
+#    pet's spell only while that pet is out (a stub that never finds a pet's name by name: the strictest reading)
+O2 = boot(pre='local gi = C_Spell.GetSpellInfo; PETNAMES = { Growl = true, Bite = true, Firebolt = true }; '
+              'C_Spell.GetSpellInfo = function(x) if type(x) == "string" and PETNAMES[x] then return nil end return gi(x) end')
+ack, placed, mode = bind(O2, "Growl", None, "PAD3", fight=True)
+keep(O2)
+ack2, placed, mode = bind(O2, "Bite", "LT", "PADDLEFT", fight=True)
+keep(O2)
+O2.execute('runTimers(NOW + 2)')
+ofs = int(O2.eval('BK.storageFor(1, 2, 1)'))
+check(ack.get('ok') is True and ack2.get('ok') is True, "o. Growl on bare X's In combat, Bite on ZL + D-pad Left's", (ack, ack2))
+check(O2.eval('FT(%d).i' % ofs) == 130000 + 17253, "o. the fight layer's Bite: its own picture (by its id, not its name)", O2.eval('FT(%d).i' % ofs))
+O2.execute('petOut(nil)')
+cf = O2.eval('WowCompanion.padMap.slotAt(1, 1, 5)')
+cf = cf and cf.cf
+check(cf is not None and cf.id == 2649 and cf.n == "Growl" and cf.i == 130000 + 2649,
+      "o. the pet away: bare X's `cf` is still Growl by its id and picture (the room's skip, B's undo, Home's picture)",
+      cf and (cf.n, cf.id, cf.i))
+check(O2.eval('XSPELL()') == "Growl", "o. X still casts Growl by name", O2.eval('XSPELL()'))
+check(errs(O2) == [] and O2.eval('#SPY') == 0, "o. no Lua error, no spied call", errs(O2)[:2])
+
 # ================================================================ render aid: PET_DUMP=<dir> writes the Controller room's documents (never committed)
 # the room's WoW Defaults, ZR + D-pad Up chosen, its chooser open on the Spells tab with the glow on Growl (the class's spells, then the pet's)
 if os.environ.get("PET_DUMP"):
@@ -589,7 +645,7 @@ if os.environ.get("PET_DUMP"):
                     fh.write(t)
                 break
     with open(os.path.join(dd, "spells_croom.json"), 'w', encoding='utf-8', newline='\n') as fh:
-        fh.write(C.eval('WowCompanion.encode({ type = "spells", v = "s10", s = WowCompanion.collectSpells() })'))
+        fh.write(C.eval('WowCompanion.encode({ type = "spells", v = "s10a", s = WowCompanion.collectSpells() })'))
 
 # ================================================================ the fixtures
 os.makedirs(FIXDIR, exist_ok=True)

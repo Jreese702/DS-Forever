@@ -30,7 +30,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local SV = "s10"    -- bump on every change; s10 PET SPELLS (#234, the user: "build it"): the pet book's SPELLS get numbers (`pv`, after the player's top ranks, before the lower ranks), never its passives or its commands (Attack / Follow / Stay ... have their homes); each pet item says `cmd` (a command), `bind` (a spell that can go on a button) and `pb` (on the pet bar), its bars are the game's own FindPetActionButtons; the Pet tab is line WC.SPELLS_PET_LINE (101); a pet book slot k travels as WC.SPELLS_PET_SLOT0 + k (5000 + k) through the Bind box and the Controller room's puts (WC.spellsPetAt / WC.spellsBankSlot read it back); WC.spellsPetName(id) = the name our own secure buttons cast a pet spell by (CastSpellByName, the game's /cast), remembered per character (WowCompanionSpellsDB.petSpellBy[name-realm]); s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
+local SV = "s10a"   -- bump on every change; s10a (review of feat/pet-spell-binding, #234, the user: "build it"): only a pet WITH A BOOK (the game's own Pet tab: HasPetSpells() and PetHasSpellbook()) has spells of ours - a charmed / possessed unit (Mind Control, Enslave) has pet spells but no book, so its spells are never kept as this character's pet spells (WC.spellsPetName), never numbered, and a travelling pet slot reads nothing then (WC.spellsPetAt / WC.spellsPetSlotOf): a mob's spell sharing an id with one of the player's own never turns that spell into a "pet spell" cast by bare name; s10 PET SPELLS (#234, the user: "build it"): the pet book's SPELLS get numbers (`pv`, after the player's top ranks, before the lower ranks), never its passives or its commands (Attack / Follow / Stay ... have their homes); each pet item says `cmd` (a command), `bind` (a spell that can go on a button) and `pb` (on the pet bar), its bars are the game's own FindPetActionButtons; the Pet tab is line WC.SPELLS_PET_LINE (101); a pet book slot k travels as WC.SPELLS_PET_SLOT0 + k (5000 + k) through the Bind box and the Controller room's puts (WC.spellsPetAt / WC.spellsBankSlot read it back); WC.spellsPetName(id) = the name our own secure buttons cast a pet spell by (CastSpellByName, the game's /cast), remembered per character (WowCompanionSpellsDB.petSpellBy[name-realm]); s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
 
 local MAX_LINES = 24        -- skill lines read (the game has General + class + a few)
 local MAX_ITEMS = 400       -- book entries read, all lines together
@@ -341,16 +341,17 @@ end
 function WC.spellsPetBook()
     local okp, nPet, token = CALL(function() return C_SpellBook.HasPetSpells() end)
     if not (okp and type(nPet) == "number" and WC.isPlain(nPet) and nPet > 0) then PB.live = {} return nil end
+    local hasBook = PB.hasBook()                      -- s10a: no book (a charmed unit) = no live pet spells
     local list, live = {}, {}
     for slot = 1, math.min(nPet, MAX_PET) do
         local e = PB.entry(slot)
         if e then
             list[#list + 1] = e
-            if e.bind then live[e.id] = e end
+            if e.bind and hasBook then live[e.id] = e end
         end
     end
     PB.live = live
-    return list, (WC.isPlain(token) and type(token) == "string") and token or nil, PB.hasBook()
+    return list, (WC.isPlain(token) and type(token) == "string") and token or nil, hasBook
 end
 -- this character's pet spells by id -> name, kept (a warlock's demon or a hunter's pet that is not out keeps its spells' names)
 function PB.db(create)
@@ -395,12 +396,14 @@ end
 function WC.spellsPetAt(vs)
     local slot, bank = WC.spellsBankSlot(vs)
     if bank ~= BANK_PET then return nil end
+    if not PB.hasBook() then return false end         -- s10a: only the game's Pet tab hands out pet slots
     local e = PB.entry(slot)
     if not (e and e.bind) then return false end
     return e.id, e.n
 end
 -- the travelling slot of pet spell [id] in the pet's book now (nil = the pet does not have it)
 function WC.spellsPetSlotOf(id)
+    if not PB.hasBook() then return nil end            -- s10a
     local e = type(id) == "number" and PB.live[id]
     if e then local now = PB.entry(e.slot); if now and now.id == id then return e.vs end end
     local list = WC.spellsPetBook()
@@ -623,7 +626,8 @@ function WC.collectSpells()
             end
         end
         -- s10: the pet's spells' names kept for this character (WC.spellsPetName: our buttons cast them by name, the pet out or not)
-        local db = next(names) and PB.db(true) or nil
+        -- s10a: a pet WITH A BOOK only (a charmed unit's spells are never this character's pet spells)
+        local db = (hasBook and next(names)) and PB.db(true) or nil
         if db then for id, n in pairs(names) do if rawget(db, id) ~= n then db[id] = n end end end
         pcall(WC.spellsPetBook)                           -- PB.live follows the book just read
     else
@@ -643,7 +647,7 @@ function WC.collectSpells()
             end
             -- s10 (#234): the pet's SPELLS after the player's top ranks, before the lower ranks; by their spell id (a pet action id
             -- carries the auto-cast state in its high byte, so it changes when auto-cast is toggled)
-            if pass == 1 and doc.pet then
+            if pass == 1 and doc.pet and doc.pet.book == true then                -- s10a: the game's Pet tab only
                 for _, it in ipairs(doc.pet.items) do if it.bind and it.id then ids[#ids + 1] = it.id end end
             end
         end
@@ -652,7 +656,7 @@ function WC.collectSpells()
             for _, it in ipairs(doc.items) do
                 if it.a and nums[it.a] then it.pv = nums[it.a] end
             end
-            if doc.pet then
+            if doc.pet and doc.pet.book == true then
                 for _, it in ipairs(doc.pet.items) do if it.bind and it.id and nums[it.id] then it.pv = nums[it.id] end end
             end
         end
