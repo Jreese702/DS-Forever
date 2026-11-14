@@ -222,6 +222,71 @@ class CaptchaHoldTest {
         assertTrue(reads.single(), "val lines = f.readLines()" in reads.single())
     }
 
+    // ---- the review (2026-11-13): the times on the wall clock, and the unread file's cap leaving a read file to the hold
+
+    /** the device sleeps: the Handler's runnables stand still (they count uptime) while the hold's clock (elapsedRealtime) goes on */
+    private fun sleepTo(t: Long) { clock.t = t }
+
+    @Test fun theCapHoldsOnTheWallClockWhenTheDeviceSleeps() {
+        hold.firstRead(); reason = "the Keyboard is open"
+        clock.to(20 * s); assertTrue(hold.holding)
+        sleepTo(620 * s)                                  // put to sleep at the captcha for 10 minutes: nothing timed ran
+        assertTrue(deleted.isEmpty())
+        hold.tick()                                       // the first traffic second after the wake
+        assertEquals(listOf(620 * s to "180 s after the client's first read (the hold's cap)"), deleted)
+        assertEquals(0, clock.pending())
+    }
+
+    @Test fun theTwentySecondsHoldOnTheWallClockToo() {
+        hold.firstRead()
+        sleepTo(300 * s); hold.tick()
+        assertEquals(listOf(300 * s to "20 s after the client's first read"), deleted)
+        assertEquals(0, clock.pending())
+        // a held file's 20 s after the read it waited for
+        deleted.clear(); hold.firstRead(); reason = "the game asks for a captcha"
+        clock.to(320 * s); readAt(330 * s); reason = null
+        sleepTo(345 * s); hold.tick(); assertTrue("not yet at the read's 20 s", deleted.isEmpty())
+        sleepTo(351 * s); hold.tick()
+        assertEquals(listOf(351 * s to "20 s after the client's read in the hold"), deleted)
+        assertEquals(0, clock.pending())
+    }
+
+    @Test fun theTickChangesNothingWhenTheTimersRunOnTime() {
+        hold.firstRead(); reason = "the Keyboard is open"
+        for (t in 1..19) { clock.to(t * s); hold.tick() }
+        assertTrue(deleted.isEmpty()); assertFalse(hold.holding)
+        clock.to(20 * s); hold.tick(); assertTrue(hold.holding); assertTrue(hold.waitingRead)
+        for (t in 21..179) { clock.to(t * s); hold.tick() }
+        assertTrue(deleted.isEmpty())
+        clock.to(180 * s); hold.tick()
+        assertEquals(listOf(180 * s to "180 s after the client's first read (the hold's cap)"), deleted)
+        assertEquals(1, logs.count { it.startsWith("login.txt kept past") })
+        assertTrue(logs.toString(), logs.none { it.startsWith("login.txt still held") })
+        assertEquals(0, clock.pending())
+    }
+
+    @Test fun theUnreadCapLeavesAReadFileToTheHold() {
+        // NativeLogin.capCheck asks this: an unread file is that cap's; a read one that a reason would hold (or is held) is the hold's
+        assertFalse(hold.keeps())
+        reason = "the Keyboard is open"; assertFalse("unread: the cap's", hold.keeps())
+        hold.firstRead(); assertTrue("read, before its 20 s, with a reason", hold.keeps())
+        reason = null; assertFalse("read, no reason: the cap may take it, as before", hold.keeps())
+        reason = "the game asks for a captcha"; clock.to(20 * s); reason = null
+        assertTrue("held", hold.keeps())
+        hold.stop(); assertFalse(hold.keeps())
+    }
+
+    @Test fun nativeLoginWiresTheTickAndTheCap() {
+        val src = listOf("../companion/app/src/main/java/com/jrees/wowcompanion", "companion/app/src/main/java/com/jrees/wowcompanion")
+            .map { File(it) }.first { it.isDirectory }
+        val native = File(src, "NativeLogin.kt").readText()
+        val capCheck = native.substringAfter("private fun capCheck()").substringBefore("PreLoginTraffic.capWait(")
+        assertTrue("capCheck leaves a kept read file to the hold", "if (hold.keeps()) return" in capCheck)
+        assertFalse("not only a file already held", "if (hold.holding) return" in capCheck)
+        val traffic = native.substringAfter("fun onTraffic(").substringBefore("private fun changed()")
+        assertTrue("each traffic second ticks the hold on the main thread", Regex("""main\.post \{\s*hold\.tick\(\)""").containsMatchIn(traffic))
+    }
+
     // ---- the game's log lines (the formats of LoginTriageTest's flow): the captcha ask, the steps after it, the realm connection
 
     @Test fun theCaptchaWordFromTheGamesLog() {

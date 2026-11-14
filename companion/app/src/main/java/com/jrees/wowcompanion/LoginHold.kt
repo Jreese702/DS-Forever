@@ -44,13 +44,21 @@ internal class LoginHold(
         stop()
         delete("${CAP_MS / 1000} s after the client's first read (the hold's cap)")
     }
+    /** when [due] should run on [now]'s clock (0 = not pending), for [tick] */
+    private var dueAt = 0L
+
+    private fun schedule(ms: Long) {
+        cancel(due)
+        dueAt = now() + ms
+        post(due, ms)
+    }
 
     /** the client's first read of this file: it goes [AFTER_READ_MS] from now, unless a reason holds it then */
     fun firstRead() {
         stop()
         reading = true
         firstReadAt = now()
-        post(due, AFTER_READ_MS)
+        schedule(AFTER_READ_MS)
     }
 
     /** a later read by the client. Only a held file waiting for it moves: then it goes 20 s after this read (never past the cap) */
@@ -59,12 +67,33 @@ internal class LoginHold(
         waitingRead = false
         val t = now()
         val at = minOf(t + AFTER_READ_MS, firstReadAt + CAP_MS)
-        cancel(due)
-        post(due, maxOf(0L, at - t))
+        schedule(maxOf(0L, at - t))
         log("login.txt read again by the client ${(t - firstReadAt) / 1000} s after its first read (held): deleting ${(at - t) / 1000} s after this read")
     }
 
+    /**
+     * THE TIMES ON THE WALL CLOCK (the review of 2026-11-13): the Handler's delays count uptime, which stands still while the device
+     * sleeps, so a Thor put to sleep at the captcha kept the file past the user's 3 minutes by the length of the sleep. NativeLogin
+     * calls this with each second's traffic sample (main thread): a deadline or the cap that [now] (elapsedRealtime, sleep included)
+     * says has passed runs at once.
+     */
+    fun tick() {
+        if (!reading) return
+        val t = now()
+        when {
+            t >= firstReadAt + CAP_MS -> if (holding) capped.run() else { cancel(due); deadline() }
+            dueAt > 0L && t >= dueAt -> { cancel(due); deadline() }
+        }
+    }
+
+    /**
+     * the client has read the file and the hold has it, or would keep it at its deadline (a reason now): the unread file's cap
+     * (NativeLogin.capCheck) leaves it to the hold, so a slow login screen whose read came near that cap keeps its captcha hold
+     */
+    fun keeps(): Boolean = reading && (holding || reason() != null)
+
     private fun deadline() {
+        dueAt = 0L
         if (!reading) return
         val t = now()
         val why = reason()
@@ -99,7 +128,7 @@ internal class LoginHold(
     /** the file went another way (NativeLogin's clear: the game's close, a new run, the root probe's realm connection...): nothing more is timed */
     fun stop() {
         cancel(due); cancel(capped)
-        reading = false; firstReadAt = 0L; holding = false; waitingRead = false
+        reading = false; firstReadAt = 0L; holding = false; waitingRead = false; dueAt = 0L
     }
 
     companion object {

@@ -131,8 +131,9 @@ object NativeLogin {
     /** the unread file's cap ([PreLoginTraffic.capWait]): deleted now, or asked again later while the game downloads. Main thread. */
     private fun capCheck() {
         if (!active) return
-        // the captcha hold (the user, 2026-11-13): a read file kept past its 20 s has its own cap, 3 minutes after the first read
-        if (hold.holding) return
+        // the captcha hold (the user, 2026-11-13): a read file kept past its 20 s has its own cap, 3 minutes after the first read -
+        // and so has one read but not yet at its 20 s while a reason would hold it (the review: this cap cut such a hold short)
+        if (hold.keeps()) return
         val now = System.currentTimeMillis()
         val wait = PreLoginTraffic.capWait(now, writtenAt, holdFrom, lifeMs, downloading)
         if (wait > 0L) {
@@ -312,6 +313,7 @@ object NativeLogin {
             main.post { logEvent("heavy traffic after the game's read ($rxBytes B/s): heavy traffic at the read, not taken for past the login screen") }
         }
         main.post {
+            hold.tick()                    // the captcha hold's times on the wall clock (the Handler's stand still while the device sleeps)
             worldTraffic(rxBytes); onTrafficSample?.invoke(rxBytes, txBytes)
             val counts = PreLoginTraffic.counts(firstReadAt > 0L, pastLogin, reachedWorld)
             if (counts) preLogin.add(rxBytes, System.currentTimeMillis())?.let { logEvent(it) }
