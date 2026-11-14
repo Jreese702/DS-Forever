@@ -60,6 +60,9 @@ object GameLife {
         startedAt = now; worldSeen = false; ended = false; note = null; closer = null
         DiagLog.event("game", "started")
         LastRun.gameStarted(now)                                   // 1.0.17: kept across the app's own death
+        // issue triage 2026-11-14 (the 1.0.29 - 1.0.31 low-memory cluster; the user: "yes on the triage things"): the game is about to
+        // take gigabytes; DS Forever lets go of what is not on show and collects first (nothing when the watch is not running)
+        MemWatch.relieve("game start")
     }
 
     /** 1.0.19: the game has reached the world and not ended (the LB picture only then: the user, "The LB menu is also appearing in the app
@@ -72,6 +75,9 @@ object GameLife {
         worldSeen = true
         DiagLog.event("game", "in the world after ${minutes(now - startedAt)}")
         LastRun.gameInWorld()
+        // issue triage 2026-11-14: the reports' kills came 2 - 30 s after this, the game still loading the world: the same relief
+        // (the loading pictures go too once the start screen stops drawing them: Scene)
+        MemWatch.relieve("world")
     }
 
     /** the guest program ended with [status] (XServerScreen's termination callback) */

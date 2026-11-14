@@ -121,13 +121,103 @@ object MemWatch {
     fun hiddenLetsGo(level: Int, shown: Boolean): Boolean = !shown && level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW
     @Volatile private var trimLevel = -1
     @Volatile private var trimAt = 0L
-    /** a trim from Android (the main thread): logged, handed on, and a line at once */
+    /** a trim from Android (the main thread): handed on, then (this watch's thread) logged with the pressure, kept, a collection at
+     *  running-low or worse ([collects]) and a line at once */
     fun trimmed(level: Int) {
         trimLevel = level; trimAt = SystemClock.uptimeMillis()
-        val freed = synchronized(this) { trimmers.toList() }.map { (n, f) -> n to runCatching { f(level) }.getOrDefault(-1L) }
-        Log.i(TAG, "trim from Android: ${trimName(level)}" + if (freed.isEmpty()) "" else
-            " (let go: ${freed.joinToString { (n, b) -> "$n ${if (b < 0) "failed" else "${mbB(b)} MB"}" }})")
-        handler?.post { runCatching { val l = line(); Log.i(TAG, l); keep(l) } }
+        val freed = letGo(level)
+        val h = handler
+        if (h == null) { Log.i(TAG, trimLine("trim from Android: ${trimName(level)}", freed, "", "")); return }
+        h.post {
+            runCatching {
+                val psi = psiNow()
+                val gc = if (collects(level)) collect() else ""
+                val t = trimLine("trim from Android: ${trimName(level)}", freed, gc, psi)
+                Log.i(TAG, t); keep(t)
+            }
+            runCatching { val l = line(); Log.i(TAG, l); keep(l) }
+        }
+    }
+
+    /** every trim registration at [level] (the main thread): what each let go, -1 = it failed */
+    private fun letGo(level: Int): List<Pair<String, Long>> =
+        synchronized(this) { trimmers.toList() }.map { (n, f) -> n to runCatching { f(level) }.getOrDefault(-1L) }
+
+    // ---------------------------------------------------------------- issue triage 2026-11-14: relief before the game's own big allocation
+    /**
+     * RELIEF BEFORE THE GAME'S OWN BIG ALLOCATION (issue triage 2026-11-14, the 1.0.29 - 1.0.31 low-memory cluster #236 - #276; the
+     * user, 2026-11-13: "yes on the triage things"). 24 reports from 18 Thors (8, 12 and 16 GB): Android's low-memory killer closed
+     * DS Forever - and the game with it, the game runs as our child, so the killer can only name us - while the GAME loaded: its own
+     * memory jumped 1 - 2 GB within seconds of Play, the world or a zone, while DS Forever held 230 - 620 MB and flat in its last minute.
+     * What DS Forever can do is hold less at exactly those moments. [relieve]: when the game's screen comes up (Play) and when it reaches
+     * the world (GameLife), every trim registration lets go at [RELIEF_LEVEL] (what is not on show: the World map room's pictures, the
+     * Settings miniatures, the loading pictures once no loading page draws them), then ONE Java collection on this watch's thread (the
+     * reports' Java heap swung 20 -> 150 MB of garbage between the runtime's own collections). Android's own running-low / critical
+     * trims get the same collection ([collects]). At most one collection per [GC_EVERY_MS]. Each relief and trim is kept in mem.log
+     * with the kernel's memory pressure ([psiNow]: what the killer acts on), so the next report says what the moment was.
+     */
+    const val RELIEF_LEVEL = ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW
+    const val GC_EVERY_MS = 10_000L
+    @Volatile private var gcAt = Long.MIN_VALUE / 2
+
+    /** a collection may run now: none in the last [GC_EVERY_MS] (pure: the tests) */
+    fun gcDue(now: Long, last: Long): Boolean = now - last >= GC_EVERY_MS
+    /** a trim worth a collection: running-low or worse while shown, any background level, Android's onLowMemory */
+    fun collects(level: Int): Boolean = level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW
+
+    /** [why] the game is about to take memory: let go and collect (any thread); nothing before [start] (the tests, no watch) */
+    fun relieve(why: String) {
+        val h = handler ?: return
+        runCatching {
+            Handler(Looper.getMainLooper()).post {
+                val freed = letGo(RELIEF_LEVEL)
+                h.post { runCatching { val l = trimLine("relief ($why)", freed, collect(), psiNow()); Log.i(TAG, l); keep(l) } }
+            }
+        }
+    }
+
+    /** one Java collection when due (this watch's thread): "java 140 -> 31 MB", "" = not due */
+    private fun collect(): String {
+        val now = SystemClock.uptimeMillis()
+        if (!gcDue(now, gcAt)) return ""
+        gcAt = now
+        val rt = Runtime.getRuntime()
+        val before = rt.totalMemory() - rt.freeMemory()
+        rt.gc()
+        val after = rt.totalMemory() - rt.freeMemory()
+        return "java ${mbB(before)} -> ${mbB(after)} MB"
+    }
+
+    /** "relief (world): let go worldroom 43 MB, scenes 0 MB; java 140 -> 31 MB; psi some 2.10 full 0.40" (pure: the tests) */
+    fun trimLine(head: String, freed: List<Pair<String, Long>>, gc: String, psi: String): String = buildString {
+        append(head)
+        val kept = freed.filter { it.second != 0L }
+        if (kept.isNotEmpty()) append(": let go ").append(kept.joinToString { (n, b) -> "$n ${if (b < 0) "failed" else "${mbB(b)} MB"}" })
+        if (gc.isNotEmpty()) append("; ").append(gc)
+        if (psi.isNotEmpty()) append("; ").append(psi)
+    }
+
+    /**
+     * THE KERNEL'S MEMORY PRESSURE (/proc/pressure/memory, what Android's low-memory killer acts on), read only at a trim or a relief:
+     * "psi some 2.10 full 0.40" (the last 10 s averages, %). ONE failed read and it is never read again this process, as [gpuBytes]
+     * (an enforcing device refuses it; the Thor logs a denial even when a read works, so never on every line).
+     */
+    internal var psiRead: () -> String? = { runCatching { java.io.File("/proc/pressure/memory").readText() }.getOrNull() }
+    @Volatile internal var psiDead = false
+    internal fun psiNow(): String {
+        if (psiDead) return ""
+        val t = runCatching { psiRead() }.getOrNull()
+        val n = t?.let { psiNote(it) }.orEmpty()
+        if (n.isEmpty()) psiDead = true
+        return n
+    }
+    /** "some avg10=2.10 ...\nfull avg10=0.40 ..." -> "psi some 2.10 full 0.40", "" = not that file (pure: the tests) */
+    fun psiNote(text: String): String {
+        fun avg10(kind: String) = text.lineSequence().firstOrNull { it.startsWith("$kind ") }
+            ?.split(' ')?.firstOrNull { it.startsWith("avg10=") }?.removePrefix("avg10=")?.toDoubleOrNull()
+        val some = avg10("some") ?: return ""
+        val full = avg10("full")
+        return "psi some ${"%.2f".format(java.util.Locale.US, some)}" + (full?.let { " full ${"%.2f".format(java.util.Locale.US, it)}" } ?: "")
     }
     fun trimName(level: Int): String = when (level) {
         ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> "running-moderate"

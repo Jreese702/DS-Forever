@@ -66,7 +66,8 @@ object LoadingScene {
     // ------------------------------------------------------------------ the pictures and their colours
 
     private val tints = HashMap<Int, FloatArray>()
-    private fun picture(i: Int): Bitmap? = UiKit.tex("scene_" + Scene.all[i % Scene.all.size])
+    // issue triage 2026-11-14 (low-memory cluster): Scene's own pictures, let go once no loading page draws (no longer UiKit's kit cache)
+    private fun picture(i: Int): Bitmap? = Scene.pic(Scene.all[i % Scene.all.size])
     private fun tint(i: Int): FloatArray {
         val fid = Scene.all[i % Scene.all.size]
         tints[fid]?.let { return it }
