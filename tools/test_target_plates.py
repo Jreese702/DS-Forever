@@ -558,7 +558,7 @@ WowCompanionDB.npFriends = nil; WowCompanionDB.npFriendsOff = nil
     chk("uf22: a glyph at the bar's level: the bar raised over it (%s > %s)" % (TB.f.level, gf.level), TB.f.level > gf.level)
     pm_src = open(os.path.join(rt.ROOT, *rtb.PADMAP_REL.split("/")), encoding="utf-8").read()
     chk("m155: PadMap's floating glyph in MEDIUM level 5, sized by Hub's UF.yPlate", rtb.glyph_layer(pm_src) == ("MEDIUM", 5)
-        and 'local PV = "m160"' in pm_src and "uf.yPlate" in pm_src and 'f:SetFrameStrata("HIGH")' not in pm_src)
+        and 'local PV = "m161"' in pm_src and "uf.yPlate" in pm_src and 'f:SetFrameStrata("HIGH")' not in pm_src)
 
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)

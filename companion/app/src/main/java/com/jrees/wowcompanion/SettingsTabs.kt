@@ -78,7 +78,8 @@ object SettingsTabs {
         CONTROLLER(Group.BUTTONS, "Buttons", listOf("ABXY location", "Button glyphs")),
         // f-radial-settings (1.0.9, the user: "better organize each radial setting into categories so its clear what each one is"): a
         // sub-heading per wheel, naming the button that opens it
-        PAUSE_WHEEL(Group.WHEELS, "Pause menu (Start)", listOf("Pause menu: open", "Pause menu: pick"), subHead = true),
+        // the user's pick 2026-11-13 ("Make it a setting toggle defaulted to our wheel"): Start over a game window, Our wheel / Game's wheel
+        PAUSE_WHEEL(Group.WHEELS, "Pause menu (Start)", listOf("Pause menu: open", "Pause menu: pick", PauseOver.ROW_ID), subHead = true),
         ITEM_WHEEL(Group.WHEELS, "Item wheel (D-pad Up)", listOf("Item wheel: open", "Item wheel: pick"), subHead = true),
         SPELL_WHEEL(Group.WHEELS, "Spell wheel (its button in Controller)", listOf("Spell wheel: open", "Spell wheel: pick"), subHead = true),
         CLASS_LEFT(Group.WHEELS, "Left class radial (LB + LT)", listOf("Left class radial: open", "Left class radial: pick"), subHead = true),

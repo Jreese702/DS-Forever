@@ -126,6 +126,16 @@ object HomeSettings {
         get() = prefs?.getBoolean("classPickAR", false) ?: false
         set(v) { if (v != classPickAR) { prefs?.edit()?.putBoolean("classPickAR", v)?.apply(); for (l in listeners) l() } }
 
+    /**
+     * START OVER GAME WINDOWS (the user's pick, 2026-11-13: "Make it a setting toggle defaulted to our wheel"; issue: "the pause radial is
+     * appearing on the top and bottom"): false = Our wheel (the default; PadMap m160: Start stays ours over a game window), true = Game's
+     * wheel (a game window open with no room holding: Start is the game's own radial, Home's wheel does not open - never both). App-wide;
+     * the add-on is told by padtab 39 then 32 / 33 (Book b61) whenever its padmap says otherwise (PauseOverModel).
+     */
+    var pauseOverGame: Boolean
+        get() = prefs?.getBoolean("pauseOverGame", false) ?: false
+        set(v) { if (v != pauseOverGame) { prefs?.edit()?.putBoolean("pauseOverGame", v)?.apply(); for (l in listeners) l() } }
+
     var pauseTap: Boolean
         get() = prefs?.getBoolean(KEY_PAUSE_TAP, true) ?: true
         set(v) {

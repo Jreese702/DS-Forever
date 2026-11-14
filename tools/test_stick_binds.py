@@ -171,7 +171,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local PV = "m160"' in SRC["padmap"] and 'local CV = "p53"' in SRC["padtabctl"], "the versions: PadMap m157, PadTabCtl p52 (stick buttons)")
+check('local PV = "m161"' in SRC["padmap"] and 'local CV = "p53"' in SRC["padtabctl"], "the versions: PadMap m157, PadTabCtl p52 (stick buttons)")
 STK = "\n".join(l.split("--", 1)[0] for l in
                 SRC["padmap"].split('-- m150 STICK BUTTONS (GitHub #78)\n', 1)[1].split('\nWC.padMap = {', 1)[0].splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', STK) and 'SaveBindings' not in STK and 'SetOverrideBinding' in STK,

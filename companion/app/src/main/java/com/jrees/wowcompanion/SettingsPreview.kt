@@ -41,6 +41,8 @@ object SettingsPreview {
         val partyMode: Boolean = true, val smartRes: Boolean = true, val attackHostile: Boolean = false, val autoShot: Int = 1,
         // the tap-to-cast bar in a fight: Hide (the default, true) / Stay
         val castCombatHide: Boolean = true,
+        // the user's pick 2026-11-13: Start over game windows, false = Our wheel (the default), true = Game's wheel
+        val pauseOverGame: Boolean = false,
     )
 
     /**
@@ -69,7 +71,7 @@ object SettingsPreview {
         "Hearthstone" to false, "Class teleport" to false, "Gold" to false, "Free bag slots" to false, "Ammo" to false,
         "Start the attack when a spell is cast" to true, "DS WoW toolbar" to false, "Tap-to-cast bar" to false, "In combat" to true,
         "ABXY location" to true, "Button glyphs" to false,
-        "Pause menu: open" to true, "Pause menu: pick" to true, "Item wheel: open" to true, "Item wheel: pick" to true,
+        "Pause menu: open" to true, "Pause menu: pick" to true, PauseOver.ROW_ID to true, "Item wheel: open" to true, "Item wheel: pick" to true,
         "Spell wheel: open" to true, "Spell wheel: pick" to true,
         "Left class radial: open" to true, "Left class radial: pick" to true, "Right class radial: open" to true, "Right class radial: pick" to true,
         "Smart Y" to true, "Party mode" to true, "Smart Res" to true, "Start attack on hostile target" to true, "Combat Auto Shot" to true,
@@ -92,6 +94,7 @@ object SettingsPreview {
         "Pause menu: open" -> if (s.pauseTap) "Tap" else "Hold"
         "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> if (tapOf(id, s)) "Tap" else "Hold"
         "Pause menu: pick" -> if (s.pausePickA) "A" else "Release"
+        PauseOver.ROW_ID -> PauseOver.SEGMENTS[if (s.pauseOverGame) 1 else 0]
         "Item wheel: pick", "Spell wheel: pick", "Left class radial: pick", "Right class radial: pick" -> if (pickAOf(id, s)) "A" else "Release"
         "Minimap zoom outdoors" -> "${s.miniOutYd} yd"
         "Minimap zoom indoors" -> "${s.miniInYd} yd"
@@ -114,7 +117,7 @@ object SettingsPreview {
     }.let { v -> val n = SHORT[id] ?: id; if (v.isEmpty()) n else "$n: $v" }
 
     /** a row's name in the picture's title when the row's own words are too long for the panel */
-    private val SHORT = mapOf("In combat" to "Cast bar in combat", "Start the attack when a spell is cast" to "Start the attack", "Start attack on hostile target" to "Start attack")
+    private val SHORT = mapOf(PauseOver.ROW_ID to "Over game windows", "In combat" to "Cast bar in combat", "Start the attack when a spell is cast" to "Start the attack", "Start attack on hostile target" to "Start attack")
 
     /** two or three short lines under the picture */
     fun caption(id: String, s: State): List<String> = when (id) {
@@ -133,6 +136,7 @@ object SettingsPreview {
         "Button glyphs" -> listOf("The button pictures shown everywhere.", "Where they sit is \"ABXY location\".")
         "Pause menu: open", "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> if (tapOf(id, s)) listOf("A press opens the wheel;", "it stays open until you pick or press B.")
             else listOf("Hold the button: the wheel is open", "while you hold it, and closes when you let go.")
+        PauseOver.ROW_ID -> PauseOver.caption(s.pauseOverGame)
         "Pause menu: pick", "Item wheel: pick", "Spell wheel: pick", "Left class radial: pick", "Right class radial: pick" -> if (pickAOf(id, s)) listOf("Aim with the stick, then press A to pick.")
             else listOf("Aim with the stick; letting go of", "the stick picks what it points at.")
         "Minimap zoom outdoors" -> listOf("How many yards across Home's small map", "shows outside.")
@@ -239,6 +243,7 @@ object SettingsPreview {
             "Button glyphs" -> glyphSets(c, r, s.glyphSet, glyph)
             "Pause menu: open", "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> wheelOpen(c, r, tapOf(id, s), t, id.startsWith("Pause"))
             "Pause menu: pick", "Item wheel: pick", "Spell wheel: pick", "Left class radial: pick", "Right class radial: pick" -> wheelPick(c, r, pickAOf(id, s), t, glyph, s.glyphSet)
+            PauseOver.ROW_ID -> pauseOver(c, r, s.pauseOverGame, t, glyph, s.glyphSet)
             "Minimap zoom outdoors" -> minimap(c, r, s.miniOutYd, false)
             "Minimap zoom indoors" -> minimap(c, r, s.miniInYd, true)
             "Message input" -> chatInput(c, r, s.quickChat)
@@ -770,6 +775,32 @@ object SettingsPreview {
             glyph.draw(c, "a", set, r.right - 60f, r.bottom - 70f, if (pressed) 56f else 48f)
             text(c, "A picks", r.right - 60f, r.bottom - 26f, 18f, if (pressed) GOLD else DIMC)
         } else text(c, if (k >= 1.6f) "let go: picked" else "aim with the stick", cx, r.bottom - 30f, 20f, if (k >= 1.6f) GOLD else DIMC)
+    }
+
+    /**
+     * Start over game windows (the user's pick 2026-11-13): the two screens, a game window open on the top one; Start is pressed and ONE
+     * wheel opens - Home's on the bottom screen (Our wheel) or the game's own over the window on the top screen (Game's wheel)
+     */
+    private fun pauseOver(c: Canvas, r: RectF, game: Boolean, t: Float, glyph: Glyph, set: Int) {
+        val period = 3.4f; val k = t % period
+        val open = when { k < 0.6f -> 0f; k < 0.85f -> (k - 0.6f) / 0.25f; k < 2.9f -> 1f; else -> 1f - ((k - 2.9f) / 0.3f).coerceIn(0f, 1f) }
+        val w = min(r.width() - 40f, 300f); val h = w * 0.42f
+        val top = RectF(r.centerX() - w / 2f, r.top + 8f, r.centerX() + w / 2f, r.top + 8f + h)
+        val bottom = RectF(top.left, top.bottom + 14f, top.right, top.bottom + 14f + h)
+        frame(c, top, BRONZE, 2f, Color.rgb(20, 16, 10)); frame(c, bottom, BRONZE, 2f, Color.rgb(20, 16, 10))
+        // the game window on the top screen
+        val win = RectF(top.left + 14f, top.top + 12f, top.left + w * 0.42f, top.bottom - 12f)
+        frame(c, win, Theme.bronzeDim, 2f, Color.rgb(46, 36, 22))
+        pFill.color = Theme.bronzeDim
+        for (i in 0 until 3) c.drawRect(win.left + 10f, win.top + 14f + i * 14f, win.right - 10f, win.top + 20f + i * 14f, pFill)
+        text(c, "Top screen", top.right - 10f, top.top + 22f, 16f, DIMC, Paint.Align.RIGHT)
+        text(c, "Bottom screen", bottom.right - 10f, bottom.top + 22f, 16f, DIMC, Paint.Align.RIGHT)
+        // ONE wheel: the game's on top over the window, or Home's on the bottom
+        val on = if (game) top else bottom
+        wheel(c, on.centerX() + (if (game) w * 0.12f else 0f), on.centerY(), on.height() * 0.38f, open)
+        val pressed = k in 0.5f..0.75f
+        glyph.draw(c, "start", set, r.centerX() - 44f, bottom.bottom + 34f, if (pressed) 40f else 34f)
+        text(c, if (game) "The game's wheel" else "Home's wheel", r.centerX() - 16f, bottom.bottom + 40f, 18f, if (open > 0f) GOLD else DIMC, Paint.Align.LEFT)
     }
 
     // ---- Rooms

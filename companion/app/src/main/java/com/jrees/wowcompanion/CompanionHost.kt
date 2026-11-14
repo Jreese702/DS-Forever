@@ -629,6 +629,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the spell radials' own names / icons (RadialMeta): the bars and the Controller room show a change at once
         RadialMeta.init(this)
         RadialMeta.onChange { lastPadMap?.let { m -> homeView.onPadMap(m); controllerView.onPadMap(m); spellbookView.onPadMap(m) } }
+        // the user's pick 2026-11-13: Start over game windows - a change is told to the add-on at once (the next padmap confirms it)
+        var pauseOverSeen = HomeSettings.pauseOverGame
+        HomeSettings.onChange { ui.post {
+            if (!shell.hostGone() && HomeSettings.pauseOverGame != pauseOverSeen) {
+                pauseOverSeen = HomeSettings.pauseOverGame; pauseOverSentAt = 0L; pauseOverTell(lastPadMap, "the setting")
+            }
+        } }
         homeView.onPartyLeaveRest = { partyLeaveHome("a Home module full screen") }
         // Home's controller reader passes each held mask to Interact's pop-up while it shows: its Make Space ring follows the real A
         // press (display only; one getevent). In a room no reader of Home's runs: the ring falls back to Interact's document
@@ -2554,6 +2561,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // 2026-11-13 (StartRoute): Start's state only from a padmap OF THIS GAME RUN: current, or replayed from this run's own
                 // backlog (its `_gt` stamp after the game's start: a host that came up mid-game); an older run's says nothing about now
                 if (current || padmapOfThisRun(msg.optLong("_gt", -1L))) { padmapRunAt = System.currentTimeMillis(); runStart = it.start }
+                if (current) pauseOverTell(it, "padmap")                // the user's pick: Start over game windows, told when it differs
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
                 spellbookView.onPadMap(it); controllerView.onPadMap(it); homeView.onPadMap(it); spellsOverlay.onPadMap(it)
@@ -3020,6 +3028,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         startReadAt = SystemClock.uptimeMillis()
         openPause("Start", byStart = true)
+    }
+    /** the user's pick 2026-11-13 ("Make it a setting toggle defaulted to our wheel"): the add-on told the app's Start-over-windows value
+     *  whenever a current padmap says another (PauseOver), and at once on a change (HomeSettings' listener) */
+    private var pauseOverSentAt = 0L
+    private fun pauseOverTell(m: PadMapModel.Map?, why: String) {
+        val game = HomeSettings.pauseOverGame
+        if (m == null || !PauseOver.needsTell(game, m.start, PauseOver.knows(m.version), pauseOverSentAt, SystemClock.elapsedRealtime())) return
+        val sent = padTabTap(PauseOver.cells(game))
+        if (sent) pauseOverSentAt = SystemClock.elapsedRealtime()
+        Log.i("WCHOME", "start over game windows: ${if (game) "game's wheel" else "our wheel"} told ($why)${if (sent) "" else ": not sent"}")
     }
     /** StartRoute: the last current document's wall time; the last padmap of this game run's wall time and its Start state (0 = none) */
     private var docLiveAt = 0L

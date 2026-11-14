@@ -165,6 +165,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** the pause wheel's own pair (HomeSettings.pauseTap / pausePickA; the user 2026-10-09) */
     private val segPauseOpen = Array(2) { RectF() }
     private val segPausePick = Array(2) { RectF() }
+    /** the user's pick 2026-11-13: Start over game windows (HomeSettings.pauseOverGame): Our wheel / Game's wheel */
+    private val segPauseOver = Array(2) { RectF() }
 
     /**
      * FRAME GENERATION (board f-frame-gen): the player's own Lossless.dll and its settings (FrameGen; applied at the next game start).
@@ -259,7 +261,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPsTop.toList() + segPq.flatMap { it.toList() } + segDanger.toList() + segFog.toList() + segChat.toList() +
-            segTheme.toList() + segLang.toList() + segGameAcct.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
+            segTheme.toList() + segLang.toList() + segGameAcct.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segPauseOver.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
             segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
@@ -293,7 +295,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         btnGuidePending.setEmpty(); for (r in segGuide) r.setEmpty()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
-        for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
+        for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segPauseOver, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
                          segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segLight, segGameAcct,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
@@ -354,7 +356,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.POLESTAR_TOP -> if (psTopShown()) ROW_H else 0f
         SettingsTabs.Block.INDOOR -> ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
         SettingsTabs.Block.CONTROLLER -> ROW_H + 10f + ROW_H
-        SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
+        SettingsTabs.Block.PAUSE_WHEEL -> ROW_H + 10f + ROW_H + 10f + ROW_H             // + Start over game windows
+        SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
         SettingsTabs.Block.CLASS_LEFT, SettingsTabs.Block.CLASS_RIGHT -> ROW_H + 10f + ROW_H
         SettingsTabs.Block.CHAT -> ROW_H
         SettingsTabs.Block.FRAMES -> fgHeight()
@@ -446,6 +449,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segPauseOpen[1].contains(x, y) -> HomeSettings.pauseTap = false
             segPausePick[0].contains(x, y) -> HomeSettings.pausePickA = true
             segPausePick[1].contains(x, y) -> HomeSettings.pausePickA = false
+            segPauseOver[0].contains(x, y) -> HomeSettings.pauseOverGame = false
+            segPauseOver[1].contains(x, y) -> HomeSettings.pauseOverGame = true
             segOpen[0].contains(x, y) -> HomeSettings.radialTap = true
             segOpen[1].contains(x, y) -> HomeSettings.radialTap = false
             segPick[0].contains(x, y) -> HomeSettings.radialPickA = true
@@ -556,6 +561,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 SettingsTabs.Block.CONTROLLER -> drawController(c, y)
                 SettingsTabs.Block.PAUSE_WHEEL -> drawWheel(c, y, "Pause menu", "Press Start to open; it stays until B.",
                     "Hold Start; letting go closes it.", HomeSettings.pauseTap, HomeSettings.pausePickA, segPauseOpen, segPausePick)
+                    .let { bottom -> drawPauseOver(c, bottom + 10f) }
                 SettingsTabs.Block.ITEM_WHEEL -> drawWheel(c, y, "Item wheel", "Press D-pad Up to open; it stays until B.",
                     "Hold D-pad Up; letting go closes it.", HomeSettings.radialTap, HomeSettings.radialPickA, segOpen, segPick)
                 SettingsTabs.Block.SPELL_WHEEL -> drawWheel(c, y, "Spell wheel", "Press its button to open; it stays until B.",
@@ -936,6 +942,18 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             b
         }
         return y + ROW_H
+    }
+
+    /** the user's pick 2026-11-13 ("Make it a setting toggle defaulted to our wheel"): Start with a game window open */
+    private fun drawPauseOver(c: Canvas, top: Float): Float {
+        val game = HomeSettings.pauseOverGame
+        val segW = segW()
+        row(c, top, PauseOver.ROW_ID, PauseOver.line(game), enabled = true) { box ->
+            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, PauseOver.SEGMENTS, if (game) 1 else 0, segPauseOver)
+            b
+        }
+        return top + ROW_H
     }
 
     // ---- SMART Y (Spells' PadMap m62; the user: "logic rows, with the bottom row being an Add button ... on a single row I need to be

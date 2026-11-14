@@ -302,7 +302,8 @@ object PadMapModel {
                     undone = sides("undone"))
             },
             start = m.optJSONObject("start")?.let { st ->
-                StartState(textOrNull(st, "key"), textOrNull(st, "bound"), textOrNull(st, "aside"), st.optBoolean("menu", false), textOrNull(st, "why"))
+                StartState(textOrNull(st, "key"), textOrNull(st, "bound"), textOrNull(st, "aside"), st.optBoolean("menu", false), textOrNull(st, "why"),
+                    textOrNull(st, "over"))
             },
         )
     }
@@ -326,8 +327,11 @@ object PadMapModel {
     /** m37 / m160 START (the padmap's `start`): [key] the game's OPENRADIAL key; [bound] "pause" = Start is the router's (Home's wheel, the
      *  game's radial shut), "menu" = armed for the game's own Game Menu for one press, null = NOT the router's (the game's own radial
      *  opens on it); [aside] the router's step-aside ("room" / a game window); [why] m160: why it is not bound ("toolbar", "menu" (the
-     *  Game Menu is open), "radial" (the game's radial is open), "guest" (a guest holds it itself), "combat" / "refused"); null when bound */
-    data class StartState(val key: String?, val bound: String?, val aside: String?, val menu: Boolean = false, val why: String? = null)
+     *  Game Menu is open), "radial" (the game's radial is open), "guest" (a guest holds it itself), "window" (m161: Game's wheel over a
+     *  game window), "combat" / "refused"); null when bound */
+    data class StartState(val key: String?, val bound: String?, val aside: String?, val menu: Boolean = false, val why: String? = null,
+                          /** m161: the add-on's "Start over game windows": "game" = Game's wheel, null = Our wheel */
+                          val over: String? = null)
 
 
     /** One fight face's cooldown (PadMap m12 `facecd`; the user 2026-10-01, the game's dark sweep): [dur] seconds long, [left] seconds left

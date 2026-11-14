@@ -1,5 +1,18 @@
 {
 "plain": {
+"Start over game windows": "Start sobre ventanas del juego",
+"Our wheel": "Nuestra rueda",
+"Game's wheel": "Rueda del juego",
+"A game window open: Start opens the game's wheel.": "Con una ventana del juego abierta: Start abre la rueda del juego.",
+"A game window open: Start opens Home's wheel.": "Con una ventana del juego abierta: Start abre la rueda de Inicio.",
+"Over game windows: Our wheel": "Sobre ventanas del juego: nuestra rueda",
+"Over game windows: Game's wheel": "Sobre ventanas del juego: rueda del juego",
+"With a game window open, Start opens": "Con una ventana del juego abierta, Start abre",
+"the game's own wheel on the top screen.": "la rueda del propio juego en la pantalla superior.",
+"Home's wheel on the bottom screen.": "la rueda de Inicio en la pantalla inferior.",
+"Home's wheel": "Rueda de Inicio",
+"The game's wheel": "La rueda del juego",
+"Turn add-ons off in AddOns at character select.": "Desactiva accesorios en AddOns, en la selección de personaje.",
 "DS Forever add-ons aren't running": "Los accesorios de DS Forever no están activos",
 "Enable them in AddOns at character select.": "Actívalos en AddOns, en la selección de personaje.",
 "How": "Cómo",

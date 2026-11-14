@@ -42,3 +42,42 @@ object StartRoute {
         return Route(Kind.GAME, "Start is the game's now (${start.why ?: "not bound"}${start.aside?.let { ", aside $it" } ?: ""})")
     }
 }
+
+/**
+ * START OVER GAME WINDOWS, THE SETTING (the user's pick, 2026-11-13: "Make it a setting toggle defaulted to our wheel"): Settings >
+ * Controller > Pause menu (Start). Our wheel (the default) = PadMap m160: Start stays ours over a game window, Home's wheel opens. Game's
+ * wheel = a game window open with no room holding: Start is the game's own radial, Home's wheel does not open (the padmap's start.why
+ * "window": StartRoute sends the press to the game). Never both. App-wide (HomeSettings.pauseOverGame); the add-on keeps the value
+ * account-wide and says it back (start.over), so the app taps padtab 39 then 32 / 33 (Book b61) whenever a current padmap disagrees -
+ * at every connect, after a change, after a /reload - at most every [RESEND_MS]. Pure.
+ */
+object PauseOver {
+    const val ROW_ID = "Start over game windows"
+    val SEGMENTS = listOf("Our wheel", "Game's wheel")
+    const val PADTAB = "padtab"
+    const val PICK = 39
+    const val OURS_CODE = 32
+    const val GAME_CODE = 33
+    const val RESEND_MS = 3_000L
+
+    /** the row's one line under its name */
+    fun line(game: Boolean): String = if (game) "A game window open: Start opens the game's wheel." else "A game window open: Start opens Home's wheel."
+
+    /** the "What it does" picture's caption */
+    fun caption(game: Boolean): List<String> = if (game) listOf("With a game window open, Start opens", "the game's own wheel on the top screen.")
+        else listOf("With a game window open, Start opens", "Home's wheel on the bottom screen.")
+
+    /** the taps that tell the add-on the value */
+    fun cells(game: Boolean): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to if (game) GAME_CODE else OURS_CODE)
+
+    /** whether the add-on must be told now: [start] the current padmap's start (null = an add-on before m37: nothing to tell);
+     *  [over] its `over` ("game" / null) is the add-on's value only from m161 on ([knows]: the padmap's version says so) */
+    fun needsTell(game: Boolean, start: PadMapModel.StartState?, knows: Boolean, lastSentAt: Long, now: Long): Boolean {
+        if (start == null || !knows) return false
+        if ((start.over == "game") == game) return false
+        return lastSentAt == 0L || now - lastSentAt >= RESEND_MS
+    }
+
+    /** the padmap's version ("m161") knows the setting */
+    fun knows(version: String?): Boolean = (version?.removePrefix("m")?.takeWhile { it.isDigit() }?.toIntOrNull() ?: 0) >= 161
+}

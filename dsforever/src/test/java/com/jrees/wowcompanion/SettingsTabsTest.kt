@@ -77,7 +77,7 @@ class SettingsTabsTest {
             G.WINDOWS to listOf("Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window", "Game tooltips", "Cast bar",
                 "Player frame", "Target frame", "Controller bars, buffs and XP"),
             G.BUTTONS to listOf("ABXY location", "Button glyphs"),
-            G.WHEELS to listOf("Pause menu: open", "Pause menu: pick", "Item wheel: open", "Item wheel: pick", "Spell wheel: open",
+            G.WHEELS to listOf("Pause menu: open", "Pause menu: pick", "Start over game windows", "Item wheel: open", "Item wheel: pick", "Spell wheel: open",
                 "Spell wheel: pick", "Left class radial: open", "Left class radial: pick", "Right class radial: open", "Right class radial: pick"),
             G.SMART_Y to listOf("Smart Y"),
             G.COMBAT to listOf("Party mode", "Smart Res", "Start attack on hostile target", "Start the attack when a spell is cast", "Combat Auto Shot"),
@@ -136,7 +136,9 @@ class SettingsTabsTest {
             // hub52 (the user, 2026-11-13: "maybe we should set this as a toggle defaulted to off"): Top > Target
             listOf("Friendly plates") +
             // added since: the clock band's ammo (feat/clock-extras-v2)
-            listOf("Ammo")
+            listOf("Ammo") +
+            // the user's pick 2026-11-13 ("Make it a setting toggle defaulted to our wheel"): Controller > Pause menu (Start)
+            listOf("Start over game windows")
         val now = B.values().flatMap { it.rows }
         assertEquals(before.toSet(), now.toSet())
         assertEquals("a row in two places", now.size, now.toSet().size)
@@ -226,7 +228,8 @@ class SettingsTabsTest {
         for (b in listOf(B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT)) {
             assertEquals(T.CONTROLLER, b.tab)
             assertEquals(G.WHEELS, b.group)
-            assertEquals(2, b.rows.size)
+            // the user's pick 2026-11-13: the pause menu's third row, Start over game windows (Our wheel / Game's wheel)
+            assertEquals(if (b == B.PAUSE_WHEEL) 3 else 2, b.rows.size)
             assertTrue(b.rows[0].endsWith(": open") && b.rows[1].endsWith(": pick"))
             for (r in b.rows) assertTrue("$r has a picture", SettingsPreview.has(r))
         }
@@ -302,7 +305,8 @@ class SettingsPreviewRowsTest {
     }
 
     @Test fun twentyTwoRowsAndTheMovingOnes() {          // f-radial-settings: + the spell wheel's own pair; 2026-11-13: + 12, + the cast bar's In combat
-        assertEquals(39, SettingsPreview.ROWS.size)
+        assertEquals(40, SettingsPreview.ROWS.size)                     // 2026-11-13: + Start over game windows
+        assertTrue(SettingsPreview.animated("Start over game windows"))
         assertTrue(SettingsPreview.animated("Swing timer") && SettingsPreview.animated("Frame limit") && !SettingsPreview.animated("Button glyphs"))
         assertTrue(SettingsPreview.animated("In combat"))                // the bar fading out in a fight
     }

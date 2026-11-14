@@ -89,6 +89,62 @@ class PauseDupTest {
         assertEquals("Add-ons not installed: x.", AddonSilence.cause("Add-ons not installed: x.", null, null, null, listOf("WowCompanionSpells:DISABLED")))
     }
 
+    // ---------------------------------------------------------------- the setting: Start over game windows (the user's pick, 2026-11-13)
+    @Test fun startOverGameWindowsBothValues() {
+        // Our wheel (the default): over a vendor the router holds Start (bound) -> Home's wheel, the game's radial shut
+        assertEquals(StartRoute.Kind.WHEEL, StartRoute.decide(true, true, true, st("pause", aside = "MerchantFrame"), "", 600_000L).kind)
+        // Game's wheel: the add-on leaves Start (why "window") -> the game's radial alone, Home's wheel never opens with it
+        val g = StartRoute.decide(true, true, true, st(null, "window", "MerchantFrame"), "", 600_000L)
+        assertEquals(StartRoute.Kind.GAME, g.kind); assertTrue(g.why, g.why.contains("window"))
+        // plain Home is ours in both values (the add-on binds there whatever the setting)
+        assertEquals(StartRoute.Kind.WHEEL, StartRoute.decide(true, true, true, st("pause"), "", 600_000L).kind)
+        // the taps: padtab 39 then 32 (Our wheel) / 33 (Game's wheel)
+        assertEquals(listOf("padtab" to 39, "padtab" to 32), PauseOver.cells(false))
+        assertEquals(listOf("padtab" to 39, "padtab" to 33), PauseOver.cells(true))
+        assertEquals(listOf("Our wheel", "Game's wheel"), PauseOver.SEGMENTS)
+    }
+
+    @Test fun theAddOnIsToldOnlyWhenItSaysOtherwise() {
+        val ours = st("pause"); val game = PadMapModel.StartState("PADFORWARD", null, "MerchantFrame", false, "window", "game")
+        assertFalse(PauseOver.needsTell(false, ours, true, 0L, 10_000L))                // in step
+        assertTrue(PauseOver.needsTell(true, ours, true, 0L, 10_000L))                  // the app says game, the add-on ours
+        assertTrue(PauseOver.needsTell(false, game, true, 0L, 10_000L))
+        assertFalse(PauseOver.needsTell(true, game, true, 0L, 10_000L))
+        assertFalse(PauseOver.needsTell(true, ours, true, 9_000L, 10_000L))             // told 1 s ago: not again yet
+        assertTrue(PauseOver.needsTell(true, ours, true, 9_000L, 9_000L + PauseOver.RESEND_MS))
+        assertFalse(PauseOver.needsTell(true, ours, knows = false, lastSentAt = 0L, now = 10_000L))   // an add-on before m161
+        assertFalse(PauseOver.needsTell(true, null, true, 0L, 10_000L))
+        assertTrue(PauseOver.knows("m161")); assertTrue(PauseOver.knows("m170")); assertFalse(PauseOver.knows("m160")); assertFalse(PauseOver.knows(null))
+        // the padmap carries the add-on's value
+        assertEquals("game", PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m161","m":{"start":{"key":"PADFORWARD","why":"window","over":"game"}}}"""))!!.start!!.over)
+    }
+
+    @Test fun theRowAndItsPicture() {
+        assertTrue(PauseOver.ROW_ID in SettingsTabs.Block.PAUSE_WHEEL.rows)
+        assertTrue(SettingsPreview.has(PauseOver.ROW_ID) && SettingsPreview.animated(PauseOver.ROW_ID))
+        assertEquals("Over game windows: Our wheel", SettingsPreview.title(PauseOver.ROW_ID, SettingsPreview.State()))
+        assertEquals("Over game windows: Game's wheel", SettingsPreview.title(PauseOver.ROW_ID, SettingsPreview.State(pauseOverGame = true)))
+        assertTrue(SettingsPreview.caption(PauseOver.ROW_ID, SettingsPreview.State(pauseOverGame = true)).last().contains("top screen"))
+        assertTrue(SettingsPreview.caption(PauseOver.ROW_ID, SettingsPreview.State()).last().contains("bottom screen"))
+    }
+
+    // ---------------------------------------------------------------- "Yes, protect": our add-on's "has been blocked" pop-up
+    @Test fun ourBlockedPopUpNeverDisables() {
+        val bs = listOf(DialogPad.B(1, true, 0), DialogPad.B(2, true, 1))
+        // Dialogs d33: safe 2 (Ignore), never 1 (Disable): A and B both answer Ignore
+        assertEquals(2, DialogPad.dialogButton("PAD1", bs, delayed = false, quit = false, safe = 2, never = 1))
+        assertEquals(2, DialogPad.dialogButton("PAD2", bs, delayed = false, quit = false, safe = 2, never = 1))
+        // the old rule (no safe): A = Disable - what switched issue #278's Spells off
+        assertEquals(1, DialogPad.dialogButton("PAD1", bs, delayed = false, quit = false))
+        // Disable is never pressed by DS Forever: not the app's own press, not a finger on its copy
+        assertFalse(DialogPad.mayPress("ADDON_ACTION_FORBIDDEN", 1, finger = false, never = 1))
+        assertFalse(DialogPad.mayPress("ADDON_ACTION_FORBIDDEN", 1, finger = true, never = 1))
+        assertTrue(DialogPad.mayPress("ADDON_ACTION_FORBIDDEN", 2, finger = true, never = 1))
+        // another add-on's pop-up (no never): as the game has it; QUIT's Exit Now stays the finger's alone
+        assertTrue(DialogPad.mayPress("ADDON_ACTION_FORBIDDEN", 1, finger = true))
+        assertFalse(DialogPad.mayPress("QUIT", 1, finger = false)); assertTrue(DialogPad.mayPress("QUIT", 1, finger = true))
+    }
+
     // ---------------------------------------------------------------- the shadow never makes Logs / WTF / Interface private
     @Test fun theSharedFolderHasLogsBeforeTheLinks() {
         val fl = Files.createTempDirectory("flavor").toFile()

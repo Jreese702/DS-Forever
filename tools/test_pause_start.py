@@ -53,7 +53,7 @@ def settle(L):
 
 OURS = "CLICK WowCompanionFaceStart:LeftButton"
 
-check('local PV = "m160"' in SRC["padmap"], "PadMap says m160")
+check('local PV = "m161"' in SRC["padmap"], "PadMap says m161")
 check('function R.startWanted(aside, holder)' in SRC["padmap"] and SRC["padmap"].count('R.startWanted(aside, holder) and rbOn') == 1
       and SRC["padmap"].count('R.startWanted(aside, roomHolder())') == 1,
       "routerBind and routerCheck both ask R.startWanted (one rule for the bind and its check)")
@@ -157,7 +157,59 @@ check(F.eval('BIND["PADFORWARD"]') == OURS, "a fight starts with a vendor open: 
 F.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.3); MerchantFrame = nil')
 settle(F)
 
-for L in (W, T, F):
+# ---------------------------------------------------------------- m161: the setting (the user: "Make it a setting toggle defaulted to our wheel")
+check('local BV = "b61"' in SRC["book"] and 'local PV = "m161"' in SRC["padmap"], "Book b61, PadMap m161")
+
+
+def padtab(L, *cols):
+    for c in cols:
+        L.execute('WowCompanion.pad.rows["padtab"].handler(nil, %d); NOW = NOW + 0.1' % c)
+
+
+G = world()
+st = last_start(G)
+check(st is not None and st.get('over') is None and G.eval('WowCompanionSpellsDB.startOver') is None,
+      "the default is Our wheel (nothing stored, start.over absent)", st)
+for value, cols, over in (("Game's wheel", (39, 33), 'game'), ("Our wheel", (39, 32), None)):
+    n0 = nsent(G)
+    padtab(G, *cols)
+    st = last_start(G, n0)
+    check(G.eval('WowCompanionSpellsDB.startOver') == over and st is not None and st.get('over') == over,
+          "padtab 39 then %d = %s: kept account-wide, the padmap says over=%r" % (cols[1], value, over), (G.eval('WowCompanionSpellsDB.startOver'), st))
+    # over a game window, nobody holding
+    G.execute('MerchantFrame = { IsShown = function() return true end }')
+    n0 = nsent(G)
+    settle(G)
+    st = last_start(G, n0) or last_start(G)
+    if over == 'game':
+        check(start_bind(G) is None and st.get('bound') is None and st.get('why') == 'window',
+              "Game's wheel, a vendor open: Start is the GAME's (its own radial), start.why window (the app opens none)", (start_bind(G), st))
+    else:
+        check(start_bind(G) == OURS and st.get('bound') == 'pause', "Our wheel, a vendor open: Start is ours", (start_bind(G), st))
+    # plain Home and a room holding are ours in both values
+    G.execute('MerchantFrame = nil')
+    settle(G)
+    check(start_bind(G) == OURS, "%s, nothing open: Start is ours (plain Home)" % value, start_bind(G))
+    G.execute('MerchantFrame = { IsShown = function() return true end }; HOLDER = "bags"')
+    settle(G)
+    check(start_bind(G) == OURS, "%s, a ROOM holds over a game window: ours (m43)" % value, start_bind(G))
+    G.execute('MerchantFrame = nil; HOLDER = nil')
+    settle(G)
+# the pick alone (no code after it) changes nothing; a code without the pick is its plain self (never the setting)
+padtab(G, 32 + 1)
+check(G.eval('WowCompanionSpellsDB.startOver') is None, "padtab 33 without the pick: not the setting", G.eval('WowCompanionSpellsDB.startOver'))
+# in a fight: kept, the binding follows at the fight's end
+G.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.3)')
+padtab(G, 39, 33)
+check(G.eval('WowCompanionSpellsDB.startOver') == 'game' and G.eval('#VIOL') == 0, "set in a fight: kept, no protected call",
+      (G.eval('WowCompanionSpellsDB.startOver'), G.eval('#VIOL')))
+G.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.3); MerchantFrame = { IsShown = function() return true end }')
+settle(G)
+check(start_bind(G) is None, "after the fight, a vendor open: the game's (Game's wheel)", start_bind(G))
+G.execute('MerchantFrame = nil'); settle(G)
+padtab(G, 39, 32)
+
+for L in (W, T, F, G):
     check(L.eval('#SPY') == 0 and L.eval('#SNIPERR') == 0, "no spied call, no snippet error", (L.eval('SPY[1]'), L.eval('SNIPERR[1]')))
 
 # ---------------------------------------------------------------- issue #278: Spells DISABLED, pad15 never switched it on (TapPad pad20)
