@@ -137,6 +137,62 @@ object HomeLogin {
         return if (r.length <= 60) r else r.take(57) + "..."
     }
 
+    // ------------------------------------------------------------------------------------------------ the report's sign-in trail
+
+    /**
+     * THE SIGN-IN TRAIL FOR THE PROBLEM REPORT (the login triage of 2026-11-13, the user: "yes on the triage things"; issues #274 "can't
+     * log in", #271 "i cannot get past the captcha", #261 / #237 BLZ51914400, #247 "no captchA login", #235 "dc on authenticator code
+     * into captcha dc", #248 "i cant get pass choosing experience type"). The game's own sign-in lines were read from General.log and
+     * Connection.log, but only the authenticator ask was ever logged, so no report could tell Blizzard's refusal ("Status has no
+     * name (14400)" = BLZ51914400) from a captcha, a wrong region's portal or a screen the player could not leave. Now each step goes to
+     * the sign-in log as ONE line in our own words with the game's clock (the game writes these logs late, so its clock is the order):
+     * the portal it signs in at, the captcha and authenticator asks, the answer to each step, the refusal's reason and the glue screens.
+     * Only the game's status words, flags, portal host and screen names; never an account, a name, an address or the line itself.
+     * The words avoid what the report's privacy pass drops or masks (StartupDiag.DROP, Redact.SECRET). Pure.
+     */
+    fun trail(raw: String): String? {
+        val line = raw.trimEnd('\r')
+        val say = when {
+            "[Lua] Switching to screen=" in line -> SCREEN.find(line)?.groupValues?.get(1)?.takeIf { SAFE_NAME.matches(it) }?.let { s ->
+                "the game's screen ${quoteName(s)}" + (SCREEN_FROM.find(line)?.groupValues?.get(1)?.takeIf { SAFE_NAME.matches(it) }
+                    ?.let { " (from ${quoteName(it)})" } ?: "")
+            }
+            "Glue login started" in line -> "the game signs in at " +
+                (PORTAL.find(line)?.groupValues?.get(1)?.lowercase()?.takeIf { SAFE_PORTAL.matches(it) } ?: "a portal it does not name")
+            "Battle.net front connected" in line -> "Battle.net connected, remembered sign-in used ${flag(line, "usedToken") ?: "?"}"
+            "logon form submission response received" in line -> "Battle.net's answer to the sign-in: ${result(line)}" +
+                (if (flag(line, "authenticatorRequired") == "true") ", the authenticator code is asked" else "") +
+                (if (flag(line, "legalRequired") == "true") ", a legal agreement is asked" else "")
+            "logon form submission requested" in line -> "the sign-in form is sent"
+            "logon form received" in line -> "the sign-in form came: ${result(line)}" +
+                when (flag(line, "hasCaptcha")) { "true" -> ", the game asks for a captcha"; "false" -> ", no captcha"; else -> "" }
+            "credentials response received" in line -> "the credentials' answer: ${result(line)}"
+            "Battle.net logon completed result=" in line -> "Battle.net sign-in completed: ${result(line)}"
+            "Fatal login error received" in line -> "the game's refusal: " + (FATAL.find(line)?.groupValues?.get(1)?.let { reason(it) } ?: "?")
+            "Realm connection connected" in line -> "the realm connection is up"
+            else -> null
+        } ?: return null
+        val at = TRAIL_CLOCK.find(line)?.groupValues?.get(1)
+        return "sign-in trail" + (at?.let { " (game $it)" } ?: "") + ": " + say
+    }
+
+    /** the game's result word for one line: "ERROR_OK (0)" -> "ok", anything else shortened ([reason]); "?" when the line has none */
+    private fun result(line: String): String = RESULT.find(line)?.groupValues?.get(1)?.let { r ->
+        if (r.trim().startsWith("ERROR_OK")) "ok" else reason(r).ifEmpty { "(empty)" }
+    } ?: "?"
+
+    private fun flag(line: String, key: String): String? = Regex("""\b$key="(true|false)"""").find(line)?.groupValues?.get(1)
+
+    /** a screen name in quotes (never a bare word the privacy pass could read as a key) */
+    private fun quoteName(s: String) = "'$s'"
+
+    private val TRAIL_CLOCK = Regex("""^\s*\d+/\d+ (\d\d:\d\d:\d\d(?:\.\d+)?)""")
+    private val RESULT = Regex("""\bresult="([^"]*)"""")
+    private val PORTAL = Regex("""loginPortal="([A-Za-z0-9.\-]+)(?::\d+)?"""")
+    private val SAFE_PORTAL = Regex("""^[a-z0-9\-]+(\.[a-z0-9\-]+)*\.battle\.net$""")
+    private val SCREEN_FROM = Regex("""\(from "([^"]*)"\)""")
+    private val SAFE_NAME = Regex("""^[A-Za-z][A-Za-z0-9_]{0,39}$""")
+
     // ------------------------------------------------------------------------------------------------ the state
 
     /** UNSURE = our typing ended but the game has written nothing yet (WoW Forever writes its sign-in late, or not at all on screen):
