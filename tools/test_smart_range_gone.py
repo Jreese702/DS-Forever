@@ -19,6 +19,7 @@ sound off for the press) are removed. The players who had it get a ONE-TIME CLEA
   f before the game has loaded the macros: nothing (every read finds none); UPDATE_MACROS starts it;
   g per character: another character's macros and records are untouched until that character logs in;
   h a character that never had Smart Range: nothing deleted, the record says 0 / 0 / 0;
+  j (review) one of ours on an action slot (the player put it there: Smart Range never did) stays, counted as h; off the bar, it goes;
   i the In combat tab still works: Y is a no-op there, A opens the chooser, a fight spell goes on and casts.
 Needs lupa. Exit code 1 on any failure."""
 import json
@@ -104,6 +105,9 @@ function GetCVar(k) return CVARS[k] end
 function SetCVar(k, v) C_CVar.SetCVar(k, v) end
 ACTIONINFO = {}
 function GetActionInfo(s) local a = ACTIONINFO[s]; if a then return a[1], a[2] end end
+-- the action slots' macro names (GetActionText): a macro the player put on a bar
+BARTEXT = BARTEXT or {}
+function GetActionText(s) return BARTEXT[s] end
 C_SpellBook = { GetSpellBookItemInfo = function(slot) local id = BOOK[slot]; return id and { spellID = id } or nil end }
 function ser(v)
     if type(v) == "table" then local t = {} for k, x in pairs(v) do t[#t + 1] = "[" .. ser(k) .. "]=" .. ser(x) end return "{" .. table.concat(t, ",") .. "}"
@@ -394,6 +398,26 @@ N = boot(pre='CHARM = { ["Korvash-Realm"] = { { name = "Mine", icon = 1, body = 
 check(mlog(N) == [] and N.eval('names()') == "Mine" and padmap(N).get('srx') == {"m": 0, "b": 0, "k": 0},
       "h. nothing of ours: nothing deleted; the record says 0 / 0 / 0", (mlog(N), padmap(N).get('srx')))
 clean(N, "h")
+
+# ================================================================ j. (review) ours on an action slot: the player's now, it stays
+B = boot(pre=LEFTOVERS + '\nBARTEXT = { [5] = "DSF ZR+Up", [200] = "Mine" }')
+check(mlog(B) == ["delete DSF Bear Up", "delete DSF ZL+Left 2", "delete DSF Y"]
+      and B.eval('names()') == "Mine|DSF ZR+Up|DSF Up|DSF Down|DSFUp|DSF Jump|DSF Up x" and B.eval('bodyAt(2)') == OURS.replace('\\n', '\n'),
+      "j. 'DSF ZR+Up' sits on action slot 5 (the player put it there): it stays, byte for byte; the other three of ours go",
+      (mlog(B), B.eval('names()')))
+check(tbl(B.eval('WowCompanionSpellsDB.srGone["Korvash-Realm"]')) == {"m": 3, "b": 4, "k": 2, "h": 1}
+      and padmap(B).get('srx') == {"m": 3, "b": 4, "k": 2, "h": 1},
+      "j. ... counted (h = 1) and the clean-up is done (no p: nothing left it may delete)", padmap(B).get('srx'))
+check(tbl(B.eval('FT(%d)' % S)).get('n') == "Raptor Strike" and not (SRF & set(tbl(B.eval('FT(%d)' % S)))),
+      "j. ... its button is still back to one plain spell")
+B.execute('fire("PLAYER_ENTERING_WORLD", false, false); fire("UPDATE_MACROS"); runTimers(NOW + 5)')
+check(mlog(B) == ["delete DSF Bear Up", "delete DSF ZL+Left 2", "delete DSF Y"], "j. more events: still kept", mlog(B))
+SAVED = 'WowCompanionSpellsDB = ' + B.eval('ser(WowCompanionSpellsDB)') + '; CHARM = ' + B.eval('ser(CHARM)')
+B2 = boot(pre=SAVED)
+check(mlog(B2) == ["delete DSF ZR+Up"] and B2.eval('names()') == PLAYER_KEPT,
+      "j. a later login with it off the bar: it goes (ours, nothing holds it)", (mlog(B2), B2.eval('names()')))
+clean(B, "j")
+clean(B2, "j2")
 
 # ================================================================ i. the In combat tab still works
 I = boot()

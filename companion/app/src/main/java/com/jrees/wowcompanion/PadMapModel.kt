@@ -153,8 +153,9 @@ object PadMapModel {
     }
 
     /** m160: the Smart Range clean-up's counts - [macros] our own saved macros deleted, [buttons] buttons that had the box, [kept]
-     *  macros with our name but not our exact body (the player's: never touched); [pending] = not run yet this game session */
-    data class SrGone(val macros: Int, val buttons: Int, val kept: Int, val pending: Boolean)
+     *  macros with our name but not our exact body (the player's: never touched); [pending] = not run yet this game session;
+     *  [held] (m160 review) our own macros kept because the player put them on an action slot (the doc's `h`, absent = 0) */
+    data class SrGone(val macros: Int, val buttons: Int, val kept: Int, val pending: Boolean, val held: Int = 0)
 
     /** p12: an "extra" answer also names what was put: [idx] (1-based in the Extra list), [kind], [what] (a command key or an id), [name] */
     data class Ack(val op: String, val ok: Boolean, val why: String?, val storage: Int?, val idx: Int? = null, val kind: String? = null,
@@ -244,7 +245,8 @@ object PadMapModel {
                 if (f > 0 && p in 1..8 && r != null) FormFight(f, p, r) else null
             },
             srGone = m.optJSONObject("srx")?.let { o ->                // m160: the Smart Range clean-up (counts only)
-                SrGone(o.optInt("m", 0).coerceAtLeast(0), o.optInt("b", 0).coerceAtLeast(0), o.optInt("k", 0).coerceAtLeast(0), o.optInt("p", 0) == 1)
+                SrGone(o.optInt("m", 0).coerceAtLeast(0), o.optInt("b", 0).coerceAtLeast(0), o.optInt("k", 0).coerceAtLeast(0), o.optInt("p", 0) == 1,
+                    o.optInt("h", 0).coerceAtLeast(0))
             },
             faceKeys = m.optJSONObject("face")?.optJSONObject("keys")?.let { k ->
                 FACES.mapNotNull { p -> k.optString(p.toString(), "").takeIf { it.isNotEmpty() }?.let { p to it } }.toMap()

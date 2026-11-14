@@ -45,6 +45,11 @@ class SmartRangeGoneTest {
         val wait = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m160","m":{"page":1,"sets":[],"srx":{"p":1}}}"""))!!
         assertTrue(SmartRangeGone.note(wait.srGone))
         assertEquals("Smart Range clean-up: waiting (macros not loaded yet, or a fight)", SmartRangeGone.line())
+        // m160 (review): ours on an action slot stays (the player put it there), counted as `h`
+        val held = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m160","m":{"page":1,"sets":[],"srx":{"m":1,"b":2,"k":0,"h":1}}}"""))!!
+        assertEquals(PadMapModel.SrGone(1, 2, 0, false, 1), held.srGone)
+        assertEquals("Smart Range clean-up: 1 macros deleted, 2 buttons back to one spell, 0 look-alike macros kept, 1 of ours kept on an action slot",
+            SmartRangeGone.line(held.srGone!!))
         val earlier = PadMapModel.SrGone(2, 2, 0, true)
         assertTrue(SmartRangeGone.line(earlier).endsWith("(an earlier session; this one has not run yet)"))
         assertFalse("counts only: no macro or character name", SmartRangeGone.line()!!.contains("DSF"))

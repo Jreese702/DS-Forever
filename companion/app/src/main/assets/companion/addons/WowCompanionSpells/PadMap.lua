@@ -3698,15 +3698,18 @@ end
 -- has loaded the macros (UPDATE_MACROS, or a character macro counted: before that every read finds nothing):
 --   * this character's macros that are PROVABLY ours - a name m146-m149 made ("DSF " [ZL+ / ZR+ / ZLR+] <button> [" " <page>], or
 --     "DSF Bear <button>") AND exactly our body ("#showtooltip", "/click DSFSR0", two "/cast" lines, "/click DSFSR1"; or m146-m148's
---     "/run DSF_SR0()" / "/run DSF_SR1()" lines) - are deleted, from the highest index down, each read again just before (a deleted
---     macro leaves every bar it was on by itself). Every other macro, a look-alike name included, is never touched (counted: `k`);
+--     "/run DSF_SR0()" / "/run DSF_SR1()" lines) - are deleted, from the highest index down, each read again just before. Every
+--     other macro, a look-alike name included, is never touched (counted: `k`);
+--   * m160 (review): ONE OF OURS ON AN ACTION SLOT STAYS (counted: `h`). m146-m149 never put their macros on a bar (the router ran
+--     them by name), so one there was put by the player, and deleting it would empty that slot of theirs (a bar write: the no-trace
+--     ruling; dropIfUnused's own rule for our combat macros). It still casts its two lines (its /click lines find no button now);
 --   * the stored entries (faceBy / fightBy / formFightBy) lose their Smart Range fields (sr / h / rg / mn / se / rgOff); the records
 --     srBy and srMacros go;
 --   * the error-sound flip (m147) kept the player's own value in memory only and gave it back within the press (or 1 s later): no
 --     saved record of it exists, so there is nothing to restore and no CVar is read or written here.
 -- What was done, counts only, is this character's srGone record (m = macros deleted, b = buttons that had Smart Range, k = look-alike
--- macros left alone), carried by the padmap doc's `srx` (p = not run yet this session) for the problem report. A run that finds
--- nothing keeps an earlier record. Idempotent: the second run finds nothing to do.
+-- macros left alone, h = ours kept on an action slot, only when any), carried by the padmap doc's `srx` (p = not run yet this session)
+-- for the problem report. A run that finds nothing keeps an earlier record. Idempotent: the second run finds nothing to do.
 OV.srx = { POS = { Left = true, Up = true, Right = true, Down = true, X = true, Y = true, B = true, A = true },
            SET = { ZL = true, ZR = true, ZLR = true },
            BODY = { { "#showtooltip\n/click DSFSR0\n/cast ", "\n/click DSFSR1" },
@@ -3741,19 +3744,33 @@ function OV.srx.body(b)
     end
     return false
 end
--- this character's macros (the indexes after the General ones): ours (ascending), and how many have our name but not our body
+-- m160 (review): the macro names on the action slots (read only; GetActionText names a macro even where this client reports its spell)
+function OV.srx.onBar()
+    local out = {}
+    for a = 1, LAST_ACTION_SLOT do
+        local n = TS(function() return GetActionText(a) end)
+        if n then out[n] = true end
+    end
+    return out
+end
+-- this character's macros (the indexes after the General ones): ours to delete (ascending), how many have our name but not our body,
+-- how many of ours sit on an action slot (kept), and the names on the slots
 function OV.srx.scan()
     local m = macroCounts()
     local g = (m.general and m.general.max) or 120
     local c = (m.char and m.char.max) or 18
-    local ours, kept = {}, 0
+    local ours, kept, held, bar = {}, 0, 0, nil
     for i = g + 1, g + c do
         local ok, n, _, body = CALL(function() return GetMacroInfo(i) end)
         if ok and OV.srx.name(n) then
-            if OV.srx.body(body) then ours[#ours + 1] = i else kept = kept + 1 end
+            if not OV.srx.body(body) then kept = kept + 1
+            else
+                bar = bar or OV.srx.onBar()
+                if bar[n] then held = held + 1 else ours[#ours + 1] = i end
+            end
         end
     end
-    return ours, kept
+    return ours, kept, held, bar or {}
 end
 -- the macros are known: the game said so (UPDATE_MACROS), or it counts a character macro
 function OV.srx.known()
@@ -3797,18 +3814,19 @@ function OV.srx.run(why)
     local b = 0
     for _ in pairs(had) do b = b + 1 end
     -- the macros: ours only, the highest index first (a deletion moves the ones after it), each read again just before
-    local ours, kept = OV.srx.scan()
+    local ours, kept, held, bar = OV.srx.scan()
     local m = 0
     for x = #ours, 1, -1 do
         local i = ours[x]
         local ok, n, _, body = CALL(function() return GetMacroInfo(i) end)
-        if ok and OV.srx.name(n) and OV.srx.body(body) and CALL(function() return DeleteMacro(i) end) then m = m + 1 end
+        if ok and OV.srx.name(n) and OV.srx.body(body) and not bar[n] and CALL(function() return DeleteMacro(i) end) then m = m + 1 end
     end
     local left = OV.srx.scan()
     if type(db.srGone) ~= "table" then db.srGone = {} end
     local rec = db.srGone[k]
-    if m > 0 or b > 0 or type(rec) ~= "table" then db.srGone[k] = { m = m, b = b, k = kept }
-    else rec.k = kept end
+    local h = held > 0 and held or nil                                 -- m160 (review): ours kept on an action slot
+    if m > 0 or b > 0 or type(rec) ~= "table" then db.srGone[k] = { m = m, b = b, k = kept, h = h }
+    else rec.k, rec.h = kept, h end
     if #left == 0 then OV.srx.done = k end
     soon()
     return OV.srx.done == k, m, b, kept
@@ -3821,7 +3839,8 @@ function OV.srx.doc()
     local r = type(db) == "table" and type(db.srGone) == "table" and db.srGone[k] or nil
     local p = (OV.srx.done ~= k) and 1 or nil
     if type(r) ~= "table" then return p and { p = 1 } or nil end
-    return { m = tonumber(r.m) or 0, b = tonumber(r.b) or 0, k = tonumber(r.k) or 0, p = p }
+    local h = tonumber(r.h)
+    return { m = tonumber(r.m) or 0, b = tonumber(r.b) or 0, k = tonumber(r.k) or 0, h = (h and h > 0) and h or nil, p = p }
 end
 OV.srx.f = CreateFrame("Frame")
 for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "UPDATE_MACROS", "PLAYER_REGEN_ENABLED" }) do
