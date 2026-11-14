@@ -96,8 +96,37 @@ object ArtHarvest {
     /** every step, in the order they run (owners add theirs here) */
     val STEPS: List<Step> by lazy {
         // AllIconsStep before Play, right after the kit's own icons (2026-11-04: every icon ready before the game starts)
-        listOf<Step>(KitSteps.Kit, KitSteps.Cast, KitSteps.Icons, AllIconsStep) + MapHarvestSteps.STEPS + IndoorSchedulerStep
+        // issues #243 #262 #263 #264 (1.0.29: "the world map pictures wont load", "Maps just will not download", "i cant see my map"):
+        // since 1.0.17 all-icons is background work, but it kept its old place AHEAD of the maps. With the background art paused
+        // while the game runs (PlayGate, every Thor since 1.0.25), the maps waited for all ~30,000 icons (31 packs) in the few
+        // game-closed minutes, and every report showed "allicons running, worldmap / minimap never stamped" hours after the install.
+        // The maps go first now ([mapsFirst]); an icon not packed yet is still asked for on its own (IconRequirements)
+        mapsFirst(listOf<Step>(KitSteps.Kit, KitSteps.Cast, KitSteps.Icons, AllIconsStep) + MapHarvestSteps.STEPS + IndoorSchedulerStep) { it.id }
     }
+
+    /** the background steps the player SEES missing, in this order: the Map room's world map, then Home's map (nearest zone first) */
+    internal val MAPS_FIRST = listOf("worldmap", "minimap")
+
+    /**
+     * [steps] with the [MAPS_FIRST] ones moved to just before the all-icons step (their own order kept, and every other step's).
+     * Pure, for the tests; nothing changes when either is missing.
+     */
+    internal fun <T> mapsFirst(steps: List<T>, id: (T) -> String): List<T> {
+        val maps = MAPS_FIRST.mapNotNull { m -> steps.firstOrNull { id(it) == m } }
+        val rest = steps.filter { id(it) !in MAPS_FIRST }
+        val at = rest.indexOfFirst { id(it) == "allicons" }
+        if (maps.isEmpty() || at < 0) return steps
+        return rest.subList(0, at) + maps + rest.subList(at, rest.size)
+    }
+
+    /**
+     * A step is stamped done (built or re-stamped) in this run: [l] gets its id on the art's worker thread. The Map room reads its
+     * manifest once at the host's start, so a world map built later (the player waiting on the start screen) is read again then.
+     */
+    private val stepDone = java.util.concurrent.CopyOnWriteArrayList<(String) -> Unit>()
+    fun onStepDone(l: (String) -> Unit) { stepDone.add(l) }
+    fun offStepDone(l: (String) -> Unit) { stepDone.remove(l) }
+    internal fun stepFinished(id: String) { for (l in stepDone) runCatching { l(id) } }
 
     /** the app's own art folder (replaces /sdcard/WowCompanion for everything game-derived) */
     fun root(ctx: Context): File =
@@ -493,6 +522,7 @@ object ArtHarvest {
                 markDone(ctx, s, g.buildKey, stamp(ctx).optJSONObject(s.id)?.optString("inputs")?.takeIf { it.isNotEmpty() })
                 Log.i(TAG, "harvest step ${s.id}: its game files are unchanged, re-stamped for ${g.buildKey} in ${System.currentTimeMillis() - t0} ms")
                 stepLog[s.id] = "unchanged (re-stamped)"; before += w
+                stepFinished(s.id)
                 continue
             }
             g.log = ArtFingerprint.Log()
@@ -521,6 +551,7 @@ object ArtHarvest {
             Log.i(TAG, "harvest step ${s.id} v${s.version} done in ${System.currentTimeMillis() - t0} ms")
             stepLog[s.id] = "done in ${System.currentTimeMillis() - t0} ms"; currentStep = null
             before += w
+            stepFinished(s.id)                                     // the Map room reads a world map built while it was open
         }
         return true
     }

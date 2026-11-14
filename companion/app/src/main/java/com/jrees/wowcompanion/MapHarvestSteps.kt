@@ -119,9 +119,14 @@ object MapHarvestSteps {
                 // its game files fetched together, several at a time, when many are missing (after a game update; issue #10 / #11)
                 val fids = m.tiles.map { it.fid } + m.overlays.flatMap { o -> o.tiles.map { it.fid } } + listOfNotNull(m.hl.takeIf { it != 0 })
                 g.prefetch(fids) { d, n -> job.progress(i, maps.size, "${m.name}: game files $d of $n") }
+                // issues #243 #262 #263 #264: the maps now run first in the background, so a Play press usually meets this step: a yield
+                // point before each picture's reads (#207's rule), so the game files let go within one picture; a map paused part-way
+                // is made again on the next pass (its resume mark comes only once it is whole)
+                job.yieldPoint(i, maps.size, m.name)
                 stitch(g, m.tiles, m.tile, m.w, m.h)?.let { job.writeWebp("$dir/base.webp", it, 88); it.recycle() }
                 val ovs = JSONArray()
                 for (o in m.overlays) {
+                    job.yieldPoint(i, maps.size, m.name)
                     val b = stitch(g, o.tiles, MapHarvest.OVERLAY_TILE_PX, o.w, o.h) ?: continue
                     job.writeWebp("$dir/ov_${o.id}.webp", b, 88); b.recycle()
                     ovs.put(JSONObject().put("id", o.id).put("fid", o.fid).put("fids", JSONArray(o.tiles.map { it.fid }))
@@ -131,6 +136,7 @@ object MapHarvestSteps {
                     .put("parent", m.parent).put("w", m.w).put("h", m.h).put("overlays", ovs)
                 // the zone's highlight picture (drawn ADD on its continent; the box comes from Map.lua's maphl sweep at runtime)
                 if (m.hl != 0) {
+                    if (m.hl !in hlDone) job.yieldPoint(i, maps.size, m.name)
                     if (m.hl !in hlDone) g.blp(m.hl)?.let { job.writeBytes("worldmap/hl/${m.hl}.webp", it.lossless()); it.recycle(); hlDone.add(m.hl) }
                     if (m.hl in hlDone) idx.put("hl", m.hl)
                 }
@@ -350,6 +356,7 @@ object MapHarvestSteps {
             if (done.isEmpty()) made.writeText(g.buildKey + "\n")
             val got = HashMap<Int, MutableList<Int>>()
             var missing = 0
+            var where = ""                                 // the zone the last report named (the progress line)
             for ((i, ck) in order.withIndex()) {
                 val (c, k) = ck
                 val col = MapHarvest.colOf(k); val row = MapHarvest.rowOf(k)
@@ -361,6 +368,9 @@ object MapHarvestSteps {
                     })
                 }
                 if (name !in done) {
+                    // issues #243 #262 #263 #264: Home's map is the second background step now (the maps first), so a Play press
+                    // often meets it: a yield point before each tile's read (#207's rule); made.txt resumes at the tile
+                    job.yieldPoint(i, order.size, where)
                     val b = g.blp(maid[c]!![k]!!)
                     if (b != null) {
                         b.setHasAlpha(false)                  // the PC saved them RGB: opaque
@@ -371,7 +381,8 @@ object MapHarvestSteps {
                 if (name in done) got.getOrPut(c) { ArrayList() }.add(k)
                 else missing++
                 if (i % 20 == 0) {
-                    job.progress(i, order.size, MapHarvest.zoneOf(c, k, rects)?.let { names[it] } ?: "")
+                    where = MapHarvest.zoneOf(c, k, rects)?.let { names[it] } ?: ""
+                    job.progress(i, order.size, where)
                     main.post { MinimapTiles.refresh() }      // the map shows what is made so far
                 }
             }
