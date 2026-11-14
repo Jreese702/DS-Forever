@@ -807,7 +807,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             ui.post(signInTick)
         }
         ui.postDelayed(guardTick, 3000L)                                 // the exit guard: no room ever without a working B
-        hostUpAt = SystemClock.elapsedRealtime(); ui.postDelayed(silenceCheck, AddonSilence.AFTER_MS)   // #147: the add-ons' silence
+        // #147: the add-ons' silence; the triage (2026-11-14): a clock per game run, re-checked every minute (AddonSilence.Watch)
+        hostUpAt = SystemClock.elapsedRealtime(); ui.postDelayed(silenceTick, 1_000L)
+        startView.onHow = { startHow = true; startAddonsStep() }
         // the user relaying a player (2026-11-13, "it keeps reinstalling ... 'waiting for game'"): an add-on install that failed at this
         // Play (LauncherSetup) is said on Home at once, with the reason; the add-ons' own documents hide nothing here (none will come)
         // (a failed UPDATE keeps the old set in place, which still runs: only the silence check speaks then)
@@ -1867,16 +1869,93 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var docFlowSeen = false
     /** #147 (1.0.24, "cant get the bottom screen to work"): no add-on document at all while the bottom screen was up, said once */
     private var hostUpAt = 0L
-    private val silenceCheck = Runnable {
-        if (shell.hostGone()) return@Runnable
-        val gameMs = if (LauncherHooks.gameStartSec > 0) System.currentTimeMillis() - LauncherHooks.gameStartSec * 1000 else 0L
-        // issue #231 ("ui iz on top screen": no document in 2 runs, the game at in-world memory): the reader and the shadow's Logs
-        val detail = if (docFlowSeen) null else readerDetail()
-        AddonSilence.line(docFlowSeen, LauncherHooks.gameUp(), SystemClock.elapsedRealtime() - hostUpAt, gameMs, detail)?.let {
-            Log.w("WCSETUP", it); DiagLog.event("addons", it)
+    /**
+     * THE ADD-ONS' SILENCE, PER GAME RUN (the add-ons-silent triage of the user's relays, 2026-11-13: "the buttons and map show 'waiting
+     * for game' and are blank"; #278): up to 1.0.32 one check 2 minutes after the bottom screen came up - before Play, so it never saw a
+     * game. Now [AddonSilence.Watch] keeps a clock per game run (the game's start, past its login screen, a bye with no hello in 30 s:
+     * the "has been blocked" pop-up's Disable + ReloadUI) and is asked every second; it says the silence once per clock and re-checks
+     * every minute until a current document comes. The start screen's line follows it ([startAddonsStep]).
+     */
+    private val silence = AddonSilence.Watch(System.currentTimeMillis())
+    private val worldMem = AddonSilence.WorldByMemory()
+    /** the clock [worldMem] was started for, and the uptime it started (a memory sample from before it does not count) */
+    private var silenceFrom = 0L
+    private var silenceFromUp = 0L
+    /** the cause the silence last put on Home by itself (a re-check shows only a new one: an OK'd card does not come back each minute) */
+    private var silenceCause: String? = null
+    /** the start screen's add-ons card: its How pressed (the steps on show); its cause, read when it comes and at each re-check (the
+     *  cause reads files - General.log's size on shared storage: never every second on the main thread) */
+    private var startHow = false
+    private var startCause: String? = null
+    /** the start screen's "Waiting for the world." was this step's (past the sign-in), not a logout's */
+    private var worldLineOurs = false
+    private val silenceTick: Runnable = object : Runnable {
+        override fun run() {
+            if (shell.hostGone()) return
+            runCatching { silenceStep() }.onFailure { Log.w("WCSETUP", "silence step: ${it.javaClass.simpleName}: ${it.message}") }
+            ui.postDelayed(this, 1_000L)
+        }
+    }
+    private fun silenceStep() {
+        val now = System.currentTimeMillis()
+        val up = DependencyAddons.gameUpNow(LauncherHooks.gameUp(), LauncherHooks.gameStartSec, GameLife.endedAt)
+        val act = silence.tick(now, up, LauncherHooks.gameStartSec * 1000, if (NativeLogin.pastLogin) NativeLogin.pastLoginAt else 0L)
+        if (silence.from != silenceFrom) { silenceFrom = silence.from; silenceFromUp = SystemClock.uptimeMillis(); worldMem.reset(); silenceCause = null; startHow = false }
+        MemWatch.gameSample?.let { (mb, at) -> if (at >= silenceFromUp) worldMem.sample(mb, at) }
+        if (act != AddonSilence.Watch.Act.NONE) {
+            val gameMs = if (LauncherHooks.gameStartSec > 0) now - LauncherHooks.gameStartSec * 1000 else 0L
+            val cause = addonsCause()
+            startCause = cause
+            if (act == AddonSilence.Watch.Act.SAY) {
+                // issue #231 ("ui iz on top screen": no document in 2 runs, the game at in-world memory): the reader and the shadow's Logs
+                val l = AddonSilence.lineFor(silence.silentMs(now), silence.clock, gameMs, readerDetail())
+                Log.w("WCSETUP", l); DiagLog.event("addons", l)
+            } else if (cause != null && cause != silenceCause) {
+                val l = "add-ons still silent ${GameLife.minutes(silence.silentMs(now))} after ${silence.clock.words}: $cause"
+                Log.w("WCSETUP", l); DiagLog.event("addons", l)
+            }
             // 2026-11-13: a known cause (a failed install, the log or the add-ons gone private) is said on Home; none known = the
-            // notice waits for a Start press (the player may still be at character select)
-            if (addonsCause() != null) addonsNotice("the add-ons' silence")
+            // notice waits for a Start press (the player may still be at character select) or the start screen's line says it
+            if (cause != null && cause != silenceCause) { silenceCause = cause; addonsNotice("the add-ons' silence") }
+        }
+        startAddonsStep()
+    }
+
+    /**
+     * THE START SCREEN STILL UP AFTER THE SIGN-IN (the triage: Home's add-ons card never shows over it): past the login screen the plain
+     * waiting line is the existing "Waiting for the world."; once the game's memory says it is in the world (>= ~2.5 GB for 30 s) with no
+     * word from the add-ons this clock, the line's panel says what the card would - its text, with How (AddonSilence.startMode). The
+     * add-ons' first current document takes the start screen away as always. Main thread.
+     */
+    private fun startAddonsStep() {
+        if (!::startView.isInitialized) return
+        val up = DependencyAddons.gameUpNow(LauncherHooks.gameUp(), LauncherHooks.gameStartSec, GameLife.endedAt)
+        // the game gone: a "Waiting for the world." this step wrote goes back to the plain waiting line (a last run's past-login is no sign-in)
+        if (!up && worldLineOurs) { worldLineOurs = false; if (startView.line == AddonSilence.WORLD_LINE) startView.line = PreLoginTraffic.WAITING_LINE }
+        val free = up && startView.visibility == View.VISIBLE && reloadAt == 0L && !setupLoading && restartNoticeAt == 0L &&
+            !(::setupView.isInitialized && setupView.visibility == View.VISIBLE)
+        val signedIn = NativeLogin.pastLogin || (::loginWatch.isInitialized && loginWatch.state.realm)
+        // the review: the game's traffic quiet (character select after a normal logout, its memory still high) holds a new word back
+        val mode = if (!free) AddonSilence.StartMode.KEEP else AddonSilence.startMode(startView.line, startView.login != StartView.Login.NONE,
+            signedIn, NativeLogin.downloading, silence.silent, worldMem.inWorld, NativeLogin.trafficQuiet, shown = startView.addons != null)
+        when (mode) {
+            AddonSilence.StartMode.ADDONS -> {
+                if (startView.addons == null) startCause = addonsCause()
+                val card = ReportNotice.card(ReportNotice.State.AddonsOff(startCause, startHow))
+                if (startView.addons == null) {
+                    val l = "start screen: the add-ons aren't running (the game's memory says the world; no word " +
+                        "${GameLife.minutes(silence.silentMs(System.currentTimeMillis()))} after ${silence.clock.words}): ${card.text}"
+                    Log.w("WCSETUP", l); DiagLog.event("addons", l)
+                    // one place for it: the card over the start screen goes, the line says the same
+                    if (::reportNotice.isInitialized && reportNotice.state is ReportNotice.State.AddonsOff) { reportNotice.hide(); SetupBridge.noticeAsking = false }
+                }
+                startView.addons = card
+            }
+            AddonSilence.StartMode.WORLD_LINE -> { startView.addons = null; startView.line = AddonSilence.WORLD_LINE; worldLineOurs = true }
+            AddonSilence.StartMode.KEEP -> if (startView.addons != null) {
+                startView.addons = null
+                if (startView.visibility != View.VISIBLE || !silence.silent) startHow = false
+            }
         }
     }
     /** the add-ons' likely cause in terse words (AddonSilence.cause), null = none known */
@@ -1889,6 +1968,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun addonsNotice(why: String) {
         if (!::reportNotice.isInitialized || shell.hostGone()) return
         if (reportNotice.state != null && reportNotice.state !is ReportNotice.State.AddonsOff) return
+        // the triage (2026-11-14): the start screen's line says it already (startAddonsStep): never the same words twice
+        if (::startView.isInitialized && startView.visibility == View.VISIBLE && startView.addonsShown) return
         val cause = addonsCause()
         Log.i("WCSETUP", "add-ons notice ($why): ${cause ?: "the default (enable them in AddOns)"}")
         DiagLog.event("addons", "notice shown ($why): ${cause ?: "default"}")
@@ -2019,6 +2100,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         docCurrent = current
         if (current) lastAddonAt = SystemClock.elapsedRealtime()           // the clean exit's "past the login screen"
         if (current) docLiveAt = System.currentTimeMillis()                // StartRoute: the add-ons speak in this game run
+        if (current) silence.word(docLiveAt, msg.optString("type") == "hello")   // the add-ons' silence clock (AddonSilence.Watch)
         // the re-login: the world is back, so a waiting login.txt goes (NativeLogin.rearm wrote it when the world closed)
         if (current && LauncherHooks.pkg != null) NativeLogin.worldSeen()
         // smoothness A: an answer document's arrival, for the latency chain (inside the launcher only)
@@ -2199,7 +2281,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val cur = msg.optInt("cur", 0)
                 if (cur != 0) { TaxiNet.onTaxiNet(cur, reach); Log.i("WCMAP", "taxinet: at $cur, ${reach.size} reachable") }
             }
-            "bye" -> if (current) { QuestWatchKeep.cleanEnd(); byeShow(); PartyModel.live.newSession() }     // a logout: the game writes its state (the watch list)
+            "bye" -> if (current) {
+                QuestWatchKeep.cleanEnd(); byeShow(); PartyModel.live.newSession()      // a logout: the game writes its state (the watch list)
+                // the triage (2026-11-14): no hello within 30 s with the game still running = silence (the game's Disable + ReloadUI)
+                silence.bye(System.currentTimeMillis())
+            }
             "chat" -> msg.optJSONObject("chat")?.let { chatView.update(it); homeView.onChat(it); PreviewStage.feedChat(it) }
             // the game's world notice (Chat chat21: the shard transfer's countdown) over Home's chat: current only (a replayed one is old)
             "notice" -> if (current) homeView.onNotice(msg)
@@ -2957,7 +3043,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     fun onDestroy() {
         Theme.removeListener(themeChanged)
         ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
-        ui.removeCallbacks(silenceCheck)
+        ui.removeCallbacks(silenceTick)
         ArtHarvest.offState(iconArtState)
         ArtHarvest.offStepDone(mapArtDone)
         IndoorSchedulerStep.stop()
@@ -3093,7 +3179,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // CURRENT padmap of this game run says Start is ours (or a guest's); else the press is the game's alone (its own radial), and
         // with the add-ons silent Home says so (StartRoute)
         val gameStart = LauncherHooks.gameStartSec * 1000
-        val docsLive = docLiveAt > 0 && docLiveAt >= gameStart
+        // the triage (2026-11-14): a bye with no hello after it is silence too (the game's Disable + ReloadUI: an older padmap says "ours")
+        val docsLive = docLiveAt > 0 && docLiveAt >= gameStart && !silence.silentByBye
         val runPadmap = padmapRunAt > 0 && padmapRunAt >= gameStart
         val gameUpMs = if (gameStart > 0) System.currentTimeMillis() - gameStart else SystemClock.elapsedRealtime() - hostUpAt
         val r = StartRoute.decide(lastDpad?.want, docsLive, runPadmap, if (runPadmap) runStart else null, capHolder, gameUpMs,
@@ -3476,7 +3563,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun bottomState(atReport: Boolean = false): String {
         if (!::startView.isInitialized) return "not up yet"
         fun shown(v: View?) = v != null && v.visibility == View.VISIBLE
-        val start = if (shown(startView)) "start screen '${startView.line}' (row ${startView.login.name.lowercase()}${if (loginRevealed) ", for the row" else ""})"
+        val start = if (shown(startView)) "start screen '${startView.line}' (row ${startView.login.name.lowercase()}${if (loginRevealed) ", for the row" else ""}" +
+            "${if (startView.addonsShown) ", the add-ons' word shown${if (startHow) " with How" else ""}" else ""})"
             else "no start screen${if (reloadAt != 0L) " (reload)" else ""}"
         val over = buildList {
             if (::setupView.isInitialized && shown(setupView)) add("setup")
@@ -3487,7 +3575,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // issue #231 (review): at report time, with no document yet, the reader's state NOW (the silence line's is from 2 min in)
         val docs = AddonSilence.atReport(docFlowSeen, if (atReport && !docFlowSeen) readerDetail() else null)
         val setup = if (atReport) "; ${runCatching { LauncherSetup.reportLine(this) }.getOrDefault("add-on setup: ?")}; Start $lastStartRoute" else ""
-        return "$start; room ${room.name.lowercase()}; documents ${if (docFlowSeen) "seen" else "none yet"}$docs" +
+        // the triage (2026-11-14): this game run's silence (documents "seen" may be an earlier run's)
+        val now = System.currentTimeMillis()
+        val quiet = if (silence.silent) "; add-ons silent ${GameLife.minutes(silence.silentMs(now))} (since ${silence.clock.words}" +
+            "${if (worldMem.inWorld) ", the game's memory says the world" else ""}${if (NativeLogin.trafficQuiet) ", its traffic quiet" else ""})" else ""
+        return "$start; room ${room.name.lowercase()}; documents ${if (docFlowSeen) "seen" else "none yet"}$docs$quiet" +
             (if (over.isEmpty()) "" else "; over it: ${over.joinToString()}") + setup
     }
 

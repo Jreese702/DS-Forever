@@ -187,6 +187,132 @@ object AddonSilence {
     /** issue #231 (review): the report's bottom-screen line, when no document came, carries the reader's state at report time */
     fun atReport(docSeen: Boolean, detail: String?): String = if (docSeen || detail.isNullOrBlank()) "" else " ($detail)"
 
+    // ------------------------------------------------------------------ the silence, per game run (the add-ons-silent triage, 2026-11-14)
+
+    /** the re-check while the silence lasts */
+    const val RECHECK_MS = 60_000L
+    /** a "bye" (PLAYER_LOGOUT: a logout, a /reload, or the game's Disable + ReloadUI) with no word after it in this long = silence */
+    const val BYE_HELLO_MS = 30_000L
+    /** the logout's own last documents (written in the same moment as the bye) are no word after it; a hello always is */
+    const val BYE_TRAIL_MS = 2_000L
+
+    /**
+     * THE ADD-ONS' SILENCE, PER GAME RUN (the add-ons-silent triage of the user's relays, 2026-11-13: "they let everything install and it
+     * keeps reinstalling, and the buttons and map show 'waiting for game'"; issue #278). Up to 1.0.32 the check ran ONCE, 2 minutes after
+     * the bottom screen came up - before Play, so with no game it said nothing and never looked again, and a game whose add-ons went quiet
+     * later (the "has been blocked" pop-up's Disable: the game switches ours off and reloads) was never noticed at all. Now:
+     *  - a clock per game run: from the game's start, or from past its login screen once that is known (the add-ons load in the world,
+     *    never before), and never before this bottom screen could hear them ([hostUpMs]);
+     *  - [AFTER_MS] into the clock with no current word: [Act.SAY] (the line, the likely cause); then [Act.RECHECK] every [RECHECK_MS]
+     *    until a current document arrives;
+     *  - a current "bye" with the game still running and NO word within [BYE_HELLO_MS] is silence too (a Disable + ReloadUI: the game
+     *    stays in the world, the add-ons never say hello again): the clock starts at the bye and [Act.SAY] comes at once.
+     * Wall-clock ms throughout; pure (dsforever's AddonsReenableTest drives it).
+     */
+    class Watch(private val hostUpMs: Long) {
+        enum class Clock(val words: String) { GAME_START("the game's start"), PAST_LOGIN("past the login screen"),
+            BYE("their logout word (no hello 30 s after it: switched off in AddOns and reloaded?)") }
+        enum class Act { NONE, SAY, RECHECK }
+
+        /** the game run the clock belongs to (its start, ms; 0 = no game) */
+        var run = 0L; private set
+        /** the clock's start (ms) and what it is */
+        var from = 0L; private set
+        var clock = Clock.GAME_START; private set
+        /** the last current word of ours: its time (ms), one more than the word before at least (two in the same ms stay in order) */
+        var wordAt = 0L; private set
+        /** the pending bye's own word stamp (0 = none pending) and when it came (ms) */
+        private var byeAt = 0L
+        private var byeWall = 0L
+        private var said = false
+        private var nextAt = 0L
+
+        /** any current document of ours, the bye too ([bye] follows it); [hello] = the add-ons' hello (a login / reload done) */
+        fun word(now: Long, hello: Boolean = false) {
+            // the logout's own trailing documents (the same flush as the bye) are not the add-ons back: only a hello, or a word later on
+            if (!hello && byeWall > 0L && now - byeWall in 0..BYE_TRAIL_MS) return
+            wordAt = maxOf(now, wordAt + 1)
+        }
+        /** a current "bye", right after its own [word] */
+        fun bye(now: Long) { byeAt = wordAt.coerceAtLeast(1L); byeWall = now }
+
+        /** no current word since the clock started (a game run only) */
+        val silent: Boolean get() = run != 0L && wordAt < from
+        /** silent since a bye with no hello after it (the Disable + ReloadUI case) */
+        val silentByBye: Boolean get() = silent && clock == Clock.BYE
+        fun silentMs(now: Long): Long = if (silent) (now - from).coerceAtLeast(0L) else 0L
+
+        /** [gameUp] the game runs; [runStartMs] its start (ms); [pastLoginAtMs] past its login screen (ms, 0 = not this run) */
+        fun tick(now: Long, gameUp: Boolean, runStartMs: Long, pastLoginAtMs: Long): Act {
+            if (!gameUp || runStartMs <= 0L) { run = 0L; byeAt = 0L; byeWall = 0L; return Act.NONE }
+            if (runStartMs != run) { run = runStartMs; byeAt = 0L; byeWall = 0L; restart(maxOf(runStartMs, hostUpMs), Clock.GAME_START, AFTER_MS) }
+            // past the login screen later than the clock while still silent (the first sign-in, a re-login after a logout's bye): the
+            // world is still to come. Not once the add-ons spoke: the world's first document marks past-login itself (NativeLogin.worldSeen)
+            if (silent && pastLoginAtMs > from && pastLoginAtMs >= run && pastLoginAtMs <= now) restart(maxOf(pastLoginAtMs, hostUpMs), Clock.PAST_LOGIN, AFTER_MS)
+            if (byeAt > 0L) {
+                if (wordAt > byeAt) byeAt = 0L                                  // a word after it: a reload's hello, a new world
+                else if (now - byeWall >= BYE_HELLO_MS) { restart(byeAt + 1, Clock.BYE, 0L); byeAt = 0L }
+            }
+            if (!silent || now < nextAt) return Act.NONE
+            val a = if (said) Act.RECHECK else Act.SAY
+            said = true; nextAt = now + RECHECK_MS
+            return a
+        }
+
+        private fun restart(at: Long, c: Clock, after: Long) { from = at; clock = c; said = false; nextAt = at + after }
+    }
+
+    /** the report's / log's line for a silence of [silentMs] measured from [clock] */
+    fun lineFor(silentMs: Long, clock: Watch.Clock, gameUpMs: Long, detail: String? = null): String =
+        "no current document from the game's add-ons ${GameLife.minutes(silentMs)} after ${clock.words} " +
+            "(the game up ${if (gameUpMs > 0) GameLife.minutes(gameUpMs) else "?"}): not in the world yet, or our add-ons did not load; the rooms wait for them" +
+            (if (detail.isNullOrBlank()) "" else "; $detail")
+
+    /** the game's memory (MB, all its processes) at which it looks to be in the world, and for how long */
+    const val IN_WORLD_MB = 2_500L
+    const val IN_WORLD_FOR_MS = 30_000L
+
+    /**
+     * THE GAME LOOKS TO BE IN THE WORLD (the triage: the add-ons say nothing, so their documents cannot tell): MemWatch's samples of the
+     * game's memory (every 30 s) at least [IN_WORLD_MB] from one sample to a later one [IN_WORLD_FOR_MS] on, with none below between.
+     * Character select and the login screen sit well under it; in the world the Thor's game is ~4.6 GB. [sample] takes (MB, its ms).
+     */
+    class WorldByMemory {
+        private var highSince = -1L
+        private var lastAt = -1L
+        fun sample(mb: Long, at: Long) {
+            if (at == lastAt) return                              // the same sample read again
+            lastAt = at
+            if (mb >= IN_WORLD_MB) { if (highSince < 0L) highSince = at } else highSince = -1L
+        }
+        val inWorld: Boolean get() = highSince >= 0L && lastAt - highSince >= IN_WORLD_FOR_MS
+        fun reset() { highSince = -1L; lastAt = -1L }
+    }
+
+    /** the start screen's plain waiting lines: the only ones the add-ons' word takes over (never a reload's, a restart's, a sign-in's) */
+    const val WORLD_LINE = "Waiting for the world."
+    const val SIGNED_WORLD_LINE = "Signed in. Waiting for the world."
+    val WAIT_LINES = setOf(PreLoginTraffic.WAITING_LINE, PreLoginTraffic.DOWNLOADING_LINE, WORLD_LINE, SIGNED_WORLD_LINE)
+
+    enum class StartMode { KEEP, WORLD_LINE, ADDONS }
+
+    /**
+     * THE START SCREEN STILL UP AFTER THE SIGN-IN (the triage; Home's add-ons card never shows over it): [line] its line now; [rowUp]
+     * the sign-in row shows; [signedIn] past the login screen; [downloading] the game fetches files; [silent] no word from the add-ons
+     * this clock ([Watch]); [inWorld] the game's memory says the world ([WorldByMemory]). ADDONS = the line's panel says what the card
+     * would (its text, with How); WORLD_LINE = the plain waiting line becomes the existing "Waiting for the world."; KEEP = as it is.
+     * The review (2026-11-14): a normal logout to character select is a bye with no hello too, and the game's memory may stay over
+     * [IN_WORLD_MB] there, so [trafficQuiet] (NativeLogin.trafficQuiet: the game's traffic stopped, which the world's never does) holds
+     * a NEW word back; one already on show ([shown]) stays - character select is where the player switches them back on.
+     */
+    fun startMode(line: String, rowUp: Boolean, signedIn: Boolean, downloading: Boolean, silent: Boolean, inWorld: Boolean,
+                  trafficQuiet: Boolean = false, shown: Boolean = false): StartMode = when {
+        line !in WAIT_LINES || rowUp -> StartMode.KEEP
+        silent && inWorld && (!trafficQuiet || shown) -> StartMode.ADDONS
+        signedIn && !downloading && line == PreLoginTraffic.WAITING_LINE -> StartMode.WORLD_LINE
+        else -> StartMode.KEEP
+    }
+
     /** issue #231: the local reader in one line ([sinceFedMs] -1 = nothing read yet); only the file's name, never the folder's */
     fun reader(path: String, exists: Boolean, len: Long, mtime: Long, nowWall: Long, fed: Long, sinceFedMs: Long,
                lines: Long, magic: Long, docs: Long): String {

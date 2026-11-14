@@ -379,10 +379,16 @@ object MemWatch {
     @Volatile private var gameAt = 0L
     @Volatile private var gameMb = -1L
     @Volatile private var gameN = 0
+    /**
+     * THE GAME'S LAST MEMORY SAMPLE (the add-ons-silent triage, 2026-11-14): (MB, the uptime ms its read began), null = none yet. The
+     * add-ons' silence reads "the game looks to be in the world" from it (AddonSilence.WorldByMemory: >= ~2.5 GB for 30 s); one value
+     * object, so the MB and its time always belong together
+     */
+    @Volatile var gameSample: Pair<Long, Long>? = null; private set
     private const val GAME_EVERY_MS = 30_000L
     private fun device(): String {
         val now = android.os.SystemClock.uptimeMillis()
-        if (now - gameAt >= GAME_EVERY_MS || gameAt == 0L) { gameAt = now; runCatching { gameNow() } }
+        if (now - gameAt >= GAME_EVERY_MS || gameAt == 0L) { gameAt = now; runCatching { gameNow(); gameSample = gameMb to now } }
         val mem = runCatching { java.io.File("/proc/meminfo").readLines() }.getOrDefault(emptyList())
         fun kb(k: String) = mem.firstOrNull { it.startsWith("$k:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull()
         val avail = kb("MemAvailable"); val swapT = kb("SwapTotal"); val swapF = kb("SwapFree")
