@@ -62,27 +62,25 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
      * reads that follow find them in the cache. Only while the recent reads show many CDN misses (a complete folder: nothing, no
      * second read). [onProgress] gets (done, total) of the fetches. The number fetched.
      */
-    fun prefetch(fids: Collection<Int>, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int {
+    fun prefetch(fids: Collection<Int>, letGo: () -> Boolean = { false }, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int {
         if (!missWindow.worthPrefetching()) return 0
-        val needs = LinkedHashSet<String>()
-        synchronized(accessLock) {
-            for (fid in fids.toSet()) {
-                CascNative.takeNeed()
-                if (CascNative.read(handle, fid) == null) CascNative.takeNeed()?.let { needs.add(it) }
-            }
+        // MEMORY RELIEF 2 (the user's picks, 2026-11-14: "lets go of the game files within one file (check per file / per download batch,
+        // not per pack ...)"): [letGo] (the art run's Job.letGoAsked) is asked before each probe read and each download; once it says
+        // so the probe ends and no further download starts (the ones in flight finish), and the caller's next checkpoint stops the run
+        val needs = synchronized(accessLock) {
+            probeNeeds(fids, letGo) { fid -> CascNative.takeNeed(); if (CascNative.read(handle, fid) == null) CascNative.takeNeed() else null }
         }
-        if (needs.isEmpty()) return 0
+        if (needs.isEmpty() || letGo()) return 0
         val total = needs.size
         val done = java.util.concurrent.atomic.AtomicInteger()
-        val ok = java.util.concurrent.atomic.AtomicInteger()
         // issues #138 / #112 (2026-11-11): [onProgress] is the art run's Job.progress, which throws PausedForGame (and the update's /
         // yield stops) when the game comes up; on a pool thread that killed the app. [inPool] hands it back to this thread instead
-        inPool(needs, minOf(PARALLEL, total), "art-fetch", 10) { n ->
-            if (runCatching { fetch(root, cache, File(n)) }.getOrDefault(false)) ok.incrementAndGet()
+        val ok = fetchUntil(needs, minOf(PARALLEL, total), letGo, { n -> runCatching { fetch(root, cache, File(n)) }.getOrDefault(false) }) {
             onProgress(done.incrementAndGet(), total)
         }
-        android.util.Log.i("WCHARVEST", "prefetch: ${ok.get()} of $total missing game files fetched ($PARALLEL at a time)")
-        return ok.get()
+        android.util.Log.i("WCHARVEST", "prefetch: $ok of $total missing game files fetched ($PARALLEL at a time)" +
+            if (letGo()) "; let go of the rest (the art stops)" else "")
+        return ok
     }
 
     /** Track B (interiors): the file's CASC content key without reading it, or null; digests a building's inputs. */
@@ -241,6 +239,33 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             val bad = java.util.concurrent.atomic.AtomicInteger()
             inPool(missing, PARALLEL, "art-vfs", 30) { f -> if (!runCatching { fetch(root, cache, f) }.getOrDefault(false)) bad.incrementAndGet() }
             android.util.Log.i("WCHARVEST", "vfs: done, ${bad.get()} failed")
+        }
+
+        /**
+         * memory relief 2: the game files [prefetch] must fetch, of [fids] (each once): [need] = the file CascLib asks for to read one,
+         * null = it is here. [letGo] is asked before each one: once it says so, what was found so far. Pure (the tests)
+         */
+        internal fun probeNeeds(fids: Collection<Int>, letGo: () -> Boolean, need: (Int) -> String?): LinkedHashSet<String> {
+            val out = LinkedHashSet<String>()
+            for (fid in fids.toSet()) {
+                if (letGo()) break
+                need(fid)?.let { out.add(it) }
+            }
+            return out
+        }
+
+        /**
+         * memory relief 2: [fetch] each of [items] on [threads] pool threads ([inPool]); one not started yet is skipped once [letGo] says
+         * so (the ones in flight finish). [done] after each fetch (it may throw: back on the calling thread). The number fetched.
+         */
+        internal fun <T> fetchUntil(items: Collection<T>, threads: Int, letGo: () -> Boolean, fetch: (T) -> Boolean, done: () -> Unit): Int {
+            val ok = java.util.concurrent.atomic.AtomicInteger()
+            inPool(items, threads, "art-fetch", 10) { n ->
+                if (letGo()) return@inPool
+                if (fetch(n)) ok.incrementAndGet()
+                done()
+            }
+            return ok.get()
         }
 
         /**

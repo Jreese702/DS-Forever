@@ -25,7 +25,9 @@ object KitSteps {
         progress = { done, total, what -> job.progress(done, total, what) },
         log = { Log.i(TAG, it) },
         why = { job.game.lastReadWhy },
-        whyFor = { reasons[it] })
+        whyFor = { reasons[it] },
+        // memory relief 2 (the user's picks, 2026-11-14: "within one file"): the icons step's pack (KitBuild.icons) stops within one icon
+        letGo = { job.letGoAsked() }, checkpoint = { job.checkpoint() })
 
     /** fonts, the kit's pictures, the map pins, the bags and the paper doll, the Home button (extract_kit / minimap_kit / extract_ui / home_kit) */
     object Kit : ArtHarvest.Step {

@@ -1843,6 +1843,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var docCurrent = false
     /** the first CURRENT document since start was logged (Home's restart check proves documents arrive; batch 24, 2026-10-01) */
     private var docFlowSeen = false
+    /** memory relief 2: the add-on's first loading-screen word was logged (its version, once a run) */
+    private var loadSeen = false
     /** #147 (1.0.24, "cant get the bottom screen to work"): no add-on document at all while the bottom screen was up, said once */
     private var hostUpAt = 0L
     private val silenceCheck = Runnable {
@@ -2008,6 +2010,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         if (current) partyAsk(PartyModel.Ask.FIRST_DOC)
         if (current) GameLife.inWorld()                      // issue #12: the first current document = the game is in the world
+        // memory relief 2 (the user's picks, 2026-11-14: "RELIEF AT ZONE CHANGES"): the add-on's loading-screen word (Core.lua core1);
+        // a loading screen in the world lets go and collects at once (GameLife.loadingScreen); a replayed one is the past: nothing
+        if (current && msg.optString("type") == "load") {
+            if (!loadSeen) { loadSeen = true; Log.i("WCMEM", "loading screens: reported by the add-on (${msg.optString("v", "?")})") }
+            GameLife.loadingScreen(msg.optBoolean("on", false))
+        }
         // the interiors bake (Track C) runs while the game is there and quiet; it waits while it fights or loads
         if (current) IndoorSchedulerStep.noteAlive(homeView.inFight() || setupLoading || startView.visibility == View.VISIBLE)
         // a reload from the Settings keeps it up until the new hello (the game writes on for a moment before it reloads)

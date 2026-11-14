@@ -57,7 +57,7 @@ object GameLife {
     // ------------------------------------------------------------------ the events (the launcher and the bottom screen call these)
 
     fun started(now: Long = System.currentTimeMillis()) {
-        startedAt = now; worldSeen = false; ended = false; note = null; closer = null
+        startedAt = now; worldSeen = false; ended = false; note = null; closer = null; loads = 0; loadingAt = 0L
         DiagLog.event("game", "started")
         LastRun.gameStarted(now)                                   // 1.0.17: kept across the app's own death
         // issue triage 2026-11-14 (the 1.0.29 - 1.0.31 low-memory cluster; the user: "yes on the triage things"): the game is about to
@@ -84,6 +84,37 @@ object GameLife {
     }
     /** the world relief's wait: past Scene's [Scene.TRIM_IDLE_MS] after the start screen closes, well before the reports' first kills */
     const val WORLD_RELIEF_MS = Scene.TRIM_IDLE_MS + 500L
+
+    /**
+     * RELIEF AT ZONE CHANGES (memory relief 2; the user's picks, 2026-11-14: "RELIEF AT ZONE CHANGES: the add-on reports loading
+     * screens (LOADING_SCREEN_ENABLED / DISABLED, plain events, a tiny doc ...; no polling) and the app runs MemWatch.relieve at each
+     * loading screen in long sessions (same sources as world entry), logged to mem.log"). The triage's reports: the game's memory jumped
+     * 1 - 2 GB within seconds of Play, the world OR A ZONE; Play and the world had their relief, a zone in a long session none.
+     * Core.lua (core1) sends {"type":"load","on":true} the moment a loading screen comes up (flushed at once: its timers may not run
+     * during the load) and {"on":false} when it goes. Each one that comes up in the world gets the same [MemWatch.relieve] as the world
+     * entry (every trim registration at running-low, one collection when due), "relief (loading screen N)" in mem.log; its end is noted
+     * there with how long it took. Before the world (the login's own loading screen) the world relief covers it. Returns what it did,
+     * for the tests: the relief's name, the end's note, or null.
+     */
+    fun loadingScreen(on: Boolean, now: Long = System.currentTimeMillis()): String? {
+        if (!worldNow) return null
+        if (on) {
+            loadingAt = now; loads++
+            val why = "loading screen $loads"
+            MemWatch.relieve(why)
+            return why
+        }
+        val at = loadingAt
+        if (at == 0L) return null                                  // its start was never seen (the login's, a lost line)
+        loadingAt = 0L
+        val l = "loading screen $loads over after ${minutes((now - at).coerceAtLeast(0L))}"
+        MemWatch.note(l)
+        return l
+    }
+    /** the loading screens seen in the world in this game run, and when the one up now came (0 = none up) */
+    @Volatile var loads = 0
+        private set
+    @Volatile private var loadingAt = 0L
 
     /** the guest program ended with [status] (XServerScreen's termination callback) */
     fun ended(status: Int, now: Long = System.currentTimeMillis()) {
