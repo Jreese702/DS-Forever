@@ -55,6 +55,8 @@ object MacrosModel {
         val pick: Pick?, val recCur: Int?, val kbd: Kbd?,
         /** Spells s10 review: the `wx` cell really is the game's window close now (armed out of combat once the game's macro UI loaded) */
         val wxArmed: Boolean = false,
+        /** Spells s12 (`sh`): the room's row is the Calendar row's GUEST (TapPad pad21), so it is asked on every showing before the hold */
+        val shared: Boolean = false,
     ) {
         val count: Count get() = if (tab == "c") char else general
     }
@@ -109,7 +111,7 @@ object MacrosModel {
             page = m.optInt("page", 1).coerceAtLeast(1), pages = m.optInt("pages", 1).coerceAtLeast(1), cur = m.optInt("cur", 0),
             cells = cells, mac = mac, ef = str(m, "ef"), efc = if (m.has("efc")) m.optInt("efc") else null, del = m.optBoolean("del", false),
             pick = pick, recCur = m.optJSONObject("rec")?.optInt("cur", 0), kbd = kbd,
-            wxArmed = m.optBoolean("wxa", false),
+            wxArmed = m.optBoolean("wxa", false), shared = m.optBoolean("sh", false),
         )
     }
 
@@ -132,7 +134,8 @@ object MacrosModel {
         else -> null
     }
 
-    /** the taps that make the room's lazy row (Book b63: the padtab one-shot pick, then its code), on the padtab row */
+    /** the taps that make the room's lazy row (Book b63: the padtab one-shot pick, then its code), on the padtab row; Spells s12: they
+     *  also put the row, shared with the Calendar's, on its place for this room (TapPad pad21's lease) */
     fun rowCells(): List<Pair<String, Int>> = listOf("padtab" to PICK, "padtab" to ROW_CODE)
 
     /** one tap on the room's row for key [k] ("h", "a", ...); null = no row yet */

@@ -47,7 +47,7 @@ for k in ("tappad", "quests", "book", "padmap", "padtabctl"):
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
 
 # ================================================================ 10. TapPad pad11
-check('local PADV = "pad20"' in SRC["tappad"], "TapPad says pad20 (pad11's party row + the resting cursor hidden under the software cursor)")
+check('local PADV = "pad21"' in SRC["tappad"], "TapPad says pad21 (pad21 the shared row; pad11's party row + the resting cursor hidden under the software cursor)")
 check(re.search(r'local ROWS_MAX = 56\b', SRC["tappad"]) is not None, "TapPad ROWS_MAX = 56")
 
 
@@ -70,7 +70,7 @@ L10, d, rows = pad_at(126.6)
 check(abs(float(d['popupTop']) - 126.6) < 0.06 and rows == list(range(56)), "pad11 at popupTop 126.6: rows 0..55 placed and described",
       (d['popupTop'], rows[-3:], len(rows)))
 check(L10.eval('rawget(_G, "X57")') is None, "a 57th row does not register (ROWS_MAX 56)")
-check(d['v'] == 'pad20', "describe() says pad20", d['v'])
+check(d['v'] == 'pad21', "describe() says pad21", d['v'])
 L10, d, rows = pad_at(121.5)
 check(abs(float(d['popupTop']) - 121.5) < 0.06 and rows == list(range(54)), "pad11 at popupTop 121.5 (smallest scale): rows 0..53 only",
       (d['popupTop'], rows[-3:], len(rows)))
@@ -1422,7 +1422,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p54"' in SRC["padtabctl"] and 'local BV = "b64"' in SRC["book"] and 'local PV = "m164"' in SRC["padmap"],
+check('local CV = "p54"' in SRC["padtabctl"] and 'local BV = "b65"' in SRC["book"] and 'local PV = "m164"' in SRC["padmap"],
       "the versions: PadMap m160, PadTabCtl p54, Book b61 (b49 stance-bind #179, b50 toolbar D-pad #18/#20, b51 / m143 / m144 rank up, m160 / p54 / b61 Smart Range gone)")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''

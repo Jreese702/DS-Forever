@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad20"     -- pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad21"     -- pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -272,6 +272,28 @@ local function newRow(name, last)
     return r
 end
 
+-- pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: with six bags, the cast bar and both radials all 56 rows are taken at the
+-- Thor's UI scale, so the Macros room's lazy row "mac" had none and the room said "No pad row"). Two rooms that are never on the bottom
+-- screen together may hold ONE row: a secure row registered with opts.share = <a secure row's name> is that row's GUEST - the same row
+-- index, but its OWN cells, attributes and onClick (nothing of the host's is touched, so the host's own code - the Calendar's
+-- syncCells - runs on its own cells as before). One of them is on the row at a time, the HOST by default: the other's cells are
+-- hidden and the other is left out of describe(), so the app finds that row's name missing and never taps it there. pad.lease(name)
+-- puts `name` on its row (out of combat: secure cells are shown / hidden only then; in a fight it waits for the fight's end, the last
+-- ask winning) and tells every feed (onLayout) so each re-publishes its grid. Each room asks for its row when it comes on the screen,
+-- by a tap on ANOTHER row (Book's padtab pick: 39 then 34 = the Macros room's, 39 then 35 = the Calendar's), so no tap is ever under
+-- way on the row while its cells change. pad.nrows, pad.byRow (the host) and every other row are unchanged.
+pad.tenant = {}          -- row index -> the GUEST on that shared row now (nil = its host)
+pad.leaseWait = {}       -- row index -> a lease asked in a fight: the guest's name, or false = the host
+local function onRow(r)
+    local t = pad.tenant[r.row]
+    if r.guestOf then return t == r.name end
+    return t == nil
+end
+function pad.holds(name)
+    local r = pad.rows[name]
+    return type(r) == "table" and onRow(r)
+end
+
 -- Register a plain row. ns = the slot namespace its columns refer to, or nil for a single-cell
 -- operation (column 0, no key). opts.last (pad19): pinned to the last row (see newRow).
 function pad.op(name, ns, handler, opts)
@@ -328,9 +350,11 @@ end
 function pad.buildSecure()
     if not pad.geom then return false end
     if InCombatLockdown() then pad.securePending = true return false end
+    -- pad21: a lease asked in a fight, now (the last ask won)
+    for idx, want in pairs(pad.leaseWait) do pad.tenant[idx] = want or nil; pad.leaseWait[idx] = nil end
     for _, r in pairs(pad.rows) do
         if r.secure then
-            local ok = fits(r.row)
+            local ok = fits(r.row) and onRow(r)            -- pad21: a shared row's other tenant stays hidden
             for col = 0, r.n - 1 do
                 local btn = secureCell(r, col)
                 if not r.built and type(r.init) == "function" then pcall(r.init, btn, col) end
@@ -354,12 +378,20 @@ end
 -- Calling it again (a bag changed size) re-runs init on every cell, out of combat.
 -- onClick(col), optional, runs after the secure action, once per tap.
 -- opts.onPress (pad6b): cells with no secure action ("type" nil) run onClick on the press instead of the release.
+-- opts.share (pad21): the name of a secure row to be the GUEST of (THE SHARED ROW, above): its row, its own cells, off the row until
+-- pad.lease(name); with no such host (its add-on off, or not registered), a row of its own as before.
 function pad.secureRow(name, ncols, init, onClick, opts)
     local r = pad.rows[name]
     if r and not r.secure then return nil end        -- the name is taken by a plain row
     if not r then
-        r = newRow(name)
-        if not r then return nil end
+        local host = type(opts) == "table" and type(opts.share) == "string" and pad.rows[opts.share] or nil
+        if type(host) == "table" and host.secure and not host.guestOf and host.name ~= name then
+            r = { name = name, row = host.row, cells = {}, guestOf = host.name }
+            pad.rows[name] = r
+        else
+            r = newRow(name)
+            if not r then return nil end
+        end
         r.secure = true
     end
     r.n = math.max(0, math.min(ncols or 0, COLS))
@@ -367,6 +399,21 @@ function pad.secureRow(name, ncols, init, onClick, opts)
     r.onPress = type(opts) == "table" and opts.onPress == true
     pad.buildSecure()
     return r.row
+end
+
+-- pad21: put [name] on its shared row (a guest, or its host back). true = it is on the row now; false, "combat" = it waits for the
+-- fight's end (the cells are secure); false, "no row" = no such secure row. A row that is not shared: always on its row.
+function pad.lease(name)
+    local r = pad.rows[name]
+    if type(r) ~= "table" or not r.secure then return false, "no row" end
+    local want = r.guestOf and r.name or nil
+    if pad.tenant[r.row] == want then pad.leaseWait[r.row] = nil return true end
+    if InCombatLockdown() then pad.leaseWait[r.row] = want or false; pad.securePending = true return false, "combat" end
+    pad.tenant[r.row] = want
+    pad.leaseWait[r.row] = nil
+    pad.buildSecure()
+    for _, fn in ipairs(pad.listeners) do pcall(fn) end
+    return true
 end
 
 -- ---------------------------------------------------------------- THE KEY CHANNEL (L1, pad10c)
@@ -674,7 +721,7 @@ function pad.describe()
     local rows, sizes = {}, {}
     local secureOK = pad.secureAt ~= nil and pad.secureAt == geomKey()
     for name, r in pairs(pad.rows) do
-        if fits(r.row) and (not r.secure or (r.built and secureOK)) then
+        if fits(r.row) and onRow(r) and (not r.secure or (r.built and secureOK)) then   -- pad21: only the tenant on a shared row
             rows[name] = r.row
             sizes[name] = r.n
         end

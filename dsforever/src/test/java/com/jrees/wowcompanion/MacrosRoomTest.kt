@@ -207,5 +207,27 @@ class MacrosRoomTest {
         val s = st("""{"type": "macros", "m": {}}""")
         assertFalse(s.ready); assertEquals("grid", s.mode); assertEquals("grid", s.view); assertNotNull(s)
         assertNull(MacrosModel.parse(JSONObject("""{"type": "calendar"}""")))
+        assertFalse(s.shared)
+    }
+
+    // ---------------------------------------------------------------- THE SHARED ROW (TapPad pad21, Spells s12, Book b65)
+    @Test fun theRoomsRowIsTheCalendarsGuest() {
+        // the document says the row is shared (`sh`): the app asks for it on every showing, before its hold
+        val shared = st("""{"type": "macros", "v": "s12", "m": {"ready": true, "sh": true, "keys": {"h": 0, "f": 1, "s0": 12, "n": 24}}}""")
+        assertTrue(shared.shared); assertNotNull(shared.keys)
+        // the Calendar has the row back: no keys, not norow - the app asks again (padtab 39 then 34), it never says "No pad row"
+        val away = st("""{"type": "macros", "v": "s12", "m": {"ready": true, "sh": true}}""")
+        assertNull(away.keys); assertFalse(away.noRow)
+        assertNull(MacrosModel.cell(away, "h"))
+        assertEquals(listOf("padtab" to 39, "padtab" to 34), MacrosModel.rowCells())
+        // no Calendar row (its add-on off): a row of its own, as before
+        assertFalse(st("""{"type": "macros", "m": {"ready": true, "keys": {"h": 0, "s0": 12, "n": 24}}}""").shared)
+    }
+
+    @Test fun theCalendarAsksItsRowBack() {
+        assertEquals(listOf("padtab" to 39, "padtab" to 35), CalendarModel.rowBackCells())
+        assertEquals("cal", CalendarModel.PAD_ROW)
+        // the Calendar's own code 35 never collides with the Macros room's 34
+        assertTrue(CalendarModel.ROW_BACK != MacrosModel.ROW_CODE && CalendarModel.PICK == MacrosModel.PICK)
     }
 }

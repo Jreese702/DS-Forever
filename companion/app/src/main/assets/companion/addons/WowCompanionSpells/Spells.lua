@@ -33,7 +33,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local SV = "s11"     -- bump on every change; s11 THE 1.0.32 TEST BUILD MERGE (code 1472): feat/macro-room and feat/pet-spell-binding both tagged s10, both kept (The Macros room = s10, Pet spells = s10p, its reviews = s10a / s10b; the pet branch's Book b63 / PadMap m163 are b63p / m163p in its notes); s10 THE MACROS ROOM (the user, 2026-11-13: "Lets scrap the smart ranged attack and start building a macro room. The calender can be moved up to a button on the right side of the map name make it small. Use the room slot for macros."): the block at the end of this file (WC.macroRoom: the "macros" document, the controller guest "macros", the lazy pad row "mac", the player's own New / Done / Delete, the Bind box for a macro); s10 REVIEW (same branch, same tag, as eaa3d23c did; the user's "start building a macro room"): the selection is the macro's INDEX while it still holds its name (the game lets two macros share a name: A / Delete / the preview hit the one under the glow), a write re-finds its macro by the game's own returned index; a bind of a name another macro shares is refused ("taken": our buttons find a macro by name); "#showtooltip" goes on the macro's FIRST line; `wxa` = the `wx` cell really is the window's close button (its ack says so); `norow` also when the row exists but is not placed (the smallest UI scale); our stored binds follow a rename / go with a delete only when no other macro keeps that name; a finger's a / x / b no longer claims the controller (only the capture's own press proves a hold); s10b (review of feat/pet-spell-binding, #234, the user: "build it"): a pet spell is PASSIVE as the game's own Spellbook says (its book item's isPassive / IsSpellBookItemPassive, the spell's own IsSpellPassive), never by the pet bar's state - the server packs every spell that cannot auto-cast with state 1, so the high-byte-1 / IsPetActionPassive readings made Seduction, Spell Lock and Sacrifice "passive": no number, no Bind, hidden with Hide Passives; s10a (review of feat/pet-spell-binding, #234, the user: "build it"): only a pet WITH A BOOK (the game's own Pet tab: HasPetSpells() and PetHasSpellbook()) has spells of ours - a charmed / possessed unit (Mind Control, Enslave) has pet spells but no book, so its spells are never kept as this character's pet spells (WC.spellsPetName), never numbered, and a travelling pet slot reads nothing then (WC.spellsPetAt / WC.spellsPetSlotOf): a mob's spell sharing an id with one of the player's own never turns that spell into a "pet spell" cast by bare name; s10p PET SPELLS (#234, the user: "build it"): the pet book's SPELLS get numbers (`pv`, after the player's top ranks, before the lower ranks), never its passives or its commands (Attack / Follow / Stay ... have their homes); each pet item says `cmd` (a command), `bind` (a spell that can go on a button) and `pb` (on the pet bar), its bars are the game's own FindPetActionButtons; the Pet tab is line WC.SPELLS_PET_LINE (101); a pet book slot k travels as WC.SPELLS_PET_SLOT0 + k (5000 + k) through the Bind box and the Controller room's puts (WC.spellsPetAt / WC.spellsBankSlot read it back); WC.spellsPetName(id) = the name our own secure buttons cast a pet spell by (CastSpellByName, the game's /cast), remembered per character (WowCompanionSpellsDB.petSpellBy[name-realm]); s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
+local SV = "s12"     -- bump on every change; s12 THE MACROS ROOM'S ROW SHARED WITH THE CALENDAR'S (the 1.0.32 test build, code 1472: with six bags, the cast bar and both radials the 56-row tap pad had no row left for the lazy "mac" row, and the room said "No pad row"): "mac" is the GUEST of the Calendar room's row "cal" (TapPad pad21 opts.share; the two rooms are never on the bottom screen together), leased to the room on each ask (Book's padtab 39 then 34; the app asks on every showing: the document's `sh`), its keys only while it is on the row (MR.onRow); the game's macro window makes / takes the row only while the room wants the controller; with no Calendar row, a row of its own as before; s11 THE 1.0.32 TEST BUILD MERGE (code 1472): feat/macro-room and feat/pet-spell-binding both tagged s10, both kept (The Macros room = s10, Pet spells = s10p, its reviews = s10a / s10b; the pet branch's Book b63 / PadMap m163 are b63p / m163p in its notes); s10 THE MACROS ROOM (the user, 2026-11-13: "Lets scrap the smart ranged attack and start building a macro room. The calender can be moved up to a button on the right side of the map name make it small. Use the room slot for macros."): the block at the end of this file (WC.macroRoom: the "macros" document, the controller guest "macros", the lazy pad row "mac", the player's own New / Done / Delete, the Bind box for a macro); s10 REVIEW (same branch, same tag, as eaa3d23c did; the user's "start building a macro room"): the selection is the macro's INDEX while it still holds its name (the game lets two macros share a name: A / Delete / the preview hit the one under the glow), a write re-finds its macro by the game's own returned index; a bind of a name another macro shares is refused ("taken": our buttons find a macro by name); "#showtooltip" goes on the macro's FIRST line; `wxa` = the `wx` cell really is the window's close button (its ack says so); `norow` also when the row exists but is not placed (the smallest UI scale); our stored binds follow a rename / go with a delete only when no other macro keeps that name; a finger's a / x / b no longer claims the controller (only the capture's own press proves a hold); s10b (review of feat/pet-spell-binding, #234, the user: "build it"): a pet spell is PASSIVE as the game's own Spellbook says (its book item's isPassive / IsSpellBookItemPassive, the spell's own IsSpellPassive), never by the pet bar's state - the server packs every spell that cannot auto-cast with state 1, so the high-byte-1 / IsPetActionPassive readings made Seduction, Spell Lock and Sacrifice "passive": no number, no Bind, hidden with Hide Passives; s10a (review of feat/pet-spell-binding, #234, the user: "build it"): only a pet WITH A BOOK (the game's own Pet tab: HasPetSpells() and PetHasSpellbook()) has spells of ours - a charmed / possessed unit (Mind Control, Enslave) has pet spells but no book, so its spells are never kept as this character's pet spells (WC.spellsPetName), never numbered, and a travelling pet slot reads nothing then (WC.spellsPetAt / WC.spellsPetSlotOf): a mob's spell sharing an id with one of the player's own never turns that spell into a "pet spell" cast by bare name; s10p PET SPELLS (#234, the user: "build it"): the pet book's SPELLS get numbers (`pv`, after the player's top ranks, before the lower ranks), never its passives or its commands (Attack / Follow / Stay ... have their homes); each pet item says `cmd` (a command), `bind` (a spell that can go on a button) and `pb` (on the pet bar), its bars are the game's own FindPetActionButtons; the Pet tab is line WC.SPELLS_PET_LINE (101); a pet book slot k travels as WC.SPELLS_PET_SLOT0 + k (5000 + k) through the Bind box and the Controller room's puts (WC.spellsPetAt / WC.spellsBankSlot read it back); WC.spellsPetName(id) = the name our own secure buttons cast a pet spell by (CastSpellByName, the game's /cast), remembered per character (WowCompanionSpellsDB.petSpellBy[name-realm]); s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
 
 local MAX_LINES = 24        -- skill lines read (the game has General + class + a few)
 local MAX_ITEMS = 400       -- book entries read, all lines together
@@ -801,7 +801,11 @@ end
 -- Per character (the user's per-character rule): WowCompanionSpellsDB.macroRoom[name-realm] = { tab, sel } (where the room was).
 do
 local MR = { GUEST = "macros", ROW = "mac", DEL_S = 3, ICON = 134400, NAME_MAX = 16, BODY_MAX = 255, PER_PAGE = 24, PICK_PAGE = 10,
-             LINE_ROWS = 19, CLOSE = "MacroFrameCloseButton" }
+             LINE_ROWS = 19, CLOSE = "MacroFrameCloseButton",
+             -- s12 THE SHARED ROW (TapPad pad21): "mac" is the GUEST of the Calendar room's row "cal" (the two rooms are never on the
+             -- bottom screen together: the Calendar lost its bar slot to this room), so the room needs no row of its own at the fullest
+             -- layout; with no Calendar row (its add-on off) a row of its own as before
+             SHARE = "cal" }
 -- the row's columns, FIXED: 0-11 the room's keys, then s0..s23 = the k-th thing on show (a grid cell, an editor row, a pick row, a tile)
 MR.KEYS = { "h", "f", "fb", "a", "x", "b", "tg", "tc", "pp", "pn", "kx", "wx" }
 MR.COL, MR.KEY = {}, {}
@@ -1087,10 +1091,23 @@ local capture = function()
     local c = WC.capture
     if type(c) == "table" and (c.version or 0) >= 1 and type(c.take) == "function" and type(c.release) == "function" then return c end
 end
+-- s12: the room's row is on its place now (made, and - shared with the Calendar's - leased to this room: TapPad pad21)
+function MR.onRow()
+    local pad = WC.pad
+    local r = pad and pad.rows and pad.rows[MR.ROW]
+    if not r then return false end
+    return type(pad.holds) ~= "function" or pad.holds(MR.ROW) == true
+end
+-- s12: the row is the Calendar's guest (the app asks for it on every showing, before its hold)
+function MR.shared()
+    local pad = WC.pad
+    local r = pad and pad.rows and pad.rows[MR.ROW]
+    return type(r) == "table" and r.guestOf ~= nil
+end
 function MR.keys()
     local pad = WC.pad
     local r = pad and pad.rows and pad.rows[MR.ROW]
-    if not r then return nil end
+    if not r or not MR.onRow() then return nil end             -- s12: the Calendar's on the shared row: no keys (the app asks again)
     local k = { s0 = MR.S0, n = MR.PER_PAGE }
     for name, col in pairs(MR.COL) do k[name] = col end
     return k
@@ -1100,7 +1117,7 @@ function MR.doc()
     if st.mode == "edit" and MR.ready() and not MR.off() and not MR.selIndex() then st.mode, st.delAt = "grid", nil end
     local c = MR.counts()
     local d = { v = SV, ready = MR.ready() or nil, off = MR.off() or nil, win = MR.winShown() or nil, cb = combat() or nil,
-                norow = st.norow or nil, tab = st.tab, cnt = c, me = TSs(function() return UnitName("player") end),
+                norow = st.norow or nil, sh = MR.shared() or nil, tab = st.tab, cnt = c, me = TSs(function() return UnitName("player") end),
                 mode = st.mode, note = st.note,
                 ctl = { held = ctlr.held or nil, want = ctlr.want and true or false, why = ctlr.why, cap = capture() ~= nil } }
     local keys = MR.keys()
@@ -1723,14 +1740,25 @@ function MR.armClose()
     if not btn or btn.wcArmed or combat() then return end
     pcall(MR.cellInit, btn, MR.COL.wx)
 end
--- THE LAZY ROW (out of combat; with none free the room says so): Book's padtab pick 39 then 34, or the game's window opening
+-- THE LAZY ROW (out of combat; with none free the room says so): Book's padtab pick 39 then 34, or the game's window opening while
+-- the room wants the controller. s12: made as the Calendar row's GUEST (MR.SHARE, TapPad pad21) and LEASED to this room on each ask -
+-- the app asks on every showing (the document's `sh`) - so the room's row costs no row of the pad; the Calendar takes it back by its
+-- own ask (padtab 39 then 35, Book b65). In a fight a made row's lease waits for the fight's end; a row not made yet waits as before.
 function MR.ensure()
     local pad = WC.pad
     if not (pad and type(pad.secureRow) == "function") then st.norow = true return false end
-    if pad.rows and pad.rows[MR.ROW] then st.norow = nil; MR.emit() return true end
-    if combat() then MR.emit() return false end
-    local ok, row = pcall(pad.secureRow, MR.ROW, MR.NCOLS, MR.cellInit, MR.onCell, { onPress = true })
-    st.norow = not (ok and type(row) == "number") or nil
+    local made = pad.rows and pad.rows[MR.ROW]
+    if made and MR.onRow() then st.norow = nil; MR.emit() return true end
+    if combat() then
+        if made and type(pad.lease) == "function" then pcall(pad.lease, MR.ROW) end
+        MR.emit() return false
+    end
+    if not made then
+        local ok, row = pcall(pad.secureRow, MR.ROW, MR.NCOLS, MR.cellInit, MR.onCell, { onPress = true, share = MR.SHARE })
+        if not (ok and type(row) == "number") then st.norow = true; MR.emit() return false end
+    end
+    if type(pad.lease) == "function" then pcall(pad.lease, MR.ROW) end
+    st.norow = (not MR.onRow()) or nil
     MR.emit()
     return not st.norow
 end
@@ -1743,7 +1771,9 @@ function MR.hookWindow()
     if type(fr) ~= "table" or type(fr.HookScript) ~= "function" then return end
     MR.hooked = true
     pcall(function()
-        fr:HookScript("OnShow", function() C_Timer.After(0, function() MR.armClose(); MR.ensure(); MR.emit() end) end)
+        -- s12: the row only while the room wants the controller (a shared row is the Calendar's otherwise: never taken by the game's
+        -- window alone)
+        fr:HookScript("OnShow", function() C_Timer.After(0, function() MR.armClose(); if ctlr.want then MR.ensure() end; MR.emit() end) end)
         fr:HookScript("OnHide", function() C_Timer.After(0, function() MR.emit() end) end)
     end)
 end

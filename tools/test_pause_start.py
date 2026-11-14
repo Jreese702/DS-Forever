@@ -158,7 +158,7 @@ F.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.3); MerchantF
 settle(F)
 
 # ---------------------------------------------------------------- m161: the setting (the user: "Make it a setting toggle defaulted to our wheel")
-check('local BV = "b64"' in SRC["book"] and 'local PV = "m164"' in SRC["padmap"], "Book b62, PadMap m162 (b61 / m161 + the 1.0.32 merge)")
+check('local BV = "b65"' in SRC["book"] and 'local PV = "m164"' in SRC["padmap"], "Book b62, PadMap m162 (b61 / m161 + the 1.0.32 merge)")
 
 
 def padtab(L, *cols):
@@ -215,7 +215,7 @@ for L in (W, T, F, G):
 # ---------------------------------------------------------------- issue #278: Spells DISABLED, pad15 never switched it on (TapPad pad20)
 # the report: "our add-ons: 9 loaded, NOT loaded: WowCompanionSpells:DISABLED" and NO "addonsoff" probe that run. The game's own reason
 # (GetAddOnInfo, what the probe reads) said DISABLED while pad15's one test, GetAddOnEnableState(name, character) == 0, did not hold.
-check('local PADV = "pad20"' in SRC["tappad"], "TapPad says pad20")
+check('local PADV = "pad21"' in SRC["tappad"], "TapPad says pad21 (pad20 + the shared row)")
 ADDONS_STUB = r'''
 OFF = { WowCompanionSpells = true }
 ENABLED_CALLS = {}

@@ -90,7 +90,9 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
     /** the room came on the screen: it takes the controller; with no row yet, it asks for the row first (Book's padtab pick) */
     fun onShown() {
         shown = true; leftByB = false; retries = 0; holdSent = false; rowTries = 0
-        if (state?.keys == null) askRow("shown") else sendHold("shown")
+        // Spells s12: a row shared with the Calendar's is asked on EVERY showing (the Calendar may have it back): the hold then goes on
+        // the document that has the keys, never on keys a document gave before the row changed hands
+        if (state?.keys == null || state?.shared == true) { rowAskedAt = -1_000_000L; askRow("shown") } else sendHold("shown")
         reconcileLater()
         pane.invalidate()
     }

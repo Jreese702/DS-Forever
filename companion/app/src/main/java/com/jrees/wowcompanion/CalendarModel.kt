@@ -21,6 +21,15 @@ object CalendarModel {
 
     const val PAD_ROW = "cal"
 
+    /**
+     * THE SHARED ROW (TapPad pad21, Book b65; the 1.0.32 test build, code 1472): the Macros room's row is the GUEST of this room's row,
+     * so while the Macros room had it the grid lists no [PAD_ROW]; the room then asks it back with Book's padtab one-shot pick
+     * ([PICK]) and its code ([ROW_BACK]) - no game action - and holds once a document lists the row again
+     */
+    const val PICK = 39
+    const val ROW_BACK = 35
+    fun rowBackCells(): List<Pair<String, Int>> = listOf("padtab" to PICK, "padtab" to ROW_BACK)
+
     /** the six filters of this client's calendar, in the game's order (camelot/calendarfilterdata.lua) */
     val FILTERS = listOf(
         "calendarShowHolidays" to "CALENDAR_FILTER_HOLIDAYS",

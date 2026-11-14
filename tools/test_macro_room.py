@@ -270,7 +270,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap"):
     e = comp(SRC[k], k)
     check(e is None, "a. Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local SV = "s11"' in SRC["spells"] and 'local BV = "b64"' in SRC["book"] and 'local PV = "m164"' in SRC["padmap"],
+check('local SV = "s12"' in SRC["spells"] and 'local BV = "b65"' in SRC["book"] and 'local PV = "m164"' in SRC["padmap"],
       "a. the versions: Spells s10, Book b63, PadMap m163")
 QUOTE = '"Lets scrap the smart ranged attack and start building a macro room'
 check(all(QUOTE in SRC[k] for k in ("spells", "book", "padmap")), "a. each changed file's header note quotes the user")

@@ -701,7 +701,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // me back to the home by default for everything")
         professionsView = ProfessionsView(this).apply { onLeave = { roomLeft(Room.PROFESSIONS) }; lastHandOverAt = { capHolderAt } }
         // the Calendar room (calendar session). B that leaves it goes HOME (user ruling)
-        calendarView = CalendarView(this).apply { onLeave = { roomLeft(Room.CALENDAR) } }
+        calendarView = CalendarView(this).apply {
+            onLeave = { roomLeft(Room.CALENDAR) }
+            // TapPad pad21: its row is shared with the Macros room's; asked back on the spells / quests documents' grid (Book b65)
+            padSource = { listOf(talentsPad, spellsPad, questsPad).firstOrNull { it?.optJSONObject("rows")?.has("padtab") == true } ?: spellsPad ?: questsPad }
+        }
         // the Macros room (Spells s10): B at its grid goes HOME (the add-on's macpad BACK); its lazy row is asked on the spells / quests
         // documents' shared grid (Book b63's padtab pick)
         macrosView = MacrosView(this).apply {

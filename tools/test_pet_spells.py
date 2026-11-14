@@ -264,7 +264,7 @@ def feed(L):
 
 def keep_spells(name, L):
     """the whole `spells` document as the feed sends it (Spells.lua emitSpells: type, v, s)"""
-    FIX[name] = L.eval('WowCompanion.encode({ type = "spells", v = "s11", s = WowCompanion.collectSpells() })')
+    FIX[name] = L.eval('WowCompanion.encode({ type = "spells", v = "s12", s = WowCompanion.collectSpells() })')
 
 
 def keep_last(name, L, typ):
@@ -333,7 +333,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap", "radial"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local SV = "s11"' in SRC["spells"] and 'local BV = "b64"' in SRC["book"] and 'local PV = "m164"' in SRC["padmap"]
+check('local SV = "s12"' in SRC["spells"] and 'local BV = "b65"' in SRC["book"] and 'local PV = "m164"' in SRC["padmap"]
       and 'local RV = "r21"' in SRC["radial"] and 'local SRV = "q5"' in SRC["radial"] and 'local CBV = "cb10"' in CASTBAR,
       "the versions: Spells s10b, Book b63a, PadMap m163a (the review), Radial r21 / q5, ActionBar cb10")
 check(all('#234, the user: "build it"' in s for s in (SRC["spells"], SRC["book"], SRC["padmap"], SRC["radial"], CASTBAR)),
@@ -682,7 +682,7 @@ if os.environ.get("PET_DUMP"):
                     fh.write(t)
                 break
     with open(os.path.join(dd, "spells_croom.json"), 'w', encoding='utf-8', newline='\n') as fh:
-        fh.write(C.eval('WowCompanion.encode({ type = "spells", v = "s11", s = WowCompanion.collectSpells() })'))
+        fh.write(C.eval('WowCompanion.encode({ type = "spells", v = "s12", s = WowCompanion.collectSpells() })'))
 
 # ================================================================ the fixtures
 os.makedirs(FIXDIR, exist_ok=True)
