@@ -421,6 +421,9 @@ class HomePauseView(
             GameMenuModel.Act.Close -> close("Game Menu: B")
             is GameMenuModel.Act.Ask -> {}           // the question shows under the menu (gm.askLine)
             is GameMenuModel.Act.Cell -> {
+                // the Macros room (the user, 2026-11-13: "start building a macro room"): the menu's Macros opens OUR room, as the bar does
+                // (every route the same); the game's own macro window is never opened from here
+                if (a.item.key == "macros") { Log.i(TAG, "pause: game menu macros -> the Macros room"); after = HomePauseModel.MACROS; close("Game Menu: Macros"); return }
                 val sent = TapBridge.tap(context, questsPad(), GameMenuModel.ROW, a.item.col) { why -> Log.i(TAG, "pause: game menu tap refused ($why)") }
                 Log.i(TAG, "pause: game menu ${a.item.key} ${if (sent) "sent" else "NOT sent"}")
                 if (!sent) { say("Comes with the next add-on update"); return }

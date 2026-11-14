@@ -132,7 +132,8 @@ class PolestarSkipTest {
         val b = f.touch(upLeft) as HomePauseModel.Act.Pick
         assertEquals(PolestarSkip.KEY_PREV, b.slice.key); assertEquals("Previous step", b.slice.label)
         // the other slices of the page are where they were
-        assertEquals("calendar", f.slices()[HomePauseModel.fromGame(1)]?.key)
+        // (the Macros room took the Calendar's slice, Spells s10: the user, 2026-11-13, "Use the room slot for macros")
+        assertEquals("macros", f.slices()[HomePauseModel.fromGame(1)]?.key)
         assertEquals("pvp", f.slices()[HomePauseModel.fromGame(4)]?.key)
     }
 

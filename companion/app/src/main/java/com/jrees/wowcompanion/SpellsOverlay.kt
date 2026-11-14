@@ -275,6 +275,7 @@ class SpellsOverlay(
                 "stick-normal" -> "L3 / R3: on the Normal tab" to Theme.warn
                 "unsure" -> "Press it again" to Theme.warn
                 "form-unknown" -> "Shift into that form once so the game shows its bar" to Theme.warn       // b44
+                "missing" -> "Missing" to Theme.unusable                     // Book b63: no macro has that name now
                 else -> "That did not work" to Theme.unusable
             }
             val p = UiKit.bodyPaint(30f, colour).apply { textAlign = Paint.Align.CENTER }

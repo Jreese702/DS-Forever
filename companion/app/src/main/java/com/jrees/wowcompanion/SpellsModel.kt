@@ -81,12 +81,13 @@ object SpellsModel {
         val bindItem: BoxItem? = null,
     ) {
         val bindOpen get() = binding != null
-        /** Book b59: a hosted box (Bags holds the controller and hands it the presses) */
-        val hosted get() = via == "bags"
+        /** Book b59: a hosted box (Bags holds the controller and hands it the presses); Book b63: the Macros room hosts one too */
+        val hosted get() = via == "bags" || via == "macros"
     }
 
-    /** Book b59: the bag item a Bind box is for: its id, name and icon (a fileID, 0 = unknown) */
-    data class BoxItem(val id: Int, val name: String, val icon: Int)
+    /** Book b59: the bag item a Bind box is for: its id, name and icon (a fileID, 0 = unknown); Book b63: [mac] = one of the player's
+     *  macros (id = its index, the name the player's own) */
+    data class BoxItem(val id: Int, val name: String, val icon: Int, val mac: Boolean = false)
 
     /** The answer to a Bind press (`spellsack`). [why]: "combat", "reserved", "unknown", "failed". */
     data class BindResult(val spellId: Int, val ok: Boolean, val why: String?, val pad: PadSlot?,
@@ -126,7 +127,7 @@ object SpellsModel {
             bindFight = c.optBoolean("bf", false),
             bindItem = c.optJSONObject("bitem")?.let { bi ->
                 val id = bi.optInt("id", 0)
-                if (id > 0) BoxItem(id, bi.optString("n", ""), bi.optInt("i", 0)) else null
+                if (id > 0) BoxItem(id, bi.optString("n", ""), bi.optInt("i", 0), mac = bi.optBoolean("mac", false)) else null
             },
         )
     }
