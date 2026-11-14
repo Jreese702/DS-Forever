@@ -1104,6 +1104,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }.start()
         // the chosen game folder changes (the launcher's Choose folder): the log follow moves with it, no restart (test11)
         getSharedPreferences(GameFiles.PREFS, MODE_PRIVATE).registerOnSharedPreferenceChangeListener(gameRootChanged)
+        // the start screen's region line (the user's pick 2026-11-13): now, and at every region choice
+        GameRegion.listeners.add(regionChanged); regionCheck("app start")
         // the self-setup's first look, once the start has settled
         ui.postDelayed({ setupCheck() }, 5_000L)
         loginWatch.start()
@@ -2716,6 +2718,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // the restart notice ends with the new run (the new game's first current word takes the start view away)
                 if (restartNoticeAt != 0L) { restartNoticeAt = 0L; Log.i("WCSETUP", "restart from Settings: the new game run attached") }
                 signInRun = LauncherHooks.gameStartSec; signInCheck.reset()
+                regionCheck("a new game run")                // Play wrote the portal (GameConfigWtf.ensure): the region line again
                 if (SetupBridge.restarting) { SetupBridge.restarting = false; NativeLogin.logEvent("restart: game attached (a new client run)") }
             }
             // no saved login: the game's own login screen, once the client has had time to show it
@@ -2803,7 +2806,32 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun gameLog(): String = GamePaths.follow(LauncherHooks.pkg != null, GameFiles.gameRoot(this).path, game?.log)
 
     private val gameRootChanged = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == GameFiles.KEY_GAME_PATH) ui.post { if (!shell.hostGone()) startTail() }
+        if (key == GameFiles.KEY_GAME_PATH) ui.post { if (!shell.hostGone()) { startTail(); regionCheck("game folder changed") } }
+    }
+
+    /**
+     * THE START SCREEN'S REGION LINE (the user's pick 2026-11-13, "Show region when it differs"; #248): "Region: EU (this install is US)"
+     * while the region the game signs in at is not the install's own ([GameRegion.note]). Inside the one app only (its local game folder),
+     * read off the main thread at the app's start, a new game run, a region choice or another game folder; not in Streaming and not once
+     * this run has reached the world (its sign-in worked). No question asked.
+     */
+    private var regionNote: GameRegion.Note? = null
+    private val regionChanged: (String) -> Unit = { _ -> ui.post { if (!shell.hostGone()) regionCheck("region chosen") } }
+    private fun regionCheck(why: String) {
+        if (LauncherHooks.pkg == null) return
+        val app = applicationContext
+        Thread({
+            val n = runCatching { GameRegion.note(app, GameFiles.gameRoot(app)) }.getOrNull()
+            ui.post {
+                if (shell.hostGone()) return@post
+                if (n != regionNote) { regionNote = n; NativeLogin.logEvent("region line: ${n?.line() ?: "none"} ($why)") }
+                regionShow()
+            }
+        }, "region-line").start()
+    }
+    private fun regionShow() {
+        if (!::startView.isInitialized) return
+        startView.region = regionNote?.takeIf { PlayModes.current != PlayMode.STREAM && !NativeLogin.inWorldThisRun }
     }
 
     /** (re)starts following the game's log at [gameLog] when it is a new path (a new chosen root stops the old follow first) */
@@ -2853,7 +2881,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     /** Streaming (S2): the mode or the bridge's PC changed (paired, or another PC): follow the new source */
-    private val sourceChanged: () -> Unit = { ui.post { if (!shell.hostGone()) { tailLog = null; startTail() } } }
+    private val sourceChanged: () -> Unit = { ui.post { if (!shell.hostGone()) { tailLog = null; startTail(); regionShow() } } }
 
     // ---------------------------------------------------------------- EXIT GUARD: no room ever without a working B (ExitGuard)
     private var guardUnheldSince = 0L
@@ -2908,6 +2936,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (PlayModes.onChanged === sourceChanged) PlayModes.onChanged = null
         tail?.stop()
         getSharedPreferences(GameFiles.PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(gameRootChanged)
+        GameRegion.listeners.remove(regionChanged)
         if (::loginWatch.isInitialized) loginWatch.stop()
     }
 
@@ -2920,6 +2949,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private fun loginShow() {
         if (nativePreview) return
+        regionShow()                                         // the region line goes once this run reaches the world
         val s = loginWatch.state
         // INSIDE THE ONE APP: the row only while it has something to say ([nativeRow]); a just-saved note shows once
         val native = if (LauncherHooks.pkg == null) null else nativeRow(s)

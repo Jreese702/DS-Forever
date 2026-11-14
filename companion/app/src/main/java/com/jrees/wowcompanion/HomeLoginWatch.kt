@@ -63,6 +63,10 @@ class HomeLoginWatch(
         if (!trailSeen.add(t)) return
         while (trailSeen.size > TRAIL_KEEP) trailSeen.remove(trailSeen.first())
         NativeLogin.logEvent(t)
+        // the captcha hold (the user, 2026-11-13): the game's captcha ask and the steps after it, and its realm connection, for the saved
+        // sign-in file (once per line: both logs carry the same lines)
+        HomeLogin.captcha(line)?.let { NativeLogin.captcha(it) }
+        if (HomeLogin.realmUp(line)) NativeLogin.realmUp("the game's log")
     }
 
     fun start() {

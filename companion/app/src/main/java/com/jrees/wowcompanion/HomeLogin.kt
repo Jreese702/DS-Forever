@@ -176,6 +176,28 @@ object HomeLogin {
         return "sign-in trail" + (at?.let { " (game $it)" } ?: "") + ": " + say
     }
 
+    /**
+     * THE CAPTCHA HOLD'S WORD FROM THE GAME'S LOG (the user, 2026-11-13: keep the saved sign-in file past its 20 s behind a captcha;
+     * NativeLogin / LoginHold). true = the sign-in form came with hasCaptcha="true" (the game sends it, and reads login.txt again, only
+     * once the player has typed the captcha); false = a form without one, or a later step (the form sent or answered, the credentials'
+     * answer, the sign-in completed or refused, the realm connection); null = not a sign-in step. The same lines as [trail]. Pure.
+     */
+    fun captcha(raw: String): Boolean? {
+        val line = raw.trimEnd('\r')
+        return when {
+            "logon form received" in line -> flag(line, "hasCaptcha")?.let { it == "true" }
+            AFTER_CAPTCHA.any { it in line } -> false
+            else -> null
+        }
+    }
+
+    /** the game's log: its realm connection is up (the sign-in is done; NativeLogin deletes a read login.txt then). Pure. */
+    fun realmUp(raw: String): Boolean = "Realm connection connected" in raw
+
+    /** the sign-in's steps past the captcha's form (each ends a captcha wait; the next form says again) */
+    private val AFTER_CAPTCHA = listOf("logon form submission requested", "logon form submission response received",
+        "credentials response received", "Battle.net logon completed result=", "Fatal login error received", "Realm connection connected")
+
     /** the game's result word for one line: "ERROR_OK (0)" -> "ok", anything else shortened ([reason]); "?" when the line has none */
     private fun result(line: String): String = RESULT.find(line)?.groupValues?.get(1)?.let { r ->
         if (r.trim().startsWith("ERROR_OK")) "ok" else reason(r).ifEmpty { "(empty)" }

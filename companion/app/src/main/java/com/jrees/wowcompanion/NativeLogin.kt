@@ -21,7 +21,10 @@ import java.nio.file.Files
  *    DELETED the moment the client has read it (a FileObserver: its read's close), with backstops: [clear] on the sign-in watcher's
  *    "signing in", a hard timeout, every app start and the game screen going (crash recovery).
  *  - No key is ever typed (the user's ruling). An authenticator code or a failed login is typed by the user on the game's own screen.
- * Never follows a symlink when cleaning: only the links themselves and login.txt are ever deleted.
+ *  - THE CAPTCHA HOLD (the user, 2026-11-13: "yes", an approved exception to the 20 s after the read): while the bottom screen's sign-in
+ *    Keyboard is open or the game's log says it asks for a captcha, a read file stays until the client's next read + 20 s, at most
+ *    3 minutes after its first read ([LoginHold]); the realm connection, the world and the game's close still delete it at once.
+ * Never follows a symlink when cleaning: only the links themselves and login.txt are ever deleted. Nothing here ever reads login.txt.
  */
 object NativeLogin {
     private const val TAG = "WCLOGIN"
@@ -128,6 +131,8 @@ object NativeLogin {
     /** the unread file's cap ([PreLoginTraffic.capWait]): deleted now, or asked again later while the game downloads. Main thread. */
     private fun capCheck() {
         if (!active) return
+        // the captcha hold (the user, 2026-11-13): a read file kept past its 20 s has its own cap, 3 minutes after the first read
+        if (hold.holding) return
         val now = System.currentTimeMillis()
         val wait = PreLoginTraffic.capWait(now, writtenAt, holdFrom, lifeMs, downloading)
         if (wait > 0L) {
@@ -170,6 +175,7 @@ object NativeLogin {
         playAt = System.currentTimeMillis(); windowArmed = false; windowSeen = false; expiredUnread = false; main.post { preLogin.reset(); afterLogin.reset() }
         downloading = false; holdFrom = 0L; capHeld = false
         downloadAtRead = false; lastHeavyAt = 0L; heavyNoted = false; readMs = 0L
+        captchaAsked = false                                              // the captcha hold: a new run's sign-in asked nothing yet
         val root = shadowRoot(ctx).apply { mkdirs() }
         val isLinkF = { f: File -> Files.isSymbolicLink(f.toPath()) }
         // test57: a flavor folder in the shadow that is a LINK into the shared game folder is unlinked first, and one that still resolves
@@ -233,8 +239,47 @@ object NativeLogin {
      * submission" 25.739 -> "credentials submission" 26.282 -> "logon completed" 26.613), and hung on "Connecting" without them. So the
      * file now stays [AFTER_READ_MS] after the client's FIRST read (the whole sign-in takes ~2.2 s from there); no traffic trigger.
      */
-    private const val AFTER_READ_MS = 20_000L
-    private val afterRead = Runnable { if (active) { logEvent("login.txt: ${AFTER_READ_MS / 1000} s after the client's first read, deleting"); clear() } }
+    private const val AFTER_READ_MS = LoginHold.AFTER_READ_MS
+
+    /**
+     * THE CAPTCHA HOLD (the user, 2026-11-13: "yes", an approved exception to the 20 s rule for this private file; #271 #247 #235):
+     * behind a captcha the client sends its form, and reads this file again, only once the player has typed the captcha - often past
+     * the 20 s. While the bottom screen's sign-in Keyboard is open or the game's log said it asks for a captcha, the file stays until
+     * the client's next read + 20 s, at most 3 minutes after its first read ([LoginHold]); still private (0600, the shadow folder). The
+     * realm connection, the world and the game's close delete it at once. Only its presence and timing: never anything in it.
+     */
+    private val hold = LoginHold(
+        now = { android.os.SystemClock.elapsedRealtime() },
+        post = { r, ms -> main.postDelayed(r, ms) },
+        cancel = { r -> main.removeCallbacks(r) },
+        reason = { holdReason() },
+        delete = { why -> if (active) { logEvent("login.txt: $why, deleting"); clear() } },
+        log = { logEvent(it) },
+    )
+
+    /** the bottom screen's sign-in Keyboard (DsForeverScreen's SignInBoard) is open: a reason to hold ([LoginHold]) */
+    @Volatile var keyboardOpen = false; private set
+    fun keyboard(open: Boolean) { keyboardOpen = open }
+
+    /**
+     * the game's log said its sign-in form asks for a captcha and no later step has come yet ([HomeLogin.captcha]; the sign-in watcher's
+     * thread). Only after this run's read: a line read before it is another run's.
+     */
+    @Volatile var captchaAsked = false; private set
+    fun captcha(asked: Boolean) = main.post { if (!asked || firstReadAt > 0L) captchaAsked = asked }
+
+    /** why the hold keeps a read file at its deadline, or null */
+    private fun holdReason(): String? = when {
+        keyboardOpen || SetupBridge.keyboardOpen -> "the Keyboard is open"
+        captchaAsked -> "the game asks for a captcha"
+        else -> null
+    }
+
+    /**
+     * THE REALM CONNECTION IN THE GAME'S LOG ([HomeLogin.realmUp]; the root probe's realm connection is CompanionHost's other way in):
+     * the sign-in is done, so a file the client has read goes at once. Any thread.
+     */
+    fun realmUp(src: String) = main.post { if (active && consumed) hold.realmUp(src) }
 
     /** each second's received / sent bytes, for the sign-in check (Track C: a refusal = the connection dead, a success = keepalives) */
     @Volatile var onTrafficSample: ((rxBytes: Long, txBytes: Long) -> Unit)? = null
@@ -318,14 +363,16 @@ object NativeLogin {
                     consumed = true
                     if (first) pastLogin = false          // a return's sign-in: past its login screen again only on the next character select
                     Log.i(TAG, "login.txt read by the client")
-                    // timed from the FIRST read only: later reads (the form submission) must not push it further out
+                    // timed from the FIRST read only: later reads (the form submission) must not push it further out - except a file
+                    // the captcha hold keeps, which goes 20 s after the read it waits for ([LoginHold.read])
+                    if (!first) main.post { hold.read() }
                     if (first) {
                         firstReadAt = readAt
                         logEvent("login.txt read by the client, ${(firstReadAt - writtenAt) / 1000} s after it was written")
                         // the verify pass: say which (a heavy second may be the login screen's own one-off fetch, not a download)
                         if (downloadAtRead) logEvent(if (downloading) "the game was downloading as it read the saved sign-in: its traffic is not taken for past the login screen"
                             else "a heavy second came just before the game's read (a download or the login screen's own fetch): its traffic is not taken for past the login screen")
-                        main.post { main.postDelayed(afterRead, AFTER_READ_MS); onChange?.invoke() }
+                        main.post { hold.firstRead(); onChange?.invoke() }
                     }
                 }
             }
@@ -335,7 +382,7 @@ object NativeLogin {
     /** deletes this run's login.txt (the watching goes on until [end]); safe any time, any number of times */
     fun clear(ctx: Context? = null) {
         val was = active
-        main.removeCallbacks(timeout); main.removeCallbacks(afterRead)
+        main.removeCallbacks(timeout); hold.stop()
         val dirs = listOfNotNull(flavorDir) + (ctx?.let { c -> WowProduct.values().map { File(shadowRoot(c), it.flavorDir) } }.orEmpty())
         for (d in dirs) File(d, FILE).let { f ->
             if (f.exists() && !Files.isSymbolicLink(f.toPath()) && f.delete())
@@ -365,6 +412,7 @@ object NativeLogin {
         } catch (t: Throwable) { Log.w(TAG, "re-login file failed: ${t.message}"); clear(); return }
         active = true; consumed = false; firstReadAt = 0L; writtenAt = System.currentTimeMillis(); capHeld = false
         downloadAtRead = false; lastHeavyAt = 0L; heavyNoted = false; readMs = 0L         // the login triage: the world's traffic is not a download
+        captchaAsked = false                                                              // the captcha hold: a new sign-in
         lifeMs = REARM_LIFE_MS
         main.postDelayed(timeout, REARM_LIFE_MS)
         logEvent("login.txt written again ($why): waiting for the return to the login screen")
@@ -401,7 +449,7 @@ object NativeLogin {
             Os.chmod(f.absolutePath, 384)          // 0600: this app only
         } catch (t: Throwable) { Log.w(TAG, "window file failed: ${t.message}"); clear(); return@post }
         active = true; consumed = false; firstReadAt = 0L; writtenAt = System.currentTimeMillis(); lifeMs = MAX_LIFE_MS; capHeld = false
-        downloadAtRead = false; readMs = 0L
+        downloadAtRead = false; readMs = 0L; captchaAsked = false
         main.postDelayed(timeout, MAX_LIFE_MS)
         logEvent("login.txt written (game window up, ${(writtenAt - playAt) / 1000} s after Play)")
         changed()
@@ -422,8 +470,14 @@ object NativeLogin {
         // the HARD backstop (test10: in the world with "Sign-in didn't work" still up): the world is past the login screen, always
         markPastLogin("in the world")
         if (!reachedWorld) { reachedWorld = true; logEvent("in the world") }
+        // the captcha hold (the user, 2026-11-13): a file the client read and the hold still keeps goes at the world, at once
+        // (a re-login file's return is worldBack's)
+        if (active && consumed && !outOfWorld) hold.world()
         worldBack()
     }
+
+    /** this client run has reached the world (the start screen's region line goes then) */
+    val inWorldThisRun: Boolean get() = reachedWorld
 
     /** the world is back (the add-on's documents current again): a waiting re-login file goes; the next time out may write one again */
     private fun worldBack() {

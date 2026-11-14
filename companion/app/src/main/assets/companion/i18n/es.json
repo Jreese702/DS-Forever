@@ -1781,6 +1781,7 @@
 "Bags full": "Bolsas llenas"
 },
 "templates": {
+"Region: %s (this install is %s)": "Región: %s (esta instalación es %s)",
 "%s isn't loaded yet. Restart the game from DS Forever.": "%s aún no está cargado. Reinicia el juego desde DS Forever.",
 "%s is out of date. Tick Load out of date AddOns at character select.": "%s está desactualizado. Marca Cargar AddOns obsoletos en la selección de personaje.",
 "%s needs DS Forever. Turn both on in AddOns at character select.": "%s necesita DS Forever. Activa ambos en AddOns, en la selección de personaje.",
