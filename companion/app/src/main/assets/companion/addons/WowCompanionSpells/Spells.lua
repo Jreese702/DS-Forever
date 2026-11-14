@@ -33,7 +33,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local SV = "s10"     -- bump on every change; s10 THE MACROS ROOM (the user, 2026-11-13: "Lets scrap the smart ranged attack and start building a macro room. The calender can be moved up to a button on the right side of the map name make it small. Use the room slot for macros."): the block at the end of this file (WC.macroRoom: the "macros" document, the controller guest "macros", the lazy pad row "mac", the player's own New / Done / Delete, the Bind box for a macro); s9 s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
+local SV = "s10"     -- bump on every change; s10 THE MACROS ROOM (the user, 2026-11-13: "Lets scrap the smart ranged attack and start building a macro room. The calender can be moved up to a button on the right side of the map name make it small. Use the room slot for macros."): the block at the end of this file (WC.macroRoom: the "macros" document, the controller guest "macros", the lazy pad row "mac", the player's own New / Done / Delete, the Bind box for a macro); s10 REVIEW (same branch, same tag, as eaa3d23c did; the user's "start building a macro room"): the selection is the macro's INDEX while it still holds its name (the game lets two macros share a name: A / Delete / the preview hit the one under the glow), a write re-finds its macro by the game's own returned index; a bind of a name another macro shares is refused ("taken": our buttons find a macro by name); "#showtooltip" goes on the macro's FIRST line; `wxa` = the `wx` cell really is the window's close button (its ack says so); `norow` also when the row exists but is not placed (the smallest UI scale); our stored binds follow a rename / go with a delete only when no other macro keeps that name; a finger's a / x / b no longer claims the controller (only the capture's own press proves a hold); s9 s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
 
 local MAX_LINES = 24        -- skill lines read (the game has General + class + a few)
 local MAX_ITEMS = 400       -- book entries read, all lines together
@@ -710,20 +710,37 @@ function MR.lines(body)
 end
 function MR.join(lines) return table.concat(lines, "\n") end
 
--- ---------------------------------------------------------------- the selection (by name: an index moves when a name sorts anew)
+-- ---------------------------------------------------------------- the selection (its index while that index still holds its name)
+-- (s10 review) THE GAME LETS TWO MACROS SHARE A NAME (its own popup checks nothing; GetMacroIndexByName answers the first), so the
+-- selection is the INDEX under the glow, kept while the macro there still has the selected name; only when it does not (a rename or a
+-- new macro sorted it elsewhere) is it looked for by name, on this tab. A name gone from the tab = no selection (never the neighbour).
 function MR.tabCount() return MR.counts()[st.tab].n end
 function MR.selIndex()
-    if st.selName then
-        local i = MR.indexOf(st.selName)
-        local base = MR.base(st.tab)
-        local c = MR.tabCount()
-        if i and i > base and i <= base + c then st.sel = i return i end
+    local base, c = MR.base(st.tab), MR.tabCount()
+    local function onTab(i) return type(i) == "number" and i > base and i <= base + c end
+    if onTab(st.sel) then
+        local n = MR.info(st.sel)
+        if not st.selName or n == st.selName then st.selName = n; return st.sel end
     end
-    if st.sel then
-        local base, c = MR.base(st.tab), MR.tabCount()
-        if st.sel > base and st.sel <= base + c then st.selName = (MR.info(st.sel)); return st.sel end
+    if st.selName then
+        for k = 1, c do
+            if MR.info(base + k) == st.selName then st.sel = base + k; return st.sel end
+        end
     end
     return nil
+end
+-- (s10 review) how many macros on either tab are called [name] (case aside, as the name rules compare: the cautious count)
+function MR.named(name)
+    if type(name) ~= "string" then return 0 end
+    local c, low, n = MR.counts(), name:lower(), 0
+    for _, tab in ipairs({ "g", "c" }) do
+        local base = MR.base(tab)
+        for k = 1, c[tab].n do
+            local other = MR.info(base + k)
+            if other and other:lower() == low then n = n + 1 end
+        end
+    end
+    return n
 end
 -- the page's things: the macros on it, then "+" after the last macro (not at the cap, not before the macros load)
 function MR.pageItems()
@@ -751,9 +768,12 @@ function MR.focusGrid()
     if it and it.abs then st.sel = it.abs; st.selName = (MR.info(it.abs)) end
     return items, pages, c
 end
--- put the glow on the macro named [name] (after a write: its page and cell)
-function MR.findAndFocus(name)
-    local i = MR.indexOf(name)
+-- put the glow on the macro named [name] (after a write: its page and cell); [idx] (s10 review) = the index the game's own write
+-- answered (CreateMacro / EditMacro return where the macro sits now) or the one just edited, used while it holds that name
+function MR.findAndFocus(name, idx)
+    local i = nil
+    if type(idx) == "number" and WC.isPlain(idx) and idx > 0 and MR.info(idx) == name then i = idx end
+    i = i or MR.indexOf(name)
     if not i then return false end
     local mg = MR.maxes()
     st.tab = i > mg and "c" or "g"
@@ -877,13 +897,23 @@ function MR.keys()
     return k
 end
 function MR.doc()
+    -- (s10 review) an editor whose macro is gone (deleted or renamed elsewhere): back to the grid, never onto a neighbour
+    if st.mode == "edit" and MR.ready() and not MR.off() and not MR.selIndex() then st.mode, st.delAt = "grid", nil end
     local c = MR.counts()
     local d = { v = SV, ready = MR.ready() or nil, off = MR.off() or nil, win = MR.winShown() or nil, cb = combat() or nil,
                 norow = st.norow or nil, tab = st.tab, cnt = c, me = TSs(function() return UnitName("player") end),
                 mode = st.mode, note = st.note,
                 ctl = { held = ctlr.held or nil, want = ctlr.want and true or false, why = ctlr.why, cap = capture() ~= nil } }
     local keys = MR.keys()
-    if keys then d.keys = keys; d.pad = WC.pad.describe() end
+    if keys then
+        d.keys = keys; d.pad = WC.pad.describe()
+        -- (s10 review) the row made but not placed (it ends inside the pop-up dialogs at the smallest UI scale, or a fight re-laid the
+        -- screen): no cell of it can be tapped, so the room says "No pad row" rather than looking alive
+        if not (type(d.pad) == "table" and type(d.pad.rows) == "table" and d.pad.rows[MR.ROW] ~= nil) then d.norow = true end
+        -- the `wx` cell really is the game's window close now (set out of combat once Blizzard_MacroUI has loaded): the app taps it then
+        local wx = MR.cells and MR.cells[MR.COL.wx]
+        d.wxa = (wx and wx.wcArmed) and true or nil
+    end
     if not d.ready or d.off then return d end
     -- what shows under an open keyboard: the place it was opened from
     local view = (st.mode == "kbd" and st.kbd and st.kbd.back) or st.mode
@@ -1098,8 +1128,8 @@ function MR.create(raw)
     if not name then return false, why end
     local c = MR.counts()[st.tab]
     if c.n >= (c.max or 0) then return false, "full" end
-    local ok = CALL(function() return CreateMacro(name, MR.ICON, "", st.tab == "c") end)
-    if not ok or not MR.findAndFocus(name) then return false, "refused" end
+    local ok, ni = CALL(function() return CreateMacro(name, MR.ICON, "", st.tab == "c") end)
+    if not ok or not MR.findAndFocus(name, ni) then return false, "refused" end
     MR.remember()
     return true
 end
@@ -1110,10 +1140,11 @@ function MR.rename(raw)
     local name, why = MR.cleanName(raw, i)
     if not name then return false, why end
     if name == old then return true end
-    local ok = CALL(function() return EditMacro(i, name) end)
-    if not ok or not MR.findAndFocus(name) then return false, "refused" end
-    -- our own stored binds follow the name (PadMap m163): this character's for a Character macro, every one for a General macro
-    if old and type(WC.padMap) == "table" and type(WC.padMap.macroRenamed) == "function" then
+    local ok, ni = CALL(function() return EditMacro(i, name) end)
+    if not ok or not MR.findAndFocus(name, ni) then return false, "refused" end
+    -- our own stored binds follow the name (PadMap m163): this character's for a Character macro, every one for a General macro;
+    -- (s10 review) not while another macro still answers to the old name (those binds run THAT one now, as they always found the first)
+    if old and MR.named(old) == 0 and type(WC.padMap) == "table" and type(WC.padMap.macroRenamed) == "function" then
         pcall(WC.padMap.macroRenamed, old, name, st.tab == "g")
     end
     MR.remember()
@@ -1139,10 +1170,11 @@ function MR.setLine(line, ins, text)
     local nb = MR.join(lines)
     if #nb > MR.BODY_MAX then return false, "long" end
     local ok = CALL(function() return EditMacro(i, nil, nil, nb) end)
-    if not ok or not MR.findAndFocus(name) then return false, "refused" end
+    if not ok or not MR.findAndFocus(name, i) then return false, "refused" end      -- the body-only form: the macro stays at [i]
     return true
 end
--- lines added at the end (a pick's line, a recipe's lines): ONE write
+-- lines added at the end (a pick's line, a recipe's lines): ONE write. (s10 review) A recipe's "#showtooltip" goes on the macro's
+-- FIRST line - the only place the game reads it - unless a "#show" line leads already; the recipe's own lines still go at the end
 function MR.addLines(add, tooltip)
     local why = MR.canWrite()
     if why then return false, why end
@@ -1150,16 +1182,12 @@ function MR.addLines(add, tooltip)
     if not i then return false, "missing" end
     local name, _, body = MR.info(i)
     local lines = MR.lines(body)
-    if tooltip then
-        local has = false
-        for _, ln in ipairs(lines) do if ln:lower():find("^#showtooltip") then has = true end end
-        if not has then table.insert(add, 1, "#showtooltip") end
-    end
+    if tooltip and not (lines[1] and lines[1]:lower():find("^#show")) then table.insert(lines, 1, "#showtooltip") end
     for _, ln in ipairs(add) do lines[#lines + 1] = ln end
     local nb = MR.join(lines)
     if #nb > MR.BODY_MAX then return false, "long" end
     local ok = CALL(function() return EditMacro(i, nil, nil, nb) end)
-    if not ok or not MR.findAndFocus(name) then return false, "refused" end
+    if not ok or not MR.findAndFocus(name, i) then return false, "refused" end
     return true
 end
 function MR.delete()
@@ -1169,9 +1197,12 @@ function MR.delete()
     if not i then return false, "missing" end
     local name = MR.info(i)
     local pos = i - MR.base(st.tab)
+    local before = MR.tabCount()
     local ok = CALL(function() return DeleteMacro(i) end)
-    if not ok or (name and MR.indexOf(name) == i and MR.info(i) == name) then return false, "refused" end
-    if name and type(WC.padMap) == "table" and type(WC.padMap.macroDeleted) == "function" then
+    -- (s10 review) gone = the tab holds one fewer (a twin of the same name may now sit at [i]: that is not a refusal)
+    if not ok or MR.tabCount() >= before then return false, "refused" end
+    -- our stored binds of it go, unless another macro still answers to that name (they find the first by name: they run that one now)
+    if name and MR.named(name) == 0 and type(WC.padMap) == "table" and type(WC.padMap.macroDeleted) == "function" then
         pcall(WC.padMap.macroDeleted, name, st.tab == "g")
     end
     -- the game's own rule (blizzard_macroui.lua DeleteMacro): the selection moves to min(count, old)
@@ -1196,8 +1227,12 @@ function MR.bind()
     if combat() then MR.ack("bind", false, "combat") return end
     if type(WC.spellsBindMacro) ~= "function" then MR.ack("bind", false, "not ready") return end
     local name = MR.info(i)
+    if not name then MR.ack("bind", false, "missing") return end
+    -- (s10 review) our buttons (the bar's read back, a stick, the fight layer) find a macro BY NAME, the first of it: a name two macros
+    -- share would put the wrong one there, so such a bind is refused until one is renamed
+    if MR.named(name) > 1 then MR.ack("bind", false, "taken") return end
     st.mode = "bind"
-    local ok, opened, why = pcall(WC.spellsBindMacro, name, MR.host)
+    local ok, opened, why = pcall(WC.spellsBindMacro, name, MR.host, i)
     if not (ok and opened) then st.mode = "grid"; MR.ack("bind", false, (ok and plain(why)) or "not ready") return end
     MR.sayNext()
 end
@@ -1376,6 +1411,11 @@ function MR.move(key)
 end
 function MR.press(k)
     if not ctlr.held then ctlr.held, ctlr.why = true, nil end            -- a press proves the hold (a take made real by Home's ENTER)
+    return MR.act(k)
+end
+-- (s10 review) the press's work, for the capture's press AND a finger's a / x / b: a TAP proves no hold (the take may still be queued
+-- behind an NPC window, or pending in a fight), so only the capture's own press says held
+function MR.act(k)
     k = plain(k)
     if not k then return end
     if st.mode == "bind" then
@@ -1410,7 +1450,12 @@ function MR.onCell(col)
         if key == "h" then return MR.hold() end
         if key == "f" then return MR.free() end
         if key == "fb" then return MR.free("B") end
-        if key == "wx" then st.winAt = GetTime(); MR.ack("wx", true); return MR.emit() end   -- the secure click closed the game's window
+        if key == "wx" then                                              -- the secure click closed the game's window
+            -- (s10 review) a cell not armed yet (no close button when it was made) clicked nothing: its ack says so
+            local btn = MR.cells and MR.cells[MR.COL.wx]
+            st.winAt = GetTime(); MR.ack("wx", (btn and btn.wcArmed) and true or false, (not (btn and btn.wcArmed)) and "not ready" or nil)
+            return MR.emit()
+        end
         if key == "kx" then                                              -- the app's keyboard closed (B / its close): nothing written
             local back = st.kbd and st.kbd.back or "grid"
             MR.kbdClose()
@@ -1419,9 +1464,9 @@ function MR.onCell(col)
             return MR.emit()
         end
         if st.mode == "kbd" then return end
-        if key == "a" then return MR.press("PAD1") end
-        if key == "x" then return MR.press("PAD3") end
-        if key == "b" then return MR.press("PAD2") end
+        if key == "a" then return MR.act("PAD1") end
+        if key == "x" then return MR.act("PAD3") end
+        if key == "b" then return MR.act("PAD2") end
         if key == "tg" or key == "tc" then
             if st.mode ~= "grid" then return end
             local t = key == "tg" and "g" or "c"

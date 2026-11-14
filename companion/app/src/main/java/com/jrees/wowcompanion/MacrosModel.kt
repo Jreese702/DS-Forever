@@ -53,6 +53,8 @@ object MacrosModel {
         val page: Int, val pages: Int, val cur: Int, val cells: List<Cell>,
         val mac: Mac?, val ef: String?, val efc: Int?, val del: Boolean,
         val pick: Pick?, val recCur: Int?, val kbd: Kbd?,
+        /** Spells s10 review: the `wx` cell really is the game's window close now (armed out of combat once the game's macro UI loaded) */
+        val wxArmed: Boolean = false,
     ) {
         val count: Count get() = if (tab == "c") char else general
     }
@@ -107,8 +109,17 @@ object MacrosModel {
             page = m.optInt("page", 1).coerceAtLeast(1), pages = m.optInt("pages", 1).coerceAtLeast(1), cur = m.optInt("cur", 0),
             cells = cells, mac = mac, ef = str(m, "ef"), efc = if (m.has("efc")) m.optInt("efc") else null, del = m.optBoolean("del", false),
             pick = pick, recCur = m.optJSONObject("rec")?.optInt("cur", 0), kbd = kbd,
+            wxArmed = m.optBoolean("wxa", false),
         )
     }
+
+    /**
+     * D2 (the user's pick: the room closes the game's own macro window ONCE with that window's own close button): the `wx` tap goes
+     * when the window shows, the room holds, the cell really is the close button (Spells s10 review: a cell made before the game's
+     * macro UI loaded clicks nothing until it is armed, out of combat) and this opening has not had its tap yet
+     */
+    fun closeWindowNow(s: State?, sentThisOpening: Boolean): Boolean =
+        s != null && s.win && s.held && s.wxArmed && s.keys != null && !s.noRow && !sentThisOpening
 
     /** B leads Home (the Home button shows B): at the grid with no keyboard and no Bind box up */
     fun bLeadsHome(s: State?): Boolean = s == null || (s.mode == "grid" && s.kbd == null)

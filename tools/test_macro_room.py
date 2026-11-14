@@ -97,7 +97,11 @@ function GetMacroIndexByName(n)
     for i, m in ipairs(CHARM) do if m.name:lower() == n:lower() then return MAXG + i end end
     return 0
 end
-local function sortT(t) table.sort(t, function(a, b) return a.name:lower() < b.name:lower() end) end
+MSEQ = 0
+function mseq() MSEQ = MSEQ + 1; return MSEQ end
+function sortT(t) table.sort(t, function(a, b) local x, y = a.name:lower(), b.name:lower(); if x ~= y then return x < y end
+    return (a.seq or 0) < (b.seq or 0) end) end
+local function idxOf(t, m) for k, x in ipairs(t) do if x == m then return (t == CHARM and MAXG or 0) + k end end end
 local function guard(what)
     MLOG[#MLOG + 1] = what
     if COMBAT then VIOL[#VIOL + 1] = what; error("ADDON_ACTION_BLOCKED " .. what) end
@@ -106,9 +110,10 @@ end
 function CreateMacro(name, icon, body, perChar)
     guard("create " .. tostring(name) .. " " .. tostring(icon) .. " " .. tostring(perChar))
     local t = perChar and CHARM or GENM
-    t[#t + 1] = { name = name, icon = icon, body = body or "" }
+    local m = { name = name, icon = icon, body = body or "", seq = mseq() }
+    t[#t + 1] = m
     sortT(t)
-    return GetMacroIndexByName(name)
+    return idxOf(t, m)
 end
 function EditMacro(i, name, icon, body)
     guard("edit " .. tostring(i) .. " " .. tostring(name) .. " " .. tostring(body))
@@ -117,7 +122,7 @@ function EditMacro(i, name, icon, body)
     if icon then m.icon = icon end
     if body then m.body = body end
     sortT(t)
-    return GetMacroIndexByName(m.name)
+    return idxOf(t, m)
 end
 function DeleteMacro(i)
     guard("delete " .. tostring(i))
@@ -245,11 +250,10 @@ def clean(L):
 
 def seed(L, gen=(), char=()):
     for n, b in gen:
-        L.eval('function(n, b) GENM[#GENM + 1] = { name = n, icon = 134400, body = b } end')(n, b)
+        L.eval('function(n, b) GENM[#GENM + 1] = { name = n, icon = 134400, body = b, seq = mseq() } end')(n, b)
     for n, b in char:
-        L.eval('function(n, b) CHARM[#CHARM + 1] = { name = n, icon = 134400, body = b } end')(n, b)
-    L.execute('table.sort(GENM, function(a, b) return a.name:lower() < b.name:lower() end); '
-              'table.sort(CHARM, function(a, b) return a.name:lower() < b.name:lower() end)')
+        L.eval('function(n, b) CHARM[#CHARM + 1] = { name = n, icon = 134400, body = b, seq = mseq() } end')(n, b)
+    L.execute('sortT(GENM); sortT(CHARM)')
 
 
 def opened(gen=(), char=(), pre=''):
@@ -696,6 +700,139 @@ L.execute('MRx.st.tab = "g"; MRx.st.cur = 0; MRx.st.sel = nil; MRx.st.selName = 
 tap(L, "h")
 check(mdoc(L).get('tab') == 'c' and mdoc(L)['mac']['n'] == 'Heal', "m. the room comes back where this character left it")
 
+# ================================================================ n. (review) two macros of one name: the one under the glow, always
+# the game's own popup lets two macros share a name, and GetMacroIndexByName answers only the first: A, a line's Done, Delete and the
+# preview must act on the macro the glow is on; a bind of such a name is refused (our buttons find a macro by name)
+TWINS = [("Heal", "/cast Healing Wave"), ("Heal", "/cast Lesser Healing Wave"), ("Zap", "/cast Lightning Bolt")]
+L = opened(TWINS, CHAR)
+press(L, "PADDRIGHT")
+d = mdoc(L)
+check(d.get('cur') == 1 and d['mac']['lines'] == ['/cast Lesser Healing Wave'],
+      "n. the second 'Heal' under the glow: its own body beside the grid (not the first's)", (d.get('cur'), d.get('mac')))
+press(L, "PAD1")
+d = mdoc(L)
+check(d.get('mode') == 'edit' and d['mac']['lines'] == ['/cast Lesser Healing Wave'], "n. A edits the second (the one selected)", d.get('mac'))
+press(L, "PADDDOWN"); press(L, "PAD1")
+L.execute('MLOG = {}')
+kbd_done(L, "/cast Chain Heal")
+check(mlog(L) == ['edit 2 nil /cast Chain Heal'] and L.eval('GENM[1].body') == '/cast Healing Wave' and L.eval('GENM[2].body') == '/cast Chain Heal',
+      "n. a line's Done writes the second (EditMacro 2), the first untouched", (mlog(L), L.eval('GENM[1].body')))
+d = mdoc(L)
+check(d.get('mode') == 'edit' and d['mac']['lines'] == ['/cast Chain Heal'], "n. ... and the editor stays on it (the game's own index)", d.get('mac'))
+press(L, "PAD2")
+check(mdoc(L).get('cur') == 1, "n. B: the grid, the glow still on the second", mdoc(L).get('cur'))
+L.execute('MLOG = {}')
+press(L, "PAD3")
+d = mdoc(L)
+check(d.get('mode') == 'grid' and d.get('note') == 'taken' and not (last(L, 'spellsctl').get('ctl') or {}).get('on') and mlog(L) == [],
+      "n. X on a shared name: refused 'taken' (no Bind box: our buttons go by name)", (d.get('mode'), d.get('note')))
+L.execute('WowCompanionSpellsDB.stickBy = { ["Korvash-Realm"] = { ["1:9"] = { t = "macro", n = "Heal", i = 1 } } }')
+press(L, "PAD1")
+for _ in range(2):
+    press(L, "PADDDOWN")
+for _ in range(3):
+    press(L, "PADDRIGHT")
+check(mdoc(L).get('ef') == 'del', "n. the Delete button", mdoc(L).get('ef'))
+L.execute('MLOG = {}; ALLOW = true')
+press(L, "PAD1"); press(L, "PAD1")
+L.execute('ALLOW = false')
+d = mdoc(L)
+check(mlog(L) == ['delete 2'] and L.eval('mnames(GENM)') == 'Heal|Zap' and L.eval('GENM[1].body') == '/cast Healing Wave'
+      and d.get('mode') == 'grid' and not d.get('note'), "n. Delete takes the second, not the first; no false 'refused'", (mlog(L), d.get('note')))
+check(L.eval('WowCompanionSpellsDB.stickBy["Korvash-Realm"]["1:9"].n') == 'Heal',
+      "n. our binds of 'Heal' stay (the other 'Heal' still answers to it)")
+check(clean(L) == {}, "n. clean", clean(L))
+# the FIRST twin deleted: its twin slides into the same index, and that is still a delete (the tab holds one fewer)
+L = opened(TWINS, CHAR)
+press(L, "PAD1")
+for _ in range(2):
+    press(L, "PADDDOWN")
+for _ in range(3):
+    press(L, "PADDRIGHT")
+L.execute('MLOG = {}; ALLOW = true')
+press(L, "PAD1"); press(L, "PAD1")
+L.execute('ALLOW = false')
+d = mdoc(L)
+check(mlog(L) == ['delete 1'] and L.eval('mnames(GENM)') == 'Heal|Zap' and L.eval('GENM[1].body') == '/cast Lesser Healing Wave'
+      and d.get('mode') == 'grid' and not d.get('note') and d.get('cur') == 0 and d['mac']['lines'] == ['/cast Lesser Healing Wave'],
+      "n. the first twin deleted: done (not 'refused'), the glow on the twin that took its place", (mlog(L), d.get('note'), d.get('mac')))
+check(clean(L) == {}, "n. clean (the first twin)", clean(L))
+# the Bind box's own check at the press (Book b63 review): a twin made after the box opened, ahead of the box's macro
+L = opened(GEN, CHAR)
+L.execute(BIND_PRE)
+tap(L, "tc")
+press(L, "PAD3")
+check((last(L, 'spellsctl').get('ctl') or {}).get('mode') == 'bind', "n. the box for the character's 'Heal'")
+L.eval('function() GENM[#GENM + 1] = { name = "Heal", icon = 1, body = "/y", seq = mseq() }; sortT(GENM) end')()
+L.execute('MLOG = {}; WowCompanion.padMap.dpadState = function() return { want = false } end')
+L.execute('ALLOW = true'); press(L, "PADDLEFT"); L.execute('ALLOW = false')
+check(last(L, 'spellsack').get('why') == 'taken' and mlog(L) == [],
+      "n. a press once another 'Heal' comes first: refused 'taken', nothing placed", (last(L, 'spellsack'), mlog(L)))
+press(L, "PAD2")
+check(clean(L) == {}, "n. clean (the box)", clean(L))
+
+# ================================================================ o. (review) a recipe's "#showtooltip" goes on the macro's first line
+L = opened([("Alpha", "/wave\n/say hi")], CHAR)
+press(L, "PAD1")
+for _ in range(3):
+    press(L, "PADDDOWN")
+press(L, "PADDRIGHT"); press(L, "PADDRIGHT")
+check(mdoc(L).get('ef') == 'rec', "o. the Recipes button", mdoc(L).get('ef'))
+press(L, "PAD1"); press(L, "PAD1")
+L.execute('ALLOW = true'); press(L, "PAD1"); L.execute('ALLOW = false')
+check(L.eval('mbody("Alpha")') == '#showtooltip\n/wave\n/say hi\n/cast [@mouseover,help,nodead][] Lightning Bolt',
+      "o. on a macro with lines: '#showtooltip' FIRST (the only line the game reads it on), the recipe at the end", L.eval('mbody("Alpha")'))
+L.eval('function() local i = GetMacroIndexByName("Alpha"); GENM[i].body = "#show Lightning Shield\\n/wave" end')()
+press(L, "PAD1"); press(L, "PAD1")
+L.execute('ALLOW = true'); press(L, "PAD1"); L.execute('ALLOW = false')
+check(L.eval('mbody("Alpha")') == '#show Lightning Shield\n/wave\n/cast [@mouseover,help,nodead][] Lightning Bolt',
+      "o. a '#show' line leading already: no second tooltip line", L.eval('mbody("Alpha")'))
+check(clean(L) == {}, "o. clean", clean(L))
+
+# ================================================================ p. (review) the `wx` cell before the game's macro UI loaded
+L = opened(GEN, CHAR)
+check(L.eval('WowCompanion.pad.rows.mac.cells[MRx.COL.wx].a.type') is None and not mdoc(L).get('wxa'),
+      "p. a row made before Blizzard_MacroUI: `wx` is no close button yet, and the document does not say wxa", mdoc(L).get('wxa'))
+n0 = nsent(L)
+tap(L, "wx")
+acks = [x for x in docs(L, n0, 'macack') if x.get('op') == 'wx']
+check(acks and acks[-1].get('ok') is False, "p. its tap clicked nothing: the answer says so (not a false 'closed')", acks[-1:] if acks else None)
+L.execute(COMBAT_ON)
+L.execute('mkwin("MacroFrame", true); fire("ADDON_LOADED", "Blizzard_MacroUI"); advance(0.5)')
+check(not mdoc(L).get('wxa') and L.eval('WowCompanion.pad.rows.mac.cells[MRx.COL.wx].a.type') is None,
+      "p. the UI loaded in a fight: not armed in the lockdown (no wxa: the app does not tap)", mdoc(L).get('wxa'))
+L.execute(COMBAT_OFF)
+d = mdoc(L)
+check(d.get('wxa') is True and L.eval('WowCompanion.pad.rows.mac.cells[MRx.COL.wx].a.type') == 'click',
+      "p. the fight over: armed (the window's own close button) and the document says wxa", d.get('wxa'))
+L.execute('ACTIONS = {}')
+tap(L, "wx")
+check(L.eval('MacroFrame._shown') is False and L.eval('ACTIONS[1] and ACTIONS[1].kind') == 'close', "p. ... and its tap closes the window")
+check(clean(L) == {}, "p. clean", clean(L))
+
+# ================================================================ q. (review) the row made but not placed, an editor whose macro went
+L = opened(GEN, CHAR)
+L.execute('local real = WowCompanion.pad.describe; WowCompanion.pad.describe = function() local d = real(); '
+          'if d and d.rows then d.rows.mac = nil end; return d end')
+check(mdoc(L).get('norow') is True, "q. the row not in the pad's description (not placed): the document says norow", mdoc(L).get('norow'))
+L = opened(GEN, CHAR)
+press(L, "PADDRIGHT"); press(L, "PAD1")
+check(mdoc(L).get('mode') == 'edit' and mdoc(L)['mac']['n'] == 'Bravo', "q. the editor on 'Bravo'")
+L.eval('function() table.remove(GENM, 2) end')()
+d = mdoc(L)
+check(d.get('mode') == 'grid' and d.get('view') == 'grid' and 'ef' not in d,
+      "q. 'Bravo' deleted elsewhere: back to the grid, never onto its neighbour's editor", (d.get('mode'), d.get('view'), d.get('mac')))
+# a finger's a / x / b proves no hold (only the capture's own press does: a take may still be queued or pending)
+L, _ = world()
+seed(L, GEN, CHAR)
+L.execute('fire("UPDATE_MACROS"); advance(1)')
+ensure_row(L)
+tap(L, "a")
+d = mdoc(L)
+check(holder(L) is None and not (d.get('ctl') or {}).get('held') and d.get('mode') == 'edit',
+      "q. a finger's A with no hold: it acts (the editor), and the document does not claim the controller", (holder(L), d.get('ctl')))
+check(clean(L) == {}, "q. clean", clean(L))
+
 # ================================================================ the documents for the room's off-device render (MacrosShotsTest)
 DUMP = os.environ.get("MACRO_DUMP")
 if DUMP:
@@ -740,6 +877,18 @@ function iconize() for _, t in ipairs({ GENM, CHARM }) do for _, m in ipairs(t) 
     L3 = opened(SHOT, [])
     L3.execute('RULE_OFF = true')
     dump(L3, "off")
+    # (review) a bind of a name two macros share, refused; the row made but not placed
+    L4 = opened(SHOT + [("Rez", "/cast Ancestral Spirit\n/s Rezzing %t")], [])
+    L4.execute(ICONS); L4.execute('iconize()')
+    for _ in range(6):
+        press(L4, "PADDRIGHT")
+    press(L4, "PAD3")
+    dump(L4, "taken")
+    L5 = opened(SHOT, [])
+    L5.execute(ICONS); L5.execute('iconize()')
+    L5.execute('local real = WowCompanion.pad.describe; WowCompanion.pad.describe = function() local d = real(); '
+               'if d and d.rows then d.rows.mac = nil end; return d end')
+    dump(L5, "norow")
     print("dumped to", DUMP)
 
 print("\n%s (%d pass, %d fail)" % ("ALL PASS" if fails == 0 else "FAILURES", passes, fails))

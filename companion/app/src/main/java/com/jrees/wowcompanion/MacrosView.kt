@@ -50,7 +50,6 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
     private var freeTapAt = -1_000_000L
     private var retries = 0
     private var wxSent = false
-    private var winWas = false
     private val recheck = Runnable { reconcile() }
 
     private val pane = Pane(c)
@@ -73,11 +72,12 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                 state = s
                 if (wasFight && !s.combat) rowTries = 0                        // the fight's end: the row may be made now
                 wasFight = s.combat
-                if (!s.win) { winWas = false; wxSent = false }
+                if (!s.win) wxSent = false
                 if (live && shown) {
                     if (!holdSent && s.keys != null) sendHold(if (hadKeys) "on a document" else "the row is made")
-                    // D2: the game's own window is open while the room holds: its own close button, ONCE per opening
-                    if (s.win && !winWas && s.held && !wxSent) { wxSent = tap("wx"); winWas = wxSent; Log.i(TAG, "the game's window: close ${if (wxSent) "sent" else "not sent"}") }
+                    // D2: the game's own window is open while the room holds: its own close button, ONCE per opening (Spells s10 review:
+                    // only once the cell IS that button - one made before the game's macro UI loaded is armed later, out of combat)
+                    if (MacrosModel.closeWindowNow(s, wxSent)) { wxSent = tap("wx"); Log.i(TAG, "the game's window: close ${if (wxSent) "sent" else "not sent"}") }
                 }
                 takeKbd(s, live)
             }

@@ -79,6 +79,8 @@ class MacrosShotsTest {
         if (out == null || !File(out, "docs/grid.json").isFile) return
         art()
         for (n in listOf("grid", "edit", "pick", "recipes", "kbd", "off")) roomShot(n)
+        // (Spells s10 review) a bind of a name two macros share, refused ("Name taken"); the row made but not placed ("No pad row")
+        for (n in listOf("taken", "norow")) if (File(out, "docs/$n.json").isFile) roomShot(n)
         // the Bind box the room hosts (Book b63): SpellsOverlay over the room, the macro where a spell stands
         val ov = SpellsOverlay(app, otherReader = { true })
         SpellsModel.parseCtl(JSONObject(File(out, "docs/bind_ctl.json").readText()))?.let { ov.onCtl(it) }

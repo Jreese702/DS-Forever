@@ -1877,7 +1877,7 @@ code = [re.sub(r'--.*$', '', ln) for ln in added]
 # m132 (the user, 2026-11-11: "Build a fight-only layer"): `self:SetBinding(` inside the header's own secure state snippet is the
 # restricted handle's OVERRIDE binding on that header (never saved, cleared with it), not the game's saved SetBinding; m133: the same
 # header handle reached as `h` (OV.fbSnip: the caller's "wc-hdr" ref, or the header itself)
-BAD = [r'(?<!self:)(?<!h:)\bSetBinding\s*\(', r'\bSaveBindings\b', r'\bCreateMacro\b', r'\bEditMacro\b', r'\bSetCVar\b', r'\bPlaceAction\b',
+BAD = [r'(?<!self:)(?<!h:)\bSetBinding\s*\(', r'\bSaveBindings\b', r'\bCreateMacro\b', r'\bEditMacro\b', r'\bDeleteMacro\b', r'\bSetCVar\b', r'\bPlaceAction\b',
        r'\bPickupAction\b', r'\bPickupMacro\b', r'\bShowUIPanel\b', r'\bHideUIPanel\b', r'\bToggleFrame\b', r'\bInspectUnit\b',
        r'\bUnitPopup_OpenMenu\b', r'\bTargetFrame_OpenMenu\b', r'\bToggleGameMenu\b', r'\bCloseAllBags\b', r'\bOpenAllBags\b',
        r'\bSetOverrideBinding\s*\(']
@@ -1905,10 +1905,15 @@ hits = [(p, ln) for (p, ln) in hits if not ((p == r'\bPlaceAction\b' and ln == '
 # the lockdown), and D5's Bind box Normal road for a macro (PickupMacro, then Book b59's same PlaceAction line) on the slot the player
 # presses; nothing else of the player's is written
 MACRO_ROOM_LINES = {
-    (r'\bCreateMacro\b', 'local ok = CALL(function() return CreateMacro(name, MR.ICON, "", st.tab == "c") end)'),
-    (r'\bEditMacro\b', 'local ok = CALL(function() return EditMacro(i, name) end)'),
+    (r'\bCreateMacro\b', 'local ok, ni = CALL(function() return CreateMacro(name, MR.ICON, "", st.tab == "c") end)'),
+    (r'\bEditMacro\b', 'local ok, ni = CALL(function() return EditMacro(i, name) end)'),
     (r'\bEditMacro\b', 'local ok = CALL(function() return EditMacro(i, nil, nil, nb) end)'),
     (r'\bPickupMacro\b', 'CALL(function() return PickupMacro(mi) end)'),
+    # (s10 review) the room's Delete is a write of the player's macros too: scanned like the others, its one line allowed; and PadMap
+    # m160's Smart Range clean-up, which deletes only OUR OWN old macros, name AND exact body, off every bar (the user, 2026-11-13:
+    # "Lets scrap the smart ranged attack"; tools/test_smart_range_gone.py proves it)
+    (r'\bDeleteMacro\b', 'local ok = CALL(function() return DeleteMacro(i) end)'),
+    (r'\bDeleteMacro\b', 'if ok and OV.srx.name(n) and OV.srx.body(body) and not bar[n] and CALL(function() return DeleteMacro(i) end) then m = m + 1 end'),
 }
 hits = [(p, ln) for (p, ln) in hits if (p, ln) not in MACRO_ROOM_LINES]
 check(not hits, "no trace in the new add-on code: no SetBinding / SaveBindings / macros / CVars / bar writes / Blizzard window code",

@@ -276,6 +276,7 @@ class SpellsOverlay(
                 "unsure" -> "Press it again" to Theme.warn
                 "form-unknown" -> "Shift into that form once so the game shows its bar" to Theme.warn       // b44
                 "missing" -> "Missing" to Theme.unusable                     // Book b63: no macro has that name now
+                "taken" -> "Name taken" to Theme.unusable                    // Book b63 review: another macro has that name too
                 else -> "That did not work" to Theme.unusable
             }
             val p = UiKit.bodyPaint(30f, colour).apply { textAlign = Paint.Align.CENTER }

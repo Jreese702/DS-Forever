@@ -107,6 +107,22 @@ class MacrosRoomTest {
         assertTrue(off.off && off.win && off.combat)
     }
 
+    /** D2 (Spells s10 review): the game's window is closed by the `wx` tap once per opening, and only once that cell IS its close button */
+    @Test fun theWindowsCloseTapWaitsForItsButton() {
+        val open = st(grid.replace("\"ready\": true", "\"ready\": true, \"win\": true"))
+        assertFalse(open.wxArmed)
+        assertFalse(MacrosModel.closeWindowNow(open, sentThisOpening = false))                     // not armed yet: no tap (it would click nothing)
+        val armed = st(grid.replace("\"ready\": true", "\"ready\": true, \"win\": true, \"wxa\": true"))
+        assertTrue(armed.wxArmed)
+        assertTrue(MacrosModel.closeWindowNow(armed, sentThisOpening = false))
+        assertFalse(MacrosModel.closeWindowNow(armed, sentThisOpening = true))                      // ONCE per opening
+        assertFalse(MacrosModel.closeWindowNow(st(grid.replace("\"ready\": true", "\"ready\": true, \"wxa\": true")), false))   // no window
+        val notHeld = st(grid.replace("\"held\": true", "\"held\": false").replace("\"ready\": true", "\"ready\": true, \"win\": true, \"wxa\": true"))
+        assertFalse(MacrosModel.closeWindowNow(notHeld, false))                                     // the room does not hold yet
+        val noRow = st(grid.replace("\"ready\": true", "\"ready\": true, \"win\": true, \"wxa\": true, \"norow\": true"))
+        assertFalse(MacrosModel.closeWindowNow(noRow, false))                                       // the row not placed: nothing to tap
+    }
+
     // ---------------------------------------------------------------- the bar, the wheel, the routes
     @Test fun macrosHasTheCalendarsSlotOnTheBar() {
         val bar = Room.values().filter { it != Room.HOME && it.onBar }
