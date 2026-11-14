@@ -49,6 +49,19 @@ class TipTouchTest {
         t.up()
     }
 
+    @Test fun aDragStopsAtTheTooltipsEndSoDraggingBackMovesAtOnce() {
+        val t = TipStack.Touch()
+        t.clear(); t.shown("buy 3 159", 100f, 200f, 500f, 800f, maxSteps = 2)
+        t.down(300f, 700f); t.move(700f - 10 * TipStack.STEP - 1f)
+        assertEquals("never past the end", 2, t.steps)
+        t.up()
+        t.down(300f, 300f); t.move(300f + TipStack.STEP + 1f)
+        assertEquals("one step back is one step", 1, t.steps)
+        t.up()
+        t.clear(); t.shown("buy 3 159", 100f, 200f, 500f, 800f, maxSteps = 0)
+        assertEquals("the tooltip now fits: back at its top", 0, t.steps)
+    }
+
     @Test fun aNewTooltipStartsAtItsTop() {
         val t = TipStack.Touch()
         shownAt(t, "buy 3 159")

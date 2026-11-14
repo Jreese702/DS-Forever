@@ -30,8 +30,9 @@ class TipStack(private val view: View) {
     /** nothing shown this frame: the next tooltip waits out the quarter second again (even the same one coming back) */
     fun forget() { fade.alpha(null) }
 
-    /** what was drawn: the main tooltip's box, the foot under its Compare hint (else the box's), this frame's fade alpha */
-    class Drawn(val box: RectF, val bottom: Float, val alpha: Int)
+    /** what was drawn: the main tooltip's box, the foot under its Compare hint (else the box's), this frame's fade alpha, and how many
+     *  [STEP]s of scrolling reach the stack's end (0 = it fits: nothing to scroll) */
+    class Drawn(val box: RectF, val bottom: Float, val alpha: Int, val maxSteps: Int = 0)
 
     /**
      * Draws the stack; returns what it drew, so a caller can put its own piece under it (Bags: UI Art's action plate) at
@@ -78,7 +79,7 @@ class TipStack(private val view: View) {
             by = b.bottom + 2f
         }
         c.restore()
-        return Drawn(RectF(box), foot, a)
+        return Drawn(RectF(box), foot, a, kotlin.math.ceil(over / STEP).toInt())
     }
 
     /**
@@ -111,9 +112,14 @@ class TipStack(private val view: View) {
             return steps
         }
 
-        /** the tooltip [k] was drawn at [left]..[right] x [top]..[bottom] this frame */
-        fun shown(k: String?, left: Float, top: Float, right: Float, bottom: Float) {
+        /** the most steps a drag can add for the tooltip shown now (its end reached: dragging back moves it at once) */
+        private var most = MAX_STEPS
+
+        /** the tooltip [k] was drawn at [left]..[right] x [top]..[bottom] this frame; [maxSteps] = the steps that reach its end */
+        fun shown(k: String?, left: Float, top: Float, right: Float, bottom: Float, maxSteps: Int = MAX_STEPS) {
             stepsFor(k)
+            most = maxSteps.coerceIn(0, MAX_STEPS)
+            if (steps > most) steps = most
             on = right > left && bottom > top
             l = left; t = top; r = right; b = bottom
         }
@@ -128,7 +134,7 @@ class TipStack(private val view: View) {
         /** the finger moved to [y]: true while it is the tooltip's (dragging up reads further down) */
         fun move(y: Float): Boolean {
             if (!held) return false
-            steps = (from + ((downY - y) / STEP).toInt()).coerceIn(0, MAX_STEPS)
+            steps = (from + ((downY - y) / STEP).toInt()).coerceIn(0, most)
             return true
         }
 

@@ -460,8 +460,11 @@ class InteractView(context: Context) : View(context) {
                         top: Float, bottom: Float, cmpX: Float, takesTouch: Boolean = false): TipStack.Drawn {
         // issue #233 ([takesTouch]: the vendor's list): a finger on the tooltip reads it (drags scroll it), never the tile under it
         val key = t.optString("key")
-        val d = tipStack.draw(c, x, yRow, w, name, q, t, top, bottom, cmpX, tipCompare, tipTs + (if (takesTouch) tipTouch.stepsFor(key) else 0))
-        if (takesTouch && d.alpha > 0) tipTouch.shown(key, d.box.left, max(d.box.top, top), d.box.right, min(d.box.bottom, bottom))
+        val stick = tipTs
+        val d = tipStack.draw(c, x, yRow, w, name, q, t, top, bottom, cmpX, tipCompare, stick + (if (takesTouch) tipTouch.stepsFor(key) else 0))
+        // (review: a drag stops at the tooltip's end, so dragging back moves it at once; the stick's own steps count toward that end)
+        if (takesTouch && d.alpha > 0) tipTouch.shown(key, d.box.left, max(d.box.top, top), d.box.right, min(d.box.bottom, bottom),
+            max(0, d.maxSteps - stick))
         return d
     }
     private val tipTouch = TipStack.Touch()

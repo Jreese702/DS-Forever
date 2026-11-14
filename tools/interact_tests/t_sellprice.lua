@@ -34,6 +34,21 @@ t = WC.tipOf("bag 0 4 504")
 chk("a sell price line with words of its own keeps them", t and t.lines and t.lines[2] and t.lines[2].t == "Vendor:" and t.lines[2].m == 250)
 t = WC.tipOf("buy 1 501")
 chk("a vendor's item too", t and t.lines and t.lines[2] and t.lines[2].m == 30)
+-- review of i160: a worn piece's tooltip (the compare beside it) is the game's shopping tooltip, which draws no coins
+-- (TooltipDataRules.SellPrice: only when not tooltip.isShopping): its sell price line is left out there
+LINES[5] = { ln("Bag item 505"), { type = 11, price = 40 } }
+C_Item.GetItemInfoInstant = function(x) if x == 505 then return 505, "Armor", "Cloth", "INVTYPE_HEAD" end return 501, "Misc", "Junk", "" end
+GetInventoryItemID = function(u, sl) if sl == 1 then return 900 end end
+C_TooltipInfo.GetInventoryItem = function(u, sl) return { lines = { ln("Worn helm"), ln("Head"), { type = 11, price = 777 } } } end
+t = WC.tipOf("bag 0 5 505")
+local c1 = t and t.cmp and t.cmp[1]
+chk("the item's own sell price kept beside a compare", t and t.lines and t.lines[2] and t.lines[2].m == 40)
+local worn = c1 and c1.lines or {}
+local coins = false
+for _, l in ipairs(worn) do if l.m ~= nil then coins = true end end
+chk("the worn piece's tooltip: no sell price (the game's shopping tooltip)", c1 and worn[1] and worn[1].t == "Worn helm" and #worn == 2 and not coins)
+C_Item.GetItemInfoInstant = function(x) return 501, "Misc", "Junk", "" end
+GetInventoryItemID = function() return nil end
 LINES[1][3] = { type = 11, price = WC.SECRET }
 t = WC.tipOf("bag 0 1 501")
 chk("a secret price is never used", t and t.lines and #t.lines == 2)
