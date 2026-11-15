@@ -147,6 +147,22 @@ The one refusal is the first call, before the add-on republished its pad at the 
 After it, thirty seconds of real room actions — quest actions, party navigation, spells, UI
 switches — and no refusal.
 
+## Why 1.0.32's Swap screens needs bug 1
+
+Swap screens (#232) moves the game to the second screen and DS Forever to display 0. On a handheld
+whose second screen is the bigger one, that is exactly the layout this device wants -- and bug 1
+stops it working anyway, because the refusal is not about WHICH screen the game is on. `gameDisplay()`
+asks for a trusted size for the game's display and answers null whenever that display is not the
+largest panel. On a Nova the built-in panel (1280x960) never is, swapped or not, so every tap is
+refused either way:
+
+```
+W TapBridge: refused: no trusted display size
+```
+
+So these two fixes are not only "it works on my handheld": without the first one, the feature
+released in 1.0.32 cannot do anything on the devices whose screen arrangement it was built for.
+
 ## How to check this on any device
 
 1. `adb logcat -d -s TapBridge:V` in the world, after touching a companion control that acts on
