@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -19,8 +20,10 @@ import android.speech.SpeechRecognizer
  * only after you pick it once"). On the main thread with the APP's context; ONE recognizer per listening, destroyed on every way out
  * (its result, its error, [cancel]); a callback that arrives after a cancel belongs to an old session and is dropped.
  *  - This device = [SpeechRecognizer.createOnDeviceSpeechRecognizer] only (nothing leaves the Thor; Android 12+).
- *  - Online = the default recognizer, with EXTRA_PREFER_OFFLINE as a hint (only that service can keep it, so the sheet never says
- *    "on this device" for it); the sheet names that service's app ([onlineName], which needs the manifest's <queries>).
+ *  - Online = a Google / system speech service BY NAME ([Voice.trusted] over [services]), with EXTRA_PREFER_OFFLINE as a hint (only that
+ *    service can keep it, so the sheet never says "on this device" for it); the sheet names that service's app ([onlineName]). NEVER the
+ *    device's default recognizer (SpeechRecognizer.createSpeechRecognizer(context) binds Settings.Secure voice_recognition_service, which
+ *    on the user's Thor is MacroDroid's: "it just flashs and instantly stops", 2026-11-16). The manifest's <queries> lets Android list them.
  * Extras: free-form, the app's language ([Voice.language]), partial results, one result, no masking; the name hints ([Voice.hints]) on
  * This device only. NO audio focus is asked and nothing touches the game's sound (the user's pick: "Leave it alone for now").
  * Nothing heard is ever logged; the sheet's DiagLog line has only the mode, the state, the time and a character count.
@@ -42,13 +45,17 @@ class VoiceEngine(context: Context) {
 
     val listening: Boolean get() = rec != null
 
-    /** starts listening ([online]: the default recognizer, else this device's); false when no recognizer could be made */
+    /** starts listening ([online]: the trusted named service, else this device's; [Voice.recognizer]); false when none could be made */
     fun start(online: Boolean, lang: String, hints: List<String>, sink: Sink): Boolean {
         cancel()
         val s = ++session
+        val pick = Voice.recognizer(online, Build.VERSION.SDK_INT, onDeviceFlag(app), if (online) services(app) else emptyList())
         val r = runCatching {
-            if (!online && Build.VERSION.SDK_INT >= 31) SpeechRecognizer.createOnDeviceSpeechRecognizer(app)
-            else if (online) SpeechRecognizer.createSpeechRecognizer(app) else null
+            when (pick) {
+                Voice.Pick.OnDevice -> if (Build.VERSION.SDK_INT >= 31) SpeechRecognizer.createOnDeviceSpeechRecognizer(app) else null
+                is Voice.Pick.Named -> SpeechRecognizer.createSpeechRecognizer(app, ComponentName(pick.service.pkg, pick.service.cls))
+                Voice.Pick.None -> null
+            }
         }.getOrNull() ?: return false
         rec = r
         r.setRecognitionListener(object : RecognitionListener {
@@ -116,30 +123,28 @@ class VoiceEngine(context: Context) {
         /** the device has a microphone (the X glyph's rule) */
         fun hasMic(ctx: Context): Boolean = runCatching { ctx.packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE) }.getOrDefault(false)
 
-        /** This device can listen: an on-device recognizer (Android 12+) */
-        fun deviceAvailable(ctx: Context): Boolean =
+        /** Android says an on-device recognizer is there (Android 12+ only: false below) */
+        private fun onDeviceFlag(ctx: Context): Boolean =
             Build.VERSION.SDK_INT >= 31 && runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(ctx) }.getOrDefault(false)
 
-        /** a default (possibly online) recognizer is installed */
-        fun onlineAvailable(ctx: Context): Boolean = runCatching { SpeechRecognizer.isRecognitionAvailable(ctx) }.getOrDefault(false)
+        /** every speech service Android lists, with whether it came with the device ([Voice.trusted] picks among them) */
+        fun services(ctx: Context): List<Voice.Service> = runCatching {
+            val sys = ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
+            ctx.packageManager.queryIntentServices(Intent(RecognitionService.SERVICE_INTERFACE), 0).mapNotNull { ri ->
+                val si = ri.serviceInfo ?: return@mapNotNull null
+                Voice.Service(si.packageName, si.name, ((si.applicationInfo?.flags ?: 0) and sys) != 0)
+            }
+        }.getOrDefault(emptyList())
 
-        /** the online recognizer's app, by its own name (the privacy line); null = none found */
+        /** the online recognizer's app, by its own name (the privacy line): the trusted service's; null = none */
         fun onlineName(ctx: Context): String? = runCatching {
             val pm = ctx.packageManager
-            // the chosen service (a setting a newer Android may not let an app read: then the first one installed)
-            val chosen = runCatching { android.provider.Settings.Secure.getString(ctx.contentResolver, "voice_recognition_service") }
-                .getOrNull()?.let { ComponentName.unflattenFromString(it) }?.packageName
-            val pkg = chosen ?: pm.queryIntentServices(Intent(RecognitionService.SERVICE_INTERFACE), 0).firstOrNull()?.serviceInfo?.packageName
-            pkg?.let { pm.getApplicationLabel(pm.getApplicationInfo(it, 0)).toString() }
+            Voice.trusted(services(ctx))?.let { pm.getApplicationLabel(pm.getApplicationInfo(it.pkg, 0)).toString() }
         }.getOrNull()
 
-        /** which recognizer the sheet can use with the setting [mode] */
-        fun avail(ctx: Context, mode: Voice.Mode): Voice.Avail = when {
-            mode == Voice.Mode.ONLINE -> if (onlineAvailable(ctx)) Voice.Avail.ONLINE else Voice.Avail.NONE
-            deviceAvailable(ctx) -> Voice.Avail.DEVICE
-            onlineAvailable(ctx) -> Voice.Avail.ONLINE_ONLY
-            else -> Voice.Avail.NONE
-        }
+        /** which recognizer the sheet can use with the setting [mode] ([Voice.avail]) */
+        fun avail(ctx: Context, mode: Voice.Mode): Voice.Avail =
+            Voice.avail(mode, Build.VERSION.SDK_INT, onDeviceFlag(ctx), services(ctx))
     }
 }
 

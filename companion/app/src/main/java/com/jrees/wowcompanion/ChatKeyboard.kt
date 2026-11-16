@@ -487,6 +487,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         Voice.State.LISTENING, Voice.State.STOPPING -> sendWord to false
         Voice.State.RESULT -> sendWord to s.canAccept()
         Voice.State.PROBLEM -> when {
+            s.problem == Voice.Problem.NO_SERVICE -> null           // nothing can listen: no button (Y = keyboard, B = back)
             s.problem == Voice.Problem.PACK && s.canGet -> "Get" to true
             s.problem == Voice.Problem.MIC_OFF -> if (fight) "After the fight" to false else "Allow" to true
             else -> "Say again" to true
@@ -501,7 +502,8 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
             Voice.State.LISTENING -> listOf("rev_a" to "Stop", back to "Cancel")
             Voice.State.STOPPING -> listOf(back to "Cancel")
             Voice.State.RESULT -> listOf("rev_x" to "Say again", "rev_y" to "Edit", back to "Cancel")
-            Voice.State.PROBLEM -> (if (buttonOf(s, false)?.first == "Say again") emptyList() else listOf("rev_x" to "Say again")) +
+            Voice.State.PROBLEM -> (if (s.problem == Voice.Problem.NO_SERVICE || buttonOf(s, false)?.first == "Say again") emptyList()
+                else listOf("rev_x" to "Say again")) +
                 listOf("rev_y" to "Edit", back to "Cancel")
         }
     }
@@ -571,9 +573,18 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         titleOf(s)?.let { t ->
             val bad = s.state == Voice.State.PROBLEM || s.state == Voice.State.MIC_OFF || s.state == Voice.State.BLOCKED
             val p = UiKit.bodyPaint(32f, if (bad) Theme.unusable else Theme.gold)
-            val line = android.text.TextUtils.ellipsize(Tr.t(t), android.text.TextPaint(p), tx1 - tx0, android.text.TextUtils.TruncateAt.END).toString()
-            c.drawText(line, tx0, y - p.ascent(), p)
-            y += -p.ascent() + p.descent() + 14f
+            val tt = Tr.t(t)
+            val tp = android.text.TextPaint(p)
+            if (tp.measureText(tt) <= tx1 - tx0) {
+                c.drawText(tt, tx0, y - p.ascent(), p)
+                y += -p.ascent() + p.descent() + 14f
+            } else {
+                // a long title (no speech services; Spanish / French): two lines, never cut to "Voice typing needs..."
+                val lay = android.text.StaticLayout.Builder.obtain(tt, 0, tt.length, tp, (tx1 - tx0).toInt().coerceAtLeast(1)).setMaxLines(2)
+                    .setEllipsize(android.text.TextUtils.TruncateAt.END).build()
+                c.save(); c.translate(tx0, y); lay.draw(c); c.restore()
+                y += lay.height + 14f
+            }
         }
         when (s.state) {
             Voice.State.LISTENING, Voice.State.STOPPING, Voice.State.RESULT -> drawWords(c, s, RectF(tx0, y, tx1, body.bottom), now)

@@ -114,6 +114,8 @@ object Voice {
     enum class Problem(val title: String) {
         NOT_HEARD("Didn't hear you"), PACK("Voice pack needed"), OFFLINE("Offline"), BUSY("Voice busy"), NO_SOUND("No sound from the mic"),
         MIC_OFF("Microphone off"),
+        /** no recognizer this app trusts (no on-device one, no Google / system speech service): X says so and opens nothing else */
+        NO_SERVICE("Voice typing needs Android speech services"),
     }
 
     /** an error's answer: try once more without a word ([retry]), offer the online recognizer, or say [problem] ([get]: A = Get the pack) */
@@ -151,6 +153,73 @@ object Voice {
             else -> Answer(problem = Problem.NOT_HEARD)
         }
         else -> Answer(problem = Problem.BUSY)
+    }
+
+    // ---------------------------------------------------------------- which recognizer (never the device's DEFAULT one)
+
+    /**
+     * One speech service Android lists (queryIntentServices for android.speech.RecognitionService): its [pkg], its class [cls], and
+     * [system] = it came with the device (ApplicationInfo.FLAG_SYSTEM / FLAG_UPDATED_SYSTEM_APP).
+     */
+    data class Service(val pkg: String, val cls: String, val system: Boolean)
+
+    /**
+     * The speech services this app binds by name, best first. NEVER the device's default recognizer (Settings.Secure
+     * voice_recognition_service): on the user's Thor that is MacroDroid's (2026-11-16: "it just flashs and instantly stops and says
+     * something about macro droid"), and most players have no such app.
+     */
+    val TRUSTED = listOf(
+        "com.google.android.googlequicksearchbox", "com.google.android.tts", "com.google.android.as", "com.google.android.apps.speechservices",
+    )
+
+    /** the service to bind: a known Google one first (in [TRUSTED]'s order), else one that came with the device; a third-party app never */
+    fun trusted(services: List<Service>): Service? {
+        for (p in TRUSTED) services.firstOrNull { it.pkg == p }?.let { return it }
+        return services.firstOrNull { it.system }
+    }
+
+    /** what listens */
+    sealed class Pick {
+        /** SpeechRecognizer.createOnDeviceSpeechRecognizer (Android 12+) */
+        object OnDevice : Pick() { override fun toString() = "OnDevice" }
+        /** SpeechRecognizer.createSpeechRecognizer(context, that service's ComponentName) */
+        data class Named(val service: Service) : Pick()
+        /** no voice: "Voice typing needs Android speech services" */
+        object None : Pick() { override fun toString() = "None" }
+    }
+
+    /** the on-device recognizer is usable: Android 12+ (API 31) and Android says it is there */
+    fun onDevice(api: Int, available: Boolean): Boolean = api >= 31 && available
+
+    /** THE ORDER: the on-device recognizer, else a trusted named service ([trusted]), else none */
+    fun pick(api: Int, onDeviceAvailable: Boolean, services: List<Service>): Pick = when {
+        onDevice(api, onDeviceAvailable) -> Pick.OnDevice
+        else -> trusted(services)?.let { Pick.Named(it) } ?: Pick.None
+    }
+
+    /**
+     * What one listening uses: [online] (the player picked Online) = the trusted service, else the on-device one; not [online] = the
+     * on-device one only (nothing leaves the Thor until the player picks Online once).
+     */
+    fun recognizer(online: Boolean, api: Int, onDeviceAvailable: Boolean, services: List<Service>): Pick = when {
+        online -> trusted(services)?.let { Pick.Named(it) } ?: if (onDevice(api, onDeviceAvailable)) Pick.OnDevice else Pick.None
+        onDevice(api, onDeviceAvailable) -> Pick.OnDevice
+        else -> Pick.None
+    }
+
+    /** which recognizer the sheet can use with the setting [mode] ([pick]'s order; Online = the player's pick of the named service) */
+    fun avail(mode: Mode, api: Int, onDeviceAvailable: Boolean, services: List<Service>): Avail = when (mode) {
+        Mode.OFF -> Avail.NONE
+        Mode.ONLINE -> when {
+            trusted(services) != null -> Avail.ONLINE
+            onDevice(api, onDeviceAvailable) -> Avail.DEVICE
+            else -> Avail.NONE
+        }
+        Mode.DEVICE -> when (pick(api, onDeviceAvailable, services)) {
+            Pick.OnDevice -> Avail.DEVICE
+            is Pick.Named -> Avail.ONLINE_ONLY
+            Pick.None -> Avail.NONE
+        }
     }
 
     // ---------------------------------------------------------------- the sheet
@@ -245,7 +314,7 @@ object Voice {
             perm == Perm.DENIED -> { state = State.MIC_OFF; problem = Problem.MIC_OFF; listOf(Act.Glow) }
             perm == Perm.BLOCKED -> { state = State.BLOCKED; problem = Problem.MIC_OFF; listOf(Act.Glow) }
             avail == Avail.ONLINE_ONLY -> { state = State.OFFER_ONLINE; listOf(Act.Glow) }
-            avail == Avail.NONE -> { state = State.PROBLEM; problem = Problem.BUSY; listOf(Act.Glow) }
+            avail == Avail.NONE -> { state = State.PROBLEM; problem = Problem.NO_SERVICE; listOf(Act.Glow) }
             else -> listen(avail == Avail.ONLINE)
         }
 
@@ -297,7 +366,13 @@ object Voice {
                 "PADLSHOULDER", "PADRSHOULDER" -> listOf(Act.Pass)
                 else -> listOf(Act.Glow)
             }
-            State.PROBLEM -> when (key) {
+            State.PROBLEM -> if (problem == Problem.NO_SERVICE) when (key) {
+                // nothing can listen: no Say again (it would only fail again); Y = the keyboard, B = back to the box
+                "PAD4" -> listOf(Act.Edit(before))
+                "PAD2" -> cancel()
+                "PADLSHOULDER", "PADRSHOULDER" -> listOf(Act.Pass)
+                else -> listOf(Act.Glow)
+            } else when (key) {
                 "PAD1" -> when {
                     problem == Problem.PACK && canGet -> listOf(Act.GetPack)
                     problem == Problem.MIC_OFF -> if (fight) listOf(Act.Glow) else listOf(Act.AskMic)

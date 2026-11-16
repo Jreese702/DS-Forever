@@ -121,6 +121,7 @@
 "Get": "Obtener",
 "Voice busy": "Voz ocupada",
 "No sound from the mic": "El micrófono no da sonido",
+"Voice typing needs Android speech services": "La escritura por voz necesita los servicios de voz de Android",
 "Tell": "Susurrar a",
 "Android Settings > Apps > DS Forever > Permissions > Microphone": "Ajustes de Android > Aplicaciones > DS Forever > Permisos > Micrófono",
 "Tooltips": "Consejos",

@@ -166,7 +166,7 @@ class VoiceTest {
         assertEquals(Mode.ONLINE, s.mode)
         val n = sheet()
         n.open(Perm.GRANTED, Avail.NONE)
-        assertEquals(State.PROBLEM, n.state); assertEquals(Problem.BUSY, n.problem)
+        assertEquals(State.PROBLEM, n.state); assertEquals(Problem.NO_SERVICE, n.problem)
         // the online pick starts the online recognizer, never "this device" (it is the service's promise, not ours)
         assertEquals(listOf<Act>(Act.Start(online = true)), sheet(mode = Mode.ONLINE).open(Perm.GRANTED, Avail.ONLINE))
     }
