@@ -127,9 +127,12 @@ check(L.eval('click(CHEST)') == 'item', "a worn item: the game's item action")
 L.execute('NOW = NOW + 0.1; click(NECK); SECURE.binv.onClick(1)')
 e = L.eval('EMITS[#EMITS].kitTap')
 check(e is not None and e.empty is True and e.slot == 2, "the kit tap proof says empty", e and dict(e))
-# the stop cell and the bag-gear macro cells are not touched
+# the stop cell is not touched; bags-de1: a bag target cell's PreClick is its own ITEM guard (not this empty-slot guard): a cell holding
+# nothing is left alone (no type, never "item")
 L.execute('STOP = newCell(); SECURE.binv.init(STOP, 19); G = newCell(); SECURE.binv.init(G, 20)')
-check(L.eval('STOP.hooks.PreClick') is None and L.eval('G.hooks.PreClick') is None, "macro cells: no guard")
+check(L.eval('STOP.hooks.PreClick') is None, "the stop cell: no guard")
+L.execute('click(G)')
+check(L.eval('G.a.type') is None, "bags-de1: a bag target cell holding nothing: its own guard leaves it without an action", L.eval('G.a.type'))
 
 # bags-empty2 (review): the fight's switch. PLAYER_REGEN_DISABLED fires before the lockdown: empty cells off, filled ones kept
 L.execute('NOW = NOW + 5; fire("PLAYER_REGEN_DISABLED"); COMBAT = true')

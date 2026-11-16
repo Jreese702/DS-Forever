@@ -142,6 +142,17 @@
 -- bags. Its row now says qstart = true while that quest is neither in the log nor done (the prompt's own test, D.qsAt), and the app
 -- offers "Start Quest" on X: the slot's own secure item cell, the game's right-click, which opens the game's quest page. Read-only
 -- calls only (C_QuestLog.IsOnQuest / IsQuestFlaggedCompleted); nothing else changes.
+--
+-- bags-de1 (the user's list, 2026-11-16: "Disenchant (and similar actions): A custom grid of bag items that can be disenchanted. Hover shows the
+-- full tooltip, as in Bags. It stays open after each one; B closes it. The disenchant cast bar is visible."; their picks the same day: every
+-- RECOMMENDED option of design_disenchant.md): THE DISENCHANT GRID, the room's mode "bulk" (DE, below KIT): the bags' green-and-better
+-- weapons and armour in bag order, the full tooltip by the cursor, ONE press = one disenchant through the item's own secure cell, the grid
+-- stays open, B stops a cast / a waiting pick / closes (back to the Bags grid it came from, else Home). Blue and purple ask once ("Disenchant?"
+-- A Yes / B No); a small green arrow on a tile whose stat changes are all gains; the strip's Disenchant icon opens it (BAR "de"); an auto loot
+-- keeps the grid (Interact i161), any other loot pop-up takes the pad and the grid takes it back at LOOT_CLOSED. With it, the pick's target
+-- cells can never equip any more (the shapes "t" / "c" / "u", KIT.cellFor), binv 39 is /stopcasting, KIT.isCurrent / spellDoc ask C_Spell
+-- first, and END_BOUND_TRADEABLE is handed to the game like the other pick questions. No new pad row (bmvq 27 + column 9 for a finger on
+-- the icon; binv's own cells); nothing saved; no game window opened or closed from here.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -1047,6 +1058,7 @@ function WC.collectBags()
         -- the pin picker's tooltips, only while it is open (bmvq 23 / 24)
         ptips = WC._bagsPinTips and WC._bagsPinTips(items) or nil,
         ctx = here,
+        de = WC._de and WC._de.stripDoc() or nil,          -- bags-de1: the strip's Disenchant icon (only when the spell is known)
         combat = InCombatLockdown() and true or false,     -- Clean Up is refused in combat
         -- the shared tap pad's geometry: the app taps row "bag<id>", column slot-1. describe()
         -- leaves a secure row OUT while its cells might be stale, so the app never taps blind.
@@ -1146,6 +1158,8 @@ bf:SetScript("OnEvent", function(_, event, a1)
     elseif event == "UPDATE_INVENTORY_DURABILITY" and WC._bagsWornDirty then WC._bagsWornDirty() end
     if event == "PLAYER_REGEN_ENABLED" and syncDoors then syncDoors() end
     if event == "PLAYER_REGEN_DISABLED" then pcall(emptyFightOff) elseif event == "PLAYER_REGEN_ENABLED" then pcall(emptyFightOn) end
+    -- bags-de1: the pick cells that could cast or /use are cleared for the fight (binv 19 / 39 and the target-only cells stay live)
+    if event == "PLAYER_REGEN_DISABLED" and WC._kit then pcall(WC._kit.fightOff) end
     -- GET_ITEM_INFO_RECEIVED fires for every item anything asks about (chat links, tooltips,
     -- other addons). Only a name WE are waiting for is worth a re-collect. (pcall: the arg is
     -- used as a table key, and nothing has measured whether an event arg can be secret.)
@@ -1448,7 +1462,8 @@ local TIP = { REST = 0.12, FRESH = 8, TICK = 0.1, PER_TICK = 2, MAX = 200, TRIES
               NW = { nw = true } }         -- bags-nocmp1: Interact's compare without the worn pieces' tooltips (only the stat changes)
 local function tipKey()
     -- bags-act1: the compare sheet (mode "compare") keeps the item's tooltip too (its compare is the sheet's right side)
-    if not (ctl.on and (ctl.mode == "grid" or ctl.mode == "compare") and not ctl.pick) or type(WC.tipOf) ~= "function" then return nil end
+    -- bags-de1: the Disenchant grid ("bulk") shows the cursor's item's tooltip too (its cursor moves ctl.bag / ctl.slot)
+    if not (ctl.on and (ctl.mode == "grid" or ctl.mode == "compare" or ctl.mode == "bulk") and not ctl.pick) or type(WC.tipOf) ~= "function" then return nil end
     local id = bagItemID(ctl.bag, ctl.slot)
     if not id then return nil end
     return "bag " .. ctl.bag .. " " .. ctl.slot .. " " .. id
@@ -1505,6 +1520,17 @@ function TIP.readCursor(key)
 end
 -- the slots of the open bags nearest the cursor first (the grid as the room draws it: COLS a row, bag under bag)
 function TIP.around()
+    -- bags-de1: in the Disenchant grid its own items, nearest the cursor first (the grid as the app draws it: COLS a row, list order)
+    if ctl.mode == "bulk" and WC._de then
+        local out, items = {}, WC._de.list()
+        local at = math.max(1, ctl.bsel or 1) - 1
+        for n, e in ipairs(items) do
+            local d = math.abs(math.floor((n - 1) / COLS) - math.floor(at / COLS)) + math.abs((n - 1) % COLS - at % COLS)
+            out[#out + 1] = { e.b, e.s, d }
+        end
+        table.sort(out, function(a, b) if a[3] ~= b[3] then return a[3] < b[3] end; if a[1] ~= b[1] then return a[1] < b[1] end; return a[2] < b[2] end)
+        return out
+    end
     local list, row0, cr, cc = {}, 0, 0, 0
     for _, e in ipairs(BAR.open()) do
         if e.bag == ctl.bag then cr = row0 + math.floor((ctl.slot - 1) / COLS); cc = (ctl.slot - 1) % COLS end
@@ -1538,7 +1564,9 @@ function TIP.step()
             if key ~= TIP.want and not TIP.get(key, q[1], q[2]) then TIP.read(key, q[1], q[2]); TIP.pre = TIP.pre + 1; done = done + 1 end
         end
     end
-    if #TIP.queue > 0 then TIP.ticking = true; C_Timer.After(TIP.TICK, TIP.step) end
+    if done > 0 and ctl.mode == "bulk" then TIP.deNew = true end
+    if #TIP.queue > 0 then TIP.ticking = true; C_Timer.After(TIP.TICK, TIP.step)
+    elseif TIP.deNew then TIP.deNew = nil; sendCtlSoon() end      -- bags-de1: the grid's green arrows come from what was read ahead
 end
 function TIP.ahead()
     -- review: in a fight TIP.step does nothing, so no timer either (_bagsTip runs at every ctl document)
@@ -1550,7 +1578,7 @@ end
 function WC._bagsTip()
     local key = tipKey()
     if not key then return nil end
-    if ctl.mode == "grid" then TIP.ahead() end           -- bags-act1: no reads ahead behind the compare sheet
+    if ctl.mode == "grid" or ctl.mode == "bulk" then TIP.ahead() end     -- bags-act1: no reads ahead behind the compare sheet
     local e = TIP.get(key, ctl.bag, ctl.slot)
     if e and (GetTime() - e.at) < TIP.FRESH then return e.val end
     if TIP.want ~= key then
@@ -1619,7 +1647,11 @@ function WC._bagsCtlDoc()
     -- lost controller must show in the log, not vanish behind a bare "off"
     -- off, the app still needs to know if the game's bags are open: then its OPEN door would do nothing, and it takes
     -- with col 29 instead
-    if not ctl.on then return { on = false, note = ctl.note, seq = ctl.seq, open = ctl.open and true or false, shut = BAR.shutList() } end
+    -- bags-de1: resume = the Disenchant grid lost the pad to a loot pop-up and takes it back when the loot window closes
+    if not ctl.on then return { on = false, note = ctl.note, seq = ctl.seq, open = ctl.open and true or false, shut = BAR.shutList(),
+                                resume = (WC._de and WC._de.resume) and true or nil } end
+    -- bags-de1: the Disenchant grid's document FIRST: its cursor moves ctl.bag / ctl.slot (cur and the tooltip below follow it)
+    local bulk = (ctl.mode == "bulk" and WC._de) and WC._de.doc() or nil
     return {
         on = true, mode = ctl.mode, cur = { bag = ctl.bag, slot = ctl.slot }, open = ctl.open and true or false,
         pick = ctl.pick and { bag = ctl.pick.bag, slot = ctl.pick.slot } or nil,
@@ -1640,6 +1672,7 @@ function WC._bagsCtlDoc()
         act = ctl.act,
         barmenu = BAR.menuDoc(),
         target = (ctl.mode == "target" and WC._kit) and WC._kit.targetDoc() or nil,   -- bags-kit3: the pick type (cx), for the report
+        bulk = bulk,                                                                 -- bags-de1: the Disenchant grid
     }
 end
 
@@ -1659,7 +1692,7 @@ local function syncPass()
         -- char-more2: a drag onto a worn slot that the game asks "bind it to you?" about (BINDWAIT): the game's own A / B answer it
         elseif BINDWAIT.on and bindAsking() then want = "PAD1 PAD2"
         -- bags-kit2 (issue #89): the game's own question about the pick (Replace enchant?) is answered by the game's own A / B
-        elseif ctl.mode == "target" and WC._kit and WC._kit.asking() then want = "PAD1 PAD2"
+        elseif (ctl.mode == "target" or ctl.mode == "bulk") and WC._kit and WC._kit.asking() then want = "PAD1 PAD2"   -- bags-de1: bulk too
         elseif ctl.open and ctl.mode == "grid" and ctl.pick == nil then want = "PAD2" end
     end
     if want == (ctl.passing or false) or not (cap and cap.pass) then return end
@@ -1780,23 +1813,57 @@ local function toGrid(note) ctl.mode = "grid"; ctl.rare = nil; ctl.dest = nil; c
 -- A kit whose pick says neither enchant nor cond (not known yet on the device) stays "spell": worn + bag gear, unfiltered. The values
 -- ride on the itarget document and the target list (cx) for a later device check. Read-only; UPDATE_SPELL_TARGET_ITEM_CONTEXT and
 -- ENCHANT_SPELL_SELECTED are listened to as well as the 0.25 s step.
-local KIT = { was = false, last = nil, DE = 13262, FEED = 6991, CELL0 = 20, CELLS = 40, MAX = 40, cells = {}, mt = {}, byKey = {},
-              STOP_HOLD = 1.5, evt = nil, evtN = 0 }
+-- bags-de1 (the Disenchant grid's review, the user's picks 2026-11-16: "Disenchant ... It stays open after each one; B closes it"): the pick's
+-- target cells were "/use <bag> <slot>" macros, and a /use whose pick has ended (moving, the GCD, a same-frame interrupt) is a plain
+-- right-click, which EQUIPS gear (issue #126 again: a BoE piece goes to the game's "bind it?", a soulbound one swaps silently). Every bag
+-- target cell is now one of two shapes that can never equip, set out of combat (KIT.cst; securetemplates.lua OnActionButtonClick targets
+-- target-bag / target-slot after ANY click, only while SpellCanTargetItem / SpellCanTargetItemID answer true):
+--   "t" a pick is waiting (cast from the bar, a kit used): no type, only target-bag / target-slot - it answers the pick and never casts or uses;
+--       the pick already ended = nothing happens
+--   "c" no pick waiting (the Disenchant grid's A): type "spell", spell 13262 + the same target-bag / target-slot - the game casts, and only
+--       if it is now picking does the click target the item; a cast that does not start does nothing
+--   "u" the device fallback ONLY: Disenchant is the current spell but both SpellCanTargetItem and SpellCanTargetItemID answer false - the
+--       old /use macro, voided at the click unless SpellIsTargeting is still true (never a plain use)
+-- One cell per item (binv 20..38; 39 is /stopcasting now); its PreClick checks the slot still holds its item and, out of combat, clears
+-- the cell when not ("moved"). PLAYER_REGEN_DISABLED clears every "c" / "u" cell (KIT.fightOff): only "t" cells and binv 19 / 39 stay
+-- live in a fight. KIT.isCurrent / spellDoc ask C_Spell first (the 11.0 move, SpellBookAPITransitionGuide), the old globals second.
+local KIT = { was = false, last = nil, DE = 13262, FEED = 6991, CELL0 = 20, CELLS = 40, CELL_LAST = 38, STOPCAST_COL = 39, MAX = 40,
+              cells = {}, cst = {}, byKey = {}, STOP_HOLD = 1.5, evt = nil, evtN = 0 }
 WC._kit = KIT                                   -- the room's document (above) reads it
 WC._kitLearned = WC._kitLearned or {}           -- item ids seen to start a pick (the bag rows' `kit` flag: the Character room's list)
+-- a spell's name: C_Spell first (C_Spell.GetSpellName / GetSpellInfo().name), the old GetSpellInfo second; nil when none is plain
+function KIT.spellName(id)
+    local n = S(function() return C_Spell.GetSpellName(id) end)
+    if type(n) ~= "string" then
+        local si = S(function() return C_Spell.GetSpellInfo(id) end)
+        n = type(si) == "table" and S(function() return si.name end) or nil
+    end
+    if type(n) ~= "string" then
+        local okN, nm = CALL(function() return GetSpellInfo(id) end)
+        n = okN and nm or nil
+    end
+    if type(n) == "string" and n ~= "" and WC.isPlain(n) then return n end
+    return nil
+end
+-- the spell `v` (an id or a name) is the current spell: C_Spell.IsCurrentSpell first, the old global second
+function KIT.cur(v)
+    if S(function() return C_Spell.IsCurrentSpell(v) end) == true then return true end
+    local okC, c = CALL(function() return IsCurrentSpell(v) end)
+    return okC and c == true
+end
 -- the game is targeting and the spell `id` (or a spell of its name) is the current spell
 function KIT.isCurrent(id)
     local okT, t = CALL(function() return SpellIsTargeting() end)
     if not (okT and t == true) then return false end
-    local okC, c = CALL(function() return IsCurrentSpell(id) end)
-    if okC and c == true then return true end
-    local okN, name = CALL(function() return GetSpellInfo(id) end)
-    if not (okN and type(name) == "string" and WC.isPlain(name)) then return false end
-    okC, c = CALL(function() return IsCurrentSpell(name) end)
-    return okC and c == true
+    if KIT.cur(id) then return true end
+    local name = KIT.spellName(id)
+    return name ~= nil and KIT.cur(name)
 end
--- Disenchant is waiting for its item (issue #126): the game is targeting and Disenchant is the current spell
-function KIT.de() return KIT.isCurrent(KIT.DE) end
+-- Disenchant is waiting for its item (issue #126): the game's target spell (bags-de1: as Feed Pet's), else targeting with Disenchant current
+function KIT.de()
+    if SN(function() return C_Spell.GetTargetSpellID() end) == KIT.DE then return true end
+    return KIT.isCurrent(KIT.DE)
+end
 -- Feed Pet is waiting for its item (bags-kit3): the game's target spell, else the current spell as for Disenchant
 function KIT.feed()
     if SN(function() return C_Spell.GetTargetSpellID() end) == KIT.FEED then return true end
@@ -1821,30 +1888,106 @@ function KIT.ctx()
 end
 -- what the game said of the pick, for the report (bags-kit3 device check): e / c = enchanting / checks item condition (nil = no answer),
 -- id = the target spell, ev / evn = the last pick event heard and how many
+-- bags-de1: sct / scti = SpellCanTargetItem / SpellCanTargetItemID (the design's device check: "t" cells need one of them true)
 function KIT.probe()
     local e = S(function() return C_Spell.TargetSpellIsEnchanting() end)
     local c = S(function() return C_Spell.TargetSpellChecksItemCondition() end)
-    return { ctx = KIT.ctx(), e = (e == true or e == false) and e or nil, c = (c == true or c == false) and c or nil,
-             id = SN(function() return C_Spell.GetTargetSpellID() end), ev = KIT.evt, evn = KIT.evtN }
+    local sct = S(function() return SpellCanTargetItem() end)
+    local scti = S(function() return SpellCanTargetItemID() end)
+    local p = { ctx = KIT.ctx(), e = (e == true or e == false) and e or nil, c = (c == true or c == false) and c or nil,
+                id = SN(function() return C_Spell.GetTargetSpellID() end), ev = KIT.evt, evn = KIT.evtN }
+    if sct == true or sct == false then p.sct = sct end              -- false kept: "both false" is the device fallback's sign
+    if scti == true or scti == false then p.scti = scti end
+    return p
 end
--- a bag gear row's target cell (issue #126): the cell this pick holds for (bag, slot), else a free one of binv CELL0..CELLS-1 with its
--- macrotext "/use <bag> <slot>" set now (out of combat only); nil when every cell is held or the fight keeps it from being set
-function KIT.cellFor(bag, slot)
-    local text = "/use " .. bag .. " " .. slot
-    local col = KIT.byKey[text]
-    if col and KIT.mt[col] == text then return col end
-    if InCombatLockdown() then return nil end
-    local held = {}
-    for _, c in pairs(KIT.byKey) do held[c] = true end
-    for c = KIT.CELL0, KIT.CELLS - 1 do
-        local btn = KIT.cells[c]
-        if btn and not held[c] then
-            if KIT.mt[c] ~= text and not pcall(btn.SetAttribute, btn, "macrotext", text) then return nil end
-            KIT.mt[c] = text; KIT.byKey[text] = c
-            return c
-        end
+-- bags-de1: the shape a waiting pick's cell takes: "t" (target only) whenever the game says it can target an item now; "u" (the old /use)
+-- only when it says no to both and Disenchant is the current spell (the device fallback, see the header above KIT)
+function KIT.pickShape()
+    local ok, v = CALL(function() return SpellCanTargetItem() end)
+    if ok and v == true then return "t" end
+    ok, v = CALL(function() return SpellCanTargetItemID() end)
+    if ok and v == true then return "t" end
+    if KIT.de() then return "u" end
+    return "t"
+end
+-- a cell's secure attributes for its state (nil = cleared: no action, no target)
+function KIT.attrs(btn, st)
+    local sh = st and st.sh
+    btn:SetAttribute("type", (sh == "c" and "spell") or (sh == "u" and "macro") or nil)
+    btn:SetAttribute("spell", sh == "c" and KIT.DE or nil)
+    btn:SetAttribute("macrotext", sh == "u" and ("/use " .. st.b .. " " .. st.s) or nil)
+    btn:SetAttribute("target-bag", (sh == "t" or sh == "c") and st.b or nil)
+    btn:SetAttribute("target-slot", (sh == "t" or sh == "c") and st.s or nil)
+end
+-- set cell `col` to item `id` in (b, s) with shape `sh`; out of combat only; true when set
+function KIT.setCell(col, b, s, id, sh)
+    local btn = KIT.cells[col]
+    if not btn or InCombatLockdown() then return false end
+    local st = { b = b, s = s, id = id, sh = sh, at = GetTime() }
+    if not pcall(KIT.attrs, btn, st) then return false end
+    KIT.cst[col] = st
+    return true
+end
+-- cell `col` cleared (no action, no target) and let go; out of combat only (attributes are fixed in a fight)
+function KIT.clearCell(col)
+    local btn = KIT.cells[col]
+    if btn and not InCombatLockdown() then pcall(KIT.attrs, btn, nil); KIT.cst[col] = nil end
+    for k, c in pairs(KIT.byKey) do if c == col then KIT.byKey[k] = nil end end
+end
+-- PLAYER_REGEN_DISABLED (the lockdown has not begun): every cell that could cast or /use is cleared for the fight; "t" cells (target only:
+-- they never cast, use or equip), binv 19 (/stopspelltarget) and binv 39 (/stopcasting) stay live
+function KIT.fightOff()
+    for col = KIT.CELL0, KIT.CELL_LAST do
+        local st = KIT.cst[col]
+        if st and st.sh ~= "t" then KIT.clearCell(col) end
     end
-    return nil
+end
+-- a bag item's target cell (issue #126; bags-de1 shapes): the cell held for (bag, slot) when it still names item `id` in shape `sh`, else
+-- that cell or a free one of binv CELL0..CELL_LAST set now (out of combat only). [evict]: when every cell is held, the least recently used
+-- is taken (the Disenchant grid: one press at a time; the pick's list never evicts: a stale list's tap must still hit the item it showed).
+-- nil when no cell can be had (or the fight keeps it from being set)
+function KIT.cellFor(bag, slot, id, sh, evict)
+    sh = sh or "t"
+    local key = bag .. " " .. slot .. " " .. tostring(id)      -- one cell per ITEM: another item in the slot never takes over its cell
+    local col = KIT.byKey[key]
+    local st = col and KIT.cst[col]
+    if st and st.b == bag and st.s == slot and st.id == id and st.sh == sh then st.at = GetTime(); return col end
+    if InCombatLockdown() then return nil end
+    if not (col and KIT.cells[col]) then
+        col = nil
+        local held = {}
+        for _, c in pairs(KIT.byKey) do held[c] = true end
+        for c = KIT.CELL0, KIT.CELL_LAST do
+            if KIT.cells[c] and not held[c] then col = c; break end
+        end
+        if not col and evict then
+            -- every cell held: the least recently used one goes
+            for c = KIT.CELL0, KIT.CELL_LAST do
+                local s2 = KIT.cst[c]
+                if KIT.cells[c] and (not col or (s2 and KIT.cst[col] and s2.at < KIT.cst[col].at)) then col = c end
+            end
+            if col then for k, c in pairs(KIT.byKey) do if c == col then KIT.byKey[k] = nil end end end
+        end
+        if not col then return nil end
+    end
+    if not KIT.setCell(col, bag, slot, id, sh) then return nil end
+    KIT.byKey[key] = col
+    return col
+end
+-- the cell's PreClick (bags-de1): the slot no longer holds the cell's item ("moved"), or a "u" cell whose pick has ended ("nopick") = the
+-- cell is cleared just before the click (out of combat), so the click does nothing. KIT.void = the last such, for the tap's proof
+function KIT.guard(btn, col)
+    if btn.wcKitGuard then return end
+    btn.wcKitGuard = true
+    pcall(btn.HookScript, btn, "PreClick", function()
+        if InCombatLockdown() then return end
+        local st = KIT.cst[col]
+        if not st then return end
+        local why
+        if bagItemID(st.b, st.s) ~= st.id then why = "moved"
+        elseif st.sh == "u" and S(function() return SpellIsTargeting() end) ~= true then why = "nopick" end
+        if why then KIT.void = { col = col, why = why, at = GetTime() }; KIT.clearCell(col) end
+    end)
 end
 -- the place of the bag item (bag, slot) in the pick's list (the grid's X while a pick is on goes to it; review 2026-11-11)
 function KIT.rowOf(bag, slot)
@@ -2032,6 +2175,7 @@ function KIT.list(ctx)
         local room = math.max(0, KIT.MAX - #out - 10)
         for i = math.min(#front, room), 1, -1 do table.insert(out, 1, front[i]) end
     end
+    local shape                                                      -- bags-de1: the waiting pick's cell shape, asked once
     for _, e in ipairs(layout()) do
         local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
         for s = 1, n do
@@ -2049,7 +2193,9 @@ function KIT.list(ctx)
                         local il = select(2, CALL(function() return ItemLocation:CreateFromBagAndSlot(e.bag, s) end))
                         -- bags-kit3: what the pick cannot go on is left out (before a cell is held for it)
                         if de or KIT.match(il, ctx) then
-                            local cell = KIT.cellFor(e.bag, s)      -- its /use cell: the item-target click, never the bag cell's equip
+                            -- its target cell (bags-de1: "t", target only; "u" only the device fallback), never the bag cell's equip
+                            shape = shape or KIT.pickShape()
+                            local cell = KIT.cellFor(e.bag, s, id, shape)
                             -- the one grey row left: it fits, but a fight keeps its cell from being set
                             out[#out + 1] = { src = "bag", bag = e.bag, s = s, id = id, cell = cell,
                                 name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
@@ -2064,9 +2210,19 @@ function KIT.list(ctx)
     return out
 end
 -- what is being applied: a named spell's own name (Disenchant, Feed Pet), else the last item used from the bags, if it was just now
+-- bags-de1: C_Spell.GetSpellInfo first (name / iconID / castTime), the old GetSpellInfo second; ct = the cast time in ms when known
 local function spellDoc(id)
-    local ok, name, _, icon = CALL(function() return GetSpellInfo(id) end)
-    if ok and type(name) == "string" and WC.isPlain(name) then return { spell = id, name = name, icon = SN(function() return icon end) } end
+    local si = S(function() return C_Spell.GetSpellInfo(id) end)
+    if type(si) == "table" then
+        local name = S(function() return si.name end)
+        if type(name) == "string" and name ~= "" and WC.isPlain(name) then
+            return { spell = id, name = name, icon = SN(function() return si.iconID end), ct = SN(function() return si.castTime end) }
+        end
+    end
+    local ok, name, _, icon, ct = CALL(function() return GetSpellInfo(id) end)
+    if ok and type(name) == "string" and WC.isPlain(name) then
+        return { spell = id, name = name, icon = SN(function() return icon end), ct = SN(function() return ct end) }
+    end
 end
 function KIT.kitDoc()
     if KIT.de() then local d = spellDoc(KIT.DE); if d then return d end end              -- issue #126: the spell's own name over the list
@@ -2096,8 +2252,9 @@ function WC._kitUsedAt(bag, slot)
 end
 -- bags-kit2 (issue #89): the GAME is asking about the pick - its replace / bind question for the item just chosen, or any pop-up
 -- its controller focuses (its A / B answer that one, never our list). Read only; the pop-up's name, nil when none asks
+-- bags-de1: END_BOUND_TRADEABLE too (disenchanting a bind-on-pickup item still inside its trade window: the game asks, gamedialogdefs.lua)
 KIT.ASKS = { REPLACE_ENCHANT = true, TRADE_REPLACE_ENCHANT = true, BIND_ENCHANT = true, ACTION_WILL_BIND_ITEM = true,
-             REPLACE_TRADESKILL_ENCHANT = true }
+             REPLACE_TRADESKILL_ENCHANT = true, END_BOUND_TRADEABLE = true }
 function KIT.asking()
     for i = 1, 4 do
         local f = _G["StaticPopup" .. i]
@@ -2112,13 +2269,20 @@ end
 -- the pick started / ended: the room's cursor follows; any route says it (an "itarget" document: the Character room waits for it)
 function KIT.step()
     -- bags-kit2 (issue #89): the game's question about the pick came or went: report, so syncPass hands A / B over (or back)
-    local ask = (ctl.on and ctl.mode == "target") and KIT.asking() or nil
+    -- bags-de1: the Disenchant grid ("bulk") hands the game's own question to the game the same way (END_BOUND_TRADEABLE)
+    local listing = ctl.on and (ctl.mode == "target" or ctl.mode == "bulk")
+    local ask = listing and KIT.asking() or nil
     if ask ~= KIT.askWas then
         KIT.askWas = ask
-        if ctl.on and ctl.mode == "target" then report(ask and ("pick-ask-" .. ask) or "pick-answered") end
+        if listing then report(ask and ("pick-ask-" .. ask) or "pick-answered") end
     end
     local on = KIT.on()
-    if not on and next(KIT.byKey) ~= nil and not InCombatLockdown() then KIT.byKey = {} end    -- the pick's cells free again
+    -- the pick's cells free again (and cleared); bags-de1: never while the Disenchant grid is open (its pick goes on and off with every
+    -- disenchant; its cells are let go one at a time, the least recently used first, KIT.cellFor)
+    if not on and next(KIT.byKey) ~= nil and not InCombatLockdown() and not (ctl.on and ctl.mode == "bulk") then
+        for _, c in pairs(KIT.byKey) do KIT.clearCell(c) end
+        KIT.byKey = {}
+    end
     -- bags-kit3 review: the pick's type changed while the list is up (the game's item context came late): the app draws it again
     local cxNow = on and KIT.ctx() or nil
     if cxNow ~= KIT.ctxWas then
@@ -2144,7 +2308,9 @@ function KIT.step()
     -- room taken mid-pick (Disenchant cast from the bar, then the Bags room) stayed on the grid, and its X / Use tapped the bag's own
     -- cell, which EQUIPS gear. Not in the moments after B's /stopspelltarget (the pick is ending)
     if ctl.on and on and ctl.mode == "grid" and not ctl.pick and not (KIT.stopT and GetTime() - KIT.stopT < KIT.STOP_HOLD) then
-        ctl.mode = "target"; ctl.tsel = 1; ctl.tkey = nil; report("pick-item")
+        -- bags-de1: a Disenchant pick opens the Disenchant grid over the Bags grid (B goes back to it), never the old list
+        if KIT.ctx() == "de" and WC._de then WC._de.open(true, "de-pick")
+        else ctl.mode = "target"; ctl.tsel = 1; ctl.tkey = nil; report("pick-item") end
     end
 end
 C_Timer.NewTicker(0.25, function() pcall(KIT.step) end)
@@ -2156,24 +2322,417 @@ do
 end
 -- worn gear as a pick's target: the secure row "binv", one cell per slot (type item, item = the slot: the game's /use <slot>)
 -- col 19 = STOP THE PICK: the game's own /stopspelltarget (a secure macro attribute, the cancel the add-on itself may not make)
--- cols 20..39 = the pick's BAG GEAR rows (issue #126): type macro, "/use <bag> <slot>" set out of combat by KIT.cellFor
+-- cols 20..38 = the bag items' target cells (issue #126; bags-de1: the shapes "t" / "c" / "u", KIT.cellFor, set out of combat)
+-- col 39 = STOP THE CAST (bags-de1): the game's own /stopcasting (the Disenchant grid's B during a cast; SpellStopCasting is protected)
 KIT.STOP_COL = 19
 if WC.pad and WC.pad.secureRow then
     pcall(WC.pad.secureRow, "binv", KIT.CELLS, function(btn, col)
         if col == KIT.STOP_COL then btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", "/stopspelltarget"); return end
+        if col == KIT.STOPCAST_COL then btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", "/stopcasting"); return end
         if col >= KIT.CELL0 then
             KIT.cells[col] = btn
-            btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", KIT.mt[col] or "")
+            KIT.guard(btn, col)
+            pcall(KIT.attrs, btn, KIT.cst[col])
             return
         end
         btn:SetAttribute("type", "item")
         btn:SetAttribute("item", tostring(col + 1))
         emptyGuard(btn, "w" .. (col + 1), wornSlotEmpty(col + 1))
     end, function(col)
-        if col == KIT.STOP_COL then WC.emit({ type = "cap", kitStop = true }); return end
-        if col >= KIT.CELL0 then WC.emit({ type = "cap", kitTap = { cell = col, use = KIT.mt[col], combat = InCombatLockdown() and true or false } }); return end
+        if col == KIT.STOP_COL then
+            WC.emit({ type = "cap", kitStop = true })
+            if WC._de then pcall(WC._de.stopped) end                -- bags-de1: the grid's B waited for the stop to land, then closes
+            return
+        end
+        if col == KIT.STOPCAST_COL then WC.emit({ type = "cap", kitStopCast = true }); return end
+        if col >= KIT.CELL0 then
+            -- bags-de1: the cell's shape and item, and why it did nothing when its PreClick voided it (the tap's proof)
+            local st, v = KIT.cst[col], KIT.void
+            WC.emit({ type = "cap", kitTap = { cell = col, sh = st and st.sh or nil, id = st and st.id or nil,
+                void = (v and v.col == col and GetTime() - v.at < 1) and v.why or nil, combat = InCombatLockdown() and true or false } })
+            return
+        end
         WC.emit({ type = "cap", kitTap = emptyFlags({ slot = col + 1, combat = InCombatLockdown() and true or false }, "w" .. (col + 1)) })
     end)
+end
+
+-- ---------------------------------------------------------------- bags-de1: THE DISENCHANT GRID (mode "bulk"; see the header)
+-- The user, 2026-11-16 (their list): "A custom grid of bag items that can be disenchanted. Hover shows the full tooltip, as in Bags. It stays
+-- open after each one; B closes it. The disenchant cast bar is visible." Their picks the same day (design_disenchant.md, every RECOMMENDED
+-- option): Disenchant only, built so others can join later; blue and purple ask once each time ("Disenchant?" A Yes / B No, Destroy's ask);
+-- loot the game's way (Auto Loot: a small strip of what came; without it the loot pop-up, then the grid comes back); bag order; a Disenchant
+-- icon on the Bags room's top strip; a small green arrow on tiles whose stat changes are all gains.
+--   OPENS: any cast of the spell (the game opens its bags for the pick: onBagsShown -> tryTake -> "bulk"; a Bags grid already held goes to
+--     it too, KIT.step), or the strip's icon (BAR "de" / a finger: bmvq 27 then column DE.TAP_COL). Opening it is never a game action.
+--   LISTS: the bags' weapons and armour of quality 2 (green) and up, in bag order; locked ones greyed (lk); refused ones hidden for the session
+--     (per item AND Enchanting rank: a skill-up offers it again); never worn gear.
+--   A: ONE press = one secure tap on that item's own cell (KIT.cellFor "c": cast + target, or "t" while a pick already waits); refused while
+--     casting ("busy"), while a loot window is open ("loot") and in a fight ("combat": the room's red flash); blue and better ask first.
+--   B, in order: casting = /stopcasting (binv 39) and stay; a pick waiting = /stopspelltarget (binv 19), then close; else close: back to the
+--     Bags grid when opened from it, else Home (leave "B"); in a fight always Home (i151).
+--   LOOT: Interact i161 lets the grid keep the pad through an AUTO loot (spec.lootPass); any other loot pop-up takes the pad and the grid
+--     takes it back itself at LOOT_CLOSED, the cursor kept (DE.resume, the ordinary take). Loot left on the top screen (the Hub's switch):
+--     A waits for LOOT_CLOSED.
+-- Read-only calls + the player's own secure taps; nothing saved (no macro, binding or CVar); no game window opened or closed from here.
+local DE = { SPELL = 13262, MAX = 100, ASK_Q = 3, REFUSE_S = 1.2, DONE_S = 3, GOT_S = 6, RESUME_S = 30, STOP_WAIT = 1.0,
+             TAP_COL = 9, refused = {}, doneN = 0, failN = 0, gotN = 0, tries = 0,
+             REFUSALS = { "ERR_CANT_BE_DISENCHANTED", "ERR_CANT_BE_DISENCHANTED_SKILL", "SPELL_FAILED_CANT_BE_DISENCHANTED",
+                          "SPELL_FAILED_CANT_BE_DISENCHANTED_SKILL", "SPELL_FAILED_LOW_CASTLEVEL" } }
+WC._de = DE
+-- the player knows the spell: C_SpellBook.ContainsAnyDisenchantSpell (the design's check), else IsPlayerSpell / IsSpellKnown
+function DE.known()
+    for _, f in ipairs({ function() return C_SpellBook.ContainsAnyDisenchantSpell() end, function() return IsPlayerSpell(DE.SPELL) end,
+                         function() return IsSpellKnown(DE.SPELL) end }) do
+        local v = S(f)
+        if v == true or v == false then return v end
+    end
+    return false
+end
+-- its name, icon and cast time (ms), kept once read (read again only out of a fight, while the name is still missing)
+function DE.spell()
+    local c = DE.info
+    if c and (c.n or InCombatLockdown()) then return c end
+    local d = spellDoc(DE.SPELL) or {}
+    local ct = d.ct
+    DE.info = { n = d.name, i = d.icon, ct = (type(ct) == "number" and ct >= 0) and math.floor(ct + 0.5) or nil }
+    return DE.info
+end
+-- the strip's word on the spell (bags doc `de`): only when the player knows it
+function DE.stripDoc()
+    if not DE.known() then return nil end
+    local sp = DE.spell()
+    return { n = sp.n, i = sp.i, ct = sp.ct, col = DE.TAP_COL }
+end
+-- the Enchanting rank (skill line 333; 0 = unknown): a refused item is offered again after a skill-up
+function DE.rank()
+    local ok, p1, p2 = CALL(function() return GetProfessions() end)
+    if not ok then return 0 end
+    for _, i in pairs({ p1, p2 }) do
+        if type(i) == "number" then
+            local okI, _, _, rank, _, _, _, line = CALL(function() return GetProfessionInfo(i) end)
+            if okI and SN(function() return line end) == 333 then return SN(function() return rank end) or 0 end
+        end
+    end
+    return 0
+end
+function DE.key(e) return "b" .. tostring(e.b) .. ":" .. tostring(e.s) .. ":" .. tostring(e.id) end
+-- a worn slot `sl` the gear (equip location `loc`) could go in is EMPTY (an upgrade there: anything beats nothing); not the off hand while a
+-- two-hander is worn (it would take the two-hander off), nor a one-hander's off hand for a class that cannot dual wield
+function DE.emptyFor(loc)
+    for _, sl in ipairs(ACT.SLOTS[loc] or {}) do
+        local skip = sl == 17 and ((loc == "INVTYPE_WEAPON" and not ACT.dualWield()) or ACT.loc(invItemID(16)) == "INVTYPE_2HWEAPON")
+        if not skip and not invItemID(sl) then return true end
+    end
+    return false
+end
+-- the small green arrow (the user's pick 6a: "a small green arrow on tiles whose stat changes are all gains"): from the KEPT tooltip only (read
+-- ahead out of a fight): usable (no red line), and an empty slot it fits or the game's stat changes against a worn piece all gains
+function DE.up(b, s, id, loc)
+    local e = TIP.get("bag " .. b .. " " .. s .. " " .. id, b, s)
+    if not e or ACT.unusable(e.val) then return false end
+    return DE.emptyFor(loc) or ACT.allGain(e.val)
+end
+-- THE LIST, in bag order (the user's pick 4a)
+function DE.list()
+    local out, rk = {}, DE.rank()
+    for _, e in ipairs(layout()) do
+        local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
+        for s = 1, n do
+            if #out >= DE.MAX then return out end
+            local id = bagItemID(e.bag, s)
+            if id and not DE.refused[id .. ":" .. rk] then
+                local okI, _, _, _, loc, _, cls = CALL(function() return C_Item.GetItemInfoInstant(id) end)
+                loc = okI and S(function() return loc end) or nil
+                cls = okI and SN(function() return cls end) or nil
+                if (cls == 2 or cls == 4) and type(loc) == "string" and loc ~= "" and loc:byte(1) > 3 and not NOT_WORN[loc] then
+                    local info = infoAt(e.bag, s)
+                    local q = info and SN(function() return info.quality end) or nil
+                    if type(q) == "number" and q >= 2 then
+                        local row = { b = e.bag, s = s, id = id, q = q }
+                        if flag(info, "isLocked") == true then row.lk = true end
+                        if DE.up(e.bag, s, id, loc) then row.up = true end
+                        out[#out + 1] = row
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+-- the cursor on its ITEM when it is still listed, else the same place (clamped) and that item from now on; the room's ctl.bag / ctl.slot
+-- follow it (the tooltip, TIP). Returns its index (0 = an empty list)
+function DE.sync(list)
+    local i
+    if ctl.bkey then for n, e in ipairs(list) do if DE.key(e) == ctl.bkey then i = n; break end end end
+    if not i then
+        i = math.max(1, math.min(#list, ctl.bsel or 1))
+        ctl.bkey = list[i] and DE.key(list[i]) or nil
+    end
+    ctl.bsel = i
+    local e = list[i]
+    if e then ctl.bag, ctl.slot = e.b, e.s end
+    return e and i or 0
+end
+-- a cast or channel of the player's runs now (UnitCastingInfo / UnitChannelInfo: plain for "player"), or ours has not ended yet
+function DE.casting()
+    for _, f in ipairs({ function() return (UnitCastingInfo("player")) end, function() return (UnitChannelInfo("player")) end }) do
+        local n = S(f)
+        if type(n) == "string" and n ~= "" then return true end
+    end
+    return DE.cast ~= nil
+end
+-- the room's document while the grid is open (bags.ctl.bulk)
+function DE.doc()
+    local sp = DE.spell()
+    local list = DE.list()
+    local d = { n = sp.n, i = sp.i, ct = sp.ct, list = list, sel = DE.sync(list), busy = DE.casting() or nil, loot = DE.lootOpen or nil,
+                fight = InCombatLockdown() or nil, pick = KIT.on() or nil, back = ctl.deFrom and "grid" or "home" }
+    local c = DE.cast
+    if c then d.cast = { b = c.b, s = c.s, id = c.id } end
+    d.done, d.fail = DE.done, DE.fail
+    local g = DE.got
+    if g and GetTime() - g.at < DE.GOT_S then d.got = { n = g.n, items = g.items, auto = g.auto } end
+    d.ask = ctl.deAsk
+    if d.pick then d.cx = KIT.probe() end           -- the device check: sct / scti for the target-only cells
+    return d
+end
+-- open the grid: [fromGrid] = over the Bags grid (B goes back to it; the grid's cursor is kept), else over nothing (B goes Home)
+function DE.open(fromGrid, note)
+    ctl.deFrom = fromGrid and { bag = ctl.bag, slot = ctl.slot, zone = ctl.zone, barAt = ctl.barAt } or nil
+    ctl.mode = "bulk"; ctl.zone = nil; ctl.pick = nil; ctl.deAsk = nil; ctl.rare = nil; ctl.dest = nil
+    ctl.bsel = 1; ctl.bkey = nil
+    DE.resume = nil
+    report(note or "de-open")
+end
+-- the cells that would cast are cleared when the grid closes (out of combat: in a fight KIT.fightOff did it at the pull)
+function DE.clearCast()
+    if InCombatLockdown() then return end
+    for col = KIT.CELL0, KIT.CELL_LAST do
+        local st = KIT.cst[col]
+        if st and st.sh == "c" then KIT.clearCell(col) end
+    end
+end
+-- close it: back to the Bags grid it came from (its cursor where it was), else Home (the player's B: leave "B"); in a fight always Home
+function DE.close(note)
+    ctl.deAsk = nil
+    DE.clearCast()
+    DE.resume, DE.stopThen = nil, nil
+    local from = ctl.deFrom
+    ctl.deFrom = nil
+    if from and not InCombatLockdown() then
+        ctl.bag, ctl.slot = from.bag, from.slot
+        if from.zone == "bar" then ctl.zone = "bar"; ctl.barAt = from.barAt end
+        toGrid(note or "de-closed")
+        return
+    end
+    ctl.mode = "grid"
+    leave("B")
+end
+-- binv 19's tap landed (the grid's B with a pick waiting): now it closes
+function DE.stopped()
+    if not DE.stopThen then return end
+    DE.stopThen = nil
+    if ctl.on and ctl.mode == "bulk" then DE.close("cancelled") end
+end
+-- a refusal the app shows on the tile (red flash): [e] the item, else the cursor's
+function DE.refuse(e, why)
+    DE.failN = DE.failN + 1
+    e = e or {}
+    DE.fail = { n = DE.failN, b = e.b, s = e.s, id = e.id, why = why }
+    report("de-" .. why)
+end
+-- our disenchant ended badly ([why]: "cast" = it failed / was interrupted, "stop" = the player's B, "refused" = the game said it cannot)
+function DE.failed(t, why)
+    if t.ended then
+        if why == "refused" and DE.fail and DE.fail.id == t.id then DE.fail.why = "refused"; if ctl.on then report("de-refused") end end
+        return
+    end
+    t.ended = true
+    DE.cast = nil
+    DE.failN = DE.failN + 1
+    DE.fail = { n = DE.failN, b = t.b, s = t.s, id = t.id, why = why }
+    if ctl.on then report("de-" .. why) end
+end
+-- A on the item: the checks, then ONE secure tap on its own cell (the shape that can never equip)
+function DE.fire(e, asked)
+    if InCombatLockdown() then DE.refuse(e, "combat"); fightRefused(); return end
+    if DE.casting() then DE.refuse(e, "busy"); return end
+    if DE.lootOpen then DE.refuse(e, "loot"); return end
+    if bagItemID(e.b, e.s) ~= e.id then ctl.bkey = nil; report("de-moved"); return end      -- the asked item left its slot: nothing used
+    local sh = KIT.on() and KIT.pickShape() or "c"
+    local col = KIT.cellFor(e.b, e.s, e.id, sh, true)
+    if not col then report("de-nocell"); return end
+    DE.tap = { b = e.b, s = e.s, id = e.id, at = GetTime(), cell = col, sh = sh }
+    DE.stopping = nil
+    ctl.use = { cell = col, seq = ctl.seq + 1, ct = DE.spell().ct }        -- ct: the app's cast bar starts at the press (predicted)
+    report(asked and "de-go-asked" or "de-go")
+end
+-- the D-pad walks the grid as the app draws it: COLS a row, in list order
+function DE.move(key, list)
+    local n = #list
+    if n == 0 then return end
+    local i = DE.sync(list)
+    if key == "PADDLEFT" then i = math.max(1, i - 1)
+    elseif key == "PADDRIGHT" then i = math.min(n, i + 1)
+    elseif key == "PADDUP" then if i > COLS then i = i - COLS end
+    elseif key == "PADDDOWN" then
+        if i + COLS <= n then i = i + COLS
+        elseif math.ceil(i / COLS) < math.ceil(n / COLS) then i = n end              -- the last row is short: its last item
+    end
+    ctl.bsel, ctl.bkey = i, DE.key(list[i])
+    ctl.bag, ctl.slot = list[i].b, list[i].s
+end
+-- B (see the header: casting / a pick waiting / close)
+function DE.back()
+    if DE.casting() then
+        ctl.use = { stopcast = true, seq = ctl.seq + 1 }; DE.stopping = GetTime(); report("de-stop")
+        return
+    end
+    if KIT.on() then
+        ctl.use = { stop = true, seq = ctl.seq + 1 }; KIT.stopT = GetTime(); DE.stopThen = GetTime()
+        report("de-stopping")
+        C_Timer.After(DE.STOP_WAIT, function()
+            if DE.stopThen and GetTime() - DE.stopThen >= DE.STOP_WAIT - 0.05 then DE.stopThen = nil; if ctl.on and ctl.mode == "bulk" then DE.close("cancelled") end end
+        end)
+        return
+    end
+    DE.close(nil)
+end
+-- every press while the grid holds
+function DE.press(key)
+    local A, B = key == "PAD1", key == "PAD2"
+    -- the game's own question about this disenchant (END_BOUND_TRADEABLE): its A / B are passed (syncPass); one that still reaches the
+    -- room acts on nothing here (the pass is made again)
+    if (A or B) and KIT.asking() then ctl.passing = false; report("de-gameask-" .. key); return end
+    if ctl.deAsk then
+        -- the blue / purple ask (the user's pick 2a: "Disenchant?" A Yes / B No)
+        local a = ctl.deAsk
+        if A then ctl.deAsk = nil; DE.fire(a, true) elseif B then ctl.deAsk = nil; report("de-ask-no") end
+        return
+    end
+    local list = DE.list()
+    if key == "PADDUP" or key == "PADDDOWN" or key == "PADDLEFT" or key == "PADDRIGHT" then DE.move(key, list); report(nil); return end
+    if B then DE.back(); return end
+    if not A then return end
+    if InCombatLockdown() then DE.refuse(nil, "combat"); fightRefused(); return end
+    if #list == 0 then report("de-empty"); return end
+    local at
+    if ctl.bkey then for n, e in ipairs(list) do if DE.key(e) == ctl.bkey then at = n; break end end end
+    if not at then ctl.bkey = nil; report("de-moved"); return end   -- the item the cursor showed is gone: nothing used, drawn again
+    local e = list[at]
+    if e.lk then DE.refuse(e, "locked"); return end
+    if DE.casting() then DE.refuse(e, "busy"); return end
+    if DE.lootOpen then DE.refuse(e, "loot"); return end
+    if (e.q or 0) >= DE.ASK_Q then ctl.deAsk = { b = e.b, s = e.s, id = e.id, q = e.q }; report("de-ask"); return end
+    DE.fire(e, false)
+end
+-- a finger on a tile (36 + its bmv cell): the cursor there (no game action); the app sends A itself for the tile already under it
+function DE.cursorTo(bag, slot)
+    for n, e in ipairs(DE.list()) do
+        if e.b == bag and e.s == slot then ctl.bsel, ctl.bkey = n, DE.key(e); ctl.bag, ctl.slot = bag, slot; report(nil); return true end
+    end
+    return false
+end
+-- the strip's icon (the controller's A on it, or a finger: bmvq 27 then DE.TAP_COL): the grid over the Bags grid
+function DE.fromStrip()
+    if not DE.known() then report("de-unknown"); return end
+    if ctl.on and ctl.mode == "grid" and not ctl.pick then DE.open(true, "de-open") end
+end
+-- the loot window's slots right after our disenchant (the strip of what came; read-only)
+function DE.readGot(auto)
+    local n = SN(function() return GetNumLootItems() end) or 0
+    local items = {}
+    for i = 1, math.min(n, 8) do
+        local ok, tex, _, qty, _, q = CALL(function() return GetLootSlotInfo(i) end)
+        local icon = ok and SN(function() return tex end) or nil
+        if icon then items[#items + 1] = { i = icon, c = SN(function() return qty end) or 1, q = SN(function() return q end) } end
+    end
+    DE.gotN = DE.gotN + 1
+    DE.got = { n = DE.gotN, items = items, at = GetTime(), auto = auto or nil }
+end
+-- the game's refusal of our disenchant: its own words (the globals), else a message naming the spell ("... cannot be disenchanted")
+function DE.isRefusal(msg)
+    for _, k in ipairs(DE.REFUSALS) do
+        local g = S(function() return _G[k] end)
+        if type(g) == "string" and g ~= "" and g == msg then return true end
+    end
+    local n = DE.spell().n
+    if type(n) ~= "string" or #n < 6 then return false end
+    return msg:lower():find(n:lower():sub(1, #n - 2), 1, true) ~= nil
+end
+-- the grid lost the pad to the loot pop-up: it takes it back itself once the loot window closed (the ordinary take, the cursor kept)
+function DE.retake()
+    local r = DE.resume
+    if not r then return end
+    if GetTime() - r.at > DE.RESUME_S then DE.resume = nil; return end
+    if ctl.on then
+        DE.resume = nil
+        if ctl.mode ~= "bulk" then ctl.deFrom = r.from; ctl.mode = "bulk"; ctl.bkey, ctl.bsel = r.bkey, r.bsel; report("de-back") end
+        return
+    end
+    local cap = capture()
+    local okS, st = pcall(function() return cap and cap.state and cap.state() end)
+    if okS and type(st) == "table" and st.holder == nil and DE.take then
+        DE.take()
+        if ctl.on then
+            DE.resume = nil
+            ctl.deFrom = r.from; ctl.mode = "bulk"; ctl.bkey, ctl.bsel = r.bkey, r.bsel
+            report("de-back")
+            return
+        end
+    end
+    DE.tries = DE.tries + 1
+    if DE.tries <= 8 then C_Timer.After(0.25, DE.retake) else DE.resume = nil end
+end
+-- the events (read-only): our cast's start / end, the game's refusal, the loot window, the pull
+function DE.event(e, a1, a2, a3)
+    local now = GetTime()
+    if e == "LOOT_OPENED" then
+        DE.lootOpen = true
+        if DE.lastDone and now - DE.lastDone < DE.DONE_S then DE.readGot(S(function() return a1 end) == true) end
+        if ctl.on and ctl.mode == "bulk" then report("de-loot") end
+        return
+    end
+    if e == "LOOT_CLOSED" then
+        DE.lootOpen = nil
+        if DE.resume then DE.tries = 0; C_Timer.After(0.1, DE.retake) end
+        if ctl.on and ctl.mode == "bulk" then report("de-loot-closed") end
+        return
+    end
+    if e == "UI_ERROR_MESSAGE" then
+        local t = DE.tap
+        if not t or now - t.at > DE.REFUSE_S then return end
+        local msg = S(function() return a2 end)
+        if type(msg) ~= "string" or msg == "" or not WC.isPlain(msg) or not DE.isRefusal(msg) then return end
+        DE.refused[t.id .. ":" .. DE.rank()] = true                -- hidden for the session (until a skill-up)
+        DE.failed(t, "refused")
+        return
+    end
+    if SN(function() return a3 end) ~= DE.SPELL then return end
+    if e == "UNIT_SPELLCAST_START" then
+        local t = DE.tap
+        if t and not t.ended and now - t.at < 3 then DE.cast = t; if ctl.on and ctl.mode == "bulk" then report("de-casting") end end
+    elseif e == "UNIT_SPELLCAST_SUCCEEDED" then
+        local t = DE.cast or (DE.tap and now - DE.tap.at < 3 and DE.tap) or nil
+        DE.cast = nil
+        if t and not t.ended then
+            t.ended = true
+            DE.doneN = DE.doneN + 1
+            DE.done = { n = DE.doneN, b = t.b, s = t.s, id = t.id }
+            DE.lastDone = now
+            if ctl.on and ctl.mode == "bulk" then report("de-done") end
+        end
+    else                                                            -- FAILED / FAILED_QUIET / INTERRUPTED
+        local t = DE.cast or (DE.tap and now - DE.tap.at < 2 and DE.tap) or nil
+        if t then DE.failed(t, (DE.stopping and now - DE.stopping < 2) and "stop" or "cast") end
+    end
+end
+do
+    local df = CreateFrame("Frame")
+    for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_FAILED_QUIET",
+                         "UNIT_SPELLCAST_INTERRUPTED" }) do pcall(df.RegisterUnitEvent, df, e, "player") end
+    for _, e in ipairs({ "UI_ERROR_MESSAGE", "LOOT_OPENED", "LOOT_CLOSED" }) do pcall(df.RegisterEvent, df, e) end
+    pcall(df.SetScript, df, "OnEvent", function(_, e, ...) pcall(DE.event, e, ...) end)
 end
 
 -- ---------------------------------------------------------------- THE ROOM'S TOP STRIP (the user, 2026-10-09: "in bags, I am not able to move my
@@ -2202,6 +2761,7 @@ function BAR.items()
     local out = {}
     for _, e in ipairs(layout()) do out[#out + 1] = { k = "bag", id = e.bag } end
     out[#out + 1] = { k = "sort" }
+    if DE.known() then out[#out + 1] = { k = "de" } end            -- bags-de1: the Disenchant grid's icon (the user's pick 5a)
     out[#out + 1] = { k = "search" }
     return out
 end
@@ -2234,6 +2794,8 @@ function BAR.act(it)
         if not ok then ok = CALL(function() return SortBags() end) end
         WC.emit({ type = "cap", bagsSort = { ok = ok and true or false } })
         report(ok and "sorted" or "sort-refused")
+    elseif it.k == "de" then
+        DE.fromStrip()                                              -- bags-de1: the Disenchant grid (no game action)
     elseif it.k == "search" then
         -- THE COMPANION'S OWN KEYBOARD types (the user, 2026-10-09: "Yes, controller keyboard": Chat's, drawn by the app, fed by the app's
         -- own reader): Bags stands still meanwhile (mode "search": every press is the keyboard's, none acts here), and Start is held
@@ -2725,6 +3287,24 @@ function ACT.allLoss(t, slot)
     end
     return nil
 end
+-- bags-de1 (the user's pick 6a: "a small green arrow on tiles whose stat changes are all gains"): true when the game's stat changes against
+-- some worn piece are ALL gains (the gain colour, or a "+" line not in red); a "-" line, or none given, = not all gains
+function ACT.allGain(t)
+    if type(t) ~= "table" or type(t.cmp) ~= "table" then return false end
+    for _, c in ipairs(t.cmp) do
+        if type(c) == "table" and type(c.lines) == "table" and type(c.dn) == "number" and c.dn > 0 then
+            local n, all = #c.lines, true
+            for i = n - c.dn + 1, n do
+                local l = c.lines[i]
+                local gain = type(l) == "table" and type(l.t) == "string" and not l.t:match("^%s*%-")
+                    and (l.c == ACT.GAIN or (l.t:match("^%s*%+") ~= nil and l.c ~= ACT.RED))
+                if not gain then all = false; break end
+            end
+            if all then return true end
+        end
+    end
+    return false
+end
 -- gear worse than EVERY worn piece it could replace: a lower item level, or the game's stat changes all losses. An empty slot it
 -- could go in = not worse (it is a gain there)
 function ACT.worse(row, t)
@@ -2968,7 +3548,11 @@ local function onPress(key)
             if ctl.pick then return end                       -- in the hand: only A / B
             if not id then report("empty"); return end
             -- (review 2026-11-11, issue #126) a pick is on: never the bag cell (it EQUIPS gear); the list, on this item's row
-            if KIT.on() then ctl.mode = "target"; ctl.tsel = KIT.rowOf(ctl.bag, ctl.slot) or 1; ctl.tkey = nil; report("pick-item"); return end
+            if KIT.on() then
+                -- bags-de1: a Disenchant pick = the Disenchant grid, on this item when it is listed (never the bag cell: it EQUIPS gear)
+                if KIT.ctx() == "de" then local b0, s0 = ctl.bag, ctl.slot; DE.open(true, "de-pick"); DE.cursorTo(b0, s0); return end
+                ctl.mode = "target"; ctl.tsel = KIT.rowOf(ctl.bag, ctl.slot) or 1; ctl.tkey = nil; report("pick-item"); return
+            end
             -- a BAG: into the hand, and the cursor up to the bag bar to choose its slot (EQ, the user 2026-10-06)
             if EQ.slotsFor(id) then EQ.begin(id); return end
             -- USE is protected: the app taps this slot's secure cell once per new use.seq
@@ -2980,6 +3564,8 @@ local function onPress(key)
             -- the menu opens on its first row that can be used (Split, unless the stack is one item)
             ctl.mode = "menu"; ctl.menu = #MENU; menuStep(1); report(nil); return
         end
+    elseif ctl.mode == "bulk" then
+        DE.press(key)                                   -- bags-de1: the Disenchant grid
     elseif ctl.mode == "menu" then
         if key == "PADDUP" then menuStep(-1); report(nil)
         elseif key == "PADDDOWN" then menuStep(1); report(nil)
@@ -3100,6 +3686,18 @@ end
 
 local function onLost(why)
     if ACT.boxUp then ACT.boxUp = nil; if type(WC.spellsBindHosted) == "table" then pcall(WC.spellsBindHosted.abort, why) end end
+    -- bags-de1: the Disenchant grid lost the pad to a loot window's pop-up (the user's pick 3a: "our loot pop-up comes up ... then the grid
+    -- comes back"): it takes the pad back itself when the loot window closes, the cursor where it was (DE.retake). "left-lootwait": the app
+    -- keeps the Bags room on screen under the pop-up (never Home)
+    local wasBulk = ctl.on and ctl.mode == "bulk"
+    if wasBulk and why == "npc" and (DE.lootOpen or (DE.lastDone and GetTime() - DE.lastDone < DE.DONE_S)) then
+        DE.resume = { at = GetTime(), from = ctl.deFrom, bkey = ctl.bkey, bsel = ctl.bsel }
+        ctl.on = false; ctl.pick = nil; ctl.mode = "grid"; ctl.passing = false; ctl.zone = nil; ctl.deAsk = nil
+        ctl.left = "lootwait"
+        report("left-lootwait")
+        return
+    end
+    if wasBulk then DE.resume = nil; ctl.deFrom = nil; ctl.deAsk = nil end
     ctl.on = false; ctl.pick = nil; ctl.mode = "grid"; ctl.passing = false; ctl.zone = nil
     -- capture v8: a B Bags leaves to the game (pass) cannot reach the game in a fight, so the capture releases Bags with
     -- lost("B"): that is the player's own B (the app goes Home, and the 1 s check does not take it back)
@@ -3159,7 +3757,10 @@ local function tryTake(viaWindow)
     for _, n in ipairs(BAG_FRAMES) do if _G[n] then hide[#hide + 1] = n end end
     -- a press only ever arrives after the hand-over: the first one ends a queued / pending wait
     ctl.spec = { press = function(key) if ctl.pending then ctl.pending = nil; report("taken") end; onPress(key) end,
-                 lost = onLost, hide = hide }
+                 lost = onLost, hide = hide,
+                 -- bags-de1 (capture v21, Interact i161): the Disenchant grid keeps the pad through an AUTO loot window (the user's pick
+                 -- 3a: "the mats go straight to your bags"); an older capture ignores the field
+                 lootPass = function() return ctl.on and ctl.mode == "bulk" end }
     -- capture v9 (Interact i78): the game window's own close button for the generic / fight leave, and "the game's window
     -- opened" so the take pre-empts a room still holding (it gets lost("taken")). Only set where they are true, and only
     -- for a capture that knows them (an unknown or wrong field answers "bad spec")
@@ -3171,7 +3772,11 @@ local function tryTake(viaWindow)
     if ok and got then
         ctl.on = true; ctl.mode = "grid"; ctl.pick = nil; ctl.left = nil
         -- (review 2026-11-11, issue #126) taken while a pick is on (Disenchant cast from the bar): straight to its list, never the grid
-        if KIT.on() then ctl.mode = "target"; ctl.tsel = 1; ctl.tkey = nil end
+        if KIT.on() then
+            -- bags-de1: a Disenchant pick (the game opened its bags for it: any cast of the spell) = the Disenchant grid (B goes Home)
+            if KIT.ctx() == "de" then ctl.mode = "bulk"; ctl.deFrom = nil; ctl.bsel = 1; ctl.bkey = nil; ctl.deAsk = nil; DE.resume = nil
+            else ctl.mode = "target"; ctl.tsel = 1; ctl.tkey = nil end
+        end
         -- capture v11 (Interact i82): a take that finds another holder is QUEUED (ok, "queued"), granted when that holder
         -- lets go; no presses before the hand-over. Bags shows the room meanwhile and says so in its note
         ctl.pending = (why == "pending" or why == "queued") or nil
@@ -3196,6 +3801,7 @@ syncDoors = function()
     doors.stale = false
 end
 -- the doors can be tapped: built, switched to the windows' state, and not in a fight
+DE.take = function() tryTake() end            -- bags-de1: the grid's own take back after a loot window (DE.retake)
 function WC._bagsDoorsLive()
     return doors.open ~= nil and doors.close ~= nil and not doors.stale and not InCombatLockdown()
 end
@@ -3211,6 +3817,9 @@ local function onBagsHidden()
     if ctl.eqPutAt and GetTime() - ctl.eqPutAt < EQ.CHURN then syncPass(); return end
     -- the app's close door (the room left by touch / the bar): a non-B leave
     if doors.closingAt and GetTime() - doors.closingAt < 1 then doors.closingAt = nil; leave("room"); return end
+    -- bags-de1: the Disenchant grid stays: the game closes its bags after each pick when they were closed before the cast
+    -- (containerframe.lua wasBagOpenBeforeItemTargeting), never the player's leave
+    if ctl.mode == "bulk" then syncPass(); return end
     -- the game closed its windows itself: with B passed to it, that was the player's B
     leave(ctl.passing and "B" or "closed")
 end
@@ -3306,6 +3915,11 @@ function WC._bagsShutTap(col)
     ctl.shutAt = nil
     if col == BAR.SEARCH_DONE_COL then BAR.searchDone(); return true end      -- the app's keyboard closed
     if col == ACT.COMPARE_COL then ACT.menuPick("compare"); return true end   -- bags-act1: the menu's Compare row by touch
+    if col == DE.TAP_COL then                                                  -- bags-de1: a finger on the strip's Disenchant icon
+        if not ctl.on then tryTake() end
+        if WC._bagsHeldNow() then DE.fromStrip() end
+        return true
+    end
     for _, e in ipairs(layout()) do
         if e.bag == col then
             report(BAR.toggle(col))
@@ -3338,6 +3952,8 @@ function WC._bagsCursorTap(bag, slot)
         end
         return true
     end
+    -- bags-de1: a finger on a tile of the Disenchant grid: its cursor there (no game action; the app's tap on it again is A)
+    if ctl.mode == "bulk" then if WC._bagsHeldNow() and not ctl.deAsk then DE.cursorTo(bag, slot) end; return true end
     if ctl.mode ~= "grid" then return true end    -- a menu / dialog is open: its own buttons act
     if not bagIndex(bag) then return true end
     ctl.bag, ctl.slot = bag, slot
@@ -3371,7 +3987,7 @@ function WC._bagsTouch(col)
     if col == TOUCH_IN then
         tryTake(ctl.open)                   -- the game's bags already open: that is the window's take
     elseif col == TOUCH_OUT then
-        if ctl.on then leave("room") end
+        if ctl.on then leave("room") else DE.resume = nil end       -- bags-de1: the room left under a loot pop-up: no take back
     elseif col == FREE then
         if ctl.on then leave("free"); return end
         -- the capture may still name Bags while Bags thinks it let go: let go there too (release refuses any other holder)

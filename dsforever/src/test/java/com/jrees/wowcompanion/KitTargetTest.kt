@@ -24,6 +24,17 @@ class KitTargetTest {
         assertNull(KitTarget.ofUse(JSONObject("""{"cell":3,"seq":7}""")))            // never a worn-slot cell by a stray number
     }
 
+    /** bags-de1 (the Disenchant grid, 2026-11-16: "It stays open after each one; B closes it"): B during a cast = binv 39 (/stopcasting);
+     *  the bag cells are 20..38, so a stray cell number can never be the stop */
+    @Test fun theGridsStopAndItsCells() {
+        assertEquals("binv" to KitTarget.STOPCAST_COL, KitTarget.ofUse(JSONObject("""{"stopcast":true,"seq":9}""")))
+        assertEquals(39, KitTarget.STOPCAST_COL)
+        assertEquals("binv" to 38, KitTarget.ofUse(JSONObject("""{"cell":38,"seq":9,"ct":3000}""")))
+        assertNull(KitTarget.ofUse(JSONObject("""{"cell":39,"seq":9}""")))
+        assertNull(KitTarget.ofRow(JSONObject("""{"src":"bag","cell":39}""")))
+        assertEquals("binv" to KitTarget.STOP_COL, KitTarget.ofUse(JSONObject("""{"stop":true,"stopcast":true,"seq":9}""")))   // a pick first
+    }
+
     /** bags-kit3 (the user's pick, 2026-11-13: "the Character room taps a slot only if it is a matching row") */
     @Test fun theCharacterRoomTapsOnlyAListedSlot() {
         val doc = JSONObject("""{"type":"itarget","on":true,"ctx":"cond","wornOk":",5,10,"}""")

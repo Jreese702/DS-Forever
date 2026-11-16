@@ -2,7 +2,9 @@
 sharpening stones ... from both the bags room as well as the charactor room"). Loads the real WowCompanion/Bags.lua in Lua 5.1 with
 stand-in game functions (anything not given is a harmless stub) and checks the pieces the app relies on:
   - the secure row "binv": 19 cells, type item, item = the slot (the game's /use <slot>: a pick's target)
-  - binv cols 20..39: the pick's BAG GEAR targets, type macro "/use <bag> <slot>" (issue #126: the bag cell's "item" action equipped)
+  - binv cols 20..38: the bag items' target cells (issue #126; bags-de1: shape "t" = no type, only target-bag / target-slot while the
+    game can target an item; "u" = the old "/use <bag> <slot>" only as the device fallback; never a secure "item" action that equips)
+  - binv col 39 = /stopcasting (bags-de1); KIT.isCurrent / KIT.de / spellDoc ask C_Spell first, the old globals second
   - Disenchant (SpellIsTargeting + IsCurrentSpell 13262): only the bags' weapons / armour of quality >= 2 (issues #126 / #39)
   - binv col 19 stops the pick with the game's own /stopspelltarget (SpellStopTargeting is FORBIDDEN to add-ons: the user's error)
   - the pick watcher: an "itarget" document when the game starts / ends "pick an item", the used item named and learned
@@ -96,11 +98,16 @@ check(b is not None and b.n == 40, "the secure row binv: 19 slots + the stop cel
 # the pad builds every cell (TapPad's init), so the bag-gear cells exist as on the device
 L.execute('''CELLS = {}
 for col = 20, 39 do
-    local c = { a = {} }; function c:SetAttribute(k, v) self.a[k] = v end
+    local c = { a = {}, hooks = {} }; function c:SetAttribute(k, v) self.a[k] = v end
+    function c:HookScript(ev, fn) self.hooks[ev] = fn end
     CELLS[col] = c; SECURE.binv.init(c, col)
 end''')
-check(L.eval('CELLS[20].a.type') == 'macro' and L.eval('CELLS[20].a.macrotext') == '',
-      "binv col 20+ = a secure macro cell, empty until a pick lists bag gear", (L.eval('CELLS[20].a.type'), L.eval('CELLS[20].a.macrotext')))
+check(L.eval('CELLS[20].a.type') is None and L.eval('CELLS[20].a.macrotext') is None and L.eval('CELLS[38].a["target-bag"]') is None,
+      "bags-de1: binv col 20..38 = cleared cells (no action, no target) until a pick lists bag gear",
+      (L.eval('CELLS[20].a.type'), L.eval('CELLS[20].a.macrotext')))
+check(L.eval('CELLS[39].a.type') == 'macro' and L.eval('CELLS[39].a.macrotext') == '/stopcasting',
+      "bags-de1: binv col 39 = the game's /stopcasting (the Disenchant grid's B during a cast)", L.eval('CELLS[39].a.macrotext'))
+check(L.eval('CELLS[20].hooks.PreClick') is not None, "bags-de1: each target cell has its PreClick guard (the item still in its slot)")
 L.execute('BTN = { a = {} }; function BTN:SetAttribute(k, v) self.a[k] = v end; SECURE.binv.init(BTN, 4)')
 check(L.eval('BTN.a.type') == 'item' and L.eval('BTN.a.item') == '5', "binv col 4 = type item, item \"5\" (the chest: the game's /use 5)",
       (L.eval('BTN.a.type'), L.eval('BTN.a.item')))
@@ -268,11 +275,11 @@ check([(r.src, r.s) for r in rows] == [('bag', 5), ('bag', 6)],
       "Disenchant lists ONLY the bags' weapons / armour of quality >= 2 (no worn gear, no consumables, no white belt)",
       [(r.src, r.slot if r.src == 'inv' else r.s) for r in rows])
 cells = [r.cell for r in rows]
-check(all(r.ok is True for r in rows) and all(c is not None and 20 <= c <= 39 for c in cells) and len(set(cells)) == 2,
-      "each row offered, on its own target cell (binv 20..39)", [(r.ok, r.cell) for r in rows])
+check(all(r.ok is True for r in rows) and all(c is not None and 20 <= c <= 38 for c in cells) and len(set(cells)) == 2,
+      "each row offered, on its own target cell (binv 20..38)", [(r.ok, r.cell) for r in rows])
 mt = lambda c: L.eval('CELLS[%d].a.macrotext' % c)
 check(all(mt(r.cell) == '/use 0 %d' % r.s for r in rows),
-      "the cells are the game's /use <bag> <slot> (the item-target click), never the bag cell's equip", [mt(c) for c in cells])
+      "bags-de1 device fallback (SpellCanTargetItem / ...ID both false, Disenchant current): the old /use <bag> <slot> cells", [mt(c) for c in cells])
 check(all(L.eval('CELLS[%d].a.type' % c) == 'macro' and L.eval('CELLS[%d].a.item' % c) is None for c in cells),
       "a target cell has no secure item attribute (no equip path)")
 vest_cell = rows[1].cell
@@ -314,14 +321,89 @@ lst = L.eval('WowCompanion._kit.list()')
 bagrows = [lst[i + 1] for i in range(len(lst)) if lst[i + 1].src == 'bag']
 check(bagrows and all(r.cell is not None and r.cell >= 20 for r in bagrows), "a kit's bag gear rows have target cells too",
       [(r.s, r.cell) for r in bagrows])
-# THE ROOM (review 2026-11-11, issue #126): Disenchant cast from the bar, THEN the Bags room taken: straight to the list, never the grid
-# (whose X / Use tap the bag's own cell, and that EQUIPS gear)
+# bags-de1: a kit's pick (SpellCanTargetItem true): its bag gear cells are TARGET ONLY ("t"): no type, no macro, target-bag / target-slot
+lst = L.eval('WowCompanion._kit.list()')
+bagrows = [lst[i + 1] for i in range(len(lst)) if lst[i + 1].src == 'bag']
+at = lambda c, k: L.eval('CELLS[%d].a["%s"]' % (c, k))
+check(bagrows and all(at(r.cell, 'type') is None and at(r.cell, 'macrotext') is None and at(r.cell, 'target-bag') == 0
+                      and at(r.cell, 'target-slot') == r.s for r in bagrows),
+      "bags-de1: a waiting pick's bag cells are target only (no type: a click answers the pick, never casts, uses or equips)",
+      [(at(r.cell, 'type'), at(r.cell, 'target-bag'), at(r.cell, 'target-slot')) for r in bagrows])
+check(all(L.eval('WowCompanion._kit.cst[%d].sh' % r.cell) == 't' for r in bagrows), "bags-de1: their shape is \"t\"")
+# the PreClick guard: the slot no longer holds the cell's item -> the cell is cleared just before the click (nothing happens)
+belt = bagrows[0]
+L.execute('BAG[0][2] = 4240; EQUIP[4240] = "INVTYPE_WAIST"')       # another belt in the slot now
+L.eval('CELLS[%d].hooks.PreClick' % belt.cell)(L.eval('CELLS[%d]' % belt.cell))
+check(at(belt.cell, 'target-bag') is None and L.eval('WowCompanion._kit.void.why') == 'moved',
+      "bags-de1: PreClick: the slot holds another item -> the cell cleared before the click ('moved')", L.eval('WowCompanion._kit.void.why'))
+L.execute('BAG[0][2] = 4239')
+# a "u" cell (the device fallback) whose pick has ended: voided at the click (never a plain /use: that would EQUIP)
+L.execute('PICKING = false; TARGETING, CURRENT = true, 13262; WowCompanion._kit.byKey = {}; WowCompanion._kit.cst = {}')
+L.execute('BAG[0][5] = 5001; C_Container.GetContainerNumSlots = function(b) return b == 0 and 6 or 0 end; WowCompanion._bagsLayout = { { bag = 0, slots = 6 } }')
+lst = L.eval('WowCompanion._kit.list()')
+ucell = lst[1].cell
+check(L.eval('WowCompanion._kit.cst[%d].sh' % ucell) == 'u' and mt(ucell) == '/use 0 5', "the fallback cell: \"u\", /use 0 5", mt(ucell))
+L.execute('TARGETING = false')
+L.eval('CELLS[%d].hooks.PreClick' % ucell)(L.eval('CELLS[%d]' % ucell))
+check(at(ucell, 'type') is None and at(ucell, 'macrotext') is None and L.eval('WowCompanion._kit.void.why') == 'nopick',
+      "bags-de1: a \"u\" cell clicked after its pick ended: voided ('nopick'), never a plain /use that equips", (at(ucell, 'type'), mt(ucell)))
+L.execute('TARGETING = true')
+lst = L.eval('WowCompanion._kit.list()')
+ucell = lst[1].cell
+check(mt(ucell) == '/use 0 5', "... the list built again sets it again")
+L.eval('CELLS[%d].hooks.PreClick' % ucell)(L.eval('CELLS[%d]' % ucell))
+check(mt(ucell) == '/use 0 5', "... and while the pick is on its click is left alone (it targets)")
+# PLAYER_REGEN_DISABLED: every cell that could cast or /use is cleared; "t" cells, binv 19 and 39 stay
+L.execute('WowCompanion._kit.setCell(30, 0, 6, 5002, "t"); WowCompanion._kit.setCell(31, 0, 5, 5001, "c")')
+check(at(31, 'type') == 'spell' and at(31, 'spell') == 13262 and at(31, 'target-bag') == 0 and at(31, 'target-slot') == 5,
+      "bags-de1: a \"c\" cell = type spell 13262 + target-bag / target-slot (the game casts, then targets)", (at(31, 'type'), at(31, 'spell')))
+L.execute('WowCompanion._kit.fightOff()')
+check(at(ucell, 'macrotext') is None and at(31, 'type') is None and at(30, 'target-slot') == 6
+      and L.eval('CELLS[39].a.macrotext') == '/stopcasting' and L.eval('BTN2.a.macrotext') == '/stopspelltarget',
+      "bags-de1: the pull clears the \"u\" / \"c\" cells; the \"t\" cell, binv 19 and binv 39 stay live", (mt(ucell), at(31, 'type'), at(30, 'target-slot')))
+L.execute('WowCompanion._kit.clearCell(30); TARGETING, CURRENT = false, nil; BAG[0][5] = nil; WowCompanion._kit.byKey = {}')
+L.execute('C_Container.GetContainerNumSlots = function(b) return b == 0 and 4 or 0 end; WowCompanion._bagsLayout = { { bag = 0, slots = 4 } }')
+
+# bags-de1: C_Spell first, the old globals second (design: "case 1: C_Spell only, globals nil, GetTargetSpellID 13262 gives ctx de")
+L.execute(r"""
+OLD = { SpellIsTargeting = SpellIsTargeting, IsCurrentSpell = IsCurrentSpell, GetSpellInfo = GetSpellInfo, GetTargetSpellID = C_Spell.GetTargetSpellID }
+IsCurrentSpell = nil; GetSpellInfo = nil
+C_Spell.GetTargetSpellID = function() return 13262 end
+C_Spell.GetSpellInfo = function(id) if id == 13262 then return { name = "Disenchant", iconID = 132853, castTime = 3000 } end end
+TARGETING, PICKING = false, false
+""")
+check(L.eval('WowCompanion._kit.ctx()') == 'de', "case 1 (C_Spell only, globals nil): GetTargetSpellID 13262 = ctx de", L.eval('WowCompanion._kit.ctx()'))
+kd = L.eval('WowCompanion._kit.kitDoc()')
+check(kd is not None and kd.name == 'Disenchant' and kd.icon == 132853 and kd.ct == 3000, "case 1: the spell's name / icon / cast time from C_Spell.GetSpellInfo",
+      kd and (kd.name, kd.icon, kd.ct))
+L.execute(r"""
+C_Spell.GetTargetSpellID = nil; TARGETING = true
+C_Spell.IsCurrentSpell = function(v) return v == 13262 end
+""")
+check(L.eval('WowCompanion._kit.de()') is True, "C_Spell.IsCurrentSpell (no global IsCurrentSpell): Disenchant current while targeting")
+L.execute(r"""
+C_Spell.IsCurrentSpell = nil; C_Spell.GetSpellInfo = nil
+IsCurrentSpell = OLD.IsCurrentSpell; GetSpellInfo = OLD.GetSpellInfo; CURRENT = 13262
+""")
+check(L.eval('WowCompanion._kit.ctx()') == 'de' and L.eval('WowCompanion._kit.kitDoc().name') == 'Disenchant',
+      "case 2 (the old globals only): IsCurrentSpell / GetSpellInfo still answer", L.eval('WowCompanion._kit.ctx()'))
+L.execute('C_Spell.IsCurrentSpell = function(v) return false end; CURRENT = "Disenchant"')
+check(L.eval('WowCompanion._kit.de()') is True, "a current spell known only by its NAME (C_Spell answers false for the id): still Disenchant")
+L.execute('C_Spell.IsCurrentSpell = nil; TARGETING, CURRENT = false, nil; C_Spell.GetTargetSpellID = OLD.GetTargetSpellID')
+cx = L.eval('WowCompanion._kit.probe()')
+check(cx.sct is False and cx.scti is False, "bags-de1: the probe carries sct / scti (the device check)", (cx.sct, cx.scti))
+
+# THE ROOM (review 2026-11-11, issue #126): a kit's pick (cond), THEN the Bags room taken: straight to the list, never the grid (whose X /
+# Use tap the bag's own cell, and that EQUIPS gear). bags-de1: a DISENCHANT pick opens the Disenchant grid instead (tools/test_disenchant.py)
 L.execute(r'''
 for _, n in ipairs({ "MerchantFrame", "GossipFrame", "QuestFrame", "BankFrame", "MailFrame", "TradeFrame", "AuctionHouseFrame",
                      "GuildBankFrame", "ClassTrainerFrame", "CharacterFrame" }) do _G[n] = { IsShown = function() return false end } end
 WowCompanion.capture = { version = 11, take = function() return true end, pass = function() return true end,
                          release = function() return true end, state = function() return { holder = "bags" } end }
-TARGETING, CURRENT, PICKING = true, 13262, false
+BAG[0][5] = 5001; BAG[0][6] = 5002
+C_Container.GetContainerNumSlots = function(b) return b == 0 and 6 or 0 end; WowCompanion._bagsLayout = { { bag = 0, slots = 6 } }
+PICKING, COND, CONDOK = true, true, { ["bag0:5"] = true, ["bag0:6"] = true }
+NOW = NOW + 30
 ''')
 step()                                                             # the pick started before the room (KIT.was = true)
 L.eval('WowCompanion._bagsTouch')(29)                             # the room taken (TOUCH_IN)
@@ -340,26 +422,18 @@ check(doc.mode == 'target' and doc.use.stop is True and doc.use.seq == seq0,
 L.eval('WowCompanion._bagsTouch')(33); L.execute('NOW = NOW + 2')
 step()
 check(L.eval('WowCompanion._bagsCtlDoc()').mode == 'target', "the pick still on after the stop's moment: back on the list (every step)")
-L.execute('TARGETING, CURRENT = false, nil')
+L.execute('PICKING = false')
 step()
 check(L.eval('WowCompanion._bagsCtlDoc()').mode == 'grid', "the pick ended: the grid")
-L.execute(r'''
-BAG[0][5] = nil; BAG[0][6] = nil; WowCompanion._bagsLayout = { { bag = 0, slots = 4 } }
-C_Container.GetContainerNumSlots = function(b) return b == 0 and 4 or 0 end
-''')
 
 # bags-kit3 review: the list can change under the cursor (the game's item context came late, loot); A answers the ITEM the cursor
 # is on, never the row number: a gone item is not used ("pick-moved"), the list is drawn again
-L.execute(r"""
-TARGETING, CURRENT, PICKING, COMBAT = true, 13262, false, false
-BAG[0][5] = 5001; BAG[0][6] = 5002
-C_Container.GetContainerNumSlots = function(b) return b == 0 and 6 or 0 end; WowCompanion._bagsLayout = { { bag = 0, slots = 6 } }
-""")
+L.execute('PICKING = true; NOW = NOW + 2')
 step()
 doc = L.eval('WowCompanion._bagsCtlDoc()')
 tl = doc.target.list
 check(doc.mode == 'target' and [tl[i + 1].s for i in range(len(tl))] == [5, 6] and doc.target.sel == 1,
-      "review: Disenchant list sword, vest; cursor on the sword", doc.mode)
+      "review: a kit's list sword, vest; cursor on the sword", (doc.mode, [tl[i + 1].s for i in range(len(tl))]))
 vest_cell = tl[2].cell
 L.eval('WowCompanion._bagsTouch')(38)                             # down: the vest
 check(L.eval('WowCompanion._bagsCtlDoc()').target.sel == 2, "review: down puts the cursor on the vest")
@@ -368,8 +442,8 @@ L.eval('WowCompanion._bagsTouch')(31)                             # A
 doc = L.eval('WowCompanion._bagsCtlDoc()')
 check(doc.note == 'apply' and doc.use.cell == vest_cell,
       "review: a row above leaves, A still answers the vest (its own cell), not the row number", (doc.note, doc.use and dict(doc.use)))
-L.execute('TARGETING, CURRENT = false, nil'); step()
-L.execute('TARGETING, CURRENT = true, 13262; BAG[0][5] = 5001; NOW = NOW + 2'); step()
+L.execute('PICKING = false'); step()
+L.execute('PICKING = true; BAG[0][5] = 5001; NOW = NOW + 2'); step()
 doc = L.eval('WowCompanion._bagsCtlDoc()')
 check(doc.mode == 'target' and doc.target.sel == 1 and doc.target.list[1].s == 5, "review: a new pick, cursor on the sword", doc.mode)
 seq0 = doc.use and doc.use.seq
@@ -382,10 +456,10 @@ check(doc.note == 'pick-moved' and (doc.use and doc.use.seq) == seq0,
 check(doc.target.sel == 1 and doc.target.list[1].s == 6, "review: the list drawn again, cursor on the vest")
 L.eval('WowCompanion._bagsTouch')(31)
 doc = L.eval('WowCompanion._bagsCtlDoc()')
-check(doc.note == 'apply' and doc.use.cell is not None and L.eval('CELLS[%d].a.macrotext' % doc.use.cell) == '/use 0 6',
-      "review: A again (the vest now drawn): the vest", (doc.note, doc.use and dict(doc.use)))
+check(doc.note == 'apply' and doc.use.cell is not None and at(doc.use.cell, 'target-slot') == 6 and at(doc.use.cell, 'type') is None,
+      "review: A again (the vest now drawn): the vest's target-only cell", (doc.note, doc.use and dict(doc.use)))
 # the pick's type changes while the list is up: the room reports (the app draws the filtered list)
-L.execute('TARGETING, CURRENT = false, nil'); step()
+L.execute('PICKING = false'); step()
 L.execute(r"""
 PICKING = true; ENCHANTING = false; COND = false; NOW = NOW + 2
 """)
@@ -396,10 +470,12 @@ doc = L.eval('WowCompanion._bagsCtlDoc()')
 check(doc.mode == 'target' and int(doc.seq) > seqA and doc.target.cx.ctx == 'cond',
       "review: spell -> cond mid-pick: reported again (the filtered list)", (doc.mode, doc.seq, seqA))
 L.execute(r"""
-COND = false; PICKING = false; BAG[0][6] = nil; WowCompanion._bagsLayout = { { bag = 0, slots = 4 } }
+COND = false; PICKING = false; BAG[0][5] = nil; BAG[0][6] = nil; WowCompanion._bagsLayout = { { bag = 0, slots = 4 } }
 C_Container.GetContainerNumSlots = function(b) return b == 0 and 4 or 0 end
 """)
 step()
+check(L.eval('next(WowCompanion._kit.byKey)') is None and all(L.eval('WowCompanion._kit.cst[%d]' % c) is None for c in range(20, 39)),
+      "bags-de1: the pick ended: its cells let go AND cleared (no target left behind)")
 L.execute('PICKING = true'); step()                       # a pick on, so the end below is a real change
 
 # the end of the pick, and the stop

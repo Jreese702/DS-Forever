@@ -11,17 +11,24 @@ import org.json.JSONObject
  * worn instead of using it, so the pick's target was equipped. Bags.lua gives each bag gear row its own cell, binv 20..39 (`cell`, a
  * "/use <bag> <slot>": the item-target click). Worn gear stays binv slot - 1; a bag row without a cell (a consumable for Feed Pet) the
  * bag's own cell, which for a consumable is its right-click.
+ *
+ * bags-de1 (the Disenchant grid; the user, 2026-11-16: "It stays open after each one; B closes it"): the bag cells are binv 20..38 now
+ * (each target-only, or the grid's cast + target: Bags.lua KIT.cellFor, never an equip), and binv 39 is the game's /stopcasting - the
+ * grid's B during a cast (`stopcast`).
  */
 object KitTarget {
     const val ROW = "binv"
     const val STOP_COL = 19
     const val CELL0 = 20
+    const val CELL_LAST = 38
+    /** bags-de1: binv 39 = /stopcasting */
+    const val STOPCAST_COL = 39
 
     /** a row of the pick's list -> (pad row, column); null = nothing to tap */
     fun ofRow(e: JSONObject): Pair<String, Int>? {
         if (e.optString("src") == "inv") return e.optInt("slot", 0).takeIf { it >= 1 }?.let { ROW to it - 1 }
         val cell = e.optInt("cell", -1)
-        if (cell >= CELL0) return ROW to cell
+        if (cell in CELL0..CELL_LAST) return ROW to cell
         val bag = e.optInt("bag", -1); val s = e.optInt("s", 0)
         return if (bag >= 0 && s >= 1) "bag$bag" to s - 1 else null
     }
@@ -31,8 +38,9 @@ object KitTarget {
         val inv = u.optInt("inv", 0)
         if (inv >= 1) return ROW to inv - 1
         if (u.optBoolean("stop")) return ROW to STOP_COL
+        if (u.optBoolean("stopcast")) return ROW to STOPCAST_COL          // bags-de1: the Disenchant grid's B during a cast
         val cell = u.optInt("cell", -1)
-        if (cell >= CELL0) return ROW to cell
+        if (cell in CELL0..CELL_LAST) return ROW to cell                  // never the stopcasting cell by a stray number
         return null
     }
 
