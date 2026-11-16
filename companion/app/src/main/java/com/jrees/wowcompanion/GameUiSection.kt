@@ -118,7 +118,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             if (s.show) "On: hostile nameplates glow yellow, orange, then red as you near their aggro range" else "Off: no tint on the nameplates")
     }
     private fun allRows(): List<GameUi.Row> = when (part) {
-        Part.HUD -> listOfNotNull(GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow())
+        // (HUD height and HUD scale are the layout editor's now: Settings > Top screen > Layout)
+        Part.HUD -> listOfNotNull(GameUi.hudRow(), GameUi.petRow(), GameUi.hudWidthRow())
         Part.TARGET -> listOfNotNull(GameUi.ufTargetRow(), GameUi.ufHpRow(), GameUi.ufTotRow(), ringsRow(), GameUi.nameplatesRow(),
             GameUi.friendlyPlatesRow())
         Part.PARTY -> listOfNotNull(GameUi.ufPartyRow(), GameUi.partyRow())

@@ -139,6 +139,10 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private var btnDeferred = RectF()
     /** Route data's "Review paths" (b-safepath-review): the host opens SafePath's review over this room */
     private var btnRouteReview = RectF()
+    /** Top screen > Layout > Edit layout (the layout editor; the user, 2026-11-16): the host opens its page over this room */
+    private var btnLayout = RectF()
+    var onEditLayout: () -> Unit = {}
+        get() = hub?.onEditLayout ?: field
     var onRouteReview: () -> Unit = {}
         get() = hub?.onRouteReview ?: field
     private var deferredOpen = false
@@ -275,7 +279,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
             segClassRPick.toList() +
             segLimit.toList() + listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() +
-            listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred, btnRouteReview) + addonFocus() + sbHits.map { it.first })
+            listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred, btnRouteReview, btnLayout) + addonFocus() + sbHits.map { it.first })
             .filter { !it.isEmpty }.map { RectF(it) }.let { controls ->
                 // ... and a row with nothing to press (an add-on's greyed module before its install, a status line) is still a stop:
                 // the cursor walks every row it can see, A there does nothing
@@ -302,7 +306,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty(); addonSettingsBtn.clear()
         btnGuidePending.setEmpty(); for (r in segGuide) r.setEmpty()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
-                         btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart, btnSwapRestart, btnWinIdRestart)) r.setEmpty()
+                         btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart, btnSwapRestart, btnWinIdRestart,
+                         btnLayout)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segPauseOver, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
                          segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segLight, segGameAcct, segSwap, segWinId,
                          segLimit, segFg, segMult, segPerf))
@@ -362,6 +367,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.WINDOWS_ID -> if (winIdRestart()) ROW_H + 10f + ROW_H else ROW_H
         SettingsTabs.Block.HELP -> ROW_H + 10f + ROW_H
         SettingsTabs.Block.STREAMING -> ROW_H
+        // the layout editor: once the add-on set has it (its "lay" document came)
+        SettingsTabs.Block.LAYOUT -> if (LayoutModel.Live.available()) ROW_H else 0f
         // zoom out, zoom in, World map (Quest tracking moved to Add-ons > Polestar, 2026-11-12)
         SettingsTabs.Block.MAP -> 3 * ROW_H + 2 * 10f
         SettingsTabs.Block.QUEST_TRACKING -> ROW_H
@@ -461,6 +468,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segIndoor[1].contains(x, y) -> Settings.indoorBuild = false
             btnDeferred.contains(x, y) -> { deferredOpen = !deferredOpen; requestLayout(); invalidate() }
             btnRouteReview.contains(x, y) -> onRouteReview()
+            btnLayout.contains(x, y) -> onEditLayout()
             segPauseOpen[0].contains(x, y) -> HomeSettings.pauseTap = true
             segPauseOpen[1].contains(x, y) -> HomeSettings.pauseTap = false
             segPausePick[0].contains(x, y) -> HomeSettings.pausePickA = true
@@ -583,6 +591,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 SettingsTabs.Block.WINDOWS_ID -> drawWindowsId(c, y)
                 SettingsTabs.Block.HELP -> drawHelp(c, y)
                 SettingsTabs.Block.STREAMING -> drawStreaming(c, y)
+                SettingsTabs.Block.LAYOUT -> drawLayout(c, y)
                 SettingsTabs.Block.MAP -> drawMap(c, y)
                 SettingsTabs.Block.QUEST_TRACKING -> { drawQuestTrackingRow(c, y); y + ROW_H }
                 SettingsTabs.Block.POLESTAR_TOP -> drawPsTop(c, y)
@@ -861,6 +870,16 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             b
         }
         return y + ROW_H
+    }
+
+    /** Top screen > Layout: the one row that opens the layout editor's page (LayoutView) */
+    private fun drawLayout(c: Canvas, top: Float): Float {
+        btnLayout = row(c, top, "Edit layout", "Move and size the top screen's pieces.", enabled = true) { b ->
+            val r = RectF(b.right - 260f, b.centerY() - 34f, b.right - 16f, b.centerY() + 34f)
+            UiKit.button(c, r, "Open", UiKit.Button.UP)
+            r
+        }
+        return top + ROW_H
     }
 
     // ---- MAP (Rooms): the small map's two widths

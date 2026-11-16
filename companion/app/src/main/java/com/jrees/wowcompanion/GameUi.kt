@@ -40,6 +40,9 @@ object GameUi {
     @Volatile private var prdSel: String? = null
     @Volatile private var wMin = 180; @Volatile private var wMax = 400; @Volatile private var wStep = 20; @Volatile private var wDef = 280
     @Volatile private var sMin = 70; @Volatile private var sMax = 160; @Volatile private var sStep = 10; @Volatile private var sDef = 100
+    /** hub55 (the layout editor; Trail prd18): the layout owns the HUD's height and scale - the tap loop leaves them alone (the width
+     *  stays a row); false = an older add-on (the loop as before) */
+    @Volatile var prdLay = false; private set
     private var hudHTapAt = 0L
     private var hudHTapN = -1
     /** the character now ("Name-Realm", the host's from the padmap); null = not known yet: no HUD row */
@@ -512,7 +515,8 @@ object GameUi {
             prdSel = if (prd.has("sel")) prd.optString("sel") else null
             wMin = prd.optInt("wmin", wMin); wMax = prd.optInt("wmax", wMax); wStep = prd.optInt("wstep", wStep).coerceAtLeast(1); wDef = prd.optInt("wdef", wDef)
             sMin = prd.optInt("smin", sMin); sMax = prd.optInt("smax", sMax); sStep = prd.optInt("sstep", sStep).coerceAtLeast(1); sDef = prd.optInt("sdef", sDef)
-        } else { prdW = null; prdS = null; prdSel = null }
+            prdLay = prd.optBoolean("lay", false)
+        } else { prdW = null; prdS = null; prdSel = null; prdLay = false }
         state = HubState(
             boot = h.optLong("boot", 0L), n = h.optInt("n", 0),
             want = if (h.has("want")) h.optInt("want") else null,
@@ -579,8 +583,10 @@ object GameUi {
                     // game's answer (or 1.5 s). The step columns move the setting the add-on has SELECTED (its doc's sel): when it is
                     // not the one to move, the tap is column 39 (the next setting) first
                     data class Want(val sel: String, val cur: Int?, val want: Int?, val def: Int, val step: Int)
-                    val todo = listOf(Want("y", prdY, hudHeight(), prdDef, prdStep), Want("w", prdW, hudWidth(), wDef, wStep),
-                        Want("s", prdS, hudScale(), sDef, sStep)).firstOrNull { it.cur != null && it.want != null && it.cur != it.want }
+                    val todo = hudWants(prdLay).map { k -> when (k) {
+                        "y" -> Want("y", prdY, hudHeight(), prdDef, prdStep); "w" -> Want("w", prdW, hudWidth(), wDef, wStep)
+                        else -> Want("s", prdS, hudScale(), sDef, sStep) } }
+                        .firstOrNull { it.cur != null && it.want != null && it.cur != it.want }
                     if (todo != null && s != null && live && s.current && s.hasRow &&
                         (s.n != hudHTapN || now - hudHTapAt > 1500L) && now >= helloAt + GameUiPolicy.SETTLE_MS) {
                         hudHTapN = s.n; hudHTapAt = now
@@ -596,6 +602,10 @@ object GameUi {
             }
         }
     }
+
+    /** the HUD settings the tap loop steps toward the player's choice: height, width and scale; with the layout owning the height and the
+     *  scale (hub55 prd.lay) the width alone (the layout editor moves and sizes the HUD itself) */
+    fun hudWants(layOwns: Boolean): List<String> = if (layOwns) listOf("w") else listOf("y", "w", "s")
 
     // ------------------------------------------------------------------ for the Settings section
 

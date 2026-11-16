@@ -234,6 +234,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private lateinit var reportPage: ReportPage
     private lateinit var pathReview: SafePathReview
+    /** the top-screen layout editor's page (stage 1; the user, 2026-11-16: "we need to make a way to basically edit the UI locations on
+     *  the top screen from our UI menu"): over the Settings room (the bar below it), opened by Top screen > Layout > Edit layout */
+    private lateinit var layoutPage: LayoutView
 
     private fun openReport(sendNow: Boolean = false) {
         if (!::reportPage.isInitialized) return
@@ -841,8 +844,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.onReportOpenSaved = { openSavedReport() }
         settings.pad.padOverride = { k ->
             (::reportPage.isInitialized && reportPage.isOpen && run { reportPage.padKey(k); true }) ||
-                (::pathReview.isInitialized && pathReview.isOpen && run { pathReview.padKey(k); true })
+                (::pathReview.isInitialized && pathReview.isOpen && run { pathReview.padKey(k); true }) ||
+                (::layoutPage.isInitialized && layoutPage.isOpen && run { layoutPage.padKey(k); true })
         }
+        settingsView.onEditLayout = { if (::layoutPage.isInitialized && LauncherHooks.gameUp()) layoutPage.open() }
         settingsView.onRouteReview = { if (::pathReview.isInitialized) pathReview.open() }
         if (LauncherHooks.pkg != null) {
             startView.firstLabel = "Save your Battle.net login"; startView.firstW = 680f      // the longer words
@@ -1089,6 +1094,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // SafePath's review (b-safepath-review): over Settings as the report page is, opened by Route data's "Review paths"
             pathReview = SafePathReview(this@CompanionHost).apply { onClosed = { DiagLog.event("safepath", "review closed") } }
             addView(pathReview, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            // the layout editor's page: over the Settings room only (the bar stays below it, a touch there leaves the room and closes it);
+            // B out of it puts Settings' cursor on its tab row, so the next B goes Home
+            layoutPage = LayoutView(this@CompanionHost).apply {
+                onClosed = { toTabs -> DiagLog.event("layout", "editor closed"); if (toTabs) settings.pad.backToTabs() }
+            }
+            addView(layoutPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                .apply { bottomMargin = Strip.HEIGHT })
             reportPage.onSend = { words -> sendReport(words) }
             // Send report's notice on Home (compiling, then ready / failed)
             reportNotice = ReportNotice(this@CompanionHost).apply {
@@ -1191,6 +1203,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (tradOpen() && r != Room.HOME) targetRadial.shut()
         // SafePath's review belongs to Settings: it closes when another room comes up
         if (r != Room.SETTINGS && ::pathReview.isInitialized && pathReview.isOpen) pathReview.close()
+        // so does the layout editor (its unsaved draft goes with it, as the add-on's own close drops it)
+        if (r != Room.SETTINGS && ::layoutPage.isInitialized && layoutPage.isOpen) layoutPage.close(toTabs = false)
         // any room change ends the bar selector first. NO GAP (the user 2026-10-06): into another room the bar's hold is KEPT for that
         // room's own take to pre-empt (capture v7 / v12; HomeBarSelect.closeFor, RoomHandOver.Bar); Home or the same room: freed now
         barSelect.closeFor(r, room)
@@ -2558,6 +2572,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "dialogpad" -> if (current) android.util.Log.w("WCDLG", "the dialogs have NO tap row: ${msg.optString("why")} (rows ${msg.optInt("rows", -1)})")
             "pvp" -> PvpModel.update(msg)   // the PvP rank (Character room tab 4) + the battleground queues (pvp session)
             "hub" -> GameUi.onHub(msg, current)
+            // the layout editor (Hub hub55): its document, CURRENT or replayed (a replay only shows; the page taps only while it is open)
+            "lay" -> LayoutModel.Live.note(msg)
             // hub22: a new hostile target with Start attack on: the secure /startattack cell (a live document only, never a replay)
             "atkgo" -> if (current) GameUi.startAttack(msg.optString("row", "party"), msg.optInt("col", 36))
             "poi" -> msg.optJSONObject("poi")?.let { if (PoiHarvest.ingest(it)) refreshServices() }

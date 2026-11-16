@@ -97,6 +97,9 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         GameUi.onChange(again); ThirdPartyAddons.onChange(again); Settings.onChange(again); HomeAttackSwitch.onChange(again)
         CompassSwitch.onChange(again); RingsSwitch.onChange(again); TipsSwitch.onChange(again); HomeLootSwitch.onChange(again)
         FrameGen.onChange(again)
+        // the layout editor's row comes with the add-on set's first "lay" document (only that change: its documents come often)
+        var layAvail = LayoutModel.Live.available()
+        LayoutModel.Live.onChange { val a = LayoutModel.Live.available(); if (a != layAvail) { layAvail = a; again() } }
         show(SettingsTabs.last, force = true)
     }
 
@@ -422,6 +425,9 @@ class SettingsPad(
         post { syncB() }
         invalidate()
     }
+
+    /** a page over the room let go by B (the layout editor): the cursor on the tab row, so the next B goes Home (the house rule) */
+    fun backToTabs() { toTabs(); post { syncB() } }
 
     /** the cursor onto the tab row (or, with no tab row, the page's first button) */
     private fun toTabs() {

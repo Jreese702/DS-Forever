@@ -1,7 +1,8 @@
 """THE TOP-SCREEN LAYOUT EDITOR, STAGE 1 (TapPad pad22, Trail prd18 / cp41, ActionBar nbar3, Chat chat37, Hub hub55 / uf23), off-device:
 the REAL add-on files under tools/wowstub.py's stubbed game (the strict world: the lockdown on every protected call).
 
-    python tools/test_layout.py            (LAYOUT_DUMP=<dir>: the "lay" documents for the app's render, LayoutShotsTest)
+    python tools/test_layout.py            (PARTY_FIXTURES_WRITE=1 rewrites the fixtures the app's tests read: dsforever/src/test/resources/
+                                            layout-fixtures, LayoutModelTest and LayoutShotsTest; otherwise a stale one fails)
 
 The user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"; the design's picks,
 all the recommended ones (DS Forever's own pieces first; taps that set an exact spot; linked pieces follow their parent until moved; one
@@ -87,7 +88,9 @@ PRE = ('function GetCursorPosition() return CURSOR_X or 0, CURSOR_Y or 0 end\n'
        'function Frame:SetAlpha(a) self._alpha = a end\n')
 QUOTE = '"we need to make a way to basically edit the UI locations on the top screen from our UI menu"'
 WHO = "Korvash-Realm"
-DUMP = os.environ.get("LAYOUT_DUMP")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FIXDIR = os.path.join(ROOT, "dsforever", "src", "test", "resources", "layout-fixtures")
+FIX = {}
 
 
 def world(pre_extra=''):
@@ -158,12 +161,19 @@ def lua_errors(L, errs):
     return list(errs) + [L.eval('ERRS[%d]' % i) for i in range(1, int(L.eval('#ERRS')) + 1)]
 
 
-def dump(name, doc):
-    if not DUMP or doc is None:
-        return
-    os.makedirs(DUMP, exist_ok=True)
-    with open(os.path.join(DUMP, name + ".json"), "w", encoding="utf-8") as fh:
-        json.dump(doc, fh, sort_keys=True)
+def fixture(L, name, part=False):
+    """the editor's document as the add-on's own encoder wrote it (the full one now, or the last part one) -> FIX[name]"""
+    if not part:
+        L.execute('WowCompanion.layEditor.emit(true)')
+    for i in range(int(L.eval('#SENT')), 0, -1):
+        t = L.eval('SENT[%d]' % i)
+        try:
+            d = json.loads(t)
+        except Exception:
+            continue
+        if isinstance(d, dict) and d.get("type") == "lay" and bool(d.get("part")) == part:
+            FIX[name] = t
+            return
 
 
 # ================================================================ a. versions, notes, compile, what the editor's code never calls
@@ -211,7 +221,7 @@ check(d1.rows.lay == rows["cal"] and d1.rows.cal is None, "b. the Settings room 
 doc = last(L)
 check(doc.get("held") is True and (doc.get("pad") or {}).get("rows", {}).get("lay") == rows["cal"],
       "b. the document says so: held, the pad's lay row", (doc.get("held"), (doc.get("pad") or {}).get("rows", {}).get("lay")))
-dump("closed", doc)
+fixture(L, "lay_closed")
 
 # ================================================================ c. the document's pieces
 ids = [p["id"] for p in doc["p"]]
@@ -272,7 +282,8 @@ check(pts is not None and abs(pts[4] - (1000 - W / 2) * L.eval('UIParent:GetHeig
 parts = [x for x in lay_docs(L, n0) if x.get("part")]
 check(parts and parts[-1]["p"][0]["id"] == "hud" and abs(parts[-1]["p"][0]["ay"] - 800) < 0.01 and parts[-1]["dirty"] is True,
       "d. the document (part): the HUD alone, at its new anchor, dirty", parts and parts[-1]["p"][0])
-dump("moved", last_full(L) and dict(last_full(L), **{"sel": "hud"}))
+fixture(L, "lay_part", part=True)
+fixture(L, "lay_moved")
 check(L.eval('WowCompanionDB.lay == nil or WowCompanionDB.lay["%s"] == nil' % WHO) is True,
       "d. NOTHING SAVED until Save (WowCompanionDB.lay untouched)")
 L.execute('tick(5)')
@@ -341,7 +352,7 @@ ease(L)
 t2 = piece(fresh(L), "target")
 c2 = piece(fresh(L), "compass")
 check(t2["d"] is True and abs(t2["ay"] - (c2["y"] + c2["h"] + 6)) < 0.01, "f. Reset (34) re-attaches it under the compass", (t2["ay"], t2["d"]))
-dump("linked", dict(last_full(L), sel="target"))
+fixture(L, "lay_linked")
 
 # ================================================================ g. size, revert, close without save, copy from character
 cell(L, 0)
@@ -357,7 +368,7 @@ check(piece(last_full(L), "hud")["s"] == 70, "g. never under its smallest (70 %)
 cell(L, 5)
 cell(L, 33)
 check(piece(last_full(L), "chat")["s"] == 100, "g. the chat strip has no size (100 % only)")
-dump("dirty", dict(last_full(L), sel="hud"))
+fixture(L, "lay_dirty")
 cell(L, 35)
 ease(L)
 d = fresh(L)
@@ -378,7 +389,7 @@ cell(L, 38)
 d = last_full(L)
 check(d["open"] is True and d["grid"] is False and d["chars"] == ["Other-Realm"], "g. Open without the grid (38); the other character listed",
       (d["open"], d["grid"], d["chars"]))
-dump("copy", dict(d, sel=None))
+fixture(L, "lay_copy")
 cell(L, 24)
 d = last_full(L)
 check(d["dirty"] is True and piece(d, "hud")["dx"] == 10 and piece(d, "hud")["s"] == 120 and piece(d, "compass")["dy"] == 30
@@ -411,7 +422,7 @@ cell(L, 1)
 cell(L, 33)
 check(int(L.eval('#VIOL')) == viol0, "h. the row's cells pressed in a fight breach nothing (the lockdown)")
 check(last(L)["open"] is True and lay.view.hud.dy == draft_dy, "h. the draft kept through the fight")
-dump("combat", dict(last_full(L)))
+fixture(L, "lay_combat")
 L.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.3)')
 check(L.eval('WowCompanion.layEditor.look._shown') is True and L.eval('WowCompanion.lay.catching()') is True and last(L)["combat"] is False,
       "h. the fight's end: the look and the catcher back")
@@ -492,6 +503,20 @@ check(ts.s is None or ts.s == 1, "k. no target entry: no scale of its own (it fo
 gp = L3.eval('WowCompanion.prd.partyGeo()')
 check(gp is not None, "k. the HUD's party geometry still answers (prd15, with the HUD's x)")
 check(lua_errors(L3, errs3) == [], "k. clean", lua_errors(L3, errs3)[:3])
+
+# ================================================================ the fixtures (the app's LayoutModelTest / LayoutShotsTest read them)
+os.makedirs(FIXDIR, exist_ok=True)
+stale = []
+for name, text in sorted(FIX.items()):
+    fp = os.path.join(FIXDIR, name + ".json")
+    old = open(fp, encoding='utf-8').read() if os.path.isfile(fp) else None
+    if os.environ.get("PARTY_FIXTURES_WRITE") == "1":
+        with open(fp, 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(text)
+    elif old != text:
+        stale.append(name)
+check(len(FIX) == 7 and not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX),
+      stale[:4])
 
 print("%s (%d pass, %d fail)" % ("ALL PASS" if fails == 0 else "FAILURES", passes, fails))
 sys.exit(1 if fails else 0)
