@@ -112,4 +112,118 @@ class MapListTest {
         assertEquals(FocusTap.Send(2, 0), hq.tapConfirm(2, live = true, now = 30L))
         assertEquals(FocusTap.Refused("Not in your quest log any more"), HomeQuests().tapAny(9, "share", true, 0L))
     }
+
+
+    // ---- TRACK / UNTRACK HOLD THE CURSOR'S PLACE (the user, 2026-11-16: "if I want to track or untrack a bunch at once I want to be able
+    // quickly go down the list and hit untrack for each, not have to scroll all the way back up after each untrack")
+
+    /** the list after quest [moved] went up into the tracked quests ([on]) or back down into its tab */
+    private fun relist(tracked: List<Int>, log: List<MapList.Entry>, open: Set<String>, polestar: Boolean = false) =
+        MapList.items(true, tracked, MapList.groups(log, 10, emptyList(), emptyList()), polestar = polestar) { it in open }
+
+    @Test fun untrackingHandsTheCursorToTheNextTrackedQuestNotTheMovedOne() {
+        val log = listOf(e(20, "A", 10))
+        val before = MapList.stops(relist(listOf(1, 2, 3, 4), log, setOf("A")))
+        val c = MapCursor(); c.startAt(before, 0)
+        c.key("PADDDOWN", before, 0, false)                                 // on 2
+        assertEquals(MapCursor.Do.Untrack(2), c.key("PAD3", before, 0, false, setOf(20)))
+        // 2 went down into its (open) tab A: the cursor stays where it was, on 3, which moved into 2's place
+        val after = MapList.stops(relist(listOf(1, 3, 4), log + e(2, "A", 10), setOf("A")))
+        assertTrue(after.contains(2))
+        assertEquals(3, c.stay(2, before, after)); assertEquals(3, c.sel)
+        assertEquals(before.indexOf(2), after.indexOf(3))                   // the same place in the list
+    }
+
+    @Test fun untrackingABunchGoesDownTheListOnePressEach() {
+        var tracked = listOf(1, 2, 3, 4, 5)
+        var log = listOf(e(20, "A", 10))
+        var stops = MapList.stops(relist(tracked, log, emptySet()))
+        val c = MapCursor(); c.startAt(stops, 2)                           // on 2
+        for (expectNext in listOf(3, 4, 5)) {
+            val acted = c.sel
+            assertEquals(MapCursor.Do.Untrack(acted), c.key("PAD3", stops, 0, false))
+            tracked = tracked - acted; log = log + e(acted, "Z", 10)
+            val after = MapList.stops(relist(tracked, log, emptySet()))
+            assertEquals(expectNext, c.stay(acted, stops, after))
+            stops = after
+        }
+        // the last tracked quest: the next stop down takes its place (the first tab), never back up the list
+        val acted = c.sel
+        tracked = tracked - acted; log = log + e(acted, "Z", 10)
+        val after = MapList.stops(relist(tracked, log, emptySet()))
+        assertTrue(MapList.isGroup(c.stay(acted, stops, after)))
+        assertEquals(listOf(1), tracked)
+    }
+
+    @Test fun trackingABunchInATabTakesTheNextQuestOfTheTab() {
+        var tracked = listOf(1, 2)
+        var log = listOf(e(20, "A", 10), e(21, "A", 10), e(22, "A", 10), e(30, "B", 12))
+        var stops = MapList.stops(relist(tracked, log, setOf("A")))
+        val c = MapCursor(); c.touched(20, stops)
+        for (expectNext in listOf(21, 22)) {
+            val acted = c.sel
+            assertEquals(MapCursor.Do.Track(acted), c.key("PAD1", stops, 0, false, MapList.untracked(relist(tracked, log, setOf("A")))))
+            // A tracks and focuses: the quest goes to the top of the tracked quests, far above the cursor
+            tracked = listOf(acted) + tracked; log = log.filter { it.id != acted }
+            val after = MapList.stops(relist(tracked, log, setOf("A")))
+            assertEquals(expectNext, c.stay(acted, stops, after))
+            // one row came above it (the tracked quest) and one left at it: the next quest stands one stop further down the stops
+            assertEquals(stops.indexOf(acted) + 1, after.indexOf(expectNext))
+            stops = after
+        }
+        // the tab's last quest: its tab goes with it, the next tab (B) takes the place
+        val acted = c.sel
+        tracked = listOf(acted) + tracked; log = log.filter { it.id != acted }
+        val after = MapList.stops(relist(tracked, log, setOf("A")))
+        assertEquals(MapList.groupKey("B"), c.stay(acted, stops, after))
+    }
+
+    @Test fun theEndOfTheListHandsTheCursorBackUpAndAnEmptyListLetsItGo() {
+        assertEquals(3, MapCursor.stayAfter(4, listOf(1, 3, 4), listOf(1, 3)))           // nothing after it: the nearest before
+        assertEquals(1, MapCursor.stayAfter(9, listOf(1, 3), listOf(1, 3)))              // not in the list as it was: the first
+        assertEquals(0, MapCursor.stayAfter(4, listOf(4), emptyList()))
+        val c = MapCursor(); c.touched(4, listOf(4))
+        assertEquals(0, c.stay(4, listOf(4), emptyList())); assertFalse(c.shown)
+        // only the quest the cursor is on: a press elsewhere leaves it alone
+        val d = MapCursor(); d.touched(3, listOf(1, 3, 4))
+        assertEquals(3, d.stay(4, listOf(1, 3, 4), listOf(1, 3)))
+        // the light blue row above the tracked quests stays where it is too (pk1: its X / Y are Skip / Previous, never a track)
+        val before = MapList.stops(relist(listOf(1, 2), listOf(e(20, "A", 10)), emptySet(), polestar = true))
+        val after = MapList.stops(relist(listOf(2), listOf(e(20, "A", 10), e(1, "A", 10)), emptySet(), polestar = true))
+        val p = MapCursor(); p.touched(1, before)
+        assertEquals(2, p.stay(1, before, after))
+        assertEquals(listOf(MapList.ME, MapList.POLESTAR), after.take(2))
+    }
+
+    /**
+     * the real order of a press (MapView.trackNow): the list's own keeping runs first ([MapCursor.moved] onto the light blue row, then
+     * keepValid), then [MapCursor.stay] for the quest the cursor WAS on. Polestar merged with quest 1 (only in the log is needed): 1's
+     * own row untracked into its closed tab handed the cursor UP to the light blue row, where the next X skips Polestar's step.
+     */
+    @Test fun untrackingTheQuestPolestarStandsForNeverHandsTheCursorToPolestarsRow() {
+        val log = listOf(e(20, "A", 10))
+        val before = MapList.stops(relist(listOf(1, 2, 3), log, emptySet(), polestar = true))
+        val c = MapCursor(); c.touched(1, before)
+        assertEquals(MapCursor.Do.Untrack(1), c.key("PAD3", before, MapList.POLESTAR, false))
+        val after = MapList.stops(relist(listOf(2, 3), log + e(1, "A", 10), emptySet(), polestar = true))
+        c.moved(1, MapList.POLESTAR, after); c.keepValid(after)              // (applyQuests: rebuildItems, then keepValid)
+        assertEquals("the list's keeping alone took it to the light blue row", MapList.POLESTAR, c.sel)
+        assertEquals(2, c.stay(1, before, after, wasOn = true)); assertEquals(2, c.sel)
+        assertEquals(before.indexOf(1), after.indexOf(2))
+        // X there now untracks 2: never a Polestar skip
+        assertEquals(MapCursor.Do.Untrack(2), c.key("PAD3", after, MapList.POLESTAR, false, psSkip = true))
+    }
+
+    @Test fun theLastTrackedQuestsNewTabTakesItsPlace() {
+        // quest 3's zone B had no tab (all of B tracked): untracked, its tab comes back right at its place, the first tab
+        val log = listOf(e(20, "A", 10))
+        val before = MapList.stops(relist(listOf(1, 2, 3), log, emptySet()))
+        val after = MapList.stops(MapList.items(true, listOf(1, 2),
+            MapList.groups(log + e(3, "B", 10), 10, listOf("B"), emptyList())) { false })
+        assertEquals(listOf(MapList.ME, 1, 2, MapList.groupKey("B"), MapList.groupKey("A")), after)
+        assertEquals(MapList.groupKey("B"), MapCursor.stayAfter(3, before, after))
+        // a tab that was there already stays the next stop (no new one at the place)
+        val afterOld = MapList.stops(relist(listOf(1, 2), log + e(3, "A", 10), emptySet()))
+        assertEquals(MapList.groupKey("A"), MapCursor.stayAfter(3, before, afterOld))
+    }
 }
