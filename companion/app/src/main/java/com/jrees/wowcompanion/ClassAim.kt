@@ -14,7 +14,10 @@ package com.jrees.wowcompanion
  *   - [move] answers true when the aim ENDS: the aiming stick came back to the middle and no other armed stick is out (Tap + Release's
  *     cast). The aiming stick back while the other armed stick is out HANDS the aim over: no cast. A stick still held from before the
  *     open (not armed) does not hold the cast back: it is not aiming (today's right-stick cast with the walking stick still held)
- *   - [allBack]: both sticks in the middle (armed or not): a wheel already closed lets the controller go then (CastView.freeLater)
+ *   - [freeOk]: the RIGHT (camera) stick in the middle (armed or not): a wheel already closed lets the controller go then
+ *     (CastView.freeLater). The left stick does not hold the free back: handed back pushed it is only the walk the player wants
+ *     (walking resumes the moment the wheel closes, as before r22); a right stick handed back pushed would swing the camera (the 1476
+ *     fix "class wheels release the stick at once, no B bashing")
  */
 internal class ClassAim(private val neutral: Float) {
     private val x = FloatArray(2)
@@ -45,6 +48,6 @@ internal class ClassAim(private val neutral: Float) {
         return true
     }
 
-    /** both sticks in the middle */
-    fun allBack(): Boolean = !out[0] && !out[1]
+    /** the right (camera) stick in the middle: the controller may go */
+    fun freeOk(): Boolean = !out[1]
 }

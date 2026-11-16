@@ -1385,11 +1385,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     /** b-class-takeover: the right stick while the class wheel is open: the pointed slice follows; back in the middle = Tap + Release's
      *  cast; a wheel already closed lets the controller go once the stick is back. f-class-wheel-sticks (the user 2026-11-16: "I think
      *  that either stick should work those wheels."): EITHER stick ([ClassAim]: the one moved last aims; one held since before the open
-     *  waits for the middle; a hand-over to the other stick casts nothing); the free waits for BOTH sticks back */
+     *  waits for the middle; a hand-over to the other stick casts nothing); the free waits for the right stick only (a held walk stick walks on) */
     private fun classStick(st: Int, x: Float, y: Float) {
         val ended = classAim.move(st, x, y)
         if (chordSide == ClassChord.NONE) {
-            if (classHeld && classAim.allBack()) { removeCallbacks(freeLater); freeLater.run() }
+            if (classHeld && classAim.freeOk()) { removeCallbacks(freeLater); freeLater.run() }
             return
         }
         invalidate(); onClassStick?.invoke()
@@ -2707,7 +2707,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         removeCallbacks(freeLater)
         if (open && !classHeld) { classHeld = true; onClassHold?.invoke(true) }
         if (!open && classHeld) {
-            if (classAim.allBack()) freeLater.run() else postDelayed(freeLater, CLASS_FREE_MS)
+            if (classAim.freeOk()) freeLater.run() else postDelayed(freeLater, CLASS_FREE_MS)
         }
         invalidate()
     }

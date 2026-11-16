@@ -8,7 +8,7 @@ import org.junit.Test
 /**
  * f-class-wheel-sticks (the user 2026-11-16: "one other thing to note on this would be its awkward only working from the right stick. I
  * think that either stick should work those wheels."; pick: "Both sticks aim, no walking"): either stick aims the class wheels; a stick
- * held from before the open waits for the middle; a hand-over casts nothing; the free waits for both sticks. [Wheel] is CastView's glue
+ * held from before the open waits for the middle; a hand-over casts nothing; the free waits for the right stick only. [Wheel] is CastView's glue
  * (classStick / noteClassOpen) over the pure parts, on a four-place wheel (0 up, 1 right, 2 down, 3 left)
  */
 class ClassWheelSticksTest {
@@ -169,30 +169,41 @@ class ClassWheelSticksTest {
         assertTrue(w.casts.isEmpty())
     }
 
-    // ---------------------------------------------------------------- the free: both sticks back
+    // ---------------------------------------------------------------- the free: the right (camera) stick back; a held walk stick walks on
 
-    @Test fun theFreeWaitsForBothSticks() {
+    @Test fun theFreeWaitsForTheRightStickOnly() {
         val a = ClassAim(CastView.CLASS_NEUTRAL)
-        assertTrue(a.allBack())
+        assertTrue(a.freeOk())
         a.move(LEFT, 0f, -1f)
-        assertFalse(a.allBack())
+        assertTrue(a.freeOk())                      // the walk stick pushed: free at once, walking resumes as the wheel closes
         a.move(RIGHT, 1f, 0f); a.move(LEFT, 0f, 0f)
-        assertFalse(a.allBack())                    // the right still out
+        assertFalse(a.freeOk())                     // the right still out: the camera would swing
         a.move(RIGHT, 0.2f, 0f)                     // inside the middle
-        assertTrue(a.allBack())
+        assertTrue(a.freeOk())
     }
 
-    @Test fun aStickNotArmedStillHoldsTheFree() {
+    @Test fun walkingDuringTheWheelThenCastingFreesAtOnce() {
+        // the verifier's case: walk on the left, RB+RT, aim with the right, let the chord go to cast with the left still pushed
+        val w = Wheel(tap = false)
+        w.stick(LEFT, 0f, -1f); w.open()
+        w.stick(RIGHT, 1f, 0f); w.release()
+        assertEquals(listOf(1), w.casts)
+        assertFalse(w.aim.freeOk())                 // the right still pushed at the close: held (it would swing the camera)
+        w.stick(RIGHT, 0f, 0f)
+        assertTrue(w.aim.freeOk())                  // the right back: the controller goes though the left is still walking
+    }
+
+    @Test fun aRightStickNotArmedStillHoldsTheFree() {
         val a = ClassAim(CastView.CLASS_NEUTRAL)
-        a.move(LEFT, 0f, -1f); a.open()             // held through the open: it never aims ...
+        a.move(RIGHT, 1f, 0f); a.open()             // turning the camera through the open: it never aims ...
         assertEquals(-1, a.aim)
-        assertFalse(a.allBack())                    // ... yet the closed wheel's free waits for it (or CLASS_FREE_MS), as for the right
-        a.move(LEFT, 0f, 0f)
-        assertTrue(a.allBack())
+        assertFalse(a.freeOk())                     // ... yet the closed wheel's free waits for it (or CLASS_FREE_MS)
+        a.move(RIGHT, 0f, 0f)
+        assertTrue(a.freeOk())
     }
 
     @Test fun otherStickNumbersAreIgnored() {
         val a = ClassAim(CastView.CLASS_NEUTRAL)
-        assertFalse(a.move(2, 1f, 1f)); assertTrue(a.allBack()); assertEquals(-1, a.aim)
+        assertFalse(a.move(2, 1f, 1f)); assertTrue(a.freeOk()); assertEquals(-1, a.aim)
     }
 }
