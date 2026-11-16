@@ -21,7 +21,8 @@ Proven here:
   f every refusal, with no call made: in a fight (the text kept, the keyboard up), while the game's window shows, before the macros load,
     with the game rule on (the lock); a taken name, too long, empty;
   g + Spell/Item: the book's spells and bag items with a use (/cast, /use, /equip lines); the six recipes (one or two picks), tooltip once;
-  h Delete: armed by the first A, confirmed by a second within 3 s, timed out after; the selection moves to min(count, old); our
+  h Delete (s15: More's Delete ASKS - Cancel [B] / Delete [A] - and the ask's A within 6 s deletes; it times out after; while it
+    asks only A and B do anything); the selection moves to min(count, old); our
     stored binds of it go, and a rename carries them (this character's for a Character macro, every character's for a General one);
   i the Bind box for a macro (Book b63), hosted: Normal = the game's PickupMacro + PlaceAction on the pressed slot, read back, B undoes;
     L3 = the stick's own button with the macro's TEXT (no saved-macro attribute); In combat = the router's fight text; a gone macro =
@@ -39,6 +40,30 @@ Proven here:
     GetMacroItem; its own icon when it has one), `ms` / `mt`, never `id` -; its GCD and cooldown on the facecd road (the plain length
     learned, the learned one in a fight), its state by the spell's id; a [mod:shift] switch re-sends the padmap and drops the old spell's
     cooldown; a secret read keeps the last plain look; reads only.
+Spells s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the recipes "make no sense" and only add lines; every RECOMMENDED pick of
+design_macrobuilder: D1 a line = an action + its spell, then cases; D2 whole-macro presets on a new or empty macro, a second A replaces a
+macro with lines; D3 strips; D4 Select = Done; D5 the controller's targets first in On; D6 the companion's own macros view only):
+  e the editor's rows (name s0, icon s1, lines s2.., + Line / More s21, s22 - s15; Presets / Delete are More's rows); X = a new line
+    under, its Action list open;
+  g the builder: action, spell, cases ("+ Case"), Done = ONE write; an unchanged draft writes nothing; B keeps the draft; Revert; Remove's
+    second A; a fight refuses Done and keeps the draft; Select = Done; the hard faults (pick, long) and the soft ones (book, bags, else);
+  o presets: which tiles show (and in what order, at most 8, Mouseover last only with room), the preview's picks, ONE write, a second A
+    to replace a macro with lines;
+  r the pet's tab: orders turn the line into /petattack ..., the pet's spells (also kept by name with the pet away);
+  t the one grammar: round trips, text lines, locks, merging cases, raw conditions, aliases, target=, castsequence, ranks, item:<id>;
+  u commands registered on this client only (and by class); /dismount and /click stay text lines;
+  v the companion's own macros: a lock, A / X refused;
+  w Select is the room's (capture v4 extra PADBACK at the take; the hosted Bind box keeps it);
+  x Move: Y, Up / Down, A drops (ONE write), B writes nothing;
+  y On (D5): the order, the soft friend only with the game's soft-friend targeting on (the CVar read, never written), the pet only for
+    pet classes;
+  z ranks: the rank chip and pop-out, the exact subtext written (an es client's "Rango 2");
+  aa the icon: Auto and the macro's spells' pictures, ONE write; ab the search: the keyboard filters, nothing written.
+Spells s15 THE LOOK PASS (the user, 2026-11-16: "it needs to be a bit more visually consistent and the icon needs work for the room"; the
+pick "Full match": one A button plus Y More like Quests, Cancel / Confirm for delete / replace):
+  ae the editor's buttons + Line / More (s21, s22), the builder's Done / More (s19, s17); More = a one-column pop-out (Presets / Delete;
+    Aa Text / Remove or Revert); Y opens More wherever Y has no work of its own (the document's ym); the asks: Delete, Remove, Replace -
+    A confirms, B cancels, nothing else moves; a finger elsewhere cancels the ask; no column added (38).
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -164,9 +189,39 @@ C_Container = { GetContainerNumSlots = function(b) if b == 0 then return 16 end 
                 GetContainerItemInfo = function() return nil end, GetContainerItemLink = function() return nil end,
                 PickupContainerItem = function() end }
 local function item(id) for _, x in pairs(BAGITEMS) do if x.id == id then return x end end end
-C_Item = { GetItemNameByID = function(id) local x = item(id); return x and x.n end, GetItemIconByID = function(id) return 200000 + id end,
-           GetItemSpell = function(id) local x = item(id); if x and x.use then return "Healing Potion", 439 end end,
-           IsEquippableItem = function(id) local x = item(id); return x and x.eq == true end }
+C_Item = { GetItemNameByID = function(id) local x = item(id) or WORNITEM[id]; return x and x.n end,
+           GetItemIconByID = function(id) if type(id) == "number" then return 200000 + id end; for _, x in pairs(BAGITEMS) do if x.n == id then return 200000 + x.id end end end,
+           GetItemSpell = function(id) local x = item(id) or WORNITEM[id]; if x and x.use then return "Healing Potion", 439 end end,
+           IsEquippableItem = function(id) local x = item(id); return x and x.eq == true end,
+           GetItemCount = function(k) for _, x in pairs(BAGITEMS) do if x.id == k or x.n == k then return 1 end end; return 0 end }
+-- s14: the worn slots (13 a trinket with a use when TRINKET), the game's slash words and its secure list (IsSecureCmd)
+WORNITEM = { [9001] = { n = "Arena Grand Master", use = true }, [9002] = { n = "Smite's Hammer" } }
+WORN = {}
+function GetInventoryItemID(u, sl) return WORN[sl] end
+function GetInventoryItemTexture(u, sl) if WORN[sl] then return 210000 + WORN[sl] end end
+SLASH_CAST1, SLASH_CAST2, SLASH_USE1, SLASH_CASTSEQUENCE1 = "/cast", "/spell", "/use", "/castsequence"
+SLASH_TARGET1, SLASH_TARGET2, SLASH_FOCUS1, SLASH_ASSIST1, SLASH_STARTATTACK1 = "/target", "/tar", "/focus", "/assist", "/startattack"
+SLASH_STOPATTACK1, SLASH_STOPCASTING1, SLASH_CANCELAURA1, SLASH_CANCELFORM1 = "/stopattack", "/stopcasting", "/cancelaura", "/cancelform"
+SLASH_EQUIP1, SLASH_EQUIP_TO_SLOT1, SLASH_CLEARTARGET1, SLASH_CLEARFOCUS1 = "/equip", "/equipslot", "/cleartarget", "/clearfocus"
+SLASH_TARGET_NEAREST_ENEMY1, SLASH_TARGET_LAST_TARGET1, SLASH_STOPMACRO1 = "/targetenemy", "/targetlasttarget", "/stopmacro"
+SLASH_DISMOUNT1, SLASH_CLICK1 = "/dismount", "/click"
+SECURE = {}
+for _, w in ipairs({ "/cast", "/spell", "/use", "/castsequence", "/target", "/tar", "/focus", "/assist", "/startattack", "/stopattack",
+                     "/stopcasting", "/cancelaura", "/cancelform", "/equip", "/equipslot", "/cleartarget", "/clearfocus", "/targetenemy",
+                     "/targetlasttarget", "/stopmacro", "/click", "/petattack", "/petfollow", "/petstay", "/petpassive", "/petdefensive",
+                     "/petaggressive", "/petdismiss", "/petmoveto", "/petassist", "/petdefensiveassist" }) do SECURE[w] = true end
+function IsSecureCmd(w) return SECURE[string.lower(w)] == true end
+SlashCmdList = { DISMOUNT = function() end }
+SPELLNAME[8042], SPELLNAME[6603], SPELLNAME[1766] = "Earth Shock", "Attack", "Kick"
+HARMFUL = { [403] = true, [8042] = true, [1766] = true, [3110] = true }
+C_Spell.IsSpellHarmful = function(id) return HARMFUL[id] == true end
+SUBTEXT = {}
+C_Spell.GetSpellSubtext = function(id) return SUBTEXT[id] end
+SOFTFRIEND = "0"
+CVARREADS, CVARWRITES = 0, 0
+function GetCVar(k) CVARREADS = CVARREADS + 1; if k == "SoftTargetFriend" then return SOFTFRIEND end end
+NFORMS = 0
+function GetNumShapeshiftForms() return NFORMS end
 '''
 # after the load: helpers
 AFTER = r'''
@@ -175,6 +230,7 @@ MRx = WowCompanion.macroRoom._mr
 WowCompanion.spellsBindableList = function()
     local out = {}
     for i, id in ipairs(BOOK) do out[#out + 1] = { id = id, slot = i } end
+    for i, id in ipairs(GENBOOK or {}) do out[#out + 1] = { id = id, slot = 100 + i, gen = true } end
     return out
 end
 WowCompanion.spellsBookSlotOf = function(id) for i, x in ipairs(BOOK) do if x == id then return i end end end
@@ -264,8 +320,8 @@ def seed(L, gen=(), char=()):
     L.execute('sortT(GENM); sortT(CHARM)')
 
 
-def opened(gen=(), char=(), pre=''):
-    L, errs = world(pre=pre)
+def opened(gen=(), char=(), pre='', macros=''):
+    L, errs = world(pre=pre, macros=macros)
     seed(L, gen, char)
     L.execute('fire("UPDATE_MACROS"); advance(1)')
     ensure_row(L)
@@ -278,23 +334,33 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap"):
     e = comp(SRC[k], k)
     check(e is None, "a. Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local SV = "s13"' in SRC["spells"] and 'local BV = "b66"' in SRC["book"] and 'local PV = "m168"' in SRC["padmap"],
-      "a. the versions: Spells s10, Book b63, PadMap m163")
+check('local SV = "s15"' in SRC["spells"] and 'local BV = "b66"' in SRC["book"] and 'local PV = "m168"' in SRC["padmap"],
+      "a. the versions: Spells s14, Book b65, PadMap m166")
+check('s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the Macros room\'s recipes "make no sense"' in SRC["spells"],
+      "a. Spells s14's header note quotes the user")
 QUOTE = '"Lets scrap the smart ranged attack and start building a macro room'
 check(all(QUOTE in SRC[k] for k in ("spells", "book", "padmap")), "a. each changed file's header note quotes the user")
 BLOCK = SRC["spells"][SRC["spells"].index("-- ==================================================================== s10 THE MACROS ROOM"):]
 code = "\n".join(re.sub(r'--.*$', '', ln) for ln in BLOCK.splitlines())
 bad = [w for w in ("ShowMacroFrame", "MacroFrame_Show", "LoadAddOn", "HideUIPanel", "ShowUIPanel", "RunMacroText", "RunMacro",
                    "SetMacroExecuteLineCallback", "SetBinding", "SaveBindings", "SetCVar", "SetOverrideBinding", "PlaceAction",
-                   "PickupMacro", "ToggleFrame", "MacroFrameText", "SetAttribute(\"macro\"")
+                   "PickupMacro", "ToggleFrame", "MacroFrameText", "SetAttribute(\"macro\"", "C_CVar.SetCVar", "SetCVarBitfield",
+                   "SetOverrideBindingClick", "SecureCmdOptionParse", "ChatEdit_SendText", "SendChatMessage", "CastSpellByName", "UseAction")
        if re.search(r'\b' + re.escape(w) + r'\b' if w[0].isalpha() and w[-1].isalpha() else re.escape(w), code)]
 check(bad == [], "a. the room's block never opens / closes / shows / hides a window, runs a macro, binds a key, writes a CVar or a bar", bad)
 writes = re.findall(r'\b(CreateMacro|EditMacro|DeleteMacro)\(', code)
 check(sorted(set(writes)) == ["CreateMacro", "DeleteMacro", "EditMacro"] and len(writes) == 5,
-      "a. its writes: CreateMacro once, EditMacro three times (name / line / added lines), DeleteMacro once", writes)
-guarded = all(re.search(r'canWrite\(\)', fn) for fn in re.findall(r'function MR\.(?:addLines|delete)\(.*?\nend', BLOCK, re.S))
-check(guarded and 'local why = MR.canWrite()\n    if why then MR.ack(k.name, false, why)' in BLOCK,
-      "a. every write is behind the one guard (the keyboard's Done, an added line, Delete)")
+      "a. its writes: CreateMacro once, EditMacro three times (name / icon / THE one body write), DeleteMacro once", writes)
+guarded = all(re.search(r'canWrite\(\)', fn) for fn in re.findall(r'function MR\.(?:writeBody|setIcon|delete)\(.*?\nend', BLOCK, re.S))
+check(guarded and len(re.findall(r'function MR\.(?:writeBody|setIcon|delete)\(', BLOCK)) == 3
+      and 'local why = MR.canWrite()\n    if why then MR.ack(k.name, false, why)' in BLOCK,
+      "a. every write is behind the one guard (the keyboard's Done, the one body write, the icon, Delete)")
+bodyCalls = re.findall(r'EditMacro\(i, nil, nil, ([a-z]+)\)', code)
+check(bodyCalls == ["nb"] and code.count("MR.writeBody(") >= 6,
+      "a. s14: every line change (Done, Remove, Move, a preset, a typed line) goes through MR.writeBody's ONE EditMacro",
+      (bodyCalls, code.count("MR.writeBody(")))
+check(re.search(r'SetCVar|C_CVar\.Set', code) is None and 'GetCVar("SoftTargetFriend")' in code,
+      "a. s14: the soft-friend CVar is READ only (never written)")
 
 # ================================================================ b. the lazy row
 L, errs = world()
@@ -311,10 +377,11 @@ check(L.eval('WowCompanion.pad.rows.mac') is None and clean(L) == {}, "b. in a f
 L.execute(COMBAT_OFF)
 ensure_row(L)
 r = L.eval('WowCompanion.pad.rows.mac')
-check(r is not None and r.n == 36, "b. padtab 39 then 34 makes the row: 36 cells", r and r.n)
+check(r is not None and r.n == 38, "b. padtab 39 then 34 makes the row: 38 cells (s14: + y, ok; the pad's limit is 40)", r and r.n)
 d = mdoc(L)
 k = d.get('keys') or {}
-check(k.get('h') == 0 and k.get('f') == 1 and k.get('fb') == 2 and k.get('wx') == 11 and k.get('s0') == 12 and k.get('n') == 24
+check(k.get('h') == 0 and k.get('f') == 1 and k.get('fb') == 2 and k.get('wx') == 11 and k.get('y') == 12 and k.get('ok') == 13
+      and k.get('s0') == 14 and k.get('n') == 24
       and 'mac' in ((d.get('pad') or {}).get('rows') or {}), "b. the document carries the keys at fixed columns and the pad", k)
 check(clean(L) == {}, "b. clean", clean(L))
 # a full pad: the row cannot be made, the document says so
@@ -410,52 +477,124 @@ kbd_done(L, "Mine")
 check(mlog(L) == ['create Mine 134400 true'] and L.eval('mnames(CHARM)') == 'Heal|Mine', "d. on the character's tab: perCharacter", mlog(L))
 check(clean(L) == {}, "d. clean (every write inside a Done)", clean(L))
 
-# ================================================================ e. the editor
+# ================================================================ e. the editor (s14: the name, the icon, the strips, + Line / Presets / Delete)
+def bdoc(L):
+    return mdoc(L).get('b') or {}
+
+
+def popd(L):
+    d = mdoc(L)
+    return (d.get('b') or {}).get('pop') or d.get('pop') or {}
+
+
+def pick_row(L, pred, allow=False):
+    """a finger on the open pop-out's first row matching [pred] (its s-cell, then A)"""
+    p = popd(L)
+    for i, r in enumerate(p.get('rows') or []):
+        if pred(r):
+            tap(L, (p.get('base') or 0) + i)
+            tap(L, "a", allow=allow)
+            return True
+    return False
+
+
+def chip(L, key, allow=False):
+    """a finger on builder chip [key] (its s-cell, then A)"""
+    sk = (bdoc(L).get('ch') or {}).get(key)
+    assert sk is not None, ("no chip", key, bdoc(L).get('ch'))
+    tap(L, sk)
+    tap(L, "a", allow=allow)
+
+
+def more(L, o, allow=False):
+    """s15: a finger on the room's More (the builder's chip, the editor's s22), then on its row [o]"""
+    if mdoc(L).get('mode') == 'build':
+        chip(L, 'more')
+    else:
+        tap(L, 22); tap(L, "a")
+    assert popd(L).get('k') == 'more', ("no More", popd(L))
+    assert pick_row(L, lambda r: r.get('o') == o, allow=allow), ("no row", o, popd(L))
+
+
 L = opened([("Alpha", "/wave\n/say hi\n/run print(|cff)")], CHAR)
 press(L, "PAD1")
 d = mdoc(L)
 check(d.get('mode') == 'edit' and d.get('ef') == 'name' and d['mac']['lines'] == ['/wave', '/say hi', '/run print(|cff)']
       and d['mac'].get('lock') == [3], "e. A: the editor, on the name; a line with '|' is locked", (d.get('ef'), d['mac']))
+check([x.get('k') for x in d.get('ls') or []] == ['text', 'text', 'lock'],
+      "e. the strips (D3): /wave and /say are text lines (kept as written), the '|' line is locked", d.get('ls'))
 press(L, "PAD1")
 check(mdoc(L).get('kbd', {}).get('name') == 'macname' and mdoc(L)['kbd']['text'] == 'Alpha', "e. A on the name: the rename keyboard, its text")
 r = kbd_done(L, "Zulu")
 d = mdoc(L)
 check(r.startswith('true') and d.get('mode') == 'edit' and d['mac']['n'] == 'Zulu' and L.eval('mnames(GENM)') == 'Zulu',
       "e. rename: EditMacro(i, name), re-found by name", (r, d['mac']['n']))
+press(L, "PADDRIGHT")
+check(mdoc(L).get('ef') == 'icon' and mdoc(L).get('efc') == 1 and mdoc(L).get('ym') is True,
+      "e. Right of the name: the Icon chip (s1); Y would open More there (ym, s15)", mdoc(L).get('ef'))
+press(L, "PAD4")
+check(popd(L).get('k') == 'more' and mdoc(L).get('mode') == 'edit' and 'ym' not in mdoc(L),
+      "ae. Y on the Icon chip: More (Y has no work of its own there); no ym while it is open", popd(L))
+press(L, "PAD2")
+check(not mdoc(L).get('pop') and mdoc(L).get('ef') == 'icon', "ae. B: More closes, the glow where it was")
 press(L, "PADDDOWN")
-check(mdoc(L).get('ef') == 'l1' and mdoc(L).get('efc') == 1, "e. Down: the first line (s1)")
+check(mdoc(L).get('ef') == 'l1' and mdoc(L).get('efc') == 2, "e. Down: the first line (s2)", (mdoc(L).get('ef'), mdoc(L).get('efc')))
+check('ym' not in mdoc(L), "ae. on a line Y is its Move: no ym", mdoc(L).get('ym'))
 press(L, "PAD1")
 check(mdoc(L)['kbd'] == {'name': 'macline', 'text': '/wave', 'max': 255 - len("/wave\n/say hi\n/run print(|cff)") + 5, 'line': 1},
-      "e. A on a line: its keyboard, the room left in 255", mdoc(L).get('kbd'))
+      "e. A on a TEXT line: its keyboard (the text-line fallback), the room left in 255", mdoc(L).get('kbd'))
 L.execute('MLOG = {}')
 kbd_done(L, "/wave hello")
 check(L.eval('mbody("Zulu")') == "/wave hello\n/say hi\n/run print(|cff)" and len(mlog(L)) == 1 and mlog(L)[0].startswith('edit 1 nil'),
       "e. Done: EditMacro(i, nil, nil, body) (the body-only form)", (L.eval('mbody("Zulu")'), mlog(L)))
 press(L, "PAD3")
-check(mdoc(L)['kbd']['name'] == 'macline' and mdoc(L)['kbd'].get('line') is None, "e. X on a line: a new line under it")
+d = mdoc(L)
+check(d.get('mode') == 'build' and (d.get('b') or {}).get('ln') is None and d['b'].get('at') == 2 and (d['b'].get('pop') or {}).get('k') == 'cmd',
+      "e. X on line 1: a NEW line under it, in the builder, its Action list open", d.get('b'))
+check(pick_row(L, lambda r: r.get('k') == 'chat') and mdoc(L).get('kbd', {}).get('name') == 'macline',
+      "e. Action: Chat line -> the keyboard (a typed line)", mdoc(L).get('kbd'))
 kbd_done(L, "/sit")
-check(L.eval('mbody("Zulu")') == "/wave hello\n/sit\n/say hi\n/run print(|cff)", "e. inserted under line 1", L.eval('mbody("Zulu")'))
+check(L.eval('mbody("Zulu")') == "/wave hello\n/sit\n/say hi\n/run print(|cff)" and mdoc(L).get('mode') == 'edit',
+      "e. typed and written under line 1; back in the editor", L.eval('mbody("Zulu")'))
+press(L, "PADDUP")
 press(L, "PAD1")
 kbd_done(L, "")
 check(L.eval('mbody("Zulu")') == "/sit\n/say hi\n/run print(|cff)", "e. a line emptied goes", L.eval('mbody("Zulu")'))
 press(L, "PADDDOWN"); press(L, "PADDDOWN")
 L.execute('MLOG = {}')
+check(mdoc(L).get('ef') == 'l3', "e. the '|' line under the glow", mdoc(L).get('ef'))
 press(L, "PAD1")
 check(mdoc(L).get('note') == 'locked' and mlog(L) == [] and mdoc(L).get('mode') == 'edit', "e. A on the '|' line: locked, no keyboard")
 press(L, "PADDDOWN")
 d = mdoc(L)
-check(d.get('ef') == 'add' and d.get('efc') == 20, "e. Down past the lines: the button row (+ line = s20)", (d.get('ef'), d.get('efc')))
-press(L, "PADDRIGHT"); press(L, "PADDRIGHT"); press(L, "PADDRIGHT")
-check(mdoc(L).get('ef') == 'del' and mdoc(L).get('efc') == 23, "e. Right along the row: Delete (s23)")
-press(L, "PADDLEFT"); press(L, "PADDLEFT"); press(L, "PADDLEFT")
+check(d.get('ef') == 'add' and d.get('efc') == 21, "e. Down past the lines: the button row (+ Line = s21)", (d.get('ef'), d.get('efc')))
+press(L, "PADDRIGHT")
+check(mdoc(L).get('ef') == 'more' and mdoc(L).get('efc') == 22 and mdoc(L).get('ym') is True, "ae. Right: More (s22)", mdoc(L).get('ef'))
+press(L, "PADDRIGHT")
+check(mdoc(L).get('ef') == 'more', "ae. ... the row's end (no Presets / Delete buttons any more)")
 press(L, "PAD1")
+p = popd(L)
+check(p.get('k') == 'more' and p.get('cols') == 1 and [r.get('o') for r in p.get('rows')] == ['pre', 'del'] and p.get('base') == 0,
+      "ae. A on More: one column, Presets and Delete (cells s0..)", p)
+press(L, "PADDDOWN")
+check(popd(L).get('cur') == 'r2', "ae. Down in More: Delete", popd(L).get('cur'))
+press(L, "PAD2")
+check(not mdoc(L).get('pop') and mdoc(L).get('ef') == 'more' and mlog(L) == [], "ae. B: More closes; nothing done")
+press(L, "PADDLEFT")
+press(L, "PAD1")
+check(mdoc(L).get('mode') == 'build' and bdoc(L).get('at') == 4 and (bdoc(L).get('pop') or {}).get('k') == 'cmd',
+      "e. + Line: a new last line in the builder, its Action list open", bdoc(L).get('at'))
+pick_row(L, lambda r: r.get('k') == 'chat')
 kbd_done(L, "/cheer")
-check(L.eval('mbody("Zulu")').endswith("\n/cheer"), "e. + line: added at the end", L.eval('mbody("Zulu")'))
+check(L.eval('mbody("Zulu")').endswith("\n/cheer"), "e. + Line, Chat line: added at the end", L.eval('mbody("Zulu")'))
 # 255 with the new lines
 L.eval('function() local i = GetMacroIndexByName("Zulu"); GENM[i].body = string.rep("x", 250) end')()
 L.execute('MLOG = {}')
+press(L, "PADDDOWN")
+check(mdoc(L).get('ef') == 'add', "e. (the glow on + Line)", mdoc(L).get('ef'))
 press(L, "PAD1")
-check(mdoc(L)['kbd']['max'] == 4, "e. + line on a 250-letter body: 4 letters left (the new line's break counts)", mdoc(L).get('kbd'))
+pick_row(L, lambda r: r.get('k') == 'chat')
+check(mdoc(L)['kbd']['max'] == 4, "e. + Line on a 250-letter body: 4 letters left (the new line's break counts)", mdoc(L).get('kbd'))
 r = kbd_done(L, "/abcde")
 check(r == 'false:long' and mlog(L) == [], "e. more than 255: refused, no call", (r, mlog(L)))
 tap(L, "kx")
@@ -487,59 +626,206 @@ check(L.eval('MRx.canWrite()') == 'loading', "f. before the macros load: 'loadin
 L.execute('MACROS_LOADED = true')
 check(clean(L) == {}, "f. clean (no write outside a Done, none in the lockdown)", clean(L))
 
-# ================================================================ g. + Spell/Item and the recipes
+# ================================================================ g. (s14) THE BUILDER (D1): the action and its spell, then the cases; Done
+def sel(L, allow=True):
+    """the Select button (D4: Done), the capture's press (inside an allowed write)"""
+    L.execute('ALLOW = %s' % ('true' if allow else 'false'))
+    press(L, "PADBACK")
+    L.execute('ALLOW = false')
+
+
 L = opened([("Alpha", "")], CHAR)
 press(L, "PAD1")
-for _ in range(2):
-    press(L, "PADDDOWN")
-press(L, "PADDRIGHT")
-check(mdoc(L).get('ef') == 'pick', "g. the Spell/Item button", mdoc(L).get('ef'))
+d = mdoc(L)
+check(d.get('mode') == 'edit' and d.get('tiles') and d.get('ls') == [], "g. an empty macro's editor: the preset tiles, no strips", d.get('tiles'))
+tap(L, 21); tap(L, "a")
+b0 = bdoc(L)
+check(mdoc(L).get('mode') == 'build' and b0.get('ln') is None and b0.get('at') == 1 and (b0.get('pop') or {}).get('k') == 'cmd'
+      and b0.get('h') == 'pick', "g. + Line: the builder on a new line, its Action list open; no spell yet = 'pick'", b0)
+cmds = [r.get('k') for r in (b0.get('pop') or {}).get('rows') or []]
+check(cmds[:3] == ['cast', 'use', 'seq'] and 'chat' == cmds[-1] and not any(k.startswith('pet') for k in cmds) and 'cancelform' not in cmds,
+      "g. the Action list: Cast, Use, Sequence first, Chat line last; a Shaman (no pet, no forms) has no pet order, no Leave form", cmds)
+pick_row(L, lambda r: r.get('k') == 'cast')
+pp = popd(L)
+check(pp.get('k') == 'arg' and pp.get('tab') == 'sp' and pp.get('base') == 6 and [r.get('n') for r in pp.get('rows')] ==
+      ['Lightning Bolt', 'Healing Wave', 'Lightning Shield'], "g. Cast picked: the Spell / Item pop-out opens next (D1), the book's spells", pp)
+check(pp.get('tabs') == ['sp', 'gen', 'it', 'sl'], "g. its tabs for a Cast: Spells, General, Items, Slots (no Pet tab for a Shaman)", pp.get('tabs'))
+pick_row(L, lambda r: r.get('n') == 'Healing Wave')
+b1 = bdoc(L)
+check(b1.get('t') == '/cast Healing Wave' and b1.get('dr') is True and not b1.get('h') and not b1.get('pop') and (b1.get('a') or {}).get('n') == 'Healing Wave',
+      "g. Healing Wave: the line reads '/cast Healing Wave', a draft, nothing wrong", b1)
+check(b1.get('rows')[0] == ['cmd', 'arg', 'keep'] and b1.get('rows')[-1] == ['done', 'more']
+      and b1.get('ch', {}).get('done') == 19 and b1.get('ch', {}).get('more') == 17 and b1.get('ch', {}).get('c1u') == 4
+      and 'text' not in b1.get('ch', {}) and 'rem' not in b1.get('ch', {}),
+      "g. its chips as rows, their s-cells (Done = s19, s15: More = s17; Aa Text / Remove are More's)", b1.get('rows'))
+check(b1.get('cur') == 'arg' and 'ym' not in b1, "ae. on the spell's chip Y clears it: no ym", b1.get('ym'))
+chip(L, 'more')
+p = popd(L)
+check(p.get('k') == 'more' and [(r.get('o'), r.get('rv'), r.get('off')) for r in p.get('rows')] == [('text', None, None), ('rem', None, None)],
+      "ae. the builder's More: Aa Text, Remove (a new line's draft: Remove, never asked)", p.get('rows'))
+press(L, "PAD2")
+check(bdoc(L).get('cur') == 'more' and bdoc(L).get('ym') is True, "ae. B: More closes; on More, Y opens it (ym)", bdoc(L).get('cur'))
+L.execute('MLOG = {}')
+sel(L)
+check(mlog(L) == ['edit 1 nil /cast Healing Wave'] and mdoc(L).get('mode') == 'edit' and mdoc(L).get('ef') == 'l1',
+      "g. Select = Done (D4): ONE write; the editor, the glow on the new line", (mlog(L), mdoc(L).get('ef')))
+d = mdoc(L)
+check((d.get('ls') or [{}])[0].get('k') == 'cmd' and d['ls'][0].get('c') == 'cast' and d['ls'][0].get('n') == 'Healing Wave'
+      and d['ls'][0].get('i') == 130331, "g. its strip (D3): the Cast, Healing Wave's picture and name", d.get('ls'))
+# an unchanged draft writes nothing
+press(L, "PAD1")
+L.execute('MLOG = {}')
+check(mdoc(L).get('mode') == 'build' and bdoc(L).get('ln') == 1 and not bdoc(L).get('dr'), "g. A on the line: the builder on it, not a draft")
+sel(L)
+check(mlog(L) == [] and mdoc(L).get('mode') == 'edit', "g. Done with nothing changed: NOTHING written", mlog(L))
+# + Case (X): the helpful spell's options
+press(L, "PAD1"); press(L, "PAD3")
+opts = [r.get('o') for r in popd(L).get('rows') or []]
+check(opts == ['fo1', 'me', 'tg', 'sp', 'bl'], "g. X = + Case: a helpful spell's: Focus first, Else on me, Else on target, Else another spell, Blank "
+      "(no Soft friend first: the game's soft-friend targeting is off)", opts)
+pick_row(L, lambda r: r.get('o') == 'me')
+b2 = bdoc(L)
+check(b2.get('t') == '/cast [help,nodead][@player] Healing Wave' and [c.get('u') for c in b2.get('cs')] == [None, 'player']
+      and b2['cs'][0].get('f') == ['help', '!dead'],
+      "g. Else on me: the plain step first gets the spell's own test (a friend, alive), then '@player': ONE clause (merged)", b2.get('t'))
+# B keeps the draft
+L.execute('MLOG = {}')
+press(L, "PAD2")
+d = mdoc(L)
+check(d.get('mode') == 'edit' and (d.get('dr') or {}).get('n') == 1 and mlog(L) == [] and L.eval('mbody("Alpha")') == '/cast Healing Wave',
+      "g. B: the editor; the draft KEPT (marked on its line), nothing written", (d.get('dr'), mlog(L)))
+press(L, "PAD1")
+check(bdoc(L).get('t') == '/cast [help,nodead][@player] Healing Wave' and bdoc(L).get('dr') is True, "g. A on the line again: the draft back")
+# Revert
+chip(L, 'more')
+check([(r.get('o'), r.get('rv')) for r in popd(L).get('rows')] == [('text', None), ('rem', True)], "ae. a stored line's draft: More says Revert (rv)",
+      popd(L).get('rows'))
+press(L, "PAD2")
+more(L, 'rem')
+check(bdoc(L).get('t') == '/cast Healing Wave' and not bdoc(L).get('dr') and mlog(L) == [], "g. Revert: the stored line again, nothing written")
+# Done in a fight: refused, the draft kept; after it: ONE write
+press(L, "PAD3"); pick_row(L, lambda r: r.get('o') == 'me')
+L.execute(COMBAT_ON)
+sel(L, allow=False)
+d = mdoc(L)
+check(d.get('note') == 'combat' and d.get('mode') == 'build' and bdoc(L).get('dr') is True and mlog(L) == [],
+      "g. Done in a fight: refused ('combat'), no call, the draft kept", (d.get('note'), mlog(L)))
+check(not bdoc(L).get('w'), "g. ... and in a fight the chips stay neutral (no soft checks)", bdoc(L).get('w'))
+L.execute(COMBAT_OFF)
+sel(L)
+check(mlog(L) == ['edit 1 nil /cast [help,nodead][@player] Healing Wave'] and L.eval('mbody("Alpha")') == '/cast [help,nodead][@player] Healing Wave',
+      "g. the fight over, Done: ONE write", mlog(L))
+# Keep on, the If grid (tri-state), the On list, Y
+press(L, "PAD1")
+chip(L, 'keep')
+check(bdoc(L).get('t') == '/cast [help,nodead][@player] !Healing Wave' and (bdoc(L).get('a') or {}).get('bang') is True,
+      "g. Keep on: '!' on the spell (the game's 'never toggle off')", bdoc(L).get('t'))
+chip(L, 'keep')
+chip(L, 'c2f')
+check(popd(L).get('k') == 'if' and popd(L).get('case') == 2, "g. case 2's If: the tri-state grid")
+ifs = [(r.get('k'), r.get('s')) for r in popd(L).get('rows')]
+check([k for k, _ in ifs] == ['harm', 'help', 'dead', 'exists', 'combat', 'mod:shift', 'mod:ctrl', 'mounted', 'channeling', 'group'],
+      "g. a Shaman's If grid: no Alt (only when parsed), no Pet out / Stealth / Form", ifs)
+pick_row(L, lambda r: r.get('k') == 'combat')
+check(bdoc(L).get('t') == '/cast [help,nodead][@player,combat] Healing Wave' and popd(L).get('k') == 'if', "g. A: yes ([combat]); the grid stays open")
+pick_row(L, lambda r: r.get('k') == 'combat')
+check(bdoc(L).get('t') == '/cast [help,nodead][@player,nocombat] Healing Wave', "g. A again: no ([nocombat])", bdoc(L).get('t'))
+pick_row(L, lambda r: r.get('k') == 'combat')
+check(bdoc(L).get('t') == '/cast [help,nodead][@player] Healing Wave', "g. A again: off", bdoc(L).get('t'))
+pick_row(L, lambda r: r.get('k') == 'mod:shift')
+check(bdoc(L).get('t') == '/cast [help,nodead][@player,mod:shift] Healing Wave', "g. Shift (the player's ZL / LT / L2): [mod:shift]")
+press(L, "PAD4")
+check(bdoc(L).get('t') == '/cast [help,nodead][@player] Healing Wave' and popd(L).get('k') == 'if', "g. Y in the grid: that cell off")
+press(L, "PAD2")
+check(not bdoc(L).get('pop') and mdoc(L).get('mode') == 'build', "g. B: the pop-out closes (one step back)")
+chip(L, 'c1u')
+units = [r.get('u') for r in popd(L).get('rows')]
+check(units == ['', 'softenemy', 'focus', 'player', 'targettarget', 'party1', 'party2', 'party3', 'party4', 'mouseover', 'name'],
+      "g. On (D5): Target, Soft enemy, Focus, Me, Target's target, Party 1-4, Mouseover, Name (no Soft friend: its CVar off; no Pet)", units)
+pick_row(L, lambda r: r.get('u') == 'focus')
+check(bdoc(L).get('t') == '/cast [@focus,help,nodead][@player] Healing Wave', "g. Focus: '@focus' first in its set", bdoc(L).get('t'))
+tap(L, bdoc(L)['ch']['c2u']); press(L, "PAD4")
+check(bdoc(L).get('t') == '/cast [@focus,help,nodead] Healing Wave' and len(bdoc(L).get('cs')) == 1, "g. Y on case 2: it goes", bdoc(L).get('t'))
+# Else another spell: the case's own spell (a clause of its own)
+press(L, "PAD3")
+pick_row(L, lambda r: r.get('o') == 'sp')
+check(popd(L).get('k') == 'arg' and popd(L).get('case') == 2, "g. Else another spell: the Spell list for case 2 at once")
+pick_row(L, lambda r: r.get('n') == 'Lightning Bolt')
+check(bdoc(L).get('t') == '/cast [@focus,help,nodead] Healing Wave; Lightning Bolt' and (bdoc(L)['cs'][1].get('a') or {}).get('n') == 'Lightning Bolt',
+      "g. ... '; Lightning Bolt' (its own chip on case 2)", bdoc(L).get('t'))
+check(bdoc(L).get('rows')[2] == ['c2u', 'c2f', 'c2a'], "g. case 2's row: On, If, its spell")
+chip(L, 'arg')
+pick_row(L, lambda r: r.get('n') == 'Lightning Shield')
+check(bdoc(L).get('t') == '/cast [@focus,help,nodead] Lightning Shield; Lightning Bolt', "g. the line's spell changed: case 2 keeps its own")
+for o in ('tg', 'bl'):
+    press(L, "PAD3"); pick_row(L, lambda r, o=o: r.get('o') == o)
+    if popd(L):
+        press(L, "PAD2")
+check(len(bdoc(L).get('cs')) == 4 and ['add'] not in bdoc(L).get('rows'), "g. at most 4 cases: no + Case then", bdoc(L).get('rows'))
+press(L, "PAD2")
+check(mdoc(L).get('mode') == 'edit', "g. B: the editor (the draft kept)")
+L.execute('MRx.st.draft = nil')
+# hard: no spell; long
+tap(L, 21); tap(L, "a")
+pick_row(L, lambda r: r.get('k') == 'cast')
+press(L, "PAD2")
+L.execute('MLOG = {}')
+sel(L)
+check(mdoc(L).get('note') == 'pick' and bdoc(L).get('cur') == 'arg' and mlog(L) == [], "g. Done with no spell: refused 'pick', the glow on the spell's chip",
+      (mdoc(L).get('note'), bdoc(L).get('cur')))
+L.eval('function() local i = GetMacroIndexByName("Alpha"); GENM[i].body = string.rep("y", 240) end')()
+chip(L, 'arg'); pick_row(L, lambda r: r.get('n') == 'Lightning Shield')
+sel(L)
+check(bdoc(L).get('h') == 'long' and mdoc(L).get('note') == 'long' and mlog(L) == [] and bdoc(L).get('len') > 255,
+      "g. past 255 (bytes): 'long', Done refused, nothing written", (bdoc(L).get('h'), bdoc(L).get('len')))
+press(L, "PAD2")
+L.execute('MRx.st.draft = nil')
+# soft: book, bags, else (amber; Done still writes)
+L = opened([("Alpha", "/cast Frostbolt\n/use Hearthstone\n/cast [harm,nodead] Lightning Bolt\n/cast [harm,nodead][] Lightning Bolt")], CHAR)
 press(L, "PAD1")
 d = mdoc(L)
-rows = (d.get('pick') or {}).get('rows') or []
-check(d.get('mode') == 'pick' and [(x['t'], x['n']) for x in rows] == [('s', 'Lightning Bolt'), ('s', 'Healing Wave'), ('s', 'Lightning Shield'),
-                                                                       ('u', 'Minor Healing Potion'), ('e', 'Worn Shortsword')],
-      "g. the list: the book's spells, then bag items with a use (/use) or to equip (/equip); cloth left out", rows)
+check([x.get('w') for x in d.get('ls')] == ['book', 'bags', 'else', None],
+      "g. the strips' amber words: not in the book, not in the bags, a harmful line with no plain else (a plain else: none)", [x.get('w') for x in d.get('ls')])
+press(L, "PADDDOWN"); press(L, "PAD1")
+check(bdoc(L).get('w') == ['book'] and not bdoc(L).get('h'), "g. the builder says it too (soft: Done not refused)", bdoc(L).get('w'))
+chip(L, 'keep')
 L.execute('MLOG = {}')
-tap(L, 3)
+sel(L)
+check(mlog(L) == ['edit 1 nil /cast !Frostbolt\n/use Hearthstone\n/cast [harm,nodead] Lightning Bolt\n/cast [harm,nodead][] Lightning Bolt'],
+      "g. ... and Done writes", mlog(L))
+# Remove: More's Remove ASKS (s15: Cancel [B] / Remove [A]); A confirms within 6 s; B cancels; the time out cancels
+press(L, "PADDDOWN"); press(L, "PAD1")
+L.execute('MLOG = {}')
+more(L, 'rem')
+check(bdoc(L).get('rem') is True and mlog(L) == [] and not bdoc(L).get('pop'), "g. More > Remove (a stored line, unchanged): it ASKS, nothing written")
+cur0 = bdoc(L).get('cur')
+press(L, "PADDDOWN"); press(L, "PAD4"); press(L, "PAD3"); sel(L, allow=False)
+check(bdoc(L).get('rem') is True and mlog(L) == [] and not bdoc(L).get('pop') and bdoc(L).get('cur') == cur0 and mdoc(L).get('mode') == 'build',
+      "ae. while it asks: the D-pad, Y, X and Select do nothing", (bdoc(L).get('cur'), bdoc(L).get('pop')))
+press(L, "PAD2")
+check(not bdoc(L).get('rem') and mdoc(L).get('mode') == 'build' and mlog(L) == [], "ae. B: the ask cancelled, still in the builder")
+more(L, 'rem')
+L.execute('advance(6.5)')
+check(not bdoc(L).get('rem'), "g. not confirmed within 6 s: the ask goes")
+more(L, 'rem')
+tap(L, bdoc(L)['ch']['cmd'])
+check(not bdoc(L).get('rem') and bdoc(L).get('cur') == 'cmd' and mlog(L) == [], "ae. a finger elsewhere cancels the ask (then selects there)")
+more(L, 'rem')
 tap(L, "a", allow=True)
-d = mdoc(L)
-check(L.eval('mbody("Alpha")') == '/use Minor Healing Potion' and d.get('mode') == 'edit' and len(mlog(L)) == 1,
-      "g. a finger picks the potion: ONE write, '/use <item>', back to the editor", (L.eval('mbody("Alpha")'), mlog(L)))
-check(mdoc(L).get('ef') == 'pick', "g. back in the editor the glow is still on Spell/Item", mdoc(L).get('ef'))
-press(L, "PAD1"); tap(L, 0); tap(L, "a", allow=True)
-check(L.eval('mbody("Alpha")') == '/use Minor Healing Potion\n/cast Lightning Bolt', "g. a spell: '/cast <spell>'", L.eval('mbody("Alpha")'))
-press(L, "PADDRIGHT")
-check(mdoc(L).get('ef') == 'rec', "g. the Recipes button")
+check(mlog(L) == ['edit 1 nil /cast !Frostbolt\n/cast [harm,nodead] Lightning Bolt\n/cast [harm,nodead][] Lightning Bolt'] and mdoc(L).get('mode') == 'edit',
+      "g. the ask's A: the line removed, ONE write", mlog(L))
+check(clean(L) == {}, "g. clean (every write inside a Done)", clean(L))
+# Name...: a typed unit (nothing written)
 press(L, "PAD1")
-d = mdoc(L)
-check(d.get('mode') == 'rec' and d['rec']['ids'] == ['mo', 'fo', 'me', 'sh', 'at', 'tr'], "g. six recipe tiles", d.get('rec'))
-L.eval('function() local i = GetMacroIndexByName("Alpha"); GENM[i].body = "" end')()
-press(L, "PAD1")
-d = mdoc(L)
-check(d.get('mode') == 'pick' and d['pick']['rec'] == 'mo' and d['pick']['step'] == 1 and d['pick']['of'] == 1
-      and all(x['t'] == 's' for x in d['pick']['rows']), "g. mouseover heal: one spell pick (spells only)", d.get('pick'))
-press(L, "PADDDOWN")
-L.execute('ALLOW = true'); press(L, "PAD1"); L.execute('ALLOW = false')
-check(L.eval('mbody("Alpha")') == '#showtooltip\n/cast [@mouseover,help,nodead][] Healing Wave' and mdoc(L).get('mode') == 'edit',
-      "g. mouseover heal written: #showtooltip + the conditional cast", L.eval('mbody("Alpha")'))
-press(L, "PAD1"); tap(L, 3); tap(L, "a")
-check(mdoc(L)['pick']['step'] == 1 and mdoc(L)['pick']['of'] == 2, "g. Shift pair: two picks (1 of 2)", mdoc(L).get('pick'))
-tap(L, 0); tap(L, "a")
-check(mdoc(L)['pick']['step'] == 2, "g. ... then 2 of 2", mdoc(L).get('pick'))
+chip(L, 'c1u')
+pick_row(L, lambda r: r.get('u') == 'name')
+check(mdoc(L).get('kbd', {}).get('name') == 'macunit', "g. On: Name... opens the keyboard")
 L.execute('MLOG = {}')
-tap(L, 1); tap(L, "a", allow=True)
-check(L.eval('mbody("Alpha")') == '#showtooltip\n/cast [@mouseover,help,nodead][] Healing Wave\n/cast [mod:shift] Healing Wave; Lightning Bolt'
-      and len(mlog(L)) == 1, "g. Shift pair: '[mod:shift] second; first', the tooltip line not twice, ONE write", (L.eval('mbody("Alpha")'), mlog(L)))
-for rid, want in (("fo", "/cast [@focus,exists,nodead][] Lightning Bolt"), ("me", "/cast [@player] Lightning Bolt"),
-                  ("at", "/startattack\n/cast Lightning Bolt"), ("tr", "/use 13\n/use 14\n/cast Lightning Bolt")):
-    L.eval('function() local i = GetMacroIndexByName("Alpha"); GENM[i].body = "" end')()
-    press(L, "PAD1")
-    tap(L, ['mo', 'fo', 'me', 'sh', 'at', 'tr'].index(rid)); tap(L, "a"); tap(L, 0); tap(L, "a", allow=True)
-    check(L.eval('mbody("Alpha")') == '#showtooltip\n' + want, "g. recipe %s" % rid, L.eval('mbody("Alpha")'))
-press(L, "PAD1"); press(L, "PAD2")
-check(mdoc(L).get('mode') == 'edit', "g. B in the recipes: the editor")
-check(clean(L) == {}, "g. clean", clean(L))
+kbd_done(L, "Bob", allow=False)
+check(bdoc(L).get('t') == '/cast [@Bob] !Frostbolt' and mlog(L) == [] and mdoc(L).get('mode') == 'build',
+      "g. ... 'Bob' typed: '@Bob' on the case, NOTHING written, back in the builder", bdoc(L).get('t'))
+press(L, "PAD2")
+check(clean(L) == {}, "g. clean (the typed unit)", clean(L))
 
 # ================================================================ h. Delete, and our stored binds following a rename / delete
 L = opened(GEN, CHAR)
@@ -552,21 +838,26 @@ check(L.eval('WowCompanionSpellsDB.stickBy["Korvash-Realm"]["1:9"].n') == 'Bravo
       L.eval('WowCompanionSpellsDB.stickBy["Other-Realm"]["1:10"].n') == 'Bravo2' and
       L.eval('WowCompanionSpellsDB.fightBy["Korvash-Realm"][25].n') == 'Bravo2',
       "h. a General macro renamed: every character's stored binds of it follow")
-for _ in range(5):
-    press(L, "PADDDOWN")
-press(L, "PADDRIGHT"); press(L, "PADDRIGHT"); press(L, "PADDRIGHT")
-check(mdoc(L).get('ef') == 'del', "h. the Delete button", mdoc(L).get('ef'))
+tap(L, 22)
+check(mdoc(L).get('ef') == 'more' and mdoc(L).get('efc') == 22, "h. the More button (s22)", mdoc(L).get('ef'))
 L.execute('MLOG = {}')
-press(L, "PAD1")
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PAD1")
 d = mdoc(L)
-check(d.get('del') is True and mlog(L) == [], "h. the first A arms Delete (nothing deleted)", (d.get('del'), mlog(L)))
-L.execute('advance(3.5)')
-check(not mdoc(L).get('del'), "h. not confirmed within 3 s: disarmed")
-press(L, "PAD1")
+check(d.get('del') is True and mlog(L) == [] and not d.get('pop') and d.get('mode') == 'edit', "h. More > Delete ASKS (nothing deleted)",
+      (d.get('del'), mlog(L)))
+press(L, "PADDUP"); press(L, "PAD4"); press(L, "PAD3")
+check(mdoc(L).get('del') is True and mdoc(L).get('mode') == 'edit' and not mdoc(L).get('pop') and mlog(L) == [],
+      "ae. while it asks: Up, Y and X do nothing")
+press(L, "PAD2")
+check(not mdoc(L).get('del') and mdoc(L).get('mode') == 'edit', "ae. B: the ask cancelled (still in the editor)")
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PAD1")
+L.execute('advance(6.5)')
+check(not mdoc(L).get('del'), "h. not confirmed within 6 s: the ask goes")
+more(L, 'del')
 L.execute('ALLOW = true'); press(L, "PAD1"); L.execute('ALLOW = false')
 d = mdoc(L)
 check(mlog(L) == ['delete 2'] and L.eval('mnames(GENM)') == 'Alpha|Charlie' and d.get('mode') == 'grid' and d.get('cur') == 1
-      and d['mac']['n'] == 'Charlie', "h. the second A within 3 s: DeleteMacro; the grid, the selection min(count, old)", (mlog(L), d.get('cur')))
+      and d['mac']['n'] == 'Charlie', "h. the ask's A within 6 s: DeleteMacro; the grid, the selection min(count, old)", (mlog(L), d.get('cur')))
 check(L.eval('WowCompanionSpellsDB.stickBy["Korvash-Realm"]["1:9"]') is None and
       L.eval('WowCompanionSpellsDB.stickBy["Other-Realm"]["1:10"]') is None and
       L.eval('WowCompanionSpellsDB.fightBy["Korvash-Realm"][25]') is None and
@@ -666,9 +957,11 @@ check(L.eval('MacroFrame._shown') is False and L.eval('ACTIONS[1] and ACTIONS[1]
 check(clean(L) == {}, "j. clean", clean(L))
 
 # ================================================================ k. B one step back, then Home; leaving drops what was half done
-L = opened(GEN, CHAR)
-press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PADDDOWN"); press(L, "PADDRIGHT"); press(L, "PAD1")
-check(mdoc(L).get('mode') == 'pick', "k. the pick list")
+L = opened([("Alpha", "/cast Lightning Bolt")] + GEN[1:], CHAR)
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PAD1"); chip(L, 'arg')
+check(mdoc(L).get('mode') == 'build' and popd(L).get('k') == 'arg', "k. the builder with its Spell list out")
+press(L, "PAD2")
+check(mdoc(L).get('mode') == 'build' and not popd(L), "k. B: the pop-out goes (the builder stays)")
 press(L, "PAD2")
 check(mdoc(L).get('mode') == 'edit', "k. B: the editor")
 press(L, "PAD2")
@@ -677,6 +970,7 @@ n0 = nsent(L)
 press(L, "PAD2")
 back = [x for x in docs(L, n0, 'macpad') if x.get('k') == 'BACK']
 check(holder(L) is None and back, "k. B at the grid: the controller back (\"B\"), macpad BACK (the app goes Home)", holder(L))
+check(mlog(L) == [], "k. B all the way: nothing written", mlog(L))
 L = opened(GEN, CHAR)
 press(L, "PAD1"); press(L, "PAD1")
 check(L.eval('WowCompanion.chatField.name()') == 'macname', "k. a keyboard open")
@@ -720,7 +1014,7 @@ check(d.get('cur') == 1 and d['mac']['lines'] == ['/cast Lesser Healing Wave'],
 press(L, "PAD1")
 d = mdoc(L)
 check(d.get('mode') == 'edit' and d['mac']['lines'] == ['/cast Lesser Healing Wave'], "n. A edits the second (the one selected)", d.get('mac'))
-press(L, "PADDDOWN"); press(L, "PAD1")
+press(L, "PADDDOWN"); press(L, "PAD1"); more(L, 'text')
 L.execute('MLOG = {}')
 kbd_done(L, "/cast Chain Heal")
 check(mlog(L) == ['edit 2 nil /cast Chain Heal'] and L.eval('GENM[1].body') == '/cast Healing Wave' and L.eval('GENM[2].body') == '/cast Chain Heal',
@@ -736,13 +1030,10 @@ check(d.get('mode') == 'grid' and d.get('note') == 'taken' and not (last(L, 'spe
       "n. X on a shared name: refused 'taken' (no Bind box: our buttons go by name)", (d.get('mode'), d.get('note')))
 L.execute('WowCompanionSpellsDB.stickBy = { ["Korvash-Realm"] = { ["1:9"] = { t = "macro", n = "Heal", i = 1 } } }')
 press(L, "PAD1")
-for _ in range(2):
-    press(L, "PADDDOWN")
-for _ in range(3):
-    press(L, "PADDRIGHT")
-check(mdoc(L).get('ef') == 'del', "n. the Delete button", mdoc(L).get('ef'))
+more(L, 'del')
+check(mdoc(L).get('del') is True, "n. More > Delete asks", mdoc(L).get('del'))
 L.execute('MLOG = {}; ALLOW = true')
-press(L, "PAD1"); press(L, "PAD1")
+press(L, "PAD1")
 L.execute('ALLOW = false')
 d = mdoc(L)
 check(mlog(L) == ['delete 2'] and L.eval('mnames(GENM)') == 'Heal|Zap' and L.eval('GENM[1].body') == '/cast Healing Wave'
@@ -753,12 +1044,9 @@ check(clean(L) == {}, "n. clean", clean(L))
 # the FIRST twin deleted: its twin slides into the same index, and that is still a delete (the tab holds one fewer)
 L = opened(TWINS, CHAR)
 press(L, "PAD1")
-for _ in range(2):
-    press(L, "PADDDOWN")
-for _ in range(3):
-    press(L, "PADDRIGHT")
+more(L, 'del')
 L.execute('MLOG = {}; ALLOW = true')
-press(L, "PAD1"); press(L, "PAD1")
+press(L, "PAD1")
 L.execute('ALLOW = false')
 d = mdoc(L)
 check(mlog(L) == ['delete 1'] and L.eval('mnames(GENM)') == 'Heal|Zap' and L.eval('GENM[1].body') == '/cast Lesser Healing Wave'
@@ -779,22 +1067,74 @@ check(last(L, 'spellsack').get('why') == 'taken' and mlog(L) == [],
 press(L, "PAD2")
 check(clean(L) == {}, "n. clean (the box)", clean(L))
 
-# ================================================================ o. (review) a recipe's "#showtooltip" goes on the macro's first line
-L = opened([("Alpha", "/wave\n/say hi")], CHAR)
+# ================================================================ o. (s14) PRESETS (D2): whole macros on a new or empty macro
+L = opened([("Alpha", ""), ("Beta", "/wave")], CHAR)
 press(L, "PAD1")
-for _ in range(3):
-    press(L, "PADDDOWN")
-press(L, "PADDRIGHT"); press(L, "PADDRIGHT")
-check(mdoc(L).get('ef') == 'rec', "o. the Recipes button", mdoc(L).get('ef'))
-press(L, "PAD1"); press(L, "PAD1")
+d = mdoc(L)
+tk = [t.get('k') for t in d.get('tiles') or []]
+check(tk == ['heal', 'fof', 'focus', 'atk', 'mo'],
+      "o. a Shaman's tiles in the table's order: Heal, Friend or foe, Set focus, Attack + spell ...", tk)
+check('int' not in tk and 'petatk' not in tk and 'form' not in tk and 'trink' not in tk,
+      "o. no interrupt in the book, no pet, no forms, no trinket with a use: those tiles are not shown", tk)
+check('seq' not in tk, "o. one harmful spell only: no Sequence (2+ needed)", tk)
+check(tk[-1] == 'mo' and len(tk) <= 8, "o. Mouseover heal LAST (room left), at most 8", tk)
+t0 = d['tiles'][0]
+check(t0.get('t') == '#showtooltip\n/cast [help,nodead][@player] Healing Wave' and t0.get('ic') == [130331],
+      "o. Heal, else me: '#showtooltip' + '[help,nodead][@player]', the book's helpful spell picked", t0)
+atk = d['tiles'][tk.index('atk')]
+check(atk.get('t') == '/target [noexists][dead] softenemy\n/startattack [harm,nodead]\n/cast Lightning Bolt',
+      "o. Attack + spell: the soft enemy targeted first (the 10-01 fix), then the attack, then the spell", atk.get('t'))
+tap(L, 2 + tk.index('heal')); tap(L, "a")
+d = mdoc(L)
+ps = d.get('ps') or {}
+check(d.get('mode') == 'ps' and ps.get('k') == 'heal' and [x.get('n') for x in ps.get('picks')] == ['Healing Wave'] and ps.get('cur') == 'p1'
+      and [x.get('k') for x in ps.get('ls')] == ['tip', 'cmd'], "o. A on a tile: its preview (strips, its pick)", ps)
+tap(L, 0); tap(L, "a")
+check(popd(L).get('k') == 'arg' and popd(L).get('ps') is True, "o. A on the pick: the Spell list")
+pick_row(L, lambda r: r.get('n') == 'Lightning Shield')
+check((mdoc(L).get('ps') or {}).get('t') == '#showtooltip\n/cast [help,nodead][@player] Lightning Shield', "o. ... the preset follows the pick")
+L.execute('MLOG = {}')
+sel(L)
+check(mlog(L) == ['edit 1 nil #showtooltip\n/cast [help,nodead][@player] Lightning Shield'] and mdoc(L).get('mode') == 'edit',
+      "o. Done on an empty macro: ONE write of the whole macro (no second A)", mlog(L))
+# a macro with lines: More > Presets; Done ASKS (Cancel / Replace), the ask's A replaces it
+press(L, "PAD2"); press(L, "PADDRIGHT"); press(L, "PAD1")
+check(mdoc(L).get('mac', {}).get('n') == 'Beta' and mdoc(L).get('tiles') is None, "o. Beta (a line): no tiles in its editor")
+more(L, 'pre')
+check(mdoc(L).get('mode') == 'pre' and len(mdoc(L).get('tiles') or []) >= 4, "o. More > Presets: the tiles view")
+tap(L, 2); tap(L, "a")
+check(mdoc(L).get('mode') == 'ps' and mdoc(L)['ps']['k'] == 'focus', "o. Set focus's preview", mdoc(L).get('ps'))
+L.execute('MLOG = {}')
+sel(L)
+check(mlog(L) == [] and (mdoc(L).get('ps') or {}).get('arm') is True, "o. Done on a macro with lines: it ASKS (Cancel / Replace), nothing written",
+      mlog(L))
+sel(L)
+check(mlog(L) == [] and (mdoc(L).get('ps') or {}).get('arm') is True, "ae. Select again while it asks: nothing (only A confirms)", mlog(L))
+press(L, "PAD2")
+check(mlog(L) == [] and mdoc(L).get('mode') == 'ps' and not (mdoc(L).get('ps') or {}).get('arm'), "ae. B: the ask cancelled, the preview stays")
+sel(L)
+L.execute('advance(6.5)')
+check(not (mdoc(L).get('ps') or {}).get('arm'), "o. not confirmed within 6 s: the ask goes")
+sel(L)
 L.execute('ALLOW = true'); press(L, "PAD1"); L.execute('ALLOW = false')
-check(L.eval('mbody("Alpha")') == '#showtooltip\n/wave\n/say hi\n/cast [@mouseover,help,nodead][] Lightning Bolt',
-      "o. on a macro with lines: '#showtooltip' FIRST (the only line the game reads it on), the recipe at the end", L.eval('mbody("Alpha")'))
-L.eval('function() local i = GetMacroIndexByName("Alpha"); GENM[i].body = "#show Lightning Shield\\n/wave" end')()
-press(L, "PAD1"); press(L, "PAD1")
-L.execute('ALLOW = true'); press(L, "PAD1"); L.execute('ALLOW = false')
-check(L.eval('mbody("Alpha")') == '#show Lightning Shield\n/wave\n/cast [@mouseover,help,nodead][] Lightning Bolt',
-      "o. a '#show' line leading already: no second tooltip line", L.eval('mbody("Alpha")'))
+check(mlog(L) == ['edit 2 nil /focus'] and L.eval('mbody("Beta")') == '/focus', "o. the ask's A within 6 s: REPLACED, ONE write", mlog(L))
+press(L, "PAD2")
+check(mdoc(L).get('mode') == 'grid', "o. B: the grid")
+# the picks' rules: no helpful spell = no heal tiles; an interrupt in the book; pet classes; forms; a trinket; two harmful
+L = opened([("Alpha", "")], CHAR, macros='BOOK = { 403, 8042 }; WORN[13] = 9001; NFORMS = 1; CLASS = "DRUID"')
+press(L, "PAD1")
+tk = [t.get('k') for t in mdoc(L).get('tiles') or []]
+check(tk == ['int', 'focus', 'atk', 'seq', 'form', 'trink'], "o. Lightning Bolt + Earth Shock, a Druid with a form, a trinket with a use: "
+      "Focus interrupt (Earth Shock), Set focus, Attack, Sequence, Leave form, Trinket; no heal tiles", tk)
+tiles = {t['k']: t for t in mdoc(L)['tiles']}
+check(tiles['int']['t'] == '/stopcasting\n/cast [@focus,harm,nodead][] Earth Shock', "o. Focus interrupt: /stopcasting then the focus' interrupt, a plain else")
+check(tiles['seq']['t'] == '/castsequence reset=target Lightning Bolt, Earth Shock', "o. Sequence: its two harmful spells, reset=target")
+check(tiles['trink']['t'] == '/use [combat] 13\n/cast Lightning Bolt', "o. Trinket + spell: the worn trinket's slot 13")
+check(tiles['form']['t'] == '/cancelform\n/cast Lightning Bolt', "o. Leave form + spell")
+L = opened([("Alpha", "")], CHAR, pre='CLASS = "HUNTER"')
+press(L, "PAD1")
+tk = [t.get('k') for t in mdoc(L).get('tiles') or []]
+check('petatk' in tk, "o. a Hunter: Pet attack + spell", tk)
 check(clean(L) == {}, "o. clean", clean(L))
 
 # ================================================================ p. (review) the `wx` cell before the game's macro UI loaded
@@ -865,90 +1205,84 @@ WowCompanion.spellsPetBook = function() return PETBOOK, "PET", true end
 '''
 
 
-def picks(L):
-    d = mdoc(L)
-    p = d.get('pick') or {}
-    out, page = [], 1
-    while True:
-        out += [(r.get('t'), r.get('n'), r.get('l'), r.get('i')) for r in (p.get('rows') or [])]
-        if page >= (p.get('pages') or 1):
-            break
-        tap(L, "pn")
-        page += 1
-        p = mdoc(L).get('pick') or {}
-    for _ in range(page - 1):
-        tap(L, "pp")                                   # back on the first page
-    return out
-
-
-def to_pick(L):
+def to_pet(L):
+    """the editor of the selected macro, + Line, Cast, the Spell / Item pop-out's Pet tab (None = no Pet tab)"""
     press(L, "PAD1")
-    for _ in range(2):
-        press(L, "PADDDOWN")
-    press(L, "PADDRIGHT")
-    press(L, "PAD1")
+    tap(L, 21); tap(L, "a")
+    pick_row(L, lambda r: r.get('k') == 'cast')
+    tabs = popd(L).get('tabs') or []
+    if 'pet' not in tabs:
+        return None
+    tap(L, tabs.index('pet')); tap(L, "a")
+    return [(r.get('t'), r.get('n'), r.get('l'), r.get('i')) for r in popd(L).get('rows') or []]
 
 
 L = opened([("Alpha", "")], CHAR, pre=PET)
 L.execute(PET_AFTER)
-to_pick(L)
-rows = picks(L)
-check(not any(t == 'p' for t, _, _, _ in rows) and not any(n == 'Firebolt' for _, n, _, _ in rows),
-      "r. no pet out: no pet command and no pet spell in + Spell/Item", rows)
+check(to_pet(L) is None, "r. a Shaman with no pet: no Pet tab in the Spell / Item pop-out", popd(L).get('tabs'))
 L = opened([("Alpha", "")], CHAR, pre=PET + 'UNITS.pet = { name = "Imp" }\n')
 L.execute(PET_AFTER)
-to_pick(L)
-rows = picks(L)
-names = [(t, n, l) for t, n, l, _ in rows]
-SP = [('s', 'Lightning Bolt', None), ('s', 'Healing Wave', None), ('s', 'Lightning Shield', None)]
+rows = to_pet(L)
+names = [(t, n, l) for t, n, l, _ in rows or []]
 PC = [('p', 'Attack', '/petattack'), ('p', 'Follow', '/petfollow'), ('p', 'Stay', '/petstay'), ('p', 'Passive', '/petpassive'),
       ('p', 'Defensive', '/petdefensive'), ('p', 'Aggressive', '/petaggressive'), ('p', 'Dismiss', '/petdismiss')]
-check(names[:len(SP) + len(PC) + 1] == SP + PC + [('s', 'Firebolt', None)],
-      "r. a pet out: the player's spells, then the pet's commands (the game's words, its slash lines), then its spell", names)
-check(names[len(SP) + len(PC) + 1:] == [('u', 'Minor Healing Potion', None), ('e', 'Worn Shortsword', None)],
-      "r. ... then the bag items as before (the pet's passive and its command entry left out)", names[len(SP) + len(PC) + 1:])
+check(names == PC + [('s', 'Firebolt', None)],
+      "r. a pet out: the Pet tab = the pet's orders (the game's words, its slash lines), then its spell (not its passive, not its command entry)", names)
 icons = {n: i for t, n, _, i in rows if t == 'p'}
 check(icons.get('Attack') == 132152 and icons.get('Stay') == 136106 and icons.get('Dismiss') == 136222,
       "r. the pet bar's pictures (WC.petTok)", icons)
+pick_row(L, lambda r: r.get('n') == 'Attack')
+check(bdoc(L).get('c') == 'petattack' and bdoc(L).get('t') == '/petattack' and not popd(L),
+      "r. Attack picked: the line BECOMES the pet's order, '/petattack'", bdoc(L).get('t'))
 L.execute('MLOG = {}')
-tap(L, 3); tap(L, "a", allow=True)
+sel(L)
 check(L.eval('mbody("Alpha")') == '/petattack' and mdoc(L).get('mode') == 'edit' and len(mlog(L)) == 1,
-      "r. a finger picks Attack: ONE write, '/petattack', back to the editor", (L.eval('mbody("Alpha")'), mlog(L)))
-press(L, "PAD1")
-rows = picks(L)
-i_fb = [n for _, n, _, _ in rows].index('Firebolt')
-for _ in range(i_fb // 10):
-    tap(L, "pn")
-tap(L, i_fb % 10); tap(L, "a", allow=True)
+      "r. Done: ONE write, '/petattack'", (L.eval('mbody("Alpha")'), mlog(L)))
+check((mdoc(L).get('ls') or [{}])[0].get('c') == 'petattack' and mdoc(L)['ls'][0].get('cn') == 'Attack'
+      and mdoc(L)['ls'][0].get('i') == 132152, "r. its strip: the game's own word and the pet bar's picture", mdoc(L).get('ls'))
+press(L, "PAD2")
+to_pet(L)
+pick_row(L, lambda r: r.get('n') == 'Firebolt')
+sel(L)
 check(L.eval('mbody("Alpha")') == '/petattack\n/cast Firebolt', "r. the pet's spell: '/cast <its name>'", L.eval('mbody("Alpha")'))
-# a recipe takes spells only: the pet's spells, never a command
-press(L, "PADDRIGHT"); press(L, "PAD1")
-tap(L, 0); tap(L, "a")
-d = mdoc(L)
-rr = [(r['t'], r['n']) for r in (d.get('pick') or {}).get('rows') or []]
-check(d.get('mode') == 'pick' and ('s', 'Firebolt') in rr and not any(t == 'p' for t, _ in rr),
-      "r. mouseover heal (spells only): the pet's spell is there, no command", rr)
-check(clean(L) == {}, "r. clean (reads only; the one write inside the pick's tap)", clean(L))
+# a castsequence entry takes the pet's spells, never an order
+tap(L, 21); tap(L, "a")
+pick_row(L, lambda r: r.get('k') == 'seq')
+check(popd(L).get('k') == 'seq', "r. Sequence: its spells' list", popd(L))
+pick_row(L, lambda r: r.get('add'))
+tabs = popd(L).get('tabs') or []
+tap(L, tabs.index('pet')); tap(L, "a")
+rr = [(r.get('t'), r.get('n')) for r in popd(L).get('rows') or []]
+check(('s', 'Firebolt') in rr and not any(t == 'p' for t, _ in rr), "r. a sequence's Pet tab: the pet's spell, no order", rr)
+press(L, "PAD2"); press(L, "PAD2"); press(L, "PAD2")
+L.execute('MRx.st.draft = nil')
+check(clean(L) == {}, "r. clean (reads only; each write inside a Done)", clean(L))
 # the pet bar's assist modes stand in for the base ones it does not show; Move To only when the bar has it
 L = opened([("Alpha", "")], CHAR, pre=PET + 'UNITS.pet = { name = "Wolf" }\n'
            'PETBAR = { "PET_ACTION_ATTACK", "PET_ACTION_FOLLOW", "PET_ACTION_MOVE_TO", nil, nil, nil, nil, "PET_MODE_ASSIST", '
            '"PET_MODE_DEFENSIVEASSIST", "PET_MODE_PASSIVE" }\n')
 L.execute(PET_AFTER)
 L.execute('PETBOOK = {}')
-to_pick(L)
-pc = [(n, l) for t, n, l, _ in picks(L) if t == 'p']
+pc = [(n, l) for t, n, l, _ in to_pet(L) if t == 'p']
 check(pc == [('Attack', '/petattack'), ('Follow', '/petfollow'), ('Stay', '/petstay'), ('Move To', '/petmoveto'), ('Passive', '/petpassive'),
              ('Defensive', '/petdefensiveassist'), ('Assist', '/petassist'), ('Dismiss', '/petdismiss')],
       "r. the pet bar's own modes: Defensive = its defensive-assist, Assist for Aggressive, Move To shown", pc)
-# no SLASH_ word for an extra command: left out; a base one falls back to the English line
-L = opened([("Alpha", "")], CHAR, pre=PET + 'UNITS.pet = { name = "Wolf" }\nSLASH_PET_ATTACK1 = nil; SLASH_PET_MOVE_TO1 = nil\n'
-           'PETBAR = { "PET_ACTION_ATTACK", "PET_ACTION_MOVE_TO" }\n')
+# not registered on this client (no slash word, not a secure command): an extra one left out; a base one falls back to English
+L = opened([("Alpha", "")], CHAR, pre=PET + 'UNITS.pet = { name = "Wolf" }\n'
+           'PETBAR = { "PET_ACTION_ATTACK", "PET_ACTION_MOVE_TO" }\n',
+           macros='SLASH_PET_ATTACK1 = nil; SLASH_PET_MOVE_TO1 = nil; SECURE["/petattack"] = nil; SECURE["/petmoveto"] = nil')
 L.execute(PET_AFTER)
-to_pick(L)
-pc = [(n, l) for t, n, l, _ in picks(L) if t == 'p']
-check(('Attack', '/petattack') in pc and not any(n == 'Move To' for n, _ in pc), "r. no slash word: base = English, an extra one left out", pc)
-check('"also things like my pet attack are missing from the spells options."' in SRC["spells"] and 'local SV = "s13"' in SRC["spells"],
-      "r. Spells s13, its header note quotes the user")
+pc = [(n, l) for t, n, l, _ in to_pet(L) if t == 'p']
+check(('Attack', '/petattack') in pc and not any(n == 'Move To' for n, _ in pc), "r. not registered: a base order = English, an extra one left out", pc)
+# a Hunter with the pet away: the base orders, and the pet spells this character keeps by name (petSpellBy[name-realm])
+L = opened([("Alpha", "")], CHAR, pre=PET, macros='CLASS = "HUNTER"; WowCompanionSpellsDB.petSpellBy = { ["Korvash-Realm"] = { [17253] = "Bite" } }; '
+           'SPELLNAME[17253] = "Bite"')
+L.execute(PET_AFTER)
+rows = to_pet(L)
+check(rows is not None and ('s', 'Bite', None) in [(t, n, l) for t, n, l, _ in rows] and ('p', 'Attack', '/petattack') in [(t, n, l) for t, n, l, _ in rows],
+      "r. a Hunter, the pet dismissed: the Pet tab still offers the orders and the kept pet spell", rows)
+check('"also things like my pet attack are missing from the spells options."' in SRC["spells"],
+      "r. Spells s13's header note (the pet's picks) quotes the user")
 
 # ================================================================ s. (PadMap m165) a macro on our buttons: its look, cooldown and GCD
 # the user, 2026-11-16: "when using show tooltip on a macro it doesn't actually show the GCD when using it"
@@ -1060,6 +1394,370 @@ check(docs(L, n3, 'padmap') == [] and docs(L, n3, 'facecd') == [], "s. no macro 
 check('"the macro room needs some work- for starters when using show tooltip on a macro it doesn\'t actually show the GCD when using it"'
       in SRC["padmap"] and 'local PV = "m168"' in SRC["padmap"], "s. PadMap m165, its header note quotes the user")
 
+# ================================================================ t. (s14) THE ONE GRAMMAR: parse -> compose, the text-line fallback
+L = opened(GEN, CHAR)
+PC_ = L.eval('function(t) local m = WowCompanion.macroRoom.parse(t); return m.kind, WowCompanion.macroRoom.compose(m) end')
+SAME = ["/cast Lightning Bolt", "/cast [@focus,harm,nodead][] Earth Shock", "/cast [mod:shift] Healing Wave; Lightning Bolt",
+        "/target [noexists][dead] softenemy", "/startattack [harm,nodead]", "#showtooltip", "#showtooltip Lightning Bolt",
+        "#show [mod:shift] Healing Wave; Lightning Bolt", "/castsequence reset=target/combat Earth Shock, Lightning Bolt",
+        "/use [combat] 13", "/use item:6948", "/cast !Lightning Shield", "/cast Healing Wave(Rank 2)", "/cast [target=focus,exists] Healing Wave",
+        "/cast [modifier:shift] Healing Wave", "/cast [spec:2,btn:2] Healing Wave", "/cast [Harm] Lightning Bolt", "/cast [nomod] Lightning Bolt",
+        "/CAST Lightning Bolt", "/spell Lightning Bolt", "/tar softenemy", "/stopcasting", "/petattack [@focus]", "/cancelaura Lightning Shield",
+        "/equipslot 16 Worn Shortsword", "/cast [@mouseover,help,nodead][@player] Healing Wave", "/focus [@mouseover,exists]"]
+bad = [(t, PC_(t)) for t in SAME if PC_(t) != ('cmd', t)]
+check(bad == [], "t. %d builder lines round-trip exactly (cases, units, target=, aliases, raw conditions, ranks, item:<id>, sequences)" % len(SAME), bad)
+k, c = PC_("/cast [@focus, harm] Earth Shock")
+check(k == 'cmd' and c == "/cast [@focus,harm] Earth Shock", "t. spaces by [ ] , ; : = do not count (the game reads them alike): built, written tidy", c)
+TEXT = ["/say hello", "/run print(1)", "/dismount", "/click MyButton", "/cast [harm][[x]] y", "/cast [harm X", "/cast [harm,@focus] X",
+        "/cast [help] Heal; [] Heal", "/p Pull in 3", "hello there", "/cast [harm;x] y"]
+bad = [(t, PC_(t)) for t in TEXT if PC_(t) != ('text', t)]
+check(bad == [], "t. text lines kept exactly as written: chat, /run, /dismount and /click (no builder actions), nested or unclosed "
+      "brackets, a unit after a condition, two clauses one merge would change", bad)
+check(PC_("/cast X|cff") == ('lock', "/cast X|cff") and PC_("") == ('empty', ""), "t. a '|' line is locked; an empty one is empty")
+M = L.eval('function(t) return WowCompanion.encode(WowCompanion.macroRoom.parse(t)) end')
+m = json.loads(M("/cast [@focus,harm,nodead][] Earth Shock"))
+cs = m.get('cs') or []
+check(len(cs) == 2 and cs[0].get('u') == 'focus' and cs[0].get('uf') == '@' and [x.get('k') for x in cs[0]['cn']] == ['harm', 'dead']
+      and cs[0]['cn'][1].get('no') is True and cs[1].get('bare') is False and not cs[1].get('cn') and cs[0]['a'] == cs[1]['a'] == 'Earth Shock',
+      "t. the model: case 1 @focus [harm, no dead], case 2 a plain [] (written), one argument", m)
+m = json.loads(M("/cast [modifier:shift,spec:2] Healing Wave"))
+cn = (m.get('cs') or [{}])[0].get('cn') or []
+check(cn[0].get('k') == 'mod:shift' and cn[0].get('nm') == 'modifier' and cn[1] == {'raw': 'spec:2'},
+      "t. a known condition under the game's other name keeps it ('modifier'); an unknown one is kept raw", cn)
+check(clean(L) == {}, "t. clean (the grammar reads nothing, writes nothing)", clean(L))
+
+# the tooltip line in the builder: its spell may be left out (no 'pick'); a spell picked shows that spell's tooltip
+L = opened([("Alpha", "#showtooltip\n/cast Lightning Bolt")], CHAR)
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PAD1")
+check(bdoc(L).get('c') == 'tip' and not bdoc(L).get('h'), "t. '#showtooltip' in the builder: the Tooltip line, nothing missing", bdoc(L))
+chip(L, 'arg'); pick_row(L, lambda r: r.get('n') == 'Lightning Shield')
+L.execute('MLOG = {}')
+sel(L)
+check(mlog(L) == ['edit 1 nil #showtooltip Lightning Shield\n/cast Lightning Bolt'], "t. '#showtooltip Lightning Shield': ONE write", mlog(L))
+check(clean(L) == {}, "t. clean (the tooltip line)", clean(L))
+
+# ================================================================ u. (s14) commands registered on this client only, and by class
+def cmd_list(L):
+    press(L, "PAD1"); tap(L, 21); tap(L, "a")
+    out = [r.get('k') for r in popd(L).get('rows') or []]
+    press(L, "PAD2"); press(L, "PAD2"); press(L, "PAD2")
+    L.execute('MRx.st.draft = nil')
+    return out
+
+
+L = opened([("Alpha", "")], CHAR, macros='SLASH_STOPMACRO1 = nil; SECURE["/stopmacro"] = nil; SECURE["/clearfocus"] = nil; '
+           'SlashCmdList.CLEARFOCUS = function() end; SECURE["/targetenemy"] = nil')
+ks = cmd_list(L)
+check('stopmacro' not in ks and 'targetenemy' not in ks, "u. not registered here (no secure command, no slash list entry): not offered", ks)
+check('clearfocus' in ks, "u. a slash word with its SlashCmdList entry (not secure): registered, offered", ks)
+check('dismount' not in ks and 'click' not in ks, "u. Dismount and Click are no builder actions", ks)
+L = opened([("Alpha", "")], CHAR, macros='CLASS = "HUNTER"')
+ks = cmd_list(L)
+check([k for k in ks if k.startswith('pet')] == ['petattack', 'petfollow', 'petstay', 'petmoveto', 'petpassive', 'petdefensive',
+      'petdefensiveassist', 'petaggressive', 'petassist', 'petdismiss'] and 'cancelform' not in ks,
+      "u. a Hunter: the pet orders registered here (in the game's order); no Leave form", ks)
+L = opened([("Alpha", "")], CHAR, macros='CLASS = "DRUID"; NFORMS = 2')
+check('cancelform' in cmd_list(L), "u. a Druid with forms: Leave form")
+L = opened([("Alpha", "")], CHAR, macros='CLASS = "WARRIOR"; NFORMS = 3')
+check('cancelform' not in cmd_list(L), "u. a Warrior (stances): no Leave form")
+check(clean(L) == {}, "u. clean", clean(L))
+
+# ================================================================ v. (s14 D6) the companion's own macros: a lock, view only
+DSM = [("DS Attack 12", "#showtooltip\n/target [noexists][dead] softenemy\n/startattack [harm,nodead]\n/click [harm,nodead] WowCompanionFaceRearm\n/cast Lightning Bolt"),
+       ("DS Combat 5", "#showtooltip\n/cast [combat] Lightning Bolt; Healing Wave"), ("DS Attack 9", "/wave")]
+L = opened([], DSM)
+tap(L, "tc")
+d = mdoc(L)
+check([c.get('lk') for c in d['cells'][:3]] == [True, None, True], "v. the grid: DS Attack / DS Combat (their exact shape) carry the lock; "
+      "a 'DS Attack' name with the player's own body does not", d['cells'])
+check(d.get('mac', {}).get('lk') is True, "v. the preview says so too")
+L.execute('MLOG = {}')
+press(L, "PAD1")
+check(mdoc(L).get('mode') == 'grid' and mdoc(L).get('note') == 'locked' and mlog(L) == [], "v. A: refused 'locked' (view only), nothing opened")
+press(L, "PAD3")
+check(mdoc(L).get('mode') == 'grid' and mdoc(L).get('note') == 'locked', "v. X (Bind): refused 'locked' too")
+tap(L, 1); press(L, "PAD1")
+check(mdoc(L).get('mode') == 'edit', "v. the player's own 'DS Attack 9': its editor opens")
+check(clean(L) == {}, "v. clean", clean(L))
+
+# ================================================================ w. (s14 D4) Select is the room's: Done
+L = opened(GEN, CHAR)
+ex = L.eval('(function() local e = __IN.G.spec and __IN.G.spec.extra; local t = {}; for k in pairs(e or {}) do t[#t + 1] = k end; table.sort(t); return table.concat(t, ",") end)()')
+check(ex == 'PADBACK', "w. the take asks the capture for Select (capture v4 extra) and nothing else beyond the eight", ex)
+L.execute('MLOG = {}')
+press(L, "PADBACK")
+check(mdoc(L).get('mode') == 'grid' and mlog(L) == [], "w. Select at the grid: nothing")
+L.execute(BIND_PRE)
+press(L, "PADDRIGHT"); press(L, "PAD3")
+ex = L.eval('(function() local e = __IN.G.spec and __IN.G.spec.extra; local t = {}; for k in pairs(e or {}) do t[#t + 1] = k end; table.sort(t); return table.concat(t, ",") end)()')
+check(ex == 'PADBACK,PADLSTICK,PADRSTICK', "w. the hosted Bind box's own extra keys asked WITH the room's Select", ex)
+press(L, "PAD2")
+L.execute('advance(1)')
+ex = L.eval('(function() local e = __IN.G.spec and __IN.G.spec.extra; local t = {}; for k in pairs(e or {}) do t[#t + 1] = k end; table.sort(t); return table.concat(t, ",") end)()')
+check(mdoc(L).get('mode') == 'grid' and ex == 'PADBACK', "w. the box gone (B): its L3 / R3 given back, the room keeps Select", (mdoc(L).get('mode'), ex))
+check(clean(L) == {}, "w. clean", clean(L))
+
+# ================================================================ x. (s14) Move: Y, Up / Down, A drops (ONE write), B writes nothing
+L = opened([("Alpha", "/wave\n/dance\n/cheer")], CHAR)
+press(L, "PAD1"); press(L, "PADDDOWN")
+press(L, "PAD4")
+d = mdoc(L)
+check(d.get('mode') == 'move' and d.get('mv') == {'from': 1, 'at': 1}, "x. Y on line 1: Move", d.get('mv'))
+press(L, "PADDDOWN")
+d = mdoc(L)
+check(d.get('mv') == {'from': 1, 'at': 2} and d['mac']['lines'] == ['/dance', '/wave', '/cheer'], "x. Down: shown one lower", d['mac']['lines'])
+L.execute('MLOG = {}')
+L.execute('ALLOW = true'); press(L, "PAD1"); L.execute('ALLOW = false')
+check(mlog(L) == ['edit 1 nil /dance\n/wave\n/cheer'] and mdoc(L).get('mode') == 'edit' and mdoc(L).get('ef') == 'l2',
+      "x. A drops it: ONE write, the glow on it where it went", (mlog(L), mdoc(L).get('ef')))
+press(L, "PAD4"); press(L, "PADDDOWN")
+L.execute('MLOG = {}')
+press(L, "PAD2")
+check(mlog(L) == [] and mdoc(L).get('mode') == 'edit' and L.eval('mbody("Alpha")') == '/dance\n/wave\n/cheer', "x. B: nothing written")
+press(L, "PAD4")
+tap(L, 2); tap(L, "a", allow=True)
+check(L.eval('mbody("Alpha")') == '/wave\n/dance\n/cheer', "x. a finger: tap where it goes (select + A)", L.eval('mbody("Alpha")'))
+press(L, "PAD4"); press(L, "PAD1")
+check(mdoc(L).get('mode') == 'edit', "x. dropped where it was: nothing to write")
+check(clean(L) == {}, "x. clean", clean(L))
+
+# ================================================================ y. (s14 D5) On: the soft friend with the game's soft-friend targeting on
+L = opened([("Alpha", "/cast Healing Wave")], CHAR, macros='SOFTFRIEND = "2"')
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PAD1")
+chip(L, 'c1u')
+units = [r.get('u') for r in popd(L).get('rows')]
+check(units[:3] == ['', 'softenemy', 'softfriend'] and units[-2:] == ['mouseover', 'name'], "y. the CVar on: Soft friend after Soft enemy; "
+      "Mouseover then Name last", units)
+press(L, "PAD2"); press(L, "PAD3")
+check([r.get('o') for r in popd(L).get('rows')][0] == 'sf1', "y. + Case for a heal: Soft friend first leads", popd(L).get('rows'))
+pick_row(L, lambda r: r.get('o') == 'sf1')
+check(bdoc(L).get('t') == '/cast [@softfriend,help,nodead][] Healing Wave', "y. '[@softfriend,help,nodead]' tried first, the old step its else",
+      bdoc(L).get('t'))
+check(L.eval('CVARREADS') > 0 and clean(L) == {}, "y. the CVar READ (never written: SetCVar is a spied call)", clean(L))
+L = opened([("Alpha", "/cast Lightning Bolt")], CHAR, macros='CLASS = "WARLOCK"')
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PAD1"); press(L, "PAD3")
+check([r.get('o') for r in popd(L).get('rows')] == ['fo1', 'se1', 'tg', 'sp', 'bl'], "y. + Case for a harmful spell: Focus first, Soft enemy "
+      "first, Else on target ...", popd(L).get('rows'))
+press(L, "PAD2")
+chip(L, 'c1u')
+check('pet' in [r.get('u') for r in popd(L).get('rows')], "y. a Warlock: Pet among the units")
+
+# ================================================================ z. (s14) ranks: "Top" by default, the exact subtext written
+RANKBOOK = r"""
+RANKS = { { id = 331, n = "Healing Wave", sub = "Rango 1" }, { id = 332, n = "Healing Wave", sub = "Rango 2" },
+          { id = 547, n = "Healing Wave", sub = "Rango 3" }, { id = 403, n = "Lightning Bolt", sub = "Rango 1" } }
+for _, r in ipairs(RANKS) do SUBTEXT[r.id] = r.sub end
+C_SpellBook = setmetatable({ GetNumSpellBookSkillLines = function() return 1 end,
+    GetSpellBookSkillLineInfo = function(k) if k == 1 then return { itemIndexOffset = 0, numSpellBookItems = #RANKS } end end,
+    GetSpellBookItemInfo = function(slot, bank) local r = RANKS[slot]; if r and bank == 0 then return { name = r.n, spellID = r.id } end end },
+    { __index = function() return STUB end })
+"""
+L = opened([("Alpha", "/cast Healing Wave\n/cast Lightning Bolt")], CHAR, macros=RANKBOOK)
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PAD1")
+b = bdoc(L)
+check('rank' in b['rows'][0] and (b.get('a') or {}).get('rk') == [0, 3], "z. three ranks: the Rank chip, at the top (0 of 3)", b.get('a'))
+chip(L, 'rank')
+check([(r.get('r'), r.get('on')) for r in popd(L).get('rows')] == [(0, True), (1, None), (2, None), (3, None)], "z. its pop-out: Top (on), 1-3")
+pick_row(L, lambda r: r.get('r') == 2)
+check(bdoc(L).get('t') == '/cast Healing Wave(Rango 2)' and bdoc(L)['a'].get('rk') == [2, 3],
+      "z. rank 2: written with ITS OWN subtext (an es client's 'Rango 2', never an English 'Rank')", bdoc(L).get('t'))
+tap(L, bdoc(L)['ch']['rank']); press(L, "PAD4")
+check(bdoc(L).get('t') == '/cast Healing Wave', "z. Y on the rank: the top again (no parentheses)")
+press(L, "PAD2"); press(L, "PADDDOWN"); press(L, "PAD1")
+check('rank' not in bdoc(L)['rows'][0], "z. one rank only (Lightning Bolt here): no Rank chip", bdoc(L)['rows'][0])
+press(L, "PAD2")
+L.execute('MRx.st.draft = nil')
+check(clean(L) == {}, "z. clean", clean(L))
+
+# ================================================================ aa. (s14) the icon: Auto and the macro's spells' pictures, ONE write
+L = opened([("Alpha", "/cast Lightning Bolt\n/cast Healing Wave")], CHAR)
+press(L, "PAD1"); press(L, "PADDRIGHT"); press(L, "PAD1")
+rows = popd(L).get('rows') or []
+check(popd(L).get('k') == 'icon' and [(r.get('i'), r.get('auto'), r.get('on')) for r in rows] == [(134400, True, True), (130403, None, None), (130331, None, None)],
+      "aa. A on the icon: Auto (now, the question mark) and the pictures of its spells", rows)
+L.execute('MLOG = {}')
+pick_row(L, lambda r: r.get('i') == 130331, allow=True)
+check(mlog(L) == ['edit 1 nil nil'] and L.eval('GENM[1].icon') == 130331 and not popd(L), "aa. Healing Wave's picture: ONE write (EditMacro(i, nil, icon))",
+      (mlog(L), L.eval('GENM[1].icon')))
+check(clean(L) == {}, "aa. clean", clean(L))
+
+# ================================================================ ab. (s14) the search, the General tab, slots, sequences
+L = opened([("Alpha", "")], CHAR, macros='GENBOOK = { 6603 }; WORN[13] = 9001')
+press(L, "PAD1"); tap(L, 21); tap(L, "a")
+pick_row(L, lambda r: r.get('k') == 'cast')
+tap(L, 5); tap(L, "a")
+check(mdoc(L).get('kbd', {}).get('name') == 'macsearch', "ab. the search box: A = the keyboard")
+L.execute('MLOG = {}')
+kbd_done(L, "shield", allow=False)
+check([r.get('n') for r in popd(L).get('rows')] == ['Lightning Shield'] and popd(L).get('q') == 'shield' and mlog(L) == []
+      and mdoc(L).get('mode') == 'build', "ab. 'shield': the list filtered, nothing written, the pop-out still out", popd(L))
+tabs = popd(L).get('tabs')
+tap(L, tabs.index('gen')); tap(L, "a")
+check(popd(L).get('tab') == 'gen' and [r.get('n') for r in popd(L).get('rows')] == ['Attack'], "ab. the General tab: Attack", popd(L).get('rows'))
+pick_row(L, lambda r: r.get('n') == 'Attack')
+check(bdoc(L).get('c') == 'startattack' and bdoc(L).get('t') == '/startattack', "ab. General's Attack: the game's own /startattack", bdoc(L).get('t'))
+chip(L, 'cmd'); pick_row(L, lambda r: r.get('k') == 'use')
+tabs = popd(L).get('tabs')
+check(tabs == ['it', 'sl', 'sp'], "ab. Use: Items, Slots, Spells", tabs)
+tap(L, tabs.index('sl')); tap(L, "a")
+pick_row(L, lambda r: r.get('sl') == 13)
+check(bdoc(L).get('t') == '/use 13' and (bdoc(L).get('a') or {}).get('n') == 'Arena Grand Master', "ab. Slots: '/use 13', shown by the worn item's name",
+      bdoc(L).get('a'))
+chip(L, 'cmd'); pick_row(L, lambda r: r.get('k') == 'seq')
+check(popd(L).get('k') == 'seq', "ab. Sequence: its list")
+for n in ('Lightning Bolt', 'Lightning Shield'):
+    pick_row(L, lambda r: r.get('add'))
+    pick_row(L, lambda r, n=n: r.get('n') == n)
+check(popd(L).get('k') == 'seq' and [r.get('n') for r in popd(L).get('rows')] == ['Lightning Bolt', 'Lightning Shield', None],
+      "ab. two spells added (each pick back on the list), then '+'", popd(L).get('rows'))
+tap(L, 0); press(L, "PAD4")
+check([r.get('n') for r in popd(L).get('rows')] == ['Lightning Shield', None], "ab. Y: an entry out")
+pick_row(L, lambda r: r.get('add')); pick_row(L, lambda r: r.get('n') == 'Lightning Bolt')
+press(L, "PAD2")
+check(bdoc(L).get('t') == '/castsequence Lightning Shield, Lightning Bolt' and 'reset' in bdoc(L)['rows'][0], "ab. the sequence's line, its Reset chip",
+      bdoc(L).get('t'))
+chip(L, 'reset')
+for o in ('target', 'combat', '6', '12'):
+    pick_row(L, lambda r, o=o: r.get('o') == o)
+check(bdoc(L).get('t') == '/castsequence reset=target/combat/12 Lightning Shield, Lightning Bolt' and popd(L).get('k') == 'reset',
+      "ab. Reset toggles (one time at a time), the pop-out stays", bdoc(L).get('t'))
+press(L, "PAD2")
+L.execute('MLOG = {}')
+sel(L)
+check(mlog(L) == ['edit 1 nil /castsequence reset=target/combat/12 Lightning Shield, Lightning Bolt'], "ab. Done: ONE write", mlog(L))
+check(clean(L) == {}, "ab. clean", clean(L))
+# equip slot: the slot, then the item
+L = opened([("Alpha", "")], CHAR, macros='WORN[16] = 9002')
+press(L, "PAD1"); tap(L, 21); tap(L, "a")
+pick_row(L, lambda r: r.get('k') == 'equipslot')
+check(popd(L).get('tabs') == ['sl', 'it'], "ab. Equip slot: Slots, then Items", popd(L).get('tabs'))
+pick_row(L, lambda r: r.get('sl') == 16)
+chip(L, 'arg'); tap(L, 1); tap(L, "a")
+pick_row(L, lambda r: r.get('n') == 'Worn Shortsword')
+check(bdoc(L).get('t') == '/equipslot 16 Worn Shortsword', "ab. '/equipslot 16 Worn Shortsword'", bdoc(L).get('t'))
+
+# /target's own unit: the On list without "the target" (it needs someone), a typed name as the argument
+L = opened([("Alpha", "")], CHAR)
+press(L, "PAD1"); tap(L, 21); tap(L, "a")
+pick_row(L, lambda r: r.get('k') == 'target')
+units = [r.get('u') for r in popd(L).get('rows')]
+check(popd(L).get('k') == 'on' and units[0] == 'softenemy' and '' not in units, "ab. Target: its unit from the On list (not 'Target': it needs one)", units)
+pick_row(L, lambda r: r.get('u') == 'softenemy')
+check(bdoc(L).get('t') == '/target softenemy', "ab. '/target softenemy' (the game's own unit word)", bdoc(L).get('t'))
+chip(L, 'arg'); pick_row(L, lambda r: r.get('u') == 'name')
+kbd_done(L, "Bob", allow=False)
+check(bdoc(L).get('t') == '/target Bob' and mlog(L) == [], "ab. Name...: '/target Bob' (the command's argument, not a case's unit), nothing written",
+      bdoc(L).get('t'))
+press(L, "PAD2"); L.execute('MRx.st.draft = nil')
+check(clean(L) == {}, "ab. clean (/target)", clean(L))
+
+# ================================================================ ac. (s14) the document's size with the builder and the strips
+L = opened([("Alpha", "\n".join("/cast [@focus,harm,nodead][@softenemy,harm][] Lightning Bolt" if i % 2 else "/cast [mod:shift] Healing Wave; Lightning Shield"
+                                  for i in range(4)))], CHAR)
+press(L, "PAD1")
+L.execute('WowCompanion.macroRoom.emit()')
+d = json.loads(L.eval('SENT[#SENT]'))['m']; d.pop('pad', None)
+ed = len(json.dumps(d, separators=(',', ':')))
+press(L, "PADDDOWN"); press(L, "PAD1"); chip(L, 'arg')
+L.execute('WowCompanion.macroRoom.emit()')
+d = json.loads(L.eval('SENT[#SENT]'))['m']; d.pop('pad', None)
+bd = len(json.dumps(d, separators=(',', ':')))
+check(ed < 2600 and bd < 2600, "ac. the editor with its strips (%d bytes) and the builder with a pop-out (%d bytes): about 3 Sink lines" % (ed, bd), (ed, bd))
+press(L, "PAD2"); press(L, "PAD2")
+check(clean(L) == {}, "ac. clean", clean(L))
+
+# ================================================================ ad. (s14 review) spaces the game reads alike, a fight's refusal, typed units
+check('s14 REVIEW' in SRC["spells"].split('\n', 40)[35], "ad. the s14 review's header note (the same tag, as s10's review)")
+# a stored line with its own spacing: opened and finished unchanged = NOTHING written, no draft, no Revert
+L = opened([("Alpha", "/cast [help] Healing Wave ;Lightning Bolt\n/cast  [mod:shift]Lightning Shield")], CHAR)
+press(L, "PAD1"); press(L, "PADDDOWN")
+d = mdoc(L)
+check([x.get('k') for x in d.get('ls') or []] == ['cmd', 'cmd'], "ad. both oddly spaced lines are builder lines (MR.norm)", d.get('ls'))
+press(L, "PAD1")
+b = bdoc(L)
+check(b.get('t') == '/cast [help] Healing Wave; Lightning Bolt' and not b.get('dr'),
+      "ad. opened: the composed text, NOT a draft (the spaces are no change)", (b.get('t'), b.get('dr')))
+L.execute('MLOG = {}')
+sel(L)
+check(mlog(L) == [] and mdoc(L).get('mode') == 'edit' and L.eval('mbody("Alpha")').startswith('/cast [help] Healing Wave ;Lightning Bolt'),
+      "ad. Done unchanged: NOTHING written, the stored spacing kept", mlog(L))
+press(L, "PADDDOWN"); press(L, "PAD1")
+check(not bdoc(L).get('dr'), "ad. the second line ('/cast  [mod:shift]Lightning Shield') too: not a draft", bdoc(L).get('t'))
+more(L, 'rem')
+check(mlog(L) == [] and bdoc(L).get('rem') is True, "ad. its Remove asks (a stored line, unchanged: Remove, not Revert)", bdoc(L))
+press(L, "PAD2"); press(L, "PAD2")
+# a real change still writes ONE line
+press(L, "PADDUP"); press(L, "PAD1"); chip(L, 'keep')
+check(bdoc(L).get('dr') is True, "ad. Keep on: a real change, a draft", bdoc(L).get('t'))
+sel(L)
+check(mlog(L) == ['edit 1 nil /cast [help] !Healing Wave; Lightning Bolt\n/cast  [mod:shift]Lightning Shield'],
+      "ad. ... Done: ONE write, the line composed; the other line untouched", mlog(L))
+# a fight: Done refused as "combat" BEFORE any fault (the design's 7), the draft kept; a preset's Done likewise
+press(L, "PAD3")
+check(bdoc(L).get('h') == 'pick', "ad. X: a new line, no spell yet ('pick')", bdoc(L).get('h'))
+press(L, "PAD2")
+L.execute('MLOG = {}; ' + COMBAT_ON)
+sel(L, allow=False)
+check(mdoc(L).get('note') == 'combat' and mdoc(L).get('mode') == 'build' and mlog(L) == [],
+      "ad. Done in a fight with a missing spell: refused as 'combat' (not 'pick'), the draft kept", (mdoc(L).get('note'), mlog(L)))
+L.execute(COMBAT_OFF)
+sel(L, allow=False)
+check(mdoc(L).get('note') == 'pick' and bdoc(L).get('cur') == 'arg' and mlog(L) == [],
+      "ad. ... out of the fight: 'pick', the cursor on the spell chip", (mdoc(L).get('note'), bdoc(L).get('cur')))
+press(L, "PAD2"); press(L, "PAD2"); press(L, "PAD2")
+check(clean(L) == {}, "ad. clean", clean(L))
+L = opened([("Alpha", "")], CHAR, macros='BOOK = { 403, 8042 }')
+press(L, "PAD1")
+tk = [t.get('k') for t in mdoc(L).get('tiles') or []]
+tap(L, 2 + tk.index('seq')); tap(L, "a")
+L.execute('MRx.st.ps.picks[2] = ""')
+L.execute('MLOG = {}; ' + COMBAT_ON)
+sel(L, allow=False)
+check(mdoc(L).get('note') == 'combat' and mlog(L) == [], "ad. a preset's Done in a fight: 'combat' first", mdoc(L).get('note'))
+L.execute(COMBAT_OFF)
+sel(L, allow=False)
+check(mdoc(L).get('note') == 'pick' and (mdoc(L).get('ps') or {}).get('cur') == 'p2' and mlog(L) == [],
+      "ad. ... out of it: 'pick', the cursor on the EMPTY pick (p2), not the first", (mdoc(L).get('note'), (mdoc(L).get('ps') or {}).get('cur')))
+check(clean(L) == {}, "ad. clean", clean(L))
+# a unit typed by name with accents (an es / fr realm): written, and read back as a unit (not a text line)
+L = opened([("Alpha", "/cast Healing Wave")], CHAR)
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PAD1")
+chip(L, 'c1u')
+pick_row(L, lambda r: r.get('u') == 'name')
+check(mdoc(L).get('kbd', {}).get('name') == 'macunit', "ad. On: Name... = the keyboard", mdoc(L).get('kbd'))
+# the game's Lua reads %w as ASCII only (the "C" CTYPE); Python set this process's CTYPE to the user's (cp1252: high bytes are letters
+# there), so the name goes in as UTF-8 bytes from Lua itself, under "C", as the game's client has it
+CT = L.eval('os.setlocale(nil, "ctype")')
+L.execute('os.setlocale("C", "ctype")')
+NAME = r'"\195\141\195\177igo"'
+L.eval('function(n) MRx.kbdDone(n) end')(L.eval(NAME))
+check(L.eval('MRx.compose(MRx.st.draft.L) == "/cast [@" .. %s .. "] Healing Wave"' % NAME) is True,
+      "ad. the typed accented name (UTF-8 bytes) is the case's unit")
+L.execute('MLOG = {}')
+sel(L)
+check(L.eval('#MLOG == 1 and MLOG[1] == "edit 1 nil /cast [@" .. %s .. "] Healing Wave"' % NAME) is True and L.eval('MRx.st.mode') == 'edit',
+      "ad. Done: written ONCE")
+check(L.eval('MRx.parse(mbody("Alpha")).kind') == 'cmd' and L.eval('MRx.strip(MRx.parse(mbody("Alpha"))).cs[1].u == %s' % NAME) is True,
+      "ad. ... and read back under the game's ASCII %w: a unit on a builder line (its strip), not a text line",
+      L.eval('MRx.parse(mbody("Alpha")).kind'))
+L.execute('GENM[1].body = "/cast [help] Healing Wave"; MRx.st.draft = nil')
+L.eval('function(c) os.setlocale(c, "ctype") end')(CT)
+# a STORED line's Chat line: its keyboard starts from the line's own text (an empty Done would remove it with no second A)
+L.execute('MRx.st.mode = "edit"; MRx.st.efk = "l1"')
+press(L, "PAD1")
+chip(L, 'cmd')
+pick_row(L, lambda r: r.get('k') == 'chat')
+k = mdoc(L).get('kbd') or {}
+check(k.get('name') == 'macline' and k.get('text') == '/cast [help] Healing Wave' and k.get('line') == 1,
+      "ad. Chat line on a stored line: the keyboard holds that line's text (not empty)", k)
+L.execute('MLOG = {}')
+tap(L, "kx")
+check(mlog(L) == [] and L.eval('mbody("Alpha")') == '/cast [help] Healing Wave', "ad. ... its keyboard closed: nothing written", mlog(L))
+press(L, "PAD2"); press(L, "PAD2")
+check(L.eval('MRx.parse("/cast [@Ä,harm|x] Bolt").kind') == 'lock' and L.eval('MRx.parse("/cast [@a b,nodead] X").kind') == 'cmd',
+      "ad. ('|' still locks a line; a spaced name still reads)")
+check(clean(L) == {}, "ad. clean", clean(L))
+
 # ================================================================ the documents for the room's off-device render (MacrosShotsTest)
 DUMP = os.environ.get("MACRO_DUMP")
 if DUMP:
@@ -1077,7 +1775,7 @@ if DUMP:
             ("Totems", "/castsequence reset=combat Searing Totem, Stoneskin Totem")]
     # the game's own icons for the picture (the stub's are made-up numbers): spells, items, and the icon each macro was given
     ICONS = r'''
-SPELLICON = { [403] = 136048, [331] = 136052, [324] = 136051 }
+SPELLICON = { [403] = 136048, [331] = 136052, [324] = 136051, [8042] = 136026, [6603] = 135641, [3110] = 135809 }
 C_Spell.GetSpellTexture = function(id) return SPELLICON[id] or 134400 end
 C_Item.GetItemIconByID = function(id) return ({ [118] = 134830, [25] = 135274 })[id] or 134400 end
 MICON = { Bandage = 133685, Bolt = 136048, ["Focus Heal"] = 136052, Mount = 136095, Rez = 136077, Shield = 136051, Totems = 135825,
@@ -1088,14 +1786,70 @@ function iconize() for _, t in ipairs({ GENM, CHARM }) do for _, m in ipairs(t) 
     L.execute(ICONS); L.execute('iconize()')
     press(L, "PADDRIGHT"); press(L, "PADDRIGHT")
     dump(L, "grid")
-    press(L, "PAD1"); press(L, "PADDDOWN")
-    dump(L, "edit")
-    press(L, "PADDDOWN"); press(L, "PADDDOWN"); press(L, "PADDRIGHT"); press(L, "PAD1")
-    dump(L, "pick")
-    press(L, "PAD2"); press(L, "PADDRIGHT"); press(L, "PAD1"); press(L, "PADDRIGHT")
-    dump(L, "recipes")
-    press(L, "PAD2"); press(L, "PADDUP"); press(L, "PADDUP"); press(L, "PADDUP"); press(L, "PAD1")
-    dump(L, "kbd")
+    # s14: the editor's strips (a macro of builder lines), its builder, each pop-out, the keyboard
+    BUILT = [("Smart Heal", "#showtooltip\n/cast [@focus,help,nodead][@mouseover,help,nodead][@player] Healing Wave\n"
+                            "/castsequence reset=target Lightning Bolt, Earth Shock\n/cast [mod:shift] !Lightning Shield; Healing Wave\n"
+                            "/startattack [harm,nodead]\n/cast Frostbolt\n/say %t")]
+    LB = opened(BUILT, [], macros='BOOK = { 403, 331, 324, 8042 }; SOFTFRIEND = "1"')
+    LB.execute(ICONS); LB.execute('iconize()')
+    press(LB, "PAD1"); press(LB, "PADDDOWN"); press(LB, "PADDDOWN")
+    dump(LB, "edit")
+    press(LB, "PAD1")
+    dump(LB, "build")
+    chip(LB, 'more'); dump(LB, "build_more"); press(LB, "PAD2")
+    tap(LB, bdoc(LB)['ch']['c2u']); dump(LB, "build_case_focus")
+    chip(LB, 'c1f'); dump(LB, "build_if"); press(LB, "PAD2")
+    chip(LB, 'c2u'); dump(LB, "build_on"); press(LB, "PAD2")
+    chip(LB, 'arg'); dump(LB, "build_arg"); press(LB, "PAD2")
+    chip(LB, 'cmd'); dump(LB, "build_cmd"); press(LB, "PAD2")
+    press(LB, "PAD3"); dump(LB, "build_case"); press(LB, "PAD2")
+    chip(LB, 'c1u'); pick_row(LB, lambda r: r.get('u') == 'softenemy')
+    LB.execute(COMBAT_ON); sel(LB, allow=False); dump(LB, "build_combat"); LB.execute(COMBAT_OFF)
+    press(LB, "PAD2"); press(LB, "PADDDOWN"); press(LB, "PAD1")
+    chip(LB, 'reset'); dump(LB, "build_reset"); press(LB, "PAD2")
+    press(LB, "PAD2"); press(LB, "PADDDOWN"); press(LB, "PADDDOWN"); press(LB, "PADDDOWN"); press(LB, "PAD1")
+    dump(LB, "build_warn")
+    press(LB, "PAD2"); press(LB, "PADDUP"); press(LB, "PAD4"); press(LB, "PADDDOWN")
+    dump(LB, "move")
+    # (s14 review) a Move past the lines on show: the editor scrolls with the moved line
+    LONG = ["#showtooltip"] + [["/cast Lightning Bolt", "/cast [mod:shift] Healing Wave", "/say %d" % i, "/startattack"][i % 4]
+                               for i in range(11)]     # 12 lines inside the game's 255
+    LM = opened([("Long", "\n".join(LONG))], [], macros='BOOK = { 403, 331, 324, 8042 }')
+    LM.execute(ICONS); LM.execute('iconize()')
+    press(LM, "PAD1"); press(LM, "PADDDOWN"); press(LM, "PADDDOWN"); press(LM, "PAD4")
+    for _ in range(8):
+        press(LM, "PADDDOWN")
+    dump(LM, "move_far")
+    press(LB, "PAD2")
+    press(LB, "PADDDOWN"); press(LB, "PADDDOWN"); press(LB, "PAD1")
+    dump(LB, "kbd")
+    tap(LB, "kx")
+    # a new line: X, its Action list open
+    press(LB, "PAD3"); dump(LB, "build_new"); press(LB, "PAD2"); press(LB, "PAD2")
+    LB.execute('MRx.st.draft = nil')
+    # s15: the editor's More open, Delete's ask; a stored line's Remove asking in the builder
+    tap(LB, 22); tap(LB, "a"); dump(LB, "edit_more")
+    press(LB, "PADDDOWN"); press(LB, "PAD1"); dump(LB, "edit_delete"); press(LB, "PAD2")
+    press(LB, "PADDUP"); press(LB, "PADDUP"); press(LB, "PAD1"); more(LB, 'rem'); dump(LB, "build_remove"); press(LB, "PAD2"); press(LB, "PAD2")
+    # an empty macro's preset tiles, a preset's preview, the presets view, the rank pop-out, the icon
+    LE = opened([("New Macro", "")], [], macros='BOOK = { 403, 331, 324, 8042 }; WORN[13] = 9001')
+    LE.execute(ICONS); LE.execute('iconize()')
+    press(LE, "PAD1"); press(LE, "PADDDOWN")
+    dump(LE, "edit_empty")
+    press(LE, "PAD1")
+    dump(LE, "preset")
+    press(LE, "PAD2"); press(LE, "PADDUP"); press(LE, "PADDRIGHT"); press(LE, "PAD1")
+    dump(LE, "icon")
+    LR = opened([("Alpha", "/cast Healing Wave(Rank 2)")], [], macros=RANKBOOK.replace("Rango", "Rank"))
+    LR.execute(ICONS)
+    press(LR, "PAD1"); press(LR, "PADDDOWN"); press(LR, "PAD1"); chip(LR, 'rank')
+    dump(LR, "build_rank")
+    LP = opened([("Alpha", "/cast Lightning Bolt")], [], macros='BOOK = { 403, 331, 324 }')
+    LP.execute(ICONS)
+    press(LP, "PAD1"); more(LP, 'pre')
+    dump(LP, "presets")
+    tap(LP, 0); tap(LP, "a"); sel(LP)
+    dump(LP, "preset_replace")
     L2 = opened(SHOT, [])
     L2.execute(ICONS); L2.execute('iconize()')
     press(L2, "PADDRIGHT"); press(L2, "PAD3")
@@ -1116,11 +1870,16 @@ function iconize() for _, t in ipairs({ GENM, CHARM }) do for _, m in ipairs(t) 
     L5.execute('local real = WowCompanion.pad.describe; WowCompanion.pad.describe = function() local d = real(); '
                'if d and d.rows then d.rows.mac = nil end; return d end')
     dump(L5, "norow")
-    # (s13) the pick list with a pet out: the player's spells, then the pet's commands (the game's pet-bar pictures)
+    # s14 D6: the companion's own macros, locked
+    L8 = opened([], DSM)
+    L8.execute(ICONS)
+    tap(L8, "tc")
+    dump(L8, "locked")
+    # (s13 / s14) the Pet tab with a pet out: the pet's orders, then its spell
     L6 = opened(SHOT, [], pre=PET + 'UNITS.pet = { name = "Imp" }\n')
     L6.execute(ICONS); L6.execute('iconize()'); L6.execute(PET_AFTER)
-    press(L6, "PADDRIGHT"); press(L6, "PAD1"); press(L6, "PADDDOWN"); press(L6, "PADDDOWN"); press(L6, "PADDDOWN"); press(L6, "PADDRIGHT")
-    press(L6, "PAD1")
+    press(L6, "PADDRIGHT")
+    to_pet(L6)
     dump(L6, "pick_pet")
     # (m165) Home's fight faces with macros on them: the padmap and a GCD's facecd, as the add-on sends them in a fight
     L7 = opened(LOOK_MACROS, [], pre=LOOKS)

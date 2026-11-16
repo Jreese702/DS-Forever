@@ -1915,6 +1915,9 @@ MACRO_ROOM_LINES = {
     (r'\bCreateMacro\b', 'local ok, ni = CALL(function() return CreateMacro(name, MR.ICON, "", st.tab == "c") end)'),
     (r'\bEditMacro\b', 'local ok, ni = CALL(function() return EditMacro(i, name) end)'),
     (r'\bEditMacro\b', 'local ok = CALL(function() return EditMacro(i, nil, nil, nb) end)'),
+    # Spells s14 (the macro builder v2, the user 2026-11-16: the recipes "make no sense"): the editor's Icon chip, the player's own pick,
+    # ONE EditMacro(i, nil, icon) behind the same guard (MR.setIcon; tools/test_macro_room.py aa)
+    (r'\bEditMacro\b', 'local ok = CALL(function() return EditMacro(i, nil, icon) end)'),
     (r'\bPickupMacro\b', 'CALL(function() return PickupMacro(mi) end)'),
     # (s10 review) the room's Delete is a write of the player's macros too: scanned like the others, its one line allowed; and PadMap
     # m160's Smart Range clean-up, which deletes only OUR OWN old macros, name AND exact body, off every bar (the user, 2026-11-13:

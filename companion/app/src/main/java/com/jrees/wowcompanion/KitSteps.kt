@@ -32,7 +32,9 @@ object KitSteps {
     /** fonts, the kit's pictures, the map pins, the bags and the paper doll, the Home button (extract_kit / minimap_kit / extract_ui / home_kit) */
     object Kit : ArtHarvest.Step {
         override val id = "kit"
-        override val version = 3
+        // 4 (the user, 2026-11-16, the Macros bar icon pick "A: game's Macros keys"): ricon_macros + ricon_macros_off (the radial set's
+        // own Macros keycaps) in kit.json, so phones build the kit again
+        override val version = 4
         override val beforePlay = true
         override val weight = 900      // the weights are shares of the bar: on the PC kit 15 s, cast 0.5 s, icons ~5 s (4 threads, PNG for WebP); the phone unmeasured
         override fun run(job: ArtHarvest.Job) {
