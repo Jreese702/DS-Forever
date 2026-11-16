@@ -6545,6 +6545,7 @@ class MapView(context: Context) : View(context) {
         // No tiles on the device yet (the harvest still building), or a continent's worth on screen: the old grid.
         val rT = rect
         var terrain = false
+        var drew = false; var allAbsent = true           // a tile drawn this frame; every tile here looked for and not on the device
         if (rT != null && rT.valid && MinimapTiles.has(rT.continent)) {
             val adt = MinimapTiles.ADT
             val wyW = rT.left - (cxView - halfX) * rT.width; val wyE = rT.left - (cxView + halfX) * rT.width
@@ -6562,8 +6563,9 @@ class MapView(context: Context) : View(context) {
                     // half a pixel of overlap so filtered neighbours never show a hairline between them
                     tileDst.set(sx(rT.nx((32 - col) * adt)) - 0.5f, sy(rT.ny((32 - row) * adt)) - 0.5f,
                                 sx(rT.nx((31 - col) * adt)) + 0.5f, sy(rT.ny((31 - row) * adt)) + 0.5f)
-                    MinimapTiles.get(rT.continent, col, row, sample) { invalidate() }?.let { c.drawBitmap(it, null, tileDst, pArt) }
-                    if (full) MinimapTiles.get(rT.continent, col, row) { invalidate() }?.let { c.drawBitmap(it, null, tileDst, pArt) }
+                    MinimapTiles.get(rT.continent, col, row, sample) { invalidate() }?.let { c.drawBitmap(it, null, tileDst, pArt); drew = true }
+                        ?: run { if (!MinimapTiles.absent(rT.continent, col, row, sample)) allAbsent = false }
+                    if (full) MinimapTiles.get(rT.continent, col, row) { invalidate() }?.let { c.drawBitmap(it, null, tileDst, pArt); drew = true }
                 }
                 c.restore()
             }
@@ -6577,7 +6579,9 @@ class MapView(context: Context) : View(context) {
         }
         // issues #316 #317 #284 (1.0.32, "its black with blue zones", "game art shows its finished but map is still empty"): Home's map
         // pictures not made yet (the background art builds them while the game is closed): said in the Map room's words, under the markers
-        artNote = if (HomeMapNote.shows(morphOn, terrain, MinimapTiles.building())) HomeMapNote.TEXT else null
+        // (review: also over this continent's folder with no tile here yet - the step part-way - not only with no folder at all)
+        val tilesShown = HomeMapNote.terrainShown(terrain, drew, allAbsent, artNote != null)
+        artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT else null
         artNote?.let { drawArtNote(c, it, left, top, fw, fh, compact) }
         // the floorplan sits ON the terrain, under every marker -- same projection, so it
         // lines up with the world by construction rather than by a second transform

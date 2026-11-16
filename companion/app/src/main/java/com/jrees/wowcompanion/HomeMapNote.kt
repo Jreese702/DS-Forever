@@ -22,6 +22,15 @@ object HomeMapNote {
     /** the note shows: no terrain drawn this frame, Home's map pictures still to be made, and not in Home's open / close glide */
     fun shows(morphing: Boolean, terrain: Boolean, building: Boolean): Boolean = !morphing && !terrain && building
 
+    /**
+     * The terrain this frame ([shows]' terrain): tiles to draw here ([tiled]: this continent's tile folder, a view of a few tiles) and
+     * one drawn ([drew]), or some still loading ([allAbsent] false) while the note is not up ([showing]). Review of #316 #317: the minimap
+     * step part-way makes the continent's folder before the tiles where the player is, and the field was black with no note; a note
+     * already up stays until a tile lands (no blink as each of the step's refreshes loads the missing tiles again).
+     */
+    fun terrainShown(tiled: Boolean, drew: Boolean, allAbsent: Boolean, showing: Boolean): Boolean =
+        tiled && (drew || (!allAbsent && !showing))
+
     /** the text size at which a line [measured] px wide at [size] fits [width] px (never under [MIN]) */
     fun fit(measured: Float, size: Float, width: Float): Float =
         if (measured <= 0f || width <= 0f || measured <= width) size else (size * width / measured).coerceAtLeast(MIN)

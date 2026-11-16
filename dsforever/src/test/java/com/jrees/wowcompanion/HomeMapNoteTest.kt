@@ -35,6 +35,15 @@ class HomeMapNoteTest {
         assertFalse(HomeMapNote.shows(morphing = false, terrain = true, building = false))
     }
 
+    @Test fun theTerrainCountsOnlyWhenATileDrawsOrIsStillLoading() {
+        // review of #316 #317: the step part-way makes this continent's folder before the tiles where the player is
+        assertFalse("no folder for this continent", HomeMapNote.terrainShown(tiled = false, drew = false, allAbsent = true, showing = false))
+        assertTrue("a tile drawn", HomeMapNote.terrainShown(tiled = true, drew = true, allAbsent = false, showing = true))
+        assertTrue("the tiles here still loading, no note up: not yet", HomeMapNote.terrainShown(tiled = true, drew = false, allAbsent = false, showing = false))
+        assertFalse("every tile here looked for and not made: the note", HomeMapNote.terrainShown(tiled = true, drew = false, allAbsent = true, showing = false))
+        assertFalse("the note up stays while the step's refresh loads them again", HomeMapNote.terrainShown(tiled = true, drew = false, allAbsent = false, showing = true))
+    }
+
     @Test fun aNarrowMapShrinksTheLine() {
         assertEquals(20f, HomeMapNote.fit(300f, 20f, 488f), 0f)                // fits: its own size
         assertEquals(20f, HomeMapNote.fit(488f, 20f, 488f), 0f)
@@ -52,7 +61,11 @@ class HomeMapNoteTest {
     @Test fun buildingReadsTheMinimapStepsIndexAndRefreshLooksAgain() {
         val t = File(src, "MinimapTiles.kt").readText()
         assertTrue(t.contains("const val INDEX = \"minimap/index.json\""))
-        assertTrue(t.contains("fun building(): Boolean = !(indexed ?: ArtHarvest.file(INDEX).isFile.also { indexed = it })"))
+        val building = t.substringAfter("fun building(): Boolean {").substringBefore("\n    }")
+        assertTrue(building.contains("!(indexed ?: File(root, INDEX).isFile.also { indexed = it })"))
+        // review: the draw reads the app's own folder only, never the /sdcard copy (ArtHarvest.file falls back to it)
+        assertTrue(building.contains("val root = ArtHarvest.rootDir ?: return false"))
+        assertTrue(!building.contains("ArtHarvest.file("))
         val refresh = t.substringAfter("fun refresh() {").substringBefore("}")
         assertTrue("refresh forgets the index's answer", refresh.contains("indexed = null"))
         // the step writes that index after its last tile, then refreshes (the note goes as the step ends)
@@ -67,7 +80,12 @@ class HomeMapNoteTest {
     @Test fun mapViewDrawsItInPlaceOfTheTerrain() {
         val v = File(src, "MapView.kt").readText()
         val grid = v.indexOf("// no tiles for this map (yet): keep the old grid so the field is not a blank slab")
-        val note = v.indexOf("artNote = if (HomeMapNote.shows(morphOn, terrain, MinimapTiles.building())) HomeMapNote.TEXT else null")
+        val shown = v.indexOf("val tilesShown = HomeMapNote.terrainShown(terrain, drew, allAbsent, artNote != null)")
+        val note = v.indexOf("artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT else null")
+        assertTrue("what the terrain drew decides it", shown in 1 until note)
+        // a tile drawn, or one not looked for yet, keeps the field "drawn"
+        assertTrue(v.contains("?.let { c.drawBitmap(it, null, tileDst, pArt); drew = true }"))
+        assertTrue(v.contains("?: run { if (!MinimapTiles.absent(rT.continent, col, row, sample)) allAbsent = false }"))
         val floor = v.indexOf("// the floorplan sits ON the terrain, under every marker")
         assertTrue("after the terrain, before the floorplan and every marker", grid in 1 until note && note < floor)
         assertTrue("through Tr", v.contains("val t = Tr.t(note)"))
