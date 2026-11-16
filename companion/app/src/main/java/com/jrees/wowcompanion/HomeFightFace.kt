@@ -60,8 +60,10 @@ object HomeFightFace {
     const val DOWN = 4
 
     /** bare-set D-pad position [pos]'s In-combat entry as the router takes it in the fight switch (PadMap m44 / m55): a form's own
-     *  first, else the caster's overlay one (a COMBAT slot with `ov`); null = none (the position keeps DS Forever's action) */
-    fun dpadFight(map: PadMapModel.Map, pos: Int): PadMapModel.Ref? =
+     *  first, else the caster's overlay one (a COMBAT slot with `ov`); null = none (the position keeps DS Forever's action). Combat
+     *  controls off (m27, the padmap's `face.cc` false): none - the router arms no fight text then (routerMacros' combatOn() gate on
+     *  `wc-ft` / `wc-ff` / `wc-ffc`), the entries are only kept, so the D-pad keeps DS Forever's action in fights too */
+    fun dpadFight(map: PadMapModel.Map, pos: Int): PadMapModel.Ref? = if (map.faceCc == false) null else
         formOwn(map)[pos] ?: PadMapModel.slot(map, BASE_SET, pos)?.takeIf { it.kind == PadMapModel.Kind.COMBAT && it.ov }?.combat
 
     /**

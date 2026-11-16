@@ -20,9 +20,9 @@ class DownHomeBarTest {
     private val bear = PadMapModel.Form(1, 5487, "Bear Form", 132276, on = true)
 
     private fun map(down: PadMapModel.Slot?, combat: Boolean, fight: Boolean = combat, forms: List<PadMapModel.Form> = emptyList(),
-                    formFights: List<PadMapModel.FormFight> = emptyList()): PadMapModel.Map =
+                    formFights: List<PadMapModel.FormFight> = emptyList(), cc: Boolean? = true): PadMapModel.Map =
         PadMapModel.Map("m164", 1, 1, combat, listOf(PadMapModel.PadSet(1, listOfNotNull(down))), null, null, emptyList(),
-            fightSwitch = fight, forms = forms, formFights = formFights)
+            fightSwitch = fight, forms = forms, formFights = formFights, faceCc = cc)
 
     /** Down holds the player's spell with an In-combat spell over it (the overlay's) */
     private val downWithFight = PadMapModel.Slot(4, 4, Kind.COMBAT, null, null, 0, combat = shock,
@@ -76,6 +76,17 @@ class DownHomeBarTest {
     }
 
     @Test fun noPadmapYetTheToolbarDecides() = assertTrue(bar(null, toolbar = true))
+
+    @Test fun combatControlsOffKeepTheToolbarsDownInAFight() {
+        // review: Combat controls off (m27) - the router arms no fight text (routerMacros' combatOn gate), the kept entries cast nothing,
+        // so the toolbar's Down is the bar in fights too (its early open must stay)
+        assertTrue(bar(map(downWithFight, combat = true, cc = false), toolbar = true))
+        assertTrue(bar(map(downPlain, combat = true, forms = listOf(bear), formFights = listOf(PadMapModel.FormFight(5487, 4, claw)), cc = false),
+            toolbar = true))
+        assertFalse(bar(map(downWithFight, combat = true, cc = false), toolbar = false))
+        // an older add-on without the toggle (null): the entries count, as before
+        assertFalse(bar(map(downWithFight, combat = true, cc = null), toolbar = true))
+    }
 
     @Test fun theHostsEarlyBarUsesThisRule() {
         val src = listOf("../companion/app/src/main/java/com/jrees/wowcompanion", "companion/app/src/main/java/com/jrees/wowcompanion")
