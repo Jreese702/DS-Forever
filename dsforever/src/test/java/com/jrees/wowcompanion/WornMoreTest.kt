@@ -141,6 +141,15 @@ class WornMoreTest {
         assertNull(m.setPad!!.bindArm); assertFalse(m.setPad!!.box)                  // an older add-on: no Bind, no box
     }
 
+    @Test fun theModelReadsTheC20SwapArm() {
+        val m = CharacterModel()
+        m.update(JSONObject().put("type", "character").put("c", JSONObject().put("eqs", JSONObject()
+            .put("row", "auracancel").put("ws", 12).put("ask", false))))
+        assertEquals(12, m.setPad!!.swapArm)
+        m.update(JSONObject().put("type", "character").put("c", JSONObject().put("eqs", JSONObject().put("row", "auracancel").put("ask", false))))
+        assertNull("an older add-on: no swap", m.setPad!!.swapArm)
+    }
+
     @Test fun theModelReadsTheC16ListCell() {
         val m = CharacterModel()
         m.update(JSONObject().put("type", "character").put("c", JSONObject().put("eqs", JSONObject()

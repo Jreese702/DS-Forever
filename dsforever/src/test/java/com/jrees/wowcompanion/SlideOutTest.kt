@@ -317,4 +317,85 @@ class SlideOutTest {
         assertEquals(1, SlideOut.start(listOf(13, 14), mapOf(13 to wornRow(1, "INVTYPE_TRINKET").put("ilvl", 25), 14 to wornRow(2, "INVTYPE_TRINKET").put("ilvl", 10))))
         assertEquals(0, SlideOut.start(listOf(13, 14), mapOf(13 to wornRow(1, "INVTYPE_TRINKET").put("ilvl", 10), 14 to wornRow(2, "INVTYPE_TRINKET").put("ilvl", 25))))
     }
+
+    // ---------------------------------------------------------------- char-popout: the other slot's piece (the user, 2026-11-16: "on
+    // weapons that are both 1 hand or can actually be swapped to the offhand or vice versa then that option should be listed in the pop
+    // out options."; "if the only other option for something is nothing then I should be able to select that to unequip.")
+
+    private fun hands(main: String?, off: String?): Map<Int, JSONObject> = buildMap {
+        if (main != null) put(16, wornRow(16, main))
+        if (off != null) put(17, wornRow(17, off))
+    }
+
+    @Test fun theOffHandsOneHanderIsListedForTheMainHand() {
+        assertEquals(listOf(17), SlideOut.swaps(16, hands("INVTYPE_WEAPON", "INVTYPE_WEAPON"), dualWield = true))
+        assertEquals("an empty main hand too", listOf(17), SlideOut.swaps(16, hands(null, "INVTYPE_WEAPON"), dualWield = true))
+        assertEquals("an off-hand-only weapon never crosses",
+            emptyList<Int>(), SlideOut.swaps(16, hands("INVTYPE_WEAPON", "INVTYPE_WEAPONOFFHAND"), dualWield = true))
+        assertTrue("a shield never crosses", SlideOut.swaps(16, hands("INVTYPE_WEAPON", "INVTYPE_SHIELD"), true).isEmpty())
+        assertTrue("a held-in-off-hand piece never crosses", SlideOut.swaps(16, hands("INVTYPE_WEAPON", "INVTYPE_HOLDABLE"), true).isEmpty())
+        assertTrue("nothing in the off hand: nothing", SlideOut.swaps(16, hands("INVTYPE_WEAPON", null), true).isEmpty())
+    }
+
+    @Test fun theMainHandsOneHanderIsListedForTheOffHandOnlyForADualWielder() {
+        assertEquals(listOf(16), SlideOut.swaps(17, hands("INVTYPE_WEAPON", "INVTYPE_SHIELD"), dualWield = true))
+        assertTrue("no dual wield: never", SlideOut.swaps(17, hands("INVTYPE_WEAPON", "INVTYPE_SHIELD"), dualWield = false).isEmpty())
+        assertTrue("a main-hand-only weapon never", SlideOut.swaps(17, hands("INVTYPE_WEAPONMAINHAND", null), true).isEmpty())
+        assertTrue("a two-hander never", SlideOut.swaps(17, hands("INVTYPE_2HWEAPON", null), true).isEmpty())
+        assertTrue("the ranged slot has no pair", SlideOut.swaps(18, hands("INVTYPE_WEAPON", "INVTYPE_WEAPON"), true).isEmpty())
+    }
+
+    @Test fun ringsAndTrinketsCrossBothWays() {
+        val w = mapOf(11 to wornRow(1, "INVTYPE_FINGER"), 12 to wornRow(2, "INVTYPE_FINGER"), 13 to wornRow(3, "INVTYPE_TRINKET"))
+        assertEquals(listOf(12), SlideOut.swaps(11, w, false))
+        assertEquals(listOf(11), SlideOut.swaps(12, w, false))
+        assertEquals("an empty trinket slot: the other trinket", listOf(13), SlideOut.swaps(14, w, false))
+        assertTrue(SlideOut.swaps(13, w, false).isEmpty())
+        assertTrue("no pair", SlideOut.swaps(5, w, false).isEmpty())
+    }
+
+    @Test fun theSwapFirstThenTheBagsThenTheBlank() {
+        val e = SlideOut.entries(listOf(pick("INVTYPE_WEAPON", 20), pick("INVTYPE_WEAPON", 12)), 16, worn = true, swaps = listOf(17))
+        assertEquals(4, e.size)
+        assertTrue(e[0].swap); assertEquals(17, e[0].from); assertFalse(e[0].blank)
+        assertFalse(e[1].swap); assertFalse(e[1].blank); assertFalse(e[2].blank)
+        assertTrue("the blank last", e[3].blank); assertFalse(e[3].swap)
+    }
+
+    @Test fun nothingElseLeavesTheBlankAlone() {
+        val e = SlideOut.entries(emptyList(), 3, worn = true, swaps = emptyList())
+        assertEquals(1, e.size); assertTrue("the user: nothing is an option to unequip", e[0].blank)
+        val only = SlideOut.entries(emptyList(), 12, worn = false, swaps = listOf(11))
+        assertEquals("an empty ring slot: the other ring only, no blank", 1, only.size); assertTrue(only[0].swap)
+    }
+
+    @Test fun aSwapIsOutOfAFightOnlyAndNeedsRoomWhenTheDisplacedPieceCantGoBack() {
+        val sw = SlideOut.Entry(null, 17)
+        val w = hands("INVTYPE_WEAPONMAINHAND", "INVTYPE_WEAPON")
+        assertNull(SlideOut.why(sw, 16, false, false, 3, w, routed = true, dualWield = true))
+        assertEquals("In combat", SlideOut.why(sw, 16, true, false, 3, w, routed = true, dualWield = true))
+        assertEquals("the main-hand-only weapon can't go to the off hand: bags full",
+            "Bags full", SlideOut.why(sw, 16, false, false, 0, w, routed = true, dualWield = true))
+        assertNull("two one-handers just change hands: no room needed",
+            SlideOut.why(sw, 16, false, false, 0, hands("INVTYPE_WEAPON", "INVTYPE_WEAPON"), routed = true, dualWield = true))
+        assertNull("an empty main hand: nothing comes off", SlideOut.why(sw, 16, false, false, 0, hands(null, "INVTYPE_WEAPON"), true, true))
+        assertEquals("the shield goes to the bags", "Bags full",
+            SlideOut.why(SlideOut.Entry(null, 16), 17, false, false, 0, hands("INVTYPE_WEAPON", "INVTYPE_SHIELD"), true, true))
+        assertEquals("Unavailable", SlideOut.why(sw, 16, false, false, 3, w, routed = false, dualWield = true))
+    }
+
+    @Test fun aSwapsCardIsTheOtherSlotsPiece() {
+        val off = wornRow(17, "INVTYPE_WEAPON", JSONArray().put(stat("ITEM_MOD_AGILITY_SHORT", "Agility", 2))).put("quality", 2)
+        val w = mapOf(16 to wornRow(16, "INVTYPE_WEAPON"), 17 to off)
+        val c = SlideOut.card(SlideOut.Entry(null, 17), 16, null, w, true)
+        assertEquals("Worn 17", c.title); assertEquals(2, c.quality)
+        assertEquals("+2 Agility", c.lines.optJSONObject(0).optString("t"))
+        val tip = JSONArray().put(JSONObject().put("t", "Fang")).put(JSONObject().put("t", "One-Hand"))
+        val c2 = SlideOut.card(SlideOut.Entry(null, 17), 16, null, mapOf(16 to w[16]!!, 17 to JSONObject(off.toString()).put("tip", tip)), true)
+        assertEquals("Fang", c2.title); assertTrue(c2.full); assertEquals("One-Hand", c2.lines.optJSONObject(0).optString("t"))
+        val shield = wornRow(17, "INVTYPE_SHIELD", JSONArray().put(stat("RESISTANCE0_NAME", "Armor", 57)))
+        val c3 = SlideOut.card(SlideOut.Entry(null, 16), 17, null, mapOf(16 to w[16]!!, 17 to shield), true)
+        val all = (0 until c3.lines.length()).joinToString("|") { c3.lines.optJSONObject(it).optString("t") }
+        assertTrue("the shield goes to the bags: its losses at the foot ($all)", all.contains("Armor"))
+    }
 }
