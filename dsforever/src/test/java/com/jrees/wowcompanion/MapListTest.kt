@@ -226,4 +226,24 @@ class MapListTest {
         val afterOld = MapList.stops(relist(listOf(1, 2), log + e(3, "A", 10), emptySet()))
         assertEquals(MapList.groupKey("A"), MapCursor.stayAfter(3, before, afterOld))
     }
+    /** pg1 / D6 (the user, 2026-11-16: "I need some kind of header in the quests menu of the homeroom map indicating that it is the
+     *  polestar objective"): with no light blue row the header stands alone above the tracked quests, and the cursor skips it */
+    @Test fun polestarsLoneHeaderIsNoStop() {
+        val g = MapList.groups(listOf(e(10, "A", 5)), 5, emptyList(), emptyList())
+        val items = MapList.items(true, listOf(1, 2), g, polestar = false, psHead = true) { false }
+        assertEquals(listOf(MapList.Item.Me, MapList.Item.PsHead, MapList.Item.Tracked(1)), items.take(3))
+        assertEquals(listOf(MapList.ME, 1, 2, MapList.groupKey("A")), MapList.stops(items))
+        assertFalse("not a tab", MapList.isGroup(MapList.PS_HEAD))
+        assertFalse(MapList.isGroup(MapList.POLESTAR))
+        // with the row the row's own ribbon is the header: no second one
+        val row = MapList.items(true, listOf(1), g, polestar = true, psHead = true) { false }
+        assertEquals(listOf(MapList.Item.Me, MapList.Item.Polestar, MapList.Item.Tracked(1)), row.take(3))
+        assertFalse(row.contains(MapList.Item.PsHead))
+        // the cursor never lands on it: Down from the portrait goes to the first tracked quest
+        val c = MapCursor()
+        c.startAt(MapList.stops(items), MapList.ME)
+        c.key("PADDDOWN", MapList.stops(items), 0, false, emptySet())
+        assertEquals(1, c.sel)
+        assertTrue(MapList.PS_HEAD != MapList.groupKey("A") && MapList.PS_HEAD < MapList.POLESTAR)
+    }
 }

@@ -8,6 +8,8 @@ import kotlin.math.abs
  * sorted by Current zone->Class/Profession quests->closest to current level. above the quests should be my own Character Portrait".
  *
  *   [Item.Me]         the player's portrait (highlighted: the map centres on the player; A: the game's own player menu)
+ *   [Item.PsHead]     pg1 / D6: "Polestar · No guide" (or the guide's zone) while Polestar has no row - a header, not a cursor stop
+ *   [Item.Polestar]   Polestar's objective, the light blue row (its own ribbon heads it: "Polestar · <zone>")
  *   [Item.Tracked]    the tracked quests, as before (their order is the view's: the focused one on top)
  *   [Item.Section]    the "Untracked" line (not a cursor stop)
  *   [Item.Group]      one tab per quest-log header (the game's own headers, as the quest book groups them), closed until opened
@@ -23,11 +25,15 @@ object MapList {
     private const val SECTION = -2
     /** Polestar's own objective (ps1; the user, 2026-11-11: "a light blue objective to select from the tracker list"): below every tab's key */
     const val POLESTAR = -2_000_000_000
+    /** pg1 (the user, 2026-11-16: "I need some kind of header in the quests menu of the homeroom map indicating that it is the polestar
+     *  objective"; D6): the header alone, while Polestar is the tracker and has no row (no guide, or nothing to do now): never a stop */
+    const val PS_HEAD = -2_000_000_001
 
     sealed class Item {
         abstract val key: Int
         object Me : Item() { override val key = ME }
         object Polestar : Item() { override val key = POLESTAR }
+        object PsHead : Item() { override val key = PS_HEAD }
         data class Tracked(val id: Int) : Item() { override val key get() = id }
         data class Section(val count: Int) : Item() { override val key get() = SECTION }
         data class Group(val zone: String, val count: Int, val open: Boolean) : Item() { override val key get() = groupKey(zone) }
@@ -41,7 +47,7 @@ object MapList {
     fun groupKey(zone: String): Int = -(3 + (zone.hashCode() and 0x3fffffff))
 
     /** a key that is a tab's */
-    fun isGroup(key: Int): Boolean = key <= -3 && key != POLESTAR
+    fun isGroup(key: Int): Boolean = key <= -3 && key != POLESTAR && key != PS_HEAD
 
     private fun gap(e: Entry, plv: Int?): Int = if (e.level == null || plv == null) Int.MAX_VALUE else abs(e.level - plv)
 
@@ -72,12 +78,13 @@ object MapList {
      * a tab - is left out (a tab it empties goes too): every key stays once.
      */
     fun items(me: Boolean, tracked: List<Int>, groups: List<Pair<String, List<Int>>>, polestar: Boolean = false,
-              merged: Int = 0, isOpen: (String) -> Boolean): List<Item> {
+              merged: Int = 0, psHead: Boolean = false, isOpen: (String) -> Boolean): List<Item> {
         val out = ArrayList<Item>()
         val m = if (polestar) merged else 0
         val tabs = if (m > 0) groups.map { (z, ids) -> z to ids.filter { it != m } }.filter { it.second.isNotEmpty() } else groups
         if (me) out.add(Item.Me)
         if (polestar) out.add(Item.Polestar)            // above the tracked quests: Polestar's objective, the light blue row
+        else if (psHead) out.add(Item.PsHead)           // pg1: no row, the header alone (never a stop)
         for (id in tracked) if (m == 0 || id != m) out.add(Item.Tracked(id))
         if (tabs.isNotEmpty()) {
             out.add(Item.Section(tabs.sumOf { it.second.size }))
@@ -90,8 +97,8 @@ object MapList {
         return out
     }
 
-    /** the cursor's stops, in order (the section line is none) */
-    fun stops(items: List<Item>): List<Int> = items.filter { it !is Item.Section }.map { it.key }
+    /** the cursor's stops, in order (the section line is none, nor Polestar's lone header) */
+    fun stops(items: List<Item>): List<Int> = items.filter { it !is Item.Section && it !is Item.PsHead }.map { it.key }
 
     /** the untracked quests the list shows */
     fun untracked(items: List<Item>): Set<Int> = items.filterIsInstance<Item.Untracked>().map { it.id }.toSet()

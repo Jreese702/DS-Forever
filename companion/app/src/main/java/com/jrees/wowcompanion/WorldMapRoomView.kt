@@ -729,11 +729,18 @@ class WorldMapRoomView(context: Context) : View(context) {
     // pk1 (the user, 2026-11-12: "we need to make a way to skip a polestar objective"; the picks: X Skip, Y Previous, the Map room too):
     // Polestar's step as the Map (Home's light blue row) has it, on top of this room's quest list
     /** Polestar's step for the list's top row: its title, the goal's words, whether Skip / Previous can be pressed */
-    class Ps(val title: String, val words: String?, val canSkip: Boolean, val canPrev: Boolean)
+    class Ps(val title: String, val words: String?, val canSkip: Boolean, val canPrev: Boolean, val choose: Boolean = false)
     /** the Map's Polestar step now (null = none: no row) */
     var polestar: () -> Ps? = { null }
     /** a Skip ([prev] false) or Previous pressed on the row (the Map's one press path, MapView.polestarSkip) */
     var onPolestarSkip: ((prev: Boolean) -> Boolean)? = null
+    // pg1 / D6 (the user, 2026-11-16: "I need some kind of header in the quests menu of the homeroom map indicating that it is the polestar
+    // objective"; rooms match on every route): Home's header line, "Polestar · <zone>" ("Polestar · No guide"), on top of this room's
+    // list - not a row, never a cursor stop; D4: the row's waiting path choice ("Choose your path") opens the Quests room on it with A
+    /** the header's words (null: Polestar is not the tracker, or has not answered) */
+    var polestarHead: () -> String? = { null }
+    /** A on the "Choose your path" row */
+    var onPolestarChoose: (() -> Unit)? = null
     /** a line under the map (a refused Skip / Previous says why) */
     fun sayLine(t: String) = say(t)
 
@@ -2014,7 +2021,10 @@ class WorldMapRoomView(context: Context) : View(context) {
             ?: UiKit.divider(c, panelR.left + 24f, panelR.top + 64f, panelR.right - 24f, panelR.top + 64f)
         rowHits.clear(); checkHits.clear(); visibleRowQuests.clear(); optAnchor = null
         val rows = listRows()
-        val top = panelR.top + 84f; val bottom = panelR.bottom - 8f
+        // pg1 / D6: Polestar's header line over the list (not a row: never a stop)
+        val head = runCatching { polestarHead() }.getOrNull()
+        if (head != null) drawPsHead(c, RectF(panelR.left + 8f, panelR.top + 80f, panelR.right - 8f, panelR.top + 80f + PS_HEAD_H), head)
+        val top = panelR.top + 84f + (if (head != null) PS_HEAD_H else 0f); val bottom = panelR.bottom - 8f
         if (rows.isEmpty()) { c.drawText(Tr.t("No quests"), panelR.left + 24f, top + 24f, UiKit.bodyPaint(20f, Theme.text)); return }
         val hs = rows.map { rowHeight(it) }
         // the cursor's row stays in view
@@ -2063,6 +2073,25 @@ class WorldMapRoomView(context: Context) : View(context) {
         is MapQuestBook.Row.Header -> HEAD_H
         is MapQuestBook.Row.Quest -> 12f + max(CHECK_PX, titleLayout(r.id, titleW()).height.toFloat()) + objLines(r.id) * 26f + 8f
         MapQuestBook.Row.Polestar -> 12f + 30f + (if (runCatching { polestar() }.getOrNull()?.words != null) 26f else 0f) + 8f
+    }
+
+    /** pg1 / D6: Polestar's header line ("Polestar · Westfall"): the star and the words in its light blue, a hairline under them */
+    private fun drawPsHead(c: Canvas, r: RectF, words: String) {
+        val tp = UiKit.bodyPaint(22f, PS_BLUE)
+        val cy = r.centerY()
+        val sp = android.graphics.Path()
+        for (k in 0 until 8) {
+            val a = Math.PI / 4.0 * k - Math.PI / 2.0
+            val rr = if (k % 2 == 0) 10f else 3.6f
+            val px = r.left + 22f + (rr * Math.cos(a)).toFloat(); val py = cy + (rr * Math.sin(a)).toFloat()
+            if (k == 0) sp.moveTo(px, py) else sp.lineTo(px, py)
+        }
+        sp.close()
+        pFill.color = PS_BLUE; c.drawPath(sp, pFill)
+        c.drawText(TextUtils.ellipsize(words, tp, r.width() - 60f, TextUtils.TruncateAt.END).toString(), r.left + 42f,
+            cy - (tp.ascent() + tp.descent()) / 2f, tp)
+        pFill.color = Color.argb(110, Color.red(PS_BLUE), Color.green(PS_BLUE), Color.blue(PS_BLUE))
+        c.drawRect(r.left + 12f, r.bottom - 3f, r.right - 12f, r.bottom - 1.6f, pFill)
     }
 
     /** pk1: Polestar's step, in its light blue (Home's row), its goal's words under the title */
@@ -2223,6 +2252,7 @@ class WorldMapRoomView(context: Context) : View(context) {
                 }
                 // pk1: X Skip step, Y Previous step (only while a skip is left to undo)
                 MapQuestBook.Row.Polestar -> runCatching { polestar() }.getOrNull()?.let { ps ->
+                    if (ps.choose) out += Prompt(listOf(glyph("a")), PolestarTab.CHOOSE_WORD)
                     if (ps.canSkip) out += Prompt(listOf(glyph("x")), PolestarSkip.SKIP_WORD)
                     if (ps.canPrev) out += Prompt(listOf(glyph("y")), PolestarSkip.PREV_WORD)
                 }
@@ -2579,6 +2609,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         }
         // pk1: on the list's Polestar row X skips its step, Y undoes the last skip, A does nothing (the rest as on any row)
         if (region == MapRoomKeys.Region.LIST && panelOn && listRows().getOrNull(listIndex) == MapQuestBook.Row.Polestar) {
+            // pg1 / D4: A on the waiting path choice opens the Quests room on it
+            if (k == "PAD1" && runCatching { polestar() }.getOrNull()?.choose == true) { onPolestarChoose?.invoke(); return false }
             when (MapRoomKeys.polestarKey(k, runCatching { polestar() }.getOrNull()?.let { it.canSkip to it.canPrev })) {
                 MapRoomKeys.PsDo.SKIP -> { onPolestarSkip?.invoke(false); return false }
                 MapRoomKeys.PsDo.PREV -> { onPolestarSkip?.invoke(true); return false }
@@ -2705,6 +2737,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         const val NO_ART_NOTE = "Map pictures build while the game is closed"
         /** pk1: Polestar's light blue (Home's row, MapView.psBlue) */
         val PS_BLUE = Color.rgb(120, 200, 255)
+        /** pg1: Polestar's header line over the list */
+        const val PS_HEAD_H = 40f
         const val SPAWN_PX = 26f          // UI Art: on painted maps a spawn spot is the ghost PICTURE (24 px and up), never the dot
         const val DISC_PX = 58f           // a quest marker
         const val HOVER_PX = DISC_PX / 2f // a quest marker under the cursor: within its own drawn size

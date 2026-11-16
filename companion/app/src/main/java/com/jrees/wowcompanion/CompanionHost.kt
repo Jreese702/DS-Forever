@@ -590,9 +590,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // step quest), a cleared focus is not pushed back as the default
         worldMapRoom.onFocusPicked = { id, on -> mapView.psRelease(); if (!on) mapView.focusCleared(id) }
         // pk1: the Map room's Polestar row (its X Skip, Y Previous) shows and presses the Map's own Polestar step
-        worldMapRoom.polestar = { mapView.polestarTitle()?.let { WorldMapRoomView.Ps(it, mapView.polestarWords(), mapView.polestarCanSkip(), mapView.polestarCanPrev()) } }
+        worldMapRoom.polestar = { mapView.polestarTitle()?.let { WorldMapRoomView.Ps(it, mapView.polestarWords(), mapView.polestarCanSkip(), mapView.polestarCanPrev(),
+            choose = mapView.polestarChoose()) } }
+        worldMapRoom.polestarHead = { if (mapView.polestarHeadShown()) mapView.polestarHead() else null }      // pg1 / D6
         worldMapRoom.onPolestarSkip = { prev -> mapView.polestarSkip(prev) }
         questsView.onFocusPicked = { id, on -> mapView.psRelease(); if (!on) mapView.focusCleared(id) }
+        // pg1: the Polestar tab's X / Y (the one pnav Skip / Previous tap), its fight state, and Home's / the Map room's "Choose your
+        // path" row (D4): the Quests room straight on the choice
+        questsView.onPolestarSkip = { prev -> polestarSkipTap(prev) }
+        questsView.fight = { homeView.inFight() }
+        mapView.onPolestarChoose = { questsView.openPolestar(path = true); show(Room.QUESTS) }
+        worldMapRoom.onPolestarChoose = { questsView.openPolestar(path = true); show(Room.QUESTS) }
         // LATER item 7: Select opens a cursor on the bar; A on a room is what a touch on its picture does
         // the swirl (Home) picked on the bar = the pause wheel, on Home and in rooms (the user 2026-10-09: "if I select the spiral I want
         // that to open the pause menu"; "Wheel everywhere"); B still goes Home from a room, a room slice switches rooms
@@ -1743,7 +1751,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // combat_nav Step 3: in a fight's room mode the shown surface is live too (the in-place swap / the stray ENTER's "app" holder)
         fun live(id: String): () -> Boolean = { PadOwnerSync.directLive(guestShown(id), capHolder == "pad:$id", padOwner.roomMode()) }
         val lr = setOf(DirectPadKeys.LB, DirectPadKeys.RB)
-        DirectPad.register(DirectPad.Reg("quests", DirectPadKeys.EIGHT, repeat = setOf("PADDUP", "PADDDOWN"), active = live("quests")) { k, down, rp ->
+        // pg1: + LB / RB (the Polestar tab's switch, from anywhere in the room; the direct route only)
+        DirectPad.register(DirectPad.Reg("quests", DirectPadKeys.EIGHT + lr, repeat = setOf("PADDUP", "PADDDOWN"), active = live("quests")) { k, down, rp ->
             if (down) questsView.onDirect(k, rp) })
         DirectPad.register(DirectPad.Reg("settings", DirectPadKeys.EIGHT + lr, active = live("settings"), onKey = synth("settings") { settings.pad.onPad(it) }))
         DirectPad.register(DirectPad.Reg("chat", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK"), active = live("chat"), onKey = synth("chat") { chatView.onPad(it) }))
@@ -2272,6 +2281,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "pnavroute" -> if (current) { mapView.polestar.onRoute(msg, SystemClock.elapsedRealtime()); mapView.invalidate() }
             "pqol" -> if (current) { PolestarQol.onDoc(msg); if (::settingsView.isInitialized) settingsView.postInvalidate() }     // pq1: Polestar's automation
             "pstep" -> if (current) { mapView.onPolestarStep(msg); if (room == Room.MAP) worldMapRoom.postInvalidate() }   // ps1: the light blue row
+            // pg1: the Polestar tab (Map.lua WC.pg); pguide also heads Home's list and the Map room's ("Polestar · <zone>", D6)
+            "pguide", "pgsteps", "pglist", "pgstep", "pgroute", "pgop" -> if (current) {
+                questsView.onPolestarDoc(msg)
+                if (msg.optString("type") == "pguide") { mapView.onPolestarGuide(msg); if (room == Room.MAP) worldMapRoom.postInvalidate() }
+                if (msg.optString("type") == "pgop" && !msg.optBoolean("ok")) Log.i("WCMAP", "polestar tab: op ${msg.optInt("op")} refused ${msg.optString("why", "")}")
+            }
             "pskip" -> if (current) {                                   // pk1: a Skip / Previous answered
                 val ok = msg.optBoolean("ok")
                 Log.i("WCMAP", "polestar ${msg.optString("op")}: ${if (ok) "ok, step ${msg.optInt("i")}" else "refused ${msg.optString("why", "")}"}" +
@@ -2281,7 +2296,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val where = PolestarSkip.noteWhere(ok, line, SystemClock.uptimeMillis(), psWheelAt, room == Room.MAP)
                 psWheelAt = 0L                                          // (one answer per press)
                 mapView.onPolestarSkipAnswer(msg, note = where == PolestarSkip.Where.HOME_MAP)
-                when (where) {
+                if (where != PolestarSkip.Where.NONE && where != PolestarSkip.Where.WHEEL && room == Room.QUESTS && questsView.psTabShown())
+                    line?.let { questsView.psNote(it) }                // pg1: pressed on the Polestar tab: its line there
+                else when (where) {
                     PolestarSkip.Where.WHEEL -> if (::pauseView.isInitialized) line?.let { pauseView.note(it) }
                     PolestarSkip.Where.MAP_ROOM -> line?.let { worldMapRoom.sayLine(it) }
                     else -> {}
