@@ -276,13 +276,50 @@ object StartupDiag {
             "low-memory graphics ${runCatching { Settings.init(ctx); if (Settings.lowMemGraphics) "on" else "off" }.getOrDefault("?")}",
     )
 
+    /**
+     * THE NEWEST CRASH RECORD IN SHORT (issue triage 2026-11-16, the 1.0.32 low-memory cluster #279 - #425: every report's excerpt
+     * here ended about 4 minutes before its kill, which read as "the memory watch stopped" - it had not). A record (CrashLogs) is its
+     * head, then the killed run's last 72 mem.log lines OLDEST FIRST under [ReportUpload.MEMORY_MARK], then an ANR's or a native
+     * crash's trace; the first 30 lines of the file were the head and the OLDEST 21 memory lines. Now: the head, then the NEWEST memory
+     * lines up to [max] lines in all, under a heading that says how many of how many; the trace is not read (the record itself is in
+     * the report's crashes/ part). A record without a memory part: its first [max] lines, as before. Pure (the tests).
+     */
+    const val CRASH_LINES = 30
+    /** the memory lines a long head always leaves room for */
+    private const val CRASH_MIN_MEMORY = 10
+    fun crashExcerpt(lines: Sequence<String>, max: Int = CRASH_LINES): List<String> {
+        val head = ArrayList<String>()
+        val tail = ArrayDeque<String>()
+        var total = 0
+        var inMemory = false
+        var sawTrace = false
+        for (l in lines) {
+            when {
+                inMemory -> {
+                    if (l.startsWith("----------")) break                       // the trace's heading: the memory part is over
+                    if (l.isBlank()) continue
+                    total++; tail.addLast(l); if (tail.size > max) tail.removeFirst()
+                }
+                l == ReportUpload.MEMORY_MARK -> inMemory = true
+                head.size < max -> { head += l; if (l.startsWith("---------- Trace")) sawTrace = true }
+                sawTrace -> break                                               // no memory part before the trace: the first lines only
+                else -> if (l.startsWith("---------- Trace")) sawTrace = true
+            }
+        }
+        if (!inMemory) return head
+        // a head that long (never seen: a record's head is 7 lines) still leaves room for the newest memory lines
+        val h = head.dropLastWhile { it.isBlank() }.take((max - 1 - minOf(tail.size, CRASH_MIN_MEMORY)).coerceAtLeast(0))
+        val shown = tail.toList().takeLast((max - h.size - 1).coerceAtLeast(0))
+        return h + "---------- Memory before the end (mem.log): the last ${shown.size} of $total lines ----------" + shown
+    }
+
     private fun crashes(ctx: Context, now: Long): List<String> {
         val out = ArrayList<String>()
         val files = (ProblemReport.crashDir(ctx).listFiles()?.toList().orEmpty() +
             File(ctx.getExternalFilesDir(null), "crash_logs").listFiles()?.toList().orEmpty())
             .filter { it.isFile && it.name.endsWith(".txt") }.sortedByDescending { it.lastModified() }
         out += "DS Forever crash files: ${files.size}" + (files.firstOrNull()?.let { ", the newest ${it.name} at ${ago(it.lastModified(), now)}" } ?: "")
-        files.firstOrNull()?.let { f -> runCatching { f.bufferedReader().use { r -> r.lineSequence().take(30).forEach { out += "  | $it" } } } }
+        files.firstOrNull()?.let { f -> runCatching { f.bufferedReader().use { r -> crashExcerpt(r.lineSequence()).forEach { out += "  | $it" } } } }
         if (Build.VERSION.SDK_INT >= 30) runCatching {
             val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             val exits = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 6)
