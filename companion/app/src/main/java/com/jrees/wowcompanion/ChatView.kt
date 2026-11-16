@@ -102,7 +102,8 @@ private class Line(o: JSONObject) {
         get() = who.isNotEmpty() && !me && ch !in NOT_PEOPLE
 
     companion object {
-        val NOT_PEOPLE = setOf("npc", "system", "loot", "money", "currency", "info", "error", "other")
+        // chat37's experience / honor / reputation / skill-up lines are the game's sentences, never a person's
+        val NOT_PEOPLE = setOf("npc", "system", "loot", "money", "currency", "info", "error", "other", "xp", "honor", "rep", "skill")
     }
 }
 
@@ -257,6 +258,9 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
     private var typed = ""
     /** the quick chat phrase the bar holds as it was picked (its preset), or -1: sent as it is by the add-on's own preset cell */
     private var quickFill = -1
+    /** the phrase put in the bar last (-1: none) and the player's own words it went after: a second pick replaces that phrase only */
+    private var quickPick = -1
+    private var quickBase = ""
     /** where the caret stands in the field's text (after the header and what is written) */
     private var caretAt = 0
     private var fieldKey = ""
@@ -339,11 +343,15 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         input.isFocusable = false
         input.isFocusableInTouchMode = false
         input.isCursorVisible = false
-        input.setOnClickListener { if (board == Board.NONE) { openInput(); afterAct() } }
+        // a finger on the field is A on it (rooms the same on every route): the input the Settings name; with quick chat up, the keyboard
+        input.setOnClickListener { if (board != Board.KEYS) { pad.focus = Focus.Field; press("PAD1") } }
         // the field only SHOWS (showTyped): what is written is cleaned by the stream, and the header (a whisper's name, "…") is not
         // chat text, so no filter stands between them and the field
         input.background = UiKit.background { cv, r -> UiKit.inputBox(cv, r) }
         insetField(BAR_H - 10)
+        // what fits is measured on the field as it is: a field that changed width (the bar's Send comes and goes with quick chat) is
+        // measured again, so the end of a long message stays in view
+        input.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ -> if (r - l != or - ol) main.post { showTyped() } }
         input.gravity = Gravity.CENTER_VERTICAL
         composer.addView(input, lp(0, MATCH, 1f).apply { leftMargin = 16; topMargin = 5; bottomMargin = 5 })
         barSend.visibility = View.GONE
@@ -356,7 +364,8 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         ThemeLive.bg(boardBox, Tok.INK)
         boardBox.visibility = View.GONE
         boardBox.setPadding(0, 0, 0, HOME_CLEAR)
-        quick.onTile = { t -> pad.focus = Focus.Quick(t); quickTile(t); afterAct() }
+        // a finger on a tile is A on it: the phrase into the bar and the cursor onto the bar's Send, as the controller's A does
+        quick.onTile = { t -> pad.focus = Focus.Quick(t); press("PAD1") }
         boardBox.addView(quick, lp(MATCH, MATCH))
         keyboard.text = { typed }
         keyboard.onText = { t -> setTyped(t); restartBlink(); invalidate() }
@@ -382,11 +391,14 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
      * THE TEXT CLEAR OF THE BOX'S EDGE (the user, 2026-11-16: "visually right now the text in the message box clips a bit with the border
      * art at the beginning of it"): the box's end pieces are drawn square at the field's height (UiKit.inputBox), so their metal edge
      * grows with the field (the input screen's is twice the log screen's). The words start where the game starts them in its own 32 px
-     * edit box (SetTextInsets(15 + header, ...)): 15 / 32 of the height in, never less than before.
+     * edit box (SetTextInsets(15 + header, ...)): 15 / 32 of the height in, never less than before. Returns whether the inset changed
+     * (what fits in the field is then measured again).
      */
-    private fun insetField(h: Int) {
+    private fun insetField(h: Int): Boolean {
         val left = maxOf(26, Math.round(h * 15f / 32f))
-        if (input.paddingLeft != left || input.paddingRight != 34 + BAR_GLYPH_W) input.setPadding(left, 0, 34 + BAR_GLYPH_W, 0)
+        if (input.paddingLeft == left && input.paddingRight == 34 + BAR_GLYPH_W) return false
+        input.setPadding(left, 0, 34 + BAR_GLYPH_W, 0)
+        return true
     }
 
     /** the game's type (UI art, fonts step) on the views this room keeps */
@@ -772,7 +784,8 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         keyboard.fillHeight = boardFull - HOME_CLEAR
         val barPad = ((1f - k) * HOME_CLEAR).toInt()
         composer.setPadding(0, 0, 16, barPad)
-        insetField(barH - barPad - 10)                     // the field's height: the bar's, less its padding and margins
+        // the field's height: the bar's, less its padding and margins; a new inset is less (or more) room, so what fits is measured again
+        if (insetField(barH - barPad - 10)) showTyped()
         fun set(v: View, h: Int) { val p = v.layoutParams as LayoutParams; if (p.height != h || p.weight != 0f) { p.height = h; p.weight = 0f; v.layoutParams = p } }
         set(head, headH); set(logBox, logH); set(composer, barH); set(boardBox, boardH)
         head.k = k
@@ -814,13 +827,20 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
      */
     private fun fillQuick(t: Int) {
         val phrase = ChatLinks.PRESETS.getOrNull(t) ?: return
-        val before = ChatLinks.PRESETS.getOrNull(quickFill)
-        val next = if (typed.isBlank() || typed == before) phrase else typed.trimEnd() + " " + phrase
-        typed = stream.clean(next)
+        // the bar still holds the last pick as it was put there: that phrase goes, the words before it stay (else what is in the bar
+        // now, the keyboard's changes included, is the player's own and the phrase goes after it)
+        val last = ChatLinks.PRESETS.getOrNull(quickPick)?.let { withPhrase(quickBase, it) }
+        if (last == null || typed != last) quickBase = typed
+        typed = withPhrase(quickBase, phrase)
+        quickPick = t
         quickFill = if (typed == phrase) t else -1
         showTyped()
         barSend.invalidate()
     }
+
+    /** [phrase] after the player's own words [base] (alone when there are none), as chat can carry it */
+    private fun withPhrase(base: String, phrase: String): String =
+        stream.clean(if (base.isBlank()) phrase else base.trimEnd() + " " + phrase)
 
     /** the composer's type now as a kind of the row (its colour); the first when it is gone */
     private fun kindNow(): Kind? = kinds().let { ks -> ks.firstOrNull { it.key == type } ?: ks.firstOrNull() }
@@ -828,10 +848,12 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
     /** the channel's name for the header: as the game's lines name it ("Trade - City"), else as the joined list does ("Trade") */
     private fun chanName(t: String): String {
         val i = t.substringAfter(":").toIntOrNull() ?: return ""
-        history.lastOrNull { it.ch == "channel" && it.idx == i && it.chan.isNotEmpty() }?.let { l ->
-            ChatFilter.chanBase(l.chan).takeIf { it.isNotEmpty() }?.let { return l.chan.substringAfter(". ", l.chan) }
-        }
-        return chans.firstOrNull { it.first == i }?.second ?: ""
+        val joined = chans.firstOrNull { it.first == i }?.second ?: ""
+        // a line of THIS channel only: a number the game gave another channel before (one left, another joined) names that one
+        val base = ChatFilter.chanBase(joined)
+        history.lastOrNull { it.ch == "channel" && it.idx == i && it.chan.isNotEmpty() && (base.isEmpty() || ChatFilter.chanBase(it.chan) == base) }
+            ?.let { l -> return l.chan.substringAfter(". ", l.chan) }
+        return joined
     }
 
     /** the game's edit box header for the type now (ChatHeader): "Say: ", "Tell Name: ", "2. Trade - City: " */
@@ -873,6 +895,9 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             put(header, colour)
             if (body.isNotEmpty()) put(body, colour) else put(hintWords, Theme.dim)
             input.setText(sb)
+            // the selection where typing goes (an EditText's setText puts it at the start): a field that holds more than its lines keeps
+            // that end in view, as before the header
+            input.setSelection(caretAt.coerceIn(0, input.text.length))
         }
         input.maxLines = lines
     }
@@ -911,7 +936,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
     /** a message went: the bar empties and the input goes, as the game's chat box does (the user, 2026-09-28: "close after") */
     private fun sent() {
         noticeUntil = 0
-        quickFill = -1
+        quickFill = -1; quickPick = -1; quickBase = ""
         setTyped("")
         if (board != Board.NONE) setBoard(Board.NONE)
         pad.focus = Focus.Field

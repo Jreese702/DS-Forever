@@ -58,7 +58,7 @@ class HomeView(
     private val grow = HomeGrow()
     private val auras = HomeAuras()
     private val quests = HomeQuests()
-    private val chat = HomeChatTail()
+    private val chat = HomeChatTail(counts = { ChatFilter.shows(it.ch, it.chan) })     // the checklist's hidden lines push nothing out
     private var pad: JSONObject? = null
     /** the small map's zone band: the game minimap's text (the subzone, else the zone) and the zone's PvP type when sent */
     private var zoneText = ""

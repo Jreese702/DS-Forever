@@ -111,6 +111,27 @@ class ChatChecklistTest {
         assertEquals(2, n)
     }
 
+    /** the review (2026-11-16): Home's pane keeps its 40 SHOWN lines, so hidden experience / reputation lines push no whisper out */
+    @Test fun homesTailKeepsItsShownLinesWhateverIsHidden() {
+        ChatFilter.init(store)
+        ChatFilter.character("Korvash-Realm")
+        ChatFilter.toggle("xp")
+        val tail = HomeChatTail(keep = 3, counts = { ChatFilter.shows(it.ch, it.chan) })
+        val lines = org.json.JSONArray()
+        var i = 0
+        fun add(ch: String, text: String) { lines.put(org.json.JSONObject().put("i", ++i).put("ch", ch).put("text", text)) }
+        add("say", "s0"); add("whisper", "w1"); add("say", "s1"); add("party", "p1")
+        repeat(20) { add("xp", "xp$it") }
+        tail.update(org.json.JSONObject().put("s", 7L).put("lines", lines))
+        assertEquals("the newest 3 shown lines stay", listOf("w1", "s1", "p1"), tail.all.filter { ChatFilter.shows(it.ch) }.map { it.text })
+        assertEquals("never more than keep x 4 lines in all: the oldest hidden ones went", 12, tail.all.size)
+        assertEquals("xp11", tail.all.first { it.ch == "xp" }.text)
+        // with nothing hidden it keeps its last [keep] lines, as before
+        val plain = HomeChatTail(keep = 3)
+        plain.update(org.json.JSONObject().put("s", 7L).put("lines", lines))
+        assertEquals(listOf("xp17", "xp18", "xp19"), plain.all.map { it.text })
+    }
+
     // ---------------------------------------------------------------- the game's edit box header
 
     @Test fun theHeaderIsTheGames() {

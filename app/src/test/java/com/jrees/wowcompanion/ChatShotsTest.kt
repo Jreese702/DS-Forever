@@ -255,6 +255,76 @@ class ChatShotsTest {
         assertTrue("typed: the check cell, never a preset: $taps", taps.contains("chq" to ChatStream.BODY) && taps.none { (r, c) -> r == "chq" && c in 0..10 })
     }
 
+    // ---------------------------------------------------------------- the review's checks (2026-11-16)
+
+    @Test fun aSecondPickReplacesTheFirstAfterWordsOfTheirOwnToo() {
+        live()
+        val v = chat()
+        watch(v)
+        press(v, "PAD3")
+        call(v, "setTyped", "brb")
+        press(v, "PAD1")                                      // Hello! after the words
+        assertEquals("Say: brb Hello!", fieldText(v).first)
+        press(v, "PADDDOWN"); press(v, "PADDRIGHT")           // from Send back to Hello!, then Thanks!
+        press(v, "PAD1")
+        assertEquals("the second pick replaces the first, the words stay", "Say: brb Thanks!", fieldText(v).first)
+        // the keyboard changed what the bar holds: all of it is the player's own now, and the next phrase goes after it
+        call(v, "setTyped", "brb Thanks! ok")
+        press(v, "PADDDOWN"); press(v, "PAD1")
+        assertEquals("Say: brb Thanks! ok Thanks!", fieldText(v).first)
+    }
+
+    @Test fun aFingerDoesWhatAOnTheSameThingDoes() {
+        live()
+        val v = chat()
+        watch(v)
+        press(v, "PAD3")                                      // quick chat
+        val quick = field<Any>(v, "quick")
+        @Suppress("UNCHECKED_CAST")
+        val onTile = quick.javaClass.getDeclaredMethod("getOnTile").apply { isAccessible = true }.invoke(quick) as (Int) -> Unit
+        onTile(2)                                             // a finger on "On my way"
+        idle(); lay(v)
+        assertEquals("Say: On my way", fieldText(v).first)
+        assertEquals("the cursor on the bar's Send, as after A", ChatPad.Focus.Send, field<ChatPad>(v, "pad").focus)
+        press(v, "PADDDOWN")
+        assertEquals("down from Send: the phrase the finger picked", ChatPad.Focus.Quick(2), field<ChatPad>(v, "pad").focus)
+        // a finger on the field with quick chat up: the keyboard, as A on the field
+        input(v).performClick()
+        idle(); lay(v)
+        assertEquals("KEYS", field<Any>(v, "board").toString())
+        assertEquals(View.GONE, field<View>(v, "barSend").visibility)
+    }
+
+    @Test fun aChannelsHeaderNamesThatChannelNeverAnEarlierOneOnItsNumber() {
+        val v = chat()
+        ChatView::class.java.getDeclaredField("type").apply { isAccessible = true }.set(v, "CHANNEL:2")
+        call(v, "applyType")
+        assertTrue(fieldText(v).first, fieldText(v).first.startsWith("2. Trade - City: "))
+        // Trade left, another channel joined on its number: the header names the new one, not the log's last Trade line
+        val chans = JSONArray().put(JSONObject().put("i", 1).put("n", "General")).put(JSONObject().put("i", 2).put("n", "Crafters"))
+        v.update(JSONObject().put("can", JSONObject().put("party", true).put("guild", true).put("raid", false).put("chans", chans)))
+        idle(); lay(v)
+        assertTrue(fieldText(v).first, fieldText(v).first.startsWith("2. Crafters: "))
+    }
+
+    @Test fun theFieldShowsTheEndOfALongMessageAfterTheBoardTurns() {
+        live()
+        val v = chat()
+        watch(v)
+        press(v, "PAD1")                                      // the keyboard: the input screen, two lines
+        call(v, "setTyped", "need one more healer for the Deadmines, meet at the Moonbrook inn by the fountain, we have the tank " +
+            "and two dps already so it should go quickly once you are there")
+        idle(); lay(v)
+        val f = input(v)
+        assertTrue("two lines on the keyboard screen: ${f.lineCount}", f.lineCount <= 2)
+        assertTrue("its end, behind …", fieldText(v).first.contains("…") && fieldText(v).first.endsWith("once you are there"))
+        press(v, "PAD3")                                      // X: quick chat, the bar's Send takes room from the field
+        idle(); lay(v); idle(); lay(v)
+        assertEquals(View.VISIBLE, field<View>(v, "barSend").visibility)
+        assertTrue("still two lines in the narrower field: ${f.lineCount} for '${f.text}'", f.lineCount <= 2)
+        assertTrue("the end still shows", fieldText(v).first.endsWith("once you are there"))
+    }
+
     // ---------------------------------------------------------------- the checklist
 
     private fun shownCount(v: ChatView): Int = field<java.util.ArrayList<*>>(v, "shown").size
