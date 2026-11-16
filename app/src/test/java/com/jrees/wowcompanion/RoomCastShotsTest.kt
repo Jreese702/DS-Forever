@@ -164,6 +164,30 @@ class RoomCastShotsTest {
         assertEquals(0, cv.roomCastState())
     }
 
+    /**
+     * review fix: Home's own bar can leave the screen (a room opens, a Home module covers the band, the band's FULL look) with no cast
+     * event; the rooms' bar must be told then, or a cast already running shows on neither until the next cast event (the strip's own
+     * clock stops when the living disc is not drawn)
+     */
+    @Test fun homesOwnBarLeavingTellsTheRoomsBar() {
+        val cv = CastView(app) { }
+        var told = 0
+        cv.onCastState = { told++ }
+        cv.layout = CastView.Layout.ROW
+        assertEquals("a band layout: re-asked", 1, told)
+        cv.bottomLine = true
+        assertEquals("Home's line on: re-asked", 2, told)
+        cv.bottomLine = true
+        assertEquals("no change: nothing", 2, told)
+        cv.onVisibilityAggregated(false)
+        assertEquals("off the screen: re-asked", 3, told)
+        cv.onVisibilityAggregated(true)
+        assertEquals("back: re-asked", 4, told)
+        cv.layout = CastView.Layout.FULL
+        assertEquals("the FULL look draws no cast bar: re-asked", 5, told)
+        assertFalse(cv.ownCastBarShown())
+    }
+
     @Test fun theBarAsksForFramesOnlyWhileItMoves() {
         val cv = CastView(app) { }
         val b = Bitmap.createBitmap(W, 40, Bitmap.Config.ARGB_8888)

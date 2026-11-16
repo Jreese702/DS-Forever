@@ -207,7 +207,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * divider, so the page always has one line. Only drawn in the band layouts.
      */
     var bottomLine = false
-        set(v) { if (field != v) { field = v; invalidate() } }
+        set(v) { if (field != v) { field = v; invalidate(); onCastState?.invoke() } }   // feat/wk-itemcast: the rooms' bar re-asks [ownCastBarShown]
     /**
      * b-cast-any (the user on test9: "the cast bar doesn't play when like, opening container or using the hearthstone"): out of the
      * combat takeover the line is the CAST BAR ONLY - drawn while one of the player's casts (any: an item, an object, a profession)
@@ -678,6 +678,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             field = v
             if (width > 0 && height > 0) applyGeometry(width, height)
             invalidate()
+            onCastState?.invoke()                       // feat/wk-itemcast: FULL draws no cast bar: the rooms' bar re-asks [ownCastBarShown]
         }
 
     private var k = 0f          // px per Blizzard UI unit
@@ -3037,6 +3038,17 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
     /** Home draws this cast bar itself now (on screen, its band layout, a layout to draw): the rooms' bar leaves it out */
     fun ownCastBarShown(): Boolean = isShown && bottomLine && layout != Layout.FULL && hud != null && k > 0f && width > 0
+
+    /**
+     * review fix: when this view leaves the screen or comes back (a room opens, a Home module covers the band, Home returns) the answer
+     * of [ownCastBarShown] changes with no cast event, and the rooms' bar only redraws on one ([onCastState]) or on its own clock - which
+     * stops when the living Home disc is not drawn. Told here (with [layout] / [bottomLine]) so a cast already running moves to the
+     * rooms' bar at once, never left on neither.
+     */
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(isVisible)
+        onCastState?.invoke()
+    }
 
     /** the rooms' cast band: 0 = nothing, 1 = a cast / channel runs, 2 = its finish or its interrupt plays (the bar fading out) */
     fun roomCastState(now: Long = SystemClock.elapsedRealtime()): Int = RoomCast.state(now.toDouble(), castStartMs, castEndMs,
