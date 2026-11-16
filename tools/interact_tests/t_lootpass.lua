@@ -65,6 +65,14 @@ chk("... and the document carries no loot pop-up (" .. tostring(lt) .. "), the p
     lt == nil and d and d.lootPass and d.lootPass.n == 1)
 close()
 chk("the auto loot closed: the pass cleared, the grid still holds", N.lootPassAt == nil and holder() == "bags" and #lost == 0)
+-- review of i161: the flag must never take the name of Make Space's auto-loot FUNCTION (LOOT.auto: the delete-then-loot calls it)
+chk("Make Space's LOOT.auto is still a function after a loot opened and closed (" .. type(LOOT.auto) .. ")", type(LOOT.auto) == "function")
+open(true)
+chk("... and while an auto loot is open (" .. type(LOOT.auto) .. "), the flag is LOOT.autoOn (" .. tostring(LOOT.autoOn) .. ")",
+    type(LOOT.auto) == "function" and LOOT.autoOn == true)
+chk("... and it can be called (no loot window: nothing to take)", pcall(function() LootFrame.shown = false; LOOT.auto(0, 1) end))
+LootFrame.shown = true
+close()
 
 -- 2) the bags full: still open after LOOT.PASS_S -> the ordinary path (lost to the pop-up)
 open(true)
@@ -115,9 +123,9 @@ WowCompanionDB.lootTop = false
 
 -- 7) in a fight an auto loot is never passed (the fight's own loot rules)
 InCombatLockdown = function() return true end
-LOOT.auto = true
+LOOT.autoOn = true
 chk("in a fight: no pass", N.lootPass() == false)
 InCombatLockdown = function() return false end
-LOOT.auto = nil
+LOOT.autoOn = nil
 pcall(WC.capture.release, "bags", "test")
 return table.concat(out, "\n")
