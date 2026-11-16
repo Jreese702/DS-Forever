@@ -2,6 +2,9 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar3 (PadMap m165; the user, 2026-11-16: "when using show tooltip on a macro it doesn't actually show the GCD when using it"): a
+-- player's macro on the In combat layer is drawn as the spell it would cast now (its picture, its cooldown / GCD sweep by that spell's
+-- duration object, its tints; an item's macro its picture): refEntry, from PadMap's look (`ms`, WC.padMap.macLook).
 -- nbar2 (review of nbar1, issue #195: "exactly what a press casts"): a form's own In-combat spell first in a fight (PadMap m55 formFight);
 -- the fight pictures only while Combat controls are on (WC.padMap.combatOn) and on the ROUTER's own switch (WC.tgGrown: the fight or an
 -- attack / auto-repeat armed, not given back by B - PadMap's "sw"); commands and bindings on the bare D-pad drawn; the glyphs by the
@@ -2102,7 +2105,7 @@ end
 -- and pcall'd; without them (or refused) the button is dimmed while its NeverSecret isActive says it cools (no sweep). The route that
 -- worked rides one "cap" line (probe "nbarcd") out of a fight and one in a fight per login. A secret is never compared or computed.
 ---------------------------------------------------------------------------------------------------
-local NB = { V = "nbar2", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64,
+local NB = { V = "nbar3", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
              -- the button a position is, by the game's binding (bar.actionButtons order: D-pad L / U / R / D, face left / top / right / bottom)
@@ -2295,9 +2298,22 @@ function NB.place()
     end
 end
 
--- a ref from PadMap's views ({ n, id, i } a spell; { n, i, t, key } a whole-button thing) -> an entry
+-- a ref from PadMap's views ({ n, id, i } a spell; { n, i, t, key } a whole-button thing) -> an entry. nbar3: a player's MACRO (t =
+-- "macro") is the spell it would cast now (PadMap m165's look: `ms`, or WC.padMap.macLook for a form's raw entry): that spell's
+-- picture, cooldown / GCD sweep and tints, as the game's own macro button; a macro using an item: its picture
 local function refEntry(ref)
     if type(ref) ~= "table" then return { kind = "empty" } end
+    if ref.t == "macro" then
+        local lk = ref
+        local pm = rawget(WC, "padMap")
+        if ref.ms == nil and ref.mt == nil and type(pm) == "table" and type(pm.macLook) == "function" then
+            local ok, l = pcall(pm.macLook, ref.n)
+            if ok and type(l) == "table" then lk = l end
+        end
+        local sid = num(lk.ms)
+        if sid then return { kind = "spell", id = sid, icon = lk.i or ref.i } end
+        return { kind = "icon", icon = lk.i or ref.i }
+    end
     if ref.t ~= nil then return { kind = "icon", icon = ref.i } end
     local id = num(ref.id)
     local ic = ref.i

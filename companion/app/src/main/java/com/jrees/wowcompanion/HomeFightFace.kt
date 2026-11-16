@@ -20,10 +20,31 @@ object HomeFightFace {
      *  D-pad's overlay one), for the state the add-on sends by spell id (hudS.fs) */
     fun ids(map: PadMapModel.Map, fight: Boolean = map.fight): Map<Int, Int> {
         val out = HashMap<Int, Int>()
-        for (pos in PadMapModel.FACES) PadMapModel.slot(map, BASE_SET, pos)?.fight?.id?.takeIf { it > 0 }?.let { out[pos] = it }
+        // PadMap m165: a macro's by the spell it casts now (Ref.stateId: `ms`), as the game's own macro button
+        for (pos in PadMapModel.FACES) PadMapModel.slot(map, BASE_SET, pos)?.fight?.stateId?.takeIf { it > 0 }?.let { out[pos] = it }
         if (fight) for (pos in 1..4) PadMapModel.slot(map, BASE_SET, pos)?.takeIf { it.kind == PadMapModel.Kind.COMBAT && it.ov }
-            ?.combat?.id?.takeIf { it > 0 }?.let { out[pos] = it }
-        formOwn(map).forEach { (pos, r) -> if (pos in PadMapModel.FACES || fight) r.id?.takeIf { it > 0 }?.let { out[pos] = it } }
+            ?.combat?.stateId?.takeIf { it > 0 }?.let { out[pos] = it }
+        // review of m165: a form's own entry is what that button DRAWS ([icons] / [dpadIcons]), so one with no spell (a command, an item,
+        // a macro using an item or casting nothing now) takes none of the caster's spell's state or cast time - as [items] reads it
+        formOwn(map).forEach { (pos, r) ->
+            if (pos in PadMapModel.FACES || fight) { val s = r.stateId?.takeIf { it > 0 }; if (s != null) out[pos] = s else out.remove(pos) }
+        }
+        return out
+    }
+
+    /**
+     * PadMap m165 (the user, 2026-11-16: "when using show tooltip on a macro it doesn't actually show the GCD when using it"): the base
+     * set's game position -> the ITEM a macro drawn there would use now (Ref.mt, GetMacroItem), for its cooldown from the `itemcd`
+     * document ([ItemCd]) - the positions and the order [ids] reads (X / Y / A; the D-pad's in a fight; a form's own over them)
+     */
+    fun items(map: PadMapModel.Map, fight: Boolean = map.fight): Map<Int, Int> {
+        val out = HashMap<Int, Int>()
+        for (pos in PadMapModel.FACES) PadMapModel.slot(map, BASE_SET, pos)?.fight?.mt?.takeIf { it > 0 }?.let { out[pos] = it }
+        if (fight) for (pos in 1..4) PadMapModel.slot(map, BASE_SET, pos)?.takeIf { it.kind == PadMapModel.Kind.COMBAT && it.ov }
+            ?.combat?.mt?.takeIf { it > 0 }?.let { out[pos] = it }
+        formOwn(map).forEach { (pos, r) ->
+            if (pos in PadMapModel.FACES || fight) { val m = r.mt?.takeIf { it > 0 }; if (m != null) out[pos] = m else out.remove(pos) }
+        }
         return out
     }
 
@@ -108,7 +129,7 @@ object HomeFightFace {
         map.sets.filter { it.set in 2..4 }.flatMap { st ->
             st.slots.filter { it.kind == PadMapModel.Kind.COMBAT && it.ov && it.pos in 1..8 }.mapNotNull { sl ->
                 val r = sl.combat ?: return@mapNotNull null
-                r.icon.takeIf { it != 0 }?.let { cmdKey(st.set, sl.pos) to (it to (r.id ?: 0)) }
+                r.icon.takeIf { it != 0 }?.let { cmdKey(st.set, sl.pos) to (it to (r.stateId ?: 0)) }       // m165: a macro's spell now
             }
         }.toMap()
 

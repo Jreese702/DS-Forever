@@ -28,9 +28,14 @@ object PadMapModel {
     /** [layer] (PadMap m132, THE FIGHT-ONLY LAYER - the user, 2026-11-11: "Build a fight-only layer"): a combat button's In combat entry
      *  that is a whole-button thing - "command" / "bind" / "item" / "mount" - with [key] (the command's / binding's key, "i:<id>" /
      *  "m:<id>"; no [id], so nothing reads it as a spell); null = a spell */
+    /** [ms] / [mt] (PadMap m165; the user, 2026-11-16: "when using show tooltip on a macro it doesn't actually show the GCD when using
+     *  it"): a MACRO's what-it-casts-now - the spell's id (its state and cast time by id, as a fight spell's) / the item's id (its
+     *  cooldown from the `itemcd` document); never [id], so nothing takes a macro for a spell. [icon] is then the macro's live picture */
     data class Ref(val id: Int?, val name: String, val icon: Int, val item: Boolean = false, val kind: String? = null,
-                   val layer: String? = null, val key: String? = null) {
+                   val layer: String? = null, val key: String? = null, val ms: Int? = null, val mt: Int? = null) {
         val manners: Boolean get() = kind == "manners"
+        /** the spell id the button's state goes by: the spell's own, else a macro's spell now (m165) */
+        val stateId: Int? get() = id ?: ms
     }
 
     /** [combat] / [otherwise]: a COMBAT button's two spells ([otherwise] null = nothing out of combat); [fight]: the spell a base X / Y / A
@@ -182,7 +187,8 @@ object PadMapModel {
 
     private fun count(o: JSONObject?): MacroCount? = o?.let { MacroCount(it.optInt("n", 0), intOrNull(it, "max")) }
     private fun ref(o: JSONObject?): Ref? = o?.let { r ->
-        textOrNull(r, "n")?.let { Ref(intOrNull(r, "id"), it, r.optInt("i", 0), r.optBoolean("item", false), layer = textOrNull(r, "t"), key = textOrNull(r, "key")) }
+        textOrNull(r, "n")?.let { Ref(intOrNull(r, "id"), it, r.optInt("i", 0), r.optBoolean("item", false), layer = textOrNull(r, "t"), key = textOrNull(r, "key"),
+            ms = intOrNull(r, "ms")?.takeIf { v -> v > 0 }, mt = intOrNull(r, "mt")?.takeIf { v -> v > 0 }) }
     }
 
     /** The `padmap` message; null when it is not one. */
@@ -254,8 +260,10 @@ object PadMapModel {
                 FACES.mapNotNull { p -> k.optString(p.toString(), "").takeIf { it.isNotEmpty() }?.let { p to it } }.toMap()
             } ?: emptyMap(),
             facePending = m.optJSONObject("face")?.optBoolean("pending", false) == true,
-            // m49+ always means the switch (`fight` left out = off); before m49 there was none
-            fightSwitch = if (m.has("fight") || (msg.optString("v").removePrefix("m").toIntOrNull() ?: 0) >= 49) m.optBoolean("fight", false) else null,
+            // m49+ always means the switch (`fight` left out = off); before m49 there was none. Review of m165: the number only - a review's
+            // letter tag ("m163a") read as no version, and a left-out `fight` (off) then fell back to the bare `combat` flag
+            fightSwitch = if (m.has("fight") || (msg.optString("v").removePrefix("m").takeWhile { it.isDigit() }.toIntOrNull() ?: 0) >= 49)
+                m.optBoolean("fight", false) else null,
             faceGiven = m.optJSONObject("face")?.optBoolean("given", false) == true,
             faceRefused = m.optJSONObject("face")?.optBoolean("refused", false) == true,
             paused = m.optBoolean("paused", false),

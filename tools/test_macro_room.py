@@ -31,6 +31,14 @@ Proven here:
   k B: one step back, then Home (the controller back with "B", macpad BACK); the room left (f) drops the keyboard / box quietly;
   l the document's size stays small (one page of names, one body);
   m per character: the tab and selection are kept per name-realm.
+  r (Spells s13; the user, 2026-11-16: "also things like my pet attack are missing from the spells options."): with a pet out, + Spell/Item
+    lists the pet's commands (the game's secure slash lines, its words, the pet bar's pictures; the pet bar's own modes) and the pet
+    book's spells after the player's spells; picks write ONE line; a recipe takes the pet's spells, never a command; no pet = none;
+  s (PadMap m165; the user, 2026-11-16: "when using show tooltip on a macro it doesn't actually show the GCD when using it"): a macro on
+    our buttons (X / Y / A, the D-pad's In-combat layer, L3) carries its live look - the picture of what it casts now (GetMacroSpell /
+    GetMacroItem; its own icon when it has one), `ms` / `mt`, never `id` -; its GCD and cooldown on the facecd road (the plain length
+    learned, the learned one in a fight), its state by the spell's id; a [mod:shift] switch re-sends the padmap and drops the old spell's
+    cooldown; a secret read keeps the last plain look; reads only.
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -270,7 +278,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap"):
     e = comp(SRC[k], k)
     check(e is None, "a. Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local SV = "s12"' in SRC["spells"] and 'local BV = "b65"' in SRC["book"] and 'local PV = "m164"' in SRC["padmap"],
+check('local SV = "s13"' in SRC["spells"] and 'local BV = "b65"' in SRC["book"] and 'local PV = "m166"' in SRC["padmap"],
       "a. the versions: Spells s10, Book b63, PadMap m163")
 QUOTE = '"Lets scrap the smart ranged attack and start building a macro room'
 check(all(QUOTE in SRC[k] for k in ("spells", "book", "padmap")), "a. each changed file's header note quotes the user")
@@ -833,6 +841,225 @@ check(holder(L) is None and not (d.get('ctl') or {}).get('held') and d.get('mode
       "q. a finger's A with no hold: it acts (the editor), and the document does not claim the controller", (holder(L), d.get('ctl')))
 check(clean(L) == {}, "q. clean", clean(L))
 
+# ================================================================ r. (s13) the pet's picks: its commands and spells, with a pet out
+# the user, 2026-11-16: "also things like my pet attack are missing from the spells options."
+PET = r'''
+PETBAR = { "PET_ACTION_ATTACK", "PET_ACTION_FOLLOW", "PET_ACTION_WAIT", "Firebolt", nil, nil, nil, "PET_MODE_AGGRESSIVE", "PET_MODE_DEFENSIVE",
+           "PET_MODE_PASSIVE" }
+function GetPetActionInfo(i) local n = PETBAR[i]; if n then return n, (n:find("^PET_") and "PET_ATTACK_TEXTURE" or 135809), n:find("^PET_") ~= nil end end
+PET_ACTION_ATTACK, PET_ACTION_FOLLOW, PET_ACTION_WAIT, PET_MODE_PASSIVE = "Attack", "Follow", "Stay", "Passive"
+PET_MODE_DEFENSIVE, PET_MODE_AGGRESSIVE, PET_MODE_ASSIST, PET_ACTION_MOVE_TO = "Defensive", "Aggressive", "Assist", "Move To"
+SLASH_PET_ATTACK1, SLASH_PET_FOLLOW1, SLASH_PET_STAY1, SLASH_PET_PASSIVE1 = "/petattack", "/petfollow", "/petstay", "/petpassive"
+SLASH_PET_DEFENSIVE1, SLASH_PET_AGGRESSIVE1, SLASH_PET_DISMISS1 = "/petdefensive", "/petaggressive", "/petdismiss"
+SLASH_PET_ASSIST1, SLASH_PET_DEFENSIVEASSIST1, SLASH_PET_MOVE_TO1 = "/petassist", "/petdefensiveassist", "/petmoveto"
+'''
+PET_AFTER = r'''
+WowCompanion.petTok = { name = function(t) return rawget(_G, t) end,
+                        icon = function(t) return ({ PET_ATTACK_TEXTURE = 132152, PET_FOLLOW_TEXTURE = 132328, PET_WAIT_TEXTURE = 136106,
+                            PET_PASSIVE_TEXTURE = 132311, PET_DEFENSIVE_TEXTURE = 132110, PET_DEFENSIVEASSIST_TEXTURE = 132110,
+                            PET_AGGRESSIVE_TEXTURE = 132277, PET_ASSIST_TEXTURE = 524348, PET_MOVE_TO_TEXTURE = 457329,
+                            PET_DISMISS_TEXTURE = 136222 })[t] end }
+PETBOOK = { { slot = 1, id = 3110, n = "Firebolt", i = 135809, bind = true }, { slot = 2, n = "Attack", cmd = true },
+            { slot = 3, id = 6307, n = "Blood Pact", i = 135803, pas = true } }
+WowCompanion.spellsPetBook = function() return PETBOOK, "PET", true end
+'''
+
+
+def picks(L):
+    d = mdoc(L)
+    p = d.get('pick') or {}
+    out, page = [], 1
+    while True:
+        out += [(r.get('t'), r.get('n'), r.get('l'), r.get('i')) for r in (p.get('rows') or [])]
+        if page >= (p.get('pages') or 1):
+            break
+        tap(L, "pn")
+        page += 1
+        p = mdoc(L).get('pick') or {}
+    for _ in range(page - 1):
+        tap(L, "pp")                                   # back on the first page
+    return out
+
+
+def to_pick(L):
+    press(L, "PAD1")
+    for _ in range(2):
+        press(L, "PADDDOWN")
+    press(L, "PADDRIGHT")
+    press(L, "PAD1")
+
+
+L = opened([("Alpha", "")], CHAR, pre=PET)
+L.execute(PET_AFTER)
+to_pick(L)
+rows = picks(L)
+check(not any(t == 'p' for t, _, _, _ in rows) and not any(n == 'Firebolt' for _, n, _, _ in rows),
+      "r. no pet out: no pet command and no pet spell in + Spell/Item", rows)
+L = opened([("Alpha", "")], CHAR, pre=PET + 'UNITS.pet = { name = "Imp" }\n')
+L.execute(PET_AFTER)
+to_pick(L)
+rows = picks(L)
+names = [(t, n, l) for t, n, l, _ in rows]
+SP = [('s', 'Lightning Bolt', None), ('s', 'Healing Wave', None), ('s', 'Lightning Shield', None)]
+PC = [('p', 'Attack', '/petattack'), ('p', 'Follow', '/petfollow'), ('p', 'Stay', '/petstay'), ('p', 'Passive', '/petpassive'),
+      ('p', 'Defensive', '/petdefensive'), ('p', 'Aggressive', '/petaggressive'), ('p', 'Dismiss', '/petdismiss')]
+check(names[:len(SP) + len(PC) + 1] == SP + PC + [('s', 'Firebolt', None)],
+      "r. a pet out: the player's spells, then the pet's commands (the game's words, its slash lines), then its spell", names)
+check(names[len(SP) + len(PC) + 1:] == [('u', 'Minor Healing Potion', None), ('e', 'Worn Shortsword', None)],
+      "r. ... then the bag items as before (the pet's passive and its command entry left out)", names[len(SP) + len(PC) + 1:])
+icons = {n: i for t, n, _, i in rows if t == 'p'}
+check(icons.get('Attack') == 132152 and icons.get('Stay') == 136106 and icons.get('Dismiss') == 136222,
+      "r. the pet bar's pictures (WC.petTok)", icons)
+L.execute('MLOG = {}')
+tap(L, 3); tap(L, "a", allow=True)
+check(L.eval('mbody("Alpha")') == '/petattack' and mdoc(L).get('mode') == 'edit' and len(mlog(L)) == 1,
+      "r. a finger picks Attack: ONE write, '/petattack', back to the editor", (L.eval('mbody("Alpha")'), mlog(L)))
+press(L, "PAD1")
+rows = picks(L)
+i_fb = [n for _, n, _, _ in rows].index('Firebolt')
+for _ in range(i_fb // 10):
+    tap(L, "pn")
+tap(L, i_fb % 10); tap(L, "a", allow=True)
+check(L.eval('mbody("Alpha")') == '/petattack\n/cast Firebolt', "r. the pet's spell: '/cast <its name>'", L.eval('mbody("Alpha")'))
+# a recipe takes spells only: the pet's spells, never a command
+press(L, "PADDRIGHT"); press(L, "PAD1")
+tap(L, 0); tap(L, "a")
+d = mdoc(L)
+rr = [(r['t'], r['n']) for r in (d.get('pick') or {}).get('rows') or []]
+check(d.get('mode') == 'pick' and ('s', 'Firebolt') in rr and not any(t == 'p' for t, _ in rr),
+      "r. mouseover heal (spells only): the pet's spell is there, no command", rr)
+check(clean(L) == {}, "r. clean (reads only; the one write inside the pick's tap)", clean(L))
+# the pet bar's assist modes stand in for the base ones it does not show; Move To only when the bar has it
+L = opened([("Alpha", "")], CHAR, pre=PET + 'UNITS.pet = { name = "Wolf" }\n'
+           'PETBAR = { "PET_ACTION_ATTACK", "PET_ACTION_FOLLOW", "PET_ACTION_MOVE_TO", nil, nil, nil, nil, "PET_MODE_ASSIST", '
+           '"PET_MODE_DEFENSIVEASSIST", "PET_MODE_PASSIVE" }\n')
+L.execute(PET_AFTER)
+L.execute('PETBOOK = {}')
+to_pick(L)
+pc = [(n, l) for t, n, l, _ in picks(L) if t == 'p']
+check(pc == [('Attack', '/petattack'), ('Follow', '/petfollow'), ('Stay', '/petstay'), ('Move To', '/petmoveto'), ('Passive', '/petpassive'),
+             ('Defensive', '/petdefensiveassist'), ('Assist', '/petassist'), ('Dismiss', '/petdismiss')],
+      "r. the pet bar's own modes: Defensive = its defensive-assist, Assist for Aggressive, Move To shown", pc)
+# no SLASH_ word for an extra command: left out; a base one falls back to the English line
+L = opened([("Alpha", "")], CHAR, pre=PET + 'UNITS.pet = { name = "Wolf" }\nSLASH_PET_ATTACK1 = nil; SLASH_PET_MOVE_TO1 = nil\n'
+           'PETBAR = { "PET_ACTION_ATTACK", "PET_ACTION_MOVE_TO" }\n')
+L.execute(PET_AFTER)
+to_pick(L)
+pc = [(n, l) for t, n, l, _ in picks(L) if t == 'p']
+check(('Attack', '/petattack') in pc and not any(n == 'Move To' for n, _ in pc), "r. no slash word: base = English, an extra one left out", pc)
+check('"also things like my pet attack are missing from the spells options."' in SRC["spells"] and 'local SV = "s13"' in SRC["spells"],
+      "r. Spells s13, its header note quotes the user")
+
+# ================================================================ s. (PadMap m165) a macro on our buttons: its look, cooldown and GCD
+# the user, 2026-11-16: "when using show tooltip on a macro it doesn't actually show the GCD when using it"
+LOOKS = r'''
+MSPELL, MITEM = {}, {}
+function GetMacroSpell(i) local n = GetMacroInfo(i); local v = n and MSPELL[n]; if type(v) == "function" then return v() end; return v end
+function GetMacroItem(i) local n = GetMacroInfo(i); local x = n and MITEM[n]; if x then return x[1], x[2] end end
+CDS = {}
+C_Spell.GetSpellCooldown = function(id) return CDS[id] or { isActive = false, isOnGCD = false, startTime = 0, duration = 0 } end
+MODSHIFT = false
+'''
+LOOK_MACROS = [("Bolt", "#showtooltip\n/cast Lightning Bolt"), ("Shift", "#showtooltip\n/cast [mod:shift] Healing Wave; Lightning Bolt"),
+               ("Pot", "#showtooltip\n/use Minor Healing Potion"), ("Own", "/cast Lightning Bolt")]
+
+
+def padmap(L):
+    L.execute('WowCompanion.padMap.emit(true); advance(0.5)')
+    return (last(L, 'padmap').get('m') or {})
+
+
+def slot(m, st, pos):
+    for s in m.get('sets') or []:
+        if s.get('set') == st:
+            for x in s.get('slots') or []:
+                if x.get('pos') == pos:
+                    return x
+    return {}
+
+
+L = opened(LOOK_MACROS, [], pre=LOOKS)
+L.execute('MSPELL.Bolt = 403; MSPELL.Shift = function() return MODSHIFT and 331 or 403 end; MSPELL.Own = 403; '
+          'MITEM.Pot = { "Minor Healing Potion", "|cffffffff|Hitem:118::::::::|h[Minor Healing Potion]|h|r" }; '
+          'GENM[GetMacroIndexByName("Own")].icon = 136095')
+L.execute('MLOG = {}')
+ok = [L.eval('WowCompanion.padMap.putFight(1, 1, %d, "macro", "%s")' % (p, n)) for p, n in ((5, "Bolt"), (2, "Shift"), (6, "Pot"), (8, "Own"))]
+check(all(ok), "s. four macros onto the In combat layer: X, D-pad Up, Y, A", ok)
+m = padmap(L)
+cf = slot(m, 1, 5).get('cf') or {}
+check(cf.get('t') == 'macro' and cf.get('n') == 'Bolt' and cf.get('i') == 130403 and cf.get('ms') == 403 and 'id' not in cf,
+      "s. X's #showtooltip macro: the picture of the spell it casts (GetMacroSpell), `ms` = its id, never `id`", cf)
+own = slot(m, 1, 8).get('cf') or {}
+check(own.get('i') == 136095 and own.get('ms') == 403, "s. a macro with an icon of its own keeps it (as the game's button), `ms` still", own)
+pot = slot(m, 1, 6).get('cf') or {}
+check(pot.get('i') == 200118 and pot.get('mt') == 118 and 'ms' not in pot, "s. an item's macro: its item (GetMacroItem): the item's picture, `mt`", pot)
+up = slot(m, 1, 2)
+check(up.get('kind') == 'combat' and (up.get('c') or {}).get('ms') == 403 and (up.get('c') or {}).get('i') == 130403,
+      "s. D-pad Up's conditional macro: what it casts now (no Shift: Lightning Bolt)", up.get('c'))
+fs = L.eval('(function() local t = {}; for _, id in ipairs(WowCompanion.padMapFightSpells()) do t[#t + 1] = id end; table.sort(t); return table.concat(t, ",") end)()')
+check(fs == "403", "s. their state by spell id (hudS.fs): the spell the macros cast now", fs)
+# the GCD on the facecd road, inside SPELL_UPDATE_COOLDOWN (out of combat: the plain length, learned)
+n0 = nsent(L)
+L.execute('CDS[403] = { isActive = true, isOnGCD = true, startTime = NOW, duration = 1.5 }; fire("SPELL_UPDATE_COOLDOWN")')
+cd = [d for d in docs(L, n0, 'facecd') if d.get('k')]
+k = cd[-1]['k'] if cd else {}
+check(all(k.get(p, {}).get('g') is True and k.get(p, {}).get('d') == 1.5 for p in ('2', '5', '8')) and '6' not in k,
+      "s. a cast: X, D-pad Up and A (macros of Lightning Bolt) show the GCD (facecd g, 1.5 s); the item's macro none", k)
+L.execute('advance(2); CDS[403] = { isActive = true, isOnGCD = false, startTime = NOW, duration = 6 }; fire("SPELL_UPDATE_COOLDOWN")')
+k = (docs(L, n0, 'facecd') or [{}])[-1].get('k') or {}
+check(k.get('5', {}).get('d') == 6 and not k.get('5', {}).get('g') and not k.get('5', {}).get('e'),
+      "s. its own cooldown (6 s, plain): the real length, learned", k.get('5'))
+check(L.eval('WowCompanionSpellsDB.faceCd["Lightning Bolt"]') == 6, "s. ... learned by the spell's name (the fight faces' store)")
+# in a fight: the values secret -> the learned length, estimated
+L.execute('advance(7); fire("SPELL_UPDATE_COOLDOWN"); fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.3)')
+n1 = nsent(L)
+L.execute('CDS[403] = { isActive = true, isOnGCD = false, startTime = SECRETV, duration = SECRETV }; fire("SPELL_UPDATE_COOLDOWN")')
+k = (docs(L, n1, 'facecd') or [{}])[-1].get('k') or {}
+check(k.get('5', {}).get('d') == 6 and k.get('5', {}).get('e') is True, "s. in a fight (secret values): the learned 6 s, estimated", k.get('5'))
+# Shift held: D-pad Up's macro casts Healing Wave now: its look follows, Lightning Bolt's cooldown leaves that button
+n2 = nsent(L)
+L.execute('MODSHIFT = true; fire("MODIFIER_STATE_CHANGED", "LSHIFT", 1); advance(1)')
+pm = [d for d in docs(L, n2, 'padmap')]
+c2 = (slot(pm[-1]['m'], 1, 2).get('c') or {}) if pm else {}
+k = (docs(L, n2, 'facecd') or [{}])[-1].get('k') if docs(L, n2, 'facecd') else None
+check(c2.get('ms') == 331 and c2.get('i') == 130331, "s. Shift: the padmap again, D-pad Up's picture = Healing Wave (what it casts now)", c2)
+check(k is not None and '2' not in k and '5' in k, "s. ... Lightning Bolt's cooldown off D-pad Up (X keeps its own)", k)
+fs = L.eval('(function() local t = {}; for _, id in ipairs(WowCompanion.padMapFightSpells()) do t[#t + 1] = id end; table.sort(t); return table.concat(t, ",") end)()')
+check(fs == "331,403", "s. ... and the state by id has Healing Wave too", fs)
+# a secret read of the macro's spell keeps its last plain look (never a guess, never a compare of the secret)
+L.execute('MSPELL.Bolt = SECRETV; fire("PLAYER_TARGET_CHANGED"); advance(1)')
+cf = slot(padmap(L), 1, 5).get('cf') or {}
+check(cf.get('ms') == 403 and cf.get('i') == 130403, "s. GetMacroSpell secret: the last plain look kept", cf)
+L.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1)')
+check(mlog(L) == [] and clean(L) == {}, "s. reads only: no macro written, no lockdown breach, no spied call", (mlog(L), clean(L)))
+# L3 (a stick): its look in the Controller room's document
+L = opened(LOOK_MACROS, [], pre=LOOKS)
+L.execute('MSPELL.Bolt = 403')
+L.eval('WowCompanion.padMap.putMacro(1, 1, 9, "Bolt")')
+st = [x for x in (padmap(L).get('sticks') or []) if x.get('pos') == 9 and x.get('set') == 1]
+check(st and st[0].get('kind') == 'macro' and st[0].get('i') == 130403 and st[0].get('ms') == 403, "s. L3's macro: the spell's picture", st)
+# m166 (review): a /castsequence steps on the player's own cast landing; [pet] on the pet; [equipped] / a worn item's /use on a gear change
+L = opened(LOOK_MACROS, [], pre=LOOKS)
+L.execute('SEQ = 403; MSPELL.Bolt = function() return SEQ end')
+L.eval('WowCompanion.padMap.putFight(1, 1, 5, "macro", "Bolt")')
+check((slot(padmap(L), 1, 5).get('cf') or {}).get('ms') == 403, "s. m166: a castsequence macro on X: its first spell")
+for ev, args, to in (("UNIT_SPELLCAST_SUCCEEDED", '"player", "Cast-1", 403', 331), ("UNIT_PET", '"player"', 8042),
+                     ("PLAYER_EQUIPMENT_CHANGED", '13, false', 403)):
+    n4 = nsent(L)
+    L.execute('SEQ = %d; fire("%s", %s); advance(1)' % (to, ev, args))
+    pm = docs(L, n4, 'padmap')
+    c4 = (slot(pm[-1]['m'], 1, 5).get('cf') or {}) if pm else {}
+    check(c4.get('ms') == to, "s. m166: %s re-reads the look: the padmap again, X = what the macro casts now" % ev, (ev, c4))
+check(mlog(L) == [] and clean(L) == {}, "s. m166: reads only", (mlog(L), clean(L)))
+# none of ours holds a macro: the watcher sends nothing
+L = opened(LOOK_MACROS, [], pre=LOOKS)
+n3 = nsent(L)
+L.execute('fire("MODIFIER_STATE_CHANGED", "LSHIFT", 1); fire("PLAYER_TARGET_CHANGED"); advance(1)')
+check(docs(L, n3, 'padmap') == [] and docs(L, n3, 'facecd') == [], "s. no macro on our buttons: nothing sent on those events",
+      (len(docs(L, n3, 'padmap')), len(docs(L, n3, 'facecd'))))
+check('"the macro room needs some work- for starters when using show tooltip on a macro it doesn\'t actually show the GCD when using it"'
+      in SRC["padmap"] and 'local PV = "m166"' in SRC["padmap"], "s. PadMap m165, its header note quotes the user")
+
 # ================================================================ the documents for the room's off-device render (MacrosShotsTest)
 DUMP = os.environ.get("MACRO_DUMP")
 if DUMP:
@@ -889,6 +1116,26 @@ function iconize() for _, t in ipairs({ GENM, CHARM }) do for _, m in ipairs(t) 
     L5.execute('local real = WowCompanion.pad.describe; WowCompanion.pad.describe = function() local d = real(); '
                'if d and d.rows then d.rows.mac = nil end; return d end')
     dump(L5, "norow")
+    # (s13) the pick list with a pet out: the player's spells, then the pet's commands (the game's pet-bar pictures)
+    L6 = opened(SHOT, [], pre=PET + 'UNITS.pet = { name = "Imp" }\n')
+    L6.execute(ICONS); L6.execute('iconize()'); L6.execute(PET_AFTER)
+    press(L6, "PADDRIGHT"); press(L6, "PAD1"); press(L6, "PADDDOWN"); press(L6, "PADDDOWN"); press(L6, "PADDDOWN"); press(L6, "PADDRIGHT")
+    press(L6, "PAD1")
+    dump(L6, "pick_pet")
+    # (m165) Home's fight faces with macros on them: the padmap and a GCD's facecd, as the add-on sends them in a fight
+    L7 = opened(LOOK_MACROS, [], pre=LOOKS)
+    L7.execute(ICONS)
+    L7.execute('SPELLICON[8042] = 136026; MSPELL.Bolt = 403; MSPELL.Shift = function() return MODSHIFT and 331 or 403 end; MSPELL.Own = 8042; '
+               'MITEM.Pot = { "Minor Healing Potion", "|cffffffff|Hitem:118::::::::|h[Minor Healing Potion]|h|r" }; '
+               'GENM[GetMacroIndexByName("Own")].icon = 136095; SPELLNAME[8042] = "Earth Shock"')
+    for p, n in ((5, "Bolt"), (2, "Shift"), (6, "Pot"), (8, "Own")):
+        L7.eval('WowCompanion.padMap.putFight(1, 1, %d, "macro", "%s")' % (p, n))
+    L7.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(1)')
+    n7 = nsent(L7)
+    L7.execute('CDS[403] = { isActive = true, isOnGCD = true, startTime = SECRETV, duration = SECRETV }; '
+               'CDS[8042] = { isActive = true, isOnGCD = true, startTime = SECRETV, duration = SECRETV }; fire("SPELL_UPDATE_COOLDOWN")')
+    open(os.path.join(DUMP, "looks_padmap.json"), "w", encoding="utf-8").write(json.dumps({"type": "padmap", "v": "m165", "m": padmap(L7)}))
+    open(os.path.join(DUMP, "looks_facecd.json"), "w", encoding="utf-8").write(json.dumps(docs(L7, n7, 'facecd')[-1]))
     print("dumped to", DUMP)
 
 print("\n%s (%d pass, %d fail)" % ("ALL PASS" if fails == 0 else "FAILURES", passes, fails))
