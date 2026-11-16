@@ -86,7 +86,7 @@ class MacrosShotsTest {
         // Spells s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the recipes "make no sense" and only add lines): the strips, the builder,
         // each pop-out sliding out of its chip, the presets, Move, the companion's own macros' lock
         for (n in listOf("edit_empty", "build", "build_if", "build_on", "build_arg", "build_cmd", "build_case", "build_combat", "build_reset",
-                         "build_warn", "build_rank", "build_new", "move", "preset", "presets", "preset_replace", "icon", "locked"))
+                         "build_warn", "build_rank", "build_new", "move", "move_far", "preset", "presets", "preset_replace", "icon", "locked"))
             if (File(out, "docs/$n.json").isFile) roomShot(n)
         // (Spells s10 review) a bind of a name two macros share, refused ("Name taken"); the row made but not placed ("No pad row")
         for (n in listOf("taken", "norow")) if (File(out, "docs/$n.json").isFile) roomShot(n)

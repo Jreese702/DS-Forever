@@ -574,7 +574,9 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                 val lineH = 74f
                 val visible = ((btnTop - 16f - top) / lineH).toInt().coerceAtLeast(1)
                 val n = minOf(m.lines.size, MacrosModel.LINE_ROWS)
-                val focusIdx = (s.ef?.takeIf { it.startsWith("l") }?.drop(1)?.toIntOrNull() ?: s.moveAt ?: 1) - 1
+                // (s14 review) a Move scrolls with the line being moved (past the 7 lines on show it went out of sight)
+                val focusIdx = ((if (s.view == "move") s.moveAt else null) ?: s.ef?.takeIf { it.startsWith("l") }?.drop(1)?.toIntOrNull()
+                    ?: s.moveAt ?: 1) - 1
                 val first = if (focusIdx >= visible) focusIdx - visible + 1 else 0
                 val box = RectF(left, top, right, top + visible * lineH + 8f)
                 well(c, box)
@@ -761,8 +763,13 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                     }
                 } else {
                     var x = left
+                    // (s14 review) the spell chip gives way so the row fits: Cast + spell + Rank + Keep on squeezed Keep on's word under
+                    // its own check box (room_build_rank)
+                    fun baseW(key: String) = when (key) { "cmd" -> 260f; "arg" -> 460f; "rank", "reset" -> 220f; "keep" -> 200f; "add" -> 260f; else -> 200f }
+                    val others = row.filter { it != "arg" }.sumOf { baseW(it).toDouble() }.toFloat() + 14f * (row.size - 1)
+                    val argW = (right - left - others).coerceIn(220f, 460f)
                     for (key in row) {
-                        val w = when (key) { "cmd" -> 260f; "arg" -> 460f; "rank", "reset" -> 220f; "keep" -> 200f; "add" -> 260f; else -> 200f }
+                        val w = if (key == "arg") argW else baseW(key)
                         val cr = RectF(x, y, (x + w).coerceAtMost(right), y + h - 10f)
                         when (key) {
                             "cmd" -> chip(c, cr, b.cmdName ?: MacrosModel.cmdWord(b.cmd), lit = b.cur == key, tr = b.cmdName == null)
@@ -772,7 +779,11 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                             "reset" -> chip(c, cr, b.reset?.split("/")?.joinToString(" ") { o -> MacrosModel.resetWord(o)?.let { Tr.t(it) } ?: "$o s" }
                                 ?: Tr.t("None"), lit = b.cur == key, small = "Reset", tr = false)
                             "keep" -> {
-                                chip(c, cr, "Keep on", lit = b.cur == key)
+                                // the word stops short of the check box (a long es / fr word ends "…", never under the box)
+                                chip(c, cr, null, lit = b.cur == key)
+                                val kp = UiKit.bodyPaint(26f, if (b.cur == key) Color.WHITE else Theme.text)
+                                c.drawText(nameFit(Tr.t("Keep on"), kp, cr.width() - 12f - 64f), cr.left + 12f,
+                                    cr.centerY() - (kp.ascent() + kp.descent()) / 2f, kp)
                                 UiKit.check(c, cr.right - 34f, cr.centerY(), 36f, b.bang)
                             }
                             "add" -> chip(c, cr, "+ Case", lit = b.cur == key)
@@ -857,11 +868,20 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
             // the ground around closes it (B), as the game's own menus do
             UiKit.cover(c, r, 0.35f)
             hit(RectF(r), MacrosModel.cell(s, "b"))
-            UiKit.slideOut(c, anchor, to, t) { cv, box -> popCells(cv, s, p, box, head, cellW, cellH) }
+            var tip: JSONObject? = null
+            UiKit.slideOut(c, anchor, to, t) { cv, box -> tip = popCells(cv, s, p, box, head, cellW, cellH) }
+            // (s14 review) the spell's words OUTSIDE the slide's clip, once it is out, beside the panel where there is room, else under /
+            // over it (room_build_arg: drawn inside the clip it showed as a sliver over the Spells tab)
+            if (!UiKit.sliding(t) && p.kind == "arg") tip?.let { row ->
+                val id = row.optInt("id", 0)
+                val desc = if (id > 0) spellTip(id) else null
+                if (!desc.isNullOrEmpty()) tooltip(c, row.optString("n", ""), desc, to, r)
+            }
             if (UiKit.sliding(t)) postInvalidateOnAnimation()
         }
 
-        private fun popCells(c: Canvas, s: State, p: MacrosModel.Pop, box: RectF, head: Float, cellW: Float, cellH: Float) {
+        /** the pop-out's cells; returns the glowed row (the arg pop-out's tooltip is drawn by [popOut], outside the slide's clip) */
+        private fun popCells(c: Canvas, s: State, p: MacrosModel.Pop, box: RectF, head: Float, cellW: Float, cellH: Float): JSONObject? {
             hits += RectF(box) to emptyList()                                 // a finger on the panel's ground does nothing
             if (p.kind == "arg") {
                 // the tabs (s0..s4), the search (s5)
@@ -906,12 +926,7 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                 val pg = UiKit.numberPaint(24f, Theme.textDim).apply { textAlign = Paint.Align.CENTER }
                 c.drawText("${p.page}/${p.pages}", box.centerX(), py - (pg.ascent() + pg.descent()) / 2f, pg)
             }
-            // the spell's own words under the grid (the spells document's description), when the glow is on a spell
-            if (p.kind == "arg") tipFor?.let { row ->
-                val id = row.optInt("id", 0)
-                val desc = if (id > 0) spellTip(id) else null
-                if (!desc.isNullOrEmpty()) tooltip(c, row.optString("n", ""), desc, box)
-            }
+            return tipFor
         }
 
         /** one pop-out cell, by kind */
@@ -961,19 +976,38 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
             }
         }
 
-        /** a spell's description beside the pop-out (the Spellbook's own words from the spells document; the game's text) */
-        private fun tooltip(c: Canvas, name: String, desc: String, box: RectF) {
-            val w = width.toFloat()
-            val tw = 380f
-            val x = if (box.right + 12f + tw < w - 8f) box.right + 12f else (box.left - 12f - tw).coerceAtLeast(8f)
+        /** a spell's description by the pop-out (the Spellbook's own words from the spells document; the game's text): beside [box]
+         *  where [room] has space for it, else under it, else over it, never on the panel's cells unless nothing else fits */
+        private fun tooltip(c: Canvas, name: String, desc: String, box: RectF, room: RectF) {
             val tp = android.text.TextPaint(UiKit.bodyPaint(20f, Theme.text, shadow = false))
-            val layout = android.text.StaticLayout.Builder.obtain(desc, 0, desc.length, tp, (tw - 32f).toInt()).build()
-            val th = 64f + layout.height.coerceAtMost(360)
-            val r = RectF(x, box.top, x + tw, box.top + th)
+            fun layoutOf(w: Float) = android.text.StaticLayout.Builder.obtain(desc, 0, desc.length, tp, (w - 32f).toInt().coerceAtLeast(40)).build()
+            val side = 380f
+            var w = side
+            var layout = layoutOf(w)
+            var th = 64f + layout.height.coerceAtMost(360)
+            val r: RectF = when {
+                box.right + 12f + side <= room.right - 8f -> {
+                    val top = box.top.coerceAtMost(room.bottom - 8f - th).coerceAtLeast(room.top + 8f)
+                    RectF(box.right + 12f, top, box.right + 12f + side, top + th)
+                }
+                box.left - 12f - side >= room.left + 8f -> {
+                    val top = box.top.coerceAtMost(room.bottom - 8f - th).coerceAtLeast(room.top + 8f)
+                    RectF(box.left - 12f - side, top, box.left - 12f, top + th)
+                }
+                else -> {
+                    w = box.width().coerceAtMost(room.width() - 16f)
+                    layout = layoutOf(w); th = 64f + layout.height.coerceAtMost(200)
+                    when {
+                        box.bottom + 12f + th <= room.bottom - 8f -> RectF(box.left, box.bottom + 12f, box.left + w, box.bottom + 12f + th)
+                        box.top - 12f - th >= room.top + 8f -> RectF(box.left, box.top - 12f - th, box.left + w, box.top - 12f)
+                        else -> RectF(box.left, room.bottom - 8f - th, box.left + w, room.bottom - 8f)     // nothing fits: the room's foot
+                    }
+                }
+            }
             UiKit.menu(c, r, solid = true)
             val np = UiKit.bodyPaint(24f, Color.WHITE)
-            c.drawText(nameFit(name, np, tw - 32f), r.left + 16f, r.top + 40f, np)
-            c.save(); c.translate(r.left + 16f, r.top + 56f); c.clipRect(0f, 0f, tw - 32f, 360f); layout.draw(c); c.restore()
+            c.drawText(nameFit(name, np, w - 32f), r.left + 16f, r.top + 40f, np)
+            c.save(); c.translate(r.left + 16f, r.top + 56f); c.clipRect(0f, 0f, w - 32f, r.height() - 64f); layout.draw(c); c.restore()
         }
 
         /** the room's one status line: a refusal's word, the game's window, a fight, no pad row */
