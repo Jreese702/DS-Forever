@@ -90,7 +90,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
     var onLeave: () -> Unit = {}
 
     /** RC3: B leaves for Home on the press, except while a craft runs (then B is the game's /stopcasting and the room stays: bstop) */
-    override fun bLeadsHome(): Boolean = ProfessionsStore.overview?.bstop != true
+    override fun bLeadsHome(): Boolean = ProfessionsStore.overview?.bstop != true && !kbOpen    // voice: B closes the search keyboard first
 
     private val board = Board(c)
     private val search = EditText(c)
@@ -139,7 +139,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
     private fun openKb(voice: Boolean) {
         if (viewed == 0 || search.visibility != VISIBLE) return
         val ov = ProfessionsStore.overview
-        if (ov?.combat == true) { message = "After combat"; messageAt = SystemClock.uptimeMillis(); board.postInvalidateDelayed(MESSAGE_MS + 50); return }
+        if (ov?.combat == true) { message = "After the fight"; messageAt = SystemClock.uptimeMillis(); board.postInvalidateDelayed(MESSAGE_MS + 50); return }
         if (!kbOpen) {
             send(M.kbdTap(ov, true))
             kbOpen = true

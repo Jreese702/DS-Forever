@@ -453,14 +453,14 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
 
     /** the finish button's word and whether it can be pressed now; null = no button (Android stopped asking) */
     private fun buttonOf(s: Voice.Sheet, fight: Boolean): Pair<String, Boolean>? = when (s.state) {
-        Voice.State.ASK, Voice.State.MIC_OFF -> if (fight) "After combat" to false else "Allow" to true
+        Voice.State.ASK, Voice.State.MIC_OFF -> if (fight) "After the fight" to false else "Allow" to true
         Voice.State.BLOCKED -> null
         Voice.State.OFFER_ONLINE -> "Online" to true
         Voice.State.LISTENING, Voice.State.STOPPING -> sendWord to false
         Voice.State.RESULT -> sendWord to s.canAccept()
         Voice.State.PROBLEM -> when {
             s.problem == Voice.Problem.PACK && s.canGet -> "Get" to true
-            s.problem == Voice.Problem.MIC_OFF -> if (fight) "After combat" to false else "Allow" to true
+            s.problem == Voice.Problem.MIC_OFF -> if (fight) "After the fight" to false else "Allow" to true
             else -> "Say again" to true
         }
     }

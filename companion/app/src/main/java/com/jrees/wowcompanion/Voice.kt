@@ -4,7 +4,7 @@ import java.text.Normalizer
 
 /**
  * VOICE TO TEXT, THE RULES (the user's list, 2026-11-16: voice to text in the message box and every search box, "A opens the keyboard,
- * X opens our own voice prompt", and it must be "intuitive and slick"; the design E:/.../design_voice.md, every decision on its
+ * X opens our own voice prompt", and it must be "intuitive and slick"; the design review of 2026-11-16 (design_voice.md), every decision on its
  * RECOMMENDED pick: speech becomes text on the Thor by default and online only after the player picks it once; Android's own
  * microphone question once, on the bottom screen, on the first X and never in a fight; X in Chat starts voice everywhere but inside
  * the open board; the words are shown first and go in only on A / Start; the game's sound is left alone; every box that takes
@@ -162,7 +162,7 @@ object Voice {
     enum class Avail { DEVICE, ONLINE_ONLY, ONLINE, NONE }
 
     enum class State {
-        /** the permission is not asked yet: "Voice needs the microphone", A = Allow (greyed "After combat" in a fight), B = Not now */
+        /** the permission is not asked yet: "Voice needs the microphone", A = Allow (greyed "After the fight" in a fight), B = Not now */
         ASK,
         /** the player said Don't allow (Android still asks): "Microphone off", A = Allow again */
         MIC_OFF,

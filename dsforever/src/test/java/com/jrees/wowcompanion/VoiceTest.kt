@@ -133,7 +133,7 @@ class VoiceTest {
         val s = sheet("hi")
         assertEquals(listOf(Act.Glow), s.open(Perm.ASKABLE, Avail.DEVICE))
         assertEquals(State.ASK, s.state)
-        assertEquals(listOf(Act.Glow), s.press("PAD1", fight = true))          // Allow greyed: "After combat"
+        assertEquals(listOf(Act.Glow), s.press("PAD1", fight = true))          // Allow greyed: "After the fight"
         assertEquals(listOf(Act.AskMic), s.press("PAD1", fight = false))
         // Android said yes: listening at once (the player pressed Allow to talk)
         assertEquals(listOf(Act.Start(online = false)), s.permAnswered(Perm.GRANTED, Avail.DEVICE))

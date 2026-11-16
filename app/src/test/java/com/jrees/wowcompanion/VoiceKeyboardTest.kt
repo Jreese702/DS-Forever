@@ -161,7 +161,7 @@ class VoiceKeyboardTest {
         assertEquals(Voice.State.ASK, kb.voiceSheet!!.state)
         draw(kb)
         Voice.inFight = { true }
-        kb.press("PAD1"); assertEquals(0, asked)                    // Allow greyed: "After combat"
+        kb.press("PAD1"); assertEquals(0, asked)                    // Allow greyed: "After the fight"
         draw(kb)
         Voice.inFight = { false }
         kb.press("PAD1"); assertEquals(1, asked)
