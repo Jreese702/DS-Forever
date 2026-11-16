@@ -181,6 +181,30 @@ L.execute('C_Item.DoesItemMatchSpellItemCondition = function() error("no") end')
 got = rowsOf(L.eval('WowCompanion._kit.list()'), True)
 check(got == [('inv', 5, True), ('inv', 10, True), ('bag', 2, True)],
       "the item check cannot answer: every gear row offered (the game decides)", got)
+# bags-kit4 (issue #332, 1.0.32: "mage comprehension skill does not work, it opens the backpack room but states that there are no
+# elligible items in bags despite unread scrolls"; its report: ctx=cond): a cond pick on a NON-gear item (a scroll) lists the bags' items
+# the game says it can go on, first, as their own bag cells; a no or no answer stays out; worn gear only where it fits
+L.execute(r'''
+C_Item.DoesItemMatchSpellItemCondition = function(loc) return CONDOK[loc.k] == true end
+NAMES[7001] = "Unread Scroll"; CLS[7001] = { 0, 4 }; BAG[0][5] = 7001
+C_Container.GetContainerNumSlots = function(b) return b == 0 and 5 or 0 end; WowCompanion._bagsLayout = { { bag = 0, slots = 5 } }
+CONDOK = { ["bag0:5"] = true }
+''')
+lst = L.eval('WowCompanion._kit.list()')
+got = rowsOf(lst, True)
+check(got == [('bag', 5, True)], "#332: a cond pick on a scroll: the scroll listed (the game's own yes), nothing else", got)
+check(lst[1].name == 'Unread Scroll' and lst[1].cell is None,
+      "#332: the scroll's row is its own bag cell (no /use gear cell)", (lst[1].name, lst[1].cell))
+L.execute('CONDOK = { ["bag0:5"] = true, inv10 = true, ["bag0:3"] = false }')
+got = rowsOf(L.eval('WowCompanion._kit.list()'))
+check(got == [('bag', 5), ('inv', 10)], "#332: the game's yes items first, then worn gear that fits; a no (the jerky) stays out", got)
+L.execute('C_Item.DoesItemMatchSpellItemCondition = function() error("no") end')
+got = rowsOf(L.eval('WowCompanion._kit.list()'))
+check(('bag', 5) not in got and ('bag', 3) not in got, "#332: no answer from the game: no non-gear row is guessed", got)
+L.execute(r'''
+BAG[0][5] = nil; C_Container.GetContainerNumSlots = function(b) return b == 0 and 4 or 0 end
+WowCompanion._bagsLayout = { { bag = 0, slots = 4 } }
+''')
 L.execute('C_Item.DoesItemMatchSpellItemCondition = function(loc) return CONDOK[loc.k] == true end; COND = false')
 lst = L.eval('WowCompanion._kit.list()')
 got = rowsOf(lst)
