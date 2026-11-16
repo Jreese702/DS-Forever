@@ -3807,9 +3807,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** Spells' last word on the D-pad room bar (null = an older add-on) */
     private var lastDpad: PadMapModel.Dpad? = null
-    /** p35: the bare D-pad Down opens Home's room bar: the DS WoW toolbar is on, or the Home Bar command (DSHOME) is on that button */
-    private fun downIsHomeBar(): Boolean =
-        lastDpad?.want == true || lastPadMap?.let { m -> PadMapModel.slot(m, 1, 4)?.key == PadMapModel.HOME_KEY } == true
+    /** p35: the bare D-pad Down opens Home's room bar: the DS WoW toolbar is on, or the Home Bar command (DSHOME) is on that button;
+     *  wk-dpad (the user 2026-11-16: "using the down ability in combat on the D-pad is flashing the home button again"): never while the
+     *  fight switch gives Down its In-combat entry (HomeFightFace.downIsHomeBar, the router's own m44 rule) */
+    private fun downIsHomeBar(): Boolean = HomeFightFace.downIsHomeBar(lastPadMap, lastDpad?.want == true, homeView.dpadFight())
 
     // ---------------------------------------------------------------- f-new-spell-prompt: learned spells, one prompt at a time on Home
     /** the user (1.0.9): "After learning new spells when I return home they should have a prompt 1 at a time a to bind or b to dismiss" */
