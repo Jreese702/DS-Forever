@@ -93,6 +93,21 @@ class MapCursor {
     }
 
     /**
+     * TRACK / UNTRACK HOLD THE CURSOR'S PLACE (the user, 2026-11-16: "Tracking and untracking from that menu right now feels really
+     * unintuitive where it jumps you all the way down 40 slots in the quest menu with the untracked quest, if I want to track or untrack
+     * a bunch at once I want to be able quickly go down the list and hit untrack for each, not have to scroll all the way back up after
+     * each untrack"). The cursor was on quest [acted], which the press moved (up into the tracked quests, or down into its tab): it
+     * stays where it was and the stop after it moves into its place ([stayAfter]). Only when the cursor is on [acted]. The new selection.
+     */
+    fun stay(acted: Int, before: List<Int>, after: List<Int>): Int {
+        if (!shown || sel != acted || acted == 0) return sel
+        val s = stayAfter(acted, before, after)
+        if (s == 0) { sel = 0; shown = false; lastIndex = 0; return 0 }
+        sel = s; lastIndex = after.indexOf(s).coerceAtLeast(0)
+        return s
+    }
+
+    /**
      * The room took the controller: the selection is VISIBLE at once (the user: "I hate that in the other menus I have to
      * press buttons a few times to make the cursor appear, it should already be there"), on the focused quest when it is
      * tracked, else on the first. False only when there is no tracked quest at all.
@@ -120,6 +135,21 @@ class MapCursor {
 
         /** the quests document's focus flags: a focus always counts (it may be fresher); "none" only when the map does not say */
         fun focusFromQuests(docFocus: Int, mapSays: Boolean, current: Int): Int = if (docFocus != 0 || !mapSays) docFocus else current
+
+        /**
+         * the stop that takes moved quest [acted]'s place ([stay]): the first stop after it in [before] (the list as it was) that is
+         * still in [after] (the list now) - the next quest of its tab, the next tracked quest, or the next tab; at the end of the list
+         * the nearest one before it; else the first of [after] (0: the list is empty). The quest itself never: it left that place.
+         */
+        fun stayAfter(acted: Int, before: List<Int>, after: List<Int>): Int {
+            val i = before.indexOf(acted)
+            if (i >= 0) {
+                val now = after.toHashSet()
+                for (j in i + 1 until before.size) if (before[j] != acted && before[j] in now) return before[j]
+                for (j in i - 1 downTo 0) if (before[j] != acted && before[j] in now) return before[j]
+            }
+            return after.firstOrNull { it != acted } ?: after.firstOrNull() ?: 0
+        }
     }
 
     /**

@@ -5562,26 +5562,19 @@ class MapView(context: Context) : View(context) {
             psSkip = PolestarSkip.canSkip(psShown(), psStep), psPrev = PolestarSkip.canPrev(psShown(), psStep))
         when (d) {
             MapCursor.Do.Show -> { listShow(cursor.sel); landOn(cursor.sel) }
-            is MapCursor.Do.Select -> {
-                listShow(d.id); landOn(d.id)
-                // the quest box follows the list's quest while the cursor is on the list (the user's correction, 2026-10-17)
-                val pq = PolestarMerge.key(d.id, psMerged())     // onto the merged light blue row: its quest's box
-                if (panelId != 0 && pq > 0 && questById.containsKey(pq) && pq != panelId) {
-                    panelId = pq; panelScroll = 0f; panelContentH = 0f; armedId = 0
-                }
-            }
+            is MapCursor.Do.Select -> cameOnto(d.id)
             MapCursor.Do.PlayerMenu -> openPlayerMenu()
             MapCursor.Do.Polestar -> psToggle()
             MapCursor.Do.PsSkip -> polestarSkip(prev = false)
             MapCursor.Do.PsPrev -> polestarSkip(prev = true)
             is MapCursor.Do.Toggle -> toggleTab(d.key)
-            is MapCursor.Do.Track -> onTrackFocusQuest?.let { it(d.id); trackNow(d.id, true) } ?: note("Track is not on the tap pad yet")
-            is MapCursor.Do.Watch -> onTrackQuest?.let { it(d.id); trackNow(d.id, true) } ?: note("Track is not on the tap pad yet")
+            is MapCursor.Do.Track -> trackPress(d.id, true, onTrackFocusQuest)
+            is MapCursor.Do.Watch -> trackPress(d.id, true, onTrackQuest)
             is MapCursor.Do.Open -> openPanel(d.id)
             is MapCursor.Do.Focus -> askFocus(d.id)
             // ps3: a focus the player cleared is not pushed back as the default (the user, 2026-11-11: "aggressivly")
             is MapCursor.Do.Unfocus -> onUnfocusQuest?.let { focusPush.cleared(d.id); it(d.id) } ?: note("Unfocus is not on the tap pad yet")
-            is MapCursor.Do.Untrack -> onUntrackQuest?.let { it(d.id); trackNow(d.id, false) } ?: note("Untrack is not on the tap pad yet")
+            is MapCursor.Do.Untrack -> trackPress(d.id, false, onUntrackQuest)
             is MapCursor.Do.ShowOnMap -> tracked.firstOrNull { it.optInt("id", 0) == d.id }?.let { q ->
                 val qx = q.optDouble("x", Double.NaN); val qy = q.optDouble("y", Double.NaN)
                 if (!qx.isNaN() && !qy.isNaN()) focusOn(qx, qy, trackedMap) else note("This quest has no place on this map")
@@ -5614,20 +5607,53 @@ class MapView(context: Context) : View(context) {
 
     // ---- TRACKING SHOWN AT ONCE (the user on test58: "When I track a quest it doesn't move up out of the untracked sort in the map
     // module"): the list was sorted from the quests document only, and the game's answer comes a moment later (or not at all). A press
-    // (Track, Track & focus, Untrack) moves the quest at once - up into the tracked quests, or back down into its tab - the cursor
-    // staying on it; the next document that agrees settles it, and after [TRACK_PENDING_MS] the game's word stands again.
+    // (Track, Track & focus, Untrack) moves the quest at once - up into the tracked quests, or back down into its tab; the next document
+    // that agrees settles it, and after [TRACK_PENDING_MS] the game's word stands again.
+    // THE CURSOR HOLDS ITS PLACE (the user, 2026-11-16: "Tracking and untracking from that menu right now feels really unintuitive where
+    // it jumps you all the way down 40 slots in the quest menu with the untracked quest, if I want to track or untrack a bunch at once I
+    // want to be able quickly go down the list and hit untrack for each, not have to scroll all the way back up after each untrack"): the
+    // quest moves without the cursor, which stays where it was with the next stop moved into its place ([MapCursor.stay]); the list
+    // slides under it, so its row keeps its place on the screen. Its zone's tab is no longer opened for it (that was for the cursor).
     private var lastQuests: JSONObject? = null
     private val trackPending = HashMap<Int, Pair<Boolean, Long>>()
     private val TRACK_PENDING_MS = 10_000L
-    /** quest [id] tracked ([on]) or not, shown now: the list re-sorted from the last document with the press on top */
-    private fun trackNow(id: Int, on: Boolean) {
+
+    /** the cursor's Track / Track & focus / Untrack on quest [id]: [send] it (null: not on the pad yet), then show it at once */
+    private fun trackPress(id: Int, on: Boolean, send: ((Int) -> Unit)?) {
+        if (send == null) { note(if (on) "Track is not on the tap pad yet" else "Untrack is not on the tap pad yet"); return }
+        // the list as the press found it (the host's send may already re-sort it: Track & focus lets the light blue row go)
+        val before = listKeys()
+        val beforeAt = items.indexOfFirst { it.key == id && it !is MapList.Item.Section }
+        val onIt = cursor.shown && cursor.sel == id
+        send(id)
+        trackNow(id, on, onIt, before, beforeAt)
+    }
+
+    /** quest [id] tracked ([on]) or not, shown now: the list re-sorted from the last document with the press on top; the cursor, when
+     *  it was on it ([onIt]), stays at its place ([before] the stops and [beforeAt] its row as the press found them) */
+    private fun trackNow(id: Int, on: Boolean, onIt: Boolean, before: List<Int>, beforeAt: Int) {
         if (id == 0) return
         trackPending[id] = on to android.os.SystemClock.elapsedRealtime()
-        // back down: its zone's tab opened, so the cursor can stay on it there
-        if (!on) questById[id]?.optString("zone", "")?.takeIf { it.isNotEmpty() }?.let { openTabs[it] = true }
+        val firstBefore = listFirst                       // (the re-sort below would scroll to the moved quest: never wanted now)
         lastQuests?.let { applyQuests(it) }
-        if (cursor.shown && selQuest() == id) { listShow(cursor.sel); revealSelected() }
+        if (onIt) {
+            val s = cursor.stay(id, before, listKeys())
+            // the row that took the quest's place stands where the quest stood: the list moves by the rows that came or went above it
+            val at = items.indexOfFirst { it.key == s && it !is MapList.Item.Section }
+            if (s != 0 && at >= 0 && beforeAt >= 0) listFirst = (firstBefore + at - beforeAt).coerceIn(0, (items.size - 1).coerceAtLeast(0))
+            if (s != 0) cameOnto(s)
+        }
         invalidate()
+    }
+
+    /** the cursor came onto stop [key] (up / down, or a track press handing it on): in view, the map to it, the quest box follows */
+    private fun cameOnto(key: Int) {
+        listShow(key); landOn(key)
+        // the quest box follows the list's quest while the cursor is on the list (the user's correction, 2026-10-17)
+        val pq = PolestarMerge.key(key, psMerged())     // onto the merged light blue row: its quest's box
+        if (panelId != 0 && pq > 0 && questById.containsKey(pq) && pq != panelId) {
+            panelId = pq; panelScroll = 0f; panelContentH = 0f; armedId = 0
+        }
     }
 
     private fun applyQuests(q: JSONObject) {
@@ -5784,7 +5810,7 @@ class MapView(context: Context) : View(context) {
     /** one item's height in the list */
     private fun itemH(it: MapList.Item): Float = when (it) {
         is MapList.Item.Me -> ME_H
-        is MapList.Item.Polestar -> psCard()?.let { UiKit.questCardHeight(it) } ?: 0f
+        is MapList.Item.Polestar -> psCard()?.let { UiKit.questCardHeight(it) + PS_RIBBON_H } ?: 0f     // its ribbon over the card
         is MapList.Item.Tracked -> tracked.firstOrNull { e -> e.optInt("id", 0) == it.id }?.let { e -> rowContentH(e) } ?: 0f
         is MapList.Item.Section -> SECTION_H
         is MapList.Item.Group -> GROUP_H
@@ -5835,6 +5861,55 @@ class MapView(context: Context) : View(context) {
     private val srcList = Rect()
     private val dstList = RectF()
     private val pBmpList = Paint(Paint.FILTER_BITMAP_FLAG)
+
+    // ---- THE POLESTAR RIBBON (the user, 2026-11-16: "I need some kind of header in the quests menu of the homeroom map indicating that
+    // it is the polestar objective"): the light blue row wears a small tab over its card's top edge - the guide's star and "Polestar",
+    // in its light blue - so the row reads as Polestar's objective, never as one more tracked quest. Part of the row (its touch, its
+    // up / down arrows around it); the selection box and Home's flying card are the card's alone ([psCardBox]).
+    private val PS_RIBBON_H = 30f            // the room above the card
+    private val PS_RIBBON_OVER = 5f          // how far the tab laps over the card's edge
+    private val pRibbon = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val pRibbonEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.6f }
+    private val psStarPath = Path()
+    private val psRibbonBox = RectF()
+
+    /** the light blue row's card: [row] under its ribbon */
+    private fun psCardBox(row: RectF): RectF = RectF(row.left, row.top + PS_RIBBON_H, row.right, row.bottom)
+
+    /** the ribbon over the light blue row [row]'s card: a tab at the card's top left, the star and the word */
+    private fun drawPsRibbon(c: Canvas, row: RectF) {
+        val tp = UiKit.bodyPaint(22f, psBlue)
+        val word = Tr.t("Polestar")
+        val star = 20f
+        val left = row.left + 16f
+        val w = 11f + star + 7f + tp.measureText(word) + 13f
+        psRibbonBox.set(left, row.top + 2f, left + w, row.top + PS_RIBBON_H + PS_RIBBON_OVER)
+        pRibbon.color = Color.rgb(14, 30, 46)
+        c.drawRoundRect(psRibbonBox, 8f, 8f, pRibbon)
+        pRibbonEdge.color = Color.argb(210, Color.red(psBlue), Color.green(psBlue), Color.blue(psBlue))
+        c.drawRoundRect(psRibbonBox, 8f, 8f, pRibbonEdge)
+        val cy = psRibbonBox.centerY()
+        drawPsStar(c, left + 11f + star / 2f, cy, star / 2f)
+        c.drawText(word, left + 11f + star + 7f, cy - (tp.ascent() + tp.descent()) / 2f, tp)
+    }
+
+    /** the guide's star: four long points (north, east, south, west) and four short ones, light blue on a dark edge */
+    private fun drawPsStar(c: Canvas, cx: Float, cy: Float, r: Float) {
+        psStarPath.reset()
+        for (k in 0 until 8) {
+            val a = Math.PI / 4.0 * k - Math.PI / 2.0
+            val rr = if (k % 2 == 0) r else r * 0.36f
+            val px = cx + (rr * cos(a)).toFloat(); val py = cy + (rr * sin(a)).toFloat()
+            if (k == 0) psStarPath.moveTo(px, py) else psStarPath.lineTo(px, py)
+        }
+        psStarPath.close()
+        pRibbonEdge.color = Color.argb(200, 0, 0, 0)
+        c.drawPath(psStarPath, pRibbonEdge)
+        pRibbon.color = psBlue
+        c.drawPath(psStarPath, pRibbon)
+        pRibbon.color = Color.WHITE
+        c.drawCircle(cx, cy, r * 0.16f, pRibbon)
+    }
 
     private fun drawTracker(c: Canvas, x: Float, y0: Float, yMax: Float, fly: Boolean) {
         trackerHits.clear()
@@ -5932,9 +6007,10 @@ class MapView(context: Context) : View(context) {
         val psOne = psMerged() > 0
         val ti = if (psOne) list.indexOfFirst { it is MapList.Item.Polestar } else list.indexOfFirst { it is MapList.Item.Tracked }
         if (ti >= listFirst && ti >= 0) {
-            val h0 = if (psOne) itemH(list[ti]) else tracked.firstOrNull { it.optInt("id", 0) == list[ti].key }?.let { rowContentH(it) }
+            val h0 = if (psOne) psCard()?.let { UiKit.questCardHeight(it) } else tracked.firstOrNull { it.optInt("id", 0) == list[ti].key }?.let { rowContentH(it) }
             if (h0 != null && h0 > 0f) {
-                val t0 = winTop + at[ti] - at[listFirst] + (if (isSel(list[ti])) SEL_GAP else 0f)
+                // (the light blue row's card stands under its ribbon: the card lands there, the ribbon stays with the rows)
+                val t0 = winTop + at[ti] - at[listFirst] + (if (isSel(list[ti])) SEL_GAP else 0f) + (if (psOne) PS_RIBBON_H else 0f)
                 flyLand.set(x, t0, x + w, t0 + h0)
             }
         }
@@ -5946,16 +6022,19 @@ class MapView(context: Context) : View(context) {
             val it = list[i]
             val front = if (psOne) it is MapList.Item.Polestar else it is MapList.Item.Tracked && it.id == shownFocus()
             if ((pass == 1) != front) continue
-            if (fly && i == ti && front) continue            // in flight: drawFlight draws it
             val pos = rowPos[it.key] ?: at[i]
             val sel = isSel(it)
             val ch = itemH(it)
             val ct = winTop + pos - listScroll + (if (sel) SEL_GAP else 0f)
             if (ct + ch < winTop - SEL_GAP || ct > winBot + SEL_GAP) continue    // outside the window
             val row = RectF(x, ct, x + w, ct + ch)
+            if (fly && i == ti && front) {                   // in flight: drawFlight draws its card (the ribbon stays, with the rows)
+                if (it is MapList.Item.Polestar) drawPsRibbon(c, row)
+                continue
+            }
             when (it) {
                 is MapList.Item.Me -> drawMe(c, row)
-                is MapList.Item.Polestar -> psCard()?.let { UiKit.questCard(c, row, it) }
+                is MapList.Item.Polestar -> psCard()?.let { UiKit.questCard(c, psCardBox(row), it) }
                 is MapList.Item.Tracked -> tracked.firstOrNull { e -> e.optInt("id", 0) == it.id }?.let { e -> drawRow(c, e, row) }
                 is MapList.Item.Section -> UiKit.trackerHeader(c, row.left, row.top, row.right, "Untracked", "${it.count}")
                 is MapList.Item.Group -> drawGroup(c, it, row)
@@ -5965,10 +6044,12 @@ class MapView(context: Context) : View(context) {
             // THE SELECTED ROW, highlighted with the kit's focus (the user: "it should like highlight"), and the up / down arrows
             // that say the controller changes it (none above the first stop, none below the last), centred in its gaps
             if (sel) {
-                UiKit.focus(c, row)
+                UiKit.focus(c, if (it is MapList.Item.Polestar) psCardBox(row) else row)     // the light blue row: its card, under the ribbon
                 val si = stops.indexOf(it.key)
                 UiKit.moveArrowsUpDown(c, row, up = si > 0, down = si < stops.size - 1, size = 22f, width = 34f, around = true, gap = SEL_GAP)
             }
+            // the light blue row's ribbon last: over its card's edge, and over the selection's gold bar when it is selected
+            if (it is MapList.Item.Polestar && psCard() != null) drawPsRibbon(c, row)
         }
         c.restore()
         if (more > 0) c.drawText(Tr.t("$more more below"), x + ROW_PAD_X, y0 + gh - 10f, dp)
