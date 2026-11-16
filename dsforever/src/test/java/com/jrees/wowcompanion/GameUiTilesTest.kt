@@ -184,6 +184,28 @@ class GameUiTilesTest {
         assertTrue("tile + band = $span", span + 24f + 16f <= view)
     }
 
+    /** every word a tile or its band shows has its Spanish and French (the menus' words; the tiles fit them: shrink, then cut) */
+    @Test fun everyTileWordIsTranslated() {
+        val words = GameUiTiles.NAMES.values + GameUiTiles.EXTRA_NAMES.values +
+            listOf("On", "Off", "Dynamic", "Tracking", "Nintendo", "Lower", "Default", "Higher", "Narrower", "Wider", "Smaller", "Larger",
+                "Percent", "Total", "Waiting for the game", "Sent", "Hidden now", "On the top screen now")
+        for (l in listOf("es", "fr")) {
+            val f = listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
+                .first { it.canRead() }
+            val plain = org.json.JSONObject(f.readText()).getJSONObject("plain")
+            for (w in words.toSet()) assertTrue("$l: $w", plain.has(w) && plain.getString(w).isNotBlank())
+        }
+    }
+
+    /** the room brings an opened tile and its band into view with the least scroll; the tile first when both do not fit */
+    @Test fun revealScrollsTheLeast() {
+        assertNull("in view", GameUiTiles.reveal(0f, 777f, 100f, 700f))
+        assertEquals("below: up to its foot", 900f - 777f, GameUiTiles.reveal(0f, 777f, 300f, 900f)!!, 0.01f)
+        assertEquals("above: down to its top", 200f, GameUiTiles.reveal(500f, 777f, 200f, 600f)!!, 0.01f)
+        assertEquals("too tall: the tile at the top", 300f, GameUiTiles.reveal(0f, 777f, 300f, 1200f)!!, 0.01f)
+        assertNull(GameUiTiles.reveal(300f, 777f, 300f, 1200f))
+    }
+
     // ---------------------------------------------------------------- the TGA reader
 
     private fun media(name: String): ByteArray = listOf(File("../companion/app/src/main/assets/companion/addons/WowCompanion/Media/$name.tga"),

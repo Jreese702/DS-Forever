@@ -576,15 +576,8 @@ class SettingsPad(
         if (focus != null) focus = centre(box)
         val band = anchorBand?.let { RectF(it.left, it.top + top, it.right, it.bottom + top) }
         anchorBand = null
-        val y0 = scroll.scrollY; val vh = scroll.height
-        val from = box.top - REVEAL_TOP
-        val to = (band?.bottom ?: box.bottom) + REVEAL_BOTTOM
-        val want = when {
-            to - from > vh -> from                      // too tall together: the tile at the top, its band runs on under it
-            from < y0 -> from
-            to > y0 + vh -> to - vh
-            else -> return
-        }
+        val want = GameUiTiles.reveal(scroll.scrollY.toFloat(), scroll.height.toFloat(), box.top - REVEAL_TOP,
+            (band?.bottom ?: box.bottom) + REVEAL_BOTTOM) ?: return
         post { scroll.smoothScrollTo(0, want.toInt().coerceAtLeast(0)) }
     }
 

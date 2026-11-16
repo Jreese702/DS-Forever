@@ -146,7 +146,7 @@ object TilePictures {
 
     /** hostile mobs in the world with their red plates; the aggro tint round the plates when it is on */
     private fun nameplates(c: Canvas, ctx: Context?, look: Look) {
-        val mobs = listOf(Triple(52f, 96f, 30f), Triple(116f, 82f, 22f), Triple(170f, 100f, 34f))
+        val mobs = listOf(Triple(44f, 96f, 30f), Triple(108f, 84f, 22f), Triple(172f, 100f, 34f))
         val tints = listOf(Color.rgb(255, 210, 40), Color.rgb(255, 140, 30), Color.rgb(230, 40, 30))
         for ((i, m) in mobs.withIndex()) {
             figure(c, m.first, m.second, m.third, Color.rgb(64, 30, 26))

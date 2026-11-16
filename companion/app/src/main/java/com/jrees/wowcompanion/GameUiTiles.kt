@@ -207,6 +207,15 @@ object GameUiTiles {
         return Band(pic, out, status, bottom + BAND_PAD - top)
     }
 
+    /** the page's scroll that brings [from]..[to] (a tile and its band, content px) into a view [vh] tall now at [y0]: the least move;
+     *  when they do not fit together, the tile at the top (its band runs on under it); null = in view already */
+    fun reveal(y0: Float, vh: Float, from: Float, to: Float): Float? = when {
+        to - from > vh -> if (from == y0) null else from
+        from < y0 -> from
+        to > y0 + vh -> to - vh
+        else -> null
+    }
+
     private fun lineBox(line: Line, x0: Float, y: Float, x1: Float): LineBox {
         val lw = if (line.labelled) min(LABEL_W, (x1 - x0) * 0.26f) else 0f
         val label = if (line.labelled) Box(x0, y, x0 + lw, y + LINE_H) else null
