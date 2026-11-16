@@ -431,6 +431,8 @@ class HomeView(
     var onClassIdle: (() -> Unit)? = null
     fun classBusy(): Boolean = classOpen || classPending || (classLayer.parent != null && classLayer.visibility == View.VISIBLE)
     private fun classLayerShow(open: Boolean) {
+        // the mail card (HomeMailButton) closes: one overlay at a time (b-radial-exclusive); the wheel's first touch is the wheel's
+        if (open) mailCard(false)
         if (!open && classPending) { classPending = false; if (!classOpen) { post { onClassIdle?.invoke() }; return } }
         if (open && classHint == null && pauseSide > 0f && pauseT > 0f) { classPending = true; return }
         if (classLayer.parent == null) { if (!open) return; addView(classLayer) }   // added on first use: over everything
@@ -653,7 +655,7 @@ class HomeView(
             if (field == v) return
             val was = field?.on == true; val now = v?.on == true
             field = v
-            if (!now) mailCard(false)
+            if (!now) { mailCard(false); auraPane.mailGone() }
             if (was != now) Log.i(TAG, "home: mail ${if (now) "on (${v?.from?.size ?: 0} named)" else "off"}")
             invalidate(); auraPane.invalidate()
         }
@@ -2116,8 +2118,14 @@ class HomeView(
         // f-trackpad-keyboard: the tool's touches are the tool's (a drag starting where the bars lie was taken as a tap on the bars)
         if (typeWanted) { barsDown = false; return false }
         // THE MAIL CARD (HomeMailButton; the user's pick: "B or tap elsewhere closes"): while it is open a touch anywhere on Home closes
-        // it - on the envelope too - and that touch does nothing else (it is Home's to its end)
-        if (e.actionMasked == MotionEvent.ACTION_DOWN && mailOpen) { mailCard(false); mailSwallow = true; barsDown = false; return true }
+        // it. On the map (the card, the envelope, the Calendar button, the quest card and buffs under it) that touch does nothing else
+        // (it is Home's to its end); anywhere else it goes on as always - the controller's buttons still cast, in a fight too (review
+        // of feat/wk-mail: the closing touch ate a touch cast), the party's frames still target
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) mailSwallow = false
+        if (e.actionMasked == MotionEvent.ACTION_DOWN && mailOpen) {
+            mailCard(false)
+            if (onMapSlot(e)) { mailSwallow = true; barsDown = false; return true }
+        }
         if (flow.full == HomeModule.BARS || barsSlot.visibility != View.VISIBLE) return false
         // the (-) Party mode tag stands over the bars' foot: its touch is the tag's
         if (e.actionMasked == MotionEvent.ACTION_DOWN) barsDown = inBars(e) &&
@@ -2146,6 +2154,11 @@ class HomeView(
 
     private fun inBars(e: MotionEvent) =
         e.x >= barsSlot.left && e.x < barsSlot.right && e.y >= barsSlot.top && e.y < barsSlot.bottom
+
+    /** the touch is on the map's part where it is drawn now (its slide included): where the mail envelope and its card are */
+    private fun onMapSlot(e: MotionEvent): Boolean = mapSlot.visibility == View.VISIBLE &&
+        e.x >= mapSlot.left + mapSlot.translationX && e.x < mapSlot.right + mapSlot.translationX &&
+        e.y >= mapSlot.top + mapSlot.translationY && e.y < mapSlot.bottom + mapSlot.translationY
 
     // ================================================================ the quests part (spec parts 1, 2, 3, 6, 7)
 
@@ -2542,8 +2555,19 @@ class HomeView(
         private fun firstRowEnd(): Pair<Boolean, Int>? =
             when { auras.shownBuffs.isNotEmpty() -> false to 0; auras.shownDebuffs.isNotEmpty() -> true to 0; else -> null }
 
+        /** the mail went (HomeView.mail): a cursor on the envelope moves onto the Calendar button's stop (it never rests on nothing) */
+        fun mailGone() {
+            if (!mailCur) return
+            mailCur = false
+            calCur = calShows()
+            invalidate()
+        }
+
         /** one press while the cursor is on an aura (or on the Calendar button, or on the mail envelope) */
         fun fullKey(k: String) {
+            // the mail card opened by a touch while the cursor is elsewhere: B closes it first (and does nothing else); any other key
+            // closes it and goes on (the card never hangs over a moving cursor)
+            if (mailOpen && !mailCur) { mailCard(false); if (k == "PAD2") { invalidate(); return } }
             if (mailCur) {
                 // THE MAIL ENVELOPE's stop (HomeMailButton): A opens / closes its card, B closes the card first, then goes back to the
                 // map; Left / Right leave it (and the card closes)

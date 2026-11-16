@@ -14,7 +14,7 @@ Proven here:
     mail the game names nobody for: {on} with no `from`; all read: {on = false};
   d event-driven: the reading happens on UPDATE_PENDING_MAIL / MAIL_INBOX_UPDATE / PLAYER_ENTERING_WORLD only - minutes of quiet and the
     heartbeat's forced document read nothing (the heartbeat carries the last reading); a MAIL_INBOX_UPDATE that changes nothing sends
-    no document;
+    no document; the reading taken at load rides a /reload's login document (sent before the world entry: no blink);
   e plain values only: a secret HasNewMail leaves the last reading as it was; a secret or empty sender is dropped; no HasNewMail on the
     client = no `mail` at all;
   f the game rule IngameMailNotificationDisabled = {off = true}; the calendar switched off still carries `mail`;
@@ -178,6 +178,18 @@ check((int(L.eval('READS.has')), int(L.eval('READS.senders'))) == r0, "d the hea
 check(len(hb) >= 1 and hb[-1]['c'].get('mail') == {"on": True}, "d ... and carries the last reading", hb and hb[-1]['c'].get('mail'))
 L.execute('fire("PLAYER_ENTERING_WORLD", false, false); advance(1)')
 check(int(L.eval('READS.has')) == r0[0] + 1, "d a world entry (a loading screen's end) reads once")
+# a /reload: the core's "login" document (WC.snapshot at PLAYER_LOGIN, as Core.lua's start() sends it) goes BEFORE the world entry; it
+# carries the reading taken at load, so Home's envelope never blinks off (review of feat/wk-mail)
+RELOAD = ('for _, a in ipairs({ "WowCompanion", "WowCompanionQuests", "WowCompanionHub", "WowCompanionInteract", "WowCompanionSpells", '
+          '"WowCompanionCalendar" }) do fire("ADDON_LOADED", a) end; fire("PLAYER_LOGIN"); WowCompanion.snapshot("login")')
+LR, errsR = boot_world(files=FILES, pre=MAIL_PRE + 'WowCompanion.partyOk = true\nHAS = true; SENDERS = { "Brannoc" }\n', strict=True,
+                       login=RELOAD, expose=False)
+dR = cal_docs(LR)
+check(len(dR) >= 1 and dR[0]['c'].get('mail') == {"on": True, "from": ["Brannoc"]},
+      "d a /reload's login document (before the world entry) already carries the mail", dR and dR[0]['c'].get('mail', 'NONE'))
+check(int(LR.eval('READS.has')) == 1, "d ... read once, at load", int(LR.eval('READS.has')))
+LR.execute('fire("PLAYER_ENTERING_WORLD", false, true); runTimers(NOW + 10)')
+check(clean(LR, errsR) == {}, "d ... and the reload world stays clean", clean(LR, errsR))
 
 # ================================================================ e plain values only
 L.execute('HAS = SECRETV')

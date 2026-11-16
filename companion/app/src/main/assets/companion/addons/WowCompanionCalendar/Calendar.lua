@@ -50,7 +50,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local CV = "c15"     -- bump on every change; c15 THE MAIL ENVELOPE (the user, 2026-11-16: "we need to add an icon somewhere to the home menu for when the player has mail"): the document's `mail` carries the two values the game's own minimap mail icon shows (HasNewMail, and its tooltip's GetLatestThreeSenders), read only on UPDATE_PENDING_MAIL / MAIL_INBOX_UPDATE / PLAYER_ENTERING_WORLD (no timer), plain values only, `off` under the game rule IngameMailNotificationDisabled (see THE MAIL ENVELOPE below); the app shows it, so a stale build is visible
+local CV = "c15"     -- bump on every change; c15 THE MAIL ENVELOPE (the user, 2026-11-16: "we need to add an icon somewhere to the home menu for when the player has mail"): the document's `mail` carries the two values the game's own minimap mail icon shows (HasNewMail, and its tooltip's GetLatestThreeSenders), read only at load and on UPDATE_PENDING_MAIL / MAIL_INBOX_UPDATE / PLAYER_ENTERING_WORLD (no timer), plain values only, `off` under the game rule IngameMailNotificationDisabled (see THE MAIL ENVELOPE below); the app shows it, so a stale build is visible
 
 -- (c7) the room's row on the shared tap pad (the pad owner's YES, AGENT_LOG "Pad owner -> calendar"): row "cal",
 -- namespace "cal". The eight fixed keys are claimed FIRST at load (columns 0..7), in this order; the answers come
@@ -528,8 +528,8 @@ local lastPend = nil
 -- envelope BY Home's Calendar button, shown only while the player has mail; a touch shows who it is from, as the game's own
 -- minimap mail icon does (Blizzard_Minimap MiniMapMailFrameMixin: shown while HasNewMail(); its tooltip, MinimapMailFrameUpdate,
 -- lists GetLatestThreeSenders()). This block reads exactly those two, and only when the game says something changed: the events
--- the game's icon and its mailbox listen to (UPDATE_PENDING_MAIL, MAIL_INBOX_UPDATE) and the world entry (a login or a reload),
--- never on a timer. The document carries the last reading as `mail`:
+-- the game's icon and its mailbox listen to (UPDATE_PENDING_MAIL, MAIL_INBOX_UPDATE), the world entry (a login or a reload) and this
+-- file's own load, never on a timer. The document carries the last reading as `mail`:
 --   { on = true, from = { up to three names } }  the game reports unread mail (`from` left out when it names nobody)
 --   { on = false }                               no unread mail
 --   { off = true }                               the game rule IngameMailNotificationDisabled is on (the game shows no icon)
@@ -585,6 +585,11 @@ local function mailRead()
     end
     return WC.encode(mailState) ~= before
 end
+
+-- the first reading, at load: the core's "login" document goes at PLAYER_LOGIN, before the world entry's reading, and a /reload's
+-- went without `mail`, so Home's envelope (and an open card) blinked off for a moment (review of feat/wk-mail). A load is an event
+-- like the others: still no timer
+mailRead()
 
 function WC.collectCalendar()
     tally = { secret = 0, threw = 0 }

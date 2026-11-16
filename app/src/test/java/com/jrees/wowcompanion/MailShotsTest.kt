@@ -29,8 +29,9 @@ import java.time.Duration
  * THE MAIL ENVELOPE ON HOME, OFF-DEVICE (the user, 2026-11-16: "we need to add an icon somewhere to the home menu for when the player has
  * mail"; HomeMailButton, Calendar c15). The real HomeView, its touches and its open map module's pad route:
  *  - the envelope shows beside the Calendar button only while the calendar document says there is mail, the band one button shorter;
- *  - its first touch opens the senders card (in a fight too); a touch anywhere on Home closes it and does nothing else; B closes it;
- *    the Calendar button keeps its own touch beside it; mail gone = the card gone;
+ *  - its first touch opens the senders card (in a fight too); a touch anywhere on Home closes it - on the map it does nothing else,
+ *    elsewhere it goes on (the controller's buttons still cast); B closes it; the class wheel closes it; the Calendar button keeps
+ *    its own touch beside it; mail gone = the card gone (and the open map's cursor onto the Calendar's stop);
  *  - the open map module: Right from the map reaches the envelope, Right again the Calendar, Left back; A opens / closes the card; B
  *    closes the card, then goes back to the map;
  *  - a long zone name steps its size down rather than being cut.
@@ -227,6 +228,69 @@ class MailShotsTest {
         home.pressB()
         assertFalse("B closes it", home.mailOpen)
         assertNull(full(home))
+    }
+
+    private fun field(home: HomeView, name: String): Any? =
+        HomeView::class.java.getDeclaredField(name).apply { isAccessible = true }.get(home)
+
+    @Test fun theClosingTouchStillReachesTheController() {
+        // review of feat/wk-mail: with the card open a touch on the controller's buttons closes it AND goes on to the buttons (a touch
+        // cast in a fight is never eaten); only a touch on the map (where the card hangs) does nothing else
+        val home = home("Elwynn Forest", mailDoc = "one")
+        fight(home, true)
+        val on = home.mailBoxOnHome()
+        tap(home, on.centerX(), on.centerY()); assertTrue(home.mailOpen)
+        val bars = field(home, "barsSlot") as View
+        val x = (bars.left + bars.right) / 2f; val y = (bars.top + bars.bottom) / 2f
+        assertTrue("the controller lies off the map", !mapBox(home).contains(x, y))
+        val t = SystemClock.uptimeMillis()
+        home.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, x, y, 0))
+        assertFalse("the touch closes the card", home.mailOpen)
+        assertTrue("... and the controller's buttons have it", field(home, "barsDown") as Boolean)
+        assertFalse("... not swallowed", field(home, "mailSwallow") as Boolean)
+        home.dispatchTouchEvent(MotionEvent.obtain(t, t + 60, MotionEvent.ACTION_UP, x, y, 0))
+        ShadowLooper.idleMainLooper()
+        // on the map the closing touch is still swallowed (the map's own touch does not run)
+        tap(home, on.centerX(), on.centerY()); assertTrue(home.mailOpen)
+        val m = mapBox(home)
+        val t2 = SystemClock.uptimeMillis()
+        home.dispatchTouchEvent(MotionEvent.obtain(t2, t2, MotionEvent.ACTION_DOWN, m.centerX(), m.centerY(), 0))
+        assertFalse(home.mailOpen); assertTrue("the map's closing touch is swallowed", field(home, "mailSwallow") as Boolean)
+        home.dispatchTouchEvent(MotionEvent.obtain(t2, t2 + 60, MotionEvent.ACTION_UP, m.centerX(), m.centerY(), 0))
+        assertFalse("its end lets go", field(home, "mailSwallow") as Boolean)
+    }
+
+    @Test fun theClassRadialClosesTheCard() {
+        // one overlay at a time: the class wheel's first touch is the wheel's, never a hidden card's close
+        val home = home("Elwynn Forest", mailDoc = "one")
+        val on = home.mailBoxOnHome()
+        tap(home, on.centerX(), on.centerY()); assertTrue(home.mailOpen)
+        HomeView::class.java.getDeclaredMethod("classLayerShow", Boolean::class.javaPrimitiveType).apply { isAccessible = true }
+            .invoke(home, true)
+        assertFalse(home.mailOpen)
+    }
+
+    @Test fun mailGoneMovesTheOpenMapsCursorOntoTheCalendar() {
+        val home = home("Elwynn Forest", mailDoc = "three")
+        assertTrue(home.openMapModule())
+        settle(); lay(home, W, H)
+        key(home, "PADDRIGHT"); assertEquals("mail", home.cornerFocus())
+        home.mail = HomeMail.parse(doc("none"))
+        assertEquals("the cursor never rests on nothing", "calendar", home.cornerFocus())
+        val before = calendarOpened
+        key(home, "PAD1"); assertEquals(before + 1, calendarOpened)
+        // a card opened by a touch while the cursor is elsewhere (on the Calendar): B closes the card first, the cursor stays
+        home.mail = HomeMail.parse(doc("one"))
+        assertNull("A left the cursor on the map", home.cornerFocus())
+        key(home, "PADDRIGHT"); assertEquals("mail", home.cornerFocus())
+        key(home, "PADDRIGHT"); assertEquals("calendar", home.cornerFocus())
+        val on = home.mailBoxOnHome()
+        tap(home, on.centerX(), on.centerY()); assertTrue("the envelope's touch in the open map", home.mailOpen)
+        key(home, "PAD2"); assertFalse("B closes the card first", home.mailOpen)
+        assertEquals("... and does nothing else", "calendar", home.cornerFocus())
+        tap(home, on.centerX(), on.centerY()); assertTrue(home.mailOpen)
+        key(home, "PADDLEFT"); assertFalse("another key closes it and goes on", home.mailOpen)
+        assertEquals("mail", home.cornerFocus())
     }
 
     @Test fun mailGoneClosesTheCard() {
