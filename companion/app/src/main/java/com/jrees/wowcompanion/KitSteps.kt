@@ -170,13 +170,17 @@ object KitSteps {
                 Log.w(TAG, "icons: no class spellbook icons (${why.joinToString("; ")})" + if (later) ", tried again on a later launch" else "")
                 return later
             }
+            // pure work on tables in hand: whatever it throws is the tables' (a layout the rows do not fit), never the pack's
             val icons = try {
                 ClassBookIcons.fromTables(sl, sla, sm)
-            } catch (e: ClassBookIcons.Layout) {
-                Log.w(TAG, "icons: no class spellbook icons, the spell tables' rows do not fit (${e.message})")
+            } catch (e: RuntimeException) {
+                Log.w(TAG, "icons: no class spellbook icons, the spell tables' rows do not fit (${e.message ?: e.javaClass.simpleName})")
                 return false
             }
-            IconRequirements.setClassBook(job.ctx, g.buildKey, icons)
+            runCatching { IconRequirements.setClassBook(job.ctx, g.buildKey, icons) }.onFailure {
+                Log.w(TAG, "icons: the class spellbook icons could not be kept (${it.message}), the pack goes on without them")
+                return false
+            }
             Log.i(TAG, "icons: every class's spellbook, ${icons.size} icons from this build's tables (layouts " +
                 "%08x %08x %08x)".format(sl.layoutHash, sla.layoutHash, sm.layoutHash))
             return false

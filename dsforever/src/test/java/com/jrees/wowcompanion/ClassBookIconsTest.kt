@@ -138,6 +138,9 @@ class ClassBookIconsTest {
         refused("abilities not on their line's parent (the line field elsewhere)", tables(parentOff = 500))
         refused("icons that are no file IDs (the icon field elsewhere)", tables(misc = (1..12).map { 1000 + it to 7 } + listOf(2660 to 9)))
         refused("most spells without an icon (the spell field elsewhere)", tables(misc = listOf(1 to 135001)))
+        val (_, sla, sm) = tables()
+        val narrow = Db2(wdc5(5, 0, listOf(Sec((1..12).map { row(5, 0 to it) })), listOf(null)), "skillline5")
+        refused("a SkillLine with too few fields (no category field)", Triple(narrow, sla, sm))
     }
 
     // ---------------------------------------------------------------- the recipe and the step

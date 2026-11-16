@@ -56,6 +56,8 @@ object ClassBookIcons {
 
     /** the tables' rows as [icons] reads them, checked ([check]) first */
     fun fromTables(skillLine: Db2, abilities: Db2, spellMisc: Db2): Set<Int> {
+        if (skillLine.fieldCount <= SL_CATEGORY || abilities.fieldCount <= SLA_SPELL || spellMisc.fieldCount <= SM_ICON)
+            throw Layout("fields: SkillLine ${skillLine.fieldCount}, SkillLineAbility ${abilities.fieldCount}, SpellMisc ${spellMisc.fieldCount}")
         val category = HashMap<Int, Int>()
         for (r in skillLine.rows()) category[r.id] = r.int(SL_CATEGORY)
         val list = ArrayList<Ability>()
