@@ -165,9 +165,21 @@ class VoiceShotsTest {
         }
         run {
             val (chat, kb, _) = chatRoom({ Voice.Perm.GRANTED }, Voice.Avail.ONLINE_ONLY)
+            kb.onlineNameProbe = { "Speech Services" }               // the online recognizer's app, as Android names it
             pad(chat, "PAD3"); settle(); lay(chat, W, H)
             assertEquals(Voice.State.OFFER_ONLINE, kb.voiceSheet?.state)
             shot("chat_7_offer_online", chat, Room.CHAT)
+        }
+        // Online picked: while it listens, the app that hears the voice is named at the foot (the design's privacy line)
+        run {
+            Settings.voiceTyping = Voice.Mode.ONLINE
+            val (chat, kb, l) = chatRoom({ Voice.Perm.GRANTED }, Voice.Avail.ONLINE)
+            kb.onlineNameProbe = { "Speech Services" }
+            pad(chat, "PAD3"); settle(); lay(chat, W, H)
+            assertEquals(1, l.starts)
+            kb.voiceSink().rms(7f); kb.voiceSink().partial("need a healer"); kb.voiceSink().partial("need a healer at")
+            shot("chat_9_online_listening", chat, Room.CHAT)
+            Settings.voiceTyping = Voice.Mode.DEVICE
         }
         // the same page in Spanish
         run {
@@ -225,6 +237,72 @@ class VoiceShotsTest {
         shot("bags_3_offline", v, Room.BAGS)
     }
 
+    // ---------------------------------------------------------------- radial names (the Controller room's Name box)
+
+    private fun radialCtl(revn: Int, rev: String?, rrow: Int = 1, rbox: String? = null) =
+        PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p40","c":{"on":true,"view":"radial","focus":"rset","tcur":4,
+            "pos":1,"rpage":2,"rad":[403,331,324],"rslots":[1,2,4],"rplate":2,"rrow":$rrow,"revn":$revn${rev?.let { ",\"rev\":\"$it\"" } ?: ""}
+            ${rbox?.let { ",\"rbox\":\"$it\"" } ?: ""}}}"""))!!
+
+    @Test fun radialNameShots() {
+        art()
+        RadialMeta.init(app)
+        RadialMeta.who = "Korvash-Realm"
+        RadialMeta.setName(2, "Fire")
+        val v = ControllerView(app, onPadCells = { true })
+        v.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m105","m":{"page":1,"pages":3,"sets":[]}}"""))!!)
+        v.onPadTabCtl(radialCtl(5, "mode", rrow = 2))
+        v.onPadTabCtl(radialCtl(7, "key:PAD2", rrow = 2))
+        v.onPadTabCtl(radialCtl(8, "name", rrow = 1, rbox = "rname"))
+        val page: Any = field(v, "page")
+        val kb = field<Lazy<ChatKeyboard>>(page, "kb\$delegate").value
+        rig(kb, { Voice.Perm.GRANTED })
+        lay(v, W, H); settle(); lay(v, W, H)
+        shot("radial_0_name_mic", v, Room.CONTROLLER)
+        // X on the Name keys (the add-on hands the press over: key:PAD3): the voice page, the name replaced by what is said
+        v.onPadTabCtl(radialCtl(9, "key:PAD3", rrow = 1, rbox = "rname"))
+        assertTrue(kb.voiceShown)
+        val s = kb.voiceSink()
+        for (db in listOf(3f, 8f)) s.rms(db)
+        s.partial("frost"); s.partial("frost nova")
+        lay(v, W, H)
+        shot("radial_1_name_listening", v, Room.CONTROLLER)
+        s.final("frost nova")
+        ShadowSystemClock.advanceBy(Duration.ofMillis(Voice.ACCEPT_MS + 50))
+        lay(v, W, H)
+        shot("radial_2_name_result", v, Room.CONTROLLER)
+    }
+
+    // ---------------------------------------------------------------- the problem report's words
+
+    @Test fun reportShots() {
+        art()
+        val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        val v = ReportPage(act)
+        act.setContentView(v, android.view.ViewGroup.LayoutParams(W, H))
+        val kb: ChatKeyboard = field(v, "kb")
+        rig(kb, { Voice.Perm.GRANTED })
+        ReportFlow.init(act)
+        ReportFlow.description = "The map froze"
+        v.open()
+        lay(v, W, H); settle(600); lay(v, W, H)
+        shot("report_0_words_mic", v, Room.SETTINGS)
+        // X on the words: the board comes up on its voice page; the words go after what is written
+        v.padKey("PAD3")
+        lay(v, W, H); settle(600); lay(v, W, H)
+        assertTrue(kb.voiceShown)
+        val s = kb.voiceSink()
+        for (db in listOf(4f, 9f)) s.rms(db)
+        s.partial("after the loading"); s.partial("after the loading screen on")
+        lay(v, W, H)
+        shot("report_1_listening", v, Room.SETTINGS)
+        s.final("after the loading screen on the Thor")
+        ShadowSystemClock.advanceBy(Duration.ofMillis(Voice.ACCEPT_MS + 50))
+        lay(v, W, H)
+        shot("report_2_result", v, Room.SETTINGS)
+        ReportFlow.description = ""
+    }
+
     // ---------------------------------------------------------------- Send Mail
 
     private fun mailDoc(cur: String, kbd: JSONObject? = null): JSONObject {
@@ -253,7 +331,11 @@ class VoiceShotsTest {
             override fun draw(c: Canvas) {
                 v.visibility = View.VISIBLE
                 v.draw(c)
-                if (kb.visibility == View.VISIBLE) { c.save(); c.translate(0f, kb.top.toFloat()); kb.draw(c); c.restore() }
+                // clipped to the board's own box, as its parent clips it on the device (review: unclipped, the board's ink filled the
+                // whole picture and the mail window above the voice page never showed)
+                if (kb.visibility == View.VISIBLE) {
+                    c.save(); c.translate(0f, kb.top.toFloat()); c.clipRect(0f, 0f, kb.width.toFloat(), kb.height.toFloat()); kb.draw(c); c.restore()
+                }
             }
         }
         v.update(mailDoc("mailedit subject"), true)
