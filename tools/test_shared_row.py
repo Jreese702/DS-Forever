@@ -178,7 +178,7 @@ for d, f in (("WowCompanion", "TapPad"), ("WowCompanionSpells", "Spells"), ("Wow
     e = comp(SRC["x_%s_%s" % (d, f)], f)
     check(e is None, "a. Lua 5.1 compiles %s.lua" % f, e or '')
 TP, SP, BK = SRC["x_WowCompanion_TapPad"], SRC["x_WowCompanionSpells_Spells"], SRC["x_WowCompanionSpells_Book"]
-check('local PADV = "pad21"' in TP and 'local SV = "s13"' in SP and 'local BV = "b65"' in BK, "a. the versions: TapPad pad21, Spells s12, Book b65")
+check('local PADV = "pad21"' in TP and 'local SV = "s14"' in SP and 'local BV = "b65"' in BK, "a. the versions: TapPad pad21, Spells s14, Book b65")
 check("pad21 THE SHARED ROW" in TP and "s12 THE MACROS ROOM'S ROW SHARED" in SP and "b65 THE SHARED ROW" in BK,
       "a. each changed file's header note names the shared row")
 check('SHARE = "cal"' in SP and 'share = MR.SHARE' in SP, "a. the Macros room's row is the Calendar row's guest")
@@ -230,7 +230,7 @@ padtab(Lc, 34)
 r1 = described(Lc)
 cal_row = int(Lc.eval('WowCompanion.pad.rows.cal.row'))
 check("mac" in r1 and "cal" not in r1 and r1["mac"] == cal_row, "c. 39 then 34: mac on the Calendar's row, cal left out", (r1.get("mac"), cal_row))
-check(shown_cells(Lc, "cal") == 0 and shown_cells(Lc, "mac") == 36, "c. cal's cells hidden, mac's 36 shown",
+check(shown_cells(Lc, "cal") == 0 and shown_cells(Lc, "mac") == 38, "c. cal's cells hidden, mac's 38 shown (Spells s14: + y, ok)",
       (shown_cells(Lc, "cal"), shown_cells(Lc, "mac")))
 m = mdoc(Lc)
 k = m.get('keys') or {}
@@ -267,7 +267,7 @@ check("cal" in described(Ld) and "mac" not in described(Ld) and shown_cells(Ld, 
       "d. in a fight 39 then 34 waits: the Calendar's row stays", sorted(k for k in described(Ld) if k in ("cal", "mac")))
 check(mdoc(Ld).get('keys') is None, "d. ... and the macros document has no keys yet")
 Ld.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1); runTimers(NOW + 2)')
-check("mac" in described(Ld) and "cal" not in described(Ld) and shown_cells(Ld, "mac") == 36,
+check("mac" in described(Ld) and "cal" not in described(Ld) and shown_cells(Ld, "mac") == 38,
       "d. the fight's end: the lease happens, mac on the row")
 check(mdoc(Ld).get('keys') is not None, "d. ... and the macros document has its keys")
 check(lua_errors(Ld, errs_d) == [], "d. clean", lua_errors(Ld, errs_d)[:3])
