@@ -1916,6 +1916,15 @@ MACRO_ROOM_LINES = {
     (r'\bDeleteMacro\b', 'if ok and OV.srx.name(n) and OV.srx.body(body) and not bar[n] and CALL(function() return DeleteMacro(i) end) then m = m + 1 end'),
 }
 hits = [(p, ln) for (p, ln) in hits if (p, ln) not in MACRO_ROOM_LINES]
+# Interact i161, CAPTURE v21 (wk-containers; the user, 2026-11-16: "it should just open the loot menu inside of the bags and then keep the
+# player inside of the bag room"): a room suspended under its own loot window gives its extra keys back to the game, and on the resume the
+# loot window's extra keys go back - the capture's own CLEAR of an override on its own owner frame (nil = the game's binding shows again),
+# the same line guestLost / N.sync / v20 already run; nothing is bound or saved (tools/interact_tests/t_lootunder.lua)
+CAPTURE_V21_LINES = {
+    (r'\bSetOverrideBinding\s*\(', 'for k in pairs(spec.extra) do pcall(function() SetOverrideBinding(padOwner, true, k, nil) end) end'),
+    (r'\bSetOverrideBinding\s*\(', 'for k in pairs(N.npcExtra) do pcall(function() SetOverrideBinding(padOwner, true, k, nil) end) end'),
+}
+hits = [(p, ln) for (p, ln) in hits if (p, ln) not in CAPTURE_V21_LINES]
 check(not hits, "no trace in the new add-on code: no SetBinding / SaveBindings / macros / CVars / bar writes / Blizzard window code",
       hits[:3])
 check(not any('SetOverrideBindingClick' in ln and 'hdr' not in ln and 'owner' not in ln for ln in code),

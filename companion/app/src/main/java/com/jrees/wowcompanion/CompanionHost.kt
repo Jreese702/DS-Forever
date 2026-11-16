@@ -1635,8 +1635,19 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             return
         }
         if (strip.bGoesHome && ::interactView.isInitialized && interactView.closeByTouch()) {
+            // bags-open1: the loot window over the Bags room closes as its own B does, and the player stays in Bags (BagsLoot)
+            if (::bagsView.isInitialized && BagsLoot.discStaysInBags(room == Room.BAGS, bagsView.lootOver)) {
+                Log.i("WCHOME", "swirl touched while it shows B: the loot window over Bags closes (its own close); Bags stays")
+                return
+            }
             Log.i("WCHOME", "swirl touched while it shows B: the game window closes (its own close)")
             pickRoom(Room.HOME); return
+        }
+        // bags-open1: a step inside the loot window over Bags (Make Space: its B steps back there first) - the disc never pulls the
+        // player out of the Bags room under it
+        if (::bagsView.isInitialized && BagsLoot.discStaysInBags(room == Room.BAGS, bagsView.lootOver)) {
+            Log.i("WCHOME", "swirl touched while the loot window over Bags is a step in (Make Space): nothing, Bags stays")
+            return
         }
         // test51 (the user: "When I'm in a room and I touch the B spiral button to go home, the pause menu opens instead of going home"):
         // while the disc wears its B look (every room; on Home, a step back to take) a touch is B: Home, the room stepping back as B
@@ -2489,6 +2500,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "auraack" -> homeView.auraAck(msg)
             "interact" -> {
                 interactView.update(msg, current)
+                // bags-open1 (capture v21): the loot window a bag item opened holds over the Bags room, which waits behind it (BagsLoot)
+                if (current && ::bagsView.isInitialized) bagsView.lootOver = BagsLoot.over(msg)
                 // PARTY MODE (the user's ruling): anything that takes the controller ends it - in fights too (the app's tap is the route)
                 if (current) partyTaker(msg.optString("holder", ""))
                 // Home > Settings' loot window row (r-loot-on-top): the add-on's word; a replayed document only draws
