@@ -92,14 +92,14 @@ class QuestListShotsTest {
     }
 
     /** the map module opened full by Home, its controller Home's, the quests in; Polestar's step when [step] */
-    private fun map(step: JSONObject? = null): MapView {
+    private fun map(step: JSONObject? = null, tracked: Set<Int> = setOf(7, 33, 46, 47, 60, 106)): MapView {
         Settings.init(app)
         Settings.polestarGuide = if (step != null) PolestarGuide.ON else PolestarGuide.OFF
         val v = MapView(app)
         v.compact = false; v.showHeader = false; v.padHints = true
         v.onUntrackQuest = { }; v.onTrackQuest = { }; v.onTrackFocusQuest = { }
         v.update(mapDoc(), 0L)
-        v.onQuests(questsDoc(setOf(7, 33, 46, 47, 60, 106)))
+        v.onQuests(questsDoc(tracked))
         step?.let { v.onPolestarStep(it) }
         lay(v)
         frames(v)
@@ -187,6 +187,40 @@ class QuestListShotsTest {
         key(v, "PAD3"); frames(v)                                  // X: track Princess Must Die! too
         assertEquals(85, sel(v))
         shot(v, "track_3_after_two")
+    }
+
+    /**
+     * Polestar merged with Kobold Camp Cleanup (7): X on 7's own row sent it into its closed tab, and the list's keeping handed the
+     * cursor UP to the light blue row (MapCursor.moved), where the next X skips Polestar's step. The cursor holds its place there too.
+     */
+    @Test fun untrackingTheQuestPolestarStandsForKeepsTheCursorOffPolestarsRow() {
+        art()
+        val merged = JSONObject().put("t", "Kobold Camp Cleanup").put("g", "Kill Kobold Vermin").put("q", 7).put("m", 1429)
+            .put("x", 0.47).put("y", 0.55).put("b", 1L).put("sk", true)
+        val v = map(merged)
+        assertEquals(MapList.POLESTAR, sel(v))
+        key(v, "PADDDOWN"); frames(v)
+        assertEquals(7, sel(v))
+        val was = rowOf(v, 7)!!
+        key(v, "PAD3"); frames(v)                                  // X: untrack Kobold Camp Cleanup
+        assertEquals("the next tracked quest took its place, not Polestar's row", 33, sel(v))
+        assertEquals(was.top, rowOf(v, 33)!!.top, 2f)
+        key(v, "PAD3"); frames(v)                                  // X again: untracks 33, never a Polestar skip
+        assertEquals(46, sel(v))
+    }
+
+    @Test fun theLastTrackedQuestHandsTheCursorToTheFirstTab() {
+        art()
+        // tabs closed: the tab after it
+        val v = map()
+        downTo(v, 106); frames(v)
+        key(v, "PAD3"); frames(v)
+        assertEquals(MapList.groupKey("Elwynn Forest"), sel(v))
+        // every Elwynn quest tracked (no Elwynn tab): its tab comes back at the place and takes it
+        val w = map(tracked = setOf(7, 33, 46, 47, 60, 106, 62, 76, 85, 88))
+        downTo(w, 88); frames(w)
+        key(w, "PAD3"); frames(w)
+        assertEquals(MapList.groupKey("Elwynn Forest"), sel(w))
     }
 
     @Test fun polestarsRowWearsItsRibbon() {

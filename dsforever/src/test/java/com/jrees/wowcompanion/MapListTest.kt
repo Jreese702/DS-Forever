@@ -194,4 +194,36 @@ class MapListTest {
         assertEquals(2, p.stay(1, before, after))
         assertEquals(listOf(MapList.ME, MapList.POLESTAR), after.take(2))
     }
+
+    /**
+     * the real order of a press (MapView.trackNow): the list's own keeping runs first ([MapCursor.moved] onto the light blue row, then
+     * keepValid), then [MapCursor.stay] for the quest the cursor WAS on. Polestar merged with quest 1 (only in the log is needed): 1's
+     * own row untracked into its closed tab handed the cursor UP to the light blue row, where the next X skips Polestar's step.
+     */
+    @Test fun untrackingTheQuestPolestarStandsForNeverHandsTheCursorToPolestarsRow() {
+        val log = listOf(e(20, "A", 10))
+        val before = MapList.stops(relist(listOf(1, 2, 3), log, emptySet(), polestar = true))
+        val c = MapCursor(); c.touched(1, before)
+        assertEquals(MapCursor.Do.Untrack(1), c.key("PAD3", before, MapList.POLESTAR, false))
+        val after = MapList.stops(relist(listOf(2, 3), log + e(1, "A", 10), emptySet(), polestar = true))
+        c.moved(1, MapList.POLESTAR, after); c.keepValid(after)              // (applyQuests: rebuildItems, then keepValid)
+        assertEquals("the list's keeping alone took it to the light blue row", MapList.POLESTAR, c.sel)
+        assertEquals(2, c.stay(1, before, after, wasOn = true)); assertEquals(2, c.sel)
+        assertEquals(before.indexOf(1), after.indexOf(2))
+        // X there now untracks 2: never a Polestar skip
+        assertEquals(MapCursor.Do.Untrack(2), c.key("PAD3", after, MapList.POLESTAR, false, psSkip = true))
+    }
+
+    @Test fun theLastTrackedQuestsNewTabTakesItsPlace() {
+        // quest 3's zone B had no tab (all of B tracked): untracked, its tab comes back right at its place, the first tab
+        val log = listOf(e(20, "A", 10))
+        val before = MapList.stops(relist(listOf(1, 2, 3), log, emptySet()))
+        val after = MapList.stops(MapList.items(true, listOf(1, 2),
+            MapList.groups(log + e(3, "B", 10), 10, listOf("B"), emptyList())) { false })
+        assertEquals(listOf(MapList.ME, 1, 2, MapList.groupKey("B"), MapList.groupKey("A")), after)
+        assertEquals(MapList.groupKey("B"), MapCursor.stayAfter(3, before, after))
+        // a tab that was there already stays the next stop (no new one at the place)
+        val afterOld = MapList.stops(relist(listOf(1, 2), log + e(3, "A", 10), emptySet()))
+        assertEquals(MapList.groupKey("A"), MapCursor.stayAfter(3, before, afterOld))
+    }
 }

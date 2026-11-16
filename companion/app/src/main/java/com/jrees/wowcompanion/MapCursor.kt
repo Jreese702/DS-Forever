@@ -97,10 +97,13 @@ class MapCursor {
      * unintuitive where it jumps you all the way down 40 slots in the quest menu with the untracked quest, if I want to track or untrack
      * a bunch at once I want to be able quickly go down the list and hit untrack for each, not have to scroll all the way back up after
      * each untrack"). The cursor was on quest [acted], which the press moved (up into the tracked quests, or down into its tab): it
-     * stays where it was and the stop after it moves into its place ([stayAfter]). Only when the cursor is on [acted]. The new selection.
+     * stays where it was and the stop after it moves into its place ([stayAfter]). Only when the cursor was on [acted] when the press
+     * came ([wasOn]): the list's own keeping may have moved it off since (keepValid, or [moved] onto the light blue row when the quest
+     * Polestar stands for went into a closed tab - the cursor then sat on the row whose X skips Polestar's step), and this rule
+     * overrides those. The new selection.
      */
-    fun stay(acted: Int, before: List<Int>, after: List<Int>): Int {
-        if (!shown || sel != acted || acted == 0) return sel
+    fun stay(acted: Int, before: List<Int>, after: List<Int>, wasOn: Boolean = sel == acted): Int {
+        if (!shown || !wasOn || acted == 0) return sel
         val s = stayAfter(acted, before, after)
         if (s == 0) { sel = 0; shown = false; lastIndex = 0; return 0 }
         sel = s; lastIndex = after.indexOf(s).coerceAtLeast(0)
@@ -140,12 +143,19 @@ class MapCursor {
          * the stop that takes moved quest [acted]'s place ([stay]): the first stop after it in [before] (the list as it was) that is
          * still in [after] (the list now) - the next quest of its tab, the next tracked quest, or the next tab; at the end of the list
          * the nearest one before it; else the first of [after] (0: the list is empty). The quest itself never: it left that place.
+         * A stop new to the list standing right at that place takes it first (the last tracked quest's zone had no tab: its tab comes
+         * back with it, the first tab under the tracked quests).
          */
         fun stayAfter(acted: Int, before: List<Int>, after: List<Int>): Int {
             val i = before.indexOf(acted)
             if (i >= 0) {
                 val now = after.toHashSet()
-                for (j in i + 1 until before.size) if (before[j] != acted && before[j] in now) return before[j]
+                val was = before.toHashSet()
+                for (j in i + 1 until before.size) if (before[j] != acted && before[j] in now) {
+                    var k = after.indexOf(before[j])
+                    while (k > 0 && after[k - 1] != acted && after[k - 1] !in was) k--
+                    return after[k]
+                }
                 for (j in i - 1 downTo 0) if (before[j] != acted && before[j] in now) return before[j]
             }
             return after.firstOrNull { it != acted } ?: after.firstOrNull() ?: 0

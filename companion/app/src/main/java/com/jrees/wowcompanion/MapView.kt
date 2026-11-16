@@ -5637,7 +5637,7 @@ class MapView(context: Context) : View(context) {
         val firstBefore = listFirst                       // (the re-sort below would scroll to the moved quest: never wanted now)
         lastQuests?.let { applyQuests(it) }
         if (onIt) {
-            val s = cursor.stay(id, before, listKeys())
+            val s = cursor.stay(id, before, listKeys(), wasOn = true)   // (applyQuests' keepValid / moved may have moved it already)
             // the row that took the quest's place stands where the quest stood: the list moves by the rows that came or went above it
             val at = items.indexOfFirst { it.key == s && it !is MapList.Item.Section }
             if (s != 0 && at >= 0 && beforeAt >= 0) listFirst = (firstBefore + at - beforeAt).coerceIn(0, (items.size - 1).coerceAtLeast(0))
