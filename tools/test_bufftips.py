@@ -8,7 +8,9 @@ The user, 2026-11-16: "tooltips for buffs are still popping up on the top screen
   - the game's buff tooltips: hovering a buff (AuraButtonMixin:OnEnter -> GameTooltip, refilled every 0.2 s by its UpdateTooltip), the
     controller-mode AUTO tooltip at every buff gained (BuffFrameMixin:ShowNextAuraForTooltip -> BuffFrameTooltip, 4 s), and the
     target frame's buffs (TargetFrameAuraButtonTemplate -> AuraButtonTooltip: FORBIDDEN, hidden from _G, its own method table);
-  - Hub's riders: the game's BuffFrame and TargetFrame at alpha 0, still taking the mouse (an invisible frame keeps its hover);
+  - review of tt4: the pet / party buff list (PetFrameMixin / PartyMemberFrameMixin:OnEnter -> PartyMemberBuffTooltip, a PLAIN frame
+    at TOOLTIP strata, not the tooltip type) and the consolidated buffs' list (BuffFrame.ConsolidatedBuffs.Tooltip, plain, no name);
+  - Hub's riders: the game's BuffFrame, TargetFrame and PetFrame at alpha 0, still taking the mouse (an invisible frame keeps its hover);
   - the mouse: hover = the topmost shown frame with MOTION enabled under the cursor, a click = the topmost with CLICKS enabled
     (the client's split: SetMouseMotionEnabled / SetMouseClickEnabled, as TapPad's sink uses it);
   - the engine's alpha put-back after a tooltip is filled (tt3 measured one with no Lua call), three ways:
@@ -238,6 +240,27 @@ function BUILD()
     TAURA.scripts.OnEnter = function(self) ENTERS = (ENTERS or 0) + 1; AURATIP:SetOwner(self); AURATIP:ShowAuraTooltip() end
     TAURA.scripts.OnLeave = function(self) AURATIP:Hide() end
     TAURA.scripts.OnClick = function() AURA_CLICKS = (AURA_CLICKS or 0) + 1 end
+    -- review of tt4: the pet's frame (Hub: alpha 0, still takes the mouse) and the game's pet / party buff list, PartyMemberBuffTooltip:
+    -- a PLAIN frame (not the tooltip type: no type hook ever meets it), TOOLTIP strata, no parent; shown at the unit frame's OnEnter
+    -- (PetFrameMixin:OnEnter -> UnitFrame_OnEnter's GameTooltip, then PartyMemberBuffTooltip:SetPoint + UpdateTooltip -> Show)
+    PMBT = new("Frame", "PartyMemberBuffTooltip", nil, { game = true, shown = false, strata = "TOOLTIP", motion = true, click = true,
+                                                        rect = { 160, 380, 60, 30 } })
+    PartyMemberBuffTooltip = PMBT
+    PetFrame = new("Button", "PetFrame", UIParent, { game = true, alpha = 0, strata = "LOW", level = 5, motion = true, click = true,
+                                                     rect = { 60, 420, 100, 40 } })
+    PetFrame.scripts.OnEnter = function(self)
+        GameTooltip:SetOwner(self); GameTooltip:SetText("Wolf"); GameTooltip:Show()
+        PMBT:SetPoint("TOPLEFT", self, "TOPLEFT", 160, 380); PMBT:SetSize(60, 30); PMBT:Show()
+    end
+    PetFrame.scripts.OnLeave = function(self) GameTooltip:Hide(); PMBT:Hide() end
+    PetFrame.scripts.OnClick = function() PET_CLICKS = (PET_CLICKS or 0) + 1 end
+    -- the consolidated buffs' list: BuffFrame.ConsolidatedBuffs.Tooltip, a plain frame with no global name, TOOLTIP strata
+    CBTN = new("Button", nil, BuffFrame, { game = true, motion = true, click = true, level = 11, rect = { 930, 525, 25, 30 } })
+    BuffFrame.ConsolidatedBuffs = CBTN
+    CBT = new("Frame", "ConsolidatedBuffs.Tooltip", CBTN, { game = true, shown = false, strata = "TOOLTIP", rect = { 820, 460, 100, 50 } })
+    CBTN.Tooltip = CBT
+    CBTN.scripts.OnEnter = function(self) CBT:Show() end
+    CBTN.scripts.OnLeave = function(self) CBT:Hide() end
     WowCompanion = { isPlain = function(v) return not issecretvalue(v) end }
     WowCompanionDB = {}
 end
@@ -276,7 +299,7 @@ end
 function EFFALPHA(o) local a = 1; while o do a = a * o.alpha; o = o.parent end; return a end
 local TIPS
 function FRAME()
-    TIPS = TIPS or { GameTooltip, BuffFrameTooltip, AURATIP }
+    TIPS = TIPS or { GameTooltip, BuffFrameTooltip, AURATIP, PMBT, CBT }
     NOW = NOW + DT
     local due = {}
     for i = #TIMERS, 1, -1 do if TIMERS[i].at <= NOW then table.insert(due, 1, TIMERS[i]); table.remove(TIMERS, i) end end
@@ -360,6 +383,16 @@ def scenario(code, mode, sealed, fails, label):
     chk("tooltips on: hovering the invisible target's buff draws AuraButtonTooltip (%d frames)" % drawn("AuraButtonTooltip"),
         drawn("AuraButtonTooltip") >= 25)
     at(-100, -100); G.RUN(0.2)
+    at(100, 440); L.execute("RESET()"); G.RUN(1)
+    chk("tooltips on: hovering the invisible pet frame draws PartyMemberBuffTooltip (%d frames)" % drawn("PartyMemberBuffTooltip"),
+        drawn("PartyMemberBuffTooltip") >= 25)
+    at(-100, -100); G.RUN(0.2)
+    L.execute("BuffFrame.alpha = 1")
+    at(940, 535); L.execute("RESET()"); G.RUN(1)
+    chk("tooltips on: the game's buffs shown, the consolidation button's list draws (%d frames)" % drawn("ConsolidatedBuffs.Tooltip"),
+        drawn("ConsolidatedBuffs.Tooltip") >= 25)
+    at(-100, -100); G.RUN(0.2)
+    L.execute("BuffFrame.alpha = 0")
 
     # --- tooltips OFF
     T.set(True)
@@ -386,12 +419,30 @@ def scenario(code, mode, sealed, fails, label):
     G.TARGET_CLICKS = 0
     at(900, 380); G.CLICK()
     chk("off: a touch on the target frame still reaches it (%d)" % G.TARGET_CLICKS, G.TARGET_CLICKS == 1)
+    st = T.stats() if T.stats else None
+    chk("off: stats say the target frame's shield is up, anchored (%s)" % (dict(st.items()) if st else "no stats"),
+        st is not None and st.sh == 1 and st.tm == "anchor")
     # a new target: its buffs appear under a resting cursor
     L.execute('AURAS.shown = false; EVENT("PLAYER_TARGET_CHANGED")')
     at(720, 270); G.RUN(0.5)
     L.execute('RESET(); ENTERS = 0; AURAS.shown = true; EVENT("PLAYER_TARGET_CHANGED")'); G.RUN(2)
     chk("off: a target whose buffs appear under the resting cursor - nothing drawn (%d), no hover (%d)" % (drawn("AuraButtonTooltip"), G.ENTERS),
         drawn("AuraButtonTooltip") == 0 and G.ENTERS == 0)
+    # review of tt4: the pet / party buff list and the consolidated list (plain frames, not the tooltip type)
+    at(100, 440); L.execute("RESET()"); G.RUN(2)
+    n, k = drawn("GameTooltip"), fills("GameTooltip")
+    chk("off: hovering the invisible pet frame - PartyMemberBuffTooltip held at 0 (%d frames), its GameTooltip too (%d drawn, %d fills)"
+        % (drawn("PartyMemberBuffTooltip"), n, k), drawn("PartyMemberBuffTooltip") == 0 and n <= (k if late else 0))
+    G.PET_CLICKS = 0
+    G.CLICK()
+    chk("off: a touch on the pet frame still reaches it (%d)" % G.PET_CLICKS, G.PET_CLICKS == 1)
+    at(-100, -100); G.RUN(0.2)
+    L.execute("BuffFrame.alpha = 1")
+    at(940, 535); L.execute("RESET()"); G.RUN(2)
+    chk("off: the game's buffs shown, the consolidation button's list held at 0 (%d frames)" % drawn("ConsolidatedBuffs.Tooltip"),
+        drawn("ConsolidatedBuffs.Tooltip") == 0)
+    at(-100, -100); G.RUN(0.2)
+    L.execute("BuffFrame.alpha = 0")
     # the same in a fight
     G.FIGHT = True
     at(-100, -100); L.execute("RESET(); GAIN()"); G.RUN(0.5)
@@ -409,7 +460,18 @@ def scenario(code, mode, sealed, fails, label):
     chk("on again: the buff's tooltip draws again (%d frames)" % drawn("BuffFrameTooltip"), drawn("BuffFrameTooltip") >= 25)
     at(720, 270); L.execute("RESET(); ENTERS = 0"); G.RUN(1)
     chk("on again: the target's buff has its hover and tooltip back (%d frames)" % drawn("AuraButtonTooltip"), drawn("AuraButtonTooltip") >= 25)
+    at(-100, -100); G.RUN(0.2)
+    at(100, 440); L.execute("RESET()"); G.RUN(1)
+    chk("on again: the pet frame's buff list draws again (%d frames)" % drawn("PartyMemberBuffTooltip"), drawn("PartyMemberBuffTooltip") >= 25)
+    at(-100, -100); G.RUN(0.2)
+    L.execute("BuffFrame.alpha = 1")
+    at(940, 535); L.execute("RESET()"); G.RUN(1)
+    chk("on again: the consolidation button's list draws again (%d frames)" % drawn("ConsolidatedBuffs.Tooltip"),
+        drawn("ConsolidatedBuffs.Tooltip") >= 25)
+    L.execute("BuffFrame.alpha = 0")
     at(-100, -100); G.RUN(5)
+    st = T.stats() if T.stats else None
+    chk("on again: no shield counted up (%s)" % (st.sh if st else "no stats"), st is not None and st.sh == 0)
 
     # --- what the add-on did
     errs = [G.ERRS[i] for i in range(1, len(G.ERRS) + 1)]

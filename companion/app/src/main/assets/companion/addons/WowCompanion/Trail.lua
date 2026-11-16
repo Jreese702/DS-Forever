@@ -4692,9 +4692,19 @@ end
 --   A hold never compares a value read back from the tooltip (on this client a frame's alpha can be a secret aspect). WC.tips.stats()
 --   counts what each hold caught (Interact's proof.tipc.st), so a device run says which path a tooltip came back on.
 -- The bottom screen's tooltips are read through C_TooltipInfo (Interact, Bags, Auras.lua), never from a tooltip frame: unchanged.
+-- Review of tt4 (the same report): two more buff tooltips that are NOT of the tooltip type, so no type hook ever met them:
+--   PartyMemberBuffTooltip (Blizzard_UnitFrame partyframe.xml: a plain frame, TOOLTIP strata, no parent): the pet frame's and every
+--   party member's buff / debuff icons, shown at its OnEnter (PetFrameMixin / PartyMemberFrameMixin:OnEnter -> UpdateTooltip). Hub
+--   hides those frames by alpha only (they still take the cursor where they stand; Hub's own unit frames take no mouse), so the cursor
+--   there drew it in full. And the consolidated buffs' list (BuffFrame.ConsolidatedBuffs.Tooltip, a plain frame, TOOLTIP
+--   strata: hovering the consolidation button while the game's buffs are shown). Both are adopted by name / path like the rest, and
+--   an adopted frame is held by its own hooks whatever its type (the type check guards the SHARED table only). stats() also says how
+--   the target frame's shield lies (tm: "anchor" / "rect"), since that container's size is a secret value (secretwrap at its layout).
 WC.tips = { V = "tt4", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ItemRefShoppingTooltip1",
                                   "ItemRefShoppingTooltip2", "EmbeddedItemTooltip", "NamePlateTooltip", "GameNoHeaderTooltip",
-                                  "BuffFrameTooltip", "GameSmallHeaderTooltip" },
+                                  "BuffFrameTooltip", "GameSmallHeaderTooltip", "PartyMemberBuffTooltip" },
+            -- review of tt4: tooltips with no global name, by their path from one
+            PATHS = { { "BuffFrame", "ConsolidatedBuffs", "Tooltip" } },
             -- tt4: a tooltip's own fillers, post-hooked on each adopted frame (SetAlpha has its own rule)
             FILL = { "Show", "SetOwner", "ClearLines", "AddLine", "AddDoubleLine", "AppendText", "SetText", "SetShown", "SetFrameLevel",
                      "SetPoint" },
@@ -4702,7 +4712,7 @@ WC.tips = { V = "tt4", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTool
             UNITS = { "TargetFrame", "FocusFrame", "Boss1TargetFrame", "Boss2TargetFrame", "Boss3TargetFrame", "Boss4TargetFrame",
                       "Boss5TargetFrame" },
             hooked = {}, on = false, zeroed = setmetatable({}, { __mode = "k" }), busy = false, typeHooked = false,
-            adopted = {}, list = {}, queue = {}, shields = {}, ticking = false,
+            adopted = {}, list = {}, named = {}, queue = {}, shields = {}, ticking = false,
             st = { show = 0, upd = 0, size = 0, fill = 0, type = 0, shield = 0 } }
 do
     local T = WC.tips
@@ -4735,10 +4745,13 @@ do
     local function hold(fr, a, why)
         if not T.on or T.busy then return end
         if type(a) == "number" and plain(a) and a <= 0 then return end   -- (a secret alpha is held: never compared)
-        -- only a TOOLTIP (the hooked methods are its type's; a shared table must never dim any other frame)
-        local okT, ty = pcall(fr.GetObjectType, fr)
-        if not okT or ty ~= "GameTooltip" then return end
-        if not T.adopted[fr] then T.queue[fr] = true; T.wake() end       -- tt4: adopted at the next frame, never inside the game's call
+        if not T.adopted[fr] then
+            -- only a TOOLTIP (the hooked methods are its type's; a shared table must never dim any other frame). An adopted frame
+            -- (review of tt4) is held whatever its type: only its own hooks reach here for it
+            local okT, ty = pcall(fr.GetObjectType, fr)
+            if not okT or ty ~= "GameTooltip" then return end
+            T.queue[fr] = true; T.wake()                                 -- tt4: adopted at the next frame, never inside the game's call
+        end
         zero(fr, why)
     end
     -- tt4: ADOPT a tooltip frame: held at its show, every frame, its layout and after its own fillers. Once per frame; never a forbidden one
@@ -4774,7 +4787,24 @@ do
             local fr = _G[n]
             if type(fr) == "table" and not T.hooked[n] then
                 T.hooked[n] = true
+                T.named[#T.named + 1] = fr
                 T.adopt(fr, true)
+            end
+        end
+        -- review of tt4: the unnamed ones, read down their path (only reads)
+        for _, p in ipairs(T.PATHS) do
+            local key = table.concat(p, ".")
+            if not T.hooked[key] then
+                local ok, fr = pcall(function()
+                    local o = _G[p[1]]
+                    for i = 2, #p do if type(o) ~= "table" then return nil end; o = o[p[i]] end
+                    return o
+                end)
+                if ok and type(fr) == "table" and type(fr.SetAlpha) == "function" then
+                    T.hooked[key] = true
+                    T.named[#T.named + 1] = fr
+                    T.adopt(fr, true)
+                end
             end
         end
     end
@@ -4844,7 +4874,7 @@ do
         return placed
     end
     local function shieldUp(e, up)
-        if e.up == up or not e.f then return end
+        if (e.up == true) == up or not e.f then return end              -- (a new one is down: its first "down" counts nothing)
         e.up = up
         pcall(up and e.f.Show or e.f.Hide, e.f)
         T.st.shield = T.st.shield + (up and 1 or -1)
@@ -4873,9 +4903,11 @@ do
     local drv = CreateFrame("Frame")
     local function tick()
         if not T.on then T.wake(); return end
-        local q = T.queue
-        T.queue = {}
-        for fr in pairs(q) do T.adopt(fr) end
+        if next(T.queue) ~= nil then                                     -- (no new table each frame)
+            local q = T.queue
+            T.queue = {}
+            for fr in pairs(q) do T.adopt(fr) end
+        end
         T.shieldTick()
     end
     function T.wake()
@@ -4889,8 +4921,9 @@ do
     -- what each hold caught, for the interact document (Interact's proof.tipc.st)
     function T.stats()
         local s = T.st
+        local te = T.shields.TargetFrame
         return { v = T.V, ad = #T.list, th = T.typeHooked and 1 or 0, show = s.show, upd = s.upd, size = s.size, fill = s.fill,
-                 type = s.type, sh = s.shield, last = s.last }
+                 type = s.type, sh = s.shield, last = s.last, tm = te and te.up == true and te.mode or nil }
     end
 
     function T.apply()
@@ -4901,9 +4934,8 @@ do
             for fr in pairs(T.zeroed) do pcall(fr.SetAlpha, fr, 1) end
             T.zeroed = setmetatable({}, { __mode = "k" })
         end
-        for _, n in ipairs(T.FRAMES) do
-            local fr = _G[n]
-            if type(fr) == "table" and type(fr.SetAlpha) == "function" then pcall(fr.SetAlpha, fr, T.on and 0 or 1) end
+        for _, fr in ipairs(T.named) do
+            if type(fr.SetAlpha) == "function" then pcall(fr.SetAlpha, fr, T.on and 0 or 1) end
         end
         T.wake()
         pcall(T.shieldTick)
