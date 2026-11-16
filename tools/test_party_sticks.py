@@ -64,8 +64,8 @@ def last_stick(L, start):
     return d[-1] if d else None
 
 
-check('local RV = "r22"' in RSRC and "the control sticks arent working on the party inspect radials" in RSRC,
-      "Radial says r22, its header note quotes the user")
+check('local RV = "r23"' in RSRC and "the control sticks arent working on the party inspect radials" in RSRC,
+      "Radial says r23 (r22p merged), its header note quotes the user")
 
 W = world()
 check(list(W.eval('ERRS').values()) == [] and W.eval('#SNIPERR') == 0, "the world loads (Safety, TapPad, Book, PadMap, PadTabCtl, Radial)",

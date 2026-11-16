@@ -160,9 +160,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var drawCollapsed = false
     /** the right stick's eighth (0 = top, clockwise), -1 at rest: the radial's pointed-at place */
     private var stickSector = -1
-    /** b-class-radial-slots: the right stick as a vector (x right +, y down +), for the evenly spaced class wheel */
-    private var stickX = 0f
-    private var stickY = 0f
+    /** b-class-radial-slots: the aiming stick as a vector (x right +, y down +), for the evenly spaced class wheel; f-class-wheel-sticks
+     *  (the user 2026-11-16: "I think that either stick should work those wheels."): EITHER stick's, by [classAim]'s rule (0, 0 = none) */
+    private val classAim = ClassAim(CLASS_NEUTRAL)
+    private val stickX get() = classAim.aimX
+    private val stickY get() = classAim.aimY
     /** the place of [r] the right stick points at now (its evenly spaced slices), -1 = none */
     private fun pointedPlace(r: Radial): Int {
         previewPointed?.let { return it }
@@ -877,7 +879,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             onButtons = { mask -> onButtons(mask) },
             onStick = { sec -> if (sec != stickSector) { stickSector = sec; invalidate() } },
             // b-class-radial-stick: Home's class layer is another view: it is told too (it was redrawn only at the open / close)
-            onStickVector = { st, x, y -> if (st == 1) { stickX = x; stickY = y; classStick() } },
+            // f-class-wheel-sticks (the user 2026-11-16, pick: "Both sticks aim, no walking"): both sticks reach the class wheel
+            onStickVector = { st, x, y -> classStick(st, x, y) },
         )
         ready = true
         refreshSettings()
@@ -1380,16 +1383,19 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
     /** PadInput: the D-pad / face buttons held, bit n = drawn position n; main thread, on change */
     /** b-class-takeover: the right stick while the class wheel is open: the pointed slice follows; back in the middle = Tap + Release's
-     *  cast; a wheel already closed lets the controller go once the stick is back */
-    private fun classStick() {
+     *  cast; a wheel already closed lets the controller go once the stick is back. f-class-wheel-sticks (the user 2026-11-16: "I think
+     *  that either stick should work those wheels."): EITHER stick ([ClassAim]: the one moved last aims; one held since before the open
+     *  waits for the middle; a hand-over to the other stick casts nothing); the free waits for the right stick only (a held walk stick walks on) */
+    private fun classStick(st: Int, x: Float, y: Float) {
+        val ended = classAim.move(st, x, y)
         if (chordSide == ClassChord.NONE) {
-            if (classHeld && ClassChord.stickDeg(stickX, stickY, CLASS_NEUTRAL) == null) { removeCallbacks(freeLater); freeLater.run() }
+            if (classHeld && classAim.freeOk()) { removeCallbacks(freeLater); freeLater.run() }
             return
         }
         invalidate(); onClassStick?.invoke()
         val p = pointedNow()
         if (p >= 0) { classLastPointed = p; return }
-        if (ClassChord.stickDeg(stickX, stickY, CLASS_NEUTRAL) != null) return
+        if (!ended) return
         val r = chordRadial()
         val was = classLastPointed; classLastPointed = -1
         if (was >= 0) classAct(classFlow.stickBack(::pickAOf, was), r)
@@ -2695,11 +2701,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     /** the open state changed: Home's mirror, the controller's hold (its free waits for the stick to come back, as the item wheel's) */
     private fun noteClassOpen() {
         val open = chordRadial() != null
+        // f-class-wheel-sticks: a stick held from before the open neither aims nor casts until back in the middle once
+        if (open && !classOpen) { classAim.open(); classLastPointed = -1 }
         if (open != classOpen) { classOpen = open; onClassRadial?.invoke(open) }
         removeCallbacks(freeLater)
         if (open && !classHeld) { classHeld = true; onClassHold?.invoke(true) }
         if (!open && classHeld) {
-            if (ClassChord.stickDeg(stickX, stickY, CLASS_NEUTRAL) == null) freeLater.run() else postDelayed(freeLater, CLASS_FREE_MS)
+            if (classAim.freeOk()) freeLater.run() else postDelayed(freeLater, CLASS_FREE_MS)
         }
         invalidate()
     }
