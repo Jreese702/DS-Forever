@@ -1,0 +1,34 @@
+{
+ "bags": [
+  {
+   "bag": 0,
+   "fam": 0,
+   "free": 16,
+   "slots": 16
+  },
+  {
+   "bag": 1,
+   "fam": 1,
+   "free": 7,
+   "icon": 134407,
+   "id": 5439,
+   "slots": 8
+  }
+ ],
+ "equipped": {
+  "ammo": {
+   "count": 200,
+   "icon": 132382,
+   "id": 2512
+  }
+ },
+ "freeGeneral": 16,
+ "items": [
+  {
+   "bag": 1,
+   "count": 200,
+   "id": 2512,
+   "slot": 1
+  }
+ ]
+}

@@ -1,0 +1,187 @@
+{
+ "bags": [
+  {
+   "bag": 0,
+   "fam": 0,
+   "free": 6,
+   "slots": 16
+  },
+  {
+   "bag": 1,
+   "fam": 0,
+   "free": 2,
+   "icon": 133633,
+   "id": 4496,
+   "slots": 14
+  },
+  {
+   "bag": 2,
+   "fam": 1,
+   "free": 5,
+   "icon": 134407,
+   "id": 5439,
+   "slots": 8
+  }
+ ],
+ "equipped": {
+  "ammo": {
+   "count": 550,
+   "icon": 132382,
+   "id": 2512,
+   "stack": 200
+  }
+ },
+ "freeGeneral": 8,
+ "items": [
+  {
+   "bag": 0,
+   "count": 5,
+   "id": 159,
+   "slot": 1
+  },
+  {
+   "bag": 0,
+   "count": 12,
+   "id": 2589,
+   "slot": 2
+  },
+  {
+   "bag": 0,
+   "count": 5,
+   "id": 159,
+   "slot": 3
+  },
+  {
+   "bag": 0,
+   "count": 3,
+   "id": 2589,
+   "slot": 4
+  },
+  {
+   "bag": 0,
+   "count": 2,
+   "id": 159,
+   "slot": 5
+  },
+  {
+   "bag": 0,
+   "count": 1,
+   "id": 2589,
+   "slot": 6
+  },
+  {
+   "bag": 0,
+   "count": 1,
+   "id": 159,
+   "slot": 7
+  },
+  {
+   "bag": 0,
+   "count": 9,
+   "id": 2589,
+   "slot": 8
+  },
+  {
+   "bag": 0,
+   "count": 4,
+   "id": 159,
+   "slot": 9
+  },
+  {
+   "bag": 0,
+   "count": 2,
+   "id": 2589,
+   "slot": 10
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 2589,
+   "slot": 1
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 2589,
+   "slot": 2
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 2589,
+   "slot": 3
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 2589,
+   "slot": 4
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 2589,
+   "slot": 5
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 2589,
+   "slot": 6
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 2589,
+   "slot": 7
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 2589,
+   "slot": 8
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 2589,
+   "slot": 9
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 2589,
+   "slot": 10
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 2589,
+   "slot": 11
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 2589,
+   "slot": 12
+  },
+  {
+   "bag": 2,
+   "count": 200,
+   "id": 2512,
+   "slot": 1
+  },
+  {
+   "bag": 2,
+   "count": 200,
+   "id": 2512,
+   "slot": 2
+  },
+  {
+   "bag": 2,
+   "count": 150,
+   "id": 2512,
+   "slot": 3
+  }
+ ]
+}

@@ -2245,6 +2245,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (current) PreviewStage.feedFull(msg)                     // f-settings-previews: the Settings panel's live miniatures
                 PreviewStage.roomBar = { castView.roomBar }; PreviewStage.roomBarOn = { castView.roomBarOn }
                 msg.optJSONObject("bags")?.let { bagsView.update(it, current); pinPicker.update(it); characterView.updateBags(it)
+                    if (::interactView.isInitialized) interactView.updateBags(it)      // feat/vendor-bag-slots: the vendor's free bag / ammo slots
                     it.optJSONObject("equipped")?.let { eq -> homeView.durability(eq.optJSONObject("durw")) }; if (ProfessionsStore.onBags(it)) professionsView.refresh() }   // old = no room switch, no tap (bags)
                 status.text = "gaps ${tail?.gapCount() ?: 0}   v${msg.optString("v", "?")}"
             }

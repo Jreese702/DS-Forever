@@ -1,0 +1,59 @@
+{
+ "bags": [
+  {
+   "bag": 0,
+   "fam": 0,
+   "free": 14,
+   "slots": 16
+  },
+  {
+   "bag": 1,
+   "fam": 1,
+   "free": 9,
+   "icon": 134407,
+   "id": 5439,
+   "slots": 12
+  }
+ ],
+ "equipped": {
+  "ammo": {
+   "count": 2340,
+   "icon": 132382,
+   "id": 2512,
+   "stack": 1000
+  }
+ },
+ "freeGeneral": 14,
+ "items": [
+  {
+   "bag": 0,
+   "count": 5,
+   "id": 159,
+   "slot": 1
+  },
+  {
+   "bag": 0,
+   "count": 2,
+   "id": 2589,
+   "slot": 2
+  },
+  {
+   "bag": 1,
+   "count": 1000,
+   "id": 2512,
+   "slot": 1
+  },
+  {
+   "bag": 1,
+   "count": 1000,
+   "id": 2512,
+   "slot": 2
+  },
+  {
+   "bag": 1,
+   "count": 340,
+   "id": 2512,
+   "slot": 3
+  }
+ ]
+}
