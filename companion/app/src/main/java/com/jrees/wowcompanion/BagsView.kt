@@ -1273,8 +1273,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     fun touchedIn() {
         state.holdAskedAt = android.os.SystemClock.uptimeMillis()
         removeCallbacks(takeCheck)
-        wantIn = true; takeRetried = false
-        if (state.ctlOn) return
+        if (!take.enter(state.ctlOn)) return
         // the game's bags already open (Bags let go, e.g. freed): the OPEN door would do nothing, so take with col 29
         val open = state.ctl?.optBoolean("open") == true
         if (state.gameDoors && !open) GameInput.tap(context, state.pad, "bag0", 39)
@@ -1289,11 +1288,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
      * [TAKE_CHECK_MS] after the take, ONE more take on bmvq 29: Bags' tryTake returns at once when it already holds, and it never
      * opens a game window. Never the bag0 door twice: the door is a toggle, so a late first click plus a second would close it.
      */
-    private var wantIn = false
-    private var takeRetried = false
+    private val take = BagsTake()
     private val takeCheck = Runnable {
-        if (!wantIn || state.ctlOn || takeRetried) return@Runnable
-        takeRetried = true
+        if (!take.check(state.ctlOn)) return@Runnable
         val sent = GameInput.tap(context, state.pad, "bmvq", 29)
         android.util.Log.i("WCBAGS", "touchedIn: no ctl.on after ${TAKE_CHECK_MS} ms (note=${state.ctl?.optString("note")}): " +
             "one more take, bmvq col 29 sent=$sent")
@@ -1315,10 +1312,21 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         GameInput.tap(context, state.pad, "bmvq", if (k == "a") 31 else 33)
     }
 
+    /**
+     * THE ROOM IS LEFT: no more takes for it, AT ONCE, whatever the route does with the close cells below (Home's show(), on every
+     * route; RoomHandOver.stops). The user, 2026-11-16: "after opening the bags from the Dpad select, and then pressing be to close has a
+     * weird behavior where it reopens again. this is not new". On the B route [touchedOut] waits B_LEAVE_MS (the game's B must not race
+     * the bag0 toggle), and the [takeCheck] still armed from the open fired inside that wait: 1476, B 1.08 s after the open, the game's B
+     * let go, the check saw no hold at 1.5 s and took again (bmvq 29); its ctl.on brought the room back
+     */
+    fun stopAsking() {
+        removeCallbacks(takeCheck)
+        take.stop()
+    }
+
     fun touchedOut() {
         state.holdAskedAt = 0L
-        removeCallbacks(takeCheck)
-        wantIn = false
+        stopAsking()
         if (!state.ctlOn) return
         if (state.gameDoors && state.ctl?.optBoolean("open") == true) GameInput.tap(context, state.pad, "bag0", 38)
         else GameInput.tap(context, state.pad, "bmvq", 30)

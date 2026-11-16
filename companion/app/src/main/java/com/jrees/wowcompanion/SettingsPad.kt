@@ -407,9 +407,14 @@ class SettingsPad(
         if (holdAsk.asked(sent)) postDelayed({ askHold() }, HoldAsk.EVERY_MS)
     }
 
+    /** the room is left (Home's show(), every route; RoomHandOver.stops): the hold is asked no more, AT ONCE. A fight's leave skips
+     *  [leave] (only the capture's secure cell lets go there), and the re-ask went on behind Home (the user 2026-11-16 on Bags: "it
+     *  reopens again"; every room the same) */
+    fun stopAsking() { holdAsk.hidden() }
+
     /** the room was left by touch: hand the controller back (one tap), if it was held */
     fun leave() {
-        holdAsk.hidden()
+        stopAsking()
         // b112: a hold asked this visit is freed even if its answer has not come yet (a late hold must not keep the controller)
         if (held || holdAsked) tap(GuestPad.cells(padSource(), ID, hold = false))
         held = false; holdAsked = false; focus = null; onTabs = false; invalidate()

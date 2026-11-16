@@ -41,6 +41,34 @@ object RoomHandOver {
         return out
     }
 
+    /**
+     * A ROOM LEFT STOPS ASKING AT ONCE (the user, 2026-11-16: "after opening the bags from the Dpad select, and then pressing be to close
+     * has a weird behavior where it reopens again. this is not new"). The rooms whose own view asks again later - Bags' take check
+     * (TAKE_CHECK_MS), Character's hold re-ask and its window still to open, Settings' hold re-ask (HoldAsk) - end those asks the moment
+     * the room is left, on EVERY route: the B route puts the room's close cells off ([leave], B_LEAVE_MS, so they do not race the game's
+     * B) and a fight's leave skips them, and until now the asks lived in those cells. 1476 measured: B 1.08 s after Bags opened, the
+     * game's B let go, then Bags' check 1.5 s after the open saw no hold and took the controller for Bags again; the take's document
+     * brought the room back and the put-off close freed the hold it had just taken (the room up with nobody holding). No tap here: only
+     * the view's own pending asks go; the close cells still wait (or are skipped) as before.
+     */
+    enum class Stop { BAGS_TAKE, CHARACTER_HOLD, SETTINGS_HOLD }
+
+    /** the asks that end now, as the room [was] is left ([same] = the very same room: nothing) */
+    fun stops(was: Kind, same: Boolean): List<Stop> = if (same) emptyList() else when (was) {
+        Kind.BAGS -> listOf(Stop.BAGS_TAKE)
+        Kind.CHARACTER -> listOf(Stop.CHARACTER_HOLD)
+        Kind.SETTINGS -> listOf(Stop.SETTINGS_HOLD)
+        else -> emptyList()
+    }
+
+    /**
+     * The B route's put-off leave of [madeFor] meets show() of a room: [same] = that very room is shown again (the game's own bag key
+     * or Character window inside B_LEAVE_MS). Its close cells would free the hold the room has again (1476: bmvq 30 right after the
+     * room came back), so they are dropped (true). Not for the rooms without hand-over taps ([Kind.OTHER]): what waits there is the
+     * room's own leave (Professions' leftByB / modeSent book-keeping), which its enter needs first; it runs as before.
+     */
+    fun dropPutOff(madeFor: Kind, same: Boolean): Boolean = same && madeFor != Kind.OTHER
+
     /** the take taps for coming to [r] from [was]. Opened through the game's own window the room holds already and nothing is tapped
      *  (the trainer lend too); between the two Spells pages the page moves, unless the game's own button moved it already */
     fun enter(was: Kind, r: Kind, same: Boolean, h: Held): List<Tap> {
