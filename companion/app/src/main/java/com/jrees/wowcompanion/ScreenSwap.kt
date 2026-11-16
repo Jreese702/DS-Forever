@@ -65,6 +65,7 @@ object ScreenSwap {
 
     /** the first ask of a run (tests: their own prefs): latches the choice; non-null = it went Off by itself (why) */
     internal fun latch(p: android.content.SharedPreferences): String? {
+        counted = false
         val why = if (p.getBoolean(PREF, false) && !keepOn(p.getInt(FAILS_PREF, 0)))
             "the bottom screen did not settle on the last $MAX_FAILS starts".also { off(p, it) } else null
         latched = p.getBoolean(PREF, false)
@@ -72,14 +73,24 @@ object ScreenSwap {
     }
 
     /**
-     * the bottom screen's activity is asked for (once per DS Forever): counted before it comes (commit: a crash or a force stop right
-     * after still counts). False = [MAX_FAILS] unsettled already, nothing counted: the caller turns Swap screens Off ([off])
+     * this run's start is counted already ([tryStart]). #384 review: once per RUN (a start of DS Forever: [latch], or [take] for the
+     * Restart), not once per DsForeverScreen: a new launcher activity in the same run (its configChanges do not cover a move to a screen
+     * of another size, so Home + reopen from the other screen's icon can rebuild it) counted again, and a couple of those within 15 s
+     * turned a working Swap screens Off in the middle of the run
+     */
+    @Volatile private var counted = false
+
+    /**
+     * the bottom screen's activity is asked for: this run counted before it comes (commit: a crash or a force stop right after still
+     * counts), once per run ([counted]). False = [MAX_FAILS] unsettled already, nothing counted: the caller turns Swap screens Off ([off])
      */
     fun tryStart(ctx: Context): Boolean = tryStart(prefs(ctx))
     internal fun tryStart(p: android.content.SharedPreferences): Boolean {
+        if (counted) return true
         val n = p.getInt(FAILS_PREF, 0)
         if (!keepOn(n)) return false
         p.edit().putInt(FAILS_PREF, n + 1).commit()
+        counted = true
         return true
     }
 
@@ -101,8 +112,8 @@ object ScreenSwap {
     /** the arrangement in use, null = not asked yet (no launcher has started) */
     val inUseNow: Boolean? get() = latched
 
-    /** the saved choice becomes this run's (the restart, just before the launcher starts again) */
-    fun take(saved: Boolean) { latched = saved }
+    /** the saved choice becomes this run's (the restart, just before the launcher starts again): a new run, counted anew ([tryStart]) */
+    fun take(saved: Boolean) { latched = saved; counted = false }
 
     /** the restart that applies the saved choice (the launcher's DsForeverScreen sets it); null = none here */
     @Volatile var restart: (() -> Unit)? = null
@@ -145,5 +156,5 @@ object ScreenSwap {
             (if (offered) "" else " (no second screen)") + "; $last" + (fellBack?.let { "; turned Off: $it" } ?: "")
 
     /** tests */
-    internal fun reset() { latched = null; offered = false; restart = null; gameDisplay = MAIN; last = "not placed yet"; fellBack = null }
+    internal fun reset() { latched = null; offered = false; restart = null; gameDisplay = MAIN; last = "not placed yet"; fellBack = null; counted = false }
 }

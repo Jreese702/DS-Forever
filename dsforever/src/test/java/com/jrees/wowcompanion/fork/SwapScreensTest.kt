@@ -378,6 +378,46 @@ class SwapScreensTest {
         assertEquals(DsForeverScreen.START_GUARD_MS, ScreenSwap.SETTLE_MS)
     }
 
+    /**
+     * #384 review: a run counts ONCE, however many launcher activities (DsForeverScreen) it has - a move to the other screen can
+     * rebuild the launcher's activity (Home + reopen from the other screen's icon), and each new one counted again: a couple within
+     * 15 s turned a working Swap screens Off mid-run. The Restart ([ScreenSwap.take]) is a new run and counts again
+     */
+    @Test fun aRunIsCountedOnce() {
+        val p = Prefs(hashMapOf(ScreenSwap.PREF to true))
+        assertNull(newStart(p))
+        repeat(4) { assertTrue("the same run asks again: allowed, not counted", ScreenSwap.tryStart(p)) }
+        assertEquals(1, fails(p))
+        assertNull("the next start is still On", newStart(p)); assertEquals(true, ScreenSwap.inUseNow)
+        repeat(3) { assertTrue(ScreenSwap.tryStart(p)) }
+        assertEquals(2, fails(p))
+        // the Restart: a new run in the same process; MAX_FAILS unsettled already, so its ask says no (the caller turns it Off)
+        ScreenSwap.take(true)
+        assertFalse(ScreenSwap.tryStart(p)); assertEquals(2, fails(p))
+        // a settled run, then a Restart: counted anew from 0
+        ScreenSwap.settled(p); ScreenSwap.take(true)
+        assertTrue(ScreenSwap.tryStart(p)); assertTrue(ScreenSwap.tryStart(p)); assertEquals(1, fails(p))
+    }
+
+    /**
+     * #384 review: the Restart (the Settings button and the recovery's own) hands over. Android destroys the old launcher activity
+     * only after the new one is up, so the new one's begin() found the old DS Forever still current and made none, and the old one's
+     * end() / stop then left neither screen with DS Forever. Now the old one stops and lets go first, and the launcher activity's
+     * pause / stop / leave hint hide only its own
+     */
+    @Test fun theRestartHandsOver() {
+        val restart = source().substringAfter("private fun restartForSwap()").substringBefore("a.finishAndRemoveTask()")
+        assertTrue(restart.contains("stop()") && restart.contains("if (current === this) current = null"))
+        assertTrue("never while the game runs, before anything stops", restart.indexOf("if (gameOn)") in 0 until restart.indexOf("stop()"))
+        assertTrue(source().contains("fun hideFor(activity: Activity) { current?.takeIf { it.context === activity }?.hide() }"))
+        assertTrue(source().substringAfter("fun begin(activity: Activity) {").substringBefore("fun end(").contains("if (current == null)"))
+        val main = listOf("../app/src/main/java/app/gamenative/MainActivity.kt", "app/src/main/java/app/gamenative/MainActivity.kt")
+            .map { java.io.File(it) }.first { it.canRead() }.readText()
+        assertFalse("no unbound hide left", main.contains("DsForeverScreen.current?.hide()"))
+        for (cb in listOf("override fun onUserLeaveHint()", "override fun onStop()", "override fun onPause()"))
+            assertTrue(cb, main.substringAfter(cb).substringBefore("super.").contains("DsForeverScreen.hideFor(this)"))
+    }
+
     // ---- the problem report
 
     @Test fun theReportNamesTheDisplays() {

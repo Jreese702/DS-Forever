@@ -268,7 +268,7 @@ class DsForeverScreen(private val context: Context) {
     /** the activity's recent starts ([startAllowed]); [gaveUp] = it kept closing: not again this run */
     private val starts = ArrayList<Long>()
     private var gaveUp = false
-    /** #384 recovery: this DS Forever's ask is counted (ScreenSwap.tryStart, once) / its activity settled (ScreenSwap.settled) */
+    /** #384 recovery: this DS Forever's ask is counted (ScreenSwap.tryStart: once per run) / its activity settled (ScreenSwap.settled) */
     private var tried = false
     private var settled = false
 
@@ -412,6 +412,12 @@ class DsForeverScreen(private val context: Context) {
         Log.i(TAG, "Swap screens restart: ${if (saved) "on" else "off"}, the launcher to display $target")
         lastMoveAt = android.os.SystemClock.elapsedRealtime()
         val again = Intent(a.intent).putExtra(EXTRA_MOVED, true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        // #384 review: this DS Forever goes BEFORE the new activity comes. Android destroys a finishing activity only once the next one
+        // is up, so the new activity's begin() still found this one current and made none, then the old activity's end() stopped this
+        // one: no DS Forever on either screen after a Restart, the recovery's own included. The old activity's pause / stop hide only
+        // its own ([hideFor])
+        stop()
+        if (current === this) current = null
         try {
             a.finishAndRemoveTask()
             a.startActivity(again, ActivityOptions.makeBasic().setLaunchDisplayId(target).toBundle())
@@ -532,6 +538,11 @@ class DsForeverScreen(private val context: Context) {
             if (current == null) current = DsForeverScreen(activity).also { it.start(); ScreenSwap.restart = it.restartHook }
         }
         fun end(activity: Activity) { current?.takeIf { it.context === activity }?.stop(); if (current?.context === activity) current = null }
+        /**
+         * the launcher activity's pause / stop / leave hint: only ITS OWN DS Forever hides. #384 review: after a Restart the new
+         * activity (and its DS Forever) is up before Android stops the old one, whose stop hid whichever was current - the new one's
+         */
+        fun hideFor(activity: Activity) { current?.takeIf { it.context === activity }?.hide() }
 
         /** the launcher's own DS Forever while Streaming's activity has the screens (restored by [endStream]) */
         @Volatile private var beforeStream: DsForeverScreen? = null
