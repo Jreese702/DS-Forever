@@ -61,7 +61,8 @@ internal object PlayGate {
      * The pause points stay: the world map too lets go of the game files (with the art's relief, ArtHarvest's PausedForGame) at the
      * launch and at each loading screen - the moments the game takes its gigabytes (1.0.32's relief points) - and opens them again
      * only once the game has been in the world, with no loading screen, for [BESIDE_CALM_MS]; never again in this game once Android
-     * warned running-low or worse ([MemWatch.pressureSince]).
+     * warned running-low or worse ([MemWatch.pressureSince]). Review of this pick: a logout to the character list or a /reload (Hub's
+     * "bye") is a pause point too, the next world's load unseen by the add-ons: no calm until their next hello (GameLife.worldLeft).
      */
     const val BESIDE_STEP = "worldmap"
     /** after the world entry or a loading screen's end (the 1.0.29 - 1.0.31 kills came 7 - 36 s after the world entry) */

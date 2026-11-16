@@ -27,9 +27,14 @@ class WorldMapBesideTest {
     private fun setTotalMb(mb: Long) =
         DeviceTier::class.java.getDeclaredField("totalMb").apply { isAccessible = true }.setLong(null, mb)
 
-    @Before fun diag() { DiagLog.useDir(Files.createTempDirectory("diag").toFile()) }
+    /** Android's last warning (MemWatch.pressureAt) is the process's: one test's warning must not end another's pass */
+    private fun clearWarning() =
+        MemWatch::class.java.getDeclaredField("pressureAt").apply { isAccessible = true }.setLong(null, 0L)
+
+    @Before fun diag() { DiagLog.useDir(Files.createTempDirectory("diag").toFile()); clearWarning() }
 
     @After fun reset() {
+        clearWarning()
         setTotalMb(0L)
         GameLife.ended(0, System.currentTimeMillis())
         LauncherHooks.gameUp = { false }; LauncherHooks.launchState = ""; LauncherHooks.launchAtMs = 0L; LauncherHooks.gameStartSec = 0L
@@ -137,6 +142,41 @@ class WorldMapBesideTest {
         assertFalse("its warning time is its own", MemWatch.pressureSince(GameLife.startedAtMs))
     }
 
+    /** review of the pick: a logout to the character list (or a /reload) is a pause point; the next world's load sends nothing */
+    @Test fun aLogoutIsAPausePointUntilTheNextHello() {
+        setTotalMb(15_255L)
+        val now = System.currentTimeMillis()
+        GameLife.started(now - 10 * 60_000L)
+        GameLife.inWorld(now - 5 * 60_000L)
+        assertTrue(PlayGate.besideNow("worldmap"))
+        assertFalse(GameLife.awayNow)
+        // Hub's "bye": the world closed; the character list and the next world's load are silent
+        GameLife.worldLeft(now - 3 * 60_000L)
+        assertTrue(GameLife.awayNow)
+        assertEquals(0L, GameLife.calmMs(now))
+        assertFalse("the character list, the next world's load", PlayGate.besideNow("worldmap"))
+        // the add-on's hello: the world is back, the calm counts from it
+        GameLife.worldBack(now - 20_000L)
+        assertFalse(GameLife.awayNow)
+        assertFalse("20 s after the hello", PlayGate.besideNow("worldmap"))
+        GameLife.worldBack(now - 5 * 60_000L)
+        assertFalse("a second hello does not move the calm back", PlayGate.besideNow("worldmap"))
+        GameLife.worldLeft(now - 3 * 60_000L); GameLife.worldBack(now - PlayGate.BESIDE_CALM_MS - 1_000L)
+        assertTrue(PlayGate.besideNow("worldmap"))
+        // never before the world, and the next game starts with no logout word
+        GameLife.ended(0, now); GameLife.worldLeft(now)
+        GameLife.started(now + 1_000L)
+        assertFalse(GameLife.awayNow)
+        GameLife.worldLeft(now + 1_500L)
+        GameLife.inWorld(now + 2_000L)
+        assertFalse("a word before the world is not kept", GameLife.awayNow)
+        // the wiring: the bye closes it, the hello opens it (CompanionHost)
+        val host = File(src, "CompanionHost.kt").readText()
+        fun branch(from: String, to: String): String { val a = host.indexOf(from); assertTrue(from, a >= 0); return host.substring(a, host.indexOf(to, a)) }
+        assertTrue(branch("\"bye\" -> if (current) {", "\"chat\" -> ").contains("GameLife.worldLeft()"))
+        assertTrue(branch("\"hello\" -> {", "\"social\" -> {").contains("if (current) GameLife.worldBack()"))
+    }
+
     // ------------------------------------------------------------------ the worker (ArtHarvest), as source: the pass needs the game files
 
     private val harvest by lazy { File(src, "ArtHarvest.kt").readText() }
@@ -186,6 +226,8 @@ class WorldMapBesideTest {
         assertTrue(handler.indexOf("MemWatch.relieve(") < handler.indexOf("besideDue(besideLeft)"))
         assertTrue(handler.contains("Log.i(TAG, \"harvest: back to the world map beside the game\"); continue"))
         assertTrue(harvest.contains("private fun besideLeft(ctx: Context): Boolean = DeviceTier.besideModel() &&"))
+        // a failed pass in this game: the park neither goes back in nor says it will
+        assertTrue(harvest.contains("DeviceTier.besideModel() && besideFailedFor != GameLife.startedAtMs &&"))
         // the yield points of the world map step are untouched (ArtMapsFirstTest checks each picture)
         assertTrue(File(src, "MapHarvestSteps.kt").readText().contains("job.yieldPoint(i, maps.size, m.name)"))
     }

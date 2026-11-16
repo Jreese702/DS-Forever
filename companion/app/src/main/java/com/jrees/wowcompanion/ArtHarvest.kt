@@ -395,7 +395,8 @@ object ArtHarvest {
      *  pass, and [PlayGate.besideNow] says so */
     private fun besideDue(left: Boolean): Boolean =
         left && besideFailedFor != GameLife.startedAtMs && PlayGate.besideNow(PlayGate.BESIDE_STEP)
-    private fun besideLeft(ctx: Context): Boolean = DeviceTier.besideModel() &&
+    // review of the pick: not after a failed pass in this game (its park said "goes on beside the game" though it waited for the close)
+    private fun besideLeft(ctx: Context): Boolean = DeviceTier.besideModel() && besideFailedFor != GameLife.startedAtMs &&
         runCatching { pending(ctx, beforePlay = false).any { it.id == PlayGate.BESIDE_STEP } }.getOrDefault(false)
 
     /**
