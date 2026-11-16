@@ -232,6 +232,11 @@ d = doc()
 c = d.use.cell
 check(d.note == 'de-go-asked' and at(c, 'target-slot') == 3 and at(c, 'type') == 'spell', "A, then A Yes: the vest's own cast cell", (d.note, c))
 check(c != sword_cell or at(c, 'target-slot') == 3, "one cell per item")
+seq = doc().use.seq
+touch(31); touch(31)
+check(doc().note == 'de-busy' and doc().use.seq == seq, "A again before its cast has started (the tap on its way): refused ('busy')", doc().note)
+ev('UNIT_SPELLCAST_FAILED', 'player', 'g', 13262)                 # (the vest's cast did not start: moving)
+check(doc().bulk.fail.why == 'cast' and doc().bulk.fail.s == 3, "its cast failed: the vest's tile flashes red ('cast'), the item stays", doc().bulk.fail.why)
 
 # ---------------------------------------------------------------- a pick already waiting (cast from the bar): target only
 L.execute('TARGETING, SCT, TSID = true, true, 13262')

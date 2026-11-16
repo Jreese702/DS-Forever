@@ -2374,7 +2374,7 @@ end
 --     takes it back itself at LOOT_CLOSED, the cursor kept (DE.resume, the ordinary take). Loot left on the top screen (the Hub's switch):
 --     A waits for LOOT_CLOSED.
 -- Read-only calls + the player's own secure taps; nothing saved (no macro, binding or CVar); no game window opened or closed from here.
-local DE = { SPELL = 13262, MAX = 100, ASK_Q = 3, REFUSE_S = 1.2, DONE_S = 3, GOT_S = 6, RESUME_S = 30, STOP_WAIT = 1.0,
+local DE = { SPELL = 13262, MAX = 100, ASK_Q = 3, REFUSE_S = 1.2, DONE_S = 3, GOT_S = 6, RESUME_S = 30, STOP_WAIT = 1.0, PEND_S = 1.0,
              TAP_COL = 9, refused = {}, doneN = 0, failN = 0, gotN = 0, tries = 0,
              REFUSALS = { "ERR_CANT_BE_DISENCHANTED", "ERR_CANT_BE_DISENCHANTED_SKILL", "SPELL_FAILED_CANT_BE_DISENCHANTED",
                           "SPELL_FAILED_CANT_BE_DISENCHANTED_SKILL", "SPELL_FAILED_LOW_CASTLEVEL" } }
@@ -2481,6 +2481,11 @@ function DE.casting()
     end
     return DE.cast ~= nil
 end
+-- a press still waiting for its cast to start (its tap on the way, the cast not begun): a second A now would cast again ("busy")
+function DE.pending()
+    local t = DE.tap
+    return t ~= nil and not t.ended and DE.cast == nil and GetTime() - t.at < DE.PEND_S
+end
 -- the room's document while the grid is open (bags.ctl.bulk)
 function DE.doc()
     local sp = DE.spell()
@@ -2556,7 +2561,7 @@ end
 -- A on the item: the checks, then ONE secure tap on its own cell (the shape that can never equip)
 function DE.fire(e, asked)
     if InCombatLockdown() then DE.refuse(e, "combat"); fightRefused(); return end
-    if DE.casting() then DE.refuse(e, "busy"); return end
+    if DE.casting() or DE.pending() then DE.refuse(e, "busy"); return end
     if DE.lootOpen then DE.refuse(e, "loot"); return end
     if bagItemID(e.b, e.s) ~= e.id then ctl.bkey = nil; report("de-moved"); return end      -- the asked item left its slot: nothing used
     local sh = KIT.on() and KIT.pickShape() or "c"
@@ -2621,7 +2626,7 @@ function DE.press(key)
     if not at then ctl.bkey = nil; report("de-moved"); return end   -- the item the cursor showed is gone: nothing used, drawn again
     local e = list[at]
     if e.lk then DE.refuse(e, "locked"); return end
-    if DE.casting() then DE.refuse(e, "busy"); return end
+    if DE.casting() or DE.pending() then DE.refuse(e, "busy"); return end
     if DE.lootOpen then DE.refuse(e, "loot"); return end
     if (e.q or 0) >= DE.ASK_Q then ctl.deAsk = { b = e.b, s = e.s, id = e.id, q = e.q }; report("de-ask"); return end
     DE.fire(e, false)
