@@ -125,6 +125,70 @@ namespace DsfDesktop.Tests
         static Dictionary<string, object> Hello(string id, string token) => new Dictionary<string, object> { ["t"] = "hello", ["proto"] = 1, ["device_id"] = id, ["token"] = token };
 
         [Test]
+        public static void ABridgeSocketIsNeverHandedToAChildProcess()
+        {
+            // issue #414: a sunshine.exe stuck on its way out kept the bridge port, because it had inherited Desktop's listener.
+            // A child started the way SunshineHost starts sunshine.exe (redirected output = every inheritable handle passed on)
+            // must not keep the port once the bridge stops.
+            using (var h = new FakeHost())
+            {
+                var s = new BridgeServer(h, null, 0, IPAddress.Loopback);
+                s.Start();
+                int port = s.Port;
+                var psi = new System.Diagnostics.ProcessStartInfo("ping.exe", "-n 6 127.0.0.1")
+                    { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                using (var child = System.Diagnostics.Process.Start(psi))
+                {
+                    try
+                    {
+                        s.Stop();
+                        Thread.Sleep(100);
+                        A.False(child.HasExited, "the child still runs");
+                        var again = new TcpListener(IPAddress.Loopback, port);
+                        again.Start();       // throws "address in use" while a child holds the old listener
+                        again.Stop();
+                    }
+                    finally { try { child.Kill(); } catch (Exception) { } }
+                }
+            }
+        }
+
+        [Test]
+        public static void SocketsAreMarkedNotInheritable()
+        {
+            using (var sock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
+            {
+                A.True(SocketHandles.Inheritable(sock), ".NET Framework makes sockets inheritable (the reason for this fix)");
+                A.True(SocketHandles.KeepToSelf(sock));
+                A.False(SocketHandles.Inheritable(sock));
+            }
+            A.False(SocketHandles.KeepToSelf(null));
+        }
+
+        [Test]
+        public static void WelcomeAndInfoCarryThePcsClock()
+        {
+            // issue #414: the Thor moves the documents' stamps onto its own clock with it (PcClock)
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var wc = new WebClient())
+            {
+                long before = WcbAssembler.GameTimeOf(DateTime.Now);
+                var info = Json.ReadObject(wc.DownloadString("http://127.0.0.1:" + s.Port + "/v1/info"));
+                long after = WcbAssembler.GameTimeOf(DateTime.Now);
+                long now = info.Long("gt_now");
+                A.True(now >= before && now <= after, "gt_now " + now + " between " + before + " and " + after);
+                var token = h.Devices.Issue("thor-1", "Thor");
+                using (var c = new Client(s.Port))
+                {
+                    c.Send(Hello("thor-1", token));
+                    var w = c.Until("welcome").Last();
+                    A.True(Math.Abs(w.Long("gt_now") - WcbAssembler.GameTimeOf(DateTime.Now)) < 5000, "the welcome's clock is now");
+                }
+            }
+        }
+
+        [Test]
         public static void CertificateIsKeptAndFingerprinted()
         {
             using (var t = new Tmp())

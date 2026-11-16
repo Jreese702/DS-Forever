@@ -259,6 +259,7 @@ namespace DsfDesktop.Bridge
         public void Start()
         {
             udp = new UdpClient { ExclusiveAddressUse = false };
+            SocketHandles.KeepToSelf(udp.Client);   // issue #414: not handed to sunshine.exe
             udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             udp.Client.Bind(new IPEndPoint(IPAddress.Any, MdnsPort));
             foreach (var a in LanAddresses())

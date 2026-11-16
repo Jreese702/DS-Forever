@@ -21,7 +21,9 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - The Thor merges the two adverts by IPv4 address; Desktop's `sunshine` port makes a PC streamable even if its `_nvstream` advert was
   missed. The Thor remembers the paired PC's address, follows it when the same `id` shows up at a new address (DHCP), and tries the
   remembered address when mDNS finds nothing.
-- `GET /v1/info` (plain HTTP on the bridge port) answers the same JSON as the welcome's info (the Thor does not need it today).
+- `GET /v1/info` (plain HTTP on the bridge port) answers the same JSON as the welcome's info. *(issue #414)* When the stored bridge
+  port answers nowhere and mDNS is silent, the Thor asks `/v1/info` on Desktop's other ports (48210-48219) and uses one only when
+  its `host_id` is the paired Desktop's; a `_dsforever` advert of the paired Desktop (its `id`) on another port is followed too.
 
 ## 2. Transport
 
@@ -63,6 +65,10 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
    - unknown device or token: `{"t":"error","error":"unauthorized","detail":"..."}`, close **4401**. The Thor stops retrying and
      asks to pair again.
 3. On every welcome the Thor drops any half-assembled state and sends `{"t":"focus"}` (bring WoW to the front).
+4. *(issue #414)* The welcome (and `/v1/info`) carries `"gt_now"`: the PC's clock when it was sent, on the documents' `gt` scale
+   (local time, like WoW's log). The Thor shifts every `gt` of the connection by (its own clock - `gt_now`), so a PC in another time
+   zone (or with a drifted clock) still gives "current" documents. Without it (an older Desktop) the Thor takes the gap of the first
+   document after `backlog_end`, rounded to whole quarter hours (within 2 min), and otherwise shifts nothing.
 
 ## 5. The add-on's documents
 

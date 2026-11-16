@@ -124,6 +124,8 @@ namespace DsfDesktop.Ui
             v.AddonsDot = a == AddonState.Current ? Theme.Ok : a == AddonState.Missing || a == AddonState.Outdated ? Theme.Warn : Theme.Dim;
             v.AddonsAction = a != null && a != AddonState.NoGame;
             v.Notices = c.Notices.ToList();
+            var pad = DsfDesktop.Sunshine.PadDriver.Notice(DsfDesktop.Sunshine.PadDriver.Now());
+            if (pad != null) v.Notices.Add(pad);
 
             v.Thor = c.Thor.Status;
             v.ThorProgress = c.Thor.Progress;

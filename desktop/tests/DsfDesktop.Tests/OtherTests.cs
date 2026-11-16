@@ -26,6 +26,15 @@ namespace DsfDesktop.Tests
             A.True(now == "vigem" || now == "missing" || now == "unknown", "one of the three words: " + now);
             A.Eq(now, PadDriver.Now(), "cached between welcomes");
         }
+
+        [Test]
+        public static void AMissingDriverIsShownInTheWindow()
+        {
+            // issues #304 / #357: no controller on the PC, and only the log said why
+            A.True(PadDriver.Notice("missing").Contains("ViGEmBus"));
+            A.Null(PadDriver.Notice("vigem"));
+            A.Null(PadDriver.Notice("unknown"), "a registry it could not read is not a missing driver");
+        }
     }
 
     public static class WsTests

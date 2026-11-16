@@ -14,6 +14,13 @@ namespace DsfDesktop.Sunshine
     {
         public const string ServiceKey = @"SYSTEM\CurrentControlSet\Services\ViGEmBus";
 
+        /// <summary>
+        /// The main window's notice for a driver word, or null (issues #304, #357: "cannot use controls for streaming on pc", "I cannot
+        /// get the Thor to 'link' with the PC (in terms of recognizing controls)"; a missing driver was only ever written to the log)
+        /// </summary>
+        public static string Notice(string word) => word == "missing"
+            ? "The Thor's controller needs the ViGEmBus driver on this PC: github.com/nefarius/ViGEmBus/releases" : null;
+
         /// <summary>the word for a registry answer: true = the key exists, false = it does not, null = could not read</summary>
         public static string Word(bool? present) => present == null ? "unknown" : present.Value ? "vigem" : "missing";
 

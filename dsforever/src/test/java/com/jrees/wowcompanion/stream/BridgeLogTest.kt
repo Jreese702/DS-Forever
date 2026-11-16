@@ -27,13 +27,14 @@ class BridgeLogTest {
     private fun doc(seq: Int, gt: Long, text: String) = JSONObject().put("t", "doc").put("seq", seq).put("gt", gt).put("doc", text).toString()
     private fun wcb(seq: Int, part: String, payload: String, time: String = "10:15:30.250") = "10/23 $time  [N][Lua] WCB1|$seq|$part|$payload"
 
-    private fun bridge(conns: List<BridgeConn>, docs: MutableList<JSONObject>, status: MutableList<String>, auth: MutableList<String> = ArrayList()): BridgeLog {
+    private fun bridge(conns: List<BridgeConn>, docs: MutableList<JSONObject>, status: MutableList<String>, auth: MutableList<String> = ArrayList(),
+                       wall: () -> Long = { com.jrees.wowcompanion.GameInput.wallYearMs() }): BridgeLog {
         val next = conns.iterator()
         var log: BridgeLog? = null
         log = BridgeLog("192.168.1.20", 48210, false, "", "t".repeat(43), "c".repeat(32),
             dialer = { _, _, _, _ -> if (next.hasNext()) next.next() else throw java.io.IOException("refused") },
             onMessage = { docs.add(it) }, onStatus = { status.add(it) }, onAuthLost = { auth.add(it) },
-            sleeper = { if (!next.hasNext()) log!!.stop() })
+            sleeper = { if (!next.hasNext()) log!!.stop() }, wall = wall)
         return log
     }
 
@@ -140,5 +141,58 @@ class BridgeLogTest {
         val st = JSONObject().put("t", "focus_result").put("ok", false).put("why", "WoW isn't the front window").toString()
         bridge(listOf(Script(listOf(welcome, st, "{\"t\":\"future_thing\"}", "not json"))), ArrayList(), status).runHere()
         assertTrue(status.contains("PC: WoW isn't the front window"))
+    }
+
+    // ---- issue #414: a PC in another time zone ("Companion stuck on 'Waiting for the game'"): the stamps go onto the Thor's clock
+    private val hour = 3_600_000L
+    /** the Thor's clock (day-of-year scale): 11-15 18:44:41 */
+    private val thorNow = com.jrees.wowcompanion.InputGate.yearMs(11, 15, 18, 44, 41, 0)
+    private val backlogEnd = JSONObject().put("t", "backlog_end").put("count", 1).toString()
+
+    @Test fun desktopsClockInTheWelcomeMovesEveryStampOntoTheThors() {
+        val docs = ArrayList<JSONObject>()
+        // the PC on UTC+3, the Thor on UTC+1: the PC's clock reads 2 h ahead
+        val w = JSONObject(welcome).put("gt_now", thorNow + 2 * hour).toString()
+        val b = bridge(listOf(Script(listOf(w, doc(1, thorNow + 2 * hour - 60_000, "{\"t\":\"old\"}"), backlogEnd,
+            doc(2, thorNow + 2 * hour + 500, "{\"t\":\"pos\"}")))), docs, ArrayList(), wall = { thorNow })
+        b.runHere()
+        assertEquals(-2 * hour, b.clock.shiftMs)
+        // the backlog keeps its age (a minute old), the live one is now
+        assertEquals(thorNow - 60_000, docs[0].getLong("_gt"))
+        assertEquals(thorNow + 500, docs[1].getLong("_gt"))
+        // and the gate counts the live one current (it never did: 2 h off)
+        val gate = com.jrees.wowcompanion.InputGate()
+        assertFalse(gate.note(1_000L, docs[0].getLong("_gt"), thorNow))
+        assertTrue(gate.note(2_000L, docs[1].getLong("_gt"), thorNow + 600))
+    }
+
+    @Test fun anOlderDesktopsZoneIsLearntFromTheFirstLiveDocumentNeverTheBacklog() {
+        val docs = ArrayList<JSONObject>()
+        // UTC+1 PC, UTC+3 Thor (PC 2 h behind); the backlog's stamp is old and must teach nothing; the live one is 3 s late
+        val b = bridge(listOf(Script(listOf(welcome, doc(1, thorNow - 2 * hour - 3 * hour, "{\"t\":\"old\"}"), backlogEnd,
+            doc(2, thorNow - 2 * hour - 3_000, "{\"t\":\"a\"}"), doc(3, thorNow - 2 * hour + 7_000, "{\"t\":\"b\"}")))),
+            docs, ArrayList(), wall = { thorNow })
+        b.runHere()
+        assertEquals(2 * hour, b.clock.shiftMs)
+        assertEquals(thorNow - 5 * hour, docs[0].getLong("_gt"))     // the backlog was stamped before the shift was known
+        assertEquals(thorNow - 3_000, docs[1].getLong("_gt"))
+        assertEquals(thorNow + 7_000, docs[2].getLong("_gt"))
+    }
+
+    @Test fun sameZoneOrAFewMinutesOffChangesNothing() {
+        for (gap in longArrayOf(0L, 4_000L, -9_000L, 4 * 60_000L, -6 * 60_000L)) {
+            val docs = ArrayList<JSONObject>()
+            bridge(listOf(Script(listOf(welcome, backlogEnd, doc(1, thorNow - gap, "{\"t\":\"a\"}")))), docs, ArrayList(), wall = { thorNow }).runHere()
+            assertEquals("gap $gap", thorNow - gap, docs.single().getLong("_gt"))
+        }
+    }
+
+    @Test fun rawLinesAreMovedToo() {
+        val docs = ArrayList<JSONObject>()
+        // the PC's clock reads 17:44:41 when the Thor's reads 18:44:41; its line was written then
+        val line = wcb(1, "1/1", "{\"t\":\"pos\"}", time = "17:44:41.000").replace("10/23", "11/15")
+        val w = JSONObject(welcome).put("gt_now", thorNow - hour).toString()
+        bridge(listOf(Script(listOf(w, lines(line)))), docs, ArrayList(), wall = { thorNow }).runHere()
+        assertEquals(thorNow, docs.single().getLong("_gt"))
     }
 }

@@ -346,7 +346,16 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         val port = if (h.hasBridge) h.bridgePort else h.httpPort
         routing = true
         worker.execute {
-            val ok = Route.pick(cands) { NetProbe.port(it, port, Route.PROBE_MS) == Diagnosis.Port.OPEN }
+            var answered = Route.pick(cands) { NetProbe.port(it, port, Route.PROBE_MS) == Diagnosis.Port.OPEN }
+            // issue #414: the stored bridge port answers nowhere and mDNS is silent: Desktop may be on another of its ports (the old
+            // one held by a stuck process); one counts only when it names this Desktop
+            var moved = 0
+            if (answered == null && h.hasBridge) for (a in cands.take(BridgePorts.ADDRESSES)) {
+                val p = NetProbe.findBridge(a, BridgePorts.others(h.bridgePort), h.desktopId) ?: continue
+                answered = a; moved = p; break
+            }
+            val ok = answered
+            val bridgeAt = moved
             val vpn = NetProbe.vpnUp(activity)
             main.post {
                 routing = false
@@ -369,10 +378,11 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 reachFails = 0
                 reachProblem = null
                 route = Route.kind(ok, thorNet)
-                val n = Route.after(h, ok, thorNet)
-                Log.i(TAG, "route: $ok (${route?.label})")
+                val n = Route.after(h, ok, thorNet).let { if (bridgeAt > 0) it.copy(bridgePort = bridgeAt) else it }
+                Log.i(TAG, "route: $ok (${route?.label})" + if (bridgeAt > 0) "; bridge port ${h.bridgePort} -> $bridgeAt" else "")
                 if (n != h) { host = n; store.save(n) }
-                if (n.address != h.address) applyMode()          // the bridge dials the address that answered (same pin)
+                // the bridge dials the address (and the port) that answered (same pin)
+                if (n.address != h.address || n.bridgePort != h.bridgePort) applyMode()
                 applyCurtain()
                 portsWait = System.currentTimeMillis() to StreamMode.choose(ok, thorNet, vpn)
                 portsTick.run()
@@ -534,14 +544,23 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun onFound() {
         if (pcIndex >= found.size) pcIndex = 0
         // the paired PC under a new address (DHCP): follow it, by Desktop's id or Sunshine's
-        val h = host
-        if (h != null && screen != Screen.STREAMING) {
-            val same = found.firstOrNull { (h.desktopId.isNotEmpty() && it.desktopId == h.desktopId) || (h.uuid.isNotEmpty() && it.sunshineId == h.uuid) ||
-                it.name.equals(h.name, ignoreCase = true) }
+        val h0 = host
+        if (h0 != null && screen != Screen.STREAMING) {
+            val same = found.firstOrNull { (h0.desktopId.isNotEmpty() && it.desktopId == h0.desktopId) || (h0.uuid.isNotEmpty() && it.sunshineId == h0.uuid) ||
+                it.name.equals(h0.name, ignoreCase = true) }
             // never while a stream is being set up, and the home LAN's address sticks (AddressPolicy)
             if (same != null && session == null) {
                 val thorNet = NetProbe.subnet(activity)
-                when (AddressPolicy.decide(h.address, same.address, thorNet)) {
+                // issue #414: the paired Desktop's bridge on another port (its old one held by a stuck process): dialled there from now on
+                val h = BridgePorts.follow(h0, same)
+                val move = AddressPolicy.decide(h.address, same.address, thorNet)
+                if (h != h0) {
+                    Log.i(TAG, "${h0.name}: bridge port ${h0.bridgePort} -> ${h.bridgePort} (mDNS)")
+                    host = h; store.save(h)
+                    // a move redials by itself (moveHost)
+                    if (move != AddressPolicy.Move.MOVE) { applyMode(); if (screen == Screen.PROBLEM) retryNow() }
+                }
+                when (move) {
                     AddressPolicy.Move.STAY -> {}
                     AddressPolicy.Move.MOVE -> moveHost(h, same.address, thorNet)
                     AddressPolicy.Move.PROBE_FIRST -> if (!probingMove) {

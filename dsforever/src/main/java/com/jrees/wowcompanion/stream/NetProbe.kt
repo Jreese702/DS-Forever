@@ -57,6 +57,39 @@ object NetProbe {
         } catch (t: Throwable) { Diagnosis.Port.TIMEOUT }
     }
 
+    /** GET /v1/info on a bridge port (plain HTTP, which Desktop's bridge serves on its one port): the body, or null. Never logged */
+    fun bridgeInfo(address: String, port: Int, timeoutMs: Int = Route.PROBE_MS): String? = try {
+        Socket().use { s ->
+            s.connect(InetSocketAddress(address, port), timeoutMs)
+            s.soTimeout = timeoutMs
+            val host = if (address.contains(':')) "[$address]" else address
+            s.getOutputStream().apply { write("GET /v1/info HTTP/1.1\r\nHost: $host:$port\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII)); flush() }
+            val got = java.io.ByteArrayOutputStream()
+            val buf = ByteArray(4096)
+            val inp = s.getInputStream()
+            while (got.size() < 64 * 1024) { val n = inp.read(buf); if (n < 0) break; got.write(buf, 0, n) }
+            val text = got.toString("UTF-8")
+            if (!text.startsWith("HTTP/1.1 200")) null else text.substringAfter("\r\n\r\n", "").ifEmpty { null }
+        }
+    } catch (_: Throwable) { null }
+
+    /**
+     * Issue #414: of [ports] at [address], the first (in order) whose /v1/info names Desktop [desktopId], or null. All are asked at
+     * once, so a PC that drops closed ports (Windows' firewall) costs one wait, not one per port. A worker thread only.
+     */
+    fun findBridge(address: String, ports: List<Int>, desktopId: String, timeoutMs: Int = Route.PROBE_MS): Int? {
+        if (ports.isEmpty() || desktopId.isEmpty()) return null
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(ports.size.coerceAtMost(BridgePorts.SPAN))
+        try {
+            val asks = ports.map { p -> pool.submit<Boolean> { BridgePorts.sameDesktop(bridgeInfo(address, p, timeoutMs), desktopId) } }
+            for (i in ports.indices) {
+                val yes = try { asks[i].get(timeoutMs * 3L, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: Throwable) { false }
+                if (yes) return ports[i]
+            }
+            return null
+        } finally { pool.shutdownNow() }
+    }
+
     /** everything [Diagnosis.reason] needs for [host] (network calls: a worker thread) */
     fun probe(ctx: Context, host: PairedHost, seen: List<FoundPc>, notPaired: Boolean = false): Diagnosis.Probe {
         val wifi = onWifi(ctx)
