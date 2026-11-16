@@ -1095,6 +1095,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             swingKind = ji(sw.opt("k"), 0); swingStartMs = ns; swingDurMs = jd(sw.opt("d")) * 1000.0
         }
         // the cast bar (hudS.cs while a cast / channel runs; hudS.ce = how it ended, 2 s)
+        val wasStart = castStartMs; val wasEnd = castEndMs; val wasFlash = flashAtMs
         val cs = o.optJSONObject("cs")
         val cs0 = if (cs != null) toApp(jd(cs.opt("s"))) else Double.NaN
         val cs1 = if (cs != null) toApp(jd(cs.opt("e"))) else Double.NaN
@@ -1123,6 +1124,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             }
             castStartMs = Double.NaN
         }
+        // feat/wk-itemcast: a cast that began, moved, ended or flashed redraws the rooms' bar (its cast band, [drawRoomCast])
+        if (wasStart.compareTo(castStartMs) != 0 || wasEnd.compareTo(castEndMs) != 0 || wasFlash != flashAtMs) onCastState?.invoke()
         val bu = ji(o.opt("bu"), 1) != 0
         if (bu != barsUsable) { barsUsable = bu; setLayer(computeLayer()) }
         liveF = o.optJSONObject("F")
@@ -3016,6 +3019,59 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         return next
     }
     private var castNamePaint: Paint? = null
+
+    // ---------------------------------------------------------------- feat/wk-itemcast: the cast bar in the rooms
+    /**
+     * THE CAST BAR IN THE ROOMS (the user, 2026-11-16: "the cast bar for using Items from my bag or applying enchants is not visible"):
+     * this view is Home's; while a room shows it is parked out of sight, so a cast started from a room - an item used from Bags, the
+     * Character room's Enchant / kit pick / Feed Pet, a Spellbook or Macros cast, any item-target spell - had no bar on the bottom
+     * screen. The rooms' bar ([Strip]) draws it in its tracking band through [roomCastState] / [drawRoomCast]: the same hudS.cs / ce,
+     * the same art and motion (groove, gold fill and spark, a channel's drain, the uninterruptible fill, the finish glow, the
+     * interrupted bar and its shake), the CAST only (never the swing), the cast's name in the bar. Draw only, as [drawSet]: no input,
+     * no state change.
+     */
+    var onCastState: (() -> Unit)? = null
+    /** true for the length of one [drawRoomCast]: the bar leaves the swing out */
+    private var roomPass = false
+    private var roomNamePaint: Paint? = null
+
+    /** Home draws this cast bar itself now (on screen, its band layout, a layout to draw): the rooms' bar leaves it out */
+    fun ownCastBarShown(): Boolean = isShown && bottomLine && layout != Layout.FULL && hud != null && k > 0f && width > 0
+
+    /** the rooms' cast band: 0 = nothing, 1 = a cast / channel runs, 2 = its finish or its interrupt plays (the bar fading out) */
+    fun roomCastState(now: Long = SystemClock.elapsedRealtime()): Int = RoomCast.state(now.toDouble(), castStartMs, castEndMs,
+        flashKind == FLASH_CAST || flashKind == FLASH_FAIL, now - flashAtMs, if (flashKind == FLASH_FAIL) CastFx.FAIL_MS else CastFx.FINISH_MS)
+
+    /**
+     * The bar into [bar] (someone else's canvas, its px), the cast's name centred between [nameL] and [nameR] inside it (the game's
+     * Classic bar carries its name in the bar). Returns the next frame's delay in ms (0 = every frame), or -1 when there is nothing to draw.
+     */
+    fun drawRoomCast(c: Canvas, bar: RectF, nameL: Float, nameR: Float): Long {
+        val now = SystemClock.elapsedRealtime()
+        val st = roomCastState(now)
+        if (st == RoomCast.NONE || bar.width() <= 0f || bar.height() <= 0f) return -1L
+        val keepBh = curBh
+        val save = c.save()
+        roomPass = true; curBh = bar.height()
+        // drawCastBar lays the bar against this view's own bottom edge: moved so that edge is [bar]'s bottom
+        c.translate(bar.left, bar.bottom - height)
+        val next = try { drawCastBar(c, now, bar.width(), castStartMs, castEndMs) } finally {
+            c.restoreToCount(save); roomPass = false; curBh = keepBh
+        }
+        val name = castName
+        if (name != null && nameR - nameL > bar.height()) {
+            val fa = now - flashAtMs
+            val a = if (st == RoomCast.FINISH) CastFx.barAlpha(flashKind == FLASH_FAIL, fa) else 1f
+            val tp = roomNamePaint ?: UiKit.bodyPaint(20f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }.also { roomNamePaint = it }
+            tp.textSize = bar.height() * RoomCast.NAME_SIZE
+            val u = bar.height() / 13f
+            tp.setShadowLayer(1.5f * u, u, u, Color.BLACK); tp.alpha = (a * 255f).toInt().coerceIn(0, 255)
+            // the game's own text (the spell's name): never through Tr.t (DSF translation = menus only)
+            val text = CastFx.fit(name, nameR - nameL) { tp.measureText(it) }
+            c.drawText(text, (nameL + nameR) / 2f, bar.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+        }
+        return if (next == Long.MAX_VALUE) 0L else next.coerceAtLeast(0L)
+    }
     /** the free gap between the D-pad group's right edge and the face group's left edge (view px), set by [restGap] */
     private var gapL = 0f
     private var gapR = 0f
@@ -3039,7 +3095,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         var next = Long.MAX_VALUE
         val fa = now - flashAtMs
         val flashLen = when (flashKind) { FLASH_SWING -> SWING_FLASH_MS; FLASH_FAIL -> CastFx.FAIL_MS; else -> CastFx.FINISH_MS }
-        val parts = SwingLine.parts(swingOn && !castOnly, now.toDouble(), castStartMs, castEndMs, swingStartMs, swingDurMs, SWING_GRACE,
+        val parts = SwingLine.parts(swingOn && !castOnly && !roomPass, now.toDouble(), castStartMs, castEndMs, swingStartMs, swingDurMs, SWING_GRACE,
             flashKind != 0, flashKind == FLASH_SWING, fa, flashLen)
         val flashing = parts.flash
         val casting = parts.cast
@@ -4030,6 +4086,37 @@ internal object CastBarPlace {
         val pw = minOf(textW + PLATE_PAD * s, PLATE_MAX * s)
         val mx = barW / 2f; val t = h - 2f * s
         return floatArrayOf(mx - pw / 2f, t, mx + pw / 2f, t + PLATE_H * s)
+    }
+}
+
+/**
+ * feat/wk-itemcast (the user, 2026-11-16: "the cast bar for using Items from my bag or applying enchants is not visible"): the rooms'
+ * cast band - WHEN it shows and WHERE it sits in the rooms' bar ([Strip]'s tracking band). Pure, checked off-device.
+ * Only while a cast or channel runs and through the game's own finish / interrupt (the bar fading out), never for a swing.
+ */
+internal object RoomCast {
+    const val NONE = 0; const val RUNNING = 1; const val FINISH = 2
+    /** the bar's height in the 34 px tracking band (a slim bar: the band's panel shows round it), its margin from the screen's sides */
+    const val BAR_H = 24f; const val SIDE = 8f
+    /** the name: a share of the bar's height; its margin from the bar's ends and from HOME's disc */
+    const val NAME_SIZE = 0.76f; const val NAME_PAD = 14f
+    /** frames while the bar moves (the swing timer's pace, the bar redrawn with the rooms' pictures) */
+    const val FRAME_MS = 33L
+
+    fun state(now: Double, castStart: Double, castEnd: Double, flashCast: Boolean, flashAge: Long, flashLen: Long): Int = when {
+        !castStart.isNaN() && castEnd > castStart && now < castEnd + 100.0 -> RUNNING
+        flashCast && flashAge >= 0 && flashAge < flashLen -> FINISH
+        else -> NONE
+    }
+
+    /**
+     * The bar in the tracking band ([top] its top, [tracks] its height, [w] the bar's width) as (left, top, right, bottom), and the name's
+     * span (left, right): the left of HOME's disc ([discL] = the disc's left edge with its ring), the bar running on behind the disc as
+     * the experience bar does.
+     */
+    fun place(w: Float, top: Float, tracks: Float, discL: Float): FloatArray {
+        val t = top + (tracks - BAR_H) / 2f
+        return floatArrayOf(SIDE, t, w - SIDE, t + BAR_H, SIDE + NAME_PAD, discL - NAME_PAD)
     }
 }
 

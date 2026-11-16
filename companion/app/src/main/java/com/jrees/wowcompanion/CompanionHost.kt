@@ -462,6 +462,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             onShowOnMap = { _ -> show(Room.MAP) })
         PoiHarvest.init(this) { refreshServices() }
         castView = CastView(this) { key -> GameInput.key(key) }
+        // feat/wk-itemcast (the user, 2026-11-16: "the cast bar for using Items from my bag or applying enchants is not visible"): while
+        // Home's own cast bar is not on screen (any room; a Home module over the band), the rooms' bar draws the player's cast in its
+        // tracking band - Bags' Use, Character's Enchant / kit pick / Feed Pet, the Spellbook, Macros, every room the same
+        strip.castBand = object : Strip.CastBand {
+            override fun state(): Int = if (castView.ownCastBarShown()) RoomCast.NONE else castView.roomCastState()
+            override fun draw(c: android.graphics.Canvas, bar: android.graphics.RectF, nameL: Float, nameR: Float): Long =
+                castView.drawRoomCast(c, bar, nameL, nameR)
+        }
+        castView.onCastState = { strip.castChanged() }
         ItemCd.init(this)                                   // r20: the Hearthstone's kept end time (per character)
         bagsView = BagsView(this)
         // bags controller mode (bags session, AGENT_LOG 2026-09-28): the Bags room while the addon holds the controller

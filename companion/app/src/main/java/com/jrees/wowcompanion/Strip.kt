@@ -206,8 +206,33 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
 
     override fun onDraw(c: Canvas) {
         drawBar(c)
+        // feat/wk-itemcast: the cast band moves (the fill, its finish): the next frame at its pace, with the living disc's own
+        if (castNext >= 0L) { animating = true; liveDelay = minOf(liveDelay, maxOf(castNext, RoomCast.FRAME_MS)) }
         nextLiveFrame()
     }
+
+    /**
+     * THE CAST BAR IN THE ROOMS (feat/wk-itemcast; the user, 2026-11-16: "the cast bar for using Items from my bag or applying enchants
+     * is not visible"): while Home's own cast bar is not on screen (a room shows: Bags, Character, the Spellbook, Macros, a kit pick
+     * list...), the player's cast takes the TRACKING BAR'S place in this bar - the same spot in every room, under every room's
+     * controls, never over one - and gives it back when the cast is done. A slim bar ([RoomCast.BAR_H]) running behind HOME's disc
+     * as the experience bar does, its name in the bar left of the disc. Only while a cast or channel runs, then the game's finish /
+     * interrupt fading over the tracking bar. The host ([CompanionHost]) says what shows; [castChanged] when a cast begins or ends.
+     */
+    interface CastBand {
+        /** [RoomCast.NONE] / RUNNING (the tracking bar gives way) / FINISH (the bar fades out over the tracking bar) */
+        fun state(): Int
+        /** draws the bar into [bar], its name centred between [nameL] and [nameR]; the next frame's delay (ms), -1 = nothing drawn */
+        fun draw(c: Canvas, bar: RectF, nameL: Float, nameR: Float): Long
+    }
+    var castBand: CastBand? = null
+    /** a cast began, moved or ended (CastView.onCastState) */
+    fun castChanged() = invalidate()
+    /** the last draw's cast band: its next frame (ms), -1 = none drawn */
+    private var castNext = -1L
+    private val castBar = RectF()
+    /** where the cast band stood in the last draw (empty = not drawn): for the off-device checks */
+    val castBox: RectF get() = RectF(if (castNext >= 0L) castBar else RectF())
 
     private fun drawBar(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
@@ -222,7 +247,10 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         val g0 = homeX - HOME / 2f - RING - 2f; val g1 = homeX + HOME / 2f + RING + 2f
         val x = xp; val f = reputation
         val all = RectF(0f, top, w, top + TRACKS)
-        when {
+        // feat/wk-itemcast: a cast running in a room takes the tracking bar's place; its finish fades out over it
+        val cast = castBand
+        val castState = cast?.state() ?: RoomCast.NONE
+        if (castState != RoomCast.RUNNING) when {
             x != null && f != null -> {                         // cut in half by height: the faction over the experience
                 UiKit.track(c, RectF(0f, top, w, top + TRACKS / 2f), f.kind, f.fill, 0f, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
                 UiKit.track(c, RectF(0f, top + TRACKS / 2f, w, top + TRACKS), x.kind, x.fill, x.reach, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
@@ -230,6 +258,12 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
             x != null -> UiKit.track(c, all, x.kind, x.fill, x.reach, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
             f != null -> UiKit.track(c, all, f.kind, f.fill, 0f, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
             else -> UiKit.track(c, all, "xp", -1f, 0f, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
+        }
+        castNext = -1L
+        if (cast != null && castState != RoomCast.NONE) {
+            val p = RoomCast.place(w, top, TRACKS.toFloat(), g0)
+            castBar.set(p[0], p[1], p[2], p[3])
+            castNext = cast.draw(c, castBar, p[4], p[5])
         }
 
         // WHICH SIDE OF HOME a room stands on does not change as rooms are added (user: Character
