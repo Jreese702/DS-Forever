@@ -113,6 +113,14 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
+        public static void TheClockOnTheLogsScale()
+        {
+            // the welcome's gt_now (issue #414) and a log line written at the same moment read the same
+            A.Eq(WcbAssembler.GameTime(Pfx + "WCB1|1|1/1|{}", Pfx.Length), WcbAssembler.GameTimeOf(new System.DateTime(2026, 10, 21, 20, 0, 55, 592)));
+            A.Eq(((0L + 1) * 24 * 60) * 60_000L, WcbAssembler.GameTimeOf(new System.DateTime(2027, 1, 1, 0, 0, 0)));
+        }
+
+        [Test]
         public static void MagicMidLineAfterOtherText()
         {
             var ev = Feed(new WcbAssembler(), "9/27 08:41:53.221  [N][Lua] stuff before WCB1|3|1/1|{\"ok\":true}");

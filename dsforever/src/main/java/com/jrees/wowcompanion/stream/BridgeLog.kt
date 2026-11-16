@@ -9,7 +9,8 @@ import org.json.JSONObject
  * BridgeLog: the add-on's documents from the PC (Streaming, S2). DS Forever Desktop's bridge tails the PC's General.log and sends
  * the add-on's documents over a token-authenticated WebSocket (docs/STREAM_BRIDGE_PROTOCOL.md), so every room reads exactly what it
  * reads in Local:
- *  - "doc": a document the bridge already joined (its own port of the WCB1 reassembly) -> parsed, the game's clock as "_gt";
+ *  - "doc": a document the bridge already joined (its own port of the WCB1 reassembly) -> parsed, the game's clock as "_gt" (the
+ *    PC's clock moved onto the Thor's: [PcClock], issue #414);
  *  - "lines": raw WCB1 lines (the draft framing) -> the SAME [Wcb1Assembler] as the local reader;
  *  - "gap" / "log" (restart, switch) / "status": the status line, as LogTail says them.
  *
@@ -40,8 +41,13 @@ class BridgeLog(
     private val savedLogin: () -> Pair<String, String>? = { null },
     /** the waits between tries (the tests pass a fake that also ends the loop) */
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
+    /** the Thor's clock on the documents' `_gt` scale ([PcClock]; the tests pass a fixed one) */
+    wall: () -> Long = { com.jrees.wowcompanion.GameInput.wallYearMs() },
 ) : LogSource {
-    private val docs = Wcb1Assembler(onMessage, onStatus)
+    /** issue #414: the PC's stamps onto the Thor's clock (a PC in another time zone was never "current") */
+    val clock = PcClock(wall)
+    private var clockSaid = 0L
+    private val docs = Wcb1Assembler({ o -> if (o.has("_gt")) o.put("_gt", stamp(o.optLong("_gt", -1L))); onMessage(o) }, onStatus)
     @Volatile private var running = false
     @Volatile private var conn: BridgeConn? = null
     private var thread: Thread? = null
@@ -106,6 +112,7 @@ class BridgeLog(
             when (val m = BridgeProtocol.parse(text) ?: continue) {
                 is BridgeMsg.Welcome -> {
                     welcomed = true
+                    clock.welcome(m.gtNow)
                     onWelcome(m)
                     // a new connection replays the backlog: half-assembled documents of the old one would only glue onto it
                     docs.reset()
@@ -119,6 +126,7 @@ class BridgeLog(
                     c.send(BridgeProtocol.focus())
                 }
                 is BridgeMsg.Doc -> emit(m)
+                is BridgeMsg.BacklogEnd -> clock.backlogEnd()
                 is BridgeMsg.Lines -> for (l in m.lines) docs.line(l)
                 is BridgeMsg.Gap -> { bridgeGaps++; onStatus("gap at seq ${m.seq} (expected ${m.expected})") }
                 is BridgeMsg.Log -> { docs.reset(); onStatus(if (m.event == "switch") "PC: following another WoW log" else "client restarted, resyncing") }
@@ -154,9 +162,20 @@ class BridgeLog(
     private fun emit(m: BridgeMsg.Doc) {
         try {
             val o = JSONObject(m.text)
-            if (m.gt >= 0) o.put("_gt", m.gt)
+            if (m.gt >= 0) o.put("_gt", stamp(m.gt))
             onMessage(o)
         } catch (t: Throwable) { onStatus("bad json (${m.text.length}b): ${t.message}") }
+    }
+
+    /** a PC stamp on the Thor's clock; a new shift is said once in the log */
+    private fun stamp(gt: Long): Long {
+        val t = clock.map(gt)
+        val shift = clock.shiftMs
+        if (shift != clockSaid) {
+            clockSaid = shift
+            try { Log.i(TAG, "PC clock: ${shift / 1000} s from the Thor's (time zone or drift): the documents' stamps moved by it") } catch (_: Throwable) {}
+        }
+        return t
     }
 
     /** for the tests: run as start() would, on the calling thread */

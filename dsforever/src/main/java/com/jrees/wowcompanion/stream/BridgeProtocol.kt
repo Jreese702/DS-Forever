@@ -20,7 +20,10 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
                  /** the client crashed (Desktop 0.2.2): "update" = Battle.net has an update for it, "crash" = anything else; "" = none */
                  val crash: String = "",
                  /** Desktop 0.2.3: Battle.net's window on the streamed screen as shares (x, y, w, h) while the player must use it; empty = none */
-                 val show: List<Float> = emptyList()) {
+                 val show: List<Float> = emptyList(),
+                 /** issues #304 / #357: why the taps can't reach WoW on the PC: "elevated" (run as administrator) | "not_filling" (WoW's
+                  *  window doesn't fill the streamed monitor); "" = fine, or an older Desktop */
+                 val input: String = "") {
     /** signed in: at character select or in the world */
     val signedIn get() = screen == "charselect" || screen == "world"
 
@@ -28,7 +31,7 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
         fun of(o: JSONObject?): PcWow? = o?.let {
             PcWow(it.optString("state"), it.optString("why"), it.optString("screen"),
                 if (it.has("focused")) it.optBoolean("focused") else null, it.optString("bnet"), it.optBoolean("needs_you"),
-                it.optString("login_error"), it.optString("crash"), rect(it.optString("show")))
+                it.optString("login_error"), it.optString("crash"), rect(it.optString("show")), it.optString("input"))
         }
 
         /** "x,y,w,h" (shares of the screen) -> 4 floats; anything else -> empty */
@@ -54,7 +57,9 @@ sealed class BridgeMsg {
                        val oldDesktop: Boolean = false,
                        /** Desktop 0.2.27: why streaming can't work on the PC ("other_sunshine" | "other_app" | "not_listening" | "exited";
                         *  "" = fine) and its line for the Thor ("pc busy: another Sunshine"); empty from an older Desktop */
-                       val sunProblem: String = "", val sunWhy: String = "") : BridgeMsg()
+                       val sunProblem: String = "", val sunWhy: String = "",
+                       /** issue #414: Desktop's clock when it sent this, on the documents' `gt` scale ([PcClock]); -1 from an older Desktop */
+                       val gtNow: Long = -1L) : BridgeMsg()
     /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed"; [pc] = all of it (0.2.1) */
     data class Wow(val state: String, val why: String, val pc: PcWow? = null) : BridgeMsg()
     data class Error(val code: String, val detail: String = "") : BridgeMsg()
@@ -138,7 +143,8 @@ object BridgeProtocol {
                 o.optJSONObject("wow")?.optString("state").orEmpty(), o.optJSONObject("wow")?.optString("why").orEmpty(),
                 PcWow.of(o.optJSONObject("wow")),
                 strings(o.optJSONArray("lan")), strings(o.optJSONArray("tailscale")), o.optString("pad_driver"),
-                sun?.has("http_port") != true, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty())
+                sun?.has("http_port") != true, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty(),
+                o.optLong("gt_now", -1L))
             "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"), PcWow.of(o))
             "error" -> BridgeMsg.Error(o.err(), o.optString("detail"))
             "doc" -> BridgeMsg.Doc(o.optInt("seq", -1), o.optLong("gt", -1L), o.optString("doc"))

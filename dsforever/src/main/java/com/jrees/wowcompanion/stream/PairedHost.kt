@@ -263,3 +263,29 @@ object StreamPorts {
         return Pick.Wait
     }
 }
+
+/**
+ * WHERE DESKTOP'S BRIDGE LISTENS NOW (issue #414: a sunshine.exe left stuck after a failed stream kept Desktop's bridge port, the next
+ * Desktop opened 48211, and the Thor kept dialling the port it paired on: "Can't reach your PC" until the PC's Wi-Fi was toggled).
+ * Desktop takes the first free port of [DEFAULT] .. [DEFAULT] + [SPAN] - 1 (AppController.StartBridge). Pure:
+ *  - [follow]: the paired Desktop (by its id) advertising another bridge port over mDNS: that port; the pairing's trust is unchanged
+ *    (the token, the certificate pin);
+ *  - [others]: where to look when the stored port answers at no address and mDNS is silent. A port counts only when its /v1/info
+ *    names the paired Desktop's id ([sameDesktop]), so the token is never sent to another program's port.
+ */
+object BridgePorts {
+    const val DEFAULT = BridgeProtocol.DEFAULT_PORT
+    const val SPAN = 10
+    /** at most this many of the addresses are looked at (the home one first: [Route.candidates]' order) */
+    const val ADDRESSES = 2
+
+    fun follow(h: PairedHost, pc: FoundPc): PairedHost =
+        if (h.hasBridge && h.desktopId.isNotEmpty() && pc.desktopId == h.desktopId && pc.bridgePort > 0 && pc.bridgePort != h.bridgePort)
+            h.copy(bridgePort = pc.bridgePort) else h
+
+    fun others(stored: Int): List<Int> = (DEFAULT until DEFAULT + SPAN).filter { it != stored }
+
+    /** a /v1/info body: the paired Desktop's? */
+    fun sameDesktop(info: String?, desktopId: String): Boolean =
+        desktopId.isNotEmpty() && info != null && try { JSONObject(info).optString("host_id") == desktopId } catch (_: Throwable) { false }
+}

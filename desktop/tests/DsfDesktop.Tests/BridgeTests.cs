@@ -11,6 +11,7 @@ using System.Threading;
 using DsfDesktop.Bridge;
 using DsfDesktop.GameLog;
 using DsfDesktop.Pairing;
+using DsfDesktop.Wow;
 
 namespace DsfDesktop.Tests
 {
@@ -22,12 +23,18 @@ namespace DsfDesktop.Tests
         public readonly List<string> Pins = new List<string>();
         public string StreamPairResult;   // null = the Sunshine side succeeds
         public string SunWhy = "";        // the PC can't stream: the Thor's reason ("pc busy: another Sunshine")
+        public string InputWhy = "";      // the Thor's taps can't reach WoW (WowInput.ThorWhy; "" = no wow.input_why)
         public FakeHost() { Devices = new DeviceStore(T.P("devices.json")); }
-        public Dictionary<string, object> Info() => new Dictionary<string, object>
+        public Dictionary<string, object> Info()
         {
-            ["host_id"] = "0123456789abcdef0123456789abcdef", ["pc_name"] = "TESTPC",
-            ["sunshine"] = new Dictionary<string, object> { ["running"] = true, ["http_port"] = 52989, ["https_port"] = 52984, ["why"] = SunWhy },
-        };
+            var d = new Dictionary<string, object>
+            {
+                ["host_id"] = "0123456789abcdef0123456789abcdef", ["pc_name"] = "TESTPC",
+                ["sunshine"] = new Dictionary<string, object> { ["running"] = true, ["http_port"] = 52989, ["https_port"] = 52984, ["why"] = SunWhy },
+            };
+            if (InputWhy.Length > 0) d["wow"] = new Dictionary<string, object> { ["input"] = "elevated", ["input_why"] = InputWhy };
+            return d;
+        }
         public void StreamPair(string deviceId, string name, string pin, string peerIp, Action<string> done)
         {
             lock (Pins) Pins.Add(pin);
@@ -125,6 +132,70 @@ namespace DsfDesktop.Tests
         static Dictionary<string, object> Hello(string id, string token) => new Dictionary<string, object> { ["t"] = "hello", ["proto"] = 1, ["device_id"] = id, ["token"] = token };
 
         [Test]
+        public static void ABridgeSocketIsNeverHandedToAChildProcess()
+        {
+            // issue #414: a sunshine.exe stuck on its way out kept the bridge port, because it had inherited Desktop's listener.
+            // A child started the way SunshineHost starts sunshine.exe (redirected output = every inheritable handle passed on)
+            // must not keep the port once the bridge stops.
+            using (var h = new FakeHost())
+            {
+                var s = new BridgeServer(h, null, 0, IPAddress.Loopback);
+                s.Start();
+                int port = s.Port;
+                var psi = new System.Diagnostics.ProcessStartInfo("ping.exe", "-n 6 127.0.0.1")
+                    { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                using (var child = System.Diagnostics.Process.Start(psi))
+                {
+                    try
+                    {
+                        s.Stop();
+                        Thread.Sleep(100);
+                        A.False(child.HasExited, "the child still runs");
+                        var again = new TcpListener(IPAddress.Loopback, port);
+                        again.Start();       // throws "address in use" while a child holds the old listener
+                        again.Stop();
+                    }
+                    finally { try { child.Kill(); } catch (Exception) { } }
+                }
+            }
+        }
+
+        [Test]
+        public static void SocketsAreMarkedNotInheritable()
+        {
+            using (var sock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
+            {
+                A.True(SocketHandles.Inheritable(sock), ".NET Framework makes sockets inheritable (the reason for this fix)");
+                A.True(SocketHandles.KeepToSelf(sock));
+                A.False(SocketHandles.Inheritable(sock));
+            }
+            A.False(SocketHandles.KeepToSelf(null));
+        }
+
+        [Test]
+        public static void WelcomeAndInfoCarryThePcsClock()
+        {
+            // issue #414: the Thor moves the documents' stamps onto its own clock with it (PcClock)
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var wc = new WebClient())
+            {
+                long before = WcbAssembler.GameTimeOf(DateTime.Now);
+                var info = Json.ReadObject(wc.DownloadString("http://127.0.0.1:" + s.Port + "/v1/info"));
+                long after = WcbAssembler.GameTimeOf(DateTime.Now);
+                long now = info.Long("gt_now");
+                A.True(now >= before && now <= after, "gt_now " + now + " between " + before + " and " + after);
+                var token = h.Devices.Issue("thor-1", "Thor");
+                using (var c = new Client(s.Port))
+                {
+                    c.Send(Hello("thor-1", token));
+                    var w = c.Until("welcome").Last();
+                    A.True(Math.Abs(w.Long("gt_now") - WcbAssembler.GameTimeOf(DateTime.Now)) < 5000, "the welcome's clock is now");
+                }
+            }
+        }
+
+        [Test]
         public static void CertificateIsKeptAndFingerprinted()
         {
             using (var t = new Tmp())
@@ -213,6 +284,35 @@ namespace DsfDesktop.Tests
                 A.False(msgs.Any(m => m.Str("t") == "status"), "no status when the PC is fine");
                 s.Publish(new Dictionary<string, object> { ["t"] = "ping_marker" });
                 A.Eq("ping_marker", c.Next().Str("t"), "nothing queued between backlog_end and the next message");
+            }
+        }
+
+        /// <summary>issues #304 / #357: WoW run as administrator (or not filling the streamed monitor): right after the welcome the Thor's
+        /// status line says why its taps miss, before the PC-busy line when both apply</summary>
+        [Test]
+        public static void WelcomeSaysWhyTheThorsTapsMiss()
+        {
+            var why = WowInput.ThorWhy(WowInput.Elevated);
+            using (var h = new FakeHost { InputWhy = why })
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-input", stream: false);
+                var msgs = c.Until("status");
+                A.Eq("welcome", msgs[0].Str("t"));
+                A.Eq("elevated", ((Dictionary<string, object>)msgs[0]["wow"]).Str("input"));
+                A.Eq(why, msgs.Last().Str("text"));
+            }
+            using (var h = new FakeHost { InputWhy = why, SunWhy = "pc busy: another Sunshine" })
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-both", stream: false);
+                var first = c.Until("status");
+                A.Eq(why, first.Last().Str("text"));
+                var second = c.Next();
+                A.Eq("status", second.Str("t"));
+                A.Eq("pc busy: another Sunshine", second.Str("text"), "the PC-busy line is the last one shown");
             }
         }
 

@@ -572,6 +572,8 @@ namespace DsfDesktop.App
                 }
             }
             catch (Exception) { }
+            // every 2 s, beside CheckCapture's tick (outside its try: a serverinfo that throws doesn't skip it)
+            if (tickN % 2 == 1) try { CheckInput(); } catch (Exception e) { Log.I("input check: " + e.Message); }
             try { Starter.Tick(); } catch (Exception) { }
             try { WowTick(); } catch (Exception e) { Log.I("wow tick: " + e.Message); }
             if (ThorWatching && DateTime.UtcNow - thorPolledAt > TimeSpan.FromSeconds(3) && !Thor.Busy)
@@ -901,7 +903,7 @@ namespace DsfDesktop.App
             if (show != null) d["show"] = show;
             if (Starter.Why != null) d["why"] = Starter.Why;
             if (err != null) d["login_error"] = err;
-            return d;
+            return WithInput(d);
         }
 
         /// <summary>every tick: the screen and Battle.net looked at, the supervisor stepped, a "wow" message when anything changed</summary>
@@ -949,14 +951,24 @@ namespace DsfDesktop.App
         DateTime lastRecapture = DateTime.MinValue, lastMove = DateTime.MinValue;
         readonly object captureGate = new object();
 
+        List<SunshineDisplay> displaysRead;
+        DateTime displaysAt = DateTime.MinValue;
+
+        /// <summary>Sunshine's display list from its log (read once for CheckCapture and CheckInput in the same tick)</summary>
         List<SunshineDisplay> SunshineDisplays()
         {
+            var cached = displaysRead;
+            if (cached != null && DateTime.UtcNow - displaysAt < TimeSpan.FromSeconds(1)) return cached;
+            List<SunshineDisplay> list;
             try
             {
                 using (var fs = new FileStream(SunshineLayout.LogFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-                using (var r = new StreamReader(fs)) return Displays.ParseSunshineLog(r.ReadToEnd());
+                using (var r = new StreamReader(fs)) list = Displays.ParseSunshineLog(r.ReadToEnd());
             }
-            catch (Exception) { return new List<SunshineDisplay>(); }
+            catch (Exception) { list = new List<SunshineDisplay>(); }
+            displaysRead = list;
+            displaysAt = DateTime.UtcNow;
+            return list;
         }
 
         /// <summary>
@@ -1005,6 +1017,56 @@ namespace DsfDesktop.App
             }
             catch (Exception e) { Log.I("capture: " + e.Message); }
             finally { Monitor.Exit(captureGate); }
+        }
+
+        /// <summary>why the Thor's taps can't reach WoW ([WowInput]: "elevated" / "not_filling"; "" = fine or not known)</summary>
+        public string InputProblem { get; private set; } = "";
+        readonly WowInput.Steady inputSteady = new WowInput.Steady();
+        string inputDetail = "";
+
+        /// <summary>
+        /// Issues #304 / #357 (the user's pick, 2026-11-16): WoW above Desktop's integrity level (run as administrator: Windows drops
+        /// Sunshine's mouse and keys), or WoW's client area not filling the captured monitor (the companion's taps land elsewhere).
+        /// Said in the window, in the welcome's / wow message's wow.input, and as a Thor status when it changes. Read-only.
+        /// </summary>
+        void CheckInput()
+        {
+            string word = "", detail = "";
+            try
+            {
+                using (var p = WowWindow.Find(FlavorDirOrNull))
+                if (p != null)
+                {
+                    var list = SunshineDisplays();
+                    var captured = list.Count > 0 ? Displays.Captured(list, Settings.CaptureDevice) : null;
+                    var mon = Displays.MonitorRect(captured);
+                    var client = WowInput.ClientOnScreen(p.MainWindowHandle);
+                    int? wowLevel = WowInput.IntegrityOf(p.Id), own = WowInput.OwnIntegrity();
+                    word = WowInput.Word(wowLevel, own, client, mon);
+                    string R(Displays.RECT? r) => r.HasValue ? r.Value.Left + "," + r.Value.Top + " " + r.Value.W + "x" + r.Value.H : "none";
+                    detail = "integrity WoW " + (wowLevel.HasValue ? "0x" + wowLevel.Value.ToString("x") : "unread") + ", ours " +
+                             (own.HasValue ? "0x" + own.Value.ToString("x") : "unread") + "; client " + R(client) + ", captured " + (captured ?? "none") + " " + R(mon);
+                }
+            }
+            catch (Exception e) { Log.I("input check: " + e.Message); }
+            if (word.Length > 0) inputDetail = detail;
+            var said = inputSteady.Step(word, DateTime.UtcNow);
+            if (said == InputProblem) return;
+            var was = InputProblem;
+            InputProblem = said;
+            Log.I("WoW input: " + (said.Length == 0 ? "fine" : said + " (" + inputDetail + ")"));
+            var text = said.Length > 0 ? WowInput.ThorWhy(said) : was.Length > 0 ? WowInput.ThorFine : null;
+            if (text != null) Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = text });
+            Fire();
+        }
+
+        /// <summary>the wow dictionary with [InputProblem] (an older Thor ignores both fields)</summary>
+        Dictionary<string, object> WithInput(Dictionary<string, object> d)
+        {
+            d["input"] = InputProblem;
+            var why = WowInput.ThorWhy(InputProblem);
+            if (why != null) d["input_why"] = why;
+            return d;
         }
 
         // ---------------------------------------------------------------- bridge + mDNS
@@ -1142,14 +1204,15 @@ namespace DsfDesktop.App
             ["stream"] = StreamWord,
             // issue #54: whether Sunshine can make the Thor's controller pad (ViGEmBus): "vigem" / "missing" / "unknown" (an older Thor ignores it)
             ["pad_driver"] = PadDriver.Now(),
-            ["wow"] = new Dictionary<string, object>
+            // issues #304 / #357: wow.input / input_why, why the Thor's taps can't reach WoW (WithInput)
+            ["wow"] = WithInput(new Dictionary<string, object>
             {
                 ["found"] = Wow != null, ["flavor"] = Flavor, ["running"] = WowWindow.IsRunning(), ["focused"] = WowWindow.IsForeground(),
                 // running / starting / stopped / start_failed (+ why): "Starting WoW on your PC..." on the Thor
                 ["state"] = WowStarter.Word(WowUp() ? WowState.Running : Starter.State), ["why"] = Starter.Why,
                 // where it is and what Battle.net needs (0.2.1): the Thor keeps its curtain until charselect / world + focused
                 ["screen"] = WowFlow.Word(LastScreen), ["bnet"] = WowFlow.Word(BnetState.Unknown), ["needs_you"] = Supervisor?.NeedsYou ?? false,
-            },
+            }),
             ["pairing_open"] = !Codes.Locked,
         };
 

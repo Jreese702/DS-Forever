@@ -132,5 +132,12 @@ namespace DsfDesktop.GameLog
             }
             catch (Exception) { return -1; }
         }
+
+        /// <summary>[t] (local time) on the same scale as <see cref="GameTime"/>: the welcome's "gt_now" (issue #414)</summary>
+        public static long GameTimeOf(DateTime t)
+        {
+            long doy = DaysBefore[t.Month - 1] + t.Day;
+            return ((doy * 24L + t.Hour) * 60L + t.Minute) * 60_000L + t.Second * 1000L + t.Millisecond;
+        }
     }
 }

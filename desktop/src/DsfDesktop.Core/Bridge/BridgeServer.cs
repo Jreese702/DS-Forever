@@ -150,6 +150,7 @@ namespace DsfDesktop.Bridge
         {
             listener = new TcpListener(bind, wantPort);
             listener.Start();
+            SocketHandles.KeepToSelf(listener.Server);   // issue #414: a stuck sunshine.exe must not keep the bridge port
             Port = ((IPEndPoint)listener.LocalEndpoint).Port;
             running = true;
             new Thread(AcceptLoop) { IsBackground = true, Name = "bridge-accept" }.Start();
@@ -216,6 +217,7 @@ namespace DsfDesktop.Bridge
                 TcpClient c;
                 try { c = listener.AcceptTcpClient(); }
                 catch (Exception) { if (!running) return; continue; }
+                SocketHandles.KeepToSelf(c.Client);
                 new Thread(() => Handle(c)) { IsBackground = true, Name = "bridge-conn" }.Start();
             }
         }
@@ -282,6 +284,9 @@ namespace DsfDesktop.Bridge
         Dictionary<string, object> InfoMsg(string t)
         {
             var m = new Dictionary<string, object> { ["t"] = t, ["proto"] = Proto, ["bridge_port"] = Port };
+            // issue #414: this PC's clock on the documents' "gt" scale (local time, like WoW's log), so a Thor in another time zone
+            // moves the stamps onto its own clock (an older Thor ignores it)
+            m["gt_now"] = WcbAssembler.GameTimeOf(DateTime.Now);
             if (Tls) { m["tls"] = true; m["fp"] = Fingerprint; }
             foreach (var kv in host.Info() ?? new Dictionary<string, object>()) m[kv.Key] = kv.Value;
             return m;
@@ -467,6 +472,9 @@ namespace DsfDesktop.Bridge
                 s.Enqueue(welcome);
                 foreach (var d in backlog) s.Enqueue(d);
                 s.Enqueue(new Dictionary<string, object> { ["t"] = "backlog_end", ["count"] = backlog.Count });
+                // issues #304 / #357: the Thor's taps can't reach WoW (run as administrator, or not filling the streamed monitor)
+                if (welcome.TryGetValue("wow", out var wow) && wow is Dictionary<string, object> wd && wd.Str("input_why") is string iw && iw.Length > 0)
+                    s.Enqueue(new Dictionary<string, object> { ["t"] = "status", ["text"] = iw });
                 // the PC can't stream (another Sunshine holds the GameStream ports, ...): the Thor's status line says why
                 if (welcome.TryGetValue("sunshine", out var sun) && sun is Dictionary<string, object> sd && sd.Str("why") is string why && why.Length > 0)
                     s.Enqueue(new Dictionary<string, object> { ["t"] = "status", ["text"] = why });

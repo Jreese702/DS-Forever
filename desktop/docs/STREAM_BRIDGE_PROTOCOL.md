@@ -29,7 +29,9 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - The Thor merges the two adverts by IPv4 address; Desktop's `sunshine` port makes a PC streamable even if its `_nvstream` advert was
   missed. The Thor remembers the paired PC's address, follows it when the same `id` shows up at a new address (DHCP), and tries the
   remembered address when mDNS finds nothing.
-- `GET /v1/info` (plain HTTP on the bridge port) answers the same JSON as the welcome's info (the Thor does not need it today).
+- `GET /v1/info` (plain HTTP on the bridge port) answers the same JSON as the welcome's info. *(issue #414)* When the stored bridge
+  port answers nowhere and mDNS is silent, the Thor asks `/v1/info` on Desktop's other ports (48210-48219) and uses one only when
+  its `host_id` is the paired Desktop's; a `_dsforever` advert of the paired Desktop (its `id`) on another port is followed too.
 
 ## 2. Transport
 
@@ -78,6 +80,12 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
    - **[S3]** one session per device: a second `hello` from the same `device_id` replaces the first, which is closed with **4409**
      (the Thor should not reconnect on 4409 while its newer connection is up).
 3. On every welcome the Thor drops any half-assembled state and sends `{"t":"focus"}` (bring WoW to the front).
+4. *(issue #414)* The welcome (and `/v1/info`) carries `"gt_now"`: the PC's clock when it was sent, on the documents' `gt` scale
+   (local time, like WoW's log). The Thor shifts every `gt` of the connection by (its own clock - `gt_now`), so a PC in another time
+   zone (or with a drifted clock) still gives "current" documents. Without it (an older Desktop) the Thor takes the gap of the
+   documents after `backlog_end`, rounded to whole quarter hours (within 2 min), once that gap has held (within 20 s) for 5 s of the
+   Thor's clock, and otherwise shifts nothing: an older Desktop can send its old log's documents after `backlog_end` (read after
+   the bridge was up), and those never hold still.
 
 ## 5. The add-on's documents
 
@@ -122,6 +130,12 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - **[S3] The streamed monitor.** Sunshine captures one monitor (the primary unless told otherwise). When no stream is running and WoW
   is on another monitor, Desktop points Sunshine at WoW's monitor (Sunshine restarts, ~25 s, and a `status` says so); during a stream
   it moves the WoW window onto the streamed monitor instead.
+- *(issues #304 / #357)* `wow.input` (welcome, `/v1/info`, the `wow` message, `focus_result`): why the Thor's taps can't reach
+  WoW. `elevated` = WoW runs above Desktop's integrity level (as administrator): Windows drops Sunshine's mouse and keys on it (UIPI),
+  the virtual pad still works. `not_filling` = WoW's client area doesn't fill the streamed monitor: the companion's taps (shares of
+  the whole stream) miss. `""` = fine, or not known. `wow.input_why` is the Thor's line for it. A new word holds 4 s before it is
+  said; on a change, and right after the welcome while one is set, a `status` carries the line ("taps reach WoW again" when it
+  clears). Desktop's window shows the same as a notice. Read-only on the PC (the window's client rectangle, the token's level).
 
 ## 7. Control (Thor → bridge)
 
