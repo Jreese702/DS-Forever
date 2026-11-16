@@ -614,6 +614,10 @@ class HomeView(
 
     private fun onB() {
         if (typeWanted) return                                            // the tool's B comes through the guest (it closes the tool)
+        // ClassPetKeys (the user, 2026-11-16: "B still makes a lot of sense to use here"; then "the glyph locations on this bar should
+        // match where they actually are on the controller"): on a class pet wheel with an ability on B's spot (the physical button the
+        // ABXY location puts B on) B is that ability's toggle - it never reaches the game and is nothing of Home's (no shrink, no close)
+        if (lent(castView) && castView.classBToggles()) return
         // while the chat module holds the controller its B comes through the guest (the chat's own chain), not this read-only watch
         if (chatWanted && chatHeld) return
         if (mapWanted && mapHeld) return
@@ -1408,7 +1412,9 @@ class HomeView(
         val sel = PadInput.isHeld(held, PadInput.SLOT_SELECT)
         if (sel && !partySelWas && PARTY_MODULE && flow.full == null && isShown) partyView.selectPressed()
         partySelWas = sel
-        if (fresh == 0 || !partyOnHere() || flow.full != null || !isShown || typeWanted) return
+        // b-class-takeover: the class wheel's D-pad never reaches the game (its guest keeps it), so the box's optimistic move would part
+        // from the game's - the wheel's presses are the wheel's
+        if (fresh == 0 || !partyOnHere() || flow.full != null || !isShown || typeWanted || (lent(castView) && castView.classRadialOpen())) return
         for ((k, d) in dirs.withIndex()) if ((fresh and (1 shl k)) != 0 && party.move(d.second) != null) { partyView.invalidate(); castView.partyChanged() }
     }
 
