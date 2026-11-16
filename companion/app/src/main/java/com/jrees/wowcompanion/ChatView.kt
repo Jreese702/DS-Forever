@@ -773,9 +773,10 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
      * "%d. %s: " ...): the voice page's words start with it, in the type's colour
      */
     private fun prefixFor(t: String): String = when {
-        t == "WHISPER" -> "Tell $whisperName: "
+        // the type's word in the app's language, as its tab above shows it (review: "Say:" stood under the "Decir" tab); names as they are
+        t == "WHISPER" -> "${Tr.t("Tell")} $whisperName: "
         t.startsWith("CHANNEL:") -> t.substringAfter(":").let { i -> "$i. ${chans.firstOrNull { it.first.toString() == i }?.second?.let { chanLabel(it) } ?: ""}: " }
-        else -> (kinds().firstOrNull { it.key == t }?.label ?: "Say") + ": "
+        else -> Tr.t(kinds().firstOrNull { it.key == t }?.label ?: "Say") + ": "
     }
 
     /** the names voice may hear here (the on-device recognizer's hints): who wrote lately, who is whispered; never logged */

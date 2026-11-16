@@ -2862,7 +2862,7 @@ class InteractView(context: Context) : View(context) {
         if (cur == "mailedit body" || kbField == "mailbody") UiKit.focus(c, paper, onPaper = true)
         // the letter under the cursor: A with the keyboard, X with the microphone, at the paper's top right (a finger on it = X)
         if (cur == "mailedit body" && kbField != "mailbody" && VoiceUi.micShown(context)) col("edit_body").takeIf { it >= 0 }?.let { bc ->
-            VoiceUi.boxGlyphs(c, paper.right - 18f, paper.top + 34f, 40f, voice = true).mic?.let { hits.add(it to "voice:mailbody|mailedit body|$bc") }
+            VoiceUi.boxGlyphs(c, paper.right - 18f, paper.top + 34f, 40f, voice = true, onPaper = true).mic?.let { hits.add(it to "voice:mailbody|mailedit body|$bc") }
         }
         UiKit.divider(c, x0, ruleY, x1, ruleY)
         // the attachment slots: the game's empty slot, the item in it; the first empty one opens the bags

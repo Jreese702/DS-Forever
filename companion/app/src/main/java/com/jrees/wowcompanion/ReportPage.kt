@@ -391,7 +391,8 @@ class ReportPage(c: Context) : FrameLayout(c) {
                 }
                 y += LINE_H
             }
-            if (k > 0f) UiKit.bodyPaint(18f, Theme.textDim).let { hint ->
+            // not while the voice page shows: its LB / RB move nothing (the words go in where the caret stood when X was pressed)
+            if (k > 0f && !kb.voiceShown) UiKit.bodyPaint(18f, Theme.textDim).let { hint ->
                 hint.textAlign = Paint.Align.RIGHT
                 c.drawText(Tr.t("LB / RB move the cursor, or tap"), box.right - 14f, box.bottom - 10f, hint)
             }

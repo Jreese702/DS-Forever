@@ -83,7 +83,7 @@ class VoiceBoardsTest {
     @Test fun theVoiceWordsAreInSpanishAndFrench() {
         val words = listOf("Voice typing", "X in a text box listens", "This device", "Online", "Off", "Listening", "Didn't hear you", "Say again",
             "Edit", "Voice needs the microphone", "Allow", "Not now", "After the fight", "Microphone off", "Use online voice", "Voice pack needed",
-            "Get", "Offline", "Voice busy", "No sound from the mic", "Stop", "Cancel", ChatKeyboard.PATH) +
+            "Get", "Offline", "Voice busy", "No sound from the mic", "Stop", "Cancel", "Tell", ChatKeyboard.PATH) +
             Voice.Problem.values().map { it.title } + Voice.Mode.values().map { it.label }
         val i18n = File(app, "../../../../assets/companion/i18n")
         for (l in listOf("es", "fr")) {

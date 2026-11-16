@@ -70,9 +70,10 @@ object VoiceUi {
 
     /**
      * The focused box's glyphs, ending at [right] and centred on [cy], [h] px tall: (A) keyboard, then (X) microphone when [voice].
-     * Returns their rects (the touch boxes: a finger on the microphone = X). Draws nothing for a zero height.
+     * Returns their rects (the touch boxes: a finger on the microphone = X). Draws nothing for a zero height. [onPaper]: the box is the
+     * letter's parchment (Send Mail), where the light keyboard and the gold microphone vanish: both in the parchment's ink there.
      */
-    fun boxGlyphs(c: Canvas, right: Float, cy: Float, h: Float, voice: Boolean, alpha: Int = 255): Glyphs {
+    fun boxGlyphs(c: Canvas, right: Float, cy: Float, h: Float, voice: Boolean, alpha: Int = 255, onPaper: Boolean = false): Glyphs {
         val g = h
         val icon = h * 0.82f
         val pairW = g + 6f + icon
@@ -80,10 +81,10 @@ object VoiceUi {
         val keysRight = if (voice) right - pairW - 18f else right
         val keysR = RectF(keysRight - pairW, cy - h / 2f - 6f, keysRight, cy + h / 2f + 6f)
         UiKit.pad(c, "rev_a", keysR.left + g / 2f, cy, g, alpha)
-        keyboard(c, keysR.right - icon / 2f, cy, icon, Theme.text, alpha)
+        keyboard(c, keysR.right - icon / 2f, cy, icon, if (onPaper) Theme.parchmentInk else Theme.text, alpha)
         if (micR != null) {
             UiKit.pad(c, "rev_x", micR.left + g / 2f, cy, g, alpha)
-            mic(c, micR.right - icon / 2f, cy, icon, Theme.gold, alpha = alpha)
+            mic(c, micR.right - icon / 2f, cy, icon, if (onPaper) Theme.parchmentInk else Theme.gold, alpha = alpha)
         }
         return Glyphs(keysR, micR)
     }
