@@ -893,7 +893,7 @@ MR.CMDS = {
     { k = "stopmacro", key = "STOPMACRO", en = { "/stopmacro" }, more = true },
     { k = "chat", chat = true, more = true },                            -- a chat line (or any line), typed
     -- parsed only (never offered): the tooltip line; its cases work as a /cast's (#show [mod] A; B)
-    { k = "tip", en = { "#showtooltip", "#show" }, arg = "spell", meta = true },
+    { k = "tip", en = { "#showtooltip", "#show" }, arg = "spell", opt = true, meta = true },      -- its spell may be left out
 }
 MR.CMD = {}
 for _, c in ipairs(MR.CMDS) do MR.CMD[c.k] = c end
@@ -2274,7 +2274,7 @@ end
 -- s14: a preset tile as the document carries it: its id, the pictures of its picks, its text (the app draws the label and the strip)
 function MR.tileDoc(t)
     local ic = {}
-    for k, n in ipairs(t.picks) do ic[k] = (MR.look("spell", n)) or 0 end
+    for _, n in ipairs(t.picks) do if MR.trim(n) ~= "" then ic[#ic + 1] = (MR.look("spell", n)) or 0 end end   -- an empty pick: no picture
     return { k = t.p.k, ic = ic, t = MR.join(MR.presetLines(t, t.picks)) }
 end
 -- s14: the open pop-out as the document carries it

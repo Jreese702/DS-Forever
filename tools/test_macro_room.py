@@ -1357,6 +1357,16 @@ check(cn[0].get('k') == 'mod:shift' and cn[0].get('nm') == 'modifier' and cn[1] 
       "t. a known condition under the game's other name keeps it ('modifier'); an unknown one is kept raw", cn)
 check(clean(L) == {}, "t. clean (the grammar reads nothing, writes nothing)", clean(L))
 
+# the tooltip line in the builder: its spell may be left out (no 'pick'); a spell picked shows that spell's tooltip
+L = opened([("Alpha", "#showtooltip\n/cast Lightning Bolt")], CHAR)
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PAD1")
+check(bdoc(L).get('c') == 'tip' and not bdoc(L).get('h'), "t. '#showtooltip' in the builder: the Tooltip line, nothing missing", bdoc(L))
+chip(L, 'arg'); pick_row(L, lambda r: r.get('n') == 'Lightning Shield')
+L.execute('MLOG = {}')
+sel(L)
+check(mlog(L) == ['edit 1 nil #showtooltip Lightning Shield\n/cast Lightning Bolt'], "t. '#showtooltip Lightning Shield': ONE write", mlog(L))
+check(clean(L) == {}, "t. clean (the tooltip line)", clean(L))
+
 # ================================================================ u. (s14) commands registered on this client only, and by class
 def cmd_list(L):
     press(L, "PAD1"); tap(L, 21); tap(L, "a")
