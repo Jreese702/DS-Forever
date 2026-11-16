@@ -89,6 +89,20 @@ class PetFollowBTest {
         assertTrue(HomeSettings.petFollowB("Korvash-Realm"))
     }
 
+    /** the review: the word is this padmap's character's setting (GameUi.character is set later in the same padmap's handling) */
+    @Test fun theWordIsThePadmapsOwnCharacters() {
+        assertEquals("Korvash-Realm", PetFollowB.who("Korvash", "Realm"))
+        assertEquals("Korvash-", PetFollowB.who("Korvash", null))                  // GameUi.character's own form for no realm
+        assertNull(PetFollowB.who(null, "Realm"))
+        assertNull(PetFollowB.who("", "Realm"))
+        val p = Prefs()
+        HomeSettings.startForTest(p)
+        HomeSettings.setPetFollowB("Korvash-Realm", false)
+        val hunter = fixture("pf_hunter_no_word").petB
+        assertFalse(PetFollowB.want(HomeSettings.petFollowB(PetFollowB.who("Korvash", "Realm")), hunter, homeFree = true))
+        assertTrue(PetFollowB.want(HomeSettings.petFollowB(PetFollowB.who("Brannoc", "Realm")), hunter, homeFree = true))
+    }
+
     @Test fun theRowSitsUnderButtons() {
         assertEquals(SettingsTabs.Group.BUTTONS, SettingsTabs.Block.PET_B.group)
         assertEquals(listOf(PetFollowB.ROW_ID), SettingsTabs.Block.PET_B.rows)

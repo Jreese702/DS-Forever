@@ -10,11 +10,12 @@ SetupNonBindableBack): Forever's own Back - stop casting, else stop targeting, e
 
 Proves: (0) the versions; (1) before the app's word B is exactly as before (the game's own binding); (2) the word on: B is the router's,
 one press = /petfollow THEN Forever's Back (its down and up edges as before); (3) the word off: B is the game's again; (4) no pet / a dead
-pet / a pet that dies before the check: no Pet Follow; a pet summoned: B follows within the check; (5) a room / a guest holding, a game
+pet / a pet that dies before the check: no Pet Follow; a pet summoned: B follows within the check; (4b, the review) a pet with nothing
+to stop (following or Stay-parked: no live pet target): no Pet Follow, Back as before; (5) a room / a guest holding, a game
 window open: B is theirs; (6) a fight: B's fight rules (give back + stop attack, then clear the target), no Pet Follow, nothing protected
 from insecure code, and Pet Follow again after the fight; (7) the fight layout out of combat (an attack running): the first B is the give-
 back, the next one (the rest layout) adds Pet Follow; (8) a trigger held: the layer's button, no Pet Follow; (9) Party mode: its own B;
-(10) a non-pet class: never; (11) the word in a fight: kept, the binding at the fight's end; (12) no trace (no spied call, no snippet error).
+(10) a non-pet class: never (a Mage's / Priest's pet bar included, the review); (11) the word in a fight: kept, the binding at the fight's end; (12) no trace (no spied call, no snippet error).
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -54,8 +55,10 @@ end
 '''
 
 
-def world(cls="HUNTER", pet=True, pre=''):
-    p = BACK % cls + ('UNITS.pet = { name = "Wolf", alive = true }\n' if pet else '') + pre
+def world(cls="HUNTER", pet=True, pre='', at=True):
+    """`at`: the pet is at something (attacking, or on its way: a live pet target), the case B's Pet Follow is for"""
+    p = (BACK % cls + ('UNITS.pet = { name = "Wolf", alive = true }\n' if pet else '')
+         + ('UNITS.pettarget = { name = "Boar", alive = true, foe = true }\n' if pet and at else '') + pre)
     L, errs = boot_world(pre=p)
     L.execute('LOADERRS = {}')
     for e in errs:
@@ -134,6 +137,8 @@ check("I want a pet class specific option where pressing B in the out of combat 
 check(SRC["padmap"].count('SecureCmdOptionParse("[nocombat,@pet,exists,nodead] 1") == "1"') == 1
       and SRC["padmap"].count('petf = "/petfollow\\n"') == 1,
       "the snippet's one check: out of combat, a live pet; the game's own /petfollow")
+check(SRC["padmap"].count('SecureCmdOptionParse("[@pettarget,exists,nodead] 1") == "1" then petf') == 1,
+      "m165 review: and only while the pet is at something (a live pet target)")
 
 # ---------------------------------------------------------------- (1) before the app's word: B exactly as before
 W = world()
@@ -193,7 +198,7 @@ d = pf(N)
 check(d.get('on') is True and d.get('pet') is None and d.get('b') is None and bkey(N) is None, "no pet out: B not carried (the game's)", (d, bkey(N)))
 r = press(N, "PAD2")
 check(r['how'] == 'game' and '/petfollow' not in lines(r), "no pet: B is the game's Back", r)
-N.execute('UNITS.pet = { name = "Imp", alive = true }; fire("UNIT_PET", "player")')
+N.execute('UNITS.pet = { name = "Imp", alive = true }; UNITS.pettarget = { name = "Boar", alive = true, foe = true }; fire("UNIT_PET", "player")')
 settle(N)
 check(bkey(N) == OURS_B, "a pet summoned: B carried within the check", bkey(N))
 r = press(N, "PAD2")
@@ -207,6 +212,20 @@ N.execute('UNITS.pet = nil; fire("UNIT_PET", "player")')
 settle(N)
 check(bkey(N) is None and pf(N).get('pet') is None, "the pet gone: the game's B", (bkey(N), pf(N)))
 check(clean(N) == {}, "no pet / dead pet: clean", clean(N))
+
+# ---------------------------------------------------------------- (4b) m165 review: a pet with nothing to stop is left alone
+S = world(at=False)
+tell(S, True)
+check(bkey(S) == OURS_B, "a pet out, following (no pet target): B carried (the snippet decides each press)", bkey(S))
+r = press(S, "PAD2")
+check(lines(r) == BACK_PRESS, "a following / Stay-parked pet: no Pet Follow (never pulled off its Stay), Forever's Back as before", lines(r))
+S.execute('UNITS.pettarget = { name = "Boar", alive = false, foe = true }')
+r = press(S, "PAD2")
+check(lines(r) == BACK_PRESS, "the pet's target dead: nothing to stop, Back only", lines(r))
+S.execute('UNITS.pettarget = { name = "Boar", alive = true, foe = true }')
+r = press(S, "PAD2")
+check(lines(r) == ['/petfollow'] + BACK_PRESS, "the pet sent at a live target: B calls it back", lines(r))
+check(clean(S) == {}, "a pet with nothing to stop: clean", clean(S))
 
 # ---------------------------------------------------------------- (5) a room / a guest holding, a game window open: theirs
 QACT = {"quests": 8, "map": 10}
@@ -290,14 +309,19 @@ check(r['how'] == 'game' and '/petfollow' not in lines(r), "a Warrior's B: the g
 for cls in ("WARLOCK", "DEATHKNIGHT"):
     C = world(cls=cls)
     check(pf(C).get('cls') is True, "%s: a pet class" % cls, pf(C))
-M = world(cls="MAGE", pre='function HasPetUI() return true, false end')
-check(pf(M).get('cls') is True, "a Mage with a pet bar this session (HasPetUI): offered too", pf(M))
+for cls in ("MAGE", "PRIEST"):
+    M = world(cls=cls, pre='function HasPetUI() return true, false end')
+    check(pf(M).get('cls') is None, "m165 review: a %s with a pet bar (a Water Elemental, a Mind Control): not a pet class, no row" % cls,
+          pf(M))
+    tell(M, True)
+    r = press(M, "PAD2")
+    check(bkey(M) is None and '/petfollow' not in lines(r), "  and told on anyway: B never carried for it, the game's own", (bkey(M), lines(r)))
 
 # ---------------------------------------------------------------- (11) a /reload forgets the word (in memory only)
 W2 = world()
 check(bkey(W2) is None and pf(W2).get('on') is None, "a new game session: off until the app says it again", (bkey(W2), pf(W2)))
 
-for L in (W, V, N, R, F, A, P, X, W2):
+for L in (W, V, N, S, R, F, A, P, X, M, W2):
     check(L.eval('#SPY') == 0 and L.eval('#SNIPERR') == 0, "no spied call, no snippet error", (L.eval('SPY[1]'), L.eval('SNIPERR[1]')))
 
 # ---------------------------------------------------------------- the fixtures the app's PetFollowBTest reads (dsforever/src/test/resources/

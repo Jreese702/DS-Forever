@@ -2714,7 +2714,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // backlog (its `_gt` stamp after the game's start: a host that came up mid-game); an older run's says nothing about now
                 if (current || padmapOfThisRun(msg.optLong("_gt", -1L))) { padmapRunAt = System.currentTimeMillis(); runStart = it.start }
                 if (current) pauseOverTell(it, "padmap")                // the user's pick: Start over game windows, told when it differs
-                if (current) { petBNow = it.petB; petBTell("padmap") }      // B: pet follow (PadMap m165), told when it differs
+                // B: pet follow (PadMap m165), told when it differs - for THIS padmap's character (the review: GameUi.character is set
+                // further down, so a first padmap after a start / a character switch read the default or the last character's setting)
+                if (current) { petBNow = it.petB; petBWho = PetFollowB.who(it.dpad?.name, it.dpad?.realm); petBTell("padmap") }
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
                 // PadMap m160: the Smart Range clean-up's counts (the problem report's line), one log line when they change
@@ -3227,12 +3229,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * game windows hold the controller themselves (the router stands aside in the add-on): no tell for them, so no taps on a room change
      */
     private var petBNow: PadMapModel.PetB? = null
+    /** the character of the padmap [petBNow] came in (its `dpad.who`: "Name-Realm", GameUi.character's form); null = not known: no tell */
+    private var petBWho: String? = null
     private var petBSent: Boolean? = null
     private var petBSentAt = 0L
     private fun petBTell(why: String) {
         val pf = petBNow ?: return
+        val who = petBWho ?: return
         val homeFree = !homeView.bClosesSomething() && !(::reportNotice.isInitialized && reportNotice.asking)
-        val want = PetFollowB.want(HomeSettings.petFollowB(GameUi.character), pf, homeFree)
+        val want = PetFollowB.want(HomeSettings.petFollowB(who), pf, homeFree)
         val now = SystemClock.elapsedRealtime()
         if (!PetFollowB.needsTell(want, pf, petBSent, petBSentAt, now)) return
         val sent = padTabTap(PetFollowB.cells(want))

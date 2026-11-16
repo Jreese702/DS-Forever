@@ -9,7 +9,8 @@ package com.jrees.wowcompanion
  * (PadMap m165) puts the game's /petfollow first on the same press, through the router's own secure B button, only while:
  *  - the app's word is on: this character's setting ([HomeSettings.petFollowB]) AND Home with nothing of its own open that B closes (a
  *    module full screen, the buff list, the report's notice) - [want];
- *  - a pet class (the padmap's `pf.cls`: Hunter, Warlock, Death Knight, or a pet bar seen this session) and a live pet out;
+ *  - a pet class (the padmap's `pf.cls`: Hunter, Warlock, Death Knight only - the review: a Priest's Mind Control is no pet class) and a
+ *    live pet out that is at something (a live pet target: it is attacking or on its way; a following or Stay-parked pet is left alone);
  *  - nothing of ours holding and no game window (a room, a wheel, a pop-up: the router stands aside), out of combat, the rest layout.
  * In a fight (and while the fight layout shows) B keeps its fight rules. The add-on keeps the word in memory only and says it back
  * (`pf.on`), so the app taps padtab 39 then 36 / 37 (Book b66) whenever a current padmap disagrees - at every connect, after a change,
@@ -33,6 +34,9 @@ object PetFollowB {
     /** the word the add-on should hold now: [setting] this character's choice, a pet class, and Home with nothing of its own open */
     fun want(setting: Boolean, pf: PadMapModel.PetB?, homeFree: Boolean): Boolean = setting && shown(pf) && homeFree
 
+    /** the per-character key of the padmap's own character (its `dpad.who`), GameUi.character's form "Name-Realm"; null = no name (no tell) */
+    fun who(name: String?, realm: String?): String? = name?.takeIf { it.isNotEmpty() }?.let { "$it-${realm ?: ""}" }
+
     /** the taps that tell the add-on [on] */
     fun cells(on: Boolean): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to if (on) ON_CODE else OFF_CODE)
 
@@ -44,6 +48,6 @@ object PetFollowB {
     }
 
     /** the "What it does" picture's title and words */
-    fun caption(on: Boolean): List<String> = if (on) listOf("Home, out of combat, your pet out:", "B calls it back to follow you.")
+    fun caption(on: Boolean): List<String> = if (on) listOf("Home, out of combat, your pet attacking:", "B calls it back to follow you.")
         else listOf("B keeps its own action.")
 }
