@@ -87,8 +87,9 @@ object SpellsModel {
         val bindItem: BoxItem? = null,
     ) {
         val bindOpen get() = binding != null
-        /** Book b59: a hosted box (Bags holds the controller and hands it the presses); Book b63: the Macros room hosts one too */
-        val hosted get() = via == "bags" || via == "macros"
+        /** Book b59: a hosted box (Bags holds the controller and hands it the presses); Book b63: the Macros room hosts one too;
+         *  bags-gear1 (Character c19): the Character room hosts one for a worn piece with a use effect */
+        val hosted get() = via == "bags" || via == "macros" || via == "character"
     }
 
     /** Book b59: the bag item a Bind box is for: its id, name and icon (a fileID, 0 = unknown); Book b63: [mac] = one of the player's

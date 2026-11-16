@@ -77,6 +77,12 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     fun bagItems(): List<Triple<Int, Int, JSONObject>> = state.items.entries
         .map { Triple((it.key shr 16).toInt(), (it.key and 0xFFFF).toInt(), it.value) }
         .sortedWith(compareBy({ it.first }, { it.second }))
+    /** bags-gear1 (D4a): the game's full tooltip this room kept for the piece in [bag] / [slot] (null = none this session) */
+    fun keptTip(bag: Int, slot: Int): JSONObject? {
+        val it = state.items[state.key(bag, slot)] ?: return null
+        return state.tips.kept("bag $bag $slot ${it.optInt("id")}", it.optInt("count", 1))
+    }
+
     fun kitItems(): List<Triple<Int, Int, JSONObject>> = state.items.entries
         .filter { it.value.optBoolean("kit") }
         .map { Triple((it.key shr 16).toInt(), (it.key and 0xFFFF).toInt(), it.value) }
@@ -219,6 +225,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             const val COMPARE_COL = 8
             const val COMPARE_STEP = 120f // bags-act1: one D-pad press on the compare sheet (about four lines)
             const val DPICK_ROW = -1000  // bags-act1: the Destroy picker's row i = DPICK_ROW - i (36 + its bmv cell; again = A)
+            const val GEAR_PICK = -5000  // bags-gear1: the target row's worn slot n = GEAR_PICK - n (bmvq 26, then column n - 1)
             /** the Y menu's rows: the add-on's names -> their words, and a finger's tap (bmvq 19 / 20 / 21; Compare by its prefix) */
             val MENU_WORDS = linkedMapOf("split" to "Split Stack", "bind" to "Bind to a Button", "compare" to "Compare", "destroy" to "Destroy")
             val MENU_TAP = mapOf("split" to 19, "bind" to 20, "compare" to COMPARE_TAP, "destroy" to 21)
@@ -332,7 +339,11 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 KIT_CANCEL -> GameInput.tap(context, st.pad, "binv", KIT_STOP_COL)
                 // bags-act1: the menu's Compare row (bmvq 27, then column 8: Bags.lua's prefix, no game action)
                 COMPARE_TAP -> if (GameInput.tap(context, st.pad, "bmvq", 27)) GameInput.tap(context, st.pad, "bmvq", COMPARE_COL)
-                else -> if (what <= DPICK_ROW) {
+                // bags-gear1: a finger on another worn slot of the target row: that slot highlighted (bmvq 26, then its column)
+                else -> if (what <= GEAR_PICK) {
+                    val inv = GEAR_PICK - what
+                    if (inv in 1..19 && GameInput.tap(context, st.pad, "bmvq", 26)) GameInput.tap(context, st.pad, "bmvq", inv - 1)
+                } else if (what <= DPICK_ROW) {
                     // bags-act1: a Destroy picker row: the gold row there (36 + its bmv cell, no game action); the gold row again = A
                     val i = DPICK_ROW - what
                     val pick = st.ctl?.optJSONObject("dpick") ?: return
@@ -374,7 +385,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                     carried(c, gx, gy)
                 }
                 "menu" -> menu(c, gx, gy, top, bottom)
-                "equip", "equipping", "bindask" -> equip(c, m ?: "")
+                // bags-gear1: a piece of gear's target row (Bags.lua EQ's gear kind); a bag's is the bag bar's
+                "equip", "equipping", "bindask" -> if (st.ctlEq()?.optBoolean("gear") == true) gearRow(c, m ?: "", gx, gy, top, bottom)
+                    else equip(c, m ?: "")
                 "barmenu" -> barMenu(c)
                 "destroy" -> destroy(c, screen)
                 "dpick" -> dpick(c, screen)
@@ -459,6 +472,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                     // a BAG: Equip puts it in the hand and the cursor goes up to the bag bar (Bags.lua EQ, the user 2026-10-06), not
                     // the game's right-click (that fills only a free bag slot); faint in a fight (the game changes no equipment then)
                     acts.add((if (glyphs) "rev_x" else null) to word); what.add(if (st.combat) EQUIP_OFF else EQUIP)
+                } else if (moves && SlideOut.opens(it, st.dualWield, st.combat, st.ctx)) {
+                    // bags-gear1 (the user, 2026-11-16: "Choose which ring or weapon slot to replace"): gear with two places to go: the
+                    // add-on's own X (bmvq 22) opens its target row; one this character can't wear (nouse): faint, nothing opens
+                    acts.add((if (glyphs) "rev_x" else null) to word); what.add(if (it.optBoolean("nouse")) EQUIP_OFF else EQUIP)
                 } else if (allowed && rows?.has("bag$bag") == true) {
                     acts.add((if (glyphs) "rev_x" else null) to word); what.add(USE); useAt = bag to slot
                 } else if (!allowed && word == LOCKED) {
@@ -592,17 +609,11 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             if (f.scrollMax > 0f) moreMark(c, boxNow, scrolled > 0f, scrolled < f.scrollMax, a)
         }
 
-        private val pMore = Paint(Paint.ANTI_ALIAS_FLAG)
-        /** a cut tooltip: a small gold chevron at the edge that has more (up at the top, down over its row) */
+        /** a cut tooltip: a small gold chevron at the edge that has more (up at the top, down over its row; bags-gear1: the kit's) */
         private fun moreMark(c: Canvas, box: RectF, up: Boolean, down: Boolean, alpha: Int) {
-            pMore.color = Theme.gold; pMore.alpha = alpha; pMore.style = Paint.Style.FILL
             val cx = box.right - 34f
-            fun chevron(y: Float, dir: Float) {
-                val p = Path().apply { moveTo(cx - 12f, y - 6f * dir); lineTo(cx + 12f, y - 6f * dir); lineTo(cx, y + 8f * dir); close() }
-                c.drawPath(p, pMore)
-            }
-            if (up) chevron(box.top + 18f, -1f)
-            if (down) chevron(box.bottom - 22f, 1f)
+            if (up) UiKit.chevron(c, cx, box.top + 18f, UiKit.Chevron.UP, alpha)
+            if (down) UiKit.chevron(c, cx, box.bottom - 22f, UiKit.Chevron.DOWN, alpha)
         }
 
         private val bat = IntArray(2)
@@ -675,6 +686,69 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 hits.add(cells[1] to 33)                                          // B: Cancel
                 zones.add(RectF(cells[0].left, cells[0].top, cells[1].right, cells[1].bottom))
             }
+        }
+
+        /**
+         * bags-gear1 THE TARGET ROW OF A PIECE OF GEAR (the user, 2026-11-16: "Choose which ring or weapon slot to replace"; "X opens a
+         * slide-out of ARMOR (item icons) next to the item"): beside the piece's tile, its worn slots as the doll draws them (the piece
+         * worn there, or the game's empty-slot art), the highlighted one carrying the piece on its corner (UiKit.carried, as the bag bar
+         * does). The tooltip beside them is the piece's own with its stat changes counted against THAT slot only (SlideOut.changesFor),
+         * A Equip (faint where the game refuses now) / B Back; a finger on another slot highlights it, on the highlighted one = A.
+         * "equipping" = the game working; "bindask" = the game's own "bind it to you?" (Bags passes it A / B). All of it from bags.ctl.eq.
+         */
+        private fun gearRow(c: Canvas, m: String, gx: Float, gy: Float, top: Float, bottom: Float) {
+            val eq = st.ctlEq() ?: return
+            val bag = eq.optInt("bag", -1); val slot = eq.optInt("slot", -1)
+            val item = st.items[st.key(bag, slot)] ?: return
+            val tile = slotBox(bag, slot, gx, gy) ?: return
+            val choosing = m == "equip"
+            val list = ArrayList<JSONObject>()
+            if (choosing) eq.optJSONArray("targets")?.let { t -> for (i in 0 until t.length()) t.optJSONObject(i)?.let { list.add(it) } }
+            else eq.optInt("to", -1).takeIf { it in 1..19 }?.let { inv ->
+                list.add(JSONObject(st.equipped[inv]?.toString() ?: "{}").put("inv", inv).put("ok", true))
+            }
+            if (list.isEmpty()) return
+            val at = if (choosing) (eq.optInt("at", 1) - 1).coerceIn(0, list.size - 1) else 0
+            UiKit.checkedGlow(c, tile, orHilite = true)                 // the piece the row is for
+            // review: on the tile's left too the slots read in their order left to right (SlideOut.rowLefts), so the D-pad's right (the
+            // add-on's next target) always moves the highlight to the right
+            val boxes = SlideOut.rowLefts(tile.left, tile.right, tile.width(), list.size, width.toFloat())
+                .map { x -> RectF(x, tile.top, x + tile.width(), tile.bottom) }
+            for ((i, t) in list.withIndex()) {
+                val inv = t.optInt("inv", -1)
+                val box = boxes[i]
+                Doll.draw(c, Doll.Layout(mapOf(inv to box), box.bottom), if (t.optInt("id", 0) > 0) mapOf(inv to t) else emptyMap())
+                if (!t.optBoolean("ok", true)) faint(c, box)
+                if (i == at) { UiKit.slotFocus(c, box); UiKit.carried(c, iconOf(item), box) }
+                if (choosing) hits.add(RectF(box) to (if (i == at) 31 else GEAR_PICK - inv))
+                zones.add(RectF(box))
+            }
+            val target = list[at]
+            val inv = target.optInt("inv", -1)
+            val name = item.optString("name").takeIf { s -> real(s) } ?: "Loading…"
+            val q = if (item.has("quality")) item.optInt("quality") else 1
+            val key = "bag $bag $slot ${item.optInt("id")}"
+            val live = st.ctl?.optJSONObject("tip")?.takeIf { st.ctlOn }
+            val shown = st.tips.pick(key, item.optInt("count", 1), live, name, q, clock()) { fallbackTip(key, item) }
+            if (shown.held) postInvalidateDelayed(HOLD_REDRAW_MS)
+            val extra: List<UiKit.TipLine> = when (m) {
+                "equipping" -> listOf(UiKit.TipLine("Equipping\u2026", Theme.dim))
+                "bindask" -> listOf(UiKit.TipLine("The game asks: bind it to you?"), UiKit.TipLine("A yes, B no (the game's own question)", Theme.dim))
+                else -> {
+                    val cards = BagsCompare.cards(shown.tip, item, st.equipped, st.dualWield,
+                        BagsCompare.Words(empty = Tr.t("Empty"), changes = Tr.t("Stat changes")))
+                    val changes = TipStack.lines(JSONArray(SlideOut.changesFor(cards, inv, item.optString("equip"), st.dualWield)), false)
+                    // review: a target the game refuses now (a fight began while the row was open) says why under the changes
+                    if (target.optBoolean("ok", true)) changes
+                    else changes + UiKit.TipLine(Tr.t(if (target.optString("why") == "combat") "In combat" else "Unavailable"), Theme.unusable)
+                }
+            }
+            val glyphs = st.ctlOn
+            val acts = if (choosing) listOf((if (glyphs) "rev_a" else null) to "Equip", (if (glyphs) UiKit.backGlyph() else null) to "Back")
+                       else emptyList()
+            val what = if (choosing) listOf(if (target.optBoolean("ok", true)) 31 else EQUIP_OFF, 33) else emptyList()
+            val all = RectF(minOf(tile.left, boxes.minOf { it.left }), tile.top, maxOf(tile.right, boxes.maxOf { it.right }), tile.bottom)
+            card(c, all, shown.name, shown.quality, shown.tip, extra, acts, what, top, bottom)
         }
 
         private val sat2 = IntArray(2)
@@ -1415,10 +1489,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 // bags-open1: the game's own order for its controller bag (Read, Open, Use); a Locked box is never tried
                 it.optBoolean("lockedBox") -> LOCKED to false
                 it.optBoolean("opens") -> OPEN to true
-                it.optBoolean("use") -> "Use" to true
-                // an addon older than 46b0d1c sends "INVTYPE_NON_EQUIP_IGNORE" for food and quest
-                // items (measured): that is not a slot
+                // bags-gear1 (C9): gear before Use: the secure action equips any unworn piece (an on-use trinket too), so X says Equip.
+                // An addon older than 46b0d1c sends "INVTYPE_NON_EQUIP_IGNORE" for food and quest items (measured): that is not a slot
                 real(it.optString("equip")) && it.optString("equip") != "INVTYPE_NON_EQUIP_IGNORE" -> "Equip" to true
+                it.optBoolean("use") -> "Use" to true
                 else -> null
             }
         }
@@ -1512,6 +1586,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         var bags = listOf<Bag>(); var items = HashMap<Long, JSONObject>()
         var equipped = HashMap<Int, JSONObject>()     // worn slot 1..19 -> row
         var equippedDoc: JSONObject? = null           // the whole bags.equipped (ammo + the class flags)
+        /** the class can wear a one-hander in the off hand (bags.equipped.dw): a one-hander has two places to go (bags-gear1) */
+        val dualWield get() = equippedDoc?.optBoolean("dw") == true
         var ctx: String? = null
         var pad: JSONObject? = null                   // the shared tap pad, as the addon published it
         var combat = false                            // Clean Up is refused in combat

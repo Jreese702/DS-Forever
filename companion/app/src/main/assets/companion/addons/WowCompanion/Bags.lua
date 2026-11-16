@@ -164,6 +164,23 @@
 -- worn ammo (equipped.ammo) now says its STACK SIZE (`stack`: C_Item.GetItemMaxStackSizeByID, else GetItemInfo's stack count; left out
 -- when unread), so the app can say what a quiver / ammo pouch holds (its slots x that stack) beside the ammo in it (the bag rows'
 -- counts). The bags used / total come from what the doc already says (each bag's slots, free and family). Read-only calls only.
+-- bags-gear1 THE EQUIP SLIDE-OUT (the user, 2026-11-16: "Choose which ring or weapon slot to replace"; "X opens a slide-out of ARMOR
+-- (item icons) next to the item ... plus a blank entry that unequips"; "The Y text menu stays for enchant and bind (use-effect items)";
+-- "When pressed, X animates the options sliding out"; the picks: D1a "X equips it at once, as today" when the piece has one place to go):
+--  * X on GEAR WITH TWO PLACES TO GO (a ring, a trinket, a dual wielder's one-hander), out of a fight, no game window open: the bag bar's
+--    chooser (EQ) in its `gear` kind - the target slots beside the tile (the worn pieces), the D-pad left / right, A = equip it THERE
+--    (equipTo: the game's own pick-up and EquipCursorItem(slot), the drag's way, out of onInvCell), B = back. The game's "bind it to
+--    you?" gets A / B (mode "bindask", syncPass) and its answer is read off the slot. The start: an empty slot, else the lower item level.
+--    One place to go, a fight, a window open: X is the slot's secure cell as before. Gear the game won't let this character wear
+--    (`nouse`): nothing opens ("equip-nouse"; the app's X is faint).
+--  * a finger: bmvq 26, then column slot - 1 names the target (the bag bar's 26 + column, WC._bagsTargetTap); and the C10 hole: while
+--    the room holds outside its grid, a worn-slot column with no fresh 26 is SWALLOWED (it was a pick of the worn piece, which a later
+--    drop would have taken off).
+--  * the worn rows say their equip location (`equip`): the Character room's rail greys a two-hander over a worn off hand (and an off-hand
+--    piece under a worn two-hander) when the bags are full.
+--  * the Character room's Bind to a Button for a worn piece (Character c19) names its slot as the Unequip arm does: WC._bagsUnequipArm
+--    ("bind"), then the bmvq column; the slot goes to WC.character.bindWorn.
+-- Plain rows and the game's own calls only: no protected call from here in a fight, no Blizzard open / close, no binding, macro or CVar.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -682,8 +699,10 @@ function WC.bagsUnequip(slot)
 end
 
 -- the arming tap (Character.lua's "uneq" cell): the next bmvq column 0..18 names the slot
-function WC._bagsUnequipArm()
+-- bags-gear1: [kind] "bind" (Character c19's "wbind" cell) = that slot's piece goes to the Spellbook's Bind box (WC.character.bindWorn)
+function WC._bagsUnequipArm(kind)
     UQ.at = GetTime()
+    UQ.kind = (kind == "bind") and "bind" or nil
     picked = nil                                   -- never a drop: a stale bag pick is void from here
 end
 
@@ -697,9 +716,16 @@ function WC._bagsUnequipTap(col)
     if UQ.swallowCol == col and now < UQ.swallowUntil then return true end      -- the input path's second press
     if not UQ.at then return false end
     local age = now - UQ.at
-    UQ.at = nil
+    local kind = UQ.kind
+    UQ.at, UQ.kind = nil, nil
     if age > PICK_TTL then return false end
     UQ.swallowCol, UQ.swallowUntil = col, now + SETTLE
+    if kind == "bind" then
+        -- bags-gear1: the Character room's Bind to a Button names this worn slot (never an unequip, never a drop)
+        local C = WC.character
+        if type(C) == "table" and type(C.bindWorn) == "function" then pcall(C.bindWorn, col + 1, age > UQ.TTL) end
+        return true
+    end
     if age > UQ.TTL then UQ.reply({ ok = false, why = "late", to = { inv = col + 1 } }); return true end
     WC.bagsUnequip(col + 1)
     return true
@@ -828,6 +854,35 @@ local function settleAfterBind(t0, id)
     if WC._bagsSyncPass then pcall(WC._bagsSyncPass) end          -- char-more2: A / B back to the room
 end
 
+-- bags-gear1: THE ONE EQUIP INTO A CHOSEN SLOT (the drag's drop, and the Bags room's slide-out): bag / slot's piece (item id) into worn
+-- slot inv, the game's own way (its pick-up, then EquipCursorItem(inv)). Returns "ok", "ask" (the game asks "bind it to you?": the piece
+-- stays on the cursor while it asks, its own A / B answer it; settleAfterBind puts it back only if the answer left it there) or the why
+-- of a refusal (combat / cursor / moved / refused). Every answer also goes out as the drag's reply (bagsMove).
+local function equipTo(bag, slot, inv, id)
+    local to = { inv = inv }
+    local from = { kind = "bag", bag = bag, slot = slot }
+    if InCombatLockdown() then mvReply({ ok = false, why = "combat", to = to }); fightRefused(); return "combat" end
+    if cursorBusy() then mvReply({ ok = false, why = "cursor", to = to }); return "cursor" end
+    if bagItemID(bag, slot) ~= id then mvReply({ ok = false, why = "moved", to = to }); return "moved" end
+    pickupBag(bag, slot)
+    CALL(function() return EquipCursorItem(inv) end)
+    if bindAsking() then
+        -- char-more1: the game asks "bind it to you?" for this piece: its own A / B answer it (Character.lua / the Bags room pass them),
+        -- so the cursor is NOT cleared now (that was a No); settleAfterBind puts the piece back only if the answer left it there
+        movedAt = GetTime()
+        BINDWAIT.on = true
+        if WC._bagsSyncPass then pcall(WC._bagsSyncPass) end      -- char-more2: the Bags room's A / B to the game's question
+        mvReply({ ok = true, ask = "bind", from = from, to = to })
+        local t0 = GetTime()
+        C_Timer.After(BINDWAIT.STEP, function() settleAfterBind(t0, id) end)
+        return "ask"
+    end
+    local clean = settle()
+    movedAt = GetTime()
+    mvReply({ ok = clean, why = (not clean) and "refused" or nil, from = from, to = to })
+    return clean and "ok" or "refused"
+end
+
 -- a tap on a worn-slot cell: a pick of worn gear, or the drop of a bag pick = equip it there
 local function onInvCell(slot)
     if settling() then return end
@@ -839,29 +894,10 @@ local function onInvCell(slot)
         return
     end
     local p = picked; picked = nil
-    local to = { inv = slot }
-    if p.kind ~= "bag" then mvReply({ ok = false, why = "unsupported", to = to }); return end
-    if InCombatLockdown() then mvReply({ ok = false, why = "combat", to = to }); fightRefused(); return end
-    if cursorBusy() then mvReply({ ok = false, why = "cursor", to = to }); return end
-    if bagItemID(p.bag, p.slot) ~= p.id then mvReply({ ok = false, why = "moved", to = to }); return end
-    pickupBag(p.bag, p.slot)
-    CALL(function() return EquipCursorItem(slot) end)
-    if bindAsking() then
-        -- char-more1: the game asks "bind it to you?" for this piece: its own A / B answer it (Character.lua / the Bags room pass them),
-        -- so the cursor is NOT cleared now (that was a No); settleAfterBind puts the piece back only if the answer left it there
-        movedAt = GetTime()
-        BINDWAIT.on = true
-        if WC._bagsSyncPass then pcall(WC._bagsSyncPass) end      -- char-more2: the Bags room's A / B to the game's question
-        mvReply({ ok = true, ask = "bind", from = { kind = "bag", bag = p.bag, slot = p.slot }, to = to })
-        local t0 = GetTime()
-        C_Timer.After(BINDWAIT.STEP, function() settleAfterBind(t0, p.id) end)
-        return
-    end
-    local clean = settle()
-    movedAt = GetTime()
-    mvReply({ ok = clean, why = (not clean) and "refused" or nil,
-              from = { kind = "bag", bag = p.bag, slot = p.slot }, to = to })
+    if p.kind ~= "bag" then mvReply({ ok = false, why = "unsupported", to = { inv = slot } }); return end
+    equipTo(p.bag, p.slot, slot, p.id)
 end
+WC._bagsEquipTo = function(bag, slot, inv, id) return equipTo(bag, slot, inv, id) end     -- bags-gear1: for EQ (below) and the harness
 
 -- bags-onerow1 (the user, 2026-11-13: "Bags share one row"): see the header. MV = the shared drag row's route, also in the bags doc.
 local MV = { ROW = "bmv", NAME_ROW = "bagsort", BASE = 10, TTL = 1.5, bag = nil, at = nil }
@@ -892,9 +928,12 @@ local function mvRegister()
             -- uneq2: a column 19+ (the Bags room) disarms it and goes on below
             if WC._bagsUnequipTap and WC._bagsUnequipTap(col) then return end
             if col >= 19 then if WC._bagsTouch then WC._bagsTouch(col) end; return end
-            -- right after a "target" tap (col 26) a column 1..5 names the bag slot for the bag in the hand (EQ)
+            -- right after a "target" tap (col 26) a column 1..5 names the bag slot for the bag in the hand (EQ); bags-gear1: a column
+            -- slot - 1 names the worn slot for the gear of the slide-out
             if WC._bagsTargetTap and WC._bagsTargetTap(col) then return end
             if WC._bagsShutTap and WC._bagsShutTap(col) then return end
+            -- bags-gear1 (C10): the room holds outside its grid and no fresh 26 named this column: never a pick of the worn piece
+            if WC._bagsSwallowInv and WC._bagsSwallowInv(col) then return end
             onInvCell(col + 1)
         end)
     end
@@ -1520,7 +1559,9 @@ local TIP = { REST = 0.12, FRESH = 8, TICK = 0.1, PER_TICK = 2, MAX = 200, TRIES
               NW = { nw = true } }         -- bags-nocmp1: Interact's compare without the worn pieces' tooltips (only the stat changes)
 local function tipKey()
     -- bags-act1: the compare sheet (mode "compare") keeps the item's tooltip too (its compare is the sheet's right side)
-    if not (ctl.on and (ctl.mode == "grid" or ctl.mode == "compare") and not ctl.pick) or type(WC.tipOf) ~= "function" then return nil end
+    -- bags-gear1: and the slide-out of a piece of gear (EQ's gear kind: the cursor stays on that piece)
+    local gear = ctl.mode == "equip" and ctl.eq and ctl.eq.gear
+    if not (ctl.on and (ctl.mode == "grid" or ctl.mode == "compare" or gear) and not ctl.pick) or type(WC.tipOf) ~= "function" then return nil end
     local id = bagItemID(ctl.bag, ctl.slot)
     if not id then return nil end
     return "bag " .. ctl.bag .. " " .. ctl.slot .. " " .. id
@@ -2574,18 +2615,52 @@ function EQ.target(t, eq)
     return r
 end
 
+-- bags-gear1: one worn slot as the target of a piece of gear (the slide-out): what is worn there, and why not now (nil = it can go)
+function EQ.gearTarget(inv)
+    local cur = invItemID(inv)
+    local r = { inv = inv }
+    if cur then
+        r.id = cur
+        r.icon = SN(function() return GetInventoryItemTexture("player", inv) end)
+        r.quality = SN(function() return GetInventoryItemQuality("player", inv) end)
+        r.ilvl = ilvlOf(S(function() return GetInventoryItemLink("player", inv) end))
+        local okN, nm = CALL(function() return C_Item.GetItemNameByID(cur) end)
+        local n = okN and S(function() return nm end)
+        if type(n) == "string" and n ~= "" and n:byte(1) > 3 then r.name = n end
+    end
+    if InCombatLockdown() then r.why = "combat" end
+    r.ok = r.why == nil
+    return r
+end
+
+-- bags-gear1: the worn slots a piece of gear may go in (Bags' ACT.SLOTS; a one-hander's off hand only for a class that dual wields, a
+-- two-hander the main hand only), nil when it is not gear (a bag, ammo, food ...)
+function EQ.gearSlots(id)
+    local loc = ACT.loc(id)
+    local s = loc and ACT.SLOTS[loc]
+    if not s then return nil end
+    if loc == "INVTYPE_WEAPON" and not ACT.dualWield() then return { 16 } end
+    return s
+end
+
 function EQ.list(eq)
     local out = {}
+    if eq.gear then
+        for _, inv in ipairs(eq.slots) do out[#out + 1] = EQ.gearTarget(inv) end
+        return out
+    end
     for _, t in ipairs(eq.slots or EQ.TARGETS) do out[#out + 1] = EQ.target(t, eq) end
     return out
 end
 
 -- where the cursor starts: an empty slot it can go in, else the smallest bag it can replace, else the first
+-- bags-gear1 (gear): an empty worn slot, else the piece of the lower item level
 function EQ.start(list)
     local best, bestN
     for i, r in ipairs(list) do
         if r.ok and not r.id then return i end
-        if r.ok and (not bestN or (r.slots or 0) < bestN) then best, bestN = i, r.slots or 0 end
+        local n = r.inv and (r.ilvl or 0) or (r.slots or 0)
+        if r.ok and (not bestN or n < bestN) then best, bestN = i, n end
     end
     return best or 1
 end
@@ -2594,8 +2669,45 @@ function EQ.doc()
     local eq = ctl.eq
     if not eq or (ctl.mode ~= "equip" and ctl.mode ~= "equipping" and ctl.mode ~= "bindask") then return nil end
     return { bag = eq.bag, slot = eq.slot, id = eq.id, size = eq.size, at = ctl.eqAt, to = ctl.eqTarget,
-             kind = eq.kind, fam = eq.fam, move = eq.move, from = eq.fromBag, icon = eq.icon,
+             kind = eq.kind, fam = eq.fam, move = eq.move, from = eq.fromBag, icon = eq.icon, gear = eq.gear,
              targets = (ctl.mode == "equip") and EQ.list(eq) or nil }
+end
+
+-- bags-gear1: X on a piece of gear with two places to go: the slide-out of its worn slots (out of a fight, no game window)
+function EQ.beginGear(id, slots)
+    if InCombatLockdown() then report("equip-combat"); fightRefused(); return end
+    ctl.eq = { gear = true, bag = ctl.bag, slot = ctl.slot, id = id, slots = slots }
+    ctl.eqAt = EQ.start(EQ.list(ctl.eq)); ctl.eqTarget = nil
+    ctl.mode = "equip"; report(nil)
+end
+
+-- bags-gear1: A on the slide-out: the piece into the chosen worn slot (equipTo, the drag's own way); the game's bind question waits
+function EQ.goGear(eq, tg)
+    if InCombatLockdown() then report("equip-combat"); fightRefused(); return end
+    if itemAt(eq.bag, eq.slot) ~= eq.id then EQ.done("moved"); return end
+    if not tg.ok then report("equip-" .. tostring(tg.why)); return end
+    if cursorBusy() then EQ.done("cursor"); return end
+    ctl.eqTarget = tg.inv
+    picked = nil                                         -- a half-done drag of the room is void now
+    local r = WC._bagsEquipTo(eq.bag, eq.slot, tg.inv, eq.id)
+    if r == "ask" then
+        ctl.mode = "bindask"; report("equip-bind")       -- syncPass hands A / B to the game's question
+        C_Timer.After(0.25, EQ.waitGear)
+        return
+    end
+    EQ.done(r == "ok" and "equipped" or ("equip-" .. tostring(r)))
+end
+
+-- bags-gear1: the game's bind question answered (or settleAfterBind gave up): the slot says whether the piece went on
+function EQ.waitGear()
+    if not (ctl.on and ctl.mode == "bindask" and ctl.eq and ctl.eq.gear) then return end
+    if bindAsking() then C_Timer.After(0.25, EQ.waitGear); return end
+    ctl.mode = "equipping"; report(nil)
+    C_Timer.After(0.5, function()                       -- the game's answer reaches the slot on its next update
+        local eq, inv = ctl.eq, ctl.eqTarget
+        if not (ctl.on and ctl.mode == "equipping" and eq and eq.gear) then return end
+        EQ.done((inv and invItemID(inv) == eq.id) and "equipped" or "equip-cancelled")
+    end)
 end
 
 function EQ.begin(id)
@@ -2633,6 +2745,7 @@ function EQ.go()
     local eq = ctl.eq
     local tg = eq and EQ.list(eq)[ctl.eqAt or 1]
     if not tg then EQ.done(nil); return end
+    if eq.gear then EQ.goGear(eq, tg); return end        -- bags-gear1: a piece of gear into a worn slot
     if InCombatLockdown() then report("equip-combat"); fightRefused(); return end
     if EQ.heldId(eq) ~= eq.id then EQ.done("moved"); return end
     if not tg.ok then report("equip-" .. tg.why); return end          -- the tooltip says why; the bag stays in the hand
@@ -2689,6 +2802,7 @@ end
 
 function EQ.check()
     if not (ctl.on and ctl.mode == "equipping") then return end
+    if ctl.eq and ctl.eq.gear then return end                  -- bags-gear1: the gear's own wait (EQ.waitGear) reads its slot
     if EQ.asking() then
         ctl.mode = "bindask"; report("equip-bind")             -- syncPass hands A / B to the game's question
         C_Timer.After(0.25, EQ.waitBind)
@@ -2699,6 +2813,7 @@ end
 
 function EQ.waitBind()
     if not (ctl.on and ctl.mode == "bindask") then return end
+    if ctl.eq and ctl.eq.gear then return end                  -- bags-gear1: EQ.waitGear's
     if EQ.asking() then C_Timer.After(0.25, EQ.waitBind); return end
     ctl.mode = "equipping"; ctl.eqPutAt = GetTime()           -- answered: A / B are Bags' again; the churn may follow
     C_Timer.After(0.5, function()                              -- the game's answer reaches the slot on its next update
@@ -3078,6 +3193,13 @@ local function onPress(key)
             if EQ.slotsFor(id) then EQ.begin(id); return end
             -- bags-open1: a box the game says is Locked: never asked (the app shows "Locked" faint)
             if OPEN.lockedAt(ctl.bag, ctl.slot) then report("locked"); return end
+            -- bags-gear1 (the user, 2026-11-16: "Choose which ring or weapon slot to replace"): GEAR WITH TWO PLACES TO GO, out of a
+            -- fight and with no game window open: the slide-out of its worn slots. One place, a fight, a window: the secure cell below
+            local gs = EQ.gearSlots(id)
+            if gs and #gs > 1 and not ctx and not InCombatLockdown() then
+                if WC._bagsNoUse(ctl.bag, ctl.slot, id) then report("equip-nouse"); return end
+                EQ.beginGear(id, gs); return
+            end
             -- USE is protected: the app taps this slot's secure cell once per new use.seq
             KIT.used(ctl.bag, ctl.slot)                       -- an armor kit / stone starts the game's "pick an item"
             ctl.use = { bag = ctl.bag, slot = ctl.slot, seq = ctl.seq + 1 }; report("use"); return
@@ -3421,9 +3543,19 @@ function WC._bagsTargetTap(col)
     if not ctl.targetAt or (GetTime() - ctl.targetAt) > CURSOR_TTL then return false end
     ctl.targetAt = nil
     if not (ctl.on and ctl.mode == "equip" and ctl.eq) then return true end
+    local gear = ctl.eq.gear                                -- bags-gear1: the gear's targets are worn slots, column = slot - 1
     for i, t in ipairs(ctl.eq.slots or EQ.TARGETS) do
-        if t == col then ctl.eqAt = i; report(nil); return true end
+        if (gear and t == col + 1) or (not gear and t == col) then ctl.eqAt = i; report(nil); return true end
     end
+    return true
+end
+
+-- bags-gear1 (C10): a worn-slot column (0..18) while the room holds OUTSIDE its grid, with no fresh 26 before it (lost, or more than
+-- CURSOR_TTL early): swallowed. It fell through to onInvCell before - a PICK of the worn piece, live for PICK_TTL, which a later drop
+-- would have taken off into a bag. True = taken (nothing happens)
+function WC._bagsSwallowInv(col)
+    if not (ctl.on and ctl.mode ~= "grid") or type(col) ~= "number" or col > 18 then return false end
+    mvReply({ ok = false, why = "swallowed", to = { inv = col + 1 } })
     return true
 end
 
@@ -3719,6 +3851,10 @@ function WC.collectEquipped()
             row.ilvl = ilvlOf(link)
             row.stats = statsOf(link)
             row.tip = wornTip(slot, link, all)
+            -- bags-gear1: its equip location (a two-hander in the main hand: the Character room's "Bags full" for an off-hand piece)
+            local okL, _, _, _, wloc = CALL(function() return C_Item.GetItemInfoInstant(id) end)
+            wloc = okL and S(function() return wloc end) or nil
+            if type(wloc) == "string" and wloc ~= "" and wloc:byte(1) > 3 then row.equip = wloc end
             -- an on-use ability (a trinket, say), for the Character room's card and Bind (character session's
             -- request, 2026-09-28): the same test the bag rows use, plus its spell. use = true like a bag row.
             local okS, spName, spID = WC.CALL(function() return C_Item.GetItemSpell(id) end)

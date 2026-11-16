@@ -218,6 +218,9 @@ object BagsCursor {
 
         fun forget() { kept.clear(); last = null; lastAt = Long.MIN_VALUE / 2 }
 
+        /** bags-gear1 (D4a): the full tooltip kept for item [key] (count [count]), or null; the Character room's slide-out card */
+        fun kept(key: String, count: Int): JSONObject? = kept[id(key, count)]
+
         fun pick(key: String, count: Int, live: JSONObject?, name: String, quality: Int, now: Long, stand: () -> JSONObject): Card {
             val mine = live?.takeIf { it.optString("key") == key }
             offer(mine, key, count)

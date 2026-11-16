@@ -25,6 +25,12 @@ object Motion {
     /** the bar cursor fading in / out */
     const val BAR_IN = 80L       // b98 (the user: the bar's opening was "really slow"): 120 -> 80 ms
     const val BAR_OUT = 100L
+    /** bags-gear1 THE EQUIP SLIDE-OUT (the user, 2026-11-16: "When pressed, X animates the options sliding out"; the pick D5a "Quick"):
+     *  the icons slide out of the slot in [RAIL_OUT], each [RAIL_STAGGER] after the one before it, and back in [RAIL_IN] (the chosen
+     *  one flies into the slot) */
+    const val RAIL_OUT = 160L
+    const val RAIL_STAGGER = 15L
+    const val RAIL_IN = 120L
 
     /** the one curve: fast out, slow in (Material's standard easing) */
     fun curve(): Interpolator = PathInterpolator(0.4f, 0f, 0.2f, 1f)
