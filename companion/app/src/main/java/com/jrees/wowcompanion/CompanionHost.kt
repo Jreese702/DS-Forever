@@ -2768,6 +2768,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current && !d.name.isNullOrEmpty()) QuestWatchKeep.character("${d.name}-${d.realm ?: ""}")
                     if (!d.name.isNullOrEmpty()) TaxiNet.character("${d.name}-${d.realm ?: ""}")
                     if (current && !d.name.isNullOrEmpty()) GameUi.character = "${d.name}-${d.realm ?: ""}"     // hub13: HUD mode per character
+                    // the chat's message-type checklist, per character (the user, 2026-11-16: "mix and match my preferences")
+                    if (current && !d.name.isNullOrEmpty()) { val who = "${d.name}-${d.realm ?: ""}"; ui.post { ChatFilter.character(who) } }
                     lastDpad = d; settings.homeSection.dpadChanged()
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
@@ -3233,7 +3235,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private fun startPressed() {
         if (shell.hostGone()) return
-        if (room == Room.CHAT && chatView.ownsStart()) {
+        // the chat's board (the keyboard's Send, quick chat's Send): the Chat room, and Home's own chat module (the same ChatView lent)
+        if ((room == Room.CHAT || (room == Room.HOME && homeView.chatModuleOn)) && chatView.ownsStart()) {
             chatView.onPad(JSONObject().put("type", "guestpad").put("id", "chat").put("k", "PADFORWARD").put("n", --directN)); return
         }
         if (room == Room.BAGS && bagsView.ownsStart()) return          // bagsView.onPadKey already had it (the unclaimed route)

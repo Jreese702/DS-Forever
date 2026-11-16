@@ -58,7 +58,7 @@ class HomeView(
     private val grow = HomeGrow()
     private val auras = HomeAuras()
     private val quests = HomeQuests()
-    private val chat = HomeChatTail()
+    private val chat = HomeChatTail(counts = { ChatFilter.shows(it.ch, it.chan) })     // the checklist's hidden lines push nothing out
     private var pad: JSONObject? = null
     /** the small map's zone band: the game minimap's text (the subzone, else the zone) and the zone's PvP type when sent */
     private var zoneText = ""
@@ -2201,6 +2201,8 @@ class HomeView(
 
         fun refresh() { cache.keys.retainAll(chat.all.toSet()); invalidate() }
 
+        init { ChatFilter.onChange { postInvalidate() } }
+
         override fun onDraw(c: Canvas) {
             val w = width.toFloat(); val h = height.toFloat()
             UiKit.asBody(tp)
@@ -2220,6 +2222,9 @@ class HomeView(
             var y = h - pad
             c.save(); c.clipRect(pad, top, w - pad, h - pad)
             for (l in chat.all.asReversed()) {
+                // the Chat room's checklist (the user, 2026-11-16: "check ... all of the message types that I care about seeing"): the
+                // pane shows the same types the room does
+                if (!ChatFilter.shows(l.ch, l.chan)) continue
                 var lay = layoutOf(l, width)
                 if (y - lay.height < top) {
                     // a message too long for what is left is NEVER dropped (tracking 17:21: the player could miss a whisper):
@@ -3061,6 +3066,9 @@ class HomeView(
             "money" to Color.parseColor("#FFFF00"), "currency" to Color.parseColor("#00AA00"),
             "system" to Color.parseColor("#FFFF00"), "info" to Color.parseColor("#FFFF00"),
             "error" to Color.parseColor("#FF5050"),
+            // Chat.lua chat37: experience, honor, reputation, skill-ups (the game's ChatTypeInfo colours)
+            "xp" to Color.parseColor("#6F6FFF"), "honor" to Color.parseColor("#E0CA0A"),
+            "rep" to Color.parseColor("#8080FF"), "skill" to Color.parseColor("#5555FF"),
         )
         private val NUMBERED: Map<Int, Int> = mapOf(
             1 to Color.parseColor("#FFC0C0"), 2 to Color.parseColor("#F5A97A"),

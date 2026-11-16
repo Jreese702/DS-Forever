@@ -806,8 +806,10 @@ data class HomeChatLine(
  * Chat.lua re-sends its whole ring (up to 60 lines) with every document and starts the ring again
  * at every /reload with a new session `s`; lines are appended by (s, i) exactly as ChatView does,
  * so a /reload's empty ring does not blank the line Home shows.
+ * [counts]: the lines the pane SHOWS (the Chat room's checklist, the user 2026-11-16: "check ... all of the message types that I care
+ * about seeing"); [keep] of those are kept, so lines of a type the player has hidden never push shown ones out of the pane.
  */
-class HomeChatTail(private val keep: Int = 40) {
+class HomeChatTail(private val keep: Int = 40, private val counts: (HomeChatLine) -> Boolean = { true }) {
     private val lines = ArrayList<HomeChatLine>()
     private var lastS = 0L
     private var lastI = 0
@@ -839,7 +841,10 @@ class HomeChatTail(private val keep: Int = 40) {
                 lines.add(line(o)); added = true
             }
         }
-        while (lines.size > keep) lines.removeAt(0)
+        // the oldest go while more than [keep] shown lines are kept; past [keep] x 4 lines in all, the oldest HIDDEN one goes
+        var shown = lines.count(counts)
+        while (shown > keep) { if (counts(lines.removeAt(0))) shown-- }
+        while (lines.size > keep * 4) { val k = lines.indexOfFirst { !counts(it) }; lines.removeAt(if (k < 0) 0 else k) }
         return added
     }
 
