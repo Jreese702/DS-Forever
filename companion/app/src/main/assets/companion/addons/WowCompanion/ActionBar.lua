@@ -23,6 +23,10 @@
 -- assign anything from the 5 tabs"): a slot holds a spell, an item, a mount or a command ({ k, id / key } per slot, an old number = a
 -- spell, migrated at the login), cast by our own cell (spell / item / a one-line macrotext on OUR button); the Controller room's Cast
 -- bar tab edits it (CB.put / CB.clear / CB.move, PadTabCtl p53). At "cb9 ANY CHOOSER KIND".
+-- gws2 (issue #306, 1.0.32: the pet wheels' stick "dont respond ... or require bashing B"; the user's pick 2026-11-16: "if the game's own
+-- pet/spell flyout ... is still shown ~0.5 s after our class wheel lets go and no room holds the pad, make it visible (alpha 1) and close
+-- it once more the safe way"): a game wheel WE drew at alpha 0 that outlives the chord is drawn again and shut once more by our secure
+-- cell (the app's tap, document "gamewheel"). At "b-game-wheel-shut2".
 -- The CAST room's data. Two feeds live here:
 --
 --  1. LEGACY keyboard-slot rows (`slots`, slots 1-12 + their ACTIONBUTTONn keys). Unchanged; the app
@@ -695,14 +699,68 @@ local function crCellOf(side, e) return (side == "l" and 0 or 8) + e.p - 1 end
 -- handler of ours whose click hides the game's three gamepad wheels, reached by a "click" cell on this row (col GF_COL), which the app
 -- taps when its class wheel opens and when it closes. While a class chord is held the game's wheel is also drawn at alpha 0 (a
 -- post-hook on its Show: alpha only), so it never shows on the top screen in the moment before the tap lands.
+-- GAMEWHEEL-BEGIN (tools/test_game_wheel.py runs this block on its own: it uses only WC's readers, CR and the game's globals)
 local GF_COL = 24
 local GF_WHEELS = { "GamepadPetActionFlyout", "GamepadPetSpellFlyout", "GamepadSpellFlyout" }
-local GF = { btn = nil, refs = 0, hooked = {} }
+local GF = { btn = nil, refs = 0, hooked = {}, watch = {}, polling = false, n = 0 }
 local function gfChordHeld()
     local function down(k) return type(k) == "string" and S(function() return IsKeyDown(k) end) == true end
     local L, LT = rawget(_G, "GAMEPAD_SHOULDER_LEFT") or "PADLSHOULDER", rawget(_G, "GAMEPAD_TRIGGER_LEFT") or "PADLTRIGGER"
     local R, RT = rawget(_G, "GAMEPAD_SHOULDER_RIGHT") or "PADRSHOULDER", rawget(_G, "GAMEPAD_TRIGGER_RIGHT") or "PADRTRIGGER"
     return (down(L) and down(LT)) or (down(R) and down(RT))
+end
+
+-- b-game-wheel-shut2 (gws2; issue #306, 1.0.32: the pet wheels' stick "dont respond ... or require bashing B"; the user's pick 2026-11-16:
+-- "if the game's own pet/spell flyout ... is still shown ~0.5 s after our class wheel lets go and no room holds the pad, make it visible
+-- (alpha 1) and close it once more the safe way"). A game wheel WE drew at alpha 0 (it showed while a class chord was held) and that is
+-- still up GF_QUIET_S after the chord is let go, with no room holding the pad (the shared capture's holder: our class wheel's own guest
+-- "pad:class" holds too), would keep the right stick unseen (its binding group) until a button press. So it is drawn again (alpha 1,
+-- SetAlpha only) and the app is asked ONCE per opening to tap the shut cell again (document "gamewheel": `w` the wheel 1-3, `col` the
+-- shut cell only while it is built as the shut). The shut stays the ruled route: our secure snippet's Hide reached by the app's tap (a
+-- hardware click; fights too) - no Blizzard open / close call, no pad press faked; if that tap is lost too, the wheel is in sight and the
+-- game's own close (any pad button) ends it. A wheel the player opened without a chord (a bar button's flyout) is never watched.
+local GWV = "gws2"
+local GF_QUIET_S, GF_POLL_S = 0.5, 0.1
+local function gfHolder()
+    local cap = WC.capture
+    if type(cap) ~= "table" or type(cap.state) ~= "function" then return nil end
+    local ok, st = pcall(cap.state)
+    return ok and type(st) == "table" and st.holder or nil
+end
+local gfPoll
+local function gfPollSoon()
+    if GF.polling then return end
+    local t = rawget(_G, "C_Timer")
+    if type(t) ~= "table" or type(t.After) ~= "function" then return end
+    GF.polling = pcall(t.After, GF_POLL_S, function() pcall(gfPoll) end) and true or false
+end
+gfPoll = function()
+    GF.polling = false
+    local now = SN(GetTime) or 0
+    local more = false
+    for w, st in pairs(GF.watch) do
+        if S(function() return w:IsShown() end) ~= true then
+            GF.watch[w] = nil                                    -- gone (the shut landed, or the game closed it): nothing to do
+        else
+            if gfChordHeld() or gfHolder() ~= nil then
+                st.quiet = nil                                   -- the chord again, or a room / our class wheel holds: not yet
+            else
+                st.quiet = st.quiet or now
+                if now - st.quiet >= GF_QUIET_S then
+                    GF.watch[w] = nil                            -- once per opening: only the next Show watches again
+                    pcall(w.SetAlpha, w, 1)
+                    local cw = CR.want[GF_COL]
+                    GF.n = GF.n + 1
+                    WC.send(WC.encode({ type = "gamewheel", v = GWV, w = st.i, n = GF.n,
+                                        col = (cw and CR.frozen[GF_COL] == cw.sig) and GF_COL or nil,
+                                        fight = (S(InCombatLockdown) == true) or nil }))
+                    if type(WC.flush) == "function" then pcall(WC.flush) else WC.push() end
+                end
+            end
+            if GF.watch[w] then more = true end
+        end
+    end
+    if more then gfPollSoon() end
 end
 local function gfSetup()
     if S(InCombatLockdown) ~= false then return GF.btn end
@@ -726,13 +784,21 @@ local function gfSetup()
                 or (type(GF.btn.SetFrameRef) == "function" and pcall(GF.btn.SetFrameRef, GF.btn, "wheel" .. i, w))
             if okRef then GF.refs = GF.refs + 1 end
             GF.hooked[n] = pcall(hooksecurefunc, w, "Show", function(self)
-                if WC.classWheelOn and gfChordHeld() then pcall(self.SetAlpha, self, 0) else pcall(self.SetAlpha, self, 1) end
+                if WC.classWheelOn and gfChordHeld() then
+                    pcall(self.SetAlpha, self, 0)
+                    GF.watch[self] = { i = i }                     -- gws2: drawn unseen by us: watched until it goes
+                    gfPollSoon()
+                else
+                    GF.watch[self] = nil                             -- the player's own (a bar button's flyout): never watched
+                    pcall(self.SetAlpha, self, 1)
+                end
             end)
         end
     end
     return GF.btn
 end
-WC.gameWheelShut = { col = GF_COL, setup = gfSetup }
+WC.gameWheelShut = { col = GF_COL, setup = gfSetup, v = GWV }
+-- GAMEWHEEL-END
 local function crInit(btn, col)
     local w = CR.want[col]
     btn:SetAttribute("type", w and w.type or nil)
