@@ -5,9 +5,8 @@ import android.graphics.RectF
 
 /**
  * THE MENU (the user 2026-11-01), on the waiting screen ([StartView]) and the chooser ([ChooserPanel]): Auto login's tick and Change login,
- * Forget login, Report issue, the controller's two settings, Region; on the waiting screen also Stream settings or Restart game, Switch
- * mode and Exit game; on the chooser Windows ID (#288). The Menu button turned into an X, B or a touch outside shuts it. The host fills
- * in the actions; one app, one menu. Main thread.
+ * Forget login, Report issue, the controller's two settings; on the waiting screen also Stream settings or Restart game, Switch mode and
+ * Exit game. The Menu button turned into an X, B or a touch outside shuts it. The host fills in the actions; one app, one menu. Main thread.
  */
 object StartMenu {
     var open = false
@@ -28,15 +27,6 @@ object StartMenu {
      *  when starting the app"): the bottom row's Region button steps US, EU, Korea, Taiwan; the portal is written at the game's next start */
     var region: () -> String = { "us" }
     var onRegion: ((String) -> Unit)? = null
-    /**
-     * WINDOWS ID ON THE START SCREEN (issue #288, 2026-11-14: "tell me how to open windows setting to change setting? i can't find it. I
-     * want to fix the error BLZ51914400"): the Windows ID switch lived only in Settings > General > Account, a room of the game's bottom
-     * screen - out of reach for a player whose sign-in Battle.net turns down, the very player it is for. The chooser's Menu has it beside
-     * Region (that row was one wide button): Per install / Original, the same saved choice (Settings.windowsId), used from the next
-     * game start. The waiting screen's Menu is full; it stays in Settings there.
-     */
-    var windowsId: () -> String = { Settings.windowsId }
-    var onWindowsId: (String) -> Unit = { Settings.windowsId = it }
     private var forgetArmedAt = -FORGET_ARM_MS
 
     /**
@@ -95,14 +85,8 @@ object StartMenu {
         if (game) {
             put(half(false), rWord, REGION, true)
             put(half(true), "Exit game", EXIT, canExit())
-        } else {
-            put(half(false), rWord, REGION, true)
-            put(half(true), winIdWords(), WINID, true)                    // #288
-        }
+        } else put(RectF(inL, y, inR, y + bh), rWord, REGION, true)
     }
-
-    /** the Windows ID button's words: "Windows ID: Per install" (es / fr: both parts translated) */
-    fun winIdWords(): String = "${Tr.t(WindowsId.ROW_ID)}: ${Tr.t(WindowsId.label(windowsId()))}"
 
     /** the four face buttons where they sit: Nintendo's X top and A right, Xbox's Y top and B right */
     private fun faceDiamond(c: Canvas, r: RectF) {
@@ -146,10 +130,6 @@ object StartMenu {
                 val all = GameRegion.ALL.map { it.code }
                 onRegion?.invoke(all[(all.indexOf(region()).coerceAtLeast(0) + 1) % all.size])
             }
-            WINID -> {
-                val all = WindowsId.VALUES
-                onWindowsId(all[(all.indexOf(WindowsId.sanitize(windowsId())) + 1) % all.size])
-            }
         }
     }
 
@@ -165,8 +145,6 @@ object StartMenu {
     private const val ABXY = 13
     private const val GLYPHS = 14
     private const val REGION = 15
-    /** the Windows ID button (#288; public for the tests) */
-    const val WINID = 16
     private const val FORGET_ARM_MS = 4000L
     const val WIDTH = 1000f
     private const val PAD = 32f
