@@ -1597,6 +1597,98 @@ check(ed < 2600 and bd < 2600, "ac. the editor with its strips (%d bytes) and th
 press(L, "PAD2"); press(L, "PAD2")
 check(clean(L) == {}, "ac. clean", clean(L))
 
+# ================================================================ ad. (s14 review) spaces the game reads alike, a fight's refusal, typed units
+check('s14 REVIEW' in SRC["spells"].split('\n', 40)[35], "ad. the s14 review's header note (the same tag, as s10's review)")
+# a stored line with its own spacing: opened and finished unchanged = NOTHING written, no draft, no Revert
+L = opened([("Alpha", "/cast [help] Healing Wave ;Lightning Bolt\n/cast  [mod:shift]Lightning Shield")], CHAR)
+press(L, "PAD1"); press(L, "PADDDOWN")
+d = mdoc(L)
+check([x.get('k') for x in d.get('ls') or []] == ['cmd', 'cmd'], "ad. both oddly spaced lines are builder lines (MR.norm)", d.get('ls'))
+press(L, "PAD1")
+b = bdoc(L)
+check(b.get('t') == '/cast [help] Healing Wave; Lightning Bolt' and not b.get('dr'),
+      "ad. opened: the composed text, NOT a draft (the spaces are no change)", (b.get('t'), b.get('dr')))
+L.execute('MLOG = {}')
+sel(L)
+check(mlog(L) == [] and mdoc(L).get('mode') == 'edit' and L.eval('mbody("Alpha")').startswith('/cast [help] Healing Wave ;Lightning Bolt'),
+      "ad. Done unchanged: NOTHING written, the stored spacing kept", mlog(L))
+press(L, "PADDDOWN"); press(L, "PAD1")
+check(not bdoc(L).get('dr'), "ad. the second line ('/cast  [mod:shift]Lightning Shield') too: not a draft", bdoc(L).get('t'))
+chip(L, 'rem')
+check(mlog(L) == [] and bdoc(L).get('rem') is True, "ad. its Remove arms (a stored line, unchanged: Remove, not Revert)", bdoc(L))
+press(L, "PAD2")
+# a real change still writes ONE line
+press(L, "PADDUP"); press(L, "PAD1"); chip(L, 'keep')
+check(bdoc(L).get('dr') is True, "ad. Keep on: a real change, a draft", bdoc(L).get('t'))
+sel(L)
+check(mlog(L) == ['edit 1 nil /cast [help] !Healing Wave; Lightning Bolt\n/cast  [mod:shift]Lightning Shield'],
+      "ad. ... Done: ONE write, the line composed; the other line untouched", mlog(L))
+# a fight: Done refused as "combat" BEFORE any fault (the design's 7), the draft kept; a preset's Done likewise
+press(L, "PAD3")
+check(bdoc(L).get('h') == 'pick', "ad. X: a new line, no spell yet ('pick')", bdoc(L).get('h'))
+press(L, "PAD2")
+L.execute('MLOG = {}; ' + COMBAT_ON)
+sel(L, allow=False)
+check(mdoc(L).get('note') == 'combat' and mdoc(L).get('mode') == 'build' and mlog(L) == [],
+      "ad. Done in a fight with a missing spell: refused as 'combat' (not 'pick'), the draft kept", (mdoc(L).get('note'), mlog(L)))
+L.execute(COMBAT_OFF)
+sel(L, allow=False)
+check(mdoc(L).get('note') == 'pick' and bdoc(L).get('cur') == 'arg' and mlog(L) == [],
+      "ad. ... out of the fight: 'pick', the cursor on the spell chip", (mdoc(L).get('note'), bdoc(L).get('cur')))
+press(L, "PAD2"); press(L, "PAD2"); press(L, "PAD2")
+check(clean(L) == {}, "ad. clean", clean(L))
+L = opened([("Alpha", "")], CHAR, macros='BOOK = { 403, 8042 }')
+press(L, "PAD1")
+tk = [t.get('k') for t in mdoc(L).get('tiles') or []]
+tap(L, 2 + tk.index('seq')); tap(L, "a")
+L.execute('MRx.st.ps.picks[2] = ""')
+L.execute('MLOG = {}; ' + COMBAT_ON)
+sel(L, allow=False)
+check(mdoc(L).get('note') == 'combat' and mlog(L) == [], "ad. a preset's Done in a fight: 'combat' first", mdoc(L).get('note'))
+L.execute(COMBAT_OFF)
+sel(L, allow=False)
+check(mdoc(L).get('note') == 'pick' and (mdoc(L).get('ps') or {}).get('cur') == 'p2' and mlog(L) == [],
+      "ad. ... out of it: 'pick', the cursor on the EMPTY pick (p2), not the first", (mdoc(L).get('note'), (mdoc(L).get('ps') or {}).get('cur')))
+check(clean(L) == {}, "ad. clean", clean(L))
+# a unit typed by name with accents (an es / fr realm): written, and read back as a unit (not a text line)
+L = opened([("Alpha", "/cast Healing Wave")], CHAR)
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PAD1")
+chip(L, 'c1u')
+pick_row(L, lambda r: r.get('u') == 'name')
+check(mdoc(L).get('kbd', {}).get('name') == 'macunit', "ad. On: Name... = the keyboard", mdoc(L).get('kbd'))
+# the game's Lua reads %w as ASCII only (the "C" CTYPE); Python set this process's CTYPE to the user's (cp1252: high bytes are letters
+# there), so the name goes in as UTF-8 bytes from Lua itself, under "C", as the game's client has it
+CT = L.eval('os.setlocale(nil, "ctype")')
+L.execute('os.setlocale("C", "ctype")')
+NAME = r'"\195\141\195\177igo"'
+L.eval('function(n) MRx.kbdDone(n) end')(L.eval(NAME))
+check(L.eval('MRx.compose(MRx.st.draft.L) == "/cast [@" .. %s .. "] Healing Wave"' % NAME) is True,
+      "ad. the typed accented name (UTF-8 bytes) is the case's unit")
+L.execute('MLOG = {}')
+sel(L)
+check(L.eval('#MLOG == 1 and MLOG[1] == "edit 1 nil /cast [@" .. %s .. "] Healing Wave"' % NAME) is True and L.eval('MRx.st.mode') == 'edit',
+      "ad. Done: written ONCE")
+check(L.eval('MRx.parse(mbody("Alpha")).kind') == 'cmd' and L.eval('MRx.strip(MRx.parse(mbody("Alpha"))).cs[1].u == %s' % NAME) is True,
+      "ad. ... and read back under the game's ASCII %w: a unit on a builder line (its strip), not a text line",
+      L.eval('MRx.parse(mbody("Alpha")).kind'))
+L.execute('GENM[1].body = "/cast [help] Healing Wave"; MRx.st.draft = nil')
+L.eval('function(c) os.setlocale(c, "ctype") end')(CT)
+# a STORED line's Chat line: its keyboard starts from the line's own text (an empty Done would remove it with no second A)
+L.execute('MRx.st.mode = "edit"; MRx.st.efk = "l1"')
+press(L, "PAD1")
+chip(L, 'cmd')
+pick_row(L, lambda r: r.get('k') == 'chat')
+k = mdoc(L).get('kbd') or {}
+check(k.get('name') == 'macline' and k.get('text') == '/cast [help] Healing Wave' and k.get('line') == 1,
+      "ad. Chat line on a stored line: the keyboard holds that line's text (not empty)", k)
+L.execute('MLOG = {}')
+tap(L, "kx")
+check(mlog(L) == [] and L.eval('mbody("Alpha")') == '/cast [help] Healing Wave', "ad. ... its keyboard closed: nothing written", mlog(L))
+press(L, "PAD2"); press(L, "PAD2")
+check(L.eval('MRx.parse("/cast [@Ä,harm|x] Bolt").kind') == 'lock' and L.eval('MRx.parse("/cast [@a b,nodead] X").kind') == 'cmd',
+      "ad. ('|' still locks a line; a spaced name still reads)")
+check(clean(L) == {}, "ad. clean", clean(L))
+
 # ================================================================ the documents for the room's off-device render (MacrosShotsTest)
 DUMP = os.environ.get("MACRO_DUMP")
 if DUMP:
@@ -1648,6 +1740,15 @@ function iconize() for _, t in ipairs({ GENM, CHARM }) do for _, m in ipairs(t) 
     dump(LB, "build_warn")
     press(LB, "PAD2"); press(LB, "PADDUP"); press(LB, "PAD4"); press(LB, "PADDDOWN")
     dump(LB, "move")
+    # (s14 review) a Move past the lines on show: the editor scrolls with the moved line
+    LONG = ["#showtooltip"] + [["/cast Lightning Bolt", "/cast [mod:shift] Healing Wave", "/say %d" % i, "/startattack"][i % 4]
+                               for i in range(11)]     # 12 lines inside the game's 255
+    LM = opened([("Long", "\n".join(LONG))], [], macros='BOOK = { 403, 331, 324, 8042 }')
+    LM.execute(ICONS); LM.execute('iconize()')
+    press(LM, "PAD1"); press(LM, "PADDDOWN"); press(LM, "PADDDOWN"); press(LM, "PAD4")
+    for _ in range(8):
+        press(LM, "PADDDOWN")
+    dump(LM, "move_far")
     press(LB, "PAD2")
     press(LB, "PADDDOWN"); press(LB, "PADDDOWN"); press(LB, "PAD1")
     dump(LB, "kbd")
