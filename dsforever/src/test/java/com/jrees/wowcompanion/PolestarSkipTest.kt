@@ -245,4 +245,33 @@ class PolestarSkipTest {
         assertTrue("MIN_MS covers the 0.25 s guard plus a slow frame", TapSpacing.MIN_MS - TapSpacing.FRAME_MS >= 250L)
         assertTrue("a frame of 150 ms is budgeted", TapSpacing.FRAME_MS >= 150L)
     }
+    /** pg1 (design_polestar B3: "Repeated digits inside one batch can be dropped"): a spaced row's cell repeated INSIDE a batch waits for
+     *  MIN_MS after its tap before it (a frame's "1, 1", a GO's "1, 34, 1"); other cells keep the batch's gap; across batches as before */
+    @Test fun aRepeatInsideABatchIsSpacedToo() {
+        val row = PolestarNav.ROW
+        val frame = listOf(38, 12, 15, 1, 1, 0, 9, 26).map { row to it }
+        val at = TapSpacing.offsets(frame, 120L)
+        assertEquals(0L, at[0]); assertEquals(120L, at[1]); assertEquals(240L, at[2]); assertEquals(360L, at[3])
+        assertEquals("the second 1 waits MIN_MS after the first", 360L + TapSpacing.MIN_MS, at[4])
+        assertEquals("then the gap again", at[4] + 120L, at[5])
+        // two taps apart (a GO's 1, 34, 1): 240 ms is under MIN_MS, so it waits too
+        val go = listOf(36, 1, 34, 1).map { row to it }
+        val g = TapSpacing.offsets(go, 120L)
+        assertTrue(g[3] - g[1] >= TapSpacing.MIN_MS)
+        // no repeat: exactly the gap; another row: never spaced; game points (null): the gap
+        assertEquals(listOf(0L, 120L, 240L), TapSpacing.offsets(listOf(38, 12, 13).map { row to it }, 120L).toList())
+        assertEquals(listOf(0L, 0L), TapSpacing.offsets(listOf("qact" to 3, "qact" to 3), 0L).toList())
+        assertEquals(listOf(0L, 50L), TapSpacing.offsets(null, 50L, 2).toList())
+        // ran() stamps each tap at its offset (the batch's end less the rest of it), so the next batch's lead counts from the real tap
+        val c = TapSpacing.Clock()
+        TapSpacing.ran(c, 10_000L, frame, 120L)
+        assertEquals(10_000L - (at[7] - at[4]) - TapSpacing.TAIL_MIN_MS, c.lastAt[row to 1])
+        // (the frame's 9, its second to last tap, at 10 000 - 120 - 30): a batch tapping 9 at once waits the rest of MIN_MS
+        assertEquals(10_000L - 120L - TapSpacing.TAIL_MIN_MS + TapSpacing.MIN_MS - 10_000L, TapSpacing.lead(c, 10_000L, listOf(row to 9), 120L))
+        assertEquals("the frame's 38 is long past", 0L, TapSpacing.lead(c, 10_000L, listOf(row to 38), 120L))
+        // Bags' rows (shared with this spacing): two names of one bag in a batch are spaced as well
+        val bags = listOf(BagsMoveRoute.NAME_ROW to 12, BagsMoveRoute.ROW to 3, BagsMoveRoute.NAME_ROW to 12, BagsMoveRoute.ROW to 7)
+        val b = TapSpacing.offsets(bags, 0L)
+        assertEquals(0L, b[1]); assertEquals(TapSpacing.MIN_MS, b[2]); assertEquals(TapSpacing.MIN_MS, b[3])
+    }
 }

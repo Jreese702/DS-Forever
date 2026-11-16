@@ -31,15 +31,39 @@ object TapSpacing {
     class Clock { val lastAt = HashMap<Pair<String, Int>, Long>() }
 
     /**
-     * A batch starting at [now]: [cells] in order (null = taps at game points, never spaced), [gapMs] between its taps. The wait (ms)
-     * before its first tap so that no cell of a [ROWS] row comes within [MIN_MS] of its last tap; 0 = at once.
+     * pg1 (the Polestar tab's framed commands, design_polestar B3: "Repeated digits inside one batch can be dropped"): when each tap of a
+     * batch starts (ms after its first): [gapMs] apart, except that a cell of a [ROWS] row repeated INSIDE the batch ("..., 1, 1, ...",
+     * a GO's "1, 34, 1" two taps apart too) waits until it is [MIN_MS] after that cell's tap before it, as [lead] spaces it against the
+     * batches before. Nothing is dropped or reordered; other rows and game points ([cells] null) keep [gapMs]. [n] = the batch's taps.
+     */
+    fun offsets(cells: List<Pair<String, Int>>?, gapMs: Long, n: Int = cells?.size ?: 0): LongArray {
+        val out = LongArray(n)
+        val seen = HashMap<Pair<String, Int>, Long>()
+        var t = 0L
+        for (i in 0 until n) {
+            if (i > 0) t += gapMs
+            val cell = cells?.getOrNull(i)
+            if (cell != null && cell.first in ROWS) {
+                seen[cell]?.let { prev -> if (t - prev < MIN_MS) t = prev + MIN_MS }
+                seen[cell] = t
+            }
+            out[i] = t
+        }
+        return out
+    }
+
+    /**
+     * A batch starting at [now]: [cells] in order (null = taps at game points, never spaced), [gapMs] between its taps (and the
+     * in-batch spacing of [offsets]). The wait (ms) before its first tap so that no cell of a [ROWS] row comes within [MIN_MS] of its
+     * last tap; 0 = at once.
      */
     fun lead(clock: Clock, now: Long, cells: List<Pair<String, Int>>?, gapMs: Long): Long {
         var lead = 0L
+        val at = offsets(cells, gapMs)
         cells?.forEachIndexed { i, cell ->
             if (cell.first !in ROWS) return@forEachIndexed
             val last = clock.lastAt[cell] ?: return@forEachIndexed
-            val need = last + MIN_MS - (now + i * gapMs)
+            val need = last + MIN_MS - (now + at[i])
             if (need > lead) lead = need
         }
         return lead.coerceAtMost(MIN_MS)
@@ -49,7 +73,8 @@ object TapSpacing {
     fun ran(clock: Clock, end: Long, cells: List<Pair<String, Int>>?, gapMs: Long) {
         if (cells == null) return
         val n = cells.size
-        cells.forEachIndexed { i, cell -> if (cell.first in ROWS) clock.lastAt[cell] = end - ((n - 1 - i) * gapMs + TAIL_MIN_MS) }
+        val at = offsets(cells, gapMs)
+        cells.forEachIndexed { i, cell -> if (cell.first in ROWS) clock.lastAt[cell] = end - ((at[n - 1] - at[i]) + TAIL_MIN_MS) }
         if (clock.lastAt.size > 64) clock.lastAt.entries.removeAll { it.value + MIN_MS < end }     // a long session: the map stays small
     }
 }

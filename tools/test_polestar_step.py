@@ -61,7 +61,7 @@ def chk(name, ok):
 def run():
     src = open(MAPLUA, encoding="utf-8").read()
     a0 = src.index("WC.pstep = {")
-    b0 = src.index("-- ---------------------------------------------------------------- QUESTTRAIL'S ARROW", a0)
+    b0 = src.index("-- ---------------------------------------------------------------- POLESTAR TAB (pg1)", a0)     # (pg1: the tab's own section follows)
     M = lupa.LuaRuntime()
     M.execute(STUB + src[a0:b0])
     read = lambda: M.eval("WC.pstep.read()")

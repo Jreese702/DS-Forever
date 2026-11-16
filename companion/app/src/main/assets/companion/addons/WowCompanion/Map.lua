@@ -2953,6 +2953,7 @@ end
 --   37                                KEEP: the app still wants it (none for KEEP_S: cancelled)
 --   39                                CANCEL
 --   38, 8 / 38, 9                     pn4 / ps4: the light blue Polestar row holds / not (WC.pnav.psOn; see below)
+--   38, 12, op, s1, s2, args, k       pn8 / pg1: a framed command of the Polestar tab (WC.pg, POLESTAR TAB below)
 -- Answers {"type":"pnav", op, ok, why, have} (have = Polestar's API is there); the route as {"type":"pnavroute", legs = {{k, c, p}}}
 -- (p = wx, wy pairs, at most PTS points in all), sent when it changes.
 -- pn4 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where to go",
@@ -2965,6 +2966,8 @@ end
 -- every step change (Polestar Nav/Nav.lua stepMoved: STEP_CHANGED / GUIDE_CHANGED clear its override) and guides its own step
 -- itself, whose route geom() refused as not ours - no pnavroute (no line on the bottom map) and no WC.pnav.legs (no path marker).
 WC.pnav = { active = false, keepAt = 0, digits = nil, digitsAt = 0, sig = nil, sentAt = 0, KEEP_S = 60, PTS = 240, PTS_FULL = 2000, OWNER = "DSForever" }
+-- pn8 / pg1 (the user, 2026-11-16: "if Polestar is active it should have its own tab at the top of the quests tab"): 38 then 12 = a
+-- framed command of the Polestar tab follows (WC.pg, POLESTAR TAB below); 38's 0-11 unchanged; every pnav doc says pn8.
 -- pn6 / ps5 (int/1429): ps-compass pn3-pn5 / ps4 and ps-noloc-guide ps4 in one file, the two signals one.
 -- pn7 / ps6 / pk1 (the user, 2026-11-12: "we need to make a way to skip a polestar objective, idealy in the home map moduale with X or
 -- Y, maybe we also add a previous step button? idk"; the picks: X Skip, Y Previous = "Undo my last skip", no confirm, Home's map + the
@@ -2981,7 +2984,7 @@ function WC.pnav.api()
 end
 function WC.pnav.say(op, ok, why)
     pcall(function()
-        WC.send(WC.encode({ type = "pnav", v = "pn7", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
+        WC.send(WC.encode({ type = "pnav", v = "pn8", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
         WC.push()
     end)
 end
@@ -3074,7 +3077,7 @@ function WC.pnav.diag(okG, raw)
     end
     local ps = S == nil and "nil" or (S.none and "none") or (S.nl and "nl") or (psLoc and "loc") or "?"
     pcall(function()
-        WC.send(WC.encode({ type = "cap", probe = "pnavt", v = "pn7", act = act, own = own, tm = tm, tx = tx, ty = ty, gm = gm,
+        WC.send(WC.encode({ type = "cap", probe = "pnavt", v = "pn8", act = act, own = own, tm = tm, tx = tx, ty = ty, gm = gm,
             a = P.active and true or false, gom = P.m, gox = P.x and math.floor(P.x * 10000 + 0.5) / 10000 or nil,
             goy = P.y and math.floor(P.y * 10000 + 0.5) / 10000 or nil, on = P.psOn(), said = P.psSaid == true,
             legs = type(P.legs) == "table" and #P.legs or 0, ps = ps, fr = type(S) == "table" and S.fr or nil,
@@ -3121,6 +3124,18 @@ if WC.pad and type(WC.pad.op) == "function" then
     WC.pad.op("pnav", "pnav", function(_, col)
         if type(col) ~= "number" then return end
         local P = WC.pnav
+        -- pg1 (the Polestar tab): a framed command in progress takes its taps 0-35, each within 2 s of the one before it; any tap 36-39
+        -- (or a late one) ends it unfinished - nothing called - and goes on below as before
+        if P.fr then
+            local fr = P.fr
+            P.fr = nil
+            if col <= 35 and GetTime() - fr.at <= WC.pg.TAP_S then
+                fr.at = GetTime()
+                fr.d[#fr.d + 1] = col
+                if not WC.pg.frameTap(fr) then P.fr = fr end
+                return
+            end
+        end
         -- pq1: 38 = Polestar's automation mask follows (WC.pqol), the next tap 0-7 within 2 s is it
         if col == 38 then P.digits = nil; P.qolAt = GetTime(); return end
         if P.qolAt and col <= 7 and GetTime() - P.qolAt <= 2 then P.qolAt = nil; return pcall(WC.pqol.choose, col) end
@@ -3132,6 +3147,11 @@ if WC.pad and type(WC.pad.op) == "function" then
         if P.qolAt and (col == 10 or col == 11) and GetTime() - P.qolAt <= 2 then           -- pk1 / pk3: skip / previous (WC.pskip), in a fight too
             P.qolAt = nil
             if type(WC.pskip) == "table" then pcall(col == 10 and WC.pskip.skip or WC.pskip.prev) end
+            return
+        end
+        if P.qolAt and col == 12 and GetTime() - P.qolAt <= 2 then                         -- pg1: a framed command follows (WC.pg)
+            P.qolAt = nil
+            if type(WC.pg) == "table" then P.fr = { at = GetTime(), d = {} } end
             return
         end
         P.qolAt = nil
@@ -3176,7 +3196,7 @@ do
         if not okR or not legs then return end
         if sig ~= P.sig or GetTime() - P.sentAt > 10 then
             P.sig, P.sentAt = sig, GetTime()
-            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn7", legs = legs })); WC.push() end)
+            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn8", legs = legs })); WC.push() end)
         end
     end)
 end
@@ -3486,6 +3506,9 @@ end
 function WC.pskip.now()
     WC.pstep.sig = nil
     if type(WC.pstep.tick) == "function" then pcall(WC.pstep.tick) end
+    -- pg1 review: the Polestar tab's summary at once too while it is open (its Y reads u: pk3's "Previous does nothing for ~1 s
+    -- right after a Skip" must not come back on the tab)
+    if type(WC.pg) == "table" and type(WC.pg.isOpen) == "function" and WC.pg.isOpen() then pcall(WC.pg.flush) end
 end
 function WC.pskip.skip()
     local E = WC.pskip.engine()
@@ -3548,6 +3571,649 @@ function WC.pstep.tick()
     end
 end
 C_Timer.NewTicker(1, function() pcall(WC.pstep.tick) end)
+
+-- ---------------------------------------------------------------- POLESTAR TAB (pg1)
+-- The user (2026-11-16): "if Polestar is active it should have its own tab at the top of the quests tab" - a Polestar menu: change
+-- zone and do whatever the player normally would there; and for Home's map: "I need some kind of header in the quests menu of the
+-- homeroom map indicating that it is the polestar objective". The picks (design_polestar, every recommended option): A on a step =
+-- LOOK at it (Polestar's own Goto: a saved look, the live step stays), goals ticked in a step's details (Polestar's ToggleGoal),
+-- Change guide / Choose your path / Reset refused in a fight (Skip, Previous, Look and Back work there), a waiting path choice on
+-- Home's light blue row, Change guide = open guides, Suggested, then folders, and a "Polestar · <zone>" header on Home's list.
+-- Polestar's Engine is its PRIVATE namespace (Polestar = ns, Core/Init.lua), frozen by our v0.2.5 pin (ThirdPartyAddons): every name
+-- used here is checked against the pinned source (tools/test_polestar_tab.py), so a pin bump must re-run that guard.
+-- READS (docs): pguide (pg1, always while Polestar is loaded: the guide, its shown / live step, progress, a waiting choice, outlevelled,
+-- the start gate; on change, at most once a second, and every 15 s; {have = false} once when no Polestar we know is there), and only
+-- while the app says the tab is open (op 13, 60 s; the app re-says it every 20 s with stamp 469, which resends nothing) the step statuses
+-- and the tabs in pguide, pgsteps (step titles in chunks of 40), pglist (the guides this character can follow: Guides.GuideMatches,
+-- folders as Polestar's picker), pgstep (one step's goals) and pgroute (a path choice). The step views are read ~20 a frame (the
+-- Thor's CPU). Every value goes through WC.isPlain (one secret value refuses the whole line).
+-- WRITES, only on a press, only into Polestar's own per-character save, by Polestar's own Engine calls: Goto (the saved look; a skip
+-- jumped to is undone), Unskip, SetGuide / SelectTab (its tabs), ChooseRoute (its route pick), ToggleGoal (its ticks), ResetProgress.
+-- Never ns.Set (so Picker's / RouteChoice's ns.Set("ui.shown", true) is skipped on purpose: Polestar's window stays as the player set
+-- it), never a window message (SHOW_PICKER, TOGGLE_FRAME, ...), never OfferRouteChoice / UI.Show* / RC.Hide, no slash command, no
+-- Blizzard window call, nothing in WowCompanionDB. Combat: Load, Continue, Choose and Reset are refused (why = "combat"), never queued.
+-- FRAMED COMMANDS on the "pnav" row: 38 then 12 = a frame follows (the old 38 then 0-11 untouched; an older add-on ignores 12+):
+--   38, 12, op, s1, s2, args..., k      op 13-35 (never 36-39), s1 s2 = the stamp (the guide id's hash, 432-1295: pguide gs, a tab's
+--                                       stamp, pgroute fs, or the list stamp ls for Load; op 13 / 14: 468, 469 = "still open"),
+--                                       k = (op + s1 + s2 + args) mod 36
+-- each tap within 2 s of the one before it (pnav's GO keeps its 2 s from 36). Any tap 36-39 ends a frame (and goes on as before), so a
+-- lost tap leaves the frame unfinished and nothing is called; a wrong check digit answers "garbled", a stamp that no longer matches
+-- "changed", nothing called either. Answers {"type":"pgop", op, ok, why, i}.
+-- TWO LOST TAPS (pg1 review, the builder's own flag): with the 12 and the op both lost, s1 lands right behind 38, where 0-7 is the
+-- automation mask (WowCompanionDB.pqol, Polestar's auto accept / turn in / sell / buy / repair), 8 / 9 the row's word and 10 / 11 Skip /
+-- Previous. Every stamp is therefore 432-1295 (s1 = 12-35): the old words can never be read off a frame that lost both.
+WC.pg = { V = "pg1", OPEN_S = 60, EVERY_S = 15, CHUNK = 40, PER_FRAME = 20, SUGGEST = 5, TAP_S = 2, OPEN_KEEP = 469,
+          -- op -> its args' count
+          LEN = { [13] = 0, [14] = 0, [15] = 2, [16] = 0, [17] = 2, [18] = 1, [19] = 0, [20] = 1, [21] = 0, [22] = 2, [23] = 3 },
+          -- ops refused in a fight (D3): Load guide, Continue, Choose route, Reset
+          FIGHT = { [17] = true, [18] = true, [20] = true, [21] = true },
+          CATS = { "Leveling", "Class", "Professions", "Reputation", "Exploration", "Legacy", "Collectibles" },
+          MSGS = { "STEP_CHANGED", "STEP_UPDATED", "GUIDE_CHANGED", "TABS_CHANGED", "ROUTE_CHOICE", "ROUTE_CHOSEN", "GUIDE_COMPLETED",
+                   "PLAYER_SKIPPED_STEP", "PACKS_CHANGED" },
+          dirtyAt = nil, stepsDirty = true, sentAt = -100, sig = nil, openAt = nil }
+-- Polestar's Engine and Guides (and its namespace), or nil when this is not a Polestar we know
+function WC.pg.api()
+    local P = _G.Polestar
+    local E = type(P) == "table" and type(P.Engine) == "table" and P.Engine or nil
+    local G = type(P) == "table" and type(P.Guides) == "table" and P.Guides or nil
+    if E and G and type(E.GetGuide) == "function" and type(E.GetStepView) == "function" and type(E.GetStepIndex) == "function"
+        and type(G.List) == "function" and type(G.Get) == "function" then return E, G, P end
+end
+-- a guide id's stamp: 432-1295, so its first digit is 12-35 (TWO LOST TAPS above; djb2 kept below 864 at every step: exact in a double)
+function WC.pg.hash(s)
+    s = tostring(s or "")
+    local h = 5381 % 864
+    for i = 1, #s do h = (h * 33 + s:byte(i)) % 864 end
+    return 432 + h
+end
+-- a plain value for the docs (a string cleaned of colour / picture escapes, cut at [cap]); a secret one is nil
+function WC.pg.plain(v, cap)
+    if v == nil or (WC.isPlain and not WC.isPlain(v)) then return nil end
+    if type(v) == "number" then return v end
+    if type(v) ~= "string" then return nil end
+    v = v:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", ""):gsub("|A.-|a", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if v == "" then return nil end
+    cap = cap or 160
+    if #v > cap then
+        v = v:sub(1, cap)
+        local i = #v
+        while i > 0 and v:byte(i) >= 0x80 and v:byte(i) < 0xC0 do i = i - 1 end
+        if i > 0 and v:byte(i) >= 0xC0 then v = v:sub(1, i - 1) end
+    end
+    return v
+end
+function WC.pg.num(v)
+    if type(v) ~= "number" or (WC.isPlain and not WC.isPlain(v)) then return nil end
+    return v
+end
+-- the tab is open in the app (op 13 within OPEN_S)
+function WC.pg.isOpen()
+    local at = WC.pg.openAt
+    return type(at) == "number" and GetTime() - at <= WC.pg.OPEN_S
+end
+-- something Polestar said changed: the docs again (at most once a second); [steps]: the step statuses / titles too
+function WC.pg.dirty(steps)
+    if WC.pg.dirtyAt == nil then WC.pg.dirtyAt = GetTime() end
+    if steps then WC.pg.stepsDirty = true end
+end
+function WC.pg.listen()
+    if WC.pg.heard then return end
+    local P = _G.Polestar
+    if type(P) ~= "table" or type(P.On) ~= "function" then return end
+    for _, m in ipairs(WC.pg.MSGS) do
+        local steps = m ~= "STEP_UPDATED"
+        pcall(P.On, m, function() WC.pg.dirty(steps) end)
+    end
+    WC.pg.heard = true
+end
+function WC.pg.player(P)
+    local C = type(P.Compat) == "table" and P.Compat or nil
+    if not (C and type(C.GetPlayerInfo) == "function") then return nil end
+    local ok, info = pcall(C.GetPlayerInfo)
+    if ok and type(info) == "table" then return info end
+end
+function WC.pg.mapName(P, m)
+    if type(m) ~= "number" then return nil end
+    local C = type(P.Compat) == "table" and P.Compat or nil
+    if C and type(C.MapName) == "function" then
+        local ok, n = pcall(C.MapName, m)
+        if ok then return WC.pg.plain(n, 60) end
+    end
+end
+-- where a guide happens (Polestar's UI.GuidePlace): its map's name, else its own words
+function WC.pg.zoneOf(P, h)
+    return WC.pg.mapName(P, h.zone) or WC.pg.plain(h.zoneName, 60)
+end
+-- the active guide's id, header and its stamp
+function WC.pg.active(E, G)
+    local okG, g = pcall(E.GetGuide)
+    local id = okG and type(g) == "table" and g.id or nil
+    if id == nil then return nil end
+    return id, g
+end
+-- the suggested guide for an outlevelled character (Polestar's own rule, Engine's evaluate: level >= max + 2), cached per guide and level
+function WC.pg.outlevel(G, g, level)
+    if not (g and type(g.maxLevel) == "number" and type(level) == "number" and level >= g.maxLevel + 2) then return nil end
+    local key = tostring(g.id) .. "@" .. level
+    if WC.pg.olKey == key then return WC.pg.olTo end
+    local to = nil
+    if type(G.Suggest) == "function" then
+        local ok, s = pcall(G.Suggest)
+        if ok and s ~= nil and s ~= g.id then to = s end
+    end
+    WC.pg.olKey, WC.pg.olTo = key, to
+    return to
+end
+-- the path choice the tab shows: the one waiting, else the outlevelled guide's suggestion's, else the one that offered this guide
+function WC.pg.routeFrom(E, G, id, g, level)
+    if type(E.PendingRouteChoice) == "function" then
+        local ok, f = pcall(E.PendingRouteChoice)
+        if ok and f ~= nil then return f, true end
+    end
+    if type(E.RouteChoiceFor) ~= "function" then return nil, false end
+    local to = WC.pg.outlevel(G, g, level)
+    if to ~= nil then
+        local ok, f = pcall(E.RouteChoiceFor, to)
+        if ok and f ~= nil then return f, false end
+    end
+    local ok, f = pcall(E.RouteChoiceFor, id)
+    if ok and f ~= nil then return f, false end
+    return nil, false
+end
+
+-- ---- the guide list (Change guide): every guide this character can follow, in Polestar's picker's folders and order
+function WC.pg.band(h)
+    for lo, hi in tostring(h.id or ""):gmatch("/(%d+)%-(%d+)/") do return tonumber(lo), tonumber(hi) end
+    local lv = type(h.minLevel) == "number" and h.minLevel or 1
+    if lv < 30 then return 1, 30 end
+    local lo = math.floor(lv / 10) * 10
+    return lo, lo + 10
+end
+function WC.pg.range(lo, hi)
+    if not lo and not hi then return nil end
+    lo, hi = lo or hi, hi or lo
+    if lo == hi then return tostring(lo) end
+    return lo .. "\226\128\147" .. hi
+end
+-- the folder a guide is listed under (Picker.lua folderOf) -> label, sort key
+function WC.pg.folderOf(P, h, mine)
+    local L = type(P.L) == "table" and P.L or {}
+    local function word(k) local ok, v = pcall(function() return L[k] end); return (ok and type(v) == "string") and v or k end
+    local c = (type(h.category) == "string" and h.category ~= "") and h.category or "Leveling"
+    local rank = 99
+    for i, x in ipairs(WC.pg.CATS) do if x == c then rank = i end end
+    if type(h.folder) == "string" and h.folder ~= "" then return h.folder, string.format("%02d", rank) .. c .. "/" .. h.folder end
+    if c == "Leveling" then
+        local lo, hi = WC.pg.band(h)
+        local f = h.faction
+        local fr = f == nil and 3 or (f == mine and 0 or (({ Alliance = 1, Horde = 2 })[f] or 4))
+        local fname = nil
+        if f and type(P.FactionName) == "function" then local ok, n = pcall(P.FactionName, f); if ok and type(n) == "string" then fname = n end end
+        return (fname or (f and tostring(f)) or word("Leveling")) .. " " .. WC.pg.range(lo, hi), string.format("%02d%d%03d", rank, fr, lo)
+    end
+    return word(c), string.format("%02d", rank) .. c
+end
+-- -> list { { h = header, label, key } }, folders { label }, stamp
+function WC.pg.buildList(E, G, P)
+    local okL, all = pcall(G.List)
+    if not okL or type(all) ~= "table" then return {}, {}, 0 end
+    local info = WC.pg.player(P)
+    local mine = info and (info.faction == "Alliance" or info.faction == "Horde") and info.faction or nil
+    local picked = {}
+    for _, h in ipairs(all) do
+        local fits = true
+        if type(h) ~= "table" or h.id == nil then fits = false
+        elseif info and type(G.GuideMatches) == "function" then
+            local ok, m = pcall(G.GuideMatches, h, info)
+            fits = ok and m and true or false
+        end
+        if fits then
+            local label, key = WC.pg.folderOf(P, h, mine)
+            picked[#picked + 1] = { h = h, label = label, key = key }
+        end
+    end
+    local function fr(f) if f == nil then return 3 end; if f == mine then return 0 end; return ({ Alliance = 1, Horde = 2 })[f] or 4 end
+    table.sort(picked, function(a, b)
+        if a.key ~= b.key then return a.key < b.key end
+        local fa, fb = fr(a.h.faction), fr(b.h.faction)
+        if fa ~= fb then return fa < fb end
+        local la, lb = a.h.minLevel or 0, b.h.minLevel or 0
+        if la ~= lb then return la < lb end
+        if (a.h.category or "Leveling") == "Leveling" then return tostring(a.h.id) < tostring(b.h.id) end
+        return tostring(a.h.title or "") < tostring(b.h.title or "")
+    end)
+    local folders, ids, last = {}, {}, nil
+    for _, e in ipairs(picked) do
+        if e.label ~= last then folders[#folders + 1] = e.label; last = e.label end
+        e.f = #folders
+        ids[#ids + 1] = tostring(e.h.id)
+    end
+    return picked, folders, WC.pg.hash(table.concat(ids, "\n"))
+end
+-- the list doc: each guide's words, levels, folder, state, chips; the suggested and the open tabs
+function WC.pg.listDoc(E, G, P)
+    local picked, folders, ls = WC.pg.buildList(E, G, P)
+    WC.pg.listIds, WC.pg.ls = {}, ls
+    local index = {}
+    for k, e in ipairs(picked) do WC.pg.listIds[k] = e.h.id; index[e.h.id] = k end
+    local sugg = {}
+    if type(G.Suggestions) == "function" then
+        local ok, s = pcall(G.Suggestions)
+        if ok and type(s) == "table" then
+            for _, id in ipairs(s) do
+                if #sugg >= WC.pg.SUGGEST then break end
+                local done = false
+                if type(E.GetGuideState) == "function" then local okS, st = pcall(E.GetGuideState, id); done = okS and st == "done" end
+                if index[id] and not done then sugg[#sugg + 1] = id end
+            end
+        end
+    end
+    local rankOf = {}
+    for i, id in ipairs(sugg) do rankOf[id] = i end
+    local tabOf = {}
+    if type(E.GetTabs) == "function" then
+        local ok, tabs = pcall(E.GetTabs)
+        if ok and type(tabs) == "table" then for i, t in ipairs(tabs) do if type(t) == "table" and t.guideId ~= nil then tabOf[t.guideId] = i end end end
+    end
+    local here, zone = nil, nil
+    pcall(function() here = C_Map.GetBestMapForUnit("player") end)
+    if not WC.pg.num(here) then here = nil end
+    pcall(function() zone = GetZoneText() end)
+    zone = WC.pg.plain(zone, 60)
+    local out = {}
+    for k, e in ipairs(picked) do
+        local h = e.h
+        local d = { t = WC.pg.plain(h.title, 80) or tostring(h.id), lo = WC.pg.num(h.minLevel), hi = WC.pg.num(h.maxLevel), f = e.f,
+                    n = WC.pg.num(h.stepCount), zm = WC.pg.num(h.zone), sg = rankOf[h.id], tb = tabOf[h.id] }
+        if (here and h.zone == here) or (zone and h.zoneName == zone) then d.h = true end
+        if h.group then d.gr = true end
+        if type(E.GetGuideState) == "function" then
+            local ok, st, dn, tt = pcall(E.GetGuideState, h.id)
+            if ok then
+                d.st = st == "done" and "d" or (st == "started" and "s" or "n")
+                d.dn, d.tt = WC.pg.num(dn), WC.pg.num(tt)
+            end
+        end
+        if h.category == "Class" and type(E.StartGate) == "function" then
+            local ok, gate = pcall(E.StartGate, h.id)
+            if ok and type(gate) == "table" then d.gl = WC.pg.num(gate.level) end
+        end
+        out[k] = d
+    end
+    return { type = "pglist", v = WC.pg.V, ls = ls, f = folders, g = out }, index
+end
+
+-- ---- the summary (every 15 s and on change): what Home's header and the tab's top need
+function WC.pg.summary()
+    local E, G, P = WC.pg.api()
+    if not E then return { type = "pguide", v = WC.pg.V, have = false } end
+    local id, g = WC.pg.active(E, G)
+    local open = WC.pg.isOpen()
+    if id == nil then return { type = "pguide", v = WC.pg.V, have = true, none = true, tb = open or nil } end
+    local info = WC.pg.player(P)
+    local level = info and WC.pg.num(info.level) or nil
+    local d = { type = "pguide", v = WC.pg.V, have = true, gid = WC.pg.plain(tostring(id), 120), gs = WC.pg.hash(id),
+                t = WC.pg.plain(g.title, 80), z = WC.pg.zoneOf(P, g), zm = WC.pg.num(g.zone), lo = WC.pg.num(g.minLevel),
+                hi = WC.pg.num(g.maxLevel), tb = open or nil }
+    local okI, s = pcall(E.GetStepIndex)
+    d.s = okI and WC.pg.num(s) or nil
+    if type(E.GetLiveStep) == "function" then local ok, l = pcall(E.GetLiveStep); d.l = ok and WC.pg.num(l) or nil end
+    if type(E.GetStepCount) == "function" then local ok, n = pcall(E.GetStepCount); d.n = ok and WC.pg.num(n) or nil end
+    if type(E.GetProgress) == "function" then
+        local ok, dn, tt = pcall(E.GetProgress)
+        if ok then d.dn, d.tt = WC.pg.num(dn), WC.pg.num(tt) end
+    end
+    d.cp = (d.s == nil and d.l == nil) or nil                          -- the guide is done (no current step)
+    -- the path choice: waiting (Home's "Choose your path" row) always; which one the tab would show only while it is open
+    if open then
+        local from, waiting = WC.pg.routeFrom(E, G, id, g, level)
+        if waiting then d.rw = true end
+        if from ~= nil then d.rc = true; d.fs = WC.pg.hash(from) end
+    elseif d.cp and type(E.PendingRouteChoice) == "function" then
+        local ok, f = pcall(E.PendingRouteChoice)
+        if ok and f ~= nil then d.rw, d.rc, d.fs = true, true, WC.pg.hash(f) end
+    end
+    local to = WC.pg.outlevel(G, g, level)
+    if to ~= nil then
+        local okT, th = pcall(G.Get, to)
+        d.ol = true
+        d.ot = okT and type(th) == "table" and WC.pg.plain(th.title, 80) or nil
+        if type(E.RouteChoiceFor) == "function" then local ok, f = pcall(E.RouteChoiceFor, to); if ok and f ~= nil then d.oc = true end end
+        if open and WC.pg.listIndex then d.oi = WC.pg.listIndex[to] end
+    end
+    if d.cp and not d.rw and g.next ~= nil then                        -- (a waiting choice is the next step, not g.next)
+        local okN, nh = pcall(G.Get, g.next)
+        if okN and type(nh) == "table" then
+            d.nx = WC.pg.plain(nh.title, 80)
+            if open and WC.pg.listIndex then d.ni = WC.pg.listIndex[g.next] end
+        end
+    end
+    if type(E.StartGate) == "function" then
+        local ok, gate = pcall(E.StartGate, id)
+        if ok and type(gate) == "table" then d.gl = WC.pg.num(gate.level) end
+    end
+    -- Skip there, and the skips Previous can undo (WC.pskip's own state), for the tab's X / Y
+    local okK, sk, u = pcall(WC.pskip.state)
+    if okK and sk then d.sk, d.u = true, u end
+    if open then
+        if WC.pg.st and WC.pg.stFor == id then d.st = WC.pg.st end
+        if type(E.GetTabs) == "function" then
+            local ok, tabs, active = pcall(E.GetTabs)
+            if ok and type(tabs) == "table" then
+                local out = {}
+                for i, t in ipairs(tabs) do
+                    if type(t) == "table" then
+                        out[i] = { t = WC.pg.plain(t.title, 80) or tostring(t.guideId), s = WC.pg.hash(t.guideId), i = WC.pg.num(t.stepIndex),
+                                   n = WC.pg.num(t.stepCount), dn = WC.pg.num(t.done), tt = WC.pg.num(t.total), c = t.complete and true or nil }
+                    end
+                end
+                d.tabs, d.ta = out, WC.pg.num(active)
+            end
+        end
+    end
+    return d
+end
+
+-- ---- one step's details (pgstep): its title, note and goals (status box, words, cur / max when plain)
+function WC.pg.stepDoc(E, gs, i)
+    local okV, v = pcall(E.GetStepView, i)
+    if not okV or type(v) ~= "table" then return nil end
+    local goals = {}
+    for _, gv in ipairs(type(v.goals) == "table" and v.goals or {}) do
+        if type(gv) == "table" and not gv.folded and gv.status ~= "na" then
+            local e = { g = WC.pg.num(gv.index), s = WC.pg.plain(gv.status, 12), x = WC.pg.plain(gv.text, 160),
+                        tk = gv.tickable and true or nil, ti = gv.ticked and true or nil }
+            if type(gv.progress) == "table" then
+                local c, m = WC.pg.num(gv.progress.cur), WC.pg.num(gv.progress.max)
+                if c and m then e.c, e.m = c, m end
+            end
+            if type(gv.starter) == "table" then e.it = WC.pg.plain(gv.starter.item, 60) end
+            goals[#goals + 1] = e                                       -- (words the game keeps secret: the goal without them)
+        end
+    end
+    return { type = "pgstep", v = WC.pg.V, gs = gs, i = i, t = WC.pg.plain(v.title, 120), nt = WC.pg.plain(v.note, 200),
+             st = WC.pg.plain(v.status, 12), sk = v.skipped and true or nil, cur = WC.pg.num(v.current), g = goals }
+end
+
+-- ---- a path choice (pgroute): the options this character can take, Polestar's own pitch, pros and cons
+function WC.pg.routeDoc(E, from)
+    if from == nil or type(E.GetRouteChoice) ~= "function" then return { type = "pgroute", v = WC.pg.V, none = true } end
+    local ok, rc = pcall(E.GetRouteChoice, from)
+    if not ok or type(rc) ~= "table" or type(rc.options) ~= "table" then return { type = "pgroute", v = WC.pg.V, none = true } end
+    local function words(list, cap)
+        if type(list) ~= "table" then return nil end
+        local out = {}
+        for _, w in ipairs(list) do
+            if #out >= cap then break end
+            local p = WC.pg.plain(w, 120)
+            if p then out[#out + 1] = p end
+        end
+        return #out > 0 and out or nil
+    end
+    local opts = {}
+    for i, o in ipairs(rc.options) do
+        if type(o) == "table" then
+            opts[i] = { t = WC.pg.plain(o.title, 80) or tostring(o.id), z = WC.pg.plain(o.zoneName, 60), zm = WC.pg.num(o.zone),
+                        lo = WC.pg.num(o.minLevel), hi = WC.pg.num(o.maxLevel), sec = WC.pg.num(o.seconds), q = WC.pg.num(o.quests),
+                        n = WC.pg.num(o.steps), rec = o.recommended and true or nil, ch = o.chosen and true or nil,
+                        ol = o.outleveled and true or nil, op = o.open and true or nil, pt = WC.pg.plain(o.pitch, 300),
+                        pr = words(o.pros, 3), cn = words(o.cons, 2) }
+        end
+    end
+    return { type = "pgroute", v = WC.pg.V, fs = WC.pg.hash(rc.from), ft = WC.pg.plain(rc.fromTitle, 80), j = WC.pg.plain(rc.joinsAt, 80),
+             o = opts }
+end
+
+function WC.pg.send(d)
+    pcall(function() WC.send(WC.encode(d)); WC.push() end)
+end
+function WC.pg.say(op, ok, why, i)
+    WC.pg.send({ type = "pgop", v = WC.pg.V, op = op, ok = ok and true or false, why = why, i = i })
+end
+
+-- ---- the step pass (only while the tab is open): every step's status and title, PER_FRAME views a frame
+-- status letters: d done, s skipped, n not for this character, l the live step, u to do, k to do but skipped ahead
+function WC.pg.pass()
+    local E, G = WC.pg.api()
+    if not E then return end
+    local id = WC.pg.active(E, G)
+    if id == nil then WC.pg.st, WC.pg.stFor = nil, nil; return end
+    local okN, n = pcall(E.GetStepCount)
+    n = okN and WC.pg.num(n) or 0
+    local okL, live = false, nil
+    if type(E.GetLiveStep) == "function" then okL, live = pcall(E.GetLiveStep) end
+    live = okL and WC.pg.num(live) or nil
+    WC.pg.passN = (WC.pg.passN or 0) + 1
+    local me = WC.pg.passN
+    local st, titles = {}, {}
+    local i = 1
+    local function run()
+        if WC.pg.passN ~= me then return end                             -- a newer pass took over
+        local stop = math.min(n, i + WC.pg.PER_FRAME - 1)
+        for s = i, stop do
+            local ok, v = pcall(E.GetStepView, s)
+            local c = "u"
+            if ok and type(v) == "table" then
+                if v.status == "na" then c = "n"
+                elseif live == nil or s < live then c = v.skipped and "s" or "d"
+                elseif s == live then c = "l"
+                else c = v.skipped and "k" or "u" end
+                local t = WC.pg.plain(v.title, 90)
+                if not t and type(v.goals) == "table" then
+                    for _, gv in ipairs(v.goals) do
+                        if type(gv) == "table" and not gv.folded then t = WC.pg.plain(gv.text, 90); if t then break end end
+                    end
+                end
+                titles[s] = t or ""
+            else
+                titles[s] = ""
+            end
+            st[s] = c
+        end
+        i = stop + 1
+        if i <= n then C_Timer.After(0, function() pcall(run) end); return end
+        WC.pg.st, WC.pg.stFor = table.concat(st), id
+        local tsig = tostring(id) .. "#" .. table.concat(titles, "\31")
+        if tsig ~= WC.pg.titlesSig then
+            WC.pg.titlesSig = tsig
+            local gs = WC.pg.hash(id)
+            for o = 1, n, WC.pg.CHUNK do
+                local chunk = {}
+                for s = o, math.min(n, o + WC.pg.CHUNK - 1) do chunk[#chunk + 1] = titles[s] end
+                WC.pg.send({ type = "pgsteps", v = WC.pg.V, gs = gs, n = n, o = o, t = chunk })
+            end
+        end
+        WC.pg.flush(true)
+    end
+    if n == 0 then WC.pg.st, WC.pg.stFor = "", id; return end
+    pcall(run)
+end
+
+-- ---- sending: the summary (on change / every EVERY_S); while open the list (on open, after a press, after a step pass: never on the
+-- heartbeat alone) and the shown step's goals
+function WC.pg.flush(force)
+    local E, G, P = WC.pg.api()
+    if not E then return end
+    local open = WC.pg.isOpen()
+    if open and (force or WC.pg.listSig == nil) then
+        local okL, ld, index = pcall(WC.pg.listDoc, E, G, P)
+        if okL and type(ld) == "table" then
+            WC.pg.listIndex = index
+            local lsig = WC.encode(ld)
+            if lsig ~= WC.pg.listSig then WC.pg.listSig = lsig; WC.pg.send(ld) end
+        end
+    end
+    local okS, d = pcall(WC.pg.summary)
+    if not okS or type(d) ~= "table" then return end
+    local sig = WC.encode(d)
+    if force or sig ~= WC.pg.sig or GetTime() - WC.pg.sentAt > WC.pg.EVERY_S then
+        WC.pg.sig, WC.pg.sentAt = sig, GetTime()
+        WC.pg.send(d)
+    end
+    -- the shown step's goals (the details beside the list): when they changed
+    if open and d.have and not d.none and d.s then
+        local okD, sd = pcall(WC.pg.stepDoc, E, d.gs, d.s)
+        if okD and type(sd) == "table" then
+            local ssig = WC.encode(sd)
+            if ssig ~= WC.pg.stepSig then WC.pg.stepSig = ssig; WC.pg.send(sd) end
+        end
+    end
+end
+-- the tab opened (op 13 with stamp 468: the app's first say after it opened the tab, after it started, after a "changed"): everything
+-- again (an app that restarted meanwhile, a lost doc: that say heals it), the step pass from the start. The app's 20 s "still open"
+-- (stamp 469, pg1 review) only keeps the open going, so the step pass runs on Polestar's own changes (the design: the Thor's CPU)
+function WC.pg.opened()
+    WC.pg.openAt = GetTime()
+    WC.pg.listSig, WC.pg.stepSig, WC.pg.titlesSig = nil, nil, nil
+    WC.pg.stepsDirty = false
+    pcall(WC.pg.listen)
+    pcall(WC.pg.pass)
+    WC.pg.flush(true)
+end
+
+-- ---- one framed command: run it when whole, right and still meant for what Polestar shows
+function WC.pg.run(op, stamp, a)
+    local E, G = WC.pg.api()
+    -- op 13's stamp: OPEN_KEEP (469) = the app's 20 s "still open" (the open goes on, nothing resent: the design's CPU rule, statuses
+    -- only on Polestar's changes; a lapsed open is a fresh one); any other (the app's 468) = the tab opened (everything again, the pass)
+    if op == 13 then
+        if stamp == WC.pg.OPEN_KEEP and WC.pg.isOpen() then WC.pg.openAt = GetTime(); pcall(WC.pg.listen) else WC.pg.opened() end
+        return WC.pg.say(op, true)
+    end
+    if op == 14 then WC.pg.openAt = nil; return WC.pg.say(op, true) end
+    if not E then return WC.pg.say(op, false, "no Polestar") end
+    if WC.pg.FIGHT[op] and InCombatLockdown() then return WC.pg.say(op, false, "combat") end
+    pcall(WC.pg.listen)
+    local id = WC.pg.active(E, G)
+    local gs = id ~= nil and WC.pg.hash(id) or nil
+    local function now()
+        WC.pg.dirtyAt = nil
+        if WC.pg.isOpen() then WC.pg.stepsDirty = false; pcall(WC.pg.pass) else WC.pg.stepsDirty = true end
+        WC.pg.flush(true)
+        pcall(WC.pskip.now)                                              -- (Home's light blue row: the step doc at once too)
+    end
+    if op == 17 then                                                     -- load guide #k of the list (stamped with the list's ls)
+        local k = a[1] * 36 + a[2]
+        if WC.pg.ls == nil or stamp ~= WC.pg.ls or not (WC.pg.listIds and WC.pg.listIds[k]) then return WC.pg.say(op, false, "changed") end
+        if type(E.SetGuide) ~= "function" then return WC.pg.say(op, false, "no Polestar") end
+        local ok, r = pcall(E.SetGuide, WC.pg.listIds[k])
+        if not ok or r == false then return WC.pg.say(op, false, "refused") end
+        now(); return WC.pg.say(op, true, nil, k)
+    end
+    if op == 18 then                                                     -- continue tab t (stamped with that tab's guide)
+        local t = a[1]
+        local okT, tabs = pcall(E.GetTabs)
+        local tab = okT and type(tabs) == "table" and tabs[t] or nil
+        if type(tab) ~= "table" or WC.pg.hash(tab.guideId) ~= stamp then return WC.pg.say(op, false, "changed") end
+        if type(E.SelectTab) ~= "function" then return WC.pg.say(op, false, "no Polestar") end
+        local ok = pcall(E.SelectTab, t)
+        if not ok then return WC.pg.say(op, false, "refused") end
+        now(); return WC.pg.say(op, true, nil, t)
+    end
+    if op == 19 or op == 20 then                                         -- the path choice: read it / choose option o
+        local info = WC.pg.player(_G.Polestar)
+        local from = id ~= nil and WC.pg.routeFrom(E, G, id, select(2, WC.pg.active(E, G)), info and WC.pg.num(info.level)) or nil
+        if op == 19 then
+            if stamp ~= gs then return WC.pg.say(op, false, "changed") end
+            local okR, rd = pcall(WC.pg.routeDoc, E, from)
+            if okR and rd then WC.pg.send(rd) end
+            return WC.pg.say(op, okR and rd and not rd.none or false, (okR and rd and not rd.none) and nil or "none")
+        end
+        if from == nil or WC.pg.hash(from) ~= stamp then return WC.pg.say(op, false, "changed") end
+        local okC, rc = pcall(E.GetRouteChoice, from)
+        local o = okC and type(rc) == "table" and type(rc.options) == "table" and rc.options[a[1]] or nil
+        if type(o) ~= "table" or o.id == nil then return WC.pg.say(op, false, "changed") end
+        local ok, r = pcall(E.ChooseRoute, from, o.id)
+        if not ok or r == false then return WC.pg.say(op, false, "refused") end
+        now(); return WC.pg.say(op, true, nil, a[1])
+    end
+    if id == nil or stamp ~= gs then return WC.pg.say(op, false, "changed") end
+    local okN, n = pcall(E.GetStepCount)
+    n = okN and WC.pg.num(n) or 0
+    if op == 15 or op == 22 or op == 23 then
+        local i = a[1] * 36 + a[2]
+        if i < 1 or i > n then return WC.pg.say(op, false, "changed") end
+        if op == 22 then
+            local okD, sd = pcall(WC.pg.stepDoc, E, gs, i)
+            if okD and sd then WC.pg.send(sd) end
+            return WC.pg.say(op, okD and sd ~= nil, (okD and sd) and nil or "none", i)
+        end
+        if op == 15 then
+            if type(E.Goto) ~= "function" then return WC.pg.say(op, false, "no Polestar") end
+            local ok = pcall(E.Goto, i)
+            if not ok then return WC.pg.say(op, false, "refused") end
+            now(); return WC.pg.say(op, true, nil, i)
+        end
+        if type(E.ToggleGoal) ~= "function" then return WC.pg.say(op, false, "no Polestar") end
+        local ok, r = pcall(E.ToggleGoal, i, a[3])
+        if not ok or r == false then
+            local okD, sd = pcall(WC.pg.stepDoc, E, gs, i)              -- (the goal as it stands: done by live state, or gone)
+            if okD and sd then WC.pg.send(sd) end
+            return WC.pg.say(op, false, ok and "nothing" or "refused", i)
+        end
+        now()
+        local okD, sd = pcall(WC.pg.stepDoc, E, gs, i)
+        if okD and sd then WC.pg.send(sd) end
+        return WC.pg.say(op, true, nil, i)
+    end
+    if op == 16 then                                                     -- back: the "away" banner's own two actions (GuideFrame.TakeBanner)
+        local okI, s = pcall(E.GetStepIndex)
+        local okL, live = false, nil
+        if type(E.GetLiveStep) == "function" then okL, live = pcall(E.GetLiveStep) end
+        s, live = okI and WC.pg.num(s) or nil, okL and WC.pg.num(live) or nil
+        if s == nil or s == live then return WC.pg.say(op, false, "nothing") end
+        local okV, v = pcall(E.GetStepView, s)
+        local ok
+        if okV and type(v) == "table" and v.skipped and type(E.Unskip) == "function" then ok = pcall(E.Unskip, s)
+        elseif live ~= nil and type(E.Goto) == "function" then ok = pcall(E.Goto, live)
+        else return WC.pg.say(op, false, "nothing") end
+        if not ok then return WC.pg.say(op, false, "refused") end
+        now(); return WC.pg.say(op, true, nil, s)
+    end
+    if op == 21 then                                                     -- reset this guide's ticks, skips and look (the app asked first)
+        if type(E.ResetProgress) ~= "function" then return WC.pg.say(op, false, "no Polestar") end
+        local ok = pcall(E.ResetProgress)
+        if not ok then return WC.pg.say(op, false, "refused") end
+        now(); return WC.pg.say(op, true)
+    end
+    WC.pg.say(op, false, "garbled")
+end
+-- one more tap of a frame [fr] ({ d = taps after 12 }): true = the frame ended (run or refused)
+function WC.pg.frameTap(fr)
+    local d = fr.d
+    local op = d[1]
+    local len = WC.pg.LEN[op]
+    if not len then WC.pg.say(op, false, "garbled"); return true end
+    local total = 1 + 2 + len + 1
+    if #d < total then return false end
+    local sum = 0
+    for j = 1, total - 1 do sum = sum + d[j] end
+    if sum % 36 ~= d[total] then WC.pg.say(op, false, "garbled"); return true end
+    local args = {}
+    for j = 1, len do args[j] = d[3 + j] end
+    local ok, err = pcall(WC.pg.run, op, d[2] * 36 + d[3], args)
+    if not ok then WC.pg.say(op, false, tostring(err):sub(1, 120)) end
+    return true
+end
+
+do
+    -- once a second: the summary when Polestar said something changed (or every EVERY_S), the step pass while the tab is open
+    local f = CreateFrame("Frame")
+    pcall(function() f:RegisterEvent("PLAYER_LEVEL_UP") end)
+    f:SetScript("OnEvent", function() WC.pg.dirty(true); WC.pg.olKey = nil end)
+    C_Timer.NewTicker(1, function()
+        local PG = WC.pg
+        -- no Polestar we know: said ONCE ({have = false}: the app's tab and Home's header go, never a stale guide), then no doc
+        if not PG.api() then
+            if PG.gone ~= true then PG.gone, PG.sig = true, nil; PG.send({ type = "pguide", v = PG.V, have = false }) end
+            return
+        end
+        PG.gone = false
+        pcall(PG.listen)
+        if PG.stepsDirty and PG.isOpen() then PG.stepsDirty = false; pcall(PG.pass) end
+        if PG.dirtyAt ~= nil or GetTime() - PG.sentAt > PG.EVERY_S then PG.dirtyAt = nil; pcall(PG.flush) end
+    end)
+end
 
 -- ---------------------------------------------------------------- QUESTTRAIL'S ARROW, READ (b-route-questtrail)
 -- The user (2026-10-17): "(a) + (b)" - with Settings' "Quest tracking: QuestTrail" the map's line and arrow follow QuestTrail's own

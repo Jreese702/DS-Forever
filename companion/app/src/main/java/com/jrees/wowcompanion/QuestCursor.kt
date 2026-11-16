@@ -11,6 +11,8 @@ package com.jrees.wowcompanion
  * move its highlight, A chooses the row, B closes the menu; X / Y do nothing (the user dislikes other buttons' glyphs while a
  * menu is open). On the Abandon confirm bar (UI Art's v5: Cancel with the B glyph, Abandon with the A glyph) A abandons and B
  * cancels. The cursor is shown from the moment the room holds the controller ([show]).
+ * pg1 (the user, 2026-11-16: "if Polestar is active it should have its own tab at the top of the quests tab"): with the Polestar tab
+ * shown ([key]'s tabs), Up from the first quest lands on the tab row ([Do.ToTabs]); the room ([QuestsView]) moves between the tabs.
  */
 class QuestCursor {
     /** what the room must do for a press */
@@ -29,6 +31,8 @@ class QuestCursor {
         data class MenuMove(val i: Int) : Do()
         data class MenuPick(val i: Int) : Do()
         object MenuClose : Do()
+        /** pg1: Up from the first quest onto the tab row ([Quests] [Polestar]; only while the Polestar tab shows) */
+        object ToTabs : Do()
     }
 
     /** the cursor is drawn (the room holds the controller) */
@@ -48,7 +52,7 @@ class QuestCursor {
      * release). [ids] = the list in order, [selected] = the quest the details show, [confirm] = the Abandon confirm bar is open,
      * [menu] = the More menu's highlighted row (-1: closed), [menuRows] = its number of rows.
      */
-    fun key(k: String, ids: List<Int>, selected: Int, confirm: Boolean, menu: Int = -1, menuRows: Int = 0): Do {
+    fun key(k: String, ids: List<Int>, selected: Int, confirm: Boolean, menu: Int = -1, menuRows: Int = 0, tabs: Boolean = false): Do {
         if (confirm) return when (k) {
             "PAD1" -> Do.ConfirmAbandon
             "PAD2" -> Do.Cancel
@@ -66,6 +70,7 @@ class QuestCursor {
         }
         return when (k) {
             "PADDUP", "PADDDOWN" -> {
+                if (tabs && k == "PADDUP" && (ids.isEmpty() || ids.indexOf(selected) <= 0)) return Do.ToTabs
                 if (ids.isEmpty()) return Do.Nothing
                 val i = ids.indexOf(selected)
                 val j = if (i < 0) 0 else (i + if (k == "PADDUP") -1 else 1).coerceIn(0, ids.size - 1)

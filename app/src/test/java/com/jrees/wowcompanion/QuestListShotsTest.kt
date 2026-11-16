@@ -247,4 +247,64 @@ class QuestListShotsTest {
         assertEquals(null, rowOf(off, MapList.POLESTAR))
         shot(off, "ribbon_4_off")
     }
+    // ---- pg1 / D6 (the user, 2026-11-16: "I need some kind of header in the quests menu of the homeroom map indicating that it is the
+    // polestar objective"): Map.lua's pguide names the guide, so the ribbon reads "Polestar · <zone>"; with no row the header stands
+    // alone and the cursor skips it; a waiting path choice is the light blue row "Choose your path" (D4: A opens the Quests room on it)
+    private fun pguide(extra: (JSONObject) -> Unit = {}) = JSONObject().put("type", "pguide").put("v", "pg1").put("have", true)
+        .put("gid", "forever/alliance/1-10/elwynn").put("gs", 444).put("t", "Elwynn Forest").put("z", "Elwynn Forest").put("zm", 1429)
+        .put("lo", 1).put("hi", 10).put("n", 16).put("s", 4).put("l", 4).put("dn", 3).put("tt", 16).also(extra)
+
+    private fun items(v: MapView): List<MapList.Item> {
+        val f = MapView::class.java.getDeclaredField("items"); f.isAccessible = true
+        @Suppress("UNCHECKED_CAST") return f.get(v) as List<MapList.Item>
+    }
+
+    @Test fun polestarsHeaderInEveryState() {
+        art()
+        val talk = JSONObject().put("t", "Speak with Marshal Dughan").put("g", "Marshal Dughan in Goldshire").put("q", 0).put("m", 1429)
+            .put("x", 0.42).put("y", 0.66).put("b", 1L).put("sk", true)
+        // a step: the ribbon names the guide's zone
+        val v = map(talk)
+        v.onPolestarGuide(pguide()); frames(v)
+        assertEquals("Polestar · Elwynn Forest", v.polestarHead())
+        assertTrue(items(v).contains(MapList.Item.Polestar) && !items(v).contains(MapList.Item.PsHead))
+        shot(v, "header_1_step")
+        // no guide: the header alone, no row; the cursor never lands on it
+        val n = map(talk)
+        n.onPolestarStep(JSONObject().put("type", "pstep").put("none", true).put("b", 1L))
+        n.onPolestarGuide(JSONObject().put("type", "pguide").put("have", true).put("none", true))
+        frames(n)
+        assertEquals("Polestar · No guide", n.polestarHead())
+        assertTrue(items(n).contains(MapList.Item.PsHead) && !items(n).contains(MapList.Item.Polestar))
+        assertTrue(MapList.PS_HEAD !in MapList.stops(items(n)))
+        n.hostStart(); frames(n)
+        assertTrue("the cursor is not on the header", sel(n) != MapList.PS_HEAD)
+        shot(n, "header_2_no_guide")
+        // a path choice waiting (the guide done, pstep none): the light blue row reads Choose your path; A opens the Quests room on it
+        val w = map(talk)
+        w.onPolestarStep(JSONObject().put("type", "pstep").put("none", true).put("b", 1L))
+        w.onPolestarGuide(pguide { it.remove("s"); it.remove("l"); it.put("cp", true).put("rw", true).put("rc", true).put("fs", 444) })
+        var opened = false
+        w.onPolestarChoose = { opened = true }
+        frames(w)
+        assertTrue(items(w).contains(MapList.Item.Polestar))
+        assertTrue(w.polestarChoose())
+        w.hostStart(); frames(w)
+        while (sel(w) != MapList.POLESTAR && sel(w) != MapList.ME) key(w, "PADDUP")
+        if (sel(w) == MapList.ME) key(w, "PADDDOWN")
+        assertEquals(MapList.POLESTAR, sel(w))
+        shot(w, "header_3_choose_your_path")
+        key(w, "PAD1")
+        assertTrue("A on Choose your path opens the Quests room on it", opened)
+        // the guide done, nothing waiting: the header alone with the guide's zone
+        val d = map(talk)
+        d.onPolestarStep(JSONObject().put("type", "pstep").put("none", true).put("b", 1L))
+        d.onPolestarGuide(pguide { it.remove("s"); it.remove("l"); it.put("cp", true) })
+        frames(d)
+        assertTrue(items(d).contains(MapList.Item.PsHead))
+        shot(d, "header_4_guide_done")
+        // an older add-on (no pguide): the ribbon reads "Polestar" as before
+        val old = map(talk)
+        assertEquals("Polestar", old.polestarHead())
+    }
 }

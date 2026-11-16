@@ -47,4 +47,11 @@ class DependencyPolestarTest {
         assertNull(qt.inUse); assertNull(qt.usedIn); assertNull(qt.settings); assertFalse(qt.base)
         assertTrue(qt in ThirdPartyAddons.ALL)                                  // an installed copy can still go out by its Uninstall
     }
+    /** pg1 (the Polestar tab, design_polestar A3: "Engine is internal, not a documented API"): Map.lua's WC.pg calls Polestar's private
+     *  Engine / Guides, checked name by name against the pinned v0.2.5 source by tools/test_polestar_tab.py's pin guard. A pin bump fails
+     *  here first: re-run that guard on the new source (POLESTAR_SRC) before moving this line */
+    @Test fun thePolestarTabsNamesAreGuardedAtThisPin() {
+        assertEquals("re-run tools/test_polestar_tab.py's pin guard on the new Polestar, then update this pin", "0.2.5", pole.version)
+        assertEquals("v0.2.5", pole.core.tag)
+    }
 }
