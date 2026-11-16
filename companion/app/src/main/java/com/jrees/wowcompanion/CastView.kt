@@ -427,12 +427,26 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var gcdDurS = Double.NaN
     private val fightCdDur = LongArray(8)
 
-    /** remaining fraction of fight face [src]'s cooldown, or -1 */
+    /** remaining fraction of fight face [src]'s cooldown, or -1. PadMap m165: a macro using an ITEM there ([fightItems]) has the
+     *  item's cooldown from the `itemcd` document ([ItemCd]: the same sweep the bags and the item wheel draw) */
     private fun fightCdLeft(src: Int, now: Long): Float {
-        val d = fightCdDur[src]; if (d <= 0L) return -1f
+        val d = fightCdDur[src]
+        if (d <= 0L) {
+            val item = fightItems?.get(src + 1) ?: return -1f
+            val len = ItemCd.len(item); val l = ItemCd.left(item)
+            return if (len > 0.0 && l > 0.0) (l / len).toFloat().coerceIn(0f, 1f) else -1f
+        }
         val left = fightCdStart[src] + d - now
         return if (left > 0L) (left.toFloat() / d).coerceIn(0f, 1f) else -1f
     }
+
+    /**
+     * PadMap m165 (the user, 2026-11-16: "when using show tooltip on a macro it doesn't actually show the GCD when using it"): base-set
+     * game position 1..8 -> the item a macro drawn there as a fight thing uses now (HomeFightFace.items); its sweep is the item's own
+     */
+    var fightItems: Map<Int, Int>? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+    init { ItemCd.onChange { postInvalidate() } }
 
     /**
      * THE D-PAD'S IN-COMBAT SPELLS (Track C; the user after test15: "The DS toolbar buttons are still not changing in combat like they

@@ -33,7 +33,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local SV = "s12"     -- bump on every change; s12 THE MACROS ROOM'S ROW SHARED WITH THE CALENDAR'S (the 1.0.32 test build, code 1472: with six bags, the cast bar and both radials the 56-row tap pad had no row left for the lazy "mac" row, and the room said "No pad row"): "mac" is the GUEST of the Calendar room's row "cal" (TapPad pad21 opts.share; the two rooms are never on the bottom screen together), leased to the room on each ask (Book's padtab 39 then 34; the app asks on every showing: the document's `sh`), its keys only while it is on the row (MR.onRow); the game's macro window makes / takes the row only while the room wants the controller; with no Calendar row, a row of its own as before; s11 THE 1.0.32 TEST BUILD MERGE (code 1472): feat/macro-room and feat/pet-spell-binding both tagged s10, both kept (The Macros room = s10, Pet spells = s10p, its reviews = s10a / s10b; the pet branch's Book b63 / PadMap m163 are b63p / m163p in its notes); s10 THE MACROS ROOM (the user, 2026-11-13: "Lets scrap the smart ranged attack and start building a macro room. The calender can be moved up to a button on the right side of the map name make it small. Use the room slot for macros."): the block at the end of this file (WC.macroRoom: the "macros" document, the controller guest "macros", the lazy pad row "mac", the player's own New / Done / Delete, the Bind box for a macro); s10 REVIEW (same branch, same tag, as eaa3d23c did; the user's "start building a macro room"): the selection is the macro's INDEX while it still holds its name (the game lets two macros share a name: A / Delete / the preview hit the one under the glow), a write re-finds its macro by the game's own returned index; a bind of a name another macro shares is refused ("taken": our buttons find a macro by name); "#showtooltip" goes on the macro's FIRST line; `wxa` = the `wx` cell really is the window's close button (its ack says so); `norow` also when the row exists but is not placed (the smallest UI scale); our stored binds follow a rename / go with a delete only when no other macro keeps that name; a finger's a / x / b no longer claims the controller (only the capture's own press proves a hold); s10b (review of feat/pet-spell-binding, #234, the user: "build it"): a pet spell is PASSIVE as the game's own Spellbook says (its book item's isPassive / IsSpellBookItemPassive, the spell's own IsSpellPassive), never by the pet bar's state - the server packs every spell that cannot auto-cast with state 1, so the high-byte-1 / IsPetActionPassive readings made Seduction, Spell Lock and Sacrifice "passive": no number, no Bind, hidden with Hide Passives; s10a (review of feat/pet-spell-binding, #234, the user: "build it"): only a pet WITH A BOOK (the game's own Pet tab: HasPetSpells() and PetHasSpellbook()) has spells of ours - a charmed / possessed unit (Mind Control, Enslave) has pet spells but no book, so its spells are never kept as this character's pet spells (WC.spellsPetName), never numbered, and a travelling pet slot reads nothing then (WC.spellsPetAt / WC.spellsPetSlotOf): a mob's spell sharing an id with one of the player's own never turns that spell into a "pet spell" cast by bare name; s10p PET SPELLS (#234, the user: "build it"): the pet book's SPELLS get numbers (`pv`, after the player's top ranks, before the lower ranks), never its passives or its commands (Attack / Follow / Stay ... have their homes); each pet item says `cmd` (a command), `bind` (a spell that can go on a button) and `pb` (on the pet bar), its bars are the game's own FindPetActionButtons; the Pet tab is line WC.SPELLS_PET_LINE (101); a pet book slot k travels as WC.SPELLS_PET_SLOT0 + k (5000 + k) through the Bind box and the Controller room's puts (WC.spellsPetAt / WC.spellsBankSlot read it back); WC.spellsPetName(id) = the name our own secure buttons cast a pet spell by (CastSpellByName, the game's /cast), remembered per character (WowCompanionSpellsDB.petSpellBy[name-realm]); s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
+local SV = "s13"     -- bump on every change; s13 THE PET'S PICKS IN THE MACROS ROOM (the user, 2026-11-16: "the macro room needs some work- ... also things like my pet attack are missing from the spells options."): with a pet out, + Spell/Item lists the pet's commands (the game's own secure slash commands: /petattack, /petfollow, /petstay, /petpassive, /petdefensive, /petaggressive, /petdismiss, and /petmoveto / /petassist / /petdefensiveassist only when the pet bar has that button; the game's words and pet-bar pictures; row kind "p" with its line `l`) and the pet book's spells ("/cast <name>", Spells s10p's bindable ones), after the player's spells, before the bag items (MR.petPicks); a recipe takes the pet's spells, never a command; read only, nothing else changed; s12 THE MACROS ROOM'S ROW SHARED WITH THE CALENDAR'S (the 1.0.32 test build, code 1472: with six bags, the cast bar and both radials the 56-row tap pad had no row left for the lazy "mac" row, and the room said "No pad row"): "mac" is the GUEST of the Calendar room's row "cal" (TapPad pad21 opts.share; the two rooms are never on the bottom screen together), leased to the room on each ask (Book's padtab 39 then 34; the app asks on every showing: the document's `sh`), its keys only while it is on the row (MR.onRow); the game's macro window makes / takes the row only while the room wants the controller; with no Calendar row, a row of its own as before; s11 THE 1.0.32 TEST BUILD MERGE (code 1472): feat/macro-room and feat/pet-spell-binding both tagged s10, both kept (The Macros room = s10, Pet spells = s10p, its reviews = s10a / s10b; the pet branch's Book b63 / PadMap m163 are b63p / m163p in its notes); s10 THE MACROS ROOM (the user, 2026-11-13: "Lets scrap the smart ranged attack and start building a macro room. The calender can be moved up to a button on the right side of the map name make it small. Use the room slot for macros."): the block at the end of this file (WC.macroRoom: the "macros" document, the controller guest "macros", the lazy pad row "mac", the player's own New / Done / Delete, the Bind box for a macro); s10 REVIEW (same branch, same tag, as eaa3d23c did; the user's "start building a macro room"): the selection is the macro's INDEX while it still holds its name (the game lets two macros share a name: A / Delete / the preview hit the one under the glow), a write re-finds its macro by the game's own returned index; a bind of a name another macro shares is refused ("taken": our buttons find a macro by name); "#showtooltip" goes on the macro's FIRST line; `wxa` = the `wx` cell really is the window's close button (its ack says so); `norow` also when the row exists but is not placed (the smallest UI scale); our stored binds follow a rename / go with a delete only when no other macro keeps that name; a finger's a / x / b no longer claims the controller (only the capture's own press proves a hold); s10b (review of feat/pet-spell-binding, #234, the user: "build it"): a pet spell is PASSIVE as the game's own Spellbook says (its book item's isPassive / IsSpellBookItemPassive, the spell's own IsSpellPassive), never by the pet bar's state - the server packs every spell that cannot auto-cast with state 1, so the high-byte-1 / IsPetActionPassive readings made Seduction, Spell Lock and Sacrifice "passive": no number, no Bind, hidden with Hide Passives; s10a (review of feat/pet-spell-binding, #234, the user: "build it"): only a pet WITH A BOOK (the game's own Pet tab: HasPetSpells() and PetHasSpellbook()) has spells of ours - a charmed / possessed unit (Mind Control, Enslave) has pet spells but no book, so its spells are never kept as this character's pet spells (WC.spellsPetName), never numbered, and a travelling pet slot reads nothing then (WC.spellsPetAt / WC.spellsPetSlotOf): a mob's spell sharing an id with one of the player's own never turns that spell into a "pet spell" cast by bare name; s10p PET SPELLS (#234, the user: "build it"): the pet book's SPELLS get numbers (`pv`, after the player's top ranks, before the lower ranks), never its passives or its commands (Attack / Follow / Stay ... have their homes); each pet item says `cmd` (a command), `bind` (a spell that can go on a button) and `pb` (on the pet bar), its bars are the game's own FindPetActionButtons; the Pet tab is line WC.SPELLS_PET_LINE (101); a pet book slot k travels as WC.SPELLS_PET_SLOT0 + k (5000 + k) through the Bind box and the Controller room's puts (WC.spellsPetAt / WC.spellsBankSlot read it back); WC.spellsPetName(id) = the name our own secure buttons cast a pet spell by (CastSpellByName, the game's /cast), remembered per character (WowCompanionSpellsDB.petSpellBy[name-realm]); s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
 
 local MAX_LINES = 24        -- skill lines read (the game has General + class + a few)
 local MAX_ITEMS = 400       -- book entries read, all lines together
@@ -1061,6 +1061,7 @@ function MR.pickList(spellsOnly)
             if #out >= 120 then break end
         end
     end
+    MR.petPicks(out, seen, spellsOnly)                                   -- s13: the pet's commands and spells, with a pet out
     if spellsOnly then return out end
     for bag = 0, 4 do
         local slots = TNn(function() return C_Container.GetContainerNumSlots(bag) end) or 0
@@ -1082,8 +1083,74 @@ function MR.pickList(spellsOnly)
     return out
 end
 function MR.lineFor(p)
+    if p.t == "p" then return p.l end                                    -- s13: a pet command's own slash line
     if p.t == "s" then return "/cast " .. p.n elseif p.t == "u" then return "/use " .. p.n end
     return "/equip " .. p.n
+end
+-- s13 THE PET'S PICKS (the user, 2026-11-16: "also things like my pet attack are missing from the spells options."): with a pet out
+-- (UnitExists("pet")), after the player's spells and before the bag items (the game's book: the class tabs, then Pet), the pet's
+-- COMMANDS as the game's own secure slash commands (slashcommands.lua: /petattack PetAttack, /petfollow, /petstay PetWait, /petpassive,
+-- /petdefensive, /petaggressive, /petdismiss; /petmoveto, /petassist, /petdefensiveassist only when the pet bar has that button; a base
+-- mode the pet bar shows only in its assist form is that one), each by the game's own word and pet-bar picture (WC.petTok), its line the
+-- game's SLASH_<command>1; then the pet book's SPELLS (Spells s10p: not passive, not a command; only a pet with a book) as "/cast <name>",
+-- the name the game's /cast takes (WC.spellsPetName). A recipe (spells only) takes the pet's spells, never a command. Read only.
+MR.PET = {
+    { tok = "PET_ACTION_ATTACK", cmd = "PET_ATTACK", tex = "PET_ATTACK_TEXTURE", en = "/petattack", w = "Attack", base = true },
+    { tok = "PET_ACTION_FOLLOW", cmd = "PET_FOLLOW", tex = "PET_FOLLOW_TEXTURE", en = "/petfollow", w = "Follow", base = true },
+    { tok = "PET_ACTION_WAIT", cmd = "PET_STAY", tex = "PET_WAIT_TEXTURE", en = "/petstay", w = "Stay", base = true },
+    { tok = "PET_ACTION_MOVE_TO", cmd = "PET_MOVE_TO", tex = "PET_MOVE_TO_TEXTURE", en = "/petmoveto", w = "Move To" },
+    { tok = "PET_MODE_PASSIVE", cmd = "PET_PASSIVE", tex = "PET_PASSIVE_TEXTURE", en = "/petpassive", w = "Passive", base = true },
+    { tok = "PET_MODE_DEFENSIVE", cmd = "PET_DEFENSIVE", tex = "PET_DEFENSIVE_TEXTURE", en = "/petdefensive", w = "Defensive", base = true,
+      alt = "PET_MODE_DEFENSIVEASSIST" },
+    { tok = "PET_MODE_DEFENSIVEASSIST", cmd = "PET_DEFENSIVEASSIST", tex = "PET_DEFENSIVEASSIST_TEXTURE", en = "/petdefensiveassist", w = "Defensive" },
+    { tok = "PET_MODE_AGGRESSIVE", cmd = "PET_AGGRESSIVE", tex = "PET_AGGRESSIVE_TEXTURE", en = "/petaggressive", w = "Aggressive", base = true,
+      alt = "PET_MODE_ASSIST" },
+    { tok = "PET_MODE_ASSIST", cmd = "PET_ASSIST", tex = "PET_ASSIST_TEXTURE", en = "/petassist", w = "Assist" },
+    { tok = "PET_ACTION_DISMISS", cmd = "PET_DISMISS", tex = "PET_DISMISS_TEXTURE", en = "/petdismiss", w = "Dismiss", base = true },
+}
+-- the pet bar's command buttons now (GetPetActionInfo's names: PET_ACTION_* / PET_MODE_* tokens) -> true
+function MR.petBar()
+    local on = {}
+    for i = 1, 10 do
+        local ok, name = CALL(function() return GetPetActionInfo(i) end)
+        if ok and type(name) == "string" and WC.isPlain(name) then on[name] = true end
+    end
+    return on
+end
+-- the game's slash word for a pet command (its SLASH_<cmd>1: plain, one word starting "/"), else the English one for a base command
+function MR.petSlash(p)
+    local g = plain(rawget(_G, "SLASH_" .. p.cmd .. "1"))
+    if g and g:find("^/%a+$") then return g end
+    return p.base and p.en or nil
+end
+function MR.petPicks(out, seen, spellsOnly)
+    if S(function() return UnitExists("pet") end) ~= true then return end
+    if not spellsOnly then
+        local bar = MR.petBar()
+        local tok = type(WC.petTok) == "table" and WC.petTok or nil
+        for _, p in ipairs(MR.PET) do
+            local show = bar[p.tok] or (p.base and not (p.alt and bar[p.alt] and not bar[p.tok]))
+            local line = show and MR.petSlash(p)
+            if line and not seen["p" .. line] then
+                seen["p" .. line] = true
+                local okN, nm, okI, ic = false, nil, false, nil
+                if tok then okN, nm = pcall(tok.name, p.tok); okI, ic = pcall(tok.icon, p.tex) end
+                local n = (okN and plain(nm)) or plain(rawget(_G, p.tok)) or p.w
+                out[#out + 1] = { t = "p", n = n, l = line, i = (okI and type(ic) == "number" and ic > 0) and ic or nil }
+            end
+        end
+    end
+    if type(WC.spellsPetBook) ~= "function" then return end
+    local ok, list, _, hasBook = pcall(WC.spellsPetBook)
+    if not (ok and type(list) == "table" and hasBook) then return end
+    for _, e in ipairs(list) do
+        local n = e.bind and type(e.id) == "number" and ((type(WC.spellsPetName) == "function" and WC.spellsPetName(e.id)) or e.n)
+        n = plain(n)
+        if n and not seen["s" .. n] and not n:find("[|;]") then
+            seen["s" .. n] = true
+            out[#out + 1] = { t = "s", n = n, i = (type(e.i) == "number" and e.i > 0) and e.i or nil, pet = true }
+        end
+    end
 end
 
 -- ---------------------------------------------------------------- the document
@@ -1167,7 +1234,7 @@ function MR.doc()
         for k = 1, MR.PICK_PAGE do
             local e = p.list[(p.page - 1) * MR.PICK_PAGE + k]
             if not e then break end
-            rows[k] = { t = e.t, n = e.n, i = e.i }
+            rows[k] = { t = e.t, n = e.n, i = e.i, l = e.l }                -- s13: a pet command's line (`l`)
         end
         d.pick = { rows = rows, page = p.page, pages = pages, cur = p.cur, rec = st.rec and st.rec.id or nil,
                    step = st.rec and (#st.rec.picks + 1) or nil, of = st.rec and st.rec.need or nil }

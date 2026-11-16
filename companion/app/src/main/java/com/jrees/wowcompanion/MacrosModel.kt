@@ -40,7 +40,9 @@ object MacrosModel {
         fun of(k: String): Int? = col[k]
         fun s(k: Int): Int? = if (k in 0 until n) s0 + k else null
     }
-    data class PickRow(val kind: String, val name: String, val icon: Int)
+    /** a pick row: [kind] "s" a spell (the player's or, Spells s13, the pet's), "u" an item to use, "e" an item to equip, "p" (s13) a
+     *  PET COMMAND whose [line] is the game's own slash command ("/petattack" ...) */
+    data class PickRow(val kind: String, val name: String, val icon: Int, val line: String? = null)
     data class Pick(val rows: List<PickRow>, val page: Int, val pages: Int, val cur: Int, val rec: String?, val step: Int, val of: Int)
     data class Kbd(val name: String, val text: String, val max: Int, val line: Int?)
 
@@ -89,7 +91,9 @@ object MacrosModel {
         val pick = m.optJSONObject("pick")?.let { o ->
             val rows = ArrayList<PickRow>()
             o.optJSONArray("rows")?.let { a ->
-                for (i in 0 until a.length()) a.optJSONObject(i)?.let { r -> rows += PickRow(r.optString("t", "s"), r.optString("n", ""), r.optInt("i", 0)) }
+                for (i in 0 until a.length()) a.optJSONObject(i)?.let { r ->
+                    rows += PickRow(r.optString("t", "s"), r.optString("n", ""), r.optInt("i", 0), str(r, "l"))
+                }
             }
             Pick(rows, o.optInt("page", 1), o.optInt("pages", 1), o.optInt("cur", 0), str(o, "rec"), o.optInt("step", 0), o.optInt("of", 0))
         }
@@ -168,8 +172,11 @@ object MacrosModel {
     /** the macro body's length counter as the game's window writes it ("n/255") */
     fun counter(mac: Mac?): String = "${mac?.len ?: 0}/$BODY_MAX"
 
-    /** a pick row's line, as the add-on writes it (MR.lineFor) */
-    fun lineOf(r: PickRow): String = when (r.kind) { "s" -> "/cast ${r.name}"; "u" -> "/use ${r.name}"; else -> "/equip ${r.name}" }
+    /** a pick row's line, as the add-on writes it (MR.lineFor; s13: a pet command's own line) */
+    fun lineOf(r: PickRow): String = when (r.kind) {
+        "p" -> r.line ?: ""
+        "s" -> "/cast ${r.name}"; "u" -> "/use ${r.name}"; else -> "/equip ${r.name}"
+    }
 
     /** the short word for why a write or a pick was refused (the add-on's `note`); null = say nothing */
     fun noteWord(note: String?): String? = when (note) {
