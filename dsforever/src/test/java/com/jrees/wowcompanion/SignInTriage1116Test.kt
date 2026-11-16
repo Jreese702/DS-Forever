@@ -11,7 +11,8 @@ import java.io.File
  * words while the game is at (or still downloading before) its login screen.
  *  - no saved sign-in file read: the download's own seconds are not "past the login screen" (1.0.32 then said "Waiting for the world.")
  *  - a restart's line goes once the new game run attaches (it stayed for minutes at the login screen)
- *  - "Signing in…" ends at the game's refusal (the captcha hold kept it up to 3 minutes over "You have been disconnected")
+ *  - "Signing in…" ends at the game's refusal (1.0.32's captcha hold, now retired, kept it up to 3 minutes over "You have been
+ *    disconnected"; the file's 20 s still outlast a refusal)
  *  - the sign-in log says why a run has no saved sign-in file
  */
 class SignInTriage1116Test {
@@ -121,7 +122,7 @@ class SignInTriage1116Test {
     // ---- "Signing in…"
 
     @Test fun signingInEndsAtTheGamesRefusal() {
-        // the client read the file and it is still there (20 s, or the captcha hold's up to 3 minutes)
+        // the client read the file and it is still there (its 20 s after the first read)
         assertTrue(HomeLogin.signingIn(read = true, fileActive = true, phase = HomeLogin.Phase.IDLE))
         assertTrue(HomeLogin.signingIn(true, true, HomeLogin.Phase.RUNNING))
         assertTrue(HomeLogin.signingIn(true, true, HomeLogin.Phase.AUTH))

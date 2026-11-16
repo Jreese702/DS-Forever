@@ -143,6 +143,16 @@ internal class PreLoginTraffic(private val minuteMs: Long = 60_000L, private val
         /** [heavyRightAfterRead]'s window: inside the ~4.4 s a real sign-in needs from the read to its character select */
         const val HEAVY_AFTER_READ_MS = 2_000L
 
+        /** the saved sign-in file's life after the client's FIRST read (NativeLogin's device tests of 2026-10-08) */
+        const val AFTER_READ_MS = 20_000L
+
+        /**
+         * THE 20 S ON THE WALL CLOCK (NativeLogin; the review of 2026-11-13, kept when the captcha hold was retired 2026-11-16): the
+         * Handler's delay counts uptime, which stands still while the device sleeps, so each traffic second also asks this on
+         * elapsedRealtime. [firstReadAt] 0 = no read. Pure.
+         */
+        fun afterReadDue(firstReadAt: Long, now: Long): Boolean = firstReadAt > 0L && now - firstReadAt >= AFTER_READ_MS
+
         /**
          * Is this second's traffic still "before the login screen"? Not after the client's first read, not once the run is past the
          * login screen (the no-file grace path: 'Play without' signs in by hand and the loading screen streams data), not in the world

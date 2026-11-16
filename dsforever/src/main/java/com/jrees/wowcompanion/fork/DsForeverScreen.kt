@@ -127,11 +127,7 @@ class DsForeverScreen(private val context: Context) {
     }
 
     /** Streaming's Battle.net keyboard on or off (it survives a new Presentation) */
-    fun signInBoard(on: Boolean) {
-        boardWanted = on; shown?.board(on)
-        // the captcha hold (the user, 2026-11-13): the open Keyboard keeps a read login.txt past its 20 s (NativeLogin / LoginHold)
-        com.jrees.wowcompanion.NativeLogin.keyboard(on)
-    }
+    fun signInBoard(on: Boolean) { boardWanted = on; shown?.board(on) }
     var signInClose: (() -> Unit)? = null
     fun signInPress(button: String) { shown?.boardPress(button) }
     /** Streaming's keyboard is wanted (a new bottom window puts it up: the Presentation, or the activity once it has its content) */
