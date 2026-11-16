@@ -3835,9 +3835,12 @@ private fun setupXEnvironment(
 
     // Microphone support is published through PulseAudio (module-pipe-source), which Wine/Proton's
     // winepulse.drv enumerates as a normal recording device. Opt-in per container.
-    val micEnabled = container.getMicEnabled() && PulseAudioComponent.isMicModuleAvailable(context)
-    if (container.getMicEnabled() && !micEnabled) {
-        Timber.w("Microphone enabled for this container but module-pipe-source.so is missing; skipping")
+    // DS FOREVER: PINNED OFF (voice to text, 2026-11-16: the app now holds RECORD_AUDIO for its own voice sheet only, the user's pick
+    // "Android's own 'Allow microphone?' box, shown once on the bottom screen the first time you press X"). The game never gets the
+    // microphone through Wine: its own voice chat stays without it, as it was before (the container's mic switch has no UI).
+    val micEnabled = false
+    if (container.getMicEnabled()) {
+        Timber.w("Microphone enabled for this container: DS Forever keeps the game's microphone off (voice to text only)")
     }
 
     if (xServerState.value.audioDriver == "alsa") {

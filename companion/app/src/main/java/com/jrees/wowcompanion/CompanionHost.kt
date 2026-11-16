@@ -731,7 +731,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         content.addView(gameMenuLock, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         interactView = InteractView(this)
-        interactKb = ChatKeyboard(this, swap = false).apply { visibility = View.GONE }
+        // voice on its word boxes (Send Mail's Subject and letter, the auction house's search): InteractView says which per field
+        interactKb = ChatKeyboard(this, swap = false, voice = true).apply { visibility = View.GONE }
         interactView.keyboard = interactKb
         interactView.padSource = { questsPad }
         dialogView = DialogView(this)
@@ -1016,6 +1017,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }, {})
         }
         pauseView.inFight = { homeView.inFight() }
+        // VOICE TO TEXT (the user's picks 2026-11-16): the microphone question never in a fight; Android's question on THIS screen (the
+        // game's never covered: this window hides until it closes); the on-device recognizer's name hints (never logged)
+        Voice.inFight = { homeView.inFight() }
+        Voice.askMic = { openOnBottom(VoiceAskActivity::class.java, "Voice") { VoiceMic.onClosed = it } }
+        Voice.hints = {
+            (chatView.voiceNames() + bagsView.bagItems().map { it.third.optString("name") })
+                .map { it.trim() }.filter { it.length in 2..40 && !it.startsWith("Loading") }.distinct().take(Voice.MAX_HINTS)
+        }
         pauseView.barsBottom = {
             if (room != Room.HOME || !homeView.isShown || homeView.barsBottom() <= 0f) 0f else {
                 val a = IntArray(2); val b = IntArray(2)
@@ -1164,6 +1173,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     fun onStop() {
+        Voice.stopAll()             // no recognizer keeps the microphone while the app is away (a page waiting on Android's question stays)
         if (unpacking) return
         // the sign-in prompt never stays open behind the app's back (its fields are cleared; the review)
         if (::loginPrompt.isInitialized && loginPrompt.isOpen) loginPrompt.close()
@@ -1760,6 +1770,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             if (room == Room.BAGS) bagsView.onPadKey(k, down)
             if (::interactView.isInitialized) interactView.onPadKey(k, down)     // 1.0.8: its keyboard, only while it is up
             if (room == Room.MACROS) macrosView.onPadKey(k, down)               // the Macros room's keyboard, only while it is up
+            if (room == Room.PROFESSIONS) professionsView.onPadKey(k, down)     // voice (11-16): the search's keyboard, only while it is up
             if (k == "PADFORWARD" && down) startPressed()
             if (k == "PAD2" && down) bPressed()
             // p35 (the user 2026-11-10: "When pressing down on the Dpad without the DS toolbar enabled the home button is lighting up for
@@ -3057,6 +3068,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     fun onDestroy() {
+        Voice.stopAll()
         Theme.removeListener(themeChanged)
         ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
         ui.removeCallbacks(silenceTick)
@@ -3185,12 +3197,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private fun startPressed() {
         if (shell.hostGone()) return
-        if (room == Room.CHAT && chatView.ownsStart()) {
+        // Home's chat module too (its keyboard / voice page: Start is their Send), as the Chat room
+        if ((room == Room.CHAT || (room == Room.HOME && homeView.chatModuleOn)) && chatView.ownsStart()) {
             chatView.onPad(JSONObject().put("type", "guestpad").put("id", "chat").put("k", "PADFORWARD").put("n", --directN)); return
         }
         if (room == Room.BAGS && bagsView.ownsStart()) return          // bagsView.onPadKey already had it (the unclaimed route)
         if (::interactView.isInitialized && interactView.ownsStart()) return   // an NPC window's keyboard: its Done (onPadKey had it)
         if (room == Room.MACROS && macrosView.ownsStart()) return      // the Macros room's keyboard: its Done (onPadKey had it)
+        if (room == Room.PROFESSIONS && professionsView.ownsStart()) return   // the search's keyboard: its Search (onPadKey had it)
         // the user relaying a player (2026-11-13: "the pause radial is appearing on the top and bottom ..."): the wheel only while a
         // CURRENT padmap of this game run says Start is ours (or a guest's); else the press is the game's alone (its own radial), and
         // with the add-ons silent Home says so (StartRoute)

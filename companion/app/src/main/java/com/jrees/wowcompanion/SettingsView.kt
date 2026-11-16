@@ -117,6 +117,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segDanger = Array(3) { RectF() }
     private val segFog = Array(2) { RectF() }
     private val segPsTop = Array(2) { RectF() }          // hub31: Polestar on the top screen, Show / Hide
+    private val segVoice = Array(Voice.Mode.values().size) { RectF() }  // 2026-11-16: Settings > General > Look > Voice typing
     private val segLang = Array(Tr.LANGS.size) { RectF() }          // 2026-11-07: Settings > System > Language
     private val segTheme = Array(Theme.presets.size) { RectF() }    // 2026-11-12: Settings > System > Theme (one tile a preset)
     private val segLight = Array(2) { RectF() }
@@ -269,7 +270,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPsTop.toList() + segPq.flatMap { it.toList() } + segDanger.toList() + segFog.toList() + segChat.toList() +
-            segTheme.toList() + segLang.toList() + segSwap.toList() + listOf(btnSwapRestart) + segGameAcct.toList() + segWinId.toList() + listOf(btnWinIdRestart) + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segPauseOver.toList() + segOpen.toList() + segPick.toList() +
+            segTheme.toList() + segLang.toList() + segVoice.toList() + segSwap.toList() + listOf(btnSwapRestart) + segGameAcct.toList() + segWinId.toList() + listOf(btnWinIdRestart) + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segPauseOver.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
             segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
@@ -304,7 +305,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart, btnSwapRestart, btnWinIdRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segPauseOver, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segLight, segGameAcct, segSwap, segWinId,
+                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segVoice, segTheme, segLight, segGameAcct, segSwap, segWinId,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -353,6 +354,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** a block's rows' height (from its first row's top to its last row's bottom), laid out exactly as its draw function lays it out */
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.LANGUAGE -> ROW_H
+        SettingsTabs.Block.VOICE -> ROW_H
         // #232: only with a second screen; Restart under it while the saved choice is not the one in use
         SettingsTabs.Block.SCREENS -> if (!ScreenSwap.offered) 0f else ROW_H + (if (swapPending() == ScreenSwap.Pending.NONE) 0f else 10f + ROW_H)
         SettingsTabs.Block.THEME -> themeGridH()
@@ -525,6 +527,12 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 if (lgx >= 0) { Settings.lowMemGraphics = lgx == 0; invalidate(); return }
                 val thi = segTheme.indexOfFirst { it.contains(x, y) }
                 if (thi >= 0) { Theme.use(Theme.presets[thi].id); invalidate(); return }
+                val vti = segVoice.indexOfFirst { it.contains(x, y) }
+                if (vti >= 0) {
+                    Settings.voiceTyping = Voice.Mode.values()[vti]
+                    DiagLog.event("voice", "Voice typing set ${Settings.voiceTyping.key}")
+                    invalidate(); return
+                }
                 val lgi = segLang.indexOfFirst { it.contains(x, y) }
                 if (lgi >= 0) { Tr.setChoice(context, Tr.LANGS[lgi].code); invalidate(); return }
                 if (fi >= 0) { Settings.worldMapFog = if (fi == 0) "all" else "explored"; invalidate(); return }
@@ -575,6 +583,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             }
             y = when (b) {
                 SettingsTabs.Block.LANGUAGE -> drawLanguage(c, y)
+                SettingsTabs.Block.VOICE -> drawVoice(c, y)
                 SettingsTabs.Block.SCREENS -> drawScreens(c, y)
                 SettingsTabs.Block.THEME -> drawTheme(c, y)
                 SettingsTabs.Block.LIGHTER -> drawLighter(c, y)
@@ -701,6 +710,21 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             val n = Tr.LANGS.size
             val b = RectF(box.right - 16f - segW * n, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             segmented(c, b, Tr.LANGS.map { if (it.code == "auto") Tr.t("Automatic") else it.label }, Tr.LANGS.indexOfFirst { it.code == Tr.choice() }, segLang)
+            b
+        }
+        return top + ROW_H
+    }
+
+    /**
+     * VOICE TYPING (the user's pick 2026-11-16: "On the Thor only by default. Online is used only after you pick it once"): This device
+     * (the default), Online, Off. App-wide, like Language
+     */
+    private fun drawVoice(c: Canvas, top: Float): Float {
+        val segW = segW()
+        row(c, top, Tr.t("Voice typing"), Tr.t("X in a text box listens"), enabled = true) { box ->
+            val n = Voice.Mode.values().size
+            val b = RectF(box.right - 16f - segW * n, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, Voice.Mode.values().map { Tr.t(it.label) }, Settings.voiceTyping.ordinal, segVoice)
             b
         }
         return top + ROW_H
