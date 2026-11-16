@@ -27,6 +27,8 @@ object TargetRadial {
         /** the context menu's icon mixed from game art (MenuIcons), when it has one; an entry's own game icon first (Quests q56: the
          *  pet's actions - the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet") */
         val menu: String? get() = if (more) "more" else entry?.let { e -> e.icon?.let { MenuIcons.iconKey(it) } ?: MenuIcons.keyOf(e.key, e.text) }
+        /** Quests q62: a pet ability that may cast itself - its pet bar slot (PetAuto's key); null = not one */
+        val autoSlot: Int? get() = entry?.takeIf { it.auto != null }?.autoSlot
     }
 
     /** the preferred places: the entry key's words (the mixin's name, lower case) and the slice's kit picture (the wheel's ricon_*) */
@@ -95,6 +97,14 @@ object TargetRadial {
                 chunk(s, page.offset) { o -> Page(sub = page.sub, offset = o) }
             }
         }
+    }
+
+    /** a slice in the kit's terms; Quests q62: a pet ability's autocast state live ([PetAuto]; the menu's word until it knows), greyed
+     *  once the pet is gone or dead ([gone]) */
+    fun kitSlice(s: Slice, now: Long, gone: Boolean = false): UiKit.PauseSlice {
+        val slot = s.autoSlot ?: return UiKit.PauseSlice(s.icon, s.label, s.enabled, menu = s.menu)
+        val on = PetAuto.on(slot, now) ?: (s.entry?.auto == 1)
+        return UiKit.PauseSlice(s.icon, s.label, s.enabled && !gone, menu = s.menu, auto = if (on) 1 else 0)
     }
 
     /** the document's name (nm), or "" */

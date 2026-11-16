@@ -141,6 +141,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         /** m71: each place's spell id (0 = none): the out-of-mana look */
         val ids = IntArray(8)
         val cell = arrayOfNulls<Int>(8); val auto = arrayOfNulls<Int>(8)
+        /** ActionBar pa1 / Quests q62 (the user, 2026-11-16: "hunters need to be able to visually see when their pets abilities are
+         *  active like growl, and a way to turn it off from those radials"): a pet command's mode on ([act]: the gold ring); a pet
+         *  spell that MAY cast itself ([autoA]: the game's corners), that does ([autoOn]: the marching shine), its pet bar [slot] */
+        val act = BooleanArray(8); val autoA = BooleanArray(8); val autoOn = BooleanArray(8); val slot = IntArray(8)
         /** b-class-radial-slots: the places it HAS, in order: only these are drawn, evenly round the wheel */
         val order: List<Int> get() = (0 until 8).filter { has[it] }
         /** place [i]'s angle on the wheel (degrees, 0 = the top, clockwise) */
@@ -971,10 +975,16 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             r.names[i] = str(e.opt("n")) ?: ""
             r.icons[i] = when (val ic = e.opt("i")) { is Number -> ic.toInt(); else -> 0 }
             r.ids[i] = if (str(e.opt("k")) == "spell") ji(e.opt("id"), 0) else 0
-            // a pet command whose mode is on, or a pet spell that casts itself: the gold ring (UI Art)
+            // a pet command whose mode is on, or a pet spell that casts itself: lit (the chord's icon, ClassChord.iconOf)
             r.lit[i] = ji(e.opt("act"), 0) == 1 || ji(e.opt("auto"), 0) == 1
             r.cell[i] = ji(e.opt("c"), -1).takeIf { it in 0..39 }
             r.auto[i] = ji(e.opt("ac"), -1).takeIf { it in 0..39 }
+            // pa1: the mode's gold ring (UI Art) for a command; a pet spell's autocast in the game's own look
+            val pet = str(e.opt("k")) == "petspell"
+            r.act[i] = ji(e.opt("act"), 0) == 1
+            r.autoOn[i] = pet && ji(e.opt("auto"), 0) == 1
+            r.autoA[i] = pet && (ji(e.opt("aa"), 0) == 1 || r.autoOn[i])
+            r.slot[i] = ji(e.opt("slot"), 0)
         }
         return r
     }
@@ -1376,6 +1386,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val r = chordRadial()
             if (PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) classAct(classFlow.b(), r)
             else if (PadInput.isHeld(down, PadInput.SLOT_FACE_BOTTOM)) classAct(classFlow.a(::pickAOf, pointedNow()), r)
+            // pa1 / q62: X = the pointed pet spell's autocast (the pet bar's right-click; the guest keeps X from the game)
+            else if (PadInput.isHeld(down, PadInput.SLOT_FACE_LEFT)) classAutoToggle(r, pointedNow())
         }
         if (down != 0) {
             val now = SystemClock.elapsedRealtime()
@@ -1958,7 +1970,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (!drawCollapsed) {
             val left = chordSide == ClassChord.LEFT                          // b-radial-exclusive: the latched side only
             val rad = when { left -> h.caL; chordSide == ClassChord.RIGHT -> h.caR; else -> null }
-            if (rad != null) drawRadial(c, rad, ox + (if (left) -75f else 70f) * k, oy, width.toFloat(), height.toFloat())
+            if (rad != null) {
+                drawRadial(c, rad, ox + (if (left) -75f else 70f) * k, oy, width.toFloat(), height.toFloat())
+                if (radialLive(rad)) next = min(next, now + 33L)               // q62: the autocast shine marches
+            }
         }
 
         if (grey) c.restore()
@@ -2572,7 +2587,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 }
             }
             if (sel) aRadHi?.let { hl -> val hw = slot / 2f; drawBox(c, hl, px - hw, py - hw, px + hw, py + hw) }
-            if (has && r.lit[i]) {
+            // pa1 / q62: a pet spell that may cast itself: the game's corners, the marching shine while it does (live: PetAuto, then
+            // the layout's word); a command whose mode is on: the gold ring (UI Art)
+            if (has && r.autoA[i]) UiKit.autoCastRing(c, px, py, 56f * sc, classAutoOn(r, i))
+            else if (has && r.lit[i]) {
                 pStroke.color = Theme.gold; pStroke.strokeWidth = 4f * sc
                 c.drawCircle(px, py, 56f * sc, pStroke)
             }
@@ -2721,8 +2739,35 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     fun classRadialCell(i: Int, auto: Boolean): Int? {
         val r = chordRadial() ?: return null
         if (i !in 0..7) return null
+        if (auto && r.autoA[i]) classAutoPressed(r, i)                    // q62: Home's long press: the flip shows at once
         return if (auto) r.auto[i] else r.cell[i]
     }
+
+    /** pa1 / q62: place [i] of [r] casts itself, as shown now: a press not yet answered or the pet's live document (PetAuto), else the
+     *  class layout's word */
+    private fun classAutoOn(r: Radial, i: Int): Boolean =
+        r.slot[i].takeIf { it in 1..10 }?.let { PetAuto.on(it, SystemClock.uptimeMillis()) } ?: r.autoOn[i]
+
+    private fun classAutoPressed(r: Radial, i: Int) {
+        val s = r.slot[i].takeIf { it in 1..10 } ?: return
+        PetAuto.pressed(s, classAutoOn(r, i), SystemClock.uptimeMillis())
+        invalidate(); onClassStick?.invoke()
+    }
+
+    /** pa1 / q62: X on the open class wheel: the pointed pet spell's autocast toggled (its classr autocast cell, 16-23) */
+    private fun classAutoToggle(r: Radial?, p: Int) {
+        if (r == null || p !in 0..7 || !r.has[p] || !r.autoA[p]) return
+        val col = r.auto[p]
+        android.util.Log.i("WCLOG", "class radial: autocast place ${p + 1} -> classr ${col ?: "none"}")
+        if (col == null) return
+        classAutoPressed(r, p)
+        onClassPick?.invoke(col)
+    }
+
+    /** the open class wheel shows a marching autocast shine (Home's layer keeps redrawing it) */
+    fun classRadialLive(): Boolean = chordRadial()?.let { radialLive(it) } == true
+    private fun radialLive(r: Radial): Boolean =
+        (0 until 8).any { r.has[it] && r.autoA[it] && classAutoOn(r, it) } || PetAuto.waiting(SystemClock.uptimeMillis())
     /** a class radial exists for that chord (Home's hint while a module holds the controller) */
     fun hasClassRadial(left: Boolean): Boolean = (if (left) hud?.caL else hud?.caR) != null
 

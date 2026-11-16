@@ -238,6 +238,67 @@ object UiKit {
      *  it was set (postInvalidateOnAnimation, or ~every 50 ms) */
     @JvmField var bookGlowLive = false
 
+    // ---------------------------------------------------------------- the pet's AUTOCAST look (Quests q62 / ActionBar pa1)
+    // The user, 2026-11-16: "hunters need to be able to visually see when their pets abilities are active like growl, and a way to turn
+    // it off from those radials". The game's own look (blizzard_uipaneltemplates AutoCastOverlayTemplate, the gamepad flyout's circle
+    // slot): gold CORNERS on every ability that may cast itself, and while it does, the SHINE - the "ants" texture turning -360 degrees
+    // every 4 s (counter-clockwise), masked to the slot's edge. The kit has no ants art (nothing new is harvested for it), so the shine
+    // is drawn: short bright gold dashes round the edge, marching counter-clockwise at the game's speed, over a soft gold glow.
+
+    /** one turn of the shine, ms (the game's Rotation duration="4") */
+    const val AUTO_TURN_MS = 4_000L
+    /** set when [autoCastRing] / [spell] drew a marching shine; the view reads and clears it after drawing, and keeps redrawing while set */
+    @JvmField var autoCastLive = false
+    private const val AUTO_GOLD = 0xFFFFD100.toInt()          // the game's GameFontNormal gold (1, 0.82, 0)
+    private const val AUTO_SPARK = 0xFFFFF2A8.toInt()
+    private val pAuto = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+    private val autoRect = RectF()
+
+    /** the shine's turn now, degrees (counter-clockwise: negative), [now] uptime ms */
+    fun autoCastAngle(now: Long = SystemClock.uptimeMillis()): Float = -360f * (now % AUTO_TURN_MS) / AUTO_TURN_MS
+
+    /**
+     * THE AUTOCAST LOOK ON A ROUND SLOT centred ([cx], [cy]) whose edge is at radius [r]: the four gold corners (at the diagonals, as the
+     * game's circle-slot corners), quiet while it is off; [on] = it casts itself: the corners bright and the marching shine round the
+     * edge. [alpha] 0..255 (a wheel's fade-in).
+     */
+    fun autoCastRing(c: Canvas, cx: Float, cy: Float, r: Float, on: Boolean, alpha: Int = 255, now: Long = SystemClock.uptimeMillis()) {
+        val a = alpha.coerceIn(0, 255)
+        if (a <= 0) return
+        autoRect.set(cx - r, cy - r, cx + r, cy + r)
+        if (on) {
+            pAuto.pathEffect = null
+            pAuto.color = AUTO_GOLD; pAuto.alpha = a * 110 / 255; pAuto.strokeWidth = r * 0.22f
+            c.drawCircle(cx, cy, r, pAuto)
+            val save = c.save()
+            c.rotate(autoCastAngle(now), cx, cy)
+            pAuto.strokeWidth = maxOf(2.5f, r * 0.11f); pAuto.color = AUTO_SPARK; pAuto.alpha = a
+            for (k in 0 until 12) c.drawArc(autoRect, k * 30f, 17f, false, pAuto)
+            c.restoreToCount(save)
+            autoCastLive = true
+        }
+        pAuto.pathEffect = null
+        pAuto.color = AUTO_GOLD; pAuto.alpha = if (on) a else a * 150 / 255; pAuto.strokeWidth = maxOf(2.5f, r * 0.1f)
+        autoRect.set(cx - r - r * 0.06f, cy - r - r * 0.06f, cx + r + r * 0.06f, cy + r + r * 0.06f)
+        for (d in floatArrayOf(45f, 135f, 225f, 315f)) c.drawArc(autoRect, d - 15f, 30f, false, pAuto)
+        pAuto.alpha = 255
+    }
+
+    /** the marching shine round a SQUARE slot ([r], the icon's box): the spellbook's pet entry while it casts itself */
+    private fun autoCastSquare(c: Canvas, r: RectF, alpha: Int = 255, now: Long = SystemClock.uptimeMillis()) {
+        val w = r.width()
+        val per = 4f * w
+        val dash = per / 24f
+        pAuto.color = AUTO_GOLD; pAuto.alpha = alpha * 70 / 255; pAuto.strokeWidth = w * 0.08f; pAuto.pathEffect = null
+        c.drawRect(r, pAuto)
+        pAuto.color = AUTO_SPARK; pAuto.alpha = alpha; pAuto.strokeWidth = maxOf(2f, w * 0.04f)
+        // counter-clockwise on the screen: the dashes run back along the rectangle's clockwise path
+        pAuto.pathEffect = android.graphics.DashPathEffect(floatArrayOf(dash * 0.55f, dash * 0.45f), per * (now % AUTO_TURN_MS) / AUTO_TURN_MS)
+        c.drawRect(r, pAuto)
+        pAuto.pathEffect = null; pAuto.alpha = 255
+        autoCastLive = true
+    }
+
     /** a waiting red button: the spinner at its right end, inside the plate, the plate's height */
     private fun waitOnButton(c: Canvas, r: RectF) {
         val s = r.height() * 0.62f
@@ -3623,6 +3684,8 @@ object UiKit {
                 c.drawBitmap(it, null, RectF(ir.left - 2f * k, ir.top - 2f * k, ir.right + 2f * k, ir.bottom + 2f * k), pTint)
                 pTint.alpha = 255
             }
+            // q62: while it casts itself, the game's marching shine round the frame (the room keeps redrawing: bookGlowLive)
+            if (autoCast == 2) { autoCastSquare(c, RectF(ir.left - 3f * k, ir.top - 3f * k, ir.right + 3f * k, ir.bottom + 3f * k)); bookGlowLive = true }
             tex("book_autocast")?.let {
                 pBmp.alpha = if (autoCast == 2) 255 else 130
                 c.drawBitmap(it, null, RectF(ir.left - 5f * k, ir.top - 5f * k, ir.right + 5f * k, ir.bottom + 5f * k), pBmp)
@@ -4769,8 +4832,11 @@ object UiKit {
      * game's word; [enabled] false = the game's unavailable look (its grey wedge, the picture's _off art, a grey label); [note] = small
      * grey words on the label's outer side (optional; the "Coming later" of a greyed slice can instead be the red line, pauseRadial's line)
      */
-    /** [menu]: a context-menu icon (MenuIcons: game art mixed on the phone) drawn instead of the kit picture [key] */
-    class PauseSlice(val key: String, val label: String, val enabled: Boolean = true, val note: String? = null, val menu: String? = null)
+    /** [menu]: a context-menu icon (MenuIcons: game art mixed on the phone) drawn instead of the kit picture [key]; [auto] (Quests q62,
+     *  a pet ability that may cast itself): -1 none, 0 it does not (the game's quiet corners), 1 it does (the corners and the marching
+     *  shine, [autoCastRing]); the pointed one wears the X (its toggle) opposite the A */
+    class PauseSlice(val key: String, val label: String, val enabled: Boolean = true, val note: String? = null, val menu: String? = null,
+                     val auto: Int = -1)
 
     /** the disc: its middle and width, how red its swirl is (0..1), how far its B has come in (0..1), its halo (0..1) */
     class PauseDisc(val cx: Float, val cy: Float, val size: Float, val red: Float, val b: Float, val glow: Float)
@@ -5120,7 +5186,18 @@ object UiKit {
                 // THE A ON THE LIT SLICE while A picks (RC4, the user on RC3: "The pause menu is missing the button glyphs"): as the
                 // consumables wheel marks its pointed item, the A half over the icon's top-left corner
                 // (UI Art on 98a70ded: on the small plain emote icons the full-size A hid half the face: 0.7 of it there, centred on the corner)
-                if (pickGlyph && i == pt && sl.enabled && selK > 0f) {
+                // q62: a pet ability that may cast itself wears the game's autocast look round its medallion
+                // (greyed - the pet gone or dead - the quiet corners only, faded as the slice)
+                if (sl.auto >= 0) autoCastRing(c, ix, if (menuIcon) iy - 10f * g.s else iy, maxOf(aw, ah) * 0.43f, sl.auto == 1 && sl.enabled,
+                    (255 * k * (if (sl.enabled) 1f else 0.45f)).toInt())
+                if (pickGlyph && i == pt && sl.enabled && selK > 0f && sl.auto >= 0) {
+                    // q62: A (cast, the pet bar's left-click) and X (its autocast, the right-click) a little smaller, out on the medallion's
+                    // two top corners, so the autocast look between them stays in sight
+                    val gs = 41.6f * g.s / 1.3f * 0.85f
+                    val my = if (menuIcon) iy - 10f * g.s else iy
+                    pad(c, okGlyph().takeIf { n -> tex("pad_$n") != null } ?: "rev_a", ix - aw / 2f, my - ah / 2f, gs, (255 * selK).toInt())
+                    pad(c, xGlyph().takeIf { n -> tex("pad_$n") != null } ?: "rev_x", ix + aw / 2f, my - ah / 2f, gs, (255 * selK).toInt())
+                } else if (pickGlyph && i == pt && sl.enabled && selK > 0f) {
                     val gs = 41.6f * g.s / 1.3f * (if (plain) 0.7f else 1f)
                     val off = if (plain) 0f else gs / 2f - 0.35f * gs
                     pad(c, okGlyph().takeIf { n -> tex("pad_$n") != null } ?: "rev_a", ix - aw / 2f + off, iy - ah / 2f + off, gs, (255 * selK).toInt())

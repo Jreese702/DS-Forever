@@ -29,6 +29,16 @@ import org.json.JSONObject
  * INPUT: either stick (READ / HOLD) or the D-pad (Left / Right round the ring, Up the top, Down the bottom) aims; A picks; B goes back a
  * wheel, and from the first closes; Y or the hub closes. MORE and a SUB-MENU open the next wheel ([TargetRadial.Page]).
  *
+ * THE PET'S AUTOCAST (Quests q62; the user, 2026-11-16: "hunters need to be able to visually see when their pets abilities are active
+ * like growl, and a way to turn it off from those radials"): on the pet's wheel (Party mode's pet slot, the target wheel on your pet) an
+ * ability that may cast itself wears the game's autocast look ([UiKit.autoCastRing]: the corners; the marching shine while it does), its
+ * state live from [PetAuto]. The press mirrors the game's pet bar, whose left-click casts and right-click toggles autocast: A picks (casts
+ * it, as every pick), X on the pointed ability toggles it and the wheel stays open (the X glyph shows at its other corner), and a finger's
+ * long press ([LONG_MS], the class wheel's) toggles it too. X rather than a held A: A acts on its press here (every opener: the PartyPad
+ * delivers presses only), so a hold could only be told after a cast had gone out; X is the one face button no wheel uses, the secondary
+ * action as in the Macros room and Bags. A toggle the add-on cannot do now (a fight changed the pet: no cell names its spell) says
+ * "Not in combat"; a pet gone or dead "Not available here".
+ *
  * A PICK ([open]'s onDo): a menu entry runs as the opener's menu ran it (digit taps or a secure cell); one with a question (Promote,
  * Uninvite) asks by a second pick.
  */
@@ -73,6 +83,12 @@ class TargetRadialView(
     private var slidT = 0f
     private var holdTry = 0
     private var freeTry = 0
+    /** when the open wheel's menu document came (uptime ms): a PetAuto document after it says what changed since */
+    private var filledAt = 0L
+    /** a finger's long press on slice [downSlice] toggles its autocast (q62) */
+    private var downSlice = -1
+    private var longDone = false
+    private val longPress = Runnable { val i = downSlice; if (i >= 0 && isOpen) { longDone = true; toggle(i) } }
     @Volatile private var heldOk = false
     @Volatile private var freed = false
 
@@ -91,6 +107,10 @@ class TargetRadialView(
         doc = d
         TargetRadial.name(d).takeIf { it.isNotEmpty() }?.let { name = it }
         items = PlayerMenu.parse(d.optJSONArray("items"), if (opener == "party") PlayerMenu.PARTY_GREY else emptySet())
+        // q62: the pet's abilities as the game said them when it read the menu (the live document follows)
+        val now = SystemClock.uptimeMillis()
+        filledAt = now
+        for (e in items) { val sl = e.autoSlot ?: continue; if (e.auto != null) PetAuto.seed(sl, e.text, e.auto == 1, e.autoCell, now) }
         relayout()
         invalidate()
     }
@@ -217,6 +237,7 @@ class TargetRadialView(
         val k = when {
             pressed(PadInput.SLOT_FACE_RIGHT, h) -> "PAD2"
             pressed(PadInput.SLOT_FACE_TOP, h) -> "PAD4"
+            pressed(PadInput.SLOT_FACE_LEFT, h) -> "PAD3"                 // q62: X, the pointed pet ability's autocast
             pressed(PadInput.SLOT_FACE_BOTTOM, h) -> "PAD1"
             pressed(PadInput.SLOT_DPAD_RIGHT, h) -> "PADDRIGHT"
             pressed(PadInput.SLOT_DPAD_LEFT, h) -> "PADDLEFT"
@@ -235,6 +256,7 @@ class TargetRadialView(
             "PAD2" -> back()
             "PAD4" -> close("Y")
             "PAD1" -> if (pointed in 0..7) pick(pointed) else say("Point at a slice")
+            "PAD3" -> if (pointed in 0..7) toggle(pointed)                // q62: the pointed pet ability's autocast
             "PADDRIGHT" -> step(+1)
             "PADDLEFT" -> step(-1)
             "PADDUP" -> { pointed = 0; invalidate() }
@@ -302,6 +324,27 @@ class TargetRadialView(
         run(act, who)
     }
 
+    /**
+     * q62: X (or a long press) on slice [i]: its autocast toggled, the pet bar's right-click - the add-on's toggle cell (pfocus 20-29,
+     * the game's own /petautocasttoggle on our button), the flip shown at once ([PetAuto.pressed]) until the game's answer. The wheel
+     * stays open. Not a pet ability: nothing.
+     */
+    private fun toggle(i: Int) {
+        val s = slices.getOrNull(i) ?: return
+        val slot = s.autoSlot ?: return
+        val now = SystemClock.uptimeMillis()
+        if (PetAuto.gone(filledAt)) { say("Not available here"); return }
+        val cell = if (PetAuto.has(slot)) PetAuto.cell(slot) else s.entry?.autoCell
+        if (cell == null) { say(if (PetAuto.fight) "Not in combat" else "Not available here"); return }
+        val was = PetAuto.on(slot, now) ?: (s.entry?.auto == 1)
+        Log.i(TAG, "context radial: autocast ${s.label} ${if (was) "off" else "on"} (pfocus $cell)")
+        PetAuto.pressed(slot, was, now)
+        pointed = i; line = null
+        lastActAt = now
+        doAct(PlayerMenu.Do.Secure(cell, s.label, "pfocus"), name)
+        invalidate()
+    }
+
     // ------------------------------------------------------------------------------------------------ paint
 
     private fun discHere(): Pair<PointF, Float> {
@@ -311,7 +354,11 @@ class TargetRadialView(
         return PointF(r.centerX() + a[0] - b[0], r.centerY() + a[1] - b[1] - strip.translationY) to r.width()
     }
 
-    private fun kitSlices(): List<UiKit.PauseSlice?> = slices.map { it?.let { s -> UiKit.PauseSlice(s.icon, s.label, s.enabled, menu = s.menu) } }
+    private fun kitSlices(): List<UiKit.PauseSlice?> {
+        val now = SystemClock.uptimeMillis()
+        val gone = PetAuto.gone(filledAt)
+        return slices.map { it?.let { s -> TargetRadial.kitSlice(s, now, gone) } }
+    }
 
     /** the title: the name, and the wheel it is on (More, a sub-menu's words) */
     private fun title(): String {
@@ -330,20 +377,37 @@ class TargetRadialView(
         val lineAlpha = if (lineFor <= HomePauseView.LINE_MS) 1f else (1f - (lineFor - HomePauseView.LINE_MS).toFloat() / HomePauseView.LINE_FADE_MS).coerceIn(0f, 1f)
         val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
         val (disc, size) = discHere()
+        UiKit.autoCastLive = false
         val moving = UiKit.pauseRadial(c, screen, disc, size, kitSlices(), -1, pointed, -1, t, 0f, line, lineAlpha = lineAlpha,
             pickGlyph = true, up = null, down = null, left = null, right = null, title = title())
         if (moving || t < UiKit.PAUSE_OPEN_MS || line != null) postInvalidateOnAnimation()
+        // q62: the autocast shine marches (and a toggle waits for the game's answer): ~30 frames a second
+        else if (UiKit.autoCastLive || PetAuto.waiting(SystemClock.uptimeMillis())) postInvalidateDelayed(33L)
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (!isOpen) return false
-        if (e.action == MotionEvent.ACTION_UP) {
-            val s = UiKit.pauseRadialHit(RectF(0f, 0f, width.toFloat(), height.toFloat()), e.x, e.y)
-            when {
-                s == UiKit.PAUSE_HUB -> back()                    // the hub = B (a wheel back, or closed)
-                s < 0 -> close("outside")
-                else -> { pointed = s; pick(s) }
+        val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                // q62: a long press on a pet ability toggles its autocast (the class wheel's long press)
+                removeCallbacks(longPress); longDone = false
+                val s = UiKit.pauseRadialHit(screen, e.x, e.y)
+                downSlice = if (s in 0..7 && slices.getOrNull(s)?.autoSlot != null) s else -1
+                if (downSlice >= 0) postDelayed(longPress, LONG_MS)
             }
+            MotionEvent.ACTION_UP -> {
+                removeCallbacks(longPress)
+                val was = longDone; longDone = false; downSlice = -1
+                if (was) return true                              // the long press toggled: no pick on the release
+                val s = UiKit.pauseRadialHit(screen, e.x, e.y)
+                when {
+                    s == UiKit.PAUSE_HUB -> back()                    // the hub = B (a wheel back, or closed)
+                    s < 0 -> close("outside")
+                    else -> { pointed = s; pick(s) }
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> { removeCallbacks(longPress); downSlice = -1; longDone = false }
         }
         return true
     }
@@ -352,5 +416,8 @@ class TargetRadialView(
         const val TAG = "WCHOME"
         const val GUEST = "radial"
         const val CONFIRM_MS = 4_000L
+        /** q62: a finger held this long on a pet ability toggles its autocast (the class wheel's CLASS_LONG_MS) */
+        const val LONG_MS = 450L
+
     }
 }
