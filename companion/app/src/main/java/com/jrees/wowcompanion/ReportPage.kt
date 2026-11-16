@@ -98,7 +98,8 @@ class ReportPage(c: Context) : FrameLayout(c) {
     }
 
     private val ui = Handler(Looper.getMainLooper())
-    private val kb = ChatKeyboard(c, swap = false).apply { visibility = View.GONE; sendWord = "Done" }
+    // VOICE on the words too (the user's pick 2026-11-16, "the problem report"): the words go in at the caret, after what is there
+    private val kb = ChatKeyboard(c, swap = false, voice = true).apply { visibility = View.GONE; sendWord = "Done"; voiceAppend = true; voiceMax = MAX_WORDS }
     private val previewText = TextView(c).apply { textSize = 11f; typeface = Typeface.MONOSPACE; ThemeLive.fg(this, Tok.TEXT); setPadding(28, 20, 28, 20) }
     private val preview = ScrollView(c).apply { visibility = View.GONE; addView(previewText) }
 
@@ -136,6 +137,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
         }
         kb.onSend = { closeKeyboard() }
         kb.onClose = { closeKeyboard() }
+        kb.onVoice = { invalidate() }
         addView(preview, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply { topMargin = 110 })
         addView(kb, LayoutParams(LayoutParams.MATCH_PARENT, ChatKeyboard.fullHeight(), android.view.Gravity.BOTTOM))
         visibility = View.GONE
@@ -169,6 +171,15 @@ class ReportPage(c: Context) : FrameLayout(c) {
     }
 
     private fun openKeyboard() { kb.open(); inKeys = true; slide(1f) }
+    /** X on the words (or a finger on their microphone): the board's voice page; [fromKeys] = from its keys (B comes back to them) */
+    private fun voiceIn(fromKeys: Boolean) {
+        if (!kbUp) openKeyboard()
+        inKeys = true; focus = Model.Target.WORDS
+        if (!kb.startVoice(fromKeys)) return
+        invalidate()
+    }
+    /** the words box's microphone as last drawn (a finger on it = X) */
+    private var micBox: RectF? = null
     private fun closeKeyboard() { slide(0f); inKeys = true; focus = if (ReportFlow.canSend(words)) Model.Target.SEND else Model.Target.WORDS; invalidate() }
     private val kbUp get() = kb.visibility == View.VISIBLE && kbK > 0f
 
@@ -214,6 +225,8 @@ class ReportPage(c: Context) : FrameLayout(c) {
             "PADDUP", "PADDLEFT" -> focus = live[(i - 1 + live.size) % live.size]
             "PADDDOWN", "PADDRIGHT" -> focus = live[(i + 1) % live.size]
             "PAD1" -> press(live.getOrElse(i) { live[0] })
+            // X on the words: the keyboard comes up on its VOICE page (Voice typing off: X does nothing here, as before)
+            "PAD3" -> if (live.getOrElse(i) { live[0] } == Model.Target.WORDS && !busy && VoiceUi.micShown(context)) voiceIn(fromKeys = false)
             "PAD2" -> close()
         }
         invalidate()
@@ -225,6 +238,8 @@ class ReportPage(c: Context) : FrameLayout(c) {
      * the keyboard, B closes the keyboard.
      */
     private fun keysWithBoard(k: String) {
+        // the voice page has every button while it shows (LB / RB too: the caret stays where the words go)
+        if (kb.voiceShown) { kb.press(k); invalidate(); return }
         if (inKeys) {
             if (k == "PADDUP" && kb.keys.row == 0) {
                 inKeys = false
@@ -313,6 +328,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
                 invalidate()
                 return true
             }
+            if (!kbUp && micBox?.contains(e.x, e.y) == true) { voiceIn(fromKeys = false); return true }
             boxes.entries.firstOrNull { it.key in live && it.value.contains(e.x, e.y) }?.key?.let { t ->
                 val up = kbUp
                 if (up && t != Model.Target.WORDS) closeKeyboard()
@@ -345,7 +361,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
             return
         }
         val can = ReportFlow.canSend(words)
-        boxes.clear()
+        boxes.clear(); micBox = null
         // the words: the box the keyboard types into
         val body = UiKit.bodyPaint(30f)
         val box = RectF(PAD, boxTop, w - PAD, boxBottom)
@@ -410,6 +426,9 @@ class ReportPage(c: Context) : FrameLayout(c) {
         var ny = top + 54f
         for (part in note.split('\n')) for (line in SetupPanel.wrap(part, small, w - PAD * 2)) { c.drawText(Tr.t(line), PAD, ny, small); ny += 34f }
         boxes[focus]?.let { UiKit.focus(c, inset(it)) }
+        // the words under the cursor: A with the keyboard, X with the microphone (the voice design), at the box's top right
+        micBox = if (focus == Model.Target.WORDS && VoiceUi.micShown(context))
+            VoiceUi.boxGlyphs(c, box.right - 16f, box.top + 34f, 40f, voice = true).mic else null
     }
 
     private fun inset(r: RectF) = RectF(r.left - 6f, r.top - 6f, r.right + 6f, r.bottom + 6f)
