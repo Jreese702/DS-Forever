@@ -30,7 +30,7 @@ import org.json.JSONObject
  *    trinket slot wears when the game's slot rules let it go here ([swaps]: an off hand's one-hander into the main hand; the main hand's
  *    one-hander into the off hand only for a class that dual wields; main-hand-only weapons, two-handers, shields and held-in-off-hand
  *    pieces never cross; rings and trinkets always). Picking it swaps the two (Bags.lua's bagsSwapWorn, Character c20's arm), out of a
- *    fight only; what this slot wears goes into the other slot when it may, else into the bags ("Bags full" when there is no room).
+ *    fight only (char-popout2, THE USER 2026-11-16 picked "Allow it in fights": the two hands' swap in a fight too, [combatSwap]); what this slot wears goes into the other slot when it may, else into the bags ("Bags full" when there is no room).
  */
 object SlideOut {
     /** the icons a rail shows at once (C4: four fit from a side column, a fifth would cover the other column) */
@@ -79,6 +79,13 @@ object SlideOut {
         val loc = w.optString("equip").takeIf { it.isNotEmpty() } ?: return emptyList()
         return if (slot in WornReplace.slotsOf(loc, dualWield)) listOf(other) else emptyList()
     }
+
+    /** char-popout2 (THE USER, 2026-11-16, picked "Allow it in fights"): the swaps tried in a fight: the two hands (main hand and off
+     *  hand, Bags bags-swap2: weapon Unequip's watched route; a refusal comes back as the room's one line, [WornMore.say]); rings,
+     *  trinkets and anything else wait for the fight to end */
+    fun combatSwap(slot: Int, from: Int): Boolean =
+        slot != from && slot in HANDS && from in HANDS
+    private val HANDS = setOf(WornReplace.MAIN, WornReplace.OFF)
 
     /** char-popout: what [slot] wears now can't go into [from] (the swap puts it in the bags: it needs a free slot) */
     fun swapNeedsRoom(slot: Int, from: Int, worn: Map<Int, JSONObject>, dualWield: Boolean): Boolean {
@@ -160,8 +167,9 @@ object SlideOut {
     fun why(e: Entry, slot: Int, combat: Boolean, window: Boolean, freeGeneral: Int?, worn: Map<Int, JSONObject>, routed: Boolean,
             dualWield: Boolean = false): String? {
         e.from?.let { from ->
-            // char-popout: a swap is out of a fight only (the add-on's pick-up of a worn piece; the D2a ruling)
-            if (combat) return "In combat"
+            // char-popout: a swap is out of a fight, except (char-popout2, THE USER 2026-11-16 picked "Allow it in fights": "the hand
+            // swap works in combat; if the game refuses, the pop-out says so") the two hands' swap, as weapon Unequip is ([combatSwap])
+            if (combat && !combatSwap(slot, from)) return "In combat"
             if (freeGeneral != null && freeGeneral <= 0 && swapNeedsRoom(slot, from, worn, dualWield)) return "Bags full"
             return if (routed) null else "Unavailable"
         }

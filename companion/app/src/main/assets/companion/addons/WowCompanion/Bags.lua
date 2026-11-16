@@ -209,6 +209,15 @@
 -- "full", nothing moved). Refused in a fight (no insecure pick-up then), with anything on the cursor, inside SETTLE, an empty FROM, a piece
 -- the game's slot rules keep out of TO ("bad": EQ.gearSlots, a one-hander's off hand only for a class that dual wields). The answer goes
 -- to WC.character.swapAck (and the drag's reply, by "swap"), confirmed 0.6 s later. No window opened or closed, nothing written.
+-- bags-swap2 (Character c21; THE USER, 2026-11-16, picked "Allow it in fights": the hand swap works in combat; if the game refuses, the
+-- pop-out says so): THE WEAPON HAND SWAP IN A FIGHT goes the way weapon Unequip already goes in one (uneq1's route): the game's own
+-- pick-up and EquipCursorItem as the call itself, WATCHED (ADDON_ACTION_BLOCKED / FORBIDDEN naming our add-on, or the piece never
+-- reaching the cursor / not landing: the cursor is cleared so the piece goes back on). There is no secure route for a worn-to-worn move
+-- (the secure templates' "item" action only equips a bag piece or uses one: Replace's bag secure cell; type=macro is ruled out), and
+-- neither call is protected. Only BOTH hands (16 and 17: UQ.WEAPON) are tried in a fight; rings, trinkets and anything else stay out of
+-- a fight ("combat", fightRefused). A block = "combat" (the app: "In combat"), any other refusal = "refused" ("The game refused it"),
+-- bags full for a displaced shield = "full"; a block arriving after the answer is answered by the watcher as a swap (UQ.doneReply).
+-- Only on the player's press (the arm + two columns); nothing written, no window opened or closed.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -689,7 +698,9 @@ do
             UQ.done = nil
             settle()
             fightRefused()
-            UQ.reply({ ok = false, why = "combat", to = UQ.done_at, late = true, blocked = UQ.blocked })
+            local reply = UQ.doneReply or UQ.reply       -- bags-swap2: a swap's late block answers as a swap
+            UQ.doneReply = nil
+            reply({ ok = false, why = "combat", to = UQ.done_at, late = true, blocked = UQ.blocked })
         end
     end)
 end
@@ -724,7 +735,7 @@ function WC.bagsUnequip(slot)
         if fight then fightRefused() end
         return no(fight and "combat" or "refused")
     end
-    UQ.done, UQ.done_at = true, at                 -- a blocked event still to come is answered by the watcher
+    UQ.done, UQ.done_at, UQ.doneReply = true, at, UQ.reply   -- a blocked event still to come is answered by the watcher
     UQ.reply({ ok = true, from = at, to = { bag = bag, slot = s }, id = id, fight = fight or nil })
     C_Timer.After(UQ.WATCH, function() UQ.done = nil end)
     C_Timer.After(0.6, function()
@@ -3278,7 +3289,7 @@ end
 -- bags-swap1 (Character c20; the user, 2026-11-16: "on weapons that are both 1 hand or can actually be swapped to the offhand or vice
 -- versa then that option should be listed in the pop out options."): worn [from]'s piece into worn [to], the paper doll's own drag
 -- (PickupInventoryItem, EquipCursorItem); what was in [to] goes into [from] when it may go there, else first into the first free plain
--- bag slot. Out of a fight only. Returns true, or false + why (bad / combat / cursor / settle / empty / full / refused); the answer goes
+-- bag slot. Out of a fight only (bags-swap2: the two hands in a fight too, watched). Returns true, or false + why (bad / combat / cursor / settle / empty / full / refused); the answer goes
 -- to the Character room (UQ.swapReply), confirmed 0.6 s later off the slot itself.
 local function fitsIn(id, inv)
     local sl = id and EQ.gearSlots(id)
@@ -3288,9 +3299,15 @@ local function fitsIn(id, inv)
 end
 function WC.bagsSwapWorn(from, to)
     local at = { inv = to }
-    local function no(why) UQ.swapReply({ ok = false, why = why, from = { inv = from }, to = at }); return false, why end
+    local fight = false
+    local function no(why)
+        if fight and why == "combat" then fightRefused() end
+        UQ.swapReply({ ok = false, why = why, from = { inv = from }, to = at, fight = fight or nil }); return false, why
+    end
     if type(from) ~= "number" or type(to) ~= "number" or from < 1 or from > 19 or to < 1 or to > 19 or from == to then return no("bad") end
-    if InCombatLockdown() then fightRefused(); return no("combat") end
+    fight = InCombatLockdown() and true or false
+    -- bags-swap2: in a fight only the two hands (the weapon swap, uneq1's watched route); rings / trinkets / the rest out of one only
+    if fight and not (UQ.WEAPON[from] and UQ.WEAPON[to] and from ~= 18 and to ~= 18) then return no("combat") end
     if cursorBusy() then return no("cursor") end
     if (GetTime() - movedAt) < SETTLE then return no("settle") end
     local idA = invItemID(from)
@@ -3299,23 +3316,32 @@ function WC.bagsSwapWorn(from, to)
     local idB = invItemID(to)
     local back = idB and fitsIn(idB, from)
     picked = nil                                   -- a half-done drag of the Bags room is void now
+    UQ.blocked, UQ.done = nil, nil
+    UQ.watchAt = GetTime()                         -- bags-swap2: the game's block of any call below is ours (the watcher)
+    -- bags-swap2: a refused step: put back what the cursor holds; a block in a fight = combat, else the game refused it
+    local function failed() settle(); movedAt = GetTime(); return no(UQ.blocked and "combat" or "refused") end
     if idB and not back then
         -- what is in TO can't go into FROM (a shield, a main-hand-only weapon): into the bags first, as Unequip does
         local bag, s = WC.bagsFirstEmpty("bags", idB)
         if not bag then return no("full") end
         CALL(function() return PickupInventoryItem(to) end)
+        if UQ.blocked or not cursorBusy() then return failed() end
         pickupBag(bag, s)
-        if not settle() or invItemID(to) then movedAt = GetTime(); return no("refused") end
+        if UQ.blocked or not settle() or invItemID(to) then return failed() end
     end
     CALL(function() return PickupInventoryItem(from) end)
-    if not cursorBusy() then movedAt = GetTime(); return no("refused") end
+    if UQ.blocked or not cursorBusy() then return failed() end
     CALL(function() return EquipCursorItem(to) end)
+    if UQ.blocked then return failed() end
     -- the game swaps two worn pieces itself; a piece it left on the cursor (TO's) goes into FROM, now empty
     if back and cursorBusy() then CALL(function() return EquipCursorItem(from) end) end
+    if UQ.blocked then return failed() end
     local clean = settle()
     movedAt = GetTime()
-    if not clean then return no("refused") end
-    UQ.swapReply({ ok = true, from = { inv = from }, to = at, id = idA })
+    if not clean or invItemID(to) ~= idA then return no("refused") end
+    UQ.done, UQ.done_at, UQ.doneReply = true, at, UQ.swapReply    -- a blocked event still to come is answered by the watcher
+    UQ.swapReply({ ok = true, from = { inv = from }, to = at, id = idA, fight = fight or nil })
+    C_Timer.After(UQ.WATCH, function() UQ.done = nil end)
     C_Timer.After(0.6, function()
         UQ.swapReply({ confirm = (invItemID(to) == idA), from = { inv = from }, to = at, id = idA })
     end)

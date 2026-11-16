@@ -463,7 +463,7 @@ except Exception as e:  # noqa: BLE001
     booted = False; print(e)
 check(booted, "part 2: the Spellbook, Bags and Character files load in the stub world")
 if W is not None:
-    check(W.eval('CH.version') == 'c20', "Character's version is c20 (char-popout's swap arm on top of c19)", W.eval('CH.version'))
+    check(W.eval('CH.version') == 'c21', "Character's version is c21 (the hands' swap in a fight, on top of c20's arm)", W.eval('CH.version'))
     W.execute('NOW = NOW + 1; CH.touchOpen()')
     check(W.eval('HOLDER') == 'character' and W.eval('CH.ctl.on') is True, "the Character room holds the controller (touch)", W.eval('HOLDER'))
     e = W.eval('eqs()')

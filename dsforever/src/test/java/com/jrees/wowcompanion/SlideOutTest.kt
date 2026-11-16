@@ -369,11 +369,10 @@ class SlideOutTest {
         assertEquals("an empty ring slot: the other ring only, no blank", 1, only.size); assertTrue(only[0].swap)
     }
 
-    @Test fun aSwapIsOutOfAFightOnlyAndNeedsRoomWhenTheDisplacedPieceCantGoBack() {
+    @Test fun aSwapNeedsRoomWhenTheDisplacedPieceCantGoBack() {
         val sw = SlideOut.Entry(null, 17)
         val w = hands("INVTYPE_WEAPONMAINHAND", "INVTYPE_WEAPON")
         assertNull(SlideOut.why(sw, 16, false, false, 3, w, routed = true, dualWield = true))
-        assertEquals("In combat", SlideOut.why(sw, 16, true, false, 3, w, routed = true, dualWield = true))
         assertEquals("the main-hand-only weapon can't go to the off hand: bags full",
             "Bags full", SlideOut.why(sw, 16, false, false, 0, w, routed = true, dualWield = true))
         assertNull("two one-handers just change hands: no room needed",
@@ -382,6 +381,28 @@ class SlideOutTest {
         assertEquals("the shield goes to the bags", "Bags full",
             SlideOut.why(SlideOut.Entry(null, 16), 17, false, false, 0, hands("INVTYPE_WEAPON", "INVTYPE_SHIELD"), true, true))
         assertEquals("Unavailable", SlideOut.why(sw, 16, false, false, 3, w, routed = false, dualWield = true))
+    }
+
+    // char-popout2 (THE USER, 2026-11-16, picked "Allow it in fights": "the hand swap works in combat; if the game refuses, the pop-out
+    // says so"): the two hands' swap is offered in a fight, as weapon Unequip is; rings and trinkets wait
+    @Test fun theHandSwapIsAllowedInAFightRingsAndTrinketsAreNot() {
+        val w = hands("INVTYPE_WEAPON", "INVTYPE_WEAPON")
+        assertNull("off hand into the main hand in a fight", SlideOut.why(SlideOut.Entry(null, 17), 16, true, false, 3, w, true, true))
+        assertNull("main hand into the off hand in a fight", SlideOut.why(SlideOut.Entry(null, 16), 17, true, false, 3, w, true, true))
+        assertNull("a game window open changes nothing (no bag right-click)", SlideOut.why(SlideOut.Entry(null, 17), 16, true, true, 3, w, true, true))
+        assertEquals("in a fight the displaced main-hand-only weapon still needs room", "Bags full",
+            SlideOut.why(SlideOut.Entry(null, 17), 16, true, false, 0, hands("INVTYPE_WEAPONMAINHAND", "INVTYPE_WEAPON"), true, true))
+        assertEquals("in a fight without the cells", "Unavailable", SlideOut.why(SlideOut.Entry(null, 17), 16, true, false, 3, w, false, true))
+        val rt = mapOf(11 to wornRow(1, "INVTYPE_FINGER"), 12 to wornRow(2, "INVTYPE_FINGER"),
+                       13 to wornRow(3, "INVTYPE_TRINKET"), 14 to wornRow(4, "INVTYPE_TRINKET"))
+        assertEquals("rings", "In combat", SlideOut.why(SlideOut.Entry(null, 12), 11, true, false, 3, rt, true, false))
+        assertEquals("trinkets", "In combat", SlideOut.why(SlideOut.Entry(null, 13), 14, true, false, 3, rt, true, false))
+        assertNull("rings out of a fight", SlideOut.why(SlideOut.Entry(null, 12), 11, false, false, 3, rt, true, false))
+        assertTrue(SlideOut.combatSwap(16, 17)); assertTrue(SlideOut.combatSwap(17, 16))
+        assertFalse(SlideOut.combatSwap(18, 16)); assertFalse(SlideOut.combatSwap(11, 12)); assertFalse(SlideOut.combatSwap(16, 16))
+        assertEquals("a refusal is one short line", "In combat", WornMore.say(false, "combat"))
+        assertEquals("The game refused it", WornMore.say(false, "refused"))
+        assertEquals("Bags full", WornMore.say(false, "full"))
     }
 
     @Test fun aSwapsCardIsTheOtherSlotsPiece() {

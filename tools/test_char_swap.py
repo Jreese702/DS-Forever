@@ -6,13 +6,19 @@ PART 1 (WowCompanion/Bags.lua, tools/test_equip_slideout.py's stand-in game plus
   - the arm "swap" (WC._bagsUnequipArm("swap")), then two bmvq columns (slot - 1): FROM, then TO -> WC.bagsSwapWorn(from, to);
   - two one-handers change hands (the game swapping them itself, or leaving TO's on the cursor: it goes into FROM); rings, trinkets;
   - a main-hand one-hander into the off hand over a SHIELD: the shield into the first free bag slot first; no room: "full", nothing moved;
-  - the refusals: a fight (combat), something on the cursor (cursor), an empty FROM (empty), a piece the game's slot rules keep out of TO
+  - bags-swap2 (Character c21; THE USER, 2026-11-16, picked "Allow it in fights"): IN A FIGHT the two hands' swap goes weapon
+    Unequip's watched route (the game's own PickupInventoryItem / EquipCursorItem, its ADDON_ACTION_BLOCKED watched): it moves; a
+    block on the pick-up or on the equip = "combat", nothing moved, the cursor clear; a block after the answer = a late "combat" swap
+    answer; a locked piece (nothing reaches the cursor) = "refused"; a displaced shield with the bags full = "full"; rings and trinkets
+    in a fight = "combat", nothing picked up;
+  - the refusals: something on the cursor (cursor), an empty FROM (empty), a piece the game's slot rules keep out of TO
     (bad: a one-hander into the off hand for a class that can't dual wield, a shield into the main hand), inside SETTLE (settle);
   - the doubled presses of both columns swallowed (never a pick of a worn piece), a late TO column said late, a column 19+ disarms;
   - every answer goes to WC.character.swapAck (by "swap") and is confirmed 0.6 s later.
 PART 2 (the REAL Character.lua beside Bags.lua, tools/wowstub.py's world, as tools/test_equip_slideout.py PART 2):
-  - Character's version is c20; the eqs part carries `ws` (the swap's arm) on its own cell, kept by the sets' retain;
-  - wswap, then two columns: the swap happens and the eqs ack is op "swap", ok; in a fight the ack says combat and nothing moves;
+  - Character's version is c21; the eqs part carries `ws` (the swap's arm) on its own cell, kept by the sets' retain;
+  - wswap, then two columns: the swap happens and the eqs ack is op "swap", ok; the rings in a fight: the ack says combat and nothing
+    moves; the two hands in a fight: they change hands, ack ok, no lockdown breach;
   - no trace: no spied call, no lockdown breach, no Lua error.
 Run: python -B tools/test_char_swap.py
 """
@@ -41,6 +47,9 @@ def check(ok, what, got=None):
 check('bags-swap1 (Character c20; the user, 2026-11-16: "on weapons that are both 1 hand' in BAGS,
       "Bags.lua's header note (bags-swap1) quotes the user")
 check('c20 (char-popout; the user, 2026-11-16: "on weapons that are both 1 hand' in CHAR, "Character.lua's version note (c20) quotes the user")
+check('bags-swap2 (Character c21; THE USER, 2026-11-16, picked "Allow it in fights": the hand swap works in combat; if the game refuses, the' in BAGS,
+      "Bags.lua's header note (bags-swap2) quotes the user's pick")
+check('c21 (char-popout; THE USER, 2026-11-16, picked "Allow it in fights"' in CHAR, "Character.lua's version note (c21) quotes the user's pick")
 
 # ====================================================================================== PART 1: Bags.lua, the stand-in game
 L = lua51.LuaRuntime(unpack_returned_tuples=True)
@@ -58,12 +67,17 @@ function fits(id, slot)
 end
 GAME_SWAPS = true    -- the game swaps two worn pieces itself (else it leaves TO's piece on the cursor)
 PICKS = {}
+BLOCK = nil      -- bags-swap2: "pick" / "equip": the game blocks that call in a fight (ADDON_ACTION_BLOCKED naming us)
+LOCKED = false   -- bags-swap2: the piece is locked: the pick-up brings nothing onto the cursor
 function PickupInventoryItem(slot)
     PICKS[#PICKS + 1] = slot
+    if COMBAT and BLOCK == "pick" then fire("ADDON_ACTION_BLOCKED", "WowCompanion", "PickupInventoryItem()"); return end
+    if LOCKED then return end
     if not ST.cursor and WORN[slot] then ST.cursor = { inv = slot, id = WORN[slot] } end
 end
 function EquipCursorItem(slot)
     EQUIPS[#EQUIPS + 1] = slot
+    if COMBAT and BLOCK == "equip" then fire("ADDON_ACTION_BLOCKED", "WowCompanion", "EquipCursorItem()"); return end
     local c = ST.cursor
     if not c then return end
     if not fits(c.id, slot) then return end                                  -- the game refuses: the piece stays on the cursor
@@ -165,10 +179,55 @@ check(worn(16) == 7250 and worn(17) is None and L.eval('lastAck().why') == 'bad'
 L.execute('DW = true')
 
 # ---- the refusals
-L.execute('WORN[16] = 7250; WORN[17] = 7202; COMBAT = true; armSwap(17, 16)')
-check(worn(16) == 7250 and L.eval('lastAck().why') == 'combat' and L.eval('#PICKS') > 0, "a fight: combat, nothing moved")
+# ---- bags-swap2: IN A FIGHT (the user's pick "Allow it in fights"): the two hands go weapon Unequip's watched route
+L.execute('run(1); BAG[0] = {}; WORN[16] = 7250; WORN[17] = 7202; COMBAT = true; PICKS = {}; EQUIPS = {}; ACKS = {}; armSwap(17, 16)')
+a = L.eval('lastAck()')
+check(worn(16) == 7202 and worn(17) == 7250 and L.eval('ST.cursor') is None and a.ok is True and a.fight is True,
+      "a fight: the off hand's one-hander into the main hand: the hands change, answered ok (fight)", (worn(16), worn(17), a.ok, a.why))
+check(list(L.eval('PICKS').values()) == [17] and list(L.eval('EQUIPS').values()) == [16],
+      "...the same calls as out of a fight (PickupInventoryItem(17), EquipCursorItem(16)), no other route",
+      (list(L.eval('PICKS').values()), list(L.eval('EQUIPS').values())))
+L.execute('run(1)')
+check(L.eval('lastAck().confirm') is True, "...confirmed 0.6 s later")
+# the game blocks the pick-up: combat, nothing moved
+L.execute('BLOCK = "pick"; armSwap(16, 17)')
+check(worn(16) == 7202 and worn(17) == 7250 and L.eval('ST.cursor') is None and L.eval('lastAck().why') == 'combat',
+      "a fight, the game blocks the pick-up: combat, nothing moved, the cursor clear", (worn(16), worn(17), L.eval('lastAck().why')))
+# the game blocks the equip: the piece goes back on, combat
+L.execute('BLOCK = "equip"; armSwap(16, 17)')
+check(worn(16) == 7202 and worn(17) == 7250 and L.eval('ST.cursor') is None and L.eval('lastAck().why') == 'combat',
+      "a fight, the game blocks the equip: combat, the piece back on, the cursor clear", (worn(16), worn(17), L.eval('lastAck().why')))
+# a block arriving after the answer: the watcher answers it as a swap
+L.execute('BLOCK = nil; armSwap(16, 17)')
+check(worn(16) == 7250 and L.eval('lastAck().ok') is True, "a fight: the main hand's into the off hand (ok)")
+L.execute('fire("ADDON_ACTION_BLOCKED", "WowCompanion", "EquipCursorItem()")')
+a = L.eval('lastAck()')
+check(a.ok is False and a.why == 'combat' and a.late is True and a.by == 'swap',
+      "...a block a moment after the answer: a late combat answer by swap", (a.ok, a.why, a.late, a.by))
+L.execute('run(1)')
+# the piece is locked (nothing reaches the cursor): refused
+L.execute('LOCKED = true; armSwap(17, 16)')
+check(worn(16) == 7250 and worn(17) == 7202 and L.eval('lastAck().why') == 'refused',
+      "a fight, a locked piece: refused (the game refused it), nothing moved", L.eval('lastAck().why'))
+L.execute('LOCKED = false')
+# over a shield, the bags full: full
+L.execute('run(1); WORN[16] = 7250; WORN[17] = 7260; BAG[0] = { 1, 2, 3, 4, 5, 6, 7, 8 }; armSwap(16, 17)')
+check(worn(16) == 7250 and worn(17) == 7260 and L.eval('lastAck().why') == 'full', "a fight, over a shield, bags full: full")
+L.execute('BAG[0] = {}; armSwap(16, 17)')
+check(worn(17) == 7250 and worn(16) is None and L.eval('BAG[0][1]') == 7260 and L.eval('lastAck().ok') is True,
+      "a fight, over a shield with room: the shield into the bags, the one-hander into the off hand")
+L.execute('run(1)')
+# rings and trinkets stay out of a fight
+L.execute('WORN[11] = 7050; WORN[12] = 7051; WORN[13] = 7150; WORN[14] = 7151; PICKS = {}; armSwap(11, 12)')
+check(worn(11) == 7050 and worn(12) == 7051 and L.eval('lastAck().why') == 'combat' and L.eval('#PICKS') == 0,
+      "a fight: the rings are refused (combat), nothing picked up", L.eval('lastAck().why'))
+L.execute('armSwap(14, 13)')
+check(worn(13) == 7150 and worn(14) == 7151 and L.eval('lastAck().why') == 'combat' and L.eval('#PICKS') == 0,
+      "a fight: the trinkets are refused (combat), nothing picked up", L.eval('lastAck().why'))
+L.execute('NOW = NOW + 5; WowCompanion.bagsSwapWorn(18, 16)')
+check(L.eval('lastAck().why') == 'combat' and L.eval('#PICKS') == 0, "a fight: the ranged slot never swaps", L.eval('lastAck().why'))
+L.execute('COMBAT = false; run(1); BAG[0] = {}; WORN[16] = 7250; WORN[17] = 7202; WORN[14] = nil; WORN[13] = 7150')
 n_picks = L.eval('#PICKS')
-L.execute('COMBAT = false')
 L.execute('ST.cursor = { bag = 0, slot = 1, id = 1 }; armSwap(17, 16)')
 check(worn(16) == 7250 and L.eval('lastAck().why') == 'cursor' and L.eval('#PICKS') == n_picks,
       "something on the cursor: cursor, nothing picked up")
@@ -223,6 +282,7 @@ function GetInventoryItemID(unit, slot) return WORNC[slot] end
 local instant = C_Item.GetItemInfoInstant
 C_Item.GetItemInfoInstant = function(id)
     if id == 7050 or id == 7051 then return id, "Armor", "Misc", "INVTYPE_FINGER", 1, 4, 0 end
+    if id == 7250 or id == 7202 then return id, "Weapon", "Swords", "INVTYPE_WEAPON", 1, 2, 7 end     -- bags-swap2: two one-handers
     if instant then return instant(id) end
 end
 DOLLC = { cur = false }               -- (a nil global reads as the stub world's STUB: a table field instead)
@@ -269,7 +329,7 @@ except Exception as e:  # noqa: BLE001
     booted = False; print(e)
 check(booted, "part 2: Bags and Character files load in the stub world")
 if W is not None:
-    check(W.eval('CH.version') == 'c20', "Character's version is c20", W.eval('CH.version'))
+    check(W.eval('CH.version') == 'c21', "Character's version is c21", W.eval('CH.version'))
     W.execute('NOW = NOW + 1; CH.touchOpen()')
     e = W.eval('eqs()')
     check(e.ws is not None and len({e.ws, e.wb, e.ba, e.bb, e.uq, e.mon, e.moff, e.msb}) == 8,
@@ -290,6 +350,12 @@ if W is not None:
     check(W.eval('WORNC[11]') == 7051 and W.eval('eqs().ack.op') == 'swap' and W.eval('eqs().ack.why') == 'combat',
           "in a fight: nothing moves, the ack says combat", W.eval('eqs().ack.why'))
     W.execute('COMBAT = false')
+    # bags-swap2: the two hands in a fight change hands (a dual wielder), the eqs ack ok, no lockdown breach
+    W.execute('WORNC[16] = 7250; WORNC[17] = 7202; CanDualWield = function() return true end')
+    W.execute('NOW = NOW + 2; COMBAT = true; tapSet("wswap"); NOW = NOW + 0.12; bmvq(16); NOW = NOW + 0.12; bmvq(15)')
+    check(W.eval('WORNC[16]') == 7202 and W.eval('WORNC[17]') == 7250 and W.eval('eqs().ack.op') == 'swap' and W.eval('eqs().ack.ok') is True,
+          "in a fight: the two hands change hands, the ack ok", (W.eval('WORNC[16]'), W.eval('WORNC[17]'), W.eval('eqs().ack.why')))
+    W.execute('runTimers(NOW + 1); COMBAT = false')
     check(W.eval('#SPY') == 0 and W.eval('#VIOL') == 0 and list(W.eval('ERRS').values()) == [],
           "part 2: no spied call (no trace), no lockdown breach, no Lua error",
           (W.eval('SPY[1]'), W.eval('VIOL[1]'), list(W.eval('ERRS').values())[:2]))
