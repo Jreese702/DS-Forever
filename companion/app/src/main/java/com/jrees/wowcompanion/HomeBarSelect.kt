@@ -31,8 +31,8 @@ class HomeBarSelect(
     private val strip: Strip,
     /** the quests documents' pad: the guest's cells (GuestPad) */
     private val padSource: () -> JSONObject?,
-    /** the room under the cursor when A is pressed */
-    private val onOpen: (Room) -> Unit,
+    /** the room under the cursor when A is pressed (or B on the disc from a room), and what that opens ([BarB.go]) */
+    private val onOpen: (Room, BarB.Go) -> Unit,
 ) : View(context) {
 
     var open = false
@@ -78,9 +78,18 @@ class HomeBarSelect(
     var roomNow: () -> Room = { Room.HOME }
     /** the guest's hold was asked for (Select, or a command): a close sends its free */
     private var holdAsked = false
-    /** the cursor came up while a ROOM was on screen: Home's disc is then a stop (the user: "When in a room, the home button should
-     *  be an option to select to go back home when using the room left and right buttons"); from Home it is still skipped */
+    /** Home's disc is a STOP of the cursor: it came up while a ROOM was on screen (the user: "When in a room, the home button should
+     *  be an option to select to go back home when using the room left and right buttons"), or on the disc by the D-pad's Down / the
+     *  "home" command (hub5, the user 2026-10-05: "down to place the home bar selection down on the swirly to start"). From Home by
+     *  Select or left / right it is still skipped. It only shapes the order and the look: what B does reads [inRoom] */
     private var fromRoom = false
+    /**
+     * The cursor came up while a ROOM was on screen (set at every open from the room actually shown; never on Home). BAR B (the user,
+     * 2026-11-16: "pressing Dpad down out of combat followed by B (while its on the spiral) is opening the pause menu? it should just be
+     * closing the dpad select"): up to 1.0.33 B on the disc read [fromRoom], which the D-pad's Down sets on Home too, so B there was
+     * the swirl's pick, the pause wheel. B on the disc goes Home only from a room ([BarB.onB])
+     */
+    private var inRoom = false
     private var openedAt = 0L
     private var lastSelN = -1
     private var lastPadN = -1
@@ -208,6 +217,7 @@ class HomeBarSelect(
         // the user: "Going left or right should skip past the middle home key": the cursor is never on Home; it starts on the room on
         // screen, or from Home on the first room right of it
         fromRoom = roomNow() != Room.HOME
+        inRoom = roomNow() != Room.HOME
         endHandOver("the cursor again")
         open = true; at = startOn(roomNow()); held = false; heldReal = false; lastPadN = -1
         syncHome()
@@ -267,7 +277,8 @@ class HomeBarSelect(
     fun openEarly(shown: Room) {
         if (open || shown != Room.HOME || strip.place(Room.HOME) == null) return
         byCommand = true
-        fromRoom = true
+        fromRoom = true                          // the disc is a stop (the cursor starts on it) ...
+        inRoom = false                           // ... on Home: B there only closes the cursor (BarB, the user 2026-11-16)
         at = Room.HOME
         held = false; heldReal = false; lastPadN = -1; endHandOver("the cursor again")
         early = true
@@ -303,6 +314,7 @@ class HomeBarSelect(
             if (blocked || strip.place(Room.HOME) == null) return
             byCommand = true
             fromRoom = true                      // the disc stays in the order (the cursor starts on it)
+            inRoom = shown != Room.HOME          // B on the disc: Home from a room, a close on Home (BarB, the user 2026-11-16)
             at = Room.HOME
             held = false; heldReal = false; lastPadN = -1; endHandOver("the cursor again")
             open = true
@@ -310,7 +322,7 @@ class HomeBarSelect(
             retryHold()
             Log.i(TAG, "bar: open on Home (D-pad down)${if (holdAsked) ", hold asked" else ", no hold sent"} (shown $shown)")
         } else {
-            fromRoom = true; at = Room.HOME
+            fromRoom = true; at = Room.HOME      // inRoom stays what the open said: the cursor is still where it came up
         }
         removeCallbacks(idleClose); postDelayed(idleClose, IDLE)
         syncHome()
@@ -331,6 +343,7 @@ class HomeBarSelect(
                     if (strip.place(start) == null) return
                     byCommand = true
                     fromRoom = shown != Room.HOME
+                    inRoom = shown != Room.HOME
                     at = start
                     held = false; heldReal = false; lastPadN = -1; endHandOver("the cursor again")
                     open = true
@@ -359,14 +372,15 @@ class HomeBarSelect(
 
     private val idleClose = Runnable { if (open && byCommand) { Log.i(TAG, "bar: command cursor idle, closed"); close() } }
 
-    /** the room under the cursor opens (A, or the Open command); Home's own button flashes as pressed */
-    private fun pick() {
+    /** the room under the cursor opens (A, or the Open command; [byB]: B on the disc from a room); Home's own button flashes as pressed */
+    private fun pick(byB: Boolean = false) {
         val r = at
         if (r == Room.HOME) strip.homePressed()
         // NO GAP: into another room the bar keeps its hold for that room's take to pre-empt (closeFor); Home / the same room free now
         closeFor(r, roomNow())
-        Log.i(TAG, "bar: opens $r")
-        onOpen(r)
+        val go = BarB.go(r, byB)
+        Log.i(TAG, "bar: opens $r (${go.name.lowercase()}${if (byB) ", by B" else ""})")
+        onOpen(r, go)
     }
 
     // ---------------------------------------------------------------- the guest "bar"
@@ -421,9 +435,13 @@ class HomeBarSelect(
             "PADDLEFT", "PADLSHOULDER", "PADLTRIGGER" -> step(-1)
             "PADDRIGHT", "PADRSHOULDER", "PADRTRIGGER" -> step(1)
             "PAD1" -> pick()
-            // B on Home's disc (a cursor that came up in a room) goes Home as A does (the user 2026-10-01: "Yes, B on the Home disc
-            // goes Home"); anywhere else B only closes the cursor. Select always closes
-            "PAD2" -> if (at == Room.HOME && fromRoom) pick() else close()
+            // B on Home's disc from a ROOM goes Home (the user 2026-10-01: "Yes, B on the Home disc goes Home"), not the swirl's pick
+            // (A's pause wheel, 10-09). On Home B only closes the cursor, on the disc too (the user 2026-11-16: "it should just be
+            // closing the dpad select"); anywhere else B closes it as well. Select always closes
+            "PAD2" -> when (BarB.onB(at, inRoom)) {
+                BarB.B.HOME -> pick(byB = true)
+                BarB.B.CLOSE -> close()
+            }
             "PADBACK" -> close()
         }
         syncHome()
@@ -511,7 +529,7 @@ class HomeBarSelect(
         getLocationInWindow(here); strip.getLocationInWindow(there)
         val dx = (there[0] - here[0]).toFloat(); val dy = (there[1] - here[1]).toFloat()
         // on Home from Home: nothing (the skip; a command cursor that has not stepped yet); on Home from a room: Home's own disc is the
-        // cursor (its gold breathing light, Strip.homeFocus) with the arrows and the A (A goes Home)
+        // cursor (its gold breathing light, Strip.homeFocus) with the arrows and the A (A = the pause wheel since 2026-10-09)
         val onHome = at == Room.HOME
         if (onHome && !fromRoom) { shownBox = null; return }      // not drawn: the next step appears where it lands (nothing to glide from)
         val target = strip.place(at) ?: run { shownBox = null; return }
@@ -552,7 +570,8 @@ class HomeBarSelect(
      *  Strip.barB - except when the cursor is ON Home's disc (from a room): then the disc is the cursor, gold (Strip.homeFocus) */
     private fun syncHome() {
         val onHome = open && at == Room.HOME && fromRoom
-        // on Home's disc the disc is the cursor (gold, A or B goes Home); anywhere else, while held, Home shows red with B (B closes)
+        // on Home's disc the disc is the cursor (gold; A = the pause wheel, B = Home from a room or a close on Home, BarB); anywhere
+        // else, while held, Home shows red with B (B closes)
         strip.homeFocus = onHome
         strip.barB = open && held && !onHome
     }
@@ -583,5 +602,29 @@ class HomeBarSelect(
         private const val IDLE = 5_000L
         /** b98: an early open the game's command has not confirmed by now is closed (the game's router was not bare) */
         private const val EARLY_MS = 600L
+    }
+}
+
+/**
+ * BAR B, pure (tested in BarBTest). The user, 2026-11-16 (1.0.33 code 1476): "pressing Dpad down out of combat followed by B (while its on
+ * the spiral) is opening the pause menu? it should just be closing the dpad select." Up to then B on the disc and A on it were one route:
+ * the swirl's pick, which the host turned into the pause wheel (the user 2026-10-09: "if I select the spiral I want that to open the pause
+ * menu"), on Home too, because the D-pad's Down puts the disc in the order there. Now:
+ *   B  on Home: only closes the cursor, on the disc too (nothing opens; only the cursor's own free goes to the game)
+ *   B  from a room, on the disc: Home (the user 2026-10-01: "Yes, B on the Home disc goes Home"); elsewhere: closes the cursor
+ *   A  (or the Open command) on the disc: the pause wheel, on Home and in rooms (10-09); on a room: that room
+ */
+object BarB {
+    enum class B { CLOSE, HOME }
+    enum class Go { PAUSE, HOME, ROOM }
+
+    /** B with the cursor on [at]; [inRoom] = the cursor came up while a room (not Home) was on screen */
+    fun onB(at: Room, inRoom: Boolean): B = if (at == Room.HOME && inRoom) B.HOME else B.CLOSE
+
+    /** what a pick of [r] opens: [byB] = B on the disc from a room ([onB]'s HOME), else A / the Open command */
+    fun go(r: Room, byB: Boolean): Go = when {
+        r != Room.HOME -> Go.ROOM
+        byB -> Go.HOME
+        else -> Go.PAUSE
     }
 }

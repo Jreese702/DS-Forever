@@ -132,10 +132,21 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
      * answer has not come yet lets go by the plain `close` (no game action; Group Finder's `f`), so a hold landing late never keeps
      * the controller for a room that is gone. True when a tap went out.
      */
+    /**
+     * THE ROOM IS LEFT: its hold is not asked again and the game's window is not opened behind it, AT ONCE, whatever the route does
+     * with [touchedOut]'s cell (Home's show(), on every route; RoomHandOver.stops). As Bags' take check (the user, 2026-11-16: "after
+     * opening the bags from the Dpad select, and then pressing be to close has a weird behavior where it reopens again"): on the B route
+     * [touchedOut] waits B_LEAVE_MS and a fight's leave skips it, and meanwhile [holdCheck] could take the controller for the room
+     * gone and [openWhenHeld] open the game's window, whose take (via window) brings the room back. [holdSent] stays for that cell
+     */
+    fun stopAsking() {
+        roomShown = false; openWanted = false
+    }
+
     fun touchedOut(): Boolean {
         val g = model.grid
         val cell = g?.leaveCell(gameOpenNow, held) ?: if (g != null && holdSent) g.row to g.close else null
-        roomShown = false; openWanted = false; holdSent = false
+        stopAsking(); holdSent = false
         // b-fix (the user on 1462: "... leaves the menu open"): the room left = its More menu / lists are gone with it (never drawn again
         // on the next visit); the add-on forgets its own when the controller goes (onLost / the leave), so nothing is tapped for it here
         moreFor = null; kitFor = null; replFor = null; moreSeen = false; subSeen = false

@@ -603,9 +603,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         worldMapRoom.onPolestarSkip = { prev -> mapView.polestarSkip(prev) }
         questsView.onFocusPicked = { id, on -> mapView.psRelease(); if (!on) mapView.focusCleared(id) }
         // LATER item 7: Select opens a cursor on the bar; A on a room is what a touch on its picture does
-        // the swirl (Home) picked on the bar = the pause wheel, on Home and in rooms (the user 2026-10-09: "if I select the spiral I want
-        // that to open the pause menu"; "Wheel everywhere"); B still goes Home from a room, a room slice switches rooms
-        barSelect = HomeBarSelect(this, strip, { questsPad }) { r -> if (r == Room.HOME) openPause("the bar's swirl", byStart = false) else pickRoom(r) }
+        // the swirl (Home) picked on the bar with A = the pause wheel, on Home and in rooms (the user 2026-10-09: "if I select the spiral I
+        // want that to open the pause menu"; "Wheel everywhere"); a room slice switches rooms. B on the swirl is no pick (BarB, the user
+        // 2026-11-16: "it should just be closing the dpad select"): from a room it goes Home (2026-10-01: "Yes, B on the Home disc goes
+        // Home"), on Home the cursor only closes and nothing comes here
+        barSelect = HomeBarSelect(this, strip, { questsPad }) { r, go -> if (go == BarB.Go.PAUSE) openPause("the bar's swirl", byStart = false) else pickRoom(r) }
         // LATER item 23a (the user: "the buttons at the top still show their presses, and that's confusing"): quiet while the cursor is up
         // p35: while the bar holds the controller its D-pad Left / Right move it: Cast shows the bar's arrows there
         barSelect.onOpenChanged = { open -> castView.quietPresses = open; castView.barArrows = open }
@@ -1195,7 +1197,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     private fun show(r: Room, byB: Boolean = false, motion: Boolean = true) {
         MemWatch.room = r.name.lowercase()                                // WCMEM: what is on show
-        flushBLeave()
+        flushBLeave(entering = r)
         // PARTY MODE (1.1, 4.2): Home shown again re-asks the add-on's documents; leaving Home turns Party mode off only by the switch
         if (r == Room.HOME && room != Room.HOME) { partyAsk(PartyModel.Ask.HOME_SHOWN); homeView.partyHomeOpened() }
         if (r != Room.HOME && room == Room.HOME) partyLeaveHome("room $r")
@@ -1221,12 +1223,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // window's jump, a whisper, the map pin, the Spells overlay. Each tap is guarded on the room still holding (no bounce). Skipped when
         // the fight leave went out above: in an armed fight only that secure cell can let go
         val leaving = room
-        if (!fightLeft) { if (byB) bLeave = { touchRoomsLeave(leaving, r) } else touchRoomsLeave(room, r) }
+        // A ROOM LEFT STOPS ASKING AT ONCE, on every route (the user 2026-11-16: "after opening the bags from the Dpad select, and then
+        // pressing be to close has a weird behavior where it reopens again"): Bags' take check, Character's hold re-ask and window to
+        // open, Settings' hold re-ask end NOW; only the close cells below wait (B) or are skipped (a fight). RoomHandOver.stops
+        roomStops(leaving, r)
+        if (!fightLeft) { if (byB) { bLeave = { touchRoomsLeave(leaving, r) }; bLeaveFor = leaving } else touchRoomsLeave(room, r) }
         // the Professions room holds the controller while it shows (a guest of the shared capture): `hold` on entering. Leaving it
         // closes the profession as the game would (user ruling 2026-09-30, "Copy the game"): the room's secure close cell clicks the
         // game's own close button and hands the controller back; B already did both (professions session)
         if (room == Room.PROFESSIONS && r != Room.PROFESSIONS) {
-            if (byB) bLeave = bLeave.let { f -> { f?.invoke(); professionsView.leave() } } else professionsView.leave()
+            if (byB) { bLeave = bLeave.let { f -> { f?.invoke(); professionsView.leave() } }; bLeaveFor = leaving } else professionsView.leave()
         }
         if (byB && bLeave != null) ui.postDelayed(bLeaveRun, B_LEAVE_MS)
         if (r == Room.PROFESSIONS && room != Room.PROFESSIONS) enterProfessions = true
@@ -3244,12 +3250,30 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * not leave after all, they do the leave as any route would.
      */
     private var bLeave: (() -> Unit)? = null
+    /** the room [bLeave] was made for (the room B left) */
+    private var bLeaveFor: Room? = null
     private val bLeaveRun = Runnable { flushBLeave() }
-    private fun flushBLeave() {
+    /** [entering] = show()'s room: that very room shown again inside the wait = its put-off close cells are dropped, never run against
+     *  the hold it has again (RoomHandOver.dropPutOff; the user 2026-11-16, "it reopens again": 1476's bmvq 30 freed Bags' new hold) */
+    private fun flushBLeave(entering: Room? = null) {
         ui.removeCallbacks(bLeaveRun)
         val f = bLeave ?: return
-        bLeave = null
+        val made = bLeaveFor
+        bLeave = null; bLeaveFor = null
+        if (made != null && entering != null && RoomHandOver.dropPutOff(handKind(made), same = made == entering)) {
+            Log.i("WCHOME", "B leave of ${made.name}: dropped (the room is shown again; its close must not free its hold)")
+            return
+        }
         f()
+    }
+
+    /** the room [was] left for [r]: its own pending asks end now (RoomHandOver.stops), whatever the route does with its close cells */
+    private fun roomStops(was: Room, r: Room) {
+        for (s in RoomHandOver.stops(handKind(was), same = was == r)) when (s) {
+            RoomHandOver.Stop.BAGS_TAKE -> bagsView.stopAsking()
+            RoomHandOver.Stop.CHARACTER_HOLD -> characterView.stopAsking()
+            RoomHandOver.Stop.SETTINGS_HOLD -> settings.pad.stopAsking()
+        }
     }
 
     /** a room's own leave (its B, the addon's "back"): Home from that room only; after [bPressed] already went Home it is the echo */
