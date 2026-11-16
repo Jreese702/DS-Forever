@@ -267,7 +267,10 @@ check('local IV = "i161"' in ISRC and "opening containers from my bags is a litt
 check(re.search(r'version = 21,', ISRC) is not None, "the capture says version 21")
 m = re.search(r'if event == "PLAYER_REGEN_DISABLED" then(.*?)local who = G\.holder', ISRC, re.S)
 check(m is not None and 'N.lootUnderDrop("npc")' in m.group(1), "a fight's start lets a suspended room go before anything else")
-check('if G.under and G.under.loot and N.lootResume() then return end' in ISRC, "N.release resumes a room under its loot window")
+m = re.search(r'function N\.release\(why, who\)(.*?)\n    N\.unhide\(\)', ISRC, re.S)
+check(m is not None and 'if G.under and G.under.loot then' in m.group(1) and 'if N.lootResume() then' in m.group(1)
+      and 'N.resumeEat = byB' in m.group(1),
+      "N.release resumes a room under its loot window (first; review of i161: marking the release of the B that closed it)")
 check('if G.holder and not (slot == "loot" and N.lootUnder()) then' in ISRC, "N.early suspends instead of losing, only for loot")
 print('passes %d, failed: %d' % (passes, fails))
 sys.exit(1 if fails else 0)

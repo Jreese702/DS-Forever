@@ -119,18 +119,38 @@ chk("the fight's start lets the suspended room go ('npc'), the loot window still
 lootClose()
 chk("... and the loot window's close resumes nothing", #RESUMED == 0 and cap.state().holder == nil)
 
--- 7) a take that waited while the loot window held wins over the resume: the room is told 'taken'
+-- 7) a take that waited while the loot window held waits on BEHIND the resumed room, as v20's resume leaves it (review of i161: it used to
+-- win the resume - the room told 'taken', the app sent Home)
 reset()
 cap.take("bags", spec())
 lootOpen()
 local okW, why = cap.take("social", { press = function() end, lost = function() end })
 chk("another room's take meanwhile waits (" .. tostring(why) .. ")", okW == true and why == "queued")
 lootClose()
-chk("the loot window closed: the waiting take wins, the room is told 'taken' (" .. tostring(LOST[1]) .. ")",
-    LOST[1] == "taken" and #RESUMED == 0 and cap.state().under == nil)
+st = cap.state()
+chk("the loot window closed: the room resumes all the same, never told 'taken' (holder " .. tostring(st.holder) .. ", lost " ..
+    tostring(LOST[1]) .. ")", st.holder == "bags" and st.under == nil and RESUMED[1] == "loot" and #LOST == 0)
+chk("... the take still waits, behind the room (" .. tostring(N.wait and N.wait.id) .. ")", N.wait ~= nil and N.wait.id == "social")
 N.grantWait()
-chk("... and the waiter holds at the next document (" .. tostring(cap.state().holder) .. ")", cap.state().holder == "social")
+chk("... never granted while the room holds (" .. tostring(cap.state().holder) .. ")", cap.state().holder == "bags")
+cap.release("bags", "room")
+N.grantWait()
+chk("... the room lets go: the waiter holds at the next document (" .. tostring(cap.state().holder) .. ")", cap.state().holder == "social")
 cap.release("social")
+
+-- 7b) a take ALREADY waiting behind the room when its box was opened (a pop-up queued behind Bags): the same - it waits on
+reset()
+cap.take("bags", spec())
+local okP, whyP = cap.take("dialogs", { press = function() end, lost = function(w) LOST[#LOST + 1] = "dialogs:" .. tostring(w) end })
+chk("a pop-up's take waits behind the room (" .. tostring(whyP) .. ")", okP == true and whyP == "queued")
+lootOpen()
+lootClose()
+st = cap.state()
+chk("its box looted: the room resumes, the pop-up's take still waits, nobody told lost (holder " .. tostring(st.holder) .. ", wait " ..
+    tostring(N.wait and N.wait.id) .. ", lost " .. tostring(LOST[1]) .. ")",
+    st.holder == "bags" and N.wait ~= nil and N.wait.id == "dialogs" and #LOST == 0 and RESUMED[1] == "loot")
+cap.release("dialogs")
+cap.release("bags", "room")
 
 -- 8) an overlay that waited (the pause wheel): it goes over the resumed room, which resumes after it (v20)
 reset()
@@ -163,4 +183,28 @@ lootOpen()
 chk("NPC windows not ours: never suspended (the game's loot window)", cap.state().under == nil and LOST[1] == "npc")
 N.setMode(true)
 lootClose()
+
+-- 11) THE DOUBLE B (review of i161): the loot window's B is our secure close acting on the PRESS (its PostClick sets N.backAt), so the
+-- room may resume before that B's release: the resume marks it, and N.resumeEaten (asked by the frame and the binding route) answers true
+-- once for PAD2's release - handed on as its press went, never the room's B. A new press of B clears the mark; other keys never use it;
+-- a mark older than RESUME_EAT_S is dropped; a loot window closed without B (A / X took it all, walked away) marks nothing
+reset()
+cap.take("bags", spec())
+lootOpen()
+N.backAt = GAME.t
+lootClose()
+chk("closed by B: the room resumed and that B's release is marked (" .. tostring(N.resumeEat and N.resumeEat.k) .. ")",
+    cap.state().holder == "bags" and N.resumeEat ~= nil and N.resumeEat.k == "PAD2")
+chk("... its release is handed on, once", N.resumeEaten("PAD2", false) == true and N.resumeEaten("PAD2", false) == false)
+lootOpen(); N.backAt = GAME.t; lootClose()
+chk("... a new press of B first clears the mark: that press is the room's", N.resumeEaten("PAD2", true) == false and N.resumeEat == nil
+    and N.resumeEaten("PAD2", false) == false)
+lootOpen(); N.backAt = GAME.t; lootClose()
+chk("... another key's edges never use it", N.resumeEaten("PAD1", false) == false and N.resumeEaten("PAD3", true) == false
+    and N.resumeEat ~= nil)
+GAME.t = GAME.t + 10
+chk("... a mark older than RESUME_EAT_S is dropped, not used", N.resumeEaten("PAD2", false) == false and N.resumeEat == nil)
+lootOpen(); N.backAt = nil; lootClose()
+chk("closed without B (looted, walked away): nothing marked", N.resumeEat == nil and cap.state().holder == "bags")
+cap.release("bags", "room")
 return table.concat(out, "\n")
