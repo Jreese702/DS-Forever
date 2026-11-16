@@ -1728,6 +1728,21 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
     private val CLASS_FREE_CHECK_MS = 700L
     private val CLASS_FREE_TRIES = 3
+    /** #306: the game's own wheel outlived our class wheel's let-go (ActionBar gws2): its shut cell tapped once more ([GameWheelAgain]) */
+    private var gameWheelAgainAt: Long? = null
+    private fun gameWheelAgain(msg: JSONObject) {
+        val now = SystemClock.elapsedRealtime()
+        val docCol = if (msg.has("col")) msg.optInt("col", -1) else null
+        val (col, why) = GameWheelAgain.decide(docCol, castView.classHolding(), now, gameWheelAgainAt)
+        var sent = false
+        if (col != null) {
+            gameWheelAgainAt = now
+            sent = TapBridge.tap(this, questsPad, "classr", col) { w -> Log.i("WCLOG", "class radial: game wheel shut again refused ($w)") }
+        }
+        Log.i("WCLOG", "class radial: the game's ${GameWheelAgain.name(msg.optInt("w"))} still up after the let-go " +
+            "(${msg.optString("v")}${if (msg.optBoolean("fight")) ", fight" else ""}): drawn again, shut again " +
+            if (sent) "sent" else "not sent (${if (col != null) "tap refused" else why})")
+    }
     private var capHolder = ""
     /** b97: when the interact doc's holder last changed (uptime ms): Professions' book tap waits for the hand-over to settle */
     private var capHolderAt = 0L
@@ -2387,6 +2402,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 "(holder=${msg.optString("holder", "-")} mode=${msg.optString("mode", "both")} ok=${msg.optBoolean("ok", false)} " +
                 "fight=${msg.optBoolean("fight", false)} arm=${msg.optBoolean("arm", false)}" +
                 (if (msg.has("n")) " caught=${msg.optInt("n")}" else "") + (if (msg.has("pass")) " passed=${msg.optInt("pass")}" else "") + ", ${msg.optString("v")})")
+            // #306 (the user's pick 2026-11-16): the game's own wheel still up 0.5 s after our class wheel let go, no room holding: the
+            // add-on drew it again (ActionBar gws2) and asks for the shut tap once more (GameWheelAgain); a replayed one is the past
+            "gamewheel" -> if (current) gameWheelAgain(msg)
             "pauseack" -> if (current && ::pauseView.isInitialized) pauseView.onAck(msg)
             // the Game Menu on the bottom screen (Spells r12): the game's list + its countdown, and the cells' answers
             "gamemenu" -> {
@@ -2440,7 +2458,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     }
                     "bar" -> barSelect.onGuestAck(msg)
                     "radial" -> if (::targetRadial.isInitialized && targetRadial.owning) targetRadial.onGuestAck(msg)
-                        else if (::pauseView.isInitialized && pauseView.isOpen) pauseView.onGuestAck(msg)
+                        // #306: the pause's own free goes out after the wheel has gone: its answer is still the pause's
+                        else if (::pauseView.isInitialized && PauseAckRoute.toPause(pauseView.isOpen, op, pauseView.awaitsFree()))
+                            pauseView.onGuestAck(msg)
                         else if (::radialView.isInitialized) radialView.onGuestAck(msg)
                     "home" -> { setupHoldAck(msg); homeView.auraGuestAck(msg) }
                     "tool" -> homeView.toolGuestAck(msg)

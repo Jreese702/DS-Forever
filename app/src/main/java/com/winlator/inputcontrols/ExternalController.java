@@ -208,15 +208,44 @@ public class ExternalController {
         return JoyConSupport.axisValue(reported, retained, getCenteredAxis(event, axis, historyPos));
     }
 
+    /*
+     * DIGITAL TRIGGERS (GitHub #292, 1.0.32: "LT and RT doesnt work"; a player's answer on it: "LT & RT change Digital to Analog").
+     * The Thor's controller setting "Digital" for L2 / R2 sends the triggers as KEYCODE_BUTTON_L2 / R2 key events only, with no
+     * trigger axis moving. In the default TRIGGER_IS_AXIS mode those key events were swallowed (the axis was the only source), so the
+     * game never saw LT / RT. Now the trigger is the axis OR its key: a held key reads as a full pull, the axis as before otherwise,
+     * and a stick's motion event (which carries the trigger axes at 0 on a digital pad) never cancels a held key.
+     */
+    private boolean keyL2 = false, keyR2 = false;
+    private float axisL2 = 0f, axisR2 = 0f;
+
+    private void applyTriggers() {
+        this.state.triggerL = keyL2 ? 1.0f : axisL2;
+        this.state.triggerR = keyR2 ? 1.0f : axisR2;
+        this.state.setPressed(IDX_BUTTON_L2, this.state.triggerL > 0.0f);
+        this.state.setPressed(IDX_BUTTON_R2, this.state.triggerR > 0.0f);
+    }
+
+    /**
+     * #292: a digital trigger's key ([keyCode] KEYCODE_BUTTON_L2 / R2, [down]) into this controller's trigger state, OR-ed with the
+     * axis (axis mode only; the button mode and Joy-Cons keep their own key handling). True = it was a trigger key and was taken.
+     */
+    public boolean noteTriggerKey(int keyCode, boolean down) {
+        if (triggerType != TRIGGER_IS_AXIS) return false;
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_L2) keyL2 = down;
+        else if (keyCode == KeyEvent.KEYCODE_BUTTON_R2) keyR2 = down;
+        else return false;
+        applyTriggers();
+        return true;
+    }
+
     private void processTriggerButton(MotionEvent event) {
         float l = event.getAxisValue(event.getAxisValue(MotionEvent.AXIS_LTRIGGER) == 0.0f ? MotionEvent.AXIS_BRAKE : MotionEvent.AXIS_LTRIGGER);
         float r = event.getAxisValue(event.getAxisValue(MotionEvent.AXIS_RTRIGGER) == 0.0f ? MotionEvent.AXIS_GAS : MotionEvent.AXIS_RTRIGGER);
         l = (l <= 0.01f) ? 0.0f : Math.min(1.0f, Math.max(0.0f, l));
         r = (r <= 0.01f) ? 0.0f : Math.min(1.0f, Math.max(0.0f, r));
-        this.state.triggerL = l;
-        this.state.triggerR = r;
-        this.state.setPressed(IDX_BUTTON_L2, l > 0.0f);
-        this.state.setPressed(IDX_BUTTON_R2, r > 0.0f);
+        axisL2 = l;
+        axisR2 = r;
+        applyTriggers();
     }
 
     public boolean isXboxController() {
@@ -277,12 +306,16 @@ public class ExternalController {
                 if (triggerType == TRIGGER_IS_BUTTON || JoyConSupport.isJoyCon(event.getDevice())) {
                     state.triggerL = pressed ? 1.0f : 0f;
                     state.setPressed(buttonIdx, pressed);
+                } else if (triggerType == TRIGGER_IS_AXIS) {
+                    noteTriggerKey(keyCode, pressed);   // #292: a digital trigger's key is a full pull (see applyTriggers)
                 } else
                     return true;
             } else if (buttonIdx == IDX_BUTTON_R2) {
                 if (triggerType == TRIGGER_IS_BUTTON || JoyConSupport.isJoyCon(event.getDevice())) {
                     state.triggerR = pressed ? 1.0f : 0f;
                     state.setPressed(buttonIdx, pressed);
+                } else if (triggerType == TRIGGER_IS_AXIS) {
+                    noteTriggerKey(keyCode, pressed);
                 } else
                     return true;
             } else
@@ -416,6 +449,7 @@ public class ExternalController {
             return 0.0f;
         }
         InputDevice device = event.getDevice();
+        if (device == null) return 0.0f;        // #292 tests: a device gone (unplugged mid-event) has no range: centred, never a crash
         InputDevice.MotionRange range = device.getMotionRange(axis, event.getSource());
         if (range != null) {
             float flat = range.getFlat();

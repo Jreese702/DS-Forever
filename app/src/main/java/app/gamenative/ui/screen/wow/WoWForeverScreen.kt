@@ -1097,9 +1097,13 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
         // Low-memory graphics (Settings > System; on by default for the 8 / 12 GB Thors): the smaller textures in Config.wtf
         // Game account (Settings > General, #47): "Ask each time" clears the game's remembered game account so its own picker shows;
         // the log names the keys cleared, never a value (a value is an account name)
+        // #305 (the user's pick 2026-11-16: "force the game to fill the top screen at EVERY start"): gxMaximize 1 and gxWindowedResolution
+        // the size of the screen the game shows on, at every start
+        val screen = gameScreenSize(context)
+        Timber.i("Config.wtf: the game's window fills its screen (gxMaximize 1, gxWindowedResolution %s)", screen ?: "1920x1080: size unread")
         val accountCleared = com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row,
             com.jrees.wowcompanion.GameRegion.chosen(context), lowMemory = com.jrees.wowcompanion.Settings.lowMemGraphics,
-            askAccount = com.jrees.wowcompanion.Settings.gameAccountAsk)
+            askAccount = com.jrees.wowcompanion.Settings.gameAccountAsk, screen = screen)
         if (com.jrees.wowcompanion.Settings.gameAccountAsk) {
             Timber.i("Config.wtf game account: ask each time; cleared %s", accountCleared.joinToString(" ").ifEmpty { "nothing (no remembered choice)" })
         }
@@ -1144,6 +1148,17 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
     containerManager.getContainerById(CONTAINER_ID)?.let { app.gamenative.utils.LsfgVkManager.applyDsForever(it); it.saveData() }
     return CONTAINER_ID
 }
+
+/**
+ * #305: the size of the screen the game shows on, landscape ("1920x1080"), from the display's PHYSICAL MODE (stable on the Thor, where
+ * getRealSize on display 0 can answer with the bottom screen's: TapBridge.gameDisplay). Display 0 = the Thor's top screen; with Swap
+ * screens in use the game's own display (ScreenSwap.gameDisplay, DsForeverScreen's choice). Null = unreadable.
+ */
+private fun gameScreenSize(context: Context): String? = runCatching {
+    val dm = context.getSystemService(android.hardware.display.DisplayManager::class.java) ?: return@runCatching null
+    val d = dm.getDisplay(com.jrees.wowcompanion.ScreenSwap.gameDisplay) ?: dm.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+    d?.mode?.let { com.jrees.wowcompanion.GameConfigWtf.screenSize(it.physicalWidth, it.physicalHeight) }
+}.getOrNull()
 
 private fun containerConfig(gameRoot: File, gpu: GpuProfile, executablePath: String): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""

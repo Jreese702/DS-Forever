@@ -169,6 +169,7 @@ object ProblemReport {
             runCatching { add(PadDiag.line()) }                 // issues #16 / #84 / #116 / #147: did any press reach DS Forever
             runCatching { add(KeyLag.line()) }                  // 1.0.29 "insane input lag on my face buttons": how late the game got them
             runCatching { add(PadSlow.line()) }                 // the 1.0.29 review: a room's press work on the main thread, named
+            TapShape.line()?.let { add(it) }                    // #305: every tap refused because the game's screen is another shape
             runCatching { add(BlockTally.line()) }              // feat/multi-radial-v2's loot test: the game's blocked / forbidden, counted
             SmartRangeGone.line()?.let { add(it) }               // PadMap m160: what the Smart Range clean-up removed (counts only)
             CastDiag.line()?.let { add(it) }                    // p-bars-grey (1.0.8): what Home's bars decided at their last draw

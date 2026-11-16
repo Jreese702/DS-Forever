@@ -94,6 +94,9 @@
 -- bags-kit3 review (2026-11-13, the same picks: "items a pick can't go on are HIDDEN"): the list can now change under the cursor while
 -- the pick is on (the game's item context arriving late, loot), so A answers the ITEM the cursor is on (KIT.key), never the row number:
 -- a row gone since the app last drew the list is not used ("pick-moved", the list is drawn again); a changed pick type reports.
+-- bags-kit4 (issue #332, 1.0.32: "mage comprehension skill does not work, it opens the backpack room but states that there are no
+-- elligible items in bags despite unread scrolls"): an item-condition pick ("cond") lists the bags' non-gear items the game says it can go
+-- on (DoesItemMatchSpellItemCondition true), first; before, only gear was ever listed for it (KIT.list).
 -- bags-merge1 (the 1.0.30 test build merge, code 1453): bags-act1 / bags-act2 (feat/bags-actions), bags-kit3 (fix/kit-filter) and uneq1 / uneq2 (feat/unequip) side by side, each kept as written.
 -- bags-nocmp1 (the user, 2026-11-13: "the bag items are still showing currently equipped, I dont want to see that, but I do want to see
 -- the stat changes at the bottom of that weapon if I equip it"): the room asks Interact for its tooltips WITHOUT the worn pieces' own
@@ -2029,6 +2032,38 @@ function KIT.list(ctx)
         for _, r in ipairs(food) do front[#front + 1] = r end
         for _, r in ipairs(other) do front[#front + 1] = r end
         -- (issue #126) the consumables before the worn gear, never past the cap: 10 rows are left for the bags' gear
+        local room = math.max(0, KIT.MAX - #out - 10)
+        for i = math.min(#front, room), 1, -1 do table.insert(out, 1, front[i]) end
+    end
+    -- bags-kit4 (issue #332, 1.0.32: "mage comprehension skill does not work, it opens the backpack room but states that there are no
+    -- elligible items in bags despite unread scrolls"; its report: itarget ctx=cond, the target spell 1296017): an item-condition pick
+    -- whose target is NOT gear (a scroll to read) listed only worn and bag gear, so its list was empty. The bags' other items the game
+    -- itself says the pick can go on (DoesItemMatchSpellItemCondition answers true) come first now; an item it says no to, or gives no
+    -- answer for, stays out (an armor kit's list is unchanged). Each such row is its own bag cell (a non-gear item: the right-click)
+    if ctx == "cond" then
+        local front = {}
+        for _, e in ipairs(layout()) do
+            local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
+            for s = 1, n do
+                if #front >= KIT.MAX then break end
+                local id = bagItemID(e.bag, s)
+                if id then
+                    local okI, _, _, _, loc = CALL(function() return C_Item.GetItemInfoInstant(id) end)
+                    loc = okI and S(function() return loc end) or nil
+                    local gear = type(loc) == "string" and loc ~= "" and loc:byte(1) > 3 and not NOT_WORN[loc]
+                    if not gear then
+                        local il = select(2, CALL(function() return ItemLocation:CreateFromBagAndSlot(e.bag, s) end))
+                        if KIT.answer(il, "cond") == true then
+                            local info = infoAt(e.bag, s)
+                            front[#front + 1] = { src = "bag", bag = e.bag, s = s, id = id,
+                                name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
+                                icon = info and SN(function() return info.iconFileID end) or nil,
+                                q = info and SN(function() return info.quality end) or nil, ok = true }
+                        end
+                    end
+                end
+            end
+        end
         local room = math.max(0, KIT.MAX - #out - 10)
         for i = math.min(#front, room), 1, -1 do table.insert(out, 1, front[i]) end
     end

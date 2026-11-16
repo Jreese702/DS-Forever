@@ -49,7 +49,7 @@ object GameConfigWtf {
     /**
      * LOW-MEMORY GRAPHICS (Settings.lowMemGraphics): the textures at the older, smaller defaults (the LEGACY values: the game's own
      * texture memory sits in the Thor's shared RAM, and the 8 / 12 GB Thors were being killed for memory while the game ran). Written at
-     * every start while the setting is on; off, the legacy rule below puts the current defaults back.
+     * every start while the setting is on; off, the keys still at these values go back to the current defaults once ([LOW_MEMORY_ON]).
      */
     val LOW_MEMORY_GRAPHICS = linkedMapOf(
         "worldBaseMip" to "\"2\"",
@@ -60,8 +60,22 @@ object GameConfigWtf {
         "RAIDcomponentTextureLevel" to "\"1\"",
     )
 
-    private val FORCED_CONFIG_KEYS = listOf("gxApi", "RenderScale", "ResampleQuality", "GamePadEnable", "InputDeviceInterfaceStyle")
+    /**
+     * Rewritten at every start whatever the folder holds. #305 (1.0.32: "controls not working on bottom screen"; its pad said the game's
+     * screen was 1542x1080 on the 1920x1080 top screen, so TapBridge refused every tap): the user's pick 2026-11-16, "force the game to
+     * fill the top screen at EVERY start" - gxMaximize 1 and gxWindowedResolution the game screen's size ([ensure]'s screen). Both were
+     * written only when missing before, so a folder's own windowed size stayed.
+     */
+    private val FORCED_CONFIG_KEYS = listOf("gxApi", "RenderScale", "ResampleQuality", "GamePadEnable", "InputDeviceInterfaceStyle",
+        "gxMaximize", "gxWindowedResolution")
 
+    /**
+     * THE OLD DEFAULTS, put right ONCE PER GAME FOLDER (#293, 1.0.32: settings that do not stay; the user's pick 2026-11-16: the rewrite
+     * "runs ONCE per game folder (a marker), never again, so a player's own in-game pick sticks"). Until then it ran at every start and
+     * turned back a player's own pick that equals an old value (Texture Resolution Low = graphicsTextureResolution 0, farclip 3000). The
+     * marker [LEGACY_DONE] sits beside Config.wtf (as SvKeep's carry-over marker), so a copied folder keeps it; a new Config.wtf gets it
+     * at once (it holds the current defaults: nothing to put right).
+     */
     private val LEGACY_CONFIG_VALUES = mapOf(
         "farclip" to "\"3000\"",
         "horizonClip" to "\"3000\"",
@@ -75,19 +89,39 @@ object GameConfigWtf {
         "RAIDcomponentTextureLevel" to "\"1\"",
     )
 
+    /** #293: the legacy values' rewrite has run in this folder (WTF/, beside Config.wtf) */
+    const val LEGACY_DONE = ".dsf-legacy-values-done"
+
+    /**
+     * #293: DS Forever's low-memory textures are in this folder's Config.wtf (there while the setting is on). With the legacy rewrite run
+     * once only, the setting's Off needs its own word: the keys still at the low-memory values go back to the defaults once, at the
+     * first start with the setting off, and the marker goes. A player's own pick after that is never turned back.
+     */
+    const val LOW_MEMORY_ON = ".dsf-low-memory-textures"
+
+    /** a game screen's size as Config.wtf's gxWindowedResolution wants it ("1920x1080", landscape), null when unusable. Pure */
+    fun screenSize(w: Int, h: Int): String? = if (w <= 0 || h <= 0) null else "${maxOf(w, h)}x${minOf(w, h)}"
+
     /**
      * [root]'s Config.wtf and .flavor.info for [product] (its .build.info row [row]): a new file gets every default; an existing one
-     * gets the forced keys, the old defaults' new values and the missing keys. For the launch client a beta portal ("test") or another
-     * client's agentUID is set right too (a _forever_ folder made from a beta copy would otherwise sign in to the closed beta).
+     * gets the forced keys, the old defaults' new values (once per folder: #293) and the missing keys. For the launch client a beta
+     * portal ("test") or another client's agentUID is set right too (a _forever_ folder made from a beta copy would otherwise sign in to
+     * the closed beta).
      */
     fun ensure(root: File, product: WowProduct, row: Map<String, String>?, region: String? = null, lowMemory: Boolean = false,
-               askAccount: Boolean = false): List<String> {
+               askAccount: Boolean = false, screen: String? = null): List<String> {
         // [region]: the player's choice (GameRegion; 2026-11-07, an EU account on a US-set device): it replaces any portal but the beta's
         // [lowMemory]: Settings.lowMemGraphics - the smaller textures over the defaults
         // [askAccount]: Settings.gameAccountAsk (#47) - the game's remembered game-account choice cleared ([forgetAccountChoice]);
         // returns the NAMES of the keys cleared (never a value: a value is an account name)
+        // [screen]: #305, the size of the screen the game shows on ([screenSize]: the Thor's top screen, the game's own with Swap
+        // screens), its gxWindowedResolution at every start; null or not "WxH" = 1920x1080
+        val size = screen?.takeIf { SIZE.matches(it) }
         val defaults = configDefaults(product, row, if (product.portal == null) region else null).let { d ->
-            if (lowMemory) LinkedHashMap(d).apply { putAll(LOW_MEMORY_GRAPHICS) } else d
+            if (lowMemory || size != null) LinkedHashMap(d).apply {
+                if (lowMemory) putAll(LOW_MEMORY_GRAPHICS)
+                if (size != null) put("gxWindowedResolution", "\"$size\"")
+            } else d
         }
         val flavorDir = File(root, product.flavorDir)
         flavorDir.mkdirs()
@@ -96,10 +130,15 @@ object GameConfigWtf {
             WowSwitch.replace(flavorInfo, "Product Flavor!STRING:0\n${product.code}\n".toByteArray())
         }
         val configWtf = File(flavorDir, "WTF/Config.wtf")
+        val legacyDone = File(configWtf.parentFile, LEGACY_DONE)
+        val lowOn = File(configWtf.parentFile, LOW_MEMORY_ON)
         if (!configWtf.exists()) {
             WowSwitch.replace(configWtf, (defaults.entries.joinToString("\n") { "SET ${it.key} ${it.value}" } + "\n").toByteArray())
+            markers(legacyDone, lowOn, lowMemory)
             return emptyList()                    // a new file remembers no account
         }
+        val legacyDue = !legacyDone.exists()
+        val lowOff = !lowMemory && lowOn.exists()       // the setting turned off since a start that wrote the smaller textures
         val otherAgents = WowProduct.values().filter { it != product }.map { "\"${it.code}\"" }
         val betaPortal = WowProduct.values().mapNotNull { it.portal }.map { "\"$it\"" }
 
@@ -116,7 +155,8 @@ object GameConfigWtf {
             when {
                 forcedKey != null && value != defaults.getValue(forcedKey) -> "SET $forcedKey ${defaults.getValue(forcedKey)}"
                 lowKey != null -> "SET $lowKey ${LOW_MEMORY_GRAPHICS.getValue(lowKey)}"
-                LEGACY_CONFIG_VALUES[key] == value -> "SET $key ${defaults.getValue(key)}"
+                legacyDue && LEGACY_CONFIG_VALUES[key] == value -> "SET $key ${defaults.getValue(key)}"
+                lowOff && LOW_MEMORY_GRAPHICS[key] == value -> "SET $key ${defaults.getValue(key)}"
                 key.equals("portal", ignoreCase = true) && product.portal == null && value in betaPortal -> "SET portal ${defaults.getValue("portal")}"
                 key.equals("portal", ignoreCase = true) && product.portal == null && region != null &&
                     !value.trim('"').equals(GameRegion.portal(region), ignoreCase = true) -> "SET portal ${defaults.getValue("portal")}"
@@ -131,7 +171,16 @@ object GameConfigWtf {
         if (updated != original) {
             WowSwitch.replace(configWtf, (updated.joinToString("\n") + "\n").toByteArray())
         }
+        markers(legacyDone, lowOn, lowMemory)             // after Config.wtf: a stop between the two only runs the rewrite once more
         return cleared
+    }
+
+    private val SIZE = Regex("[1-9][0-9]{2,4}x[1-9][0-9]{2,4}")
+
+    /** #293's two markers as this start leaves Config.wtf; a marker that cannot be written never stops Play */
+    private fun markers(legacyDone: File, lowOn: File, lowMemory: Boolean) {
+        runCatching { if (!legacyDone.exists()) legacyDone.writeText("") }
+        runCatching { if (lowMemory) { if (!lowOn.exists()) lowOn.writeText("") } else if (lowOn.exists()) lowOn.delete() }
     }
 
     /**

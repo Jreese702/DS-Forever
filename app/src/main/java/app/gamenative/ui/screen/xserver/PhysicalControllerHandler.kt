@@ -202,13 +202,30 @@ class PhysicalControllerHandler(
                 }
 
                 if (controllerBinding != null) {
-                    // Some controllers emit BOTH a digital KeyEvent for L2/R2 and an analog axis value in MotionEvent.
-                    // If this physical key is mapped to a virtual trigger AND the device exposes trigger axes,
-                    // ignore the KeyEvent to avoid an initial "full press" spike. MotionEvent will provide the analog value.
+                    // DS FOREVER #292 (1.0.32, "LT and RT doesnt work"; a player's answer on it: "LT & RT change Digital to Analog"):
+                    // the Thor's "Digital" L2 / R2 setting sends the triggers as KeyEvents only, while the device still declares its
+                    // trigger axes. Upstream ignored a trigger KeyEvent on such a device (to spare an analog game a full-press spike), so
+                    // the game never got LT / RT; and on a device without the axes a stick's next MotionEvent (its triggers at 0)
+                    // released a held key. Now the key goes into the controller's trigger state (key OR axis, ExternalController
+                    // noteTriggerKey) and through the SAME trigger route as the axis, so neither path cancels the other. WoW reads the
+                    // triggers as buttons, so a full pull at the key is what it needs.
                     if ((keyCode == KeyEvent.KEYCODE_BUTTON_L2 || keyCode == KeyEvent.KEYCODE_BUTTON_R2) &&
                         controllerBinding.bindingCombo.bindings.any { it == Binding.GAMEPAD_BUTTON_L2 || it == Binding.GAMEPAD_BUTTON_R2 } &&
-                        deviceHasTriggerAxis(event.device, keyCode)
+                        controller.noteTriggerKey(keyCode, event.action == KeyEvent.ACTION_DOWN)
                     ) {
+                        val value = if (keyCode == KeyEvent.KEYCODE_BUTTON_L2) controller.state.triggerL else controller.state.triggerR
+                        handleTriggerBinding(
+                            keyCode,
+                            controllerBinding.binding,
+                            controllerBinding.bindingCombo,
+                            value > 0f,
+                            value,
+                            fromMotion = true,
+                            sourceKeyCode = keyCode,
+                            sourceDeviceId = event.deviceId,
+                            sourceController = controller,
+                        )
+                        sendGamepadState()
                         return true
                     }
                     val isActionDown = event.action == KeyEvent.ACTION_DOWN
@@ -243,23 +260,6 @@ class PhysicalControllerHandler(
             }
         }
         return false
-    }
-
-    private fun deviceHasTriggerAxis(device: InputDevice?, keyCode: Int): Boolean {
-        return when (keyCode) {
-            KeyEvent.KEYCODE_BUTTON_L2 ->
-                hasMotionRange(device, MotionEvent.AXIS_LTRIGGER) || hasMotionRange(device, MotionEvent.AXIS_BRAKE)
-            KeyEvent.KEYCODE_BUTTON_R2 ->
-                hasMotionRange(device, MotionEvent.AXIS_RTRIGGER) || hasMotionRange(device, MotionEvent.AXIS_GAS)
-            else -> false
-        }
-    }
-
-    private fun hasMotionRange(device: InputDevice?, axis: Int): Boolean {
-        if (device == null) return false
-        return device.getMotionRange(axis, InputDevice.SOURCE_JOYSTICK) != null ||
-            device.getMotionRange(axis, InputDevice.SOURCE_GAMEPAD) != null ||
-            device.getMotionRange(axis) != null
     }
 
     /**

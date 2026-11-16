@@ -165,6 +165,10 @@ object TapBridge {
         // would land on the game world instead of the grid. Refuse rather than misfire.
         if (abs(d.x.toDouble() / d.y - pw / ph) > 0.02) {
             Log.w(TAG, "refused: display ${d.x}x${d.y} does not match the game's ${pw.toInt()}x${ph.toInt()}")
+            // #305 (1.0.32: "controls not working on bottom screen"; its pad said pw=1542 ph=1080 on a 1920x1080 top screen): every tap
+            // refused here, so no room could take the controller - and the report never said why (TapBridge's tag is not in it)
+            if (TapShape.refuse(pw.toInt(), ph.toInt(), d.x, d.y))
+                Log.i("WCLOG", "taps: refused: the game's screen ${pw.toInt()}x${ph.toInt()} is not the top screen's shape (${d.x}x${d.y})")
             return null
         }
         // 1.0.21: not rounded to a whole display pixel (a 1080p Thor pixel is 1.33 game px on a 1440p PC: rows were lost); the tap line
