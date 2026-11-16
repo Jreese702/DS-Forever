@@ -2312,7 +2312,8 @@ end
 -- fight) is never offered (`ac` only while the cell names what the slot holds now): the app says "Not in combat" until the fight ends,
 -- when the row is built again. EVENT-DRIVEN: PET_BAR_UPDATE (the game fires it on every autocast change) / PET_BAR_UPDATE_COOLDOWN /
 -- UNIT_PET / the pet's health (its death) - one scan of the ten slots, coalesced; a {"type":"petauto"} document only when the state
--- changes, so an open wheel follows the game. Plain facts only: a secret value keeps the slot's last known state. No pet out = no rows
+-- changes, so an open wheel follows the game. Plain facts only: a secret value keeps the ability's last known state (by slot AND name,
+-- so a new pet's ability in that slot never inherits the old one's). No pet out = no rows
 -- (the doc says pet 0); a dead pet = no rows (q60's rule), the doc says dead 1.
 WC.pmenu.AUTO = { cast = 10, tog = 20, n = 10 }
 WC.pmenu.auto = { want = {}, frozen = {}, cast = {}, sig = nil, last = nil, soon = false, dirty = false, on = {} }
@@ -2328,12 +2329,13 @@ function WC.pmenu.autoScan()
         local name, tex, tok, allowed, enabled, sid = r[2], r[3], r[4], r[6], r[7], r[8]
         if r[1] == true and type(name) == "string" and WC.isPlain(name) and name ~= "" and name:find("^PET_") == nil
             and WC.isPlain(tok) and tok ~= true and WC.isPlain(allowed) and allowed == true then
-            local on = A.on[i]
+            local key = i .. "=" .. name                 -- review: the last known state is the ABILITY's (a new pet in the slot starts unknown)
+            local on = A.on[key]
             if WC.isPlain(enabled) then on = enabled == true end
             local id = (type(sid) == "number" and WC.isPlain(sid)) and sid or nil
             local ic = (type(tex) == "number" and WC.isPlain(tex)) and tex or nil
             if not ic and id then ic = TN(function() return C_Spell.GetSpellTexture(id) end) end
-            A.on[i] = on
+            A.on[key] = on
             list[#list + 1] = { s = i, n = name, on = on == true, id = id, ic = ic }
         end
     end
@@ -2387,7 +2389,8 @@ function WC.pmenu.autoSend()
         local sc, ac = P.autoCells(e)
         s[#s + 1] = { s = e.s, n = e.n, on = e.on and 1 or 0, sc = sc, ac = ac }
     end
-    local doc = { type = "petauto", v = QV, pet = list and 1 or 0, s = s, fight = fight and 1 or nil,
+    -- review: `fight` only with a pet out, so a character with no pet (the user's Shaman) sends nothing at a fight's start or end
+    local doc = { type = "petauto", v = QV, pet = list and 1 or 0, s = s, fight = (fight and list) and 1 or nil,
                   dead = (list and T(function() return UnitIsDeadOrGhost("pet") end) == true) and 1 or nil }
     local ok, line = pcall(WC.encode, doc)
     if ok and type(line) == "string" and line ~= A.last then

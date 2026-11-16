@@ -91,6 +91,8 @@ pa = pump('fire("PLAYER_ENTERING_WORLD", true, false)')
 check(len(pa) == 1 and pa[0].get('pet') == 0 and pa[0].get('s') in ([], {}, None), "the Shaman's login: one petauto, pet 0", pa)
 check(pump('fire("PET_BAR_UPDATE"); fire("PLAYER_REGEN_DISABLED"); fire("PLAYER_REGEN_ENABLED"); fire("SPELLS_CHANGED")') == [],
       "the Shaman: no further petauto documents (nothing changed)")
+check(pump('COMBAT = true; fire("PLAYER_REGEN_DISABLED")') == [] and pump('COMBAT = false; fire("PLAYER_REGEN_ENABLED")') == [],
+      "the Shaman: a real fight's start and end send nothing either (no pet: no fight flag)")
 check([x for x in read("player", None).get('items', []) if x.get('k') in ("PetAuto", "PetFeed")] == [], "the Shaman's own menu: no pet rows")
 check(cell(0).get('type') == 'focus' and cell(1).get('type') == 'clearfocus' and cell(2).get('macrotext') == '/inspect'
       and cell(4).get('macrotext') == '/trade' and all(cell(c).get('type') is None for c in range(10, 30)),
@@ -198,6 +200,12 @@ check(pa == [] and int(Q.eval('#ERRS')) == 0, "a secret autoCastEnabled: Firebol
 pa = pump('PETBAR[4][1] = SECRETV; fire("PET_BAR_UPDATE")')
 check(pa and [x['n'] for x in pa[-1]['s']] == ["Blood Pact", "Fire Shield", "Phase Shift"], "a secret name: that slot left out", pa and pa[-1])
 Q.execute('PETBAR[4][1] = "Firebolt"; PETBAR[4][6] = true')
+# review: the last known state is the ABILITY's - another ability in that slot (another pet) with a secret state starts off, never
+# inheriting Firebolt's "on"
+pa = pump('PETBAR[4] = { "Torment", 136160, false, false, true, SECRETV, 3716 }; fire("PET_BAR_UPDATE")')
+check(pa and [(x['n'], x['on']) for x in pa[-1]['s'] if x['s'] == 4] == [("Torment", 0)],
+      "a secret state on a NEW ability in the slot: not the old ability's (Firebolt was on)", pa and pa[-1])
+Q.execute('PETBAR[4] = { "Firebolt", 135809, false, false, true, true, 3110 }')
 
 # 13. the pet dead: the document says so, its wheel has no rows (q60)
 pa = pump('UNITS.pet.alive = false; fire("UNIT_HEALTH", "pet")')

@@ -2739,18 +2739,21 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     fun classRadialCell(i: Int, auto: Boolean): Int? {
         val r = chordRadial() ?: return null
         if (i !in 0..7) return null
-        if (auto && r.autoA[i]) classAutoPressed(r, i)                    // q62: Home's long press: the flip shows at once
+        // q62: Home's long press: the flip shows at once (review: only when a cell will really be tapped)
+        if (auto && r.autoA[i] && r.auto[i] != null) classAutoPressed(r, i)
         return if (auto) r.auto[i] else r.cell[i]
     }
 
     /** pa1 / q62: place [i] of [r] casts itself, as shown now: a press not yet answered or the pet's live document (PetAuto), else the
      *  class layout's word */
     private fun classAutoOn(r: Radial, i: Int): Boolean =
-        r.slot[i].takeIf { it in 1..10 }?.let { PetAuto.on(it, SystemClock.uptimeMillis()) } ?: r.autoOn[i]
+        r.slot[i].takeIf { it in 1..10 }?.let { PetAuto.on(it, r.names[i], SystemClock.uptimeMillis()) } ?: r.autoOn[i]
 
     private fun classAutoPressed(r: Radial, i: Int) {
         val s = r.slot[i].takeIf { it in 1..10 } ?: return
-        PetAuto.pressed(s, classAutoOn(r, i), SystemClock.uptimeMillis())
+        // review: the flip on THIS spell's slot (by its name), never on another pet's ability that now sits in the slot
+        val at = PetAuto.find(s, r.names[i])?.slot ?: (if (PetAuto.has(s)) return else s)
+        PetAuto.pressed(at, classAutoOn(r, i), SystemClock.uptimeMillis())
         invalidate(); onClassStick?.invoke()
     }
 

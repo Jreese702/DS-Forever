@@ -103,7 +103,8 @@ object TargetRadial {
      *  once the pet is gone or dead ([gone]) */
     fun kitSlice(s: Slice, now: Long, gone: Boolean = false): UiKit.PauseSlice {
         val slot = s.autoSlot ?: return UiKit.PauseSlice(s.icon, s.label, s.enabled, menu = s.menu)
-        val on = PetAuto.on(slot, now) ?: (s.entry?.auto == 1)
+        // review: the state of THIS ability (its name), never of whatever the slot holds after a pet swap
+        val on = PetAuto.on(slot, s.entry?.text, now) ?: (s.entry?.auto == 1)
         return UiKit.PauseSlice(s.icon, s.label, s.enabled && !gone, menu = s.menu, auto = if (on) 1 else 0)
     }
 

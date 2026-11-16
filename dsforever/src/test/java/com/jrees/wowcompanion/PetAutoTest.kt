@@ -68,6 +68,32 @@ class PetAutoTest {
         assertNull(PetAuto.on(4, 1_600L))
     }
 
+    /** review: a slot is the ABILITY's only while it holds it - another pet's ability in that slot is never shown or toggled for it */
+    @Test fun aPetSwapNeverLendsTheSlotToAnotherAbility() {
+        PetAuto.seed(4, "Growl", true, 23, 1_000L)
+        assertEquals(true, PetAuto.on(4, "Growl", 1_000L))
+        assertFalse(PetAuto.lost(4, "Growl", 1_000L))
+        // another pet: slot 4 is Claw now (off), Growl nowhere
+        PetAuto.onDoc(doc("""{"type":"petauto","pet":1,"s":[{"s":4,"n":"Claw","on":0,"ac":23}]}"""), 1_500L)
+        assertNull("Growl is not Claw", PetAuto.find(4, "Growl"))
+        assertNull(PetAuto.on(4, "Growl", 1_500L))
+        assertTrue("a newer word without Growl", PetAuto.lost(4, "Growl", 1_000L))
+        assertEquals(false, PetAuto.on(4, "Claw", 1_500L))
+        // the ability moved to another slot: found there, its cell and state
+        PetAuto.onDoc(doc("""{"type":"petauto","pet":1,"s":[{"s":4,"n":"Claw","on":0,"ac":23},{"s":6,"n":"Growl","on":1,"ac":25}]}"""), 1_600L)
+        assertEquals(6, PetAuto.find(4, "Growl")?.slot); assertEquals(25, PetAuto.find(4, "Growl")?.cell)
+        assertEquals(true, PetAuto.on(4, "Growl", 1_600L))
+        // a press on Growl, then the slot changes hands: the flip is dropped, not shown on the newcomer
+        PetAuto.pressed(6, wasOn = true, now = 1_700L)
+        assertEquals(false, PetAuto.on(6, "Growl", 1_710L))
+        PetAuto.onDoc(doc("""{"type":"petauto","pet":1,"s":[{"s":6,"n":"Bite","on":1,"ac":25}]}"""), 1_800L)
+        assertEquals("Bite's own word, not Growl's pending flip", true, PetAuto.on(6, "Bite", 1_810L))
+        // nothing said of a slot yet: a press's flip still shows at once
+        PetAuto.reset()
+        PetAuto.pressed(5, wasOn = false, now = 2_000L)
+        assertEquals(true, PetAuto.on(5, "Bite", 2_010L))
+    }
+
     @Test fun theMenuRowsCarryTheAbilityAndTheWheelShowsItLive() {
         val items = PlayerMenu.parse(org.json.JSONArray("""[
             {"t":"Feed Pet","k":"PetFeed","sc":5,"en":1,"ic":132165},

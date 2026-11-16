@@ -242,8 +242,9 @@ object UiKit {
     // The user, 2026-11-16: "hunters need to be able to visually see when their pets abilities are active like growl, and a way to turn
     // it off from those radials". The game's own look (blizzard_uipaneltemplates AutoCastOverlayTemplate, the gamepad flyout's circle
     // slot): gold CORNERS on every ability that may cast itself, and while it does, the SHINE - the "ants" texture turning -360 degrees
-    // every 4 s (counter-clockwise), masked to the slot's edge. The kit has no ants art (nothing new is harvested for it), so the shine
-    // is drawn: short bright gold dashes round the edge, marching counter-clockwise at the game's speed, over a soft gold glow.
+    // every 4 s, masked to the slot's edge. REVIEW: the game's Rotation turns COUNTER-clockwise for a positive angle (its spinners all use
+    // -360 to spin clockwise), so the ants march CLOCKWISE. The kit has no ants art (nothing new is harvested for it), so the shine is
+    // drawn: short bright gold dashes round the edge, marching clockwise at the game's speed, over a soft gold glow.
 
     /** one turn of the shine, ms (the game's Rotation duration="4") */
     const val AUTO_TURN_MS = 4_000L
@@ -254,8 +255,8 @@ object UiKit {
     private val pAuto = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val autoRect = RectF()
 
-    /** the shine's turn now, degrees (counter-clockwise: negative), [now] uptime ms */
-    fun autoCastAngle(now: Long = SystemClock.uptimeMillis()): Float = -360f * (now % AUTO_TURN_MS) / AUTO_TURN_MS
+    /** the shine's turn now, degrees on Android's canvas (positive = clockwise on the screen, the game's -360), [now] uptime ms */
+    fun autoCastAngle(now: Long = SystemClock.uptimeMillis()): Float = 360f * (now % AUTO_TURN_MS) / AUTO_TURN_MS
 
     /**
      * THE AUTOCAST LOOK ON A ROUND SLOT centred ([cx], [cy]) whose edge is at radius [r]: the four gold corners (at the diagonals, as the
@@ -292,8 +293,9 @@ object UiKit {
         pAuto.color = AUTO_GOLD; pAuto.alpha = alpha * 70 / 255; pAuto.strokeWidth = w * 0.08f; pAuto.pathEffect = null
         c.drawRect(r, pAuto)
         pAuto.color = AUTO_SPARK; pAuto.alpha = alpha; pAuto.strokeWidth = maxOf(2f, w * 0.04f)
-        // counter-clockwise on the screen: the dashes run back along the rectangle's clockwise path
-        pAuto.pathEffect = android.graphics.DashPathEffect(floatArrayOf(dash * 0.55f, dash * 0.45f), per * (now % AUTO_TURN_MS) / AUTO_TURN_MS)
+        // clockwise on the screen (the game's -360): a FALLING phase moves the dashes forward along the rectangle's clockwise path
+        pAuto.pathEffect = android.graphics.DashPathEffect(floatArrayOf(dash * 0.55f, dash * 0.45f),
+            per * (AUTO_TURN_MS - now % AUTO_TURN_MS) / AUTO_TURN_MS)
         c.drawRect(r, pAuto)
         pAuto.pathEffect = null; pAuto.alpha = 255
         autoCastLive = true

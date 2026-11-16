@@ -334,11 +334,16 @@ class TargetRadialView(
         val slot = s.autoSlot ?: return
         val now = SystemClock.uptimeMillis()
         if (PetAuto.gone(filledAt)) { say("Not available here"); return }
-        val cell = if (PetAuto.has(slot)) PetAuto.cell(slot) else s.entry?.autoCell
+        // review: the cell of THIS ability (by its name): after a pet swap the slot's live cell names another pet's ability
+        val nm = s.entry?.text
+        val live = PetAuto.find(slot, nm)
+        if (live == null && PetAuto.lost(slot, nm, filledAt)) { say(if (PetAuto.fight) "Not in combat" else "Not available here"); return }
+        val cell = if (live != null) live.cell else s.entry?.autoCell
         if (cell == null) { say(if (PetAuto.fight) "Not in combat" else "Not available here"); return }
-        val was = PetAuto.on(slot, now) ?: (s.entry?.auto == 1)
+        val at = live?.slot ?: slot
+        val was = PetAuto.on(at, nm, now) ?: (s.entry?.auto == 1)
         Log.i(TAG, "context radial: autocast ${s.label} ${if (was) "off" else "on"} (pfocus $cell)")
-        PetAuto.pressed(slot, was, now)
+        PetAuto.pressed(at, was, now)
         pointed = i; line = null
         lastActAt = now
         doAct(PlayerMenu.Do.Secure(cell, s.label, "pfocus"), name)
@@ -357,7 +362,8 @@ class TargetRadialView(
     private fun kitSlices(): List<UiKit.PauseSlice?> {
         val now = SystemClock.uptimeMillis()
         val gone = PetAuto.gone(filledAt)
-        return slices.map { it?.let { s -> TargetRadial.kitSlice(s, now, gone) } }
+        // review: an ability the pet no longer has (another pet since the menu was read) greys as a gone pet's
+        return slices.map { it?.let { s -> TargetRadial.kitSlice(s, now, gone || (s.autoSlot?.let { sl -> PetAuto.lost(sl, s.entry?.text, filledAt) } == true)) } }
     }
 
     /** the title: the name, and the wheel it is on (More, a sub-menu's words) */
@@ -395,6 +401,10 @@ class TargetRadialView(
                 val s = UiKit.pauseRadialHit(screen, e.x, e.y)
                 downSlice = if (s in 0..7 && slices.getOrNull(s)?.autoSlot != null) s else -1
                 if (downSlice >= 0) postDelayed(longPress, LONG_MS)
+            }
+            // review: a finger that slides off the ability (a release on another slice picks THAT one) never toggles it
+            MotionEvent.ACTION_MOVE -> if (downSlice >= 0 && !longDone && UiKit.pauseRadialHit(screen, e.x, e.y) != downSlice) {
+                removeCallbacks(longPress); downSlice = -1
             }
             MotionEvent.ACTION_UP -> {
                 removeCallbacks(longPress)

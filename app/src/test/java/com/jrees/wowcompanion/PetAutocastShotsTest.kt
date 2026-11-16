@@ -152,6 +152,26 @@ class PetAutocastShotsTest {
         assertFalse(w.v.isOpen)
     }
 
+    /** review: a finger pressed on Growl that slides to Feed Pet and rests there picks Feed Pet - Growl's autocast never toggled */
+    @Test fun aFingerSlidingOffTheAbilityNeverTogglesIt() {
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
+        val w = wheel()
+        opened()
+        val screen = RectF(0f, 0f, w.v.width.toFloat(), w.v.height.toFloat())
+        val x = screen.centerX()
+        val bottom = (0 until w.v.height).filter { y -> UiKit.pauseRadialHit(screen, x, y.toFloat()) == 4 }
+        val top = (0 until w.v.height).filter { y -> UiKit.pauseRadialHit(screen, x, y.toFloat()) == 0 }
+        assertTrue(bottom.isNotEmpty() && top.isNotEmpty())
+        val g = bottom[bottom.size / 2].toFloat(); val f = top[top.size / 2].toFloat()
+        val t = SystemClock.uptimeMillis()
+        w.v.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, x, g, 0))
+        ShadowSystemClock.advanceBy(Duration.ofMillis(100)); ShadowLooper.idleMainLooper()
+        w.v.dispatchTouchEvent(MotionEvent.obtain(t, t + 100, MotionEvent.ACTION_MOVE, x, f, 0))
+        ShadowSystemClock.advanceBy(Duration.ofMillis(TargetRadialView.LONG_MS + 100)); ShadowLooper.idleMainLooper()
+        w.v.dispatchTouchEvent(MotionEvent.obtain(t, t + 700, MotionEvent.ACTION_UP, x, f, 0))
+        assertEquals("the release on Feed Pet picks it; no toggle", listOf<PlayerMenu.Do>(PlayerMenu.Do.Secure(5, "Feed Pet", "pfocus")), w.did)
+    }
+
     @Test fun aFightThatChangedThePetRefusesTheToggle() {
         ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
         val w = wheel(menu(growlCell = null))
@@ -166,6 +186,23 @@ class PetAutocastShotsTest {
         ShadowSystemClock.advanceBy(Duration.ofMillis(5))
         w.v.key("PADDRIGHT"); w.v.key("PAD3")
         assertTrue(w.did.isEmpty())
+    }
+
+    /** review: the wheel read on the wolf, then another pet in slot 4 (Claw, its own toggle cell 23 built out of combat): X on the wheel's
+     *  Growl must never tap Claw's cell; the slice greys */
+    @Test fun aPetSwapUnderAnOpenWheelNeverTogglesTheNewcomer() {
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
+        val w = wheel()
+        opened()
+        PetAuto.onDoc(JSONObject("""{"type":"petauto","pet":1,"s":[{"s":4,"n":"Claw","on":0,"sc":13,"ac":23},{"s":5,"n":"Bite","on":0,"sc":14,"ac":24}]}"""),
+            SystemClock.uptimeMillis() + 1)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(5))
+        w.v.key("PADDDOWN"); w.v.key("PAD3")
+        assertTrue("Growl is gone: nothing tapped (pfocus 23 is Claw's now)", w.did.isEmpty())
+        assertTrue(w.v.isOpen)
+        // Bite is still the pet's: its own toggle
+        w.v.key("PADDRIGHT"); w.v.key("PAD3")
+        assertEquals(listOf<PlayerMenu.Do>(PlayerMenu.Do.Secure(24, "Bite", "pfocus")), w.did)
     }
 
     /** a class wheel (RB + RT) of pet spells as ActionBar pa1 sends it: Growl (on), Bite (off), Dash (cannot cast itself) */

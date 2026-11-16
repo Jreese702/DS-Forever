@@ -42,6 +42,9 @@ object PetAuto {
             val s = o.optInt("s", 0).takeIf { it in 1..10 } ?: continue
             m[s] = Slot(s, o.optString("n", ""), o.optInt("on", 0) == 1, if (o.has("ac")) o.optInt("ac") else null)
         }
+        // review: a press on a slot that now holds ANOTHER ability (a pet swap) is no longer what it shows
+        val old = slots
+        pending.keys.filter { k -> old[k]?.let { it.name != m[k]?.name } == true }.forEach { pending.remove(it) }
         slots = m
         pet = d.optInt("pet", 0) == 1
         dead = d.optInt("dead", 0) == 1
@@ -72,6 +75,29 @@ object PetAuto {
 
     /** the toggle cell for [slot] now (null = none built for what the slot holds) */
     fun cell(slot: Int): Int? = slots[slot]?.cell
+
+    /**
+     * REVIEW (the toggle must hit the ability the wheel SHOWS): the game's word for the ability [name] - its pet bar [slot] while the slot
+     * still holds it, else the slot it moved to; null = the pet has no such ability now (another pet since the menu or the class wheel
+     * was read: what [slot] holds now is a different ability, never shown or toggled in its place). A blank [name]: the slot alone.
+     */
+    fun find(slot: Int, name: String?): Slot? {
+        val m = slots
+        val s = m[slot]
+        if (name.isNullOrEmpty()) return s
+        if (s != null && s.name == name) return s
+        return m.values.firstOrNull { it.name == name }
+    }
+
+    /** the ability [name] (at [slot]) casts itself, as shown now ([on] of the slot [find] names); null = the game has not said it */
+    @Synchronized fun on(slot: Int, name: String?, now: Long): Boolean? {
+        find(slot, name)?.let { return on(it.slot, now) }
+        // the game has said nothing of the slot yet: a press's flip alone (else the caller's own word)
+        return if (!slots.containsKey(slot)) on(slot, now) else null
+    }
+
+    /** a document newer than [since] (uptime ms) no longer lists the ability [name] (another pet): its slice greys, X refuses */
+    fun lost(slot: Int, name: String?, since: Long): Boolean = at > since && find(slot, name) == null
 
     /** the game has said something of [slot] (a document or a menu's row) */
     fun has(slot: Int): Boolean = slots.containsKey(slot)
