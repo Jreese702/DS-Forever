@@ -213,6 +213,21 @@ class InteractView(context: Context) : View(context) {
         refresh()
     }
 
+    /** the vendor strip's free bag / ammo slots (feat/vendor-bag-slots), from the last Bags document; null = none known */
+    private var vendorSlots: VendorSlots.Slots? = null
+
+    /**
+     * The Bags document (`full.bags`; Bags.lua sends it at every BAG_UPDATE_DELAYED, so a purchase shows at once): the vendor's free bag
+     * and ammo slots ([VendorSlots]). Redrawn only when they changed while a vendor is up.
+     */
+    fun updateBags(bags: JSONObject) {
+        if (!bags.has("freeGeneral") && !bags.has("bags")) return       // a bags section without the counts keeps what was said
+        val s = VendorSlots.of(bags)
+        if (s == vendorSlots) return
+        vendorSlots = s
+        if (kind == Kind.MERCHANT) invalidate()
+    }
+
     private var navSel: String? = null          // the add-on's last vendor selection, as last taken
 
     /** the addon's controller state: draw its highlight; take its picks when a press changed them */
@@ -4921,6 +4936,29 @@ class InteractView(context: Context) : View(context) {
         return min(most, m.optInt("qtyMax"))
     }
 
+    /**
+     * The vendor strip's free slots ([vendorSlots]: bags, then ammo while a quiver / ammo pouch is worn), right-aligned to [right] on
+     * [cy]: each the icon in the game's slot well and the free count beside it, red at 0. Shown only, never a touch. Returns the cells'
+     * left edge ([right] = nothing drawn).
+     */
+    private fun vendorSlotsCells(c: Canvas, right: Float, cy: Float): Float {
+        val cells = vendorSlots?.cells ?: return right
+        if (cells.isEmpty()) return right
+        val s = SLOTS_ICON; val well = s * 0.31f            // UiKit.slot's well stands 0.31 of the icon out on each side
+        val paints = cells.map { UiKit.numberPaint(SLOTS_TEXT, if (it.free <= 0) Theme.unusable else Theme.text) }
+        val texts = cells.map { it.free.toString() }
+        val widths = cells.indices.map { well + s + well + SLOTS_PAD + paints[it].measureText(texts[it]) }
+        var x = right - widths.sum() - SLOTS_GAP * (cells.size - 1)
+        val left = x
+        for ((i, cell) in cells.withIndex()) {
+            UiKit.slot(c, Icons.getOrUnknown(cell.icon), x + well, cy - s / 2f, s)
+            val p = paints[i]
+            c.drawText(Tr.t(texts[i]), x + well + s + well + SLOTS_PAD, cy - (p.ascent() + p.descent()) / 2f, p)
+            x += widths[i] + SLOTS_GAP
+        }
+        return left
+    }
+
     private fun vendorWindow(c: Canvas, r: RectF, m: JSONObject, now: Long) {
         val inner = UiKit.windowGround(c, r, marble = true)
         val block = blocked(now)
@@ -5041,7 +5079,10 @@ class InteractView(context: Context) : View(context) {
         val e = list.firstOrNull { it.cmd == selected }
         val word = when (tab) { Tab.BUY -> "Buy"; Tab.SELL -> "Sell"; Tab.BACK -> "Buyback" }
         qtyMost = 1
-        val leftEnd = btn.left - 24f
+        // THE FREE SLOTS (feat/vendor-bag-slots; the user, 2026-11-16: "when talking to a vendor in the buy screen I should see my bag
+        // slots available as well as ammo slots available (if applicable)"): on every tab, just left of the action button, so a buy,
+        // a sale or a buyback shows its change beside the button that made it; the result line and Repair / Junk keep the rest
+        val leftEnd = vendorSlotsCells(c, btn.left - 24f, cy).let { if (it < btn.left - 24f) it - 28f else it }
         if (e == null) {
             goWhy = "Select an item first"
             stripButton(c, btn, word, "go", enabled = false, busy = false, id = "go")
@@ -5112,6 +5153,11 @@ class InteractView(context: Context) : View(context) {
         const val TIP_MIN_ROOM = 260f           // a tooltip starts no lower than this above the list's foot        // the user's pick (2026-09-29 11:23, replacing 2): a small B on the X's corner
         const val LINE_H = 111f           // a line of a gossip page: 48 dp, the touch floor
         const val VROW = 132f             // a vendor row and the gap under it
+        /** the vendor strip's free slots (feat/vendor-bag-slots): the icon, the count's size, icon-to-count and cell-to-cell gaps */
+        const val SLOTS_ICON = 58f
+        const val SLOTS_TEXT = 36f
+        const val SLOTS_PAD = 6f
+        const val SLOTS_GAP = 22f
 
         const val DISMISS_BACK_MS = 2_500L
         const val STALE_MS = 40_000L      // the addon re-sends every 15 s; two missed = the game is gone
