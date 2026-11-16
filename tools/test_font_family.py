@@ -310,10 +310,10 @@ def main():
     trail = open(tc.TRAIL, encoding="utf-8").read()
     hub = open(HUB, encoding="utf-8").read()
     quote = "Cyrillic characters are displayed as empty squares instead of actual letters"
-    chk("tags: Trail cp41 / ag12 / prd18, Hub hub55 / uf23", C.V == "cp41" and G.WowCompanion.live.V == "ag12"
+    chk("tags: Trail cp41 / ag13 (ag12f) / prd18, Hub hub55 / uf23", C.V == "cp41" and G.WowCompanion.live.V == "ag13"
         and G.WowCompanion.prd.V == "prd18" and 'local HV = "hub55"' in hub and UF.V == "uf23", (C.V, UF.V))
     chk("tags: each header note quotes the issue and the user's pick (2026-11-16)",
-        all(n in trail for n in ("-- cp41 ISSUE #358", "-- ag12 ISSUE #358", "-- prd18 ISSUE #358"))
+        all(n in trail for n in ("-- cp41 ISSUE #358", "-- ag12f ISSUE #358", "-- prd18 ISSUE #358"))
         and "-- uf23 (hub55) ISSUE #358" in hub and "-- hub55 ISSUE #358" in hub
         and trail.count(quote) >= 3 and hub.count(quote) >= 2 and trail.count("user's pick, 2026-11-16") >= 1 and trail.count("user's pick,") >= 3 and hub.count("the user's pick, 2026-11-16") >= 2)
     chk("Hub: no SetFont(FONT ...) left but the cooldown's own seconds; Trail: none of FRIZQT__ but the fallback and the calibration label",
