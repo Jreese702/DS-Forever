@@ -99,4 +99,21 @@ class DependencyQuestieTest {
         assertTrue(File(addons, "QuestieDB/Database/Forever/quests.lua").isFile)
         assertTrue("the old copy is kept", File(game, "Interface/${DependencyAddons.BACKUP}").listFiles()!!.any { it.name.startsWith("QuestieDB-1.1.0-") })
     }
+
+    /** #293 review: an older app's recent "skipped" line (no rule stamp) is not kept for 6 h: the first start after the update checks */
+    @Test fun anOlderAppsSkipIsCheckedAgainAtOnce() {
+        val game = File(tmp, "_forever_")
+        File(game, "Interface/AddOns").mkdirs()
+        val state = File(tmp, "state.json")
+        val now = System.currentTimeMillis()
+        val old = "QuestieDB skipped (no QuestieDB-Forever.zip in v1.1.1)"
+        state.writeText(JSONObject().put("QuestieDB", JSONObject().put("at", now - 60_000L).put("line", old).put("installed", "")
+            .put("pending", false)).toString())
+        val line = DependencyAddons.run(game, File(tmp, "cache"), state, now)
+        assertTrue(line, line.contains("QuestieDB 1.1.2 installed"))
+        assertEquals(DependencyAddons.STATE_RULE, JSONObject(state.readText()).getJSONObject("QuestieDB").getInt("rule"))
+        // this app's own line, a minute later: kept, no new check
+        val again = DependencyAddons.run(game, File(tmp, "cache"), state, now + 60_000L)
+        assertTrue(again, again.contains("QuestieDB 1.1.2 installed"))
+    }
 }

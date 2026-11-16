@@ -49,6 +49,12 @@ object DependencyAddons {
     @Volatile var wanted: (Dep) -> Boolean = { !it.optIn }
 
     const val RECHECK_MS = 6 * 60 * 60_000L
+    /**
+     * #293 review: the last check's line is kept for [RECHECK_MS] only while it was made by these rules. An app with the versioned
+     * QuestieDB name (rule 2) checks again at its first start, not up to 6 h later on an older app's "skipped (no QuestieDB-Forever.zip
+     * in v1.1.1)". Bump when the way a package is found changes.
+     */
+    internal const val STATE_RULE = 2
     /** a whole download's deadline: a server that trickles bytes (each read inside the read timeout) still ends (Track D's note) */
     const val DOWNLOAD_DEADLINE_MS = 10 * 60_000L
     private const val MAX_ZIP = 64L * 1024 * 1024
@@ -83,13 +89,14 @@ object DependencyAddons {
             val prev = last?.optJSONObject(dep.folder)
             // recently checked and still the same copy: the last line again, no network
             if (prev != null && now - prev.optLong("at") < RECHECK_MS && prev.optString("installed") == (installed ?: "") &&
-                !prev.optBoolean("pending")) Result(dep, prev.optString("line"))
+                !prev.optBoolean("pending") && prev.optInt("rule") == STATE_RULE) Result(dep, prev.optString("line"))
             else runCatching { check(dep, flavorRoot, cache, installed) }
                 .getOrElse { Result(dep, "${dep.folder} skipped (${reason(it)})${installed?.let { v -> "; $v kept" } ?: ""}") }
         }
         val out = JSONObject()
         for (r in results) out.put(r.dep.folder, JSONObject().put("at", now).put("line", r.line)
-            .put("installed", installedVersion(File(addons, r.dep.folder)) ?: "").put("pending", r.line.contains("next start")))
+            .put("installed", installedVersion(File(addons, r.dep.folder)) ?: "").put("pending", r.line.contains("next start"))
+            .put("rule", STATE_RULE))
         runCatching { state.parentFile?.mkdirs(); state.writeText(out.toString()) }
         // the third-party add-ons the player opted into (Settings > Add-ons, Map's Polestar): in / out with the game closed
         val third = runCatching { ThirdPartyAddons.applyAtStart(flavorRoot) }.getOrElse { "add-ons skipped (${reason(it)})" }
