@@ -80,6 +80,9 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         val body = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         pad = SettingsPad(context, scroll, sections, gameUis, padSource, tabBar, { dir -> show(SettingsTabs.step(tab, dir)) },
             { v, r -> rowOf(v, r.centerX(), r.centerY()) })
+        // Top screen's tiles (2026-11-16): ONE band open in the room - a tile's band opening closes any other part's - and the cursor
+        // and the band follow it (a tap and A alike)
+        for (gu in gameUis) gu.onOpen = { s -> gameUis.filter { it !== s }.forEach { it.closeSelection() }; pad.follow(s) }
         page.addView(pad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         body.addView(page, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         body.addView(preview, LinearLayout.LayoutParams(PREVIEW_W, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -124,7 +127,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         pad.invalidate()
     }
 
-    /** the views that draw [g]'s rows, in its blocks' order: a run of SettingsView blocks is one slice */
+    /** the views that draw [g]'s rows, in its blocks' order: a run of SettingsView blocks is one slice; GameUiSection blocks of the same
+     *  part share it (Navigation's Polestar tile is in Navigation's grid) */
     private fun partsOf(g: SettingsTabs.Group): List<View> {
         val out = ArrayList<View>()
         val run = LinkedHashSet<SettingsTabs.Block>()
@@ -133,7 +137,11 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             SettingsTabs.Drawer.VIEW -> run.add(b)
             SettingsTabs.Drawer.HOME -> { flush(); out.add(when (b) {
                 SettingsTabs.Block.ATTACK_CAST -> attackSection; SettingsTabs.Block.CAST_BAR -> castBarSection; else -> homeSection }) }
-            SettingsTabs.Drawer.GAME_UI -> { flush(); out.add(GameUiSection(context, gameUiPart(b)).also { gameUis.add(it) }) }
+            SettingsTabs.Drawer.GAME_UI -> {
+                flush()
+                val part = gameUiPart(b)
+                if ((out.lastOrNull() as? GameUiSection)?.part != part) out.add(GameUiSection(context, part).also { gameUis.add(it) })
+            }
         }
         flush()
         return out
@@ -145,7 +153,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         SettingsTabs.Block.HUD -> GameUiSection.Part.HUD
         SettingsTabs.Block.TARGET -> GameUiSection.Part.TARGET
         SettingsTabs.Block.PARTY -> GameUiSection.Part.PARTY
-        SettingsTabs.Block.NAVIGATION -> GameUiSection.Part.NAVIGATION
+        SettingsTabs.Block.NAVIGATION, SettingsTabs.Block.POLESTAR_TOP -> GameUiSection.Part.NAVIGATION
         SettingsTabs.Block.COMBAT -> GameUiSection.Part.COMBAT
         SettingsTabs.Block.AUTO_SHOT -> GameUiSection.Part.AUTO_SHOT
         else -> GameUiSection.Part.WINDOWS
@@ -494,11 +502,20 @@ class SettingsPad(
             }
             "PADDLEFT", "PADDRIGHT" -> horizontal(all, here, if (k == "PADDLEFT") -1 else 1)?.let { moveTo(it) }
             "PAD1" -> if (focus != null) here?.let { press(it) } else moveTo(all.first())
-            "PAD2" -> when {
-                gameUis.any { it.closeSelection() } -> { post { focus = focus?.let { f -> nearest(targets(), f)?.let { centre(it.box) } }; invalidate() } }
-                // B in the page: back to the tab row (rows -> tabs -> Home); without a tab row it leaves
-                tabBar != null -> toTabs()
-                else -> if (!tap(GuestPad.leaveB(padSource()))) onLeave?.invoke()
+            "PAD2" -> {
+                val open = gameUis.firstOrNull { it.hasSelection }
+                when {
+                    // B one step back: the open bar / band closes and the cursor is back on its own row / tile (the band under a tile
+                    // takes the buttons the cursor was on away; the nearest button left would be the next tile row)
+                    open != null -> {
+                        val a = open.selectionAnchor()
+                        gameUis.forEach { it.closeSelection() }
+                        if (a != null) { anchor = open to a; anchorBand = null }
+                    }
+                    // B in the page: back to the tab row (rows -> tabs -> Home); without a tab row it leaves
+                    tabBar != null -> toTabs()
+                    else -> if (!tap(GuestPad.leaveB(padSource()))) onLeave?.invoke()
+                }
             }
         }
         post { syncB() }
@@ -539,6 +556,36 @@ class SettingsPad(
         invalidate()
     }
 
+    /**
+     * THE CURSOR FOLLOWS A BAND (Top screen's tiles, 2026-11-16): the button the cursor goes to once the page is laid out again ([v]'s
+     * box in its own coordinates; resolved in the next draw, when the parts above have their new heights), and the band brought into
+     * view with it
+     */
+    private var anchor: Pair<View, RectF>? = null
+    private var anchorBand: RectF? = null
+
+    /** a tile's band opened or moved (a tap, or A): the cursor onto that tile when it is in the page, the tile and its band in view */
+    fun follow(s: GameUiSection) {
+        val a = s.selectionAnchor() ?: return
+        anchor = s to a
+        anchorBand = s.bandBox()
+        invalidate()
+    }
+
+    /** the anchor's place now: the cursor there (when it is in the page) and the tile, with its band when that fits, in view */
+    private fun resolveAnchor() {
+        val (v, a) = anchor ?: return
+        val top = contentTop(v) ?: run { anchor = null; return }
+        anchor = null
+        val box = RectF(a.left, a.top + top, a.right, a.bottom + top)
+        if (focus != null) focus = centre(box)
+        val band = anchorBand?.let { RectF(it.left, it.top + top, it.right, it.bottom + top) }
+        anchorBand = null
+        val want = GameUiTiles.reveal(scroll.scrollY.toFloat(), scroll.height.toFloat(), box.top - REVEAL_TOP,
+            (band?.bottom ?: box.bottom) + REVEAL_BOTTOM) ?: return
+        post { scroll.smoothScrollTo(0, want.toInt().coerceAtLeast(0)) }
+    }
+
     /** A: exactly a touch at the button's centre (down, then up), so the section's own logic decides */
     private fun press(t: Target) {
         val x = t.local.centerX(); val y = t.local.centerY()
@@ -567,6 +614,7 @@ class SettingsPad(
     // ---------------------------------------------------------------- drawing
 
     override fun onDraw(c: Canvas) {
+        resolveAnchor()
         if (!held || onTabs) return                 // on the tabs: the tab row draws its own cursor
         val f = focus ?: return
         val t = nearest(targets(), f) ?: return
@@ -585,5 +633,8 @@ class SettingsPad(
         const val ROW_SLOP = 12f
         const val MARGIN = 40f
         const val A_GLYPH = 42f
+        /** a tile and its band brought into view: the room kept above the tile (its A glyph) and under the band */
+        const val REVEAL_TOP = 24f
+        const val REVEAL_BOTTOM = 16f
     }
 }
