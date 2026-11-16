@@ -1652,6 +1652,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Log.i("WCLOG", "home disc: touched with the B look in CHARACTER: one step back (a menu of the room's closed)")
             return
         }
+        // the layout editor's page over Settings: the disc is its B too (drop the piece, ask Save / Discard / Cancel with unsaved
+        // changes, then out to Settings' tab row; the next touch goes Home), never a straight Home that drops the draft unasked
+        if (room == Room.SETTINGS && ::layoutPage.isInitialized && layoutPage.isOpen) {
+            layoutPage.backByTouch()
+            Log.i("WCLOG", "home disc: touched with the layout editor open: its B")
+            return
+        }
         if (room != Room.HOME || strip.bGoesHome || homeView.bGoesHome()) {
             Log.i("WCLOG", "home disc: touched with the B look in ${room.name}: Home")
             pickRoom(Room.HOME); return

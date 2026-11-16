@@ -167,15 +167,18 @@ object LayoutModel {
 
     // ---------------------------------------------------------------- geometry
     /** where to tap for an anchor at ([x], [y]): the spot itself, or REACH lower with the reach switch (the spot inside the pad band or
-     *  the sink); null = it cannot be reached (both in a zone, or off the screen) */
+     *  the sink); null = it cannot be reached (both in a zone, or the reach point off the screen). An anchor OFF the screen (the app's
+     *  [EDGE_SLACK] lets a piece stand a little past an edge) is tapped at the nearest point on it: the add-on keeps the piece on the screen
+     *  and its answer becomes the place ([Editor.onDoc]), so no wish is left waiting for a tap that can never go (the review) */
     data class Tap(val x: Double, val y: Double, val reach: Boolean)
 
     fun tapFor(x: Double, y: Double, doc: Doc): Tap? {
         val onScreen = { px: Double, py: Double -> px >= 0 && py >= 0 && px <= doc.w && py <= doc.h }
         val blocked = { px: Double, py: Double -> doc.zones.any { it.contains(px, py) } }
-        if (onScreen(x, y) && !blocked(x, y)) return Tap(x, y, false)
-        val ry = y + doc.reachPx
-        if (onScreen(x, ry) && !blocked(x, ry)) return Tap(x, ry, true)
+        val cx = x.coerceIn(0.0, doc.w); val cy = y.coerceIn(0.0, doc.h)
+        if (!blocked(cx, cy)) return Tap(cx, cy, false)
+        val ry = cy + doc.reachPx
+        if (onScreen(cx, ry) && !blocked(cx, ry)) return Tap(cx, ry, true)
         return null
     }
 
@@ -269,6 +272,9 @@ object LayoutModel {
         private var lastCellAt = Long.MIN_VALUE / 4
         private var lastCellCells = -1
         private val queued = ArrayList<Int>()
+        /** the first queued command went at this time (null = not sent yet), when the add-on's cell counter read [cmdCells] */
+        private var cmdAt: Long? = null
+        private var cmdCells = -1
 
         fun onDoc(d: Doc) {
             val first = doc == null
@@ -400,12 +406,27 @@ object LayoutModel {
         fun next(now: Long): Send? {
             val d = doc ?: return null
             if (!d.ready) return null
-            // a command first (Save before the close that follows it); one for the picked piece only once the add-on has it selected
+            // a command first (Save before the close that follows it); one for the picked piece only once the add-on has it selected.
+            // It stays first until the add-on ANSWERS it (its cell counter past the send) and goes again after RETRY_MS without one -
+            // every command is the same twice (Save, Revert, Reset, Copy) - so a lost tap never lets the close behind it drop the
+            // draft the prompt's Save was meant to keep (the review)
+            if (d.open && queued.isNotEmpty()) {
+                if (cmdAt != null && d.cells > cmdCells) { queued.removeAt(0); cmdAt = null }
+            }
             if (d.open && queued.isNotEmpty()) {
                 val col = queued.first()
+                val at = cmdAt
+                if (at != null) {
+                    if (now - at < RETRY_MS) return null
+                    cmdAt = now; cmdCells = d.cells
+                    lastCell = col; lastCellAt = now; lastCellCells = d.cells
+                    return Send.Cell(col)
+                }
                 val pp = pickedPiece()
                 if (col in PIECE_CELLS && pp != null && d.sel != pp.id) return cellOnce(pp.col, now, d)
-                queued.removeAt(0)
+                // (a cell still on its way - a selection, the reach switch - is answered first, so the counter moving past is THIS one's)
+                if (lastCell != null && d.cells <= lastCellCells && now - lastCellAt < RETRY_MS) return null
+                cmdAt = now; cmdCells = d.cells
                 lastCell = col; lastCellAt = now; lastCellCells = d.cells
                 return Send.Cell(col)
             }
@@ -448,7 +469,7 @@ object LayoutModel {
         /** the page opens afresh: nothing is wanted */
         fun reset() {
             picked = null; clearWant(); sizeMode = false; prompt = false; list = false; focus = Focus.TILES
-            queued.clear(); lastSpot = null; lastCell = null; raw = null
+            queued.clear(); cmdAt = null; lastSpot = null; lastCell = null; raw = null
         }
     }
 

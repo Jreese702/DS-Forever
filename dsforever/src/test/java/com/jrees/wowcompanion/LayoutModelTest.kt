@@ -113,6 +113,7 @@ class LayoutModelTest {
         // Revert / Reset / Copy forget an older wish (it would undo them)
         e.pick("hud"); e.nudge(0, 1); e.forget(); e.command(LayoutModel.C_REVERT)
         assertEquals(LayoutModel.Send.Cell(LayoutModel.C_REVERT), e.next(6000))
+        e.onDoc(e.doc!!.copy(cells = e.doc!!.cells + 1, n = e.doc!!.n + 1))  // its answer
         assertNull(e.next(7000))
     }
 
@@ -230,7 +231,9 @@ class LayoutModelTest {
         e.command(LayoutModel.C_SAVE)
         e.wantOpen = false
         assertEquals(LayoutModel.Send.Cell(LayoutModel.C_SAVE), e.next(0))
-        assertEquals(LayoutModel.Send.Cell(LayoutModel.C_CLOSE), e.next(10))
+        assertNull("the close waits for Save's answer", e.next(10))
+        e.onDoc(e.doc!!.copy(cells = e.doc!!.cells + 1, dirty = false, saves = e.doc!!.saves + 1, n = e.doc!!.n + 1))
+        assertEquals(LayoutModel.Send.Cell(LayoutModel.C_CLOSE), e.next(20))
     }
 
     @Test fun thePromptsSaveSurvivesThePageClosing() {
@@ -241,7 +244,45 @@ class LayoutModelTest {
         e.leave()                                                       // the page closes right behind the prompt's Save
         assertNull(e.picked); assertFalse(e.prompt); assertNull("no wish after the close", e.want)
         assertEquals(LayoutModel.Send.Cell(LayoutModel.C_SAVE), e.next(0))
-        assertEquals(LayoutModel.Send.Cell(LayoutModel.C_CLOSE), e.next(10))
+        // the review: the Save's tap LOST (no answer): it goes again after RETRY_MS, and the close never goes before its answer
+        assertNull(e.next(LayoutModel.RETRY_MS - 1))
+        assertEquals(LayoutModel.Send.Cell(LayoutModel.C_SAVE), e.next(LayoutModel.RETRY_MS))
+        assertNull(e.next(LayoutModel.RETRY_MS + 10))
+        e.onDoc(e.doc!!.copy(cells = e.doc!!.cells + 1, dirty = false, n = e.doc!!.n + 1))
+        assertEquals(LayoutModel.Send.Cell(LayoutModel.C_CLOSE), e.next(LayoutModel.RETRY_MS + 20))
+    }
+
+    @Test fun aCommandWaitsForTheCellBeforeIt() {
+        // a selection still on its way when Save is pressed: Save goes once that is answered, so the counter moving past is Save's own
+        val e = open()
+        e.pick("compass")
+        assertEquals(LayoutModel.Send.Cell(1), e.next(0))
+        e.command(LayoutModel.C_SAVE)
+        assertNull("the selection's answer first", e.next(10))
+        e.onDoc(e.doc!!.copy(sel = "compass", cells = e.doc!!.cells + 1, n = e.doc!!.n + 1))
+        assertEquals(LayoutModel.Send.Cell(LayoutModel.C_SAVE), e.next(20))
+        e.onDoc(e.doc!!.copy(cells = e.doc!!.cells + 1, n = e.doc!!.n + 1))
+        assertNull("answered: nothing more", e.next(2000))
+        // a selection never answered holds a command back only RETRY_MS
+        val f = open()
+        f.pick("compass"); f.next(0); f.command(LayoutModel.C_REVERT)
+        assertEquals(LayoutModel.Send.Cell(LayoutModel.C_REVERT), f.next(LayoutModel.RETRY_MS))
+    }
+
+    @Test fun anAnchorOffTheScreenIsTappedOnIt() {
+        // the app's slack lets the party block's top-left stand a little left of the screen: the tap goes at the edge (never no tap at
+        // all, a wish left waiting for ever), the add-on keeps it on the screen and its answer is the place
+        val d = doc("lay_moved")
+        assertEquals(LayoutModel.Tap(0.0, 500.0, false), LayoutModel.tapFor(-12.0, 500.0, d))
+        assertEquals(LayoutModel.Tap(1920.0, 1080.0, false), LayoutModel.tapFor(1940.0, 1100.0, d))
+        val e = LayoutModel.Editor().apply { wantOpen = true; onDoc(d.copy(sel = "party")); gridOn = true; snapOn = false }
+        e.pick("party")
+        e.dragTo(-15.0, 300.0)
+        assertEquals(-15.0, e.want!!.first, 0.0)
+        assertEquals(LayoutModel.Send.Spot(0.0, 300.0), e.next(0))
+        e.onDoc(answered(e.doc!!, "party", 0.0, 300.0))
+        assertEquals("the add-on's answer is the place", 0.0 to 300.0, e.want)
+        assertNull(e.next(5000))
     }
 
     @Test fun aPieceCommandWaitsForItsSelection() {

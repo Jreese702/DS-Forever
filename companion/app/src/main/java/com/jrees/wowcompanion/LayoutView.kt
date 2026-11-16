@@ -205,21 +205,51 @@ class LayoutView(context: Context) : View(context) {
         }
     }
 
+    /** the B disc on the bar touched while the page shows: the page's own B (one step back, the prompt, then out to Settings), as the
+     *  pad's B - the house rule "rooms the same on every route" (CompanionHost.swirlTouched, as the Character room's stepBackByTouch) */
+    fun backByTouch() { if (isOpen) padKey("PAD2") }
+
     // ---------------------------------------------------------------- the stick (the left one glides the picked piece)
     private var reader: PadInput? = null
     private var stickX = 0f; private var stickY = 0f
     private var frameAt = 0L
     private var running = false
     private val frame = Runnable { stickFrame() }
+    // with no piece picked the stick BROWSES as the D-pad does (the design: "D-pad or stick browses the tiles"): one step a push, then
+    // the D-pad's own hold-repeat while it stays pushed (MapRoomKeys.StickSteps, as the World map's quest list)
+    private val steps = MapRoomKeys.StickSteps()
+    private val browseRepeat = Runnable { browseStep(); postBrowseRepeat(DirectPadKeys.REPEAT_MS) }
+    private fun postBrowseRepeat(ms: Long) { removeCallbacks(browseRepeat); postDelayed(browseRepeat, ms) }
+    private fun browseStep() {
+        val d = steps.dir ?: return
+        if (!isOpen || editor.picked != null) return
+        val k = when {
+            d.first == 0f && d.second < 0f -> "PADDUP"; d.first == 0f && d.second > 0f -> "PADDDOWN"
+            d.second == 0f && d.first < 0f -> "PADDLEFT"; d.second == 0f && d.first > 0f -> "PADDRIGHT"
+            else -> return                                              // (a diagonal: nothing, as the quest list)
+        }
+        padKey(k)
+    }
+    /** a stick vector (x right, y down): glide the picked piece, else browse */
+    fun stickVector(x: Float, y: Float) {
+        stickX = x; stickY = y
+        val push = steps.update(x, y)
+        if (editor.picked != null) {
+            if (MapRoomKeys.stickMoves(x, y) && !running) { running = true; frameAt = 0L; postOnAnimation(frame) }
+        } else if (push) { browseStep(); postBrowseRepeat(DirectPadKeys.REPEAT_FIRST_MS) }
+        if (!steps.engaged) removeCallbacks(browseRepeat)
+    }
     private fun startStick() {
         if (reader != null || dryRun) return
         reader = PadInput(onPad = { _, _, _, _ -> }, onStatus = { _, _ -> }, onStickVector = { stick, x, y ->
             if (stick != 0) return@PadInput
-            stickX = x; stickY = y
-            if (MapRoomKeys.stickMoves(x, y) && !running) { running = true; frameAt = 0L; postOnAnimation(frame) }
+            stickVector(x, y)
         }).also { it.start() }
     }
-    private fun stopStick() { reader?.stop(); reader = null; removeCallbacks(frame); running = false }
+    private fun stopStick() {
+        reader?.stop(); reader = null; removeCallbacks(frame); running = false
+        steps.update(0f, 0f); removeCallbacks(browseRepeat)
+    }
     private fun stickFrame() {
         if (!isOpen || editor.picked == null || !MapRoomKeys.stickMoves(stickX, stickY)) { running = false; editor.glideEnd(); return }
         val now = SystemClock.uptimeMillis()

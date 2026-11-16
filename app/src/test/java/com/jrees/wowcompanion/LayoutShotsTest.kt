@@ -161,6 +161,35 @@ class LayoutShotsTest {
         assertFalse("nothing unsaved: B leaves", v.isOpen)
     }
 
+    // the review: the stick browses as the D-pad does while no piece is picked (the design: "D-pad or stick browses the tiles"); the B
+    // disc on the bar is the page's B (rooms the same on every route), never a straight Home that drops the draft unasked
+    @Test fun theStickBrowsesAndTheDiscIsB() {
+        val v = page("lay_moved")
+        val e = v.editor
+        assertEquals(0, e.tile)
+        v.stickVector(0f, 1f)                                           // pushed down: one tile a push
+        assertEquals(1, e.tile)
+        v.stickVector(0.1f, 0.9f)                                       // still pushed: no new step (the hold-repeat steps it later)
+        assertEquals(1, e.tile)
+        v.stickVector(0f, 0f); v.stickVector(0f, 1f)
+        assertEquals(2, e.tile)
+        v.stickVector(0f, 0f)
+        v.padKey("PAD1")                                                // A picks the third tile (Party frames)
+        assertEquals("party", e.picked)
+        v.stickVector(0f, 1f)                                           // a piece picked: the stick glides it, it never browses
+        assertEquals(2, e.tile)
+        v.stickVector(0f, 0f)
+        lay(v)
+        v.backByTouch()                                                 // the disc: drop the piece
+        assertNull(e.picked)
+        assertTrue(v.isOpen)
+        v.backByTouch()                                                 // unsaved changes (the document says dirty): ask
+        assertTrue(e.prompt)
+        v.backByTouch()                                                 // the disc again: the prompt goes, the page stays
+        assertFalse(e.prompt)
+        assertTrue(v.isOpen)
+    }
+
     // ---------------------------------------------------------------- a finger
     @Test fun aFingerPicksAndDrags() {
         val v = page("lay_moved")
