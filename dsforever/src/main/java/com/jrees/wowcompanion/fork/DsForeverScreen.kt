@@ -49,6 +49,11 @@ import com.jrees.wowcompanion.ScreenSwap
  * ([bottomScreen]). Display 0, the default display, takes no Presentation (Android adds presentation windows only to displays flagged
  * for them), so there DS Forever's window is our [CompanionScreenActivity] instead: not focusable either, and the game's task is
  * brought back to the front after it comes ([gameToFront]) so the controller's keys stay the game's. Off (the default) = all as before.
+ * #383 / #384: that move is [toFront] (only the task asked for), never AppTask.moveToFront (it put display 0's home screen over the
+ * bottom activity and Android closed it: a restart loop), and it is asked again whenever display 0 takes the keys back.
+ * #384 recovery (the user, 2026-11-16: "make sure there IS a safe recovery path"): a Swap screens start whose bottom activity never
+ * settles counts ([settleCheck]); ScreenSwap.MAX_FAILS in a row and the next start is Off, the start guard's give-up turns it Off at
+ * once ([swapOff]), and a start with ScreenSwap.EXTRA_OFF is the by-hand way out ([moveToTop]).
  */
 class DsForeverScreen(private val context: Context) {
     /** the launcher's X server as DS Forever's input, while the game screen is up */
@@ -91,6 +96,7 @@ class DsForeverScreen(private val context: Context) {
         detachGame()
         running = false
         main.removeCallbacksAndMessages(null)
+        frontLater = false                                   // #383 / #384: its waiting ask went with the queue
         try { dm?.unregisterDisplayListener(listener) } catch (_: Exception) {}
         shown?.close(); shown = null
         if (ScreenSwap.restart === restartHook) ScreenSwap.restart = null
@@ -258,15 +264,28 @@ class DsForeverScreen(private val context: Context) {
     /** the activity's recent starts ([startAllowed]); [gaveUp] = it kept closing: not again this run */
     private val starts = ArrayList<Long>()
     private var gaveUp = false
+    /** #384 recovery: this DS Forever's ask is counted (ScreenSwap.tryStart: once per run) / its activity settled (ScreenSwap.settled) */
+    private var tried = false
+    private var settled = false
 
     private fun openActivity(id: Int): BottomWindow? {
         if (gaveUp) return null
+        // #384 recovery: the first ask counts as a Swap screens start; MAX_FAILS unsettled ones in a row already = Off now
+        if (!tried) {
+            tried = true
+            if (!ScreenSwap.tryStart(context)) {
+                gaveUp = true
+                swapOff("the bottom screen did not settle on the last ${ScreenSwap.MAX_FAILS} starts")
+                return null
+            }
+        }
         val now = android.os.SystemClock.elapsedRealtime()
         starts.removeAll { now - it >= START_GUARD_MS }
         if (!startAllowed(starts, now)) {
             gaveUp = true
             Log.w(TAG, "Swap screens: the bottom screen's activity was started ${starts.size} times in ${START_GUARD_MS / 1000} s: not again this run")
-            com.jrees.wowcompanion.DiagLog.event("app", "Swap screens: the bottom screen kept closing; DS Forever stays off display $id until the next start")
+            com.jrees.wowcompanion.DiagLog.event("app", "Swap screens: the bottom screen kept closing on display $id")
+            swapOff("the bottom screen kept closing")
             return null
         }
         starts.add(now)
@@ -301,7 +320,30 @@ class DsForeverScreen(private val context: Context) {
             return false
         }
         w.activity = a
+        if (!settled) main.postDelayed({ settleCheck(w, a) }, ScreenSwap.SETTLE_MS)
         return true
+    }
+
+    /**
+     * #384 recovery: the bottom activity still up [ScreenSwap.SETTLE_MS] later with the controller at the game (not [holdsKeys]): Swap
+     * screens works on this device, the unsettled-start count starts over. Holding the keys = not yet (looked at again a while later)
+     */
+    private fun settleCheck(w: AskedActivity, a: CompanionScreenActivity) {
+        if (settled || !running || shown !== w || w.closed || w.activity !== a) return
+        if (a.holdsKeys) { main.postDelayed({ settleCheck(w, a) }, ScreenSwap.SETTLE_MS); return }
+        settled = true
+        ScreenSwap.settled(context)
+        Log.i(TAG, "Swap screens: the bottom screen settled on display ${w.displayId}")
+    }
+
+    /**
+     * #384 recovery: Swap screens Off, saved (ScreenSwap.off). The launcher's own DS Forever with no game starts again at once in the
+     * Thor's arrangement (the Restart button's route: nothing is lost); with the game up it applies from the next start
+     */
+    private fun swapOff(why: String) {
+        ScreenSwap.off(context, why)
+        if (!gameOn && ScreenSwap.restart === restartHook) restartHook()
+        else Log.i(TAG, "Swap screens Off from the next start ($why)")
     }
 
     /**
@@ -322,18 +364,36 @@ class DsForeverScreen(private val context: Context) {
 
     /**
      * the launcher's task (the game) to the front: its display becomes the top one again, so the controller's keys go to the game and
-     * not to display 0 (a display whose top activity has no focusable window would hold them). AppTask: our own task, no permission.
+     * not to display 0 (a display whose top activity has no focusable window would hold them).
      * #232 review: never while the launcher is going away ([frontWanted]): the bottom activity's typing ends in its onStop, and that
-     * moved the launcher back over the home screen the player had just pressed Home for
+     * moved the launcher back over the home screen the player had just pressed Home for.
+     * #383 / #384 (a player on a Retroid Pocket Nova + Dual Screen Add-on, 1.0.32: "the bottom screen's activity restarts itself until
+     * the guard gives up", then "input ANRs once the loop is stopped"): the move is [toFront] (never AppTask.moveToFront, which closed
+     * the bottom activity each time), at most once a [FRONT_GAP_MS] counted HERE (each bottom activity is a new one: a field of its own
+     * never held a second one back), and an ask inside the gap is not dropped: it runs once the gap is over if the bottom activity
+     * still holds the keys ([CompanionScreenActivity.holdsKeys]; dropped, display 0 kept them and every press timed out)
      */
     internal fun gameToFront(why: String) {
         val a = context as? Activity ?: return
         if (!frontWanted(running, hidden, a.isFinishing)) { Log.i(TAG, "Swap screens: the game's task stays ($why; the launcher is away)"); return }
-        runCatching {
-            a.getSystemService(android.app.ActivityManager::class.java)?.appTasks?.firstOrNull { it.taskInfo.taskId == a.taskId }?.moveToFront()
-        }.onFailure { Log.w(TAG, "game to the front: ${it.message}") }
-        Log.i(TAG, "Swap screens: the game's task to the front ($why)")
+        val now = android.os.SystemClock.elapsedRealtime()
+        val wait = frontWait(now, frontAt)
+        if (wait > 0L) {
+            if (!frontLater) {
+                frontLater = true
+                main.postDelayed({
+                    frontLater = false
+                    if ((shown as? AskedActivity)?.activity?.holdsKeys == true) gameToFront("$why, after the gap")
+                }, wait)
+            }
+            return
+        }
+        frontAt = now
+        if (toFront(a, a.taskId, "game to the front")) Log.i(TAG, "Swap screens: the game's task to the front ($why)")
     }
+    /** the last [gameToFront] move (any bottom activity's) and whether an ask waits for the gap to end */
+    private var frontAt = Long.MIN_VALUE / 2
+    private var frontLater = false
 
     /** Settings > Swap screens > Restart (ScreenSwap.restart): the launcher started again on the screen the saved choice gives it */
     private val restartHook: () -> Unit = { main.post { restartForSwap() } }
@@ -348,6 +408,12 @@ class DsForeverScreen(private val context: Context) {
         Log.i(TAG, "Swap screens restart: ${if (saved) "on" else "off"}, the launcher to display $target")
         lastMoveAt = android.os.SystemClock.elapsedRealtime()
         val again = Intent(a.intent).putExtra(EXTRA_MOVED, true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        // #384 review: this DS Forever goes BEFORE the new activity comes. Android destroys a finishing activity only once the next one
+        // is up, so the new activity's begin() still found this one current and made none, then the old activity's end() stopped this
+        // one: no DS Forever on either screen after a Restart, the recovery's own included. The old activity's pause / stop hide only
+        // its own ([hideFor])
+        stop()
+        if (current === this) current = null
         try {
             a.finishAndRemoveTask()
             a.startActivity(again, ActivityOptions.makeBasic().setLaunchDisplayId(target).toBundle())
@@ -410,6 +476,27 @@ class DsForeverScreen(private val context: Context) {
          */
         fun frontWanted(running: Boolean, hidden: Boolean, launcherFinishing: Boolean): Boolean = running && !hidden && !launcherFinishing
 
+        /** #383 / #384, pure for the tests: 0 = [gameToFront] moves now; else how long until [FRONT_GAP_MS] has passed since [lastAt] */
+        fun frontWait(now: Long, lastAt: Long): Long = (FRONT_GAP_MS - (now - lastAt)).coerceIn(0L, FRONT_GAP_MS)
+        const val FRONT_GAP_MS = 1_000L
+
+        /**
+         * #383 / #384: a task of ours to the front of its display, that display on top (the controller's keys go there). NEVER
+         * AppTask.moveToFront: that is Recents' route (startActivityFromRecents), which first puts display 0's HOME task in front - over
+         * the bottom activity - and Android then trims a task that is excluded from Recents and behind Home on display 0: the bottom
+         * activity closed, DS Forever opened it again, it asked again (the restart loop). ActivityManager.moveTaskToFront moves only the
+         * task asked for (REORDER_TASKS: a normal permission, no prompt); MOVE_TASK_NO_USER_ACTION: no "user leaving" (the launcher's
+         * onUserLeaveHint hides DS Forever). True = moved
+         */
+        internal fun toFront(ctx: Context, taskId: Int, what: String): Boolean = try {
+            val am = ctx.getSystemService(android.app.ActivityManager::class.java)
+            if (am == null) false else { am.moveTaskToFront(taskId, android.app.ActivityManager.MOVE_TASK_NO_USER_ACTION); true }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Swap screens: $what: ${t.message}")
+            com.jrees.wowcompanion.DiagLog.event("app", "Swap screens: $what failed: ${t.javaClass.simpleName}")
+            false
+        }
+
         /**
          * #232 review: the display whose panel sizes InputSink's tap pixels - display 0 ALWAYS, Swap screens or not. TapBridge (the
          * tap-pad cells) and HomeLoginWatch (the sign-in's fields) make a tap's pixels in display 0's space; InputSink turns them back
@@ -447,6 +534,11 @@ class DsForeverScreen(private val context: Context) {
             if (current == null) current = DsForeverScreen(activity).also { it.start(); ScreenSwap.restart = it.restartHook }
         }
         fun end(activity: Activity) { current?.takeIf { it.context === activity }?.stop(); if (current?.context === activity) current = null }
+        /**
+         * the launcher activity's pause / stop / leave hint: only ITS OWN DS Forever hides. #384 review: after a Restart the new
+         * activity (and its DS Forever) is up before Android stops the old one, whose stop hid whichever was current - the new one's
+         */
+        fun hideFor(activity: Activity) { current?.takeIf { it.context === activity }?.hide() }
 
         /** the launcher's own DS Forever while Streaming's activity has the screens (restored by [endStream]) */
         @Volatile private var beforeStream: DsForeverScreen? = null
@@ -509,6 +601,12 @@ class DsForeverScreen(private val context: Context) {
         fun moveToTop(activity: Activity, gameRunning: Boolean): Boolean {
             val d = activity.display?.displayId ?: Display.DEFAULT_DISPLAY
             val now = android.os.SystemClock.elapsedRealtime()
+            // #384 recovery by hand (adb, after a force stop: am start -n <app>/app.gamenative.MainActivity --ez dsforever_swap_off true):
+            // Swap screens saved Off before this run takes it; the extra goes, so a restart's copy of the intent never repeats it
+            if (activity.intent?.getBooleanExtra(ScreenSwap.EXTRA_OFF, false) == true) {
+                activity.intent.removeExtra(ScreenSwap.EXTRA_OFF)
+                ScreenSwap.off(activity, "the start asked for it")
+            }
             // #232: the game's display (display 0 unless Swap screens is in use: then the second screen)
             val target = gameTarget(activity, d)
             val move = decide(d, gameRunning || up, now - lastMoveAt, target)

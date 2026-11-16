@@ -3,6 +3,9 @@
     <!-- Streaming (S2): the PC on the LAN (normal permissions, no prompt; the launcher already holds them) -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Swap screens (#383 / #384): the game's task back to the front of its screen (ActivityManager.moveTaskToFront; a normal
+         permission, no prompt). Used only while Swap screens is On (DsForeverScreen.toFront) -->
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
     <application>
         <!-- Streaming mode (S2): WoW on the PC through Moonlight's core, on the top screen; the companion stays on the bottom -->
         <activity

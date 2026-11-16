@@ -151,6 +151,82 @@ class SwapScreensTest {
         listOf("src/main/java/com/jrees/wowcompanion/fork/$name", "dsforever/src/main/java/com/jrees/wowcompanion/fork/$name")
             .map { java.io.File(it) }.first { it.canRead() }.readText()
 
+    private fun manifest(): String =
+        listOf("src/main/AndroidManifest.xml", "dsforever/src/main/AndroidManifest.xml").map { java.io.File(it) }.first { it.canRead() }.readText()
+
+    // ---- #383 / #384 (a player on a Retroid Pocket Nova + Dual Screen Add-on, 1.0.32): the restart loop, then the input ANRs
+
+    /**
+     * "the bottom screen's activity restarts itself until the guard gives up": the game's task came forward with AppTask.moveToFront,
+     * Recents' route, which puts display 0's home screen in front first; Android then trims a Recents-excluded task behind Home on
+     * display 0 - the bottom activity closed, was opened again and asked again. Neither file may use AppTask's move any more
+     */
+    @Test fun theGameComesForwardWithoutRecentsRoute() {
+        for (f in listOf("DsForeverScreen.kt", "CompanionScreenActivity.kt")) {
+            val code = source(f).lines().filterNot { it.trimStart().startsWith("*") || it.trimStart().startsWith("//") || it.trimStart().startsWith("/**") }
+                .joinToString("\n")
+            assertFalse("$f: no AppTask", code.contains("appTasks"))
+            assertFalse("$f: no AppTask.moveToFront", code.contains(".moveToFront()"))
+        }
+        val to = source().substringAfter("internal fun toFront(").substringBefore("fun begin(")
+        assertTrue(to.contains("am.moveTaskToFront(taskId, android.app.ActivityManager.MOVE_TASK_NO_USER_ACTION)"))
+        assertTrue(source().substringAfter("internal fun gameToFront(").substringBefore("private val restartHook").contains("toFront(a, a.taskId,"))
+        assertTrue(source("CompanionScreenActivity.kt").substringAfter("private fun typingChanged(").substringBefore("fun board(")
+            .contains("DsForeverScreen.toFront(this, taskId,"))
+        // moveTaskToFront needs REORDER_TASKS (a normal permission: granted with the install, no prompt)
+        assertTrue(manifest().contains("<uses-permission android:name=\"android.permission.REORDER_TASKS\" />"))
+    }
+
+    /** the once-a-second gap: counted by DsForeverScreen (every bottom activity is a new one: its own field never held anything back) */
+    @Test fun theGapOutlivesTheBottomActivity() {
+        val gap = DsForeverScreen.FRONT_GAP_MS
+        assertEquals(0L, DsForeverScreen.frontWait(100_000L, Long.MIN_VALUE / 2))          // never moved: at once
+        assertEquals(gap, DsForeverScreen.frontWait(100_000L, 100_000L))
+        assertEquals(400L, DsForeverScreen.frontWait(100_600L, 100_000L))
+        assertEquals(0L, DsForeverScreen.frontWait(100_000L + gap, 100_000L))
+        assertEquals(0L, DsForeverScreen.frontWait(500_000L, 100_000L))
+        assertEquals("a clock that went back waits one gap, no more", gap, DsForeverScreen.frontWait(99_000L, 100_000L))
+        // the reporter's three rounds (13.293, 13.931, 14.102): a new activity each time, one move only
+        var last = Long.MIN_VALUE / 2
+        var moves = 0
+        for (t in listOf(13_293L, 13_931L, 14_102L)) if (DsForeverScreen.frontWait(t, last) == 0L) { last = t; moves++ }
+        assertEquals(1, moves)
+        assertFalse(source("CompanionScreenActivity.kt").contains("frontAt"))
+        val fn = source().substringAfter("internal fun gameToFront(").substringBefore("private val restartHook")
+        assertTrue(fn.contains("frontWait(now, frontAt)"))
+        assertTrue(fn.contains("private var frontAt = Long.MIN_VALUE / 2"))
+    }
+
+    /**
+     * "input ANRs once the loop is stopped" (no focused window): display 0 on top with only a not-focusable window holds the keys.
+     * An ask inside the gap is not dropped (it runs after it while the bottom activity still holds them), and the bottom activity asks
+     * whenever it becomes Android's top resumed activity - display 0 took the keys - unless a text field types there
+     */
+    @Test fun display0NeverKeepsTheKeys() {
+        val fn = source().substringAfter("internal fun gameToFront(").substringBefore("private val restartHook")
+        val later = fn.substringAfter("if (wait > 0L) {").substringBefore("frontAt = now")
+        assertTrue(later.contains("main.postDelayed("))
+        assertTrue(later.contains("(shown as? AskedActivity)?.activity?.holdsKeys == true"))
+        assertTrue("one ask waits at a time", later.contains("if (!frontLater) {"))
+        val a = source("CompanionScreenActivity.kt")
+        assertTrue(a.contains("val holdsKeys: Boolean get() = host != null && topResumed && !typer.typing && !isFinishing"))
+        val top = a.substringAfter("override fun onTopResumedActivityChanged(").substringBefore("override fun onStop()")
+        assertTrue(top.contains("topResumed = isTopResumedActivity"))
+        assertTrue(top.contains("if (holdsKeys) screen?.gameToFront("))
+        assertTrue(a.substringAfter("override fun onResume()").substringBefore("override fun onTopResumedActivityChanged(")
+            .contains("if (host != null && !typer.typing) screen?.gameToFront(\"bottom screen resumed\")"))
+    }
+
+    /** Swap screens Off (the Thor): the Presentation never moves a task; only the Swap screens activity asks */
+    @Test fun offNothingMovesATask() {
+        val presentation = source().substringAfter("private class HostPresentation(")
+        assertFalse(presentation.contains("toFront("))
+        assertFalse(presentation.contains("gameToFront("))
+        val outside = source().substringBefore("internal fun gameToFront(") + source().substringAfter("private val restartHook")
+        assertFalse("gameToFront is asked only by the bottom activity (and its own wait)", outside.contains("gameToFront("))
+        assertFalse(outside.substringBefore("internal fun toFront(").contains("toFront("))
+    }
+
     // ---- the Settings row's Restart (ScreenSwap)
 
     @Test fun restartRowOnlyWhenTheChoiceIsNotTheOneInUse() {
@@ -174,6 +250,172 @@ class SwapScreensTest {
         assertEquals(ScreenSwap.Pending.RESTART, ScreenSwap.pending(true, ScreenSwap.inUseNow, false, true))
         ScreenSwap.take(true)
         assertEquals(ScreenSwap.Pending.NONE, ScreenSwap.pending(true, ScreenSwap.inUseNow, false, true))
+    }
+
+    // ---- #384 recovery (the user, 2026-11-16: "make sure there IS a safe recovery path in the app ... if the UI is stuck")
+
+    private class Prefs(val m: HashMap<String, Any?> = HashMap()) : android.content.SharedPreferences {
+        override fun getAll(): MutableMap<String, *> = m
+        override fun getString(k: String?, d: String?) = m[k] as? String ?: d
+        @Suppress("UNCHECKED_CAST")
+        override fun getStringSet(k: String?, d: MutableSet<String>?) = m[k] as? MutableSet<String> ?: d
+        override fun getInt(k: String?, d: Int) = m[k] as? Int ?: d
+        override fun getLong(k: String?, d: Long) = m[k] as? Long ?: d
+        override fun getFloat(k: String?, d: Float) = m[k] as? Float ?: d
+        override fun getBoolean(k: String?, d: Boolean) = m[k] as? Boolean ?: d
+        override fun contains(k: String?) = m.containsKey(k)
+        override fun registerOnSharedPreferenceChangeListener(l: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+        override fun unregisterOnSharedPreferenceChangeListener(l: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+        override fun edit(): android.content.SharedPreferences.Editor = object : android.content.SharedPreferences.Editor {
+            val put = HashMap<String, Any?>(); val gone = HashSet<String>()
+            override fun putString(k: String, v: String?) = apply { put[k] = v }
+            override fun putStringSet(k: String, v: MutableSet<String>?) = apply { put[k] = v }
+            override fun putInt(k: String, v: Int) = apply { put[k] = v }
+            override fun putLong(k: String, v: Long) = apply { put[k] = v }
+            override fun putFloat(k: String, v: Float) = apply { put[k] = v }
+            override fun putBoolean(k: String, v: Boolean) = apply { put[k] = v }
+            override fun remove(k: String) = apply { gone.add(k) }
+            override fun clear() = apply { gone.addAll(m.keys) }
+            override fun commit(): Boolean { apply(); return true }
+            override fun apply() { for (k in gone) m.remove(k); m.putAll(put) }
+        }
+    }
+
+    private fun fails(p: Prefs) = p.getInt(ScreenSwap.FAILS_PREF, 0)
+    private fun saved(p: Prefs) = p.getBoolean(ScreenSwap.PREF, false)
+    /** a new start of DS Forever (a new process): nothing latched */
+    private fun newStart(p: Prefs): String? { ScreenSwap.reset(); return ScreenSwap.latch(p) }
+
+    /**
+     * the bottom screen never settles (it keeps closing, never comes, display 0 keeps the controller, a crash, a force stop): two such
+     * starts in a row and the third is Off - this run's choice and the saved one (the row shows Off; On again only by hand)
+     */
+    @Test fun twoUnsettledStartsThenTheNextStartIsOff() {
+        assertEquals(2, ScreenSwap.MAX_FAILS)
+        assertTrue(ScreenSwap.keepOn(0)); assertTrue(ScreenSwap.keepOn(1)); assertFalse(ScreenSwap.keepOn(2)); assertFalse(ScreenSwap.keepOn(5))
+        val p = Prefs(hashMapOf(ScreenSwap.PREF to true))
+        assertNull(newStart(p)); assertEquals(true, ScreenSwap.inUseNow)
+        assertTrue(ScreenSwap.tryStart(p)); assertEquals(1, fails(p))               // counted before the activity comes
+        assertNull(newStart(p)); assertEquals(true, ScreenSwap.inUseNow)
+        assertTrue(ScreenSwap.tryStart(p)); assertEquals(2, fails(p))
+        val why = newStart(p)
+        assertEquals("the bottom screen did not settle on the last 2 starts", why)
+        assertEquals(false, ScreenSwap.inUseNow)
+        assertFalse("saved Off too", saved(p))
+        assertEquals("the count starts over", 0, fails(p))
+        assertEquals(why, ScreenSwap.fellBack)
+        assertTrue(ScreenSwap.line(saved(p)).endsWith("; turned Off: $why"))
+        // and Off stays Off: no count, nothing turns it On again
+        assertNull(newStart(p)); assertEquals(false, ScreenSwap.inUseNow)
+    }
+
+    /** a bottom screen that settled clears the count: a device where Swap screens works never falls back */
+    @Test fun aSettledStartClearsTheCount() {
+        val p = Prefs(hashMapOf(ScreenSwap.PREF to true))
+        repeat(5) {
+            assertNull(newStart(p)); assertEquals(true, ScreenSwap.inUseNow)
+            assertTrue(ScreenSwap.tryStart(p)); assertEquals(1, fails(p))
+            ScreenSwap.settled(p); assertEquals(0, fails(p))
+        }
+        // one unsettled start between settled ones changes nothing either
+        newStart(p); ScreenSwap.tryStart(p); newStart(p); ScreenSwap.tryStart(p); ScreenSwap.settled(p)
+        assertNull(newStart(p)); assertEquals(true, ScreenSwap.inUseNow)
+    }
+
+    /** the process lived on (no new latch): the ask itself says no at the count, and counts nothing */
+    @Test fun theAskSaysNoAtTheCount() {
+        val p = Prefs(hashMapOf(ScreenSwap.PREF to true, ScreenSwap.FAILS_PREF to 2))
+        assertFalse(ScreenSwap.tryStart(p))
+        assertEquals(2, fails(p))
+    }
+
+    /** off() saves Off at once; the run keeps the arrangement it latched (the Settings row then shows Restart) */
+    @Test fun offSavesOffThisRunKeepsItsArrangement() {
+        val p = Prefs(hashMapOf(ScreenSwap.PREF to true, ScreenSwap.FAILS_PREF to 1))
+        ScreenSwap.take(true)
+        ScreenSwap.off(p, "the bottom screen kept closing")
+        assertFalse(saved(p)); assertEquals(0, fails(p))
+        assertEquals(true, ScreenSwap.inUseNow)
+        assertEquals(ScreenSwap.Pending.RESTART, ScreenSwap.pending(saved(p), ScreenSwap.inUseNow, false, true))
+        assertEquals("the bottom screen kept closing", ScreenSwap.fellBack)
+    }
+
+    /** a choice by hand gives On its tries again (the count is removed with it) */
+    @Test fun aChoiceByHandStartsTheCountOver() {
+        val p = Prefs(hashMapOf(ScreenSwap.PREF to false, ScreenSwap.FAILS_PREF to 2))
+        try {
+            com.jrees.wowcompanion.Settings.startForTest(p)
+            com.jrees.wowcompanion.Settings.swapScreens = true
+            assertTrue(saved(p)); assertFalse(p.contains(ScreenSwap.FAILS_PREF))
+            assertNull(newStart(p)); assertEquals(true, ScreenSwap.inUseNow)
+        } finally { com.jrees.wowcompanion.Settings.startForTest(null) }
+    }
+
+    /** how DsForeverScreen wires it: the count, the settle, the give-up's Off, the restart only with no game, the by-hand extra */
+    @Test fun theLauncherCountsSettlesAndFallsBack() {
+        val open = source().substringAfter("private fun openActivity(").substringBefore("internal fun adopt(")
+        val first = open.substringAfter("if (!tried) {").substringBefore("val now = ")
+        assertTrue("counted once per DS Forever", first.contains("tried = true") && first.contains("if (!ScreenSwap.tryStart(context)) {"))
+        assertTrue(first.contains("swapOff(") && first.contains("return null"))
+        assertTrue("before the activity is started", open.indexOf("ScreenSwap.tryStart(context)") < open.indexOf("context.startActivity("))
+        val guard = open.substringAfter("if (!startAllowed(starts, now)) {").substringBefore("starts.add(now)")
+        assertTrue("the start guard's give-up turns it Off", guard.contains("swapOff(\"the bottom screen kept closing\")"))
+        val adopt = source().substringAfter("internal fun adopt(").substringBefore("private fun settleCheck(")
+        assertTrue(adopt.contains("main.postDelayed({ settleCheck(w, a) }, ScreenSwap.SETTLE_MS)"))
+        val settle = source().substringAfter("private fun settleCheck(").substringBefore("private fun swapOff(")
+        assertTrue("the same activity, still up", settle.contains("shown !== w || w.closed || w.activity !== a"))
+        assertTrue("never while display 0 holds the keys", settle.indexOf("if (a.holdsKeys)") in 0 until settle.indexOf("ScreenSwap.settled(context)"))
+        val off = source().substringAfter("private fun swapOff(").substringBefore("internal fun released(")
+        assertTrue(off.contains("ScreenSwap.off(context, why)"))
+        assertTrue("restarts only the launcher's own, with no game", off.contains("if (!gameOn && ScreenSwap.restart === restartHook) restartHook()"))
+        assertTrue(source().substringAfter("private fun restartForSwap()").substringBefore("a.finishAndRemoveTask()").contains("if (gameOn)"))
+        val top = source().substringAfter("fun moveToTop(activity: Activity, gameRunning: Boolean): Boolean {")
+        val extra = top.substringBefore("val target = gameTarget(activity, d)")
+        assertTrue("the extra before this run latches", extra.contains("getBooleanExtra(ScreenSwap.EXTRA_OFF, false) == true"))
+        assertTrue("and gone, so a restart's copy never repeats it", extra.contains("activity.intent.removeExtra(ScreenSwap.EXTRA_OFF)"))
+        assertTrue(extra.contains("ScreenSwap.off(activity,"))
+        assertEquals("dsforever_swap_off", ScreenSwap.EXTRA_OFF)
+        assertEquals(DsForeverScreen.START_GUARD_MS, ScreenSwap.SETTLE_MS)
+    }
+
+    /**
+     * #384 review: a run counts ONCE, however many launcher activities (DsForeverScreen) it has - a move to the other screen can
+     * rebuild the launcher's activity (Home + reopen from the other screen's icon), and each new one counted again: a couple within
+     * 15 s turned a working Swap screens Off mid-run. The Restart ([ScreenSwap.take]) is a new run and counts again
+     */
+    @Test fun aRunIsCountedOnce() {
+        val p = Prefs(hashMapOf(ScreenSwap.PREF to true))
+        assertNull(newStart(p))
+        repeat(4) { assertTrue("the same run asks again: allowed, not counted", ScreenSwap.tryStart(p)) }
+        assertEquals(1, fails(p))
+        assertNull("the next start is still On", newStart(p)); assertEquals(true, ScreenSwap.inUseNow)
+        repeat(3) { assertTrue(ScreenSwap.tryStart(p)) }
+        assertEquals(2, fails(p))
+        // the Restart: a new run in the same process; MAX_FAILS unsettled already, so its ask says no (the caller turns it Off)
+        ScreenSwap.take(true)
+        assertFalse(ScreenSwap.tryStart(p)); assertEquals(2, fails(p))
+        // a settled run, then a Restart: counted anew from 0
+        ScreenSwap.settled(p); ScreenSwap.take(true)
+        assertTrue(ScreenSwap.tryStart(p)); assertTrue(ScreenSwap.tryStart(p)); assertEquals(1, fails(p))
+    }
+
+    /**
+     * #384 review: the Restart (the Settings button and the recovery's own) hands over. Android destroys the old launcher activity
+     * only after the new one is up, so the new one's begin() found the old DS Forever still current and made none, and the old one's
+     * end() / stop then left neither screen with DS Forever. Now the old one stops and lets go first, and the launcher activity's
+     * pause / stop / leave hint hide only its own
+     */
+    @Test fun theRestartHandsOver() {
+        val restart = source().substringAfter("private fun restartForSwap()").substringBefore("a.finishAndRemoveTask()")
+        assertTrue(restart.contains("stop()") && restart.contains("if (current === this) current = null"))
+        assertTrue("never while the game runs, before anything stops", restart.indexOf("if (gameOn)") in 0 until restart.indexOf("stop()"))
+        assertTrue(source().contains("fun hideFor(activity: Activity) { current?.takeIf { it.context === activity }?.hide() }"))
+        assertTrue(source().substringAfter("fun begin(activity: Activity) {").substringBefore("fun end(").contains("if (current == null)"))
+        val main = listOf("../app/src/main/java/app/gamenative/MainActivity.kt", "app/src/main/java/app/gamenative/MainActivity.kt")
+            .map { java.io.File(it) }.first { it.canRead() }.readText()
+        assertFalse("no unbound hide left", main.contains("DsForeverScreen.current?.hide()"))
+        for (cb in listOf("override fun onUserLeaveHint()", "override fun onStop()", "override fun onPause()"))
+            assertTrue(cb, main.substringAfter(cb).substringBefore("super.").contains("DsForeverScreen.hideFor(this)"))
     }
 
     // ---- the problem report

@@ -26,17 +26,26 @@ import com.jrees.wowcompanion.HostShell
  * Only [DsForeverScreen] opens it ([DsForeverScreen.adopt]: one that was not asked for closes at once) and closes it (the launcher's
  * pause / stop, as the Presentation). An activity is a focused APP on its display even when its window takes no focus, and a display
  * whose top activity has no focusable window would hold the controller's keys, so the game's task is brought back to the front each
- * time this one resumes and when typing ends ([DsForeverScreen.gameToFront]); typing brings this task to the front so the keyboard
- * gets the focus.
+ * time this one resumes, each time display 0 takes the keys back (onTopResumedActivityChanged) and when typing ends
+ * ([DsForeverScreen.gameToFront]); typing brings this task to the front so the keyboard gets the focus.
+ *
+ * #383 / #384 (a player on a Retroid Pocket Nova + Dual Screen Add-on, 1.0.32): "the bottom screen's activity restarts itself until the
+ * guard gives up" - the move was AppTask.moveToFront, which put display 0's home screen over this activity and Android closed it; now
+ * [DsForeverScreen.toFront]. "Input ANRs once the loop is stopped" (Input dispatching timed out, no focused window) - display 0 kept the
+ * keys with no ask left to give them back: the once-a-second gap is DsForeverScreen's now (this field was new in every activity) and an
+ * ask inside it runs after it while [holdsKeys].
  */
 class CompanionScreenActivity : Activity(), HostShell {
     private var host: CompanionHost? = null
     private var screen: DsForeverScreen? = null
     private var board: com.jrees.wowcompanion.stream.SignInBoard? = null
-    private var frontAt = Long.MIN_VALUE / 2
+    /** Android's top resumed activity: display 0 is the top display and this its activity (the controller's keys come here) */
+    private var topResumed = false
 
     private val typer by lazy { BottomTyping(this, { window }) { on -> typingChanged(on) } }
     val typing: Boolean get() = screen != null && typer.typing
+    /** #383 / #384: display 0's keys are held here with no text field to take them (the input ANR's state) */
+    val holdsKeys: Boolean get() = host != null && topResumed && !typer.typing && !isFinishing
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(null)                     // never a saved state: DsForeverScreen opens a fresh one each time
@@ -73,9 +82,15 @@ class CompanionScreenActivity : Activity(), HostShell {
 
     override fun onResume() {
         super.onResume()
-        // the game's display the top one again (its keys), unless a text field types here; at most once a second (no ping-pong)
-        val now = SystemClock.elapsedRealtime()
-        if (host != null && !typer.typing && now - frontAt >= 1_000L) { frontAt = now; screen?.gameToFront("bottom screen resumed") }
+        // the game's display the top one again (its keys), unless a text field types here (DsForeverScreen: once a second, no ping-pong)
+        if (host != null && !typer.typing) screen?.gameToFront("bottom screen resumed")
+    }
+
+    /** #383 / #384: display 0 took the keys (anything brought it to the top): back to the game, unless a text field types here */
+    override fun onTopResumedActivityChanged(isTopResumedActivity: Boolean) {
+        super.onTopResumedActivityChanged(isTopResumedActivity)
+        topResumed = isTopResumedActivity
+        if (holdsKeys) screen?.gameToFront("bottom screen took the keys")
     }
 
     override fun onStop() {
@@ -97,9 +112,8 @@ class CompanionScreenActivity : Activity(), HostShell {
 
     /** typing on: this task to the front (display 0 takes the focus, the keyboard comes); off: the game's task back to the front */
     private fun typingChanged(on: Boolean) {
-        if (on) runCatching {
-            getSystemService(android.app.ActivityManager::class.java)?.appTasks?.firstOrNull { it.taskInfo.taskId == taskId }?.moveToFront()
-        }.onFailure { Log.w(DsForeverScreen.TAG, "bottom screen to the front: ${it.message}") }
+        // #383 / #384: DsForeverScreen.toFront, not AppTask.moveToFront (that one puts display 0's home screen in front first)
+        if (on) DsForeverScreen.toFront(this, taskId, "bottom screen to the front")
         else screen?.gameToFront("typing done")
     }
 

@@ -223,18 +223,19 @@ class MainActivity : ComponentActivity() {
     // DS Forever (the user 2026-10-09: "When I press the Home button on my controller, sometimes the top window minimizes but the
     // bottom window stays"): the bottom screen goes with the top on EVERY way out, not only onPause. With two screens Android can keep
     // this activity resumed while another display has the focus, and a Home press then reaches us as onUserLeaveHint / onStop only
+    // #384 review: hideFor = this activity's own DS Forever only (after a Restart the new activity's is up before this one stops)
     override fun onUserLeaveHint() {
-        com.jrees.wowcompanion.fork.DsForeverScreen.current?.hide()
+        com.jrees.wowcompanion.fork.DsForeverScreen.hideFor(this)
         super.onUserLeaveHint()
     }
 
     override fun onStop() {
-        com.jrees.wowcompanion.fork.DsForeverScreen.current?.hide()
+        com.jrees.wowcompanion.fork.DsForeverScreen.hideFor(this)
         super.onStop()
     }
 
     override fun onPause() {
-        com.jrees.wowcompanion.fork.DsForeverScreen.current?.hide()
+        com.jrees.wowcompanion.fork.DsForeverScreen.hideFor(this)
         PluviaApp.isActivityInForeground = false
         if (hasReadyGameLifecycleState("pause")) {
             when {
