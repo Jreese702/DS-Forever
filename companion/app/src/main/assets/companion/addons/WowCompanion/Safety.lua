@@ -105,8 +105,15 @@ local ESC = {
     ['"'] = '\\"', ['\\'] = '\\\\', ['\b'] = '\\b',
     ['\f'] = '\\f', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t',
 }
+-- k5 (issue #358, 2026-11-15: "Character names: Cyrillic characters are displayed as empty squares instead of actual letters.
+-- Quest descriptions: Some Cyrillic characters are replaced with question marks"): the class was [%c"\\]. %c is the C library's
+-- iscntrl, which follows the game's code page, not ASCII: MEASURED (Lua 5.1 under code page 1252) it also matches 0x81 0x8D 0x8F
+-- 0x90 0x9D 0xAD (code page 1251: 0x98 0xAD), all of them UTF-8 continuation bytes. Such a byte went out as \u0081 and the like: the
+-- letter's lead byte was left alone (the app read it as U+FFFD, a "?") and the byte became a C1 control (an empty square). Russian
+-- U+0410 U+041D U+0401 U+042D U+0441 U+044F U+044D, and accented i / A / I in Spanish and French names. Now only the ASCII controls (0-31, 127), spelled out; on an
+-- ASCII-only document the output is byte for byte what it was.
 local function escStr(s)
-    s = s:gsub('[%c"\\]', function(c) return ESC[c] or string.format('\\u%04x', c:byte()) end)
+    s = s:gsub('[%z\1-\31\127"\\]', function(c) return ESC[c] or string.format('\\u%04x', c:byte()) end)
     return '"' .. s .. '"'
 end
 
@@ -226,7 +233,7 @@ WC.encode = encode
 --
 -- It is also the early warning for a patch that moves the secrecy map: `specimen` turns
 -- "plain", or `S` / `encode` turn false.
-WC.KERNEL = "k4"
+WC.KERNEL = "k5"
 
 local function blocked(f)
     return not pcall(f)
@@ -243,6 +250,18 @@ end
 -- client threw on it, and the line that was meant to report the fact never left.
 local function selfTest(r)
     r.hasIsSecret = type(issecretvalue) == "function"
+
+    -- k5 (#358): how many bytes 128-255 this client's %c calls a control (0 = ASCII rules; 1252 = 6), and whether a UTF-8 letter
+    -- (Cyrillic A, 0xD0 0x90) leaves the encoder whole. Numbers and booleans only
+    local okc, cc = pcall(function()
+        local n = 0
+        for i = 128, 255 do if string.char(i):find("%c") then n = n + 1 end end
+        return n
+    end)
+    r.cc = okc and cc or nil
+    local oku, u = pcall(encode, "\208\144")
+    r.utf8 = (oku and u == '"\208\144"') and true or false
+    r.sink = (type(WC.SINKV) == "string" and isPlain(WC.SINKV)) and WC.SINKV or nil
 
     -- what this client's %d does at 2^31 (see the fast path): "ok", "wraps" or "throws"
     local okf, s31 = pcall(string.format, "%d", 2147483648)

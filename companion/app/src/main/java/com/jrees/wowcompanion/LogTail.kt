@@ -41,6 +41,8 @@ class LogTail(
     private val handler = Handler(thread.looper)
     private var offset = 0L
     private var carry = ""                       // partial trailing line between reads
+    /** #358: the first bytes of a UTF-8 letter the last read cut short (Utf8Cut), joined to the next read before it is decoded */
+    private var byteCarry = Utf8Cut.EMPTY
     /** issue #231 (diagnostics only): bytes fed since start, and when the last read brought any */
     @Volatile private var bytesFed = 0L
     @Volatile private var lastFedAt = 0L
@@ -103,7 +105,7 @@ class LogTail(
         val next = LogFollow.pick(path, mt)
         if (next == path) return
         path = next
-        offset = 0; carry = ""; docs.reset()
+        offset = 0; carry = ""; byteCarry = Utf8Cut.EMPTY; docs.reset()
         reclaimedTo = -1; reclaimAt = 0
         onStatus("following the game's log: ${if (next == DEFAULT_PATH) "GameNative" else "WoW Forever"}")
         android.util.Log.i("WCLOG", "following $next (mtimes $mt)")
@@ -243,7 +245,7 @@ class LogTail(
         if (!f.exists()) { onStatus("waiting for game"); return }
         val len = f.length()
         if (len < offset) {                       // client relaunched: file truncated
-            offset = 0; carry = ""; docs.reset()
+            offset = 0; carry = ""; byteCarry = Utf8Cut.EMPTY; docs.reset()
             onStatus("client restarted, resyncing")
         }
         if (len == offset) return
@@ -310,7 +312,7 @@ class LogTail(
             // there would throw away the offset that is about to become correct again.
             val since = android.os.SystemClock.elapsedRealtime() - reclaimAt
             if (reclaimAt != 0L && since < 5_000L) return
-            offset = 0; carry = ""; docs.reset()
+            offset = 0; carry = ""; byteCarry = Utf8Cut.EMPTY; docs.reset()
             // NOT 0: the next read's apparent size (a sparse ~90 MB right after a reclaim) would reclaim AGAIN at once, and again
             // after every 5 s guard - measured 2026-09-30 20:33-20:35, the log read as 0 bytes for 2.5 min and the app saw nothing.
             // "Unknown": the next read takes the length it sees, and the next reclaim needs RECLAIM_BYTES of real growth
@@ -322,7 +324,7 @@ class LogTail(
         // the baseline comes from the first length the game has written to again (0 = still the emptied file: keep waiting)
         if (reclaimedTo < 0 && len > 0) reclaimedTo = len
         // The shell skipped a backlog bigger than MAX_READ: resume from where it really began.
-        if (start != offset) { offset = start; carry = "" }
+        if (start != offset) { offset = start; carry = ""; byteCarry = Utf8Cut.EMPTY }
         if (buf.isEmpty()) return
         offset += buf.size
         feed(buf, buf.size)
@@ -334,7 +336,10 @@ class LogTail(
         // A read straddling the edge of a reclaimed hole starts with NULs, and a NUL run has no
         // newline, so without this it would glue itself onto the first real line.
         bytesFed += n; lastFedAt = android.os.SystemClock.elapsedRealtime()
-        var s = String(buf, 0, n, Charsets.UTF_8)
+        // #358: a letter cut by the read's end waits for its other bytes (decoded apart, both halves were U+FFFD: "?")
+        val (decoded, keep) = Utf8Cut.join(byteCarry, buf, n)
+        byteCarry = keep
+        var s = decoded
         if (s.indexOf('\u0000') >= 0) s = s.replace("\u0000", "")       // only a read at a reclaimed hole has NULs
         val text = if (carry.isEmpty()) s else carry + s
         val lines = text.split('\n')

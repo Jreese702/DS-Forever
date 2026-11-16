@@ -51,15 +51,43 @@ local function raw(s)
     return ok
 end
 
+-- sink1 (issue #358, 2026-11-15: "Some Cyrillic characters are replaced with question marks (?)"): a long document was cut every
+-- MAX_LINE BYTES, so a letter of two or more bytes (Cyrillic, accents, CJK) could be split between two lines; the app decodes each
+-- line's bytes on their own, and both halves became U+FFFD ("?"). A cut now steps back off UTF-8 continuation bytes (0x80-0xBF), so
+-- every part holds whole letters (a part is at most 3 bytes shorter). An ASCII document is cut exactly where it was.
+WC.SINKV = "sink1"
+-- the parts of [json], each at most MAX_LINE bytes, never ending inside a UTF-8 letter
+function WC.cuts(json, max)
+    max = max or MAX_LINE
+    local parts, at, len = {}, 1, #json
+    while at <= len do
+        local e = math.min(at + max - 1, len)
+        if e < len then
+            local back = e
+            while back > at do
+                local nb = json:byte(back + 1)
+                if not nb or nb < 128 or nb >= 192 then break end
+                back = back - 1
+            end
+            local nb = json:byte(back + 1)
+            if nb and (nb < 128 or nb >= 192) then e = back end    -- a run of continuation bytes longer than a part: cut as before
+        end
+        parts[#parts + 1] = json:sub(at, e)
+        at = e + 1
+    end
+    return parts
+end
+
 -- Send one JSON document, fragmenting if it exceeds the safe line length.
 -- Fragments carry part=i/n and the reader reassembles before parsing.
 function WC.send(json)
     if #json <= MAX_LINE then
         return raw("1/1|" .. json)
     end
-    local n = math.ceil(#json / MAX_LINE)
+    local parts = WC.cuts(json, MAX_LINE)
+    local n = #parts
     for i = 1, n do
-        raw(i .. "/" .. n .. "|" .. json:sub((i - 1) * MAX_LINE + 1, i * MAX_LINE))
+        raw(i .. "/" .. n .. "|" .. parts[i])
     end
     return true
 end
