@@ -10,11 +10,16 @@ package com.jrees.wowcompanion
  * char-more (the user, 2026-11-13: "if unequip is the only thing in this more menu then what even is the point? we should have options
  * there like unequip, replace and enchant"): three rows, Unequip, Replace ([WornReplace]: the bags' pieces for THIS slot) and Enchant
  * (the kits that fit it, [KitFit]); a row that cannot be used is drawn disabled with its terse reason.
+ *
+ * bags-gear1 THE EQUIP SLIDE-OUT (the user, 2026-11-16: "X opens a slide-out of ARMOR (item icons) next to the item. It lists the options
+ * for that slot, plus a blank entry that unequips."; "The Y text menu stays for enchant and bind (use-effect items)."): Replace and
+ * Unequip leave the Y menu for X's slide-out ([SlideOut]; its blank keeps Unequip's rule, [rows]). Y is [yRows]: Enchant, and Bind to
+ * a Button when the piece has a use effect; Enchant alone = Y opens the kit list at once ([kitsAtOnce]).
  */
 object WornMore {
     const val UNEQUIP = "Unequip"
-    const val REPLACE = "Replace"
     const val ENCHANT = "Enchant"
+    const val BIND = "Bind to a Button"
     /** main hand, off hand, ranged / relic: the only pieces tried in a fight */
     val WEAPONS = setOf(16, 17, 18)
 
@@ -22,10 +27,11 @@ object WornMore {
     data class Row(val label: String, val usable: Boolean, val why: String? = null)
 
     /**
-     * The rows for worn [slot]. Empty = no menu at all (ammo, slot 0, or not a worn slot). [freeGeneral] = the bags document's free
-     * slots in plain bags (null = not known yet: the add-on judges); [routed] = the add-on's arm cell and Bags' bmvq row are there.
+     * UNEQUIP'S RULE for worn [slot] (uneq1; bags-gear1: the slide-out's blank): one row. Empty = none at all (ammo, slot 0, or not a worn
+     * slot). [freeGeneral] = the bags document's free slots in plain bags (null = not known yet: the add-on judges); [routed] = the
+     * add-on's arm cell and Bags' bmvq row are there.
      */
-    fun rows(slot: Int, worn: Boolean, combat: Boolean, freeGeneral: Int?, routed: Boolean, fits: Fits? = null): List<Row> {
+    fun rows(slot: Int, worn: Boolean, combat: Boolean, freeGeneral: Int?, routed: Boolean): List<Row> {
         if (slot !in 1..19) return emptyList()
         val why = when {
             !worn -> "Empty"
@@ -34,36 +40,38 @@ object WornMore {
             !routed -> "Unavailable"
             else -> null
         }
-        val unequip = Row(UNEQUIP, why == null, why)
-        if (fits == null) return listOf(unequip)
-        // char-more: Replace = a bag piece for this slot (armour refused in a fight, as the game does; a weapon only where the game's own
-        // equip lands it in this slot); Enchant = a kit that may go on it (the ones the game said no to for this piece left out)
-        val rw = when {
-            !worn -> "Empty"
-            combat && slot !in WEAPONS -> "In combat"
-            fits.replace <= 0 -> "Nothing fits"
-            combat && fits.replaceNow <= 0 -> "In combat"
-            !fits.replaceRouted -> "Unavailable"
-            else -> null
-        }
-        val ew = when {
-            !worn -> "Empty"
-            fits.window -> "Window open"            // char-more2: the kit's own cell would sell / deposit / attach it now
-            fits.kits <= 0 -> "No kits"
-            fits.kitsFit <= 0 -> "Nothing fits"
-            else -> null
-        }
-        return listOf(unequip, Row(REPLACE, rw == null, rw), Row(ENCHANT, ew == null, ew))
+        return listOf(Row(UNEQUIP, why == null, why))
     }
 
     /**
-     * char-more: what the Replace and Enchant rows can offer for the slot: [replace] bag pieces that fit it, [replaceNow] of them that can
-     * go on now (all of them out of a fight), [replaceRouted] = the pad has the cells to equip one; [kits] = the bags' kits at all,
-     * [kitsFit] = those not known to be refused by this piece ([KitFit]); char-more2: [window] = a game window (vendor, bank, mail,
-     * trade, auction house) makes a bag cell's tap sell / deposit / attach, so no kit is used then
+     * bags-gear1 THE Y MENU of worn [slot] ("The Y text menu stays for enchant and bind (use-effect items)."): Enchant (the kits that
+     * may go on it: [kits] in the bags at all, [kitsFit] of them not refused by this piece, [KitFit]; char-more2: [window] = a game window
+     * would sell / deposit / attach the kit), then Bind to a Button when the piece has a use effect ([use]; out of a fight, [bindRouted]
+     * = the add-on's Bind arm and Bags' bmvq row are there). Empty = no menu (nothing worn, ammo, not a worn slot).
      */
-    data class Fits(val replace: Int, val replaceNow: Int, val replaceRouted: Boolean, val kits: Int, val kitsFit: Int,
-                    val window: Boolean = false)
+    fun yRows(slot: Int, worn: Boolean, use: Boolean, combat: Boolean, kits: Int, kitsFit: Int, window: Boolean,
+              bindRouted: Boolean): List<Row> {
+        if (slot !in 1..19 || !worn) return emptyList()
+        val ew = when {
+            window -> "Window open"
+            kits <= 0 -> "No kits"
+            kitsFit <= 0 -> "Nothing fits"
+            else -> null
+        }
+        val out = arrayListOf(Row(ENCHANT, ew == null, ew))
+        if (use) {
+            val bw = when {
+                combat -> "In combat"
+                !bindRouted -> "Unavailable"
+                else -> null
+            }
+            out.add(Row(BIND, bw == null, bw))
+        }
+        return out
+    }
+
+    /** G8 (the user on a one-row menu: "what even is the point?"): Enchant alone = Y opens the kit list at once, the button says Enchant */
+    fun kitsAtOnce(rows: List<Row>): Boolean = rows.size == 1 && rows[0].label == ENCHANT
 
     enum class Act { NONE, CHOOSE, BACK }
 
@@ -99,12 +107,13 @@ object WornMore {
      *  of [now]; the add-on re-sends its last ack in every eqs part, so anything else is an old answer and is never said */
     fun fresh(sentAt: Long, now: Long): Boolean = sentAt > 0L && now >= sentAt && now - sentAt <= ANSWER_MS
 
-    /** the add-on's answer (eqs ack `unequip`) as the room's one line; null = done, nothing to say (the doll shows it) */
+    /** the add-on's answer (eqs ack `unequip`; bags-gear1: `bind`) as the room's one line; null = done, nothing to say (the doll shows it) */
     fun say(ok: Boolean, why: String): String? = if (ok) null else when (why) {
         "full" -> "Bags full"
         "combat" -> "In combat"
         "empty" -> "Empty"
-        "settle", "cursor", "late" -> "Try again"
+        "settle", "cursor", "late", "busy", "lost" -> "Try again"
+        "unsupported", "no item", "bad", "notready" -> "Unavailable"
         else -> "The game refused it"
     }
 }

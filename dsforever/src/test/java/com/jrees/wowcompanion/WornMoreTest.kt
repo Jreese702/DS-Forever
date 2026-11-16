@@ -78,51 +78,67 @@ class WornMoreTest {
 
     @Test fun everyWordHasSpanishAndFrench() {
         val words = listOf("Unequip", "More", "Bags full", "In combat", "Empty", "Unavailable", "Try again", "The game refused it",
-            "The game did not take it", "Choose", "Back", "Replace", "Enchant", "Nothing fits", "No kits", "Equip")
+            "The game did not take it", "Choose", "Back", "Enchant", "Nothing fits", "No kits", "Equip",
+            // bags-gear1: the slide-out's and the new Y menu's words
+            "Swap", "Bind to a Button", "Window open", "Stat changes")
         for (lang in listOf("es", "fr")) {
             val plain = JSONObject(java.io.File("../companion/app/src/main/assets/companion/i18n/$lang.json").readText()).getJSONObject("plain")
             for (w in words) assertTrue("$lang: $w", plain.has(w))
         }
     }
 
-    // char-more (the user, 2026-11-13: "we should have options there like unequip, replace and enchant")
-    private fun fits(replace: Int = 2, now: Int = replace, routed: Boolean = true, kits: Int = 1, fit: Int = kits) =
-        WornMore.Fits(replace, now, routed, kits, fit)
+    // bags-gear1 (the user, 2026-11-16: "The Y text menu stays for enchant and bind (use-effect items)."): Y = Enchant, + Bind for an
+    // on-use piece; Unequip and Replace are X's slide-out now (SlideOutTest)
+    private fun y(slot: Int = 5, worn: Boolean = true, use: Boolean = false, combat: Boolean = false, kits: Int = 1, fit: Int = kits,
+                  window: Boolean = false, bind: Boolean = true) = WornMore.yRows(slot, worn, use, combat, kits, fit, window, bind)
 
-    @Test fun threeRowsUnequipReplaceEnchant() {
-        val rows = WornMore.rows(5, worn = true, combat = false, freeGeneral = 3, routed = true, fits = fits())
-        assertEquals(listOf("Unequip", "Replace", "Enchant"), rows.map { it.label })
-        assertTrue(rows.all { it.usable && it.why == null })
-        // the old call (no fits) keeps the one row
-        assertEquals(listOf("Unequip"), WornMore.rows(5, worn = true, combat = false, freeGeneral = 3, routed = true).map { it.label })
+    @Test fun yIsEnchantAloneForAPlainPiece() {
+        val rows = y()
+        assertEquals(listOf("Enchant"), rows.map { it.label })
+        assertTrue(rows[0].usable)
+        assertTrue("Enchant alone: Y opens the kit list at once", WornMore.kitsAtOnce(rows))
     }
 
-    @Test fun replaceAndEnchantSayWhyNot() {
-        fun row(i: Int, slot: Int = 5, combat: Boolean = false, f: WornMore.Fits = fits(), free: Int? = 3) =
-            WornMore.rows(slot, worn = true, combat = combat, freeGeneral = free, routed = true, fits = f)[i]
-        assertEquals("Nothing fits", row(1, f = fits(replace = 0)).why)
-        assertEquals("In combat", row(1, combat = true).why)                              // armour in a fight, as the game
-        assertEquals("In combat", row(1, slot = 17, combat = true, f = fits(now = 0)).why)  // a weapon only the drag can place
-        assertTrue(row(1, slot = 16, combat = true, f = fits(now = 1)).usable)              // a weapon the game's own equip lands there
-        assertEquals("Unavailable", row(1, f = fits(routed = false)).why)
-        assertTrue("bags full does not stop a swap", row(1, free = 0).usable)
-        assertEquals("No kits", row(2, f = fits(kits = 0)).why)
-        assertEquals("Nothing fits", row(2, f = fits(kits = 3, fit = 0)).why)
-        val empty = WornMore.rows(5, worn = false, combat = false, freeGeneral = 3, routed = true, fits = fits())
-        assertTrue(empty.none { it.usable }); assertTrue(empty.all { it.why == "Empty" })
+    @Test fun yAddsBindForAPieceWithAUseEffect() {
+        val rows = y(slot = 13, use = true)
+        assertEquals(listOf("Enchant", "Bind to a Button"), rows.map { it.label })
+        assertTrue(rows.all { it.usable })
+        assertFalse("two rows: the menu", WornMore.kitsAtOnce(rows))
     }
 
-    @Test fun downReachesEveryRow() {
-        assertEquals(2 to WornMore.Act.NONE, WornMore.key(1, 3, "PADDDOWN"))
-        assertEquals(2 to WornMore.Act.NONE, WornMore.key(2, 3, "PADDDOWN"))
+    @Test fun noYMenuOnAnEmptySlotOrAmmo() {
+        assertTrue(y(worn = false).isEmpty())
+        assertTrue(y(slot = 0).isEmpty())
+        assertTrue(y(slot = 20).isEmpty())
+        assertFalse(WornMore.kitsAtOnce(emptyList()))
     }
 
-    /** char-more2 (review): a vendor / bank / mail open: a kit's cell would sell / deposit it, so Enchant says why */
-    @Test fun enchantWithAGameWindowOpen() {
-        val r = WornMore.rows(5, worn = true, combat = false, freeGeneral = 3, routed = true,
-            fits = WornMore.Fits(1, 1, true, kits = 2, kitsFit = 2, window = true))
-        assertEquals(WornMore.ENCHANT, r[2].label); assertFalse(r[2].usable); assertEquals("Window open", r[2].why)
-        assertTrue("Replace stays (the drag)", r[1].usable)
+    @Test fun yRowsSayWhyNot() {
+        assertEquals("No kits", y(kits = 0)[0].why)
+        assertEquals("Nothing fits", y(kits = 3, fit = 0)[0].why)
+        assertEquals("Window open", y(window = true)[0].why)               // char-more2: the kit's cell would sell / deposit it
+        assertTrue("a fight does not stop a kit (the game judges)", y(combat = true)[0].usable)
+        assertEquals("In combat", y(use = true, combat = true)[1].why)       // the Bind box never opens in a fight
+        assertEquals("Unavailable", y(use = true, bind = false)[1].why)      // an older add-on: no Bind arm
+        assertTrue("a disabled Enchant still leaves a menu", WornMore.kitsAtOnce(y(kits = 0)))
+    }
+
+    @Test fun theBindAnswersInTerseWords() {
+        assertEquals("Try again", WornMore.say(false, "busy"))
+        assertEquals("Try again", WornMore.say(false, "lost"))
+        assertEquals("Unavailable", WornMore.say(false, "unsupported"))
+        assertEquals("In combat", WornMore.say(false, "combat"))
+        assertNull(WornMore.say(true, ""))
+    }
+
+    @Test fun theModelReadsTheC19Cells() {
+        val m = CharacterModel()
+        m.update(JSONObject().put("type", "character").put("c", JSONObject().put("eqs", JSONObject()
+            .put("row", "auracancel").put("wb", 9).put("ba", 10).put("bb", 11).put("box", true).put("ask", false))))
+        val p = m.setPad!!
+        assertEquals(9, p.bindArm); assertEquals(10, p.boxA); assertEquals(11, p.boxB); assertTrue(p.box)
+        m.update(JSONObject().put("type", "character").put("c", JSONObject().put("eqs", JSONObject().put("row", "auracancel").put("ask", false))))
+        assertNull(m.setPad!!.bindArm); assertFalse(m.setPad!!.box)                  // an older add-on: no Bind, no box
     }
 
     @Test fun theModelReadsTheC16ListCell() {

@@ -17,10 +17,16 @@ import org.json.JSONObject
  *  - char-more2 (review): while a game window changes what a right-click does ([window]: the bags document's `ctx`, a vendor / bank /
  *    mail / trade / auction house) the secure cell would SELL / deposit / attach the piece, so every piece goes on by the drag then
  *    (its id checked by the add-on, nothing sold), and none in a fight.
+ *  - bags-gear1 THE AMMO SLOT (the equip slide-out, the class-only ruling; the user, 2026-11-16: "It lists the options for that slot"):
+ *    slot 0's pieces are the bags' ammo (`INVTYPE_AMMO`, one per kind, the kind worn now left out), each by its bag slot's secure cell
+ *    (the game's right-click equips ammo), in a fight as well (the game decides); never by the drag (there is no worn-slot column for
+ *    it), so not while a game window would sell it.
  */
 object WornReplace {
     const val MAIN = 16
     const val OFF = 17
+    const val AMMO = 0
+    const val AMMO_LOC = "INVTYPE_AMMO"
 
     /** one bag piece for the slot: where it is, its bags row, and whether the game's own equip lands it in this slot (the secure cell) */
     data class Pick(val bag: Int, val slot: Int, val row: JSONObject, val exact: Boolean)
@@ -29,8 +35,10 @@ object WornReplace {
     fun slotsOf(loc: String?, dualWield: Boolean): List<Int> =
         if (BagsCompare.twoHand(loc)) listOf(MAIN) else BagsCompare.slotsFor(loc, dualWield)
 
-    /** the bags' pieces for worn [slot] ([items] = (bag, slot, bags row)); best item level first, then the bags' order */
-    fun picks(items: List<Triple<Int, Int, JSONObject>>, slot: Int, dualWield: Boolean): List<Pick> {
+    /** the bags' pieces for worn [slot] ([items] = (bag, slot, bags row)); best item level first, then the bags' order.
+     *  bags-gear1: slot 0 (ammo) = the bags' ammo, one stack per kind, [wornAmmo] (the kind worn now) left out */
+    fun picks(items: List<Triple<Int, Int, JSONObject>>, slot: Int, dualWield: Boolean, wornAmmo: Int? = null): List<Pick> {
+        if (slot == AMMO) return ammo(items, wornAmmo)
         if (slot !in 1..19) return emptyList()
         val out = ArrayList<Pick>()
         for ((bag, s, row) in items) {
@@ -42,9 +50,23 @@ object WornReplace {
         return out.sortedWith(compareByDescending<Pick> { it.row.optInt("ilvl", 0) }.thenBy { it.bag }.thenBy { it.slot })
     }
 
-    /** can [p] go into worn [slot] now: out of a fight any; in a fight a weapon slot's piece the game's own equip lands there */
+    /** bags-gear1: the ammo slot's pieces: the bags' ammo stacks, the first stack of each kind, the kind worn now left out */
+    private fun ammo(items: List<Triple<Int, Int, JSONObject>>, wornAmmo: Int?): List<Pick> {
+        val seen = HashSet<Int>()
+        val out = ArrayList<Pick>()
+        for ((bag, s, row) in items) {
+            if (row.optString("equip") != AMMO_LOC || row.optBoolean("nouse")) continue
+            val id = row.optInt("id", 0)
+            if (id <= 0 || id == wornAmmo || !seen.add(id)) continue
+            out.add(Pick(bag, s, row, true))
+        }
+        return out.sortedWith(compareByDescending<Pick> { it.row.optInt("ilvl", 0) }.thenBy { it.bag }.thenBy { it.slot })
+    }
+
+    /** can [p] go into worn [slot] now: out of a fight any; in a fight a weapon slot's piece the game's own equip lands there
+     *  (bags-gear1: and ammo, by its secure cell: the game decides) */
     fun now(p: Pick, slot: Int, combat: Boolean, window: Boolean = false): Boolean =
-        !combat || (!window && slot in WornMore.WEAPONS && p.exact)
+        !combat || (!window && (slot in WornMore.WEAPONS || slot == AMMO) && p.exact)
 
     /** the terse reason a listed piece can't go on now, or null */
     fun why(p: Pick, slot: Int, combat: Boolean, window: Boolean = false): String? = if (now(p, slot, combat, window)) null else "In combat"
@@ -57,6 +79,7 @@ object WornReplace {
         val rows = pad?.optJSONObject("rows") ?: return null
         if (!now(p, slot, combat, window)) return null
         if (p.exact && !window) return if (rows.has("bag${p.bag}") && p.slot >= 1) listOf("bag${p.bag}" to p.slot - 1) else null
+        if (slot == AMMO) return null                       // bags-gear1: ammo only by its secure cell (no worn-slot column)
         if (!rows.has("bmvq")) return null
         val pick = BagsMoveRoute.cells(pad, p.bag, p.slot) ?: return null
         return pick + ("bmvq" to slot - 1)

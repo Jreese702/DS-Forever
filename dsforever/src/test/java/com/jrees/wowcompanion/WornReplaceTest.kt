@@ -83,6 +83,33 @@ class WornReplaceTest {
         assertNull(WornReplace.cells(pad, chest, 5, combat = true))
     }
 
+    // bags-gear1 (the equip slide-out; the user, 2026-11-16: "It lists the options for that slot"): the ammo slot = the bags' ammo
+    private val ammoBags = listOf(
+        Triple(0, 1, row("INVTYPE_AMMO", 5).put("id", 2512)),
+        Triple(0, 2, row("INVTYPE_AMMO", 5).put("id", 2512)),            // a second stack of the same arrows
+        Triple(0, 3, row("INVTYPE_AMMO", 15).put("id", 2515)),
+        Triple(1, 1, row("INVTYPE_AMMO", 25).put("id", 3030)),           // the kind worn now
+        Triple(1, 2, row("INVTYPE_AMMO", 30, nouse = true).put("id", 11285)),
+        Triple(1, 3, row("INVTYPE_RANGED").put("id", 2504)),
+    )
+
+    @Test fun theAmmoSlotsPiecesAreTheBagsAmmo() {
+        val p = WornReplace.picks(ammoBags, WornReplace.AMMO, false, wornAmmo = 3030)
+        assertEquals("one stack per kind, the worn kind and the unusable left out, best first",
+            listOf(0 to 3, 0 to 1), p.map { it.bag to it.slot })
+        assertTrue("by the secure cell", p.all { it.exact })
+        assertEquals(3, WornReplace.picks(ammoBags, WornReplace.AMMO, false).size)       // nothing worn: every kind
+        assertTrue("no ammo for the ranged slot", WornReplace.picks(ammoBags, 18, false).none { it.row.optString("equip") == "INVTYPE_AMMO" })
+    }
+
+    @Test fun ammoGoesOnByItsSecureCellEvenInAFight() {
+        val arrows = WornReplace.picks(ammoBags, WornReplace.AMMO, false, wornAmmo = 3030).first()     // bag 0 slot 3
+        assertEquals(listOf("bag0" to 2), WornReplace.cells(pad, arrows, WornReplace.AMMO, combat = false))
+        assertEquals("the game decides in a fight", listOf("bag0" to 2), WornReplace.cells(pad, arrows, WornReplace.AMMO, combat = true))
+        assertNull(WornReplace.why(arrows, WornReplace.AMMO, combat = true))
+        assertNull("a window open: no drag for ammo, nothing", WornReplace.cells(pad, arrows, WornReplace.AMMO, combat = false, window = true))
+    }
+
     @Test fun kitFits() {
         val k1 = JSONObject().put("kit", true).put("name", "Light Armor Kit").put("kfy", ",5,10,").put("kfn", ",6,")
         val k2 = JSONObject().put("kit", true).put("name", "Sharpening Stone").put("kfn", ",5,10,")
