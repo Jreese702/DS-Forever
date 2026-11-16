@@ -2109,7 +2109,10 @@ end
 --   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
 --   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 --   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-WC.live = { V = "ag11", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+-- ag12 (the user, 2026-11-16: "Sometimes while playing the friendly name plates will turn themselves back on even though they are
+-- turned off in the menu."): Friendly plates Off stays off for the session; only the player's own change through the game's own
+-- controls stands (A.friendsOffStep below).
+WC.live = { V = "ag12", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -2604,6 +2607,7 @@ do
         A.FRIENDS_ON = on
         A.friendWas = nil                       -- re-decided on the next step
         A.offDeclined = {}                      -- ag11: a new choice: the player's own on (declined) is re-decided too
+        A.offSeen, A.offPlayer, A.offAt = {}, {}, {}   -- ag12: the next reading is the game's value again (a press before it: re-decided)
     end
     -- ag11 OFF HIDES THEM (the user on build 1462: "friendly name plates still show with the setting off"). THE CAUSE: ag9 / ag10's Off
     -- only stopped US turning the friendly plates on; it never turned off what was already on in the player's game - the game's own
@@ -2615,8 +2619,53 @@ do
     -- (before On's own rule runs), and at log out (a disabled add-on or a closed game leaves the game as it was). A change of the
     -- player's own in the game meanwhile (an option of ours back on) stands for this session: dropped from the record, not fought.
     -- An option the client does not have reads nil and is skipped. Fights keep the 0 (nothing is put back at PLAYER_REGEN_DISABLED).
+    -- ag12 OFF STAYS OFF (the user, 2026-11-16: "Sometimes while playing the friendly name plates will turn themselves back on even
+    -- though they are turned off in the menu."). THE CAUSE: ag11 took EVERY 1 found where ours was 0 for the player's own choice and
+    -- gave Off up for the rest of the session (offDeclined + the record dropped), but it could not tell who wrote that 1, and the game
+    -- writes it too: the Off step ran from the first frame of the load (this file's ticker), before the game had put the character's
+    -- own saved options in place (C_CVar.AreCVarsLoaded; the game's own UI waits for VARIABLES_LOADED before it trusts a CVar), so the
+    -- game's load wrote the player's stored 1 over our 0 and ag11 read that as "the player turned it back on" - friendly plates for the
+    -- whole session, on the logins where the load landed after our first step (a /reload finds the options loaded: so "sometimes").
+    -- Any other writer that is not the player (another add-on, a game write we do not know of) did the same. NOW:
+    --   - the Off step waits for the game's options: VARIABLES_LOADED seen (PLAYER_ENTERING_WORLD + CV_GRACE_S without it) and
+    --     C_CVar.AreCVarsLoaded() not false; nothing is read as the player's value or written before;
+    --   - the PLAYER's own change is the one the game's own controls make: the Interface options' Friendly Players / Friendly NPCs
+    --     boxes and their Defaults, and the game's FRIENDNAMEPLATES / ALLNAMEPLATES keys all go through the game's Settings object
+    --     (setting:SetValue -> its value-changed event, Blizzard_Settings_Shared); Off listens to that event (read only,
+    --     Settings.SetOnValueChangedCallback, the CallbackRegistry's taint barrier) and only that marks a change as the player's. A key
+    --     press counts: it is the game's own control, the game prints its own message for it (NAMEPLATES_MESSAGE_FRIENDLY_ON / _OFF),
+    --     and a second press turns them off again. Their on stands until the next load (as ag11); their off hands it back to Off;
+    --   - any other change (none of ours, no such event) is NOT the player's: Off puts the 0 back out of a fight (at most once each
+    --     OFF_MIN_S, so a writer that keeps fighting is not raced) and the record keeps the game's value to give back at log out;
+    --   - a client without the Settings event keeps ag11's reading (a change after ours is the player's), after the same wait.
     A.NP_FRIEND_OFF = { "nameplateShowFriendlyPlayers", "nameplateShowFriends", "nameplateShowFriendlyNPCs" }
+    -- the game's Settings variables (case matters there, not in a CVar name) -> our option names
+    A.NP_FRIEND_SETTINGS = { nameplateShowFriendlyPlayers = "nameplateShowFriendlyPlayers", nameplateShowFriends = "nameplateShowFriends",
+                             nameplateShowFriendlyNpcs = "nameplateShowFriendlyNPCs", nameplateShowFriendlyNPCs = "nameplateShowFriendlyNPCs" }
+    A.CV_GRACE_S = 3
+    A.OFF_MIN_S = 1
     A.offDeclined = {}
+    A.offSeen = {}                              -- ag12: each option as Off last read / wrote it (nil: the next reading is the game's)
+    A.offPlayer = {}                            -- ag12: the game's own controls changed it since the last step
+    A.offAt = {}                                -- ag12: Off's last write of each
+    A.offFix = 0                                -- ag12: 0s put back after one of ours (a change that was not the player's; the probe line)
+    function A.cvReady()
+        if not (A.varsLoaded or (A.pewAt ~= nil and now() - A.pewAt >= A.CV_GRACE_S)) then return false end
+        if type(C_CVar) == "table" and type(C_CVar.AreCVarsLoaded) == "function" and pv(C_CVar.AreCVarsLoaded) == false then return false end
+        return true
+    end
+    function A.offHookTry()
+        if A.offHook ~= nil then return A.offHook end
+        if type(Settings) ~= "table" or type(Settings.SetOnValueChangedCallback) ~= "function" then return false end
+        local n = 0
+        for variable, name in pairs(A.NP_FRIEND_SETTINGS) do
+            -- a flag only: the step reads the option itself, out of a fight
+            local ok = pcall(Settings.SetOnValueChangedCallback, variable, function() A.offPlayer[name] = true end, A)
+            if ok then n = n + 1 end
+        end
+        A.offHook = n > 0
+        return A.offHook
+    end
     function A.friendsOffRestore(why)
         local saved = type(WowCompanionDB) == "table" and WowCompanionDB.npFriendsOff or nil
         if type(saved) ~= "table" then return end
@@ -2632,30 +2681,60 @@ do
         end
         WowCompanionDB.npFriendsOff = next(left) ~= nil and { orig = left } or nil
         A.offWhy = why
+        A.offSeen, A.offAt = {}, {}             -- ag12: the values given back are the game's: the next reading is the game's value
     end
     function A.friendsOffStep()
         if pv(InCombatLockdown) == true then return end
+        -- ag12: not before the game's own saved options are in place (its load would write over our 0)
+        if not A.cvReady() then A.offWait = true; return end
+        A.offWait = nil
+        local hooked = A.offHookTry() == true
         local saved = WowCompanionDB.npFriendsOff
         if type(saved) == "table" and type(saved.orig) ~= "table" then saved.orig = {} end
+        local t = now()
         for _, name in ipairs(A.NP_FRIEND_OFF) do
             local cur = cvGet(name)
+            local player = A.offPlayer[name] == true
+            A.offPlayer[name] = nil
             if cur ~= nil then
-                local mine = type(saved) == "table" and saved.orig[name] ~= nil
-                if tonumber(cur) ~= 0 then
-                    if mine then
-                        -- ours was 0: the player turned it back on in the game; their choice stands (this session)
-                        saved.orig[name] = nil
-                        A.offDeclined[name] = true
-                    elseif not A.offDeclined[name] then
-                        saved = saved or { orig = {} }
-                        saved.orig[name] = cur
-                        WowCompanionDB.npFriendsOff = saved
-                        cvSet(name, "0")
+                local seen = A.offSeen[name]
+                local on = tonumber(cur) ~= 0
+                if seen == nil or tonumber(seen) ~= tonumber(cur) then
+                    -- a change that is not a write of ours, or the first reading of this load: the game's value now
+                    if player or (not hooked and seen ~= nil) then
+                        -- the player's own (the game's options / key; without the Settings event, ag11's reading): an on stands
+                        -- for this session, an off gives the option back to Off
+                        A.offDeclined[name] = on or nil
+                    end
+                    local keep = seen == nil and not on and type(saved) == "table" and saved.orig[name] ~= nil
+                    if not keep then
+                        -- keep: a first reading of a 0 of ours left from before (a refused give-back); else the record holds the
+                        -- game's value exactly while Off holds a 0 over it
+                        if on and not A.offDeclined[name] then
+                            saved = saved or { orig = {} }
+                            saved.orig[name] = cur
+                            WowCompanionDB.npFriendsOff = saved
+                        elseif type(saved) == "table" then
+                            saved.orig[name] = nil
+                        end
                     end
                 end
+                if on and not A.offDeclined[name] and not (A.offAt[name] ~= nil and t - A.offAt[name] < A.OFF_MIN_S) then
+                    if A.offAt[name] ~= nil then A.offFix = A.offFix + 1 end    -- a put-back after a 0 of ours
+                    A.offAt[name] = t
+                    cvSet(name, "0")
+                end
+                A.offSeen[name] = cvGet(name) or cur
             end
         end
         if type(saved) == "table" and next(saved.orig) == nil then WowCompanionDB.npFriendsOff = nil end
+    end
+    -- ag12: the probe line's word on Off (plain values only)
+    function A.npfDiag()
+        local dec = 0
+        for _ in pairs(A.offDeclined) do dec = dec + 1 end
+        return { on = A.FRIENDS_ON == true, hook = A.offHook == true, wait = A.offWait == true or nil, fix = A.offFix,
+                 dec = dec > 0 and dec or nil, pl = cvGet("nameplateShowFriendlyPlayers"), npc = cvGet("nameplateShowFriendlyNPCs") }
     end
     function A.friendsStep()
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
@@ -2934,6 +3013,7 @@ do
                        still = A.sent.still, rej = A.lastReject, err = A.err,
                        picks = (A.pick[1] and 1 or 0) + (A.pick[2] and 1 or 0), win = A.win and A.win.op or nil,
                        np = A.np.state, npv = npGet(), npo = A.npSaved() and A.npSaved().orig or nil, icons = A.iconN or 0,
+                       npf = A.npfDiag(),
                        route = A.routing(), pin = type(WC.routeWp) == "table" and WC.routeWp.active == true,
                        rings = type(WC.rings) == "table" and { v = WC.rings.V, on = WC.rings.wanted(), n = WC.rings.n,
                                                                    why = WC.rings.whyLine and WC.rings.whyLine() or nil } or nil,
@@ -2944,7 +3024,7 @@ do
 
     -- ---------------------------------------------------------------- events and the ticker
     local ev = CreateFrame("Frame")
-    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "SPELLS_CHANGED",
+    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "SPELLS_CHANGED",
                          "ITEM_DATA_LOAD_RESULT", "CVAR_UPDATE", "ENCOUNTER_START", "ENCOUNTER_END", "UNIT_SPELLCAST_SENT",
                          "PLAYER_ENTER_COMBAT", "START_AUTOREPEAT_SPELL", "UNIT_THREAT_LIST_UPDATE", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED" }) do
         pcall(function() ev:RegisterEvent(e) end)
@@ -2957,7 +3037,10 @@ do
             elseif e == "PLAYER_REGEN_DISABLED" then
                 -- a fight: the player's plate values back now (no friendly-target change sticks through a fight); re-decided after it
                 pcall(A.friendsRestore, "combat"); A.friendWas = nil
+            elseif e == "VARIABLES_LOADED" then
+                A.varsLoaded = true                 -- ag12: the game's own saved options are in place (Off may read / write them)
             elseif e == "PLAYER_ENTERING_WORLD" then
+                A.pewAt = A.pewAt or now()          -- ag12: Off's fallback wait when VARIABLES_LOADED never comes
                 -- a value of ours left from before (a crash): back to the player's once the route is not running (npStep's grace)
                 if A.npSaved() then A.np.offSince = now() - A.NP_OFF_S + 3 end
                 -- a reload / login: every slot cleared, q from 1 (the contract)

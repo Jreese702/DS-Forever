@@ -42,6 +42,205 @@ def rig_with(opts=None):
     return rig
 
 
+# the game's Settings object, as Blizzard_Settings_Shared builds it for these options: the Interface options' boxes, their Defaults and
+# the FRIENDNAMEPLATES / ALLNAMEPLATES keys all call setting:SetValue(v) (the CVar written, then the value-changed event, synchronous)
+SETTINGS_STUB = r'''
+CVW = {}
+CV = CV or {}
+CVLOADED = false
+C_CVar.AreCVarsLoaded = function() return CVLOADED end
+C_CVar.SetCVar = function(k, v) CVW[#CVW + 1] = k .. "=" .. tostring(v); CV[k] = tostring(v) end
+function UnitIsFriend(a, b) return true end
+SETCB = {}
+SETCB_N = 0
+Settings = { SetOnValueChangedCallback = function(variable, fn, owner)
+    SETCB[variable] = SETCB[variable] or {}
+    SETCB[variable][#SETCB[variable] + 1] = { fn = fn, owner = owner }
+    SETCB_N = SETCB_N + 1
+    return { Unregister = function() end }
+end }
+local CVAR_OF = { nameplateShowFriendlyPlayers = "nameplateShowFriendlyPlayers", nameplateShowFriendlyNpcs = "nameplateShowFriendlyNPCs",
+                  nameplateShowEnemies = "nameplateShowEnemies" }
+-- the player's own press / click: the game's own write (not an add-on write: CVW untouched), then the event
+function PLAYER_SETS(variable, value)
+    CV[CVAR_OF[variable]] = value and "1" or "0"
+    for _, cb in ipairs(SETCB[variable] or {}) do cb.fn(cb.owner, {}, value) end
+end
+-- a Settings NotifyUpdate / a re-shown panel: the event with the value as it stands, nothing written
+function SETTINGS_NOTIFY(variable)
+    local v = CV[CVAR_OF[variable]]
+    for _, cb in ipairs(SETCB[variable] or {}) do cb.fn(cb.owner, {}, v ~= nil and tonumber(v) ~= 0) end
+end
+'''
+
+
+def ag12(chk):
+    """ag12 OFF STAYS OFF (the user, 2026-11-16: "Sometimes while playing the friendly name plates will turn themselves back on even
+    though they are turned off in the menu.")"""
+    rig = rig_with()
+    L, G = rig.L, rig.G
+    WC = G.WowCompanion
+    A = WC.live
+    hub = WC.hub
+    liveEv = [r for r in rig._frames() if r.events and r.events.NAME_PLATE_UNIT_ADDED and r.scripts][0]
+
+    def fire(e):
+        liveEv.scripts.OnEvent(liveEv, e, None)
+
+    def steps(k=3, dt=0.2):
+        for _ in range(k):
+            G.GAME.t = G.GAME.t + dt
+            A.friendsStep()
+
+    def plate_writes():
+        return [w for w in G.CVW.values() if w.startswith("nameplateShowFriend")]
+
+    L.execute(SETTINGS_STUB)
+    L.execute('CV.nameplateShowFriendlyPlayers, CV.nameplateShowFriendlyNPCs, CV.nameplateNotSelectedAlpha = "0", "0", "0.5"; '
+              'CV.nameplateShowFriends = nil; WowCompanionDB.npFriends = nil; WowCompanionDB.npFriendsOff = nil')
+    G.UNITS = L.table_from({})
+    G.TARGET = None
+    G.GAME.fight = False
+    chk("ag12: the version tag; the live layer listens for VARIABLES_LOADED", A.V == "ag12" and liveEv.events.VARIABLES_LOADED is not None)
+
+    # THE LOGIN RACE (the cause): the ticker runs from the first frame of the load, before the game has put the character's saved
+    # options in place; on ag11 the Off step zeroed the pre-load value, the game's load then wrote the stored 1 over it, and ag11 took
+    # that 1 for the player's own: friendly plates for the whole session
+    steps(5)
+    chk("ag12: during the load (options not loaded, no VARIABLES_LOADED): nothing read as the player's, nothing written",
+        len(G.CVW) == 0 and G.WowCompanionDB.npFriendsOff is None and A.offWait is True and A.npfDiag().wait is True)
+    # the game's load: the character's own stored options (on), then the event
+    L.execute('CV.nameplateShowFriendlyPlayers, CV.nameplateShowFriendlyNPCs = "1", "1"')
+    steps(2)
+    chk("ag12: ... the stored options in, VARIABLES_LOADED not yet: still nothing", len(G.CVW) == 0)
+    L.execute('CVLOADED = true')
+    fire("VARIABLES_LOADED")
+    steps(3)
+    chk("ag12: ... loaded: off, the stored values kept to give back (%s)" % ",".join(G.CVW.values()),
+        G.CV.nameplateShowFriendlyPlayers == "0" and G.CV.nameplateShowFriendlyNPCs == "0" and len(G.CVW) == 2
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyPlayers == "1"
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyNPCs == "1" and A.offWait is None)
+    chk("ag12: the game's Settings event heard for both options (read only: a callback, our table as its owner)",
+        A.offHook is True and G.SETCB.nameplateShowFriendlyPlayers is not None and G.SETCB.nameplateShowFriendlyNpcs is not None
+        and L.eval("SETCB.nameplateShowFriendlyPlayers[1].owner == WowCompanion.live"))
+    chk("ag12: ... no Settings value written by the add-on (only the two option writes)",
+        all(w.split("=")[0] in ("nameplateShowFriendlyPlayers", "nameplateShowFriendlyNPCs") for w in G.CVW.values()))
+
+    # A CHANGE THAT IS NOT THE PLAYER'S (a game write, another add-on): ag11 gave Off up for the session; now the 0 goes back
+    L.execute('CV.nameplateShowFriendlyPlayers = "1"')
+    n = len(G.CVW)
+    steps(3, dt=0.5)
+    chk("ag12: a change not the player's (no Settings event): off again (within OFF_MIN_S of our last write), the record unchanged",
+        G.CV.nameplateShowFriendlyPlayers == "0" and len(G.CVW) == n + 1 and A.offDeclined.nameplateShowFriendlyPlayers is None
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyPlayers == "1" and A.offFix == 1)
+    # the same in a fight: nothing written there (the options are refused), off at the first moment after it
+    G.GAME.fight = True
+    fire("PLAYER_REGEN_DISABLED")
+    L.execute('CV.nameplateShowFriendlyNPCs = "1"')
+    n = len(G.CVW)
+    steps(5)
+    chk("ag12: ... in a fight: nothing written", len(G.CVW) == n and G.CV.nameplateShowFriendlyNPCs == "1")
+    G.GAME.fight = False
+    steps(3, dt=0.5)
+    chk("ag12: ... out of it: off again", G.CV.nameplateShowFriendlyNPCs == "0" and len(G.CVW) == n + 1 and A.offFix == 2)
+    # a writer that keeps putting it back is not raced: at most one write a second
+    w0 = len(plate_writes())
+    for _ in range(15):
+        L.execute('CV.nameplateShowFriendlyPlayers = "1"')
+        steps(1)
+    k = len(plate_writes()) - w0
+    chk("ag12: a writer fighting every step (3 s): at most one write a second (%d)" % k, 1 <= k <= 4, k)
+    steps(10)
+    chk("ag12: ... and off once it stops", G.CV.nameplateShowFriendlyPlayers == "0")
+
+    # THE PLAYER'S OWN: the game's key / Interface options box -> their on stands for the session
+    n = len(G.CVW)
+    L.execute('PLAYER_SETS("nameplateShowFriendlyPlayers", true)')
+    steps(10, dt=0.5)
+    chk("ag12: the player's own on (the game's key / options box): it stands, not fought, nothing of ours to give back",
+        G.CV.nameplateShowFriendlyPlayers == "1" and len(G.CVW) == n and A.offDeclined.nameplateShowFriendlyPlayers is True
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyPlayers is None
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyNPCs == "1" and A.npfDiag().dec == 1)
+    # the NPC option's Settings variable is spelled nameplateShowFriendlyNpcs (case matters in Lua, not in a CVar name)
+    L.execute('PLAYER_SETS("nameplateShowFriendlyNpcs", true)')
+    steps(3)
+    chk("ag12: ... the NPC box (variable nameplateShowFriendlyNpcs) too", G.CV.nameplateShowFriendlyNPCs == "1" and len(G.CVW) == n
+        and A.offDeclined.nameplateShowFriendlyNPCs is True and G.WowCompanionDB.npFriendsOff is None)
+    # the player's off: the option is Off's again, a later change that is not theirs is put back
+    L.execute('PLAYER_SETS("nameplateShowFriendlyPlayers", false)')
+    steps(3)
+    chk("ag12: the player's own off: nothing written, the option Off's again", G.CV.nameplateShowFriendlyPlayers == "0"
+        and len(G.CVW) == n and A.offDeclined.nameplateShowFriendlyPlayers is None)
+    L.execute('CV.nameplateShowFriendlyPlayers = "1"')
+    steps(3)
+    chk("ag12: ... then a change not theirs: off again, that value kept to give back",
+        G.CV.nameplateShowFriendlyPlayers == "0" and len(G.CVW) == n + 1
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyPlayers == "1")
+    # the event with nothing changed (a NotifyUpdate, the panel re-read): nothing decided
+    n = len(G.CVW)
+    L.execute('SETTINGS_NOTIFY("nameplateShowFriendlyPlayers")')
+    steps(3)
+    chk("ag12: the Settings event with no change: nothing decided, the record kept",
+        G.CV.nameplateShowFriendlyPlayers == "0" and len(G.CVW) == n and A.offDeclined.nameplateShowFriendlyPlayers is None
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyPlayers == "1")
+    # the player's press in a fight: decided out of it, as theirs
+    G.GAME.fight = True
+    L.execute('PLAYER_SETS("nameplateShowFriendlyPlayers", true)')
+    steps(3)
+    G.GAME.fight = False
+    steps(3)
+    chk("ag12: the player's press in a fight: theirs out of it (stands)", G.CV.nameplateShowFriendlyPlayers == "1"
+        and len(G.CVW) == n and A.offDeclined.nameplateShowFriendlyPlayers is True)
+    # the probe line carries Off's word
+    A.diagAt = -100
+    A.diag()
+    d = A.lastDiag.npf
+    chk("ag12: the probe line: npf (switch, hook, put-backs, the player's ons, the options now)",
+        d is not None and d.on is False and d.hook is True and d.fix == A.offFix and d.dec == 2 and d.pl == "1" and d.npc == "1")
+    fire("PLAYER_LOGOUT")
+    chk("ag12: log out: nothing written over the player's own ons", G.CV.nameplateShowFriendlyPlayers == "1"
+        and G.CV.nameplateShowFriendlyNPCs == "1" and G.WowCompanionDB.npFriendsOff is None)
+
+    # ON MODE: a press there, then the switch Off: a new choice re-decides (ag11), the stale press does not count
+    L.execute('CV.nameplateShowFriendlyPlayers, CV.nameplateShowFriendlyNPCs = "0", "0"')
+    A.offDeclined = L.table_from({})
+    chk("ag12: NPF_ON reaches Trail", hub.swTap(39) is True and A.FRIENDS_ON is True)
+    steps(2)
+    L.execute('PLAYER_SETS("nameplateShowFriendlyPlayers", true)')
+    steps(2)
+    chk("ag12: NPF_OFF reaches Trail", hub.swTap(38) is True and A.FRIENDS_ON is False)
+    n = len(G.CVW)
+    steps(3)
+    chk("ag12: ... Off after On: the player's on from On's time re-decided: off, their value kept",
+        G.CV.nameplateShowFriendlyPlayers == "0" and len(G.CVW) == n + 1
+        and G.WowCompanionDB.npFriendsOff.orig.nameplateShowFriendlyPlayers == "1")
+
+    # VARIABLES_LOADED never comes (a client without it): PLAYER_ENTERING_WORLD + CV_GRACE_S
+    rig = rig_with()
+    L, G = rig.L, rig.G
+    A = G.WowCompanion.live
+    liveEv = [r for r in rig._frames() if r.events and r.events.NAME_PLATE_UNIT_ADDED and r.scripts][0]
+    L.execute(SETTINGS_STUB)
+    L.execute('CVLOADED = true; CV.nameplateShowFriendlyPlayers, CV.nameplateShowFriendlyNPCs = "1", "1"; '
+              'WowCompanionDB.npFriends = nil; WowCompanionDB.npFriendsOff = nil')
+    G.GAME.fight = False
+    A.friendsStep()
+    chk("ag12: no VARIABLES_LOADED, no PLAYER_ENTERING_WORLD: nothing written", len(G.CVW) == 0)
+    liveEv.scripts.OnEvent(liveEv, "PLAYER_ENTERING_WORLD", None)
+    G.GAME.t = G.GAME.t + A.CV_GRACE_S - 0.5
+    A.friendsStep()
+    chk("ag12: ... PLAYER_ENTERING_WORLD, under its wait: nothing", len(G.CVW) == 0)
+    G.GAME.t = G.GAME.t + 1
+    A.friendsStep()
+    chk("ag12: ... after it: off", G.CV.nameplateShowFriendlyPlayers == "0" and G.CV.nameplateShowFriendlyNPCs == "0")
+    # the options report not loaded (a client that says so later): wait again
+    L.execute('CVLOADED = false; CV.nameplateShowFriendlyPlayers = "1"')
+    n = len(G.CVW)
+    G.GAME.t = G.GAME.t + 2
+    A.friendsStep()
+    chk("ag12: C_CVar.AreCVarsLoaded() false: nothing written", len(G.CVW) == n)
+
+
 def main():
     fails = []
 
@@ -68,7 +267,7 @@ function UnitIsFriend(a, b) return true end
     A.friendsStep()
     rig.run(0.5)
     chk("ag9: a friendly target switches no plate option on (%d writes)" % len(G.CVW), len(G.CVW) == 0, list(G.CVW.values()))
-    chk("ag9: the version tag", A.V == "ag11" and G.WowCompanion.rings.V == "at9", (A.V, G.WowCompanion.rings.V))
+    chk("ag9: the version tag", A.V == "ag12" and G.WowCompanion.rings.V == "at9", (A.V, G.WowCompanion.rings.V))
     # a player who had them on from ag2..ag8: our values in place, the saved originals
     L.execute('''
 CV.nameplateShowFriendlyPlayers, CV.nameplateShowFriendlyNPCs, CV.nameplateNotSelectedAlpha = "1", "1", "0"
@@ -399,7 +598,7 @@ function UnitIsFriend(a, b) return true end
     G.GAME.fight = False
     hub = WC.hub
     chk("ag10: the version tag; the switch Off by default, said in the doc (npf false, not chosen)",
-        A.V == "ag11" and A.FRIENDS_ON is False and hub.npfFlag() is False and A.friendsChosen is None, (A.V, A.FRIENDS_ON))
+        A.V == "ag12" and A.FRIENDS_ON is False and hub.npfFlag() is False and A.friendsChosen is None, (A.V, A.FRIENDS_ON))
     A.friendsStep()
     chk("ag10: Off: a friendly target writes nothing (ag9)", len(G.CVW) == 0, list(G.CVW.values()))
     chk("hub52: NPF_ON (column 39) reaches Trail", hub.swTap(39) is True and A.FRIENDS_ON is True and hub.npfFlag() is True
@@ -455,6 +654,8 @@ WowCompanionDB.npFriends = nil; WowCompanionDB.npFriendsOff = nil
 ''')
     G.UNITS = L.table_from({"target": L.table_from({"name": "Guard Thomas", "lv": 10, "hp": 1, "hpMax": 1})})
     G.TARGET = "target"
+    # ag12: the game's own saved options in place first; this stub game has no Settings object: ag11's reading of a change (below)
+    fire("VARIABLES_LOADED")
     G.GAME.fight = True
     A.friendsStep()
     chk("ag11: Off, the game's own friendly plates on, in a fight: nothing written", len(G.CVW) == 0, list(G.CVW.values()))
@@ -525,6 +726,9 @@ WowCompanionDB.npFriends = nil; WowCompanionDB.npFriendsOff = nil
     n = len(G.CVW)
     steps()
     chk("ag11: already off in the game: nothing written or recorded", len(G.CVW) == n and G.WowCompanionDB.npFriendsOff is None)
+    chk("ag12: without the game's Settings object: no hook (ag11's reading kept)", A.offHook is not True)
+
+    ag12(chk)
 
     # ------------------------------------------------------------------ uf22: the bar on top, the glyph sizes
     rig = rig_with({"plate": True})
