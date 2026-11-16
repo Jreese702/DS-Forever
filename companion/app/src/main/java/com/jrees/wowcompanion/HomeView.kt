@@ -389,6 +389,8 @@ class HomeView(
             }
             // closing (classOpen false while it still shows): the slide-back draws the last radial (the chord is already let go)
             if (lent(castView)) castView.drawClassRadial(c, width.toFloat(), height.toFloat(), closing = !classOpen)
+            // q62: a pet spell's autocast shine marches (and a toggle waits for the game's answer) while the wheel shows
+            if (classOpen && lent(castView) && castView.classRadialLive()) postInvalidateDelayed(33L)
         }
         override fun onTouchEvent(e: MotionEvent): Boolean {
             if (classHint != null) return true

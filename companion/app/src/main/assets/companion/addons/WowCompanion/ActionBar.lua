@@ -30,6 +30,11 @@
 -- pet/spell flyout ... is still shown ~0.5 s after our class wheel lets go and no room holds the pad, make it visible (alpha 1) and close
 -- it once more the safe way"): a game wheel WE drew at alpha 0 that outlives the chord is drawn again and shut once more by our secure
 -- cell (the app's tap, document "gamewheel"). At "b-game-wheel-shut2".
+-- pa1 THE PET'S AUTOCAST ON THE CLASS WHEEL (the user, 2026-11-16: "hunters need to be able to visually see when their pets abilities
+-- are active like growl, and a way to turn it off from those radials"): a pet spell's entry on the right class radial (hud.ca.r) also
+-- says whether it MAY cast itself (`aa`, GetPetActionInfo's autoCastAllowed) beside `auto` (it does), both read through S() now; the
+-- app draws the game's autocast look (corners; the marching gold border while on) and X on the pointed spell taps its classr autocast
+-- cell (16-23, unchanged: the game's own /petautocasttoggle on our button), as a long press does.
 -- The CAST room's data. Two feeds live here:
 --
 --  1. LEGACY keyboard-slot rows (`slots`, slots 1-12 + their ACTIONBUTTONn keys). Unchanged; the app
@@ -675,7 +680,9 @@ local function petEntries(tokens)
                 e.n = realStr(name)
                 e.id = num(r[8])
                 e.i = num(tex) or iconOfPath(tex)
-                e.auto = bit01(r[7] == true)
+                e.auto = bit01(SV(r[7]) == true)
+                -- pa1: it MAY cast itself (the game's autoCastAllowed): the app draws the game's autocast corners, plain while off
+                e.aa = bit01(SV(r[6]) == true)
             end
             list[#list + 1] = e
         end

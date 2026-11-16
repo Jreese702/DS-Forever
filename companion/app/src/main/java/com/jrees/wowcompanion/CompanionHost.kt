@@ -2298,6 +2298,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     else -> if (tradOpen() && targetRadial.opener == "portrait") targetRadial.fill(msg) else mapView.onPlayerMenuDoc(msg)
                 }
             }
+            // Quests q62 (the user, 2026-11-16: "hunters need to be able to visually see when their pets abilities are active like growl,
+            // and a way to turn it off from those radials"): the pet's autocast, live; an open wheel follows it (only a current one: a
+            // replay may be another character's pet)
+            "petauto" -> if (current) {
+                PetAuto.onDoc(msg, SystemClock.uptimeMillis())
+                if (tradOpen()) targetRadial.invalidate()
+            }
             // PARTY MODE (PARTY_BUILD.md 1, 4.7): the roster and the settings may be SHOWN from a replay; a box press and an answer only
             // count when current; nothing is ever tapped because of a replayed document
             "party" -> PartyModel.parseParty(msg)?.let { partyDoc(it, current) }

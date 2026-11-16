@@ -15,10 +15,14 @@ class PlayerMenu(private val runs: Boolean = RUNS, private val greyKeys: Set<Str
     /** [confirm]: the question the game would ask first (asked here, on the bottom screen); [secure]: a column of the add-on's secure
      *  row [secureRow] (Quests' "pfocus": Set / Clear Focus; Party mode's "party": Set Focus on that member, q49 `scr`) instead of an
      *  [id]; [app]: what the APP does after the entry runs (q49 `ap`: "whisper" = the Chat room, replying to the member);
-     *  [icon]: a game icon's fileDataID for the entry (Quests q56 `ic`: the pet's actions carry their spell's icon) */
+     *  [icon]: a game icon's fileDataID for the entry (Quests q56 `ic`: the pet's actions carry their spell's icon);
+     *  [auto] (Quests q62 `au`, the user 2026-11-16: "hunters need to be able to visually see when their pets abilities are active like
+     *  growl, and a way to turn it off from those radials"): a pet ability that may cast itself - 1 it does, 0 it does not (null = not
+     *  one); [autoSlot] its pet bar slot (`as`, PetAuto's key), [autoCell] its toggle on the pfocus row (`ac`; null = none built now) */
     data class Entry(val text: String, val id: Int?, val enabled: Boolean, val checked: Boolean?, val title: Boolean, val sub: List<Entry>?,
                      val confirm: String? = null, val secure: Int? = null, val secureRow: String = "pfocus", val app: String? = null,
-                     val key: String? = null, val icon: Int? = null)
+                     val key: String? = null, val icon: Int? = null, val auto: Int? = null, val autoSlot: Int? = null,
+                     val autoCell: Int? = null)
 
     sealed class Do {
         object None : Do()
@@ -167,7 +171,9 @@ class PlayerMenu(private val runs: Boolean = RUNS, private val greyKeys: Set<Str
                     if (o.has("sub")) parse(o.optJSONArray("sub"), greyKeys) else null,
                     o.optString("cf", "").ifEmpty { null }, if (o.has("sc")) o.optInt("sc") else null,
                     o.optString("scr", "").ifEmpty { "pfocus" }, o.optString("ap", "").ifEmpty { null }, k,
-                    o.optInt("ic", 0).takeIf { it > 0 }))
+                    o.optInt("ic", 0).takeIf { it > 0 },
+                    if (o.has("au")) o.optInt("au").coerceIn(0, 1) else null, o.optInt("as", 0).takeIf { it in 1..10 },
+                    if (o.has("ac")) o.optInt("ac") else null))
             }
             return out
         }
