@@ -17,7 +17,9 @@
 -- WHAT IT SENDS: one {"type":"calendar"} document when anything in it changed, and again on the core
 -- 15 s heartbeat (so the app gets it back after the log rotates). A month is sent as absolute
 -- year/month with its events; a holiday that runs over several days is ONE entry with the list of
--- days it is drawn on, and its description travels once, in `hol`.
+-- days it is drawn on, and its description travels once, in `hol`. (c15) It also carries `mail`, the
+-- player's unread mail as the game's minimap mail icon shows it, for the envelope beside Home's Calendar
+-- button (THE MAIL ENVELOPE, below): sent whether or not the calendar itself is on.
 --
 -- WHAT IT CHANGES IN THE GAME: only what the game's own calendar window does.
 --  * C_Calendar.OpenCalendar(), the request for the calendar's data (it opens no window), and
@@ -48,7 +50,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local CV = "c14"     -- bump on every change; the app shows it, so a stale build is visible
+local CV = "c15"     -- bump on every change; c15 THE MAIL ENVELOPE (the user, 2026-11-16: "we need to add an icon somewhere to the home menu for when the player has mail"): the document's `mail` carries the two values the game's own minimap mail icon shows (HasNewMail, and its tooltip's GetLatestThreeSenders), read only on UPDATE_PENDING_MAIL / MAIL_INBOX_UPDATE / PLAYER_ENTERING_WORLD (no timer), plain values only, `off` under the game rule IngameMailNotificationDisabled (see THE MAIL ENVELOPE below); the app shows it, so a stale build is visible
 
 -- (c7) the room's row on the shared tap pad (the pad owner's YES, AGENT_LOG "Pad owner -> calendar"): row "cal",
 -- namespace "cal". The eight fixed keys are claimed FIRST at load (columns 0..7), in this order; the answers come
@@ -521,6 +523,69 @@ end
 -- the pending-invitation count at the last look, so a RISE can ask the server for the new event
 local lastPend = nil
 
+-- ---------------------------------------------------------------- (c15) THE MAIL ENVELOPE
+-- The user, 2026-11-16: "we need to add an icon somewhere to the home menu for when the player has mail". The picks: a small
+-- envelope BY Home's Calendar button, shown only while the player has mail; a touch shows who it is from, as the game's own
+-- minimap mail icon does (Blizzard_Minimap MiniMapMailFrameMixin: shown while HasNewMail(); its tooltip, MinimapMailFrameUpdate,
+-- lists GetLatestThreeSenders()). This block reads exactly those two, and only when the game says something changed: the events
+-- the game's icon and its mailbox listen to (UPDATE_PENDING_MAIL, MAIL_INBOX_UPDATE) and the world entry (a login or a reload),
+-- never on a timer. The document carries the last reading as `mail`:
+--   { on = true, from = { up to three names } }  the game reports unread mail (`from` left out when it names nobody)
+--   { on = false }                               no unread mail
+--   { off = true }                               the game rule IngameMailNotificationDisabled is on (the game shows no icon)
+--   no `mail` at all                             not read yet, or this client has no HasNewMail
+-- Plain values only: a secret, absent or failing answer leaves the last reading as it was (WC.S / WC.isPlain; nothing is
+-- concatenated). Nothing is opened, taken, marked read or written: no mail call but these two reads, no window touched. The
+-- names are the game's text for the bottom screen only: never printed, never in a log line of ours.
+local MAIL_MAX = 3
+local mailState = nil
+
+-- true = the game rule switched the mail notification off; nil = this client cannot say
+local function mailRuleOff()
+    local ok, rule = CALL(function() return Enum.GameRule.IngameMailNotificationDisabled end)
+    if not ok or type(rule) ~= "number" then return nil end
+    local v = S(function() return C_GameRules.IsGameRuleActive(rule) end)
+    if type(v) == "boolean" then return v end
+    return nil
+end
+
+-- the senders as the game returns them (several values): plain non-empty strings only, at most MAIL_MAX
+local function mailNames(ok, ...)
+    if not ok then return nil end
+    local out = {}
+    local n = select("#", ...)
+    for i = 1, n do
+        local v = select(i, ...)
+        -- type() first (the one operation measured safe on a secret), then the client's own test, then the compare
+        if type(v) == "string" and WC.isPlain(v) and v ~= "" then out[#out + 1] = v end
+        if #out >= MAIL_MAX then break end
+    end
+    return out
+end
+
+-- Read the two values now. Returns true when the reading changed (the caller sends the document then).
+local function mailRead()
+    local before = mailState and WC.encode(mailState) or nil
+    if mailRuleOff() == true then
+        mailState = { off = true }
+    else
+        if type(_G.HasNewMail) ~= "function" then return false end   -- this client has no such call: no reading at all
+        local has = S(function() return HasNewMail() end)
+        local on
+        if type(has) == "boolean" then on = has
+        elseif type(has) == "number" then on = has ~= 0           -- an older client's 1 / nil
+        elseif has == WC.ABSENT then on = false
+        else return false end                                     -- secret, or the call failed: the last reading stands
+        local m = { on = on }
+        if on then
+            local from = mailNames(CALL(function() return GetLatestThreeSenders() end))
+            if from and #from > 0 then m.from = from end
+        end
+        mailState = m
+    end
+    return WC.encode(mailState) ~= before
+end
+
 function WC.collectCalendar()
     tally = { secret = 0, threw = 0 }
     local hasApi = type(C_Calendar) == "table" and type(C_Calendar.GetMonthInfo) == "function"
@@ -541,6 +606,8 @@ function WC.collectCalendar()
         ctl = { held = ctlr.held or nil, want = ctlr.want and true or false, why = ctlr.why, cap = capture() ~= nil,
                 -- (c11) B is the game's own close button now (the window is open and the room is at its top level)
                 back = (ctlr.held and ctlr.back) or nil },
+        -- (c15) THE MAIL ENVELOPE: the last reading (mailRead, on the game's mail events only), whether or not the calendar is on
+        mail = mailState,
     }
     if not hasApi or doc.off == true then
         wanted = {}
@@ -1003,6 +1070,11 @@ f:SetScript("OnEvent", function(_, event, arg1)
         if not mine then return end
     elseif event == "PLAYER_ENTERING_WORLD" then
         if not lastRequest then request() end
+        mailRead()                  -- (c15) the envelope's first reading (a login, a reload, a loading screen's end)
+    elseif event == "UPDATE_PENDING_MAIL" or event == "MAIL_INBOX_UPDATE" then
+        -- (c15) the game's own mail icon's event and its mailbox's: the document goes again only when the reading changed (the
+        -- mailbox fires MAIL_INBOX_UPDATE on every item taken)
+        if not mailRead() then return end
     elseif event == "CALENDAR_UPDATE_PENDING_INVITES" then
         local p = SN(function() return C_Calendar.GetNumPendingInvites() end)
         if p and lastPend and p > lastPend then request() end
@@ -1026,6 +1098,8 @@ local WANT = {
     "PLAYER_REGEN_ENABLED", "CVAR_UPDATE",
     -- (c11) the game's window: its code loading, and the fight's start (the door cell is disarmed)
     "ADDON_LOADED", "PLAYER_REGEN_DISABLED",
+    -- (c15) THE MAIL ENVELOPE: the events the game's own minimap mail icon and its mailbox listen to
+    "UPDATE_PENDING_MAIL", "MAIL_INBOX_UPDATE",
 }
 local missing = {}
 for _, e in ipairs(WANT) do
