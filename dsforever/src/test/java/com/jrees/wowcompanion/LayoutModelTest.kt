@@ -233,6 +233,17 @@ class LayoutModelTest {
         assertEquals(LayoutModel.Send.Cell(LayoutModel.C_CLOSE), e.next(10))
     }
 
+    @Test fun thePromptsSaveSurvivesThePageClosing() {
+        val e = open()
+        e.pick("hud"); e.nudge(1, 0)
+        e.prompt = true
+        e.command(LayoutModel.C_SAVE)
+        e.leave()                                                       // the page closes right behind the prompt's Save
+        assertNull(e.picked); assertFalse(e.prompt); assertNull("no wish after the close", e.want)
+        assertEquals(LayoutModel.Send.Cell(LayoutModel.C_SAVE), e.next(0))
+        assertEquals(LayoutModel.Send.Cell(LayoutModel.C_CLOSE), e.next(10))
+    }
+
     @Test fun aPieceCommandWaitsForItsSelection() {
         val e = open()
         e.pick("target")

@@ -59,8 +59,7 @@ class LayoutView(context: Context) : View(context) {
     /** close the page (the add-on's editor closes too: its draft is dropped unless saved) */
     fun close(toTabs: Boolean = false) {
         if (!isOpen) return
-        editor.reset()
-        editor.wantOpen = false
+        editor.leave()                                                  // (the prompt's Save, if asked, still goes before the close)
         isOpen = false; visibility = GONE
         stopStick()
         closingUntil = SystemClock.uptimeMillis() + CLOSE_WAIT_MS          // the close cell still goes out (the pump keeps running)
@@ -385,8 +384,8 @@ class LayoutView(context: Context) : View(context) {
     /** the picked piece's line: its name, its place and size, the step */
     private fun drawInfo(c: Canvas, d: LayoutModel.Doc?, r: RectF) {
         val p = editor.pickedPiece() ?: editor.tilePiece() ?: return
-        val pr = editor.previewRect(p)
-        val ax = p.ax + (pr.x - p.rect.x); val ay = p.ay + (pr.y - p.rect.y)
+        val w = editor.want?.takeIf { editor.wantId == p.id }
+        val ax = w?.first ?: p.ax; val ay = w?.second ?: p.ay
         val np = UiKit.bodyPaint(26f, Theme.gold)
         c.drawText(Tr.t(LayoutModel.labelOf(p.id)), r.left + 4f, r.centerY() + 9f, np)
         val vp = UiKit.numberPaint(24f, Theme.text)
@@ -531,8 +530,8 @@ class LayoutView(context: Context) : View(context) {
                         ?.minByOrNull { it.rect.w * it.rect.h }
                     if (hit != null) {
                         if (editor.picked != hit.id) editor.pick(hit.id)
-                        val pr = editor.previewRect(hit)
-                        dragId = hit.id; dragAx = hit.ax + (pr.x - hit.rect.x); dragAy = hit.ay + (pr.y - hit.rect.y)
+                        val w = editor.want?.takeIf { editor.wantId == hit.id }
+                        dragId = hit.id; dragAx = w?.first ?: hit.ax; dragAy = w?.second ?: hit.ay
                         invalidate()
                     }
                 }

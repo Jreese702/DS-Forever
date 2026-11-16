@@ -329,6 +329,10 @@ class SettingsPad(
 
     /** the report page over the room (board f-problem-report) takes each press while it is open: true = taken */
     var padOverride: ((String) -> Boolean)? = null
+    /** a page over the room that takes B itself (the layout editor): while it shows, B never leads Home in the capture */
+    var overlayOpen: () -> Boolean = { false }
+    /** tell the capture where B leads again (a page over the room opened or closed) */
+    fun resyncB() { bSaid = null; post { syncB() } }
 
     var held = false; private set
     /** b112 (the rooms audit: one hold tap, never asked again): Map's HoldAsk, asked again every 0.7 s while unanswered, 4 at most */
@@ -556,7 +560,7 @@ class SettingsPad(
     private fun syncB() {
         if (!held) return
         // B leads Home only from the tab row (or with no tab row and no bar open)
-        val where = if (gameUis.any { it.hasSelection } || (tabBar != null && !onTabs)) "back" else "home"
+        val where = if (overlayOpen() || gameUis.any { it.hasSelection } || (tabBar != null && !onTabs)) "back" else "home"
         if (where != bSaid && tap(GuestPad.bnext(padSource(), home = where == "home"))) bSaid = where
     }
 

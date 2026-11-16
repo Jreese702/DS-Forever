@@ -709,7 +709,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // TapPad pad21: its row is shared with the Macros room's; asked back on the spells / quests documents' grid (Book b65)
             padSource = { listOf(talentsPad, spellsPad, questsPad).firstOrNull { it?.optJSONObject("rows")?.has("padtab") == true } ?: spellsPad ?: questsPad }
             // the cross-branch review: while the Macros room's row is this row's guest (its document's `sh`), asked back on every showing
-            rowShared = { ::macrosView.isInitialized && macrosView.state?.shared == true }
+            rowShared = { ::macrosView.isInitialized && macrosView.state?.shared == true ||
+                // hub55: the layout editor's row "lay" is this row's guest too (leased while the Settings room holds): asked back as well
+                LayoutModel.Live.doc?.row != null }
         }
         // the Macros room (Spells s10): B at its grid goes HOME (the add-on's macpad BACK); its lazy row is asked on the spells / quests
         // documents' shared grid (Book b63's padtab pick)
@@ -847,7 +849,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 (::pathReview.isInitialized && pathReview.isOpen && run { pathReview.padKey(k); true }) ||
                 (::layoutPage.isInitialized && layoutPage.isOpen && run { layoutPage.padKey(k); true })
         }
-        settingsView.onEditLayout = { if (::layoutPage.isInitialized && LauncherHooks.gameUp()) layoutPage.open() }
+        // the layout editor's page takes B itself (one step back, then out): the capture's B never leads Home while it shows
+        settings.pad.overlayOpen = { ::layoutPage.isInitialized && layoutPage.isOpen }
+        settingsView.onEditLayout = { if (::layoutPage.isInitialized && LauncherHooks.gameUp()) { layoutPage.open(); settings.pad.resyncB() } }
         settingsView.onRouteReview = { if (::pathReview.isInitialized) pathReview.open() }
         if (LauncherHooks.pkg != null) {
             startView.firstLabel = "Save your Battle.net login"; startView.firstW = 680f      // the longer words
@@ -1097,7 +1101,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the layout editor's page: over the Settings room only (the bar stays below it, a touch there leaves the room and closes it);
             // B out of it puts Settings' cursor on its tab row, so the next B goes Home
             layoutPage = LayoutView(this@CompanionHost).apply {
-                onClosed = { toTabs -> DiagLog.event("layout", "editor closed"); if (toTabs) settings.pad.backToTabs() }
+                onClosed = { toTabs -> DiagLog.event("layout", "editor closed"); if (toTabs) settings.pad.backToTabs() else settings.pad.resyncB() }
             }
             addView(layoutPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 .apply { bottomMargin = Strip.HEIGHT })

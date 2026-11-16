@@ -2828,7 +2828,7 @@ do
     local L = WC.lay
     local LAY = { V = "lay1", ROW = "lay", HOST = "cal", COLS = 40, C_CHAR = 24, CHARS = 6, C_REACH_OFF = 30, C_REACH_ON = 31,
                   C_SMALLER = 32, C_BIGGER = 33, C_RESET = 34, C_REVERT = 35, C_SAVE = 36, C_OPEN_GRID = 37, C_OPEN = 38, C_CLOSE = 39,
-                  EASE_S = 0.08, EMIT_S = 0.1, AWAY_S = 1.0, TICK_S = 0.25,
+                  EASE_S = 0.12, EMIT_S = 0.1, AWAY_S = 1.0, TICK_S = 0.25,
                   open = false, grid = false, sel = nil, draft = {}, shown = {}, combat = false, rowOk = false, why = nil,
                   n = 0, taps = 0, cells = 0, saves = 0, pieces = {}, order = {}, chars = {}, game = nil }
     WC.layEditor = LAY
@@ -3360,8 +3360,9 @@ do
             pcall(pad.lease, LAY.ROW)
         end
         if LAY.open and gameEditMode() then LAY.closeIt("editmode"); LAY.emit(true); return end
-        -- the Settings room no longer holds (out of a fight): the editor goes (the app's own close may never come)
-        if LAY.open and not held and not combatNow() then
+        -- the Settings room no longer holds (out of a fight): the editor goes (the app's own close may never come); a wheel opened OVER
+        -- the room (the pause wheel: the capture's overlay guest "radial") only suspends it
+        if LAY.open and not held and h ~= "pad:radial" and not combatNow() then
             awaySince = awaySince or GetTime()
             if GetTime() - awaySince >= LAY.AWAY_S then awaySince = nil; LAY.closeIt("away"); LAY.emit(true); return end
         else

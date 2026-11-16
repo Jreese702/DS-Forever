@@ -439,7 +439,13 @@ object LayoutModel {
             return Send.Cell(col)
         }
 
-        /** the page left: nothing more is wanted */
+        /** the page closes: no piece, no wish, no prompt; a command already asked (the prompt's Save) still goes, before the close */
+        fun leave() {
+            picked = null; clearWant(); sizeMode = false; prompt = false; list = false; focus = Focus.TILES
+            wantOpen = false; raw = null
+        }
+
+        /** the page opens afresh: nothing is wanted */
         fun reset() {
             picked = null; clearWant(); sizeMode = false; prompt = false; list = false; focus = Focus.TILES
             queued.clear(); lastSpot = null; lastCell = null; raw = null
