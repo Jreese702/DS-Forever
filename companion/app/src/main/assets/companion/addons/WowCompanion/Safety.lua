@@ -107,11 +107,12 @@ local ESC = {
 }
 -- k5 (issue #358, 2026-11-15: "Character names: Cyrillic characters are displayed as empty squares instead of actual letters.
 -- Quest descriptions: Some Cyrillic characters are replaced with question marks"): the class was [%c"\\]. %c is the C library's
--- iscntrl, which follows the game's code page, not ASCII: MEASURED (Lua 5.1 under code page 1252) it also matches 0x81 0x8D 0x8F
--- 0x90 0x9D 0xAD (code page 1251: 0x98 0xAD), all of them UTF-8 continuation bytes. Such a byte went out as \u0081 and the like: the
--- letter's lead byte was left alone (the app read it as U+FFFD, a "?") and the byte became a C1 control (an empty square). Russian
--- U+0410 U+041D U+0401 U+042D U+0441 U+044F U+044D, and accented i / A / I in Spanish and French names. Now only the ASCII controls (0-31, 127), spelled out; on an
--- ASCII-only document the output is byte for byte what it was.
+-- iscntrl, which follows the C library's code page once a program sets a locale: MEASURED in Lua 5.1 on the PC under code page 1252
+-- it also matches 0x81 0x8D 0x8F 0x90 0x9D 0xAD (code page 1251: 0x98 0xAD), all of them UTF-8 continuation bytes. Whether the game's
+-- client sets one is NOT measured yet: the self-test's cc says (the app's "add-on kernel" line). Where it does, such a byte went out as
+-- \u0081 and the like: the letter's lead byte was left alone (the app read it as U+FFFD, a "?") and the byte became a C1 control (an
+-- empty square). Russian U+0410 U+041D U+0401 U+042D U+0441 U+044F U+044D, and accented i / A / I in Spanish and French names. Now
+-- only the ASCII controls (0-31, 127), spelled out; on an ASCII-only document the output is byte for byte what it was.
 local function escStr(s)
     s = s:gsub('[%z\1-\31\127"\\]', function(c) return ESC[c] or string.format('\\u%04x', c:byte()) end)
     return '"' .. s .. '"'
