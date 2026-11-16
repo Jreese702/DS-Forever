@@ -27,9 +27,10 @@ object PolestarTab {
         DESCRIBE to 2, TICK to 3)
     /** the ops a fight refuses (D3; Map.lua WC.pg.FIGHT) */
     val FIGHT = setOf(LOAD, CONTINUE, CHOOSE, RESET)
-    /** op 13's stamp (pg1 review): the tab opened (everything again) / the 20 s "still open" (nothing resent) */
-    const val OPEN_FRESH = 0
-    const val OPEN_KEEP = 1
+    /** op 13's stamp (pg1 review): the tab opened (everything again) / the 20 s "still open" (nothing resent; Map.lua WC.pg.OPEN_KEEP).
+     *  Like every stamp they are 432-1295 ([frame]): op 14 uses [OPEN_FRESH] */
+    const val OPEN_FRESH = 468
+    const val OPEN_KEEP = 469
     /** the ops an UNANSWERED frame may be tapped again for (pg1 review): ones that end the same if they ran twice. A Tick toggles and a
      *  Back can Unskip then Goto, so a frame that ran but whose answer came late would undo or change the press: never again unanswered
      *  (a garbled frame never ran: any op is sent once more) */
@@ -94,7 +95,9 @@ object PolestarTab {
 
     // ---------------------------------------------------------------- the frame
     /** one framed command's taps on the "pnav" row: 38, 12, op, s1, s2, args, k (k = the sum of op, stamp digits and args, mod 36);
-     *  empty for what no frame can say (an op of another length, an arg past 35): nothing is sent */
+     *  empty for what no frame can say (an op of another length, an arg past 35): nothing is sent. Every stamp the add-on hands out is
+     *  432-1295 (Map.lua WC.pg.hash; ours [OPEN_FRESH] / [OPEN_KEEP]), so s1 is 12-35: a frame that lost both its 12 and its op never
+     *  leaves 0-11 behind the 38 (the automation mask, the row's word, Skip / Previous; pg1 review) */
     fun frame(op: Int, stamp: Int, args: List<Int> = emptyList()): List<Int> {
         if (op !in 13..35 || ARGS[op] != args.size || args.any { it !in 0..35 }) return emptyList()
         val st = stamp.coerceIn(0, 1295)

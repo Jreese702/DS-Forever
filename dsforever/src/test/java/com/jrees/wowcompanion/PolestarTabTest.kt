@@ -33,7 +33,7 @@ class PolestarTabTest {
     @Test fun theFrameIsOpStampArgsAndTheCheckDigit() {
         // 38, 12, op, s1, s2, args, k (k = the sum of op, s1, s2 and args, mod 36: Map.lua WC.pg.frameTap)
         assertEquals(listOf(38, 12, 15, 12, 12, 0, 9, (15 + 12 + 12 + 0 + 9) % 36), PolestarTab.frame(PolestarTab.LOOK, 444, PolestarTab.two(9)))
-        assertEquals(listOf(38, 12, 13, 0, 0, 13), PolestarTab.frame(PolestarTab.OPEN, 0))
+        assertEquals(listOf(38, 12, 13, 13, 0, (13 + 13 + 0) % 36), PolestarTab.frame(PolestarTab.OPEN, PolestarTab.OPEN_FRESH))
         assertEquals(listOf(38, 12, 23, 1, 2, 0, 4, 1, (23 + 1 + 2 + 0 + 4 + 1) % 36), PolestarTab.frame(PolestarTab.TICK, 38, listOf(0, 4, 1)))
         for ((op, n) in PolestarTab.ARGS) {
             val f = PolestarTab.frame(op, 1295, List(n) { 35 })
@@ -57,6 +57,12 @@ class PolestarTabTest {
             val cut = f.filterIndexed { i, _ -> i != drop }
             val whole = cut.size >= 2 && cut[0] == 38 && cut[1] == 12 && cut.size == 3 + 2 + (PolestarTab.ARGS[cut[2]] ?: -99) + 1
             assertFalse("dropping tap $drop leaves no whole frame ($cut)", whole && cut.subList(2, cut.size - 1).sum() % 36 == cut.last())
+        }
+        // pg1 review (TWO LOST TAPS): the 12 and the op both lost leave s1 right behind the 38, where Map.lua's old words live (0-7 the
+        // automation mask, 8 / 9 the row's word, 10 / 11 Skip / Previous); the add-on's stamps (432-1295) and ours keep s1 at 12-35
+        for (st in listOf(PolestarTab.OPEN_FRESH, PolestarTab.OPEN_KEEP, 432, 444, 1295)) {
+            val fr = PolestarTab.frame(PolestarTab.OPEN, st)
+            assertTrue("stamp $st: s1 = ${fr[3]} is never an old word of 38", fr[3] in 12..35)
         }
         val bad = f.toMutableList().also { it[6] = (it[6] + 1) % 36 }
         assertTrue(bad.subList(2, bad.size - 1).sum() % 36 != bad.last())
@@ -328,8 +334,8 @@ class PolestarTabTest {
         assertTrue(PolestarTab.LOOK in PolestarTab.AGAIN_UNANSWERED && PolestarTab.TICK !in PolestarTab.AGAIN_UNANSWERED &&
             PolestarTab.BACK !in PolestarTab.AGAIN_UNANSWERED)
         // the 20 s "still open" is op 13 with stamp 1 (Map.lua: nothing resent), the first say stamp 0 (everything again)
-        assertEquals(listOf(38, 12, 13, 0, 1, 14), PolestarTab.frame(PolestarTab.OPEN, PolestarTab.OPEN_KEEP))
-        assertEquals(listOf(38, 12, 13, 0, 0, 13), PolestarTab.frame(PolestarTab.OPEN, PolestarTab.OPEN_FRESH))
+        assertEquals(listOf(38, 12, 13, 13, 1, (13 + 13 + 1) % 36), PolestarTab.frame(PolestarTab.OPEN, PolestarTab.OPEN_KEEP))
+        assertEquals(listOf(38, 12, 13, 13, 0, (13 + 13 + 0) % 36), PolestarTab.frame(PolestarTab.OPEN, PolestarTab.OPEN_FRESH))
         // "changed" ends it at once (the tab refreshes); an answer to another op is not this frame's
         s.send(PolestarTab.LOAD, PolestarTab.frame(PolestarTab.LOAD, 901, listOf(0, 3)), 30_000L)
         assertFalse(s.onAnswer(PolestarTab.LOOK, true, null, 30_100L).done)
@@ -343,7 +349,8 @@ class PolestarTabTest {
         val tick = PolestarTab.frame(PolestarTab.TICK, 444, listOf(0, 4, 1))
         s.send(PolestarTab.DESCRIBE, PolestarTab.frame(PolestarTab.DESCRIBE, 444, listOf(0, 5)), 35_000L)
         s.send(PolestarTab.TICK, tick, 35_001L); s.send(PolestarTab.LOOK, a, 35_002L)
-        s.send(PolestarTab.OPEN, PolestarTab.frame(PolestarTab.OPEN, 0), 35_003L); s.send(PolestarTab.CLOSE, PolestarTab.frame(PolestarTab.CLOSE, 0), 35_004L)
+        s.send(PolestarTab.OPEN, PolestarTab.frame(PolestarTab.OPEN, PolestarTab.OPEN_FRESH), 35_003L)
+        s.send(PolestarTab.CLOSE, PolestarTab.frame(PolestarTab.CLOSE, PolestarTab.OPEN_FRESH), 35_004L)
         val n1 = s.onAnswer(PolestarTab.DESCRIBE, true, null, 35_100L).next!!
         assertEquals(PolestarTab.TICK, n1.op)
         val n2 = s.onAnswer(PolestarTab.TICK, true, null, 35_200L).next!!

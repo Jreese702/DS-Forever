@@ -3583,7 +3583,7 @@ C_Timer.NewTicker(1, function() pcall(WC.pstep.tick) end)
 -- used here is checked against the pinned source (tools/test_polestar_tab.py), so a pin bump must re-run that guard.
 -- READS (docs): pguide (pg1, always while Polestar is loaded: the guide, its shown / live step, progress, a waiting choice, outlevelled,
 -- the start gate; on change, at most once a second, and every 15 s; {have = false} once when no Polestar we know is there), and only
--- while the app says the tab is open (op 13, 60 s; the app re-says it every 20 s with stamp 1, which resends nothing) the step statuses
+-- while the app says the tab is open (op 13, 60 s; the app re-says it every 20 s with stamp 469, which resends nothing) the step statuses
 -- and the tabs in pguide, pgsteps (step titles in chunks of 40), pglist (the guides this character can follow: Guides.GuideMatches,
 -- folders as Polestar's picker), pgstep (one step's goals) and pgroute (a path choice). The step views are read ~20 a frame (the
 -- Thor's CPU). Every value goes through WC.isPlain (one secret value refuses the whole line).
@@ -3593,12 +3593,16 @@ C_Timer.NewTicker(1, function() pcall(WC.pstep.tick) end)
 -- it), never a window message (SHOW_PICKER, TOGGLE_FRAME, ...), never OfferRouteChoice / UI.Show* / RC.Hide, no slash command, no
 -- Blizzard window call, nothing in WowCompanionDB. Combat: Load, Continue, Choose and Reset are refused (why = "combat"), never queued.
 -- FRAMED COMMANDS on the "pnav" row: 38 then 12 = a frame follows (the old 38 then 0-11 untouched; an older add-on ignores 12+):
---   38, 12, op, s1, s2, args..., k      op 13-35 (never 36-39), s1 s2 = the stamp (the guide id's hash mod 1296: pguide gs, a tab's
---                                       stamp, pgroute fs, or the list stamp ls for Load), k = (op + s1 + s2 + args) mod 36
+--   38, 12, op, s1, s2, args..., k      op 13-35 (never 36-39), s1 s2 = the stamp (the guide id's hash, 432-1295: pguide gs, a tab's
+--                                       stamp, pgroute fs, or the list stamp ls for Load; op 13 / 14: 468, 469 = "still open"),
+--                                       k = (op + s1 + s2 + args) mod 36
 -- each tap within 2 s of the one before it (pnav's GO keeps its 2 s from 36). Any tap 36-39 ends a frame (and goes on as before), so a
 -- lost tap leaves the frame unfinished and nothing is called; a wrong check digit answers "garbled", a stamp that no longer matches
 -- "changed", nothing called either. Answers {"type":"pgop", op, ok, why, i}.
-WC.pg = { V = "pg1", OPEN_S = 60, EVERY_S = 15, CHUNK = 40, PER_FRAME = 20, SUGGEST = 5, TAP_S = 2,
+-- TWO LOST TAPS (pg1 review, the builder's own flag): with the 12 and the op both lost, s1 lands right behind 38, where 0-7 is the
+-- automation mask (WowCompanionDB.pqol, Polestar's auto accept / turn in / sell / buy / repair), 8 / 9 the row's word and 10 / 11 Skip /
+-- Previous. Every stamp is therefore 432-1295 (s1 = 12-35): the old words can never be read off a frame that lost both.
+WC.pg = { V = "pg1", OPEN_S = 60, EVERY_S = 15, CHUNK = 40, PER_FRAME = 20, SUGGEST = 5, TAP_S = 2, OPEN_KEEP = 469,
           -- op -> its args' count
           LEN = { [13] = 0, [14] = 0, [15] = 2, [16] = 0, [17] = 2, [18] = 1, [19] = 0, [20] = 1, [21] = 0, [22] = 2, [23] = 3 },
           -- ops refused in a fight (D3): Load guide, Continue, Choose route, Reset
@@ -3615,12 +3619,12 @@ function WC.pg.api()
     if E and G and type(E.GetGuide) == "function" and type(E.GetStepView) == "function" and type(E.GetStepIndex) == "function"
         and type(G.List) == "function" and type(G.Get) == "function" then return E, G, P end
 end
--- a guide id's stamp (djb2, kept below 1296 at every step: exact in a double)
+-- a guide id's stamp: 432-1295, so its first digit is 12-35 (TWO LOST TAPS above; djb2 kept below 864 at every step: exact in a double)
 function WC.pg.hash(s)
     s = tostring(s or "")
-    local h = 5381
-    for i = 1, #s do h = (h * 33 + s:byte(i)) % 1296 end
-    return h
+    local h = 5381 % 864
+    for i = 1, #s do h = (h * 33 + s:byte(i)) % 864 end
+    return 432 + h
 end
 -- a plain value for the docs (a string cleaned of colour / picture escapes, cut at [cap]); a secret one is nil
 function WC.pg.plain(v, cap)
@@ -4055,9 +4059,9 @@ function WC.pg.flush(force)
         end
     end
 end
--- the tab opened (op 13 with stamp 0: the app's first say after it opened the tab, after it started, after a "changed"): everything
+-- the tab opened (op 13 with stamp 468: the app's first say after it opened the tab, after it started, after a "changed"): everything
 -- again (an app that restarted meanwhile, a lost doc: that say heals it), the step pass from the start. The app's 20 s "still open"
--- (stamp 1, pg1 review) only keeps the open going, so the step pass runs on Polestar's own changes (the design: the Thor's CPU)
+-- (stamp 469, pg1 review) only keeps the open going, so the step pass runs on Polestar's own changes (the design: the Thor's CPU)
 function WC.pg.opened()
     WC.pg.openAt = GetTime()
     WC.pg.listSig, WC.pg.stepSig, WC.pg.titlesSig = nil, nil, nil
@@ -4070,10 +4074,10 @@ end
 -- ---- one framed command: run it when whole, right and still meant for what Polestar shows
 function WC.pg.run(op, stamp, a)
     local E, G = WC.pg.api()
-    -- op 13's stamp: 0 = the tab opened (everything again, the step pass), 1 = the app's 20 s "still open" (the open goes on, nothing
-    -- resent: the design's CPU rule, statuses only on Polestar's changes; a lapsed open is a fresh one)
+    -- op 13's stamp: OPEN_KEEP (469) = the app's 20 s "still open" (the open goes on, nothing resent: the design's CPU rule, statuses
+    -- only on Polestar's changes; a lapsed open is a fresh one); any other (the app's 468) = the tab opened (everything again, the pass)
     if op == 13 then
-        if stamp == 1 and WC.pg.isOpen() then WC.pg.openAt = GetTime(); pcall(WC.pg.listen) else WC.pg.opened() end
+        if stamp == WC.pg.OPEN_KEEP and WC.pg.isOpen() then WC.pg.openAt = GetTime(); pcall(WC.pg.listen) else WC.pg.opened() end
         return WC.pg.say(op, true)
     end
     if op == 14 then WC.pg.openAt = nil; return WC.pg.say(op, true) end

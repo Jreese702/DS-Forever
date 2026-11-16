@@ -310,7 +310,7 @@ class QuestsView(
     private fun psClose() {
         if (psOpenAt == 0L) return
         psOpenAt = 0L
-        psFrame(PolestarTab.CLOSE, 0)
+        psFrame(PolestarTab.CLOSE, PolestarTab.OPEN_FRESH)
     }
     /** while the room shows (every draw): the answer's wait, the open's keep-alive, the resting step's goals */
     private fun psTick(now: Long) {
