@@ -176,27 +176,8 @@ object HomeLogin {
         return "sign-in trail" + (at?.let { " (game $it)" } ?: "") + ": " + say
     }
 
-    /**
-     * THE CAPTCHA HOLD'S WORD FROM THE GAME'S LOG (the user, 2026-11-13: keep the saved sign-in file past its 20 s behind a captcha;
-     * NativeLogin / LoginHold). true = the sign-in form came with hasCaptcha="true" (the game sends it, and reads login.txt again, only
-     * once the player has typed the captcha); false = a form without one, or a later step (the form sent or answered, the credentials'
-     * answer, the sign-in completed or refused, the realm connection); null = not a sign-in step. The same lines as [trail]. Pure.
-     */
-    fun captcha(raw: String): Boolean? {
-        val line = raw.trimEnd('\r')
-        return when {
-            "logon form received" in line -> flag(line, "hasCaptcha")?.let { it == "true" }
-            AFTER_CAPTCHA.any { it in line } -> false
-            else -> null
-        }
-    }
-
     /** the game's log: its realm connection is up (the sign-in is done; NativeLogin deletes a read login.txt then). Pure. */
     fun realmUp(raw: String): Boolean = "Realm connection connected" in raw
-
-    /** the sign-in's steps past the captcha's form (each ends a captcha wait; the next form says again) */
-    private val AFTER_CAPTCHA = listOf("logon form submission requested", "logon form submission response received",
-        "credentials response received", "Battle.net logon completed result=", "Fatal login error received", "Realm connection connected")
 
     /** the game's result word for one line: "ERROR_OK (0)" -> "ok", anything else shortened ([reason]); "?" when the line has none */
     private fun result(line: String): String = RESULT.find(line)?.groupValues?.get(1)?.let { r ->
@@ -220,6 +201,29 @@ object HomeLogin {
     /** UNSURE = our typing ended but the game has written nothing yet (WoW Forever writes its sign-in late, or not at all on screen):
      *  it may well be signing in, so Login stays shut (the review: re-arming here invited a second run on the wrong screen) */
     enum class Phase { IDLE, RUNNING, QUEUE, AUTH, FAILED, UNSURE }
+
+    /**
+     * THE ONE APP'S "Signing in…" (CompanionHost.nativeRow): the client has [read] this run's saved sign-in and the file is still there
+     * ([fileActive]) - and the game has not refused that sign-in since ([phase], the game's "Fatal login error"). The sign-in triage of
+     * 2026-11-16 (#334 #422 #423): with 1.0.32's captcha hold the file stayed up to 3 minutes while the Keyboard was open, so the line
+     * said "Signing in…" for minutes over the game's "You have been disconnected". The hold is retired (the user, 2026-11-16), but a
+     * refusal inside the file's 20 s still ends the line. After a refusal the line before it comes back (no failure words: the user's
+     * ruling of 2026-11-07); the game's next try ("Glue login started": RUNNING) says it again. Pure.
+     */
+    fun signingIn(read: Boolean, fileActive: Boolean, phase: Phase): Boolean = read && fileActive && phase != Phase.FAILED
+
+    /**
+     * WHY THIS RUN HAS NO SAVED SIGN-IN FILE, in the sign-in log's words (diagnostics only; the sign-in triage of 2026-11-16: #399 saved
+     * a login, then every start said "no saved login", and #424 had one start without the file - Auto login unticked, the install's
+     * first start or a saved login that no longer opens all read the same). [saved]: a saved login is on the device; [autoLogin]: the
+     * Menu's Auto login; [seeding]: the direct install's first start. Only states, never anything of the login. Pure.
+     */
+    fun noFileWhy(saved: Boolean, autoLogin: Boolean, seeding: Boolean): String = when {
+        !saved -> "no saved login"
+        !autoLogin -> "Auto login is off"
+        seeding -> "the install's first start"
+        else -> "the saved login could not be opened"
+    }
 
     /**
      * What the waiting screen shows. [showRow] = the sign-in row is offered; [phase] = where a sign-in is.

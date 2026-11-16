@@ -77,18 +77,37 @@ internal class PreLoginTraffic(private val minuteMs: Long = 60_000L, private val
             else -> line
         }
 
+        /** the start screen's line while a restart's old game saves and closes (CompanionHost.restartNotice) */
+        const val RESTART_LINE = "Restarting the game: it saves and closes first (about 20 s)..."
+
+        /**
+         * A NEW GAME RUN'S START SCREEN LINE (the sign-in triage of 2026-11-16). #289, #399, #424 and #423 sat at the game's login screen
+         * for minutes under "Restarting the game: it saves and closes first (about 20 s)...": the notice ended when the new game run
+         * attached, its line never did. #312 / #313 sat under the last run's "Waiting for the world." through four new runs: a sign-in
+         * row's note ("Saved. ...") took the line over at the restart, so the game's end could not put the waiting line back, and the row
+         * gave the old line back when it went. A new run is past nothing yet, so these lines are the plain waiting one again (or "Game
+         * downloading"); any other line stays.
+         */
+        fun lineAtNewRun(line: String, downloading: Boolean): String =
+            if (line == RESTART_LINE || line == AddonSilence.WORLD_LINE || line == AddonSilence.SIGNED_WORLD_LINE)
+                waitingLine(WAITING_LINE, downloading) else line
+
         /**
          * May a second of heavy traffic mean "past the login screen" (NativeLogin)? After the client's read, yes; while a written file
          * waits for its read, no. Without a read, issue #132 (2026-11-11, a 2.6 GB direct install): the client downloading its own data
          * said "past the login screen (6028576 B/s)" 27 s BEFORE the game's window appeared, and again (3185058 B/s) right after an unread
          * file was deleted at its cap. So without a read: only once the window is up, never after an unread file's cap, and [graceS]
          * after the game screen came up ([sinceStartS], -1 = not up). The world's documents stay the hard backstop.
+         * The sign-in triage of 2026-11-16 (#312 / #313 "game says waiting for world, whatever that means", #296, #399): without a read the
+         * download's own seconds (2-8 MB/s) still said "past the login screen" ~30-120 s after the download line came on, and 1.0.32's start
+         * screen turned that into "Waiting for the world." while the game was still downloading at its login screen. So without a read, never
+         * while the game is downloading before its login screen ([downloadingNow], NativeLogin.downloading).
          */
         fun trafficIsSignIn(consumed: Boolean, active: Boolean, windowSeen: Boolean, expiredUnread: Boolean, sinceStartS: Long, graceS: Long,
-                            downloadAtRead: Boolean = false): Boolean = when {
+                            downloadAtRead: Boolean = false, downloadingNow: Boolean = false): Boolean = when {
             consumed -> !downloadAtRead
             active -> false
-            !windowSeen || expiredUnread -> false
+            !windowSeen || expiredUnread || downloadingNow -> false
             else -> sinceStartS >= graceS
         }
 
@@ -123,6 +142,16 @@ internal class PreLoginTraffic(private val minuteMs: Long = 60_000L, private val
 
         /** [heavyRightAfterRead]'s window: inside the ~4.4 s a real sign-in needs from the read to its character select */
         const val HEAVY_AFTER_READ_MS = 2_000L
+
+        /** the saved sign-in file's life after the client's FIRST read (NativeLogin's device tests of 2026-10-08) */
+        const val AFTER_READ_MS = 20_000L
+
+        /**
+         * THE 20 S ON THE WALL CLOCK (NativeLogin; the review of 2026-11-13, kept when the captcha hold was retired 2026-11-16): the
+         * Handler's delay counts uptime, which stands still while the device sleeps, so each traffic second also asks this on
+         * elapsedRealtime. [firstReadAt] 0 = no read. Pure.
+         */
+        fun afterReadDue(firstReadAt: Long, now: Long): Boolean = firstReadAt > 0L && now - firstReadAt >= AFTER_READ_MS
 
         /**
          * Is this second's traffic still "before the login screen"? Not after the client's first read, not once the run is past the
