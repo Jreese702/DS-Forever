@@ -17,6 +17,10 @@ package com.jrees.wowcompanion
  * the Settings row offers "Restart the game" while the running game started with the other one, and the problem report says which one
  * the last start used ([reportLine]). No identity VALUE is ever logged or reported, only the mode's name. Pure, but for the two volatile
  * fields the launcher sets.
+ *
+ * NOT RECOMMENDED FOR BLZ51914400 (the user, 2026-11-16: "Stop recommending it"; the sign-in triage of 1.0.32, #288): upstream's A/B
+ * found Original made no difference to 14400 for most testers. The setting stays where it is (General > Account), the start screen's
+ * Menu gets no entry for it, and no start-screen or sign-in line points players at it.
  */
 object WindowsId {
     const val PER_INSTALL = "per_install"
