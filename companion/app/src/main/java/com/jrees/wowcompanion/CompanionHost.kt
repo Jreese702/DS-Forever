@@ -2851,6 +2851,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (signInRun != 0L && room != Room.HOME) { Log.i("WCHOME", "new game run: $room -> HOME"); show(Room.HOME, motion = false) }
                 // the restart notice ends with the new run (the new game's first current word takes the start view away)
                 if (restartNoticeAt != 0L) { restartNoticeAt = 0L; Log.i("WCSETUP", "restart from Settings: the new game run attached") }
+                // the sign-in triage (2026-11-16: #289 #399 #424 #423 sat at the login screen under the restart's line, #312 / #313 under
+                // the last run's "Waiting for the world."): a new run's line is the plain waiting one, on the screen and in the line a
+                // sign-in row gives back when it goes
+                if (::startView.isInitialized) {
+                    val l = PreLoginTraffic.lineAtNewRun(startView.line, NativeLogin.downloading)
+                    if (l != startView.line) { startView.line = l; startView.invalidate(); worldLineOurs = false }
+                    lineBeforeLogin = lineBeforeLogin?.let { PreLoginTraffic.lineAtNewRun(it, NativeLogin.downloading) }
+                }
                 signInRun = LauncherHooks.gameStartSec; signInCheck.reset()
                 regionCheck("a new game run")                // Play wrote the portal (GameConfigWtf.ensure): the region line again
                 if (SetupBridge.restarting) { SetupBridge.restarting = false; NativeLogin.logEvent("restart: game attached (a new client run)") }
@@ -2906,7 +2914,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private fun restartNotice() {
         if (!::startView.isInitialized) return
-        startView.line = "Restarting the game: it saves and closes first (about 20 s)..."
+        startView.line = PreLoginTraffic.RESTART_LINE
         startView.visibility = View.VISIBLE
         startView.invalidate()
         val at = SystemClock.elapsedRealtime()
@@ -3566,7 +3574,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // 2026-11-07 (the user: "the sign in prompts are still appearing ... if I dont push anything fast enough"): no authenticator,
         // failure or "not signed in yet" lines either - account select read as "not signed in"; the Menu and Keyboard are the way
         !HomeLoginStore.has(this) -> StartView.Login.FIRST to "Save it once and the game signs in by itself."
-        NativeLogin.firstReadAt > 0L && NativeLogin.active -> StartView.Login.NONE to "Signing in…"
+        HomeLogin.signingIn(NativeLogin.firstReadAt > 0L, NativeLogin.active, s.phase) -> StartView.Login.NONE to "Signing in…"
         else -> null
     }
     private var loginRevealed = false

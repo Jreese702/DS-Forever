@@ -222,6 +222,28 @@ object HomeLogin {
     enum class Phase { IDLE, RUNNING, QUEUE, AUTH, FAILED, UNSURE }
 
     /**
+     * THE ONE APP'S "Signing in…" (CompanionHost.nativeRow): the client has [read] this run's saved sign-in and the file is still there
+     * ([fileActive]) - and the game has not refused that sign-in since ([phase], the game's "Fatal login error"). The sign-in triage of
+     * 2026-11-16 (#334 #422 #423): with 1.0.32's captcha hold the file stays up to 3 minutes while the Keyboard is open, so the line said
+     * "Signing in…" for minutes over the game's "You have been disconnected". After a refusal the line before it comes back (no failure
+     * words: the user's ruling of 2026-11-07); the game's next try ("Glue login started": RUNNING) says it again. Pure.
+     */
+    fun signingIn(read: Boolean, fileActive: Boolean, phase: Phase): Boolean = read && fileActive && phase != Phase.FAILED
+
+    /**
+     * WHY THIS RUN HAS NO SAVED SIGN-IN FILE, in the sign-in log's words (diagnostics only; the sign-in triage of 2026-11-16: #399 saved
+     * a login, then every start said "no saved login", and #424 had one start without the file - Auto login unticked, the install's
+     * first start or a saved login that no longer opens all read the same). [saved]: a saved login is on the device; [autoLogin]: the
+     * Menu's Auto login; [seeding]: the direct install's first start. Only states, never anything of the login. Pure.
+     */
+    fun noFileWhy(saved: Boolean, autoLogin: Boolean, seeding: Boolean): String = when {
+        !saved -> "no saved login"
+        !autoLogin -> "Auto login is off"
+        seeding -> "the install's first start"
+        else -> "the saved login could not be opened"
+    }
+
+    /**
      * What the waiting screen shows. [showRow] = the sign-in row is offered; [phase] = where a sign-in is.
      * Fed every login-relevant line in order, and the game's client state by [client]; [note] / [client] say whether anything a
      * viewer draws changed.

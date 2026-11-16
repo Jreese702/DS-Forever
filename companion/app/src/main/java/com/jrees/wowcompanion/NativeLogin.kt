@@ -223,7 +223,9 @@ object NativeLogin {
             main.postDelayed(timeout, MAX_LIFE_MS)
             Log.i(TAG, "login.txt written (Play; private shadow folder); waiting for the client's read")
         } else { watch(fl); Log.i(TAG, "no saved login: the game's own login screen") }
-        logEvent("client run starts (login.txt ${if (active) "written at Play" else "not written: no saved login"})")
+        // the sign-in triage (2026-11-16, #399 / #424): which of the reasons for no file (states only)
+        logEvent("client run starts (login.txt ${if (active) "written at Play" else "not written: " +
+            HomeLogin.noFileWhy(HomeLoginStore.has(ctx), HomeLoginStore.autoLogin(ctx), SetupBridge.seeding)})")
         root
     } catch (t: Throwable) {
         Log.w(TAG, "shadow folder failed: ${t.message}"); clear(); null
@@ -294,9 +296,10 @@ object NativeLogin {
      * [NO_FILE_GRACE_S] after the game screen came up. Never while a written file still waits for its read.
      */
     private const val NO_FILE_GRACE_S = 60L
+    // the sign-in triage (2026-11-16, #312 / #313 / #296 / #399): with no read file, not while the game downloads before its login screen
     private fun signInTraffic(): Boolean = PreLoginTraffic.trafficIsSignIn(consumed, active, windowSeen, expiredUnread,
         if (LauncherHooks.gameStartSec > 0) System.currentTimeMillis() / 1000 - LauncherHooks.gameStartSec else -1L, NO_FILE_GRACE_S,
-        downloadAtRead)
+        downloadAtRead, downloadingNow = downloading)
 
     /** one second's received bytes of the game (the launcher's traffic loop): only [pastLogin]; the delete is [AFTER_READ_MS]'s */
     fun onTraffic(rxBytes: Long, txBytes: Long = -1L) {
