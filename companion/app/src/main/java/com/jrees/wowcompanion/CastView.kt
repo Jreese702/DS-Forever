@@ -2956,13 +2956,64 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
     private var curBh = 0f
     private var curPlate = false
+
+    // ---------------------------------------------------------------- bags-de1: THE CAST BAR, PAINTED INTO ANOTHER ROOM
+    /**
+     * bags-de1 (the Disenchant grid; the user's list 2026-11-16: "The disenchant cast bar is visible"; the design: "Extract CastView's bar
+     * drawing into one painter fed by the same actionbar document ... Build it once"): Home's own cast bar - the same state (hudS.cs / ce,
+     * the predicted bar, the finish and interrupt flashes), the same art and the same drawing code - painted into [r] of someone else's
+     * canvas (the Bags room's Disenchant grid foot), as [drawSet] paints the bar's buttons for the Spellbook. The cast only: no swing, the
+     * name inside the bar. Home's own draw is unchanged ([into] false: the view's own width / height, pixel for pixel - CastBarGuardShotsTest).
+     * Returns the next redraw delay (0 = every frame, Long.MAX_VALUE = nothing runs). Draw only; main thread.
+     */
+    fun drawCastInto(c: Canvas, r: RectF, now: Long = SystemClock.elapsedRealtime()): Long {
+        if (r.width() <= 0f || r.height() <= 0f) return Long.MAX_VALUE
+        val bh0 = curBh; val pl0 = curPlate
+        into = true; intoW = r.width(); intoH = r.height()
+        curBh = r.height(); curPlate = false
+        val save = c.save()
+        try {
+            c.translate(r.left, r.top)
+            return drawSwingLineIn(c, now, r.width())
+        } finally {
+            c.restoreToCount(save)
+            into = false; curBh = bh0; curPlate = pl0
+        }
+    }
+
+    /** bags-de1: a cast this long ([ctMs]) starts NOW from a press the host saw elsewhere (the Disenchant grid's A): the pending bar at once,
+     *  the game's real start takes over, never confirmed = dropped ([CastPredict]); false = no prediction (instant, or a cast runs) */
+    fun predictFrom(ctMs: Int, now: Long = SystemClock.elapsedRealtime()): Boolean {
+        val casting = !castStartMs.isNaN() && now < castEndMs
+        if (ctMs > 0) predPressAt = now
+        if (!CastPredict.start(ctMs, casting, true)) return false
+        predOn = true; predStartMs = now.toDouble(); predEndMs = now.toDouble() + ctMs
+        invalidate()
+        return true
+    }
+
+    /** a cast, its prediction or its finish shows now (the host redraws a room's painted bar while true) */
+    fun castShowing(now: Long = SystemClock.elapsedRealtime()): Boolean {
+        if (!castStartMs.isNaN() && now < castEndMs + 100.0) return true
+        if (predOn && CastPredict.alive(predPressAt, now)) return true
+        val fa = now - flashAtMs
+        return (flashKind == FLASH_CAST || flashKind == FLASH_FAIL) && fa >= 0 && fa < (if (flashKind == FLASH_FAIL) CastFx.FAIL_MS else CastFx.FINISH_MS)
+    }
+
+    /** [drawCastInto] is painting: the box's own size stands in for the view's (Home's draw: false, the view's own) */
+    private var into = false
+    private var intoW = 0f
+    private var intoH = 0f
+    private fun barW(): Float = if (into) intoW else width.toFloat()
+    private fun barH(): Float = if (into) intoH else height.toFloat()
+
     private fun drawSwingLineIn(c: Canvas, now: Long, w: Float): Long {
         // b-cast-bar-late: no real cast yet, a fresh prediction: the bar from the press, in its pending look
         val predicted = castStartMs.isNaN() && predOn && CastPredict.alive(predPressAt, now)
         if (predOn && !predicted && castStartMs.isNaN()) predOn = false               // never confirmed: dropped quietly
         val cStart = if (predicted) predStartMs else castStartMs
         val cEnd = if (predicted) predEndMs else castEndMs
-        if (predicted) c.saveLayerAlpha(-width.toFloat(), -height.toFloat(), 2f * width, 2f * height, CastPredict.PENDING_ALPHA)
+        if (predicted) c.saveLayerAlpha(-barW(), -barH(), 2f * barW(), 2f * barH(), CastPredict.PENDING_ALPHA)
         val nextPred = drawCastLine(c, now, w, cStart, cEnd, if (predicted) null else castName)
         if (predicted) c.restore()
         return if (predicted) 0L else nextPred
@@ -2975,7 +3026,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val shown = (!castStartMs.isNaN() && now < castEndMs + 100.0) ||
             ((flashKind == FLASH_CAST || flashKind == FLASH_FAIL) && fa >= 0 && fa < (if (flashKind == FLASH_FAIL) CastFx.FAIL_MS else CastFx.FINISH_MS))
         if (name == null || !shown) return next
-        val s = width / FRAME_W
+        val s = barW() / FRAME_W
         val bh = curBh; val u = bh / 13f
         // the whole cast fades with the bar's finish (the game's FadeOutAnim)
         val a = if (flashKind == FLASH_CAST || flashKind == FLASH_FAIL) {
@@ -2986,13 +3037,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (curPlate) {
             tp.textSize = CastBarPlace.NAME_PX * s
             tp.setShadowLayer(2f * s, s, s, Color.BLACK); tp.alpha = ai
-            val pg = CastBarPlace.plate(castTop, w, height.toFloat(), tp.measureText(CastFx.fit(name, (CastBarPlace.PLATE_MAX - CastBarPlace.PLATE_PAD) * s) { tp.measureText(it) }), s)
+            val pg = CastBarPlace.plate(castTop, w, barH(), tp.measureText(CastFx.fit(name, (CastBarPlace.PLATE_MAX - CastBarPlace.PLATE_PAD) * s) { tp.measureText(it) }), s)
             val text = CastFx.fit(name, (CastBarPlace.PLATE_MAX - CastBarPlace.PLATE_PAD) * s) { tp.measureText(it) }
             val tb = aBarTextBox
             if (tb != null) drawBox(c, tb, pg[0], pg[1], pg[2], pg[3], ai)
             else { pSwing.color = Color.argb((200 * a).toInt(), 0, 0, 0); c.drawRoundRect(pg[0], pg[1], pg[2], pg[3], 8f * s, 8f * s, pSwing) }
             c.drawText(Tr.t(text), (pg[0] + pg[2]) / 2f, (pg[1] + pg[3]) / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
-        } else if (restGap(s)) {
+        } else if (!into && restGap(s)) {
             // the user (test42): "when casting out of combat could we make the spell text appear above the bar with the same font size as in
             // combat?": the fight's TextBox plate and type, standing on the bar, centred in the free gap between the two button groups
             // (never over a button: the plate is at most the gap's width; the gap measured from the band's own slot boxes)
@@ -3002,7 +3053,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val text = CastFx.fit(name, maxW - CastBarPlace.PLATE_PAD * s) { tp.measureText(it) }
             val pw = minOf(tp.measureText(text) + CastBarPlace.PLATE_PAD * s, maxW)
             val mx = (gapL + gapR) / 2f
-            val b0 = height - bh - 2f * s; val t0 = b0 - CastBarPlace.PLATE_H * s
+            val b0 = barH() - bh - 2f * s; val t0 = b0 - CastBarPlace.PLATE_H * s
             val tb = aBarTextBox
             if (tb != null) drawBox(c, tb, mx - pw / 2f, t0, mx + pw / 2f, b0, ai)
             else { pSwing.color = Color.argb((200 * a).toInt(), 0, 0, 0); c.drawRoundRect(mx - pw / 2f, t0, mx + pw / 2f, b0, 8f * s, 8f * s, pSwing) }
@@ -3011,7 +3062,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             tp.textSize = bh * CastFx.NAME_SIZE
             tp.setShadowLayer(1.5f * u, u, u, Color.BLACK); tp.alpha = ai
             val text = CastFx.fit(name, w - 2f * CastFx.NAME_PAD * s) { tp.measureText(it) }
-            c.drawText(Tr.t(text), w / 2f, height - bh / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
+            c.drawText(Tr.t(text), w / 2f, barH() - bh / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
         }
         return next
     }
@@ -3035,11 +3086,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private fun drawCastBar(c: Canvas, now: Long, w: Float, castStartMs: Double, castEndMs: Double): Long {
         fun xAt(p: Float) = w * p
         val bh = curBh
-        val y0 = height - bh; val y1 = height.toFloat()
+        val y0 = barH() - bh; val y1 = barH()
         var next = Long.MAX_VALUE
         val fa = now - flashAtMs
         val flashLen = when (flashKind) { FLASH_SWING -> SWING_FLASH_MS; FLASH_FAIL -> CastFx.FAIL_MS; else -> CastFx.FINISH_MS }
-        val parts = SwingLine.parts(swingOn && !castOnly, now.toDouble(), castStartMs, castEndMs, swingStartMs, swingDurMs, SWING_GRACE,
+        val parts = SwingLine.parts(swingOn && !castOnly && !into, now.toDouble(), castStartMs, castEndMs, swingStartMs, swingDurMs, SWING_GRACE,
             flashKind != 0, flashKind == FLASH_SWING, fa, flashLen)
         val flashing = parts.flash
         val casting = parts.cast
