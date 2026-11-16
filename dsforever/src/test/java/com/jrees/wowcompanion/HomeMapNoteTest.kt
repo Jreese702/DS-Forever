@@ -89,5 +89,8 @@ class HomeMapNoteTest {
         val floor = v.indexOf("// the floorplan sits ON the terrain, under every marker")
         assertTrue("after the terrain, before the floorplan and every marker", grid in 1 until note && note < floor)
         assertTrue("through Tr", v.contains("val t = Tr.t(note)"))
+        // review: the open map centres the player in the part its quest list leaves (trackPx): the note goes there, not under the list
+        assertTrue(v.contains("artNote?.let { drawArtNote(c, it, left + trackPx, top, fw - trackPx, fh, compact) }"))
+        assertTrue("the same strip the player's centre leaves", v.contains("var cxView = cxMap - (trackPx / 2f) / fw * (2f * halfX)"))
     }
 }

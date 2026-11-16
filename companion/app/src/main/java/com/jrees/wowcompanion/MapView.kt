@@ -2604,7 +2604,8 @@ class MapView(context: Context) : View(context) {
         private set
     private val pArtNote = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
 
-    /** [note] centred across the field, under the player's arrow ([HomeMapNote.baseline]), shrunk to fit a narrow map */
+    /** [note] centred across the field ([left], [fw]: the part the open map's quest list leaves), under the player's arrow
+     *  ([HomeMapNote.baseline]), shrunk to fit a narrow map */
     private fun drawArtNote(c: Canvas, note: String, left: Float, top: Float, fw: Float, fh: Float, compact: Boolean) {
         val t = Tr.t(note)
         pArtNote.color = cText
@@ -6582,7 +6583,8 @@ class MapView(context: Context) : View(context) {
         // (review: also over this continent's folder with no tile here yet - the step part-way - not only with no folder at all)
         val tilesShown = HomeMapNote.terrainShown(terrain, drew, allAbsent, artNote != null)
         artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT else null
-        artNote?.let { drawArtNote(c, it, left, top, fw, fh, compact) }
+        // (review: on the open map, in the part the quest list leaves - where the player is centred - not under the list)
+        artNote?.let { drawArtNote(c, it, left + trackPx, top, fw - trackPx, fh, compact) }
         // the floorplan sits ON the terrain, under every marker -- same projection, so it
         // lines up with the world by construction rather than by a second transform
         val flPlace = placeHere(m)
