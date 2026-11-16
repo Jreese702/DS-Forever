@@ -3339,7 +3339,8 @@ do
         local ok, row = pcall(pad.secureRow, LAY.ROW, LAY.COLS, function() end, function(col) LAY.onCell(col) end,
                               { onPress = true, share = LAY.HOST })
         LAY.rowOk = ok and row ~= nil
-        LAY.why = LAY.rowOk and LAY.why or "norow"
+        -- (review: never `rowOk and why or "norow"` - with no why yet that reads "norow" on a row that IS made)
+        if not LAY.rowOk then LAY.why = "norow" elseif LAY.why == "norow" then LAY.why = nil end
         return LAY.rowOk
     end
     local function holder()

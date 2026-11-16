@@ -15,14 +15,16 @@ Proven here:
      back (padtab 39 then 35) and gets it;
   c  the document at login: six pieces in order, their select columns 0-5, their default anchors (the HUD's top-centre 350 under the
      centre, the compass 4 from the top, the target bar under it, the party column, the Nintendo bar at the stock bar's centre, the chat
-     strip's bottom-centre 16 under the screen's edge);
+     strip's TOP-centre, its bottom border 16 under the screen's edge); no "norow" once the row is made (the review);
   d  OPEN / SELECT / A SPOT: the catcher up (TOOLTIP, level 0: under every cell), a tap at a spot puts the selected piece's anchor there
      (the HUD's frame at it after the ease), the document (part) says where, NOTHING saved until Save (WowCompanionDB.lay untouched;
      SvKeep's svkeep carries no lay), then Save writes it and SvKeep carries it;
   e  THE CATCHER: the mapping (1080-line pixels from the cursor), the 60 ms same-spot guard, the pad band and the sink refused, the
-     reach switch (a tap REACH lower reaches a spot inside the band), the selected piece kept on the screen;
+     reach switch (a tap REACH lower reaches a spot inside the band; on a smaller screen the reach still clears the band), the selected
+     piece kept on the screen;
   f  LINKED: the target bar follows the compass until it is moved itself; Reset re-attaches it;
-  g  SIZE (32 / 33) within the piece's limits, REVERT (35), CLOSE without Save drops the draft, COPY FROM CHARACTER (24..29);
+  g  SIZE (32 / 33) within the piece's limits, the chat strip moved sideways from its own place (its anchor on the screen), REVERT (35),
+     CLOSE without Save drops the draft, COPY FROM CHARACTER (24..29);
   h  THE FIGHT: the look and the stick catch hide at once, the catcher inert (a tap moves nothing) and gone LINGER_S after its last tap,
      the draft kept, everything back at the fight's end; the row's cells pressed in a fight breach nothing;
   i  the game's own Edit Mode shown: the editor never opens, and closes when it opens; the Settings room letting go closes it (AWAY_S);
@@ -214,6 +216,8 @@ check(d0.rows.lay is None and d0.rows.cal is not None, "b. at login the Calendar
 doc = last(L)
 check(doc is not None and doc.get("row") == "lay" and doc.get("open") is False and doc.get("held") is None,
       "b. the lay document at login: the row, closed, the Settings room not holding", doc and (doc.get("row"), doc.get("open"), doc.get("held")))
+check(doc is not None and doc.get("why") is None and L.eval('WowCompanion.layEditor.why') is None,
+      "b. the row made: no 'norow' (the review: `rowOk and why or 'norow'` said it with no why yet)", doc and doc.get("why"))
 hold(L)
 d1 = L.eval('WowCompanion.pad.describe()')
 check(d1.rows.lay == rows["cal"] and d1.rows.cal is None, "b. the Settings room holds: lay leased onto the row (described), cal not",
@@ -242,8 +246,10 @@ par = piece(doc, "party")
 check(par["ax"] == 24 and par["ay"] == 250 and par["w"] == 300 and par["h"] == 256, "c. the party block: the left column (24, 250), 300 x 256",
       (par["ax"], par["ay"], par["w"], par["h"]))
 chat = piece(doc, "chat")
-check(abs(chat["ay"] - 1096) < 0.01 and chat["sn"] == 100 and chat["sx"] == 100 and abs(chat["y"] - 655) < 0.01,
-      "c. the chat strip: its bottom-centre 16 under the edge, moved only", (chat["ay"], chat["y"], chat["sn"], chat["sx"]))
+check(abs(chat["ay"] - 655) < 0.01 and abs(chat["y"] - 655) < 0.01 and abs(chat["y"] + chat["h"] - 1096) < 0.01
+      and chat["sn"] == 100 and chat["sx"] == 100,
+      "c. the chat strip: its anchor the top-centre (on the screen), its bottom 16 under the edge, moved only",
+      (chat["ay"], chat["y"], chat["y"] + chat["h"], chat["sn"], chat["sx"]))
 nbar = piece(doc, "nbar")
 check(nbar is not None and nbar["w"] > 0 and nbar["h"] > 0, "c. the Nintendo bar: its rect at the stock bar's centre", nbar)
 check(all(p["g"] is False and p["m"] is True for p in doc["p"]), "c. every piece is ours (g false) and can move")
@@ -327,6 +333,12 @@ check(lay.view.compass.dx == 40 and lay.view.compass.dy == 16, "e. a tap 160 low
       "(+40, 20) (dx %s, dy %s)" % (lay.view.compass.dx, lay.view.compass.dy))
 cell(L, 30)
 check(lay.reach is False, "e. reach off (30)")
+rp = L.eval('(function() local g = WowCompanion.pad.geom; local o = g.ph; local r0 = WowCompanion.lay.reachPx(); g.ph = 720; '
+            'local r = WowCompanion.lay.reachPx(); local z = WowCompanion.lay.forbidden()[1]; local d = WowCompanion.lay.catchDescribe(); '
+            'g.ph = o; return { r0 = r0, r = r, bottom = z.y + z.h, d = d.reach } end)()')
+check(rp.r0 == 160 and rp.r > 160 and rp.r >= rp.bottom + 8 and rp.d == rp.r,
+      "e. the reach clears the band on a smaller screen too (720 lines: band bottom %.1f, reach %s; 160 at the Thor's)" % (rp.bottom, rp.r),
+      (rp.r0, rp.r, rp.bottom, rp.d))
 cell(L, 0)
 catch(L, 5, 1075)                                                 # the HUD's top-centre in the corner: kept on the screen
 ease(L)
@@ -369,6 +381,11 @@ cell(L, 5)
 cell(L, 33)
 check(piece(last_full(L), "chat")["s"] == 100, "g. the chat strip has no size (100 % only)")
 fixture(L, "lay_dirty")
+catch(L, W / 2 - 100, 655)                                        # the chat strip (selected) sideways from its own place
+ease(L)
+check(lay.view.chat is not None and lay.view.chat.dx == -100 and lay.view.chat.dy == 0,
+      "g. the chat strip moves sideways from its own place (its top-centre anchor is on the screen: dx %s, dy %s)"
+      % (lay.view.chat and lay.view.chat.dx, lay.view.chat and lay.view.chat.dy))
 cell(L, 35)
 ease(L)
 d = fresh(L)

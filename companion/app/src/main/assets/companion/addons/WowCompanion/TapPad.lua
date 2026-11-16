@@ -909,7 +909,8 @@ end
 --   (an invisible window a room keeps open by alpha never takes the tap). The PRESS only (a stray release does nothing); where the press
 --   landed (GetCursorPosition, read only) is handed to the editor in 1080-line pixels. Left out: the pad's band (describe()'s rows, its
 --   gaps too) and the sink at the park point - a tap meant for a spot there would press a cell, so THE REACH SWITCH (L.reach) reads every
---   tap REACH pixels lower: the app taps under the spot. Its own double-press guard: a second press at the same spot within CATCH_REPEAT
+--   tap REACH pixels lower (L.reachPx: never less than the band's own bottom, so a spot at the very top is reached on any screen): the app
+--   taps under the spot. Its own double-press guard: a second press at the same spot within CATCH_REPEAT
 --   (60 ms; TapPad's REPEAT of 0.25 s would cap it at 4 taps a second). INERT (L.inert) it takes the press and does nothing: a fight's
 --   start or the editor's close leaves it so for LINGER_S after its last tap (taps already in flight never reach the world), then hides it.
 --   One real tap test on the Thor is owed before release (TapPad's rule; probe 5 of the design: 1 px accuracy, taps a second).
@@ -982,6 +983,14 @@ do
         for _, z in ipairs(L.forbidden()) do if inside(z, x, y) then return z.why end end
         return nil
     end
+    -- the reach distance: REACH, or more where the pad's band reaches lower (a smaller screen: the band is taller in 1080-line pixels),
+    -- so a spot at the very top always has its tap under the band (the review of 2026-11-16)
+    function L.reachPx()
+        for _, z in ipairs(L.forbidden()) do
+            if z.why == "pad" then return math.max(L.REACH, math.ceil(z.y + z.h + 8)) end
+        end
+        return L.REACH
+    end
     -- where the press landed, in 1080-line pixels from the top-left (nil = not readable)
     function L.cursor()
         local ok, x, y = pcall(GetCursorPosition)
@@ -1007,7 +1016,7 @@ do
         local why = L.blocked(x, y)
         if why then L.refused = L.refused + 1; return false, why end
         L.n = L.n + 1
-        local sy = y - (L.reach and L.REACH or 0)
+        local sy = y - (L.reach and L.reachPx() or 0)
         if type(L.onSpot) == "function" then pcall(L.onSpot, x, sy) end
         return true
     end
@@ -1052,7 +1061,7 @@ do
     -- the catcher as the app reads it: its rect, the zones left out, the reach distance (1080-line pixels)
     function L.catchDescribe()
         local w, h = L.screen()
-        return { x = 0, y = 0, w = math.floor(w + 0.5), h = h, no = L.forbidden(), reach = L.REACH, on = L.catching() or nil,
+        return { x = 0, y = 0, w = math.floor(w + 0.5), h = h, no = L.forbidden(), reach = L.reachPx(), on = L.catching() or nil,
                  inert = (catcher ~= nil and catcher:IsShown() and L.inert) or nil }
     end
 end
