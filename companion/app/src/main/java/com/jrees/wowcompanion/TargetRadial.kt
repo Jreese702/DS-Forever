@@ -20,6 +20,13 @@ object TargetRadial {
     }
     val ROOT = Page()
 
+    /** what the wheel's own controller reader takes for its opener's [input]. HOLD / READ: the sticks and the buttons. KEYS (Party
+     *  mode: the PartyPad hands the presses in by `key`): the sticks only, so no press counts twice (the user, 2026-11-16: "the control
+     *  sticks arent working on the party inspect radials, they are still walking and looking around"; the add-on keeps both sticks
+     *  from the game meanwhile, Radial r22) */
+    data class Reads(val sticks: Boolean, val buttons: Boolean)
+    fun reads(input: TargetRadialView.Input): Reads = Reads(sticks = true, buttons = input != TargetRadialView.Input.KEYS)
+
     /** one slice: the menu [entry] it runs, or a wheel to open ([next]: More / a sub-menu) */
     data class Slice(val label: String, val icon: String, val entry: PlayerMenu.Entry?, val next: Page? = null) {
         val more get() = next != null && entry == null

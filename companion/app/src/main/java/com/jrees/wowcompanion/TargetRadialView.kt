@@ -26,7 +26,7 @@ import org.json.JSONObject
  *  - Party mode's MEMBER menu (the PartyPad's Y, a long press on a cell): [Input.KEYS]: the PartyPad's own presses come in by [key] (a
  *    hold of ours would end Party mode); a finger works too.
  *
- * INPUT: either stick (READ / HOLD) or the D-pad (Left / Right round the ring, Up the top, Down the bottom) aims; A picks; B goes back a
+ * INPUT: either stick (every opener; KEYS reads only the sticks itself) or the D-pad (Left / Right round the ring, Up the top, Down the bottom) aims; A picks; B goes back a
  * wheel, and from the first closes; Y or the hub closes. MORE and a SUB-MENU open the next wheel ([TargetRadial.Page]).
  *
  * THE PET'S AUTOCAST (Quests q62; the user, 2026-11-16: "hunters need to be able to visually see when their pets abilities are active
@@ -148,10 +148,12 @@ class TargetRadialView(
         bringToFront()
         if (input == Input.HOLD) { owning = true; hold(0) }
         reader?.stop(); reader = null
-        if (input != Input.KEYS) reader = PadInput(
+        // KEYS (Party mode): the sticks too, the presses only by [key] (TargetRadial.reads)
+        val rd = TargetRadial.reads(input)
+        if (rd.sticks) reader = PadInput(
             onPad = { _, _, _, _ -> },
             onStatus = { ok, m -> if (!ok) Log.i(TAG, "context radial: controller reader: $m") },
-            onButtons = { h -> post { buttons(h) } },
+            onButtons = { h -> if (rd.buttons) post { buttons(h) } },
             onStickVector = { st, x, y -> post {
                 mag[st.coerceIn(0, 1)] = kotlin.math.hypot(x.toDouble(), y.toDouble())
                 if (isOpen) vector(st, x.toDouble(), -y.toDouble()) else stickCheck()

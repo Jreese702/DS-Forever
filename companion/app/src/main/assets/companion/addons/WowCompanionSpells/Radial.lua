@@ -19,7 +19,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local RV = "r21"                -- bump on every change; r21 PET SPELLS (#234, the user: "build it"): the spell radials' cells cast a PET spell by its NAME (q5); r20a (review of feat/item-cooldowns; the user 2026-11-13: "honour enable=0 (held potion: dim, no number)", "Persist the hearthstone end time per name-realm"): held only with a length (the game's duration > 0 and enable 0; an item with no cooldown never dims), the itemcd doc says whose it is (`who`, name-realm: the app never keeps one character's Hearthstone under another's name); r20: ITEM COOLDOWNS (feat/item-cooldowns; the user's picks 2026-11-13: "cooldowns on radial slices AND bag slots: dark pie sweep + seconds"; "LEARNED LENGTHS in the style of the existing facecd"; "Counts only on stackable consumables/reagents/ammo/items with charges"): the `itemcd` document (event-driven only, change-only, never collect / pad.retain / buildCells), BAG_UPDATE_COOLDOWN off the radial's rebuild list, the radial doc's items / pins carry `st` (stackable) and no `cd`; r19: SEVERAL SPELL RADIALS back (feat/multi-radial-v2): q3 = 1.0.18's q2 (6 radials x 8, 40 shared cells, the radial buttons 2..6 armed) with r17e's guard (the row rebuilt only on a change) and NO cooldown sweep (r18 / q1b: one sradialcd per cast); r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r17 (1.0.18, reverted): the spell radials (q2); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
+local RV = "r22"                -- bump on every change; r22 THE PARTY WHEELS (the user, 2026-11-16: "the control sticks arent working on the party inspect radials, they are still walking and looking around"): the stick catch also shows while a Party mode wheel is open (the party pad's wc-pmenu, read only; or MENU HOLD clicked, until MENU DONE), both sticks kept, at most 60 s; r21 PET SPELLS (#234, the user: "build it"): the spell radials' cells cast a PET spell by its NAME (q5); r20a (review of feat/item-cooldowns; the user 2026-11-13: "honour enable=0 (held potion: dim, no number)", "Persist the hearthstone end time per name-realm"): held only with a length (the game's duration > 0 and enable 0; an item with no cooldown never dims), the itemcd doc says whose it is (`who`, name-realm: the app never keeps one character's Hearthstone under another's name); r20: ITEM COOLDOWNS (feat/item-cooldowns; the user's picks 2026-11-13: "cooldowns on radial slices AND bag slots: dark pie sweep + seconds"; "LEARNED LENGTHS in the style of the existing facecd"; "Counts only on stackable consumables/reagents/ammo/items with charges"): the `itemcd` document (event-driven only, change-only, never collect / pad.retain / buildCells), BAG_UPDATE_COOLDOWN off the radial's rebuild list, the radial doc's items / pins carry `st` (stackable) and no `cd`; r19: SEVERAL SPELL RADIALS back (feat/multi-radial-v2): q3 = 1.0.18's q2 (6 radials x 8, 40 shared cells, the radial buttons 2..6 armed) with r17e's guard (the row rebuilt only on a change) and NO cooldown sweep (r18 / q1b: one sradialcd per cast); r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r17 (1.0.18, reverted): the spell radials (q2); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
 local ROW, CELLS = "radial", 24 -- the secure pad row: 24 cells = 3 pages of 8
 local PLAYER_BAGS = { 0, 1, 2, 3, 4 }
 local QUARANTINE = 30           -- seconds a freed column stays unused (as the pad's own columns)
@@ -655,8 +655,31 @@ local stickSync
 local EXTRA_ARM = { "WowCompanionPadSpellRadial", "WowCompanionPadPause", "WowCompanionPadSpellRadial2", "WowCompanionPadSpellRadial3",
                     "WowCompanionPadSpellRadial4", "WowCompanionPadSpellRadial5", "WowCompanionPadSpellRadial6" }
 local extraHooked = {}
-local function allHooked() for _, n in ipairs(EXTRA_ARM) do if not extraHooked[n] then return false end end return true end
+-- r22 (the user, 2026-11-16: "the control sticks arent working on the party inspect radials, they are still walking and looking around"):
+-- a Party mode wheel (a member's or the pet's) holds no guest (a hold would end Party mode), so the catch also shows while the party
+-- pad's own menu sub-state is on (PadMap's wc-pmenu: Y's menu, or a hold's MENU HOLD with Party mode on; a plain attribute READ) or
+-- since a hold's MENU HOLD with Party mode off, until MENU DONE (the wheel's close). Both are the player's own presses. PARTY_MAX: a lost
+-- MENU DONE never keeps the sticks
+local PARTY_HOOK = { WowCompanionPartyMenuHold = true, WowCompanionPartyMenuDone = false }
+local PARTY_MAX = 60
+local partyHeldAt, pmenuSince = nil, nil
+local function allHooked()
+    for _, n in ipairs(EXTRA_ARM) do if not extraHooked[n] then return false end end
+    for n in pairs(PARTY_HOOK) do if not extraHooked[n] then return false end end
+    return true
+end
+local function partyMenu()
+    local pp = _G.WowCompanionPartyPad
+    if type(pp) ~= "table" or type(pp.GetAttribute) ~= "function" then return false end
+    return S(function() return pp:GetAttribute("wc-pmenu") end) == true
+end
 local function hookHub()
+    for n, held in pairs(PARTY_HOOK) do
+        local sb = not extraHooked[n] and _G[n]
+        if type(sb) == "table" and type(sb.HookScript) == "function" then
+            extraHooked[n] = pcall(function() sb:HookScript("OnClick", function() partyHeldAt = held and GetTime() or nil; pcall(stickSync) end) end)
+        end
+    end
     for _, n in ipairs(EXTRA_ARM) do
         local sb = not extraHooked[n] and _G[n]
         if type(sb) == "table" and type(sb.HookScript) == "function" then
@@ -682,7 +705,13 @@ stickSync = function()
     if holder == GUEST_HOLDER then armedAt = nil end              -- the hold has come: the arm has done its job
     local armed = armedAt ~= nil and holder == nil and (GetTime() - armedAt) < ARM_S
     -- r13 (b-class-takeover, Quests q44): the app's CLASS wheel's guest holds the camera still the same way while it aims
-    local want = (holder == GUEST_HOLDER or holder == "pad:class" or armed) and stickOn
+    local wheel = holder == GUEST_HOLDER or holder == "pad:class" or armed
+    -- r22: a Party mode wheel is open (see PARTY_HOOK)
+    local now = GetTime()
+    if partyMenu() then pmenuSince = pmenuSince or now else pmenuSince = nil end
+    if partyHeldAt and now - partyHeldAt >= PARTY_MAX then partyHeldAt = nil end
+    local party = (pmenuSince ~= nil and now - pmenuSince < PARTY_MAX) or partyHeldAt ~= nil
+    local want = (wheel or party) and stickOn
     catch.mode = holder == "pad:class" and "class" or nil
     if want ~= (catch:IsShown() and true or false) then
         local caught, passed = catch.n, catch.pass
@@ -691,12 +720,12 @@ stickSync = function()
         -- r6 (the user, b65: "A sometimes doesn't use it" -- MEASURED: after an app restart every wheel had 0 items, because this doc is
         -- sent only on a change and the app's log replay no longer held the last one): the FULL list again on every opening (the arm or
         -- the hold), flushed at once, so the app always has it before any A
-        if want then pcall(emit, true, true) end
+        if want and wheel then pcall(emit, true, true) end
         -- r10 (Home: "so the wheel never opens on a stale list"): the SPELL radial's full list too, at the same opening (the two wheels
         -- share the guest, so the edge cannot tell which one opens; its list is small), flushed at once
-        if want and type(WC.spellRadial) == "table" and type(WC.spellRadial.emit) == "function" then pcall(WC.spellRadial.emit, true) end
+        if want and wheel and type(WC.spellRadial) == "table" and type(WC.spellRadial.emit) == "function" then pcall(WC.spellRadial.emit, true) end
         WC.send(WC.encode({ type = "radialstick", v = RV, on = want or false, ok = stickOn or nil, fight = inCombat() or nil,
-                            arm = (want and armed and holder == nil) or nil, holder = holder,
+                            arm = (want and armed and holder == nil) or nil, holder = holder, party = (want and party) or nil,
                             mode = catch.mode, n = (not want) and caught or nil, pass = (not want and passed > 0) and passed or nil }))
         WC.push()
     end

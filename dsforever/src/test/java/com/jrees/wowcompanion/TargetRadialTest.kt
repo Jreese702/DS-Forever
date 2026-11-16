@@ -76,4 +76,12 @@ class TargetRadialTest {
         // a pet key is no game menu icon of ours (no mix-up with Dismiss / Trade / Follow)
         for (k in listOf("PetFeed", "PetDismiss", "PetMend", "PetTrain")) assertNull(MenuIcons.keyOf(k, k))
     }
+
+    /** the user, 2026-11-16: "the control sticks arent working on the party inspect radials, they are still walking and looking around":
+     *  every opener aims with the sticks; Party mode's KEYS wheel reads no buttons itself (the PartyPad's `key` brings them: no press twice) */
+    @Test fun everyOpenerAimsWithTheSticksAndKeysTakesNoButtons() {
+        assertEquals(TargetRadial.Reads(sticks = true, buttons = false), TargetRadial.reads(TargetRadialView.Input.KEYS))
+        assertEquals(TargetRadial.Reads(sticks = true, buttons = true), TargetRadial.reads(TargetRadialView.Input.READ))
+        assertEquals(TargetRadial.Reads(sticks = true, buttons = true), TargetRadial.reads(TargetRadialView.Input.HOLD))
+    }
 }
