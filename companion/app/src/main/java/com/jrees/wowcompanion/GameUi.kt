@@ -603,17 +603,16 @@ object GameUi {
               val known: Boolean, val hidden: Boolean, val note: String)
 
     /** the elements to list: what the game reports, and always the minimap */
-    fun rows(): List<Row> {
-        val s = state
-        val out = ArrayList<Row>()
-        for (info in UiElements.KNOWN) {
-            val el = s?.els?.firstOrNull { it.id == info.id }
-            if (el == null && info.id != "minimap") continue
-            val m = mode(info.id)
-            out.add(Row(info.id, info.label, roomOf(info.home), m, el != null,
-                        el?.hidden == true, if (info.id == "hud" && m == UiMode.NINTENDO && el != null) nbarNote(sw?.nbar) else note(el, m)))
-        }
-        return out
+    fun rows(): List<Row> = UiElements.KNOWN.mapNotNull { info -> elementRow(info.id)?.takeIf { it.known || info.id == "minimap" } }
+
+    /** one element's row whether the game reports it or not (known = false until it does): Top screen's tiles keep a fixed place for
+     *  every element (the user's 2026-11-16 tile grid: a dim "..." tile until the game reports, no reflow); null = no such element */
+    fun elementRow(id: String): Row? {
+        val info = UiElements.of(id) ?: return null
+        val el = state?.els?.firstOrNull { it.id == info.id }
+        val m = mode(info.id)
+        return Row(info.id, info.label, roomOf(info.home), m, el != null,
+                   el?.hidden == true, if (info.id == "hud" && m == UiMode.NINTENDO && el != null) nbarNote(sw?.nbar) else note(el, m))
     }
 
     private fun note(el: HubEl?, m: UiMode): String {
