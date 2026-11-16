@@ -120,6 +120,7 @@ class ChatStream(
         fun flush(): Boolean {
             if (batch.isEmpty()) return true
             val ok = taps(ArrayList(batch), if (batch.size > 1) BATCH_GAP_MS else 0L)
+            if (ok) busy(batch.size, if (batch.size > 1) BATCH_GAP_MS else 0L)
             batch.clear()
             return ok
         }
@@ -136,6 +137,7 @@ class ChatStream(
                 else -> {
                     if (!flush()) return false
                     if (!taps(listOf(spacer, c), REPEAT_GAP_MS)) return false
+                    busy(2, REPEAT_GAP_MS)
                     handed(spacer, REST_MS); handed(c, REPEAT_GAP_MS)
                 }
             }
@@ -144,6 +146,20 @@ class ChatStream(
         pendingBody += cells.count { it == "chq" to BODY }
         return true
     }
+
+    /**
+     * VOICE'S GOLD FILL (the user's pick 2026-11-16, the voice sheet: "A gold fill on Send shows copy progress"): when the taps handed over
+     * so far will all have landed, at the least times above (the queue may only add to them). An estimate for the drawing only: the send
+     * still waits for the add-on's own length and hash check.
+     */
+    private var busyUntil = 0L
+    private fun busy(n: Int, gap: Long) {
+        val t = now()
+        busyUntil = maxOf(busyUntil, t) + REST_MS + (n - 1).coerceAtLeast(0) * gap
+    }
+
+    /** how long the taps handed over so far still take to land (0 = all landed, as far as the least times tell) */
+    fun copyLeftMs(): Long = (busyUntil - now()).coerceAtLeast(0L)
 
     /** the least time between [c]'s last press and a press [before] ms after the newest one (enough = [REPEAT_GAP_MS]) */
     private fun sinceOwn(c: Pair<String, Int>, before: Long): Long {

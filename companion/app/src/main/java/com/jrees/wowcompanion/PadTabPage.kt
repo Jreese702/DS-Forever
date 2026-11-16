@@ -1006,14 +1006,21 @@ class PadTabPage(
     private var icTop = 0
     private fun editorOpen() = edName != 0 || edIcon != 0
     private val kb by lazy {
-        ChatKeyboard(host.context, swap = false).apply {
+        // VOICE on the name too (the user's pick 2026-11-16, "radial names"): X here (A types the keys) speaks the name, which replaces
+        // the old one; B on the voice page comes back to these keys
+        ChatKeyboard(host.context, swap = false, voice = true).apply {
             sendWord = "Save"
             text = { edText }
             onText = { t -> edText = t.take(RadialMeta.NAME_MAX); host.invalidate() }
             onSend = { closeEditor(true) }
             onClose = { closeEditor(false) }
+            voiceAppend = false
+            voiceMax = RadialMeta.NAME_MAX
+            onVoice = { host.invalidate() }
         }
     }
+    /** where the name box's X / microphone was drawn (a finger on it = X) */
+    private var edMic: RectF? = null
 
     private fun openName(slot: Int, byTouch: Boolean) {
         if (slot == 0) return
@@ -1042,6 +1049,7 @@ class PadTabPage(
 
     /** the editor closes: [save] = the typed name / nothing more for the icon (a pick saves itself); the add-on's box is told it is done */
     private fun closeEditor(save: Boolean, tell: Boolean = true) {
+        if (edName != 0) kb.stopVoice()                    // words not accepted never go into the name
         if (edName != 0 && save) RadialMeta.setName(edName, edText)
         val was = editorOpen()
         edName = 0; edIcon = 0
@@ -1120,12 +1128,15 @@ class PadTabPage(
                 val cx = tx + if (edText.isEmpty()) 0f else pt.measureText(edText) + 4f
                 pt.alpha = 255; c.drawRect(cx, ty + pt.ascent(), cx + 3f, ty + pt.descent(), pt)
             }
-            c.drawText(Tr.t("${Glyphs.name("a")} types · Start saves · ${Glyphs.name("b")} cancels"), 48f, 270f, hint)
+            if (!kb.voiceShown) c.drawText(Tr.t("${Glyphs.name("a")} types · Start saves · ${Glyphs.name("b")} cancels"), 48f, 270f, hint)
+            // X and the microphone on the name box while the keys show (the voice design: a finger on it = X)
+            edMic = if (!kb.voiceShown && VoiceUi.micShown(host.context)) VoiceUi.micGlyph(c, box.right - 24f, box.centerY(), 44f) else null
             kb.measure(View.MeasureSpec.makeMeasureSpec(w.toInt(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
             val kh = kb.measuredHeight
             kb.layout(0, 0, w.toInt(), kh)
             c.save(); c.translate(0f, h - kh); c.clipRect(0f, 0f, w, kh.toFloat()); kb.draw(c); c.restore()
-            host.postInvalidateDelayed(250)
+            // the voice page's ripples move on every frame (this board is drawn here, never attached: its own redraw can't)
+            if (kb.voiceAnimating) host.postInvalidateOnAnimation() else host.postInvalidateDelayed(250)
             return
         }
         c.drawText(Tr.t("Choose an icon for ${RadialMeta.name(edIcon)}"), 48f, 72f, title)
@@ -1164,6 +1175,9 @@ class PadTabPage(
         if (edName != 0) {
             val kh = kb.measuredHeight.toFloat()
             val top = h - kh
+            if (ev.actionMasked == MotionEvent.ACTION_UP && edMic?.contains(ev.x, ev.y) == true && !kb.voiceShown) {
+                kb.startVoice(fromKeys = true); host.invalidate(); return
+            }
             if (ev.y >= top || ev.actionMasked != MotionEvent.ACTION_DOWN) {
                 val e2 = MotionEvent.obtain(ev); e2.offsetLocation(0f, -top)
                 kb.dispatchTouchEvent(e2); e2.recycle()

@@ -10,12 +10,15 @@ package com.jrees.wowcompanion
  *   the cursor starts IN THE MESSAGE BAR (the user, 2026-09-30), there the moment the module opens
  *   LB / RB             the chat TYPE, from anywhere (the X menu and the filter row are gone); on the log screen D-pad left /
  *                       right too (the user, 2026-10-07), except on a selected line, where they pick its links
- *   X                   QUICK CHAT <-> the KEYBOARD: the board under the bar turns its page (no board yet: quick chat)
+ *   X                   QUICK CHAT <-> the KEYBOARD: the board under the bar turns its page; with no board up VOICE (Scene.voice, the
+ *                       user's pick 2026-11-16: from a line the cursor jumps to the bar), else quick chat as before
+ *   D-pad Down on the bar with no board: quick chat (the way there now that X is voice's)
  *   A on the bar        THE INPUT the Settings name (the user, b121: the keyboard by default); B closes it again; with quick chat
  *                       up, the keyboard (to change what a phrase put in the bar)
  *   Select / View       the FILTER MENU: a CHECKLIST of the message types (the user, 2026-11-16: "check a radio box for all of the
  *                       message types that I care about seeing"); A ticks the box under the cursor and the list stays open; Select,
- *                       B or Y closes it. Four columns (the game's Chat Settings groups and the joined channels) under one All box
+ *                       B or Y closes it. Four columns (the game's Chat Settings groups and the joined channels) under one All box;
+ *                       while the keyboard is up, nothing
  *   D-pad up / down     from the bar up into the log (newest line first), and back down; down from the bar into quick chat
  *   D-pad left / right  on the selected line: its LINKS (the sender first, then what the text links); in quick chat, the tiles
  *   A                   what a touch on the cursor's thing does: the bar opens the keyboard, a line is selected (the cursor on its
@@ -58,6 +61,7 @@ class ChatPad {
         val viewAct: Boolean = false,       // and it has an action, which A on the link does (a player's: Whisper)
         val quickTiles: Int = 12,
         val defaultBoard: Board = Board.KEYS,   // what A on the bar opens (the Settings choice, the user's default: the keyboard)
+        val voice: Boolean = false,             // X is voice's (Voice typing on, a microphone): X on the log screen starts it
     ) {
         /** the checklist's boxes: All and every column's */
         val menuItems: Int get() = 1 + menuCols.sum()
@@ -80,6 +84,8 @@ class ChatPad {
         object CloseView : Act() { override fun toString() = "CloseView" }
         data class ViewAct(val k: Int) : Act()
         object Leave : Act() { override fun toString() = "Leave" }
+        /** VOICE (the user's pick 2026-11-16): the voice page on the message bar (the keyboard's board, its voice page) */
+        object Voice : Act() { override fun toString() = "Voice" }
     }
 
     /** where the cursor is; null before the module shows */
@@ -142,9 +148,14 @@ class ChatPad {
             "PADBACK" -> if (s.board != Board.NONE) emptyList() else menu(f, s)
             // Start: Send while quick chat is up (the keyboard takes its own Start before this); the room has it only then
             "PADFORWARD" -> if (s.board == Board.QUICK && !s.menu) listOf(Act.Send) else emptyList()
-            "PAD3" -> swap(s)
+            // VOICE (the user's pick 2026-11-16, "X starts voice everywhere in Chat; from a chat line, the cursor jumps to the message bar.
+            // Inside the open chat keyboard, X still flips to quick chat"): on the log screen X is voice's; with a board up, its page
+            "PAD3" -> if (s.voice && s.board == Board.NONE) voice(s) else swap(s)
             "PADDUP" -> { focus = up(f, s); moved(f, s) }
-            "PADDDOWN" -> { focus = down(f, s); moved(f, s) }
+            // "... and D-pad Down from the bar also opens quick chat" (X no longer does from the log screen)
+            "PADDDOWN" -> if (f == Focus.Field && s.board == Board.NONE && !s.menu) {
+                focus = Focus.Quick(lastQuick.coerceIn(0, s.quickTiles - 1)); listOf(Act.Board(Board.QUICK))
+            } else { focus = down(f, s); moved(f, s) }
             "PADDLEFT" -> side(f, s, -1)
             "PADDRIGHT" -> side(f, s, 1)
             "PAD1" -> a(f, s)
@@ -209,6 +220,15 @@ class ChatPad {
         if (s.view) closing.add(Act.CloseView)
         focus = if (to == Board.QUICK) Focus.Quick(lastQuick.coerceIn(0, s.quickTiles - 1)) else Focus.Field
         return closing + Act.Board(to)
+    }
+
+    /** X on the log screen: the cursor to the message bar (an open menu or view closes on the way), and its voice page */
+    private fun voice(s: Scene): List<Act> {
+        val acts = ArrayList<Act>()
+        if (s.menu) acts.add(Act.Menu(false))
+        if (s.view) acts.add(Act.CloseView)
+        focus = Focus.Field
+        return acts + Act.Voice
     }
 
     /** Y: back to the message bar from anywhere; an open menu or view closes on the way */

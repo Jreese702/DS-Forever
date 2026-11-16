@@ -92,6 +92,9 @@ class ChatKeys(private val layout: Layout = Layout.DEFAULT, private val pipe: Bo
         object Swap : Act() { override fun toString() = "Swap" }          // the Quick chat key: the room turns to quick chat
     }
 
+    /** this board has the "(X) Quick chat" key: X is that key's (else X is free, and a voice board gives it to voice) */
+    val hasSwap: Boolean get() = layout.pages.any { p -> p.any { r -> r.cells.any { it.key == Key.Swap } } }
+
     var page = 0; private set
     var row = 0; private set
     var col = 0; private set

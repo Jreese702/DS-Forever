@@ -339,8 +339,22 @@ class InteractView(context: Context) : View(context) {
         kb.onText = { t -> kbText = fieldStream.clean(t, kbMax); fieldStream.setBody(kbText); invalidate() }
         kb.onSend = { if (fieldStream.send()) { removeCallbacks(fieldTick); postDelayed(fieldTick, 500L) } }
         kb.onClose = { closeField() }
+        // VOICE (the user's pick 2026-11-16; Interact i161): on the words fields only (Subject, the letter, the search); the letter adds
+        // to its words, the others are replaced; the words copy into the add-on's field at Chat's pace (the finish button's gold fill)
+        kb.voiceBox = name in VOICE_FIELDS
+        kb.voiceAppend = name == "mailbody"
+        kb.voiceMax = kbMax
+        kb.copyLeftMs = { fieldStream.copyLeftMs() }
         kb.open(); kb.visibility = VISIBLE
+        // X on the field (doc.kbd.v), or a finger on its microphone a moment ago: the keyboard opens on its voice page
+        val wanted = voiceWanted == name && System.currentTimeMillis() - voiceWantedAt < VOICE_WANT_MS
+        voiceWanted = null
+        if (kb.voiceBox && (k.optInt("v", 0) == 1 || wanted)) kb.startVoice(fromKeys = false)
     }
+
+    /** a finger on a words field's microphone: the field's own cell (as A), and its voice page when the field opens */
+    private var voiceWanted: String? = null
+    private var voiceWantedAt = 0L
 
     /** B / the keyboard's close: the add-on drops the field (the value stays as it was), the keyboard goes */
     private fun closeField() {
@@ -349,6 +363,8 @@ class InteractView(context: Context) : View(context) {
     }
 
     private fun hideKeyboard() {
+        // the field is gone (the add-on closed it): a voice page on it stops without copying anything back (no taps into Chat's own buffer)
+        keyboard?.stopVoice(restore = false)
         kbField = null; kbRepeat = null
         removeCallbacks(kbTick); removeCallbacks(fieldTick)
         keyboard?.visibility = GONE
@@ -970,6 +986,12 @@ class InteractView(context: Context) : View(context) {
                 send(parts[0], parts[1].toInt())
             }
             hit.startsWith("why:") -> note(hit.substring(4), false)
+            hit.startsWith("voice:") -> {
+                // i161: the field opens (its own cell, as A) and the app opens its voice page on it
+                val parts = hit.substring(6).split('|')
+                voiceWanted = parts[0]; voiceWantedAt = System.currentTimeMillis()
+                send(parts[1], parts[2].toInt())
+            }
         }
         invalidate()
     }
@@ -2778,7 +2800,9 @@ class InteractView(context: Context) : View(context) {
         val p = if (shown.isEmpty()) UiKit.bodyPaint(size, Theme.dim) else if (digits) UiKit.numberPaint(size, Color.WHITE) else UiKit.bodyPaint(size, Color.WHITE)
         val words = if (shown.isEmpty()) hint else shown
         val x = box.left + 18f
-        val maxW = box.width() - 36f
+        // the words stop before the voice glyphs while they show (the field under the cursor, below)
+        val glyphs = cur == cmd && !typing && field in VOICE_FIELDS && col >= 0 && VoiceUi.micShown(context)
+        val maxW = box.width() - 36f - (if (glyphs) VoiceUi.glyphsWidth(minOf(40f, box.height() * 0.6f), true) + 10f else 0f)
         // the end of what is typed stays in view (the game's own box scrolls with the caret)
         val drawn = if (typing && p.measureText(words) > maxW) "…" + words.takeLast(p.breakText(words.reversed(), true, maxW - 24f, null)) else fit(p, words, maxW)
         val by = box.centerY() - (p.ascent() + p.descent()) / 2f
@@ -2793,6 +2817,12 @@ class InteractView(context: Context) : View(context) {
         }
         if (col >= 0) hits.add(box to "act:$cmd|$col")
         if (cur == cmd || typing) UiKit.focus(c, box)
+        // the words field under the cursor: A with the keyboard, X with the microphone (the voice design); a finger on it = X
+        if (glyphs) {
+            val g = minOf(40f, box.height() * 0.6f)
+            VoiceUi.boxGlyphs(c, box.right - 14f, box.centerY(), g, voice = true).mic
+                ?.let { hits.add(it to "voice:$field|$cmd|$col") }
+        }
     }
 
     private fun sendPage(c: Canvas, r: RectF, inner: RectF, top: Float, sd: JSONObject, act: JSONObject?, purse: Long, now: Long) {
@@ -2845,6 +2875,10 @@ class InteractView(context: Context) : View(context) {
         if (kbField == "mailbody") postInvalidateDelayed(500L)
         col("edit_body").takeIf { it >= 0 }?.let { hits.add(paper to "act:mailedit body|$it") }
         if (cur == "mailedit body" || kbField == "mailbody") UiKit.focus(c, paper, onPaper = true)
+        // the letter under the cursor: A with the keyboard, X with the microphone, at the paper's top right (a finger on it = X)
+        if (cur == "mailedit body" && kbField != "mailbody" && VoiceUi.micShown(context)) col("edit_body").takeIf { it >= 0 }?.let { bc ->
+            VoiceUi.boxGlyphs(c, paper.right - 18f, paper.top + 34f, 40f, voice = true, onPaper = true).mic?.let { hits.add(it to "voice:mailbody|mailedit body|$bc") }
+        }
         UiKit.divider(c, x0, ruleY, x1, ruleY)
         // the attachment slots: the game's empty slot, the item in it; the first empty one opens the bags
         val items = arr(sd, "items")
@@ -5191,6 +5225,10 @@ class InteractView(context: Context) : View(context) {
     }
 
     companion object {
+        /** i161: the words fields X opens on the voice page (never To, the money or the level range) */
+        val VOICE_FIELDS = setOf("mailsubject", "mailbody", "ahtext")
+        /** a finger on a field's microphone: its voice page when the field opens this soon after */
+        const val VOICE_WANT_MS = 4000L
         const val SPK_EVERY_MS = 3_000L
         const val PAPER_GOLD = 2            // UI Art's gold selection look; the user's pick replaces it
         const val CLOSE_B_LOOK = 1

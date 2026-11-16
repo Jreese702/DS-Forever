@@ -48,6 +48,8 @@ object SettingsTabs {
         // 2026-11-12 (the user: "an oled theme, but different color variations for menus"): the theme picker, the language under it
         THEME(Group.LOOK, "Theme", listOf("Theme")),
         LANGUAGE(Group.LOOK, "Language", listOf("Language")),
+        // the user's pick 2026-11-16 (voice to text): This device / Online / Off under Language, app-wide like it
+        VOICE(Group.LOOK, "Voice typing", listOf("Voice typing")),
         // GitHub #232 (the user, 2026-11-14: build it): which screen has the game; only with a second screen, Restart under it after a
         // change (ScreenSwap)
         SCREENS(Group.LOOK, "Screens", listOf("Swap screens", "Restart DS Forever")),

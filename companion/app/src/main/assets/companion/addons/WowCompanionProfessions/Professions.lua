@@ -48,7 +48,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "p23"          -- bump on every change; the app shows it, so a stale build is visible; p23: FORGET a main profession (ctl forget:1 / forget:2)
+local PV = "p25"          -- bump on every change; the app shows it, so a stale build is visible; p25 (voice1 review, the user 2026-11-16: voice to text must be "intuitive and slick", "A opens the keyboard, X opens our own voice prompt"): while the app's search keyboard (or its voice page) is up, Start is held from the game too (the keyboard's Search key, as Bags' search holds it), so the game's own Start never opens its wheel over it; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
 local MAKE_MAX = 26      -- make:1 .. make:26 on the control row; more than that is Create All
 local SEL_COLS = 40      -- columns of the "profsel" row (TapPad's COLS)
 local BASIC = 1          -- Enum.CraftingReagentType.Basic (profession constants documentation)
@@ -104,7 +104,7 @@ end
 local padFull = nil     -- the pad rows that did not register (the pad was full), set at load
 -- the controller (see "the controller" below): held = we are the capture's guest now; want = the room asked for it
 local ctlr = { held = false, want = false, n = 0, why = nil, mode = "book", backOn = false, stopOn = false, waiting = false,
-               awaitWin = false }
+               awaitWin = false, kbd = false }
 local retake            -- defined with the controller half; the event handler calls it after a fight
 local padWindow         -- the controller half's answer to the game's window opening / closing (defined there)
 local fightRefused      -- capture v8: the room refused a protected action because of the fight (defined there)
@@ -132,6 +132,8 @@ for n = 1, MAKE_MAX do CTL_STATIC[#CTL_STATIC + 1] = "make:" .. n end
 for _, k in ipairs({ "all", "track", "untrack", "book", "page", "free", "enter" }) do CTL_STATIC[#CTL_STATIC + 1] = k end
 -- p23: forget the main profession in place 1 / 2 (appended: the columns before keep theirs)
 for _, k in ipairs({ "forget:1", "forget:2" }) do CTL_STATIC[#CTL_STATIC + 1] = k end
+-- p24: the app's search keyboard up / down (appended: the columns before keep theirs)
+for _, k in ipairs({ "kbd", "nokbd" }) do CTL_STATIC[#CTL_STATIC + 1] = k end
 
 -- the secure "profopen" row: a stable column per profession for the session, and the spell each column casts
 local openCols, openSpell, openLine, openDirty = {}, {}, {}, false
@@ -629,6 +631,7 @@ function WC.collectProf()
         mode = ctlr.want and ctlr.mode or nil,
         back = (ctlr.held and ctlr.backOn) or nil,
         bstop = (ctlr.held and ctlr.stopOn) or nil,        -- B cancels the craft now (the room shows B Cancel)
+        kbd = (ctlr.held and ctlr.kbd) or nil,             -- p24: the app's keyboard types the search (B is the room's)
         heldWhy = (not ctlr.held) and ctlr.want and ctlr.why or nil,
         str = words(),
         sec = { secret = tally.secret, threw = tally.threw },
@@ -935,7 +938,10 @@ local function takePad()
     local c = capture()
     if not c then ctlr.held, ctlr.why = false, "no controller capture" return false, ctlr.why end
     local spec = { hide = CAP_SPEC.hide, press = CAP_SPEC.press, lost = CAP_SPEC.lost, extra = extraKeys(c) }
-    local back = wantBack(c)
+    -- p24: the app's keyboard types the search: B is the room's (no back button, nothing passed), so it closes the keyboard; and Start
+    -- is held from the game meanwhile (the keyboard's Search key, as Bags' search holds it: the game's own Start would open its wheel)
+    if ctlr.kbd and spec.extra then spec.extra[#spec.extra + 1] = "PADFORWARD" end
+    local back = wantBack(c) and not ctlr.kbd
     if back then spec.back = wantStop() and STOP_BUTTON or (closeVisible() and CLOSE_BUTTON or nil) end
     -- p21: no back button to name (the game hid it): B is the GAME's own (its navigation closes the window); `back` stays on, so
     -- the window's hide lets the controller go with "B"
@@ -999,7 +1005,7 @@ end
 local function sayNext()
     local c = capture()
     if ctlr.held and c and (c.version or 1) >= 3 and type(c.bnext) == "function" then
-        CALL(c.bnext, GUEST, ctlr.stopOn and "back" or "home")
+        CALL(c.bnext, GUEST, (ctlr.stopOn or ctlr.kbd) and "back" or "home")
     end
 end
 
@@ -1218,10 +1224,28 @@ CTL.enter = function()
     ack("book", nil, ok, why, { back = ctlr.backOn or nil, tabs = ctlr.tabs or nil, noopen = (fight or holder ~= nil) or nil })
     if diagNote then diagNote("book") end
 end
+-- p24: the app's search keyboard (and its voice page) is up / down. Up: the re-take with B the room's; out of a fight only (the
+-- bindings cannot change in one: the app keeps its keyboard closed then). Down: B the game's close again (as the window says)
+CTL.kbd = function()
+    if InCombatLockdown() then fightRefused(); return ack("kbd", nil, false, "combat") end
+    if not ctlr.held then return ack("kbd", nil, false, "not held") end
+    ctlr.kbd = true
+    local ok, why = takePad()
+    sayNext()
+    ack("kbd", nil, ok, why)
+    soon()
+end
+CTL.nokbd = function()
+    local was = ctlr.kbd
+    ctlr.kbd = false
+    if was and ctlr.held and not InCombatLockdown() then takePad(); sayNext() end
+    ack("nokbd", nil, true)
+    soon()
+end
 CTL.book = function() hold("book") end
 CTL.page = function() hold("page") end
 CTL.free = function()
-    ctlr.want, ctlr.awaitWin = false, false
+    ctlr.want, ctlr.awaitWin, ctlr.kbd = false, false, false
     freePad()
     ack("free", nil, true)
 end

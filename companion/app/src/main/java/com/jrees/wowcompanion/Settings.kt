@@ -210,6 +210,15 @@ object Settings {
         set(v) { if (v != swapScreens) { prefs?.edit()?.putBoolean(ScreenSwap.PREF, v)?.remove(ScreenSwap.FAILS_PREF)?.apply(); changed() } }
 
     /**
+     * VOICE TYPING (the user's pick 2026-11-16: "On the Thor only by default. Online is used only after you pick it once"): This device
+     * (the default), Online (the player's pick: here, or the voice sheet's "Use online voice"), Off (no X / mic on any box). App-wide,
+     * like Language, not per character.
+     */
+    var voiceTyping: Voice.Mode
+        get() = Voice.Mode.of(prefs?.getString("voiceTyping", null))
+        set(v) { if (v != voiceTyping) { prefs?.edit()?.putString("voiceTyping", v.key)?.apply(); changed() } }
+
+    /**
      * WINDOWS ID (the user, 2026-11-14: "build it"; the BLZ51914400 wave): which Windows machine identity the game's container shows,
      * from the next game start - "per_install" (the default, 1.0.25's own identity per install) or "original" (v2.3.3's shared prebuilt
      * one). See [WindowsId]; the launcher reads it at each start (MachineIdentityApply).

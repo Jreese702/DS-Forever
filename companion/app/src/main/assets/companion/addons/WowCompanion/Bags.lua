@@ -195,6 +195,11 @@
 -- or a throw comes back as a one-byte SENTINEL string (Safety.lua) - so the grid's "a cast runs" read every idle moment as a cast and A
 -- was refused "busy" for good; every game string the grid reads now passes KIT.txt (this file's own byte(1) > 3 test) first. A pick of
 -- ANOTHER spell left waiting (a kit, an enchant, Feed Pet) is never answered by the grid's A (refused "pick", the A greyed).
+-- bags-voice1 (the user, 2026-11-16: voice to text in the message box and ALL search boxes, "A opens the keyboard, X opens our own voice
+-- prompt"; the pick: "Every box that takes words ... Bags search"): X on the strip's Search is the same request as A (BAR.act "search":
+-- mode "search", Start held from the game, the app's own reader types) with the act named "voice", so the app opens the keyboard on its
+-- voice page. A finger on the box's microphone is the strip's touch X (bmvq 22). Nothing of the game's is called: the words stay in the
+-- app (the search dims the grid there), exactly as typed ones.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -2959,7 +2964,7 @@ function BAR.toggle(bag)
     ctl.shut[bag] = true
     return "bag-closed"
 end
-function BAR.act(it)
+function BAR.act(it, voice)
     if not it then return end
     if it.k == "bag" then
         report(BAR.toggle(it.id))
@@ -2979,8 +2984,9 @@ function BAR.act(it)
         ctl.mode = "search"; ctl.searchAt = GetTime()
         local cap = capture()
         if cap and type(cap.extra) == "function" and (tonumber(cap.version) or 1) >= 4 then pcall(cap.extra, "bags", { "PADFORWARD" }) end
-        ctl.act = { k = "search", seq = ctl.seq + 1 }
-        report("search")
+        -- bags-voice1: X asks for the app's voice page on the same box (the app keeps its keyboard when voice is off)
+        ctl.act = { k = voice and "voice" or "search", seq = ctl.seq + 1 }
+        report(voice and "voice" or "search")
     end
 end
 BAR.SEARCH_TTL = 300
@@ -3003,6 +3009,7 @@ function BAR.press(key, A)
     elseif key == "PADDDOWN" then if BAR.leave() then report(nil) end
     elseif key == "PADDUP" then
     elseif A then BAR.act(items[ctl.barAt])
+    elseif key == "PAD3" and items[ctl.barAt] and items[ctl.barAt].k == "search" then BAR.act(items[ctl.barAt], true)    -- bags-voice1
     elseif key == "PAD4" then BAR.openMenu(items[ctl.barAt])
     else return false end
     return true
