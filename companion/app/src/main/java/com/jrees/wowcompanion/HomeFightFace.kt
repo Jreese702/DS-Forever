@@ -56,6 +56,30 @@ object HomeFightFace {
                 ?.let { pos to it }
         }.toMap()
 
+    /** the bare D-pad's Down (game position 4) */
+    const val DOWN = 4
+
+    /** bare-set D-pad position [pos]'s In-combat entry as the router takes it in the fight switch (PadMap m44 / m55): a form's own
+     *  first, else the caster's overlay one (a COMBAT slot with `ov`); null = none (the position keeps DS Forever's action) */
+    fun dpadFight(map: PadMapModel.Map, pos: Int): PadMapModel.Ref? =
+        formOwn(map)[pos] ?: PadMapModel.slot(map, BASE_SET, pos)?.takeIf { it.kind == PadMapModel.Kind.COMBAT && it.ov }?.combat
+
+    /**
+     * WK-DPAD (the user, 2026-11-16: "using the down ability in combat on the D-pad is flashing the home button again with its arrows as if
+     * it was doing the down DS toolbar action and then changing its mind to fix it"): the bare D-pad Down IS Home's room bar right now, so
+     * the app's early bar (b98, opened on its own reader's Down before the game's command) may come up. The router's rule (PadMap m29 /
+     * m44 / m55; tools/test_fight_layer.py case 10): in the fight switch ([fight]: the padmap's `fight`, nothing given back) a Down with an
+     * In-combat entry runs that entry - the bar only when that entry is the Home Bar command itself; with none, or out of the switch, Down
+     * is the bar while the DS WoW toolbar is on ([toolbar]) or the Home Bar command is on the bare button (p35). p35 gated only the
+     * toolbar; p36 gave In combat's D-pad back its fight spells with the toolbar on, so a fight's Down lit the bar and the game never
+     * confirmed it (EARLY_MS later it closed).
+     */
+    fun downIsHomeBar(map: PadMapModel.Map?, toolbar: Boolean, fight: Boolean): Boolean {
+        val f = if (fight && map != null) dpadFight(map, DOWN) else null
+        if (f != null) return f.layer == "command" && f.key == PadMapModel.HOME_KEY
+        return toolbar || map?.let { PadMapModel.slot(it, BASE_SET, DOWN)?.key == PadMapModel.HOME_KEY } == true
+    }
+
     /**
      * THE COMPANION'S COMMANDS ON THE BAR (Track C, the user after test17: the Spell Radial on ZL+ZR + Y worked but "The button was not
      * there"): a command is the router's OVERLAY (PadMap m41, no macro, nothing in the game's slot), so the game's bar shows that slot

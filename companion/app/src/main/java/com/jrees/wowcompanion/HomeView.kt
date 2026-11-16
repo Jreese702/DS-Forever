@@ -663,6 +663,8 @@ class HomeView(
     private var dpadSaid: Map<Int, Int>? = null
 
     fun onFightWord(fight: Boolean) { if (fight != fightNow) { fightNow = fight; applyDpad() } }
+    /** wk-dpad: the fight switch the D-pad's In-combat picture follows (the router's own `sw`): the host's early-bar gate reads it */
+    fun dpadFight(): Boolean = fightNow
 
     private fun applyDpad() {
         val map = padMap ?: return
