@@ -20,6 +20,11 @@ import org.json.JSONObject
  * [Builder] (its text, its chips as rows with their s-cells, its checks, the open pop-out [Pop]), the presets as [Tile] / [Preset]. The
  * words for the chips are the room's menu words ([cmdWord], [unitWord], [condWord] ...); spell, item, unit and pet-order NAMES are the
  * game's or the player's text, never Tr.t.
+ *
+ * Spells s15 THE LOOK PASS (the user, 2026-11-16, the pick "Full match": "one A button plus Y More like Quests", Cancel / Confirm for
+ * delete / replace): the editor's buttons are + Line and More ([BUTTONS]: s21, s22), the builder's Done and More; More is the add-on's
+ * one-column pop-out (kind "more": [moreWord]); [State.ym] / [Builder.ym] = Y opens More now (the More button carries the Y glyph only
+ * then); [State.del], [Builder.remArmed], [Preset.armed] = that ask is up (the app draws Cancel [B] / Confirm [A]).
  */
 object MacrosModel {
     /** Book b63: the padtab one-shot pick's code that makes the Macros room's row (39 then this) */
@@ -28,8 +33,9 @@ object MacrosModel {
     const val PER_PAGE = 24
     const val LINE_ROWS = 19
     const val BODY_MAX = 255
-    /** Spells s14: the editor's buttons' s-cells (MR.editCell: s0 the name, s1 the icon, s2..s20 the lines or tiles, then these) */
-    val BUTTONS = listOf("add", "pre", "del")
+    /** Spells s14: the editor's buttons' s-cells (MR.editCell: s0 the name, s1 the icon, s2..s20 the lines or tiles, then these);
+     *  s15: + Line and More (Presets and Delete are More's rows) */
+    val BUTTONS = listOf("add", "more")
     const val CASES = 4
 
     data class Count(val n: Int, val max: Int)
@@ -81,7 +87,7 @@ object MacrosModel {
                        val look: Look?, val bang: Boolean, val sub: String?, val rank: Pair<Int, Int>?, val seq: List<Look>,
                        val reset: String?, val slot: Int?, val cases: List<Case>, val rows: List<List<String>>, val cells: Map<String, Int>,
                        val cur: String?, val draft: Boolean, val remArmed: Boolean, val hard: String?, val hardChip: String?,
-                       val warns: List<String>, val pop: Pop?)
+                       val warns: List<String>, val pop: Pop?, val ym: Boolean = false)
     /** a preset's preview: its lines as strips, its picks ("p1".."p3"), Done ([armed] = a macro with lines is replaced on the next A) */
     data class Preset(val key: String, val strips: List<Strip>, val text: String, val len: Int, val picks: List<Pair<Look?, String>>,
                       val cur: String?, val armed: Boolean, val hard: String?)
@@ -107,6 +113,8 @@ object MacrosModel {
         /** s14: the open pop-out outside the builder (the editor's icon, a preset's pick), the presets view's glow, the builder, a preview */
         val pop: Pop? = null, val presetCur: Int = 1,
         val builder: Builder? = null, val preset: Preset? = null,
+        /** s15: in the editor, Y opens More now (not on a line: its Move) */
+        val ym: Boolean = false,
     ) {
         val count: Count get() = if (tab == "c") char else general
     }
@@ -163,7 +171,7 @@ object MacrosModel {
             sub = a?.let { str(it, "sub") }, rank = rk, seq = seq(o.optJSONArray("sq")), reset = str(o, "rs"), slot = intOrNull(o, "sl"),
             cases = cases(o.optJSONArray("cs")), rows = rows, cells = cells, cur = str(o, "cur"), draft = o.optBoolean("dr", false),
             remArmed = o.optBoolean("rem", false), hard = str(o, "h"), hardChip = str(o, "hc"), warns = strings(o.optJSONArray("w")),
-            pop = pop(o.optJSONObject("pop")))
+            pop = pop(o.optJSONObject("pop")), ym = o.optBoolean("ym", false))
     }
     fun preset(o: JSONObject?): Preset? {
         if (o == null) return null
@@ -236,6 +244,7 @@ object MacrosModel {
             moveFrom = m.optJSONObject("mv")?.let { intOrNull(it, "from") }, moveAt = m.optJSONObject("mv")?.let { intOrNull(it, "at") },
             pop = pop(m.optJSONObject("pop")), presetCur = m.optInt("pcur", 1),
             builder = builder(m.optJSONObject("b")), preset = preset(m.optJSONObject("ps")),
+            ym = m.optBoolean("ym", false),
         )
     }
 
@@ -273,18 +282,18 @@ object MacrosModel {
         return if (act && a != null && a >= 0) listOf("mac" to sc, "mac" to a) else listOf("mac" to sc)
     }
 
-    /** the editor's rows as the add-on numbers them (Spells s14 MR.editRows): "name", "icon", then "l1".."lL" (at most [LINE_ROWS]) and
-     *  + Line / Presets / Delete, or (an empty macro) "t1".."tK" (its preset tiles) and + Line / Delete */
+    /** the editor's rows as the add-on numbers them (Spells s14 MR.editRows): "name", "icon", then "l1".."lL" (at most [LINE_ROWS]) or
+     *  (an empty macro) "t1".."tK" (its preset tiles), then (s15) + Line and More */
     fun editRows(mac: Mac?, tiles: Int = 0): List<String> {
         val out = arrayListOf("name", "icon")
         val n = minOf(mac?.lines?.size ?: 0, LINE_ROWS)
-        if (n == 0) { for (i in 1..tiles) out += "t$i"; out += "add"; out += "del"; return out }
+        if (n == 0) { for (i in 1..tiles) out += "t$i"; out += BUTTONS; return out }
         for (i in 1..n) out += "l$i"
         out += BUTTONS
         return out
     }
 
-    /** a row's s-cell (MR.editCell): the name 0, the icon 1, a line / a tile its number + 1, the buttons 21..23 */
+    /** a row's s-cell (MR.editCell): the name 0, the icon 1, a line / a tile its number + 1, the buttons 21 (+ Line) and 22 (More) */
     fun editCell(row: String): Int = when {
         row == "name" -> 0
         row == "icon" -> 1
@@ -384,6 +393,10 @@ object MacrosModel {
         b.line != null && b.draft -> "Revert"
         b.remArmed -> "Remove?"
         else -> "Remove"
+    }
+    /** s15: a row of the room's More (the add-on's pop-out "more": `o` = pre / del / text / rem, `rv` = Remove reads Revert): its word */
+    fun moreWord(o: String, revert: Boolean = false): String = when (o) {
+        "pre" -> "Presets"; "del" -> "Delete"; "text" -> "Aa Text"; "rem" -> if (revert) "Revert" else "Remove"; else -> o
     }
     /** a builder chip's s-cell, as the add-on numbers it (MR.bcell): null = not on show */
     fun chipCell(b: Builder?, key: String): Int? = b?.cells?.get(key)?.takeIf { it >= 0 }

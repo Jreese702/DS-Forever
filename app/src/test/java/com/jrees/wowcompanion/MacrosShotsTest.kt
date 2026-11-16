@@ -55,6 +55,17 @@ class MacrosShotsTest {
 
     private fun doc(name: String): JSONObject = JSONObject(File(out, "docs/$name.json").readText())
 
+    /** s15: the Spell / Item pop-out's icon tabs take the class's and the pet's pictures from the spells document (the shaman fixture,
+     *  with a pet put in), when the dsforever fixtures are at hand */
+    private val book: SpellsModel.Book? by lazy {
+        listOf(File("../dsforever/src/test/resources/pet-fixtures"), File("dsforever/src/test/resources/pet-fixtures"))
+            .map { File(it, "spells_shaman.json") }.firstOrNull { it.isFile }?.let { f ->
+                val d = JSONObject(f.readText())
+                d.getJSONObject("s").put("pet", JSONObject().put("n", "Imp").put("i", 136218))
+                SpellsModel.parse(d)
+            }
+    }
+
     /** the room on the bar's screen: the room above, the bar under it (Macros lit) */
     private fun roomShot(name: String, overlay: View? = null) {
         val d = out ?: return
@@ -62,6 +73,7 @@ class MacrosShotsTest {
             dryRun = true
             // s14: the Spell / Item pop-out's tooltip (the spells document's own description of the spell under the glow)
             spellTip = { id -> if (id == 403) "Casts a bolt of lightning at the target for 15 to 17 Nature damage." else null }
+            book = { this@MacrosShotsTest.book }
         }
         v.onDoc(doc(name), live = false)
         lay(v, W, H); settle(); lay(v, W, H)
@@ -87,6 +99,10 @@ class MacrosShotsTest {
         // each pop-out sliding out of its chip, the presets, Move, the companion's own macros' lock
         for (n in listOf("edit_empty", "build", "build_if", "build_on", "build_arg", "build_cmd", "build_case", "build_combat", "build_reset",
                          "build_warn", "build_rank", "build_new", "move", "move_far", "preset", "presets", "preset_replace", "icon", "locked"))
+            if (File(out, "docs/$n.json").isFile) roomShot(n)
+        // Spells s15 THE LOOK PASS (the user, 2026-11-16, "Full match"): the editor's More open, Delete asking (Cancel / Delete), the
+        // builder's More, a stored line's Remove asking, a focused case's "Y Remove"
+        for (n in listOf("edit_more", "edit_delete", "build_more", "build_remove", "build_case_focus"))
             if (File(out, "docs/$n.json").isFile) roomShot(n)
         // (Spells s10 review) a bind of a name two macros share, refused ("Name taken"); the row made but not placed ("No pad row")
         for (n in listOf("taken", "norow")) if (File(out, "docs/$n.json").isFile) roomShot(n)

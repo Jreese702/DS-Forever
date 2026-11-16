@@ -27,6 +27,9 @@ import org.json.JSONObject
  * its PRESET tiles (D2); A on a line opens the BUILDER (D1: the action and its spell, then the cases), each chip's pop-out sliding out
  * of it (UiKit.slideOut); Select or the Done button finishes a line (D4); the companion's own macros carry a lock, view only (D6). Every
  * chip and pop-out cell is the add-on's (its s-cells); the app has no grammar.
+ * Spells s15 THE LOOK PASS (the user, 2026-11-16: "it needs to be a bit more visually consistent and the icon needs work for the room";
+ * the pick "Full match"): drawn as the other rooms are (see [Pane]); the editor's + Line / More and the builder's Done / More, More's
+ * rows (Presets / Delete, Aa Text / Remove or Revert) a one-column pop-out; Delete, Remove and Replace ASK (Cancel [B] / Confirm [A]).
  *
  * The STATE is the add-on's ([MacrosModel]); this view draws its `macros` document, holds / frees the controller as the room shows
  * (the add-on's `h` / `f` / `fb`, no game action), and turns a finger into ONE tap on the room's row: select the k-th thing on show
@@ -44,6 +47,9 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
     /** s14: a spell's description by its id (the spells document the Spellbook room parses: SpellsModel's `desc`), for the Spell / Item
      *  pop-out's tooltip; null = none (an item's: its name and picture only) */
     var spellTip: (Int) -> String? = { null }
+    /** s15: the spells document the Spellbook room parses, for the Spell / Item pop-out's icon tabs (the class's picture on General, the
+     *  pet's own on Pet, as the Controller room's chooser and the Spellbook draw them); null = none yet */
+    var book: () -> SpellsModel.Book? = { null }
 
     var state: State? = null
         private set
@@ -247,37 +253,50 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
 
     // ---------------------------------------------------------------- the page
 
+    /**
+     * Spells s15 THE LOOK PASS (the user, 2026-11-16: "it needs to be a bit more visually consistent and the icon needs work for the
+     * room"; the pick "Full match"): drawn as the other rooms are - the rooms' flat header (no window frame, no X: B leaves through the
+     * add-on and the bar's Home disc says so; a sub-screen's "B Back" stands at the header's right end, a finger's back too), the grid's
+     * two panes and ONE pane for the editor / builder / presets / preview, the tabs with the game's gold arrows, Morpheus headings,
+     * Quests' action band (one A button and Y More; Cancel [B] / Confirm [A] for Delete / Remove / Replace), the builder's chips in the
+     * theme's colours (the ring edge only on the big containers: the case cards, the lines' well, the preset tiles), the kit's lock and
+     * plus, the book's paging, the game's tooltip, ONE status at the header's right end, one empty / waiting line.
+     */
     private inner class Pane(c: Context) : View(c) {
         private val hits = ArrayList<Pair<RectF, List<Pair<String, Int>>?>>()
         private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
         private val pLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val pBmp = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         /** s14: the open pop-out and when it opened (UiKit.slideOut's clock) */
         private var popKey: String? = null
         private var popAt = 0L
         /** s14: where each chip was drawn this frame (a pop-out slides out of its chip) */
         private val chipAt = HashMap<String, RectF>()
+        /** s15: the grid's two tabs and the Spell / Item pop-out's icon tabs (the gaps round the chosen one, where the gold arrows stand) */
+        private val gridGaps = UiKit.TabGaps(vertical = false)
+        private val popGaps = UiKit.TabGaps(vertical = false)
 
         override fun onDraw(c: Canvas) {
             hits.clear(); chipAt.clear()
             val w = width.toFloat(); val h = height.toFloat()
             val full = RectF(0f, 0f, w, h)
-            val inner = UiKit.windowGround(c, full)
+            c.drawColor(Theme.ink)
+            UiKit.header(c, w, "Macros")
+            val body = RectF(0f, HEADER, w, h)
             val s = state
-            UiKit.windowFrame(c, full, "Macros", Icons.get(Icons.QUESTION_MARK), closeB = if (bLeadsHome() && s?.held == true) 1 else 0)
-            hit(UiKit.windowClose(full), MacrosModel.cell(s, "b"))
             when {
-                s == null || !s.ready -> say(c, inner, "Loading")
-                s.off -> lockScreen(c, inner, "Macros are off")
+                s == null || !s.ready -> { UiKit.pane(c, body); say(c, body, "Waiting for the game") }
+                s.off -> { UiKit.pane(c, body); lockScreen(c, body, "Macros are off") }
                 else -> {
                     when (s.view) {
-                        "edit", "move" -> editor(c, s, inner)
-                        "build" -> builder(c, s, inner)
-                        "pre" -> presets(c, s, inner)
-                        "ps" -> preview(c, s, inner)
-                        else -> grid(c, s, inner)
+                        "edit", "move" -> editor(c, s, body)
+                        "build" -> builder(c, s, body)
+                        "pre" -> presets(c, s, body)
+                        "ps" -> preview(c, s, body)
+                        else -> grid(c, s, body)
                     }
-                    status(c, s, inner)
-                    (s.builder?.pop ?: s.pop)?.let { popOut(c, s, it, inner) } ?: run { popKey = null }
+                    headerRight(c, s, w)
+                    (s.builder?.pop ?: s.pop)?.let { popOut(c, s, it, body) } ?: run { popKey = null }
                 }
             }
             if (kbField != null) typingLine(c, full)
@@ -285,32 +304,36 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
 
         private fun hit(r: RectF, cells: List<Pair<String, Int>>?) { if (cells != null) hits += RectF(r) to cells }
 
-        /** the game's macro text box: a dark well in the frame's bronze */
-        private fun well(c: Canvas, r: RectF) {
-            pFill.color = Color.argb(215, 6, 5, 4); c.drawRoundRect(r, 10f, 10f, pFill)
-            pLine.color = Theme.bronzeDim; pLine.strokeWidth = 2f; c.drawRoundRect(r, 10f, 10f, pLine)
-        }
-
-        private fun say(c: Canvas, r: RectF, text: String) {
-            val p = UiKit.bodyPaint(32f, Theme.textDim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(Tr.t(text), r.centerX(), r.centerY(), p)
+        /** the room's one empty / waiting line (Quests' own): 22 px, dim, at the pane's top left */
+        private fun say(c: Canvas, r: RectF, text: String, x: Float = r.left + 24f) {
+            if (text.isEmpty()) return
+            c.drawText(Tr.t(text), x, r.top + 48f, UiKit.bodyPaint(22f, Theme.dim))
         }
 
         /** the game rule turns macros off (C_GameRules MacrosDisabled): the lock, and nothing to touch */
         private fun lockScreen(c: Canvas, r: RectF, text: String) {
-            lock(c, r.centerX(), r.centerY() - 60f, 80f, Theme.textDim)
-            val p = UiKit.bodyPaint(32f, Theme.textDim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(Tr.t(text), r.centerX(), r.centerY() + 40f, p)
+            lock(c, r.left + 44f, r.top + 40f, 40f)
+            say(c, r, text, x = r.left + 76f)
         }
 
-        /** a padlock, [size] px, drawn in the kit's dim ink (no asset: a stand-in, D7) */
-        private fun lock(c: Canvas, cx: Float, cy: Float, size: Float, colour: Int) {
-            pLine.color = colour; pLine.strokeWidth = size * 0.11f
+        /** the game's lock (the kit's bank_lock: bankslot-icon-lock, as UiKit.bankSlot draws it), [size] px; drawn only without the kit */
+        private fun lock(c: Canvas, cx: Float, cy: Float, size: Float, alpha: Int = 255) {
+            UiKit.tex("bank_lock")?.let { b ->
+                val k = size / maxOf(b.width, b.height)
+                val bw = b.width * k; val bh = b.height * k
+                pBmp.alpha = alpha
+                c.drawBitmap(b, null, RectF(cx - bw / 2f, cy - bh / 2f, cx + bw / 2f, cy + bh / 2f), pBmp)
+                pBmp.alpha = 255
+                return
+            }
+            val colour = Theme.gold
+            pLine.color = colour; pLine.strokeWidth = size * 0.11f; pLine.alpha = alpha
             val bw = size * 0.72f; val bh = size * 0.52f
             val body = RectF(cx - bw / 2f, cy - bh / 2f + size * 0.16f, cx + bw / 2f, cy + bh / 2f + size * 0.16f)
-            pFill.color = colour; c.drawRoundRect(body, size * 0.08f, size * 0.08f, pFill)
+            pFill.color = colour; pFill.alpha = alpha; c.drawRoundRect(body, size * 0.08f, size * 0.08f, pFill)
             val arc = RectF(cx - bw * 0.32f, body.top - size * 0.42f, cx + bw * 0.32f, body.top + size * 0.2f)
             c.drawArc(arc, 180f, 180f, false, pLine)
+            pFill.alpha = 255; pLine.alpha = 255
         }
 
         private fun nameFit(text: String, p: Paint, maxW: Float): String {
@@ -322,75 +345,149 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
 
         private fun icon(id: Int): android.graphics.Bitmap? = Icons.get(id.takeIf { it > 0 } ?: Icons.QUESTION_MARK)
 
+        private fun yGlyph(): String = Glyphs.translate("rev_y", CastSettings.buttonLayout)
+        private fun selectGlyph(): String = Glyphs.translate("rev_minus", CastSettings.buttonLayout)
+
+        /** a red button with its glyph, or none */
+        private fun button(c: Canvas, r: RectF, label: String, glyph: String?, state: UiKit.Button = UiKit.Button.UP) {
+            if (glyph != null) UiKit.button(c, r, label, glyph, state) else UiKit.button(c, r, label, state)
+        }
+
+        /** what asks now (Spells s15: Delete / Remove / Replace, the add-on's): a pop-out never stands over one */
+        private fun asking(s: State): Boolean = (s.view == "edit" && s.del) || (s.view == "build" && s.builder?.remArmed == true) ||
+            (s.view == "ps" && s.preset?.armed == true)
+
+        // ---- the header's right end: a sub-screen's B Back (a finger's back too), then the ONE status word left of it
+        private fun headerRight(c: Canvas, s: State, w: Float) {
+            var right = w - 24f
+            val sub = s.view == "edit" || s.view == "move" || s.view == "build" || s.view == "pre" || s.view == "ps"
+            if (sub && kbField == null && (s.builder?.pop ?: s.pop) == null && !asking(s)) {
+                val hx = UiKit.hints(c, w - 20f, HEADER / 2f, UiKit.backGlyph() to "Back")
+                hit(RectF(hx - 12f, 0f, w, HEADER), MacrosModel.cell(s, "b"))
+                right = hx - 30f
+            }
+            status(c, s, right)
+        }
+
+        /** the room's ONE status (the Spellbook's place): a refusal's word, the game's window, no pad row, a fight; in the builder its
+         *  own word folded in (a hard fault red, a soft one amber, Draft dim) */
+        private fun status(c: Canvas, s: State, right: Float) {
+            val room = when {
+                s.noRow -> "No pad row"
+                s.win -> "Game window open"
+                s.view == "move" && s.note == null -> "Move"
+                else -> MacrosModel.noteWord(s.note) ?: MacrosModel.hardWord(s.note)?.takeIf { s.note == "pick" }
+                    ?: if (s.combat) "In combat" else null
+            }
+            val b = s.builder?.takeIf { s.view == "build" }
+            val (word, colour) = when {
+                room != null -> room to (if (s.note != null) Theme.warn else Theme.dim)
+                b != null -> MacrosModel.hardWord(b.hard)?.let { it to Theme.unusable }
+                    ?: MacrosModel.warnWord(b.warns.firstOrNull())?.let { it to Theme.warn }
+                    ?: (if (b.draft) "Draft" to Theme.dim else null)
+                    ?: return
+                else -> return
+            }
+            val p = UiKit.bodyPaint(24f, colour).apply { textAlign = Paint.Align.RIGHT }
+            c.drawText(nameFit(Tr.t(word), p, 420f), right, HEADER / 2f - (p.ascent() + p.descent()) / 2f, p)
+        }
+
+        // ---- Quests' action band at a single pane's foot: Theme.panel, the bronze hairline, two buttons half the width, 88 px tall
+        private fun band(c: Canvas, r: RectF): Pair<RectF, RectF> {
+            val top = r.bottom - BAND_H
+            pFill.color = Theme.panel; c.drawRect(r.left, top, r.right, r.bottom, pFill)
+            pFill.color = Theme.bronzeDim; c.drawRect(r.left, top, r.right, top + 1f, pFill)
+            val half = (r.width() - PAD * 2 - 10f) / 2f
+            val a = RectF(r.left + PAD, top + 12f, r.left + PAD + half, r.bottom - 12f)
+            return a to RectF(a.right + 10f, a.top, r.right - PAD, a.bottom)
+        }
+
+        /** an ask (the user's pick: Cancel / Confirm): Cancel [B] on the left, the confirm [A] where the button that asked stood */
+        private fun askPair(c: Canvas, s: State, a: RectF, b: RectF, word: String) {
+            button(c, a, "Cancel", if (s.held) UiKit.backGlyph() else null)
+            button(c, b, word, if (s.held) UiKit.okGlyph() else null)
+            hit(a, MacrosModel.cell(s, "b"))
+            hit(b, MacrosModel.cell(s, "a"))
+        }
+
+        /** the room's More (Quests' Y More): its Y while Y opens it, the gold box while the cursor is on it */
+        private fun moreButton(c: Canvas, s: State, r: RectF, focused: Boolean, yOpens: Boolean, cells: List<Pair<String, Int>>?) {
+            button(c, r, "More", if (s.held && yOpens) yGlyph() else null)
+            if (focused) UiKit.focus(c, r)
+            hit(r, cells)
+            chipAt["more"] = r
+        }
+
         // ---- the grid (the game's window: tabs, 6 wide, the selection beside it)
         private fun grid(c: Canvas, s: State, r: RectF) {
-            // the tabs: General n/max, the character's n/max (the game's GENERAL_MACROS / CHARACTER_SPECIFIC_MACROS, terse)
-            val tabs = listOf(RectF(r.left + 104f, r.top + 6f, r.left + 404f, r.top + 70f), RectF(r.left + 414f, r.top + 6f, r.left + 714f, r.top + 70f))
+            val lp = RectF(r.left, r.top, GRID_SPLIT, r.bottom)
+            val side = RectF(GRID_SPLIT, r.top, r.right, r.bottom)
+            UiKit.pane(c, lp)
+            UiKit.pane(c, side, right = true)
+            // the tabs: General n/max, the character's n/max (the game's GENERAL_MACROS / CHARACTER_SPECIFIC_MACROS, terse); the cursor's
+            // tab is the kit's lit tab with the game's gold arrows beside it (D-pad Left / Right; A opens it)
+            val open = if (s.tab == "c") 1 else 0
+            val onTabs = s.cur == -1 || s.cur == -2
+            val curTab = if (onTabs) -s.cur - 1 else open
+            val tabs = gridGaps.row(2, lp.left + 8f, lp.right - 8f, r.top + 14f, 64f, 300f, curTab, this)
             for ((i, tr) in tabs.withIndex()) {
-                val on = (i == 0) == (s.tab == "g")
-                UiKit.tab(c, tr, "", on, onTop = true)
+                val on = i == open
+                UiKit.tab(c, tr, "", on, onTop = true, cursor = s.cur == -(i + 1))
+                // the label drawn here, not by the kit's tab (it runs Tr.t): the character's name is never translated
                 val cnt = if (i == 0) s.general else s.char
-                val label = if (i == 0) Tr.t("General") else s.me.ifEmpty { Tr.t("Character") }      // the character's name: never Tr.t
+                val label = if (i == 0) Tr.t("General") else s.me.ifEmpty { Tr.t("Character") }
                 val p = UiKit.bodyPaint(26f, if (on) Color.WHITE else Theme.gold)
-                val np = UiKit.numberPaint(24f, Theme.textDim)
+                val np = UiKit.numberPaint(22f, Theme.textDim)
                 val num = "${cnt.n}/${cnt.max}"
-                val shown = nameFit(label, p, tr.width() - np.measureText(num) - 52f)
-                val tw = p.measureText(shown) + 12f + np.measureText(num)
+                val shown = nameFit(label, p, tr.width() - np.measureText(num) - 44f)
+                val tw = p.measureText(shown) + 10f + np.measureText(num)
                 val x0 = tr.centerX() - tw / 2f
                 val ty = tr.centerY() + 8f - (p.ascent() + p.descent()) / 2f
                 c.drawText(shown, x0, ty, p)
-                c.drawText(num, x0 + p.measureText(shown) + 12f, ty, np)
-                if (s.cur == -(i + 1)) UiKit.focus(c, RectF(tr.left + 8f, tr.top + 6f, tr.right - 8f, tr.bottom - 4f))
+                c.drawText(num, x0 + p.measureText(shown) + 10f, ty, np)
                 hit(tr, MacrosModel.cell(s, if (i == 0) "tg" else "tc"))
             }
+            if (onTabs) UiKit.moveArrows(c, tabs[curTab], left = curTab > 0, right = curTab < 1, words = false)
             // the cells: 6 x 4, an icon in its slot and the name under it
-            val gx = r.left + 24f; val gy = r.top + 92f
+            val gx = lp.left + 24f; val gy = r.top + 96f
             val cw = 112f; val ch = 142f
             for ((k, cell) in s.cells.withIndex()) {
                 val col = k % 6; val row = k / 6
                 val x = gx + col * cw; val y = gy + row * ch
                 val icon = RectF(x + 14f, y + 6f, x + 98f, y + 90f)
+                val np = UiKit.bodyPaint(20f, Theme.text).apply { textAlign = Paint.Align.CENTER }
                 if (cell.plus) {
                     UiKit.slot(c, null, icon.left, icon.top, icon.width())
-                    val pp = UiKit.titlePaint(64f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
-                    c.drawText("+", icon.centerX(), icon.centerY() - (pp.ascent() + pp.descent()) / 2f, pp)
-                    val np = UiKit.bodyPaint(20f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
+                    plus(c, icon)
                     c.drawText(Tr.t("New"), icon.centerX(), y + 120f, np)
                     hit(RectF(x, y, x + cw, y + ch), MacrosModel.pickCells(s, k, act = true))
                 } else {
                     UiKit.slot(c, icon(cell.icon), icon.left, icon.top, icon.width())
-                    if (cell.locked) lock(c, icon.right - 14f, icon.bottom - 16f, 26f, Theme.gold)         // s14 D6: the companion's own
-                    val np = UiKit.bodyPaint(20f, Theme.text).apply { textAlign = Paint.Align.CENTER }
-                    c.drawText(nameFit(cell.name, np, cw - 8f), icon.centerX(), y + 120f, np)     // the player's text: never Tr.t
+                    if (cell.locked) lock(c, icon.right - 14f, icon.bottom - 16f, 30f)                // s14 D6: the companion's own
+                    c.drawText(nameFit(cell.name, np, cw - 8f), icon.centerX(), y + 120f, np)       // the player's text: never Tr.t
                     hit(RectF(x, y, x + cw, y + ch), MacrosModel.pickCells(s, k, act = false))
                 }
                 if (k == s.cur) UiKit.focus(c, RectF(icon.left - 4f, icon.top - 4f, icon.right + 4f, icon.bottom + 4f))
             }
-            // the pages: < n/m > under the grid
-            val py = gy + 4 * ch + 34f
-            val gridMid = gx + 3 * cw
-            val canPrev = s.page > 1; val canNext = s.page < s.pages
-            UiKit.pageArrow(c, false, gridMid - 150f, py, 60f, canPrev)
-            UiKit.pageArrow(c, true, gridMid + 150f, py, 60f, canNext)
-            if (canPrev) hit(RectF(gridMid - 200f, py - 50f, gridMid - 100f, py + 50f), MacrosModel.cell(s, "pp"))
-            if (canNext) hit(RectF(gridMid + 100f, py - 50f, gridMid + 200f, py + 50f), MacrosModel.cell(s, "pn"))
-            val pg = UiKit.numberPaint(28f, Theme.textDim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("${s.page}/${s.pages}", gridMid, py - (pg.ascent() + pg.descent()) / 2f, pg)
-            // the selection beside the grid (read only): its icon, name, lines, n/255; A Edit and X Bind under it
-            val px = gx + 6 * cw + 30f
-            val side = RectF(px, r.top + 6f, r.right - 10f, r.bottom - 6f)
-            UiKit.pane(c, side, right = true)
+            // the pages: the book's own paging under the grid, only when there is more than one (the Spellbook's)
+            if (s.pages > 1) {
+                val py = gy + 4 * ch + 40f
+                val mid = gx + 3 * cw
+                UiKit.bookPaging(c, mid, py, s.page, s.pages, onPaper = false)
+                if (s.page > 1) hit(RectF(mid - 206f, py - 55f, mid - 94f, py + 56f), MacrosModel.cell(s, "pp"))
+                if (s.page < s.pages) hit(RectF(mid + 94f, py - 55f, mid + 206f, py + 56f), MacrosModel.cell(s, "pn"))
+            }
+            // the selection beside the grid (read only): its icon, name, lines, n/255; A Edit and X Bind under it (the Spellbook's Bind's size)
             val m = s.mac.takeIf { s.cur >= 0 && s.cells.getOrNull(s.cur)?.plus == false }
             if (m == null) {
-                val p = UiKit.bodyPaint(26f, Theme.textDim).apply { textAlign = Paint.Align.CENTER }
-                c.drawText(Tr.t(if (s.cells.isEmpty()) "No macros" else ""), side.centerX(), side.top + 160f, p)
+                if (s.cells.isEmpty()) say(c, side, "No macros")
                 return
             }
-            macPreview(c, m, RectF(side.left + 24f, side.top + 24f, side.right - 24f, side.bottom - 140f), 8)
-            val by = side.bottom - 110f
-            val bw = (side.width() - 72f) / 2f
-            val eb = RectF(side.left + 24f, by, side.left + 24f + bw, by + 84f)
-            val xb = RectF(eb.right + 24f, by, eb.right + 24f + bw, by + 84f)
+            val bTop = r.bottom - 141f
+            macPreview(c, m, RectF(side.left + 24f, side.top + 24f, side.right - 24f, bTop - 20f))
+            val bw = (side.width() - 48f - 16f) / 2f
+            val eb = RectF(side.left + 24f, bTop, side.left + 24f + bw, r.bottom - 30f)
+            val xb = RectF(eb.right + 16f, bTop, side.right - 24f, r.bottom - 30f)
             val canEdit = !m.locked
             val canBind = !s.combat && !m.locked
             UiKit.button(c, eb, "Edit", UiKit.okGlyph(), if (canEdit) UiKit.Button.UP else UiKit.Button.DISABLED)
@@ -399,13 +496,27 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
             if (canBind) hit(xb, MacrosModel.cell(s, "x"))
         }
 
-        /** a macro as the game's window shows it beside the grid: the icon, the name, its lines (the player's text), n/255 */
-        private fun macPreview(c: Canvas, m: MacrosModel.Mac, r: RectF, maxLines: Int) {
+        /** the "+" tile's plus: the kit's list plus (the game's common-button-list-plus) at 0.6 of the slot; drawn only without the kit */
+        private fun plus(c: Canvas, slot: RectF) {
+            UiKit.tex("list_plus")?.let { b ->
+                val s = slot.width() * 0.6f
+                val k = s / maxOf(b.width, b.height)
+                val bw = b.width * k; val bh = b.height * k
+                c.drawBitmap(b, null, RectF(slot.centerX() - bw / 2f, slot.centerY() - bh / 2f, slot.centerX() + bw / 2f, slot.centerY() + bh / 2f), pBmp)
+                return
+            }
+            val pp = UiKit.titlePaint(56f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
+            c.drawText("+", slot.centerX(), slot.centerY() - (pp.ascent() + pp.descent()) / 2f, pp)
+        }
+
+        /** a macro as the game's window shows it beside the grid: the icon, the name (Morpheus), its lines (the player's text), n/255 */
+        private fun macPreview(c: Canvas, m: MacrosModel.Mac, r: RectF) {
             UiKit.slot(c, icon(m.icon), r.left + 6f, r.top + 6f, 84f)
-            val np = UiKit.bodyPaint(32f, Theme.gold)
-            c.drawText(nameFit(m.name, np, r.width() - 150f), r.left + 112f, r.top + 48f - (np.ascent() + np.descent()) / 2f, np)
-            if (m.locked) lock(c, r.right - 24f, r.top + 40f, 36f, Theme.gold)                      // s14 D6: view only
+            val np = UiKit.titlePaint(40f, Theme.gold)
+            c.drawText(nameFit(m.name, np, r.width() - 160f), r.left + 112f, r.top + 48f - (np.ascent() + np.descent()) / 2f, np)
+            if (m.locked) lock(c, r.right - 24f, r.top + 40f, 40f)                                 // s14 D6: view only
             val lp = UiKit.bodyPaint(24f, Theme.text, shadow = false)
+            val maxLines = ((r.height() - 172f) / 34f).toInt().coerceAtLeast(1)
             var y = r.top + 132f
             for ((i, ln) in m.lines.withIndex()) {
                 if (i >= maxLines) { c.drawText("…", r.left + 6f, y, lp); break }
@@ -416,34 +527,35 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
             c.drawText(MacrosModel.counter(m), r.right, r.bottom, cp)
         }
 
-        // ---- s14 chips: a rounded plate in the frame's bronze, an icon and a word; lit = the glow, warn = amber, bad = red
+        // ---- s14 chips (s15: the theme's colours): a raised plate with the bronze hairline, an icon and a word; lit = the gold box and
+        // gold words (the menus' rule), warn = amber, bad = the app's red (Theme.unusable)
         private fun chip(c: Canvas, r: RectF, label: String?, iconId: Int? = null, lit: Boolean = false, warn: Boolean = false,
                          bad: Boolean = false, dim: Boolean = false, size: Float = 26f, tr: Boolean = true, small: String? = null) {
-            pFill.color = Color.argb(200, 14, 11, 8); c.drawRoundRect(r, 12f, 12f, pFill)
+            pFill.color = Theme.raised; c.drawRoundRect(r, 12f, 12f, pFill)
             pLine.strokeWidth = if (bad || warn) 3f else 2f
-            pLine.color = when { bad -> Color.rgb(220, 60, 50); warn -> Theme.warn; else -> Theme.bronzeDim }
+            pLine.color = when { bad -> Theme.unusable; warn -> Theme.warn; else -> Theme.bronzeDim }
             c.drawRoundRect(r, 12f, 12f, pLine)
-            var x = r.left + 12f
+            var x = r.left + 14f
             if (iconId != null) {
                 val sz = (r.height() - 16f).coerceAtMost(56f)
                 UiKit.slot(c, icon(iconId), x, r.centerY() - sz / 2f, sz)
                 x += sz + 12f
             }
             if (small != null) {
-                val sp = UiKit.bodyPaint(18f, Theme.textDim, shadow = false)
+                val sp = UiKit.bodyPaint(20f, Theme.textDim, shadow = false)
                 c.drawText(Tr.t(small), x, r.top + 24f, sp)
             }
             if (label != null) {
-                val p = UiKit.bodyPaint(size, when { dim -> Theme.dim; lit -> Color.WHITE; else -> Theme.text })
+                val p = UiKit.bodyPaint(size, when { dim -> Theme.dim; lit -> Theme.gold; else -> Theme.text })
                 val text = if (tr) Tr.t(label) else label
-                val y = if (small != null) r.bottom - 14f else r.centerY() - (p.ascent() + p.descent()) / 2f
+                val y = if (small != null) r.bottom - 12f else r.centerY() - (p.ascent() + p.descent()) / 2f
                 c.drawText(nameFit(text, p, r.right - 10f - x), x, y, p)
             }
             if (lit) UiKit.focus(c, r)
         }
 
-        /** one condition as a small pill: its word (or the game's own text, kept as written), struck through for its "no" form; the
-         *  modifiers carry the player's own button glyph (ZL / LT / L2 = Shift, LB / L / L1 = Ctrl) with the word small */
+        /** one condition as a small pill (the theme's raised ground, the bronze hairline): its word (or the game's own text, kept as
+         *  written), struck through in the app's red for its "no" form; the modifiers carry the player's own button glyph */
         private fun condPill(c: Canvas, x: Float, cy: Float, k: String, h: Float = 40f): Float {
             val word = MacrosModel.condWord(k)
             val text = word?.let { Tr.t(it) } ?: k.removePrefix("~")
@@ -452,13 +564,13 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
             val gw = if (glyph != null) h - 6f else 0f
             val w = p.measureText(text) + 22f + gw
             val r = RectF(x, cy - h / 2f, x + w, cy + h / 2f)
-            pFill.color = Color.argb(160, 40, 32, 20); c.drawRoundRect(r, h / 2f, h / 2f, pFill)
+            pFill.color = Theme.raised; pFill.alpha = 153; c.drawRoundRect(r, h / 2f, h / 2f, pFill); pFill.alpha = 255
             pLine.strokeWidth = 1.5f; pLine.color = Theme.bronzeDim; c.drawRoundRect(r, h / 2f, h / 2f, pLine)
             if (glyph != null) UiKit.pad(c, Glyphs.translate("rev_$glyph", CastSettings.buttonLayout), x + 6f + gw / 2f, cy, gw - 4f)
             val tx = x + 11f + gw
             c.drawText(text, tx, cy - (p.ascent() + p.descent()) / 2f, p)
             if (MacrosModel.condStruck(k)) {
-                pLine.strokeWidth = 2.5f; pLine.color = Color.rgb(220, 70, 60)
+                pLine.strokeWidth = 2.5f; pLine.color = Theme.unusable
                 c.drawLine(tx - 2f, cy, tx + p.measureText(text) + 2f, cy, pLine)
             }
             return r.right + 8f
@@ -473,7 +585,7 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
         /** a strip's cases: "on Focus" "if Enemy, Alive" "else Me": the words small, the units and conditions as pills */
         private fun casesInline(c: Canvas, x0: Float, cy: Float, maxX: Float, cases: List<MacrosModel.Case>): Float {
             var x = x0
-            val sp = UiKit.bodyPaint(18f, Theme.textDim, shadow = false)
+            val sp = UiKit.bodyPaint(20f, Theme.textDim, shadow = false)
             for ((i, cs) in cases.withIndex()) {
                 if (x > maxX - 60f) { c.drawText("…", x, cy + 6f, sp); return x + 20f }
                 if (i > 0) { val w = Tr.t("else"); c.drawText(w, x, cy + 6f, sp); x += sp.measureText(w) + 8f }
@@ -501,13 +613,13 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
             return x
         }
 
-        /** D3: one line as a strip of icons and short tags, its code small under it */
+        /** D3: one line as a strip of icons and short tags, its code small under it (20 px) */
         private fun strip(c: Canvas, r: RectF, st: MacrosModel.Strip, code: String, locked: Boolean, reserve: Float = 0f) {
-            val cy = r.top + 30f
+            val cy = r.top + 28f
             if (st.kind == "text" || st.kind == "lock" || st.kind == "empty") {
-                if (locked) lock(c, r.left + 24f, r.centerY(), 30f, Theme.textDim)
+                if (locked) lock(c, r.left + 26f, r.centerY(), 32f, 200)
                 val p = UiKit.bodyPaint(24f, if (locked) Theme.textDim else Color.WHITE, shadow = false)
-                c.drawText(nameFit(code, p, r.width() - 70f), r.left + 50f, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+                c.drawText(nameFit(code, p, r.width() - 70f - reserve), r.left + 54f, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
                 return
             }
             var x = r.left + 8f
@@ -526,10 +638,10 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                 val np = UiKit.bodyPaint(24f, Color.WHITE, shadow = false)
                 val t = nameFit((if (st.bang) "!" else "") + n, np, 300f)          // the game's name of it: never Tr.t
                 c.drawText(t, x, cy + 8f, np); x += np.measureText(t) + 8f
-                st.sub?.let { sub -> val sp = UiKit.bodyPaint(18f, Theme.textDim, shadow = false); c.drawText(sub, x, cy + 8f, sp); x += sp.measureText(sub) + 10f }
+                st.sub?.let { sub -> val sp = UiKit.bodyPaint(20f, Theme.textDim, shadow = false); c.drawText(sub, x, cy + 8f, sp); x += sp.measureText(sub) + 10f }
             }
             if (st.seq.isNotEmpty()) {
-                val np = UiKit.bodyPaint(22f, Color.WHITE, shadow = false)
+                val np = UiKit.bodyPaint(24f, Color.WHITE, shadow = false)
                 val t = nameFit(st.seq.joinToString(", ") { it.name }, np, 320f); c.drawText(t, x, cy + 8f, np); x += np.measureText(t) + 10f
             }
             val warnW = MacrosModel.warnWord(st.warn)
@@ -537,96 +649,93 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
             casesInline(c, x + 6f, cy, maxX, st.cases.takeIf { it.size > 1 || it.firstOrNull()?.let { f -> f.unit != null || f.conds.isNotEmpty() } == true } ?: emptyList())
             if (warnW != null) {
                 val ap = UiKit.bodyPaint(20f, Theme.warn, shadow = false).apply { textAlign = Paint.Align.RIGHT }
-                c.drawText(nameFit(Tr.t(warnW), ap, 190f), r.right - 12f, cy + 7f, ap)
+                c.drawText(nameFit(Tr.t(warnW), ap, 190f), r.right - 12f - reserve, cy + 7f, ap)
             }
-            val code0 = UiKit.bodyPaint(17f, Theme.textDim, shadow = false)
-            c.drawText(nameFit(code, code0, r.width() - 72f - reserve), r.left + 62f, r.bottom - 10f, code0)
+            val code0 = UiKit.bodyPaint(20f, Theme.textDim, shadow = false)
+            c.drawText(nameFit(code, code0, r.width() - 72f - reserve), r.left + 62f, r.bottom - 8f, code0)
         }
 
-        // ---- the editor: the name, the icon, the strips (or an empty macro's preset tiles), + Line / Presets / Delete
-        private fun editor(c: Canvas, s: State, r: RectF) {
-            val m = s.mac ?: return
-            val left = r.left + 20f; val right = r.right - 20f
+        // ---- the editor: the name, the icon, the strips (or an empty macro's preset tiles), then + Line and More (s15)
+        private fun editor(c: Canvas, s0: State, r: RectF) {
+            val m = s0.mac ?: return
+            // ONE gold cursor: while a pop-out is open the cursor is in it, the page under it shows none
+            val s = if (s0.pop != null) s0.copy(ef = null) else s0
+            UiKit.pane(c, r)
+            val left = r.left + PAD; val right = r.right - PAD
             // the icon chip and the name row
-            val iconBox = RectF(left, r.top + 8f, left + 104f, r.top + 112f)
+            val iconBox = RectF(left, r.top + 16f, left + 104f, r.top + 120f)
             UiKit.slot(c, icon(m.icon), iconBox.left + 10f, iconBox.top + 10f, 84f)
             if (m.icon == Icons.QUESTION_MARK || m.icon == 0) {
-                val ap = UiKit.bodyPaint(18f, Theme.textDim).apply { textAlign = Paint.Align.CENTER }
-                c.drawText(Tr.t("Auto"), iconBox.centerX(), iconBox.bottom + 18f, ap)
+                val ap = UiKit.bodyPaint(20f, Theme.textDim).apply { textAlign = Paint.Align.CENTER }
+                c.drawText(Tr.t("Auto"), iconBox.centerX(), iconBox.bottom + 20f, ap)
             }
             if (s.ef == "icon") UiKit.focus(c, iconBox)
             hit(iconBox, MacrosModel.pickCells(s, 1, act = true))
             chipAt["icon"] = iconBox
-            val nameBox = RectF(left + 120f, r.top + 8f, right, r.top + 112f)
+            val nameBox = RectF(left + 120f, r.top + 16f, right, r.top + 120f)
             UiKit.inputBox(c, nameBox)
-            val np = UiKit.bodyPaint(36f, Theme.gold)
+            val np = UiKit.bodyPaint(30f, Theme.gold)                        // the player's text in the field: Friz, never Tr.t
             c.drawText(nameFit(m.name, np, nameBox.width() - 200f), nameBox.left + 24f, nameBox.centerY() - (np.ascent() + np.descent()) / 2f, np)
-            val cp = UiKit.numberPaint(26f, Theme.textDim).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(MacrosModel.counter(m), nameBox.right - 20f, nameBox.centerY() + 9f, cp)
+            val cp = UiKit.numberPaint(22f, Theme.textDim).apply { textAlign = Paint.Align.RIGHT }
+            c.drawText(MacrosModel.counter(m), nameBox.right - 24f, nameBox.centerY() - (cp.ascent() + cp.descent()) / 2f, cp)
             if (s.ef == "name") UiKit.focus(c, nameBox)
             hit(nameBox, MacrosModel.pickCells(s, 0, act = true))
-            val top = nameBox.bottom + 22f
-            val btnTop = r.bottom - 100f
+            val top = nameBox.bottom + 30f
+            val bandTop = r.bottom - BAND_H
             if (m.lines.isEmpty() && s.tiles.isNotEmpty()) {
                 // D2: an empty macro offers the presets right here (up to 8 tiles, four a row)
-                tiles(c, s, RectF(left, top, right, btnTop - 16f), 2, s.ef)
+                tiles(c, s, RectF(left, top, right, bandTop - 16f), 2, s.ef)
             } else {
                 val lineH = 74f
-                val visible = ((btnTop - 16f - top) / lineH).toInt().coerceAtLeast(1)
+                val visible = ((bandTop - 24f - top - 16f) / lineH).toInt().coerceAtLeast(1)
                 val n = minOf(m.lines.size, MacrosModel.LINE_ROWS)
                 // (s14 review) a Move scrolls with the line being moved (past the 7 lines on show it went out of sight)
                 val focusIdx = ((if (s.view == "move") s.moveAt else null) ?: s.ef?.takeIf { it.startsWith("l") }?.drop(1)?.toIntOrNull()
                     ?: s.moveAt ?: 1) - 1
                 val first = if (focusIdx >= visible) focusIdx - visible + 1 else 0
-                val box = RectF(left, top, right, top + visible * lineH + 8f)
-                well(c, box)
+                val box = RectF(left, top, right, top + visible * lineH + 16f)
+                UiKit.module(c, box)                                             // the lines' well: the ring edge (a big container)
                 for (i in first until minOf(n, first + visible)) {
-                    val y = top + 4f + (i - first) * lineH
-                    val lr = RectF(left + 6f, y, right - 6f, y + lineH - 4f)
+                    val y = top + 8f + (i - first) * lineH
+                    val lr = RectF(left + 12f, y + 2f, right - 12f, y + lineH - 2f)
                     val st = s.strips.getOrNull(i) ?: MacrosModel.Strip("text", null, null, null, false, null, emptyList(), null, null, emptyList(), null)
                     val moving = s.view == "move" && s.moveAt == i + 1
-                    if (moving) { pFill.color = Color.argb(70, 255, 210, 90); c.drawRoundRect(lr, 8f, 8f, pFill) }
+                    if (moving) { pFill.color = Theme.selected; c.drawRoundRect(lr, 8f, 8f, pFill) }
                     val glow = s.ef == "l${i + 1}" && s.view != "move"
-                    strip(c, lr, st, m.lines.getOrElse(i) { "" }, (i + 1) in m.lock, reserve = if (glow) 130f else 0f)
-                    if (s.draftLine == i + 1 && s.view != "move") {
-                        val dp = UiKit.bodyPaint(18f, Theme.warn, shadow = false).apply { textAlign = Paint.Align.RIGHT }
-                        c.drawText(Tr.t("Draft"), lr.right - 10f, lr.bottom - 10f, dp)
-                    }
+                    val moveHint = glow && st.kind != "lock"
+                    val draft = s.draftLine == i + 1 && s.view != "move"
+                    strip(c, lr, st, m.lines.getOrElse(i) { "" }, (i + 1) in m.lock, reserve = (if (moveHint) 180f else 0f) + (if (draft) 70f else 0f))
                     if (moving) UiKit.moveArrowsUpDown(c, lr, up = i > 0, down = i < n - 1)
                     hit(lr, MacrosModel.pickCells(s, i + 2, act = true))
+                    var dx = lr.right - 12f
                     if (glow) {
                         UiKit.focus(c, lr)
-                        // the Y glyph's Move by touch, on the line under the glow (its own hit, over the line's)
-                        val mb = RectF(lr.right - 124f, lr.centerY() - 22f, lr.right - 8f, lr.centerY() + 22f)
-                        if (st.kind != "lock") {
-                            UiKit.pad(c, Glyphs.translate("rev_y", CastSettings.buttonLayout), mb.left + 18f, mb.centerY(), 32f)
-                            val mp = UiKit.bodyPaint(20f, Theme.textDim, shadow = false)
-                            c.drawText(Tr.t("Move"), mb.left + 40f, mb.centerY() + 7f, mp)
-                            hit(mb, MacrosModel.cell(s, "y"))
+                        // the Y glyph's Move (UiKit.hints: the kit's glyph and word), its own hit over the line's
+                        if (moveHint) {
+                            val hx = UiKit.hints(c, lr.right - 14f, lr.centerY(), yGlyph() to "Move")
+                            hit(RectF(hx - 10f, lr.top, lr.right, lr.bottom), MacrosModel.cell(s, "y"))
+                            dx = hx - 14f
                         }
                     }
+                    if (draft) {
+                        val dp = UiKit.bodyPaint(20f, Theme.warn, shadow = false).apply { textAlign = Paint.Align.RIGHT }
+                        c.drawText(Tr.t("Draft"), dx, lr.bottom - 8f, dp)
+                    }
                 }
-                if (m.lines.isEmpty()) {
-                    val ep = UiKit.bodyPaint(26f, Theme.textDim, shadow = false)
-                    c.drawText(Tr.t("Empty"), left + 54f, top + 46f, ep)
-                }
+                if (m.lines.isEmpty()) say(c, box, "Empty")
             }
-            // the buttons: + Line, Presets (a macro with lines), Delete
-            val keys = if (m.lines.isEmpty()) listOf("add", "del") else MacrosModel.BUTTONS
-            val bw = (right - left - (keys.size - 1) * 16f) / keys.size
-            for ((i, key) in keys.withIndex()) {
-                val b = RectF(left + i * (bw + 16f), btnTop, left + i * (bw + 16f) + bw, btnTop + 84f)
-                val focused = s.ef == key
-                val word = when (key) { "add" -> if (s.draftLine == null && s.draftAt != null) "+ Line (Draft)" else "+ Line"
-                    "pre" -> "Presets"; else -> if (s.del) "Delete?" else "Delete" }
-                val st = if (s.combat && key == "del") UiKit.Button.DISABLED else UiKit.Button.UP
-                if (focused) UiKit.button(c, b, word, UiKit.okGlyph(), st) else UiKit.button(c, b, word, st)
-                if (focused) UiKit.focus(c, b)
-                hit(b, MacrosModel.pickCells(s, MacrosModel.editCell(key), act = true))
-            }
+            // the band: + Line (A on it) and More (Y); Delete asks with Cancel / Delete
+            val (a, b) = band(c, r)
+            if (s.del) { askPair(c, s, a, b, "Delete"); return }
+            val addF = s.ef == "add"
+            button(c, a, if (s.draftLine == null && s.draftAt != null) "+ Line (Draft)" else "+ Line", if (s.held && addF) UiKit.okGlyph() else null)
+            if (addF) UiKit.focus(c, a)
+            hit(a, MacrosModel.pickCells(s, MacrosModel.editCell("add"), act = true))
+            chipAt["add"] = a
+            moreButton(c, s, b, s.ef == "more", s.ym, MacrosModel.pickCells(s, MacrosModel.editCell("more"), act = true))
         }
 
-        /** the preset tiles: [cols] ... four a row; [ef] the glow's key ("t3"), or the presets view's own glow */
+        /** the preset tiles: four a row, each a module (the ring edge: the room's tiles); [ef] the glow's key ("t3"), or the presets view's */
         private fun tiles(c: Canvas, s: State, area: RectF, sBase: Int, ef: String?) {
             val per = 4
             val gap = 16f
@@ -635,42 +744,47 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
             for ((k, t) in s.tiles.withIndex()) {
                 val x = area.left + (k % per) * (tw + gap); val y = area.top + (k / per) * (th + gap)
                 val tr = RectF(x, y, x + tw, y + th)
-                UiKit.card(c, tr)
+                UiKit.module(c, tr)
                 val lp = UiKit.bodyPaint(26f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
-                c.drawText(nameFit(Tr.t(MacrosModel.presetWord(t.key)), lp, tw - 24f), tr.centerX(), tr.top + 50f, lp)
+                c.drawText(nameFit(Tr.t(MacrosModel.presetWord(t.key)), lp, tw - 28f), tr.centerX(), tr.top + 50f, lp)
                 var ix = tr.centerX() - (t.icons.size.coerceAtMost(3) * 62f) / 2f
                 for (ic in t.icons.take(3)) { UiKit.slot(c, icon(ic), ix + 4f, tr.top + 74f, 54f); ix += 62f }
-                val sp = UiKit.bodyPaint(17f, Theme.textDim, shadow = false)
+                val sp = UiKit.bodyPaint(20f, Theme.textDim, shadow = false)
                 var ly = tr.top + 160f
-                for (ln in t.text.split("\n").take(3)) { c.drawText(nameFit(ln, sp, tw - 24f), tr.left + 14f, ly, sp); ly += 24f }
+                for (ln in t.text.split("\n").take(3)) {
+                    if (ly > tr.bottom - 12f) break
+                    c.drawText(nameFit(ln, sp, tw - 32f), tr.left + 16f, ly, sp); ly += 26f
+                }
                 val key = "t${k + 1}"
-                if (ef == key || (ef == null && s.presetCur == k + 1)) UiKit.focus(c, RectF(tr.left + 6f, tr.top + 6f, tr.right - 6f, tr.bottom - 6f))
+                if (ef == key || (ef == null && s.presetCur == k + 1)) UiKit.focus(c, tr)
                 hit(tr, MacrosModel.pickCells(s, sBase + k, act = true))
             }
         }
 
-        // ---- the presets view (Presets on a macro with lines): the tiles, A replaces after a second A (D2)
+        // ---- the presets view (More > Presets on a macro with lines): the tiles; a preset's Done asks before it replaces (D2)
         private fun presets(c: Canvas, s: State, r: RectF) {
-            val hp = UiKit.bodyPaint(30f, Theme.gold)
-            c.drawText(Tr.t("Presets"), r.left + 130f, r.top + 40f, hp)
-            tiles(c, s, RectF(r.left + 20f, r.top + 70f, r.right - 20f, r.bottom - 20f), 0, null)
+            UiKit.pane(c, r)
+            val hp = UiKit.titlePaint(30f, Theme.gold)
+            c.drawText(Tr.t("Presets"), r.left + PAD, r.top + 44f, hp)
+            tiles(c, s, RectF(r.left + PAD, r.top + 70f, r.right - PAD, r.bottom - 20f), 0, null)
         }
 
-        // ---- a preset's preview: its lines as strips, its picks, Done
+        // ---- a preset's preview: its lines as strips, its picks, Done (Select); on a macro with lines Done asks: Cancel / Replace
         private fun preview(c: Canvas, s: State, r: RectF) {
-            val p = s.preset ?: return
-            val left = r.left + 20f; val right = r.right - 20f
-            val hp = UiKit.bodyPaint(30f, Theme.gold)
-            c.drawText(Tr.t(MacrosModel.presetWord(p.key)), left + 110f, r.top + 40f, hp)
-            val cp = UiKit.numberPaint(24f, if (MacrosModel.tooLong(p.len)) Color.rgb(230, 70, 60) else Theme.textDim).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText("${p.len}/${MacrosModel.BODY_MAX}", right, r.top + 40f, cp)
+            val p = s.preset?.let { p0 -> if (s.pop != null) p0.copy(cur = null) else p0 } ?: return       // ONE cursor (see [editor])
+            UiKit.pane(c, r)
+            val left = r.left + PAD; val right = r.right - PAD
+            val hp = UiKit.titlePaint(30f, Theme.gold)
+            c.drawText(Tr.t(MacrosModel.presetWord(p.key)), left, r.top + 44f, hp)
+            val cp = UiKit.numberPaint(22f, if (MacrosModel.tooLong(p.len)) Theme.unusable else Theme.textDim).apply { textAlign = Paint.Align.RIGHT }
+            c.drawText("${p.len}/${MacrosModel.BODY_MAX}", right, r.top + 44f, cp)
             val top = r.top + 70f
-            val box = RectF(left, top, right, top + p.strips.size.coerceAtLeast(1) * 74f + 8f)
-            well(c, box)
+            val box = RectF(left, top, right, top + p.strips.size.coerceAtLeast(1) * 74f + 16f)
+            UiKit.module(c, box)
             val lines = p.text.split("\n")
             for ((i, st) in p.strips.withIndex()) {
-                val y = top + 4f + i * 74f
-                strip(c, RectF(left + 6f, y, right - 6f, y + 70f), st, lines.getOrElse(i) { "" }, false)
+                val y = top + 8f + i * 74f
+                strip(c, RectF(left + 12f, y + 2f, right - 12f, y + 72f), st, lines.getOrElse(i) { "" }, false)
             }
             // the picks: one chip each (A opens the Spell list for it)
             val py = box.bottom + 30f
@@ -683,68 +797,59 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                 chipAt[key] = pr
                 hit(pr, MacrosModel.pickCells(s, k, act = true))
             }
-            val db = RectF(right - 300f, r.bottom - 100f, right, r.bottom - 16f)
-            val word = if (p.armed) "Replace?" else "Done"
-            UiKit.button(c, db, word, selectGlyph(), if (p.hard != null || s.combat) UiKit.Button.DISABLED else UiKit.Button.UP)
-            if (p.cur == "done") UiKit.focus(c, db)
-            hit(db, MacrosModel.pickCells(s, 3, act = true))
+            val (a, b) = band(c, r)
+            if (p.armed) { askPair(c, s, a, b, "Replace"); return }
+            button(c, b, "Done", if (s.held) selectGlyph() else null, if (p.hard != null || s.combat) UiKit.Button.DISABLED else UiKit.Button.UP)
+            if (p.cur == "done") UiKit.focus(c, b)
+            hit(b, MacrosModel.pickCells(s, 3, act = true))
+            chipAt["done"] = b
         }
 
-        private fun selectGlyph(): String = Glyphs.translate("rev_minus", CastSettings.buttonLayout)
-
-        // ---- THE BUILDER (D1): the line's text, its action row, its cases, + Case, then Aa Text / Remove / Done
+        // ---- THE BUILDER (D1): Line n, the line's text, its action row, its cases, + Case; Done (Select) and More (Aa Text / Remove)
         private fun builder(c: Canvas, s: State, r: RectF) {
-            val b = s.builder ?: return
-            val left = r.left + 20f; val right = r.right - 20f
-            // the title band: Line n (or New line), n/255, the status word
-            val tp = UiKit.bodyPaint(30f, Theme.gold)
-            val title = if (b.line == null) Tr.t("New line") else Tr.t("Line") + " ${b.line}"
-            c.drawText(title, left + 110f, r.top + 40f, tp)
-            val cp = UiKit.numberPaint(24f, if (MacrosModel.tooLong(b.len)) Color.rgb(230, 70, 60) else Theme.textDim).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText("${b.len}/${MacrosModel.BODY_MAX}", right, r.top + 40f, cp)
-            // in a fight the room's status line says so (the chips stay neutral): nothing here then
-            val word = if (s.combat) null else MacrosModel.hardWord(b.hard)
-                ?: MacrosModel.warnWord(b.warns.firstOrNull()) ?: (if (b.draft) "Draft" else null)
-            word?.let { w ->
-                val bad = b.hard != null && !s.combat
-                val sp = UiKit.bodyPaint(22f, when { bad -> Color.rgb(230, 80, 60); b.warns.isNotEmpty() && b.hard == null -> Theme.warn
-                    else -> Theme.textDim }).apply { textAlign = Paint.Align.RIGHT }
-                c.drawText(nameFit(Tr.t(w), sp, 300f), right - 110f, r.top + 40f, sp)
-            }
-            // the composed text in a dark well (red past 255): the player's own text, never Tr.t
-            val wellR = RectF(left, r.top + 60f, right, r.top + 120f)
-            well(c, wellR)
-            val wp = UiKit.bodyPaint(26f, if (MacrosModel.tooLong(b.len)) Color.rgb(240, 90, 70) else Color.WHITE, shadow = false)
-            c.drawText(nameFit(b.text, wp, wellR.width() - 32f), wellR.left + 16f, wellR.centerY() - (wp.ascent() + wp.descent()) / 2f, wp)
+            val b = s.builder?.let { b0 -> if (b0.pop != null) b0.copy(cur = null) else b0 } ?: return     // ONE cursor (see [editor])
+            UiKit.pane(c, r)
+            val left = r.left + PAD; val right = r.right - PAD
+            // the heading: Line n (or New line) in Morpheus, n/255 (its word is the header's one status)
+            val tp = UiKit.titlePaint(30f, Theme.gold)
+            c.drawText(if (b.line == null) Tr.t("New line") else Tr.t("Line") + " ${b.line}", left, r.top + 44f, tp)
+            val cp = UiKit.numberPaint(22f, if (MacrosModel.tooLong(b.len)) Theme.unusable else Theme.textDim).apply { textAlign = Paint.Align.RIGHT }
+            c.drawText("${b.len}/${MacrosModel.BODY_MAX}", right, r.top + 44f, cp)
+            // the composed text in the game's edit box (red past 255): the player's own text, never Tr.t
+            val wellR = RectF(left, r.top + 62f, right, r.top + 122f)
+            UiKit.inputBox(c, wellR)
+            val wp = UiKit.bodyPaint(26f, if (MacrosModel.tooLong(b.len)) Theme.unusable else Color.WHITE, shadow = false)
+            c.drawText(nameFit(b.text, wp, wellR.width() - 48f), wellR.left + 24f, wellR.centerY() - (wp.ascent() + wp.descent()) / 2f, wp)
             // the chips, row by row as the add-on lays them
             var y = wellR.bottom + 18f
             val bad = if (s.combat) null else b.hardChip
             val warn = !s.combat && b.warns.isNotEmpty()
             for ((ri, row) in b.rows.withIndex()) {
                 val isCase = row.firstOrNull()?.matches(Regex("^c\\d[ufa]$")) == true
-                val isFooter = row.firstOrNull() == "text"
-                val h = when { ri == 0 -> 96f; isCase -> 84f; isFooter -> 0f; else -> 70f }
-                if (isFooter) break
+                if (row.firstOrNull() == "done" || row.firstOrNull() == "more" || row.firstOrNull() == "text") break    // the band's
+                val h = when { ri == 0 -> 96f; isCase -> 84f; else -> 70f }
                 if (isCase) {
                     val n = row.first().substring(1, 2).toInt()
                     val card = RectF(left, y, right, y + h)
-                    pFill.color = Color.argb(120, 30, 24, 16); c.drawRoundRect(card, 14f, 14f, pFill)
-                    val tabW = 96f
-                    val tabR = RectF(left + 8f, y + 8f, left + tabW, y + h - 8f)
-                    val tl = UiKit.bodyPaint(22f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
+                    UiKit.module(c, card)                                        // a case card: the ring edge (a big container)
+                    val tabR = RectF(left + 12f, y + 12f, left + 88f, y + h - 12f)
+                    val tl = UiKit.bodyPaint(24f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
                     c.drawText(if (n == 1) "1" else Tr.t("else"), tabR.centerX(), tabR.centerY() - (tl.ascent() + tl.descent()) / 2f, tl)
-                    var x = left + tabW + 12f
+                    var x = tabR.right + 12f
                     val cs = b.cases.getOrNull(n - 1)
+                    val focusedCase = b.cur != null && Regex("^c${n}[ufa]$").matches(b.cur)
+                    val removable = b.cases.size > 1 || cs?.unit != null || cs?.conds?.isNotEmpty() == true
+                    val maxR = right - CASE_HINT_W
                     for (key in row) {
                         val part = key.last()
-                        val w = when (part) { 'u' -> 300f; 'f' -> 480f; else -> 300f }.coerceAtMost(right - x - 8f)
-                        val cr = RectF(x, y + 8f, x + w, y + h - 8f)
+                        val w = when (part) { 'u' -> 250f; 'f' -> 400f; else -> 250f }.coerceAtMost(maxR - x)
+                        val cr = RectF(x, y + 12f, x + w, y + h - 12f)
                         when (part) {
                             'u' -> chip(c, cr, cs?.unit?.let { unitText(it) } ?: Tr.t("Target"), lit = b.cur == key, small = "On", tr = false)
                             'f' -> {
                                 chip(c, cr, if (cs?.conds.isNullOrEmpty()) "Always" else null, lit = b.cur == key, small = "If")
                                 var px = cr.left + 14f
-                                for (k in cs?.conds.orEmpty()) { if (px > cr.right - 60f) break; px = condPill(c, px, cr.centerY() + 10f, k, 32f) }
+                                for (k in cs?.conds.orEmpty()) { if (px > cr.right - 60f) break; px = condPill(c, px, cr.centerY() + 10f, k, 30f) }
                             }
                             else -> chip(c, cr, cs?.arg?.name?.takeIf { it.isNotEmpty() } ?: Tr.t("Pick"), cs?.arg?.icon ?: 0,
                                 lit = b.cur == key, bad = bad == key, tr = false)
@@ -753,13 +858,10 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                         MacrosModel.chipCell(b, key)?.let { sk -> hit(cr, MacrosModel.pickCells(s, sk, act = true)) }
                         x = cr.right + 12f
                     }
-                    // Y's remove by touch: the case's small x (select its first chip, then Y)
-                    if (b.cases.size > 1 || cs?.unit != null || cs?.conds?.isNotEmpty() == true) {
-                        val xr = RectF(right - 64f, y + 18f, right - 12f, y + h - 18f)
-                        UiKit.closeX(c, xr.centerX(), xr.centerY(), 40f)
-                        val sk = MacrosModel.chipCell(b, row.first())
-                        val yk = MacrosModel.cell(s, "y")
-                        if (sk != null && yk != null) MacrosModel.pickCells(s, sk, act = false)?.let { hit(xr, it + yk) }
+                    // Y takes the case away: the hint on the FOCUSED case only (the clutter rule: select, then ONE action), its own hit
+                    if (focusedCase && removable && b.pop == null) {
+                        val hx = UiKit.hints(c, right - 16f, card.centerY(), yGlyph() to "Remove")
+                        hit(RectF(hx - 10f, card.top, right, card.bottom), MacrosModel.cell(s, "y"))
                     }
                 } else {
                     var x = left
@@ -781,8 +883,8 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                             "keep" -> {
                                 // the word stops short of the check box (a long es / fr word ends "…", never under the box)
                                 chip(c, cr, null, lit = b.cur == key)
-                                val kp = UiKit.bodyPaint(26f, if (b.cur == key) Color.WHITE else Theme.text)
-                                c.drawText(nameFit(Tr.t("Keep on"), kp, cr.width() - 12f - 64f), cr.left + 12f,
+                                val kp = UiKit.bodyPaint(26f, if (b.cur == key) Theme.gold else Theme.text)
+                                c.drawText(nameFit(Tr.t("Keep on"), kp, cr.width() - 14f - 64f), cr.left + 14f,
                                     cr.centerY() - (kp.ascent() + kp.descent()) / 2f, kp)
                                 UiKit.check(c, cr.right - 34f, cr.centerY(), 36f, b.bang)
                             }
@@ -795,23 +897,14 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                 }
                 y += h + 10f
             }
-            // the footer: Aa Text, Remove (Revert while a draft), Done (Select)
-            val fy = r.bottom - 100f
-            val fw = (right - left - 2 * 16f) / 3f
-            val keys = listOf("text", "rem", "done")
-            for ((i, key) in keys.withIndex()) {
-                val fr = RectF(left + i * (fw + 16f), fy, left + i * (fw + 16f) + fw, fy + 84f)
-                val focused = b.cur == key
-                when (key) {
-                    "text" -> UiKit.button(c, fr, "Aa Text", if (focused) UiKit.Button.UP else UiKit.Button.UP)
-                    "rem" -> UiKit.button(c, fr, MacrosModel.removeWord(b), UiKit.Button.UP)
-                    else -> UiKit.button(c, fr, "Done", selectGlyph(), if (b.hard != null || s.combat) UiKit.Button.DISABLED else UiKit.Button.UP)
-                }
-                if (focused) UiKit.focus(c, fr)
-                chipAt[key] = fr
-                if (key == "done") hit(fr, MacrosModel.doneCells(s))
-                else MacrosModel.chipCell(b, key)?.let { sk -> hit(fr, MacrosModel.pickCells(s, sk, act = true)) }
-            }
+            // the band: Done (Select) and More (Y); a stored line's Remove asks with Cancel / Remove
+            val (a, bb) = band(c, r)
+            if (b.remArmed) { askPair(c, s, a, bb, "Remove"); return }
+            button(c, a, "Done", if (s.held) selectGlyph() else null, if (b.hard != null || s.combat) UiKit.Button.DISABLED else UiKit.Button.UP)
+            if (b.cur == "done") UiKit.focus(c, a)
+            hit(a, MacrosModel.doneCells(s))
+            chipAt["done"] = a
+            moreButton(c, s, bb, b.cur == "more", b.ym, MacrosModel.chipCell(b, "more")?.let { MacrosModel.pickCells(s, it, act = true) })
         }
 
         /** the line's spell / item chip: its picture and name; a sequence's pictures; a unit's word; equipslot's slot and item */
@@ -832,14 +925,14 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                  small = b.slot?.let { Tr.t("Slot") + " $it" })
         }
 
-        // ---- THE POP-OUTS: each slides out of its chip (UiKit.slideOut); a finger outside it closes it (B)
+        // ---- THE POP-OUTS: each slides out of its chip (UiKit.slideOut); a finger outside it closes it (B); A Choose / B Back under it
         private fun popOut(c: Canvas, s: State, p: MacrosModel.Pop, r: RectF) {
             val key = "${p.kind}:${p.case}:${p.forSeq}:${p.forPreset}"
             val now = SystemClock.uptimeMillis()
             if (key != popKey) { popKey = key; popAt = now }
             val t = if (dryRun) SLIDE_MS else (now - popAt).toFloat()
             val anchorKey = when (p.kind) {
-                "cmd" -> "cmd"; "rank" -> "rank"; "reset" -> "reset"; "case" -> "add"; "seq" -> "arg"; "icon" -> "icon"
+                "cmd" -> "cmd"; "rank" -> "rank"; "reset" -> "reset"; "case" -> "add"; "seq" -> "arg"; "icon" -> "icon"; "more" -> "more"
                 "arg" -> if (p.forPreset) (s.preset?.cur ?: "p1") else if (p.forSeq) "arg" else if ((p.case ?: 1) > 1) "c${p.case}a" else "arg"
                 "on" -> if ((p.case ?: 1) >= 1 && s.builder?.cur?.endsWith("u") == true) "c${p.case}u" else "arg"
                 "if" -> "c${p.case ?: 1}f"
@@ -852,12 +945,17 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                 "icon" -> { cellW = 104f; cellH = 104f }
                 "cmd" -> { cellW = 270f; cellH = 64f }
                 "if" -> { cellW = 250f; cellH = 64f }
-                "on", "reset" -> { cellW = 290f; cellH = 60f }
+                "on", "reset" -> { cellW = 290f; cellH = 64f }
+                "more" -> { cellW = 440f; cellH = 92f }
                 else -> { cellW = 440f; cellH = 64f }
             }
             val rowsN = ((p.rows.size + p.cols - 1) / p.cols).coerceAtLeast(1)
-            val head = if (p.kind == "arg") 150f else 20f
-            val foot = if (p.pages > 1) 70f else 16f
+            val head = if (p.kind == "arg") 166f else 20f
+            // the panel's foot: the book's paging, then the hint row (A Choose / B Back, inside the panel as Calendar's and Group Finder's
+            // lists have it: under a panel it stood on the chips the cover only dims) while the room holds the pad
+            val pagesH = if (p.pages > 1) 96f else 0f
+            val hintH = if (s.held) 64f else 0f
+            val foot = maxOf(16f, pagesH + hintH)
             val pw = p.cols * cellW + 40f
             val ph = head + rowsN * cellH + foot + 10f
             var px = anchor.left; var py = anchor.bottom + 8f
@@ -869,32 +967,56 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
             UiKit.cover(c, r, 0.35f)
             hit(RectF(r), MacrosModel.cell(s, "b"))
             var tip: JSONObject? = null
-            UiKit.slideOut(c, anchor, to, t) { cv, box -> tip = popCells(cv, s, p, box, head, cellW, cellH) }
-            // (s14 review) the spell's words OUTSIDE the slide's clip, once it is out, beside the panel where there is room, else under /
-            // over it (room_build_arg: drawn inside the clip it showed as a sliver over the Spells tab)
-            if (!UiKit.sliding(t) && p.kind == "arg") tip?.let { row ->
-                val id = row.optInt("id", 0)
-                val desc = if (id > 0) spellTip(id) else null
-                if (!desc.isNullOrEmpty()) tooltip(c, row.optString("n", ""), desc, to, r)
+            UiKit.slideOut(c, anchor, to, t) { cv, box -> tip = popCells(cv, s, p, box, head, cellW, cellH, hintH) }
+            if (!UiKit.sliding(t)) {
+                // (s14 review) the spell's words OUTSIDE the slide's clip, once it is out: the game's tooltip beside the panel where there
+                // is room, else under / over it (room_build_arg: drawn inside the clip it showed as a sliver over the Spells tab)
+                if (p.kind == "arg") tip?.let { row ->
+                    val id = row.optInt("id", 0)
+                    val desc = if (id > 0) spellTip(id) else null
+                    // clear of the action band at the pane's foot too (over the panel when under it would reach the band)
+                    if (!desc.isNullOrEmpty()) tooltip(c, row.optString("n", ""), desc, to, RectF(r.left, r.top, r.right, r.bottom - BAND_H))
+                }
+                if (s.held) UiKit.hints(c, to.right - 24f, to.bottom - 10f - hintH / 2f, UiKit.okGlyph() to "Choose", UiKit.backGlyph() to "Back")
             }
             if (UiKit.sliding(t)) postInvalidateOnAnimation()
         }
 
+        /** the Spell / Item pop-out's icon tabs (the Controller room's chooser): Spells, General (the class), Pet (the pet's own),
+         *  Items, Slots; a tab with no picture yet (no spells document) says its word */
+        private fun tabIcon(t: String): android.graphics.Bitmap? = when (t) {
+            "sp" -> UiKit.tex("ricon_spellbook")
+            "gen" -> book()?.lines?.firstOrNull { it.index == 1 }?.let { Icons.get(it.icon) }
+            "pet" -> book()?.petIcon?.takeIf { it > 0 }?.let { Icons.get(it) }
+            "it" -> UiKit.tex("ricon_bags")
+            "sl" -> UiKit.tex("ricon_character")
+            else -> null
+        }
+
         /** the pop-out's cells; returns the glowed row (the arg pop-out's tooltip is drawn by [popOut], outside the slide's clip) */
-        private fun popCells(c: Canvas, s: State, p: MacrosModel.Pop, box: RectF, head: Float, cellW: Float, cellH: Float): JSONObject? {
+        private fun popCells(c: Canvas, s: State, p: MacrosModel.Pop, box: RectF, head: Float, cellW: Float, cellH: Float, hintH: Float): JSONObject? {
             hits += RectF(box) to emptyList()                                 // a finger on the panel's ground does nothing
             if (p.kind == "arg") {
-                // the tabs (s0..s4), the search (s5)
-                val tw = (box.width() - 40f) / p.tabs.size.coerceAtLeast(1)
-                for ((i, t) in p.tabs.withIndex()) {
-                    val tr = RectF(box.left + 20f + i * tw, box.top + 14f, box.left + 20f + (i + 1) * tw - 8f, box.top + 70f)
-                    UiKit.tab(c, tr, Tr.t(MacrosModel.tabWord(t)), t == p.tab, onTop = true, cursor = p.cur == "t${i + 1}")
-                    if (p.cur == "t${i + 1}") UiKit.focus(c, tr)
-                    hit(tr, MacrosModel.pickCells(s, i, act = true))
+                // the tabs (s0..s4): the game's small icon tabs, the gaps round the cursor's (or the open) one, the gold arrows beside it
+                val open = p.tabs.indexOf(p.tab).coerceAtLeast(0)
+                val curT = p.cur?.takeIf { it.startsWith("t") }?.drop(1)?.toIntOrNull()?.minus(1)
+                val chosen = curT ?: open
+                val tr = popGaps.row(p.tabs.size, box.left + 20f - UiKit.TAB_END_W, box.right - 20f + UiKit.TAB_END_W, box.top + 14f, 72f, 72f,
+                    chosen.coerceIn(0, (p.tabs.size - 1).coerceAtLeast(0)), this)
+                for ((i, tk) in p.tabs.withIndex()) {
+                    val rr = tr.getOrNull(i) ?: continue
+                    val pic = tabIcon(tk)
+                    UiKit.smallTab(c, rr, pic, i == open, cursor = curT == i)
+                    if (pic == null) {
+                        val wp = UiKit.bodyPaint(20f, if (i == open) Theme.gold else Theme.text).apply { textAlign = Paint.Align.CENTER }
+                        c.drawText(nameFit(Tr.t(MacrosModel.tabWord(tk)), wp, rr.width() - 8f), rr.centerX(), rr.centerY() - (wp.ascent() + wp.descent()) / 2f, wp)
+                    }
+                    hit(rr, MacrosModel.pickCells(s, i, act = true))
                 }
-                val sr = RectF(box.left + 20f, box.top + 80f, box.right - 20f, box.top + 136f)
+                if (curT != null && curT in tr.indices) UiKit.moveArrows(c, tr[curT], left = curT > 0, right = curT < p.tabs.size - 1, words = false)
+                val sr = RectF(box.left + 20f, box.top + 98f, box.right - 20f, box.top + 152f)
                 UiKit.inputBox(c, sr)
-                val qp = UiKit.bodyPaint(22f, if (p.query != null) Color.WHITE else Theme.textDim, shadow = false)
+                val qp = UiKit.bodyPaint(24f, if (p.query != null) Color.WHITE else Theme.textDim, shadow = false)
                 c.drawText(p.query ?: Tr.t("Search"), sr.left + 54f, sr.centerY() - (qp.ascent() + qp.descent()) / 2f, qp)
                 UiKit.pad(c, UiKit.okGlyph(), sr.left + 26f, sr.centerY(), 30f)
                 if (p.cur == "q") UiKit.focus(c, sr)
@@ -905,123 +1027,112 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
             for ((i, row) in p.rows.withIndex()) {
                 val x = gx + (i % p.cols) * cellW; val y = gy + (i / p.cols) * cellH
                 val cr = RectF(x + 4f, y + 4f, x + cellW - 4f, y + cellH - 4f)
-                val ck = "r${i + 1}"
-                val lit = p.cur == ck
+                val lit = p.cur == "r${i + 1}"
                 if (lit) tipFor = row
                 popCell(c, p, row, cr, lit)
-                if (lit) UiKit.focus(c, cr)
                 hit(cr, MacrosModel.pickCells(s, p.base + i, act = true))
             }
-            if (p.rows.isEmpty()) {
-                val ep = UiKit.bodyPaint(24f, Theme.textDim)
-                c.drawText(Tr.t("Nothing to pick"), gx + 8f, gy + 40f, ep)
-            }
+            if (p.rows.isEmpty()) say(c, RectF(gx, gy - 20f, box.right, box.bottom), "Nothing to pick", x = gx + 4f)
             if (p.pages > 1) {
-                val py = box.bottom - 38f
-                val canPrev = p.page > 1; val canNext = p.page < p.pages
-                UiKit.pageArrow(c, false, box.centerX() - 120f, py, 50f, canPrev)
-                UiKit.pageArrow(c, true, box.centerX() + 120f, py, 50f, canNext)
-                if (canPrev) hit(RectF(box.centerX() - 170f, py - 40f, box.centerX() - 70f, py + 40f), MacrosModel.cell(s, "pp"))
-                if (canNext) hit(RectF(box.centerX() + 70f, py - 40f, box.centerX() + 170f, py + 40f), MacrosModel.cell(s, "pn"))
-                val pg = UiKit.numberPaint(24f, Theme.textDim).apply { textAlign = Paint.Align.CENTER }
-                c.drawText("${p.page}/${p.pages}", box.centerX(), py - (pg.ascent() + pg.descent()) / 2f, pg)
+                val py = box.bottom - hintH - 54f
+                UiKit.bookPaging(c, box.centerX(), py, p.page, p.pages, onPaper = false)
+                if (p.page > 1) hit(RectF(box.centerX() - 206f, py - 55f, box.centerX() - 94f, py + 56f), MacrosModel.cell(s, "pp"))
+                if (p.page < p.pages) hit(RectF(box.centerX() + 94f, py - 55f, box.centerX() + 206f, py + 56f), MacrosModel.cell(s, "pn"))
             }
             return tipFor
         }
 
-        /** one pop-out cell, by kind */
+        /** a multi-column pop-out's cell (s15): the menus' look without their gutter - the word gold when lit, the gold box round it */
+        private fun wordCell(c: Canvas, cr: RectF, text: String, lit: Boolean, iconId: Int? = null, dim: Boolean = false, endRoom: Float = 0f) {
+            var x = cr.left + 16f
+            if (iconId != null) {
+                val sz = cr.height() - 20f
+                UiKit.slot(c, icon(iconId), x, cr.centerY() - sz / 2f, sz)
+                x += sz + 12f
+            }
+            val p = UiKit.bodyPaint(26f, when { dim -> Theme.dim; lit -> Theme.gold; else -> Theme.text })
+            c.drawText(nameFit(text, p, cr.right - 12f - endRoom - x), x, cr.centerY() - (p.ascent() + p.descent()) / 2f, p)
+            if (lit) UiKit.focus(c, cr)
+        }
+
+        /** one pop-out cell, by kind: the icon grids keep their slots; a one-column list is the game's menu rows; the rest plain words */
         private fun popCell(c: Canvas, p: MacrosModel.Pop, row: JSONObject, cr: RectF, lit: Boolean) {
             when (p.kind) {
                 "arg", "icon" -> {
                     val ic = row.optInt("i", 0)
                     val sz = (cr.width() - 30f).coerceAtMost(cr.height() - 40f)
-                    UiKit.slot(c, icon(ic), cr.centerX() - sz / 2f, cr.top + 6f, sz)
-                    if (row.optBoolean("on", false)) UiKit.checkedGlow(c, RectF(cr.centerX() - sz / 2f, cr.top + 6f, cr.centerX() + sz / 2f, cr.top + 6f + sz))
-                    val np = UiKit.bodyPaint(17f, Theme.text, shadow = false).apply { textAlign = Paint.Align.CENTER }
+                    val sr = RectF(cr.centerX() - sz / 2f, cr.top + 6f, cr.centerX() + sz / 2f, cr.top + 6f + sz)
+                    UiKit.slot(c, icon(ic), sr.left, sr.top, sz)
+                    if (row.optBoolean("on", false)) UiKit.checkedGlow(c, sr)
+                    val np = UiKit.bodyPaint(20f, if (lit) Theme.gold else Theme.text, shadow = false).apply { textAlign = Paint.Align.CENTER }
                     val name = when {
                         row.optBoolean("auto", false) -> Tr.t("Auto")
                         row.has("sl") && row.isNull("n") -> Tr.t("Slot") + " " + row.optInt("sl")
                         else -> row.optString("n", "")                          // the game's names: never Tr.t
                     }
                     if (p.kind == "arg" || row.optBoolean("auto", false)) c.drawText(nameFit(name, np, cr.width() - 4f), cr.centerX(), cr.bottom - 6f, np)
+                    if (lit) UiKit.focus(c, cr)
                 }
-                "cmd" -> chip(c, cr, row.optString("n").takeIf { it.isNotEmpty() } ?: MacrosModel.cmdWord(row.optString("k")),
-                    row.optInt("i", 0).takeIf { it > 0 }, lit = lit, tr = !row.has("n"))
-                "on" -> {
-                    val u = row.optString("u", "")
-                    chip(c, cr, unitText(u), lit = lit, tr = false)
-                }
+                "cmd" -> wordCell(c, cr, row.optString("n").takeIf { it.isNotEmpty() } ?: Tr.t(MacrosModel.cmdWord(row.optString("k"))), lit,
+                    row.optInt("i", 0).takeIf { it > 0 })
+                "on" -> wordCell(c, cr, unitText(row.optString("u", "")), lit)
                 "if" -> {
                     val k = row.optString("k"); val st = row.optInt("s", 0)
-                    chip(c, cr, null, lit = lit, dim = st == 0)
-                    val shown = k                                             // the grid names the condition; Yes / No / Off say its state
-                    condPill(c, cr.left + 14f, cr.centerY(), shown, 40f)
-                    val sp = UiKit.bodyPaint(18f, if (st == 0) Theme.dim else Theme.gold, shadow = false).apply { textAlign = Paint.Align.RIGHT }
-                    c.drawText(Tr.t(when (st) { 1 -> "Yes"; 2 -> "No"; else -> "Off" }), cr.right - 12f, cr.centerY() + 6f, sp)
+                    condPill(c, cr.left + 14f, cr.centerY(), k, 40f)               // the grid names the condition; Yes / No / Off say its state
+                    val sp = UiKit.bodyPaint(20f, if (st == 0) Theme.dim else Theme.gold, shadow = false).apply { textAlign = Paint.Align.RIGHT }
+                    c.drawText(Tr.t(when (st) { 1 -> "Yes"; 2 -> "No"; else -> "Off" }), cr.right - 14f, cr.centerY() - (sp.ascent() + sp.descent()) / 2f, sp)
+                    if (lit) UiKit.focus(c, cr)
+                }
+                "reset" -> {
+                    val o = row.optString("o")
+                    wordCell(c, cr, MacrosModel.resetWord(o)?.let { Tr.t(it) } ?: "$o s", lit, endRoom = 50f)
+                    UiKit.check(c, cr.right - 30f, cr.centerY(), 32f, row.optBoolean("on", false))
                 }
                 "rank" -> {
                     val r = row.optInt("r", 0)
-                    chip(c, cr, if (r == 0) Tr.t("Top") else "$r / ${p.ranks}", lit = lit, tr = false)
-                    if (row.optBoolean("on", false)) UiKit.check(c, cr.right - 30f, cr.centerY(), 32f, true)
+                    UiKit.menuRow(c, cr, if (r == 0) "Top" else "$r / ${p.ranks}", lit, size = 28f, mark = if (row.optBoolean("on", false)) "icon_check" else null)
                 }
-                "case" -> chip(c, cr, MacrosModel.caseWord(row.optString("o")), lit = lit)
-                "reset" -> {
-                    val o = row.optString("o")
-                    chip(c, cr, MacrosModel.resetWord(o)?.let { Tr.t(it) } ?: "$o s", lit = lit, tr = false)
-                    UiKit.check(c, cr.right - 30f, cr.centerY(), 32f, row.optBoolean("on", false))
-                }
-                "seq" -> if (row.optBoolean("add", false)) chip(c, cr, "+ Spell", lit = lit)
-                         else chip(c, cr, row.optString("n", ""), row.optInt("i", 0), lit = lit, tr = false)
-                else -> chip(c, cr, row.optString("n", ""), lit = lit, tr = false)
+                "case" -> UiKit.menuRow(c, cr, MacrosModel.caseWord(row.optString("o")), lit, size = 28f)
+                "more" -> UiKit.menuRow(c, cr, MacrosModel.moreWord(row.optString("o"), row.optBoolean("rv", false)), lit,
+                    enabled = !row.optBoolean("off", false), size = 28f)
+                "seq" -> if (row.optBoolean("add", false)) UiKit.menuRow(c, cr, "+ Spell", lit, size = 28f) else seqRow(c, cr, row, lit)
+                else -> wordCell(c, cr, row.optString("n", ""), lit)
             }
         }
 
-        /** a spell's description by the pop-out (the Spellbook's own words from the spells document; the game's text): beside [box]
-         *  where [room] has space for it, else under it, else over it, never on the panel's cells unless nothing else fits */
+        /** a sequence's spell as the menu's row (its picture in the gutter, the game's name never through Tr.t, gold when lit) */
+        private fun seqRow(c: Canvas, cr: RectF, row: JSONObject, lit: Boolean) {
+            if (lit) UiKit.focus(c, RectF(cr.left + 6f, cr.top + 4f, cr.right - 6f, cr.bottom - 4f))
+            val sz = cr.height() - 16f
+            UiKit.slot(c, icon(row.optInt("i", 0)), cr.left + 48f - sz / 2f, cr.centerY() - sz / 2f, sz)
+            val p = UiKit.bodyPaint(28f, if (lit) Theme.gold else Theme.text)
+            c.drawText(nameFit(row.optString("n", ""), p, cr.right - 16f - (cr.left + 100f)), cr.left + 100f, cr.centerY() - 2f - (p.ascent() + p.descent()) / 2f, p)
+        }
+
+        /** a spell's description by the pop-out: THE GAME'S TOOLTIP (UiKit.tooltip, as Bags and Chat show one), beside [box] where
+         *  [room] has space for it, else under it, else over it, never on the panel's cells unless nothing else fits */
         private fun tooltip(c: Canvas, name: String, desc: String, box: RectF, room: RectF) {
-            val tp = android.text.TextPaint(UiKit.bodyPaint(20f, Theme.text, shadow = false))
-            fun layoutOf(w: Float) = android.text.StaticLayout.Builder.obtain(desc, 0, desc.length, tp, (w - 32f).toInt().coerceAtLeast(40)).build()
-            val side = 380f
+            val lines = listOf(UiKit.TipLine(desc, Theme.gold))
+            fun tall(w: Float) = UiKit.tooltip(c, 0f, 0f, w, name, Color.WHITE, lines, alpha = 0).height()   // measured, nothing drawn
+            val side = 400f
             var w = side
-            var layout = layoutOf(w)
-            var th = 64f + layout.height.coerceAtMost(360)
-            val r: RectF = when {
-                box.right + 12f + side <= room.right - 8f -> {
-                    val top = box.top.coerceAtMost(room.bottom - 8f - th).coerceAtLeast(room.top + 8f)
-                    RectF(box.right + 12f, top, box.right + 12f + side, top + th)
-                }
-                box.left - 12f - side >= room.left + 8f -> {
-                    val top = box.top.coerceAtMost(room.bottom - 8f - th).coerceAtLeast(room.top + 8f)
-                    RectF(box.left - 12f - side, top, box.left - 12f, top + th)
-                }
+            var th = tall(w)
+            val at: Pair<Float, Float> = when {
+                box.right + 12f + side <= room.right - 8f ->
+                    (box.right + 12f) to box.top.coerceAtMost(room.bottom - 8f - th).coerceAtLeast(room.top + 8f)
+                box.left - 12f - side >= room.left + 8f ->
+                    (box.left - 12f - side) to box.top.coerceAtMost(room.bottom - 8f - th).coerceAtLeast(room.top + 8f)
                 else -> {
                     w = box.width().coerceAtMost(room.width() - 16f)
-                    layout = layoutOf(w); th = 64f + layout.height.coerceAtMost(200)
+                    th = tall(w)
                     when {
-                        box.bottom + 12f + th <= room.bottom - 8f -> RectF(box.left, box.bottom + 12f, box.left + w, box.bottom + 12f + th)
-                        box.top - 12f - th >= room.top + 8f -> RectF(box.left, box.top - 12f - th, box.left + w, box.top - 12f)
-                        else -> RectF(box.left, room.bottom - 8f - th, box.left + w, room.bottom - 8f)     // nothing fits: the room's foot
+                        box.bottom + 12f + th <= room.bottom - 8f -> box.left to (box.bottom + 12f)
+                        box.top - 12f - th >= room.top + 8f -> box.left to (box.top - 12f - th)
+                        else -> box.left to (room.bottom - 8f - th)                     // nothing fits: the room's foot
                     }
                 }
             }
-            UiKit.menu(c, r, solid = true)
-            val np = UiKit.bodyPaint(24f, Color.WHITE)
-            c.drawText(nameFit(name, np, w - 32f), r.left + 16f, r.top + 40f, np)
-            c.save(); c.translate(r.left + 16f, r.top + 56f); c.clipRect(0f, 0f, w - 32f, r.height() - 64f); layout.draw(c); c.restore()
-        }
-
-        /** the room's one status line: a refusal's word, the game's window, a fight, no pad row */
-        private fun status(c: Canvas, s: State, r: RectF) {
-            val word = when {
-                s.noRow -> "No pad row"
-                s.win -> "Game window open"
-                s.view == "move" && s.note == null -> "Move"
-                else -> MacrosModel.noteWord(s.note) ?: MacrosModel.hardWord(s.note)?.takeIf { s.note == "pick" }
-                    ?: if (s.combat && s.view != "build") "In combat" else null
-            } ?: return
-            // in the title band, after the portrait (clear of the centred title and the close X)
-            val p = UiKit.bodyPaint(24f, if (s.note != null) Theme.warn else Theme.textDim)
-            c.drawText(nameFit(Tr.t(word), p, 300f), r.left + 130f, 62f, p)
+            UiKit.tooltip(c, at.first, at.second, w, name, Color.WHITE, lines)
         }
 
         /** the line over the keyboard (InteractView's): the field's word, what is typed, the caret */
@@ -1069,5 +1180,12 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
         const val RETRY_MAX = 4
         private const val KB_REPEAT_FIRST_MS = 380L
         private const val KB_REPEAT_MS = 110L
+        /** s15: the rooms' header (UiKit.header), Quests' action band, the panes' side padding, the grid's pane split */
+        private const val HEADER = 62f
+        private const val BAND_H = 112f
+        private const val PAD = 20f
+        private const val GRID_SPLIT = 720f
+        /** the room a focused case keeps at its right end for its "Y Remove" (UiKit.hints: glyph and word) */
+        private const val CASE_HINT_W = 190f
     }
 }

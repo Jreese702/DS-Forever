@@ -76,17 +76,28 @@ class MacrosRoomTest {
 
     @Test fun theEditorsRowsMatchTheAddOns() {
         val mac = st(grid).mac
-        // Spells s14 MR.editRows: the name, the icon, the lines, then + Line / Presets / Delete
-        assertEquals(listOf("name", "icon", "l1", "l2", "add", "pre", "del"), MacrosModel.editRows(mac))
+        // Spells s14 MR.editRows: the name, the icon, the lines, then (s15, the look pass "Full match") + Line and More
+        assertEquals(listOf("name", "icon", "l1", "l2", "add", "more"), MacrosModel.editRows(mac))
         assertEquals(0, MacrosModel.editCell("name")); assertEquals(1, MacrosModel.editCell("icon")); assertEquals(3, MacrosModel.editCell("l2"))
-        assertEquals(listOf(21, 22, 23), MacrosModel.BUTTONS.map { MacrosModel.editCell(it) })
+        assertEquals(listOf(21, 22), MacrosModel.BUTTONS.map { MacrosModel.editCell(it) })
         val many = MacrosModel.Mac("x", 0, List(25) { "/say $it" }, 200, emptySet(), more = true)
-        assertEquals(2 + MacrosModel.LINE_ROWS + 3, MacrosModel.editRows(many).size)                // at most 19 line rows (s2..s20)
+        assertEquals(2 + MacrosModel.LINE_ROWS + 2, MacrosModel.editRows(many).size)                // at most 19 line rows (s2..s20)
         assertEquals(20, MacrosModel.editCell("l19"))
-        // an empty macro: its preset tiles where the lines go, + Line and Delete (no Presets button)
+        // an empty macro: its preset tiles where the lines go, + Line and More (More holds Delete only then)
         val empty = MacrosModel.Mac("x", 0, emptyList(), 0, emptySet(), more = false)
-        assertEquals(listOf("name", "icon", "t1", "t2", "t3", "add", "del"), MacrosModel.editRows(empty, tiles = 3))
+        assertEquals(listOf("name", "icon", "t1", "t2", "t3", "add", "more"), MacrosModel.editRows(empty, tiles = 3))
         assertEquals(2, MacrosModel.editCell("t1"))
+    }
+
+    /** Spells s15 (the look pass, the user's "Full match"): the editor's Y opens More (ym), More's rows, the Delete ask */
+    @Test fun theMoreMenuAndTheAsk() {
+        val e = st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit","ym":true,"del":true,"pop":{"k":"more","cur":"r2","cols":1,
+            "base":0,"rows":[{"o":"pre"},{"o":"del","off":true}]}}}""")
+        assertTrue(e.ym); assertTrue(e.del)
+        val p = e.pop!!
+        assertEquals("more", p.kind); assertEquals(1, p.cols); assertEquals(0, p.cellOf("r1")); assertEquals(1, p.cellOf("r2"))
+        assertEquals(listOf("pre", "del"), p.rows.map { it.optString("o") }); assertTrue(p.rows[1].optBoolean("off"))
+        assertFalse(st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit"}}""").ym)
     }
 
     /** (s13, an older add-on's + Spell/Item list) its rows' lines, kept for a document from before s14 */
@@ -99,9 +110,9 @@ class MacrosRoomTest {
 
     // ---------------------------------------------------------------- s14 THE MACRO BUILDER v2 (the add-on's documents, MACRO_DUMP, trimmed)
     private val build = """{"type":"macros","m":{"ready":true,"mode":"build","view":"build","b":{"a":{"i":136052,"n":"Healing Wave"},"c":"cast",
-        "ch":{"add":16,"arg":1,"c1f":5,"c1u":4,"c2f":8,"c2u":7,"c3f":11,"c3u":10,"cmd":0,"done":19,"keep":3,"rem":18,"text":17},
+        "ch":{"add":16,"arg":1,"c1f":5,"c1u":4,"c2f":8,"c2u":7,"c3f":11,"c3u":10,"cmd":0,"done":19,"keep":3,"more":17},"ym":true,
         "cs":[{"f":["help","!dead"],"u":"focus","x":1},{"f":["help","!dead"],"u":"mouseover","x":2},{"u":"player","x":3}],"cur":"cmd","len":241,
-        "ln":2,"rows":[["cmd","arg","keep"],["c1u","c1f"],["c2u","c2f"],["c3u","c3f"],["add"],["text","rem","done"]],
+        "ln":2,"rows":[["cmd","arg","keep"],["c1u","c1f"],["c2u","c2f"],["c3u","c3f"],["add"],["done","more"]],
         "t":"/cast [@focus,help,nodead][@mouseover,help,nodead][@player] Healing Wave"},"keys":$keys}}"""
 
     @Test fun parsesTheBuilder() {
@@ -113,8 +124,12 @@ class MacrosRoomTest {
         assertEquals(listOf("focus", "mouseover", "player"), b.cases.map { it.unit })
         assertEquals(listOf("help", "!dead"), b.cases[0].conds)
         assertTrue(b.cases[2].conds.isEmpty())
-        assertEquals(listOf("cmd", "arg", "keep"), b.rows.first()); assertEquals(listOf("text", "rem", "done"), b.rows.last())
+        assertEquals(listOf("cmd", "arg", "keep"), b.rows.first()); assertEquals(listOf("done", "more"), b.rows.last())
         assertEquals(19, MacrosModel.chipCell(b, "done")); assertEquals(7, MacrosModel.chipCell(b, "c2u")); assertNull(MacrosModel.chipCell(b, "rank"))
+        // s15: More (s17) in the band beside Done; on the action chip Y opens it (ym); Aa Text / Remove are More's rows, no chips
+        assertEquals(17, MacrosModel.chipCell(b, "more")); assertNull(MacrosModel.chipCell(b, "text")); assertTrue(b.ym)
+        assertEquals("Revert", MacrosModel.moreWord("rem", revert = true)); assertEquals("Remove", MacrosModel.moreWord("rem"))
+        assertEquals("Presets", MacrosModel.moreWord("pre")); assertEquals("Delete", MacrosModel.moreWord("del")); assertEquals("Aa Text", MacrosModel.moreWord("text"))
         assertFalse(b.draft); assertNull(b.hard); assertTrue(b.warns.isEmpty()); assertNull(b.pop)
         assertEquals("Remove", MacrosModel.removeWord(b))
         assertEquals("Revert", MacrosModel.removeWord(b.copy(draft = true)))                            // a draft of a stored line

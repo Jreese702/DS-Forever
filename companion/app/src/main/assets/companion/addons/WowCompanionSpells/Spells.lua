@@ -33,7 +33,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local SV = "s14"     -- bump on every change; s14 REVIEW (same branch, same tag, as s10's; the user, 2026-11-16: the recipes "make no sense"): a stored line opened and finished unchanged writes NOTHING even when its spaces differ from the composed text (MR.dirty by MR.norm, the parser's own rule: no Revert, no Draft); a fight refuses Done and a preset's Done as "combat" before any fault (the design's 7: the chips neutral); a preset's missing pick puts the cursor on THAT pick; a unit typed by name with accents (es / fr realms) reads back as a unit, not a text line; a stored line's Chat line opens its keyboard on the line's own text (an empty Done would remove it without Remove's second A); s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the Macros room's recipes "make no sense" and only add lines; the picks: every RECOMMENDED option of design_macrobuilder): the block at the end of this file builds each LINE - an action and its spell, then "first try on ... if ..." / "else ..." cases (MR.parse / MR.compose / MR.check, the one grammar; the app has none) - shown as strips of icons and short tags (`ls`); PRESETS (whole macros) on a new or empty macro, replacing one with lines after a second A; Select = Done (capture v4 extra PADBACK; Start stays the pause wheel); "On" lists the controller's targets first (soft enemy / soft friend, the CVar read only), Mouseover last; the companion's own "DS Combat" / "DS Attack" macros are view only (a lock); the writes: the builder's Done, a line's Remove, a Move's drop, a preset's Done, the icon - ONE EditMacro each behind the one guard; the row's keys gain y / ok (38 columns, the Calendar row's guest still); s13 THE PET'S PICKS IN THE MACROS ROOM (the user, 2026-11-16: "the macro room needs some work- ... also things like my pet attack are missing from the spells options."): with a pet out, + Spell/Item lists the pet's commands (the game's own secure slash commands: /petattack, /petfollow, /petstay, /petpassive, /petdefensive, /petaggressive, /petdismiss, and /petmoveto / /petassist / /petdefensiveassist only when the pet bar has that button; the game's words and pet-bar pictures; row kind "p" with its line `l`) and the pet book's spells ("/cast <name>", Spells s10p's bindable ones), after the player's spells, before the bag items (MR.petPicks); a recipe takes the pet's spells, never a command; read only, nothing else changed; s12 THE MACROS ROOM'S ROW SHARED WITH THE CALENDAR'S (the 1.0.32 test build, code 1472: with six bags, the cast bar and both radials the 56-row tap pad had no row left for the lazy "mac" row, and the room said "No pad row"): "mac" is the GUEST of the Calendar room's row "cal" (TapPad pad21 opts.share; the two rooms are never on the bottom screen together), leased to the room on each ask (Book's padtab 39 then 34; the app asks on every showing: the document's `sh`), its keys only while it is on the row (MR.onRow); the game's macro window makes / takes the row only while the room wants the controller; with no Calendar row, a row of its own as before; s11 THE 1.0.32 TEST BUILD MERGE (code 1472): feat/macro-room and feat/pet-spell-binding both tagged s10, both kept (The Macros room = s10, Pet spells = s10p, its reviews = s10a / s10b; the pet branch's Book b63 / PadMap m163 are b63p / m163p in its notes); s10 THE MACROS ROOM (the user, 2026-11-13: "Lets scrap the smart ranged attack and start building a macro room. The calender can be moved up to a button on the right side of the map name make it small. Use the room slot for macros."): the block at the end of this file (WC.macroRoom: the "macros" document, the controller guest "macros", the lazy pad row "mac", the player's own New / Done / Delete, the Bind box for a macro); s10 REVIEW (same branch, same tag, as eaa3d23c did; the user's "start building a macro room"): the selection is the macro's INDEX while it still holds its name (the game lets two macros share a name: A / Delete / the preview hit the one under the glow), a write re-finds its macro by the game's own returned index; a bind of a name another macro shares is refused ("taken": our buttons find a macro by name); "#showtooltip" goes on the macro's FIRST line; `wxa` = the `wx` cell really is the window's close button (its ack says so); `norow` also when the row exists but is not placed (the smallest UI scale); our stored binds follow a rename / go with a delete only when no other macro keeps that name; a finger's a / x / b no longer claims the controller (only the capture's own press proves a hold); s10b (review of feat/pet-spell-binding, #234, the user: "build it"): a pet spell is PASSIVE as the game's own Spellbook says (its book item's isPassive / IsSpellBookItemPassive, the spell's own IsSpellPassive), never by the pet bar's state - the server packs every spell that cannot auto-cast with state 1, so the high-byte-1 / IsPetActionPassive readings made Seduction, Spell Lock and Sacrifice "passive": no number, no Bind, hidden with Hide Passives; s10a (review of feat/pet-spell-binding, #234, the user: "build it"): only a pet WITH A BOOK (the game's own Pet tab: HasPetSpells() and PetHasSpellbook()) has spells of ours - a charmed / possessed unit (Mind Control, Enslave) has pet spells but no book, so its spells are never kept as this character's pet spells (WC.spellsPetName), never numbered, and a travelling pet slot reads nothing then (WC.spellsPetAt / WC.spellsPetSlotOf): a mob's spell sharing an id with one of the player's own never turns that spell into a "pet spell" cast by bare name; s10p PET SPELLS (#234, the user: "build it"): the pet book's SPELLS get numbers (`pv`, after the player's top ranks, before the lower ranks), never its passives or its commands (Attack / Follow / Stay ... have their homes); each pet item says `cmd` (a command), `bind` (a spell that can go on a button) and `pb` (on the pet bar), its bars are the game's own FindPetActionButtons; the Pet tab is line WC.SPELLS_PET_LINE (101); a pet book slot k travels as WC.SPELLS_PET_SLOT0 + k (5000 + k) through the Bind box and the Controller room's puts (WC.spellsPetAt / WC.spellsBankSlot read it back); WC.spellsPetName(id) = the name our own secure buttons cast a pet spell by (CastSpellByName, the game's /cast), remembered per character (WowCompanionSpellsDB.petSpellBy[name-realm]); s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
+local SV = "s15"     -- bump on every change; s15 THE MACROS ROOM'S LOOK PASS (the user, 2026-11-16: "it needs to be a bit more visually consistent and the icon needs work for the room"; the pick "Full match": the rooms' flat header with no X, normal tabs with gold arrows, Morpheus headings, one A button plus Y More like Quests, Cancel / Confirm for delete / replace, the builder's pieces in theme colours, the game's tooltip): the editor's buttons are + Line and MORE (s21, s22), the builder's Done and MORE (s19, s17); More is a one-column pop-out (`k` "more": Presets / Delete in the editor, Aa Text / Remove or Revert in the builder; a row the fight refuses says `off`); Y opens More wherever Y has no work of its own (a line's Move, a case's Remove, a chip's reset keep theirs: the document's `ym`); Delete, a stored line's Remove and a preset's Replace ASK (the app draws Cancel [B] / Confirm [A]): while one asks, A confirms, B cancels and every other press does nothing, for DEL_S = 6 s (Quests' confirm) - no relabel arm, no row and no cell added (38 columns, the Calendar row's guest still); s14 REVIEW (same branch, same tag, as s10's; the user, 2026-11-16: the recipes "make no sense"): a stored line opened and finished unchanged writes NOTHING even when its spaces differ from the composed text (MR.dirty by MR.norm, the parser's own rule: no Revert, no Draft); a fight refuses Done and a preset's Done as "combat" before any fault (the design's 7: the chips neutral); a preset's missing pick puts the cursor on THAT pick; a unit typed by name with accents (es / fr realms) reads back as a unit, not a text line; a stored line's Chat line opens its keyboard on the line's own text (an empty Done would remove it without Remove's second A); s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the Macros room's recipes "make no sense" and only add lines; the picks: every RECOMMENDED option of design_macrobuilder): the block at the end of this file builds each LINE - an action and its spell, then "first try on ... if ..." / "else ..." cases (MR.parse / MR.compose / MR.check, the one grammar; the app has none) - shown as strips of icons and short tags (`ls`); PRESETS (whole macros) on a new or empty macro, replacing one with lines after a second A; Select = Done (capture v4 extra PADBACK; Start stays the pause wheel); "On" lists the controller's targets first (soft enemy / soft friend, the CVar read only), Mouseover last; the companion's own "DS Combat" / "DS Attack" macros are view only (a lock); the writes: the builder's Done, a line's Remove, a Move's drop, a preset's Done, the icon - ONE EditMacro each behind the one guard; the row's keys gain y / ok (38 columns, the Calendar row's guest still); s13 THE PET'S PICKS IN THE MACROS ROOM (the user, 2026-11-16: "the macro room needs some work- ... also things like my pet attack are missing from the spells options."): with a pet out, + Spell/Item lists the pet's commands (the game's own secure slash commands: /petattack, /petfollow, /petstay, /petpassive, /petdefensive, /petaggressive, /petdismiss, and /petmoveto / /petassist / /petdefensiveassist only when the pet bar has that button; the game's words and pet-bar pictures; row kind "p" with its line `l`) and the pet book's spells ("/cast <name>", Spells s10p's bindable ones), after the player's spells, before the bag items (MR.petPicks); a recipe takes the pet's spells, never a command; read only, nothing else changed; s12 THE MACROS ROOM'S ROW SHARED WITH THE CALENDAR'S (the 1.0.32 test build, code 1472: with six bags, the cast bar and both radials the 56-row tap pad had no row left for the lazy "mac" row, and the room said "No pad row"): "mac" is the GUEST of the Calendar room's row "cal" (TapPad pad21 opts.share; the two rooms are never on the bottom screen together), leased to the room on each ask (Book's padtab 39 then 34; the app asks on every showing: the document's `sh`), its keys only while it is on the row (MR.onRow); the game's macro window makes / takes the row only while the room wants the controller; with no Calendar row, a row of its own as before; s11 THE 1.0.32 TEST BUILD MERGE (code 1472): feat/macro-room and feat/pet-spell-binding both tagged s10, both kept (The Macros room = s10, Pet spells = s10p, its reviews = s10a / s10b; the pet branch's Book b63 / PadMap m163 are b63p / m163p in its notes); s10 THE MACROS ROOM (the user, 2026-11-13: "Lets scrap the smart ranged attack and start building a macro room. The calender can be moved up to a button on the right side of the map name make it small. Use the room slot for macros."): the block at the end of this file (WC.macroRoom: the "macros" document, the controller guest "macros", the lazy pad row "mac", the player's own New / Done / Delete, the Bind box for a macro); s10 REVIEW (same branch, same tag, as eaa3d23c did; the user's "start building a macro room"): the selection is the macro's INDEX while it still holds its name (the game lets two macros share a name: A / Delete / the preview hit the one under the glow), a write re-finds its macro by the game's own returned index; a bind of a name another macro shares is refused ("taken": our buttons find a macro by name); "#showtooltip" goes on the macro's FIRST line; `wxa` = the `wx` cell really is the window's close button (its ack says so); `norow` also when the row exists but is not placed (the smallest UI scale); our stored binds follow a rename / go with a delete only when no other macro keeps that name; a finger's a / x / b no longer claims the controller (only the capture's own press proves a hold); s10b (review of feat/pet-spell-binding, #234, the user: "build it"): a pet spell is PASSIVE as the game's own Spellbook says (its book item's isPassive / IsSpellBookItemPassive, the spell's own IsSpellPassive), never by the pet bar's state - the server packs every spell that cannot auto-cast with state 1, so the high-byte-1 / IsPetActionPassive readings made Seduction, Spell Lock and Sacrifice "passive": no number, no Bind, hidden with Hide Passives; s10a (review of feat/pet-spell-binding, #234, the user: "build it"): only a pet WITH A BOOK (the game's own Pet tab: HasPetSpells() and PetHasSpellbook()) has spells of ours - a charmed / possessed unit (Mind Control, Enslave) has pet spells but no book, so its spells are never kept as this character's pet spells (WC.spellsPetName), never numbered, and a travelling pet slot reads nothing then (WC.spellsPetAt / WC.spellsPetSlotOf): a mob's spell sharing an id with one of the player's own never turns that spell into a "pet spell" cast by bare name; s10p PET SPELLS (#234, the user: "build it"): the pet book's SPELLS get numbers (`pv`, after the player's top ranks, before the lower ranks), never its passives or its commands (Attack / Follow / Stay ... have their homes); each pet item says `cmd` (a command), `bind` (a spell that can go on a button) and `pb` (on the pet bar), its bars are the game's own FindPetActionButtons; the Pet tab is line WC.SPELLS_PET_LINE (101); a pet book slot k travels as WC.SPELLS_PET_SLOT0 + k (5000 + k) through the Bind box and the Controller room's puts (WC.spellsPetAt / WC.spellsBankSlot read it back); WC.spellsPetName(id) = the name our own secure buttons cast a pet spell by (CastSpellByName, the game's /cast), remembered per character (WowCompanionSpellsDB.petSpellBy[name-realm]); s9 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): WC.spellsNewsHas(id) = that spell was learned this load (PadMap m144: rankSync leaves an entry for the rank-up prompt only then); s8 RANK UP (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): `rk` = for each just-learned spell that is the top rank now, how many lower copies are on buttons (PadMap m143 WC.rankUpList: bars, radial, In-combat), so Home can ask; s7 s7: loose fly-out members (aspects) numbered; the app shows it, so a stale build is visible
 
 local MAX_LINES = 24        -- skill lines read (the game has General + class + a few)
 local MAX_ITEMS = 400       -- book entries read, all lines together
@@ -791,8 +791,8 @@ end
 -- game's own macro window shows ("window": its close saves its text over ours, blizzard_macroui.lua SaveMacro); before the game has
 -- loaded the macros ("loading": every read finds none until UPDATE_MACROS, PadMap m160's lesson); while the game rule turns macros off
 -- ("off"). New = CreateMacro(name, 134400, "", tab == the character's) (iconselector.lua's own call); a name's Done = EditMacro(i, name);
--- every body change = ONE EditMacro(i, nil, nil, body) (the game's body-only form, blizzard_macroui.lua:366, MR.writeBody); Delete = a
--- second A within DEL_S (DeleteMacro). Nothing is written on B, on leaving, or by itself. The game's macro window is never opened; no
+-- every body change = ONE EditMacro(i, nil, nil, body) (the game's body-only form, blizzard_macroui.lua:366, MR.writeBody); Delete = More's
+-- Delete, then the ask's A within DEL_S (DeleteMacro; s15). Nothing is written on B, on leaving, or by itself. The game's macro window is never opened; no
 -- Blizzard UI Lua runs.
 -- THE STATE IS THE ADD-ON'S, as the Spellbook's and Bags' are: the capture hands the presses here and the app draws the "macros"
 -- document; a finger taps the k-th thing on show (s<k>) or A / X / B / Y / Done (a / x / b / y / ok). THE PAD ROW "mac" IS LAZY (the pad
@@ -822,12 +822,13 @@ end
 -- Done still writes): "book" (not in this character's book), "bags" (not in the bags or worn), "else" (a harmful Cast / Sequence with no
 -- plain else: [harm] reads the HARD target and a pad's soft enemy becomes one only after a harmful spell goes out, targetlogic.lua 86-95).
 -- THE WRITES are the player's own and ONE EditMacro each, behind the one guard: the builder's Done (an unchanged draft writes nothing), a
--- line's Remove (a second A within DEL_S), a Move's drop, a preset's Done (a macro with lines: a second A), the icon picked. In a fight
+-- line's Remove (More's Remove, then the ask's A within DEL_S), a Move's drop, a preset's Done (a macro with lines: the ask's A), the
+-- icon picked. In a fight
 -- Done is refused ("combat") and the draft is kept; B keeps the draft too. No RunMacroText, no SetBinding, no CVar write, no Blizzard
 -- open / close. MR.CMDS / MR.CONDS / MR.PRESETS replace s10's six recipes; the row's keys gain `y` (Y) and `ok` (Done): 38 of 40 columns,
 -- no new row (the Calendar row's guest still).
 do
-local MR = { GUEST = "macros", ROW = "mac", DEL_S = 3, ICON = 134400, NAME_MAX = 16, BODY_MAX = 255, PER_PAGE = 24,
+local MR = { GUEST = "macros", ROW = "mac", DEL_S = 6, ICON = 134400, NAME_MAX = 16, BODY_MAX = 255, PER_PAGE = 24,
              LINE_ROWS = 19, CLOSE = "MacroFrameCloseButton",
              -- s12 THE SHARED ROW (TapPad pad21): "mac" is the GUEST of the Calendar room's row "cal" (the two rooms are never on the
              -- bottom screen together: the Calendar lost its bar slot to this room), so the room needs no row of its own at the fullest
@@ -1788,7 +1789,7 @@ function MR.presetLines(t, picks)
 end
 
 -- ---------------------------------------------------------------- s14 the editor's rows: the name, the icon, the lines (or the preset
--- tiles of an empty macro), then + Line, Presets, Delete
+-- tiles of an empty macro), then + Line and More (s15: Presets and Delete are More's rows)
 function MR.editRows()
     local i = MR.selIndex()
     if not i then return nil end
@@ -1797,19 +1798,19 @@ function MR.editRows()
     local rows = { "name", "icon" }
     if #lines == 0 then
         for k = 1, #MR.tiles() do rows[#rows + 1] = "t" .. k end
-        rows[#rows + 1] = "add"; rows[#rows + 1] = "del"
+        rows[#rows + 1] = "add"; rows[#rows + 1] = "more"
     else
         for k = 1, math.min(#lines, MR.LINE_ROWS) do rows[#rows + 1] = "l" .. k end
-        rows[#rows + 1] = "add"; rows[#rows + 1] = "pre"; rows[#rows + 1] = "del"
+        rows[#rows + 1] = "add"; rows[#rows + 1] = "more"
     end
     return rows, lines, name, icon, body or "", i
 end
--- the s<k> cell of a thing in edit mode: s0 the name, s1 the icon, s2..s20 the lines (or tiles), s21 + Line, s22 Presets, s23 Delete
+-- the s<k> cell of a thing in edit mode: s0 the name, s1 the icon, s2..s20 the lines (or tiles), s21 + Line, s22 More (s15)
 function MR.editCell(row)
     if row == "name" then return 0 elseif row == "icon" then return 1 end
     local l = type(row) == "string" and tonumber(row:match("^[lt](%d+)$"))
     if l then return l + 1 end
-    if row == "add" then return 21 elseif row == "pre" then return 22 elseif row == "del" then return 23 end
+    if row == "add" then return 21 elseif row == "more" then return 22 end
 end
 -- the editor's rows for the D-pad: the name and icon, one line a row (the tiles four a row), the buttons
 function MR.editNav(rows)
@@ -1820,7 +1821,7 @@ function MR.editNav(rows)
         elseif r:match("^t%d+$") then
             if not cur or #cur >= 4 then cur = {}; out[#out + 1] = cur end
             cur[#cur + 1] = r
-        elseif r == "add" or r == "pre" or r == "del" then btn[#btn + 1] = r end
+        elseif r == "add" or r == "more" then btn[#btn + 1] = r end
     end
     out[#out + 1] = btn
     return out
@@ -1898,7 +1899,8 @@ function MR.openDraft(idx, at)
     return true
 end
 -- the builder's chips as rows (the D-pad's and the app's layout) and their s-cells
-MR.BCELL = { cmd = 0, arg = 1, rank = 2, reset = 2, keep = 3, add = 16, text = 17, rem = 18, done = 19 }
+-- s15: the footer is Done and More (Aa Text and Remove / Revert are More's rows): More takes Aa Text's s17, Done keeps s19
+MR.BCELL = { cmd = 0, arg = 1, rank = 2, reset = 2, keep = 3, add = 16, more = 17, done = 19 }
 function MR.bcell(k)
     if MR.BCELL[k] then return MR.BCELL[k] end
     local n, part = tostring(k):match("^c(%d)([ufa])$")
@@ -1923,7 +1925,7 @@ function MR.bRows(d)
         rows[#rows + 1] = row
     end
     if #L.cs < MR.CASES then rows[#rows + 1] = { "add" } end
-    rows[#rows + 1] = { "text", "rem", "done" }
+    rows[#rows + 1] = { "done", "more" }
     return rows
 end
 function MR.bHas(d, key)
@@ -2072,7 +2074,8 @@ end
 -- ---------------------------------------------------------------- s14 THE POP-OUTS (each slides out of its chip; the app draws them)
 -- st.pop = { k = kind, cur = its cell ("r3", a tab "t2", the search "q"), page, tab, q (the search), case (the case it is for), at (a
 -- sequence entry), back (the pop-out under it) }. Kinds: cmd (the Action list), arg (Spell / Item: tabs, search, a 6 x 3 grid), on (the
--- unit), if (the tri-state grid), rank, case (+ Case), reset (castsequence), seq (castsequence's spells), icon (the editor's icon)
+-- unit), if (the tri-state grid), rank, case (+ Case), reset (castsequence), seq (castsequence's spells), icon (the editor's icon),
+-- more (s15: the room's More, one column: the editor's Presets / Delete, the builder's Aa Text / Remove or Revert)
 MR.TABS = { spell = { "sp", "pet", "gen", "it", "sl" }, item = { "it", "sl", "sp" }, seq = { "sp", "pet", "gen", "it" }, aura = { "sp", "pet" },
             equip = { "it" }, eslot = { "sl", "it" }, pick = { "sp", "pet", "gen" } }
 function MR.cmdList()
@@ -2213,6 +2216,20 @@ function MR.popView(pop)
             end
         end
         paged(list, MR.POP)
+    elseif pop.k == "more" then
+        -- s15: { o = "pre" | "del" | "text" | "rem", rv = Remove reads Revert, off = the fight refuses it (its write) }
+        local list = {}
+        local d = st.draft
+        if st.mode == "build" and d then
+            list[1] = { o = "text" }
+            local rv = d.idx ~= nil and MR.dirty(d)
+            list[2] = { o = "rem", rv = rv or nil, off = (combat() and d.idx ~= nil and not rv) or nil }
+        else
+            local _, lines = MR.editRows()
+            if lines and #lines > 0 then list[#list + 1] = { o = "pre" } end
+            list[#list + 1] = { o = "del", off = combat() or nil }
+        end
+        paged(list, MR.POP)
     end
     return v
 end
@@ -2323,6 +2340,7 @@ function MR.buildDoc(d, lines)
     b.rows = MR.bRows(d)
     b.ch = {}
     for _, row in ipairs(b.rows) do for _, k in ipairs(row) do b.ch[k] = MR.bcell(k) end end
+    if not st.pop and not MR.bYOwn(st.bc) then b.ym = true end            -- s15: Y opens More now
     local h, hc, soft = MR.check(L, #nb)
     b.h, b.hc = h, hc
     if #soft > 0 then b.w = soft end
@@ -2404,6 +2422,8 @@ function MR.doc()
         local dr = st.draft
         if dr and dr.mac == (d.mac and d.mac.n) then d.dr = { n = dr.idx, at = dr.at } end
         if st.pop then d.pop = MR.popDoc(st.pop) end
+        -- s15: Y opens More now (the app's More button carries the Y glyph only then): not on a line (its Move), not in Move
+        if view == "edit" and not st.pop and not (st.efk or ""):match("^l%d+$") then d.ym = true end
     elseif view == "pre" then
         local tiles = {}
         for k, t in ipairs(MR.tiles()) do tiles[k] = MR.tileDoc(t) end
@@ -2747,7 +2767,7 @@ function MR.bRemove()
     if not d.idx then st.draft, st.pop, st.mode = nil, nil, "edit"; st.efk = "add" return end
     if MR.dirty(d) then
         d.L = MR.parse(d.orig)
-        st.bc, st.remAt = "rem", nil
+        st.bc, st.remAt = "more", nil
         return
     end
     if st.remAt and GetTime() - st.remAt <= MR.DEL_S then
@@ -2768,6 +2788,18 @@ function MR.bRemove()
     st.remAt = GetTime()
     C_Timer.After(MR.DEL_S + 0.1, function() MR.emit() end)
 end
+-- s15: More's Aa Text (the line's own text on the keyboard)
+function MR.bText()
+    local d = st.draft
+    if not d then return end
+    local i = MR.selIndex()
+    local _, _, body = MR.info(i or 0)
+    local room = MR.BODY_MAX - #(body or "") + (d.idx and #(d.orig or "") or -1)
+    if room < 1 then MR.ack("line", false, "long") return end
+    MR.kbdOpen("macline", MR.compose(d.L), math.min(room, 255), d.idx, (not d.idx) and (d.at or 0) or nil)
+end
+-- s15: the room's More (Y wherever Y has no work of its own, or A on the More button): a one-column pop-out
+function MR.moreOpen() st.pop = { k = "more", cur = "r1", page = 1 } end
 -- the builder's A on its chip
 function MR.bA()
     local d = st.draft
@@ -2786,12 +2818,8 @@ function MR.bA()
         local bang, n, sub = MR.castParts(d.L.cs[1].a or "")
         MR.setArg(d, 1, MR.castJoin(not bang, n, sub))
     elseif k == "add" then st.pop = { k = "case", cur = "r1", page = 1 }
-    elseif k == "text" then
-        local i = MR.selIndex()
-        local _, _, body = MR.info(i or 0)
-        local room = MR.BODY_MAX - #(body or "") + (d.idx and #(d.orig or "") or -1)
-        if room < 1 then MR.ack("line", false, "long") return end
-        MR.kbdOpen("macline", MR.compose(d.L), math.min(room, 255), d.idx, (not d.idx) and (d.at or 0) or nil)
+    elseif k == "more" then MR.moreOpen()
+    elseif k == "text" then MR.bText()
     elseif k == "rem" then MR.bRemove()
     elseif k == "done" then MR.bDone()
     else
@@ -2805,7 +2833,9 @@ function MR.bA()
         end
     end
 end
--- Y: a case's chip takes its case away (the only one: cleared); the rank goes back to the top, keep-on off, the reset none, the spell gone
+-- Y: a case's chip takes its case away (the only one: cleared); the rank goes back to the top, keep-on off, the reset none, the spell gone;
+-- s15: anywhere else (the action, + Case, Done, More) Y opens More (Quests' Y)
+function MR.bYOwn(k) return tostring(k):match("^c%d[ufa]$") ~= nil or k == "rank" or k == "keep" or k == "reset" or k == "arg" end
 function MR.bY()
     local d = st.draft
     if not d then return end
@@ -2817,7 +2847,8 @@ function MR.bY()
     elseif k == "rank" then local bang, nm = MR.castParts(d.L.cs[1].a or ""); MR.setArg(d, 1, MR.castJoin(bang, nm, nil))
     elseif k == "keep" then local _, nm, sub = MR.castParts(d.L.cs[1].a or ""); MR.setArg(d, 1, MR.castJoin(false, nm, sub))
     elseif k == "reset" then local _, list = MR.seqParts(d.L.cs[1].a or ""); MR.setArg(d, 1, MR.seqJoin(nil, list))
-    elseif k == "arg" then MR.setArg(d, 1, "") end
+    elseif k == "arg" then MR.setArg(d, 1, "")
+    else MR.moreOpen() end
 end
 
 -- ---------------------------------------------------------------- s14 the pop-outs' presses
@@ -2840,6 +2871,15 @@ function MR.popA()
     local e = r and v.rows[r]
     if not e then return end
     local d = st.draft
+    if p.k == "more" then                                                -- s15: the room's More
+        if e.off then MR.ack(e.o == "del" and "delete" or "remove", false, "combat") return end
+        st.pop = nil
+        if e.o == "pre" then st.mode, st.pcur = "pre", 1
+        elseif e.o == "del" then MR.askDel()
+        elseif e.o == "text" then MR.bText()
+        elseif e.o == "rem" then MR.bRemove() end
+        return
+    end
     if p.k == "icon" then
         local ok, why = MR.setIcon(e.i)
         MR.ack("icon", ok, why)
@@ -3043,6 +3083,29 @@ function MR.psA()
     if n then ps.armAt = nil; st.pop = { k = "arg", cur = "r1", page = 1, tab = 1, ps = n } end
 end
 
+-- ---------------------------------------------------------------- s15 THE ASKS (the user's pick: Cancel / Confirm for delete / replace)
+-- More's Delete asks (nothing deleted yet); the ask's A within DEL_S deletes (ONE DeleteMacro), its B or the time out cancels
+function MR.askDel()
+    local why = MR.canWrite()
+    if why then MR.ack("delete", false, why) return end
+    st.delAt = GetTime()
+    C_Timer.After(MR.DEL_S + 0.1, function() MR.emit() end)
+end
+function MR.delNow()
+    st.delAt = nil
+    local ok, why = MR.delete()
+    MR.ack("delete", ok, why)
+    if ok then st.mode = "grid" end
+end
+-- what is asking now: "del" (the editor's Delete), "rem" (the builder's Remove of a stored line), "rep" (a preset replacing a macro)
+function MR.asking()
+    local now = GetTime()
+    if st.mode == "edit" and st.delAt and now - st.delAt <= MR.DEL_S then return "del" end
+    if st.mode == "build" and st.remAt and now - st.remAt <= MR.DEL_S then return "rem" end
+    if st.mode == "ps" and st.ps and st.ps.armAt and now - st.ps.armAt <= MR.DEL_S then return "rep" end
+end
+function MR.askNo() st.delAt, st.remAt = nil, nil; if st.ps then st.ps.armAt = nil end end
+
 -- ---------------------------------------------------------------- the actions (a press or a finger's a / x / b / y / ok)
 function MR.enterEdit()
     local i = MR.selIndex()
@@ -3112,7 +3175,8 @@ function MR.editA(x, y)
     local l = r and tonumber(r:match("^l(%d+)$"))
     local t = r and tonumber(r:match("^t(%d+)$"))
     if y then
-        if l and lines[l] then st.mv = { from = l, at = l }; st.mode = "move" end
+        if l and lines[l] then st.mv = { from = l, at = l }; st.mode = "move"
+        else MR.moreOpen() end                                           -- s15: Y = More where Y has no work of its own
         return
     end
     if x then
@@ -3132,20 +3196,7 @@ function MR.editA(x, y)
     elseif r == "add" then
         if #body + ((#body > 0) and 1 or 0) >= MR.BODY_MAX then MR.ack("line", false, "long") return end
         MR.openDraft(nil, #lines + 1)
-    elseif r == "pre" then st.mode, st.pcur = "pre", 1
-    elseif r == "del" then
-        if st.delAt and GetTime() - st.delAt <= MR.DEL_S then
-            st.delAt = nil
-            local ok, why = MR.delete()
-            MR.ack("delete", ok, why)
-            if ok then st.mode = "grid" end
-        else
-            local why = MR.canWrite()
-            if why then MR.ack("delete", false, why) return end
-            st.delAt = GetTime()
-            C_Timer.After(MR.DEL_S + 0.1, function() MR.emit() end)
-        end
-    end
+    elseif r == "more" then MR.moreOpen() end
 end
 -- Move's drop: ONE write when the line went somewhere else
 function MR.moveDrop()
@@ -3255,6 +3306,15 @@ function MR.act(k)
     end
     if st.mode == "kbd" then return end                                  -- the app's own reader drives the keyboard meanwhile
     st.note = nil
+    local ask = MR.asking()
+    if ask then                                                          -- s15: Cancel [B] / Confirm [A] (Quests' confirm)
+        if k == "PAD1" then
+            if ask == "del" then MR.delNow() elseif ask == "rem" then MR.bRemove() else MR.psDone() end
+        elseif k == "PAD2" then MR.askNo() end
+        MR.sayNext()
+        MR.emit()
+        return
+    end
     if k == "PADDUP" or k == "PADDDOWN" or k == "PADDLEFT" or k == "PADDRIGHT" then MR.move(k)
     elseif k == "PAD1" then
         if st.pop then MR.popA()
@@ -3334,6 +3394,7 @@ function MR.onCell(col)
         end
         if sk then
             st.note = nil
+            if MR.asking() then MR.askNo() end                           -- s15: a finger elsewhere cancels the ask (then acts there)
             if st.pop then
                 local v = MR.popView(st.pop)
                 local c = MR.popFromCell(st.pop, sk, v)
