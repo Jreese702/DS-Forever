@@ -2630,41 +2630,70 @@ do
     --   - the Off step waits for the game's options: VARIABLES_LOADED seen (PLAYER_ENTERING_WORLD + CV_GRACE_S without it) and
     --     C_CVar.AreCVarsLoaded() not false; nothing is read as the player's value or written before;
     --   - the PLAYER's own change is the one the game's own controls make: the Interface options' Friendly Players / Friendly NPCs
-    --     boxes and their Defaults, and the game's FRIENDNAMEPLATES / ALLNAMEPLATES keys all go through the game's Settings object
-    --     (setting:SetValue -> its value-changed event, Blizzard_Settings_Shared); Off listens to that event (read only,
-    --     Settings.SetOnValueChangedCallback, the CallbackRegistry's taint barrier) and only that marks a change as the player's. A key
-    --     press counts: it is the game's own control, the game prints its own message for it (NAMEPLATES_MESSAGE_FRIENDLY_ON / _OFF),
-    --     and a second press turns them off again. Their on stands until the next load (as ag11); their off hands it back to Off;
-    --   - any other change (none of ours, no such event) is NOT the player's: Off puts the 0 back out of a fight (at most once each
+    --     boxes (setting:SetValue(v)), their Defaults (setting:SetValueToDefault()) and the game's FRIENDNAMEPLATES / ALLNAMEPLATES
+    --     keys (Settings.SetValue(var, v) -> setting:SetValue(v)), all on the game's own setting OBJECT for the option
+    --     (Blizzard_Settings_Shared, Settings.GetSetting; the game registers it after VARIABLES_LOADED + PLAYER_ENTERING_WORLD). Off
+    --     post-hooks those two methods on the two objects (hooksecurefunc: the game's call runs first and as it was, ours only sets a
+    --     flag; read only) and only such a call marks a change as the player's. NOT the value-changed event
+    --     (Settings.SetOnValueChangedCallback, ag12's first cut): every script-API / console CVar write fires CVAR_UPDATE, and
+    --     SettingsPanel:OnCVarChanged answers it with setting:SetValue(value, true) - the same event - so an add-on's SetCVar (ours
+    --     too) read as the player's; that forced call (force true) is the one SetValue we do not count. A key press counts: it is the
+    --     game's own control, the game prints its own message for it (NAMEPLATES_MESSAGE_FRIENDLY_ON / _OFF), and a second press turns
+    --     them off again. Their on stands until the next load (as ag11); their off hands it back to Off;
+    --   - any other change (none of ours, no such call) is NOT the player's: Off puts the 0 back out of a fight (at most once each
     --     OFF_MIN_S, so a writer that keeps fighting is not raced) and the record keeps the game's value to give back at log out;
-    --   - a client without the Settings event keeps ag11's reading (a change after ours is the player's), after the same wait.
+    --   - Off waits (up to OFF_HOOK_N steps) for the game's setting objects; an option the client has no object for keeps ag11's
+    --     reading (a change after ours is the player's), as does a client without Settings / hooksecurefunc.
     A.NP_FRIEND_OFF = { "nameplateShowFriendlyPlayers", "nameplateShowFriends", "nameplateShowFriendlyNPCs" }
     -- the game's Settings variables (case matters there, not in a CVar name) -> our option names
     A.NP_FRIEND_SETTINGS = { nameplateShowFriendlyPlayers = "nameplateShowFriendlyPlayers", nameplateShowFriends = "nameplateShowFriends",
                              nameplateShowFriendlyNpcs = "nameplateShowFriendlyNPCs", nameplateShowFriendlyNPCs = "nameplateShowFriendlyNPCs" }
     A.CV_GRACE_S = 3
     A.OFF_MIN_S = 1
+    A.OFF_HOOK_N = 50                           -- steps (SCAN_S each, out of a fight) to find the game's setting objects
     A.offDeclined = {}
     A.offSeen = {}                              -- ag12: each option as Off last read / wrote it (nil: the next reading is the game's)
     A.offPlayer = {}                            -- ag12: the game's own controls changed it since the last step
     A.offAt = {}                                -- ag12: Off's last write of each
     A.offFix = 0                                -- ag12: 0s put back after one of ours (a change that was not the player's; the probe line)
+    A.offHooked = {}                            -- ag12: our option name -> its game setting object is hooked (never unhooked)
+    A.offHookN = 0
     function A.cvReady()
         if not (A.varsLoaded or (A.pewAt ~= nil and now() - A.pewAt >= A.CV_GRACE_S)) then return false end
         if type(C_CVar) == "table" and type(C_CVar.AreCVarsLoaded) == "function" and pv(C_CVar.AreCVarsLoaded) == false then return false end
         return true
     end
+    -- true once every option the client has is hooked, or the looking is over (no Settings / hooksecurefunc, or OFF_HOOK_N steps)
     function A.offHookTry()
-        if A.offHook ~= nil then return A.offHook end
-        if type(Settings) ~= "table" or type(Settings.SetOnValueChangedCallback) ~= "function" then return false end
-        local n = 0
-        for variable, name in pairs(A.NP_FRIEND_SETTINGS) do
-            -- a flag only: the step reads the option itself, out of a fight
-            local ok = pcall(Settings.SetOnValueChangedCallback, variable, function() A.offPlayer[name] = true end, A)
-            if ok then n = n + 1 end
+        if A.offHookDone then return true end
+        local api = type(Settings) == "table" and type(Settings.GetSetting) == "function" and type(hooksecurefunc) == "function"
+        local want = false
+        if api then
+            for variable, name in pairs(A.NP_FRIEND_SETTINGS) do
+                if not A.offHooked[name] and cvGet(name) ~= nil then
+                    local ok, setting = pcall(Settings.GetSetting, variable)
+                    if ok and type(setting) == "table" and type(setting.SetValue) == "function" then
+                        -- flags only: the step reads the option itself, out of a fight. force true = SettingsPanel:OnCVarChanged
+                        -- answering a CVar write that did not come through the setting (an add-on's, ours, the console)
+                        if pcall(hooksecurefunc, setting, "SetValue", function(_, _, force)
+                            if force ~= true then A.offPlayer[name] = true end
+                        end) then
+                            A.offHooked[name] = true
+                            if type(setting.SetValueToDefault) == "function" then
+                                pcall(hooksecurefunc, setting, "SetValueToDefault", function() A.offPlayer[name] = true end)
+                            end
+                        end
+                    end
+                end
+            end
+            for _, name in ipairs(A.NP_FRIEND_OFF) do
+                if not A.offHooked[name] and cvGet(name) ~= nil then want = true end
+            end
         end
-        A.offHook = n > 0
-        return A.offHook
+        A.offHookN = A.offHookN + 1
+        if not want or A.offHookN >= A.OFF_HOOK_N then A.offHookDone = true end
+        A.offHook = next(A.offHooked) ~= nil
+        return A.offHookDone == true
     end
     function A.friendsOffRestore(why)
         local saved = type(WowCompanionDB) == "table" and WowCompanionDB.npFriendsOff or nil
@@ -2687,8 +2716,9 @@ do
         if pv(InCombatLockdown) == true then return end
         -- ag12: not before the game's own saved options are in place (its load would write over our 0)
         if not A.cvReady() then A.offWait = true; return end
+        -- ag12: nor before the game's setting objects are hooked (the player's own change could not be told from another's)
+        if not A.offHookTry() then A.offWait = true; return end
         A.offWait = nil
-        local hooked = A.offHookTry() == true
         local saved = WowCompanionDB.npFriendsOff
         if type(saved) == "table" and type(saved.orig) ~= "table" then saved.orig = {} end
         local t = now()
@@ -2701,8 +2731,8 @@ do
                 local on = tonumber(cur) ~= 0
                 if seen == nil or tonumber(seen) ~= tonumber(cur) then
                     -- a change that is not a write of ours, or the first reading of this load: the game's value now
-                    if player or (not hooked and seen ~= nil) then
-                        -- the player's own (the game's options / key; without the Settings event, ag11's reading): an on stands
+                    if player or (not A.offHooked[name] and seen ~= nil) then
+                        -- the player's own (the game's options / key; without its setting object, ag11's reading): an on stands
                         -- for this session, an off gives the option back to Off
                         A.offDeclined[name] = on or nil
                     end
