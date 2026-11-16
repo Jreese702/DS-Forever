@@ -20,7 +20,8 @@ class LoginHoldRetiredTest {
         .map { File(it) }.first { it.isDirectory }
     private val fork = listOf("src/main/java/com/jrees/wowcompanion/fork", "dsforever/src/main/java/com/jrees/wowcompanion/fork")
         .map { File(it) }.first { it.isDirectory }
-    private val native by lazy { File(src, "NativeLogin.kt").readText() }
+    // LF whatever the checkout: the block matches below are written with "\n"
+    private val native by lazy { File(src, "NativeLogin.kt").readText().replace("\r\n", "\n") }
 
     private val s = 1000L
 
@@ -41,8 +42,10 @@ class LoginHoldRetiredTest {
         // the login screen's burst of reads and the form's submission ~2 s later never push it out (the 10-08 device tests)
         val watch = native.substringAfter("private fun watch(dir: File)").substringBefore("fun clear(")
         assertEquals("one 20 s timer, posted once", 1, Regex("""postDelayed\(afterRead, AFTER_READ_MS\)""").findAll(native).count())
-        val firstBlock = watch.substringAfter("if (first) {\n                        firstReadAt = readAt")
-        assertTrue(watch, "main.postDelayed(afterRead, AFTER_READ_MS)" in firstBlock)
+        // the first read's own block only (to its closing brace), never the rest of watch()
+        val firstBlock = watch.substringAfter("if (first) {\n                        firstReadAt = readAt", "").substringBefore("\n                    }")
+        assertTrue(watch, firstBlock.isNotEmpty())
+        assertTrue(firstBlock, "main.postDelayed(afterRead, AFTER_READ_MS)" in firstBlock)
         assertFalse("a later read reschedules nothing", Regex("""if \(!first\)""").containsMatchIn(watch))
         // the 20 s count from the first read on elapsedRealtime, set on the read's thread before [consumed] (an earlier file's timer
         // or a traffic second in between never sees a read without it)
