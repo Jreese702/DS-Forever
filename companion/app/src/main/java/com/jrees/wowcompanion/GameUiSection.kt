@@ -575,9 +575,12 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
                     c.drawText(fitText(pValue, br.value, lb.w - 6f, 22f, 18f), lb.l + 4f, lb.cy + 26f, pValue)
                 } else c.drawText(name, lb.l + 4f, lb.cy + 9f, pBandLabel)
             }
+            // one look for the whole line: every sign beside its word, or (a four-mode line has no room beside Dynamic's and
+            // Tracking's words) every sign over its word - never On and Off with signs and the others without
+            val inline = br.modes?.let { ms -> line.buttons.withIndex().all { (k, b) -> ms.getOrNull(k)?.let { signSize(Tr.t(word(it)), b.w - 44f) != null } ?: true } } ?: true
             for ((k, b) in line.buttons.withIndex()) {
                 val m = br.modes?.getOrNull(k)
-                if (m != null) modeChoice(c, b.rect(), m, k == br.chosen, br.enabled)
+                if (m != null) modeChoice(c, b.rect(), m, k == br.chosen, br.enabled, inline)
                 else UiKit.choice(c, b.rect(), Tr.t(br.words.getOrElse(k) { "" }), k == br.chosen, br.enabled, textSize = 27f)
             }
         }
@@ -589,27 +592,36 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         pSub.textSize = 22f
     }
 
-    /** one of the tile's own choices: the game's red button, lit when chosen, the mode's sign and word over it (both fitted) */
-    private fun modeChoice(c: Canvas, b: RectF, m: UiMode, on: Boolean, enabled: Boolean) {
+    /** the word's size beside its sign in [room] (27 shrunk to 22 at the least), null = no room for the sign */
+    private fun signSize(w: String, room: Float): Float? {
+        pSeg.textSize = 27f
+        while (pSeg.measureText(w) + 58f > room && pSeg.textSize > 22f) pSeg.textSize -= 1f
+        val size = pSeg.textSize.takeIf { pSeg.measureText(w) + 58f <= room }
+        pSeg.textSize = 27f
+        return size
+    }
+
+    /** one of the tile's own choices: the game's red button, lit when chosen, the mode's sign and word over it (both fitted): the sign
+     *  beside the word ([inline]: the whole line has room for that), else the sign over the word */
+    private fun modeChoice(c: Canvas, b: RectF, m: UiMode, on: Boolean, enabled: Boolean, inline: Boolean) {
         UiKit.choice(c, b, "", on, enabled)
         val col = if (!enabled) Theme.dim else if (on) Theme.gold else Theme.textDim
         val w = Tr.t(word(m))
-        pSeg.textSize = 27f
-        // the button art's thick ends: the sign and the word keep clear of them; the sign goes first when the word would get too small
+        // the button art's thick ends: the sign and the word keep clear of them
         val room = b.width() - 44f
-        while (pSeg.measureText(w) + 58f > room && pSeg.textSize > 22f) pSeg.textSize -= 1f
-        val sign = pSeg.measureText(w) + 58f <= room
-        if (!sign) pSeg.textSize = 27f
+        val size = if (inline) signSize(w, room) else null
         pSeg.color = col
-        if (sign) {
+        pStroke.color = col; pStroke.strokeWidth = 2.4f
+        if (size != null) {
+            pSeg.textSize = size
             val total = 44f + 14f + pSeg.measureText(w)
             val ix = b.centerX() - total / 2f + 22f
-            pStroke.color = col; pStroke.strokeWidth = 2.4f
             modeIcon(c, m, ix, b.centerY())
             c.drawText(w, ix + 22f + 14f, b.centerY() + 10f, pSeg)
         } else {
+            modeIcon(c, m, b.centerX(), b.centerY() - 15f)
             pSeg.textAlign = Paint.Align.CENTER
-            c.drawText(fitText(pSeg, w, room, pSeg.textSize, 16f), b.centerX(), b.centerY() + 10f, pSeg)
+            c.drawText(fitText(pSeg, w, room, 25f, 16f), b.centerX(), b.centerY() + 33f, pSeg)
             pSeg.textAlign = Paint.Align.LEFT
         }
         pSeg.textSize = 27f

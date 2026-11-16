@@ -511,11 +511,20 @@ class GameUiTilesRoomTest {
             File(out, "$name.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
             made.add(name to b)
         }
+        // the room brings the tile and its band in view (its post does not run on a detached view here; theBandComesIntoViewInAWindow
+        // proves the room does it): the same least move, computed as the pad computes it, so a shot shows what the player sees
+        fun reveal(id: String) {
+            val p = partOf(r, id); val top = contentTop(r, p)!!
+            val t = tileBoxes(r).getValue(id)
+            val bottom = p.bandBox()?.let { it.bottom + top } ?: t.bottom
+            val sv = sc.apply { isAccessible = true }.get(r) as android.widget.ScrollView
+            GameUiTiles.reveal(sv.scrollY.toFloat(), sv.height.toFloat(), t.top - SettingsPad.REVEAL_TOP, bottom + SettingsPad.REVEAL_BOTTOM)
+                ?.let { scroll(it.toInt().coerceAtLeast(0)) }
+        }
         fun open(id: String) {
             val p = partOf(r, id); val t = tileBoxes(r).getValue(id)
             tap(p, t.centerX(), t.centerY() - contentTop(r, p)!!); lay(r)
-            // the room brings the tile and its band in view (its post does not run on a detached view here): the same place by hand
-            scroll((tileBoxes(r).getValue(id).top - SettingsPad.REVEAL_TOP).toInt())
+            reveal(id)
             Thread.sleep(400); org.robolectric.shadows.ShadowLooper.idleMainLooper(); lay(r)
         }
         fun close() { r.gameUis.forEach { it.closeSelection() }; lay(r) }
@@ -532,7 +541,9 @@ class GameUiTilesRoomTest {
         close(); open("minimap"); shot("top_7_band_minimap")
         close(); open("hud"); GameUi.setMode("hud", UiMode.NINTENDO); lay(r); shot("top_8_band_controller_bars")
         // the cursor on a tile with its band open (the gold box over the picture; the open tile's lit edge)
-        close(); hold(r); press(r, "PADDDOWN"); press(r, "PADDDOWN"); press(r, "PAD1"); scroll(0); shot("top_9_cursor_on_open_tile")
+        // (the page where the room puts it: the tile and its whole band in view, as on the device - it was scrolled back to the top here,
+        // which cut the band off at the screen's foot)
+        close(); hold(r); press(r, "PADDDOWN"); press(r, "PADDDOWN"); press(r, "PAD1"); reveal(GameUi.UFT_ID); shot("top_9_cursor_on_open_tile")
         press(r, "PADDDOWN"); shot("top_10_cursor_in_band")
         press(r, "PAD2"); shot("top_11_b_back_on_tile")
         // Spanish and French: the names fitted (shrunk, then cut)
