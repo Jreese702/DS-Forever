@@ -272,8 +272,13 @@ object TapBridge {
         // are one batch, so nothing else lands between them
         // and a short rest after the action: the game takes one touch per frame, and two actions' taps close together lost one
         // (b61: a wheel's hold right behind another tap never reached the game)
-        val gap = if (gapMs > 0L) "\nsleep ${"%.3f".format(java.util.Locale.ROOT, gapMs / 1000.0)}\n" else "\n"
-        val taps = pts.joinToString(gap) { c -> "input -d 0 tap ${"%.2f".format(java.util.Locale.ROOT, c.x)} ${"%.2f".format(java.util.Locale.ROOT, c.y)}" } + "\nsleep 0.08"
+        // pg1 (TapSpacing.offsets): a spaced row's cell repeated inside the batch waits for its own MIN_MS; every other gap is gapMs
+        val at = TapSpacing.offsets(cells, gapMs, pts.size)
+        val taps = pts.mapIndexed { i, c ->
+            val wait = if (i == 0) 0L else at[i] - at[i - 1]
+            (if (wait > 0L) "sleep ${"%.3f".format(java.util.Locale.ROOT, wait / 1000.0)}\n" else "") +
+                "input -d 0 tap ${"%.2f".format(java.util.Locale.ROOT, c.x)} ${"%.2f".format(java.util.Locale.ROOT, c.y)}"
+        }.joinToString("\n") + "\nsleep 0.08"
         val queuedAt = SystemClock.uptimeMillis()
         watchPad()
         // b90 (23:00:18 padstray, Home's focus): a press handled INSIDE the controller reader's own dispatch (DirectPad: Home's map
