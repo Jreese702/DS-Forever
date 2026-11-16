@@ -118,6 +118,12 @@ ItemLocation = { CreateFromEquipmentSlot = function(_, s) return { k = "inv" .. 
                  CreateFromBagAndSlot = function(_, b, s) return { k = "bag" .. b .. ":" .. s } end }
 WowCompanion._bagsLayout = { { bag = 0, slots = 8 }, { bag = 1, slots = 4 } }
 ''')
+# review of bags-de1: the REAL Safety.lua's S / SN / CALL / isPlain, as on the device - S answers a one-byte SENTINEL string for a nil, a
+# secret or a throw (never nil), so a lenient stand-in S hid that the grid read every idle moment as "a cast runs" (A refused for good)
+SAFETY = open(os.path.join(ROOT, 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons', 'WowCompanion', 'Safety.lua'),
+              encoding='utf-8').read()
+L.eval('function(src) local f, e = loadstring(src, "@Safety.lua"); if not f then error(e) end; return f end')(SAFETY)('WowCompanion')
+check(L.eval('WowCompanion.S(function() return nil end)') == '', "the real Safety.lua S is loaded (nil -> its 'absent' sentinel)")
 load = L.eval('function(src) local f, e = loadstring(src, "@Bags.lua"); if not f then error(e) end; return f end')
 ok_load = True
 try:
@@ -468,6 +474,28 @@ d = doc()
 check(d.note in ('left-B',) and L.eval('RELEASED') == 'B' and not (d.use and d.use.stopcast and d.use.seq != seq),
       "B in a fight: Home (even over the Bags grid, even mid-cast), no /stopcasting from the grid in a fight", d.note)
 L.execute('COMBAT = false; CASTING = nil')
+
+# ---------------------------------------------------------------- review: ANOTHER spell's pick waiting is never the grid's to answer
+touch(29); touch(27); L.eval('WowCompanion._bagsShutTap')(9)
+check(doc().mode == 'bulk' and doc().bulk.busy is None, "(the grid again, nothing running: A live)", doc().bulk.busy)
+L.execute('TARGETING, SCT, TSID = true, true, 6991')                # Feed Pet's pick, cast by touch on the top screen
+d = doc()
+check(d.bulk.pick is True and d.bulk.busy is True, "another spell's pick waits: A greyed (busy)", (d.bulk.pick, d.bulk.busy))
+seq = d.use and d.use.seq
+L.execute('WowCompanion._de.fire({ b = 0, s = 2, id = 5001 }, false)')
+d = doc()
+check(d.note == 'de-pick' and (d.use and d.use.seq) == seq and d.bulk.fail.why == 'pick',
+      "A with another spell's pick waiting: refused ('pick'), nothing tapped (a target cell would answer THAT pick)", (d.note, d.bulk.fail.why))
+touch(33)
+d = doc()
+check(d.use.stop is True and d.note == 'de-stopping', "B stops that pick (binv 19), then closes", d.note)
+L.execute('TARGETING, SCT, TSID = false, false, nil'); L.execute('RUN_TIMERS()'); L.execute('NOW = NOW + 5'); step()
+# review: the spell's name with no C_Spell.GetSpellName (S's 'threw' sentinel is a string: never taken for the name)
+check(L.eval('WowCompanion._kit.spellName(13262)') == 'Disenchant', "the spell's name: C_Spell.GetSpellInfo's when GetSpellName is missing",
+      L.eval('WowCompanion._kit.spellName(13262)'))
+check(L.eval('WowCompanion._kit.txt(WowCompanion.S(function() return nil end))') is None
+      and L.eval('WowCompanion._kit.txt(WowCompanion.S(function() error("x") end))') is None
+      and L.eval('WowCompanion._kit.txt("Disenchant")') == 'Disenchant', "KIT.txt: S's sentinels are no text, a real word is")
 
 # ---------------------------------------------------------------- no trace
 de_code = SRC[SRC.index('-- ---------------------------------------------------------------- bags-de1: THE DISENCHANT GRID'):

@@ -153,6 +153,10 @@
 -- cells can never equip any more (the shapes "t" / "c" / "u", KIT.cellFor), binv 39 is /stopcasting, KIT.isCurrent / spellDoc ask C_Spell
 -- first, and END_BOUND_TRADEABLE is handed to the game like the other pick questions. No new pad row (bmvq 27 + column 9 for a finger on
 -- the icon; binv's own cells); nothing saved; no game window opened or closed from here.
+-- Review of bags-de1 (before release; the user's words above: "It stays open after each one"): WC.S never answers nil - a nil, a secret
+-- or a throw comes back as a one-byte SENTINEL string (Safety.lua) - so the grid's "a cast runs" read every idle moment as a cast and A
+-- was refused "busy" for good; every game string the grid reads now passes KIT.txt (this file's own byte(1) > 3 test) first. A pick of
+-- ANOTHER spell left waiting (a kit, an enchant, Feed Pet) is never answered by the grid's A (refused "pick", the A greyed).
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -1831,19 +1835,21 @@ local KIT = { was = false, last = nil, DE = 13262, FEED = 6991, CELL0 = 20, CELL
               cells = {}, cst = {}, byKey = {}, STOP_HOLD = 1.5, evt = nil, evtN = 0 }
 WC._kit = KIT                                   -- the room's document (above) reads it
 WC._kitLearned = WC._kitLearned or {}           -- item ids seen to start a pick (the bag rows' `kit` flag: the Character room's list)
+-- review of bags-de1: a game string out of S() is real only past S's sentinels ("" secret, "" absent, "" threw: S never answers nil);
+-- [v] must already be plain (out of S, or checked with WC.isPlain): nil otherwise
+function KIT.txt(v) if type(v) == "string" and v ~= "" and v:byte(1) > 3 then return v end end
 -- a spell's name: C_Spell first (C_Spell.GetSpellName / GetSpellInfo().name), the old GetSpellInfo second; nil when none is plain
 function KIT.spellName(id)
-    local n = S(function() return C_Spell.GetSpellName(id) end)
-    if type(n) ~= "string" then
+    local n = KIT.txt(S(function() return C_Spell.GetSpellName(id) end))
+    if not n then
         local si = S(function() return C_Spell.GetSpellInfo(id) end)
-        n = type(si) == "table" and S(function() return si.name end) or nil
+        n = type(si) == "table" and KIT.txt(S(function() return si.name end)) or nil
     end
-    if type(n) ~= "string" then
+    if not n then
         local okN, nm = CALL(function() return GetSpellInfo(id) end)
-        n = okN and nm or nil
+        if okN and type(nm) == "string" and WC.isPlain(nm) then n = KIT.txt(nm) end
     end
-    if type(n) == "string" and n ~= "" and WC.isPlain(n) then return n end
-    return nil
+    return n
 end
 -- the spell `v` (an id or a name) is the current spell: C_Spell.IsCurrentSpell first, the old global second
 function KIT.cur(v)
@@ -2214,8 +2220,8 @@ end
 local function spellDoc(id)
     local si = S(function() return C_Spell.GetSpellInfo(id) end)
     if type(si) == "table" then
-        local name = S(function() return si.name end)
-        if type(name) == "string" and name ~= "" and WC.isPlain(name) then
+        local name = KIT.txt(S(function() return si.name end))
+        if name then
             return { spell = id, name = name, icon = SN(function() return si.iconID end), ct = SN(function() return si.castTime end) }
         end
     end
@@ -2477,18 +2483,19 @@ end
 -- a cast or channel of the player's runs now (UnitCastingInfo / UnitChannelInfo: plain for "player"), or ours has not ended yet
 function DE.casting()
     for _, f in ipairs({ function() return (UnitCastingInfo("player")) end, function() return (UnitChannelInfo("player")) end }) do
-        local n = S(f)
-        if type(n) == "string" and n ~= "" then return true end
+        if KIT.txt(S(f)) then return true end          -- (review: S's "absent" is a string too: never read as a cast)
     end
     return DE.cast ~= nil
 end
 -- OUR cast runs (the grid's own disenchant, or a cast of the spell's name): only that one is B's to stop - never another spell's cast
 function DE.ourCast()
     if DE.cast ~= nil then return true end
-    local n = S(function() return (UnitCastingInfo("player")) end)
+    local n = KIT.txt(S(function() return (UnitCastingInfo("player")) end))
     local sp = DE.spell().n
-    return type(n) == "string" and sp ~= nil and n == sp
+    return n ~= nil and sp ~= nil and n == sp
 end
+-- review of bags-de1: a pick of ANOTHER spell waits (never the grid's to answer)
+function DE.otherPick() return KIT.on() and KIT.ctx() ~= "de" end
 -- a press still waiting for its cast to start (its tap on the way, the cast not begun): a second A now would cast again ("busy")
 function DE.pending()
     local t = DE.tap
@@ -2498,7 +2505,7 @@ end
 function DE.doc()
     local sp = DE.spell()
     local list = DE.list()
-    local d = { n = sp.n, i = sp.i, ct = sp.ct, list = list, sel = DE.sync(list), busy = DE.casting() or nil, loot = DE.lootOpen or nil,
+    local d = { n = sp.n, i = sp.i, ct = sp.ct, list = list, sel = DE.sync(list), busy = (DE.casting() or DE.otherPick()) or nil, loot = DE.lootOpen or nil,
                 fight = InCombatLockdown() or nil, pick = KIT.on() or nil, back = ctl.deFrom and "grid" or "home",
                 stop = (DE.ourCast() and not InCombatLockdown()) or nil }               -- B stops our cast (else B closes)
     local c = DE.cast
@@ -2572,6 +2579,9 @@ function DE.fire(e, asked)
     if InCombatLockdown() then DE.refuse(e, "combat"); fightRefused(); return end
     if DE.casting() or DE.pending() then DE.refuse(e, "busy"); return end
     if DE.lootOpen then DE.refuse(e, "loot"); return end
+    -- review of bags-de1: ANOTHER spell's pick waiting (a kit, an enchant, Feed Pet: a cast by touch on the top screen): the grid's A would
+    -- answer it with this item (a "t" cell targets whatever pick waits) - refused; B stops that pick
+    if DE.otherPick() then DE.refuse(e, "pick"); return end
     if bagItemID(e.b, e.s) ~= e.id then ctl.bkey = nil; report("de-moved"); return end      -- the asked item left its slot: nothing used
     local sh = KIT.on() and KIT.pickShape() or "c"
     local col = KIT.cellFor(e.b, e.s, e.id, sh, true)
@@ -2673,8 +2683,8 @@ end
 -- the game's refusal of our disenchant: its own words (the globals), else a message naming the spell ("... cannot be disenchanted")
 function DE.isRefusal(msg)
     for _, k in ipairs(DE.REFUSALS) do
-        local g = S(function() return _G[k] end)
-        if type(g) == "string" and g ~= "" and g == msg then return true end
+        local g = KIT.txt(S(function() return _G[k] end))
+        if g and g == msg then return true end
     end
     local n = DE.spell().n
     if type(n) ~= "string" or #n < 6 then return false end
@@ -2722,8 +2732,8 @@ function DE.event(e, a1, a2, a3)
     if e == "UI_ERROR_MESSAGE" then
         local t = DE.tap
         if not t or now - t.at > DE.REFUSE_S then return end
-        local msg = S(function() return a2 end)
-        if type(msg) ~= "string" or msg == "" or not WC.isPlain(msg) or not DE.isRefusal(msg) then return end
+        local msg = KIT.txt(S(function() return a2 end))
+        if not msg or not DE.isRefusal(msg) then return end
         DE.refused[t.id .. ":" .. DE.rank()] = true                -- hidden for the session (until a skill-up)
         DE.failed(t, "refused")
         return
