@@ -237,6 +237,17 @@ object SlideOut {
     fun opens(row: JSONObject, dualWield: Boolean, combat: Boolean, ctx: String?): Boolean =
         ctx == null && !combat && targets(row, dualWield).size > 1
 
+    /**
+     * The left edges of the Bags room's [n] target slots beside a tile ([tileLeft] .. [tileRight], slots [size] square, 12 px apart): on
+     * the tile's right when they fit inside [width], else on its left. Either way the first target is the leftmost (review: the D-pad's
+     * right is the add-on's next target, so the row must read left to right on both sides of the tile).
+     */
+    fun rowLefts(tileLeft: Float, tileRight: Float, size: Float, n: Int, width: Float): List<Float> {
+        val step = size + 12f
+        val toRight = tileRight + n * step + 16f <= width
+        return (0 until n).map { i -> if (toRight) tileRight + 12f + i * step else tileLeft - (n - i) * step }
+    }
+
     /** the Bags room's start (G9, the bag bar's chooser): an empty slot first, else the lower item level ([worn]: slot -> row) */
     fun start(slots: List<Int>, worn: Map<Int, JSONObject>): Int {
         slots.indexOfFirst { wornId(worn[it]) <= 0 }.takeIf { it >= 0 }?.let { return it }

@@ -214,16 +214,16 @@ class EquipSlideOutShotsTest {
 
     // ---------------------------------------------------------------- the Bags room's two-target row (D1a: a ring)
 
-    private fun bagsShot(name: String, mode: String, at: Int) {
+    private fun bagsShot(name: String, mode: String, at: Int, ringSlot: Int = 6, fight: Boolean = false) {
         val app = RuntimeEnvironment.getApplication()
         val v = BagsView(app)
         val ring = item(3201, "Ring of the Copper Vein", "INVTYPE_FINGER", 2, 15, 133344, arr(stat(sta, "Stamina", 3), stat(agi, "Agility", 2)))
-            .put("bag", 0).put("slot", 6)
+            .put("bag", 0).put("slot", ringSlot)
         val items = JSONArray()
             .put(item(6948, "Hearthstone", "", 1, 1, 134414, JSONArray()).put("bag", 0).put("slot", 1).put("use", true))
             .put(item(3401, "Stonemason Chestguard", "INVTYPE_CHEST", 2, 18, 132637, arr(stat(arm, "Armor", 58))).put("bag", 0).put("slot", 5))
             .put(ring)
-        val tip = JSONObject().put("key", "bag 0 6 3201")
+        val tip = JSONObject().put("key", "bag 0 $ringSlot 3201")
             .put("lines", arr(l("Ring of the Copper Vein", "1eff00"), l("Binds when equipped"), l("Finger"), l("+2 Agility"), l("+3 Stamina"), l("Requires Level 12")))
             .put("cmp", arr(
                 JSONObject().put("slot", 11).put("dn", 3).put("nw", true).put("lines", arr(l(" "), l("If you replace this item, the following stat changes will occur:", "ffd100"),
@@ -231,13 +231,14 @@ class EquipSlideOutShotsTest {
                 JSONObject().put("slot", 12).put("dn", 2).put("nw", true).put("lines", arr(l(" "), l("If you replace this item, the following stat changes will occur:", "ffd100"),
                     l("+2 Agility", "00ff00"), l("+3 Stamina", "00ff00")))))
         val targets = JSONArray()
-            .put(JSONObject().put("inv", 11).put("id", 908).put("icon", 133347).put("quality", 2).put("name", "Band of Thorns").put("ok", true))
-            .put(JSONObject().put("inv", 12).put("ok", true))
-        val eq = JSONObject().put("gear", true).put("bag", 0).put("slot", 6).put("id", 3201).put("at", at)
+            .put(JSONObject().put("inv", 11).put("id", 908).put("icon", 133347).put("quality", 2).put("name", "Band of Thorns").put("ok", !fight)
+                .also { if (fight) it.put("why", "combat") })
+            .put(JSONObject().put("inv", 12).put("ok", !fight).also { if (fight) it.put("why", "combat") })
+        val eq = JSONObject().put("gear", true).put("bag", 0).put("slot", ringSlot).put("id", 3201).put("at", at)
         if (mode == "equip") eq.put("targets", targets) else eq.put("to", 10 + at)
         val ctl = JSONObject().put("on", true).put("mode", mode).put("seq", 1).put("sid", 1)
-            .put("cur", JSONObject().put("bag", 0).put("slot", 6)).put("tip", tip).put("eq", eq)
-        val doc = JSONObject().put("free", 12).put("total", 16).put("money", 102345)
+            .put("cur", JSONObject().put("bag", 0).put("slot", ringSlot)).put("tip", tip).put("eq", eq)
+        val doc = JSONObject().put("free", 12).put("total", 16).put("money", 102345).put("combat", fight)
             .put("bags", JSONArray().put(JSONObject().put("bag", 0).put("slots", 16)))
             .put("items", items).put("equipped", equipped()).put("ctl", ctl)
             .put("pad", JSONObject().put("rows", JSONObject().put("bmvq", 27).put("bag0", 30)))
@@ -253,6 +254,90 @@ class EquipSlideOutShotsTest {
         bagsShot("bags_ring_row_empty_finger.png", "equip", 2)       // the start: the EMPTY Finger 2, its all-gains
         bagsShot("bags_ring_row_finger1.png", "equip", 1)            // Finger 1: only its changes (-1 Spirit)
         bagsShot("bags_ring_row_bindask.png", "bindask", 2)          // the game's own "bind it to you?"
+        // review: the ring in the grid's last column: the row on the tile's LEFT still reads Finger 1, Finger 2 left to right (the D-pad's
+        // right = the next slot); and a fight begun while the row is open: the slots faint, the reason under the changes
+        bagsShot("bags_ring_row_left_edge.png", "equip", 1, ringSlot = 10)
+        bagsShot("bags_ring_row_fight.png", "equip", 2, fight = true)
+    }
+
+    // ---------------------------------------------------------------- review: a finger on the card's A / B, and the ammo rail's place
+
+    private fun get(v: CharacterView, name: String): Any? =
+        CharacterView::class.java.getDeclaredField(name).also { it.isAccessible = true }.get(v)
+
+    /** one frame drawn (no file), the slide-out finished */
+    private fun frame(v: CharacterView) {
+        val w = 1240; val h = 1007
+        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        for (pass in 0..1) {
+            v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
+            v.layout(0, 0, w, h)
+            v.draw(Canvas(b))
+            ShadowSystemClock.advanceBy(Duration.ofMillis(400L))
+            ShadowLooper.idleMainLooper()
+        }
+    }
+
+    private fun tap(v: CharacterView, x: Float, y: Float) {
+        val t = android.os.SystemClock.uptimeMillis()
+        v.onTouchEvent(android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0))
+        v.onTouchEvent(android.view.MotionEvent.obtain(t, t + 50, android.view.MotionEvent.ACTION_UP, x, y, 0))
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun cardHit(v: CharacterView, which: String): android.graphics.RectF =
+        (get(v, "railCardHits") as List<Pair<android.graphics.RectF, String>>).first { it.second == which }.first
+
+    private fun chosenOfTheWayBack(v: CharacterView): Int? = get(v, "railBack")?.let { b ->
+        b.javaClass.getDeclaredField("chosen").also { it.isAccessible = true }.getInt(b)
+    }
+
+    /** review: the card's "A Equip" by a finger is A on the highlighted icon (it closed the rail as B before); its "B Back" is B */
+    @Test fun aFingerOnTheCardsAIsATheBIsB() {
+        Tr.init(RuntimeEnvironment.getApplication())
+        val a = room()
+        set(a, "chosenSlot", 1); call(a, "openRail", 1); frame(a)
+        val ra = cardHit(a, "a")
+        tap(a, ra.centerX(), ra.centerY())
+        assertEquals("A on the card: the rail closed", null, get(a, "railFor"))
+        assertEquals("...with the highlighted piece flying into the slot (A, not B)", 0, chosenOfTheWayBack(a))
+        assertEquals("...and its route tried (no game in a test: not taken)", "The game did not take it", get(a, "kitLine"))
+
+        val b = room()
+        set(b, "chosenSlot", 1); call(b, "openRail", 1); frame(b)
+        val rb = cardHit(b, "b")
+        tap(b, rb.centerX(), rb.centerY())
+        assertEquals("B on the card: the rail closed", null, get(b, "railFor"))
+        assertEquals("...nothing chosen", -1, chosenOfTheWayBack(b))
+        assertEquals("...nothing tried", null, get(b, "kitLine"))
+
+        val c = room()
+        set(c, "chosenSlot", 1); call(c, "openRail", 1); frame(c)
+        val rc = cardHit(c, "a")
+        tap(c, rc.centerX(), rc.top - 200f)                       // the card's middle: not a button, the rail goes back in (B)
+        assertEquals(null, get(c, "railFor"))
+        assertEquals(-1, chosenOfTheWayBack(c))
+    }
+
+    /** review: the ammo slot's rail starts above the weapons row (its first icon covered the ranged slot's corner) */
+    @Test fun theAmmoRailStandsClearOfTheWeaponsRow() {
+        Tr.init(RuntimeEnvironment.getApplication())
+        val v = room(ammo = true)
+        set(v, "chosenSlot", 0); call(v, "openRail", 0); frame(v)
+        @Suppress("UNCHECKED_CAST")
+        val icons = (get(v, "railHits") as List<Pair<android.graphics.RectF, Int>>).map { it.first }
+        assertEquals("the two kinds of arrows in the bags (the worn kind left out)", 2, icons.size)
+        val boxes = (get(v, "focusables") as List<*>).associate { f ->
+            val k = f!!.javaClass.getDeclaredField("key").also { it.isAccessible = true }.get(f) as String
+            k to (f.javaClass.getDeclaredField("r").also { it.isAccessible = true }.get(f) as android.graphics.RectF)
+        }
+        val weaponsTop = listOf(16, 17, 18).mapNotNull { boxes["slot:$it"]?.top }.minOrNull()
+        val rightColumn = listOf(10, 6, 7, 8, 11, 12, 13, 14).mapNotNull { boxes["slot:$it"]?.left }.minOrNull()
+        org.junit.Assert.assertNotNull(weaponsTop); org.junit.Assert.assertNotNull(rightColumn)
+        for (r in icons) {
+            org.junit.Assert.assertTrue("an ammo icon $r above the weapons row (top $weaponsTop)", r.bottom <= weaponsTop!!)
+            org.junit.Assert.assertTrue("an ammo icon $r clear of the right column ($rightColumn)", r.right <= rightColumn!!)
+        }
     }
 
     /** the doll's columns (Doll.SLOTS) and SlideOut's ways out agree */

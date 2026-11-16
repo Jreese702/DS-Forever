@@ -705,7 +705,11 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         // the ammo slot (beside the ranged slot) slides up as the weapons do, never over the right column
         val limit = pane.right - 30f - s - 12f
         val fromX = if (dir == SlideOut.Dir.UP) minOf(src.left, limit - (src.width() + s) / 2f) else src.left
-        val from = SlideOut.Box(fromX, src.top, src.width())
+        // review: the small ammo slot sits at the foot of the weapons row, so its rail starts above that row (its first icon covered
+        // the ranged slot's corner)
+        val fromTop = if (slot == WornReplace.AMMO) (listOfNotNull(l.boxes[16]?.top, l.boxes[17]?.top, l.boxes[18]?.top).minOrNull() ?: src.top)
+            .coerceAtMost(src.top) else src.top
+        val from = SlideOut.Box(fromX, fromTop, src.width())
         val home = SlideOut.Box(src.centerX() - s / 2f, src.centerY() - s / 2f, s)
         val t = now - railAt
         val shown = (list.size - railFirst).coerceAtMost(SlideOut.SHOWN)
@@ -751,6 +755,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
      * card "Unequip" and the losses; a greyed entry's reason last; A Equip / Unequip, B Back under it.
      */
     private fun railCard(c: Canvas, r: RectF) {
+        railCardHits.clear()
         val slot = railFor ?: return
         val e = railEntries(slot).getOrNull(railSel) ?: return
         val p = e.pick
@@ -767,8 +772,15 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         c.save(); c.clipRect(r.left - 6f, top - 6f, r.right + 6f, foot)
         UiKit.tooltip(c, r.left, top, r.width(), title, colour, lines, scale = s)
         c.restore()
-        UiKit.hints(c, r.right - 8f, r.bottom - 40f, "rev_a" to (if (e.blank) WornMore.UNEQUIP else "Equip"), UiKit.backGlyph() to "Back")
+        val hy = r.bottom - 40f
+        val hs = UiKit.hints(c, r.right - 8f, hy, "rev_a" to (if (e.blank) WornMore.UNEQUIP else "Equip"), UiKit.backGlyph() to "Back")
+        // review (rooms the same on every route): a finger on the card's A / B does what the pad's A / B do (it closed the rail before:
+        // any touch off an icon was B, so tapping "A Equip" took the rail away)
+        val mid = (hs + r.right - 8f) / 2f
+        railCardHits.add(RectF(hs - 12f, hy - 36f, mid, hy + 36f) to "a")
+        railCardHits.add(RectF(mid, hy - 36f, r.right, hy + 36f) to "b")
     }
+    private val railCardHits = ArrayList<Pair<RectF, String>>()
 
     // ------------------------------------------------------------------ drawing
 
@@ -1545,7 +1557,9 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
                 if (railFor != null) {
                     // bags-gear1 (G10): a finger on an icon highlights it and shows its card; on the highlighted one = A; elsewhere = B
                     val k = railHits.firstOrNull { it.first.contains(e.x, e.y) }?.second
-                    if (k == null) closeRail() else if (k == railSel) railAct(k) else { railSel = k; railFirst = SlideOut.first(k, railEntries(railFor ?: 0).size, railFirst) }
+                    val hint = if (k == null) railCardHits.firstOrNull { it.first.contains(e.x, e.y) }?.second else null
+                    if (hint == "a") railAct(railSel)                     // review: the card's A = A on the highlighted icon
+                    else if (k == null) closeRail() else if (k == railSel) railAct(k) else { railSel = k; railFirst = SlideOut.first(k, railEntries(railFor ?: 0).size, railFirst) }
                     invalidate()
                     return true
                 }

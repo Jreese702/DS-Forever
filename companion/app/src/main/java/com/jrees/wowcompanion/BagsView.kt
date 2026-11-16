@@ -703,12 +703,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             if (list.isEmpty()) return
             val at = if (choosing) (eq.optInt("at", 1) - 1).coerceIn(0, list.size - 1) else 0
             UiKit.checkedGlow(c, tile, orHilite = true)                 // the piece the row is for
-            val size = tile.width(); val step = size + 12f
-            val toRight = tile.right + list.size * step + 16f <= width
-            val boxes = list.indices.map { i ->
-                if (toRight) RectF(tile.right + 12f + i * step, tile.top, tile.right + 12f + i * step + size, tile.bottom)
-                else RectF(tile.left - 12f - i * step - size, tile.top, tile.left - 12f - i * step, tile.bottom)
-            }
+            // review: on the tile's left too the slots read in their order left to right (SlideOut.rowLefts), so the D-pad's right (the
+            // add-on's next target) always moves the highlight to the right
+            val boxes = SlideOut.rowLefts(tile.left, tile.right, tile.width(), list.size, width.toFloat())
+                .map { x -> RectF(x, tile.top, x + tile.width(), tile.bottom) }
             for ((i, t) in list.withIndex()) {
                 val inv = t.optInt("inv", -1)
                 val box = boxes[i]
@@ -732,7 +730,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 else -> {
                     val cards = BagsCompare.cards(shown.tip, item, st.equipped, st.dualWield,
                         BagsCompare.Words(empty = Tr.t("Empty"), changes = Tr.t("Stat changes")))
-                    TipStack.lines(JSONArray(SlideOut.changesFor(cards, inv, item.optString("equip"), st.dualWield)), false)
+                    val changes = TipStack.lines(JSONArray(SlideOut.changesFor(cards, inv, item.optString("equip"), st.dualWield)), false)
+                    // review: a target the game refuses now (a fight began while the row was open) says why under the changes
+                    if (target.optBoolean("ok", true)) changes
+                    else changes + UiKit.TipLine(Tr.t(if (target.optString("why") == "combat") "In combat" else "Unavailable"), Theme.unusable)
                 }
             }
             val glyphs = st.ctlOn

@@ -299,6 +299,19 @@ class SlideOutTest {
         assertFalse("a vendor: Sell", SlideOut.opens(row("INVTYPE_FINGER"), false, combat = false, ctx = "merchant"))
     }
 
+    /** review: the Bags room's row reads left to right on BOTH sides of its tile (the D-pad's right = the add-on's next target) */
+    @Test fun theBagsRowReadsLeftToRightOnEitherSideOfItsTile() {
+        val right = SlideOut.rowLefts(640f, 740f, 100f, 2, 1240f)
+        assertEquals(listOf(752f, 864f), right)
+        val left = SlideOut.rowLefts(1120f, 1220f, 100f, 2, 1240f)
+        assertEquals("no room on the right: on the left", listOf(896f, 1008f), left)
+        assertTrue("the first target leftmost", left[0] < left[1])
+        assertEquals("12 px off the tile", 1120f - 12f, left[1] + 100f, 1e-3f)
+        val three = SlideOut.rowLefts(1000f, 1100f, 100f, 3, 1240f)
+        assertEquals(listOf(664f, 776f, 888f), three)
+        assertEquals("one target", listOf(1112f), SlideOut.rowLefts(1000f, 1100f, 100f, 1, 1240f))
+    }
+
     @Test fun theBagsRowStartsOnAnEmptySlotElseTheLowerItemLevel() {
         assertEquals(1, SlideOut.start(listOf(11, 12), mapOf(11 to wornRow(1, "INVTYPE_FINGER"), 12 to JSONObject())))
         assertEquals(1, SlideOut.start(listOf(13, 14), mapOf(13 to wornRow(1, "INVTYPE_TRINKET").put("ilvl", 25), 14 to wornRow(2, "INVTYPE_TRINKET").put("ilvl", 10))))
