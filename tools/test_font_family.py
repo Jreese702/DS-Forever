@@ -124,7 +124,7 @@ def block():
     """Trail.lua's cp41 WC.font block: from its header note to the line before the compass's tag"""
     src = open(tc.TRAIL, encoding="utf-8").read()
     a = src.index("-- cp41 ISSUE #358")
-    b = src.index('WC.compass = { V = "cp41" }')
+    b = src.index('WC.compass = { V = "cp42" }')
     return src[a:b]
 
 
@@ -310,8 +310,8 @@ def main():
     trail = open(tc.TRAIL, encoding="utf-8").read()
     hub = open(HUB, encoding="utf-8").read()
     quote = "Cyrillic characters are displayed as empty squares instead of actual letters"
-    chk("tags: Trail cp41 / ag13 (ag12f) / prd18, Hub hub55 / uf23", C.V == "cp41" and G.WowCompanion.live.V == "ag13"
-        and G.WowCompanion.prd.V == "prd18" and 'local HV = "hub55"' in hub and UF.V == "uf23", (C.V, UF.V))
+    chk("tags: Trail cp42 / ag13 (ag12f) / prd19, Hub hub56 / uf24 (the 11-16 merge)", C.V == "cp42" and G.WowCompanion.live.V == "ag13"
+        and G.WowCompanion.prd.V == "prd19" and 'local HV = "hub56"' in hub and UF.V == "uf24", (C.V, UF.V))
     chk("tags: each header note quotes the issue and the user's pick (2026-11-16)",
         all(n in trail for n in ("-- cp41 ISSUE #358", "-- ag12f ISSUE #358", "-- prd18 ISSUE #358"))
         and "-- uf23 (hub55) ISSUE #358" in hub and "-- hub55 ISSUE #358" in hub

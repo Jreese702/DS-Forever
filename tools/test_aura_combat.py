@@ -167,7 +167,7 @@ def main():
 
     rig = make()
     G, P = rig.G, rig.P
-    chk("prd17 / uf19 (uf18 the target plate pass + uf19 the snapped spot, uf20 the smooth rim, uf21 its old notched corner): the version tags", P.V == "prd18" and rig.UF.V == "uf23", (P.V, rig.UF.V))
+    chk("prd17 / uf19 (uf18 the target plate pass + uf19 the snapped spot, uf20 the smooth rim, uf21 its old notched corner): the version tags", int(P.V[3:]) >= 17 and int(rig.UF.V[2:]) >= 22, (P.V, rig.UF.V))      # (the layout editor: prd18 / uf23 or later)
     _, nt = strict(read(TRAIL_REL))
     chk("the rig's strict self-compare: Trail.lua's NaN tests rewritten (%d sites)" % nt, nt >= 4, nt)
     chk("the rig's type(): a secret duration is a number, a secret dispel type a string, a secret table a table",

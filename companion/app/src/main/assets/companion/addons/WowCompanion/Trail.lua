@@ -100,6 +100,8 @@ end
 -- overshot the facing by more than it corrected, so the bar swung left and right a little wider each frame, up to whole-bar
 -- swings and the 2.5 rad reset. Now each step is the spring's EXACT solution over dt (closed form, the same 0.2 s settle):
 -- stable at any frame time, never overshooting, the letters still placed at sub-pixel offsets (no snapping of a moving offset).
+-- cp42 THE 11-16 TEST BUILD MERGE: issue #358's cp41 (the font family, WC.font) and feat/big-layout's cp41 (the compass in the
+-- layout editor) both kept; both notes below
 -- cp41 ISSUE #358 (a player: "Character names: Cyrillic characters are displayed as empty squares instead of actual letters"; the
 -- user's pick, 2026-11-16: the font family, "CreateFontFamily with the game's per-alphabet members, like the game's own frames"):
 -- WC.font(fs, height, flags) - OUR TOP-SCREEN TEXT IN A FONT FAMILY, the way the game's own frames draw theirs. SetFont with
@@ -186,7 +188,11 @@ do
         return false
     end
 end
-WC.compass = { V = "cp41" }
+-- cp41 THE COMPASS IN THE LAYOUT EDITOR (the user, 2026-11-16:
+-- "we need to make a way to basically edit the UI locations on the top screen from our UI menu"): the bar's place and size are the layout's (TapPad pad22 WC.lay.get("compass"): its top-centre at (dx, 4 + dy)
+-- 1080-line pixels from the screen's top-centre, scale s % of the frame: C.place); C.lay is the piece Hub's editor gathers. The target
+-- bar follows it until the target bar is moved itself (Hub uf23).
+WC.compass = { V = "cp42" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -258,6 +264,39 @@ do
         return C.k
     end
     function C.u(px) return px * (C.k or C.scale()) end
+
+    -- cp41: the bar's place and scale from the layout (no entry: the spec's place, scale 1)
+    C.S_MIN, C.S_MAX, C.S_STEP = 70, 150, 10
+    function C.place()
+        local f = C.frame
+        if not f then return end
+        local L = WC.lay
+        local e = type(L) == "table" and type(L.get) == "function" and L.get("compass") or nil
+        local dx, dy = e and num(e.dx) or 0, e and num(e.dy) or 0
+        local sc = math.max(C.S_MIN, math.min(C.S_MAX, e and num(e.s) or 100)) / 100
+        pcall(f.SetScale, f, sc)
+        f:ClearAllPoints()
+        -- (the offsets are in the frame's own scaled units)
+        f:SetPoint("TOP", UIParent, "TOP", C.u(dx) / sc, -C.u(C.SPEC.top + dy) / sc)
+    end
+    C.lay = {
+        id = "compass", sn = C.S_MIN, sx = C.S_MAX, ss = C.S_STEP,
+        base = function()
+            local W = type(WC.lay) == "table" and WC.lay.screen() or 1920
+            return W / 2, C.SPEC.top
+        end,
+        size = function(e)
+            local sc = ((e and num(e.s)) or 100) / 100
+            return C.SPEC.w * sc, C.SPEC.h * sc
+        end,
+        off = function(w) return -w / 2, 0 end,
+        on = function() return C.wanted() end,
+        apply = function()
+            C.place()
+            -- the target bar follows the compass (Hub's uf23 reads the compass frame's own rect)
+            if type(WC.uf) == "table" and type(WC.uf.placeTarget) == "function" then pcall(WC.uf.placeTarget) end
+        end,
+    }
 
     -- the player's facing as counter-clockwise radians from north (the game's own convention), or nil
     function C.facing()
@@ -476,7 +515,7 @@ do
         C.frame = f
         local S, u = C.SPEC, C.u
         f:SetSize(u(S.w), u(S.h))
-        f:SetPoint("TOP", UIParent, "TOP", 0, -u(S.top))
+        C.place()
         -- the ground: our own soft band texture, its alpha already fading smoothly to every edge
         local g = f:CreateTexture(nil, "BACKGROUND")
         g:SetTexture(C.BAND)
@@ -3505,10 +3544,23 @@ end
 -- Blizzard's own aura buttons do: P.auraSweep hands it straight over (never read or compared) for the HUD's row and Hub's target bar;
 -- without the functions, or refused, the old route as before. Feature-detected; the route that worked rides one "cap" line (probe
 -- "aurasweep") per route a login.
+-- prd19 THE 11-16 TEST BUILD MERGE: issue #358's prd18 (the font family) and feat/big-layout's prd18 (the HUD in the layout
+-- editor) both kept; both notes below
 -- prd18 ISSUE #358 (a player: "Cyrillic characters are displayed as empty squares instead of actual letters"; the user's pick,
 -- 2026-11-16: the font family, "like the game's own frames"): the HUD row's aura seconds and stack counts take cp41's WC.font
 -- instead of SetFont(FRIZQT__); the same look in Latin.
-WC.prd = { V = "prd18", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
+-- prd18 THE HUD IN THE LAYOUT EDITOR (the user, 2026-11-16:
+-- "we need to make a way to basically edit the UI locations on the top screen from our UI menu";
+-- the design's pick: HUD height and scale move into the editor, the width stays a row): the HUD's PLACE and SIZE are
+-- the layout's (TapPad pad22 WC.lay, per character: WowCompanionDB.lay[name-realm].hud = { dx, dy, s }): its top-centre at the screen's
+-- centre plus (dx, 350 + dy) 1080-line pixels, its scale s % (S_MIN..S_MAX in S_STEP, as before), the place independent of the scale
+-- (the scale grows the bars round their top-centre). P.y / P.x stay the bar's own frame-unit offsets (P.fromLay), so the pet strip, the
+-- auras, the pick boxes, Party mode's lift and Hub's party grid (P.partyGeo, now with the HUD's x) follow it as before. ONCE (layV 1,
+-- every character at once) the old height / scale (prdY / prdS, the app's slider) become that character's layout entry, so nothing
+-- moves; the hub document then says the layout owns the two (prd.lay: the app drops them from its tap loop). Hub's old columns 36-39
+-- still step them for an older app (into the saved entry: the player's press). While the editor is open the HUD is held up at its rest
+-- alpha (why "layout"), so the piece being moved is seen. P.lay is the piece Hub's editor gathers.
+WC.prd = { V = "prd19", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
            PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
@@ -3538,7 +3590,8 @@ do
         if ok and type(n) == "string" then return n .. "-" .. tostring(r or "") end
         return "?"
     end
-    function P.loadY()
+    -- the OLD height (prdY, frame units; the prd4 shift once) of [name], the default when none
+    local function oldY(name)
         -- prd4: a height the player set on the old default moves down with it, once (prdYv 2)
         if type(WowCompanionDB) == "table" and type(WowCompanionDB.prdY) == "table" and WowCompanionDB.prdYv ~= 2 then
             for k, v in pairs(WowCompanionDB.prdY) do
@@ -3547,10 +3600,63 @@ do
             WowCompanionDB.prdYv = 2
         end
         local t = type(WowCompanionDB) == "table" and WowCompanionDB.prdY
-        local y = type(t) == "table" and num(t[who()]) or nil
-        P.y = y and math.max(P.Y_MIN, math.min(P.Y_MAX, y)) or P.Y_DEF
+        local y = type(t) == "table" and num(t[name]) or nil
+        return y and math.max(P.Y_MIN, math.min(P.Y_MAX, y)) or P.Y_DEF
+    end
+    P.oldY = oldY
+    -- prd18 THE ONE-TIME MOVE (layV 1): every character's old height / scale -> its layout entry { dx 0, dy, s } (the top where it was:
+    -- the old top stood y * s spec px from the centre, the new one at Y_DEF - dy), never over an entry the layout already has
+    function P.layMigrate()
+        if type(WowCompanionDB) ~= "table" or WowCompanionDB.layV == 1 then return false end
+        local names = {}
+        for _, key in ipairs({ "prdY", "prdS" }) do
+            local t = WowCompanionDB[key]
+            if type(t) == "table" then for k in pairs(t) do if type(k) == "string" then names[k] = true end end end
+        end
+        local moved = 0
+        for name in pairs(names) do
+            local y = oldY(name)
+            local st = type(WowCompanionDB.prdS) == "table" and num(WowCompanionDB.prdS[name]) or nil
+            local sc = st and math.max(P.S_MIN, math.min(P.S_MAX, st)) or P.S_DEF
+            if y ~= P.Y_DEF or sc ~= P.S_DEF then
+                if type(WowCompanionDB.lay) ~= "table" then WowCompanionDB.lay = {} end
+                if type(WowCompanionDB.lay[name]) ~= "table" then WowCompanionDB.lay[name] = {} end
+                if WowCompanionDB.lay[name].hud == nil then
+                    WowCompanionDB.lay[name].hud = { dx = 0, dy = math.floor(P.Y_DEF - y * sc / 100 + 0.5), s = sc }
+                    moved = moved + 1
+                end
+            end
+        end
+        WowCompanionDB.layV = 1
+        P.layMoved = moved
+        return true
+    end
+    -- the HUD's layout entry: TapPad's WC.lay (the editor's view while it is open, else the saved one); without it (an older TapPad)
+    -- our saved table read directly
+    local function layHud()
+        local L = WC.lay
+        if type(L) == "table" and type(L.get) == "function" then return L.get("hud") end
+        local db = type(WowCompanionDB) == "table" and WowCompanionDB.lay or nil
+        local t = type(db) == "table" and db[who()] or nil
+        local e = type(t) == "table" and t.hud or nil
+        return type(e) == "table" and e or nil
+    end
+    -- the HUD's entry now -> P.sc, P.y, P.x (frame units: the offsets over the scale)
+    P.layOwns = true
+    function P.fromLay()
+        pcall(P.layMigrate)
+        local e = layHud()
+        local dx = e and num(e.dx) or 0
+        local dy = e and num(e.dy) or 0
+        local sc = e and num(e.s) or P.S_DEF
+        sc = math.max(P.S_MIN, math.min(P.S_MAX, sc))
+        dx, dy = math.max(-1920, math.min(1920, dx)), math.max(-1080, math.min(1080, dy))
+        P.sc = sc
+        P.y = (P.Y_DEF - dy) / (sc / 100)
+        P.x = dx / (sc / 100)
         return P.y
     end
+    function P.loadY() return P.fromLay() end
     -- the app's slider: one step down (-1) / up (+1), or back to the default (0)
     -- prd8: the width and the scale, per character
     local function kept(key, def, lo, hi)
@@ -3563,11 +3669,33 @@ do
         if type(WowCompanionDB[key]) ~= "table" then WowCompanionDB[key] = {} end
         WowCompanionDB[key][who()] = v ~= def and v or nil
     end
+    -- prd18: the layout's scale alone (P.fromLay sets the place with it; the place is left as it is here)
+    function P.layScale()
+        pcall(P.layMigrate)
+        local e = layHud()
+        return math.max(P.S_MIN, math.min(P.S_MAX, (e and num(e.s)) or P.S_DEF))
+    end
     function P.loadSize()
         P.wd = kept("prdW", P.W_DEF, P.W_MIN, P.W_MAX)
-        P.sc = kept("prdS", P.S_DEF, P.S_MIN, P.S_MAX)
+        P.sc = P.layScale()                                              -- prd18: the scale is the layout's
         P.W = P.wd
         return P.wd, P.sc
+    end
+    -- prd18: an older app's step of the height / the scale (Hub's columns 36-38, the player's press) into the saved layout entry
+    local function layStep(ddy, ds, reset)
+        local L = WC.lay
+        local name = type(L) == "table" and type(L.who) == "function" and L.who() or who()
+        if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+        if type(WowCompanionDB.lay) ~= "table" then WowCompanionDB.lay = {} end
+        if type(WowCompanionDB.lay[name]) ~= "table" then WowCompanionDB.lay[name] = {} end
+        local t = WowCompanionDB.lay[name]
+        local e = type(t.hud) == "table" and t.hud or {}
+        local dx, dy, sc = num(e.dx) or 0, num(e.dy) or 0, num(e.s) or P.S_DEF
+        if reset == "y" then dy = 0 elseif reset == "s" then sc = P.S_DEF end
+        -- (the old slider's range: the height Y_MIN..Y_MAX at 100 %)
+        dy = math.max(P.Y_DEF - P.Y_MAX, math.min(P.Y_DEF - P.Y_MIN, dy + (ddy or 0)))
+        sc = math.max(P.S_MIN, math.min(P.S_MAX, sc + (ds or 0)))
+        t.hud = (dx ~= 0 or dy ~= 0 or sc ~= P.S_DEF) and { dx = dx, dy = dy, s = sc } or nil
     end
     -- Hub's column 39: the next setting the step columns move (height -> width -> scale -> height)
     function P.select()
@@ -3583,19 +3711,19 @@ do
                 P.wd = d == 0 and P.W_DEF or math.max(P.W_MIN, math.min(P.W_MAX, P.wd + (d > 0 and P.W_STEP or -P.W_STEP)))
                 keep("prdW", P.wd, P.W_DEF)
             else
-                P.sc = d == 0 and P.S_DEF or math.max(P.S_MIN, math.min(P.S_MAX, P.sc + (d > 0 and P.S_STEP or -P.S_STEP)))
-                keep("prdS", P.sc, P.S_DEF)
+                -- prd18: the scale is the layout's (the saved entry; the player's press)
+                if d == 0 then layStep(0, 0, "s") else layStep(0, d > 0 and P.S_STEP or -P.S_STEP) end
+                P.fromLay()
             end
             P.resize()
+            P.place()
             return P.sel == "w" and P.wd or P.sc
         end
         P.sel = "y"
-        P.y = P.y or P.loadY()
-        if d == 0 then P.y = P.Y_DEF else P.y = math.max(P.Y_MIN, math.min(P.Y_MAX, P.y + (d > 0 and P.STEP or -P.STEP))) end
-        if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
-        if type(WowCompanionDB.prdY) ~= "table" then WowCompanionDB.prdY = {} end
-        WowCompanionDB.prdY[who()] = P.y ~= P.Y_DEF and P.y or nil
-        WowCompanionDB.prdYv = 2                                   -- (a height on today's scale: never shifted)
+        -- prd18: the height is the layout's (the saved entry; one STEP of screen pixels a press, up = d > 0)
+        if d == 0 then layStep(0, 0, "y") else layStep(d > 0 and -P.STEP or P.STEP, 0) end
+        P.fromLay()
+        P.resize()
         P.place()
         return P.y
     end
@@ -3836,8 +3964,26 @@ do
     function P.place()
         if not P.f then return end
         P.f:ClearAllPoints()
-        P.f:SetPoint("TOP", UIParent, "CENTER", 0, u((P.y or P.loadY()) + (P.dy or 0) + (num(P.lift) or 0)))   -- prd15: the guard's lift
+        local y = P.y or P.loadY()
+        P.f:SetPoint("TOP", UIParent, "CENTER", u(num(P.x) or 0), u(y + (P.dy or 0) + (num(P.lift) or 0)))   -- prd15: the guard's lift
     end
+    -- prd18 THE HUD AS A LAYOUT PIECE (Hub's editor gathers it): its anchor is the bars' top-centre, 1080-line pixels from the top-left
+    P.lay = {
+        id = "hud", sn = P.S_MIN, sx = P.S_MAX, ss = P.S_STEP,
+        -- the default anchor (no entry): the screen's centre, 350 below it
+        base = function()
+            local W = type(WC.lay) == "table" and WC.lay.screen() or 1920
+            return W / 2, 540 - P.Y_DEF
+        end,
+        -- the rect's size at entry [e] (its scale) and its top-left from the anchor
+        size = function(e)
+            local sc = ((e and num(e.s)) or P.S_DEF) / 100
+            return (num(P.W) or num(P.wd) or P.W_DEF) * sc, (P.HH + P.BAR_GAP + P.PH) * sc
+        end,
+        off = function(w) return -w / 2, 0 end,
+        on = function() local ok, w = pcall(P.wanted); return ok and w == true end,
+        apply = function() P.fromLay(); P.resize(); P.place() end,
+    }
 
     -- ---------------------------------------------------------------- the values (fed, never read)
     -- prd3: the lag bar (under the health fill), the heals and the shield (past it, clipped to the bar), the cost (on the power fill)
@@ -4592,7 +4738,7 @@ do
         local w = num(P.W) or P.W_DEF
         y = y + P.liftFor(P.partyModeOn())                              -- (the guard's lift the block is going to: Hub fades its rows to it)
         -- (h: the two bars' height, for the solo tab beside the [me][pet] row)
-        return { x = -u(w) / 2 * s, top = u(y) * s, h = u(P.HH + P.BAR_GAP + P.PH) * s,
+        return { x = (u(num(P.x) or 0) - u(w) / 2) * s, top = u(y) * s, h = u(P.HH + P.BAR_GAP + P.PH) * s,        -- prd18: the HUD's x
                  y = u(y - (P.HH + P.BAR_GAP + P.PH + cpx + P.PET_GAP + P.PARTY_GAP)) * s, s = s }
     end
     -- prd15 THE ON-SCREEN GUARD (the user, 2026-11-12: "KEEP IT ON SCREEN"): in Party mode, the lift (spec px, up) that keeps the block -
@@ -4776,6 +4922,9 @@ do
         P.partyOn = P.partyModeOn()                                     -- prd15: every frame (the lift and Hub's grid read it live)
         -- prd15: Party mode on holds the HUD up too (it is the block's [me] row: the grid hangs under it)
         local picked = P.partyWho ~= nil or P.partyOn == true
+        -- prd18: while the layout editor is open the HUD is held up too (why "layout": the piece being moved is seen)
+        local editing = type(WC.lay) == "table" and WC.lay.editing == true
+        picked = picked or editing
         local fight = P.fight()
         local hurt, src = P.hurt()
         if fight then P.lastFight = t end
@@ -4812,7 +4961,7 @@ do
         P.alpha = e
         local dy = -P.TRAVEL * (1 - e)
         if dy ~= P.dy then P.dy = dy; P.place() end
-        P.why = fight and "fight" or (picked and "party") or (powerOff and "power") or (src == "curve" and "curve") or (hurt and "hurt") or (P.alpha > 0 and "fading") or "full"
+        P.why = fight and "fight" or (editing and "layout") or (picked and "party") or (powerOff and "power") or (src == "curve" and "curve") or (hurt and "hurt") or (P.alpha > 0 and "fading") or "full"
         if P.alpha > 0 then
             if not P.f:IsShown() then P.f:Show() end
             P.f:SetAlpha(P.alpha * P.REST * ((P.hudFade and P.petFadeA) or 1))   -- prd15: the HUD fades too while its lift changes

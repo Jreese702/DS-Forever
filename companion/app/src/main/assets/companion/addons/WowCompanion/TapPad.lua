@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad21"     -- pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad22"     -- pad22 THE LAYOUT EDITOR'S CATCHER AND STORE (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"; the design's picks, all the recommended ones: our own pieces first, taps that set an exact spot): WC.lay at the end of this file - the per-character saved layout of our own top-screen pieces (WowCompanionDB.lay[name-realm]), the editor's view of its draft, and THE CATCHER, one full-screen plain button at TOOLTIP strata under every cell and the sink, press only, that reads where a tap landed (its own 60 ms same-spot guard, the pad band and the sink left out, the reach switch); nothing else changed; pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -892,4 +892,176 @@ do
         ev:UnregisterEvent("PLAYER_ENTERING_WORLD")
         pcall(WC.addonsOn)
     end)
+end
+
+-- ---------------------------------------------------------------- pad22 THE LAYOUT EDITOR'S CATCHER AND STORE
+-- The user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu". The design's
+-- picks (all the recommended ones): stage 1 moves DS Forever's OWN top-screen pieces only (the HUD, the compass, the target bar, the
+-- party block, the Nintendo bar, the top chat strip); a tap that sets an EXACT spot; a linked piece follows its parent until it is moved;
+-- one saved layout per character, plus "Copy from character". The editor itself is Hub.lua's (hub55); this is what every owner reads.
+--   THE STORE: WowCompanionDB.lay[name-realm][id] = { dx, dy, s } - our own saved table, plain numbers only: dx / dy in 1080-line pixels
+--   (right / down) from the piece's own default anchor, s its size in percent. No entry = the default (and a linked piece follows its
+--   parent). Written ONLY by the editor's Save (the player's press) and the HUD's one-time move of its old height / scale (Trail prd18);
+--   SvKeep (PadMap m51) carries it with the rest of WowCompanionDB. WC.lay.get(id) is what an owner places by: the editor's VIEW of its
+--   draft while it is open (WC.lay.view: id -> entry, or false = the default), else the saved entry.
+--   THE CATCHER (the design's "absolute channel": a repeated or stale tap changes nothing): one plain Button of ours, the whole screen, at
+--   TOOLTIP strata and frame level 0 - under every pad cell (TOOLTIP, its default level) and the stray-press sink, over every game window
+--   (an invisible window a room keeps open by alpha never takes the tap). The PRESS only (a stray release does nothing); where the press
+--   landed (GetCursorPosition, read only) is handed to the editor in 1080-line pixels. Left out: the pad's band (describe()'s rows, its
+--   gaps too) and the sink at the park point - a tap meant for a spot there would press a cell, so THE REACH SWITCH (L.reach) reads every
+--   tap REACH pixels lower (L.reachPx: never less than the band's own bottom, so a spot at the very top is reached on any screen): the app
+--   taps under the spot. Its own double-press guard: a second press at the same spot within CATCH_REPEAT
+--   (60 ms; TapPad's REPEAT of 0.25 s would cap it at 4 taps a second). INERT (L.inert) it takes the press and does nothing: a fight's
+--   start or the editor's close leaves it so for LINGER_S after its last tap (taps already in flight never reach the world), then hides it.
+--   One real tap test on the Thor is owed before release (TapPad's rule; probe 5 of the design: 1 px accuracy, taps a second).
+do
+    local L = { V = PADV, editing = false, view = nil, reach = false, inert = false, REACH = 160, CATCH_REPEAT = 0.06, CATCH_SAME = 1.5,
+                LINGER_S = 1.5, BAND_PAD = 2, n = 0, refused = 0, lastAt = -1, lastX = nil, lastY = nil, onSpot = nil }
+    WC.lay = L
+    local function plain(v) return (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
+    local function num(v) if type(v) == "number" and plain(v) and v == v and v ~= math.huge and v ~= -math.huge then return v end end
+    L.num = num
+    -- "Name-Realm", the key every per-character store of ours uses
+    function L.who()
+        local ok, n, r = pcall(function() return UnitName("player"), GetRealmName() end)
+        if ok and type(n) == "string" and plain(n) then return n .. "-" .. tostring(r or "") end
+        return nil
+    end
+    -- one entry as whole plain numbers (nil = the default)
+    function L.clean(e)
+        if type(e) ~= "table" then return nil end
+        local dx, dy, s = num(e.dx) or 0, num(e.dy) or 0, num(e.s) or 100
+        return { dx = math.floor(dx + 0.5), dy = math.floor(dy + 0.5), s = math.floor(s + 0.5) }
+    end
+    -- [who]'s saved table (nil = none); never made here
+    function L.store(who)
+        who = who or L.who()
+        local db = type(WowCompanionDB) == "table" and WowCompanionDB.lay or nil
+        local t = who and type(db) == "table" and db[who] or nil
+        return type(t) == "table" and t or nil
+    end
+    function L.saved(id, who) local t = L.store(who); return t and L.clean(t[id]) or nil end
+    -- what an owner places [id] by: the editor's view while it is open, else the saved entry; nil = the default
+    function L.get(id)
+        if L.editing and type(L.view) == "table" then
+            local v = L.view[id]
+            if v == false then return nil end
+            if v ~= nil then return L.clean(v) end
+        end
+        return L.saved(id)
+    end
+    -- the screen in 1080-line pixels: its width (the game's aspect), its height, and the factor from UIParent units
+    function L.screen()
+        local okH, uh = pcall(function() return UIParent:GetHeight() end)
+        local okW, uw = pcall(function() return UIParent:GetWidth() end)
+        uh, uw = okH and num(uh) or nil, okW and num(uw) or nil
+        if not (uh and uw and uh > 0 and uw > 0) then return 1920, 1080, 1 end
+        return uw * 1080 / uh, 1080, 1080 / uh
+    end
+    -- 1080-line pixels -> UIParent units
+    function L.u(px)
+        local _, _, k = L.screen()
+        return px / k
+    end
+
+    -- ---- THE CATCHER
+    local catcher
+    -- the zones a tap is never read in (1080-line pixels): the pad's band (every row it may hold) and the sink
+    function L.forbidden()
+        local out = {}
+        local g = pad.geom
+        if not g or not g.ph or g.ph <= 0 then return out end
+        local k = 1080 / g.ph
+        local rows = math.max(1, pad.nrows or 0)
+        out[#out + 1] = { x = (g.x - L.BAND_PAD) * k, y = (g.y - L.BAND_PAD) * k, w = (COLS * CELL_W + 2 * L.BAND_PAD) * k,
+                          h = (rows * CELL_H + 2 * L.BAND_PAD) * k, why = "pad" }
+        out[#out + 1] = { x = (g.pw * PARK_X - SINK / 2) * k, y = (g.ph * PARK_Y - SINK / 2) * k, w = SINK * k, h = SINK * k, why = "sink" }
+        return out
+    end
+    local function inside(z, x, y) return x >= z.x and x <= z.x + z.w and y >= z.y and y <= z.y + z.h end
+    function L.blocked(x, y)
+        for _, z in ipairs(L.forbidden()) do if inside(z, x, y) then return z.why end end
+        return nil
+    end
+    -- the reach distance: REACH, or more where the pad's band reaches lower (a smaller screen: the band is taller in 1080-line pixels),
+    -- so a spot at the very top always has its tap under the band (the review of 2026-11-16)
+    function L.reachPx()
+        for _, z in ipairs(L.forbidden()) do
+            if z.why == "pad" then return math.max(L.REACH, math.ceil(z.y + z.h + 8)) end
+        end
+        return L.REACH
+    end
+    -- where the press landed, in 1080-line pixels from the top-left (nil = not readable)
+    function L.cursor()
+        local ok, x, y = pcall(GetCursorPosition)
+        x, y = ok and num(x) or nil, ok and num(y) or nil
+        local okS, es = pcall(function() return UIParent:GetEffectiveScale() end)
+        es = okS and num(es) or nil
+        local okH, uh = pcall(function() return UIParent:GetHeight() end)
+        uh = okH and num(uh) or nil
+        if not (x and y and es and es > 0 and uh and uh > 0) then return nil end
+        local k = 1080 / uh
+        return (x / es) * k, (uh - y / es) * k
+    end
+    -- one press on the catcher: the guard, the zones, the reach, then the editor's handler with the spot
+    function L.press()
+        local x, y = L.cursor()
+        if not x then L.refused = L.refused + 1; return false, "cursor" end
+        local t = clock()
+        if L.inert then L.lastAt = t; return false, "inert" end
+        if L.lastX and t - L.lastAt < L.CATCH_REPEAT and math.abs(x - L.lastX) <= L.CATCH_SAME and math.abs(y - L.lastY) <= L.CATCH_SAME then
+            return false, "repeat"                                       -- the tap's own second press
+        end
+        L.lastAt, L.lastX, L.lastY = t, x, y
+        local why = L.blocked(x, y)
+        if why then L.refused = L.refused + 1; return false, why end
+        L.n = L.n + 1
+        local sy = y - (L.reach and L.reachPx() or 0)
+        if type(L.onSpot) == "function" then pcall(L.onSpot, x, sy) end
+        return true
+    end
+    local function make()
+        if catcher then return catcher end
+        catcher = CreateFrame("Button", nil, UIParent)
+        L.catcher = catcher                                              -- for the harness
+        catcher:SetFrameStrata("TOOLTIP")
+        pcall(catcher.SetFrameLevel, catcher, 0)                         -- under every pad cell and the sink (their default level)
+        catcher:SetAllPoints(UIParent)
+        catcher:EnableMouse(true)
+        pcall(catcher.SetMouseMotionEnabled, catcher, false)             -- click only: the parked cursor's hover is unchanged
+        catcher:RegisterForClicks("AnyDown")                             -- the press only
+        catcher:SetScript("OnClick", function(_, _, down) if down ~= false then L.press() end end)
+        catcher:Hide()
+        return catcher
+    end
+    -- on: the catcher shown and live; [fn](x, y) gets every spot
+    function L.catchOn(fn)
+        make()
+        L.onSpot, L.inert, L.lingerTo = fn, false, nil
+        catcher:Show()
+        return true
+    end
+    -- off: inert at once, hidden LINGER_S after its last tap (taps still in flight land on it, never on the world)
+    function L.catchOff()
+        if not catcher or not catcher:IsShown() then return end
+        L.inert = true
+        L.inertAt = clock()
+        local token = {}
+        L.lingerTo = token
+        local function later()
+            if L.lingerTo ~= token or not L.inert then return end
+            local left = L.LINGER_S - (clock() - math.max(L.lastAt or -1, L.inertAt or -1))
+            if left > 0.01 then C_Timer.After(left, later); return end
+            catcher:Hide()
+            L.lingerTo = nil
+        end
+        C_Timer.After(L.LINGER_S, later)
+    end
+    function L.catching() return catcher ~= nil and catcher:IsShown() and not L.inert end
+    -- the catcher as the app reads it: its rect, the zones left out, the reach distance (1080-line pixels)
+    function L.catchDescribe()
+        local w, h = L.screen()
+        return { x = 0, y = 0, w = math.floor(w + 0.5), h = h, no = L.forbidden(), reach = L.reachPx(), on = L.catching() or nil,
+                 inert = (catcher ~= nil and catcher:IsShown() and L.inert) or nil }
+    end
 end

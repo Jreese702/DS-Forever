@@ -163,7 +163,8 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         else -> null
     }
     private fun allRows(): List<GameUi.Row> = when (part) {
-        Part.HUD -> listOfNotNull(GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow())
+        // (HUD height and HUD scale are the layout editor's now: Settings > Top screen > Layout)
+        Part.HUD -> listOfNotNull(GameUi.hudRow(), GameUi.petRow(), GameUi.hudWidthRow())
         Part.TARGET -> listOfNotNull(GameUi.ufTargetRow(), GameUi.ufHpRow(), GameUi.ufTotRow(), ringsRow(), GameUi.nameplatesRow(),
             GameUi.friendlyPlatesRow())
         Part.PARTY -> listOfNotNull(GameUi.ufPartyRow(), GameUi.partyRow())

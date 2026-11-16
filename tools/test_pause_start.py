@@ -215,7 +215,7 @@ for L in (W, T, F, G):
 # ---------------------------------------------------------------- issue #278: Spells DISABLED, pad15 never switched it on (TapPad pad20)
 # the report: "our add-ons: 9 loaded, NOT loaded: WowCompanionSpells:DISABLED" and NO "addonsoff" probe that run. The game's own reason
 # (GetAddOnInfo, what the probe reads) said DISABLED while pad15's one test, GetAddOnEnableState(name, character) == 0, did not hold.
-check('local PADV = "pad21"' in SRC["tappad"], "TapPad says pad21 (pad20 + the shared row)")
+check((int(__import__('re').search(r'local PADV = "pad(\d+)"', SRC["tappad"]).group(1)) >= 21), "TapPad says pad21 (pad20 + the shared row)")
 ADDONS_STUB = r'''
 OFF = { WowCompanionSpells = true }
 ENABLED_CALLS = {}

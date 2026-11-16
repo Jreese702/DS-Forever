@@ -234,6 +234,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private lateinit var reportPage: ReportPage
     private lateinit var pathReview: SafePathReview
+    /** the top-screen layout editor's page (stage 1; the user, 2026-11-16: "we need to make a way to basically edit the UI locations on
+     *  the top screen from our UI menu"): over the Settings room (the bar below it), opened by Top screen > Layout > Edit layout */
+    private lateinit var layoutPage: LayoutView
 
     private fun openReport(sendNow: Boolean = false) {
         if (!::reportPage.isInitialized) return
@@ -741,7 +744,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // TapPad pad21: its row is shared with the Macros room's; asked back on the spells / quests documents' grid (Book b65)
             padSource = { listOf(talentsPad, spellsPad, questsPad).firstOrNull { it?.optJSONObject("rows")?.has("padtab") == true } ?: spellsPad ?: questsPad }
             // the cross-branch review: while the Macros room's row is this row's guest (its document's `sh`), asked back on every showing
-            rowShared = { ::macrosView.isInitialized && macrosView.state?.shared == true }
+            rowShared = { ::macrosView.isInitialized && macrosView.state?.shared == true ||
+                // hub55: the layout editor's row "lay" is this row's guest too (leased while the Settings room holds): asked back as well
+                LayoutModel.Live.doc?.row != null }
         }
         // the Macros room (Spells s10): B at its grid goes HOME (the add-on's macpad BACK); its lazy row is asked on the spells / quests
         // documents' shared grid (Book b63's padtab pick)
@@ -895,8 +900,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.onReportOpenSaved = { openSavedReport() }
         settings.pad.padOverride = { k ->
             (::reportPage.isInitialized && reportPage.isOpen && run { reportPage.padKey(k); true }) ||
-                (::pathReview.isInitialized && pathReview.isOpen && run { pathReview.padKey(k); true })
+                (::pathReview.isInitialized && pathReview.isOpen && run { pathReview.padKey(k); true }) ||
+                (::layoutPage.isInitialized && layoutPage.isOpen && run { layoutPage.padKey(k); true })
         }
+        // the layout editor's page takes B itself (one step back, then out): the capture's B never leads Home while it shows
+        settings.pad.overlayOpen = { ::layoutPage.isInitialized && layoutPage.isOpen }
+        settingsView.onEditLayout = { if (::layoutPage.isInitialized && LauncherHooks.gameUp()) { layoutPage.open(); settings.pad.resyncB() } }
         settingsView.onRouteReview = { if (::pathReview.isInitialized) pathReview.open() }
         if (LauncherHooks.pkg != null) {
             startView.firstLabel = "Save your Battle.net login"; startView.firstW = 680f      // the longer words
@@ -1154,6 +1163,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // SafePath's review (b-safepath-review): over Settings as the report page is, opened by Route data's "Review paths"
             pathReview = SafePathReview(this@CompanionHost).apply { onClosed = { DiagLog.event("safepath", "review closed") } }
             addView(pathReview, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            // the layout editor's page: over the Settings room only (the bar stays below it, a touch there leaves the room and closes it);
+            // B out of it puts Settings' cursor on its tab row, so the next B goes Home
+            layoutPage = LayoutView(this@CompanionHost).apply {
+                onClosed = { toTabs -> DiagLog.event("layout", "editor closed"); if (toTabs) settings.pad.backToTabs() else settings.pad.resyncB() }
+            }
+            addView(layoutPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                .apply { bottomMargin = Strip.HEIGHT })
             reportPage.onSend = { words -> sendReport(words) }
             // Send report's notice on Home (compiling, then ready / failed)
             reportNotice = ReportNotice(this@CompanionHost).apply {
@@ -1258,6 +1274,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (tradOpen() && r != Room.HOME) targetRadial.shut()
         // SafePath's review belongs to Settings: it closes when another room comes up
         if (r != Room.SETTINGS && ::pathReview.isInitialized && pathReview.isOpen) pathReview.close()
+        // so does the layout editor (its unsaved draft goes with it, as the add-on's own close drops it)
+        if (r != Room.SETTINGS && ::layoutPage.isInitialized && layoutPage.isOpen) layoutPage.close(toTabs = false)
         // any room change ends the bar selector first. NO GAP (the user 2026-10-06): into another room the bar's hold is KEPT for that
         // room's own take to pre-empt (capture v7 / v12; HomeBarSelect.closeFor, RoomHandOver.Bar); Home or the same room: freed now
         barSelect.closeFor(r, room)
@@ -1714,6 +1732,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // b-fix (rooms the same on every route): the Character room's More menu / its lists / the save question step back one, as its B
         if (room == Room.CHARACTER && characterView.stepBackByTouch()) {
             Log.i("WCLOG", "home disc: touched with the B look in CHARACTER: one step back (a menu of the room's closed)")
+            return
+        }
+        // the layout editor's page over Settings: the disc is its B too (drop the piece, ask Save / Discard / Cancel with unsaved
+        // changes, then out to Settings' tab row; the next touch goes Home), never a straight Home that drops the draft unasked
+        if (room == Room.SETTINGS && ::layoutPage.isInitialized && layoutPage.isOpen) {
+            layoutPage.backByTouch()
+            Log.i("WCLOG", "home disc: touched with the layout editor open: its B")
             return
         }
         if (room != Room.HOME || strip.bGoesHome || homeView.bGoesHome()) {
@@ -2688,6 +2713,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "dialogpad" -> if (current) android.util.Log.w("WCDLG", "the dialogs have NO tap row: ${msg.optString("why")} (rows ${msg.optInt("rows", -1)})")
             "pvp" -> PvpModel.update(msg)   // the PvP rank (Character room tab 4) + the battleground queues (pvp session)
             "hub" -> GameUi.onHub(msg, current)
+            // the layout editor (Hub hub55): its document, CURRENT or replayed (a replay only shows; the page taps only while it is open)
+            "lay" -> LayoutModel.Live.note(msg)
             // hub22: a new hostile target with Start attack on: the secure /startattack cell (a live document only, never a replay)
             "atkgo" -> if (current) GameUi.startAttack(msg.optString("row", "party"), msg.optInt("col", 36))
             "poi" -> msg.optJSONObject("poi")?.let { if (PoiHarvest.ingest(it)) refreshServices() }

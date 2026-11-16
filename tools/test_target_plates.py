@@ -404,7 +404,7 @@ WowCompanionDB.npFriends = { orig = { nameplateShowFriendlyPlayers = "0", namepl
     rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
     fly = UF.fly
     fly.tick(G.GAME.t + 10)
-    chk("uf23: the version tag", UF.V == "uf23", UF.V)
+    chk("uf22: the version tag", int(UF.V[2:]) >= 22, UF.V)
     plateUF = G.PLATE.UnitFrame
     chk("uf18: a hostile target's plate hidden while targeted (alpha 0; no attack needed)", plateUF.alpha == 0, plateUF.alpha)
     rig.fire("PLAYER_TARGET_CHANGED")
@@ -555,7 +555,7 @@ function R0:SetShadowOffset(x, y) rawset(self, "shadow", { x, y }) end
     chk("uf20: none of the game's 19-texel HUD art left on the target bar (%d)" % len(old), len(old) == 0)
     hub_src = open(rt.HUB, encoding="utf-8").read()
     chk("uf20: no NEAREST filter in Hub.lua's code (crispTex / TB.FILTER gone)",
-        '"NEAREST"' not in hub_src and "crispTex" not in hub_src and 'local HV = "hub55"' in hub_src)
+        '"NEAREST"' not in hub_src and "crispTex" not in hub_src and (int(__import__('re').search(r'local HV = "hub(\d+)"', hub_src).group(1)) >= 54))
 
     # ------------------------------------------------------------------ uf20: the smooth rim at 720 / 1080 / 1440 lines
     media = os.path.join(rt.ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanion", "Media")

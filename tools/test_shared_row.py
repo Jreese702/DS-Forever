@@ -178,7 +178,7 @@ for d, f in (("WowCompanion", "TapPad"), ("WowCompanionSpells", "Spells"), ("Wow
     e = comp(SRC["x_%s_%s" % (d, f)], f)
     check(e is None, "a. Lua 5.1 compiles %s.lua" % f, e or '')
 TP, SP, BK = SRC["x_WowCompanion_TapPad"], SRC["x_WowCompanionSpells_Spells"], SRC["x_WowCompanionSpells_Book"]
-check('local PADV = "pad21"' in TP and 'local SV = "s15"' in SP and 'local BV = "b66"' in BK, "a. the versions: TapPad pad21, Spells s15, Book b65")
+check((int(__import__('re').search(r'local PADV = "pad(\d+)"', TP).group(1)) >= 21) and 'local SV = "s15"' in SP and 'local BV = "b66"' in BK, "a. the versions: TapPad pad21, Spells s15, Book b65")
 check("pad21 THE SHARED ROW" in TP and "s12 THE MACROS ROOM'S ROW SHARED" in SP and "b65 THE SHARED ROW" in BK,
       "a. each changed file's header note names the shared row")
 check('SHARE = "cal"' in SP and 'share = MR.SHARE' in SP, "a. the Macros room's row is the Calendar row's guest")
@@ -199,7 +199,10 @@ check(names.get("mac") == names.get("cal") and L.eval('WowCompanion.pad.rows.mac
 off = [n for n, r in names.items() if not fits(r, 126.6)]
 check(off == [], "b. Thor scale (popupTop 126.6): every row fits above the dialogs", off)
 rows = described(L)
-expect = set(names) - {"cal"}
+# (Hub hub55: the layout editor's row "lay" is a third tenant of "cal", on it only while the Settings room holds: not described here)
+check(names.get("lay") == names.get("cal") and L.eval('WowCompanion.pad.rows.lay.guestOf') == "cal",
+      "b. hub55: lay is a guest of cal too (no row of its own)", (names.get("lay"), names.get("cal")))
+expect = set(names) - {"cal", "lay"}
 check(set(rows) == expect, "b. Thor scale: every row is described (the shared one as its tenant, mac)",
       (sorted(expect - set(rows)), sorted(set(rows) - expect)))
 check(all(x in rows for x in ("mac", "castbar", "radial", "classr")), "b. mac, castbar, radial and classr all placed at the Thor's scale",
@@ -215,7 +218,7 @@ padtab(Ls, 34)
 names_s = dict((k, int(v)) for k, v in Ls.eval('(function() local t = {} for n, r in pairs(WowCompanion.pad.rows) do t[n] = r.row end '
                                              'return t end)()').items())
 rows_s = described(Ls)
-dropped = sorted(n for n in names_s if n != "cal" and n not in rows_s)
+dropped = sorted(n for n in names_s if n not in ("cal", "lay") and n not in rows_s)
 check(dropped == ["bmv", "classr"] and "mac" in rows_s, "b. smallest scale (121.5): only rows 54-55 drop (classr, bmv: as before), mac stays",
       (dropped, rows_s.get("mac")))
 print("INFO rows: Thor scale %d names on %d places, %d described; smallest scale %d described, dropped %s"

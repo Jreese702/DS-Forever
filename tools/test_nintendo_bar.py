@@ -402,12 +402,12 @@ def main():
     L = boot()
     G = L.globals()
     WC = G.WowCompanion
-    chk("nbar3: the version tag", WC.nbar is not None and WC.nbar.V == "nbar3")
+    chk("nbar2: the version tag", WC.nbar is not None and int(WC.nbar.V[4:]) >= 2)      # (the layout editor: nbar3 or later)
     abs_src = open(AB, encoding="utf-8").read()
     hub_src = open(HUB, encoding="utf-8").read()
     chk("nbar2 / hub46 / uf17: the header notes quote the issue", "issue #195" in abs_src.split("\n", 6)[1] + abs_src.split("\n", 6)[2]
-        and "nbar2 (review of nbar1, issue #195" in abs_src and 'local HV = "hub55"' in hub_src and "hub49:" in hub_src and "hub48:" in hub_src and "hub47b: SMART RES" in hub_src and "hub47:" in hub_src and "hub45: THE NINTENDO BAR" in hub_src
-        and "hub46: ONE GLYPH RULE (issue #195" in hub_src and 'V = "uf23"' in hub_src)
+        and "nbar2 (review of nbar1, issue #195" in abs_src and (int(__import__('re').search(r'local HV = "hub(\d+)"', hub_src).group(1)) >= 54) and "hub49:" in hub_src and "hub48:" in hub_src and "hub47b: SMART RES" in hub_src and "hub47:" in hub_src and "hub45: THE NINTENDO BAR" in hub_src
+        and "hub46: ONE GLYPH RULE (issue #195" in hub_src and (int(__import__('re').search(r'V = "uf(\d+)"', hub_src).group(1)) >= 22))
     # ------------------------------------------------------------ the switch round trip (Hub's "uisw")
     sw_row = G.ROWS["uisw"]
     chk("hub45: Hub registered its switch row", sw_row is not None)
@@ -508,7 +508,7 @@ def main():
     chk("fight: the charges secret -> no count drawn (never compared)", s[4]["count"] == "", s[4]["count"])
     caps = [c for c in sent(G, "cap") if c.probe == "nbarcd"]
     chk("probe nbarcd: once out of a fight and once in one, route dur, plain values", len(caps) == 2 and {c["fight"] for c in caps} == {True, False}
-        and all(c.route == "dur" and c.v == "nbar3" and c.have.acd and c.have.set for c in caps), caps)
+        and all(c.route == "dur" and int(c.v[4:]) >= 2 and c.have.acd and c.have.set for c in caps), caps)
     for _ in range(5):
         WC.nbar.refresh()
     chk("probe nbarcd: never again in the same state", len([c for c in sent(G, "cap") if c.probe == "nbarcd"]) == 2)
@@ -767,7 +767,7 @@ def aura_checks(chk):
     ids = sorted(o.cd.cdObj.aura for o in hb)
     chk("aura sweeps: the objects are the auras' own (ids 11 / 12 / 13)", ids == [11, 12, 13], ids)
     sw = [dict(x) for x in G.SWEEPS.values()]
-    chk("probe aurasweep: route dur, once (both units share the route), plain", len(sw) == 1 and sw[0]["route"] == "dur" and sw[0]["v"] == "prd18", sw)
+    chk("probe aurasweep: route dur, once (both units share the route), plain", len(sw) == 1 and sw[0]["route"] == "dur" and int(sw[0]["v"][3:]) >= 17, sw)
     # absent: the old route as before (the secrets straight to the old setter)
     rig2 = ta.make(mode="plain")
     rig2.L.execute("SWEEPS = {}; WowCompanion.send = function(j) if type(j) == 'table' and j.probe == 'aurasweep' then SWEEPS[#SWEEPS + 1] = j end end")

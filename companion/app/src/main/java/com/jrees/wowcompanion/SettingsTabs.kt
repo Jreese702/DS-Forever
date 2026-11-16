@@ -30,6 +30,9 @@ object SettingsTabs {
         LOOK(Tab.GENERAL, "Look"), ACCOUNT(Tab.GENERAL, "Account"), HELP(Tab.GENERAL, "Help"),
         // GitHub #43 cb3 (the user, 2026-11-13: "the tap to cast bar should get its own bottom screen section"): its own group
         HOME(Tab.BOTTOM, "Home"), CAST_BAR(Tab.BOTTOM, "Tap-to-cast bar"), MAP(Tab.BOTTOM, "Map"), CHAT(Tab.BOTTOM, "Chat"),
+        // the layout editor (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI
+        // menu"; the design's pick: a first group "Layout" on Top screen, so it is the one that opens; Your HUD then opens folded)
+        LAYOUT(Tab.TOP, "Layout"),
         HUD(Tab.TOP, "Your HUD"), TARGET(Tab.TOP, "Target"), PARTY(Tab.TOP, "Party"), NAVIGATION(Tab.TOP, "Navigation"),
         WINDOWS(Tab.TOP, "Game windows"),
         BUTTONS(Tab.CONTROLLER, "Buttons"), WHEELS(Tab.CONTROLLER, "Wheels"), SMART_Y(Tab.CONTROLLER, "Smart Y"),
@@ -74,7 +77,10 @@ object SettingsTabs {
         MAP(Group.MAP, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map")),
         CHAT(Group.CHAT, "Chat", listOf("Message input")),
         // ---- Top screen (GameUiSection's parts: the same rows, ids, taps and channels as on QOL / Top screen before)
-        HUD(Group.HUD, "Your HUD", listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale"), Drawer.GAME_UI),
+        // the layout editor's one row: its own page (LayoutView); shown once the add-on set has the editor (a "lay" document came)
+        LAYOUT(Group.LAYOUT, "Layout", listOf("Edit layout")),
+        // HUD height and HUD scale moved into the layout editor (the design's pick); the width stays a row
+        HUD(Group.HUD, "Your HUD", listOf("Resource bar", "Pet bar", "HUD width"), Drawer.GAME_UI),
         TARGET(Group.TARGET, "Target", listOf("Target bar", "Target health text", "Target of target", "Aggro tint", "Enemy nameplates", "Friendly plates"),
             Drawer.GAME_UI),
         PARTY(Group.PARTY, "Party", listOf("DS party frames", "Party frames"), Drawer.GAME_UI),

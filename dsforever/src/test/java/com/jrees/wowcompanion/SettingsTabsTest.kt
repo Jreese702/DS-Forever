@@ -51,7 +51,9 @@ class SettingsTabsTest {
         assertEquals(listOf("Look", "Account", "Help"), SettingsTabs.groups(T.GENERAL).map { it.heading })
         // GitHub #43 cb3 (the user: "the tap to cast bar should get its own bottom screen section")
         assertEquals(listOf("Home", "Tap-to-cast bar", "Map", "Chat"), SettingsTabs.groups(T.BOTTOM).map { it.heading })
-        assertEquals(listOf("Your HUD", "Target", "Party", "Navigation", "Game windows"), SettingsTabs.groups(T.TOP).map { it.heading })
+        // the layout editor (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI
+        // menu"; the design's pick): a first group "Layout" on Top screen
+        assertEquals(listOf("Layout", "Your HUD", "Target", "Party", "Navigation", "Game windows"), SettingsTabs.groups(T.TOP).map { it.heading })
         assertEquals(listOf("Buttons", "Wheels", "Smart Y", "Combat helpers"), SettingsTabs.groups(T.CONTROLLER).map { it.heading })
         assertEquals(listOf("Polestar", "Spoken", "Manners"), SettingsTabs.groups(T.ADDONS).map { it.heading })   // QuestTrail: not installed
         assertEquals(listOf("Frames", "Memory", "Indoor maps", "Streaming"), SettingsTabs.groups(T.PERFORMANCE).map { it.heading })
@@ -71,7 +73,9 @@ class SettingsTabsTest {
             G.CAST_BAR to listOf("Tap-to-cast bar", "In combat"),
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
             G.CHAT to listOf("Message input"),
-            G.HUD to listOf("Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale"),
+            // the layout editor's row; HUD height and HUD scale moved into its page (the width stays a row)
+            G.LAYOUT to listOf("Edit layout"),
+            G.HUD to listOf("Resource bar", "Pet bar", "HUD width"),
             G.TARGET to listOf("Target bar", "Target health text", "Target of target", "Aggro tint", "Enemy nameplates", "Friendly plates"),
             G.PARTY to listOf("DS party frames", "Party frames"),
             G.NAVIGATION to listOf("Compass bar", "Compass follows the camera", "World markers", "Polestar on the top screen"),
@@ -93,7 +97,7 @@ class SettingsTabsTest {
         for (g in G.values()) assertEquals(g.heading, want[g], B.values().filter { it.group == g }.flatMap { it.rows })
         // and each group's tab
         val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
-            T.TOP to listOf(G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
+            T.TOP to listOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
             T.ADDONS to listOf(G.POLESTAR, G.SPOKEN, G.QUESTTRAIL, G.MANNERS), T.PERFORMANCE to listOf(G.FRAMES, G.MEMORY, G.INDOOR, G.STREAMING))
         for ((t, gs) in tabOf) assertEquals(t.label, gs, G.values().filter { it.tab == t })
         // who draws the rows that left their old view: Home's section still draws its attack row, GameUiSection the Top screen rows
@@ -151,7 +155,8 @@ class SettingsTabsTest {
             // the user's pick 2026-11-16 (voice to text): General > Look > Voice typing
             listOf("Voice typing")
         val now = B.values().flatMap { it.rows }
-        assertEquals(before.toSet(), now.toSet())
+        // the layout editor (the user, 2026-11-16): HUD height and HUD scale are its page's now (its own row "Edit layout" opens it)
+        assertEquals((before - setOf("HUD height", "HUD scale") + "Edit layout").toSet(), now.toSet())
         assertEquals("a row in two places", now.size, now.toSet().size)
     }
 
@@ -179,7 +184,9 @@ class SettingsTabsTest {
         // the user's pick 2026-11-16 (the design's "five headings with no folding on this tab"): Top screen's tiles never fold either
         assertEquals(false, T.TOP.folds)
         assertEquals(T.values().filter { it != T.GENERAL && it != T.TOP }, T.values().filter { it.folds })
-        assertEquals(setOf(G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), SettingsTabs.openOnShow(T.TOP))
+        // the layout editor's group first (feat/big-layout's pick), and with the tiles' no-folding tab (feat/big-uimenus) every group opens
+        assertEquals(setOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), SettingsTabs.openOnShow(T.TOP))
+        assertEquals(G.LAYOUT, SettingsTabs.groups(T.TOP).first())
     }
 
     /** 2026-11-09: Performance on the row (Lossless frame generation), last, with its four groups */
@@ -229,7 +236,8 @@ class SettingsTabsTest {
         // 11-16: Voice typing under the language (the user's pick: app-wide, like Language)
         assertEquals(listOf(B.THEME, B.LANGUAGE, B.VOICE, B.SCREENS, B.ACCOUNT, B.GAME_ACCOUNT, B.WINDOWS_ID, B.HELP), SettingsTabs.viewBlocks(T.GENERAL))   // + the status (GameUiSection)
         assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.BOTTOM))                            // under Home's section
-        assertEquals(emptyList<B>(), SettingsTabs.viewBlocks(T.TOP))                                   // all GameUiSection's tiles
+        // the layout editor's row (its page's Open); the rest, Polestar's included: GameUiSection's tiles
+        assertEquals(listOf(B.LAYOUT), SettingsTabs.viewBlocks(T.TOP))
         assertEquals(listOf(B.CONTROLLER, B.PET_B, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT, B.SMART_Y),
             SettingsTabs.viewBlocks(T.CONTROLLER))
         // only the wheels keep a sub-heading of their own inside their group
