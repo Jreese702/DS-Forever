@@ -30,8 +30,16 @@ object DependencyAddons {
     data class Dep(val folder: String, val repo: String, val asset: String, val assetRegex: Regex? = null, val multi: Boolean = false,
                    val optIn: Boolean = false)
 
+    /**
+     * GitHub #293 (1.0.32: "available quest won't show in the map"; every 1.0.32 report: "QuestieDB skipped (no QuestieDB-Forever.zip
+     * in v1.1.1)"): from v1.0.11 (2026-11-05) QuestieDB names its packages with the version, "QuestieDB-1.1.1-Forever.zip", so the exact
+     * name matched no asset and no new install or update came in (the Map's "!" givers come from QuestieDB). Both spellings are taken;
+     * never another flavour's package, the "-all" one or a preview build's ("QuestieDB-1.1.1-dev.4588c44-Forever.zip").
+     */
+    val QUESTIEDB_ASSET = Regex("""QuestieDB(-\d+(\.\d+)*)?-Forever\.zip""")
+
     val DEPS = listOf(
-        Dep("QuestieDB", "Questie/QuestieDB", "QuestieDB-Forever.zip"),
+        Dep("QuestieDB", "Questie/QuestieDB", "QuestieDB-Forever.zip", assetRegex = QUESTIEDB_ASSET),
         // POLESTAR is part of the base install too (the user, 2026-11-12: "including this addon to the base install like questie"),
         // but PINNED (v0.2.5, its size and sha256) and switched by the player's answer (PolestarGuide): ThirdPartyAddons.POLESTAR,
         // installed by the same start step (ThirdPartyAddons.applyAtStart, from run below), never a second path here
@@ -101,8 +109,7 @@ object DependencyAddons {
         if (installed != null && compare(installed, latest) >= 0) return Result(dep, "${dep.folder} $installed (up to date)")
         val assets = rel.optJSONArray("assets") ?: throw IOException("no ${dep.asset} in $tag")
         val all = (0 until assets.length()).mapNotNull { assets.optJSONObject(it) }
-        val asset = all.firstOrNull { a -> dep.assetRegex?.matches(a.optString("name")) ?: (a.optString("name") == dep.asset) }
-            ?: throw IOException("no ${dep.asset} in $tag")
+        val asset = assetOf(dep, all) ?: throw IOException("no ${dep.asset} in $tag")
         val size = asset.optLong("size")
         // GitHub's own digest, else the release's SHA256SUMS line for this asset
         var sha = asset.optString("digest").removePrefix("sha256:").lowercase()
@@ -132,6 +139,10 @@ object DependencyAddons {
         File(cache, "deps").listFiles()?.filter { it.name.startsWith("${dep.folder}-") && it != zip }?.forEach { it.delete() }
         return Result(dep, if (installed == null) "${dep.folder} $latest installed" else "${dep.folder} updated $installed -> $latest", true)
     }
+
+    /** [dep]'s package among a release's [assets]: its pattern ([Dep.assetRegex]) when it has one, else its exact name; null = none */
+    internal fun assetOf(dep: Dep, assets: List<JSONObject>): JSONObject? =
+        assets.firstOrNull { a -> dep.assetRegex?.matches(a.optString("name")) ?: (a.optString("name") == dep.asset) }
 
     /** the checksum a SHA256SUMS text gives [name] ("<sha256>  <name>" lines, a "*" before the name allowed), or null */
     internal fun sumFor(text: String, name: String): String? = text.lineSequence().map { it.trim() }.mapNotNull { l ->
