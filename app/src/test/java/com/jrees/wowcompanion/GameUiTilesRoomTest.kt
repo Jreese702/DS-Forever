@@ -369,6 +369,132 @@ class GameUiTilesRoomTest {
         assertTrue(MediaArt.bytes() > 0)
     }
 
+    // ---------------------------------------------------------------- in a window, as on the device (the views' posts run)
+
+    /** the room in an activity's window: a view's post runs there (the band's reveal scroll, the add-on listeners' refresh), which a
+     *  detached room never does (the tests above, and the renders, scroll by hand) */
+    private fun windowed(): Pair<SettingsRoom, android.widget.ScrollView> {
+        Settings.init(app); SettingsTabs.init(app); GameUi.init(app); art()
+        val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        val v = SettingsView(act) { }
+        val r = SettingsRoom(act, v) { null }
+        act.setContentView(r)
+        r.show(SettingsTabs.Tab.TOP)
+        settle(r)
+        val sc = SettingsRoom::class.java.getDeclaredField("scroll").apply { isAccessible = true }.get(r) as android.widget.ScrollView
+        return r to sc
+    }
+
+    /** a few of the window's frames: the posts run, a smooth scroll runs out, the page is drawn (the pad resolves the cursor there) */
+    private fun settle(r: View) {
+        repeat(8) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper(300, java.util.concurrent.TimeUnit.MILLISECONDS)
+            val root = r.rootView
+            if (root.width > 0 && root.height > 0) root.draw(Canvas(Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)))
+        }
+    }
+
+    /** one press in the window */
+    private fun pressW(r: SettingsRoom, k: String) { r.pad.onPad(JSONObject().put("k", k).put("n", ++n)); settle(r) }
+
+    /** THE BAND COMES INTO VIEW (the design: "the tile and its band scroll into view"; the builder's renders scrolled by hand): A on a
+     *  tile low on the page, or a tap there, and the page moves so the tile and its whole band show; B brings the tile back */
+    @Test @Config(qualifiers = "w1240dp-h1080dp-mdpi")
+    fun theBandComesIntoViewInAWindow() {
+        val (r, sc) = windowed()
+        game(); settle(r)
+        assertTrue("the page is taller than the window", sc.getChildAt(0).height > sc.height)
+        fun inView(id: String) {
+            val p = partOf(r, id)
+            val top = contentTop(r, p)!!
+            val tile = tileBoxes(r).getValue(id)
+            val band = p.bandBox()!!.let { RectF(it.left, it.top + top, it.right, it.bottom + top) }
+            val y0 = sc.scrollY.toFloat(); val y1 = y0 + sc.height
+            assertTrue("$id tile ${tile.top}..${tile.bottom} in $y0..$y1", tile.top >= y0 && tile.bottom <= y1)
+            assertTrue("$id band ${band.top}..${band.bottom} in $y0..$y1", band.top >= y0 && band.bottom <= y1)
+        }
+        // touch: the page at its top, a tap on the Target frame (Game windows' second row, below the window)
+        sc.scrollTo(0, 0); settle(r)
+        val tf = tileBoxes(r).getValue(GameUi.TARGET_ID)
+        assertTrue("the Target frame starts below the window", tf.bottom > sc.height)
+        val p = partOf(r, GameUi.TARGET_ID)
+        tap(p, tf.centerX(), tf.centerY() - contentTop(r, p)!!); settle(r)
+        assertEquals(GameUi.TARGET_ID, openTile(r))
+        inView(GameUi.TARGET_ID)
+        r.gameUis.forEach { it.closeSelection() }; sc.scrollTo(0, 0); settle(r)
+        // the controller: down the tiles to Game windows' second row, A there - the cursor stays on its tile, the band in view
+        r.pad.enter(); r.show(SettingsTabs.Tab.TOP, force = true)
+        r.pad.onGuestAck(JSONObject().put("op", "hold").put("ok", true)); settle(r)
+        repeat(12) { if (r.pad.focusBox() != tileBoxes(r)[GameUiSection.TIPS_ID]) pressW(r, "PADDDOWN") }
+        assertEquals(tileBoxes(r).getValue(GameUiSection.TIPS_ID), r.pad.focusBox())
+        pressW(r, "PAD1")
+        assertEquals(GameUiSection.TIPS_ID, openTile(r))
+        assertEquals("the cursor stays on the tile", tileBoxes(r).getValue(GameUiSection.TIPS_ID), r.pad.focusBox())
+        inView(GameUiSection.TIPS_ID)
+        // A on the Resource bar's tile up top (Up through the page): the band moves there, and it is the one in view
+        repeat(12) { if (r.pad.focusBox() != tileBoxes(r)[GameUi.HUD_ID]) pressW(r, "PADDUP") }
+        pressW(r, "PAD1")
+        assertEquals(GameUi.HUD_ID, openTile(r))
+        assertEquals(tileBoxes(r).getValue(GameUi.HUD_ID), r.pad.focusBox())
+        inView(GameUi.HUD_ID)
+        // into the band, then B: the band closes, the cursor on the tile and in view
+        pressW(r, "PADDDOWN"); pressW(r, "PADDDOWN")
+        pressW(r, "PAD2")
+        assertNull(openTile(r))
+        val hud = tileBoxes(r).getValue(GameUi.HUD_ID)
+        assertEquals(hud, r.pad.focusBox())
+        assertTrue(hud.top >= sc.scrollY && hud.bottom <= sc.scrollY + sc.height)
+    }
+
+    /** POLESTAR'S TILE (it was SettingsView's Show / Hide row; the switch says "hidden"): there while Polestar is in use, On = its frame
+     *  shown; the choice writes the switch the right way round; the guide off takes the tile (and its open band) away */
+    @Test @Config(qualifiers = "w1240dp-h1080dp-mdpi")
+    fun polestarsTileSwitchesItsFrame() {
+        ThirdPartyAddons::class.java.getDeclaredField("noFetch").apply { isAccessible = true }.setBoolean(null, true)   // no downloads here
+        val dirF = ThirdPartyAddons::class.java.getDeclaredField("dir").apply { isAccessible = true }
+        val stateF = ThirdPartyAddons::class.java.getDeclaredField("stateJ").apply { isAccessible = true }
+        val savedDir = dirF.get(ThirdPartyAddons); val savedState = stateF.get(ThirdPartyAddons)
+        try {
+            // Polestar's core in the game (its state as the launcher's step writes it)
+            dirF.set(ThirdPartyAddons, null)
+            stateF.set(ThirdPartyAddons, JSONObject().put("polestar/core", JSONObject().put("in", ThirdPartyAddons.POLESTAR.core.tag)))
+            val (r, _) = windowed()
+            game(); settle(r)
+            val nav = r.gameUis.single { it.part == GameUiSection.Part.NAVIGATION }
+            assertEquals("the guide not chosen: no tile", listOf(GameUiSection.COMPASS_ID, GameUi.WM_ID), nav.tileIds())
+            Settings.polestarGuide = PolestarGuide.ON; settle(r)
+            assertEquals(listOf(GameUiSection.COMPASS_ID, GameUi.WM_ID, GameUiTiles.PS_ID), nav.tileIds())
+            assertEquals(3, nav.focusTargets().size)
+            val row = { GameUiSection::class.java.getDeclaredMethod("rowOf", String::class.java).apply { isAccessible = true }
+                .invoke(nav, GameUiTiles.PS_ID) as GameUi.Row? }
+            // the game says its frame is shown ("ps" = hidden: false): On
+            assertEquals(UiMode.ON, row()!!.mode)
+            assertEquals(GameUiTiles.Badge.ON, GameUiTiles.badge(row()))
+            val t = nav.focusTargets()[2]
+            tap(nav, t.centerX(), t.centerY()); settle(r)
+            assertEquals(GameUiTiles.PS_ID, nav.openTile)
+            val b = nav.focusTargets().drop(3)
+            assertEquals("On / Off", 2, b.size)
+            // Off: the switch's "hidden" wanted; the picture follows (dimmed), the badge waits for the game
+            tap(nav, b[1].centerX(), b[1].centerY()); settle(r)
+            assertEquals(true, GameUi.swWant(GameUi.SW_PS))
+            assertEquals(UiMode.OFF, row()!!.mode)
+            assertEquals(GameUiTiles.Badge.SENT, GameUiTiles.badge(row()))
+            // On again: shown wanted, the game agrees
+            tap(nav, b[0].centerX(), b[0].centerY()); settle(r)
+            assertEquals(false, GameUi.swWant(GameUi.SW_PS))
+            assertEquals(GameUiTiles.Badge.ON, GameUiTiles.badge(row()))
+            // the guide off: the tile goes, its band with it (B has nothing of it to close)
+            Settings.polestarGuide = PolestarGuide.OFF; settle(r)
+            assertEquals(listOf(GameUiSection.COMPASS_ID, GameUi.WM_ID), nav.tileIds())
+            assertNull(nav.openTile)
+            assertTrue(r.gameUis.none { it.hasSelection })
+        } finally {
+            dirF.set(ThirdPartyAddons, savedDir); stateF.set(ThirdPartyAddons, savedState)
+            Settings.polestarGuide = null
+        }
+    }
+
     // ---------------------------------------------------------------- the renders (UIMENUS_SHOTS_DIR)
 
     @Test fun shots() {
