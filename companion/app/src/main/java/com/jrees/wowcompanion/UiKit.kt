@@ -2914,8 +2914,13 @@ object UiKit {
      * lies round the frame and not over the picture. The Controller room's button being edited while a chooser is open (the chooser's
      * gold box is the one cursor). Draw it after the slot. Without the picture: nothing.
      */
-    fun checkedGlow(c: Canvas, r: RectF) {
-        val t = tex("slot_checked") ?: return
+    fun checkedGlow(c: Canvas, r: RectF, orHilite: Boolean = false) {
+        // bags-gear1 ([orHilite]: the equip slide-out's slot it is open for): without the kit's picture, the game's own checked hilite
+        // (checkbuttonhilight, the Bags room's selected slot) over the slot itself
+        val t = tex("slot_checked") ?: run {
+            if (orHilite) Icons.ui("checkbuttonhilight")?.let { b -> pHilite.colorFilter = hiliteFilter(); c.drawBitmap(b, null, r, pHilite) }
+            return
+        }
         val g = r.width() * 0.2f
         c.drawBitmap(t, null, RectF(r.left - g, r.top - g, r.right + g, r.bottom + g), pBmp)
     }
@@ -2940,6 +2945,29 @@ object UiKit {
             val p = numberPaint(s * 0.38f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
             c.drawText(Tr.t(count.toString()), r.right - 5f, r.bottom - 6f, p)
         }
+    }
+
+    private val pHilite = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD) }
+
+    /** which way a [chevron] points */
+    enum class Chevron { UP, DOWN, LEFT, RIGHT }
+
+    private val pChevron = Paint(Paint.ANTI_ALIAS_FLAG)
+    /**
+     * A SMALL GOLD CHEVRON: "there is more this way" (Bags' cut tooltip first; bags-gear1: the equip slide-out's rail when it holds
+     * more than it shows). Centred on ([cx], [cy]), 24 px across, pointing [dir], at [alpha].
+     */
+    fun chevron(c: Canvas, cx: Float, cy: Float, dir: Chevron, alpha: Int = 255) {
+        pChevron.color = Theme.gold; pChevron.alpha = alpha; pChevron.style = Paint.Style.FILL
+        val p = android.graphics.Path()
+        when (dir) {
+            Chevron.UP -> { p.moveTo(cx - 12f, cy + 6f); p.lineTo(cx + 12f, cy + 6f); p.lineTo(cx, cy - 8f) }
+            Chevron.DOWN -> { p.moveTo(cx - 12f, cy - 6f); p.lineTo(cx + 12f, cy - 6f); p.lineTo(cx, cy + 8f) }
+            Chevron.LEFT -> { p.moveTo(cx + 6f, cy - 12f); p.lineTo(cx + 6f, cy + 12f); p.lineTo(cx - 8f, cy) }
+            Chevron.RIGHT -> { p.moveTo(cx - 6f, cy - 12f); p.lineTo(cx - 6f, cy + 12f); p.lineTo(cx + 8f, cy) }
+        }
+        p.close()
+        c.drawPath(p, pChevron)
     }
 
     /**

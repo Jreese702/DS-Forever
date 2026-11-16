@@ -25,6 +25,10 @@ import kotlin.math.min
  * FIRST BUILD = LOOK-ONLY (user ruling): folding a heading and choosing an entry or a gear slot are the room's own view; the game's
  * check boxes are SHOWN, not pressed. What reaches the game since: the gear sets' Equip / Save, a worn piece's kits (X / Apply) and,
  * uneq1, its More menu (Y / the card's More: Unequip, [WornMore]); char-more: Replace ([WornReplace]) and Enchant ([KitFit]) there too.
+ * bags-gear1 (the user, 2026-11-16: "X opens a slide-out of ARMOR (item icons) next to the item. It lists the options for that slot, plus a
+ * blank entry that unequips."; "The Y text menu stays for enchant and bind (use-effect items)."): X on a slot = THE EQUIP SLIDE-OUT
+ * ([SlideOut]: the bags' pieces for it, then the blank = Unequip); Y = Enchant, and Bind to a Button for a piece with a use effect (the
+ * Spellbook's Bind box, hosted by this room: Character c19).
  *
  * Owned elsewhere and called here: the paper doll is Bags' (`Doll.kt`, one doll for both rooms) and so are the worn pieces'
  * data and tooltip lines (`bags.equipped`); tab 4's contents are the pvp session's ([pvpDrawer], set by the activity once
@@ -48,15 +52,17 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         WornMore.bLeadsHome(ownOpen(), model.setPad?.gameAsks == true, model.setPad?.bToGame == true)
 
     /** something of the room's own over it: the More menu, a list of it, the kit list, the save question */
-    private fun ownOpen(): Boolean = moreFor != null || kitFor != null || replFor != null || model.setPad?.ask != null
+    private fun ownOpen(): Boolean = moreFor != null || kitFor != null || railFor != null || model.setPad?.ask != null ||
+        model.setPad?.box == true                       // bags-gear1: the slide-out; the Bind box this room hosts (c19: B is the box's)
 
     /** b-fix: a touch on the B disc (Home's swirl wearing B) is B: one step back while something of the room's own is open (true =
      *  it closed one step here and the room stays), the same as the pad's B and the menu's own Back */
     fun stepBackByTouch(): Boolean {
         if (model.setPad?.gameAsks == true) return false
         return when {
+            model.setPad?.box == true -> { boxKey("b"); true }                 // bags-gear1: the hosted Bind box's Back
+            railFor != null -> { closeRail(); invalidate(); true }             // bags-gear1: the slide-out goes back in
             kitFor != null -> { closeKits(); invalidate(); true }
-            replFor != null -> { closeSub(); invalidate(); true }
             moreFor != null -> { closeMore(); invalidate(); true }
             model.setPad?.ask != null -> { model.setPad?.no?.let { setTap("no", it) }; true }
             else -> false
@@ -138,7 +144,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         roomShown = false; openWanted = false; holdSent = false
         // b-fix (the user on 1462: "... leaves the menu open"): the room left = its More menu / lists are gone with it (never drawn again
         // on the next visit); the add-on forgets its own when the controller goes (onLost / the leave), so nothing is tapped for it here
-        moreFor = null; kitFor = null; replFor = null; moreSeen = false; subSeen = false
+        moreFor = null; kitFor = null; moreSeen = false; subSeen = false; closeRailNow()
         return tapCell("out", cell)
     }
 
@@ -201,11 +207,13 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             if (active) openWhenHeld()
         }
         if ("pad" in changed) model.pad?.let { key -> model.pad = null; pending.addLast(key) }
+        if ("eqs" in changed && current) watchTick()                  // bags-gear1 (C6): the game's question pauses the watch
         if ("eqs" in changed && current) model.setPad?.let { sp ->
             // uneq1: the add-on's `more` went false while the menu is open (B closed it there): one step back here too
-            if (sp.more) moreSeen = true else if (moreSeen && (moreFor != null || kitFor != null)) { moreSeen = false; closeMore(tell = false) }
-            // char-more: its list flag went off while a Replace / Enchant list is open (B there): back to the menu, as B does
-            if (sp.sub) subSeen = true else if (subSeen && sp.more && moreFor != null && (replFor != null || kitFor != null)) closeSub(tell = false)
+            // bags-gear1 (C12): the slide-out too (B on the pad: the add-on closed it, the rail goes back in)
+            if (sp.more) moreSeen = true else if (moreSeen && (moreFor != null || kitFor != null || railFor != null)) { moreSeen = false; closeMore(tell = false) }
+            // char-more: its list flag went off while the Enchant list is open over the menu (B there): back to the menu, as B does
+            if (sp.sub) subSeen = true else if (subSeen && sp.more && moreFor != null && kitFor != null) closeSub(tell = false)
         }
         if ("eqs" in changed && current) model.setPad?.ack?.takeIf { it.op == "unequip" }?.let { a ->
             // uneq2 (review): the add-on re-sends its LAST ack in every eqs part, so an old answer (another piece, another visit) is
@@ -215,7 +223,14 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
                 if (WornMore.fresh(unequipSentAt, android.os.SystemClock.uptimeMillis())) WornMore.say(a.ok, a.why)?.let { kitSay(it) }
             }
         }
-        if ("eqs" in changed && current) model.setPad?.ack?.takeIf { it.op != "unequip" }?.let { a ->
+        if ("eqs" in changed && current) model.setPad?.ack?.takeIf { it.op == "bind" }?.let { a ->
+            // bags-gear1 (Character c19): the Bind box's opening answered; only an answer to this room's own Bind tap is said
+            if (a.seq != ackShownSeq) {
+                ackShownSeq = a.seq
+                if (WornMore.fresh(bindSentAt, android.os.SystemClock.uptimeMillis())) WornMore.say(a.ok, a.why)?.let { kitSay(it) }
+            }
+        }
+        if ("eqs" in changed && current) model.setPad?.ack?.takeIf { it.op != "unequip" && it.op != "bind" }?.let { a ->
             if (a.seq != ackShownSeq) {
                 ackShownSeq = a.seq; ackUntil = android.os.SystemClock.uptimeMillis() + 4000L
                 postInvalidateDelayed(4050L)
@@ -262,7 +277,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val list = slotKits(slot)
         if (list.isEmpty()) { kitSay(if (kits().isEmpty()) "No armor kits, stones or enchants in your bags" else "Nothing fits"); return }
         if (bagsCtx != null) { kitSay("Window open"); return }          // char-more2: the kit's cell would sell / deposit it
-        moreFor = null; replFor = null; moreSeen = false; subSeen = false
+        moreFor = null; moreSeen = false; subSeen = false; closeRailNow()
         kitFor = slot; kitSel = 0
         model.setPad?.moreOn?.let { setTap("more on (kits)", it) }
         invalidate()
@@ -281,7 +296,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         // select -> ONE action: the list (and a More menu under it) is done; the add-on hears it in the same batch as the kit's use
         val sp = model.setPad
         val off = sp?.moreOff?.takeIf { sp.row.isNotEmpty() }?.let { listOf(sp.row to it) } ?: emptyList()
-        kitFor = null; moreFor = null; replFor = null; moreSeen = false; subSeen = false
+        kitFor = null; moreFor = null; moreSeen = false; subSeen = false
         val g = model.grid
         val ok = g != null && TapBridge.tapsSpaced(context, g.pad, off + listOf("bag$bag" to s - 1), 120L)
         Log.i(TAG, "character: kit bag$bag:${s - 1} for slot $slot -> ${if (ok) "tapped" else "refused"}")
@@ -357,23 +372,26 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         bags.optJSONObject("pad")?.let { bagsPad = it }
         // char-more2: the game window that changes what a bag cell's tap does (vendor / bank / mail / trade / auction: the Bags room's ctx)
         bagsCtx = bags.optString("ctx").takeIf { it.isNotEmpty() && it[0].code > 3 }
-        bags.optJSONObject("equipped")?.let { equipped = it; if (model.tab == CharTab.CHARACTER) invalidate() }
+        bags.optJSONObject("equipped")?.let { equipped = it; if (model.tab == CharTab.CHARACTER) invalidate(); watchTick() }
     }
+
+    /** bags-gear1 (D4a): the game's full tooltip a Bags visit kept for bag piece (bag, slot), or null (BagsView.keptTip, the host's) */
+    var bagTip: (Int, Int) -> JSONObject? = { _, _ -> null }
 
     // ------------------------------------------------------------------ uneq1: A WORN PIECE'S MORE MENU (the user's picks, 2026-11-13: "choose a
     // worn slot, Y = More opens a small menu with 'Unequip' first (A does it, B back, Up/Down moves; touch: a More card button with the Y
     // glyph)"; "WEAPONS (slots 16,17,18) MAY be unequipped in combat, armor is refused in combat"). The rules are [WornMore]'s. Opening it
     // taps the add-on's `moreon` (B is the room's then: one step back closes it, the add-on says `more` false), closing it `moreoff`.
+    // bags-gear1 (the user, 2026-11-16: "The Y text menu stays for enchant and bind (use-effect items)."): the menu is Enchant, and Bind to
+    // a Button for a piece with a use effect ([WornMore.yRows]); Enchant alone = Y opens the kit list at once. Unequip and Replace are X's
+    // slide-out now (THE EQUIP SLIDE-OUT, below).
     private var moreFor: Int? = null
     private var moreSel = 0
     private var moreSeen = false                    // the add-on has said `more` true for this menu (its false then closes it)
     private var unequipSentAt = 0L                  // uneq2: uptime of this room's last unequip batch (0 = none): only its answer is said
+    private var bindSentAt = 0L                     // bags-gear1: uptime of this room's last Bind batch (0 = none): only its answer is said
     private val moreHits = ArrayList<Pair<RectF, Int>>()
     private var subSeen = false                     // char-more: the add-on has said `msub` true for the open list (its false: back)
-    // char-more: the Replace list (the worn slot it is open for) over the menu
-    private var replFor: Int? = null
-    private var replSel = 0
-    private val replHits = ArrayList<Pair<RectF, Int>>()
 
     /** the pad that has both cells of the route (the bags document's is the newer), else null: nothing is tapped */
     private fun routePad(): JSONObject? {
@@ -385,10 +403,17 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         return null
     }
 
-    /** char-more: the bags' pieces for worn [slot] (the game's slot rules; what the player can't wear left out) */
-    private fun replPicks(slot: Int) = WornReplace.picks(bagItems(), slot, equipped?.optBoolean("dw") == true)
+    /** something is worn in [slot] (0 = the ammo slot) */
+    private fun wornHas(slot: Int): Boolean =
+        if (slot == WornReplace.AMMO) equipped?.optJSONObject("ammo")?.has("id") == true else worn()[slot]?.has("id") == true
 
-    /** char-more: the pad and the cells that put [p] into worn [slot] now (the More menu's close first, on the add-on's row), or null */
+    private fun dualWield() = equipped?.optBoolean("dw") == true
+
+    /** bags-gear1: the bags' pieces for worn [slot] (the game's slot rules; what the player can't wear left out; ammo: the bags' ammo) */
+    private fun railPicks(slot: Int) =
+        WornReplace.picks(bagItems(), slot, dualWield(), equipped?.optJSONObject("ammo")?.optInt("id", 0)?.takeIf { it > 0 })
+
+    /** char-more: the pad and the cells that put [p] into worn [slot] now (the menu's close first, on the add-on's row), or null */
     private fun replRoute(p: WornReplace.Pick, slot: Int): Pair<JSONObject, List<Pair<String, Int>>>? {
         val sp = model.setPad
         val off = sp?.moreOff?.takeIf { sp.row.isNotEmpty() }
@@ -400,44 +425,47 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         return null
     }
 
-    private fun moreRows(slot: Int): List<WornMore.Row> {
-        val combat = model.combat
-        val picks = replPicks(slot)
-        val window = bagsCtx != null
-        val now = picks.filter { WornReplace.now(it, slot, combat, window) }
-        val fits = WornMore.Fits(picks.size, now.size, now.isEmpty() || now.any { replRoute(it, slot) != null },
-            kits().size, slotKits(slot).size, window)
-        return WornMore.rows(slot, worn()[slot]?.has("id") == true, combat, freeGeneral,
-            model.setPad?.unequip != null && routePad() != null, fits)
+    /** bags-gear1: the Y menu of worn [slot]: Enchant, and Bind to a Button for a piece with a use effect */
+    private fun moreRows(slot: Int): List<WornMore.Row> = WornMore.yRows(slot, wornHas(slot), worn()[slot]?.optBoolean("use") == true,
+        model.combat, kits().size, slotKits(slot).size, bagsCtx != null, model.setPad?.bindArm != null && routePad() != null)
+
+    /** Y on a worn slot (or the card's Y button): the menu, or with Enchant alone the kit list at once (G8) */
+    private fun openY(slot: Int) {
+        val rows = moreRows(slot)
+        if (rows.isEmpty()) return
+        if (WornMore.kitsAtOnce(rows)) { openKits(slot); return }
+        openMore(slot)
     }
 
     private fun openMore(slot: Int) {
-        if (moreRows(slot).isEmpty()) return            // ammo: no menu
-        moreFor = slot; moreSel = 0; moreSeen = false; subSeen = false; kitFor = null; replFor = null
+        if (moreRows(slot).isEmpty()) return            // nothing worn there, ammo: no menu
+        closeRailNow()
+        moreFor = slot; moreSel = 0; moreSeen = false; subSeen = false; kitFor = null
         model.setPad?.moreOn?.let { setTap("more on", it) }
         invalidate()
     }
 
-    /** the whole More menu closes, with any list over it; [tell] = say so to the add-on (`moreoff`) */
+    /** the whole More menu closes, with any list over it, and the slide-out; [tell] = say so to the add-on (`moreoff`) */
     private fun closeMore(tell: Boolean = true) {
-        if (moreFor == null && kitFor == null && replFor == null) return
-        moreFor = null; kitFor = null; replFor = null; subSeen = false
+        if (moreFor == null && kitFor == null && railFor == null) return
+        moreFor = null; kitFor = null; subSeen = false
+        if (railFor != null) closeRail(tell = false)
         if (tell) model.setPad?.moreOff?.let { setTap("more off", it) }
         invalidate()
     }
 
-    /** char-more: a Replace / Enchant list opens over the menu; the add-on holds its B (`moresub`: B = back to the menu) */
-    private fun openSub(slot: Int, enchant: Boolean) {
+    /** char-more: the Enchant list opens over the menu; the add-on holds its B (`moresub`: B = back to the menu) */
+    private fun openSub(slot: Int) {
         subSeen = false
-        if (enchant) { kitFor = slot; kitSel = 0 } else { replFor = slot; replSel = 0 }
+        kitFor = slot; kitSel = 0
         model.setPad?.moreSub?.let { setTap("more list", it) }
         invalidate()
     }
 
     /** char-more: the open list closes, one step back to the menu; [tell] = say so to the add-on (`moreon`: the menu alone again) */
     private fun closeSub(tell: Boolean = true) {
-        if (replFor == null && kitFor == null) return
-        replFor = null; kitFor = null; subSeen = false
+        if (kitFor == null) return
+        kitFor = null; subSeen = false
         if (tell) model.setPad?.moreOn?.let { setTap("more back", it) }
         invalidate()
     }
@@ -447,19 +475,33 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val row = moreRows(slot).getOrNull(i) ?: return
         if (!row.usable) { row.why?.let { kitSay(it) }; return }
         when (row.label) {
-            WornMore.REPLACE -> { openSub(slot, enchant = false); return }
-            WornMore.ENCHANT -> { openSub(slot, enchant = true); return }
+            WornMore.ENCHANT -> openSub(slot)
+            WornMore.BIND -> bindWorn(slot)
         }
+    }
+
+    /**
+     * bags-gear1 BIND TO A BUTTON for a worn piece with a use effect (Character c19): ONE batch, all or nothing: the add-on's Bind arm,
+     * then the worn slot's bmvq column (Bags names the slot, the add-on opens the Spellbook's Bind box for that piece, hosted by this
+     * room: SpellsOverlay draws it, a finger's Keep / Undo / Back are [boxKey]). The arm closes the menu in the add-on too.
+     */
+    private fun bindWorn(slot: Int) {
         val sp = model.setPad
-        val arm = sp?.unequip
+        val arm = sp?.bindArm
         val pad = routePad()
         if (sp == null || arm == null || pad == null) { closeMore(); kitSay("Unavailable"); return }
-        closeMore(tell = false)                         // the arm closes it in the add-on too
-        // ONE batch, all or nothing: the arm, then the worn slot's column; spaced past the pad's 0.25 s repeat guard
-        val ok = TapBridge.tapsSpaced(context, pad, WornMore.cells(sp.row, arm, slot), 120L)
-        Log.i(TAG, "character: unequip slot $slot -> ${if (ok) "tapped" else "refused"}")
-        unequipSentAt = if (ok) android.os.SystemClock.uptimeMillis() else 0L
+        closeMore(tell = false)
+        val ok = TapBridge.tapsSpaced(context, pad, listOf(sp.row to arm, "bmvq" to slot - 1), 120L)
+        Log.i(TAG, "character: bind slot $slot -> ${if (ok) "tapped" else "refused"}")
+        bindSentAt = if (ok) android.os.SystemClock.uptimeMillis() else 0L
         if (!ok) { sp.moreOff?.let { setTap("more off", it) }; kitSay("The game did not take it") }
+    }
+
+    /** bags-gear1 (Character c19): a finger's A ("a") / B ("b") in the Bind box this room hosts (SpellsOverlay's Keep / Undo / Back) */
+    fun boxKey(k: String) {
+        val sp = model.setPad ?: return
+        if (!sp.box) return
+        (if (k == "a") sp.boxA else sp.boxB)?.let { setTap("box $k", it) }
     }
 
     private fun moreKey(key: String) {
@@ -472,70 +514,6 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             WornMore.Act.NONE -> {}
         }
         invalidate()
-    }
-
-    /** char-more: A on a Replace row = that piece into the slot (ONE batch: the menu's close, then its route); one that can't now says why */
-    private fun doReplace(i: Int) {
-        val slot = replFor ?: return
-        val p = replPicks(slot).getOrNull(i) ?: return
-        WornReplace.why(p, slot, model.combat, bagsCtx != null)?.let { kitSay(it); return }
-        val route = replRoute(p, slot)
-        if (route == null) { kitSay("Unavailable"); return }
-        replFor = null; moreFor = null; kitFor = null; moreSeen = false; subSeen = false
-        val ok = TapBridge.tapsSpaced(context, route.first, route.second, BagsMoveRoute.GAP_MS)
-        Log.i(TAG, "character: replace slot $slot with ${p.bag}:${p.slot} (${if (p.exact && bagsCtx == null) "secure" else "drag"}) -> ${if (ok) "tapped" else "refused"}")
-        if (!ok) { model.setPad?.moreOff?.let { setTap("more off", it) }; kitSay("The game did not take it") }
-        invalidate()
-    }
-
-    private fun replKey(key: String) {
-        val slot = replFor ?: return
-        val n = replPicks(slot).size
-        when (key) {
-            "PADDUP" -> replSel = (replSel - 1).coerceAtLeast(0)
-            "PADDDOWN" -> replSel = (replSel + 1).coerceAtMost(maxOf(0, n - 1))
-            "PAD1" -> doReplace(replSel)
-            "PAD2", "PAD3" -> closeSub()
-        }
-        invalidate()
-    }
-
-    /** char-more: the Replace list over the menu, drawn as the Bags room's lists: the bag pieces for this slot (one that can't go on now
-     *  greyed, its reason beside its name), the gold row the controller's, A Equip, B Back */
-    private fun replList(c: Canvas, w: Float, h: Float) {
-        replHits.clear()
-        val slot = replFor ?: return
-        val list = replPicks(slot)
-        if (list.isEmpty()) { post { if (replFor == slot && replPicks(slot).isEmpty()) closeSub() }; return }    // the bags changed under it
-        if (replSel > list.size - 1) replSel = list.size - 1
-        val combat = model.combat
-        UiKit.cover(c, RectF(0f, 0f, w, h))
-        val bw = minOf(760f, w - 80f)
-        val rowH = 84f
-        val shown = list.size.coerceAtMost(7)
-        val box = RectF(w / 2f - bw / 2f, 90f, w / 2f + bw / 2f, 90f + 80f + shown * rowH + 20f)
-        val inner = UiKit.menu(c, box, solid = true)
-        c.drawText(Tr.t(WornMore.REPLACE), inner.left + 16f, inner.top + 40f, UiKit.bodyPaint(30f, Theme.gold))
-        val name = worn()[slot]?.optString("name")?.takeIf { it.isNotEmpty() } ?: Doll.NAMES[slot] ?: ""
-        if (name.isNotEmpty()) {
-            val np = UiKit.bodyPaint(24f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(TextUtils.ellipsize(name, TextPaint(np), inner.width() / 2f, TextUtils.TruncateAt.END).toString(), inner.right - 16f, inner.top + 40f, np)
-        }
-        val first = (replSel - shown + 1).coerceAtLeast(0)
-        for (k in first until (first + shown).coerceAtMost(list.size)) {
-            val p = list[k]
-            val y = inner.top + 64f + (k - first) * rowH
-            val r = RectF(inner.left + 8f, y, inner.right - 8f, y + rowH - 6f)
-            val icon = Icons.getOrUnknown(if (p.row.has("icon")) p.row.optInt("icon") else null)
-            val why = WornReplace.why(p, slot, combat, bagsCtx != null)
-            val label = p.row.optString("name", "?") + (why?.let { " (" + Tr.t(it) + ")" } ?: "")
-            UiKit.itemPlate(c, r, icon, label, Theme.quality(p.row.optInt("quality", 1)), 0, unusable = why != null)
-            if (k == replSel) UiKit.focus(c, r)
-            replHits.add(RectF(r) to k)
-        }
-        val hy = box.bottom + 46f
-        val hs = UiKit.hints(c, box.right - 16f, hy, "rev_a" to "Equip", UiKit.backGlyph() to "Back")
-        replHits.add(RectF((hs + box.right) / 2f, hy - 36f, box.right, hy + 36f) to -1)
     }
 
     /** the Y glyph in the layout the Settings chose (Nintendo's Y, Xbox's Y, PlayStation's triangle) */
@@ -569,6 +547,229 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         moreHits.add(RectF((hs + box.right) / 2f, hy - 36f, box.right, hy + 36f) to -1)
     }
 
+    // ------------------------------------------------------------------ bags-gear1 THE EQUIP SLIDE-OUT (the user, 2026-11-16: "Choose which ring or
+    // weapon slot to replace"; "Design: X opens a slide-out of ARMOR (item icons) next to the item. It lists the options for that slot, plus a
+    // blank entry that unequips."; "When pressed, X animates the options sliding out."). X on a slot (the card's Swap / Equip): a RAIL of the
+    // bags' pieces for THAT slot slides out of it toward the doll's middle (D3a), best item level first, then the blank (the worn piece comes
+    // off); the ammo slot's rail is the bags' ammo. The D-pad along it moves, A acts once and the rail goes back in (the chosen icon flies
+    // into the slot), B / X step back (the add-on holds B while it is open: `moreon`). The candidate's card stands in the right pane (C3),
+    // its stat changes counted against this slot (D4a). A greyed entry's A says why; nothing is tapped. The rules are [SlideOut]'s.
+    private var railFor: Int? = null                // the slot the rail is open for
+    private var railSel = 0
+    private var railFirst = 0
+    private var railAt = 0L                         // uptime it began to slide out
+    private val railHits = ArrayList<Pair<RectF, Int>>()
+    private val railDrawn = ArrayList<Pair<SlideOut.Entry, RectF>>()     // its icons where they stand (the slide back starts there)
+    private var railSrc: RectF? = null
+    /** the rail going back in: its icons, the slot they return to, the chosen one (-1 = none) and since when */
+    private class RailBack(val slot: Int, val icons: List<Pair<SlideOut.Entry, RectF>>, val src: RectF, val chosen: Int, val at: Long)
+    private var railBack: RailBack? = null
+    private val railCurve = Motion.curve()
+    /** C6: a Replace sent and not seen in the slot yet */
+    private var watch: SlideOut.Watch? = null
+
+    private fun railEntries(slot: Int) = SlideOut.entries(railPicks(slot), slot, wornHas(slot))
+
+    /** why entry [e] can't go into [slot] now (null = it can): the route table, Bags full, the pad's cells */
+    private fun railWhy(e: SlideOut.Entry, slot: Int): String? {
+        val routed = if (e.blank) model.setPad?.unequip != null && routePad() != null else replRoute(e.pick!!, slot) != null
+        return SlideOut.why(e, slot, model.combat, bagsCtx != null, freeGeneral, worn(), routed)
+    }
+
+    /** X on a slot / the card's Swap: the rail; an empty slot with nothing for it says so (C5: a worn one always has its blank) */
+    private fun openRail(slot: Int) {
+        val list = railEntries(slot)
+        if (list.isEmpty()) { kitSay("Nothing fits"); return }
+        moreFor = null; kitFor = null; moreSeen = false; subSeen = false
+        railFor = slot; railSel = 0; railFirst = 0; railBack = null
+        railAt = android.os.SystemClock.uptimeMillis()
+        model.setPad?.moreOn?.let { setTap("more on (rail)", it) }
+        invalidate()
+    }
+
+    /** the rail goes back in ([chosen] = the icon that flies into the slot, -1 = none); [tell] = say so to the add-on (`moreoff`) */
+    private fun closeRail(tell: Boolean = true, chosen: Int = -1) {
+        val slot = railFor ?: return
+        val src = railSrc
+        if (src != null && railDrawn.isNotEmpty())
+            railBack = RailBack(slot, ArrayList(railDrawn), RectF(src), chosen - railFirst, android.os.SystemClock.uptimeMillis())
+        railFor = null; moreSeen = false; railDrawn.clear()
+        if (tell) model.setPad?.moreOff?.let { setTap("more off", it) }
+        invalidate()
+    }
+
+    /** gone at once, no slide back (another menu opens over it) */
+    private fun closeRailNow() { railFor = null; railBack = null; railDrawn.clear() }
+
+    private fun railKey(key: String) {
+        val slot = railFor ?: return
+        val n = railEntries(slot).size
+        val (sel, act) = SlideOut.key(railSel, n, SlideOut.dir(slot), key)
+        railSel = sel; railFirst = SlideOut.first(sel, n, railFirst)
+        when (act) {
+            SlideOut.Act.CHOOSE -> railAct(railSel)
+            SlideOut.Act.BACK -> closeRail()
+            SlideOut.Act.NONE -> {}
+        }
+        invalidate()
+    }
+
+    /** A on entry [i]: the piece into the slot (ONE batch: the rail's close, then its route), or the blank's unequip; greyed = why */
+    private fun railAct(i: Int) {
+        val slot = railFor ?: return
+        val e = railEntries(slot).getOrNull(i) ?: return
+        railWhy(e, slot)?.let { kitSay(it); return }           // G4: greyed: the reason, nothing tapped
+        val p = e.pick
+        if (p == null) {
+            // the blank: Unequip (uneq1's route: the add-on's arm, then the worn slot's column; the arm closes the menu in the add-on)
+            val sp = model.setPad
+            val arm = sp?.unequip
+            val pad = routePad()
+            if (sp == null || arm == null || pad == null) { closeRail(); kitSay("Unavailable"); return }
+            closeRail(tell = false, chosen = i)
+            val ok = TapBridge.tapsSpaced(context, pad, WornMore.cells(sp.row, arm, slot), 120L)
+            Log.i(TAG, "character: unequip slot $slot -> ${if (ok) "tapped" else "refused"}")
+            unequipSentAt = if (ok) android.os.SystemClock.uptimeMillis() else 0L
+            if (!ok) { sp.moreOff?.let { setTap("more off", it) }; kitSay("The game did not take it") }
+            return
+        }
+        val route = replRoute(p, slot)
+        if (route == null) { kitSay("Unavailable"); return }
+        closeRail(tell = false, chosen = i)
+        val ok = TapBridge.tapsSpaced(context, route.first, route.second, BagsMoveRoute.GAP_MS)
+        Log.i(TAG, "character: replace slot $slot with ${p.bag}:${p.slot} (${if (p.exact && bagsCtx == null) "secure" else "drag"}) -> ${if (ok) "tapped" else "refused"}")
+        if (!ok) { model.setPad?.moreOff?.let { setTap("more off", it) }; kitSay("The game did not take it"); return }
+        val want = p.row.optInt("id", 0)
+        if (want > 0) { watch = SlideOut.Watch(slot, want, android.os.SystemClock.uptimeMillis() + SlideOut.WATCH_MS); watchTick() }
+    }
+
+    /** C6: what is in the watched slot now */
+    private fun wornIdAt(slot: Int): Int? =
+        (if (slot == WornReplace.AMMO) equipped?.optJSONObject("ammo") else worn()[slot])?.optInt("id", 0)?.takeIf { it > 0 }
+
+    /** C6: the watch looks again (a bags document, or its own quarter-second tick); the game's question pauses it */
+    private fun watchTick() {
+        val w = watch ?: return
+        when (SlideOut.seen(w, android.os.SystemClock.uptimeMillis(), wornIdAt(w.slot), model.setPad?.gameAsks == true)) {
+            SlideOut.Seen.DONE -> watch = null
+            SlideOut.Seen.REFUSED -> { watch = null; kitSay("The game refused it") }
+            SlideOut.Seen.WAIT -> { removeCallbacks(watchRun); postDelayed(watchRun, 250L) }
+        }
+    }
+    private val watchRun = Runnable { watchTick() }
+
+    /** one rail icon in [r]: the piece as the doll draws it (its icon, quality frame, wear), the ammo with its count, the blank as the
+     *  slot's own empty art; [alpha] < 255 while it slides; [dim] = it can't go on now */
+    private fun railIcon(c: Canvas, slot: Int, e: SlideOut.Entry, r: RectF, alpha: Int, dim: Boolean) {
+        if (alpha <= 0) return
+        val layer = alpha < 255
+        if (layer) c.saveLayerAlpha(RectF(r.left - 8f, r.top - 8f, r.right + 8f, r.bottom + 8f), alpha)
+        val one = Doll.Layout(mapOf(slot to r), r.bottom)
+        val p = e.pick
+        when {
+            p == null -> Doll.draw(c, one, emptyMap(), relic = equipped?.optBoolean("relic") == true)
+            slot == WornReplace.AMMO -> Doll.draw(c, one, emptyMap(), ammo = p.row)
+            else -> Doll.draw(c, one, mapOf(slot to p.row))
+        }
+        if (dim) UiKit.cover(c, r, 0.55f)
+        if (layer) c.restore()
+    }
+
+    /** the rail over the doll ([l], the doll's layout; [s] its slot size, [pitch] its step; [pane] the doll's pane, dimmed under it) */
+    private fun rail(c: Canvas, l: Doll.Layout, s: Float, pitch: Float, pane: RectF) {
+        railHits.clear()
+        val now = android.os.SystemClock.uptimeMillis()
+        railBack?.let { b ->
+            val share = railCurve.getInterpolation(SlideOut.inShare(now - b.at))
+            for ((k, pair) in b.icons.withIndex()) {
+                val (e, r) = pair
+                val t = SlideOut.lerp(SlideOut.Box(r.left, r.top, r.width()), SlideOut.Box(b.src.centerX() - r.width() / 2f,
+                    b.src.centerY() - r.width() / 2f, r.width()), share)
+                val a = if (k == b.chosen) 255 else ((1f - share) * 255f).toInt()
+                railIcon(c, b.slot, e, RectF(t.left, t.top, t.right, t.bottom), a, false)
+            }
+            if (now - b.at < Motion.RAIL_IN) postInvalidateOnAnimation() else railBack = null
+        }
+        val slot = railFor ?: return
+        val src = l.boxes[slot]
+        if (src == null) { post { if (railFor == slot) closeRail() }; return }
+        val list = railEntries(slot)
+        if (list.isEmpty()) { post { if (railFor == slot && railEntries(slot).isEmpty()) closeRail() }; return }    // the bags changed under it
+        if (railSel > list.size - 1) railSel = list.size - 1
+        railFirst = SlideOut.first(railSel, list.size, railFirst)
+        railSrc = RectF(src)
+        UiKit.cover(c, pane, 0.45f)                             // the doll steps back under the rail
+        Doll.draw(c, Doll.Layout(mapOf(slot to src), src.bottom), worn(), equipped?.optJSONObject("ammo"), equipped?.optBoolean("relic") == true)
+        UiKit.checkedGlow(c, src, orHilite = true)              // the slot the rail is for
+        val dir = SlideOut.dir(slot)
+        // the ammo slot (beside the ranged slot) slides up as the weapons do, never over the right column
+        val limit = pane.right - 30f - s - 12f
+        val fromX = if (dir == SlideOut.Dir.UP) minOf(src.left, limit - (src.width() + s) / 2f) else src.left
+        val from = SlideOut.Box(fromX, src.top, src.width())
+        val home = SlideOut.Box(src.centerX() - s / 2f, src.centerY() - s / 2f, s)
+        val t = now - railAt
+        val shown = (list.size - railFirst).coerceAtMost(SlideOut.SHOWN)
+        railDrawn.clear()
+        var last: SlideOut.Box? = null
+        for (k in 0 until shown) {
+            val i = railFirst + k
+            val e = list[i]
+            val at = SlideOut.cell(from, dir, k, pitch, s)
+            val share = railCurve.getInterpolation(SlideOut.outShare(t, k))
+            val b = SlideOut.lerp(home, at, share)
+            val r = RectF(b.left, b.top, b.right, b.bottom)
+            railIcon(c, slot, e, r, (share * 255f).toInt(), railWhy(e, slot) != null)
+            if (i == railSel && share >= 1f) UiKit.slotFocus(c, r)
+            val stand = RectF(at.left, at.top, at.right, at.bottom)
+            railHits.add(stand to i)
+            railDrawn.add(e to stand)
+            last = at
+        }
+        // more than it shows (C4): a chevron past the last icon, pointing on; one in the gap before the first when it has scrolled
+        val (before, after) = SlideOut.more(railFirst, list.size)
+        val end = last
+        val first = SlideOut.cell(from, dir, 0, pitch, s)
+        if (end != null && !SlideOut.outMoving(t, shown)) {
+            val half = (pitch - s) / 2f
+            if (after) when (dir) {
+                SlideOut.Dir.RIGHT -> UiKit.chevron(c, end.right + half + 10f, end.cy, UiKit.Chevron.RIGHT)
+                SlideOut.Dir.LEFT -> UiKit.chevron(c, end.left - half - 10f, end.cy, UiKit.Chevron.LEFT)
+                SlideOut.Dir.UP -> UiKit.chevron(c, end.cx, end.top - half - 10f, UiKit.Chevron.UP)
+            }
+            if (before) when (dir) {
+                SlideOut.Dir.RIGHT -> UiKit.chevron(c, first.left - half, first.cy, UiKit.Chevron.LEFT)
+                SlideOut.Dir.LEFT -> UiKit.chevron(c, first.right + half, first.cy, UiKit.Chevron.RIGHT)
+                SlideOut.Dir.UP -> UiKit.chevron(c, first.cx, first.bottom + half, UiKit.Chevron.DOWN)
+            }
+        }
+        if (SlideOut.outMoving(t, shown)) postInvalidateOnAnimation()
+    }
+
+    /**
+     * THE CANDIDATE'S CARD in the right pane while the rail is open (C3: the middle is the rails'), as the Bags room draws a tooltip: the
+     * game's full tooltip when a Bags visit kept it, else the short card (D4a); the stat changes against THIS slot at its foot; the blank's
+     * card "Unequip" and the losses; a greyed entry's reason last; A Equip / Unequip, B Back under it.
+     */
+    private fun railCard(c: Canvas, r: RectF) {
+        val slot = railFor ?: return
+        val e = railEntries(slot).getOrNull(railSel) ?: return
+        val p = e.pick
+        val card = SlideOut.card(e, slot, p?.let { bagTip(it.bag, it.slot) }, worn(), dualWield(),
+            BagsCompare.Words(empty = Tr.t("Empty"), changes = Tr.t("Stat changes")))
+        val lines = ArrayList(TipStack.lines(card.lines, false))
+        railWhy(e, slot)?.let { lines.add(UiKit.TipLine(Tr.t(it), Theme.unusable)) }
+        val title = if (card.quality < 0) Tr.t(card.title) else card.title
+        val colour = if (card.quality < 0) Theme.gold else Theme.quality(card.quality)
+        val top = r.top + 6f; val foot = r.bottom - 84f
+        var s = 1f
+        fun tall(sc: Float) = UiKit.tooltip(c, 0f, -9999f, r.width(), title, colour, lines, alpha = 0, scale = sc).height()
+        while (s > BagsCursor.MIN_SCALE + 1e-4f && tall(s) > foot - top) s -= 0.04f
+        c.save(); c.clipRect(r.left - 6f, top - 6f, r.right + 6f, foot)
+        UiKit.tooltip(c, r.left, top, r.width(), title, colour, lines, scale = s)
+        c.restore()
+        UiKit.hints(c, r.right - 8f, r.bottom - 40f, "rev_a" to (if (e.blank) WornMore.UNEQUIP else "Equip"), UiKit.backGlyph() to "Back")
+    }
+
     // ------------------------------------------------------------------ drawing
 
     override fun onDraw(c: Canvas) {
@@ -596,7 +797,8 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val list = RectF(0f, 68f, split - 8f, h - 6f)
         val detail = RectF(split + 26f, 68f, tabsX - 22f, h - 6f)
         when (tab) {
-            CharTab.CHARACTER -> { if (petShown()) petPage(c, list) else doll(c, list); rightPane(c, detail) }
+            // bags-gear1 (C3): while the slide-out is open its candidate's card stands in the right pane
+            CharTab.CHARACTER -> { if (petShown()) petPage(c, list) else doll(c, list); if (railFor != null) railCard(c, detail) else rightPane(c, detail) }
             CharTab.REPUTATION -> { listTab(c, list, model.reputation, "rep", Kind.REP); repDetail(c, detail) }
             CharTab.SKILLS -> { listTab(c, list, model.skills, "sk", Kind.SKILL); skillDetail(c, detail) }
             CharTab.PVP -> pvpDrawer?.invoke(c, list, detail)
@@ -604,14 +806,17 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             CharTab.STATISTICS -> statistics(c, RectF(0f, 68f, tabsX - 12f, h - 6f))
         }
         setQuestion(c, w, h)
-        glow(c)
+        if (railFor == null) glow(c)                    // bags-gear1: the slide-out has its own gold box
         if (moreFor != null) moreMenu(c, w, h)
-        if (kitFor != null) kitList(c, w, h)            // char-more: the menu's lists over it
-        if (replFor != null) replList(c, w, h)
+        if (kitFor != null) kitList(c, w, h)            // char-more: the menu's list over it
         kitLine?.let { s ->
             if (android.os.SystemClock.uptimeMillis() - kitLineAt > 3000L) kitLine = null
             else c.drawText(Tr.t(s), w / 2f, h - 60f, UiKit.bodyPaint(28f, Theme.gold).apply { textAlign = android.graphics.Paint.Align.CENTER })
         }
+        // bags-gear1 (C11): the game's window switched its tab or side pane (LB / RB never reach the room): the slide-out and the menu
+        // close, never left open over another tab
+        if ((drawnTab != null && drawnTab != model.tab) || (drawnSide != null && drawnSide != model.side))
+            if (railFor != null || moreFor != null || kitFor != null) post { closeMore() }
         drawnTab = model.tab; drawnSide = model.side
     }
     private var drawnTab: CharTab? = null
@@ -650,16 +855,17 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     }
 
     /** a press the addon passed on: the D-pad moves the glow, A does what a tap does (SPEC 8); B is the addon's (it closes
-     *  the game's window; while the More menu is open the add-on holds it and closes the menu); X on a worn slot = its kits;
-     *  Y on a worn slot = its More menu (uneq1) */
+     *  the game's window; while the More menu is open the add-on holds it and closes the menu); bags-gear1: X on a slot = its slide-out,
+     *  Y on a worn slot = Enchant / Bind (the kit list at once with Enchant alone) */
     private fun press(key: String) {
+        if (railFor != null) { railKey(key); return }
         if (kitFor != null) { kitKey(key); return }
-        if (replFor != null) { replKey(key); return }
         if (moreFor != null) { moreKey(key); return }
         if (key == "PAD3" || key == "PAD4") {
             val k = current()?.key?.takeIf { it.startsWith("slot:") }?.removePrefix("slot:")?.toIntOrNull()
-            if (key == "PAD3" && k != null && worn()[k] != null) { openKits(k); return }
-            if (key == "PAD4" && k != null && worn()[k] != null) { chosenSlot = k; openMore(k); return }
+            // bags-gear1: X = the slide-out (an empty slot too, the ammo slot too); Y = Enchant / Bind on a worn piece
+            if (key == "PAD3" && k != null) { chosenSlot = k; openRail(k); return }
+            if (key == "PAD4" && k != null && wornHas(k)) { chosenSlot = k; openY(k); return }
         }
         val cur = current() ?: return
         when (key) {
@@ -758,29 +964,29 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             ammo = eq?.optBoolean("ammoNeeded") == true, ranged = eq?.let { !it.has("rangedShown") || it.optBoolean("rangedShown") } ?: true)
         val slot = chosenSlot
         if (slot == null || slot !in layout.boxes) { chosenSlot = null; UiKit.emblem(c, middle, model.who?.clsFile ?: "") }
+        else if (railFor != null) UiKit.emblem(c, middle, model.who?.clsFile ?: "")      // bags-gear1 (C3): the card is the right pane's
         else {
             card(c, middle, slot)
-            // the card's Apply (X): the kits for this slot (the same as X on the slot); More (Y, uneq1): the slot's More menu (the same
-            // as Y on the slot). Both: side by side; one alone: the card's width
-            val apply = worn()[slot] != null && slotKits(slot).isNotEmpty()
-            val more = worn()[slot] != null && moreRows(slot).isNotEmpty()
+            // bags-gear1: the card's X = the slide-out (Swap; Equip on an empty slot), the same as X on the slot; Y = Enchant (the kits at
+            // once) or More (Enchant + Bind), the same as Y on the slot. Both: side by side; one alone: the card's width
+            val more = if (wornHas(slot)) moreRows(slot) else emptyList()
+            val y = more.isNotEmpty()
             val bt = middle.bottom - 78f; val bb = middle.bottom - 8f
             val mid = middle.centerX()
-            if (apply) {
-                val ab = RectF(middle.left + 24f, bt, if (more) mid - 6f else middle.right - 24f, bb)
-                UiKit.button(c, ab, "Apply", UiKit.xGlyph(), UiKit.Button.UP)
-                hit(ab) { openKits(slot) }
-            }
-            if (more) {
-                val mb = RectF(if (apply) mid + 6f else middle.left + 24f, bt, middle.right - 24f, bb)
-                UiKit.button(c, mb, "More", yGlyph(), UiKit.Button.UP)
-                hit(mb) { openMore(slot) }
+            val xb = RectF(middle.left + 24f, bt, if (y) mid - 6f else middle.right - 24f, bb)
+            UiKit.button(c, xb, if (wornHas(slot)) "Swap" else "Equip", UiKit.xGlyph(), UiKit.Button.UP)
+            hit(xb) { openRail(slot) }
+            if (y) {
+                val mb = RectF(mid + 6f, bt, middle.right - 24f, bb)
+                UiKit.button(c, mb, if (WornMore.kitsAtOnce(more)) WornMore.ENCHANT else "More", yGlyph(), UiKit.Button.UP)
+                hit(mb) { openY(slot) }
             }
         }
         Doll.draw(c, layout, worn(), eq?.optJSONObject("ammo"), eq?.optBoolean("relic") == true,
             alertColours = eq?.optJSONArray("alertc"))
-        chosenSlot?.let { layout.boxes[it]?.let { box -> UiKit.slotFocus(c, box) } }
+        if (railFor == null) chosenSlot?.let { layout.boxes[it]?.let { box -> UiKit.slotFocus(c, box) } }
         for ((k, box) in layout.boxes) hit(box, "slot:$k", slot = true) { chosenSlot = if (chosenSlot == k) null else k; scroll["card"] = 0f; invalidate() }
+        rail(c, layout, s, pitch, r)                    // bags-gear1: the slide-out (and its way back in) over the doll
     }
 
     private fun worn(): Map<Int, JSONObject> {
@@ -1336,10 +1542,10 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
                     invalidate()
                     return true
                 }
-                if (replFor != null) {
-                    // char-more, the Replace list: a row equips (as A on it), Back / outside goes back to the menu (as B)
-                    val k = replHits.firstOrNull { it.first.contains(e.x, e.y) }?.second
-                    if (k != null && k >= 0) { replSel = k; doReplace(k) } else closeSub()
+                if (railFor != null) {
+                    // bags-gear1 (G10): a finger on an icon highlights it and shows its card; on the highlighted one = A; elsewhere = B
+                    val k = railHits.firstOrNull { it.first.contains(e.x, e.y) }?.second
+                    if (k == null) closeRail() else if (k == railSel) railAct(k) else { railSel = k; railFirst = SlideOut.first(k, railEntries(railFor ?: 0).size, railFirst) }
                     invalidate()
                     return true
                 }

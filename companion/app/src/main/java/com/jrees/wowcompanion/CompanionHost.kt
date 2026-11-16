@@ -474,6 +474,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         characterView.onLeave = { roomLeft(Room.CHARACTER) }
         characterView.kits = { if (::bagsView.isInitialized) bagsView.kitItems() else emptyList() }
         characterView.bagItems = { if (::bagsView.isInitialized) bagsView.bagItems() else emptyList() }     // char-more: Replace
+        // bags-gear1 (D4a): the slide-out's card is the game's full tooltip when a Bags visit kept one for that bag piece
+        characterView.bagTip = { bag, slot -> if (::bagsView.isInitialized) bagsView.keptTip(bag, slot) else null }
         // tab 4 (PvP): the PVP session's page inside the room's frame (its PvpRankTab, UI Art's SPEC 6)
         characterView.pvpDrawer = PvpRankTab::draw
         PvpRankTab.onChange = { characterView.invalidate() }
@@ -881,7 +883,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             onTap = { col -> spellsTap(col) },                    // b37: the Bind box's Normal / In combat
             onCastBarTaps = { cells -> castBarTaps(cells) },        // GitHub #43 cb3: the box's Cast bar tab and its slots
             // Book b59 / bags-bindbox1: a finger's Keep / Undo / Back in the box the Bags room hosts (a bag item's): Bags' own A / B
-            onHostKey = { k -> if (room == Room.MACROS && ::macrosView.isInitialized) macrosView.boxKey(k) else if (::bagsView.isInitialized) bagsView.boxKey(k) })
+            // bags-gear1 (Character c19): the Character room hosts one for a worn piece: its own boxa / boxb cells
+            onHostKey = { k -> if (room == Room.MACROS && ::macrosView.isInitialized) macrosView.boxKey(k)
+                else if (room == Room.CHARACTER && ::characterView.isInitialized) characterView.boxKey(k)
+                else if (::bagsView.isInitialized) bagsView.boxKey(k) })
         spellsOverlay.visibility = View.GONE
         radialView = HomeRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pinPicker = BagsPinPicker(this)
