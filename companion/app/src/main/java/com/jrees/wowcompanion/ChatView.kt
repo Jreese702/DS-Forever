@@ -257,8 +257,9 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
     private val composer = LinearLayout(c)
     private val boardBox = LinearLayout(c)
     private val quick = QuickTiles(c)
-    // the companion's own keyboard (the user's pick 2026-09-30): what a controller types with
-    private val keyboard = ChatKeyboard(c)
+    // the companion's own keyboard (the user's pick 2026-09-30): what a controller types with; its VOICE page too (the user's pick
+    // 2026-11-16: X starts voice in the message box; the words go after what is written, the channel's prefix before them)
+    private val keyboard = ChatKeyboard(c, voice = true)
     private val logBox = FrameLayout(c)
     /** 0: the log screen; 1: the input screen (the board up, the log gone up behind the row); between: the move */
     private var inputK = 0f
@@ -368,6 +369,11 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         keyboard.onSend = { doSend() }
         keyboard.onClose = { setBoard(Board.NONE); pad.focus = Focus.Field; afterAct() }      // B: the input goes, the log again
         keyboard.onSwap = { setBoard(Board.QUICK); pad.focus = pad.quickFocus(scene()); afterAct() }
+        keyboard.voiceAppend = true
+        keyboard.voiceMax = MAX_MESSAGE
+        keyboard.voicePrefix = { prefixFor(type) to (kinds().firstOrNull { it.key == type }?.colour ?: Theme.text) }
+        keyboard.copyLeftMs = { stream.copyLeftMs() }
+        keyboard.onVoice = { refreshBack() }
         boardBox.addView(keyboard, lp(MATCH, MATCH))
         addView(boardBox, lp(MATCH, 0))
 
@@ -378,9 +384,16 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
     /** the game's type (UI art, fonts step) on the views this room keeps */
     private fun fonts() { UiKit.asBody(input) }
 
+    /** the field's words stop before its glyphs: A's, and X's microphone while voice is offered */
+    private fun padField() {
+        val g = 48f
+        input.setPadding(26, 0, if (VoiceUi.micShown(context)) (34 + VoiceUi.glyphsWidth(g, true)).toInt() else 34 + BAR_GLYPH_W, 0)
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         fonts()
+        padField()
         removeCallbacks(watch)
         post(watch)
     }
@@ -755,6 +768,29 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         invalidate()
     }
 
+    /**
+     * The game's own chat-box header for the type (GlobalStrings CHAT_SAY_SEND "Say: ", CHAT_WHISPER_SEND "Tell %s: ", CHAT_CHANNEL_SEND
+     * "%d. %s: " ...): the voice page's words start with it, in the type's colour
+     */
+    private fun prefixFor(t: String): String = when {
+        t == "WHISPER" -> "Tell $whisperName: "
+        t.startsWith("CHANNEL:") -> t.substringAfter(":").let { i -> "$i. ${chans.firstOrNull { it.first.toString() == i }?.second?.let { chanLabel(it) } ?: ""}: " }
+        else -> (kinds().firstOrNull { it.key == t }?.label ?: "Say") + ": "
+    }
+
+    /** the names voice may hear here (the on-device recognizer's hints): who wrote lately, who is whispered; never logged */
+    fun voiceNames(): List<String> =
+        (listOf(whisperName, replyTo) + history.takeLast(120).map { it.who }).filter { it.isNotEmpty() }.map { it.substringBefore('-').trim() }.distinct()
+
+    /** X on the log screen (or a finger on the bar's microphone): the board comes up on its VOICE page, the cursor on the bar */
+    private fun startVoice() {
+        if (!VoiceUi.micShown(context)) return
+        if (board != Board.KEYS) setBoard(Board.KEYS)
+        pad.focus = Focus.Field
+        if (!keyboard.startVoice(fromKeys = false)) setBoard(Board.NONE)
+        afterAct()
+    }
+
     /** what is written changed: to the add-on's buffer ([ChatStream]) and into the field */
     private fun setTyped(t: String) {
         typed = stream.clean(t)
@@ -878,9 +914,12 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
 
     override fun onVisibilityChanged(changedView: View, visibility: Int) {
         super.onVisibilityChanged(changedView, visibility)
+        // Android's microphone question (the voice page's Allow) hides the whole window and shows it again: the board stays as it was
+        if (keyboard.voiceAsking) return
         if (visibility == View.VISIBLE && isShown) {
             if (filter == Filter.ALL) unread.clear() else unread.remove(filter)
             head.invalidate()
+            padField()                      // Settings > Voice typing may have changed: the bar's microphone comes or goes
             // A new hold starts with B leading Home, so B's state is said again once the hub has asked for the controller
             lastLeadsHome = null
             // THE LOG FIRST (the user, b121: "I didn't mean that quick chat should immediately open when opening the chat module- it
@@ -923,6 +962,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             viewAct = viewOpen && k != null && picks.getOrNull(k)?.link?.k == "player",
             quickTiles = ChatLinks.TILES,
             defaultBoard = defaultBoard(),
+            voice = VoiceUi.micShown(context),
         )
     }
 
@@ -977,6 +1017,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             ChatPad.Act.CloseView -> { viewOpen = false; invalidate() }
             is ChatPad.Act.ViewAct -> viewAction(act.k)
             ChatPad.Act.Leave -> onLeave()
+            ChatPad.Act.Voice -> startVoice()
         }
         afterAct()
     }
@@ -1104,9 +1145,13 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             is Focus.Line, is Focus.Link -> "rev_y"                      // Y comes back down here
             else -> null
         }
+        micHit = null
         if (fieldGlyph != null) {
             val g = minOf(48f, glowRect.height() * 0.6f)
-            UiKit.pad(c, fieldGlyph, glowRect.right - 36f, glowRect.exactCenterY(), g)
+            // the box focused on the log screen: A with the keyboard, X with the microphone (the design: X shows while voice is offered)
+            if (f == Focus.Field && board == Board.NONE && VoiceUi.micShown(context))
+                micHit = VoiceUi.boxGlyphs(c, glowRect.right - 22f, glowRect.exactCenterY(), g, voice = true).mic
+            else UiKit.pad(c, fieldGlyph, glowRect.right - 36f, glowRect.exactCenterY(), g)
         }
         if (f == Focus.Field && caretOn && board != Board.QUICK) {
             // the caret where typing goes: just after the text; in an empty field 4 px BEFORE where the hint starts
@@ -1211,8 +1256,12 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         c.drawText(Tr.t(notice), r.centerX(), r.centerY() + 10f, p)
     }
 
+    /** where the bar's microphone was drawn (a finger on it = X) */
+    private var micHit: RectF? = null
+
     /** a finger on the menu or a view's action; anywhere else with the menu open closes it */
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        if (e.actionMasked == MotionEvent.ACTION_DOWN && board == Board.NONE && micHit?.contains(e.x, e.y) == true) { startVoice(); return true }
         if (e.actionMasked == MotionEvent.ACTION_DOWN) {
             menuBox?.let { box ->
                 val i = menuRows.indexOfFirst { it.contains(e.x, e.y) }
