@@ -2437,7 +2437,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     }
                     "bar" -> barSelect.onGuestAck(msg)
                     "radial" -> if (::targetRadial.isInitialized && targetRadial.owning) targetRadial.onGuestAck(msg)
-                        else if (::pauseView.isInitialized && pauseView.isOpen) pauseView.onGuestAck(msg)
+                        // #306: the pause's own free goes out after the wheel has gone: its answer is still the pause's
+                        else if (::pauseView.isInitialized && PauseAckRoute.toPause(pauseView.isOpen, op, pauseView.awaitsFree()))
+                            pauseView.onGuestAck(msg)
                         else if (::radialView.isInitialized) radialView.onGuestAck(msg)
                     "home" -> { setupHoldAck(msg); homeView.auraGuestAck(msg) }
                     "tool" -> homeView.toolGuestAck(msg)

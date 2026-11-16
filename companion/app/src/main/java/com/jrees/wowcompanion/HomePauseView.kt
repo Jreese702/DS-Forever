@@ -89,6 +89,16 @@ class HomePauseView(
 
     val isOpen get() = openedAt != 0L
 
+    /**
+     * GitHub #306 (1.0.32: "after opening the pets wheels and closing them, the joystick dont respond for a few secs or require bashing
+     * B"; its log: "pause: free again (1) .. (4) sent", each answered "radial: guest free ok", and "menu Escape sent (no answer to the free
+     * in 600 ms)"): the free goes out AFTER the wheel has gone, so its answer was handed to the item wheel (the host routes the shared
+     * guest "radial" to the pause only while it is open). The pause never heard it: four spare frees, each a tap into the game, and the
+     * Game Menu's Escape only at its 600 ms fallback. Now the pause's own outstanding free (for [FREE_ANSWER_MS]) takes its answer.
+     */
+    private var freeOutAt = 0L
+    fun awaitsFree(now: Long = SystemClock.uptimeMillis()): Boolean = !isOpen && freeOutAt != 0L && !freed && now - freeOutAt < FREE_ANSWER_MS
+
     init { visibility = GONE; isClickable = true }
 
     /** barcmd "pause" (Spells' router: Start with nothing holding): open; a second one while open closes */
@@ -219,6 +229,7 @@ class HomePauseView(
 
     private fun hold(attempt: Int) {
         heldOk = false
+        freeOutAt = 0L                                               // a new hold: no free of ours is out any more
         val mine = ++holdTry
         val sent = guestTap(GuestPad.cells(questsPad(), GUEST, hold = true))
         Log.i(TAG, "pause: hold${if (attempt > 0) " again ($attempt)" else ""} ${if (sent) "sent" else "NOT sent"}")
@@ -232,6 +243,7 @@ class HomePauseView(
         freed = false
         val mine = ++freeTry
         val sent = guestTap(GuestPad.cells(questsPad(), GUEST, hold = false))
+        if (sent) freeOutAt = SystemClock.uptimeMillis()            // #306: its answer is ours (awaitsFree)
         Log.i(TAG, "pause: free${if (attempt > 0) " again ($attempt)" else ""} ${if (sent) "sent" else "NOT sent"}")
         postDelayed({ if (mine == freeTry && !freed && attempt < 4 && !live()) free(attempt + 1) }, HomeRadialView.FREE_CHECK_MS)
     }
@@ -246,7 +258,7 @@ class HomePauseView(
     /** the game's answers for the guest "radial" while this wheel is the one open (MainActivity's guestack route) */
     fun onGuestAck(msg: JSONObject) {
         if (msg.optString("op") == "hold" && msg.optBoolean("ok")) heldOk = true
-        if (msg.optString("op") == "free" && msg.optBoolean("ok")) { freed = true; menuEscape("the controller let go") }
+        if (msg.optString("op") == "free" && msg.optBoolean("ok")) { freed = true; freeOutAt = 0L; menuEscape("the controller let go") }
         Log.i(TAG, "pause: guest ${msg.optString("op")} ${if (msg.optBoolean("ok")) "ok" else "refused (${msg.optString("why")})"}")
     }
 
@@ -686,6 +698,8 @@ class HomePauseView(
         const val CONFIRM_MS = 4_000L
         /** the Game Menu's Escape goes this long after the pick at the latest (the free's answer took 90-370 ms on b65) */
         const val MENU_ESC_MS = 600L
+        /** #306: a free of the pause's own takes the shared guest's free answer for this long after it went (its tries, 4 x 350 ms, fit) */
+        const val FREE_ANSWER_MS = 2_000L
         /** gm3: the game's menu should show this soon after the Menu button's tap; a "shown" later than [GAME_WANT_MS] is not ours */
         const val GAME_MENU_WAIT_MS = 1_500L
         const val GAME_WANT_MS = 3_000L
