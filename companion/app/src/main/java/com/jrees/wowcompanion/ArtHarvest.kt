@@ -268,6 +268,20 @@ object ArtHarvest {
     internal fun queued(stepBeforePlay: Boolean, query: Boolean?, stale: Boolean, retryDue: Boolean): Boolean =
         if (stale) query == null || stepBeforePlay == query else retryDue && query != true
 
+    /**
+     * THE START SCREEN'S MAPS LINE (the user's pick, 2026-11-16, #284: "Game art: ready" was read as the maps being done): true = the
+     * world map and Home's map ([MAPS_FIRST]) are stamped for this game build, false = one is still to build, null = no game build
+     * found. Reads the stamp and the game folder's build: off the main thread, or where the launcher already reads them (checkFiles).
+     */
+    fun mapsReady(ctx: Context): Boolean? = runCatching {
+        mapsReady(GameFiles.activeBuild(GameFiles.gameRoot(ctx))?.second, pending(ctx, beforePlay = false).map { it.id })
+    }.getOrNull()
+    /** pure (the tests): [build] null = not known; [pendingIds] = the background steps still to build */
+    internal fun mapsReady(build: String?, pendingIds: Collection<String>): Boolean? =
+        if (build == null) null else MAPS_FIRST.none { it in pendingIds }
+    /** one of the maps' steps ([MAPS_FIRST]): the start screen's maps line reads the stamp again when it is done (onStepDone) */
+    fun mapStep(id: String): Boolean = id in MAPS_FIRST
+
     /** true = Play has to wait for the before-Play steps (the launcher shows the progress screen) */
     fun needsBeforePlay(ctx: Context): Boolean = pending(ctx, beforePlay = true).isNotEmpty()
 

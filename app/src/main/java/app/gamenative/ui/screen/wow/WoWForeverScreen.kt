@@ -110,6 +110,8 @@ fun WoWForeverScreen(
     var artReady by remember { mutableStateOf(false) }
     // interiors (Track C): the optional 7th step's own row; it never gates Play
     var interiors by remember { mutableStateOf(com.jrees.wowcompanion.IndoorSchedulerStep.readiness(context)) }
+    // the user's pick, 2026-11-16 (#284): the maps' own row on the top screen (true = built, false = still to build, null = no build)
+    var mapsReady by remember { mutableStateOf<Boolean?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     // DS FOREVER SETUP ON TWO SCREENS (the user's fresh-install test 2026-10-12, Track C): this top screen shows the checks only;
     // Play and ONE pop-up at a time are on the bottom screen (SetupBridge -> the companion's SetupPanel). The Battle.net login is a
@@ -239,10 +241,19 @@ fun WoWForeverScreen(
         scope.launch { fetchVersionStatus() }
     }
 
+    /** the maps' row reads the stamp and the game's build again, off the main thread (ArtHarvest.mapsReady) */
+    fun refreshMaps() {
+        scope.launch(Dispatchers.IO) {
+            val r = runCatching { com.jrees.wowcompanion.ArtHarvest.mapsReady(context) }.getOrNull()
+            withContext(Dispatchers.Main) { mapsReady = r }
+        }
+    }
+
     fun checkFiles(): Boolean {
         GamePath.save(context, gamePath)
         files = GamePath.status(context, gamePath)
         artReady = runCatching { com.jrees.wowcompanion.ArtHarvest.beforePlayReady(context) }.getOrDefault(false)
+        refreshMaps()
         loginSaved = com.jrees.wowcompanion.HomeLoginStore.has(context)
         addonsInstalled = File(WowClientDownloader.flavorDir(File(gamePath)), "Interface/AddOns/WowCompanion").isDirectory
         addonsProblem = runCatching { com.jrees.wowcompanion.LauncherSetup.problem(context) }.getOrNull()
@@ -384,6 +395,7 @@ fun WoWForeverScreen(
                     is com.jrees.wowcompanion.ArtHarvest.State.Running -> {
                         isHarvesting = true
                         if (state.beforePlay) artFailed = null
+                        if (state.beforePlay && artReady) refreshMaps()          // a new game build's art: the maps' row looks again
                         if (state.beforePlay) artReady = false else if (!artReady) checkFiles()
                         artProgress = state.fraction
                         val phase = if (state.beforePlay) "Harvesting art" else "Harvesting background art"
@@ -414,6 +426,10 @@ fun WoWForeverScreen(
         }
         com.jrees.wowcompanion.ArtHarvest.onState(harvestListener)
         harvestListener(com.jrees.wowcompanion.ArtHarvest.state)
+        // the maps' row: the world map or Home's map stamped (the art's worker thread; also beside the game on the Thor Max)
+        val mapsListener: (String) -> Unit = { id -> if (com.jrees.wowcompanion.ArtHarvest.mapStep(id)) refreshMaps() }
+        com.jrees.wowcompanion.ArtHarvest.onStepDone(mapsListener)
+        refreshMaps()
         val interiorsListener: () -> Unit = {
             val r = com.jrees.wowcompanion.IndoorSchedulerStep.readiness(context)
             scope.launch(Dispatchers.Main) { interiors = r }
@@ -424,6 +440,7 @@ fun WoWForeverScreen(
         PluviaApp.events.on<AndroidEvent.GuestProgramTerminated, Unit>(reset)
         onDispose {
             com.jrees.wowcompanion.ArtHarvest.offState(harvestListener)
+            com.jrees.wowcompanion.ArtHarvest.offStepDone(mapsListener)
             com.jrees.wowcompanion.IndoorSchedulerStep.offChange(interiorsListener)
             PluviaApp.events.off<AndroidEvent.ForceCloseApp, Unit>(reset)
             PluviaApp.events.off<AndroidEvent.GuestProgramTerminated, Unit>(reset)
@@ -852,6 +869,7 @@ fun WoWForeverScreen(
                 if (com.jrees.wowcompanion.DirectTest.LOW_SPACE_ALWAYS) Long.MAX_VALUE else com.jrees.wowcompanion.SetupFlow.LOW_SPACE_BYTES) else null,
         staleData = remember { com.jrees.wowcompanion.DataStaleness.init(context); 0 }.let { com.jrees.wowcompanion.DataStaleness.current() },
         iconsLine = com.jrees.wowcompanion.AllIcons.line(com.jrees.wowcompanion.ArtHarvest.state is com.jrees.wowcompanion.ArtHarvest.State.Ready),
+        maps = mapsReady,
         updating = isUpdating,
         busy = when {
             isUpdating -> updateStatusText

@@ -4,8 +4,8 @@ package com.jrees.wowcompanion
  * THE SETUP SCREEN, SPLIT ACROSS THE TWO SCREENS (the user's fresh-install test, 2026-10-12; Track C). Pure: what the launcher knows
  * ([Inputs]) in, what the two screens show out.
  *
- * - TOP = [checks]: the checks only, one line each (game folder, Battle.net login, game art, add-ons, indoor maps when that step is
- *   registered, the client build).
+ * - TOP = [checks]: the checks only, one line each (game folder, Battle.net login, game art, the maps, add-ons, indoor maps when that
+ *   step is registered, the client build).
  * - BOTTOM = [screen]: Play, plus ONE pop-up at a time ([Prompt]), the most blocking first. Controller first (D-pad + A, the gold box),
  *   touch too ([SetupPanel]).
  * - The art builds BY ITSELF once the game folder is found (the user's pick "Automatic, no button"): there is no harvest button;
@@ -58,6 +58,9 @@ object SetupFlow {
         val appLine: String? = null,
         /** the all-icons step's line (AllIcons.line): before Play since 2026-11-04 (the art's READY covers it) */
         val iconsLine: String? = null,
+        /** the world map and Home's map (ArtHarvest.mapsReady): true = built for this game build, false = still to build, null = not
+         *  known (no game build found): no row */
+        val maps: Boolean? = null,
         /** the game ended abnormally (GameLife.note): the touch-only "The game closed" note; null = none */
         val gameClosed: String? = null,
         /** the game folder's Data is older than its build (DataStaleness), null = fine or not known; its plain message */
@@ -117,7 +120,16 @@ object SetupFlow {
     data class Screen(val prompt: Prompt?, val play: Button?, val line: String, val report: Button? = null)
 
     enum class Mark { OK, WAIT, BAD, OPTIONAL }
-    data class Check(val label: String, val mark: Mark)
+    /** [full] = the top box shows all its words, never only its name ([terse]) */
+    data class Check(val label: String, val mark: Mark, val full: Boolean = false)
+
+    /**
+     * THE MAPS' ROW (the user's pick, 2026-11-16, #284: the player played under "Game art: ready", which is only the art Play needs,
+     * and found the maps empty): its own row under the game art, all its words in the top box. The maps are background art (they never
+     * hold Play), built while the game is closed (on the Thor Max the world map also beside the game: PlayGate.besideNow).
+     */
+    const val MAPS_WAIT = "Maps: build while the game is closed"
+    const val MAPS_READY = "Maps: ready"
 
     /** the "DS Forever vX is out" pop-up holds Play until Update or Later (board b-update-blocks-play) */
     /**
@@ -218,7 +230,7 @@ object SetupFlow {
     }
 
     fun terse(checks: List<Check>): List<Check> =
-        checks.map { if (it.mark == Mark.BAD) it else it.copy(label = it.label.substringBefore(':').trim()) }
+        checks.map { if (it.mark == Mark.BAD || it.full) it else it.copy(label = it.label.substringBefore(':').trim()) }
 
     fun canPlay(i: Inputs): Boolean =
         i.folderFound && !i.wrongGame && i.storage && i.art == Art.READY && i.busy == null && !i.gameRunning && i.appUpdate == null
@@ -378,6 +390,8 @@ object SetupFlow {
             Art.READY -> Check("Game art: ready", Mark.OK)
             Art.FAILED -> Check("Game art: failed - ${i.artWhy.ifEmpty { "unknown reason" }}", Mark.BAD)
         })
+        // the user's pick, 2026-11-16: the maps' own row right under the game art (it never holds Play: optional while they build)
+        i.maps?.let { add(if (it) Check(MAPS_READY, Mark.OK, full = true) else Check(MAPS_WAIT, Mark.OPTIONAL, full = true)) }
         add(i.addonsProblem?.let { Check(it + (i.dependencies?.let { d -> "; $d" } ?: ""), Mark.BAD) }
             ?: Check("Add-ons: ${if (i.addonsInstalled) "installed" else "installed with the first Play"}" +
                 (i.dependencies?.let { "; $it" } ?: ""), if (i.addonsInstalled) Mark.OK else Mark.WAIT))
