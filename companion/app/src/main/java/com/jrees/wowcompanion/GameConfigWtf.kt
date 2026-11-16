@@ -60,7 +60,14 @@ object GameConfigWtf {
         "RAIDcomponentTextureLevel" to "\"1\"",
     )
 
-    private val FORCED_CONFIG_KEYS = listOf("gxApi", "RenderScale", "ResampleQuality", "GamePadEnable", "InputDeviceInterfaceStyle")
+    /**
+     * Rewritten at every start whatever the folder holds. #305 (1.0.32: "controls not working on bottom screen"; its pad said the game's
+     * screen was 1542x1080 on the 1920x1080 top screen, so TapBridge refused every tap): the user's pick 2026-11-16, "force the game to
+     * fill the top screen at EVERY start" - gxMaximize 1 and gxWindowedResolution the game screen's size ([ensure]'s screen). Both were
+     * written only when missing before, so a folder's own windowed size stayed.
+     */
+    private val FORCED_CONFIG_KEYS = listOf("gxApi", "RenderScale", "ResampleQuality", "GamePadEnable", "InputDeviceInterfaceStyle",
+        "gxMaximize", "gxWindowedResolution")
 
     private val LEGACY_CONFIG_VALUES = mapOf(
         "farclip" to "\"3000\"",
@@ -75,19 +82,28 @@ object GameConfigWtf {
         "RAIDcomponentTextureLevel" to "\"1\"",
     )
 
+    /** a game screen's size as Config.wtf's gxWindowedResolution wants it ("1920x1080", landscape), null when unusable. Pure */
+    fun screenSize(w: Int, h: Int): String? = if (w <= 0 || h <= 0) null else "${maxOf(w, h)}x${minOf(w, h)}"
+
     /**
      * [root]'s Config.wtf and .flavor.info for [product] (its .build.info row [row]): a new file gets every default; an existing one
      * gets the forced keys, the old defaults' new values and the missing keys. For the launch client a beta portal ("test") or another
      * client's agentUID is set right too (a _forever_ folder made from a beta copy would otherwise sign in to the closed beta).
      */
     fun ensure(root: File, product: WowProduct, row: Map<String, String>?, region: String? = null, lowMemory: Boolean = false,
-               askAccount: Boolean = false): List<String> {
+               askAccount: Boolean = false, screen: String? = null): List<String> {
         // [region]: the player's choice (GameRegion; 2026-11-07, an EU account on a US-set device): it replaces any portal but the beta's
         // [lowMemory]: Settings.lowMemGraphics - the smaller textures over the defaults
         // [askAccount]: Settings.gameAccountAsk (#47) - the game's remembered game-account choice cleared ([forgetAccountChoice]);
         // returns the NAMES of the keys cleared (never a value: a value is an account name)
+        // [screen]: #305, the size of the screen the game shows on ([screenSize]: the Thor's top screen, the game's own with Swap
+        // screens), its gxWindowedResolution at every start; null or not "WxH" = 1920x1080
+        val size = screen?.takeIf { SIZE.matches(it) }
         val defaults = configDefaults(product, row, if (product.portal == null) region else null).let { d ->
-            if (lowMemory) LinkedHashMap(d).apply { putAll(LOW_MEMORY_GRAPHICS) } else d
+            if (lowMemory || size != null) LinkedHashMap(d).apply {
+                if (lowMemory) putAll(LOW_MEMORY_GRAPHICS)
+                if (size != null) put("gxWindowedResolution", "\"$size\"")
+            } else d
         }
         val flavorDir = File(root, product.flavorDir)
         flavorDir.mkdirs()
@@ -133,6 +149,8 @@ object GameConfigWtf {
         }
         return cleared
     }
+
+    private val SIZE = Regex("[1-9][0-9]{2,4}x[1-9][0-9]{2,4}")
 
     /**
      * THE GAME'S REMEMBERED GAME ACCOUNT (GitHub #47): with several game accounts on one Battle.net login (WoW1, WoW2 ...), the client
