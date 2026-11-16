@@ -2368,8 +2368,9 @@ end
 --     (per item AND Enchanting rank: a skill-up offers it again); never worn gear.
 --   A: ONE press = one secure tap on that item's own cell (KIT.cellFor "c": cast + target, or "t" while a pick already waits); refused while
 --     casting ("busy"), while a loot window is open ("loot") and in a fight ("combat": the room's red flash); blue and better ask first.
---   B, in order: casting = /stopcasting (binv 39) and stay; a pick waiting = /stopspelltarget (binv 19), then close; else close: back to the
---     Bags grid when opened from it, else Home (leave "B"); in a fight always Home (i151).
+--   B, in order: in a fight always Home (i151; a waiting pick stopped on the way, never a cast: it may be the fight's); OUR cast running =
+--     /stopcasting (binv 39) and stay (never another spell's cast); a pick waiting = /stopspelltarget (binv 19), then close; else close:
+--     back to the Bags grid when opened from it, else Home (leave "B").
 --   LOOT: Interact i161 lets the grid keep the pad through an AUTO loot (spec.lootPass); any other loot pop-up takes the pad and the grid
 --     takes it back itself at LOOT_CLOSED, the cursor kept (DE.resume, the ordinary take). Loot left on the top screen (the Hub's switch):
 --     A waits for LOOT_CLOSED.
@@ -2481,6 +2482,13 @@ function DE.casting()
     end
     return DE.cast ~= nil
 end
+-- OUR cast runs (the grid's own disenchant, or a cast of the spell's name): only that one is B's to stop - never another spell's cast
+function DE.ourCast()
+    if DE.cast ~= nil then return true end
+    local n = S(function() return (UnitCastingInfo("player")) end)
+    local sp = DE.spell().n
+    return type(n) == "string" and sp ~= nil and n == sp
+end
 -- a press still waiting for its cast to start (its tap on the way, the cast not begun): a second A now would cast again ("busy")
 function DE.pending()
     local t = DE.tap
@@ -2491,7 +2499,8 @@ function DE.doc()
     local sp = DE.spell()
     local list = DE.list()
     local d = { n = sp.n, i = sp.i, ct = sp.ct, list = list, sel = DE.sync(list), busy = DE.casting() or nil, loot = DE.lootOpen or nil,
-                fight = InCombatLockdown() or nil, pick = KIT.on() or nil, back = ctl.deFrom and "grid" or "home" }
+                fight = InCombatLockdown() or nil, pick = KIT.on() or nil, back = ctl.deFrom and "grid" or "home",
+                stop = (DE.ourCast() and not InCombatLockdown()) or nil }               -- B stops our cast (else B closes)
     local c = DE.cast
     if c then d.cast = { b = c.b, s = c.s, id = c.id } end
     d.done, d.fail = DE.done, DE.fail
@@ -2589,7 +2598,13 @@ function DE.move(key, list)
 end
 -- B (see the header: casting / a pick waiting / close)
 function DE.back()
-    if DE.casting() then
+    -- in a fight B always goes Home (i151; the design's B rule 4): a waiting pick is stopped on the way, never a cast (it may be the fight's)
+    if InCombatLockdown() then
+        if KIT.on() then ctl.use = { stop = true, seq = ctl.seq + 1 }; KIT.stopT = GetTime() end
+        DE.close(nil)
+        return
+    end
+    if DE.ourCast() then
         ctl.use = { stopcast = true, seq = ctl.seq + 1 }; DE.stopping = GetTime(); report("de-stop")
         return
     end
@@ -3829,6 +3844,7 @@ local function onBagsHidden()
     leave(ctl.passing and "B" or "closed")
 end
 
+WC._bagsOnHidden = function() onBagsHidden() end     -- bags-de1: for the off-device tests (tools/test_disenchant.py)
 -- hook the bag windows themselves, whatever opened them (the controller's bag button, a key, a click)
 do
     local hf = CreateFrame("Frame")

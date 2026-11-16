@@ -175,7 +175,7 @@ class DisenchantShotsTest {
         shot("bulk_cursor_right.png", doc(10, JSONObject()))
         // a disenchant casting: Home's own bar in the foot (a real CastView fed hudS.cs), the tile's dark sweep, B = Stop
         val cv = castView(JSONObject().put("k", "c").put("s", G - 1.2).put("e", G + 1.8).put("nm", "Disenchant"))
-        shot("bulk_casting.png", doc(1, JSONObject().put("busy", true).put("cast", JSONObject().put("b", 0).put("s", 2).put("id", 5001))), cv, 3)
+        shot("bulk_casting.png", doc(1, JSONObject().put("busy", true).put("stop", true).put("cast", JSONObject().put("b", 0).put("s", 2).put("id", 5001))), cv, 3)
         // the blue ask: "Disenchant?" A Yes / B No
         shot("bulk_ask.png", doc(2, JSONObject().put("ask", JSONObject().put("b", 0).put("s", 3).put("id", 5002).put("q", 3))))
         // Auto Loot: the strip of what came, at the top right

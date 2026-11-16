@@ -921,7 +921,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
          * design_disenchant.md: blue / purple ask once, the game's own loot way with a strip of what came, bag order, an icon on the strip,
          * a small green arrow on an upgrade). The game's window: the spell's own icon in the ring, its own name and how many in the title;
          * Bags' own tiles 10 across (drawSlot); the Bags tooltip card beside the cursor (card, the same place and fit); Home's own cast bar
-         * in the foot ([castBar] = CastView.drawCastInto); A <spell> and B Close (B Stop while casting) as the window's buttons. A tile
+         * in the foot ([castBar] = CastView.drawCastInto); A <spell> and B Close (B Stop while its own cast runs) as the window's buttons. A tile
          * casting: the dark sweep; done: it flashes and sparkles away (LootFx, Make Space's burst); refused: it shakes, red. A finger: a tile
          * = the cursor there, the cursor's tile again = A; a drag scrolls the rows. Everything acts through the add-on (bmvq 31 / 33 / 36).
          */
@@ -1048,7 +1048,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 !aOk -> UiKit.Button.DISABLED
                 !asking && (pressedIn(listOf(aR)) == 0 || isDown("PAD1")) -> UiKit.Button.DOWN
                 else -> UiKit.Button.UP })
-            UiKit.button(c, bR, if (busy) "Stop" else "Close", UiKit.backGlyph(),
+            // B = Stop only while OUR cast runs (Bags.lua DE.ourCast: never another spell's cast, never in a fight), else Close
+            UiKit.button(c, bR, if (b.optBoolean("stop")) "Stop" else "Close", UiKit.backGlyph(),
                 if (!asking && (pressedIn(listOf(bR)) == 0 || isDown("PAD2"))) UiKit.Button.DOWN else UiKit.Button.UP)
             if (!asking) { if (aOk) hits.add(RectF(aR) to 31); hits.add(RectF(bR) to 33) }
             val barR = RectF(inner.left + 16f, bt + 111f / 2f - 15f, aR.left - 28f, bt + 111f / 2f + 15f)

@@ -374,10 +374,25 @@ check(doc().resume is None and doc().note == 'lost-npc', "another window's pop-u
 # ---------------------------------------------------------------- the game's bags close after a pick; the close door still leaves
 touch(29); touch(27); L.eval('WowCompanion._bagsShutTap')(9)
 check(doc().mode == 'bulk', "(the grid again)")
-check('if ctl.mode == "bulk" then syncPass(); return end' in SRC, "onBagsHidden: the game's own close after a pick never closes the grid")
-i_door = SRC.index('if doors.closingAt and GetTime() - doors.closingAt < 1 then doors.closingAt = nil; leave("room"); return end')
-i_bulk = SRC.index('if ctl.mode == "bulk" then syncPass(); return end')
-check(i_door < i_bulk, "... after the app's close door (the room left by touch still leaves)")
+L.execute('''BAGWIN = { shown = false, IsShown = function(self) return self.shown end }; ContainerFrameCombinedBags = BAGWIN
+for i = 1, 13 do _G["ContainerFrame" .. i] = { IsShown = function() return false end } end
+WowCompanion.bagsPadRows({ { bag = 0, slots = 8 } })
+DOOR = { a = {}, hooks = {} }; function DOOR:SetAttribute(k, v) self.a[k] = v end; function DOOR:HookScript(e, fn) self.hooks[e] = fn end
+SECURE.bag0.init(DOOR, 38)''')
+L.execute('BAGWIN.shown = true')
+L.eval('WowCompanion._bagsTouch')(29)                              # (the game's bags open: ctl.open through the take)
+L.execute('BAGWIN.shown = false')
+L.eval('WowCompanion._bagsOnHidden')()
+d = doc()
+check(d.on is True and d.mode == 'bulk', "the game closes its bags after a pick (they were closed before the cast): the grid STAYS", (d.on, d.mode))
+L.execute('BAGWIN.shown = true')
+L.eval('WowCompanion._bagsOnHidden')()                              # (still shown: nothing)
+L.execute('DOOR.hooks.PreClick(DOOR); BAGWIN.shown = false')       # the app's close door (the room left by touch)
+L.eval('WowCompanion._bagsOnHidden')()
+d = doc()
+check(d.on is False and d.note == 'left-room', "the app's close door still leaves the room (a non-B leave)", (d.on, d.note))
+L.execute('ContainerFrameCombinedBags = nil')
+touch(29); touch(27); L.eval('WowCompanion._bagsShutTap')(9)
 
 # ---------------------------------------------------------------- the game's own question (END_BOUND_TRADEABLE): A / B are the game's
 L.execute('''POP = { IsShown = function() return true end, which = "END_BOUND_TRADEABLE" }; StaticPopup1 = POP''')
@@ -434,11 +449,25 @@ check(ups.get((0, 6)) is True, "the ring: a finger slot empty -> the arrow (anyt
 check(ups.get((1, 1)) is None, "the gloves: a red line (cannot be worn) -> never the arrow, even into an empty slot", ups.get((1, 1)))
 check(d.tip is not None, "the cursor's full tooltip rides with the grid's document (TIP)")
 
-# ---------------------------------------------------------------- B in a fight: Home
-L.execute('COMBAT = true')
+# ---------------------------------------------------------------- B and other casts: only OUR cast is B's to stop
+L.execute('CASTING = "Hearthstone"')
+d = doc()
+check(d.bulk.busy is True and d.bulk.stop is None, "another spell casting: A greyed (busy), B still Close (never Stop)", (d.bulk.busy, d.bulk.stop))
+seq = d.use and d.use.seq
 touch(33)
-check(doc().note in ('left-B',) and L.eval('RELEASED') == 'B', "B in a fight: Home (even over the Bags grid)", doc().note)
-L.execute('COMBAT = false')
+d = doc()
+check(d.mode == 'grid' and d.on is True and (d.use and d.use.seq) == seq, "B while ANOTHER spell casts: closes (back to the Bags grid), no /stopcasting", (d.mode, d.note))
+touch(27); L.eval('WowCompanion._bagsShutTap')(9)
+L.execute('CASTING = "Disenchant"')
+check(doc().bulk.stop is True, "our own spell casting: B = Stop")
+# ---------------------------------------------------------------- B in a fight: Home, never a stop of the fight's cast
+L.execute('COMBAT = true; CASTING = "Disenchant"; RELEASED = nil')     # (the pull came mid-disenchant)
+seq = doc().use and doc().use.seq
+touch(33)
+d = doc()
+check(d.note in ('left-B',) and L.eval('RELEASED') == 'B' and not (d.use and d.use.stopcast and d.use.seq != seq),
+      "B in a fight: Home (even over the Bags grid, even mid-cast), no /stopcasting from the grid in a fight", d.note)
+L.execute('COMBAT = false; CASTING = nil')
 
 # ---------------------------------------------------------------- no trace
 de_code = SRC[SRC.index('-- ---------------------------------------------------------------- bags-de1: THE DISENCHANT GRID'):
