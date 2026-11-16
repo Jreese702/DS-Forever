@@ -116,16 +116,25 @@ object KitSteps {
     /** icons.pak (build_pak.py): every icon the rooms show, 64 px WebP */
     object Icons : ArtHarvest.Step {
         override val id = "icons"
-        override val version = 5
+        // 6 (issue #404, the user's pick 2026-11-16: "seed every class's spellbook icons in the FIRST icon pack (before Play), from the
+        // game's tables, so a new character's spells are never blank"): + every class's spellbook (ClassBookIcons); an install that has
+        // a pack builds it again in the background, a first install before Play as before
+        override val version = 6
         // 1.0.17: before Play only while no icons.pak exists (a first install); a newly asked icon rebuilds it in the background
         override val beforePlay: Boolean get() = !File(ArtHarvest.dir("."), "icons.pak").isFile
         override val weight = 1200
         override fun run(job: ArtHarvest.Job) {
             Log.i(TAG, "icons: registered ${job.game.loadClientKeys()} keys from this game's own tables")
+            val bookLater = classBook(job)
             do {
                 val recipe = IconRequirements.recipe(job.ctx, job.game.buildKey)
                 val key = IconRecipe.fingerprint(recipe)
-                Log.i(TAG, "icons: ${recipe.getJSONArray("fids").length()} required companion references")
+                val fids = recipe.getJSONArray("fids")
+                Log.i(TAG, "icons: ${fids.length()} required companion references")
+                // #404: the pack's missing game files fetched several at once first (the class book is ~800 icons: one by one on a
+                // partial / streamed Data folder was minutes), as the all-icons packs do; a failed fetch is not the step's, a stop is
+                ArtHarvest.tolerant { job.game.prefetch((0 until fids.length()).map { fids.getInt(it) }, letGo = { job.letGoAsked() }) }
+                job.checkpoint()
                 val icons = build(job)
                 // #35 #36 #38 review (2026-11-11): tolerant, so one unreadable icon no longer locks Play on a first install
                 val n = icons.icons(recipe, job.file("icons.pak"), tolerant = true, encode = ::webp)
@@ -137,7 +146,48 @@ object KitSteps {
                 if (icons.degraded.isNotEmpty()) Log.w(TAG, "icons in a degraded state: ${icons.degraded.size} left out, Play goes on")
                 job.inputKey = key
             } while (job.inputKey != IconRequirements.inputKey(job.ctx, job.game.buildKey))
+            // #404: the spell tables did not download: the stamp never matches the requirements, so a later launch builds the pack
+            // again in the background (the first pack is there: never before Play again) and reads the tables once more
+            if (bookLater) job.inputKey = CLASS_BOOK_LATER + job.inputKey
         }
+
+        /**
+         * #404: this build's class spellbook icons into the recipe (ClassBookIcons, from SkillLine, SkillLineAbility and SpellMisc), once
+         * per build. A table that did not download is tried again in this launch (the step throws until its last try) and then on a
+         * later launch (true); a table that does not read or a layout the rows do not fit: the pack goes on without it (logged), as before
+         */
+        internal fun classBook(job: ArtHarvest.Job): Boolean {
+            val g = job.game
+            if (IconRequirements.hasClassBook(job.ctx, g.buildKey)) return false
+            val why = ArrayList<String>()
+            fun table(fid: Int): Db2? = g.db2(fid).also { if (it == null) why.add(g.lastReadWhy ?: "table $fid could not be read") }
+            val sl = table(ClassBookIcons.DB_SKILL_LINE)
+            val sla = table(ClassBookIcons.DB_SKILL_LINE_ABILITY)
+            val sm = table(ClassBookIcons.DB_SPELL_MISC)
+            if (sl == null || sla == null || sm == null) {
+                val later = why.any { KitBuild.transient(it) }
+                if (later && !job.lastTry) error("the spell tables could not be downloaded: trying again")
+                Log.w(TAG, "icons: no class spellbook icons (${why.joinToString("; ")})" + if (later) ", tried again on a later launch" else "")
+                return later
+            }
+            // pure work on tables in hand: whatever it throws is the tables' (a layout the rows do not fit), never the pack's
+            val icons = try {
+                ClassBookIcons.fromTables(sl, sla, sm)
+            } catch (e: RuntimeException) {
+                Log.w(TAG, "icons: no class spellbook icons, the spell tables' rows do not fit (${e.message ?: e.javaClass.simpleName})")
+                return false
+            }
+            runCatching { IconRequirements.setClassBook(job.ctx, g.buildKey, icons) }.onFailure {
+                Log.w(TAG, "icons: the class spellbook icons could not be kept (${it.message}), the pack goes on without them")
+                return false
+            }
+            Log.i(TAG, "icons: every class's spellbook, ${icons.size} icons from this build's tables (layouts " +
+                "%08x %08x %08x)".format(sl.layoutHash, sla.layoutHash, sm.layoutHash))
+            return false
+        }
+
+        /** the stamp's inputs prefix of a pack built without the class book because its tables did not download (#404) */
+        const val CLASS_BOOK_LATER = "classbook-later:"
     }
 
     @Suppress("DEPRECATION")

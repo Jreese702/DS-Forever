@@ -14,11 +14,14 @@ object IconRequirements {
     private var build = ""
     private var seed: JSONObject? = null
     private var observed: JSONObject? = null
+    /** #404 (the user's pick, 2026-11-16): every class's spellbook icons for one game build (ClassBookIcons, read in the icons step) */
+    private var classBook: JSONObject? = null
     private var ids = emptySet<Int>()
     private var failure: String? = null
     private val handler = Handler(Looper.getMainLooper())
     private val retry = Runnable { app?.let { ArtHarvest.start(it) } }
     private var listening = false
+    private const val CLASS_BOOK = "icon_classbook.json"
 
     @Synchronized fun init(ctx: Context) {
         val active = GameFiles.activeBuild(GameFiles.gameRoot(ctx))?.second ?: return
@@ -30,7 +33,9 @@ object IconRequirements {
             seed = ctx.assets.open("harvest/icons.json").bufferedReader().use { JSONObject(it.readText()) }
             val file = File(ctx.filesDir, "icon_requirements.json")
             observed = if (file.exists()) JSONObject(file.readText()) else null
-            val array = IconRecipe.resolve(seed!!, observed, build).getJSONArray("fids")
+            // a class book that does not read is only not there (the icons step reads the tables again)
+            classBook = runCatching { File(ctx.filesDir, CLASS_BOOK).takeIf { it.exists() }?.let { JSONObject(it.readText()) } }.getOrNull()
+            val array = IconRecipe.resolve(seed!!, observed, build, classBook).getJSONArray("fids")
             ids = (0 until array.length()).map { array.getInt(it) }.toSet()
         }.onFailure { failure = "icon dependencies could not be loaded: ${it.message}" }
         if (!listening) {
@@ -48,12 +53,34 @@ object IconRequirements {
         init(ctx)
         failure?.let { error(it) }
         check(active == build) { "game build changed during icon harvest" }
-        return IconRecipe.resolve(seed ?: error("no fixed icon recipe"), observed, build)
+        return IconRecipe.resolve(seed ?: error("no fixed icon recipe"), observed, build, classBook)
     }
 
     fun inputKey(ctx: Context, active: String): String = runCatching {
         IconRecipe.fingerprint(recipe(ctx, active))
     }.getOrElse { "invalid" }
+
+    /** #404: this build's class spellbook icons are in the recipe already */
+    @Synchronized fun hasClassBook(ctx: Context, active: String): Boolean {
+        init(ctx)
+        return active == build && classBook?.optString("build") == active
+    }
+
+    /**
+     * #404: [icons] are every class's spellbook icons for game build [active]: kept (an atomic write, as the asked icons) and in the
+     * recipe from now on, so the first pack holds them and the bottom screen never asks for them one by one
+     */
+    @Synchronized fun setClassBook(ctx: Context, active: String, icons: Collection<Int>) {
+        init(ctx)
+        check(active == build) { "game build changed during icon harvest" }
+        val data = JSONObject().put("build", active).put("fids", JSONArray(icons.filter { it > 0 }.sorted()))
+        val file = File(ctx.filesDir, CLASS_BOOK)
+        val temp = File(ctx.filesDir, "$CLASS_BOOK.part")
+        temp.writeText(data.toString())
+        check(temp.renameTo(file)) { "class spellbook icon metadata could not be saved" }
+        classBook = data
+        ids = ids + icons.filter { it > 0 }
+    }
 
     @Synchronized fun require(id: Int) {
         if (id <= 0 || id in ids || failure != null) return

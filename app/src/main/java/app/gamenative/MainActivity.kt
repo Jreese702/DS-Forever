@@ -140,6 +140,9 @@ class MainActivity : ComponentActivity() {
         // emit before super so Compose DisposableEffects (which unregister
         // listeners during super.onDestroy's lifecycle transition) still fire
         if (!isChangingConfigurations) {
+            // issue #355: the window closed for good ends the game from here (XServerScreen's exit): ours, not Android's, in the
+            // game's end line ("was closed by DS Forever (...)"), and no "The game closed" note for it
+            if (isFinishing && com.jrees.wowcompanion.GameLife.closer == null) com.jrees.wowcompanion.GameLife.closer = "the app closing"
             PluviaApp.events.emit(AndroidEvent.ActivityDestroyed)
 
             // if exit() didn't run (listener already unregistered, race, etc.)
@@ -161,7 +164,11 @@ class MainActivity : ComponentActivity() {
             val app = applicationContext
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 val am = app.getSystemService(android.app.ActivityManager::class.java)
-                if (am?.appTasks.isNullOrEmpty() && !PluviaApp.keepAlive) android.os.Process.killProcess(android.os.Process.myPid())
+                if (am?.appTasks.isNullOrEmpty() && !PluviaApp.keepAlive) {
+                    // issue #355: Android records this kill as "stopped by a signal" (9); the mark says it was ours (LastRun.ownKill)
+                    com.jrees.wowcompanion.LastRun.ownExit(app)
+                    android.os.Process.killProcess(android.os.Process.myPid())
+                }
             }, 1_500L)
         }
 

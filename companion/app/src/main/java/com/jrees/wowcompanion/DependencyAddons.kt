@@ -207,8 +207,13 @@ object DependencyAddons {
         staging.deleteRecursively()
     }
 
-    /** the zip into [to]: files at its top level, or all under one "<folder>/" (both packagings) */
-    internal fun unpack(zip: File, to: File, folder: String, maxFiles: Int = MAX_FILES, maxBytes: Long = MAX_UNPACKED) {
+    /**
+     * the zip into [to]: files at its top level, or all under one "<folder>/" (both packagings). [progress] (issue #412, 2026-11-15:
+     * "installing spoken addon", sent 7 minutes into Spoken Quests' 1.5 GB unpack, which finished seconds later, under a line that
+     * never moved): the whole percent of the zip read so far by the unpack's own pass, 0 - 100, each value once
+     */
+    internal fun unpack(zip: File, to: File, folder: String, maxFiles: Int = MAX_FILES, maxBytes: Long = MAX_UNPACKED,
+                        progress: ((Int) -> Unit)? = null) {
         to.mkdirs()
         val root = to.canonicalFile
         var files = 0; var bytes = 0L
@@ -216,9 +221,16 @@ object DependencyAddons {
             generateSequence { z.nextEntry }.map { it.name.replace('\\', '/') }.toList()
         }
         val prefix = "$folder/".takeIf { p -> folder.isNotEmpty() && names.isNotEmpty() && names.all { it.startsWith(p) } } ?: ""
-        ZipInputStream(zip.inputStream().buffered()).use { z ->
+        val total = zip.length().coerceAtLeast(1L)
+        var shown = -1
+        val counted = Counted(zip.inputStream())
+        ZipInputStream(counted.buffered()).use { z ->
             val buf = ByteArray(65536)
             while (true) {
+                if (progress != null) {
+                    val pct = (counted.read * 100 / total).toInt().coerceIn(0, 100)
+                    if (pct != shown) { shown = pct; progress(pct) }
+                }
                 val e = z.nextEntry ?: break
                 val name = e.name.replace('\\', '/').removePrefix(prefix)
                 if (name.isEmpty()) continue
@@ -239,6 +251,15 @@ object DependencyAddons {
             }
         }
         require(files > 0) { "the package is empty" }
+        if (progress != null && shown != 100) progress(100)
+    }
+
+    /** a stream that counts what it gave (the unpack's progress: the zip's bytes read so far) */
+    private class Counted(inner: java.io.InputStream) : java.io.FilterInputStream(inner) {
+        var read = 0L
+        override fun read(): Int = super.read().also { if (it >= 0) read++ }
+        override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { if (it > 0) read += it }
+        override fun skip(n: Long): Long = super.skip(n).also { if (it > 0) read += it }
     }
 
     private class GameStarted : RuntimeException()

@@ -4,9 +4,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 
-/** Only fixed companion references and icons actually requested by this build's UI. */
+/**
+ * Only fixed companion references and icons actually requested by this build's UI - and (issue #404, the user's pick 2026-11-16) every
+ * class's spellbook icons from this build's own tables ([classBook]: ClassBookIcons, kept by IconRequirements per build).
+ */
 object IconRecipe {
-    fun resolve(seed: JSONObject, observed: JSONObject?, build: String): JSONObject {
+    fun resolve(seed: JSONObject, observed: JSONObject?, build: String, classBook: JSONObject? = null): JSONObject {
         check(seed.optString("source") == "companion-requests") { "unsupported icon recipe source" }
         val ids = sortedSetOf<Int>()
         fun add(array: JSONArray) {
@@ -19,6 +22,8 @@ object IconRecipe {
         add(seed.optJSONArray("fids") ?: error("fixed icon references missing"))
         if (observed != null && observed.optString("build") == build)
             add(observed.optJSONArray("fids") ?: error("observed icon references missing"))
+        if (classBook != null && classBook.optString("build") == build)
+            add(classBook.optJSONArray("fids") ?: error("class spellbook icon references missing"))
         check(ids.isNotEmpty()) { "no required companion icons" }
         return JSONObject().put("fids", JSONArray(ids.toList())).put("tile", 64).put("quality", 80)
     }

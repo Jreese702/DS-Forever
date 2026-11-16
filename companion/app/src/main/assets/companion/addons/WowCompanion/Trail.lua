@@ -100,7 +100,93 @@ end
 -- overshot the facing by more than it corrected, so the bar swung left and right a little wider each frame, up to whole-bar
 -- swings and the 2.5 rad reset. Now each step is the spring's EXACT solution over dt (closed form, the same 0.2 s settle):
 -- stable at any frame time, never overshooting, the letters still placed at sub-pixel offsets (no snapping of a moving offset).
-WC.compass = { V = "cp40" }
+-- cp41 ISSUE #358 (a player: "Character names: Cyrillic characters are displayed as empty squares instead of actual letters"; the
+-- user's pick, 2026-11-16: the font family, "CreateFontFamily with the game's per-alphabet members, like the game's own frames"):
+-- WC.font(fs, height, flags) - OUR TOP-SCREEN TEXT IN A FONT FAMILY, the way the game's own frames draw theirs. SetFont with
+-- Fonts\FRIZQT__.TTF picks ONE file, and that file has no Cyrillic letters (253 glyphs, none in U+0400-04FF; its placeholder glyph
+-- is a hollow box), so every Cyrillic letter drew as an empty square. The game's fonts are families (blizzard_fonts_shared
+-- fonts.xml): one member font per alphabet, each letter drawn from its own alphabet's member. WC.font makes one family per
+-- (height, flags) with CreateFontFamily and the game's own members (roman FRIZQT__, russian FRIZQT___CYR, korean 2002, simplified
+-- Chinese ARKai_T, traditional Chinese blei00d; roman + russian only on a client that refuses that set), so Latin keeps today's
+-- look (the same FRIZQT__ file at the same size) and the other alphabets draw. SetFontObject hands the string the object's colour,
+-- shadow, justification and spacing, so the string's own go back on after it (plain values only: nothing secret is read back, a
+-- string's text is never read). No family on this client (no CreateFontFamily, or it fails): SetFont(FRIZQT__) as before.
+-- Runtime objects only (WowCompanionFont<n>, never saved). Hub's name strings (uf23) and our other top-screen text use it; here the
+-- compass's letters, distances and numbers (C.FONT stays the roman member, the fallback).
+do
+    local ROMAN = "Fonts\\FRIZQT__.TTF"
+    local ALL = { { "roman", ROMAN }, { "korean", "Fonts\\2002.ttf" }, { "simplifiedchinese", "Fonts\\ARKai_T.ttf" },
+                  { "traditionalchinese", "Fonts\\blei00d.TTF" }, { "russian", "Fonts\\FRIZQT___CYR.TTF" } }
+    local F = { V = "cp41", ROMAN = ROMAN, SETS = { ALL, { ALL[1], ALL[5] } }, set = 1, n = 0, fams = {} }
+    WC.fontFamily = F
+    local function plain(...)
+        local isPlain = WC.isPlain
+        if type(isPlain) ~= "function" then return true end
+        for i = 1, select("#", ...) do if not isPlain((select(i, ...))) then return false end end
+        return true
+    end
+    -- a new family of the current member set; a set the client refuses is dropped for this one and every later family
+    local function make(h, flags)
+        while F.set <= #F.SETS do
+            local m = {}
+            for i, a in ipairs(F.SETS[F.set]) do m[i] = { alphabet = a[1], file = a[2], height = h, flags = flags } end
+            F.n = F.n + 1
+            local ok, obj = pcall(CreateFontFamily, "WowCompanionFont" .. F.n, m)
+            if ok and obj ~= nil then
+                local okF, file = pcall(function() return obj:GetFont() end)
+                if okF and type(file) == "string" and file ~= "" then return obj end
+            end
+            F.set = F.set + 1
+        end
+        return false
+    end
+    local function family(h, flags)
+        local key = string.format("%.3f|%s", h, flags)
+        local obj = F.fams[key]
+        if obj == nil then
+            obj = type(CreateFontFamily) == "function" and make(h, flags) or false
+            F.fams[key] = obj
+        end
+        return obj
+    end
+    -- the string's own looks that SetFontObject replaces with the object's (only values that test plain FIRST are kept)
+    local function keep(fs)
+        local k = {}
+        local ok, r, g, b, a = pcall(fs.GetTextColor, fs)
+        if ok and plain(r, g, b, a) and type(r) == "number" then k.tc = { r, g, b, a or 1 } end
+        local okO, x, y = pcall(fs.GetShadowOffset, fs)
+        if okO and plain(x, y) and type(x) == "number" and type(y) == "number" then k.so = { x, y } end
+        local okC, sr, sg, sb, sa = pcall(fs.GetShadowColor, fs)
+        if okC and plain(sr, sg, sb, sa) and type(sr) == "number" then k.sc = { sr, sg, sb, sa or 1 } end
+        local okH, jh = pcall(fs.GetJustifyH, fs)
+        if okH and plain(jh) and type(jh) == "string" then k.jh = jh end
+        local okV, jv = pcall(fs.GetJustifyV, fs)
+        if okV and plain(jv) and type(jv) == "string" then k.jv = jv end
+        local okS, sp = pcall(fs.GetSpacing, fs)
+        if okS and plain(sp) and type(sp) == "number" then k.sp = sp end
+        return k
+    end
+    local function put(fs, k)
+        if k.tc then pcall(fs.SetTextColor, fs, k.tc[1], k.tc[2], k.tc[3], k.tc[4]) end
+        if k.so then pcall(fs.SetShadowOffset, fs, k.so[1], k.so[2]) end
+        if k.sc then pcall(fs.SetShadowColor, fs, k.sc[1], k.sc[2], k.sc[3], k.sc[4]) end
+        if k.jh then pcall(fs.SetJustifyH, fs, k.jh) end
+        if k.jv then pcall(fs.SetJustifyV, fs, k.jv) end
+        if k.sp then pcall(fs.SetSpacing, fs, k.sp) end
+    end
+    -- in place of fs:SetFont(FRIZQT__, h, flags): true = the family, false = the plain file (no family on this client)
+    function WC.font(fs, h, flags)
+        flags = flags or ""
+        local obj = type(h) == "number" and h > 0 and family(h, flags)
+        if obj then
+            local k = keep(fs)
+            if pcall(fs.SetFontObject, fs, obj) then put(fs, k); return true end
+        end
+        fs:SetFont(ROMAN, h, flags)
+        return false
+    end
+end
+WC.compass = { V = "cp41" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -403,7 +489,7 @@ do
         for deg = 0, 345, 15 do
             if C.NAMES[deg] then
                 local fs = f:CreateFontString(nil, "OVERLAY")
-                fs:SetFont(C.FONT, u(#C.NAMES[deg] == 1 and S.letter or S.letter2), "OUTLINE")
+                WC.font(fs, u(#C.NAMES[deg] == 1 and S.letter or S.letter2), "OUTLINE")
                 fs:SetText(C.NAMES[deg])
                 fs:SetTextColor(C.TICK[1], C.TICK[2], C.TICK[3], 1)
                 C.slot[deg] = { fs = fs, lifted = false }
@@ -431,7 +517,7 @@ do
             o.sh:SetSize(sz + u(3), sz + u(3))
             o.tx:SetSize(sz, sz)
             o.d = f:CreateFontString(nil, "OVERLAY")
-            o.d:SetFont(C.FONT, u(S.dist), "OUTLINE")
+            WC.font(o.d, u(S.dist), "OUTLINE")
             if spec.red then o.d:SetTextColor(1, 0.25, 0.25, 1) else o.d:SetTextColor(1, 1, 1, 1) end
             o.a = f:CreateTexture(nil, "ARTWORK", nil, 3)
             pcall(function() o.a:SetAtlas("Navigation-Tracked-Arrow") end)
@@ -441,7 +527,7 @@ do
                 -- brown disc (read from its atlas: the modern style, numbers drawn light on it); cp17's dark brown number was there
                 -- but invisible on it. Now light, outlined, over the disc (OVERLAY over its ARTWORK)
                 o.num = f:CreateFontString(nil, "OVERLAY", nil, 7)
-                o.num:SetFont(C.FONT, u(15), "")
+                WC.font(o.num, u(15), "")
                 o.num:SetTextColor(C.NUM_RGB[1], C.NUM_RGB[2], C.NUM_RGB[3], 1)   -- cp27: dark on our gold disc
             end
             C.mk[key] = o
@@ -985,10 +1071,10 @@ do
             dia:SetVertexColor(C.GOLD[1], C.GOLD[2], C.GOLD[3])
             dia:Hide()
             local d = f:CreateFontString(nil, "OVERLAY")
-            d:SetFont(C.FONT, C.u(13), "OUTLINE")
+            WC.font(d, C.u(13), "OUTLINE")
             d:SetPoint("TOP", f, "BOTTOM", 0, -C.u(2))
             local nm = f:CreateFontString(nil, "OVERLAY", nil, 7)            -- cp27: the objective's number on its disc
-            nm:SetFont(C.FONT, C.u(16), "")
+            WC.font(nm, C.u(16), "")
             nm:SetTextColor(C.NUM_RGB[1], C.NUM_RGB[2], C.NUM_RGB[3], 1)
             nm:SetPoint("CENTER", f, "CENTER", 0, 0)
             nm:Hide()
@@ -1601,7 +1687,7 @@ do
             o.ln[i] = f:CreateLine(nil, "ARTWORK", nil, 2); o.ln[i]:SetColorTexture(R[1], R[2], R[3], 1)
         end
         o.d = f:CreateFontString(nil, "OVERLAY")
-        o.d:SetFont(C.FONT, C.u(C.SPEC.dist), "OUTLINE")
+        WC.font(o.d, C.u(C.SPEC.dist), "OUTLINE")
         o.d:SetTextColor(R[1], R[2], R[3], 1)
         o.a = f:CreateTexture(nil, "ARTWORK", nil, 3)
         pcall(function() o.a:SetAtlas("Navigation-Tracked-Arrow") end)
@@ -1687,7 +1773,7 @@ do
             local s = C.slot[l.deg]
             seen[l.deg] = true
             if s.lifted ~= l.lifted then                    -- the font only when the size changes (a marker came / went)
-                s.fs:SetFont(C.FONT, u(l.size), "OUTLINE")
+                WC.font(s.fs, u(l.size), "OUTLINE")
                 s.lifted = l.lifted
             end
             s.fs:SetAlpha(C.LETTER_A * l.fade)
@@ -1769,10 +1855,10 @@ do
             o.dsh = f:CreateTexture(nil, "ARTWORK", nil, 4); o.dsh:SetTexture(C.DISC_TEX); o.dsh:SetVertexColor(0, 0, 0, 0.6)
             o.disc = f:CreateTexture(nil, "ARTWORK", nil, 5); o.disc:SetTexture(C.DISC_TEX)
             o.num = f:CreateFontString(nil, "OVERLAY", nil, 7)
-            o.num:SetFont(C.FONT, u(15), "")
+            WC.font(o.num, u(15), "")
             o.num:SetTextColor(C.NUM_RGB[1], C.NUM_RGB[2], C.NUM_RGB[3], 1)
             o.d = f:CreateFontString(nil, "OVERLAY")
-            o.d:SetFont(C.FONT, u(C.SPEC.dist), "OUTLINE")
+            WC.font(o.d, u(C.SPEC.dist), "OUTLINE")
             o.d:SetTextColor(1, 1, 1, 1)
             o.ar = f:CreateTexture(nil, "ARTWORK", nil, 3); pcall(function() o.ar:SetAtlas("Navigation-Tracked-Arrow") end)
             o.ar:SetSize(u(14), u(14))
@@ -2109,7 +2195,10 @@ end
 --   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
 --   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 --   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-WC.live = { V = "ag11", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+-- ag12 ISSUE #358 (a player: "Cyrillic characters are displayed as empty squares instead of actual letters"; the user's pick,
+-- 2026-11-16: the font family, "like the game's own frames"): the pull pick's step number (A.iconFor) takes cp41's WC.font
+-- instead of SetFont(FRIZQT__); the same look in Latin.
+WC.live = { V = "ag12", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -2852,7 +2941,7 @@ do
         pcall(function() pk:SetAtlas("TargetCrosshairs") end)
         pk:Hide()
         local pn = f:CreateFontString(nil, "OVERLAY")
-        pcall(function() pn:SetFont("Fonts\\FRIZQT__.TTF", u(13), "OUTLINE") end)
+        pcall(function() WC.font(pn, u(13), "OUTLINE") end)               -- ag12 (#358): the family (cp41 WC.font)
         pn:SetPoint("BOTTOMLEFT", pk, "TOPRIGHT", -u(8), -u(10))
         pcall(function() pn:SetTextColor(1, 0.82, 0, 1) end)
         pn:Hide()
@@ -3301,7 +3390,10 @@ end
 -- Blizzard's own aura buttons do: P.auraSweep hands it straight over (never read or compared) for the HUD's row and Hub's target bar;
 -- without the functions, or refused, the old route as before. Feature-detected; the route that worked rides one "cap" line (probe
 -- "aurasweep") per route a login.
-WC.prd = { V = "prd17", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
+-- prd18 ISSUE #358 (a player: "Cyrillic characters are displayed as empty squares instead of actual letters"; the user's pick,
+-- 2026-11-16: the font family, "like the game's own frames"): the HUD row's aura seconds and stack counts take cp41's WC.font
+-- instead of SetFont(FRIZQT__); the same look in Latin.
+WC.prd = { V = "prd18", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
            PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
@@ -3553,10 +3645,10 @@ do
         o.bd:SetPoint("TOPLEFT", o.f, "TOPLEFT", -u(4), u(4))
         o.bd:SetPoint("BOTTOMRIGHT", o.f, "BOTTOMRIGHT", u(4), -u(4))
         o.t = o.f:CreateFontString(nil, "OVERLAY")
-        o.t:SetFont("Fonts\\FRIZQT__.TTF", u(13), "OUTLINE")
+        WC.font(o.t, u(13), "OUTLINE")                                      -- prd18 (#358): the family (cp41 WC.font)
         o.t:SetPoint("TOP", o.f, "BOTTOM", 0, -u(2))
         o.n = o.f:CreateFontString(nil, "OVERLAY")
-        o.n:SetFont("Fonts\\FRIZQT__.TTF", u(13), "OUTLINE")
+        WC.font(o.n, u(13), "OUTLINE")
         o.n:SetPoint("BOTTOMRIGHT", o.f, "BOTTOMRIGHT", -u(1), u(1))
         o.f:Hide()
         return o

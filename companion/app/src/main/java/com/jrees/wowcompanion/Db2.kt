@@ -56,13 +56,15 @@ class Db2(private val d: ByteArray, private val name: String = "db2") {
         o += fieldStorageInfoSize
         pallet = d.copyOfRange(o, o + palletDataSize); o += palletDataSize
         val commonRaw = d.copyOfRange(o, o + commonDataSize); o += commonDataSize
-        // encrypted sections park their id lists here, before section 0's data (db2.py)
-        for (s in sections) if (s.tact != 0L && s.idListSize != 0) {
-            val cnt = u32(o); o += 4
-            check(cnt * 4 == s.idListSize) { "$name: encrypted section id count $cnt != ${s.idListSize}" }
-            o += s.idListSize
+        // encrypted sections park their id lists here, before section 0's data (db2.py). #404 (SkillLineAbility, its ids inline: no id
+        // list, id_list_size 0): there EVERY encrypted section writes its count and ids (5 sections, 1 id each: 40 bytes db2.py's rule
+        // left over). The rule that closes exactly on section 0's offset is the one (at most one can: they differ by 4 bytes or more)
+        val listed = encryptedIdsEnd(o, every = false)
+        val every = encryptedIdsEnd(o, every = true)
+        if (sections.isNotEmpty()) {
+            val s0 = sections[0].fileOffset
+            check(listed == s0 || every == s0) { "$name: block end ${listed ?: every ?: o} != section 0 offset $s0" }
         }
-        if (sections.isNotEmpty()) check(sections[0].fileOffset == o) { "$name: block end $o != section 0 offset ${sections[0].fileOffset}" }
         var p = 0
         for ((i, s) in storage.withIndex()) if (s.type == ST_COMMON && s.additional != 0) {
             val m = HashMap<Int, Int>()
@@ -73,6 +75,23 @@ class Db2(private val d: ByteArray, private val name: String = "db2") {
         palletOffsets = IntArray(storage.size)
         var off = 0
         for ((i, s) in storage.withIndex()) { palletOffsets[i] = off; if (s.type == ST_INDEXED || s.type == ST_INDEXED_ARRAY) off += s.additional }
+    }
+
+    /**
+     * where the encrypted sections' id lists end, from [start], or null when they do not fit: [every] = each encrypted section writes
+     * uint32 count + count ids (the count from the file: a table whose ids are inline writes them too); else only the sections with an
+     * id list, each count * 4 == its id_list_size (db2.py's rule, map.db2's three sections)
+     */
+    private fun encryptedIdsEnd(start: Int, every: Boolean): Int? {
+        var o = start
+        for (s in sections) if (s.tact != 0L && (every || s.idListSize != 0)) {
+            if (o < 0 || o + 4 > d.size) return null
+            val cnt = u32(o); o += 4
+            if (cnt < 0 || cnt > (d.size - o) / 4) return null
+            if (s.idListSize != 0 && cnt * 4 != s.idListSize) return null
+            o += cnt * 4
+        }
+        return o
     }
 
     /** every readable row; [strings] = the field indices to decode as strings */

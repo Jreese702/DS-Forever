@@ -1712,6 +1712,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val SIGN_IN_PROMPTS = false
     /** pad15: the one reload for add-ons switched back on (this app run) */
     private var addonsReloaded = false
+    /** #358 review: the add-on kernel's self-test line last written (a replayed log's copy is not written again) */
+    private var kernelLineLast: String? = null
     /** the chat guest's B place last sent (null = not since its hold): repeats are not clicked again */
     private var chatBSaid: Boolean? = null
 
@@ -2181,6 +2183,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     reportNotice.hide(); SetupBridge.noticeAsking = false
                 }
             }
+        }
+        // #358 review: the kernel's self-test (Safety.lua k5: cc / utf8 / sink) as a line of its own; DiagLog's summary of "cap" lost it
+        kernelProbeLine(msg)?.let { line ->
+            if (line != kernelLineLast) { kernelLineLast = line; Log.i("WCSETUP", line); DiagLog.event("addons", line) }
         }
         // hub21: the frames standing where the bottom-left bar is (one probe per login)
         if (msg.optString("probe") == "barprobe") Log.i("WCHUB", "bar probe (${msg.optInt("scanned")} frames): ${msg.optJSONArray("frames")}")

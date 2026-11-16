@@ -406,8 +406,8 @@ def main():
     abs_src = open(AB, encoding="utf-8").read()
     hub_src = open(HUB, encoding="utf-8").read()
     chk("nbar2 / hub46 / uf17: the header notes quote the issue", "issue #195" in abs_src.split("\n", 6)[1] + abs_src.split("\n", 6)[2]
-        and "nbar2 (review of nbar1, issue #195" in abs_src and 'local HV = "hub54"' in hub_src and "hub49:" in hub_src and "hub48:" in hub_src and "hub47b: SMART RES" in hub_src and "hub47:" in hub_src and "hub45: THE NINTENDO BAR" in hub_src
-        and "hub46: ONE GLYPH RULE (issue #195" in hub_src and 'V = "uf22"' in hub_src)
+        and "nbar2 (review of nbar1, issue #195" in abs_src and 'local HV = "hub55"' in hub_src and "hub49:" in hub_src and "hub48:" in hub_src and "hub47b: SMART RES" in hub_src and "hub47:" in hub_src and "hub45: THE NINTENDO BAR" in hub_src
+        and "hub46: ONE GLYPH RULE (issue #195" in hub_src and 'V = "uf23"' in hub_src)
     # ------------------------------------------------------------ the switch round trip (Hub's "uisw")
     sw_row = G.ROWS["uisw"]
     chk("hub45: Hub registered its switch row", sw_row is not None)
@@ -744,7 +744,7 @@ def aura_checks(chk):
     ids = sorted(o.cd.cdObj.aura for o in hb)
     chk("aura sweeps: the objects are the auras' own (ids 11 / 12 / 13)", ids == [11, 12, 13], ids)
     sw = [dict(x) for x in G.SWEEPS.values()]
-    chk("probe aurasweep: route dur, once (both units share the route), plain", len(sw) == 1 and sw[0]["route"] == "dur" and sw[0]["v"] == "prd17", sw)
+    chk("probe aurasweep: route dur, once (both units share the route), plain", len(sw) == 1 and sw[0]["route"] == "dur" and sw[0]["v"] == "prd18", sw)
     # absent: the old route as before (the secrets straight to the old setter)
     rig2 = ta.make(mode="plain")
     rig2.L.execute("SWEEPS = {}; WowCompanion.send = function(j) if type(j) == 'table' and j.probe == 'aurasweep' then SWEEPS[#SWEEPS + 1] = j end end")

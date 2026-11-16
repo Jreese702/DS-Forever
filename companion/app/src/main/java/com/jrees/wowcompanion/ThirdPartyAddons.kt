@@ -517,7 +517,9 @@ object ThirdPartyAddons {
                     lines.add("$name goes in at the next start with the game closed"); log("add-ons: $name not applied: the game is running"); continue
                 }
                 onStep("Installing add-ons: $name...")
-                moveIn(a, key, p, flavorRoot)
+                // #412: a big pack (Spoken Quests: 1.5 GB, ~7 min on a Thor) says how far its unpack is (a line only when it changes)
+                var line = "Installing add-ons: $name..."
+                moveIn(a, key, p, flavorRoot) { pct -> installLine(name, pct).let { if (it != line) { line = it; onStep(it) } } }
                 val ver = a.version.takeIf { key == "core" } ?: p.tag.substringAfterLast('v')
                 lines.add("$name $ver installed")
                 log("add-ons: applied $name $ver")
@@ -559,7 +561,11 @@ object ThirdPartyAddons {
     /** one WCSETUP line (the off-device tests have no android.util.Log: ignored there) */
     private fun log(line: String) { runCatching { android.util.Log.i("WCSETUP", line) } }
 
-    private fun moveIn(a: Addon, key: String, p: Pkg, flavorRoot: File) {
+    /** #412: the install step's line while a package unpacks ("Installing add-ons: Spoken Quests 42%..."); 0 and 100 say no number */
+    internal fun installLine(name: String, pct: Int): String =
+        if (pct in 1..99) "Installing add-ons: $name $pct%..." else "Installing add-ons: $name..."
+
+    private fun moveIn(a: Addon, key: String, p: Pkg, flavorRoot: File, progress: ((Int) -> Unit)? = null) {
         val iface = File(flavorRoot, "Interface")
         val addons = File(iface, "AddOns").apply { mkdirs() }
         val staging = stagingOf(flavorRoot, a, key)
@@ -575,7 +581,8 @@ object ThirdPartyAddons {
         try {
             if (!staged) {
                 if (staging.exists()) staging.deleteRecursively()             // our own leftover only
-                DependencyAddons.unpack(zipOf(p), staging, "", maxFiles = 40_000, maxBytes = p.bytes * 3 / 2 + 50_000_000)
+                DependencyAddons.unpack(zipOf(p), staging, "", maxFiles = 40_000, maxBytes = p.bytes * 3 / 2 + 50_000_000,
+                    progress = progress)
                 keepNotices(staging)
                 mark.writeText(sig(p))
             } else log("add-ons: ${a.id}-$key: the staged copy is complete, not unpacked again")

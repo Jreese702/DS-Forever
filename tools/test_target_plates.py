@@ -68,7 +68,7 @@ function UnitIsFriend(a, b) return true end
     A.friendsStep()
     rig.run(0.5)
     chk("ag9: a friendly target switches no plate option on (%d writes)" % len(G.CVW), len(G.CVW) == 0, list(G.CVW.values()))
-    chk("ag9: the version tag", A.V == "ag11" and G.WowCompanion.rings.V == "at9", (A.V, G.WowCompanion.rings.V))
+    chk("ag9: the version tag", A.V == "ag12" and G.WowCompanion.rings.V == "at9", (A.V, G.WowCompanion.rings.V))
     # a player who had them on from ag2..ag8: our values in place, the saved originals
     L.execute('''
 CV.nameplateShowFriendlyPlayers, CV.nameplateShowFriendlyNPCs, CV.nameplateNotSelectedAlpha = "1", "1", "0"
@@ -101,7 +101,7 @@ WowCompanionDB.npFriends = { orig = { nameplateShowFriendlyPlayers = "0", namepl
     rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
     fly = UF.fly
     fly.tick(G.GAME.t + 10)
-    chk("uf22: the version tag", UF.V == "uf22", UF.V)
+    chk("uf23: the version tag", UF.V == "uf23", UF.V)
     plateUF = G.PLATE.UnitFrame
     chk("uf18: a hostile target's plate hidden while targeted (alpha 0; no attack needed)", plateUF.alpha == 0, plateUF.alpha)
     rig.fire("PLAYER_TARGET_CHANGED")
@@ -252,7 +252,7 @@ function R0:SetShadowOffset(x, y) rawset(self, "shadow", { x, y }) end
     chk("uf20: none of the game's 19-texel HUD art left on the target bar (%d)" % len(old), len(old) == 0)
     hub_src = open(rt.HUB, encoding="utf-8").read()
     chk("uf20: no NEAREST filter in Hub.lua's code (crispTex / TB.FILTER gone)",
-        '"NEAREST"' not in hub_src and "crispTex" not in hub_src and 'local HV = "hub54"' in hub_src)
+        '"NEAREST"' not in hub_src and "crispTex" not in hub_src and 'local HV = "hub55"' in hub_src)
 
     # ------------------------------------------------------------------ uf20: the smooth rim at 720 / 1080 / 1440 lines
     media = os.path.join(rt.ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanion", "Media")
@@ -399,7 +399,7 @@ function UnitIsFriend(a, b) return true end
     G.GAME.fight = False
     hub = WC.hub
     chk("ag10: the version tag; the switch Off by default, said in the doc (npf false, not chosen)",
-        A.V == "ag11" and A.FRIENDS_ON is False and hub.npfFlag() is False and A.friendsChosen is None, (A.V, A.FRIENDS_ON))
+        A.V == "ag12" and A.FRIENDS_ON is False and hub.npfFlag() is False and A.friendsChosen is None, (A.V, A.FRIENDS_ON))
     A.friendsStep()
     chk("ag10: Off: a friendly target writes nothing (ag9)", len(G.CVW) == 0, list(G.CVW.values()))
     chk("hub52: NPF_ON (column 39) reaches Trail", hub.swTap(39) is True and A.FRIENDS_ON is True and hub.npfFlag() is True

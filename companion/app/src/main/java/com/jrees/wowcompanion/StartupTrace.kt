@@ -41,13 +41,16 @@ object StartupTrace {
         !i.storage -> "storage permission" to ""
         i.wrongGame -> "wrong game in the folder" to i.product
         i.installedExternal -> "installed on external storage" to ""
-        i.busy != null -> "busy: ${i.busy.take(48)}" to i.busy
+        i.busy != null -> "busy: ${busyKey(i.busy).take(48)}" to i.busy
         i.client == null -> "checks: game version" to ""
         i.art == SetupFlow.Art.RUNNING -> "art: ${i.artPercent / 10 * 10}%" to i.artWhat
         i.art == SetupFlow.Art.FAILED -> "art failed" to i.artWhy
         i.signIn != SetupFlow.SignIn.NONE -> "sign-in: ${i.signIn.name.lowercase()}" to ""
         else -> "ready (Play)" to (i.client ?: "")
     }
+
+    /** #412: a busy line's stage without its percent ("Installing add-ons: Spoken Quests 42%..." is one stage, not a hundred) */
+    fun busyKey(busy: String): String = busy.replace(Regex("\\s\\d{1,3}%"), "")
 
     /** the start-up screen's state changed ([SetupBridge.publish]) */
     fun observe(i: SetupFlow.Inputs?, gameUp: Boolean = LauncherHooks.gameUp()) {
