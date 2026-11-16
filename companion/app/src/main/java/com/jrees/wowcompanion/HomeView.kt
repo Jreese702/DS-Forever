@@ -614,8 +614,9 @@ class HomeView(
 
     private fun onB() {
         if (typeWanted) return                                            // the tool's B comes through the guest (it closes the tool)
-        // ClassPetKeys (the user, 2026-11-16: "B still makes a lot of sense to use here", pick "Only with a 4th ability"): on a class pet
-        // wheel with a 4th ability B is that ability's toggle - it never reaches the game and is nothing of Home's (no shrink, no close)
+        // ClassPetKeys (the user, 2026-11-16: "B still makes a lot of sense to use here"; then "the glyph locations on this bar should
+        // match where they actually are on the controller"): on a class pet wheel with an ability on B's spot (the physical button the
+        // ABXY location puts B on) B is that ability's toggle - it never reaches the game and is nothing of Home's (no shrink, no close)
         if (lent(castView) && castView.classBToggles()) return
         // while the chat module holds the controller its B comes through the guest (the chat's own chain), not this read-only watch
         if (chatWanted && chatHeld) return
