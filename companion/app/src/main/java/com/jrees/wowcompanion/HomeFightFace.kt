@@ -24,7 +24,11 @@ object HomeFightFace {
         for (pos in PadMapModel.FACES) PadMapModel.slot(map, BASE_SET, pos)?.fight?.stateId?.takeIf { it > 0 }?.let { out[pos] = it }
         if (fight) for (pos in 1..4) PadMapModel.slot(map, BASE_SET, pos)?.takeIf { it.kind == PadMapModel.Kind.COMBAT && it.ov }
             ?.combat?.stateId?.takeIf { it > 0 }?.let { out[pos] = it }
-        formOwn(map).forEach { (pos, r) -> if (pos in PadMapModel.FACES || fight) r.stateId?.takeIf { it > 0 }?.let { out[pos] = it } }
+        // review of m165: a form's own entry is what that button DRAWS ([icons] / [dpadIcons]), so one with no spell (a command, an item,
+        // a macro using an item or casting nothing now) takes none of the caster's spell's state or cast time - as [items] reads it
+        formOwn(map).forEach { (pos, r) ->
+            if (pos in PadMapModel.FACES || fight) { val s = r.stateId?.takeIf { it > 0 }; if (s != null) out[pos] = s else out.remove(pos) }
+        }
         return out
     }
 

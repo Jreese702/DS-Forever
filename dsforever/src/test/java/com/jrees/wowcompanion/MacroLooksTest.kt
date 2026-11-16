@@ -72,4 +72,33 @@ class MacroLooksTest {
         assertNull(rows[0].line)
         assertTrue(MacrosModel.lineOf(MacrosModel.PickRow("p", "Attack", 0)).isEmpty())      // no line said: nothing invented
     }
+
+    /** review of m165: a form's own macro with no spell now (an item's) is what that button draws and casts, so the caster's spell
+     *  under it lends it neither its state nor its cast time ([HomeFightFace.ids] as [HomeFightFace.items]) */
+    @Test fun aFormsOwnMacroWithNoSpellTakesNoneOfTheCastersState() {
+        val heal = PadMapModel.Ref(5185, "Healing Touch", 136041)
+        val wave = PadMapModel.Ref(331, "Healing Wave", 136052)
+        val pot = PadMapModel.Ref(null, "Pot", 134830, layer = "macro", key = "mc:Pot", mt = 118)
+        val claw = PadMapModel.Ref(null, "Claws", 132140, layer = "macro", key = "mc:Claws", ms = 1082)
+        val slots = listOf(
+            PadMapModel.Slot(5, null, PadMapModel.Kind.FIXED, null, "Interact", 0, fight = heal),
+            PadMapModel.Slot(6, null, PadMapModel.Kind.FIXED, null, "Inspect", 0, fight = wave),
+            PadMapModel.Slot(7, null, PadMapModel.Kind.FIXED, null, "Back", 0),
+            PadMapModel.Slot(8, null, PadMapModel.Kind.FIXED, null, "Jump", 0))
+        val m = PadMapModel.Map("m166", 1, 1, true, listOf(PadMapModel.PadSet(1, slots)), null, null, emptyList(),
+            faceArmedLayer = mapOf(5 to "g", 6 to "g", 8 to "g"), fightSwitch = true,
+            forms = listOf(PadMapModel.Form(2, 768, "Cat Form", 132115, on = true)),
+            formFights = listOf(PadMapModel.FormFight(768, 5, pot), PadMapModel.FormFight(768, 6, claw)))
+        assertEquals(mapOf(5 to 134830, 6 to 132140), HomeFightFace.icons(m))
+        assertEquals(mapOf(6 to 1082), HomeFightFace.ids(m, fight = true))                    // X: no Healing Touch state on the potion
+        assertEquals(mapOf(5 to 118), HomeFightFace.items(m, fight = true))
+    }
+
+    /** review of m165: a review's letter tag is still m49+ - a left-out `fight` is the router's switch OFF, never the bare fight flag */
+    @Test fun aLetterTagStillReadsTheFightSwitch() {
+        for (v in listOf("m163a", "m166")) {
+            val m = PadMapModel.parse(JSONObject("""{"type": "padmap", "v": "$v", "m": {"page": 1, "pages": 3, "combat": true, "sets": []}}"""))!!
+            assertEquals(v, false, m.fightSwitch); assertEquals(v, false, m.fight)
+        }
+    }
 }

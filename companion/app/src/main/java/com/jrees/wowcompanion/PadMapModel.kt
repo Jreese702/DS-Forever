@@ -260,8 +260,10 @@ object PadMapModel {
                 FACES.mapNotNull { p -> k.optString(p.toString(), "").takeIf { it.isNotEmpty() }?.let { p to it } }.toMap()
             } ?: emptyMap(),
             facePending = m.optJSONObject("face")?.optBoolean("pending", false) == true,
-            // m49+ always means the switch (`fight` left out = off); before m49 there was none
-            fightSwitch = if (m.has("fight") || (msg.optString("v").removePrefix("m").toIntOrNull() ?: 0) >= 49) m.optBoolean("fight", false) else null,
+            // m49+ always means the switch (`fight` left out = off); before m49 there was none. Review of m165: the number only - a review's
+            // letter tag ("m163a") read as no version, and a left-out `fight` (off) then fell back to the bare `combat` flag
+            fightSwitch = if (m.has("fight") || (msg.optString("v").removePrefix("m").takeWhile { it.isDigit() }.toIntOrNull() ?: 0) >= 49)
+                m.optBoolean("fight", false) else null,
             faceGiven = m.optJSONObject("face")?.optBoolean("given", false) == true,
             faceRefused = m.optJSONObject("face")?.optBoolean("refused", false) == true,
             paused = m.optBoolean("paused", false),

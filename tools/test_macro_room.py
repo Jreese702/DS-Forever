@@ -278,7 +278,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap"):
     e = comp(SRC[k], k)
     check(e is None, "a. Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local SV = "s13"' in SRC["spells"] and 'local BV = "b65"' in SRC["book"] and 'local PV = "m165"' in SRC["padmap"],
+check('local SV = "s13"' in SRC["spells"] and 'local BV = "b65"' in SRC["book"] and 'local PV = "m166"' in SRC["padmap"],
       "a. the versions: Spells s10, Book b63, PadMap m163")
 QUOTE = '"Lets scrap the smart ranged attack and start building a macro room'
 check(all(QUOTE in SRC[k] for k in ("spells", "book", "padmap")), "a. each changed file's header note quotes the user")
@@ -1038,6 +1038,19 @@ L.execute('MSPELL.Bolt = 403')
 L.eval('WowCompanion.padMap.putMacro(1, 1, 9, "Bolt")')
 st = [x for x in (padmap(L).get('sticks') or []) if x.get('pos') == 9 and x.get('set') == 1]
 check(st and st[0].get('kind') == 'macro' and st[0].get('i') == 130403 and st[0].get('ms') == 403, "s. L3's macro: the spell's picture", st)
+# m166 (review): a /castsequence steps on the player's own cast landing; [pet] on the pet; [equipped] / a worn item's /use on a gear change
+L = opened(LOOK_MACROS, [], pre=LOOKS)
+L.execute('SEQ = 403; MSPELL.Bolt = function() return SEQ end')
+L.eval('WowCompanion.padMap.putFight(1, 1, 5, "macro", "Bolt")')
+check((slot(padmap(L), 1, 5).get('cf') or {}).get('ms') == 403, "s. m166: a castsequence macro on X: its first spell")
+for ev, args, to in (("UNIT_SPELLCAST_SUCCEEDED", '"player", "Cast-1", 403', 331), ("UNIT_PET", '"player"', 8042),
+                     ("PLAYER_EQUIPMENT_CHANGED", '13, false', 403)):
+    n4 = nsent(L)
+    L.execute('SEQ = %d; fire("%s", %s); advance(1)' % (to, ev, args))
+    pm = docs(L, n4, 'padmap')
+    c4 = (slot(pm[-1]['m'], 1, 5).get('cf') or {}) if pm else {}
+    check(c4.get('ms') == to, "s. m166: %s re-reads the look: the padmap again, X = what the macro casts now" % ev, (ev, c4))
+check(mlog(L) == [] and clean(L) == {}, "s. m166: reads only", (mlog(L), clean(L)))
 # none of ours holds a macro: the watcher sends nothing
 L = opened(LOOK_MACROS, [], pre=LOOKS)
 n3 = nsent(L)
@@ -1045,7 +1058,7 @@ L.execute('fire("MODIFIER_STATE_CHANGED", "LSHIFT", 1); fire("PLAYER_TARGET_CHAN
 check(docs(L, n3, 'padmap') == [] and docs(L, n3, 'facecd') == [], "s. no macro on our buttons: nothing sent on those events",
       (len(docs(L, n3, 'padmap')), len(docs(L, n3, 'facecd'))))
 check('"the macro room needs some work- for starters when using show tooltip on a macro it doesn\'t actually show the GCD when using it"'
-      in SRC["padmap"] and 'local PV = "m165"' in SRC["padmap"], "s. PadMap m165, its header note quotes the user")
+      in SRC["padmap"] and 'local PV = "m166"' in SRC["padmap"], "s. PadMap m165, its header note quotes the user")
 
 # ================================================================ the documents for the room's off-device render (MacrosShotsTest)
 DUMP = os.environ.get("MACRO_DUMP")
