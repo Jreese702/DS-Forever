@@ -129,6 +129,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private var pcWhy = ""
     /** a connect that answered and waits for Desktop's Sunshine ports: since when, and its stream mode; null = not waiting */
     private var portsWait: Pair<Long, StreamMode.Choice>? = null
+    /** issue #414: the next routed connect streams in this mode ([StreamMode.retryAfter]: no QoS after "No video arrived"); null = none */
+    private var retryMode: StreamMode.Choice? = null
 
     /** WoW has shown in this stream: losing the front no longer hides it */
     private var seen = false
@@ -261,6 +263,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         netCallback = null
         main.removeCallbacksAndMessages(null)
         portsWait = null
+        retryMode = null
         PlayModes.set(PlayMode.LOCAL, null, "")
     }
 
@@ -384,7 +387,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 // the bridge dials the address (and the port) that answered (same pin)
                 if (n.address != h.address || n.bridgePort != h.bridgePort) applyMode()
                 applyCurtain()
-                portsWait = System.currentTimeMillis() to StreamMode.choose(ok, thorNet, vpn)
+                portsWait = System.currentTimeMillis() to StreamMode.forConnect(StreamMode.choose(ok, thorNet, vpn), retryMode)
+                retryMode = null
                 portsTick.run()
             }
         }
@@ -469,11 +473,19 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private fun onEnded(error: Int, notPaired: Boolean, message: String) {
         val wasStreaming = screen == Screen.STREAMING
+        val mode = session?.mode
         teardown()
         Log.i(TAG, "stream ended ($error, paired ${!notPaired}): $message; " + PadNote.sent(padSent, padDriver))
         if (!isOpen) return
         if (notPaired) { problem(Diagnosis.Reason.NOT_PAIRED.title, Diagnosis.Reason.NOT_PAIRED.detail, message, auto = false); return }
         if (wasStreaming) policy.reset()
+        // issue #414 (the user's pick, 2026-11-16): no video on a home stream: once more at once, without QoS tagging
+        StreamMode.retryAfter(mode, error)?.let { m ->
+            Log.i(TAG, "no video on a ${mode?.label} stream: one retry ${m.label} (qosTrafficType 0)")
+            retryMode = m
+            connect()
+            return
+        }
         diagnose(message)
     }
 

@@ -50,10 +50,26 @@ object StreamMode {
     const val REMOTE_V6 = 1184
 
     data class Choice(val config: Int, val packetSize: Int) {
-        val label get() = when (config) { LOCAL -> "local"; REMOTE -> "remote"; else -> "auto" } + " $packetSize"
+        val label get() = if (this == NO_QOS) "no-QoS $packetSize" else when (config) { LOCAL -> "local"; REMOTE -> "remote"; else -> "auto" } + " $packetSize"
     }
 
     val HOME = Choice(LOCAL, StreamSession.PACKET_SIZE)
+
+    /**
+     * Issue #414 (the user's pick, 2026-11-16: "after a 'No video arrived' failure on a home (LOCAL) stream, retry ONCE in the no-QoS
+     * mode (qosTrafficType 0), logging it"). A LOCAL stream makes moonlight-common-c ask Sunshine to QoS-tag its sockets
+     * (x-nv-vqos[0].qosTrafficType 5, x-nv-aqos 4: SdpGenerator.c), and the reporter's PC (qWAVE on, MediaTek MT7922 Wi-Fi) blocked the
+     * video send there. REMOTE asks qosTrafficType 0; the core's only other change for an explicit REMOTE is 500 kbps off the video
+     * bitrate (its 1024-byte packet cap is for AUTO alone), so the LAN packet size stays.
+     */
+    val NO_QOS = Choice(REMOTE, StreamSession.PACKET_SIZE)
+
+    /** the mode of the one retry after Moonlight's [error] ended a stream in [mode]; null = none (the retry's own failure gets none) */
+    fun retryAfter(mode: Choice?, error: Int): Choice? =
+        if (mode == HOME && error == MoonBridge.ML_ERROR_NO_VIDEO_TRAFFIC) NO_QOS else null
+
+    /** the mode a connect streams in: [chosen] by the route, or [retry]'s when the route is still the home one */
+    fun forConnect(chosen: Choice, retry: Choice?): Choice = if (retry != null && chosen == HOME) retry else chosen
 
     /** [address] = the PC's address dialled; [thorSubnet] = the Thor's Wi-Fi /24 ("" = not on Wi-Fi); [vpnUp] = a VPN is up */
     fun choose(address: String, thorSubnet: String, vpnUp: Boolean): Choice {
@@ -81,7 +97,7 @@ class StreamSession(
     private val events: Events,
     private val decoders: (String) -> Boolean = { VideoDecoder.hasDecoder(it) },
     /** local / remote and the packet size ([StreamMode]) */
-    private val mode: StreamMode.Choice = StreamMode.HOME,
+    val mode: StreamMode.Choice = StreamMode.HOME,
     /** Sunshine's base (http) port as Desktop last reported it, for the "no video" line's ports */
     private val httpPort: () -> Int = { host.httpPort },
 ) {
