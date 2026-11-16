@@ -9,6 +9,10 @@
 -- (WC.padGlyphAtlas), the faces at the ABXY location (swap: Y left, X top, A right, B bottom, as CastView); an atlas this client refuses
 -- falls to the next / the letter (WC.prd.atlasOn); ours follows the stock bar's visibility and scale (UI_SCALE_CHANGED /
 -- DISPLAY_SIZE_CHANGED, a window taking the pad) and keeps its last spot when a fight hides the centre.
+-- nbar3 THE NINTENDO BAR IN THE LAYOUT EDITOR (the user, 2026-11-16:
+-- "we need to make a way to basically edit the UI locations on the top screen from our UI menu"): the bar stands at the stock bar's centre and scale as before, PLUS the layout's offset (dx, dy 1080-line
+-- pixels) and size (s %) - TapPad pad22 WC.lay.get("nbar"), per character; no entry = the stock spot. NB.lay is the piece Hub's editor
+-- gathers (its anchor the bar's centre). The stock bar itself is the game's and is never moved.
 -- cb1 (GitHub #43, the tap-to-cast bar): one secure pad row "castbar" (12 spell cells + the Spellbook's pick), the character's own
 -- slots (WowCompanionSpellsDB.castBar[name-realm]), a fight's edits queued to its end; documents "castbar" / "castcd". At "THE TAP-TO-CAST BAR".
 -- cb2 (1.0.30 code 1454): the row "castbar" only once the character's bar has a spell (bmv4 kept on a full pad); the Spellbook's pick on padtab 39 + 19.
@@ -2036,7 +2040,7 @@ end
 -- and pcall'd; without them (or refused) the button is dimmed while its NeverSecret isActive says it cools (no sweep). The route that
 -- worked rides one "cap" line (probe "nbarcd") out of a fight and one in a fight per login. A secret is never compared or computed.
 ---------------------------------------------------------------------------------------------------
-local NB = { V = "nbar2", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64,
+local NB = { V = "nbar3", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
              -- the button a position is, by the game's binding (bar.actionButtons order: D-pad L / U / R / D, face left / top / right / bottom)
@@ -2198,9 +2202,8 @@ function NB.build()
 end
 
 -- the stock bar's spot: its centre, read only (a plain number out of a fight), else bottom centre
-function NB.place()
-    local f = NB.f
-    if not f then return end
+-- nbar3: the stock centre and scale (cx, cy in the stock bar's own units, k its scale over UIParent's), or the last one read
+function NB.stock()
     local mf = mainFrame()
     local cx, cy = nil, nil
     if mf ~= nil and type(field(mf, "GetCenter")) == "function" then
@@ -2215,19 +2218,66 @@ function NB.place()
         cx, cy, k = NB.lastC[1], NB.lastC[2], k or NB.lastC[3]
     end
     k = k or 1
-    -- nbar2: the stock bar's own scale on ours (its buttons the stock size); the offsets then in its own units
-    pcall(f.SetScale, f, k)
-    NB.scale = k
+    if cx and cy and cx > 0 and cy > 0 then return cx, cy, k end
+    return nil, nil, k
+end
+-- nbar3: the layout's entry for the bar now (offset in UIParent units, scale as a factor)
+function NB.layEntry()
+    local L = WC.lay
+    local e = type(L) == "table" and type(L.get) == "function" and L.get("nbar") or nil
+    local sc = math.max(NB.S_MIN, math.min(NB.S_MAX, (e and num(e.s)) or 100)) / 100
+    local ox, oy = 0, 0
+    if e and type(L.u) == "function" then ox, oy = L.u(num(e.dx) or 0), L.u(num(e.dy) or 0) end
+    return ox, oy, sc
+end
+function NB.place()
+    local f = NB.f
+    if not f then return end
+    local cx, cy, k = NB.stock()
+    local ox, oy, sc = NB.layEntry()
+    -- nbar2: the stock bar's own scale on ours (its buttons the stock size); nbar3: times the layout's size, the offsets in our own units
+    pcall(f.SetScale, f, k * sc)
+    NB.scale, NB.lsc = k, sc
     pcall(f.ClearAllPoints, f)
-    if cx and cy and cx > 0 and cy > 0 then
+    if cx and cy then
         NB.lastC = { cx, cy, k }
-        f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx, cy)
+        -- (the stock centre in UIParent units is cx * k; ours = that plus the layout's offset, in our frame's units)
+        f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx / sc + ox / (k * sc), cy / sc - oy / (k * sc))
         NB.at = "stock"
     else
-        f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, NB.Y_DEF)
+        f:SetPoint("BOTTOM", UIParent, "BOTTOM", ox / (k * sc), NB.Y_DEF / sc - oy / (k * sc))
         NB.at = "default"
     end
 end
+-- nbar3 THE NINTENDO BAR AS A LAYOUT PIECE (Hub's editor gathers it): its anchor is the bar's centre, 1080-line pixels from the top-left
+local function layK()
+    local L = WC.lay
+    if type(L) == "table" and type(L.screen) == "function" then local W, _, kk = L.screen(); return W, kk end
+    return 1920, 1
+end
+local function barSize() return 2 * NB.DX + 2 * NB.OFF + NB.B, 2 * NB.OFF + NB.B end
+NB.lay = {
+    id = "nbar", sn = NB.S_MIN, sx = NB.S_MAX, ss = NB.S_STEP,
+    -- the stock bar's centre (no entry), else the default spot's
+    base = function()
+        local W, kk = layK()
+        local cx, cy, k = NB.stock()
+        local uh = 1080 / kk
+        if cx and cy then return cx * k * kk, (uh - cy * k) * kk end
+        local _, bh = barSize()
+        return W / 2, (uh - NB.Y_DEF * k - bh * k / 2) * kk
+    end,
+    size = function(e)
+        local _, kk = layK()
+        local _, _, k = NB.stock()
+        local sc = ((e and num(e.s)) or 100) / 100
+        local bw, bh = barSize()
+        return bw * k * sc * kk, bh * k * sc * kk
+    end,
+    off = function(w, h) return -w / 2, -h / 2 end,
+    on = function() return NB.on == true end,
+    apply = function() pcall(NB.place) end,
+}
 
 -- a ref from PadMap's views ({ n, id, i } a spell; { n, i, t, key } a whole-button thing) -> an entry
 local function refEntry(ref)

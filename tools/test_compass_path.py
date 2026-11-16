@@ -66,7 +66,7 @@ def main():
     L.execute(open(TC.TRAIL, encoding="utf-8").read().replace("local ADDON = ...", "local ADDON = 'WowCompanion'", 1))
     G, WC = L.globals().GAME, L.globals().WowCompanion
     C = WC.compass
-    chk("cp40: the compass's version tag (the jitter fix)", C.V == "cp40")
+    chk("cp40: the compass's version tag (the jitter fix)", int(C.V[2:]) >= 40)      # (the layout editor: cp41 or later)
     chk("cp36: the path marker drawn under the quest (C.ORDER)", [C.ORDER[i] for i in range(1, len(C.ORDER) + 1)]
         == ["corpse", "pin", "path", "quest"])
 

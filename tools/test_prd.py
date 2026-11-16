@@ -249,10 +249,17 @@ def main():
     Lg.WowCompanion.npWant.hud = True; run(0.3)
 
     # the height: the app's steps (10 spec px), its range, the default, per character in our saved data
+    # prd18 (the layout editor; the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from
+    # our UI menu"): the height is the LAYOUT's now - Hub's old columns step the saved entry WowCompanionDB.lay[who].hud (dy, 1080-line px
+    # down); P.y stays the frame's own offset, so the old numbers hold
+    def hud_entry():
+        lay = Lg.WowCompanionDB.lay
+        t = lay and lay["Yes-Lander"]
+        return t and t.hud
     y0 = P.y
     P.nudge(1)
-    chk("a step up: -340 (%s), saved for Yes-Lander" % P.y, P.y == -340 and Lg.WowCompanionDB.prdY["Yes-Lander"] == -340
-        and abs(P.f.point[5] + 340 * 768 / 1080) < 1e-6)
+    chk("a step up: -340 (%s), saved for Yes-Lander (the layout's entry, dy -10)" % P.y, P.y == -340 and hud_entry() is not None
+        and hud_entry().dy == -10 and abs(P.f.point[5] + 340 * 768 / 1080) < 1e-6)
     for _ in range(30):
         P.nudge(1)
     chk("the top of the range: -170 (%s)" % P.y, P.y == -170)
@@ -260,13 +267,16 @@ def main():
         P.nudge(-1)
     chk("the bottom of the range: -470 (%s)" % P.y, P.y == -470)
     P.nudge(0)
-    chk("back to the default: -350, nothing kept (%s)" % P.y, P.y == -350 and Lg.WowCompanionDB.prdY["Yes-Lander"] is None and y0 == -350)
+    chk("back to the default: -350, nothing kept (%s)" % P.y, P.y == -350 and hud_entry() is None and y0 == -350)
     P.nudge(-1); P.y = None; P.loadY()
     chk("read back at log in (%s)" % P.y, P.y == -360)
-    # prd4: a height saved on the OLD default (prdYv not yet 2) moves down with it, once
-    Lg.WowCompanionDB.prdY["Yes-Lander"] = -230; Lg.WowCompanionDB.prdYv = None; P.loadY()
+    # prd4: a height saved on the OLD default (prdYv not yet 2) moves down with it, once - prd18: inside the layout's one-time move (layV)
+    Lg.WowCompanionDB.prdY = L.table_from({"Yes-Lander": -230}); Lg.WowCompanionDB.prdYv = None
+    Lg.WowCompanionDB.layV = None; Lg.WowCompanionDB.lay = None; P.loadY()
     y1 = P.y; P.loadY()
-    chk("prd4: an old saved height (-230) shifted once with the default: %s, then %s" % (y1, P.y), y1 == -280 and P.y == -280)
+    chk("prd4: an old saved height (-230) shifted once with the default: %s, then %s (into the layout once: dy %s, layV %s)"
+        % (y1, P.y, hud_entry() and hud_entry().dy, Lg.WowCompanionDB.layV), y1 == -280 and P.y == -280 and hud_entry().dy == -70
+        and Lg.WowCompanionDB.layV == 1)
     chk("Hub's names: y, on, min, max, step, def, nudge", P.min == -470 and P.max == -170 and P.step == 10 and P["def"] == -350
         and P.on is True and callable(P.nudge))
     chk("this client has no curve route in the stub: tried once, off, the read stands (%s)" % P.curveBad, P.curveBad is not None)
@@ -469,10 +479,10 @@ def main():
     chk("prd8: select -> width; a step up: 300 (%s), the bars that wide at once (the live preview), kept for Yes-Lander" % P.wd,
         P.wd == 300 and abs(P.hp.w - 300 * 768 / 1080) < 1e-6 and abs(P.f.w - 300 * 768 / 1080) < 1e-6 and Lg.WowCompanionDB.prdW["Yes-Lander"] == 300)
     P.select(); P.nudge(1); P.nudge(1)
-    chk("prd8: select -> scale; two steps: 120 %% (%s), the whole bar scaled" % P.sc, P.sc == 120 and abs(P.f.scale - 1.2) < 1e-9
-        and Lg.WowCompanionDB.prdS["Yes-Lander"] == 120)
+    chk("prd8: select -> scale; two steps: 120 %% (%s), the whole bar scaled (prd18: the layout's entry)" % P.sc, P.sc == 120
+        and abs(P.f.scale - 1.2) < 1e-9 and hud_entry().s == 120)
     P.nudge(0)
-    chk("prd8: default on the scale: 100, nothing kept", P.sc == 100 and Lg.WowCompanionDB.prdS["Yes-Lander"] is None)
+    chk("prd8: default on the scale: 100, nothing kept", P.sc == 100 and (hud_entry() is None or hud_entry().s == 100))
     y0 = P.y; run(5); P.nudge(1)
     chk("prd8: 4 s with no tap: the step columns back on the height (an app that only knows the height still works): %s -> %s" % (y0, P.y),
         P.sel == "y" and P.y == y0 + 10 and P.wd == 300)
@@ -481,7 +491,7 @@ def main():
     chk("prd8: read back at log in: 300 wide, 100 %%", P.wd == 300 and P.sc == 100)
     P.select(); P.nudge(0); P.sel = "y"
     # prd10 (issue #120, a Rogue: "I can't see the combo points that are accumulated during combat"): the pips under the power bar
-    chk("prd17: the version tag (issue #195: the aura sweep by the duration object; prd16 issue #181: the secret-safe aura reader)", P.V == "prd17")
+    chk("prd17: the version tag (issue #195: the aura sweep by the duration object; prd16 issue #181: the secret-safe aura reader)", int(P.V[3:]) >= 17)      # (the layout editor: prd18 or later)
     chk("prd10: the player's UNIT_POWER_FREQUENT is heard (combo points at the next frame)", ev.events.UNIT_POWER_FREQUENT == "player")
     L.execute('''
         local upm = UnitPowerMax

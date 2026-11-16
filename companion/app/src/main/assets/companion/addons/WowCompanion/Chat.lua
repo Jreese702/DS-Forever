@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat36"     -- chat36 (issue #29 review: "the new error-frame hook is tried only when Chat.lua loads and at the login probe, so early load errors (Interact.lua) can be missed while eh still reads 'hook'"): the hook is tried again at every ADDON_LOADED (the error frame's own add-on may load after ours), and the probe tells "hooked before Interact.lua ran" (eh hook) from "hooked after it started" (eh late: an Interact load error may be missed) and counts every message the hook saw, anyone's (ehN: 0 with errors on screen = the hooked method is not the one the game calls); chat35 (issue #29, streaming: "WowCompanion has been blocked from an action only available to the Blizzard UI" - SetPreferredGamepadInteractTarget(), after a Lua error opened the game's error frame): the game's error handler is NOT wrapped any more. chat33's wrapper made the game's own handler run inside a WowCompanion function for EVERY Lua error (anyone's), so the error frame it opens took the gamepad UI's focus as our code - the chain #29's reporter traced to the blocked gamepad bar. Our errors are now read with a secure post-hook on the error frame's own method (hooksecurefunc: the game's code stays the game's); the probe's eh says "hook" (caught) or "none" (no such method on this client: errors not caught); chat34 (#183 review): the "ours" probe also says how far Interact.lua ran (istage: none / top / guard / cap / end, Interact i153) and its version, and whether the error handler is still ours (eh: ours / other / unset), so "loaded, no capture, no errors" is no longer one answer; chat33 (#183, 1.0.25: "Not able to send messages in chat/guild/whisper/party/etc"; its log: every key, type and send answered ok=0, every room's hold "no controller capture", no Interact document in 15 min): the game never ran DS Forever: Interact, so no room could hold the controller and the chat refused all with "the chat is not open". A refusal now says so ("Interact add-on not running"), and one probe per login ("ours") names each DS Forever add-on the game did not load, with the game's reason, and the first Lua errors from our own files (why it did not load is not in that report); chat32: any /command from the composer runs (the secure cell chcmd, armed at the check); chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
+local CHATV = "chat37"     -- chat37 THE TOP CHAT STRIP IN THE LAYOUT EDITOR (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"): the strip (chat13, shown while the chat module types) stands at its own place PLUS the layout's offset (TapPad pad22 WC.lay.get("chat"), dx / dy in 1080-line pixels, per character; no size: it is laid out for the screen), and WC.chatTop.lay is the piece Hub's editor gathers (its anchor the strip's bottom-centre); chat36 (issue #29 review: "the new error-frame hook is tried only when Chat.lua loads and at the login probe, so early load errors (Interact.lua) can be missed while eh still reads 'hook'"): the hook is tried again at every ADDON_LOADED (the error frame's own add-on may load after ours), and the probe tells "hooked before Interact.lua ran" (eh hook) from "hooked after it started" (eh late: an Interact load error may be missed) and counts every message the hook saw, anyone's (ehN: 0 with errors on screen = the hooked method is not the one the game calls); chat35 (issue #29, streaming: "WowCompanion has been blocked from an action only available to the Blizzard UI" - SetPreferredGamepadInteractTarget(), after a Lua error opened the game's error frame): the game's error handler is NOT wrapped any more. chat33's wrapper made the game's own handler run inside a WowCompanion function for EVERY Lua error (anyone's), so the error frame it opens took the gamepad UI's focus as our code - the chain #29's reporter traced to the blocked gamepad bar. Our errors are now read with a secure post-hook on the error frame's own method (hooksecurefunc: the game's code stays the game's); the probe's eh says "hook" (caught) or "none" (no such method on this client: errors not caught); chat34 (#183 review): the "ours" probe also says how far Interact.lua ran (istage: none / top / guard / cap / end, Interact i153) and its version, and whether the error handler is still ours (eh: ours / other / unset), so "loaded, no capture, no errors" is no longer one answer; chat33 (#183, 1.0.25: "Not able to send messages in chat/guild/whisper/party/etc"; its log: every key, type and send answered ok=0, every room's hold "no controller capture", no Interact document in 15 min): the game never ran DS Forever: Interact, so no room could hold the controller and the chat refused all with "the chat is not open". A refusal now says so ("Interact add-on not running"), and one probe per login ("ours") names each DS Forever add-on the game did not load, with the game's reason, and the first Lua errors from our own files (why it did not load is not in that report); chat32: any /command from the composer runs (the secure cell chcmd, armed at the check); chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -1280,7 +1280,11 @@ local function topLayout()
     topW, topH = W * 1240 / 1920, px(16 + 425)
     topFrame:SetSize(topW, topH)
     topFrame:ClearAllPoints()
-    topFrame:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, -px(16))      -- its bottom border under the screen's edge
+    -- chat37: plus the layout's offset (none: its own place)
+    local L = WC.lay
+    local e = type(L) == "table" and type(L.get) == "function" and L.get("chat") or nil
+    local ox, oy = e and tonumber(e.dx) or 0, e and tonumber(e.dy) or 0
+    topFrame:SetPoint("BOTTOM", UIParent, "BOTTOM", px(ox), -px(16) - px(oy))      -- its bottom border under the screen's edge
     local font = STANDARD_TEXT_FONT
     if ChatFontNormal and ChatFontNormal.GetFont then
         local ok, f = pcall(ChatFontNormal.GetFont, ChatFontNormal)
@@ -1338,6 +1342,24 @@ local function setTop(on)
         topAnim = { from = topY, to = -topH, t = 0, dur = TOP_OUT, hide = true }
     end
 end
+
+-- chat37 THE STRIP AS A LAYOUT PIECE (Hub's editor gathers it): its anchor is the strip's bottom-centre, 1080-line pixels from the top-left;
+-- moved only (smin = smax = 100)
+WC.chatTop = WC.chatTop or {}
+WC.chatTop.lay = {
+    id = "chat", sn = 100, sx = 100, ss = 10,
+    base = function()
+        local W = type(WC.lay) == "table" and WC.lay.screen() or 1920
+        return W / 2, 1080 + 16
+    end,
+    size = function()
+        local W = type(WC.lay) == "table" and WC.lay.screen() or 1920
+        return W * 1240 / 1920, 16 + 425
+    end,
+    off = function(w, h) return -w / 2, -h end,
+    on = function() return topShown == true end,
+    apply = function() if topFrame then pcall(topLayout) end end,
+}
 
 local chatHolds          -- the quick chat block's, below
 topCheck = function()
