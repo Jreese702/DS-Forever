@@ -1787,7 +1787,9 @@
 "Nothing fits": "Rien ne convient",
 "No kits": "Aucun kit",
 "Window open": "Fenêtre ouverte",
-"Bags full": "Sacs pleins"
+"Bags full": "Sacs pleins",
+"Binds when picked up": "Lié quand ramassé",
+"Disenchant": "Désenchanter"
 },
 "templates": {
 "Region: %s (this install is %s)": "Région : %s (cette installation est %s)",
@@ -1977,6 +1979,7 @@
 "Cleared %s": "Effacé : %s",
 "Press %s again to clear it": "Appuyez encore sur %s pour l’effacer",
 "Cleared from": "Retiré de",
-"Keep it cleared?": "Le laisser retiré ?"
+"Keep it cleared?": "Le laisser retiré ?",
+"+%s more": "+%s de plus"
 }
 }

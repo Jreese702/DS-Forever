@@ -604,7 +604,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // for a press that goes to the game's bars - the router's own holder (the add-on's capture), Home's guests, the menus on screen
         castView.pressesReachGame = {
             CastPredict.reaches(capHolder, room == Room.HOME, homeView.homeGuestWanted(), pauseView.isOpen, barSelect.open,
-                interactView.visibility == View.VISIBLE || dialogView.visibility == View.VISIBLE ||
+                interactView.visibility == View.VISIBLE || dialogView.covers() ||
                     spellsOverlay.visibility == View.VISIBLE || startView.visibility == View.VISIBLE,
                 barsUsable = true, radialOpen = false)
         }
@@ -632,7 +632,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         barSelect.roomNow = { room }        // Select's cursor starts on the room on screen (never on Home: the user's skip-Home rule)
         // the Home button's B follows Home's own state at once (a module full screen shows B; user 15:08)
-        homeView.onStateChanged = { discB("Home's state") }
+        homeView.onStateChanged = { discB("Home's state"); if (::dialogView.isInitialized) dialogView.fightCheck() }     // loot-pop: a fight's end grows the rolls
         homeView.onBHome = { strip.homePressed() }
         partyWire()
         MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
@@ -666,7 +666,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // b-login-a-input: not in the game (its login screen): A goes to the game, never to our login row / form
             else if (startView.visibility == View.VISIBLE && startView.login != StartView.Login.NONE && !loginPrompt.isOpen && !startView.menuOpen &&
                 setupView.visibility != View.VISIBLE && !LauncherHooks.gameUp()) loginPad(down)
-            else if (::dialogView.isInitialized && dialogView.visibility == View.VISIBLE) dialogView.onPadHeld(m)   // Interact: the dialog's press look
+            // loot-pop: the fight's small roll panel takes no press (the loot window under it keeps its own)
+            else if (::dialogView.isInitialized && dialogView.covers()) dialogView.onPadHeld(m)   // Interact: the dialog's press look
             else if (::interactView.isInitialized && interactView.visibility == View.VISIBLE) interactView.onPadHeld(m)
         }
         // the Social room (social session). B that leaves it goes HOME (user ruling 2026-09-28 23:12: "Pressing be to leave the
@@ -737,6 +738,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         dialogView = DialogView(this)
         dialogView.appOwnsPad = { padOwner.roomMode() }          // combat_nav: a pop-up / a roll answered with the pad in a fight
         dialogView.rollsOwnPad = { padOwner.holder == null || padOwner.holder == "app" }   // review 2026-11-11: never with a room's press
+        // loot-pop (the user, 2026-11-16: "there should be a smaller version that pops up over the minimap and gets bigger when transitioning
+        // out of combat"): in a fight the rolls are a small panel over Home's minimap module (else at the right), the fight's presses kept
+        dialogView.fightNow = { homeView.inFight() }
+        dialogView.mapBox = {
+            if (room == Room.HOME && homeView.isShown) homeView.previewMapRect()?.let { m ->
+                val a = IntArray(2); val b = IntArray(2)
+                homeView.getLocationOnScreen(a); dialogView.getLocationOnScreen(b)
+                android.graphics.RectF(m).apply { offset((a[0] - b[0]).toFloat(), (a[1] - b[1]).toFloat()) }
+            } else null
+        }
         startView = StartView(this)
         // INSIDE THE ONE APP (the native login.txt sign-in; the user: "injecting the keys is not the way to go"): the row never types -
         // its button saves / updates the login, which the game uses by itself at its next start (NativeLogin)
@@ -947,7 +958,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         castView.overlayOpen = {
             radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || homeView.toolWanted() ||
                 setupView.visibility == View.VISIBLE || loginPrompt.isOpen || barSelect.open ||
-                (::dialogView.isInitialized && dialogView.visibility == View.VISIBLE) ||
+                (::dialogView.isInitialized && dialogView.covers()) ||
                 (::interactView.isInitialized && interactView.visibility == View.VISIBLE) || spellsOverlay.visibility == View.VISIBLE ||
                 (room == Room.HOME && homeView.flow.screen.full.let { it == HomeModule.CHAT || it == HomeModule.MAP })
         }
@@ -1776,7 +1787,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // p35 (the user 2026-11-10: "When pressing down on the Dpad without the DS toolbar enabled the home button is lighting up for
             // a half second"): only while the bare Down IS the Home bar - the toolbar on, or the Home Bar command put on it
             if (down && k == "PADDDOWN" && room == Room.HOME && capHolder.isEmpty() && !DirectPad.sideHeld() && downIsHomeBar()
-                && interactView.visibility != View.VISIBLE && dialogView.visibility != View.VISIBLE
+                && interactView.visibility != View.VISIBLE && !dialogView.covers()
                 && spellsOverlay.visibility != View.VISIBLE && startView.visibility != View.VISIBLE
                 && !homeView.partyHoldsDpad()) barSelect.openEarly(room)       // Party mode's D-pad: no early bar either (2026-11-04)
         }
@@ -2552,10 +2563,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             // Select with nobody holding the controller (interact's capture v5): the bar selector (LATER item 7), never over a window
             "cappad" -> if (current && msg.optString("room") == "bar") barSelect.onSelect(msg, blocked = interactView.visibility == View.VISIBLE ||
-                    dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE || startView.visibility == View.VISIBLE)
+                    dialogView.covers() || spellsOverlay.visibility == View.VISIBLE || startView.visibility == View.VISIBLE)
             // the bar commands (Hub.lua hub4; Spells' macros "DS Bar Left / Right / Open"): the bar cursor without holding the controller
             "barcmd" -> if (current) barSelect.onCommand(msg, room, blocked = interactView.visibility == View.VISIBLE ||
-                    dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE || startView.visibility == View.VISIBLE ||
+                    dialogView.covers() || spellsOverlay.visibility == View.VISIBLE || startView.visibility == View.VISIBLE ||
                     (room == Room.HOME && homeView.partyHoldsDpad()))
             "interactack" -> {
                 if (msg.optString("cmd") == "release npc" && !msg.optBoolean("ok", true)) {

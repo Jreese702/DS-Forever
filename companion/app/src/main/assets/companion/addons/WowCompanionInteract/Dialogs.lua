@@ -38,7 +38,7 @@ local S = WC.S
 
 -- d30 (int/1429): combat-nav d27-d28 (the idlg leave cells 33-39, WC.dialogs.mirrored) + starter-prompt d27-d29 (the quest starter
 -- prompt, its Start / Not now now on the charter's Sign / Offer cells 28 / 29: the row stays 40 columns)
-local DV = "d33"         -- bump on every change; d33 (issue #278, the user's pick "Yes, protect", 2026-11-13): the game's "<a DS Forever add-on> has been blocked from an action" pop-up (ADDON_ACTION_FORBIDDEN / ADDON_ACTION_BLOCKED, button 1 = Disable: C_AddOns.DisableAddOn + ReloadUI in the game's own code) is GUARDED for our own add-ons: A and B press Ignore (button 2), Disable is never pressed by DS Forever (not A, not our copy, not a finger on our copy; the AddOns list stays the player's); d32 (issue camp-exit, build 1462, the user: "when exiting the game and the timer pops up it doesnt have the 'exit now' option that it normally should"): the QUIT countdown's "Exit Now" (the game's button 1, its OnAccept = ForceQuit in the game's own code) is mirrored again with its touch cell, a secure click on the game's own button; A stays bound to nothing on it (d22's guard: never pressed by the controller, the app's fallback or the safe close); CAMP has no button 1, so it still shows Cancel alone; d31 (issue #69, 1.0.18: "tried to sign a guild chart didnt work"; the offline harness signs by touch and by A, the report's log has no trace of the charter): DIAGNOSTICS ONLY, nothing pressed or written - the charter's Sign is followed for 4 s and one "cap" document says what came of it (petSign: by touch / A, signatures before / after, the window closed, the game's UI error id, which petition system message by its place in D.PETMSG, a pop-up shown), numbers only; d30 int/1429: the quest starter's Start / Not now SHARE the charter's Sign / Offer cells (idlg 28 / 29: the prompt never shows with the charter open, PETITION_SHOW disarms it and gives the cells back), so the row keeps combat-nav's seven leave cells (33-39) at 40 columns; d29 (starter-prompt): the quest starter prompt ONLY when a starter is NEWLY LOOTED this session (the user, 2026-11-11, asked how long "Not now" lasts: "Only when newly looted"): a baseline of the bags' item counts at login / reload, a prompt only for a count rising above it (never for what was already there, a /reload or a move between bags), Not now = that one prompt; d28 (starter-prompt): the quest starter's Start is DISARMED on the very event a vendor / bank / mail / trade / NPC window opens (a bag item used at a vendor is sold) and aimed by item id, not bag and slot; a Start on a disarmed button is no answer; d27 (starter-prompt): A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d28 (combat-nav): WC.dialogs.mirrored() - the pop-ups the app shows as its box (Interact's fight sink leaves A / B to the app while one shows: the review of combat_nav, the user's decision 1, 2026-11-11); d27 (combat-nav): the idlg row's last seven columns (33-39, the row grows to 40: no new row) are the capture's per-window leave cells (combat_nav_design Step 5c, the user 2026-11-11), aimed by Interact (WC.dialogs.leaveCell); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
+local DV = "d34"         -- bump on every change; d34 (loot-pop, the user 2026-11-16: "I have also noticed that the loot roll window is delayed and buggy, sometimes making me press the button twice to move on or even just taking like 2 second after accepting an input to move on"): A ROLL ANSWERED LEAVES THE DOCUMENT IN THAT VERY FRAME - the game's own RollOnLoot / ConfirmLootRoll are watched with secure post-hooks (whoever made the call: our cell, the game's own roll frame, its confirm's Okay) and the roll is held out (D.rolled) until the game drops it (CANCEL_LOOT_ROLL / it leaves GetActiveLootRollIDs) or D.ROLL_KEEP s pass with the game still offering it; the GAME'S BIND CONFIRM rides its roll (CONFIRM_LOOT_ROLL / CONFIRM_DISENCHANT_ROLL: r.ask = the roll asked for, r.askI = its pop-up's slot, the pop-up says roll = the roll id) so the app draws it on the roll with the dialog's own cells; Cancel gives the roll back; the game's selection on an answered roll is read as the one its frame takes next; the game's roll frame stays dimmed while an answered roll waits; a roll confirm is not counted in mirrored() (the rolls never claim A / B from a holding room); d33 (issue #278, the user's pick "Yes, protect", 2026-11-13): the game's "<a DS Forever add-on> has been blocked from an action" pop-up (ADDON_ACTION_FORBIDDEN / ADDON_ACTION_BLOCKED, button 1 = Disable: C_AddOns.DisableAddOn + ReloadUI in the game's own code) is GUARDED for our own add-ons: A and B press Ignore (button 2), Disable is never pressed by DS Forever (not A, not our copy, not a finger on our copy; the AddOns list stays the player's); d32 (issue camp-exit, build 1462, the user: "when exiting the game and the timer pops up it doesnt have the 'exit now' option that it normally should"): the QUIT countdown's "Exit Now" (the game's button 1, its OnAccept = ForceQuit in the game's own code) is mirrored again with its touch cell, a secure click on the game's own button; A stays bound to nothing on it (d22's guard: never pressed by the controller, the app's fallback or the safe close); CAMP has no button 1, so it still shows Cancel alone; d31 (issue #69, 1.0.18: "tried to sign a guild chart didnt work"; the offline harness signs by touch and by A, the report's log has no trace of the charter): DIAGNOSTICS ONLY, nothing pressed or written - the charter's Sign is followed for 4 s and one "cap" document says what came of it (petSign: by touch / A, signatures before / after, the window closed, the game's UI error id, which petition system message by its place in D.PETMSG, a pop-up shown), numbers only; d30 int/1429: the quest starter's Start / Not now SHARE the charter's Sign / Offer cells (idlg 28 / 29: the prompt never shows with the charter open, PETITION_SHOW disarms it and gives the cells back), so the row keeps combat-nav's seven leave cells (33-39) at 40 columns; d29 (starter-prompt): the quest starter prompt ONLY when a starter is NEWLY LOOTED this session (the user, 2026-11-11, asked how long "Not now" lasts: "Only when newly looted"): a baseline of the bags' item counts at login / reload, a prompt only for a count rising above it (never for what was already there, a /reload or a move between bags), Not now = that one prompt; d28 (starter-prompt): the quest starter's Start is DISARMED on the very event a vendor / bank / mail / trade / NPC window opens (a bag item used at a vendor is sold) and aimed by item id, not bag and slot; a Start on a disarmed button is no answer; d27 (starter-prompt): A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d28 (combat-nav): WC.dialogs.mirrored() - the pop-ups the app shows as its box (Interact's fight sink leaves A / B to the app while one shows: the review of combat_nav, the user's decision 1, 2026-11-11); d27 (combat-nav): the idlg row's last seven columns (33-39, the row grows to 40: no new row) are the capture's per-window leave cells (combat_nav_design Step 5c, the user 2026-11-11), aimed by Interact (WC.dialogs.leaveCell); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -185,6 +185,8 @@ local function read(i, f)
     -- none), with its touch cell: a finger on it is one secure click on the game's own button (its OnAccept, ForceQuit, runs in the
     -- game's code). It carries no key (A is not its key), and the app never taps it by itself (DialogView.neverPress)
     if d.which == "QUIT" then d.guard = true end
+    -- d34: the game's bind confirm on a loot roll names its roll (ShowConfirmLootRollDialog: data = the roll id, data2 = its type)
+    if d.which == "CONFIRM_LOOT_ROLL" then d.roll = TN(function() return f.data end); d.rollType = TN(function() return f.data2 end) end
     -- d33 (issue #278: a player's Spells came up DISABLED; the game's "WowCompanionSpells has been blocked from an action" pop-up has
     -- Disable as its button 1, so the controller's A switched our own add-on off and reloaded): for OUR add-ons (the dialog's data is
     -- the add-on's name, the text names it too) it is guarded like QUIT, with Ignore (button 2) as its safe answer: `safe` = the button A
@@ -276,47 +278,125 @@ local function rollText(n)
     if type(n) ~= "number" or n <= 0 then return nil end
     return TS(function() return _G["LOOT_ROLL_INELIGIBLE_REASON" .. n] end)
 end
+-- d34 (loot-pop; the user, 2026-11-16: "sometimes making me press the button twice to move on or even just taking like 2 second after
+-- accepting an input to move on"): THE PLAYER'S OWN ANSWERS. An answered roll stayed in GetActiveLootRollIDs (and in every document)
+-- until the game's CANCEL_LOOT_ROLL, a server round trip later (after the game's own need animation on this client), so the app drew the
+-- answered roll again and the next press landed on it. The game's RollOnLoot / ConfirmLootRoll are watched (secure post-hooks, in the
+-- hooks below: whoever made the call, nothing of it is ours) and the roll is held out of the document at once:
+--   D.rolled[id] = { ty, at }   answered: held out until the game drops it, or D.ROLL_KEEP s with the game still offering it (a roll the
+--                               game never took comes back);
+--   D.ask[id] = { ty, at }      the game asked first (CONFIRM_LOOT_ROLL / CONFIRM_DISENCHANT_ROLL: its "Looting X will bind it to you."
+--                               pop-up, gamedialogdefs.lua): the roll stays, marked ask (the roll asked for) and askI (the pop-up's slot);
+--                               its pop-up gone without ConfirmLootRoll (Cancel, Escape) = the roll is open again.
+-- Every field lives in D (no new chunk locals).
+D.rolled, D.ask = {}, {}
+D.ROLL_KEEP = 10        -- seconds an answered roll is held out while the game still offers it
+D.ASK_GRACE = 0.6       -- seconds the game's confirm may take to show after the game asked
+D.ROLL_KIND = { [0] = "pass", [1] = "need", [2] = "greed", [3] = "de", [4] = "transmog" }
+-- a roll call seen (the hook): [confirmed] = ConfirmLootRoll (the confirm's Okay). A RollOnLoot whose CONFIRM_LOOT_ROLL came inside the
+-- very same call (this frame) is the game ASKING, not a roll yet
+function D.rollSeen(id, ty, confirmed)
+    id = TN(function() return id end)
+    if not id then return end
+    local t = now()
+    if not confirmed and D.ask[id] and D.ask[id].at >= t then return end
+    D.ask[id] = nil
+    D.rolled[id] = { ty = TN(function() return ty end), at = t }
+end
+-- the game's events on its rolls (the hooks' frame below)
+function D.rollEvent(event, id, ty)
+    if event == "CANCEL_ALL_LOOT_ROLLS" then D.rolled, D.ask = {}, {}; return end
+    id = TN(function() return id end)
+    if not id then return end
+    if event == "CONFIRM_LOOT_ROLL" or event == "CONFIRM_DISENCHANT_ROLL" then
+        D.rolled[id] = nil
+        D.ask[id] = { ty = TN(function() return ty end) or (event == "CONFIRM_DISENCHANT_ROLL" and 3 or 1), at = now() }
+    elseif event == "CANCEL_LOOT_ROLL" then
+        D.rolled[id], D.ask[id] = nil, nil
+    end
+end
+-- the roll the game's own frame selects once [sel] (answered) is gone: RemoveRoll's "the one before, else the first" over [order]
+function D.selAfter(order, sel)
+    local before
+    for _, id in ipairs(order) do
+        if id == sel then break end
+        if not D.rolled[id] then before = id end
+    end
+    return before
+end
 local function readRolls()
     D.rollsMore = nil
     local ok, ids = pcall(function() return GetActiveLootRollIDs() end)
-    if not ok or type(ids) ~= "table" or #ids == 0 then return nil end
-    -- the roll the game's A / B / X act on: its own frame's selection (read only)
+    if not ok or type(ids) ~= "table" or #ids == 0 then D.rolled, D.ask, D.rollsWait = {}, {}, nil; return nil end
+    local t = now()
+    -- d34: the game's bind confirms on screen, by the roll they ask about (the pop-up's data is the roll id: ShowConfirmLootRollDialog)
+    local asks = {}
+    for i = 1, POOL do
+        local f = dialogFrame(i)
+        if f and shown(f) and TS(function() return f.which end) == "CONFIRM_LOOT_ROLL" then
+            local rid = TN(function() return f.data end)
+            if rid then asks[rid] = i end
+        end
+    end
+    local open, live = {}, {}
+    for _, raw in ipairs(ids) do
+        local id = TN(function() return raw end)
+        if id then
+            live[id] = true
+            local done = D.rolled[id]
+            if done and t - done.at > D.ROLL_KEEP then D.rolled[id] = nil; done = nil end
+            local a = D.ask[id]
+            if a and not asks[id] and t - a.at > D.ASK_GRACE then D.ask[id] = nil end
+            if not done then open[#open + 1] = id end
+        end
+    end
+    for id in pairs(D.rolled) do if not live[id] then D.rolled[id] = nil end end
+    for id in pairs(D.ask) do if not live[id] then D.ask[id] = nil end end
+    D.rollsWait = next(D.rolled) ~= nil or nil
+    if #open == 0 then return nil end
+    -- the roll the game's A / B / X act on: its own frame's selection (read only); an answered one = the one its frame takes next
     local sel
     local gf = _G.GamepadGroupLootRollFrame
     if type(gf) == "table" then
         pcall(function()
             local i, w = gf.selectedRollIndex, gf.waitingRolls
-            if type(i) == "number" and type(w) == "table" and type(w[i]) == "table" then sel = w[i].rollID end
+            if type(i) == "number" and type(w) == "table" and type(w[i]) == "table" then
+                sel = w[i].rollID
+                if sel and D.rolled[sel] then
+                    local order = {}
+                    for _, e in ipairs(w) do if type(e) == "table" then order[#order + 1] = e.rollID end end
+                    sel = D.selAfter(order, sel)
+                end
+            end
         end)
     end
     local out = {}
-    for k, raw in ipairs(ids) do
+    for k, id in ipairs(open) do
         if k > ROLL_SHOW then
-            D.rollsMore = #ids - ROLL_SHOW
+            D.rollsMore = #open - ROLL_SHOW
             break
         end
-        local id = TN(function() return raw end)
-        if id then
-            local okI, tex, name, count, q, bop, need, greed, de, rn, rg, rd, skill, tm = pcall(GetLootRollItemInfo, id)
-            name = okI and real(name) and type(name) == "string" and name or nil
-            if name then
-                local r = { id = id, name = name, icon = type(tex) == "number" and tex or nil,
-                            count = type(count) == "number" and count > 1 and count or nil, q = type(q) == "number" and q or nil,
-                            bop = bop == true or nil, need = need == true or nil, greed = greed == true or nil,
-                            de = de == true or nil, transmog = tm == true or nil }
-                local why = { need = (not r.need) and rollText(rn) or nil, greed = (not r.greed) and rollText(rg) or nil,
-                              de = (not r.de) and rollText(rd) or nil }
-                if next(why) then r.why = why end
-                local left = TN(function() return GetLootRollTimeLeft(id) end)
-                if left then r.left = math.floor(left / 1000 + 0.5) end
-                local dur = TN(function() return C_Loot.GetLootRollDuration(id) end)
-                if dur then r.dur = math.floor(dur / 1000 + 0.5) end
-                if type(WC.rollCells) == "function" then
-                    local okC, c = pcall(WC.rollCells, id)
-                    if okC and type(c) == "table" then r.cells = c end
-                end
-                out[#out + 1] = r
+        local okI, tex, name, count, q, bop, need, greed, de, rn, rg, rd, skill, tm = pcall(GetLootRollItemInfo, id)
+        name = okI and real(name) and type(name) == "string" and name or nil
+        if name then
+            local r = { id = id, name = name, icon = type(tex) == "number" and tex or nil,
+                        count = type(count) == "number" and count > 1 and count or nil, q = type(q) == "number" and q or nil,
+                        bop = bop == true or nil, need = need == true or nil, greed = greed == true or nil,
+                        de = de == true or nil, transmog = tm == true or nil }
+            local why = { need = (not r.need) and rollText(rn) or nil, greed = (not r.greed) and rollText(rg) or nil,
+                          de = (not r.de) and rollText(rd) or nil }
+            if next(why) then r.why = why end
+            local left = TN(function() return GetLootRollTimeLeft(id) end)
+            if left then r.left = math.floor(left / 1000 + 0.5) end
+            local dur = TN(function() return C_Loot.GetLootRollDuration(id) end)
+            if dur then r.dur = math.floor(dur / 1000 + 0.5) end
+            if type(WC.rollCells) == "function" then
+                local okC, c = pcall(WC.rollCells, id)
+                if okC and type(c) == "table" then r.cells = c end
             end
+            -- d34: the game asked first: its confirm rides this roll (askI = the pop-up's slot, whose cells answer it)
+            if D.ask[id] then r.ask = D.ROLL_KIND[D.ask[id].ty or 1] or "need"; r.askI = asks[id] end
+            out[#out + 1] = r
         end
     end
     if #out == 0 then return nil end
@@ -326,8 +406,8 @@ local function readRolls()
         -- EVERY shown roll's tooltip (a finger may choose another card than the game's; the game's selection is
         -- never written): for a weapon or armour, Currently Equipped and the stat changes with it
         if type(WC.rollTip) == "function" then
-            local okT, t = pcall(WC.rollTip, r.id)
-            if okT and type(t) == "table" and not t.none then r.tip = { lines = t.lines, cmp = t.cmp } end
+            local okT, t2 = pcall(WC.rollTip, r.id)
+            if okT and type(t2) == "table" and not t2.none then r.tip = { lines = t2.lines, cmp = t2.cmp } end
         end
     end
     return out
@@ -774,7 +854,7 @@ local function build()
     local rolls = readRolls()
     pcall(D.qsOffer, list, rolls)       -- d27: a quest starter's prompt, when nothing else is up
     pcall(D.padSync, list)
-    hideRolls(rolls ~= nil)
+    hideRolls(rolls ~= nil or D.rollsWait == true)      -- d34: also while an answered roll waits for the game's word (no flash on top)
     -- touch = false: this pad has no room for the dialogs' cells; they are answered with the controller
     local doc = { type = "dialogs", dv = DV, mode = D.mode or nil, list = list, touch = D.touch, rolls = rolls,
                   rollsMore = rolls and D.rollsMore or nil }
@@ -782,7 +862,8 @@ local function build()
     -- d28 (review of combat_nav, the user's decision 1, 2026-11-11): how many pop-ups the app shows as its box (mirrored: not left on top)
     -- - while one shows in a fight the app answers A / B on it, and Interact's sink lets those presses go by (WC.dialogs.mirrored)
     D.mirN = 0
-    if D.mode then for _, d in ipairs(list) do if d.top == nil then D.mirN = D.mirN + 1 end end end
+    -- d34: a loot roll's bind confirm is drawn on its roll, not as the box (never counted: the rolls never claim A / B from a room)
+    if D.mode then for _, d in ipairs(list) do if d.top == nil and d.roll == nil then D.mirN = D.mirN + 1 end end end
     if D.mode and busy and WC.pad and type(WC.pad.slotFor) == "function" then
         local ok, col = pcall(WC.pad.slotFor, "iact", "alive")
         if ok and type(col) == "number" then doc.life = { col = col, every = LIFE_EVERY } end
@@ -891,7 +972,7 @@ end
 local function look()
     pcall(D.aim)
     local ok, n = pcall(emit, false)
-    if ok and type(n) == "number" and n > 0 and not D.polling then
+    if ok and type(n) == "number" and (n > 0 or D.rollsWait) and not D.polling then
         D.polling = true
         C_Timer.After(POLL, function()
             D.polling = false
@@ -914,6 +995,20 @@ if type(hooksecurefunc) == "function" then
             if reason == "heartbeat" then pcall(emit, true) end
         end)
     end
+    -- d34: the game's own roll calls, WATCHED (they run after the game's call, whoever made it: our cell's ACT.roll, the game's roll frame
+    -- on A / B / X, its bind confirm's Okay); the answered roll leaves the document in this very frame
+    if type(RollOnLoot) == "function" then
+        pcall(hooksecurefunc, "RollOnLoot", function(id, ty) pcall(D.rollSeen, id, ty, false); look() end)
+    end
+    if type(ConfirmLootRoll) == "function" then
+        pcall(hooksecurefunc, "ConfirmLootRoll", function(id, ty) pcall(D.rollSeen, id, ty, true); look() end)
+    end
+end
+-- d34: the game's word on its rolls: it asks (the bind confirm), it drops one (answered, won, timed out) or all
+D.rollFrame = CreateFrame("Frame")
+D.rollFrame:SetScript("OnEvent", function(_, event, a1, a2) pcall(D.rollEvent, event, a1, a2); look() end)
+for _, e in ipairs({ "CONFIRM_LOOT_ROLL", "CONFIRM_DISENCHANT_ROLL", "CANCEL_LOOT_ROLL", "CANCEL_ALL_LOOT_ROLLS" }) do
+    pcall(D.rollFrame.RegisterEvent, D.rollFrame, e)
 end
 
 -- ---------------------------------------------------------------- the companion in charge
@@ -1282,6 +1377,8 @@ WC.dialogs = { version = DV, setMode = setMode, look = look,
                leaveN = LEAVE_N,
                mirrored = function() return D.mirN or 0 end,       -- d28: the pop-ups the app shows as its box, at the last document
                rollsHide = function(on) ROLLS_HIDE = on and true or false; look() end,  -- the harness; the build flips the default
+               -- d34: a roll the player answered (held out of the document until the game drops it): Interact's cells and ACT.roll
+               rolled = function(id) return D.rolled[id] ~= nil end,
                -- how many dialogs the controller answers right now: shown AND with the game's focus
                -- (read by Interact.lua for bnext). A dialog without the focus does not take B.
                open = function()
