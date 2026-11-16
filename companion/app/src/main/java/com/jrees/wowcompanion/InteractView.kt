@@ -4953,7 +4953,7 @@ class InteractView(context: Context) : View(context) {
         for ((i, cell) in cells.withIndex()) {
             UiKit.slot(c, Icons.getOrUnknown(cell.icon), x + well, cy - s / 2f, s)
             val p = paints[i]
-            c.drawText(Tr.t(texts[i]), x + well + s + well + SLOTS_PAD, cy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(texts[i], x + well + s + well + SLOTS_PAD, cy - (p.ascent() + p.descent()) / 2f, p)     // a count: no words, no Tr
             x += widths[i] + SLOTS_GAP
         }
         return left
@@ -5128,11 +5128,19 @@ class InteractView(context: Context) : View(context) {
                 if (onTab && !rh.startsWith("why:")) glyphHits["rev_x"] = rh      // X = Repair All: its press shows here
                 x += 292f
             }
-            if (m.optInt("junk", 0) > 0 && x + 270f < leftEnd) {
+            // review (feat/vendor-bag-slots): the free-slot cells took the strip's spare room, and with two two-digit counts the full
+            // 270 box no longer fitted - Sell junk vanished (the fallback font, a repair due: measured in VendorSlotsShotsTest). The box
+            // now gives up its slack instead (down to JUNK_MIN_W); it is never pushed out by the counts
+            val jRight = min(x + 270f, leftEnd)
+            if (m.optInt("junk", 0) > 0 && jRight - x >= JUNK_MIN_W) {
                 val slot = act?.let { slotOf(it, "junk") } ?: -1
-                val box = RectF(x, cy - 54f, x + 270f, cy + 54f)
+                val box = RectF(x, cy - 54f, jRight, cy + 54f)
                 UiKit.slot(c, UiKit.tex("icon_junk"), x + 8f, cy - 44f, 88f)
-                c.drawText(Tr.t("Sell junk"), x + 112f, cy - 10f, UiKit.bodyPaint(24f))
+                // the words run past the box in French ("Vendre la camelote"); with the free-slot cells to the right they would touch
+                // the bag cell, so they shrink (to 20) and then cut to end before leftEnd
+                val jp = UiKit.bodyPaint(24f); val jRoom = leftEnd - (x + 112f); val jw = jp.measureText(Tr.t("Sell junk"))
+                if (jw > jRoom) jp.textSize = max(20f, 24f * jRoom / jw)
+                c.drawText(fit(jp, "Sell junk", jRoom), x + 112f, cy - 10f, jp)
                 if (onTab) UiKit.pad(c, "rev_y", x + 22f, cy - 30f, 40f)
                 UiKit.money(c, m.optLong("junkValue", 0), x + 112f, cy + 18f, 25f)
                 if (pendingCmd == "junk" || pressed.startsWith("act:junk")) UiKit.glow(c, box, Theme.gold, 0.4f)
@@ -5158,6 +5166,8 @@ class InteractView(context: Context) : View(context) {
         const val SLOTS_TEXT = 36f
         const val SLOTS_PAD = 6f
         const val SLOTS_GAP = 22f
+        /** Sell junk's narrowest box (its icon and the start of its words), when the free-slot cells leave less than the 270 */
+        const val JUNK_MIN_W = 220f
 
         const val DISMISS_BACK_MS = 2_500L
         const val STALE_MS = 40_000L      // the addon re-sends every 15 s; two missed = the game is gone

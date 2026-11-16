@@ -38,7 +38,10 @@ object VendorSlots {
         val entries = if (list == null) emptyList() else (0 until list.length()).mapNotNull { list.optJSONObject(it) }
         // the plain bags: the add-on's own sum (its rule: family 0, not the reagent bag); else the same sum over the bags it listed
         val plain = entries.filter { it.has("fam") && it.optInt("fam", -1) == 0 && !it.optBoolean("reagent") && it.has("free") }
+        // review (feat/vendor-bag-slots): the add-on's freeGeneral STARTS at 0 and only a bag that gave both its family and its free
+        // count adds to it, so a listed bag bar with no such bag says 0 for "not read" - no count, never a red 0
         val general = when {
+            list != null && plain.isEmpty() -> null
             bags.has("freeGeneral") -> bags.optInt("freeGeneral", -1).takeIf { it >= 0 }
             plain.isNotEmpty() -> plain.sumOf { it.optInt("free", 0).coerceAtLeast(0) }
             else -> null

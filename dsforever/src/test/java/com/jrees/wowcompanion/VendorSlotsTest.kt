@@ -83,6 +83,14 @@ class VendorSlotsTest {
         assertNull(VendorSlots.of(doc(bag(0, 16, 5, null))))
     }
 
+    @Test fun aZeroWithNoReadPlainBagBehindItIsNoCount() {
+        // the add-on's freeGeneral starts at 0: when no plain bag gave its free count, that 0 means "not read", not "full"
+        val s = VendorSlots.of(doc(bag(0, 16, null, 0), bag(1, 14, 5, 1, 134408), freeGeneral = 0))!!
+        assertNull(s.bags)
+        assertEquals(VendorSlots.Count(5, 134408), s.ammo)
+        assertNull(VendorSlots.of(doc(bag(0, 16, 9, null), freeGeneral = 0)))     // the family not read: the same
+    }
+
     @Test fun aNegativeFreeGeneralIsNoCount() {
         assertNull(VendorSlots.of(doc(freeGeneral = -1)))
     }

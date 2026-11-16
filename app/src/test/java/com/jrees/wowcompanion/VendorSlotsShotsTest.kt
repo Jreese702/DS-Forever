@@ -34,7 +34,7 @@ class VendorSlotsShotsTest {
         f.set(null, File(root))
     }
 
-    private fun merchant(tab: String, cur: String?, money: Long = 123456L, junk: Boolean = true, repair: Boolean = true): JSONObject {
+    private fun merchant(tab: String, cur: String?, money: Long = 123456L, junk: Boolean = true, repair: Boolean = true, junkValue: Long = 70L): JSONObject {
         val items = JSONArray()
         val goods = listOf(Triple("Refreshing Spring Water", 132794, 25), Triple("Ice Cold Milk", 132815, 62), Triple("Rough Arrow", 132382, 10),
             Triple("Light Shot", 132384, 10), Triple("Small Quiver", 134407, 400), Triple("Light Quiver", 134408, 2000),
@@ -52,7 +52,7 @@ class VendorSlotsShotsTest {
         val m = JSONObject().put("npc", JSONObject().put("name", "Innkeeper Farley")).put("items", items).put("sell", sell).put("buyback", back)
             .put("money", money).put("qtyMax", 20)
         if (repair) m.put("canRepair", true).put("needsRepair", true).put("repairCost", 845L)
-        if (junk) m.put("junk", 2).put("junkValue", 70L)
+        if (junk) m.put("junk", 2).put("junkValue", junkValue)
         m.put("act", JSONObject().put("repair", 1).put("junk", 2).put("back", 3))
         // a live document (InteractView's own game clock), so the strip shows Repair / Junk instead of "Waiting for the game"
         val d = JSONObject().put("type", "interact").put("iv", "i160").put("merchant", m).put("mode", true).put("_gt", gameNow())
@@ -152,8 +152,34 @@ class VendorSlotsShotsTest {
         shot("vendor_10_full_refused.png", merchant("buy", "buy 1 159"), bags(listOf(16 to 0, 6 to 0), Triple(14, 2, 1)),
             JSONObject().put("type", "interactack").put("cmd", "buy 1 159").put("ok", false).put("why", "inventory is full.").put("_gt", gameNow()))
         Tr.load("es", File("../companion/app/src/main/assets/companion/i18n/es.json").readText())
-        val c0 = Tr::class.java.getDeclaredField("choice"); c0.isAccessible = true; c0.set(Tr, "es")
-        shot("vendor_9_spanish_quiver.png", merchant("buy", "buy 3 161"), bags(roomy, Triple(14, 9, 1)))
-        c0.set(Tr, "auto")
+        Tr.load("fr", File("../companion/app/src/main/assets/companion/i18n/fr.json").readText())
+        val c0 = Tr::class.java.getDeclaredField("choice"); c0.isAccessible = true
+        val was = c0.get(Tr)
+        try {
+            c0.set(Tr, "es")
+            shot("vendor_9_spanish_quiver.png", merchant("buy", "buy 3 161"), bags(roomy, Triple(14, 9, 1)))
+            // review: the strip's tightest case - French's longest Repair / Junk words, two-digit counts in both cells (a full bag bar
+            // of 18-slot bags, an 18-slot quiver): Junk keeps its place, its words stop short of the bag cell
+            c0.set(Tr, "fr")
+            shot("vendor_12_french_widest_counts.png", merchant("sell", "sell 0 1 2000"), bags(listOf(16 to 16, 18 to 18, 18 to 18, 18 to 18), Triple(18, 18, 1)))
+        } finally { c0.set(Tr, was) }
+    }
+
+    /**
+     * review: the widest counts (two digits in both cells) with a repair due and a gold-sized junk value leave Repair and Junk in the
+     * strip - Junk is never pushed out (it was, with the fallback font: the full-suite run, no art root)
+     */
+    @Test fun widestCountsKeepJunk() {
+        artRoot()
+        val v = view(merchant("buy", "buy 1 159", junkValue = 12_345L), bags(listOf(16 to 16, 18 to 18, 18 to 18, 18 to 18), Triple(18, 18, 1)))
+        save("vendor_12b_widest_counts_english.png", v)
+        val f = InteractView::class.java.getDeclaredField("hits"); f.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val hits = f.get(v) as List<Pair<android.graphics.RectF, String>>
+        val junk = hits.firstOrNull { it.second.startsWith("act:junk") }?.first
+        val go = hits.firstOrNull { it.second == "go" }?.first
+        org.junit.Assert.assertNotNull("Sell junk drawn beside the widest counts; hits ${hits.map { it.second to it.first }}", junk)
+        org.junit.Assert.assertNotNull(go)
+        org.junit.Assert.assertTrue("Junk ends left of the action button", junk!!.right < go!!.left)
     }
 }
