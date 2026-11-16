@@ -262,8 +262,10 @@ check(ok2 and L2.eval('SPEC ~= nil and SPEC.lootUnder == nil and SPEC.resumed ==
 # static ties between the two files
 check("bags-open1 (wk-containers; the user, 2026-11-16: \"opening containers from my bags is a little cluncky" in SRC,
       "Bags.lua's header note quotes the user")
-check('local IV = "i162"' in ISRC and "i161c (wk-containers;" in ISRC and "opening containers from my bags is a little cluncky" in ISRC,
-      "Interact.lua is i162 (i161c merged) with the user's words")
+# i161 or later (loot-pop's i162 keeps i161's note): the tag never goes back, the user's words stay
+check(int((re.search(r'local IV = "i(\d+)"', ISRC) or re.search('i(0)', 'i0')).group(1)) >= 161
+      and "opening containers from my bags is a little cluncky" in ISRC,
+      "Interact.lua is i161 or later with the user's words")
 check(re.search(r'version = 21,', ISRC) is not None, "the capture says version 21")
 m = re.search(r'if event == "PLAYER_REGEN_DISABLED" then(.*?)local who = G\.holder', ISRC, re.S)
 check(m is not None and 'N.lootUnderDrop("npc")' in m.group(1), "a fight's start lets a suspended room go before anything else")

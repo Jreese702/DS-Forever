@@ -3724,6 +3724,27 @@ class InteractView(context: Context) : View(context) {
 
     private fun lootClosing() = lootCloseAt > 0L && (System.currentTimeMillis() - lootCloseAt < Motion.MODULE_CLOSE || fxBusy())
 
+    // ---- loot-pop: the compact window's slide aside for its tooltip (0 = centred, 1 = at the left); one slide at a time, from where it is
+    private var sideOpen = -1L                 // the open (lootOpenAt) the slide belongs to: a new open starts centred
+    private var sideFrom = 0f
+    private var sideTo = 0f
+    private var sideAt = 0L
+    private var tipSeenAt = 0L                 // the chosen item's tooltip last there (a new card's tooltip comes a moment after the cursor)
+    private val LOOT_TIP_HOLD = 300L           // no tooltip this long = back to the centre (not between two cards' tooltips)
+
+    /** the slide toward [want] (aside) at [now]: a change of mind starts from where the window is */
+    private fun lootSide(now: Long, want: Boolean): Float {
+        val target = if (want) 1f else 0f
+        if (target != sideTo) { sideFrom = sideNow(now); sideTo = target; sideAt = now }
+        return sideNow(now)
+    }
+
+    private fun sideNow(now: Long): Float {
+        val t = if (sideAt == 0L) 1f else ((now - sideAt).toFloat() / Motion.SLIDE).coerceIn(0f, 1f)
+        if (t < 1f) postInvalidateOnAnimation()
+        return sideFrom + (sideTo - sideFrom) * lootCurve.getInterpolation(t)
+    }
+
     // LOOTWIN_SPEC 7's beats, in ms
     private val LOOT_GROW = 320L
     private val LOOT_CLOSE = 260L
@@ -3749,10 +3770,27 @@ class InteractView(context: Context) : View(context) {
         val shownN = min(5, max(1, items.size))
         if (lootOpenAt != fxOpenSeen) { fxOpenSeen = lootOpenAt; slides.clear() }
         val ch = 84f; val gap = 10f; val cardsTop = 150f
-        // AT THE LEFT (the user, 2026-10-22: "The loot window needs to shift left to make space for the larger tooltips"; was centred
-        // since 10-02): the room at its right is the tooltip's
-        val wl = 24f
-        val r = RectF(wl, 30f, wl + 600f, 30f + cardsTop + shownN * (ch + gap) + 64f + 22f)
+        // IN A FIGHT (the user, 10-22: "When I'm in combat I am not able to control the loot window"): the game won't hand us the
+        // controller until the fight ends, so the app reads the pad itself (read only: padSubHeld) and drives THIS window like a finger:
+        // Up / Down choose the card, A loots it, X loots all, B closes; its highlight is our own selection
+        fightLootCmds = items.map { "loot ${it.optInt("i")}" }
+        fightLootAll = lt.optJSONObject("act")?.let { slotOf(it, "all") } ?: -1
+        val inFight = doc?.optJSONObject("nav")?.optJSONObject("fight") != null
+        if (inFight && (selected == null || selected !in fightLootCmds)) selected = fightLootCmds.firstOrNull()
+        val curNow = if (inFight) selected else cur
+        val shown = curNow?.takeIf { it.startsWith("loot ") } ?: selected?.takeIf { it.startsWith("loot ") }
+        // loot-pop (the user, 2026-11-16: "The loot pop up looks weird offset, I want it to be centered and then animate over to the side
+        // to make space for the tooltip"): CENTRED as it opens; once the pop is over and the chosen item's tooltip is there, the window
+        // SLIDES to the left (Motion.SLIDE, Home's quick ease) and the tooltip comes in beside it, riding its right edge; no tooltip
+        // (coins, nothing chosen) for a moment = back to the centre. (10-22 had it at the left for good: "The loot window needs to shift
+        // left to make space for the larger tooltips".) The same window over the Bags room (bags-open1).
+        if (lootOpenAt != sideOpen) { sideOpen = lootOpenAt; sideFrom = 0f; sideTo = 0f; sideAt = 0L; tipSeenAt = 0L }
+        if (!closing && shown != null && tipFor(shown) != null) tipSeenAt = now
+        val tipWanted = !closing && x >= 1f && shown != null && now - tipSeenAt <= LOOT_TIP_HOLD
+        val side = if (closing) sideNow(now) else lootSide(now, tipWanted)
+        val ww = 600f
+        val wl = (full.width() - ww) / 2f + (24f - (full.width() - ww) / 2f) * side
+        val r = RectF(wl, 30f, wl + ww, 30f + cardsTop + shownN * (ch + gap) + 64f + 22f)
         lootRect = r
         val save = c.save()
         val sc = if (closing) 0.95f + 0.05f * k else 0.88f + 0.12f * k
@@ -3763,16 +3801,7 @@ class InteractView(context: Context) : View(context) {
         val view = RectF(inner.left, r.top + cardsTop - 8f, inner.right, r.top + cardsTop + shownN * (ch + gap))
         viewA = view; contentA = items.size * (ch + gap)
         scrollA = scrollA.coerceIn(0f, max(0f, contentA - view.height()))
-        // IN A FIGHT (the user, 10-22: "When I'm in combat I am not able to control the loot window"): the game won't hand us the
-        // controller until the fight ends, so the app reads the pad itself (read only: padSubHeld) and drives THIS window like a finger:
-        // Up / Down choose the card, A loots it, X loots all, B closes; its highlight is our own selection
-        fightLootCmds = items.map { "loot ${it.optInt("i")}" }
-        fightLootAll = lt.optJSONObject("act")?.let { slotOf(it, "all") } ?: -1
-        val inFight = doc?.optJSONObject("nav")?.optJSONObject("fight") != null
-        if (inFight && (selected == null || selected !in fightLootCmds)) selected = fightLootCmds.firstOrNull()
-        val curNow = if (inFight) selected else cur
         if (!closing) follow(items.indexOfFirst { "loot ${it.optInt("i")}" == curNow }, ch + gap, view.height())
-        val shown = curNow?.takeIf { it.startsWith("loot ") } ?: selected?.takeIf { it.startsWith("loot ") }
         var cardAt: RectF? = null; var shownItem: JSONObject? = null
         c.save(); c.clipRect(view)
         for ((i, it) in items.withIndex()) {
@@ -3819,13 +3848,15 @@ class InteractView(context: Context) : View(context) {
             c.save(); c.clipRect(r); c.drawRect(r, gp); c.restore()
         }
         c.restoreToCount(save)
-        // the tooltip OUTSIDE at the window's right, level with the chosen card: comes last (open), goes first (close)
-        val ta = if (closing) (1f - x * 2f).coerceIn(0f, 1f) else ((x - 0.6f) / 0.4f).coerceIn(0f, 1f)    // full when the open ends
+        // the tooltip OUTSIDE at the window's right, level with the chosen card: comes in as the window slides aside (loot-pop), goes
+        // first (close)
+        val ta = if (closing) (1f - x * 2f).coerceIn(0f, 1f) * side else side
         val ca = cardAt
         if (ta > 0f && ca != null && shown != null) tipFor(shown)?.let { tp ->
-            // the tooltip beside the window: at its right, as wide as the room there allows (larger gear tooltips, 10-22)
-            val tw = (full.right - 10f - (r.right + 14f)).coerceIn(280f, 560f)
-            val tx = if (r.right + 14f + tw <= full.right - 10f) r.right + 14f else max(10f, r.left - 14f - tw)
+            // the tooltip beside the window: at its right, as wide as the room there allows once the window is aside (larger gear
+            // tooltips, 10-22); while the window slides it rides the window's edge at that width, coming in from the right (loot-pop)
+            val tw = (full.right - 10f - (24f + ww + 14f)).coerceIn(280f, 560f)
+            val tx = r.right + 14f
             val ty = max(r.top + 60f, ca.top - 10f)
             val layer = c.saveLayerAlpha(RectF(0f, 0f, full.width(), full.height()), (255 * ta).toInt())
             tipStack.draw(c, tx, ty, tw, shownItem?.optString("name", "") ?: "", shownItem?.optInt("q", 1) ?: 1, tp,

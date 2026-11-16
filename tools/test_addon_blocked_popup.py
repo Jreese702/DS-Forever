@@ -85,7 +85,9 @@ def static_checks():
     out.append(('PASS ' if not bad else 'FAIL ') + 'no add-on code calls DisableAddOn / StaticPopup_Hide / _Show / _OnClick or writes StaticPopupDialogs'
                + (' (%s)' % ', '.join(bad) if bad else ''))
     src = open(SRC, encoding='utf-8').read()
-    out.append(('PASS ' if 'local DV = "d33"' in src else 'FAIL ') + 'Dialogs says d33')
+    # d33 or later (loot-pop's d34 keeps d33's note): the tag never goes back, the note stays
+    dv = re.search(r'local DV = "d(\d+)"', src)
+    out.append(('PASS ' if dv and int(dv.group(1)) >= 33 and 'd33 (issue #278' in src else 'FAIL ') + 'Dialogs says d33 or later, with the d33 note')
     return "\n".join(out)
 
 

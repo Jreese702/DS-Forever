@@ -1843,7 +1843,9 @@
 "Nothing fits": "Nada encaja",
 "No kits": "Sin kits",
 "Window open": "Ventana abierta",
-"Bags full": "Bolsas llenas"
+"Bags full": "Bolsas llenas",
+"Binds when picked up": "Se liga al recogerlo",
+"Disenchant": "Desencantar"
 },
 "templates": {
 "Tell %s:": "Susurrar a %s:",
@@ -2031,6 +2033,7 @@
 "Cleared %s": "Borrado %s",
 "Press %s again to clear it": "Pulsa %s otra vez para borrarlo",
 "Cleared from": "Quitado de",
-"Keep it cleared?": "¿Dejarlo quitado?"
+"Keep it cleared?": "¿Dejarlo quitado?",
+"+%s more": "+%s más"
 }
 }

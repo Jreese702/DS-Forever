@@ -19,6 +19,9 @@ object Motion {
     /** Chat's controller keyboard sliding up / down */
     const val KEYBOARD_UP = 200L
     const val KEYBOARD_DOWN = 160L
+    /** loot-pop (the user, 2026-11-16: "centered and then animate over to the side to make space for the tooltip"): a window sliding
+     *  aside for its tooltip, and back (the keyboard's quick pace) */
+    const val SLIDE = 180L
     /** the bar cursor fading in / out */
     const val BAR_IN = 80L       // b98 (the user: the bar's opening was "really slow"): 120 -> 80 ms
     const val BAR_OUT = 100L

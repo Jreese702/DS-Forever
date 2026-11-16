@@ -10,6 +10,7 @@ import java.util.Calendar
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * THE GAME'S DIALOGS on the bottom screen: release spirit, resurrect, invites, duels, the yes / no
@@ -37,7 +38,7 @@ class DialogView(context: Context) : View(context) {
         val extra: String?, val extraKey: String?, val extraCell: Int, val x: Boolean, val xCell: Int,
         val left: Int, val dur: Float, val bar: Boolean, val delay: Int, val alert: String?,
         val item: JSONObject?, val money: Long, val focus: Boolean, val top: String?, val hid: Boolean,
-        val fkey: String?, val safe: Int = 0, val never: Int = 0)
+        val fkey: String?, val safe: Int = 0, val never: Int = 0, val roll: Int = -1)
 
     private var doc: JSONObject? = null
     private var docGt = -1L
@@ -51,11 +52,16 @@ class DialogView(context: Context) : View(context) {
     private val hits = ArrayList<Pair<RectF, String>>()
     private var lifeAt = 0L                    // when the last sign of life was sent
     private var drawnSig = ""                  // the dialogs that have really been drawn
-    private var rolls: List<JSONObject> = emptyList()
+    private var lifeSig = ""                   // the dialogs and the rolls shown: a change = a sign of life at once
+    // ---- LOOT ROLLS (Dialogs d12; loot-pop: [RollBook] - one press = one roll, the next one at once, the game's word corrects)
+    private val book = RollBook()
+    /** the rolls on screen (the answered ones gone at once; a bind-on-pickup one showing the game's confirm) */
+    private val rolls: List<RollBook.Roll> get() = book.shown()
     private var rollsMore = 0
     private var rollsAt = 0L                   // when the rolls' seconds were read
     private var rollGameSel = -1               // the roll the game has chosen (its D-pad)
     private var rollPick = -1                  // a finger's choice of card, the app's alone (the game's is never written)
+    private var gameGuess = -1                 // after a controller answer out of a fight: the roll the game's frame takes next (RemoveRoll)
 
     // ---- PRESS FEEDBACK + CLOSE ON SELECT (the user, 2026-10-07: "the buttons don't really look like they are always getting
     // pressed ... missing a feedback layer" / "I dont like when the context menu stays open after making a selection (the spirit
@@ -69,7 +75,6 @@ class DialogView(context: Context) : View(context) {
     private var foldKey: String? = null        // the dialog folding / folded away ("<i>:<which>")
     private var foldAt = 0L                    // when its fold starts (after the press is seen)
     private var foldGt = -1L                   // the game clock at the choice
-    private val rollGone = HashMap<Int, Long>()   // roll id -> the game clock when it was answered
 
     private fun keyOf(d: Dlg) = "${d.i}:${d.which}"
     private fun isDown(hit: String) =
@@ -77,12 +82,11 @@ class DialogView(context: Context) : View(context) {
     private fun downStarts(prefix: String) =
         pressed.startsWith(prefix) || padHit.startsWith(prefix) || (lingerHit.startsWith(prefix) && System.currentTimeMillis() < lingerUntil)
 
-    /** a choice was made on [d] (or on roll [rollId]): keep its button DOWN a moment, then fold it away */
-    private fun chose(hit: String, d: Dlg?, rollId: Int = -1) {
+    /** a choice was made on [d]: keep its button DOWN a moment, then fold it away */
+    private fun chose(hit: String, d: Dlg?) {
         val now = System.currentTimeMillis()
         lingerHit = hit; lingerUntil = now + PRESS_MIN_MS + FOLD_MS     // DOWN through the fold too
         if (d != null) { foldKey = keyOf(d); foldAt = now + PRESS_MIN_MS; foldGt = gameNow() }
-        if (rollId >= 0) rollGone[rollId] = gameNow()
         postInvalidateOnAnimation()
         postDelayed(ticker, PRESS_MIN_MS + FOLD_MS + 20L)
     }
@@ -93,6 +97,36 @@ class DialogView(context: Context) : View(context) {
         val t = System.currentTimeMillis() - foldAt
         return if (t <= 0L) 0f else (t.toFloat() / FOLD_MS)
     }
+
+    /**
+     * loot-pop review: Home's held mask while this view reads no press ([padTakes] false: the fight's small panel, the pill, nothing up).
+     * The presses are the EDGES from the last mask seen, so it must stay fresh: a button held through the small panel's grow (a fight's
+     * end: the player still on an ability) was a phantom press of the window (A Need / B Pass / X Greed on the game's roll, tapped
+     * 400 ms later), and the release of the press that answered the last roll (gone at once, the view no longer reading) stayed "held"
+     * and swallowed the next press of that button - a press made twice.
+     */
+    fun padSeen(mask: Int) {
+        padMask = mask
+        if (padHit.isNotEmpty() && PAD_SLOTS.none { (slot, key) -> key == padKey && PadInput.isHeld(mask, slot) }) {
+            padHit = ""; postInvalidateOnAnimation()
+        }
+    }
+
+    /** the host: this view reads the controller now - its box, its full roll window, or the small panel's bind confirm the GAME's pop-up
+     *  has the controller's focus for (A Okay / B Cancel are the game's then, as on its own screen: one press, one answer) */
+    fun padTakes(): Boolean = covers() || focusedConfirm() != null
+
+    /** the fight's small panel: the roll showing the game's bind confirm whose pop-up has the GAME's controller focus (CONFIRM_LOOT_ROLL
+     *  is not one the game skips: it takes A / B in a fight too, while we draw it on the row) */
+    private fun focusedConfirm(): RollBook.Roll? {
+        if (!showing() || rollMode() != RollMode.COMPACT) return null
+        val r = confirmRoll() ?: return null
+        return if (list.any { it.roll == r.id && it.focus }) r else null
+    }
+
+    /** the full window is not readable yet - just grown from the small panel (a fight's end, the player's open) or not drawn as the window
+     *  at all: a press now was the fight's, never a roll (its touches are not taken then either) */
+    private fun growing(): Boolean = drawnMode != RollMode.FULL || drawClock() - growAt < GROW_MS
 
     /** Home's controller reader: the held mask (display only; the game itself answers the press) */
     fun onPadHeld(mask: Int) {
@@ -126,19 +160,28 @@ class DialogView(context: Context) : View(context) {
                 padPress = PadPress(keyOf(d), hit, gameNow())
                 chose(hit, d)
                 pokeSoon()
-            } else if (rolls.isNotEmpty()) {
-                // the rolls: the game keeps the controller (A Need, X Greed / Transmog, B Pass) on ITS selected roll
-                val r = rolls.firstOrNull { it.optBoolean("sel") } ?: rolls.firstOrNull() ?: continue
-                val canGreed = r.optBoolean("greed"); val tm = r.optBoolean("transmog")
-                val hit = when (key) {
-                    "PAD1" -> if (r.optBoolean("need")) "roll:need" else null
-                    "PAD3" -> if (canGreed) "roll:greed" else if (tm) "roll:transmog" else null
-                    "PAD2" -> "roll:pass"
-                    else -> null
-                } ?: continue
-                padHit = hit; padKey = key; changed = true
-                rollPadPress[r.optInt("id")] = hit.substring(5) to gameNow()
-                chose(hit, null, r.optInt("id"))
+            } else if (rolls.isNotEmpty() && ((rollMode() == RollMode.FULL && !growing()) || focusedConfirm() != null)) {
+                // the rolls OUT OF A FIGHT: the game keeps the controller (A Need, X Greed / Transmog, B Pass) on ITS selected roll, and
+                // A Okay / B Cancel on its bind confirm. loot-pop: the answer shows AT ONCE (RollBook), the game's first: its cell is
+                // tapped only if a document a moment later still offers what the press answered. (In a fight's small panel the
+                // controller is the fight's: nothing here - but A / B on a bind confirm the game's pop-up has the focus for, review.)
+                val r = confirmRoll() ?: gameRoll() ?: continue
+                if (book.rowOf(r) == RollBook.Row.CONFIRM) {
+                    val ok = when (key) { "PAD1" -> true; "PAD2" -> false; else -> null } ?: continue
+                    if (book.confirm(r.id, ok, gameNow(), gameFirst = true)) {
+                        padHit = "ask:${r.id}:" + (if (ok) "ok" else "cancel"); padKey = key; changed = true
+                        android.util.Log.i("WCDLG", "controller $key on roll ${r.id}'s confirm (${if (ok) "Okay" else "Cancel"}): the game's first")
+                        rollTaps(); pokeSoon()
+                    }
+                    continue
+                }
+                val kind = DialogPad.rollKind(key, r.need, r.greed, r.transmog) ?: continue
+                val ids = rolls.map { it.id }
+                if (!book.answer(r.id, kind, gameNow(), gameFirst = true)) continue
+                padHit = "roll:${r.id}:$kind"; padKey = key; changed = true
+                android.util.Log.i("WCDLG", "controller $key: $kind on roll ${r.id}: shown at once, the game's first")
+                gameGuess = RollBook.nextAfter(ids, r.id) ?: -1; rollPick = -1
+                pokeSoon()
             }
         }
         if (changed) postInvalidateOnAnimation()
@@ -166,16 +209,23 @@ class DialogView(context: Context) : View(context) {
             return true
         }
         if (rolls.isEmpty()) return false
-        if (rollsMin) return false             // folded into the pill: the presses are not the rolls' (wantsPad)
+        if (rollMode() != RollMode.FULL) return false     // the fight's small panel / the pill: the presses are the fight's (wantsPad)
+        if (growing()) return false                         // review: the window opening from the panel is not readable yet
         if (!rollsOwnPad()) return false       // a room / the loot holds: its presses, the rolls by touch (one press, one answer)
-        val ids = rolls.map { it.optInt("id") }
+        val ids = rolls.map { it.id }
         val r = shownRoll() ?: return false
-        val move = DialogPad.rollMove(key, ids, r.optInt("id"))
-        if (move != null) { rollPick = move; rollsMin = false; return true }
-        val kind = DialogPad.rollKind(key, r.optBoolean("need"), r.optBoolean("greed"), r.optBoolean("transmog")) ?: return false
-        val cell = r.optJSONObject("cells")?.optInt(kind, -1) ?: -1
-        padHit = "roll:$kind"; padKey = key
-        if (rollSend(kind, cell)) chose("roll:$kind", null, r.optInt("id"))
+        if (book.rowOf(r) == RollBook.Row.CONFIRM) {
+            // the game's bind confirm on this roll: A Okay, B Cancel (its own pop-up's cells, at once or the moment it is known)
+            val ok = when (key) { "PAD1" -> true; "PAD2" -> false; else -> return false }
+            padHit = "ask:${r.id}:" + (if (ok) "ok" else "cancel"); padKey = key
+            confirmPress(r.id, ok)
+            return true
+        }
+        val move = DialogPad.rollMove(key, ids, r.id)
+        if (move != null) { rollPick = move; return true }
+        val kind = DialogPad.rollKind(key, r.need, r.greed, r.transmog) ?: return false
+        padHit = "roll:${r.id}:$kind"; padKey = key
+        rollAnswer(r, kind)
         return true
     }
 
@@ -188,13 +238,13 @@ class DialogView(context: Context) : View(context) {
     private var padPress: PadPress? = null
 
     /** a sign of life now-ish (a fresh document from the add-on, d20), so a refused press is seen within a second */
-    private fun pokeSoon() {
+    private fun pokeSoon(delayMs: Long = PAD_POKE_MS) {
         postDelayed({
             val d = doc ?: return@postDelayed
             val col = d.optJSONObject("life")?.optInt("col", -1) ?: -1
             if (col < 0 || !docCurrent || dryRun) return@postDelayed
             TapBridge.tap(context, d.optJSONObject("pad"), "iact", col) { }
-        }, PAD_POKE_MS)
+        }, delayMs)
     }
 
     /**
@@ -273,7 +323,8 @@ class DialogView(context: Context) : View(context) {
                         d.optInt("left", 0), d.optDouble("dur", 0.0).toFloat(), d.optBoolean("bar"),
                         d.optInt("delay", 0), str(d, "alert"), d.optJSONObject("item"),
                         d.optLong("money", -1L), d.optBoolean("focus"), str(d, "top"), d.optBoolean("hid"),
-                        str(d, "fkey"), d.optInt("safe", 0), d.optInt("never", 0)))
+                        str(d, "fkey"), d.optInt("safe", 0), d.optInt("never", 0),
+                        if (str(d, "which") == "CONFIRM_LOOT_ROLL") d.optInt("roll", -1) else -1))
         }
         list = out
         if (current) padRefused() else padPress = null
@@ -285,23 +336,38 @@ class DialogView(context: Context) : View(context) {
                 note("The game did not take that")
             }
         }
-        // LOOT ROLLS (addon Dialogs d12): the game's rolls ride this document
+        // LOOT ROLLS (addon Dialogs d12): the game's rolls ride this document. loot-pop: the BOOK keeps the answers made (gone at once)
+        // until the game's word; a document written well after an answer that still offers the roll brings it back (a note)
         val ra = msg.optJSONArray("rolls")
-        rolls = if (ra == null) emptyList() else (0 until ra.length()).mapNotNull { ra.optJSONObject(it) }
+        val rl = if (ra == null) emptyList() else (0 until ra.length()).mapNotNull { ra.optJSONObject(it) }.map { RollBook.Roll(it) }
         rollsMore = msg.optInt("rollsMore", 0)
         rollsAt = System.currentTimeMillis()
-        rollPadRefused()
-        val gameSel = rolls.firstOrNull { it.optBoolean("sel") }?.optInt("id") ?: -1
+        val back = book.onDoc(rl, RollBook.asksOf(a), docGt)
+        if (current) {
+            if (back.isNotEmpty()) {
+                android.util.Log.w("WCDLG", "roll(s) $back still offered ${RollBook.REFUSE_MS} ms after the answer: the game did not take it")
+                note("The game did not take that")
+            }
+            rollTaps()
+        } else book.taps()                                                  // a replayed document never taps
+        val gameSel = rl.firstOrNull { it.sel }?.id ?: -1
         if (gameSel != rollGameSel) { rollGameSel = gameSel; rollPick = -1 }     // the controller moved: its choice wins
-        if (rolls.none { it.optInt("id") == rollPick }) rollPick = -1
-        // an answered roll stays away; it comes back if a document written well after the answer still lists it unanswered
-        rollGone.entries.removeAll { (id, gt) -> rolls.none { it.optInt("id") == id } || docGt > gt + FOLD_REFUSE_MS }
-        rolls = rolls.filter { !rollGone.containsKey(it.optInt("id")) }
-        val s = out.joinToString("/") { d -> "${d.i}:${d.which}:" + d.buttons.joinToString(",") { "${it.k}${it.key}" } + ":${d.top}" } +
-            "|r" + rolls.joinToString(",") { r -> "${r.optInt("id")}" + (if (r.optBoolean("need")) "n" else "") + (if (r.optBoolean("greed")) "g" else "") }
-        if (s != sig) { sig = s; sigAt = System.currentTimeMillis(); pressed = "" }
+        if (rolls.any { it.id == gameSel }) gameGuess = -1                   // the game's own word on its selection
+        if (rolls.none { it.id == rollPick }) rollPick = -1
+        // the game asks (its bind confirm): a folded window opens to show it (its pop-up on the top screen stays hidden while we draw it)
+        if (rollsMin && confirmRoll() != null) rollsMin = false
+        // the box's lock (SETTLE) follows the BOX dialogs only: a roll coming or going never locks a press (loot-pop), and a finger held
+        // on a roll's button keeps it (its hit names the roll: a changed layout simply misses)
+        val s = boxes().joinToString("/") { d -> "${d.i}:${d.which}:" + d.buttons.joinToString(",") { "${it.k}${it.key}" } + ":${d.top}" }
+        if (s != sig) { sig = s; sigAt = System.currentTimeMillis(); if (!rollHit(pressed)) pressed = "" }
+        lifeSig = s + "|r" + rolls.joinToString(",") { r -> "${r.id}" + (if (book.rowOf(r) == RollBook.Row.CONFIRM) "c" else "") }
         refresh()
     }
+
+    private fun rollHit(h: String) = h.startsWith("roll:") || h.startsWith("ask:") || h.startsWith("rolls:") || h.startsWith("card:")
+    /** a press that names its roll (an answer, its confirm's Okay / Cancel) */
+    private fun rollPress(h: String) = h.startsWith("roll:") || h.startsWith("ask:")
+    private var pressedAt: RectF? = null        // where the finger's press went down (its button then; review: the rows may move under it)
 
     /** {"type":"dialogack", cell, i, k}: the tap landed, the game's button was clicked */
     fun ack(msg: JSONObject, current: Boolean = true) {
@@ -324,18 +390,28 @@ class DialogView(context: Context) : View(context) {
      * the bottom screen"): a pop-up as the box, or the rolls OPEN - never the folded rolls pill (the review of 2026-11-11: a minimized
      * roll kept the whole controller from the fight for up to a minute)
      */
-    fun wantsPad() = showing() && (active() != null || (rolls.isNotEmpty() && !rollsMin))
+    fun wantsPad() = showing() && (active() != null || rollMode() == RollMode.FULL)
 
     /** Interact i152 (router-heal): the pad is wanted for the game's DEATH pop-up alone (no rolls open) - with a dead player that is never
      *  an ENTER (PadOwnerSync.step's deathOnly) */
-    fun wantsPadForDeathOnly() = wantsPad() && active()?.which == "DEATH" && (rolls.isEmpty() || rollsMin)
+    fun wantsPadForDeathOnly() = wantsPad() && active()?.which == "DEATH" && rollMode() != RollMode.FULL
+
+    /**
+     * loot-pop: this view COVERS the bottom screen (a pop-up as the box, the full roll window): the host's "a window is up" checks. The
+     * fight's small roll panel over the minimap and the folded pill cover nothing: the fight's presses, the bar, the cast bar go on.
+     */
+    fun covers() = showing() && (active() != null || rollMode() == RollMode.FULL)
 
     private fun str(o: JSONObject, key: String) = if (o.has(key) && !o.isNull(key)) o.optString(key) else null
 
     // ---------------------------------------------------------------- which dialog is the box
 
-    /** the dialogs this view may show as the box: mirrored ones only (not the ones that stay on top) */
-    private fun mirrored() = list.filter { it.top == null }
+    /** the dialogs this view may show as the box: mirrored ones only (not the ones that stay on top), never a roll's own bind confirm
+     *  (Dialogs d34: drawn on its roll, loot-pop) */
+    private fun mirrored() = boxes().filter { it.top == null }
+
+    /** the dialogs but a loot roll's bind confirm whose roll is in the book (that one is drawn on the roll itself) */
+    private fun boxes() = list.filter { d -> d.roll < 0 || book.rolls.none { it.id == d.roll } }
 
     /** the box: the mirrored dialog with the game's focus, else the first mirrored one */
     private fun active(): Dlg? {
@@ -366,9 +442,14 @@ class DialogView(context: Context) : View(context) {
         if (visibility != v) visibility = v
         padSubSync(want)
         if (!want) drawnSig = ""
-        if (list.isNotEmpty() || rolls.isNotEmpty()) postDelayed(ticker, 500)
+        if (rolls.isEmpty() && book.rolls.isEmpty()) { rollsMin = false; openedInFight = false }
+        // the rolls look a fight's end up four times a second (the small panel grows into the window then)
+        if (list.isNotEmpty() || rolls.isNotEmpty()) postDelayed(ticker, if (rolls.isNotEmpty()) 250L else 500L)
         invalidate()
     }
+
+    /** the host: Home's state changed (a fight's start / end among it): the rolls look again now */
+    fun fightCheck() { if (rolls.isNotEmpty() && fightNow() != wasFight) refresh() }
 
     /**
      * Say that this view shows the dialogs. Called from onDraw, so it is only ever said after they
@@ -381,10 +462,10 @@ class DialogView(context: Context) : View(context) {
         if (col < 0 || !docCurrent || ageMs() > LIVE_MS) return
         val every = life.optInt("every", 5).coerceIn(2, 30) * 1000L
         val now = System.currentTimeMillis()
-        val fresh = drawnSig != sig
+        val fresh = drawnSig != lifeSig
         if (!fresh && now - lifeAt < every) return
         if (now - lifeAt < MIN_LIFE_GAP_MS) return
-        drawnSig = sig
+        drawnSig = lifeSig
         lifeAt = now
         if (dryRun) { lastSent = "alive"; return }
         TapBridge.tap(context, d.optJSONObject("pad"), "iact", col) { }
@@ -421,46 +502,119 @@ class DialogView(context: Context) : View(context) {
 
     private fun note(s: String) { noteText = s; noteAt = System.currentTimeMillis(); postInvalidate() }
 
-    private fun rollSend(what: String, cell: Int): Boolean {
-        val now = System.currentTimeMillis()
-        blocked(now)?.let { note(it); return false }
+    /** the preview harness / the off-device tests read this: every tap the rolls made, in order ("<row> <cell> <what>") */
+    val rollSent = ArrayList<String>()
+
+    /** one tap of the rolls' (a roll's cell on isell, its confirm's on idlg): no settle lock, no lockout (loot-pop) */
+    private fun rollTap(row: String, cell: Int, what: String): Boolean {
         if (cell < 0) { note("The game gave this no tap cell"); return false }
-        lastTapAt = now
-        if (dryRun) { lastSent = "roll $what cell $cell"; note("Preview: $what"); return true }
-        val ok = TapBridge.tap(context, doc?.optJSONObject("pad"), "isell", cell) { why -> post { note(why) } }
+        rollSent.add("$row $cell $what")
+        if (dryRun) { lastSent = "$what cell $cell"; return true }
+        val ok = TapBridge.tap(context, doc?.optJSONObject("pad"), row, cell) { why -> post { note(why) }; android.util.Log.w("WCDLG", "$what cell $cell failed: $why") }
+        android.util.Log.i("WCDLG", "$what: $row $cell ${if (ok) "sent" else "NOT sent (no pad)"}")
         if (!ok) note("The game has not published its tap pad")
         return ok
     }
 
+    /** why an answer cannot go now (null = it can; "" = a bounce, said nowhere) */
+    private fun rollGate(gt: Long): String? = when {
+        ageMs() > LIVE_MS -> "Waiting for the game"
+        doc?.optJSONObject("pad") == null -> "The game has not published its tap pad"
+        !book.mayAnswer(gt) -> ""
+        else -> null
+    }
+
+    /**
+     * ONE PRESS = ONE ROLL (loot-pop): [kind] on roll [r] by a finger or the app's pad in a fight - its cell now, the roll gone from the
+     * screen at once and the next one shown (the game's own choice of the next: RollBook.nextAfter); the game's word corrects it
+     */
+    private fun rollAnswer(r: RollBook.Roll, kind: String): Boolean {
+        val gt = gameNow()
+        rollGate(gt)?.let { if (it.isNotEmpty()) note(it); return false }
+        val cell = r.cell(kind)
+        if (cell < 0) { note("The game gave this no tap cell"); return false }
+        val ids = rolls.map { it.id }
+        val wasShown = shownRoll()?.id == r.id
+        if (!book.answer(r.id, kind, gt)) return false
+        if (!rollTap("isell", cell, "roll $kind on ${r.id}")) { book.forget(r.id); return false }
+        // the window moves on as the game's own frame does (the one before, else the first); a bind-on-pickup one stays for its confirm
+        if (wasShown && book.rowOf(r) == null) rollPick = RollBook.nextAfter(ids, r.id) ?: -1
+        lingerHit = "roll:${r.id}:$kind"; lingerUntil = System.currentTimeMillis() + PRESS_MIN_MS
+        // review: a tap the game never got changes nothing in the add-on, so no document would come to bring the roll back (the last roll
+        // answered: no sign of life either, only the 15 s heartbeat) - a fresh one is asked for once the game's word is due
+        pokeSoon(RollBook.REFUSE_MS + REFUSE_POKE_MS)
+        postInvalidateOnAnimation()
+        return true
+    }
+
+    /** the game's bind confirm on roll [id]: Okay / Cancel - its pop-up's own cell now, or the moment the add-on's document carries it */
+    private fun confirmPress(id: Int, ok: Boolean) {
+        val gt = gameNow()
+        rollGate(gt)?.let { if (it.isNotEmpty()) note(it); return }
+        if (!book.confirm(id, ok, gt)) return
+        rollTaps()
+        pokeSoon(RollBook.REFUSE_MS + REFUSE_POKE_MS)        // review: the game's word on it, even when nothing changed (as rollAnswer)
+        postInvalidateOnAnimation()
+    }
+
+    /** the book's taps due now (a confirm's answer, the controller's roll the game did not take) */
+    private fun rollTaps() {
+        if (!docCurrent) { book.taps(); return }
+        for (t in book.taps()) rollTap(t.row, t.cell, t.what)
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        // loot-pop: the fight's small roll panel and the folded pill take only their own touches; the rest reaches Home behind
+        if (e.actionMasked == MotionEvent.ACTION_DOWN && active() == null) {
+            val m = rollMode()
+            if (m == RollMode.COMPACT && !compactRect.contains(e.x, e.y)) return false
+            if (m == RollMode.PILL && !rollsPill.contains(e.x, e.y)) return false
+        }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                pressed = hits.lastOrNull { it.first.contains(e.x, e.y) }?.second ?: ""
+                val h = hits.lastOrNull { it.first.contains(e.x, e.y) }
+                pressed = h?.second ?: ""
+                pressedAt = h?.first?.let { RectF(it) }
                 invalidate()
             }
             MotionEvent.ACTION_UP -> {
-                val hit = hits.lastOrNull { it.first.contains(e.x, e.y) }?.second
+                val now = hits.lastOrNull { it.first.contains(e.x, e.y) }?.second
                 val was = pressed
-                pressed = ""
+                // loot-pop review: a roll's button names its roll ("roll:<id>:<kind>", "ask:<id>:ok"), so a finger lifted where it went
+                // down is that press even when a document moved the rows under it meanwhile (a roll above it answered or ended): never
+                // another roll's, never lost (the box's buttons keep the old rule: their names are not the dialog's)
+                val hit = if (now != was && rollPress(was) && pressedAt?.contains(e.x, e.y) == true) was else now
+                pressed = ""; pressedAt = null
                 // b-release-spirit: every finger press on the dialog, so "it presses but nothing happens" has its reason in the log
                 android.util.Log.i("WCDLG", "finger up on '${hit ?: "-"}' (down on '$was')" + if (hit == null || hit != was) ": no press" else "")
                 if (hit != null && hit == was) tap(hit)
                 invalidate()
             }
-            MotionEvent.ACTION_CANCEL -> { pressed = ""; invalidate() }
+            MotionEvent.ACTION_CANCEL -> { pressed = ""; pressedAt = null; invalidate() }
         }
-        if (rollsMin && active() == null && !rollsPill.contains(e.x, e.y)) return false    // folded: the rest of the screen is Home's
         return true       // the dialog owns every touch: nothing reaches what is behind it
     }
 
     private fun tap(hit: String) {
-        if (hit == "rolls:min") { rollsMin = true; invalidate(); return }
-        if (hit == "rolls:open") { rollsMin = false; invalidate(); return }
+        if (hit == "rolls:min") {
+            // the window folds: in a fight back into the small panel over the minimap, else into the pill
+            if (fightNow()) openedInFight = false else rollsMin = true
+            refresh(); return
+        }
+        if (hit == "rolls:open") { rollsMin = false; refresh(); return }
+        if (hit == "rolls:full") { if (fightNow()) openedInFight = true else rollsMin = false; refresh(); return }    // the player opens it
         if (hit.startsWith("card:")) { rollPick = hit.substring(5).toIntOrNull() ?: -1; invalidate(); return }
         if (hit.startsWith("roll:")) {
-            // "roll:<kind>:<cell>": the game's own RollOnLoot through Interact's cell on the isell row
+            // "roll:<id>:<kind>": the game's own RollOnLoot through Interact's cell on the isell row - on the first touch
             val parts = hit.split(':')
-            if (rollSend(parts[1], parts[2].toIntOrNull() ?: -1)) chose("roll:" + parts[1], null, shownRoll()?.optInt("id") ?: -1)
+            val r = rolls.firstOrNull { it.id == parts.getOrNull(1)?.toIntOrNull() } ?: return
+            rollAnswer(r, parts.getOrNull(2) ?: return)
+            return
+        }
+        if (hit.startsWith("ask:")) {
+            // "ask:<id>:ok|cancel": the game's bind confirm on that roll, through its pop-up's own cell
+            val parts = hit.split(':')
+            confirmPress(parts.getOrNull(1)?.toIntOrNull() ?: return, parts.getOrNull(2) == "ok")
             return
         }
         val d = active() ?: run { android.util.Log.w("WCDLG", "press '$hit': no dialog is shown"); return }
@@ -635,10 +789,18 @@ class DialogView(context: Context) : View(context) {
 
     override fun onDraw(c: Canvas) {
         hits.clear()
-        if (rolls.isEmpty()) rollsMin = false
-        if (rolls.isNotEmpty()) { if (rollsMin && active() == null) drawRollsPill(c) else drawRolls(c) }
+        val now = drawClock()
+        syncFight()
+        val m = rollMode()
+        if (m != drawnMode) { modeChanged(drawnMode, m, now); drawnMode = m }
+        when (m) {
+            RollMode.COMPACT -> drawCompact(c, now)
+            RollMode.PILL -> if (active() == null) drawRollsPill(c) else drawRolls(c)
+            RollMode.FULL -> if (now - growAt < GROW_MS) drawGrow(c, now) else drawRolls(c)
+            RollMode.NONE -> Unit
+        }
         val d = active()
-        if (d == null) { if (rolls.isNotEmpty()) { rollNote(c); signOfLife() }; return }
+        if (d == null) { if (rolls.isNotEmpty()) { rollNote(c, m); signOfLife() }; return }
         if (rolls.isNotEmpty()) hits.clear()        // a game dialog over the rolls owns the touches
         val w = width.toFloat(); val h = height.toFloat()
         val cx = w / 2f
@@ -771,6 +933,56 @@ class DialogView(context: Context) : View(context) {
     // with the stat changes, AUTOMATICALLY; the game's own Need / Greed / Pass buttons in the strip, a grey one with the
     // game's reason. A MIRROR: the game keeps the controller (A Need, X Greed, B Pass, its D-pad between rolls); a tap is
     // one cell of Interact's, whose action is the game's RollOnLoot.
+    //
+    // loot-pop (the user, 2026-11-16: "The loot roll pop up is WAY too intrusive during a fight / there should be a smaller version that
+    // pops up over the minimap and gets bigger when transitioning out of combat. / during combat it should accept touch input and show
+    // things per item/roll"): IN A FIGHT the rolls are a SMALL PANEL over Home's minimap (one row per roll: its icon, its name in its
+    // quality's colour, its timer, and the game's Need / Greed (or Transmogrification) / Disenchant / Pass as buttons, each acting on the
+    // first touch); the controller stays the fight's (no ENTER: [wantsPad] false) unless the player opens the window (the panel's open
+    // button). When the fight ends the panel GROWS into the full window. Out of a fight the full window, as before (its minimize: the
+    // pill). The game's bind confirm is drawn ON ITS ROLL (Okay / Cancel), never a box over the fight.
+
+    enum class RollMode { NONE, COMPACT, FULL, PILL }
+
+    /** the rolls' animation clock (the panel's pop, the grow): the off-device renders set it to stop a frame mid-motion */
+    var drawClock: () -> Long = { System.currentTimeMillis() }
+
+    /** set by the host: the player is in a fight (Home's own word: the takeover or the grow) */
+    var fightNow: () -> Boolean = { false }
+    /** set by the host: Home's minimap module in this view's px while Home shows it, else null (the small panel then stands at the right) */
+    var mapBox: () -> RectF? = { null }
+
+    private var wasFight = false
+    private var openedInFight = false          // the player opened the window in this fight (the panel's open button)
+    private var drawnMode = RollMode.NONE
+    private var growAt = 0L                    // the small panel growing into the window (a fight's end, or opened)
+    private var growFrom = RectF()
+    private var popAt = 0L                     // the small panel popping up over the minimap
+    private var compactRect = RectF()
+
+    /** how the rolls show now */
+    fun rollMode(): RollMode = when {
+        rolls.isEmpty() -> RollMode.NONE
+        fightNow() && !openedInFight -> RollMode.COMPACT
+        !fightNow() && rollsMin -> RollMode.PILL
+        else -> RollMode.FULL
+    }
+
+    /** a fight's start or end: a window the player opened in the fight closes back with it; a pill becomes the fight's panel */
+    private fun syncFight() {
+        val f = fightNow()
+        if (f == wasFight) return
+        wasFight = f
+        openedInFight = false
+        if (f) rollsMin = false
+    }
+
+    private fun modeChanged(from: RollMode, to: RollMode, now: Long) {
+        android.util.Log.i("WCDLG", "rolls: $from -> $to")
+        if (from == RollMode.COMPACT && to == RollMode.FULL && compactRect.width() > 0f) { growAt = now; growFrom = RectF(compactRect) }
+        if (to == RollMode.COMPACT) popAt = now
+        if (to == RollMode.NONE) { growAt = 0L; popAt = 0L }
+    }
 
     private fun hexColour(hex: String?, def: Int): Int =
         if (hex != null && hex.length == 6) try { Color.parseColor("#$hex") } catch (e: Exception) { def } else def
@@ -786,28 +998,8 @@ class DialogView(context: Context) : View(context) {
         return out
     }
 
-    // ---- A ROLL THE GAME DID NOT TAKE (the user, 10-22, an event's loot rolls in combat: "my selections aren't triggering"): the
-    // controller's Need / Greed / Pass is the game's first (its GamepadGroupLootRollFrame); a document written PAD_FALLBACK_MS or more
-    // after it that still lists that roll means the game never got it: the roll's own cell is tapped then, as a finger's press, once
-    private val rollPadPress = HashMap<Int, Pair<String, Long>>()
-    private fun rollPadRefused() {
-        if (docGt < 0) return
-        val it = rollPadPress.entries.iterator()
-        while (it.hasNext()) {
-            val (id, kp) = it.next()
-            val (kind, gt) = kp
-            val roll = rolls.firstOrNull { r -> r.optInt("id") == id }
-            if (roll == null || docGt - gt > PAD_FALLBACK_MAX_MS) { it.remove(); continue }
-            if (docGt < gt + PAD_FALLBACK_MS) continue
-            it.remove()
-            val cell = roll.optJSONObject("cells")?.optInt(kind, -1) ?: -1
-            android.util.Log.w("WCDLG", "the game did not take the controller's $kind on roll $id (${docGt - gt} ms): tapping its cell $cell")
-            if (cell >= 0) rollSend(kind, cell)
-        }
-    }
-
-    // ---- MINIMISED ROLLS (the user, 10-22: "I can't minimize the menu"): the roll window folds into a small pill at the bottom left;
-    // a tap on the pill opens it again; while folded every touch outside the pill reaches what is behind
+    // ---- MINIMISED ROLLS (the user, 10-22: "I can't minimize the menu"): out of a fight the roll window folds into a small pill at the
+    // bottom left; a tap on the pill opens it again; while folded every touch outside the pill reaches what is behind
     private var rollsMin = false
     private var rollsPill = RectF()
     private fun drawRollsPill(c: Canvas) {
@@ -821,8 +1013,28 @@ class DialogView(context: Context) : View(context) {
         hits.add(rollsPill to "rolls:open")
     }
 
-    private fun shownRoll(): JSONObject? =
-        rolls.firstOrNull { it.optInt("id") == rollPick } ?: rolls.firstOrNull { it.optBoolean("sel") } ?: rolls.firstOrNull()
+    /** the roll the window shows: one showing the game's bind confirm (the game's pop-up has the controller then, as in the game), else
+     *  the finger's pick, else the game's own selection */
+    private fun shownRoll(): RollBook.Roll? = confirmRoll() ?: rolls.firstOrNull { it.id == rollPick } ?: gameRoll()
+
+    /** the roll showing the game's bind confirm (A Okay / B Cancel answer it before anything else) */
+    private fun confirmRoll(): RollBook.Roll? = rolls.firstOrNull { book.rowOf(it) == RollBook.Row.CONFIRM }
+
+    /** the roll the GAME's A / B / X act on out of a fight: its selection (after a controller answer, the one its frame takes next) */
+    private fun gameRoll(): RollBook.Roll? =
+        rolls.firstOrNull { it.id == gameGuess } ?: rolls.firstOrNull { it.sel } ?: rolls.firstOrNull()
+
+    /** the timer's fraction left on [rl] (the seconds of its document, counted down here) */
+    private fun timerOf(rl: RollBook.Roll): Float {
+        val dur = rl.dur.toFloat()
+        val gone = (System.currentTimeMillis() - rollsAt) / 1000f
+        return if (dur > 0f) ((rl.left - gone) / dur).coerceIn(0f, 1f) else 1f
+    }
+
+    /** the words on [rl]'s bind confirm, ready to draw: the game's pop-up's own (never through Tr: game text), else the app's line in the
+     *  game's words for such an item */
+    private fun askWords(rl: RollBook.Roll): String =
+        book.askOf(rl.id)?.text?.takeIf { it.isNotBlank() }?.let { plain(it) } ?: Tr.t("Binds when picked up")
 
     private fun drawRolls(c: Canvas) {
         val r = RectF(0f, 0f, width.toFloat(), height.toFloat())
@@ -831,28 +1043,23 @@ class DialogView(context: Context) : View(context) {
         val ch = 92f; val cw = ch * 277f / 67f
         val cx0 = inner.left + 14f
         val shown = shownRoll()
-        val gone = (System.currentTimeMillis() - rollsAt) / 1000f
         for ((i, rl) in rolls.withIndex()) {
             if (i >= 4) break
             val y = top + i * (ch + 26f)
             val card = RectF(cx0, y, cx0 + cw, y + ch)
-            val q = rl.optInt("q", 1)
-            val dur = rl.optInt("dur", 0).toFloat()
-            val timer = if (dur > 0f) ((rl.optInt("left", 0) - gone) / dur).coerceIn(0f, 1f) else 1f
-            UiKit.rollCard(c, card, Icons.getOrUnknown(rl.optInt("icon", 0).takeIf { it > 0 }), rl.optString("name", ""), q, Theme.quality(q),
-                max(1, rl.optInt("count", 1)), timer, rl.optBoolean("need"), rl.optBoolean("greed"), rl.optBoolean("transmog"))
+            UiKit.rollCard(c, card, Icons.getOrUnknown(rl.icon.takeIf { it > 0 }), rl.name, rl.q, Theme.quality(rl.q),
+                max(1, rl.count), timerOf(rl), rl.need, rl.greed, rl.transmog)
             if (rl === shown) UiKit.focus(c, RectF(card.left - 4f, card.top - 6f, card.right + 4f, card.bottom + 6f))
-            hits.add(card to "card:${rl.optInt("id")}")
+            hits.add(card to "card:${rl.id}")
         }
-        if (rollsMore > 0) c.drawText(Tr.t("+$rollsMore more"), cx0 + 12f, top + 4 * (ch + 26f) + 18f, UiKit.bodyPaint(24f, Theme.dim))
+        if (rollsMore > 0) c.drawText(Tr.t("+$rollsMore more"), cx0 + 12f, top + min(4, rolls.size) * (ch + 26f) + 18f, UiKit.bodyPaint(24f, Theme.dim))
         // the chosen roll's tooltip; gear with a worn item in that slot: Currently Equipped beside it (two worn: one under the other)
         if (shown != null) {
             val tx = cx0 + cw + 26f
             val tw = (inner.right - 8f - tx - 14f) / 2f
-            val tip = shown.optJSONObject("tip")
+            val tip = shown.o.optJSONObject("tip")
             val lines = tip?.optJSONArray("lines")
-            val q = shown.optInt("q", 1)
-            UiKit.tooltip(c, tx, r.top + 112f, tw, shown.optString("name", ""), Theme.quality(q), tipLines(lines, 1))
+            UiKit.tooltip(c, tx, r.top + 112f, tw, shown.name, Theme.quality(shown.q), tipLines(lines, 1))
             val cmp = tip?.optJSONArray("cmp")
             var wy = r.top + 112f
             if (cmp != null) for (n in 0 until cmp.length()) {
@@ -863,47 +1070,288 @@ class DialogView(context: Context) : View(context) {
                 wy = rr.bottom + 14f
             }
         }
-        // the strip: the game's own roll buttons, in its footer's order Need, Greed (or Transmogrification), Pass
+        // the strip: the game's own roll buttons, in its order Need, Greed (or Transmogrification), Disenchant, Pass; or, on a
+        // bind-on-pickup roll the game asks about, ITS confirm: the words, Okay (A) / Cancel (B)
         val strip = UiKit.strip(c, inner)
         val cy = strip.centerY() + 2f
         val bx = inner.right - 8f
         val bs = 84f; val by = cy - 14f
-        if (shown != null) {
-            val cells = shown.optJSONObject("cells")
-            fun cell(k: String) = cells?.optInt(k, -1) ?: -1
-            val canNeed = shown.optBoolean("need"); val canGreed = shown.optBoolean("greed"); val tm = shown.optBoolean("transmog")
-            val gKind = if (!canGreed && tm) "transmog" else "greed"
-            UiKit.rollButton(c, bx - 70f, by, bs, "pass", UiKit.backGlyph(), true, downStarts("roll:pass"), label = "Pass")
-            UiKit.rollButton(c, bx - 230f, by, bs, gKind, "rev_x", canGreed || tm, downStarts("roll:$gKind"),
+        if (shown != null && book.rowOf(shown) == RollBook.Row.CONFIRM) {
+            val ask = book.askOf(shown.id)
+            val bw = 260f; val bh = 92f
+            val okR = RectF(bx - 2 * bw - 24f, cy - bh / 2f, bx - bw - 24f, cy + bh / 2f)
+            val noR = RectF(bx - bw, cy - bh / 2f, bx, cy + bh / 2f)
+            UiKit.button(c, okR, ask?.okLabel ?: "Okay", UiKit.okGlyph(), if (isDown("ask:${shown.id}:ok")) UiKit.Button.DOWN else UiKit.Button.UP)
+            UiKit.button(c, noR, ask?.cancelLabel ?: "Cancel", UiKit.backGlyph(), if (isDown("ask:${shown.id}:cancel")) UiKit.Button.DOWN else UiKit.Button.UP)
+            hits.add(okR to "ask:${shown.id}:ok"); hits.add(noR to "ask:${shown.id}:cancel")
+            val p = android.text.TextPaint(UiKit.bodyPaint(26f, Theme.gold))
+            val words = askWords(shown)
+            val lay = android.text.StaticLayout.Builder.obtain(words, 0, words.length, p, (okR.left - inner.left - 44f).toInt())
+                .setMaxLines(2).setEllipsize(android.text.TextUtils.TruncateAt.END).build()
+            c.save(); c.translate(inner.left + 24f, cy - lay.height / 2f); lay.draw(c); c.restore()
+        } else if (shown != null) {
+            val canNeed = shown.need; val canGreed = shown.greed; val tm = shown.transmog
+            val gKind = shown.xKind
+            val id = shown.id
+            // right to left: Pass, Disenchant (when the game allows it: touch only, as the game's own frame has no key for it), Greed, Need
+            var x = bx - 70f
+            UiKit.rollButton(c, x, by, bs, "pass", UiKit.backGlyph(), true, downStarts("roll:$id:pass"), label = "Pass")
+            hits.add(RectF(x - 60f, by - 60f, x + 60f, by + 74f) to "roll:$id:pass")
+            if (shown.de) {
+                x -= 160f
+                deButton(c, x, by, bs, true, downStarts("roll:$id:de"), label = "Disenchant")
+                hits.add(RectF(x - 60f, by - 60f, x + 60f, by + 74f) to "roll:$id:de")
+            }
+            x -= 160f
+            UiKit.rollButton(c, x, by, bs, gKind, UiKit.xGlyph(), canGreed || tm, downStarts("roll:$id:$gKind"),
                 label = if (gKind == "transmog") "Transmog" else "Greed")
-            UiKit.rollButton(c, bx - 390f, by, bs, "need", "rev_a", canNeed, downStarts("roll:need"), label = "Need")
-            hits.add(RectF(bx - 130f, by - 60f, bx - 10f, by + 74f) to "roll:pass:${cell("pass")}")
-            if (canGreed || tm) hits.add(RectF(bx - 290f, by - 60f, bx - 170f, by + 74f) to "roll:$gKind:${cell(gKind)}")
-            if (canNeed) hits.add(RectF(bx - 450f, by - 60f, bx - 330f, by + 74f) to "roll:need:${cell("need")}")
+            if (canGreed || tm) hits.add(RectF(x - 60f, by - 60f, x + 60f, by + 74f) to "roll:$id:$gKind")
+            x -= 160f
+            UiKit.rollButton(c, x, by, bs, "need", UiKit.okGlyph(), canNeed, downStarts("roll:$id:need"), label = "Need")
+            if (canNeed) hits.add(RectF(x - 60f, by - 60f, x + 60f, by + 74f) to "roll:$id:need")
             // a grey one: the game's reason, at the strip's left
-            val why = shown.optJSONObject("why")
+            val why = shown.o.optJSONObject("why")
             val reason = (if (!canNeed) why?.let { str(it, "need") } else null) ?: (if (!canGreed && !tm) why?.let { str(it, "greed") } else null)
             if (reason != null) {
                 val p = android.text.TextPaint(UiKit.bodyPaint(22f, Theme.unusable))
-                val lay = android.text.StaticLayout.Builder.obtain(Tr.span(reason), 0, Tr.span(reason).length, p, (bx - 470f - inner.left - 24f).toInt())
+                val lay = android.text.StaticLayout.Builder.obtain(Tr.span(reason), 0, Tr.span(reason).length, p, (x - 80f - inner.left - 24f).toInt())
                     .setMaxLines(3).build()
                 c.save(); c.translate(inner.left + 20f, cy - lay.height / 2f); lay.draw(c); c.restore()
             }
         }
         UiKit.windowFrame(c, r, "Loot Rolls", UiKit.tex("loot_dice"), Theme.gold, close = false)
-        // the fold button (top right): the window becomes a pill
+        // the fold button (top right): out of a fight the window becomes a pill, in a fight the small panel again
         val mb = RectF(r.right - 110f, r.top + 20f, r.right - 24f, r.top + 92f)
         UiKit.menu(c, mb, solid = true)
         c.drawLine(mb.left + 24f, mb.centerY(), mb.right - 24f, mb.centerY(), UiKit.bodyPaint(26f, Theme.gold).apply { strokeWidth = 6f })
         hits.add(mb to "rolls:min")
+        if (System.currentTimeMillis() < lingerUntil) postInvalidateOnAnimation()
     }
 
-    /** why a tap on a roll did nothing, over the strip */
-    private fun rollNote(c: Canvas) {
+    /** the Disenchant roll button: the game's own disenchant art is not harvested, so its spell icon in the roll buttons' place */
+    private fun deButton(c: Canvas, cx: Float, cy: Float, size: Float, enabled: Boolean, down: Boolean, label: String?) {
+        val r = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
+        UiKit.pressed(c, r, down && enabled) {
+            val ic = Icons.get(DISENCHANT_ICON)
+            val ir = RectF(r.left + size * 0.12f, r.top + size * 0.12f, r.right - size * 0.12f, r.bottom - size * 0.12f)
+            c.save()
+            c.clipPath(Path().apply { addCircle(ir.centerX(), ir.centerY(), ir.width() / 2f, Path.Direction.CW) })
+            if (ic != null) c.drawBitmap(ic, null, ir, if (enabled) art else greyArt)
+            c.restore()
+            ring.color = if (enabled) Theme.gold else Theme.dim
+            c.drawCircle(ir.centerX(), ir.centerY(), ir.width() / 2f, ring)
+        }
+        if (label != null) {
+            val p = UiKit.bodyPaint(22f, if (enabled) Theme.gold else Theme.dim).apply { textAlign = Paint.Align.CENTER }
+            c.drawText(Tr.t(label), cx, r.bottom + 6f - p.ascent(), p)
+        }
+    }
+    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
+    private val greyArt = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) }); alpha = 120
+    }
+
+    // ---- THE SMALL PANEL OVER THE MINIMAP (a fight)
+
+    /** where the small panel stands: the top of Home's minimap module (else the right half), as tall as its rows */
+    private fun compactBox(): RectF {
+        val m = compactHost()
+        val (n, more) = compactFit(m)
+        val ph = compactHeight(n, more)
+        val l = m.left + 8f; val t = m.top + 8f
+        return RectF(l, t, max(l + 300f, m.right - 8f), t + ph)
+    }
+
+    /** the box the small panel stands in: Home's minimap module, else the right half */
+    private fun compactHost(): RectF {
+        val w = width.toFloat(); val h = height.toFloat()
+        return mapBox() ?: RectF(w / 2f + 4f, 110f, w - UiKit.MODULE_GAP, h - 90f)
+    }
+
+    private fun compactHeight(n: Int, more: Int) = C_HEAD + n * C_ROW + (if (more > 0) C_MORE else 0f) + 14f
+
+    /** review: the rows the panel has room for INSIDE [m] (1 .. 4) and how many it counts as "+N more" - with the tap-to-cast bar under
+     *  the minimap (Right / Both) the module is cut short, and four rows reached ~100 px past it onto the cast bar, whose touches the
+     *  panel then took */
+    private fun compactFit(m: RectF): Pair<Int, Int> {
+        val all = rolls.size
+        var n = min(4, all)
+        while (n > 1 && compactHeight(n, rollsMore + all - n) > m.height() - 16f) n--
+        return n to (rollsMore + all - n)
+    }
+
+    /** the small panel, popping up (scale 0.9 -> 1 and in, Home's module timing); its touches are taken from the first frame, where its
+     *  buttons land (the combat-touch ruling: the first touch acts) */
+    private fun drawCompact(c: Canvas, now: Long) {
+        val box = compactBox()
+        compactRect = RectF(box)
+        val t = (now - popAt).toFloat()
+        val k = if (popAt > 0L) lootCurve.getInterpolation((t / Motion.MODULE_OPEN).coerceIn(0f, 1f)) else 1f
+        if (k < 1f) {
+            postInvalidateOnAnimation()
+            val sv = c.saveLayerAlpha(RectF(0f, 0f, width.toFloat(), height.toFloat()), (255 * k).toInt().coerceIn(0, 255))
+            val s = 0.9f + 0.1f * k
+            c.scale(s, s, box.right, box.top)                                  // from the minimap's corner
+            compactPanel(c, box, interactive = true)                          // (the hits are the landed layout's: plain px)
+            c.restoreToCount(sv)
+            return
+        }
+        compactPanel(c, box, interactive = true)
+    }
+
+    /** the panel's picture in [r]; [interactive] = its touches are taken (not while it pops or grows) */
+    private fun compactPanel(c: Canvas, r: RectF, interactive: Boolean) {
+        val inner = UiKit.menu(c, r, solid = true)
+        // the head: the game's dice, its words, how many; the open button (the full window, with the controller)
+        UiKit.tex("loot_dice")?.let { c.drawBitmap(it, null, RectF(inner.left + 4f, inner.top + 2f, inner.left + 44f, inner.top + 42f), art) }
+        val n = rolls.size + rollsMore
+        val tp = UiKit.bodyPaint(27f, Theme.gold)
+        c.drawText(Tr.t(if (n > 1) "Loot rolls ($n)" else "Loot Rolls"), inner.left + 54f, inner.top + 22f - (tp.ascent() + tp.descent()) / 2f, tp)
+        val ob = RectF(inner.right - 48f, inner.top, inner.right, inner.top + 44f)
+        val down = isDown("rolls:full")
+        ring.color = if (down) Color.WHITE else Theme.gold
+        val pad = 12f
+        // the open glyph: four corners pointing out
+        val g = Path().apply {
+            moveTo(ob.left + pad, ob.top + pad + 9f); lineTo(ob.left + pad, ob.top + pad); lineTo(ob.left + pad + 9f, ob.top + pad)
+            moveTo(ob.right - pad - 9f, ob.top + pad); lineTo(ob.right - pad, ob.top + pad); lineTo(ob.right - pad, ob.top + pad + 9f)
+            moveTo(ob.right - pad, ob.bottom - pad - 9f); lineTo(ob.right - pad, ob.bottom - pad); lineTo(ob.right - pad - 9f, ob.bottom - pad)
+            moveTo(ob.left + pad + 9f, ob.bottom - pad); lineTo(ob.left + pad, ob.bottom - pad); lineTo(ob.left + pad, ob.bottom - pad - 9f)
+        }
+        c.drawPath(g, ring)
+        if (interactive) hits.add(RectF(ob.left - 30f, r.top, r.right, inner.top + C_HEAD - 6f) to "rolls:full")
+        // the rows
+        var y = inner.top + C_HEAD - 6f
+        val (fit, more) = compactFit(compactHost())
+        for (rl in rolls.take(fit)) {
+            val row = RectF(inner.left, y, inner.right, y + C_ROW - 6f)
+            UiKit.divider(c, row.left + 6f, row.top - 3f, row.right - 6f, row.top - 3f)
+            if (book.rowOf(rl) == RollBook.Row.CONFIRM) compactConfirm(c, row, rl, interactive) else compactRow(c, row, rl, interactive)
+            y += C_ROW
+        }
+        if (more > 0) {
+            val p = UiKit.bodyPaint(22f, Theme.dim)
+            c.drawText(Tr.t("+$more more"), inner.left + 10f, y + 4f - p.ascent(), p)
+        }
+        if (System.currentTimeMillis() < lingerUntil) postInvalidateOnAnimation()
+    }
+
+    /** the item at a row's left: its icon in its quality's loot border, its count; returns where the words may start */
+    private fun compactItem(c: Canvas, row: RectF, rl: RollBook.Roll): Float {
+        val s = 58f
+        val ir = RectF(row.left + 8f, row.centerY() - s / 2f, row.left + 8f + s, row.centerY() + s / 2f)
+        Icons.getOrUnknown(rl.icon.takeIf { it > 0 })?.let { c.drawBitmap(it, null, ir, art) }
+        UiKit.tex(UiKit.lootBorder(rl.q))?.let { val b = s * 0.62f; c.drawBitmap(it, null, RectF(ir.centerX() - b, ir.centerY() - b + 2f, ir.centerX() + b, ir.centerY() + b + 2f), art) }
+        if (rl.count > 1) {
+            val p = UiKit.numberPaint(20f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
+            c.drawText(Tr.t(rl.count.toString()), ir.right - 4f, ir.bottom - 4f, p)
+        }
+        return ir.right + 12f
+    }
+
+    /** the item's name in its quality's colour (one line, cut), in [l] .. [rgt], centred on [cy] */
+    private fun compactName(c: Canvas, rl: RollBook.Roll, l: Float, rgt: Float, cy: Float) {
+        val p = UiKit.bodyPaint(24f, Theme.quality(rl.q))
+        val line = android.text.TextUtils.ellipsize(rl.name, android.text.TextPaint(p), max(40f, rgt - l), android.text.TextUtils.TruncateAt.END).toString()
+        // review: held inside its room too (a cut that did not hold let a long line run under the buttons)
+        c.save(); c.clipRect(l, cy - 40f, max(l + 40f, rgt), cy + 40f)
+        c.drawText(line, l, cy - (p.ascent() + p.descent()) / 2f, p)
+        c.restore()
+    }
+
+    /** an open roll: icon, name, the timer under it, the game's buttons at the right - each one acts on the first touch */
+    private fun compactRow(c: Canvas, row: RectF, rl: RollBook.Roll, interactive: Boolean) {
+        val wl = compactItem(c, row, rl)
+        val kinds = ArrayList<String>()
+        kinds.add("need"); kinds.add(rl.xKind)
+        if (rl.de) kinds.add("de")
+        kinds.add("pass")
+        val bs = 54f; val pitch = 62f
+        val bx0 = row.right - kinds.size * pitch
+        compactName(c, rl, wl, bx0 - 10f, row.top + 26f)
+        // the timer: the game's yellow bar draining, under the name
+        val tr = RectF(wl, row.top + 48f, bx0 - 14f, row.top + 56f)
+        timerPaint.color = Color.BLACK; c.drawRect(tr, timerPaint)
+        val tw = tr.width() * timerOf(rl)
+        if (tw > 0.5f) {
+            timerPaint.color = Color.rgb(230, 200, 0); c.drawRect(tr.left, tr.top, tr.left + tw, tr.bottom, timerPaint)
+            timerPaint.color = Color.rgb(255, 236, 90); c.drawRect(tr.left, tr.top, tr.left + tw, tr.centerY(), timerPaint)
+        }
+        for ((i, kind) in kinds.withIndex()) {
+            val cx = bx0 + i * pitch + pitch / 2f
+            val on = rl.can(kind)
+            val hit = "roll:${rl.id}:$kind"
+            if (kind == "de") deButton(c, cx, row.centerY(), bs, on, isDown(hit), null)
+            else UiKit.rollButton(c, cx, row.centerY(), bs, kind, null, on, isDown(hit))
+            if (interactive && on) hits.add(RectF(cx - pitch / 2f, row.top, cx + pitch / 2f, row.bottom) to hit)
+        }
+    }
+    private val timerPaint = Paint().apply { style = Paint.Style.FILL }
+
+    /** a bind-on-pickup roll the game asks about: its words, the game's Okay / Cancel (its pop-up's own cells) */
+    private fun compactConfirm(c: Canvas, row: RectF, rl: RollBook.Roll, interactive: Boolean) {
+        val wl = compactItem(c, row, rl)
+        val ask = book.askOf(rl.id)
+        val bw = 112f; val bh = 58f
+        val okR = RectF(row.right - 2 * bw - 10f, row.centerY() - bh / 2f, row.right - bw - 10f, row.centerY() + bh / 2f)
+        val noR = RectF(row.right - bw, row.centerY() - bh / 2f, row.right, row.centerY() + bh / 2f)
+        // review: the game's pop-up has the controller's focus (it takes A / B in a fight too, hidden while we draw it here)
+        val focused = list.any { it.roll == rl.id && it.focus }
+        val wordsR = okR.left - (if (focused) 28f else 10f)              // clear of the A badge
+        compactName(c, rl, wl, okR.left - 10f, row.top + 26f)
+        val p = UiKit.bodyPaint(19f, Theme.gold)
+        val words = android.text.TextUtils.ellipsize(askWords(rl), android.text.TextPaint(p), max(40f, wordsR - wl), android.text.TextUtils.TruncateAt.END).toString()
+        c.save(); c.clipRect(wl, row.top, max(wl + 40f, wordsR), row.bottom)       // review: never under the buttons, however long
+        c.drawText(words, wl, row.top + 54f - (p.ascent() + p.descent()) / 2f, p)
+        c.restore()
+        val okHit = "ask:${rl.id}:ok"; val noHit = "ask:${rl.id}:cancel"
+        UiKit.button(c, okR, ask?.okLabel ?: "Okay", if (isDown(okHit)) UiKit.Button.DOWN else UiKit.Button.UP, textSize = 24f)
+        UiKit.button(c, noR, ask?.cancelLabel ?: "Cancel", if (isDown(noHit)) UiKit.Button.DOWN else UiKit.Button.UP, textSize = 24f)
+        // ... its keys on its buttons then, as the game shows them (the roll buttons' badge, at the bottom left)
+        if (focused) {
+            UiKit.pad(c, UiKit.okGlyph(), okR.left + 4f, okR.bottom - 8f, 30f)
+            UiKit.pad(c, UiKit.backGlyph(), noR.left + 4f, noR.bottom - 8f, 30f)
+        }
+        if (interactive) {
+            hits.add(RectF(okR.left - 4f, row.top, okR.right + 4f, row.bottom) to okHit)
+            hits.add(RectF(noR.left - 4f, row.top, noR.right + 4f, row.bottom) to noHit)
+        }
+    }
+
+    // ---- THE GROW (a fight's end, or the player opening the panel): the small panel's box grows into the window, the window's picture
+    // scaled from it (as Interact's loot window grows into Make Space), the panel fading over the first half
+    private val lootCurve = Motion.curve()
+
+    private fun drawGrow(c: Canvas, now: Long) {
+        val full = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        val from = growFrom
+        val k = lootCurve.getInterpolation(((now - growAt).toFloat() / GROW_MS).coerceIn(0f, 1f))
+        val cx = from.centerX() + (full.centerX() - from.centerX()) * k
+        val cy = from.centerY() + (full.centerY() - from.centerY()) * k
+        val sx = from.width() / full.width() + (1f - from.width() / full.width()) * k
+        val sy = from.height() / full.height() + (1f - from.height() / full.height()) * k
+        val save = c.save()
+        c.translate(cx - full.centerX() * sx, cy - full.centerY() * sy)
+        c.scale(sx, sy)
+        c.saveLayerAlpha(full, (255 * (0.35f + 0.65f * k)).toInt().coerceIn(0, 255))
+        drawRolls(c)
+        c.restoreToCount(save)
+        if (k < 0.5f) {
+            val sv = c.saveLayerAlpha(full, (255 * (1f - 2f * k)).toInt().coerceIn(0, 255))
+            compactPanel(c, from, interactive = false)
+            c.restoreToCount(sv)
+        }
+        hits.clear()
+        postInvalidateOnAnimation()
+    }
+
+    /** why a tap on a roll did nothing: over the strip (the window), under the panel (a fight) */
+    private fun rollNote(c: Canvas, m: RollMode) {
         val nt = noteText ?: return
         if (System.currentTimeMillis() - noteAt >= 2500) return
         val p = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(Tr.t(nt), width / 2f, height - 150f, p)
+        if (m == RollMode.COMPACT) c.drawText(Tr.t(nt), compactRect.centerX(), compactRect.bottom + 34f, p)
+        else c.drawText(Tr.t(nt), width / 2f, height - 150f, p)
     }
 
     companion object {
@@ -924,5 +1372,14 @@ class DialogView(context: Context) : View(context) {
                                        PadInput.SLOT_DPAD_LEFT to "PADDLEFT", PadInput.SLOT_DPAD_RIGHT to "PADDRIGHT")
         const val MIN_LIFE_GAP_MS = 1_000L    // never more than one sign of life a second
         private val DAYS_BEFORE = intArrayOf(0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)
+        // loot-pop: the fight's small roll panel (px) and its grow into the window
+        const val C_HEAD = 58f                // the panel's head (the dice, its words, the open button)
+        const val C_ROW = 86f                 // one roll's row
+        const val C_MORE = 34f                // the "+N more" line
+        const val GROW_MS = 280L              // the panel growing into the window (a fight's end)
+        /** review: after a finger's answer a fresh document is asked for this long after RollBook.REFUSE_MS (a lost tap comes back) */
+        const val REFUSE_POKE_MS = 150L
+        /** the game's Disenchant spell icon (INV_Enchant_Disenchant): the Disenchant roll's button */
+        const val DISENCHANT_ICON = 132878
     }
 }
