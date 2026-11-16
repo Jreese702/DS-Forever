@@ -401,6 +401,9 @@ object ProfessionsModel {
     private fun ctlTap(ov: Overview, key: String): Tap? =
         if (ROW_CTL in ov.padRows) ov.ctl[key]?.let { Tap(ROW_CTL, it) } else null
 
+    /** p24 (voice): the app's search keyboard up ([on]) / down: B the room's while it is up (no game action); null = an older add-on */
+    fun kbdTap(ov: Overview?, on: Boolean): Tap? = ov?.let { ctlTap(it, if (on) "kbd" else "nokbd") }
+
     /** is [book] the profession open in the game right now, and the player's own */
     fun isLive(ov: Overview?, book: Book?): Boolean =
         ov != null && book != null && ov.open == book.id && !ov.foreign && !book.foreign

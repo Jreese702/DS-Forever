@@ -78,6 +78,8 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         data class Head(val cat: Int) : Fk()
         data class Rec(val id: Int) : Fk()
         object Track : Fk(); object All : Fk(); object Count : Fk(); object Create : Fk()
+        /** the page's search box (the voice design: a controller stop, A = the keyboard, X = voice) */
+        object Search : Fk()
         /** a main card's Forget button (add-on p23) */
         data class Forget(val id: Int) : Fk()
     }
@@ -92,6 +94,15 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
 
     private val board = Board(c)
     private val search = EditText(c)
+    /**
+     * THE SEARCH'S CONTROLLER KEYBOARD (Chat's, as Bags' search has it) and its VOICE page (the user's pick 2026-11-16: "Professions search
+     * (which gets controller A and X)"): A on the search box opens the keys, X the voice page; the words replace the search and the list
+     * filters as they come. While it is up the add-on keeps B the room's (Professions.lua p24, ctl kbd), so B closes it, never the game's
+     * window; the presses come from the app's own reader ([onPadKey]); Start is its Search key ([ownsStart]).
+     */
+    private val kb = ChatKeyboard(c, swap = false, voice = true).apply { visibility = View.GONE; sendWord = "Search"; voiceAppend = false; voiceMax = 64 }
+    private var kbOpen = false
+    private var micHit: RectF? = null
 
     init {
         addView(board, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -117,6 +128,69 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         }
         addView(search, LayoutParams(SPLIT.toInt() - 134 - 16, 72).apply { leftMargin = 16; topMargin = 74 })
         search.visibility = GONE
+        addView(kb, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        kb.text = { search.text?.toString() ?: "" }
+        kb.onText = { t -> search.setText(t); search.setSelection(t.length) }
+        kb.onSend = { closeKb() }
+        kb.onClose = { closeKb() }
+    }
+
+    /** A (or X: [voice]) on the search box: the keyboard along the bottom, the add-on told (B the room's); never in a fight */
+    private fun openKb(voice: Boolean) {
+        if (viewed == 0 || search.visibility != VISIBLE) return
+        val ov = ProfessionsStore.overview
+        if (ov?.combat == true) { message = "After combat"; messageAt = SystemClock.uptimeMillis(); board.postInvalidateDelayed(MESSAGE_MS + 50); return }
+        if (!kbOpen) {
+            send(M.kbdTap(ov, true))
+            kbOpen = true
+            search.clearFocus()
+            (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(search.windowToken, 0)
+            kb.open(); kb.visibility = VISIBLE
+        }
+        if (voice) kb.startVoice(fromKeys = false)
+        board.invalidate(); invalidate()
+    }
+
+    /** the keyboard goes (its Search / B / the room left): the add-on gives B back to the game's close */
+    private fun closeKb() {
+        if (!kbOpen) return
+        kbOpen = false; kbRepeat = null; removeCallbacks(kbTick)
+        kb.stopVoice(restore = false)
+        kb.visibility = GONE
+        send(M.kbdTap(ProfessionsStore.overview, false))
+        board.invalidate(); invalidate()
+    }
+
+    /** Start is the keyboard's Search while it is up (Home asks before the pause wheel takes Start) */
+    fun ownsStart(): Boolean = kbOpen && isShown
+
+    private var kbRepeat: String? = null
+    private val kbTick = object : Runnable {
+        override fun run() { val k = kbRepeat ?: return; kb.press(k); postDelayed(this, KB_REPEAT_MS) }
+    }
+
+    /** a controller key from the app's own reader (the host's unclaimed route), only while the keyboard is up */
+    fun onPadKey(k: String, down: Boolean) {
+        if (!kbOpen || !isShown) return
+        val dpad = k == "PADDUP" || k == "PADDDOWN" || k == "PADDLEFT" || k == "PADDRIGHT"
+        if (!down) { if (kbRepeat == k) { kbRepeat = null; removeCallbacks(kbTick) }; return }
+        kb.press(k)
+        if (dpad && kbOpen) { kbRepeat = k; removeCallbacks(kbTick); postDelayed(kbTick, KB_REPEAT_FIRST_MS) }
+    }
+
+    /** the search box under the cursor: the gold box over the box itself, A with the keyboard and X with the microphone (on top) */
+    override fun dispatchDraw(c: Canvas) {
+        super.dispatchDraw(c)
+        micHit = null
+        if (kbOpen || search.visibility != VISIBLE || ProfessionsStore.overview?.held != true || focus != Fk.Search) return
+        val r = RectF(search.left.toFloat(), search.top.toFloat(), search.right.toFloat(), search.bottom.toFloat())
+        UiKit.focus(c, r)
+        micHit = VoiceUi.boxGlyphs(c, r.right - 14f, r.centerY(), 40f, VoiceUi.micShown(context)).mic
+    }
+
+    override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        if (e.actionMasked == MotionEvent.ACTION_DOWN && !kbOpen && micHit?.contains(e.x, e.y) == true) { openKb(voice = true); return true }
+        return super.dispatchTouchEvent(e)
     }
 
     // ------------------------------------------------------------ fed by MainActivity
@@ -242,7 +316,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
 
     override fun onVisibilityChanged(changedView: View, visibility: Int) {
         super.onVisibilityChanged(changedView, visibility)
-        if (visibility == VISIBLE) refresh() else { filterOpen = false; search.clearFocus() }
+        if (visibility == VISIBLE) refresh() else { filterOpen = false; search.clearFocus(); closeKb() }
         padNow.setActive(isShown)
     }
 
@@ -255,7 +329,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 if (ProfessionsStore.overview?.held != true) null
                 else when (k) {
                     "PAD1" -> focus?.takeIf { f -> board.nav.any { it.key == f && it.act != null } }
-                    "PAD3" -> if (viewed != 0 && board.nav.any { it.key == Fk.Create && it.act != null }) Fk.Create else null
+                    "PAD3" -> if (focus != Fk.Search && viewed != 0 && board.nav.any { it.key == Fk.Create && it.act != null }) Fk.Create else null
                     "PAD4" -> if (viewed != 0 && board.nav.any { it.key == Fk.Track && it.act != null }) Fk.Track else null
                     else -> null
                 }
@@ -329,6 +403,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 is Fk.Tab -> {}                                        // LATER 19: the tab draws its own cursor (sideTab cursor)
                 is Fk.Head, is Fk.Rec -> { c.save(); c.clipRect(listBox); UiKit.focus(c, n.r); c.restore() }
                 is Fk.Track -> { c.save(); c.clipRect(detailBox); UiKit.focus(c, n.r); c.restore() }
+                Fk.Search -> {}                                        // drawn over the search box itself (dispatchDraw)
                 else -> UiKit.focus(c, n.r)
             }
         }
@@ -479,6 +554,8 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
             // the list
             val fx = SPLIT - 72f; val fy = 110f
             if (book != null) {
+                // the search box: a stop of the cursor's (A the keyboard, X voice)
+                if (search.visibility == VISIBLE) nav(Fk.Search, RectF(16f, 74f, SPLIT - 134f, 146f), { openKb(voice = false) })
                 UiKit.trackerButton(c, "filter", fx, fy, 76f, filterOpen)
                 hits.add(Hit(RectF(fx - 55.5f, fy - 55.5f, fx + 55.5f, fy + 55.5f)) { filterOpen = !filterOpen; invalidate() })
                 drawList(c, book, rows, recipe, foot)
@@ -881,7 +958,9 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         }
         val k = msg.optString("k")
         // B was the game's own close button: the game has closed its window and the controller went back with "B"
-        if (k == "BACK") { leftByB = true; onLeave(); return }
+        if (k == "BACK") { leftByB = true; closeKb(); onLeave(); return }
+        // the keyboard (its voice page) is up: its presses are the app's own reader's ([onPadKey]); the relayed copy is dropped
+        if (kbOpen) return
         // LB / RB: the next tab, as the game's own tab indicators (capture version 4)
         if (k == "PADLSHOULDER" || k == "PADRSHOULDER") {
             M.nextTab(ProfessionsStore.overview, viewed, if (k == "PADLSHOULDER") -1 else 1)?.let { select(it) }
@@ -897,7 +976,9 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
             // A / X / Y: the button they perform shows DOWN at once (board.flash, the drawing only; the user 2026-10-07)
             "PAD1" -> { val f = focus; board.nav.firstOrNull { it.key == f }?.act?.let { board.flash(f); it() } }   // A
             "PAD2" -> onLeave()                                                     // B, with nothing open in the game: Home
-            "PAD3" -> if (viewed != 0) board.nav.firstOrNull { it.key == Fk.Create }?.act?.let { board.flash(Fk.Create); it() }   // X = Create
+            // X on the search box: its voice page (Voice typing off: X is Create there too, as before)
+            "PAD3" -> if (focus == Fk.Search && VoiceUi.micShown(context)) openKb(voice = true)
+                else if (viewed != 0) board.nav.firstOrNull { it.key == Fk.Create }?.act?.let { board.flash(Fk.Create); it() }   // X = Create
             "PAD4" -> if (viewed != 0) board.nav.firstOrNull { it.key == Fk.Track }?.act?.let { board.flash(Fk.Track); it() }     // Y = Track
         }
         board.invalidate()
@@ -967,9 +1048,14 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                                       else if (has(Fk.Track)) Fk.Track else rows.firstOrNull()?.key ?: f
                 }
             }
+            Fk.Search -> when {                                // the search box: down to the list, right to Track / the tabs
+                dy > 0 -> toRows()
+                dx > 0 -> focus = if (has(Fk.Track)) Fk.Track else Fk.Tab(viewed)
+            }
             is Fk.Head, is Fk.Rec -> {
                 val i = rows.indexOfFirst { it.key == f }
                 when {
+                    dy < 0 && i == 0 && has(Fk.Search) -> { lastRow = f; focus = Fk.Search }
                     dy < 0 -> rows.getOrNull(i - 1)?.let { focus = it.key }
                     dy > 0 -> { val next = rows.getOrNull(i + 1); if (next != null) focus = next.key else { lastRow = f; toFoot() } }
                     dx > 0 -> { lastRow = f; focus = if (has(Fk.Track)) Fk.Track else Fk.Tab(viewed) }
@@ -1036,6 +1122,9 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         const val SPLIT = 600f
         private const val TAG = "WCPROF"
         private const val MESSAGE_MS = 3000L
+        /** the search keyboard's D-pad repeat, as Bags' (DirectPad's rooms) */
+        private const val KB_REPEAT_FIRST_MS = 280L
+        private const val KB_REPEAT_MS = 70L
         /** Forget's "Tap again" window, and its red over the button (add-on p23) */
         private const val FORGET_ASK_MS = 3000L
         private val FORGET_RED = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(110, 200, 30, 20) }
