@@ -23,6 +23,11 @@
 -- assign anything from the 5 tabs"): a slot holds a spell, an item, a mount or a command ({ k, id / key } per slot, an old number = a
 -- spell, migrated at the login), cast by our own cell (spell / item / a one-line macrotext on OUR button); the Controller room's Cast
 -- bar tab edits it (CB.put / CB.clear / CB.move, PadTabCtl p53). At "cb9 ANY CHOOSER KIND".
+-- pa1 THE PET'S AUTOCAST ON THE CLASS WHEEL (the user, 2026-11-16: "hunters need to be able to visually see when their pets abilities
+-- are active like growl, and a way to turn it off from those radials"): a pet spell's entry on the right class radial (hud.ca.r) also
+-- says whether it MAY cast itself (`aa`, GetPetActionInfo's autoCastAllowed) beside `auto` (it does), both read through S() now; the
+-- app draws the game's autocast look (corners; the marching gold border while on) and X on the pointed spell taps its classr autocast
+-- cell (16-23, unchanged: the game's own /petautocasttoggle on our button), as a long press does.
 -- The CAST room's data. Two feeds live here:
 --
 --  1. LEGACY keyboard-slot rows (`slots`, slots 1-12 + their ACTIONBUTTONn keys). Unchanged; the app
@@ -668,7 +673,9 @@ local function petEntries(tokens)
                 e.n = realStr(name)
                 e.id = num(r[8])
                 e.i = num(tex) or iconOfPath(tex)
-                e.auto = bit01(r[7] == true)
+                e.auto = bit01(SV(r[7]) == true)
+                -- pa1: it MAY cast itself (the game's autoCastAllowed): the app draws the game's autocast corners, plain while off
+                e.aa = bit01(SV(r[6]) == true)
             end
             list[#list + 1] = e
         end

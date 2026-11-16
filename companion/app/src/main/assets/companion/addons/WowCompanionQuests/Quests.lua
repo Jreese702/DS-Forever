@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q61"    -- bump on every change; q61 (the user on build 1462: "holding on the pet bar does not open the pet inspect"): WC.pmenu.ctx("pet") reads the game's PET menu (Party mode's pet slot, PadMap m157 col 7), not the PARTY one, and its own Dismiss is hidden (our Dismiss Pet row leads it); q60 (the user, 2026-11-13: "I dont like the res pet being in the player radial, thats silly, I just want it to be done when touching a dead pet slot in the party mode section."): Revive Pet off every wheel (WC.pmenu.PET drops it, pfocus col 7 left empty; petSeen / petLast and their pet-event frame removed, the radial alone used them); Smart Res's tap on the dead pet slot stays the one Revive Pet; q59 (review of 1.0.30 code 1454, ActionBar cb2b): WC.questsSoon, the coalesced quests document on demand, so a pad row registered mid-session (the lazy castbar row) reaches Home's pad copy at once; q58 THE 1.0.30 TEST BUILD MERGE (code 1453): feat/bags-actions's q56b next to q57, both kept; q56b: WC.questNeedItems, read only - the item ids QuestieDB's item objectives name and the game's item objectives' words for every quest in the log, for the Bags Destroy picker (the user's pick 2026-11-13: Suggested never offers "items a tracked quest objective needs"); q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6); q57: THE PET'S WHEEL, TWO HOLES (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet."): Revive Pet also on the wheel of YOURSELF as the target (UnitIsUnit target / player), and the pet's name kept from the game's pet events (UNIT_PET / PET_BAR_UPDATE / PLAYER_ENTERING_WORLD / UNIT_NAME_UPDATE), not only from a menu read, so its body offers Revive after a login with no menu opened; q56: THE PET'S WHEEL CARRIES ITS ACTIONS (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet."; the picker: Feed Pet, Dismiss Pet, Revive / Mend Pet, Train pet): the pet's menu (Party mode's pet cell, unit "pet"; the target wheel on your pet) gains our own rows first - Feed Pet (greyed in a fight), Dismiss Pet, Mend Pet (alive) or Revive Pet (dead), Beast Training - each only when the character knows the spell, each a plain /cast on our own secure pfocus cells 5-9 (set up out of combat; the game opens its own training window); Revive Pet alone on your own wheel with no pet out and on your dead pet's body (its name as last seen); each row carries its spell's icon (`ic`); the re-read after a pfocus cell says again = 1 (q54's rule: the wheel is never opened again by it); q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
+local QV = "q62"    -- bump on every change; q62 THE PET'S AUTOCAST ON ITS WHEELS (the user, 2026-11-16: "hunters need to be able to visually see when their pets abilities are active like growl, and a way to turn it off from those radials"): the pet's abilities that may cast themselves (GetPetActionInfo autoCastAllowed) join the pet's wheel (Party mode's pet slot, the target wheel on your pet) after the q56 rows, each with its state (au) and slot (as); A = its cast (pfocus 10-19, type pet = the pet bar's left-click), X / a long press = its autocast toggle (pfocus 20-29, the game's own /petautocasttoggle on OUR button = the pet bar's right-click); pfocus grows to 30 cells (no new pad row), its pet cells built again out of combat when the pet's abilities change, a toggle cell naming another pet's spell never offered; {"type":"petauto"} on PET_BAR_UPDATE / PET_BAR_UPDATE_COOLDOWN / UNIT_PET / the pet's health, only when it changes; q61 (the user on build 1462: "holding on the pet bar does not open the pet inspect"): WC.pmenu.ctx("pet") reads the game's PET menu (Party mode's pet slot, PadMap m157 col 7), not the PARTY one, and its own Dismiss is hidden (our Dismiss Pet row leads it); q60 (the user, 2026-11-13: "I dont like the res pet being in the player radial, thats silly, I just want it to be done when touching a dead pet slot in the party mode section."): Revive Pet off every wheel (WC.pmenu.PET drops it, pfocus col 7 left empty; petSeen / petLast and their pet-event frame removed, the radial alone used them); Smart Res's tap on the dead pet slot stays the one Revive Pet; q59 (review of 1.0.30 code 1454, ActionBar cb2b): WC.questsSoon, the coalesced quests document on demand, so a pad row registered mid-session (the lazy castbar row) reaches Home's pad copy at once; q58 THE 1.0.30 TEST BUILD MERGE (code 1453): feat/bags-actions's q56b next to q57, both kept; q56b: WC.questNeedItems, read only - the item ids QuestieDB's item objectives name and the game's item objectives' words for every quest in the log, for the Bags Destroy picker (the user's pick 2026-11-13: Suggested never offers "items a tracked quest objective needs"); q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6); q57: THE PET'S WHEEL, TWO HOLES (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet."): Revive Pet also on the wheel of YOURSELF as the target (UnitIsUnit target / player), and the pet's name kept from the game's pet events (UNIT_PET / PET_BAR_UPDATE / PLAYER_ENTERING_WORLD / UNIT_NAME_UPDATE), not only from a menu read, so its body offers Revive after a login with no menu opened; q56: THE PET'S WHEEL CARRIES ITS ACTIONS (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet."; the picker: Feed Pet, Dismiss Pet, Revive / Mend Pet, Train pet): the pet's menu (Party mode's pet cell, unit "pet"; the target wheel on your pet) gains our own rows first - Feed Pet (greyed in a fight), Dismiss Pet, Mend Pet (alive) or Revive Pet (dead), Beast Training - each only when the character knows the spell, each a plain /cast on our own secure pfocus cells 5-9 (set up out of combat; the game opens its own training window); Revive Pet alone on your own wheel with no pet out and on your dead pet's body (its name as last seen); each row carries its spell's icon (`ic`); the re-read after a pfocus cell says again = 1 (q54's rule: the wheel is never opened again by it); q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2300,6 +2300,107 @@ function WC.pmenu.petKnows(p)
     end
     return false
 end
+-- q62 THE PET'S AUTOCAST ON ITS WHEELS (the user, 2026-11-16: "hunters need to be able to visually see when their pets abilities are
+-- active like growl, and a way to turn it off from those radials"). The pet's abilities that may cast themselves (the game's pet bar:
+-- GetPetActionInfo's autoCastAllowed; a hunter's Growl, a warlock's Firebolt / Blood Pact ...) join the pet's wheel after the q56 rows,
+-- each with its autocast state (`au`, the game's autoCastEnabled), and the app draws the game's look (the corners; the marching gold
+-- border while it is on). The press MIRRORS THE PET BAR: its left-click casts (A on the slice: our cast cell, type pet = the game's
+-- CastPetAction of that bar slot), its right-click toggles autocast (X on the slice, or a long press: our toggle cell, the game's own
+-- secure "/petautocasttoggle <name>" in-memory macro text on OUR button - nothing saved, the pet bar untouched: leave no trace).
+-- Cells on Quests' own secure row pfocus (no new pad row: the row budget): 10-19 = pet bar slots 1-10's cast, 20-29 their toggle.
+-- STATIC, set out of combat (TapPad's rule); a toggle cell names its spell, so a cell built for another pet (a demon summoned in a
+-- fight) is never offered (`ac` only while the cell names what the slot holds now): the app says "Not in combat" until the fight ends,
+-- when the row is built again. EVENT-DRIVEN: PET_BAR_UPDATE (the game fires it on every autocast change) / PET_BAR_UPDATE_COOLDOWN /
+-- UNIT_PET / the pet's health (its death) - one scan of the ten slots, coalesced; a {"type":"petauto"} document only when the state
+-- changes, so an open wheel follows the game. Plain facts only: a secret value keeps the slot's last known state. No pet out = no rows
+-- (the doc says pet 0); a dead pet = no rows (q60's rule), the doc says dead 1.
+WC.pmenu.AUTO = { cast = 10, tog = 20, n = 10 }
+WC.pmenu.auto = { want = {}, frozen = {}, cast = {}, sig = nil, last = nil, soon = false, dirty = false, on = {} }
+function WC.pmenu.autoScan()
+    local A = WC.pmenu.auto
+    if T(function() return UnitExists("pet") end) ~= true then return nil end
+    local list = {}
+    local n = TN(function() return NUM_PET_ACTION_SLOTS end) or 10
+    if n > WC.pmenu.AUTO.n then n = WC.pmenu.AUTO.n end
+    for i = 1, n do
+        -- name, texture, isToken, isActive, autoCastAllowed, autoCastEnabled, spellID
+        local r = { CALL(GetPetActionInfo, i) }
+        local name, tex, tok, allowed, enabled, sid = r[2], r[3], r[4], r[6], r[7], r[8]
+        if r[1] == true and type(name) == "string" and WC.isPlain(name) and name ~= "" and name:find("^PET_") == nil
+            and WC.isPlain(tok) and tok ~= true and WC.isPlain(allowed) and allowed == true then
+            local on = A.on[i]
+            if WC.isPlain(enabled) then on = enabled == true end
+            local id = (type(sid) == "number" and WC.isPlain(sid)) and sid or nil
+            local ic = (type(tex) == "number" and WC.isPlain(tex)) and tex or nil
+            if not ic and id then ic = TN(function() return C_Spell.GetSpellTexture(id) end) end
+            A.on[i] = on
+            list[#list + 1] = { s = i, n = name, on = on == true, id = id, ic = ic }
+        end
+    end
+    return list
+end
+-- a slot's cells, only while the built cell is what the slot holds now
+function WC.pmenu.autoCells(e)
+    local A, C = WC.pmenu.auto, WC.pmenu.AUTO
+    return (A.cast[e.s] == e.n) and (C.cast + e.s - 1) or nil, (A.frozen[e.s] == e.n) and (C.tog + e.s - 1) or nil
+end
+function WC.pmenu.autoInit(btn, col)
+    local A, C = WC.pmenu.auto, WC.pmenu.AUTO
+    if col >= C.cast and col < C.cast + C.n then
+        local s = col - C.cast + 1
+        local nm = A.want[s]
+        A.cast[s] = nm
+        btn:SetAttribute("type", nm and "pet" or nil)
+        btn:SetAttribute("action", nm and s or nil)
+        return true
+    end
+    if col >= C.tog and col < C.tog + C.n then
+        local s = col - C.tog + 1
+        local nm = A.want[s]
+        A.frozen[s] = nm
+        btn:SetAttribute("type", nm and "macro" or nil)
+        btn:SetAttribute("macrotext", nm and ("/petautocasttoggle " .. nm) or nil)
+        -- the cells are built when TapPad can (its geometry; a fight's end): the document then names them
+        if s == C.n then WC.pmenu.autoSoon(0.05) end
+        return true
+    end
+    return false
+end
+-- one scan: the cells built again when the pet's abilities changed (out of combat), and the document when anything changed
+function WC.pmenu.autoSend()
+    local P, A = WC.pmenu, WC.pmenu.auto
+    local list = P.autoScan()
+    local want, parts = {}, {}
+    for _, e in ipairs(list or {}) do want[e.s] = e.n; parts[#parts + 1] = e.s .. "=" .. e.n end
+    local sig = table.concat(parts, ",")
+    local fight = T(function() return InCombatLockdown() end) == true
+    if sig ~= A.sig then
+        if fight then A.dirty = true
+        elseif type(P.focusInit) == "function" and WC.pad and type(WC.pad.secureRow) == "function" then
+            A.want = want
+            local ok, row = pcall(WC.pad.secureRow, "pfocus", P.AUTO.tog + P.AUTO.n, P.focusInit, P.focusClick)
+            if ok and type(row) == "number" then A.sig = sig; A.dirty = false; P.focusRow = row end
+        end
+    end
+    local s = {}
+    for _, e in ipairs(list or {}) do
+        local sc, ac = P.autoCells(e)
+        s[#s + 1] = { s = e.s, n = e.n, on = e.on and 1 or 0, sc = sc, ac = ac }
+    end
+    local doc = { type = "petauto", v = QV, pet = list and 1 or 0, s = s, fight = fight and 1 or nil,
+                  dead = (list and T(function() return UnitIsDeadOrGhost("pet") end) == true) and 1 or nil }
+    local ok, line = pcall(WC.encode, doc)
+    if ok and type(line) == "string" and line ~= A.last then
+        A.last = line
+        pcall(function() WC.send(line); WC.push() end)
+    end
+end
+function WC.pmenu.autoSoon(after)
+    local A = WC.pmenu.auto
+    if A.soon then return end
+    A.soon = true
+    C_Timer.After(after or 0.1, function() A.soon = false; pcall(WC.pmenu.autoSend) end)
+end
 function WC.pmenu.petRows(unit)
     local P = WC.pmenu
     local out = T(function() return UnitExists("pet") end) == true
@@ -2315,6 +2416,12 @@ function WC.pmenu.petRows(unit)
             local ic = TN(function() return C_Spell.GetSpellTexture(p.id) end) or TN(function() return GetSpellTexture(p.id) end)
             rows[#rows + 1] = { t = P.petName(p), k = p.k, sc = p.col, en = en, ic = ic }
         end
+    end
+    -- q62: the abilities that may cast themselves, in the pet bar's order: A casts (sc), X toggles (ac), `au` its state, `as` its slot
+    local okA, list = pcall(P.autoScan)
+    for _, e in ipairs((okA and list) or {}) do
+        local sc, ac = P.autoCells(e)
+        rows[#rows + 1] = { t = e.n, k = "PetAuto", sc = sc, ac = ac, au = e.on and 1 or 0, as = e.s, en = 1, ic = e.ic }
     end
     return #rows > 0 and rows or nil
 end
@@ -2391,7 +2498,10 @@ end
 if WC.pad and type(WC.pad.secureRow) == "function" then
     -- q51: col 2 = the target's Inspect (the game's own /inspect), col 3 = Set Focus on the target; q56: cols 5-9 = the pet's
     -- actions (WC.pmenu.PET: the game's own /cast of the spell by its name, the top rank)
-    WC.pmenu.focusRow = WC.pad.secureRow("pfocus", 10, function(btn, col)
+    -- q62: cols 10-29 = the pet's abilities (WC.pmenu.autoInit: 10-19 cast, 20-29 autocast toggle), built again when they change;
+    -- their click asks for a fresh scan (the petauto document), never the menu again (the wheel stays open on a toggle)
+    function WC.pmenu.focusInit(btn, col)
+        if WC.pmenu.autoInit(btn, col) then return end
         if col == 2 then btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", "/inspect"); return end
         if col == 4 then btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", "/trade"); return end     -- q55
         if col == 7 then return end     -- q60: Revive Pet's old cell, left empty (no wheel offers Revive Pet; Smart Res casts it)
@@ -2400,7 +2510,29 @@ if WC.pad and type(WC.pad.secureRow) == "function" then
         end
         btn:SetAttribute("type", (col == 0 or col == 3) and "focus" or "clearfocus")
         btn:SetAttribute("unit", col == 3 and "target" or "player")
-    end, function(col) C_Timer.After(0.3, function() pcall(WC.pmenu.read, WC.pmenu.lastUnit, WC.pmenu.lastSrc, true) end) end)   -- q56: again
+    end
+    function WC.pmenu.focusClick(col)
+        if col >= WC.pmenu.AUTO.cast then
+            C_Timer.After(0.2, function() WC.pmenu.autoSoon(0) end)
+            C_Timer.After(0.8, function() WC.pmenu.autoSoon(0) end)       -- a late PET_BAR_UPDATE
+            return
+        end
+        C_Timer.After(0.3, function() pcall(WC.pmenu.read, WC.pmenu.lastUnit, WC.pmenu.lastSrc, true) end)   -- q56: again
+    end
+    WC.pmenu.focusRow = WC.pad.secureRow("pfocus", WC.pmenu.AUTO.tog + WC.pmenu.AUTO.n, WC.pmenu.focusInit, WC.pmenu.focusClick)
+    -- q62: the pet's autocast, event-driven (the coalesced scan; the cells again after a fight that changed the pet)
+    local okF, af = pcall(CreateFrame, "Frame")
+    if okF and af then
+        for _, e in ipairs({ "PET_BAR_UPDATE", "PET_BAR_UPDATE_COOLDOWN", "PET_UI_UPDATE", "UNIT_PET", "PLAYER_ENTERING_WORLD",
+                             "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "SPELLS_CHANGED" }) do pcall(af.RegisterEvent, af, e) end
+        pcall(af.RegisterUnitEvent, af, "UNIT_HEALTH", "pet")
+        af:SetScript("OnEvent", function(_, e, a1)
+            if e == "UNIT_PET" and a1 ~= "player" then return end
+            if e == "UNIT_HEALTH" and a1 ~= "pet" then return end
+            WC.pmenu.autoSoon(e == "PLAYER_REGEN_ENABLED" and 0.2 or 0.1)
+        end)
+        WC.pmenu.autoFrame = af
+    end
 end
 GACT[G_PLAYER_MENU] = function() WC.pmenu.read() end
 for d = 0, 7 do
