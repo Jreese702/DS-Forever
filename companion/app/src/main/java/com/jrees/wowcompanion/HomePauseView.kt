@@ -17,7 +17,8 @@ import org.json.JSONObject
  *
  * INPUT, all read here while open (its own PadInput, as the consumables wheel): a stick lights a slice, letting it go OR A picks (the
  * user 2026-10-09, "A picks too", as our other wheels); B closes (on Emotes: back to the main page); LB / RB the pages; the right
- * stick's click drops the pick; D-pad Up = Emotes, Down = Sit / Stand (both on the release); Start closes. A finger works too.
+ * stick's click drops the pick; D-pad Up = Emotes, Down = Sit / Stand (both on the release; Sit closes the wheel as an emote does,
+ * [HomePauseModel.SIT]); Start closes. A finger works too.
  *
  * THE CONTROLLER: while open it holds the guest "radial" (the consumables wheel's; never both open: the router only sends "pause" when
  * no guest holds), so the game acts on none of it; Quests q34 adds Start to that guest's keys.
@@ -281,11 +282,12 @@ class HomePauseView(
         if (!msg.optBoolean("ok", true) && gm != null) say("The game refused it")
     }
 
-    /** Spells' answer to a game action: a refusal shows on the line ("not here" for an emote the game restricts) */
+    /** Spells' answer to a game action: a refusal shows on the line ("not here" for an emote the game restricts); the wheel has
+     *  gone by then (every game action closes it, Sit too), so the line stands where the game's red line does ([note]) */
     fun onAck(msg: JSONObject) {
         val ok = msg.optBoolean("ok", true) && !msg.optBoolean("restricted")
         Log.i(TAG, "pause: ${msg.optString("cmd")} ${if (ok) "done" else "refused (${msg.optString("why")})"}")
-        if (!ok && live()) say(if (msg.optBoolean("restricted")) "Not here" else "The game refused it")
+        if (!ok) note(if (msg.optBoolean("restricted")) "Not here" else "The game refused it")
     }
 
     /** the preview only (tools/homepreview): drive the wheel's state by hand (a page, an aim, an option held, a line) */
@@ -372,7 +374,6 @@ class HomePauseView(
         when (a) {
             HomePauseModel.Act.None -> {}
             HomePauseModel.Act.Close -> pressHub()
-            HomePauseModel.Act.Sit -> game("sit", stay = true)
             is HomePauseModel.Act.Refuse -> say(a.slice.offLine ?: HomePauseModel.LATER_LINE)
             is HomePauseModel.Act.Pick -> pick(a.slice)
         }
@@ -389,15 +390,19 @@ class HomePauseView(
                     if (now - pvpArmedAt > CONFIRM_MS) { pvpArmedAt = now; say("Pick ${s.label} again to change your PvP flag"); return }
                     pvpArmedAt = 0L
                 }
-                game(cmd, stay = false)
+                game(cmd)
             }
             HomePauseModel.Kind.ROOM, HomePauseModel.Kind.HOME -> { after = s; close("a room picked") }
             HomePauseModel.Kind.LATER -> say(s.offLine ?: HomePauseModel.LATER_LINE)
         }
     }
 
-    /** one tap on Spells' "pause" row; [stay] = the wheel stays open (Sit / Stand, as the game's). The Game Menu: OUR menu */
-    private fun game(cmd: String, stay: Boolean) {
+    /**
+     * one tap on Spells' "pause" row, then the wheel closes: every one-shot game action, Sit / Stand too (the user, 2026-11-16:
+     * "pressing the sit button from the pause menu should close the pause menu"; it stayed open up to 1.0.32, as the game's radial
+     * does after its D-pad Sit). The Game Menu: the game's own menu
+     */
+    private fun game(cmd: String) {
         if (cmd == "menu") {
             // 1.0.21 (the user: "showing the escape menu on the bottom screen was a mistake since we have to reopen it on the top screen for
             // most things anyways"; the pick "Open game's menu on top"): no copy below - the wheel goes and the game's own Game Menu opens
@@ -413,7 +418,7 @@ class HomePauseView(
         Log.i(TAG, "pause: $cmd ${if (sent) "sent" else "NOT sent (no pause row yet?)"}")
         if (!sent) { say("Comes with the next add-on update"); return }
         lastActAt = SystemClock.uptimeMillis()
-        if (!stay) close("a pick")
+        close("a pick")
     }
 
     /** the Game Menu on the cleared stage: the last known list at once, Spells' fresh one follows the info tap */

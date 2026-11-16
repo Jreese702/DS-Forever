@@ -106,6 +106,14 @@ object HomePauseModel {
     const val TRACKPAD_WORD = "Track Pad"
     const val KEYBOARD_WORD = "Keyboard"
 
+    /**
+     * D-pad DOWN: Sit / Stand, a one-shot game action like the emotes (the tap row's "sit" cell). IT CLOSES THE WHEEL (the user,
+     * 2026-11-16: "pressing the sit button from the pause menu should close the pause menu"): the game's own radial keeps itself open
+     * after its D-pad Sit (gamepadradial.lua: a context option, ToggleSit with no CloseRadial), so this is the user's rule over the
+     * game's; every other one-shot pick (an emote, PvP, the Game Menu) already closes, as the game's slices do.
+     */
+    val SIT = game("sit", "Sit / Stand", "sit")
+
     /** D-pad UP's custom page: eight one-shot emotes (the game's order), header "Emotes" */
     val EMOTES: List<Slice?> = kitOrder(listOf("Dance", "Point", "Wave", "Kneel", "Train", "Chicken", "Angry", "Cheer")
         .map { game("emote", it, "emote_" + it.lowercase()) })
@@ -123,12 +131,10 @@ object HomePauseModel {
     sealed class Act {
         object None : Act()
         object Close : Act()
-        /** a slice fired: the wheel closes and [slice] runs */
+        /** a slice fired (D-pad Down's [SIT] too): the wheel closes and [slice] runs */
         data class Pick(val slice: Slice) : Act()
         /** a greyed slice was let go on: the wheel stays, its line shows */
         data class Refuse(val slice: Slice) : Act()
-        /** D-pad Down's release: Sit / Stand, the wheel stays open (the game's) */
-        object Sit : Act()
     }
 
     /**
@@ -247,8 +253,8 @@ object HomePauseModel {
             return true
         }
 
-        /** a D-pad direction (0 up, 1 right, 2 down, 3 left) pressed or let go: up Emotes, down Sit / Stand, left the Track Pad,
-         *  right the Keyboard */
+        /** a D-pad direction (0 up, 1 right, 2 down, 3 left) pressed or let go: up Emotes, down Sit / Stand ([SIT]: a pick, the wheel
+         *  closes), left the Track Pad, right the Keyboard */
         fun dpad(dir: Int, down: Boolean): Act {
             if (dir !in 0..3) return Act.None
             if (down) { heldOption = dir; return Act.None }
@@ -258,7 +264,7 @@ object HomePauseModel {
                 0 -> { page = EMOTE_PAGE; pointed = -1; Act.None }
                 1 -> Act.Pick(KEYBOARD)
                 3 -> Act.Pick(TRACKPAD)
-                else -> Act.Sit
+                else -> Act.Pick(SIT)
             }
         }
 
