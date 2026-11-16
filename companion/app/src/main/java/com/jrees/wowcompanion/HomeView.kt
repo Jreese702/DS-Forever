@@ -805,6 +805,9 @@ class HomeView(
     fun homeGuestWanted(): Boolean = typeWanted || homeOwnGuestWanted()
     /** the guest "home" itself is wanted (the chat or map module, the buff / debuff list; the tool has its own "tool") */
     fun homeOwnGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null
+    /** B: pet follow (PetFollowB): something of Home's own is open that B closes - a module full screen (chat, map, the bars), the buff /
+     *  debuff list, the Keyboard & Trackpad tool - so B's press is not Home's plain B */
+    fun bClosesSomething(): Boolean = flow.full != null || auraPane.open != null || typeWanted
     /** the chat module is full screen (the ChatView lent, the guest "home" wanted): only then does the chat's B sign reach the game */
     val chatModuleOn: Boolean get() = chatWanted
 

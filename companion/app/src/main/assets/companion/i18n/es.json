@@ -1,5 +1,18 @@
 {
 "plain": {
+"B: pet follow": "B: seguir mascota",
+"B on Home": "B en Inicio",
+"Home, out of combat: B calls your pet back.": "Inicio, fuera de combate: B llama a tu mascota.",
+"B keeps its own action.": "B mantiene su propia acción.",
+"B: pet follow: On": "B: seguir mascota: activado",
+"B: pet follow: Off": "B: seguir mascota: desactivado",
+"Home, out of combat, your pet out:": "Inicio, fuera de combate, con tu mascota:",
+"B calls it back to follow you.": "B la llama para que te siga.",
+"you": "tú",
+"your pet follows": "tu mascota te sigue",
+"your pet attacks": "tu mascota ataca",
+"Pet Follow": "Seguir",
+"B's own action": "la acción propia de B",
 "Macros": "Macros",
 "New": "Nueva",
 "Edit": "Editar",

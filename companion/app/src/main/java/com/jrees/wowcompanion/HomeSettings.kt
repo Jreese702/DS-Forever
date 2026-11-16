@@ -136,6 +136,19 @@ object HomeSettings {
         get() = prefs?.getBoolean("pauseOverGame", false) ?: false
         set(v) { if (v != pauseOverGame) { prefs?.edit()?.putBoolean("pauseOverGame", v)?.apply(); for (l in listeners) l() } }
 
+    /**
+     * B: PET FOLLOW (the user, 2026-11-16: "I want a pet class specific option where pressing B in the out of combat home menu basically
+     * stops the pet attacking"; PetFollowB): PER CHARACTER ([who] = "Name-Realm", GameUi.character), ON BY DEFAULT (the row shows only
+     * for a pet class); no character known = the default
+     */
+    fun petFollowB(who: String?): Boolean = who?.let { prefs?.getBoolean("petFollowB.$it", true) } ?: true
+    fun setPetFollowB(who: String?, on: Boolean) {
+        val k = who ?: return
+        if (on == petFollowB(k)) return
+        prefs?.edit()?.putBoolean("petFollowB.$k", on)?.apply()
+        for (l in listeners) l()
+    }
+
     var pauseTap: Boolean
         get() = prefs?.getBoolean(KEY_PAUSE_TAP, true) ?: true
         set(v) {

@@ -174,6 +174,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segPausePick = Array(2) { RectF() }
     /** the user's pick 2026-11-13: Start over game windows (HomeSettings.pauseOverGame): Our wheel / Game's wheel */
     private val segPauseOver = Array(2) { RectF() }
+    /** the user, 2026-11-16: B: pet follow (HomeSettings.petFollowB, per character): Off / On; a pet class only (PetFollowB) */
+    private val segPetB = Array(2) { RectF() }
 
     /**
      * FRAME GENERATION (board f-frame-gen): the player's own Lossless.dll and its settings (FrameGen; applied at the next game start).
@@ -269,7 +271,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPsTop.toList() + segPq.flatMap { it.toList() } + segDanger.toList() + segFog.toList() + segChat.toList() +
-            segTheme.toList() + segLang.toList() + segSwap.toList() + listOf(btnSwapRestart) + segGameAcct.toList() + segWinId.toList() + listOf(btnWinIdRestart) + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segPauseOver.toList() + segOpen.toList() + segPick.toList() +
+            segTheme.toList() + segLang.toList() + segSwap.toList() + listOf(btnSwapRestart) + segGameAcct.toList() + segWinId.toList() + listOf(btnWinIdRestart) + segLight.toList() + segLocation.toList() + segLayout.toList() + segPetB.toList() + segPauseOpen.toList() + segPausePick.toList() + segPauseOver.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
             segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
@@ -303,7 +305,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         btnGuidePending.setEmpty(); for (r in segGuide) r.setEmpty()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart, btnSwapRestart, btnWinIdRestart)) r.setEmpty()
-        for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segPauseOver, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
+        for (a in listOf(segIndoor, segLocation, segLayout, segPetB, segPauseOpen, segPausePick, segPauseOver, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
                          segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segLight, segGameAcct, segSwap, segWinId,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
@@ -368,6 +370,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.POLESTAR_TOP -> if (psTopShown()) ROW_H else 0f
         SettingsTabs.Block.INDOOR -> ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
         SettingsTabs.Block.CONTROLLER -> ROW_H + 10f + ROW_H
+        SettingsTabs.Block.PET_B -> if (PetFollowB.shown(petB())) ROW_H else 0f            // a pet class only
         SettingsTabs.Block.PAUSE_WHEEL -> ROW_H + 10f + ROW_H + 10f + ROW_H             // + Start over game windows
         SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
         SettingsTabs.Block.CLASS_LEFT, SettingsTabs.Block.CLASS_RIGHT -> ROW_H + 10f + ROW_H
@@ -465,6 +468,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segPauseOpen[1].contains(x, y) -> HomeSettings.pauseTap = false
             segPausePick[0].contains(x, y) -> HomeSettings.pausePickA = true
             segPausePick[1].contains(x, y) -> HomeSettings.pausePickA = false
+            segPetB[0].contains(x, y) -> HomeSettings.setPetFollowB(GameUi.character, false)
+            segPetB[1].contains(x, y) -> HomeSettings.setPetFollowB(GameUi.character, true)
             segPauseOver[0].contains(x, y) -> HomeSettings.pauseOverGame = false
             segPauseOver[1].contains(x, y) -> HomeSettings.pauseOverGame = true
             segOpen[0].contains(x, y) -> HomeSettings.radialTap = true
@@ -588,6 +593,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 SettingsTabs.Block.POLESTAR_TOP -> drawPsTop(c, y)
                 SettingsTabs.Block.INDOOR -> drawIndoor(c, y)
                 SettingsTabs.Block.CONTROLLER -> drawController(c, y)
+                SettingsTabs.Block.PET_B -> drawPetB(c, y)
                 SettingsTabs.Block.PAUSE_WHEEL -> drawWheel(c, y, "Pause menu", "Press Start to open; it stays until B.",
                     "Hold Start; letting go closes it.", HomeSettings.pauseTap, HomeSettings.pausePickA, segPauseOpen, segPausePick)
                     .let { bottom -> drawPauseOver(c, bottom + 10f) }
@@ -1033,6 +1039,19 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         return y + ROW_H
     }
 
+    /** the user, 2026-11-16 ("a pet class specific option where pressing B in the out of combat home menu basically stops the pet
+     *  attacking"): this character's B on Home's rest, Off / On (PetFollowB; drawn only for a pet class: [blockHeight]) */
+    private fun drawPetB(c: Canvas, top: Float): Float {
+        val on = HomeSettings.petFollowB(GameUi.character)
+        val segW = segW()
+        row(c, top, PetFollowB.ROW_ID, PetFollowB.line(on), enabled = true) { box ->
+            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, PetFollowB.SEGMENTS, if (on) 1 else 0, segPetB)
+            b
+        }
+        return top + ROW_H
+    }
+
     /** the user's pick 2026-11-13 ("Make it a setting toggle defaulted to our wheel"): Start with a game window open */
     private fun drawPauseOver(c: Canvas, top: Float): Float {
         val game = HomeSettings.pauseOverGame
@@ -1057,6 +1076,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** the padmap's Smart buffs (the host's: the latest padmap); null = no game yet, or an add-on before m62 */
     var smartDoc: () -> SmartYModel.Doc? = { null }
         get() = hub?.smartDoc ?: field
+    /** m165: the last current padmap's B pet follow (`pf`: a pet class shows the row); null = no game yet, or an add-on before m165 */
+    var petB: () -> PadMapModel.PetB? = { null }
+        get() = hub?.petB ?: field
     /** m127: the kind of what Y would do now (the padmap's `smarty` k: food / drink / buff / or / manners); null = nothing */
     var smartNow: () -> String? = { null }
         get() = hub?.smartNow ?: field

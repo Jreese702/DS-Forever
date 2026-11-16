@@ -632,7 +632,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         barSelect.roomNow = { room }        // Select's cursor starts on the room on screen (never on Home: the user's skip-Home rule)
         // the Home button's B follows Home's own state at once (a module full screen shows B; user 15:08)
-        homeView.onStateChanged = { discB("Home's state") }
+        homeView.onStateChanged = { discB("Home's state"); petBTell("Home's state") }      // B: pet follow follows Home's own state
         homeView.onBHome = { strip.homePressed() }
         partyWire()
         MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
@@ -646,6 +646,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             if (!shell.hostGone() && HomeSettings.pauseOverGame != pauseOverSeen) {
                 pauseOverSeen = HomeSettings.pauseOverGame; pauseOverSentAt = 0L; pauseOverTell(lastPadMap, "the setting")
             }
+            if (!shell.hostGone()) petBTell("the setting")                     // B: pet follow, this character's choice
         } }
         homeView.onPartyLeaveRest = { partyLeaveHome("a Home module full screen") }
         // Home's controller reader passes each held mask to Interact's pop-up while it shows: its Make Space ring follows the real A
@@ -832,6 +833,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.onReport = { openReport() }
         // m62 Smart buffs: the Settings section reads the latest padmap, edits by taps, names a spell by the book's two taps
         settingsView.smartDoc = { lastPadMap?.smartBuffs }
+        settingsView.petB = { petBNow }                                     // B: pet follow's row (a pet class only)
         settingsView.smartNow = { lastPadMap?.smartY?.kind }                // m127: the row Y would act on now
         settingsView.smartTaps = { cells -> TapBridge.tapsSpaced(this, spellsPad ?: questsPad, cells, 120L) }   // the user 11-11: Pick added nothing - a repeated cell inside 0.25 s was swallowed (as Polestar's digits)
         settingsView.smartSpellCells = { name ->
@@ -1149,6 +1151,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 homeView.tick()
                 roomCue.tick()
                 discB("no fresh word")      // on Home a B with no fresh word goes back to the house
+                petBTell("tick")            // B: pet follow - a state change nothing else reported (the report's notice), a lost tell
                 ui.postDelayed(this, 1000)
             }
         })
@@ -2711,6 +2714,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // backlog (its `_gt` stamp after the game's start: a host that came up mid-game); an older run's says nothing about now
                 if (current || padmapOfThisRun(msg.optLong("_gt", -1L))) { padmapRunAt = System.currentTimeMillis(); runStart = it.start }
                 if (current) pauseOverTell(it, "padmap")                // the user's pick: Start over game windows, told when it differs
+                if (current) { petBNow = it.petB; petBTell("padmap") }      // B: pet follow (PadMap m165), told when it differs
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
                 // PadMap m160: the Smart Range clean-up's counts (the problem report's line), one log line when they change
@@ -3215,6 +3219,26 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the user's pick 2026-11-13 ("Make it a setting toggle defaulted to our wheel"): the add-on told the app's Start-over-windows value
      *  whenever a current padmap says another (PauseOver), and at once on a change (HomeSettings' listener) */
     private var pauseOverSentAt = 0L
+    /**
+     * B: PET FOLLOW (the user, 2026-11-16: "I want a pet class specific option where pressing B in the out of combat home menu basically
+     * stops the pet attacking"; PetFollowB, PadMap m165): the add-on holds the app's word - this character's setting AND Home with nothing
+     * of its own open that B closes (a module full screen, the buff list, the tool, the report's notice) - told by padtab 39 then 36 / 37
+     * whenever the last CURRENT padmap disagrees ([petBNow]: its `pf`; null = an add-on without it, never told). Rooms, wheels, pop-ups and
+     * game windows hold the controller themselves (the router stands aside in the add-on): no tell for them, so no taps on a room change
+     */
+    private var petBNow: PadMapModel.PetB? = null
+    private var petBSent: Boolean? = null
+    private var petBSentAt = 0L
+    private fun petBTell(why: String) {
+        val pf = petBNow ?: return
+        val homeFree = !homeView.bClosesSomething() && !(::reportNotice.isInitialized && reportNotice.asking)
+        val want = PetFollowB.want(HomeSettings.petFollowB(GameUi.character), pf, homeFree)
+        val now = SystemClock.elapsedRealtime()
+        if (!PetFollowB.needsTell(want, pf, petBSent, petBSentAt, now)) return
+        val sent = padTabTap(PetFollowB.cells(want))
+        if (sent) { petBSent = want; petBSentAt = now }
+        Log.i("WCHOME", "B pet follow: ${if (want) "on" else "off"} told ($why)${if (sent) "" else ": not sent"}")
+    }
     private fun pauseOverTell(m: PadMapModel.Map?, why: String) {
         val game = HomeSettings.pauseOverGame
         if (m == null || !PauseOver.needsTell(game, m.start, PauseOver.knows(m.version), pauseOverSentAt, SystemClock.elapsedRealtime())) return

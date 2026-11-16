@@ -1,5 +1,18 @@
 {
 "plain": {
+"B: pet follow": "B : suivi du familier",
+"B on Home": "B sur l'Accueil",
+"Home, out of combat: B calls your pet back.": "Accueil, hors combat : B rappelle votre familier.",
+"B keeps its own action.": "B garde sa propre action.",
+"B: pet follow: On": "B : suivi du familier : activé",
+"B: pet follow: Off": "B : suivi du familier : désactivé",
+"Home, out of combat, your pet out:": "Accueil, hors combat, votre familier là :",
+"B calls it back to follow you.": "B le rappelle pour qu'il vous suive.",
+"you": "vous",
+"your pet follows": "votre familier vous suit",
+"your pet attacks": "votre familier attaque",
+"Pet Follow": "Suivre",
+"B's own action": "l'action propre de B",
 "Macros": "Macros",
 "New": "Nouvelle",
 "Edit": "Modifier",
