@@ -46,6 +46,9 @@ function GetLatestThreeSenders() READS.senders = READS.senders + 1; return unpac
 RULES = {}
 Enum = setmetatable({ GameRule = { IngameCalendarDisabled = 76, IngameMailNotificationDisabled = 77 } }, { __index = function() return STUB end })
 C_GameRules = { IsGameRuleActive = function(r) return RULES[r] == true end }
+-- a secret STRING as the client has them (the stub's SECRETV is a table): the client's own test says so
+SECRET_STR = { ["Hidden Sender"] = true }
+do local was = issecretvalue; function issecretvalue(v) return was(v) or (type(v) == "string" and SECRET_STR[v] == true) end end
 -- the mail calls the block must never make (each a spy: nothing opened, taken, deleted, marked)
 for _, n in ipairs({ "CheckInbox", "GetInboxHeaderInfo", "GetInboxNumItems", "GetInboxText", "TakeInboxItem", "TakeInboxMoney",
                      "AutoLootMailItem", "DeleteInboxItem", "ReturnInboxItem", "InboxItemCanDelete", "SendMail", "CloseMail",
@@ -148,8 +151,12 @@ check(len(d) == 1 and d[-1]['c'].get('mail') == {"on": True, "from": ["Brannoc",
       "c three senders (a fourth value is never sent)", d and d[-1]['c'].get('mail'))
 DOC_THREE = d[-1] if d else None
 n0 = nsent(L)
+L.execute('advance(5)')
+t0 = int(L.eval('#TIMERS'))
+L.execute('fire("MAIL_INBOX_UPDATE")')
+check(int(L.eval('#TIMERS')) == t0, "d a MAIL_INBOX_UPDATE that changes nothing queues no work (no collect, no timer)", int(L.eval('#TIMERS')) - t0)
 d = mail_event(L, 'MAIL_INBOX_UPDATE')
-check(d == [], "d a MAIL_INBOX_UPDATE that changes nothing sends no document", len(d))
+check(d == [], "d ... and sends no document", len(d))
 L.execute('HAS = false; SENDERS = {}')
 d = mail_event(L, 'MAIL_INBOX_UPDATE')
 check(len(d) == 1 and d[-1]['c'].get('mail') == {"on": False}, "c all read (the mailbox's event): {on = false}", d and d[-1]['c'].get('mail'))
@@ -177,9 +184,9 @@ L.execute('HAS = SECRETV')
 d = mail_event(L)
 check(d == [] and last_mail(L) == {"on": True}, "e a secret HasNewMail: the last reading stands, nothing sent", last_mail(L))
 L.execute('HAS = true')
-senders(L, "SECRET", "", "Brannoc")
+senders(L, "SECRET", "", "Hidden Sender", "Brannoc")
 d = mail_event(L)
-check(len(d) == 1 and d[-1]['c'].get('mail') == {"on": True, "from": ["Brannoc"]}, "e a secret and an empty sender are dropped",
+check(len(d) == 1 and d[-1]['c'].get('mail') == {"on": True, "from": ["Brannoc"]}, "e a secret (a table, a string) and an empty sender are dropped",
       d and d[-1]['c'].get('mail'))
 # (the stub's _G answers a missing global with its STUB table: not a function, as the game's nil is not)
 L2, errs2 = world('HasNewMail = nil\n')
