@@ -43,6 +43,10 @@ class PolestarTabTest {
             assertEquals(f.subList(2, f.size - 1).sum() % 36, f.last())
         }
         assertEquals(listOf(35, 35), PolestarTab.two(5000))      // (coerced: two base-36 digits)
+        // what no frame can say: nothing (never a throw)
+        assertEquals(emptyList<Int>(), PolestarTab.frame(PolestarTab.TICK, 444, listOf(0, 4, 40)))
+        assertEquals(emptyList<Int>(), PolestarTab.frame(PolestarTab.LOOK, 444, listOf(1)))
+        assertEquals(emptyList<Int>(), PolestarTab.frame(12, 444))
         assertEquals(setOf(PolestarTab.LOAD, PolestarTab.CONTINUE, PolestarTab.CHOOSE, PolestarTab.RESET), PolestarTab.FIGHT)
     }
 
@@ -293,7 +297,7 @@ class PolestarTabTest {
         assertNotNull(s.send(PolestarTab.LOOK, a, 1_000L))
         assertTrue(s.busy)
         assertNull("the next press waits", s.send(PolestarTab.LOOK, b, 1_100L))
-        assertNull("only the latest press waits", s.send(PolestarTab.LOOK, c, 1_200L))
+        assertNull("only the latest press of an op waits", s.send(PolestarTab.LOOK, c, 1_200L))
         // garbled: sent once more; garbled again: given up, the waiting press goes
         val g1 = s.onAnswer(PolestarTab.LOOK, false, "garbled", 2_000L)
         assertEquals(a, g1.next!!.taps); assertTrue(g1.next!!.resend); assertFalse(g1.done)
@@ -318,6 +322,18 @@ class PolestarTabTest {
         assertEquals(PolestarTab.FIGHT_LINE, PolestarTab.refusedLine("combat"))
         assertEquals(PolestarTab.LOST_LINE, PolestarTab.refusedLine("garbled"))
         assertNull(PolestarTab.refusedLine(null))
+        // different ops wait in order (a Tick is never dropped for a later Look); open / close replace each other
+        val tick = PolestarTab.frame(PolestarTab.TICK, 444, listOf(0, 4, 1))
+        s.send(PolestarTab.DESCRIBE, PolestarTab.frame(PolestarTab.DESCRIBE, 444, listOf(0, 5)), 35_000L)
+        s.send(PolestarTab.TICK, tick, 35_001L); s.send(PolestarTab.LOOK, a, 35_002L)
+        s.send(PolestarTab.OPEN, PolestarTab.frame(PolestarTab.OPEN, 0), 35_003L); s.send(PolestarTab.CLOSE, PolestarTab.frame(PolestarTab.CLOSE, 0), 35_004L)
+        val n1 = s.onAnswer(PolestarTab.DESCRIBE, true, null, 35_100L).next!!
+        assertEquals(PolestarTab.TICK, n1.op)
+        val n2 = s.onAnswer(PolestarTab.TICK, true, null, 35_200L).next!!
+        assertEquals(PolestarTab.LOOK, n2.op)
+        val n3 = s.onAnswer(PolestarTab.LOOK, true, null, 35_300L).next!!
+        assertEquals("the close replaced the open", PolestarTab.CLOSE, n3.op)
+        assertNull(s.onAnswer(PolestarTab.CLOSE, true, null, 35_400L).next)
         // a tap that could not go: nothing in flight, nothing waiting
         s.send(PolestarTab.LOOK, a, 40_000L); s.send(PolestarTab.LOOK, b, 40_001L); s.failed()
         assertFalse(s.busy); assertNull(s.onAnswer(PolestarTab.LOOK, true, null, 40_002L).next)

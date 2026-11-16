@@ -3856,10 +3856,15 @@ function WC.pg.summary()
         if ok then d.dn, d.tt = WC.pg.num(dn), WC.pg.num(tt) end
     end
     d.cp = (d.s == nil and d.l == nil) or nil                          -- the guide is done (no current step)
-    local from, waiting = WC.pg.routeFrom(E, G, id, g, level)
-    if waiting then d.rw = true end
-    if from ~= nil then d.rc = true; d.fs = WC.pg.hash(from) end
-    WC.pg.rfrom = from
+    -- the path choice: waiting (Home's "Choose your path" row) always; which one the tab would show only while it is open
+    if open then
+        local from, waiting = WC.pg.routeFrom(E, G, id, g, level)
+        if waiting then d.rw = true end
+        if from ~= nil then d.rc = true; d.fs = WC.pg.hash(from) end
+    elseif d.cp and type(E.PendingRouteChoice) == "function" then
+        local ok, f = pcall(E.PendingRouteChoice)
+        if ok and f ~= nil then d.rw, d.rc, d.fs = true, true, WC.pg.hash(f) end
+    end
     local to = WC.pg.outlevel(G, g, level)
     if to ~= nil then
         local okT, th = pcall(G.Get, to)

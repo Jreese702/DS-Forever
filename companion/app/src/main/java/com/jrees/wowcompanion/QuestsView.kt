@@ -283,6 +283,7 @@ class QuestsView(
     /** one framed command ([op], [stamp], [args]): now, or after the one in flight */
     private fun psFrame(op: Int, stamp: Int, args: List<Int> = emptyList()) {
         val taps = PolestarTab.frame(op, stamp, args)
+        if (taps.isEmpty()) { note(PolestarSkip.REFUSED_LINE, false); return }
         psSend.send(op, taps, System.currentTimeMillis(), PolestarTab.frameMs(taps))?.let { psTap(it) }
     }
     private fun psTap(o: PolestarTab.Sender.Out) {
@@ -984,7 +985,7 @@ class QuestsView(
         splitX = floor(w * 0.57f)
         if (tab == 1 && psShows()) {
             psPane.draw(c, w, h, bodyTop, PolestarPane.Frame(polestar, psCur, psRows(), psPicks(), fight(), held && cursor.shown && !onTabs,
-                pressed, waiting = false))
+                pressed, waiting = false, quiet = onTabs))
             for ((g, key) in psPane.glyphHits) glyphHits[g] = key
             if (isShown) postInvalidateDelayed(REFRESH_MS)
             return
@@ -1033,7 +1034,7 @@ class QuestsView(
             }
             if (onTabs && active) UiKit.moveArrows(c, r, left = i > 0, right = i < labels.size - 1, words = false)
             tabHits.add(r to i)
-            x += tw + 24f
+            x += tw + UiKit.TAB_GAP_H                      // (room for the cursor's gold arrow between the two)
         }
     }
 
@@ -1074,9 +1075,9 @@ class QuestsView(
         val inset = RectF(box.left + 8f, box.top + 3f, box.right - 8f, box.bottom - 3f)
         if (sel) {
             // THE selector (UI Art's SHEET_quests_v3): the kit's selection box; its up / down arrows in the gaps while the
-            // controller is the room's
-            UiKit.focus(c, inset)
-            if (held && cursor.shown) UiKit.moveArrowsUpDown(c, inset, up = up, down = down, size = 22f, width = 34f,
+            // controller is the room's. pg1: while the cursor is on the tab row, the row is only the selection (one selector)
+            if (onTabs) UiKit.selectedRow(c, inset) else UiKit.focus(c, inset)
+            if (held && cursor.shown && !onTabs) UiKit.moveArrowsUpDown(c, inset, up = up, down = down, size = 22f, width = 34f,
                 around = true, gap = SEL_GAP)
         }
         if (q.optBoolean("focus")) {
@@ -1312,7 +1313,7 @@ class QuestsView(
         val reachable = QuestPad.cells(padDoc, QuestPad.Act.WATCH, slot) != null
         val tracked = tracked(q)
         val menuOpen = menuSel >= 0
-        val glyphs = held && cursor.shown && !menuOpen
+        val glyphs = held && cursor.shown && !menuOpen && !onTabs
         button(c, RectF(bx, bTop, bx + bw, bBot), if (tracked) "Untrack" else "Track", "track",
             enabled = block == null && reachable, glyph = if (glyphs) "rev_a" else null)
         bx += bw + gap

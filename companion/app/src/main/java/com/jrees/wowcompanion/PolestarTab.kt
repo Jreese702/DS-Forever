@@ -86,9 +86,10 @@ object PolestarTab {
     fun fill(t: String, vararg v: Any): String { var r = t; for (x in v) r = r.replaceFirst("%s", x.toString()); return r }
 
     // ---------------------------------------------------------------- the frame
-    /** one framed command's taps on the "pnav" row: 38, 12, op, s1, s2, args, k (k = the sum of op, stamp digits and args, mod 36) */
+    /** one framed command's taps on the "pnav" row: 38, 12, op, s1, s2, args, k (k = the sum of op, stamp digits and args, mod 36);
+     *  empty for what no frame can say (an op of another length, an arg past 35): nothing is sent */
     fun frame(op: Int, stamp: Int, args: List<Int> = emptyList()): List<Int> {
-        require(op in 13..35 && ARGS[op] == args.size && args.all { it in 0..35 })
+        if (op !in 13..35 || ARGS[op] != args.size || args.any { it !in 0..35 }) return emptyList()
         val st = stamp.coerceIn(0, 1295)
         val body = listOf(op, st / 36, st % 36) + args
         return listOf(SAY, FRAME) + body + (body.sum() % 36)
@@ -123,7 +124,7 @@ object PolestarTab {
             fun parse(d: JSONObject?): Guide? {
                 if (d == null || d.optString("type") != "pguide") return null
                 fun int(k: String): Int? = if (d.has(k) && !d.isNull(k)) d.optInt(k) else null
-                fun str(k: String): String? = d.optString(k, "").takeIf { d.has(k) && it.isNotEmpty() }
+                fun str(k: String): String? = if (d.has(k) && !d.isNull(k)) d.optString(k, "").ifEmpty { null } else null
                 val tabs = d.optJSONArray("tabs")?.let { a ->
                     (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { t ->
                         Tab(t.optString("t", ""), t.optInt("s", -1), if (t.has("i")) t.optInt("i") else null, t.optInt("n", 0),
@@ -176,8 +177,8 @@ object PolestarTab {
                             x.optBoolean("tk"), x.optBoolean("ti"), x.optString("it", "").ifEmpty { null })
                     }
                 } ?: emptyList()
-                return StepDetail(d.optInt("gs", -1), d.optInt("i", 0), d.optString("t", "").ifEmpty { null }, d.optString("nt", "").ifEmpty { null },
-                    d.optString("st", "").ifEmpty { null }, d.optBoolean("sk"), goals)
+                fun str(k: String): String? = if (d.has(k) && !d.isNull(k)) d.optString(k, "").ifEmpty { null } else null
+                return StepDetail(d.optInt("gs", -1), d.optInt("i", 0), str("t"), str("nt"), str("st"), d.optBoolean("sk"), goals)
             }
         }
     }
@@ -550,7 +551,7 @@ object PolestarTab {
 
     /** a notice's words (ours, the guide's title filled in as Polestar gives it) */
     fun noteWords(kind: Notice, g: Guide): String = when (kind) {
-        Notice.NO_GUIDE -> NO_GUIDE
+        Notice.NO_GUIDE -> CHANGE_GUIDE
         Notice.CHOOSE -> CHOOSE_PATH
         Notice.AWAY -> if (g.shownSkipped()) fill(UNSKIP_N, g.shown ?: 0) else fill(BACK_TO, g.live ?: 0)
         Notice.OUTLEVEL -> if (g.outChoice) CHOOSE_PATH else fill(JUMP_TO, g.outTitle ?: "")
@@ -577,20 +578,25 @@ object PolestarTab {
         /** [dur]: how long its own taps take (the spacing's), counted before the wait */
         private class Flight(val op: Int, val taps: List<Int>, val at: Long, val tries: Int, val dur: Long)
         private var flight: Flight? = null
-        private var queued: Triple<Int, List<Int>, Long>? = null
-        private var queuedAt = 0L
+        /** the presses waiting, in order: one per op (a later press of the same op replaces it; open / close replace each other) */
+        private val queued = ArrayList<Pair<Triple<Int, List<Int>, Long>, Long>>()
 
         val busy: Boolean get() = flight != null
         fun inFlight(): Int? = flight?.op
 
-        /** a frame to send: now (returned), or after the one in flight (kept: only the latest press waits) */
+        /** a frame to send: now (returned), or after the one in flight (kept: the latest press of each op waits, in order) */
         fun send(op: Int, taps: List<Int>, now: Long, dur: Long = 0L): Out? {
-            if (flight != null) { queued = Triple(op, taps, dur); queuedAt = now; return null }
+            if (taps.isEmpty()) return null
+            if (flight != null) {
+                queued.removeAll { it.first.first == op || (op == OPEN && it.first.first == CLOSE) || (op == CLOSE && it.first.first == OPEN) }
+                queued.add(Triple(op, taps, dur) to now)
+                return null
+            }
             flight = Flight(op, taps, now, 1, dur)
             return Out(op, taps, false)
         }
         /** the tap could not go at all (the game not live, no pad): nothing in flight */
-        fun failed() { flight = null; queued = null }
+        fun failed() { flight = null; queued.clear() }
 
         /** what an answer to [op] means: the frame to tap next (a resend, or the queued press), and whether it ended [ok] */
         class After(val next: Out?, val done: Boolean, val ok: Boolean, val why: String?)
@@ -613,11 +619,13 @@ object PolestarTab {
             return After(next(now), true, false, "lost")
         }
         private fun next(now: Long): Out? {
-            val q = queued ?: return null
-            queued = null
-            if (now - queuedAt > WAIT_MS * 3) return null                 // a press waiting this long is stale: dropped
-            flight = Flight(q.first, q.second, now, 1, q.third)
-            return Out(q.first, q.second, false)
+            while (queued.isNotEmpty()) {
+                val (q, at) = queued.removeAt(0)
+                if (now - at > WAIT_MS * 3) continue                       // a press waiting this long is stale: dropped
+                flight = Flight(q.first, q.second, now, 1, q.third)
+                return Out(q.first, q.second, false)
+            }
+            return null
         }
     }
     /** a frame's taps' own time on the "pnav" row ([gapMs] apart, a repeated cell spaced: [TapSpacing.offsets]), with the batch's rest */

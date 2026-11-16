@@ -142,19 +142,21 @@ class PolestarPane(private val invalidate: () -> Unit) {
 
     // ---------------------------------------------------------------- the whole tab
     class Frame(val book: PolestarTab.Book, val cur: PolestarTab.Cursor, val rows: List<PolestarTab.Row>, val picks: List<PolestarTab.PickRow>,
-                val fight: Boolean, val glyphs: Boolean, val pressed: String, val waiting: Boolean)
+                val fight: Boolean, val glyphs: Boolean, val pressed: String, val waiting: Boolean, val quiet: Boolean = false)
 
     fun draw(c: Canvas, w: Float, h: Float, top: Float, f: Frame) {
         rowHits.clear(); btnHits.clear(); glyphHits.clear()
         val g = f.book.guide ?: return
         val split = kotlin.math.floor(w * 0.57f)
         if (f.cur.view != lastView) { if (f.cur.view == PolestarTab.View.PICKER || f.cur.view == PolestarTab.View.PATH) pickScroll = 0f; lastView = f.cur.view }
+        // under Reset's question the room stays drawn, quiet: no glyphs, nothing to touch but the question's buttons
+        val under = if (f.cur.view == PolestarTab.View.CONFIRM) Frame(f.book, f.cur, f.rows, f.picks, f.fight, false, "", f.waiting) else f
         when (f.cur.view) {
             PolestarTab.View.PICKER -> { drawPicks(c, 0f, top, split, h, f); divider(c, split, top, h); drawPickDetail(c, split + 1f, top, w, h, f) }
             PolestarTab.View.PATH -> { drawPath(c, 0f, top, split, h, f); divider(c, split, top, h); drawPathDetail(c, split + 1f, top, w, h, f) }
-            else -> { drawList(c, 0f, top, split, h, f, g); divider(c, split, top, h); drawDetail(c, split + 1f, top, w, h, f, g) }
+            else -> { drawList(c, 0f, top, split, h, under, g); divider(c, split, top, h); drawDetail(c, split + 1f, top, w, h, under, g) }
         }
-        if (f.cur.view == PolestarTab.View.CONFIRM) drawConfirm(c, w, h, top, f)
+        if (f.cur.view == PolestarTab.View.CONFIRM) { rowHits.clear(); btnHits.clear(); glyphHits.clear(); drawConfirm(c, w, h, top, f) }
     }
     private fun divider(c: Canvas, x: Float, top: Float, h: Float) { pFill.color = Theme.bronzeDim; c.drawRect(x, top, x + 1f, h, pFill) }
 
@@ -190,7 +192,8 @@ class PolestarPane(private val invalidate: () -> Unit) {
             val box = RectF(x0 + 8f, y + 3f, x1 - 8f, y + rowH(r) - 3f)
             if (box.bottom > y0 - SEL_GAP && box.top < y1 + SEL_GAP) {
                 if (isSel) {
-                    UiKit.focus(c, box)
+                    // (the cursor on the tab row: the row is only the selection - one selector)
+                    if (f.quiet) UiKit.selectedRow(c, box) else UiKit.focus(c, box)
                     if (f.glyphs && f.cur.view == PolestarTab.View.LIST)
                         UiKit.moveArrowsUpDown(c, box, up = true, down = i < rows.size - 1, size = 22f, width = 34f, around = true, gap = SEL_GAP)
                 }
@@ -265,8 +268,9 @@ class PolestarPane(private val invalidate: () -> Unit) {
     // ---------------------------------------------------------------- the details (and the buttons)
     private fun drawDetail(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, f: Frame, g: PolestarTab.Guide) {
         val pad = 22f
-        val actTop = y1 - ACTIONS_H
         val row = f.rows.firstOrNull { it.key == f.cur.sel }
+        // A over X / Y (two rows) where all three are drawn: each keeps its words beside its glyph
+        val actTop = y1 - (if (aWord(row, g, f) != null && f.cur.view == PolestarTab.View.LIST && PolestarTab.canXY(row, g)) ACTIONS_2_H else ACTIONS_H)
         c.save(); c.clipRect(x0, y0, x1, actTop)
         var y = y0 + 16f
         val tw = x1 - x0 - pad * 2
@@ -363,16 +367,18 @@ class PolestarPane(private val invalidate: () -> Unit) {
         val words = aWord(row, g, f)
         val fightGrey = f.fight && aFightOnly(row, g, f)
         val aOn = words != null && !fightGrey && !f.waiting && !(row is PolestarTab.Row.Step && row.shown && f.cur.view == PolestarTab.View.LIST)
-        val n = (if (words != null) 1 else 0) + (if (xy) 2 else 0)
-        if (n == 0) return
-        val bw = ((x1 - x0) - pad * 2 - gap * (n - 1)) / n
-        var bx = x0 + pad
+        if (words == null && !xy) return
+        var top = bTop
         if (words != null) {
-            button(c, RectF(bx, bTop, bx + bw, bBot), words, "PAD1", aOn, if (glyphs) "rev_a" else null, f); bx += bw + gap
+            val bot = if (xy) bTop + BTN_H else bBot
+            button(c, RectF(x0 + pad, top, x1 - pad, bot), words, "PAD1", aOn, if (glyphs) "rev_a" else null, f)
+            top = bot + gap
         }
         if (xy) {
-            button(c, RectF(bx, bTop, bx + bw, bBot), PolestarSkip.SKIP_WORD, "PAD3", !f.waiting, if (glyphs) "rev_x" else null, f); bx += bw + gap
-            button(c, RectF(bx, bTop, bx + bw, bBot), PolestarSkip.PREV_WORD, "PAD4", g.undo > 0 && !f.waiting, if (glyphs) "rev_y" else null, f)
+            val bw = ((x1 - x0) - pad * 2 - gap) / 2f
+            button(c, RectF(x0 + pad, top, x0 + pad + bw, bBot), PolestarSkip.SKIP_WORD, "PAD3", !f.waiting, if (glyphs) "rev_x" else null, f)
+            button(c, RectF(x0 + pad + bw + gap, top, x1 - pad, bBot), PolestarSkip.PREV_WORD, "PAD4", g.undo > 0 && !f.waiting,
+                if (glyphs) "rev_y" else null, f)
         }
         if (fightGrey) ours(c, PolestarTab.FIGHT_LINE, x0 + pad, actTop - 12f, body(20f, Color.rgb(255, 90, 70)))
     }
@@ -385,7 +391,6 @@ class PolestarPane(private val invalidate: () -> Unit) {
     }
 
     private fun drawPicks(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, f: Frame) {
-        val g = f.book.guide
         val rows = f.picks
         val sel = f.cur.pick
         ours(c, PolestarTab.CHANGE_GUIDE, x0 + 22f, y0 + 40f, title(30f, Theme.gold))
@@ -452,7 +457,6 @@ class PolestarPane(private val invalidate: () -> Unit) {
             if (isSel) y += SEL_GAP
         }
         c.restore()
-        if (g == null) return
     }
 
     private fun drawPickDetail(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, f: Frame) {
@@ -592,5 +596,7 @@ class PolestarPane(private val invalidate: () -> Unit) {
         const val SEL_GAP = 28f
         const val TILE_H = 170f
         const val ACTIONS_H = 112f
+        const val BTN_H = 82f
+        const val ACTIONS_2_H = 12f + BTN_H + 10f + BTN_H + 12f
     }
 }
