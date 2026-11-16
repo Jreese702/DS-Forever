@@ -4878,38 +4878,142 @@ end
 -- puts its alpha back INSIDE the engine - no SetAlpha call to hook - so only the next frame's OnUpdate caught it. Now every filler is
 -- post-hooked too: every method of the tooltip type named Set... (not SetAlpha: that one has its own rule), Show, ClearLines, AddLine,
 -- AddDoubleLine, AppendText - each tooltip is held at 0 the moment it is (re)filled, before the frame draws.
-WC.tips = { V = "tt3", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ItemRefShoppingTooltip1",
-                                  "ItemRefShoppingTooltip2", "EmbeddedItemTooltip", "NamePlateTooltip", "GameNoHeaderTooltip" },
-            hooked = {}, on = false, zeroed = setmetatable({}, { __mode = "k" }), busy = false, typeHooked = false }
+-- tt4 (the user, 2026-11-16: "tooltips for buffs are still popping up on the top screen even though they are off"). Two holes, read in
+-- this client's own UI source (Blizzard_BuffFrame, Blizzard_AuraContainer, Blizzard_UnitFrame):
+--   1. THE BUFF'S OWN TOOLTIP FRAME. In controller mode the game pops a tooltip up for 4 s at every buff gained or refreshed
+--      (BuffFrameMixin:ShowNextAuraForTooltip, while GamepadShowAutoAuraTooltip is on) on BuffFrameTooltip: a tooltip frame of its own,
+--      not GameTooltip, anchored to the buff's icon (invisible here: Hub's riders). It was not in the named list, so nothing held it at
+--      its show or at each frame - only tt2 / tt3's hooks on the type's shared method table, which run after a Lua call and so miss an
+--      alpha the engine puts back with none (tt3's own measurement); GameTooltip's per-frame hold caught that a frame later, nothing
+--      caught it on BuffFrameTooltip, so the buff's tooltip drew for its whole 4 s. Now every tooltip frame we reach is ADOPTED:
+--      BuffFrameTooltip and GameSmallHeaderTooltip join the list, and any GameTooltip-type frame a type hook meets is adopted the next
+--      frame. An adopted frame is held at its OnShow, at EVERY frame (OnUpdate), at its layout (OnSizeChanged) and after each of its
+--      own fillers (post-hooks on the frame itself: they do not depend on the shared table reaching it).
+--   2. A FORBIDDEN TOOLTIP. The target / focus / boss frames' buffs and debuffs (TargetFrameAuraButtonTemplate, an aura container in the
+--      secure environment) show their tooltip on AuraButtonTooltip, which is forbidden and hidden from every add-on
+--      (Blizzard_AuraButtonTooltip.xml): no alpha of ours can reach it. And Hub hides the target frame by alpha only, so its invisible
+--      buffs still take the cursor's hover. While tooltips are off, a frame of OUR OWN lies over each shown aura container: MOTION only
+--      (SetMouseMotionEnabled true, SetMouseClickEnabled false - TapPad's sink is the same split the other way round), so the hover
+--      stops on it and the buff never gets its OnEnter, while a click still goes to whatever is under it. MEDIUM strata, level 1:
+--      above the unit frames (LOW), under every window. Nothing of the game's is touched; the aura container is only read.
+--   A hold never compares a value read back from the tooltip (on this client a frame's alpha can be a secret aspect). WC.tips.stats()
+--   counts what each hold caught (Interact's proof.tipc.st), so a device run says which path a tooltip came back on.
+-- The bottom screen's tooltips are read through C_TooltipInfo (Interact, Bags, Auras.lua), never from a tooltip frame: unchanged.
+-- Review of tt4 (the same report): two more buff tooltips that are NOT of the tooltip type, so no type hook ever met them:
+--   PartyMemberBuffTooltip (Blizzard_UnitFrame partyframe.xml: a plain frame, TOOLTIP strata, no parent): the pet frame's and every
+--   party member's buff / debuff icons, shown at its OnEnter (PetFrameMixin / PartyMemberFrameMixin:OnEnter -> UpdateTooltip). Hub
+--   hides those frames by alpha only (they still take the cursor where they stand; Hub's own unit frames take no mouse), so the cursor
+--   there drew it in full. And the consolidated buffs' list (BuffFrame.ConsolidatedBuffs.Tooltip, a plain frame, TOOLTIP
+--   strata: hovering the consolidation button while the game's buffs are shown). Both are adopted by name / path like the rest, and
+--   an adopted frame is held by its own hooks whatever its type (the type check guards the SHARED table only). stats() also says how
+--   the target frame's shield lies (tm: "anchor" / "rect"), since that container's size is a secret value (secretwrap at its layout).
+WC.tips = { V = "tt4", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ItemRefShoppingTooltip1",
+                                  "ItemRefShoppingTooltip2", "EmbeddedItemTooltip", "NamePlateTooltip", "GameNoHeaderTooltip",
+                                  "BuffFrameTooltip", "GameSmallHeaderTooltip", "PartyMemberBuffTooltip" },
+            -- review of tt4: tooltips with no global name, by their path from one
+            PATHS = { { "BuffFrame", "ConsolidatedBuffs", "Tooltip" } },
+            -- tt4: a tooltip's own fillers, post-hooked on each adopted frame (SetAlpha has its own rule)
+            FILL = { "Show", "SetOwner", "ClearLines", "AddLine", "AddDoubleLine", "AppendText", "SetText", "SetShown", "SetFrameLevel",
+                     "SetPoint" },
+            -- tt4: the unit frames whose auras show the forbidden AuraButtonTooltip (TargetFrameTemplate's aura container)
+            UNITS = { "TargetFrame", "FocusFrame", "Boss1TargetFrame", "Boss2TargetFrame", "Boss3TargetFrame", "Boss4TargetFrame",
+                      "Boss5TargetFrame" },
+            hooked = {}, on = false, zeroed = setmetatable({}, { __mode = "k" }), busy = false, typeHooked = false,
+            adopted = {}, list = {}, named = {}, queue = {}, shields = {}, ticking = false,
+            st = { show = 0, upd = 0, size = 0, fill = 0, type = 0, shield = 0 } }
 do
     local T = WC.tips
     function T.wanted() return type(WowCompanionDB) == "table" and WowCompanionDB.hideTips == true end
-    local function zero(fr)
-        if not T.on then return end
-        local ok, a = pcall(fr.GetAlpha, fr)
-        if not ok or type(a) ~= "number" or a > 0 then pcall(fr.SetAlpha, fr, 0) end
+    local function plain(v)
+        if type(WC.isPlain) == "function" then return WC.isPlain(v) end
+        if type(issecretvalue) == "function" then local ok, s = pcall(issecretvalue, v); return ok and s == false end
+        return true
+    end
+    local function nameOf(fr)
+        local ok, n = pcall(fr.GetName, fr)
+        if ok and type(n) == "string" and plain(n) then return n end
+        return "?"
+    end
+    -- the hold itself: alpha 0, nothing else. `why` counts a catch (the tooltip was drawn above 0 when the hold came)
+    local function zero(fr, why)
+        if not T.on or T.busy then return end
+        if why then
+            local ok, a = pcall(fr.GetAlpha, fr)
+            if ok and type(a) == "number" and plain(a) and a > 0 then
+                T.st[why] = (T.st[why] or 0) + 1
+                if why == "upd" or why == "size" then T.st.last = nameOf(fr) end
+            end
+        end
+        T.busy = true
+        if pcall(fr.SetAlpha, fr, 0) then T.zeroed[fr] = true end
+        T.busy = false
+    end
+    -- tt2: a GameTooltip-type frame, at a filler or at any SetAlpha above 0 (a guard: our own SetAlpha(0) comes back through the hook)
+    local function hold(fr, a, why)
+        if not T.on or T.busy then return end
+        if type(a) == "number" and plain(a) and a <= 0 then return end   -- (a secret alpha is held: never compared)
+        if not T.adopted[fr] then
+            -- only a TOOLTIP (the hooked methods are its type's; a shared table must never dim any other frame). An adopted frame
+            -- (review of tt4) is held whatever its type: only its own hooks reach here for it
+            local okT, ty = pcall(fr.GetObjectType, fr)
+            if not okT or ty ~= "GameTooltip" then return end
+            T.queue[fr] = true; T.wake()                                 -- tt4: adopted at the next frame, never inside the game's call
+        end
+        zero(fr, why)
+    end
+    -- tt4: ADOPT a tooltip frame: held at its show, every frame, its layout and after its own fillers. Once per frame; never a forbidden one
+    function T.adopt(fr, named)
+        if type(fr) ~= "table" or T.adopted[fr] then return end
+        local okF, forb = pcall(fr.IsForbidden, fr)
+        if okF and forb == true then return end
+        if not named then
+            local okT, ty = pcall(fr.GetObjectType, fr)
+            if not okT or ty ~= "GameTooltip" then return end
+        end
+        T.adopted[fr] = true
+        T.list[#T.list + 1] = fr
+        if type(fr.HookScript) == "function" then
+            pcall(fr.HookScript, fr, "OnShow", function(self) zero(self, "show") end)
+            pcall(fr.HookScript, fr, "OnUpdate", function(self) zero(self, "upd") end)
+            pcall(fr.HookScript, fr, "OnSizeChanged", function(self) zero(self, "size") end)
+        end
+        if type(hooksecurefunc) == "function" then
+            if type(fr.SetAlpha) == "function" then pcall(hooksecurefunc, fr, "SetAlpha", function(self, a) hold(self, a, "fill") end) end
+            for _, k in ipairs(T.FILL) do
+                if type(fr[k]) == "function" then pcall(hooksecurefunc, fr, k, function(self) hold(self, nil, "fill") end) end
+            end
+        end
+        if T.on then
+            local ok, s = pcall(fr.IsShown, fr)
+            if ok and s == true then zero(fr) end
+        end
     end
     -- hook the tooltips the client has (once each; a frame made later is picked up at the next apply)
     function T.hook()
         for _, n in ipairs(T.FRAMES) do
             local fr = _G[n]
-            if type(fr) == "table" and not T.hooked[n] and type(fr.HookScript) == "function" then
+            if type(fr) == "table" and not T.hooked[n] then
                 T.hooked[n] = true
-                pcall(fr.HookScript, fr, "OnShow", zero)
-                pcall(fr.HookScript, fr, "OnUpdate", zero)
+                T.named[#T.named + 1] = fr
+                T.adopt(fr, true)
             end
         end
-    end
-    -- tt2: every GameTooltip-type frame, at its Show and at any SetAlpha above 0 (a guard: our own SetAlpha(0) comes back through the hook)
-    local function hold(fr, a)
-        if not T.on or T.busy then return end
-        if a ~= nil and (type(a) ~= "number" or a <= 0) then return end
-        -- only a TOOLTIP (the hooked methods are its type's; a shared table must never dim any other frame)
-        local okT, ty = pcall(fr.GetObjectType, fr)
-        if not okT or ty ~= "GameTooltip" then return end
-        T.busy = true
-        if pcall(fr.SetAlpha, fr, 0) then T.zeroed[fr] = true end
-        T.busy = false
+        -- review of tt4: the unnamed ones, read down their path (only reads)
+        for _, p in ipairs(T.PATHS) do
+            local key = table.concat(p, ".")
+            if not T.hooked[key] then
+                local ok, fr = pcall(function()
+                    local o = _G[p[1]]
+                    for i = 2, #p do if type(o) ~= "table" then return nil end; o = o[p[i]] end
+                    return o
+                end)
+                if ok and type(fr) == "table" and type(fr.SetAlpha) == "function" then
+                    T.hooked[key] = true
+                    T.named[#T.named + 1] = fr
+                    T.adopt(fr, true)
+                end
+            end
+        end
     end
     function T.hookType()
         if T.typeHooked or type(GameTooltip) ~= "table" then return end
@@ -4917,15 +5021,118 @@ do
         local idx = type(mt) == "table" and mt.__index
         if type(idx) ~= "table" or type(hooksecurefunc) ~= "function" then return end
         T.typeHooked = true
-        pcall(hooksecurefunc, idx, "SetAlpha", function(fr, a) hold(fr, a) end)
+        pcall(hooksecurefunc, idx, "SetAlpha", function(fr, a) hold(fr, a, "type") end)
         local names = { Show = true, ClearLines = true, AddLine = true, AddDoubleLine = true, AppendText = true }
         for k, v in pairs(idx) do
             if type(k) == "string" and type(v) == "function" and k:sub(1, 3) == "Set" and k ~= "SetAlpha" then names[k] = true end
         end
         for k in pairs(names) do
-            if type(idx[k]) == "function" then pcall(hooksecurefunc, idx, k, function(fr) hold(fr) end) end
+            if type(idx[k]) == "function" then pcall(hooksecurefunc, idx, k, function(fr) hold(fr, nil, "type") end) end
         end
     end
+
+    -- ---------------------------------------------------------------- tt4: the hover shields over the forbidden tooltip's buffs
+    -- the unit frame's aura container (TargetFrameMixin:GetAuraContainer's path), read once and kept; a miss is tried again after 2 s
+    local boxOf, boxTry = {}, {}
+    local function auraBox(n)
+        local c = boxOf[n]
+        if c then return c end
+        local now = type(GetTime) == "function" and GetTime() or 0
+        if boxTry[n] and now - boxTry[n] < 2 then return nil end
+        boxTry[n] = now
+        local uf = _G[n]
+        if type(uf) ~= "table" then return nil end
+        local ok, v = pcall(function() return uf.TargetFrameContent.TargetFrameContentContextual.Auras end)
+        if ok and type(v) == "table" then boxOf[n] = v; return v end
+    end
+    local function newShield()
+        local f = CreateFrame("Frame", nil, UIParent)
+        -- motion only, or nothing: a frame that takes clicks would eat a touch meant for the frame under it
+        if type(f.SetMouseMotionEnabled) ~= "function" or type(f.SetMouseClickEnabled) ~= "function" then return false end
+        local ok = pcall(function()
+            f:SetFrameStrata("MEDIUM")
+            f:SetFrameLevel(1)
+            f:SetMouseClickEnabled(false)
+            f:SetMouseMotionEnabled(true)
+            f:Hide()
+        end)
+        return ok and f or false
+    end
+    -- lay [f] over [c]: anchored to it (it follows by itself), else its rectangle copied in our parent's units each tick
+    local function place(e, c)
+        if e.c == c and e.mode == "anchor" then return true end
+        local f = e.f
+        if pcall(function() f:ClearAllPoints(); f:SetAllPoints(c) end) then e.c, e.mode = c, "anchor"; return true end
+        local ok, l, b, w, h = pcall(c.GetRect, c)
+        local okS, sc = pcall(c.GetEffectiveScale, c)
+        local okU, us = pcall(UIParent.GetEffectiveScale, UIParent)
+        if not (ok and okS and okU) then return false end
+        for _, v in ipairs({ l, b, w, h, sc, us }) do
+            if type(v) ~= "number" or not plain(v) then return false end
+        end
+        if w <= 0 or h <= 0 or us <= 0 then return false end
+        local k = sc / us
+        local placed = pcall(function()
+            f:ClearAllPoints()
+            f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", l * k, b * k)
+            f:SetSize(w * k, h * k)
+        end)
+        if placed then e.c, e.mode = c, "rect" end
+        return placed
+    end
+    local function shieldUp(e, up)
+        if (e.up == true) == up or not e.f then return end              -- (a new one is down: its first "down" counts nothing)
+        e.up = up
+        pcall(up and e.f.Show or e.f.Hide, e.f)
+        T.st.shield = T.st.shield + (up and 1 or -1)
+    end
+    function T.shieldTick()
+        for _, n in ipairs(T.UNITS) do
+            local e = T.shields[n]
+            local c = T.on and auraBox(n) or nil
+            local want = false
+            if c then
+                local ok, v = pcall(c.IsVisible, c)
+                if ok then
+                    if plain(v) then want = (v == true) else want = true end   -- a secret answer: the hover stays blocked
+                end
+            end
+            if want then
+                if not e then e = { f = newShield() }; T.shields[n] = e end
+                if e.f and place(e, c) then shieldUp(e, true) else shieldUp(e, false) end
+            elseif e then
+                shieldUp(e, false)
+            end
+        end
+    end
+
+    -- ---------------------------------------------------------------- tt4: one frame of ours runs while tooltips are off
+    local drv = CreateFrame("Frame")
+    local function tick()
+        if not T.on then T.wake(); return end
+        if next(T.queue) ~= nil then                                     -- (no new table each frame)
+            local q = T.queue
+            T.queue = {}
+            for fr in pairs(q) do T.adopt(fr) end
+        end
+        T.shieldTick()
+    end
+    function T.wake()
+        if T.on then
+            if not T.ticking then T.ticking = true; pcall(drv.SetScript, drv, "OnUpdate", function() pcall(tick) end) end
+        else
+            pcall(T.shieldTick)                                          -- every shield down
+            if T.ticking then T.ticking = false; pcall(drv.SetScript, drv, "OnUpdate", nil) end
+        end
+    end
+    -- what each hold caught, for the interact document (Interact's proof.tipc.st)
+    function T.stats()
+        local s = T.st
+        local te = T.shields.TargetFrame
+        return { v = T.V, ad = #T.list, th = T.typeHooked and 1 or 0, show = s.show, upd = s.upd, size = s.size, fill = s.fill,
+                 type = s.type, sh = s.shield, last = s.last, tm = te and te.up == true and te.mode or nil }
+    end
+
     function T.apply()
         T.on = T.wanted()
         T.hook()
@@ -4934,10 +5141,11 @@ do
             for fr in pairs(T.zeroed) do pcall(fr.SetAlpha, fr, 1) end
             T.zeroed = setmetatable({}, { __mode = "k" })
         end
-        for _, n in ipairs(T.FRAMES) do
-            local fr = _G[n]
-            if type(fr) == "table" and type(fr.SetAlpha) == "function" then pcall(fr.SetAlpha, fr, T.on and 0 or 1) end
+        for _, fr in ipairs(T.named) do
+            if type(fr.SetAlpha) == "function" then pcall(fr.SetAlpha, fr, T.on and 0 or 1) end
         end
+        T.wake()
+        pcall(T.shieldTick)
         return T.on
     end
     -- the app's switch (Interact's ACT.tips)
@@ -4947,8 +5155,11 @@ do
         return T.apply()
     end
     local f = CreateFrame("Frame")
-    for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD" }) do pcall(function() f:RegisterEvent(e) end) end
-    f:SetScript("OnEvent", function() pcall(T.apply) end)
+    for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED",
+                         "INSTANCE_ENCOUNTER_ENGAGE_UNIT" }) do pcall(function() f:RegisterEvent(e) end) end
+    f:SetScript("OnEvent", function(_, e)
+        if e == "PLAYER_LOGIN" or e == "PLAYER_ENTERING_WORLD" then pcall(T.apply) else pcall(T.shieldTick) end
+    end)
 end
 
 -- ================================================================== THE AGGRO TINT ON NAMEPLATES (at1; the user's "Nameplate tint plus bottom map")
