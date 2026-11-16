@@ -27,6 +27,13 @@ object PolestarTab {
         DESCRIBE to 2, TICK to 3)
     /** the ops a fight refuses (D3; Map.lua WC.pg.FIGHT) */
     val FIGHT = setOf(LOAD, CONTINUE, CHOOSE, RESET)
+    /** op 13's stamp (pg1 review): the tab opened (everything again) / the 20 s "still open" (nothing resent) */
+    const val OPEN_FRESH = 0
+    const val OPEN_KEEP = 1
+    /** the ops an UNANSWERED frame may be tapped again for (pg1 review): ones that end the same if they ran twice. A Tick toggles and a
+     *  Back can Unskip then Goto, so a frame that ran but whose answer came late would undo or change the press: never again unanswered
+     *  (a garbled frame never ran: any op is sent once more) */
+    val AGAIN_UNANSWERED = setOf(OPEN, CLOSE, LOOK, LOAD, CONTINUE, ROUTE, CHOOSE, RESET, DESCRIBE)
 
     // ---------------------------------------------------------------- our words (Tr.t, es / fr in i18n)
     const val TAB = "Polestar"
@@ -570,8 +577,9 @@ object PolestarTab {
 
     // ---------------------------------------------------------------- one frame in flight
     /**
-     * THE SENDER (one frame in flight; the next press waits up to [WAIT_MS] for the answer; a garbled or unanswered frame is sent once
-     * more; "changed" refreshes and says so). Pure: [now] ms. The host taps what [send] / [onAnswer] / [tick] hand back.
+     * THE SENDER (one frame in flight; the next press waits up to [WAIT_MS] for the answer; a garbled frame is sent once more, an
+     * unanswered one too when running it twice ends the same, [AGAIN_UNANSWERED]; "changed" refreshes and says so). Pure: [now] ms.
+     * The host taps what [send] / [onAnswer] / [tick] hand back.
      */
     class Sender {
         class Out(val op: Int, val taps: List<Int>, val resend: Boolean)
@@ -610,11 +618,13 @@ object PolestarTab {
             flight = null
             return After(next(now), true, ok, why)
         }
-        /** time passing: an unanswered frame is sent once more, then given up ([After.why] "lost") */
+        /** time passing: an unanswered frame is sent once more (only an op that ends the same run twice: [AGAIN_UNANSWERED]), then
+         *  given up ([After.why] "lost") */
         fun tick(now: Long, waitMs: Long = WAIT_MS): After? {
             val f = flight ?: return null
             if (now - f.at < waitMs + f.dur) return null
-            if (f.tries < 2) { flight = Flight(f.op, f.taps, now, f.tries + 1, f.dur); return After(Out(f.op, f.taps, true), false, false, "lost") }
+            if (f.tries < 2 && f.op in AGAIN_UNANSWERED) {
+                flight = Flight(f.op, f.taps, now, f.tries + 1, f.dur); return After(Out(f.op, f.taps, true), false, false, "lost") }
             flight = null
             return After(next(now), true, false, "lost")
         }

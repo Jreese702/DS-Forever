@@ -313,6 +313,23 @@ class PolestarTabTest {
         assertTrue(t1.next!!.resend)
         val t2 = s.tick(20_000L)!!
         assertTrue(t2.done && t2.why == "lost" && !s.busy)
+        // pg1 review: an unanswered TICK (a toggle) or BACK (Unskip, then Goto) is never tapped again - had it run with its answer
+        // late, a second run would undo or change the press; given up at once ("lost": the player presses again). A garbled one
+        // never ran, so it is still sent once more
+        for (op in listOf(PolestarTab.TICK, PolestarTab.BACK)) {
+            val f = if (op == PolestarTab.TICK) PolestarTab.frame(op, 444, listOf(0, 4, 1)) else PolestarTab.frame(op, 444)
+            s.send(op, f, 50_000L)
+            val t = s.tick(50_000L + PolestarTab.WAIT_MS)!!
+            assertNull("op $op unanswered: not sent again", t.next); assertTrue(t.done && t.why == "lost" && !s.busy)
+            s.send(op, f, 60_000L)
+            val gb = s.onAnswer(op, false, "garbled", 60_500L)
+            assertTrue("op $op garbled: sent once more", gb.next!!.resend); s.onAnswer(op, true, null, 61_000L)
+        }
+        assertTrue(PolestarTab.LOOK in PolestarTab.AGAIN_UNANSWERED && PolestarTab.TICK !in PolestarTab.AGAIN_UNANSWERED &&
+            PolestarTab.BACK !in PolestarTab.AGAIN_UNANSWERED)
+        // the 20 s "still open" is op 13 with stamp 1 (Map.lua: nothing resent), the first say stamp 0 (everything again)
+        assertEquals(listOf(38, 12, 13, 0, 1, 14), PolestarTab.frame(PolestarTab.OPEN, PolestarTab.OPEN_KEEP))
+        assertEquals(listOf(38, 12, 13, 0, 0, 13), PolestarTab.frame(PolestarTab.OPEN, PolestarTab.OPEN_FRESH))
         // "changed" ends it at once (the tab refreshes); an answer to another op is not this frame's
         s.send(PolestarTab.LOAD, PolestarTab.frame(PolestarTab.LOAD, 901, listOf(0, 3)), 30_000L)
         assertFalse(s.onAnswer(PolestarTab.LOOK, true, null, 30_100L).done)

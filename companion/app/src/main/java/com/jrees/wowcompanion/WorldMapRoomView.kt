@@ -2701,7 +2701,10 @@ class WorldMapRoomView(context: Context) : View(context) {
                     if (long) { region = MapRoomKeys.Region.LIST; listIndex = i; setListCursor(follow = false); openOptions(r.id) }
                     else if (listIndex == i && region == MapRoomKeys.Region.LIST) trackFocus(r.id)
                     else { region = MapRoomKeys.Region.LIST; listIndex = i; setListCursor() }
-                MapQuestBook.Row.Polestar -> { region = MapRoomKeys.Region.LIST; listIndex = i; setListCursor(follow = false) }
+                // pg1 review (rooms the same on every route): a second touch on the selected "Choose your path" row does what A does
+                MapQuestBook.Row.Polestar ->
+                    if (listIndex == i && region == MapRoomKeys.Region.LIST && runCatching { polestar() }.getOrNull()?.choose == true) onPolestarChoose?.invoke()
+                    else { region = MapRoomKeys.Region.LIST; listIndex = i; setListCursor(follow = false) }
                 null -> {}
             }
             syncB(); invalidate(); return true

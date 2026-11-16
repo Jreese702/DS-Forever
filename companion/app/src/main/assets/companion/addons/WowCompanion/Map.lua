@@ -3506,6 +3506,9 @@ end
 function WC.pskip.now()
     WC.pstep.sig = nil
     if type(WC.pstep.tick) == "function" then pcall(WC.pstep.tick) end
+    -- pg1 review: the Polestar tab's summary at once too while it is open (its Y reads u: pk3's "Previous does nothing for ~1 s
+    -- right after a Skip" must not come back on the tab)
+    if type(WC.pg) == "table" and type(WC.pg.isOpen) == "function" and WC.pg.isOpen() then pcall(WC.pg.flush) end
 end
 function WC.pskip.skip()
     local E = WC.pskip.engine()
@@ -3579,10 +3582,11 @@ C_Timer.NewTicker(1, function() pcall(WC.pstep.tick) end)
 -- Polestar's Engine is its PRIVATE namespace (Polestar = ns, Core/Init.lua), frozen by our v0.2.5 pin (ThirdPartyAddons): every name
 -- used here is checked against the pinned source (tools/test_polestar_tab.py), so a pin bump must re-run that guard.
 -- READS (docs): pguide (pg1, always while Polestar is loaded: the guide, its shown / live step, progress, a waiting choice, outlevelled,
--- the start gate; on change, at most once a second, and every 15 s), and only while the app says the tab is open (op 13, 60 s, the app
--- re-says it every 20 s) the step statuses and the tabs in pguide, pgsteps (step titles in chunks of 40), pglist (the guides this
--- character can follow: Guides.GuideMatches, folders as Polestar's picker), pgstep (one step's goals) and pgroute (a path choice). The
--- step views are read ~20 a frame (the Thor's CPU). Every value goes through WC.isPlain (one secret value refuses the whole line).
+-- the start gate; on change, at most once a second, and every 15 s; {have = false} once when no Polestar we know is there), and only
+-- while the app says the tab is open (op 13, 60 s; the app re-says it every 20 s with stamp 1, which resends nothing) the step statuses
+-- and the tabs in pguide, pgsteps (step titles in chunks of 40), pglist (the guides this character can follow: Guides.GuideMatches,
+-- folders as Polestar's picker), pgstep (one step's goals) and pgroute (a path choice). The step views are read ~20 a frame (the
+-- Thor's CPU). Every value goes through WC.isPlain (one secret value refuses the whole line).
 -- WRITES, only on a press, only into Polestar's own per-character save, by Polestar's own Engine calls: Goto (the saved look; a skip
 -- jumped to is undone), Unskip, SetGuide / SelectTab (its tabs), ChooseRoute (its route pick), ToggleGoal (its ticks), ResetProgress.
 -- Never ns.Set (so Picker's / RouteChoice's ns.Set("ui.shown", true) is skipped on purpose: Polestar's window stays as the player set
@@ -3873,7 +3877,7 @@ function WC.pg.summary()
         if type(E.RouteChoiceFor) == "function" then local ok, f = pcall(E.RouteChoiceFor, to); if ok and f ~= nil then d.oc = true end end
         if open and WC.pg.listIndex then d.oi = WC.pg.listIndex[to] end
     end
-    if d.cp and not waiting and g.next ~= nil then
+    if d.cp and not d.rw and g.next ~= nil then                        -- (a waiting choice is the next step, not g.next)
         local okN, nh = pcall(G.Get, g.next)
         if okN and type(nh) == "table" then
             d.nx = WC.pg.plain(nh.title, 80)
@@ -4051,8 +4055,9 @@ function WC.pg.flush(force)
         end
     end
 end
--- the tab opened (op 13; the app says it again every 20 s while it shows): everything again (an app that restarted meanwhile, a lost
--- doc: each say heals it), the step pass from the start
+-- the tab opened (op 13 with stamp 0: the app's first say after it opened the tab, after it started, after a "changed"): everything
+-- again (an app that restarted meanwhile, a lost doc: that say heals it), the step pass from the start. The app's 20 s "still open"
+-- (stamp 1, pg1 review) only keeps the open going, so the step pass runs on Polestar's own changes (the design: the Thor's CPU)
 function WC.pg.opened()
     WC.pg.openAt = GetTime()
     WC.pg.listSig, WC.pg.stepSig, WC.pg.titlesSig = nil, nil, nil
@@ -4065,7 +4070,12 @@ end
 -- ---- one framed command: run it when whole, right and still meant for what Polestar shows
 function WC.pg.run(op, stamp, a)
     local E, G = WC.pg.api()
-    if op == 13 then WC.pg.opened(); return WC.pg.say(op, true) end
+    -- op 13's stamp: 0 = the tab opened (everything again, the step pass), 1 = the app's 20 s "still open" (the open goes on, nothing
+    -- resent: the design's CPU rule, statuses only on Polestar's changes; a lapsed open is a fresh one)
+    if op == 13 then
+        if stamp == 1 and WC.pg.isOpen() then WC.pg.openAt = GetTime(); pcall(WC.pg.listen) else WC.pg.opened() end
+        return WC.pg.say(op, true)
+    end
     if op == 14 then WC.pg.openAt = nil; return WC.pg.say(op, true) end
     if not E then return WC.pg.say(op, false, "no Polestar") end
     if WC.pg.FIGHT[op] and InCombatLockdown() then return WC.pg.say(op, false, "combat") end
@@ -4189,7 +4199,12 @@ do
     f:SetScript("OnEvent", function() WC.pg.dirty(true); WC.pg.olKey = nil end)
     C_Timer.NewTicker(1, function()
         local PG = WC.pg
-        if not PG.api() then return end                                  -- (no Polestar: no doc, as pstep)
+        -- no Polestar we know: said ONCE ({have = false}: the app's tab and Home's header go, never a stale guide), then no doc
+        if not PG.api() then
+            if PG.gone ~= true then PG.gone, PG.sig = true, nil; PG.send({ type = "pguide", v = PG.V, have = false }) end
+            return
+        end
+        PG.gone = false
         pcall(PG.listen)
         if PG.stepsDirty and PG.isOpen() then PG.stepsDirty = false; pcall(PG.pass) end
         if PG.dirtyAt ~= nil or GetTime() - PG.sentAt > PG.EVERY_S then PG.dirtyAt = nil; pcall(PG.flush) end

@@ -397,13 +397,17 @@ def run():
     chk("... a tab stamp that does not match: changed, nothing called", calls(L) == [] and last(L, "pgop", n0)["why"] == "changed")
     tap(L, *frame(17, ls, 0, 1))                    # back to Elwynn (list #1), and finish it: the path choice waits
     L.execute('DONE["%s"] = {}; for i = 1, 12 do DONE["%s"][i] = true end; PSDB.skipped = {}; PIN = {}' % (ELW, ELW))
+    L.execute('GUIDES["%s"].next = "forever/alliance/20-30/redridge"' % ELW)       # (a guide with both: the waiting choice wins)
     L.execute('Polestar.Fire("STEP_CHANGED")')
     n0 = nsent(L)
     L.execute('tick(1)')
     settle(L)
     d = last(L, "pguide", n0)
+    L.execute('GUIDES["%s"].next = nil' % ELW)
     chk("the guide done, its path choice waiting: cp, rw, rc, fs = its stamp", d is not None and d.get("cp") is True and d.get("rw") is True
         and d.get("rc") is True and d.get("fs") == h1296(ELW) and "s" not in d)
+    chk("... (review fix) a waiting choice is not also a 'Next' guide: no nx / ni (%s)" % (d and d.get("nx")), d is not None
+        and "nx" not in d and "ni" not in d)
     L.execute('CALLS = {}')
     n0 = nsent(L)
     tap(L, *frame(19, h1296(ELW)))
@@ -564,6 +568,38 @@ def run():
     settle(L)
     chk("... the open lapses after 60 s without a say", all("tabs" not in x for x in docs(L, n0 + 0, "pguide")[-1:]))
 
+    # ---- (review fix) the app's 20 s "still open" (op 13, stamp 1) keeps the open going and resends nothing; a lapsed one is a fresh open
+    K = fresh()
+    tap(K, *frame(13, 0))
+    settle(K)
+    K.execute('VIEWS = 0; local gv = Polestar.Engine.GetStepView; Polestar.Engine.GetStepView = function(i) VIEWS = VIEWS + 1; return gv(i) end')
+    n0 = nsent(K)
+    K.execute('NOW = NOW + 40')
+    tap(K, *frame(13, 1))
+    settle(K)
+    K.execute('NOW = NOW + 40; tick(1)')
+    settle(K)
+    a = last(K, "pgop", n0)
+    chk("still open (stamp 1): answered ok, no list / titles / goals again, no step pass (%d step views: the 15 s summary's shown "
+        "step only; a pass reads all 12)" % K.eval('VIEWS'),
+        a is not None and a["op"] == 13 and a["ok"] is True and docs(K, n0, "pglist") == [] and docs(K, n0, "pgsteps") == []
+        and docs(K, n0, "pgstep") == [] and K.eval('VIEWS') < 12)
+    K.execute('Polestar.Engine.Goto(7); tick(1)')
+    settle(K)
+    chk("... 80 s after the open, 40 s after the say: still open (the tabs in pguide)", "tabs" in (last(K, "pguide", n0) or {}))
+    n0 = nsent(K)
+    K.execute('NOW = NOW + 61')
+    tap(K, *frame(13, 1))
+    settle(K)
+    chk("... a say after the open lapsed: a fresh open (the list and the titles again)", docs(K, n0, "pglist") != []
+        and docs(K, n0, "pgsteps") != [])
+
+    # ---- (review fix) a Skip on the open tab (38 then 10): pguide at once with the new undo count (pk3: Previous at once)
+    n0 = nsent(K)
+    tap(K, 38, 10)
+    d = last(K, "pguide", n0)
+    chk("Skip while the tab is open: pguide in the same press with u = 1 (%s)" % (d and d.get("u")), d is not None and d.get("u") == 1)
+
     # ---- coalesced: several Polestar messages in one second, one summary
     n0 = nsent(L)
     L.execute('for i = 1, 5 do Polestar.Fire("STEP_UPDATED") end; tick(1)')
@@ -589,7 +625,12 @@ def run():
     N.execute('tick(1)')
     tap(N, *frame(15, 5, 0, 3))
     a = last(N, "pgop", n0)
-    chk("no Polestar: no pguide, a look answered 'no Polestar'", docs(N, n0, "pguide") == [] and a is not None and a["why"] == "no Polestar")
+    gd = docs(N, n0, "pguide")
+    chk("no Polestar: ONE pguide {have = false} (the app's tab and header go), a look answered 'no Polestar' (%s)" % gd,
+        len(gd) == 1 and gd[0]["have"] is False and "gid" not in gd[0] and a is not None and a["why"] == "no Polestar")
+    n0 = nsent(N)
+    N.execute('tick(1); tick(1); NOW = NOW + 30; tick(1)')
+    chk("... said once: no doc after that", docs(N, n0, "pguide") == [])
 
     # ---- THE PIN GUARD: every Engine / Guides / namespace name WC.pg calls is in the pinned source
     sec = SRC["maproom"]

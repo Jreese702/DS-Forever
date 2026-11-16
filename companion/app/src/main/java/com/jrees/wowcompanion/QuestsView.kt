@@ -259,7 +259,11 @@ class QuestsView(
         PolestarTab.answer(d)?.let { a -> psAnswer(a, now); return }
         val before = polestar.guide?.stamp
         val shownBefore = polestar.guide?.shown
+        val routeBefore = polestar.route?.stamp
         if (!polestar.onDoc(d, now)) return
+        // pg1 review: the path view opened before its choice came (Home's row, a notice): it lands on the chosen / recommended option
+        // when the choice arrives, as it would have had it been there
+        if (d.optString("type") == "pgroute" && psCur.view == PolestarTab.View.PATH && routeBefore != polestar.route?.stamp) psCur.openPath(polestar.route)
         if (d.optString("type") == "pguide") {
             if (!psShows() && tab == 1) { tab = 0; onTabs = false; syncB() }
             // a new guide (loaded, continued, chosen, chained on): the tab is entered afresh, on its shown step; else the cursor keeps
@@ -293,12 +297,15 @@ class QuestsView(
             post { psSend.failed(); note(why, false) } }
         if (!ok) psSend.failed()
     }
-    /** the add-on told the tab is open (at once, then every KEEP_MS while it shows) */
+    /** the add-on told the tab is open (at once, then every KEEP_MS while it shows). pg1 review: the first say (and a forced one: the
+     *  picker, a "changed") is a fresh open, everything again; the later ones only keep it open ([PolestarTab.OPEN_KEEP]), so the
+     *  add-on's step pass runs on Polestar's own changes, not every 20 s (the design's CPU rule) */
     private fun psOpen(now: Long, force: Boolean = false) {
         if (!force && psOpenAt != 0L && now - psOpenAt < PolestarTab.KEEP_MS) return
         if (psSend.busy && !force) return
+        val keep = !force && psOpenAt != 0L
         psOpenAt = now
-        psFrame(PolestarTab.OPEN, 0)
+        psFrame(PolestarTab.OPEN, if (keep) PolestarTab.OPEN_KEEP else PolestarTab.OPEN_FRESH)
     }
     private fun psClose() {
         if (psOpenAt == 0L) return
