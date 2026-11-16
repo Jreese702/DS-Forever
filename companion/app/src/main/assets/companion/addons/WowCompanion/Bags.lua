@@ -142,6 +142,12 @@
 -- bags. Its row now says qstart = true while that quest is neither in the log nor done (the prompt's own test, D.qsAt), and the app
 -- offers "Start Quest" on X: the slot's own secure item cell, the game's right-click, which opens the game's quest page. Read-only
 -- calls only (C_QuestLog.IsOnQuest / IsQuestFlaggedCompleted); nothing else changes.
+--
+-- bags-vslots1 (feat/vendor-bag-slots; the user, 2026-11-16, on the vendor window's bag / ammo figures: "It should show like bag slots out
+-- of how many available and for ammo it should show ammo/total available space. The numbers on their own don't mean anything"): the
+-- worn ammo (equipped.ammo) now says its STACK SIZE (`stack`: C_Item.GetItemMaxStackSizeByID, else GetItemInfo's stack count; left out
+-- when unread), so the app can say what a quiver / ammo pouch holds (its slots x that stack) beside the ammo in it (the bag rows'
+-- counts). The bags used / total come from what the doc already says (each bag's slots, free and family). Read-only calls only.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -3616,6 +3622,14 @@ function WC.collectEquipped()
                  count = SN(function() return GetInventoryItemCount("player", 0) end) }
         local okn, nm = WC.CALL(function() return C_Item.GetItemNameByID(aid) end)
         if okn then ammo.item = S(function() return nm end) end
+        -- bags-vslots1: its stack size (200 arrows in Classic), what one quiver / pouch slot holds - the vendor's "ammo / space"
+        local st = SN(function() return C_Item.GetItemMaxStackSizeByID(aid) end)
+        if not st then
+            local okI, _, _, _, _, _, _, _, stk = CALL(function() return C_Item.GetItemInfo(aid) end)
+            if not okI then okI, _, _, _, _, _, _, _, stk = CALL(function() return GetItemInfo(aid) end) end
+            if okI then st = SN(function() return stk end) end
+        end
+        if st and st > 0 then ammo.stack = st end
     end
     local function flag(fn)
         local ok, v = WC.CALL(fn)

@@ -213,16 +213,16 @@ class InteractView(context: Context) : View(context) {
         refresh()
     }
 
-    /** the vendor strip's free bag / ammo slots (feat/vendor-bag-slots), from the last Bags document; null = none known */
+    /** the vendor strip's bag / ammo figures (feat/vendor-bag-slots: used / total, ammo / what it fits), from the last Bags document */
     private var vendorSlots: VendorSlots.Slots? = null
 
     /**
-     * The Bags document (`full.bags`; Bags.lua sends it at every BAG_UPDATE_DELAYED, so a purchase shows at once): the vendor's free bag
-     * and ammo slots ([VendorSlots]). Redrawn only when they changed while a vendor is up.
+     * The Bags document (`full.bags`; Bags.lua sends it at every BAG_UPDATE_DELAYED, so a purchase shows at once): the vendor's bag and
+     * ammo figures ([VendorSlots]). Redrawn only when they changed while a vendor is up.
      */
     fun updateBags(bags: JSONObject) {
         if (!bags.has("freeGeneral") && !bags.has("bags")) return       // a bags section without the counts keeps what was said
-        val s = VendorSlots.of(bags)
+        val s = VendorSlots.of(bags, vendorSlots)
         if (s == vendorSlots) return
         vendorSlots = s
         if (kind == Kind.MERCHANT) invalidate()
@@ -4937,24 +4937,29 @@ class InteractView(context: Context) : View(context) {
     }
 
     /**
-     * The vendor strip's free slots ([vendorSlots]: bags, then ammo while a quiver / ammo pouch is worn), right-aligned to [right] on
-     * [cy]: each the icon in the game's slot well and the free count beside it, red at 0. Shown only, never a touch. Returns the cells'
-     * left edge ([right] = nothing drawn).
+     * The vendor strip's figures ([vendorSlots]: bags, then ammo while a quiver / ammo pouch is worn), right-aligned to [right] on [cy]:
+     * each the icon in the game's slot well and "have / of" beside it ([VendorSlots.text]), in its tone (red = bags full / no ammo,
+     * amber = ammo low). One cell = one row at full size; two (a hunter's bags + ammo) = STACKED, bags over ammo, smaller, so the wider
+     * "1850 / 3200" leaves Repair and Junk their room and the block never changes shape with them. Shown only, never a touch. Returns
+     * the block's left edge ([right] = nothing drawn).
      */
     private fun vendorSlotsCells(c: Canvas, right: Float, cy: Float): Float {
         val cells = vendorSlots?.cells ?: return right
         if (cells.isEmpty()) return right
-        val s = SLOTS_ICON; val well = s * 0.31f            // UiKit.slot's well stands 0.31 of the icon out on each side
-        val paints = cells.map { UiKit.numberPaint(SLOTS_TEXT, if (it.free <= 0) Theme.unusable else Theme.text) }
-        val texts = cells.map { it.free.toString() }
-        val widths = cells.indices.map { well + s + well + SLOTS_PAD + paints[it].measureText(texts[it]) }
-        var x = right - widths.sum() - SLOTS_GAP * (cells.size - 1)
-        val left = x
+        val stacked = cells.size > 1
+        val s = if (stacked) SLOTS_ICON_2 else SLOTS_ICON; val well = s * 0.31f      // UiKit.slot's well: 0.31 of the icon out each side
+        val paints = cells.map {
+            UiKit.numberPaint(if (stacked) SLOTS_TEXT_2 else SLOTS_TEXT, when (it.tone) {
+                VendorSlots.Tone.OUT -> Theme.unusable; VendorSlots.Tone.LOW -> Theme.warn; VendorSlots.Tone.PLAIN -> Theme.text
+            })
+        }
+        val texts = cells.map { VendorSlots.text(it) }                  // figures: no words, no Tr
+        val left = right - (well + s + well + SLOTS_PAD + cells.indices.maxOf { paints[it].measureText(texts[it]) })
         for ((i, cell) in cells.withIndex()) {
-            UiKit.slot(c, Icons.getOrUnknown(cell.icon), x + well, cy - s / 2f, s)
+            val ry = cy + (i - (cells.size - 1) / 2f) * SLOTS_ROW
+            UiKit.slot(c, Icons.getOrUnknown(cell.icon), left + well, ry - s / 2f, s)
             val p = paints[i]
-            c.drawText(texts[i], x + well + s + well + SLOTS_PAD, cy - (p.ascent() + p.descent()) / 2f, p)     // a count: no words, no Tr
-            x += widths[i] + SLOTS_GAP
+            c.drawText(texts[i], left + well + s + well + SLOTS_PAD, ry - (p.ascent() + p.descent()) / 2f, p)
         }
         return left
     }
@@ -5079,8 +5084,9 @@ class InteractView(context: Context) : View(context) {
         val e = list.firstOrNull { it.cmd == selected }
         val word = when (tab) { Tab.BUY -> "Buy"; Tab.SELL -> "Sell"; Tab.BACK -> "Buyback" }
         qtyMost = 1
-        // THE FREE SLOTS (feat/vendor-bag-slots; the user, 2026-11-16: "when talking to a vendor in the buy screen I should see my bag
-        // slots available as well as ammo slots available (if applicable)"): on every tab, just left of the action button, so a buy,
+        // THE BAG / AMMO FIGURES (feat/vendor-bag-slots; the user, 2026-11-16: "when talking to a vendor in the buy screen I should see
+        // my bag slots available as well as ammo slots available (if applicable)", then "It should show like bag slots out of how many
+        // available and for ammo it should show ammo/total available space"): on every tab, just left of the action button, so a buy,
         // a sale or a buyback shows its change beside the button that made it; the result line and Repair / Junk keep the rest
         val leftEnd = vendorSlotsCells(c, btn.left - 24f, cy).let { if (it < btn.left - 24f) it - 28f else it }
         if (e == null) {
@@ -5161,11 +5167,14 @@ class InteractView(context: Context) : View(context) {
         const val TIP_MIN_ROOM = 260f           // a tooltip starts no lower than this above the list's foot        // the user's pick (2026-09-29 11:23, replacing 2): a small B on the X's corner
         const val LINE_H = 111f           // a line of a gossip page: 48 dp, the touch floor
         const val VROW = 132f             // a vendor row and the gap under it
-        /** the vendor strip's free slots (feat/vendor-bag-slots): the icon, the count's size, icon-to-count and cell-to-cell gaps */
+        /** the vendor strip's bag / ammo figures (feat/vendor-bag-slots): one cell = the icon and the figures' size, icon-to-figures gap */
         const val SLOTS_ICON = 58f
         const val SLOTS_TEXT = 36f
         const val SLOTS_PAD = 6f
-        const val SLOTS_GAP = 22f
+        /** two cells, stacked: the icon, the figures' size, centre to centre (36 px icons in their wells: 58 px each, end to end) */
+        const val SLOTS_ICON_2 = 36f
+        const val SLOTS_TEXT_2 = 30f
+        const val SLOTS_ROW = 58f
         /** Sell junk's narrowest box (its icon and the start of its words), when the free-slot cells leave less than the 270 */
         const val JUNK_MIN_W = 220f
 

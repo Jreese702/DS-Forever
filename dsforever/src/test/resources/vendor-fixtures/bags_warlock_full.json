@@ -1,0 +1,129 @@
+{
+ "bags": [
+  {
+   "bag": 0,
+   "fam": 0,
+   "free": 0,
+   "slots": 16
+  },
+  {
+   "bag": 1,
+   "fam": 4,
+   "free": 18,
+   "icon": 133649,
+   "id": 22243,
+   "slots": 20
+  }
+ ],
+ "freeGeneral": 0,
+ "items": [
+  {
+   "bag": 0,
+   "count": 5,
+   "id": 159,
+   "slot": 1
+  },
+  {
+   "bag": 0,
+   "count": 2,
+   "id": 2589,
+   "slot": 2
+  },
+  {
+   "bag": 0,
+   "count": 5,
+   "id": 159,
+   "slot": 3
+  },
+  {
+   "bag": 0,
+   "count": 2,
+   "id": 2589,
+   "slot": 4
+  },
+  {
+   "bag": 0,
+   "count": 5,
+   "id": 159,
+   "slot": 5
+  },
+  {
+   "bag": 0,
+   "count": 2,
+   "id": 2589,
+   "slot": 6
+  },
+  {
+   "bag": 0,
+   "count": 5,
+   "id": 159,
+   "slot": 7
+  },
+  {
+   "bag": 0,
+   "count": 2,
+   "id": 2589,
+   "slot": 8
+  },
+  {
+   "bag": 0,
+   "count": 5,
+   "id": 159,
+   "slot": 9
+  },
+  {
+   "bag": 0,
+   "count": 2,
+   "id": 2589,
+   "slot": 10
+  },
+  {
+   "bag": 0,
+   "count": 5,
+   "id": 159,
+   "slot": 11
+  },
+  {
+   "bag": 0,
+   "count": 2,
+   "id": 2589,
+   "slot": 12
+  },
+  {
+   "bag": 0,
+   "count": 5,
+   "id": 159,
+   "slot": 13
+  },
+  {
+   "bag": 0,
+   "count": 2,
+   "id": 2589,
+   "slot": 14
+  },
+  {
+   "bag": 0,
+   "count": 5,
+   "id": 159,
+   "slot": 15
+  },
+  {
+   "bag": 0,
+   "count": 2,
+   "id": 2589,
+   "slot": 16
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 6265,
+   "slot": 1
+  },
+  {
+   "bag": 1,
+   "count": 1,
+   "id": 6265,
+   "slot": 2
+  }
+ ]
+}
