@@ -87,6 +87,6 @@ else
 end
 
 -- the header note
-chk("the version is i161", WowCompanion.interactIV == "i161", WowCompanion.interactIV)
+chk("the version is i161 or later (i161v; i165 in the 11-16 merge)", tonumber(WowCompanion.interactIV:match("^i(%d+)$")) >= 161, WowCompanion.interactIV)
 
 return table.concat(out, "\n")

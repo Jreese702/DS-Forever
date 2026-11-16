@@ -143,7 +143,9 @@ object SettingsTabs {
 
     /** the groups OPEN when [tab] is shown (the user's pick, 2026-11-12: every time a tab shows, its first group open, the rest folded) */
     fun openOnShow(tab: Tab, hasRows: (Group) -> Boolean = { true }): Set<Group> =
-        if (!tab.folds) groups(tab).toSet() else groups(tab).filter(hasRows).take(1).toSet()
+        // a tab that does not fold opens every group WITH ROWS (11-16 merge: Top screen's Layout group has none until the add-on set
+        // sends its first "lay" document; the tiles' groups always have their fixed slots)
+        if (!tab.folds) groups(tab).filter(hasRows).toSet() else groups(tab).filter(hasRows).take(1).toSet()
 
     /** 1.0.9 (the user: "Disable the safe path, quest trail and polestar buttons for now"): with the route modes held back, the
      *  Polestar and QuestTrail blocks are not shown (Spoken stays) */

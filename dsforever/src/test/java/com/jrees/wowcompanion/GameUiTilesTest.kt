@@ -27,8 +27,8 @@ class GameUiTilesTest {
         assertEquals(19, GameUiTiles.ALL.toSet().size)
         // the Game windows in the user's approved order
         assertEquals(GameUiSection.WINDOWS_ORDER, GameUiTiles.TILES.getValue(TG.WINDOWS))
-        // the user's pick (2A): the Pet bar in the Resource bar's band, with the three steppers
-        assertEquals(listOf(GameUi.PET_ID, GameUi.HUD_H_ID, GameUi.HUD_W_ID, GameUi.HUD_S_ID), GameUiTiles.EXTRAS.getValue(GameUi.HUD_ID))
+        // the user's pick (2A): the Pet bar in the Resource bar's band, with the width stepper (height and scale: the layout editor's)
+        assertEquals(listOf(GameUi.PET_ID, GameUi.HUD_W_ID), GameUiTiles.EXTRAS.getValue(GameUi.HUD_ID))
         assertTrue(GameUi.PET_ID !in GameUiTiles.ALL)
         assertEquals(listOf(GameUi.UFHP_ID, GameUi.UFTOT_ID), GameUiTiles.EXTRAS.getValue(GameUi.UFT_ID))
         assertEquals(listOf(GameUiSection.RINGS_ID), GameUiTiles.EXTRAS.getValue(GameUi.NP_ID))
@@ -36,8 +36,8 @@ class GameUiTilesTest {
         // every tile and band row has its short name
         for (id in GameUiTiles.ALL) assertTrue(id, !GameUiTiles.NAMES[id].isNullOrBlank())
         for (id in GameUiTiles.EXTRAS.values.flatten()) assertTrue(id, !GameUiTiles.EXTRA_NAMES[id].isNullOrBlank())
-        // only Top screen's groups are tiles
-        for (g in TG.values()) assertEquals(g.heading, g.tab == SettingsTabs.Tab.TOP, GameUiTiles.tiled(g))
+        // only Top screen's groups are tiles (its Layout group excepted: the editor's one row, SettingsView's)
+        for (g in TG.values()) assertEquals(g.heading, g.tab == SettingsTabs.Tab.TOP && g != TG.LAYOUT, GameUiTiles.tiled(g))
         assertTrue(!GameUiTiles.tiled(null))
     }
 

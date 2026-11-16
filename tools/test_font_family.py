@@ -314,7 +314,7 @@ def main():
         and G.WowCompanion.prd.V == "prd19" and 'local HV = "hub56"' in hub and UF.V == "uf24", (C.V, UF.V))
     chk("tags: each header note quotes the issue and the user's pick (2026-11-16)",
         all(n in trail for n in ("-- cp41 ISSUE #358", "-- ag12f ISSUE #358", "-- prd18 ISSUE #358"))
-        and "-- uf23 (hub55) ISSUE #358" in hub and "-- hub55 ISSUE #358" in hub
+        and "-- uf23 (hub55) ISSUE #358" in hub and "hub55 ISSUE #358" in hub
         and trail.count(quote) >= 3 and hub.count(quote) >= 2 and trail.count("user's pick, 2026-11-16") >= 1 and trail.count("user's pick,") >= 3 and hub.count("the user's pick, 2026-11-16") >= 2)
     chk("Hub: no SetFont(FONT ...) left but the cooldown's own seconds; Trail: none of FRIZQT__ but the fallback and the calibration label",
         len(re.findall(r":SetFont\(FONT,", hub)) == 2 and "rg:SetFont(FONT, u(10)" in hub

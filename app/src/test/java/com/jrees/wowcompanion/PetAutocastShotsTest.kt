@@ -287,8 +287,8 @@ class PetAutocastShotsTest {
     private fun stick(v: CastView, deg: Double?) {
         val x = if (deg == null) 0f else kotlin.math.sin(Math.toRadians(deg)).toFloat()
         val y = if (deg == null) 0f else -kotlin.math.cos(Math.toRadians(deg)).toFloat()
-        field(v, "stickX").setFloat(v, x); field(v, "stickY").setFloat(v, y)
-        call(v, "classStick", arrayOf())
+        // (11-16 merge with feat/class-wheel-sticks: the aim is ClassAim's, fed by classStick(stick, x, y); 1 = the right stick)
+        call(v, "classStick", arrayOf(Integer.TYPE, java.lang.Float.TYPE, java.lang.Float.TYPE), 1, x, y)
     }
     private fun line(v: CastView) = field(v, "classLine").get(v) as String?
     private fun now() = SystemClock.uptimeMillis()

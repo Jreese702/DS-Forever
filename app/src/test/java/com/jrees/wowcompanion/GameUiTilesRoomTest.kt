@@ -147,7 +147,9 @@ class GameUiTilesRoomTest {
     /** the Top screen tab: five plain headings (no folding, no heading stops), every group open, each drawn by ONE tile part */
     @Test fun topTabIsFiveOpenGroupsOfTiles() {
         val r = room()
-        val groups = SettingsTabs.groups(SettingsTabs.Tab.TOP)
+        // (11-16 merge: the layout editor's Layout group comes first on the tab, its one row SettingsView's, hidden with no "lay" document)
+        assertEquals(SettingsTabs.Group.LAYOUT, SettingsTabs.groups(SettingsTabs.Tab.TOP).first())
+        val groups = SettingsTabs.groups(SettingsTabs.Tab.TOP) - SettingsTabs.Group.LAYOUT
         assertEquals(5, groups.size)
         assertEquals(groups.toSet(), r.open)
         for (gb in r.groupBoxes.filter { it.group in groups }) {
@@ -324,15 +326,16 @@ class GameUiTilesRoomTest {
         val t = tileBoxes(r).getValue(GameUi.HUD_ID)
         tap(p, t.centerX(), t.centerY() - contentTop(r, p)!!); lay(r)
         val buttons = p.focusTargets().drop(1)
-        assertEquals("On / Off, Pet bar On / Off, three steppers of three", 2 + 2 + 9, buttons.size)
+        // (11-16 merge: HUD height and HUD scale are the layout editor's now: the width stepper stays)
+        assertEquals("On / Off, Pet bar On / Off, the width stepper of three", 2 + 2 + 3, buttons.size)
         val band = p.bandBox()!!
         assertTrue("tile + band ${band.bottom - (t.top - contentTop(r, p)!!)} fit on one screen",
             band.bottom - (t.top - contentTop(r, p)!!) + SettingsPad.REVEAL_TOP + SettingsPad.REVEAL_BOTTOM <= H - SettingsTabBar.BAR_H)
-        // the stepper's Higher: one step, kept for this character
-        val before = GameUi.hudHeight()!!
-        val higher = buttons[4 + 2]
-        tap(p, higher.centerX(), higher.centerY()); lay(r)
-        assertEquals(before + 10, GameUi.hudHeight())
+        // the width stepper's Wider: one step, kept for this character (11-16 merge: the height stepper is the layout editor's now)
+        val before = GameUi.hudWidth()!!
+        val wider = buttons[4 + 2]
+        tap(p, wider.centerX(), wider.centerY()); lay(r)
+        assertTrue("one step wider: $before -> ${GameUi.hudWidth()}", GameUi.hudWidth()!! > before)
         // the resource bar Off: its rows go, the band shrinks to its own line
         tap(p, buttons[1].centerX(), buttons[1].centerY()); lay(r)
         assertEquals(2, p.focusTargets().drop(1).size)

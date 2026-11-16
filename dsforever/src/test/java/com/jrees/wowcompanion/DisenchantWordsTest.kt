@@ -28,9 +28,13 @@ class DisenchantWordsTest {
     }
 
     @Test fun theSpellsNameIsTheGames() {
-        load()
-        // "Disenchant" comes from the game in the player's language: the app's word files never carry it
-        assertEquals("Disenchant", Tr.t("Disenchant", "es"))
-        assertEquals("Disenchant", Tr.t("Disenchant", "fr"))
+        // The grid's title is the spell's own name, from the game in the player's language: drawn as it came, never through Tr.t.
+        // (11-16 merge: the word files DO carry "Disenchant" now - feat/loot-popups' roll button caption, an app label - so this
+        // checks the grid's draw instead of the word files)
+        val src = listOf("../companion/app/src/main/java/com/jrees/wowcompanion/BagsView.kt",
+                         "companion/app/src/main/java/com/jrees/wowcompanion/BagsView.kt")
+            .map { java.io.File(it) }.first { it.isFile }.readText()
+        assertEquals(true, src.contains("c.drawText(spell, tx,"))
+        assertEquals(false, src.contains("Tr.t(spell"))
     }
 }

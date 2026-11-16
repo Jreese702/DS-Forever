@@ -116,6 +116,9 @@ private class Box(val key: String, val label: String, val colour: Int)
 /** a chat type the module sends on (ChatStream.TYPES' keys); [usable] = the player can talk there right now */
 private class Kind(val key: String, val label: String, val colour: Int, val usable: Boolean = true)
 
+/** the game's own limit on one chat message (the voice page's words stop there: feat/big-voice) */
+private const val MAX_MESSAGE = 255
+
 /** the bar's Send (quick chat): its width right of the field */
 private const val SEND_W = 220
 

@@ -39,7 +39,8 @@ object GameUiTiles {
 
     /** the rows a tile's band carries under its own choices (each only while its row is there: the add-on's word, the resource bar on) */
     val EXTRAS: Map<String, List<String>> = mapOf(
-        GameUi.HUD_ID to listOf(GameUi.PET_ID, GameUi.HUD_H_ID, GameUi.HUD_W_ID, GameUi.HUD_S_ID),
+        // (11-16 merge: HUD height and HUD scale are the layout editor's now - feat/big-layout's pick - so the band keeps Pet bar + Width)
+        GameUi.HUD_ID to listOf(GameUi.PET_ID, GameUi.HUD_W_ID),
         GameUi.UFT_ID to listOf(GameUi.UFHP_ID, GameUi.UFTOT_ID),
         GameUi.NP_ID to listOf(GameUiSection.RINGS_ID),
         GameUiSection.COMPASS_ID to listOf(GameUiSection.COMPASS_CAM_ID))

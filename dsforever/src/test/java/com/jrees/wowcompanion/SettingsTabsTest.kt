@@ -295,8 +295,9 @@ class SettingsPreviewRowsTest {
         val word = TopWords.WORD
         val shown = GameUiTiles.ALL + GameUiTiles.EXTRAS.values.flatten()
         assertEquals("each once", shown.size, shown.toSet().size)
-        val topRows = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP }.flatMap { it.rows }
-        assertEquals(27, topRows.size)
+        // (the layout editor's "Edit layout" is SettingsView's row, not a tile; HUD height / scale moved into the editor)
+        val topRows = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP && it != SettingsTabs.Block.LAYOUT }.flatMap { it.rows }
+        assertEquals(25, topRows.size)
         assertEquals(topRows.toSet(), shown.map { word.getValue(it) }.toSet())
         // and group by group: a group's tiles and their bands' rows are that group's rows
         for ((g, ids) in GameUiTiles.TILES) {

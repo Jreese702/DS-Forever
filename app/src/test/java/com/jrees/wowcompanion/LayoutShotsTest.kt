@@ -241,7 +241,9 @@ class LayoutShotsTest {
         ShadowLooper.idleMainLooper(); lay(r)
         r.show(SettingsTabs.Tab.GENERAL); r.show(SettingsTabs.Tab.TOP); lay(r)
         assertEquals(View.VISIBLE, layoutBox.box.visibility)
-        assertEquals("Layout is the group that opens", setOf(SettingsTabs.Group.LAYOUT), r.open)
+        // (11-16 merge with the tiles: Top screen does not fold, so every group opens; Layout is the first)
+        assertTrue("Layout opens", SettingsTabs.Group.LAYOUT in r.open)
+        assertEquals("Layout is the first group", SettingsTabs.Group.LAYOUT, SettingsTabs.groups(SettingsTabs.Tab.TOP).first())
         val part = layoutBox.parts.single() as SettingsView
         assertEquals(listOf("Edit layout"), SettingsTabs.Block.LAYOUT.rows)
         // the row's Open, pressed by a finger (the cursor's A presses it the same way)
