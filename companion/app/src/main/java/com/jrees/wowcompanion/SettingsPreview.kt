@@ -43,6 +43,8 @@ object SettingsPreview {
         val castCombatHide: Boolean = true,
         // the user's pick 2026-11-13: Start over game windows, false = Our wheel (the default), true = Game's wheel
         val pauseOverGame: Boolean = false,
+        // the user, 2026-11-16: B: pet follow (this character's; on by default)
+        val petFollowB: Boolean = true,
     )
 
     /**
@@ -70,7 +72,7 @@ object SettingsPreview {
         "Controller on Home" to false, "Combat layout" to true, "Swing timer" to true, "Focused quest" to false,
         "Hearthstone" to false, "Class teleport" to false, "Gold" to false, "Free bag slots" to false, "Ammo" to false,
         "Start the attack when a spell is cast" to true, "DS WoW toolbar" to false, "Tap-to-cast bar" to false, "In combat" to true,
-        "ABXY location" to true, "Button glyphs" to false,
+        "ABXY location" to true, "Button glyphs" to false, PetFollowB.ROW_ID to true,
         "Pause menu: open" to true, "Pause menu: pick" to true, PauseOver.ROW_ID to true, "Item wheel: open" to true, "Item wheel: pick" to true,
         "Spell wheel: open" to true, "Spell wheel: pick" to true,
         "Left class radial: open" to true, "Left class radial: pick" to true, "Right class radial: open" to true, "Right class radial: pick" to true,
@@ -91,6 +93,7 @@ object SettingsPreview {
         "DS WoW toolbar" -> s.toolbar?.let { onOff(it) } ?: "-"
         "ABXY location" -> if (s.abxyNintendo) "Nintendo" else "Xbox"
         "Button glyphs" -> SET_NAMES[s.glyphSet.coerceIn(0, 2)]
+        PetFollowB.ROW_ID -> PetFollowB.SEGMENTS[if (s.petFollowB) 1 else 0]
         "Pause menu: open" -> if (s.pauseTap) "Tap" else "Hold"
         "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> if (tapOf(id, s)) "Tap" else "Hold"
         "Pause menu: pick" -> if (s.pausePickA) "A" else "Release"
@@ -180,6 +183,7 @@ object SettingsPreview {
             else listOf("A tap on a dead member does not res.")
         "Start attack on hostile target" -> if (s.attackHostile) listOf("Targeting an enemy starts", "your auto-attack.")
             else listOf("Targeting an enemy does not start", "your auto-attack.")
+        PetFollowB.ROW_ID -> PetFollowB.caption(s.petFollowB)
         "Combat Auto Shot" -> when (s.autoShot) {
             0 -> listOf("No Auto Shot in a fight.")
             2 -> listOf("As On, but off for a plain attack", "you start yourself.")
@@ -241,6 +245,7 @@ object SettingsPreview {
             "DS WoW toolbar" -> toolbar(c, r, s.toolbar == true)
             "ABXY location" -> abxy(c, r, s, prev, sinceMs, glyph)
             "Button glyphs" -> glyphSets(c, r, s.glyphSet, glyph)
+            PetFollowB.ROW_ID -> petFollow(c, r, s.petFollowB, t, glyph, s.glyphSet)
             "Pause menu: open", "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> wheelOpen(c, r, tapOf(id, s), t, id.startsWith("Pause"))
             "Pause menu: pick", "Item wheel: pick", "Spell wheel: pick", "Left class radial: pick", "Right class radial: pick" -> wheelPick(c, r, pickAOf(id, s), t, glyph, s.glyphSet)
             PauseOver.ROW_ID -> pauseOver(c, r, s.pauseOverGame, t, glyph, s.glyphSet)
@@ -1327,6 +1332,30 @@ object SettingsPreview {
         text(c, "Select", r.left + 100f, y + 7f, 19f, if (press) GOLD else DIMC, Paint.Align.LEFT)
         text(c, if (!on) "nothing" else if (shown) "Party mode on" else "Party mode off", r.right - 20f, y + 7f, 19f,
             if (shown) GOLD else DIMC, Paint.Align.RIGHT)
+    }
+
+    /** B: pet follow (the user, 2026-11-16): your pet at an enemy; B pressed - On: it comes back beside you; Off: it keeps attacking */
+    private fun petFollow(c: Canvas, r: RectF, on: Boolean, t: Float, glyph: Glyph, set: Int) {
+        val k = t % 3.6f
+        val pressed = k in 0.8f..1.1f
+        val back = if (on) ((k - 1.0f) / 0.9f).coerceIn(0f, 1f) else 0f
+        val cy = r.top + r.height() * 0.36f
+        val px = r.left + 60f; val ex = r.right - 60f
+        pFill.color = Color.rgb(255, 230, 120); c.drawCircle(px, cy, 16f, pFill)                 // you
+        pFill.color = Color.rgb(150, 50, 40); c.drawCircle(ex, cy, 24f, pFill)                    // the enemy
+        val atX = ex - 50f; val homeX = px + 46f
+        val petX = atX + (homeX - atX) * back
+        val lunge = if (back == 0f) sin(t * 12f) * 5f else 0f
+        pFill.color = Color.rgb(110, 170, 90); c.drawCircle(petX + lunge, cy + 20f, 14f, pFill)  // your pet
+        if (back == 0f && sin(t * 12f) > 0.6f) {                                                  // its strikes
+            pStroke.color = GOLD; pStroke.strokeWidth = 3f
+            c.drawLine(ex - 30f, cy - 6f, ex - 14f, cy - 22f, pStroke); c.drawLine(ex - 26f, cy + 4f, ex - 8f, cy - 12f, pStroke)
+        }
+        text(c, "you", px, cy + 58f, 18f, DIMC)
+        text(c, if (back > 0f) "your pet follows" else "your pet attacks", r.centerX(), cy + 96f, 19f, if (back > 0f) GOLD else DIMC)
+        val gy = r.bottom - 60f
+        glyph.draw(c, "b", set, r.left + 60f, gy, if (pressed) 58f else 48f)
+        text(c, if (on) "Pet Follow" else "B's own action", r.left + 100f, gy + 7f, 19f, if (pressed) GOLD else DIMC, Paint.Align.LEFT)
     }
 
     /** Smart Res: a tap on a dead member's plate casts the res (On: its soft green edge while armed); a tap only (Off) */

@@ -82,6 +82,9 @@ object SettingsTabs {
             "Game tooltips", "Cast bar", "Player frame", "Target frame", "Controller bars, buffs and XP"), Drawer.GAME_UI),
         // ---- Controller
         CONTROLLER(Group.BUTTONS, "Buttons", listOf("ABXY location", "Button glyphs")),
+        // the user, 2026-11-16 ("a pet class specific option where pressing B in the out of combat home menu basically stops the pet
+        // attacking"): B on Home's rest, per character; shown only for a pet class (PetFollowB)
+        PET_B(Group.BUTTONS, "B on Home", listOf(PetFollowB.ROW_ID)),
         // f-radial-settings (1.0.9, the user: "better organize each radial setting into categories so its clear what each one is"): a
         // sub-heading per wheel, naming the button that opens it
         // the user's pick 2026-11-13 ("Make it a setting toggle defaulted to our wheel"): Start over a game window, Our wheel / Game's wheel

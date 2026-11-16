@@ -278,7 +278,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap"):
     e = comp(SRC[k], k)
     check(e is None, "a. Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local SV = "s13"' in SRC["spells"] and 'local BV = "b65"' in SRC["book"] and 'local PV = "m166"' in SRC["padmap"],
+check('local SV = "s13"' in SRC["spells"] and 'local BV = "b66"' in SRC["book"] and 'local PV = "m167"' in SRC["padmap"],
       "a. the versions: Spells s10, Book b63, PadMap m163")
 QUOTE = '"Lets scrap the smart ranged attack and start building a macro room'
 check(all(QUOTE in SRC[k] for k in ("spells", "book", "padmap")), "a. each changed file's header note quotes the user")
@@ -1058,7 +1058,7 @@ L.execute('fire("MODIFIER_STATE_CHANGED", "LSHIFT", 1); fire("PLAYER_TARGET_CHAN
 check(docs(L, n3, 'padmap') == [] and docs(L, n3, 'facecd') == [], "s. no macro on our buttons: nothing sent on those events",
       (len(docs(L, n3, 'padmap')), len(docs(L, n3, 'facecd'))))
 check('"the macro room needs some work- for starters when using show tooltip on a macro it doesn\'t actually show the GCD when using it"'
-      in SRC["padmap"] and 'local PV = "m166"' in SRC["padmap"], "s. PadMap m165, its header note quotes the user")
+      in SRC["padmap"] and 'local PV = "m167"' in SRC["padmap"], "s. PadMap m165, its header note quotes the user")
 
 # ================================================================ the documents for the room's off-device render (MacrosShotsTest)
 DUMP = os.environ.get("MACRO_DUMP")
