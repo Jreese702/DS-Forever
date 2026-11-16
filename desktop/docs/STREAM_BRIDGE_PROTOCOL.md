@@ -130,6 +130,12 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - **[S3] The streamed monitor.** Sunshine captures one monitor (the primary unless told otherwise). When no stream is running and WoW
   is on another monitor, Desktop points Sunshine at WoW's monitor (Sunshine restarts, ~25 s, and a `status` says so); during a stream
   it moves the WoW window onto the streamed monitor instead.
+- *(issues #304 / #357)* `wow.input` (welcome, `/v1/info`, the `wow` message, `focus_result`): why the Thor's taps can't reach
+  WoW. `elevated` = WoW runs above Desktop's integrity level (as administrator): Windows drops Sunshine's mouse and keys on it (UIPI),
+  the virtual pad still works. `not_filling` = WoW's client area doesn't fill the streamed monitor: the companion's taps (shares of
+  the whole stream) miss. `""` = fine, or not known. `wow.input_why` is the Thor's line for it. A new word holds 4 s before it is
+  said; on a change, and right after the welcome while one is set, a `status` carries the line ("taps reach WoW again" when it
+  clears). Desktop's window shows the same as a notice. Read-only on the PC (the window's client rectangle, the token's level).
 
 ## 7. Control (Thor → bridge)
 

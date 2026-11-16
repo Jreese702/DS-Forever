@@ -160,6 +160,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     private fun pcWord(w: PcWow) {
+        // issues #304 / #357: Desktop's word on why the taps can't reach WoW (its status line says it to the player), in the report
+        if (w.input != pc?.input.orEmpty()) Log.i(TAG, "PC: WoW input ${w.input.ifEmpty { "fine" }}")
         pc = w
         if (!StreamCurtain.atLogin(w)) { loginSince = 0L; main.removeCallbacks(loginShow) }
         else if (loginSince == 0L) { loginSince = System.currentTimeMillis(); main.postDelayed(loginShow, StreamCurtain.LOGIN_SHOW_MS + 100L) }

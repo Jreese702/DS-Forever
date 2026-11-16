@@ -20,7 +20,10 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
                  /** the client crashed (Desktop 0.2.2): "update" = Battle.net has an update for it, "crash" = anything else; "" = none */
                  val crash: String = "",
                  /** Desktop 0.2.3: Battle.net's window on the streamed screen as shares (x, y, w, h) while the player must use it; empty = none */
-                 val show: List<Float> = emptyList()) {
+                 val show: List<Float> = emptyList(),
+                 /** issues #304 / #357: why the taps can't reach WoW on the PC: "elevated" (run as administrator) | "not_filling" (WoW's
+                  *  window doesn't fill the streamed monitor); "" = fine, or an older Desktop */
+                 val input: String = "") {
     /** signed in: at character select or in the world */
     val signedIn get() = screen == "charselect" || screen == "world"
 
@@ -28,7 +31,7 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
         fun of(o: JSONObject?): PcWow? = o?.let {
             PcWow(it.optString("state"), it.optString("why"), it.optString("screen"),
                 if (it.has("focused")) it.optBoolean("focused") else null, it.optString("bnet"), it.optBoolean("needs_you"),
-                it.optString("login_error"), it.optString("crash"), rect(it.optString("show")))
+                it.optString("login_error"), it.optString("crash"), rect(it.optString("show")), it.optString("input"))
         }
 
         /** "x,y,w,h" (shares of the screen) -> 4 floats; anything else -> empty */

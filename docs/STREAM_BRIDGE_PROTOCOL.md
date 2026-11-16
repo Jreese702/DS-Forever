@@ -92,6 +92,12 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - `{"t":"wow","state":"starting"|"running"|"stopped"|"start_failed","why":"..."}` — Desktop starting WoW on the PC (S3,
   feat/stream-desktop f1c653d6); also `welcome.wow.state` / `.why`, and `focus_result.state` while it starts. The Thor shows
   "Starting WoW on your PC…" over the stream (and while connecting) until `running`, and "WoW didn't start: <why>" for a failure.
+- *(issues #304 / #357)* `wow.input` (welcome, `/v1/info`, the `wow` message, `focus_result`): why the Thor's taps can't reach
+  WoW. `elevated` = WoW runs above Desktop's integrity level (as administrator): Windows drops Sunshine's mouse and keys on it (UIPI),
+  the virtual pad still works. `not_filling` = WoW's client area doesn't fill the streamed monitor: the companion's taps (shares of
+  the whole stream) miss. `""` = fine, or not known. `wow.input_why` is the Thor's line for it. A new word holds 4 s before it is
+  said; on a change, and right after the welcome while one is set, a `status` carries the line ("taps reach WoW again" when it
+  clears). Desktop's window shows the same as a notice. Read-only on the PC (the window's client rectangle, the token's level).
 
 ## 7. Control (Thor → bridge)
 

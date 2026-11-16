@@ -11,6 +11,7 @@ using System.Threading;
 using DsfDesktop.Bridge;
 using DsfDesktop.GameLog;
 using DsfDesktop.Pairing;
+using DsfDesktop.Wow;
 
 namespace DsfDesktop.Tests
 {
@@ -22,12 +23,18 @@ namespace DsfDesktop.Tests
         public readonly List<string> Pins = new List<string>();
         public string StreamPairResult;   // null = the Sunshine side succeeds
         public string SunWhy = "";        // the PC can't stream: the Thor's reason ("pc busy: another Sunshine")
+        public string InputWhy = "";      // the Thor's taps can't reach WoW (WowInput.ThorWhy; "" = no wow.input_why)
         public FakeHost() { Devices = new DeviceStore(T.P("devices.json")); }
-        public Dictionary<string, object> Info() => new Dictionary<string, object>
+        public Dictionary<string, object> Info()
         {
-            ["host_id"] = "0123456789abcdef0123456789abcdef", ["pc_name"] = "TESTPC",
-            ["sunshine"] = new Dictionary<string, object> { ["running"] = true, ["http_port"] = 52989, ["https_port"] = 52984, ["why"] = SunWhy },
-        };
+            var d = new Dictionary<string, object>
+            {
+                ["host_id"] = "0123456789abcdef0123456789abcdef", ["pc_name"] = "TESTPC",
+                ["sunshine"] = new Dictionary<string, object> { ["running"] = true, ["http_port"] = 52989, ["https_port"] = 52984, ["why"] = SunWhy },
+            };
+            if (InputWhy.Length > 0) d["wow"] = new Dictionary<string, object> { ["input"] = "elevated", ["input_why"] = InputWhy };
+            return d;
+        }
         public void StreamPair(string deviceId, string name, string pin, string peerIp, Action<string> done)
         {
             lock (Pins) Pins.Add(pin);
@@ -277,6 +284,35 @@ namespace DsfDesktop.Tests
                 A.False(msgs.Any(m => m.Str("t") == "status"), "no status when the PC is fine");
                 s.Publish(new Dictionary<string, object> { ["t"] = "ping_marker" });
                 A.Eq("ping_marker", c.Next().Str("t"), "nothing queued between backlog_end and the next message");
+            }
+        }
+
+        /// <summary>issues #304 / #357: WoW run as administrator (or not filling the streamed monitor): right after the welcome the Thor's
+        /// status line says why its taps miss, before the PC-busy line when both apply</summary>
+        [Test]
+        public static void WelcomeSaysWhyTheThorsTapsMiss()
+        {
+            var why = WowInput.ThorWhy(WowInput.Elevated);
+            using (var h = new FakeHost { InputWhy = why })
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-input", stream: false);
+                var msgs = c.Until("status");
+                A.Eq("welcome", msgs[0].Str("t"));
+                A.Eq("elevated", ((Dictionary<string, object>)msgs[0]["wow"]).Str("input"));
+                A.Eq(why, msgs.Last().Str("text"));
+            }
+            using (var h = new FakeHost { InputWhy = why, SunWhy = "pc busy: another Sunshine" })
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-both", stream: false);
+                var first = c.Until("status");
+                A.Eq(why, first.Last().Str("text"));
+                var second = c.Next();
+                A.Eq("status", second.Str("t"));
+                A.Eq("pc busy: another Sunshine", second.Str("text"), "the PC-busy line is the last one shown");
             }
         }
 

@@ -472,6 +472,9 @@ namespace DsfDesktop.Bridge
                 s.Enqueue(welcome);
                 foreach (var d in backlog) s.Enqueue(d);
                 s.Enqueue(new Dictionary<string, object> { ["t"] = "backlog_end", ["count"] = backlog.Count });
+                // issues #304 / #357: the Thor's taps can't reach WoW (run as administrator, or not filling the streamed monitor)
+                if (welcome.TryGetValue("wow", out var wow) && wow is Dictionary<string, object> wd && wd.Str("input_why") is string iw && iw.Length > 0)
+                    s.Enqueue(new Dictionary<string, object> { ["t"] = "status", ["text"] = iw });
                 // the PC can't stream (another Sunshine holds the GameStream ports, ...): the Thor's status line says why
                 if (welcome.TryGetValue("sunshine", out var sun) && sun is Dictionary<string, object> sd && sd.Str("why") is string why && why.Length > 0)
                     s.Enqueue(new Dictionary<string, object> { ["t"] = "status", ["text"] = why });
