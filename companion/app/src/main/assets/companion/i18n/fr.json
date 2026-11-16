@@ -1,5 +1,18 @@
 {
 "plain": {
+"Experience": "Expérience",
+"Honor": "Honneur",
+"Skill-ups": "Gains de compétence",
+"Item Loot": "Butin d'objets",
+"Money": "Argent",
+"Creatures": "Créatures",
+"Say:": "Dire :",
+"Yell:": "Crier :",
+"Party:": "Groupe :",
+"Raid:": "Raid :",
+"Guild:": "Guilde :",
+"Officer:": "Officier :",
+"Tell:": "Chuchoter :",
 "Macros": "Macros",
 "New": "Nouvelle",
 "Edit": "Modifier",
@@ -1790,6 +1803,7 @@
 "Bags full": "Sacs pleins"
 },
 "templates": {
+"Tell %s:": "Chuchoter à %s :",
 "Region: %s (this install is %s)": "Région : %s (cette installation est %s)",
 "%s isn't loaded yet. Restart the game from DS Forever.": "%s n'est pas encore chargé. Relancez le jeu depuis DS Forever.",
 "%s is out of date. Tick Load out of date AddOns at character select.": "%s est périmé. Cochez Charger les AddOns périmés à la sélection du personnage.",
