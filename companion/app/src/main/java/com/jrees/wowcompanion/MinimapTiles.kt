@@ -57,10 +57,25 @@ object MinimapTiles {
         ArtHarvest.rootDir?.let { File(it, "minimap/$cont").isDirectory } == true || File(ArtHarvest.LEGACY, "minimap/$cont").isDirectory
     }
 
+    /**
+     * HOME'S MAP PICTURES STILL TO BE MADE (issues #316 #317 #284, 1.0.32: "the minimap on bottom screen does not display correctly. its
+     * black with blue zones", "game art shows its finished but map is still empty"): the minimap step has not written its index yet
+     * ([INDEX], the step's last write, once per build it finishes) in the art folder or the old pushed copy. Those reports' Game art
+     * sections: "minimap v2 (background): PENDING; never stamped" with "minimap 0" in every memory line - no tile on the device, so the
+     * small map was its dark ground, the faint grid and the quests' blue areas, under a "Game art: ready" that is only Play's art. Home's
+     * map says so where the terrain would be ([HomeMapNote]). Cached like [has]; [refresh] (the step's own, every 20 tiles and at its
+     * end) looks again. UI thread.
+     */
+    fun building(): Boolean = !(indexed ?: ArtHarvest.file(INDEX).isFile.also { indexed = it })
+    private var indexed: Boolean? = null
+    /** the minimap step's index (MapHarvestSteps.MINIMAP writes it after its last tile) */
+    const val INDEX = "minimap/index.json"
+
     /** The harvest made more tiles: look again for the continents and the tiles that were missing. UI thread. */
     fun refresh() {
         contOk.clear()
         missing.clear()
+        indexed = null
     }
 
     /**

@@ -2597,6 +2597,26 @@ class MapView(context: Context) : View(context) {
     private fun compactDown(): Float = max(0f, compactCover - compactRimTop) / 2f
 
     /**
+     * What the last frame said where the terrain would be ([HomeMapNote]: issues #316 #317 #284, Home's map pictures not made yet), or
+     * null when it drew the terrain or needed no word. Read by the tests.
+     */
+    var artNote: String? = null
+        private set
+    private val pArtNote = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+
+    /** [note] centred across the field, under the player's arrow ([HomeMapNote.baseline]), shrunk to fit a narrow map */
+    private fun drawArtNote(c: Canvas, note: String, left: Float, top: Float, fw: Float, fh: Float, compact: Boolean) {
+        val t = Tr.t(note)
+        pArtNote.color = cText
+        pArtNote.textSize = HomeMapNote.SIZE
+        UiKit.asBody(pArtNote)
+        val s = HomeMapNote.fit(pArtNote.measureText(t), HomeMapNote.SIZE, fw - 2f * HomeMapNote.PAD)
+        if (s != HomeMapNote.SIZE) { pArtNote.textSize = s; UiKit.asBody(pArtNote) }
+        val playerY = top + fh / 2f + (if (compact) compactDown() else 0f)
+        c.drawText(t, left + fw / 2f, HomeMapNote.baseline(playerY, top + fh), pArtNote)
+    }
+
+    /**
      * Boxes of the HOST's own controls over the map (view coordinates: Home's buff / debuff buttons and their list on the
      * small map, its buff / debuff rows over the open module), which the rim arrow slides along the edge to stay clear of.
      * NOT Home's + / - column: there the arrow keeps the true edge, under the faded buttons (the user, 2026-10-12: "It
@@ -6555,6 +6575,10 @@ class MapView(context: Context) : View(context) {
                 c.drawLine(left, top + fh * i / 4f, left + fw, top + fh * i / 4f, pGrid)
             }
         }
+        // issues #316 #317 #284 (1.0.32, "its black with blue zones", "game art shows its finished but map is still empty"): Home's map
+        // pictures not made yet (the background art builds them while the game is closed): said in the Map room's words, under the markers
+        artNote = if (HomeMapNote.shows(morphOn, terrain, MinimapTiles.building())) HomeMapNote.TEXT else null
+        artNote?.let { drawArtNote(c, it, left, top, fw, fh, compact) }
         // the floorplan sits ON the terrain, under every marker -- same projection, so it
         // lines up with the world by construction rather than by a second transform
         val flPlace = placeHere(m)
