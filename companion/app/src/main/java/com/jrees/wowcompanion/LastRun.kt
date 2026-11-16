@@ -14,8 +14,8 @@ import android.content.SharedPreferences
  *    start = DS Forever died while the game ran;
  *  - Android's own record of how this app's last process ended (ApplicationExitInfo, API 30): a crash, a native crash, a freeze (ANR),
  *    Android's low-memory kill or a signal (#37: "LOW_MEMORY ... pss 1256 MB").
- * A swipe-away, a force stop by the player or our own clean exit is no crash. The start screen then asks "Your last session ended
- * unexpectedly" with Send report / Not now; Send builds the ordinary problem report (it already carries the exit records, the game's
+ * A swipe-away, a force stop by the player or our own clean exit is no crash (our own process kill too: [ownExit], issue #355). The
+ * start screen then asks "Your last session ended unexpectedly" with Send report / Not now; Send builds the ordinary problem report (it already carries the exit records, the game's
  * crash files, the DXVK log and the last logs, through the privacy pass).
  */
 object LastRun {
@@ -36,6 +36,29 @@ object LastRun {
     fun gameEnded() { prefs?.edit()?.remove("running")?.remove("world")?.apply() }
 
     fun dismiss() { pending = null }
+
+    // ---------------------------------------------------------------- our own exit (issue #355)
+    /**
+     * DS FOREVER CLOSING ITSELF (issue #355, 2026-11-15: "Automatic crash report: DS Forever was stopped by a signal."; its log: the
+     * launcher went to the background, 7 s later the game "was killed (signal 9 ...)", then the app's own process ended 1.5 s later):
+     * when the launcher's window closes for good, MainActivity ends the game and then its own process with Process.killProcess (the
+     * 2026-10-30 CocoonShell fix: no idle process left behind). Android records that as REASON_SIGNALED, status 9 - the same as a kill
+     * from outside - so the next start asked "Your last session ended unexpectedly". The kill now leaves this mark first (written at
+     * once: the process ends a moment later), and a signal 9 that comes right after it is our own clean exit, never a crash.
+     */
+    fun ownExit(ctx: Context, now: Long = System.currentTimeMillis()) {
+        runCatching {
+            ctx.applicationContext.getSharedPreferences("dsf_last_run", Context.MODE_PRIVATE).edit().putLong(KEY_OWN_EXIT, now).commit()
+        }
+    }
+
+    /** a signal 9 recorded within [OWN_EXIT_MS] after our own exit's mark ([ownAt]; 0 = none) is that exit (pure: the tests) */
+    fun ownKill(reason: Int, status: Int, exitAt: Long, ownAt: Long): Boolean =
+        reason == ApplicationExitInfo.REASON_SIGNALED && status == 9 && ownAt > 0L && exitAt >= ownAt - 1_000L && exitAt - ownAt <= OWN_EXIT_MS
+
+    const val KEY_OWN_EXIT = "ownExitAt"
+    /** MainActivity's kill comes 1.5 s after the window closes; Android's record of it, within a moment */
+    const val OWN_EXIT_MS = 15_000L
 
     /** the reasons that are a crash, in words (null = not one) */
     fun badReason(reason: Int): String? = when (reason) {
@@ -95,14 +118,18 @@ object LastRun {
             val seen = p.getLong("exitSeen", 0L)
             val last = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 10)
                 .filter { it.processName == ctx.packageName }.maxByOrNull { it.timestamp }
+            val ownAt = p.getLong(KEY_OWN_EXIT, 0L)
             if (last != null && last.timestamp > seen) {
                 p.edit().putLong("exitSeen", last.timestamp).apply()
                 exitAt = last.timestamp
-                val worth = offer(last.reason, last.importance, last.pss, runningAt > 0L)
+                val ours = ownKill(last.reason, last.status, last.timestamp, ownAt)
+                val worth = !ours && offer(last.reason, last.importance, last.pss, runningAt > 0L)
                 exit = if (worth) badReason(last.reason) else null
-                android.util.Log.i("WCLASTRUN", "last exit: reason ${last.reason} (${last.description ?: "-"}), importance ${last.importance}, " +
-                    "pss ${last.pss / 1024} MB; game running $runningAt${if (worth) "" else "; no report (a background clean-up)"}")
+                android.util.Log.i("WCLASTRUN", "last exit: reason ${last.reason} (${last.description ?: "-"}), status ${last.status}, " +
+                    "importance ${last.importance}, pss ${last.pss / 1024} MB; game running $runningAt" +
+                    (if (ours) "; no report (DS Forever closed itself)" else if (worth) "" else "; no report (a background clean-up)"))
             }
+            if (ownAt > 0L) p.edit().remove(KEY_OWN_EXIT).apply()
         }
         pending = words(exit, runningAt > 0L, world, ranMs(runningAt, exitAt, System.currentTimeMillis()))
         pending?.let { DiagLog.event("last run", it) }
