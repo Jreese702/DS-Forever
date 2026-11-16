@@ -58,7 +58,11 @@ class MacrosShotsTest {
     /** the room on the bar's screen: the room above, the bar under it (Macros lit) */
     private fun roomShot(name: String, overlay: View? = null) {
         val d = out ?: return
-        val v = MacrosView(app).apply { dryRun = true }
+        val v = MacrosView(app).apply {
+            dryRun = true
+            // s14: the Spell / Item pop-out's tooltip (the spells document's own description of the spell under the glow)
+            spellTip = { id -> if (id == 403) "Casts a bolt of lightning at the target for 15 to 17 Nature damage." else null }
+        }
         v.onDoc(doc(name), live = false)
         lay(v, W, H); settle(); lay(v, W, H)
         overlay?.let { lay(it, W, 1080) }
@@ -78,7 +82,12 @@ class MacrosShotsTest {
     @Test fun roomShots() {
         if (out == null || !File(out, "docs/grid.json").isFile) return
         art()
-        for (n in listOf("grid", "edit", "pick", "recipes", "kbd", "off")) roomShot(n)
+        for (n in listOf("grid", "edit", "kbd", "off")) roomShot(n)
+        // Spells s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the recipes "make no sense" and only add lines): the strips, the builder,
+        // each pop-out sliding out of its chip, the presets, Move, the companion's own macros' lock
+        for (n in listOf("edit_empty", "build", "build_if", "build_on", "build_arg", "build_cmd", "build_case", "build_combat", "build_reset",
+                         "build_warn", "build_rank", "build_new", "move", "preset", "presets", "preset_replace", "icon", "locked"))
+            if (File(out, "docs/$n.json").isFile) roomShot(n)
         // (Spells s10 review) a bind of a name two macros share, refused ("Name taken"); the row made but not placed ("No pad row")
         for (n in listOf("taken", "norow")) if (File(out, "docs/$n.json").isFile) roomShot(n)
         // (Spells s13; the user, 2026-11-16: "also things like my pet attack are missing from the spells options.") the pick list with a

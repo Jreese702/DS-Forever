@@ -76,22 +76,114 @@ class MacrosRoomTest {
 
     @Test fun theEditorsRowsMatchTheAddOns() {
         val mac = st(grid).mac
-        assertEquals(listOf("name", "l1", "l2", "add", "pick", "rec", "del"), MacrosModel.editRows(mac))
-        assertEquals(0, MacrosModel.editCell("name")); assertEquals(2, MacrosModel.editCell("l2"))
-        assertEquals(listOf(20, 21, 22, 23), MacrosModel.BUTTONS.map { MacrosModel.editCell(it) })
+        // Spells s14 MR.editRows: the name, the icon, the lines, then + Line / Presets / Delete
+        assertEquals(listOf("name", "icon", "l1", "l2", "add", "pre", "del"), MacrosModel.editRows(mac))
+        assertEquals(0, MacrosModel.editCell("name")); assertEquals(1, MacrosModel.editCell("icon")); assertEquals(3, MacrosModel.editCell("l2"))
+        assertEquals(listOf(21, 22, 23), MacrosModel.BUTTONS.map { MacrosModel.editCell(it) })
         val many = MacrosModel.Mac("x", 0, List(25) { "/say $it" }, 200, emptySet(), more = true)
-        assertEquals(MacrosModel.LINE_ROWS + 1 + 4, MacrosModel.editRows(many).size)            // at most 19 line rows (s1..s19)
+        assertEquals(2 + MacrosModel.LINE_ROWS + 3, MacrosModel.editRows(many).size)                // at most 19 line rows (s2..s20)
+        assertEquals(20, MacrosModel.editCell("l19"))
+        // an empty macro: its preset tiles where the lines go, + Line and Delete (no Presets button)
+        val empty = MacrosModel.Mac("x", 0, emptyList(), 0, emptySet(), more = false)
+        assertEquals(listOf("name", "icon", "t1", "t2", "t3", "add", "del"), MacrosModel.editRows(empty, tiles = 3))
+        assertEquals(2, MacrosModel.editCell("t1"))
     }
 
-    @Test fun picksAndRecipes() {
+    /** (s13, an older add-on's + Spell/Item list) its rows' lines, kept for a document from before s14 */
+    @Test fun theOlderPickListStillReads() {
         val p = st("""{"type": "macros", "m": {"ready": true, "mode": "pick", "view": "pick", "pick": {"rows": [{"t": "s", "n": "Lightning Bolt",
             "i": 1}, {"t": "u", "n": "Minor Healing Potion", "i": 2}, {"t": "e", "n": "Worn Shortsword", "i": 3}], "page": 1, "pages": 1,
-            "cur": 1, "rec": "sh", "step": 2, "of": 2}}}""")
-        val pick = p.pick!!
-        assertEquals(listOf("/cast Lightning Bolt", "/use Minor Healing Potion", "/equip Worn Shortsword"), pick.rows.map { MacrosModel.lineOf(it) })
-        assertEquals("sh", pick.rec); assertEquals(2, pick.step); assertEquals(2, pick.of)
-        assertEquals(listOf("mo", "fo", "me", "sh", "at", "tr"), MacrosModel.RECIPES)
-        assertTrue(MacrosModel.RECIPES.all { MacrosModel.RECIPE_WORDS[it] != null && MacrosModel.RECIPE_LINES[it] != null })
+            "cur": 1}}}""")
+        assertEquals(listOf("/cast Lightning Bolt", "/use Minor Healing Potion", "/equip Worn Shortsword"), p.pick!!.rows.map { MacrosModel.lineOf(it) })
+    }
+
+    // ---------------------------------------------------------------- s14 THE MACRO BUILDER v2 (the add-on's documents, MACRO_DUMP, trimmed)
+    private val build = """{"type":"macros","m":{"ready":true,"mode":"build","view":"build","b":{"a":{"i":136052,"n":"Healing Wave"},"c":"cast",
+        "ch":{"add":16,"arg":1,"c1f":5,"c1u":4,"c2f":8,"c2u":7,"c3f":11,"c3u":10,"cmd":0,"done":19,"keep":3,"rem":18,"text":17},
+        "cs":[{"f":["help","!dead"],"u":"focus","x":1},{"f":["help","!dead"],"u":"mouseover","x":2},{"u":"player","x":3}],"cur":"cmd","len":241,
+        "ln":2,"rows":[["cmd","arg","keep"],["c1u","c1f"],["c2u","c2f"],["c3u","c3f"],["add"],["text","rem","done"]],
+        "t":"/cast [@focus,help,nodead][@mouseover,help,nodead][@player] Healing Wave"},"keys":$keys}}"""
+
+    @Test fun parsesTheBuilder() {
+        val s = st(build)
+        val b = s.builder!!
+        assertEquals("/cast [@focus,help,nodead][@mouseover,help,nodead][@player] Healing Wave", b.text)
+        assertEquals(2, b.line); assertNull(b.at); assertEquals(241, b.len); assertEquals("cast", b.cmd)
+        assertEquals(MacrosModel.Look(136052, "Healing Wave"), b.look)
+        assertEquals(listOf("focus", "mouseover", "player"), b.cases.map { it.unit })
+        assertEquals(listOf("help", "!dead"), b.cases[0].conds)
+        assertTrue(b.cases[2].conds.isEmpty())
+        assertEquals(listOf("cmd", "arg", "keep"), b.rows.first()); assertEquals(listOf("text", "rem", "done"), b.rows.last())
+        assertEquals(19, MacrosModel.chipCell(b, "done")); assertEquals(7, MacrosModel.chipCell(b, "c2u")); assertNull(MacrosModel.chipCell(b, "rank"))
+        assertFalse(b.draft); assertNull(b.hard); assertTrue(b.warns.isEmpty()); assertNull(b.pop)
+        assertEquals("Remove", MacrosModel.removeWord(b))
+        assertEquals("Revert", MacrosModel.removeWord(b.copy(draft = true)))                            // a draft of a stored line
+        assertEquals("Remove", MacrosModel.removeWord(b.copy(line = null, draft = true)))              // a new line's draft goes
+        assertEquals("Remove?", MacrosModel.removeWord(b.copy(remArmed = true)))
+        // a finger: the chip's s-cell then A; Done is the `ok` key (the Select button's own work)
+        assertEquals(listOf("mac" to 12 + 7, "mac" to 3), MacrosModel.pickCells(s, 7, act = true))
+        assertEquals(listOf("mac" to 13), MacrosModel.doneCells(s.copy(keys = MacrosModel.Keys(s.keys!!.col + ("ok" to 13), 14, 24))))
+    }
+
+    @Test fun parsesTheStripsAndTheDraftMark() {
+        val s = st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit","ls":[{"c":"tip","cs":[{"x":1}],"k":"tip"},{"c":"cast",
+            "cs":[{"f":["help","!dead"],"u":"focus","x":1},{"f":["help","!dead"],"u":"mouseover","x":2},{"u":"player","x":3}],"i":136052,"k":"cmd",
+            "n":"Healing Wave"},{"c":"seq","cs":[{"x":1}],"i":136048,"k":"cmd","n":"Lightning Bolt","rs":"target","sq":[{"i":136048,
+            "n":"Lightning Bolt"},{"i":136026,"n":"Earth Shock"}]},{"k":"text"},{"k":"lock"},{"c":"petattack","cn":"Attack","i":132152,"k":"cmd",
+            "cs":[{"x":1}]},{"c":"cast","cs":[{"x":1}],"k":"cmd","n":"Frostbolt","w":"book"}],"ef":"l2","dr":{"n":2}}}""")
+        assertEquals(listOf("tip", "cmd", "cmd", "text", "lock", "cmd", "cmd"), s.strips.map { it.kind })
+        assertEquals(3, s.strips[1].cases.size)
+        assertEquals(listOf("Lightning Bolt", "Earth Shock"), s.strips[2].seq.map { it.name }); assertEquals("target", s.strips[2].reset)
+        assertEquals("Attack", s.strips[5].cmdName)                                                     // the game's own word
+        assertEquals("book", s.strips[6].warn); assertEquals("Not in book", MacrosModel.warnWord(s.strips[6].warn))
+        assertEquals(2, s.draftLine); assertNull(s.draftAt)
+    }
+
+    @Test fun parsesPopOutsAndPresets() {
+        val s = st("""{"type":"macros","m":{"ready":true,"mode":"build","view":"build","b":{"c":"cast","t":"/cast","len":5,"rows":[["cmd","arg"]],
+            "ch":{"cmd":0,"arg":1},"h":"pick","hc":"arg","pop":{"base":6,"case":1,"cols":6,"cur":"r1","forc":"cast","k":"arg","page":1,"pages":2,
+            "q":"bolt","rows":[{"i":136048,"id":403,"n":"Lightning Bolt","t":"s"}],"tab":"sp","tabs":["sp","gen","it","sl"]}}}}""")
+        val b = s.builder!!
+        assertEquals("pick", b.hard); assertEquals("arg", b.hardChip); assertEquals("Pick", MacrosModel.hardWord(b.hard))
+        val p = b.pop!!
+        assertEquals("arg", p.kind); assertEquals(6, p.base); assertEquals(6, p.cols); assertEquals(2, p.pages); assertEquals("bolt", p.query)
+        assertEquals(listOf("sp", "gen", "it", "sl"), p.tabs); assertEquals("sp", p.tab); assertEquals("cast", p.forCmd)
+        assertEquals(6, p.cellOf("r1")); assertEquals(5, p.cellOf("q")); assertEquals(2, p.cellOf("t3"))
+        assertEquals(403, p.rows[0].optInt("id"))
+        val ps = st("""{"type":"macros","m":{"ready":true,"mode":"ps","view":"ps","ps":{"back":"edit","cur":"p1","k":"heal","len":54,"ls":[{"c":"tip",
+            "cs":[{"x":1}],"k":"tip"},{"c":"cast","cs":[{"f":["help","!dead"],"x":1},{"u":"player","x":2}],"i":136052,"k":"cmd","n":"Healing Wave"}],
+            "picks":[{"i":136052,"kind":"help","n":"Healing Wave"}],"t":"#showtooltip\n/cast [help,nodead][@player] Healing Wave","arm":true},
+            "tiles":[{"ic":[136052],"k":"heal","t":"#showtooltip"},{"ic":[136052,136048],"k":"fof","t":"/cast"}]}}""")
+        val pr = ps.preset!!
+        assertEquals("heal", pr.key); assertEquals(2, pr.strips.size); assertTrue(pr.armed); assertEquals("help", pr.picks[0].second)
+        assertEquals(listOf("heal", "fof"), ps.tiles.map { it.key }); assertEquals(listOf(136052, 136048), ps.tiles[1].icons)
+        assertEquals("Heal, else me", MacrosModel.presetWord("heal")); assertEquals("Friend or foe", MacrosModel.presetWord("fof"))
+    }
+
+    @Test fun theChipsWords() {
+        // D5's units: the controller's targets; party1..4 = "Party" + its number; a typed name is the player's text (no word)
+        assertEquals("Target", MacrosModel.unitWord(null)); assertEquals("Soft enemy", MacrosModel.unitWord("softenemy"))
+        assertEquals("Me", MacrosModel.unitWord("player")); assertEquals("Party", MacrosModel.unitWord("party3"))
+        assertEquals(3, MacrosModel.partyNo("party3")); assertNull(MacrosModel.unitWord("Bob"))
+        // the conditions: "!dead" = Alive, the other "no" forms struck through; a raw one is the game's own text
+        assertEquals("Alive", MacrosModel.condWord("!dead")); assertFalse(MacrosModel.condStruck("!dead"))
+        assertEquals("Enemy", MacrosModel.condWord("!harm")); assertTrue(MacrosModel.condStruck("!harm"))
+        assertNull(MacrosModel.condWord("~spec:2"))
+        // the modifiers: the player's own glyph set (the game's Shift = ZL / LT / L2, its Ctrl = LB / L / L1)
+        assertEquals("ltrigger", MacrosModel.condGlyph("mod:shift")); assertEquals("lshoulder", MacrosModel.condGlyph("!mod:ctrl"))
+        assertEquals("Cast", MacrosModel.cmdWord("cast")); assertEquals("Start attack", MacrosModel.cmdWord("startattack"))
+        assertEquals("Else on me", MacrosModel.caseWord("me")); assertEquals("Soft friend first", MacrosModel.caseWord("sf1"))
+        assertNull(MacrosModel.resetWord("12")); assertEquals("Combat", MacrosModel.resetWord("combat"))
+        assertTrue(MacrosModel.tooLong(256)); assertFalse(MacrosModel.tooLong(255))
+        // terse: every chip word fits a chip
+        for (w in listOf("Soft friend first", "Else another spell", "Not in bags or worn", "Pet attack + spell", "Leave form + spell"))
+            assertTrue(w, w.length <= 20)
+    }
+
+    @Test fun theLockedMacro() {
+        val s = st("""{"type":"macros","m":{"ready":true,"mode":"grid","view":"grid","cells":[{"n":"DS Attack 12","i":134400,"lk":true},
+            {"n":"Mine","i":1}],"cur":0,"mac":{"n":"DS Attack 12","i":134400,"lines":["#showtooltip"],"len":12,"lk":true}}}""")
+        assertTrue(s.cells[0].locked); assertFalse(s.cells[1].locked); assertTrue(s.mac!!.locked)
     }
 
     @Test fun refusalWordsAreTerse() {

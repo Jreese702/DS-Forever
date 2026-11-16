@@ -713,6 +713,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         macrosView = MacrosView(this).apply {
             onLeave = { roomLeft(Room.MACROS) }
             padSource = { listOf(talentsPad, spellsPad, questsPad).firstOrNull { it?.optJSONObject("rows")?.has("padtab") == true } ?: spellsPad ?: questsPad }
+            // Spells s14: the Spell / Item pop-out's tooltip is the Spellbook's own description of that spell (the spells document)
+            spellTip = { id -> lastBook?.let { b -> (b.items + b.petItems).firstOrNull { it.spellId == id }?.desc } }
         }
         // THE CALENDAR BUTTON (the user, 2026-11-13: "The calender can be moved up to a button on the right side of the map name make it
         // small"): the small button at the right end of Home's map-name band opens the Calendar room, on the first touch in a fight too
