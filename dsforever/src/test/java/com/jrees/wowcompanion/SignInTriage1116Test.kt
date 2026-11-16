@@ -171,4 +171,25 @@ class SignInTriage1116Test {
         val native = File(src, "NativeLogin.kt").readText()
         assertTrue("HomeLogin.noFileWhy(HomeLoginStore.has(ctx), HomeLoginStore.autoLogin(ctx), SetupBridge.seeding)" in native)
     }
+
+    @Test fun theMenusLoginStepsAreInTheSignInLog() {
+        // the verify pass (#399: a login saved at 18:02 was gone by the next start, and nothing in the log said how): the form's save,
+        // the Menu's Auto login and Forget login are logged - their names only, never anything of the login
+        val host = File(src, "CompanionHost.kt").readText()
+        val words = listOf("sign-in: login saved (the login form)", "sign-in: Auto login on (the Menu)", "sign-in: Auto login off (the Menu)",
+            "sign-in: the saved login forgotten (the Menu)")
+        assertTrue("NativeLogin.logEvent(\"sign-in: login saved (the login form)\")" in host)
+        assertTrue("NativeLogin.logEvent(\"sign-in: Auto login \${if (on) \"on\" else \"off\"} (the Menu)\")" in host)
+        assertTrue("NativeLogin.logEvent(\"sign-in: the saved login forgotten (the Menu)\")" in host)
+        // each in its own handler: the save in the form's callback, the toggle and the forget in the Menu's
+        assertTrue(host.substringAfter("StartMenu.onAutoLogin = {").substringBefore("\n").contains("Auto login"))
+        assertTrue(host.substringAfter("StartMenu.onForgetLogin = {").substringBefore("\n").contains("forgotten"))
+        assertTrue(host.substringAfter("loginPrompt = HomeLoginPrompt(this) { login ->").substringBefore("SetupBridge.loginSaved()")
+            .contains("login saved (the login form)"))
+        val pattern = Redact.namePattern(emptyList())
+        for (w in words) {
+            assertEquals(w, StartupDiag.sanitize(w, emptyList()))
+            assertEquals(w, Redact.text(w, pattern))
+        }
+    }
 }
