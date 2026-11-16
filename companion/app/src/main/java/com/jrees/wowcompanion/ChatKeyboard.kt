@@ -531,7 +531,8 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         // ---- the words, centre: the title over them, the words in large type
         val tx0 = mcx + r * 1.25f + 44f
         val tx1 = bRect.left - 34f
-        var y = body.top + 12f
+        // the words start level with the medallion's top (the board fills the room in Chat: the page stays balanced, never hugging the top)
+        var y = maxOf(body.top + 12f, mcy - r * 1.3f)
         titleOf(s)?.let { t ->
             val bad = s.state == Voice.State.PROBLEM || s.state == Voice.State.MIC_OFF || s.state == Voice.State.BLOCKED
             val p = UiKit.bodyPaint(32f, if (bad) Theme.unusable else Theme.gold)
