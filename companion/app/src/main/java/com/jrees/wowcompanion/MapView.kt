@@ -2597,6 +2597,27 @@ class MapView(context: Context) : View(context) {
     private fun compactDown(): Float = max(0f, compactCover - compactRimTop) / 2f
 
     /**
+     * What the last frame said where the terrain would be ([HomeMapNote]: issues #316 #317 #284, Home's map pictures not made yet), or
+     * null when it drew the terrain or needed no word. Read by the tests.
+     */
+    var artNote: String? = null
+        private set
+    private val pArtNote = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+
+    /** [note] centred across the field ([left], [fw]: the part the open map's quest list leaves), under the player's arrow
+     *  ([HomeMapNote.baseline]), shrunk to fit a narrow map */
+    private fun drawArtNote(c: Canvas, note: String, left: Float, top: Float, fw: Float, fh: Float, compact: Boolean) {
+        val t = Tr.t(note)
+        pArtNote.color = cText
+        pArtNote.textSize = HomeMapNote.SIZE
+        UiKit.asBody(pArtNote)
+        val s = HomeMapNote.fit(pArtNote.measureText(t), HomeMapNote.SIZE, fw - 2f * HomeMapNote.PAD)
+        if (s != HomeMapNote.SIZE) { pArtNote.textSize = s; UiKit.asBody(pArtNote) }
+        val playerY = top + fh / 2f + (if (compact) compactDown() else 0f)
+        c.drawText(t, left + fw / 2f, HomeMapNote.baseline(playerY, top + fh), pArtNote)
+    }
+
+    /**
      * Boxes of the HOST's own controls over the map (view coordinates: Home's buff / debuff buttons and their list on the
      * small map, its buff / debuff rows over the open module), which the rim arrow slides along the edge to stay clear of.
      * NOT Home's + / - column: there the arrow keeps the true edge, under the faded buttons (the user, 2026-10-12: "It
@@ -6525,6 +6546,7 @@ class MapView(context: Context) : View(context) {
         // No tiles on the device yet (the harvest still building), or a continent's worth on screen: the old grid.
         val rT = rect
         var terrain = false
+        var drew = false; var allAbsent = true           // a tile drawn this frame; every tile here looked for and not on the device
         if (rT != null && rT.valid && MinimapTiles.has(rT.continent)) {
             val adt = MinimapTiles.ADT
             val wyW = rT.left - (cxView - halfX) * rT.width; val wyE = rT.left - (cxView + halfX) * rT.width
@@ -6542,8 +6564,9 @@ class MapView(context: Context) : View(context) {
                     // half a pixel of overlap so filtered neighbours never show a hairline between them
                     tileDst.set(sx(rT.nx((32 - col) * adt)) - 0.5f, sy(rT.ny((32 - row) * adt)) - 0.5f,
                                 sx(rT.nx((31 - col) * adt)) + 0.5f, sy(rT.ny((31 - row) * adt)) + 0.5f)
-                    MinimapTiles.get(rT.continent, col, row, sample) { invalidate() }?.let { c.drawBitmap(it, null, tileDst, pArt) }
-                    if (full) MinimapTiles.get(rT.continent, col, row) { invalidate() }?.let { c.drawBitmap(it, null, tileDst, pArt) }
+                    MinimapTiles.get(rT.continent, col, row, sample) { invalidate() }?.let { c.drawBitmap(it, null, tileDst, pArt); drew = true }
+                        ?: run { if (!MinimapTiles.absent(rT.continent, col, row, sample)) allAbsent = false }
+                    if (full) MinimapTiles.get(rT.continent, col, row) { invalidate() }?.let { c.drawBitmap(it, null, tileDst, pArt); drew = true }
                 }
                 c.restore()
             }
@@ -6555,6 +6578,13 @@ class MapView(context: Context) : View(context) {
                 c.drawLine(left, top + fh * i / 4f, left + fw, top + fh * i / 4f, pGrid)
             }
         }
+        // issues #316 #317 #284 (1.0.32, "its black with blue zones", "game art shows its finished but map is still empty"): Home's map
+        // pictures not made yet (the background art builds them while the game is closed): said in the Map room's words, under the markers
+        // (review: also over this continent's folder with no tile here yet - the step part-way - not only with no folder at all)
+        val tilesShown = HomeMapNote.terrainShown(terrain, drew, allAbsent, artNote != null)
+        artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT else null
+        // (review: on the open map, in the part the quest list leaves - where the player is centred - not under the list)
+        artNote?.let { drawArtNote(c, it, left + trackPx, top, fw - trackPx, fh, compact) }
         // the floorplan sits ON the terrain, under every marker -- same projection, so it
         // lines up with the world by construction rather than by a second transform
         val flPlace = placeHere(m)

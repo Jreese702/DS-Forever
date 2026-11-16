@@ -48,6 +48,16 @@ object DeviceTier {
 
     const val LOW_MB = 13_000L
 
+    /**
+     * THE MODEL THAT BUILDS THE WORLD MAP BESIDE THE GAME (the user's pick, 2026-11-16: "Let ONLY the world-map art step build beside
+     * the running game on the 16 GB Thor Max (DeviceTier / RAM >= ~15 GB)"; [PlayGate.besideNow]): the Thor Max (Android counts
+     * 15255 MB), lighter mode off (Settings > Performance > Lighter mode = the lighter behaviour: it waits like every other step).
+     * Never while the RAM is unknown.
+     */
+    const val BESIDE_MB = 15_000L
+    fun besideModel(mb: Long, lighter: Boolean): Boolean = mb >= BESIDE_MB && !lighter
+    fun besideModel(): Boolean = besideModel(totalMb, runCatching { Settings.lighterMode }.getOrDefault(false))
+
     /** the notice before Play on the 8 / 12 GB models (the user: "some kind of notice for Lower model Thors that the art will not build
      *  in the background if they proceed") */
     const val ART_NOTICE_TITLE = "The rest of the game art builds while the game is closed"

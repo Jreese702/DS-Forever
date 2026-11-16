@@ -2317,6 +2317,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             "bye" -> if (current) {
                 QuestWatchKeep.cleanEnd(); byeShow(); PartyModel.live.newSession()      // a logout: the game writes its state (the watch list)
+                GameLife.worldLeft()                        // the world closed: no calm until the next hello (the world map beside the game)
                 // the triage (2026-11-14): no hello within 30 s with the game still running = silence (the game's Disable + ReloadUI)
                 silence.bye(System.currentTimeMillis())
             }
@@ -2597,6 +2598,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // a login or a reload just happened: the game's UI hide waits out the loading screen (GameUiPolicy.SETTLE_MS)
                 if (current) GameUi.onHello()
                 if (current) QuestWatchKeep.newSession()        // a login or reload: its first quests document is checked
+                if (current) GameLife.worldBack()               // the world back after a logout word: its calm counts from here
                 if (current && reloadAt != 0L) reloadDone()
             }
             // the Social room (social session): its lists and the answers to its taps; the controller's presses while it shows.

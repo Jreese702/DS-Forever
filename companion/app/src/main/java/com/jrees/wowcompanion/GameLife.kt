@@ -57,7 +57,8 @@ object GameLife {
     // ------------------------------------------------------------------ the events (the launcher and the bottom screen call these)
 
     fun started(now: Long = System.currentTimeMillis()) {
-        startedAt = now; worldSeen = false; ended = false; note = null; closer = null; loads = 0; loadingAt = 0L
+        startedAt = now; worldSeen = false; ended = false; note = null; closer = null; loads = 0; loadingAt = 0L; worldAt = 0L; loadEndAt = 0L
+        leftAt = 0L
         DiagLog.event("game", "started")
         LastRun.gameStarted(now)                                   // 1.0.17: kept across the app's own death
         // issue triage 2026-11-14 (the 1.0.29 - 1.0.31 low-memory cluster; the user: "yes on the triage things"): the game is about to
@@ -69,9 +70,39 @@ object GameLife {
      *  startup screen before the game starts") */
     val worldNow: Boolean get() = worldSeen && !ended
 
+    /** when this game started (epoch ms), 0 = none in this process (PlayGate.besideNow: Android's warnings since then) */
+    val startedAtMs: Long get() = startedAt
+    /** a loading screen in the world is up now (its end not seen yet) */
+    val loadingNow: Boolean get() = worldNow && loadingAt != 0L
+
+    /**
+     * How long the game has been in the world with no loading screen (the user's pick, 2026-11-16: the world map beside the game on
+     * the Thor Max, PlayGate.besideNow): since the world entry, the last loading screen's end or the world's return after a logout
+     * ([worldBack]); 0 = not in the world, one is up, or the world closed ([worldLeft]) and is not back yet
+     */
+    fun calmMs(now: Long = System.currentTimeMillis()): Long =
+        if (!worldNow || loadingAt != 0L || leftAt != 0L) 0L else (now - maxOf(worldAt, loadEndAt)).coerceAtLeast(0L)
+    @Volatile private var worldAt = 0L
+    @Volatile private var loadEndAt = 0L
+
+    /**
+     * THE WORLD CLOSED AND CAME BACK (review of the world map beside the game, 2026-11-16; the user's pick: "keep the memory relief and
+     * the pause points"): Hub's logout word ("bye", PLAYER_LOGOUT: a logout to the character list or a /reload) closes the world. The
+     * add-ons are silent until the next world is up, so neither the character list nor that world's loading screen sends anything, and
+     * the calm since the last load kept counting through both. Now [calmMs] is 0 from the word until the add-on's next hello (the
+     * world back), and the calm counts from that hello: the next world's load is a pause point like any loading screen.
+     */
+    fun worldLeft(now: Long = System.currentTimeMillis()) { if (worldNow) leftAt = now }
+    /** the add-on's hello after a logout word ([worldLeft]): the world is back, its calm starts now */
+    fun worldBack(now: Long = System.currentTimeMillis()) { if (leftAt != 0L) { leftAt = 0L; worldAt = now } }
+    /** the logout word came and the add-on's hello not yet */
+    val awayNow: Boolean get() = worldNow && leftAt != 0L
+    @Volatile private var leftAt = 0L
+
     /** the first CURRENT document from the add-on: the game is in the world */
     fun inWorld(now: Long = System.currentTimeMillis()) {
         if (worldSeen || startedAt == 0L) return
+        worldAt = now
         worldSeen = true
         DiagLog.event("game", "in the world after ${minutes(now - startedAt)}")
         LastRun.gameInWorld()
@@ -106,7 +137,7 @@ object GameLife {
         }
         val at = loadingAt
         if (at == 0L) return null                                  // its start was never seen (the login's, a lost line)
-        loadingAt = 0L
+        loadingAt = 0L; loadEndAt = now
         val l = "loading screen $loads over after ${minutes((now - at).coerceAtLeast(0L))}"
         MemWatch.note(l)
         return l

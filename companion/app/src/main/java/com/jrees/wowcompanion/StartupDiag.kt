@@ -223,7 +223,7 @@ object StartupDiag {
             "Login saved ${i.loginSaved}, skipped ${i.loginSkipped}, sign-in ${i.signIn}, restart offered ${i.restartOffered}, restarting ${i.restarting}",
             "Art ${i.art} ${i.artPercent}%${if (i.artWhat.isNotBlank()) " (${i.artWhat})" else ""}${if (i.artWhy.isNotBlank()) ", why: ${i.artWhy}" else ""}",
             "Add-ons installed ${i.addonsInstalled}; problem: ${i.addonsProblem ?: "none"}; dependencies: ${i.dependencies ?: "(not checked)"}",
-            "Interiors: ${i.indoor ?: "(no step)"}; icons: ${i.iconsLine ?: "?"}",
+            "Interiors: ${i.indoor ?: "(no step)"}; icons: ${i.iconsLine ?: "?"}; maps: ${when (i.maps) { true -> "ready"; false -> "still to build"; null -> "?" }}",
             "Client: ${i.client ?: "(not checked yet)"}; newer game build: ${i.gameOutdated ?: "none"}; stale data: ${i.staleData ?: "no"}",
             "App: ${i.appLine ?: "?"}; update offered: ${i.appUpdate ?: "none"}",
             "Busy: ${i.busy ?: "no"}; game running ${i.gameRunning}; installed on external storage ${i.installedExternal}",
