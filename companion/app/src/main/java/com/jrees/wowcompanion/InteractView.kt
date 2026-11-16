@@ -348,6 +348,8 @@ class InteractView(context: Context) : View(context) {
     }
 
     private fun hideKeyboard() {
+        // the field is gone (the add-on closed it): a voice page on it stops without copying anything back (no taps into Chat's own buffer)
+        keyboard?.stopVoice(restore = false)
         kbField = null; kbRepeat = null
         removeCallbacks(kbTick); removeCallbacks(fieldTick)
         keyboard?.visibility = GONE
