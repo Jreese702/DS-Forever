@@ -70,6 +70,12 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         UiKit.asBody(search)             // the game's type (UI Art's fonts step)
+        padSearch()
+    }
+
+    /** the search's words stop before the glyphs drawn on its right while the strip's cursor is on it (A, and X's microphone) */
+    private fun padSearch() {
+        search.setPadding(20, 14, 16 + VoiceUi.glyphsWidth(SEARCH_GLYPH, VoiceUi.micShown(context)).toInt() + 12, 14)
     }
     private val state = State()
     /** the bags' armor kits / stones / enchants (Bags.lua's `kit` flag): (bag, slot, row), for the Character room's Apply */
@@ -87,7 +93,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     private val dragLayer = DragLayer(c, state)
     /** THE COMPANION'S CONTROLLER KEYBOARD (Chat's, reused as it is) for the search box: A on the strip's Search (Bags.lua BAR) */
     // no "(X) Quick chat" key (Chat's swap = false: Space takes its width); its Send key says Search (Chat's chat-s3 87fb90b4)
-    private val kb = ChatKeyboard(c, swap = false).apply { visibility = View.GONE; sendWord = "Search" }
+    // its VOICE page too (the user's pick 2026-11-16: X on the strip's Search, Bags.lua bags-voice1): the words replace the search, and the
+    // grid dims as they come
+    private val kb = ChatKeyboard(c, swap = false, voice = true).apply { visibility = View.GONE; sendWord = "Search" }
     private val ctlLayer = CtlLayer(c, state, grid, gridScroll, bar) { search }
 
     init {
@@ -702,6 +710,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                         (sat2[0] - at[0] + v.width).toFloat(), (sat2[1] - at[1] + v.height).toFloat())
                     UiKit.focus(c, r)
                     title = "Search"; word = "Search"
+                    // the box's glyphs (the voice design): A with the keyboard, X with the microphone; a finger on it = the strip's X
+                    if (st.ctlOn) VoiceUi.boxGlyphs(c, r.right - 14f, r.centerY(), SEARCH_GLYPH, VoiceUi.micShown(context)).mic
+                        ?.let { m -> hits.add(m to 22) }
                 }
                 else -> return
             }
@@ -1331,6 +1342,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         if (on && a != null && akey != actSeen) {
             actSeen = akey
             if (a.optString("k") == "search") openKeyboard()
+            // bags-voice1: X on Search = the keyboard's voice page (Voice typing off: the keyboard, as A)
+            if (a.optString("k") == "voice") { openKeyboard(); kb.startVoice(fromKeys = false) }
         }
         // the add-on stopped typing (the room left, its 5-minute end): the keyboard goes too
         if (kbOpen && (!on || c?.optString("mode") != "search")) closeKeyboard(false)
@@ -1353,6 +1366,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     companion object {
         private fun rule(colour: Int, c: Context) = View(c).apply { setBackgroundColor(colour) }
         const val TAKE_CHECK_MS = 1500L          // touchedIn's take, checked against bags.ctl this long after
+        /** the search box's glyphs (A keyboard, X microphone), px */
+        const val SEARCH_GLYPH = 40f
         const val KB_REPEAT_FIRST_MS = 280L      // the search keyboard's D-pad repeat, as DirectPad's rooms (DirectPadKeys)
         const val KB_REPEAT_MS = 70L
         const val HOLD_GRACE_MS = 2000L          // a press this soon after touchedIn shows pushed before ctl.on arrives
