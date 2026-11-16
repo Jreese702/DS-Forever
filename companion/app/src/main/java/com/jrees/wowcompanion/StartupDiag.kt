@@ -285,6 +285,8 @@ object StartupDiag {
      * the report's crashes/ part). A record without a memory part: its first [max] lines, as before. Pure (the tests).
      */
     const val CRASH_LINES = 30
+    /** the memory lines a long head always leaves room for */
+    private const val CRASH_MIN_MEMORY = 10
     fun crashExcerpt(lines: Sequence<String>, max: Int = CRASH_LINES): List<String> {
         val head = ArrayList<String>()
         val tail = ArrayDeque<String>()
@@ -305,7 +307,8 @@ object StartupDiag {
             }
         }
         if (!inMemory) return head
-        val h = head.dropLastWhile { it.isBlank() }.take(max - 1)
+        // a head that long (never seen: a record's head is 7 lines) still leaves room for the newest memory lines
+        val h = head.dropLastWhile { it.isBlank() }.take((max - 1 - minOf(tail.size, CRASH_MIN_MEMORY)).coerceAtLeast(0))
         val shown = tail.toList().takeLast((max - h.size - 1).coerceAtLeast(0))
         return h + "---------- Memory before the end (mem.log): the last ${shown.size} of $total lines ----------" + shown
     }

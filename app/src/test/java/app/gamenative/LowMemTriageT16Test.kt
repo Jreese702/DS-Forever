@@ -1,13 +1,11 @@
 package app.gamenative
 
-import com.jrees.wowcompanion.MemWatch
 import com.jrees.wowcompanion.ProblemReport
 import com.jrees.wowcompanion.ReportUpload
 import com.jrees.wowcompanion.StartupDiag
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,10 +15,11 @@ import org.robolectric.annotation.Config
 
 /**
  * Issue triage 2026-11-16, the 1.0.32 low-memory cluster (#279 - #425, 100 reports from 34 Thors on 1.0.32): no regression in
- * DS Forever's own memory (12 GB, per device: 348 MB at the kill against 453 MB on 1.0.29 - 1.0.31) nor in the game's (3580 / 3565 MB);
- * what the next reports need: (1) the diagnostics' crash excerpt showed the OLDEST 21 of the killed run's 72 memory lines, so every
- * excerpt ended about 4 minutes before its kill; (2) half the kills came with the device's swap 85 % full or more, and no line said
- * whose swap it was.
+ * DS Forever's own memory (12 GB, per device: about 345 MB at the last line before the kill against about 435 MB on 1.0.29 - 1.0.31)
+ * nor in the game's (about 3.6 / 3.5 GB). The diagnostics' crash excerpt showed the OLDEST 21 of the killed run's 72 memory lines, so
+ * every excerpt ended about 4 minutes before its kill (median 241 s), which read as "the memory watch stopped"; it had not.
+ * (Verification, same day: the line's "swap F/T MB" is FREE/total. Swap was 75 - 90 % free at most kills, so the swap note first built
+ * here answered a question the reports do not raise and was taken out again.)
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -89,29 +88,17 @@ class LowMemTriageT16Test {
         } finally { f.delete() }
     }
 
-    @Test fun theGamesSwapIsReadFromTheSameRollup() {
-        val rollup = """
-            00400000-7fffd0d1d000 ---p 00000000 00:00 0                              [rollup]
-            Rss:             3912340 kB
-            Pss:             3870112 kB
-            Pss_Anon:        3401220 kB
-            Pss_File:         468892 kB
-            Pss_Shmem:             0 kB
-            Shared_Clean:      44120 kB
-            Swap:            2254000 kB
-            SwapPss:         2251980 kB
-            Locked:                0 kB
-        """.trimIndent().lines()
-        assertEquals(3870112L to 2251980L, MemWatch.rollup(rollup))
-        assertEquals(1024L to 0L, MemWatch.rollup(listOf("Rss: 2048 kB", "Pss:   1024 kB")))  // an older kernel: no SwapPss line
-        assertNull(MemWatch.rollup(listOf("Rss: 2048 kB", "Pss_Anon: 1024 kB")))           // no Pss: the process is skipped
-        assertNull(MemWatch.rollup(emptyList()))
-    }
-
-    @Test fun theSwapNoteSaysWhoseSwapItIs() {
-        assertEquals("swapped ours 40 MB, game 2199 MB", MemWatch.swapNote(40L * 1024, 2251980L))
-        assertEquals("swapped game 0 MB", MemWatch.swapNote(-1L, 0L))                       // no game running: its part is 0
-        assertEquals("swapped ours 12 MB", MemWatch.swapNote(12L * 1024, -1L))              // before the first game sample
-        assertEquals("", MemWatch.swapNote(-1L, -1L))
+    @Test fun aHeadLongerThanTheExcerptStillEndsWithTheNewestLine() {
+        // a record whose head alone fills the excerpt (a long description): the head is cut, the newest memory line still shows
+        val r = buildString {
+            appendLine("DS Forever: how the last run ended")
+            (1..40).forEach { appendLine("Description line $it") }
+            append(CrashLogs.memoryPart(history, kill))
+        }
+        val ex = StartupDiag.crashExcerpt(r.lineSequence())
+        assertEquals(StartupDiag.CRASH_LINES, ex.size)
+        assertTrue(ex.last(), ex.last().contains("pss 1120 MB"))
+        assertTrue(ex.contains("---------- Memory before the end (mem.log): the last 10 of 72 lines ----------"))
+        assertTrue(ex.contains("Description line 18") && !ex.contains("Description line 19"))   // 1 + 18 head lines, the heading, 10 lines
     }
 }
