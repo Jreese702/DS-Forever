@@ -200,6 +200,15 @@
 -- mode "search", Start held from the game, the app's own reader types) with the act named "voice", so the app opens the keyboard on its
 -- voice page. A finger on the box's microphone is the strip's touch X (bmvq 22). Nothing of the game's is called: the words stay in the
 -- app (the search dims the grid there), exactly as typed ones.
+-- bags-swap1 (Character c20; the user, 2026-11-16: "on weapons that are both 1 hand or can actually be swapped to the offhand or vice versa
+-- then that option should be listed in the pop out options."): THE SWAP BETWEEN TWO WORN SLOTS for the Character room's pop-out (the other
+-- hand's one-hander, the other ring, the other trinket). Character.lua's arm "wswap" = WC._bagsUnequipArm("swap"); the next bmvq column
+-- (slot - 1) names the slot the piece comes FROM, the one after it the slot it goes TO, each within UQ.TTL (both columns' doubled presses
+-- swallowed, never a pick or a drop). WC.bagsSwapWorn moves it the game's own way, the paper doll's drag: PickupInventoryItem(from),
+-- EquipCursorItem(to); what was in TO goes back into FROM when it may go there, else first into the first free plain bag slot (none:
+-- "full", nothing moved). Refused in a fight (no insecure pick-up then), with anything on the cursor, inside SETTLE, an empty FROM, a piece
+-- the game's slot rules keep out of TO ("bad": EQ.gearSlots, a one-hander's off hand only for a class that dual wields). The answer goes
+-- to WC.character.swapAck (and the drag's reply, by "swap"), confirmed 0.6 s later. No window opened or closed, nothing written.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -660,6 +669,13 @@ function UQ.reply(t)
     local C = WC.character
     if type(C) == "table" and type(C.unequipAck) == "function" then pcall(C.unequipAck, t) end
 end
+-- bags-swap1: a swap's answer, to the Character room (Character c20's swapAck) and as the drag's reply
+function UQ.swapReply(t)
+    t.by = "swap"
+    mvReply(t)
+    local C = WC.character
+    if type(C) == "table" and type(C.swapAck) == "function" then pcall(C.swapAck, t) end
+end
 -- the game's blocked / forbidden events: ours during an unequip's pick-up (synchronous, or a moment after it)
 do
     local bf = CreateFrame("Frame")
@@ -719,9 +735,11 @@ end
 
 -- the arming tap (Character.lua's "uneq" cell): the next bmvq column 0..18 names the slot
 -- bags-gear1: [kind] "bind" (Character c19's "wbind" cell) = that slot's piece goes to the Spellbook's Bind box (WC.character.bindWorn)
+-- bags-swap1: [kind] "swap" (Character c20's "wswap" cell) = the next column names the slot FROM, the one after it the slot TO (bagsSwapWorn)
 function WC._bagsUnequipArm(kind)
     UQ.at = GetTime()
-    UQ.kind = (kind == "bind") and "bind" or nil
+    UQ.kind = (kind == "bind" or kind == "swap") and kind or nil
+    UQ.swapFrom = nil
     picked = nil                                   -- never a drop: a stale bag pick is void from here
 end
 
@@ -731,14 +749,30 @@ function WC._bagsVoidPick() picked = nil end
 -- a bmvq column 0..18: taken (true) right after the arm, or as its late / doubled press; never reaches onInvCell then
 function WC._bagsUnequipTap(col)
     local now = GetTime()
-    if col >= 19 then UQ.at = nil; return false end                              -- uneq2: a Bags-room tap: the arm is stale
+    if col >= 19 then UQ.at = nil; UQ.kind = nil; UQ.swapFrom = nil; return false end   -- uneq2: a Bags-room tap: the arm is stale
     if UQ.swallowCol == col and now < UQ.swallowUntil then return true end      -- the input path's second press
+    if UQ.swallowCol2 == col and now < UQ.swallowUntil2 then return true end    -- bags-swap1: the swap's FROM column's second press
     if not UQ.at then return false end
     local age = now - UQ.at
     local kind = UQ.kind
     UQ.at, UQ.kind = nil, nil
-    if age > PICK_TTL then return false end
+    if age > PICK_TTL then UQ.swapFrom = nil; return false end
+    -- bags-swap1: the FROM column's doubled press may come after the TO column: it is swallowed too (never a pick of a worn piece)
+    if kind == "swap" then UQ.swallowCol2, UQ.swallowUntil2 = col, now + SETTLE + UQ.TTL end
     UQ.swallowCol, UQ.swallowUntil = col, now + SETTLE
+    if kind == "swap" then
+        -- bags-swap1: the FROM slot; the arm stays for the TO column
+        if age > UQ.TTL then UQ.swapReply({ ok = false, why = "late", to = { inv = col + 1 } }); return true end
+        UQ.swapFrom, UQ.at, UQ.kind = col + 1, now, "swap2"
+        return true
+    end
+    if kind == "swap2" then
+        local from = UQ.swapFrom
+        UQ.swapFrom = nil
+        if age > UQ.TTL or not from then UQ.swapReply({ ok = false, why = "late", to = { inv = col + 1 } }); return true end
+        WC.bagsSwapWorn(from, col + 1)
+        return true
+    end
     if kind == "bind" then
         -- bags-gear1: the Character room's Bind to a Button names this worn slot (never an unequip, never a drop)
         local C = WC.character
@@ -3239,6 +3273,53 @@ function EQ.gearSlots(id)
     if not s then return nil end
     if loc == "INVTYPE_WEAPON" and not ACT.dualWield() then return { 16 } end
     return s
+end
+
+-- bags-swap1 (Character c20; the user, 2026-11-16: "on weapons that are both 1 hand or can actually be swapped to the offhand or vice
+-- versa then that option should be listed in the pop out options."): worn [from]'s piece into worn [to], the paper doll's own drag
+-- (PickupInventoryItem, EquipCursorItem); what was in [to] goes into [from] when it may go there, else first into the first free plain
+-- bag slot. Out of a fight only. Returns true, or false + why (bad / combat / cursor / settle / empty / full / refused); the answer goes
+-- to the Character room (UQ.swapReply), confirmed 0.6 s later off the slot itself.
+local function fitsIn(id, inv)
+    local sl = id and EQ.gearSlots(id)
+    if not sl then return false end
+    for _, v in ipairs(sl) do if v == inv then return true end end
+    return false
+end
+function WC.bagsSwapWorn(from, to)
+    local at = { inv = to }
+    local function no(why) UQ.swapReply({ ok = false, why = why, from = { inv = from }, to = at }); return false, why end
+    if type(from) ~= "number" or type(to) ~= "number" or from < 1 or from > 19 or to < 1 or to > 19 or from == to then return no("bad") end
+    if InCombatLockdown() then fightRefused(); return no("combat") end
+    if cursorBusy() then return no("cursor") end
+    if (GetTime() - movedAt) < SETTLE then return no("settle") end
+    local idA = invItemID(from)
+    if not idA then return no("empty") end
+    if not fitsIn(idA, to) then return no("bad") end
+    local idB = invItemID(to)
+    local back = idB and fitsIn(idB, from)
+    picked = nil                                   -- a half-done drag of the Bags room is void now
+    if idB and not back then
+        -- what is in TO can't go into FROM (a shield, a main-hand-only weapon): into the bags first, as Unequip does
+        local bag, s = WC.bagsFirstEmpty("bags", idB)
+        if not bag then return no("full") end
+        CALL(function() return PickupInventoryItem(to) end)
+        pickupBag(bag, s)
+        if not settle() or invItemID(to) then movedAt = GetTime(); return no("refused") end
+    end
+    CALL(function() return PickupInventoryItem(from) end)
+    if not cursorBusy() then movedAt = GetTime(); return no("refused") end
+    CALL(function() return EquipCursorItem(to) end)
+    -- the game swaps two worn pieces itself; a piece it left on the cursor (TO's) goes into FROM, now empty
+    if back and cursorBusy() then CALL(function() return EquipCursorItem(from) end) end
+    local clean = settle()
+    movedAt = GetTime()
+    if not clean then return no("refused") end
+    UQ.swapReply({ ok = true, from = { inv = from }, to = at, id = idA })
+    C_Timer.After(0.6, function()
+        UQ.swapReply({ confirm = (invItemID(to) == idA), from = { inv = from }, to = at, id = idA })
+    end)
+    return true
 end
 
 function EQ.list(eq)

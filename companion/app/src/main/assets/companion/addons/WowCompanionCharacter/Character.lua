@@ -51,7 +51,7 @@ local format = string.format
 -- and the core's heartbeat. Set to false when the Character room itself goes to the device.
 local BARS_ONLY = false
 
-local CV = BARS_ONLY and "c19b" or "c19"     -- bump on every change; c19 (the equip slide-out; the user, 2026-11-16: "The Y text menu stays for enchant and bind (use-effect items)."): the Y menu's Bind to a Button for a worn piece with a use effect opens the Spellbook's Bind box for it HOSTED by this room (Book b59 WC.spellsBindItem, as the Bags room hosts one): three more keys on the eqset cells (no new pad row): wbind = the arm (the next bmvq column slot - 1 names the slot, Bags' WC._bagsUnequipArm("bind") -> bindWorn), boxa / boxb = a finger's A / B in the box; while the box is up every press is the box's (B too, taken off the game's window: eqs box = true) and its end hands the room back; c18 (the user on build 1462: "pressing B in the more menu closes the character page and leaves the menu open."): the eqs part says what B does while the More menu / its lists / the save question are up (gask = the game's own question holds B; bgo = the capture refused to take B off the game's window, in a fight) so the app goes Home on B only when B really leaves; a refused B pass is tried again on the 0.25 s tick; c17 (char-more2, review of c16; the user: "we should have options there like unequip, replace and enchant"): the game's question keeps A / B until it is gone (a pass the capture refused in a fight is tried again; the menu's own B pass never overrides it); c16 (char-more, the user: "we should have options there like unequip, replace and enchant"): the More menu's lists hold B (moresub: B one step back to the menu) and the game's own questions over the room (bind it to you? Replace enchant?) get A / B; c15 (uneq2, the user: "Never let a stale bag pick equip anything"): moreon also voids a Bags drag pick; c14 (uneq1): the Unequip route's cells (see THE GEAR SETS' BUTTONS); c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
+local CV = BARS_ONLY and "c20b" or "c20"     -- bump on every change; c20 (char-popout; the user, 2026-11-16: "on weapons that are both 1 hand or can actually be swapped to the offhand or vice versa then that option should be listed in the pop out options."): one more key on the eqset cells (no new pad row), wswap = the ARM of a swap between two worn slots: the app's next two bmvq columns name the slot the piece comes FROM, then the slot it goes TO (Bags.lua's WC._bagsUnequipArm("swap") -> WC.bagsSwapWorn, out of a fight only), its answer the ack `swap` (swapAck); c19 (the equip slide-out; the user, 2026-11-16: "The Y text menu stays for enchant and bind (use-effect items)."): the Y menu's Bind to a Button for a worn piece with a use effect opens the Spellbook's Bind box for it HOSTED by this room (Book b59 WC.spellsBindItem, as the Bags room hosts one): three more keys on the eqset cells (no new pad row): wbind = the arm (the next bmvq column slot - 1 names the slot, Bags' WC._bagsUnequipArm("bind") -> bindWorn), boxa / boxb = a finger's A / B in the box; while the box is up every press is the box's (B too, taken off the game's window: eqs box = true) and its end hands the room back; c18 (the user on build 1462: "pressing B in the more menu closes the character page and leaves the menu open."): the eqs part says what B does while the More menu / its lists / the save question are up (gask = the game's own question holds B; bgo = the capture refused to take B off the game's window, in a fight) so the app goes Home on B only when B really leaves; a refused B pass is tried again on the 0.25 s tick; c17 (char-more2, review of c16; the user: "we should have options there like unequip, replace and enchant"): the game's question keeps A / B until it is gone (a pass the capture refused in a fight is tried again; the menu's own B pass never overrides it); c16 (char-more, the user: "we should have options there like unequip, replace and enchant"): the More menu's lists hold B (moresub: B one step back to the menu) and the game's own questions over the room (bind it to you? Replace enchant?) get A / B; c15 (uneq2, the user: "Never let a stale bag pick equip anything"): moreon also voids a Bags drag pick; c14 (uneq1): the Unequip route's cells (see THE GEAR SETS' BUTTONS); c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
 
 -- ---------------------------------------------------------------- safe reads
 
@@ -442,7 +442,7 @@ local function collectSets()
     -- a deleted set's cells go back to the row (after the pad's quarantine, so a stale tap can never reach another set)
     if WC.pad and type(WC.pad.retain) == "function" then
         local keep = { yes = true, no = true, uneq = true, moreon = true, moreoff = true, moresub = true,
-                       wbind = true, boxa = true, boxb = true }                -- c19: the Bind box's arm and its finger's A / B
+                       wbind = true, boxa = true, boxb = true, wswap = true }   -- c19: the Bind box's arm and its finger's A / B; c20: the swap's arm
         for _, r in ipairs(out) do keep["equip:" .. r.id] = true; keep["save:" .. r.id] = true end
         pcall(WC.pad.retain, "eqset", keep)
     end
@@ -1116,6 +1116,12 @@ end
 --   wbind             the ARM of a worn piece's Bind to a Button: the app's next tap, bmvq column slot - 1, names the slot (Bags.lua's
 --                     arm, kind "bind"), which opens the Spellbook's Bind box for that piece, hosted here (bindWorn, HOST below)
 --   boxa / boxb       a finger's Keep / Undo / Back in that box: its own A / B
+-- c20 (char-popout; the user, 2026-11-16: "on weapons that are both 1 hand or can actually be swapped to the offhand or vice versa then that
+-- option should be listed in the pop out options."): one more key, 10 fixed + 2 per set, still inside the row's 37:
+--   wswap             the ARM of a swap between two worn slots (the other hand's one-hander, the other ring, the other trinket): the app's
+--                     next two bmvq columns (slot - 1) name the slot the piece comes FROM, then the slot it goes TO; Bags.lua's
+--                     WC.bagsSwapWorn moves it the game's own way (PickupInventoryItem, EquipCursorItem) and answers here (swapAck).
+--                     Out of a fight only (Bags refuses one: the room greys it then)
 local eqs ={ ask = nil, ack = nil, seq = 0, more = nil }
 local function eqWords(g, fallback) local v = PS(_G[g]); return (v and v ~= "") and v or fallback end
 local function eqAck(op, id, ok, why)
@@ -1219,6 +1225,13 @@ local function onSetTap(key)
         WC._bagsUnequipArm("bind")
         return
     end
+    -- c20: the swap's arm: the app's next two taps (bmvq columns slot - 1) name the worn slot FROM, then TO (Bags.lua -> bagsSwapWorn)
+    if key == "wswap" then
+        eqForget()
+        if type(WC._bagsUnequipArm) ~= "function" then return eqAck("swap", nil, false, "unsupported") end
+        WC._bagsUnequipArm("swap")
+        return
+    end
     if key == "no" then if not eqForget() then eqAck("no", nil, false, "nothing asked") end return end
     if key == "moreon" then
         if type(WC._bagsVoidPick) == "function" then pcall(WC._bagsVoidPick) end      -- c15: a lost arm can't make the slot tap a drop
@@ -1278,6 +1291,7 @@ local function collectEqs()
         row.uq = eqCell("uneq"); row.mon = eqCell("moreon"); row.moff = eqCell("moreoff")      -- c14: the Unequip route
         row.msb = eqCell("moresub")                                                             -- c16: a list of the More menu
         row.wb = eqCell("wbind"); row.ba = eqCell("boxa"); row.bb = eqCell("boxb")              -- c19: the Bind box's arm, its A / B
+        row.ws = eqCell("wswap")                                                                -- c20: the swap's arm
     end
     return row
 end
@@ -1293,6 +1307,16 @@ local function unequipAck(t)
         return
     end
     eqAck("unequip", at, t.ok == true, t.ok == true and nil or t.why)
+end
+-- c20: Bags.lua's answer to a swap between two worn slots (WC.bagsSwapWorn): one ack; its later confirm only when the piece did not land
+local function swapAck(t)
+    if type(t) ~= "table" then return end
+    local at = type(t.to) == "table" and t.to.inv or nil
+    if t.confirm ~= nil then
+        if t.confirm == false then eqAck("swap", at, false, "refused") end
+        return
+    end
+    eqAck("swap", at, t.ok == true, t.ok == true and nil or t.why)
 end
 local function onSetCell(col)
     local t = WC.pad and WC.pad.ns and WC.pad.ns.eqset
@@ -1658,5 +1682,5 @@ end
 WC.character = { version = CV, barsOnly = BARS_ONLY, emit = emit, collect = COLLECT, standIn = standIn, ctl = ctl,
                   touchOpen = touchOpen, touchClose = touchClose,
                   initOpenCell = initOpenCell, initCloseCell = initCloseCell, onOpenTap = onOpenTap, onCloseTap = onCloseTap,
-                  onSetCell = onSetCell, unequipAck = unequipAck, eqFirst = EQ_FIRST, eqCells = EQ_CELLS, syncAsk = syncAsk, syncB = syncB,
+                  onSetCell = onSetCell, unequipAck = unequipAck, swapAck = swapAck, eqFirst = EQ_FIRST, eqCells = EQ_CELLS, syncAsk = syncAsk, syncB = syncB,
                   bindWorn = bindWorn, box = BOX }   -- standIn / ctl for tools/test_character.py; the touch pair for Auras.lua
