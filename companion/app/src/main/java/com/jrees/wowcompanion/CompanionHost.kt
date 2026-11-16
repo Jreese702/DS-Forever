@@ -3314,7 +3314,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val homeFree = !homeView.bClosesSomething() && !(::reportNotice.isInitialized && reportNotice.asking)
         val want = PetFollowB.want(HomeSettings.petFollowB(who), pf, homeFree)
         val now = SystemClock.elapsedRealtime()
-        if (!PetFollowB.needsTell(want, pf, petBSent, petBSentAt, now)) return
+        if (!PetFollowB.needsTell(want, pf, petBSent, petBSentAt, now, GameInput.live())) return
         val sent = padTabTap(PetFollowB.cells(want))
         if (sent) { petBSent = want; petBSentAt = now }
         Log.i("WCHOME", "B pet follow: ${if (want) "on" else "off"} told ($why)${if (sent) "" else ": not sent"}")

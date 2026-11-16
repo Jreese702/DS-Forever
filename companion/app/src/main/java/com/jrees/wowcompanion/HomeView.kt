@@ -674,6 +674,8 @@ class HomeView(
         if (o) auraPane.close()
         Log.i(TAG, "home: mail card ${if (o) "open" else "closed"}")
         invalidate(); auraPane.invalidate()
+        // the 1.0.33 merge review: the host's B: pet follow word follows the card at once (bClosesSomething), as a module's state does
+        onStateChanged?.invoke()
     }
 
     // ---------------------------------------------------------------- the fight faces and B's give-back
@@ -855,8 +857,9 @@ class HomeView(
     /** the guest "home" itself is wanted (the chat or map module, the buff / debuff list; the tool has its own "tool") */
     fun homeOwnGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null
     /** B: pet follow (PetFollowB): something of Home's own is open that B closes - a module full screen (chat, map, the bars), the buff /
-     *  debuff list, the Keyboard & Trackpad tool - so B's press is not Home's plain B */
-    fun bClosesSomething(): Boolean = flow.full != null || auraPane.open != null || typeWanted
+     *  debuff list, the Keyboard & Trackpad tool - so B's press is not Home's plain B. The 1.0.33 merge review (feat/wk-mail x
+     *  feat/wk-b-pet-follow): the mail card too - its B "closes it first, and does nothing else of Home's", so it never calls the pet */
+    fun bClosesSomething(): Boolean = flow.full != null || auraPane.open != null || typeWanted || mailOpen
     /** the chat module is full screen (the ChatView lent, the guest "home" wanted): only then does the chat's B sign reach the game */
     val chatModuleOn: Boolean get() = chatWanted
 

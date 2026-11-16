@@ -223,10 +223,20 @@ class MailShotsTest {
     @Test fun bClosesTheCard() {
         val home = home("Elwynn Forest", mailDoc = "one")
         val on = home.mailBoxOnHome()
+        var told = 0
+        home.onStateChanged = { told++ }
+        assertFalse("nothing of Home's open yet", home.bClosesSomething())
         tap(home, on.centerX(), on.centerY()); assertTrue(home.mailOpen)
+        // the 1.0.33 merge review (feat/wk-mail x feat/wk-b-pet-follow): the card is a thing B closes, so B: pet follow's word goes off
+        // while it is open, and the host is told at once (its petBTell rides onStateChanged)
+        assertTrue("the open card is something B closes (no pet follow)", home.bClosesSomething())
+        assertTrue("the card's opening told the host", told >= 1)
         shot(home, "card_one")
+        val beforeB = told
         home.pressB()
         assertFalse("B closes it", home.mailOpen)
+        assertFalse("closed: Home's plain B again", home.bClosesSomething())
+        assertTrue("the card's closing told the host", told > beforeB)
         assertNull(full(home))
     }
 

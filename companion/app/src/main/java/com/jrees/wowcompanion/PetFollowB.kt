@@ -8,7 +8,7 @@ package com.jrees.wowcompanion
  * WHAT B DID THERE BEFORE, and still does: the game's own Back (stop casting, else stop targeting, else clear the target). The add-on
  * (PadMap m165) puts the game's /petfollow first on the same press, through the router's own secure B button, only while:
  *  - the app's word is on: this character's setting ([HomeSettings.petFollowB]) AND Home with nothing of its own open that B closes (a
- *    module full screen, the buff list, the report's notice) - [want];
+ *    module full screen, the buff list, the report's notice, the mail card - HomeView.bClosesSomething) - [want];
  *  - a pet class (the padmap's `pf.cls`: Hunter, Warlock, Death Knight only - the review: a Priest's Mind Control is no pet class) and a
  *    live pet out that is at something (a live pet target: it is attacking or on its way; a following or Stay-parked pet is left alone);
  *  - nothing of ours holding and no game window (a room, a wheel, a pop-up: the router stands aside), out of combat, the rest layout.
@@ -41,9 +41,11 @@ object PetFollowB {
     fun cells(on: Boolean): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to if (on) ON_CODE else OFF_CODE)
 
     /** whether the add-on must be told [want] now: [pf] the current padmap's (null = an add-on before m165: nothing to tell); the same
-     *  value is sent again only after [RESEND_MS] ([lastSent] / [lastSentAt]: the last value told and when, 0 = never) */
-    fun needsTell(want: Boolean, pf: PadMapModel.PetB?, lastSent: Boolean?, lastSentAt: Long, now: Long): Boolean {
-        if (pf == null || pf.on == want) return false
+     *  value is sent again only after [RESEND_MS] ([lastSent] / [lastSentAt]: the last value told and when, 0 = never). [live]: the game
+     *  is live (GameInput.live) - the 1.0.33 merge review: with the game closed or quiet (a crash's report notice, a Settings change at
+     *  the start screen, a loading screen) the host's 1 s tick tried the refused taps every second, two log lines each; now it waits */
+    fun needsTell(want: Boolean, pf: PadMapModel.PetB?, lastSent: Boolean?, lastSentAt: Long, now: Long, live: Boolean = true): Boolean {
+        if (!live || pf == null || pf.on == want) return false
         return lastSent != want || lastSentAt == 0L || now - lastSentAt >= RESEND_MS
     }
 

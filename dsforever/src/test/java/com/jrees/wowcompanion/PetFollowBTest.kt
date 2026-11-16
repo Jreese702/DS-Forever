@@ -72,6 +72,11 @@ class PetFollowBTest {
         // a Warrior / an older add-on: nothing to tell, ever (no taps for a class with no pet)
         assertFalse(PetFollowB.needsTell(false, fixture("pf_warrior").petB, null, 0L, 10_000L))
         assertFalse(PetFollowB.needsTell(true, null, null, 0L, 10_000L))
+        // the 1.0.33 merge review: the game closed or quiet (a crash's report notice up, a Settings change at the start screen): no tap
+        // is tried (the 1 s tick tried the refused taps every second), and once it is live again the word goes
+        assertFalse(PetFollowB.needsTell(false, on, true, 10_000L, 20_000L, live = false))
+        assertFalse(PetFollowB.needsTell(true, noWord, null, 0L, 10_000L, live = false))
+        assertTrue(PetFollowB.needsTell(false, on, true, 10_000L, 20_000L, live = true))
     }
 
     @Test fun perCharacterOnByDefault() {
