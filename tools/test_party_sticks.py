@@ -139,10 +139,21 @@ check(W.eval('shown()') is False and W.eval('#VIOL') == 0, "in a fight: its clos
 W.execute('COMBAT = false')
 
 # ---------------------------------------------------------------- 6. the other wheels as before
+n0 = nsent(W)
 W.execute('HOLDER = "pad:radial"; sync()')
 check(W.eval('shown()') is True, "the item wheel's guest: shown, as before")
+check(bool(docs(W, n0, "radial")), "its opening sends the item list, as before")
 W.execute('HOLDER = nil; sync()')
 check(W.eval('shown()') is False, "its free: hidden")
+# the party catch already shown (a lost MENU DONE), then a real wheel opens: its lists still go out at that opening
+W.execute('both("WowCompanionPartyMenuHold"); sync()')
+check(W.eval('shown()') is True, "a stranded party hold: shown")
+n0 = nsent(W)
+W.execute('HOLDER = "pad:radial"; sync()')
+check(W.eval('shown()') is True and bool(docs(W, n0, "radial")),
+      "the item wheel opens over it: its item list is sent all the same (never a stale list)")
+W.execute('HOLDER = nil; both("WowCompanionPartyMenuDone"); sync()')
+check(W.eval('shown()') is False, "both closed: hidden")
 check(W.eval('#SNIPERR') == 0 and list(W.eval('ERRS').values()) == [], "no snippet / script error", W.eval('SNIPERR[1]'))
 
 print("%d passed, %d failed" % (passes, fails))

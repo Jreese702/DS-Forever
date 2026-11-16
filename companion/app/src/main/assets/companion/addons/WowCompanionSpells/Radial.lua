@@ -663,6 +663,7 @@ local extraHooked = {}
 local PARTY_HOOK = { WowCompanionPartyMenuHold = true, WowCompanionPartyMenuDone = false }
 local PARTY_MAX = 60
 local partyHeldAt, pmenuSince = nil, nil
+local wheelSent = false   -- r22: the lists go out on the REAL wheel's opening edge, even with the party catch already shown
 local function allHooked()
     for _, n in ipairs(EXTRA_ARM) do if not extraHooked[n] then return false end end
     for n in pairs(PARTY_HOOK) do if not extraHooked[n] then return false end end
@@ -713,17 +714,21 @@ stickSync = function()
     local party = (pmenuSince ~= nil and now - pmenuSince < PARTY_MAX) or partyHeldAt ~= nil
     local want = (wheel or party) and stickOn
     catch.mode = holder == "pad:class" and "class" or nil
+    local realWheel = (want and wheel) and true or false
+    if realWheel and not wheelSent then
+        -- r6 (the user, b65: "A sometimes doesn't use it" -- MEASURED: after an app restart every wheel had 0 items, because this doc is
+        -- sent only on a change and the app's log replay no longer held the last one): the FULL list again on every opening (the arm or
+        -- the hold), flushed at once, so the app always has it before any A
+        pcall(emit, true, true)
+        -- r10 (Home: "so the wheel never opens on a stale list"): the SPELL radial's full list too, at the same opening (the two wheels
+        -- share the guest, so the edge cannot tell which one opens; its list is small), flushed at once
+        if type(WC.spellRadial) == "table" and type(WC.spellRadial.emit) == "function" then pcall(WC.spellRadial.emit, true) end
+    end
+    wheelSent = realWheel
     if want ~= (catch:IsShown() and true or false) then
         local caught, passed = catch.n, catch.pass
         catch.n, catch.pass = 0, 0
         if want then catch:Show() else catch:Hide() end
-        -- r6 (the user, b65: "A sometimes doesn't use it" -- MEASURED: after an app restart every wheel had 0 items, because this doc is
-        -- sent only on a change and the app's log replay no longer held the last one): the FULL list again on every opening (the arm or
-        -- the hold), flushed at once, so the app always has it before any A
-        if want and wheel then pcall(emit, true, true) end
-        -- r10 (Home: "so the wheel never opens on a stale list"): the SPELL radial's full list too, at the same opening (the two wheels
-        -- share the guest, so the edge cannot tell which one opens; its list is small), flushed at once
-        if want and wheel and type(WC.spellRadial) == "table" and type(WC.spellRadial.emit) == "function" then pcall(WC.spellRadial.emit, true) end
         WC.send(WC.encode({ type = "radialstick", v = RV, on = want or false, ok = stickOn or nil, fight = inCombat() or nil,
                             arm = (want and armed and holder == nil) or nil, holder = holder, party = (want and party) or nil,
                             mode = catch.mode, n = (not want) and caught or nil, pass = (not want and passed > 0) and passed or nil }))
