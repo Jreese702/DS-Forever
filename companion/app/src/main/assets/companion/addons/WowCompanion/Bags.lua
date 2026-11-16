@@ -15,6 +15,16 @@
 -- exactly as they are, because every action works on one stack at a time. Sorting and a merged
 -- "clean" view may come later as toggles; the wire stays per-slot either way.
 --
+-- bags-take1 (the user, 2026-11-16, test build 1478:
+-- "read my DS my bag is behaving weird and opening the bag on top for some reason"; the top screen showed the GAME's Combined Backpack, the bottom our room with no cursor, the log "note=take-skip-window"
+-- three times with no NPC window up): the open-window state (ctx, set by MERCHANT_SHOW / MAIL_SHOW ...) was cleared ONLY by its
+-- matching close event, and the take trusted it alone, so one close event the add-on never saw (an earlier vendor visit) skipped
+-- every take after it for good: the game's bags stayed on top, the room held nothing. Now ctx is believed only while its own frame is
+-- shown (CTXW.now, a 1 s grace for the open event that comes before the frame); a stale one is let go (ctl doc ctxStale) and the
+-- SELL / DEPOSIT labels follow it too. A skip names the window ("take-skip-window:MerchantFrame", "...:ctx-merchant"), and the take is
+-- tried again when that window goes (its OnHide or close event, CTXW.retry) while the game's bags are still open, with the 1 s
+-- check's exceptions. Read-only (IsShown, HookScript): no game window is opened or closed, nothing protected is called.
+--
 -- bags-kit2 (issue #89, 1.0.21: "replacing an existing armor kit with another one does not work, the confirmation screen loops"): while
 -- the room's "Choose an item" list is up and the GAME asks its own question about the pick (StaticPopup REPLACE_ENCHANT and the like,
 -- or any pop-up the game's controller focuses), A / B are PASSED to the game, as for a bag's bind question ("bindask"). Before, the
@@ -334,6 +344,26 @@ local CTX_CLOSE = {
     MERCHANT_CLOSED = "merchant", BANKFRAME_CLOSED = "bank", GUILDBANKFRAME_CLOSED = "guildbank",
     MAIL_CLOSED = "mail", TRADE_CLOSED = "trade", AUCTION_HOUSE_CLOSED = "auction",
 }
+-- bags-take1: ctx is believed only while ITS window is really shown (one table: the main chunk's local count). A close event the
+-- add-on never saw left ctx set for good, and every take after it was skipped "take-skip-window" with no window up (1478, the user
+-- 2026-11-16: "my bag is behaving weird and opening the bag on top for some reason"). GRACE: the open event may come a moment before
+-- the game's own frame shows. Read-only: IsShown only, nothing in the game is called.
+local CTXW = { GRACE = 1.0, at = 0, stale = nil,
+               FRAME = { merchant = "MerchantFrame", bank = "BankFrame", guildbank = "GuildBankFrame", mail = "MailFrame",
+                         trade = "TradeFrame", auction = "AuctionHouseFrame" } }
+function CTXW.shown(n)
+    local f = n and _G[n]
+    local ok, shown = pcall(function() return f and f:IsShown() end)
+    return (ok and shown) and true or false
+end
+-- the open window's name now, a stale one let go (CTXW.stale keeps its name for the next report)
+function CTXW.now()
+    if not ctx then return nil end
+    if CTXW.shown(CTXW.FRAME[ctx]) then return ctx end
+    if (GetTime() or 0) - CTXW.at < CTXW.GRACE then return ctx end
+    CTXW.stale = ctx; ctx = nil
+    return nil
+end
 -- the mailbox: only the Send tab attaches; on the Inbox tab a right-click uses the item as usual
 local function mailSendShown()
     local ok, shown = pcall(function() return SendMailFrame and SendMailFrame:IsShown() end)
@@ -1161,7 +1191,7 @@ function WC.collectBags()
     end
 
     if WC._bagsTipKeep then WC._bagsTipKeep(items) end
-    local here = ctx
+    local here = CTXW.now()             -- bags-take1: a stale ctx no longer labels the buttons SELL / DEPOSIT
     if here == "mail" and not mailSendShown() then here = nil end
     WC.bagsPadRows(bags)
     WC.bagsMoveRows(bags)
@@ -1287,7 +1317,7 @@ bf:SetScript("OnEvent", function(_, event, a1)
         local ok, hit = pcall(function() return pending[a1] end)
         if not (ok and hit) then return end
     elseif CTX_OPEN[event] then
-        ctx = CTX_OPEN[event]
+        ctx = CTX_OPEN[event]; CTXW.at = GetTime() or 0; CTXW.stale = nil
         -- the mailbox's Send/Inbox tabs change what a right-click does without any bag event,
         -- so follow the Send frame itself (hooked once, the first time the mailbox opens)
         if event == "MAIL_SHOW" and not WC._bagsMailHooked then
@@ -1298,6 +1328,8 @@ bf:SetScript("OnEvent", function(_, event, a1)
         end
     elseif CTX_CLOSE[event] then
         if ctx == CTX_CLOSE[event] then ctx = nil end
+        -- bags-take1: a take skipped for this window is tried again once it is gone (the bags still open)
+        if CTXW.retry then pcall(C_Timer.After, 0, CTXW.retry) end
     end
     sendSoon(event)
 end)
@@ -1770,7 +1802,8 @@ function WC._bagsCtlDoc()
     -- with col 29 instead
     -- bags-de1: resume = the Disenchant grid lost the pad to a loot pop-up and takes it back when the loot window closes
     if not ctl.on then return { on = false, note = ctl.note, seq = ctl.seq, open = ctl.open and true or false, shut = BAR.shutList(),
-                                resume = (WC._de and WC._de.resume) and true or nil } end
+                                resume = (WC._de and WC._de.resume) and true or nil,
+                                ctxStale = CTXW.stale } end      -- bags-take1: an open-window state let go (its close never came)
     -- bags-de1: the Disenchant grid's document FIRST: its cursor moves ctl.bag / ctl.slot (cur and the tooltip below follow it)
     local bulk = (ctl.mode == "bulk" and WC._de) and WC._de.doc() or nil
     return {
@@ -4011,14 +4044,15 @@ end
 -- this check alone is not enough -- the OnShow hook below hands the controller over too.
 local NPC_FRAMES = { "MerchantFrame", "GossipFrame", "QuestFrame", "BankFrame", "MailFrame", "TradeFrame",
                      "AuctionHouseFrame", "GuildBankFrame", "ClassTrainerFrame", "CharacterFrame" }
+-- bags-take1: answers WHAT is open (the frame's name, or "ctx-<name>" for an open event whose frame has not shown yet), or nil.
+-- ctx alone is no longer believed (CTXW.now: a close event that never came left it set for good); a stale one is let go here.
 local function npcWindowOpen()
-    if ctx then return true end
+    local c = CTXW.now()
+    if c then return CTXW.shown(CTXW.FRAME[c]) and CTXW.FRAME[c] or ("ctx-" .. c) end
     for _, n in ipairs(NPC_FRAMES) do
-        local f = _G[n]
-        local ok, shown = pcall(function() return f and f:IsShown() end)
-        if ok and shown then return true end
+        if CTXW.shown(n) then return n end
     end
-    return false
+    return nil
 end
 
 -- why the controller was NOT taken, once per reason (the 1 s check would otherwise repeat it)
@@ -4033,7 +4067,13 @@ local function tryTake(viaWindow)
     -- SPEC_COMBAT item 9 ("opening a room during a fight takes the controller"): no combat skip of Bags' own any more. A
     -- capture from i81 answers ok + "pending" in a fight (it really holds once Home taps the enter cell); an older one
     -- answers "combat", which is logged as the refusal
-    if npcWindowOpen() then skip("take-skip-window"); return end
+    -- bags-take1: the note names the window ("take-skip-window:MerchantFrame"), and the take is tried again when it goes (CTXW.retry)
+    local win = npcWindowOpen()
+    if win then
+        CTXW.wait = { at = GetTime() or 0, win = win }
+        skip("take-skip-window:" .. win); return
+    end
+    CTXW.wait = nil
     -- ALL the bag windows, not only the shown ones: with separate bags the game opens them one by
     -- one, and the ones after the first must not flash up either
     local hide = {}
@@ -4073,6 +4113,19 @@ local function tryTake(viaWindow)
     end
 end
 
+-- bags-take1: a take skipped for an open window is tried again once that window is gone (its OnHide, its close event, below), while
+-- the game's bags are still open: the game's bag window never stays up on the top screen with the room holding nothing. The same
+-- exceptions as the 1 s check (the room left by touch, freed by Home, the player's B, a later room won): no take back then.
+CTXW.WAIT = 120
+CTXW.retry = function()
+    local w = CTXW.wait
+    if not w or ctl.on or not ctl.open then return end
+    if (GetTime() or 0) - w.at > CTXW.WAIT then CTXW.wait = nil; return end
+    if ctl.left == "room" or ctl.left == "free" or ctl.left == "B" or ctl.left == "taken" then return end
+    if npcWindowOpen() then return end
+    tryTake(true)
+end
+
 syncDoors = function()
     if not (doors.open and doors.close) then return end
     if InCombatLockdown() then doors.stale = true; return end
@@ -4095,6 +4148,7 @@ local function onBagsShown() ctl.open = true; syncDoors(); tryTake(true) end
 local function onBagsHidden()
     syncDoors()
     if #shownBagFrames() > 0 then return end        -- another bag window is still open
+    CTXW.wait = nil                                 -- bags-take1: the bags closed: nothing to take back for
     if not ctl.open and not ctl.on then return end  -- B already closed them
     ctl.open = false
     if not ctl.on then return end       -- never held (skipped / refused): keep that reason in the log
@@ -4133,6 +4187,8 @@ do
             local why = n == "CharacterFrame" and "character" or "window"
             if f and f.HookScript then
                 pcall(f.HookScript, f, "OnShow", function() if ctl.on then leave(why) end end)
+                -- bags-take1: the window that kept Bags from taking is gone: try again (CTXW.retry)
+                pcall(f.HookScript, f, "OnHide", function() if CTXW.wait then pcall(C_Timer.After, 0, CTXW.retry) end end)
             end
         end
     end)
