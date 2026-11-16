@@ -116,7 +116,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private var btnGuidePending = RectF()                             // its Restart game / Try again
     private val segDanger = Array(3) { RectF() }
     private val segFog = Array(2) { RectF() }
-    private val segPsTop = Array(2) { RectF() }          // hub31: Polestar on the top screen, Show / Hide
     private val segLang = Array(Tr.LANGS.size) { RectF() }          // 2026-11-07: Settings > System > Language
     private val segTheme = Array(Theme.presets.size) { RectF() }    // 2026-11-12: Settings > System > Theme (one tile a preset)
     private val segLight = Array(2) { RectF() }
@@ -268,7 +267,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      */
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
-            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPsTop.toList() + segPq.flatMap { it.toList() } + segDanger.toList() + segFog.toList() + segChat.toList() +
+            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPq.flatMap { it.toList() } + segDanger.toList() + segFog.toList() + segChat.toList() +
             segTheme.toList() + segLang.toList() + segSwap.toList() + listOf(btnSwapRestart) + segGameAcct.toList() + segWinId.toList() + listOf(btnWinIdRestart) + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segPauseOver.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
@@ -304,7 +303,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart, btnSwapRestart, btnWinIdRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segPauseOver, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segLight, segGameAcct, segSwap, segWinId,
+                         segClassROpen, segClassRPick, segChat, segQt, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segTheme, segLight, segGameAcct, segSwap, segWinId,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -344,12 +343,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** a block heading's room above its first row (its baseline 12 px above that row) */
     private fun headGap() = if (only == null) 16f else 52f
 
-    /** hub31: the "Polestar on the top screen" row shows (Polestar installed, the add-on has the switch) - the draw and the height agree */
-    private fun psTopRow(): Boolean =
-        ThirdPartyAddons.status(ThirdPartyAddons.POLESTAR, "core").kind == ThirdPartyAddons.Kind.INSTALLED && GameUi.swNow(GameUi.SW_PS) != null
-    /** Top screen > Navigation's Polestar row: shown when it was under Add-ons > Polestar (the guide on and installed) */
-    private fun psTopShown(): Boolean = guideOn() && ThirdPartyAddons.coreInstalled(ThirdPartyAddons.POLESTAR) && psTopRow()
-
     /** a block's rows' height (from its first row's top to its last row's bottom), laid out exactly as its draw function lays it out */
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.LANGUAGE -> ROW_H
@@ -365,7 +358,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         // zoom out, zoom in, World map (Quest tracking moved to Add-ons > Polestar, 2026-11-12)
         SettingsTabs.Block.MAP -> 3 * ROW_H + 2 * 10f
         SettingsTabs.Block.QUEST_TRACKING -> ROW_H
-        SettingsTabs.Block.POLESTAR_TOP -> if (psTopShown()) ROW_H else 0f
         SettingsTabs.Block.INDOOR -> ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
         SettingsTabs.Block.CONTROLLER -> ROW_H + 10f + ROW_H
         SettingsTabs.Block.PAUSE_WHEEL -> ROW_H + 10f + ROW_H + 10f + ROW_H             // + Start over game windows
@@ -501,8 +493,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 val qi = segQt.indexOfFirst { it.contains(x, y) }
                 val di = segDanger.indexOfFirst { it.contains(x, y) }
                 val fi = segFog.indexOfFirst { it.contains(x, y) }
-                val psi = segPsTop.indexOfFirst { it.contains(x, y) }
-                if (psi >= 0) { GameUi.setSwitch(GameUi.SW_PS, psi == 1); invalidate(); return }
                 for ((k, segs) in segPq.withIndex()) {
                     val pi = segs.indexOfFirst { it.contains(x, y) }
                     if (pi >= 0) { PolestarQol.set(GameUi.character, listOf(PolestarQol.QUEST, PolestarQol.VENDOR, PolestarQol.REPAIR)[k], pi == 0); invalidate(); return }
@@ -585,7 +575,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 SettingsTabs.Block.STREAMING -> drawStreaming(c, y)
                 SettingsTabs.Block.MAP -> drawMap(c, y)
                 SettingsTabs.Block.QUEST_TRACKING -> { drawQuestTrackingRow(c, y); y + ROW_H }
-                SettingsTabs.Block.POLESTAR_TOP -> drawPsTop(c, y)
                 SettingsTabs.Block.INDOOR -> drawIndoor(c, y)
                 SettingsTabs.Block.CONTROLLER -> drawController(c, y)
                 SettingsTabs.Block.PAUSE_WHEEL -> drawWheel(c, y, "Pause menu", "Press Start to open; it stays until B.",
@@ -1548,20 +1537,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         }
         if (on && ThirdPartyAddons.coreInstalled(a)) y = drawPolestarRows(c, y)
         return y + ROW_H
-    }
-
-    /** Top screen > Navigation (hub31): Polestar's own frame on the top screen, Show / Hide (it stood under Add-ons > Polestar) */
-    private fun drawPsTop(c: Canvas, top: Float): Float {
-        if (!psTopShown()) return top
-        val hide = GameUi.swWant(GameUi.SW_PS)
-        val sent = GameUi.swNow(GameUi.SW_PS) != hide
-        row(c, top, "Polestar on the top screen", if (sent) "Sent" else if (hide) "Hidden" else "Shown", enabled = true) { box ->
-            val bw = minOf(segW() * 2.6f, box.width() * 0.5f)
-            val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("Show", "Hide"), if (hide) 1 else 0, segPsTop)
-            b
-        }
-        return top + ROW_H
     }
 
     private fun drawPolestarRows(c: Canvas, top: Float): Float {

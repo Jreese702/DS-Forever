@@ -156,6 +156,13 @@ class SettingsRoomTest {
         assertEquals(setOf(SettingsTabs.Group.HELP, SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY,
             SettingsTabs.Group.NAVIGATION, SettingsTabs.Group.WINDOWS, SettingsTabs.Group.COMBAT),
             r.groupBoxes.filter { gb -> gb.parts.any { it is GameUiSection } }.map { it.group }.toSet())
+        // 2026-11-16 (the tiles): Navigation is ONE tile part (its Polestar tile was SettingsView's row); every Top screen group's part draws
+        // its tiles, the rest keep their rows
+        val nav = box(r, SettingsTabs.Group.NAVIGATION).parts
+        assertEquals(1, nav.size)
+        assertEquals(GameUiSection.Part.NAVIGATION, (nav.single() as GameUiSection).part)
+        for (gb in r.groupBoxes) for (p in gb.parts.filterIsInstance<GameUiSection>())
+            assertEquals("${gb.group}", gb.group.tab == SettingsTabs.Tab.TOP, p.tiled)
     }
 
     // ---------------------------------------------------------------- the review's findings (2026-11-12)
@@ -219,24 +226,30 @@ class SettingsRoomTest {
         }
     }
 
-    /** 4 / 6: a group with no rows now is not shown (no heading, no stop); it shows - and opens, folds untouched - when rows come */
+    /**
+     * 4 / 6: a group with no rows now is not shown (no heading, no stop). The Top screen's groups are TILES since 2026-11-16 (the user's
+     * pick: a fixed place per element, a dim "..." tile until the game reports, so nothing reflows): all five show before the game says
+     * anything, all open (no folding on that tab), and the compass's word changes its tile, not the page
+     */
     @Test fun emptyGroupsHideUntilTheirRowsCome() {
         val r = room()
         r.show(SettingsTabs.Tab.TOP); lay(r)
-        // no game: only Game windows (the minimap is always listed) has rows; it is the open one
-        for (g in listOf(SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY, SettingsTabs.Group.NAVIGATION))
-            assertEquals("$g", View.GONE, box(r, g).box.visibility)
-        assertEquals(setOf(SettingsTabs.Group.WINDOWS), r.open)
+        val top = listOf(SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY, SettingsTabs.Group.NAVIGATION,
+            SettingsTabs.Group.WINDOWS)
+        for (g in top) assertEquals("$g", View.VISIBLE, box(r, g).box.visibility)
+        assertEquals(top.toSet(), r.open)
         assertTrue(r.pad.targetBoxes().none { it == headBox(r, SettingsTabs.Group.NAVIGATION) })
-        // the add-on says the compass bar's word: Navigation has a row now, shows, and (folds untouched) is the open one
+        val before = r.pad.targetBoxes()
+        val navTop = box(r, SettingsTabs.Group.NAVIGATION).box.top
+        // the add-on says the compass bar's word: the Compass tile is a reported one now, the page does not move
         CompassSwitch.note(JSONObject().put("proof", JSONObject().put("compc", JSONObject().put("show", true).put("on", 1).put("off", 2))))
         lay(r)
-        assertEquals(View.VISIBLE, box(r, SettingsTabs.Group.NAVIGATION).box.visibility)
-        assertEquals(setOf(SettingsTabs.Group.NAVIGATION), r.open)
-        assertTrue(r.pad.targetBoxes().any { it == headBox(r, SettingsTabs.Group.NAVIGATION) })
+        assertEquals(navTop, box(r, SettingsTabs.Group.NAVIGATION).box.top)
+        assertEquals(before, r.pad.targetBoxes())
         // Controller > Combat helpers: no switch, no attack row - hidden
         r.show(SettingsTabs.Tab.CONTROLLER); lay(r)
         assertEquals(View.GONE, box(r, SettingsTabs.Group.COMBAT).box.visibility)
+        CompassSwitch::class.java.getDeclaredField("state").apply { isAccessible = true }.set(CompassSwitch, null)
     }
 
     /** 5: the Frames slice's draw compares with the MEASURED row count, so a row that comes or goes asks for a new layout */

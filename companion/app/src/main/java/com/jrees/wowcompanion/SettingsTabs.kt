@@ -15,9 +15,10 @@ import android.content.SharedPreferences
  */
 object SettingsTabs {
     /** [folds] false = its groups are always open, plain headings (the user, 2026-11-12: "the general tab doesnt need the folding
-     *  sections") */
+     *  sections"). Top screen too since its tiles (the user, 2026-11-16: "VISUAL overhaul of UI menus"; the design's pick, accepted the
+     *  same day: "The five headings with no folding on this tab", which changes the 11-12 fold ruling for this tab only) */
     enum class Tab(val label: String, val hidden: Boolean = false, val folds: Boolean = true) {
-        GENERAL("General", folds = false), BOTTOM("Bottom screen"), TOP("Top screen"), CONTROLLER("Controller"), ADDONS("Add-ons"),
+        GENERAL("General", folds = false), BOTTOM("Bottom screen"), TOP("Top screen", folds = false), CONTROLLER("Controller"), ADDONS("Add-ons"),
         PERFORMANCE("Performance")
     }
 
@@ -76,8 +77,9 @@ object SettingsTabs {
             Drawer.GAME_UI),
         PARTY(Group.PARTY, "Party", listOf("DS party frames", "Party frames"), Drawer.GAME_UI),
         NAVIGATION(Group.NAVIGATION, "Navigation", listOf("Compass bar", "Compass follows the camera", "World markers"), Drawer.GAME_UI),
-        // hub31: Polestar's own frame on the top screen (it was under Add-ons > Polestar), shown while Polestar is in use
-        POLESTAR_TOP(Group.NAVIGATION, "Polestar on the top screen", listOf("Polestar on the top screen")),
+        // hub31: Polestar's own frame on the top screen (it was under Add-ons > Polestar), shown while Polestar is in use. 2026-11-16 (the
+        // tiles): Navigation's third tile, drawn by Navigation's GameUiSection part (it was SettingsView's row)
+        POLESTAR_TOP(Group.NAVIGATION, "Polestar on the top screen", listOf("Polestar on the top screen"), Drawer.GAME_UI),
         GAME_UI(Group.WINDOWS, "Game windows", listOf("Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window",
             "Game tooltips", "Cast bar", "Player frame", "Target frame", "Controller bars, buffs and XP"), Drawer.GAME_UI),
         // ---- Controller

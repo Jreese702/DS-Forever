@@ -1,5 +1,13 @@
 {
 "plain": {
+"Tooltips": "Infobulles",
+"Controller bars": "Barres de la manette",
+"Polestar": "Polestar",
+"Height": "Hauteur",
+"Width": "Largeur",
+"Scale": "Échelle",
+"Health text": "Texte de santé",
+"Follows the camera": "Suit la caméra",
 "Macros": "Macros",
 "New": "Nouvelle",
 "Edit": "Modifier",

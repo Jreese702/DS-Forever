@@ -100,7 +100,8 @@ class SettingsTabsTest {
         assertEquals(SettingsTabs.Drawer.HOME, B.ATTACK_CAST.drawer)
         assertEquals(SettingsTabs.Drawer.HOME, B.CAST_BAR.drawer)
         assertEquals(SettingsTabs.Drawer.GAME_UI, B.COMPANION.drawer)
-        assertEquals(SettingsTabs.Drawer.VIEW, B.POLESTAR_TOP.drawer)
+        // 2026-11-16 (the tiles): Polestar's top-screen row is Navigation's third tile, drawn by Navigation's GameUiSection part
+        assertEquals(SettingsTabs.Drawer.GAME_UI, B.POLESTAR_TOP.drawer)
         assertEquals(SettingsTabs.Drawer.VIEW, B.QUEST_TRACKING.drawer)
     }
 
@@ -170,8 +171,10 @@ class SettingsTabsTest {
         // the user, 2026-11-12: "the general tab doesnt need the folding sections": every General group always open
         assertEquals(false, T.GENERAL.folds)
         assertEquals(setOf(G.LOOK, G.ACCOUNT, G.HELP), SettingsTabs.openOnShow(T.GENERAL))
-        assertEquals(T.values().filter { it != T.GENERAL }, T.values().filter { it.folds })
-        assertEquals(setOf(G.HUD), SettingsTabs.openOnShow(T.TOP))
+        // the user's pick 2026-11-16 (the design's "five headings with no folding on this tab"): Top screen's tiles never fold either
+        assertEquals(false, T.TOP.folds)
+        assertEquals(T.values().filter { it != T.GENERAL && it != T.TOP }, T.values().filter { it.folds })
+        assertEquals(setOf(G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), SettingsTabs.openOnShow(T.TOP))
     }
 
     /** 2026-11-09: Performance on the row (Lossless frame generation), last, with its four groups */
@@ -220,7 +223,7 @@ class SettingsTabsTest {
         // #232: Swap screens under the language (SettingsView draws it, only with a second screen); Windows ID under Game account
         assertEquals(listOf(B.THEME, B.LANGUAGE, B.SCREENS, B.ACCOUNT, B.GAME_ACCOUNT, B.WINDOWS_ID, B.HELP), SettingsTabs.viewBlocks(T.GENERAL))   // + the status (GameUiSection)
         assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.BOTTOM))                            // under Home's section
-        assertEquals(listOf(B.POLESTAR_TOP), SettingsTabs.viewBlocks(T.TOP))                              // the rest: GameUiSection
+        assertEquals(emptyList<B>(), SettingsTabs.viewBlocks(T.TOP))                                   // all GameUiSection's tiles
         assertEquals(listOf(B.CONTROLLER, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT, B.SMART_Y),
             SettingsTabs.viewBlocks(T.CONTROLLER))
         // only the wheels keep a sub-heading of their own inside their group
@@ -264,8 +267,29 @@ class SettingsPreviewRowsTest {
         }
     }
 
+    /** the panel stays off the Top screen tab (a row there with a "What it does" picture would show it and squeeze the tile grid) */
     @Test fun noPictureOnTheTopScreensShowHide() =
         assertTrue(SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP }.flatMap { it.rows }.none { SettingsPreview.has(it) })
+
+    /** 2026-11-16 (the user: "VISUAL overhaul of UI menus (picture beside each game-UI element option)"): every Top screen tile has its
+     *  picture, in the tiles' own registry (GameUiTiles.PICTURED, which TilePictures draws), and every Top screen row is a tile or a row
+     *  of a tile's band, each once (19 tiles + 8 band rows = the tab's 27 rows) */
+    @Test fun everyTopTileHasAPicture() {
+        val missing = GameUiTiles.ALL.filter { it !in GameUiTiles.PICTURED }
+        assertTrue("Top screen tiles with no picture: $missing", missing.isEmpty())
+        assertEquals(19, GameUiTiles.ALL.size)
+        val word = TopWords.WORD
+        val shown = GameUiTiles.ALL + GameUiTiles.EXTRAS.values.flatten()
+        assertEquals("each once", shown.size, shown.toSet().size)
+        val topRows = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP }.flatMap { it.rows }
+        assertEquals(27, topRows.size)
+        assertEquals(topRows.toSet(), shown.map { word.getValue(it) }.toSet())
+        // and group by group: a group's tiles and their bands' rows are that group's rows
+        for ((g, ids) in GameUiTiles.TILES) {
+            val rows = SettingsTabs.Block.values().filter { it.group == g }.flatMap { it.rows }.toSet()
+            assertEquals(g.heading, rows, (ids + ids.flatMap { GameUiTiles.EXTRAS[it] ?: emptyList() }).map { word.getValue(it) }.toSet())
+        }
+    }
 
     /** 2026-11-13 (the user: "a lot of these new options and settings need visuals to accompany them in the settings menus"): every
      *  Bottom screen row has its picture (a new row there needs one), and the Controller tab's combat helpers have theirs */
@@ -316,6 +340,18 @@ class SettingsPreviewRowsTest {
         assertTrue(SettingsPreview.animated("Swing timer") && SettingsPreview.animated("Frame limit") && !SettingsPreview.animated("Button glyphs"))
         assertTrue(SettingsPreview.animated("In combat"))                // the bar fading out in a fight
     }
+}
+
+/** the Top screen rows' own words by the ids their tiles and band rows go by (Block.rows stay the data: the tiles' names are display only) */
+object TopWords {
+    val WORD = mapOf(GameUi.HUD_ID to "Resource bar", GameUi.PET_ID to "Pet bar", GameUi.HUD_H_ID to "HUD height", GameUi.HUD_W_ID to "HUD width",
+        GameUi.HUD_S_ID to "HUD scale", GameUi.UFT_ID to "Target bar", GameUi.UFHP_ID to "Target health text", GameUi.UFTOT_ID to "Target of target",
+        GameUiSection.RINGS_ID to "Aggro tint", GameUi.NP_ID to "Enemy nameplates", GameUi.NPF_ID to "Friendly plates",
+        GameUi.UFP_ID to "DS party frames", GameUi.PARTY_ID to "Party frames", GameUiSection.COMPASS_ID to "Compass bar",
+        GameUiSection.COMPASS_CAM_ID to "Compass follows the camera", GameUi.WM_ID to "World markers", GameUiTiles.PS_ID to "Polestar on the top screen",
+        "minimap" to "Minimap", "tracker" to "Quest tracker", "chat" to "Chat window", "dialogs" to "NPC windows", GameUiSection.LOOT_ID to "Loot window",
+        GameUiSection.TIPS_ID to "Game tooltips", GameUi.CASTBAR_ID to "Cast bar", GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame",
+        "hud" to "Controller bars, buffs and XP")
 }
 
 /** test40 ("the tabs seem way too small for the text of each one"): every tab as wide as its label, a strip that scrolls when too wide */
