@@ -105,6 +105,14 @@ class PauseSitTest {
         // the GAME pick goes to game() (PvP's confirm first), so Sit runs the emotes' route
         val p = body(view, "private fun pick(s: HomePauseModel.Slice)")
         assertTrue(p.contains("game(cmd)"))
+        // review (feat/wk-sit): the checks above let an early `if (cmd == "sit") return` before the close through. No Sit case on the
+        // route at all, and game()'s only early returns are the Game Menu's (it closes first) and an unsent tap's (the wheel stays)
+        for ((name, b) in listOf("game" to g, "pick" to p)) {
+            assertFalse("$name(): no Sit special case", b.contains("\"sit\"") || Regex("""\bSIT\b""").containsMatchIn(b))
+        }
+        assertEquals("game(): the Game Menu's return and the unsent tap's, no other", 2, Regex("""\breturn\b""").findAll(g).count())
+        assertTrue(g.contains("if (!sent) { say(\"Comes with the next add-on update\"); return }"))
+        assertTrue("a Pick goes to pick()", body(view, "private fun act(a: HomePauseModel.Act)").contains("is HomePauseModel.Act.Pick -> pick(a.slice)"))
     }
 
     @Test fun aRefusalAfterTheWheelHasGoneStillShows() {
