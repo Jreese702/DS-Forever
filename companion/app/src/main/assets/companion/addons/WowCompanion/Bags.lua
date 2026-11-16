@@ -142,6 +142,20 @@
 -- bags. Its row now says qstart = true while that quest is neither in the log nor done (the prompt's own test, D.qsAt), and the app
 -- offers "Start Quest" on X: the slot's own secure item cell, the game's right-click, which opens the game's quest page. Read-only
 -- calls only (C_QuestLog.IsOnQuest / IsQuestFlaggedCompleted); nothing else changes.
+--
+-- bags-open1 (wk-containers; the user, 2026-11-16: "opening containers from my bags is a little cluncky, there is not a button although
+-- weirdly x does work to open them, it opens the loot menu back in the home room, it should just open the loot menu inside of the bags and
+-- then keep the player inside of the bag room."): (1) A BAG ITEM THAT OPENS says so. Its row carries opens = true from the game's own
+-- signals - C_Container.GetContainerItemInfo's hasLoot (what the game's own controller bag shows its Open for), or the item's tooltip
+-- line ITEM_OPENABLE ("<Right Click to Open>") - and the app offers "Open" on X as it offers Start Quest / Use (X was already the slot's
+-- secure item cell, the game's right-click: unchanged). A box the game says is LOCKED (its tooltip line LOCKED) carries lockedBox =
+-- true instead: the app shows "Locked" faint, and X there is refused here ("locked") - the game is never asked. The tooltip is read only
+-- for boxes (hasLoot, or a Miscellaneous item with no other action), and fresh at the X press. (2) THE LOOT WINDOW STAYS IN THE ROOM:
+-- a bag cell of ours clicked a moment ago (OPEN.TTL, its PreClick) and a loot window opening while Bags holds = the loot is the room's
+-- own (spec.lootUnder, capture v21 / Interact i161): the room is SUSPENDED under the loot window (the app shows the loot window over the
+-- Bags room, same controls), not lost, and resumes on the same slot when it closes (spec.resumed: "loot-resumed"). Out of a fight only;
+-- a fight that starts meanwhile lets the room go as before. Bags full: the game's own "Inventory is full" and Interact's Make Space, as
+-- for any loot. Read-only calls only; nothing new is called in the game.
 
 local ADDON = ...
 local WC = _G.WowCompanion
@@ -179,6 +193,45 @@ local function flag(tbl, key)
     local v = field(tbl, key)
     if type(v) == "boolean" then return v end
     return nil
+end
+
+-- bags-open1: BOXES. OPEN.click = the last click of one of our bag cells (its PreClick, before the game's own right-click runs), so a
+-- loot window that opens right after it is the room's own (OPEN.mine, set further down where the controller state is known).
+local OPEN = { TTL = 5, click = nil, under = nil, LINES = 30 }
+local function gameWord(name)
+    local v = S(function() return _G[name] end)
+    if type(v) == "string" and v ~= "" and v:byte(1) > 3 then return v end
+    return nil
+end
+-- the item's own tooltip, read only: does the game say LOCKED ("Locked") or ITEM_OPENABLE ("<Right Click to Open>")? (locked, opens)
+function OPEN.read(bag, slot)
+    if not (C_TooltipInfo and C_TooltipInfo.GetBagItem) then return false, false end
+    local ok, data = CALL(function() return C_TooltipInfo.GetBagItem(bag, slot) end)
+    local lines = ok and type(data) == "table" and data.lines
+    if type(lines) ~= "table" then return false, false end
+    local lk, op = gameWord("LOCKED"), gameWord("ITEM_OPENABLE")
+    local locked, opens = false, false
+    for i = 1, math.min(#lines, OPEN.LINES) do
+        local ln = lines[i]
+        local t = type(ln) == "table" and S(function() return ln.leftText end) or nil
+        if type(t) == "string" then
+            t = t:match("^%s*(.-)%s*$")
+            if lk and t == lk then locked = true end
+            if op and t == op then opens = true end
+        end
+    end
+    return locked, opens
+end
+-- a box worth a tooltip read at a bags collect: the game says it has loot, or a Miscellaneous item (class 15: the lockboxes, clams and
+-- bags of loot) that is not junk and has no other action. The X press reads it anyway (OPEN.lockedAt)
+function OPEN.candidate(row, hasLoot)
+    if hasLoot == true then return true end
+    return row.cls == 15 and row.quality ~= 0 and not (row.use or row.readable or row.equip or row.quest or row.qstart)
+end
+-- the box at bag / slot is LOCKED now (fresh, for the X press)
+function OPEN.lockedAt(bag, slot)
+    local locked = OPEN.read(bag, slot)
+    return locked == true
 end
 
 -- ---------------------------------------------------------------- gear: item level + stats
@@ -270,6 +323,9 @@ local function emptyGuard(btn, key, isEmpty)
     if btn.wcEmptyHooked then return end
     btn.wcEmptyHooked = true
     pcall(btn.HookScript, btn, "PreClick", function(self)
+        -- bags-open1: a bag cell of ours is clicked (the X route or a finger's Open): a loot window right after it is the room's own
+        local k = self.wcSlotKey
+        if type(k) == "string" and k:sub(1, 1) == "b" then OPEN.click = { key = k, at = GetTime() } end
         local f = self.wcIsEmpty
         if type(f) ~= "function" then return end
         local okE, empty = pcall(f)
@@ -1012,6 +1068,14 @@ function WC.collectBags()
                            and S(function() return C_QuestLog.IsOnQuest(qid) end) ~= true
                            and S(function() return C_QuestLog.IsQuestFlaggedCompleted(qid) end) ~= true then row.qstart = true end
                     end
+                    -- bags-open1: a box. The game's hasLoot (its controller bag's Open), else its tooltip's open line; LOCKED wins over both
+                    local hasLoot = flag(info, "hasLoot")
+                    if hasLoot == true then row.opens = true end
+                    if OPEN.candidate(row, hasLoot) then
+                        local lk, op = OPEN.read(bag, slot)
+                        if lk then row.lockedBox = true; row.opens = nil
+                        elseif op then row.opens = true end
+                    end
 
                     local okNm, nm = CALL(function() return C_Item.GetItemNameByID(id) end)
                     if okNm then row.name = S(function() return nm end) end
@@ -1738,6 +1802,7 @@ local function leave(why)
         if ok and done == false and how == "tap leave" then report("leave-tap-" .. tostring(why)); return end
     end
     ctl.on = false; ctl.pick = nil; ctl.mode = "grid"; ctl.passing = false; ctl.pending = nil; ctl.zone = nil
+    OPEN.under = nil                    -- bags-open1: a loot window over the room is the capture's to keep (v21's release drops the room)
     ctl.left = why                      -- the 1 s check takes it back only after a window, never after the player left
     -- bags-bindbox1: report() below sees the room off and closes a Bind box that was up (abort)
     report("left-" .. why)
@@ -2971,6 +3036,8 @@ local function onPress(key)
             if KIT.on() then ctl.mode = "target"; ctl.tsel = KIT.rowOf(ctl.bag, ctl.slot) or 1; ctl.tkey = nil; report("pick-item"); return end
             -- a BAG: into the hand, and the cursor up to the bag bar to choose its slot (EQ, the user 2026-10-06)
             if EQ.slotsFor(id) then EQ.begin(id); return end
+            -- bags-open1: a box the game says is Locked: never asked (the app shows "Locked" faint)
+            if OPEN.lockedAt(ctl.bag, ctl.slot) then report("locked"); return end
             -- USE is protected: the app taps this slot's secure cell once per new use.seq
             KIT.used(ctl.bag, ctl.slot)                       -- an armor kit / stone starts the game's "pick an item"
             ctl.use = { bag = ctl.bag, slot = ctl.slot, seq = ctl.seq + 1 }; report("use"); return
@@ -3098,7 +3165,25 @@ local function onPress(key)
     end
 end
 
+-- bags-open1 (capture v21): asked by the capture when a loot window opens while Bags holds - is it the room's own? A bag cell of ours
+-- clicked within OPEN.TTL (the X route, or a finger's Open), the hold really ours, out of a fight. Once per click; noted "loot-under"
+function OPEN.mine()
+    local c = OPEN.click
+    if not (ctl.on and not ctl.pending and c and GetTime() - c.at <= OPEN.TTL) then return false end
+    if InCombatLockdown() then return false end
+    OPEN.click = nil
+    OPEN.under = c.key
+    report("loot-under")
+    return true
+end
+-- the loot window over the room closed: Bags holds again as it was (same mode, same slot), told nothing else
+function OPEN.resumed(why)
+    OPEN.under = nil
+    report("loot-resumed")
+end
+
 local function onLost(why)
+    OPEN.under = nil
     if ACT.boxUp then ACT.boxUp = nil; if type(WC.spellsBindHosted) == "table" then pcall(WC.spellsBindHosted.abort, why) end end
     ctl.on = false; ctl.pick = nil; ctl.mode = "grid"; ctl.passing = false; ctl.zone = nil
     -- capture v8: a B Bags leaves to the game (pass) cannot reach the game in a fight, so the capture releases Bags with
@@ -3167,9 +3252,11 @@ local function tryTake(viaWindow)
         if _G.ContainerFrameCombinedBagsCloseButton then ctl.spec.leave = "ContainerFrameCombinedBagsCloseButton" end
         if viaWindow then ctl.spec.window = true end
     end
+    -- bags-open1: capture v21 (Interact i161): a loot window the room opened itself is shown over the room, which resumes after it
+    if (tonumber(cap.version) or 1) >= 21 then ctl.spec.lootUnder = OPEN.mine; ctl.spec.resumed = OPEN.resumed end
     local ok, got, why = pcall(cap.take, "bags", ctl.spec)
     if ok and got then
-        ctl.on = true; ctl.mode = "grid"; ctl.pick = nil; ctl.left = nil
+        ctl.on = true; ctl.mode = "grid"; ctl.pick = nil; ctl.left = nil; OPEN.under = nil
         -- (review 2026-11-11, issue #126) taken while a pick is on (Disenchant cast from the bar): straight to its list, never the grid
         if KIT.on() then ctl.mode = "target"; ctl.tsel = 1; ctl.tkey = nil end
         -- capture v11 (Interact i82): a take that finds another holder is QUEUED (ok, "queued"), granted when that holder
@@ -3350,6 +3437,7 @@ end
 -- cells waits for that (the room shows, nothing happens); this also notices the hand-over Bags is never told about
 local function heldNow()
     if not ctl.on then return false end
+    if OPEN.under then return false end         -- bags-open1: the loot window over the room has the controller until it closes
     if not ctl.pending then return true end
     local cap = capture()
     local ok, st = pcall(function() return cap and cap.state and cap.state() end)

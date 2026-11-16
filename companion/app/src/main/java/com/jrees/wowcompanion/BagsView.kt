@@ -209,6 +209,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             const val MORE = -3          // a finger's More: the cursor to the shown slot, then Y
             const val EQUIP = -4         // a finger's Equip on a BAG: the cursor to the shown slot, then bmvq 22 (= X: into the hand)
             const val EQUIP_OFF = -5     // the same cell, faint (a fight): nothing
+            const val OFF = -8           // bags-open1: an action the game would refuse (a Locked box): its word, faint, nothing
+            /** a cell drawn faint, with no touch and no press */
+            fun faintKind(w: Int) = w == EQUIP_OFF || w == OFF
             const val KIT_CANCEL = -6    // "Choose an item": Cancel (binv 19: the game's /stopspelltarget)
             const val KIT_STOP_COL = 19
             const val KIT_ROW = -100     // "Choose an item": row i = KIT_ROW - i (its item's secure cell)
@@ -325,7 +328,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 MOVE -> st.onCard(31)                        // the cursor goes to the shown slot first (BagsView.cardPress)
                 MORE -> st.onCard(32)
                 EQUIP -> st.onCard(22)
-                EQUIP_OFF -> {}
+                EQUIP_OFF, OFF -> {}
                 KIT_CANCEL -> GameInput.tap(context, st.pad, "binv", KIT_STOP_COL)
                 // bags-act1: the menu's Compare row (bmvq 27, then column 8: Bags.lua's prefix, no game action)
                 COMPARE_TAP -> if (GameInput.tap(context, st.pad, "bmvq", 27)) GameInput.tap(context, st.pad, "bmvq", COMPARE_COL)
@@ -355,6 +358,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
 
         override fun onDraw(c: Canvas) {
             hits.clear(); zones.clear(); useAt = null
+            if (st.lootOver) { cut = null; stickWanted(false); return }    // bags-open1: the loot window's tooltip is the one shown
             val m = mode()
             val now = android.os.SystemClock.uptimeMillis()
             getLocationOnScreen(at); grid.getLocationOnScreen(gat); scroll.getLocationOnScreen(sat)
@@ -457,6 +461,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                     acts.add((if (glyphs) "rev_x" else null) to word); what.add(if (st.combat) EQUIP_OFF else EQUIP)
                 } else if (allowed && rows?.has("bag$bag") == true) {
                     acts.add((if (glyphs) "rev_x" else null) to word); what.add(USE); useAt = bag to slot
+                } else if (!allowed && word == LOCKED) {
+                    // bags-open1: the game says the box is Locked: its word, faint, no glyph; X is refused by the add-on, never tried
+                    acts.add(null to word); what.add(OFF)
                 }
             }
             if (moves) { acts.add((if (glyphs) "rev_y" else null) to "More"); what.add(MORE) }
@@ -467,14 +474,14 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         private fun plate(c: Canvas, box: RectF, acts: List<Pair<String?, String>>, what: List<Int>, alpha: Int): List<RectF> {
             if (acts.isEmpty()) return emptyList()
             val probe = UiKit.tooltipActions(c, box, acts, alpha = 0)           // the cells, to know which one is pressed
-            val dn = downIn(probe, what.map { w -> if (w == EQUIP_OFF) null else keyOf(w) })
+            val dn = downIn(probe, what.map { w -> if (faintKind(w)) null else keyOf(w) })
             // b116 ("the button push is delayed a moment"): a press during the tooltip's fade-in showed nothing until the room
             // changed; a pressed plate is at full strength at once
             val a = if (dn >= 0) 255 else alpha
             val cells = UiKit.tooltipActions(c, box, acts, a)
             if (a >= 255) pushCell(c, box, acts, cells, dn)
             if (a > 0) {
-                for ((i, r) in cells.withIndex()) if (what[i] == EQUIP_OFF) faint(c, r) else hits.add(r to what[i])
+                for ((i, r) in cells.withIndex()) if (faintKind(what[i])) faint(c, r) else hits.add(r to what[i])
                 zones.add(RectF(cells.first().left, cells.first().top, cells.last().right, cells.last().bottom))
             }
             return cells
@@ -568,7 +575,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             // a press on the item's OWN cells shows it at once (b116); the first tooltip waits out the game's quarter second
             val boxNow = RectF(x, f.y, x + tw, f.y + (if (f.scrollMax > 0f) f.h else itemH(s)))
             val pressed = acts.isNotEmpty() &&
-                downIn(UiKit.tooltipActions(c, boxNow, acts, alpha = 0), what.map { w -> if (w == EQUIP_OFF) null else keyOf(w) }) >= 0
+                downIn(UiKit.tooltipActions(c, boxNow, acts, alpha = 0), what.map { w -> if (faintKind(w)) null else keyOf(w) }) >= 0
             val a = if (pressed) 255 else fade
             if (a <= 0) { cut = null; return }               // the first quarter second: measured, nothing shown yet
             if (f.scrollMax > 0f) {
@@ -1183,6 +1190,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
      */
     fun onPadKey(k: String, down: Boolean) {
         if (kbOpen) { keyboardKey(k, down); return }
+        if (state.lootOver) return                 // bags-open1: these presses are the loot window's over the room
         // (b) THE CURSOR AT ONCE (tracking's yes 2026-10-22: PadInput read only, reconciled by seq with the game's cursor, the game
         // still gets every press): the D-pad moves the app's copy by the add-on's own rules (BagsCursor), in the order pressed
         if (down && state.drag == null && state.predict.press(k, android.os.SystemClock.uptimeMillis())) {
@@ -1237,6 +1245,23 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     var onController: ((Boolean, String?) -> Unit)? = null      // (on, why it went off: "B", "room", "closed", ...)
 
     /**
+     * bags-open1: THE LOOT WINDOW OVER THIS ROOM (Home sets it from each current interact document, BagsLoot.over: capture v21, Bags
+     * suspended under the loot window one of its bag items opened). Interact's own loot window is drawn over the room (its dim, its
+     * cards, A / X / B as on Home); the room behind shows no tooltip, takes no touch and reads no press, and comes back as it was - the
+     * same mode, the same slot - when the loot window closes.
+     */
+    var lootOver: Boolean
+        get() = state.lootOver
+        set(v) {
+            if (state.lootOver == v) return
+            state.lootOver = v
+            android.util.Log.i("WCBAGS", "loot window ${if (v) "over the room (Bags suspended under it)" else "gone: the room is back"}")
+            layoutAll()
+        }
+    override fun onInterceptTouchEvent(e: MotionEvent): Boolean = state.lootOver || super.onInterceptTouchEvent(e)
+    override fun onTouchEvent(e: MotionEvent): Boolean = state.lootOver || super.onTouchEvent(e)
+
+    /**
      * The room entered / left from the app (touch, the bar; Home calls these on EVERY route into and out of Bags).
      * The user 2026-10-01 (via Home): every room opens the GAME'S OWN WINDOW behind it, "act the EXACT same for all rooms".
      * So, while the addon says its doors are live (bags.gameDoors: built, and not in a fight), ONE tap on the backpack's
@@ -1281,7 +1306,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
      * while Bags holds the controller; every other mode is a step back (an older add-on without `mode`: false, the old echo route)
      */
     override fun bLeadsHome(): Boolean =
-        state.ctlOn && !kbOpen && state.drag == null && state.ctl?.optString("mode") == "grid" && state.ctlPick() == null
+        state.ctlOn && !kbOpen && !state.lootOver && state.drag == null && state.ctl?.optString("mode") == "grid" && state.ctlPick() == null
 
     /** bags-bindbox1: a finger's A ("a") / B ("b") for the Spellbook's Bind box this room hosts (SpellsOverlay): Bags' own touch
      *  A / B (bmvq 31 / 33), which Bags hands to the box. Only while the room holds and the box is up (mode "bindbox") */
@@ -1359,6 +1384,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
 
         /** issue #252: the action word for an item that begins a quest (Bags.lua bags-qstart1 `qstart`) */
         const val START_QUEST = "Start Quest"
+        /** bags-open1: the action word for a box, lockbox or clam that opens (Bags.lua `opens`: the game's hasLoot / its open line) */
+        const val OPEN = "Open"
+        /** bags-open1: a box the game says is Locked (Bags.lua `lockedBox`): shown faint, never tried */
+        const val LOCKED = "Locked"
 
         /**
          * What a right-click on this item does in the game right now -- the ONE action the panel
@@ -1375,6 +1404,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 // issue #252 (bags-qstart1): an item that begins a quest not taken yet - its right-click opens the game's quest page
                 it.optBoolean("qstart") -> START_QUEST to true
                 it.optBoolean("readable") -> "Read" to true
+                // bags-open1: the game's own order for its controller bag (Read, Open, Use); a Locked box is never tried
+                it.optBoolean("lockedBox") -> LOCKED to false
+                it.optBoolean("opens") -> OPEN to true
                 it.optBoolean("use") -> "Use" to true
                 // an addon older than 46b0d1c sends "INVTYPE_NON_EQUIP_IGNORE" for food and quest
                 // items (measured): that is not a slot
@@ -1558,6 +1590,12 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
 
         /** the addon's controller state (bags.ctl); off = touch only */
         var ctl: JSONObject? = null
+        /**
+         * bags-open1 (the user, 2026-11-16: "it should just open the loot menu inside of the bags and then keep the player inside of the bag
+         * room"): the loot window a bag item of this room opened holds OVER the room (capture v21: Bags suspended under it, Interact's
+         * window drawn over this room, its controls the loot window's). The room shows behind it dimmed: no tooltip, no touch, no press.
+         */
+        var lootOver = false
         val ctlOn get() = ctl?.optBoolean("on") == true
         /**
          * While the controller holds the bags, the grid shows them as the game has them: every bag,
