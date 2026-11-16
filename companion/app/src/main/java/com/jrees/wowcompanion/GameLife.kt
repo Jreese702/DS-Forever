@@ -57,7 +57,7 @@ object GameLife {
     // ------------------------------------------------------------------ the events (the launcher and the bottom screen call these)
 
     fun started(now: Long = System.currentTimeMillis()) {
-        startedAt = now; worldSeen = false; ended = false; note = null; closer = null; loads = 0; loadingAt = 0L
+        startedAt = now; worldSeen = false; ended = false; note = null; closer = null; loads = 0; loadingAt = 0L; worldAt = 0L; loadEndAt = 0L
         DiagLog.event("game", "started")
         LastRun.gameStarted(now)                                   // 1.0.17: kept across the app's own death
         // issue triage 2026-11-14 (the 1.0.29 - 1.0.31 low-memory cluster; the user: "yes on the triage things"): the game is about to
@@ -69,9 +69,24 @@ object GameLife {
      *  startup screen before the game starts") */
     val worldNow: Boolean get() = worldSeen && !ended
 
+    /** when this game started (epoch ms), 0 = none in this process (PlayGate.besideNow: Android's warnings since then) */
+    val startedAtMs: Long get() = startedAt
+    /** a loading screen in the world is up now (its end not seen yet) */
+    val loadingNow: Boolean get() = worldNow && loadingAt != 0L
+
+    /**
+     * How long the game has been in the world with no loading screen (the user's pick, 2026-11-16: the world map beside the game on
+     * the Thor Max, PlayGate.besideNow): since the world entry or the last loading screen's end, 0 = not in the world or one is up
+     */
+    fun calmMs(now: Long = System.currentTimeMillis()): Long =
+        if (!worldNow || loadingAt != 0L) 0L else (now - maxOf(worldAt, loadEndAt)).coerceAtLeast(0L)
+    @Volatile private var worldAt = 0L
+    @Volatile private var loadEndAt = 0L
+
     /** the first CURRENT document from the add-on: the game is in the world */
     fun inWorld(now: Long = System.currentTimeMillis()) {
         if (worldSeen || startedAt == 0L) return
+        worldAt = now
         worldSeen = true
         DiagLog.event("game", "in the world after ${minutes(now - startedAt)}")
         LastRun.gameInWorld()
@@ -106,7 +121,7 @@ object GameLife {
         }
         val at = loadingAt
         if (at == 0L) return null                                  // its start was never seen (the login's, a lost line)
-        loadingAt = 0L
+        loadingAt = 0L; loadEndAt = now
         val l = "loading screen $loads over after ${minutes((now - at).coerceAtLeast(0L))}"
         MemWatch.note(l)
         return l

@@ -336,13 +336,18 @@ object ArtHarvest {
     @Volatile private var stopping = false
     /** 1.0.17: a before-Play step became due while the worker runs the background ones: they give way at their next report */
     class YieldToRequired : InterruptedException("a required step is due")
-    /** 2026-11-08: the background art waits for the game to close OUTSIDE the open game files (~500 MB of index tables) */
-    class PausedForGame : InterruptedException("the background art waits for the game to close")
+    /** 2026-11-08: the background art waits for the game to close OUTSIDE the open game files (~500 MB of index tables).
+     *  [step]: the step a finished pass leaves (the world map built beside the game: [besidePass]); null = the step running now */
+    class PausedForGame(val step: String? = null) : InterruptedException("the background art waits for the game to close")
     @Volatile private var yieldBg = false
     @Volatile private var bgPhase = false
     private fun checkStop() {
         if (stopping) throw StoppedForUpdate()
-        if (yieldBg && bgPhase) throw YieldToRequired()
+        // the user's pick, 2026-11-16 ([besidePass]): the world map building beside the game on the Thor Max neither pauses for the game
+        // nor gives way to a required step it could not run anyway (the game is up); once the game closes both stops are back
+        val active = PlayGate.gameActiveNow()
+        val beside = besideNow(active)
+        if (yieldBg && bgPhase && !beside) throw YieldToRequired()
         // 1.0.17 (the user's pick for the 8 / 12 GB Thors: "Pause while playing, always"): the background art waits while the game runs
         // 2026-11-08 (the native heap profile: the open game files are ~500 MB, and this wait held them through the whole session on
         // exactly the Thors that run out of memory): it leaves the run (the files close) and the worker waits outside them
@@ -350,17 +355,70 @@ object ArtHarvest {
         // 250-550 MB on top of a 3-4 GB game): EVERY tier, and the launch's own window ([PlayGate])
         // review of this fix, 2026-11-11: only on the worker thread (a step's report from GameFiles.prefetch's pool threads must not throw
         // there: #138's uncaught PausedForGame) - the worker's next report pauses it
-        if (PlayGate.artMustPause(bgPhase, PlayGate.gameActiveNow(), onWorker = Thread.currentThread() === worker)) throw PausedForGame()
+        if (PlayGate.artMustPause(bgPhase, active, onWorker = Thread.currentThread() === worker, beside = beside)) throw PausedForGame()
     }
 
     /** memory relief 2: [checkStop] on the run's own thread only (Job.checkpoint: a step's pool threads never throw it) */
     private fun checkpoint() { if (Thread.currentThread() === worker) checkStop() }
     /** memory relief 2: the run is asked to let go of the game files now (any thread; Job.letGoAsked) */
-    private fun letGoAsked(): Boolean = letGo(stopping, yieldBg, bgPhase, PlayGate.gameActiveNow())
+    private fun letGoAsked(): Boolean = PlayGate.gameActiveNow().let { active -> letGo(stopping, yieldBg, bgPhase, active, besideNow(active)) }
     /** [checkStop]'s three stops as one answer: the update, a required step due (background only), the game up or launching
-     *  (background only). Pure (the tests) */
-    internal fun letGo(stopping: Boolean, yieldBg: Boolean, bgPhase: Boolean, gameActive: Boolean): Boolean =
-        stopping || (bgPhase && (yieldBg || gameActive))
+     *  (background only); [beside] = the world map building beside the game ([besideNow]): neither of the last two. Pure (the tests) */
+    internal fun letGo(stopping: Boolean, yieldBg: Boolean, bgPhase: Boolean, gameActive: Boolean, beside: Boolean = false): Boolean =
+        stopping || (bgPhase && !beside && (yieldBg || gameActive))
+
+    // ------------------------------------------------------------------ the world map beside the game (the Thor Max only)
+
+    /** [besidePass] is running its step now */
+    @Volatile private var besideOn = false
+    /** the game ([GameLife.startedAtMs]) in which a beside pass failed: not tried again until the game has closed */
+    @Volatile private var besideFailedFor = -1L
+    /** the beside pass may go on right now: the game up ([active]) and [PlayGate.besideNow] for its step (between two of its files
+     *  [currentStep] may be unset: the pass runs that step alone) */
+    private fun besideNow(active: Boolean): Boolean =
+        active && besideOn && (currentStep ?: PlayGate.BESIDE_STEP) == PlayGate.BESIDE_STEP && PlayGate.besideNow(PlayGate.BESIDE_STEP)
+    /** a parked worker goes back in for the world map: it is left to build ([left], read once as it parks), this game has no failed
+     *  pass, and [PlayGate.besideNow] says so */
+    private fun besideDue(left: Boolean): Boolean =
+        left && besideFailedFor != GameLife.startedAtMs && PlayGate.besideNow(PlayGate.BESIDE_STEP)
+    private fun besideLeft(ctx: Context): Boolean = DeviceTier.besideModel() &&
+        runCatching { pending(ctx, beforePlay = false).any { it.id == PlayGate.BESIDE_STEP } }.getOrDefault(false)
+
+    /**
+     * THE WORLD MAP BESIDE THE GAME (the user's pick, 2026-11-16: "Let ONLY the world-map art step build beside the running game on the
+     * 16 GB Thor Max ... every other background art step keeps pausing while the game runs; keep the memory relief and the pause points;
+     * log it"; [PlayGate.besideNow]). With the game up, a pass opens the game files for [step] (the world map alone) and nothing else:
+     * the art before Play and every other background step wait for the game to close as before. Its stops are every step's: a loading
+     * screen, Android's warning or the game's end ([PlayGate.besideNow]) throw [PausedForGame] at the next file, the files close and the
+     * pause's relief runs. Kept in the log and in mem.log (MemWatch.note).
+     */
+    private fun besidePass(ctx: Context, step: Step): Boolean {
+        require(step.id == PlayGate.BESIDE_STEP) { "${step.id} never builds beside the game" }
+        val t0 = System.currentTimeMillis()
+        val why = "${DeviceTier.model()}, ${GameLife.minutes(GameLife.calmMs(t0))} after the world or a loading screen"
+        Log.i(TAG, "harvest: the world map builds beside the game ($why); every other step waits for the game to close")
+        MemWatch.note("art beside the game: ${step.id} starts ($why)")
+        GameFiles.onTables = { checkStop() }
+        val game = try { GameFiles.open(ctx) } finally { GameFiles.onTables = null }
+        if (game == null) {
+            besideFailedFor = GameLife.startedAtMs
+            Log.w(TAG, "harvest: the world map beside the game: ${GameFiles.lastWhy ?: "the game files could not be read"}; it waits for the game to close")
+            return false
+        }
+        openedFiles = true
+        besideOn = true; bgPhase = true
+        val ok = try { game.use { g -> runAll(ctx, g, listOf(step), beforePlay = false) } } finally { bgPhase = false; besideOn = false }
+        if (!ok) {
+            besideFailedFor = GameLife.startedAtMs
+            Log.w(TAG, "harvest: the world map beside the game failed; it waits for the game to close")
+            return false
+        }
+        stepLog[step.id] = "${stepLog[step.id] ?: "done"} (beside the game)"
+        val l = "art beside the game: ${step.id} done in ${(System.currentTimeMillis() - t0) / 1000} s"
+        Log.i(TAG, "harvest: $l; the rest waits for the game to close")
+        MemWatch.note(l)
+        return true
+    }
 
     /**
      * [f]'s failure is not the step's (a prefetch only speeds the reads up: before, runCatching) - but the run's own stops (the pause
@@ -423,19 +481,26 @@ object ArtHarvest {
                         // issues #207 #203 (2026-11-13): which step paused and how long after the launch (the pause's lag, in the report)
                         val at = LauncherHooks.launchAtMs
                         val lag = if (at > 0L) "${(System.currentTimeMillis() - at) / 1000} s after the launch" else "no launch time"
-                        Log.i(TAG, "harvest: paused while the game runs (${DeviceTier.model()}), the game files let go (step ${currentStep ?: "-"}, $lag)")
+                        val step = currentStep ?: e.step ?: "-"
+                        Log.i(TAG, "harvest: paused while the game runs (${DeviceTier.model()}), the game files let go (step $step, $lag)")
                         // memory relief 2 (the user's picks, 2026-11-14: "... lets go of the game files within one file ... and frees its
                         // buffers"): the game files closed as the run left (GameFiles.close: CascLib's ~450 MB of index tables); the step's
                         // own buffers (its pictures, the pack's pieces) are garbage now: one collection at once and the trim registrations'
                         // let-go, as at Play, kept in mem.log ("relief (art let go: allicons, 3 s after the launch)")
                         // (only a pass that had them open: one that never opened them, the game already up, has nothing to free)
-                        if (openedFiles) MemWatch.relieve("art let go: ${currentStep ?: "-"}, $lag", collectNow = true)
+                        if (openedFiles) MemWatch.relieve("art let go: $step, $lag", collectNow = true)
                         openedFiles = false
                         bgPhase = false; currentStep = null
                         parkedForGame = true
+                        // the user's pick, 2026-11-16 ([besidePass]): on the Thor Max a world map still to build goes back in beside the
+                        // game once it is calm in the world ([PlayGate.besideNow]); everything else waits for the game to close
+                        val besideLeft = besideLeft(app)
+                        if (besideLeft) Log.i(TAG, "harvest: the world map goes on beside the game once it is in the world, " +
+                            "${PlayGate.BESIDE_CALM_MS / 1000} s after its last load")
                         try {
-                            while (PlayGate.gameActiveNow() && !stopping && !yieldBg) Thread.sleep(3_000)
+                            while (PlayGate.gameActiveNow() && !stopping && !yieldBg && !besideDue(besideLeft)) Thread.sleep(3_000)
                         } finally { parkedForGame = false }
+                        if (!stopping && !yieldBg && PlayGate.gameActiveNow()) { Log.i(TAG, "harvest: back to the world map beside the game"); continue }
                         Log.i(TAG, "harvest: the game is closed, the background art goes on")
                         if (stopping) { stopping = false; set(State.Idle); break }
                         yieldBg = false
@@ -509,7 +574,12 @@ object ArtHarvest {
         // for in game, the worker's next pass) waits outside them for the game to close; the art before Play never meets this (Play waits)
         // review of this fix (2026-11-11): the launch window alone never holds back a run with before-Play steps (Play waits for it)
         if (!PlayGate.artMayOpen(gameUp = !PlayGate.streamingNow() && LauncherHooks.gameUp(), launching = PlayGate.launchingNow(),
-                beforePlayDue = first.isNotEmpty())) throw PausedForGame()
+                beforePlayDue = first.isNotEmpty())) {
+            // the user's pick, 2026-11-16: on the Thor Max the world map alone builds beside the game ([besidePass]); the rest waits
+            val beside = later.firstOrNull { it.id == PlayGate.BESIDE_STEP }
+            if (beside != null && besideDue(true)) throw PausedForGame(if (besidePass(ctx, beside)) "${beside.id} (built beside the game)" else null)
+            throw PausedForGame()
+        }
         // a CDN hiccup while it fetches the build's tables passes: tried again (HarvestRetry) before the art says it failed
         // after a game update the open downloads the build's tables (about 180 MB): the launcher shows how far (b-art-progress)
         GameFiles.onTables = { line -> checkStop(); set(State.Running(first.isNotEmpty(), 0f, line)) }

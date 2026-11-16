@@ -46,8 +46,38 @@ internal object PlayGate {
      * the harvest's own worker thread (review of this fix, 2026-11-11: a step's progress report also comes from GameFiles.prefetch's
      * "art-fetch" pool threads, where an uncaught throw ends the process - #138; the worker's next report pauses it instead).
      */
-    fun artMustPause(backgroundPhase: Boolean, gameActive: Boolean, onWorker: Boolean = true): Boolean =
-        backgroundPhase && gameActive && onWorker
+    fun artMustPause(backgroundPhase: Boolean, gameActive: Boolean, onWorker: Boolean = true, beside: Boolean = false): Boolean =
+        backgroundPhase && gameActive && onWorker && !beside
+
+    // ------------------------------------------------------------------ the world map beside the game, on the Thor Max only
+
+    /**
+     * THE WORLD MAP BUILDS BESIDE THE GAME ON THE 16 GB THOR MAX (the user's pick, 2026-11-16, issues #316 #317 #284: "Let ONLY the
+     * world-map art step build beside the running game on the 16 GB Thor Max (DeviceTier / RAM >= ~15 GB); every other background art
+     * step keeps pausing while the game runs; keep the memory relief and the pause points; log it"). #316's player pressed Play 2.4 s
+     * after the app opened, so the background art never had its game-closed minutes. Now [BESIDE_STEP] alone may build with the game
+     * up, on [DeviceTier.besideModel] alone; every other step, and every other model, pauses as before.
+     *
+     * The pause points stay: the world map too lets go of the game files (with the art's relief, ArtHarvest's PausedForGame) at the
+     * launch and at each loading screen - the moments the game takes its gigabytes (1.0.32's relief points) - and opens them again
+     * only once the game has been in the world, with no loading screen, for [BESIDE_CALM_MS]; never again in this game once Android
+     * warned running-low or worse ([MemWatch.pressureSince]).
+     */
+    const val BESIDE_STEP = "worldmap"
+    /** after the world entry or a loading screen's end (the 1.0.29 - 1.0.31 kills came 7 - 36 s after the world entry) */
+    const val BESIDE_CALM_MS = 60_000L
+
+    /**
+     * May [step] build with the game up? [model]: [DeviceTier.besideModel]; [inWorld]: the game is in the world and running;
+     * [loading]: a loading screen is up; [calmMs]: since the world entry or the last loading screen's end; [pressure]: Android warned
+     * running-low or worse in this game. Pure (the tests).
+     */
+    fun mayBuildBeside(step: String?, model: Boolean, inWorld: Boolean, loading: Boolean, calmMs: Long, pressure: Boolean): Boolean =
+        step == BESIDE_STEP && model && inWorld && !loading && calmMs >= BESIDE_CALM_MS && !pressure
+
+    /** the same from the live state; cheap (a step's every report and stop asks it) */
+    fun besideNow(step: String?): Boolean = step == BESIDE_STEP && mayBuildBeside(step, DeviceTier.besideModel(), GameLife.worldNow,
+        GameLife.loadingNow, GameLife.calmMs(System.currentTimeMillis()), MemWatch.pressureSince(GameLife.startedAtMs))
 
     /**
      * A new art run (or the next pass of the worker) while the game is up: it does not open the game files at all (a required step

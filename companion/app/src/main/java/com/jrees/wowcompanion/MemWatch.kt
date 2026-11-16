@@ -125,6 +125,7 @@ object MemWatch {
      *  running-low or worse ([collects]) and a line at once */
     fun trimmed(level: Int) {
         trimLevel = level; trimAt = SystemClock.uptimeMillis()
+        warned(level)
         val freed = letGo(level)
         val h = handler
         if (h == null) { Log.i(TAG, trimLine("trim from Android: ${trimName(level)}", freed, "", "")); return }
@@ -138,6 +139,20 @@ object MemWatch {
             runCatching { val l = line(); Log.i(TAG, l); keep(l) }
         }
     }
+
+    /**
+     * ANDROID'S MEMORY WARNINGS WHILE DS FOREVER RUNS (the user's pick, 2026-11-16: the world map beside the game on the Thor Max, "keep
+     * the memory relief"; PlayGate.besideNow): running-low, running-critical or onLowMemory - not the hidden / background levels, which
+     * say where DS Forever's screen is, not how short the device is. [pressureAt] = the last one (epoch ms), 0 = none.
+     */
+    fun pressure(level: Int): Boolean = level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+        level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL || level == LOW_MEMORY
+    @Volatile var pressureAt = 0L
+        private set
+    /** [level] kept as [pressureAt] when it is a warning ([pressure]); any thread */
+    internal fun warned(level: Int, now: Long = System.currentTimeMillis()) { if (pressure(level)) pressureAt = now }
+    /** a warning ([pressure]) came at or after [since] (epoch ms; 0 = no game started: false) */
+    fun pressureSince(since: Long): Boolean = since > 0L && pressureAt >= since
 
     /** every trim registration at [level] (the main thread): what each let go, -1 = it failed */
     private fun letGo(level: Int): List<Pair<String, Long>> =
