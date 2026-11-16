@@ -374,13 +374,38 @@ object MemWatch {
             add(if (LauncherHooks.gameUp()) "game up" else "game down")
         }.joinToString(", ")
         val rt = Runtime.getRuntime()
+        val dev = device()                                            // first: the game's sample (and its swap) for this line's end
         val low = lowKb; lowKb = -1L                                  // the low since the last line, then the next window
         val more = extras(low, rt.totalMemory() - rt.freeMemory(), rt.maxMemory(), gpuBytes(), trimLevel,
-            if (trimAt > 0L) SystemClock.uptimeMillis() - trimAt else 0L)
+            if (trimAt > 0L) SystemClock.uptimeMillis() - trimAt else 0L) +
+            swapNote(mi.getMemoryStat("summary.total-swap")?.toLongOrNull() ?: -1L, gameSwapKb).let { if (it.isEmpty()) "" else ", $it" }
         val bm = beatMax; beatMax = 0L                                // issue #230: the main thread's worst beat and touch since the last line
         val lag = listOf(beatNote(bm), runCatching { TouchLag.take() }.getOrDefault("")).filter { it.isNotEmpty() }.joinToString(", ")
-        if (lag.isNotEmpty()) return "pss ${mb(pss)} MB ($parts) $heap | ${device()} | $caches | $doing | $more, $lag"
-        return "pss ${mb(pss)} MB ($parts) $heap | ${device()} | $caches | $doing | $more"
+        if (lag.isNotEmpty()) return "pss ${mb(pss)} MB ($parts) $heap | $dev | $caches | $doing | $more, $lag"
+        return "pss ${mb(pss)} MB ($parts) $heap | $dev | $caches | $doing | $more"
+    }
+
+    /**
+     * WHOSE MEMORY IS IN SWAP (issue triage 2026-11-16, the 1.0.32 low-memory cluster #279 - #425: 48 of the 100 kills came with the
+     * device's swap 85 % full or more, and on the Thors with 8 GB of swap it was 7.2 - 7.8 GB used before the game had even started;
+     * the line's "game N MB" is the game's PSS, which leaves out what of it sits in swap, so no report could say whose swap it was).
+     * "swapped ours 40 MB, game 1210 MB": DS Forever's own (Android's summary.total-swap) and the game's processes' SwapPss summed, MB;
+     * either part left out while it is unknown (< 0), "" = neither. Pure (the tests).
+     */
+    fun swapNote(oursKb: Long, gameKb: Long): String {
+        val parts = buildList {
+            if (oursKb >= 0) add("ours ${mb(oursKb)} MB")
+            if (gameKb >= 0) add("game ${mb(gameKb)} MB")
+        }
+        return if (parts.isEmpty()) "" else "swapped " + parts.joinToString(", ")
+    }
+
+    /** one process's /proc/<pid>/smaps_rollup: its Pss and SwapPss (KB; SwapPss 0 when the kernel has no such line), null = no Pss
+     *  line (pure: the tests) */
+    fun rollup(lines: List<String>): Pair<Long, Long>? {
+        fun kb(key: String) = lines.firstOrNull { it.startsWith(key) }?.split(SPACES)?.getOrNull(1)?.toLongOrNull()
+        val pss = kb("Pss:") ?: return null
+        return pss to (kb("SwapPss:") ?: 0L)
     }
 
     /**
@@ -393,6 +418,8 @@ object MemWatch {
     @Volatile private var gameAt = 0L
     @Volatile private var gameMb = -1L
     @Volatile private var gameN = 0
+    /** the game's processes' SwapPss summed (KB) at the last sample, -1 = none yet ([swapNote]) */
+    @Volatile private var gameSwapKb = -1L
     /**
      * THE GAME'S LAST MEMORY SAMPLE (the add-ons-silent triage, 2026-11-14): (MB, the uptime ms its read began), null = none yet. The
      * add-ons' silence reads "the game looks to be in the world" from it (AddonSilence.WorldByMemory: >= ~2.5 GB for 30 s); one value
@@ -413,18 +440,18 @@ object MemWatch {
     }
     private fun gameNow() {
         val me = android.os.Process.myPid(); val uid = android.os.Process.myUid()
-        var kb = 0L; var n = 0
+        var kb = 0L; var swapKb = 0L; var n = 0
         for (d in java.io.File("/proc").listFiles() ?: emptyArray()) {
             val pid = d.name.toIntOrNull() ?: continue
             if (pid == me) continue
             val st = runCatching { java.io.File(d, "status").readLines() }.getOrNull() ?: continue
             val u = st.firstOrNull { it.startsWith("Uid:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toIntOrNull()
             if (u != uid) continue
-            val pss = runCatching { java.io.File(d, "smaps_rollup").readLines() }.getOrNull()
-                ?.firstOrNull { it.startsWith("Pss:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull() ?: continue
-            kb += pss; n++
+            // the same read as before; its SwapPss too (issue triage 2026-11-16: whose swap it is, [swapNote])
+            val (pss, swap) = runCatching { java.io.File(d, "smaps_rollup").readLines() }.getOrNull()?.let { rollup(it) } ?: continue
+            kb += pss; swapKb += swap; n++
         }
-        gameMb = mb(kb); gameN = n
+        gameMb = mb(kb); gameN = n; gameSwapKb = swapKb
     }
 }
 
