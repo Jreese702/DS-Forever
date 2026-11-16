@@ -166,17 +166,43 @@ class BridgeLogTest {
         assertTrue(gate.note(2_000L, docs[1].getLong("_gt"), thorNow + 600))
     }
 
-    @Test fun anOlderDesktopsZoneIsLearntFromTheFirstLiveDocumentNeverTheBacklog() {
+    @Test fun anOlderDesktopsZoneIsLearntFromLiveDocumentsNeverTheBacklog() {
         val docs = ArrayList<JSONObject>()
-        // UTC+1 PC, UTC+3 Thor (PC 2 h behind); the backlog's stamp is old and must teach nothing; the live one is 3 s late
+        // UTC+1 PC, UTC+3 Thor (PC 2 h behind); the backlog's stamp is old and must teach nothing; the live ones come 6 s apart, a few
+        // seconds late, and the shift is taken once two of them have kept time
+        var calls = 0
+        fun arrival(n: Int) = thorNow + n * 6_000L
         val b = bridge(listOf(Script(listOf(welcome, doc(1, thorNow - 2 * hour - 3 * hour, "{\"t\":\"old\"}"), backlogEnd,
-            doc(2, thorNow - 2 * hour - 3_000, "{\"t\":\"a\"}"), doc(3, thorNow - 2 * hour + 7_000, "{\"t\":\"b\"}")))),
-            docs, ArrayList(), wall = { thorNow })
+            doc(2, arrival(0) - 2 * hour - 3_000, "{\"t\":\"a\"}"), doc(3, arrival(1) - 2 * hour - 1_000, "{\"t\":\"b\"}"),
+            doc(4, arrival(2) - 2 * hour - 2_000, "{\"t\":\"c\"}")))),
+            docs, ArrayList(), wall = { arrival(calls++) })
         b.runHere()
         assertEquals(2 * hour, b.clock.shiftMs)
-        assertEquals(thorNow - 5 * hour, docs[0].getLong("_gt"))     // the backlog was stamped before the shift was known
-        assertEquals(thorNow - 3_000, docs[1].getLong("_gt"))
-        assertEquals(thorNow + 7_000, docs[2].getLong("_gt"))
+        assertEquals(thorNow - 5 * hour, docs[0].getLong("_gt"))     // the backlog: never moved by a guess
+        assertEquals(arrival(0) - 2 * hour - 3_000, docs[1].getLong("_gt"))   // one live document proves nothing yet
+        assertEquals(arrival(1) - 1_000, docs[2].getLong("_gt"))
+        assertEquals(arrival(2) - 2_000, docs[3].getLong("_gt"))
+        // and the gate counts them current from then on (it never did: 2 h off)
+        val gate = com.jrees.wowcompanion.InputGate()
+        assertFalse(gate.note(1_000L, docs[1].getLong("_gt"), arrival(0)))
+        assertTrue(gate.note(7_000L, docs[2].getLong("_gt"), arrival(1)))
+    }
+
+    @Test fun anOldLogReadAfterTheBacklogTeachesNothing() {
+        // Desktop 0.2.29 reads the game's log only after its bridge is up (AppController.Start: StartBridge, StartSunshine, StartMdns,
+        // then the log), and again when its WoW folder is chosen: a Thor that connected in between gets an empty backlog, then the old
+        // log's documents as live ones. Same time zone: a 3 h old document must not teach a 3 h shift (nothing would be current again)
+        val docs = ArrayList<JSONObject>()
+        // the Thor's clock as each live document arrives: the old ones together (one read of the log), the fresh ones 6 s apart
+        fun arrival(n: Int) = if (n < 40) thorNow + n * 2L else thorNow + 80 + (n - 40) * 6_000L
+        var calls = 0
+        val old = (0 until 40).map { doc(it, thorNow - 3 * hour + it * 1_000L, "{\"t\":\"old$it\"}") }
+        val fresh = (40 until 43).map { doc(it, arrival(it) - 300, "{\"t\":\"new$it\"}") }
+        val b = bridge(listOf(Script(listOf(welcome, backlogEnd) + old + fresh)), docs, ArrayList(), wall = { arrival(calls++) })
+        b.runHere()
+        assertEquals(0L, b.clock.shiftMs)
+        assertEquals(thorNow - 3 * hour, docs[0].getLong("_gt"))
+        for (n in 40 until 43) assertEquals(arrival(n) - 300, docs[n].getLong("_gt"))
     }
 
     @Test fun sameZoneOrAFewMinutesOffChangesNothing() {

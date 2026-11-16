@@ -82,8 +82,10 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 3. On every welcome the Thor drops any half-assembled state and sends `{"t":"focus"}` (bring WoW to the front).
 4. *(issue #414)* The welcome (and `/v1/info`) carries `"gt_now"`: the PC's clock when it was sent, on the documents' `gt` scale
    (local time, like WoW's log). The Thor shifts every `gt` of the connection by (its own clock - `gt_now`), so a PC in another time
-   zone (or with a drifted clock) still gives "current" documents. Without it (an older Desktop) the Thor takes the gap of the first
-   document after `backlog_end`, rounded to whole quarter hours (within 2 min), and otherwise shifts nothing.
+   zone (or with a drifted clock) still gives "current" documents. Without it (an older Desktop) the Thor takes the gap of the
+   documents after `backlog_end`, rounded to whole quarter hours (within 2 min), once that gap has held (within 20 s) for 5 s of the
+   Thor's clock, and otherwise shifts nothing: an older Desktop can send its old log's documents after `backlog_end` (read after
+   the bridge was up), and those never hold still.
 
 ## 5. The add-on's documents
 
