@@ -48,7 +48,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "p24"          -- bump on every change; the app shows it, so a stale build is visible; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
+local PV = "p25"          -- bump on every change; the app shows it, so a stale build is visible; p25 (voice1 review, the user 2026-11-16: voice to text must be "intuitive and slick", "A opens the keyboard, X opens our own voice prompt"): while the app's search keyboard (or its voice page) is up, Start is held from the game too (the keyboard's Search key, as Bags' search holds it), so the game's own Start never opens its wheel over it; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
 local MAKE_MAX = 26      -- make:1 .. make:26 on the control row; more than that is Create All
 local SEL_COLS = 40      -- columns of the "profsel" row (TapPad's COLS)
 local BASIC = 1          -- Enum.CraftingReagentType.Basic (profession constants documentation)
@@ -938,7 +938,9 @@ local function takePad()
     local c = capture()
     if not c then ctlr.held, ctlr.why = false, "no controller capture" return false, ctlr.why end
     local spec = { hide = CAP_SPEC.hide, press = CAP_SPEC.press, lost = CAP_SPEC.lost, extra = extraKeys(c) }
-    -- p24: the app's keyboard types the search: B is the room's (no back button, nothing passed), so it closes the keyboard
+    -- p24: the app's keyboard types the search: B is the room's (no back button, nothing passed), so it closes the keyboard; and Start
+    -- is held from the game meanwhile (the keyboard's Search key, as Bags' search holds it: the game's own Start would open its wheel)
+    if ctlr.kbd and spec.extra then spec.extra[#spec.extra + 1] = "PADFORWARD" end
     local back = wantBack(c) and not ctlr.kbd
     if back then spec.back = wantStop() and STOP_BUTTON or (closeVisible() and CLOSE_BUTTON or nil) end
     -- p21: no back button to name (the game hid it): B is the GAME's own (its navigation closes the window); `back` stays on, so

@@ -101,6 +101,7 @@ function lastSpec() return SPECS[#SPECS] end
 function lastAck(op) for i = #SENT, 1, -1 do local t = SENT[i]; if t.type == "profack" and t.op == op then return t end end end
 function lastDoc() for i = #SENT, 1, -1 do local t = SENT[i]; if t.type == "prof" then return t.p end end end
 function passHas(spec, k) if not spec.pass then return false end; for _, x in ipairs(spec.pass) do if x == k then return true end end; return false end
+function extraHas(spec, k) if not spec.extra then return false end; for _, x in ipairs(spec.extra) do if x == k then return true end end; return false end
 ''')
 load = L.eval('function(src) local f, e = loadstring(src, "@Professions.lua"); if not f then error(e) end; return f end')
 ok_load = True
@@ -126,14 +127,19 @@ check(L.eval('lastSpec().back') is None and not L.eval('passHas(lastSpec(), "PAD
 check(L.eval('BNEXT') == "back", "kbd: Home is told B steps back (not Home)", L.eval('BNEXT'))
 check(L.eval('lastAck("kbd") and lastAck("kbd").ok') is True, "kbd answered ok")
 check(L.eval('lastDoc() and lastDoc().kbd') is True, "the prof doc says kbd", L.eval('lastDoc() and lastDoc().kbd'))
+# p25: Start held from the game while the keyboard is up (its Search key; the shoulders stay held as before)
+check(L.eval('extraHas(lastSpec(), "PADFORWARD")') is True, "kbd: Start held from the game (the keyboard's Search key)")
+check(L.eval('extraHas(lastSpec(), "PADLSHOULDER") and extraHas(lastSpec(), "PADRSHOULDER")') is True, "kbd: LB / RB still held")
 # a craft starting meanwhile changes nothing of B while typing
 L.execute('ROWS.prof("page"); run(1)')
 check(L.eval('lastSpec().back') is None, "a page re-take while the keyboard is up keeps B the room's")
+check(L.eval('extraHas(lastSpec(), "PADFORWARD")') is True, "a page re-take while the keyboard is up keeps Start held")
 
 # the keyboard down
 L.execute('ROWS.prof("nokbd"); run(1)')
 check(L.eval('lastSpec().back') == "ProfessionsFrameCloseButton", "nokbd: B the game's close again", L.eval('lastSpec().back'))
 check(L.eval('BNEXT') == "home", "nokbd: Home is told B goes home again")
+check(L.eval('extraHas(lastSpec(), "PADFORWARD")') is False, "nokbd: Start the game's / Home's again (not held)")
 check(L.eval('lastDoc() and lastDoc().kbd') is None, "the prof doc no longer says kbd")
 L.execute('N1 = #SPECS; ROWS.prof("nokbd"); run(1)')
 check(L.eval('#SPECS') == L.eval('N1'), "a second nokbd re-takes nothing")
@@ -167,6 +173,7 @@ check(cols["nokbd"] < 40, "still inside the control row's 40 columns", cols["nok
 check(L.eval('#TRACE') == 0, "no trace: no binding, macro, CVar or window call", L.eval('#TRACE'))
 check('p24 (voice1, the user 2026-11-16' in SRC and '"A opens the keyboard, X opens our own voice prompt"' in SRC,
       "the version note quotes the user")
+check('local PV = "p25"' in SRC and 'p25 (voice1 review, the user 2026-11-16' in SRC, "p25: the tag bumped, its note quotes the user")
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
