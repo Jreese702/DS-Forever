@@ -51,7 +51,7 @@ local format = string.format
 -- and the core's heartbeat. Set to false when the Character room itself goes to the device.
 local BARS_ONLY = false
 
-local CV = BARS_ONLY and "c18b" or "c18"     -- bump on every change; c18 (the user on build 1462: "pressing B in the more menu closes the character page and leaves the menu open."): the eqs part says what B does while the More menu / its lists / the save question are up (gask = the game's own question holds B; bgo = the capture refused to take B off the game's window, in a fight) so the app goes Home on B only when B really leaves; a refused B pass is tried again on the 0.25 s tick; c17 (char-more2, review of c16; the user: "we should have options there like unequip, replace and enchant"): the game's question keeps A / B until it is gone (a pass the capture refused in a fight is tried again; the menu's own B pass never overrides it); c16 (char-more, the user: "we should have options there like unequip, replace and enchant"): the More menu's lists hold B (moresub: B one step back to the menu) and the game's own questions over the room (bind it to you? Replace enchant?) get A / B; c15 (uneq2, the user: "Never let a stale bag pick equip anything"): moreon also voids a Bags drag pick; c14 (uneq1): the Unequip route's cells (see THE GEAR SETS' BUTTONS); c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
+local CV = BARS_ONLY and "c19b" or "c19"     -- bump on every change; c19 (the equip slide-out; the user, 2026-11-16: "The Y text menu stays for enchant and bind (use-effect items)."): the Y menu's Bind to a Button for a worn piece with a use effect opens the Spellbook's Bind box for it HOSTED by this room (Book b59 WC.spellsBindItem, as the Bags room hosts one): three more keys on the eqset cells (no new pad row): wbind = the arm (the next bmvq column slot - 1 names the slot, Bags' WC._bagsUnequipArm("bind") -> bindWorn), boxa / boxb = a finger's A / B in the box; while the box is up every press is the box's (B too, taken off the game's window: eqs box = true) and its end hands the room back; c18 (the user on build 1462: "pressing B in the more menu closes the character page and leaves the menu open."): the eqs part says what B does while the More menu / its lists / the save question are up (gask = the game's own question holds B; bgo = the capture refused to take B off the game's window, in a fight) so the app goes Home on B only when B really leaves; a refused B pass is tried again on the 0.25 s tick; c17 (char-more2, review of c16; the user: "we should have options there like unequip, replace and enchant"): the game's question keeps A / B until it is gone (a pass the capture refused in a fight is tried again; the menu's own B pass never overrides it); c16 (char-more, the user: "we should have options there like unequip, replace and enchant"): the More menu's lists hold B (moresub: B one step back to the menu) and the game's own questions over the room (bind it to you? Replace enchant?) get A / B; c15 (uneq2, the user: "Never let a stale bag pick equip anything"): moreon also voids a Bags drag pick; c14 (uneq1): the Unequip route's cells (see THE GEAR SETS' BUTTONS); c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
 
 -- ---------------------------------------------------------------- safe reads
 
@@ -441,7 +441,8 @@ local function collectSets()
     end
     -- a deleted set's cells go back to the row (after the pad's quarantine, so a stale tap can never reach another set)
     if WC.pad and type(WC.pad.retain) == "function" then
-        local keep = { yes = true, no = true, uneq = true, moreon = true, moreoff = true, moresub = true }
+        local keep = { yes = true, no = true, uneq = true, moreon = true, moreoff = true, moresub = true,
+                       wbind = true, boxa = true, boxb = true }                -- c19: the Bind box's arm and its finger's A / B
         for _, r in ipairs(out) do keep["equip:" .. r.id] = true; keep["save:" .. r.id] = true end
         pcall(WC.pad.retain, "eqset", keep)
     end
@@ -1110,7 +1111,12 @@ end
 --   uneq              the ARM of Bags.lua's unequip (WC._bagsUnequipArm): the app's next tap, bmvq column slot - 1, names the worn
 --                     slot; Bags does the move and its answer comes back here as the ack `unequip` (unequipAck). Not refused here in a
 --                     fight: Bags refuses armour then and tries a weapon (the user's pick)
-local eqs = { ask = nil, ack = nil, seq = 0, more = nil }
+-- c19 (the equip slide-out; the user, 2026-11-16: "The Y text menu stays for enchant and bind (use-effect items)."): three more keys,
+-- 9 fixed + 2 per set, still inside the row's 37 (the game keeps at most 10 sets):
+--   wbind             the ARM of a worn piece's Bind to a Button: the app's next tap, bmvq column slot - 1, names the slot (Bags.lua's
+--                     arm, kind "bind"), which opens the Spellbook's Bind box for that piece, hosted here (bindWorn, HOST below)
+--   boxa / boxb       a finger's Keep / Undo / Back in that box: its own A / B
+local eqs ={ ask = nil, ack = nil, seq = 0, more = nil }
 local function eqWords(g, fallback) local v = PS(_G[g]); return (v and v ~= "") and v or fallback end
 local function eqAck(op, id, ok, why)
     eqs.seq = eqs.seq + 1
@@ -1137,18 +1143,82 @@ local function passB(on)
     local ok, done = pcall(cap.pass, "character", on and { "PAD2" } or {})
     if ok and done then passOff = not on end
 end
+-- c19 THE BIND BOX FOR A WORN PIECE, HOSTED HERE (the user, 2026-11-16: "The Y text menu stays for enchant and bind (use-effect
+-- items)."): the Spellbook's own box (Book b59 WC.spellsBindItem: Normal | In combat, keep / undo, its refusals), this room keeping the
+-- controller as the Bags room does: every press goes to the box (WC.spellsBindHosted.press), its extra keys (Select / L3 / R3) are asked
+-- of the capture under this room's name (HOST.extra), and its end (kept, cancelled, its answer closed) hands the room back (HOST.done).
+-- Out of a fight only (the box refuses one); the piece by its worn slot, named by Bags' arm (bindWorn below). Nothing of the game's is
+-- called from here but the box's own (its PickupItem / PlaceAction on the slot the player's press names, as for a bag item).
+local BOX = { up = false }
+local HOST = {
+    name = "character",
+    extra = function(list)
+        local cap = capture()
+        if not (cap and type(cap.extra) == "function" and (tonumber(cap.version) or 1) >= 4) then return false end
+        local ok, got = pcall(cap.extra, "character", list)
+        return ok and got and true or false
+    end,
+    done = function()
+        if not BOX.up then return end
+        BOX.up = false
+        if not eqs.ask and not eqs.more then passB(true) end   -- B to the game's window again (when the window holds)
+        dirty.eqs = true
+        soon(0)
+    end,
+}
+local function boxAbort(why)
+    if not BOX.up then return end
+    BOX.up = false
+    if type(WC.spellsBindHosted) == "table" and type(WC.spellsBindHosted.abort) == "function" then
+        pcall(WC.spellsBindHosted.abort, why or "left")
+    end
+    dirty.eqs = true
+    soon(0)
+end
 local function eqForget()
     if not eqs.ask and not eqs.more then return false end
     eqs.ask, eqs.more = nil, nil
-    passB(true)
+    if not BOX.up then passB(true) end
     dirty.eqs = true
     soon(0)
     return true
+end
+-- c19: Bags' arm named worn [slot] (its bmvq column after `wbind`); [late] = the column came after the arm's TTL (nothing opens)
+local function bindWorn(slot, late)
+    if late then return eqAck("bind", slot, false, "late") end
+    if type(slot) ~= "number" or slot < 1 or slot > 19 then return eqAck("bind", slot, false, "bad") end
+    if not ctl.on or ctl.pend then return eqAck("bind", slot, false, "lost") end
+    if BOX.up then return eqAck("bind", slot, false, "busy") end
+    if inCombat() then return eqAck("bind", slot, false, "combat") end
+    local id = PN(one(GetInventoryItemID, "player", slot))
+    if not id then return eqAck("bind", slot, false, "empty") end
+    if type(WC.spellsBindItem) ~= "function" then return eqAck("bind", slot, false, "unsupported") end
+    local ok, opened, why = pcall(WC.spellsBindItem, id, HOST)
+    if not (ok and opened) then return eqAck("bind", slot, false, ok and tostring(why) or "error") end
+    BOX.up = true
+    passB(false)                                            -- B is the box's (Back / Undo), not the game's window's
+    eqAck("bind", slot, true)
 end
 local function onSetTap(key)
     if type(key) ~= "string" then return eqAck("?", nil, false, "nothing on that cell") end
     local op, sid = key:match("^(%a+):(%d+)$")
     sid = tonumber(sid)
+    -- c19: a finger's Keep / Undo / Back in the Bind box: the box's own A / B
+    if key == "boxa" or key == "boxb" then
+        local hb = WC.spellsBindHosted
+        if BOX.up and type(hb) == "table" and type(hb.press) == "function" then
+            local okP, took = pcall(hb.press, key == "boxa" and "PAD1" or "PAD2")
+            if not (okP and took) then HOST.done() end
+        end
+        return
+    end
+    -- c19: the Bind arm: the app's next tap (bmvq column slot - 1) names the worn piece (Bags.lua -> bindWorn)
+    if key == "wbind" then
+        eqForget()
+        if type(WC._bagsUnequipArm) ~= "function" then return eqAck("bind", nil, false, "unsupported") end
+        WC._bagsUnequipArm("bind")
+        return
+    end
     if key == "no" then if not eqForget() then eqAck("no", nil, false, "nothing asked") end return end
     if key == "moreon" then
         if type(WC._bagsVoidPick) == "function" then pcall(WC._bagsVoidPick) end      -- c15: a lost arm can't make the slot tap a drop
@@ -1201,11 +1271,13 @@ local function collectEqs()
     -- c18: gask = the game's own question is up (B answers it, the room stays); bgo = something of ours is open but B still goes to the
     -- game's window (the capture refused to take it off, in a fight): B leaves the room then, as before
     row.gask = gameAsked ~= nil
-    row.bgo = (ctl.on and ctl.via == "window" and (eqs.ask or eqs.more) and not passOff and not gameAsked) and true or false
+    row.bgo = (ctl.on and ctl.via == "window" and (eqs.ask or eqs.more or BOX.up) and not passOff and not gameAsked) and true or false
+    row.box = BOX.up                                                                            -- c19: the hosted Bind box is up
     if pad and type(pad.slotFor) == "function" then
         row.row = EQ_ROW; row.yes = eqCell("yes"); row.no = eqCell("no")
         row.uq = eqCell("uneq"); row.mon = eqCell("moreon"); row.moff = eqCell("moreoff")      -- c14: the Unequip route
         row.msb = eqCell("moresub")                                                             -- c16: a list of the More menu
+        row.wb = eqCell("wbind"); row.ba = eqCell("boxa"); row.bb = eqCell("boxb")              -- c19: the Bind box's arm, its A / B
     end
     return row
 end
@@ -1230,6 +1302,14 @@ end
 
 local function onPress(key)
     if ctl.pend then ctl.pend = nil; note("taken") end      -- a press reaches us: the app's ENTER landed
+    -- c19: the hosted Bind box takes every press while it is up (B too: its Back / Undo); a box gone meanwhile: the room again
+    if BOX.up then
+        local hb = WC.spellsBindHosted
+        local ok, took = false, false
+        if type(hb) == "table" and type(hb.press) == "function" then ok, took = pcall(hb.press, key) end
+        if not (ok and took) then HOST.done() end
+        return
+    end
     if key == "PAD2" then
         -- c16: a list of the More menu open: back to the menu (the app closes the list when `msub` goes false), the menu stays
         if eqs.more == "sub" then eqs.more = true; dirty.eqs = true; soon(0); return end
@@ -1287,11 +1367,12 @@ end
 -- spec passes B): tried again on the tick; and the app told whenever what B does changes (eqs gask / bgo)
 local bSent = nil
 local function syncB()
+    local open = eqs.ask or eqs.more or BOX.up                        -- c19: the Bind box holds B as the menu does
     if ctl.on and not ctl.pend and ctl.via == "window" and not gameAsked then
-        if (eqs.ask or eqs.more) and not passOff then passB(false)
-        elseif not (eqs.ask or eqs.more) and passOff then passB(true) end   -- closed while the way back was refused: B to the window again
+        if open and not passOff then passB(false)
+        elseif not open and passOff then passB(true) end   -- closed while the way back was refused: B to the window again
     end
-    local now = tostring(gameAsked ~= nil) .. tostring((ctl.on and ctl.via == "window" and (eqs.ask or eqs.more) and not passOff and not gameAsked) and true or false)
+    local now = tostring(gameAsked ~= nil) .. tostring((ctl.on and ctl.via == "window" and open and not passOff and not gameAsked) and true or false)
     if now ~= bSent then bSent = now; dirty.eqs = true; soon(0) end
 end
 if not BARS_ONLY and C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(0.25, function() pcall(syncAsk); pcall(syncB) end) end
@@ -1305,6 +1386,7 @@ if not BARS_ONLY and C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(0.25, 
 local LEFT = { B = true, left = true, taken = true }
 local function onLost(why)
     eqForget()
+    boxAbort(why)                                           -- c19: the hosted Bind box goes quietly with the controller
     passOff = false
     if LEFT[why] and ctl.open then ctl.stayOff = true end
     ctl.on, ctl.via, ctl.pend = false, nil, nil
@@ -1423,6 +1505,7 @@ local function onWindowHidden()
     -- through) can close its window from the controller: "B". In a fight (capture v10) the hold stays: Interact's leave lets it
     -- go (its lost("B") follows this OnHide in the same click), and a window closed any other way leaves the room usable
     if not release(ours and "closed" or (v2 and "B" or nil)) then note("closed-in-fight"); return end
+    boxAbort("closed")                                      -- c19
     ctl.on, ctl.via, ctl.pend = false, nil, nil
     note(ours and "closed-app" or (v2 and "released-B" or "closed"))
 end
@@ -1458,6 +1541,7 @@ local function touchClose()
     if not ctl.on and not named then return false end
     -- not "B": the app changed room itself. In a fight a real hold is Interact's leave's to end (the app taps it): no retry here
     if not release("closed") then note("close-fight-leave"); return false end
+    boxAbort("closed")                                      -- c19: the room left: its hosted Bind box with it
     -- the player left the room in the APP while the game's window is still open: stay off until that window closes (else the
     -- 1 s retake would pull the controller, and the app with it, straight back into the room)
     if ctl.via == "window" then ctl.stayOff = true end
@@ -1574,4 +1658,5 @@ end
 WC.character = { version = CV, barsOnly = BARS_ONLY, emit = emit, collect = COLLECT, standIn = standIn, ctl = ctl,
                   touchOpen = touchOpen, touchClose = touchClose,
                   initOpenCell = initOpenCell, initCloseCell = initCloseCell, onOpenTap = onOpenTap, onCloseTap = onCloseTap,
-                  onSetCell = onSetCell, unequipAck = unequipAck, eqFirst = EQ_FIRST, eqCells = EQ_CELLS, syncAsk = syncAsk, syncB = syncB }   -- standIn / ctl for tools/test_character.py; the touch pair for Auras.lua
+                  onSetCell = onSetCell, unequipAck = unequipAck, eqFirst = EQ_FIRST, eqCells = EQ_CELLS, syncAsk = syncAsk, syncB = syncB,
+                  bindWorn = bindWorn, box = BOX }   -- standIn / ctl for tools/test_character.py; the touch pair for Auras.lua

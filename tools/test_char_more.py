@@ -194,7 +194,7 @@ for src, name, addon in ((BAGS, 'Bags.lua', 'WowCompanion'), (CHAR, 'Character.l
 L.execute('WowCompanionDB = {}; fire("PLAYER_LOGIN"); WowCompanion._bagsLayout = { { bag = 0, slots = 4 } }; WowCompanion.bagsPadRows({ { bag = 0, slots = 4 } })')
 
 # ---- Character c16
-check(str(L.eval('WowCompanion.character.version')) == 'c18', "Character's version is bumped (c18)", L.eval('WowCompanion.character.version'))
+check(str(L.eval('WowCompanion.character.version')) == 'c19', "Character's version is bumped (c19: the equip slide-out's Bind host)", L.eval('WowCompanion.character.version'))
 d = L.eval('eqs()')
 check(d.msb is not None and d.msb not in (d.uq, d.mon, d.moff) and d.msub is False, "eqs: the moresub cell (its own), msub false", (d.msb, d.uq, d.mon, d.moff))
 L.execute('WowCompanion.character.collect.sets()')
