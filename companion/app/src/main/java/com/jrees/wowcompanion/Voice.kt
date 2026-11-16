@@ -233,6 +233,8 @@ object Voice {
         private var stopAt = 0L
         /** what the box was given last ([Act.Push]) */
         var pushed = before; private set
+        /** the sheet is over (B, the finish button, Edit): the recognizer's late words change nothing */
+        var closed = false; private set
 
         /** the box's text now: [before] with what was heard (the settled words while listening) */
         fun boxText(): String = insert(before, if (state == State.LISTENING) stable.text else heard, append, max)
@@ -258,7 +260,11 @@ object Voice {
         private fun pushIf(t: String): List<Act> = if (t == pushed) emptyList() else { pushed = t; listOf(Act.Push(t)) }
 
         /** one button (the guest pad's names), [fight] = the game is in a fight now */
-        fun press(key: String, fight: Boolean): List<Act> = when (state) {
+        fun press(key: String, fight: Boolean): List<Act> = if (closed) emptyList() else pressOpen(key, fight).also { acts ->
+            if (acts.any { it is Act.Finish || it is Act.Edit || it == Act.Close }) closed = true
+        }
+
+        private fun pressOpen(key: String, fight: Boolean): List<Act> = when (state) {
             State.ASK, State.MIC_OFF -> when (key) {
                 "PAD1" -> if (fight) listOf(Act.Glow) else listOf(Act.AskMic)
                 "PAD2" -> cancel()
@@ -307,6 +313,8 @@ object Voice {
 
         /** B: the recognizer goes, the box gets its earlier text back, the sheet closes */
         fun cancel(): List<Act> {
+            if (closed) return emptyList()
+            closed = true
             val wasLive = state == State.LISTENING || state == State.STOPPING
             heard = ""; stable.reset()
             return (if (wasLive) listOf<Act>(Act.Abort) else emptyList()) + pushIf(before) + Act.Close
@@ -314,6 +322,7 @@ object Voice {
 
         /** the microphone question answered: [perm] now, [avail] the recognizer */
         fun permAnswered(perm: Perm, avail: Avail): List<Act> {
+            if (closed) return emptyList()
             if (state != State.ASK && state != State.MIC_OFF && !(state == State.PROBLEM && problem == Problem.MIC_OFF)) return emptyList()
             problem = null
             return open(perm, avail)
@@ -322,7 +331,7 @@ object Voice {
         // ---- the recognizer's events (stale ones are the engine's to drop)
 
         fun rms(db: Float) {
-            if (state != State.LISTENING && state != State.STOPPING) return
+            if (closed || (state != State.LISTENING && state != State.STOPPING)) return
             if (db > loudest) loudest = db
             val k = ((db + 2f) / 12f).coerceIn(0f, 1f)
             level = if (k > level) level * 0.4f + k * 0.6f else level * 0.85f + k * 0.15f
@@ -330,7 +339,7 @@ object Voice {
 
         /** a partial guess: the words heard show at once; the box is given the settled ones, at most once per new settled word */
         fun partial(text: String): List<Act> {
-            if (state != State.LISTENING && state != State.STOPPING) return emptyList()
+            if (closed || (state != State.LISTENING && state != State.STOPPING)) return emptyList()
             heard = clean(text, max)
             if (state != State.LISTENING || !stable.partial(heard)) return listOf(Act.Glow)
             return pushIf(insert(before, stable.text, append, max)).ifEmpty { listOf(Act.Glow) }
@@ -338,7 +347,7 @@ object Voice {
 
         /** the final words: the result, or "Didn't hear you" when there are none */
         fun final(text: String): List<Act> {
-            if (state != State.LISTENING && state != State.STOPPING) return emptyList()
+            if (closed || (state != State.LISTENING && state != State.STOPPING)) return emptyList()
             val t = clean(text, max).ifEmpty { if (state == State.STOPPING) heard else "" }
             if (t.isEmpty()) return showProblem(timeoutAnswer())
             heard = t; state = State.RESULT; resultAt = now(); flat = 0
@@ -352,7 +361,7 @@ object Voice {
 
         /** the recognizer's error [code] */
         fun error(code: Int): List<Act> {
-            if (state != State.LISTENING && state != State.STOPPING) return emptyList()
+            if (closed || (state != State.LISTENING && state != State.STOPPING)) return emptyList()
             // A pressed and the recognizer then says it matched nothing: the words heard so far are the result
             if (state == State.STOPPING && heard.isNotEmpty()) return final(heard)
             val timeout = code == E_SPEECH_TIMEOUT || code == E_NO_MATCH
@@ -377,6 +386,7 @@ object Voice {
 
         /** the clock: A while listening whose final words never came uses the words heard so far */
         fun tick(): List<Act> {
+            if (closed) return emptyList()
             if (state == State.STOPPING && now() - stopAt > STOP_WAIT_MS) return listOf<Act>(Act.Abort) + final(heard)
             return emptyList()
         }

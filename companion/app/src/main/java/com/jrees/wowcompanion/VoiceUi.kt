@@ -23,7 +23,7 @@ object VoiceUi {
     }
 
     /** the off-device renders and tests: the device's microphone as given (null = ask the device again) */
-    internal fun micForTest(has: Boolean?) { micMemo = has }
+    fun micForTest(has: Boolean?) { micMemo = has }
 
     private val line by lazy { Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND } }
     private val fill by lazy { Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL } }

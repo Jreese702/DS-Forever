@@ -251,11 +251,11 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
     /** the voice page changed (a redraw for a host that draws this board itself, Bags' live dimming ...) */
     var onVoice: () -> Unit = {}
     /** the off-device renders: the permission and the recognizer as given (null = ask Android) */
-    internal var voiceProbe: (() -> Pair<Voice.Perm, Voice.Avail>)? = null
+    var voiceProbe: (() -> Pair<Voice.Perm, Voice.Avail>)? = null
     /** the recognizer (the renders and tests give their own) */
-    internal var engine: VoiceListen? = null
+    var engine: VoiceListen? = null
     /** the clock (the tests' own) */
-    internal var clock: () -> Long = { android.os.SystemClock.uptimeMillis() }
+    var clock: () -> Long = { android.os.SystemClock.uptimeMillis() }
 
     /** what listens: Android's recognizer ([VoiceEngine]) */
     interface VoiceListen {
@@ -271,7 +271,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
     /** the voice page shows (its buttons are the page's) */
     val voiceShown: Boolean get() = sheet != null
     /** the sheet, for the renders and the tests */
-    internal val voiceSheet: Voice.Sheet? get() = sheet
+    val voiceSheet: Voice.Sheet? get() = sheet
     /** the page is moving (ripples while listening): a host that draws this board itself redraws on every frame */
     val voiceAnimating: Boolean get() = sheet?.state.let { it == Voice.State.LISTENING || it == Voice.State.STOPPING }
 
@@ -329,8 +329,13 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         askPending = false
         Voice.unregister(stopHook)
         ui.removeCallbacks(tick)
-        VoiceMic.onAnswer = null
+        // only this page's own wait for Android's answer (another board's stays)
+        myAnswer?.let { if (VoiceMic.onAnswer === it) VoiceMic.onAnswer = null }
+        myAnswer = null
     }
+
+    /** this page's wait for Android's microphone answer ([askMic]) */
+    private var myAnswer: (() -> Unit)? = null
 
     private val sink = object : VoiceEngine.Sink {
         override fun rms(db: Float) { sheet?.rms(db) }
@@ -340,7 +345,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
     }
 
     /** the recognizer's events, for the off-device renders and tests (as Android would call them) */
-    internal fun voiceSink(): VoiceEngine.Sink = sink
+    fun voiceSink(): VoiceEngine.Sink = sink
 
     private fun voicePress(button: String): Boolean {
         val s = sheet ?: return false
@@ -389,17 +394,19 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
     /** A on Allow: Android's question on the bottom screen (the host's), the sheet looks again when it closes */
     private fun askMic(s: Voice.Sheet) {
         askPending = true
-        VoiceMic.onAnswer = {
-            askPending = false
+        val answer: () -> Unit = {
+            askPending = false; myAnswer = null
             if (sheet === s) { val (p, a) = probe(s.mode); run(s.permAnswered(p, a)) }
         }
+        myAnswer = answer
+        VoiceMic.onAnswer = answer
         DiagLog.event("voice", "mic question asked")
         val ask = Voice.askMic
         if (ask != null) { ask(); return }
         // no host (before Play): the question on this board's own display
         val i = android.content.Intent(context, VoiceAskActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         val opts = display?.displayId?.let { android.app.ActivityOptions.makeBasic().setLaunchDisplayId(it).toBundle() }
-        runCatching { context.startActivity(i, opts) }.onFailure { VoiceMic.onAnswer = null; askPending = false }
+        runCatching { context.startActivity(i, opts) }.onFailure { if (VoiceMic.onAnswer === answer) VoiceMic.onAnswer = null; askPending = false; myAnswer = null }
     }
 
     /** the page's clock: the ripples, the recognizer's late finish, the fight's end on Allow, the copy's gold fill */
