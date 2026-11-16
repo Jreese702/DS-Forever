@@ -218,7 +218,9 @@ class PetAutocastShotsTest {
     /*
      * PET AUTOCAST ON THE FACE BUTTONS (the user, 2026-11-16: "I wonder if we should just use the face buttons without having to select
      * the attack to toggle the attack on and off? ... using Y/X/A as the toggles for them? just flat out playing the animation or turning
-     * it off when toggling"; picks "Y / X / A, pet bar order", the 4th "D-pad Up", "Class pet wheel only"). The REAL CastView: the chord
+     * it off when toggling"; picks "Y / X / A, pet bar order", "Class pet wheel only"; the 4th, 2026-11-16: "on the pet skill raadial you
+     * made it with the Dpad button but I actually thing that B still makes a lot of sense to use here", pick "Only with a 4th ability":
+     * B toggles a 4th, else B goes back; D-pad Up nothing). The REAL CastView: the chord
      * (RB + RT) and the buttons go in as PadInput gives them (onPad / onButtons, bit n = PadInput.SLOT_x), the picks come out as the
      * classr cells the host taps (onClassPick).
      */
@@ -289,7 +291,7 @@ class PetAutocastShotsTest {
     private fun line(v: CastView) = field(v, "classLine").get(v) as String?
     private fun now() = SystemClock.uptimeMillis()
 
-    @Test fun yXADpadUpToggleTheirAbilitiesAtOnceAndTheWheelStaysOpen() {
+    @Test fun yXABToggleTheirAbilitiesAtOnceAndTheWheelStaysOpen() {
         ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
         val w = classWheel(wolf4)
         chord(w.v, true)
@@ -314,15 +316,21 @@ class PetAutocastShotsTest {
         assertEquals(false, PetAuto.on(6, "Cower", now()))
         assertTrue(wheelOpen(w.v))
         stick(w.v, null)
-        // D-pad Up = the 4th (Dash)
+        // D-pad Up: nothing (back to its old no-op)
         press(w.v, PadInput.SLOT_DPAD_UP)
+        assertEquals(listOf(16, 16, 17, 18), w.picks)
+        assertTrue(wheelOpen(w.v))
+        // B = the 4th (Dash): a toggle, the wheel stays open (B is not back on this wheel), Home's B leaves it alone
+        assertTrue(w.v.classBToggles())
+        press(w.v, PadInput.SLOT_FACE_RIGHT)
         assertEquals(19, w.picks.last())
         assertEquals(true, PetAuto.on(7, "Dash", now()))
         assertEquals("nothing was ever cast", listOf(16, 16, 17, 18, 19), w.picks)
         assertTrue(wheelOpen(w.v))
-        // B goes back
-        press(w.v, PadInput.SLOT_FACE_RIGHT)
+        // letting the chord go closes it (Hold + Release, nothing pointed: no cast)
+        chord(w.v, false)
         assertFalse(wheelOpen(w.v))
+        assertFalse(w.v.classBToggles())
         assertEquals(5, w.picks.size)
         // a press the game never confirms falls back after PENDING_MS (Dash's last word: off)
         ShadowSystemClock.advanceBy(Duration.ofMillis(PetAuto.PENDING_MS + 100))
@@ -337,7 +345,7 @@ class PetAutocastShotsTest {
         assertTrue("the control: a bar press predicts", predicted(w.v))
         field(w.v, "predOn").setBoolean(w.v, false)
         chord(w.v, true)
-        for (s in listOf(PadInput.SLOT_FACE_TOP, PadInput.SLOT_FACE_LEFT, PadInput.SLOT_FACE_BOTTOM, PadInput.SLOT_DPAD_UP)) {
+        for (s in listOf(PadInput.SLOT_FACE_TOP, PadInput.SLOT_FACE_LEFT, PadInput.SLOT_FACE_BOTTOM, PadInput.SLOT_FACE_RIGHT)) {
             press(w.v, s)
             assertFalse("a toggle never starts the predicted bar (slot $s)", predicted(w.v))
         }
@@ -381,7 +389,67 @@ class PetAutocastShotsTest {
             chord(imp.v, false)
             assertEquals("the chord let go casts the pointed Blood Pact (cell 9)", listOf(18, 9), imp.picks)
             assertFalse(wheelOpen(imp.v))
+            // three: B still goes back (no cast, nothing toggled)
+            chord(imp.v, true)
+            assertFalse(imp.v.classBToggles())
+            press(imp.v, PadInput.SLOT_FACE_RIGHT)
+            assertFalse(wheelOpen(imp.v))
+            assertEquals(listOf(18, 9), imp.picks)
+            // two: B goes back too
+            chord(two.v, false); chord(two.v, true)
+            assertTrue(wheelOpen(two.v))
+            press(two.v, PadInput.SLOT_FACE_RIGHT)
+            assertFalse(wheelOpen(two.v))
+            assertEquals(listOf(17, 8), two.picks)
         } finally { HomeSettings.classPickAR = false }
+    }
+
+    /** with a 4th ability B is a toggle and never closes: the wheel must still close in every open / pick mode */
+    @Test fun aFourAbilityWheelAlwaysCloses() {
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
+        HomeSettings.init(app)
+        try {
+            for (pickA in listOf(false, true)) {
+                HomeSettings.classPickAR = pickA
+                // Hold: letting the chord go closes (nothing pointed: no cast; pointed: casts it - A never does here)
+                HomeSettings.classTapR = false
+                PetAuto.reset()
+                val h = classWheel(wolf4)
+                chord(h.v, true)
+                press(h.v, PadInput.SLOT_FACE_RIGHT)
+                assertEquals("Hold (pickA=$pickA): B toggles Dash", listOf(19), h.picks)
+                assertTrue(wheelOpen(h.v))
+                chord(h.v, false)
+                assertFalse("Hold (pickA=$pickA): the chord let go closes", wheelOpen(h.v))
+                assertEquals(listOf(19), h.picks)
+                chord(h.v, true); stick(h.v, 90.0)               // Bite pointed
+                chord(h.v, false)
+                assertFalse(wheelOpen(h.v))
+                assertEquals("Hold (pickA=$pickA): the chord let go casts the pointed Bite (cell 9)", listOf(19, 9), h.picks)
+                stick(h.v, null)
+                // Tap: the chord let go keeps it open; B toggles, never closes; the same chord again closes (no cast)
+                HomeSettings.classTapR = true
+                PetAuto.reset()
+                val t = classWheel(wolf4)
+                chord(t.v, true); chord(t.v, false)
+                assertTrue("Tap (pickA=$pickA): stays", wheelOpen(t.v))
+                press(t.v, PadInput.SLOT_FACE_RIGHT)
+                press(t.v, PadInput.SLOT_FACE_BOTTOM)
+                assertEquals(listOf(19, 18), t.picks)
+                assertTrue(wheelOpen(t.v))
+                chord(t.v, true)
+                assertFalse("Tap (pickA=$pickA): the same chord again closes", wheelOpen(t.v))
+                assertEquals(listOf(19, 18), t.picks)
+                chord(t.v, false)
+                // Tap: the stick back in the middle after pointing casts the pointed slice and closes
+                chord(t.v, true); chord(t.v, false)
+                assertTrue(wheelOpen(t.v))
+                stick(t.v, 180.0)                                 // Cower pointed
+                stick(t.v, null)
+                assertFalse("Tap (pickA=$pickA): the stick back closes", wheelOpen(t.v))
+                assertEquals("the stick back casts the pointed Cower (cell 10)", listOf(19, 18, 10), t.picks)
+            }
+        } finally { HomeSettings.classPickAR = false; HomeSettings.classTapR = false }
     }
 
     @Test fun aClassWheelWithNoPetAbilityIsAsBefore() {
@@ -452,7 +520,7 @@ class PetAutocastShotsTest {
     @Test fun faceButtonShots() {
         if (out == null) return
         ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
-        // the hunter's wolf: Y Growl (on), X Bite (off), A Cower (on), D-pad Up Dash (off); nothing pointed
+        // the hunter's wolf: Y Growl (on), X Bite (off), A Cower (on), B Dash (off); nothing pointed
         val w = classWheel(wolf4)
         chord(w.v, true)
         classShot(w.v, "1_hunter_4_abilities.png")

@@ -146,7 +146,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
          *  spell that MAY cast itself ([autoA]: the game's corners), that does ([autoOn]: the marching shine), its pet bar [slot] */
         val act = BooleanArray(8); val autoA = BooleanArray(8); val autoOn = BooleanArray(8); val slot = IntArray(8)
         /** ClassPetKeys (the user, 2026-11-16: "use the face buttons without having to select the attack to toggle the attack on and
-         *  off"): the places Y, X, A, D-pad Up toggle, in that order (pet bar order; empty = no pet ability that may cast itself: not a
+         *  off"; 2026-11-16 again: B, not the D-pad, takes a 4th): the places Y, X, A, B toggle, in that order (pet bar order; empty = no pet ability that may cast itself: not a
          *  class pet wheel); [at] = when this layout came (uptime ms): a PetAuto document after it says what changed since */
         var keys: List<Int> = emptyList(); var at = 0L
         /** b-class-radial-slots: the places it HAS, in order: only these are drawn, evenly round the wheel */
@@ -1409,12 +1409,15 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val wheel = chordSide != ClassChord.NONE
         if (wheel && down != 0) {
             val r = chordRadial()
-            if (PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) classAct(classFlow.b(), r)
+            // B goes back - except on a class pet wheel with a 4th ability, where B is that ability's toggle (ClassPetKeys.bToggles)
+            if (PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT) && !ClassPetKeys.bToggles(r?.keys.orEmpty())) classAct(classFlow.b(), r)
             else {
                 // PET AUTOCAST ON THE FACE BUTTONS (the user, 2026-11-16: "use the face buttons without having to select the attack to
                 // toggle the attack on and off? ... using Y/X/A as the toggles for them? just flat out playing the animation or turning it
-                // off when toggling"; picks "Y / X / A, pet bar order", "D-pad Up", "Class pet wheel only"): on a class pet wheel each
-                // of Y, X, A, D-pad Up toggles ITS ability at once - no aiming, the wheel stays open, nothing cast (ClassPetKeys.press)
+                // off when toggling"; picks "Y / X / A, pet bar order", "Class pet wheel only"; the 4th, 2026-11-16: "on the pet skill
+                // raadial you made it with the Dpad button but I actually thing that B still makes a lot of sense to use here", pick
+                // "Only with a 4th ability"): on a class pet wheel each of Y, X, A, B toggles ITS ability at once - no aiming, the wheel
+                // stays open, nothing cast (ClassPetKeys.press); D-pad Up nothing
                 val p = ClassPetKeys.press(r?.keys.orEmpty(), down)
                 for (place in p.toggles) classAutoToggle(r, place)
                 // A: the pointed slice's cast (where the side picks with A) unless it is a toggle here; X: the pointed pet spell's
@@ -2631,7 +2634,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 c.drawCircle(px, py, 56f * sc, pStroke)
             }
             // ClassPetKeys (the user, 2026-11-16: "using Y/X/A as the toggles for them?"): the button that toggles this ability, its
-            // glyph (the BUTTON GLYPHS set's; D-pad Up's arrow) on every slice that has one - pointing no longer matters - at the
+            // glyph (the BUTTON GLYPHS set's, B's too) on every slice that has one - pointing no longer matters - at the
             // slot's top-right corner, just outside the corners and the shine, clear of the icon; faint while a press would be refused
             val k = r.keys.indexOf(i)
             if (has && k >= 0) {
@@ -2655,17 +2658,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
     }
 
-    /** ClassPetKeys: a button's glyph [size] across at ([x], [y]). The face glyphs are the game's discs; D-pad Up's cross (bare art) sits
-     *  on the same dark disc and grey rim (0.8 of it), so the four read as one set on the dark wheel */
-    private fun classKeyGlyph(c: Canvas, name: String, x: Float, y: Float, size: Float, alpha: Int) {
-        if (!name.startsWith("gen_")) { UiKit.pad(c, name, x, y, size, alpha); return }
-        val rim = size * 3f / 64f
-        pFill.color = Color.argb(alpha, 20, 20, 20)
-        c.drawCircle(x, y, size / 2f - rim / 2f, pFill)
-        pStroke.color = Color.argb(alpha, 152, 152, 136); pStroke.strokeWidth = rim
-        c.drawCircle(x, y, size / 2f - rim / 2f, pStroke)
-        UiKit.pad(c, name, x, y, size * 0.8f, alpha)
-    }
+    /** ClassPetKeys: a button's glyph [size] across at ([x], [y]): the game's face discs (Y / X / A / B), the BUTTON GLYPHS set's */
+    private fun classKeyGlyph(c: Canvas, name: String, x: Float, y: Float, size: Float, alpha: Int) = UiKit.pad(c, name, x, y, size, alpha)
 
     /** p-bars-grey (CastDiag): the layer on show's buttons with something on them that the add-on calls not enabled */
     private fun diagEOff(h: Hud): Int {
@@ -2831,7 +2825,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         invalidate(); onClassStick?.invoke()
     }
 
-    /** pa1 / q62: place [p]'s autocast toggled on the open class wheel - its button (ClassPetKeys: Y / X / A / D-pad Up) or, on a wheel
+    /** pa1 / q62: place [p]'s autocast toggled on the open class wheel - its button (ClassPetKeys: Y / X / A / B) or, on a wheel
      *  with no pet ability of its own, X on the pointed place - through its classr autocast cell (16-23); the wheel stays open */
     private fun classAutoToggle(r: Radial?, p: Int) {
         if (r == null || p !in 0..7 || !r.has[p] || !r.autoA[p]) return
@@ -2865,9 +2859,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         return if (t <= HomePauseView.LINE_MS) 1f else 1f - (t - HomePauseView.LINE_MS).toFloat() / HomePauseView.LINE_FADE_MS
     }
 
-    /** a class wheel is open now: its guest keeps the eight buttons from the game and the presses are the wheel's (ClassPetKeys: D-pad
-     *  Up is a pet wheel's 4th toggle), so Home's Party mode box must not move on the D-pad meanwhile */
+    /** a class wheel is open now: its guest keeps the eight buttons from the game and the presses are the wheel's (the D-pad does
+     *  nothing there), so Home's Party mode box must not move on the D-pad meanwhile */
     fun classRadialOpen(): Boolean = chordRadial() != null
+    /** the open class wheel's B is its 4th pet ability's toggle (ClassPetKeys.bToggles), not back: Home's B leaves it alone */
+    fun classBToggles(): Boolean = ClassPetKeys.bToggles(chordRadial()?.keys.orEmpty())
 
     /** the open class wheel shows a marching autocast shine or a refusal's fade (Home's layer keeps redrawing it) */
     fun classRadialLive(): Boolean = chordRadial()?.let { radialLive(it) } == true
@@ -4427,28 +4423,34 @@ internal object ClassChord {
  * PET AUTOCAST ON THE FACE BUTTONS (the user, 2026-11-16: "Turning off the Pet attack is not immediately obvious. I wonder if we should
  * just use the face buttons without having to select the attack to toggle the attack on and off? like there can only be up to2 3 pet
  * attacks I think so using Y/X/A as the toggles for them? just flat out playing the animation or turning it off when toggling"; the
- * picks: "Y / X / A, pet bar order", the 4th "D-pad Up", "Class pet wheel only"). Pure.
+ * picks: "Y / X / A, pet bar order", "Class pet wheel only"). The 4th (the user, 2026-11-16, after a first pick of D-pad Up: "on the
+ * pet skill raadial you made it with the Dpad button but I actually thing that B still makes a lot of sense to use here"; the pick
+ * "Only with a 4th ability"): B. Pure.
  *
  * A CLASS PET WHEEL is a class wheel (CastView: LB + LT / RB + RT) showing at least one pet ability that MAY cast itself (ActionBar
  * pa1 `aa`). Its abilities that may, in pet bar order (slot 1..10 ascending; one with no slot after them, in wheel order), take
- * Y, X, A, D-pad Up - the first four; a 5th or more has no button (the long press still toggles it). A press of an ability's button
+ * Y, X, A, B - the first four; a 5th or more has no button (the long press still toggles it). A press of an ability's button
  * toggles its autocast at once: no aiming, the flip shows (PetAuto.pressed), the wheel stays open, nothing is cast. Each such slice
- * wears its button's glyph. The buttons with no ability on a pet wheel:
+ * wears its button's glyph (the BUTTON GLYPHS set's). The buttons with no ability on a pet wheel:
  *   A  keeps its job (casts the pointed slice where the side picks with A, Settings > Controller). Once A IS a toggle (3+ abilities)
  *      it never casts there, and that wheel picks as Release does (Hold: letting the chord go casts the pointed slice; Tap: the stick
  *      back in the middle) - so the controller can still cast from it.
+ *   B  goes back (closes the wheel) while there are 3 or fewer. With a 4th it is that ability's toggle and never closes: the wheel
+ *      then closes as Release's does (Hold: letting the chord go; Tap: the stick back in the middle after pointing - that casts the
+ *      pointed slice - or the same chord again, no cast). Home's own B (shrink the big controller, close a module) leaves it alone.
  *   X  does nothing (it toggled the POINTED ability before; pointing no longer matters, so it toggles only an ability it wears).
- *   Y, D-pad Up  nothing, as before.
- * B always goes back. A wheel with no such ability (a warrior's stances, a druid's forms, the pet's commands) is exactly as before:
- * A picks where the side picks with A, X toggles the pointed slice's autocast (none there: nothing). The pet's own wheels
+ *   Y, the D-pad  nothing, as before.
+ * A wheel with no such ability (a warrior's stances, a druid's forms, the pet's commands) is exactly as before: A picks where the
+ * side picks with A, X toggles the pointed slice's autocast (none there: nothing), B goes back. The pet's own wheels
  * (TargetRadialView: the target wheel on your pet, Party mode's pet slot) keep aim + X and the long press.
  */
 internal object ClassPetKeys {
     /** the buttons in the order the abilities take them (PadInput slots, as the class wheel reads A / B / X: Xbox positions) */
-    val BUTTONS = intArrayOf(PadInput.SLOT_FACE_TOP, PadInput.SLOT_FACE_LEFT, PadInput.SLOT_FACE_BOTTOM, PadInput.SLOT_DPAD_UP)
-    /** each button's glyph for UiKit.pad (the face ones follow the BUTTON GLYPHS setting, Glyphs.translate; D-pad Up is every set's) */
-    val GLYPHS = arrayOf("rev_y", "rev_x", "rev_a", "gen_up")
+    val BUTTONS = intArrayOf(PadInput.SLOT_FACE_TOP, PadInput.SLOT_FACE_LEFT, PadInput.SLOT_FACE_BOTTOM, PadInput.SLOT_FACE_RIGHT)
+    /** each button's glyph for UiKit.pad (the BUTTON GLYPHS setting's, Glyphs.translate) */
+    val GLYPHS = arrayOf("rev_y", "rev_x", "rev_a", "rev_b")
     private const val A_KEY = 2
+    private const val B_KEY = 3
 
     /** the places the buttons toggle ([BUTTONS] order), from a wheel's [has] / [autoA] / pet bar [slot] per place; empty = no pet wheel */
     fun order(has: BooleanArray, autoA: BooleanArray, slot: IntArray): List<Int> =
@@ -4458,10 +4460,12 @@ internal object ClassPetKeys {
 
     /** A is the 3rd ability's toggle (it never casts on that wheel) */
     fun aToggles(order: List<Int>): Boolean = order.size > A_KEY
+    /** B is the 4th ability's toggle (it never goes back on that wheel) */
+    fun bToggles(order: List<Int>): Boolean = order.size > B_KEY
 
-    /** what a press of the buttons newly down in [down] (PadInput's mask) does on a wheel whose [order] it is, B aside: the places
-     *  toggled (one per button pressed, [BUTTONS] order); [aPick] A goes to the wheel's pick (Flow.a); [xPointed] X toggles the
-     *  pointed slice (a wheel with no pet ability only) */
+    /** what a press of the buttons newly down in [down] (PadInput's mask) does on a wheel whose [order] it is, B's back aside (the
+     *  caller closes on B unless [bToggles]): the places toggled (one per button pressed, [BUTTONS] order); [aPick] A goes to the
+     *  wheel's pick (Flow.a); [xPointed] X toggles the pointed slice (a wheel with no pet ability only) */
     data class Press(val toggles: List<Int>, val aPick: Boolean, val xPointed: Boolean)
     fun press(order: List<Int>, down: Int): Press {
         fun on(slot: Int) = (down shr slot) and 1 != 0
