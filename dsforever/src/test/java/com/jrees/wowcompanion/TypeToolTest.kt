@@ -63,7 +63,8 @@ class TypeToolTest {
 
     @Test fun upAndDownAreUnchanged() {
         val f = HomePauseModel.Flow()
-        f.dpad(2, true); assertEquals(HomePauseModel.Act.Sit, f.dpad(2, false))
+        // Down = Sit / Stand, a pick now (the wheel closes: PauseSitTest)
+        f.dpad(2, true); assertEquals(HomePauseModel.Act.Pick(HomePauseModel.SIT), f.dpad(2, false))
         f.dpad(0, true); assertEquals(HomePauseModel.Act.None, f.dpad(0, false)); assertEquals(HomePauseModel.EMOTE_PAGE, f.page)
     }
 
