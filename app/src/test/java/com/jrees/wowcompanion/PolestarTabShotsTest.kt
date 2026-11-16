@@ -240,6 +240,15 @@ class PolestarTabShotsTest {
         key(w, "PADDDOWN")                                     // (the first press applies it: the hold came)
         assertEquals(1, tab(w))
         assertEquals(PolestarTab.View.PATH, cur(w).view)
+        // pg1 review: opened before its choice came (a first open: no pgroute yet), it lands on the recommended option when it arrives
+        val late = room(guide(s = null, l = null, st = "dddddddddddddddd") { it.put("cp", true).put("rw", true).put("rc", true).put("fs", 445) })
+        late.openPolestar(path = true)
+        key(late, "PADDDOWN")
+        assertEquals(PolestarTab.View.PATH, cur(late).view)
+        val r = route().put("fs", 445)
+        r.getJSONArray("o").getJSONObject(0).remove("rec"); r.getJSONArray("o").getJSONObject(1).put("rec", true)
+        late.onPolestarDoc(r)
+        assertEquals("the recommended option (Loch Modan, the second)", 1, cur(late).path)
     }
 
     @Test fun resetAndAFight() {
