@@ -115,7 +115,8 @@ function RollOnLoot(id, ty)
         for _, f in ipairs(FRAMES) do if f.events.CONFIRM_LOOT_ROLL and f.scripts.OnEvent then f.scripts.OnEvent(f, "CONFIRM_LOOT_ROLL", id, ty) end end
     end
 end
-function ConfirmLootRoll(id, ty) GAME.confirms[#GAME.confirms + 1] = { id = id, ty = ty }; HIDECONFIRM() end
+-- the real order (review): StaticPopup_OnClick runs OnAccept (ConfirmLootRoll) while the pop-up still shows and hides it AFTER; GAME.confirmHides = false keeps it shown through the call
+function ConfirmLootRoll(id, ty) GAME.confirms[#GAME.confirms + 1] = { id = id, ty = ty }; if GAME.confirmHides ~= false then HIDECONFIRM() end end
 -- the game drops a roll (a server round trip after the answer, or the roll ends)
 function DROP(id) for _, r in ipairs(GAME.rolls) do if r.id == id then r.gone = true end end; FIRE("CANCEL_LOOT_ROLL", id) end
 function START(r) GAME.rolls[#GAME.rolls + 1] = r; FIRE("START_LOOT_ROLL", r.id, 60000) end
@@ -246,6 +247,23 @@ chk("5 s later, still out", ROLL(FRESH(), 31) == nil)
 GAME.t = GAME.t + 6
 chk("d34: past ROLL_KEEP with the game still offering it: back", ROLL(FRESH(), 31) ~= nil)
 DROP(31); DROP(14); DROP(21); DROP(22)
+
+-- 8b. (review) THE GAME'S ORDER ON OKAY: its OnAccept (ConfirmLootRoll) runs while the pop-up still shows, the pop-up hides after; the
+-- document the hook sends from INSIDE that click must not list the answered roll's confirm (its roll already held out: the app drew a box)
+START({ id = 23, name = "Ring of the Moon", q = 3, bop = true })
+ACT.roll(23, "need")
+chk("BoP need on 23: asks (" .. tostring(ROLL(DOC(), 23) and ROLL(DOC(), 23).ask) .. ")", ROLL(DOC(), 23) and ROLL(DOC(), 23).ask == "need")
+GAME.confirmHides = false
+SENT = {}
+GAME.t = GAME.t + 0.3
+ConfirmLootRoll(23, 1)
+local inClick = DOC()
+local boxed = false
+for _, x in ipairs((inClick and inClick.list) or {}) do if x.which == "CONFIRM_LOOT_ROLL" then boxed = true end end
+chk("d34 review: the document sent from inside the confirm's click: 23 gone (" .. IDS(inClick) .. ") and its confirm not listed (listed: "
+    .. tostring(boxed) .. ")", inClick ~= nil and ROLL(inClick, 23) == nil and not boxed)
+HIDECONFIRM(); GAME.confirmHides = nil
+DROP(23)
 
 -- 9. THE CELLS SKIP ANSWERED ROLLS: five rolls, the fifth gets cells once one of the first four is answered
 for i = 41, 45 do START({ id = i, name = "Cloth " .. i, q = 1 }) end

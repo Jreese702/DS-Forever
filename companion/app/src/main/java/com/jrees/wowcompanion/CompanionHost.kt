@@ -604,7 +604,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // for a press that goes to the game's bars - the router's own holder (the add-on's capture), Home's guests, the menus on screen
         castView.pressesReachGame = {
             CastPredict.reaches(capHolder, room == Room.HOME, homeView.homeGuestWanted(), pauseView.isOpen, barSelect.open,
-                interactView.visibility == View.VISIBLE || dialogView.covers() ||
+                interactView.visibility == View.VISIBLE || dialogView.padTakes() ||      // review: the game's focused bind confirm too
                     spellsOverlay.visibility == View.VISIBLE || startView.visibility == View.VISIBLE,
                 barsUsable = true, radialOpen = false)
         }
@@ -654,6 +654,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // our own sign-in's row on the start screen takes the pad while it shows (LATER 29); then Interact's loot ring
             // (the edge is taken on EVERY mask, whatever the route, so a press held through a route change is not swallowed later)
             val down = m and loginPadHeld.inv(); loginPadHeld = m
+            // loot-pop review: the rolls read the presses while they cover the screen, or while the fight's small panel shows a roll's bind
+            // confirm with the GAME's focus (its A / B are the game's pop-up's: never also the loot window's under it); every other mask is
+            // only SEEN, so the first press after the panel grows / opens is a real edge (DialogView.padSeen)
+            val dlgTakes = ::dialogView.isInitialized && dialogView.padTakes()
+            if (::dialogView.isInitialized && !dlgTakes) dialogView.padSeen(m)
             // the report page has the controller through the Settings room's guest pad (or the launcher's keys before Play)
             if (::reportPage.isInitialized && reportPage.isOpen) Unit
             else if (noticePad(down)) Unit                                  // the report's notice on Home (Open issue / OK)
@@ -666,8 +671,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // b-login-a-input: not in the game (its login screen): A goes to the game, never to our login row / form
             else if (startView.visibility == View.VISIBLE && startView.login != StartView.Login.NONE && !loginPrompt.isOpen && !startView.menuOpen &&
                 setupView.visibility != View.VISIBLE && !LauncherHooks.gameUp()) loginPad(down)
-            // loot-pop: the fight's small roll panel takes no press (the loot window under it keeps its own)
-            else if (::dialogView.isInitialized && dialogView.covers()) dialogView.onPadHeld(m)   // Interact: the dialog's press look
+            // loot-pop: the fight's small roll panel takes no press (the loot window under it keeps its own) - but its row's bind confirm
+            // while the game's pop-up has the focus (review)
+            else if (dlgTakes) dialogView.onPadHeld(m)   // Interact: the dialog's press look
             else if (::interactView.isInitialized && interactView.visibility == View.VISIBLE) interactView.onPadHeld(m)
         }
         // the Social room (social session). B that leaves it goes HOME (user ruling 2026-09-28 23:12: "Pressing be to leave the

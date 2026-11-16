@@ -196,4 +196,93 @@ class DialogViewRollsTest {
         v.update(doc(v, listOf(roll(1), roll(2))), true)                     // still offered 500 ms later: the game did not take it
         assertEquals(listOf("isell 11 roll need (the game did not take the controller's)"), v.rollSent)
     }
+
+    // ---------------------------------------------------------------- the review's
+    /** the host's routing (CompanionHost.onPadHeldAny): the view reads the presses while it takes them, else it only SEES the mask */
+    private fun held(v: DialogView, m: Int) { if (v.padTakes()) v.onPadHeld(m) else v.padSeen(m) }
+    private fun bit(slot: Int) = 1 shl slot
+
+    @Test fun theReleaseOfThePressThatAnsweredTheLastRollNeverSwallowsTheNextPress() {
+        val v = view(fight = false)
+        v.update(doc(v, listOf(roll(1))), true)
+        draw(v)
+        later(300)
+        held(v, bit(PadInput.SLOT_FACE_BOTTOM))                                 // A down: Need on the last roll, gone at once
+        draw(v)
+        assertFalse("roll 1 answered: the view covers nothing now", v.covers())
+        held(v, 0)                                                              // A up, while the view reads no press
+        later(100)
+        v.update(doc(v, listOf(roll(2))), true)                                  // the game had it; a new roll
+        draw(v)
+        later(300)
+        held(v, bit(PadInput.SLOT_FACE_BOTTOM)); held(v, 0)                     // A: Need on roll 2 - the FIRST press counts
+        draw(v)
+        assertFalse("the next press of A answered roll 2 at once (not swallowed)", has(v, "card:2"))
+    }
+
+    @Test fun aButtonHeldThroughTheFightsEndIsNoPressOfTheWindow() {
+        val v = view(fight = true)
+        v.update(doc(v, listOf(roll(1), roll(2))), true)
+        draw(v)
+        later(300)
+        held(v, bit(PadInput.SLOT_FACE_LEFT))                                   // X held for the fight (the small panel reads nothing)
+        fightState = false
+        draw(v)                                                                 // the panel grows into the window
+        held(v, bit(PadInput.SLOT_FACE_LEFT) or bit(PadInput.SLOT_FACE_RIGHT)) // B pressed mid-grow, X still held
+        later(DialogView.GROW_MS + 40); draw(v)
+        assertTrue("grown, nothing answered: both rolls still shown", has(v, "card:1") && has(v, "card:2"))
+        held(v, bit(PadInput.SLOT_FACE_LEFT) or bit(PadInput.SLOT_FACE_RIGHT) or bit(PadInput.SLOT_FACE_BOTTOM))   // A pressed
+        later(500)
+        v.update(doc(v, listOf(roll(1), roll(2))), true)                     // the game took none of them
+        assertEquals("only A's edge was a press: Need on roll 1 (X held through the end and B mid-grow never rolled)",
+            listOf("isell 11 roll need (the game did not take the controller's)"), v.rollSent)
+    }
+
+    @Test fun theSmallPanelStaysInsideAShortMinimapModuleAboveTheCastBar() {
+        val v = view(fight = true)
+        val short = RectF(624f, 425f, 1232f, 785f)                              // the map cut short by the tap-to-cast bar under it
+        v.mapBox = { RectF(short) }
+        v.update(doc(v, listOf(roll(1), roll(2), roll(3), roll(4))), true)
+        draw(v)
+        later(400); draw(v)
+        assertTrue("every touch of the panel inside the module", hits(v).all { it.first.bottom <= short.bottom + 0.5f })
+        assertTrue("the rows that fit have their buttons", has(v, "roll:1:need") && has(v, "roll:2:need"))
+        assertFalse("the fourth is counted, not drawn past the module", has(v, "roll:4:need"))
+        assertFalse("a touch just under the module (the cast bar) reaches Home", tap(v, 900f, short.bottom + 30f))
+    }
+
+    @Test fun inAFightTheGamesFocusedBindConfirmTakesAAndBOnThePanelAlone() {
+        val v = view(fight = true)
+        v.update(doc(v, listOf(roll(5, bop = true), roll(6))), true)
+        draw(v)
+        later(400); draw(v)
+        tap(v, hit(v, "roll:5:need"))
+        later(150)
+        v.update(doc(v, listOf(roll(5, bop = true, ask = "need"), roll(6)), confirm(5)), true)
+        draw(v)
+        assertFalse("the panel still wants no controller", v.wantsPad())
+        assertTrue("but the game's pop-up has the focus: A / B are its, read here (never the loot window's under it)", v.padTakes())
+        later(150)
+        held(v, bit(PadInput.SLOT_FACE_BOTTOM)); held(v, 0)
+        draw(v)
+        assertFalse("A = the game's Okay: the row gone at once", has(v, "ask:5:ok"))
+        assertEquals("nothing tapped: the game's own pop-up answers its A", listOf("isell 51 roll need on 5"), v.rollSent)
+    }
+
+    @Test fun aRowMovingUnderTheFingerKeepsItsPress() {
+        val v = view(fight = true)
+        v.update(doc(v, listOf(roll(1), roll(2), roll(3))), true)
+        draw(v)
+        later(400); draw(v)
+        val at = hit(v, "roll:2:need")
+        val t0 = SystemClock.uptimeMillis()
+        val d = MotionEvent.obtain(t0, t0, MotionEvent.ACTION_DOWN, at.centerX(), at.centerY(), 0)
+        assertTrue(v.dispatchTouchEvent(d)); d.recycle()
+        v.update(doc(v, listOf(roll(2), roll(3))), true)                       // roll 1 ended mid-press: the rows move up
+        draw(v)
+        val u = MotionEvent.obtain(t0, t0 + 60, MotionEvent.ACTION_UP, at.centerX(), at.centerY(), 0)
+        v.dispatchTouchEvent(u); u.recycle()
+        assertEquals("the press went to roll 2 (its button when the finger went down), never roll 3 under it now",
+            listOf("isell 21 roll need on 2"), v.rollSent)
+    }
 }

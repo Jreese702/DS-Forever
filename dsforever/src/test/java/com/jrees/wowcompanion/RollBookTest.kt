@@ -101,6 +101,25 @@ class RollBookTest {
         assertTrue(b.taps().isEmpty())
     }
 
+    /** review: the game's bind confirm is ONE exclusive pop-up, reused for the next ask - a waiting Okay never goes once another
+     *  bind-on-pickup roll was answered after it (that roll may own the pop-up when the tap lands: our Okay would bind IT) */
+    @Test fun aWaitingOkayNeverGoesToAnotherRollsPopup() {
+        val b = RollBook()
+        b.onDoc(listOf(roll(5, bop = true), roll(6, bop = true)), emptyMap(), 1_000)
+        assertTrue(b.answer(5, "need", 1_000))
+        assertTrue(b.confirm(5, ok = true, gt = 1_150))                      // Okay before the pop-up was known: it waits
+        assertTrue(b.answer(6, "need", 1_300))                                // a Need on the next BoP roll: the game asks about 6 next
+        // the document written before 6's Need landed: the pop-up still 5's - but 6's tap is on its way and takes the pop-up
+        b.onDoc(listOf(roll(5, bop = true, ask = "need"), roll(6, bop = true)), mapOf(5 to ask(5)), 1_350)
+        assertTrue("never Okay on a pop-up another roll may own by now", b.taps().isEmpty())
+        assertFalse(b.waiting(5))
+        // the pop-up 6's: its confirm on 6; 5 comes back (not taken) once the game's word is due
+        b.onDoc(listOf(roll(5, bop = true), roll(6, bop = true, ask = "need")), mapOf(6 to ask(6)), 1_150 + RollBook.REFUSE_MS)
+        assertEquals(RollBook.Row.OPEN, b.rowOf(b.shown().first { it.id == 5 }))
+        assertEquals(RollBook.Row.CONFIRM, b.rowOf(b.shown().first { it.id == 6 }))
+        assertTrue(b.taps().isEmpty())
+    }
+
     @Test fun okayWithThePopupKnownTapsAtOnce() {
         val b = RollBook()
         b.onDoc(listOf(roll(5, bop = true, ask = "greed")), mapOf(5 to ask(5)), 1_000)

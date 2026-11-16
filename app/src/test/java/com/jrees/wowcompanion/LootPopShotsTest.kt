@@ -29,7 +29,8 @@ import java.time.Duration
  *  3. SLID ASIDE with the tooltip beside it;                                  4. the same over the Bags room (bags-open1);
  *  5. a fight: the small roll panel over the minimap, ONE roll;               6. ... THREE rolls (one more counted);
  *  7. ... a bind-on-pickup Need: the game's confirm on its row;               8. the fight's end: the panel GROWING (mid-frame);
- *  9. the full roll window (gear: Currently Equipped beside its tooltip).
+ *  9. the full roll window (gear: Currently Equipped beside its tooltip);   10. (review) the tap-to-cast bar under the minimap in a fight:
+ *     the panel fits the cut module (two rows, the rest counted), never over the bar.
  * Runs only when LOOT_SHOTS_DIR is set; LOOT_ART_ROOT = an art root laid out like the app's (ui/kit, fonts, icons.pak).
  */
 @RunWith(RobolectricTestRunner::class)
@@ -233,6 +234,13 @@ class LootPopShotsTest {
             bop.dispatchTouchEvent(android.view.MotionEvent.obtain(t0, t0, android.view.MotionEvent.ACTION_DOWN, r.centerX(), r.centerY(), 0))
             bop.dispatchTouchEvent(android.view.MotionEvent.obtain(t0, t0 + 40, android.view.MotionEvent.ACTION_UP, r.centerX(), r.centerY(), 0))
         }
+        // review: then the game's own pop-up (its focus: A / B are its in a fight too) - its keys on its buttons
+        bop.update(rollsDoc(bop, listOf(roll(4, "Gold-flecked Gloves", 132939, 3, bop = true).put("ask", "need").put("askI", 1),
+            roll(2, "Smelting Pants", 134588, 2))).put("list", JSONArray().put(JSONObject().put("i", 1).put("which", "CONFIRM_LOOT_ROLL")
+            .put("roll", 4).put("rollType", 1).put("text", "Looting |cff0070ddGold-flecked Gloves|r will bind it to you.").put("focus", true)
+            .put("buttons", arr(JSONObject().put("k", 1).put("label", "Okay").put("on", true).put("key", "PAD1"),
+                JSONObject().put("k", 2).put("label", "Cancel").put("on", true).put("key", "PAD2")))
+            .put("cells", JSONObject().put("b1", 0).put("b2", 1)))), true)
         page(frames = 2) { c -> homePage(c, home, strip); bop.draw(c) }
         save("7_fight_compact_bop_confirm.png")
         // 8. the fight ends: the panel grows into the window (half way)
@@ -253,5 +261,17 @@ class LootPopShotsTest {
         // 9. grown: the full roll window
         page(frames = 3) { c -> homePage(c, calm, strip); grow.draw(c) }
         save("9_full_roll_window.png")
+        // 10. (review) the tap-to-cast bar under the minimap, kept in fights (Right, Stay): the module is cut short, the panel fits in it -
+        // two rows, the rest counted - and never reaches the bar
+        HomeSettings.castBarSide = CastStripModel.Side.RIGHT
+        HomeSettings.castBarCombat = CastStripModel.Combat.STAY
+        fight = true
+        val barHome = home(true)
+        val four = rollsOver(barHome)
+        four.update(rollsDoc(four, listOf(barb(), roll(2, "Smelting Pants", 134588, 2, de = true, left = 47),
+            roll(3, "Linen Cloth", 132889, 1, left = 40).put("count", 4), roll(5, "Bone Ring", 133345, 2, left = 38))), true)
+        lay(four, w, h)
+        page(frames = 3) { c -> homePage(c, barHome, strip); four.draw(c) }
+        save("10_fight_compact_cast_bar_right.png")
     }
 }

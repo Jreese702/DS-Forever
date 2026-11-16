@@ -184,6 +184,13 @@ class RollBook {
     fun taps(): List<Tap> { val t = ArrayList(pending); pending.clear(); return t }
 
     private fun queueTaps(docGt: Long, nowGt: Long) {
+        // review: a waiting Okay / Cancel whose roll is no longer the last one the game was asked about never goes: CONFIRM_LOOT_ROLL is
+        // ONE exclusive pop-up the game reuses for the next ask (its data = the new roll), so a bind-on-pickup roll answered after this
+        // press may own it by the time the tap lands (its Need tap sent before this document arrived) - our Okay would bind THAT item.
+        // The roll comes back instead (REFUSE_MS, with the note), to be answered again
+        wants.entries.removeAll { (id, w) ->
+            w.sentGt < 0 && answers.any { (oid, a) -> oid != id && a.gt > w.gt && a.stage != Stage.GONE }
+        }
         for (w in wants.values) {
             if (w.sentGt >= 0) continue
             val a = asks[w.rollId] ?: continue                       // the game's pop-up not known yet: it waits for the document
