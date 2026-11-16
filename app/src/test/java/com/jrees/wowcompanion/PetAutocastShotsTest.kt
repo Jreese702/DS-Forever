@@ -213,6 +213,279 @@ class PetAutocastShotsTest {
             {"k":"petspell","slot":5,"p":2,"n":"Bite","i":132278,"act":0,"auto":0,"aa":1,"c":9,"ac":17},
             {"k":"petspell","slot":6,"p":3,"n":"Dash","i":132120,"act":0,"auto":0,"aa":0,"c":10,"ac":18}]""")))))
 
+    // ------------------------------------------------------------------------------------------------ the class pet wheel's face buttons
+
+    /*
+     * PET AUTOCAST ON THE FACE BUTTONS (the user, 2026-11-16: "I wonder if we should just use the face buttons without having to select
+     * the attack to toggle the attack on and off? ... using Y/X/A as the toggles for them? just flat out playing the animation or turning
+     * it off when toggling"; picks "Y / X / A, pet bar order", the 4th "D-pad Up", "Class pet wheel only"). The REAL CastView: the chord
+     * (RB + RT) and the buttons go in as PadInput gives them (onPad / onButtons, bit n = PadInput.SLOT_x), the picks come out as the
+     * classr cells the host taps (onClassPick).
+     */
+
+    /** the hud with a right class wheel of [entries] (ActionBar pa1's rows) and, on the base and RT layers, a 2.5 s cast on every face */
+    private fun classHudOf(entries: String) = JSONObject("""{"hud":{"ok":true,"page":1,"pages":[true,true,true],"L":{
+        "n":[{"p":5,"k":"spell","id":133,"i":135812,"ct":2500},{"p":6,"k":"spell","id":133,"i":135812,"ct":2500},
+             {"p":7,"k":"spell","id":133,"i":135812,"ct":2500},{"p":8,"k":"spell","id":133,"i":135812,"ct":2500},
+             {"p":2,"k":"spell","id":133,"i":135812,"ct":2500}],
+        "rt":[{"p":5,"k":"spell","id":133,"i":135812,"ct":2500},{"p":6,"k":"spell","id":133,"i":135812,"ct":2500},
+              {"p":7,"k":"spell","id":133,"i":135812,"ct":2500},{"p":8,"k":"spell","id":133,"i":135812,"ct":2500},
+              {"p":2,"k":"spell","id":133,"i":135812,"ct":2500}]},
+        "ca":{"r":{"e":$entries}}}}""")
+
+    /** a hunter's wolf, the four the user named: Growl ON (pet bar slot 4), Bite OFF (5), Cower ON (6), Dash OFF (7) */
+    private val wolf4 = """[
+        {"k":"petspell","slot":4,"p":1,"n":"Growl","i":132270,"act":0,"auto":1,"aa":1,"c":8,"ac":16},
+        {"k":"petspell","slot":5,"p":2,"n":"Bite","i":132278,"act":0,"auto":0,"aa":1,"c":9,"ac":17},
+        {"k":"petspell","slot":6,"p":3,"n":"Cower","i":132118,"act":0,"auto":1,"aa":1,"c":10,"ac":18},
+        {"k":"petspell","slot":7,"p":4,"n":"Dash","i":132120,"act":0,"auto":0,"aa":1,"c":11,"ac":19}]"""
+    /** a warlock's imp: Firebolt ON, Blood Pact ON, Fire Shield OFF may cast themselves; Phase Shift may not (no button) */
+    private val imp = """[
+        {"k":"petspell","slot":4,"p":1,"n":"Firebolt","i":135809,"act":0,"auto":1,"aa":1,"c":8,"ac":16},
+        {"k":"petspell","slot":5,"p":2,"n":"Blood Pact","i":136168,"act":0,"auto":1,"aa":1,"c":9,"ac":17},
+        {"k":"petspell","slot":6,"p":3,"n":"Fire Shield","i":135806,"act":0,"auto":0,"aa":1,"c":10,"ac":18},
+        {"k":"petspell","slot":7,"p":4,"n":"Phase Shift","i":136164,"act":0,"auto":0,"aa":0,"c":11,"ac":19}]"""
+    /** two that may: Growl ON, Claw OFF; Dash may not */
+    private val two = """[
+        {"k":"petspell","slot":4,"p":1,"n":"Growl","i":132270,"act":0,"auto":1,"aa":1,"c":8,"ac":16},
+        {"k":"petspell","slot":5,"p":2,"n":"Claw","i":132140,"act":0,"auto":0,"aa":1,"c":9,"ac":17},
+        {"k":"petspell","slot":6,"p":3,"n":"Dash","i":132120,"act":0,"auto":0,"aa":0,"c":10,"ac":18}]"""
+    /** a warrior's stances: no pet ability - the class wheel as it always was */
+    private val stances = """[
+        {"k":"spell","id":2457,"p":1,"n":"Battle Stance","i":132349,"act":1,"c":8},
+        {"k":"spell","id":71,"p":2,"n":"Defensive Stance","i":132341,"act":0,"c":9},
+        {"k":"spell","id":2458,"p":3,"n":"Berserker Stance","i":132275,"act":0,"c":10}]"""
+
+    private class Cls(val v: CastView, val picks: ArrayList<Int>)
+    private fun classWheel(entries: String): Cls {
+        val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        val v = CastView(act) { }
+        act.setContentView(v)
+        val picks = ArrayList<Int>()
+        v.onClassPick = { picks += it }
+        v.bottomLine = true                                       // Home's bars: a press there may start the predicted cast bar
+        v.update(classHudOf(entries))
+        ShadowLooper.idleMainLooper()
+        return Cls(v, picks)
+    }
+    private val bool = java.lang.Boolean.TYPE
+    private fun call(v: CastView, name: String, types: Array<Class<*>>, vararg a: Any?): Any? =
+        CastView::class.java.getDeclaredMethod(name, *types).apply { isAccessible = true }.invoke(v, *a)
+    private fun field(v: CastView, name: String) = CastView::class.java.getDeclaredField(name).apply { isAccessible = true }
+    /** RB + RT held (true) or let go */
+    private fun chord(v: CastView, held: Boolean) = call(v, "onPad", arrayOf(bool, bool, bool, bool), false, held, false, held)
+    private fun mask(v: CastView, m: Int) = call(v, "onButtons", arrayOf(Integer.TYPE), m)
+    /** one press and release of PadInput slot [slot] */
+    private fun press(v: CastView, slot: Int) { mask(v, 1 shl slot); mask(v, 0) }
+    private fun wheelOpen(v: CastView) = call(v, "chordRadial", arrayOf()) != null
+    private fun predicted(v: CastView) = field(v, "predOn").getBoolean(v)
+    /** the right stick pushed toward [deg] (0 = up, clockwise), or let go (null) */
+    private fun stick(v: CastView, deg: Double?) {
+        val x = if (deg == null) 0f else kotlin.math.sin(Math.toRadians(deg)).toFloat()
+        val y = if (deg == null) 0f else -kotlin.math.cos(Math.toRadians(deg)).toFloat()
+        field(v, "stickX").setFloat(v, x); field(v, "stickY").setFloat(v, y)
+        call(v, "classStick", arrayOf())
+    }
+    private fun line(v: CastView) = field(v, "classLine").get(v) as String?
+    private fun now() = SystemClock.uptimeMillis()
+
+    @Test fun yXADpadUpToggleTheirAbilitiesAtOnceAndTheWheelStaysOpen() {
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
+        val w = classWheel(wolf4)
+        chord(w.v, true)
+        assertTrue(wheelOpen(w.v))
+        // Y = the 1st in pet bar order (Growl, on): its classr autocast cell 16, the flip at once, the wheel still open, no aiming
+        press(w.v, PadInput.SLOT_FACE_TOP)
+        assertEquals(listOf(16), w.picks)
+        assertEquals("Growl's flip shows at once", false, PetAuto.on(4, "Growl", now()))
+        assertTrue(wheelOpen(w.v))
+        // a held Y toggles once
+        mask(w.v, 1 shl PadInput.SLOT_FACE_TOP); mask(w.v, 1 shl PadInput.SLOT_FACE_TOP); mask(w.v, 0)
+        assertEquals(listOf(16, 16), w.picks)
+        assertEquals("Growl back on", true, PetAuto.on(4, "Growl", now()))
+        // X = the 2nd (Bite, off -> on)
+        press(w.v, PadInput.SLOT_FACE_LEFT)
+        assertEquals(17, w.picks.last())
+        assertEquals(true, PetAuto.on(5, "Bite", now()))
+        // A = the 3rd (Cower): a toggle, never a cast (no place cell 8..11), the wheel open
+        stick(w.v, 0.0)                                          // even with a slice pointed
+        press(w.v, PadInput.SLOT_FACE_BOTTOM)
+        assertEquals(18, w.picks.last())
+        assertEquals(false, PetAuto.on(6, "Cower", now()))
+        assertTrue(wheelOpen(w.v))
+        stick(w.v, null)
+        // D-pad Up = the 4th (Dash)
+        press(w.v, PadInput.SLOT_DPAD_UP)
+        assertEquals(19, w.picks.last())
+        assertEquals(true, PetAuto.on(7, "Dash", now()))
+        assertEquals("nothing was ever cast", listOf(16, 16, 17, 18, 19), w.picks)
+        assertTrue(wheelOpen(w.v))
+        // B goes back
+        press(w.v, PadInput.SLOT_FACE_RIGHT)
+        assertFalse(wheelOpen(w.v))
+        assertEquals(5, w.picks.size)
+        // a press the game never confirms falls back after PENDING_MS (Dash's last word: off)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(PetAuto.PENDING_MS + 100))
+        assertEquals(false, PetAuto.on(7, "Dash", now()) ?: false)
+    }
+
+    @Test fun aToggleNeverStartsThePredictedCastBar() {
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
+        val w = classWheel(wolf4)
+        // the control: Y with no wheel open is a bar press - a 2.5 s cast's bar starts at once
+        press(w.v, PadInput.SLOT_FACE_TOP)
+        assertTrue("the control: a bar press predicts", predicted(w.v))
+        field(w.v, "predOn").setBoolean(w.v, false)
+        chord(w.v, true)
+        for (s in listOf(PadInput.SLOT_FACE_TOP, PadInput.SLOT_FACE_LEFT, PadInput.SLOT_FACE_BOTTOM, PadInput.SLOT_DPAD_UP)) {
+            press(w.v, s)
+            assertFalse("a toggle never starts the predicted bar (slot $s)", predicted(w.v))
+        }
+        assertEquals(listOf(16, 17, 18, 19), w.picks)
+    }
+
+    @Test fun aKeepsItsPickUntilItIsAToggle() {
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
+        HomeSettings.init(app)
+        HomeSettings.classPickAR = true                           // Hold + A on RB + RT
+        try {
+            // two abilities: A still casts the pointed slice (Growl's place cell 8) and closes; X toggles the 2nd (Claw)
+            val two = classWheel(two)
+            chord(two.v, true)
+            press(two.v, PadInput.SLOT_FACE_LEFT)
+            assertEquals(listOf(17), two.picks)
+            press(two.v, PadInput.SLOT_DPAD_UP)
+            assertEquals("D-pad Up owns nothing here", listOf(17), two.picks)
+            stick(two.v, 0.0)
+            press(two.v, PadInput.SLOT_FACE_BOTTOM)
+            assertEquals(listOf(17, 8), two.picks)
+            assertFalse(wheelOpen(two.v))
+            // one ability: X owns nothing (it no longer toggles the pointed one), Y toggles it
+            PetAuto.reset()
+            val one = classWheel("""[{"k":"petspell","slot":4,"p":1,"n":"Growl","i":132270,"act":0,"auto":1,"aa":1,"c":8,"ac":16},
+                {"k":"petspell","slot":5,"p":2,"n":"Dash","i":132120,"act":0,"auto":0,"aa":0,"c":9,"ac":17}]""")
+            chord(one.v, true)
+            stick(one.v, 0.0)                                     // Growl pointed
+            press(one.v, PadInput.SLOT_FACE_LEFT)
+            assertTrue("X on a 1-ability wheel: nothing", one.picks.isEmpty())
+            press(one.v, PadInput.SLOT_FACE_TOP)
+            assertEquals(listOf(16), one.picks)
+            // three: A toggles the 3rd and never casts; the pick falls to Release - letting the chord go casts the pointed slice
+            PetAuto.reset()
+            val imp = classWheel(imp)
+            chord(imp.v, true)
+            stick(imp.v, 90.0)                                    // Blood Pact (2nd of 4 places, at 90 degrees)
+            press(imp.v, PadInput.SLOT_FACE_BOTTOM)
+            assertEquals(listOf(18), imp.picks)
+            assertTrue(wheelOpen(imp.v))
+            chord(imp.v, false)
+            assertEquals("the chord let go casts the pointed Blood Pact (cell 9)", listOf(18, 9), imp.picks)
+            assertFalse(wheelOpen(imp.v))
+        } finally { HomeSettings.classPickAR = false }
+    }
+
+    @Test fun aClassWheelWithNoPetAbilityIsAsBefore() {
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
+        HomeSettings.init(app)
+        HomeSettings.classPickAR = true
+        try {
+            val w = classWheel(stances)
+            chord(w.v, true)
+            stick(w.v, 120.0)                                     // Defensive Stance (2nd of 3, at 120 degrees)
+            for (s in listOf(PadInput.SLOT_FACE_TOP, PadInput.SLOT_FACE_LEFT, PadInput.SLOT_DPAD_UP)) press(w.v, s)
+            assertTrue("Y, X, D-pad Up: nothing on a wheel with no pet ability", w.picks.isEmpty())
+            assertTrue(wheelOpen(w.v))
+            press(w.v, PadInput.SLOT_FACE_BOTTOM)
+            assertEquals("A casts the pointed slice, as before", listOf(9), w.picks)
+            assertFalse(wheelOpen(w.v))
+        } finally { HomeSettings.classPickAR = false }
+        // Hold + Release (the default): A does nothing, letting the chord go casts
+        val r = classWheel(stances)
+        chord(r.v, true)
+        stick(r.v, 0.0)
+        press(r.v, PadInput.SLOT_FACE_BOTTOM)
+        assertTrue(r.picks.isEmpty())
+        chord(r.v, false)
+        assertEquals(listOf(8), r.picks)
+    }
+
+    @Test fun refusalsKeepThePetWheelsAnswers() {
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
+        // a fight changed the pet: Growl's toggle cell is gone from the layout (no `ac`)
+        val w = classWheel(wolf4.replace(""","c":8,"ac":16}""", ""","c":8}"""))
+        chord(w.v, true)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(5))
+        PetAuto.onDoc(JSONObject("""{"type":"petauto","pet":1,"fight":1,"s":[{"s":4,"n":"Growl","on":1},{"s":5,"n":"Bite","on":0,"ac":24},
+            {"s":6,"n":"Cower","on":1,"ac":25},{"s":7,"n":"Dash","on":0,"ac":26}]}"""), now())
+        press(w.v, PadInput.SLOT_FACE_TOP)
+        assertTrue("no cell: nothing tapped", w.picks.isEmpty())
+        assertEquals("Not in combat", line(w.v))
+        assertEquals("no flip", true, PetAuto.on(4, "Growl", now()))
+        // Bite still has its cell
+        press(w.v, PadInput.SLOT_FACE_LEFT)
+        assertEquals(listOf(17), w.picks)
+        // the pet died: every toggle refuses
+        ShadowSystemClock.advanceBy(Duration.ofMillis(5))
+        PetAuto.onDoc(JSONObject("""{"type":"petauto","pet":1,"dead":1,"s":[{"s":5,"n":"Bite","on":1,"ac":24}]}"""), now())
+        press(w.v, PadInput.SLOT_FACE_BOTTOM)
+        assertEquals(listOf(17), w.picks)
+        assertEquals("Not available here", line(w.v))
+        // the line goes with its time (the next draw shows the pointed name again)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(HomePauseView.LINE_MS + HomePauseView.LINE_FADE_MS + 50))
+        assertTrue(w.v.drawClassRadial(Canvas(Bitmap.createBitmap(200, 200, Bitmap.Config.ARGB_8888)), 200f, 200f))
+        assertEquals(null, line(w.v))
+    }
+
+    /** the open class wheel as Home draws it (drawClassRadial), the icons given time to land; the chord (and the stick at [deg]) held
+     *  again before each pass - the shared controller reader's revive (PadHub, no device here) lets every view's buttons go */
+    private fun classShot(v: CastView, name: String, size: Int = 620, deg: Double? = null, each: (() -> Unit)? = null) {
+        val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        for (pass in 0..3) {
+            chord(v, true); if (deg != null) stick(v, deg); each?.invoke()
+            val c = Canvas(b); c.drawColor(Color.rgb(20, 24, 32))
+            assertTrue(v.drawClassRadial(c, size.toFloat(), size.toFloat()))
+            if (pass < 3) { Thread.sleep(400); ShadowLooper.idleMainLooper() }
+        }
+        save(b, name)
+    }
+
+    @Test fun faceButtonShots() {
+        if (out == null) return
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
+        // the hunter's wolf: Y Growl (on), X Bite (off), A Cower (on), D-pad Up Dash (off); nothing pointed
+        val w = classWheel(wolf4)
+        chord(w.v, true)
+        classShot(w.v, "1_hunter_4_abilities.png")
+        // X pressed: Bite flips on at once (its shine), the wheel stays
+        press(w.v, PadInput.SLOT_FACE_LEFT)
+        classShot(w.v, "2_hunter_after_x_bite_on.png")
+        // the stick on Bite: its name in the middle, the glyph over the selection frame
+        classShot(w.v, "3_hunter_bite_pointed.png", deg = 90.0)
+        // the warlock's imp: Y Firebolt, X Blood Pact, A Fire Shield; Phase Shift no glyph
+        PetAuto.reset()
+        val i = classWheel(imp)
+        chord(i.v, true)
+        classShot(i.v, "4_warlock_imp_3_plus_phase_shift.png")
+        // two: Y Growl, X Claw; Dash no glyph
+        PetAuto.reset()
+        val t = classWheel(two)
+        chord(t.v, true)
+        classShot(t.v, "5_two_abilities.png")
+        // a fight changed the pet: Growl's glyph faint, Y's answer in the middle
+        PetAuto.reset()
+        val f = classWheel(wolf4.replace(""","c":8,"ac":16}""", ""","c":8}"""))
+        chord(f.v, true)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(5))
+        PetAuto.onDoc(JSONObject("""{"type":"petauto","pet":1,"fight":1,"s":[{"s":4,"n":"Growl","on":1},{"s":5,"n":"Bite","on":0,"ac":24},
+            {"s":6,"n":"Cower","on":1,"ac":25},{"s":7,"n":"Dash","on":0,"ac":26}]}"""), now())
+        classShot(f.v, "6_fight_refused_not_in_combat.png") { press(f.v, PadInput.SLOT_FACE_TOP) }
+        // Home's wheel at a smaller box (a narrow column): the glyphs still read
+        PetAuto.reset()
+        val s = classWheel(wolf4)
+        chord(s.v, true)
+        classShot(s.v, "7_hunter_4_small_440.png", 440)
+    }
+
     @Test fun shots() {
         if (out == null) return
         ShadowSystemClock.advanceBy(Duration.ofSeconds(10))

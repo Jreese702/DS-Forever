@@ -1408,7 +1408,9 @@ class HomeView(
         val sel = PadInput.isHeld(held, PadInput.SLOT_SELECT)
         if (sel && !partySelWas && PARTY_MODULE && flow.full == null && isShown) partyView.selectPressed()
         partySelWas = sel
-        if (fresh == 0 || !partyOnHere() || flow.full != null || !isShown || typeWanted) return
+        // ClassPetKeys (the user, 2026-11-16: the 4th pet ability on "D-pad Up"): the class wheel's D-pad never reaches the game (its guest
+        // keeps it), so the box's optimistic move would part from the game's - the wheel's presses are the wheel's
+        if (fresh == 0 || !partyOnHere() || flow.full != null || !isShown || typeWanted || (lent(castView) && castView.classRadialOpen())) return
         for ((k, d) in dirs.withIndex()) if ((fresh and (1 shl k)) != 0 && party.move(d.second) != null) { partyView.invalidate(); castView.partyChanged() }
     }
 
