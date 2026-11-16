@@ -152,7 +152,7 @@ class VoiceKeyboardTest {
 
     @Test fun theMicrophoneQuestionOnceNeverInAFightAndThePageWaitsForIt() {
         var asked = 0
-        Voice.askMic = { asked++ }
+        Voice.askMic = { asked++; true }
         var perm = Voice.Perm.ASKABLE
         val kb = ChatKeyboard(app, swap = false, voice = true)
         val l = Listen()
@@ -172,6 +172,12 @@ class VoiceKeyboardTest {
         assertTrue(kb.voiceShown)
         Voice.stopAll()
         assertTrue(kb.voiceShown)
+        // review: the app's own reader still sees the controller while Android's question has it: A on its "Allow" is NOT a second
+        // question, B on it does not cancel the page, Start / X / the D-pad do nothing here
+        for (k in listOf("PAD1", "PADDDOWN", "PAD1", "PAD2", "PAD3", "PADFORWARD")) assertTrue(kb.press(k))
+        assertEquals(1, asked)
+        assertTrue(kb.voiceShown); assertTrue(kb.voiceAsking)
+        assertEquals(Voice.State.ASK, kb.voiceSheet!!.state)
         // Android said yes: listening at once
         perm = Voice.Perm.GRANTED
         VoiceMic.onAnswer!!.invoke()
@@ -184,6 +190,88 @@ class VoiceKeyboardTest {
         assertFalse(kb.voiceShown)
         assertEquals("", text)
         assertTrue(l.cancels >= 1)
+    }
+
+    @Test fun aQuestionThatClosesWithoutAnAnswerNeverLeavesThePageDeaf() {
+        var asked = 0
+        Voice.askMic = { asked++; true }
+        var perm = Voice.Perm.ASKABLE
+        val kb = ChatKeyboard(app, swap = false, voice = true)
+        val l = Listen()
+        kb.text = { text }; kb.onText = { text = it }; kb.engine = l; kb.voiceProbe = { perm to Voice.Avail.DEVICE }; kb.clock = { now }
+        kb.press("PAD3"); kb.press("PAD1")
+        assertEquals(1, asked); assertTrue(kb.voiceAsking)
+        kb.onVisibilityAggregated(false)
+        // the window comes back but no answer follows (the question's activity went without one): the page looks again by itself
+        VoiceMic.onAnswer = null
+        perm = Voice.Perm.GRANTED
+        kb.onVisibilityAggregated(true)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(ChatKeyboard.ASK_LOST_MS + 100))
+        assertFalse(kb.voiceAsking)
+        assertEquals(Voice.State.LISTENING, kb.voiceSheet!!.state)
+        assertEquals(1, l.starts.size)
+        // and the buttons are the page's again
+        assertTrue(kb.press("PAD2")); assertFalse(kb.voiceShown)
+    }
+
+    @Test fun aQuestionNotShownOnTheBottomScreenKeepsThePageButtons() {
+        var asked = 0
+        Voice.askMic = { asked++; false }                          // the bottom display refused it: the window was never hidden
+        val (kb, _) = board(perm = Voice.Perm.ASKABLE)
+        kb.press("PAD3"); kb.press("PAD1")
+        assertEquals(1, asked)
+        assertTrue(kb.press("PAD2"))                                // B still cancels: nothing waits behind a hidden window
+        assertFalse(kb.voiceShown)
+    }
+
+    @Test fun professionsKeepsItsVoicePageWhileAndroidsQuestionHidesTheWindow() {
+        // review: Professions closed its search keyboard on ANY hide, so the window hidden for Android's microphone question ended the page
+        // and the player's Allow never led to listening
+        Voice.askMic = { true }
+        val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        val v = ProfessionsView(act)
+        val holder = android.widget.FrameLayout(act)
+        holder.addView(v)
+        act.setContentView(holder)
+        val kb = v.javaClass.getDeclaredField("kb").apply { isAccessible = true }.get(v) as ChatKeyboard
+        val open = v.javaClass.getDeclaredField("kbOpen").apply { isAccessible = true }
+        var perm = Voice.Perm.ASKABLE
+        val l = Listen()
+        kb.engine = l; kb.voiceProbe = { perm to Voice.Avail.DEVICE }; kb.clock = { now }
+        open.setBoolean(v, true); kb.open(); kb.visibility = View.VISIBLE
+        assertTrue(kb.startVoice())
+        kb.press("PAD1")                                            // Allow: Android's question, the window hidden for it
+        assertTrue(kb.voiceAsking)
+        holder.visibility = View.GONE
+        assertTrue("the page waits for the answer", kb.voiceShown)
+        assertTrue("the keyboard stays open", open.getBoolean(v))
+        holder.visibility = View.VISIBLE
+        perm = Voice.Perm.GRANTED
+        VoiceMic.onAnswer!!.invoke()
+        assertEquals(Voice.State.LISTENING, kb.voiceSheet!!.state)
+        assertEquals(1, l.starts.size)
+        // a real hide (the room left) still closes it
+        holder.visibility = View.GONE
+        assertFalse(kb.voiceShown)
+        assertFalse(open.getBoolean(v))
+    }
+
+    @Test fun theOnlineRecognizerIsNamedWhileItListensAndThisDeviceNever() {
+        Settings.voiceTyping = Voice.Mode.ONLINE
+        val (kb, l) = board(avail = Voice.Avail.ONLINE)
+        var asked = 0
+        kb.onlineNameProbe = { asked++; "Speech Services" }
+        kb.press("PAD3")
+        assertEquals(listOf(true), l.starts)
+        draw(kb)
+        assertTrue("the privacy line asks for the online app's name", asked > 0)
+        Settings.voiceTyping = Voice.Mode.DEVICE
+        val (kb2, _) = board()
+        var asked2 = 0
+        kb2.onlineNameProbe = { asked2++; "Speech Services" }
+        kb2.press("PAD3")
+        draw(kb2)
+        assertEquals("This device names nothing", 0, asked2)
     }
 
     @Test fun androidStoppedAskingShowsTheSettingsPath() {

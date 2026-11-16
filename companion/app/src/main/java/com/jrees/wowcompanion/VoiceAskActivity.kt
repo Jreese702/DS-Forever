@@ -32,10 +32,13 @@ class VoiceAskActivity : Activity() {
         finish()
     }
 
-    /** however it ends (an answer, Back, a failure): the bottom screen's window comes back, the sheet looks again */
+    /**
+     * however it ends (an answer, Back, a failure, or Android taking it away without a finish: its task or display gone): the bottom
+     * screen's window comes back, the sheet looks again. Only a recreate (a configuration change) keeps waiting: the new one has the answer
+     */
     override fun onDestroy() {
         super.onDestroy()
-        if (!isFinishing) return
+        if (isChangingConfigurations) return
         VoiceMic.onClosed?.invoke()
         VoiceMic.onAnswer?.let { a -> VoiceMic.onAnswer = null; android.os.Handler(android.os.Looper.getMainLooper()).post { a() } }
     }

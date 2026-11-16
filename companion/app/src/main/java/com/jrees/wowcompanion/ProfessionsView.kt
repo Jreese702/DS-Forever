@@ -316,6 +316,9 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
 
     override fun onVisibilityChanged(changedView: View, visibility: Int) {
         super.onVisibilityChanged(changedView, visibility)
+        // Android's microphone question (the voice page's Allow) hides the whole window until it closes: the search keyboard and its
+        // voice page stay for the answer (as Chat's board does), never closed as a room left
+        if (visibility != VISIBLE && kb.voiceAsking) { padNow.setActive(isShown); return }
         if (visibility == VISIBLE) refresh() else { filterOpen = false; search.clearFocus(); closeKb() }
         padNow.setActive(isShown)
     }

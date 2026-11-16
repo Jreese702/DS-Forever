@@ -406,9 +406,9 @@ object Voice {
     @Volatile var inFight: () -> Boolean = { false }
     /** names the on-device recognizer is told to expect (party, guild, friends, zone, bag items); never logged */
     @Volatile var hints: () -> List<String> = { emptyList() }
-    /** Android's microphone question on the bottom screen (the host's openOnBottom: its window hidden until the question closes);
-     *  null = none hosted (before Play): the keyboard starts the question on its own display */
-    @Volatile var askMic: (() -> Unit)? = null
+    /** Android's microphone question on the bottom screen (the host's openOnBottom: its window hidden until the question closes; true =
+     *  it is up there, the window hidden); null = none hosted (before Play): the keyboard starts the question on its own display */
+    @Volatile var askMic: (() -> Boolean)? = null
     /** every open sheet stops (the host went away, the bottom screen hid) */
     private val live = java.util.Collections.newSetFromMap(java.util.WeakHashMap<() -> Unit, Boolean>())
     fun register(stop: () -> Unit) { synchronized(live) { live.add(stop) } }

@@ -225,7 +225,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * picker is up, this window is hidden (GONE: no touches, the picker shows), and it comes back when the picker closes
      * (FrameGen.onPickerClosed). If the bottom display refuses the launch, the picker opens where Android puts it and nothing is hidden.
      */
-    private fun openDllPicker() = openOnBottom(FrameGenPickActivity::class.java, "FrameGen") { FrameGen.onPickerClosed = it }
+    private fun openDllPicker() { openOnBottom(FrameGenPickActivity::class.java, "FrameGen") { FrameGen.onPickerClosed = it } }
 
     /**
      * Settings / the setup screen > "Send a problem report" (board f-problem-report): the report PAGE inside the bottom screen (the
@@ -344,8 +344,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * One of our activities on THIS context's display (the bottom screen), so the game's window on the top screen is never covered. A
      * Presentation is a system window over its display's activities: while the activity is up, this window is hidden (GONE), and it
      * comes back when the activity closes ([setClosed]'s hook). Refused on the bottom display: where Android puts it, nothing hidden.
+     * True = it is up on the bottom screen and this window hidden until it closes (voice: its buttons are the activity's meanwhile).
      */
-    private fun openOnBottom(cls: Class<*>, tag: String, setClosed: ((() -> Unit)?) -> Unit) {
+    private fun openOnBottom(cls: Class<*>, tag: String, setClosed: ((() -> Unit)?) -> Unit): Boolean {
         val i = android.content.Intent(this, cls).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         val displayId = runCatching {
             (getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.displayId
@@ -362,6 +363,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             setClosed(null)
             runCatching { shell.startHostActivity(i) }.onFailure { android.util.Log.w(tag, "${cls.simpleName}: ${it.message}") }
         }
+        return onBottom && decor != null
     }
 
     /** "● REC 3:12 · Stop" over every room while Record 5 minutes runs (board f-problem-report); a tap stops it */

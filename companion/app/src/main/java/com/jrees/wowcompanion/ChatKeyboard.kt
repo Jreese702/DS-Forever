@@ -280,6 +280,13 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
     private val stopHook: () -> Unit = { if (!voiceAsking) stopVoice() }
     private var askPending = false
     /**
+     * Android's question is in FRONT of this page (the host hid its window for it, [Voice.askMic] said so). Its buttons are that
+     * question's: the app's own reader still sees every press (a root getevent, whatever has the focus) and Chat's direct route is the
+     * room's, not the window's, so A on Android's "Allow" also reached this page (still on Allow: a second question, the window shown
+     * again over it) and B there cancelled the page. While it is up, the page takes no button.
+     */
+    private var askHidden = false
+    /**
      * Android's microphone question is up for this page: the host's window is hidden meanwhile (openOnBottom), so the page and its host
      * must not take that hiding as "the box went away" (the page waits for the answer, then listens)
      */
@@ -326,9 +333,9 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
 
     private fun endSheet() {
         sheet = null
-        askPending = false
+        askPending = false; askHidden = false
         Voice.unregister(stopHook)
-        ui.removeCallbacks(tick)
+        ui.removeCallbacks(tick); ui.removeCallbacks(askLost)
         // only this page's own wait for Android's answer (another board's stays)
         myAnswer?.let { if (VoiceMic.onAnswer === it) VoiceMic.onAnswer = null }
         myAnswer = null
@@ -349,6 +356,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
 
     private fun voicePress(button: String): Boolean {
         val s = sheet ?: return false
+        if (askPending && askHidden) return true            // Android's question has the buttons while it is up ([askHidden])
         val acts = s.press(button, Voice.inFight())
         if (acts.singleOrNull() == Voice.Act.Pass) return false
         run(acts)
@@ -395,14 +403,20 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
     private fun askMic(s: Voice.Sheet) {
         askPending = true
         val answer: () -> Unit = {
-            askPending = false; myAnswer = null
-            if (sheet === s) { val (p, a) = probe(s.mode); run(s.permAnswered(p, a)) }
+            if (sheet === s) {
+                askPending = false; askHidden = false; myAnswer = null; ui.removeCallbacks(askLost)
+                val (p, a) = probe(s.mode); run(s.permAnswered(p, a))
+            }
         }
         myAnswer = answer
         VoiceMic.onAnswer = answer
         DiagLog.event("voice", "mic question asked")
         val ask = Voice.askMic
-        if (ask != null) { ask(); return }
+        if (ask != null) {
+            askHidden = ask()
+            if (!askHidden) DiagLog.event("voice", "mic question not on the bottom screen")
+            return
+        }
         // no host (before Play): the question on this board's own display
         val i = android.content.Intent(context, VoiceAskActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         val opts = display?.displayId?.let { android.app.ActivityOptions.makeBasic().setLaunchDisplayId(it).toBundle() }
@@ -434,6 +448,20 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
     override fun onVisibilityAggregated(isVisible: Boolean) {
         super.onVisibilityAggregated(isVisible)
         if (!isVisible && !voiceAsking) stopVoice()
+        // the window is back: Android's question has closed and its answer follows at once ([VoiceMic.onAnswer], posted right after);
+        // an answer that never comes (the question's activity gone without one) must not leave the page deaf to every button
+        if (isVisible && voiceAsking && askHidden) { ui.removeCallbacks(askLost); ui.postDelayed(askLost, ASK_LOST_MS) }
+    }
+
+    /** the window came back and no answer followed: the page looks again itself (the permission as it is now) */
+    private val askLost = Runnable {
+        val s = sheet ?: return@Runnable
+        if (!askPending) return@Runnable
+        askPending = false; askHidden = false
+        myAnswer?.let { if (VoiceMic.onAnswer === it) VoiceMic.onAnswer = null }
+        myAnswer = null
+        DiagLog.event("voice", "mic question closed without an answer")
+        val (p, a) = probe(s.mode); run(s.permAnswered(p, a))
     }
 
     override fun onDetachedFromWindow() {
@@ -490,6 +518,13 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
 
     private var onlineName: String? = null
     private var onlineAsked = false
+    /** the off-device renders: the online recognizer's app name as given (null = ask Android) */
+    var onlineNameProbe: (() -> String?)? = null
+    private fun onlineApp(): String? {
+        onlineNameProbe?.let { return it() }
+        if (!onlineAsked) { onlineAsked = true; onlineName = runCatching { VoiceEngine.onlineName(context) }.getOrNull() }
+        return onlineName
+    }
 
     private fun drawVoice(c: Canvas, kb: RectF, s: Voice.Sheet) {
         chips.clear(); btnRect = null
@@ -544,10 +579,17 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
             Voice.State.LISTENING, Voice.State.STOPPING, Voice.State.RESULT -> drawWords(c, s, RectF(tx0, y, tx1, body.bottom), now)
             Voice.State.BLOCKED -> sub(c, PATH, tx0, y, tx1, body.bottom)
             Voice.State.OFFER_ONLINE -> {
-                if (!onlineAsked) { onlineAsked = true; onlineName = runCatching { VoiceEngine.onlineName(context) }.getOrNull() }
-                onlineName?.let { sub(c, it, tx0, y, tx1, body.bottom) }
+                onlineApp()?.let { sub(c, it, tx0, y, tx1, body.bottom) }
             }
             else -> {}
+        }
+        // ---- THE PRIVACY LINE (the design: "Online ... The privacy line names that app"): while the ONLINE recognizer listens, the app
+        // that hears the voice is named at the foot's left (only that service can keep EXTRA_PREFER_OFFLINE, so nothing says "this device")
+        if (s.mode == Voice.Mode.ONLINE && (s.state == Voice.State.LISTENING || s.state == Voice.State.STOPPING)) onlineApp()?.let { name ->
+            val np = UiKit.bodyPaint(26f, Theme.dim)
+            val w = (inner.width() * 0.45f).coerceAtLeast(1f)
+            val line = android.text.TextUtils.ellipsize(name, android.text.TextPaint(np), w, android.text.TextUtils.TruncateAt.END).toString()
+            c.drawText(line, inner.left + 4f, inner.bottom - chipH / 2f - (np.ascent() + np.descent()) / 2f, np)
         }
         // ---- the buttons' words, along the foot (right to left), each a touch box
         val p = UiKit.bodyPaint(28f, Theme.text)
@@ -684,6 +726,8 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         const val POP_SHOW_MS = 160L
         /** one ripple's way out from the medallion */
         const val RIPPLE_MS = 1400L
+        /** the window back after Android's microphone question: its answer is due by then ([askLost]) */
+        const val ASK_LOST_MS = 1500L
         /** where Android keeps the microphone once it stopped asking (the sheet shows it; DS Forever never opens it) */
         const val PATH = "Android Settings > Apps > DS Forever > Permissions > Microphone"
     }
