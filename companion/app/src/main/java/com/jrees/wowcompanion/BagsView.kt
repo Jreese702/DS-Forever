@@ -149,6 +149,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         state.onCard = { col -> cardPress(col) }
         state.onEquipSlot = { id -> equipTap(id) }
         state.onShutTap = { id -> GameInput.tap(context, state.pad, "bmvq", 27) && GameInput.tap(context, state.pad, "bmvq", id) }
+        // bags-de1: a finger on the strip's Disenchant icon: bmvq 27, then its column (Bags.lua DE.TAP_COL): the grid opens, no game action
+        state.onDeTap = { GameInput.tap(context, state.pad, "bmvq", 27) &&
+            GameInput.tap(context, state.pad, "bmvq", state.de?.optInt("col", DE_TAP_COL) ?: DE_TAP_COL) }
         state.onDragMove = { x, y -> dragMove(x, y) }
         state.onDragEnd = { x, y -> dragEnd(x, y) }
     }
@@ -226,6 +229,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             const val COMPARE_STEP = 120f // bags-act1: one D-pad press on the compare sheet (about four lines)
             const val DPICK_ROW = -1000  // bags-act1: the Destroy picker's row i = DPICK_ROW - i (36 + its bmv cell; again = A)
             const val GEAR_PICK = -5000  // bags-gear1: the target row's worn slot n = GEAR_PICK - n (bmvq 26, then column n - 1)
+            const val DE_TILE = -3000    // bags-de1: the Disenchant grid's tile i = DE_TILE - i (the cursor's tile again = A)
+            const val DE_COLS = 10       // bags-de1: the grid as wide as Bags' own (Grid.COLS): drawSlot and the tooltip's place reused
+            const val DE_GAP = 10f
+            const val DE_GOT_MS = 6000L  // bags-de1: the strip of what the loot gave shows this long
             /** the Y menu's rows: the add-on's names -> their words, and a finger's tap (bmvq 19 / 20 / 21; Compare by its prefix) */
             val MENU_WORDS = linkedMapOf("split" to "Split Stack", "bind" to "Bind to a Button", "compare" to "Compare", "destroy" to "Destroy")
             val MENU_TAP = mapOf("split" to 19, "bind" to 20, "compare" to COMPARE_TAP, "destroy" to 21)
@@ -304,11 +311,14 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             val m = mode()
             if (e.actionMasked == MotionEvent.ACTION_DOWN) {
                 // bags-bindbox1: "bindbox" = the Spellbook's Bind box over everything (SpellsOverlay takes the touches)
-                val blocking = m == "destroy" || m == "split" || m == "target" || m == "dpick" || m == "compare"
+                // bags-de1: the Disenchant grid ("bulk") covers the room: it takes every touch
+                val blocking = m == "destroy" || m == "split" || m == "target" || m == "dpick" || m == "compare" || m == "bulk"
                 owning = blocking || zones.any { it.contains(e.x, e.y) }
                 if (owning) { pressX = e.x; pressY = e.y; invalidate() }
             }
             if (!owning) return false
+            // bags-de1: a finger dragged up / down over the Disenchant grid scrolls its rows (no game action; the add-on's cursor stays)
+            if (m == "bulk" && deScroll(e)) return true
             val inCut = cut?.contains(pressX, pressY) == true
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> if (inCut) dragY = e.y
@@ -343,6 +353,14 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 else -> if (what <= GEAR_PICK) {
                     val inv = GEAR_PICK - what
                     if (inv in 1..19 && GameInput.tap(context, st.pad, "bmvq", 26)) GameInput.tap(context, st.pad, "bmvq", inv - 1)
+                } else if (what <= DE_TILE) {
+                    // bags-de1: a tile of the Disenchant grid: the cursor's own tile = A; another = the cursor there (36 + its bmv cell)
+                    val b = st.ctl?.optJSONObject("bulk") ?: return
+                    val i = DE_TILE - what
+                    val e = b.optJSONArray("list")?.optJSONObject(i) ?: return
+                    if (b.optInt("sel", 0) - 1 == i) GameInput.tap(context, st.pad, "bmvq", 31)
+                    else BagsMoveRoute.cells(st.pad, e.optInt("b", -1), e.optInt("s", 0))
+                        ?.let { cells -> GameInput.taps(context, st.pad, listOf("bmvq" to 36) + cells) }
                 } else if (what <= DPICK_ROW) {
                     // bags-act1: a Destroy picker row: the gold row there (36 + its bmv cell, no game action); the gold row again = A
                     val i = DPICK_ROW - what
@@ -394,6 +412,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 "compare" -> compare(c, screen)
                 "split" -> split(c, screen)
                 "target" -> target(c, screen)
+                "bulk" -> bulk(c, screen)                          // bags-de1: the Disenchant grid
                 // bags-bindbox1: "bindbox" draws nothing here: the Spellbook's Bind box (SpellsOverlay) lies over the room
             }
         }
@@ -777,6 +796,13 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                     UiKit.slotFocus(c, r)
                     title = "Clean Up Bags"; word = "Clean Up"
                 }
+                "de" -> {
+                    // bags-de1: the strip's Disenchant icon: A opens the grid (the spell's own name is the game's: never translated)
+                    val d = bar.deRect().takeIf { b -> !b.isEmpty } ?: return
+                    r = inLayer(d)
+                    UiKit.slotFocus(c, r)
+                    title = st.de?.optString("n")?.takeIf { s -> s.isNotEmpty() } ?: "…"; word = "Open"
+                }
                 "search" -> {
                     val v = searchBox(); v.getLocationOnScreen(sat2)
                     r = RectF((sat2[0] - at[0]).toFloat(), (sat2[1] - at[1]).toFloat(),
@@ -967,6 +993,315 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             val hs = UiKit.hints(c, box.right - 16f, hy, "rev_a" to "Apply", UiKit.backGlyph() to "Cancel")
             val back = RectF((hs + box.right) / 2f, hy - 36f, box.right, hy + 36f)
             hits.add(back to KIT_CANCEL); zones.add(back)
+        }
+
+        // ------------------------------------------------------------------ bags-de1: THE DISENCHANT GRID (Bags.lua DE, mode "bulk")
+        /**
+         * THE DISENCHANT GRID (the user's list, 2026-11-16: "A custom grid of bag items that can be disenchanted. Hover shows the full
+         * tooltip, as in Bags. It stays open after each one; B closes it. The disenchant cast bar is visible."; their picks the same day,
+         * design_disenchant.md: blue / purple ask once, the game's own loot way with a strip of what came, bag order, an icon on the strip,
+         * a small green arrow on an upgrade). The game's window: the spell's own icon in the ring, its own name and how many in the title;
+         * Bags' own tiles 10 across (drawSlot); the Bags tooltip card beside the cursor (card, the same place and fit); Home's own cast bar
+         * in the foot ([castBar] = CastView.drawCastInto); A <spell> and B Close (B Stop while its own cast runs) as the window's buttons. A tile
+         * casting: the dark sweep; done: it flashes and sparkles away (LootFx, Make Space's burst); refused: it shakes, red. A finger: a tile
+         * = the cursor there, the cursor's tile again = A; a drag scrolls the rows. Everything acts through the add-on (bmvq 31 / 33 / 36).
+         */
+        var castBar: ((Canvas, RectF, Long) -> Long)? = null
+        private val deP = Paints()
+        private var deFirst = 0
+        private var deSelSeen = -1
+        private var deRowsFit = 1
+        private var deRows = 0
+        private var deStep = 1f
+        private var deGrid = RectF()
+        private var deDragY = -1f
+        private var deDragFirst = 0
+        private var deDragging = false
+        /** (bag, slot) -> its tile as last drawn: where its sparkle or its shake plays */
+        private val deRect = HashMap<Long, RectF>()
+        private var deDoneSeen = -1
+        private var deFailSeen = -1
+        private var deGotSeen = -1
+        private var deGotAt = 0L
+        private class DeFx(val rect: RectF, val icon: Int?, val at: Long, val seed: Int)
+        private val deVanish = ArrayList<DeFx>()
+        private val deShakes = HashMap<Long, Long>()
+        private var deCastKey: String? = null
+        private var deCastAt = 0L
+        private val pDeArrow = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val pDeRed = Paint()
+        private val pDeIcon = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        private val pDeAdd = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD) }
+
+        private fun bulk(c: Canvas, screen: RectF) {
+            val b = st.ctl?.optJSONObject("bulk") ?: return
+            val now = clock()
+            deEffects(b, now)
+            val list = b.optJSONArray("list") ?: JSONArray()
+            val n = list.length()
+            val sel = b.optInt("sel", 0) - 1
+            val fight = b.optBoolean("fight"); val busy = b.optBoolean("busy"); val loot = b.optBoolean("loot")
+            val asking = b.has("ask") && !b.isNull("ask")
+            val spell = b.optString("n").takeIf { it.isNotEmpty() } ?: "…"
+            val r = RectF(screen)
+            val inner = UiKit.windowGround(c, r)
+            val strip = UiKit.strip(c, inner)
+            // the grid: Bags' own tiles, 10 across, under the ring; its rows follow the cursor (a finger's scroll stays until it moves)
+            val gx = inner.left + 24f
+            val t = (inner.width() - 48f - (DE_COLS - 1) * DE_GAP) / DE_COLS
+            deStep = t + DE_GAP
+            val gy = r.top + UiKit.WINDOW_UNDER_RING + 10f
+            deGrid = RectF(gx - 12f, gy - 12f, gx + DE_COLS * deStep - DE_GAP + 12f, strip.top - 10f)
+            deRowsFit = maxOf(1, ((deGrid.bottom - gy + DE_GAP) / deStep).toInt())
+            deRows = (n + DE_COLS - 1) / DE_COLS
+            if (sel >= 0 && sel != deSelSeen) {
+                val row = sel / DE_COLS
+                if (row < deFirst) deFirst = row
+                if (row > deFirst + deRowsFit - 1) deFirst = row - deRowsFit + 1
+                deSelSeen = sel
+            }
+            deFirst = deFirst.coerceIn(0, maxOf(0, deRows - deRowsFit))
+            deRect.clear()
+            val cast = b.optJSONObject("cast")
+            val castKey = cast?.let { "${it.optInt("b")}:${it.optInt("s")}:${it.optInt("id")}" }
+            if (castKey != deCastKey) { deCastKey = castKey; deCastAt = now }
+            var cur: RectF? = null
+            c.save(); c.clipRect(deGrid)
+            for (i in 0 until n) {
+                val e = list.optJSONObject(i) ?: continue
+                val row = i / DE_COLS - deFirst
+                if (row < 0 || row >= deRowsFit) continue
+                val x = gx + (i % DE_COLS) * deStep; val y = gy + row * deStep
+                val bag = e.optInt("b", -1); val slot = e.optInt("s", -1)
+                val k = st.key(bag, slot)
+                val shakeAt = deShakes[k]
+                val dx = if (shakeAt != null) LootFx.shake(now - shakeAt) else 0f
+                val box = RectF(x + dx, y, x + dx + t, y + t)
+                // the bags document's own row (its icon, quality, count, cooldown), the grid's word for what it lacks
+                val row0 = st.items[k]?.takeIf { o -> o.optInt("id") == e.optInt("id") }
+                    ?: JSONObject().put("id", e.optInt("id")).put("quality", e.optInt("q", 2))
+                val shown = if (e.optBoolean("lk")) JSONObject(row0.toString()).put("locked", true) else row0
+                drawSlot(c, box, shown, deP, dimmed = fight)
+                val inset = RectF(box.left + 4f, box.top + 4f, box.right - 4f, box.bottom - 4f)
+                // its cast: the dark sweep over the tile, from the cast's start for the spell's cast time
+                if (cast != null && cast.optInt("b") == bag && cast.optInt("s") == slot) {
+                    val ct = b.optInt("ct", 0)
+                    val left = (ct - (now - deCastAt)) / 1000f
+                    if (ct > 0 && left > 0f) { UiKit.radialCd(c, inset, left, ct / 1000f, 255, inset.width() / 100f); postInvalidateOnAnimation() }
+                    else UiKit.radialCdDim(c, inset, 255)
+                }
+                if (e.optBoolean("up") && !fight) deArrow(c, box)
+                if (shakeAt != null) {
+                    val tint = LootFx.shakeTint(now - shakeAt)
+                    if (tint > 0) { pDeRed.color = Color.argb(tint, 200, 20, 10); c.drawRect(box, pDeRed); postInvalidateOnAnimation() }
+                    else deShakes.remove(k)
+                }
+                val home = RectF(x, y, x + t, y + t)
+                deRect[k] = home
+                if (!asking) hits.add(RectF(home) to (DE_TILE - i))
+                if (i == sel) cur = home
+            }
+            cur?.let { UiKit.slotFocus(c, it) }
+            c.restore()
+            if (deRows > deRowsFit)
+                UiKit.scrollBar(c, RectF(inner.right - 14f, gy, inner.right - 2f, gy + deRowsFit * deStep - DE_GAP),
+                    deFirst / deRows.toFloat(), (deFirst + deRowsFit) / deRows.toFloat())
+            if (n == 0) c.drawText(Tr.t("Nothing to disenchant"), gx, gy + 50f, UiKit.bodyPaint(28f, Theme.dim))
+            deVanishDraw(c, now)
+            // the frame: the spell's own icon in the ring; the title is the spell's own name (the game's words: never translated) and how many
+            UiKit.windowFrame(c, r, "", Icons.getOrUnknown(if (b.has("i")) b.optInt("i") else null), close = false)
+            val band = r.top - 16f + 57f * UiKit.FRAME
+            val tp = UiKit.bodyPaint(32f, Color.WHITE)
+            val cp = UiKit.numberPaint(28f, Theme.dim)
+            val count = n.toString()
+            val total = tp.measureText(spell) + 16f + cp.measureText(count)
+            val tx = (r.left + 170f + r.right - 40f) / 2f - total / 2f
+            c.drawText(spell, tx, band - (tp.ascent() + tp.descent()) / 2f, tp)
+            c.drawText(Tr.t(count), tx + tp.measureText(spell) + 16f, band - (cp.ascent() + cp.descent()) / 2f, cp)
+            deGot(c, b, inner, now)
+            // the foot: Home's cast bar on the left, A <spell> and B Close / Stop on the right
+            val bt = strip.top + 13f
+            val bR = RectF(inner.right - 8f - 300f, bt, inner.right - 8f, bt + 111f)
+            val aR = RectF(bR.left - 24f - 380f, bt, bR.left - 24f, bt + 111f)
+            val curE = if (sel >= 0) list.optJSONObject(sel) else null
+            val aOk = curE != null && !busy && !loot && !fight && !curE.optBoolean("lk")
+            spellButton(c, aR, spell, "rev_a", when {
+                !aOk -> UiKit.Button.DISABLED
+                !asking && (pressedIn(listOf(aR)) == 0 || isDown("PAD1")) -> UiKit.Button.DOWN
+                else -> UiKit.Button.UP })
+            // B = Stop only while OUR cast runs (Bags.lua DE.ourCast: never another spell's cast, never in a fight), else Close
+            UiKit.button(c, bR, if (b.optBoolean("stop")) "Stop" else "Close", UiKit.backGlyph(),
+                if (!asking && (pressedIn(listOf(bR)) == 0 || isDown("PAD2"))) UiKit.Button.DOWN else UiKit.Button.UP)
+            if (!asking) { if (aOk) hits.add(RectF(aR) to 31); hits.add(RectF(bR) to 33) }
+            val barR = RectF(inner.left + 16f, bt + 111f / 2f - 15f, aR.left - 28f, bt + 111f / 2f + 15f)
+            castBar?.let { p ->
+                val next = p(c, barR, android.os.SystemClock.elapsedRealtime())
+                if (next == 0L) postInvalidateOnAnimation() else if (next < Long.MAX_VALUE) postInvalidateDelayed(next)
+            }
+            // the cursor's item: the Bags tooltip card beside it (its full tooltip, its stat changes at the foot)
+            if (cur != null && curE != null && !asking) deTooltip(c, cur, curE.optInt("b", -1), curE.optInt("s", -1), inner.top + 8f, strip.top - 8f)
+            else { cut = null; stickWanted(false) }
+            if (asking) deAsk(c, screen, b, spell)
+            zones.add(RectF(screen))
+        }
+
+        /** the add-on's done / fail (each .n once; the first document seen is only a baseline): the tile sparkles away, or shakes red */
+        private fun deEffects(b: JSONObject, now: Long) {
+            val done = b.optJSONObject("done"); val fail = b.optJSONObject("fail")
+            val dn = done?.optInt("n", 0) ?: 0; val fn = fail?.optInt("n", 0) ?: 0
+            if (deDoneSeen < 0) { deDoneSeen = dn; deFailSeen = fn }
+            if (done != null && dn > deDoneSeen) {
+                deDoneSeen = dn
+                val k = st.key(done.optInt("b", -1), done.optInt("s", -1))
+                val icon = st.items[k]?.let { o -> if (o.has("icon")) o.optInt("icon") else null }
+                deRect[k]?.let { rr -> deVanish.add(DeFx(RectF(rr), icon, now, dn)) }
+            }
+            if (fail != null && fn > deFailSeen) {
+                deFailSeen = fn
+                if (fail.optString("why") != "stop") {
+                    val bag = fail.optInt("b", -1); val slot = fail.optInt("s", -1)
+                    val at = if (bag >= 0 && slot >= 1) bag to slot
+                        else b.optJSONArray("list")?.optJSONObject(b.optInt("sel", 0) - 1)?.let { e -> e.optInt("b") to e.optInt("s") }
+                    if (at != null) deShakes[st.key(at.first, at.second)] = now
+                }
+            }
+        }
+
+        /** a done tile: its icon bright, shrinking and fading, Make Space's burst over it and the cast bar's flakes rising (LootFx) */
+        private fun deVanishDraw(c: Canvas, now: Long) {
+            if (deVanish.isEmpty()) return
+            deVanish.removeAll { now - it.at >= LootFx.VANISH_MS }
+            for (v in deVanish) {
+                val t = now - v.at
+                val ca = LootFx.cardAlpha(t)
+                if (ca > 0f) Icons.getOrUnknown(v.icon)?.let { bmp ->
+                    val sc = LootFx.cardScale(t)
+                    c.save(); c.scale(sc, sc, v.rect.centerX(), v.rect.centerY())
+                    pDeIcon.alpha = (255 * ca).toInt()
+                    c.drawBitmap(bmp, null, RectF(v.rect.left + 4f, v.rect.top + 4f, v.rect.right - 4f, v.rect.bottom - 4f), pDeIcon)
+                    c.restore()
+                }
+                val bk = t.toFloat() / LootFx.BURST_MS
+                if (bk < 1f) UiKit.deleteBurst(c, RectF(v.rect.left - 14f, v.rect.top - 14f, v.rect.right + 14f, v.rect.bottom + 14f), bk)
+                for (k in 0 until LootFx.N) {
+                    val pt = LootFx.piece(k, v.seed, t) ?: continue
+                    val bmp = UiKit.castArt(LootFx.PIECES[k % LootFx.PIECES.size]) ?: continue
+                    val cx = v.rect.centerX() + pt.dx; val cy = v.rect.centerY() + pt.dy
+                    pDeAdd.alpha = pt.alpha
+                    c.save(); c.rotate(pt.turn, cx, cy)
+                    val hh = pt.size * bmp.height / bmp.width.coerceAtLeast(1)
+                    c.drawBitmap(bmp, null, RectF(cx - pt.size, cy - hh, cx + pt.size, cy + hh), pDeAdd)
+                    c.restore()
+                    pDeAdd.alpha = 255
+                }
+            }
+            postInvalidateOnAnimation()
+        }
+
+        /** the small green arrow (the user's pick 6a: "a small green arrow on tiles whose stat changes are all gains"), top left */
+        private fun deArrow(c: Canvas, box: RectF) {
+            val s = box.width() * 0.32f
+            val l = box.left + 5f; val tp = box.top + 5f
+            val path = Path().apply {
+                moveTo(l + s / 2f, tp); lineTo(l + s, tp + s * 0.55f); lineTo(l + s * 0.68f, tp + s * 0.55f); lineTo(l + s * 0.68f, tp + s)
+                lineTo(l + s * 0.32f, tp + s); lineTo(l + s * 0.32f, tp + s * 0.55f); lineTo(l, tp + s * 0.55f); close()
+            }
+            pDeArrow.style = Paint.Style.FILL; pDeArrow.color = Color.rgb(30, 255, 0); c.drawPath(path, pDeArrow)
+            pDeArrow.style = Paint.Style.STROKE; pDeArrow.strokeWidth = 2.5f; pDeArrow.color = Color.BLACK; c.drawPath(path, pDeArrow)
+        }
+
+        /** what the loot gave (Auto Loot: the mats went to the bags): its icons and counts at the top right, for DE_GOT_MS */
+        private fun deGot(c: Canvas, b: JSONObject, inner: RectF, now: Long) {
+            val g = b.optJSONObject("got") ?: return
+            val gn = g.optInt("n", 0)
+            if (gn != deGotSeen) { deGotSeen = gn; deGotAt = now }
+            val age = now - deGotAt
+            if (age >= DE_GOT_MS) return
+            val items = g.optJSONArray("items") ?: return
+            if (items.length() == 0) return
+            val a = if (age > DE_GOT_MS - 600L) ((DE_GOT_MS - age) * 255 / 600L).toInt() else 255
+            val s = 58f; val gap = 14f
+            var x = inner.right - 20f - items.length() * (s + gap) + gap
+            val y = inner.top + 2f
+            val l = c.saveLayerAlpha(RectF(x - 30f, y - 30f, inner.right, y + s + 30f), a)
+            for (i in 0 until items.length()) {
+                val o = items.optJSONObject(i) ?: continue
+                val q = o.optInt("q", 1)
+                UiKit.slot(c, Icons.getOrUnknown(if (o.has("i")) o.optInt("i") else null), x, y, s, if (q >= 2) Theme.quality(q) else 0, o.optInt("c", 1))
+                x += s + gap
+            }
+            c.restoreToCount(l)
+            postInvalidateDelayed(120L)
+        }
+
+        /** the cursor's item: the Bags tooltip card beside its tile (the same card, place and fit as the grid's; no buttons under it) */
+        private fun deTooltip(c: Canvas, cur: RectF, bag: Int, slot: Int, top: Float, bottom: Float) {
+            val it = st.items[st.key(bag, slot)] ?: run { cut = null; stickWanted(false); return }
+            val name = it.optString("name").takeIf { s -> real(s) } ?: "Loading…"
+            val q = if (it.has("quality")) it.optInt("quality") else 1
+            val key = "bag $bag $slot ${it.optInt("id")}"
+            val live = st.ctl?.optJSONObject("tip")?.takeIf { st.ctlOn }
+            val shown = st.tips.pick(key, it.optInt("count", 1), live, name, q, clock()) { fallbackTip(key, it) }
+            if (shown.held) postInvalidateDelayed(HOLD_REDRAW_MS)
+            card(c, cur, shown.name, shown.quality, shown.tip, changesOf(shown.tip, it), emptyList(), emptyList(), top, bottom)
+            stickWanted(cut != null)
+        }
+
+        /** the window's A button with the spell's own name on it (the game's words: never through Tr.t), its glyph at the left */
+        private fun spellButton(c: Canvas, r: RectF, label: String, glyph: String, state: UiKit.Button) {
+            UiKit.button(c, r, "", glyph, state)
+            val g = minOf(70f, r.height() * 0.64f)
+            val x0 = r.left + 22f + g + 8f; val x1 = r.right - 26f
+            val p = UiKit.bodyPaint(r.height() * 0.34f, if (state == UiKit.Button.DISABLED) Theme.dim else Theme.btnLabel)
+            p.textAlign = Paint.Align.CENTER
+            val w = p.measureText(label)
+            if (w > x1 - x0 && w > 0f) p.textSize = maxOf(r.height() * 0.2f, p.textSize * (x1 - x0) / w)
+            c.save()
+            if (state == UiKit.Button.DOWN) c.scale(UiKit.PRESS_SCALE, UiKit.PRESS_SCALE, r.centerX(), r.centerY())
+            c.drawText(label, (x0 + x1) / 2f, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+            c.restore()
+        }
+
+        /** the blue / purple ask (the user's pick 2a: "Disenchant?" A Yes / B No, the same ask Destroy uses) */
+        private fun deAsk(c: Canvas, screen: RectF, b: JSONObject, spell: String) {
+            val a = b.optJSONObject("ask") ?: return
+            UiKit.cover(c, screen)
+            val it = st.items[st.key(a.optInt("b", -1), a.optInt("s", -1))]
+            val cx = screen.width() / 2f
+            val bh = 440f
+            val r = RectF(cx - 520f, (screen.height() - bh) / 2f, cx + 520f, (screen.height() + bh) / 2f)
+            UiKit.dialog(c, r)
+            val text = UiKit.bodyPaint(42f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
+            c.drawText("$spell?", cx, r.top + 104f, text)                        // the spell's own name: the game's words
+            UiKit.itemPlate(c, RectF(cx - 280f, r.top + 134f, cx + 280f, r.top + 242f), iconOf(it), it?.optString("name") ?: "",
+                colourOf(it))
+            val by = r.bottom - 60f - 111f
+            val yes = RectF(cx - 14f - 380f, by, cx - 14f, by + 111f); val no = RectF(cx + 14f, by, cx + 14f + 380f, by + 111f)
+            button(c, yes, "Yes", "rev_a", "PAD1"); button(c, no, "No", "rev_b", "PAD2")
+            hits.add(yes to 31); hits.add(no to 33)
+        }
+
+        /** a finger dragged up / down over the grid scrolls its rows; true = this touch is the scroll's */
+        private fun deScroll(e: MotionEvent): Boolean {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { deDragging = false; deDragY = if (deGrid.contains(e.x, e.y)) e.y else -1f; deDragFirst = deFirst }
+                MotionEvent.ACTION_MOVE -> {
+                    if (deDragY < 0f) return false
+                    if (!deDragging && abs(e.y - deDragY) > 24f) deDragging = true
+                    if (deDragging) {
+                        deFirst = (deDragFirst - ((e.y - deDragY) / deStep).roundToInt()).coerceIn(0, maxOf(0, deRows - deRowsFit))
+                        pressX = -1f; pressY = -1f
+                        invalidate()
+                        return true
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val was = deDragging
+                    deDragging = false; deDragY = -1f
+                    if (was) { owning = false; pressX = -1f; pressY = -1f; invalidate(); return true }
+                }
+            }
+            return false
         }
 
         /**
@@ -1178,6 +1513,18 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
      */
     /** r20: an `itemcd` document came (ItemCd): the slots' cooldowns redraw */
     fun cooldowns() { grid.invalidate() }
+
+    /**
+     * bags-de1 (the user's list 2026-11-16: "The disenchant cast bar is visible"): the host's painter of Home's own cast bar
+     * (CastView.drawCastInto: the same state, art and code, into a box of this room) for the Disenchant grid's foot
+     */
+    var castBar: ((Canvas, RectF, Long) -> Long)?
+        get() = ctlLayer.castBar
+        set(v) { ctlLayer.castBar = v }
+    /** bags-de1: the grid's A was taken (its use request carries the cast time): the bar starts at the press (CastView.predictFrom) */
+    var castPredict: ((Int) -> Unit)? = null
+    /** bags-de1: an actionbar document came (a cast started / ended): the grid's foot draws again */
+    fun castTick() { if (state.ctlOn && state.ctl?.optString("mode") == "bulk") ctlLayer.invalidate() }
 
     fun update(bags: JSONObject, current: Boolean = true) {
         head.set(bags.optInt("free", 0), bags.optInt("total", 0),
@@ -1401,7 +1748,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     fun touchedOut() {
         state.holdAskedAt = 0L
         stopAsking()
-        if (!state.ctlOn) return
+        // bags-de1: the Disenchant grid waits to take the pad back after a loot pop-up (ctl.resume): the room left now = it never does
+        if (!state.ctlOn) { if (state.ctl?.optBoolean("resume") == true) GameInput.tap(context, state.pad, "bmvq", 30); return }
         if (state.gameDoors && state.ctl?.optBoolean("open") == true) GameInput.tap(context, state.pad, "bag0", 38)
         else GameInput.tap(context, state.pad, "bmvq", 30)
     }
@@ -1422,8 +1770,17 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     private var useSeen: String? = null
     private var actSeen: String? = null
 
+    private var deNoteSeen = -1
     private fun onCtl(c: JSONObject?) {
         val on = c?.optBoolean("on") == true
+        // bags-de1: the Disenchant grid's own words, one log line each (the device checks: the pick's sct / scti, the cell's use)
+        val dn = c?.optString("note") ?: ""
+        if (dn.startsWith("de-") && c != null && c.optInt("seq") != deNoteSeen) {
+            deNoteSeen = c.optInt("seq")
+            val bk = c.optJSONObject("bulk")
+            android.util.Log.i("WCBAGS", "de: $dn n=${bk?.optJSONArray("list")?.length()} sel=${bk?.optInt("sel")} busy=${bk?.optBoolean("busy")} " +
+                "pick=${bk?.optBoolean("pick")} cx=${bk?.optJSONObject("cx")} use=${c.optJSONObject("use")}")
+        }
         if (on != ctlOn) {
             ctlOn = on
             // the addon says why it handed back ("left-B" = the player left with B: the user's ruling, B goes Home)
@@ -1446,7 +1803,12 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         // "Choose an item" (an armor kit / stone / enchant picking its target): worn gear is the secure row binv (the game's /use <slot>)
         // B in "Choose an item": the game's own cancel (binv 19 = /stopspelltarget; SpellStopTargeting is forbidden to add-ons); a bag
         // gear target its own /use cell, binv 20..39 (issue #126, 2026-11-11: the bag cell equipped it instead of disenchanting)
-        KitTarget.ofUse(u)?.let { (row, col) -> GameInput.tap(context, state.pad, row, col); return }
+        KitTarget.ofUse(u)?.let { (row, col) ->
+            GameInput.tap(context, state.pad, row, col)
+            // bags-de1: the Disenchant grid's A: the cast bar starts from the press (the request's cast time), the game's start takes over
+            if (c?.optString("mode") == "bulk" && u.has("ct")) castPredict?.invoke(u.optInt("ct"))
+            return
+        }
         val bag = u.optInt("bag", -1); val slot = u.optInt("slot", 0)
         if (bag >= 0 && slot >= 1) GameInput.tap(context, state.pad, "bag$bag", slot - 1)
     }
@@ -1460,6 +1822,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     companion object {
         private fun rule(colour: Int, c: Context) = View(c).apply { setBackgroundColor(colour) }
         const val TAKE_CHECK_MS = 1500L          // touchedIn's take, checked against bags.ctl this long after
+        const val DE_TAP_COL = 9                 // bags-de1: bmvq 27 then this column = the strip's Disenchant icon (Bags.lua DE.TAP_COL)
         const val KB_REPEAT_FIRST_MS = 280L      // the search keyboard's D-pad repeat, as DirectPad's rooms (DirectPadKeys)
         const val KB_REPEAT_MS = 70L
         const val HOLD_GRACE_MS = 2000L          // a press this soon after touchedIn shows pushed before ctl.on arrives
@@ -1593,6 +1956,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         var combat = false                            // Clean Up is refused in combat
         var gameDoors = false                         // the game's own open / close of the bags can be tapped (bag0 39 / 38)
         var clean = false                             // the "clean view": merged + grouped (off by default)
+        /** bags-de1: the strip's Disenchant icon (bags.de: the spell's name, icon, cast time and the finger's column), null = not known */
+        var de: JSONObject? = null
+        /** bags-de1: a finger on the strip's Disenchant icon (BagsView: bmvq 27, then its column); false = not sent */
+        var onDeTap: () -> Boolean = { false }
 
         /** one tile of the clean view: an item with every stack of it merged */
         data class Merged(val first: JSONObject, val total: Int, val stacks: Int)
@@ -1788,6 +2155,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             pad = b.optJSONObject("pad")
             combat = b.optBoolean("combat", false)
             gameDoors = b.optBoolean("gameDoors", false)
+            de = b.optJSONObject("de")
             val sel = selected()
             if (sel == null || sel.optInt("id") != selId) { selBag = -1; selSlot = -1; selId = -1 }
             return true
@@ -1881,6 +2249,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         fun slotRect(id: Int): RectF? = slots[id]
         /** Clean Up's square, as last drawn */
         fun sortRect(): RectF = RectF(sortBox)
+        /** bags-de1: the Disenchant icon's square, as last drawn (empty = not drawn: the spell not known) */
+        fun deRect(): RectF = RectF(deBox)
+        private var deBox = RectF()
 
         // a finger on a slot / button pushes it in at once (the kit's press), and it stays in 160 ms after the lift (b116)
         private var pressedId = NONE
@@ -1888,14 +2259,15 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             st.equipping -> slots.entries.firstOrNull { it.value.contains(x, y) && it.key in eqIds() }?.key ?: NONE
             sortBox.contains(x, y) -> if (sortLive()) SORT else NONE
             viewBox.contains(x, y) -> VIEW
+            st.de != null && deBox.contains(x, y) -> DE
             else -> boxes.firstOrNull { it.first.contains(x, y) }?.second ?: NONE
         }
-        private companion object { const val NONE = Int.MIN_VALUE; const val SORT = -100; const val VIEW = -101 }
+        private companion object { const val NONE = Int.MIN_VALUE; const val SORT = -100; const val VIEW = -101; const val DE = -102 }
         private fun sortLive() = st.pad?.optJSONObject("rows")?.has("bagsort") == true && !st.combat &&
             android.os.SystemClock.uptimeMillis() - sortedAt > 1500
 
         override fun onMeasure(wSpec: Int, hSpec: Int) {
-            val w = M + ids().size * (B + G) + CTRL_GAP + 2 * (B + G) + G
+            val w = M + ids().size * (B + G) + CTRL_GAP + (if (st.de != null) 3 else 2) * (B + G) + G
             setMeasuredDimension(w.toInt(), MeasureSpec.getSize(hSpec))
         }
 
@@ -1949,6 +2321,20 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 }
             }
             if (st.clean) drawGlow(cv, viewBox, p)
+            // bags-de1 (the user's pick 5a: "A Disenchant icon on the Bags room's top strip"): the spell's own icon in a slot, only while
+            // the spell is known; faint in a fight (the grid refuses there); a tap opens the Disenchant grid (no game action)
+            val de = st.de
+            if (de != null) {
+                x += B + G
+                deBox = RectF(x, y, x + B, y + B)
+                UiKit.pressed(cv, deBox, pressedId == DE) {
+                    drawSlot(cv, deBox, null, p, emptyTexture = "ui-emptyslot")
+                    Icons.getOrUnknown(if (de.has("i")) de.optInt("i") else null)?.let { b ->
+                        cv.drawBitmap(b, null, RectF(deBox.left + 6f, deBox.top + 6f, deBox.right - 6f, deBox.bottom - 6f),
+                            if (st.combat) p.dim else bmpPaint)
+                    }
+                }
+            } else deBox = RectF()
         }
 
         override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -1975,6 +2361,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                     }
                 }
                 viewBox.contains(e.x, e.y) -> st.toggleClean()
+                st.de != null && deBox.contains(e.x, e.y) -> st.onDeTap()        // bags-de1: the Disenchant grid
                 else -> for ((box, id) in boxes) if (box.contains(e.x, e.y)) { st.toggle(id); break }
             }
             return true

@@ -475,6 +475,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         bagsView = BagsView(this)
         // bags controller mode (bags session, AGENT_LOG 2026-09-28): the Bags room while the addon holds the controller
         bagsView.onController = { on, why -> onBagsController(on, why) }
+        // bags-de1 (the user's list 2026-11-16: "The disenchant cast bar is visible"): the Disenchant grid's foot is Home's own cast bar,
+        // painted by CastView from the same actionbar document; the grid's A starts it at the press
+        bagsView.castBar = { c, r, now -> castView.drawCastInto(c, r, now) }
+        bagsView.castPredict = { ct -> castView.predictFrom(ct) }
         chatView = ChatView(this) { cmd -> GameInput.chat(cmd) }
         // Chat's rework (AGENT_LOG 2026-10-07): typed and quick chat go out through the add-on's chat rows, in ordered batches
         chatView.tapper = { cells, gap -> TapBridge.tapsSpaced(this, questsPad, cells, gap) }
@@ -2067,7 +2071,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun onBagsController(on: Boolean, why: String? = null) {
         if (on) {
             if (room != Room.BAGS && docCurrent) show(Room.BAGS)
-        } else if (room == Room.BAGS && docCurrent && why != "room" && why != "free" && why != "character") show(Room.HOME)
+        // bags-de1: "lootwait" = the Disenchant grid lost the pad to the loot pop-up and takes it back itself: the room stays under it
+        } else if (room == Room.BAGS && docCurrent && why != "room" && why != "free" && why != "character" && why != "lootwait") show(Room.HOME)
     }
 
     /** when the Settings' reload key went out (0 = no reload pending): the start screen waits for the game's new hello */
@@ -2261,7 +2266,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current) routePinTick()
                     if (current) GameUi.onTracking(it.optJSONObject("track"))     // LATER 25: the "While tracking" minimap
                 }
-                msg.optJSONObject("actionbar")?.let { castView.update(it) }
+                msg.optJSONObject("actionbar")?.let { castView.update(it); bagsView.castTick() }      // bags-de1: the grid's bar too
                 homeView.onFull(msg, current)
                 if (castAskOpen && homeView.inFight()) castBarAsk()          // a fight: the cast bar question goes at once (back after)
                 if (current) PreviewStage.feedFull(msg)                     // f-settings-previews: the Settings panel's live miniatures
