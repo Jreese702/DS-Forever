@@ -459,6 +459,34 @@ object UiKit {
      * ends kept and its middle stretched to [r]'s width). [colour] as the game colours the zone: `Theme.zoneColour(pvp)`.
      */
     fun zoneBand(c: Canvas, r: RectF, zone: String, colour: Int = Theme.gold) {
+        bandPlate(c, r)
+        val p = bodyPaint(zoneTextSize(zone, r.width(), r.height()), colour).apply { textAlign = Paint.Align.CENTER }
+        // the zone's name is the GAME's text (GetZoneText): never through Tr.t, the menus' translator (the user's ruling 2026-11-07:
+        // "menus only"; fixed with the Calendar button, the Macros room's change)
+        val shown = fitEnd(zone, p, r.width() - ZONE_TEXT_INSET)
+        c.drawText(shown, r.centerX(), r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+    }
+
+    /** the zone band's text room: its width less this (the plate's rounded ends) */
+    const val ZONE_TEXT_INSET = 40f
+    /** the zone's name at its smallest: this part of the band's height (half of it is the name's own size) */
+    const val ZONE_MIN_K = 0.42f
+
+    /**
+     * The zone name's size on a band [w] x [h]: half the band's height (the user 09-30: "the map name is SUPER small"), and a name too
+     * long for that steps down just enough to fit, to [ZONE_MIN_K] of the height at the least, before [fitEnd] cuts it (the mail
+     * envelope, 2026-11-16: the band is one more button shorter while it shows; "long zone names still fit")
+     */
+    fun zoneTextSize(zone: String, w: Float, h: Float): Float {
+        val full = h * 0.5f
+        val room = w - ZONE_TEXT_INSET
+        val wide = bodyPaint(full).measureText(zone)
+        if (wide <= room || wide <= 0f) return full
+        return maxOf(h * ZONE_MIN_K, full * room / wide)
+    }
+
+    /** the band's own plate (the classic minimap's zone bar, kit `zone_band`, its rounded ends kept, its middle stretched to [r]) */
+    private fun bandPlate(c: Canvas, r: RectF) {
         val t = tex("zone_band")
         if (t != null) {
             val k = r.height() / t.height
@@ -471,11 +499,6 @@ object UiKit {
             pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(20, 18, 14); c.drawRect(r, pFlat)
             pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Theme.bronzeDim; c.drawRect(r, pFlat)
         }
-        val p = bodyPaint(r.height() * 0.5f, colour).apply { textAlign = Paint.Align.CENTER }
-        // the zone's name is the GAME's text (GetZoneText): never through Tr.t, the menus' translator (the user's ruling 2026-11-07:
-        // "menus only"; fixed with the Calendar button, the Macros room's change)
-        val shown = fitEnd(zone, p, r.width() - 40f)
-        c.drawText(shown, r.centerX(), r.centerY() - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /** [text] cut to [maxW] with an ellipsis (Paint.breakText: the device's and the off-device canvas's measure alike) */
@@ -493,18 +516,7 @@ object UiKit {
      */
     fun calendarButton(c: Canvas, r: RectF, pending: Boolean, focus: Boolean = false, down: Boolean = false) {
         pressed(c, r, down) {
-            val t = tex("zone_band")
-            if (t != null) {
-                val k = r.height() / t.height
-                val cap = 12
-                val cw = cap * k
-                c.drawBitmap(t, Rect(0, 0, cap, t.height), RectF(r.left, r.top, r.left + cw, r.bottom), pBmp)
-                c.drawBitmap(t, Rect(cap, 0, t.width - cap, t.height), RectF(r.left + cw, r.top, r.right - cw, r.bottom), pBmp)
-                c.drawBitmap(t, Rect(t.width - cap, 0, t.width, t.height), RectF(r.right - cw, r.top, r.right, r.bottom), pBmp)
-            } else {
-                pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(20, 18, 14); c.drawRect(r, pFlat)
-                pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Theme.bronzeDim; c.drawRect(r, pFlat)
-            }
+            bandPlate(c, r)
             val pic = tex("icon_calendar") ?: tex("ricon_calendar")
             val s = r.height() * 0.7f
             val box = RectF(r.centerX() - s / 2f, r.centerY() - s / 2f, r.centerX() + s / 2f, r.centerY() + s / 2f)
@@ -526,6 +538,69 @@ object UiKit {
             }
         }
         if (focus) focus(c, r)
+    }
+
+    /**
+     * THE MAIL ENVELOPE beside the Calendar button on Home's map-name band (the user, 2026-11-16: "we need to add an icon somewhere to
+     * the home menu for when the player has mail"; HomeMailButton), [r] square, the band's height: the band's own plate as the Calendar
+     * button has it, the game's own minimap mail picture on it (the kit's `mm_mailbox`, the classic minimap's envelope; a stand-in
+     * until UI Art's pass), a drawn envelope while the kit has none; a soft gold wash while its card is open ([lit]), the gold box
+     * while the open map module's cursor is on it ([focus]).
+     */
+    fun mailButton(c: Canvas, r: RectF, lit: Boolean = false, focus: Boolean = false, down: Boolean = false) {
+        pressed(c, r, down) {
+            bandPlate(c, r)
+            // the wash inside the plate's metal edge only (over it the bar's square ends showed past the plate's rounded corners)
+            if (lit) glow(c, RectF(r.left + r.width() * 0.16f, r.top + r.height() * 0.16f, r.right - r.width() * 0.16f, r.bottom - r.height() * 0.16f),
+                SOFT_GOLD, 0.7f)
+            val pic = tex("mm_mailbox")
+            val s = r.height() * 0.72f
+            if (pic != null) {
+                val k = minOf(s / pic.width, s / pic.height)
+                val w = pic.width * k; val h = pic.height * k
+                c.drawBitmap(pic, null, RectF(r.centerX() - w / 2f, r.centerY() - h / 2f, r.centerX() + w / 2f, r.centerY() + h / 2f), pBmp)
+            } else envelope(c, RectF(r.centerX() - s / 2f, r.centerY() - s * 0.34f, r.centerX() + s / 2f, r.centerY() + s * 0.34f))
+        }
+        if (focus) focus(c, r)
+    }
+
+    /** a drawn envelope in the HUD's colours (no kit picture on the device yet): the parchment body, its flap's V, a gold edge */
+    private fun envelope(c: Canvas, b: RectF) {
+        pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(222, 205, 168)
+        c.drawRoundRect(b, 4f, 4f, pFlat)
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3f; pFlat.color = Color.rgb(96, 70, 34)
+        c.drawLine(b.left + 3f, b.top + 3f, b.centerX(), b.top + b.height() * 0.58f, pFlat)
+        c.drawLine(b.right - 3f, b.top + 3f, b.centerX(), b.top + b.height() * 0.58f, pFlat)
+        pFlat.color = Theme.gold
+        c.drawRoundRect(b, 4f, 4f, pFlat)
+    }
+
+    /**
+     * THE MAIL CARD under the envelope (HomeMailButton): the kit's card (the game's tooltip box with its shadow), [heading] (Tr.t: our
+     * words) over up to three [names] (the GAME'S text: never Tr.t, each cut to the card's width). Its right edge on [anchorRight],
+     * its top at [top], never left of [minLeft]. Returns the card's box.
+     */
+    fun mailCard(c: Canvas, anchorRight: Float, top: Float, minLeft: Float, heading: String, names: List<String>): RectF {
+        val ph = titlePaint(HomeMailButton.HEAD_SIZE)
+        val pn = bodyPaint(HomeMailButton.NAME_SIZE, Theme.text)
+        val head = Tr.t(heading)
+        val shown = names.take(HomeMail.MAX)
+        var textW = ph.measureText(head)
+        for (n in shown) textW = maxOf(textW, pn.measureText(n))
+        val w = HomeMailButton.cardWidth(textW, anchorRight - minLeft)
+        val left = HomeMailButton.cardLeft(anchorRight, w, minLeft)
+        val r = RectF(left, top, left + w, top + HomeMailButton.cardHeight(shown.size))
+        card(c, r)
+        val pad = HomeMailButton.CARD_PAD
+        val room = r.width() - pad * 2f
+        var y = r.top + pad
+        c.drawText(fitEnd(head, ph, room), r.left + pad, y + HomeMailButton.HEAD_LINE / 2f - (ph.ascent() + ph.descent()) / 2f, ph)
+        y += HomeMailButton.HEAD_LINE
+        for (n in shown) {
+            c.drawText(fitEnd(n, pn, room), r.left + pad, y + HomeMailButton.NAME_LINE / 2f - (pn.ascent() + pn.descent()) / 2f, pn)
+            y += HomeMailButton.NAME_LINE
+        }
+        return r
     }
 
     /** D7's stand-in for the Macros room's picture: the game's question-mark icon (134400) in the radial menu's dark disc and bronze ring */

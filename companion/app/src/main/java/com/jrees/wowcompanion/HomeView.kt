@@ -247,6 +247,7 @@ class HomeView(
     /** another room opens: everything borrowed goes back where it came from, last lent first */
     fun giveBack() {
         watchB(false)
+        mailCard(false)                                                   // another room: the mail card closes
         closeTypeTool()                                                   // f-trackpad-keyboard: another room: the tool closes, the guest freed
         if (lent(mapView)) {
             mapView.compact = false; mapView.compactZoomButtons = false; mapView.headerRightInset = 0f; mapView.buttonTopInset = 0f
@@ -349,6 +350,7 @@ class HomeView(
         Log.i(TAG, "type tool: open tab $tab${if (typeWanted) " (already)" else ""} sink=${if (InputSink.sink != null) "ok" else "none"}")
         if (typeWanted) return
         if (typeTool.parent == null) addView(typeTool)
+        mailCard(false)
         typeWanted = true
         typeTool.visibility = View.VISIBLE
         // f-trackpad-keyboard rework (the user on test9: "the map border map name and quest tracker thing is all in the way. Also the
@@ -429,6 +431,8 @@ class HomeView(
     var onClassIdle: (() -> Unit)? = null
     fun classBusy(): Boolean = classOpen || classPending || (classLayer.parent != null && classLayer.visibility == View.VISIBLE)
     private fun classLayerShow(open: Boolean) {
+        // the mail card (HomeMailButton) closes: one overlay at a time (b-radial-exclusive); the wheel's first touch is the wheel's
+        if (open) mailCard(false)
         if (!open && classPending) { classPending = false; if (!classOpen) { post { onClassIdle?.invoke() }; return } }
         if (open && classHint == null && pauseSide > 0f && pauseT > 0f) { classPending = true; return }
         if (classLayer.parent == null) { if (!open) return; addView(classLayer) }   // added on first use: over everything
@@ -611,6 +615,8 @@ class HomeView(
         // while the chat module holds the controller its B comes through the guest (the chat's own chain), not this read-only watch
         if (chatWanted && chatHeld) return
         if (mapWanted && mapHeld) return
+        // THE MAIL CARD (HomeMailButton): B closes it first, and does nothing else of Home's (the game gets the press as always)
+        if (mailOpen) { mailCard(false); return }
         // B closes the buff / debuff list first; while the list holds the controller its B comes through the guest (deselect first)
         if (auraPane.open != null) { if (!auraPane.padHeld) { auraPane.close(); onBHome?.invoke() }; return }
         if (flow.takeover) {
@@ -638,6 +644,35 @@ class HomeView(
     /** an invitation waits (the calendar document's `pend`): the game's mark on the button */
     var calPending = false
         set(v) { if (field != v) { field = v; invalidate(); auraPane.invalidate() } }
+
+    /**
+     * THE MAIL ENVELOPE (the user, 2026-11-16: "we need to add an icon somewhere to the home menu for when the player has mail";
+     * HomeMailButton): the calendar document's `mail` (Calendar c15). The envelope shows beside the Calendar button while the game says
+     * the player has mail ([HomeMail.on]), wherever the button shows; one log line when that changes (a count, never a name).
+     */
+    var mail: HomeMail? = null
+        set(v) {
+            if (field == v) return
+            val was = field?.on == true; val now = v?.on == true
+            field = v
+            if (!now) { mailCard(false); auraPane.mailGone() }
+            if (was != now) Log.i(TAG, "home: mail ${if (now) "on (${v?.from?.size ?: 0} named)" else "off"}")
+            invalidate(); auraPane.invalidate()
+        }
+    /** the senders card is open (the envelope's touch, or A on it in the open map module) */
+    var mailOpen = false
+        private set
+    /** a touch that closed the card is swallowed to its end (it does nothing else: "tap elsewhere closes") */
+    private var mailSwallow = false
+    /** the card open / closed; it opens only while the envelope shows, and it closes the buff / debuff list */
+    fun mailCard(open: Boolean) {
+        val o = open && mail?.on == true
+        if (o == mailOpen) return
+        mailOpen = o
+        if (o) auraPane.close()
+        Log.i(TAG, "home: mail card ${if (o) "open" else "closed"}")
+        invalidate(); auraPane.invalidate()
+    }
 
     // ---------------------------------------------------------------- the fight faces and B's give-back
 
@@ -708,6 +743,15 @@ class HomeView(
     fun previewMapAuraList() { auraPane.enterFull(); auraPane.fullKey("PAD1") }
     /** the preview harness: the open list as the controller sees it (no game: nothing is tapped) */
     fun previewAuraPad() = auraPane.previewPad()
+    /** the off-device tests: the open map cursor's stop - "mail", "calendar", "aura", or null (the map itself) */
+    fun cornerFocus(): String? = when {
+        auraPane.mailCur -> "mail"; auraPane.calCur -> "calendar"; auraPane.fullCursorOn -> "aura"; else -> null
+    }
+    /** the off-device tests: the envelope's box in Home's own px (the pane lies over the map), empty = not shown */
+    fun mailBoxOnHome(): RectF = auraPane.mailBox().let { b ->
+        if (b.isEmpty) b else RectF(b.left + auraPane.left + auraPane.translationX, b.top + auraPane.top + auraPane.translationY,
+            b.right + auraPane.left + auraPane.translationX, b.bottom + auraPane.top + auraPane.translationY)
+    }
 
     /** the controller's B from outside (the preview harness); the real press is watched by [watchB] */
     fun pressB() = onB()
@@ -1560,6 +1604,9 @@ class HomeView(
         val before = shown
         shown = s
         val open = s.full != null && !s.takeover
+        // THE MAIL CARD (HomeMailButton) belongs to the page it opened on: a module opening / closing or the fight view coming / going
+        // closes it (the envelope itself stays wherever the Calendar button is)
+        if (before != null && (before.full != s.full || before.takeover != s.takeover)) mailCard(false)
         // PARTY MODE (the user's ruling): a Home module going full screen leaves Home's rest page: the host turns Party mode off
         if (PartyModel.leftRest(before?.let { it.full != null && !it.takeover } ?: false, open)) onPartyLeaveRest?.invoke()
         // the full-screen chat is the real ChatView, lent only for as long as it shows
@@ -2019,12 +2066,23 @@ class HomeView(
             // small and hard to read"); map's arrow keeps below ZONE_BAND_BOTTOM
             // THE CALENDAR BUTTON (the user, 2026-11-13: "a button on the right side of the map name make it small"): the band ends
             // before it, and both fade and slide together
-            val band = RectF(m.left + 8f, m.top + ZONE_BAND_TOP, HomeCalendarButton.bandRight(m.right), m.top + ZONE_BAND_BOTTOM)
+            // THE MAIL ENVELOPE (the user, 2026-11-16: "we need to add an icon somewhere to the home menu for when the player has mail";
+            // HomeMailButton): beside the Calendar button while the game says there is mail; the band one button shorter meanwhile
+            val mailOn = mail?.on == true
+            val band = RectF(m.left + 8f, m.top + ZONE_BAND_TOP, HomeMailButton.bandRight(m.right, mailOn), m.top + ZONE_BAND_BOTTOM)
             val cb = HomeCalendarButton.box(m.right, m.top)
             val save = if (zoneA < 0.99f) c.saveLayerAlpha(band.left - 4f, band.top - 4f, cb[2] + 4f, band.bottom + 4f, (zoneA * 255).toInt()) else -1
             UiKit.zoneBand(c, band, zoneText, Theme.zoneColour(zonePvp))
             UiKit.calendarButton(c, RectF(cb[0], cb[1], cb[2], cb[3]), calPending, down = auraPane.calDown)
+            val mb = HomeMailButton.box(m.right, m.top)
+            if (mailOn) UiKit.mailButton(c, RectF(mb[0], mb[1], mb[2], mb[3]), lit = mailOpen, down = auraPane.mailDown)
             if (save >= 0) c.restoreToCount(save)
+            // its card hangs under it, over the map (and the quest card / buffs while it is open), at the band's own fade
+            if (mailOn && mailOpen && !auraPane.fullMap()) {
+                val cs = if (zoneA < 0.99f) c.saveLayerAlpha(m.left, m.top, m.right, m.bottom + 40f, (zoneA * 255).toInt()) else -1
+                mail?.let { ml -> UiKit.mailCard(c, mb[2], mb[3] + HomeMailButton.CARD_GAP, m.left + 8f, ml.heading, ml.from) }
+                if (cs >= 0) c.restoreToCount(cs)
+            }
         }
         if (slideSave >= 0) c.restoreToCount(slideSave)
         // THE CLOCK AND THE BATTERY at the top centre, between the two diamond groups (17:30: "the time should be on display
@@ -2062,6 +2120,15 @@ class HomeView(
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
         // f-trackpad-keyboard: the tool's touches are the tool's (a drag starting where the bars lie was taken as a tap on the bars)
         if (typeWanted) { barsDown = false; return false }
+        // THE MAIL CARD (HomeMailButton; the user's pick: "B or tap elsewhere closes"): while it is open a touch anywhere on Home closes
+        // it. On the map (the card, the envelope, the Calendar button, the quest card and buffs under it) that touch does nothing else
+        // (it is Home's to its end); anywhere else it goes on as always - the controller's buttons still cast, in a fight too (review
+        // of feat/wk-mail: the closing touch ate a touch cast), the party's frames still target
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) mailSwallow = false
+        if (e.actionMasked == MotionEvent.ACTION_DOWN && mailOpen) {
+            mailCard(false)
+            if (onMapSlot(e)) { mailSwallow = true; barsDown = false; return true }
+        }
         if (flow.full == HomeModule.BARS || barsSlot.visibility != View.VISIBLE) return false
         // the (-) Party mode tag stands over the bars' foot: its touch is the tag's
         if (e.actionMasked == MotionEvent.ACTION_DOWN) barsDown = inBars(e) &&
@@ -2070,6 +2137,10 @@ class HomeView(
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (mailSwallow) {
+            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) mailSwallow = false
+            return true
+        }
         if (!barsDown) return false
         // 1.0.19 (the user: "When touching the top controller stuff I don't want it to open the old controller room. Its time to retire
         // that. Instead the buttons should touch cast the skills"): the touch goes to the controller's buttons (CastView.touchDown / Up)
@@ -2086,6 +2157,11 @@ class HomeView(
 
     private fun inBars(e: MotionEvent) =
         e.x >= barsSlot.left && e.x < barsSlot.right && e.y >= barsSlot.top && e.y < barsSlot.bottom
+
+    /** the touch is on the map's part where it is drawn now (its slide included): where the mail envelope and its card are */
+    private fun onMapSlot(e: MotionEvent): Boolean = mapSlot.visibility == View.VISIBLE &&
+        e.x >= mapSlot.left + mapSlot.translationX && e.x < mapSlot.right + mapSlot.translationX &&
+        e.y >= mapSlot.top + mapSlot.translationY && e.y < mapSlot.bottom + mapSlot.translationY
 
     // ================================================================ the quests part (spec parts 1, 2, 3, 6, 7)
 
@@ -2430,7 +2506,7 @@ class HomeView(
             // (the user on the test build, 2026-10-12: "The quest arrow is getting stuck on the + and - buttons. It should show on
             // the edge of the screen for those"): the arrow keeps the true edge there, under the buttons, which rest at ZOOM_MIN
             if (lent(mapView) && !fullMap()) mapView.rimKeepOut = if (!mapView.compact) emptyList()
-                else listOf(buffBox, debuffBox, panel, warnBox, calBox()).filter { !it.isEmpty }
+                else listOf(buffBox, debuffBox, panel, warnBox, calBox(), mailBox()).filter { !it.isEmpty }
             // Map 2026-10-09 (the user: the quest arrow under the card; the player lower): how far down the card covers the map now
             if (lent(mapView) && !fullMap()) mapView.compactCover = cardCover()
         }
@@ -2466,29 +2542,58 @@ class HomeView(
         // buffs' rows (8 a row, growing leftward, the first at the right), the debuffs' row under them; the cursor is the kit's
         // slot box; Right from the map enters on the buff row's LEFTMOST icon (nearest the map)
         private var fullCur: Pair<Boolean, Int>? = null              // (debuff, index in its list: 0 = rightmost)
-        val fullCursorOn get() = fullCur != null || calCur
+        val fullCursorOn get() = fullCur != null || calCur || mailCur
         private val buffRects = ArrayList<RectF>(); private val debuffRects = ArrayList<RectF>()
 
         /** the open map closed: the cursor leaves the auras */
-        fun leaveFull() { fullCur = null; calCur = false; close(); if (lent(mapView)) mapView.hostZoomHidden = false }
+        fun leaveFull() { fullCur = null; calCur = false; mailCur = false; mailCard(false); close(); if (lent(mapView)) mapView.hostZoomHidden = false }
 
         /** D-pad Right from the map: onto the buffs' leftmost icon on their first line (the debuffs' when there are no buffs) */
         fun enterFull() {
             val nb = minOf(auras.shownBuffs.size, FULL_PER); val nd = minOf(auras.shownDebuffs.size, FULL_PER)
             fullCur = when { nb > 0 -> false to nb - 1; nd > 0 -> true to nd - 1; else -> null }
-            // the Calendar button (HomeCalendarButton): with no auras the cursor goes straight onto it
-            calCur = fullCur == null && calShows()
+            // the Calendar button (HomeCalendarButton): with no auras the cursor goes straight onto it - onto the mail envelope first
+            // while it shows (HomeMailButton: it stands left of the Calendar's stop)
+            mailCur = fullCur == null && mailShows()
+            calCur = fullCur == null && !mailCur && calShows()
             invalidate()
         }
 
-        /** one press while the cursor is on an aura (or on the Calendar button) */
+        /** the auras' first row's right end (the buffs', the debuffs' when there are no buffs), or null = none */
+        private fun firstRowEnd(): Pair<Boolean, Int>? =
+            when { auras.shownBuffs.isNotEmpty() -> false to 0; auras.shownDebuffs.isNotEmpty() -> true to 0; else -> null }
+
+        /** the mail went (HomeView.mail): a cursor on the envelope moves onto the Calendar button's stop (it never rests on nothing) */
+        fun mailGone() {
+            if (!mailCur) return
+            mailCur = false
+            calCur = calShows()
+            invalidate()
+        }
+
+        /** one press while the cursor is on an aura (or on the Calendar button, or on the mail envelope) */
         fun fullKey(k: String) {
+            // the mail card opened by a touch while the cursor is elsewhere: B closes it first (and does nothing else); any other key
+            // closes it and goes on (the card never hangs over a moving cursor)
+            if (mailOpen && !mailCur) { mailCard(false); if (k == "PAD2") { invalidate(); return } }
+            if (mailCur) {
+                // THE MAIL ENVELOPE's stop (HomeMailButton): A opens / closes its card, B closes the card first, then goes back to the
+                // map; Left / Right leave it (and the card closes)
+                when (k) {
+                    "PADDLEFT" -> { mailCur = false; mailCard(false); fullCur = firstRowEnd() }
+                    "PADDRIGHT" -> if (calShows()) { mailCur = false; mailCard(false); calCur = true }
+                    "PAD1" -> mailCard(!mailOpen)
+                    "PAD2" -> if (mailOpen) mailCard(false) else mailCur = false
+                }
+                invalidate(); return
+            }
             if (calCur) {
                 when (k) {
-                    // Left: the buffs' first row's right end (the debuffs' when there are no buffs), else back to the map
+                    // Left: the mail envelope while it shows, else the buffs' first row's right end (the debuffs' when there are no
+                    // buffs), else back to the map
                     "PADDLEFT" -> {
                         calCur = false
-                        fullCur = when { auras.shownBuffs.isNotEmpty() -> false to 0; auras.shownDebuffs.isNotEmpty() -> true to 0; else -> null }
+                        if (mailShows()) mailCur = true else fullCur = firstRowEnd()
                     }
                     "PAD1" -> { calCur = false; onCalendar?.invoke() }          // A: the Calendar room
                     "PAD2" -> calCur = false                                       // B: back to the map
@@ -2501,7 +2606,10 @@ class HomeView(
             when (k) {
                 "PADDLEFT" -> fullCur = if (i + 1 < n && (i + 1) % FULL_PER != 0) deb to i + 1 else null      // past the leftmost: the map
                 "PADDRIGHT" -> if (i % FULL_PER > 0) fullCur = deb to i - 1
-                    else if (i < FULL_PER && (!deb || auras.shownBuffs.isEmpty()) && calShows()) { fullCur = null; calCur = true }   // the Calendar button
+                    else if (i < FULL_PER && (!deb || auras.shownBuffs.isEmpty()) && calShows()) {
+                        // the mail envelope while it shows (it stands first), else the Calendar button
+                        fullCur = null; if (mailShows()) mailCur = true else calCur = true
+                    }
                 "PADDDOWN" -> if (!deb && i + FULL_PER < minOf(n, FULL_PER * ROW_LINES)) fullCur = false to i + FULL_PER
                     else if (!deb && other > 0) fullCur = true to minOf(i % FULL_PER, other - 1)
                 "PADDUP" -> if (deb && other > 0) fullCur = false to minOf(i % FULL_PER + FULL_PER * ((minOf(other, FULL_PER * ROW_LINES) - 1) / FULL_PER), other - 1)
@@ -2515,9 +2623,11 @@ class HomeView(
         private fun drawFull(c: Canvas, w: Float, h: Float, now: Long) {
             val nb = auras.shownBuffs.size; val nd = auras.shownDebuffs.size
             buffRects.clear(); debuffRects.clear()
-            // the Calendar button has the corner (HomeCalendarButton.fullBox): the rows end left of it
-            val right = w - FULL_RIGHT - (if (calShows()) HomeCalendarButton.FULL_SHIFT else 0f)
+            // the Calendar button has the corner (HomeCalendarButton.fullBox): the rows end left of it - and left of the mail envelope
+            // while it shows (HomeMailButton.fullBox)
+            val right = w - FULL_RIGHT - (if (calShows()) HomeCalendarButton.FULL_SHIFT else 0f) - (if (mailShows()) HomeMailButton.SHIFT else 0f)
             if (calShows()) calBox().let { b -> UiKit.calendarButton(c, b, calPending, focus = calCur && open == null, down = calDown) }
+            if (mailShows()) mailBox().let { b -> UiKit.mailButton(c, b, lit = mailOpen, focus = mailCur && open == null, down = mailDown) }
             if (nb > 0) auraRow(c, auras.shownBuffs, false, FULL_TOP, right, buffBox, now, fromRight = true, rects = buffRects)
             var dTop = if (nb > 0) buffBox.bottom + 8f else FULL_TOP
             // the game's durability warning between the buffs and the debuffs (the user's pick): the debuffs make room for it
@@ -2533,6 +2643,11 @@ class HomeView(
             }
             // UI Art: the map's + / - hide while the list is open (their edges stood out past the panel) - Map's hostZoomHidden
             if (lent(mapView) && mapView.hostZoomHidden != (open != null)) mapView.hostZoomHidden = open != null
+            // THE MAIL CARD (HomeMailButton) under the envelope, over the rows (the list and the card are never open together)
+            if (mailOpen && mailShows()) mail?.let { ml ->
+                val b = mailBox()
+                UiKit.mailCard(c, b.right, b.bottom + HomeMailButton.CARD_GAP, 16f, ml.heading, ml.from)
+            }
             val which = open ?: run { keepOut(); return }
             list(c, which, w, h, now)
             keepOut()
@@ -2820,8 +2935,11 @@ class HomeView(
         }
         private fun calHit(x: Float, y: Float): Boolean {
             if (!calShows() || open != null) return false
-            if (fullMap()) return HomeCalendarButton.inBox(x, y, HomeCalendarButton.fullBox(width.toFloat(), FULL_RIGHT, FULL_TOP), 12f)
-            return HomeCalendarButton.inHit(x, y, width.toFloat())
+            // the mail envelope beside it takes the corner's finger box from the middle of their gap leftwards (HomeMailButton.split)
+            val m = mailShows()
+            if (fullMap()) return HomeCalendarButton.inBox(x, y, HomeCalendarButton.fullBox(width.toFloat(), FULL_RIGHT, FULL_TOP), 12f) &&
+                (!m || x >= HomeMailButton.fullSplit(width.toFloat(), FULL_RIGHT))
+            return if (m) HomeMailButton.inCalHit(x, y, width.toFloat()) else HomeCalendarButton.inHit(x, y, width.toFloat())
         }
         private fun calTouch(e: MotionEvent): Boolean {
             when (e.actionMasked) {
@@ -2850,9 +2968,61 @@ class HomeView(
         var calCur = false
             private set
 
+        // ---- THE MAIL ENVELOPE (HomeMailButton; the user, 2026-11-16: "we need to add an icon somewhere to the home menu for when the
+        // player has mail"): beside the Calendar button wherever that shows, while the game says there is mail. Its touch here (the pane
+        // lies exactly over the map), its stop on the open map's cursor (left of the Calendar's)
+        /** a finger is down on it (its press look) */
+        var mailDown = false
+            private set
+        private var mailTracking = false
+        /** the open map's cursor is on the envelope (Right from the buffs' first row's right end; straight on with no auras) */
+        var mailCur = false
+            private set
+        private fun mailShows(): Boolean = calShows() && mail?.on == true
+        /** its box in the pane (the compact map: left of the Calendar button; the open map: [HomeMailButton.fullBox]); empty = not shown */
+        fun mailBox(): RectF {
+            if (!mailShows() || width <= 0) return RectF()
+            val b = if (fullMap()) HomeMailButton.fullBox(width.toFloat(), FULL_RIGHT, FULL_TOP)
+                else HomeMailButton.box(width.toFloat(), 0f)
+            return RectF(b[0], b[1], b[2], b[3])
+        }
+        private fun mailHit(x: Float, y: Float): Boolean {
+            if (!mailShows() || open != null) return false
+            if (fullMap()) return HomeCalendarButton.inBox(x, y, HomeMailButton.fullBox(width.toFloat(), FULL_RIGHT, FULL_TOP), 12f) &&
+                x < HomeMailButton.fullSplit(width.toFloat(), FULL_RIGHT)
+            return HomeMailButton.inHit(x, y, width.toFloat())
+        }
+        /** its touch: the first touch opens the card, in a fight too (as the Calendar button's); while the card is open Home's own
+         *  touch rule closes it before this pane sees anything (HomeView.onInterceptTouchEvent) */
+        private fun mailTouch(e: MotionEvent): Boolean {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    mailTracking = mailHit(e.x, e.y)
+                    if (mailTracking) { mailDown = true; this@HomeView.invalidate(); invalidate() }
+                    return mailTracking
+                }
+                MotionEvent.ACTION_MOVE -> if (mailTracking) {
+                    val d = mailHit(e.x, e.y)
+                    if (d != mailDown) { mailDown = d; this@HomeView.invalidate(); invalidate() }
+                    return true
+                }
+                MotionEvent.ACTION_UP -> if (mailTracking) {
+                    mailTracking = false
+                    val go = mailDown && mailHit(e.x, e.y)
+                    mailDown = false; this@HomeView.invalidate(); invalidate()
+                    if (go) { Log.i(TAG, "home: the mail envelope touched${if (grow.fighting(System.currentTimeMillis())) " (in a fight)" else ""}"); mailCard(true) }
+                    return true
+                }
+                MotionEvent.ACTION_CANCEL -> if (mailTracking) { mailTracking = false; mailDown = false; this@HomeView.invalidate(); invalidate(); return true }
+            }
+            return false
+        }
+
         override fun onTouchEvent(e: MotionEvent): Boolean {
             // a touch on the open quest panel is the panel's (the map below takes it), never a buff's
             if (e.actionMasked == MotionEvent.ACTION_DOWN && fullMap() && lent(mapView) && mapView.panelCover()?.contains(e.x, e.y) == true) return false
+            // THE MAIL ENVELOPE's touch (HomeMailButton): the first touch opens its card, in a fight too
+            if (mailTouch(e)) return true
             // THE CALENDAR BUTTON's touch (HomeCalendarButton): the first touch opens the Calendar room, in a fight too (D8)
             if (calTouch(e)) return true
             when (e.actionMasked) {

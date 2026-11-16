@@ -2732,6 +2732,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val s = calendarView.state
                 strip.mark(Room.CALENDAR.label, (s?.pending ?: 0) > 0)
                 homeView.calPending = (s?.pending ?: 0) > 0              // the invite mark now rides Home's Calendar button
+                // THE MAIL ENVELOPE (Calendar c15; the user, 2026-11-16: "we need to add an icon somewhere to the home menu for when the
+                // player has mail"): the document's `mail` beside Home's Calendar button; a document without it (an older add-on, not
+                // read yet, the game's rule off) shows none
+                homeView.mail = HomeMail.parse(msg)
                 val win = s?.shown == true
                 // only on a CURRENT document: a change inside the backlog LogTail replays at start is history, and the jump
                 // would send the room's `hold` tap into a game that may not be live (Home's finding, AGENT_LOG 9596d1a)
