@@ -49,6 +49,8 @@ import com.jrees.wowcompanion.ScreenSwap
  * ([bottomScreen]). Display 0, the default display, takes no Presentation (Android adds presentation windows only to displays flagged
  * for them), so there DS Forever's window is our [CompanionScreenActivity] instead: not focusable either, and the game's task is
  * brought back to the front after it comes ([gameToFront]) so the controller's keys stay the game's. Off (the default) = all as before.
+ * #383 / #384: that move is [toFront] (only the task asked for), never AppTask.moveToFront (it put display 0's home screen over the
+ * bottom activity and Android closed it: a restart loop), and it is asked again whenever display 0 takes the keys back.
  */
 class DsForeverScreen(private val context: Context) {
     /** the launcher's X server as DS Forever's input, while the game screen is up */
@@ -91,6 +93,7 @@ class DsForeverScreen(private val context: Context) {
         detachGame()
         running = false
         main.removeCallbacksAndMessages(null)
+        frontLater = false                                   // #383 / #384: its waiting ask went with the queue
         try { dm?.unregisterDisplayListener(listener) } catch (_: Exception) {}
         shown?.close(); shown = null
         if (ScreenSwap.restart === restartHook) ScreenSwap.restart = null
@@ -326,18 +329,36 @@ class DsForeverScreen(private val context: Context) {
 
     /**
      * the launcher's task (the game) to the front: its display becomes the top one again, so the controller's keys go to the game and
-     * not to display 0 (a display whose top activity has no focusable window would hold them). AppTask: our own task, no permission.
+     * not to display 0 (a display whose top activity has no focusable window would hold them).
      * #232 review: never while the launcher is going away ([frontWanted]): the bottom activity's typing ends in its onStop, and that
-     * moved the launcher back over the home screen the player had just pressed Home for
+     * moved the launcher back over the home screen the player had just pressed Home for.
+     * #383 / #384 (a player on a Retroid Pocket Nova + Dual Screen Add-on, 1.0.32: "the bottom screen's activity restarts itself until
+     * the guard gives up", then "input ANRs once the loop is stopped"): the move is [toFront] (never AppTask.moveToFront, which closed
+     * the bottom activity each time), at most once a [FRONT_GAP_MS] counted HERE (each bottom activity is a new one: a field of its own
+     * never held a second one back), and an ask inside the gap is not dropped: it runs once the gap is over if the bottom activity
+     * still holds the keys ([CompanionScreenActivity.holdsKeys]; dropped, display 0 kept them and every press timed out)
      */
     internal fun gameToFront(why: String) {
         val a = context as? Activity ?: return
         if (!frontWanted(running, hidden, a.isFinishing)) { Log.i(TAG, "Swap screens: the game's task stays ($why; the launcher is away)"); return }
-        runCatching {
-            a.getSystemService(android.app.ActivityManager::class.java)?.appTasks?.firstOrNull { it.taskInfo.taskId == a.taskId }?.moveToFront()
-        }.onFailure { Log.w(TAG, "game to the front: ${it.message}") }
-        Log.i(TAG, "Swap screens: the game's task to the front ($why)")
+        val now = android.os.SystemClock.elapsedRealtime()
+        val wait = frontWait(now, frontAt)
+        if (wait > 0L) {
+            if (!frontLater) {
+                frontLater = true
+                main.postDelayed({
+                    frontLater = false
+                    if ((shown as? AskedActivity)?.activity?.holdsKeys == true) gameToFront("$why, after the gap")
+                }, wait)
+            }
+            return
+        }
+        frontAt = now
+        if (toFront(a, a.taskId, "game to the front")) Log.i(TAG, "Swap screens: the game's task to the front ($why)")
     }
+    /** the last [gameToFront] move (any bottom activity's) and whether an ask waits for the gap to end */
+    private var frontAt = Long.MIN_VALUE / 2
+    private var frontLater = false
 
     /** Settings > Swap screens > Restart (ScreenSwap.restart): the launcher started again on the screen the saved choice gives it */
     private val restartHook: () -> Unit = { main.post { restartForSwap() } }
@@ -413,6 +434,27 @@ class DsForeverScreen(private val context: Context) {
          * the launcher is hidden (its pause / stop / Home) or finishing
          */
         fun frontWanted(running: Boolean, hidden: Boolean, launcherFinishing: Boolean): Boolean = running && !hidden && !launcherFinishing
+
+        /** #383 / #384, pure for the tests: 0 = [gameToFront] moves now; else how long until [FRONT_GAP_MS] has passed since [lastAt] */
+        fun frontWait(now: Long, lastAt: Long): Long = (FRONT_GAP_MS - (now - lastAt)).coerceIn(0L, FRONT_GAP_MS)
+        const val FRONT_GAP_MS = 1_000L
+
+        /**
+         * #383 / #384: a task of ours to the front of its display, that display on top (the controller's keys go there). NEVER
+         * AppTask.moveToFront: that is Recents' route (startActivityFromRecents), which first puts display 0's HOME task in front - over
+         * the bottom activity - and Android then trims a task that is excluded from Recents and behind Home on display 0: the bottom
+         * activity closed, DS Forever opened it again, it asked again (the restart loop). ActivityManager.moveTaskToFront moves only the
+         * task asked for (REORDER_TASKS: a normal permission, no prompt); MOVE_TASK_NO_USER_ACTION: no "user leaving" (the launcher's
+         * onUserLeaveHint hides DS Forever). True = moved
+         */
+        internal fun toFront(ctx: Context, taskId: Int, what: String): Boolean = try {
+            val am = ctx.getSystemService(android.app.ActivityManager::class.java)
+            if (am == null) false else { am.moveTaskToFront(taskId, android.app.ActivityManager.MOVE_TASK_NO_USER_ACTION); true }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Swap screens: $what: ${t.message}")
+            com.jrees.wowcompanion.DiagLog.event("app", "Swap screens: $what failed: ${t.javaClass.simpleName}")
+            false
+        }
 
         /**
          * #232 review: the display whose panel sizes InputSink's tap pixels - display 0 ALWAYS, Swap screens or not. TapBridge (the

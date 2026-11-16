@@ -151,6 +151,82 @@ class SwapScreensTest {
         listOf("src/main/java/com/jrees/wowcompanion/fork/$name", "dsforever/src/main/java/com/jrees/wowcompanion/fork/$name")
             .map { java.io.File(it) }.first { it.canRead() }.readText()
 
+    private fun manifest(): String =
+        listOf("src/main/AndroidManifest.xml", "dsforever/src/main/AndroidManifest.xml").map { java.io.File(it) }.first { it.canRead() }.readText()
+
+    // ---- #383 / #384 (a player on a Retroid Pocket Nova + Dual Screen Add-on, 1.0.32): the restart loop, then the input ANRs
+
+    /**
+     * "the bottom screen's activity restarts itself until the guard gives up": the game's task came forward with AppTask.moveToFront,
+     * Recents' route, which puts display 0's home screen in front first; Android then trims a Recents-excluded task behind Home on
+     * display 0 - the bottom activity closed, was opened again and asked again. Neither file may use AppTask's move any more
+     */
+    @Test fun theGameComesForwardWithoutRecentsRoute() {
+        for (f in listOf("DsForeverScreen.kt", "CompanionScreenActivity.kt")) {
+            val code = source(f).lines().filterNot { it.trimStart().startsWith("*") || it.trimStart().startsWith("//") || it.trimStart().startsWith("/**") }
+                .joinToString("\n")
+            assertFalse("$f: no AppTask", code.contains("appTasks"))
+            assertFalse("$f: no AppTask.moveToFront", code.contains(".moveToFront()"))
+        }
+        val to = source().substringAfter("internal fun toFront(").substringBefore("fun begin(")
+        assertTrue(to.contains("am.moveTaskToFront(taskId, android.app.ActivityManager.MOVE_TASK_NO_USER_ACTION)"))
+        assertTrue(source().substringAfter("internal fun gameToFront(").substringBefore("private val restartHook").contains("toFront(a, a.taskId,"))
+        assertTrue(source("CompanionScreenActivity.kt").substringAfter("private fun typingChanged(").substringBefore("fun board(")
+            .contains("DsForeverScreen.toFront(this, taskId,"))
+        // moveTaskToFront needs REORDER_TASKS (a normal permission: granted with the install, no prompt)
+        assertTrue(manifest().contains("<uses-permission android:name=\"android.permission.REORDER_TASKS\" />"))
+    }
+
+    /** the once-a-second gap: counted by DsForeverScreen (every bottom activity is a new one: its own field never held anything back) */
+    @Test fun theGapOutlivesTheBottomActivity() {
+        val gap = DsForeverScreen.FRONT_GAP_MS
+        assertEquals(0L, DsForeverScreen.frontWait(100_000L, Long.MIN_VALUE / 2))          // never moved: at once
+        assertEquals(gap, DsForeverScreen.frontWait(100_000L, 100_000L))
+        assertEquals(400L, DsForeverScreen.frontWait(100_600L, 100_000L))
+        assertEquals(0L, DsForeverScreen.frontWait(100_000L + gap, 100_000L))
+        assertEquals(0L, DsForeverScreen.frontWait(500_000L, 100_000L))
+        assertEquals("a clock that went back waits one gap, no more", gap, DsForeverScreen.frontWait(99_000L, 100_000L))
+        // the reporter's three rounds (13.293, 13.931, 14.102): a new activity each time, one move only
+        var last = Long.MIN_VALUE / 2
+        var moves = 0
+        for (t in listOf(13_293L, 13_931L, 14_102L)) if (DsForeverScreen.frontWait(t, last) == 0L) { last = t; moves++ }
+        assertEquals(1, moves)
+        assertFalse(source("CompanionScreenActivity.kt").contains("frontAt"))
+        val fn = source().substringAfter("internal fun gameToFront(").substringBefore("private val restartHook")
+        assertTrue(fn.contains("frontWait(now, frontAt)"))
+        assertTrue(fn.contains("private var frontAt = Long.MIN_VALUE / 2"))
+    }
+
+    /**
+     * "input ANRs once the loop is stopped" (no focused window): display 0 on top with only a not-focusable window holds the keys.
+     * An ask inside the gap is not dropped (it runs after it while the bottom activity still holds them), and the bottom activity asks
+     * whenever it becomes Android's top resumed activity - display 0 took the keys - unless a text field types there
+     */
+    @Test fun display0NeverKeepsTheKeys() {
+        val fn = source().substringAfter("internal fun gameToFront(").substringBefore("private val restartHook")
+        val later = fn.substringAfter("if (wait > 0L) {").substringBefore("frontAt = now")
+        assertTrue(later.contains("main.postDelayed("))
+        assertTrue(later.contains("(shown as? AskedActivity)?.activity?.holdsKeys == true"))
+        assertTrue("one ask waits at a time", later.contains("if (!frontLater) {"))
+        val a = source("CompanionScreenActivity.kt")
+        assertTrue(a.contains("val holdsKeys: Boolean get() = host != null && topResumed && !typer.typing && !isFinishing"))
+        val top = a.substringAfter("override fun onTopResumedActivityChanged(").substringBefore("override fun onStop()")
+        assertTrue(top.contains("topResumed = isTopResumedActivity"))
+        assertTrue(top.contains("if (holdsKeys) screen?.gameToFront("))
+        assertTrue(a.substringAfter("override fun onResume()").substringBefore("override fun onTopResumedActivityChanged(")
+            .contains("if (host != null && !typer.typing) screen?.gameToFront(\"bottom screen resumed\")"))
+    }
+
+    /** Swap screens Off (the Thor): the Presentation never moves a task; only the Swap screens activity asks */
+    @Test fun offNothingMovesATask() {
+        val presentation = source().substringAfter("private class HostPresentation(")
+        assertFalse(presentation.contains("toFront("))
+        assertFalse(presentation.contains("gameToFront("))
+        val outside = source().substringBefore("internal fun gameToFront(") + source().substringAfter("private val restartHook")
+        assertFalse("gameToFront is asked only by the bottom activity (and its own wait)", outside.contains("gameToFront("))
+        assertFalse(outside.substringBefore("internal fun toFront(").contains("toFront("))
+    }
+
     // ---- the Settings row's Restart (ScreenSwap)
 
     @Test fun restartRowOnlyWhenTheChoiceIsNotTheOneInUse() {
