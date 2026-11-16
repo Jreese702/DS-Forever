@@ -89,7 +89,7 @@ class DisenchantShotsTest {
         gear.forEachIndexed { i, g ->
             val e = JSONObject().put("b", g.bag).put("s", g.slot).put("id", g.id).put("q", g.q)
             if (i == 0 || i == 3 || i == 6 || i == 11) e.put("up", true)
-            if (i == 8) e.put("lk", true)
+            if (i == 12) e.put("lk", true)        // (review: a coloured icon in the 2nd row, clear of the tooltips: its grey shows)
             list.put(e)
         }
         bulk.put("list", list).put("sel", sel).put("n", "Disenchant").put("i", 132853).put("ct", 3000).put("back", "grid")
