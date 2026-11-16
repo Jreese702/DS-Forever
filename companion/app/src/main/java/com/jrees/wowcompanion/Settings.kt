@@ -202,11 +202,12 @@ object Settings {
 
     /**
      * SWAP SCREENS (GitHub #232; ScreenSwap): true = the game on the second screen, DS Forever on the main one (display 0). Off by
-     * default (the Thor's arrangement). Applies from a start of DS Forever (ScreenSwap.inUse latches it per run).
+     * default (the Thor's arrangement). Applies from a start of DS Forever (ScreenSwap.inUse latches it per run). #384: a choice by
+     * hand starts the unsettled-start count over (ScreenSwap.FAILS_PREF), so On after a fall-back gets its tries again.
      */
     var swapScreens: Boolean
         get() = prefs?.getBoolean(ScreenSwap.PREF, false) ?: false
-        set(v) { if (v != swapScreens) { prefs?.edit()?.putBoolean(ScreenSwap.PREF, v)?.apply(); changed() } }
+        set(v) { if (v != swapScreens) { prefs?.edit()?.putBoolean(ScreenSwap.PREF, v)?.remove(ScreenSwap.FAILS_PREF)?.apply(); changed() } }
 
     /**
      * WINDOWS ID (the user, 2026-11-14: "build it"; the BLZ51914400 wave): which Windows machine identity the game's container shows,

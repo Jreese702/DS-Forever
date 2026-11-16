@@ -51,6 +51,9 @@ import com.jrees.wowcompanion.ScreenSwap
  * brought back to the front after it comes ([gameToFront]) so the controller's keys stay the game's. Off (the default) = all as before.
  * #383 / #384: that move is [toFront] (only the task asked for), never AppTask.moveToFront (it put display 0's home screen over the
  * bottom activity and Android closed it: a restart loop), and it is asked again whenever display 0 takes the keys back.
+ * #384 recovery (the user, 2026-11-16: "make sure there IS a safe recovery path"): a Swap screens start whose bottom activity never
+ * settles counts ([settleCheck]); ScreenSwap.MAX_FAILS in a row and the next start is Off, the start guard's give-up turns it Off at
+ * once ([swapOff]), and a start with ScreenSwap.EXTRA_OFF is the by-hand way out ([moveToTop]).
  */
 class DsForeverScreen(private val context: Context) {
     /** the launcher's X server as DS Forever's input, while the game screen is up */
@@ -265,15 +268,28 @@ class DsForeverScreen(private val context: Context) {
     /** the activity's recent starts ([startAllowed]); [gaveUp] = it kept closing: not again this run */
     private val starts = ArrayList<Long>()
     private var gaveUp = false
+    /** #384 recovery: this DS Forever's ask is counted (ScreenSwap.tryStart, once) / its activity settled (ScreenSwap.settled) */
+    private var tried = false
+    private var settled = false
 
     private fun openActivity(id: Int): BottomWindow? {
         if (gaveUp) return null
+        // #384 recovery: the first ask counts as a Swap screens start; MAX_FAILS unsettled ones in a row already = Off now
+        if (!tried) {
+            tried = true
+            if (!ScreenSwap.tryStart(context)) {
+                gaveUp = true
+                swapOff("the bottom screen did not settle on the last ${ScreenSwap.MAX_FAILS} starts")
+                return null
+            }
+        }
         val now = android.os.SystemClock.elapsedRealtime()
         starts.removeAll { now - it >= START_GUARD_MS }
         if (!startAllowed(starts, now)) {
             gaveUp = true
             Log.w(TAG, "Swap screens: the bottom screen's activity was started ${starts.size} times in ${START_GUARD_MS / 1000} s: not again this run")
-            com.jrees.wowcompanion.DiagLog.event("app", "Swap screens: the bottom screen kept closing; DS Forever stays off display $id until the next start")
+            com.jrees.wowcompanion.DiagLog.event("app", "Swap screens: the bottom screen kept closing on display $id")
+            swapOff("the bottom screen kept closing")
             return null
         }
         starts.add(now)
@@ -308,7 +324,30 @@ class DsForeverScreen(private val context: Context) {
             return false
         }
         w.activity = a
+        if (!settled) main.postDelayed({ settleCheck(w, a) }, ScreenSwap.SETTLE_MS)
         return true
+    }
+
+    /**
+     * #384 recovery: the bottom activity still up [ScreenSwap.SETTLE_MS] later with the controller at the game (not [holdsKeys]): Swap
+     * screens works on this device, the unsettled-start count starts over. Holding the keys = not yet (looked at again a while later)
+     */
+    private fun settleCheck(w: AskedActivity, a: CompanionScreenActivity) {
+        if (settled || !running || shown !== w || w.closed || w.activity !== a) return
+        if (a.holdsKeys) { main.postDelayed({ settleCheck(w, a) }, ScreenSwap.SETTLE_MS); return }
+        settled = true
+        ScreenSwap.settled(context)
+        Log.i(TAG, "Swap screens: the bottom screen settled on display ${w.displayId}")
+    }
+
+    /**
+     * #384 recovery: Swap screens Off, saved (ScreenSwap.off). The launcher's own DS Forever with no game starts again at once in the
+     * Thor's arrangement (the Restart button's route: nothing is lost); with the game up it applies from the next start
+     */
+    private fun swapOff(why: String) {
+        ScreenSwap.off(context, why)
+        if (!gameOn && ScreenSwap.restart === restartHook) restartHook()
+        else Log.i(TAG, "Swap screens Off from the next start ($why)")
     }
 
     /**
@@ -555,6 +594,12 @@ class DsForeverScreen(private val context: Context) {
         fun moveToTop(activity: Activity, gameRunning: Boolean): Boolean {
             val d = activity.display?.displayId ?: Display.DEFAULT_DISPLAY
             val now = android.os.SystemClock.elapsedRealtime()
+            // #384 recovery by hand (adb, after a force stop: am start -n <app>/app.gamenative.MainActivity --ez dsforever_swap_off true):
+            // Swap screens saved Off before this run takes it; the extra goes, so a restart's copy of the intent never repeats it
+            if (activity.intent?.getBooleanExtra(ScreenSwap.EXTRA_OFF, false) == true) {
+                activity.intent.removeExtra(ScreenSwap.EXTRA_OFF)
+                ScreenSwap.off(activity, "the start asked for it")
+            }
             // #232: the game's display (display 0 unless Swap screens is in use: then the second screen)
             val target = gameTarget(activity, d)
             val move = decide(d, gameRunning || up, now - lastMoveAt, target)
