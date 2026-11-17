@@ -744,15 +744,15 @@ class WorldMapRoomView(context: Context) : View(context) {
     // pm1 (the user, 2026-11-16: "The polestar option in the map room, I want x to open the polestar menu and y to open skip options to go
     // to the next or previous step"): on the list's Polestar row X opens THE Polestar menu (the Quests room's Polestar tab: the same
     // [PolestarMenu], drawn by its own [PolestarPane]) over the room, B out of its list back to the map; Y opens a small skip choice,
-    // Next step / Previous step (pk1's Skip and "Undo my last skip", the one pnav press path). Touch: a second tap on the selected row
+    // Next step / Previous step (pm2: Polestar's own Engine.Next / Prev; pm3: one press closes it). Touch: a second tap on the selected row
     // opens the menu, a long press the skip choice. Without a Polestar row (Polestar not the tracker, no step) X and Y are the list's
     /** the one Polestar menu (the host hands QuestsView's); null: no menu (X does nothing) */
     var psMenu: PolestarMenu? = null
     private val psPane = PolestarPane { postInvalidate() }
     private var psOpen = false
-    private var skipOpen = false
-    private var skipSel = 0
-    private val skipHits = ArrayList<Pair<RectF, Int>>()
+    /** pm3: Y's Next / Previous step choice (Home's map has the same one); it closes after one press (the user's pick, 2026-11-16) */
+    private val stepChoice = PolestarStepChoice({ psMenu }) { say(it) }
+    private val skipOpen get() = stepChoice.open
     private var psRowR: RectF? = null
     private var psPressed = ""
     /** the Polestar menu shows over the room (the host: a refused Skip / Previous's line) */
@@ -1293,7 +1293,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         roomOn = true; letGoClock.removeCallbacks(letGoLater)         // memory relief 2: back within the minute: the pictures stay
         history.clear()
         cursor = null; menuOpen = false; crumbMenu = null
-        closePsMenu(); skipOpen = false
+        closePsMenu(); stepChoice.close()
         jumpTo(startMap())
         region = MapRoomKeys.Region.MAP
         selQuest = 0
@@ -1323,7 +1323,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         // memory relief 2: the pictures go [MapRoomLetGo.AFTER_MS] after the room is left (unless it is opened again before)
         roomOn = false; letGoClock.removeCallbacks(letGoLater); letGoClock.postDelayed(letGoLater, MapRoomLetGo.AFTER_MS)
         held = false
-        closePsMenu(); skipOpen = false                 // pm1: the add-on told the Polestar menu is closed
+        closePsMenu(); stepChoice.close()                    // pm1: the add-on told the Polestar menu is closed
         holdAsk.hidden(); removeCallbacks(holdTick)     // the let-go itself is the hand-over's (touchedOut)
         stopStick()
     }
@@ -2606,7 +2606,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun key(k: String): Boolean {
         // pm1: the Polestar menu, then the skip choice, take every press while they show
         if (psOpen) { psKey(k); return false }
-        if (skipOpen) { skipKey(k); return false }
+        if (skipOpen) { stepChoice.key(k); return false }
         if (confirmId != 0) {
             when (k) { "PAD1" -> confirmAbandon(); "PAD2", "PAD4" -> confirmId = 0 }
             return false
@@ -2695,15 +2695,12 @@ class WorldMapRoomView(context: Context) : View(context) {
     /** X can open the Polestar menu: the row is there and the menu can show (Polestar the tracker, answering) */
     private fun psMenuCan(): Boolean = psMenu?.shows() == true
     /** Y can open the skip choice: Polestar has a guide (pm2: Next / Previous step are Polestar's own Engine.Next / Prev) */
-    private fun psSkipsCan(): Boolean = psMenu?.canStep() == true
-    /** Polestar's shown step and the guide's step count (the skip choice's dim rows) */
-    private fun psShown(): Pair<Int?, Int> = psMenu?.book?.guide.let { g -> g?.shown to (g?.count ?: 0) }
-    private fun psStepOn(s: MapRoomKeys.PsSkip): Boolean = psShown().let { (sh, n) -> MapRoomKeys.psSkipOn(s, sh, n) }
+    private fun psSkipsCan(): Boolean = stepChoice.can()
 
     /** X: the menu over the room, on the shown step (on "Choose your path": the path choice, as Home's row opens it), the add-on told */
     private fun openPsMenu() {
         val m = psMenu?.takeIf { it.shows() } ?: return
-        optQuest = 0; skipOpen = false
+        optQuest = 0; stepChoice.close()
         m.shownIn = "map"; m.note = { say(it) }
         m.enter()
         if (runCatching { polestar() }.getOrNull()?.choose == true) m.openPath()
@@ -2730,29 +2727,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         postDelayed({ if (psPressed == key) { psPressed = ""; invalidate() } }, PRESS_MS)
     }
 
-    /** Y: the skip choice under the row, on Next step (on Previous when only that can be pressed) */
-    private fun openSkips() {
-        if (!psSkipsCan()) return
-        optQuest = 0
-        skipSel = if (!psStepOn(MapRoomKeys.PsSkip.NEXT) && psStepOn(MapRoomKeys.PsSkip.PREV)) 1 else 0
-        skipOpen = true
-    }
-    private fun skipKey(k: String) {
-        when (val d = MapRoomKeys.psSkipKey(k, skipSel)) {
-            MapRoomKeys.SkipDo.Close -> skipOpen = false
-            is MapRoomKeys.SkipDo.Move -> skipSel = d.sel
-            is MapRoomKeys.SkipDo.Run -> runSkip(d.skip)
-            MapRoomKeys.SkipDo.None -> {}
-        }
-    }
-    /** one row pressed: a dim one says why; else Polestar's own Next / Previous step (pm2: framed op 24 / 25, a look that skips
-     *  nothing). The choice stays open, so A again walks on (B or Y closes it) */
-    private fun runSkip(s: MapRoomKeys.PsSkip) {
-        val m = psMenu?.takeIf { it.canStep() } ?: run { skipOpen = false; say(PolestarSkip.NO_STEP_LINE); return }
-        if (!psStepOn(s)) { say(PolestarTab.NOTHING_LINE); return }
-        if (m.shownIn == null) m.note = { say(it) }                  // (a refusal's line here, unless a room shows the menu)
-        if (!m.step(s == MapRoomKeys.PsSkip.NEXT)) say(PolestarSkip.NO_STEP_LINE)
-    }
+    /** Y: the Next / Previous step choice under the row (pm3: [PolestarStepChoice], shared with Home's map) */
+    private fun openSkips() { optQuest = 0; stepChoice.open() }
 
     /** the Polestar menu over the whole room: its header, the Quests room's pane under it, a refusal's line in the header */
     private fun drawPsMenu(c: Canvas) {
@@ -2776,21 +2752,10 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     /** the skip choice under the Polestar row (the quest options' look: the kit's menu rows), above it near the bottom */
     private fun drawSkipChoice(c: Canvas) {
-        skipHits.clear()
-        if (!skipOpen) return
-        val ps = runCatching { polestar() }.getOrNull() ?: run { skipOpen = false; return }
-        val rows = MapRoomKeys.PsSkip.values()
+        if (!skipOpen) { stepChoice.draw(c, RectF(), 0f, 0f, OPT_ROW); return }
+        runCatching { polestar() }.getOrNull() ?: run { stepChoice.close(); return }
         val a = psRowR ?: RectF(panelR.left + 8f, panelR.top + 84f, panelR.right - 8f, panelR.top + 130f)
-        val h = 16f + rows.size * OPT_ROW
-        var top = a.bottom + 2f
-        if (top + h > canvasR.bottom) top = max(canvasR.top, a.top - 2f - h)
-        val box = RectF(a.left, top, a.right, top + h)
-        UiKit.menu(c, box, solid = true)
-        for ((i, s) in rows.withIndex()) {
-            val r = RectF(box.left + 8f, box.top + 8f + i * OPT_ROW, box.right - 8f, box.top + 8f + (i + 1) * OPT_ROW)
-            UiKit.menuRow(c, r, s.word, i == skipSel, enabled = psStepOn(s), size = 28f)
-            skipHits.add(r to i)
-        }
+        stepChoice.draw(c, a, canvasR.top, canvasR.bottom, OPT_ROW)
     }
 
 
@@ -2815,8 +2780,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             syncB(); invalidate(); return true
         }
         if (skipOpen) {
-            skipHits.firstOrNull { it.first.contains(x, y) }?.let { (_, i) -> skipSel = i; runSkip(MapRoomKeys.PsSkip.values()[i]) }
-                ?: run { skipOpen = false }
+            stepChoice.touch(x, y)
             syncB(); invalidate(); return true
         }
         if (confirmId != 0) {
@@ -2894,7 +2858,7 @@ class WorldMapRoomView(context: Context) : View(context) {
          */
         const val NO_ART_NOTE = "Map pictures build while the game is closed"
         /** pm1: Y's words on the Polestar row (Tr: es / fr in i18n) */
-        const val SKIP_WORD = "Skip"
+        const val SKIP_WORD = MapRoomKeys.STEPS_WORD
         /** pk1: Polestar's light blue (Home's row, MapView.psBlue) */
         val PS_BLUE = Color.rgb(120, 200, 255)
         /** pg1: Polestar's header line over the list */

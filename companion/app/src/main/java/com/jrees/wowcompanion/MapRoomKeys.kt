@@ -133,9 +133,14 @@ object MapRoomKeys {
     /** pm2: the skip choice's rows, in order: Next step / Previous step - Polestar's own Engine.Next / Engine.Prev (framed ops 24 / 25,
      *  /polestar next / prev): one step forward / back, a look that skips nothing. Skip for good and "Undo my last skip" (pk1) stay in the
      *  Polestar menu (X) */
-    enum class PsSkip(val word: String) { NEXT(NEXT_WORD), PREV(PolestarSkip.PREV_WORD) }
+    enum class PsSkip(val word: String) { NEXT(NEXT_WORD), PREV(PREV_WORD) }
     /** "Next step" (Tr: es / fr in i18n) */
     const val NEXT_WORD = "Next step"
+    /** pm3 (the user's pick, 2026-11-16: "Rename to 'Undo skip'" - "Previous step" kept for the real look-back): Polestar's Engine.Prev,
+     *  never pk1's undo ([PolestarSkip.PREV_WORD] = "Undo skip") */
+    const val PREV_WORD = "Previous step"
+    /** Y's words on a Polestar row, the Map room's and Home's map's (Tr: es / fr in i18n) */
+    const val STEPS_WORD = "Skip"
     /** the row can be pressed, from Polestar's shown step [shown] of [count] (null / 0: not known, both can): Next before the last step,
      *  Previous after the first */
     fun psSkipOn(s: PsSkip, shown: Int?, count: Int): Boolean =

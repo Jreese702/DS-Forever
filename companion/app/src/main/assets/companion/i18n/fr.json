@@ -2019,7 +2019,8 @@
 "New friend request": "Nouvelle demande d'ami",
 "posted a broadcast": "a publié une annonce",
 "Community invite": "Invitation à une communauté",
-"Next step": "Étape suivante"
+"Next step": "Étape suivante",
+"Undo skip": "Annuler le saut"
 },
 "templates": {
 "Friend requests: %s": "Demandes d'ami : %s",

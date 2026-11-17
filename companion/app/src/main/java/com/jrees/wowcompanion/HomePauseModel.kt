@@ -46,7 +46,7 @@ object HomePauseModel {
     /** the Macros room (Spells s10): page 3's slice where Calendar stood, and the Game Menu's own "Macros" entry (HomePauseView) */
     val MACROS = Slice("macros", "Macros", Kind.ROOM, room = "MACROS")
 
-    /** pk1: Polestar's Skip step / Previous step (Home picks: MapView.polestarSkip) */
+    /** pk1: Polestar's Skip step / Undo skip (pm3: the undo is "Undo skip"; Home picks: MapView.polestarSkip) */
     val PS_SKIP = Slice(PolestarSkip.KEY_SKIP, PolestarSkip.SKIP_WORD, Kind.HOME)
     val PS_PREV = Slice(PolestarSkip.KEY_PREV, PolestarSkip.PREV_WORD, Kind.HOME)
     /** the line under the wheel for Previous with nothing to undo */

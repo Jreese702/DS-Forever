@@ -626,6 +626,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         questsView.fight = { homeView.inFight() }
         mapView.onPolestarChoose = { questsView.openPolestar(path = true); show(Room.QUESTS) }
         worldMapRoom.onPolestarChoose = { questsView.openPolestar(path = true); show(Room.QUESTS) }
+        // pm3 (the user's pick, 2026-11-16: "Yes, match the Map room"): Home's light blue row X = the Polestar menu (the Quests room's
+        // Polestar tab, on the path choice when one waits), Y = the Next / Previous step choice through the same menu
+        mapView.psMenu = questsView.psMenu
+        mapView.onPolestarMenu = { path -> questsView.openPolestar(path = path); show(Room.QUESTS) }
         // LATER item 7: Select opens a cursor on the bar; A on a room is what a touch on its picture does
         // the swirl (Home) picked on the bar with A = the pause wheel, on Home and in rooms (the user 2026-10-09: "if I select the spiral I
         // want that to open the pause menu"; "Wheel everywhere"); a room slice switches rooms. B on the swirl is no pick (BarB, the user

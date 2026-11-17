@@ -211,7 +211,7 @@ class MapListTest {
         assertEquals(2, c.stay(1, before, after, wasOn = true)); assertEquals(2, c.sel)
         assertEquals(before.indexOf(1), after.indexOf(2))
         // X there now untracks 2: never a Polestar skip
-        assertEquals(MapCursor.Do.Untrack(2), c.key("PAD3", after, MapList.POLESTAR, false, psSkip = true))
+        assertEquals(MapCursor.Do.Untrack(2), c.key("PAD3", after, MapList.POLESTAR, false, psMenu = true))
     }
 
     @Test fun theLastTrackedQuestsNewTabTakesItsPlace() {

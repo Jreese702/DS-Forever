@@ -117,8 +117,15 @@ class MapPolestarShotsTest {
         File(d, "$name.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
     private fun <T> field(v: WorldMapRoomView, name: String): T {
+        if (name == "skipOpen") @Suppress("UNCHECKED_CAST") return choice(v).open as T
+        if (name == "skipSel") @Suppress("UNCHECKED_CAST") return choice(v).sel as T
         val f = WorldMapRoomView::class.java.getDeclaredField(name); f.isAccessible = true
         @Suppress("UNCHECKED_CAST") return f.get(v) as T
+    }
+    /** pm3: the view's Next / Previous step choice (the Map room's and Home's map's [PolestarStepChoice]) */
+    private fun choice(v: View): PolestarStepChoice {
+        val f = v.javaClass.getDeclaredField("stepChoice"); f.isAccessible = true
+        return f.get(v) as PolestarStepChoice
     }
     private var n = 0
     private fun key(v: WorldMapRoomView, k: String) { v.onMapPad(JSONObject().put("n", ++n).put("k", k)); frames(v, 2) }
@@ -205,15 +212,30 @@ class MapPolestarShotsTest {
         // pm2 (verifier): Polestar's own Engine.Next / Engine.Prev (framed ops 24 / 25), never pk1's Skip / Undo
         key(v, "PAD1")
         assertEquals("Previous step: op 25", listOf(PolestarTab.PREV), q.psMenu.steps.toList())
-        assertTrue("the choice stays: A again walks on", field(v, "skipOpen"))
-        key(v, "PADDUP"); key(v, "PAD1"); key(v, "PAD1")
-        assertEquals("Next step twice: op 24, 24", listOf(PolestarTab.PREV, PolestarTab.NEXT, PolestarTab.NEXT), q.psMenu.steps.toList())
+        // pm3 (the user's pick, 2026-11-16: "Close after one press")
+        assertFalse("one press closes the choice", field(v, "skipOpen"))
+        shot(v, "07b_after_one_press_closed")
+        key(v, "PAD1")
+        assertEquals("A with the choice closed sends nothing", 1, q.psMenu.steps.size)
+        key(v, "PAD4")
+        assertTrue("Y opens it again", field(v, "skipOpen"))
+        assertEquals("on Next step", 0, field<Int>(v, "skipSel"))
+        key(v, "PAD1")
+        assertEquals("Next step: op 24", listOf(PolestarTab.PREV, PolestarTab.NEXT), q.psMenu.steps.toList())
+        assertFalse(field(v, "skipOpen"))
         assertEquals("nothing skipped, nothing un-skipped", emptyList<Boolean>(), skips)
-        key(v, "PAD2")
+        key(v, "PAD4"); key(v, "PAD2")
         assertFalse("B closes it", field(v, "skipOpen"))
         key(v, "PAD4"); key(v, "PAD4")
         assertFalse("Y again closes it", field(v, "skipOpen"))
-        assertEquals(3, q.psMenu.steps.size)
+        // touch: a row presses it and closes the choice
+        key(v, "PAD4")
+        val (r, _) = choice(v).hits[0]
+        v.dispatchTouchEvent(android.view.MotionEvent.obtain(0L, 0L, android.view.MotionEvent.ACTION_DOWN, r.centerX(), r.centerY(), 0))
+        v.dispatchTouchEvent(android.view.MotionEvent.obtain(0L, 10L, android.view.MotionEvent.ACTION_UP, r.centerX(), r.centerY(), 0))
+        frames(v, 2)
+        assertFalse("a touched row closes it too", field(v, "skipOpen"))
+        assertEquals(listOf(PolestarTab.PREV, PolestarTab.NEXT, PolestarTab.NEXT), q.psMenu.steps.toList())
     }
 
     @Test fun previousIsDimOnTheFirstStepWithNoSkips() {
@@ -248,5 +270,109 @@ class MapPolestarShotsTest {
         key(v, "PAD2")
         key(v, "PAD3")
         assertFalse("X: no menu", field(v, "psOpen"))
+    }
+    // ---------------------------------------------------------------- pm3: Home's map, the same buttons as the Map room
+    /** Home's map module opened full (its controller Home's), Polestar's step on its light blue row (merged with quest 7), the Quests
+     *  room's own Polestar menu handed to it as the host does; [menuAsked] = the host's "open the Quests room's Polestar tab" calls */
+    private val menuAsked = ArrayList<Boolean>()
+    private fun home(shown: Int = 4): Pair<MapView, QuestsView> {
+        art()
+        Settings.init(app)
+        Settings.polestarGuide = PolestarGuide.ON
+        val q = QuestsView(app, { null }, { })
+        for (d in listOf(guide(1, shown), steps(), list(), stepDoc(shown))) q.onPolestarDoc(d)
+        val v = MapView(app)
+        v.compact = false; v.showHeader = false; v.padHints = true
+        v.onUntrackQuest = { }; v.onTrackQuest = { }; v.onTrackFocusQuest = { }
+        v.psMenu = q.psMenu                                   // as CompanionHost hands it
+        v.onPolestarMenu = { path -> menuAsked.add(path) }
+        v.onPolestarSkip = { prev -> skips.add(prev); true }
+        v.update(JSONObject().put("ok", true).put("mapID", 1429).put("zone", "Elwynn Forest").put("subzone", "Goldshire")
+            .put("x", 0.42).put("y", 0.65).put("facing", 0.0), 0L)
+        v.onQuests(questsDoc().put("type", "quests").put("me", JSONObject().put("n", "Brightwater").put("c", "SHAMAN").put("cl", "Shaman")))
+        v.onPolestarGuide(guide(1, shown))
+        v.onPolestarStep(JSONObject().put("type", "pstep").put("t", "Kobold Camp Cleanup").put("g", "Kill Kobold Vermin").put("q", 7)
+            .put("m", 1429).put("x", 0.47).put("y", 0.55).put("b", 1L).put("sk", true).put("u", 1))
+        v.measure(View.MeasureSpec.makeMeasureSpec(W, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(H, View.MeasureSpec.EXACTLY))
+        v.layout(0, 0, W, H)
+        frames(v, 30)
+        v.hostStart()
+        frames(v, 30)
+        return v to q
+    }
+    private fun homeSel(v: MapView): Int = MapView::class.java.getDeclaredField("cursor").apply { isAccessible = true }.get(v).let { (it as MapCursor).sel }
+    private fun hkey(v: MapView, k: String): Boolean { val r = v.hostKey(k); frames(v, 2); return r }
+
+    @Test fun homesPolestarRowXOpensTheMenuAndYTheStepChoice() {
+        lang("en")
+        val (v, q) = home()
+        assertEquals("the controller starts on the light blue row", MapList.POLESTAR, homeSel(v))
+        shot(v, "11_home_polestar_row")
+        // X: the Polestar menu (the host opens the Quests room's Polestar tab), never a skip
+        hkey(v, "PAD3")
+        assertEquals("X: the Polestar menu, on its list", listOf(false), menuAsked)
+        assertEquals(emptyList<Boolean>(), skips)
+        // Y: the Next / Previous step choice, on Next step
+        hkey(v, "PAD4")
+        assertTrue("Y: the step choice", choice(v).open)
+        assertEquals(0, choice(v).sel)
+        assertEquals("B leads back (the choice closes), not Home", "back", v.hostBLeads())
+        shot(v, "12_home_step_choice")
+        hkey(v, "PADDDOWN")
+        assertEquals(1, choice(v).sel)
+        shot(v, "13_home_step_choice_previous")
+        hkey(v, "PAD1")
+        assertEquals("Previous step: op 25 (Engine.Prev), nothing un-skipped", listOf(PolestarTab.PREV), q.psMenu.steps.toList())
+        assertEquals(emptyList<Boolean>(), skips)
+        assertFalse("one press closes it", choice(v).open)
+        shot(v, "14_home_after_one_press")
+        // B closes it and stays on Home's map; Y again closes it too
+        hkey(v, "PAD4")
+        assertTrue("B on the open choice: not a leave", hkey(v, "PAD2"))
+        assertFalse(choice(v).open)
+        hkey(v, "PAD4"); hkey(v, "PAD4")
+        assertFalse(choice(v).open)
+        assertEquals(1, q.psMenu.steps.size)
+        // a long press on the row: the choice (the Map room's touch)
+        val f = MapView::class.java.getDeclaredField("trackerHits"); f.isAccessible = true
+        @Suppress("UNCHECKED_CAST") val row = (f.get(v) as List<Pair<android.graphics.RectF, MapList.Item>>).first { it.second is MapList.Item.Polestar }.first
+        v.dispatchTouchEvent(android.view.MotionEvent.obtain(0L, 0L, android.view.MotionEvent.ACTION_DOWN, row.centerX(), row.centerY(), 0))
+        v.dispatchTouchEvent(android.view.MotionEvent.obtain(0L, 700L, android.view.MotionEvent.ACTION_UP, row.centerX(), row.centerY(), 0))
+        frames(v, 2)
+        assertTrue("a long press opens the choice", choice(v).open)
+        lang("es")
+        shot(v, "15_home_step_choice_es")
+        lang("fr")
+        shot(v, "16_home_step_choice_fr")
+        lang("en")
+        hkey(v, "PAD2")
+        assertFalse(choice(v).open)
+    }
+
+    @Test fun homesStepChoiceDimsPreviousOnTheFirstStep() {
+        lang("en")
+        val (v, q) = home(shown = 1)
+        hkey(v, "PAD4")
+        assertTrue(choice(v).open)
+        hkey(v, "PADDDOWN"); hkey(v, "PAD1")
+        assertTrue("a dim row: nothing sent, the choice stays", choice(v).open)
+        assertEquals(0, q.psMenu.steps.size)
+        shot(v, "17_home_step_choice_previous_dim")
+    }
+
+    @Test fun theUndoIsCalledUndoSkipOnThePolestarMenu() {
+        lang("en")
+        val (v, _) = room()
+        toRow(v)
+        key(v, "PAD3")
+        assertTrue(field(v, "psOpen"))
+        assertEquals("Undo skip", PolestarSkip.PREV_WORD)
+        assertEquals("the real look-back keeps its words", "Previous step", MapRoomKeys.PsSkip.PREV.word)
+        shot(v, "18_polestar_menu_undo_skip")
+        lang("es")
+        shot(v, "19_polestar_menu_undo_skip_es")
+        lang("fr")
+        shot(v, "20_polestar_menu_undo_skip_fr")
+        lang("en")
     }
 }
