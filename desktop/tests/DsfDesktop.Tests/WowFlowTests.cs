@@ -2,6 +2,8 @@ using System.IO;
 using System;
 using System.Collections.Generic;
 using DsfDesktop.Wow;
+using DsfDesktop.GameLog;
+using System.Linq;
 
 namespace DsfDesktop.Tests
 {
@@ -216,6 +218,84 @@ namespace DsfDesktop.Tests
             var start = new DateTime(2026, 11, 17, 14, 15, 19);
             A.True(WowFlow.LogIsThisRun(start.AddMinutes(5), start), "Desktop read the file from its start while this client was up: its own log");
             A.True(!WowFlow.LogIsThisRun(start.AddSeconds(-0.5), start), "a Wow.exe started after that read, its restart not seen yet: stale");
+        }
+
+        /// <summary>the tailer wired as AppController wires it (RawLine -> LoginLog, Began -> reset + the log's "this run" time)</summary>
+        sealed class Wired
+        {
+            public readonly LogTailer Tail;
+            public readonly LoginLog Login = new LoginLog();
+            public int Began;
+            public DateTime? LogAt;
+            public readonly List<string> Order = new List<string>();
+            public Wired(string f)
+            {
+                Tail = new LogTailer(f);
+                Tail.RawLine = l => { Login.Line(l); Order.Add("line"); };
+                Tail.Began = () => { Login.Reset(); Began++; LogAt = DateTime.Now; Order.Add("began"); };
+            }
+        }
+
+        /// <summary>
+        /// review of the 2026-11-17 fix ("the auto sign in on streaming didnt work"): no General.log when Desktop started, then a new
+        /// client makes it. No Restart is reported for that, so the log's "this run" time has to come from the read itself, or the whole
+        /// run's log is dropped as stale and a 308 (Battle.net's verify-it's-you step) never reaches the Thor as login_error.
+        /// </summary>
+        [Test]
+        public static void ALogMadeAfterDesktopStartedIsThisRuns()
+        {
+            using (var t = new Tmp())
+            {
+                var f = t.P("General.log");
+                var w = new Wired(f);
+                w.Tail.Poll();
+                A.Eq(0, w.Began, "nothing to read yet");
+                A.Eq(null, w.LogAt);
+                var processStart = DateTime.Now.AddSeconds(-2);
+                File.WriteAllText(f, LoginScreen + "\r\n" + GlueStarted + "\r\n" + Fatal308 + "\r\n");
+                var ev = w.Tail.Poll();
+                A.False(ev.Any(e => e.Kind == LogEventKind.Restart), "a file made anew after none: no restart event");
+                A.Eq(1, w.Began, "but the read began");
+                A.Eq("began", w.Order.First(), "before the file's lines");
+                A.True(WowFlow.LogIsThisRun(w.LogAt, processStart), "the running client's log");
+                A.Eq("308", w.Login.Error, "the failure is there for login_error");
+                A.Eq(WowScreen.Login, WowFlow.Classify(true, 10, 0, 1, WowFlow.LogIsThisRun(w.LogAt, processStart) ? w.Login : null, null));
+
+                // the file gone (the client closed, the folder cleaned) and made again by the next client: again this run's
+                File.Delete(f);
+                w.Tail.Poll();
+                var nextStart = DateTime.Now;
+                System.Threading.Thread.Sleep(20);
+                File.WriteAllText(f, LoginScreen + "\r\n");
+                w.Tail.Poll();
+                A.Eq(2, w.Began);
+                A.True(WowFlow.LogIsThisRun(w.LogAt, nextStart));
+                A.Eq(null, w.Login.Error, "the last run's 308 is gone");
+            }
+        }
+
+        [Test]
+        public static void ARestartKeepsTheLinesReadWithIt()
+        {
+            using (var t = new Tmp())
+            {
+                var f = t.P("General.log");
+                File.WriteAllText(f, LoginScreen + "\r\n" + GlueStarted + "\r\n" + CharSelect + "\r\n");
+                var w = new Wired(f);
+                w.Tail.Poll();
+                A.True(w.Login.PastLogin);
+                using (var fs = new FileStream(f, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+                {
+                    fs.SetLength(0);
+                    var b = System.Text.Encoding.UTF8.GetBytes(LoginScreen + "\r\n" + Fatal308 + "\r\n");
+                    fs.Write(b, 0, b.Length);
+                }
+                var ev = w.Tail.Poll();
+                A.True(ev.Any(e => e.Kind == LogEventKind.Restart));
+                A.Eq(2, w.Began);
+                A.False(w.Login.PastLogin, "the last run's character select is gone");
+                A.Eq("308", w.Login.Error, "the new run's lines from the same poll are kept");
+            }
         }
 
         [Test]

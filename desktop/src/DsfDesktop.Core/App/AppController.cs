@@ -141,8 +141,8 @@ namespace DsfDesktop.App
                 Wow = inst;
                 Flavor = WowLocator.ChooseFlavor(inst, DateTime.Now);
                 var path = inst != null && Flavor != null ? inst.LogPath(Flavor) : null;
-                if (tailer == null) { tailer = new LogTailer(path); tailer.RawLine = l => { lock (loginLog) loginLog.Line(l); }; loginLogAt = DateTime.Now; }
-                else if (tailer.Path != path) { tailer.SetPath(path); lock (loginLog) loginLog.Reset(); clientDocAt = null; loginLogAt = DateTime.Now; }
+                if (tailer == null) { tailer = new LogTailer(path); tailer.RawLine = l => { lock (loginLog) loginLog.Line(l); }; tailer.Began = LogBegan; loginLogAt = null; }
+                else if (tailer.Path != path) { tailer.SetPath(path); lock (loginLog) loginLog.Reset(); clientDocAt = null; loginLogAt = null; }
                 Notices = inst != null && Flavor != null ? ConfigCheck.Notices(inst.FlavorDir(Flavor)) : new List<string>();
             }
             Log.I(inst == null ? "WoW Forever not found" : "WoW at " + inst.Root + " (" + string.Join(", ", inst.Flavors) + "), following " + Flavor);
@@ -187,11 +187,7 @@ namespace DsfDesktop.App
                                 Log.I(e.Text);
                                 changed = true;
                                 break;
-                            case LogEventKind.Restart:
-                                lock (loginLog) loginLog.Reset();
-                                clientDocAt = null;
-                                loginLogAt = DateTime.Now;     // from here the log is this client run's (WowFlow.LogIsThisRun)
-                                signInSeenAt = null;           // a new client run: its own sign-in starts login.txt's 20 s
+                            case LogEventKind.Restart:      // the log state was reset in LogBegan, before this run's first lines
                                 Bridge?.PublishLog("restart", LogPath, Flavor);
                                 LogStatus = e.Text; Log.I(e.Text); changed = true;
                                 break;
@@ -208,6 +204,18 @@ namespace DsfDesktop.App
             }
         }
 
+        /// <summary>the tailer starts reading the file from its start (or its capped backlog), on the polling thread inside Poll, before
+        /// any of its lines: the first read, the file back after it was missing, a path or flavor switch, a client restart. Whatever
+        /// client is up now wrote these lines (WoW empties its log at launch), so from here they count as this run's
+        /// (WowFlow.LogIsThisRun). Reset here, not on the Restart event, so the lines read in the same poll are kept. login.txt's
+        /// sign-in clock is NOT reset: only a fresh login_file write starts it again ("deleted 20 s after FIRST read").</summary>
+        void LogBegan()
+        {
+            lock (loginLog) loginLog.Reset();
+            clientDocAt = null;
+            loginLogAt = DateTime.Now;
+        }
+
         /// <summary>LogFollow: switch to the other flavor's log when that one is the one being written</summary>
         void Follow()
         {
@@ -221,7 +229,7 @@ namespace DsfDesktop.App
                 tailer.SetPath(inst.LogPath(f));
                 lock (loginLog) loginLog.Reset();
                 clientDocAt = null;
-                loginLogAt = DateTime.Now;     // read from the file's start: a client up now wrote it (WowFlow.LogIsThisRun)
+                loginLogAt = null;             // nothing of the new file read yet: LogBegan sets it at the first read
                 Notices = ConfigCheck.Notices(inst.FlavorDir(f));
             }
             Log.I("following the game's log: " + f);
@@ -762,8 +770,8 @@ namespace DsfDesktop.App
         }
 
         DateTime? loginFileAt, signInSeenAt;
-        /// <summary>when the game's log state last began from the file's start or an emptied file (a client restart, the first read, a
-        /// path or flavor switch; local time)</summary>
+        /// <summary>when the game's log state last began from the file's start or an emptied file (LogBegan: the first read, the file
+        /// back after it was missing, a client restart, a path or flavor switch; local time); null while nothing of the file is read</summary>
         DateTime? loginLogAt;
         bool loginFileSwept;
 
