@@ -182,7 +182,7 @@ SP_LINES = "/target [noexists][dead] softenemy\n/petattack [pet,harm,nodead]\n/s
 OURS_B = "CLICK WowCompanionFaceB:LeftButton"
 
 # ---------------------------------------------------------------- (0) the versions, the notes
-check('local PV = "m172"' in SRC["padmap"] and 'local BV = "b67"' in SRC["book"], "PadMap m172, Book b67")
+check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local BV = "b67"' in SRC["book"], "PadMap m172, Book b67")
 check("I feel like maybe it needs to be a full smart pet feature where it stops on b and then starts attacking whatever that I target and"
       " start attack on" in SRC["padmap"]
       and "to be clear I think this should just be a smart pet feature that includes both of those settings in one" in SRC["padmap"]

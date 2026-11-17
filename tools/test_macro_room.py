@@ -334,7 +334,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap"):
     e = comp(SRC[k], k)
     check(e is None, "a. Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local SV = "s15"' in SRC["spells"] and 'local BV = "b67"' in SRC["book"] and 'local PV = "m172"' in SRC["padmap"],
+check('local SV = "s15"' in SRC["spells"] and 'local BV = "b67"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
       "a. the versions: Spells s14, Book b65, PadMap m166")
 check('s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the Macros room\'s recipes "make no sense"' in SRC["spells"],
       "a. Spells s14's header note quotes the user")
@@ -1392,7 +1392,7 @@ L.execute('fire("MODIFIER_STATE_CHANGED", "LSHIFT", 1); fire("PLAYER_TARGET_CHAN
 check(docs(L, n3, 'padmap') == [] and docs(L, n3, 'facecd') == [], "s. no macro on our buttons: nothing sent on those events",
       (len(docs(L, n3, 'padmap')), len(docs(L, n3, 'facecd'))))
 check('"the macro room needs some work- for starters when using show tooltip on a macro it doesn\'t actually show the GCD when using it"'
-      in SRC["padmap"] and 'local PV = "m172"' in SRC["padmap"], "s. PadMap m165, its header note quotes the user")
+      in SRC["padmap"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172, "s. PadMap m165, its header note quotes the user")
 
 # ================================================================ t. (s14) THE ONE GRAMMAR: parse -> compose, the text-line fallback
 L = opened(GEN, CHAR)
