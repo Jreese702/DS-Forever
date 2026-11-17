@@ -44,7 +44,7 @@ namespace DsfDesktop.Ui
         readonly GoldButton addonsBtn = new GoldButton("Install / update add-ons"), folderBtn = new GoldButton("Choose WoW folder...");
         // footer
         readonly Toggle startWindows = new Toggle("Start with Windows"), startWow = new Toggle("Start WoW when streaming"),
-            matchStream = new Toggle("Match PC screen to stream");
+            matchStream = new Toggle("Match PC screen to stream"), ownScreen = new Toggle("Stream on its own screen");
         readonly LinkLabel testPage = new LinkLabel();
         readonly Timer tick = new Timer { Interval = 1000 };
 
@@ -129,6 +129,7 @@ namespace DsfDesktop.Ui
             footer.Controls.Add(startWindows);
             footer.Controls.Add(startWow);
             footer.Controls.Add(matchStream);
+            footer.Controls.Add(ownScreen);
             testPage.Text = "Bridge test page";
             testPage.AutoSize = true;
             testPage.LinkColor = Theme.SoftGold;
@@ -197,6 +198,7 @@ namespace DsfDesktop.Ui
             };
             startWow.CheckedChanged += (s, e) => { if (!applying) act?.SetStartWow(startWow.Checked); };
             matchStream.CheckedChanged += (s, e) => { if (!applying) act?.SetMatchStream(matchStream.Checked); };
+            ownScreen.CheckedChanged += (s, e) => { if (!applying) act?.SetOwnScreen(ownScreen.Checked); };
             testPage.LinkClicked += (s, e) => { if (v.BridgePort > 0) Process.Start("http://localhost:" + v.BridgePort + "/test"); };
         }
 
@@ -263,6 +265,7 @@ namespace DsfDesktop.Ui
             startWindows.Checked = s.StartWithWindows;
             startWow.Checked = s.StartWow;
             matchStream.Checked = s.MatchStream;
+            ownScreen.Checked = s.OwnScreen;
             ResumeLayout(true);
             foreach (Control c in new Control[] { pairCard, thorCard }) c.Invalidate();
             applying = false;

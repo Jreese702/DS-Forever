@@ -101,7 +101,12 @@ namespace DsfDesktop.Wow
         }
 
         /// <summary>a screen to stream exists: a real monitor on, or a lasting virtual one on (not a session's, which goes away)</summary>
-        public static bool HasScreen(List<WinDisplay> win) => (win ?? new List<WinDisplay>()).Any(d => d.Active && d.Kind != DisplayKind.VirtualSession);
+        public static bool HasScreen(List<WinDisplay> win) => HasScreen(win, null);
+
+        /// <summary>the same, not counting OUR virtual screen ([ours] = its GDI name; the Virtual Display Driver's is a lasting kind)</summary>
+        public static bool HasScreen(List<WinDisplay> win, string ours)
+            => (win ?? new List<WinDisplay>()).Any(d => d.Active && d.Kind != DisplayKind.VirtualSession
+                                                       && !(ours != null && string.Equals(d.Name, ours, StringComparison.OrdinalIgnoreCase)));
 
         public static bool HasRealScreen(List<WinDisplay> win) => (win ?? new List<WinDisplay>()).Any(d => d.Active && d.Kind == DisplayKind.Real);
 
@@ -145,13 +150,14 @@ namespace DsfDesktop.Wow
         /// <summary>
         /// What to do when WoW is on another monitor than the captured one: with no stream running, point Sunshine at WoW's monitor
         /// (a restart of Sunshine, harmless then, and remembered); during a stream (a restart would cut it) move the WoW window to
-        /// the captured monitor instead.
+        /// the captured monitor instead. [ownScreen] = our own virtual screen is the session's (Part 2): WoW always comes to it,
+        /// off the player's desktop; Sunshine never follows WoW back.
         /// </summary>
-        public static Fix Decide(string wowDisplay, string capturedDisplay, bool streaming, bool canMapWowDisplay, bool wowOnVirtual = false)
+        public static Fix Decide(string wowDisplay, string capturedDisplay, bool streaming, bool canMapWowDisplay, bool wowOnVirtual = false, bool ownScreen = false)
         {
             if (wowDisplay == null || capturedDisplay == null) return Fix.None;
             if (string.Equals(wowDisplay, capturedDisplay, StringComparison.OrdinalIgnoreCase)) return Fix.None;
-            if (streaming) return Fix.MoveWow;
+            if (streaming || ownScreen) return Fix.MoveWow;
             // never follow WoW onto a virtual display (another host's session screen goes away with its client): WoW comes to ours
             if (wowOnVirtual) return Fix.MoveWow;
             return canMapWowDisplay ? Fix.RecaptureSunshine : Fix.None;

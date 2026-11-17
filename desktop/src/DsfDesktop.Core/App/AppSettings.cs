@@ -30,6 +30,17 @@ namespace DsfDesktop.App
         public string VirtualScreenId { get; set; }
         /// <summary>the virtual-screen install question was asked (once)</summary>
         public bool VirtualScreenOffered { get; set; }
+        /// <summary>"Stream on its own screen" (Part 2, the user's pick 2026-11-17): a Thor's stream gets our own virtual screen at its
+        /// mode on every PC, WoW moved onto it; off = only a PC with no screen on gets one (0.2.31)</summary>
+        public bool OwnScreen { get; set; } = true;
+        /// <summary>we attached the Virtual Display Driver's monitor and haven't detached it yet (detached when Desktop next can)</summary>
+        public bool VddAttached { get; set; }
+        /// <summary>the player said yes to our Virtual Display Driver install: its monitor is ours</summary>
+        public bool VddInstalledByUs { get; set; }
+        /// <summary>the Sunshine device id our own screen had last time, and the driver that made it: written as output_name before
+        /// the restart, so one restart does instead of two</summary>
+        public string OwnScreenDriver { get; set; }
+        public string OwnScreenDevice { get; set; }
         /// <summary>the folder question is asked once; after that the user uses "Choose folder" themselves</summary>
         public bool AskedForFolder { get; set; }
 

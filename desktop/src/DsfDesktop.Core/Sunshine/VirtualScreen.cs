@@ -12,39 +12,51 @@ using Microsoft.Win32.SafeHandles;
 namespace DsfDesktop.Sunshine
 {
     /// <summary>
-    /// What to do about the screen our Sunshine streams (F6, the user's pick 2026-11-17 "Use one if installed, else offer ours": a
-    /// headless PC whose only screen is Apollo's per-session virtual one). Pure.
+    /// What to do about the screen our Sunshine streams. F6 (0.2.31, the user's pick 2026-11-17 "Use one if installed, else offer
+    /// ours"): a headless PC whose only screen is Apollo's per-session virtual one. Part 2 (0.2.32, the user's pick 2026-11-17
+    /// "Sunshine + own virtual screen"): with "Stream on its own screen" on (the default), EVERY PC streams our own virtual screen at
+    /// the Thor's mode; off = the 0.2.31 headless-only rule. Pure.
     /// </summary>
     public static class ScreenPlan
     {
         public enum Step
         {
-            /// <summary>a screen exists (a real monitor, or a lasting virtual one), or no Thor wants a stream: nothing to do</summary>
+            /// <summary>a screen exists and our own isn't wanted, or no Thor wants a stream: nothing to do</summary>
             None,
             /// <summary>ours already exists: keep it</summary>
             Keep,
-            /// <summary>headless and SudoVDA is installed: make our own virtual screen through it</summary>
+            /// <summary>a driver can make our own virtual screen: make it</summary>
             MakeOurs,
-            /// <summary>headless, no driver: ask the player once to install one</summary>
+            /// <summary>no driver: ask the player once to install one</summary>
             OfferInstall,
             /// <summary>headless, no driver, already asked: say so</summary>
             NeedsInstall,
             /// <summary>a real screen came back (or no Thor any more): remove ours</summary>
             RemoveOurs,
+            /// <summary>own screen wanted but none can be made (no driver, or it failed): stream a real screen, with a one-line note</summary>
+            Fallback,
+            /// <summary>a make failed a moment ago and no screen to fall back on: wait</summary>
+            Wait,
         }
 
-        /// <summary>
-        /// [hasScreen] = a real monitor or a lasting virtual one is on, NOT counting ours or another host's session screen (Apollo's goes
-        /// with its client); [sudoVda] = the SudoVDA driver answers; [ours] = our virtual screen exists; [thorWants] = a Thor is connected
-        /// (bridge) or streaming; [offered] = the install question was asked before.
-        /// </summary>
+        /// <summary>the 0.2.31 headless-only rule ("Stream on its own screen" off): [sudoVda] = a driver can make ours</summary>
         public static Step Decide(bool hasScreen, bool sudoVda, bool ours, bool thorWants, bool offered)
+            => Decide(false, hasScreen, sudoVda, ours, thorWants, offered);
+
+        /// <summary>
+        /// [ownOn] = "Stream on its own screen"; [hasScreen] = a real monitor or a lasting virtual one is on, NOT counting ours or
+        /// another host's session screen (Apollo's goes with its client); [driver] = a driver can make ours now; [ours] = our virtual
+        /// screen exists; [thorWants] = a Thor is connected (bridge) or streaming, or was within the grace; [offered] = the install
+        /// question was asked before (or a driver is installed but can't be used: nothing to offer).
+        /// </summary>
+        public static Step Decide(bool ownOn, bool hasScreen, bool driver, bool ours, bool thorWants, bool offered)
         {
-            if (hasScreen) return ours ? Step.RemoveOurs : Step.None;
             if (!thorWants) return ours ? Step.RemoveOurs : Step.None;
-            if (ours) return Step.Keep;
-            if (sudoVda) return Step.MakeOurs;
-            return offered ? Step.NeedsInstall : Step.OfferInstall;
+            if (ours) return ownOn || !hasScreen ? Step.Keep : Step.RemoveOurs;
+            if (hasScreen && !ownOn) return Step.None;
+            if (driver) return Step.MakeOurs;
+            if (!offered) return Step.OfferInstall;
+            return hasScreen ? Step.Fallback : Step.NeedsInstall;
         }
 
         /// <summary>the PC's and the Thor's terse lines</summary>
@@ -52,6 +64,11 @@ namespace DsfDesktop.Sunshine
         public const string Ready = "Virtual screen ready";
         public const string Install = "Install needed";
         public const string Failed = "No screen: couldn't make one";
+        /// <summary>own screen on, a real one there: making ours</summary>
+        public const string MakingOwn = "Making the stream's own screen";
+        /// <summary>own screen on but none could be made: the real screen is streamed (the one-line note)</summary>
+        public const string FallbackNote = "Streaming your screen: no virtual screen driver";
+        public const string FallbackFailed = "Streaming your screen: virtual screen failed";
         /// <summary>the welcome's sunshine.problem words (the Thor's curtain)</summary>
         public const string ProblemNeedsScreen = "needs_screen", ProblemNoScreen = "no_screen";
         public const string ThorNeedsScreen = "pc needs a virtual screen: see Desktop", ThorNoScreen = "pc has no screen on";
@@ -244,11 +261,16 @@ namespace DsfDesktop.Sunshine
     }
 
     /// <summary>
-    /// OUR virtual screen for a headless PC, made through an installed SudoVDA: added at the Thor's stream mode, pinged while it
-    /// lives (the driver's watchdog), removed when our session ends. One at a time; thread-safe.
+    /// OUR virtual screen made through an installed SudoVDA: added at the Thor's stream mode, pinged while it lives (the driver's
+    /// watchdog), removed when our session ends. One at a time; thread-safe. The first driver <see cref="ScreenLife"/> tries.
     /// </summary>
-    public sealed class OurScreen : IDisposable
+    public sealed class OurScreen : IScreenDriver, IDisposable
     {
+        public string Name => "SudoVDA";
+        public bool Installed() => SudoVda.Installed();
+        /// <summary>SudoVDA keys displays by GUID: ours never touches Apollo's, so an installed one is always usable</summary>
+        public bool Usable() => Installed();
+
         readonly Guid id;
         readonly object gate = new object();
         SudoVda dev;
@@ -307,7 +329,9 @@ namespace DsfDesktop.Sunshine
     /// <summary>
     /// The one-time offer when no virtual display driver is installed: Virtual Display Driver (github.com/VirtualDrivers/
     /// Virtual-Display-Driver, MIT, releases signed through SignPath) through winget, which checks the installer against the hash in its
-    /// manifest; Windows' admin prompt is the player's. Only after the player's yes; never silent, never bundled.
+    /// manifest; Windows' admin prompt is the player's. Only after the player's yes; never silent, never bundled. Checked 2026-11-17:
+    /// the id is in microsoft/winget-pkgs (manifests/v/VirtualDrivers/Virtual-Display-Driver, 25.7.23) and is the project README's
+    /// own "winget install --id=VirtualDrivers.Virtual-Display-Driver -e". How its monitor is used: <see cref="VddScreen"/>.
     /// </summary>
     public static class VddInstall
     {

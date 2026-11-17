@@ -147,7 +147,13 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - `{"t":"ping","id":"..."}` → `{"t":"pong","id":"..."}` (optional; WebSocket pings do the keep-alive).
 - `{"t":"unpair"}` → `{"t":"unpaired"}`, then close: the device is removed from Desktop.
 - `{"t":"stream_mode","w":1920,"h":1080,"fps":60}` *(Desktop 0.2.31)* — the Thor's stream mode, sent after each welcome. On a PC with
-  no screen on, a virtual screen Desktop makes through an installed SudoVDA takes this mode. No answer.
+  no screen on, a virtual screen Desktop makes through an installed SudoVDA takes this mode. No answer. *(0.2.32, "Stream on its
+  own screen", default on)* Every PC: while a Thor is connected or streaming, Desktop makes OUR virtual screen at this mode
+  (SudoVDA if installed; else the Virtual Display Driver's monitor, attached at the nearest mode it offers; else, after the one-time
+  install question, the real screen with the `status` "Streaming your screen: no virtual screen driver"), points its Sunshine's
+  `output_name` at it and moves WoW onto it; 60 s after the last Thor/stream it is removed and WoW goes back to its monitor. Never
+  made or removed mid-stream on a PC with a real screen. Apollo's screens and a VDD monitor the player keeps on are never touched.
+  `status` lines: "Making the stream's own screen", "Virtual screen ready", "Streaming your screen: virtual screen failed".
 - `{"t":"host_check"}` *(Desktop 0.2.32)* — the Thor's RTSP timed out twice while HTTP answered: Desktop checks its Sunshine's whole
   port set (TCP base-5 / base / base+21 listening by our sunshine.exe, RTSP answering a connect, the UDP base+9..11 free and outside
   Windows' excluded ranges, no "Couldn't bind" in its log) and, when no stream is live, restarts it or moves it to a new base. Never
