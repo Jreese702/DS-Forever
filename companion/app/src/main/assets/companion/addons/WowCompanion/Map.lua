@@ -3602,9 +3602,15 @@ C_Timer.NewTicker(1, function() pcall(WC.pstep.tick) end)
 -- TWO LOST TAPS (pg1 review, the builder's own flag): with the 12 and the op both lost, s1 lands right behind 38, where 0-7 is the
 -- automation mask (WowCompanionDB.pqol, Polestar's auto accept / turn in / sell / buy / repair), 8 / 9 the row's word and 10 / 11 Skip /
 -- Previous. Every stamp is therefore 432-1295 (s1 = 12-35): the old words can never be read off a frame that lost both.
-WC.pg = { V = "pg1", OPEN_S = 60, EVERY_S = 15, CHUNK = 40, PER_FRAME = 20, SUGGEST = 5, TAP_S = 2, OPEN_KEEP = 469,
+-- pg2 / pm2 (the user, 2026-11-16: "The polestar option in the map room, I want x to open the polestar menu and y to open skip options to
+-- go to the next or previous step"): ops 24 = NEXT, 25 = PREVIOUS step, Polestar's own Engine.Next / Engine.Prev (Core/Engine.lua 0.2.5,
+-- /polestar next / prev): one applicable step forward / back, a look that skips nothing and saves no skip (Prev never un-skips; Next
+-- back onto the live step hands back to it). Stamped with the guide (pguide gs); no args; in a fight too (plain Lua, as Look). Answers
+-- pgop {ok, i = the step shown now}, or why = "nothing" when the shown step did not move (the first / the last step). Skip for good and
+-- "Undo my last skip" stay 38 then 10 / 11 (pk1).
+WC.pg = { V = "pg2", OPEN_S = 60, EVERY_S = 15, CHUNK = 40, PER_FRAME = 20, SUGGEST = 5, TAP_S = 2, OPEN_KEEP = 469,
           -- op -> its args' count
-          LEN = { [13] = 0, [14] = 0, [15] = 2, [16] = 0, [17] = 2, [18] = 1, [19] = 0, [20] = 1, [21] = 0, [22] = 2, [23] = 3 },
+          LEN = { [13] = 0, [14] = 0, [15] = 2, [16] = 0, [17] = 2, [18] = 1, [19] = 0, [20] = 1, [21] = 0, [22] = 2, [23] = 3, [24] = 0, [25] = 0 },
           -- ops refused in a fight (D3): Load guide, Continue, Choose route, Reset
           FIGHT = { [17] = true, [18] = true, [20] = true, [21] = true },
           CATS = { "Leveling", "Class", "Professions", "Reputation", "Exploration", "Legacy", "Collectibles" },
@@ -4130,6 +4136,17 @@ function WC.pg.run(op, stamp, a)
     if id == nil or stamp ~= gs then return WC.pg.say(op, false, "changed") end
     local okN, n = pcall(E.GetStepCount)
     n = okN and WC.pg.num(n) or 0
+    if op == 24 or op == 25 then                                         -- pg2: Next / Previous step (Polestar's Engine.Next / Prev: a look)
+        local fn = (op == 24) and E.Next or E.Prev
+        if type(fn) ~= "function" then return WC.pg.say(op, false, "no Polestar") end
+        local okI, s0 = pcall(E.GetStepIndex)
+        local ok = pcall(fn)
+        if not ok then return WC.pg.say(op, false, "refused") end
+        local okJ, s1 = pcall(E.GetStepIndex)
+        s0, s1 = okI and WC.pg.num(s0) or nil, okJ and WC.pg.num(s1) or nil
+        if s1 == nil or s1 == s0 then return WC.pg.say(op, false, "nothing", s1) end
+        now(); return WC.pg.say(op, true, nil, s1)
+    end
     if op == 15 or op == 22 or op == 23 then
         local i = a[1] * 36 + a[2]
         if i < 1 or i > n then return WC.pg.say(op, false, "changed") end

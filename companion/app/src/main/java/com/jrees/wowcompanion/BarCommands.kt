@@ -8,8 +8,13 @@ package com.jrees.wowcompanion
  * One list now, and home_test checks every key the bundled Hub.lua sends against it. Pure.
  */
 object BarCommands {
-    /** the keys the HOST opens itself (HomeBarSelect.onDpad): the map / chat rooms, the two radials, the pause wheel */
-    val HOST = setOf("map", "chat", "radial", "sradial", "pause", "smartor")      // + "smartor": Smart buffs' OR wheel (Hub hub12)
+    /** hub57 / PadMap m169 (the user, 2026-11-16: "The polestar previous or next options should be able to be bound to keys in the
+     *  controller bindings menus"): the commands "Polestar: next step" / "Polestar: previous step" on any button; the host steps
+     *  Polestar through the one [PolestarMenu] ([PolestarStepChoice.command]) */
+    const val PS_NEXT = "psnext"
+    const val PS_PREV = "psprev"
+    /** the keys the HOST opens itself (HomeBarSelect.onDpad): the map / chat rooms, the two radials, the pause wheel; Polestar's step */
+    val HOST = setOf("map", "chat", "radial", "sradial", "pause", "smartor", PS_NEXT, PS_PREV)      // + "smartor": Smart buffs' OR wheel (Hub hub12)
 
     enum class Route { CURSOR, OPEN, HOME, HOST, UNKNOWN }
 

@@ -121,7 +121,7 @@ class PolestarTabShotsTest {
     }
     private fun tab(v: QuestsView): Int = field(v, "tab")
     private fun onTabs(v: QuestsView): Boolean = field(v, "onTabs")
-    private fun cur(v: QuestsView): PolestarTab.Cursor = field(v, "psCur")
+    private fun cur(v: QuestsView): PolestarTab.Cursor = v.psMenu.cur      // pm1: the one Polestar menu (PolestarMenu)
     private fun key(v: QuestsView, k: String) { v.onDirect(k); frames(v, 2) }
 
     /** the Quests room, Polestar the tracker, its documents in */

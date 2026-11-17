@@ -741,6 +741,22 @@ class WorldMapRoomView(context: Context) : View(context) {
     var polestarHead: () -> String? = { null }
     /** A on the "Choose your path" row */
     var onPolestarChoose: (() -> Unit)? = null
+    // pm1 (the user, 2026-11-16: "The polestar option in the map room, I want x to open the polestar menu and y to open skip options to go
+    // to the next or previous step"): on the list's Polestar row X opens THE Polestar menu (the Quests room's Polestar tab: the same
+    // [PolestarMenu], drawn by its own [PolestarPane]) over the room, B out of its list back to the map; Y opens a small skip choice,
+    // Next step / Previous step (pm2: Polestar's own Engine.Next / Prev; pm3: one press closes it). Touch: a second tap on the selected row
+    // opens the menu, a long press the skip choice. Without a Polestar row (Polestar not the tracker, no step) X and Y are the list's
+    /** the one Polestar menu (the host hands QuestsView's); null: no menu (X does nothing) */
+    var psMenu: PolestarMenu? = null
+    private val psPane = PolestarPane { postInvalidate() }
+    private var psOpen = false
+    /** pm3: Y's Next / Previous step choice (Home's map has the same one); it closes after one press (the user's pick, 2026-11-16) */
+    private val stepChoice = PolestarStepChoice({ psMenu }) { say(it) }
+    private val skipOpen get() = stepChoice.open
+    private var psRowR: RectF? = null
+    private var psPressed = ""
+    /** the Polestar menu shows over the room (the host: a refused Skip / Previous's line) */
+    fun psMenuShown(): Boolean = isShown && psOpen
     /** a line under the map (a refused Skip / Previous says why) */
     fun sayLine(t: String) = say(t)
 
@@ -1137,7 +1153,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
     private fun openOptions(id: Int) { if (logEntry(id) != null) { optQuest = id; optSel = 0 } }
     /** a menu or a question is up: the stick and the map's keys wait */
-    private fun modal() = menuOpen || crumbMenu != null || optQuest != 0 || confirmId != 0
+    private fun modal() = menuOpen || crumbMenu != null || optQuest != 0 || confirmId != 0 || psOpen || skipOpen
 
     private fun runOpt(o: MapRoomKeys.Opt) {
         val id = optQuest
@@ -1277,6 +1293,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         roomOn = true; letGoClock.removeCallbacks(letGoLater)         // memory relief 2: back within the minute: the pictures stay
         history.clear()
         cursor = null; menuOpen = false; crumbMenu = null
+        closePsMenu(); stepChoice.close()
         jumpTo(startMap())
         region = MapRoomKeys.Region.MAP
         selQuest = 0
@@ -1306,6 +1323,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         // memory relief 2: the pictures go [MapRoomLetGo.AFTER_MS] after the room is left (unless it is opened again before)
         roomOn = false; letGoClock.removeCallbacks(letGoLater); letGoClock.postDelayed(letGoLater, MapRoomLetGo.AFTER_MS)
         held = false
+        closePsMenu(); stepChoice.close()                    // pm1: the add-on told the Polestar menu is closed
         holdAsk.hidden(); removeCallbacks(holdTick)     // the let-go itself is the hand-over's (touchedOut)
         stopStick()
     }
@@ -1470,7 +1488,10 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (menuOpen) drawShowMenu(c)
         crumbMenu?.let { drawCrumbMenu(c, it) }
         drawQuestOptions(c)
+        drawSkipChoice(c)
         drawConfirm(c)
+        psMenu?.tick(System.currentTimeMillis(), psOpen && isShown)
+        if (psOpen) drawPsMenu(c)
     }
 
     /** the game's marks on a zone (quest discs numbered like the panel, the turn-in "?", flight points, the corpse) + Show:'s extras */
@@ -2019,7 +2040,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         c.drawText(Tr.t(model.name(shown)), panelR.centerX(), panelR.top + 46f, title)
         UiKit.tex("qlog_divider")?.let { dst.set(panelR.left + 24f, panelR.top + 56f, panelR.right - 24f, panelR.top + 72f); c.drawBitmap(it, null, dst, pBmp) }
             ?: UiKit.divider(c, panelR.left + 24f, panelR.top + 64f, panelR.right - 24f, panelR.top + 64f)
-        rowHits.clear(); checkHits.clear(); visibleRowQuests.clear(); optAnchor = null
+        rowHits.clear(); checkHits.clear(); visibleRowQuests.clear(); optAnchor = null; psRowR = null
         val rows = listRows()
         // pg1 / D6: Polestar's header line over the list (not a row: never a stop)
         val head = runCatching { polestarHead() }.getOrNull()
@@ -2097,6 +2118,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     /** pk1: Polestar's step, in its light blue (Home's row), its goal's words under the title */
     private fun drawPolestarRow(c: Canvas, row: RectF, i: Int) {
         val ps = runCatching { polestar() }.getOrNull() ?: return
+        psRowR = RectF(row)
         if (region == MapRoomKeys.Region.LIST && i == listIndex && optQuest == 0 && confirmId == 0) UiKit.focus(c, row)
         val tp = UiKit.bodyPaint(24f, PS_BLUE)
         c.drawText(Tr.t(ellipsize(tp, ps.title, row.width() - 40f)), row.left + 20f, row.top + 34f, tp)
@@ -2238,6 +2260,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (qp.isOpen) return if (qp.focus < 0) listOf(Prompt(listOf(glyph("right")), "Into the quest"), Prompt(listOf(glyph("b")), "Close"))
             else if (qp.focus == 0) listOf(Prompt(listOf(glyph("up"), glyph("down")), "Scroll"), Prompt(listOf(glyph("b")), "Back"))
             else listOf(Prompt(listOf(glyph("a")), "Press"), Prompt(listOf(glyph("b")), "Back"))
+        if (psOpen) return emptyList()              // pm1: the menu's own buttons carry their glyphs
+        if (skipOpen) return listOf(Prompt(listOf(glyph("a")), "Select"), Prompt(listOf(glyph("b")), "Close"))
         if (confirmId != 0) return emptyList()      // the question's own buttons say A Yes / B No (UI Art: the clutter rule)
         if (optQuest != 0) return listOf(Prompt(listOf(glyph("a")), "Select"), Prompt(listOf(glyph("b")), "Close"))
         if (menuOpen) return listOf(Prompt(listOf(glyph("a")), "Toggle"), Prompt(listOf(glyph("b")), "Close"))
@@ -2250,11 +2274,11 @@ class WorldMapRoomView(context: Context) : View(context) {
                     out += MapRoomKeys.questPrompts(logEntry(row.id)?.let { trackedQ(it) } ?: false, row.id == focusQid).map { prompt(it) }
                     out += Prompt(listOf(glyph("y")), "Options")
                 }
-                // pk1: X Skip step, Y Previous step (only while a skip is left to undo)
+                // pm1: X Polestar (the menu), Y Skip (the skip choice), each only while it opens
                 MapQuestBook.Row.Polestar -> runCatching { polestar() }.getOrNull()?.let { ps ->
                     if (ps.choose) out += Prompt(listOf(glyph("a")), PolestarTab.CHOOSE_WORD)
-                    if (ps.canSkip) out += Prompt(listOf(glyph("x")), PolestarSkip.SKIP_WORD)
-                    if (ps.canPrev) out += Prompt(listOf(glyph("y")), PolestarSkip.PREV_WORD)
+                    if (psMenuCan()) out += Prompt(listOf(glyph("x")), PolestarTab.TAB)
+                    if (psSkipsCan()) out += Prompt(listOf(glyph("y")), SKIP_WORD)
                 }
                 null -> {}
             }
@@ -2285,6 +2309,12 @@ class WorldMapRoomView(context: Context) : View(context) {
      * over it, both nine-sliced (9 px corners of their 32), 18 px in; each prompt its button(s), 44 px (two of one prompt with the
      * game's slash between, 4 px each side, 2 px up), 7 px, its words in the game's gold (27 px, a shadow); 27 px between prompts.
      */
+    /** a legend's width (as [drawLegend] lays it out) */
+    private fun legendW(prompts: List<Prompt>): Float {
+        val tp = legendP
+        return prompts.sumOf { p -> (p.glyphs.size * LEG_ICON + (p.glyphs.size - 1) * (LEG_SLASH_W + 8f) + LEG_TEXT_GAP + tp.measureText(p.text)).toDouble() }
+            .toFloat() + LEG_GAP * (prompts.size - 1) + 2f * LEG_PAD
+    }
     private fun drawLegend(c: Canvas, prompts: List<Prompt>, cx: Float, cy: Float) {
         if (prompts.isEmpty()) { legendBox.setEmpty(); return }
         val tp = legendP
@@ -2574,6 +2604,9 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     /** one press; true = B with nothing left to close or step back from (the room leaves) */
     private fun key(k: String): Boolean {
+        // pm1: the Polestar menu, then the skip choice, take every press while they show
+        if (psOpen) { psKey(k); return false }
+        if (skipOpen) { stepChoice.key(k); return false }
         if (confirmId != 0) {
             when (k) { "PAD1" -> confirmAbandon(); "PAD2", "PAD4" -> confirmId = 0 }
             return false
@@ -2607,13 +2640,14 @@ class WorldMapRoomView(context: Context) : View(context) {
             }
             return false
         }
-        // pk1: on the list's Polestar row X skips its step, Y undoes the last skip, A does nothing (the rest as on any row)
+        // pm1: on the list's Polestar row X opens the Polestar menu, Y the skip choice (Next / Previous step), A does nothing (the rest
+        // as on any row)
         if (region == MapRoomKeys.Region.LIST && panelOn && listRows().getOrNull(listIndex) == MapQuestBook.Row.Polestar) {
             // pg1 / D4: A on the waiting path choice opens the Quests room on it
             if (k == "PAD1" && runCatching { polestar() }.getOrNull()?.choose == true) { onPolestarChoose?.invoke(); return false }
-            when (MapRoomKeys.polestarKey(k, runCatching { polestar() }.getOrNull()?.let { it.canSkip to it.canPrev })) {
-                MapRoomKeys.PsDo.SKIP -> { onPolestarSkip?.invoke(false); return false }
-                MapRoomKeys.PsDo.PREV -> { onPolestarSkip?.invoke(true); return false }
+            when (MapRoomKeys.polestarKey(k, psMenuCan(), psSkipsCan())) {
+                MapRoomKeys.PsDo.MENU -> { openPsMenu(); return false }
+                MapRoomKeys.PsDo.SKIPS -> { openSkips(); return false }
                 MapRoomKeys.PsDo.NOTHING -> return false
                 MapRoomKeys.PsDo.PASS -> {}
             }
@@ -2657,6 +2691,73 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     private fun moveQuest(d: Int) = moveList(d)
 
+    // ---------------------------------------------------------------- pm1: the Polestar menu and the skip choice
+    /** X can open the Polestar menu: the row is there and the menu can show (Polestar the tracker, answering) */
+    private fun psMenuCan(): Boolean = psMenu?.shows() == true
+    /** Y can open the skip choice: Polestar has a guide (pm2: Next / Previous step are Polestar's own Engine.Next / Prev) */
+    private fun psSkipsCan(): Boolean = stepChoice.can()
+
+    /** X: the menu over the room, on the shown step (on "Choose your path": the path choice, as Home's row opens it), the add-on told */
+    private fun openPsMenu() {
+        val m = psMenu?.takeIf { it.shows() } ?: return
+        optQuest = 0; stepChoice.close()
+        m.shownIn = "map"; m.note = { say(it) }
+        m.enter()
+        if (runCatching { polestar() }.getOrNull()?.choose == true) m.openPath()
+        psOpen = true
+    }
+    /** back to the map: the add-on told the menu closed */
+    private fun closePsMenu() {
+        if (!psOpen) return
+        psOpen = false
+        psMenu?.let { m -> m.close(); m.cur.toList(); if (m.shownIn == "map") m.shownIn = null }
+    }
+    private fun psKey(k: String) {
+        val m = psMenu
+        if (m == null || !m.shows()) { closePsMenu(); return }
+        // the button carrying this key's glyph pushes in at once (the Quests room's press feedback)
+        psPane.glyphHits[when (k) { "PAD1" -> "rev_a"; "PAD2" -> UiKit.backGlyph(); "PAD3" -> "rev_x"; "PAD4" -> "rev_y"; else -> "" }]?.let { psLinger(it) }
+        when (m.press(k)) {
+            PolestarMenu.Out.LEAVE -> closePsMenu()
+            PolestarMenu.Out.UP_TOP, PolestarMenu.Out.NONE -> {}          // (no tab row here: Up from the first row stays)
+        }
+    }
+    private fun psLinger(key: String) {
+        psPressed = key; invalidate()
+        postDelayed({ if (psPressed == key) { psPressed = ""; invalidate() } }, PRESS_MS)
+    }
+
+    /** Y: the Next / Previous step choice under the row (pm3: [PolestarStepChoice], shared with Home's map) */
+    private fun openSkips() { optQuest = 0; stepChoice.open() }
+
+    /** the Polestar menu over the whole room: its header, the Quests room's pane under it, a refusal's line in the header */
+    private fun drawPsMenu(c: Canvas) {
+        val m = psMenu
+        if (m == null || !m.shows()) { closePsMenu(); syncB(); return }
+        val w = width.toFloat(); val h = height.toFloat()
+        pFill.color = Theme.ink; c.drawRect(0f, 0f, w, h, pFill)
+        UiKit.header(c, w, PolestarTab.TAB, null, TOP)
+        psPane.draw(c, w, h, TOP, PolestarPane.Frame(m.book, m.cur, m.rows(), m.picks(), m.fight(), held, psPressed, waiting = false))
+        // pm2 review: the way out shows in the header (B Back: a sub-view one step, the list back to the map)
+        val back = listOf(Prompt(listOf(glyph("b")), "Back"))
+        val lw = legendW(back)
+        drawLegend(c, back, w - 20f - lw / 2f, TOP / 2f)
+        note?.takeIf { System.currentTimeMillis() - noteAt < 4000L }?.let { n ->
+            val tp = UiKit.bodyPaint(22f, Theme.warn)
+            val t = ellipsize(tp, Tr.t(n), w * 0.5f - lw)
+            c.drawText(t, w - 40f - lw - tp.measureText(t), TOP * 0.62f, tp)
+        }
+        postInvalidateDelayed(500L)                          // the keep-alive and the resting step's goals tick with the draws
+    }
+
+    /** the skip choice under the Polestar row (the quest options' look: the kit's menu rows), above it near the bottom */
+    private fun drawSkipChoice(c: Canvas) {
+        if (!skipOpen) { stepChoice.draw(c, RectF(), 0f, 0f, OPT_ROW); return }
+        runCatching { polestar() }.getOrNull() ?: run { stepChoice.close(); return }
+        val a = psRowR ?: RectF(panelR.left + 8f, panelR.top + 84f, panelR.right - 8f, panelR.top + 130f)
+        stepChoice.draw(c, a, canvasR.top, canvasR.bottom, OPT_ROW)
+    }
+
 
     private fun leave() {
         // the own row: Home's show() hides the room, whose onHidden lets go its own way (the game's close / the free)
@@ -2670,6 +2771,18 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (e.action != MotionEvent.ACTION_UP) return true
         val x = e.x; val y = e.y
         val long = e.eventTime - downAt >= LONG_PRESS_MS
+        // pm1: the Polestar menu: a button presses its key, a row selects it, the header goes back to the map
+        if (psOpen) {
+            val m = psMenu
+            psPane.btnHits.firstOrNull { it.first.contains(x, y) }?.let { (_, key) -> psLinger(key); psKey(key); syncB(); invalidate(); return true }
+            psPane.rowHits.firstOrNull { it.first.contains(x, y) }?.let { (_, key) -> m?.touchRow(key); syncB(); invalidate(); return true }
+            if (y < TOP && m?.cur?.view == PolestarTab.View.LIST) closePsMenu() else if (y < TOP) m?.cur?.toList()
+            syncB(); invalidate(); return true
+        }
+        if (skipOpen) {
+            stepChoice.touch(x, y)
+            syncB(); invalidate(); return true
+        }
         if (confirmId != 0) {
             confirmHits.firstOrNull { it.first.contains(x, y) }?.let { (_, yes) -> if (yes) confirmAbandon() else confirmId = 0 }
             syncB(); invalidate(); return true
@@ -2701,10 +2814,16 @@ class WorldMapRoomView(context: Context) : View(context) {
                     if (long) { region = MapRoomKeys.Region.LIST; listIndex = i; setListCursor(follow = false); openOptions(r.id) }
                     else if (listIndex == i && region == MapRoomKeys.Region.LIST) trackFocus(r.id)
                     else { region = MapRoomKeys.Region.LIST; listIndex = i; setListCursor() }
-                // pg1 review (rooms the same on every route): a second touch on the selected "Choose your path" row does what A does
-                MapQuestBook.Row.Polestar ->
-                    if (listIndex == i && region == MapRoomKeys.Region.LIST && runCatching { polestar() }.getOrNull()?.choose == true) onPolestarChoose?.invoke()
-                    else { region = MapRoomKeys.Region.LIST; listIndex = i; setListCursor(follow = false) }
+                // pg1 review (rooms the same on every route): a second touch on the selected "Choose your path" row does what A does;
+                // pm1: else a second touch opens the Polestar menu (X), a long press the skip choice (Y)
+                MapQuestBook.Row.Polestar -> {
+                    val sel = listIndex == i && region == MapRoomKeys.Region.LIST
+                    region = MapRoomKeys.Region.LIST; listIndex = i
+                    if (long) { setListCursor(follow = false); if (psSkipsCan()) openSkips() }
+                    else if (sel && runCatching { polestar() }.getOrNull()?.choose == true) onPolestarChoose?.invoke()
+                    else if (sel) { if (psMenuCan()) openPsMenu() }
+                    else setListCursor(follow = false)
+                }
                 null -> {}
             }
             syncB(); invalidate(); return true
@@ -2738,6 +2857,8 @@ class WorldMapRoomView(context: Context) : View(context) {
          * what to do; the background art builds only while the game is closed - PlayGate, every Thor). Tr: es / fr in i18n.
          */
         const val NO_ART_NOTE = "Map pictures build while the game is closed"
+        /** pm1: Y's words on the Polestar row (Tr: es / fr in i18n) */
+        const val SKIP_WORD = MapRoomKeys.STEPS_WORD
         /** pk1: Polestar's light blue (Home's row, MapView.psBlue) */
         val PS_BLUE = Color.rgb(120, 200, 255)
         /** pg1: Polestar's header line over the list */

@@ -1300,7 +1300,7 @@ class MapView(context: Context) : View(context) {
             if (field == v) return
             field = v
             filterOpen = false
-            pmenu.close(); closePanel()
+            pmenu.close(); closePanel(); stepChoice.close()
             compactDown = false
             lastCamAt = 0L                  // the Map room's camera eases from a fresh clock
             postInvalidate()
@@ -1438,7 +1438,7 @@ class MapView(context: Context) : View(context) {
             morphOk = !drawnPx.isNaN() && !drawnPy.isNaN() && drawnS > 0f
             morphP0x = drawnPx; morphP0y = drawnPy; morphS0 = drawnS
             filterOpen = false
-            pmenu.close(); closePanel()
+            pmenu.close(); closePanel(); stepChoice.close()
             touchOwner = OWN_NONE
             if (opening) {
                 // the list starts settled, the focused quest in its top spot
@@ -1637,7 +1637,12 @@ class MapView(context: Context) : View(context) {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (touchOwner == OWN_LIST && !listMoved)
-                        trackerHits.firstOrNull { it.first.contains(e.x, e.y) }?.let { (_, item) -> touchItem(item) }
+                        trackerHits.firstOrNull { it.first.contains(e.x, e.y) }?.let { (_, item) ->
+                            // pm3: a long press on the light blue row is its Y (the Next / Previous step choice), as in the Map room
+                            if (item is MapList.Item.Polestar && e.eventTime - e.downTime >= LONG_PRESS_MS && stepChoice.can()) {
+                                cursor.touched(MapList.POLESTAR, listKeys()); openSteps(); invalidate()
+                            } else touchItem(item)
+                        }
                     touchOwner = OWN_NONE
                 }
                 MotionEvent.ACTION_CANCEL -> touchOwner = OWN_NONE
@@ -1646,6 +1651,12 @@ class MapView(context: Context) : View(context) {
         }
         if (e.action == MotionEvent.ACTION_DOWN) {
             touchOwner = OWN_NONE
+            if (stepChoice.open) {
+                // pm3: the step choice: a row presses it (and it closes), anywhere else closes it
+                stepChoice.touch(e.x, e.y)
+                touchOwner = OWN_CONTROL
+                syncB(); postInvalidate(); return true
+            }
             if (panelId != 0 && !pmenu.open) {
                 // the quest panel: its buttons act, the rest of it does nothing, outside it closes
                 val hit = panelHits.firstOrNull { it.first.contains(e.x, e.y) }
@@ -3560,6 +3571,9 @@ class MapView(context: Context) : View(context) {
     private var trackedMap = Int.MIN_VALUE
     private val trackerHits = ArrayList<Pair<RectF, MapList.Item>>()
     private val TRACKER_W = 400f
+    /** pm3: the step choice's row (the Map room's OPT_ROW) and a long press on the light blue row (the Map room's) */
+    private val STEP_ROW = PolestarStepChoice.ROW
+    private val LONG_PRESS_MS = PolestarStepChoice.LONG_PRESS_MS
 
     // ---- NUMBERED QUEST BUBBLES (the user, LATER.md item 10, 2026-09-30: "in the map function the yellow quest bubble
     // should be numbered and correlate with the quests on the left side, these bubbles are small, so they should be large
@@ -3612,6 +3626,21 @@ class MapView(context: Context) : View(context) {
     private var psGuide: PolestarTab.Guide? = null
     /** A on the "Choose your path" row: the host opens the Quests room on the choice */
     var onPolestarChoose: (() -> Unit)? = null
+    // pm3 (the user's pick, 2026-11-16: "Yes, match the Map room"): the light blue row's X opens THE Polestar menu (the Quests room's
+    // Polestar tab: the host opens that room on it, on the path choice when one waits), its Y the Next / Previous step choice
+    // ([PolestarStepChoice], the Map room's own; one press closes it: "Close after one press"). Skip step / Undo skip stay the menu's
+    // own X / Y. Touch: a long press on the row opens the choice (as in the Map room)
+    /** the one Polestar menu (the host hands QuestsView's): the step choice's sender and the dim rows */
+    var psMenu: PolestarMenu? = null
+    /** X on the light blue row: the host opens the Quests room's Polestar tab ([path]: on the waiting path choice) */
+    var onPolestarMenu: ((path: Boolean) -> Unit)? = null
+    private val stepChoice = PolestarStepChoice({ psMenu }) { note(it) }
+    /** X can open the Polestar menu */
+    private fun psMenuCan(): Boolean = onPolestarMenu != null && psMenu?.shows() == true
+    private fun openPsMenu() { if (psMenuCan()) { stepChoice.close(); onPolestarMenu?.invoke(psChoose()) } }
+    private fun openSteps() { if (stepChoice.open()) { pmenu.close(); closePanel() }; syncB() }
+    /** the step choice shows */
+    fun stepsOpen(): Boolean = stepChoice.open
     /** the light blue row stands for a waiting path choice (D4) */
     private fun psChoose(): Boolean = Settings.questTracking == "polestar" && psStep == null && psGuide?.let { it.have && it.waiting } == true
     /** the light blue row is in the list (a step, or a waiting choice) */
@@ -5416,6 +5445,7 @@ class MapView(context: Context) : View(context) {
         val cy = band.centerY()
         if (filterOpen) { UiKit.hints(c, band.right - 24f, cy, glyph("lb") to "", glyph("rb") to "Tabs", glyph("b") to "Close"); return }
         if (pmenu.open) { UiKit.hints(c, band.right - 24f, cy, glyph("up") to "Select", glyph("a") to "Choose", glyph("b") to "Back"); return }
+        if (stepChoice.open) { UiKit.hints(c, band.right - 24f, cy, glyph("a") to "Select", glyph("b") to "Close"); return }
         if (panelId != 0) {
             val hp = when {
                 armedId == panelId -> arrayOf(glyph("left") to "", glyph("right") to "Select", glyph("a") to "Press", glyph("b") to "Cancel")
@@ -5436,9 +5466,9 @@ class MapView(context: Context) : View(context) {
         when {
             at == MapList.ME -> if (onPlayerMenu != null) pairs.add(glyph("a") to "Menu")
             at == MapList.POLESTAR -> {
-                // pk1 (the user, 2026-11-12): X Skip, Y Previous (only while a skip is left to undo), merged or not
-                if (psChoose()) pairs.add(glyph("a") to PolestarTab.CHOOSE_WORD)          // pg1 / D4: the waiting path choice
-                else for ((b, w) in PolestarSkip.rowHints(psHolds(), polestarCanSkip(), polestarCanPrev())) pairs.add(glyph(b) to w)
+                // pm3 (the user's pick, 2026-11-16: "Yes, match the Map room"): A Choose (pg1 / D4) or Focus / Unfocus, X Polestar
+                // (the menu), Y Skip (the Next / Previous step choice), each only while it opens; merged or not
+                for ((b, w) in PolestarSkip.rowHints(psHolds(), psChoose(), psMenuCan(), stepChoice.can())) pairs.add(glyph(b) to w)
             }
             MapList.isGroup(at) -> pairs.add(glyph("a") to (if (openTabs[groupZone(at)] == true) "Close" else "Open"))
             at > 0 && at in MapList.untracked(items) -> {
@@ -5609,30 +5639,31 @@ class MapView(context: Context) : View(context) {
     }
 
     /** where the host's next B leads: "back" (closes the filter) or "home" */
-    fun hostBLeads(): String = cursor.bLeads(filterOpen || pmenu.open || panelId != 0)
+    fun hostBLeads(): String = cursor.bLeads(filterOpen || pmenu.open || panelId != 0 || stepChoice.open)
 
     /** apply one key; everything but leaving (returned as [MapCursor.Do.Leave] for the caller) */
     private fun applyKey(k: String): MapCursor.Do {
         if (radialOpen()) return MapCursor.Do.Nothing                                 // the context radial reads the controller itself
         if (pmenu.open) { pmenuDid(pmenu.key(k)); return MapCursor.Do.Nothing }      // every key is the open player menu's
         if (panelId != 0 && panelKey(k)) return MapCursor.Do.Nothing                  // ... and the open quest panel's, when it takes it
+        if (stepChoice.open) { stepChoice.key(k); syncB(); return MapCursor.Do.Nothing }        // pm3: ... and the step choice's (B / Y close it)
         // the Filter's tabs with LB / RB (zoom is not in use while it is open)
         if (filterOpen && (k == "PADLSHOULDER" || k == "PADRSHOULDER")) {
             filterTab = (filterTab + (if (k == "PADRSHOULDER") 1 else FILTER_TABS.size - 1)) % FILTER_TABS.size
             invalidate(); return MapCursor.Do.Nothing
         }
         // ps3: while the light blue row holds it is the focused row (A on the game's old quest focuses it, A on the row lets go)
-        // pk1 (the user, 2026-11-12: "X Skip, Y Previous"): the row's X skips Polestar's step, its Y undoes the last skip - merged
-        // with a quest too (that quest's Track / Open of the 2026-11-11 merge leave X and Y)
+        // pm3 (the user's pick, 2026-11-16: "Yes, match the Map room"): the row's X opens the Polestar menu, its Y the Next / Previous
+        // step choice - merged with a quest too (that quest's Track / Open of the 2026-11-11 merge leave X and Y)
         val d = cursor.key(k, listKeys(), if (psHolds()) MapList.POLESTAR else focusQid, filterOpen, MapList.untracked(items),
-            psSkip = PolestarSkip.canSkip(psShown(), psStep), psPrev = PolestarSkip.canPrev(psShown(), psStep))
+            psMenu = psMenuCan(), psSteps = stepChoice.can())
         when (d) {
             MapCursor.Do.Show -> { listShow(cursor.sel); landOn(cursor.sel) }
             is MapCursor.Do.Select -> cameOnto(d.id)
             MapCursor.Do.PlayerMenu -> openPlayerMenu()
             MapCursor.Do.Polestar -> if (psChoose()) onPolestarChoose?.invoke() else psToggle()
-            MapCursor.Do.PsSkip -> polestarSkip(prev = false)
-            MapCursor.Do.PsPrev -> polestarSkip(prev = true)
+            MapCursor.Do.PsMenu -> openPsMenu()
+            MapCursor.Do.PsSteps -> openSteps()
             is MapCursor.Do.Toggle -> toggleTab(d.key)
             is MapCursor.Do.Track -> trackPress(d.id, true, onTrackFocusQuest)
             is MapCursor.Do.Watch -> trackPress(d.id, true, onTrackQuest)
@@ -5660,7 +5691,7 @@ class MapView(context: Context) : View(context) {
     /** tell the capture where B leads now, so the Home button shows B only when it leads Home */
     private fun syncB() {
         if (!held) return
-        val where = cursor.bLeads(filterOpen || pmenu.open || panelId != 0)
+        val where = cursor.bLeads(filterOpen || pmenu.open || panelId != 0 || stepChoice.open)
         if (where != bSaid && guestTap(GuestPad.bnext(padDoc, home = where == "home"))) bSaid = where
     }
 
@@ -7557,6 +7588,12 @@ class MapView(context: Context) : View(context) {
                 fly = morphOn && morphCard != null)
             else { trackerRect.setEmpty(); flyLand.setEmpty() }
             if (rows >= 0) c.restoreToCount(rows)
+            // pm3: the Next / Previous step choice under the light blue row (the Map room's look)
+            val psRow = if (stepChoice.open && !morphOn) trackerHits.firstOrNull { it.second is MapList.Item.Polestar }?.first else null
+            if (stepChoice.open && !morphOn && psRow == null) stepChoice.close()
+            // (under the selection's gold down-arrow, which stays in sight)
+            if (psRow != null) stepChoice.draw(c, RectF(psRow.left, psRow.top, psRow.right, psRow.bottom + 26f), top + BTN_GAP, top + fh - 64f - (if (hintsOn()) HINT_BAND else 0f), STEP_ROW)
+            else stepChoice.draw(c, RectF(), 0f, 0f, STEP_ROW)
             // the player menu beside the list, from the top (the portrait's height)
             if (pmenu.open && !morphOn) {
                 val lw = if (showTracker && items.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + 16f else 0f

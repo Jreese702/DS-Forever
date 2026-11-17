@@ -22,9 +22,11 @@ object PolestarTab {
     const val FRAME = 12
     const val OPEN = 13; const val CLOSE = 14; const val LOOK = 15; const val BACK = 16; const val LOAD = 17; const val CONTINUE = 18
     const val ROUTE = 19; const val CHOOSE = 20; const val RESET = 21; const val DESCRIBE = 22; const val TICK = 23
+    /** pg2 / pm2: Next / Previous step, Polestar's own Engine.Next / Engine.Prev (a look: nothing skipped, nothing un-skipped) */
+    const val NEXT = 24; const val PREV = 25
     /** each op's args (Map.lua WC.pg.LEN) */
     val ARGS = mapOf(OPEN to 0, CLOSE to 0, LOOK to 2, BACK to 0, LOAD to 2, CONTINUE to 1, ROUTE to 0, CHOOSE to 1, RESET to 0,
-        DESCRIBE to 2, TICK to 3)
+        DESCRIBE to 2, TICK to 3, NEXT to 0, PREV to 0)
     /** the ops a fight refuses (D3; Map.lua WC.pg.FIGHT) */
     val FIGHT = setOf(LOAD, CONTINUE, CHOOSE, RESET)
     /** op 13's stamp (pg1 review): the tab opened (everything again) / the 20 s "still open" (nothing resent; Map.lua WC.pg.OPEN_KEEP).

@@ -42,28 +42,29 @@ class PolestarSkipTest {
     @Test fun xSkipsAndYGoesBackOnTheLightBlueRow() {
         val plain = MapList.stops(MapList.items(true, listOf(7, 8), g, polestar = true) { false })
         val c = MapCursor(); c.touched(MapList.POLESTAR, plain)
-        assertEquals(MapCursor.Do.PsSkip, c.key("PAD3", plain, MapList.POLESTAR, false, psSkip = true, psPrev = true))
-        assertEquals(MapCursor.Do.PsPrev, c.key("PAD4", plain, MapList.POLESTAR, false, psSkip = true, psPrev = true))
-        assertEquals(MapCursor.Do.Polestar, c.key("PAD1", plain, MapList.POLESTAR, false, psSkip = true, psPrev = true))
-        // nothing to undo: Y does nothing; no Skip (an older add-on): X does nothing
-        assertEquals(MapCursor.Do.Nothing, c.key("PAD4", plain, MapList.POLESTAR, false, psSkip = true, psPrev = false))
-        assertEquals(MapCursor.Do.Nothing, c.key("PAD3", plain, MapList.POLESTAR, false, psSkip = false, psPrev = false))
+        assertEquals(MapCursor.Do.PsMenu, c.key("PAD3", plain, MapList.POLESTAR, false, psMenu = true, psSteps = true))
+        assertEquals(MapCursor.Do.PsSteps, c.key("PAD4", plain, MapList.POLESTAR, false, psMenu = true, psSteps = true))
+        assertEquals(MapCursor.Do.Polestar, c.key("PAD1", plain, MapList.POLESTAR, false, psMenu = true, psSteps = true))
+        // pm3 (the user's pick, 2026-11-16: "Yes, match the Map room"): X the Polestar menu, Y the Next / Previous step choice; no
+        // guide: Y does nothing; no menu: X does nothing
+        assertEquals(MapCursor.Do.Nothing, c.key("PAD4", plain, MapList.POLESTAR, false, psMenu = true, psSteps = false))
+        assertEquals(MapCursor.Do.Nothing, c.key("PAD3", plain, MapList.POLESTAR, false, psMenu = false, psSteps = false))
     }
 
     @Test fun mergedWithAQuestXAndYAreStillSkipAndPrevious() {
         val merged = MapList.stops(MapList.items(true, listOf(7, 8), g, polestar = true, merged = 7) { false })
         val c = MapCursor(); c.touched(MapList.POLESTAR, merged)
-        assertEquals(MapCursor.Do.PsSkip, c.key("PAD3", merged, MapList.POLESTAR, false, psSkip = true, psPrev = true))
-        assertEquals(MapCursor.Do.PsPrev, c.key("PAD4", merged, MapList.POLESTAR, false, psSkip = true, psPrev = true))
+        assertEquals(MapCursor.Do.PsMenu, c.key("PAD3", merged, MapList.POLESTAR, false, psMenu = true, psSteps = true))
+        assertEquals(MapCursor.Do.PsSteps, c.key("PAD4", merged, MapList.POLESTAR, false, psMenu = true, psSteps = true))
         // that quest's Track / Open are not on X / Y any more
         for (k in listOf("PAD3", "PAD4")) {
-            val d = c.key(k, merged, MapList.POLESTAR, false, psSkip = true, psPrev = true)
+            val d = c.key(k, merged, MapList.POLESTAR, false, psMenu = true, psSteps = true)
             assertFalse(d is MapCursor.Do.Untrack || d is MapCursor.Do.Watch || d is MapCursor.Do.Open)
         }
         // another quest's row keeps its own X / Y
         c.touched(8, merged)
-        assertEquals(MapCursor.Do.Untrack(8), c.key("PAD3", merged, MapList.POLESTAR, false, psSkip = true, psPrev = true))
-        assertEquals(MapCursor.Do.Open(8), c.key("PAD4", merged, MapList.POLESTAR, false, psSkip = true, psPrev = true))
+        assertEquals(MapCursor.Do.Untrack(8), c.key("PAD3", merged, MapList.POLESTAR, false, psMenu = true, psSteps = true))
+        assertEquals(MapCursor.Do.Open(8), c.key("PAD4", merged, MapList.POLESTAR, false, psMenu = true, psSteps = true))
     }
 
     // pk2 (the user, 2026-11-12: "Open stays reachable on the quest's own row"): on Home's map the merged quest's own row stays a
@@ -75,28 +76,46 @@ class PolestarSkipTest {
         assertTrue("the quest's own row is a stop", keys.contains(7))
         assertTrue(keys.contains(MapList.POLESTAR))
         val c = MapCursor(); c.touched(7, keys)
-        assertEquals(MapCursor.Do.Untrack(7), c.key("PAD3", keys, MapList.POLESTAR, false, psSkip = true, psPrev = true))
-        assertEquals(MapCursor.Do.Open(7), c.key("PAD4", keys, MapList.POLESTAR, false, psSkip = true, psPrev = true))
+        assertEquals(MapCursor.Do.Untrack(7), c.key("PAD3", keys, MapList.POLESTAR, false, psMenu = true, psSteps = true))
+        assertEquals(MapCursor.Do.Open(7), c.key("PAD4", keys, MapList.POLESTAR, false, psMenu = true, psSteps = true))
         c.touched(MapList.POLESTAR, keys)
-        assertEquals(MapCursor.Do.PsSkip, c.key("PAD3", keys, MapList.POLESTAR, false, psSkip = true, psPrev = true))
-        assertEquals(MapCursor.Do.PsPrev, c.key("PAD4", keys, MapList.POLESTAR, false, psSkip = true, psPrev = true))
+        assertEquals(MapCursor.Do.PsMenu, c.key("PAD3", keys, MapList.POLESTAR, false, psMenu = true, psSteps = true))
+        assertEquals(MapCursor.Do.PsSteps, c.key("PAD4", keys, MapList.POLESTAR, false, psMenu = true, psSteps = true))
         // untracked merged quest 9 in an open tab: X tracks it, Y opens it
         val tabs = listOf("Elwynn Forest" to listOf(9))
         val items = MapList.items(true, listOf(8), tabs, polestar = true, merged = PolestarMerge.listMerged(9)) { true }
         val k2 = MapList.stops(items)
         assertTrue(k2.contains(9))
         val c2 = MapCursor(); c2.touched(9, k2)
-        assertEquals(MapCursor.Do.Watch(9), c2.key("PAD3", k2, MapList.POLESTAR, false, MapList.untracked(items), psSkip = true, psPrev = true))
-        assertEquals(MapCursor.Do.Open(9), c2.key("PAD4", k2, MapList.POLESTAR, false, MapList.untracked(items), psSkip = true, psPrev = true))
+        assertEquals(MapCursor.Do.Watch(9), c2.key("PAD3", k2, MapList.POLESTAR, false, MapList.untracked(items), psMenu = true, psSteps = true))
+        assertEquals(MapCursor.Do.Open(9), c2.key("PAD4", k2, MapList.POLESTAR, false, MapList.untracked(items), psMenu = true, psSteps = true))
     }
 
     @Test fun theRowsHintsSayOnlyWhatWorks() {
-        assertEquals(listOf("a" to "Unfocus", "x" to "Skip step", "y" to "Previous step"), PolestarSkip.rowHints(true, true, true))
-        assertEquals(listOf("a" to "Focus", "x" to "Skip step"), PolestarSkip.rowHints(false, true, false))   // nothing to undo: no Y
-        assertEquals(listOf("a" to "Unfocus"), PolestarSkip.rowHints(true, false, false))                    // an older add-on
-        // merged or not, never the quest's Track / Open
-        val words = PolestarSkip.rowHints(true, true, true).map { it.second }
-        assertFalse(words.any { it == "Track" || it == "Untrack" || it == "Open" })
+        // pm3: the Map room's words - X Polestar (the menu), Y Skip (the Next / Previous step choice)
+        assertEquals(listOf("a" to "Unfocus", "x" to "Polestar", "y" to "Skip"), PolestarSkip.rowHints(true, false, true, true))
+        assertEquals(listOf("a" to "Focus", "x" to "Polestar"), PolestarSkip.rowHints(false, false, true, false))   // no guide: no Y
+        assertEquals(listOf("a" to "Unfocus"), PolestarSkip.rowHints(true, false, false, false))                    // an older add-on
+        assertEquals(listOf("a" to "Choose", "x" to "Polestar", "y" to "Skip"), PolestarSkip.rowHints(false, true, true, true))
+        // merged or not, never the quest's Track / Open, and never pk1's words on the row any more
+        val words = PolestarSkip.rowHints(true, false, true, true).map { it.second }
+        assertFalse(words.any { it == "Track" || it == "Untrack" || it == "Open" || it == "Skip step" || it == "Undo skip" })
+        // the same words as the Map room's legend
+        assertEquals(MapRoomKeys.STEPS_WORD, PolestarSkip.rowHints(true, false, true, true).last().second)
+        assertEquals(PolestarTab.TAB, PolestarSkip.rowHints(true, false, true, true)[1].second)
+    }
+
+    // pm3 (the user's pick, 2026-11-16: "Rename to 'Undo skip'"; "Previous step" kept for the real look-back)
+    @Test fun theUndoIsUndoSkipAndPreviousStepIsTheLookBack() {
+        assertEquals("Undo skip", PolestarSkip.PREV_WORD)
+        assertEquals("Previous step", MapRoomKeys.PREV_WORD)
+        assertEquals(MapRoomKeys.PREV_WORD, MapRoomKeys.PsSkip.PREV.word)
+        assertEquals("Undo skip", HomePauseModel.PS_PREV.label)
+        val es = java.io.File(i18nDir(), "es.json").readText(); val fr = java.io.File(i18nDir(), "fr.json").readText()
+        for (w in listOf("Undo skip", "Previous step", "Next step", "Skip", "Polestar")) {
+            assertTrue("es: $w", es.contains("\"$w\":")); assertTrue("fr: $w", fr.contains("\"$w\":"))
+        }
+        assertTrue(es.contains("\"Undo skip\": \"Deshacer salto\"")); assertTrue(fr.contains("\"Undo skip\": \"Annuler le saut\""))
     }
 
     @Test fun theMapRoomsPolestarRowTakesXAndY() {
@@ -104,13 +123,42 @@ class PolestarSkipTest {
         val log = listOf(MapQuestBook.Entry(7, "Elwynn Forest"))
         assertEquals(MapQuestBook.Row.Polestar, book.rows(log, polestar = true).first())
         assertFalse(book.rows(log).contains(MapQuestBook.Row.Polestar))
-        assertEquals(MapRoomKeys.PsDo.SKIP, MapRoomKeys.polestarKey("PAD3", true to true))
-        assertEquals(MapRoomKeys.PsDo.PREV, MapRoomKeys.polestarKey("PAD4", true to true))
-        assertEquals(MapRoomKeys.PsDo.NOTHING, MapRoomKeys.polestarKey("PAD4", true to false))     // nothing to undo: not Options
-        assertEquals(MapRoomKeys.PsDo.NOTHING, MapRoomKeys.polestarKey("PAD3", null))
-        assertEquals(MapRoomKeys.PsDo.NOTHING, MapRoomKeys.polestarKey("PAD1", true to true))
-        assertEquals(MapRoomKeys.PsDo.PASS, MapRoomKeys.polestarKey("PADDDOWN", true to true))      // the list still moves
-        assertEquals(MapRoomKeys.PsDo.PASS, MapRoomKeys.polestarKey("PAD2", true to true))
+        // pm1 (the user, 2026-11-16: "x to open the polestar menu and y to open skip options to go to the next or previous step")
+        assertEquals(MapRoomKeys.PsDo.MENU, MapRoomKeys.polestarKey("PAD3", menu = true, skips = true))
+        assertEquals(MapRoomKeys.PsDo.SKIPS, MapRoomKeys.polestarKey("PAD4", menu = true, skips = true))
+        assertEquals(MapRoomKeys.PsDo.NOTHING, MapRoomKeys.polestarKey("PAD3", menu = false, skips = true))   // no menu: never Track
+        assertEquals(MapRoomKeys.PsDo.NOTHING, MapRoomKeys.polestarKey("PAD4", menu = true, skips = false))   // nothing to skip: not Options
+        assertEquals(MapRoomKeys.PsDo.SKIPS, MapRoomKeys.polestarKey("PAD4", menu = false, skips = true))     // the skips without the menu
+        assertEquals(MapRoomKeys.PsDo.NOTHING, MapRoomKeys.polestarKey("PAD1", menu = true, skips = true))
+        assertEquals(MapRoomKeys.PsDo.PASS, MapRoomKeys.polestarKey("PADDDOWN", menu = true, skips = true))   // the list still moves
+        assertEquals(MapRoomKeys.PsDo.PASS, MapRoomKeys.polestarKey("PAD2", menu = true, skips = true))
+    }
+
+    @Test fun theMapRoomsSkipChoiceIsNextAndPrevious() {
+        // pm2: two rows, Next step / Previous step = Polestar's own Engine.Next / Engine.Prev (a look): dim only at the guide's ends
+        assertEquals(listOf("Next step", "Previous step"), MapRoomKeys.PsSkip.values().map { it.word })
+        assertTrue(MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.NEXT, shown = 4, count = 10))
+        assertTrue("no skip needed: Previous works on any later step", MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.PREV, shown = 4, count = 10))
+        assertFalse("step 1: Previous dim", MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.PREV, shown = 1, count = 10))
+        assertFalse("the last step: Next dim", MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.NEXT, shown = 10, count = 10))
+        assertTrue("not known: both", MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.PREV, shown = null, count = 0))
+        // D-pad + A, B / Y close
+        assertEquals(MapRoomKeys.SkipDo.Move(1), MapRoomKeys.psSkipKey("PADDDOWN", 0))
+        assertEquals(MapRoomKeys.SkipDo.Move(1), MapRoomKeys.psSkipKey("PADDDOWN", 1))                 // the last row stays
+        assertEquals(MapRoomKeys.SkipDo.Move(0), MapRoomKeys.psSkipKey("PADDUP", 1))
+        assertEquals(MapRoomKeys.SkipDo.Run(MapRoomKeys.PsSkip.NEXT), MapRoomKeys.psSkipKey("PAD1", 0))
+        assertEquals(MapRoomKeys.SkipDo.Run(MapRoomKeys.PsSkip.PREV), MapRoomKeys.psSkipKey("PAD1", 1))
+        assertEquals(MapRoomKeys.SkipDo.Close, MapRoomKeys.psSkipKey("PAD2", 0))
+        assertEquals(MapRoomKeys.SkipDo.Close, MapRoomKeys.psSkipKey("PAD4", 1))
+        assertEquals(MapRoomKeys.SkipDo.None, MapRoomKeys.psSkipKey("PAD3", 0))
+        // pg2: framed ops 24 / 25 with the guide's stamp, no args (444 = 12, 12; k = 24 + 12 + 12 mod 36)
+        assertEquals(listOf(38, 12, 24, 12, 12, 12), PolestarTab.frame(PolestarTab.NEXT, 444))
+        assertEquals(listOf(38, 12, 25, 12, 12, 13), PolestarTab.frame(PolestarTab.PREV, 444))
+        assertFalse("a look: never in a fight's refusals", PolestarTab.FIGHT.contains(PolestarTab.NEXT) || PolestarTab.FIGHT.contains(PolestarTab.PREV))
+        assertFalse("a step each: never re-sent unanswered", PolestarTab.AGAIN_UNANSWERED.contains(PolestarTab.NEXT))
+        // pk1's Skip for good / Undo my last skip keep their pnav columns (the Polestar menu's X / Y, Home's row, the wheel)
+        assertEquals(listOf(38, 10), PolestarSkip.cols(prev = false))
+        assertEquals(listOf(38, 11), PolestarSkip.cols(prev = true))
     }
 
     private fun page3(skip: Boolean, prev: Boolean): HomePauseModel.Flow {
@@ -120,7 +168,7 @@ class PolestarSkipTest {
         return f
     }
     private val up = HomePauseModel.fromGame(2)                          // N: Skip step
-    private val upLeft = HomePauseModel.fromGame(3)                      // NW: Previous step
+    private val upLeft = HomePauseModel.fromGame(3)                      // NW: Undo skip
 
     @Test fun thePauseWheelHasSkipAndPreviousOnPage3() {
         val f = page3(skip = true, prev = true)
@@ -130,7 +178,7 @@ class PolestarSkipTest {
         assertEquals(PolestarSkip.KEY_SKIP, a.slice.key); assertEquals(HomePauseModel.Kind.HOME, a.slice.kind)
         assertEquals("Skip step", a.slice.label)
         val b = f.touch(upLeft) as HomePauseModel.Act.Pick
-        assertEquals(PolestarSkip.KEY_PREV, b.slice.key); assertEquals("Previous step", b.slice.label)
+        assertEquals(PolestarSkip.KEY_PREV, b.slice.key); assertEquals("pm3: the undo's words", "Undo skip", b.slice.label)
         // the other slices of the page are where they were
         // (the Macros room took the Calendar's slice, Spells s10: the user, 2026-11-13, "Use the room slot for macros")
         assertEquals("macros", f.slices()[HomePauseModel.fromGame(1)]?.key)

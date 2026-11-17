@@ -2054,7 +2054,11 @@
 "D-pad Left opens Chat.": "D-pad izquierda abre el chat.",
 "Your words go as soon as you let go.": "Tus palabras se envían al soltar.",
 "Your words show: A sends them,": "Tus palabras se muestran: A las envía,",
-"B drops them.": "B las descarta."
+"B drops them.": "B las descarta.",
+"Next step": "Paso siguiente",
+"Polestar: next step": "Polestar: paso siguiente",
+"Polestar: previous step": "Polestar: paso anterior",
+"Undo skip": "Deshacer salto"
 },
 "templates": {
 "Friend requests: %s": "Solicitudes de amistad: %s",

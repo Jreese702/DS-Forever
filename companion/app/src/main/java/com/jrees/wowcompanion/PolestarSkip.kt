@@ -21,9 +21,11 @@ object PolestarSkip {
     const val SKIP = 10
     const val PREV = 11
 
-    /** the words (terse: the user's rule), the same on every route */
+    /** the words (terse: the user's rule), the same on every route. pm3 (the user's pick, 2026-11-16: "Rename to 'Undo skip'"): the
+     *  undo is "Undo skip" everywhere it shows (the Polestar menu / the Quests room's Polestar tab, the pause wheel); "Previous step" is
+     *  the real look-back only ([MapRoomKeys.PREV_WORD], Polestar's own Engine.Prev) */
     const val SKIP_WORD = "Skip step"
-    const val PREV_WORD = "Previous step"
+    const val PREV_WORD = "Undo skip"
 
     /** the "pnav" row's columns for one press: Skip, or Previous ([prev]) */
     fun cols(prev: Boolean): List<Int> = listOf(SAY, if (prev) PREV else SKIP)
@@ -35,13 +37,15 @@ object PolestarSkip {
     fun canPrev(shown: Boolean, step: PolestarStep?): Boolean = canSkip(shown, step) && (step?.undo ?: 0) > 0
 
     /**
-     * the light blue row's hints on Home's map, as (button, words): A Focus / Unfocus ([holds]), X Skip step while [canSkip], Y Previous
-     * step while [canPrev]. The same merged with a quest or not (that quest's Track / Open of the 2026-11-11 merge left X and Y)
+     * the light blue row's hints on Home's map, as (button, words): A Choose on a waiting path choice ([choose]), else Focus / Unfocus
+     * ([holds]); pm3 (the user's pick, 2026-11-16: "Yes, match the Map room"): X Polestar while the Polestar menu opens ([menu]), Y Skip
+     * while the Next / Previous step choice opens ([steps]) - the Map room's words. The same merged with a quest or not (that quest's
+     * Track / Open of the 2026-11-11 merge left X and Y). Skip step / Undo skip are the Polestar menu's own X / Y now
      */
-    fun rowHints(holds: Boolean, canSkip: Boolean, canPrev: Boolean): List<Pair<String, String>> = listOfNotNull(
-        "a" to (if (holds) "Unfocus" else "Focus"),
-        if (canSkip) "x" to SKIP_WORD else null,
-        if (canPrev) "y" to PREV_WORD else null,
+    fun rowHints(holds: Boolean, choose: Boolean, menu: Boolean, steps: Boolean): List<Pair<String, String>> = listOfNotNull(
+        "a" to (if (choose) PolestarTab.CHOOSE_WORD else if (holds) "Unfocus" else "Focus"),
+        if (menu) "x" to PolestarTab.TAB else null,
+        if (steps) "y" to MapRoomKeys.STEPS_WORD else null,
     )
 
     const val NOTHING_LINE = "Nothing to undo"
