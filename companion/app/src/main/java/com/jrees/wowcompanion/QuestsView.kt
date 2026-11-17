@@ -1083,8 +1083,14 @@ class QuestsView(
         var y = 0f
 
         pDTitle.color = diffColour(q)
-        val tl = layout(q.optString("title", "Quest"), pDTitle, tw)
-        tl.draw(c); y += tl.height + 8f
+        // q64: the quest's usable item at the title's right (the tracker's item button; display only), redrawn while its cooldown runs
+        val qItem = QuestItem.parse(q)
+        val tl = layout(q.optString("title", "Quest"), pDTitle, if (qItem != null) tw - (ITEM_SZ + 16f).toInt() else tw)
+        if (qItem != null) {
+            UiKit.questItemButton(c, RectF(tw - ITEM_SZ, 2f, tw.toFloat(), 2f + ITEM_SZ), qItem)
+            if (QuestItem.Cd.left(qItem.id) > 0.0) postInvalidateDelayed(250L)
+        }
+        tl.draw(c); y += max(tl.height.toFloat(), if (qItem != null) ITEM_SZ + 4f else 0f) + 8f
 
         val meta = buildList {
             if (q.has("lv")) add("Level ${q.optInt("lv")}")
@@ -1426,6 +1432,7 @@ class QuestsView(
         const val FADE_H = 40f          // the details fade into the ground over this, while there is more below (a line + the arrow)
         const val SEL_GAP = 28f         // the selected row's gap above and below, for the selector's arrows (UI Art's sheet)
         const val ACTIONS_H = 112f
+        const val ITEM_SZ = 56f         // q64: the quest item's button beside the title
         const val REWARD_ROW_H = 96f    // q63: one reward item's row (the game's QuestItemTemplate; Interact's is 116)
         const val REWARD_GAP = 6f
         const val REWARD_LINE_H = 46f   // the Experience / money line, the Honor line

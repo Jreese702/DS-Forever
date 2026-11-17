@@ -5,7 +5,8 @@ import org.json.JSONObject
 /**
  * A QUEST'S REWARDS (Quests.lua q63; the user, 2026-11-17: "The quests don't show rewards at all anywhere"): the quests document's
  * `rw` for one quest - money (copper), XP, honor, the choose-one items, the fixed items, the spells. Pure, so the tests read it.
- * The Quests room's detail pane draws it as the game's quest log reward block ([QuestsView]); Home's card draws [strip].
+ * The Quests room's detail pane draws it as the game's quest log reward block ([QuestsView]); Home's card does not (the user, 2026-11-17:
+ * "I didnt want the rewards on the quests in the home page I think that adds way too much clutter, just in the actual full quest views").
  * The game's item and spell names are shown as the game wrote them (never through Tr).
  */
 class QuestRewards(val money: Long, val xp: Int, val honor: Int, val choices: List<Item>, val items: List<Item>, val spells: List<Spell>) {
@@ -22,16 +23,6 @@ class QuestRewards(val money: Long, val xp: Int, val honor: Int, val choices: Li
     fun pieces(): List<Piece> = choices.indices.map { Piece('c', it) } + items.indices.map { Piece('i', it) } + spells.indices.map { Piece('s', it) }
 
     fun itemOf(p: Piece): Item? = when (p.kind) { 'c' -> choices.getOrNull(p.i); 'i' -> items.getOrNull(p.i); else -> null }
-
-    /** HOME'S CARD (the compact line): up to [max] item icons, choices first, how many more, and the money */
-    class Strip(val icons: List<Pair<Int, Int>>, val more: Int, val money: Long)
-
-    fun strip(max: Int = 3): Strip? {
-        val all = choices + items
-        val icons = all.take(max).map { it.icon to it.quality }
-        if (icons.isEmpty() && money <= 0) return null
-        return Strip(icons, (all.size - icons.size).coerceAtLeast(0), money)
-    }
 
     companion object {
         /** the quest entry's `rw`, or null when it has none (or nothing in it) */

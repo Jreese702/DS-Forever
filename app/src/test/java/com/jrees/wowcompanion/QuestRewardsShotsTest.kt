@@ -25,8 +25,8 @@ import java.time.Duration
 /**
  * Quests q63 OFF THE DEVICE (the user, 2026-11-17: "The quests don't show rewards at all anywhere"): the Quests room's detail pane
  * with a quest's rewards (two choose-one items, a fixed stack, a spell, XP and money), driven by the controller as DirectPad delivers
- * it (Right onto the rewards, Down, Left / B back) and by a finger (a reward's tooltip), and Home's quest card with its compact reward
- * line. The checks run always; the pictures only when QRW_SHOTS_DIR is set (QRW_ART_ROOT = an art root laid out like the app's).
+ * it (Right onto the rewards, Down, Left / B back) and by a finger (a reward's tooltip). Home's card draws no rewards (the user, 2026-11-17: "just in the actual full quest
+ * views"; HomeQuestCardsShotsTest). The checks run always; the pictures only when QRW_SHOTS_DIR is set (QRW_ART_ROOT = an art root laid out like the app's).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -147,32 +147,5 @@ class QuestRewardsShotsTest {
         save(frames(v), "5_touch_tooltip")
         tap(row.centerX(), row.centerY())
         assertEquals(-1, field<Int>(v, "rewardTouch"))
-    }
-
-    @Test fun homesCardCarriesTheRewardLine() {
-        art()
-        val doc = questsDoc()
-        val list = doc.getJSONArray("list")
-        fun card(e: JSONObject, lines: List<Pair<String, Boolean>>, turnIn: Boolean) =
-            UiKit.QuestCard(e.optString("title"), e.optInt("lv"), Theme.questGreen, lines, turnIn = turnIn, number = 1, focused = true,
-                rewards = QuestRewards.parse(e)?.strip())
-        val cards = listOf(
-            card(list.getJSONObject(0), listOf("Tough Wolf Meat: 8/8" to true), true),
-            card(list.getJSONObject(1), listOf("Torn Murloc Fin: 3/8" to false), false),
-            card(list.getJSONObject(0), listOf("Collect the Tough Wolf Meat from the wolves of the eastern hills: 3/8" to false), false))
-        assertTrue("a strip for the wolves", cards[0].rewards != null && cards[0].rewards!!.icons.size == 3)
-        val w = 600f
-        val b = Bitmap.createBitmap(W, 700, Bitmap.Config.ARGB_8888)
-        val c = Canvas(b); c.drawColor(Theme.ink)
-        var y = 20f
-        for ((i, q) in cards.withIndex()) {
-            val h = UiKit.questCardHeight(q, UiKit.CARD_HOME_SCALE)
-            UiKit.questCard(c, RectF(20f, y, 20f + w, y + h), q, scale = UiKit.CARD_HOME_SCALE, rewardLine = true)
-            // the same card as the Map room's list draws it (no line there)
-            UiKit.questCard(c, RectF(640f, y, 640f + 400f, y + UiKit.questCardHeight(q)), q)
-            y += h + 24f
-            if (i == 0) assertTrue(UiKit.rewardStripWidth(q.rewards!!, UiKit.CARD_HOME_SCALE) < w / 2f)
-        }
-        save(b, "6_home_cards")
     }
 }

@@ -3803,7 +3803,7 @@ class MapView(context: Context) : View(context) {
         // quest with the item in the bags reads "Use <item>" with its icon, and Y's glyph once PadMap has armed it on Y (m132)
         val card = if (ct.merged && base != null)
             UiKit.QuestCard(ct.title, base.level, psBlue, ct.lines, turnIn = base.turnIn, number = base.number, focused = true,
-                rewards = base.rewards)
+                item = base.item)
         else if (st.useItem)
             UiKit.QuestCard(st.title ?: st.useLine(), 0, psBlue, listOf(st.useLine() to false), focused = psHolds(),
                 useIcon = st.itemIcon, useGlyph = if (psHolds() && qitemArmed == st.itemId) glyph("y") else null)
@@ -6072,7 +6072,7 @@ class MapView(context: Context) : View(context) {
         if (id != 0 && id == qtFocus()) qtStep?.words?.let { w -> objs.clear(); objs.add(w to false) }
         val card = UiKit.QuestCard(e.optString("title", ""), lv ?: 0, colour, objs,
             turnIn = e.optBoolean("ready") || e.optBoolean("done"), number = trackedNo[id], focused = id != 0 && id == shownFocus(),
-            rewards = QuestRewards.parse(e)?.strip())         // q63: Home's card shows it (the list's rows do not)
+            item = QuestItem.parse(e))          // q64: the quest's usable item; Home's card shows it (the list's rows do not)
         cards[id] = card
         return card
     }

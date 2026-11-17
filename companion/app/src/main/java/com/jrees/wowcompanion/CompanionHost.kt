@@ -2698,6 +2698,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             "quests" -> msg.optJSONObject("q")?.let {
                 it.optJSONObject("pad")?.let { p -> questsPad = p }
+                QuestItem.Cd.onQuests(it, current)          // q64: the quest items' cooldowns, before the views draw them
                 questsView.update(it); homeView.onQuests(it, current); mapView.onQuests(it); worldMapRoom.onQuests(it)
                 if (current) PreviewStage.feedQuests(it)
                 // fix/focus-latency (test50): the focus a tap just changed rides THIS document; the game's pin follows it now, not at the next

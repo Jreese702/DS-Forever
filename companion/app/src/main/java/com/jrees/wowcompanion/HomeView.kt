@@ -2372,10 +2372,12 @@ class HomeView(
             val q = homeCard()
             val folded = HomeSettings.questMin &&
                 h <= UiKit.questCardHeight(q, UiKit.CARD_HOME_SCALE, collapsed = true) + 0.5f
-            // q63: the compact reward line on the card's last line, where its words leave room (UiKit.questCard rewardLine)
+            // q64 (the user, 2026-11-17: "I didnt want the rewards on the quests in the home page ... showing the Icon for if there is a
+            // usable quest Item"): no reward line; the quest's item at the card's right edge, redrawn while its cooldown runs
             if (!cardHidden) UiKit.questCard(c, RectF(0f, 0f, w, h), q, scale = UiKit.CARD_HOME_SCALE,
                 bgAlpha = if (cardOverMap()) lerp(UiKit.CARD_OVER_MAP_ALPHA.toFloat(), 255f, plate).toInt() else 255,
-                collapsed = folded, rewardLine = true)
+                collapsed = folded, itemButton = true)
+            if (!cardHidden && q?.item?.let { QuestItem.Cd.left(it.id) > 0.0 } == true) postInvalidateDelayed(250L)
             val n = noteText
             if (n != null && System.currentTimeMillis() < noteUntil) {
                 val p = UiKit.bodyPaint(24f, Theme.warn)
