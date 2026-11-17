@@ -125,7 +125,7 @@ check(ok is True, "the same spell on a second radial shares its cell", ok)
 # ---------------------------------------------------------------- 3. the document
 W.execute('runTimers(NOW + 5); %s.emit(true)' % SR)
 d = last(W, 'sradial')
-check(d is not None and d.get('v') == 'q5' and isinstance(d['r'].get('list'), list), "the sradial document has the list", d and d.get('v'))
+check(d is not None and d.get('v') == 'q6' and isinstance(d['r'].get('list'), list), "the sradial document has the list", d and d.get('v'))
 lst = d['r']['list']
 check([x['u'] for x in lst] == [1, 2, 3, 4, 5, 6] and [i['id'] for i in lst[0]['items']] == [403, 331],
       "each radial by slot, its items in order", [x['u'] for x in lst])
@@ -229,6 +229,34 @@ W6.execute('WowCompanion.pad.rows.padtab.handler(nil, 39); NOW = NOW + 3; WowCom
 check(lua_list(W6.eval(SR + '.slots()')) == n_slots, "a pick older than 2 s: the code is not a radial op", lua_list(W6.eval(SR + '.slots()')))
 W6.execute('WowCompanion.pad.rows.padtab.handler(nil, 39); WowCompanion.pad.rows.padtab.handler(nil, 11)')
 check(len(lua_list(W6.eval(SR + '.slots()'))) == len(n_slots) + 1, "39 then 11 (fresh): New", lua_list(W6.eval(SR + '.slots()')))
+
+# ---------------------------------------------------------------- q6 SMART PET (PadMap m172, Radial r24; the user, 2026-11-17: "to be clear I
+# think this should just be a smart pet feature that includes both of those settings in one"): a harmful spell's cell casts through Smart
+# pet's text while this character's Smart pet is on; a helpful one stays the plain spell; off again = the plain cells
+SPT = "/target [noexists][dead] softenemy\n/petattack [pet,harm,nodead]\n/cast Lightning Bolt"
+W7 = world(pre='CLASS = "HUNTER"; C_Spell.IsSpellHarmful = function(s) return s == 403 or s == "Lightning Bolt" end')
+W7.execute(SR + '.put(1, 1, 403); ' + SR + '.put(1, 2, 331); runTimers(NOW + 5); ' + SR + '.emit(true)')
+
+
+def q6cell(L, sid):
+    d = last(L, 'sradial')
+    col = None
+    for it in d['r']['list'][0]['items']:
+        if it['id'] == sid:
+            col = it.get('col')
+    if col is None:
+        return None
+    a = L.eval('WowCompanion.pad.rows.sradial.cells[%d].a' % col)
+    return (a['type'], a['spell'], a['macrotext'])
+
+
+check(q6cell(W7, 403) == ("spell", 403, None) and q6cell(W7, 331) == ("spell", 331, None), "q6: Smart pet off: the plain spell cells",
+      (q6cell(W7, 403), q6cell(W7, 331)))
+W7.execute('WowCompanion.padMap.smartPet(true, false); runTimers(NOW + 1)')
+check(q6cell(W7, 403) == ("macro", None, SPT), "q6: Smart pet on: the harmful spell's cell casts through Smart pet's text", q6cell(W7, 403))
+check(q6cell(W7, 331) == ("spell", 331, None), "q6: a helpful spell's cell stays the plain spell", q6cell(W7, 331))
+W7.execute('WowCompanion.padMap.smartPet(false, false); runTimers(NOW + 1)')
+check(q6cell(W7, 403) == ("spell", 403, None), "q6: off again: the plain cell back", q6cell(W7, 403))
 
 print("\n%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

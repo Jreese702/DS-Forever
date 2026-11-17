@@ -133,7 +133,7 @@ OURS_B = "CLICK WowCompanionFaceB:LeftButton"
 BACK_PRESS = ['GPTop7+', 'GPTop7-']            # Forever's Back: its down and up edges, as the router's native press makes them
 
 # ---------------------------------------------------------------- (0) the versions
-check('local PV = "m171"' in SRC["padmap"] and 'local BV = "b66"' in SRC["book"], "PadMap m171, Book b66")
+check('local PV = "m172"' in SRC["padmap"] and 'local BV = "b67"' in SRC["book"], "PadMap m172, Book b67 (Smart pet: B's half unchanged)")
 check("I want a pet class specific option where pressing B in the out of combat home menu basically stops the pet attacking" in SRC["padmap"]
       and "basically stops the pet attacking" in SRC["book"], "both header notes quote the user")
 check("the pet follow on b does not work out of combat, I wonder if we made this as an actual out of combat function" in SRC["padmap"],
@@ -364,6 +364,13 @@ FIX["pf_warrior"] = pfdoc(world(cls="WARRIOR", pet=False))
 NP = world(pet=False)
 tell(NP, True)
 FIX["pf_hunter_on_no_pet"] = pfdoc(NP)
+# m172 SMART PET: 0 = on with Home busy (the pet's attack only: B not carried, no bf)
+BZ = world()
+tell(BZ, True)
+padtab(BZ, 39, 0)
+settle(BZ)
+FIX["pf_hunter_on_busy"] = pfdoc(BZ)
+check(bkey(BZ) is None, "m172: 0 (Smart pet on, Home busy): B not carried for Pet Follow (the game's own B)", bkey(BZ))
 os.makedirs(FIXDIR, exist_ok=True)
 stale = []
 for name, text in sorted(FIX.items()):
@@ -374,11 +381,12 @@ for name, text in sorted(FIX.items()):
             fh.write(text)
     elif old != text:
         stale.append(name)
-check(json.loads(FIX["pf_hunter_on"])["m"]["pf"] == {"on": True, "cls": True, "pet": True, "b": True}
+check(json.loads(FIX["pf_hunter_on"])["m"]["pf"] == {"on": True, "bf": True, "cls": True, "pet": True, "b": True, "sp": True}
       and json.loads(FIX["pf_hunter_no_word"])["m"]["pf"] == {"cls": True, "pet": True}
-      and json.loads(FIX["pf_hunter_on_no_pet"])["m"]["pf"] == {"on": True, "cls": True}
+      and json.loads(FIX["pf_hunter_on_no_pet"])["m"]["pf"] == {"on": True, "bf": True, "cls": True, "sp": True}
+      and json.loads(FIX["pf_hunter_on_busy"])["m"]["pf"] == {"on": True, "cls": True, "pet": True, "sp": True}
       and json.loads(FIX["pf_warrior"])["m"]["pf"] in ([], {}),
-      "the fixtures' pf: told on / no word / no pet / a Warrior", FIX)
+      "the fixtures' pf (m172: bf / sp): told on / no word / no pet / Home busy / a Warrior", FIX)
 check(not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX), stale)
 
 print("%d passed, %d failed" % (passes, fails))
