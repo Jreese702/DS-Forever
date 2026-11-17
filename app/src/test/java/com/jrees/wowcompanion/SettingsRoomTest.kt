@@ -149,18 +149,20 @@ class SettingsRoomTest {
     /** every row of the data is drawn by a part of its own group (the rows a part draws now, by their words) */
     @Test fun partsDrawTheirGroupsRows() {
         val r = room()
-        // beautify/bottom: Bottom screen > Home is ONE tile part (Home's 8 tiles; the attack row stays Controller's)
+        // beautify/bottom: Bottom screen > Home is ONE tile part (Home's 8 tiles; the attack row is Controller's Combat helpers tile now)
         val home = box(r, SettingsTabs.Group.HOME).parts.single() as BottomTilesView
         assertTrue(home.tileIds().containsAll(listOf(BottomTiles.REST, BottomTiles.QUEST, BottomTiles.CASTBAR)))
+        // the beautify pass: the Controller tab's groups are ONE tile part each (Combat helpers' tiles take Home's attack row and the
+        // two GameUi parts); Smart Y's own group has none (its tile is in Buttons, its list a sub-page)
         val combat = box(r, SettingsTabs.Group.COMBAT).parts
-        assertEquals(3, combat.size)                                  // GameUiSection, Home's attack row, GameUiSection
-        assertTrue(combat[1] is HomeSettingsSection)
-        // every group has a part, and a GameUiSection part only in Top screen's groups and Combat helpers (2026-11-17, the beautify
-        // pass: General's groups are GeneralTilesView parts, Help's status their compact row)
-        for (gb in r.groupBoxes) assertTrue("${gb.group} has parts", gb.parts.isNotEmpty())
+        assertEquals(1, combat.size)
+        assertTrue(combat.single() is ControllerTiles)
+        assertTrue(box(r, SettingsTabs.Group.SMART_Y).parts.isEmpty())
+        // every group has a part but Smart Y's; General's groups are GeneralTilesView parts; a GameUiSection part only in Top screen's groups
+        for (gb in r.groupBoxes.filter { it.group != SettingsTabs.Group.SMART_Y }) assertTrue("${gb.group} has parts", gb.parts.isNotEmpty())
         for (gb in r.groupBoxes.filter { it.group.tab == SettingsTabs.Tab.GENERAL }) assertTrue("${gb.group}", gb.parts.single() is GeneralTilesView)
         assertEquals(setOf(SettingsTabs.Group.LAYOUT, SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY,
-            SettingsTabs.Group.NAVIGATION, SettingsTabs.Group.WINDOWS, SettingsTabs.Group.COMBAT),
+            SettingsTabs.Group.NAVIGATION, SettingsTabs.Group.WINDOWS),
             r.groupBoxes.filter { gb -> gb.parts.any { it is GameUiSection } }.map { it.group }.toSet())
         // 2026-11-16 (the tiles): Navigation is ONE tile part (its Polestar tile was SettingsView's row); every Top screen group's part draws
         // its tiles, the rest keep their rows
@@ -212,8 +214,8 @@ class SettingsRoomTest {
     @Test fun reEnteringTheRoomOpensTheFirstGroup() {
         val r = room()
         r.show(SettingsTabs.Tab.CONTROLLER); lay(r)
-        r.toggle(SettingsTabs.Group.BUTTONS); r.toggle(SettingsTabs.Group.WHEELS); r.toggle(SettingsTabs.Group.SMART_Y)
-        assertEquals(setOf(SettingsTabs.Group.WHEELS, SettingsTabs.Group.SMART_Y), r.open)
+        r.toggle(SettingsTabs.Group.BUTTONS); r.toggle(SettingsTabs.Group.WHEELS); r.toggle(SettingsTabs.Group.COMBAT)
+        assertEquals(setOf(SettingsTabs.Group.WHEELS, SettingsTabs.Group.COMBAT), r.open)
         r.pad.leave()
         r.pad.enter()
         lay(r)
@@ -254,9 +256,11 @@ class SettingsRoomTest {
         lay(r)
         assertEquals(navTop, box(r, SettingsTabs.Group.NAVIGATION).box.top)
         assertEquals(before, r.pad.targetBoxes())
-        // Controller > Combat helpers: no switch, no attack row - hidden
+        // Controller > Combat helpers: tiles since the beautify pass (fixed slots, dim "..." ones before the game): shown; Smart Y's
+        // own group never (its tile is in Buttons)
         r.show(SettingsTabs.Tab.CONTROLLER); lay(r)
-        assertEquals(View.GONE, box(r, SettingsTabs.Group.COMBAT).box.visibility)
+        assertEquals(View.VISIBLE, box(r, SettingsTabs.Group.COMBAT).box.visibility)
+        assertEquals(View.GONE, box(r, SettingsTabs.Group.SMART_Y).box.visibility)
         CompassSwitch::class.java.getDeclaredField("state").apply { isAccessible = true }.set(CompassSwitch, null)
     }
 
