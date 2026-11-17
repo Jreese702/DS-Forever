@@ -9,8 +9,13 @@ Trail.lua's compass under test_compass.py's stub game, with a stub Polestar rout
   reaches it, gone at it and aboard / on a taxi; the hand-over to the objective within HAND yd ALONG the route (not the straight line);
   another continent: none;
 - C.pathTarget: only while WC.pnav is active with a fresh route read;
-- the drawing: the path marker's own look (light blue lines, a double chevron, no texture of the objective's) beside the objective's
+- the drawing: the path marker's own look (light blue lines, no texture of the objective's but the gold dots) beside the objective's
   gold disc, unchanged; hidden when the route goes;
+- cp43 THE ROUTE CONVEYOR (the user, 2026-11-17: "on the compass the blue arows arent clear what they are, I want to make them
+  animate scrolling upwards with a yellow dot between them"): C.paConveyor(t): three chevrons with a gold dot halfway between each
+  pair, every piece moving up at SPEED, the same picture again every P / SPEED s, alpha 0 at both window ends; the drawing: the
+  strokes and dots at those places on the marker's x (cp40's eased x, no jitter), the dots C.GOLD on C.DISC_TEX, moving up between
+  two frames; all hidden with a stale route / guidance off;
 - Map.lua pn3: the 1 s ticker keeps the route read (legs, legSig, legsAt) for the compass, cancel drops it, the docs say pn3.
 - pn3 review fix: a journey over 240 points: the compass keeps every corner (the app's copy alone is thinned); the look-ahead goes round it.
 - cp37 / pn4 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where to
@@ -167,14 +172,56 @@ def main():
     lines = [o.ln[i] for i in range(1, len(o.ln) + 1)]
     rims = [o.rim[i] for i in range(1, len(o.rim) + 1)]
     R = [120 / 255, 200 / 255, 1]
-    chk("its look: four light blue strokes (rgb 120,200,255), shown", len(lines) == 4 and all(
-        ln.kind == "line" and ln.shown and all(near(ln.ctex[i + 1], R[i], 1e-6) for i in range(3)) for ln in lines))
-    chk("a dark rim under each stroke, wider", all(r.kind == "line" and r.shown and r.ctex[1] == 0 and r.thick > lines[0].thick
-        and r.sub < lines[0].sub for r in rims))
-    # a double chevron pointing up: each pair meets at an apex above its ends, the rear one lower and dimmer
+    chk("cp43: its look: six light blue strokes (three chevrons, rgb 120,200,255)", len(lines) == 6 and all(
+        ln.kind == "line" and (ln.shown or ln.alpha == 0) and all(near(ln.ctex[i + 1], R[i], 1e-6) for i in range(3)) for ln in lines))
+    chk("a dark rim under each stroke, wider", len(rims) == 6 and all(r.kind == "line" and r.ctex[1] == 0
+        and r.thick > lines[0].thick and r.sub < lines[0].sub for r in rims))
+    # each chevron points up: its two arms meet at an apex above their ends, on the marker's x
     ys = [(ln.p1[4], ln.p2[4]) for ln in lines]
-    chk("a double chevron pointing up (apexes above the ends, the second lower)", all(a > b for a, b in ys) and ys[2][0] < ys[0][0]
-        and lines[2].alpha < lines[0].alpha)
+    chk("each chevron pointing up (apex above the ends)", all(a > b for a, b in ys))
+    mx = m["path"].x
+    chk("cp43: every piece on the marker's x (the eased x, cp40: no jitter)", all(near(ln.p1[3], C.u(mx), 1e-6) for ln in lines)
+        and all(near(o.dot[i].point[4], C.u(mx), 1e-6) for i in range(1, len(o.dot) + 1)))
+    PA = C.PA
+    pieces = C.paConveyor(G.t)
+    pl = [pieces[i] for i in range(1, len(pieces) + 1)]
+    chk("cp43: the conveyor: 3 chevrons and 3 dots", [p.kind for p in pl] == ["chev", "dot"] * 3)
+    # placed where the conveyor says: chevron k's apex at band line + y + 2, dot k at band line + y
+    chev = [p for p in pl if p.kind == "chev"]
+    dots = [p for p in pl if p.kind == "dot"]
+    chk("cp43: the drawn strokes / dots at the conveyor's places", all(near(lines[2 * k].p1[4], C.u(-C.SPEC.line + chev[k].y + 2), 1e-6)
+        and near(lines[2 * k].alpha, chev[k].a, 1e-6) for k in range(3))
+        and all(near(o.dot[k + 1].point[5], C.u(-C.SPEC.line + dots[k].y), 1e-6) for k in range(3)))
+    chk("cp43: the dots our gold on the quest disc's texture, a dark rim under each", all(
+        o.dot[i].tex == C.DISC_TEX and all(near(o.dot[i].col[j + 1], C.GOLD[j + 1], 1e-6) for j in range(3))
+        and o.dsh[i].tex == C.DISC_TEX and o.dsh[i].col[1] == 0 and o.dsh[i].w > o.dot[i].w for i in range(1, 4)))
+    # a dot between each pair: sorted by height the kinds alternate, each dot halfway (P / 2) between its chevrons
+    srt = sorted(((p.y, p.kind) for p in pl))
+    chk("cp43: a dot halfway between each pair of chevrons", all(srt[i][1] != srt[i + 1][1] for i in range(5))
+        and all(near(srt[i + 1][0] - srt[i][0], PA.P / 2, 1e-6) for i in range(5)))
+    # moving up: 0.1 s later every piece (not wrapping) SPEED * 0.1 higher
+    def ys_at(t):
+        q = C.paConveyor(t)
+        return [q[i].y for i in range(1, len(q) + 1)]
+    t0 = 1000.03
+    a0, a1 = ys_at(t0), ys_at(t0 + 0.1)
+    moved = [b - a for a, b in zip(a0, a1) if b > a - 1]
+    chk("cp43: scrolling upward (0.1 s: +SPEED / 10 spec px)", PA.SPEED > 0 and len(moved) >= 5
+        and all(near(d, PA.SPEED * 0.1, 1e-6) for d in moved))
+    q0, q1 = C.paConveyor(t0), C.paConveyor(t0 + PA.P / PA.SPEED)
+    s0 = sorted((q0[i].kind, round(q0[i].y, 6), round(q0[i].a, 6)) for i in range(1, 7))
+    s1 = sorted((q1[i].kind, round(q1[i].y, 6), round(q1[i].a, 6)) for i in range(1, 7))
+    chk("cp43: a loop: the same picture every P / SPEED s (one chevron step)", s0 == s1)
+    q = C.paConveyor(0)
+    chk("cp43: alpha 0 at the window's ends (the wrap never pops), 1 in the middle", near(q[1].y, -PA.SPAN / 2, 1e-9)
+        and q[1].a == 0 and all(q[i].a <= 1 for i in range(1, 7)) and any(q[i].a == 1 for i in range(1, 7))
+        and near(C.paConveyor(PA.SPAN / PA.SPEED - 1e-6)[1].a, 0, 1e-3))
+    # two frames 0.25 s apart: the drawn dots higher (the same dot, unless it wrapped)
+    y0 = [o.dot[i].point[5] for i in range(1, 4)]
+    G.t = G.t + 0.25
+    C.draw()
+    y1 = [o.dot[i].point[5] for i in range(1, 4)]
+    chk("cp43: drawn frame to frame: the dots move up", sum(1 for a, b in zip(y0, y1) if near(b - a, C.u(PA.SPEED * 0.25), 1e-6)) >= 2)
     chk("smaller than the objective's disc (18 vs 28 spec px)", C.PA.SIZE < 28)
     chk("terse: no distance text on a walk", not o.d.shown)
     rk = None
@@ -182,7 +229,8 @@ def main():
         rk = v
     chk("the objective's look unchanged: our gold disc texture, no line", rk is not None and rk.disc.tex == C.DISC_TEX and rk.disc.shown
         and rk.disc.kind == "tex")
-    chk("the path marker uses no texture of the objective's", all(getattr(ln, "tex", None) is None for ln in lines + rims))
+    chk("the path marker uses no texture of the objective's (lines; the dots the disc in gold)", all(getattr(ln, "tex", None) is None
+        for ln in lines + rims))
     # the walk reaches a flight leg: the distance shows, light blue
     L.execute('''WowCompanion.pnav.legs = { { k = "walk", c = 0, p = { 0, 0, 0, -20 } }, { k = "flight", c = 0, p = { 0, -20, 400, -400 } },
         { k = "walk", c = 0, p = { 400, -400, 450, -400 } } }; WowCompanion.pnav.legSig = "live2"''')
@@ -195,12 +243,14 @@ def main():
     G.t = G.t + 10
     C.draw()
     chk("a stale route read (10 s): the path marker hidden", C.pa_ is None and not any(ln.shown for ln in lines) and not o.d.shown)
+    chk("cp43: stale: every conveyor piece hidden (strokes, rims, dots)", not any(o.all[i].shown for i in range(1, len(o.all) + 1)))
     L.execute("WowCompanion.pnav.legsAt = GAME.t")
     C.draw()
     chk("fresh again: shown", C.pa_ is not None and all(ln.shown for ln in lines))
     L.execute("WowCompanion.pnav.active = false")
     C.draw()
     chk("guidance off: hidden", C.pa_ is None and not any(ln.shown for ln in lines))
+    chk("cp43: guidance off: the dots hidden too", not any(o.dot[i].shown or o.dsh[i].shown for i in range(1, 4)))
     C.diagAt = -100
     C.draw()
     chk("the diag line: pa = off", C.lastDiag is not None and C.lastDiag.pa == "off")

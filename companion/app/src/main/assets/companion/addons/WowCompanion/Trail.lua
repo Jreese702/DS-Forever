@@ -100,6 +100,14 @@ end
 -- overshot the facing by more than it corrected, so the bar swung left and right a little wider each frame, up to whole-bar
 -- swings and the 2.5 rad reset. Now each step is the spring's EXACT solution over dt (closed form, the same 0.2 s settle):
 -- stable at any frame time, never overshooting, the letters still placed at sub-pixel offsets (no snapping of a moving offset).
+-- cp43 THE ROUTE CONVEYOR (the user, 2026-11-17: "on the compass the blue arows arent clear what they are, I want to make them
+-- animate scrolling upwards with a yellow dot between them"): the path marker (cp36's light blue double chevron) is now a
+-- conveyor: three single chevrons pointing up with a small gold dot (C.GOLD on C.DISC_TEX, the quest disc's own gold) between
+-- each pair, all drifting upward on a loop (C.PA.SPEED spec px/s, one chevron step C.PA.P a second) and fading out at both ends of
+-- its window (C.PA.SPAN), so the wrap never pops. C.paConveyor(t) is the pure place/alpha of every piece at time t (GetTime(),
+-- no stored offset: no drift, any frame time); the pieces are made once and only moved vertically, so cp40's eased x (no jitter)
+-- is untouched. Still drawn from C.step (no second OnUpdate), still hidden with no route. The Home map's route dots carry the same
+-- blue chevron every 5th dot (app side, RouteArrows.kt).
 -- cp42 THE 11-16 TEST BUILD MERGE: issue #358's cp41 (the font family, WC.font) and feat/big-layout's cp41 (the compass in the
 -- layout editor) both kept; both notes below
 -- cp41 ISSUE #358 (a player: "Character names: Cyrillic characters are displayed as empty squares instead of actual letters"; the
@@ -192,7 +200,7 @@ end
 -- "we need to make a way to basically edit the UI locations on the top screen from our UI menu"): the bar's place and size are the layout's (TapPad pad22 WC.lay.get("compass"): its top-centre at (dx, 4 + dy)
 -- 1080-line pixels from the screen's top-centre, scale s % of the frame: C.place); C.lay is the piece Hub's editor gathers. The target
 -- bar follows it until the target bar is moved itself (Hub uf23).
-WC.compass = { V = "cp42" }
+WC.compass = { V = "cp43" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -1712,18 +1720,45 @@ do
         C.paWhy = why
         return w
     end
-    -- its look: a light blue DOUBLE CHEVRON pointing up (go on this way), a dark rim under each stroke; smaller than the objective's
-    -- disc and nothing like it. Lines (as Polestar's own route lines), on our frame, made once.
-    C.PA.ARMS = { { 0, 7, -8, 0 }, { 0, 7, 8, 0 }, { 0, -1, -8, -8 }, { 0, -1, 8, -8 } }   -- spec px from the marker's centre, y up
-    C.PA.W, C.PA.RIM, C.PA.SIZE = 3.5, 6, 18
+    -- its look (cp43): a light blue CONVEYOR pointing up (go on this way): single chevrons with a gold dot between each pair,
+    -- scrolling upward on a loop, a dark rim under each piece; drawn on our frame, made once.
+    -- ARM: one chevron's arms in spec px from its centre, y up (12 wide, 4 tall); P the step from chevron to chevron, the dot
+    -- halfway; SPAN the window (N chevrons, the loop length); FADE the soft ends; SPEED spec px a second (one P a second)
+    C.PA.ARM = { { 0, 2, -6, -2 }, { 0, 2, 6, -2 } }
+    C.PA.N, C.PA.P, C.PA.SPEED, C.PA.FADE, C.PA.DOT = 3, 14, 14, 7, 4.5
+    C.PA.SPAN = C.PA.N * C.PA.P
+    C.PA.W, C.PA.RIM, C.PA.SIZE = 2.5, 4.5, 18
+    -- every piece at time t: { kind = "chev" | "dot", y (spec px from the band line, up), a (0..1) }; 2N pieces, chevron k at
+    -- k * P, its dot at k * P + P / 2, all + the phase, wrapped in the window; alpha 0 at both window ends
+    function C.paConveyor(t)
+        local PA = C.PA
+        local span, half = PA.SPAN, PA.SPAN / 2
+        local phase = ((tonumber(t) or 0) * PA.SPEED) % span
+        local out = {}
+        for k = 0, 2 * PA.N - 1 do
+            local y = ((k * PA.P / 2 + phase) % span) - half
+            local a = (half - math.abs(y)) / PA.FADE
+            if a > 1 then a = 1 elseif a < 0 then a = 0 end
+            out[k + 1] = { kind = (k % 2 == 0) and "chev" or "dot", y = y, a = a }
+        end
+        return out
+    end
     function C.paBuild()
         if C.pa then return C.pa end
         local f = C.frame
-        local o = { rim = {}, ln = {} }
-        local R = C.PA.RGB
-        for i = 1, #C.PA.ARMS do
+        local o = { rim = {}, ln = {}, dsh = {}, dot = {}, all = {} }
+        local R, G = C.PA.RGB, C.GOLD
+        for i = 1, C.PA.N * #C.PA.ARM do
             o.rim[i] = f:CreateLine(nil, "ARTWORK", nil, 0); o.rim[i]:SetColorTexture(0, 0, 0, 0.85)
             o.ln[i] = f:CreateLine(nil, "ARTWORK", nil, 2); o.ln[i]:SetColorTexture(R[1], R[2], R[3], 1)
+            o.all[#o.all + 1] = o.rim[i]; o.all[#o.all + 1] = o.ln[i]
+        end
+        for i = 1, C.PA.N do
+            o.dsh[i] = f:CreateTexture(nil, "ARTWORK", nil, 0); o.dsh[i]:SetTexture(C.DISC_TEX); o.dsh[i]:SetVertexColor(0, 0, 0, 0.85)
+            o.dsh[i]:SetSize(C.u(C.PA.DOT + 2), C.u(C.PA.DOT + 2))
+            o.dot[i] = f:CreateTexture(nil, "ARTWORK", nil, 2); o.dot[i]:SetTexture(C.DISC_TEX); o.dot[i]:SetVertexColor(G[1], G[2], G[3], 1)
+            o.dot[i]:SetSize(C.u(C.PA.DOT), C.u(C.PA.DOT))
+            o.all[#o.all + 1] = o.dsh[i]; o.all[#o.all + 1] = o.dot[i]
         end
         o.d = f:CreateFontString(nil, "OVERLAY")
         WC.font(o.d, C.u(C.SPEC.dist), "OUTLINE")
@@ -1732,6 +1767,7 @@ do
         pcall(function() o.a:SetAtlas("Navigation-Tracked-Arrow") end)
         o.a:SetVertexColor(R[1], R[2], R[3])
         o.a:SetSize(C.u(14), C.u(14))
+        o.all[#o.all + 1] = o.d; o.all[#o.all + 1] = o.a
         C.pa = o
         return o
     end
@@ -1742,24 +1778,38 @@ do
         local f, u, S, PA = C.frame, C.u, C.SPEC, C.PA
         local o = C.paBuild()
         local cx, cy = m.x, -S.line
-        for i, arm in ipairs(PA.ARMS) do
-            local x1, y1, x2, y2 = arm[1], arm[2], arm[3], arm[4]
-            local dx, dy = x2 - x1, y2 - y1
-            local l = math.sqrt(dx * dx + dy * dy)
-            local ex, ey = dx / l, dy / l                                  -- (the rim a pixel longer at both ends)
-            local al = (i > 2) and 0.7 or 1                                -- (the rear chevron a little dimmer)
-            local r, ln = o.rim[i], o.ln[i]
-            r:SetThickness(u(PA.RIM)); r:SetAlpha(al)
-            r:SetStartPoint("TOP", f, u(cx + x1 - ex), u(cy + y1 - ey)); r:SetEndPoint("TOP", f, u(cx + x2 + ex), u(cy + y2 + ey))
-            ln:SetThickness(u(PA.W)); ln:SetAlpha(al)
-            ln:SetStartPoint("TOP", f, u(cx + x1), u(cy + y1)); ln:SetEndPoint("TOP", f, u(cx + x2), u(cy + y2))
-            C.paVis(r, true); C.paVis(ln, true)
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        local ci, di = 0, 0
+        for _, p in ipairs(C.paConveyor(now)) do
+            local py = cy + p.y
+            if p.kind == "chev" then
+                ci = ci + 1
+                for j, arm in ipairs(PA.ARM) do
+                    local x1, y1, x2, y2 = arm[1], arm[2], arm[3], arm[4]
+                    local dx, dy = x2 - x1, y2 - y1
+                    local l = math.sqrt(dx * dx + dy * dy)
+                    local ex, ey = dx / l, dy / l                          -- (the rim a pixel longer at both ends)
+                    local i = (ci - 1) * #PA.ARM + j
+                    local r, ln = o.rim[i], o.ln[i]
+                    r:SetThickness(u(PA.RIM)); r:SetAlpha(p.a)
+                    r:SetStartPoint("TOP", f, u(cx + x1 - ex), u(py + y1 - ey)); r:SetEndPoint("TOP", f, u(cx + x2 + ex), u(py + y2 + ey))
+                    ln:SetThickness(u(PA.W)); ln:SetAlpha(p.a)
+                    ln:SetStartPoint("TOP", f, u(cx + x1), u(py + y1)); ln:SetEndPoint("TOP", f, u(cx + x2), u(py + y2))
+                    C.paVis(r, p.a > 0); C.paVis(ln, p.a > 0)
+                end
+            else
+                di = di + 1
+                local sh, d = o.dsh[di], o.dot[di]
+                sh:SetAlpha(p.a); d:SetAlpha(p.a)
+                sh:SetPoint("CENTER", f, "TOP", u(cx), u(py)); d:SetPoint("CENTER", f, "TOP", u(cx), u(py))
+                C.paVis(sh, p.a > 0); C.paVis(d, p.a > 0)
+            end
         end
-        -- terse: a distance only for a leg's start (where the walk ends: a flight master, a dock, a portal)
+        -- terse: a distance only for a leg's start (where the walk ends: a flight master, a dock, a portal), under the window
         local txt = (type(w) == "table" and w.kind ~= "walk" and num(w.d)) and C.distText(w.d) or nil
         if txt then
             if o.text ~= txt then o.d:SetText(txt); o.text = txt end
-            o.d:SetPoint("TOP", f, "TOP", u(m.x), -u(S.line + PA.SIZE / 2 + 3)); C.paVis(o.d, true)
+            o.d:SetPoint("TOP", f, "TOP", u(m.x), -u(S.line + PA.SPAN / 2 + 2)); C.paVis(o.d, true)
         else
             C.paVis(o.d, false)
         end
@@ -1774,8 +1824,7 @@ do
     function C.paHide()
         local o = C.pa
         if not o or not o.shown then return end
-        for i = 1, #o.ln do C.paVis(o.rim[i], false); C.paVis(o.ln[i], false) end
-        C.paVis(o.d, false); C.paVis(o.a, false)
+        for _, p in ipairs(o.all) do C.paVis(p, false) end
         o.shown = false
     end
 

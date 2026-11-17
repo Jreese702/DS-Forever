@@ -4388,11 +4388,7 @@ class MapView(context: Context) : View(context) {
         pathTmp.reset(); pathTmp.moveTo(x0, y0)
         var i = 0
         while (i + 1 < p.size) { pathTmp.lineTo(sx(p[i]), sy(p[i + 1])); i += 2 }
-        val phase = -(android.os.SystemClock.elapsedRealtime() / 1000f * 24f) % 16f
-        pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
-        pPath.strokeWidth = 9f; pPath.color = Color.argb(160, 0, 0, 0); c.drawPath(pathTmp, pPath)
-        pPath.strokeWidth = 6f; pPath.color = cGold; c.drawPath(pathTmp, pPath)
-        pPath.pathEffect = null
+        drawRouteDots(c, pathTmp, 1f, android.os.SystemClock.elapsedRealtime())
         postInvalidateOnAnimation()
         return true
     }
@@ -5149,12 +5145,44 @@ class MapView(context: Context) : View(context) {
     private fun drawStretch(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, dim: Float, unchecked: Boolean = false) {
         pathTmp.reset(); pathTmp.moveTo(x0, y0); pathTmp.lineTo(x1, y1)
         if (unchecked) { drawUnchecked(c, dim); return }
-        val phase = -(android.os.SystemClock.elapsedRealtime() / 1000f * 24f) % 16f
-        pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
-        pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * dim).toInt(), 0, 0, 0); c.drawPath(pathTmp, pPath)
-        pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * dim).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
-        c.drawPath(pathTmp, pPath)
+        drawRouteDots(c, pathTmp, dim, android.os.SystemClock.elapsedRealtime())
+    }
+
+    // ---- THE ROUTE'S DOTS AND ARROWS (feat/route-arrows; the user, 2026-11-17: "on the mini map every 5 dots I want a blue arrow so
+    // that its consistent"): every route's gold dots ([RouteArrows]: 16 px apart, 24 px a second toward the goal), every 5th one the
+    // compass's light blue chevron (Trail.lua cp43) turned along the route at that point, moving with the dots
+    private val pArrow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+    }
+    private val arrowMeasure = PathMeasure()
+    private val arrowPos = FloatArray(2)
+    private val arrowTan = FloatArray(2)
+    private val arrowPath = Path()
+
+    /** [path]'s dots and arrows at [a] of their strength (0..1), the pattern where it stands at [tMs] */
+    private fun drawRouteDots(c: Canvas, path: Path, a: Float, tMs: Long) {
+        pPath.pathEffect = DashPathEffect(RouteArrows.DASH, RouteArrows.phase(tMs))
+        pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * a).toInt(), 0, 0, 0); c.drawPath(path, pPath)
+        pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * a).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
+        c.drawPath(path, pPath)
         pPath.pathEffect = null
+        arrowMeasure.setPath(path, false)
+        do {
+            for (s in RouteArrows.arrowDistances(arrowMeasure.length, tMs)) {
+                if (!arrowMeasure.getPosTan(s, arrowPos, arrowTan)) continue
+                val fx = arrowTan[0]; val fy = arrowTan[1]                 // along the route (toward the goal)
+                val nx = -fy; val ny = fx
+                val x = arrowPos[0]; val y = arrowPos[1]
+                arrowPath.reset()
+                arrowPath.moveTo(x - fx * RouteArrows.BEHIND + nx * RouteArrows.HALF_W, y - fy * RouteArrows.BEHIND + ny * RouteArrows.HALF_W)
+                arrowPath.lineTo(x + fx * RouteArrows.AHEAD, y + fy * RouteArrows.AHEAD)
+                arrowPath.lineTo(x - fx * RouteArrows.BEHIND - nx * RouteArrows.HALF_W, y - fy * RouteArrows.BEHIND - ny * RouteArrows.HALF_W)
+                pArrow.strokeWidth = RouteArrows.RIM; pArrow.color = Color.argb((217 * a).toInt(), 0, 0, 0); c.drawPath(arrowPath, pArrow)
+                pArrow.strokeWidth = RouteArrows.W
+                pArrow.color = Color.argb((255 * a).toInt(), Color.red(psBlue), Color.green(psBlue), Color.blue(psBlue))
+                c.drawPath(arrowPath, pArrow)
+            }
+        } while (arrowMeasure.nextContour())
     }
 
     /** an UNCHECKED stretch ([pathTmp]; the user's "Point straight at it"): thin long dashes, pale - never the safe way's moving dots */
@@ -5247,12 +5275,7 @@ class MapView(context: Context) : View(context) {
             }
         }
         if (!any) return false
-        val age = android.os.SystemClock.elapsedRealtime()
-        val phase = -(age / 1000f * 24f) % 16f
-        pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
-        pPath.strokeWidth = 9f; pPath.color = Color.argb(160, 0, 0, 0); c.drawPath(pathTmp, pPath)
-        pPath.strokeWidth = 6f; pPath.color = cGold; c.drawPath(pathTmp, pPath)
-        pPath.pathEffect = null
+        drawRouteDots(c, pathTmp, 1f, android.os.SystemClock.elapsedRealtime())
         // ps2 (the user, 2026-11-11: "I dont like the red dots"): no red danger dots and no "crosses hostile ground" note on Polestar's
         // path any more; the Map room's opt-in "Danger areas" filter still shows hostile ground
         postInvalidateOnAnimation()
@@ -5381,14 +5404,9 @@ class MapView(context: Context) : View(context) {
         val age = now - pathAt
         val a = min(1f, age / 300f)
         if (len >= 40f) {
-            // the dots: 16 px apart, moving 24 px a second toward the goal (a dash path's phase runs against the path, hence minus)
-            val phase = -(age / 1000f * 24f) % 16f
+            // the dots: 16 px apart, moving 24 px a second toward the goal, every 5th a blue arrow ([drawRouteDots])
             pathTmp.reset(); pathTmp.moveTo(x0, y0); pathTmp.lineTo(ex, ey)
-            pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
-            pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * a * dim).toInt(), 0, 0, 0); c.drawPath(pathTmp, pPath)
-            pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * a * dim).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
-            c.drawPath(pathTmp, pPath)
-            pPath.pathEffect = null
+            drawRouteDots(c, pathTmp, a * dim, age)
         }
         // at the edge: an arrow on along the way (not for the focused quest: the game's own rim arrow already points there)
         if (!inside && qid != shownFocus()) {
