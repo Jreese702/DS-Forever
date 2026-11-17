@@ -184,53 +184,122 @@ object ControllerPictures {
         }
     }
 
-    /** Smart Y: the Y glyph on the left, then the list's first five entries (food, water, buffs), the ones that cannot act dimmed */
+    /** Smart Y: the Y glyph on the left, then the list's first five entries (food, water, buffs), the ones that cannot act dimmed. The
+     *  wide tile: one row; the band's 2:1 picture: the same five, large, in two rows (three, then two), read top first */
     private fun smartY(c: Canvas, w: Float, look: Look) {
         val wide = w > W
-        // the band's picture is the 2:1 space: the glyph and arrow pulled in so the same five entries fit
-        val gx = if (wide) 32f else 26f; val ax = if (wide) 56f else 48f
-        glyph(c, "y", gx, 54f, if (wide) 40f else 34f)
-        pS.color = if (look.on) Theme.gold else Theme.bronzeDim; pS.strokeWidth = 2.2f
-        c.drawLine(ax, 54f, ax + 14f, 54f, pS); c.drawLine(ax + 14f, 54f, ax + 8f, 49f, pS); c.drawLine(ax + 14f, 54f, ax + 8f, 59f, pS)
-        // the same five entries on the wide tile and in the band (smaller icons there, no links)
         val ids = look.smartIcons.ifEmpty { SAMPLE_SMART }.take(5)
-        val s = if (wide) 50f else 25f
-        val gap = if (wide) 26f else 3.5f
-        val x0 = if (wide) 86f else 70f
+        val lit = if (look.on) Theme.gold else Theme.bronzeDim
+        if (wide) {
+            glyph(c, "y", 32f, 54f, 40f)
+            pS.color = lit; pS.strokeWidth = 2.2f
+            c.drawLine(56f, 54f, 70f, 54f, pS); c.drawLine(70f, 54f, 64f, 49f, pS); c.drawLine(70f, 54f, 64f, 59f, pS)
+            val s = 50f; val gap = 26f; val x0 = 86f
+            for ((i, id) in ids.withIndex()) {
+                val x = x0 + i * (s + gap)
+                if (i > 0) { pF.color = lit; c.drawRect(x - gap + 3f, 53f, x - 3f, 56f, pF) }
+                slot(c, id, x, 54f - s / 2f, s, look.smartDim.getOrElse(i) { false } || !look.on)
+            }
+            return
+        }
+        glyph(c, "y", 26f, 54f, 38f)
+        pS.color = lit; pS.strokeWidth = 2.2f
+        c.drawLine(48f, 54f, 60f, 54f, pS); c.drawLine(60f, 54f, 55f, 49f, pS); c.drawLine(60f, 54f, 55f, 59f, pS)
+        val s = 42f; val gap = 7f; val x0 = 68f
         for ((i, id) in ids.withIndex()) {
-            val x = x0 + i * (s + gap)
-            val dim = look.smartDim.getOrElse(i) { false } || !look.on
-            if (i > 0 && wide) { pF.color = if (look.on) Theme.gold else Theme.bronzeDim; c.drawRect(x - gap + 3f, 53f, x - 3f, 56f, pF) }
-            slot(c, id, x, 54f - s / 2f, s, dim)
+            val x = x0 + (i % 3) * (s + gap); val y = if (i < 3) 8f else 58f
+            slot(c, id, x, y, s, look.smartDim.getOrElse(i) { false } || !look.on)
         }
     }
 
     // ---------------------------------------------------------------- Wheels
 
-    private val pauseScreen = RectF(0f, 0f, 1240f, 1080f)
-
-    /** the Pause menu: the app's own pause wheel (UiKit.pauseRadial on a 1240 x 1080 screen, its wheel cut out and scaled into the well)
-     *  with its slices' pictures and no labels (5 px words at tile size); the Start glyph at the hub; Game's wheel = its hub lit gold */
+    /** the Pause menu, COMPOSED to the well (the whole wheel, never a cropped rim): its ring the size of the other wheels, the game
+     *  menu's own slices (HomePauseModel's centre page, kit order) as the kit's slice pictures - large, no labels - or, without the kit,
+     *  our drawn menu signs (bag, book, chat...: never spells, so it never reads as the Spell wheel); the Start glyph at the hub;
+     *  Game's wheel = its hub lit gold */
     private fun pauseWheel(c: Canvas, look: Look) {
-        // the wheel's place on that screen (UiKit.pauseGeo's free layout: centre 620, 522; rim 270 x 1.3)
-        val sc = 104f / 620f * 1.45f                                          // zoomed: the slices' pictures large, the rim cropped
-        val sv = c.save()
-        // without the kit the pause wheel has no slice pictures (only its rim): our own sketch with sample icons instead
-        val drawn = UiKit.tex("ricon_spellbook") != null && runCatching {
-            c.clipRect(0f, 0f, W, H)
-            c.translate(108f - 620f * sc, 54f - 522f * sc); c.scale(sc, sc)
-            val keepB = UiKit.pauseBarsBottom; val keepS = UiKit.pauseStripTop
-            UiKit.pauseBarsBottom = 0f; UiKit.pauseStripTop = 0f
-            try {
-                val slices = HomePauseModel.Flow().slices().map { it?.let { sl -> UiKit.PauseSlice(sl.key, "", sl.enabled) } }
-                UiKit.pauseRadial(c, pauseScreen, android.graphics.PointF(620f, 1120f), 140f, slices, 0, pointed(look, 8), glyphs = false,
-                    up = null, down = null, hubGold = if (look.gameWheel) 1f else 0f)
-            } finally { UiKit.pauseBarsBottom = keepB; UiKit.pauseStripTop = keepS }
-            true
-        }.getOrDefault(false)
-        c.restoreToCount(sv)
-        if (!drawn) sketchWheel(c, 108f, 54f, 48f, pointed(look, 6), SAMPLE_SPELLS)
-        hub(c, 108f, 54f, gold = look.gameWheel) { glyphOrWord(c, START, "Start", 108f, 54f, 26f) }
+        val cx = 108f; val cy = 54f; val rim = 51f
+        pF.shader = RadialGradient(cx, cy, rim, intArrayOf(Color.rgb(44, 36, 26), Color.rgb(16, 13, 10)), floatArrayOf(0.3f, 1f), Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy, rim, pF); pF.shader = null
+        val slices = runCatching { HomePauseModel.Flow().slices() }.getOrDefault(emptyList())
+        val pick = pointed(look, 8)
+        // the lit slice (the band's clock): a gold wedge
+        if (pick >= 0) {
+            pF.color = Color.argb(90, 255, 200, 60)
+            c.drawArc(RectF(cx - rim, cy - rim, cx + rim, cy + rim), pick * 45f - 90f - 22.5f, 45f, true, pF)
+        }
+        // the slices' seams, then the rim
+        pS.color = Theme.bronzeDim; pS.strokeWidth = 1f
+        for (i in 0 until 8) {
+            val a = ((i * 45f - 90f + 22.5f) * PI / 180f).toFloat()
+            c.drawLine(cx + cos(a) * 21f, cy + sin(a) * 21f, cx + cos(a) * (rim - 2f), cy + sin(a) * (rim - 2f), pS)
+        }
+        pS.color = Theme.bronze; pS.strokeWidth = 2.4f; c.drawCircle(cx, cy, rim, pS)
+        pS.color = Color.argb(140, 0, 0, 0); pS.strokeWidth = 1f; c.drawCircle(cx, cy, rim - 2.4f, pS)
+        for (i in 0 until 8) {
+            val sl = slices.getOrNull(i) ?: continue
+            val a = ((i * 45f - 90f) * PI / 180f).toFloat()
+            val sx = cx + cos(a) * 36f; val sy = cy + sin(a) * 36f
+            val name = pauseArt(sl.key)
+            val art = (if (!sl.enabled) UiKit.tex(name + "_off") else null) ?: UiKit.tex(name)
+            val q = 11.5f
+            if (art != null) {
+                pB.alpha = if (sl.enabled) 255 else 120
+                c.drawBitmap(art, null, RectF(sx - q, sy - q, sx + q, sy + q), pB); pB.alpha = 255
+            } else menuSign(c, sl.key, sx, sy, q, sl.enabled)
+        }
+        hub(c, cx, cy, gold = look.gameWheel) { glyphOrWord(c, START, "Start", cx, cy, 26f) }
+    }
+
+    /** the pause slice's kit picture (the names of UiKit.pauseIcon, which is UiKit's own and private) */
+    private fun pauseArt(key: String) = "ricon_" + when (key) {
+        "lfd" -> "groupfinder"; "store" -> "shop"; "map" -> "quests"; "menu" -> "gamemenu"; "time" -> "clock"
+        PolestarSkip.KEY_SKIP, PolestarSkip.KEY_PREV -> "quests"
+        else -> key
+    }
+
+    /** a menu slice's sign without the kit: a bag, a book, a star, a speech bubble, a figure, a hammer, the quest "!", else a gear */
+    private fun menuSign(c: Canvas, key: String, x: Float, y: Float, q: Float, enabled: Boolean) {
+        val ink = if (enabled) Color.rgb(226, 200, 140) else Color.rgb(110, 100, 80)
+        pF.color = ink; pS.color = ink; pS.strokeWidth = 1.8f
+        when (key) {
+            "bags" -> {
+                c.drawRoundRect(RectF(x - q * 0.8f, y - q * 0.45f, x + q * 0.8f, y + q * 0.85f), 3f, 3f, pF)
+                c.drawArc(RectF(x - q * 0.45f, y - q * 0.95f, x + q * 0.45f, y), 180f, 180f, false, pS)
+            }
+            "spellbook" -> {
+                c.drawRect(x - q * 0.75f, y - q * 0.85f, x + q * 0.75f, y + q * 0.85f, pF)
+                pS.color = Color.rgb(40, 30, 20); c.drawLine(x - q * 0.45f, y - q * 0.85f, x - q * 0.45f, y + q * 0.85f, pS)
+            }
+            "talents" -> {
+                path.reset()
+                for (k in 0 until 10) {
+                    val r = if (k % 2 == 0) q * 0.95f else q * 0.42f
+                    val a = ((k * 36f - 90f) * PI / 180f).toFloat()
+                    if (k == 0) path.moveTo(x + cos(a) * r, y + sin(a) * r) else path.lineTo(x + cos(a) * r, y + sin(a) * r)
+                }
+                path.close(); c.drawPath(path, pF)
+            }
+            "chat" -> {
+                c.drawRoundRect(RectF(x - q * 0.9f, y - q * 0.7f, x + q * 0.9f, y + q * 0.45f), q * 0.4f, q * 0.4f, pF)
+                path.reset(); path.moveTo(x - q * 0.4f, y + q * 0.3f); path.lineTo(x - q * 0.6f, y + q * 0.9f); path.lineTo(x + q * 0.05f, y + q * 0.3f)
+                path.close(); c.drawPath(path, pF)
+            }
+            "character" -> figure(c, x, y + q * 0.95f, q * 1.9f, ink)
+            "professions" -> {
+                pS.strokeWidth = 2.6f; c.drawLine(x - q * 0.6f, y + q * 0.8f, x + q * 0.3f, y - q * 0.1f, pS)
+                c.drawRoundRect(RectF(x - q * 0.1f, y - q * 0.9f, x + q * 0.9f, y - q * 0.2f), 2f, 2f, pF)
+            }
+            "map" -> { c.drawRect(x - q * 0.16f, y - q * 0.9f, x + q * 0.16f, y + q * 0.35f, pF); c.drawCircle(x, y + q * 0.72f, q * 0.18f, pF) }
+            else -> {
+                pS.strokeWidth = 2.2f; c.drawCircle(x, y, q * 0.5f, pS)
+                for (k in 0 until 6) {
+                    val a = (k * 60f * PI / 180f).toFloat()
+                    c.drawLine(x + cos(a) * q * 0.55f, y + sin(a) * q * 0.55f, x + cos(a) * q * 0.9f, y + sin(a) * q * 0.9f, pS)
+                }
+            }
+        }
     }
 
     /** the item wheel ([items]) or the spell wheel: the app's own wheel at rest (UiKit.radialPreview) with the player's page 1, or
@@ -239,11 +308,25 @@ object ControllerPictures {
         val list = look.items.takeIf { it.any { i -> i != null } } ?: (if (items) SAMPLE_ITEMS else SAMPLE_SPELLS)
             .map { UiKit.RadialItem(Icons.get(it), "", if (items) 3 else -1) }
         radial(c, 108f, 54f, 104f, list, pointed(look, 8))
-        hub(c, 108f, 54f) {
-            if (items) glyphOrWord(c, "gen_up", "Up", 108f, 54f, 22f)
-            else UiKit.tex("ricon_spellbook")?.let { b -> c.drawBitmap(b, null, RectF(97f, 43f, 119f, 65f), pB) }
-                ?: glyphOrWord(c, "-", "Spells", 108f, 54f, 20f)
+        // the hub says what opens it, as large as the class wheels' ZL / ZR: the D-pad with its Up arm lit (the item wheel), the
+        // spellbook (the spell wheel: its own bound button, no fixed glyph)
+        hub(c, 108f, 54f, rad = 21f) {
+            if (items) dpadUp(c, 108f, 54f, 15f)
+            else UiKit.tex("ricon_spellbook")?.let { b -> c.drawBitmap(b, null, RectF(91f, 37f, 125f, 71f), pB) }
+                ?: menuSign(c, "spellbook", 108f, 54f, 13f, true)
         }
+    }
+
+    /** a D-pad cross, its Up arm lit gold (the button that opens the item wheel) */
+    private fun dpadUp(c: Canvas, cx: Float, cy: Float, a: Float) {
+        val t = a * 0.36f
+        pF.color = Color.rgb(205, 205, 210)
+        c.drawRoundRect(cx - t, cy - a, cx + t, cy + a, 2f, 2f, pF)
+        c.drawRoundRect(cx - a, cy - t, cx + a, cy + t, 2f, 2f, pF)
+        pS.color = Color.argb(200, 0, 0, 0); pS.strokeWidth = 1f
+        c.drawRoundRect(cx - t, cy - a, cx + t, cy + a, 2f, 2f, pS); c.drawRoundRect(cx - a, cy - t, cx + a, cy + t, 2f, 2f, pS)
+        pF.color = Color.rgb(205, 205, 210); c.drawRect(cx - t + 1f, cy - t + 1f, cx + t - 1f, cy + t - 1f, pF)
+        pF.color = Theme.gold; c.drawRoundRect(cx - t + 1f, cy - a + 1f, cx + t - 1f, cy - t, 2f, 2f, pF)
     }
 
     /** the left / right class radial: the character's own (PreviewStage) or a sample wheel; its trigger (LT / RT) alone at the hub */
@@ -289,9 +372,9 @@ object ControllerPictures {
     }
 
     /** the hub's disc and what opens the wheel on it; [gold] = lit (the game's wheel over its windows) */
-    private inline fun hub(c: Canvas, cx: Float, cy: Float, gold: Boolean = false, inside: () -> Unit) {
-        pF.color = if (gold) Theme.gold else Color.argb(235, 12, 12, 14); c.drawCircle(cx, cy, 18f, pF)
-        pS.color = if (gold) Theme.text else Theme.gold; pS.strokeWidth = 1.4f; c.drawCircle(cx, cy, 18f, pS)
+    private inline fun hub(c: Canvas, cx: Float, cy: Float, gold: Boolean = false, rad: Float = 18f, inside: () -> Unit) {
+        pF.color = if (gold) Theme.gold else Color.argb(235, 12, 12, 14); c.drawCircle(cx, cy, rad, pF)
+        pS.color = if (gold) Theme.text else Theme.gold; pS.strokeWidth = 1.4f; c.drawCircle(cx, cy, rad, pS)
         inside()
     }
 

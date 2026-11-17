@@ -39,7 +39,7 @@ interface SettingsBands {
  * ([SmartYPage]: the list moved as it is). No sub-captions (the terse rule): the picture says what it does. Wheels are app-wide;
  * the pet's B, Smart Y and the GameUi helpers are per character (their stores, unchanged). Combat helpers keep Top's game-state badges
  * (ON / OFF / SENT / REFUSED / WAITING); the app-local tiles carry none. A slot that does not apply is not drawn (B: pet follow on a
- * class without a pet, Smart Res on a class without a res). Auto Shot shows for every class, as its old row did (bows, guns, wands).
+ * class without a pet, Smart Res on a class without a res, Auto Shot on a class that can never hold a bow, gun or wand - design 0.4).
  *
  * The tile engine of the shared core (TileSource / TileDraw) had not landed when this was built (core and the areas ran side by side):
  * this view keeps the TileSource shape ([slots] / [name] / [value] / [lines] / [badge] / [dimmed] / [press] / the sub-page) so the
@@ -66,7 +66,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
         SettingsTabs.Group.COMBAT -> listOfNotNull(Slot(GameUi.PMODE_ID),
             Slot(GameUi.SRES_ID).takeIf { GameUi.sresClass(GameUi.playerClass) != false },
             Slot(GameUi.ATK_ID), Slot(ControllerPictures.ATTACK_CAST),
-            Slot(GameUi.SHOT_ID))     // every class, as the old row: bows, guns and wands (a Warrior's bow, a Mage's wand)
+            Slot(GameUi.SHOT_ID).takeIf { shotClass(GameUi.playerClass) })
         else -> emptyList()
     }
 
@@ -517,6 +517,13 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
         const val SEG_SIZE = 27f
         const val WAIT = "..."
         const val LIST = "list"; const val OPEN = "open"; const val PICK = "pick"; const val OVER = "over"
+
+        /** the classes that can never shoot: no ranged slot of their own in this game (a Paladin's libram, a Shaman's totem, a Druid's
+         *  idol, a Death Knight's sigil). Every other class can (a Hunter's or Warrior's or Rogue's bow / gun, a caster's wand) */
+        val NO_SHOT = setOf("PALADIN", "SHAMAN", "DRUID", "DEATHKNIGHT")
+
+        /** Auto Shot's tile applies to [cls] (unknown yet = shown, as before the game says) */
+        fun shotClass(cls: String?): Boolean = cls.isNullOrBlank() || cls.uppercase() !in NO_SHOT
 
         private val LOCATIONS = CastSettings.AbxyLocation.values().toList()
         private val LAYOUTS = CastSettings.ButtonLayout.values().toList()

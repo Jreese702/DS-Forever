@@ -264,11 +264,15 @@ class ControllerTilesRoomTest {
         assertEquals(2, GameUi.shotMode())
         assertNull(c.badge("attackcast"))
         assertEquals("On", c.value("attackcast"))
-        // a warrior: no Smart Res; Auto Shot stays (the old row showed it for every class: a Warrior's bow, a Mage's wand)
+        // a warrior: no Smart Res; Auto Shot stays (a Warrior's bow, a Mage's wand); a class that can never shoot has no Auto Shot (0.4)
         GameUi::class.java.getDeclaredField("playerClass").apply { isAccessible = true }.set(GameUi, "WARRIOR")
         assertEquals(listOf(GameUi.PMODE_ID, GameUi.ATK_ID, "attackcast", GameUi.SHOT_ID), c.tileIds())
         GameUi::class.java.getDeclaredField("playerClass").apply { isAccessible = true }.set(GameUi, "MAGE")
         assertTrue(GameUi.SHOT_ID in c.tileIds())
+        for (cls in listOf("SHAMAN", "PALADIN", "DRUID", "DEATHKNIGHT")) {
+            GameUi::class.java.getDeclaredField("playerClass").apply { isAccessible = true }.set(GameUi, cls)
+            assertFalse(cls, GameUi.SHOT_ID in c.tileIds())
+        }
     }
 
     /** Smart Y: dim "..." before the game; On / Off through Smart Y's own taps; "List" opens the list as a sub-page that lands on its
@@ -403,6 +407,10 @@ class ControllerTilesRoomTest {
         close(); open("attackcast"); shot("ctl_15_band_attack_on_cast")
         close(); open(GameUi.SHOT_ID); shot("ctl_16_band_auto_shot")
         close(); open(GameUi.SRES_ID); shot("ctl_17_band_smart_res")
+        // a Shaman: the Combat helpers row without Auto Shot (a class that can never shoot), then back to the Hunter
+        close(); GameUi::class.java.getDeclaredField("playerClass").apply { isAccessible = true }.set(GameUi, "SHAMAN")
+        r.ctlTiles.forEach { it.refresh() }; lay(r); reveal(GameUi.ATK_ID); shot("ctl_28_shaman_no_auto_shot")
+        game(); r.ctlTiles.forEach { it.refresh() }; lay(r)
         // the cursor on an open tile, then in its band (the gold box; the open tile's lit edge), then B back on the tile
         close(); scroll(0); hold(r); openAll(r); press(r, "PADDDOWN"); press(r, "PADDDOWN"); press(r, "PADDLEFT"); press(r, "PAD1"); reveal("glyphs")
         shot("ctl_18_cursor_on_open_tile")
