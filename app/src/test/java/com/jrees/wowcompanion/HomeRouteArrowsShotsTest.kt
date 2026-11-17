@@ -28,8 +28,9 @@ import kotlin.math.hypot
 /**
  * feat/route-arrows, HOME'S MAP ROUTE OFF THE DEVICE (the user, 2026-11-17: "on the mini map every 5 dots I want a blue arrow so that
  * its consistent"): the real MapView's route drawing ([MapView.drawRouteDots], used by Polestar's path, SafePath's stretches, the
- * corpse run, the cursor's line and QuestTrail's path): every 5th gold dot is the compass's light blue chevron, turned along the
- * route; then the real HomeView with Polestar's route on the small map and the open module, blue arrows on it 80 px apart.
+ * corpse run, the cursor's line and QuestTrail's path): then "I want it to be 1 arrow every 5 dots": five gold dots, then the
+ * compass's light blue chevron in a 6th slot of its own, turned along the route; then the real HomeView with Polestar's route on
+ * the small map and the open module, blue arrows on it 96 px apart.
  * The checks run always; the pictures only when RA_SHOTS_DIR is set (RA_ART_ROOT = an art root laid out like the app's).
  *   RA_SHOTS_DIR=<dir> RA_ART_ROOT=<root> gradlew :app:testModernDebugUnitTest --tests "*HomeRouteArrowsShotsTest*"
  */
@@ -52,15 +53,16 @@ class HomeRouteArrowsShotsTest {
             Long::class.javaPrimitiveType).apply { isAccessible = true }.invoke(v, c, p, a, t)
     }
 
-    @Test fun everyFifthDotIsABlueArrowAlongTheRoute() {
+    @Test fun aBlueArrowAfterEveryFiveDotsAlongTheRoute() {
         val v = MapView(app)
         val b = Bitmap.createBitmap(420, 120, Bitmap.Config.ARGB_8888)
         val c = Canvas(b); c.drawColor(Color.rgb(40, 60, 34))
         val p = Path().apply { moveTo(20f, 60f); lineTo(400f, 60f) }
         routeDots(v, c, p, 1f, 0L)
-        // t = 0: dots at 0, 16, 32, 48 (+ 80 k), arrows at 64 (+ 80 k) from the start
+        // t = 0: dots at 0, 16, 32, 48, 64 (+ 96 k), arrows at 80 (+ 96 k) from the start
         val arrows = RouteArrows.arrowDistances(380f, 0L)
-        assertEquals(listOf(64f, 144f, 224f, 304f), arrows.toList())
+        assertEquals(listOf(80f, 176f, 272f, 368f), arrows.toList())
+        assertEquals(listOf(0f, 16f, 32f, 48f, 64f), RouteArrows.dotDistances(380f, 0L).take(5))
         for (s in arrows) {
             val x = (20f + s).toInt()
             assertTrue("a blue arrow at $s (apex ahead)", blue(b.getPixel(x + 3, 60)))
@@ -73,12 +75,12 @@ class HomeRouteArrowsShotsTest {
         val b2 = Bitmap.createBitmap(120, 420, Bitmap.Config.ARGB_8888)
         val c2 = Canvas(b2); c2.drawColor(Color.rgb(40, 60, 34))
         routeDots(v, c2, Path().apply { moveTo(60f, 20f); lineTo(60f, 400f) }, 1f, 0L)
-        assertTrue("turned down the route", blue(b2.getPixel(60, 20 + 64 + 3)) && !blue(b2.getPixel(60, 20 + 64 + 9)))
+        assertTrue("turned down the route", blue(b2.getPixel(60, 20 + 80 + 3)) && !blue(b2.getPixel(60, 20 + 80 + 9)))
         // dimmed with the stretch beyond the next checkpoint
         val b3 = Bitmap.createBitmap(420, 120, Bitmap.Config.ARGB_8888)
         val c3 = Canvas(b3); c3.drawColor(Color.BLACK)
         routeDots(v, c3, p, 0.4f, 0L)
-        assertTrue("dimmed", Color.blue(b3.getPixel(20 + 64 + 3, 60)) < 140)
+        assertTrue("dimmed", Color.blue(b3.getPixel(20 + 80 + 3, 60)) < 140)
         out?.let { d ->
             d.mkdirs()
             val z = Bitmap.createScaledBitmap(b, 420 * 3, 120 * 3, false)
@@ -174,7 +176,7 @@ class HomeRouteArrowsShotsTest {
         assertTrue("blue arrows on the small map's Polestar route (${blobs.size})", blobs.size >= 2)
         val near = blobs.sortedBy { it[0] }
         val gaps = near.zipWithNext { a, b -> hypot(b[0] - a[0], b[1] - a[1]) }
-        assertTrue("80 px apart along the route ($gaps)", gaps.count { abs(it - 80f) < 6f } >= 1)
+        assertTrue("96 px apart along the route ($gaps)", gaps.count { abs(it - 96f) < 6f } >= 1)
         // the open module: the same route, the same arrows
         assertTrue(home.openMapModule()); settle(); lay(home)
         map.polestar.onRoute(JSONObject().put("type", "pnavroute").put("legs", JSONArray().put(JSONObject().put("k", "walk").put("c", 0)
