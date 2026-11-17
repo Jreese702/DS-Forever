@@ -238,23 +238,29 @@ class WorldMapRoomView(context: Context) : View(context) {
         var guard = 0
         while (guard++ < 3) {
             val m = model.maps[canvas] ?: return
-            if (m.type == 2 && zoom < 1f) {
+            if (model.isLand(m.id) && zoom < 1f) {           // a continent, or an island the world places by its row (Zephras Isle)
                 val w = model.parentOf(canvas)?.takeIf { p -> model.assignsOf(p).isNotEmpty() && model.placeOn(canvas, p) != null }
                 if (w != null) { switchCanvas(w); continue }
             }
             if (model.assignsOf(canvas).isNotEmpty()) {
                 val h = 0.5f / zoom
-                val k = layers().firstOrNull { l -> l.kind == WorldMapModel.CONTINENT && zoom * l.p.width() >= 0.999f &&
+                // the smallest frame that covers the view (an island's frame lies inside Eastern Kingdoms')
+                val k = layers().filter { l -> l.kind == WorldMapModel.CONTINENT && zoom * l.p.width() >= 0.999f &&
                     l.p.left <= panX - h + EDGE_EPS && l.p.right >= panX + h - EDGE_EPS && l.p.top <= panY - h + EDGE_EPS && l.p.bottom >= panY + h - EDGE_EPS }
+                    .minByOrNull { it.p.width() }
                 if (k != null) { switchCanvas(k.id); continue }
             }
             return
         }
     }
 
-    /** the continent on the world canvas whose box (the one it is drawn in) holds ([u], [v]) */
-    private fun contAt(u: Float, v: Float): Lay? = layers().firstOrNull { l -> l.kind == WorldMapModel.CONTINENT &&
+    /** the continent on the world canvas whose box (the one it is drawn in) holds ([u], [v]); an island's box lies inside a continent's
+     *  (Zephras Isle in Eastern Kingdoms'): the smallest box wins */
+    private fun contAt(u: Float, v: Float): Lay? = layers().filter { l -> l.kind == WorldMapModel.CONTINENT &&
         model.maps[l.id]?.world?.continent?.let { model.assignOf(canvas, it)?.holds(u, v) } == true }
+        .minByOrNull { l -> model.maps[l.id]?.world?.continent?.let { model.assignOf(canvas, it) }?.let { (it.u1 - it.u0) * (it.v1 - it.v0) } ?: 1.0 }
+    /** a land layer that is an island zone straight on the world (Zephras Isle), not a continent */
+    private fun isIsland(l: Lay) = l.kind == WorldMapModel.CONTINENT && model.maps[l.id]?.type == 3
 
     /** layer [l]'s outline (the game's highlight of it on the continent) at ([u], [v]) of the canvas: true / false, null = not known */
     private fun inOutline(l: Lay, u: Float, v: Float): Boolean? {
@@ -428,11 +434,15 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun drawArt(c: Canvas) {
         drawPicture(c, canvas, UNIT_R)
         val mid = contAt(panX, panY)
-        for (l in layers().sortedBy { if (it === mid) 1 else 0 }) {
+        // AN ISLAND ON THE WORLD (the user, 2026-11-17: the Skyborne's island "should be in like the upper center"): the world's painting
+        // has no picture of it, so its own art shows at every zoom, cut to its land (its overlays' outline), over the continents' sheets
+        // (Eastern Kingdoms' frame reaches under it); its whole sheet fades in over that as it fills the view, as a continent's does
+        for (l in layers().sortedBy { (if (isIsland(it)) 2 else 0) + (if (it === mid) 1 else 0) }) {
             val a = l.shown
-            if (a <= 0.004f) continue
             val sr = RectF(sxc(l.p.left), syc(l.p.top), sxc(l.p.right), syc(l.p.bottom))
             if (!sr.intersect(canvasR)) continue
+            if (isIsland(l)) drawMasked(c, l, 1f, RectF(sr), land = true)
+            if (a <= 0.004f) continue
             if (l.kind == WorldMapModel.CONTINENT) drawContinentLayer(c, l, a) else drawMasked(c, l, a, sr)
         }
     }
@@ -465,7 +475,7 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     /** a zone's / capital's own art at [a], cut to its outline: the game's highlight picture of the zone (as the stitch was), else
      *  its overlays, else a soft-edged box (a capital) */
-    private fun drawMasked(c: Canvas, l: Lay, a: Float, sr: RectF) {
+    private fun drawMasked(c: Canvas, l: Lay, a: Float, sr: RectF, land: Boolean = false) {
         pLayer.alpha = (255 * a).toInt().coerceIn(0, 255)
         c.saveLayer(sr, pLayer)
         drawPicture(c, l.id, l.p)
@@ -481,7 +491,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             srcR.set(0, 0, max(1, (hb.width * h.tpx).toInt()), max(1, (hb.height * h.tpy).toInt()))
             dst.set(sxc(h.x), syc(h.y), sxc(h.x + h.w), syc(h.y + h.h))
             c.drawBitmap(hb, srcR, dst, pMaskHl)
-        } else if (l.kind == WorldMapModel.ZONE && info != null && info.overlays.isNotEmpty()) {
+        } else if ((l.kind == WorldMapModel.ZONE || land) && info != null && info.overlays.isNotEmpty()) {
             for (o in info.overlays) { val b = bmp("${l.id}/ov_${o.id}") ?: continue; overlayDst(l.p, info, o); c.drawBitmap(b, null, dst, pBmp) }
         } else {
             dst.set(sxc(l.p.left), syc(l.p.top), sxc(l.p.right), syc(l.p.bottom))
