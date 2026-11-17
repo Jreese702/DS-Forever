@@ -11,6 +11,9 @@ WowCompanion/Bags.lua in Lua 5.1 with stand-in game frames and checks:
   - the open event a moment before its frame shows (the 1 s grace): still skipped ("ctx-merchant");
   - the bags closed while waiting, or the room left by touch: no take back;
   - bags-take2: a leave from an EARLIER visit (taken / free / B) does not stop a later visit's retry or 1 s check;
+  - bags-take3: a listed window really shown that nobody drives (no holder, the companion in charge, Interact counting none open, no
+    fight) never hides: after CTXW.ORPHAN_S of skips the 1 s check / touch entry takes anyway ("take-orphan:<window>"); the game's own
+    window (mode off), an older capture (no mode), Interact counting a window open, a holder, a fight: still skipped;
   - read-only: no binding / macro / CVar / window call.
 Run: python -B tools/test_bags_take.py
 """
@@ -150,7 +153,8 @@ HOLDER = nil
 SPEC = nil
 CAPV = CAPV or 21
 WowCompanion.capture = { version = CAPV, take = function(_, spec) SPEC = spec; TAKES = (TAKES or 0) + 1; return true end, pass = function() return true end,
-                         release = function() return true end, state = function() return { holder = rawget(_G, "HOLDER") } end,
+                         release = function() return true end,
+                         state = function() return { holder = rawget(_G, "HOLDER"), mode = rawget(_G, "MODE"), npcOpen = rawget(_G, "NPCOPEN") } end,
                          chord = function() return true end, refused = function() return false end }
 function press(k) SPEC.press(k); run(0) end
 function doc() return WowCompanion._bagsCtlDoc() end
@@ -272,9 +276,56 @@ L.execute('show("ContainerFrameCombinedBags"); SPEC.lost("taken"); run(0)')
 L.execute('show("GossipFrame"); hide("GossipFrame"); for _, t in ipairs(TICKS) do t() end; run(0)')
 check(not on(L), "lost to another room during this visit (bags still open, no new entry): no take back", note(L))
 
+# 7. bags-take3 (second review): a listed window REALLY shown that nobody drives never hides: the room must still take
+def tick(L, n=1):
+    for _ in range(n):
+        L.execute('NOW = NOW + 1; for _, t in ipairs(TICKS) do t() end; run(0)')
+
+for w in ("GossipFrame", "QuestFrame", "MerchantFrame", "CharacterFrame"):
+    L = runtime()
+    L.execute('MODE = true; NPCOPEN = false; show("%s"); show("ContainerFrameCombinedBags")' % w)
+    n1 = note(L)
+    tick(L, 1)
+    early = on(L)
+    tick(L, 1)
+    check(n1 == "take-skip-window:" + w and not early and on(L),
+          "%s shown with no holder, companion in charge, none open: skipped, then taken by the 1 s check (orphan)" % w,
+          (n1, early, note(L)))
+L = runtime()
+L.execute('MODE = true; NPCOPEN = false; show("GossipFrame"); show("ContainerFrameCombinedBags"); NOW = NOW + 2')
+L.execute('WowCompanion._bagsTouch(29); run(0)')
+check(on(L), "... the touch entry's one more take (1.5 s later) takes too", note(L))
+L = runtime()
+L.execute('MODE = true; NPCOPEN = false; show("GossipFrame"); show("ContainerFrameCombinedBags")')
+L.execute('NOW = NOW + 1; hide("GossipFrame"); show("QuestFrame")')
+tick(L, 1)
+check(not on(L), "a DIFFERENT window starts its own wait (no orphan take 1 s after it showed)", note(L))
+for what, setup in (("the game's own window (mode off)", 'MODE = false; NPCOPEN = false'),
+                    ("an older capture (no mode)", 'MODE = nil; NPCOPEN = nil'),
+                    ("Interact counting a window open (Send Mail's confirm)", 'MODE = true; NPCOPEN = true'),
+                    ("a holder (Interact holds the vendor)", 'MODE = true; NPCOPEN = false; HOLDER = "npc"'),
+                    ("a fight", 'MODE = true; NPCOPEN = false; COMBAT = true')):
+    L = runtime()
+    L.execute(setup + '; show("MerchantFrame"); show("ContainerFrameCombinedBags")')
+    tick(L, 5)
+    L.execute('WowCompanion._bagsTouch(29); run(0)')
+    check(not on(L) and (note(L) or "").startswith("take-skip-window:MerchantFrame"),
+          "%s: still skipped (no orphan take)" % what, note(L))
+L = runtime()
+L.execute('MODE = true; NPCOPEN = false; HOLDER = nil; show("CharacterFrame"); show("ContainerFrameCombinedBags"); MODE = false')
+tick(L, 2)
+check(on(L), "the Character window with no holder: an orphan even with the NPC-windows bit off (no Interact window)", note(L))
+L = runtime()
+L.execute('MODE = true; NPCOPEN = false; show("GossipFrame"); show("ContainerFrameCombinedBags")')
+check(L.eval('doc().wait') == "GossipFrame", "the off doc says which window the take waits on (wait)", L.eval('doc().wait'))
+ISRC = open(os.path.join(ADDONS, 'WowCompanionInteract', 'Interact.lua'), encoding='utf-8').read()
+check('mode = N.mode and true or false, npcOpen = N.lastOpen' in ISRC and 'local IV = "i166"' in ISRC,
+      "Interact i166: capture.state() says mode and npcOpen")
+
 check(L.eval('#TRACE') == 0, "read-only: no binding / macro / CVar / window call", L.eval('TRACE[1]'))
 check('"read my DS my bag is behaving weird and opening the bag on top for some reason"' in SRC,
       "Bags.lua's header note quotes the user (bags-take1)")
 check('bags-take2' in SRC, "Bags.lua's header note for bags-take2")
+check('bags-take3' in SRC, "Bags.lua's header note for bags-take3")
 print('passes %d, failed: %d' % (passes, fails))
 sys.exit(1 if fails else 0)
