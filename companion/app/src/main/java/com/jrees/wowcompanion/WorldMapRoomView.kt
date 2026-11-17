@@ -777,6 +777,9 @@ class WorldMapRoomView(context: Context) : View(context) {
         override fun abandonConfirm(id: Int) { confirmId = id; confirmAt = System.currentTimeMillis(); confirmAbandon() }
         override fun changed() { syncB(); invalidate() }
         override fun redrawIn(ms: Long) { postInvalidateDelayed(ms) }
+        // A on the panel (the user, 2026-11-17: "A for track"): the room's own track toggle (its pending answer, its tap-pad route)
+        override fun track(id: Int, on: Boolean) { if (tracked(id) != on) toggleTrack(id) }
+        override fun glyphs(): Boolean = held
     })
     private var travelDrawn: List<Pair<Travel.Point, FloatArray>> = emptyList()
     private fun drawTravel(c: Canvas) {
@@ -2428,9 +2431,9 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun legendPrompts(): List<Prompt> {
         val back = Prompt(listOf(glyph("b")), "Back")
         // the quest panel (b-maproom-quests): its own keys
+        // (its buttons carry A / X / Y: the user, 2026-11-17)
         if (qp.isOpen) return if (qp.focus < 0) listOf(Prompt(listOf(glyph("right")), "Into the quest"), Prompt(listOf(glyph("b")), "Close"))
-            else if (qp.focus == 0) listOf(Prompt(listOf(glyph("up"), glyph("down")), "Scroll"), Prompt(listOf(glyph("b")), "Back"))
-            else listOf(Prompt(listOf(glyph("a")), "Press"), Prompt(listOf(glyph("b")), "Back"))
+            else listOf(Prompt(listOf(glyph("up"), glyph("down")), "Scroll"), Prompt(listOf(glyph("b")), "Back"))
         if (psOpen) return emptyList()              // pm1: the menu's own buttons carry their glyphs
         if (skipOpen) return listOf(Prompt(listOf(glyph("a")), "Select"), Prompt(listOf(glyph("b")), "Close"))
         if (confirmId != 0) return emptyList()      // the question's own buttons say A Yes / B No (UI Art: the clutter rule)

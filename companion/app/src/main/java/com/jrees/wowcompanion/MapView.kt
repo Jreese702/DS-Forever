@@ -4103,16 +4103,18 @@ class MapView(context: Context) : View(context) {
      * row wears the grey disc and "Untracked" ([cardFor]). Merged with the light blue row: that row.
      */
     private fun revealInList(id: Int) {
-        if (psMerged() == id) {
-            cursor.touched(MapList.POLESTAR, listKeys()); revealRow = MapList.POLESTAR
-        } else {
-            val z = untrackedLog.firstOrNull { it.optInt("id", 0) == id }?.optString("zone", "")?.ifEmpty { MapQuestBook.OTHER }
-            if (z != null && openTabs[z] != true) { openTabs[z] = true; rebuildItems() }
-            cursor.touched(id, listKeys()); revealRow = id
-        }
+        selectRow(id)
         openPanel(id)
         onListWanted?.invoke()
         invalidate()
+    }
+
+    /** the list's cursor onto quest [id]'s row (its tab opened when it is untracked; merged with the light blue row: that row), in view */
+    private fun selectRow(id: Int) {
+        if (psMerged() == id) { cursor.touched(MapList.POLESTAR, listKeys()); revealRow = MapList.POLESTAR; return }
+        val z = untrackedLog.firstOrNull { it.optInt("id", 0) == id }?.optString("zone", "")?.ifEmpty { MapQuestBook.OTHER }
+        if (z != null && openTabs[z] != true) { openTabs[z] = true; rebuildItems() }
+        cursor.touched(id, listKeys()); revealRow = id
     }
 
     /**
@@ -4275,8 +4277,27 @@ class MapView(context: Context) : View(context) {
         override fun abandonConfirm(id: Int) { onAbandonConfirm?.invoke(id) }
         override fun changed() { syncB(); invalidate() }
         override fun redrawIn(ms: Long) { postInvalidateDelayed(ms) }
+        override fun track(id: Int, on: Boolean) = panelTrack(id, on)
+        override fun glyphs(): Boolean = held || padHints
     })
     private var panelId: Int get() = qp.id; set(v) { qp.id = v }
+
+    /**
+     * THE PANEL'S TRACK / UNTRACK (A; the user, 2026-11-17: "A for track"): the game's tracker only (QuestPad's watch / unwatch, as the
+     * list's X), shown at once ([trackNow]). The panel stays on its quest, so the list's cursor, when it was on it, goes with it to its
+     * new place (up into the tracked quests, or down into its tab, opened) instead of holding the place as the list's own X does.
+     */
+    private fun panelTrack(id: Int, on: Boolean) {
+        val send = if (on) onTrackQuest else onUntrackQuest
+        if (send == null) { note(if (on) "Track is not on the tap pad yet" else "Untrack is not on the tap pad yet"); return }
+        val onIt = cursor.shown && PolestarMerge.key(cursor.sel, psMerged()) == id
+        val before = listKeys()
+        val beforeAt = items.indexOfFirst { it.key == id && it !is MapList.Item.Section }
+        send(id)
+        trackNow(id, on, false, before, beforeAt)
+        if (onIt) selectRow(id)
+        invalidate()
+    }
     private var armedId: Int get() = qp.armedId; set(v) { qp.armedId = v }
     private var panelScroll: Float get() = qp.scroll; set(v) { qp.scroll = v }
     private var panelContentH: Float get() = qp.contentH; set(v) { qp.contentH = v }
@@ -4295,9 +4316,8 @@ class MapView(context: Context) : View(context) {
     // ---- THE CURSOR IN THE QUEST BOX (the user's correction, 2026-10-17: "Right d pad was not literally supposed to show quest areas, I
     // meant that the cursor would move over onto the quest box to scroll the text or press buttons or whatever"). With the panel open
     // the cursor is on the LIST ([panelFocus] -1: the list moves as always, the panel showing the quest under it) until Right takes it
-    // INTO the box: 0 its text (Up / Down scroll it; Down at its end goes to the buttons), 1.. its buttons (Left / Right between them,
-    // A presses one, Up back to the text). Left from the text or the first button, or B, steps back out to the list; B on the list
-    // closes the panel.
+    // INTO the box: 0 its text (Up / Down scroll it). Left or B steps back out to the list; B on the list closes the panel. The buttons
+    // are pressed by their own glyphs from either place (2026-11-17: Track A, Share X, Abandon Y; QuestPanel.key), no longer walked to.
     private var panelFocus: Int get() = qp.focus; set(v) { qp.focus = v }
     private fun panelKey(k: String): Boolean = qp.key(k)
     private fun panelAct(act: String) = qp.act(act)
@@ -5816,11 +5836,11 @@ class MapView(context: Context) : View(context) {
         if (pmenu.open) { UiKit.hints(c, band.right - 24f, cy, glyph("up") to "Select", glyph("a") to "Choose", glyph("b") to "Back"); return }
         if (stepChoice.open) { UiKit.hints(c, band.right - 24f, cy, glyph("a") to "Select", glyph("b") to "Close"); return }
         if (panelId != 0) {
+            // the panel's buttons carry A / X / Y (the user, 2026-11-17): the line says only the moves and B
             val hp = when {
-                armedId == panelId -> arrayOf(glyph("left") to "", glyph("right") to "Select", glyph("a") to "Press", glyph("b") to "Cancel")
+                armedNow() -> arrayOf(glyph("b") to "Cancel")
                 panelFocus < 0 -> arrayOf(glyph("up") to "Select", glyph("right") to "Quest box", glyph("b") to "Close")
-                panelFocus == 0 -> arrayOf(glyph("up") to "Scroll", glyph("left") to "List", glyph("b") to "Back")
-                else -> arrayOf(glyph("left") to "", glyph("right") to "Select", glyph("a") to "Press", glyph("b") to "Back")
+                else -> arrayOf(glyph("up") to "Scroll", glyph("left") to "List", glyph("b") to "Back")
             }
             UiKit.hints(c, band.right - 24f, cy, *hp); return
         }

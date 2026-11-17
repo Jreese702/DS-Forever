@@ -16,6 +16,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -589,6 +590,16 @@ class MapKalimdorShotsTest {
         tap(r, at!![0], at[1])
         shownInList(r, 8, "a tap")
         shot("home_untracked_tap_list", frames(r, 2000L))
+        // the panel's A (the user: "A for track"): the game's tracker takes it; the panel and the list's cursor stay with the quest
+        val asked = ArrayList<Int>()
+        r.map.onTrackQuest = { asked.add(it) }
+        r.map.onTrackFocusQuest = { fail("the panel's A tracks, it does not focus") }
+        key(r.home, "PAD1")
+        assertEquals(listOf(8), asked)
+        draw(r.home)
+        assertTrue("the panel stays open", r.map.panelOpen())
+        assertEquals("the cursor went with the quest", 8, r.map.listSel())
+        assertTrue("... up into the tracked quests (${r.map.listItemKeys()})", r.map.listItemKeys().let { k -> k.indexOf(8) in 0 until k.indexOfFirst { MapList.isGroup(it) } })
     }
 
     @Test fun aOnAnUntrackedDiscShowsItInTheList() {
