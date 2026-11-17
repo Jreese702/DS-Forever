@@ -31,6 +31,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     private val attackSection = HomeSettingsSection(context) { it == ATTACK_CAST }
     /** every GameUiSection part (B closes an open On / Off bar of any of them first) */
     val gameUis = ArrayList<GameUiSection>()
+    /** General's parts (beautify: its tiles and compact rows, GeneralTilesView); B closes an open band of theirs first too */
+    val generals = ArrayList<GeneralTilesView>()
     val tabBar = SettingsTabBar(context) { t -> show(t) }
     /** "What it does" (phase 2): the row's picture, right of the page, on the tabs that have pictures */
     val preview = SettingsPreviewView(context, { homeSection.dpadState()?.want }, { view.smartDoc()?.on })
@@ -73,6 +75,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
                 is SettingsView -> SettingsPad.Section(p, { p.focusTargets() }, noStart = { p.isReload(it) })
                 is HomeSettingsSection -> SettingsPad.Section(p, { p.focusTargets() })
                 is GameUiSection -> SettingsPad.Section(p, { p.focusTargets() })
+                is GeneralTilesView -> SettingsPad.Section(p, { p.focusTargets() }, noStart = { p.isReload(it) })
                 else -> SettingsPad.Section(p, { emptyList() })
             })
         }
@@ -86,6 +89,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         // Top screen's tiles (2026-11-16): ONE band open in the room - a tile's band opening closes any other part's - and the cursor
         // and the band follow it (a tap and A alike)
         for (gu in gameUis) gu.onOpen = { s -> gameUis.filter { it !== s }.forEach { it.closeSelection() }; pad.follow(s) }
+        pad.bands = generals
+        for (gv in generals) gv.onOpen = { s -> generals.filter { it !== s }.forEach { it.closeSelection() }; pad.follow(s, s.selectionAnchor(), s.bandBox()) }
         page.addView(pad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         body.addView(page, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         body.addView(preview, LinearLayout.LayoutParams(PREVIEW_W, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -111,7 +116,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
 
     /** [p] has rows to draw now */
     private fun hasContent(p: View): Boolean = when (p) {
-        is SettingsView -> p.hasContent(); is GameUiSection -> p.hasContent(); is HomeSettingsSection -> p.hasContent(); else -> true
+        is SettingsView -> p.hasContent(); is GameUiSection -> p.hasContent(); is HomeSettingsSection -> p.hasContent()
+        is GeneralTilesView -> p.hasContent(); else -> true
     }
     /** [g] has rows to draw now (a group without any is not shown: no heading, no cursor stop) */
     fun hasRows(g: SettingsTabs.Group): Boolean = groupBoxes.firstOrNull { it.group == g }?.parts?.any { hasContent(it) } == true
@@ -136,6 +142,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     /** the views that draw [g]'s rows, in its blocks' order: a run of SettingsView blocks is one slice; GameUiSection blocks of the same
      *  part share it (Navigation's Polestar tile is in Navigation's grid) */
     private fun partsOf(g: SettingsTabs.Group): List<View> {
+        // General as picture tiles and compact rows (the beautify design, section 2): ONE part per group draws all its rows
+        if (g.tab == SettingsTabs.Tab.GENERAL) return listOf(GeneralTilesView(context, view, g).also { generals.add(it) })
         val out = ArrayList<View>()
         val run = LinkedHashSet<SettingsTabs.Block>()
         fun flush() { if (run.isNotEmpty()) { out.add(view.slice(run.toSet())); run.clear() } }
@@ -171,6 +179,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         tab = t
         SettingsTabs.last = t
         gameUis.forEach { it.closeSelection() }
+        generals.forEach { it.closeSelection() }
         touched = false
         open.clear(); open.addAll(SettingsTabs.openOnShow(t) { hasRows(it) })
         applyGroups()
@@ -334,6 +343,9 @@ class SettingsPad(
     /** one section of the room and its buttons, in its own coordinates; a button [noStart] says yes to is never where the cursor
      *  starts (it was "the first N", which on a tab without Reload skipped that tab's first button: Spoken's Install, test40) */
     class Section(val view: View, val targets: () -> List<RectF>, val noStart: (RectF) -> Boolean = { false })
+
+    /** the other parts with a band (General's tiles): B closes an open one first, as it closes a GameUiSection's */
+    var bands: List<BandPart> = emptyList()
 
     /** B with nothing nearer to do, when the leave-with-B cell cannot be tapped: Home directly (MainActivity) */
     var onLeave: (() -> Unit)? = null
@@ -517,6 +529,7 @@ class SettingsPad(
             "PAD1" -> if (focus != null) here?.let { press(it) } else moveTo(all.first())
             "PAD2" -> {
                 val open = gameUis.firstOrNull { it.hasSelection }
+                val openBand = bands.firstOrNull { it.hasSelection }
                 when {
                     // B one step back: the open bar / band closes and the cursor is back on its own row / tile (the band under a tile
                     // takes the buttons the cursor was on away; the nearest button left would be the next tile row)
@@ -524,6 +537,11 @@ class SettingsPad(
                         val a = open.selectionAnchor()
                         gameUis.forEach { it.closeSelection() }
                         if (a != null) { anchor = open to a; anchorBand = null }
+                    }
+                    openBand != null -> {
+                        val a = openBand.selectionAnchor()
+                        bands.forEach { it.closeSelection() }
+                        if (a != null && openBand is View) { anchor = openBand to a; anchorBand = null }
                     }
                     // B in the page: back to the tab row (rows -> tabs -> Home); without a tab row it leaves
                     tabBar != null -> toTabs()
@@ -578,10 +596,13 @@ class SettingsPad(
     private var anchorBand: RectF? = null
 
     /** a tile's band opened or moved (a tap, or A): the cursor onto that tile when it is in the page, the tile and its band in view */
-    fun follow(s: GameUiSection) {
-        val a = s.selectionAnchor() ?: return
-        anchor = s to a
-        anchorBand = s.bandBox()
+    fun follow(s: GameUiSection) = follow(s, s.selectionAnchor(), s.bandBox())
+
+    /** a band opened in part [v]: its tile [a] and its band [band] (its own coordinates) */
+    fun follow(v: View, a: RectF?, band: RectF?) {
+        a ?: return
+        anchor = v to a
+        anchorBand = band
         invalidate()
     }
 
@@ -615,7 +636,7 @@ class SettingsPad(
     private fun syncB() {
         if (!held) return
         // B leads Home only from the tab row (or with no tab row and no bar open)
-        val where = if (overlayOpen() || gameUis.any { it.hasSelection } || (tabBar != null && !onTabs)) "back" else "home"
+        val where = if (overlayOpen() || gameUis.any { it.hasSelection } || bands.any { it.hasSelection } || (tabBar != null && !onTabs)) "back" else "home"
         if (where != bSaid && tap(GuestPad.bnext(padSource(), home = where == "home"))) bSaid = where
     }
 

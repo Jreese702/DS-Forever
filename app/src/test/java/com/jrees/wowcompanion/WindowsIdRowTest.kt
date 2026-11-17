@@ -73,18 +73,16 @@ class WindowsIdRowTest {
         }
     }
 
-    private fun account(r: SettingsRoom): SettingsView =
-        r.groupBoxes.first { it.group == SettingsTabs.Group.ACCOUNT }.parts.single() as SettingsView
+    /** 2026-11-17 (the beautify pass): General > Account is ONE GeneralTilesView part of compact rows */
+    private fun account(r: SettingsRoom): GeneralTilesView =
+        r.groupBoxes.first { it.group == SettingsTabs.Group.ACCOUNT }.parts.single() as GeneralTilesView
 
-    @Suppress("UNCHECKED_CAST")
-    private fun segs(v: SettingsView): Array<RectF> =
-        SettingsView::class.java.getDeclaredField("segWinId").apply { isAccessible = true }.get(v) as Array<RectF>
+    private fun segs(v: GeneralTilesView): List<RectF> = v.controlBoxes(GeneralTiles.Row.WINDOWS_ID)
 
-    private fun restartBox(v: SettingsView): RectF =
-        SettingsView::class.java.getDeclaredField("btnWinIdRestart").apply { isAccessible = true }.get(v) as RectF
+    private fun restartBox(v: GeneralTilesView): RectF = v.controlBoxes(GeneralTiles.Row.WINDOWS_RESTART).singleOrNull() ?: RectF()
 
     /** a finger's tap at [b]'s centre, in the slice's own coordinates */
-    private fun touch(r: SettingsRoom, v: SettingsView, b: RectF) {
+    private fun touch(r: SettingsRoom, v: View, b: RectF) {
         val down = MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, b.centerX(), b.centerY(), 0)
         val upE = MotionEvent.obtain(0, 40, MotionEvent.ACTION_UP, b.centerX(), b.centerY(), 0)
         v.dispatchTouchEvent(down); v.dispatchTouchEvent(upE)

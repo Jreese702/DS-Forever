@@ -154,9 +154,11 @@ class SettingsRoomTest {
         val combat = box(r, SettingsTabs.Group.COMBAT).parts
         assertEquals(3, combat.size)                                  // GameUiSection, Home's attack row, GameUiSection
         assertTrue(combat[1] is HomeSettingsSection)
-        // every group has a part, and a GameUiSection part only in Top screen's groups, Help and Combat helpers
+        // every group has a part, and a GameUiSection part only in Top screen's groups and Combat helpers (2026-11-17, the beautify
+        // pass: General's groups are GeneralTilesView parts, Help's status their compact row)
         for (gb in r.groupBoxes) assertTrue("${gb.group} has parts", gb.parts.isNotEmpty())
-        assertEquals(setOf(SettingsTabs.Group.HELP, SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY,
+        for (gb in r.groupBoxes.filter { it.group.tab == SettingsTabs.Tab.GENERAL }) assertTrue("${gb.group}", gb.parts.single() is GeneralTilesView)
+        assertEquals(setOf(SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY,
             SettingsTabs.Group.NAVIGATION, SettingsTabs.Group.WINDOWS, SettingsTabs.Group.COMBAT),
             r.groupBoxes.filter { gb -> gb.parts.any { it is GameUiSection } }.map { it.group }.toSet())
         // 2026-11-16 (the tiles): Navigation is ONE tile part (its Polestar tile was SettingsView's row); every Top screen group's part draws
@@ -178,14 +180,16 @@ class SettingsRoomTest {
     @Test fun zeroHeightPartsAreNoStops() {
         val r = room()
         r.show(SettingsTabs.Tab.GENERAL); r.toggle(SettingsTabs.Group.ACCOUNT); lay(r)
-        val slice = box(r, SettingsTabs.Group.ACCOUNT).parts.single() as SettingsView
-        val before = slice.focusTargets()
+        // 2026-11-17 (the beautify pass): General's Account group is ONE GeneralTilesView part of compact rows
+        val part = box(r, SettingsTabs.Group.ACCOUNT).parts.single() as GeneralTilesView
+        val before = part.focusTargets()
         // the user, 2026-11-14 ("build it"): + Windows ID's Per install / Original (no game here: no restart row)
         assertEquals("the login button, then Ask each time / Remembered, then Per install / Original", 5, before.size)
         val loginBox = before.first()
         assertTrue(r.pad.targetBoxes().any { it.top >= headBox(r, SettingsTabs.Group.ACCOUNT).bottom && it.height() == loginBox.height() })
-        val host = SettingsView::class.java.getDeclaredField("hub").apply { isAccessible = true }.get(slice) as SettingsView
-        // a slice of the login block alone: the host takes the login row away, measured again it is 0 px with no stale box
+        val host = SettingsRoom::class.java.getDeclaredField("view").apply { isAccessible = true }.get(r) as SettingsView
+        // a slice of the login block alone (SettingsView's own rows, still used by its whole-tab view): the host takes the login row
+        // away, measured again it is 0 px with no stale box
         val loginOnly = host.slice(setOf(SettingsTabs.Block.ACCOUNT))
         lay(loginOnly)
         assertEquals(1, loginOnly.focusTargets().size)
@@ -196,7 +200,7 @@ class SettingsRoomTest {
         assertTrue("no stale login box", loginOnly.focusTargets().isEmpty())
         // the room's Account group: the login row is gone, the Game account row stays (its group and heading with it)
         lay(r)
-        val after = slice.focusTargets()
+        val after = part.focusTargets()
         assertEquals(4, after.size)
         assertTrue("no stale login box", after.none { it == loginBox })
         assertEquals(View.VISIBLE, box(r, SettingsTabs.Group.ACCOUNT).box.visibility)
