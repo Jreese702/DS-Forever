@@ -65,12 +65,15 @@ class SettingsRoomTest {
             // the tab's groups WITH ROWS NOW (no game here: Top screen's switches have not come, only Game windows' minimap)
             val groups = SettingsTabs.groups(t).filter { r.hasRows(it) }
             assertTrue(t.label, groups.isNotEmpty())
-            // General does not fold (the user, 2026-11-12): every group open
-            assertEquals(t.label, if (t.folds) setOf(groups.first()) else groups.toSet(), r.open)
+            // General does not fold (the user, 2026-11-12): every group open. A headless group (Add-ons' Import button, the user
+            // 2026-11-16) is always open, with the first group that has a heading
+            val firstHeaded = groups.first { !it.headless }
+            val want = if (t.folds) groups.filter { it.headless }.toSet() + firstHeaded else groups.toSet()
+            assertEquals(t.label, want, r.open)
             for (gb in r.groupBoxes) {
                 val onTab = gb.group in groups
                 assertEquals("${gb.group} box", if (onTab) View.VISIBLE else View.GONE, gb.box.visibility)
-                val isOpen = if (t.folds) gb.group == groups.first() else onTab
+                val isOpen = gb.group in want
                 assertEquals("${gb.group} heading", isOpen, gb.heading.open)
                 for (p in gb.parts) assertEquals("${gb.group} part", if (isOpen) View.VISIBLE else View.GONE, p.visibility)
             }
@@ -276,7 +279,7 @@ class SettingsRoomTest {
         ThirdPartyAddons.setCore(ThirdPartyAddons.QUESTTRAIL, false)
         lay(r)
         assertEquals(View.GONE, box(r, SettingsTabs.Group.QUESTTRAIL).box.visibility)
-        assertEquals("one stop per shown heading", r.groupBoxes.count { it.box.visibility == View.VISIBLE }, headingStops(r))
+        assertEquals("one stop per shown heading", r.groupBoxes.count { it.box.visibility == View.VISIBLE && !it.group.headless }, headingStops(r))
     }
 
     /** 8: a change that decides a slice's rows (an add-on's state, Polestar's top-screen row's inputs) measures every part again */

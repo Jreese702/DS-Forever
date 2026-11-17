@@ -59,12 +59,15 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             val parts = partsOf(g)
             val box = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
             box.addView(heading, wrap())
+            // a headless group (Add-ons' Import button): no heading at all, its parts always shown
+            if (g.headless) heading.visibility = View.GONE
             for (p in parts) box.addView(p, wrap())
             column.addView(box, wrap())
             groupBoxes.add(GroupBox(g, box, heading, parts))
             // the cursor stops on the heading (A opens / folds it), then on the rows of an open group
             // a tab that does not fold (General): no stop on its plain headings
-            sections.add(SettingsPad.Section(heading, { if (g.tab.folds) listOf(heading.rect()) else emptyList() }))
+            // a headless group: no heading, no stop
+            sections.add(SettingsPad.Section(heading, { if (SettingsTabs.folds(g)) listOf(heading.rect()) else emptyList() }))
             for (p in parts) sections.add(when (p) {
                 // General's "Reload game UI", the room's one destructive control: the cursor never STARTS there
                 is SettingsView -> SettingsPad.Section(p, { p.focusTargets() }, noStart = { p.isReload(it) })
@@ -183,7 +186,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
 
     /** a tap on [g]'s heading or A on it: open it, or fold it */
     fun toggle(g: SettingsTabs.Group) {
-        if (!g.tab.folds) return                                         // General: always open
+        if (!SettingsTabs.folds(g)) return                               // General, and a headless group: always open
         touched = true
         if (!open.remove(g)) {
             open.add(g)
@@ -198,7 +201,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
 
     private fun applyFolds() {
         for (gb in groupBoxes) {
-            val on = gb.group in open
+            val on = gb.group in open || (gb.group.headless && gb.group.tab == tab)
             gb.heading.open = on
             for (p in gb.parts) p.visibility = if (on) View.VISIBLE else View.GONE
         }

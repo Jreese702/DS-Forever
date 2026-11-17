@@ -22,8 +22,9 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * SETTINGS > ADD-ONS > IMPORTED, off the device (the user, 2026-11-16: "maybe we just do an import addons button then?"): the room on
- * the Add-ons tab with the Imported group open, driven the real way (a pick handed to ImportedAddons.receive, its worker, the card, the
+ * SETTINGS > ADD-ONS > IMPORT, off the device (the user, 2026-11-16: "maybe we just do an import addons button then?", then "Import
+ * addons should be a single button at the top of the list"): the room on the Add-ons tab - ONE full-width Import button first, its
+ * confirm card under it, the Imported group (the list) last and open - driven the real way (a pick handed to ImportedAddons.receive, its worker, the card, the
  * Install press, the list, Remove). The checks run always; the pictures only when ADDONS_IMPORT_SHOTS_DIR is set
  * (ADDONS_IMPORT_ART_ROOT = an art root laid out like the app's, E:/wow-build/runtime-art/r1/files):
  *   ADDONS_IMPORT_SHOTS_DIR=<dir> ADDONS_IMPORT_ART_ROOT=<root> gradlew :app:testModernDebugUnitTest --tests "*AddonsImportShotsTest*"
@@ -50,15 +51,15 @@ class AddonsImportShotsTest {
             r.draw(Canvas(Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)))
         }
     }
-    /** the room's scroll at its foot (the Imported group is the tab's last) */
-    private fun toFoot(v: View) {
-        if (v is android.widget.ScrollView) { v.scrollTo(0, (v.getChildAt(0)?.height ?: 0) - v.height); return }
-        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) toFoot(v.getChildAt(i))
+    /** the room's scroll at its foot (the Imported group is the tab's last), or at its top (the Import button and its card) */
+    private fun toFoot(v: View, top: Boolean = false) {
+        if (v is android.widget.ScrollView) { v.scrollTo(0, if (top) 0 else (v.getChildAt(0)?.height ?: 0) - v.height); return }
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) toFoot(v.getChildAt(i), top)
     }
-    private fun shot(r: View, name: String) {
-        lay(r); toFoot(r); lay(r)
+    private fun shot(r: View, name: String, top: Boolean = false) {
+        lay(r); toFoot(r, top); lay(r)
         val d = out ?: return
-        Thread.sleep(250); lay(r); toFoot(r)                            // icons decode off the UI thread
+        Thread.sleep(250); lay(r); toFoot(r, top)                       // icons decode off the UI thread
         val b = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
         val c = Canvas(b); c.drawColor(Theme.ink); r.draw(c)
         d.mkdirs()
@@ -80,9 +81,11 @@ class AddonsImportShotsTest {
         lay(r)
     }
 
-    /** the Imported group's slice (the SettingsView part that draws it) */
-    private fun slice(r: SettingsRoom): SettingsView =
-        r.groupBoxes.first { it.group == SettingsTabs.Group.IMPORTED }.parts.filterIsInstance<SettingsView>().single()
+    /** a group's slice (the SettingsView part that draws it): IMPORT = the button and its card, IMPORTED = the list */
+    private fun slice(r: SettingsRoom, g: SettingsTabs.Group = SettingsTabs.Group.IMPORT): SettingsView =
+        r.groupBoxes.first { it.group == g }.parts.filterIsInstance<SettingsView>().single()
+    private var n = 0
+    private fun pad(r: SettingsRoom, k: String) { r.pad.onPad(org.json.JSONObject().put("k", k).put("n", ++n)); lay(r) }
     private fun box(v: SettingsView, name: String): RectF = SettingsView::class.java.getDeclaredField(name).apply { isAccessible = true }.get(v) as RectF
     @Suppress("UNCHECKED_CAST")
     private fun removeBoxes(v: SettingsView): Map<String, RectF> =
@@ -126,9 +129,28 @@ class AddonsImportShotsTest {
             v.onImportAddons = { picker++ }
             val r = SettingsRoom(app, v) { null }.also { lay(it) }
             r.show(SettingsTabs.Tab.ADDONS); lay(r)
-            r.toggle(SettingsTabs.Group.POLESTAR); r.toggle(SettingsTabs.Group.IMPORTED)
+            // ---- the user, 2026-11-16: "Import addons should be a single button at the top of the list"
+            val gi = r.groupBoxes.first { it.group == SettingsTabs.Group.IMPORT }
+            assertEquals("no heading over the button", View.GONE, gi.heading.visibility)
+            assertEquals("the tab's first box", gi.box, r.groupBoxes.filter { it.box.visibility == View.VISIBLE }.minByOrNull { it.box.top }!!.box)
+            assertTrue("open as the tab shows", SettingsTabs.Group.IMPORT in r.open && gi.parts.all { it.visibility == View.VISIBLE })
+            assertTrue("the first headed group opens with it", SettingsTabs.groups(SettingsTabs.Tab.ADDONS)[1] in r.open)
+            r.toggle(SettingsTabs.Group.IMPORT); lay(r)
+            assertTrue("it never folds", SettingsTabs.Group.IMPORT in r.open)
             val s = slice(r)
-            shot(r, "01_addons_tab_import")
+            val b0 = RectF(box(s, "btnImport"))                     // a copy: each draw empties the last box
+            assertTrue("one full-width button", b0.width() > s.width * 0.9f)
+            assertEquals("nothing beside it: its box is the row's", listOf("Import add-ons"),
+                listOf(b0.left + 4f, b0.right - 4f).map { x -> s.rowAt(x, b0.centerY()) }.distinct())
+            // the controller: from the tab row, Down lands on Import first
+            pad(r, "PADDDOWN")
+            val f = r.pad.focusBox()!!
+            val top = gi.box.top + s.top
+            assertEquals("the first stop", RectF(b0.left, b0.top + top, b0.right, b0.bottom + top), f)
+            r.toggle(SettingsTabs.Group.POLESTAR)
+            r.toggle(SettingsTabs.Group.IMPORTED)                    // no imports yet: nothing in it, so it is not shown
+            assertEquals(View.GONE, r.groupBoxes.first { it.group == SettingsTabs.Group.IMPORTED }.box.visibility)
+            shot(r, "01_addons_tab_import", top = true)
             // Import: the host's picker (A and a touch alike)
             press(s, box(s, "btnImport"))
             assertEquals(1, picker)
@@ -150,14 +172,18 @@ class AddonsImportShotsTest {
             assertEquals("Kept: DS Forever's own", p.found.first { it.folder == "WowCompanionHub" }.refused)
             assertEquals("No add-on in this zip", p.bad.single().why)
             assertEquals("Bagnon", p.found.first().title)
-            shot(r, "02_confirm_card")
-            for (l in listOf("es", "fr")) { lang(l); shot(r, "02_confirm_card_$l") }
+            shot(r, "02_confirm_card", top = true)
+            // the card is under the button, before Polestar's heading
+            val card = RectF(box(s, "btnImportCancel"))
+            assertTrue(card.top > box(s, "btnImport").bottom)
+            assertTrue("before the next group", gi.box.bottom <= r.groupBoxes.first { it.group == SettingsTabs.Group.POLESTAR }.box.top)
+            for (l in listOf("es", "fr")) { lang(l); shot(r, "02_confirm_card_$l", top = true) }
             lang("en")
 
             // Install: it replaces one of yours, so twice
             press(s, box(s, "btnImportInstall")); lay(r)
             assertNotNull("not installed on the first press", ImportedAddons.pending)
-            shot(r, "03_confirm_tap_again")
+            shot(r, "03_confirm_tap_again", top = true)
             press(s, box(s, "btnImportInstall"))
             waitIdle(r)
             assertEquals(null, ImportedAddons.pending)
@@ -166,13 +192,19 @@ class AddonsImportShotsTest {
                 File(flavor, "Interface/AddOns/Bagnon/Bagnon.toc").readText())
             assertFalse(File(flavor, "Interface/AddOns/WowCompanionHub").exists())
             assertEquals(listOf("Bagnon", "Details", "OldBars"), ImportedAddons.list().map { it.folder })
+            // the list: the Imported group, last on the tab (its rows the add-ons' own)
+            assertEquals(View.VISIBLE, r.groupBoxes.first { it.group == SettingsTabs.Group.IMPORTED }.box.visibility)
+            if (SettingsTabs.Group.IMPORTED !in r.open) r.toggle(SettingsTabs.Group.IMPORTED)
+            lay(r)
+            val l = slice(r, SettingsTabs.Group.IMPORTED)
             shot(r, "04_imported_list")
+            shot(r, "04b_installed_top", top = true)
 
             // Remove: twice; then it is in the backup
-            val rm = removeBoxes(s)["Details"]!!
-            press(s, RectF(rm)); lay(r)
+            val rm = removeBoxes(l)["Details"]!!
+            press(l, RectF(rm)); lay(r)
             shot(r, "05_remove_tap_again")
-            press(s, RectF(removeBoxes(s)["Details"]!!))
+            press(l, RectF(removeBoxes(l)["Details"]!!))
             waitIdle(r)
             assertEquals(listOf("Bagnon", "OldBars"), ImportedAddons.list().map { it.folder })
             assertFalse(File(flavor, "Interface/AddOns/Details").exists())
@@ -191,15 +223,15 @@ class AddonsImportShotsTest {
             assertEquals("## Interface: 16001\n## Title: |cff00aaffBagnon|r\n## Version: 10.2.1\n",
                 File(flavor, "Interface/AddOns/Bagnon/Bagnon.toc").readText())
             assertEquals(listOf("Bagnon"), ImportedAddons.queued().map { it.folder })
-            assertEquals("the waiting row stands for it", setOf("OldBars"), removeBoxes(s).keys)
+            assertEquals("the waiting row stands for it", setOf("OldBars"), removeBoxes(l).keys)
             shot(r, "06b_replaces_at_next_start")
             for (l in listOf("es", "fr")) { lang(l); shot(r, "06b_replaces_at_next_start_$l") }
             lang("en")
             // its Cancel: the row goes, AddOns untouched
-            press(s, RectF(unqueueBoxes(s)["Bagnon"]!!))
+            press(l, RectF(unqueueBoxes(l)["Bagnon"]!!))
             waitIdle(r)
             assertTrue(ImportedAddons.queued().isEmpty())
-            assertEquals(setOf("Bagnon", "OldBars"), removeBoxes(s).keys)
+            assertEquals(setOf("Bagnon", "OldBars"), removeBoxes(l).keys)
             running(false)
             // no game folder: Import greyed with its word
             ImportedAddons.flavorRoot = { null }
@@ -207,7 +239,7 @@ class AddonsImportShotsTest {
             assertTrue("greyed", box(s, "btnImport").width() == 0f)
             for (f in ImportedAddons.list()) ImportedAddons.removeNow(f.folder, flavor)
             ImportedAddons.cancel()
-            shot(r, "07_no_game_folder")
+            shot(r, "07_no_game_folder", top = true)
         } finally {
             ImportedAddons.flavorRoot = oldRoot
             ImportedAddons::class.java.getDeclaredField("gameRunning").apply { isAccessible = true }
