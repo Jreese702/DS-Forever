@@ -15,13 +15,13 @@
 -- exactly as they are, because every action works on one stack at a time. Sorting and a merged
 -- "clean" view may come later as toggles; the wire stays per-slot either way.
 --
--- bags-take3 (the same report, second review; the user, 2026-11-16: "read my DS my bag is behaving weird and opening the bag on top for
--- some reason"): a listed window REALLY shown that nobody drives (the capture names no holder, the companion is in charge of the NPC
--- windows and Interact counts none of them open, out of a fight) never hides, so its OnHide retry never came and the game's bags stayed
--- on top with the room holding nothing. Such a window is an orphan: once the skip for that same window has lasted CTXW.ORPHAN_S, the
--- next take (the 1 s check, the touch entry's one more take) takes anyway and says so ("take-orphan:GossipFrame"). An older capture
--- that does not say its mode, the game's own window (companion not in charge), Interact counting a window open (Send Mail's confirm on
--- the top screen) and a fight all keep the skip as before. Read-only: IsShown and the capture's state(); nothing in the game is called.
+-- bags-take4 (the same report; the user, 2026-11-16 on 1478: "read my DS my bag is behaving weird and opening the bag on top for some
+-- reason"): bags-take3's orphan rule is TAKEN OUT (reverted, with Interact i166). Taking anyway after 1.5 s over-took at a real guild
+-- bank (no Interact window), at the game's own Character window with the NPC-windows bit off, and at a real vendor / bank whose
+-- Interact document came late. The trace could not name the window behind 1478's "take-skip-window": the Controller / Spellbook leave
+-- just before it (Book.lua, PadTabCtl.lua) is unchanged since 1477, and no 1478 change shows or keeps a listed window or sets ctx. So a
+-- shown listed window still skips; the skip names it ("take-skip-window:<frame>", bags-take1) so the next log says which one, and the
+-- take is tried again when it goes (bags-take1 / bags-take2). Nothing in the game is called.
 --
 -- bags-take2 (the same report, review of bags-take1): the retry and the 1 s check skipped on ctl.left, and ctl.left was cleared only by a
 -- successful take, so a leave from an EARLIER visit (another room "taken" -- the user was in the Spellbook / Controller rooms just
@@ -1816,8 +1816,7 @@ function WC._bagsCtlDoc()
     -- bags-de1: resume = the Disenchant grid lost the pad to a loot pop-up and takes it back when the loot window closes
     if not ctl.on then return { on = false, note = ctl.note, seq = ctl.seq, open = ctl.open and true or false, shut = BAR.shutList(),
                                 resume = (WC._de and WC._de.resume) and true or nil,
-                                ctxStale = CTXW.stale,           -- bags-take1: an open-window state let go (its close never came)
-                                wait = CTXW.wait and CTXW.wait.win or nil } end   -- bags-take3: the window the take waits on
+                                ctxStale = CTXW.stale } end      -- bags-take1: an open-window state let go (its close never came)
     -- bags-de1: the Disenchant grid's document FIRST: its cursor moves ctl.bag / ctl.slot (cur and the tooltip below follow it)
     local bulk = (ctl.mode == "bulk" and WC._de) and WC._de.doc() or nil
     return {
@@ -4084,15 +4083,8 @@ local function tryTake(viaWindow)
     -- bags-take1: the note names the window ("take-skip-window:MerchantFrame"), and the take is tried again when it goes (CTXW.retry)
     local win = npcWindowOpen()
     if win then
-        -- bags-take3: `since` = the first skip for THIS window (a different window starts again); `at` = the last one (CTXW.retry's limit)
-        local now = GetTime() or 0
-        local w = CTXW.wait
-        if w and w.win == win then w.at = now else w = { at = now, since = now, win = win } end
-        CTXW.wait = w
-        if not (now - w.since >= CTXW.ORPHAN_S and CTXW.orphan(win, cap)) then
-            skip("take-skip-window:" .. win); return
-        end
-        report("take-orphan:" .. win)       -- bags-take3: shown, and nobody drives it: the room takes (the bags never stay on top)
+        CTXW.wait = { at = GetTime() or 0, win = win }
+        skip("take-skip-window:" .. win); return
     end
     CTXW.wait = nil
     -- ALL the bag windows, not only the shown ones: with separate bags the game opens them one by
@@ -4138,20 +4130,6 @@ end
 -- the game's bags are still open: the game's bag window never stays up on the top screen with the room holding nothing. The same
 -- exceptions as the 1 s check (the room left by touch, freed by Home, the player's B, a later room won): no take back then.
 CTXW.WAIT = 120
--- bags-take3: AN ORPHAN WINDOW. [win] is shown (npcWindowOpen) but nobody drives it: the capture's state() names no holder, says the
--- companion is in charge of the NPC windows (mode) and that Interact counts none of its windows open (npcOpen false), out of a fight.
--- The Character window is no Interact window: no holder is enough there (the Character room did not take it). Anything the capture
--- does not say (an older one) = not an orphan (the skip as before).
-CTXW.ORPHAN_S = 1.5
-function CTXW.orphan(win, cap)
-    if InCombatLockdown() then return false end
-    if type(win) ~= "string" or win:sub(1, 4) == "ctx-" then return false end    -- an open event whose frame has not shown: the grace
-    if not (cap and type(cap.state) == "function") then return false end
-    local ok, st = pcall(cap.state)
-    if not (ok and type(st) == "table") or st.holder ~= nil or st.mode == nil then return false end
-    if win == "CharacterFrame" then return true end
-    return st.mode == true and st.npcOpen == false
-end
 CTXW.retry = function()
     local w = CTXW.wait
     if not w or ctl.on or not ctl.open then return end
