@@ -28,6 +28,17 @@ object MapExitGuard {
     /** the hold answer was "pending": not held yet, the guard reads B meanwhile (QuestsView's rule, 635-639) */
     fun ackPending(ok: Boolean, why: String?): Boolean = ok && why == "pending"
 
+    /** fix/polestar-b-home: how long the capture may name nobody before the module stops believing it holds (a holder report can lag
+     *  the hold's own answer by a document or two) */
+    const val HOLDER_GRACE_MS = 2_000L
+
+    /** the open module believes it holds ([held]) but the capture has named NOBODY ([holder] empty) for [sinceChangeMs]: its hold is
+     *  gone (B would do nothing: onB leaves B to the guest). Another holder (a wheel over the module, the bar, an NPC window) is left
+     *  alone: those hold over the module on purpose and give it back; a hidden room's guest is the host's refree, which ends empty */
+    fun holdGone(wanted: Boolean, held: Boolean, holder: String, sinceChangeMs: Long): Boolean =
+        wanted && held && holder.isEmpty() && sinceChangeMs >= HOLDER_GRACE_MS
+    const val HOME_HOLDER = "pad:home"
+
     /** a press of B in the read buttons: held now and not before (one close per press) */
     fun bPressed(before: Int, now: Int): Boolean =
         PadInput.isHeld(now, PadInput.SLOT_FACE_RIGHT) && !PadInput.isHeld(before, PadInput.SLOT_FACE_RIGHT)

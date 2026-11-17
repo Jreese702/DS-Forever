@@ -375,4 +375,21 @@ class MapPolestarShotsTest {
         shot(v, "20_polestar_menu_undo_skip_fr")
         lang("en")
     }
+
+    /** fix/polestar-b-home (the user, 2026-11-17: "pressing B again doesnt do anything to return it home"): the Map room's own route,
+     *  the menu over the room - B on its list closes it (back to the map, pm1), the next B leaves the room for Home */
+    @Test fun afterTheMenuTheNextBLeavesTheMapRoom() {
+        lang("en")
+        val (v, _) = room()
+        var left = 0
+        v.onLeave = { left++ }
+        toRow(v)
+        key(v, "PAD3")
+        assertTrue(field(v, "psOpen"))
+        key(v, "PAD2")
+        assertFalse("B on the menu's list: back to the map", field(v, "psOpen"))
+        assertEquals("not a leave yet", 0, left)
+        key(v, "PAD2")
+        assertEquals("the next B: Home", 1, left)
+    }
 }
