@@ -26,6 +26,10 @@ namespace DsfDesktop.App
         public bool MatchStreamResolution { get; set; } = true;
         /// <summary>the display device id Sunshine captures (the monitor WoW was last seen on); null = the primary display</summary>
         public string CaptureDevice { get; set; }
+        /// <summary>our own virtual screen's id in SudoVDA (made once; displays are keyed by it, so ours never touches Apollo's)</summary>
+        public string VirtualScreenId { get; set; }
+        /// <summary>the virtual-screen install question was asked (once)</summary>
+        public bool VirtualScreenOffered { get; set; }
         /// <summary>the folder question is asked once; after that the user uses "Choose folder" themselves</summary>
         public bool AskedForFolder { get; set; }
 

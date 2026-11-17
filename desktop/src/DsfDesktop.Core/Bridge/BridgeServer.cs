@@ -33,6 +33,8 @@ namespace DsfDesktop.Bridge
         void LoginFile(string email, string password);
         Dictionary<string, object> AddonsStatus();
         Dictionary<string, object> AddonsInstall();
+        /// <summary>the Thor's stream mode ("stream_mode": w, h, fps): a virtual screen Desktop makes for a headless PC takes it</summary>
+        void StreamMode(int w, int h, int fps);
     }
 
     /// <summary>the documents since the current log began (what a fresh LogTail would read from the file), capped</summary>
@@ -422,6 +424,7 @@ namespace DsfDesktop.Bridge
                             var sa = s;
                             Task.Run(() => sa.Enqueue(With("addons", host.AddonsInstall())));
                             break;
+                        case "stream_mode": host.StreamMode(Num(m, "w"), Num(m, "h"), Num(m, "fps")); break;
                         case "unpair":
                             host.Devices.Remove(s.DeviceId);
                             s.Enqueue(new Dictionary<string, object> { ["t"] = "unpaired" });
@@ -445,6 +448,12 @@ namespace DsfDesktop.Bridge
                 }
                 ws.Close(1000);
             }
+        }
+
+        static int Num(Dictionary<string, object> m, string k)
+        {
+            if (!m.TryGetValue(k, out var v) || v == null) return 0;
+            try { return System.Convert.ToInt32(v, System.Globalization.CultureInfo.InvariantCulture); } catch (System.Exception) { return 0; }
         }
 
         static Dictionary<string, object> With(string t, Dictionary<string, object> body)

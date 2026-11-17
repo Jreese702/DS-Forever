@@ -48,8 +48,10 @@ namespace DsfDesktop.App
         public PortReport Ports { get; private set; }
         /// <summary>what is wrong with streaming on this PC, for the window and the Thor (null = nothing): the port check, or our
         /// sunshine.exe exiting on its own</summary>
-        public string HostProblem => Sunshine != null && Sunshine.Exited ? "exited" : Ports?.Problem;
-        public string HostWhy => Sunshine != null && Sunshine.Exited ? "pc busy: the streaming host stopped" : Ports?.ThorWhy ?? "";
+        public string HostProblem => Sunshine != null && Sunshine.Exited ? "exited" : Ports?.Problem ?? ScreenProblem;
+        public string HostWhy => Sunshine != null && Sunshine.Exited ? "pc busy: the streaming host stopped"
+            : Ports?.Problem != null ? Ports.ThorWhy : ScreenProblem == ScreenPlan.ProblemNeedsScreen ? ScreenPlan.ThorNeedsScreen
+            : ScreenProblem == ScreenPlan.ProblemNoScreen ? ScreenPlan.ThorNoScreen : "";
 
         public event Action Changed;
 
@@ -107,6 +109,10 @@ namespace DsfDesktop.App
             pollThread = new Thread(PollLoop) { IsBackground = true, Name = "log-poll" };
             pollThread.Start();
             slowTimer = new Timer(_ => SlowTick(), null, 1000, 1000);
+            // Windows' displays changed (WM_DISPLAYCHANGE, through SystemEvents' own window): re-read them at the next tick
+            try { Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaysChanged; } catch (Exception e) { Log.I("display events: " + e.Message); }
+            // our own virtual screen left by a Desktop that didn't close cleanly (only ours, by its id; Apollo's are never touched)
+            if (Guid.TryParse(Settings.VirtualScreenId ?? "", out var vid)) Task.Run(() => { try { OurScreen.RemoveLeftover(vid); } catch (Exception) { } });
             if (Settings.AutoAddons) Task.Run(() => AddonsAuto());
             Fire();
         }
@@ -116,6 +122,8 @@ namespace DsfDesktop.App
             if (loginFileAt.HasValue && FlavorDirOrNull != null) WowLoginFile.Delete(FlavorDirOrNull);
             running = false;
             slowTimer?.Dispose();
+            try { Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaysChanged; } catch (Exception) { }
+            try { ourScreen?.Dispose(); } catch (Exception) { }
             try { mdns?.Dispose(); } catch (Exception) { }
             try { Bridge?.Stop(); } catch (Exception) { }
             try { Sunshine?.Dispose(); } catch (Exception) { }
@@ -283,10 +291,18 @@ namespace DsfDesktop.App
             // pairings Sunshine's state file holds: logged before ours starts
             foreach (var o in SunshineDiag.OtherSunshines(-1)) Log.I("sunshine: another sunshine.exe is running before ours: " + o);
             int sticky = Settings.SunshinePort;
+            // 0.2.31: the stock block is never ours; a saved 47989 moves to 52989 once (a paired Thor follows the welcome's port)
+            if (PortPlanner.Migrate(sticky) != sticky)
+            {
+                Log.I("sunshine: saved port " + sticky + " is in the stock GameStream block; moving off it (a paired Thor learns the new port from the bridge)");
+                Settings.SunshinePort = sticky = 0;
+                SaveSettings();
+            }
             var gs = new List<int> { 47984, 47989 };
             if (sticky > 0) { gs.Add(sticky - 5); gs.Add(sticky); }
             Log.I("sunshine: GameStream ports before start: " + SunshineDiag.Listeners(gs, PortPlanner.TcpFree));
             CheckPorts("before start");
+            LogNeighbours();
             Log.I("sunshine: state file: " + SunshineDiag.StateSummaryOfFile(SunshineLayout.State));
             int port = PortPlanner.Pick(Settings.SunshinePort, PortPlanner.TcpFree, PortPlanner.UdpFree);
             if (port < 0) { Log.I("sunshine: no free port set"); CheckPorts("no free port set"); return; }
@@ -306,6 +322,22 @@ namespace DsfDesktop.App
 
         string lastPortsKey;
 
+        /// <summary>F5: one start line naming the other streaming hosts, their ports, the virtual displays and the drivers present</summary>
+        void LogNeighbours()
+        {
+            try
+            {
+                var win = Displays.WindowsDisplays();
+                var virt = win.Where(d => d.Virtual).Select(d => d.ToString()).ToList();
+                bool sudo = SudoVda.Installed();
+                Log.I("neighbours: hosts " + (Ports != null && Ports.Neighbours.Count > 0 ? string.Join("; ", Ports.Neighbours) : "none") +
+                      "; virtual displays " + (virt.Count > 0 ? string.Join("; ", virt) : "none") +
+                      "; SudoVDA " + (sudo ? "installed" : "not installed") +
+                      "; screens " + (win.Count > 0 ? string.Join("; ", win.Where(d => !d.Virtual).Select(d => d.ToString())) : "unread"));
+            }
+            catch (Exception e) { Log.I("neighbours: " + e.Message); }
+        }
+
         /// <summary>who holds the GameStream ports (ours / another Sunshine / another program): logged and shown when it changes, and
         /// the Thor told; never stops or changes the other program</summary>
         void CheckPorts(string when)
@@ -317,6 +349,7 @@ namespace DsfDesktop.App
                 bool settled = up && DateTime.UtcNow - sh.StartedUtc > TimeSpan.FromSeconds(4);
                 var r = PortGuard.Now(SunshinePort, sh?.Pid ?? -1, up, settled, SunshineLayout.ExeDir);
                 Ports = r;
+                SetApollo(r.Hosts.Contains("Apollo"));
                 var key = (HostProblem ?? "") + "|" + string.Join(",", r.ForeignPorts);
                 if (when != null) Log.I("sunshine: ports " + when + ": " + r.Detail);
                 if (key == lastPortsKey) return;
@@ -336,8 +369,37 @@ namespace DsfDesktop.App
         void WriteSunshineConfig() => SunshineConfig.Write(SunshineLayout, new SunshineOptions
         {
             Port = SunshinePort, Encoder = Settings.Encoder, EventExe = "", HostName = Environment.MachineName,
-            BindAddress = Loopback ? "127.0.0.1" : "", OutputName = Settings.CaptureDevice, MatchStream = Settings.MatchStreamResolution,
+            BindAddress = Loopback ? "127.0.0.1" : "", OutputName = CurrentOutput, MatchStream = MatchStreamNow,
         });
+
+        /// <summary>the display id our Sunshine captures: our own virtual screen's for the session, else the remembered real one</summary>
+        string CurrentOutput => sessionOutput ?? Settings.CaptureDevice;
+
+        /// <summary>"Match PC screen to stream" as written: off while Apollo runs (both change the display setup and revert each other)</summary>
+        bool MatchStreamNow => Settings.MatchStreamResolution && !apolloRunning;
+
+        volatile bool apolloRunning;
+        /// <summary>the config changed while a stream ran: written and restarted once the stream ends</summary>
+        volatile bool configStale;
+
+        void SetApollo(bool on)
+        {
+            if (on == apolloRunning) return;
+            apolloRunning = on;
+            if (!Settings.MatchStreamResolution) { Log.I("apollo: " + (on ? "running" : "gone")); return; }
+            Log.I(on ? "match screen: off while Apollo runs (both change the display setup)" : "match screen: back on (Apollo gone)");
+            ApplyConfig("match screen");
+        }
+
+        /// <summary>writes the config and restarts ours now when idle, else after the stream</summary>
+        void ApplyConfig(string why)
+        {
+            if (Sunshine == null || !Sunshine.Running) { if (SunshinePort > 0) WriteSunshineConfig(); return; }
+            if (Stream == StreamState.Streaming) { configStale = true; Log.I("sunshine: " + why + ": applied after the stream"); return; }
+            configStale = false;
+            WriteSunshineConfig();
+            RestartSunshine();
+        }
 
         public void SetMatchStream(bool on)
         {
@@ -351,6 +413,188 @@ namespace DsfDesktop.App
         {
             Sunshine?.Stop();
             Sunshine?.Start();
+            displaysRead = null;
+        }
+
+        // ---------------------------------------------------------------- the screen our Sunshine streams (F3 / F6)
+
+        /// <summary>the PC's line on the streamed screen ("No screen: making one", ...); "" = a screen is there</summary>
+        public string ScreenLine { get; private set; } = "";
+        /// <summary>the welcome's problem word for the screen (needs_screen / no_screen), null = fine</summary>
+        public string ScreenProblem { get; private set; }
+        /// <summary>the window's line on a headless PC while no Thor is connected</summary>
+        public const string NoScreenLine = "No screen is on at this PC";
+        OurScreen ourScreen;
+        string sessionOutput;
+        volatile bool displaysDirty = true;
+        string topoKey;
+        List<WinDisplay> lastWin = new List<WinDisplay>();
+        DateTime lastDisplayRestart = DateTime.MinValue, lastThorAt = DateTime.MinValue, makeFailedAt = DateTime.MinValue, sudoAt = DateTime.MinValue;
+        bool sudoInstalled, displayCheckPending = true, screenBusy, screenOffer;
+        int thorW = 1920, thorH = 1080, thorFps = 60;
+
+        void OnDisplaysChanged(object sender, EventArgs e) { displaysDirty = true; }
+
+        /// <summary>the Thor's stream mode (its "stream_mode" message): our virtual screen is made at it</summary>
+        public void StreamMode(int w, int h, int fps)
+        {
+            var m = ScreenPlan.Mode(w, h, fps);
+            if (m == (thorW, thorH, thorFps)) return;
+            (thorW, thorH, thorFps) = m;
+            Log.I("thor stream mode: " + thorW + "x" + thorH + "@" + thorFps);
+        }
+
+        /// <summary>the install question, once: true when the window should ask it now</summary>
+        public bool TakeScreenOffer() { if (!screenOffer) return false; screenOffer = false; return true; }
+
+        /// <summary>the player said yes: the driver's own installer (Windows asks for admin); null = started</summary>
+        public string InstallVirtualScreen() => VddInstall.Start();
+
+        void Say(string line, string problem)
+        {
+            if (line == ScreenLine && problem == ScreenProblem) return;
+            ScreenLine = line;
+            ScreenProblem = problem;
+            Log.I("screen: " + (line.Length > 0 ? line : "fine") + (problem != null ? " (" + problem + ")" : ""));
+            if (line.Length > 0) Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = line });
+            lastPortsKey = null;   // the host problem line follows
+            Fire();
+        }
+
+        /// <summary>every 2 s: Windows' display list, what changed, and the screen plan</summary>
+        void DisplayTick()
+        {
+            var win = Displays.WindowsDisplays();
+            if (win.Count == 0) return;
+            lastWin = win;
+            var key = Displays.TopologyKey(win);
+            if (key != topoKey || displaysDirty)
+            {
+                if (key != topoKey) Log.I("displays: " + string.Join("; ", win.Where(d => d.Active).Select(d => d.ToString())));
+                topoKey = key;
+                displaysDirty = false;
+                displaysRead = null;
+                displayCheckPending = true;
+            }
+            bool streaming = Stream == StreamState.Streaming;
+            if (configStale && !streaming) ApplyConfig("config");
+            ScreenTick(win, streaming);
+            // a remembered display that has gone, or a capture target that went away: once the change has settled
+            var sh = Sunshine;
+            if (!displayCheckPending || sh == null || !sh.Running || DateTime.UtcNow - sh.StartedUtc < TimeSpan.FromSeconds(6) || screenBusy) return;
+            var list = SunshineDisplays();
+            var act = Displays.OnChange(list, win, Settings.CaptureDevice, CurrentOutput, streaming);
+            if (act == Displays.Change.None) { displayCheckPending = false; return; }
+            if (DateTime.UtcNow - lastDisplayRestart < TimeSpan.FromSeconds(30)) return;
+            lastDisplayRestart = DateTime.UtcNow;
+            displayCheckPending = false;
+            if (act == Displays.Change.ClearAndRestart)
+            {
+                Log.I("capture: the remembered display " + Settings.CaptureDevice + " is gone or virtual: back to the primary (restart)");
+                Settings.CaptureDevice = null;
+                SaveSettings();
+            }
+            else Log.I("capture: Sunshine's display is gone or a screen came back: restart to re-read the displays");
+            WriteSunshineConfig();
+            RestartSunshine();
+        }
+
+        void ScreenTick(List<WinDisplay> win, bool streaming)
+        {
+            if (screenBusy) return;
+            bool thor = (Bridge?.Sessions().Count ?? 0) > 0 || streaming;
+            if (thor) lastThorAt = DateTime.UtcNow;
+            bool thorWants = thor || DateTime.UtcNow - lastThorAt < TimeSpan.FromSeconds(60);
+            if (DateTime.UtcNow - sudoAt > TimeSpan.FromSeconds(30)) { sudoAt = DateTime.UtcNow; sudoInstalled = SudoVda.Installed(); }
+            bool ours = ourScreen != null && ourScreen.Exists;
+            bool hasScreen = Displays.HasScreen(win);
+            var step = ScreenPlan.Decide(hasScreen, sudoInstalled, ours, thorWants, Settings.VirtualScreenOffered);
+            switch (step)
+            {
+                case ScreenPlan.Step.None:
+                    // no screen and no Thor: the window says so; nothing goes to a Thor
+                    if (!hasScreen) { if (ScreenProblem != null || ScreenLine != NoScreenLine) { ScreenProblem = null; ScreenLine = NoScreenLine; Fire(); } }
+                    else Say("", null);
+                    break;
+                case ScreenPlan.Step.Keep:
+                    if (!streaming && ourScreen.Mode != (thorW, thorH, thorFps)) RemoveOurs("the Thor's mode changed");
+                    break;
+                case ScreenPlan.Step.RemoveOurs:
+                    if (!streaming) RemoveOurs(hasScreen ? "a screen is on" : "no Thor");
+                    break;
+                case ScreenPlan.Step.MakeOurs:
+                    if (DateTime.UtcNow - makeFailedAt < TimeSpan.FromMinutes(2)) break;
+                    screenBusy = true;
+                    Say(ScreenPlan.Making, null);
+                    Task.Run(() => MakeOurs());
+                    break;
+                case ScreenPlan.Step.OfferInstall:
+                    Settings.VirtualScreenOffered = true;
+                    SaveSettings();
+                    screenOffer = true;
+                    Log.I("screen: none on and no virtual display driver: asking once");
+                    Say(ScreenPlan.Install, ScreenPlan.ProblemNeedsScreen);
+                    break;
+                case ScreenPlan.Step.NeedsInstall:
+                    Say(ScreenPlan.Install, ScreenPlan.ProblemNeedsScreen);
+                    break;
+            }
+        }
+
+        void MakeOurs()
+        {
+            try
+            {
+                if (ourScreen == null)
+                {
+                    if (string.IsNullOrEmpty(Settings.VirtualScreenId) || !Guid.TryParse(Settings.VirtualScreenId, out _))
+                    {
+                        Settings.VirtualScreenId = Guid.NewGuid().ToString("D");
+                        SaveSettings();
+                    }
+                    ourScreen = new OurScreen(Guid.Parse(Settings.VirtualScreenId));
+                }
+                var why = ourScreen.Make(thorW, thorH, thorFps);
+                if (why != null || ourScreen.GdiName == null)
+                {
+                    if (why == null) ourScreen.Remove("no display name");
+                    makeFailedAt = DateTime.UtcNow;
+                    Log.I("virtual screen: couldn't make one: " + (why ?? "it didn't appear"));
+                    Say(ScreenPlan.Failed, ScreenPlan.ProblemNoScreen);
+                    return;
+                }
+                // our Sunshine lists displays at its start: restart, find ours in its list, point output_name at it, restart again
+                RestartSunshine();
+                SunshineDisplay mine = null;
+                for (int i = 0; i < 30 && mine == null; i++)
+                {
+                    Thread.Sleep(500);
+                    displaysRead = null;
+                    mine = SunshineDisplays().FirstOrDefault(d => string.Equals(d.DisplayName, ourScreen.GdiName, StringComparison.OrdinalIgnoreCase));
+                }
+                if (mine?.DeviceId != null)
+                {
+                    sessionOutput = mine.DeviceId;
+                    Log.I("virtual screen: our Sunshine captures " + ourScreen.GdiName + " (" + mine.DeviceId + ")");
+                    WriteSunshineConfig();
+                    RestartSunshine();
+                }
+                else Log.I("virtual screen: our Sunshine didn't list " + ourScreen.GdiName + "; it captures its primary");
+                lastDisplayRestart = DateTime.UtcNow;
+                Say(ScreenPlan.Ready, null);
+                Task.Run(() => { Thread.Sleep(3000); CheckCapture(); });
+            }
+            catch (Exception e) { makeFailedAt = DateTime.UtcNow; Log.I("virtual screen: " + e.Message); Say(ScreenPlan.Failed, ScreenPlan.ProblemNoScreen); }
+            finally { screenBusy = false; }
+        }
+
+        void RemoveOurs(string why)
+        {
+            ourScreen?.Remove(why);
+            bool had = sessionOutput != null;
+            sessionOutput = null;
+            Say("", null);
+            if (had) ApplyConfig("our virtual screen went");
         }
 
         public void StreamPair(string deviceId, string name, string pin, string peerIp, Action<string> done)
@@ -568,6 +812,7 @@ namespace DsfDesktop.App
                             SetStream(st.IndexOf("BUSY", StringComparison.OrdinalIgnoreCase) >= 0 ? StreamState.Streaming : StreamState.Idle);
                     }
                     else SetStream(StreamState.Unknown);
+                    try { DisplayTick(); } catch (Exception e) { Log.I("display tick: " + e.Message); }
                     CheckCapture();
                 }
             }
@@ -592,6 +837,7 @@ namespace DsfDesktop.App
             var was = Stream;
             Stream = s;
             Log.I("stream: " + s);
+            if (s != StreamState.Streaming && configStale) Task.Run(() => ApplyConfig("after the stream"));
             Bridge?.Publish(new Dictionary<string, object> { ["t"] = "stream", ["state"] = StreamWord });
             if (s == StreamState.Streaming && was != StreamState.Streaming)
                 Task.Run(() =>
@@ -758,7 +1004,7 @@ namespace DsfDesktop.App
             var h = b.Login != IntPtr.Zero ? b.Login : WowProbe.BnetMain();
             if (h == IntPtr.Zero) return null;
             var list = SunshineDisplays();
-            var captured = list.Count > 0 ? Displays.Captured(list, Settings.CaptureDevice) : null;
+            var captured = list.Count > 0 ? Displays.Captured(list, CurrentOutput) : null;
             if (captured == null) return null;
             if (!string.Equals(Displays.MonitorOf(h), captured, StringComparison.OrdinalIgnoreCase) && DateTime.UtcNow - lastShowMove > TimeSpan.FromSeconds(5))
             {
@@ -780,7 +1026,7 @@ namespace DsfDesktop.App
             var h = WowProbe.Bnet().Login;
             if (h == IntPtr.Zero) return no("no sign-in window");
             var list = SunshineDisplays();
-            var captured = list.Count > 0 ? Displays.Captured(list, Settings.CaptureDevice) : null;
+            var captured = list.Count > 0 ? Displays.Captured(list, CurrentOutput) : null;
             if (captured == null) return no("no captured monitor");
             if (!string.Equals(Displays.MonitorOf(h), captured, StringComparison.OrdinalIgnoreCase))
             {
@@ -966,6 +1212,7 @@ namespace DsfDesktop.App
                 using (var r = new StreamReader(fs)) list = Displays.ParseSunshineLog(r.ReadToEnd());
             }
             catch (Exception) { list = new List<SunshineDisplay>(); }
+            Displays.MarkVirtual(list, lastWin.Count > 0 ? lastWin : Displays.WindowsDisplays());
             displaysRead = list;
             displaysAt = DateTime.UtcNow;
             return list;
@@ -986,11 +1233,16 @@ namespace DsfDesktop.App
                 var wowDisplay = Displays.MonitorOf(p.MainWindowHandle);
                 var list = SunshineDisplays();
                 if (list.Count == 0) return;
-                var captured = Displays.Captured(list, Settings.CaptureDevice);
+                var captured = Displays.Captured(list, CurrentOutput);
                 var target = list.FirstOrDefault(d => string.Equals(d.DisplayName, wowDisplay, StringComparison.OrdinalIgnoreCase));
-                switch (Displays.Decide(wowDisplay, captured, Stream == StreamState.Streaming, target?.DeviceId != null))
+                // WoW on a virtual display (Apollo's session screen): never remembered; WoW comes to the captured screen instead
+                bool wowOnVirtual = target != null ? target.Virtual
+                    : lastWin.Any(w => w.Virtual && string.Equals(w.Name, wowDisplay, StringComparison.OrdinalIgnoreCase));
+                if (ScreenLine.Length > 0 && ScreenLine != ScreenPlan.Ready) CaptureStatus = ScreenLine;
+                switch (Displays.Decide(wowDisplay, captured, Stream == StreamState.Streaming, Displays.MayRemember(target), wowOnVirtual))
                 {
                     case Displays.Fix.RecaptureSunshine:
+                        if (sessionOutput != null) return;          // our own virtual screen is the session's: WoW comes to it
                         if (DateTime.UtcNow - lastRecapture < TimeSpan.FromSeconds(90)) return;
                         lastRecapture = DateTime.UtcNow;
                         Settings.CaptureDevice = target.DeviceId;
@@ -1006,12 +1258,13 @@ namespace DsfDesktop.App
                         lastMove = DateTime.UtcNow;
                         var why = Displays.MoveTo(p.MainWindowHandle, captured);
                         CaptureStatus = why == null ? "moved WoW to the streamed monitor" : "couldn't move WoW to the streamed monitor: " + why;
-                        Log.I("capture: stream running, WoW on " + wowDisplay + ", captured " + captured + ": " + CaptureStatus);
+                        Log.I("capture: " + (Stream == StreamState.Streaming ? "stream running" : "WoW on a virtual display") + ", WoW on " + wowDisplay + ", captured " + captured + ": " + CaptureStatus);
                         FocusWow();
                         break;
                     default:
                         var cap = list.FirstOrDefault(d => d.DisplayName == captured);
-                        CaptureStatus = "capturing " + (cap?.Friendly ?? captured) + (wowDisplay == captured ? ", where WoW is" : "");
+                        CaptureStatus = ScreenLine.Length > 0 && ScreenLine != ScreenPlan.Ready ? ScreenLine
+                            : "capturing " + (sessionOutput != null ? "DS Forever's virtual screen" : cap?.Friendly ?? captured) + (wowDisplay == captured ? ", where WoW is" : "");
                         break;
                 }
             }
@@ -1038,7 +1291,7 @@ namespace DsfDesktop.App
                 if (p != null)
                 {
                     var list = SunshineDisplays();
-                    var captured = list.Count > 0 ? Displays.Captured(list, Settings.CaptureDevice) : null;
+                    var captured = list.Count > 0 ? Displays.Captured(list, CurrentOutput) : null;
                     var mon = Displays.MonitorRect(captured);
                     var client = WowInput.ClientOnScreen(p.MainWindowHandle);
                     int? wowLevel = WowInput.IntegrityOf(p.Id), own = WowInput.OwnIntegrity();

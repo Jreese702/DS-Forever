@@ -104,6 +104,13 @@ namespace DsfDesktop.Ui
                 v.HostServices = pr.Services;
                 v.HostDot = Theme.Bad;
             }
+            else if (pr != null && pr.Info.Length > 0 && sh != null && sh.Running) v.Host += "  ·  " + pr.Info;   // Apollo beside ours: fine, said quietly
+            if (c.ScreenProblem != null && pr?.Problem == null && c.HostProblem != "exited")
+            {
+                v.HostHint = c.ScreenProblem == DsfDesktop.Sunshine.ScreenPlan.ProblemNeedsScreen ? "No screen is on. Install a virtual screen, or turn a monitor on."
+                    : "No screen is on. Turn a monitor on.";
+                v.HostDot = Theme.Warn;
+            }
 
             v.Stream = c.Stream == StreamState.Streaming ? "streaming to your Thor" : c.Stream == StreamState.Idle ? "not streaming" : "-";
             v.StreamDot = c.Stream == StreamState.Streaming ? Theme.Gold : Theme.Dim;
@@ -111,7 +118,8 @@ namespace DsfDesktop.Ui
             var st = c.WowUp() ? WowState.Running : c.Starter.State;
             v.Wow = st == WowState.Running ? "running" : st == WowState.Starting ? "starting (" + c.Starter.Why + ")" : st == WowState.StartFailed ? "didn't start: " + c.Starter.Why : "not running";
             v.WowDot = st == WowState.Running ? Theme.Ok : st == WowState.Starting ? Theme.Gold : st == WowState.StartFailed ? Theme.Warn : Theme.Dim;
-            v.Monitor = c.CaptureStatus.Length > 0 ? c.CaptureStatus : "the primary display";
+            v.Monitor = c.ScreenLine.Length > 0 && c.ScreenLine != DsfDesktop.Sunshine.ScreenPlan.Ready ? c.ScreenLine
+                : c.CaptureStatus.Length > 0 ? c.CaptureStatus : "the primary display";
             v.Link = c.BridgeStatus + (v.Online > 0 ? ", " + v.Online + " connected" : "");
             v.LinkDot = c.Bridge == null ? Theme.Bad : v.Online > 0 ? Theme.Ok : Theme.Dim;
 

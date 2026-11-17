@@ -238,10 +238,24 @@ namespace DsfDesktop.Tests
         {
             var busy = new HashSet<int> { 47989, 47990, 48989, 49989 };
             A.Eq(52989, PortPlanner.Pick(0, p => !busy.Contains(p), p => true));
-            A.Eq(47989, PortPlanner.Pick(0, p => true, p => true));
+            A.Eq(52989, PortPlanner.Pick(0, p => true, p => true), "never the stock base");
             A.Eq(53989, PortPlanner.Pick(53989, p => true, p => true), "sticky first");
-            A.Eq(52989, PortPlanner.Pick(0, p => true, p => p != 47998), "a busy UDP port counts too");
+            A.Eq(53989, PortPlanner.Pick(0, p => true, p => p != 52998), "a busy UDP port counts too");
             A.Eq(-1, PortPlanner.Pick(0, p => false, p => true));
+            A.False(PortPlanner.Candidates.Any(PortPlanner.InStockBlock), "no candidate in 47984-48010");
+        }
+
+        [Test]
+        public static void ASavedStockPortMovesOnce()
+        {
+            A.Eq(0, PortPlanner.Migrate(47989), "Desktop 0.2.30's saved stock base");
+            A.Eq(0, PortPlanner.Migrate(48000), "inside the block");
+            A.Eq(0, PortPlanner.Migrate(47970), "its UDP ports reach the block");
+            A.Eq(52989, PortPlanner.Migrate(52989));
+            A.Eq(0, PortPlanner.Migrate(0));
+            A.Eq(52989, PortPlanner.Pick(47989, p => true, p => true), "the sticky stock base is skipped");
+            A.Eq(52989, PortPlanner.Pick(47989, p => p != 47989, p => true));
+            A.Eq(52989, new DsfDesktop.Sunshine.SunshineOptions().Port, "the default base");
         }
 
         [Test]

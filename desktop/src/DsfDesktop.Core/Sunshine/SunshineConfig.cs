@@ -30,7 +30,7 @@ namespace DsfDesktop.Sunshine
     {
         public string HostName = Environment.MachineName;
         /// <summary>Sunshine's base port: HTTP = base, HTTPS = base-5, web/API = base+1, RTSP = base+21, video/control/audio UDP = base+9..11</summary>
-        public int Port = 47989;
+        public int Port = PortPlanner.Candidates[0];
         /// <summary>empty = Sunshine's own probe (NVENC, then AMF, then Quick Sync, then software); or nvenc / amdvce / quicksync</summary>
         public string Encoder = "";
         /// <summary>"" = all interfaces (the Thor reaches it over the LAN); tests use 127.0.0.1</summary>
@@ -139,17 +139,28 @@ namespace DsfDesktop.Sunshine
     }
 
     /// <summary>
-    /// Picks Sunshine's base port. 47989 is what stock Moonlight assumes, but another Sunshine/Apollo may hold it (this PC runs
-    /// Apollo on 47989/48989/49989); the Thor learns the port from the bridge (/v1/info and the mDNS TXT), so any free base works.
+    /// Picks Sunshine's base port. Never the stock GameStream block 47984-48010 that a separately installed Sunshine or Apollo uses
+    /// (it may be stopped when Desktop starts and want its ports back later: a player's Apollo, 2026-11-16); the Thor learns our
+    /// port from the bridge (the welcome and the mDNS TXT), so any free base works.
     /// </summary>
     public static class PortPlanner
     {
-        public static readonly int[] Candidates = { 47989, 52989, 53989, 54989, 55989, 56989 };
+        public static readonly int[] Candidates = { 52989, 53989, 54989, 55989, 56989 };
         public static readonly int[] TcpOffsets = { -5, 0, 1, 21 };
         public static readonly int[] UdpOffsets = { 9, 10, 11 };
+        /// <summary>the stock GameStream block (base 47989: TCP 47984-48010, UDP 47998-48000)</summary>
+        public const int StockLow = 47984, StockHigh = 48010;
+
+        /// <summary>any of a base's TCP / UDP ports falls in the stock block</summary>
+        public static bool InStockBlock(int basePort)
+            => basePort > 0 && TcpOffsets.Concat(UdpOffsets).Any(o => basePort + o >= StockLow && basePort + o <= StockHigh);
+
+        /// <summary>a saved base in the stock block (Desktop 0.2.30 and older could save 47989) is dropped: 0 = none</summary>
+        public static int Migrate(int saved) => InStockBlock(saved) ? 0 : saved;
 
         public static int Pick(int sticky, Func<int, bool> tcpFree, Func<int, bool> udpFree)
         {
+            sticky = Migrate(sticky);
             var order = new List<int>();
             if (sticky > 0) order.Add(sticky);
             order.AddRange(Candidates.Where(c => c != sticky));
