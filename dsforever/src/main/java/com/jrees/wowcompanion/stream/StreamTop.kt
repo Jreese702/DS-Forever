@@ -623,7 +623,12 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         }
     }
 
-    private fun retryNow() { policy.reset(); heal.reset(); main.removeCallbacks(healTimeout); reachFails = 0; retryAt = 0; if (host == null) show(Screen.PAIRING) else connect() }
+    private fun retryNow() {
+        policy.reset(); heal.reset(); main.removeCallbacks(healTimeout); reachFails = 0; retryAt = 0
+        // Desktop's own virtual screen gave up after its 3 tries: the player's Retry starts them over
+        bridge?.screenRetry()
+        if (host == null) show(Screen.PAIRING) else connect()
+    }
 
     private fun stopStream(why: String) {
         session?.let { Log.i(TAG, "stopping the stream: $why"); it.stop() }

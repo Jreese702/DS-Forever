@@ -143,6 +143,8 @@ object BridgeProtocol {
     fun hostCheck(): String = JSONObject().put("t", "host_check").toString()
     /** Desktop 0.2.32: the PC's half of Test connection (ports, RTSP, encoder, screen, controller); answered by pc_test_result */
     fun pcTest(): String = JSONObject().put("t", "pc_test").toString()
+    /** Desktop 0.2.32: the player's Retry by hand: Desktop's own virtual screen starts its tries over (it gives up after 3) */
+    fun screenRetry(): String = JSONObject().put("t", "screen_retry").toString()
     /** the saved login for WoW's login.txt on the PC: only down the pinned wss connection, never logged */
     fun loginFile(email: String, password: String): String = JSONObject().put("t", "login_file").put("email", email).put("password", password).toString()
 

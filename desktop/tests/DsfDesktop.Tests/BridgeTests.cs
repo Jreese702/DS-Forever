@@ -28,7 +28,8 @@ namespace DsfDesktop.Tests
         public volatile int[] Mode;       // the Thor's stream_mode
         public void StreamMode(int w, int h, int fps) { Mode = new[] { w, h, fps }; }
         public int HostChecks;
-        public int PcTests;
+        public int PcTests, ScreenRetries;
+        public void ScreenRetry() { ScreenRetries++; }
         public Dictionary<string, object> PcTest()
         {
             PcTests++;
@@ -599,6 +600,22 @@ namespace DsfDesktop.Tests
                 c.Send(new Dictionary<string, object> { ["t"] = "unpair" });
                 c.Until("unpaired");
                 A.False(h.Devices.Validate("thor-9", token));
+            }
+        }
+
+        [Test]
+        public static void TheThorsRetryStartsTheScreenTriesOver()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8d", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "screen_retry" });
+                c.Send(new Dictionary<string, object> { ["t"] = "pc_test" });
+                c.Until("pc_test_result");
+                A.Eq(1, h.ScreenRetries);
             }
         }
     }

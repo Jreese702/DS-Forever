@@ -40,6 +40,8 @@ namespace DsfDesktop.Bridge
         Dictionary<string, object> HostCheck();
         /// <summary>the Thor's "pc_test" (its Test connection): the PC's checks, answered as {"t":"pc_test_result", ...}</summary>
         Dictionary<string, object> PcTest();
+        /// <summary>the Thor's Retry by hand ("screen_retry"): our virtual screen's tries start over after it gave up</summary>
+        void ScreenRetry();
     }
 
     /// <summary>the documents since the current log began (what a fresh LogTail would read from the file), capped</summary>
@@ -434,6 +436,7 @@ namespace DsfDesktop.Bridge
                             var sh = s;
                             Task.Run(() => { var r = With("host_check_result", host.HostCheck()); r["t"] = "host_check_result"; sh.Enqueue(r); });
                             break;
+                        case "screen_retry": host.ScreenRetry(); break;
                         case "pc_test":
                             var sp = s;
                             Task.Run(() => { var r = host.PcTest(); r["t"] = "pc_test_result"; sp.Enqueue(r); });

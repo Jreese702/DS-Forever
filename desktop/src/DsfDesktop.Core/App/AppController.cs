@@ -116,9 +116,34 @@ namespace DsfDesktop.App
             if (Guid.TryParse(Settings.VirtualScreenId ?? "", out var vid)) Task.Run(() => { try { OurScreen.RemoveLeftover(vid); } catch (Exception) { } });
             // WoW's monitor from before a crash: it goes back once no screen of ours is there (ScreenTick)
             wowHomeNow = Settings.WowHome;
-            // (a Virtual Display Driver monitor we attached is adopted by the screen plan and detached once no Thor wants it)
+            // a Virtual Display Driver monitor we attached (recorded before the attach): detached now when no Thor is here, else
+            // adopted by the screen plan and detached once no Thor wants it
+            if (Settings.VddAttached) Task.Run(() => RemoveLeftoverVdd());
             if (Settings.AutoAddons) Task.Run(() => AddonsAuto());
             Fire();
+        }
+
+        void RemoveLeftoverVdd()
+        {
+            if (!TakeScreen()) return;
+            try
+            {
+                if ((Bridge?.Sessions().Count ?? 0) > 0 || StreamLive()) return;
+                var life = Screens;
+                if (!life.Exists) return;
+                Log.I("virtual screen: ours from before (" + life.Current?.Name + ", Desktop didn't close cleanly): removed");
+                RemoveOurs("left from before");
+            }
+            catch (Exception e) { Log.I("virtual screen: leftover: " + e.Message); }
+            finally { FreeScreen(); }
+        }
+
+        /// <summary>the Thor's Retry by hand ("screen_retry"): our screen's tries start over (it gave up after ScreenLife.MaxFails)</summary>
+        public void ScreenRetry()
+        {
+            Log.I("bridge: the Thor's Retry: our screen's tries start over");
+            Screens.Reset(byHand: true);
+            displaysDirty = true;
         }
 
         public void Dispose()
@@ -560,6 +585,8 @@ namespace DsfDesktop.App
             lock (testGate)
             {
                 Log.I("test: run for " + who);
+                // the player's Test: our screen's tries start over (it gave up after ScreenLife.MaxFails)
+                Screens.Reset(byHand: true);
                 // ours still starting (its encoder probe, about 26 s): a short wait, else the steps would say ports are closed
                 for (int i = 0; i < 30 && Sunshine != null && Sunshine.Running && !HostStarted; i++)
                 {
@@ -622,26 +649,39 @@ namespace DsfDesktop.App
             if (f.OwnOn && f.Driver)
             {
                 if (streaming) f.NotTried = "a stream is live";
-                else if (screenBusy) f.NotTried = "it is being made";
                 else
                 {
-                    screenBusy = true;
-                    try
+                    // the screen worker first (it may be making ours now: up to about 45 s), never a second make beside it
+                    bool got = false;
+                    for (int i = 0; i < 180 && !(got = TakeScreen()); i++) Thread.Sleep(250);
+                    if (!got) f.NotTried = "it is being made";
+                    else
                     {
-                        var why = life.Make(thorW, thorH, thorFps, DateTime.UtcNow);
-                        if (why == null)
+                        try
                         {
-                            f.Hz = Math.Max(PcChecks.MaxHz(life.GdiName), life.Mode.hz);
-                            var drv = life.Current?.Name;
-                            life.Remove("test");
-                            f.Made = "";
-                            Log.I("test: our virtual screen made and removed (" + drv + ")");
+                            if (life.Exists)
+                            {
+                                // made by the worker while the Test waited
+                                f.Ours = true;
+                                f.OursMode = life.Mode;
+                                f.Hz = Math.Max(PcChecks.MaxHz(life.GdiName), life.Mode.hz);
+                                return f;
+                            }
+                            var why = life.Make(thorW, thorH, thorFps, DateTime.UtcNow);
+                            if (why == null)
+                            {
+                                f.Hz = Math.Max(PcChecks.MaxHz(life.GdiName), life.Mode.hz);
+                                var drv = life.Current?.Name;
+                                life.Remove("test");
+                                f.Made = "";
+                                Log.I("test: our virtual screen made and removed (" + drv + ")");
+                            }
+                            else f.Made = why;
                         }
-                        else f.Made = why;
+                        catch (Exception e) { f.Made = e.Message; }
+                        finally { FreeScreen(); }
+                        if (f.Made == "") return f;
                     }
-                    catch (Exception e) { f.Made = e.Message; }
-                    finally { screenBusy = false; }
-                    if (f.Made == "") return f;
                 }
             }
             var real = win.FirstOrDefault(d => d.Active && d.Primary && !d.Virtual) ?? win.FirstOrDefault(d => d.Active && !d.Virtual);
@@ -728,7 +768,13 @@ namespace DsfDesktop.App
         string topoKey;
         List<WinDisplay> lastWin = new List<WinDisplay>();
         DateTime lastDisplayRestart = DateTime.MinValue, driversAt = DateTime.MinValue;
-        bool driverInstalled, driverUsable, displayCheckPending = true, screenBusy, screenOffer, screenOfferHeadless;
+        bool driverInstalled, driverUsable, displayCheckPending = true, screenOffer, screenOfferHeadless;
+        /// <summary>the screen worker (ScreenTick, MakeOurs, the Test's make, the start's cleanup) runs: one at a time (reviewers
+        /// 2026-11-17: ScreenFactsNow and ScreenTick read and set a plain bool, so both could make ours at once)</summary>
+        int screenBusyN;
+        bool screenBusy => Volatile.Read(ref screenBusyN) != 0;
+        bool TakeScreen() => Interlocked.CompareExchange(ref screenBusyN, 1, 0) == 0;
+        void FreeScreen() => Volatile.Write(ref screenBusyN, 0);
         int thorW = 1920, thorH = 1080, thorFps = 60;
         /// <summary>when the Thor's bridge connected, and whether its stream_mode came since: ours waits for the mode (else it is
         /// made at 1080p60 and made again at 120, two Sunshine restarts each)</summary>
@@ -882,7 +928,15 @@ namespace DsfDesktop.App
 
         void ScreenTick(List<WinDisplay> win, bool streaming)
         {
-            if (screenBusy) return;
+            if (!TakeScreen()) return;
+            bool handed = false;
+            try { handed = ScreenStep(win, streaming); }
+            finally { if (!handed) FreeScreen(); }
+        }
+
+        /// <summary>ScreenTick's step, the worker taken; true = handed to MakeOurs (it frees the worker)</summary>
+        bool ScreenStep(List<WinDisplay> win, bool streaming)
+        {
             var life = Screens;
             var now = DateTime.UtcNow;
             // a WoW home left from before (a crash, or a close mid-move) with no screen of ours now: WoW goes back there
@@ -895,7 +949,8 @@ namespace DsfDesktop.App
             bool thor = (Bridge?.Sessions().Count ?? 0) > 0;
             // the mode is forgotten when the Thor goes, not when this tick first sees it: its stream_mode follows the welcome at
             // once and usually lands before this tick (verifier 2026-11-17: reset here, every make waited the full 5 s)
-            if (thor && !thorWas) thorSince = now;
+            // a Thor (re)connected: our screen's tries start over (it gave up after ScreenLife.MaxFails)
+            if (thor && !thorWas) { thorSince = now; life.Reset(byHand: false); }
             if (!thor && thorWas) modeHeard = false;
             thorWas = thor;
             bool thorWants = life.ThorWants(now, thor, streaming);
@@ -904,7 +959,7 @@ namespace DsfDesktop.App
             // a driver that is there but can't be used (the player's own VDD monitor): nothing to offer
             bool offered = Settings.VirtualScreenOffered || driverInstalled;
             var (step, why) = life.Decide(now, Settings.OwnScreen, hasScreen, driverUsable, thorWants, offered, (thorW, thorH, thorFps), streaming,
-                                          sunshineOnOurs: sessionOutput != null);
+                                          sunshineOnOurs: sessionOutput != null, thorHere: thor || streaming);
             switch (step)
             {
                 case ScreenPlan.Step.None:
@@ -921,9 +976,14 @@ namespace DsfDesktop.App
                 case ScreenPlan.Step.MakeOurs:
                     if (thor && !modeHeard && !streaming && now - thorSince < TimeSpan.FromSeconds(5)) break;   // its stream_mode follows the welcome
                     if (why != null) Log.I("virtual screen: " + why);
-                    screenBusy = true;
                     Say(hasScreen ? ScreenPlan.MakingOwn : ScreenPlan.Making, null);
                     Task.Run(() => MakeOurs(hasScreen));
+                    return true;
+                case ScreenPlan.Step.GaveUp:
+                    // the user's rule: never a loop. A real screen is streamed; headless, the PC says it needs a virtual screen (the
+                    // Thor's Retry or a Test start the tries over)
+                    if (hasScreen) { if (ScreenLine != ScreenPlan.FallbackFailed) Say(ScreenPlan.FallbackFailed, null); }
+                    else Say(ScreenPlan.NeedsVirtual, ScreenPlan.ProblemNeedsScreen);
                     break;
                 case ScreenPlan.Step.OfferInstall:
                     Settings.VirtualScreenOffered = true;
@@ -942,6 +1002,7 @@ namespace DsfDesktop.App
                     if (ScreenLine != ScreenPlan.FallbackFailed) Say(driverUsable ? ScreenPlan.FallbackFailed : ScreenPlan.FallbackNote, null);
                     break;
             }
+            return false;
         }
 
         void MakeOurs(bool hasScreen)
@@ -1005,15 +1066,16 @@ namespace DsfDesktop.App
                 }
                 lastDisplayRestart = DateTime.UtcNow;
                 Say(ScreenPlan.Ready, null);
-                Task.Run(() => { Thread.Sleep(3000); CheckCapture(); });
+                Task.Run(() => { Thread.Sleep(3000); CheckCapture(); RetireOldScreen(); });
             }
             catch (Exception e) { Log.I("virtual screen: " + e.Message); Say(hasScreen ? ScreenPlan.FallbackFailed : ScreenPlan.Failed, hasScreen ? null : ScreenPlan.ProblemNoScreen); }
-            finally { screenBusy = false; }
+            finally { FreeScreen(); }
         }
 
         void RemoveOurs(string why)
         {
-            Screens.Remove(why);
+            // Windows refused (a VDD detach): still ours and on - paused, then left on after ScreenLife.MaxRemoveFails
+            if (!Screens.Remove(why)) return;
             bool had = sessionOutput != null;
             sessionOutput = null;
             Say("", null);
@@ -1022,6 +1084,29 @@ namespace DsfDesktop.App
             var home = wowHome;
             wowHome = null;
             if (home != null) Task.Run(() => WowHome(home));
+        }
+
+        /// <summary>
+        /// A new mode on a driver that can't change one in place (SudoVDA) is a new screen beside the old one (reviewers 2026-11-17:
+        /// remove-then-make moved WoW to the player's screen): WoW to the new one first (CheckCapture), then the old one goes.
+        /// </summary>
+        void RetireOldScreen()
+        {
+            try
+            {
+                var old = Screens.OldGdiName;
+                if (old == null) return;
+                for (int i = 0; i < 20; i++)
+                {
+                    string on;
+                    using (var p = WowWindow.Find(FlavorDirOrNull)) on = p == null ? null : Displays.MonitorOf(p.MainWindowHandle);
+                    if (!string.Equals(on, old, StringComparison.OrdinalIgnoreCase)) break;
+                    Thread.Sleep(1000);
+                    CheckCapture();
+                }
+                Screens.RetireOld("WoW is on the new one");
+            }
+            catch (Exception e) { Log.I("virtual screen: retire the old one: " + e.Message); }
         }
 
         void WowHome(string home)
@@ -1874,8 +1959,9 @@ namespace DsfDesktop.App
             if (driversAt == DateTime.MinValue) { driversAt = now; (driverInstalled, driverUsable) = life.Survey(); }
             var win = lastWin.Count > 0 ? lastWin : Displays.WindowsDisplays();
             bool hasScreen = Displays.HasScreen(win, life.GdiName);
-            var (step, _) = life.Decide(now, Settings.OwnScreen, hasScreen, driverUsable, true, Settings.VirtualScreenOffered || driverInstalled,
-                                        (thorW, thorH, thorFps), false, sunshineOnOurs: sessionOutput != null);
+            // a pure look (reviewers 2026-11-17: Decide adopted a leftover and wrote the mode ours was made for)
+            var (step, _) = life.Peek(now, Settings.OwnScreen, hasScreen, driverUsable, true, Settings.VirtualScreenOffered || driverInstalled,
+                                      (thorW, thorH, thorFps), false, sunshineOnOurs: sessionOutput != null, thorHere: true);
             return step == ScreenPlan.Step.MakeOurs;
         }
 

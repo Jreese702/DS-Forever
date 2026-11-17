@@ -36,7 +36,26 @@ namespace DsfDesktop.Tests
                 GdiName = names ? @"\\.\DISPLAY" + (20 + makes) : null;
                 return null;
             }
-            public void Remove(string why) { removes++; log.Add("remove " + why); Exists = false; GdiName = null; Mode = (0, 0, 0); }
+            /// <summary>a removal Windows refuses (a VDD detach); null = removed</summary>
+            public string removeFail;
+            /// <summary>Resize: null = in place, else refused with this</summary>
+            public string resizeFail = "can't";
+            public int resizes, retires;
+            public string Remove(string why)
+            {
+                removes++; log.Add("remove " + why);
+                if (removeFail != null) return removeFail;
+                Exists = false; GdiName = null; Mode = (0, 0, 0); return null;
+            }
+            public string Resize(int w, int h, int hz)
+            {
+                resizes++; log.Add("resize " + w + "x" + h + "@" + hz);
+                if (resizeFail != null) return resizeFail;
+                Mode = gives ?? (w, h, hz);
+                return null;
+            }
+            public void RetireOld(string why) { retires++; OldGdiName = null; }
+            public string OldGdiName { get; set; }
             public bool Exists { get; set; }
             public string GdiName { get; set; }
             public (int w, int h, int hz) Mode { get; set; }
@@ -392,6 +411,267 @@ namespace DsfDesktop.Tests
                 A.True(l.Length <= 48 && !l.EndsWith("."), l);
             A.Eq("Streaming your screen: no virtual screen driver", ScreenPlan.FallbackNote);
             A.Eq("VirtualDrivers.Virtual-Display-Driver", VddInstall.WingetId, "the id in microsoft/winget-pkgs");
+        }
+
+        // ---------------------------------------------------------------- reviewers 2026-11-17: never a loop
+
+        [Test]
+        public static void AMakeThatKeepsFailingGivesUpAfterThree()
+        {
+            // the user's rule: never loop for ever. Before: a failed make only paused 2 minutes, then MakeOurs again, for ever
+            var sudo = new Fake("SudoVDA") { fail = "add: x" };
+            var life = new ScreenLife(new List<IScreenDriver> { sudo });
+            var t = T0;
+            for (int i = 1; i <= ScreenLife.MaxFails; i++)
+            {
+                A.Eq(ScreenPlan.Step.MakeOurs, life.Decide(t, true, true, true, true, false, M120, false).step, "try " + i);
+                A.NotNull(life.Make(1920, 1080, 120, t));
+                t = t.AddMinutes(2).AddSeconds(1);
+            }
+            A.True(life.GaveUp);
+            for (int i = 0; i < 10; i++, t = t.AddMinutes(3))
+            {
+                A.Eq(ScreenPlan.Step.GaveUp, life.Decide(t, true, true, true, true, false, M120, false).step, "a real screen: streamed, no more tries");
+                A.Eq(ScreenPlan.Step.GaveUp, life.Decide(t, true, false, true, true, false, M120, false).step, "headless: the PC says it needs one");
+            }
+            A.Eq(ScreenLife.MaxFails, sudo.makes);
+            // the Thor reconnects: the tries start over (the 2-minute pause between tries stays)
+            life.Reset(byHand: false);
+            A.False(life.GaveUp);
+            A.Eq(ScreenPlan.Step.MakeOurs, life.Decide(t, true, true, true, true, false, M120, false).step);
+            A.NotNull(life.Make(1920, 1080, 120, t));
+            A.Eq(ScreenPlan.Step.Fallback, life.Decide(t.AddSeconds(5), true, true, true, true, false, M120, false).step, "reconnects don't skip the pause");
+            // the player's Retry / Test: the pause goes too
+            life.Reset(byHand: true);
+            A.Eq(ScreenPlan.Step.MakeOurs, life.Decide(t.AddSeconds(6), true, true, true, true, false, M120, false).step);
+            A.True(ScreenPlan.NeedsVirtual.Length <= 48 && !ScreenPlan.NeedsVirtual.EndsWith("."), ScreenPlan.NeedsVirtual);
+        }
+
+        [Test]
+        public static void AScreenSunshineNeverListsGivesUpAfterThree()
+        {
+            // AppController.MakeOurs: made, not listed, removed (a real screen) or kept (headless), Failed - before: every 2 minutes for ever
+            var sudo = new Fake("SudoVDA");
+            var life = new ScreenLife(new List<IScreenDriver> { sudo });
+            var t = T0;
+            for (int i = 1; i <= ScreenLife.MaxFails; i++)
+            {
+                A.Eq(ScreenPlan.Step.MakeOurs, life.Decide(t, true, true, true, true, false, M120, false).step, "try " + i);
+                A.Null(life.Make(1920, 1080, 120, t));
+                life.Remove("Sunshine didn't list it");
+                life.Failed(t);
+                t = t.AddMinutes(2).AddSeconds(1);
+            }
+            A.Eq(ScreenPlan.Step.GaveUp, life.Decide(t.AddHours(1), true, true, true, true, false, M120, false).step);
+            A.Eq(ScreenLife.MaxFails, sudo.makes);
+
+            // headless: ours is kept (the only screen) and pointed at again - three times, then left as it is
+            var vdd = new Fake("Virtual Display Driver");
+            var h = new ScreenLife(new List<IScreenDriver> { vdd });
+            A.Null(h.Make(1920, 1080, 120, T0));
+            t = T0;
+            for (int i = 1; i <= ScreenLife.MaxFails; i++)
+            {
+                h.Failed(t);
+                t = t.AddMinutes(2).AddSeconds(1);
+                var d = h.Decide(t, true, false, true, true, false, M120, false, sunshineOnOurs: false);
+                if (i < ScreenLife.MaxFails) A.Eq(ScreenLife.NotOnOurs, d.why, "pointed at again " + i);
+                else A.Eq(ScreenPlan.Step.Keep, d.step, "gave up: kept as it is");
+            }
+            A.Eq(ScreenPlan.Step.Keep, h.Decide(t.AddHours(1), true, false, true, true, false, M120, false, sunshineOnOurs: false).step);
+        }
+
+        [Test]
+        public static void ARefusedRemovalIsNotRetriedEveryTick()
+        {
+            // a VDD detach Windows refused: before, the monitor was adopted again at the next tick and detached again, for ever
+            var vdd = new Fake("Virtual Display Driver") { Exists = true, GdiName = @"\\.\DISPLAY7", Mode = (1920, 1080, 60), removeFail = "display settings refused (-1)" };
+            var life = new ScreenLife(new List<IScreenDriver> { vdd });
+            var t = T0;
+            for (int i = 1; i <= ScreenLife.MaxRemoveFails; i++)
+            {
+                var d = life.Decide(t, true, true, true, false, false, M120, false);
+                A.Eq(ScreenPlan.Step.RemoveOurs, d.step, "try " + i);
+                A.False(life.Remove(d.why, t));
+                for (int s = 2; s < 120; s += 2)
+                    A.Eq(ScreenPlan.Step.Keep, life.Decide(t.AddSeconds(s), true, true, true, false, false, M120, false).step, "paused, tick " + s);
+                t = t.AddMinutes(2).AddSeconds(1);
+            }
+            A.True(life.RemoveGaveUp);
+            A.Eq(ScreenPlan.Step.Keep, life.Decide(t.AddHours(1), true, true, true, false, false, M120, false).step, "left on, said once");
+            A.Eq(ScreenLife.MaxRemoveFails, vdd.removes);
+            A.True(life.Exists, "still ours (a Thor that comes uses it)");
+            // a removal that works again resets the count
+            vdd.removeFail = null;
+            life.Reset(byHand: true);
+            A.True(life.Remove("again", t));
+            A.False(life.Exists);
+        }
+
+        [Test]
+        public static void NothingIsMadeForAThorThatHasGone()
+        {
+            // in the 60 s grace ThorWants is true: before, ours was made (or remade at a new mode) for a Thor that had left
+            var sudo = new Fake("SudoVDA");
+            var life = new ScreenLife(new List<IScreenDriver> { sudo });
+            life.ThorWants(T0, true, false);
+            var t = T0.AddSeconds(10);
+            bool wants = life.ThorWants(t, false, false);
+            A.True(wants, "inside the grace");
+            var d = life.Decide(t, true, true, true, wants, false, M120, false, thorHere: false);
+            A.Eq(ScreenPlan.Step.None, d.step);
+            A.Eq(ScreenLife.ThorGone, d.why);
+            A.Eq(ScreenPlan.Step.None, life.Decide(t, true, false, true, wants, false, M120, false, thorHere: false).step, "headless too");
+            // ours there at another mode, or not pointed at: kept, not remade
+            A.Null(life.Make(1920, 1080, 60, t));
+            A.Eq(ScreenPlan.Step.Keep, life.Decide(t, true, true, true, wants, false, M120, false, thorHere: false).step);
+            A.Eq(ScreenPlan.Step.Keep, life.Decide(t, true, true, true, wants, false, (1920, 1080, 60), false, sunshineOnOurs: false, thorHere: false).step);
+            // and removed after the grace as before
+            t = T0.AddSeconds(61);
+            A.Eq(ScreenPlan.Step.RemoveOurs, life.Decide(t, true, true, true, life.ThorWants(t, false, false), false, M120, false, thorHere: false).step);
+        }
+
+        [Test]
+        public static void PeekWritesNothing()
+        {
+            // the Thor's wait word asked Decide, which adopted a leftover and took the Thor's mode as the one ours was made for
+            var vdd = new Fake("Virtual Display Driver") { Exists = true, GdiName = @"\\.\DISPLAY7", Mode = (0, 0, 0) };
+            var life = new ScreenLife(new List<IScreenDriver> { vdd });
+            A.Eq(ScreenPlan.Step.Keep, life.Peek(T0, true, true, true, true, false, M120, false).step);
+            A.Null(life.Current, "not adopted by a look");
+            A.Eq(ScreenPlan.Step.Keep, life.Peek(T0, true, true, true, true, false, (1280, 720, 60), false).step, "still unknown: kept as it is");
+            A.Eq(ScreenPlan.Step.Keep, life.Decide(T0, true, true, true, true, false, M120, false).step);
+            A.Eq(M120, life.Asked.Value, "Decide takes it");
+            A.Eq(ScreenPlan.Step.MakeOurs, life.Peek(T0, true, true, true, true, false, (1280, 720, 60), false).step);
+            A.Eq(M120, life.Asked.Value, "a look leaves it");
+            // a failed make's pause and the give-up are read, never counted
+            var s = new ScreenLife(new List<IScreenDriver> { new Fake("SudoVDA") { fail = "x" } });
+            for (int i = 0; i < 10; i++) s.Peek(T0, true, true, true, true, false, M120, false);
+            A.Eq(0, s.Fails);
+        }
+
+        [Test]
+        public static void ANewModeIsSetWithoutTakingOursAway()
+        {
+            // reviewers 2026-11-17: remove-then-make moved WoW to the player's screen. A driver that resizes: no removal at all
+            var vdd = new Fake("Virtual Display Driver") { resizeFail = null };
+            var life = new ScreenLife(new List<IScreenDriver> { vdd });
+            A.Null(life.Make(1920, 1080, 60, T0));
+            A.Eq(ScreenPlan.Step.MakeOurs, life.Decide(T0, true, true, true, true, false, M120, false).step);
+            A.Null(life.Make(1920, 1080, 120, T0));
+            A.Eq(1, vdd.makes);
+            A.Eq(0, vdd.removes);
+            A.Eq(1, vdd.resizes);
+            A.Eq((1920, 1080, 120), life.Mode);
+            A.Eq(ScreenPlan.Step.Keep, life.Decide(T0, true, true, true, true, false, M120, false).step);
+            // one that makes a new screen beside the old one: the old one goes when asked (WoW moved first)
+            var sudo = new Fake("SudoVDA") { resizeFail = null };
+            var l2 = new ScreenLife(new List<IScreenDriver> { sudo });
+            A.Null(l2.Make(1920, 1080, 60, T0));
+            sudo.OldGdiName = @"\\.\DISPLAY21";
+            A.Null(l2.Make(1920, 1080, 120, T0));
+            A.Eq(@"\\.\DISPLAY21", l2.OldGdiName);
+            l2.RetireOld("WoW is on the new one");
+            A.Eq(1, sudo.retires);
+            A.Null(l2.OldGdiName);
+            // a driver that can't, and the old one won't go: a failed try, nothing new made beside it
+            var stuck = new Fake("Virtual Display Driver") { removeFail = "refused" };
+            var l3 = new ScreenLife(new List<IScreenDriver> { stuck });
+            A.Null(l3.Make(1920, 1080, 60, T0));
+            A.NotNull(l3.Make(1920, 1080, 120, T0));
+            A.Eq(1, stuck.makes);
+            A.Eq(1, l3.Fails);
+        }
+
+        // ---------------------------------------------------------------- the VDD with fake Windows calls
+
+        sealed class FakeWin : IVddWindows
+        {
+            public readonly List<WinDisplay> list = new List<WinDisplay>();
+            public bool comesOn = true;
+            public string setFail, detachFail;
+            public readonly List<string> calls = new List<string>();
+            public Func<string> onSet = () => null;
+            public (int, int)? at;
+            public FakeWin() { list.Add(new WinDisplay { Name = @"\\.\DISPLAY1", Adapter = "NVIDIA", AdapterId = @"PCI\VEN_10DE", Active = true, Primary = true }); list.Add(Vdd(false)); }
+            static WinDisplay Vdd(bool on) => new WinDisplay { Name = @"\\.\DISPLAY7", Adapter = "Virtual Display Driver", AdapterId = @"Root\MttVDD", Active = on };
+            WinDisplay V => list.First(d => d.Name == @"\\.\DISPLAY7");
+            public List<WinDisplay> Displays() => list.Select(d => new WinDisplay { Name = d.Name, Adapter = d.Adapter, AdapterId = d.AdapterId, Active = d.Active, Primary = d.Primary }).ToList();
+            public List<(int w, int h, int hz)> Modes(string dev) => new List<(int, int, int)> { (1920, 1080, 60), (1920, 1080, 120), (2560, 1440, 60) };
+            public (int w, int h, int hz) Current(string dev) => (1920, 1080, 60);
+            public (int x, int y)? Position(string dev) => at;
+            public int RightEdge() => 2560;
+            public string Set(string dev, int w, int h, int hz, int x, int y)
+            {
+                calls.Add("set " + w + "x" + h + "@" + hz + " at " + x + "," + y + " " + onSet());
+                if (setFail != null) return setFail;
+                if (comesOn) V.Active = true;
+                return null;
+            }
+            public string Detach(string dev) { calls.Add("detach"); if (detachFail != null) return detachFail; V.Active = false; return null; }
+            public void Sleep(int ms) { }
+        }
+
+        [Test]
+        public static void AVddMonitorThatNeverComesOnIsDetachedAgain()
+        {
+            // reviewers 2026-11-17: attached (registry too), not active within ~3 s, "made" with no name - and left attached
+            var w = new FakeWin { comesOn = false };
+            bool attached = false; string dev = null;
+            var vdd = new VddScreen(() => attached, v => attached = v, () => dev, v => dev = v, w);
+            A.Eq("it didn't come on", vdd.Make(1920, 1080, 120));
+            A.Eq("detach", w.calls.Last(), string.Join(" | ", w.calls));
+            A.False(attached, "not ours any more");
+            A.Null(dev);
+            A.Null(vdd.GdiName);
+            // a refused attach: undone the same way
+            var r = new FakeWin { setFail = "display settings refused (-2)" };
+            attached = false; dev = null;
+            var v2 = new VddScreen(() => attached, v => attached = v, () => dev, v => dev = v, r);
+            A.Eq("display settings refused (-2)", v2.Make(1920, 1080, 120));
+            A.Eq("detach", r.calls.Last());
+            A.False(attached);
+        }
+
+        [Test]
+        public static void TheVddMonitorIsRecordedAsOursBeforeItIsAttached()
+        {
+            // a crash between the attach and the record left a monitor nobody detached at the next start
+            var w = new FakeWin();
+            bool attached = false; string dev = null;
+            w.onSet = () => attached + " " + dev;
+            var vdd = new VddScreen(() => attached, v => attached = v, () => dev, v => dev = v, w);
+            A.Null(vdd.Make(1920, 1080, 120));
+            A.Eq(@"set 1920x1080@120 at 2560,0 True \\.\DISPLAY7", w.calls[0]);
+            A.True(vdd.Exists);
+            // the next start (a new VddScreen on the same record): adopted and detached
+            var again = new VddScreen(() => attached, v => attached = v, () => dev, v => dev = v, w);
+            var life = new ScreenLife(new List<IScreenDriver> { again });
+            A.True(life.Exists, "adopted");
+            A.True(life.Remove("left from before"));
+            A.False(attached);
+            A.Eq("detach", w.calls.Last());
+        }
+
+        [Test]
+        public static void TheVddModeChangesInPlaceAndARefusedDetachStaysOurs()
+        {
+            var w = new FakeWin();
+            bool attached = false; string dev = null;
+            var vdd = new VddScreen(() => attached, v => attached = v, () => dev, v => dev = v, w);
+            var life = new ScreenLife(new List<IScreenDriver> { vdd });
+            A.Null(life.Make(1920, 1080, 60, T0));
+            w.at = (2560, 0);
+            A.Null(life.Make(1920, 1080, 120, T0), "the Thor's new mode");
+            A.Eq(@"set 1920x1080@120 at 2560,0 ", w.calls.Last());
+            A.False(w.calls.Contains("detach"), "never taken off the desktop: WoW stays on it");
+            A.Eq((1920, 1080, 120), life.Mode);
+            A.Eq(@"\\.\DISPLAY7", life.GdiName);
+            // a detach Windows refuses: still ours, still on, and said
+            w.detachFail = "display settings refused (-1)";
+            A.False(life.Remove("no Thor", T0));
+            A.True(attached, "still ours");
+            A.True(life.Exists);
         }
     }
 }

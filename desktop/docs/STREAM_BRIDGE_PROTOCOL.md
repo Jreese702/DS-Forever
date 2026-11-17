@@ -175,6 +175,10 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   (our Sunshine's ports listening and free, a TCP connect to RTSP, a video encoder in its log since its start, our own virtual screen
   made and removed again when none is there and no stream is live, else the real screen, and ViGEmBus). Logged to desktop.log and
   last_test.txt. Answer: `pc_test_result`.
+- `{"t":"screen_retry"}` *(Desktop 0.2.32)* — the player pressed Retry on the Thor's problem screen: Desktop's own virtual screen
+  starts its tries over. It gives up after 3 failed makes (or screens its Sunshine didn't list) in a Thor session - a real screen is
+  streamed, or a headless PC says "PC needs a virtual screen" (`problem` "needs_screen") - and tries again only when the Thor
+  reconnects, on this message, or on a Test. No answer.
 - `{"t":"addons_status"}` / `{"t":"addons_install"}` → `{"t":"addons",...}` (Desktop's add-on install; not used by the Thor yet).
 
 ## 8. What the Thor tells the player

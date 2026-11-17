@@ -37,6 +37,9 @@ namespace DsfDesktop.Sunshine
             Fallback,
             /// <summary>a make failed a moment ago and no screen to fall back on: wait</summary>
             Wait,
+            /// <summary>ours failed <see cref="ScreenLife.MaxFails"/> times this Thor session: a real screen is streamed (or, headless,
+            /// the PC says it needs a virtual screen); no more tries until the Thor reconnects or the player's Retry / Test</summary>
+            GaveUp,
         }
 
         /// <summary>the 0.2.31 headless-only rule ("Stream on its own screen" off): [sudoVda] = a driver can make ours</summary>
@@ -69,6 +72,8 @@ namespace DsfDesktop.Sunshine
         /// <summary>own screen on but none could be made: the real screen is streamed (the one-line note)</summary>
         public const string FallbackNote = "Streaming your screen: no virtual screen driver";
         public const string FallbackFailed = "Streaming your screen: virtual screen failed";
+        /// <summary>headless and ours gave up (<see cref="Step.GaveUp"/>)</summary>
+        public const string NeedsVirtual = "PC needs a virtual screen";
         /// <summary>the welcome's sunshine.problem words (the Thor's curtain)</summary>
         public const string ProblemNeedsScreen = "needs_screen", ProblemNoScreen = "no_screen";
         public const string ThorNeedsScreen = "pc needs a virtual screen: see Desktop", ThorNoScreen = "pc has no screen on";
@@ -271,20 +276,27 @@ namespace DsfDesktop.Sunshine
         /// <summary>SudoVDA keys displays by GUID: ours never touches Apollo's, so an installed one is always usable</summary>
         public bool Usable() => Installed();
 
-        readonly Guid id;
+        /// <summary>our two GUIDs: a new mode is a new screen under the other one, up beside the old one until WoW is on it</summary>
+        readonly Guid id, alt;
         readonly object gate = new object();
         SudoVda dev;
         Timer pinger;
+        Guid cur;
+        Guid? old;
         public string GdiName { get; private set; }
+        public string OldGdiName { get; private set; }
         public (int w, int h, int hz) Mode { get; private set; }
         public bool Exists { get { lock (gate) return dev != null; } }
 
-        public OurScreen(Guid id) { this.id = id; }
+        public OurScreen(Guid id) { this.id = id; alt = Alt(id); cur = id; }
 
-        /// <summary>a screen left by a Desktop that didn't close cleanly (same GUID): removed; Apollo's are never touched</summary>
+        /// <summary>our second GUID: [id] with its last bit flipped (the same on every start, so a leftover of either is found)</summary>
+        public static Guid Alt(Guid id) { var b = id.ToByteArray(); b[15] ^= 0x01; return new Guid(b); }
+
+        /// <summary>screens left by a Desktop that didn't close cleanly (either of our GUIDs): removed; Apollo's are never touched</summary>
         public static void RemoveLeftover(Guid id)
         {
-            using (var d = SudoVda.Open(out _)) d?.Remove(id);
+            using (var d = SudoVda.Open(out _)) { d?.Remove(id); d?.Remove(Alt(id)); }
         }
 
         /// <summary>makes it; null = done (GdiName set), else why not</summary>
@@ -296,30 +308,68 @@ namespace DsfDesktop.Sunshine
                 var d = SudoVda.Open(out string why);
                 if (d == null) return why;
                 var wd = d.Watchdog();
-                if (!d.Add(id, w, h, hz, out long luid, out uint target, out why)) { d.Dispose(); return "add: " + why; }
+                cur = id;
+                if (!d.Add(cur, w, h, hz, out long luid, out uint target, out why)) { d.Dispose(); return "add: " + why; }
                 dev = d;
                 Mode = (w, h, hz);
                 // ping well inside the driver's watchdog (its default 3 s: every second)
                 int every = wd.HasValue && wd.Value.timeout > 0 ? (int)Math.Max(300, Math.Min(1000, wd.Value.timeout * 1000 / 3)) : 1000;
                 pinger = new Timer(_ => { lock (gate) dev?.Ping(); }, null, every, every);
-                string name = null;
-                for (int ms = 20; ms <= 1280 && name == null; ms *= 2) { Thread.Sleep(ms); name = SudoVda.GdiName(luid, target); }
+                var name = NameOf(luid, target);
                 GdiName = name;
                 Log.I("virtual screen: made " + w + "x" + h + "@" + hz + " as " + (name ?? "(no name yet)") + ", watchdog " + (wd.HasValue ? wd.Value.timeout + " s" : "unread") + ", ping " + every + " ms");
                 return null;
             }
         }
 
-        public void Remove(string why)
+        static string NameOf(long luid, uint target)
+        {
+            string name = null;
+            for (int ms = 20; ms <= 1280 && name == null; ms *= 2) { Thread.Sleep(ms); name = SudoVda.GdiName(luid, target); }
+            return name;
+        }
+
+        /// <summary>SudoVDA's mode is fixed at ADD: the new mode is a second screen of ours, the old one kept until <see cref="RetireOld"/></summary>
+        public string Resize(int w, int h, int hz)
         {
             lock (gate)
             {
-                if (dev == null) return;
+                if (dev == null) return "not made";
+                if (old.HasValue) RetireLocked("a newer mode");
+                var next = cur == id ? alt : id;
+                if (!dev.Add(next, w, h, hz, out long luid, out uint target, out string why)) return "add: " + why;
+                var name = NameOf(luid, target);
+                if (name == null) { dev.Remove(next); return "it didn't appear"; }
+                old = cur; OldGdiName = GdiName;
+                cur = next; GdiName = name; Mode = (w, h, hz);
+                Log.I("virtual screen: made " + w + "x" + h + "@" + hz + " as " + name + " beside the old one (" + (OldGdiName ?? "unnamed") + ")");
+                return null;
+            }
+        }
+
+        public void RetireOld(string why) { lock (gate) RetireLocked(why); }
+
+        void RetireLocked(string why)
+        {
+            if (dev == null || !old.HasValue) return;
+            bool ok = dev.Remove(old.Value);
+            Log.I("virtual screen: the old one " + (OldGdiName ?? "") + " removed (" + why + ")" + (ok ? "" : ", the driver didn't answer"));
+            old = null; OldGdiName = null;
+        }
+
+        public string Remove(string why)
+        {
+            lock (gate)
+            {
+                if (dev == null) return null;
                 pinger?.Dispose(); pinger = null;
-                bool ok = dev.Remove(id);
+                RetireLocked(why);
+                bool ok = dev.Remove(cur);
                 dev.Dispose(); dev = null;
+                // the driver's watchdog removes it anyway once the pings stop: gone either way
                 Log.I("virtual screen: removed (" + why + ")" + (ok ? "" : ", the driver didn't answer"));
                 GdiName = null;
+                return null;
             }
         }
 
