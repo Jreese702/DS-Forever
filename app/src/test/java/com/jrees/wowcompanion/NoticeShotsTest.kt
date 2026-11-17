@@ -38,6 +38,10 @@ import java.time.Duration
  * chat41 (the user's picks, 2026-11-16: "Red in the last minute", "Yes, all of them"): the countdown line turns red under 60 s (the
  * words stay blue); friend requests, broadcasts and community invites come over the chat as well, one short line each, living the
  * game's toast time (`hold`), a protected broadcast or name never shown.
+ * chat42 (the user, 2026-11-16: "There is a little white flash animation that happens whenever someone comes online in battlenet. We
+ * need to hit that on the top screen and make something similar on the bottom"): a notice flashes white once as it comes (UiKit
+ * noticeFlash, the game's toast glow made short): the pane mid-flash differs from the same pane settled; a refresh notice's own updates
+ * never flash it again. NOTICE_FLASH_DIR = where the mid-flash and settled pictures go (bnet_flash_mid / _settled, refresh_flash_*).
  * With NOTICE_SHOTS_DIR set Home is drawn as home_notice_<case>.png (1240 x 1080, the bar under it) and its chat pane alone as
  * chat_notice_<case>.png; NOTICE_ART_ROOT = an art root laid out like the app's. The checks run always.
  */
@@ -322,5 +326,95 @@ class NoticeShotsTest {
         @Suppress("UNCHECKED_CAST")
         val now = field(home, "bnet") as List<NoticeModel.Bnet>
         assertEquals("two at most, newest first", listOf("r7", "r6"), now.map { it.id })
+    }
+
+    // ---------------------------------------------------------------- chat42: the flash
+
+    private val flashOut: File? = System.getenv("NOTICE_FLASH_DIR")?.let { File(it) }
+
+    /** pixels that differ (any channel by more than 24) between two pictures of the same size */
+    private fun differ(a: Bitmap, b: Bitmap): Int {
+        var n = 0
+        for (y in 0 until minOf(a.height, b.height)) for (x in 0 until minOf(a.width, b.width)) {
+            val p = a.getPixel(x, y); val q = b.getPixel(x, y)
+            if (Math.abs(android.graphics.Color.red(p) - android.graphics.Color.red(q)) > 24 ||
+                Math.abs(android.graphics.Color.green(p) - android.graphics.Color.green(q)) > 24 ||
+                Math.abs(android.graphics.Color.blue(p) - android.graphics.Color.blue(q)) > 24) n++
+        }
+        return n
+    }
+
+    private fun keep(bm: Bitmap, name: String) {
+        val d = flashOut ?: return
+        d.mkdirs()
+        File(d, "$name.png").outputStream().use { bm.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    /** Home whole (1240 x 1080, the bar under it) as it stands now, kept as [name] */
+    private fun keepHome(home: HomeView, name: String) {
+        if (flashOut == null) return
+        val bm = Bitmap.createBitmap(W, 1080, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bm); c.drawColor(Theme.ink)
+        home.draw(c)
+        val strip = Strip(app) { }
+        lay(strip, W, Strip.HEIGHT)
+        c.save(); c.translate(0f, H.toFloat()); strip.draw(c); c.restore()
+        keep(bm, name)
+    }
+
+    private fun step(ms: Long) { ShadowSystemClock.advanceBy(Duration.ofMillis(ms)); ShadowLooper.idleMainLooper() }
+
+    @Test fun aBattleNetNoticeFlashesWhiteOnceAsItComes() {
+        val home = home()
+        home.onNotice(bn("f1", "Thrall", true))
+        step(150)                                                          // mid-flash
+        val mid = drawPane(home); keep(mid, "chat_bnet_flash_mid"); keepHome(home, "home_bnet_flash_mid")
+        step(1_000)                                                        // settled (still held: the toast lives 4 s)
+        val settled = drawPane(home); keep(settled, "chat_bnet_flash_settled"); keepHome(home, "home_bnet_flash_settled")
+        step(200)
+        val again = drawPane(home)
+        assertEquals("settled is settled: nothing moves on its own", 0, differ(settled, again))
+        val d = differ(mid, settled)
+        assertTrue("the flash frame differs from the settled frame ($d pixels)", d > 2_000)
+        // brighter, never darker: added light over the notice line
+        var lighter = 0L; var darker = 0L
+        for (y in 0 until mid.height) for (x in 0 until mid.width) {
+            val p = mid.getPixel(x, y); val q = settled.getPixel(x, y)
+            val dl = (android.graphics.Color.red(p) + android.graphics.Color.green(p) + android.graphics.Color.blue(p)) -
+                     (android.graphics.Color.red(q) + android.graphics.Color.green(q) + android.graphics.Color.blue(q))
+            if (dl > 0) lighter += dl else darker -= dl
+        }
+        assertTrue("the flash is white light added ($lighter lighter, $darker darker)", lighter > 20 * darker.coerceAtLeast(1L))
+    }
+
+    @Test fun theRefreshNoticeFlashesOnlyWhenItIsNew() {
+        val home = home()
+        home.onNotice(shard(240))
+        step(150)
+        val newMid = drawPane(home); keep(newMid, "chat_refresh_flash_mid")
+        step(2_000)
+        home.onNotice(shard(230))                                          // the same refresh, its next document
+        step(150)
+        val update = drawPane(home); keep(update, "chat_refresh_update_noflash")
+        step(1_000)
+        val settled = drawPane(home); keep(settled, "chat_refresh_flash_settled")
+        assertTrue("a new refresh notice flashes", differ(newMid, settled) > 2_000)
+        assertEquals("its own updates never flash it again", 0, differ(update, settled))
+    }
+
+    @Test fun theFlashIsShortAndOnce() {
+        assertEquals(0f, UiKit.noticeFlash(-1L), 0f)
+        assertEquals(0f, UiKit.noticeFlash(0L), 0f)
+        assertEquals(1f, UiKit.noticeFlash(UiKit.NOTICE_FLASH_IN_MS), 0.001f)
+        assertEquals(0f, UiKit.noticeFlash(UiKit.NOTICE_FLASH_MS), 0f)
+        assertTrue("about 0.3 to 0.5 s", UiKit.NOTICE_FLASH_MS in 300L..500L)
+        val b = NoticeModel.applyBnet(emptyList(), bn("f2", "Thrall", true), 1_000L)[0]
+        assertEquals(150L, b.flashMs(1_150L))
+        val n0 = NoticeModel.apply(null, shard(240), 1_000L)!!
+        val n1 = NoticeModel.apply(n0, shard(230), 11_000L)!!
+        assertEquals("an update keeps the first show's time", 1_000L, n1.since)
+        assertEquals(0f, UiKit.noticeFlash(n1.flashMs(11_150L)), 0f)
+        val n2 = NoticeModel.apply(null, shard(240, "2-1"), 20_000L)!!
+        assertEquals("a new notice flashes again", 20_000L, n2.since)
     }
 }

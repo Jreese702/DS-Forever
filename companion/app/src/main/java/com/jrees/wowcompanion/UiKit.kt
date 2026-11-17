@@ -5533,7 +5533,7 @@ object UiKit {
      * (PAUSE_RED, the red it had before chat40) under 60 s: in the seconds, or when [urgent] (Chat's own `urgent`, NoticeModel.urgent).
      */
     fun notice(c: Canvas, rect: RectF, minutes: Int, seconds: Int, scale: Float = 1f, pressed: Boolean = false, bang: RectF? = null,
-               focused: Boolean = false, urgent: Boolean = false): Float {
+               focused: Boolean = false, urgent: Boolean = false, flashMs: Long = -1L): Float {
         val s = scale
         val h = 78f * s
         val x0 = rect.left + 6f * s; val y0 = rect.top + 10f * s
@@ -5562,8 +5562,40 @@ object UiKit {
         }
         pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(110, 90, 50)
         c.drawRect(rect.left + 6f * s, y0 + 76f * s, rect.right - 8f * s, y0 + 78f * s, pFlat)
+        noticeFlash(c, RectF(rect.left + 6f * s, y0, rect.right - 8f * s, y0 + 76f * s), flashMs)        // chat42: once, when it is new
         return h + 10f * s
     }
+
+    /**
+     * chat42 (the user, 2026-11-16: "There is a little white flash animation that happens whenever someone comes online in battlenet. We
+     * need to hit that on the top screen and make something similar on the bottom"): THE NOTICE'S FLASH, the game's toast glow
+     * (SocialToastTemplate's UI-Toast-Flair, added light: 0.2 s up, 0.5 s down) made short: its strength [ms] after the notice came, up
+     * to full in [NOTICE_FLASH_IN_MS], down to 0 at [NOTICE_FLASH_MS]; outside that (or [ms] < 0) 0. Drawn with [noticeFlash].
+     */
+    fun noticeFlash(ms: Long): Float = when {
+        ms < 0L || ms >= NOTICE_FLASH_MS -> 0f
+        ms < NOTICE_FLASH_IN_MS -> ms.toFloat() / NOTICE_FLASH_IN_MS
+        else -> 1f - (ms - NOTICE_FLASH_IN_MS).toFloat() / (NOTICE_FLASH_MS - NOTICE_FLASH_IN_MS)
+    }
+    const val NOTICE_FLASH_IN_MS = 100L
+    const val NOTICE_FLASH_MS = 450L
+
+    /** the flash over one notice line [r], [ms] after it came: the kit's additive highlight bar in white at [noticeFlash]'s strength,
+     *  and a soft white sweep crossing the line left to right over the flash's time (added light: dark stays dark, nothing is covered) */
+    fun noticeFlash(c: Canvas, r: RectF, ms: Long) {
+        val f = noticeFlash(ms)
+        if (f <= 0f || r.width() <= 0f) return
+        glow(c, r, Color.WHITE, 0.55f * f)
+        val band = r.width() * 0.28f
+        val x = r.left - band + (r.width() + 2f * band) * (ms.toFloat() / NOTICE_FLASH_MS)
+        val w = Color.argb((200 * f).toInt().coerceIn(0, 255), 255, 255, 255)
+        val clear = Color.argb(0, 255, 255, 255)
+        pFlashAdd.shader = LinearGradient(x - band, 0f, x + band, 0f, intArrayOf(clear, w, clear), floatArrayOf(0f, 0.5f, 1f),
+            Shader.TileMode.CLAMP)
+        c.drawRect(r, pFlashAdd)
+        pFlashAdd.shader = null
+    }
+    private val pFlashAdd = Paint(Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD) }
 
     /**
      * ONE BATTLE.NET NOTICE at the top of [rect] (under the refresh notice: its top is [rect]'s), one short line as the game's toast says
@@ -5572,9 +5604,9 @@ object UiKit {
      * "Yes, all of them"): a friend request (kit `tab_friends`) "New friend request", the waiting ones "Friend requests: 3"; a broadcast
      * (`icon_chat`) the name, then its words when the game gave them plain (a player's: never translated), else "posted a broadcast"; a
      * community invite (`tab_guild`) "Community invite: " and the community's name. A thin bronze line under it. [alpha] = the toast's
-     * fade. Returns its height.
+     * fade. chat42: [flashMs] = ms since it came, its one white flash ([noticeFlash]; -1 = none). Returns its height.
      */
-    fun bnetNotice(c: Canvas, rect: RectF, b: NoticeModel.Bnet, alpha: Float = 1f, scale: Float = 1f): Float {
+    fun bnetNotice(c: Canvas, rect: RectF, b: NoticeModel.Bnet, alpha: Float = 1f, scale: Float = 1f, flashMs: Long = -1L): Float {
         val s = scale
         val a = (alpha.coerceIn(0f, 1f) * 255f).toInt()
         val x0 = rect.left + 6f * s; val y0 = rect.top + 6f * s
@@ -5624,6 +5656,7 @@ object UiKit {
         }
         pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(a, 110, 90, 50)
         c.drawRect(rect.left + 6f * s, y0 + 44f * s, rect.right - 8f * s, y0 + 46f * s, pFlat)
+        noticeFlash(c, RectF(rect.left + 6f * s, y0 - 2f * s, rect.right - 8f * s, y0 + 44f * s), flashMs)   // chat42: its one flash
         return 52f * s
     }
 

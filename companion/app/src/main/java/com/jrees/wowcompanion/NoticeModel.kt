@@ -14,7 +14,10 @@ object NoticeModel {
     const val STALE_MS = 30_000L
 
     /** the notice on show: [id] (a /reload starts a new one), [leftAt] = `left` seconds at [at] (uptime ms) */
-    data class Notice(val id: String, val kind: String, val text: String, val left: Int, val at: Long, val urgent: Boolean, val seenAt: Long) {
+    data class Notice(val id: String, val kind: String, val text: String, val left: Int, val at: Long, val urgent: Boolean, val seenAt: Long,
+                      val since: Long = at) {
+        /** chat42: ms since this notice first showed ([since]: kept across its own updates) - its flash (UiKit.noticeFlash) */
+        fun flashMs(now: Long): Long = now - since
         /** whole seconds left now, never under 0 */
         fun left(now: Long): Int = (left - ((now - at) / 1000L).toInt()).coerceAtLeast(0)
         /** the game's popup wording: whole MINUTES rounded up from 60 s on, then SECONDS in the last minute (UiKit.notice) */
@@ -32,12 +35,17 @@ object NoticeModel {
         val id = msg.optString("id")
         if (msg.optBoolean("ended")) return if (cur == null || cur.id == id || id.isEmpty()) null else cur
         if (!msg.has("left")) return cur
+        // chat42: the flash once, when the notice is new; its 10 s updates (and a /reload's new id while it shows) keep the first time
         return Notice(id, msg.optString("kind", "shard"), msg.optString("text", ""), msg.optInt("left", 0).coerceAtLeast(0), now,
-            msg.optBoolean("urgent", false), now)
+            msg.optBoolean("urgent", false), now, since = cur?.since ?: now)
     }
 
     /** the notice still on show at [now] (it goes STALE_MS after the last document) */
     fun live(cur: Notice?, now: Long): Notice? = cur?.takeIf { now - it.seenAt < STALE_MS }
+
+    // chat42 (the user, 2026-11-16: "There is a little white flash animation that happens whenever someone comes online in battlenet.
+    // We need to hit that on the top screen and make something similar on the bottom"): each notice flashes white once as it comes (the
+    // game's toast glow, UI-Toast-Flair: 0.2 s up, 0.5 s down; ours UiKit.NOTICE_FLASH_MS), timed from [Bnet.at] / [Notice.since].
 
     // ---------------------------------------------------------------- chat40: THE BATTLE.NET FRIEND NOTICES (the user, 2026-11-16: "the
     // Bnet friends coming online pop ups should appear over my chat similar to the world refreesh prompt"). Chat's {kind "bnet", id,
@@ -64,6 +72,8 @@ object NoticeModel {
      *  friend"); [text] a broadcast's words, [name] a community's, [n] the pending count */
     data class Bnet(val id: String, val who: String?, val online: Boolean, val at: Long, val t: String = if (online) T_ON else T_OFF,
                     val text: String? = null, val name: String? = null, val n: Int = 0, val holdMs: Long = BNET_HOLD_MS) {
+        /** chat42: ms since it came - its one flash (UiKit.noticeFlash); a notice comes once per id, so it flashes once */
+        fun flashMs(now: Long): Long = now - at
         /** 1 while it holds, down to 0 over the fade; 0 = gone */
         fun alpha(now: Long): Float {
             val t = now - at
