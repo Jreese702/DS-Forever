@@ -149,6 +149,27 @@ object HomeSettings {
         for (l in listeners) l()
     }
 
+    /**
+     * HOLD TO TALK (the user, 2026-11-16: "a quick chat option for holding that button for quick voice to text to last used text channel";
+     * picks: "A toggle, off by default", on release "Show, then A sends" (the default) or "Send straight away"; [HoldTalk]): PER CHARACTER
+     * as the DS WoW toolbar it sits under ([who] = "Name-Realm", GameUi.character); no character known = the defaults
+     */
+    fun holdTalk(who: String?): Boolean = who?.let { prefs?.getBoolean("holdTalk.$it", false) } ?: false
+    fun setHoldTalk(who: String?, on: Boolean) {
+        val k = who ?: return
+        if (on == holdTalk(k)) return
+        prefs?.edit()?.putBoolean("holdTalk.$k", on)?.apply()
+        for (l in listeners) l()
+    }
+    /** "On release": false = Show, then A sends (the default); true = Send straight away */
+    fun talkSendNow(who: String?): Boolean = who?.let { prefs?.getBoolean("talkSendNow.$it", false) } ?: false
+    fun setTalkSendNow(who: String?, on: Boolean) {
+        val k = who ?: return
+        if (on == talkSendNow(k)) return
+        prefs?.edit()?.putBoolean("talkSendNow.$k", on)?.apply()
+        for (l in listeners) l()
+    }
+
     var pauseTap: Boolean
         get() = prefs?.getBoolean(KEY_PAUSE_TAP, true) ?: true
         set(v) {
@@ -526,9 +547,12 @@ class HomeSettingsSection(context: Context,
     var onDpad: (Boolean) -> Unit = {}
     /** the padmap changed: the row may appear or flip */
     fun dpadChanged() { post { requestLayout(); invalidate() } }
+    /** hold to talk's character (per character, as the toolbar): GameUi.character; the tests set their own */
+    var talkWho: () -> String? = { GameUi.character }
 
     init {
-        HomeSettings.onChange { post { invalidate() } }
+        // hold to talk's "On release" row comes and goes with its switch: the section's height may change
+        HomeSettings.onChange { post { requestLayout(); invalidate() } }
         // the attack switch appears / its words change: the section's height may change too
         HomeAttackSwitch.onChange { post { requestLayout(); invalidate() } }
         GameBars.onChange { post { requestLayout(); invalidate() } }               // f-class-radial: the rows appear / change
@@ -628,6 +652,15 @@ class HomeSettingsSection(context: Context,
             y = row(c, y + GAP, "DS WoW toolbar", subs, listOf("Off", "On"), if (d.want == true) 1 else 0,
                 if (d.colOn == null) null
                 else listOf({ if (d.want == true) onDpad(false) }, { if (d.want != true) onDpad(true) }))
+            // HOLD TO TALK (the user, 2026-11-16, HoldTalk): under the toolbar while it is on; "On release" only while it is On
+            if (d.want == true && d.colOn != null) {
+                val who = talkWho()
+                y = row(c, y + GAP, TALK_ROW, listOf("Hold D-pad Left to talk."), listOf("Off", "On"), if (HomeSettings.holdTalk(who)) 1 else 0,
+                    if (who == null) null else listOf({ HomeSettings.setHoldTalk(who, false) }, { HomeSettings.setHoldTalk(who, true) }))
+                if (HomeSettings.holdTalk(who)) y = row(c, y + GAP, RELEASE_ROW, listOf("To the last chat you used."),
+                    listOf("Show, A sends", "Send now"), if (HomeSettings.talkSendNow(who)) 1 else 0,
+                    listOf({ HomeSettings.setTalkSendNow(who, false) }, { HomeSettings.setTalkSendNow(who, true) }))
+            }
             // the radial's way moved to Settings' Controller section: TWO settings for every wheel (Wheels: open / Wheels: pick)
         }
         return if (drawn == 0) 0f else y + 10f
@@ -692,15 +725,18 @@ class HomeSettingsSection(context: Context,
         return true
     }
 
-    private companion object {
-        const val TOP = 8f              // the first row's top (the room's folding heading stands above the section)
-        const val ROW = 112f            // a row's height: the 48 dp touch floor (each choice's touch area is the whole row)
-        const val ROW_H_DRAWN = 96f     // where the compact buttons sit: centred as on the page's 96 px rows
-        const val GAP = 10f             // between rows, as on the page
-        const val SUB_H = 28f
-        const val SEG_TEXT = 24f        // the page's segment text (SettingsView)
-        const val SEG_PAD = 36f
-        const val SEG_MIN_W = 120f
-        const val SLOP = 16f
+    companion object {
+        /** hold to talk's rows (HoldTalk; SettingsTabs' Home section lists them) */
+        const val TALK_ROW = "Hold to talk"
+        const val RELEASE_ROW = "On release"
+        private const val TOP = 8f              // the first row's top (the room's folding heading stands above the section)
+        private const val ROW = 112f            // a row's height: the 48 dp touch floor (each choice's touch area is the whole row)
+        private const val ROW_H_DRAWN = 96f     // where the compact buttons sit: centred as on the page's 96 px rows
+        private const val GAP = 10f             // between rows, as on the page
+        private const val SUB_H = 28f
+        private const val SEG_TEXT = 24f        // the page's segment text (SettingsView)
+        private const val SEG_PAD = 36f
+        private const val SEG_MIN_W = 120f
+        private const val SLOP = 16f
     }
 }

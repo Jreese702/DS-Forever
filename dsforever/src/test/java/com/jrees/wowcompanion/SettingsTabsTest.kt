@@ -69,7 +69,7 @@ class SettingsTabsTest {
             G.HELP to listOf("Problem report", "Reload game UI", "Status"),
             // the clock extras (the user's picks 2026-11-13, feat/item-cooldowns): one row each, before the toolbar
             G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Focused quest", "Hearthstone", "Class teleport", "Gold",
-                "Free bag slots", "Ammo", "DS WoW toolbar"),          // feat/clock-extras-v2: Ammo
+                "Free bag slots", "Ammo", "DS WoW toolbar", "Hold to talk", "On release"),   // feat/clock-extras-v2: Ammo; 11-16: hold to talk
             G.CAST_BAR to listOf("Tap-to-cast bar", "In combat"),
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
             G.CHAT to listOf("Message input"),
@@ -159,7 +159,9 @@ class SettingsTabsTest {
             // the user, 2026-11-16 ("we could make the per languege downloads part of the addons folder"): Add-ons > Voice
             listOf("Voice: English · 60 MB", "Voice: English · 148 MB", "Voice: other languages · 60 MB", "Voice: other languages · 148 MB") +
             // the user, 2026-11-16 ("maybe we just do an import addons button then?"): Add-ons > Imported
-            listOf("Import add-ons")
+            listOf("Import add-ons") +
+            // the user, 2026-11-16 (hold to talk on the DS toolbar's Chat): Bottom screen > Home, under the toolbar
+            listOf("Hold to talk", "On release")
         val now = B.values().flatMap { it.rows }
         // the layout editor (the user, 2026-11-16): HUD height and HUD scale are its page's now (its own row "Edit layout" opens it)
         assertEquals((before - setOf("HUD height", "HUD scale") + "Edit layout").toSet(), now.toSet())
@@ -380,7 +382,7 @@ class SettingsPreviewRowsTest {
     }
 
     @Test fun twentyTwoRowsAndTheMovingOnes() {          // f-radial-settings: + the spell wheel's own pair; 2026-11-13: + 12, + the cast bar's In combat
-        assertEquals(41, SettingsPreview.ROWS.size)                     // 2026-11-13: + Start over game windows; 2026-11-16: + B: pet follow
+        assertEquals(43, SettingsPreview.ROWS.size)                     // 2026-11-13: + Start over game windows; 2026-11-16: + B: pet follow, + hold to talk's two
         assertTrue(SettingsPreview.animated("Start over game windows"))
         assertTrue(SettingsPreview.animated("Swing timer") && SettingsPreview.animated("Frame limit") && !SettingsPreview.animated("Button glyphs"))
         assertTrue(SettingsPreview.animated("In combat"))                // the bar fading out in a fight

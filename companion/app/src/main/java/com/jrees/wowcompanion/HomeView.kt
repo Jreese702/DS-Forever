@@ -2178,6 +2178,11 @@ class HomeView(
                 if (save >= 0) c.restoreToCount(save)
             }
         }
+        // HOLD TO TALK's line (HoldTalk, the user 2026-11-16): under the toolbar's D-pad, over the page (the band is only as tall as its
+        // buttons); with the band's own pause slide
+        if (castView.talkLine != null && castView.parent === barsSlot && barsSlot.visibility == View.VISIBLE)
+            castView.drawTalkLine(c, barsSlot.left + barsSlot.translationX + castView.left + castView.translationX,
+                barsSlot.top + barsSlot.translationY + castView.top + castView.translationY, width.toFloat())
         if (pauseSave >= 0) c.restoreToCount(pauseSave)
     }
 
