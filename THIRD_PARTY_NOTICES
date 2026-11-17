@@ -483,3 +483,21 @@ agreement. If you redistribute this project, verify your right to redistribute t
 - The prebuilt OpenSSL / Opus static libraries are git-ignored build inputs (`dsforever/src/main/jni/prebuilt/`), copied from
   the moonlight-android revision above by `tools/stream/vendor_moonlight.sh`. A release's source bundle must include them (or
   that revision's link) next to this notice.
+
+---
+
+## whisper.cpp (offline voice typing)
+
+**Component:** `libdsfwhisper.so` (built from source by `companion/tools/whisper_native/build_android.sh`, CPU only, arm64-v8a)
+**Used for:** Voice typing on the device itself: speech to text in the text boxes, without Android's speech services.
+
+| Part | Upstream | Revision | Licence |
+|---|---|---|---|
+| whisper.cpp (and its bundled ggml 0.26.0) | https://github.com/ggml-org/whisper.cpp | `v1.9.5`, `d1be6fde11ac6e0407606b4e42fe72d34add8037` | MIT (`licenses/whisper.cpp-MIT.txt`), Copyright (c) 2023-2026 The ggml authors |
+| JNI glue (`companion/tools/whisper_native/jni/whisper_jni.cpp`) | this project | - | GPL-3.0 |
+
+- The whisper.cpp sources under `companion/tools/whisper_native/whisper.cpp/` are copied unmodified, CPU parts only
+  (`vendor_whisper.sh`; `UPSTREAM` lists the revision; its `LICENSE` is kept there).
+- The speech models are NOT in the APK. The player downloads them from Settings > Add-ons > Voice: OpenAI's Whisper base
+  weights (MIT) converted to ggml by the whisper.cpp project, https://huggingface.co/ggerganov/whisper.cpp at commit
+  `5359861c739e955e79d9a303bcbc70fb988958b1` (`ggml-base.en.bin`, `ggml-base.bin`; size and sha256 pinned in `VoiceModels.kt`).

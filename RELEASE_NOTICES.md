@@ -39,6 +39,10 @@ These support licence identification, NOT verification of all custom binary inpu
 - libinteriors.so: included C++/JNI plus Recast6dc1667f580357e8a2154c28b7867bea7e8ad3a7
   (Mikko Mononen, zlib-style). licenses/Recast-zlib.txt. Native bootstrap is
   reproducible from listed inputs; bit-for-bit reproduction is not claimed.
+- libdsfwhisper.so: included JNI plus whisper.cpp v1.9.5 d1be6fde11ac6e0407606b4e42fe72d34add8037
+  (The ggml authors, MIT). licenses/whisper.cpp-MIT.txt. The Whisper base model
+  weights (OpenAI, MIT) are downloaded at runtime on the player's press and are
+  not in the APK.
 - Android/system zlib and C++ runtime notices still apply as applicable; NDK
   build recipes and exact compiler version are recorded in the build receipt.
 
