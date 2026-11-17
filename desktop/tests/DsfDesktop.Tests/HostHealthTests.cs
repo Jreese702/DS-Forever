@@ -213,10 +213,153 @@ namespace DsfDesktop.Tests
             g.Force(t);
             A.False(g.GaveUp);
             A.Eq(HealStep.Restart, g.Tick(t, bad, false, true));
+            // asked while a heal is under way: its count stays (no fresh 3 tries on top)
+            var m = new HostHealer();
+            m.Force(Start);
+            A.Eq(HealStep.Restart, m.Tick(Start, bad, false, true));
+            m.Force(Start.AddSeconds(2));
+            A.Eq(1, m.Tries, "kept");
+            A.Eq(HealStep.None, m.Tick(Start.AddSeconds(2), bad, false, false), "its host is still starting: no restart on top");
+            A.Eq(HealStep.Restart, m.Tick(Start.AddSeconds(30), bad, false, true));
+            A.Eq(2, m.Tries);
             // asked while fine: "healed" at once (the Thor retries)
             var f = new HostHealer();
             f.Force(Start);
             A.Eq(HealStep.Healed, f.Tick(Start, Check(Tcp(OurPid, 52984, 52989, 53010)), false, true));
+        }
+
+        [Test]
+        public static void Started_TheUsersHostTook26sToBind()
+        {
+            // verifier 2026-11-17: ours started 13:50:17, probed its encoders, "Configuration UI available" 13:50:42.926; a 4 s settle
+            // judged its ports at 13:50:23 ("not_listening") and the healer restarted it before it could bind
+            var since = new DateTime(2026, 11, 17, 13, 50, 17);
+            const string log = "[2026-11-17 13:50:17.139]: Info: Sunshine version: 2026.914.233613\r\n" +
+                               "[2026-11-17 13:50:42.901]: Info: Found H.264 encoder: h264_amf [amdvce]\r\n" +
+                               "[2026-11-17 13:50:42.926]: Info: Configuration UI available at [https://localhost:52990]\r\n";
+            const string probing = "[2026-11-17 13:50:17.139]: Info: Sunshine version: 2026.914.233613\r\n";
+            A.False(HostHealth.Started(TimeSpan.FromSeconds(6), false, probing, since, since.AddSeconds(6)), "6 s: still probing");
+            A.False(HostHealth.Started(TimeSpan.FromSeconds(25), false, probing, since, since.AddSeconds(25)));
+            A.False(HostHealth.Started(TimeSpan.FromSeconds(26), false, log, since, since.AddSeconds(26)), "the line just came: the binds' 2 s");
+            A.True(HostHealth.Started(TimeSpan.FromSeconds(28), false, log, since, since.AddSeconds(28)), "started");
+            A.True(HostHealth.Started(TimeSpan.FromSeconds(8), true, probing, since, since.AddSeconds(8)), "every port ours: started");
+            A.False(HostHealth.Started(TimeSpan.FromSeconds(28), false, log, since.AddMinutes(5), since.AddMinutes(5).AddSeconds(28)), "an older start's line");
+            A.True(HostHealth.Started(HostHealth.StartupMax, false, probing, since, since + HostHealth.StartupMax), "90 s: whatever the log says");
+            A.False(HostHealth.Started(TimeSpan.FromSeconds(30), false, null, since, since.AddSeconds(30)), "no log");
+            A.True(HostHealth.Started(HostHealth.StartupNoLog, false, null, since, since + HostHealth.StartupNoLog));
+            // today's failure: the bind line is the outcome
+            A.True(HostHealth.Started(TimeSpan.FromSeconds(28), false, TodaysLog, Start, Start.AddSeconds(28)), "Couldn't bind: started (broken)");
+        }
+
+        /// <summary>
+        /// Our sunshine as the user's PC has it: nothing bound for [bindS] after each start (the encoder probe), then HTTPS/HTTP/web
+        /// and, if [rtsp] says so for (base, start number), RTSP; [denied] logs the WSAEACCES line. Ticks every 2 s like HealthTick.
+        /// [oldSettle] = the 4 s rule before this fix.
+        /// </summary>
+        sealed class Sim
+        {
+            public int Base = 52989, Starts = 1, Restarts, Moves;
+            public DateTime StartedAt;
+            public Func<int, int, bool> Rtsp = (b, n) => true;
+            public Func<int, int, bool> Denied = (b, n) => false;
+            public int BindS = 26;
+            public readonly List<string> Steps = new List<string>();
+
+            public (HealthReport h, bool started) Look(DateTime t, bool oldSettle)
+            {
+                bool bound = t - StartedAt >= TimeSpan.FromSeconds(BindS);
+                bool rtsp = Rtsp(Base, Starts), denied = Denied(Base, Starts);
+                var tcp = new List<TcpListenerRow>();
+                string log = "[" + StartedAt.ToString("yyyy-MM-dd HH:mm:ss.fff") + "]: Info: Sunshine version: x\r\n";
+                if (bound)
+                {
+                    tcp.AddRange(new[] { Base - 5, Base, Base + 1 }.Select(p => new TcpListenerRow(p, OurPid)));
+                    if (rtsp) tcp.Add(new TcpListenerRow(Base + 21, OurPid));
+                    var at = StartedAt.AddSeconds(BindS).ToString("yyyy-MM-dd HH:mm:ss.fff");
+                    if (denied) log += "[" + at + "]: Fatal: Couldn't bind RTSP server to port [" + (Base + 21) + "], An attempt was made to access a socket in a way forbidden by its access permissions\r\n";
+                    log += "[" + at + "]: Info: Configuration UI available at [https://localhost:" + (Base + 1) + "]\r\n";
+                }
+                var h = HostHealth.Check(Base, OurPid, OurDir, tcp, null, bound ? rtsp : (bool?)null, null, null, log, StartedAt, Who);
+                bool started = oldSettle ? t - StartedAt > TimeSpan.FromSeconds(4)
+                    : HostHealth.Started(t - StartedAt, h.Missing.Count == 0, log, StartedAt, t);
+                return (h, started);
+            }
+
+            /// <summary>runs the healer for [seconds]; returns when it healed (null = never)</summary>
+            public double? Run(HostHealer healer, DateTime t0, int seconds, bool oldSettle = false, bool force = false)
+            {
+                StartedAt = t0;
+                double? healedAt = null;
+                for (int s = 0; s <= seconds; s += 2)
+                {
+                    var t = t0.AddSeconds(s);
+                    if (force && s == 0) healer.Force(t);
+                    var (h, started) = Look(t, oldSettle);
+                    var step = healer.Tick(t, h, false, started);
+                    if (step == HealStep.None) continue;
+                    Steps.Add(step + "@" + s);
+                    if (step == HealStep.Restart) { Restarts++; Starts++; StartedAt = t; }
+                    else if (step == HealStep.Move) { Moves++; Base += 1000; Starts = 1; StartedAt = t; }
+                    else if (step == HealStep.Healed && healedAt == null) healedAt = s;
+                }
+                return healedAt;
+            }
+        }
+
+        [Test]
+        public static void Healer_AHealthyStartIsNeverRestarted()
+        {
+            // a normal boot: 26 s to bind, then all fine. The 4 s settle restarted it (twice) before it ever bound
+            var old = new Sim();
+            old.Run(new HostHealer(), Start, 120, oldSettle: true);
+            A.True(old.Restarts >= 2, "the old rule: " + string.Join(", ", old.Steps));
+            var sim = new Sim();
+            var h = new HostHealer();
+            sim.Run(h, Start, 300);
+            A.Eq(0, sim.Restarts + sim.Moves, string.Join(", ", sim.Steps));
+            A.False(h.Healing || h.GaveUp);
+            // the Thor asking while ours is still probing its encoders: it waits for the start, no restart on top
+            var asked = new Sim();
+            var g = new HostHealer();
+            asked.Run(g, Start, 60, force: true);
+            A.Eq(0, asked.Restarts + asked.Moves, string.Join(", ", asked.Steps));
+            A.Eq("Healed@26", string.Join(", ", asked.Steps), "the answer comes once it has started");
+        }
+
+        [Test]
+        public static void Healer_TodaysWsaeaccesMovesOnTheSecondTryInTime()
+        {
+            // today: Windows refuses RTSP on base 52989 (WSAEACCES) every start; a new base works. The old 4 s settle never saw a
+            // bind line at the second try (killed before it bound), so it could never move for WSAEACCES
+            var sim = new Sim { Rtsp = (b, n) => b != 52989, Denied = (b, n) => b == 52989 };
+            var h = new HostHealer();
+            var healed = sim.Run(h, Start.AddSeconds(-30), 300, force: true);
+            A.Eq("Restart@28, Move@56, Healed@82", string.Join(", ", sim.Steps), "try 1 restarts, the second WSAEACCES moves");
+            A.NotNull(healed);
+            A.True(healed.Value < 120, "inside the Thor's wait: " + healed);
+            A.False(h.GaveUp);
+        }
+
+        [Test]
+        public static void Healer_AnUnexplainedRtspGapHealsAfterTheLastTryMoves()
+        {
+            // verifier 2026-11-17: a reservation netsh doesn't show; the last try moved, the report came 10 s later, before the moved
+            // host could bind (a false "not responding"). Now every look waits for the host it restarted
+            var sim = new Sim { Rtsp = (b, n) => b != 52989 };
+            var h = new HostHealer();
+            var healed = sim.Run(h, Start.AddSeconds(-30), 400, force: true);
+            A.Eq(0, sim.Steps.Count(s => s.StartsWith("GiveUp")), string.Join(", ", sim.Steps));
+            A.Eq(2, sim.Restarts);
+            A.Eq(1, sim.Moves);
+            A.NotNull(healed, string.Join(", ", sim.Steps));
+            A.True(healed.Value <= 150, "within the Thor's wait: " + string.Join(", ", sim.Steps));
+            // nothing works anywhere: the report comes after the moved host has started, never before
+            var none = new Sim { Rtsp = (b, n) => false };
+            none.Run(new HostHealer(), Start.AddSeconds(-30), 400, force: true);
+            var give = none.Steps.FirstOrDefault(s => s.StartsWith("GiveUp"));
+            var move = none.Steps.First(s => s.StartsWith("Move"));
+            A.NotNull(give, string.Join(", ", none.Steps));
+            A.True(int.Parse(give.Split('@')[1]) - int.Parse(move.Split('@')[1]) >= none.BindS, "the moved host's start waited for: " + string.Join(", ", none.Steps));
         }
 
         [Test]

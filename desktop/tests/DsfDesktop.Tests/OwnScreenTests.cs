@@ -179,14 +179,16 @@ namespace DsfDesktop.Tests
             A.Eq(ScreenPlan.Step.Keep, life.Decide(T0, false, true, true, true, false, (1920, 1080, 60), true).step);
             // the Thor's mode changed mid-stream: kept
             A.Eq(ScreenPlan.Step.Keep, life.Decide(T0, true, true, true, true, false, M120, true).step);
-            // idle: the mode change remakes it (removed now, made at the next tick)
+            // idle: the mode change remakes it in place (verifier 2026-11-17: RemoveOurs then MakeOurs was two Sunshine restarts and
+            // two WoW moves): one MakeOurs, the old screen removed inside it
             var d = life.Decide(T0, true, true, true, true, false, M120, false);
-            A.Eq(ScreenPlan.Step.RemoveOurs, d.step);
-            A.Eq("the Thor's mode changed", d.why);
-            life.Remove(d.why);
-            A.Eq(ScreenPlan.Step.MakeOurs, life.Decide(T0, true, true, true, true, false, M120, false).step);
+            A.Eq(ScreenPlan.Step.MakeOurs, d.step);
+            A.Eq(ScreenLife.ModeChanged, d.why);
             A.Null(life.Make(1920, 1080, 120, T0));
             A.Eq((1920, 1080, 120), life.Mode);
+            A.Eq(1, sudo.removes);
+            A.Eq(2, sudo.makes);
+            A.Eq(ScreenPlan.Step.Keep, life.Decide(T0, true, true, true, true, false, M120, false).step, "then it stays");
             // own screen off, idle, a real screen: ours goes
             A.Eq(ScreenPlan.Step.RemoveOurs, life.Decide(T0, false, true, true, true, false, M120, false).step);
         }
@@ -237,11 +239,11 @@ namespace DsfDesktop.Tests
             A.True(Displays.HasScreen(new List<WinDisplay> { realOff, vddOn }), "someone's lasting virtual screen counts");
             A.False(Displays.HasScreen(new List<WinDisplay> { realOff, vddOn }, @"\\.\DISPLAY7"), "but not when it is ours");
             A.True(Displays.HasScreen(new List<WinDisplay> { real, vddOn }, @"\\.\DISPLAY7"));
-            // the VDD's monitor to use: an off one (ours to attach); an on one only while we have it attached (our install sets that)
+            // the VDD's monitor to use: an off one (ours to attach); an on one only while we have it attached, by its name
             var vddOff = W(@"\\.\DISPLAY8", "Virtual Display Driver", @"Root\MttVDD", false);
             A.Eq(@"\\.\DISPLAY8", VddScreen.Pick(new List<WinDisplay> { real, vddOn, vddOff }, false)?.Name);
             A.Null(VddScreen.Pick(new List<WinDisplay> { real, vddOn }, false), "the player's own on monitor: never ours");
-            A.Eq(@"\\.\DISPLAY7", VddScreen.Pick(new List<WinDisplay> { real, vddOn }, true)?.Name, "attached by us");
+            A.Eq(@"\\.\DISPLAY7", VddScreen.Pick(new List<WinDisplay> { real, vddOn }, true, vddOn.Name)?.Name, "attached by us (by its name)");
             A.Null(VddScreen.Pick(new List<WinDisplay> { real }, false), "no VDD");
             A.True(VddScreen.IsVdd(vddOn));
             A.False(VddScreen.IsVdd(W(@"\\.\DISPLAY9", "SudoMaker Virtual Display Adapter", @"Root\SudoMaker\SudoVDA", true)), "never Apollo's");
@@ -263,7 +265,7 @@ namespace DsfDesktop.Tests
             A.Eq(1, vdd.makes);
             A.Eq(0, vdd.removes);
             // the Thor really changed its mode: one remake
-            A.Eq(ScreenPlan.Step.RemoveOurs, life.Decide(T0.AddMinutes(1), true, true, true, true, false, (1600, 900, 60), false).step);
+            A.Eq(ScreenPlan.Step.MakeOurs, life.Decide(T0.AddMinutes(1), true, true, true, true, false, (1600, 900, 60), false).step);
         }
 
         [Test]
@@ -279,9 +281,9 @@ namespace DsfDesktop.Tests
             var vdd2 = new Fake("Virtual Display Driver") { Exists = true, GdiName = @"\\.\DISPLAY7", Mode = (1920, 1080, 60) };
             var life2 = new ScreenLife(new List<IScreenDriver> { vdd2 });
             var d = life2.Decide(T0, true, true, true, true, false, M120, false);
-            A.Eq(ScreenPlan.Step.RemoveOurs, d.step);
-            life2.Remove(d.why);
+            A.Eq(ScreenPlan.Step.MakeOurs, d.step);
             A.Null(life2.Make(1920, 1080, 120, T0));
+            A.Eq(1, vdd2.removes);
             A.Eq(ScreenPlan.Step.Keep, life2.Decide(T0.AddSeconds(2), true, true, true, true, false, M120, false).step);
         }
 
@@ -310,11 +312,55 @@ namespace DsfDesktop.Tests
             var all = new List<WinDisplay> { a, b };
             A.Eq(@"\\.\DISPLAY8", VddScreen.Ours(all, true, @"\\.\DISPLAY8")?.Name, "the one we named, not the first on");
             A.Null(VddScreen.Ours(new List<WinDisplay> { a }, true, @"\\.\DISPLAY8"), "ours is off: the player's other one is never taken");
-            A.Eq(@"\\.\DISPLAY7", VddScreen.Ours(new List<WinDisplay> { a }, true, null)?.Name, "our install's monitor (no name yet)");
+            A.Null(VddScreen.Ours(new List<WinDisplay> { a }, true, null), "no name kept: nothing is ours (the install names its monitor)");
             A.Null(VddScreen.Ours(all, false, @"\\.\DISPLAY7"), "detached by us: any monitor on now is the player's");
             // after our install's monitor was detached, the player turning it on: not ours (the install no longer counts)
             A.Null(VddScreen.Pick(new List<WinDisplay> { a }, false), "never used, sized or detached");
             A.Eq(@"\\.\DISPLAY8", VddScreen.Pick(all, true, @"\\.\DISPLAY8")?.Name);
+        }
+
+        [Test]
+        public static void ALeftoverAdoptedWhileAThorIsHereIsPointedAt()
+        {
+            // verifier 2026-11-17: Desktop restarted with our VDD monitor still on and the Thor already connected: Keep, so our
+            // Sunshine never captured it and WoW never moved there. Now: MakeOurs on it (no new screen: our Sunshine pointed at it)
+            var vdd = new Fake("Virtual Display Driver") { Exists = true, GdiName = @"\\.\DISPLAY7", Mode = (1920, 1080, 120) };
+            var life = new ScreenLife(new List<IScreenDriver> { vdd });
+            var d = life.Decide(T0, true, true, true, life.ThorWants(T0, true, false), false, M120, false, sunshineOnOurs: false);
+            A.Eq(ScreenPlan.Step.MakeOurs, d.step);
+            A.Eq(ScreenLife.NotOnOurs, d.why);
+            A.Null(life.Make(1920, 1080, 120, T0));
+            A.Eq(0, vdd.makes + vdd.removes, "the same screen");
+            A.Eq(ScreenPlan.Step.Keep, life.Decide(T0, true, true, true, true, false, M120, false, sunshineOnOurs: true).step);
+            A.Eq(ScreenPlan.Step.Keep, life.Decide(T0, true, true, true, true, false, M120, true, sunshineOnOurs: false).step, "never mid-stream");
+            // our Sunshine didn't list it: kept, pointed at again after the 2-minute pause, not every tick
+            life.Failed(T0);
+            A.Eq(ScreenPlan.Step.Keep, life.Decide(T0.AddSeconds(2), true, false, true, true, false, M120, false, sunshineOnOurs: false).step);
+            A.Eq(ScreenPlan.Step.MakeOurs, life.Decide(T0.AddSeconds(121), true, false, true, true, false, M120, false, sunshineOnOurs: false).step);
+        }
+
+        [Test]
+        public static void OnlyTheMonitorOurInstallBroughtIsOurs()
+        {
+            // verifier 2026-11-17: the flag was set at the player's yes; after a declined admin prompt the first VDD monitor the player
+            // put on later was adopted and detached. Now the install's new monitor is named when it appears, and only then
+            static WinDisplay W(string name, bool active)
+                => new WinDisplay { Name = name, Adapter = "Virtual Display Driver", AdapterId = @"Root\MttVDD", Active = active, Kind = Displays.KindOf("Virtual Display Driver", @"Root\MttVDD") };
+            var real = new WinDisplay { Name = @"\\.\DISPLAY1", Adapter = "AMD Radeon RX 7800 XT", AdapterId = @"PCI\VEN_1002", Active = true };
+            var none = new List<string>();
+            var on = new List<WinDisplay> { real, W(@"\\.\DISPLAY7", true) };
+            A.Null(VddInstallWatch.Adopt(T0, T0.AddSeconds(30), null, none, new List<WinDisplay> { real }), "not there yet");
+            A.Eq(@"\\.\DISPLAY7", VddInstallWatch.Adopt(T0, T0.AddMinutes(2), null, none, on), "it appeared: ours by name");
+            A.Eq(@"\\.\DISPLAY7", VddInstallWatch.Adopt(T0, T0.AddMinutes(2), 0, none, on), "installer done");
+            A.Null(VddInstallWatch.Adopt(T0, T0.AddMinutes(2), 1, none, on), "declined (non-zero): nothing is ours");
+            A.True(VddInstallWatch.Over(T0, T0.AddMinutes(2), 1));
+            A.Null(VddInstallWatch.Adopt(T0, T0.AddMinutes(16), null, none, on), "the player's own install, later: theirs");
+            A.True(VddInstallWatch.Over(T0, T0.AddMinutes(16), null));
+            A.Null(VddInstallWatch.Adopt(T0, T0.AddMinutes(2), null, new List<string> { @"\\.\DISPLAY7" }, on), "there before: theirs");
+            A.Null(VddInstallWatch.Adopt(T0, T0.AddMinutes(2), null, none, new List<WinDisplay> { real, W(@"\\.\DISPLAY7", false) }), "off: not yet");
+            A.Null(VddInstallWatch.Adopt(DateTime.MinValue, T0, null, none, on), "no install of ours");
+            // and with no name kept, no active VDD monitor is ours
+            A.Null(VddScreen.Pick(on, true, null), "attached flag with no name: the active one is never taken");
         }
 
         [Test]

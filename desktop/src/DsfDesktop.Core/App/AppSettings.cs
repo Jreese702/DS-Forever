@@ -43,6 +43,8 @@ namespace DsfDesktop.App
         /// the restart, so one restart does instead of two</summary>
         public string OwnScreenDriver { get; set; }
         public string OwnScreenDevice { get; set; }
+        /// <summary>the monitor WoW was on before it moved to our screen (kept across a crash: WoW goes back there at the next start)</summary>
+        public string WowHome { get; set; }
         /// <summary>the folder question is asked once; after that the user uses "Choose folder" themselves</summary>
         public bool AskedForFolder { get; set; }
 

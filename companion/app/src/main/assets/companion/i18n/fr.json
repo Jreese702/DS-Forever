@@ -266,6 +266,8 @@
 "PC busy: its streaming host isn't listening": "PC occupé : son serveur de streaming n'écoute pas",
 "PC busy: its streaming host stopped": "PC occupé : son serveur de streaming s'est arrêté",
 "PC streaming host restarting": "Redémarrage du serveur de streaming du PC",
+"PC making its stream screen": "Le PC crée son écran de streaming",
+"PC streaming host starting": "Démarrage du serveur de streaming du PC",
 "PC streaming host not responding": "Le serveur de streaming du PC ne répond pas",
 "Restart DS Forever Desktop on the PC.": "Redémarrez DS Forever Desktop sur le PC.",
 "Test connection": "Tester la connexion",

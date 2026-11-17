@@ -142,6 +142,40 @@ namespace DsfDesktop.Sunshine
             return rep;
         }
 
+        /// <summary>after this long ours counts as started whatever its log says (the user's PC: about 26 s from start to its ports)</summary>
+        public static readonly TimeSpan StartupMax = TimeSpan.FromSeconds(90);
+        /// <summary>with its log unreadable: this long</summary>
+        public static readonly TimeSpan StartupNoLog = TimeSpan.FromSeconds(45);
+        /// <summary>a start-done line, then this long for the other servers' binds (they start together)</summary>
+        public static readonly TimeSpan StartupLineGrace = TimeSpan.FromSeconds(2);
+
+        static readonly Regex StartedLine = new Regex(@"Configuration UI available|Registered Sunshine mDNS|Couldn't bind|Couldn't find any working encoder|Unable to find display or encoder",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        /// <summary>
+        /// Ours has STARTED: its ports' outcome is known (verifier 2026-11-17: Sunshine probes its encoders before it binds anything -
+        /// the user's PC: started 13:50:17, encoders 13:50:42.9, "Configuration UI available" 13:50:42.9, so about 26 s; a 4 s
+        /// settle restarted a healthy host twice on every start). Started = every TCP port ours already, or a start-done line in its log
+        /// since [sinceLocal] ("Configuration UI available", "Registered Sunshine mDNS", "Couldn't bind", no encoder) at least
+        /// <see cref="StartupLineGrace"/> before [nowLocal], or <see cref="StartupMax"/> up (<see cref="StartupNoLog"/> with no log).
+        /// </summary>
+        public static bool Started(TimeSpan up, bool allTcpOurs, string log, DateTime sinceLocal, DateTime nowLocal)
+        {
+            if (allTcpOurs || up >= StartupMax) return true;
+            if (log == null) return up >= StartupNoLog;
+            foreach (var raw in log.Split('\n'))
+            {
+                var line = raw.TrimEnd('\r');
+                if (!StartedLine.IsMatch(line)) continue;
+                var m = LogLine.Match(line);
+                if (!m.Success || !DateTime.TryParseExact(m.Groups[1].Value, new[] { "yyyy-MM-dd HH:mm:ss.fff", "yyyy-MM-dd HH:mm:ss" },
+                        CultureInfo.InvariantCulture, DateTimeStyles.None, out var at)) continue;
+                if (at < sinceLocal.AddSeconds(-1)) continue;
+                if (nowLocal - at >= StartupLineGrace) return true;
+            }
+            return false;
+        }
+
         static readonly Regex LogLine = new Regex(@"^\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d+)?)\]:\s*(\w+):\s*(.*)$", RegexOptions.Compiled);
         static readonly Regex BindLine = new Regex(@"Couldn't bind (.+?) to port \[?(\d+)\]?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -263,7 +297,7 @@ namespace DsfDesktop.Sunshine
         public const int MaxTries = 3;
         /// <summary>WSAEACCES this many times in a row: the ports are reserved, move</summary>
         public const int AccessMoves = 2;
-        /// <summary>after the last try: the look that decides the report</summary>
+        /// <summary>after the last try: the look that decides the report (no sooner than the moved host has started: [settled])</summary>
         public const int LastLookS = 10;
 
         public int Tries { get; private set; }
@@ -275,7 +309,9 @@ namespace DsfDesktop.Sunshine
         bool moved;
         DateTime? dueAt;
 
-        /// <summary>[settled] = ours has had its few seconds to bind since its last start; [streaming] = a stream is live (never restart)</summary>
+        /// <summary>[settled] = ours has STARTED since its last start (<see cref="HostHealth.Started"/>: about 26 s on the user's PC) and
+        /// nothing else is restarting it; nothing is judged before that, so each try (and the last look) waits for the host it
+        /// restarted. [streaming] = a stream is live (never restart)</summary>
         public HealStep Tick(DateTime now, HealthReport h, bool streaming, bool settled)
         {
             if (h == null) return HealStep.None;
@@ -302,8 +338,13 @@ namespace DsfDesktop.Sunshine
             return move ? HealStep.Move : HealStep.Restart;
         }
 
-        /// <summary>the Thor asked: start over, the first try due now</summary>
-        public void Force(DateTime now) { Reset(); dueAt = now; }
+        /// <summary>the Thor asked: the next try due now. A heal under way keeps its count (its host may still be starting: the try
+        /// waits for [settled], never a restart on top); one given up, or none, starts over</summary>
+        public void Force(DateTime now)
+        {
+            if (!dueAt.HasValue || GaveUp) Reset();
+            if (!dueAt.HasValue || dueAt.Value > now) dueAt = now;
+        }
 
         public void Reset() { Tries = 0; GaveUp = false; denied = 0; moved = false; dueAt = null; }
     }

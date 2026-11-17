@@ -59,7 +59,10 @@ sealed class BridgeMsg {
                         *  "" = fine) and its line for the Thor ("pc busy: another Sunshine"); empty from an older Desktop */
                        val sunProblem: String = "", val sunWhy: String = "",
                        /** issue #414: Desktop's clock when it sent this, on the documents' `gt` scale ([PcClock]); -1 from an older Desktop */
-                       val gtNow: Long = -1L) : BridgeMsg()
+                       val gtNow: Long = -1L,
+                       /** Desktop 0.2.32: what the stream's start waits for ("screen" = its own virtual screen being made, "starting" = its
+                        *  streaming host starting; "" = go, or an older Desktop) */
+                       val sunWait: String = "") : BridgeMsg()
     /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed"; [pc] = all of it (0.2.1) */
     data class Wow(val state: String, val why: String, val pc: PcWow? = null) : BridgeMsg()
     data class Error(val code: String, val detail: String = "") : BridgeMsg()
@@ -75,7 +78,8 @@ sealed class BridgeMsg {
     data class Stream(val state: String) : BridgeMsg()
     /** Desktop 0.2.32: its Sunshine's ports and reason again ("sunshine": it moved to a new base; "host_check_result": the answer to
      *  [BridgeProtocol.hostCheck], [state] ok | restarting | failed | streaming, "" for a plain "sunshine") */
-    data class Sunshine(val state: String, val httpPort: Int, val httpsPort: Int, val problem: String, val why: String, val answer: Boolean) : BridgeMsg() {
+    data class Sunshine(val state: String, val httpPort: Int, val httpsPort: Int, val problem: String, val why: String, val answer: Boolean,
+                        /** as [Welcome.sunWait] */ val wait: String = "") : BridgeMsg() {
         val report get() = StreamPorts.Report(true, httpPort, httpsPort)
     }
     /** Desktop's answer to [BridgeProtocol.bnetReady]: [form] = Battle.net's sign-in in front and found; null = do not type */
@@ -164,7 +168,7 @@ object BridgeProtocol {
                 PcWow.of(o.optJSONObject("wow")),
                 strings(o.optJSONArray("lan")), strings(o.optJSONArray("tailscale")), o.optString("pad_driver"),
                 sun?.has("http_port") != true, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty(),
-                o.optLong("gt_now", -1L))
+                o.optLong("gt_now", -1L), sun?.optString("wait").orEmpty())
             "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"), PcWow.of(o))
             "error" -> BridgeMsg.Error(o.err(), o.optString("detail"))
             "doc" -> BridgeMsg.Doc(o.optInt("seq", -1), o.optLong("gt", -1L), o.optString("doc"))
@@ -178,7 +182,8 @@ object BridgeProtocol {
             "backlog_end" -> BridgeMsg.BacklogEnd(o.optInt("count", 0))
             "stream" -> BridgeMsg.Stream(o.optString("state"))
             "sunshine", "host_check_result" -> BridgeMsg.Sunshine(o.optString("state"), sun?.optInt("http_port", 0) ?: 0,
-                sun?.optInt("https_port", 0) ?: 0, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty(), t == "host_check_result")
+                sun?.optInt("https_port", 0) ?: 0, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty(), t == "host_check_result",
+                sun?.optString("wait").orEmpty())
             "bnet_ready_result" -> {
                 val pass = point(o.optString("password")); val button = point(o.optString("button"))
                 BridgeMsg.BnetReady(if (o.optBoolean("ok") && pass != null && button != null) BnetFormAt(point(o.optString("email")), pass, button) else null,

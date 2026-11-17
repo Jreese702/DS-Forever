@@ -340,12 +340,16 @@ namespace DsfDesktop.Sunshine
 
         public static string WingetArgs => "install --id " + WingetId + " -e --source winget";
 
-        /// <summary>starts the install in its own window; null = started, else why not (then the release page opens instead)</summary>
-        public static string Start()
+        /// <summary>starts the install in its own window; null = started ([proc] = winget, null when Windows gave none), else why not
+        /// (then the release page opens instead)</summary>
+        public static string Start() => Start(out _);
+
+        public static string Start(out Process proc)
         {
+            proc = null;
             try
             {
-                Process.Start(new ProcessStartInfo("winget", WingetArgs) { UseShellExecute = true });
+                proc = Process.Start(new ProcessStartInfo("winget", WingetArgs) { UseShellExecute = true });
                 Log.I("virtual screen: install started (winget " + WingetArgs + ")");
                 return null;
             }

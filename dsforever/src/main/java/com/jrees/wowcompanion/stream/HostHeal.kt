@@ -34,8 +34,10 @@ class HostHeal {
     /** it ended some other way: the RTSP run is broken (the normal policy decides) */
     fun otherEnd() { if (phase == Phase.IDLE || phase == Phase.RETRYING) { phase = Phase.IDLE; timeouts = 0 } }
 
-    /** Desktop's host_check_result: "ok" | "restarting" | "failed" | "streaming" (anything else: wait) */
+    /** Desktop's host_check_result: "ok" | "restarting" | "failed" | "streaming" (anything else: wait). An "ok" after we gave up (its
+     *  heal landed late: verifier 2026-11-17, a moved host binds about 26 s on) gives the one more try too; the Retry stays */
     fun answer(state: String): Next {
+        if (phase == Phase.GAVE_UP && state == "ok") { phase = Phase.RETRYING; return Next.RETRY }
         if (phase != Phase.ASKED) return Next.NORMAL
         return when (state) {
             "ok" -> { phase = Phase.RETRYING; Next.RETRY }
@@ -52,8 +54,9 @@ class HostHeal {
 
     companion object {
         const val ASK_AFTER = 2
-        /** Desktop's heal: the first try at once, then 15 s and 45 s apart, each a few seconds to settle */
-        const val ASK_WAIT_MS = 120_000L
+        /** Desktop's heal: the first try at once, then 15 s and 45 s apart, each waiting for its host to start (about 26 s on the
+         *  user's PC): about 105 s at worst */
+        const val ASK_WAIT_MS = 180_000L
         const val RESTARTING = "PC streaming host restarting"
         const val DOWN = "PC streaming host not responding"
         const val DOWN_DETAIL = "Restart DS Forever Desktop on the PC."

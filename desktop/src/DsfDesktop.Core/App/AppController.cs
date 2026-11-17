@@ -114,6 +114,8 @@ namespace DsfDesktop.App
             try { Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaysChanged; } catch (Exception e) { Log.I("display events: " + e.Message); }
             // our own virtual screen left by a Desktop that didn't close cleanly (only ours, by its id; Apollo's are never touched)
             if (Guid.TryParse(Settings.VirtualScreenId ?? "", out var vid)) Task.Run(() => { try { OurScreen.RemoveLeftover(vid); } catch (Exception) { } });
+            // WoW's monitor from before a crash: it goes back once no screen of ours is there (ScreenTick)
+            wowHomeNow = Settings.WowHome;
             // (a Virtual Display Driver monitor we attached is adopted by the screen plan and detached once no Thor wants it)
             if (Settings.AutoAddons) Task.Run(() => AddonsAuto());
             Fire();
@@ -126,6 +128,8 @@ namespace DsfDesktop.App
             slowTimer?.Dispose();
             try { Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaysChanged; } catch (Exception) { }
             try { screens?.Remove("Desktop closing"); } catch (Exception) { }
+            // WoW back where the player had it (it was only queued after the screen went)
+            try { var home = wowHome; if (home != null) { WowHome(home); wowHome = null; } } catch (Exception) { }
             try { mdns?.Dispose(); } catch (Exception) { }
             try { Bridge?.Stop(); } catch (Exception) { }
             try { Sunshine?.Dispose(); } catch (Exception) { }
@@ -352,7 +356,7 @@ namespace DsfDesktop.App
             {
                 var sh = Sunshine;
                 bool up = sh != null && sh.Running;
-                bool settled = up && DateTime.UtcNow - sh.StartedUtc > TimeSpan.FromSeconds(4);
+                bool settled = up && HostStarted;
                 var r = PortGuard.Now(SunshinePort, sh?.Pid ?? -1, up, settled, SunshineLayout.ExeDir);
                 Ports = r;
                 SetApollo(r.Hosts.Contains("Apollo"));
@@ -412,16 +416,24 @@ namespace DsfDesktop.App
                 // was under way) - then it is a host with every port missing, restarted on the heal's clock and reported
                 bool exited = !sh.Running;
                 if (exited && !healer.Healing) return;
-                // our screen being made restarts ours too (MakeOurs, the Test's screen check): the heal waits for it, never a
-                // second restart on top
-                bool settled = !screenBusy && (exited || DateTime.UtcNow - sh.StartedUtc > TimeSpan.FromSeconds(4));
                 bool streaming = !exited && StreamLive(thorAsked);
                 var x = HostHealth.ExcludedNow(healer.Healing ? 10 : 300);
-                bool? rtspOk = exited ? false : rtsp && settled && !streaming ? HostHealth.Connects(SunshinePort + HostHealth.RtspOffset) : (bool?)null;
                 var udp = PortGuard.UdpBound();
-                var h = HostHealth.Check(SunshinePort, exited ? -1 : sh.Pid, SunshineLayout.ExeDir, PortGuard.TcpListeners(), udp, rtspOk,
-                    x.tcp, x.udp, exited ? null : HostHealth.ReadLog(SunshineLayout.LogFile), sh.StartedUtc.ToLocalTime(), PortGuard.Who);
+                var tcp = PortGuard.TcpListeners();
+                var log = exited ? null : HostHealth.ReadLog(SunshineLayout.LogFile);
+                var since = sh.StartedUtc.ToLocalTime();
+                HealthReport Look(bool? rtspOk) => HostHealth.Check(SunshinePort, exited ? -1 : sh.Pid, SunshineLayout.ExeDir, tcp, udp, rtspOk,
+                    x.tcp, x.udp, log, since, PortGuard.Who);
+                var h = Look(exited ? false : (bool?)null);
+                // ours STARTED (verifier 2026-11-17: Sunshine probes its encoders before it binds, about 26 s on the user's PC; a 4 s
+                // settle restarted a healthy host on every start); our screen being made restarts ours too (MakeOurs, the Test's
+                // screen check): the heal waits for both, never a restart on top
+                bool started = exited || HostHealth.Started(DateTime.UtcNow - sh.StartedUtc, h.Missing.Count == 0, log, since, DateTime.Now);
+                if (started && !exited) startedFor = sh.StartedUtc;
+                bool settled = !screenBusy && started;
+                if (!exited && rtsp && settled && !streaming) h = Look(HostHealth.Connects(SunshinePort + HostHealth.RtspOffset));
                 if (exited) h.Detail = "exited, " + h.Detail;
+                else if (!started) h.Detail = "starting, " + h.Detail;
                 Health = h;
                 var key = h.Healthy + "|" + h.Detail;
                 if (key != lastHealthKey) { lastHealthKey = key; Log.I("sunshine: health " + (h.Healthy ? "ok" : "PROBLEM") + ": " + h.Detail); }
@@ -453,6 +465,19 @@ namespace DsfDesktop.App
         }
 
         DateTime busySince = DateTime.MinValue;
+        /// <summary>the start of ours that has been seen STARTED (its ports' outcome known: <see cref="HostHealth.Started"/>)</summary>
+        DateTime startedFor = DateTime.MinValue;
+
+        /// <summary>ours is running and has started (its ports bound, or their failure logged): until then nothing judges its ports</summary>
+        public bool HostStarted
+        {
+            get
+            {
+                var sh = Sunshine;
+                if (sh == null || !sh.Running) return false;
+                return startedFor == sh.StartedUtc || DateTime.UtcNow - sh.StartedUtc >= HostHealth.StartupMax;
+            }
+        }
 
         /// <summary>a stream is live: BUSY with a bound session (see <see cref="HostHealth.StreamLive"/>); BUSY alone is an app launched</summary>
         public bool StreamLive(bool thorAsked = false)
@@ -535,6 +560,14 @@ namespace DsfDesktop.App
             lock (testGate)
             {
                 Log.I("test: run for " + who);
+                // ours still starting (its encoder probe, about 26 s): a short wait, else the steps would say ports are closed
+                for (int i = 0; i < 30 && Sunshine != null && Sunshine.Running && !HostStarted; i++)
+                {
+                    if (i == 0) Task.Run(() => HealthTick(false));
+                    Thread.Sleep(500);
+                    if (i % 4 == 3) Task.Run(() => HealthTick(false));
+                }
+                bool starting = Sunshine != null && Sunshine.Running && !HostStarted;
                 var sh = Sunshine;
                 bool running = sh != null && sh.Available && sh.Running && SunshinePort > 0;
                 bool streaming = StreamLive();
@@ -551,7 +584,7 @@ namespace DsfDesktop.App
                             h = HostHealth.Check(SunshinePort, sh.Pid, SunshineLayout.ExeDir, PortGuard.TcpListeners(), PortGuard.UdpBound(), null,
                                 x.tcp, x.udp, HostHealth.ReadLog(SunshineLayout.LogFile), sh.StartedUtc.ToLocalTime(), PortGuard.Who);
                         }
-                        return PcChecks.Ports(h, SunshinePort, running);
+                        return PcChecks.Ports(h, SunshinePort, running, starting);
                     }),
                     ("rtsp", "RTSP", () => PcChecks.Rtsp(!streaming && HostHealth.Connects(rtspPort), rtspPort, streaming)),
                     ("encoder", "Encoder", () => PcChecks.Encoder(HostHealth.ReadLog(SunshineLayout.LogFile, 1024 * 1024), sh.StartedUtc.ToLocalTime(),
@@ -678,7 +711,19 @@ namespace DsfDesktop.App
         ScreenLife screens;
         string sessionOutput;
         /// <summary>the monitor WoW was on before it moved to our screen: it goes back there after</summary>
-        volatile string wowHome;
+        volatile string wowHomeNow;
+        /// <summary>saved too (verifier 2026-11-17: only in memory, so after a crash or a close WoW never went back)</summary>
+        string wowHome
+        {
+            get => wowHomeNow;
+            set
+            {
+                wowHomeNow = value;
+                if (Settings.WowHome == value) return;
+                Settings.WowHome = value;
+                try { SaveSettings(); } catch (Exception) { }
+            }
+        }
         volatile bool displaysDirty = true;
         string topoKey;
         List<WinDisplay> lastWin = new List<WinDisplay>();
@@ -732,11 +777,46 @@ namespace DsfDesktop.App
         /// <summary>the player said yes: the driver's own installer (Windows asks for admin); null = started. Its monitor is ours.</summary>
         public string InstallVirtualScreen()
         {
-            Settings.VddInstalledByUs = true;
-            Settings.VddAttached = true;      // it comes up on by itself: detached once no Thor wants it
-            SaveSettings();
+            // nothing is ours yet: the monitor the install brings is named when it appears (VddInstallWatch), so a declined admin
+            // prompt leaves nothing marked ours
+            var before = Displays.WindowsDisplays().Where(VddScreen.IsVdd).Select(d => d.Name).ToList();
+            var err = VddInstall.Start(out var p);
+            if (err != null) return err;
+            lock (vddWatchGate) { vddWatchAt = DateTime.UtcNow; vddWatchBefore = before; try { vddWatchProc?.Dispose(); } catch (Exception) { } vddWatchProc = p; }
             driversAt = DateTime.MinValue;
-            return VddInstall.Start();
+            return null;
+        }
+
+        readonly object vddWatchGate = new object();
+        DateTime vddWatchAt = DateTime.MinValue;
+        List<string> vddWatchBefore = new List<string>();
+        System.Diagnostics.Process vddWatchProc;
+
+        /// <summary>each display tick while our install runs: its new monitor is ours (on by itself; detached once no Thor wants it)</summary>
+        void VddWatchTick(List<WinDisplay> win)
+        {
+            lock (vddWatchGate)
+            {
+                if (vddWatchAt == DateTime.MinValue) return;
+                int? exit = null;
+                try { if (vddWatchProc != null && vddWatchProc.HasExited) exit = vddWatchProc.ExitCode; } catch (Exception) { }
+                var now = DateTime.UtcNow;
+                var name = VddInstallWatch.Adopt(vddWatchAt, now, exit, vddWatchBefore, win);
+                if (name == null && !VddInstallWatch.Over(vddWatchAt, now, exit)) return;
+                if (name != null)
+                {
+                    Settings.VddInstalledByUs = true;
+                    Settings.VddAttached = true;
+                    Settings.VddDevice = name;
+                    SaveSettings();
+                    driversAt = DateTime.MinValue;
+                    Log.I("virtual screen: our install's Virtual Display Driver monitor " + name + " is ours");
+                }
+                else Log.I("virtual screen: the install " + (exit.HasValue ? "ended (" + exit.Value + ")" : "window passed") + " with no new monitor: nothing is ours");
+                vddWatchAt = DateTime.MinValue;
+                try { vddWatchProc?.Dispose(); } catch (Exception) { }
+                vddWatchProc = null;
+            }
         }
 
         /// <summary>"Stream on its own screen" On/Off: the next tick makes or removes ours</summary>
@@ -777,7 +857,9 @@ namespace DsfDesktop.App
             }
             bool streaming = StreamLive();
             if (configStale && !streaming) ApplyConfig("config");
+            VddWatchTick(win);
             ScreenTick(win, streaming);
+            WaitTick();
             // a remembered display that has gone, or a capture target that went away: once the change has settled
             var sh = Sunshine;
             if (!displayCheckPending || sh == null || !sh.Running || DateTime.UtcNow - sh.StartedUtc < TimeSpan.FromSeconds(6) || screenBusy) return;
@@ -803,15 +885,26 @@ namespace DsfDesktop.App
             if (screenBusy) return;
             var life = Screens;
             var now = DateTime.UtcNow;
+            // a WoW home left from before (a crash, or a close mid-move) with no screen of ours now: WoW goes back there
+            if (wowHomeNow != null && sessionOutput == null && !life.Exists)
+            {
+                var home = wowHome;
+                wowHome = null;
+                Task.Run(() => WowHome(home));
+            }
             bool thor = (Bridge?.Sessions().Count ?? 0) > 0;
-            if (thor && !thorWas) { thorSince = now; modeHeard = false; }
+            // the mode is forgotten when the Thor goes, not when this tick first sees it: its stream_mode follows the welcome at
+            // once and usually lands before this tick (verifier 2026-11-17: reset here, every make waited the full 5 s)
+            if (thor && !thorWas) thorSince = now;
+            if (!thor && thorWas) modeHeard = false;
             thorWas = thor;
             bool thorWants = life.ThorWants(now, thor, streaming);
             if (now - driversAt > TimeSpan.FromSeconds(30)) { driversAt = now; (driverInstalled, driverUsable) = life.Survey(); }
             bool hasScreen = Displays.HasScreen(win, life.GdiName);
             // a driver that is there but can't be used (the player's own VDD monitor): nothing to offer
             bool offered = Settings.VirtualScreenOffered || driverInstalled;
-            var (step, why) = life.Decide(now, Settings.OwnScreen, hasScreen, driverUsable, thorWants, offered, (thorW, thorH, thorFps), streaming);
+            var (step, why) = life.Decide(now, Settings.OwnScreen, hasScreen, driverUsable, thorWants, offered, (thorW, thorH, thorFps), streaming,
+                                          sunshineOnOurs: sessionOutput != null);
             switch (step)
             {
                 case ScreenPlan.Step.None:
@@ -827,6 +920,7 @@ namespace DsfDesktop.App
                     break;
                 case ScreenPlan.Step.MakeOurs:
                     if (thor && !modeHeard && !streaming && now - thorSince < TimeSpan.FromSeconds(5)) break;   // its stream_mode follows the welcome
+                    if (why != null) Log.I("virtual screen: " + why);
                     screenBusy = true;
                     Say(hasScreen ? ScreenPlan.MakingOwn : ScreenPlan.Making, null);
                     Task.Run(() => MakeOurs(hasScreen));
@@ -907,6 +1001,7 @@ namespace DsfDesktop.App
                         return;
                     }
                     if (hadOutput) { WriteSunshineConfig(); RestartSunshine(); }
+                    life.Failed(DateTime.UtcNow);          // kept (headless: the only screen), pointed at again in 2 minutes, not every tick
                 }
                 lastDisplayRestart = DateTime.UtcNow;
                 Say(ScreenPlan.Ready, null);
@@ -1146,11 +1241,13 @@ namespace DsfDesktop.App
             {
                 // the streaming ports: 5 s after the start (ours has bound by then), then every 15 s
                 if (tickN == 5 || tickN % 15 == 0) CheckPorts(null);
-                // the whole port set (HostHealth): 6 s after the start, then every 15 s; every 2 s while a heal runs. RTSP is
-                // connected to once a minute when fine (each connect is a line in its log), at every look while healing
-                if (tickN == 6 || tickN % 15 == 0 || (healer.Healing && tickN % 2 == 0))
+                // the whole port set (HostHealth): 6 s after the start, then every 15 s; every 2 s while a heal runs or ours is
+                // still starting (so its first started look comes at once). RTSP is connected to once a minute when fine (each
+                // connect is a line in its log), at every look while healing, and at the first look after a start
+                bool starting = Sunshine != null && Sunshine.Running && !HostStarted;
+                if (tickN == 6 || tickN % 15 == 0 || ((healer.Healing || starting) && tickN % 2 == 0))
                 {
-                    bool rtsp = tickN % 60 == 0 || healer.Healing || tickN == 6;
+                    bool rtsp = tickN % 60 == 0 || healer.Healing || tickN == 6 || starting;
                     Task.Run(() => HealthTick(rtsp));
                 }
                 if (tickN++ % 2 == 0)
@@ -1742,7 +1839,59 @@ namespace DsfDesktop.App
             // "needs_screen" | "no_screen"; "" = fine) and the Thor's line for it; an older Thor ignores both
             ["problem"] = HostProblem ?? "",
             ["why"] = HostWhy,
+            // the Thor holds its stream start while this is said (verifier 2026-11-17: its stream started with the bridge, before
+            // ours was made, so the first stream of each session stayed on the real screen): "screen" | "starting" | "" = go
+            ["wait"] = StreamWait(),
         };
+
+        string lastWait;
+        int lastWaitSessions;
+
+        /// <summary>
+        /// What a Thor's stream start should wait for now: "screen" = our virtual screen is being made, or would be for a Thor (each
+        /// make restarts ours); "starting" = ours is starting (its encoder probe, about 26 s) or a heal is restarting it; "" = go.
+        /// Said in the welcome and every "sunshine" message; a change is sent at once.
+        /// </summary>
+        public string StreamWait()
+        {
+            try
+            {
+                var sh = Sunshine;
+                if (sh == null || !sh.Running || SunshinePort <= 0) return "";
+                if (StreamLive()) return "";
+                if (screenBusy || WouldMakeScreen()) return "screen";
+                if (!HostStarted || HealProblem == ProblemRestarting) return "starting";
+                return "";
+            }
+            catch (Exception) { return ""; }
+        }
+
+        /// <summary>the screen plan for a Thor that is here now: ours would be made (or remade, or pointed at)</summary>
+        bool WouldMakeScreen()
+        {
+            var life = Screens;
+            var now = DateTime.UtcNow;
+            if (driversAt == DateTime.MinValue) { driversAt = now; (driverInstalled, driverUsable) = life.Survey(); }
+            var win = lastWin.Count > 0 ? lastWin : Displays.WindowsDisplays();
+            bool hasScreen = Displays.HasScreen(win, life.GdiName);
+            var (step, _) = life.Decide(now, Settings.OwnScreen, hasScreen, driverUsable, true, Settings.VirtualScreenOffered || driverInstalled,
+                                        (thorW, thorH, thorFps), false, sunshineOnOurs: sessionOutput != null);
+            return step == ScreenPlan.Step.MakeOurs;
+        }
+
+        /// <summary>the wait word changed: the Thor told now (it starts its stream when it goes "")</summary>
+        void WaitTick()
+        {
+            int n = Bridge?.Sessions().Count ?? 0;
+            if (n == 0) { lastWait = null; lastWaitSessions = 0; return; }
+            // a new connection's welcome said its own word: the next change is sent whatever was said before
+            if (n != lastWaitSessions) { lastWaitSessions = n; lastWait = null; }
+            var w = StreamWait();
+            if (w == lastWait) return;
+            lastWait = w;
+            Log.I("stream wait: " + (w.Length > 0 ? w : "go"));
+            Bridge.Publish(new Dictionary<string, object> { ["t"] = "sunshine", ["sunshine"] = SunshineInfo() });
+        }
 
         /// <summary>/v1/info and the welcome: no secrets</summary>
         /// <summary>the PC's up, non-loopback IPv4s on its own networks (Ethernet / Wi-Fi), Tailscale's CGNAT range left out</summary>

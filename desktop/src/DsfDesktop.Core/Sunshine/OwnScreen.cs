@@ -37,6 +37,7 @@ namespace DsfDesktop.Sunshine
     public sealed class ScreenLife
     {
         public static readonly TimeSpan DefaultGrace = TimeSpan.FromSeconds(60), RetryAfter = TimeSpan.FromMinutes(2);
+        public const string ModeChanged = "the Thor's mode changed", NotOnOurs = "our Sunshine isn't on it";
 
         readonly IList<IScreenDriver> drivers;
         readonly object gate = new object();
@@ -99,10 +100,13 @@ namespace DsfDesktop.Sunshine
 
         /// <summary>
         /// The step now, with its reason for the log. [hasScreen] = a screen on that is not ours (see <see cref="ScreenPlan.Decide(bool,bool,bool,bool,bool,bool)"/>);
-        /// [want] = the Thor's mode.
+        /// [want] = the Thor's mode; [sunshineOnOurs] = our Sunshine captures ours now (false: a leftover adopted while a Thor wants it,
+        /// verifier 2026-11-17 - kept, but output_name was never pointed at it and WoW never moved there).
+        /// MakeOurs on a screen that exists = point our Sunshine at it, or (the Thor's mode changed) remake it in place: one Sunshine
+        /// restart, WoW stays put, instead of RemoveOurs (a restart and WoW home) then MakeOurs (another and WoW back).
         /// </summary>
         public (ScreenPlan.Step step, string why) Decide(DateTime now, bool ownOn, bool hasScreen, bool driverUsable, bool thorWants, bool offered,
-            (int w, int h, int hz) want, bool streaming)
+            (int w, int h, int hz) want, bool streaming, bool sunshineOnOurs = true)
         {
             lock (gate)
             {
@@ -117,7 +121,10 @@ namespace DsfDesktop.Sunshine
                     case ScreenPlan.Step.Keep:
                         // a leftover of unknown mode is taken as it is (no remake loop)
                         if (!asked.HasValue) asked = want;
-                        if (!streaming && asked.Value != want) return (ScreenPlan.Step.RemoveOurs, "the Thor's mode changed");
+                        if (streaming) return (step, null);
+                        if (now - failedAt < RetryAfter) return (step, null);
+                        if (asked.Value != want) return (ScreenPlan.Step.MakeOurs, ModeChanged);
+                        if (!sunshineOnOurs) return (ScreenPlan.Step.MakeOurs, NotOnOurs);
                         return (step, null);
                     case ScreenPlan.Step.MakeOurs:
                         // making ours restarts our Sunshine: never under a running stream that already shows a real screen
@@ -138,7 +145,15 @@ namespace DsfDesktop.Sunshine
         {
             lock (gate)
             {
-                if (Adopt() != null) return null;
+                var cur = Adopt();
+                if (cur != null)
+                {
+                    // there already: as it is (a leftover of unknown mode too), or remade at the Thor's new mode
+                    if (!asked.HasValue || asked.Value == (w, h, hz)) return null;
+                    try { cur.Remove(ModeChanged); } catch (Exception e) { Log.I("virtual screen: remove: " + e.Message); }
+                    Current = null;
+                    asked = null;
+                }
                 var whys = new List<string>();
                 foreach (var d in drivers)
                 {
@@ -169,6 +184,30 @@ namespace DsfDesktop.Sunshine
                 asked = null;
             }
         }
+    }
+
+    /// <summary>
+    /// Our Virtual Display Driver install (the player's yes): the monitor it brings - a VDD monitor that wasn't there before, on,
+    /// within <see cref="Window"/> of the start, and the installer not failed (a declined admin prompt exits non-zero) - is ours,
+    /// by its name. Nothing is ours before that (verifier 2026-11-17: the flag was set at the yes, so after a declined install the
+    /// first VDD monitor the player put on later was adopted and detached). Pure.
+    /// </summary>
+    public static class VddInstallWatch
+    {
+        public static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
+
+        /// <summary>the monitor our install brought; null = none (yet)</summary>
+        public static string Adopt(DateTime startedUtc, DateTime nowUtc, int? exitCode, IEnumerable<string> before, List<WinDisplay> win)
+        {
+            if (Over(startedUtc, nowUtc, exitCode)) return null;
+            var b = new HashSet<string>(before ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            return (win ?? new List<WinDisplay>()).Where(d => VddScreen.IsVdd(d) && d.Active && !b.Contains(d.Name ?? ""))
+                                                  .Select(d => d.Name).FirstOrDefault(n => !string.IsNullOrEmpty(n));
+        }
+
+        /// <summary>the watch is over: none started, the installer failed, or the window passed</summary>
+        public static bool Over(DateTime startedUtc, DateTime nowUtc, int? exitCode)
+            => startedUtc == DateTime.MinValue || (exitCode.HasValue && exitCode.Value != 0) || nowUtc - startedUtc > Window;
     }
 
     /// <summary>the VDD monitor's mode closest to the Thor's (the driver offers only the modes in its vdd_settings.xml). Pure.</summary>
@@ -247,15 +286,15 @@ namespace DsfDesktop.Sunshine
         }
 
         /// <summary>
-        /// The active VDD monitor that is OURS: only while we have it attached, the one we named when we did; with no name kept (our
-        /// install's monitor, which came up on by itself) the first active one. null = none (never another active VDD monitor).
+        /// The active VDD monitor that is OURS: only while we have it attached, and only the one we named when we did (our install's
+        /// monitor is named by <see cref="VddInstallWatch"/> when it appears). null = none: never another active VDD monitor, and with
+        /// no name kept none at all (verifier 2026-11-17: "the first active one" took a monitor the player put on after a declined
+        /// install).
         /// </summary>
         public static WinDisplay Ours(List<WinDisplay> win, bool attachedByUs, string ourDevice)
         {
-            if (!attachedByUs) return null;
-            var on = (win ?? new List<WinDisplay>()).Where(d => IsVdd(d) && d.Active).ToList();
-            return string.IsNullOrEmpty(ourDevice) ? on.FirstOrDefault()
-                : on.FirstOrDefault(d => string.Equals(d.Name, ourDevice, StringComparison.OrdinalIgnoreCase));
+            if (!attachedByUs || string.IsNullOrEmpty(ourDevice)) return null;
+            return (win ?? new List<WinDisplay>()).FirstOrDefault(d => IsVdd(d) && d.Active && string.Equals(d.Name, ourDevice, StringComparison.OrdinalIgnoreCase));
         }
 
         public bool Installed() => Displays.WindowsDisplays().Any(IsVdd);

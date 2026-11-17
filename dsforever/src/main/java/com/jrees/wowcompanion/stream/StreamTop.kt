@@ -132,12 +132,14 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     /** what the top screen shows over the stream now (StreamCurtain's rule) */
     private fun shows(): StreamCurtain.Shows = StreamCurtain.decide(screen == Screen.STREAMING, host?.hasBridge == true, pc,
         ((android.os.SystemClock.uptimeMillis() / 500) % 4).toInt(), route?.label.orEmpty(), reachProblem, signIn.working, loginLong(), seen,
-        pcWhy, portsWait != null)
+        pcWhy.ifEmpty { StreamCurtain.waitLine(pcWait) }, portsWait != null)
 
     /** this bridge connection's word on Sunshine's ports (its welcome; null = none yet): [StreamPorts] picks from it, never 47989 by guess */
     private var ports: StreamPorts.Report? = null
     /** the PC's reason it can't stream (the welcome's sunshine.problem / why, [StreamCurtain.reason]; "" = none) */
     private var pcWhy = ""
+    /** Desktop 0.2.32: what the stream's start waits for ("screen" | "starting"; "" = go): [StreamCurtain.holds] */
+    private var pcWait = ""
     /** a connect that answered and waits for Desktop's Sunshine ports: since when, and its stream mode; null = not waiting */
     private var portsWait: Pair<Long, StreamMode.Choice>? = null
     /** issue #414: the next routed connect streams in this mode ([StreamMode.retryAfter]: no QoS after "No video arrived"); null = none */
@@ -295,6 +297,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         pc = null
         ports = null
         pcWhy = ""
+        pcWait = ""
         val clientId = store.clientId()
         PlayModes.set(PlayMode.STREAM, { onMsg, onStatus ->
             BridgeLog(h.address, h.bridgePort, h.bridgeTls, h.bridgeFingerprint, h.bridgeToken, clientId, WsClient, onMsg, onStatus,
@@ -320,6 +323,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         ports = StreamPorts.Report.of(w)
         val why = StreamCurtain.reason(w.sunProblem, w.sunWhy)
         if (why != pcWhy) { pcWhy = why; Log.i(TAG, "PC: streaming ${if (why.isEmpty()) "fine" else "problem ${w.sunProblem}: ${w.sunWhy}"}") }
+        waitSaid(w.sunWait)
         val h = host ?: return
         var n = Route.reported(h, w.lan, NetProbe.subnet(activity), w.tailscale)
         if (w.httpPort > 0 && (w.httpPort != n.httpPort || StreamPorts.httpsOf(w.httpPort, w.httpsPort) != n.httpsPort))
@@ -341,12 +345,20 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         }
         val why = StreamCurtain.reason(m.problem, m.why)
         if (why != pcWhy) pcWhy = why
-        if (!m.answer) { applyCurtain(); return }
+        waitSaid(m.wait)
+        if (!m.answer) { if (portsWait != null) { main.removeCallbacks(portsTick); main.post(portsTick) } else applyCurtain(); return }
         when (heal.answer(m.state)) {
             HostHeal.Next.RETRY -> { main.removeCallbacks(healTimeout); Log.i(TAG, "PC: streaming host ready: one more try"); connect() }
             HostHeal.Next.GIVE_UP -> hostDown("PC said ${m.state}")
             else -> applyCurtain()
         }
+    }
+
+    /** Desktop's wait word (verifier 2026-11-17: the stream started with the bridge, before the PC's own screen was made) */
+    private fun waitSaid(w: String) {
+        if (w == pcWait) return
+        Log.i(TAG, "PC: stream start " + if (w.isEmpty()) "may go" else "waits ($w)")
+        pcWait = w
     }
 
     /** two RTSP timeouts with HTTP fine: Desktop checks and restarts its streaming host; we wait for its word */
@@ -474,6 +486,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             val waited = System.currentTimeMillis() - since
             when (val p = StreamPorts.pick(h, ports, waited)) {
                 is StreamPorts.Pick.Use -> {
+                    // Desktop is making its own screen for us, or its host is starting: a start now would land on the real screen
+                    // or meet a restart; it waits for Desktop's "go" (a "sunshine" message), at most PC_WAIT_MS
+                    if (StreamCurtain.holds(pcWait, waited)) { applyCurtain(); main.postDelayed(this, 500L); return }
+                    if (pcWait.isNotEmpty()) Log.i(TAG, "PC: still '$pcWait' after ${waited / 1000} s: starting anyway")
                     portsWait = null
                     Log.i(TAG, "sunshine ports ${p.http}/${p.https} (${p.from})")
                     applyCurtain()

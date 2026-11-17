@@ -61,6 +61,11 @@ namespace DsfDesktop.Tests
             var ok = PcChecks.Ports(HostHealth.Check(52989, OurPid, OurDir, Tcp(52984, 52989, 52990, 53010), null, null, null, null, "", Start, Who), 52989, true);
             A.Eq(TestState.Pass, ok.State, ok.Line);
             A.Eq(TestState.Fail, PcChecks.Ports(null, 52989, false).State);
+            // verifier 2026-11-17: run in the ~26 s after ours started (its encoder probe), nothing bound yet: not "Port ... not open"
+            var probing = HostHealth.Check(52989, OurPid, OurDir, Tcp(), null, null, null, null, "", Start, Who);
+            var st = PcChecks.Ports(probing, 52989, true, starting: true);
+            A.Eq("The streaming host is starting", st.Line);
+            A.False(st.Line.Contains("not open"), st.Line);
             var reserved = HostHealth.Check(52989, OurPid, OurDir, Tcp(52984, 52989, 52990), null, null, new[] { new PortRange(52980, 53079) }, null, "", Start, Who);
             A.True(PcChecks.Ports(reserved, 52989, true).Line.StartsWith("Windows reserved port 53010"), PcChecks.Ports(reserved, 52989, true).Line);
         }

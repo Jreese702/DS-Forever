@@ -102,9 +102,11 @@ namespace DsfDesktop.Sunshine
         // ---------------------------------------------------------------- the judgements
 
         /// <summary>our sunshine's port set (HostHealth): every TCP port listening by ours, the UDP ones free and not reserved</summary>
-        public static TestStep Ports(HealthReport h, int basePort, bool running)
+        /// <summary>[starting] = ours hasn't started yet (its encoder probe: <see cref="HostHealth.Started"/>): its ports aren't judged</summary>
+        public static TestStep Ports(HealthReport h, int basePort, bool running, bool starting = false)
         {
             if (!running || basePort <= 0) return TestStep.Fail("The streaming host isn't running", FixRestart);
+            if (starting) return TestStep.Fail("The streaming host is starting", "Run the test again in a minute.");
             if (h == null) return TestStep.Fail("Not checked", "Run the test again.");
             if (h.Excluded.Count > 0) return TestStep.Fail("Windows reserved port " + string.Join(", ", h.Excluded), "Wait a minute: Desktop moves its ports by itself. Else " + FixRestart);
             if (h.Taken.Count + h.Blocked.Count > 0) return TestStep.Fail("Another program has port " + string.Join(", ", h.Taken.Concat(h.Blocked)), "Wait a minute: Desktop moves its ports by itself. Else " + FixRestart);
