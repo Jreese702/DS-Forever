@@ -44,6 +44,7 @@ class GeneralTilesRoomTest {
     private var swapRestarts = 0
     private var reloads = 0
     private var reports = 0
+    private lateinit var host: SettingsView
 
     private fun art(root: String? = System.getenv("THEME_ART_ROOT")) {
         val f = ArtHarvest::class.java.getDeclaredField("rootDir"); f.isAccessible = true; f.set(null, root?.let { File(it) })
@@ -61,6 +62,7 @@ class GeneralTilesRoomTest {
         ScreenSwap.take(false)
         ScreenSwap.restart = { swapRestarts++ }
         val v = SettingsView(app) { reloads++ }
+        host = v
         v.loginRow = true
         v.gameRunning = { game }
         v.onRestart = { restarts++ }
@@ -180,14 +182,18 @@ class GeneralTilesRoomTest {
     @Test fun themeTileOpensTheMakerPageOrThePremades() {
         val r = room()
         val look = part(r, SettingsTabs.Group.LOOK)
-        // no page wired: the premades in its band, a press applies one at once
+        // no page wired: the premade gallery in its band (standard tiles, 5 x 2), a press applies one at once, the gallery stays
         tap(r, look, look.tileBox(GeneralTiles.THEME)!!)
         assertEquals(GeneralTiles.THEME, look.openTile)
         assertEquals(listOf(5, 5), look.bandButtons().map { it.size })
-        // one even grid: every swatch the same size
-        assertEquals(1, look.bandButtons().flatten().map { Math.round(it.width() * 10) to Math.round(it.height() * 10) }.toSet().size)
+        val sizes = look.bandButtons().flatten().map { Math.round(it.width() * 10) to Math.round(it.height() * 10) }.toSet()
+        assertEquals(1, sizes.size)
+        assertEquals(GameUiTiles.TILE_H, look.bandButtons()[0][0].height(), 0.01f)
+        // every premade is a cursor stop
+        for (b in look.bandButtons().flatten()) assertTrue(look.focusTargets().any { it == b })
         tap(r, look, look.bandButtons()[1][2])
         assertEquals("oled_rose", Theme.cur.id)
+        assertEquals(GeneralTiles.THEME, look.openTile)
         // the maker's page wired (themes' ThemeMakerPage): A opens it, no band
         var opened = 0
         GeneralTiles.onOpenTheme = { opened++; true }
@@ -219,6 +225,37 @@ class GeneralTilesRoomTest {
         assertEquals(swapBox, r.pad.focusBox())
         press(r, "PAD2")                                                          // B again: the tab row
         assertTrue(r.pad.onTabRow)
+    }
+
+    @Test fun savedReportOpensThenDismissesOnlyThatReport() {
+        val r = room()
+        val help = part(r, SettingsTabs.Group.HELP)
+        var opened = 0
+        host.onReportOpenSaved = { opened++ }
+        try {
+            ReportFlow.markSaved("/x/report1.zip", 1_000L, "https://example.invalid/1")
+            lay(r)
+            // the saved report's note is the row's label (its time); its ONE button opens it
+            assertEquals(Tr.t(ReportFlow.noteTitle(ReportFlow.pending!!)), help.reportLabel())
+            assertEquals("Open issue", help.reportWord())
+            val b = help.controlBoxes(GeneralTiles.Row.REPORT).single()
+            tap(r, help, b)
+            assertEquals(1, opened)
+            // no browser opened (still pending): the second state Dismiss, for THIS report
+            assertEquals("Dismiss", help.reportWord())
+            // a browser opened it (the host clears it) and a NEW report saves itself: it starts at Open issue, never dismissed unseen
+            ReportFlow.clearPending()
+            ReportFlow.markSaved("/x/report2.zip", 2_000L, "https://example.invalid/2")
+            lay(r)
+            assertEquals("Open issue", help.reportWord())
+            tap(r, help, b)
+            assertEquals(2, opened)
+            assertNotNull(ReportFlow.pending)
+            tap(r, help, b)                                                          // Dismiss
+            assertNull(ReportFlow.pending)
+            assertEquals("Send", help.reportWord())
+            assertEquals(Tr.t("Problem report"), help.reportLabel())
+        } finally { ReportFlow.clearPending() }
     }
 
     @Test fun accountAndHelpRows() {
@@ -297,10 +334,10 @@ class GeneralTilesRoomTest {
         Settings.voiceTyping = Voice.Mode.DEVICE
         tap(r, look(), look().tileBox(GeneralTiles.THEME)!!)
         shot("gen_8_band_theme_premades")
-        // the cursor on a swatch: Down to the tile, A opens its band, Down into it
+        // the cursor on a premade tile: Down to the tile, A opens its band, Down into it
         look().closeSelection()
         hold(r); press(r, "PADDDOWN"); press(r, "PAD1"); repeat(3) { lay(r) }; press(r, "PADDDOWN"); repeat(3) { lay(r) }
-        shot("gen_8b_cursor_on_swatch")
+        shot("gen_8b_cursor_on_premade")
         r.pad.backToTabs()
         look().closeSelection()
         // the cursor on the Swap screens tile, its band open
@@ -315,6 +352,11 @@ class GeneralTilesRoomTest {
             shot("gen_11_theme_${id}_band")
         }
         Theme.use("classic")
+        // a saved report waiting (its note as the label, Open issue)
+        r = room()
+        ReportFlow.markSaved("/x/report.zip", 1_763_400_000_000L, "https://example.invalid/1")
+        shot("gen_15_saved_report", scrollTo = 10_000)
+        ReportFlow.clearPending()
         for (l in listOf("es", "fr")) {
             Tr.setChoice(app, l); r = room()
             tap(r, look(), look().tileBox(GeneralTiles.SWAP)!!)

@@ -8,9 +8,6 @@ import android.graphics.RectF
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -71,17 +68,36 @@ object GeneralTiles {
     /** the Theme tile's page (themes' Theme maker, ThemeMakerPage): set by the room's host; null = the premade themes in its band */
     @Volatile var onOpenTheme: (() -> Boolean)? = null
 
-    /** the most premade swatches on one band line (5 x 135 px beside the band's picture on the room's 1240 px page) */
-    const val PRESETS_PER_LINE = 5
+    /**
+     * THE PREMADE GALLERY while no maker page is wired (the beautify design 9.6; 2026-11-17 review: "the premade swatch chips are
+     * small ... a fourth building block"): the premades as Top's standard tiles, [GALLERY_COLS] across inside the Theme tile's band,
+     * Classic and the Dark ones first, then OLED.
+     */
+    const val GALLERY_COLS = 5
+    /** the gallery's padding inside the band's plate */
+    const val GALLERY_PAD = 12f
 
-    /** the premades in the Theme tile's band while no maker page is wired: an even grid - as few lines as hold them at
-     *  [PRESETS_PER_LINE] each, the same count on every line (the last may hold fewer) - Classic and the Dark ones first, then OLED */
-    fun presetLines(ids: List<String>): List<List<String>> {
-        if (ids.isEmpty()) return emptyList()
-        val ordered = ids.filter { !it.startsWith("oled") } + ids.filter { it.startsWith("oled") }
-        val lines = (ordered.size + PRESETS_PER_LINE - 1) / PRESETS_PER_LINE
-        return ordered.chunked((ordered.size + lines - 1) / lines)
+    /** the premades in the gallery's order */
+    fun galleryOrder(ids: List<String>): List<String> = ids.filter { !it.startsWith("oled") } + ids.filter { it.startsWith("oled") }
+
+    /** the band's height holding [n] premade tiles */
+    fun galleryHeight(n: Int): Float {
+        val rows = (n + GALLERY_COLS - 1) / GALLERY_COLS
+        return if (rows == 0) 0f else 2f * GALLERY_PAD + rows * GameUiTiles.TILE_H + (rows - 1) * GameUiTiles.GAP
     }
+
+    /** [n] standard tiles (Top's height and gap; five across the band) in [band], in reading order */
+    fun gallery(band: GameUiTiles.Box, n: Int): List<GameUiTiles.Box> {
+        val tw = (band.w - 2f * GALLERY_PAD - (GALLERY_COLS - 1) * GameUiTiles.GAP) / GALLERY_COLS
+        return (0 until n).map { i ->
+            val x = band.l + GALLERY_PAD + (i % GALLERY_COLS) * (tw + GameUiTiles.GAP)
+            val y = band.t + GALLERY_PAD + (i / GALLERY_COLS) * (GameUiTiles.TILE_H + GameUiTiles.GAP)
+            GameUiTiles.Box(x, y, x + tw, y + GameUiTiles.TILE_H)
+        }
+    }
+
+    /** a premade's two words on its tile: its family (Classic / Dark / OLED) as the name, its colour as the value word */
+    fun nameAndValue(name: String): Pair<String, String> = name.substringBefore(' ') to name.substringAfter(' ', "")
 
     // ---------------------------------------------------------------- the geometry
 
@@ -179,8 +195,10 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
     private var downY = 0f
     private var reloadArmedAt = 0L
     private var reloadSentAt = 0L
-    /** the saved report's Open issue was pressed and it is still there (no browser): the ONE button's second state is Dismiss */
-    private var reportTried = false
+    /** the saved report (its time) whose Open issue was pressed while it is still there (no browser): the ONE button's second state
+     *  is Dismiss for THAT report only; a later saved report starts at Open issue again (2026-11-17 review: a flag never reset let a
+     *  new report be dismissed unseen) */
+    private var reportTriedAt = 0L
     private var voiceAvailAt = -10_000L
     private var voiceNeeds = false
 
@@ -233,8 +251,6 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             // no dead stops: the Restart line only while a restart can apply the choice now
             if (swapPending() == ScreenSwap.Pending.RESTART) BandLine("restart", null, listOf("Restart DS Forever"), -1, action = true) else null)
         GeneralTiles.VOICE -> listOf(BandLine("voice", null, Voice.Mode.values().map { it.label }, Settings.voiceTyping.ordinal))
-        GeneralTiles.THEME -> GeneralTiles.presetLines(Theme.presets.map { it.id }).mapIndexed { i, ids ->
-            BandLine("theme$i", null, ids, ids.indexOf(Theme.cur.id)) }
         else -> emptyList()
     }
 
@@ -245,34 +261,37 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         else -> ""
     }
 
-    /** a band line's button words: the theme ids as their names */
-    private fun word(line: BandLine, k: Int): String =
-        if (line.key.startsWith("theme")) Theme.byId(line.words[k])?.name ?: line.words[k] else line.words[k]
+    /** a band line's button words */
+    private fun word(line: BandLine, k: Int): String = line.words[k]
+
+    /** the premades in the Theme tile's gallery (its band while no maker page is wired) */
+    private fun premades(): List<String> = GeneralTiles.galleryOrder(Theme.presets.map { it.id })
 
     // ---------------------------------------------------------------- the layout
 
     private class Layout(val slots: List<GeneralTiles.Slot>, val grid: GameUiTiles.Grid?, val band: GameUiTiles.Band?, val lines: List<BandLine>,
-                         val rows: List<Pair<GeneralTiles.Row, GameUiTiles.Box>>, val height: Float)
+                         val gallery: List<Pair<String, GameUiTiles.Box>>, val rows: List<Pair<GeneralTiles.Row, GameUiTiles.Box>>, val height: Float)
 
     private fun layout(w: Float): Layout {
         val ss = slots()
         val open = openTile?.let { o -> ss.indexOfFirst { it.id == o } } ?: -1
         val ls = if (open >= 0) lines(ss[open].id) else emptyList()
         val gl = ls.map { GameUiTiles.Line(it.key, it.words.size, it.label != null) }
-        val full = if (open >= 0) GameUiTiles.band(GameUiTiles.MARGIN, 0f, w - 2f * GameUiTiles.MARGIN, gl) else null
-        // the Theme band never has a status line: its foot (where the band puts one under the swatches) is not kept empty
+        val theme = open >= 0 && ss[open].id == GeneralTiles.THEME
+        val pre = if (theme) premades() else emptyList()
+        // the Theme band is the premade gallery (standard tiles); the others Top's band (picture, lines, status)
         val bandH = when {
-            full == null -> 0f
-            ss[open].id == GeneralTiles.THEME && full.status.t >= (full.lines.flatMap { it.buttons }.maxOfOrNull { it.b } ?: 0f) ->
-                full.height - GameUiTiles.STATUS_H - GameUiTiles.LINE_GAP
-            else -> full.height
+            open < 0 -> 0f
+            theme -> GeneralTiles.galleryHeight(pre.size)
+            else -> GameUiTiles.band(GameUiTiles.MARGIN, 0f, w - 2f * GameUiTiles.MARGIN, gl).height
         }
         val grid = if (ss.isEmpty()) null else GeneralTiles.grid(ss, w, open, bandH)
-        val band = grid?.band?.let { GameUiTiles.band(it.l, it.t, it.w, gl) }
+        val band = if (theme) null else grid?.band?.let { GameUiTiles.band(it.l, it.t, it.w, gl) }
+        val gallery = if (theme) grid?.band?.let { pre.zip(GeneralTiles.gallery(it, pre.size)) } ?: emptyList() else emptyList()
         var y = grid?.height ?: GameUiTiles.TOP
         val rows = rows().map { r -> (r to GeneralTiles.rowBox(y, w)).also { y += GeneralTiles.COMPACT_H } }
         val h = if (ss.isEmpty() && rows.isEmpty()) 0f else y + (if (rows.isEmpty()) 0f else GeneralTiles.FOOT)
-        return Layout(ss, grid, band, ls, rows, h)
+        return Layout(ss, grid, band, ls, gallery, rows, h)
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
@@ -326,6 +345,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         val out = ArrayList<RectF>()
         l.grid?.tiles?.forEach { out.add(it.rect()) }
         l.band?.lines?.forEach { line -> line.buttons.forEach { out.add(it.rect()) } }
+        l.gallery.forEach { out.add(it.second.rect()) }
         controls(l).forEach { out.add(RectF(it.box)) }
         return out
     }
@@ -338,7 +358,12 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
     /** a tile's box (the tests); null = not drawn */
     fun tileBox(id: String): RectF? = layout(width.toFloat()).let { l -> l.slots.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { l.grid!!.tiles[it].rect() } }
     /** the open band's buttons, line by line (the tests) */
-    fun bandButtons(): List<List<RectF>> = layout(width.toFloat()).band?.lines?.map { line -> line.buttons.map { it.rect() } } ?: emptyList()
+    fun bandButtons(): List<List<RectF>> = layout(width.toFloat()).let { l ->
+        if (l.gallery.isNotEmpty()) l.gallery.map { it.second.rect() }.chunked(GeneralTiles.GALLERY_COLS)
+        else l.band?.lines?.map { line -> line.buttons.map { it.rect() } } ?: emptyList()
+    }
+    /** the gallery's premade ids in its order (the tests); empty = not open */
+    fun galleryIds(): List<String> = layout(width.toFloat()).gallery.map { it.first }
     /** the open band's status words (the tests); "" = none */
     fun bandStatus(): String = openTile?.let { status(it) } ?: ""
 
@@ -379,12 +404,14 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             val k = line.buttons.indexOfFirst { it.contains(x, y) }
             if (k >= 0) { bandPress(l.lines[i], k); relayout(); return }
         }
+        // a premade: applied at once, the gallery stays open (design 9.6)
+        l.gallery.firstOrNull { it.second.contains(x, y) }?.let { Theme.use(it.first); relayout(); return }
         val ti = l.grid?.tiles?.indexOfFirst { it.contains(x, y) } ?: -1
         if (ti >= 0) { tilePress(l.slots[ti].id); return }
         controls(l).firstOrNull { it.box.contains(x, y) }?.let { it.act(); relayout(); return }
     }
 
-    /** A or a tap on a tile: the Theme tile opens the theme maker (its band of premades while there is no page); the others open
+    /** A or a tap on a tile: the Theme tile opens the theme maker (its premade gallery in its band while there is no page); the others open
      *  their band, or close it when it is the open one */
     private fun tilePress(id: String) {
         if (id == GeneralTiles.THEME && GeneralTiles.onOpenTheme?.invoke() == true) { closeSelection(); return }
@@ -405,15 +432,14 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                 Settings.voiceTyping = Voice.Mode.values()[k]
                 DiagLog.event("voice", "Voice typing set ${Settings.voiceTyping.key}")
             }
-            line.key.startsWith("theme") -> Theme.use(line.words[k])
         }
     }
 
     private fun reportPress() {
         val saved = ReportFlow.pending
         when {
-            saved != null && reportTried -> { ReportFlow.clearPending(); reportTried = false }
-            saved != null -> { reportTried = true; host.onReportOpenSaved() }
+            saved != null && saved.at == reportTriedAt -> { ReportFlow.clearPending(); reportTriedAt = 0L }
+            saved != null -> { reportTriedAt = saved.at; host.onReportOpenSaved() }
             DiagLog.recording() -> host.onReportSendNow()
             else -> host.onReport()
         }
@@ -442,6 +468,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             val band = l.band
             val open = l.slots.indexOfFirst { it.id == openTile }
             if (band != null && open >= 0) drawBand(c, grid.band!!, band, grid.tiles[open], openTile!!, l.lines)
+            if (l.gallery.isNotEmpty() && open >= 0) drawGallery(c, grid.band!!, grid.tiles[open], l.gallery)
         }
         val ctl = controls(l)
         for ((i, rb) in l.rows.withIndex()) {
@@ -451,7 +478,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             val room = GeneralTiles.controlRoom(box)
             val lw = room.l - box.l - GeneralTiles.LABEL_X - 16f
             val cs = ctl.filter { it.row == r }.map { it.box }
-            c.drawText(fitText(pLabel, Tr.t(r.label), lw, 28f, 20f), box.l + GeneralTiles.LABEL_X, box.cy + 10f, pLabel)
+            c.drawText(fitText(pLabel, label(r), lw, 28f, 20f), box.l + GeneralTiles.LABEL_X, box.cy + 10f, pLabel)
             drawControl(c, r, box, room, cs)
         }
     }
@@ -464,19 +491,10 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             GeneralTiles.Row.LOGIN -> UiKit.button(c, cs[0], if (host.loginSaved()) "Change" else "Save", UiKit.Button.UP)
             GeneralTiles.Row.WINDOWS_RESTART -> UiKit.button(c, cs[0], "Restart", UiKit.Button.UP)
             GeneralTiles.Row.REPORT -> {
-                val saved = ReportFlow.pending
                 val rec = DiagLog.recording()
-                val word = when {
-                    saved != null && reportTried -> "Dismiss"; saved != null -> "Open issue"; rec -> "Send report"; else -> "Send"
-                }
-                UiKit.button(c, cs[0], word, UiKit.Button.UP)
-                // the state as the value word: the time left while recording, the saved report's time (or its issue number)
-                val value = when {
-                    saved != null && saved.sent > 0 -> "#${saved.sent}"
-                    saved != null -> SimpleDateFormat("HH:mm", Locale.US).format(Date(saved.at))
-                    rec -> (DiagLog.recordLeftMs() / 1000).let { "%d:%02d".format(it / 60, it % 60) }
-                    else -> null
-                }
+                UiKit.button(c, cs[0], reportWord(), UiKit.Button.UP)
+                // the time left while recording as the value word (a saved report's time and issue number are in its note, the label)
+                val value = if (ReportFlow.pending == null && rec) (DiagLog.recordLeftMs() / 1000).let { "%d:%02d".format(it / 60, it % 60) } else null
                 value?.let { valueWord(c, it, cs[0].left - 20f, box.cy) }
                 if (rec) postInvalidateDelayed(1000)
             }
@@ -495,6 +513,18 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                 pValue.textAlign = Paint.Align.LEFT; pValue.textSize = 22f
             }
         }
+    }
+
+    /** a row's label: the saved report's note on Problem report while one waits (its time, its issue number), else the row's name */
+    private fun label(r: GeneralTiles.Row): String =
+        if (r == GeneralTiles.Row.REPORT) ReportFlow.pending?.let { Tr.t(ReportFlow.noteTitle(it)) } ?: Tr.t(r.label) else Tr.t(r.label)
+
+    /** the Problem report row's label now (the tests) */
+    fun reportLabel(): String = label(GeneralTiles.Row.REPORT)
+    /** the Problem report button's word now (the tests) */
+    fun reportWord(): String {
+        val saved = ReportFlow.pending
+        return when { saved != null && saved.at == reportTriedAt -> "Dismiss"; saved != null -> "Open issue"; DiagLog.recording() -> "Send report"; else -> "Send" }
     }
 
     private fun valueWord(c: Canvas, s: String, right: Float, cy: Float) {
@@ -552,9 +582,8 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         UiKit.ringEdge(c, tilePath, w, lit = lit)
     }
 
-    /** the open tile's band: Top screen's (the notch at the tile, the picture large on the left, the choices, one status line) */
-    private fun drawBand(c: Canvas, box: GameUiTiles.Box, band: GameUiTiles.Band, tile: GameUiTiles.Box, id: String, lines: List<BandLine>) {
-        val rect = box.rect()
+    /** the band's plate: the panel, the ring edge, the notch at [tile] */
+    private fun bandPlate(c: Canvas, rect: RectF, tile: GameUiTiles.Box) {
         pFill.color = Theme.panel
         c.drawRoundRect(rect, 12f, 12f, pFill)
         edge(c, rect, false)
@@ -564,14 +593,13 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         c.drawPath(tilePath, pFill)
         pStroke.color = Theme.gold; pStroke.strokeWidth = 2.6f
         c.drawLine(nx - 18f, rect.top + 1f, nx, rect.top - 13f, pStroke); c.drawLine(nx, rect.top - 13f, nx + 18f, rect.top + 1f, pStroke)
+    }
+
+    /** the open tile's band: Top screen's (the notch at the tile, the picture large on the left, the choices, one status line) */
+    private fun drawBand(c: Canvas, box: GameUiTiles.Box, band: GameUiTiles.Band, tile: GameUiTiles.Box, id: String, lines: List<BandLine>) {
+        bandPlate(c, box.rect(), tile)
         val pr = band.picture.rect()
-        // the Theme band's picture: the theme in use's room filling the picture (beside the swatches' two lines, no empty bands)
-        if (id == GeneralTiles.THEME) {
-            val save = c.save()
-            tilePath.reset(); tilePath.addRoundRect(pr, 8f, 8f, Path.Direction.CW); c.clipPath(tilePath)
-            GeneralPictures.miniRoom(c, pr)
-            c.restoreToCount(save)
-        } else GeneralPictures.draw(c, context, id, pr, look(id))
+        GeneralPictures.draw(c, context, id, pr, look(id))
         if (dimmed(id)) { pFill.color = Theme.ink; pFill.alpha = 165; c.drawRoundRect(pr, 8f, 8f, pFill); pFill.alpha = 255 }
         pStroke.color = android.graphics.Color.argb(200, 0, 0, 0); pStroke.strokeWidth = 2f
         c.drawRoundRect(pr, 8f, 8f, pStroke)
@@ -581,7 +609,6 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                 pName.color = Theme.text
                 c.drawText(fitText(pName, Tr.t(bl.label ?: ""), lb.w - 6f, 25f, 18f), lb.l + 4f, lb.cy + 9f, pName)
             }
-            if (bl.key.startsWith("theme")) { swatchLine(c, line.buttons.map { it.rect() }, bl); continue }
             for ((k, b) in line.buttons.withIndex()) {
                 if (bl.action) UiKit.button(c, b.rect(), word(bl, k), UiKit.Button.UP, textSize = 27f)
                 else UiKit.choice(c, b.rect(), Tr.t(word(bl, k)), k == bl.chosen, textSize = 27f)
@@ -596,39 +623,33 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
     }
 
     /**
-     * one line of premade swatches: each chip a tile in small (its plate, the premade's own mini room, its name under it, ONE size for
-     * every name on the band); the theme in use lit (the selected plate, the lit ring, its name in the accent). The cursor's box is the
-     * room's, as on every stop.
+     * The Theme tile's band while no maker page is wired: the premade gallery (the beautify design 9.6) - each premade a standard tile
+     * (Top's anatomy: plate, ring edge, the well = its mini room in its own colours, art light and metal, the name and the value word),
+     * the theme in use marked by the check_tick badge only (never a ring or a lit plate: the golden box is the cursor's - the cursor-look
+     * ruling; 2026-11-17 review).
      */
-    private fun swatchLine(c: Canvas, boxes: List<RectF>, bl: BandLine) {
-        val names = Theme.presets.map { it.name }
-        val size = swatchTextSize(names, boxes.firstOrNull()?.width() ?: return)
-        for ((k, b) in boxes.withIndex()) {
-            val t = Theme.byId(bl.words[k]) ?: continue
-            val lit = k == bl.chosen
-            pFill.color = if (lit) Theme.selected else Theme.raised
-            c.drawRoundRect(b, 8f, 8f, pFill)
-            val sw = RectF(b.left + 7f, b.top + 7f, b.right - 7f, b.bottom - 38f)
-            GeneralPictures.swatch(c, sw, t)
-            pStroke.color = android.graphics.Color.argb(200, 0, 0, 0); pStroke.strokeWidth = 1.5f
-            c.drawRoundRect(sw, 6f, 6f, pStroke)
-            edge(c, b, lit)
-            pName.textSize = size; pName.color = if (lit) Theme.gold else Theme.text; pName.textAlign = Paint.Align.CENTER
-            c.drawText(Tr.t(t.name), b.centerX(), b.bottom - 13f, pName)
-            pName.textAlign = Paint.Align.LEFT; pName.textSize = 25f
+    private fun drawGallery(c: Canvas, box: GameUiTiles.Box, tile: GameUiTiles.Box, gallery: List<Pair<String, GameUiTiles.Box>>) {
+        bandPlate(c, box.rect(), tile)
+        for ((id, b) in gallery) {
+            val t = Theme.byId(id) ?: continue
+            val rect = b.rect()
+            pFill.color = Theme.raised
+            c.drawRoundRect(rect, 10f, 10f, pFill)
+            val well = GameUiTiles.well(b).rect()
+            GeneralPictures.premade(c, well, t)
+            pStroke.color = android.graphics.Color.argb(200, 0, 0, 0); pStroke.strokeWidth = 2f
+            c.drawRoundRect(well, 8f, 8f, pStroke)
+            if (id == Theme.cur.id) GeneralPictures.tick(c, GameUiTiles.badgeBox(b).rect())
+            edge(c, rect, false)
+            val (name, value) = GeneralTiles.nameAndValue(t.name)
+            val x = b.l + GameUiTiles.WELL_PAD + 2f
+            val maxW = b.w - 2f * GameUiTiles.WELL_PAD - 4f
+            pName.color = Theme.text
+            c.drawText(fitText(pName, Tr.t(name), maxW, 25f, 19f), x, b.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 34f, pName)
+            pValue.color = t.accent                                     // its colour's word in its own accent
+            c.drawText(fitText(pValue, Tr.t(value), maxW, 22f, 18f), x, b.b - 12f, pValue)
+            pName.textSize = 25f; pValue.textSize = 22f
         }
-    }
-
-    /** the one name size the band's swatches share: the largest (22 down to 15) at which the longest name fits a chip [w] wide */
-    private fun swatchTextSize(names: List<String>, w: Float): Float {
-        var s = 22f
-        while (s > 15f) {
-            pName.textSize = s
-            if (names.all { pName.measureText(Tr.t(it)) <= w - 14f }) break
-            s -= 1f
-        }
-        pName.textSize = 25f
-        return s
     }
 
     private fun GameUiTiles.Box.rect() = RectF(l, t, r, b)

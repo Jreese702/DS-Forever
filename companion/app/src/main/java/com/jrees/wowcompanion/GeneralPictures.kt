@@ -2,10 +2,14 @@ package com.jrees.wowcompanion
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
@@ -18,8 +22,8 @@ import android.graphics.Shader
  * pictures and want to do something similar to the other menus"; the beautify design, section 2): Top screen's picture language
  * ([TilePictures]: drawn in a fixed unit space - 216 x 108, the wide Theme tile's 460 x 108 - scaled into the box given, so the band's
  * large picture is the same drawing) for the Look row's three tiles:
- *  - Theme: the theme IN USE - a drawn mini room in its colours (its ground, header, rows, the red cloth, the metal ring); the Theme
- *    band's premades are the same room as small swatches, each in its own colours
+ *  - Theme: the theme IN USE - a drawn mini room in its colours and art (its rock ground, header, rows, the red cloth, the ring in its
+ *    metal); the Theme band's premade gallery tiles are the same room, each in its own colours, light and metal
  *  - Swap screens: the Thor's two screens, the game (a crop of one of the game's own loading pictures, the kit's scene art) and our Home;
  *    On = they trade places
  *  - Voice typing: the microphone; This device = the Thor under it, Online = a cloud, Off = the microphone struck through
@@ -72,74 +76,172 @@ object GeneralPictures {
      * glyph tints and cut the map's header in half at 460 x 108; the drawn room shows the ground, the header, the rows, the cloth and
      * the metal in every state, and needs no document.)
      */
-    private fun theme(c: Canvas) = miniRoom(c, RectF(0f, 0f, WIDE_W, H), Theme.cur, kit = true)
+    private fun theme(c: Canvas) = miniRoom(c, RectF(0f, 0f, WIDE_W, H), Theme.cur)
 
     /**
-     * A ROOM IN MINIATURE, in [t]'s colours: its ground (ink to field), the header bar (panel) with the title in the accent and two tabs
-     * (the lit one selected), two rows (raised, then selected with its accent mark), the words' strokes in the text colours, the red
-     * cloth button and a tile in the theme's metal ring. [kit] = the kit's cloth and ring (they follow the theme IN USE, so a premade's
-     * swatch draws its own red plate and an edge in its own metal colour).
+     * A ROOM IN MINIATURE, in [t]'s colours and art (the beautify design 9.6; 2026-11-17 review: "a flat line diagram ... reads as a
+     * placeholder skeleton", "Classic Bronze looks the same as OLED Bronze"): what tells the themes apart is drawn as the theme draws it -
+     *  - the ground: the kit's rock (the game's window ground) at the theme's own light and saturation (Classic as harvested, a Dark theme dimmed and greyed;
+     *    OLED none: its page's black, as its rooms draw it today), a soft vignette at the edges
+     *  - the header bar (panel) over a hairline in the theme's edge, the title in the accent, two tabs (the lit one selected)
+     *  - two compact rows (raised, then selected with its accent mark), the words' strokes in the text colours; the first row's ONE
+     *    red cloth button with its label stroke in btnLabel
+     *  - a picture tile framed by the kit's ring_square recoloured with the theme's Metal (a per-theme 64 px copy): the game's scene
+     *    art in its well (as Settings' tiles hold pictures), its value stroke in the accent
+     * Without the kit: the same room with a flat ground, a drawn cloth and a ring stroked in the theme's edge.
      */
-    fun miniRoom(c: Canvas, b: RectF, t: ThemeSpec = Theme.cur, kit: Boolean = t === Theme.cur) {
+    fun miniRoom(c: Canvas, b: RectF, t: ThemeSpec = Theme.cur, kitCloth: Boolean = t === Theme.cur) {
         val w = b.width(); val h = b.height()
-        pF.shader = LinearGradient(0f, b.top, 0f, b.bottom, t.ink, t.field, Shader.TileMode.CLAMP)
-        c.drawRect(b, pF); pF.shader = null
-        // the header and its two tabs
+        pF.shader = null; pF.color = t.ink; c.drawRect(b, pF)
         val hh = h * 0.24f
+        val body = RectF(b.left, b.top + hh, b.right, b.bottom)
+        // the ground: the kit's rock as the theme lights its window grounds (none on OLED: black, as its rooms are)
+        val rock = rockArt()
+        if (rock != null && t.groundLight > 0f) {
+            val sh = BitmapShader(rock, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+            sh.setLocalMatrix(Matrix().apply { setScale(0.5f, 0.5f); postTranslate(b.left, b.top) })
+            pB.shader = sh; pB.colorFilter = groundFilter(t)
+            c.drawRect(body, pB)
+            pB.shader = null; pB.colorFilter = null
+        } else {
+            pF.shader = LinearGradient(0f, body.top, 0f, body.bottom, t.field, t.ink, Shader.TileMode.CLAMP)
+            c.drawRect(body, pF); pF.shader = null
+        }
+        // the vignette: the edges toward the ink
+        pF.shader = RadialGradient(b.centerX(), b.centerY(), maxOf(w, h) * 0.62f,
+            intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT, (t.ink and 0x00FFFFFF) or (0x70 shl 24)), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+        c.drawRect(b, pF); pF.shader = null
+        // the header, its hairline, the title and two tabs
         pF.color = t.panel; c.drawRect(b.left, b.top, b.right, b.top + hh, pF)
-        pF.color = t.edge; c.drawRect(b.left, b.top + hh - 1.5f, b.right, b.top + hh, pF)
+        pF.color = t.edgeDim; c.drawRect(b.left, b.top + hh - 2.5f, b.right, b.top + hh, pF)
+        pF.color = t.edge; c.drawRect(b.left, b.top + hh - 1.2f, b.right, b.top + hh, pF)
         stroke(c, b.left + 10f, b.top + hh / 2f, minOf(64f, w * 0.26f), 5f, t.accent)
         val tabW = minOf(40f, w * 0.16f)
         for (i in 0..1) {
             val tl = b.right - 10f - (2 - i) * (tabW + 6f)
-            val tr = RectF(tl, b.top + 5f, tl + tabW, b.top + hh - 3f)
+            val tr = RectF(tl, b.top + 5f, tl + tabW, b.top + hh - 4f)
             pF.color = if (i == 0) t.selected else t.raised; c.drawRoundRect(tr, 3f, 3f, pF)
-            stroke(c, tr.left + 7f, tr.centerY(), tr.width() - 14f, 3f, if (i == 0) t.accent else t.textDim)
+            if (i == 0) { pF.color = t.accent; c.drawRect(tr.left + 3f, tr.bottom - 2f, tr.right - 3f, tr.bottom, pF) }
+            stroke(c, tr.left + 7f, tr.centerY() - 1f, tr.width() - 14f, 3f, if (i == 0) t.accent else t.textDim)
         }
-        // the body: two rows on the left, the cloth and a tile on the right
-        val top = b.top + hh + 8f
-        val split = b.left + w * 0.58f
+        // the body: two compact rows on the left (the first with its ONE red cloth button), a picture tile on the right
+        val top = body.top + 8f
+        val split = b.left + w * 0.6f
         val rowH = (b.bottom - 8f - top - 6f) / 2f
         for (i in 0..1) {
-            val rr = RectF(b.left + 8f, top + i * (rowH + 6f), split - 6f, top + i * (rowH + 6f) + rowH)
-            pF.color = if (i == 1) t.selected else t.raised; c.drawRoundRect(rr, 4f, 4f, pF)
+            val rr = RectF(b.left + 10f, top + i * (rowH + 6f), split - 8f, top + i * (rowH + 6f) + rowH)
+            pF.color = if (i == 1) t.selected else t.raised; pF.alpha = 215; c.drawRoundRect(rr, 4f, 4f, pF); pF.alpha = 255
             if (i == 1) { pF.color = t.accent; c.drawRect(rr.left, rr.top + 3f, rr.left + 3f, rr.bottom - 3f, pF) }
-            stroke(c, rr.left + 10f, rr.centerY() - 4f, rr.width() * 0.5f, 3.5f, t.text)
-            stroke(c, rr.left + 10f, rr.centerY() + 5f, rr.width() * 0.32f, 2.5f, t.textDim)
+            val words = if (i == 0) rr.width() * 0.5f else rr.width() * 0.62f
+            stroke(c, rr.left + 10f, rr.centerY() - 4f, words * 0.7f, 3.5f, if (i == 1) t.accent else t.text)
+            stroke(c, rr.left + 10f, rr.centerY() + 5f, words * 0.45f, 2.5f, t.textDim)
+            if (i == 0) {
+                // the red cloth: the kit's on the Theme tile ([kitCloth]: its trim is the theme in use's metal); the gallery's drawn alike
+                val btn = RectF(rr.right - rr.width() * 0.4f, rr.top + 3f, rr.right - 4f, rr.bottom - 3f)
+                if (kitCloth && UiKit.tex("button_up_center") != null) UiKit.button(c, btn, "", UiKit.Button.UP)
+                else cloth(c, btn, t)
+                stroke(c, btn.centerX() - btn.width() * 0.22f, btn.centerY(), btn.width() * 0.44f, 2.5f, t.btnLabel)
+            }
         }
-        // the red cloth (the kit's; a drawn red plate without it)
-        val btn = RectF(split + 4f, top, b.right - 8f, top + rowH)
-        if (kit && UiKit.tex("button_up_center") != null) UiKit.button(c, btn, "", UiKit.Button.UP)
-        else { pF.color = Color.rgb(138, 16, 16); c.drawRoundRect(btn, 4f, 4f, pF) }
-        stroke(c, btn.centerX() - btn.width() * 0.22f, btn.centerY(), btn.width() * 0.44f, 3f, t.btnLabel)
-        // a tile in the theme's metal
-        val tile = RectF(split + 4f, top + rowH + 6f, b.right - 8f, b.bottom - 8f)
+        // a picture tile in the theme's metal: the game's own scene art in its well, its value word's stroke in the accent
+        val tile = RectF(split, top, b.right - 10f, b.bottom - 8f)
         pF.color = t.raised; c.drawRoundRect(tile, 4f, 4f, pF)
-        val ring = RectF(tile.left + 1f, tile.top + 1f, tile.right - 1f, tile.bottom - 1f)
-        if (!kit || !UiKit.ringBox(c, ring, 0.35f)) {
-            if (kit) {
-                path.reset(); path.addRoundRect(RectF(ring.left + 1.5f, ring.top + 1.5f, ring.right - 1.5f, ring.bottom - 1.5f), 3f, 3f, Path.Direction.CW)
-                UiKit.ringEdge(c, path, 3f)
-            } else { pS.shader = null; pS.color = t.edge; pS.strokeWidth = 2.5f; c.drawRoundRect(ring, 3f, 3f, pS) }
-        }
-        stroke(c, tile.left + 9f, tile.centerY(), tile.width() * 0.4f, 3f, t.accent)
+        val well = RectF(tile.left + 4f, tile.top + 4f, tile.right - 4f, tile.bottom - 13f)
+        val save = c.save()
+        c.clipRect(well)
+        game(c, null, well)
+        c.restoreToCount(save)
+        stroke(c, tile.left + 7f, tile.bottom - 7f, tile.width() * 0.36f, 2.5f, t.accent)
+        val ring = ringArt(t)
+        if (ring != null) nine(c, ring, tile, RING_CAP, 7f)
+        else { pS.shader = null; pS.color = t.edge; pS.strokeWidth = 2.5f; c.drawRoundRect(RectF(tile.left + 1f, tile.top + 1f, tile.right - 1f, tile.bottom - 1f), 3f, 3f, pS) }
     }
 
-    /** a premade's swatch (the Theme band's chips): its mini room drawn in a fixed 240 x 132 unit space, scaled into [r] */
-    fun swatch(c: Canvas, r: RectF, t: ThemeSpec) {
+    /** a drawn red cloth: the game's red, darker below, a dark rim and a hairline of [t]'s edge */
+    private fun cloth(c: Canvas, r: RectF, t: ThemeSpec) {
+        pF.shader = LinearGradient(0f, r.top, 0f, r.bottom, Color.rgb(150, 20, 16), Color.rgb(74, 6, 6), Shader.TileMode.CLAMP)
+        c.drawRoundRect(r, 4f, 4f, pF); pF.shader = null
+        pS.shader = null; pS.strokeWidth = 2.5f; pS.color = Color.argb(220, 20, 4, 4); c.drawRoundRect(r, 4f, 4f, pS)
+        pS.strokeWidth = 1.2f; pS.color = t.edge; c.drawRoundRect(RectF(r.left + 1.5f, r.top + 1.5f, r.right - 1.5f, r.bottom - 1.5f), 3f, 3f, pS)
+    }
+
+    /** the ring art's corner, in its own px (UiKit's RING_C) */
+    private const val RING_CAP = 14
+
+    /** [art] nine-sliced round [r]: its [cap] px corners drawn [capPx] wide */
+    private fun nine(c: Canvas, art: Bitmap, r: RectF, cap: Int, capPx: Float) {
+        val s = art.width; val e = s - cap
+        val xs = floatArrayOf(r.left, r.left + capPx, r.right - capPx, r.right)
+        val ys = floatArrayOf(r.top, r.top + capPx, r.bottom - capPx, r.bottom)
+        val sx = intArrayOf(0, cap, e, s); val sy = intArrayOf(0, cap, art.height - cap, art.height)
+        for (i in 0..2) for (j in 0..2) {
+            if (i == 1 && j == 1) continue
+            c.drawBitmap(art, Rect(sx[i], sy[j], sx[i + 1], sy[j + 1]), RectF(xs[i], ys[j], xs[i + 1], ys[j + 1]), pB)
+        }
+    }
+
+    /** a premade's picture (the gallery's wells): its mini room in Top's 216 x 108 unit space, scaled into [r] */
+    fun premade(c: Canvas, r: RectF, t: ThemeSpec) {
         val save = c.save()
-        val k = minOf(r.width() / SW_W, r.height() / SW_H)
-        val rad = 6f
-        path.reset(); path.addRoundRect(r, rad, rad, Path.Direction.CW)
+        val k = minOf(r.width() / W, r.height() / H)
+        path.reset(); path.addRoundRect(r, 8f, 8f, Path.Direction.CW)
         c.clipPath(path)
-        c.translate(r.centerX() - SW_W * k / 2f, r.centerY() - SW_H * k / 2f)
+        pF.shader = null; pF.color = WORLD; c.drawRect(r, pF)
+        c.translate(r.centerX() - W * k / 2f, r.centerY() - H * k / 2f)
         c.scale(k, k)
-        runCatching { miniRoom(c, RectF(0f, 0f, SW_W, SW_H), t, kit = false) }
+        runCatching { miniRoom(c, RectF(0f, 0f, W, H), t, kitCloth = false) }
         c.restoreToCount(save)
         pF.shader = null
     }
-    private const val SW_W = 240f
-    private const val SW_H = 132f
+
+    /** the gallery's in-use badge (design 9.6: the game's check_tick, else a drawn tick) on Top's badge disc */
+    fun tick(c: Canvas, r: RectF) {
+        val cx = r.centerX(); val cy = r.centerY(); val rad = r.width() / 2f
+        pF.shader = null; pF.color = Color.argb(215, 10, 10, 12); c.drawCircle(cx, cy, rad, pF)
+        pS.shader = null; pS.strokeWidth = 2f; pS.color = Color.argb(220, 150, 126, 90); c.drawCircle(cx, cy, rad - 1f, pS)
+        val tk = UiKit.tex("check_tick")
+        if (tk != null) { val q = rad * 0.78f; c.drawBitmap(tk, null, RectF(cx - q, cy - q, cx + q, cy + q), pB); return }
+        pS.color = Theme.gold; pS.strokeWidth = 3.2f
+        path.reset(); path.moveTo(cx - rad * 0.42f, cy + rad * 0.02f); path.lineTo(cx - rad * 0.1f, cy + rad * 0.34f); path.lineTo(cx + rad * 0.45f, cy - rad * 0.32f)
+        c.drawPath(path, pS)
+    }
+
+    // the kit art the mini rooms draw, decoded small and held until [letGo]
+    private var rockBmp: Bitmap? = null
+    private var rockMissing = false
+    private val ringBmps = HashMap<String, Bitmap>()
+    private val ringMissing = HashSet<String>()
+    private val groundFilters = HashMap<String, ColorMatrixColorFilter>()
+
+    /** the kit's ground_rock at a quarter size, 256 px (one copy for every theme: the light is a colour filter) */
+    @Synchronized private fun rockArt(): Bitmap? {
+        rockBmp?.let { return it }
+        if (rockMissing) return null
+        val b = runCatching {
+            val f = ArtHarvest.file("ui/kit/ground_rock.png")
+            if (f.canRead()) BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = 4 }) else null
+        }.getOrNull()
+        if (b == null) rockMissing = true else rockBmp = b
+        return b
+    }
+
+    /** the rock as [t] lights its grounds (groundLight, groundSat), lifted to 0.9 so the stone reads at a tile's size (the rooms: 0.5) */
+    private fun groundFilter(t: ThemeSpec): ColorMatrixColorFilter = groundFilters.getOrPut(t.id) {
+        val k = 0.9f * t.groundLight
+        ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(t.groundSat); postConcat(ColorMatrix().apply { setScale(k, k, k, 1f) }) })
+    }
+
+    /** the kit's ring_square in [t]'s metal (the raw art, recoloured once per theme: 64 px, 16 KB) */
+    @Synchronized private fun ringArt(t: ThemeSpec): Bitmap? {
+        ringBmps[t.id]?.let { return it }
+        if (t.id in ringMissing) return null
+        val b = runCatching {
+            val f = ArtHarvest.file("ui/kit/ring_square.png")
+            if (f.canRead()) BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inMutable = true })?.let { UiKit.recolour(it, t.metal) } else null
+        }.getOrNull()
+        if (b == null) ringMissing += t.id else ringBmps[t.id] = b
+        return b
+    }
 
     /** a word's stand-in: a rounded stroke [len] long, [th] thick, from ([x], [cy]) */
     private fun stroke(c: Canvas, x: Float, cy: Float, len: Float, th: Float, col: Int) {
@@ -341,11 +443,13 @@ object GeneralPictures {
 
     /** every decoded picture goes (a trim; Settings closing); their bytes */
     @Synchronized fun letGo(): Long {
-        val n = sceneBmp?.byteCount?.toLong() ?: 0L
+        val n = bytes()
         sceneBmp = null; sceneMissing = false
+        rockBmp = null; rockMissing = false; ringBmps.clear(); ringMissing.clear(); groundFilters.clear()
         return n
     }
 
     /** the bytes held now (the tests) */
-    @Synchronized fun bytes(): Long = sceneBmp?.byteCount?.toLong() ?: 0L
+    @Synchronized fun bytes(): Long = (sceneBmp?.byteCount?.toLong() ?: 0L) + (rockBmp?.byteCount?.toLong() ?: 0L) +
+        ringBmps.values.sumOf { it.byteCount.toLong() }
 }
