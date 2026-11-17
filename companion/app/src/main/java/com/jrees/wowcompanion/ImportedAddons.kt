@@ -51,6 +51,8 @@ object ImportedAddons {
 
     /** a zip the app will not take; [message] is the card's word */
     class Refused(msg: String) : IOException(msg)
+    /** Install found [folders] already there that the card did not mark: the card is marked and asks again */
+    class NeedsConfirm(val folders: Set<String>) : IOException("Replaces yours: tap Install again")
 
     // ---------------------------------------------------------------- the zip's central directory
     /** one central-directory entry: its name ('/' separators), sizes, external attributes */
@@ -363,12 +365,16 @@ object ImportedAddons {
         val iface = File(flavorRoot, "Interface")
         val addons = File(iface, "AddOns").apply { mkdirs() }
         for (f in take) addonDir(addons, f.folder)                                   // never a name outside AddOns
+        // (review, 2026-11-16) the card said "new" but the folder is there now (the game folder picked after the card, or made
+        // since): no replace without the card's second tap
+        val nowThere = take.filter { !it.replaces && addonDir(addons, it.folder).exists() }.map { it.folder }
+        if (nowThere.isNotEmpty()) throw NeedsConfirm(nowThere.toSet())
         val need = take.sumOf { it.bytes } + ThirdPartyAddons.SPACE_MARGIN
         if (freeSpace(flavorRoot) < need) throw Refused("Needs ${ThirdPartyAddons.size(((need + 999_999) / 1_000_000).toInt())} free")
         ThirdPartyAddons.applyLock.lock()
         val staging = File(iface, "${DependencyAddons.STAGING}/import")
         try {
-            if (staging.exists()) staging.deleteRecursively()                       // our own leftover only
+            if (staging.exists()) ThirdPartyAddons.deleteTree(staging)               // our own leftover only
             staging.mkdirs()
             onStep("Unpacking")
             val total = longArrayOf(0L)                                              // one cap for the whole install
@@ -406,7 +412,7 @@ object ImportedAddons {
             if (!listed) return "Installed, but not on the Imported list"
             return if (gameRunning()) "Installed. /reload or restart the game to load them" else "Installed"
         } finally {
-            staging.deleteRecursively()
+            ThirdPartyAddons.deleteTree(staging)
             File(iface, DependencyAddons.STAGING).delete()                         // only when empty
             ThirdPartyAddons.applyLock.unlock()
         }
@@ -489,7 +495,7 @@ object ImportedAddons {
     /** the off-device tests' way in: their own folder and own-folder names */
     internal fun start(folder: File, own: Set<String>) {
         dir = folder; ownFolders = own; pending = null; status = null; busy = false; listCache = null
-        File(folder, "import").deleteRecursively()                                  // a pick left from an earlier run
+        ThirdPartyAddons.deleteTree(File(folder, "import"))                         // a pick left from an earlier run
     }
     /** the renders: a card and a line as given */
     internal fun preview(p: Pending?, line: String?) { pending = p; status = line; changed() }
@@ -536,7 +542,13 @@ object ImportedAddons {
     fun install() {
         val p = pending ?: return
         val root = flavorRoot() ?: run { status = "Pick the game folder first"; changed(); return }
-        job("Installing") { val line = installNow(p.found, root); clearPending(); line }
+        job("Installing") {
+            try { val line = installNow(p.found, root); clearPending(); line }
+            catch (t: NeedsConfirm) {
+                pending = p.copy(found = p.found.map { if (it.folder in t.folders) it.copy(replaces = true) else it })
+                t.message
+            }
+        }
     }
 
     /** the card's Cancel: its zips' room back */

@@ -649,7 +649,7 @@ object ThirdPartyAddons {
      */
     internal fun putBack(done: List<Pair<File, File?>>) {
         for ((target, old) in done.asReversed()) {
-            target.deleteRecursively()
+            deleteTree(target)
             if (old != null) runCatching { moveDir(old, target, "the old ${target.name} could not be put back") }
                 .onFailure { log("add-ons: ${target.name}: ${it.message}: the old copy stays in the backup (${old.name})") }
         }
@@ -657,13 +657,32 @@ object ThirdPartyAddons {
     }
 
     internal fun backup(iface: File, target: File, stamp: String): File {
-        val base = "${target.name}-${DependencyAddons.installedVersion(target) ?: "unknown"}-$stamp"
-        var b = File(iface, "${DependencyAddons.BACKUP}/$base")
+        // (review of the import, 2026-11-16) the .toc's Version is the add-on author's text (an imported zip's): only a plain word
+        // goes in the name, so "x/../../AddOns/WowCompanion/z" can never send the old copy anywhere but straight into the backup
+        val base = "${target.name}-${backupWord(DependencyAddons.installedVersion(target))}-$stamp"
+        val home = File(iface, DependencyAddons.BACKUP)
+        var b = File(home, base)
         var n = 2
-        while (b.exists()) b = File(b.parentFile, "$base~${n++}")         // #135: never into an older backup of the same second
-        b.parentFile?.mkdirs()
+        while (b.exists()) b = File(home, "$base~${n++}")                  // #135: never into an older backup of the same second
+        if (b.canonicalFile.parentFile != home.canonicalFile) throw IOException("the old ${target.name} could not be moved to the backup")
+        home.mkdirs()
         moveDir(target, b, "the old ${target.name} could not be moved to the backup")
         return b
+    }
+
+    /** a version as a backup-name word: letters, digits, '.', '_', '-' only, no "..", at most 40; "unknown" when nothing is left */
+    internal fun backupWord(v: String?): String {
+        val w = (v ?: "").map { if (it.isLetterOrDigit() && it.code < 128 || it == '.' || it == '_' || it == '-') it else '_' }
+            .joinToString("").replace(Regex("""\.{2,}"""), "_").trim('.').take(40)
+        return w.ifEmpty { "unknown" }
+    }
+
+    /** [f] and everything under it gone; a link is removed itself, never followed (Kotlin's deleteRecursively follows them) */
+    internal fun deleteTree(f: File): Boolean {
+        val p = f.toPath()
+        if (java.nio.file.Files.isSymbolicLink(p)) return f.delete()
+        if (f.isDirectory) f.listFiles()?.forEach { deleteTree(it) }
+        return f.delete() || !f.exists()
     }
 
     /**

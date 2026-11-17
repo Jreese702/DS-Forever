@@ -403,4 +403,56 @@ class ImportedAddonsTest {
         assertEquals(listOf("Det"), ImportedAddons.list().map { it.folder })
         assertNotNull(ImportedAddons.list().single().version)
     }
+
+    // ---------------------------------------------------------------- review, 2026-11-16
+    @Test fun aVersionWithSlashesStaysInTheBackup() {
+        // step 1: an Evil whose Version makes a folder in the backup; step 2: a new Evil whose Version climbs into WowCompanion
+        File(addons, "WowCompanion").mkdirs(); File(addons, "WowCompanion/WowCompanion.toc").writeText("## Version: 9\n")
+        ImportedAddons.installNow(ImportedAddons.plan(zip("Evil/Evil.toc" to toc(ver = "x/y")), addons), game)
+        ImportedAddons.installNow(ImportedAddons.plan(zip("Evil/Evil.toc" to toc(ver = "x/../../AddOns/WowCompanion/z"), "Evil/p.lua" to "p"), addons), game)
+        assertEquals("Moved to the backup", ImportedAddons.removeNow("Evil", game))
+        assertEquals("WowCompanion untouched", listOf("WowCompanion.toc"), File(addons, "WowCompanion").list()!!.toList())
+        val names = backups.list()!!.toList()
+        assertEquals(names.toString(), 2, names.size)
+        assertTrue(names.toString(), names.all { it.startsWith("Evil-x_") && !it.contains("..") })
+        assertTrue("every backup straight in the backup folder", backups.listFiles()!!.all { File(it, "Evil.toc").isFile })
+        assertTrue(backups.listFiles()!!.any { File(it, "p.lua").isFile })
+    }
+    @Test fun backupWords() {
+        assertEquals("2.1.0", ThirdPartyAddons.backupWord("2.1.0"))
+        assertEquals("v1-beta_2", ThirdPartyAddons.backupWord("v1-beta_2"))
+        assertEquals("unknown", ThirdPartyAddons.backupWord(null))
+        assertEquals("_", ThirdPartyAddons.backupWord(".."))
+        assertEquals("x_", ThirdPartyAddons.backupWord("x/"))
+        for (v in listOf("x/../../a", "..\\..\\a", "/abs", "C:\\w", "a\u0000b", "\u00e9t\u00e9")) {
+            val w = ThirdPartyAddons.backupWord(v)
+            assertTrue("$v -> $w", w.matches(Regex("[A-Za-z0-9._-]+")) && !w.contains("..") && !w.startsWith("."))
+        }
+        assertEquals(40, ThirdPartyAddons.backupWord("a".repeat(200)).length)
+    }
+    @Test fun aFolderThatAppearedAfterTheCardAsksAgain() {
+        // the card read with no game folder: nothing marked; the folder is there at Install: no replace, the card asks again
+        val plan = ImportedAddons.plan(zip("Bagnon/Bagnon.toc" to toc(ver = "2.0"), "Bagnon/n.lua" to "new"), null)
+        assertFalse(plan.single().replaces)
+        File(addons, "Bagnon").mkdirs(); File(addons, "Bagnon/Bagnon.toc").writeText("## Version: 1.0\n")
+        try { ImportedAddons.installNow(plan, game); fail() } catch (e: ImportedAddons.NeedsConfirm) {
+            assertEquals(setOf("Bagnon"), e.folders); assertEquals("Replaces yours: tap Install again", e.message)
+        }
+        assertEquals("## Version: 1.0\n", File(addons, "Bagnon/Bagnon.toc").readText())
+        assertFalse(File(addons, "Bagnon/n.lua").exists()); assertFalse(backups.exists())
+        assertFalse(File(game, "Interface/${DependencyAddons.STAGING}").exists())
+        // marked (the card's second tap): it goes in, the old to the backup
+        assertEquals("Installed", ImportedAddons.installNow(plan.map { it.copy(replaces = true) }, game))
+        assertTrue(File(addons, "Bagnon/n.lua").isFile); assertTrue(backups.listFiles()!!.single().name.startsWith("Bagnon-1.0-"))
+    }
+    @Test fun deleteTreeLeavesWhatALinkPointsAt() {
+        val keep = File(tmp, "keep").apply { mkdirs() }; File(keep, "k.txt").writeText("k")
+        val d = File(tmp, "staging/import").apply { mkdirs() }; File(d, "a.txt").writeText("a")
+        val link = File(d, "link")
+        val made = runCatching { Files.createSymbolicLink(link.toPath(), keep.toPath()) }.isSuccess
+        org.junit.Assume.assumeTrue("no symlinks here (Windows without the right)", made)
+        assertTrue(ThirdPartyAddons.deleteTree(File(tmp, "staging")))
+        assertFalse(File(tmp, "staging").exists())
+        assertEquals("k", File(keep, "k.txt").readText())
+    }
 }
