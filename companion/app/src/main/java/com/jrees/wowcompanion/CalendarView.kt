@@ -306,6 +306,7 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         c.drawColor(Theme.ink)
         UiKit.header(c, w, "Calendar")
         val gx = 7 * DAY_W
+        UiKit.pane(c, RectF(0f, 62f, gx + 12f, h))                     // beautify 8.4: the month grid on the list pane's art
         UiKit.pane(c, RectF(gx + 12f, 62f, w, h), right = true)
         UiKit.paneDivider(c, gx + 12f, 62f, h)
         val st = state

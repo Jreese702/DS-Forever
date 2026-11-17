@@ -25,23 +25,121 @@ object ThemeGallery {
     private val path = Path()
 
     /**
-     * A room in [spec]'s colours over [r], drawn (never [Theme.cur]'s): its ground the list pane's art at the theme's pane light under
-     * its vignette; a header bar with a short accent stroke for its title; two rows (raised, then selected with an accent stroke); a
-     * small framed tile in the theme's metal; one red cloth chip with the button words' stroke. Scales with [r]'s height.
+     * A ROOM IN [spec] over [r] (review fix 2026-11-17: the drawn wireframe read as a diagram next to the Top-screen tiles' real pictures):
+     * a REAL miniature - the Social room's own pieces (the header and its rule, the list and detail panes' art at the theme's pane light
+     * under its vignette, the game's friend lines, a framed class tile, a red button) drawn by UiKit itself in [spec] ([Theme.preview]:
+     * nothing saved, no listener told) into a small picture cached per theme and size, so a gallery of a dozen costs a dozen renders
+     * once. Without the kit: [drawnRoom] (strokes in the theme's colours).
      */
-    fun miniRoom(c: Canvas, r: RectF, spec: ThemeSpec) {
+    fun miniRoom(c: Canvas, r: RectF, spec: ThemeSpec, strip: Boolean = false) {
+        val k = r.height() / 108f
+        val pic = picture(spec, r.width().toInt(), r.height().toInt(), strip)
+        if (pic == null) { drawnRoom(c, r, spec); return }
+        val save = c.save()
+        path.reset(); path.addRoundRect(r, 8f * k, 8f * k, Path.Direction.CW)
+        c.clipPath(path)
+        c.drawBitmap(pic, null, r, pArt)
+        c.restoreToCount(save)
+    }
+
+    /**
+     * the pictures, least recently drawn first, kept under [PICS_BYTES] in all (a gallery well is about 85 KB, the maker's two about 0.7 MB
+     * a draft; the 1.0.29 - 1.0.31 low-memory cluster: nothing here grows without a cap)
+     */
+    private val pics = object : LinkedHashMap<String, Bitmap>(16, 0.75f, true) {
+        override fun removeEldestEntry(e: MutableMap.MutableEntry<String, Bitmap>): Boolean {
+            if (values.sumOf { it.byteCount } <= PICS_BYTES) return false
+            val it = entries.iterator()
+            while (size > 1 && values.sumOf { b -> b.byteCount } > PICS_BYTES) { it.next(); it.remove() }
+            return false
+        }
+    }
+    private const val PICS_BYTES = 3 * 1024 * 1024
+
+    /**
+     * the miniature of [spec] at [w] x [h] px, null without the kit's panes (the drawn room stands in); [strip] = the maker's room strip:
+     * the Settings page's own pieces instead of Social's (its stone, a framed tile, an On / Off pair, a red button)
+     */
+    fun picture(spec: ThemeSpec, w: Int, h: Int, strip: Boolean = false): Bitmap? {
+        if (w < 8 || h < 8 || UiKit.tex("pane_left") == null) return null
+        val key = "${spec.id}/${spec.hashCode()}/${w}x$h/$strip"
+        pics[key]?.let { return it }
+        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        val s = w / ROOM_W
+        c.scale(s, s)
+        val ok = runCatching { Theme.preview(spec) { if (strip) realStrip(c, ROOM_W, h / s) else realRoom(c, ROOM_W, h / s) } }.isSuccess
+        if (!ok) return null
+        pics[key] = b
+        return b
+    }
+
+    /** the logical width the miniature is laid out at (its words and plates at the rooms' own sizes, then scaled down) */
+    private const val ROOM_W = 600f
+
+    /** the Social room's pieces over [w] x [h] in the theme in use (inside [Theme.preview]) */
+    private fun realRoom(c: Canvas, w: Float, h: Float) {
+        pF.style = Paint.Style.FILL; pF.color = Theme.ink
+        c.drawRect(0f, 0f, w, h, pF)
+        val split = w * 0.6f
+        UiKit.pane(c, RectF(0f, 62f, split, h))
+        UiKit.pane(c, RectF(split, 62f, w, h), right = true)
+        UiKit.paneDivider(c, split, 62f, h)
+        UiKit.header(c, w, "Social")
+        // the friend lines: one chosen, as the room shows them
+        val lines = listOf(
+            Triple("online", "Jaina", "MAGE"), Triple("online", "Thrall", "SHAMAN"), Triple("away", "Sylvanas", "HUNTER"),
+            Triple("offline", "Uther", "PALADIN"))
+        val zones = listOf("Stormwind City", "Orgrimmar", "Undercity", "")
+        var y = 74f
+        for ((i, l) in lines.withIndex()) {
+            if (y + 100f > h - 4f) break
+            val col = if (l.first == "offline") Theme.offline else Theme.classColourOf(l.third)
+            UiKit.playerLine(c, RectF(12f, y, split - 14f, y + 100f), l.first, l.second, col, zones[i], i == 1)
+            y += 104f
+        }
+        // the detail: the chosen friend's class in a framed tile, and the room's red button under it
+        val ts = minOf(118f, (h - 62f) * 0.42f)
+        val tile = RectF((split + w) / 2f - ts / 2f, 84f, (split + w) / 2f + ts / 2f, 84f + ts)
+        pF.color = Theme.raised
+        c.drawRoundRect(tile, 10f, 10f, pF)
+        UiKit.classIcon("SHAMAN")?.let { c.drawBitmap(it, null, RectF(tile.left + 10f, tile.top + 10f, tile.right - 10f, tile.bottom - 10f), pArt) }
+        if (!UiKit.ringBox(c, tile)) metalFrame(c, tile, Theme.cur, 6f)
+        val bh = 66f
+        val bt = maxOf(tile.bottom + 18f, h - bh - 22f)
+        if (bt + bh <= h - 4f) UiKit.button(c, RectF(split + 30f, bt, w - 30f, bt + bh), "Whisper", textSize = 27f)
+    }
+
+    /** the Settings page's pieces over [w] x [h] in the theme in use: its stone, a framed picture tile, an On / Off pair, a red button */
+    private fun realStrip(c: Canvas, w: Float, h: Float) {
+        pF.style = Paint.Style.FILL; pF.color = Theme.ink
+        c.drawRect(0f, 0f, w, h, pF)
+        RoomGround.settings(c, RectF(0f, 0f, w, h))
+        val ts = h - 48f
+        val tile = RectF(24f, 24f, 24f + ts, 24f + ts)
+        pF.color = Theme.raised
+        c.drawRoundRect(tile, 10f, 10f, pF)
+        UiKit.tex("ricon_chat")?.let { c.drawBitmap(it, null, RectF(tile.left + 16f, tile.top + 16f, tile.right - 16f, tile.bottom - 16f), pArt) }
+        if (!UiKit.ringBox(c, tile)) metalFrame(c, tile, Theme.cur, 6f)
+        val x0 = tile.right + 28f
+        val cw = (w - 24f - x0 - 14f) / 2f
+        val ch = (ts - 18f) / 2f
+        UiKit.choice(c, RectF(x0, 24f, x0 + cw, 24f + ch), "On", true, textSize = 27f)
+        UiKit.choice(c, RectF(x0 + cw + 14f, 24f, w - 24f, 24f + ch), "Off", false, textSize = 27f)
+        UiKit.button(c, RectF(x0, tile.bottom - ch, w - 24f, tile.bottom), "Use", textSize = 27f)
+    }
+
+    /**
+     * the miniature without the kit: [r] in [spec]'s colours, drawn: a header bar with a short accent stroke for its title; two rows
+     * (raised, then selected with an accent stroke); a small framed tile in the theme's metal; one red cloth chip
+     */
+    fun drawnRoom(c: Canvas, r: RectF, spec: ThemeSpec) {
         val k = r.height() / 108f
         val save = c.save()
         path.reset(); path.addRoundRect(r, 8f * k, 8f * k, Path.Direction.CW)
         c.clipPath(path)
         pF.style = Paint.Style.FILL; pF.color = spec.ink
         c.drawRect(r, pF)
-        val art = UiKit.tex("pane_left")
-        if (art != null) {
-            pArt.colorFilter = ColorMatrixColorFilter(UiKit.groundMatrix(spec, 1.5f * spec.paneLight))
-            c.drawBitmap(art, null, r, pArt)
-            UiKit.vignette(c, r, spec)
-        }
         // the header bar and its title stroke
         val hb = r.top + 22f * k
         pF.color = spec.panel
@@ -115,7 +213,7 @@ object ThemeGallery {
     }
 
     /** forget the cached rings (the kit came or went) */
-    fun forget() { ringCache.clear(); ringRaw = null; ringTried = false }
+    fun forget() { ringCache.clear(); ringRaw = null; ringTried = false; pics.clear() }
 
     /**
      * a frame round [r] in [spec]'s metal: the kit's ring (recoloured for that metal), else the drawn ring (UiKit.ringEdge's three

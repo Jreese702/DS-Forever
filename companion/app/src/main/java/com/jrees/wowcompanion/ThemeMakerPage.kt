@@ -307,7 +307,7 @@ class ThemeMakerPage {
         }
         if (!drawn) ThemeGallery.miniRoom(c, hb, spec)
         frame(c, hb)
-        ThemeGallery.miniRoom(c, stripBox, spec)
+        ThemeGallery.miniRoom(c, stripBox, spec, strip = true)
         frame(c, stripBox)
     }
 
@@ -369,39 +369,60 @@ class ThemeMakerPage {
     private var rockShader: BitmapShader? = null
     private var rockFrom: Bitmap? = null
 
-    /** the stone tinted at the tint's hue and shown at L 0.18 (exaggerated so the tints read), its real dark value as a 20 px core */
+    /**
+     * the stone tinted at the tint's hue, EXAGGERATED (review fix 2026-11-17: at the design's L 0.18 / sat 0.25 the six chips were flat
+     * near-black squares, Warm / Neutral / Cool / Rose / Moss / Dusk barely told apart at Thor size): shown at L 0.30 and 2.4x the tint's
+     * saturation, the rock's grain stretched so it reads as stone; the real dark value stays the 20 px core
+     */
     private fun stoneChip(c: Canvas, b: RectF, t: ThemeMaker.Tint) {
         val save = c.save()
         path.reset(); path.addRoundRect(b, 7f, 7f, Path.Direction.CW); c.clipPath(path)
-        val show = ThemeMaker.hsl(t.hue, t.sat, 0.18f)
+        val show = ThemeMaker.hsl(t.hue, minOf(0.62f, t.sat * 2.4f), 0.30f)
         pF.style = Paint.Style.FILL; pF.color = show
         c.drawRect(b, pF)
         val rock = UiKit.tex("ground_rock")
         if (rock != null) {
             if (rockFrom !== rock) { rockFrom = rock; rockShader = BitmapShader(rock, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT) }
-            // the rock's light (grey, about a quarter of white) times the tint's colour, lifted so the texture sits at about L 0.18 in
-            // the tint's own colour
-            val r = Color.red(show) / 255f * 4.2f; val g = Color.green(show) / 255f * 4.2f; val bl = Color.blue(show) / 255f * 4.2f
+            // grey, then each channel = the shown colour x (1 + (rock - its median) / 9): the rock's few levels of grain (44..49 of 255)
+            // stretched round the shown colour, so the chip is stone in the tint, not a flat square
+            val med = UiKit.artStats("ground_rock", rock).med
             val cm = ColorMatrix().apply { setSaturation(0f) }
-            cm.postConcat(ColorMatrix(floatArrayOf(r, 0f, 0f, 0f, 0f, 0f, g, 0f, 0f, 0f, 0f, 0f, bl, 0f, 0f, 0f, 0f, 0f, 1f, 0f)))
+            val ch = floatArrayOf(Color.red(show).toFloat(), Color.green(show).toFloat(), Color.blue(show).toFloat())
+            val g = FloatArray(3) { ch[it] / 9f }
+            val o = FloatArray(3) { ch[it] * (1f - med / 9f) }
+            cm.postConcat(ColorMatrix(floatArrayOf(g[0], 0f, 0f, 0f, o[0], 0f, g[1], 0f, 0f, o[1], 0f, 0f, g[2], 0f, o[2], 0f, 0f, 0f, 1f, 0f)))
             val p = Paint(Paint.FILTER_BITMAP_FLAG).apply { shader = rockShader; colorFilter = ColorMatrixColorFilter(cm) }
+            // the grain at a quarter of its size: a 52 px chip shows a patch of stone, not one smear
+            val m = android.graphics.Matrix(); m.setScale(0.25f, 0.25f); m.postTranslate(b.left, b.top); rockShader?.setLocalMatrix(m)
             c.drawRect(b, p)
         }
-        // the real ground at the draft's shade (OLED: its raised plate, the ground being black)
+        // the real ground at the draft's shade (OLED: its raised plate, the ground being black), ringed so it shows on the stone
         val d = draft
+        val core = RectF(b.centerX() - 10f, b.centerY() - 10f, b.centerX() + 10f, b.centerY() + 10f)
         pF.color = if (d.oled) ThemeMaker.hsl(t.hue, t.sat, ThemeMaker.OLED_RAISED_L) else ThemeMaker.hsl(t.hue, t.sat, d.tintL)
-        c.drawRoundRect(RectF(b.centerX() - 10f, b.centerY() - 10f, b.centerX() + 10f, b.centerY() + 10f), 3f, 3f, pF)
+        c.drawRoundRect(core, 3f, 3f, pF)
+        pS.color = Color.argb(120, 0, 0, 0); pS.strokeWidth = 1.5f
+        c.drawRoundRect(core, 3f, 3f, pS)
         c.restoreToCount(save)
         pS.color = Color.argb(170, 0, 0, 0); pS.strokeWidth = 2f
         c.drawRoundRect(b, 7f, 7f, pS)
     }
 
-    /** "Aa" in the colour on the draft's raised plate: a sample, not a word */
+    private val hsv = FloatArray(3)
+
+    /**
+     * "Aa" in the colour on the draft's raised plate: a sample, not a word; under it a 6 px bar of the colour's own hue, exaggerated
+     * (review fix 2026-11-17: Parchment / Paper / Ice / Blush are all near white, so four bare "Aa" looked the same at Thor size)
+     */
     private fun textChip(c: Canvas, b: RectF, col: Int, draft: ThemeSpec) {
         pF.style = Paint.Style.FILL; pF.color = draft.raised
         c.drawRoundRect(b, 7f, 7f, pF)
         pAa.textSize = 30f; pAa.color = col
-        c.drawText("Aa", b.centerX(), b.centerY() + 11f, pAa)
+        c.drawText("Aa", b.centerX(), b.centerY() + 7f, pAa)
+        Color.colorToHSV(col, hsv)
+        val sat = if (hsv[1] < 0.02f) 0f else 0.65f
+        pF.color = ThemeMaker.hsl(hsv[0], sat, 0.62f)
+        c.drawRoundRect(RectF(b.left + 8f, b.bottom - 12f, b.right - 8f, b.bottom - 6f), 3f, 3f, pF)
         pS.color = draft.edgeDim; pS.strokeWidth = 2f
         c.drawRoundRect(b, 7f, 7f, pS)
     }

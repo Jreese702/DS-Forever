@@ -311,13 +311,15 @@ class ThemeMakerPageTest {
                 for (i in 0 until 5) {
                     val r = ThemeGallery.tile(i, 1240f, 40f)
                     pf.color = Theme.raised; c.drawRoundRect(r, 10f, 10f, pf)
-                    ThemeGallery.edge(c, r, i == 0)
+                    ThemeGallery.edge(c, r, false)
                 }
+                // the controller's cursor as the app draws it: the golden box (UiKit.focus), never a gold outline
+                ThemeGallery.tile(0, 1240f, 40f).let { r -> UiKit.focus(c, RectF(r.left - 4f, r.top - 4f, r.right + 4f, r.bottom + 4f)) }
                 save(b, "ground_${n}_$id.png")
             }
         }
         Theme.use("classic")
-        // pick 9: OLED Bronze's art level, three side by side (stone / pane 0.22 / 0.30, 0.30 / 0.40, 0.40 / 0.50)
+        // pick 9: OLED Bronze's art level, three side by side (stone / pane 0.45 / 0.45, 0.55 / 0.60 = default, 0.70 / 0.75)
         pick9("macros") { MacrosView(app).apply { dryRun = true }.also { v ->
             System.getenv("MAKER_MACRO_DOCS")?.let { File(it, "grid.json") }?.takeIf { it.isFile }?.let { v.onDoc(JSONObject(it.readText()), live = false) } } }
         pick9("social") { SocialView(app).also { v ->
@@ -330,7 +332,7 @@ class ThemeMakerPageTest {
     }
 
     private fun pick9(name: String, make: () -> View) {
-        val levels = listOf(0.30f to 0.45f, 0.40f to 0.60f, 0.50f to 0.75f)
+        val levels = listOf(0.45f to 0.45f, 0.55f to 0.60f, 0.70f to 0.75f)
         val h = 1080 - Strip.HEIGHT
         val shots = levels.map { (s, pn) ->
             Theme.preview(ThemePresets.OLED_BRONZE.copy(stoneLight = s, paneLight = pn)) {

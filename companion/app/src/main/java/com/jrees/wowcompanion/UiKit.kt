@@ -4177,7 +4177,7 @@ object UiKit {
             pFlat.style = Paint.Style.FILL; pFlat.color = if (right) Theme.panel else Theme.ink
             c.drawRect(r, pFlat); return
         }
-        c.drawBitmap(b, null, r, litPaint(light))
+        c.drawBitmap(b, null, r, litPaint(light, if (right) "pane_right" else "pane_left", b))
         vignette(c, r)
     }
 
@@ -6004,7 +6004,7 @@ object UiKit {
         // OLED keeps the Overview's stone at its pane light (beautify 8.4); a crafting page is paper and stays as it is
         val b = tex(if (page) "prof_ground_page" else "prof_ground")
         if (b == null) { pFlat.style = Paint.Style.FILL; pFlat.color = Theme.ink; c.drawRect(r, pFlat); return }
-        c.drawBitmap(b, null, r, if (page) pLit else litPaint())
+        c.drawBitmap(b, null, r, if (page) pLit else litPaint(1f, "prof_ground", b))
         if (!page) vignette(c, r)
     }
 
@@ -7296,7 +7296,7 @@ object UiKit {
         }
         val p = Paint(Paint.FILTER_BITMAP_FLAG)
         p.shader = android.graphics.BitmapShader(b, android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT)
-        p.colorFilter = ColorMatrixColorFilter(groundMatrix(t, light * t.stoneLight))
+        p.colorFilter = ColorMatrixColorFilter(groundMatrix(t, light * t.stoneLight, artStats(name, b)))
         c.drawRect(r, p)
         if (vig) vignette(c, r, t)
     }
@@ -7310,7 +7310,7 @@ object UiKit {
         val b = tex(name) ?: return false
         val p = Paint(Paint.FILTER_BITMAP_FLAG)
         p.shader = android.graphics.BitmapShader(b, android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT)
-        p.colorFilter = ColorMatrixColorFilter(groundMatrix(t, light * (if (pane) t.paneLight else t.stoneLight)))
+        p.colorFilter = ColorMatrixColorFilter(groundMatrix(t, light * (if (pane) t.paneLight else t.stoneLight), artStats(name, b)))
         c.drawRect(r, p)
         vignette(c, r, t)
         return true
@@ -7318,16 +7318,55 @@ object UiKit {
 
     /**
      * THE ONE GROUND MATRIX (beautify 8.2): the art's saturation ([ThemeSpec.artSat]) first, then its light [k]. Classic and the Dark
-     * family: a plain scale (Classic exactly [k], as always). OLED: `out = (in * 1.08 - 8) * k` per channel: the ART's darkest values
-     * (under 8 of 255) land on true #000 and those pixels stay off, while its lit parts still show. (The design wrote the 8 after the
-     * scale; measured on the kit, pane_left's mean is 15 / 9 / 3, so at the design's pane 0.30 x the 1.5 lift that put the whole list
-     * pane on #000 - the "lifeless" look again. The crush on the art's own scale keeps its texture.)
+     * family: a plain scale (Classic exactly [k], as always).
+     *
+     * OLED, with the picture's own measure [st] (review fix, 2026-11-17: the design's fixed `in * k * 1.08 - 8` - and a crush on the
+     * art's scale after it - still left the Macros / Social list pane, the Calendar, Bags and the Settings rock reading as #000: the kit's
+     * pane_left is very dark art, its median 9 of 255 and its texture a few levels deep; the rock is flat, 44..49): per picture, its
+     * darkest tenth ([ArtStats.p10], at most half its median: a flat stone keeps its grey) lands on true #000 (those pixels stay off) and the gain spreads what is left so its median sits at
+     * `median * k + OLED_FLOOR * k` (the art's own light plus a floor), the gain at most [OLED_GAIN_MAX]. So a dark picture keeps a
+     * visible texture over black, and every OLED room reads as its picture, darkened, never a black slab. Without [st]: the design's
+     * fixed curve.
      */
-    fun groundMatrix(t: ThemeSpec, k: Float): ColorMatrix = ColorMatrix().apply {
-        val kk = if (t.oled) k * 1.08f else k
-        val off = if (t.oled) -8f * k else 0f
+    fun groundMatrix(t: ThemeSpec, k: Float, st: ArtStats? = null): ColorMatrix = ColorMatrix().apply {
+        val kk: Float; val off: Float
+        if (t.oled && st != null) {
+            val floor = minOf(st.p10, st.med * 0.5f)
+            val target = st.med * k + OLED_FLOOR * k
+            kk = (target / (st.med - floor).coerceAtLeast(1f)).coerceIn(0f, OLED_GAIN_MAX)
+            off = -floor * kk
+        } else if (t.oled) { kk = k * 1.08f; off = -8f * k }
+        else { kk = k; off = 0f }
         val scale = ColorMatrix(floatArrayOf(kk, 0f, 0f, 0f, off, 0f, kk, 0f, 0f, off, 0f, 0f, kk, 0f, off, 0f, 0f, 0f, 1f, 0f))
         if (t.artSat != 1f) { setSaturation(t.artSat); postConcat(scale) } else set(scale)
+    }
+
+    /** the OLED floor (out of 255, times the call's light): what a ground's median gets on top of its own light */
+    const val OLED_FLOOR = 8f
+    const val OLED_GAIN_MAX = 4f
+
+    /** a picture's light, measured once: the luminance (0..255) of its darkest tenth and its median */
+    class ArtStats(val p10: Float, val med: Float)
+    private val statsCache = HashMap<String, Pair<Bitmap, ArtStats>>()
+
+    /** [b]'s measure, cached per kit [name] while the same picture is loaded (about 4,000 samples on a grid) */
+    fun artStats(name: String, b: Bitmap): ArtStats {
+        statsCache[name]?.let { if (it.first === b) return it.second }
+        val step = maxOf(1, Math.sqrt(b.width.toDouble() * b.height / 4096.0).toInt())
+        val ls = ArrayList<Float>()
+        var y = step / 2
+        while (y < b.height) {
+            var x = step / 2
+            while (x < b.width) {
+                val px = b.getPixel(x, y)
+                if (Color.alpha(px) > 128) ls.add(0.299f * Color.red(px) + 0.587f * Color.green(px) + 0.114f * Color.blue(px))
+                x += step
+            }
+            y += step
+        }
+        val st = if (ls.isEmpty()) ArtStats(0f, 0f) else { ls.sort(); ArtStats(ls[ls.size / 10], ls[ls.size / 2]) }
+        statsCache[name] = b to st
+        return st
     }
 
     private val vigCache = HashMap<String, android.graphics.RadialGradient>()
@@ -7358,12 +7397,16 @@ object UiKit {
 
     private var litFor: ThemeSpec? = null
     private var litK = 1f
+    private var litName: String? = null
     private val pLitTheme = Paint(Paint.FILTER_BITMAP_FLAG)
-    /** the panes' 1.5x lift ([pLit]) as the theme draws its panes, times [k] (Classic at 1: [pLit] itself) */
-    private fun litPaint(k: Float = 1f): Paint {
+    /** the panes' 1.5x lift ([pLit]) as the theme draws its pane [name] ([b]), times [k] (Classic at 1: [pLit] itself) */
+    private fun litPaint(k: Float, name: String, b: Bitmap): Paint {
         val t = Theme.cur
         if (t === ThemePresets.CLASSIC && k == 1f) return pLit
-        if (litFor !== t || litK != k) { litFor = t; litK = k; pLitTheme.colorFilter = ColorMatrixColorFilter(groundMatrix(t, 1.5f * k * t.paneLight)) }
+        if (litFor !== t || litK != k || litName != name) {
+            litFor = t; litK = k; litName = name
+            pLitTheme.colorFilter = ColorMatrixColorFilter(groundMatrix(t, 1.5f * k * t.paneLight, artStats(name, b)))
+        }
         return pLitTheme
     }
 

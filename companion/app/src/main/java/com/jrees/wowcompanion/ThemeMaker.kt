@@ -80,9 +80,9 @@ object ThemeMaker {
     const val OLED_RAISED_L = 0.075f
 
     /** how much of the rooms' art shows (design 8.2): stone / pane light per Art level, OLED or not */
-    // (OLED: Low 0.30 / 0.45, Mid 0.40 / 0.60 = the OLED presets', High 0.50 / 0.75; the design's 0.18 .. 0.50 left the dark pane art
+    // (OLED: Low 0.45 / 0.45, Mid 0.55 / 0.60 = the OLED presets', High 0.70 / 0.75; the design's 0.18 .. 0.50 left the dark pane art
     // on pure black once its blacks were crushed: see ThemePresets' OLED levels)
-    fun stoneLight(oled: Boolean, a: Art) = if (oled) when (a) { Art.LOW -> 0.30f; Art.MID -> 0.40f; Art.HIGH -> 0.50f }
+    fun stoneLight(oled: Boolean, a: Art) = if (oled) when (a) { Art.LOW -> 0.45f; Art.MID -> 0.55f; Art.HIGH -> 0.70f }
         else when (a) { Art.LOW -> 0.5f; Art.MID -> 0.6f; Art.HIGH -> 0.8f }
     fun paneLight(oled: Boolean, a: Art) = if (oled) when (a) { Art.LOW -> 0.45f; Art.MID -> 0.60f; Art.HIGH -> 0.75f }
         else stoneLight(false, a)

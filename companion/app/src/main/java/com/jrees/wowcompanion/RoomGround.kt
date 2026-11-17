@@ -24,16 +24,29 @@ object RoomGround {
      */
     const val CONTROLLER_LIGHT = 0.8f
 
+    /**
+     * OLED: these grounds 1.3x brighter (review fix 2026-11-17: rock at 0.55 x stone 0.40 = 0.22 rendered indistinguishable from
+     * #000, against section 8's "never plain black"); the rock is flat grey art, so it reads as dark stone, not as a lit page
+     */
+    const val OLED_LIFT = 1.3f
+
     private val pFlat = Paint()
 
     fun settings(c: Canvas, r: RectF) = draw(c, r, SETTINGS_LIGHT)
 
     fun controller(c: Canvas, r: RectF) = draw(c, r, CONTROLLER_LIGHT)
 
+    /** Bags: rock at 0.6 x the stone light (design 8.4: "rock dropped" on OLED, a flat page in every theme): every theme */
+    const val BAGS_LIGHT = 0.6f
+
+    fun bags(c: Canvas, r: RectF) {
+        UiKit.roomGround(c, r, "ground_rock", if (Theme.cur.oled) BAGS_LIGHT * OLED_LIFT else BAGS_LIGHT)
+    }
+
     private fun draw(c: Canvas, r: RectF, light: Float) {
         pFlat.color = Theme.ink
         c.drawRect(r, pFlat)
         if (!CLASSIC_TOO && Theme.classic) return
-        UiKit.roomGround(c, r, "ground_rock", light)
+        UiKit.roomGround(c, r, "ground_rock", if (Theme.cur.oled) light * OLED_LIFT else light)
     }
 }
