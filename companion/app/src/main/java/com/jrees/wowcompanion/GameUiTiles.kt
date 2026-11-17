@@ -60,7 +60,9 @@ object GameUiTiles {
         GameUi.UFP_ID to "DS party frames", GameUi.PARTY_ID to "Party frames", GameUiSection.COMPASS_ID to "Compass bar",
         GameUi.WM_ID to "World markers", PS_ID to "Polestar", "minimap" to "Minimap", "tracker" to "Quest tracker", "chat" to "Chat window",
         "dialogs" to "NPC windows", GameUiSection.LOOT_ID to "Loot window", GameUiSection.TIPS_ID to "Tooltips", GameUi.CASTBAR_ID to "Cast bar",
-        GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame", "hud" to "Controller bars",
+        GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame", "hud" to "Controller UI",
+        // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): the old tile's riders, tiles of their own
+        HudSplit.BUFFS_ID to "Buffs", HudSplit.XP_ID to "XP bar",
         GameUi.DMG_ID to "Damage meter", GameUi.CDM_ID to "Cooldown Manager", LAYOUT_ID to "Edit layout")
 
     /** a band row's label (short: the tile above names the element) */
@@ -74,9 +76,11 @@ object GameUiTiles {
      *  does" panel beside the page, which would squeeze the grid): every tile has one */
     val PICTURED: Set<String> = setOf(GameUi.HUD_ID, GameUi.UFT_ID, GameUi.NP_ID, GameUi.NPF_ID, GameUi.UFP_ID, GameUi.PARTY_ID,
         GameUiSection.COMPASS_ID, GameUi.WM_ID, PS_ID, "minimap", "tracker", "chat", "dialogs", GameUiSection.LOOT_ID,
-        GameUiSection.TIPS_ID, GameUi.CASTBAR_ID, GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud", GameUi.DMG_ID, GameUi.CDM_ID, LAYOUT_ID)
+        GameUiSection.TIPS_ID, GameUi.CASTBAR_ID, GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud", HudSplit.BUFFS_ID, HudSplit.XP_ID,
+        GameUi.DMG_ID, GameUi.CDM_ID, LAYOUT_ID)
 
-    /** every tile, every group (22 with Polestar in use: 19 + the damage meter, the Cooldown Manager and Edit layout) */
+    /** every tile, every group (24 with Polestar in use: 19 + the damage meter, the Cooldown Manager, Edit layout, and split-hud's
+     *  Buffs and XP bar) */
     val ALL: List<String> get() = TILES.values.flatten()
 
     /** the groups drawn as tiles (the Top screen tab's) */
@@ -93,7 +97,7 @@ object GameUiTiles {
         GAME_OFF }
 
     /** the game's elements (Hub.lua's layout bits): their notes say the game's state */
-    private val ELEMENTS = setOf("minimap", "hud", "tracker", "chat", "dialogs")
+    private val ELEMENTS = setOf("minimap", "hud", "tracker", "chat", "dialogs", HudSplit.BUFFS_ID, HudSplit.XP_ID)
     /** an element's notes when the game shows what was chosen */
     private val STEADY = setOf("Hidden now", "On the top screen now", "DS Forever's bar on the top screen now")
     /** a switch's notes while the game has not caught up with the choice */

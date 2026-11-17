@@ -199,7 +199,7 @@ object LayoutModel {
         "ObjectiveTrackerFrame" to "Quest tracker", "PlayerCastingBarFrame" to "Cast bar", "GamepadPlayerCastingBarFrame" to "Controller cast bar",
         "DamageMeter" to "Damage meter", "EssentialCooldownViewer" to "Essential cooldowns", "UtilityCooldownViewer" to "Utility cooldowns",
         "BuffIconCooldownViewer" to "Buff icons", "BuffBarCooldownViewer" to "Buff bars", "MicroMenuContainer" to "Micro menu",
-        "BagsBar" to "Bag bar", "MainStatusTrackingBarContainer" to "Status bar", "SecondaryStatusTrackingBarContainer" to "Second status bar",
+        "BagsBar" to "Bag bar", "MainStatusTrackingBarContainer" to "XP bar", "SecondaryStatusTrackingBarContainer" to "Second status bar",
         "DurabilityFrame" to "Durability", "MirrorTimerContainer" to "Timers", "QueueStatusButton" to "Queue", "ExtraAbilityContainer" to "Extra ability",
         "SwingTimerMainHandFrame" to "Swing timer", "SwingTimerOffHandFrame" to "Off-hand swing", "SwingTimerRangedFrame" to "Ranged swing",
     )

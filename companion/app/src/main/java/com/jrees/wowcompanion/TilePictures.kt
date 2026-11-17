@@ -106,6 +106,8 @@ object TilePictures {
             GameUi.PLAYER_ID -> unitFrame(c, look, target = false)
             GameUi.TARGET_ID -> unitFrame(c, look, target = true)
             "hud" -> controllerBars(c, look)
+            HudSplit.BUFFS_ID -> buffs(c)
+            HudSplit.XP_ID -> xpBar(c)
             GameUi.DMG_ID -> damageMeter(c, look)
             GameUi.CDM_ID -> cooldownManager(c, look)
             GameUiTiles.LAYOUT_ID -> layoutMini(c)
@@ -457,8 +459,8 @@ object TilePictures {
         figure(c, if (target) 60f else 160f, 104f, 26f, Color.rgb(22, 24, 30))
     }
 
-    /** the game's controller bars: four round buttons a side in the diamond, the XP bar between, buffs at the top right; Nintendo =
-     *  DS Forever's bar in its place (the buttons' letters, the gold rings) */
+    /** the game's controller bars: four round buttons a side in the diamond; Nintendo = DS Forever's bar in its place (the buttons'
+     *  letters, the gold rings). split-hud: the XP bar and the buffs are tiles of their own now ([xpBar], [buffs]) */
     private fun controllerBars(c: Canvas, look: Look) {
         val nin = look.mode == UiMode.NINTENDO
         val icons = listOf("ricon_spellbook", "ricon_bags", "ricon_character", "ricon_talents", "ricon_quests", "ricon_map", "ricon_social", "ricon_professions")
@@ -481,14 +483,66 @@ object TilePictures {
                 }
             }
         }
-        // the XP bar between the clusters
-        val xp = RectF(70f, 99f, 146f, 104f)
-        pF.color = Color.argb(220, 10, 10, 10); c.drawRect(xp, pF)
-        UiKit.tex("track_xp")?.let { b -> c.save(); c.clipRect(xp.left, xp.top, xp.left + xp.width() * 0.46f, xp.bottom); c.drawBitmap(b, null, xp, pB); c.restore() }
-            ?: run { pF.color = Color.rgb(160, 60, 200); c.drawRect(xp.left, xp.top, xp.left + xp.width() * 0.46f, xp.bottom, pF) }
-        pS.color = Color.rgb(120, 104, 80); pS.strokeWidth = 0.8f; c.drawRect(xp, pS)
-        for (i in 0..3) aura(c, 150f + i * 13f, 8f, 11f, listOf(Color.rgb(70, 130, 220), Color.rgb(230, 190, 60), Color.rgb(120, 200, 90), Color.rgb(200, 80, 200))[i])
         figure(c, 108f, 90f, 40f, Color.rgb(22, 24, 30))
+    }
+
+    /** split-hud: sample buffs and debuffs (icons.pak fileIDs: Fortitude, Mark of the Wild, Arcane Intellect, Kings, Lightning Shield;
+     *  Curse of Weakness, Frost Nova) */
+    private val BUFF_ICONS = listOf(135987, 136078, 135932, 135995, 136051)
+    private val DEBUFF_ICONS = listOf(136138 to "Curse", 135848 to "Magic")
+
+    /** split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): the game's buffs at the top right of
+     *  the screen (a row of icons, their minutes under them at the band's size), the debuffs under them in their type's border, the
+     *  durability figure beside (Home draws it between its buff rows, so it rides this tile); clear of the badge corner (x 172+, y 0..44) */
+    private fun buffs(c: Canvas) {
+        figure(c, 92f, 104f, 30f, Color.rgb(22, 24, 30))
+        val s = 17f
+        for ((i, fid) in BUFF_ICONS.withIndex()) {
+            val x = 168f - (BUFF_ICONS.size - i) * (s + 3f)
+            auraIcon(c, fid, RectF(x, 8f, x + s, 8f + s), i, null)
+            if (big) text(c, listOf("58m", "52m", "41m", "9m", "6m")[i], x + s / 2f, 8f + s + 6.5f, 5.5f, Color.rgb(255, 210, 0), center = true, number = true)
+        }
+        for ((i, d) in DEBUFF_ICONS.withIndex()) {
+            val x = 168f - (DEBUFF_ICONS.size - i) * (s + 3f)
+            auraIcon(c, d.first, RectF(x, 38f, x + s, 38f + s), 5 + i, UiKit.debuffColour(d.second))
+            if (big) text(c, listOf("1m", "6")[i], x + s / 2f, 38f + s + 6.5f, 5.5f, Color.rgb(255, 210, 0), center = true, number = true)
+        }
+        durability(c, 190f, 50f)
+    }
+
+    /** a buff's icon (icons.pak) cut square with the game's thin dark edge; [border] = a debuff's type colour; without the pack its hue */
+    private fun auraIcon(c: Canvas, fid: Int, r: RectF, slot: Int, border: Int?) {
+        val b = runCatching { Icons.get(fid) }.getOrNull() ?: UiKit.icon(fid)
+        if (b != null) {
+            val ix = b.width * 0.08f; val iy = b.height * 0.08f
+            c.drawBitmap(b, Rect(ix.toInt(), iy.toInt(), (b.width - ix).toInt(), (b.height - iy).toInt()), r, pB)
+        } else {
+            val hue = ICON_HUES[slot % ICON_HUES.size]
+            pF.shader = LinearGradient(0f, r.top, 0f, r.bottom, lighter(hue), darker(hue), Shader.TileMode.CLAMP); c.drawRect(r, pF); pF.shader = null
+        }
+        if (border != null) { pS.color = border; pS.strokeWidth = 1.6f; c.drawRect(r.left - 0.8f, r.top - 0.8f, r.right + 0.8f, r.bottom + 0.8f, pS) }
+        else { pS.color = Color.argb(220, 0, 0, 0); pS.strokeWidth = 0.8f; c.drawRect(r, pS) }
+    }
+
+    /** the game's durability figure (its little armoured man): the worn pieces yellow, a broken one red, [top] its head's top */
+    private fun durability(c: Canvas, cx: Float, top: Float) {
+        val ok = Color.argb(150, 190, 190, 190); val worn = Color.rgb(230, 200, 40); val broken = Color.rgb(220, 40, 30)
+        pF.color = ok; c.drawCircle(cx, top + 4f, 4f, pF)                                     // head
+        pF.color = worn; c.drawRect(cx - 7f, top + 9f, cx - 3f, top + 13f, pF)               // shoulders
+        c.drawRect(cx + 3f, top + 9f, cx + 7f, top + 13f, pF)
+        pF.color = broken; c.drawRect(cx - 4f, top + 9f, cx + 4f, top + 22f, pF)             // chest
+        pF.color = ok; c.drawRect(cx - 8f, top + 14f, cx - 5f, top + 24f, pF)                // arms
+        c.drawRect(cx + 5f, top + 14f, cx + 8f, top + 24f, pF)
+        pF.color = worn; c.drawRect(cx - 4f, top + 23f, cx - 0.6f, top + 36f, pF)            // legs
+        pF.color = ok; c.drawRect(cx + 0.6f, top + 23f, cx + 4f, top + 36f, pF)
+    }
+
+    /** split-hud: the game's XP bar at the bottom of the screen (the gamepad layout's half-width bar: the XP with its rested part, the
+     *  kit's track art), the second status bar (a reputation) over it, a character in the world above */
+    private fun xpBar(c: Canvas) {
+        figure(c, 108f, 68f, 42f, Color.rgb(22, 24, 30))
+        UiKit.track(c, RectF(18f, 73f, 198f, 82f), "green", 0.68f, segments = 10)
+        UiKit.track(c, RectF(18f, 85f, 198f, 99f), "xp", 0.46f, reach = 0.62f, segments = 20)
     }
 
     // ---------------------------------------------------------------- hub61: the damage meter, the Cooldown Manager, Edit layout

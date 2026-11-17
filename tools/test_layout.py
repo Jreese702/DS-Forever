@@ -47,6 +47,9 @@ Proven here:
      hide switches, never Hide / Show / a CVar), the press on "lay" while the editor is closed, per character, Dynamic's 15 s linger
      (cancelled by a new fight), a press in a fight held to its end, Edit Mode's opacity / layout update re-asserted, the game's Edit
      Mode shown = all shown, the game's options only read (the hub document's mt), a stored choice applied at login without the app.
+  p  hub63 (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar" -> "Both"): the controller UI, the buffs and
+     the XP bar each with its own word on "lay" while the editor is closed (on / off / ride the layout bit), no word = the old element,
+     the editor listing and moving each part alone, the game re-anchoring the buffs re-applied, a word in a fight with no breach.
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -1122,6 +1125,144 @@ L7.execute('WHO = "Other"; WowCompanion.meters.load(); WowCompanion.meters.apply
 check(alpha(L7, "DamageMeter") == 1 and [alpha(L7, n) for n in VIEWERS] == [1, 0.6, 1, 1], "o. another character: its own (none: all back)")
 check(lua_errors(L7, errs7) == [] and int(L7.eval('#VIOL')) == 0, "o. clean (stored)", lua_errors(L7, errs7)[:3])
 
+# ================================================================ p. hub63 split-hud: the buffs, the controller UI and the XP bar apart
+# The user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar" -> "Both". The three rode ONE layout bit (1, "hud"),
+# so they were hidden together and the layout editor (it lists a frame only while it is visible) listed them together. Now each part
+# has a word on "lay" while the editor is closed (columns 24-32: on / off / ride), kept in WowCompanionDB.hudsplit; unset = ride = the
+# old element exactly. Proven: the old behaviour with no word; each word on its own (the editor lists the parts that are shown, each
+# movable alone); the element's hidden() is the bit; a word applied in a fight with no breach; stored words at login without the app;
+# the game re-anchoring the buffs (StatusTrayManager) or the XP bar (its layout update) gets our offset back; alpha only.
+QUOTE4 = '"we need to split out the Buffs controller UI and XP bar" -> "Both"'
+check(int(re.search(r'local HV = "hub(\d+)"', TXT["hub"]).group(1)) >= 63 and TXT["hub"].count(QUOTE4) >= 3,
+      "p. Hub hub63+, its notes (the version line, the header, the blocks) quote the user")
+HSRC = TXT["hub"][TXT["hub"].index("-- ---------------------------------------------------------------- hub63 the parts"):
+                  TXT["hub"].index("-- ---------------------------------------------------------------- the game's cast bar (hub11)")]
+HSRC += TXT["hub"][TXT["hub"].index("-- ==================================================================== hub63 SPLIT-HUD"):
+                   TXT["hub"].index("-- ==================================================================== hub61 THE DAMAGE METER")]
+hcode = "\n".join(re.sub(r'--.*$', '', ln) for ln in HSRC.splitlines())
+hbad = [w for w in (":Hide(", ":Show(", "SetShown", "SetCVar", "ShowUIPanel", "HideUIPanel", "EnterEditMode", "ExitEditMode",
+                    "SetParent", "C_EditMode", "SetBinding", "SetPoint", "ClearAllPoints") if w in hcode]
+check(hbad == [], "p. the split's code never hides / shows / re-parents / moves a frame, writes a CVar or opens a game window", hbad)
+
+SPLITPOST = r'''
+geo("GamepadPersistentInputLegend", 600, 30, false, true, { "BOTTOM", "BOTTOM", 0, 60 })
+geo("DebuffFrame", 300, 40, true, false, { "TOPRIGHT", "TOPRIGHT", -240, -90 })
+geo("MainStatusTrackingBarContainer", 500, 14, true, false, { "BOTTOM", "BOTTOM", 0, 0 })
+geo("SecondaryStatusTrackingBarContainer", 500, 10, true, false, { "BOTTOM", "BOTTOM", 0, 17 })
+'''
+PARTS = {"c": "GamepadMainActionBarFrame", "b": "BuffFrame", "x": "MainStatusTrackingBarContainer"}
+
+
+def hubdoc(L):
+    L.execute('WowCompanion.meters.emit()')
+    d = [x for x in wowstub.docs(L, 0, "hub") if isinstance(x.get("hub"), dict)]
+    return d[-1]["hub"] if d else {}
+
+
+def shown3(L):
+    return {k: alpha(L, v) > 0 for k, v in PARTS.items()}
+
+
+def listed3(L):
+    L.execute('tick(0.5)')
+    d = fresh(L)
+    on = {p["id"] for p in d["p"] if p.get("g") and p["on"]}
+    return {k: ("g." + v) in on for k, v in PARTS.items()}
+
+
+def layout(L, mask):
+    L.eval('hwTap')("ui", mask)
+    L.execute('advance(0.3)')
+
+
+L8, errs8 = world(GAMEPRE)
+L8.execute(GAMEPOST + SPLITPOST)
+L8.execute('pcall(WowCompanion.nbarSet, false)')                        # the stock controller bar (the Nintendo bar keeps it at 0)
+L8.execute('tick(0.5); advance(0.1)')
+hold(L8)
+h = hubdoc(L8)
+hs = h.get("hs") or {}
+check(hs.get("v") == "hs1" and hs.get("c") is None and hs.get("b") is None and hs.get("x") is None and hs.get("bit") is None
+      and hs.get("cols") == {"C_ON": 24, "C_OFF": 25, "C_RIDE": 26, "B_ON": 27, "B_OFF": 28, "B_RIDE": 29, "X_ON": 30, "X_OFF": 31, "X_RIDE": 32},
+      "p. the hub document's hs at login: no word (all three ride the bit), the columns", hs)
+check(shown3(L8) == {"c": True, "b": True, "x": True} and listed3(L8) == {"c": True, "b": True, "x": True},
+      "p. nothing hidden: all three shown and listed in the editor")
+# NO WORD = THE OLD ELEMENT: the bit hides all three together, and shows them together
+layout(L8, 2)
+check(shown3(L8) == {"c": False, "b": False, "x": False} and alpha(L8, "DebuffFrame") == 0 and alpha(L8, "SecondaryStatusTrackingBarContainer") == 0
+      and alpha(L8, "GamepadPersistentInputLegend") == 0, "p. no word: bit 1 hides the controller UI, the buffs + debuffs and both XP containers", shown3(L8))
+hud = [e for e in hubdoc(L8)["els"] if e["id"] == "hud"][0]
+check(hud["hidden"] is True and hubdoc(L8)["hs"].get("bit") is True, "p. ... the element reports hidden (the bit)", hud)
+check(listed3(L8) == {"c": False, "b": False, "x": False}, "p. ... (all three out of the editor's list: why they read as one piece before)")
+layout(L8, 0)
+check(shown3(L8) == {"c": True, "b": True, "x": True} and alpha(L8, "DebuffFrame") == 1, "p. ... and bit 0 shows all three")
+# THE WORDS: only on "lay" while the editor is closed (the meters' row, past their columns)
+check(cell(L8, 28), "p. (the lay row's cell 28 is on the pad while the Settings room holds)")
+check(shown3(L8) == {"c": True, "b": False, "x": True} and alpha(L8, "DebuffFrame") == 0,
+      "p. B_OFF (28): the buffs (and debuffs) hidden, the controller UI and the XP bar stay", shown3(L8))
+check(listed3(L8) == {"c": True, "b": False, "x": True}, "p. ... the editor lists the controller bar and the XP bar, not the buffs", listed3(L8))
+fixture(L8, "lay_split_nobuffs")
+check(L8.eval('WowCompanionDB.hudsplit.b') == "off" and hubdoc(L8)["hs"].get("b") == "off" and hubdoc(L8)["hs"].get("bh") is True,
+      "p. ... kept in WowCompanionDB.hudsplit, the document says so")
+hud = [e for e in hubdoc(L8)["els"] if e["id"] == "hud"][0]
+check(hud["hidden"] is False, "p. ... the element still reports the bit (shown): a word never moves the layout", hud)
+cell(L8, 24)                                                            # C_ON
+layout(L8, 2)
+check(shown3(L8) == {"c": True, "b": False, "x": False}, "p. C_ON (24) + the bit: the controller UI stays, the XP bar (riding) goes", shown3(L8))
+check(listed3(L8) == {"c": True, "b": False, "x": False}, "p. ... the controller bar listed alone", listed3(L8))
+cell(L8, 30)                                                            # X_ON
+check(shown3(L8) == {"c": True, "b": False, "x": True} and listed3(L8) == {"c": True, "b": False, "x": True},
+      "p. X_ON (30): the XP bar back while the bit holds", shown3(L8))
+cell(L8, 29)                                                            # B_RIDE: follows the bit (set)
+check(shown3(L8) == {"c": True, "b": False, "x": True} and L8.eval('WowCompanionDB.hudsplit.b') is None, "p. B_RIDE (29): the word gone, the bit decides")
+layout(L8, 0)
+check(shown3(L8) == {"c": True, "b": True, "x": True}, "p. ... bit 0: the buffs back")
+check(listed3(L8) == {"c": True, "b": True, "x": True}, "p. ... all three listed, three pieces")
+fixture(L8, "lay_split")
+cell(L8, 25)                                                            # C_OFF
+check(shown3(L8) == {"c": False, "b": True, "x": True} and listed3(L8) == {"c": False, "b": True, "x": True},
+      "p. C_OFF (25): the controller UI alone hidden; buffs and XP bar listed, each its own piece", shown3(L8))
+# each piece moves alone (the editor open: the buffs selected and moved, the XP bar not)
+cell(L8, 37)
+d = fresh(L8)
+bcol = piece(d, "g.BuffFrame").get("c")
+x0 = gpts(L8, "MainStatusTrackingBarContainer")
+cell(L8, bcol)
+catch(L8, 1200, 400)
+ease(L8)
+check(gpts(L8, "BuffFrame") != ("TOPRIGHT", "TOPRIGHT", -240, -14) and gpts(L8, "MainStatusTrackingBarContainer") == x0,
+      "p. the buffs moved on their own (the XP bar where it was)", (gpts(L8, "BuffFrame"), x0))
+cell(L8, 36)
+cell(L8, 39)
+b1 = gpts(L8, "BuffFrame")
+# the game re-anchors the buffs (StatusTrayManager.UpdateTrayAndBuffFrameLayout, its default place) and the XP bar (its layout update)
+L8.execute('IN_SECURE = true; BuffFrame:ClearAllPointsBase(); BuffFrame:SetPointBase("TOPRIGHT", UIParent, "TOPRIGHT", -205, -13); IN_SECURE = false')
+L8.execute('tick(0.5); advance(0.01)')
+check(gpts(L8, "BuffFrame") == ("TOPRIGHT", "TOPRIGHT", b1[2] + 35, b1[3] + 1),
+      "p. the game re-anchoring the buffs (the tray manager): its new place read as the base, our offset back on", (gpts(L8, "BuffFrame"), b1))
+# a word in a fight: alpha only, no breach
+viol8 = int(L8.eval('#VIOL'))
+L8.execute('advance(3.1); fire("PLAYER_REGEN_DISABLED"); COMBAT = true')
+cell(L8, 31)                                                            # X_OFF in a fight
+check(alpha(L8, "MainStatusTrackingBarContainer") == 0 and int(L8.eval('#VIOL')) == viol8, "p. X_OFF in a fight: hidden at once (alpha), no breach")
+L8.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.1)')
+# the game gives a hidden rider its alpha back (a level-up's flash): only a hidden group's frame is zeroed again
+L8.execute('MainStatusTrackingBarContainer:SetAlpha(1); BuffFrame:SetAlpha(1); WowCompanion.hub.ridersCheck()')
+check(alpha(L8, "MainStatusTrackingBarContainer") == 0 and alpha(L8, "BuffFrame") == 1, "p. the riders' check zeroes the hidden XP bar, leaves the shown buffs")
+check(lua_errors(L8, errs8) == [] and int(L8.eval('#VIOL')) == 0, "p. clean", (lua_errors(L8, errs8)[:3], int(L8.eval('#VIOL'))))
+# stored words at a login, without the app: applied at the login's snapshot
+L9, errs9 = world(GAMEPRE + 'WowCompanionDB = WowCompanionDB or {}; WowCompanionDB.hudsplit = { b = "off" }\n')
+L9.execute(GAMEPOST + SPLITPOST)
+L9.execute('pcall(WowCompanion.nbarSet, false)')
+L9.execute('WowCompanion.snapshot("heartbeat"); advance(0.1)')
+check(shown3(L9) == {"c": True, "b": False, "x": True}, "p. a login with a stored word: the buffs hidden without the app", shown3(L9))
+L10, errs10 = world(GAMEPRE)
+L10.execute(GAMEPOST + SPLITPOST)
+L10.execute('pcall(WowCompanion.nbarSet, false)')
+L10.execute('WowCompanion.hudHide(); WowCompanion.snapshot("heartbeat"); advance(0.1)')
+check(alpha(L10, "GamepadMainActionBarFrame") == 0, "p. no word: the heartbeat never touches a part (/wchud hide stays)")
+check(lua_errors(L9, errs9) == [] and lua_errors(L10, errs10) == [], "p. clean (stored)", (lua_errors(L9, errs9)[:3], lua_errors(L10, errs10)[:3]))
+
 # ================================================================ the fixtures (the app's LayoutModelTest / LayoutShotsTest read them)
 os.makedirs(FIXDIR, exist_ok=True)
 stale = []
@@ -1133,7 +1274,7 @@ for name, text in sorted(FIX.items()):
             fh.write(text)
     elif old != text:
         stale.append(name)
-check(len(FIX) == 11 and not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX),
+check(len(FIX) == 13 and not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX),
       stale[:4])
 
 print("%s (%d pass, %d fail)" % ("ALL PASS" if fails == 0 else "FAILURES", passes, fails))

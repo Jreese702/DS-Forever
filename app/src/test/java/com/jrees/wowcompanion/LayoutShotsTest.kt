@@ -269,6 +269,27 @@ class LayoutShotsTest {
         shot(q, "layout_game_queued")
     }
 
+    // ---------------------------------------------------------------- split-hud: the buffs, the controller bar and the XP bar apart
+    /** the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar" -> "Both": three pieces in the list, each picked
+     *  and moved on its own; the buffs hidden by their tile = no Buffs piece, the other two stay (shots layout_split*) */
+    @Test fun theSplitPartsAreThreePieces() {
+        val v = page("lay_split")
+        val e = v.editor
+        val three = listOf("g.GamepadMainActionBarFrame", "g.BuffFrame", "g.MainStatusTrackingBarContainer")
+        for (id in three) assertTrue(id, e.tiles().any { it.id == id })
+        shot(v, "layout_split")
+        e.tile = e.tiles().indexOfFirst { it.id == "g.MainStatusTrackingBarContainer" }
+        lay(v)
+        v.padKey("PAD1")
+        assertEquals("the XP bar picked alone", "g.MainStatusTrackingBarContainer", e.picked)
+        lay(v)
+        shot(v, "layout_split_xp_picked")
+        val nb = page("lay_split_nobuffs")
+        assertTrue(nb.editor.tiles().none { it.id == "g.BuffFrame" })
+        assertTrue(nb.editor.tiles().any { it.id == "g.GamepadMainActionBarFrame" } && nb.editor.tiles().any { it.id == "g.MainStatusTrackingBarContainer" })
+        shot(nb, "layout_split_nobuffs")
+    }
+
     // ---------------------------------------------------------------- the Settings row
     @Test fun settingsShowsLayoutFirstOnTopScreen() {
         art()

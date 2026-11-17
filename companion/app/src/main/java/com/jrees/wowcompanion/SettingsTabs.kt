@@ -106,7 +106,9 @@ object SettingsTabs {
         // tiles): Navigation's third tile, drawn by Navigation's GameUiSection part (it was SettingsView's row)
         POLESTAR_TOP(Group.NAVIGATION, "Polestar on the top screen", listOf("Polestar on the top screen"), Drawer.GAME_UI),
         GAME_UI(Group.WINDOWS, "Game windows", listOf("Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window",
-            "Game tooltips", "Cast bar", "Player frame", "Target frame", "Controller bars, buffs and XP",
+            "Game tooltips", "Cast bar", "Player frame", "Target frame",
+            // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): three tiles where one was
+            "Controller UI", "Buffs", "XP bar",
             // hub61: the damage meter, the Cooldown Manager and its four parts (its band's lines)
             "Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars"), Drawer.GAME_UI),
         // ---- Controller

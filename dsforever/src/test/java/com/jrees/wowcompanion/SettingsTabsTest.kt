@@ -84,7 +84,7 @@ class SettingsTabsTest {
             G.PARTY to listOf("DS party frames", "Party frames"),
             G.NAVIGATION to listOf("Compass bar", "Compass follows the camera", "World markers", "Polestar on the top screen"),
             G.WINDOWS to listOf("Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window", "Game tooltips", "Cast bar",
-                "Player frame", "Target frame", "Controller bars, buffs and XP",
+                "Player frame", "Target frame", "Controller UI", "Buffs", "XP bar",
                 // hub61: the damage meter, the Cooldown Manager and its four parts
                 "Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars"),
             G.BUTTONS to listOf("ABXY location", "Button glyphs", "B: pet follow"),       // the user, 2026-11-16: B on Home, a pet class only
@@ -172,8 +172,10 @@ class SettingsTabsTest {
             // hub61 (the user, 2026-11-17: "DPS meters and also the cooldown manager"): Top screen > Game windows
             listOf("Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars")
         val now = B.values().flatMap { it.rows }
+        // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): one row is three
+        val split = before - "Controller bars, buffs and XP" + listOf("Controller UI", "Buffs", "XP bar")
         // the layout editor (the user, 2026-11-16): HUD height and HUD scale are its page's now (its own row "Edit layout" opens it)
-        assertEquals((before - setOf("HUD height", "HUD scale") + "Edit layout").toSet(), now.toSet())
+        assertEquals((split - setOf("HUD height", "HUD scale") + "Edit layout").toSet(), now.toSet())
         assertEquals("a row in two places", now.size, now.toSet().size)
     }
 
@@ -230,6 +232,7 @@ class SettingsTabsTest {
         assertEquals(listOf("off", "low", "high"), Settings.AVOID_DANGER)
         // Top screen > Game windows: the approved order, by the rows' own ids
         assertEquals(listOf("minimap", "tracker", "chat", "dialogs", "loot", "hidetips", "castbar", GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud",
+            "buffs", "xp",                                           // split-hud: the controller UI's riders right after it
             GameUi.DMG_ID, GameUi.CDM_ID),                           // hub61: the meters after the controller bars
             GameUiSection.WINDOWS_ORDER)
     }
@@ -364,13 +367,13 @@ class SettingsPreviewRowsTest {
     @Test fun everyTopTileHasAPicture() {
         val missing = GameUiTiles.ALL.filter { it !in GameUiTiles.PICTURED }
         assertTrue("Top screen tiles with no picture: $missing", missing.isEmpty())
-        assertEquals(22, GameUiTiles.ALL.size)                       // hub61: + Damage meter, Cooldown Manager, Edit layout
+        assertEquals(24, GameUiTiles.ALL.size)                       // hub61: + Damage meter, Cooldown Manager, Edit layout; split-hud: + Buffs, XP bar
         val word = TopWords.WORD
         val shown = GameUiTiles.ALL + GameUiTiles.EXTRAS.values.flatten()
         assertEquals("each once", shown.size, shown.toSet().size)
         // (hub61: "Edit layout" is a tile now, the meters and the Cooldown Manager's four parts rows; HUD height / scale in the editor)
         val topRows = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP }.flatMap { it.rows }
-        assertEquals(32, topRows.size)
+        assertEquals(34, topRows.size)
         assertEquals(topRows.toSet(), shown.map { word.getValue(it) }.toSet())
         // and group by group: a group's tiles and their bands' rows are that group's rows
         for ((g, ids) in GameUiTiles.TILES) {
@@ -439,7 +442,7 @@ object TopWords {
         GameUiSection.COMPASS_CAM_ID to "Compass follows the camera", GameUi.WM_ID to "World markers", GameUiTiles.PS_ID to "Polestar on the top screen",
         "minimap" to "Minimap", "tracker" to "Quest tracker", "chat" to "Chat window", "dialogs" to "NPC windows", GameUiSection.LOOT_ID to "Loot window",
         GameUiSection.TIPS_ID to "Game tooltips", GameUi.CASTBAR_ID to "Cast bar", GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame",
-        "hud" to "Controller bars, buffs and XP", GameUi.DMG_ID to "Damage meter", GameUi.CDM_ID to "Cooldown Manager",
+        "hud" to "Controller UI", HudSplit.BUFFS_ID to "Buffs", HudSplit.XP_ID to "XP bar", GameUi.DMG_ID to "Damage meter", GameUi.CDM_ID to "Cooldown Manager",
         GameUi.CDM_ESS_ID to "Essential", GameUi.CDM_UTIL_ID to "Utility", GameUi.CDM_BICON_ID to "Buff icons", GameUi.CDM_BBAR_ID to "Buff bars",
         GameUiTiles.LAYOUT_ID to "Edit layout")
 }

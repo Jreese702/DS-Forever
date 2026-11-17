@@ -160,7 +160,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
 
     /** a tile's or a band row's row now, by its id: an element's even before the game reports it (known = false); null = not reported */
     private fun rowOf(id: String): GameUi.Row? = when (id) {
-        "minimap", "hud", "tracker", "chat", "dialogs" -> GameUi.elementRow(id)
+        "minimap", "hud", "tracker", "chat", "dialogs", HudSplit.BUFFS_ID, HudSplit.XP_ID -> GameUi.elementRow(id)
         LOOT_ID -> lootRow(); COMPASS_ID -> compassRow(); COMPASS_CAM_ID -> compassCamRow(); TIPS_ID -> tipsRow(); RINGS_ID -> ringsRow()
         GameUiTiles.PS_ID -> polestarRow()
         GameUi.CASTBAR_ID -> GameUi.castBarRow(); GameUi.HUD_ID -> GameUi.hudRow(); GameUi.PET_ID -> GameUi.petRow()
@@ -413,7 +413,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
 
     /** the choices a tile's own line offers: the game's elements their modes (the minimap's While tracking, the bars' Nintendo), the
      *  rest On / Off */
-    private fun modesOf(id: String): List<UiMode> = if (UiElements.of(id) != null) UiElements.modesFor(id)
+    private fun modesOf(id: String): List<UiMode> = if (UiElements.of(id) != null || id in HudSplit.EXTRA) UiElements.modesFor(id)
         else if (id == GameUi.DMG_ID) listOf(UiMode.ON, UiMode.OFF, UiMode.DYNAMIC)          // hub61: Dynamic = a fight and 15 s after
         else listOf(UiMode.ON, UiMode.OFF)
 
@@ -856,7 +856,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         return when (r.mode) {
             UiMode.ON -> "The game keeps it on the top screen."
             UiMode.OFF -> "Hidden while the companion is on this screen."
-            UiMode.DYNAMIC -> if (UiElements.of(r.id)?.onHome == true)
+            UiMode.DYNAMIC -> if (UiElements.of(r.id)?.onHome == true || r.id in HudSplit.EXTRA)
                 "Hidden only while the $room room or Home is showing." else "Hidden only while the $room room is showing."
             UiMode.TRACKING -> "Shown while Find Herbs, Minerals or Treasure is on."
             UiMode.NINTENDO -> "DS Forever's bar replaces the game's on the top screen: the layer you hold, Nintendo buttons, cooldowns."
@@ -983,7 +983,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         const val STATUS_ROW_H = STATUS_TOP + ROW_H
         /** Top screen > Game windows' order (the user's approved list): the game's elements and our switches by id */
         val WINDOWS_ORDER = listOf("minimap", "tracker", "chat", "dialogs", LOOT_ID, TIPS_ID, GameUi.CASTBAR_ID, GameUi.PLAYER_ID,
-            GameUi.TARGET_ID, "hud", GameUi.DMG_ID, GameUi.CDM_ID)
+            GameUi.TARGET_ID, "hud", HudSplit.BUFFS_ID, HudSplit.XP_ID, GameUi.DMG_ID, GameUi.CDM_ID)
         const val SLOP = 24f
         /** a tile's name: Friz 25, shrunk to fit down to 18, then cut */
         const val NAME_SIZE = 25f

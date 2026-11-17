@@ -22,7 +22,8 @@ object GameUi {
     private var appCtx: Context? = null
     private val listeners = ArrayList<() -> Unit>()
 
-    private val policy = GameUiPolicy({ tracking }) { id -> mode(id) }
+    /** split-hud: the layout bit of the "hud" element carries the three parts' riding mode ([hudBitMode]) */
+    private val policy = GameUiPolicy({ tracking }) { id -> if (id == HudSplit.CONTROLLER_ID) hudBitMode() else mode(id) }
     /** hub11: the game's cast bar (its own Show / Hide, not a layout bit) */
     private val castBar = CastBarPolicy()
     /** hub13 HUD MODE: the game's player / target frames hidden, per character; the hub document's hud.hidden (null = no row) */
@@ -72,15 +73,77 @@ object GameUi {
 
     fun mode(id: String): UiMode {
         val def = UiElements.of(id)?.default ?: UiMode.ON
-        val s = prefs?.getString("mode.$id", null) ?: return def
-        return try { UiMode.valueOf(s) } catch (_: Throwable) { def }
+        val saved = prefs?.getString("mode.$id", null)?.let { s -> runCatching { UiMode.valueOf(s) }.getOrNull() }
+        // split-hud: the buffs and the XP bar rode the controller bars' mode until the split; until one is picked it still comes from there
+        if (id in HudSplit.EXTRA) return HudSplit.migrate(saved, mode(HudSplit.CONTROLLER_ID))
+        return saved ?: def
     }
 
     /** the user picked a mode: one touch, so at most one tap follows */
     fun setMode(id: String, m: UiMode) {
-        prefs?.edit()?.putString("mode.$id", m.name)?.apply()
+        val ed = prefs?.edit() ?: return
+        // split-hud: a part picked = the parts are separate from now on: the others keep the mode they show now (never follow this one)
+        if (id in HudSplit.PARTS) for (o in HudSplit.EXTRA) if (o != id && prefs?.contains("mode.$o") != true) ed.putString("mode.$o", mode(o).name)
+        ed.putString("mode.$id", m.name).apply()
         reconcile()
         changed()
+    }
+
+    // ------------------------------------------------------------------ split-hud: the controller UI, the buffs, the XP bar
+
+    /** the hub document's `hs` (Hub.lua hs1): each part's word ("on" / "off" / "ride"), each part hidden now, the bit, the columns;
+     *  null = an add-on set before the split (the controller tile alone, the bit as before) */
+    data class Hs(val words: Map<String, String>, val hidden: Map<String, Boolean>, val bit: Boolean, val n: Int, val cols: Map<String, Int>)
+    @Volatile private var hs: Hs? = null
+
+    fun hsFrom(o: JSONObject?): Hs? = o?.let { h ->
+        val cols = HashMap<String, Int>()
+        h.optJSONObject("cols")?.let { c -> for (k in c.keys()) cols[k] = c.optInt(k, -1) }
+        val words = HashMap<String, String>(); val hid = HashMap<String, Boolean>()
+        for ((id, l) in HudSplit.LETTER) {
+            words[id] = HudSplit.norm(if (h.has(l) && !h.isNull(l)) h.optString(l) else null)
+            hid[id] = h.optBoolean(l + "h", false)
+        }
+        Hs(words, hid, h.optBoolean("bit", false), h.optInt("n", 0), cols)
+    }
+
+    /** the three parts' modes now */
+    private fun partModes(): Map<String, UiMode> = HudSplit.PARTS.associateWith { mode(it) }
+    /** the mode the "hud" bit carries: the parts' riding one; an add-on before the split: the controller tile's, exactly as before */
+    fun hudBitMode(): UiMode = if (hs == null) mode(HudSplit.CONTROLLER_ID) else HudSplit.riding(partModes().values)
+    /** each part's word for the add-on */
+    fun hsWant(modes: Map<String, UiMode> = partModes()): Map<String, String> {
+        val r = HudSplit.riding(modes.values)
+        return modes.mapValues { (_, m) -> HudSplit.word(m, r) }
+    }
+    /** the split's tap on "lay" now, or null (the add-on's words already the chosen ones) */
+    fun hsCol(h: Hs, modes: Map<String, UiMode> = partModes()): Int? = HudSplit.col(h.cols, h.words, hsWant(modes))
+
+    private val PART_LABELS = mapOf(HudSplit.BUFFS_ID to "Buffs", HudSplit.XP_ID to "XP bar")
+
+    /** a part's tile row (the controller UI's too, once the add-on has the split); null = no such part / the controller with an older set */
+    fun partRow(id: String): Row? {
+        if (id !in HudSplit.PARTS) return null
+        val info = UiElements.of(HudSplit.CONTROLLER_ID) ?: return null
+        val el = state?.els?.firstOrNull { it.id == info.id }
+        val m = mode(id)
+        val label = PART_LABELS[id] ?: info.label
+        val home = roomOf(info.home)
+        val h = hs
+        if (h == null && id == HudSplit.CONTROLLER_ID) return null
+        if (h == null || el == null)
+            return Row(id, label, home, m, el != null, false, if (state == null) "Waiting for the game" else "The game does not offer this yet")
+        val now = h.hidden[id] == true
+        if (id == HudSplit.CONTROLLER_ID && m == UiMode.NINTENDO) return Row(id, label, home, m, true, now, nbarNote(sw?.nbar))
+        val want = HudSplit.wantsHidden(m, room.name, visible)
+        val steady = if (now) "Hidden now" else "On the top screen now"
+        val note = when {
+            now == want -> steady
+            HudSplit.norm(h.words[id]) != hsWant()[id] -> "Sent"
+            // the word stands: the bit's own state says (sent, held for combat, refused ...)
+            else -> note(el, hudBitMode()).let { n -> if (n == "Hidden now" || n == "On the top screen now") steady else n }
+        }
+        return Row(id, label, home, m, true, now, note)
     }
 
     // ------------------------------------------------------------------ from the hub
@@ -543,13 +606,17 @@ object GameUi {
     private var mtTapN = -1
     /** the meters' one tap: the Settings room holding (the row "lay" on the pad), the editor closed, after the add-on's answer or 1.5 s */
     private fun mtStep(ctx: Context, s: HubState?, live: Boolean, now: Long) {
-        val m = mt ?: return
+        val m = mt
+        val h = hs
+        if (m == null && h == null) return
         if (character == null || s == null || !live || !s.current || now < helloAt + GameUiPolicy.SETTLE_MS) return
         if (pad?.optJSONObject("rows")?.has(MT_ROW) != true || layOpen()) return
-        val col = mtCol(m, dmgChosen(), cdmChosen(), partsChosen()) ?: return
-        if (m.n == mtTapN && now - mtTapAt <= 1500L) return
+        // split-hud: the parts' words first (the same row, one tap at a time), then the meters'
+        val col = h?.let { hsCol(it) } ?: m?.let { mtCol(it, dmgChosen(), cdmChosen(), partsChosen()) } ?: return
+        val n = (m?.n ?: 0) + (h?.n ?: 0)
+        if (n == mtTapN && now - mtTapAt <= 1500L) return
         if (now - swTapAt < 300L) return                                  // one tap at a time: a switch's tap just went
-        mtTapN = m.n; mtTapAt = now
+        mtTapN = n; mtTapAt = now
         GameInput.tap(ctx, pad, MT_ROW, col)
     }
     /** the game's own option for the damage meter (or the Cooldown Manager) is off: the choice waits ("Off in the game's Options") */
@@ -645,6 +712,8 @@ object GameUi {
         }
         // hub61: the damage meter and the Cooldown Manager (absent from an older add-on set: "..." tiles, no taps)
         mt = mtFrom(h.optJSONObject("mt"))
+        // split-hud: the controller UI, the buffs and the XP bar (absent from an older add-on set: the controller tile alone)
+        hs = hsFrom(h.optJSONObject("hs"))
         val prd = h.optJSONObject("prd")
         prdY = prd?.let { if (it.has("y")) it.optInt("y") else null }
         if (prd != null) {
@@ -761,11 +830,14 @@ object GameUi {
               val known: Boolean, val hidden: Boolean, val note: String)
 
     /** the elements to list: what the game reports, and always the minimap */
-    fun rows(): List<Row> = UiElements.KNOWN.mapNotNull { info -> elementRow(info.id)?.takeIf { it.known || info.id == "minimap" } }
+    fun rows(): List<Row> = UiElements.KNOWN.mapNotNull { info -> elementRow(info.id)?.takeIf { it.known || info.id == "minimap" } } +
+        HudSplit.EXTRA.mapNotNull { id -> partRow(id)?.takeIf { it.known } }       // split-hud: the buffs and the XP bar
 
     /** one element's row whether the game reports it or not (known = false until it does): Top screen's tiles keep a fixed place for
      *  every element (the user's 2026-11-16 tile grid: a dim "..." tile until the game reports, no reflow); null = no such element */
     fun elementRow(id: String): Row? {
+        if (id in HudSplit.EXTRA) return partRow(id)
+        if (id == HudSplit.CONTROLLER_ID) partRow(id)?.let { return it }           // split-hud: the add-on has the split
         val info = UiElements.of(id) ?: return null
         val el = state?.els?.firstOrNull { it.id == info.id }
         val m = mode(info.id)

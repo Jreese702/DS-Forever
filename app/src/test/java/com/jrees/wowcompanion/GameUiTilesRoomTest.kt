@@ -36,6 +36,10 @@ import java.io.File
  * picture options"): Game windows' Damage meter (On / Off / Dynamic) and Cooldown Manager (its four parts in its band, gone while Off),
  * the game's option off (GAME_OFF), Layout's Edit layout tile (A opens the editor's page, no band); shots top_16..25 (22..24 the cursor,
  * 25 the OLED / Dark themes).
+ *
+ * split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar" -> "Both"): Game windows' Controller UI,
+ * Buffs and XP bar, three tiles with their own pictures and modes; a pick sends that part's word on "lay" (the add-on's hs); with
+ * SPLIT_HUD_SHOTS_DIR set, the three tiles, their bands (es / fr too) and their pictures.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -126,7 +130,16 @@ class GameUiTilesRoomTest {
         LayoutModel.Live.note(JSONObject(f.readText()))
     }
 
-    private fun game(hudHidden: Boolean = false, chatHidden: Boolean = true, pending: Boolean = false, mt: JSONObject? = mtDoc()) {
+    /** split-hud: the hub document's `hs` as Hub.lua's HS.doc() writes it (words: null = ride) */
+    private fun hsDoc(c: String? = null, b: String? = null, x: String? = null, ch: Boolean = false, bh: Boolean = false, xh: Boolean = false) =
+        JSONObject().put("v", "hs1").put("n", 0).apply {
+            c?.let { put("c", it) }; b?.let { put("b", it) }; x?.let { put("x", it) }
+            if (ch) put("ch", true); if (bh) put("bh", true); if (xh) put("xh", true)
+        }.put("cols", JSONObject().put("C_ON", 24).put("C_OFF", 25).put("C_RIDE", 26).put("B_ON", 27).put("B_OFF", 28).put("B_RIDE", 29)
+            .put("X_ON", 30).put("X_OFF", 31).put("X_RIDE", 32))
+
+    private fun game(hudHidden: Boolean = false, chatHidden: Boolean = true, pending: Boolean = false, mt: JSONObject? = mtDoc(),
+                     hs: JSONObject? = hsDoc(ch = hudHidden, bh = hudHidden, xh = hudHidden)) {
         GameUi.character = "Sample-Realm"
         val cols = JSONObject()
         listOf("PLAYER_SHOW", "PLAYER_HIDE", "TARGET_SHOW", "TARGET_HIDE", "NP_OFF", "NP_ON", "PRD_OFF", "PRD_ON", "WM_OFF", "WM_ON",
@@ -143,6 +156,7 @@ class GameUiTilesRoomTest {
             .put("cb", JSONObject().put("hidden", true)).put("sw", sw)
             .put("prd", JSONObject().put("y", -350).put("w", 280).put("s", 100))
         if (mt != null) hub.put("mt", mt)
+        if (hs != null) hub.put("hs", hs)
         GameUi.onHub(JSONObject().put("hub", hub), true)
         GameUi.onVisible(true)                                          // the companion on the bottom screen (its choices hold)
         HomeLootSwitch.note(JSONObject().put("proof", JSONObject().put("lootc", JSONObject().put("top", false).put("on", 1).put("off", 2))))
@@ -157,7 +171,7 @@ class GameUiTilesRoomTest {
         for (o in listOf(HomeLootSwitch, CompassSwitch, TipsSwitch, RingsSwitch))
             o::class.java.getDeclaredField("state").apply { isAccessible = true }.set(o, null)
         LayoutModel.Live.clearForTest()
-        for (f in listOf("sw", "state", "castBarHidden", "prdY", "prdW", "prdS", "prefs", "mt"))
+        for (f in listOf("sw", "state", "castBarHidden", "prdY", "prdW", "prdS", "prefs", "mt", "hs"))
             GameUi::class.java.getDeclaredField(f).apply { isAccessible = true }.set(GameUi, null)
         GameUi.character = null
         Tr.setChoice(app, "auto")
@@ -186,12 +200,12 @@ class GameUiTilesRoomTest {
         // a tap on a heading folds nothing
         r.toggle(SettingsTabs.Group.TARGET)
         assertEquals(groups.toSet(), r.open)
-        // 20 tiles with Polestar not in use and no layout editor (hub61: + the damage meter and the Cooldown Manager); before the game:
-        // every one a "..." tile but the elements' (their choice known)
-        assertEquals(20, tileBoxes(r).size)
-        // the layout editor's document: its Layout group shows, one tile (21; 22 with Polestar)
+        // 22 tiles with Polestar not in use and no layout editor (hub61: + the damage meter and the Cooldown Manager; split-hud: +
+        // Buffs and XP bar); before the game: every one a "..." tile but the elements' (their choice known)
+        assertEquals(22, tileBoxes(r).size)
+        // the layout editor's document: its Layout group shows, one tile (23; 24 with Polestar)
         layDoc(); r.refreshGroups(); lay(r)
-        assertEquals(21, tileBoxes(r).size)
+        assertEquals(23, tileBoxes(r).size)
         assertEquals(GameUiTiles.LAYOUT_ID, tileBoxes(r).keys.first())
         // Controller > Combat helpers keep their rows
         assertTrue(r.gameUis.filter { it.part == GameUiSection.Part.COMBAT || it.part == GameUiSection.Part.AUTO_SHOT }.none { it.tiled })
@@ -202,8 +216,8 @@ class GameUiTilesRoomTest {
         val r = room()
         val w = tileBoxes(r)
         val win = GameUiTiles.slots(SettingsTabs.Group.WINDOWS, false).map { w.getValue(it) }
-        assertEquals(12, win.size)
-        // hub61: 5 + 5 + 2
+        assertEquals(14, win.size)
+        // hub61: 5 + 5 + 2; split-hud: 5 + 5 + 4
         assertEquals(3, win.map { it.top }.distinct().size)
         for (b in win) { assertEquals(GameUiTiles.TILE_W, b.width(), 0.5f); assertEquals(GameUiTiles.TILE_H, b.height(), 0.01f) }
         assertEquals(16f, win[0].left, 0.5f)
@@ -431,8 +445,8 @@ class GameUiTilesRoomTest {
         }
     }
 
-    /** the 22-tile walk: every tile a stop, in reading order (Edit layout first, the meters Game windows' last row) */
-    @Test fun theCursorWalksAllTwentyTwoTiles() {
+    /** the 24-tile walk: every tile a stop, in reading order (Edit layout first, the meters Game windows' last row) */
+    @Test fun theCursorWalksAllTwentyFourTiles() {
         ThirdPartyAddons::class.java.getDeclaredField("noFetch").apply { isAccessible = true }.setBoolean(null, true)
         val dirF = ThirdPartyAddons::class.java.getDeclaredField("dir").apply { isAccessible = true }
         val stateF = ThirdPartyAddons::class.java.getDeclaredField("stateJ").apply { isAccessible = true }
@@ -443,7 +457,7 @@ class GameUiTilesRoomTest {
             Settings.init(app); Settings.polestarGuide = PolestarGuide.ON
             val r = room(); game(); layDoc(); r.refreshGroups(); lay(r); hold(r)
             val boxes = tileBoxes(r)
-            assertEquals(22, boxes.size)
+            assertEquals(24, boxes.size)
             assertEquals(GameUiTiles.ALL.toSet(), boxes.keys)
             val seen = LinkedHashSet<String>()
             press(r, "PADDDOWN")
@@ -693,6 +707,104 @@ class GameUiTilesRoomTest {
             dirF.set(ThirdPartyAddons, savedDir); stateF.set(ThirdPartyAddons, savedState)
             Settings.polestarGuide = null
         }
+    }
+
+    // ---------------------------------------------------------------- split-hud: the three tiles
+
+    /** the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar" -> "Both": three tiles where one was, each its
+     *  own mode; the old choice carried over until one is tapped; the others then keep theirs; a pick's word sent on "lay"; an add-on set
+     *  before the split: the buffs and the XP bar wait ("..."), the controller tile as before */
+    @Test fun theBuffsAndTheXpBarAreTilesOfTheirOwn() {
+        // a player from before the split: Controller bars saved Dynamic (written as that build wrote it)
+        app.getSharedPreferences("gameui", android.content.Context.MODE_PRIVATE).edit().putString("mode.hud", UiMode.DYNAMIC.name).commit()
+        val r = room()
+        game()
+        lay(r)
+        val boxes = tileBoxes(r)
+        for (id in HudSplit.PARTS) assertTrue(id, boxes.containsKey(id))
+        assertEquals("the old mode carried over", UiMode.DYNAMIC, GameUi.elementRow(HudSplit.BUFFS_ID)!!.mode)
+        assertEquals(UiMode.DYNAMIC, GameUi.elementRow(HudSplit.XP_ID)!!.mode)
+        assertEquals(listOf("hud", "buffs", "xp"), GameUiSection.WINDOWS_ORDER.filter { it in HudSplit.PARTS })
+        // the XP bar On: the controller and the buffs keep Dynamic (no longer following the controller tile)
+        GameUi.setMode(HudSplit.XP_ID, UiMode.ON)
+        GameUi.setMode("hud", UiMode.OFF)
+        assertEquals(UiMode.DYNAMIC, GameUi.mode(HudSplit.BUFFS_ID))
+        assertEquals(UiMode.ON, GameUi.mode(HudSplit.XP_ID))
+        // the bit rides Dynamic; the controller stands off, the XP bar on: their words; the buffs ride
+        assertEquals(UiMode.DYNAMIC, GameUi.hudBitMode())
+        assertEquals(mapOf("hud" to "off", "buffs" to "ride", "xp" to "on"), GameUi.hsWant())
+        val h = GameUi.hsFrom(hsDoc())!!
+        assertEquals("the controller's word first: C_OFF", 25, GameUi.hsCol(h))
+        assertEquals("then the XP bar's: X_ON", 30, GameUi.hsCol(GameUi.hsFrom(hsDoc(c = "off"))!!))
+        assertNull(GameUi.hsCol(GameUi.hsFrom(hsDoc(c = "off", x = "on"))!!))
+        // the tile says "Sent" until the add-on's word and state match, then its state
+        val sent = GameUi.elementRow(HudSplit.XP_ID)!!
+        assertEquals("On the top screen now", sent.note)                        // shown, as chosen
+        game(hs = hsDoc(c = "off", x = "on", ch = true)); lay(r)
+        assertEquals("Hidden now", GameUi.elementRow("hud")!!.note)
+        assertEquals(GameUiTiles.Badge.OFF, GameUiTiles.badge(GameUi.elementRow("hud")))
+        assertEquals(GameUiTiles.Badge.ON, GameUiTiles.badge(GameUi.elementRow(HudSplit.XP_ID)))
+        // an add-on set before the split: the two new tiles wait, the controller tile is the old element's row
+        game(hs = null); lay(r)
+        assertEquals(GameUiTiles.Badge.WAITING, GameUiTiles.badge(GameUi.elementRow(HudSplit.BUFFS_ID)))
+        assertEquals("the bit as before: the controller tile's mode", UiMode.OFF, GameUi.hudBitMode())
+        assertEquals("Controller UI", GameUi.elementRow("hud")!!.label)
+    }
+
+    /** the three tiles drawn (SPLIT_HUD_SHOTS_DIR): the Game windows grid, each band open, Spanish and French, the pictures */
+    @Test fun splitHudShots() {
+        val out = System.getenv("SPLIT_HUD_SHOTS_DIR")?.let { File(it) } ?: return
+        out.mkdirs()
+        val r = room()
+        val sc = SettingsRoom::class.java.getDeclaredField("scroll")
+        fun scroll(to: Int) { (sc.apply { isAccessible = true }.get(r) as android.widget.ScrollView).scrollTo(0, to); lay(r) }
+        fun shot(name: String) {
+            lay(r); Thread.sleep(250); lay(r)
+            val b = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+            val c = Canvas(b); c.drawColor(Theme.ink); r.draw(c)
+            File(out, "$name.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        fun reveal(id: String) {
+            val p = partOf(r, id); val top = contentTop(r, p)!!
+            val t = tileBoxes(r).getValue(id)
+            val bottom = p.bandBox()?.let { it.bottom + top } ?: t.bottom
+            val sv = sc.apply { isAccessible = true }.get(r) as android.widget.ScrollView
+            GameUiTiles.reveal(sv.scrollY.toFloat(), sv.height.toFloat(), t.top - SettingsPad.REVEAL_TOP, bottom + SettingsPad.REVEAL_BOTTOM)
+                ?.let { scroll(it.toInt().coerceAtLeast(0)) }
+        }
+        fun open(id: String) {
+            val p = partOf(r, id); val t = tileBoxes(r).getValue(id)
+            tap(p, t.centerX(), t.centerY() - contentTop(r, p)!!); lay(r)
+            reveal(id)
+            Thread.sleep(400); org.robolectric.shadows.ShadowLooper.idleMainLooper(); lay(r)
+        }
+        fun close() { r.gameUis.forEach { it.closeSelection() }; lay(r) }
+        // the player's split: the controller UI Dynamic, the buffs On, the XP bar Off (the add-on caught up)
+        GameUi.setMode("hud", UiMode.DYNAMIC); GameUi.setMode(HudSplit.BUFFS_ID, UiMode.ON); GameUi.setMode(HudSplit.XP_ID, UiMode.OFF)
+        game(hs = hsDoc(b = "on", x = "off", xh = true)); lay(r)
+        reveal(HudSplit.XP_ID); shot("split_1_game_windows")
+        open("hud"); shot("split_2_band_controller_ui")
+        close(); open(HudSplit.BUFFS_ID); shot("split_3_band_buffs")
+        close(); open(HudSplit.XP_ID); shot("split_4_band_xp_bar")
+        for (l in listOf("es", "fr")) {
+            listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
+                .firstOrNull { it.canRead() }?.let { Tr.load(l, it.readText()) }
+            Tr.setChoice(app, l); close(); reveal(HudSplit.XP_ID); shot("split_5_$l")
+            open(HudSplit.BUFFS_ID); shot("split_6_${l}_band_buffs")
+        }
+        Tr.setChoice(app, "auto")
+        // the three pictures at the band's size (the controller On and Nintendo)
+        val cw = 438; val ch = 220; val pad = 14; val label = 30
+        val looks = listOf("hud" to UiMode.ON, "hud" to UiMode.NINTENDO, HudSplit.BUFFS_ID to UiMode.ON, HudSplit.XP_ID to UiMode.ON)
+        val sheet = Bitmap.createBitmap(2 * (cw + pad) + pad, 2 * (ch + label + pad) + pad, Bitmap.Config.ARGB_8888)
+        val c = Canvas(sheet); c.drawColor(Color.rgb(40, 40, 40))
+        val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 22f }
+        for ((i, e) in looks.withIndex()) {
+            val x = pad + (i % 2) * (cw + pad); val y = pad + (i / 2) * (ch + label + pad)
+            TilePictures.draw(c, app, e.first, RectF(x.toFloat(), y.toFloat(), (x + cw).toFloat(), (y + ch).toFloat()), TilePictures.Look(mode = e.second, cls = "SHAMAN"))
+            c.drawText("${GameUiTiles.NAMES[e.first]}  ${e.second}", x.toFloat(), (y + ch + 24).toFloat(), tp)
+        }
+        File(out, "split_7_pictures.png").outputStream().use { sheet.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     // ---------------------------------------------------------------- the renders (UIMENUS_SHOTS_DIR)

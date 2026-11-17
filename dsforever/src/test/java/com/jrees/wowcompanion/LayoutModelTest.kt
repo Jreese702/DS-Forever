@@ -163,6 +163,22 @@ class LayoutModelTest {
         assertTrue(d.gset)
     }
 
+    /** split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar" -> "Both"): the add-on's real
+     *  documents (tools/test_layout.py p.) - the controller bar, the buffs and the XP bar three pieces, each listed while it is shown,
+     *  each its own column; the buffs hidden by their tile leave the controller bar and the XP bar listed */
+    @Test fun theBuffsTheControllerBarAndTheXpBarAreThreePieces() {
+        val t = LayoutModel.tiles(doc("lay_split")).filter { it.game }
+        val three = listOf("g.GamepadMainActionBarFrame", "g.BuffFrame", "g.MainStatusTrackingBarContainer")
+        for (id in three) assertTrue(id, t.any { it.id == id })
+        assertEquals("each its own select column", 3, t.filter { it.id in three }.map { it.col }.toSet().size)
+        assertEquals(listOf("Controller bar", "Buffs", "XP bar"), three.map { LayoutModel.labelOf(it) })
+        assertEquals(listOf("Action bars", "Game UI", "Game UI"), three.map { id -> LayoutModel.groupOf(t.first { it.id == id }).label })
+        val nb = LayoutModel.tiles(doc("lay_split_nobuffs")).map { it.id }
+        assertTrue("the controller bar stays listed", "g.GamepadMainActionBarFrame" in nb)
+        assertTrue("the XP bar stays listed", "g.MainStatusTrackingBarContainer" in nb)
+        assertFalse("the hidden buffs are no tile", "g.BuffFrame" in nb || "g.DebuffFrame" in nb)
+    }
+
     @Test fun aChangeInAFightSaysItWaits() {
         val q = doc("lay_queued")
         assertEquals(1, q.queued)
