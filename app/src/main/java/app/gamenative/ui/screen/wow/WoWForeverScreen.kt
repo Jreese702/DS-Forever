@@ -239,7 +239,7 @@ fun WoWForeverScreen(
         versionStatus = withContext(Dispatchers.IO) { WowClientDownloader.checkVersion(File(gamePath), region) }
         isCheckingVersion = false
         // the switched-to region is this install's build already: nothing downloads, nothing to stop
-        if (versionStatus?.isOutdated != true && !isUpdating) regionSwitch = null
+        if (versionStatus?.isOutdated == false && !isUpdating) { regionSwitch = null; com.jrees.wowcompanion.GameRegion.settle(context) }
     }
 
     fun checkVersionStatus() {
@@ -737,6 +737,7 @@ fun WoWForeverScreen(
                     }
                 }
                 regionSwitch = null; updateStop.set(false)
+                com.jrees.wowcompanion.GameRegion.settle(context)
                 checkFiles()
                 versionStatus = versionStatus?.copy(isOutdated = false, localVersion = target.remoteVersion)
                 isUpdating = false
@@ -784,12 +785,17 @@ fun WoWForeverScreen(
     // checked at once (and then updated by itself as any new build is); during an update the check waits for its end
     var regionRecheck by remember { mutableStateOf(false) }
     DisposableEffect(Unit) {
+        // a switch made while this screen was gone (the game screen's Menu; verifier, 2026-11-17): its download gets its Stop too
+        com.jrees.wowcompanion.GameRegion.pending(context)?.let { sw ->
+            setupLog("region: ${sw.to} picked earlier (${sw.by.ifEmpty { "?" }}); its download can be stopped")
+            regionSwitch = sw
+        }
         val l: (String) -> Unit = { code ->
-            val change = com.jrees.wowcompanion.GameRegion.lastChange?.takeIf { it.to == code }
+            // the switch kept on disk (none after a Stop's way back): the FIRST region before it is where Stop goes back to
+            val change = com.jrees.wowcompanion.GameRegion.pending(context)?.takeIf { it.to == code }
             scope.launch(Dispatchers.Main) {
                 setupLog("region: $code picked; checking its build")
-                // a Stop's way back starts no Stop of its own
-                regionSwitch = change?.takeIf { it.by != com.jrees.wowcompanion.GameRegion.BY_STOP }
+                regionSwitch = change
                 // a switch on purpose may start a build that was stopped before (once per build otherwise)
                 if (regionSwitch != null) autoUpdatedFor = null
                 regionRecheck = true
@@ -1039,7 +1045,9 @@ fun WoWForeverScreen(
             PluviaApp.events.off<AndroidEvent.MotionEvent, Boolean>(motion)
             com.jrees.wowcompanion.SetupBridge.launcherActions = null
             com.jrees.wowcompanion.SetupBridge.launcherRefresh = null
-            com.jrees.wowcompanion.SetupBridge.regionCheck = null
+            // the game screen's Menu asks too while the game runs (this screen is gone then): the same install, its path kept
+            val root = currentGamePath()
+            com.jrees.wowcompanion.SetupBridge.regionCheck = { code -> WowClientDownloader.regionNeedsDownload(File(root), code) }
         }
     }
 

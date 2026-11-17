@@ -40,6 +40,8 @@ object GameRegion {
     private const val KEY = "region"
     private const val KEY_BY = "region_by"
     private const val KEY_AT = "region_at"
+    private const val KEY_PEND_FROM = "pending_from"     // "" = no choice made before the switch
+    private const val KEY_PEND_TO = "pending_to"
 
     /** the region the player chose, or null when none was chosen (the install's own region stands) */
     fun chosen(ctx: Context): String? =
@@ -64,6 +66,11 @@ object GameRegion {
         val was = chosen(ctx)
         val e = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, code)
         if (was != code) e.putString(KEY_BY, by).putLong(KEY_AT, System.currentTimeMillis())
+        if (was != code) {
+            val next = nextPending(pendingRaw(ctx), was, code, by)
+            if (next == null) e.remove(KEY_PEND_FROM).remove(KEY_PEND_TO)
+            else e.putString(KEY_PEND_FROM, next.from ?: "").putString(KEY_PEND_TO, next.to)
+        }
         e.apply()
         if (was != code) {
             runCatching { NativeLogin.logEvent("region: ${was ?: "none chosen"} -> $code" + if (by.isNotEmpty()) " ($by)" else "") }
@@ -86,11 +93,46 @@ object GameRegion {
     fun restore(ctx: Context, from: String?, by: String = BY_STOP) {
         if (from != null) return choose(ctx, from, by)
         val was = chosen(ctx) ?: return
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).remove(KEY_BY).remove(KEY_AT).apply()
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).remove(KEY_BY).remove(KEY_AT)
+            .remove(KEY_PEND_FROM).remove(KEY_PEND_TO).apply()
         runCatching { NativeLogin.logEvent("region: $was -> none chosen ($by)") }
         val back = current(ctx)
         lastChange = Change(was, back, by)
         listeners.forEach { runCatching { it(back) } }
+    }
+
+    /**
+     * A SWITCH NOT YET SETTLED (verifier, 2026-11-17): a region picked in the game screen's Menu while the launcher was not up (it is
+     * gone while the game runs) reached no listener, so its download started later with no Stop. The switch is kept on disk until the
+     * launcher settles it ([settle]: its build is in, or there was nothing to download); [pending] gives it back to a launcher that
+     * starts later (even after an app restart). Null when the choice is not that switch's region any more.
+     */
+    fun pending(ctx: Context): Change? {
+        val raw = pendingRaw(ctx) ?: return null
+        if (raw.to != chosen(ctx)) return null
+        return raw.copy(by = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_BY, null) ?: "")
+    }
+
+    /** the launcher is done with the switch: its build is installed, or it was this install's build already */
+    fun settle(ctx: Context) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_PEND_FROM).remove(KEY_PEND_TO).apply()
+    }
+
+    private fun pendingRaw(ctx: Context): Change? {
+        val p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val to = p.getString(KEY_PEND_TO, null) ?: return null
+        return Change(p.getString(KEY_PEND_FROM, "")?.ifEmpty { null }, to, "")
+    }
+
+    /**
+     * The switch kept after a change [was] -> [code] made by [by], with [pending] the one kept before. A Stop's way back keeps none; a
+     * second pick before the first settled keeps the FIRST region as the way back (US -> EU -> Korea: Stop goes back to US), and picking
+     * that first region again is no switch at all. Pure.
+     */
+    fun nextPending(pending: Change?, was: String?, code: String, by: String): Change? {
+        if (by == BY_STOP) return null
+        val from = if (pending != null && pending.to == was) pending.from else was
+        return if (from == code) null else Change(from, code, "")
     }
 
     /** who made the current choice and when (epoch ms; 0 = before this was kept), or null with no choice made */
