@@ -1978,9 +1978,16 @@
 "Download a voice in Add-ons": "Téléchargez une voix dans AddOns",
 "Not downloaded": "Non téléchargé",
 "Smaller and faster. Whisper base by OpenAI, MIT.": "Plus petit et plus rapide. Whisper base d’OpenAI, MIT.",
-"Spanish, French, German and more. Smaller and faster.": "Espagnol, français, allemand et plus. Plus petit et plus rapide."
+"Spanish, French, German and more. Smaller and faster.": "Espagnol, français, allemand et plus. Plus petit et plus rapide.",
+"A friend": "Un ami",
+"has come online": "s'est connecté(e)",
+"has gone offline": "s'est déconnecté(e)",
+"New friend request": "Nouvelle demande d'ami",
+"posted a broadcast": "a publié une annonce",
+"Community invite": "Invitation à une communauté"
 },
 "templates": {
+"Friend requests: %s": "Demandes d'ami : %s",
 "Tell %s:": "Chuchoter à %s :",
 "Region: %s (this install is %s)": "Région : %s (cette installation est %s)",
 "%s isn't loaded yet. Restart the game from DS Forever.": "%s n'est pas encore chargé. Relancez le jeu depuis DS Forever.",

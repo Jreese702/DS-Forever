@@ -30,6 +30,9 @@ package com.jrees.wowcompanion
  *   B                   one step back: a link's view, the menu, the board, the selected line; with nothing open, Home
  * While the KEYBOARD is up it has the buttons ([ChatKeys]: LT delete, RT shift, Start Send, B closes), except X / LB / RB.
  * The bar's SEND stands right of the field while quick chat is up: D-pad right from the field, up from the tiles' right column.
+ * THE WORLD-REFRESH "!" (chat40; the user, 2026-11-16: "the ! notice part should be a button to trigger the refresh"): while Home's
+ * world-refresh notice shows ([Scene.notice]) it stands over the log as the top stop: D-pad up from the top line (from the bar with no
+ * lines), down back into the log; A = the game's Refresh now ([Act.NoticeGo]); B / Y as on a line.
  */
 class ChatPad {
 
@@ -47,6 +50,8 @@ class ChatPad {
         object Field : Focus() { override fun toString() = "Field" }
         /** the bar's Send, right of the field while quick chat is up */
         object Send : Focus() { override fun toString() = "Send" }
+        /** chat40: the world-refresh notice's "!" over the log (while [Scene.notice]) */
+        object Notice : Focus() { override fun toString() = "Notice" }
     }
 
     /** What the module shows right now, as far as the controller needs it. */
@@ -62,6 +67,7 @@ class ChatPad {
         val quickTiles: Int = 12,
         val defaultBoard: Board = Board.KEYS,   // what A on the bar opens (the Settings choice, the user's default: the keyboard)
         val voice: Boolean = false,             // X is voice's (Voice typing on, a microphone): X on the log screen starts it
+        val notice: Boolean = false,            // chat40: the world-refresh notice and its "!" show over the log (the log screen)
     ) {
         /** the checklist's boxes: All and every column's */
         val menuItems: Int get() = 1 + menuCols.sum()
@@ -86,6 +92,8 @@ class ChatPad {
         object Leave : Act() { override fun toString() = "Leave" }
         /** VOICE (the user's pick 2026-11-16): the voice page on the message bar (the keyboard's board, its voice page) */
         object Voice : Act() { override fun toString() = "Voice" }
+        /** chat40: the "!" pressed: the game's Refresh now (Home's route, Chat's chcmd column 1) */
+        object NoticeGo : Act() { override fun toString() = "NoticeGo" }
     }
 
     /** where the cursor is; null before the module shows */
@@ -131,6 +139,8 @@ class ChatPad {
             is Focus.Menu -> if (!s.menu) (beforeMenu ?: Focus.Field) else Focus.Menu(f.m.coerceIn(0, s.menuItems - 1))
             Focus.Field -> Focus.Field
             Focus.Send -> if (s.board == Board.QUICK) Focus.Send else Focus.Field
+            // the notice went (or a board / the menu covers it): the top line, else the bar
+            Focus.Notice -> if (noticeStop(s)) Focus.Notice else if (s.lines > 0) lineFocus(0, s) else Focus.Field
         }
         if (s.menu && focus !is Focus.Menu) focus = Focus.Menu(lastMenu.coerceIn(0, s.menuItems - 1))
     }
@@ -242,16 +252,20 @@ class ChatPad {
         return acts
     }
 
+    /** the "!" is a stop only on the log screen while the notice shows */
+    private fun noticeStop(s: Scene) = s.notice && s.board == Board.NONE && !s.menu
+
     private fun lineFocus(i: Int, s: Scene): Focus = if (i == s.selected && s.links > 0) Focus.Link(i, 0) else Focus.Line(i)
 
     private fun up(f: Focus, s: Scene): Focus = when (f) {
-        is Focus.Line -> lineFocus(maxOf(0, f.i - 1), s)
+        is Focus.Line -> if (f.i == 0 && noticeStop(s)) Focus.Notice else lineFocus(maxOf(0, f.i - 1), s)
         is Focus.Link -> lineFocus(maxOf(0, f.i - 1), s).let { if (f.i == 0) f else it }
         // the top row's right tile goes up to the bar's Send (it stands over it), the others to the field
         is Focus.Quick -> if (f.t >= 3) Focus.Quick(f.t - 3) else if (f.t % 3 == 2) Focus.Send else Focus.Field
         is Focus.Menu -> Focus.Menu(menuMove(f.m, s, 0, -1))
-        Focus.Field -> if (s.lines > 0) lineFocus(s.lines - 1, s) else f
+        Focus.Field -> if (s.lines > 0) lineFocus(s.lines - 1, s) else if (noticeStop(s)) Focus.Notice else f
         Focus.Send -> if (s.lines > 0) lineFocus(s.lines - 1, s) else f
+        Focus.Notice -> f
     }
 
     private fun down(f: Focus, s: Scene): Focus = when (f) {
@@ -264,6 +278,7 @@ class ChatPad {
         Focus.Field -> if (s.board == Board.QUICK) Focus.Quick(lastQuick.coerceIn(0, s.quickTiles - 1)) else f
         // down from Send: back to the phrase picked last (where the cursor came from)
         Focus.Send -> Focus.Quick(lastQuick.coerceIn(0, s.quickTiles - 1))
+        Focus.Notice -> if (s.lines > 0) lineFocus(0, s) else Focus.Field
     }
 
     private fun side(f: Focus, s: Scene, step: Int): List<Act> {
@@ -286,6 +301,7 @@ class ChatPad {
             // changed by left and right on the Dpad in the chat module"): on the log screen, from the bar or a line; a SELECTED
             // line keeps left / right for its links (above)
             is Focus.Line -> if (s.board == Board.NONE && !s.menu) return listOf(Act.Type(step))
+            Focus.Notice -> {}
         }
         return listOf(Act.Glow)
     }
@@ -309,6 +325,7 @@ class ChatPad {
         // a box ticks or unticks; the list stays open for the next (Select, B or Y closes it)
         is Focus.Menu -> listOf(Act.Filter(f.m))
         Focus.Send -> listOf(Act.Send)
+        Focus.Notice -> listOf(Act.NoticeGo)
         // A on the bar: THE INPUT, the one the Settings name (the user, b121: "it should still open with A after opening it"); with
         // quick chat already up, the keyboard (what a phrase put in the bar can be changed there)
         Focus.Field -> when {

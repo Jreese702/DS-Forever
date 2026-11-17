@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat39"     -- chat39 THE 11-16 TEST BUILD MERGE: feat/big-layout tagged chat37 as well (the top chat strip in the layout editor), kept on top of chat38; chat37 THE TOP CHAT STRIP IN THE LAYOUT EDITOR (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"): the strip (chat13, shown while the chat module types) stands at its own place PLUS the layout's offset (TapPad pad22 WC.lay.get("chat"), dx / dy in 1080-line pixels, per character; no size: it is laid out for the screen), and WC.chatTop.lay is the piece Hub's editor gathers (its anchor the strip's TOP-centre: the bottom-centre stood 16 px under the screen's edge, where no tap can reach, so the strip could not be moved sideways from its own place - the review of 2026-11-16); chat38 THE 1.0.33 TEST BUILD MERGE (code 1475): fix/t16-singles and feat/wk-chat both tagged chat37, both kept (the QuestTrail filter of issue #400 = chat37n, the message-type checklist = chat37c); chat37n (issue #400, 2026-11-16: "The chat is constantly spammed with 'No player named (name) (realm) is currently playing'"; its report: QuestTrail installed until that start): the chat25 filter asked for QuestTrail's mode (WC.qtMode), which the app no longer turns on since QuestTrail was retired as a quest-tracking mode (2026-11-12), so a QuestTrail still installed whispered its offline peers unfiltered again. The filter now needs only QuestTrail loaded; nothing of QuestTrail is touched (a chat filter on the game's system lines, registered as before), and an answer to your own whisper still shows; chat37c (the user, 2026-11-16: "the messages filter should work different, instead of filtering to one message type I want it to open a menu where I can check a radio box for all of the message types that I care about seeing so that I can mix and match my preferences"): the app's filter is a checklist of the game's Chat Settings boxes, so the game's experience, honor and reputation lines are mirrored too (CHAT_MSG_COMBAT_XP_GAIN / _HONOR_GAIN / _FACTION_CHANGE as "xp" / "honor" / "rep", plain sentences) and skill-ups are their own "skill" (were "system"), each in the game's ChatTypeInfo colour on the top-screen chat; nothing else changes and nothing is written; chat36 (issue #29 review: "the new error-frame hook is tried only when Chat.lua loads and at the login probe, so early load errors (Interact.lua) can be missed while eh still reads 'hook'"): the hook is tried again at every ADDON_LOADED (the error frame's own add-on may load after ours), and the probe tells "hooked before Interact.lua ran" (eh hook) from "hooked after it started" (eh late: an Interact load error may be missed) and counts every message the hook saw, anyone's (ehN: 0 with errors on screen = the hooked method is not the one the game calls); chat35 (issue #29, streaming: "WowCompanion has been blocked from an action only available to the Blizzard UI" - SetPreferredGamepadInteractTarget(), after a Lua error opened the game's error frame): the game's error handler is NOT wrapped any more. chat33's wrapper made the game's own handler run inside a WowCompanion function for EVERY Lua error (anyone's), so the error frame it opens took the gamepad UI's focus as our code - the chain #29's reporter traced to the blocked gamepad bar. Our errors are now read with a secure post-hook on the error frame's own method (hooksecurefunc: the game's code stays the game's); the probe's eh says "hook" (caught) or "none" (no such method on this client: errors not caught); chat34 (#183 review): the "ours" probe also says how far Interact.lua ran (istage: none / top / guard / cap / end, Interact i153) and its version, and whether the error handler is still ours (eh: ours / other / unset), so "loaded, no capture, no errors" is no longer one answer; chat33 (#183, 1.0.25: "Not able to send messages in chat/guild/whisper/party/etc"; its log: every key, type and send answered ok=0, every room's hold "no controller capture", no Interact document in 15 min): the game never ran DS Forever: Interact, so no room could hold the controller and the chat refused all with "the chat is not open". A refusal now says so ("Interact add-on not running"), and one probe per login ("ours") names each DS Forever add-on the game did not load, with the game's reason, and the first Lua errors from our own files (why it did not load is not in that report); chat32: any /command from the composer runs (the secure cell chcmd, armed at the check); chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
+local CHATV = "chat41"     -- chat41 (the user's picks, 2026-11-16: "Red in the last minute" and "Yes, all of them"): every other Battle.net toast BNToastFrame shows is veiled on the top screen too and copied over Home's chat, as online / offline are: friend requests (BN_FRIEND_INVITE_ADDED; BN_FRIEND_INVITE_LIST_INITIALIZED = the pending count), broadcasts (BN_CUSTOM_MESSAGE_CHANGED: the text only when it is a plain string, else none and the app says the friend posted a broadcast), community invites (CLUB_INVITATION_ADDED_FOR_SELF: the community's name when plain) and the community-finder invite (CLUB_FINDER_APPLICANT_INVITE_RECIEVED, bnet.lua's toast 7, which the game shows whatever its toast settings say); each only when the game itself would toast it (its CVars, read only; online / offline / broadcast also only when the game can read the friend, as its toast does), the name as before (the character, else the BattleTag before "#", never the account name), the game's toast time (toastDuration, read only) sent as hold; {type "notice", kind "bnet", t = "on" | "off" | "invite" | "pending" | "bcast" | "club"}. Nothing is accepted or declined: the toast only informs. The countdown's red in the last minute is the app's (the add-on's urgent, as sent since chat21); chat40 (the user, 2026-11-16: "the Bnet friends coming online pop ups should appear over my chat similar to the world refreesh prompt. both of those should be getting hidden from the top screen. the world refresh prompt should have blue text and the ! notice part should be a button to trigger the refresh."): the game's shard-transfer toast (ShardTransferImminentFrame + its minimize button) and the Battle.net online / offline toasts (BNToastFrame, toastType 1 / 2 only) are veiled on the top screen (alpha 0 on the frame and its pieces, the glow's vertex alpha 0, the mouse off out of combat; never Hide / Show / a CVar); a Battle.net friend's login / logout is a `notice` {kind "bnet", who = the character or the BattleTag's name, never the account name} when the game itself would toast it (its CVars, read only); chcmd's new column 1 is the refresh notice's "!": the game's own Refresh now (C_PlayerInteractionManager.ShardTransferConfirm, not protected) on the player's press (run on the press itself, TapPad pad6b onPress: a release-only cell can be lost after a controller press), answered {kind "shard", op "go"}; chat39 THE 11-16 TEST BUILD MERGE: feat/big-layout tagged chat37 as well (the top chat strip in the layout editor), kept on top of chat38; chat37 THE TOP CHAT STRIP IN THE LAYOUT EDITOR (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"): the strip (chat13, shown while the chat module types) stands at its own place PLUS the layout's offset (TapPad pad22 WC.lay.get("chat"), dx / dy in 1080-line pixels, per character; no size: it is laid out for the screen), and WC.chatTop.lay is the piece Hub's editor gathers (its anchor the strip's TOP-centre: the bottom-centre stood 16 px under the screen's edge, where no tap can reach, so the strip could not be moved sideways from its own place - the review of 2026-11-16); chat38 THE 1.0.33 TEST BUILD MERGE (code 1475): fix/t16-singles and feat/wk-chat both tagged chat37, both kept (the QuestTrail filter of issue #400 = chat37n, the message-type checklist = chat37c); chat37n (issue #400, 2026-11-16: "The chat is constantly spammed with 'No player named (name) (realm) is currently playing'"; its report: QuestTrail installed until that start): the chat25 filter asked for QuestTrail's mode (WC.qtMode), which the app no longer turns on since QuestTrail was retired as a quest-tracking mode (2026-11-12), so a QuestTrail still installed whispered its offline peers unfiltered again. The filter now needs only QuestTrail loaded; nothing of QuestTrail is touched (a chat filter on the game's system lines, registered as before), and an answer to your own whisper still shows; chat37c (the user, 2026-11-16: "the messages filter should work different, instead of filtering to one message type I want it to open a menu where I can check a radio box for all of the message types that I care about seeing so that I can mix and match my preferences"): the app's filter is a checklist of the game's Chat Settings boxes, so the game's experience, honor and reputation lines are mirrored too (CHAT_MSG_COMBAT_XP_GAIN / _HONOR_GAIN / _FACTION_CHANGE as "xp" / "honor" / "rep", plain sentences) and skill-ups are their own "skill" (were "system"), each in the game's ChatTypeInfo colour on the top-screen chat; nothing else changes and nothing is written; chat36 (issue #29 review: "the new error-frame hook is tried only when Chat.lua loads and at the login probe, so early load errors (Interact.lua) can be missed while eh still reads 'hook'"): the hook is tried again at every ADDON_LOADED (the error frame's own add-on may load after ours), and the probe tells "hooked before Interact.lua ran" (eh hook) from "hooked after it started" (eh late: an Interact load error may be missed) and counts every message the hook saw, anyone's (ehN: 0 with errors on screen = the hooked method is not the one the game calls); chat35 (issue #29, streaming: "WowCompanion has been blocked from an action only available to the Blizzard UI" - SetPreferredGamepadInteractTarget(), after a Lua error opened the game's error frame): the game's error handler is NOT wrapped any more. chat33's wrapper made the game's own handler run inside a WowCompanion function for EVERY Lua error (anyone's), so the error frame it opens took the gamepad UI's focus as our code - the chain #29's reporter traced to the blocked gamepad bar. Our errors are now read with a secure post-hook on the error frame's own method (hooksecurefunc: the game's code stays the game's); the probe's eh says "hook" (caught) or "none" (no such method on this client: errors not caught); chat34 (#183 review): the "ours" probe also says how far Interact.lua ran (istage: none / top / guard / cap / end, Interact i153) and its version, and whether the error handler is still ours (eh: ours / other / unset), so "loaded, no capture, no errors" is no longer one answer; chat33 (#183, 1.0.25: "Not able to send messages in chat/guild/whisper/party/etc"; its log: every key, type and send answered ok=0, every room's hold "no controller capture", no Interact document in 15 min): the game never ran DS Forever: Interact, so no room could hold the controller and the chat refused all with "the chat is not open". A refusal now says so ("Interact add-on not running"), and one probe per login ("ours") names each DS Forever add-on the game did not load, with the game's reason, and the first Lua errors from our own files (why it did not load is not in that report); chat32: any /command from the composer runs (the secure cell chcmd, armed at the check); chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -601,6 +601,222 @@ local function noticeTick()
               text = noticeText(left, now) })
 end
 
+-- ---------------------------------------------------------------- chat40: the toasts over the top-screen chat, on the bottom screen
+-- The user (2026-11-16): "the Bnet friends coming online pop ups should appear over my chat similar to the world refreesh prompt.
+-- both of those should be getting hidden from the top screen. the world refresh prompt should have blue text and the ! notice part
+-- should be a button to trigger the refresh."
+-- THE GAME'S TOASTS (this build's UI source): ShardTransferImminentFrame (+ its ShardTransferImminentMinimizeButton) and BNToastFrame,
+-- SocialToastTemplate alert frames over the chat. They are VEILED, never closed: the frame's alpha 0 AND each of its pieces' (the toast's
+-- fade-in drives the frame's own alpha, so the pieces keep the picture away; Interact's loot rule), the glow's vertex alpha 0 (it has a
+-- fade of its own), and the mouse off out of combat (an invisible toast must not take a click: the BN toast's click whispers, the shard
+-- toast's opens the pop-up). Never Hide / Show / SetParent, never a CVar, never a protected frame. The BN toast is veiled only for the
+-- toasts this file mirrors (its own field toastType): chat40 online / offline (1 / 2); chat41 every one bnet.lua has (1 .. 7: broadcast,
+-- pending and new friend requests, community and community-finder invites), so a toast type the game adds later stays the game's.
+-- Nothing is saved: a /reload shows the game's toasts as they were.
+local VEIL = { ShardTransferImminentFrame = "shard", ShardTransferImminentMinimizeButton = "shard", BNToastFrame = "bnet" }
+local veiled = {}           -- frame -> { pieces = { piece -> its alpha before }, glow = { r, g, b, a }, mouse = bool }
+local veilHooked = {}
+local veilN = 0             -- toasts veiled since the login (the probe)
+
+local function veilWanted(fr, kind)
+    if kind ~= "bnet" then return true end
+    local ok, t = pcall(function() return fr.toastType end)
+    -- chat41: every toast bnet.lua knows (BN_TOAST_TYPE_ONLINE 1 .. _CLUB_FINDER_INVITATION 7), all mirrored; an unknown one stays the game's
+    return ok and type(t) == "number" and t >= 1 and t <= 7
+end
+
+local function veil(fr, on)
+    local v = veiled[fr]
+    if on then
+        if not v then
+            v = { pieces = {} }
+            local okM, m = pcall(function() return fr:IsMouseEnabled() end)
+            v.mouse = okM and m or nil
+            veiled[fr] = v
+            veilN = veilN + 1
+        end
+        local function dim(p)
+            if type(p) ~= "table" or type(p.SetAlpha) ~= "function" then return end
+            if v.pieces[p] == nil then
+                local okA, a = pcall(function() return p:GetAlpha() end)
+                v.pieces[p] = (okA and type(a) == "number") and a or 1
+            end
+            pcall(p.SetAlpha, p, 0)
+        end
+        pcall(function() for _, ch in ipairs({ fr:GetChildren() }) do dim(ch) end end)
+        pcall(function() for _, rg in ipairs({ fr:GetRegions() }) do dim(rg) end end)
+        local g = rawget(fr, "glow")
+        if type(g) == "table" and type(g.SetVertexColor) == "function" then
+            if not v.glow then
+                local okG, r, gg, b, a = pcall(function() return g:GetVertexColor() end)
+                v.glow = okG and { r or 1, gg or 1, b or 1, a or 1 } or { 1, 1, 1, 1 }
+            end
+            pcall(g.SetVertexColor, g, v.glow[1], v.glow[2], v.glow[3], 0)
+        end
+        pcall(fr.SetAlpha, fr, 0)
+        if not InCombatLockdown() then pcall(fr.EnableMouse, fr, false) end
+        return
+    end
+    if not v then return end
+    veiled[fr] = nil
+    for p, a in pairs(v.pieces) do pcall(p.SetAlpha, p, a) end
+    local g = rawget(fr, "glow")
+    if v.glow and type(g) == "table" then pcall(g.SetVertexColor, g, v.glow[1], v.glow[2], v.glow[3], v.glow[4]) end
+    pcall(fr.SetAlpha, fr, 1)
+    if v.mouse ~= nil and not InCombatLockdown() then pcall(fr.EnableMouse, fr, v.mouse) end
+end
+
+local function veilCheck(fr, kind)
+    local okP, prot = pcall(function() return fr:IsProtected() end)
+    if okP and prot then return end
+    veil(fr, veilWanted(fr, kind))
+end
+
+local function veilJoin()
+    for name, kind in pairs(VEIL) do
+        local fr = not veilHooked[name] and rawget(_G, name) or nil
+        if type(fr) == "table" and type(fr.HookScript) == "function" then
+            local okP, prot = pcall(function() return fr:IsProtected() end)
+            if not (okP and prot) then
+                veilHooked[name] = true
+                -- a post-hook (HookScript, never SetScript): the game's own show runs, then the veil; the fade-in's start and end too
+                pcall(fr.HookScript, fr, "OnShow", function(self) veilCheck(self, kind) end)
+                local anim = rawget(fr, "animIn")
+                if type(anim) == "table" and type(anim.HookScript) == "function" then
+                    pcall(anim.HookScript, anim, "OnPlay", function() veilCheck(fr, kind) end)
+                    pcall(anim.HookScript, anim, "OnFinished", function() if veiled[fr] then veil(fr, true) end end)
+                end
+                local okS, shown = pcall(function() return fr:IsShown() end)
+                if okS and shown then veilCheck(fr, kind) end
+            end
+        end
+    end
+end
+pcall(veilJoin)
+
+-- THE BATTLE.NET FRIEND NOTICE: the game's BN_FRIEND_ACCOUNT_ONLINE / _OFFLINE (friend id, isCompanionApp), only when the game itself
+-- would toast it (its own settings, READ only: showToastWindow and showToastOnline / showToastOffline; a companion-app login is never
+-- toasted). The name: the character they play, else their BattleTag's name; never the account name (a protected |K string on this
+-- client); none readable = no name (the app says "A friend"). {type "notice", kind "bnet", id, who, bt, on}, once; nothing is kept.
+-- chat41 (the user's pick, 2026-11-16: "Yes, all of them"): EVERY toast bnet.lua's BNToastMixin shows, by its own events and settings
+-- (BNToastEvents: showToastOnline / Offline / ClubInvitation / Broadcast / FriendRequest, under showToastWindow; the club-finder invite
+-- is registered at OnLoad and shown whatever the settings say). t = "on" | "off" (toast 1 / 2), "bcast" (3: who + text, the text only
+-- when the API gives a plain string), "pending" (4: n = the count the game formats), "invite" (5: no data), "club" (6 / 7: name = the
+-- community's name when plain). As the game's ShowToast: online / offline / broadcast only when the friend can be read (its "don't
+-- display a toast if we didn't get the data in time"), a broadcast only with a message ("" = none). hold = the game's toast time
+-- (toastDuration, read only; AlertFrame_SetDuration). Information only: nothing is accepted, declined or opened.
+local bnN = 0
+local function cvarOn(name)
+    local fn = (type(C_CVar) == "table" and C_CVar.GetCVarBool) or _G.GetCVarBool
+    if type(fn) ~= "function" then return true end
+    local ok, v = pcall(fn, name)
+    if not ok or v == nil then return true end   -- unreadable: as the game's default (on)
+    return v and true or false
+end
+local function toastHold()
+    local fn = (type(C_CVar) == "table" and C_CVar.GetCVar) or _G.GetCVar
+    if type(fn) ~= "function" then return nil end
+    local ok, v = pcall(fn, "toastDuration")
+    if not ok then return nil end
+    v = tonumber(str(v) or num(v))
+    return (v and v > 0) and v or nil
+end
+local function bnInfo(id)
+    id = num(id)
+    if not id then return nil end
+    local ok, info = pcall(function() return C_BattleNet.GetAccountInfoByID(id) end)
+    return (ok and type(info) == "table") and info or nil
+end
+local function bnName(info)
+    if type(info) ~= "table" then return nil, nil end
+    local ch = str(type(info.gameAccountInfo) == "table" and info.gameAccountInfo.characterName or nil)
+    if ch and (ch == "" or ch:find("|K", 1, true)) then ch = nil end
+    if ch then return ch, nil end
+    local tag = str(info.battleTag)
+    if tag then tag = tag:match("^[^#]+") end
+    if tag and tag ~= "" and not tag:find("|K", 1, true) then return tag, true end
+    return nil, nil
+end
+-- a value the player wrote (a broadcast, a community's name): only a plain string, never a protected one
+local function plainText(v)
+    v = str(v)
+    if not v or v == "" or v:find("|K", 1, true) then return nil end
+    return v
+end
+local function bnEmit(t, fields)
+    bnN = bnN + 1
+    local d = { type = "notice", v = CHATV, kind = "bnet", id = tostring(session) .. "-bn" .. bnN, t = t, hold = toastHold() }
+    for k, v in pairs(fields or {}) do d[k] = v end
+    WC.emit(d)
+end
+-- the setting each event's toast hangs on (bnet.lua BNToastEvents)
+local BN_CVAR = {
+    BN_FRIEND_ACCOUNT_ONLINE = "showToastOnline", BN_FRIEND_ACCOUNT_OFFLINE = "showToastOffline",
+    CLUB_INVITATION_ADDED_FOR_SELF = "showToastClubInvitation", BN_CUSTOM_MESSAGE_CHANGED = "showToastBroadcast",
+    BN_FRIEND_INVITE_ADDED = "showToastFriendRequest", BN_FRIEND_INVITE_LIST_INITIALIZED = "showToastFriendRequest",
+}
+-- bnet.lua's CLUB_FINDER_APPLICANT_INVITE_RECIEVED: a toast for each community that approved the player's application and that the
+-- player is not in yet (C_ClubFinder reads only)
+local function clubFinderInvites(guids)
+    if type(guids) ~= "table" or type(C_ClubFinder) ~= "table" then return end
+    local approved = type(Enum) == "table" and type(Enum.PlayerClubRequestStatus) == "table" and Enum.PlayerClubRequestStatus.Approved
+    if approved == nil then return end
+    for _, guid in ipairs(guids) do
+        local okB, belongs = pcall(C_ClubFinder.DoesPlayerBelongToClubFromClubGUID, guid)
+        if okB and not belongs then
+            local okI, info = pcall(C_ClubFinder.GetRecruitingClubInfoFromFinderGUID, guid)
+            if okI and type(info) == "table" then
+                local okS, st = pcall(C_ClubFinder.GetPlayerClubApplicationStatus, info.clubFinderGUID)
+                if okS and st ~= nil and st == approved then bnEmit("club", { name = plainText(info.name) }) end
+            end
+        end
+    end
+end
+local function onBnFriend(event, a, b)
+    if event == "CLUB_FINDER_APPLICANT_INVITE_RECIEVED" then return clubFinderInvites(a) end
+    if not cvarOn("showToastWindow") or not cvarOn(BN_CVAR[event] or "showToastWindow") then return end
+    if event == "BN_FRIEND_ACCOUNT_ONLINE" or event == "BN_FRIEND_ACCOUNT_OFFLINE" then
+        if b then return end                                   -- isCompanionApp: never toasted
+        local info = bnInfo(a)
+        if not info then return end                            -- the game's toast needs the friend too
+        local on = event == "BN_FRIEND_ACCOUNT_ONLINE"
+        local who, bt = bnName(info)
+        bnEmit(on and "on" or "off", { who = who, bt = bt, on = on })
+    elseif event == "BN_CUSTOM_MESSAGE_CHANGED" then
+        if a == nil then return end                            -- the player's own broadcast: no toast
+        local info = bnInfo(a)
+        if not info then return end
+        local okE, empty = pcall(function() return info.customMessage == nil or info.customMessage == "" end)
+        if okE and empty then return end                       -- as the game's: no message, no toast
+        local who, bt = bnName(info)
+        bnEmit("bcast", { who = who, bt = bt, text = plainText(info.customMessage) })
+    elseif event == "BN_FRIEND_INVITE_ADDED" then
+        bnEmit("invite")
+    elseif event == "BN_FRIEND_INVITE_LIST_INITIALIZED" then
+        bnEmit("pending", { n = num(a) })
+    elseif event == "CLUB_INVITATION_ADDED_FOR_SELF" then
+        local okN, name = pcall(function() return a.club.name end)
+        bnEmit("club", { name = okN and plainText(name) or nil })
+    end
+end
+
+-- THE "!" OF THE WORLD-REFRESH NOTICE: the player's press on the bottom screen (Chat's chcmd row, column 1, below) is the game's own
+-- "Refresh now" (SHARD_TRANSFER_NOW_BUTTON: C_PlayerInteractionManager.ShardTransferConfirm, the pop-up's button1; not a protected
+-- call, no /reload). Only while a world refresh is on; answered {type "notice", kind "shard", op "go", ok, why}.
+function WC.shardConfirm()
+    local live = notice ~= nil or popupShown("SHARD_TRANSFER_IMMINENT_EVENT") or popupShown("SHARD_TRANSFER_IMMEDIATE")
+    local ok, why = false, nil
+    local api = type(C_PlayerInteractionManager) == "table" and C_PlayerInteractionManager.ShardTransferConfirm or nil
+    if not live then why = "no world refresh"
+    elseif type(api) ~= "function" then why = "the game has no refresh"
+    else
+        ok = pcall(api)
+        if not ok then why = "the game refused" end
+    end
+    WC.emit({ type = "notice", v = CHATV, kind = "shard", id = notice and notice.id or nil, op = "go", ok = ok, why = why })
+    return ok
+end
+
 local owed = 0
 local blockedDue            -- the refusal reporter's counts, further down
 local linkTips              -- the links' tooltips, further down
@@ -610,6 +826,7 @@ C_Timer.NewTicker(1.0, function()
     linkTips()
     topCheck()
     pcall(noticeTick)
+    pcall(veilJoin)             -- chat40: a toast's add-on that loads late
     if dirty then
         dirty = false
         WC.send(WC.encode(document()))
@@ -640,6 +857,12 @@ pcall(function() f:RegisterEvent("PLAYER_LOGIN") end)
 pcall(function() f:RegisterEvent("PLAYER_REGEN_ENABLED") end)
 pcall(function() f:RegisterEvent("ADDON_LOADED") end)      -- the hub is an addon of its own
 pcall(function() f:RegisterEvent("PLAYER_LOGOUT") end)     -- a /reload too: the top chat's last lines are kept (chat14)
+-- chat40: a Battle.net friend's login / logout, for the notice over Home's chat (onBnFriend)
+-- chat41: every other Battle.net toast too (onBnFriend)
+local BN_EVENTS = { BN_FRIEND_ACCOUNT_ONLINE = true, BN_FRIEND_ACCOUNT_OFFLINE = true, BN_CUSTOM_MESSAGE_CHANGED = true,
+                    BN_FRIEND_INVITE_ADDED = true, BN_FRIEND_INVITE_LIST_INITIALIZED = true, CLUB_INVITATION_ADDED_FOR_SELF = true,
+                    CLUB_FINDER_APPLICANT_INVITE_RECIEVED = true }
+for e in pairs(BN_EVENTS) do pcall(function() f:RegisterEvent(e) end) end
 
 -- RIDE THE CORE HEARTBEAT, the way the Quests feed does. WC.snapshot() emits and schedules its
 -- push for the end of the frame; a document sent in this post-hook lands in that same pad
@@ -1661,16 +1884,23 @@ local function joinPad()
         end
     end
     -- chat32: the /command cell (one secure cell, type macro); its press is the send: the line is spent, Send's answer goes back
+    -- chat40: column 1 = the world-refresh notice's "!" (no secure action; no new row, the pad is full). opts.onPress (TapPad pad6b): it
+    -- runs WC.shardConfirm on the PRESS, as a plain cell (a release-only cell can be lost after a controller press, pad5); column 0
+    -- keeps its macro on the release (hasAction)
     if not padRows.chcmd and type(WC.pad.secureRow) == "function" then
-        local ok, row = pcall(WC.pad.secureRow, "chcmd", 1,
-            function(btn) cmdBtn = btn; btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", nil) end,
-            function()
+        local ok, row = pcall(WC.pad.secureRow, "chcmd", 2,
+            function(btn, col)
+                if col == 1 then btn:SetAttribute("type", nil) return end
+                cmdBtn = btn; btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", nil)
+            end,
+            function(col)
+                if col == 1 then return WC.shardConfirm() end
                 local ran = cmdArmed
                 cmdArmed = false
                 if ran then typed.body = "" end
                 if not InCombatLockdown() and cmdBtn then pcall(cmdBtn.SetAttribute, cmdBtn, "macrotext", nil) end
                 tack("send", "chq", 23, ran, (not ran) and "the command was not ready" or nil, true)
-            end)
+            end, { onPress = true })
         padRows.chcmd = ok and row or nil
     end
 end
@@ -1708,16 +1938,19 @@ end
 -- ---------------------------------------------------------------- start
 
 f:SetScript("OnEvent", function(_, event, ...)
-    if event == "ADDON_LOADED" then pcall(hookErrors); pcall(joinHub) return end   -- chat36: the error frame's add-on may load after ours
+    if event == "ADDON_LOADED" then pcall(hookErrors); pcall(joinHub); pcall(veilJoin) return end   -- chat36: the error frame's add-on may load after ours
+    if BN_EVENTS[event] then pcall(onBnFriend, event, ...) return end
     if event == "PLAYER_LOGOUT" then pcall(topSave) return end
     if event == "PLAYER_LOGIN" then
         pcall(topRestore)
         pcall(joinHub)
+        pcall(veilJoin)
         joinPad()
         ride()
         WC.send(WC.encode({ type = "cap", probe = "chat", v = CHATV, s = session,
                             missingEvents = missing, mods = modifiers(), hub = hubbed, chq = padRows.chq ~= nil,
-                            typing = padRows.chr ~= nil and padRows.chs ~= nil }))
+                            typing = padRows.chr ~= nil and padRows.chs ~= nil, veils = veilN,
+                            veiled = (function() local t = {} for n in pairs(veilHooked) do t[#t + 1] = n end table.sort(t) return t end)() }))
         reportStyle()
         talkChanged()
         C_Timer.After(2, function() pcall(function() WC.send(WC.encode(WC.oursProbe())); WC.push() end) end)

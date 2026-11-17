@@ -242,6 +242,33 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
     private var notice = ""
     private var noticeUntil = 0L
 
+    /**
+     * chat40 (the user, 2026-11-16: "the ! notice part should be a button to trigger the refresh"): Home's world-refresh notice and its
+     * Battle.net notices, drawn over the top of the log (HomeView owns them and draws them, as on its chat pane). The "!" is touch here
+     * and a controller stop ([ChatPad.Focus.Notice]: up from the top line, A presses it).
+     */
+    interface WorldNotice {
+        /** the refresh notice (its "!") shows */
+        fun live(): Boolean
+        /** anything shows (the refresh notice or a Battle.net notice) */
+        fun shows(): Boolean
+        /** draws at the top of [r]; [bang] set to the "!" box (empty = none); [v] asked for the next frames. Returns the height used */
+        fun draw(c: Canvas, r: RectF, focused: Boolean, bang: RectF, v: View): Float
+        /** the "!" pressed: the game's Refresh now */
+        fun go()
+    }
+    var world: WorldNotice? = null
+    private val worldBang = RectF()
+    private var onWorldBang = false
+    /** the log's top inset under the notices (px), so no line hides under them */
+    private var worldInset = 0
+
+    /** Home's notices changed: the cursor leaves a "!" that went, and the log redraws */
+    fun worldChanged() {
+        if (pad.focus != null) { val was = pad.focus; pad.settle(scene()); if (pad.focus != was) refreshBack() }
+        invalidate()
+    }
+
     // ---- the parts
     private val head = Head(c)
     private val list = ListView(c)
@@ -1086,6 +1113,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             quickTiles = ChatLinks.TILES,
             defaultBoard = defaultBoard(),
             voice = VoiceUi.micShown(context),
+            notice = !morphOn && world?.live() == true,
         )
     }
 
@@ -1142,6 +1170,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             is ChatPad.Act.ViewAct -> viewAction(act.k)
             ChatPad.Act.Leave -> onLeave()
             ChatPad.Act.Voice -> startVoice()
+            ChatPad.Act.NoticeGo -> world?.go()
         }
         afterAct()
     }
@@ -1205,9 +1234,10 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
                 android.graphics.Shader.TileMode.CLAMP)
             canvas.drawRect(r.left, r.top, r.right, r.top + 70f, fadePaint)
         }
-        if (morphOn) return                     // along Home's glide: the lines only
+        if (morphOn) { worldBang.setEmpty(); return }        // along Home's glide: the lines only
         barMarks(canvas)
         linkMarks(canvas)
+        drawWorld(canvas)
         drawView(canvas)
         drawMenu(canvas)
         drawNotice(canvas)
@@ -1411,6 +1441,29 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
 
     private val dot = Paint(Paint.ANTI_ALIAS_FLAG)
     private val noticePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val worldGround = Paint()
+
+    /** chat40: Home's notices over the top of the log, on the log screen only (the input screen's board covers the log) */
+    private fun drawWorld(c: Canvas) {
+        val w = world
+        val on = w != null && w.shows() && board == Board.NONE && inputK < 0.5f && list.visibility == View.VISIBLE
+        var h = 0
+        if (on) {
+            val log = logRect()
+            val r = RectF(log.left + 20f, log.top + 8f, log.right - 20f, log.bottom)
+            worldGround.color = Theme.ink
+            c.save(); c.clipRect(log)
+            // the ground first (a line still under them before the log's inset lands), then the notices; their height is that inset
+            if (worldInset > 0) c.drawRect(log.left, log.top, log.right, log.top + worldInset, worldGround)
+            val used = w!!.draw(c, RectF(r), pad.focus == Focus.Notice, worldBang, this)
+            c.restore()
+            h = (used + 4f).toInt()
+        } else worldBang.setEmpty()
+        if (h != worldInset) {
+            worldInset = h
+            post { list.setPadding(list.paddingLeft, worldInset, list.paddingRight, list.paddingBottom) }
+        }
+    }
 
     private fun drawNotice(c: Canvas) {
         if (noticeUntil == 0L || notice.isEmpty()) return
@@ -1428,6 +1481,14 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
 
     /** a finger on the menu or a view's action; anywhere else with the menu open closes it */
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        // chat40: a touch that starts on the world-refresh "!" is its press (the game's Refresh now), with a little slack round it
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) onWorldBang = !worldBang.isEmpty && world?.live() == true &&
+            RectF(worldBang).apply { inset(-10f, -10f) }.contains(e.x, e.y)
+        if (onWorldBang) {
+            if (e.actionMasked == MotionEvent.ACTION_UP) { onWorldBang = false; world?.go() }
+            if (e.actionMasked == MotionEvent.ACTION_CANCEL) onWorldBang = false
+            return true
+        }
         if (e.actionMasked == MotionEvent.ACTION_DOWN && board == Board.NONE && micHit?.contains(e.x, e.y) == true) { startVoice(); return true }
         if (e.actionMasked == MotionEvent.ACTION_DOWN) {
             menuBox?.let { box ->
