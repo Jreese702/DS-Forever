@@ -15,6 +15,11 @@
 -- exactly as they are, because every action works on one stack at a time. Sorting and a merged
 -- "clean" view may come later as toggles; the wire stays per-slot either way.
 --
+-- bags-take2 (the same report, review of bags-take1): the retry and the 1 s check skipped on ctl.left, and ctl.left was cleared only by a
+-- successful take, so a leave from an EARLIER visit (another room "taken" -- the user was in the Spellbook / Controller rooms just
+-- before -- Home's "free", B) stopped every later retry: the bags stayed on top again. A fresh bag open (the bags were closed) and the
+-- room's touch entry now start a new visit (ctl.left = nil); a leave during the visit still stops the take back as before.
+--
 -- bags-take1 (the user, 2026-11-16, test build 1478:
 -- "read my DS my bag is behaving weird and opening the bag on top for some reason"; the top screen showed the GAME's Combined Backpack, the bottom our room with no cursor, the log "note=take-skip-window"
 -- three times with no NPC window up): the open-window state (ctx, set by MERCHANT_SHOW / MAIL_SHOW ...) was cleared ONLY by its
@@ -4144,7 +4149,12 @@ function WC._bagsDoorsLive()
     return doors.open ~= nil and doors.close ~= nil and not doors.stale and not InCombatLockdown()
 end
 
-local function onBagsShown() ctl.open = true; syncDoors(); tryTake(true) end
+-- bags-take2: a FRESH open (the bags were closed) is a new entry: an earlier visit's leave ("taken" by the Spellbook room, Home's
+-- "free", B, a touch leave) no longer stops this visit's retry or the 1 s check (ctl.left is a leave of THIS visit only)
+local function onBagsShown()
+    if not ctl.open and not ctl.on then ctl.left = nil end
+    ctl.open = true; syncDoors(); tryTake(true)
+end
 local function onBagsHidden()
     syncDoors()
     if #shownBagFrames() > 0 then return end        -- another bag window is still open
@@ -4338,6 +4348,7 @@ end
 
 function WC._bagsTouch(col)
     if col == TOUCH_IN then
+        if not ctl.on then ctl.left = nil end   -- bags-take2: entering the room is a new visit (an earlier leave no longer holds)
         tryTake(ctl.open)                   -- the game's bags already open: that is the window's take
     elseif col == TOUCH_OUT then
         if ctl.on then leave("room") else DE.resume = nil end       -- bags-de1: the room left under a loot pop-up: no take back

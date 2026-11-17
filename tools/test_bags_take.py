@@ -10,6 +10,7 @@ WowCompanion/Bags.lua in Lua 5.1 with stand-in game frames and checks:
   - any other listed window shown (QuestFrame, e.g. kept at alpha 0): named, and taken on its OnHide; the close event retries too;
   - the open event a moment before its frame shows (the 1 s grace): still skipped ("ctx-merchant");
   - the bags closed while waiting, or the room left by touch: no take back;
+  - bags-take2: a leave from an EARLIER visit (taken / free / B) does not stop a later visit's retry or 1 s check;
   - read-only: no binding / macro / CVar / window call.
 Run: python -B tools/test_bags_take.py
 """
@@ -149,7 +150,7 @@ HOLDER = nil
 SPEC = nil
 CAPV = CAPV or 21
 WowCompanion.capture = { version = CAPV, take = function(_, spec) SPEC = spec; TAKES = (TAKES or 0) + 1; return true end, pass = function() return true end,
-                         release = function() return true end, state = function() return { holder = HOLDER } end,
+                         release = function() return true end, state = function() return { holder = rawget(_G, "HOLDER") } end,
                          chord = function() return true end, refused = function() return false end }
 function press(k) SPEC.press(k); run(0) end
 function doc() return WowCompanion._bagsCtlDoc() end
@@ -244,8 +245,36 @@ L = runtime()
 L.execute('show("MerchantFrame"); show("ContainerFrameCombinedBags"); WowCompanion._bagsTouch(28); run(0); hide("MerchantFrame")')
 check(not on(L) and L.eval('TAKES') == 0, "Home freed the room while waiting: the window hides, nothing taken", L.eval('TAKES'))
 
+# 6. bags-take2 (review): an EARLIER visit's leave (another room took the pad, Home's free, B) must not stop this visit's retry
+for prior, how in (("taken", 'SPEC.lost("taken"); run(0)'), ("free", 'WowCompanion._bagsTouch(28); run(0)'), ("B", 'SPEC.lost("B"); run(0)')):
+    L = runtime()
+    L.execute('show("ContainerFrameCombinedBags")')
+    L.execute(how)
+    L.execute('hide("ContainerFrameCombinedBags"); NOW = NOW + 60')
+    L.execute('show("GossipFrame"); show("ContainerFrameCombinedBags")')
+    n1 = note(L)
+    L.execute('NOW = NOW + 3; hide("GossipFrame")')
+    check(n1 == "take-skip-window:GossipFrame" and on(L),
+          "an earlier visit left by %s, later a GossipFrame skip: taken when it hides" % prior, (n1, note(L)))
+# ... and the 1 s check too (holder nil, no window hook involved): a stale leave from the earlier visit no longer stops it
+L = runtime()
+L.execute('show("ContainerFrameCombinedBags"); SPEC.lost("taken"); run(0); hide("ContainerFrameCombinedBags"); NOW = NOW + 60')
+L.execute('WIN.QuestFrame.shown = true; show("ContainerFrameCombinedBags"); WIN.QuestFrame.shown = false')
+L.execute('for _, t in ipairs(TICKS) do t() end; run(0)')
+check(on(L), "an earlier visit lost to another room, this visit skipped (window hid without its OnHide): the 1 s check takes", note(L))
+# a leave DURING this visit still stops the take back (B pressed while waiting)
+L = runtime()
+L.execute('show("ContainerFrameCombinedBags"); SPEC.lost("taken"); run(0); NOW = NOW + 5')
+L.execute('show("GossipFrame"); WowCompanion._bagsTouch(29); run(0); hide("GossipFrame"); for _, t in ipairs(TICKS) do t() end; run(0)')
+check(on(L), "touch entry while the bags stayed open after an earlier 'taken': skip, then taken when the window hides", note(L))
+L = runtime()
+L.execute('show("ContainerFrameCombinedBags"); SPEC.lost("taken"); run(0)')
+L.execute('show("GossipFrame"); hide("GossipFrame"); for _, t in ipairs(TICKS) do t() end; run(0)')
+check(not on(L), "lost to another room during this visit (bags still open, no new entry): no take back", note(L))
+
 check(L.eval('#TRACE') == 0, "read-only: no binding / macro / CVar / window call", L.eval('TRACE[1]'))
 check('"read my DS my bag is behaving weird and opening the bag on top for some reason"' in SRC,
       "Bags.lua's header note quotes the user (bags-take1)")
+check('bags-take2' in SRC, "Bags.lua's header note for bags-take2")
 print('passes %d, failed: %d' % (passes, fails))
 sys.exit(1 if fails else 0)
