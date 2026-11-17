@@ -1999,7 +1999,10 @@
 "Voice: other languages": "Voz: otros idiomas",
 "Speech to text on this device. Whisper base by OpenAI, MIT.": "Voz a texto en este dispositivo. Whisper base de OpenAI, MIT.",
 "Spanish, French, German and more in one file.": "Español, francés, alemán y más en un solo archivo.",
-"Download a voice in Add-ons": "Descarga una voz en Accesorios"
+"Download a voice in Add-ons": "Descarga una voz en Accesorios",
+"Not downloaded": "No descargado",
+"Smaller and faster. Whisper base by OpenAI, MIT.": "Más pequeño y rápido. Whisper base de OpenAI, MIT.",
+"Spanish, French, German and more. Smaller and faster.": "Español, francés, alemán y más. Más pequeño y rápido."
 },
 "templates": {
 "Tell %s:": "Susurrar a %s:",
@@ -2203,6 +2206,8 @@
 "+%s more": "+%s más",
 "Not downloaded · %s": "No descargado · %s",
 "Download failed: %s": "Descarga fallida: %s",
-"Download (%s)": "Descargar (%s)"
+"Download (%s)": "Descargar (%s)",
+"Voice: English · %s": "Voz: inglés · %s",
+"Voice: other languages · %s": "Voz: otros idiomas · %s"
 }
 }

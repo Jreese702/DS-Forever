@@ -103,8 +103,9 @@ class VoiceTypingRowTest {
             assertEquals(VoiceModels.Model.values().toSet(), btns.keys)
             val targets = s.focusTargets()
             for (b in btns.values) { assertTrue(!b.isEmpty); assertTrue(targets.any { it == b }) }
-            assertEquals(listOf("Voice: English", "Voice: other languages"),
-                btns.values.map { b -> s.rowAt(b.centerX(), b.centerY()) }.sortedBy { it != "Voice: English" })
+            assertEquals(VoiceModels.Model.values().map { it.label }.toSet(), btns.values.map { b -> s.rowAt(b.centerX(), b.centerY()) }.toSet())
+            for ((m, b) in btns) assertEquals(m.label, s.rowAt(b.centerX(), b.centerY()))
+            assertEquals(4, btns.size)
             // Download: on the worker; this host refuses, so the row says so in one line
             tap(s, btns.getValue(VoiceModels.Model.EN))
             val until = System.currentTimeMillis() + 10_000

@@ -22,7 +22,7 @@ import java.nio.file.Files
 class VoiceModelsTest {
     private lateinit var dir: File
 
-    /** a small model for the fake host: its bytes, with the pinned size and sha256 swapped for these (the real ones are 148 MB) */
+    /** a small model for the fake host: its bytes, with the pinned size and sha256 swapped for these (the real ones are 60 / 148 MB) */
     private val body = ByteArray(5_000_000) { (it * 31 + 7).toByte() }
     private val sha = java.security.MessageDigest.getInstance("SHA-256").digest(body).joinToString("") { "%02x".format(it.toInt() and 255) }
 
@@ -39,6 +39,14 @@ class VoiceModelsTest {
     // ---------------------------------------------------------------- the pins
 
     @Test fun pinnedFilesSizesAndHashes() {
+        // the quantised pair (the user's pick 2026-11-16 "Offer both"; X-Linked-Size / X-Linked-ETag at the pinned commit, and the
+        // whole files' sha256 matched)
+        assertEquals("ggml-base.en-q5_1.bin", Model.EN_SMALL.file)
+        assertEquals(59_721_011L, Model.EN_SMALL.bytes)
+        assertEquals("4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f", Model.EN_SMALL.sha256)
+        assertEquals("ggml-base-q5_1.bin", Model.MULTI_SMALL.file)
+        assertEquals(59_707_625L, Model.MULTI_SMALL.bytes)
+        assertEquals("422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898", Model.MULTI_SMALL.sha256)
         assertEquals("ggml-base.en.bin", Model.EN.file)
         assertEquals(147_964_211L, Model.EN.bytes)
         assertEquals("a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002", Model.EN.sha256)
@@ -48,11 +56,17 @@ class VoiceModelsTest {
         for (m in Model.values()) {
             assertEquals("https://huggingface.co/ggerganov/whisper.cpp/resolve/${VoiceModels.HF_COMMIT}/${m.file}", m.url)
             assertTrue(m.url.startsWith("https://"))
-            assertEquals("148 MB", m.size)                       // the add-on rows' megabytes (1,000,000 bytes)
+            assertEquals(if (m.small) "60 MB" else "148 MB", m.size)   // the add-on rows' megabytes (1,000,000 bytes)
             assertEquals(64, m.sha256.length)
         }
-        assertEquals(listOf("Voice: English", "Voice: other languages"), Model.values().map { it.title })
-        assertEquals("Not downloaded · 148 MB", VoiceModels.line(Model.EN, State.None))
+        assertEquals(listOf(Model.EN_SMALL, Model.EN, Model.MULTI_SMALL, Model.MULTI), Model.values().toList())
+        assertEquals(listOf("Voice: English · 60 MB", "Voice: English · 148 MB", "Voice: other languages · 60 MB",
+            "Voice: other languages · 148 MB"), Model.values().map { it.label })
+        assertEquals(listOf(false, false, true, true), Model.values().map { it.multi })
+        assertEquals(Model.values().map { it.id }.toSet().size, Model.values().size)
+        assertEquals(listOf(Model.EN, Model.EN_SMALL), VoiceModels.ofKind(false))
+        assertEquals(listOf(Model.MULTI, Model.MULTI_SMALL), VoiceModels.ofKind(true))
+        assertEquals("Not downloaded", VoiceModels.line(Model.EN, State.None))
         assertEquals("Downloading 42%", VoiceModels.line(Model.EN, State.Downloading(42)))
         assertEquals("Ready", VoiceModels.line(Model.MULTI, State.Ready))
         assertEquals("Download failed: offline", VoiceModels.line(Model.MULTI, State.Failed("offline")))

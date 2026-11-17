@@ -85,10 +85,33 @@ class VoiceWhisperTest {
         assertEquals(Model.MULTI to "fr", Voice.whisperModel("fr-FR", multi))
         assertNull(Voice.whisperModel("en", libOnly))
         assertNull(Voice.whisperModel("es", noLib))
-        // the sheet offers the file the app's language wants
-        assertEquals(Model.EN, Voice.wantedModel("en"))
-        assertEquals(Model.MULTI, Voice.wantedModel("es"))
-        assertEquals(Model.MULTI, Voice.wantedModel("fr"))
+        // the sheet offers the small file of the kind the app's language wants ("Download (60 MB)")
+        assertEquals(Model.EN_SMALL, Voice.wantedModel("en"))
+        assertEquals(Model.MULTI_SMALL, Voice.wantedModel("es"))
+        assertEquals(Model.MULTI_SMALL, Voice.wantedModel("fr"))
+        assertEquals("60 MB", Voice.wantedModel("en").size)
+    }
+
+    /** both sizes of a kind (the user's pick 2026-11-16 "Offer both"): the bigger one listens when both are in, else whichever is there */
+    @Test fun biggerModelOfAKindWins() {
+        val enSmall = WhisperOn(lib = true, en = false, multi = false, enSmall = true)
+        val enBoth = WhisperOn(lib = true, en = true, multi = false, enSmall = true)
+        val multiSmall = WhisperOn(lib = true, en = false, multi = false, multiSmall = true)
+        val multiBoth = WhisperOn(lib = true, en = false, multi = true, multiSmall = true)
+        val smalls = WhisperOn(lib = true, en = false, multi = false, enSmall = true, multiSmall = true)
+        assertEquals(Model.EN_SMALL to "en", Voice.whisperModel("en", enSmall))
+        assertEquals(Model.EN to "en", Voice.whisperModel("en", enBoth))
+        assertEquals(Model.MULTI_SMALL to "es", Voice.whisperModel("es", multiSmall))
+        assertEquals(Model.MULTI to "fr", Voice.whisperModel("fr", multiBoth))
+        // the language rule holds: Spanish / French take a multilingual file, small or not, over any English one
+        assertEquals(Model.MULTI_SMALL to "es", Voice.whisperModel("es", smalls))
+        assertEquals(Model.MULTI_SMALL to "fr", Voice.whisperModel("fr", WhisperOn(lib = true, en = true, multi = false, multiSmall = true)))
+        assertEquals(Model.EN_SMALL to "en", Voice.whisperModel("en", smalls))
+        assertEquals(Model.EN_SMALL to "en", Voice.whisperModel("es", enSmall))
+        assertEquals(Model.MULTI_SMALL to "en", Voice.whisperModel("en", multiSmall))
+        assertEquals(Model.EN to "en", Voice.whisperModel("en", WhisperOn(lib = true, en = true, multi = true, enSmall = true, multiSmall = true)))
+        assertNull(Voice.whisperModel("en", WhisperOn(lib = false, en = false, multi = false, enSmall = true, multiSmall = true)))
+        assertEquals(Pick.Whisper(Model.EN_SMALL, "en"), Voice.pick(33, true, emptyList(), enSmall))
     }
 
     @Test fun whisperCleanDropsItsTags() {

@@ -334,7 +334,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         // offline voice's model offered: a download already running (Settings > Add-ons, an earlier page) shows here, and listens when in
         if (s.problem == Voice.Problem.NEED_MODEL) {
             watchModel(s)
-            s.downloading = modelState(sheetModel()).let { it is VoiceModels.State.Downloading || it == VoiceModels.State.Checking }
+            s.downloading = kindBusy()
             invalidate()
         }
         ticking()
@@ -424,11 +424,15 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         invalidate(); onVoice()
     }
 
-    // ---- OFFLINE VOICE'S MODEL from the sheet (the player's press on "Download (148 MB)"): its download, its percentage on the page,
+    // ---- OFFLINE VOICE'S MODEL from the sheet (the player's press on "Download (60 MB)"): its download, its percentage on the page,
     // and listening at once when it is in (unless the sheet has closed)
     private var modelWatch: (() -> Unit)? = null
-    /** the model this sheet offers: the one the app's language wants */
+    /** the model this sheet offers: the small one of the kind the app's language wants */
     private fun sheetModel(): VoiceModels.Model = Voice.wantedModel(Tr.lang())
+    /** a file of the sheet's kind is downloading or being checked (the full one from Settings > Add-ons counts too) */
+    private fun kindBusy(): Boolean = VoiceModels.ofKind(sheetModel().multi).any { m ->
+        modelState(m).let { it is VoiceModels.State.Downloading || it == VoiceModels.State.Checking }
+    }
 
     private fun getModel(s: Voice.Sheet) {
         val m = sheetModel()
@@ -444,11 +448,10 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         val w: () -> Unit = {
             ui.post {
                 if (sheet === s) {
-                    val m = sheetModel()
-                    val st = VoiceModels.state(m)
+                    val kind = VoiceModels.ofKind(sheetModel().multi)
                     when {
-                        st == VoiceModels.State.Ready -> { val (p, a) = probe(s.mode); run(s.modelReady(p, a)) }
-                        st is VoiceModels.State.Downloading || st == VoiceModels.State.Checking -> { s.downloading = true; invalidate(); onVoice() }
+                        kind.any { VoiceModels.state(it) == VoiceModels.State.Ready } -> { val (p, a) = probe(s.mode); run(s.modelReady(p, a)) }
+                        kindBusy() -> { s.downloading = true; invalidate(); onVoice() }
                         else -> { s.downloading = false; invalidate(); onVoice() }
                     }
                 }
@@ -660,10 +663,11 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
             }
             // offline voice's model: which one, and its download's state (its percentage while it runs)
             Voice.State.PROBLEM -> if (s.problem == Voice.Problem.NEED_MODEL) {
-                val m = sheetModel()
+                // the file of the sheet's kind that is downloading (the full one from Add-ons, say), else the small one it offers
+                val m = VoiceModels.ofKind(sheetModel().multi).firstOrNull { modelState(it) !is VoiceModels.State.None } ?: sheetModel()
                 val st = modelState(m)
                 if (st is VoiceModels.State.Downloading || st == VoiceModels.State.Checking) postInvalidateDelayed(250)
-                sub(c, "${Tr.t(m.title)} · ${Tr.t(VoiceModels.line(m, st))}", tx0, y, tx1, body.bottom)
+                sub(c, "${Tr.t(m.label)} · ${Tr.t(VoiceModels.line(m, st))}", tx0, y, tx1, body.bottom)
             }
             else -> {}
         }

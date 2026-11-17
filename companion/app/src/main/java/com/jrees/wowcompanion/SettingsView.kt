@@ -1733,7 +1733,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val addonDrawnRows = HashMap<String, Int>()
 
     // ---- ADD-ONS > VOICE (the user, 2026-11-16: "we could make the per languege downloads part of the addons folder"): offline voice's
-    // model files, in the add-on rows' look - each its size, its state (Not downloaded / Downloading n% / Ready) and Download / Delete
+    // model files (small and full of each kind: the user's pick "Offer both"), in the add-on rows' look - each its size, its state (Not downloaded / Downloading n% / Ready) and Download / Delete
     // (twice, as Uninstall). App files ([VoiceModels]), never the game's AddOns folder; a download only on this press.
     private val voiceModelBtn = HashMap<VoiceModels.Model, RectF>()
 
@@ -1744,7 +1744,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             val st = VoiceModels.state(m)
             if (st is VoiceModels.State.Downloading || st == VoiceModels.State.Checking) postInvalidateDelayed(1000)
             val sub = "${Tr.t(VoiceModels.line(m, st))}. ${Tr.t(m.what)}"
-            voiceModelBtn[m] = row(c, y, m.title, sub, enabled = true) { box ->
+            voiceModelBtn[m] = row(c, y, m.label, sub, enabled = true) { box ->
                 val r = RectF(box.right - 16f - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
                 val armed = addonArmed == "voice.${m.id}" && SystemClock.elapsedRealtime() - addonArmedAt < ARM_MS
                 when (st) {

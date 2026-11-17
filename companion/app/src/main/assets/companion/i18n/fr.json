@@ -1975,7 +1975,10 @@
 "Voice: other languages": "Voix : autres langues",
 "Speech to text on this device. Whisper base by OpenAI, MIT.": "Reconnaissance vocale sur cet appareil. Whisper base d’OpenAI, MIT.",
 "Spanish, French, German and more in one file.": "Espagnol, français, allemand et plus dans un seul fichier.",
-"Download a voice in Add-ons": "Téléchargez une voix dans AddOns"
+"Download a voice in Add-ons": "Téléchargez une voix dans AddOns",
+"Not downloaded": "Non téléchargé",
+"Smaller and faster. Whisper base by OpenAI, MIT.": "Plus petit et plus rapide. Whisper base d’OpenAI, MIT.",
+"Spanish, French, German and more. Smaller and faster.": "Espagnol, français, allemand et plus. Plus petit et plus rapide."
 },
 "templates": {
 "Tell %s:": "Chuchoter à %s :",
@@ -2182,6 +2185,8 @@
 "+%s more": "+%s de plus",
 "Not downloaded · %s": "Non téléchargé · %s",
 "Download failed: %s": "Échec du téléchargement : %s",
-"Download (%s)": "Télécharger (%s)"
+"Download (%s)": "Télécharger (%s)",
+"Voice: English · %s": "Voix : anglais · %s",
+"Voice: other languages · %s": "Voix : autres langues · %s"
 }
 }

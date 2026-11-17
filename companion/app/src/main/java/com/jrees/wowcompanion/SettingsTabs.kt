@@ -119,8 +119,9 @@ object SettingsTabs {
         ADDON_SPOKEN(Group.SPOKEN, "Spoken", ThirdPartyAddons.SPOKEN.rowWords()),
         ADDON_QUESTTRAIL(Group.QUESTTRAIL, "QuestTrail", ThirdPartyAddons.QUESTTRAIL.rowWords()),
         ADDON_MANNERS(Group.MANNERS, "Manners", ThirdPartyAddons.MANNERS.rowWords()),
-        // offline voice (VoiceModels): English, and every other language in one file; shown only in a build with libdsfwhisper.so
-        ADDON_VOICE(Group.VOICE, "Voice", VoiceModels.Model.values().map { it.title }),
+        // offline voice (VoiceModels): English, and every other language in one file, each small and full ("Voice: English · 60 MB");
+        // shown only in a build with libdsfwhisper.so
+        ADDON_VOICE(Group.VOICE, "Voice", VoiceModels.Model.values().map { it.label }),
         // ---- Performance
         FRAMES(Group.FRAMES, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game")),

@@ -90,7 +90,7 @@ class SettingsTabsTest {
             G.SPOKEN to ThirdPartyAddons.SPOKEN.rowWords(),
             G.QUESTTRAIL to ThirdPartyAddons.QUESTTRAIL.rowWords(),
             G.MANNERS to ThirdPartyAddons.MANNERS.rowWords(),
-            G.VOICE to listOf("Voice: English", "Voice: other languages"),
+            G.VOICE to listOf("Voice: English · 60 MB", "Voice: English · 148 MB", "Voice: other languages · 60 MB", "Voice: other languages · 148 MB"),
             G.FRAMES to listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game"),
             G.MEMORY to listOf("Lighter mode", "Low-memory graphics"),
             G.INDOOR to listOf("Build in the background", "Progress", "Route data"),
@@ -156,7 +156,7 @@ class SettingsTabsTest {
             // the user's pick 2026-11-16 (voice to text): General > Look > Voice typing
             listOf("Voice typing") +
             // the user, 2026-11-16 ("we could make the per languege downloads part of the addons folder"): Add-ons > Voice
-            listOf("Voice: English", "Voice: other languages")
+            listOf("Voice: English · 60 MB", "Voice: English · 148 MB", "Voice: other languages · 60 MB", "Voice: other languages · 148 MB")
         val now = B.values().flatMap { it.rows }
         // the layout editor (the user, 2026-11-16): HUD height and HUD scale are its page's now (its own row "Edit layout" opens it)
         assertEquals((before - setOf("HUD height", "HUD scale") + "Edit layout").toSet(), now.toSet())
@@ -226,11 +226,11 @@ class SettingsTabsTest {
 
     /**
      * offline voice's model files (the user, 2026-11-16: "we could make the per languege downloads part of the addons folder"): their own
-     * group on Add-ons, after Manners (Polestar's still opens first), two rows; shown only in a build with libdsfwhisper.so
+     * group on Add-ons, after Manners (Polestar's still opens first), four rows (small and full of each: "Offer both"); shown only in a build with libdsfwhisper.so
      */
     @Test fun voiceModelsAreAnAddOnsGroupOnlyWithTheLibrary() {
         assertEquals(T.ADDONS, G.VOICE.tab)
-        assertEquals(listOf("Voice: English", "Voice: other languages"), B.ADDON_VOICE.rows)
+        assertEquals(listOf("Voice: English · 60 MB", "Voice: English · 148 MB", "Voice: other languages · 60 MB", "Voice: other languages · 148 MB"), B.ADDON_VOICE.rows)
         assertEquals(SettingsTabs.Drawer.VIEW, B.ADDON_VOICE.drawer)
         val was = VoiceModels.offered
         try {

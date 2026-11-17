@@ -13,7 +13,7 @@ import java.util.concurrent.Executors
  * ([Model.MULTI]: Spanish, French, German and more). APP FILES, in the app's own storage ([dir] = files/dsforever/voice), NEVER the game's
  * AddOns folder and never inside the APK.
  *
- * THE RULES: a download starts ONLY on the player's press (Settings > Add-ons' Download, or the voice sheet's "Download (148 MB)"), on
+ * THE RULES: a download starts ONLY on the player's press (Settings > Add-ons' Download, or the voice sheet's "Download (60 MB)"), on
  * any network, the size said first; it is PINNED (Hugging Face ggerganov/whisper.cpp at one commit: its exact size and sha256, read on
  * 2026-11-16 from the whole files); resumed where it stopped ([CdnResume]: Range, 206 appended, 200 from the start, 416 / a wrong resume
  * drop the part) with [CdnRetry]'s retries and more rounds while a round still adds bytes; checked for its size and sha256 before it is
@@ -23,20 +23,35 @@ import java.util.concurrent.Executors
  * Pure but for [init] (the off-device test gives [start] its own folder and network).
  */
 object VoiceModels {
-    /** one model file: its [file] name, the pinned [url], [bytes] and [sha256]; [title] = its Add-ons row */
+    /**
+     * one model file: its [file] name, the pinned [url], [bytes] and [sha256]; [title] = its kind's words, [label] = its Add-ons row.
+     * [multi] = every language (else English only); [small] = the q5_1 quantised file (the user's pick 2026-11-16 "Offer both"):
+     * about 60 MB against 148, a little less exact. The rows' order: English small, English, other languages small, other languages.
+     */
     enum class Model(val id: String, val file: String, val url: String, val bytes: Long, val sha256: String, val title: String,
-                     val what: String) {
+                     val what: String, val multi: Boolean, val small: Boolean) {
+        EN_SMALL("en-q5", "ggml-base.en-q5_1.bin", "$HF/ggml-base.en-q5_1.bin", 59_721_011L,
+            "4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f", "Voice: English",
+            "Smaller and faster. Whisper base by OpenAI, MIT.", multi = false, small = true),
         EN("en", "ggml-base.en.bin", "$HF/ggml-base.en.bin", 147_964_211L,
             "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002", "Voice: English",
-            "Speech to text on this device. Whisper base by OpenAI, MIT."),
+            "Speech to text on this device. Whisper base by OpenAI, MIT.", multi = false, small = false),
+        MULTI_SMALL("multi-q5", "ggml-base-q5_1.bin", "$HF/ggml-base-q5_1.bin", 59_707_625L,
+            "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898", "Voice: other languages",
+            "Spanish, French, German and more. Smaller and faster.", multi = true, small = true),
         MULTI("multi", "ggml-base.bin", "$HF/ggml-base.bin", 147_951_465L,
             "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe", "Voice: other languages",
-            "Spanish, French, German and more in one file.");
-        /** its size in the add-on rows' megabytes (1 MB = 1,000,000 bytes, rounded up): 148 */
+            "Spanish, French, German and more in one file.", multi = true, small = false);
+        /** its size in the add-on rows' megabytes (1 MB = 1,000,000 bytes, rounded up): 60 / 148 */
         val mb: Int get() = ((bytes + 999_999) / 1_000_000).toInt()
         /** "148 MB" */
         val size: String get() = ThirdPartyAddons.size(mb)
+        /** its Add-ons row: "Voice: English · 60 MB" */
+        val label: String get() = "$title · $size"
     }
+
+    /** the [multi] kind's files, the bigger first (the one that listens when both are in) */
+    fun ofKind(multi: Boolean): List<Model> = Model.values().filter { it.multi == multi }.sortedByDescending { it.bytes }
 
     /** what a model file is doing (its row's state) */
     sealed class State {
@@ -50,7 +65,7 @@ object VoiceModels {
 
     /** the row's words for [s] (terse: the Add-ons rows and the voice sheet) */
     fun line(m: Model, s: State): String = when (s) {
-        State.None -> "Not downloaded · ${m.size}"
+        State.None -> "Not downloaded"
         is State.Downloading -> "Downloading ${s.pct}%"
         State.Checking -> "Checking"
         State.Ready -> "Ready"

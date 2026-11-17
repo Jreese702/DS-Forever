@@ -182,30 +182,34 @@ object Voice {
 
     /**
      * OFFLINE VOICE (whisper.cpp, [WhisperNative]; the user, 2026-11-16: "base with optional downloads per language"): [lib] = this build
-     * has libdsfwhisper.so, [en] / [multi] = that model file is on disk and checked ([VoiceModels.ready])
+     * has libdsfwhisper.so, [en] / [multi] = that model file is on disk and checked ([VoiceModels.ready]); [enSmall] / [multiSmall] = the
+     * quantised one of that kind (the user's pick 2026-11-16 "Offer both")
      */
-    data class WhisperOn(val lib: Boolean, val en: Boolean, val multi: Boolean)
+    data class WhisperOn(val lib: Boolean, val en: Boolean, val multi: Boolean, val enSmall: Boolean = false, val multiSmall: Boolean = false)
 
     /**
      * Which model and language offline voice uses for the app's language [appLang] ("en", "es", "fr"): a language that is not English
      * takes the multilingual file when it is there; else the English one ("en"); else the multilingual one in the app's language.
-     * Null = no model on disk (or no library).
+     * Of one kind the bigger file listens when both are in, else whichever is there. Null = no model on disk (or no library).
      */
     fun whisperModel(appLang: String, w: WhisperOn?): Pair<VoiceModels.Model, String>? {
         if (w == null || !w.lib) return null
         val lang = langOf(appLang)
+        val en = if (w.en) VoiceModels.Model.EN else if (w.enSmall) VoiceModels.Model.EN_SMALL else null
+        val multi = if (w.multi) VoiceModels.Model.MULTI else if (w.multiSmall) VoiceModels.Model.MULTI_SMALL else null
         return when {
-            lang != "en" && w.multi -> VoiceModels.Model.MULTI to lang
-            w.en -> VoiceModels.Model.EN to "en"
-            w.multi -> VoiceModels.Model.MULTI to lang
+            lang != "en" && multi != null -> multi to lang
+            en != null -> en to "en"
+            multi != null -> multi to lang
             else -> null
         }
     }
 
     private fun langOf(appLang: String): String = appLang.lowercase().substringBefore('-').ifEmpty { "en" }
 
-    /** the model the voice sheet offers to download for [appLang]: the multilingual one for a language that is not English */
-    fun wantedModel(appLang: String): VoiceModels.Model = if (langOf(appLang) != "en") VoiceModels.Model.MULTI else VoiceModels.Model.EN
+    /** the model the voice sheet offers to download for [appLang]: the small one, multilingual for a language that is not English */
+    fun wantedModel(appLang: String): VoiceModels.Model =
+        if (langOf(appLang) != "en") VoiceModels.Model.MULTI_SMALL else VoiceModels.Model.EN_SMALL
 
     /** what listens */
     sealed class Pick {

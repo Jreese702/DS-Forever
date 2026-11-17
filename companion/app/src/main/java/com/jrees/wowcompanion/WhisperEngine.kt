@@ -146,7 +146,8 @@ class WhisperEngine(context: Context) : ChatKeyboard.VoiceListen {
 
         /** offline voice's state now: the library and which model files are ready */
         fun on(): Voice.WhisperOn = Voice.WhisperOn(WhisperNative.available,
-            VoiceModels.ready(VoiceModels.Model.EN), VoiceModels.ready(VoiceModels.Model.MULTI))
+            VoiceModels.ready(VoiceModels.Model.EN), VoiceModels.ready(VoiceModels.Model.MULTI),
+            VoiceModels.ready(VoiceModels.Model.EN_SMALL), VoiceModels.ready(VoiceModels.Model.MULTI_SMALL))
 
         // ---- THE LOADED MODEL (one, shared by every board; only the work thread loads, runs and frees it)
         private val lock = Any()
