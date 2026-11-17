@@ -67,7 +67,8 @@ class SettingsRoomTest {
             assertTrue(t.label, groups.isNotEmpty())
             // General does not fold (the user, 2026-11-12): every group open. A headless group (Add-ons' Import button, the user
             // 2026-11-16) is always open, with the first group that has a heading
-            val want = if (t.folds) groups.filter { it.headless }.toSet() + groups.first { !it.headless } else groups.toSet()
+            // (Performance: one headless group, no headed one - pick 5 open, the tab still folds)
+            val want = if (t.folds) groups.filter { it.headless }.toSet() + listOfNotNull(groups.firstOrNull { !it.headless }) else groups.toSet()
             assertEquals(t.label, want, r.open)
             for (gb in r.groupBoxes) {
                 val onTab = gb.group in groups

@@ -327,12 +327,17 @@ class PerformanceTilesRoomTest {
         Tr.setChoice(app, "auto")
         // the other presets (OLED black, a dark tint): the wells, the bands and the words on each ground
         for (theme in listOf("oled_bronze", "oled_frost", "dark_rose")) {
-            Theme.use(theme); lay(r)
+            // as the host does on a theme change (CompanionHost: ThemeLive.repaint), so the page's own ScrollView ground follows too
+            Theme.use(theme); ThemeLive.repaint(r, Theme.prev, Theme.cur); lay(r)
             close(); shot("perf_20_${theme}")
             open(r, PerformanceTileModel.LIMIT); shot("perf_21_${theme}_band_frame_limit")
             open(r, PerformanceTileModel.MEM); shot("perf_22_${theme}_band_memory")
         }
-        Theme.use("classic"); lay(r)
+        Theme.use("classic"); ThemeLive.repaint(r, Theme.prev, Theme.cur); lay(r)
+        // streaming set up: the compact row's ONE button live
+        SetupBridge.openStreamSettings = { }
+        close(); lay(r); shot("perf_23_stream_on")
+        SetupBridge.openStreamSettings = null
         // no kit on the phone yet: the drawn pictures (no map tiles, no bar art)
         r = room(kit = false)
         prog.set(r.perf, status(JSONObject().put("phase", "BAKING").put("ready", 148).put("total", 236)))

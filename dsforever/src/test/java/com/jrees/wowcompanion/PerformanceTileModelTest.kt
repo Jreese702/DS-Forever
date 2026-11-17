@@ -99,13 +99,14 @@ class PerformanceTileModelTest {
     @Test fun memoryIsAPackOfThreeLines() {
         val s = PerformanceTileModel.State(lighter = true, lowGfx = false, mapFull = true)
         val lines = M.lines(M.MEM, s)
-        // the line the picture shows first (beside the picture), then the two that do not change it
-        assertEquals(listOf(M.L_MAP, M.L_LIGHTER, M.L_LOWGFX), lines.map { it.key })
-        assertEquals(listOf(0, 0, 1), lines.map { it.chosen })
+        // the design's order (section 6: "Lighter mode, Low-memory graphics, Home map: full detail"); all three stacked beside the
+        // picture, so no line needs to sit next to it first
+        assertEquals(listOf(M.L_LIGHTER, M.L_LOWGFX, M.L_MAP), lines.map { it.key })
+        assertEquals(listOf(0, 1, 0), lines.map { it.chosen })
         assertTrue(lines.all { it.label != null && it.words == listOf("On", "Off") })
         // the 8 / 12 GB Thors: Lighter mode is the model's, its line not drawn; the status line says so
         val fixed = s.copy(lighterFixed = true)
-        assertEquals(listOf(M.L_MAP, M.L_LOWGFX), keys(M.MEM, fixed))
+        assertEquals(listOf(M.L_LOWGFX, M.L_MAP), keys(M.MEM, fixed))
         assertEquals("Lighter mode: always on for this Thor", M.status(M.MEM, fixed))
         assertEquals("Lighter", M.value(M.MEM, fixed))
         assertEquals("Full map", M.value(M.MEM, PerformanceTileModel.State(mapFull = true)))
@@ -128,14 +129,34 @@ class PerformanceTileModelTest {
             M.statusParts(M.INDOOR, PerformanceTileModel.State(progress = "building one 40 yd from you", terrain = "Route data 4 / 9")))
     }
 
-    /** Deferred > List: the reason first and the building's short id; the list's height carries every line and a "+ n" line */
+    /** Deferred > List (verifier 11-18: the hex ids were debug clutter): one line per reason with how many buildings it held back, in
+     *  the bake's order; no building key on screen; the list's height carries every line and a "+ n" line */
     @Test fun deferredListReadsAsReasons() {
-        assertEquals("no floor found" to "b3f2a1c0", M.deferredParts("b3f2a1c0d9e8f7a6b5c4d3e2f1a0b9c8: no floor found"))
-        assertEquals("timed out" to "k1", M.deferredParts("k1: timed out"))
-        assertEquals("odd" to "", M.deferredParts("odd"))
+        val rows = M.deferredRows(listOf("b3f2a1c0d9e8f7a6b5c4d3e2f1a0b9c8: no floor found", "k1: timed out", "77aa1c0d: no floor found", "odd"))
+        assertEquals(listOf("no floor found" to 2, "timed out" to 1, "odd" to 1), rows)
+        assertTrue("no key reaches the screen", rows.none { (w, _) -> w.contains("b3f2") || w.contains("k1") || w.contains("77aa") })
+        assertEquals(4, rows.sumOf { it.second })
+        assertEquals(emptyList<Pair<String, Int>>(), M.deferredRows(emptyList()))
         assertEquals(0f, M.listH(0, 0), 0.01f)
         assertEquals(M.listH(3, 0) + M.LIST_LINE, M.listH(3, 2), 0.01f)
         assertEquals(M.listH(20, 0) - M.listH(1, 0), 19 * M.LIST_LINE, 0.01f)
+    }
+
+    /** verifier 11-18: only a choice's picked button is lit (Top's look for "selected"); a stepper's and an action's buttons are presses,
+     *  never lit (Faster AND Sharper lit read as both picked; Choose / Restart / List as picked states) */
+    @Test fun onlyAPickedChoiceIsLit() {
+        val all = listOf(
+            M.lines(M.FG, PerformanceTileModel.State(hasDll = true, fgOn = true, fgWaits = true)),
+            M.lines(M.LIMIT, PerformanceTileModel.State(limit = 60, limitWaits = true)),
+            M.lines(M.MEM, PerformanceTileModel.State(lighter = true)),
+            M.lines(M.INDOOR, PerformanceTileModel.State(deferred = 2))).flatten()
+        val kinds = all.map { it.kind }.toSet()
+        assertEquals(setOf(PerformanceTileModel.Kind.CHOICE, PerformanceTileModel.Kind.STEPPER, PerformanceTileModel.Kind.ACTION), kinds)
+        for (line in all) for (k in line.words.indices) {
+            val want = line.kind == PerformanceTileModel.Kind.CHOICE && k == line.chosen
+            assertEquals("${line.key} $k", want, M.lit(line, k))
+        }
+        assertTrue(all.filter { it.kind != PerformanceTileModel.Kind.CHOICE }.none { l -> l.words.indices.any { M.lit(l, it) } })
     }
 
     @Test fun badgesAreTopsSet() {
@@ -173,5 +194,24 @@ class PerformanceTileModelTest {
             for (x in lb.buttons) assertTrue(x.w >= M.BTN_MIN - 0.01f)
             assertTrue(lb.buttons.first().l > lb.label!!.r)
         }
+    }
+
+    /** verifier 11-18: a three-line band (Memory's pack) stacks ALL its lines in one column beside the picture (no lone line dropped
+     *  under the picture on the left), the picture centred on them; the long labels ("Home map: full detail") on one line */
+    @Test fun aThreeLineBandStacksBesideThePicture() {
+        val mem = M.band(16f, 0f, 1208f, M.lines(M.MEM, PerformanceTileModel.State()))
+        assertEquals(3, mem.lines.size)
+        val x = mem.lines.map { it.label!!.l }.distinct()
+        assertEquals("one column", 1, x.size)
+        assertTrue("beside the picture", x.single() > mem.picture.r)
+        for (i in 1 until mem.lines.size) assertTrue(mem.lines[i].label!!.t > mem.lines[i - 1].label!!.t)
+        val top = mem.lines.first().label!!.t; val bot = mem.lines.last().label!!.b
+        assertEquals("the picture centred on the lines", (top + bot) / 2f, (mem.picture.t + mem.picture.b) / 2f, 0.5f)
+        assertTrue("one label width, one button column", mem.lines.map { it.buttons.first().l }.distinct().size == 1)
+        assertTrue("room for 'Home map: full detail' on one line", mem.lines.all { it.label!!.w >= 340f })
+        assertTrue(mem.status.t >= bot)
+        // a two-line band and the six-line Frame generation band keep the Top screen's layout
+        val fg = M.band(16f, 0f, 1208f, M.lines(M.FG, PerformanceTileModel.State(hasDll = true, fgOn = true)))
+        assertTrue(fg.lines.any { it.buttons.first().l < fg.picture.r })
     }
 }

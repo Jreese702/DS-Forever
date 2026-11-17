@@ -93,11 +93,11 @@ object PerformanceTileModel {
             if (s.limitWaits || s.fgWaits) add(restart())
         }
         MEM -> buildList {
+            // the design's order (section 6), all three stacked beside the picture ([band])
             // the 8 / 12 GB Thors: always lighter (the model decides; nothing to press, the status line says so)
-            // the line the picture shows first, beside it
-            add(Line(L_MAP, "Home map: full detail", null, ON_OFF, if (s.mapFull) 0 else 1, Kind.CHOICE))
             if (!s.lighterFixed) add(Line(L_LIGHTER, "Lighter mode", null, ON_OFF, if (s.lighter) 0 else 1, Kind.CHOICE))
             add(Line(L_LOWGFX, "Low-memory graphics", null, ON_OFF, if (s.lowGfx) 0 else 1, Kind.CHOICE))
+            add(Line(L_MAP, "Home map: full detail", null, ON_OFF, if (s.mapFull) 0 else 1, Kind.CHOICE))
         }
         INDOOR -> buildList {
             add(Line(L_BUILD, "Build in the background", null, ON_OFF, if (s.indoorOn) 0 else 1, Kind.CHOICE))
@@ -159,20 +159,33 @@ object PerformanceTileModel {
 
     // ---------------------------------------------------------------- Indoor maps' deferred list (Deferred > List)
 
-    /** the list across the band's width under its lines, every deferred building on its own line (the old row's full list) */
-    const val LIST_LINE = 34f
-    const val LIST_PAD = 22f
+    /** the list across the band's width under its lines: one line per reason with its count (every deferred building counted) */
+    const val LIST_LINE = 40f
+    const val LIST_PAD = 18f
 
     /** the list's height for [shown] lines and a "+ n" line when the bake deferred more than the list carries */
     fun listH(shown: Int, more: Int): Float = if (shown <= 0) 0f else 2f * LIST_PAD + (shown + (if (more > 0) 1 else 0)) * LIST_LINE + GameUiTiles.BAND_PAD
 
-    /** a deferred line ("key: why", IndoorProgress.deferredLine) as the player reads it: the reason, and the building's short id */
-    fun deferredParts(line: String): Pair<String, String> {
-        val i = line.indexOf(": ")
-        if (i <= 0) return line to ""
-        val key = line.substring(0, i)
-        return line.substring(i + 2) to (if (key.length > 8) key.take(8) else key)
+    /**
+     * the deferred lines ("key: why", IndoorProgress.deferredLine) as the player reads them (verifier 11-18: the buildings' hex ids were
+     * debug clutter): the reasons, each once, in the bake's order, with how many buildings it held back. The key never reaches the screen
+     */
+    fun deferredRows(lines: List<String>): List<Pair<String, Int>> {
+        val out = LinkedHashMap<String, Int>()
+        for (line in lines) {
+            val i = line.indexOf(": ")
+            val why = (if (i > 0) line.substring(i + 2) else line).trim().ifEmpty { "deferred" }
+            out[why] = (out[why] ?: 0) + 1
+        }
+        return out.entries.map { it.key to it.value }
     }
+
+    /**
+     * button [k] of [line] drawn LIT (the red cloth's highlight, gold word): only a choice's picked button, as on Top. A stepper's and
+     * an action's buttons are presses, not states: always the quiet plate, as Top's Narrower / Default / Wider (verifier 11-18: lit
+     * Faster AND Sharper read as both picked)
+     */
+    fun lit(line: Line, k: Int): Boolean = line.kind == Kind.CHOICE && k == line.chosen
 
     /** the tile animates in its open band (the frame lanes, the build) */
     fun animated(id: String): Boolean = id == LIMIT || id == FG || id == INDOOR
@@ -222,14 +235,15 @@ object PerformanceTileModel {
     const val ACTION_W = 300f
 
     /** a labelled line's label column at most this wide, while its buttons keep [BTN_MIN] each (Memory's and Frame generation's labels
-     *  are longer than Top's: "Low-memory graphics", "Performance mode" were cut at Top's 26 %) */
-    const val LABEL_MAX = 300f
+     *  are longer than Top's: "Low-memory graphics", "Performance mode" were cut at Top's 26 %; "Home map: full detail" on one line) */
+    const val LABEL_MAX = 360f
     const val BTN_MIN = 150f
 
     /** the band's boxes for [lines] (GameUiTiles.band; a label widened while its buttons keep [BTN_MIN]; an action's one button
      *  [ACTION_W] wide after its label) */
     fun band(left: Float, top: Float, width: Float, lines: List<Line>): GameUiTiles.Band {
-        val b = GameUiTiles.band(left, top, width, lines.map { GameUiTiles.Line(it.key, it.words.size, it.label != null) })
+        val b = if (lines.size == STACK) stacked(left, top, width, lines)
+            else GameUiTiles.band(left, top, width, lines.map { GameUiTiles.Line(it.key, it.words.size, it.label != null) })
         val out = b.lines.mapIndexed { i, lb ->
             val line = lines.getOrNull(i)
             val lab = lb.label
@@ -247,6 +261,35 @@ object PerformanceTileModel {
             GameUiTiles.LineBox(lb.key, label, buttons)
         }
         return GameUiTiles.Band(b.picture, out, b.status, b.height)
+    }
+
+    /** a band of exactly this many lines stacks them all beside the picture (Top's layout would drop the third under the picture,
+     *  alone on the left: verifier 11-18, "Memory band layout is uneven") */
+    const val STACK = 3
+
+    /** [lines] in ONE column beside the picture, the picture centred on them, the status line at the foot (Top's numbers) */
+    private fun stacked(left: Float, top: Float, width: Float, lines: List<Line>): GameUiTiles.Band {
+        val l = left + GameUiTiles.BAND_PAD
+        val r = left + width - GameUiTiles.BAND_PAD
+        val pw = if (width >= 1100f) GameUiTiles.PIC_W else (r - l) * 0.36f
+        val ph = pw * GameUiTiles.PIC_H / GameUiTiles.PIC_W
+        val linesH = lines.size * GameUiTiles.LINE_H + (lines.size - 1) * GameUiTiles.LINE_GAP
+        val y0 = top + GameUiTiles.BAND_PAD
+        val py = y0 + maxOf(0f, (linesH - ph) / 2f)
+        val pic = GameUiTiles.Box(l, py, l + pw, py + ph)
+        val colL = pic.r + 24f
+        val out = lines.mapIndexed { i, line ->
+            val y = y0 + i * (GameUiTiles.LINE_H + GameUiTiles.LINE_GAP)
+            val n = maxOf(1, line.words.size)
+            val lw = if (line.label != null) min(GameUiTiles.LABEL_W, (r - colL) * 0.26f) else 0f
+            val label = if (line.label != null) GameUiTiles.Box(colL, y, colL + lw, y + GameUiTiles.LINE_H) else null
+            val bx = if (line.label != null) colL + lw + 12f else colL
+            val bw = (r - bx - (n - 1) * GameUiTiles.BTN_GAP) / n
+            GameUiTiles.LineBox(line.key, label, (0 until n).map { k -> GameUiTiles.Box(bx + k * (bw + GameUiTiles.BTN_GAP), y, bx + k * (bw + GameUiTiles.BTN_GAP) + bw, y + GameUiTiles.LINE_H) })
+        }
+        val bottom = maxOf(pic.b, y0 + linesH)
+        val status = GameUiTiles.Box(l, bottom + GameUiTiles.LINE_GAP, r, bottom + GameUiTiles.LINE_GAP + GameUiTiles.STATUS_H)
+        return GameUiTiles.Band(pic, out, status, status.b + GameUiTiles.BAND_PAD - top)
     }
 
     /** the part's height: the grid (with the band) and the compact row under it */
@@ -281,7 +324,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
 
     /** the open tile, null = none (the session's only: never saved) */
     private var selected: String? = null
-    /** Indoor maps' deferred list shown in its band's picture (Deferred > List) */
+    /** Indoor maps' deferred list shown under its band's lines (Deferred > List) */
     private var deferredOpen = false
     /** Low-memory graphics pressed this visit (its status line: from the next game start) */
     private var lowGfxChanged = false
@@ -356,11 +399,12 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
         }
     }
 
-    /** the deferred list shown now (Deferred > List), and how many more the bake deferred than the list carries */
-    private fun deferredShown(): Pair<List<String>, Int> {
+    /** the deferred list shown now (Deferred > List): its reasons with their counts, and how many more the bake deferred than its list
+     *  carries */
+    private fun deferredShown(): Pair<List<Pair<String, Int>>, Int> {
         val p = progress
-        if (!deferredOpen || p == null || p.list.isEmpty()) return emptyList<String>() to 0
-        return p.list to (p.deferred - p.list.size).coerceAtLeast(0)
+        if (!deferredOpen || p == null || p.list.isEmpty()) return emptyList<Pair<String, Int>>() to 0
+        return M.deferredRows(p.list) to (p.deferred - p.list.size).coerceAtLeast(0)
     }
 
     // ---------------------------------------------------------------- layout
@@ -373,7 +417,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
         val open = selected?.let { id -> M.SLOTS.indexOfFirst { it.id == id } } ?: -1
         val lines = if (open >= 0) M.lines(M.SLOTS[open].id, s, deferredOpen) else emptyList()
         val bw = w - 2f * GameUiTiles.MARGIN
-        val (shown, more) = if (open >= 0 && M.SLOTS[open].id == M.INDOOR) deferredShown() else emptyList<String>() to 0
+        val (shown, more) = if (open >= 0 && M.SLOTS[open].id == M.INDOOR) deferredShown() else emptyList<Pair<String, Int>>() to 0
         val bandH = if (open >= 0) M.band(GameUiTiles.MARGIN, 0f, bw, lines).height + M.listH(shown.size, more) else 0f
         val grid = M.grid(M.SLOTS, w, open, bandH)
         val band = grid.band?.let { M.band(it.l, it.t, it.w, lines) }
@@ -566,23 +610,19 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
         c.drawLine(nx - 18f, rect.top + 1f, nx, rect.top - 13f, pStroke); c.drawLine(nx, rect.top - 13f, nx + 18f, rect.top + 1f, pStroke)
         val t = SystemClock.uptimeMillis() / 1000f
         picture(c, id, s, band.picture.rect(), t, big = true)
-        // one label size and one button size for the whole band (the longest es / fr words set them; no line shrinks alone)
+        // one label size for the whole band (the longest es / fr label sets it); the buttons' words Top's 27 px, ONE size per line: a
+        // two-word button too long for its plate wraps onto two lines, a one-word one shrinks its line only (verifier 11-18: one long
+        // word must not shrink the whole band)
         val labelSize = labelSize(band, lines)
-        val wordSize = wordSize(band, lines)
         for ((i, lb) in band.lines.withIndex()) {
             val line = lines.getOrNull(i) ?: continue
             lb.label?.let { lab -> label(c, lab, line, labelSize) }
-            for ((k, b) in lb.buttons.withIndex()) {
-                val r = b.rect()
-                val word = Tr.t(line.words.getOrElse(k) { "" })
-                when (line.kind) {
-                    PerformanceTileModel.Kind.CHOICE -> UiKit.choice(c, r, word, k == line.chosen, true, textSize = wordSize)
-                    else -> UiKit.button(c, r, word, if (k in line.off) UiKit.Button.DISABLED else UiKit.Button.UP, textSize = wordSize)
-                }
-            }
+            val words = lb.buttons.indices.map { k -> Tr.t(line.words.getOrElse(k) { "" }) }
+            val size = lb.buttons.withIndex().minOfOrNull { (k, b) -> wordFit(words[k], plateRoom(b.rect())) } ?: WORD_SIZE
+            for ((k, b) in lb.buttons.withIndex()) plate(c, b.rect(), words[k], M.lit(line, k), k !in line.off, size)
         }
         val st = band.status
-        val say = M.statusParts(id, s).joinToString(" · ") { Tr.t(it) }
+        val say = M.statusParts(id, s).joinToString(" · ") { cap(Tr.t(it)) }
         if (say.isNotEmpty()) {
             pSub.color = Theme.textDim
             c.drawText(fitText(pSub, say, st.w - 8f, 22f, 18f), st.l + 4f, st.cy + 8f, pSub)
@@ -590,7 +630,8 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
         if (id == M.INDOOR) deferredList(c, rect)
     }
 
-    /** Deferred > List: every deferred building across the band's width under its lines, the reason first, its short id after */
+    /** Deferred > List: across the band's width under its lines, one line per reason (capitalised, Tr.t) with its count right-aligned
+     *  in gold; no building ids (debug words, never the player's) */
     private fun deferredList(c: Canvas, band: RectF) {
         val (shown, more) = deferredShown()
         if (shown.isEmpty()) return
@@ -600,19 +641,70 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
         c.drawRoundRect(r, 8f, 8f, pFill)
         pStroke.color = Theme.bronzeDim; pStroke.strokeWidth = 1.5f
         c.drawRoundRect(r, 8f, 8f, pStroke)
-        val idP = UiKit.numberPaint(20f, Theme.textDim, shadow = false).apply { textAlign = Paint.Align.RIGHT }
-        val idW = idP.measureText("00000000") + 8f
-        pSub.color = Theme.text
-        for ((i, line) in shown.withIndex()) {
-            val (why, key) = M.deferredParts(line)
-            val y = r.top + M.LIST_PAD + (i + 1) * M.LIST_LINE - 9f
-            c.drawText(fitText(pSub, Tr.t(why), r.width() - 2f * M.LIST_PAD - idW - 12f, 22f, 18f), r.left + M.LIST_PAD, y, pSub)
-            if (key.isNotEmpty()) c.drawText(key, r.right - M.LIST_PAD, y, idP)
+        val nP = UiKit.numberPaint(24f, Theme.gold, shadow = false).apply { textAlign = Paint.Align.RIGHT }
+        val nW = nP.measureText("000") + 16f
+        for ((i, row) in shown.withIndex()) {
+            val (why, n) = row
+            val y = r.top + M.LIST_PAD + (i + 1) * M.LIST_LINE - 11f
+            pBandLabel.color = Theme.text
+            c.drawText(fitText(pBandLabel, cap(Tr.t(why)), r.width() - 2f * M.LIST_PAD - nW, 24f, 18f), r.left + M.LIST_PAD, y, pBandLabel)
+            c.drawText("$n", r.right - M.LIST_PAD, y, nP)
+            if (i < shown.size - 1 || more > 0) {
+                pFill.color = Theme.bronzeDim; pFill.alpha = 90
+                c.drawRect(r.left + M.LIST_PAD, y + 13f, r.right - M.LIST_PAD, y + 14f, pFill)
+                pFill.alpha = 255
+            }
         }
         if (more > 0) {
             pSub.color = Theme.textDim
-            c.drawText("+ $more", r.left + M.LIST_PAD, r.top + M.LIST_PAD + (shown.size + 1) * M.LIST_LINE - 9f, pSub)
+            c.drawText("+ $more", r.left + M.LIST_PAD, r.top + M.LIST_PAD + (shown.size + 1) * M.LIST_LINE - 11f, pSub)
         }
+    }
+
+    /** [s] with its first letter a capital (the bake's reasons and phases are lower-case words; the page's labels are not) */
+    private fun cap(s: String): String = s.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+
+    private val pWord = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /** the room a word has on plate [r] (UiKit.choice's own: the plate's ends) */
+    private fun plateRoom(r: RectF) = r.width() - r.height() * 0.5f
+
+    /** the largest size from Top's 27 px at which [word] fits [room]: on one line, or (two words or more) on two lines down to 22 px;
+     *  else one line shrunk down to 16 px */
+    private fun wordFit(word: String, room: Float): Float {
+        UiKit.asBody(pWord)
+        var size = WORD_SIZE
+        pWord.textSize = size
+        if (word.isEmpty() || pWord.measureText(word) <= room) return size
+        if (word.contains(' ')) {
+            while (size >= WORD_WRAP_MIN) {
+                pWord.textSize = size
+                val rows = wrap(pWord, word, room)
+                if (rows.size == 2 && rows.all { pWord.measureText(it) <= room }) return size
+                size -= 1f
+            }
+            size = WORD_SIZE
+        }
+        pWord.textSize = size
+        while (pWord.measureText(word) > room && size > WORD_MIN) { size -= 1f; pWord.textSize = size }
+        return size
+    }
+
+    /**
+     * one band button: the game's red cloth, LIT only for a choice's picked button ([PerformanceTileModel.lit]); the word at the line's
+     * one [size] in the plate's own colours (UiKit.choice's), on two lines when it does not fit one at that size
+     */
+    private fun plate(c: Canvas, r: RectF, word: String, lit: Boolean, enabled: Boolean, size: Float) {
+        UiKit.choice(c, r, "", lit, enabled)
+        if (word.isEmpty()) return
+        val p = UiKit.bodyPaint(size, if (!enabled) Theme.dim else if (lit) Theme.btnLabel else Theme.textDim).apply { textAlign = Paint.Align.CENTER }
+        val room = plateRoom(r)
+        val cy = r.centerY() - 2f
+        val rows = if (p.measureText(word) <= room || !word.contains(' ')) listOf(word) else wrap(p, word, room).let {
+            if (it.size <= 2) it else listOf(it[0], it.drop(1).joinToString(" ")) }
+        val lh = size * 1.12f
+        var y = cy - (rows.size - 1) * lh / 2f - (p.ascent() + p.descent()) / 2f
+        for (row in rows) { c.drawText(row, r.centerX(), y, p); y += lh }
     }
 
     /** the room a line's words have in its label column (after its sign) */
@@ -631,21 +723,6 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
                 pBandLabel.textSize = size
                 if (wrap(pBandLabel, words, room).let { it.size <= 2 && it.all { w -> pBandLabel.measureText(w) <= room } }) break
                 size -= 1f
-            }
-        }
-        return size
-    }
-
-    /** the band's button word size: the largest from 27 down at which every button's word fits (UiKit's own room for each kind) */
-    private fun wordSize(band: GameUiTiles.Band, lines: List<PerformanceTileModel.Line>): Float {
-        var size = WORD_SIZE
-        val p = UiKit.bodyPaint(size, Theme.text, shadow = false)
-        for ((i, lb) in band.lines.withIndex()) {
-            val line = lines.getOrNull(i) ?: continue
-            for ((k, b) in lb.buttons.withIndex()) {
-                val word = Tr.t(line.words.getOrElse(k) { "" })
-                val room = if (line.kind == PerformanceTileModel.Kind.CHOICE) b.w - b.h * 0.5f else b.w - 48f
-                while (size > WORD_MIN) { p.textSize = size; if (p.measureText(word) <= room) break; size -= 1f }
             }
         }
         return size
@@ -723,6 +800,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
         const val LABEL_SIZE = 25f
         const val LABEL_MIN = 17f
         const val WORD_SIZE = 27f
-        const val WORD_MIN = 18f
+        const val WORD_WRAP_MIN = 22f
+        const val WORD_MIN = 16f
     }
 }

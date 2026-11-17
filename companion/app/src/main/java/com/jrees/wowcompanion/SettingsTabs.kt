@@ -19,9 +19,7 @@ object SettingsTabs {
      *  same day: "The five headings with no folding on this tab", which changes the 11-12 fold ruling for this tab only) */
     enum class Tab(val label: String, val hidden: Boolean = false, val folds: Boolean = true) {
         GENERAL("General", folds = false), BOTTOM("Bottom screen"), TOP("Top screen", folds = false), CONTROLLER("Controller"), ADDONS("Add-ons"),
-        // beautify (the user, 2026-11-17: "I REALLY REALLY love what you did with the top screen settings menu with the pictures"): one
-        // headless row of picture tiles (the design's section 6 / critic C6), so nothing to fold
-        PERFORMANCE("Performance", folds = false)
+        PERFORMANCE("Performance")
     }
 
     /** the tabs the room shows, in order (a hidden one is never on the row, never stepped onto) */

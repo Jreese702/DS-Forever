@@ -192,15 +192,17 @@ class SettingsTabsTest {
     @Test fun firstGroupOpenOnShow() {
         // (a headless group - Add-ons' Import button - is never folded: open with the first group that has a heading)
         for (t in T.values()) if (t.folds) assertEquals(t.label, SettingsTabs.groups(t).filter { it.headless }.toSet() +
-            SettingsTabs.groups(t).first { !it.headless }, SettingsTabs.openOnShow(t))
+            listOfNotNull(SettingsTabs.groups(t).firstOrNull { !it.headless }), SettingsTabs.openOnShow(t))
         // the user, 2026-11-12: "the general tab doesnt need the folding sections": every General group always open
         assertEquals(false, T.GENERAL.folds)
         assertEquals(setOf(G.LOOK, G.ACCOUNT, G.HELP), SettingsTabs.openOnShow(T.GENERAL))
         // the user's pick 2026-11-16 (the design's "five headings with no folding on this tab"): Top screen's tiles never fold either
         assertEquals(false, T.TOP.folds)
-        // beautify: Performance's one headless row of tiles has nothing to fold
-        assertEquals(false, T.PERFORMANCE.folds)
-        assertEquals(T.values().filter { it != T.GENERAL && it != T.TOP && it != T.PERFORMANCE }, T.values().filter { it.folds })
+        // beautify: Performance keeps the 11-12 fold flag until the user's pick 5 (its one group is headless, so always open anyway)
+        assertEquals(true, T.PERFORMANCE.folds)
+        assertEquals(setOf(G.FRAMES), SettingsTabs.openOnShow(T.PERFORMANCE))
+        assertEquals(false, SettingsTabs.folds(G.FRAMES))
+        assertEquals(T.values().filter { it != T.GENERAL && it != T.TOP }, T.values().filter { it.folds })
         // the layout editor's group first (feat/big-layout's pick), and with the tiles' no-folding tab (feat/big-uimenus) every group opens
         assertEquals(setOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), SettingsTabs.openOnShow(T.TOP))
         assertEquals(G.LAYOUT, SettingsTabs.groups(T.TOP).first())
