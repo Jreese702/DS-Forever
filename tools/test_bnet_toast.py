@@ -12,6 +12,12 @@ chat41 (the user's pick, 2026-11-16: "Yes, all of them"): EVERY toast bnet.lua's
 unknown one stays the game's) and copied: friend requests (new + pending count), broadcasts (the text only when plain; protected = none),
 community invites and community-finder invites, each only when the game's own settings (read only) would toast it, with the game's
 toast time (toastDuration) as hold; never a |K string or a whole BattleTag; nothing accepted or declined.
+chat42 (the user, 2026-11-16: "There is a little white flash animation that happens whenever someone comes online in battlenet. We need
+to hit that on the top screen and make something similar on the bottom"): the flash is the toast's glow (SocialToastTemplate's
+$parentGlowFrame, UI-Toast-Flair, alphaMode ADD), whose own animIn (0 -> 1 -> 0 in 0.7 s) AlertFrame_PlayIntroAnimation plays after
+the frame's show and which drives the glow's alpha while it plays: the stub plays it as the game does (its OnPlay hooks, then the alpha
+the animation sets, vertex alpha included), and what the glow adds (colour x alpha) must be 0 on every veiled toast; the glow's colour
+comes back with the rest on a toast that is the game's.
 """
 import json
 import os
@@ -57,6 +63,10 @@ local function toast(name)
     local anim = { _hooks = {} }
     function anim:HookScript(k, fn) self._hooks[k] = self._hooks[k] or {}; table.insert(self._hooks[k], fn) end
     fr.animIn = anim
+    -- chat42: the glow's own flash (SocialToastGlowTemplate animIn): its OnPlay hooks, then the alpha the animation drives
+    local ganim = { _hooks = {} }
+    function ganim:HookScript(k, fn) self._hooks[k] = self._hooks[k] or {}; table.insert(self._hooks[k], fn) end
+    g.animIn = ganim
     function fr:IsMouseEnabled() return self._mouse end
     function fr:EnableMouse(on) self._mouse = on end
     function fr:IsProtected() return false end
@@ -70,6 +80,14 @@ local function toast(name)
         self._shown = true
         for _, fn in ipairs(self._hooks.OnShow or {}) do fn(self) end
         for _, fn in ipairs(anim._hooks.OnPlay or {}) do fn(anim) end
+        -- AlertFrame_PlayIntroAnimation: frame.glow:Show(); frame.glow.animIn:Play() -> mid-flash, the animation's alpha 1
+        for _, fn in ipairs(ganim._hooks.OnPlay or {}) do fn(ganim) end
+        g._a = 1; g._vc[4] = 1
+    end
+    -- what the glow adds to the screen mid-flash (alphaMode ADD: colour x alpha x the texture's own alpha)
+    function fr:GlowLight()
+        local r, gg, b, a = g:GetVertexColor()
+        return math.max(r, gg, b) * a * g._a
     end
     rawset(_G, name, fr)
     return fr
@@ -122,7 +140,7 @@ load = L.eval('function(src, name) local f, e = loadstring(src, name); if not f 
 load(CHAT, "@Chat.lua")("WowCompanion")
 L.execute('HOLDER = "pad:chat"; fire("PLAYER_LOGIN"); runTimers(NOW + 3)')
 ok(L.eval('#ERRS') == 0, "no Lua errors at the login: %s" % L.eval('table.concat(ERRS, " | ")'))
-ok('local CHATV = "chat41"' in CHAT, "Chat.lua is chat41")
+ok('local CHATV = "chat42"' in CHAT, "Chat.lua is chat42")
 
 
 def alpha(expr):
@@ -135,22 +153,29 @@ for name in ("ShardTransferImminentFrame", "ShardTransferImminentMinimizeButton"
     ok(alpha('%s:GetAlpha()' % name) == 0, "%s: the frame's alpha is 0" % name)
     ok(alpha('%s._kids[1]:GetAlpha()' % name) == 0 and alpha('%s._regions[1]:GetAlpha()' % name) == 0
        and alpha('%s._regions[2]:GetAlpha()' % name) == 0, "%s: every piece's alpha is 0 (the fade has nothing to show)" % name)
-    ok(alpha('select(4, %s.glow:GetVertexColor())' % name) == 0, "%s: the glow's vertex alpha is 0 (its own fade)" % name)
+    ok(alpha('(select(1, %s.glow:GetVertexColor()))' % name) == 0, "%s: the glow's colour is black (chat42: its own fade drives its alpha)" % name)
     ok(L.eval('%s._mouse' % name) is False, "%s: the invisible toast takes no click" % name)
+    ok(alpha('%s:GlowLight()' % name) == 0, "chat42: %s: the glow's flash adds nothing mid-animation (the white flash)" % name)
 
 # ---- 2. the BN toast: every toast bnet.lua has is veiled (chat41); a toast type it does not know is the game's again
 L.execute('BNToastFrame.toastType = 1; BNToastFrame:GameShow()')
 ok(alpha('BNToastFrame:GetAlpha()') == 0 and alpha('BNToastFrame._regions[1]:GetAlpha()') == 0, "the BN online toast is veiled")
 ok(L.eval('BNToastFrame._mouse') is False, "the BN online toast takes no click (its click would whisper)")
+ok(alpha('BNToastFrame:GlowLight()') == 0, "chat42: no white flash on the top screen when a friend comes online (the glow's own animIn)")
+L.execute('BNToastFrame.toastType = 1; BNToastFrame:GameShow()')       # a second friend while the toast is still up: the glow replays
+ok(alpha('BNToastFrame:GlowLight()') == 0, "chat42: nor when the next friend's toast replays the glow on the toast still shown")
 for t in (3, 4, 5, 6, 7):
     L.execute('BNToastFrame._shown = false; BNToastFrame.toastType = %d; BNToastFrame:GameShow()' % t)
     ok(alpha('BNToastFrame:GetAlpha()') == 0 and alpha('BNToastFrame._regions[1]:GetAlpha()') == 0
-       and alpha('select(4, BNToastFrame.glow:GetVertexColor())') == 0, "chat41: BN toast type %d is veiled too" % t)
+       and alpha('(select(1, BNToastFrame.glow:GetVertexColor()))') == 0, "chat41: BN toast type %d is veiled too" % t)
+    ok(alpha('BNToastFrame:GlowLight()') == 0, "chat42: BN toast type %d: no glow flash" % t)
     ok(L.eval('BNToastFrame._mouse') is False, "chat41: BN toast type %d takes no click" % t)
 L.execute('BNToastFrame._shown = false; BNToastFrame.toastType = 8; BNToastFrame:GameShow()')
 ok(alpha('BNToastFrame:GetAlpha()') == 1 and alpha('BNToastFrame._regions[1]:GetAlpha()') == 1
    and alpha('select(4, BNToastFrame.glow:GetVertexColor())') == 1, "a toast type bnet.lua does not have shows as the game made it")
 ok(L.eval('BNToastFrame._mouse') is True, "that toast takes its click again")
+ok(L.eval('(select(1, BNToastFrame.glow:GetVertexColor()))') == 1 and alpha('BNToastFrame:GlowLight()') == 1,
+   "chat42: that toast's glow flashes as the game made it (its colour back)")
 L.execute('BNToastFrame._shown = false; BNToastFrame.toastType = 2; BNToastFrame:GameShow()')
 ok(alpha('BNToastFrame:GetAlpha()') == 0, "the BN offline toast is veiled")
 ok(L.eval('#TOASTCALLS') == 0, "never Hide / Show / SetParent on a toast: %s" % L.eval('table.concat(TOASTCALLS, ", ")'))
@@ -171,7 +196,7 @@ ok(all(d.get("hold") == 5 for d in bn), "chat41: the game's toast time (toastDur
 ok(bn[0].get("who") == "Thrall" and bn[0].get("on") is True and not bn[0].get("bt"), "online: the character they play: %r" % bn[0])
 ok(bn[1].get("who") == "Quietone" and bn[1].get("on") is False and bn[1].get("bt") is True, "offline: the BattleTag's name: %r" % bn[1])
 ok(bn[2].get("who") is None, "only protected names: no name at all (the app says A friend): %r" % bn[2])
-ok(all(d.get("v") == "chat41" for d in bn) and len({d.get("id") for d in bn}) == 3, "each its own id, chat41")
+ok(all(d.get("v") == "chat42" for d in bn) and len({d.get("id") for d in bn}) == 3, "each its own id, chat42")
 raw = json.dumps(bn)
 ok("|K" not in raw and "Palfriend#" not in raw, "never the account name, a |K string or a whole BattleTag: %s" % raw)
 ok(not any(d.get("type") == "chat" and "Thrall" in json.dumps(d) for d in docs(L)[n0:]), "a BN login is not a chat line")
@@ -202,7 +227,7 @@ ok(more[3].get("who") == "Quietone" and more[3].get("text") is None, "a protecte
 ok(more[4].get("name") == "Goldshire Book Club", "a community invite: its name: %r" % more[4])
 ok(more[5].get("name") is None, "a protected community name: none: %r" % more[5])
 ok(more[6].get("name") == "Finders g1", "the community-finder invite: only the approved one not joined yet: %r" % more[6])
-ok(all(d.get("hold") == 5 and d.get("v") == "chat41" for d in more), "each with hold and chat41")
+ok(all(d.get("hold") == 5 and d.get("v") == "chat42" for d in more), "each with hold and chat42")
 raw = json.dumps(more)
 ok("|K" not in raw and "#" not in raw, "never a |K string or a whole BattleTag: %s" % raw)
 ok(not any(d.get("type") == "chat" and ("LFG Deadmines" in json.dumps(d)) for d in docs(L)[n1:]), "a broadcast is not a chat line")

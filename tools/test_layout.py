@@ -187,9 +187,9 @@ for k, v in TXT.items():
     e = comp(v, k)
     check(e is None, "a. Lua 5.1 compiles %s" % FILES[k], e or '')
 check('local PADV = "pad22"' in TXT["tappad"] and 'WC.prd = { V = "prd19"' in TXT["trail"] and 'WC.compass = { V = "cp42" }' in TXT["trail"]
-      and int(re.search(r'local NB = \{ V = "nbar(\d+)"', TXT["actionbar"]).group(1)) >= 4 and 'local CHATV = "chat41"' in TXT["chat"] and 'local HV = "hub57"' in TXT["hub"]
+      and int(re.search(r'local NB = \{ V = "nbar(\d+)"', TXT["actionbar"]).group(1)) >= 4 and 'local CHATV = "chat42"' in TXT["chat"] and 'local HV = "hub57"' in TXT["hub"]
       and 'V = "uf24" }' in TXT["hub"] and 'V = "lay1"' in TXT["hub"],
-      "a. the versions: TapPad pad22, Trail prd19 / cp42, ActionBar nbar4 (or later: nbar5 the split swing lines), Chat chat41, Hub hub57 (hub56 + the Polestar step binds; editor lay1, uf24): the 11-16 merge")
+      "a. the versions: TapPad pad22, Trail prd19 / cp42, ActionBar nbar4 (or later: nbar5 the split swing lines), Chat chat42 (the toast glow veil + notice flash), Hub hub57 (hub56 + the Polestar step binds; editor lay1, uf24): the 11-16 merge")
 check(all(QUOTE in TXT[k] for k in TXT), "a. each changed file's header note quotes the user", [k for k in TXT if QUOTE not in TXT[k]])
 check(TXT["trail"].count(QUOTE) >= 2, "a. Trail: both notes (prd18, cp41) quote the user")
 ED = TXT["hub"][TXT["hub"].index("-- ==================================================================== hub55 THE TOP-SCREEN LAYOUT EDITOR"):]
