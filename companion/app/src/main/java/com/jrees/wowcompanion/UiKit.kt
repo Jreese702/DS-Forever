@@ -24,6 +24,7 @@ import android.text.TextPaint
 import android.text.TextUtils
 import android.widget.TextView
 import java.io.File
+import kotlin.math.roundToInt
 
 /**
  * The shared Classic look: the game's OWN fonts, buttons, parchment and borders, so that every
@@ -3498,7 +3499,7 @@ object UiKit {
                 pGlow.alpha = 255
             }
             c.drawBitmap(d, null, r, pBmp)
-            lastDiscPx = size * artFill(d)
+            lastDiscPx = size * artFill(d, size)
             val p = numberPaint(size * 0.46f, MarkerArt.DISC_NUMBER, shadow = false).apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
             c.drawText(Tr.t(number?.toString() ?: "!"), cx, cy - (p.ascent() + p.descent()) / 2f, p)
             return
@@ -3524,7 +3525,7 @@ object UiKit {
             pGlow.alpha = 255
         }
         c.drawBitmap(disc, null, r, pBmp)
-        lastDiscPx = size * artFill(disc)
+        lastDiscPx = size * artFill(disc, size)
         if (number != null) {
             val p = numberPaint(size * 0.46f, if (focus) Color.rgb(34, 22, 6) else Theme.gameGold, shadow = !focus)
                 .apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
@@ -3548,11 +3549,15 @@ object UiKit {
      * does not stay the same as the other tracked circles"): the two disc pictures fill their boxes differently (the add-on's quest_disc.tga
      * 94 %, the kit's poi_disc 64 %), so at one [size] they stood 1.46x apart. [marker] = false: the kit's poi_disc, the tracked circles'
      * own (Home's map: its tracked quests are poi_disc but the focused one); true: the yellow marker's (MarkerArt's quest_disc.tga, else
-     * poi_disc_focus: the Map room, whose discs are all the yellow marker).
+     * poi_disc_focus: the Map room, whose discs are all the yellow marker). Both draw the yellow marker's picture in grey (the light grey
+     * the user picked; poi_disc greyed is near black), Home's in a box shrunk so its solid part spans exactly poi_disc's at [size].
      */
     fun questDiscMuted(c: Canvas, cx: Float, cy: Float, size: Float, marker: Boolean) {
-        val r = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
-        val disc = if (marker) MarkerArt.discLoaded() ?: tex("poi_disc_focus") else tex("poi_disc")
+        // Home without the kit's poi_disc draws its tracked circles plain, so its grey disc is plain too (the fallback below)
+        val poi = if (marker) null else tex("poi_disc")
+        val disc = if (marker) MarkerArt.discLoaded() ?: tex("poi_disc_focus") else poi?.let { MarkerArt.discLoaded() ?: tex("poi_disc_focus") ?: it }
+        val s = if (disc != null && poi != null && poi !== disc) size * artFill(poi, size) / artFill(disc, size) else size
+        val r = RectF(cx - s / 2f, cy - s / 2f, cx + s / 2f, cy + s / 2f)
         if (disc == null) {
             pFlat.style = Paint.Style.FILL; pFlat.color = Theme.questGrey
             c.drawCircle(cx, cy, size * 0.36f, pFlat)
@@ -3562,18 +3567,25 @@ object UiKit {
             return
         }
         c.drawBitmap(disc, null, r, pMuted)
-        lastDiscPx = size * artFill(disc)
+        lastDiscPx = s * artFill(disc, s)
     }
     /** the solid part of the last quest disc drawn, across, in px ([questDisc] / [questDiscMuted]: its art's own fill of the box) */
     var lastDiscPx = 0f
         private set
-    private val fills = java.util.WeakHashMap<Bitmap, Float>()
-    /** how much of [b]'s width its solid part (alpha > 32) spans, 0..1, read once per picture (the disc arts differ: 94 % / 64 %) */
-    fun artFill(b: Bitmap): Float = fills.getOrPut(b) {
-        var lo = b.width; var hi = -1
-        val y = b.height / 2
-        for (x in 0 until b.width) if (Color.alpha(b.getPixel(x, y)) > 32) { if (x < lo) lo = x; hi = x }
-        if (hi < lo) 1f else (hi - lo + 1).toFloat() / b.width
+    private val fills = java.util.WeakHashMap<Bitmap, HashMap<Int, Float>>()
+    /**
+     * how much of [b]'s width its solid part spans, 0..1, as DRAWN at [px] (shrunk with filtering, alpha > 32 across its middle row): a
+     * soft-edged picture loses more of its faint rim the smaller it is drawn, a hard-edged one does not, so one count from the full
+     * picture put Home's grey disc 3 px over the tracked circle. Read once per picture and size (to 2 px; the disc arts: ~94 % / ~72 %).
+     */
+    fun artFill(b: Bitmap, px: Float): Float = fills.getOrPut(b) { HashMap() }.getOrPut((px / 2f).roundToInt().coerceIn(4, 128)) {
+        val n = (px / 2f).roundToInt().coerceIn(4, 128) * 2
+        val bm = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
+        Canvas(bm).drawBitmap(b, null, RectF(0f, 0f, n.toFloat(), n.toFloat()), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+        var lo = n; var hi = -1
+        for (x in 0 until n) if (Color.alpha(bm.getPixel(x, n / 2)) > 32) { if (x < lo) lo = x; hi = x }
+        bm.recycle()
+        if (hi < lo) 1f else (hi - lo + 1).toFloat() / n
     }
     private val pMuted = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
         colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f); postConcat(ColorMatrix().apply { setScale(0.85f, 0.85f, 0.85f, 1f) }) })

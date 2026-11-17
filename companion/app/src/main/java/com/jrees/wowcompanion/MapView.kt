@@ -4279,6 +4279,8 @@ class MapView(context: Context) : View(context) {
         override fun redrawIn(ms: Long) { postInvalidateDelayed(ms) }
         override fun track(id: Int, on: Boolean) = panelTrack(id, on)
         override fun glyphs(): Boolean = held || padHints
+        // the list's cursor on this untracked quest's own row: a tracked row keeps A Focus / X Untrack / Y Open, the other rows their own
+        override fun padOnQuest(id: Int): Boolean = cursor.shown && cursor.sel == id && !trackedNo.containsKey(id)
     })
     private var panelId: Int get() = qp.id; set(v) { qp.id = v }
 
@@ -4317,7 +4319,8 @@ class MapView(context: Context) : View(context) {
     // meant that the cursor would move over onto the quest box to scroll the text or press buttons or whatever"). With the panel open
     // the cursor is on the LIST ([panelFocus] -1: the list moves as always, the panel showing the quest under it) until Right takes it
     // INTO the box: 0 its text (Up / Down scroll it). Left or B steps back out to the list; B on the list closes the panel. The buttons
-    // are pressed by their own glyphs from either place (2026-11-17: Track A, Share X, Abandon Y; QuestPanel.key), no longer walked to.
+    // are pressed by their own glyphs (2026-11-17: Track A, Share X, Abandon Y; QuestPanel.key) from the text, or from the list with the
+    // cursor on the panel's own untracked row (any other row keeps the list's A / X / Y); no longer walked to.
     private var panelFocus: Int get() = qp.focus; set(v) { qp.focus = v }
     private fun panelKey(k: String): Boolean = qp.key(k)
     private fun panelAct(act: String) = qp.act(act)

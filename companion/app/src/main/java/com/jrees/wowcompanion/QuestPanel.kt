@@ -16,7 +16,8 @@ import kotlin.math.min
  * THE ACTIONS ARE BUTTONS WITH THEIR GLYPHS (the user, 2026-11-17: "when opening quests in this menu in general them not having the
  * buttons or glyphs on their options is also confusing- a button is not needed for close as B will close it, but share abandon and track
  * should each have buttons with the glyphs on them (A for track I dont care for the others)"): Track / Untrack = A, Share = X, Abandon =
- * Y, pressed from the list or the text alike; no Close button (B closes). Abandon's question: Cancel = B, Abandon = A (the Quests room's).
+ * Y, pressed from the text, or with the cursor on the quest itself (an untracked quest's row; in the Map room its disc too); elsewhere
+ * A / X / Y stay the list's and the buttons wear no glyph. No Close button (B closes). Abandon's question: Cancel = B, Abandon = A.
  */
 class QuestPanel(private val host: Host) {
     interface Host {
@@ -35,6 +36,11 @@ class QuestPanel(private val host: Host) {
         fun track(id: Int, on: Boolean)
         /** the buttons wear their controller glyphs (the host holds the controller; the glyphs follow Settings' BUTTON GLYPHS) */
         fun glyphs(): Boolean
+        /**
+         * the controller's cursor is on this quest itself while it is in the list / on the map, so A / X / Y may be the panel's (review of
+         * 2026-11-17: on any other row, a tracked quest's row, a tab header, the portrait or the Polestar row they stay the list's own)
+         */
+        fun padOnQuest(id: Int): Boolean
     }
     /** the tests: the glyphs the last frame's buttons wore, in order */
     var lastGlyphs: List<String> = emptyList()
@@ -68,18 +74,24 @@ class QuestPanel(private val host: Host) {
     fun buttons(): List<String> = if (armedNow()) listOf("cancel", "abandon!") else listOf("track", "share", "abandon")
     fun armedNow(): Boolean = armedId != 0 && armedId == id && android.os.SystemClock.elapsedRealtime() - armedAt < ARM_MS
 
+    /** A / X / Y are the panel's: the cursor is in its text, or on its own quest in the list / on the map ([Host.padOnQuest]) */
+    fun padHere(): Boolean = id != 0 && (focus >= 0 || host.padOnQuest(id))
+
     /**
-     * one key while the panel is open: true = the panel took it. A / X / Y press the buttons wherever the cursor is (Abandon's question:
-     * A Abandon, B Cancel); otherwise the cursor on the list: Right goes into the text, B closes the panel, the rest is the list's (the
-     * panel follows it); in the text: Up / Down scroll it, Left / B back out.
+     * one key while the panel is open: true = the panel took it. A / X / Y press its buttons while [padHere] (Abandon's question: A
+     * Abandon, B Cancel, whatever the cursor is on); else they are the list's. On the list: Right goes into the text, B closes the
+     * panel, the rest is the list's (the panel follows it); in the text: Up / Down scroll it, Left / B back out.
      */
     fun key(k: String): Boolean {
         val armed = armedNow()
-        when (k) {
-            "PAD1" -> { act(if (armed) "abandon!" else "track"); return true }
-            "PAD3" -> { if (!armed) act("share") else host.changed(); return true }
-            "PAD4" -> { if (!armed) act("abandon") else host.changed(); return true }
-            "PAD2" -> if (armed) { act("cancel"); return true }
+        if (armed) when (k) {
+            "PAD1" -> { act("abandon!"); return true }
+            "PAD2" -> { act("cancel"); return true }
+            "PAD3", "PAD4" -> { host.changed(); return true }
+        } else if (padHere()) when (k) {
+            "PAD1" -> { act("track"); return true }
+            "PAD3" -> { act("share"); return true }
+            "PAD4" -> { act("abandon"); return true }
         }
         if (focus < 0) {
             when (k) {
@@ -209,7 +221,8 @@ class QuestPanel(private val host: Host) {
         val b1 = RectF(inner.left + pad, inner.bottom - btnH - 12f, inner.left + pad + bw, inner.bottom - 12f)
         val b2 = RectF(b1.right + gap, b1.top, b1.right + gap + bw, b1.bottom)
         val b3 = RectF(b2.right + gap, b1.top, b2.right + gap + bw, b1.bottom)
-        val glyphs = host.glyphs()
+        // the glyphs only where they are true: the question's always, the buttons' while A / X / Y are the panel's ([padHere])
+        val glyphs = host.glyphs() && (armed || padHere())
         val drawn = ArrayList<String>(3)
         // a button with its glyph while the host holds the controller (UiKit.pad follows Settings' BUTTON GLYPHS), else plain
         fun btn(r: RectF, label: String, glyph: String, state: UiKit.Button, act: String) {

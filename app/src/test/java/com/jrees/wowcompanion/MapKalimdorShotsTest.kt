@@ -632,6 +632,61 @@ class MapKalimdorShotsTest {
         room.onHidden()
     }
 
+    /** review of 2026-11-17: the open panel takes A / X / Y only on its own untracked row; a tracked row keeps the list's keys */
+    @Test fun withThePanelOpenATrackedRowKeepsTheListsKeys() {
+        val r = rig(terrain = true, extra = true)
+        r.map.onFocusQuest = { }
+        r.map.update(mapDoc(), 0)
+        key(r.home, "PADDRIGHT")
+        frames(r, 1500L)
+        val at = bubbleAt(r, 8)!!
+        tap(r, at[0], at[1])
+        shownInList(r, 8, "a tap")
+        val did = ArrayList<String>()
+        r.map.onUntrackQuest = { did.add("untrack $it") }
+        r.map.onTrackQuest = { did.add("track $it") }
+        r.map.onShareQuest = { did.add("share $it") }
+        r.map.onAbandonArm = { did.add("arm $it") }
+        for (i in 0 until 12) { if (r.map.listSel() == 10) break; key(r.home, "PADDUP"); draw(r.home) }
+        assertEquals("the cursor on the tracked quest 10", 10, r.map.listSel())
+        key(r.home, "PAD1"); draw(r.home)
+        key(r.home, "PAD4"); draw(r.home)
+        assertTrue("A / Y on a tracked row never untrack, share or arm Abandon ($did)", did.isEmpty())
+        for (i in 0 until 12) { if (r.map.listSel() == 8) break; key(r.home, "PADDDOWN"); draw(r.home) }
+        assertEquals(8, r.map.listSel())
+        if (!r.map.panelOpen()) key(r.home, "PAD4")
+        draw(r.home)
+        key(r.home, "PAD1")
+        assertEquals("back on its own untracked row A is the panel's Track", listOf("track 8"), did)
+    }
+
+    @Test fun theMapRoomsTouchOnAGreyDiscOpensItInTheList() {
+        val r = rig(terrain = true)
+        val room = r.room
+        room.visibility = View.VISIBLE
+        room.layout(0, 0, W, H)
+        room.onShown()
+        val bm = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+        for (i in 0 until 30) { bm.eraseColor(Color.BLACK); room.layout(0, 0, W, H); room.draw(Canvas(bm)); Thread.sleep(30); settle(2) }
+        WorldMapRoomView::class.java.getDeclaredMethod("select", Int::class.javaObjectType).apply { isAccessible = true }.invoke(room, 8)
+        fun conv(n: String, v: Float) = WorldMapRoomView::class.java.getDeclaredMethod(n, Float::class.javaPrimitiveType).apply { isAccessible = true }.invoke(room, v) as Float
+        val x = conv("sxc", rf("ccx").getFloat(room)); val y = conv("syc", rf("ccy").getFloat(room))
+        // the cursor elsewhere first: ONE touch on the grey disc does it (no second touch, never Track & focus)
+        WorldMapRoomView::class.java.getDeclaredMethod("select", Int::class.javaObjectType).apply { isAccessible = true }.invoke(room, 10)
+        val t = android.os.SystemClock.uptimeMillis()
+        room.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0))
+        room.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t + 60, android.view.MotionEvent.ACTION_UP, x, y, 0))
+        settle(2)
+        assertEquals("the touch selects its row in the list", 8, rf("selQuest").getInt(room))
+        assertTrue("... never tracking it", (rf("trackPending").get(room) as Map<*, *>).isEmpty())
+        assertTrue("... its group open", (rf("book").get(room) as MapQuestBook).isOpen("Durotar"))
+        val qp = rf("qp").get(room) as QuestPanel
+        assertEquals("... and its panel open", 8, qp.id)
+        for (i in 0 until 10) { bm.eraseColor(Color.BLACK); room.layout(0, 0, W, H); room.draw(Canvas(bm)); settle(2) }
+        shot("room_untracked_touch_row", bm)
+        room.onHidden()
+    }
+
     // ---------------------------------------------------------------- the numbers (real art only)
 
     @Test fun terrainMemoryFootprint() {

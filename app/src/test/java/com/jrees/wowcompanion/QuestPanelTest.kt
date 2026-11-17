@@ -45,6 +45,8 @@ class QuestPanelTest {
         override fun redrawIn(ms: Long) {}
         override fun track(id: Int, on: Boolean) { did.add("track $id $on") }
         override fun glyphs(): Boolean = true
+        var onQuest = true
+        override fun padOnQuest(id: Int): Boolean = onQuest
     }
 
     /** the harvested kit (the buttons' plates, the glyphs) and fonts from MK_ART_ROOT, when set */
@@ -136,5 +138,22 @@ class QuestPanelTest {
         val bm = draw(armed)
         assertEquals(listOf(UiKit.backGlyph(), "rev_a"), armed.lastGlyphs)
         shot("quest_panel_abandon_question", bm)
+    }
+
+    /** review of 2026-11-17: off the quest's own row (another row, a tracked row, a header, the portrait, Polestar) A / X / Y are the list's */
+    @Test fun offTheQuestsOwnRowAXYAreTheLists() {
+        val h = FakeHost()
+        h.onQuest = false
+        val p = panel(h)
+        for (k in listOf("PAD1", "PAD3", "PAD4")) assertFalse("$k passes to the list", p.key(k))
+        assertTrue("nothing tracked, shared or armed", h.did.isEmpty())
+        draw(p)
+        assertTrue("no glyph promises a key the panel does not take", p.lastGlyphs.isEmpty())
+        // inside the text they are the panel's again
+        assertTrue(p.key("PADDRIGHT"))
+        assertTrue(p.key("PAD1"))
+        assertEquals(listOf("track 8 true"), h.did)
+        draw(p)
+        assertEquals(listOf("rev_a", "rev_x", "rev_y"), p.lastGlyphs)
     }
 }
