@@ -220,8 +220,8 @@ class AddonTilesRoomTest {
         ThirdPartyAddons.setCore(ThirdPartyAddons.SPOKEN, false)
         assertTrue(AddonCards.dimmed(ThirdPartyAddons.SPOKEN))
         assertEquals("Next start", AddonCards.value(ThirdPartyAddons.SPOKEN))
-        // nothing to press while it downloads (its % is the status line)
-        assertTrue(AddonCards.lines(ThirdPartyAddons.MANNERS, AddonCards.Env()).isEmpty())
+        // nothing to press while it downloads: Version and its bar in the action's place (the % is the card's value word)
+        assertTrue(AddonCards.lines(ThirdPartyAddons.MANNERS, AddonCards.Env()).single().isBar)
     }
 
     /** not installed: the band is its ONE action (Install, with its size); its own lines only once it is in */
@@ -253,6 +253,9 @@ class AddonTilesRoomTest {
         val r = room()
         open(r, "spoken")
         assertEquals(listOf("core", "m.quests", "m.zones", "m.books", "o.stopClose", "o.stopAccept"), cards(r).bandKeys())
+        // one short word per option, so every label can stay at Top's 25 px (it was "Stop on Accept", which shrank the band)
+        assertEquals(listOf("Version", "Quests", "Zones", "Books", "Stop on B", "On Accept"),
+            AddonCards.lines(ThirdPartyAddons.SPOKEN, AddonCards.Env()).map { it.label })
         val zones = AddonCards.lines(ThirdPartyAddons.SPOKEN, AddonCards.Env()).first { it.key == "m.zones" }
         assertEquals("37%", zones.value)
         shot(r, "add_04_band_spoken_installed")
@@ -269,36 +272,54 @@ class AddonTilesRoomTest {
         assertEquals(listOf("core"), cards(r).bandKeys())
     }
 
-    /** Polestar: the same band as every card - Version + Install / Uninstall (twice), which IS the guide's choice (PolestarGuide), then
-     *  the QoL switches only with a character; Restart only while the game runs and a change waits for it */
+    /** Polestar: its first line is the quest guide's own On / Off (the user, 2026-11-12: "add a toggle in settings to turn it on and
+     *  off"; for a base add-on Install / Uninstall IS that choice), one tap each way; when installed and on, the design's Quest tracking
+     *  Vanilla / Polestar (the line ThirdPartyAddons.POLESTAR.usedIn names), then the QoL switches only with a character; Restart only
+     *  while the game runs and a change waits for it */
     @Test fun polestarBand() {
         Settings.polestarGuide = PolestarGuide.ON; installed("polestar")
         GameUi.character = "Sample-Realm"
         val r = room(game = true)
         open(r, "polestar")
-        assertEquals(listOf("core", "pq.1", "pq.2", "pq.4"), cards(r).bandKeys())
-        assertEquals("Uninstall", AddonCards.lines(ThirdPartyAddons.POLESTAR, AddonCards.Env()).first().words.single())
+        assertEquals(listOf("core", "qt", "pq.1", "pq.2", "pq.4"), cards(r).bandKeys())
+        val first = AddonCards.lines(ThirdPartyAddons.POLESTAR, AddonCards.Env()).first()
+        assertEquals("Quest guide", first.label); assertEquals(listOf("On", "Off"), first.words); assertEquals(0, first.chosen)
+        val qt = AddonCards.lines(ThirdPartyAddons.POLESTAR, AddonCards.Env())[1]
+        assertTrue("usedIn names this line", ThirdPartyAddons.POLESTAR.usedIn!!.endsWith(qt.label!!))
+        assertEquals(listOf("Vanilla", "Polestar"), qt.words); assertEquals(1, qt.chosen)
         shot(r, "add_06_band_polestar")
-        // Auto vendor On (per character)
-        val b = bandButtons(r)
-        tap(cards(r), b[3]); lay(r)                                     // Uninstall, quest On, Off, vendor On
+        // Auto vendor On (per character): guide On, Off, tracking Vanilla, Polestar, quest On, Off, vendor On
+        tap(cards(r), bandButtons(r)[6]); lay(r)
         assertTrue(PolestarQol.on("Sample-Realm", PolestarQol.VENDOR))
         // no character: no per-character lines (no dead stops)
         GameUi.character = null; lay(r)
-        assertEquals(listOf("core"), cards(r).bandKeys())
-        // Uninstall twice = the guide Off: it moves out at the next start; Keep it, and Restart game while the game runs
-        tap(cards(r), bandButtons(r)[0]); lay(r)
-        assertEquals(PolestarGuide.ON, Settings.polestarGuide)
-        tap(cards(r), bandButtons(r)[0]); lay(r)
+        assertEquals(listOf("core", "qt"), cards(r).bandKeys())
+        // Quest tracking Vanilla = the guide Off (one choice): it moves out at the next start, Restart game while the game runs
+        tap(cards(r), bandButtons(r)[2]); lay(r)
         assertEquals(PolestarGuide.OFF, Settings.polestarGuide)
+        assertEquals("vanilla", Settings.questTracking)
         assertEquals(listOf("core", "restart"), cards(r).bandKeys())
-        assertEquals("Keep it", AddonCards.lines(ThirdPartyAddons.POLESTAR, AddonCards.Env(gameRunning = true)).first().words.single())
         assertTrue("Off: dimmed", AddonCards.dimmed(ThirdPartyAddons.POLESTAR))
         assertEquals("", AddonCards.status(ThirdPartyAddons.POLESTAR, AddonCards.Env(gameRunning = true)))
         shot(r, "add_07_band_polestar_restart")
-        // Keep it: back On (one tap)
+        // On: back (one tap)
         tap(cards(r), bandButtons(r)[0]); lay(r)
         assertEquals(PolestarGuide.ON, Settings.polestarGuide)
+        // Off: one tap too (it was Uninstall twice)
+        tap(cards(r), bandButtons(r)[1]); lay(r)
+        assertEquals(PolestarGuide.OFF, Settings.polestarGuide)
+    }
+
+    /** Polestar not asked yet and not here: the guide line with neither lit; Off is ONE tap (no download started and stopped) */
+    @Test fun polestarNotAskedOffInOneTap() {
+        val r = room()
+        open(r, "polestar")
+        assertEquals(listOf("core"), cards(r).bandKeys())
+        assertEquals(-1, AddonCards.lines(ThirdPartyAddons.POLESTAR, AddonCards.Env()).first().chosen)
+        shot(r, "add_06b_band_polestar_not_asked")
+        tap(cards(r), bandButtons(r)[1]); lay(r)
+        assertEquals(PolestarGuide.OFF, Settings.polestarGuide)
+        assertFalse(ThirdPartyAddons.coreWanted(ThirdPartyAddons.POLESTAR))
     }
 
     /** QuestTrail: only while a copy is there, last (so it never leaves a hole); its band its Uninstall */
@@ -312,15 +333,56 @@ class AddonTilesRoomTest {
         shot(r, "add_08_band_questtrail")
     }
 
-    /** a download under way: the card's value its %, the hourglass, nothing to press in the band, its % in the status line */
+    /** a download under way: the card's value its %, the hourglass; the band keeps its shape - Version, and the gold bar in the action's
+     *  place (not a stop: nothing to press) */
     @Test fun downloadingCard() {
         ThirdPartyAddons.setCore(ThirdPartyAddons.MANNERS, true)
         live(ThirdPartyAddons.MANNERS, "core", ThirdPartyAddons.Status(ThirdPartyAddons.Kind.DOWNLOADING, "Downloading", 42))
         val r = room()
         open(r, "manners")
-        assertEquals(emptyList<String>(), cards(r).bandKeys())
-        assertEquals("the % is the value word; the status line only its bar", "", AddonCards.status(ThirdPartyAddons.MANNERS, AddonCards.Env()))
+        assertEquals(listOf("core"), cards(r).bandKeys())
+        val l = AddonCards.lines(ThirdPartyAddons.MANNERS, AddonCards.Env()).single()
+        assertEquals("Version", l.label); assertEquals(42, l.bar); assertFalse(l.action)
+        assertTrue("the bar is not a stop", bandButtons(r).isEmpty())
+        assertEquals("the % is the value word", "", AddonCards.status(ThirdPartyAddons.MANNERS, AddonCards.Env()))
         shot(r, "add_09_band_manners_downloading")
+    }
+
+    /** Manners installed with the game up: the design's "Settings" action has no page to open - the registry gives Manners (and every
+     *  add-on) no settings page (ThirdPartyAddons.MANNERS.settings == null) - so the band is Uninstall alone, as without the game (no
+     *  dead stops); a registry page would add its Open line after the add-on's own lines */
+    @Test fun mannersBandWithTheGameUp() {
+        installed("manners"); ThirdPartyAddons.setCore(ThirdPartyAddons.MANNERS, true)
+        assertNull(ThirdPartyAddons.MANNERS.settings)
+        val r = room(game = true)
+        open(r, "manners")
+        assertEquals(listOf("core"), cards(r).bandKeys())
+        shot(r, "add_17_band_manners_game_up")
+    }
+
+    /** the rest of the tab under the cards: Voice (the first folding group, open as the tab shows: the user's "first open" pick) and
+     *  Imported (folded), then both open - shots of the compact rows with their ONE button */
+    @Test fun voiceAndImportedUnderTheCards() {
+        val wasOffered = VoiceModels.offered
+        val cache = ImportedAddons::class.java.getDeclaredField("listCache").apply { isAccessible = true }
+        val savedList = cache.get(ImportedAddons)
+        try {
+            VoiceModels.offered = { true }
+            cache.set(ImportedAddons, listOf(ImportedAddons.Imported("Bagnon", "Bagnon", "11.0", 1_400_000L, 0L),
+                ImportedAddons.Imported("Details", "Details! Damage Meter", "3.4.1", 6_200_000L, 0L)))
+            installed("polestar"); Settings.polestarGuide = PolestarGuide.ON
+            val r = room()
+            assertTrue("Voice opens with the tab", SettingsTabs.Group.VOICE in r.open)
+            assertTrue("Imported folded", SettingsTabs.Group.IMPORTED !in r.open)
+            assertTrue("the cards always open", SettingsTabs.Group.CARDS in r.open)
+            shot(r, "add_18_voice_imported", scrollTo = 300f)
+            r.toggle(SettingsTabs.Group.IMPORTED); lay(r)
+            assertTrue(SettingsTabs.Group.IMPORTED in r.open)
+            shot(r, "add_18b_voice_imported_open", scrollTo = 600f)
+        } finally {
+            VoiceModels.offered = wasOffered
+            cache.set(ImportedAddons, savedList)
+        }
     }
 
     // ---------------------------------------------------------------- the controller

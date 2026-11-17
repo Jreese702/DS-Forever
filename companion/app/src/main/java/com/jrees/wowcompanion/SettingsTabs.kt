@@ -28,7 +28,7 @@ object SettingsTabs {
     /** a heading that folds (the user's pick: a tab opens with its FIRST group open, the rest folded). [headless] = a group with NO
      *  heading: nothing to fold, no heading stop, always open (Add-ons' Import button: the user, 2026-11-16, "Import addons should be a
      *  single button at the top of the list"); the first group that opens is then the first one WITH a heading */
-    enum class Group(val tab: Tab, val heading: String, val headless: Boolean = false, val cards: Boolean = false) {
+    enum class Group(val tab: Tab, val heading: String, val headless: Boolean = false) {
         LOOK(Tab.GENERAL, "Look"), ACCOUNT(Tab.GENERAL, "Account"), HELP(Tab.GENERAL, "Help"),
         // GitHub #43 cb3 (the user, 2026-11-13: "the tap to cast bar should get its own bottom screen section"): its own group
         HOME(Tab.BOTTOM, "Home"), CAST_BAR(Tab.BOTTOM, "Tap-to-cast bar"), MAP(Tab.BOTTOM, "Map"), CHAT(Tab.BOTTOM, "Chat"),
@@ -42,8 +42,8 @@ object SettingsTabs {
         // the user, 2026-11-16: "Import addons should be a single button at the top of the list": first on the tab, no heading
         IMPORT(Tab.ADDONS, "Import add-ons", headless = true),
         // the beautify pass (2026-11-17, the design's section 5): the third-party add-ons are ONE row of picture cards (AddonTiles), a
-        // group with no heading, always open ([cards]); it was one folding group each (Polestar, Spoken, QuestTrail, Manners)
-        CARDS(Tab.ADDONS, "Add-ons", headless = true, cards = true),
+        // group with no heading, always open; it was one folding group each (Polestar, Spoken, QuestTrail, Manners)
+        CARDS(Tab.ADDONS, "Add-ons", headless = true),
         // offline voice's model files (the user, 2026-11-16: "we could make the per languege downloads part of the addons folder"): app
         // files, never the game's AddOns; after Manners, so Polestar's group still opens first
         VOICE(Tab.ADDONS, "Voice"),
@@ -171,9 +171,7 @@ object SettingsTabs {
         // sends its first "lay" document; the tiles' groups always have their fixed slots); a folding one its headless groups (never
         // folded: Add-ons' Import button) and its first group with a heading
         if (!tab.folds) groups(tab).filter(hasRows).toSet()
-        // a tab with cards (Add-ons, 2026-11-17): the cards are its content, always open; its long lists (Voice, Imported) open folded
-        else groups(tab).filter(hasRows).let { gs -> gs.filter { it.headless }.toSet() +
-            (if (gs.any { it.cards }) emptyList() else gs.filter { !it.headless }.take(1)) }
+        else groups(tab).filter(hasRows).let { gs -> gs.filter { it.headless }.toSet() + gs.filter { !it.headless }.take(1) }
 
     /** [g] folds (a tap / A on its heading opens or folds it): a folding tab's group with a heading */
     fun folds(g: Group): Boolean = g.tab.folds && !g.headless

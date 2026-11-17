@@ -95,7 +95,7 @@ class VoiceTypingRowTest {
             act.setContentView(r)
             r.show(SettingsTabs.Tab.ADDONS)
             assertTrue(SettingsTabs.Group.VOICE in SettingsTabs.groups(SettingsTabs.Tab.ADDONS))
-            r.toggle(SettingsTabs.Group.VOICE)
+            if (SettingsTabs.Group.VOICE !in r.open) r.toggle(SettingsTabs.Group.VOICE)   // open (the first folding group opens with the tab since the cards, 2026-11-17)
             lay(r)
             val s = r.groupBoxes.first { it.group == SettingsTabs.Group.VOICE }.parts.single() as SettingsView
             @Suppress("UNCHECKED_CAST")

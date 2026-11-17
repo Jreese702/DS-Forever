@@ -190,11 +190,9 @@ class SettingsTabsTest {
 
     /** the user's pick: showing a tab opens its FIRST group, the rest folded */
     @Test fun firstGroupOpenOnShow() {
-        // (a headless group - Add-ons' Import button - is never folded: open with the first group that has a heading; a tab with picture
-        // cards - Add-ons since 2026-11-17 - opens its headless groups only: the cards are its content, the lists stay folded)
+        // (a headless group - Add-ons' Import button and its picture cards - is never folded: open with the first group that has a heading)
         for (t in T.values()) if (t.folds) assertEquals(t.label, SettingsTabs.groups(t).filter { it.headless }.toSet() +
-            (if (SettingsTabs.groups(t).any { it.cards }) emptySet() else setOf(SettingsTabs.groups(t).first { !it.headless })),
-            SettingsTabs.openOnShow(t))
+            SettingsTabs.groups(t).first { !it.headless }, SettingsTabs.openOnShow(t))
         // the user, 2026-11-12: "the general tab doesnt need the folding sections": every General group always open
         assertEquals(false, T.GENERAL.folds)
         assertEquals(setOf(G.LOOK, G.ACCOUNT, G.HELP), SettingsTabs.openOnShow(T.GENERAL))
@@ -260,9 +258,8 @@ class SettingsTabsTest {
             val bs = SettingsTabs.blocks(T.ADDONS)
             assertEquals(listOf(B.ADDON_MANNERS, B.ADDON_VOICE, B.IMPORTED), bs.takeLast(3))
             assertEquals(listOf(G.CARDS, G.VOICE, G.IMPORTED), SettingsTabs.groups(T.ADDONS).takeLast(3))
-            // the cards are the tab's content (2026-11-17): Import and the cards open, the lists folded
-            assertEquals(setOf(G.IMPORT, G.CARDS), SettingsTabs.openOnShow(T.ADDONS))
-            assertTrue(G.VOICE !in SettingsTabs.openOnShow(T.ADDONS))
+            // Import and the cards (headless, 2026-11-17) open, and the first group with a heading: Voice (the user's "first open" pick)
+            assertEquals(setOf(G.IMPORT, G.CARDS, G.VOICE), SettingsTabs.openOnShow(T.ADDONS))
         } finally { VoiceModels.offered = was }
     }
 
@@ -282,9 +279,9 @@ class SettingsTabsTest {
         assertTrue("the old Import row is gone from Imported", B.IMPORTED.rows.isEmpty())
         val open = SettingsTabs.openOnShow(T.ADDONS)
         assertTrue(G.IMPORT in open)
-        // the cards (2026-11-17): headless and always open with it; no list group opens (the cards are the tab's content)
-        assertEquals(setOf(G.IMPORT, G.CARDS), open)
-        assertEquals(setOf(G.CARDS), SettingsTabs.openOnShow(T.ADDONS) { it != G.IMPORT })
+        // the cards (2026-11-17): headless and always open with it, and the first group with a heading as on every folding tab
+        assertEquals(setOf(G.IMPORT, G.CARDS) + SettingsTabs.groups(T.ADDONS).first { !it.headless }, open)
+        assertEquals(setOf(G.CARDS) + SettingsTabs.groups(T.ADDONS).first { !it.headless }, SettingsTabs.openOnShow(T.ADDONS) { it != G.IMPORT })
     }
 
     @Test fun everyRowIsInExactlyOneGroup() {
