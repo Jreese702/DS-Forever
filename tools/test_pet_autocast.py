@@ -60,7 +60,7 @@ end
 '''
 Q = boot(["safety", "tappad", "quests"], pre=PRE)
 
-check('local QV = "q64"' in SRC["quests"], "Quests says q64 (q63 kept below it)")
+check('local QV = "q65"' in SRC["quests"], "Quests says q65 (q64 kept below it)")
 check('the user, 2026-11-16: "hunters need to be able to visually see when their pets abilities are active like growl' in SRC["quests"],
       "the q62 header quotes the user")
 
@@ -105,7 +105,7 @@ check(last.get('pet') == 1 and [(x['s'], x['n'], x['on']) for x in last.get('s',
       "petauto: Growl (slot 4, on) and Bite (slot 5, off) only", last)
 check([(x.get('sc'), x.get('ac')) for x in last.get('s', [])] == [(13, 23), (14, 24)],
       "petauto: their cells once built (cast pfocus 13 / 14, toggle 23 / 24)", [(x.get('sc'), x.get('ac')) for x in last.get('s', [])])
-check(Q.eval('WowCompanion.pad.rows.pfocus.n') == 30, "the pfocus row has 30 cells (no new pad row)", Q.eval('WowCompanion.pad.rows.pfocus.n'))
+check(Q.eval('WowCompanion.pad.rows.pfocus.n') == 31, "the pfocus row has 31 cells (q65: col 30 the quest item; no new pad row)", Q.eval('WowCompanion.pad.rows.pfocus.n'))
 
 # 2. the cells: the game's pet action for the slot (CastPetAction), the game's own /petautocasttoggle by the ability's name
 check(cell(13) == {'type': 'pet', 'action': 4, 'macrotext': None}, "pfocus 13 = the pet bar's slot 4 (type pet, action 4)", cell(13))
