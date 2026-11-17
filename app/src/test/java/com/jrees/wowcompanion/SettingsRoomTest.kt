@@ -67,15 +67,15 @@ class SettingsRoomTest {
             assertTrue(t.label, groups.isNotEmpty())
             // General does not fold (the user, 2026-11-12): every group open. A headless group (Add-ons' Import button, the user
             // 2026-11-16) is always open, with the first group that has a heading
-            // (Add-ons' cards, 2026-11-17: with no Voice / Imported rows, a tab may have headless groups only)
-            val firstHeaded = groups.filter { !it.headless }.take(1)
-            val want = if (t.folds) groups.filter { it.headless }.toSet() + firstHeaded else groups.toSet()
+            // (Performance: one headless group, no headed one - pick 5 open, the tab still folds)
+            val want = if (t.folds) groups.filter { it.headless }.toSet() + listOfNotNull(groups.firstOrNull { !it.headless }) else groups.toSet()
             assertEquals(t.label, want, r.open)
             for (gb in r.groupBoxes) {
                 val onTab = gb.group in groups
                 assertEquals("${gb.group} box", if (onTab) View.VISIBLE else View.GONE, gb.box.visibility)
                 val isOpen = gb.group in want
-                assertEquals("${gb.group} heading", isOpen, gb.heading.open)
+                // (a headless group - Add-ons' Import, Performance's tiles - draws no heading at all)
+                if (!gb.group.headless) assertEquals("${gb.group} heading", isOpen, gb.heading.open)
                 for (p in gb.parts) assertEquals("${gb.group} part", if (isOpen) View.VISIBLE else View.GONE, p.visibility)
             }
         }
@@ -86,10 +86,11 @@ class SettingsRoomTest {
         assertEquals(setOf(SettingsTabs.Group.BUTTONS), r.open)
     }
 
+    // (beautify: Performance became one headless row of tiles, so the fold walk uses Controller's groups)
     @Test fun aOnAHeadingFoldsAndOpensIt() {
         val r = room()
-        r.show(SettingsTabs.Tab.PERFORMANCE); lay(r)
-        val groups = SettingsTabs.groups(SettingsTabs.Tab.PERFORMANCE).filter { r.hasRows(it) }
+        r.show(SettingsTabs.Tab.CONTROLLER); lay(r)
+        val groups = SettingsTabs.groups(SettingsTabs.Tab.CONTROLLER).filter { r.hasRows(it) }
         val first = groups[0]; val second = groups[1]
         val heads = groups.map { g -> headBox(r, g) }
         val targets = r.pad.targetBoxes()
@@ -135,16 +136,16 @@ class SettingsRoomTest {
 
     @Test fun aTapOnAHeadingToggles() {
         val r = room()
-        r.show(SettingsTabs.Tab.PERFORMANCE); lay(r)
-        val mem = box(r, SettingsTabs.Group.MEMORY)
+        r.show(SettingsTabs.Tab.CONTROLLER); lay(r)
+        val mem = box(r, SettingsTabs.Group.WHEELS)
         val h = mem.heading
         val down = android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_DOWN, 300f, 40f, 0)
         val up = android.view.MotionEvent.obtain(0, 40, android.view.MotionEvent.ACTION_UP, 300f, 40f, 0)
         h.dispatchTouchEvent(down); h.dispatchTouchEvent(up)
-        assertTrue(SettingsTabs.Group.MEMORY in r.open)
+        assertTrue(SettingsTabs.Group.WHEELS in r.open)
         assertTrue(mem.parts.all { it.visibility == View.VISIBLE })
         h.dispatchTouchEvent(down); h.dispatchTouchEvent(up)
-        assertTrue(SettingsTabs.Group.MEMORY !in r.open)
+        assertTrue(SettingsTabs.Group.WHEELS !in r.open)
     }
 
     /** every row of the data is drawn by a part of its own group (the rows a part draws now, by their words) */
@@ -164,6 +165,8 @@ class SettingsRoomTest {
         for (gb in r.groupBoxes.filter { it.group.tab == SettingsTabs.Tab.GENERAL }) assertTrue("${gb.group}", gb.parts.single() is GeneralTilesView)
         assertEquals(setOf(SettingsTabs.Group.LAYOUT, SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY,
             SettingsTabs.Group.NAVIGATION, SettingsTabs.Group.WINDOWS),
+        // beautify: Performance's one group is ONE part, its picture tiles
+        assertTrue(box(r, SettingsTabs.Group.FRAMES).parts.single() is PerformanceTiles)
             r.groupBoxes.filter { gb -> gb.parts.any { it is GameUiSection } }.map { it.group }.toSet())
         // 2026-11-16 (the tiles): Navigation is ONE tile part (its Polestar tile was SettingsView's row); every Top screen group's part draws
         // its tiles, the rest keep their rows
@@ -267,18 +270,28 @@ class SettingsRoomTest {
         CompassSwitch::class.java.getDeclaredField("state").apply { isAccessible = true }.set(CompassSwitch, null)
     }
 
-    /** 5: the Frames slice's draw compares with the MEASURED row count, so a row that comes or goes asks for a new layout */
-    @Test fun framesDrawAsksForLayoutWhenItsRowsChange() {
-        val r = room()
+    /** 5 (beautify: the Frames rows are Performance's tiles now): a line that comes into the open band (Restart, once a change waits for
+     *  the running game) asks for a new layout */
+    @Test fun performanceTilesAskForLayoutWhenTheBandsLinesChange() {
+        Settings.init(app); SettingsTabs.init(app); FrameGen.init(app)
+        val v = SettingsView(app) { }
+        v.gameRunning = { true }
+        val r = SettingsRoom(app, v) { null }
         r.show(SettingsTabs.Tab.PERFORMANCE); lay(r)
-        val frames = box(r, SettingsTabs.Group.FRAMES).parts.single() as SettingsView
-        val f = SettingsView::class.java.getDeclaredField("measuredFg").apply { isAccessible = true }
-        assertTrue(f.getInt(frames) > 0)
-        assertTrue(!frames.isLayoutRequested)
-        f.setInt(frames, 99)                                         // as if the rows changed since the measure
-        frames.draw(Canvas(Bitmap.createBitmap(1240, 1000, Bitmap.Config.ARGB_8888)))
-        assertTrue("the draw asked for a new layout", frames.isLayoutRequested)
-        assertEquals(99, f.getInt(frames))                           // the draw path leaves the measured count alone
+        val p = box(r, SettingsTabs.Group.FRAMES).parts.single() as PerformanceTiles
+        FrameGen.markLaunched()                                       // the running game's limit is today's
+        val t = p.focusTargets()[0]                                   // Frame limit
+        val d = android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_DOWN, t.centerX(), t.centerY(), 0)
+        val u = android.view.MotionEvent.obtain(0, 40, android.view.MotionEvent.ACTION_UP, t.centerX(), t.centerY(), 0)
+        p.dispatchTouchEvent(d); p.dispatchTouchEvent(u)
+        lay(r)
+        assertEquals(PerformanceTileModel.LIMIT, p.openTile)
+        assertTrue(!p.isLayoutRequested)
+        val was = FrameGen.fpsLimit
+        FrameGen.askLimit(if (was == 40) 60 else 40)                  // a pick the running game does not have: Restart comes
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        assertTrue("the band's new line asked for a layout", p.isLayoutRequested)
+        FrameGen.askLimit(was)
     }
 
     /** 7: an add-on that stops being shown (QuestTrail out) goes at once, its card and its band, without a tab switch (the beautify
