@@ -112,7 +112,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         overlay = FrameLayout(activity)
         view.addView(overlay, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         pairing = PairingView(activity, onPair = { pair(it) }, onBack = { back() }, onQuality = { openQuality() }, onPcStep = { stepPc(it) })
-        status = StatusView(activity, onRetry = { retryNow() }, onPairAgain = { show(Screen.PAIRING) }, onQuality = { openQuality() }, onBack = { back() })
+        status = StatusView(activity, onRetry = { retryNow(byHand = true) }, onPairAgain = { show(Screen.PAIRING) }, onQuality = { openQuality() }, onBack = { back() })
         overlay.centered(pairing, 640f)
         overlay.centered(status, 760f)
         // "Starting WoW on your PC…" over the stream (S3's wow message)
@@ -623,10 +623,15 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         }
     }
 
-    private fun retryNow() {
+    /**
+     * [byHand] = the player's Retry (the button or A on the problem screen). Only that asks Desktop to start its own virtual screen's
+     * tries over (verifier 2026-11-17: the network coming back, mDNS moves and the quality sheet call this too, so every flap re-armed
+     * the screen makes with no pause - against "never a loop").
+     */
+    private fun retryNow(byHand: Boolean = false) {
         policy.reset(); heal.reset(); main.removeCallbacks(healTimeout); reachFails = 0; retryAt = 0
         // Desktop's own virtual screen gave up after its 3 tries: the player's Retry starts them over
-        bridge?.screenRetry()
+        if (byHand) bridge?.screenRetry()
         if (host == null) show(Screen.PAIRING) else connect()
     }
 
@@ -1035,7 +1040,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         Screen.QUALITY -> qualityView?.pad(code) == true
         Screen.TEST -> testView?.pad(code) == true
         Screen.PROBLEM, Screen.CONNECTING, Screen.PIN -> when (code) {
-            KeyEvent.KEYCODE_BUTTON_A -> { if (screen == Screen.PROBLEM) retryNow(); true }
+            KeyEvent.KEYCODE_BUTTON_A -> { if (screen == Screen.PROBLEM) retryNow(byHand = true); true }
             KeyEvent.KEYCODE_BUTTON_X -> { stopStream("pair again"); show(Screen.PAIRING); true }
             KeyEvent.KEYCODE_BUTTON_Y -> { openQuality(); true }
             KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BACK -> { back(); true }

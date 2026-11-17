@@ -191,7 +191,7 @@ namespace DsfDesktop.Tests
         [Test]
         public static void NeverRemovedOrRemadeMidStream()
         {
-            var sudo = new Fake("SudoVDA");
+            var sudo = new Fake("SudoVDA") { resizeFail = null };
             var life = new ScreenLife(new List<IScreenDriver> { sudo });
             A.Null(life.Make(1920, 1080, 60, T0));
             // own screen switched off during a stream (a real screen on): kept until it ends
@@ -205,8 +205,8 @@ namespace DsfDesktop.Tests
             A.Eq(ScreenLife.ModeChanged, d.why);
             A.Null(life.Make(1920, 1080, 120, T0));
             A.Eq((1920, 1080, 120), life.Mode);
-            A.Eq(1, sudo.removes);
-            A.Eq(2, sudo.makes);
+            A.Eq(0, sudo.removes, "never taken away first (a new one beside it, the old one retired once WoW is off it)");
+            A.Eq(1, sudo.resizes);
             A.Eq(ScreenPlan.Step.Keep, life.Decide(T0, true, true, true, true, false, M120, false).step, "then it stays");
             // own screen off, idle, a real screen: ours goes
             A.Eq(ScreenPlan.Step.RemoveOurs, life.Decide(T0, false, true, true, true, false, M120, false).step);
@@ -297,12 +297,13 @@ namespace DsfDesktop.Tests
                 A.Eq(ScreenPlan.Step.Keep, life.Decide(T0.AddSeconds(2 * i), true, true, true, true, false, M120, false).step, "tick " + i);
             A.Eq(0, vdd.removes);
             // a leftover whose mode is known and differs: one remake, then it settles
-            var vdd2 = new Fake("Virtual Display Driver") { Exists = true, GdiName = @"\\.\DISPLAY7", Mode = (1920, 1080, 60) };
+            var vdd2 = new Fake("Virtual Display Driver") { Exists = true, GdiName = @"\\.\DISPLAY7", Mode = (1920, 1080, 60), resizeFail = null };
             var life2 = new ScreenLife(new List<IScreenDriver> { vdd2 });
             var d = life2.Decide(T0, true, true, true, true, false, M120, false);
             A.Eq(ScreenPlan.Step.MakeOurs, d.step);
             A.Null(life2.Make(1920, 1080, 120, T0));
-            A.Eq(1, vdd2.removes);
+            A.Eq(0, vdd2.removes);
+            A.Eq(1, vdd2.resizes);
             A.Eq(ScreenPlan.Step.Keep, life2.Decide(T0.AddSeconds(2), true, true, true, true, false, M120, false).step);
         }
 
@@ -476,9 +477,14 @@ namespace DsfDesktop.Tests
                 t = t.AddMinutes(2).AddSeconds(1);
                 var d = h.Decide(t, true, false, true, true, false, M120, false, sunshineOnOurs: false);
                 if (i < ScreenLife.MaxFails) A.Eq(ScreenLife.NotOnOurs, d.why, "pointed at again " + i);
-                else A.Eq(ScreenPlan.Step.Keep, d.step, "gave up: kept as it is");
+                else A.Eq(ScreenPlan.Step.GaveUp, d.step, "gave up: kept, and said (verifier 2026-11-17: it stayed 'Ready' with no line)");
             }
-            A.Eq(ScreenPlan.Step.Keep, h.Decide(t.AddHours(1), true, false, true, true, false, M120, false, sunshineOnOurs: false).step);
+            A.Eq(ScreenPlan.Step.GaveUp, h.Decide(t.AddHours(1), true, false, true, true, false, M120, false, sunshineOnOurs: false).step);
+            A.Eq(1, vdd.makes, "never made again");
+            A.Eq(0, vdd.removes, "kept: the only screen");
+            // Retry by hand: pointed at again at once
+            h.Reset(byHand: true);
+            A.Eq(ScreenLife.NotOnOurs, h.Decide(t.AddHours(1), true, false, true, true, false, M120, false, sunshineOnOurs: false).why);
         }
 
         [Test]
@@ -574,13 +580,23 @@ namespace DsfDesktop.Tests
             l2.RetireOld("WoW is on the new one");
             A.Eq(1, sudo.retires);
             A.Null(l2.OldGdiName);
-            // a driver that can't, and the old one won't go: a failed try, nothing new made beside it
-            var stuck = new Fake("Virtual Display Driver") { removeFail = "refused" };
+            // a driver that refuses the new mode: ours stays at its old one (verifier 2026-11-17: it was removed and made again, the
+            // detach moving WoW to a real screen first) - a failed try, paused, capped, never removed
+            var stuck = new Fake("Virtual Display Driver");
             var l3 = new ScreenLife(new List<IScreenDriver> { stuck });
             A.Null(l3.Make(1920, 1080, 60, T0));
             A.NotNull(l3.Make(1920, 1080, 120, T0));
             A.Eq(1, stuck.makes);
+            A.Eq(0, stuck.removes, "never taken away");
+            A.True(l3.Exists);
+            A.Eq((1920, 1080, 60), l3.Mode, "still streamed at its mode");
             A.Eq(1, l3.Fails);
+            A.Eq(ScreenPlan.Step.Keep, l3.Decide(T0.AddMinutes(1), true, true, true, true, false, M120, false).step, "paused");
+            var t3 = T0;
+            for (int i = 2; i <= ScreenLife.MaxFails; i++) { t3 = t3.AddMinutes(2).AddSeconds(1); l3.Make(1920, 1080, 120, t3); }
+            A.True(l3.GaveUp);
+            A.Eq(ScreenPlan.Step.Keep, l3.Decide(t3.AddHours(1), true, true, true, true, false, M120, false).step, "kept as it is, no more tries");
+            A.Eq(0, stuck.removes);
         }
 
         // ---------------------------------------------------------------- the VDD with fake Windows calls
@@ -651,6 +667,67 @@ namespace DsfDesktop.Tests
             A.True(life.Remove("left from before"));
             A.False(attached);
             A.Eq("detach", w.calls.Last());
+        }
+
+        [Test]
+        public static void AFailedUndoKeepsTheMonitorOurs()
+        {
+            // verifier 2026-11-17: a refused detach in the undo still cleared the record - attached, but nobody's for ever
+            var w = new FakeWin { comesOn = false, detachFail = "display settings refused (-1)" };
+            bool attached = false; string dev = null;
+            var vdd = new VddScreen(() => attached, v => attached = v, () => dev, v => dev = v, w);
+            A.Eq("it didn't come on", vdd.Make(1920, 1080, 120));
+            A.True(attached, "still ours");
+            A.Eq(@"\\.\DISPLAY7", dev);
+            // not on: the next look detaches it again (registry too) - and once that works it is no longer ours
+            A.False(vdd.Exists);
+            A.True(attached, "refused again: kept");
+            w.detachFail = null;
+            A.False(vdd.Exists);
+            A.False(attached);
+            A.Null(dev);
+            A.Eq(3, w.calls.Count(c => c == "detach"));
+            // refused every time: never a loop - after VddScreen.MaxStaleFails the record goes, said once
+            var w2 = new FakeWin { detachFail = "refused" };
+            bool at2 = true; string d2 = @"\\.\DISPLAY7";
+            var v2 = new VddScreen(() => at2, v => at2 = v, () => d2, v => d2 = v, w2);
+            for (int i = 0; i < VddScreen.MaxStaleFails + 2; i++) A.False(v2.Exists);
+            A.False(at2);
+            A.Eq(VddScreen.MaxStaleFails, w2.calls.Count(c => c == "detach"));
+        }
+
+        [Test]
+        public static void ACrashBeforeTheMonitorCameOnIsUndoneAtTheNextStart()
+        {
+            // verifier 2026-11-17: recorded, attached in the registry, Desktop gone before it came on. At the next start the record was
+            // wiped without a detach: the registry attachment could come on later as nobody's monitor
+            var w = new FakeWin();
+            bool attached = true; string dev = @"\\.\DISPLAY7";
+            var life = new ScreenLife(new List<IScreenDriver> { new VddScreen(() => attached, v => attached = v, () => dev, v => dev = v, w) });
+            A.False(life.Exists, "not on: nothing to adopt");
+            A.Eq("detach", w.calls.Single(), "its registry attachment undone");
+            A.False(attached);
+            A.Null(dev);
+            // a recorded name that isn't the VDD's any more: nothing to undo
+            var w2 = new FakeWin();
+            bool a2 = true; string d2 = @"\\.\DISPLAY9";
+            A.False(new VddScreen(() => a2, v => a2 = v, () => d2, v => d2 = v, w2).Exists);
+            A.Eq(0, w2.calls.Count);
+            A.False(a2);
+        }
+
+        [Test]
+        public static void TheOldScreenGoesOnlyOnceWowIsOffIt()
+        {
+            // verifier 2026-11-17: removed after 20 s whatever happened - WoW on it was then put on the player's screen by Windows
+            const string old = @"\\.\DISPLAY21", fresh = @"\\.\DISPLAY22";
+            A.Eq(OldScreen.Next.Retire, OldScreen.Decide(true, fresh, old, 0));
+            A.Eq(OldScreen.Next.Retire, OldScreen.Decide(false, null, old, 0), "no WoW: nothing to move");
+            A.Eq(OldScreen.Next.Later, OldScreen.Decide(true, old, old, 0), "still on it: kept");
+            A.Eq(OldScreen.Next.Later, OldScreen.Decide(true, null, old, 0), "unreadable: not seen off it");
+            A.Eq(OldScreen.Next.Later, OldScreen.Decide(true, old.ToLowerInvariant(), old, OldScreen.MaxTries - 2));
+            A.Eq(OldScreen.Next.LeaveOn, OldScreen.Decide(true, old, old, OldScreen.MaxTries - 1), "never a loop");
+            A.Eq(OldScreen.Next.Retire, OldScreen.Decide(true, fresh, null, 5), "none: nothing to do");
         }
 
         [Test]

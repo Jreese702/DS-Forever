@@ -954,6 +954,8 @@ namespace DsfDesktop.App
             if (!thor && thorWas) modeHeard = false;
             thorWas = thor;
             bool thorWants = life.ThorWants(now, thor, streaming);
+            // an old screen WoW hadn't left yet (RetireOldScreen): tried again, never in a loop (OldScreen.MaxTries)
+            if (now >= retireAt) { retireAt = DateTime.MaxValue; Task.Run(() => RetireOldScreen()); }
             if (now - driversAt > TimeSpan.FromSeconds(30)) { driversAt = now; (driverInstalled, driverUsable) = life.Survey(); }
             bool hasScreen = Displays.HasScreen(win, life.GdiName);
             // a driver that is there but can't be used (the player's own VDD monitor): nothing to offer
@@ -1014,6 +1016,8 @@ namespace DsfDesktop.App
                 if (why != null)
                 {
                     Log.I("virtual screen: couldn't make one: " + why);
+                    // a mode change the driver refused: ours is still there at its old mode, and still streamed
+                    if (life.Exists && sessionOutput != null) { Say(ScreenPlan.Ready, null); return; }
                     if (hasScreen) Say(ScreenPlan.FallbackFailed, null);
                     else Say(ScreenPlan.Failed, ScreenPlan.ProblemNoScreen);
                     return;
@@ -1063,9 +1067,17 @@ namespace DsfDesktop.App
                     }
                     if (hadOutput) { WriteSunshineConfig(); RestartSunshine(); }
                     life.Failed(DateTime.UtcNow);          // kept (headless: the only screen), pointed at again in 2 minutes, not every tick
+                    lastDisplayRestart = DateTime.UtcNow;
+                    // verifier 2026-11-17: after the last try this still said Ready. Ours isn't captured: the PC needs a virtual screen
+                    // (the Thor's Retry or a Test start the tries over). No old screen is retired: Sunshine isn't on the new one
+                    if (life.GaveUp) Say(ScreenPlan.NeedsVirtual, ScreenPlan.ProblemNeedsScreen);
+                    else Say(ScreenPlan.Ready, null);
+                    Task.Run(() => { Thread.Sleep(3000); CheckCapture(); });
+                    return;
                 }
                 lastDisplayRestart = DateTime.UtcNow;
                 Say(ScreenPlan.Ready, null);
+                retireTries = 0;
                 Task.Run(() => { Thread.Sleep(3000); CheckCapture(); RetireOldScreen(); });
             }
             catch (Exception e) { Log.I("virtual screen: " + e.Message); Say(hasScreen ? ScreenPlan.FallbackFailed : ScreenPlan.Failed, hasScreen ? null : ScreenPlan.ProblemNoScreen); }
@@ -1092,22 +1104,46 @@ namespace DsfDesktop.App
         /// </summary>
         void RetireOldScreen()
         {
+            if (Interlocked.CompareExchange(ref retiringN, 1, 0) != 0) return;
             try
             {
                 var old = Screens.OldGdiName;
                 if (old == null) return;
+                var next = OldScreen.Next.Later;
                 for (int i = 0; i < 20; i++)
                 {
-                    string on;
-                    using (var p = WowWindow.Find(FlavorDirOrNull)) on = p == null ? null : Displays.MonitorOf(p.MainWindowHandle);
-                    if (!string.Equals(on, old, StringComparison.OrdinalIgnoreCase)) break;
+                    bool running; string on;
+                    using (var p = WowWindow.Find(FlavorDirOrNull)) { running = p != null; on = p == null ? null : Displays.MonitorOf(p.MainWindowHandle); }
+                    next = OldScreen.Decide(running, on, old, retireTries);
+                    if (next == OldScreen.Next.Retire) break;
                     Thread.Sleep(1000);
                     CheckCapture();
                 }
-                Screens.RetireOld("WoW is on the new one");
+                switch (next)
+                {
+                    case OldScreen.Next.Retire:
+                        retireTries = 0;
+                        Screens.RetireOld("WoW is on the new one");
+                        break;
+                    case OldScreen.Next.Later:
+                        retireTries++;
+                        retireAt = DateTime.UtcNow + OldScreen.Again;
+                        Log.I("virtual screen: WoW is still on the old one (" + old + "): kept, tried again in " + (int)OldScreen.Again.TotalSeconds + " s (" + retireTries + "/" + OldScreen.MaxTries + ")");
+                        break;
+                    default:
+                        retireAt = DateTime.MaxValue;
+                        Log.I("virtual screen: WoW stayed on the old one (" + old + ") after " + OldScreen.MaxTries + " tries: it stays on until ours goes");
+                        break;
+                }
             }
             catch (Exception e) { Log.I("virtual screen: retire the old one: " + e.Message); }
+            finally { Volatile.Write(ref retiringN, 0); }
         }
+
+        /// <summary>the old-screen retire: one at a time; its next try (MaxValue = none); tries for this old screen</summary>
+        int retiringN;
+        DateTime retireAt = DateTime.MaxValue;
+        int retireTries;
 
         void WowHome(string home)
         {

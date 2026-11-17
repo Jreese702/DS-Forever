@@ -209,7 +209,10 @@ namespace DsfDesktop.Sunshine
                 case ScreenPlan.Step.Keep:
                     // a leftover of unknown mode is taken as it is (no remake loop)
                     if (!askedIn.HasValue) askedOut = want;
-                    if (streaming || !thorHere || gaveUp) return (step, null);
+                    if (streaming || !thorHere) return (step, null);
+                    // verifier 2026-11-17: headless, ours never listed by our Sunshine and the tries used up - kept (the only screen),
+                    // but said: the PC needs a virtual screen, and the Thor gets the line with its Retry
+                    if (gaveUp) return (!sunshineOnOurs && !hasScreen ? ScreenPlan.Step.GaveUp : step, !sunshineOnOurs && !hasScreen ? MaxFails + " tries failed" : null);
                     if (now - failedAt < RetryAfter) return (step, null);
                     if (askedOut.Value != want) return (ScreenPlan.Step.MakeOurs, ModeChanged);
                     if (!sunshineOnOurs) return (ScreenPlan.Step.MakeOurs, NotOnOurs);
@@ -230,7 +233,7 @@ namespace DsfDesktop.Sunshine
         /// <summary>
         /// Makes ours through the first usable driver that manages it (in order); null = made, Current set and named, else every
         /// driver's reason (a try towards <see cref="MaxFails"/>). A driver that made one but Windows didn't name is undone. Ours at
-        /// another mode is resized (<see cref="IScreenDriver.Resize"/>) - only when the driver can't is it removed and made again.
+        /// another mode is resized (<see cref="IScreenDriver.Resize"/>); a driver that refuses keeps ours at its mode (a failed try).
         /// </summary>
         public string Make(int w, int h, int hz, DateTime now)
         {
@@ -244,17 +247,12 @@ namespace DsfDesktop.Sunshine
                     string rs;
                     try { rs = cur.Resize(w, h, hz); } catch (Exception e) { rs = e.Message; }
                     if (rs == null) { asked = (w, h, hz); return null; }
-                    Log.I("virtual screen: " + cur.Name + " can't change its mode (" + rs + "): removed and made again");
-                    string rm;
-                    try { rm = cur.Remove(ModeChanged); } catch (Exception e) { rm = e.Message; }
-                    if (rm != null)
-                    {
-                        failedAt = now;
-                        Fail("the old one couldn't be removed");
-                        return cur.Name + ": the old one couldn't be removed (" + rm + ")";
-                    }
-                    Current = null;
-                    asked = null;
+                    // verifier 2026-11-17: a refused resize used to remove ours and make it again - the detach moved WoW to a real
+                    // screen before the new one was up. Ours stays at its mode (it still streams); a failed try, paused and capped
+                    failedAt = now;
+                    Fail("its mode couldn't change");
+                    Log.I("virtual screen: " + cur.Name + " can't change its mode (" + rs + "): ours stays at " + cur.Mode.w + "x" + cur.Mode.h + "@" + cur.Mode.hz);
+                    return cur.Name + ": its mode couldn't change (" + rs + ")";
                 }
                 var whys = new List<string>();
                 foreach (var d in drivers)
@@ -318,6 +316,27 @@ namespace DsfDesktop.Sunshine
                 asked = null;
                 return true;
             }
+        }
+    }
+
+    /// <summary>
+    /// The old screen a SudoVDA mode change left beside the new one (<see cref="IScreenDriver.Resize"/>): removed only once WoW is
+    /// seen OFF it (verifier 2026-11-17: it was removed after 20 s whatever happened - Sunshine restarting, the 15 s move throttle or a
+    /// failed move left WoW on it, and Windows then put WoW on the player's screen). Not seen off: kept and tried again later;
+    /// <see cref="MaxTries"/> such tries and it stays on (said once) until ours goes. Pure.
+    /// </summary>
+    public static class OldScreen
+    {
+        public const int MaxTries = 3;
+        public static readonly TimeSpan Again = TimeSpan.FromSeconds(60);
+        public enum Next { Retire, Later, LeaveOn }
+
+        /// <summary>[wowRunning] = WoW's window found; [wowOn] = the screen it is on (null = unreadable); [tries] = tries before this one</summary>
+        public static Next Decide(bool wowRunning, string wowOn, string old, int tries)
+        {
+            if (old == null || !wowRunning) return Next.Retire;
+            if (wowOn != null && !string.Equals(wowOn, old, StringComparison.OrdinalIgnoreCase)) return Next.Retire;
+            return tries + 1 >= MaxTries ? Next.LeaveOn : Next.Later;
         }
     }
 
@@ -471,7 +490,7 @@ namespace DsfDesktop.Sunshine
                     var all = win.Displays().Where(IsVdd).ToList();
                     if (all.Count == 0) return false;          // not installed (yet): our install's flag waits for it
                     var d = Ours(all, true, ourDevice());
-                    if (d == null) { setAttached(false); setDevice(null); GdiName = null; return false; }
+                    if (d == null) { Forget(all); return false; }
                     if (!string.Equals(GdiName, d.Name, StringComparison.OrdinalIgnoreCase))
                     {
                         GdiName = d.Name;
@@ -481,6 +500,39 @@ namespace DsfDesktop.Sunshine
                     return true;
                 }
             }
+        }
+
+        /// <summary>times our recorded but inactive monitor's detach (its registry attachment) was refused</summary>
+        int staleFails;
+        /// <summary>a detach of our recorded inactive monitor refused this many times: the record goes anyway (said once)</summary>
+        public const int MaxStaleFails = 3;
+
+        /// <summary>
+        /// Our recorded monitor is not on (the player turned it off, Windows never applied our attach, or Desktop crashed between the
+        /// registry write and the monitor coming on). Verifier 2026-11-17: the record was simply wiped, so a registry attachment left by
+        /// that crash could come on later as a monitor nobody owned. Its attachment is undone first (registry too); the record goes once
+        /// that worked - or, never a loop, after <see cref="MaxStaleFails"/> refusals. A recorded name not among the VDD's monitors:
+        /// nothing to undo.
+        /// </summary>
+        void Forget(List<WinDisplay> vdd)
+        {
+            var dev = ourDevice();
+            GdiName = null;
+            if (!string.IsNullOrEmpty(dev) && vdd.Any(v => string.Equals(v.Name, dev, StringComparison.OrdinalIgnoreCase)))
+            {
+                var err = win.Detach(dev);
+                if (err != null)
+                {
+                    staleFails++;
+                    Log.I("virtual screen: Virtual Display Driver's " + dev + " (ours, not on) couldn't be detached (" + staleFails + "/" + MaxStaleFails + "): " + err);
+                    if (staleFails < MaxStaleFails) return;
+                    Log.I("virtual screen: " + MaxStaleFails + " detaches refused: " + dev + " is no longer counted as ours");
+                }
+                else Log.I("virtual screen: Virtual Display Driver's " + dev + " (ours, not on) detached in the registry too");
+            }
+            staleFails = 0;
+            setAttached(false);
+            setDevice(null);
         }
 
         public string GdiName { get; private set; }
@@ -531,6 +583,11 @@ namespace DsfDesktop.Sunshine
         {
             var err = win.Detach(dev);
             Log.I("virtual screen: Virtual Display Driver's " + dev + " undone (" + why + ")" + (err != null ? ": " + err : ""));
+            GdiName = null;
+            Mode = (0, 0, 0);
+            // verifier 2026-11-17: a refused detach still cleared the record - attached in the registry (or on), but nobody's. The
+            // record stays: an active one is adopted and removed (capped), an inactive one is detached again by Exists (capped)
+            if (err != null) return;
             setAttached(false);
             setDevice(null);
             GdiName = null;
