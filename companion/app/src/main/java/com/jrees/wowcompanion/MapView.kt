@@ -5149,9 +5149,8 @@ class MapView(context: Context) : View(context) {
     }
 
     // ---- THE ROUTE'S DOTS AND ARROWS (feat/route-arrows; the user, 2026-11-17: "on the mini map every 5 dots I want a blue arrow so
-    // that its consistent", then "I want it to be 1 arrow every 5 dots"): every route's gold dots ([RouteArrows]: 16 px apart, 24 px
-    // a second toward the goal), five dots then the compass's light blue chevron (Trail.lua cp43) in a 6th slot of its own (96 px a
-    // cycle), turned along the route at that point, moving with the dots
+    // that its consistent"): every route's gold dots ([RouteArrows]: 16 px apart, 24 px a second toward the goal), every 5th one the
+    // compass's light blue chevron (Trail.lua cp43) turned along the route at that point, moving with the dots
     private val pArrow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
     }
@@ -5410,7 +5409,7 @@ class MapView(context: Context) : View(context) {
         val age = now - pathAt
         val a = min(1f, age / 300f)
         if (len >= 40f) {
-            // the dots: 16 px apart, moving 24 px a second toward the goal, a blue arrow after every 5 ([drawRouteDots])
+            // the dots: 16 px apart, moving 24 px a second toward the goal, every 5th a blue arrow ([drawRouteDots])
             pathTmp.reset(); pathTmp.moveTo(x0, y0); pathTmp.lineTo(ex, ey)
             drawRouteDots(c, pathTmp, a * dim, age)
         }
