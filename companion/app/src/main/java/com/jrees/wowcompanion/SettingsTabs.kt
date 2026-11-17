@@ -41,6 +41,8 @@ object SettingsTabs {
         // offline voice's model files (the user, 2026-11-16: "we could make the per languege downloads part of the addons folder"): app
         // files, never the game's AddOns; after Manners, so Polestar's group still opens first
         VOICE(Tab.ADDONS, "Voice"),
+        // the player's own add-ons (the user, 2026-11-16: "maybe we just do an import addons button then?"): last, so Polestar opens first
+        IMPORTED(Tab.ADDONS, "Imported"),
         FRAMES(Tab.PERFORMANCE, "Frames"), MEMORY(Tab.PERFORMANCE, "Memory"), INDOOR(Tab.PERFORMANCE, "Indoor maps"),
         STREAMING(Tab.PERFORMANCE, "Streaming"),
     }
@@ -122,6 +124,8 @@ object SettingsTabs {
         // offline voice (VoiceModels): English, and every other language in one file, each small and full ("Voice: English · 60 MB");
         // shown only in a build with libdsfwhisper.so
         ADDON_VOICE(Group.VOICE, "Voice", VoiceModels.Model.values().map { it.label }),
+        // Import (a .zip through Android's picker), its confirm card and the imported list (ImportedAddons; SettingsView.drawImported)
+        IMPORTED(Group.IMPORTED, "Imported", listOf("Import add-ons")),
         // ---- Performance
         FRAMES(Group.FRAMES, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game")),

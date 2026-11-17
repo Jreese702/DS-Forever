@@ -159,6 +159,7 @@ object ThirdPartyAddons {
     private var prefs: Store? = null
     @Volatile private var app: Context? = null
     fun init(c: Context) {
+        ImportedAddons.init(c)                                  // its queued replacements go in at this object's start step
         if (prefs != null) return
         Settings.init(c)                                        // the base add-ons' choice (PolestarGuide) lives in Settings
         app = c.applicationContext
@@ -462,7 +463,8 @@ object ThirdPartyAddons {
             return applyLocked(flavorRoot, fetchSmall, by) { msg -> currentStep = msg; onStep(msg) }
         } finally { currentStep = null; applyLock.unlock() }
     }
-    private val applyLock = java.util.concurrent.locks.ReentrantLock()
+    /** one add-on move at a time: the start step, and Settings > Add-ons > Import ([ImportedAddons]) */
+    internal val applyLock = java.util.concurrent.locks.ReentrantLock()
     /** the running step's status text ("Installing add-ons: Spoken Quests..."), null between runs: a waiting caller shows it */
     @Volatile internal var currentStep: String? = null
 
@@ -531,6 +533,11 @@ object ThirdPartyAddons {
                 if (t !is Later && wanted(a, key) && !installed(a, key)) putState(a, key, state(a, key).put("failed", sig(p)).put("why", why))
             }
         }
+        // Settings > Add-ons > Import's replacements made while the game ran (the user's pick, 2026-11-16: "New now, replace next
+        // start"): this same safe point, the game closed, under this same lock
+        runCatching { ImportedAddons.applyQueued(flavorRoot, onStep) }
+            .onSuccess { it?.let { l -> lines.add(l) } }
+            .onFailure { lines.add("imported add-ons skipped (${DependencyAddons.reasonOf(it)})"); log("add-ons: imported: ${it.message}") }
         log("add-ons ($by): " + lines.joinToString("; ").ifEmpty { "nothing to do" })
         changed()
         return lines.joinToString("; ")
@@ -646,23 +653,42 @@ object ThirdPartyAddons {
      * from the backup, so AddOns ends as it was (the old copy whole, or nothing where there was nothing), never half new. The new
      * copy is still in its download (kept on a failure).
      */
-    private fun putBack(done: List<Pair<File, File?>>) {
+    internal fun putBack(done: List<Pair<File, File?>>) {
         for ((target, old) in done.asReversed()) {
-            target.deleteRecursively()
+            deleteTree(target)
             if (old != null) runCatching { moveDir(old, target, "the old ${target.name} could not be put back") }
                 .onFailure { log("add-ons: ${target.name}: ${it.message}: the old copy stays in the backup (${old.name})") }
         }
         if (done.isNotEmpty()) log("add-ons: the move in failed: ${done.joinToString { it.first.name }} put back as before")
     }
 
-    private fun backup(iface: File, target: File, stamp: String): File {
-        val base = "${target.name}-${DependencyAddons.installedVersion(target) ?: "unknown"}-$stamp"
-        var b = File(iface, "${DependencyAddons.BACKUP}/$base")
+    internal fun backup(iface: File, target: File, stamp: String): File {
+        // (review of the import, 2026-11-16) the .toc's Version is the add-on author's text (an imported zip's): only a plain word
+        // goes in the name, so "x/../../AddOns/WowCompanion/z" can never send the old copy anywhere but straight into the backup
+        val base = "${target.name}-${backupWord(DependencyAddons.installedVersion(target))}-$stamp"
+        val home = File(iface, DependencyAddons.BACKUP)
+        var b = File(home, base)
         var n = 2
-        while (b.exists()) b = File(b.parentFile, "$base~${n++}")         // #135: never into an older backup of the same second
-        b.parentFile?.mkdirs()
+        while (b.exists()) b = File(home, "$base~${n++}")                  // #135: never into an older backup of the same second
+        if (b.canonicalFile.parentFile != home.canonicalFile) throw IOException("the old ${target.name} could not be moved to the backup")
+        home.mkdirs()
         moveDir(target, b, "the old ${target.name} could not be moved to the backup")
         return b
+    }
+
+    /** a version as a backup-name word: letters, digits, '.', '_', '-' only, no "..", at most 40; "unknown" when nothing is left */
+    internal fun backupWord(v: String?): String {
+        val w = (v ?: "").map { if (it.isLetterOrDigit() && it.code < 128 || it == '.' || it == '_' || it == '-') it else '_' }
+            .joinToString("").replace(Regex("""\.{2,}"""), "_").trim('.').take(40)
+        return w.ifEmpty { "unknown" }
+    }
+
+    /** [f] and everything under it gone; a link is removed itself, never followed (Kotlin's deleteRecursively follows them) */
+    internal fun deleteTree(f: File): Boolean {
+        val p = f.toPath()
+        if (java.nio.file.Files.isSymbolicLink(p)) return f.delete()
+        if (f.isDirectory) f.listFiles()?.forEach { deleteTree(it) }
+        return f.delete() || !f.exists()
     }
 
     /**

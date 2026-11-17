@@ -31,6 +31,13 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!-- Settings > Add-ons > Import: the player's own add-on zips through Android's picker (AddonImportActivity.kt); read access to
+             the picked files only, no permission asked for -->
+        <activity
+            android:name="com.jrees.wowcompanion.AddonImportActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <!-- Voice to text (the user's pick 2026-11-16: "Android's own 'Allow microphone?' box, shown once on the bottom screen the first
              time you press X (never in a fight)"): asks for the microphone on the bottom screen's display and closes (VoiceAskActivity.kt) -->
         <activity
