@@ -1714,7 +1714,7 @@ class WorldMapRoomView(context: Context) : View(context) {
                 val size = DISC_PX * (1f + (SEL_SCALE - 1f) * k)
                 withAlpha(c, cx, cy, size, fadeA) {
                     // the user's pick (2026-11-17, "Grey there too"): an untracked quest's objective is Home's grey disc, no number
-                    if (untrackedObj(q)) UiKit.questDiscMuted(c, cx, cy, size)
+                    if (untrackedObj(q)) UiKit.questDiscMuted(c, cx, cy, size, marker = true)
                     else UiKit.questDisc(c, cx, cy, size, if (q.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
                         focus = true, glow = focused, number = if (q.done || n <= 0) null else n)
                     if (focused) {
@@ -1964,7 +1964,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             val x = sxc(lm.u); val y = syc(lm.v)
             if (x < canvasR.left || x > canvasR.right || y < canvasR.top || y > canvasR.bottom) continue
             withAlpha(c, x, y, DISC_PX, lm.a) {
-                if (untrackedObj(lm.m)) UiKit.questDiscMuted(c, x, y, DISC_PX)
+                if (untrackedObj(lm.m)) UiKit.questDiscMuted(c, x, y, DISC_PX, marker = true)
                 else UiKit.questDisc(c, x, y, DISC_PX, if (lm.m.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS, focus = true, glow = lm.m.id == focusQid)
             }
         }

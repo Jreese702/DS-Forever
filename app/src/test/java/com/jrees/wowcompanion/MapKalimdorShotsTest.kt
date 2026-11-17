@@ -126,13 +126,17 @@ class MapKalimdorShotsTest {
 
     private val ELWYNN = doubleArrayOf(0.0, -7939.583, -10254.166, 1535.4166, -1935.4166)
     private var zoneId = 1411
+    /** the untracked-quests cases (2026-11-17, second report): a tracked quest NOT focused (10) beside the untracked one, and an
+     *  untracked quest the game places nothing for, with three QuestieDB spots (11) */
+    private var extra = false
     private fun mapDoc(): JSONObject {
         val (name, r) = if (zoneId == 1429) "Elwynn Forest" to ELWYNN else "Durotar" to DUROTAR
         return JSONObject().put("ok", true).put("mapID", zoneId).put("zone", name).put("subzone", "")
         .put("x", 0.52).put("y", 0.44).put("facing", 2.4)
         .put("rect", JSONObject().put("c", r[0].toInt()).put("t", r[1]).put("b", r[2]).put("l", r[3]).put("r", r[4]))
         .put("quests", JSONArray().put(JSONObject().put("questID", 7).put("x", 0.55).put("y", 0.48).put("title", "Sarkoth"))
-            .put(JSONObject().put("questID", 8).put("x", 0.47).put("y", 0.50).put("title", "Vile Familiars")))
+            .put(JSONObject().put("questID", 8).put("x", 0.47).put("y", 0.50).put("title", "Vile Familiars"))
+            .apply { if (extra) put(JSONObject().put("questID", 10).put("x", 0.58).put("y", 0.41).put("title", "Galgar's Cactus Apple Surprise")) })
     }
 
     private fun questsDoc(): JSONObject {
@@ -142,7 +146,17 @@ class MapKalimdorShotsTest {
             .put(JSONObject().put("id", 9).put("title", "Lazy Peons").put("lv", 4).put("watch", 1).put("ready", true).put("done", true)
                 .put("zone", "Durotar"))
             .put(JSONObject().put("id", 8).put("title", "Vile Familiars").put("lv", 3).put("zone", "Durotar")
-                .put("obj", JSONArray().put(JSONObject().put("t", "Vile Familiar slain: 2/12")))))
+                .put("obj", JSONArray().put(JSONObject().put("t", "Vile Familiar slain: 2/12"))).put("canAbandon", true))
+            .apply { if (extra) {
+                put(JSONObject().put("id", 10).put("title", "Galgar's Cactus Apple Surprise").put("lv", 3).put("watch", 2).put("zone", "Durotar")
+                    .put("obj", JSONArray().put(JSONObject().put("t", "Cactus Apple: 3/10"))))
+                put(JSONObject().put("id", 11).put("title", "Thazz'ril's Pick").put("lv", 6).put("zone", "Valley of Trials")
+                    .put("obj", JSONArray().put(JSONObject().put("t", "Thazz'ril's Pick: 0/1")))
+                    .put("qdb", JSONObject().put("src", "qdb").put("obj", JSONArray()
+                        .put(JSONObject().put("m", 1411).put("i", 1).put("x", 0.50).put("y", 0.56))
+                        .put(JSONObject().put("m", 1411).put("i", 1).put("x", 0.515).put("y", 0.575))
+                        .put(JSONObject().put("m", 1411).put("i", 1).put("x", 0.49).put("y", 0.585)))))
+            } })
     }
 
     private class Rig(val home: HomeView, val map: MapView, val room: WorldMapRoomView)
@@ -163,8 +177,8 @@ class MapKalimdorShotsTest {
             .invoke(k.getField("INSTANCE").get(null), which, x, y)
     }
 
-    private fun rig(terrain: Boolean, minimapK: Boolean = true, buffs: Boolean = true, zone: Int = 1411): Rig {
-        zoneId = zone
+    private fun rig(terrain: Boolean, minimapK: Boolean = true, buffs: Boolean = true, zone: Int = 1411, extra: Boolean = false): Rig {
+        zoneId = zone; this.extra = extra
         if (frameDelayWas == null) frameDelayWas = org.robolectric.shadows.ShadowChoreographer.getFrameDelay()
         org.robolectric.shadows.ShadowChoreographer.setPaused(true)
         org.robolectric.shadows.ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
@@ -515,6 +529,29 @@ class MapKalimdorShotsTest {
             shot("room_untracked_filtered", bm)
         } finally { prefs.edit().remove(QuestLayers.Layer.OTHER.key).commit() }
         room.onHidden()
+    }
+
+    // ---------------------------------------------------------------- 6. untracked quests, the second report (2026-11-17)
+    // THE USER: "the scaling on the untracked quest spot goes wacky when zooming out, it does not stay the same as the other tracked
+    // circles. when clicking on one, it does not open to the quest in the left menu so its confusing on that its not tracked"
+
+    /** the grey disc and an unfocused tracked circle beside it: the same drawn size at every zoom; a quest's QuestieDB spots one disc */
+    @Test fun untrackedDiscsKeepTheTrackedCirclesSizeAtEveryZoom() {
+        val r = rig(terrain = true, extra = true)
+        r.map.onFocusQuest = { }
+        r.map.update(mapDoc(), 0)
+        key(r.home, "PADDRIGHT")                                 // the map controls (the zoom keys)
+        for ((name, z) in listOf("1" to 1f, "0.4" to 0.4f, "floor" to -1f)) {
+            if (z > 0f) homeView(r, z, 0.5f, 0.5f) else { homeView(r, 0.4f, 0.5f, 0.5f); for (i in 0 until 10) key(r.home, "PADLSHOULDER") }
+            val bm = frames(r, 2500L)
+            val tracked = r.map.discDrawn[10]; val grey = r.map.discDrawn[8]
+            assertNotNull("zoom $name: the unfocused tracked circle drawn (${r.map.discDrawn})", tracked)
+            assertNotNull("zoom $name: the grey disc drawn (${r.map.discDrawn})", grey)
+            assertEquals("zoom $name: the grey disc the tracked circle's size", tracked!!, grey!!, 2f)
+            assertEquals("zoom $name: one disc for the quest with three QuestieDB spots (${r.map.discCount})", 1, r.map.discCount[11] ?: 0)
+            assertTrue("zoom $name: its guess disc no bigger than a tracked circle", (r.map.discDrawn[11] ?: 0f) <= tracked + 2f)
+            shot("home_untracked_equal_zoom_$name", bm)
+        }
     }
 
     // ---------------------------------------------------------------- the numbers (real art only)

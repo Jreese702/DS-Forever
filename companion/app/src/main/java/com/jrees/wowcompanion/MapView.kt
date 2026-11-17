@@ -5467,6 +5467,10 @@ class MapView(context: Context) : View(context) {
     /** the tests: untracked quests' discs drawn this frame */
     var untrackedDrawn = 0
         private set
+    /** the tests: each quest's disc drawn this frame, its solid part across in px (UiKit.lastDiscPx), and how many discs it had */
+    val discDrawn = HashMap<Int, Float>()
+    val discCount = HashMap<Int, Int>()
+    private fun discSeen(qid: Int) { discDrawn[qid] = UiKit.lastDiscPx; discCount[qid] = (discCount[qid] ?: 0) + 1 }
     var hintsDrawn = ""
         private set
     /** the list is not the page (the controls or the buffs): its cursor is not drawn */
@@ -6615,7 +6619,8 @@ class MapView(context: Context) : View(context) {
     // out of the JSON and sort them again every frame. They are split into onDraw's draw passes
     // here, each list already sorted by y.
     /** [guess] = a "!" from the bundle's quest givers (not one the game listed to the player): off a capital's small map */
-    private class Marker(val x: Double, val y: Double, val shape: Int, val qid: Int = 0, val guess: Boolean = false)
+    /** [lead] = an untracked quest's QuestieDB spot nearest the player (its one disc and tap target; the others are ghost dots) */
+    private class Marker(val x: Double, val y: Double, val shape: Int, val qid: Int = 0, val guess: Boolean = false, val lead: Boolean = false)
     private val mkMid = ArrayList<Marker>()     // objectives, "!" (plain and daily), flight, vignettes
     private val mkTurnIn = ArrayList<Marker>()  // "?"
     private var turnInPx = FloatArray(0)        // the "?" screen centres, refilled each frame
@@ -6762,8 +6767,8 @@ class MapView(context: Context) : View(context) {
                     if (if (ready) !on(QuestLayers.Layer.TURN_INS) else !on(QuestLayers.Layer.OTHER)) continue
                     val pts = CursorRoute.goals(null, e, mapId)
                         .sortedBy { if (px.isNaN()) 0.0 else hypot(it[0] - px, it[1] - py) }.take(OTHER_SPOTS)
-                    for (p in pts) if (ready) mkTurnIn.add(Marker(p[0], p[1], SH_TURNIN, id, guess = true))
-                        else mkMid.add(Marker(p[0], p[1], SH_OBJ_OTHER, id, guess = true))
+                    for ((k, p) in pts.withIndex()) if (ready) mkTurnIn.add(Marker(p[0], p[1], SH_TURNIN, id, guess = true))
+                        else mkMid.add(Marker(p[0], p[1], SH_OBJ_OTHER, id, guess = true, lead = k == 0))
                 }
             }
             // Quests AVAILABLE to pick up on this map, at the giver (addon: GetAvailableQuestLines,
@@ -7627,7 +7632,7 @@ class MapView(context: Context) : View(context) {
             turnInPx[2 * i] = if (on) tx else Float.NaN; turnInPx[2 * i + 1] = if (on) ty else Float.NaN
         }
         val sameNpc2 = (QUEST_ICON_PX / 2f) * (QUEST_ICON_PX / 2f)
-        bubbleN = 0; untrackedDrawn = 0                                    // this frame's numbered bubbles, for the tap test
+        bubbleN = 0; untrackedDrawn = 0; discDrawn.clear(); discCount.clear()   // this frame's numbered bubbles, for the tap test
         for (lp in 0..1) for (s in qdbSpots) {         // QuestieDB's objective guesses (deriveQdb), under the game's marks; leads last
             if (s.turnIn || s.lead != (lp == 1)) continue
             val gx = sx(s.x); val gy = sy(s.y)
@@ -7653,8 +7658,21 @@ class MapView(context: Context) : View(context) {
             when (mk.shape) {
                 // an untracked quest's objective (the user, 2026-11-17): on the open map a full-size grey disc, no number, tappable (its
                 // panel) and under the controls' cursor (A); Home's small map keeps the dim dot. The filter's OTHER layer still hides it
-                SH_OBJ_OTHER -> if (compact) objDot(c, cxp, cyp, 0.5f) else {
-                    UiKit.questDiscMuted(c, cxp, cyp, BUBBLE_ART)
+                // THE TRACKED CIRCLES' SIZE (the user, 2026-11-17 again: "the scaling on the untracked quest spot goes wacky when zooming
+                // out, it does not stay the same as the other tracked circles"): the grey disc is the tracked circle's own art (poi_disc,
+                // UiKit.questDiscMuted marker = false; it was the add-on's quest_disc.tga, 1.46x bigger at one size), and a quest's
+                // QuestieDB guesses follow the tracked quests' guess rule (drawQdbSpot): a ghost dot at every spot and ONE grey disc, at
+                // QDB_SCALE, on the spot nearest the player - its one tap target (three full discs had piled up as the view widened)
+                SH_OBJ_OTHER -> if (compact) objDot(c, cxp, cyp, 0.5f) else if (mk.guess) {
+                    UiKit.ghostDot(c, cxp, cyp)
+                    if (mk.lead) {
+                        UiKit.questDiscMuted(c, cxp, cyp, BUBBLE_ART * QDB_SCALE, marker = false)
+                        discSeen(mk.qid)
+                        addBubble(cxp, cyp, mk.qid); untrackedDrawn++
+                    }
+                } else {
+                    UiKit.questDiscMuted(c, cxp, cyp, BUBBLE_ART, marker = false)
+                    discSeen(mk.qid)
                     addBubble(cxp, cyp, mk.qid); untrackedDrawn++
                 }
                 SH_DUNGEON -> if (!compact) drawDungeon(c, cxp, cyp, dungeonNames[mk.qid] ?: "")
@@ -7677,6 +7695,7 @@ class MapView(context: Context) : View(context) {
                         // game's yellow focus disc. A white ring expands while a tap waits for the game's answer.
                         val focused = mk.qid == shownFocus()
                         UiKit.questDisc(c, cxp, cyp, BUBBLE_ART, focus = focused, number = no)
+                        discSeen(mk.qid)
                         val now = android.os.SystemClock.elapsedRealtime()
                         if (!morphOn && !focused && mk.qid == askedQid && now - askedAt < ASK_MS) {
                             val ph = ((now - askedAt) % 900L) / 900f
