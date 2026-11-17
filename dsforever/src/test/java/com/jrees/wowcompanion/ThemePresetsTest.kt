@@ -15,8 +15,8 @@ class ThemePresetsTest {
     private val all = ThemePresets.ALL
     private fun rgb(c: Int) = c and 0xFFFFFF
 
-    @Test fun tenPresetsUniqueAndNamed() {
-        assertEquals(10, all.size)
+    @Test fun presetsUniqueAndNamed() {
+        assertEquals(12, all.size)                                            // ten + OLED Jade + Dark Violet (beautify 9.7, pick 7)
         assertEquals(all.size, all.map { it.id }.toSet().size)
         assertEquals(all.size, all.map { it.name }.toSet().size)
         assertEquals(ThemePresets.CLASSIC, all.first())                       // the default leads the picker
@@ -31,7 +31,7 @@ class ThemePresetsTest {
 
     @Test fun everyTokenIsOpaque() {
         for (t in all) for ((n, c) in tokens(t)) assertEquals("${t.id}.$n is opaque", 0xFF, c ushr 24)
-        for (t in all) assertTrue(t.id, t.groundLight in 0f..1f && t.groundSat in 0f..1f)
+        for (t in all) assertTrue(t.id, t.stoneLight in 0f..1f && t.paneLight in 0f..1f && t.artSat in 0f..1f && t.vignette in 0f..1f)
     }
 
     /** Classic Bronze is exactly the colours the app drew before themes (Theme.kt at 44d3b16a) */
@@ -43,19 +43,48 @@ class ThemePresetsTest {
         assertEquals(0xB3A48A, rgb(c.textDim)); assertEquals(0x8F8168, rgb(c.dim)); assertEquals(0xD99A4E, rgb(c.warn))
         assertEquals(0xFFD100, rgb(c.focus)); assertEquals(0xE2AA50, rgb(c.soft))         // UiKit.SOFT_GOLD = rgb(226, 170, 80)
         assertEquals(0xFFD100, rgb(c.btnLabel))                                              // the red buttons' words were Theme.gold
-        assertNull(c.metal); assertEquals(1f, c.groundLight); assertEquals(1f, c.groundSat); assertFalse(c.oled)
+        assertNull(c.metal); assertEquals(1f, c.stoneLight); assertEquals(1f, c.paneLight); assertEquals(1f, c.artSat)
+        assertEquals(0f, c.vignette); assertFalse(c.oled)
     }
 
     @Test fun oledIsPureBlack() {
         val oled = all.filter { it.oled }
-        assertEquals(6, oled.size)
+        assertEquals(7, oled.size)
         for (t in oled) {
             assertTrue(t.id, t.name.startsWith("OLED"))
             for (c in listOf(t.ink, t.field, t.panel)) assertEquals(t.id, 0x000000, rgb(c))
             // a visible step for tiles and the selected row, or they vanish on black
             assertTrue(t.id, ThemePresets.luminance(t.raised) > 0.0 && ThemePresets.luminance(t.selected) > ThemePresets.luminance(t.raised))
         }
-        for (t in all.filter { !it.oled }) assertTrue(t.id, t.groundLight > 0f)
+        for (t in all.filter { !it.oled }) assertTrue(t.id, t.stoneLight > 0f)
+    }
+
+    /**
+     * OLED KEEPS ITS ART (beautify 8; the user, 2026-11-17: "the background on some of the OLED themes look lifeless, like the macro and
+     * friend room, I do really like having the background image there"): every OLED preset draws its stone and panes, dark, under a
+     * heavy vignette; its tiles stand on a raised plate that shows on black (review 9.7: the old 100C08 was all but invisible)
+     */
+    @Test fun oledKeepsItsArt() {
+        for (t in all.filter { it.oled }) {
+            assertTrue(t.id, t.stoneLight in 0.25f..0.6f && t.paneLight in 0.4f..0.8f)
+            assertTrue(t.id, t.vignette >= 0.6f)
+            assertTrue("${t.id}: raised shows on black", ThemePresets.contrast(t.raised, 0xFF000000.toInt()) >= 1.12)
+        }
+        // the Dark family no longer grey (Dark Silver's lifeless stone): some colour left in every ground
+        for (t in all.filter { !it.oled && it !== ThemePresets.CLASSIC }) { assertTrue(t.id, t.artSat >= 0.15f); assertTrue(t.id, t.vignette > 0f) }
+    }
+
+    /** every preset carries the maker's picks (the maker starts from the theme in use), all of them curated swatches once snapped */
+    @Test fun presetsCarryPicks() {
+        for (t in all) {
+            val p = t.picks
+            assertTrue(t.id, p != null)
+            assertEquals(t.id, t.oled, p!!.oled)
+            val s = ThemeMaker.snap(p)
+            assertTrue(t.id, ThemeMaker.ACCENTS.any { it.colour == s.accent })
+            assertTrue(t.id, ThemeMaker.TEXTS.any { it.colour == s.text })
+            assertTrue(t.id, ThemeMaker.METALS.any { it.id == s.metal })
+        }
     }
 
     /** WCAG-ish: body words and headings at 4.5:1 or more on every ground they stand on; the faint words at 4.5 on the page */
