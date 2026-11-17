@@ -1987,7 +1987,10 @@
 "Window open": "Ventana abierta",
 "Bags full": "Bolsas llenas",
 "Binds when picked up": "Se liga al recogerlo",
-"Disenchant": "Desencantar"
+"Disenchant": "Desencantar",
+"A friend": "Un amigo",
+"has come online": "se ha conectado",
+"has gone offline": "se ha desconectado"
 },
 "templates": {
 "Tell %s:": "Susurrar a %s:",

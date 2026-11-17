@@ -1069,9 +1069,32 @@ class HomeView(
 
     /** THE WORLD NOTICE over the chat (the user's pick "A: system line"; Chat's chat21 `notice` documents, current only) */
     private var notice: NoticeModel.Notice? = null
+    /** chat40: the Battle.net friend notices under it (newest first, as the game's toasts live), and the "!" press waiting for the game */
+    private var bnet: List<NoticeModel.Bnet> = emptyList()
+    private var goAt = -1L
     fun onNotice(msg: JSONObject) {
-        notice = NoticeModel.apply(notice, msg, android.os.SystemClock.uptimeMillis())
+        val now = android.os.SystemClock.uptimeMillis()
+        notice = NoticeModel.apply(notice, msg, now)
+        bnet = NoticeModel.applyBnet(bnet, msg, now)
+        NoticeModel.goAnswer(msg)?.let { took ->
+            goAt = -1L
+            if (!took) Log.i(TAG, "world refresh: refused (${msg.optString("why")})")
+        }
         chatPane.invalidate()
+    }
+
+    /** chat40 (the user, 2026-11-16: "the ! notice part should be a button to trigger the refresh"): the game's own Refresh now (Chat's
+     *  chcmd column 1: C_PlayerInteractionManager.ShardTransferConfirm, the pop-up's button), one press at a time (2 s guard) */
+    private fun noticeGo() {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (goAt >= 0 && now - goAt < GO_GUARD_MS) return
+        goAt = now
+        chatPane.invalidate()
+        chatPane.postInvalidateDelayed(GO_GUARD_MS)
+        if (pad == null || !TapBridge.taps(context, pad, listOf("chcmd" to 1)) { why -> post { goAt = -1L; chatPane.invalidate(); Log.i(TAG, "world refresh: $why") } }) {
+            goAt = -1L
+            Log.i(TAG, "world refresh: not sent (no tap pad)")
+        }
     }
 
     /** character's `auras` document (a1): the player's buffs, debuffs and weapon enchants */
@@ -2304,10 +2327,16 @@ class HomeView(
             // the game's world notice (the shard transfer's countdown) pinned at the top of the well; the log starts under it
             val now = android.os.SystemClock.uptimeMillis()
             notice = NoticeModel.live(notice, now)
-            val top = pad + (notice?.let { n ->
+            var top = pad + (notice?.let { n ->
                 postInvalidateDelayed(1_000L - (now - n.at).mod(1_000L))          // the next whole second of the game's count
-                UiKit.notice(c, RectF(pad, pad, w - pad, h - pad), n.minutes(now), n.seconds(now))
+                UiKit.notice(c, RectF(pad, pad, w - pad, h - pad), n.minutes(now), n.seconds(now),
+                    pressed = goAt >= 0 && now - goAt < GO_GUARD_MS, bang = bang)
             } ?: 0f)
+            if (notice == null) bang.setEmpty()
+            // chat40: the Battle.net friend notices under it, each fading as the game's toast does
+            bnet = NoticeModel.liveBnet(bnet, now)
+            for (b in bnet) top += UiKit.bnetNotice(c, RectF(pad, top, w - pad, h - pad), b.who, b.online, b.alpha(now))
+            if (bnet.isNotEmpty()) postInvalidateDelayed(50L)
             tp.textSize = 27f
             val width = (w - 2f * pad).toInt().coerceAtLeast(10)
             var y = h - pad
@@ -2354,7 +2383,20 @@ class HomeView(
             return lay
         }
 
+        /** chat40: the refresh notice's "!" button (empty = none on show) */
+        private val bang = RectF()
+        private var onBang = false
+
         override fun onTouchEvent(e: MotionEvent): Boolean {
+            // chat40: a touch that starts on the refresh notice's "!" is its press (the game's Refresh now), never the Chat room; a
+            // little slack round the button (a finger is wider than its picture)
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) onBang = !bang.isEmpty && notice != null &&
+                RectF(bang).apply { inset(-10f, -10f) }.contains(e.x, e.y)
+            if (onBang) {
+                if (e.actionMasked == MotionEvent.ACTION_UP) { onBang = false; noticeGo() }
+                if (e.actionMasked == MotionEvent.ACTION_CANCEL) onBang = false
+                return true
+            }
             // a tap opens the full CHAT ROOM (the user, 2026-10-05: "Tap Home's chat panel", now that the Controller room has Chat's
             // spot on the bar). combat-touch (2026-11-13): in a fight too, as the D-pad's "chat" does; show() hands over fight-safe
             if (e.actionMasked == MotionEvent.ACTION_UP) openRoom(Room.CHAT)
@@ -3143,6 +3185,8 @@ class HomeView(
     }
 
     companion object {
+        /** chat40: the refresh notice's "!" waits this long for the game's answer before it can be pressed again */
+        private const val GO_GUARD_MS = 2_000L
         /** one pick + act pair at a time: the add-on's pick serves one action (CompanionHost's restore uses the same gap) */
         const val WATCH_GAP_MS = 700L
         /** p-grow-glitch: B does not shrink the big controller this soon after it grew */

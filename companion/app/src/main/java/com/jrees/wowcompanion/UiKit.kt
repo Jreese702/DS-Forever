@@ -5517,21 +5517,26 @@ object UiKit {
     // refresh in %s %s" (minutes, then seconds in the last minute) and, at 0, SHARD_TRANSFER_ANYTIME. Picture: wow-companion-design\
     // home\notice\ (SHEET_notice.png, A).
 
-    /** the game's SYSTEM chat colour (ChatTypeInfo SYSTEM 1, 1, 0) */
-    private val NOTICE_YELLOW = Color.rgb(255, 255, 0)
+    // chat40 (the user, 2026-11-16: "the world refresh prompt should have blue text and the ! notice part should be a button to trigger
+    // the refresh"): the words in the game's own toast blue (ShardTransferImminentFrame's Text: r .510 g .773 b 1 = Theme.battleNet), the
+    // seconds too; the warning sign is a kit button (its press is the game's Refresh now, HomeView). The Battle.net friend notices
+    // ([bnetNotice]) stand under it in the same style.
 
     /**
-     * THE WORLD-REFRESH NOTICE pinned at the top of [rect] (the chat well's inside): the dialog's warning sign (kit `alert`), then the
-     * game's words in its system yellow: "The world around you will refresh" over "in 4 Minutes"; in the last minute "in 42 Seconds"
-     * in the game's error red; at 0 (both 0) "Refreshing your world at any time." over "Characters and creatures around you may
-     * change."; a thin bronze line under it. [scale] 1 = the 1240 x 1080 bottom screen. Returns its height: the log starts under it.
+     * THE WORLD-REFRESH NOTICE pinned at the top of [rect] (the chat well's inside): a button with the dialog's warning sign (kit `alert`;
+     * [pressed] = DOWN while its press waits for the game), then the game's words in its toast blue: "The world around you will refresh"
+     * over "in 4 Minutes"; in the last minute "in 42 Seconds"; at 0 (both 0) "Refreshing your world at any time." over "Characters and
+     * creatures around you may change."; a thin bronze line under it. [scale] 1 = the 1240 x 1080 bottom screen. [bang], when given, is set
+     * to the button's box (its touch target). Returns its height: the log starts under it.
      */
-    fun notice(c: Canvas, rect: RectF, minutes: Int, seconds: Int, scale: Float = 1f): Float {
+    fun notice(c: Canvas, rect: RectF, minutes: Int, seconds: Int, scale: Float = 1f, pressed: Boolean = false, bang: RectF? = null): Float {
         val s = scale
         val h = 78f * s
         val x0 = rect.left + 6f * s; val y0 = rect.top + 10f * s
-        tex("alert")?.let { c.drawBitmap(it, null, RectF(x0 + 4f * s, y0 + 8f * s, x0 + 56f * s, y0 + 60f * s), pBmp) }
-        val tx = x0 + 68f * s; val room = rect.right - 8f * s - tx
+        val b = RectF(x0, y0 + 4f * s, x0 + 60f * s, y0 + 64f * s)
+        iconButton(c, b, "alert", if (pressed) Button.DOWN else Button.UP)
+        bang?.set(b)
+        val tx = x0 + 72f * s; val room = rect.right - 8f * s - tx
         val anytime = minutes <= 0 && seconds <= 0
         val urgent = !anytime && minutes <= 0
         val l1 = if (anytime) "Refreshing your world at any time." else "The world around you will refresh"
@@ -5541,7 +5546,7 @@ object UiKit {
             else -> "in $minutes " + (if (minutes == 1) "Minute" else "Minutes")
         }
         for ((i, line) in listOf(l1, l2).withIndex()) {
-            val p = bodyPaint(25f * s, if (i == 1 && urgent) PAUSE_RED else NOTICE_YELLOW)
+            val p = bodyPaint(25f * s, Theme.battleNet)
             while (p.textSize > 19f * s && p.measureText(line) > room) p.textSize -= 1f
             c.drawText(Tr.t(TextUtils.ellipsize(line, TextPaint(p), room, TextUtils.TruncateAt.END).toString()), tx,
                 y0 + (4f + 32f * i) * s - p.ascent(), p)
@@ -5549,6 +5554,39 @@ object UiKit {
         pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(110, 90, 50)
         c.drawRect(rect.left + 6f * s, y0 + 76f * s, rect.right - 8f * s, y0 + 78f * s, pFlat)
         return h + 10f * s
+    }
+
+    /**
+     * ONE BATTLE.NET FRIEND NOTICE at the top of [rect] (under the refresh notice: its top is [rect]'s), as the game's toast says it: the
+     * friend's status light (kit `status_online` / `status_offline`), the name ([who]; null = "A friend") in the game's Battle.net blue,
+     * then "has come online" / "has gone offline" in grey; a thin bronze line under it. [alpha] = the toast's fade. Returns its height.
+     */
+    fun bnetNotice(c: Canvas, rect: RectF, who: String?, online: Boolean, alpha: Float = 1f, scale: Float = 1f): Float {
+        val s = scale
+        val a = (alpha.coerceIn(0f, 1f) * 255f).toInt()
+        val x0 = rect.left + 6f * s; val y0 = rect.top + 6f * s
+        tex(if (online) "status_online" else "status_offline")?.let {
+            pBmp.alpha = a
+            c.drawBitmap(it, null, RectF(x0 + 16f * s, y0 + 8f * s, x0 + 44f * s, y0 + 36f * s), pBmp)
+            pBmp.alpha = 255
+        }
+        val tx = x0 + 72f * s; val room = rect.right - 8f * s - tx
+        val name = who ?: Tr.t("A friend")
+        val tail = " " + Tr.t(if (online) "has come online" else "has gone offline")
+        val pn = bodyPaint(25f * s, Theme.battleNet).apply { this.alpha = a }
+        val pt = bodyPaint(25f * s, Theme.dim).apply { this.alpha = a }
+        while (pn.textSize > 19f * s && pn.measureText(name) + pt.measureText(tail) > room) { pn.textSize -= 1f; pt.textSize -= 1f }
+        // the name is never translated (a player's); it gives way to the words
+        val nameRoom = (room - pt.measureText(tail)).coerceAtLeast(room * 0.4f)
+        val shown = TextUtils.ellipsize(name, TextPaint(pn), nameRoom, TextUtils.TruncateAt.END).toString()
+        val base = y0 + 6f * s - pn.ascent()
+        c.drawText(shown, tx, base, pn)
+        val tx2 = tx + pn.measureText(shown)
+        c.drawText(TextUtils.ellipsize(tail, TextPaint(pt), (rect.right - 8f * s - tx2).coerceAtLeast(0f), TextUtils.TruncateAt.END).toString(),
+            tx2, base, pt)
+        pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(a, 110, 90, 50)
+        c.drawRect(rect.left + 6f * s, y0 + 44f * s, rect.right - 8f * s, y0 + 46f * s, pFlat)
+        return 52f * s
     }
 
     // ---------------------------------------------------------------- the PIN PICKER (the radial's "+")

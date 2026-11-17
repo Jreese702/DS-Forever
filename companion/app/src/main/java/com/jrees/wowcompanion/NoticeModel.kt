@@ -24,9 +24,11 @@ object NoticeModel {
         fun urgent(now: Long): Boolean = urgent || left(now) < 60
     }
 
-    /** one `notice` document onto the notice on show ([cur]); null = none any more */
+    /** one `notice` document onto the notice on show ([cur]); null = none any more. chat40: a Battle.net document ([bnet]) and the
+     *  refresh press's answer (`op` "go", [goAnswer]) never touch the refresh notice */
     fun apply(cur: Notice?, msg: JSONObject, now: Long): Notice? {
         if (msg.optString("type") != "notice") return cur
+        if (msg.optString("kind", "shard") != "shard" || msg.has("op")) return cur
         val id = msg.optString("id")
         if (msg.optBoolean("ended")) return if (cur == null || cur.id == id || id.isEmpty()) null else cur
         if (!msg.has("left")) return cur
@@ -36,4 +38,42 @@ object NoticeModel {
 
     /** the notice still on show at [now] (it goes STALE_MS after the last document) */
     fun live(cur: Notice?, now: Long): Notice? = cur?.takeIf { now - it.seenAt < STALE_MS }
+
+    // ---------------------------------------------------------------- chat40: THE BATTLE.NET FRIEND NOTICES (the user, 2026-11-16: "the
+    // Bnet friends coming online pop ups should appear over my chat similar to the world refreesh prompt"). Chat's {kind "bnet", id,
+    // who, on} as the game's toast lives: 4 s, then a 1.5 s fade (SocialToastAnimOutTemplate); the newest first, at most [BNET_MAX].
+
+    const val BNET_HOLD_MS = 4_000L
+    const val BNET_FADE_MS = 1_500L
+    const val BNET_MAX = 2
+
+    /** one friend's login ([online]) or logout; [who] = the character or the BattleTag's name, null = none readable ("A friend") */
+    data class Bnet(val id: String, val who: String?, val online: Boolean, val at: Long) {
+        /** 1 while it holds, down to 0 over the fade; 0 = gone */
+        fun alpha(now: Long): Float {
+            val t = now - at
+            return when {
+                t < BNET_HOLD_MS -> 1f
+                t < BNET_HOLD_MS + BNET_FADE_MS -> 1f - (t - BNET_HOLD_MS).toFloat() / BNET_FADE_MS
+                else -> 0f
+            }
+        }
+    }
+
+    /** one `notice` document onto the BN notices on show ([cur], newest first): a new one goes on top, the oldest past [BNET_MAX] goes */
+    fun applyBnet(cur: List<Bnet>, msg: JSONObject, now: Long): List<Bnet> {
+        if (msg.optString("type") != "notice" || msg.optString("kind") != "bnet") return cur
+        val id = msg.optString("id")
+        if (id.isEmpty() || cur.any { it.id == id }) return cur
+        val who = msg.optString("who", "").takeIf { it.isNotBlank() && !it.contains("|K") }
+        return (listOf(Bnet(id, who, msg.optBoolean("on", true), now)) + cur).take(BNET_MAX)
+    }
+
+    /** the BN notices still on show at [now] */
+    fun liveBnet(cur: List<Bnet>, now: Long): List<Bnet> = cur.filter { it.alpha(now) > 0f }
+
+    /** the refresh press's answer, or null when [msg] is not one: true = the game took it */
+    fun goAnswer(msg: JSONObject): Boolean? =
+        if (msg.optString("type") == "notice" && msg.optString("kind", "shard") == "shard" && msg.optString("op") == "go") msg.optBoolean("ok")
+        else null
 }

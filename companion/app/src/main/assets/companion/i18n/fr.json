@@ -1963,7 +1963,10 @@
 "Window open": "Fenêtre ouverte",
 "Bags full": "Sacs pleins",
 "Binds when picked up": "Lié quand ramassé",
-"Disenchant": "Désenchanter"
+"Disenchant": "Désenchanter",
+"A friend": "Un ami",
+"has come online": "s'est connecté(e)",
+"has gone offline": "s'est déconnecté(e)"
 },
 "templates": {
 "Tell %s:": "Chuchoter à %s :",
