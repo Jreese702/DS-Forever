@@ -13,7 +13,7 @@ import java.util.concurrent.Executors
  * ([Model.MULTI]: Spanish, French, German and more). APP FILES, in the app's own storage ([dir] = files/dsforever/voice), NEVER the game's
  * AddOns folder and never inside the APK.
  *
- * THE RULES: a download starts ONLY on the player's press (Settings > Add-ons' Download, or the voice sheet's "Download (60 MB)"), on
+ * THE RULES: a download starts ONLY on the player's press (Settings > Add-ons' Download, or the voice sheet's list of the four), on
  * any network, the size said first; it is PINNED (Hugging Face ggerganov/whisper.cpp at one commit: its exact size and sha256, read on
  * 2026-11-16 from the whole files); resumed where it stopped ([CdnResume]: Range, 206 appended, 200 from the start, 416 / a wrong resume
  * drop the part) with [CdnRetry]'s retries and more rounds while a round still adds bytes; checked for its size and sha256 before it is
@@ -48,6 +48,8 @@ object VoiceModels {
         val size: String get() = ThirdPartyAddons.size(mb)
         /** its Add-ons row: "Voice: English · 60 MB" */
         val label: String get() = "$title · $size"
+        /** its row on the voice sheet's list (the sheet's title says "Download voice"): "English · 60 MB", "Other languages · 148 MB" */
+        val choice: String get() = (if (multi) "Other languages" else "English") + " · $size"
     }
 
     /** the [multi] kind's files, the bigger first (the one that listens when both are in) */

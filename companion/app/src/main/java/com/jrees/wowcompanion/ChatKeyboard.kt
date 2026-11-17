@@ -326,17 +326,15 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         stopVoice(restore = false)
         val mode = Settings.voiceTyping
         val s = Voice.Sheet(text(), voiceAppend, voiceMax, mode, clock)
+        // the model list's cursor (if it shows): the small one of the kind the app's language wants
+        s.model = sheetModel()
         sheet = s; voiceFromKeys = fromKeys; copyTotal = 0L
         Voice.register(stopHook)
         val (perm, avail) = probe(mode)
         DiagLog.event("voice", s.logLine("open") + " perm=${perm.name.lowercase()} avail=${avail.name.lowercase()}")
+        // offline voice's model offered: a download already running (Settings > Add-ons, an earlier page) shows on its row ([run]'s end),
+        // and the page listens when one is in
         run(s.open(perm, avail))
-        // offline voice's model offered: a download already running (Settings > Add-ons, an earlier page) shows here, and listens when in
-        if (s.problem == Voice.Problem.NEED_MODEL) {
-            watchModel(s)
-            s.downloading = kindBusy()
-            invalidate()
-        }
         ticking()
         return true
     }
@@ -414,31 +412,32 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
                 Voice.Act.AskMic -> askMic(s)
                 Voice.Act.UseOnline -> { Settings.voiceTyping = Voice.Mode.ONLINE; DiagLog.event("voice", "online voice picked") }
                 Voice.Act.GetPack -> { val ok = listen().getPack(Voice.language(Tr.lang())); DiagLog.event("voice", "pack download asked ok=$ok") }
-                Voice.Act.GetModel -> getModel(s)
+                is Voice.Act.GetModel -> getModel(s, a.model)
                 Voice.Act.Pass, Voice.Act.Glow -> {}
             }
         }
         // a page that came to offer offline voice's model (after the microphone question too) follows its download
-        sheet?.let { if (it.state == Voice.State.PROBLEM && it.problem == Voice.Problem.NEED_MODEL) watchModel(it) }
+        // (the rows' busy set read once as it arrives; later the watch keeps it, and a press adds its own at once)
+        sheet?.let { if (it.state == Voice.State.PROBLEM && it.problem == Voice.Problem.NEED_MODEL && modelWatch == null) { watchModel(it); it.busy = busyModels() } }
         ticking()
         invalidate(); onVoice()
     }
 
-    // ---- OFFLINE VOICE'S MODEL from the sheet (the player's press on "Download (60 MB)"): its download, its percentage on the page,
-    // and listening at once when it is in (unless the sheet has closed)
+    // ---- OFFLINE VOICE'S MODEL from the sheet (the player's pick from its list of the four, the user 2026-11-16: "The voice menu should
+    // have all of the options not just the 60 mb"): its download, its percentage on its row, and listening at once when one is in
+    // (unless the sheet has closed)
     private var modelWatch: (() -> Unit)? = null
-    /** the model this sheet offers: the small one of the kind the app's language wants */
+    /** where the list's cursor starts: the small one of the kind the app's language wants */
     private fun sheetModel(): VoiceModels.Model = Voice.wantedModel(Tr.lang())
-    /** a file of the sheet's kind is downloading or being checked (the full one from Settings > Add-ons counts too) */
-    private fun kindBusy(): Boolean = VoiceModels.ofKind(sheetModel().multi).any { m ->
+    /** the files downloading or being checked now (Settings > Add-ons' too) */
+    private fun busyModels(): Set<VoiceModels.Model> = VoiceModels.Model.values().filterTo(HashSet()) { m ->
         modelState(m).let { it is VoiceModels.State.Downloading || it == VoiceModels.State.Checking }
     }
 
-    private fun getModel(s: Voice.Sheet) {
-        val m = sheetModel()
+    private fun getModel(s: Voice.Sheet, m: VoiceModels.Model) {
         VoiceModels.init(context)
         watchModel(s)
-        s.downloading = true
+        s.busy = s.busy + m
         DiagLog.event("voice", "model ${m.id} download asked from the voice page")
         VoiceModels.download(m)
     }
@@ -448,12 +447,9 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         val w: () -> Unit = {
             ui.post {
                 if (sheet === s) {
-                    val kind = VoiceModels.ofKind(sheetModel().multi)
-                    when {
-                        kind.any { VoiceModels.state(it) == VoiceModels.State.Ready } -> { val (p, a) = probe(s.mode); run(s.modelReady(p, a)) }
-                        kindBusy() -> { s.downloading = true; invalidate(); onVoice() }
-                        else -> { s.downloading = false; invalidate(); onVoice() }
-                    }
+                    // any of the four in: offline voice listens ([Voice.whisperModel] picks which and in what language)
+                    if (VoiceModels.Model.values().any { modelState(it) == VoiceModels.State.Ready }) { val (p, a) = probe(s.mode); run(s.modelReady(p, a)) }
+                    else { s.busy = busyModels(); invalidate(); onVoice() }
                 }
             }
         }
@@ -549,7 +545,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         Voice.State.LISTENING, Voice.State.STOPPING, Voice.State.WORKING -> sendWord to false
         Voice.State.RESULT -> sendWord to s.canAccept()
         Voice.State.PROBLEM -> when {
-            s.problem == Voice.Problem.NEED_MODEL -> if (s.downloading) "Downloading" to false else "Download (${sheetModel().size})" to true
+            s.problem == Voice.Problem.NEED_MODEL -> null           // the list of the four takes the button's place (A = the highlighted row)
             s.problem == Voice.Problem.NO_SERVICE -> null           // nothing can listen: no button (Y = keyboard, B = back)
             s.problem == Voice.Problem.PACK && s.canGet -> "Get" to true
             s.problem == Voice.Problem.MIC_OFF -> if (fight) "After the fight" to false else "Allow" to true
@@ -565,8 +561,8 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
             Voice.State.LISTENING -> listOf("rev_a" to "Stop", back to "Cancel")
             Voice.State.STOPPING, Voice.State.WORKING -> listOf(back to "Cancel")
             Voice.State.RESULT -> listOf("rev_x" to "Say again", "rev_y" to "Edit", back to "Cancel")
-            Voice.State.PROBLEM -> (if (s.problem == Voice.Problem.NO_SERVICE || s.problem == Voice.Problem.NEED_MODEL ||
-                    buttonOf(s, false)?.first == "Say again") emptyList()
+            Voice.State.PROBLEM -> (if (s.problem == Voice.Problem.NEED_MODEL) listOf("rev_a" to "Download")
+                else if (s.problem == Voice.Problem.NO_SERVICE || buttonOf(s, false)?.first == "Say again") emptyList()
                 else listOf("rev_x" to "Say again")) +
                 listOf("rev_y" to "Edit", back to "Cancel")
         }
@@ -597,8 +593,11 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         return onlineName
     }
 
+    /** NEED_MODEL's rows as last drawn (a finger's pick) */
+    private val modelRows = ArrayList<Pair<VoiceModels.Model, RectF>>()
+
     private fun drawVoice(c: Canvas, kb: RectF, s: Voice.Sheet) {
-        chips.clear(); btnRect = null
+        chips.clear(); btnRect = null; modelRows.clear()
         val now = android.os.SystemClock.uptimeMillis()
         val fight = Voice.inFight()
         val inner = RectF(kb.left + INSET + 10f, kb.top + INSET + 6f, kb.right - INSET - 10f, kb.bottom - INSET - 6f)
@@ -635,8 +634,10 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
             btnRect = bRect
         }
         // ---- the words, centre: the title over them, the words in large type
-        val tx0 = mcx + r * 1.25f + 44f
-        val tx1 = bRect.left - 34f
+        val pickModel = s.state == Voice.State.PROBLEM && s.problem == Voice.Problem.NEED_MODEL
+        // the model list: its rows' highlight starts clear of the medallion's rim (the rows' words, and the title, 84 px in from there)
+        val tx0 = if (pickModel) maxOf(mcx + r * 1.25f + 44f, mcx + r * 1.3f + 96f) else mcx + r * 1.25f + 44f
+        val tx1 = if (pickModel) body.right else bRect.left - 34f
         // the words start level with the medallion's top (the board fills the room in Chat: the page stays balanced, never hugging the top)
         var y = maxOf(body.top + 12f, mcy - r * 1.3f)
         titleOf(s)?.let { t ->
@@ -661,14 +662,8 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
             Voice.State.OFFER_ONLINE -> {
                 onlineApp()?.let { sub(c, it, tx0, y, tx1, body.bottom) }
             }
-            // offline voice's model: which one, and its download's state (its percentage while it runs)
-            Voice.State.PROBLEM -> if (s.problem == Voice.Problem.NEED_MODEL) {
-                // the file of the sheet's kind that is downloading (the full one from Add-ons, say), else the small one it offers
-                val m = VoiceModels.ofKind(sheetModel().multi).firstOrNull { modelState(it) !is VoiceModels.State.None } ?: sheetModel()
-                val st = modelState(m)
-                if (st is VoiceModels.State.Downloading || st == VoiceModels.State.Checking) postInvalidateDelayed(250)
-                sub(c, "${Tr.t(m.label)} · ${Tr.t(VoiceModels.line(m, st))}", tx0, y, tx1, body.bottom)
-            }
+            // offline voice's model: the four as a short list (Add-ons' order), each row's download state at its right
+            Voice.State.PROBLEM -> if (pickModel) drawModels(c, s, RectF(tx0, y, tx1, body.bottom))
             else -> {}
         }
         // ---- THE PRIVACY LINE (the design: "Online ... The privacy line names that app"): while the ONLINE recognizer listens, the app
@@ -694,6 +689,32 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
             val key = when (glyph) { "rev_x" -> "PAD3"; "rev_y" -> "PAD4"; "rev_a" -> "PAD1"; else -> "PAD2" }
             chips += Chip(key, RectF(x - 10f, cy - chipH / 2f, right + 10f, cy + chipH / 2f))
             x -= 34f
+        }
+    }
+
+    /**
+     * NEED_MODEL's list: the four models as the app's short choice lists draw them ([UiKit.menuRow]: the highlight on the cursor's row, its
+     * words gold), "English · 60 MB" ...; a row whose file is doing something says so at its right ("Downloading 42%", "Download failed: ...")
+     */
+    private fun drawModels(c: Canvas, s: Voice.Sheet, area: RectF) {
+        val all = VoiceModels.Model.values()
+        val rowH = minOf(MODEL_ROW_H, area.height() / all.size)
+        // the label stands just in from the title's words (menuRow's words sit 100 px in from its left)
+        val left = area.left - 84f
+        for ((i, m) in all.withIndex()) {
+            val r = RectF(left, area.top + i * rowH, area.right, area.top + (i + 1) * rowH)
+            val st = modelState(m)
+            val busy = st is VoiceModels.State.Downloading || st == VoiceModels.State.Checking
+            if (busy) postInvalidateDelayed(250)
+            UiKit.menuRow(c, r, m.choice, m == s.model, size = 30f)
+            if (st != VoiceModels.State.None) {
+                val p = UiKit.bodyPaint(26f, if (st is VoiceModels.State.Failed || st is VoiceModels.State.NoSpace) Theme.unusable else Theme.dim)
+                val w = Tr.t(VoiceModels.line(m, st))
+                val room = r.width() * 0.45f
+                val t = android.text.TextUtils.ellipsize(w, android.text.TextPaint(p), room, android.text.TextUtils.TruncateAt.END).toString()
+                c.drawText(t, r.right - 22f - p.measureText(t), r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+            }
+            modelRows += m to r
         }
     }
 
@@ -785,6 +806,8 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
 
     private fun voiceTouch(e: MotionEvent) {
         if (e.actionMasked != MotionEvent.ACTION_UP) return
+        // a model row (NEED_MODEL's list): that one is picked and its download asked, as A on it
+        modelRows.firstOrNull { it.second.contains(e.x, e.y) }?.let { (m, _) -> sheet?.model = m; voicePress("PAD1"); return }
         val key = when {
             btnRect?.contains(e.x, e.y) == true -> "PAD1"
             // the medallion: X's say it again (and A's stop while listening)
@@ -814,6 +837,8 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         const val POP_SHOW_MS = 160L
         /** one ripple's way out from the medallion */
         const val RIPPLE_MS = 1400L
+        /** one row of NEED_MODEL's list of the four (less when the board is shorter) */
+        const val MODEL_ROW_H = 84f
         /** the window back after Android's microphone question: its answer is due by then ([askLost]) */
         const val ASK_LOST_MS = 1500L
         /** where Android keeps the microphone once it stopped asking (the sheet shows it; DS Forever never opens it) */

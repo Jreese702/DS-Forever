@@ -193,6 +193,61 @@ class VoiceShotsTest {
         }
     }
 
+    // ---------------------------------------------------------------- offline voice's model list (no model on disk)
+
+    /**
+     * the user, 2026-11-16: "The voice menu should have all of the options not just the 60 mb": the sheet's no-model page lists the four
+     * (Add-ons' order and words), the cursor on the old pick; D-pad moves, A / a finger asks that one's download, a running one shows its
+     * percentage on its row
+     */
+    @Test fun needModelShots() {
+        art()
+        // no real network: a download asked here fails at once (the rows' states come from the probe)
+        VoiceModels.start(File(System.getProperty("java.io.tmpdir"), "voice-sheet-models-test").apply { mkdirs() },
+            VoiceModels.Net { _, _ -> throw java.io.IOException("HTTP 404") }) { }
+        val states = HashMap<VoiceModels.Model, VoiceModels.State>()
+        val (chat, kb, _) = chatRoom({ Voice.Perm.GRANTED }, Voice.Avail.NEED_MODEL)
+        kb.modelStateProbe = { states[it] ?: VoiceModels.State.None }
+        pad(chat, "PAD3"); settle(); lay(chat, W, H)
+        val s = kb.voiceSheet!!
+        assertEquals(Voice.Problem.NEED_MODEL, s.problem)
+        assertEquals(VoiceModels.Model.EN_SMALL, s.model)
+        draw(chat)
+        val rows: List<Pair<VoiceModels.Model, android.graphics.RectF>> = field(kb, "modelRows")
+        assertEquals(VoiceModels.Model.values().toList(), rows.map { it.first })
+        shot("voice_need_model_0_list", chat, Room.CHAT)
+        pad(chat, "PADDDOWN"); pad(chat, "PADDDOWN"); settle()
+        assertEquals(VoiceModels.Model.MULTI_SMALL, s.model)
+        shot("voice_need_model_1_cursor_moved", chat, Room.CHAT)
+        // one downloading (from Add-ons, say): its row says so, the others stay selectable
+        states[VoiceModels.Model.EN] = VoiceModels.State.Downloading(42)
+        pad(chat, "PADDUP"); settle()
+        assertEquals(VoiceModels.Model.EN, s.model)
+        shot("voice_need_model_2_one_downloading", chat, Room.CHAT)
+        // a finger on the last row: that one is picked and its download asked
+        draw(chat)
+        val last = field<List<Pair<VoiceModels.Model, android.graphics.RectF>>>(kb, "modelRows").last().second
+        val up = android.view.MotionEvent.obtain(0L, 0L, android.view.MotionEvent.ACTION_UP, last.centerX(), last.centerY(), 0)
+        assertTrue(kb.voiceTouchAt(up))
+        assertEquals(VoiceModels.Model.MULTI, s.model)
+        assertTrue(VoiceModels.Model.MULTI in s.busy)
+        states[VoiceModels.Model.MULTI] = VoiceModels.State.Downloading(3)
+        shot("voice_need_model_3_touch_picked", chat, Room.CHAT)
+        kb.stopVoice()
+        // the same page in Spanish: the cursor on the small multilingual one
+        Tr.load("es", File("../companion/app/src/main/assets/companion/i18n/es.json").readText())
+        val c0 = Tr::class.java.getDeclaredField("choice"); c0.isAccessible = true; c0.set(Tr, "es")
+        val (chatEs, kbEs, _) = chatRoom({ Voice.Perm.GRANTED }, Voice.Avail.NEED_MODEL)
+        kbEs.modelStateProbe = { VoiceModels.State.None }
+        pad(chatEs, "PAD3"); settle(); lay(chatEs, W, H)
+        assertEquals(VoiceModels.Model.MULTI_SMALL, kbEs.voiceSheet?.model)
+        shot("voice_need_model_4_spanish", chatEs, Room.CHAT)
+        c0.set(Tr, "auto")
+        kbEs.stopVoice()
+    }
+
+    private fun draw(v: View) { val bm = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888); v.draw(Canvas(bm)) }
+
     // ---------------------------------------------------------------- Bags
 
     private fun bagsDoc(ctl: JSONObject): JSONObject {
