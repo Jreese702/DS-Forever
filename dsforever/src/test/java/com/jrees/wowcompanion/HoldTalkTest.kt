@@ -172,7 +172,7 @@ class HoldTalkTest {
         // the gate: the toolbar's Chat under the router's fight rule
         assertTrue(h.contains("HoldTalk.leftIsChat(lastPadMap, lastDpad?.want == true && castView.roomBarOn, lastDpad?.dirs, homeView.dpadFight())"))
         // every send through ChatView's path
-        assertTrue(h.contains("chatView.talkSend(holdTalk.words)"))
+        assertTrue(h.contains("chatView.talkSend(holdTalk.words, talkTabs.now()"))
         assertFalse("no game key from the hold", Regex("GameInput\\.key\\([^)]*talk").containsMatchIn(h))
     }
 }

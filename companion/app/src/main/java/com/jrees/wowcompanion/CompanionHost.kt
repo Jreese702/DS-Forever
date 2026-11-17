@@ -488,7 +488,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // Chat's rework (AGENT_LOG 2026-10-07): typed and quick chat go out through the add-on's chat rows, in ordered batches
         chatView.tapper = { cells, gap -> TapBridge.tapsSpaced(this, questsPad, cells, gap) }
         // hold to talk (HoldTalk): the toolbar's microphone follows its switch and the last used chat's colour
-        chatView.onTalkChannel = { talkDraw() }
+        chatView.onTalkChannel = { if (talkPanelUp()) talkTabs.refresh(chatView.talkTabs()); talkDraw() }
         HomeSettings.onChange { ui.post { talkDraw() } }
         characterView = CharacterView(this)
         // B leaves the cursor -> Home (user ruling, every room)
@@ -1073,6 +1073,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // 1.0.19: Home's sides move only far enough for the picture (LbPartyView.SIDE_PX)
         lbView.onSlide = { t -> if (room == Room.HOME && !pauseView.isOpen && !tradOpen()) homeView.pauseSlide(t, LbPartyView.SIDE_PX) }
         castView.onShoulders = { lb, rb -> lbAloneNow = lb && !rb; lbEval() }
+        // hold to talk's pop-up: a finger on a chat tab picks it (as LB / RB do)
+        castView.onTalkTab = { key -> if (talkPanelUp() && talkTabs.pick(key)) {
+            holdTalk.tabTouched(SystemClock.uptimeMillis()); Log.i("WCHOME", "hold to talk: chat $key (touch)"); talkDraw() } }
         // 1.0.20: the class wheel's close done (its column back over it): the LB picture's turn
         homeView.onClassIdle = { lbEval() }
         castView.onButtonsAlso = { m -> lbView.buttons(m) }
@@ -1837,6 +1840,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     // mic". Off by default (Settings > Bottom screen > Home, per character). A tap keeps today's Chat room; a hold records (offline
     // Whisper), the release works the words out; they go to the last used chat through ChatView's own send path, on the player's press.
     private val holdTalk = HoldTalk()
+    /** the pop-up's chat tabs (the user, 2026-11-17: "pop up tabs to press L or R to change what chat that its for"; TalkTabs) */
+    private val talkTabs = TalkTabs()
+    /** the pop-up is up: from the hold's start until the words went or were dropped */
+    private fun talkPanelUp(): Boolean = holdTalk.st == HoldTalk.St.HELD || holdTalk.st == HoldTalk.St.WORKING ||
+        holdTalk.st == HoldTalk.St.LINE || holdTalk.st == HoldTalk.St.SENDING
     private val talkEngine by lazy { WhisperEngine(this, held = true) }
     private var talkLevel = 0f
     /** the hold's microphone could not listen (no model / the microphone off): the slot's microphone shows dimmed with the note */
@@ -1888,21 +1896,28 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             HoldTalk.Out.SEND -> { talkSendTry = 0; talkSend() }
             HoldTalk.Out.DROP -> { Log.i("WCHOME", "hold to talk: the line went ($why), nothing sent"); talkFree() }
             HoldTalk.Out.NOTE -> { Log.i("WCHOME", "hold to talk: ${if (holdTalk.noteSent) "sent" else "note: ${holdTalk.note}"}"); talkFree() }
+            // LB / RB: the pop-up's previous / next chat (stops at the ends, the Chat room's rule)
+            HoldTalk.Out.TAB_L, HoldTalk.Out.TAB_R -> if (talkTabs.step(if (o == HoldTalk.Out.TAB_L) -1 else 1))
+                Log.i("WCHOME", "hold to talk: chat ${talkTabs.now()?.key}")
         }
         // the line's fade and its time-outs run on the tick (PENDING's own check was posted at the press)
         if (holdTalk.st != HoldTalk.St.IDLE && holdTalk.st != HoldTalk.St.PENDING) { ui.removeCallbacks(talkTick); ui.postDelayed(talkTick, TALK_TICK_MS) }
         talkDraw()
+        // the LB party picture never stands over the pop-up (LB is its tab key while the hold has the pad)
+        if (::lbView.isInitialized && ::pauseView.isInitialized) lbEval()
     }
 
     /** the hold passed HOLD_MS: the microphone listens (offline Whisper only: a hold must answer at once, never a sheet) */
     private fun talkListen() {
         val now = SystemClock.uptimeMillis()
+        // the pop-up's tabs: the chats usable now, on the last used one
+        talkTabs.seed(chatView.talkTabs(), chatView.talkStart())
         // the Hub held the chat guest in the router's click (hub7); asked again here if it is not ours yet
         if (capHolder != "pad:chat") guestTap(GuestPad.cells(questsPad, "chat", hold = true))
         if (Voice.whisperModel(Tr.lang(), WhisperEngine.on()) == null) { talkNoVoice = true; talkAct(holdTalk.noVoice(now, HoldTalk.NO_VOICE), "no voice model"); return }
         if (!VoiceMic.granted(this)) { talkNoVoice = true; talkAct(holdTalk.noVoice(now, HoldTalk.MIC_OFF), "no microphone"); return }
         talkLevel = 0f
-        Log.i("WCHOME", "hold to talk: listening (${chatView.talkChannel().first})")
+        Log.i("WCHOME", "hold to talk: listening (${talkTabs.now()?.key})")
         val started = talkEngine.start(false, Tr.lang(), chatView.voiceNames(), object : VoiceEngine.Sink {
             override fun rms(db: Float) { talkLevel = HoldTalk.level(db); if (holdTalk.listening) talkDraw() }
             override fun partial(text: String) {}
@@ -1924,7 +1939,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             ui.postDelayed({ talkSend() }, 150L)
             return
         }
-        chatView.talkSend(holdTalk.words) { ok, why ->
+        chatView.talkSend(holdTalk.words, talkTabs.now()?.let { it.key to it.whisper }) { ok, why ->
             talkAct(holdTalk.sent(SystemClock.uptimeMillis(), ok, if (ok) "" else Tr.t("Not sent: ") + Tr.t(why)), if (ok) "sent" else "refused ($why)")
         }
         talkDraw()
@@ -1947,8 +1962,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the toolbar's microphone and the line, as the hold's state says */
     private fun talkDraw() {
         if (!::castView.isInitialized || !::chatView.isInitialized) return
-        val (_, prefix, colour) = chatView.talkChannel()
         val st = holdTalk.st
+        val up = talkPanelUp() && talkTabs.now() != null
+        // while the pop-up is up the chosen tab's chat colours the microphones and heads the words; else the last used chat
+        val (_, prefix, colour) = talkTabs.now()?.takeIf { up }?.let { chatView.talkChannel(it.key, it.whisper) } ?: chatView.talkChannel()
         castView.talk = if (!talkOn() && st == HoldTalk.St.IDLE) null else CastView.TalkFace(when {
             st == HoldTalk.St.HELD -> CastView.TalkFace.Mode.LISTEN
             st == HoldTalk.St.WORKING -> CastView.TalkFace.Mode.WORK
@@ -1957,7 +1974,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }, colour, talkLevel)
         val now = SystemClock.uptimeMillis()
         fun fade(total: Long): Int { val left = total - (now - holdTalk.shownAt); return if (left >= 500L) 255 else (255 * left / 500L).toInt().coerceIn(0, 255) }
-        castView.talkLine = when (st) {
+        castView.talkPanel = if (!up) null else CastView.TalkPanel(talkTabs.tabs, talkTabs.sel,
+            CastView.TalkFace(if (st == HoldTalk.St.HELD) CastView.TalkFace.Mode.LISTEN else CastView.TalkFace.Mode.WORK, colour, talkLevel),
+            prefix, when (st) { HoldTalk.St.HELD -> ""; HoldTalk.St.WORKING -> "…"; else -> holdTalk.words },
+            ask = st == HoldTalk.St.LINE, alpha = if (st == HoldTalk.St.LINE) fade(HoldTalk.LINE_MS) else 255)
+        if (!up && st != HoldTalk.St.NOTE) talkTabs.clear()
+        castView.talkLine = if (up) null else when (st) {
             HoldTalk.St.HELD, HoldTalk.St.WORKING -> CastView.TalkLine(prefix, colour, if (st == HoldTalk.St.WORKING) "…" else "")
             HoldTalk.St.LINE -> CastView.TalkLine(prefix, colour, holdTalk.words, ask = true, alpha = fade(HoldTalk.LINE_MS))
             HoldTalk.St.SENDING -> CastView.TalkLine(prefix, colour, holdTalk.words)
@@ -3657,7 +3679,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the LB picture shows while LB alone is held and nothing else has the screen: only in the world (1.0.19: never over the start-up
      *  screens), and only once the class wheel is closed and covered (1.0.20: they take turns, HomeView.classBusy) */
     private fun lbEval() {
-        val free = room == Room.HOME && !pauseView.isOpen && !tradOpen() && !(::radialView.isInitialized && radialView.isOpen) &&
+        val free = room == Room.HOME && !holdTalk.takesPad && !pauseView.isOpen && !tradOpen() && !(::radialView.isInitialized && radialView.isOpen) &&
             // 1.0.21 (the user, streaming: "when I press L it didnt show the party member targetor"): GameLife only knows the Thor's own
             // game; a live add-on stream (Local or Streaming) counts too
             (GameLife.worldNow || GameInput.live(System.currentTimeMillis())) && (!::chooserPanel.isInitialized || chooserPanel.visibility != View.VISIBLE) && !homeView.classBusy()

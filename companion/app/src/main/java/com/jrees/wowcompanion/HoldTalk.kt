@@ -22,7 +22,7 @@ class HoldTalk {
     enum class St { IDLE, PENDING, HELD, WORKING, LINE, SENDING, NOTE }
 
     /** what the host does after an event */
-    enum class Out { NONE, OPEN_CHAT, LISTEN, STOP, CANCEL, SHOW, SEND, DROP, NOTE }
+    enum class Out { NONE, OPEN_CHAT, LISTEN, STOP, CANCEL, SHOW, SEND, DROP, NOTE, TAB_L, TAB_R }
 
     var st = St.IDLE; private set
     /** the words heard (the line's text, the send's body) */
@@ -110,8 +110,23 @@ class HoldTalk {
         return Out.NOTE
     }
 
-    /** a press while the hold has the controller (not Left's own release): [k] the capture's name */
-    fun key(t: Long, k: String): Out = when (st) {
+    /**
+     * a press while the hold has the controller (not Left's own release): [k] the capture's name. LB / RB (the user, 2026-11-17: "pop up
+     * tabs to press L or R to change what chat that its for") move the panel's chat tab while held, while the words are worked out and
+     * while they wait (the wait starts again: a choice is never cut short by the fade)
+     */
+    fun key(t: Long, k: String): Out = when {
+        (k == LB || k == RB) && (st == St.HELD || st == St.WORKING || st == St.LINE) -> {
+            if (st == St.LINE) shownAt = t
+            if (k == LB) Out.TAB_L else Out.TAB_R
+        }
+        else -> keyOther(k)
+    }
+
+    /** a finger picked a tab on the pop-up: a waiting line's time starts again (as LB / RB) */
+    fun tabTouched(t: Long) { if (st == St.LINE) shownAt = t }
+
+    private fun keyOther(k: String): Out = when (st) {
         St.LINE -> when (k) {
             A -> { st = St.SENDING; Out.SEND }
             else -> { st = St.IDLE; words = ""; Out.DROP }        // B, or any other button: the line goes, nothing sent
@@ -148,6 +163,9 @@ class HoldTalk {
         const val NOTE_MS = 2500L
         const val A = "PAD1"
         const val B = "PAD2"
+        /** the shoulders (DirectPadKeys.LB / RB, the app's own reader): the panel's previous / next chat */
+        const val LB = DirectPadKeys.LB
+        const val RB = DirectPadKeys.RB
         const val NOT_HEARD = "Didn't hear you"
         const val NO_VOICE = "Download a voice in Add-ons"
         const val MIC_OFF = "Microphone off"

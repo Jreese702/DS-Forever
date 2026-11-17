@@ -47,7 +47,7 @@ class HoldTalkShotsTest {
         HomeSettings.init(app)
     }
 
-    @After fun clean() { HomeSettings.setHoldTalk(WHO, false); HomeSettings.setTalkSendNow(WHO, false) }
+    @After fun clean() { HomeSettings.setHoldTalk(WHO, false); HomeSettings.setTalkSendNow(WHO, false); TalkKeep.reset() }
 
     private fun idle() = ShadowLooper.idleMainLooper()
 
@@ -97,6 +97,17 @@ class HoldTalkShotsTest {
             .put("tlen", 0).put("th", 0).put("ty", ty)
         if (why != null) m.put("why", why)
         v.onDoc(m); idle()
+    }
+    /** the check's answer with a spelt target (a whisper's person, a channel's number) */
+    private fun answerCheckTo(v: ChatView, body: String, ty: String, target: String) {
+        // the spelt target's own BODY tap is answered first; the check's answer is the last (until the send's tap goes)
+        var n = 0
+        while (("chq" to ChatStream.SEND) !in taps && n++ < 4) answerOnce(v, body, ty, target)
+    }
+    private fun answerOnce(v: ChatView, body: String, ty: String, target: String) {
+        v.onDoc(JSONObject().put("type", "chatt").put("op", "body").put("ok", true).put("len", body.length).put("h", ChatStream.hash(body))
+            .put("tlen", target.length).put("th", ChatStream.hash(target)).put("ty", ty))
+        idle()
     }
     private fun answerSend(v: ChatView, ty: String, ok: Boolean = true) {
         v.onDoc(JSONObject().put("type", "chatt").put("op", "send").put("ok", ok).put("len", 0).put("h", 0).put("tlen", 0).put("th", 0).put("ty", ty))
@@ -277,4 +288,115 @@ class HoldTalkShotsTest {
                 File(d, "preview_${id.replace(' ', '_').lowercase()}_${tag}_$t.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
             }
     }
+
+    // ---------------------------------------------------------------- the pop-up's chat tabs (the user, 2026-11-17: "pop up tabs to press
+    // L or R to change what chat that its for. lets give it its own pop up UI around it.")
+
+    private val GUILD = Color.parseColor("#40FF40")
+
+    /** a chat in a group and a guild, General and Trade joined, Mirelle whispered */
+    private fun chatWithChannels(): ChatView {
+        val v = chat()
+        v.update(JSONObject().put("v", "chat37").put("s", 77L).put("n", 1).put("lines", JSONArray())
+            .put("can", JSONObject().put("party", true).put("guild", true).put("raid", false).put("chans", JSONArray()
+                .put(JSONObject().put("i", 1).put("n", "General - Elwynn Forest")).put(JSONObject().put("i", 2).put("n", "Trade - City")))))
+        set(v, "whisperName", "Mirelle")
+        idle()
+        return v
+    }
+
+    @Test fun theTabsAreTheChatRoomsListAndASendOnGuildAfterRGoesThereAndIsKept() {
+        live()
+        TalkKeep.reset()
+        val v = chatWithChannels()
+        val tabs = v.talkTabs()
+        assertEquals(listOf("SAY", "PARTY", "GUILD", "YELL", "CHANNEL:1", "CHANNEL:2", "WHISPER"), tabs.map { it.key })
+        assertEquals(listOf("Say", "Party", "Guild", "Yell", "General", "Trade", "→ Mirelle"), tabs.map { it.label })
+        assertFalse("never an invented Officer tab", tabs.any { it.key == "OFFICER" })
+        // the last used chat: Party (the composer's send)
+        set(v, "type", "PARTY"); call(v, "applyType"); call(v, "setTyped", "omw"); call(v, "doSend")
+        answerCheck(v, "omw", "PARTY"); answerSend(v, "PARTY")
+        val t = TalkTabs(); t.seed(v.talkTabs(), v.talkStart())
+        assertEquals("starts on the last used chat", "PARTY", t.now()!!.key)
+        assertTrue(t.step(1))                                                   // R
+        assertEquals("GUILD", t.now()!!.key)
+        assertEquals(Triple("GUILD", "Guild: ", GUILD), v.talkChannel("GUILD", ""))
+        taps.clear()
+        var result: Pair<Boolean, String>? = null
+        assertTrue(v.talkSend("pulling at 5", t.now()!!.let { it.key to it.whisper }) { ok, why -> result = ok to why })
+        assertTrue("the guild type tapped (chq ${ChatStream.TYPES.getValue("GUILD")})", ("chq" to ChatStream.TYPES.getValue("GUILD")) in taps)
+        assertFalse("not the party's", ("chq" to ChatStream.TYPES.getValue("PARTY")) in taps)
+        answerCheck(v, "pulling at 5", "GUILD"); answerSend(v, "GUILD")
+        assertEquals(true to "", result)
+        assertEquals("kept as the last used chat", "GUILD", TalkKeep.used.type)
+        assertEquals("GUILD", v.talkStart())
+        // a whisper tab: its person goes with it
+        taps.clear(); result = null
+        assertTrue(v.talkSend("inv pls", "WHISPER" to "Mirelle") { ok, why -> result = ok to why })
+        answerCheckTo(v, "inv pls", "WHISPER", "Mirelle"); answerSend(v, "WHISPER")
+        assertEquals(TalkKeep.Used("WHISPER", "Mirelle", ""), TalkKeep.used)
+        // a channel: kept by its name
+        taps.clear()
+        assertTrue(v.talkSend("wts linen", "CHANNEL:2" to "") { _, _ -> })
+        answerCheckTo(v, "wts linen", "CHANNEL", "2"); answerSend(v, "CHANNEL")
+        assertEquals(TalkKeep.Used("CHANNEL:2", "", "Trade - City"), TalkKeep.used)
+        assertEquals("the composer's own type untouched", "PARTY", get<String>(v, "type"))
+    }
+
+    /** the tab gaps' ease done before the picture (the clock stands still under the paused looper) */
+    private fun settle() { org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(UiKit.TAB_GAP_MS + 100L)) }
+
+    private fun panel(v: ChatView, t: TalkTabs, mode: CastView.TalkFace.Mode, words: String, ask: Boolean = false, level: Float = 0.7f): CastView.TalkPanel {
+        val n = t.now()!!
+        val (_, prefix, colour) = v.talkChannel(n.key, n.whisper)
+        return CastView.TalkPanel(t.tabs, t.sel, CastView.TalkFace(mode, colour, level), prefix, words, ask)
+    }
+
+    @Test fun thePopUpHoldingOnPartyThenGuildTheWaitingWordsAndAWhisper() {
+        live()
+        TalkKeep.reset()
+        val v = chatWithChannels()
+        val (home, cast) = home()
+        val t = TalkTabs(); t.seed(v.talkTabs(), "PARTY")
+        cast.talk = CastView.TalkFace(CastView.TalkFace.Mode.LISTEN, PARTY, 0.7f)
+        cast.talkPanel = panel(v, t, CastView.TalkFace.Mode.LISTEN, "")
+        val onParty = shot(home, "ptt_party_hold")
+        assertFalse(cast.talkPanelBox.isEmpty)
+        assertTrue("on the page", cast.talkPanelBox.left >= 0f && cast.talkPanelBox.right <= home.width && cast.talkPanelBox.bottom <= home.height)
+        val castBottom = (cast.parent as View).top + cast.bottom
+        assertTrue("under the toolbar's D-pad, never over the held Left (${cast.talkPanelBox} / $castBottom)", cast.talkPanelBox.top >= castBottom - 40f)
+        assertEquals(t.tabs.size, cast.talkTabBoxes.size)
+        assertTrue("the big microphone in Party's colour", count(onParty, PARTY) > 200)
+        // R: Guild; the microphone and the words take its colour
+        assertTrue(t.step(1))
+        cast.talk = CastView.TalkFace(CastView.TalkFace.Mode.LISTEN, GUILD, 0.7f)
+        cast.talkPanel = panel(v, t, CastView.TalkFace.Mode.LISTEN, "")
+        shot(home, "ptt_after_r_guild"); settle()
+        val onGuild = shot(home, "ptt_after_r_guild")
+        assertTrue("Guild's colour now", count(onGuild, GUILD) > 200)
+        assertTrue("Party's only on its tab", count(onGuild, PARTY) < count(onParty, PARTY) / 2)
+        // the words wait (A sends, B drops)
+        cast.talk = CastView.TalkFace(CastView.TalkFace.Mode.READY, GUILD)
+        cast.talkPanel = panel(v, t, CastView.TalkFace.Mode.WORK, "pulling the first pack at five, everyone ready?", ask = true)
+        shot(home, "ptt_words_wait")
+        // a finger on the whisper's tab picks it
+        var picked: String? = null
+        cast.onTalkTab = { picked = it }
+        val (wKey, wBox) = cast.talkTabBoxes.last()
+        assertTrue(cast.talkPanelTouch(wBox.centerX(), wBox.centerY()))
+        assertEquals("WHISPER", wKey); assertEquals("WHISPER", picked)
+        assertTrue(t.pick("WHISPER"))
+        val tell = v.talkChannel("WHISPER", "Mirelle")
+        assertEquals("Tell Mirelle: ", tell.second)
+        cast.talk = CastView.TalkFace(CastView.TalkFace.Mode.READY, tell.third)
+        cast.talkPanel = panel(v, t, CastView.TalkFace.Mode.WORK, "inv please", ask = true)
+        shot(home, "ptt_whisper_tab"); settle()
+        shot(home, "ptt_whisper_tab")
+        assertFalse("a touch off the pop-up is not its", cast.talkPanelTouch(5f, 5f))
+        cast.talkPanel = null
+        assertTrue(cast.talkPanelBox.isEmpty)
+        assertTrue(cast.talkTabBoxes.isEmpty())
+        cast.talk = null
+    }
+
 }

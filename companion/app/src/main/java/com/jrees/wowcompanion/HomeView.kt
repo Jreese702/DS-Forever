@@ -2183,18 +2183,28 @@ class HomeView(
         }
         // HOLD TO TALK's line (HoldTalk, the user 2026-11-16): under the toolbar's D-pad, over the page (the band is only as tall as its
         // buttons); with the band's own pause slide
-        if (castView.talkLine != null && castView.parent === barsSlot && barsSlot.visibility == View.VISIBLE)
-            castView.drawTalkLine(c, barsSlot.left + barsSlot.translationX + castView.left + castView.translationX,
-                barsSlot.top + barsSlot.translationY + castView.top + castView.translationY, width.toFloat())
+        // its POP-UP (the user 2026-11-17: "pop up tabs to press L or R to change what chat that its for"): the chat tabs, the microphone
+        // and the words, in the line's place while the hold lasts and its words wait
+        if ((castView.talkLine != null || castView.talkPanel != null) && castView.parent === barsSlot && barsSlot.visibility == View.VISIBLE) {
+            val ox = barsSlot.left + barsSlot.translationX + castView.left + castView.translationX
+            val oy = barsSlot.top + barsSlot.translationY + castView.top + castView.translationY
+            if (castView.talkPanel != null) castView.drawTalkPanel(c, ox, oy, width.toFloat(), this)
+            else castView.drawTalkLine(c, ox, oy, width.toFloat())
+        }
         if (pauseSave >= 0) c.restoreToCount(pauseSave)
     }
 
     // ================================================================ the bars: a tap opens them full screen
 
     private var barsDown = false
+    /** a touch that came down on hold to talk's pop-up (CastView.talkPanelTouch): the rest of it is the pop-up's */
+    private var talkSwallow = false
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
         // f-trackpad-keyboard: the tool's touches are the tool's (a drag starting where the bars lie was taken as a tap on the bars)
         if (typeWanted) { barsDown = false; return false }
+        // hold to talk's pop-up: a finger on it is its own (a tab picks that chat); nothing under it acts
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) talkSwallow = castView.talkPanelTouch(e.x, e.y)
+        if (talkSwallow) { barsDown = false; return true }
         // THE MAIL CARD (HomeMailButton; the user's pick: "B or tap elsewhere closes"): while it is open a touch anywhere on Home closes
         // it. On the map (the card, the envelope, the Calendar button, the quest card and buffs under it) that touch does nothing else
         // (it is Home's to its end); anywhere else it goes on as always - the controller's buttons still cast, in a fight too (review
@@ -2212,6 +2222,10 @@ class HomeView(
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (talkSwallow) {
+            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) talkSwallow = false
+            return true
+        }
         if (mailSwallow) {
             if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) mailSwallow = false
             return true
