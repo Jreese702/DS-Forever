@@ -116,6 +116,7 @@ class BottomTilesRoomTest {
     }
 
     @After fun forget() {
+        Theme.use("classic")
         GameUi.character = null
         Tr.setChoice(app, "auto")
         BottomPictures.drop()
@@ -280,9 +281,23 @@ class BottomTilesRoomTest {
         // the first crops, then the second pass once the minimap's tiles decoded (their own thread) and the stage drew again
         settle(); Thread.sleep(BottomPictures.AGAIN_MS + 300); feedStage(); org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(BottomPictures.AGAIN_MS + 300))
         shot("bot_2_game")
-        scroll(900); shot("bot_3_game_lower")
-        scroll(0)
-        for ((i, id) in BottomTiles.ALL.withIndex()) { open(id); shot("bot_band_${i + 1}_$id") }
+        // (the whole tab fits the page: no "lower" view; the bands lower down scroll, below)
+        System.getenv("BOTTOM_DEBUG_DIR")?.let { d ->
+            PreviewStage.home(app, HomeView.Companion.Look(HomeSettings.rest, true, HomeSettings.questOverMap, false), false)?.let { b ->
+                File(d).mkdirs(); File(d, "home_stage.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        }
+        for ((i, id) in BottomTiles.ALL.withIndex()) {
+            open(id)
+            // Hold to talk's band a moment in: the hold done, the words in the box (the band opens on the hold)
+            if (id == BottomTiles.TALK) org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(1600))
+            shot("bot_band_${i + 1}_$id")
+        }
+        // Hold to talk On (this character): the hold, the words in the box, A to send; then Send now, the line sent into the chat
+        HomeSettings.setHoldTalk("Sample-Realm", true); HomeSettings.setTalkSendNow("Sample-Realm", false)
+        open(BottomTiles.TALK); org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(1600)); shot("bot_band_7b_talk_on")
+        HomeSettings.setTalkSendNow("Sample-Realm", true)
+        open(BottomTiles.TALK); org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(2600)); shot("bot_band_7c_talk_send_now")
+        HomeSettings.setTalkSendNow("Sample-Realm", false); HomeSettings.setHoldTalk("Sample-Realm", false)
         // the zoom band with the cursor on Indoors: the picture follows it
         close(); hold(r); r.toggle(SettingsTabs.Group.MAP); lay(r)
         open(BottomTiles.ZOOM)
@@ -293,19 +308,32 @@ class BottomTilesRoomTest {
         close(); scroll(0); hold(r); press(r, "PADDDOWN"); press(r, "PADDDOWN"); press(r, "PADDLEFT"); press(r, "PAD1"); reveal(BottomTiles.COMBAT); shot("bot_cursor_on_open_tile")
         press(r, "PADDDOWN"); shot("bot_cursor_in_band")
         press(r, "PAD2"); shot("bot_b_back_on_tile")
-        // Spanish and French
+        // the themes: an OLED one and a dark one (no light preset exists), the tab and a band each
+        for (th in listOf("oled_bronze", "dark_silver", "oled_frost")) {
+            Theme.use(th); close(); hold(r); r.toggle(SettingsTabs.Group.MAP); lay(r); scroll(0); shot("bot_theme_$th")
+            open(BottomTiles.QUEST); shot("bot_theme_${th}_band_quest")
+        }
+        Theme.use("classic")
+        // Spanish and French (with this area's new words, BOTTOM_I18N = scratchpad res/i18n/bottom.json, merged as the integrator will)
+        val extra = System.getenv("BOTTOM_I18N")?.let { File(it) }?.takeIf { it.canRead() }?.let { JSONObject(it.readText()) }
         for (l in listOf("es", "fr")) {
             listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
-                .firstOrNull { it.canRead() }?.let { Tr.load(l, it.readText()) }
+                .firstOrNull { it.canRead() }?.let { f ->
+                    val doc = JSONObject(f.readText())
+                    extra?.let { x -> val plain = doc.getJSONObject("plain"); for (k in x.keys()) plain.put(k, x.getJSONObject(k).getString(l)) }
+                    Tr.load(l, doc.toString())
+                }
             Tr.setChoice(app, l); close(); scroll(0); shot("bot_${l}")
             open(BottomTiles.CLOCK); shot("bot_${l}_band_clock")
         }
         Tr.setChoice(app, "auto")
-        // no kit on the phone yet
+        // no kit on the phone yet (the stage's own pictures, made with the kit, go too: a phone without the kit never had them)
         BottomPictures.drop()
+        MemWatch.room = "home"; MemWatch.trimmed(android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW); MemWatch.room = "-"
         r = room(kit = false); r.toggle(SettingsTabs.Group.MAP); lay(r); shot("bot_nokit")
         open(BottomTiles.CLOCK); shot("bot_nokit_band_clock")
         open(BottomTiles.CASTBAR); shot("bot_nokit_band_castbar")
+        open(BottomTiles.WORLD); shot("bot_nokit_band_worldmap")
         art()
         HomeSettings.castBarSide = CastStripModel.Side.OFF
         sheet(out, made)

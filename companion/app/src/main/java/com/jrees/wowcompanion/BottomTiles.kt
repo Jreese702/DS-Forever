@@ -68,6 +68,10 @@ object BottomTiles {
         else -> emptyList()
     }
 
+    /** the group's heading: Map's is "Map & chat" (critic C6: Message input lives there), the rest as SettingsTabs names them. INTERIM
+     *  until the core's SettingsTabs has the Bottom screen's MAP_CHAT group */
+    fun heading(g: SettingsTabs.Group): String = if (g.tab == SettingsTabs.Tab.BOTTOM && g.name == "MAP") "Map & chat" else g.heading
+
     /** every tile, both groups */
     val ALL: List<String> get() = HOME_TILES + MAP_TILES
 
@@ -223,7 +227,8 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
     private var focusIdx = 0
     private var downX = 0f
     private var downY = 0f
-    private val t0 = SystemClock.uptimeMillis()
+    /** when the open band opened: its animation starts there (it opens on the picture its tile shows) */
+    private var openedAt = SystemClock.uptimeMillis()
 
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
@@ -337,6 +342,7 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
                     focusIdx = i
                     selected = if (selected == id) null else id
                     lineFocus = null
+                    openedAt = SystemClock.uptimeMillis()
                     requestLayout(); invalidate()
                     if (selected != null) onOpen?.invoke(this)
                 }
@@ -360,6 +366,7 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         val e = env()
         val l = layout(width.toFloat())
         val look = BottomPictures.Look(e, zoomIndoor = lineFocus == "in")
+        BottomPictures.onArt = { postInvalidate() }
         for ((i, id) in l.slots.withIndex()) drawTile(c, l.grid.tiles[i], id, e, look, id == selected, abs(i - focusIdx) + 1)
         val open = l.slots.indexOf(selected)
         val band = l.band
@@ -392,7 +399,7 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         pName.color = Theme.text
         c.drawText(fitText(pName, Tr.t(BottomTiles.NAMES[id] ?: id), maxW, NAME_SIZE, NAME_MIN), x, box.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 34f, pName)
         pValue.color = if (BottomTiles.dimmed(id, e)) Theme.textDim else Theme.gold
-        c.drawText(fitText(pValue, Tr.t(BottomTiles.value(id, e)), maxW, 22f, 18f), x, box.b - 12f, pValue)
+        c.drawText(fitText(pValue, Tr.t(BottomTiles.value(id, e)), maxW, 22f, 16f), x, box.b - 12f, pValue)
     }
 
     /** the game's metal ring (the kit's ring_square), lit for the open tile; the drawn ring without the kit */
@@ -412,6 +419,29 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         return s.substring(0, n).trimEnd() + "…"
     }
 
+    /** a band line's label in [room] px: one line at 25 (down to 21), else two or three lines (down to 15: a long Spanish or French
+     *  word set; 13 for one long word such as "Emplacements"), never cut short unless one word alone is wider than the room */
+    private fun label(c: Canvas, s: String, x: Float, cy: Float, room: Float) {
+        val p = pBandLabel
+        p.textSize = 25f
+        while (p.measureText(s) > room && p.textSize > 21f) p.textSize -= 1f
+        if (p.measureText(s) <= room) { c.drawText(s, x, cy + 9f, p); return }
+        for (n in 2..3) {
+            p.textSize = 23f
+            while (p.textSize >= 13f) {
+                val lines = wrapWords(s, room) { p.measureText(it) }
+                if (lines != null && lines.size <= n) {
+                    val lh = p.textSize * 1.1f
+                    val top = cy - lh * lines.size / 2f
+                    for ((i, l) in lines.withIndex()) c.drawText(l, x, top + lh * i + lh * 0.78f, p)
+                    return
+                }
+                p.textSize -= 1f
+            }
+        }
+        c.drawText(fitText(p, s, room, 21f, 15f), x, cy + 9f, p)
+    }
+
     /** the open tile's band (Top's): under its row, a notch at the tile; the picture large, the lines, the one status line */
     private fun drawBand(c: Canvas, box: GameUiTiles.Box, band: GameUiTiles.Band, tile: GameUiTiles.Box, id: String, e: BottomTiles.Env,
                          look: BottomPictures.Look, lines: List<BottomTiles.Line>) {
@@ -424,7 +454,7 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         c.drawPath(tilePath, pFill)
         pStroke.color = Theme.gold; pStroke.strokeWidth = 2.6f
         c.drawLine(nx - 18f, rect.top + 1f, nx, rect.top - 13f, pStroke); c.drawLine(nx, rect.top - 13f, nx + 18f, rect.top + 1f, pStroke)
-        val tMs = if (BottomTiles.animated(id)) SystemClock.uptimeMillis() - t0 else null
+        val tMs = if (BottomTiles.animated(id)) SystemClock.uptimeMillis() - openedAt else null
         picture(c, id, band.picture.rect(), e, look, tMs, 0)
         for ((i, line) in band.lines.withIndex()) {
             val ln = lines.getOrNull(i) ?: continue
@@ -432,20 +462,20 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
                 var lx = lb.l + 4f
                 ln.icon?.let { fid ->
                     Icons.get(fid)?.let { bmp ->
-                        val ib = RectF(lx, lb.cy - 16f, lx + 32f, lb.cy + 16f)
+                        // the design's 3.2: the icons.pak icon at 40 px left of the label
+                        val ib = RectF(lx, lb.cy - ICON / 2f, lx + ICON, lb.cy + ICON / 2f)
                         c.drawBitmap(bmp, null, ib, pIcon)
                         pStroke.color = Theme.bronzeDim; pStroke.strokeWidth = 1.5f; c.drawRect(ib, pStroke)
-                        lx += 40f
+                        lx += ICON + 10f
                     }
                 }
                 val room = lb.r - lx - 4f
                 pBandLabel.color = Theme.text
-                val name = fitText(pBandLabel, Tr.t(ln.label ?: ""), room, 25f, 18f)
                 if (ln.value != null) {
-                    c.drawText(name, lx, lb.cy - 6f, pBandLabel)
+                    c.drawText(fitText(pBandLabel, Tr.t(ln.label ?: ""), room, 25f, 18f), lx, lb.cy - 6f, pBandLabel)
                     pValue.color = Theme.gold
                     c.drawText(fitText(pValue, Tr.t(ln.value), room, 22f, 18f), lx, lb.cy + 26f, pValue)
-                } else c.drawText(name, lx, lb.cy + 9f, pBandLabel)
+                } else label(c, Tr.t(ln.label ?: ""), lx, lb.cy, room)
             }
             for ((k, b) in line.buttons.withIndex()) {
                 val m = ln.modes?.getOrNull(k)
@@ -482,5 +512,20 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         const val SLOP = 24f
         /** the open band's animation: up to 30 fps */
         const val FRAME_MS = 33L
+        /** a band line's icon (the clock band's: the design's 3.2) */
+        const val ICON = 40f
+
+        /** [s]'s words laid in lines no wider than [maxW] ([w] measures), null = one word alone is wider */
+        fun wrapWords(s: String, maxW: Float, w: (String) -> Float): List<String>? {
+            val out = ArrayList<String>()
+            var cur = ""
+            for (word in s.split(' ').filter { it.isNotEmpty() }) {
+                if (w(word) > maxW) return null
+                val next = if (cur.isEmpty()) word else "$cur $word"
+                if (w(next) <= maxW) cur = next else { out += cur; cur = word }
+            }
+            if (cur.isNotEmpty()) out += cur
+            return out
+        }
     }
 }

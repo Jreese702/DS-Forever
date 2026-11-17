@@ -297,7 +297,7 @@ class SettingsFoldHeading(context: Context, val group: SettingsTabs.Group, priva
         }
         pHead.color = Theme.gold
         pHead.alpha = if (open) 255 else 190
-        c.drawText(Tr.t(group.heading), if (folds) SIGN_X + SIGN_W + 18f else SIGN_X, cy - (pHead.ascent() + pHead.descent()) / 2f, pHead)
+        c.drawText(Tr.t(BottomTiles.heading(group)), if (folds) SIGN_X + SIGN_W + 18f else SIGN_X, cy - (pHead.ascent() + pHead.descent()) / 2f, pHead)
         pHead.alpha = 255
     }
 

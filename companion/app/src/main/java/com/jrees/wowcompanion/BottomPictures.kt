@@ -74,7 +74,9 @@ object BottomPictures {
     object HalfStage : Stage {
         override fun frame(ctx: Context, look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?): Frame? {
             val b = PreviewStage.home(ctx, look, fight, toolbar) ?: return null
-            val mb = PreviewStage.mapBox ?: return null
+            // the stage's mapBox is its LAST render's: a picture handed back from its cache may be another look's (a cast bar on, the
+            // quest over the map), so each picture keeps the box it was drawn with (a picture seen first was just drawn)
+            val mb = boxOf.getOrPut(b) { PreviewStage.mapBox?.let { RectF(it) } ?: return null }
             val w = HOME_W; val h = homeH()
             val map = RectF(mb.left * w, mb.top * h, mb.right * w, mb.bottom * h)
             val chat = RectF(w - map.right, map.top, w - map.left, map.bottom)
@@ -82,6 +84,8 @@ object BottomPictures {
         }
     }
     var stage: Stage = HalfStage
+    /** each stage picture's map box (HalfStage), as long as the stage keeps the picture */
+    private val boxOf = java.util.WeakHashMap<Bitmap, RectF>()
 
     const val HOME_W = 1240f
     fun homeH(): Float = 1080f - Strip.HEIGHT
@@ -157,7 +161,7 @@ object BottomPictures {
     private val redone = HashSet<String>()
 
     /** every crop goes (a trim, Settings' Bottom screen out of view); the bytes let go */
-    fun drop(): Long { pending.clear(); failed.clear(); madeAt.clear(); redone.clear(); kb = null; worldArt.clear(); return small.clear() + large.clear() }
+    fun drop(): Long { pending.clear(); failed.clear(); madeAt.clear(); redone.clear(); kb = null; worldArt.clear(); spotLooked = false; spotMemo = null; return small.clear() + large.clear() }
 
     private val viewers = HashSet<Int>()
     /** a Bottom screen tile view came into view ([on]) or went; the last one going drops the crops */
@@ -175,8 +179,14 @@ object BottomPictures {
         return RectF(x, y, x + w, y + h)
     }
     /** the controller's face buttons (the right group) / its D-pad (the left group), from the band's top */
-    private fun faces(b: Map<String, RectF>) = b["controller"]?.let { win(it.left + it.width() * 0.715f, it.top + WIN_H / 2f) }
-    private fun dpad(b: Map<String, RectF>) = b["controller"]?.let { win(it.left + it.width() * 0.27f, it.top + WIN_H / 2f) }
+    private fun faces(b: Map<String, RectF>) = b["controller"]?.let { win(it.left + it.width() * 0.715f, it.top + PAD_WIN / 4f, PAD_WIN) }
+    private fun dpad(b: Map<String, RectF>) = b["controller"]?.let { win(it.left + it.width() * 0.278f, it.top + PAD_WIN / 4f, PAD_WIN) }
+    /** the controller's groups' window: just the group (the clock band's icons and the L / R trigger boxes beside it stay out, so the
+     *  miniature has clean edges); 404 of Home's px into the band's 438 */
+    private const val PAD_WIN = 404f
+    /** the fight's window: the grown buttons need about the band's 438 (its edges softened: [sides]), the R trigger box just outside */
+    private fun fightFaces(b: Map<String, RectF>) = b["controller"]?.let { win(it.left + it.width() * 0.713f, it.top + FIGHT_WIN / 4f, FIGHT_WIN) }
+    private const val FIGHT_WIN = 436f
     /** the top of a column (the focused quest's frames): [QW] x [QH] of Home at its top-left */
     private const val QW = 236f
     private const val QH = 220f
@@ -185,6 +195,82 @@ object BottomPictures {
     private fun colFoot(b: Map<String, RectF>, key: String) = b[key]?.let { RectF(it.left, it.bottom - QH, it.left + QW, it.bottom) }
     /** the minimap, [k] of the window (indoors: narrower, the same map closer) */
     private fun mapWin(b: Map<String, RectF>, k: Float) = b["map"]?.let { win(it.centerX(), it.centerY(), WIN_W * k) }
+
+    /** a window of module [key] the shape of [dw] x [dh], [k] Home px per unit, kept inside the module; [anchor] -1 its top, 0 its
+     *  middle, 1 its foot */
+    private fun modWin(b: Map<String, RectF>, key: String, dw: Float, dh: Float, k: Float, anchor: Int, left: Boolean = false): RectF? = b[key]?.let { m ->
+        var w = dw * k; var h = dh * k
+        if (w > m.width()) { h *= m.width() / w; w = m.width() }
+        if (h > m.height()) { w *= m.height() / h; h = m.height() }
+        // the chat's words start at its left: its window keeps that edge (a few px in, past the module's frame)
+        val x = if (left) m.left + 6f else m.centerX() - w / 2f
+        val y = when (anchor) { -1 -> m.top; 1 -> m.bottom - h; else -> m.centerY() - h / 2f }
+        RectF(x, y, x + w, y + h)
+    }
+
+    /** the well's ground: the game's world colour (the design's 0.2: not a theme token, it stands for the game) */
+    val WORLD = Color.rgb(14, 16, 18)
+
+    /** a view to draw again when art that was loading lands (the minimap tiles decode on their own thread) */
+    var onArt: (() -> Unit)? = null
+
+    // ---------------------------------------------------------------- the minimap's own art (Minimap zoom, the cast bar's map column)
+
+    /** a sample place (sample values only, the ToS ruling): its continent, world x (north) / y (west) and facing */
+    private class Spot(val cont: Int, val wx: Double, val wy: Double, val facing: Float)
+    /** Razor Hill (Durotar) first, Goldshire after: the first whose tile is on the phone */
+    private val SPOTS = listOf(Spot(1, 300.0, -4700.0, 2.11f), Spot(0, -9460.0, 60.0, 0.6f))
+    private fun tileCol(wy: Double) = kotlin.math.floor(32 - wy / MinimapTiles.ADT).toInt()
+    private fun tileRow(wx: Double) = kotlin.math.floor(32 - wx / MinimapTiles.ADT).toInt()
+    private var spotMemo: Spot? = null
+    private var spotLooked = false
+    private fun spot(): Spot? {
+        if (!spotLooked) {
+            spotLooked = true
+            spotMemo = SPOTS.firstOrNull { s -> MinimapTiles.has(s.cont) && ArtHarvest.file("minimap/${s.cont}/${tileCol(s.wy)}_${tileRow(s.wx)}.webp").isFile }
+        }
+        return spotMemo
+    }
+
+    /**
+     * the minimap's tiles round the sample place into [r], [ydH] yards from its top to its bottom (the player in the middle), the game's
+     * own arrow on top; false = no tile on the phone yet (the caller draws a crop or a drawing instead). The tiles are the full 512 px ones
+     * (0.96 px / yd): the band's 220 px show about 230 yd at 1x - never blown up the way a crop of the half-size stage was
+     */
+    private fun terrain(c: Canvas, r: RectF, ydH: Float): Boolean {
+        val s = spot() ?: return false
+        val k = r.height() / ydH                                                  // px per yard
+        val halfW = r.width() / 2f / k; val halfH = r.height() / 2f / k
+        val c0 = tileCol(s.wy + halfW); val c1 = tileCol(s.wy - halfW)
+        val r0 = tileRow(s.wx + halfH); val r1 = tileRow(s.wx - halfH)
+        if ((c1 - c0 + 1) * (r1 - r0 + 1) > 9) return false
+        val adt = MinimapTiles.ADT
+        fun sx(wy: Double) = (r.centerX() + (s.wy - wy) * k).toFloat()
+        fun sy(wx: Double) = (r.centerY() + (s.wx - wx) * k).toFloat()
+        var drew = false
+        c.save(); c.clipRect(r)
+        for (row in r0..r1) for (col in c0..c1) {
+            val dst = RectF(sx((32 - col) * adt) - 0.5f, sy((32 - row) * adt) - 0.5f, sx((31 - col) * adt) + 0.5f, sy((31 - row) * adt) + 0.5f)
+            MinimapTiles.get(s.cont, col, row) { onArt?.invoke() }?.let { c.drawBitmap(it, null, dst, pBmp); drew = true }
+        }
+        c.restore()
+        if (!drew) return MinimapTiles.has(s.cont)                                 // still loading: the ground meanwhile, the arrow on it
+        return true
+    }
+
+    /** the game's minimap arrow (UI Art's mm_player) at the sample place's facing, [size] px; the drawn arrow without the kit */
+    private fun arrow(c: Canvas, cx: Float, cy: Float, size: Float) {
+        val f = spot()?.facing ?: 0f
+        c.save(); c.rotate(-Math.toDegrees(f.toDouble()).toFloat(), cx, cy)
+        val art = UiKit.tex("mm_player")
+        if (art != null && art.width > 0) c.drawBitmap(art, null, RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f), pBmp)
+        else {
+            path.reset(); path.moveTo(cx, cy - size * 0.45f); path.lineTo(cx - size * 0.3f, cy + size * 0.32f); path.lineTo(cx, cy + size * 0.12f)
+            path.lineTo(cx + size * 0.3f, cy + size * 0.32f); path.close()
+            pF.color = Color.rgb(170, 211, 114); c.drawPath(path, pF)
+        }
+        c.restore()
+    }
 
     // ---------------------------------------------------------------- the pictures
 
@@ -208,7 +294,7 @@ object BottomPictures {
         val rad = 8f * r.width() / W
         path.reset(); path.addRoundRect(r, rad, rad, Path.Direction.CW)
         c.clipPath(path)
-        pF.color = Theme.ink; c.drawRect(r, pF)
+        pF.color = WORLD; c.drawRect(r, pF)
         val big = r.width() > W + 1f
         runCatching { picture(c, ctx, id, r, look, tMs, prio, big) }
         c.restoreToCount(save)
@@ -224,37 +310,40 @@ object BottomPictures {
             BottomTiles.REST -> {
                 val rest = HomeSettings.rest
                 val b = crop("rest|$rest|$sz", shot(player(rest = rest), false, null, ::faces), prio)
-                if (b != null) blit(c, b, r) else fallback(c, r, "Controller on Home", look, tMs)
+                if (b != null) { blit(c, b, r); sides(c, r) } else fallback(c, r, "Controller on Home", look, tMs)
             }
             BottomTiles.COMBAT -> {
                 val grow = HomeSettings.combatGrow
-                val restB = crop("combat|rest|$sz", shot(player(), false, null, ::faces), prio)
-                val fightB = crop("combat|$grow|$sz", shot(player(grow = grow), true, null, ::faces), prio)
+                val restB = crop("combat|rest|$sz", shot(player(), false, null, ::fightFaces), prio)
+                val fightB = crop("combat|$grow|$sz", shot(player(grow = grow), true, null, ::fightFaces), prio)
                 if (restB == null || fightB == null) { fallback(c, r, "Combat layout", look, tMs); return }
-                // the tile: the fight (frame 0 of the loop); the band: rest -> the fight -> rest
-                val k = if (tMs == null) 1f else loop(t, 4.4f)
+                // the tile: the fight (frame 0 of the loop); the band opens on the fight too (as the tile shows it), then rest, the fight
+                val k = if (tMs == null) 1f else loop(t + 4.4f * 0.45f, 4.4f)
                 blit(c, restB, r)
-                if (k > 0f) { pBmp.alpha = (255 * k).toInt(); blit(c, fightB, r); pBmp.alpha = 255; UiKit.combatGlow(c, r, 0.75f * k, r.height() * 0.16f) }
+                if (k > 0f) { pBmp.alpha = (255 * k).toInt(); blit(c, fightB, r); pBmp.alpha = 255 }
+                sides(c, r, 0.12f)
+                if (k > 0f) UiKit.combatGlow(c, r, 0.75f * k, r.height() * 0.16f)
             }
             BottomTiles.SWING -> {
                 val on = HomeSettings.swingTimer
-                val b = crop("swing|fight|$sz", shot(player(swing = false), true, null, ::faces), prio)
+                val b = crop("swing|fight|$sz", shot(player(swing = false), true, null, ::fightFaces), prio)
                 if (b == null) { fallback(c, r, "Swing timer", look, tMs); return }
-                blit(c, b, r)
+                blit(c, b, r); sides(c, r, 0.12f)
                 UiKit.combatGlow(c, r, 0.55f, r.height() * 0.14f)
-                if (on) swingLine(c, r, if (tMs == null) 0.62f else (t % 2.6f) / 2.6f)
+                if (on) swingLine(c, r, if (tMs == null) 0.62f else ((t + 0.62f * 2.6f) % 2.6f) / 2.6f)   // the band opens where the tile is
             }
             BottomTiles.QUEST -> quest(c, ctx, r, prio, big)
             BottomTiles.CLOCK -> clock(c, r)
             BottomTiles.TOOLBAR -> {
                 val on = look.env.dpad?.want == true
                 val b = crop("toolbar|$on|$sz", shot(player(), false, on, ::dpad), prio)
-                if (b != null) blit(c, b, r) else fallback(c, r, "DS WoW toolbar", look, tMs)
+                if (b != null) { blit(c, b, r); sides(c, r) } else toolbarDrawn(c, r)
             }
-            BottomTiles.TALK -> talk(c, r, look, tMs)
-            BottomTiles.CASTBAR -> castBar(c, r, tMs)
+            BottomTiles.TALK -> talk(c, r, look, tMs, prio, big)
+            BottomTiles.CASTBAR -> castBar(c, r, tMs, prio, big)
             BottomTiles.ZOOM -> {
                 val out = Settings.minimapYd; val inn = Settings.minimapIndoorYd
+                if (zoom(c, r, out, inn, look.zoomIndoor)) return
                 val k = if (look.zoomIndoor) (inn.toFloat() / out.coerceAtLeast(1)).coerceIn(0.4f, 1f) else 1f
                 val lk = player(overMap = false)
                 val b = crop("zoom|${look.zoomIndoor}|$inn|$out|$sz", shot(lk, false, null, { mapWin(it, k) }), prio)
@@ -276,8 +365,30 @@ object BottomPictures {
 
     private fun blit(c: Canvas, b: Bitmap, r: RectF) = c.drawBitmap(b, null, r, pBmp)
 
+    /** the crop's left and right edges faded into the well (whatever of Home's next module reaches the window's edge goes) */
+    private fun sides(c: Canvas, r: RectF, frac: Float = 0.1f) {
+        val w = r.width() * frac
+        pF.shader = LinearGradient(r.left, 0f, r.left + w, 0f, WORLD, Color.argb(0, Color.red(WORLD), Color.green(WORLD), Color.blue(WORLD)), Shader.TileMode.CLAMP)
+        c.drawRect(r.left, r.top, r.left + w, r.bottom, pF)
+        pF.shader = LinearGradient(r.right - w, 0f, r.right, 0f, Color.argb(0, Color.red(WORLD), Color.green(WORLD), Color.blue(WORLD)), WORLD, Shader.TileMode.CLAMP)
+        c.drawRect(r.right - w, r.top, r.right, r.bottom, pF)
+        pF.shader = null
+    }
+
     /** the space's px per unit of the 216 x 108 picture */
     private fun k(r: RectF) = r.width() / W
+
+    /** no game yet: the DS toolbar's diamond of four spells on the D-pad (sample icons, no words on the picture) */
+    private fun toolbarDrawn(c: Canvas, r: RectF) {
+        val s = k(r)
+        val cx = r.centerX(); val cy = r.centerY(); val d = 26f * s; val half = 15f * s
+        for ((j, o) in listOf(0f to -1f, 1f to 0f, 0f to 1f, -1f to 0f).withIndex()) {
+            val box = RectF(cx + o.first * d * 1.25f - half, cy + o.second * d - half, cx + o.first * d * 1.25f + half, cy + o.second * d + half)
+            val ic = Icons.get(SPELL_ICONS[j])
+            if (ic != null) c.drawBitmap(ic, null, box, pBmp) else { pF.color = Theme.raised; c.drawRect(box, pF) }
+            pS.color = Theme.bronze; pS.strokeWidth = 1.5f * s; c.drawRect(box, pS)
+        }
+    }
 
     // ---- Swing timer: the line drawn 3x thick over the controller's crop
 
@@ -293,7 +404,12 @@ object BottomPictures {
         c.drawRoundRect(RectF(l - 2f * s, y - 5f * s, rr + 2f * s, y + 5f * s), 4f * s, 4f * s, pS)
     }
 
-    // ---- Focused quest: two slot frames (the chat's top, the minimap's top), the quest card in the chosen one
+    // ---- Focused quest: two slot frames (the chat's foot, the minimap), Home's own quest card at the top of the chosen one
+
+    /** the sample focused quest (sample words, the ToS ruling): Home's card object, drawn by Home's own UiKit.questCard */
+    private val SAMPLE_QUEST by lazy {
+        UiKit.QuestCard("Vile Familiars", 6, Theme.questYellow, listOf("Vile Familiar slain: 4/12" to false), number = 1)
+    }
 
     private fun quest(c: Canvas, ctx: Context, r: RectF, prio: Int, big: Boolean) {
         val over = HomeSettings.questOverMap
@@ -303,34 +419,36 @@ object BottomPictures {
         val frames = listOf(RectF(r.left + gap, r.top + gap, r.left + gap + fw, r.top + gap + fh),
             RectF(r.right - gap - fw, r.top + gap, r.right - gap, r.top + gap + fh))
         val lk = player(overMap = over)
-        val sw = (if (big) 210 else 104); val sh = (sw * QH / QW).toInt()
         for ((i, key) in listOf("chat", "map").withIndex()) {
             val f = frames[i]
             val chosen = (i == 1) == over
-            val b = crop("quest|$key|$over|${if (big) "L" else "S"}", Shot(lk, false, null, { if (key == "chat" && over) colFoot(it, key) else colTop(it, key) }, sw, sh), prio)
             pF.color = Theme.field; c.drawRect(f, pF)
-            if (b != null) {
-                val h = f.width() * sh / sw
-                c.drawBitmap(b, null, RectF(f.left, f.top, f.right, f.top + min(h, f.height())), pBmp)
+            c.save(); c.clipRect(f)
+            if (key == "map") {
+                // the minimap's own tiles (crisp at both sizes), the arrow in the open part under the card
+                if (terrain(c, f, 150f)) arrow(c, f.centerX(), f.centerY() + (if (chosen) f.height() * 0.18f else 0f), 22f * s)
+                else { pF.color = Color.rgb(52, 70, 46); c.drawCircle(f.centerX(), f.centerY() + 8f * s, min(f.width(), f.height()) * 0.36f, pF) }
             } else {
-                if (i == 1) { pF.color = Color.rgb(52, 70, 46); c.drawCircle(f.centerX(), f.centerY() + 8f * s, min(f.width(), f.height()) * 0.36f, pF) }
+                // the chat's newest lines (its foot): a crop of the real Home, at most 2.2x shrunk into the well
+                val ow = f.width().toInt().coerceAtLeast(1); val oh = f.height().toInt().coerceAtLeast(1)
+                val b = crop("quest|chat|$over|${if (big) "L" else "S"}", Shot(lk, false, null,
+                    { modWin(it, "chat", f.width() / s, f.height() / s, MAX_SHRINK, 1, left = true) }, ow, oh), prio)
+                if (b != null) c.drawBitmap(b, null, f, pBmp)
                 else { pF.color = Theme.textDim; for (j in 0..2) c.drawRect(f.left + 8f * s, f.bottom - (14f + j * 12f) * s, f.right - (10f + j * 14f) * s, f.bottom - (10f + j * 12f) * s, pF) }
-                if (chosen) card(c, RectF(f.left + 4f * s, f.top + 4f * s, f.right - 4f * s, f.top + 30f * s))
             }
+            if (chosen) {
+                // Home's card, laid out at the Map room's 400 px and scaled to the frame
+                val sc = (f.width() - 4f * s) / 400f
+                val ch = UiKit.questCardHeight(SAMPLE_QUEST)
+                c.save(); c.translate(f.left + 2f * s, f.top + 2f * s); c.scale(sc, sc)
+                UiKit.questCard(c, RectF(0f, 0f, 400f, ch), SAMPLE_QUEST)
+                c.restore()
+            }
+            c.restore()
             if (!chosen) { pF.color = Color.argb(150, 0, 0, 0); c.drawRect(f, pF) }
             pS.color = if (chosen) Theme.gold else Theme.bronzeDim; pS.strokeWidth = (if (chosen) 2.4f else 1.2f) * s
             c.drawRect(f, pS)
         }
-    }
-
-    /** a quest card (our own drawing, sample words): the number disc and a title */
-    private fun card(c: Canvas, b: RectF) {
-        val s = b.height() / 26f
-        pF.color = Theme.raised; c.drawRoundRect(b, 3f * s, 3f * s, pF)
-        pF.color = Theme.gold; c.drawRect(b.left, b.top + 2f * s, b.left + 2f * s, b.bottom - 2f * s, pF)
-        pF.color = Color.rgb(230, 170, 40); c.drawCircle(b.left + 12f * s, b.centerY(), 7f * s, pF)
-        val p = UiKit.bodyPaint(9f * s, Color.rgb(255, 230, 60), shadow = false)
-        c.drawText("Wolves Across…", b.left + 23f * s, b.centerY() + 3.5f * s, p)
     }
 
     // ---- Clock band: Home's own clock chip and extras row, the extras as they are on
@@ -362,78 +480,101 @@ object BottomPictures {
         c.restore()
     }
 
-    // ---- Hold to talk: the chat bar, the mic, the hold ring round the D-pad's Left; the band: hold, then the words, then sent / shown
+    // ---- Hold to talk: the real chat behind, the kit's chat box with the mic, D-pad Left with Home's hold ring; the band: hold, the
+    // ---- words in the box, then sent into the chat (Send now) or waiting for A (Show, A sends)
 
-    private fun talk(c: Canvas, r: RectF, look: Look, tMs: Long?) {
+    private fun talk(c: Canvas, r: RectF, look: Look, tMs: Long?, prio: Int, big: Boolean) {
         val who = look.env.who
         val on = HomeSettings.holdTalk(who)
         val now = HomeSettings.talkSendNow(who)
         val kk = r.width() / 432f
+        // the upper part: the chat's newest lines (a crop of the real Home, its left edge kept; our dim lines until the game is in)
+        val chatH = 140f
+        val b = crop("talk|chat|${if (big) "L" else "S"}", Shot(player(), false, null,
+            { modWin(it, "chat", 432f, chatH, 1.1f, 1, left = true) }, r.width().toInt(), (chatH * kk).toInt().coerceAtLeast(1)), prio)
         c.save(); c.translate(r.left, r.top); c.scale(kk, kk)
-        pF.shader = LinearGradient(0f, 0f, 0f, 216f, Theme.panel, Theme.ink, Shader.TileMode.CLAMP); c.drawRect(0f, 0f, 432f, 216f, pF); pF.shader = null
-        val t = if (tMs == null) 1.0f else (tMs / 1000f) % 4f
+        pF.color = WORLD; c.drawRect(0f, 0f, 432f, 216f, pF)
+        if (b != null) c.drawBitmap(b, null, RectF(0f, 0f, 432f, chatH), pBmp)
+        else {
+            pF.color = Theme.textDim
+            for (j in 0..3) c.drawRoundRect(RectF(16f, 22f + j * 28f, 300f - j * 46f, 34f + j * 28f), 4f, 4f, pF)
+        }
+        // the lower part: the game's chat box on the frame, D-pad Left with Home's hold ring, the mic in the box
+        pF.shader = LinearGradient(0f, chatH - 30f, 0f, chatH, Color.argb(0, 0, 0, 0), Color.argb(230, 10, 10, 12), Shader.TileMode.CLAMP)
+        c.drawRect(0f, chatH - 30f, 432f, chatH, pF); pF.shader = null
+        pF.color = Color.argb(230, 10, 10, 12); c.drawRect(0f, chatH, 432f, 216f, pF)
+        val t = if (tMs == null) 1.6f else (tMs / 1000f) % 4f                     // the tile: the hold done, the words in the box
         val hold = (t / 1.2f).coerceIn(0f, 1f)                                   // the ring fills while D-pad Left is held
-        // D-pad Left with the hold ring
-        val gx = 78f; val gy = 92f
-        UiKit.pad(c, "gen_left", gx, gy, 72f, if (on) 255 else 120)
-        pS.color = Theme.bronzeDim; pS.strokeWidth = 6f; c.drawCircle(gx, gy, 50f, pS)
-        if (on) { pS.color = Theme.gold; c.drawArc(RectF(gx - 50f, gy - 50f, gx + 50f, gy + 50f), -90f, 360f * hold, false, pS) }
-        // the mic
-        VoiceUi.mic(c, 196f, gy, 84f, if (on) Theme.gold else Theme.dim, crossed = !on)
-        // the chat bar: the words come after the hold; Send now = sent at once, Show = waits for A
-        val bar = RectF(250f, 62f, 414f, 122f)
-        pF.color = Theme.field; c.drawRoundRect(bar, 8f, 8f, pF)
-        if (!UiKit.ringBox(c, bar, 0.6f)) { pS.color = Theme.bronze; pS.strokeWidth = 2f; c.drawRoundRect(bar, 8f, 8f, pS) }
-        if (on) {
-            val shown = t >= 1.3f
-            if (shown) {
-                val p = UiKit.bodyPaint(22f, Theme.text, shadow = false)
-                c.drawText(fit(p, "lfg Razor Hill", bar.width() - 20f), bar.left + 10f, bar.centerY() + 8f, p)
-                if (!now) UiKit.pad(c, UiKit.okGlyph(), bar.right - 6f, bar.bottom + 30f, 52f)
-                else if (t >= 1.8f) {
-                    val q = UiKit.bodyPaint(20f, Theme.gold, shadow = false).apply { textAlign = Paint.Align.CENTER }
-                    c.drawText(Tr.t("Sent"), bar.centerX(), bar.bottom + 40f, q)
-                }
+        val gx = 46f; val gy = 178f
+        UiKit.pad(c, "gen_left", gx, gy, 58f, if (on) 255 else 150)
+        if (on) UiKit.holdRing(c, gx, gy, 36f, hold)
+        val box = RectF(92f, 154f, 424f, 202f)
+        UiKit.inputBox(c, box)
+        VoiceUi.mic(c, box.right - 26f, box.centerY(), 34f, if (on) Theme.gold else Theme.dim, crossed = !on)
+        if (on && t >= 1.3f) {
+            val sent = now && t >= 2.1f
+            val p = UiKit.bodyPaint(24f, Theme.text, shadow = false)
+            if (!sent) c.drawText(fit(p, "lfg Razor Hill", box.width() - 110f), box.left + 14f, box.centerY() + 8f, p)
+            if (!now) UiKit.pad(c, UiKit.okGlyph(), box.right - 72f, box.centerY(), 36f)
+            if (sent) {
+                // sent: the line is the chat's newest, lit a moment
+                val q = UiKit.bodyPaint(24f, Color.rgb(255, 255, 255), shadow = true)
+                val line = RectF(0f, chatH - 38f, 432f, chatH)
+                pF.color = WORLD; c.drawRect(line, pF)                            // the line takes the newest place in the chat
+                pF.color = Theme.focusA(80); c.drawRoundRect(RectF(8f, chatH - 36f, 340f, chatH - 4f), 6f, 6f, pF)
+                c.drawText(fit(q, "${who?.substringBefore('-')?.ifEmpty { null } ?: "You"}: lfg Razor Hill", 320f), 16f, chatH - 12f, q)
             }
         }
         c.restore()
     }
 
-    // ---- Tap-to-cast bar: Home's columns, the bar of real spell icons under the chosen one(s); In combat: Hide slides it away
+    // ---- Tap-to-cast bar: Home's two columns (the real chat, the minimap's own art), the bar of real spell icons under the chosen
+    // ---- one(s); In combat: Hide slides it away
 
     /** a level-6 Shaman's first spells (CastBarAsk's picture: sample icons) */
     private val SPELL_ICONS = intArrayOf(136048, 136026, 136052, 136051, 136086, 136102, 136015, 135824)
 
-    private fun castBar(c: Canvas, r: RectF, tMs: Long?) {
+    private fun castBar(c: Canvas, r: RectF, tMs: Long?, prio: Int, big: Boolean) {
         val side = HomeSettings.castBarSide
         val hide = HomeSettings.castBarCombat == CastStripModel.Combat.HIDE
         val kk = r.width() / 432f
-        c.save(); c.translate(r.left, r.top); c.scale(kk, kk)
         // the band's loop: rest, a fight (the red edge), the bar sliding away (Hide) or staying (Stay), back
         val fight = if (tMs == null || side == CastStripModel.Side.OFF) 0f else loop(tMs / 1000f, 4.4f)
         val slide = if (hide) fight else 0f
-        pF.color = Theme.ink; c.drawRect(0f, 0f, 432f, 216f, pF)
-        // the controller band: two small diamond groups
-        pF.color = Theme.panel; c.drawRect(0f, 0f, 432f, 46f, pF)
-        for (gx in listOf(86f, 346f)) for ((dx, dy) in listOf(0f to -11f, 11f to 0f, 0f to 11f, -11f to 0f)) {
-            pS.color = Theme.bronzeDim; pS.strokeWidth = 2f; c.drawCircle(gx + dx, 23f + dy, 7f, pS)
-        }
         val g = 8f
         val barH = 46f
         val left = side == CastStripModel.Side.LEFT || side == CastStripModel.Side.BOTH
         val right = side == CastStripModel.Side.RIGHT || side == CastStripModel.Side.BOTH
         val room = (barH + g) * (1f - slide)
-        val chat = RectF(g, 46f + g, 216f - g / 2f, 216f - g - (if (left) room else 0f))
-        val map = RectF(216f + g / 2f, 46f + g, 432f - g, 216f - g - (if (right) room else 0f))
-        for (col in listOf(chat, map)) {
-            pF.color = Theme.raised; c.drawRoundRect(col, 6f, 6f, pF)
-            pS.color = Theme.bronzeDim; pS.strokeWidth = 2f; c.drawRoundRect(col, 6f, 6f, pS)
+        val top = 0f
+        val chat = RectF(g, top + g, 216f - g / 2f, 216f - g - (if (left) room else 0f))
+        val map = RectF(216f + g / 2f, top + g, 432f - g, 216f - g - (if (right) room else 0f))
+        val sz = if (big) "L" else "S"
+        // the chat column's crop: the full column's shape at rest (the columns grow over the bar's place as it goes)
+        val full = RectF(g, top + g, 216f - g / 2f, 216f - g)
+        val chatB = crop("cast|chat|$sz", Shot(player(), false, null, { modWin(it, "chat", full.width(), full.height(), 1.1f, 1, left = true) },
+            (full.width() * kk).toInt(), (full.height() * kk).toInt()), prio)
+        c.save(); c.translate(r.left, r.top); c.scale(kk, kk)
+        pF.color = WORLD; c.drawRect(0f, 0f, 432f, 216f, pF)
+        // the chat column (its foot: the newest lines stay at the bottom as the column grows)
+        c.save(); c.clipRect(chat)
+        if (chatB != null) c.drawBitmap(chatB, null, RectF(full.left, chat.bottom - full.height(), full.right, chat.bottom), pBmp)
+        else {
+            pF.color = Theme.raised; c.drawRect(chat, pF)
+            pF.color = Theme.textDim
+            for (j in 0..2) { val y = chat.bottom - 14f - j * 16f; if (y > chat.top + 10f) c.drawRect(chat.left + 10f, y - 5f, chat.right - 10f - j * 26f, y, pF) }
         }
-        pF.color = Theme.textDim
-        for (j in 0..2) { val y = chat.bottom - 14f - j * 16f; if (y > chat.top + 10f) c.drawRect(chat.left + 10f, y - 5f, chat.right - 10f - j * 26f, y, pF) }
-        val mr = min(map.width(), map.height()) / 2f - 8f
-        pF.color = Color.rgb(52, 70, 46); c.drawCircle(map.centerX(), map.centerY(), mr, pF)
-        pS.color = Theme.bronze; c.drawCircle(map.centerX(), map.centerY(), mr, pS)
+        c.restore()
+        // the map column: the minimap's own tiles, the arrow in its middle
+        c.save(); c.clipRect(map)
+        if (terrain(c, map, 160f)) arrow(c, map.centerX(), map.centerY(), 26f)
+        else {
+            pF.color = Theme.raised; c.drawRect(map, pF)
+            val mr = min(map.width(), map.height()) / 2f - 8f
+            pF.color = Color.rgb(52, 70, 46); c.drawCircle(map.centerX(), map.centerY(), mr, pF)
+        }
+        c.restore()
+        for (col in listOf(chat, map)) { pS.color = Theme.bronzeDim; pS.strokeWidth = 2f; c.drawRect(col, pS) }
         fun bar(l: Float, rr: Float, n: Int, first: Int) {
             val dy = (barH + g + 2f) * slide
             if (slide >= 1f) return
@@ -461,6 +602,35 @@ object BottomPictures {
         }
         if (fight > 0f) UiKit.combatGlow(c, RectF(0f, 0f, 432f, 216f), 0.8f * fight, 28f)
         c.restore()
+    }
+
+    // ---- Minimap zoom: the minimap's own tiles round the player, the yards each choice shows framed (the line the cursor is on lit,
+    // ---- the rest of the picture dimmed), the yards under it
+
+    /** [out] / [inn] yards across; true = drawn (false: no minimap tile on the phone, the caller crops Home instead) */
+    private fun zoom(c: Canvas, r: RectF, out: Int, inn: Int, indoor: Boolean): Boolean {
+        val s = k(r)
+        // the picture's height in yards: twice the wider choice (its frame half the picture across), never closer than 120 yd (the
+        // tiles' 0.96 px / yd at most about 1.8x in the band)
+        val ydH = max(120f, max(out, inn) * 2f)
+        if (!terrain(c, r, ydH)) return false
+        val k = r.height() / ydH
+        // Home's minimap shape (the module's box), else square
+        val aspect = PreviewStage.mapBox?.let { m -> (m.width() * HOME_W) / (m.height() * homeH()).coerceAtLeast(1f) }?.coerceIn(0.6f, 1.6f) ?: 1f
+        fun frame(yd: Int): RectF { val w = yd * k; val h = w / aspect; return RectF(r.centerX() - w / 2f, r.centerY() - h / 2f, r.centerX() + w / 2f, r.centerY() + h / 2f) }
+        val lit = frame(if (indoor) inn else out)
+        val other = frame(if (indoor) out else inn)
+        // outside the lit frame: dimmed
+        path.reset(); path.fillType = Path.FillType.EVEN_ODD
+        path.addRect(r, Path.Direction.CW); path.addRect(lit, Path.Direction.CW)
+        pF.color = Color.argb(150, 0, 0, 0); c.drawPath(path, pF)
+        path.fillType = Path.FillType.WINDING
+        pS.color = Theme.bronzeDim; pS.strokeWidth = 1.4f * s; c.drawRect(other, pS)
+        pS.color = Color.argb(200, 0, 0, 0); pS.strokeWidth = 3.6f * s; c.drawRect(lit, pS)
+        pS.color = Theme.gold; pS.strokeWidth = 1.8f * s; c.drawRect(lit, pS)
+        arrow(c, r.centerX(), r.centerY(), 16f * s)
+        yards(c, r, if (indoor) inn else out, indoor)
+        return true
     }
 
     // ---- Minimap zoom: the yards across, under the crop
@@ -503,7 +673,7 @@ object BottomPictures {
     private fun world(c: Canvas, r: RectF, all: Boolean, look: Look, tMs: Long?) {
         val a = continent("all")
         val base = continent("base")
-        if (a == null || (!all && base == null)) { fallback(c, r, "World map", look, tMs); return }
+        if (a == null || (!all && base == null)) { worldDrawn(c, r, all); return }
         // the middle 2:1 of the continent's picture (its smallest level: under 2.2x into the well)
         val w = a.width.toFloat(); val h = a.height.toFloat()
         val sw = min(w, h * 2f) * 0.92f; val sh = sw / 2f
@@ -517,6 +687,31 @@ object BottomPictures {
             c.clipPath(path); c.drawBitmap(a, srcR, r, pBmp)
             c.restoreToCount(save)
             pF.color = Color.argb(90, 10, 8, 6); c.drawRect(r, pF)
+        }
+    }
+
+    /** no map art on the phone yet: our own drawing of a continent (no words on the picture), the fog over it when Explored only */
+    private fun worldDrawn(c: Canvas, r: RectF, all: Boolean) {
+        val s = k(r)
+        pF.shader = LinearGradient(0f, r.top, 0f, r.bottom, Color.rgb(28, 46, 62), Color.rgb(16, 28, 40), Shader.TileMode.CLAMP)
+        c.drawRect(r, pF); pF.shader = null
+        fun land(vararg p: Float) {
+            path.reset(); path.moveTo(r.left + p[0] * s, r.top + p[1] * s)
+            var i = 2
+            while (i + 3 < p.size) { path.quadTo(r.left + p[i] * s, r.top + p[i + 1] * s, r.left + p[i + 2] * s, r.top + p[i + 3] * s); i += 4 }
+            path.close()
+            pF.color = Color.rgb(112, 120, 74); c.drawPath(path, pF)
+            pS.color = Color.rgb(196, 170, 110); pS.strokeWidth = 1.6f * s; c.drawPath(path, pS)
+        }
+        land(40f, 14f, 70f, 6f, 92f, 22f, 104f, 46f, 96f, 70f, 90f, 96f, 66f, 98f, 40f, 98f, 34f, 70f, 26f, 40f, 40f, 14f)
+        land(130f, 20f, 160f, 10f, 184f, 30f, 198f, 56f, 182f, 76f, 166f, 94f, 146f, 84f, 126f, 70f, 132f, 44f, 128f, 26f, 130f, 20f)
+        if (!all) {
+            val save = c.save()
+            path.reset(); path.fillType = Path.FillType.EVEN_ODD
+            path.addRect(r, Path.Direction.CW); path.addCircle(r.left + 70f * s, r.top + 58f * s, 26f * s, Path.Direction.CW)
+            pF.color = Color.argb(170, 8, 8, 10); c.drawPath(path, pF)
+            path.fillType = Path.FillType.WINDING
+            c.restoreToCount(save)
         }
     }
 

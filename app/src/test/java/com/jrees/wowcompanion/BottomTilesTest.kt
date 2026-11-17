@@ -159,4 +159,14 @@ class BottomTilesTest {
         // the badge: Top's eye on the On / Off tiles only
         assertTrue(BottomTiles.badge(BottomTiles.SWING, on) != null && BottomTiles.badge(BottomTiles.REST, on) == null)
     }
+
+    /** the band's labels never cut short where two lines fit (the clock band's "Free bag slots"); Map's heading says what is in it */
+    @Test fun labelsAndHeading() {
+        val w = { t: String -> t.length * 10f }
+        assertEquals(listOf("Free bag", "slots"), BottomTilesView.wrapWords("Free bag slots", 90f, w))
+        assertEquals(listOf("Huecos", "libres en", "bolsas"), BottomTilesView.wrapWords("Huecos libres en bolsas", 90f, w))
+        assertNull("one word wider than the room", BottomTilesView.wrapWords("Teletransporte", 90f, w))
+        assertEquals("Map & chat", BottomTiles.heading(SettingsTabs.Group.MAP))
+        assertEquals(SettingsTabs.Group.HOME.heading, BottomTiles.heading(SettingsTabs.Group.HOME))
+    }
 }
