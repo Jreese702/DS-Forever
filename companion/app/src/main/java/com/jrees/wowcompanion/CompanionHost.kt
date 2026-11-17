@@ -487,6 +487,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         chatView = ChatView(this) { cmd -> GameInput.chat(cmd) }
         // Chat's rework (AGENT_LOG 2026-10-07): typed and quick chat go out through the add-on's chat rows, in ordered batches
         chatView.tapper = { cells, gap -> TapBridge.tapsSpaced(this, questsPad, cells, gap) }
+        // hold to talk (HoldTalk): the toolbar's microphone follows its switch and the last used chat's colour
+        chatView.onTalkChannel = { talkDraw() }
+        HomeSettings.onChange { ui.post { talkDraw() } }
         characterView = CharacterView(this)
         // B leaves the cursor -> Home (user ruling, every room)
         characterView.onLeave = { roomLeft(Room.CHARACTER) }
@@ -654,7 +657,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 "pause" -> if (SystemClock.uptimeMillis() - startReadAt > START_DEDUPE_MS && room == Room.HOME &&
                     !(::radialView.isInitialized && radialView.isOpen)) pauseView.toggle()
                 "map" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openMapModule() } }
-                "chat" -> if (room != Room.CHAT) show(Room.CHAT)
+                // hold to talk: a hold's word is swallowed, a tap's waits for the release (HoldTalk.word)
+                "chat" -> if (holdTalk.word(SystemClock.uptimeMillis()) && room != Room.CHAT) show(Room.CHAT)
                 "radial" -> radialView.toggle()
                 // Spells' spell radials (Hub's WowCompanionPadSpellRadial / ...<n>; hub26: "sradial:<n>", Radial.lua q2)
                 "sradial" -> radialView.toggle("sradial", 1)
@@ -1256,6 +1260,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (::radialView.isInitialized) radialView.shut()
         if (::pauseView.isInitialized) { pauseView.shut(); pauseView.clearHint() }
         if (::targetRadial.isInitialized) targetRadial.shut()
+        talkReset("the app went away")                                      // hold to talk: its reader goes, nothing sent
         DirectPad.shutdown()
         // nothing of the game's UI stays hidden without its replacement in view
         GameUi.onVisible(false)
@@ -1265,6 +1270,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     private fun show(r: Room, byB: Boolean = false, motion: Boolean = true) {
         MemWatch.room = r.name.lowercase()                                // WCMEM: what is on show
+        if (r != Room.HOME) talkReset("room $r")                          // hold to talk: a room change ends a hold, nothing sent
         flushBLeave(entering = r)
         // PARTY MODE (1.1, 4.2): Home shown again re-asks the add-on's documents; leaving Home turns Party mode off only by the switch
         if (r == Room.HOME && room != Room.HOME) { partyAsk(PartyModel.Ask.HOME_SHOWN); homeView.partyHomeOpened() }
@@ -1814,6 +1820,142 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
     private val chatAsk = HoldAsk()
     private var chatHoldTry = 0
+
+    // ---------------------------------------------------------------- HOLD TO TALK (the DS toolbar's Chat held: HoldTalk)
+    // The user, 2026-11-16: "Add an option to the text chat ds toolbar option for a quick chat option for holding that button for quick
+    // voice to text to last used text channel (usage and chat indicated by a mic symbol on the toolbar and the color of the chat is the
+    // mic". Off by default (Settings > Bottom screen > Home, per character). A tap keeps today's Chat room; a hold records (offline
+    // Whisper), the release works the words out; they go to the last used chat through ChatView's own send path, on the player's press.
+    private val holdTalk = HoldTalk()
+    private val talkEngine by lazy { WhisperEngine(this, held = true) }
+    private var talkLevel = 0f
+    /** the hold's microphone could not listen (no model / the microphone off): the slot's microphone shows dimmed with the note */
+    private var talkNoVoice = false
+    private var talkSendTry = 0
+    private val talkTick = object : Runnable {
+        override fun run() {
+            ui.removeCallbacks(this)
+            // the reader stopped mid-press: Left's release would never come
+            if (!DirectPad.healthy && (holdTalk.st == HoldTalk.St.PENDING || holdTalk.st == HoldTalk.St.HELD)) { talkReset("reader down"); return }
+            talkAct(holdTalk.tick(SystemClock.uptimeMillis()), "tick")
+            if (holdTalk.st != HoldTalk.St.IDLE) ui.postDelayed(this, TALK_TICK_MS)
+        }
+    }
+    private val TALK_TICK_MS = 100L
+
+    /** hold to talk is on for this character and D-pad Left is the toolbar's Chat right now (the router's rule) */
+    private fun talkOn(): Boolean = HomeSettings.holdTalk(GameUi.character) &&
+        HoldTalk.leftIsChat(lastPadMap, lastDpad?.want == true && castView.roomBarOn, lastDpad?.dirs, homeView.dpadFight())
+
+    /** D-pad Left down on the app's own reader: a hold may start (the gate is the early bar's, b98 / p35) */
+    private fun talkDown(): Boolean {
+        if (!talkOn() || room != Room.HOME || capHolder.isNotEmpty() || DirectPad.sideHeld()) return false
+        if (interactView.visibility == View.VISIBLE || dialogView.covers() || spellsOverlay.visibility == View.VISIBLE ||
+            startView.visibility == View.VISIBLE || homeView.partyHoldsDpad() || barSelect.open ||
+            (::radialView.isInitialized && radialView.isOpen) || (::pauseView.isInitialized && pauseView.isOpen) || tradOpen()) return false
+        if (!holdTalk.down(SystemClock.uptimeMillis(), HomeSettings.talkSendNow(GameUi.character))) return false
+        talkNoVoice = false
+        ui.postDelayed(talkTick, HoldTalk.HOLD_MS)
+        talkDraw()
+        return true
+    }
+
+    private fun talkUp() { talkAct(holdTalk.up(SystemClock.uptimeMillis()), "release") }
+
+    /** what an answer of the hold's says to do */
+    private fun talkAct(o: HoldTalk.Out, why: String) {
+        when (o) {
+            HoldTalk.Out.NONE -> {}
+            HoldTalk.Out.OPEN_CHAT -> {
+                // D1: the router's word came while Left was down; the room waited for the release (how long, in the log)
+                Log.i("WCHOME", "hold to talk: a tap ($why): the Chat room, ${SystemClock.uptimeMillis() - holdTalk.downAt} ms after the press")
+                if (room == Room.HOME) show(Room.CHAT)
+            }
+            HoldTalk.Out.LISTEN -> talkListen()
+            HoldTalk.Out.STOP -> { Log.i("WCHOME", "hold to talk: released, working the words out"); talkEngine.stop() }
+            HoldTalk.Out.CANCEL -> { Log.i("WCHOME", "hold to talk: given up ($why)"); talkEngine.cancel(); talkFree() }
+            HoldTalk.Out.SHOW -> Log.i("WCHOME", "hold to talk: the words shown, A sends")
+            HoldTalk.Out.SEND -> { talkSendTry = 0; talkSend() }
+            HoldTalk.Out.DROP -> { Log.i("WCHOME", "hold to talk: the line went ($why), nothing sent"); talkFree() }
+            HoldTalk.Out.NOTE -> { Log.i("WCHOME", "hold to talk: ${if (holdTalk.noteSent) "sent" else "note: ${holdTalk.note}"}"); talkFree() }
+        }
+        // the line's fade and its time-outs run on the tick (PENDING's own check was posted at the press)
+        if (holdTalk.st != HoldTalk.St.IDLE && holdTalk.st != HoldTalk.St.PENDING) { ui.removeCallbacks(talkTick); ui.postDelayed(talkTick, TALK_TICK_MS) }
+        talkDraw()
+    }
+
+    /** the hold passed HOLD_MS: the microphone listens (offline Whisper only: a hold must answer at once, never a sheet) */
+    private fun talkListen() {
+        val now = SystemClock.uptimeMillis()
+        // the Hub held the chat guest in the router's click (hub7); asked again here if it is not ours yet
+        if (capHolder != "pad:chat") guestTap(GuestPad.cells(questsPad, "chat", hold = true))
+        if (Voice.whisperModel(Tr.lang(), WhisperEngine.on()) == null) { talkNoVoice = true; talkAct(holdTalk.noVoice(now, HoldTalk.NO_VOICE), "no voice model"); return }
+        if (!VoiceMic.granted(this)) { talkNoVoice = true; talkAct(holdTalk.noVoice(now, HoldTalk.MIC_OFF), "no microphone"); return }
+        talkLevel = 0f
+        Log.i("WCHOME", "hold to talk: listening (${chatView.talkChannel().first})")
+        val started = talkEngine.start(false, Tr.lang(), chatView.voiceNames(), object : VoiceEngine.Sink {
+            override fun rms(db: Float) { talkLevel = HoldTalk.level(db); if (holdTalk.listening) talkDraw() }
+            override fun partial(text: String) {}
+            override fun final(text: String) = talkAct(holdTalk.heard(SystemClock.uptimeMillis(), text), "words")
+            override fun error(code: Int) = talkAct(holdTalk.failed(SystemClock.uptimeMillis(), HoldTalk.problem(code)), "voice error $code")
+        })
+        if (!started) { talkNoVoice = true; talkAct(holdTalk.noVoice(now, HoldTalk.NO_VOICE), "no voice model") }
+    }
+
+    /**
+     * the words to the last used chat (the release with "Send straight away", or A on the line): ChatView's send path, the add-on's
+     * rules. Chat.lua takes the chat's taps only while "pad:chat" holds: a hold not confirmed yet is waited for (asked again) a moment
+     */
+    private fun talkSend() {
+        if (holdTalk.st != HoldTalk.St.SENDING) return
+        if (capHolder != "pad:chat" && talkSendTry < TALK_SEND_TRIES) {
+            if (talkSendTry == 0) guestTap(GuestPad.cells(questsPad, "chat", hold = true))
+            talkSendTry++
+            ui.postDelayed({ talkSend() }, 150L)
+            return
+        }
+        chatView.talkSend(holdTalk.words) { ok, why ->
+            talkAct(holdTalk.sent(SystemClock.uptimeMillis(), ok, if (ok) "" else Tr.t("Not sent: ") + Tr.t(why)), if (ok) "sent" else "refused ($why)")
+        }
+        talkDraw()
+    }
+    private val TALK_SEND_TRIES = 10
+
+    /** the hold is over: the chat guest goes back (the Chat room keeps its own when it is on screen) */
+    private fun talkFree() {
+        if (room == Room.CHAT) return
+        guestTap(GuestPad.cells(questsPad, "chat", hold = false))
+    }
+
+    /** the room changes, the game goes: the hold ends, nothing sent */
+    private fun talkReset(why: String) {
+        val o = holdTalk.reset()
+        if (o == HoldTalk.Out.CANCEL) { talkEngine.cancel(); Log.i("WCHOME", "hold to talk: ended ($why)"); talkFree() }
+        talkDraw()
+    }
+
+    /** the toolbar's microphone and the line, as the hold's state says */
+    private fun talkDraw() {
+        if (!::castView.isInitialized || !::chatView.isInitialized) return
+        val (_, prefix, colour) = chatView.talkChannel()
+        val st = holdTalk.st
+        castView.talk = if (!talkOn() && st == HoldTalk.St.IDLE) null else CastView.TalkFace(when {
+            st == HoldTalk.St.HELD -> CastView.TalkFace.Mode.LISTEN
+            st == HoldTalk.St.WORKING -> CastView.TalkFace.Mode.WORK
+            st == HoldTalk.St.NOTE && talkNoVoice -> CastView.TalkFace.Mode.NO_VOICE
+            else -> CastView.TalkFace.Mode.READY
+        }, colour, talkLevel)
+        val now = SystemClock.uptimeMillis()
+        fun fade(total: Long): Int { val left = total - (now - holdTalk.shownAt); return if (left >= 500L) 255 else (255 * left / 500L).toInt().coerceIn(0, 255) }
+        castView.talkLine = when (st) {
+            HoldTalk.St.HELD, HoldTalk.St.WORKING -> CastView.TalkLine(prefix, colour, if (st == HoldTalk.St.WORKING) "…" else "")
+            HoldTalk.St.LINE -> CastView.TalkLine(prefix, colour, holdTalk.words, ask = true, alpha = fade(HoldTalk.LINE_MS))
+            HoldTalk.St.SENDING -> CastView.TalkLine(prefix, colour, holdTalk.words)
+            HoldTalk.St.NOTE -> if (holdTalk.noteSent) CastView.TalkLine(prefix, colour, holdTalk.note, alpha = fade(HoldTalk.NOTE_MS))
+                else CastView.TalkLine("", colour, holdTalk.note, note = true, alpha = fade(HoldTalk.NOTE_MS))
+            else -> null
+        }
+    }
     /** the login screen's sign-in prompts and their keyboard (off since 2026-11-05, the user's ruling) */
     private val SIGN_IN_PROMPTS = false
     /** pad15: the one reload for add-ons switched back on (this app run) */
@@ -1869,6 +2011,18 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // combat_nav Step 3: in a fight's room mode the shown surface is live too (the in-place swap / the stray ENTER's "app" holder)
         fun live(id: String): () -> Boolean = { PadOwnerSync.directLive(guestShown(id), capHolder == "pad:$id", padOwner.roomMode()) }
         val lr = setOf(DirectPadKeys.LB, DirectPadKeys.RB)
+        // HOLD TO TALK (HoldTalk): FIRST, while a hold lasts (Left's release, A / B on its line); the chat guest the Hub held in the
+        // router's click keeps the game from every press meanwhile, and the Chat room's own registration (same keys) never gets them
+        DirectPad.register(DirectPad.Reg("talk", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK", "PADFORWARD"),
+            wantsRelease = true, active = { holdTalk.takesPad }) { k, down, _ ->
+            when {
+                k == "PADDLEFT" && !down -> talkUp()
+                !down -> {}
+                // still deciding tap or hold: every other press is what it was (Home's B, Start ...)
+                holdTalk.st == HoldTalk.St.PENDING -> padUnclaimed(k, true)
+                else -> talkAct(holdTalk.key(SystemClock.uptimeMillis(), k), "press $k")
+            }
+        })
         // pg1: + LB / RB (the Polestar tab's switch, from anywhere in the room; the direct route only)
         DirectPad.register(DirectPad.Reg("quests", DirectPadKeys.EIGHT + lr, repeat = setOf("PADDUP", "PADDDOWN"), active = live("quests")) { k, down, rp ->
             if (down) questsView.onDirect(k, rp) })
@@ -1881,22 +2035,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         DirectPad.register(DirectPad.Reg("bar", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK"),
             active = { live("bar")() || (barSelect.open && barSelect.early) }, onKey = synth("bar") { barSelect.onPad(it) }))
         // b98: D-pad Down that no room takes, on Home with nobody holding: the bar comes up at once (the game's command confirms it)
-        DirectPad.unclaimed = { k, down ->
-            // Bags' press feedback (the user: "all other context buttons should have similar feedback"): A / B / X / Y push in the
-            // drawn button at once; display only (Bags ignores other keys, and keys while it does not hold the controller)
-            if (room == Room.BAGS) bagsView.onPadKey(k, down)
-            if (::interactView.isInitialized) interactView.onPadKey(k, down)     // 1.0.8: its keyboard, only while it is up
-            if (room == Room.MACROS) macrosView.onPadKey(k, down)               // the Macros room's keyboard, only while it is up
-            if (room == Room.PROFESSIONS) professionsView.onPadKey(k, down)     // voice (11-16): the search's keyboard, only while it is up
-            if (k == "PADFORWARD" && down) startPressed()
-            if (k == "PAD2" && down) bPressed()
-            // p35 (the user 2026-11-10: "When pressing down on the Dpad without the DS toolbar enabled the home button is lighting up for
-            // a half second"): only while the bare Down IS the Home bar - the toolbar on, or the Home Bar command put on it
-            if (down && k == "PADDDOWN" && room == Room.HOME && capHolder.isEmpty() && !DirectPad.sideHeld() && downIsHomeBar()
-                && interactView.visibility != View.VISIBLE && !dialogView.covers()
-                && spellsOverlay.visibility != View.VISIBLE && startView.visibility != View.VISIBLE
-                && !homeView.partyHoldsDpad()) barSelect.openEarly(room)       // Party mode's D-pad: no early bar either (2026-11-04)
-        }
+        DirectPad.unclaimed = { k, down -> padUnclaimed(k, down) }
         DirectPad.register(DirectPad.Reg("home", DirectPadKeys.EIGHT + lr + setOf("PADBACK"), active = live("home"),
             onKey = synth("home") { if (setupPad) setupView.padKey(it.optString("k")) else homeView.auraPad(it) }))
         // the Track Pad & Keyboard: LB / RB the tabs, ZL / ZR the clicks (the user, 2026-10-16)
@@ -1904,10 +2043,31 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             onKey = synth("tool") { homeView.toolPad(it) }))
     }
 
+    /** b98: a press NO registered room takes (DirectPad.unclaimed); the hold to talk's pending press passes its other keys here too */
+    private fun padUnclaimed(k: String, down: Boolean) {
+        // hold to talk: D-pad Left on Home where it is the toolbar's Chat (a hold's note keeps the release too)
+        if (k == "PADDLEFT") { if (down) talkDown() else talkUp() }
+        // Bags' press feedback (the user: "all other context buttons should have similar feedback"): A / B / X / Y push in the
+        // drawn button at once; display only (Bags ignores other keys, and keys while it does not hold the controller)
+        if (room == Room.BAGS) bagsView.onPadKey(k, down)
+        if (::interactView.isInitialized) interactView.onPadKey(k, down)     // 1.0.8: its keyboard, only while it is up
+        if (room == Room.MACROS) macrosView.onPadKey(k, down)               // the Macros room's keyboard, only while it is up
+        if (room == Room.PROFESSIONS) professionsView.onPadKey(k, down)     // voice (11-16): the search's keyboard, only while it is up
+        if (k == "PADFORWARD" && down) startPressed()
+        if (k == "PAD2" && down) bPressed()
+        // p35 (the user 2026-11-10: "When pressing down on the Dpad without the DS toolbar enabled the home button is lighting up for
+        // a half second"): only while the bare Down IS the Home bar - the toolbar on, or the Home Bar command put on it
+        if (down && k == "PADDDOWN" && room == Room.HOME && capHolder.isEmpty() && !DirectPad.sideHeld() && downIsHomeBar()
+            && interactView.visibility != View.VISIBLE && !dialogView.covers()
+            && spellsOverlay.visibility != View.VISIBLE && startView.visibility != View.VISIBLE
+            && !homeView.partyHoldsDpad()) barSelect.openEarly(room)       // Party mode's D-pad: no early bar either (2026-11-04)
+    }
+
     private fun guestShown(id: String): Boolean = when (id) {
         "settings" -> room == Room.SETTINGS
         "quests" -> room == Room.QUESTS
-        "chat" -> room == Room.CHAT
+        // hold to talk: the Hub's same-click chat hold is the hold's own while it lasts (its presses, the send's taps)
+        "chat" -> room == Room.CHAT || holdTalk.wantsGuest
         "map" -> room == Room.MAP
         // during the no-gap hand-over the bar still holds ON PURPOSE: its presses are dropped (HomeBarSelect.onPad, closed), never
         // re-freed here (a free then would open the very gap the hand-over avoids); the hand-over frees it itself when it must
@@ -2478,6 +2638,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // DIRECTPAD: while the room gets its presses straight from the app's reader, the game's copy of the same press is dropped
                 // (it would act twice); "lost" is a control signal, never dropped
                 if (!msg.has("lost") && DirectPad.active(id)) return
+                // hold to talk holds the chat guest off the Chat room: its presses are the hold's (the app's reader); a relayed one here
+                // means the reader is down - the hold ends, nothing sent (the composer never takes them)
+                if (id == "chat" && holdTalk.wantsGuest && room != Room.CHAT) { if (!msg.has("lost") && !DirectPad.healthy) talkReset("relayed press, reader down"); return }
                 // a press for a guest whose room is not on screen: it should not hold the controller at all (b7b)
                 if (!msg.has("lost") && !guestShown(id)) refree(id, "press ${msg.optString("k")} n ${msg.optInt("n", -1)}")
                 else when (id) {
@@ -2895,8 +3058,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current && !d.name.isNullOrEmpty()) QuestWatchKeep.character("${d.name}-${d.realm ?: ""}")
                     if (!d.name.isNullOrEmpty()) TaxiNet.character("${d.name}-${d.realm ?: ""}")
                     if (current && !d.name.isNullOrEmpty()) GameUi.character = "${d.name}-${d.realm ?: ""}"     // hub13: HUD mode per character
-                    // the chat's message-type checklist, per character (the user, 2026-11-16: "mix and match my preferences")
-                    if (current && !d.name.isNullOrEmpty()) { val who = "${d.name}-${d.realm ?: ""}"; ui.post { ChatFilter.character(who) } }
+                    // the chat's message-type checklist, per character (the user, 2026-11-16: "mix and match my preferences"); hold to talk's last used chat too (TalkKeep)
+                    if (current && !d.name.isNullOrEmpty()) { val who = "${d.name}-${d.realm ?: ""}"; ui.post { ChatFilter.character(who); TalkKeep.character(who) } }
                     lastDpad = d; settings.homeSection.dpadChanged()
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
@@ -2907,6 +3070,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // its name) gives the D-pad back to the game, so its slots show then
                     castView.roomBarOn = d.on || (d.want == true && d.aside == "room")
                     castView.roomBar = d.dirs.ifEmpty { null }; castView.invalidate()
+                    talkDraw()                                                  // hold to talk's microphone follows the toolbar
                     if (current) dpadAsk(d)
                 }
             }

@@ -2042,7 +2042,19 @@
 "has gone offline": "se ha desconectado",
 "New friend request": "Nueva solicitud de amistad",
 "posted a broadcast": "publicó un mensaje",
-"Community invite": "Invitación a comunidad"
+"Community invite": "Invitación a comunidad",
+"Hold to talk": "Mantener para hablar",
+"Hold D-pad Left to talk.": "Mantén D-pad izquierda para hablar.",
+"On release": "Al soltar",
+"To the last chat you used.": "Al último chat que usaste.",
+"Show, A sends": "Ver, A envía",
+"Send now": "Enviar ya",
+"Hold D-pad Left and speak;": "Mantén D-pad izquierda y habla;",
+"the words go to your last chat.": "las palabras van a tu último chat.",
+"D-pad Left opens Chat.": "D-pad izquierda abre el chat.",
+"Your words go as soon as you let go.": "Tus palabras se envían al soltar.",
+"Your words show: A sends them,": "Tus palabras se muestran: A las envía,",
+"B drops them.": "B las descarta."
 },
 "templates": {
 "Friend requests: %s": "Solicitudes de amistad: %s",

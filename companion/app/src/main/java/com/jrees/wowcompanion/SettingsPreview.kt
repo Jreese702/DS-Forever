@@ -45,6 +45,9 @@ object SettingsPreview {
         val pauseOverGame: Boolean = false,
         // the user, 2026-11-16: B: pet follow (this character's; on by default)
         val petFollowB: Boolean = true,
+        // the user, 2026-11-16: hold to talk on the DS toolbar's Chat (this character's; off by default) and its On release
+        // (false = Show, then A sends; true = Send straight away)
+        val holdTalk: Boolean = false, val talkSendNow: Boolean = false,
     )
 
     /**
@@ -71,7 +74,8 @@ object SettingsPreview {
     val ROWS: Map<String, Boolean> = linkedMapOf(
         "Controller on Home" to false, "Combat layout" to true, "Swing timer" to true, "Focused quest" to false,
         "Hearthstone" to false, "Class teleport" to false, "Gold" to false, "Free bag slots" to false, "Ammo" to false,
-        "Start the attack when a spell is cast" to true, "DS WoW toolbar" to false, "Tap-to-cast bar" to false, "In combat" to true,
+        "Start the attack when a spell is cast" to true, "DS WoW toolbar" to false,
+        HomeSettingsSection.TALK_ROW to true, HomeSettingsSection.RELEASE_ROW to true, "Tap-to-cast bar" to false, "In combat" to true,
         "ABXY location" to true, "Button glyphs" to false, PetFollowB.ROW_ID to true,
         "Pause menu: open" to true, "Pause menu: pick" to true, PauseOver.ROW_ID to true, "Item wheel: open" to true, "Item wheel: pick" to true,
         "Spell wheel: open" to true, "Spell wheel: pick" to true,
@@ -91,6 +95,8 @@ object SettingsPreview {
         "Focused quest" -> if (s.questOverMap) "Above Minimap" else "Above Chat"
         "Start the attack when a spell is cast" -> s.startAttack?.let { onOff(it) } ?: "-"
         "DS WoW toolbar" -> s.toolbar?.let { onOff(it) } ?: "-"
+        HomeSettingsSection.TALK_ROW -> onOff(s.holdTalk)
+        HomeSettingsSection.RELEASE_ROW -> if (s.talkSendNow) "Send now" else "Show, A sends"
         "ABXY location" -> if (s.abxyNintendo) "Nintendo" else "Xbox"
         "Button glyphs" -> SET_NAMES[s.glyphSet.coerceIn(0, 2)]
         PetFollowB.ROW_ID -> PetFollowB.SEGMENTS[if (s.petFollowB) 1 else 0]
@@ -135,6 +141,10 @@ object SettingsPreview {
             else listOf("Spells do not start your auto-attack;", "start it yourself.")
         "DS WoW toolbar" -> if (s.toolbar == true) listOf("The plain D-pad opens the map, chat,", "the bar and the wheel.")
             else listOf("The D-pad keeps your own slots.")
+        HomeSettingsSection.TALK_ROW -> if (s.holdTalk) listOf("Hold D-pad Left and speak;", "the words go to your last chat.")
+            else listOf("D-pad Left opens Chat.")
+        HomeSettingsSection.RELEASE_ROW -> if (s.talkSendNow) listOf("Your words go as soon as you let go.")
+            else listOf("Your words show: A sends them,", "B drops them.")
         "ABXY location" -> listOf("Which face button does what (for button", "mods). The pictures follow \"Button glyphs\".")
         "Button glyphs" -> listOf("The button pictures shown everywhere.", "Where they sit is \"ABXY location\".")
         "Pause menu: open", "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> if (tapOf(id, s)) listOf("A press opens the wheel;", "it stays open until you pick or press B.")
@@ -246,6 +256,8 @@ object SettingsPreview {
             "ABXY location" -> abxy(c, r, s, prev, sinceMs, glyph)
             "Button glyphs" -> glyphSets(c, r, s.glyphSet, glyph)
             PetFollowB.ROW_ID -> petFollow(c, r, s.petFollowB, t, glyph, s.glyphSet)
+            HomeSettingsSection.TALK_ROW -> holdTalk(c, r, s.holdTalk, false, t, glyph, s.glyphSet)
+            HomeSettingsSection.RELEASE_ROW -> holdTalk(c, r, true, s.talkSendNow, t, glyph, s.glyphSet, release = true)
             "Pause menu: open", "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> wheelOpen(c, r, tapOf(id, s), t, id.startsWith("Pause"))
             "Pause menu: pick", "Item wheel: pick", "Spell wheel: pick", "Left class radial: pick", "Right class radial: pick" -> wheelPick(c, r, pickAOf(id, s), t, glyph, s.glyphSet)
             PauseOver.ROW_ID -> pauseOver(c, r, s.pauseOverGame, t, glyph, s.glyphSet)
@@ -1335,6 +1347,50 @@ object SettingsPreview {
     }
 
     /** B: pet follow (the user, 2026-11-16): your pet at an enemy; B pressed - On: it comes back beside you; Off: it keeps attacking */
+    /**
+     * HOLD TO TALK (the user, 2026-11-16): the D-pad with the toolbar's Chat on Left. On: a loop - Left held (pressed in, the microphone
+     * in the party's colour, its halo breathing), let go, the words' line under it ("Party: omw"); [release]'s picture ends the loop as
+     * the setting does (A / B on the line, or the line sent at once). Off: Left is the Chat picture, a press opens Chat.
+     */
+    private fun holdTalk(c: Canvas, r: RectF, on: Boolean, sendNow: Boolean, t: Float, glyph: Glyph, set: Int, release: Boolean = false) {
+        val party = Color.parseColor("#AAABFE")
+        val cx = r.centerX() + 30f; val cy = r.top + r.height() * 0.34f; val a = 74f; val w = 54f
+        pFill.color = Color.rgb(60, 52, 42)
+        c.drawRoundRect(cx - w / 2f, cy - a - w / 2f, cx + w / 2f, cy + a + w / 2f, 8f, 8f, pFill)
+        c.drawRoundRect(cx - a - w / 2f, cy - w / 2f, cx + a + w / 2f, cy + w / 2f, 8f, 8f, pFill)
+        val ph = t % 4f                                   // 0-1.6 held, 1.6-4 the line
+        val held = on && ph < 1.6f
+        val lx = cx - a; val ly = cy + if (held) 3f else 0f
+        if (held) {
+            val br = 0.5f + 0.5f * sin(2.0 * PI * ph / 0.8).toFloat()
+            pFill.color = party; pFill.alpha = (80 + 90 * br).toInt()
+            c.drawCircle(lx, ly, 46f + 8f * br, pFill); pFill.alpha = 255
+        }
+        pFill.color = GROUND; c.drawCircle(lx, ly, 40f, pFill)
+        pStroke.color = if (held) GOLD else BRONZE; pStroke.strokeWidth = 3f; c.drawCircle(lx, ly, 40f, pStroke)
+        if (on) VoiceUi.mic(c, lx, ly + 2f, 48f, party, alpha = if (held) 255 else 200)
+        else text(c, "Chat", lx, ly + 8f, 22f, GOLD)
+        if (!on) return
+        if (held) { text(c, "Hold", lx, ly + 72f, 22f, GOLD); return }
+        // the line under the D-pad: "Party: omw"
+        val y = cy + a + w / 2f + 56f
+        val box = RectF(r.left + 30f, y - 30f, r.right - 30f, y + 30f)
+        val fade = if (ph > 3.5f) ((4f - ph) / 0.5f).coerceIn(0f, 1f) else 1f
+        val alpha = (255 * fade).toInt()
+        pFill.color = Color.argb((235 * fade).toInt(), 6, 6, 10); c.drawRoundRect(box, 8f, 8f, pFill)
+        pStroke.color = Color.argb(alpha, 120, 120, 120); pStroke.strokeWidth = 2f; c.drawRoundRect(box, 8f, 8f, pStroke)
+        VoiceUi.mic(c, box.left + 30f, box.centerY(), 36f, party, alpha = alpha)
+        pText.textSize = 26f; pText.textAlign = Paint.Align.LEFT; pText.color = party; pText.alpha = alpha
+        val pre = Tr.t("Party") + ": "
+        c.drawText(pre, box.left + 56f, box.centerY() + 9f, pText)
+        c.drawText("omw", box.left + 56f + pText.measureText(pre), box.centerY() + 9f, pText)
+        pText.alpha = 255; pText.textAlign = Paint.Align.CENTER
+        if (release && !sendNow) {
+            glyph.draw(c, "b", set, box.right - 30f, box.centerY(), 42f)
+            glyph.draw(c, "a", set, box.right - 78f, box.centerY(), 42f)
+        } else if (release) text(c, "Sent", box.right - 46f, box.centerY() + 8f, 22f, GOLD)
+    }
+
     private fun petFollow(c: Canvas, r: RectF, on: Boolean, t: Float, glyph: Glyph, set: Int) {
         val k = t % 3.6f
         val pressed = k in 0.8f..1.1f

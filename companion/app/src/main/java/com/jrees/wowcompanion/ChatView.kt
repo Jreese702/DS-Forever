@@ -420,6 +420,13 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             override fun write(s: String) { prefs.edit().putString("all", s).apply() }
         })
         ChatFilter.onChange { if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) filterChanged() else main.post { filterChanged() } }
+        // hold to talk's last used chat, per character (the user's pick, 2026-11-16: "Remember per character"); never the words
+        val talkPrefs = c.applicationContext.getSharedPreferences("chat_talk", Context.MODE_PRIVATE)
+        TalkKeep.init(object : TalkKeep.Store {
+            override fun read(): String? = talkPrefs.getString("all", null)
+            override fun write(s: String) { talkPrefs.edit().putString("all", s).apply() }
+        })
+        TalkKeep.onChange { main.post { onTalkChannel() } }
         applySendState()
     }
 
@@ -474,6 +481,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
                 canParty = party; canGuild = guild; canRaid = raid; chans = cs
                 // a type that has just gone away cannot stay chosen
                 if (kinds().none { it.key == type }) { type = "SAY"; stream.setType(type) }      // gone (left the group / city)
+                onTalkChannel()                                  // hold to talk's chat may be there now, or gone (Say)
                 head.invalidate()
                 showTyped()
             }
@@ -978,6 +986,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         if (!GameInput.live()) { sendEnabled = false; say("Waiting for the game"); return }
         if (stream.sending) return
         tellType()
+        sendingTo = type to whisperName                        // hold to talk: the chat this send uses, kept once it went
         // a quick chat phrase as it was picked: the add-on's own preset cell (one tap; the answer is QuickSent)
         val k = quickFill
         if (k >= 0 && text == ChatLinks.PRESETS.getOrNull(k)) { stream.quick(k); return }
@@ -991,7 +1000,81 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         fillQuick(t)
     }
 
+    // ---------------------------------------------------------------- hold to talk (the DS toolbar's Chat held: HoldTalk)
+
+    /** the chat the player's last send went to (type, whisper name) as it is now: TalkKeep's, per character; Say until one went */
+    private fun usedNow(): Pair<String, String> = TalkKeep.resolve(TalkKeep.used, kinds().map { it.key }.toSet(), chans)
+    /** the chat a send on its way uses (kept in TalkKeep once it went) */
+    private var sendingTo: Pair<String, String>? = null
+    /** the last used chat changed (hold to talk's microphone takes its colour) */
+    var onTalkChannel: () -> Unit = {}
+    /** a hold-to-talk send on its way: its answer goes here, not to the composer ([sent] / its notice) */
+    private var talkDone: ((Boolean, String) -> Unit)? = null
+    private var talkKept: Triple<String, String, String>? = null
+
+    /** the last used chat: its key, the game's header for it ("Party: ", "Tell Name: ") and its colour */
+    fun talkChannel(): Triple<String, String, Int> {
+        val (t, usedW) = usedNow()
+        val keepW = whisperName
+        if (t == "WHISPER") whisperName = usedW
+        val prefix = prefixFor(t)
+        whisperName = keepW
+        val colour = kinds().firstOrNull { it.key == t }?.colour ?: when {
+            t == "WHISPER" || t == "REPLY" -> colour("whisper")
+            t.startsWith("CHANNEL:") -> NUMBERED[t.substringAfter(":").toIntOrNull() ?: 0] ?: Color.rgb(255, 192, 192)
+            else -> colour(t.lowercase())
+        }
+        return Triple(t, prefix, colour)
+    }
+
+    /**
+     * HOLD TO TALK'S SEND (the player's press: the release, or A on its line): [text] to the last used chat through the same add-on
+     * path as the composer's Send (its type, the check, the ONE send tap; the add-on's rules refuse what the game would). The composer
+     * keeps its own type and draft. [done] (main thread): sent, or the reason it was not. False = nothing went (the reason given).
+     */
+    fun talkSend(text: String, done: (Boolean, String) -> Unit): Boolean {
+        val body = HoldTalk.body(text)
+        if (body.isBlank()) { done(false, HoldTalk.NOT_HEARD); return false }
+        if (!GameInput.live()) { done(false, "Waiting for the game"); return false }
+        if (stream.sending || talkDone != null) { done(false, "Sending…"); return false }
+        talkKept = Triple(type, whisperName, typed)
+        val (usedT, usedW) = usedNow()
+        type = usedT
+        if (type == "WHISPER") whisperName = usedW
+        talkDone = done
+        tellType()
+        stream.setBody(body)
+        if (!stream.send()) { talkEnd(false, "The game is not ready"); return false }
+        return true
+    }
+
+    /** a hold-to-talk send's answer: the composer's type and draft back, the host told */
+    private fun talkEnd(ok: Boolean, why: String) {
+        val d = talkDone ?: return
+        talkDone = null
+        talkKept?.let { (t, w, draft) -> type = t; whisperName = w; tellType(); stream.setBody(draft); head.invalidate(); showTyped() }
+        talkKept = null
+        d(ok, why)
+    }
+
     private fun onStream(e: ChatStream.Event) {
+        if (talkDone != null) {
+            // the hold's own send: the chat it went to stays the last used one; the composer is not touched
+            when (e) {
+                ChatStream.Event.Sent -> talkEnd(true, "")
+                is ChatStream.Event.Refused -> talkEnd(false, e.why.replaceFirstChar { it.uppercase() })
+                is ChatStream.Event.QuickSent -> {}
+            }
+            return
+        }
+        if (e == ChatStream.Event.Sent || e is ChatStream.Event.QuickSent) {
+            // kept per character (TalkKeep: the kind, the whisper's person, a channel's name; never the words); its listener redraws
+            (sendingTo ?: (type to whisperName)).let { (t, w) ->
+                val chan = if (t.startsWith("CHANNEL:")) chans.firstOrNull { it.first.toString() == t.substringAfter(":") }?.second ?: "" else ""
+                TalkKeep.went(TalkKeep.Used(t, if (t == "WHISPER") w else "", chan))
+            }
+        }
+        sendingTo = null
         when (e) {
             ChatStream.Event.Sent -> sent()
             is ChatStream.Event.Refused -> say("Not sent: " + e.why.replaceFirstChar { it.uppercase() })

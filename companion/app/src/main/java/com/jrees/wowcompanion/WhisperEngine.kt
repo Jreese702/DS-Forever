@@ -21,7 +21,10 @@ import java.util.concurrent.Executors
  * busy"; the model is checked again, [VoiceModels.distrust]). The model stays loaded [IDLE_MS] after its last use (it is about 300 MB),
  * and goes at once on Android's running-low warning while idle. Nothing heard is ever logged; the hints are the names only, never logged.
  */
-class WhisperEngine(context: Context) : ChatKeyboard.VoiceListen {
+class WhisperEngine(context: Context,
+    /** HOLD TO TALK (HoldTalk, the user 2026-11-16): the recording lasts while the button is held - only [stop] (the release) or
+     *  [Voice.MAX_MS] ends it, never the quiet rule; nothing above [Voice.MIN_SPEECH_DBFS] heard = [Voice.E_SPEECH_TIMEOUT] */
+    private val held: Boolean = false) : ChatKeyboard.VoiceListen {
     private val app = context.applicationContext
     private val ui = Handler(Looper.getMainLooper())
 
@@ -79,6 +82,7 @@ class WhisperEngine(context: Context) : ChatKeyboard.VoiceListen {
         var n = 0
         val vad = Voice.Vad()
         var outcome = Voice.Vad.Step.GO
+        var peak = -90f
         try {
             rec.startRecording()
             if (rec.recordingState != AudioRecord.RECORDSTATE_RECORDING) { post(s) { sink.error(Voice.E_AUDIO) }; return }
@@ -95,7 +99,8 @@ class WhisperEngine(context: Context) : ChatKeyboard.VoiceListen {
                 val level = Voice.rmsDb(db)
                 post(s) { sink.rms(level) }
                 outcome = vad.frame(db)
-                if (outcome != Voice.Vad.Step.GO) break
+                if (db > peak) peak = db
+                if (HoldTalk.stopsOn(held, outcome)) break
             }
         } catch (t: Throwable) {
             post(s) { sink.error(Voice.E_AUDIO) }
@@ -105,7 +110,8 @@ class WhisperEngine(context: Context) : ChatKeyboard.VoiceListen {
             runCatching { rec.release() }
         }
         if (!live(s)) return
-        if (outcome == Voice.Vad.Step.NO_SPEECH) { post(s) { sink.error(Voice.E_SPEECH_TIMEOUT) }; return }
+        if (held && !HoldTalk.heardSomething(n * 1000L / RATE, peak)) { post(s) { sink.error(Voice.E_SPEECH_TIMEOUT) }; return }
+        if (!held && outcome == Voice.Vad.Step.NO_SPEECH) { post(s) { sink.error(Voice.E_SPEECH_TIMEOUT) }; return }
         if (n == 0) { post(s) { sink.error(Voice.E_NO_MATCH) }; return }
         post(s) { sink.working() }
         val count = n

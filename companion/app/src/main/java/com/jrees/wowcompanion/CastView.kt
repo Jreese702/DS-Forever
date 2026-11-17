@@ -99,6 +99,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         var drawAlpha = 255        // Party mode: the whole slot faded (an Empty place: the ring alone at 45 %)
         var kitAlpha = 255         // Party mode: the kit picture alone faded (an arrow the box cannot take: 28 %)
         var noBadge = false        // Party mode: the D-pad slots are emptied (no glyph badge, no toolbar mark)
+        var talk = false           // the D-pad toolbar's Chat: hold to talk's microphone shows on it ([talk])
         var bmp: Bitmap? = null
         var shader: BitmapShader? = null
         val empty get() = k.isEmpty()
@@ -388,6 +389,121 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         set(v) { if (field != v) { field = v; invalidate() } }
     private val barBtns = arrayOfNulls<Btn>(2)
 
+    /**
+     * HOLD TO TALK ON THE TOOLBAR'S CHAT (the user, 2026-11-16: "usage and chat indicated by a mic symbol on the toolbar and the color of
+     * the chat is the mic"; [HoldTalk]): null = the switch off (the Chat picture alone). [TalkFace.Mode.READY] = a small microphone on the
+     * picture's corner in the last used chat's colour; LISTEN = a big microphone in its place, a halo following the voice's level; WORK
+     * = the words being worked out (dimmed); NO_VOICE = no voice model (dimmed, the line says where to get one). The host sets it.
+     */
+    data class TalkFace(val mode: Mode, val colour: Int, val level: Float = 0f) { enum class Mode { READY, LISTEN, WORK, NO_VOICE } }
+    var talk: TalkFace? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /**
+     * HOLD TO TALK'S LINE under the D-pad: the chat's header ([prefix], "Party: ") in its [colour], the [words]; [ask] = "Show, then A
+     * sends": the A and B glyphs at its end (A sends, B drops); a [note] (sent, refused, no voice) in plain words; [alpha] its fade
+     */
+    data class TalkLine(val prefix: String, val colour: Int, val words: String, val ask: Boolean = false, val note: Boolean = false,
+                        val alpha: Int = 255)
+    var talkLine: TalkLine? = null
+        set(v) {
+            if (field == v) return
+            field = v
+            if (v == null) talkLineBox.setEmpty()
+            // Home draws the line over its page, under this band (HomeView.dispatchDraw): the page redraws
+            var p = parent
+            while (p is View) { p.invalidate(); p = p.parent }
+        }
+    /** where the line was last drawn, in the drawing page's px (the tests; empty = none) */
+    val talkLineBox = RectF()
+
+    private val pTalk by lazy { UiKit.bodyPaint(26f) }
+    private val pTalkDisc = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /** the big microphone in the Chat slot's place (not [TalkFace.Mode.READY]); returns the next frame's delay */
+    private fun drawTalkBig(c: Canvas, cx: Float, cy: Float, size: Float, t: TalkFace, now: Long): Long {
+        val listen = t.mode == TalkFace.Mode.LISTEN
+        if (listen) {
+            // the halo: the voice's level, and a slow breath so a quiet room still shows it listens
+            val breath = 0.5f + 0.5f * sin(2.0 * Math.PI * (now % 1200L) / 1200.0).toFloat()
+            val r = size * (0.30f + 0.10f * t.level.coerceIn(0f, 1f) + 0.03f * breath)
+            pTalkDisc.style = Paint.Style.FILL
+            pTalkDisc.color = t.colour; pTalkDisc.alpha = (70 + 110 * t.level.coerceIn(0f, 1f)).toInt()
+            c.drawCircle(cx, cy, r, pTalkDisc)
+        }
+        pTalkDisc.style = Paint.Style.FILL; pTalkDisc.color = Color.argb(200, 8, 6, 4)
+        c.drawCircle(cx, cy, size * 0.27f, pTalkDisc)
+        val a = when (t.mode) { TalkFace.Mode.LISTEN -> 255; TalkFace.Mode.WORK -> 150; else -> 95 }
+        VoiceUi.mic(c, cx, cy + size * 0.02f, size * 0.42f, t.colour, alpha = a)
+        return if (listen) 33L else Long.MAX_VALUE
+    }
+
+    /** READY: the small microphone on the Chat picture's lower-left corner, in the chat's colour */
+    private fun drawTalkBadge(c: Canvas, cx: Float, cy: Float, iconHalf: Float, t: TalkFace) {
+        val r = iconHalf * 0.40f
+        val bx = cx - iconHalf * 0.58f; val by = cy + iconHalf * 0.58f
+        pTalkDisc.style = Paint.Style.FILL; pTalkDisc.color = Color.argb(230, 8, 6, 4)
+        c.drawCircle(bx, by, r, pTalkDisc)
+        pTalkDisc.style = Paint.Style.STROKE; pTalkDisc.strokeWidth = maxOf(1.5f, r * 0.12f); pTalkDisc.color = Theme.bronze
+        c.drawCircle(bx, by, r, pTalkDisc)
+        VoiceUi.mic(c, bx, by + r * 0.06f, r * 1.25f, t.colour)
+    }
+
+    /**
+     * the line under the D-pad, drawn by the page this band stands in (Home: over its chat, under the band; this view is only as tall as
+     * its buttons): [ox] / [oy] = this view's place on [c], [maxRight] the page's right edge
+     */
+    fun drawTalkLine(c: Canvas, ox: Float, oy: Float, maxRight: Float) {
+        talkLineBox.setEmpty()
+        val l = talkLine ?: return
+        if (l.alpha <= 0 || hud == null || layout == Layout.FULL || k <= 0f) return
+        var bot = 0f; var left = Float.MAX_VALUE
+        for (pos in 0 until 4) {
+            bandSlot(pos, bandBox); val hs = bandBox[2] / 2f
+            bot = max(bot, oy + bandBox[1] + hs); left = min(left, ox + bandBox[0] - hs)
+        }
+        val h = TALK_LINE_H
+        val glyph = h * 0.66f
+        val pad = 16f
+        val icon = h * 0.62f
+        val pre = l.prefix                         // the chat's own header, in the app's language already (ChatView.prefixFor)
+        val preW = if (l.note) 0f else pTalk.measureText(pre)
+        val tail = if (l.ask) 2 * (glyph + 8f) + 6f else 0f
+        val x = maxOf(12f, left)
+        val maxW = maxRight - 12f - x
+        var words = if (l.note) Tr.t(l.words) else l.words
+        val room = maxW - pad * 2 - icon - 10f - preW - tail
+        if (pTalk.measureText(words) > room) {
+            val n = pTalk.breakText(words, true, (room - pTalk.measureText("…")).coerceAtLeast(0f), null)
+            words = words.substring(0, n).trimEnd() + "…"
+        }
+        val w = pad * 2 + icon + 10f + preW + pTalk.measureText(words) + tail
+        val y = bot + 10f
+        val box = RectF(x, y, x + w, y + h)
+        talkLineBox.set(box)
+        val layer = l.alpha < 255
+        if (layer) c.saveLayerAlpha(RectF(box.left - 4f, box.top - 4f, box.right + 4f, box.bottom + 4f), l.alpha)
+        pTalkDisc.style = Paint.Style.FILL; pTalkDisc.color = Color.argb(245, 6, 6, 10)
+        c.drawRect(box.left + 4f, box.top + 4f, box.right - 4f, box.bottom - 4f, pTalkDisc)
+        UiKit.border(c, box, "border_tooltip", 18f, Color.rgb(120, 120, 120))
+        VoiceUi.mic(c, box.left + pad + icon / 2f, box.centerY(), icon, l.colour, alpha = if (l.note) 170 else 255)
+        val base = box.centerY() - (pTalk.ascent() + pTalk.descent()) / 2f
+        var tx = box.left + pad + icon + 10f
+        if (!l.note) { pTalk.color = l.colour; c.drawText(pre, tx, base, pTalk); tx += preW }
+        pTalk.color = if (l.note) Theme.textDim else l.colour
+        c.drawText(words, tx, base, pTalk)
+        if (l.ask) {
+            val gx = box.right - pad / 2f - glyph / 2f
+            UiKit.pad(c, UiKit.backGlyph(), gx, box.centerY(), glyph)
+            UiKit.pad(c, aGlyphName(), gx - glyph - 8f, box.centerY(), glyph)
+        }
+        if (layer) c.restore()
+    }
+
+    private fun aGlyphName(): String = when (CastSettings.buttonLayout) {
+        CastSettings.ButtonLayout.XBOX -> "ltr_a"; CastSettings.ButtonLayout.PLAYSTATION -> "shp_cross"; else -> "rev_a"
+    }
+
     private fun roomOverride(li: Int, src: Int): Btn? {
         if (barArrows && li == N && (src == 0 || src == 2)) {
             val i = src / 2
@@ -402,7 +518,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             // PadMap m29 ("DS WoW toolbar", the user's D-pad layout): the same pictures as Home's bar
             when (what) {
                 "map" -> kit = "ricon_map"
-                "chat" -> kit = "ricon_chat"
+                "chat" -> { kit = "ricon_chat"; talk = true }
                 // the Home disc's swirl, as the Home button draws it, filling the tile (user 10-06: "made a bit larger")
                 "home" -> { kit = "home_stone_rough"; kitCut = true; kitScale = 0.95f }   // the bar Home button's own face, 1:1 (user 10-06)
                 // the consumables radial (user 10-06: "should look like a little mini Radial wheel")
@@ -2308,7 +2424,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
         // ---- the D-pad toolbar's pictures (host-driven, PadMap m29): under the ring and the glyph badge
         if (b != null && b.wheel) UiKit.miniWheel(c, cx, cy, size * 0.4f)
-        b?.kit?.let { name ->
+        // hold to talk: while held (or working, or with no voice) the big microphone stands in the Chat picture's place
+        val talkNow = if (b?.talk == true) talk else null
+        if (talkNow != null && talkNow.mode != TalkFace.Mode.READY) next = min(next, drawTalkBig(c, cx, cy, size, talkNow, now))
+        b?.kit?.takeIf { talkNow == null || talkNow.mode == TalkFace.Mode.READY }?.let { name ->
             val bmp = if (b.kitCut) swirlCut(name) else UiKit.tex(name)
             if (bmp != null) {
                 val hs = size * b.kitScale / 2f
@@ -2398,6 +2517,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (!(drawCollapsed && keyText == null) && b?.noBadge != true) drawGlyphBadge(c, gx, gy, pos, keyText, outOfRange, pressed)
         // the companion mark: a small gold "two screens" tag in the lower-left corner (the slot drives the bottom screen)
         if (b != null && b.ds) drawDsMark(c, cx - iconHalf * 0.62f, cy + iconHalf * 0.62f, iconHalf * 0.34f)
+        if (talkNow != null && talkNow.mode == TalkFace.Mode.READY) drawTalkBadge(c, cx, cy, iconHalf, talkNow)
         return next
     }
 
@@ -4016,6 +4136,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
         private const val ATTACK_SPELL = 6603
         private const val STALE_MS = 20_000L
+        /** hold to talk's line under the D-pad, px tall */
+        const val TALK_LINE_H = 64f
         private const val TRIG_X = 76f           // frame px (1240 wide): a chip's centre under its bumper (UI Art)
         private const val TRIG_BOTTOM = 60f      // ... and its centre this far above the band's bottom
         private const val TRIG_W = 84f; private const val TRIG_H = 56f

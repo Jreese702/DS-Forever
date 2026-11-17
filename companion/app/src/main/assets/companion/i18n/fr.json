@@ -2018,7 +2018,19 @@
 "has gone offline": "s'est déconnecté(e)",
 "New friend request": "Nouvelle demande d'ami",
 "posted a broadcast": "a publié une annonce",
-"Community invite": "Invitation à une communauté"
+"Community invite": "Invitation à une communauté",
+"Hold to talk": "Maintenir pour parler",
+"Hold D-pad Left to talk.": "Maintenez D-pad gauche pour parler.",
+"On release": "Au relâchement",
+"To the last chat you used.": "Vers le dernier canal utilisé.",
+"Show, A sends": "Voir, A envoie",
+"Send now": "Envoyer direct",
+"Hold D-pad Left and speak;": "Maintenez D-pad gauche et parlez ;",
+"the words go to your last chat.": "les mots vont au dernier canal.",
+"D-pad Left opens Chat.": "D-pad gauche ouvre la discussion.",
+"Your words go as soon as you let go.": "Vos mots partent dès que vous lâchez.",
+"Your words show: A sends them,": "Vos mots s'affichent : A les envoie,",
+"B drops them.": "B les efface."
 },
 "templates": {
 "Friend requests: %s": "Demandes d'ami : %s",

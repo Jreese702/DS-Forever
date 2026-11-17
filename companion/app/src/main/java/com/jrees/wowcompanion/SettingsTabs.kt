@@ -80,7 +80,9 @@ object SettingsTabs {
             // "Stance bar", "Pet bar": hidden for now (test40, the user: "hide the settings that don't do anything for now")
             "Focused quest",
             // the clock extras (the user's picks 2026-11-13): one row each
-            "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo", "DS WoW toolbar"), Drawer.HOME),
+            "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo", "DS WoW toolbar",
+            // hold to talk (the user, 2026-11-16): under the toolbar, "On release" under its switch (HoldTalk)
+            HomeSettingsSection.TALK_ROW, HomeSettingsSection.RELEASE_ROW), Drawer.HOME),
         // GitHub #43 cb3: Off / Left / Right / Both (Home's section draws it, as it drew the old Home row)
         // the bar in a fight (the user 2026-11-13: "a settings toggle to make them Hide/stay in combat"): Hide (the default) / Stay
         CAST_BAR(Group.CAST_BAR, "Tap-to-cast bar", listOf("Tap-to-cast bar", "In combat"), Drawer.HOME),
