@@ -16,6 +16,10 @@ Trail.lua's compass under test_compass.py's stub game, with a stub Polestar rout
   pair, every piece moving up at SPEED, the same picture again every P / SPEED s, alpha 0 at both window ends; the drawing: the
   strokes and dots at those places on the marker's x (cp40's eased x, no jitter), the dots C.GOLD on C.DISC_TEX, moving up between
   two frames; all hidden with a stale route / guidance off;
+- cp44 FOUR DOTS, THEN AN ARROW (the user, 2026-11-17: "go back to 4, I was meaning on the compass scroll I just miscounted"):
+  C.paConveyor(t): M slots S apart, going up four gold dots then a chevron (every K-th slot, the kinds following the endless row),
+  the same picture every P / SPEED s (P = K * S), at least one whole set (4 dots + 1 chevron) at full alpha at every t; the pools
+  (NCH chevrons, NDOT dots) hold any window, the unused pieces hidden;
 - Map.lua pn3: the 1 s ticker keeps the route read (legs, legSig, legsAt) for the compass, cancel drops it, the docs say pn3.
 - pn3 review fix: a journey over 240 points: the compass keeps every corner (the app's copy alone is thinned); the look-ahead goes round it.
 - cp37 / pn4 (the user, 2026-11-11: "Okay now I actually do have a polestar objective that is not in my bag and not telling me where to
@@ -172,33 +176,56 @@ def main():
     lines = [o.ln[i] for i in range(1, len(o.ln) + 1)]
     rims = [o.rim[i] for i in range(1, len(o.rim) + 1)]
     R = [120 / 255, 200 / 255, 1]
-    chk("cp43: its look: six light blue strokes (three chevrons, rgb 120,200,255)", len(lines) == 6 and all(
-        ln.kind == "line" and (ln.shown or ln.alpha == 0) and all(near(ln.ctex[i + 1], R[i], 1e-6) for i in range(3)) for ln in lines))
-    chk("a dark rim under each stroke, wider", len(rims) == 6 and all(r.kind == "line" and r.ctex[1] == 0
-        and r.thick > lines[0].thick and r.sub < lines[0].sub for r in rims))
-    # each chevron points up: its two arms meet at an apex above their ends, on the marker's x
-    ys = [(ln.p1[4], ln.p2[4]) for ln in lines]
-    chk("each chevron pointing up (apex above the ends)", all(a > b for a, b in ys))
-    mx = m["path"].x
-    chk("cp43: every piece on the marker's x (the eased x, cp40: no jitter)", all(near(ln.p1[3], C.u(mx), 1e-6) for ln in lines)
-        and all(near(o.dot[i].point[4], C.u(mx), 1e-6) for i in range(1, len(o.dot) + 1)))
     PA = C.PA
-    pieces = C.paConveyor(G.t)
+    chk("cp44: the tag (cp44 or later)", int(C.V[2:]) >= 44)
+    chk("cp44: the set: K 5 (four dots, then the chevron), S 7, SPEED 14 (cp43's), window 49 (7 slots)", PA.K == 5 and PA.S == 7
+        and PA.SPEED == 14 and PA.SPAN == 49 and PA.P == 35)
+    chk("cp44: the pools: %d chevrons (%d strokes), %d dots" % (PA.NCH, len(lines), PA.NDOT), PA.NCH == 2 and PA.NDOT == 6
+        and len(lines) == PA.NCH * 2 and len(o.dot) == PA.NDOT)
+    chk("cp43: its look: light blue strokes (rgb 120,200,255)", len(lines) == 4 and all(
+        ln.kind == "line" and (not ln.shown or ln.alpha is not None) and all(near(ln.ctex[i + 1], R[i], 1e-6) for i in range(3))
+        for ln in lines) and sum(1 for ln in lines if ln.shown) >= 2)
+    chk("a dark rim under each stroke, wider", len(rims) == 4 and all(r.kind == "line" and r.ctex[1] == 0
+        and r.sub < lines[0].sub and (not r.shown or r.thick > lines[0].thick) for r in rims))
+    # each chevron points up: its two arms meet at an apex above their ends, on the marker's x
+    ys = [(ln.p1[4], ln.p2[4]) for ln in lines if ln.shown]
+    chk("each chevron pointing up (apex above the ends)", len(ys) >= 2 and all(a > b for a, b in ys))
+    mx = m["path"].x
+    chk("cp43: every piece on the marker's x (the eased x, cp40: no jitter)", all(near(ln.p1[3], C.u(mx), 1e-6) for ln in lines if ln.shown)
+        and all(near(o.dot[i].point[4], C.u(mx), 1e-6) for i in range(1, len(o.dot) + 1) if o.dot[i].shown))
+    pieces = C.paConveyor(o.tt)
     pl = [pieces[i] for i in range(1, len(pieces) + 1)]
-    chk("cp43: the conveyor: 3 chevrons and 3 dots", [p.kind for p in pl] == ["chev", "dot"] * 3)
-    # placed where the conveyor says: chevron k's apex at band line + y + 2, dot k at band line + y
+    chk("cp44: the conveyor: M (7) slots bottom to top, S apart", len(pl) == PA.M == 7
+        and all(near(pl[i + 1].y - pl[i].y, PA.S, 1e-6) for i in range(6)))
+    # placed where the conveyor says: chevron k's apex at band line + y + 2, dot k at band line + y; the unused pool hidden
     chev = [p for p in pl if p.kind == "chev"]
     dots = [p for p in pl if p.kind == "dot"]
-    chk("cp43: the drawn strokes / dots at the conveyor's places", all(near(lines[2 * k].p1[4], C.u(-C.SPEC.line + chev[k].y + 2), 1e-6)
-        and near(lines[2 * k].alpha, chev[k].a, 1e-6) for k in range(3))
-        and all(near(o.dot[k + 1].point[5], C.u(-C.SPEC.line + dots[k].y), 1e-6) for k in range(3)))
+    chk("cp44: the drawn strokes / dots at the conveyor's places", all(near(lines[2 * k].p1[4], C.u(-C.SPEC.line + chev[k].y + 2), 1e-6)
+        and near(lines[2 * k].alpha, chev[k].a, 1e-6) for k in range(len(chev)))
+        and all(near(o.dot[k + 1].point[5], C.u(-C.SPEC.line + dots[k].y), 1e-6) for k in range(len(dots)))
+        and all(not lines[i].shown for i in range(2 * len(chev), len(lines)))
+        and all(not o.dot[k + 1].shown for k in range(len(dots), PA.NDOT)))
     chk("cp43: the dots our gold on the quest disc's texture, a dark rim under each", all(
         o.dot[i].tex == C.DISC_TEX and all(near(o.dot[i].col[j + 1], C.GOLD[j + 1], 1e-6) for j in range(3))
-        and o.dsh[i].tex == C.DISC_TEX and o.dsh[i].col[1] == 0 and o.dsh[i].w > o.dot[i].w for i in range(1, 4)))
-    # a dot between each pair: sorted by height the kinds alternate, each dot halfway (P / 2) between its chevrons
-    srt = sorted(((p.y, p.kind) for p in pl))
-    chk("cp43: a dot halfway between each pair of chevrons", all(srt[i][1] != srt[i + 1][1] for i in range(5))
-        and all(near(srt[i + 1][0] - srt[i][0], PA.P / 2, 1e-6) for i in range(5)))
+        and o.dsh[i].tex == C.DISC_TEX and o.dsh[i].col[1] == 0 and o.dsh[i].w > o.dot[i].w for i in range(1, PA.NDOT + 1)))
+    # the rhythm, over many times: going up, chevrons exactly K slots apart (four dots between), and at every t at least one whole
+    # set (four dots and a chevron) at full alpha
+    rhythm, whole = True, True
+    for n in range(400):
+        q = C.paConveyor(1000 + n * 0.0137)
+        ks = [q[i].kind for i in range(1, 8)]
+        cs = [i for i, k in enumerate(ks) if k == "chev"]
+        if not cs or any(b - a != PA.K for a, b in zip(cs, cs[1:])):
+            rhythm = False
+        full = [q[i].kind for i in range(1, 8) if q[i].a == 1]
+        if len(full) < 5 or full.count("chev") < 1 or full.count("dot") < 4:
+            whole = False
+    chk("cp44: going up four dots, then a chevron, repeating (every 5th slot)", rhythm)
+    chk("cp44: at every t at least one whole set at full alpha (4 dots + 1 chevron)", whole)
+    # the kinds ride with their slot: 0.1 s on (under one S), each slot's kind is the same
+    qa, qb = C.paConveyor(1000.0), C.paConveyor(1000.0 + 0.1)
+    chk("cp44: a piece keeps its kind as it moves up (no wrap inside S / SPEED)",
+        [qa[i].kind for i in range(1, 8)] == [qb[i].kind for i in range(1, 8)])
     # moving up: 0.1 s later every piece (not wrapping) SPEED * 0.1 higher
     def ys_at(t):
         q = C.paConveyor(t)
@@ -206,42 +233,47 @@ def main():
     t0 = 1000.03
     a0, a1 = ys_at(t0), ys_at(t0 + 0.1)
     moved = [b - a for a, b in zip(a0, a1) if b > a - 1]
-    chk("cp43: scrolling upward (0.1 s: +SPEED / 10 spec px)", PA.SPEED > 0 and len(moved) >= 5
+    chk("cp43: scrolling upward (0.1 s: +SPEED / 10 spec px)", PA.SPEED > 0 and len(moved) >= 6
         and all(near(d, PA.SPEED * 0.1, 1e-6) for d in moved))
     q0, q1 = C.paConveyor(t0), C.paConveyor(t0 + PA.P / PA.SPEED)
-    s0 = sorted((q0[i].kind, round(q0[i].y, 6), round(q0[i].a, 6)) for i in range(1, 7))
-    s1 = sorted((q1[i].kind, round(q1[i].y, 6), round(q1[i].a, 6)) for i in range(1, 7))
-    chk("cp43: a loop: the same picture every P / SPEED s (one chevron step)", s0 == s1)
+    s0 = sorted((q0[i].kind, round(q0[i].y, 6), round(q0[i].a, 6)) for i in range(1, 8))
+    s1 = sorted((q1[i].kind, round(q1[i].y, 6), round(q1[i].a, 6)) for i in range(1, 8))
+    q2 = C.paConveyor(t0 + PA.S / PA.SPEED)
+    s2 = sorted((q2[i].kind, round(q2[i].y, 6), round(q2[i].a, 6)) for i in range(1, 8))
+    chk("cp44: a loop: the same picture every P / SPEED s (one chevron step), not every slot step", s0 == s1 and s0 != s2)
     q = C.paConveyor(0)
     chk("cp43: alpha 0 at the window's ends (the wrap never pops), 1 in the middle", near(q[1].y, -PA.SPAN / 2, 1e-9)
-        and q[1].a == 0 and all(q[i].a <= 1 for i in range(1, 7)) and any(q[i].a == 1 for i in range(1, 7))
-        and near(C.paConveyor(PA.SPAN / PA.SPEED - 1e-6)[1].a, 0, 1e-3))
+        and q[1].a == 0 and all(q[i].a <= 1 for i in range(1, 8)) and any(q[i].a == 1 for i in range(1, 8))
+        and near(C.paConveyor(PA.S / PA.SPEED - 1e-6)[7].a, 0, 1e-3))
     # two frames 0.25 s apart: the drawn dots higher (the same dot, unless it wrapped)
-    y0 = [o.dot[i].point[5] for i in range(1, 4)]
+    def dys():
+        return [o.dot[i].point[5] for i in range(1, PA.NDOT + 1) if o.dot[i].shown]
+    y0 = dys()
     G.t = G.t + 0.25
     C.draw()
-    y1 = [o.dot[i].point[5] for i in range(1, 4)]
-    chk("cp43: drawn frame to frame: the dots move up", sum(1 for a, b in zip(y0, y1) if near(b - a, C.u(PA.SPEED * 0.25), 1e-6)) >= 2)
+    y1 = dys()
+    chk("cp43: drawn frame to frame: the dots move up", sum(1 for b in y1 if any(near(b - a, C.u(PA.SPEED * 0.25), 1e-6)
+        for a in y0)) >= 4)
     # the verifier's per-frame cost fix: no table made per frame, the drift stepped at most every TICK, nothing re-placed unchanged
     same = L.eval("""(function(C, t)
         local cv = C.pa.cv; local p = {}
         for i = 1, #cv do p[i] = cv[i] end
         local out = C.paConveyor(t, cv)
-        if not rawequal(out, cv) or #cv ~= 6 then return false end
-        for i = 1, 6 do if not rawequal(cv[i], p[i]) then return false end end
+        if not rawequal(out, cv) or #cv ~= 7 then return false end
+        for i = 1, 7 do if not rawequal(cv[i], p[i]) then return false end end
         return true
     end)""")(C, G.t + 3.3)
     chk("cp43 cost: C.paConveyor fills the table it is given (the same piece tables)", same is True)
     G.t = G.t + PA.TICK / 3
     C.draw()
-    y2 = [o.dot[i].point[5] for i in range(1, 4)]
+    y2 = dys()
     chk("cp43 cost: a frame inside one TICK: the drift holds (nothing moved)", y2 == y1 and o.pt == o.tt)
     tt0 = o.tt
     G.t = G.t + PA.TICK
     C.draw()
-    y3 = [o.dot[i].point[5] for i in range(1, 4)]
+    y3 = dys()
     chk("cp43 cost: past the TICK: the drift steps again (moving up)", o.tt != tt0
-        and sum(1 for a, b in zip(y2, y3) if b > a) >= 2)
+        and sum(1 for b in y3 if any(0 < b - a < C.u(PA.S) / 2 for a in y2)) >= 4)
     chk("smaller than the objective's disc (18 vs 28 spec px)", C.PA.SIZE < 28)
     chk("terse: no distance text on a walk", not o.d.shown)
     rk = None
@@ -266,11 +298,12 @@ def main():
     chk("cp43: stale: every conveyor piece hidden (strokes, rims, dots)", not any(o.all[i].shown for i in range(1, len(o.all) + 1)))
     L.execute("WowCompanion.pnav.legsAt = GAME.t")
     C.draw()
-    chk("fresh again: shown", C.pa_ is not None and all(ln.shown for ln in lines))
+    chk("fresh again: shown (a chevron's strokes at least; cp44: the pool's unused hidden)", C.pa_ is not None
+        and sum(1 for ln in lines if ln.shown) >= 2 and sum(1 for i in range(1, PA.NDOT + 1) if o.dot[i].shown) >= 4)
     L.execute("WowCompanion.pnav.active = false")
     C.draw()
     chk("guidance off: hidden", C.pa_ is None and not any(ln.shown for ln in lines))
-    chk("cp43: guidance off: the dots hidden too", not any(o.dot[i].shown or o.dsh[i].shown for i in range(1, 4)))
+    chk("cp43: guidance off: the dots hidden too", not any(o.dot[i].shown or o.dsh[i].shown for i in range(1, PA.NDOT + 1)))
     C.diagAt = -100
     C.draw()
     chk("the diag line: pa = off", C.lastDiag is not None and C.lastDiag.pa == "off")

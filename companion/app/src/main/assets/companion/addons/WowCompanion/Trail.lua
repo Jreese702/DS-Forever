@@ -107,10 +107,17 @@ end
 -- its window (C.PA.SPAN), so the wrap never pops. C.paConveyor(t) is the pure place/alpha of every piece at time t (GetTime(),
 -- no stored offset: no drift, any frame time); the pieces are made once and only moved vertically, so cp40's eased x (no jitter)
 -- is untouched. Still drawn from C.step (no second OnUpdate), still hidden with no route. The Home map's route dots carry the same
--- blue chevron every 5th dot (app side, RouteArrows.kt). Cheap per frame: no table made per frame (C.paConveyor fills the marker's
--- own reused table), the drift steps at most C.PA.TICK (30 a second), and the pieces are re-placed only when the drift stepped or
+-- blue chevron (app side, RouteArrows.kt: four dots, then the chevron in the 5th slot; cp44 gives the compass that rhythm too).
+-- Cheap per frame: no table made per frame (C.paConveyor fills the marker's own reused table), the drift steps at most C.PA.TICK (30 a second), and the pieces are re-placed only when the drift stepped or
 -- the eased x / the scale moved (so a steady facing costs nothing; while turning they follow the eased x each frame, as cp36's
 -- marker did, or they would lag the letters).
+-- cp44 FOUR DOTS, THEN AN ARROW (the user, 2026-11-17: "go back to 4, I was meaning on the compass scroll I just miscounted"): the
+-- conveyor takes the Home map's rhythm: going up, four gold dots, then one light blue chevron in the 5th slot, repeating. It is a row
+-- of C.PA.M slots C.PA.S spec px apart (the old chevron-to-dot step, 7), all drifting up at the same C.PA.SPEED (14 spec px a second);
+-- what stands in a slot follows the slot's place in the endless row (every C.PA.K-th a chevron), so the window need not hold whole
+-- sets. The window grew from 42 to 49 spec px (7 slots) so that, with the 7 px fade at each end, at least five slots are always at
+-- full alpha: one whole set of four dots and a chevron. Same costs as cp43: C.paConveyor fills its reused table, the drift steps at
+-- most C.PA.TICK, nothing is re-placed unchanged; the pooled chevrons / dots a frame does not use are hidden.
 -- cp42 THE 11-16 TEST BUILD MERGE: issue #358's cp41 (the font family, WC.font) and feat/big-layout's cp41 (the compass in the
 -- layout editor) both kept; both notes below
 -- cp41 ISSUE #358 (a player: "Character names: Cyrillic characters are displayed as empty squares instead of actual letters"; the
@@ -203,7 +210,7 @@ end
 -- "we need to make a way to basically edit the UI locations on the top screen from our UI menu"): the bar's place and size are the layout's (TapPad pad22 WC.lay.get("compass"): its top-centre at (dx, 4 + dy)
 -- 1080-line pixels from the screen's top-centre, scale s % of the frame: C.place); C.lay is the piece Hub's editor gathers. The target
 -- bar follows it until the target bar is moved itself (Hub uf23).
-WC.compass = { V = "cp43" }
+WC.compass = { V = "cp44" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -1723,30 +1730,36 @@ do
         C.paWhy = why
         return w
     end
-    -- its look (cp43): a light blue CONVEYOR pointing up (go on this way): single chevrons with a gold dot between each pair,
-    -- scrolling upward on a loop, a dark rim under each piece; drawn on our frame, made once.
-    -- ARM: one chevron's arms in spec px from its centre, y up (12 wide, 4 tall); P the step from chevron to chevron, the dot
-    -- halfway; SPAN the window (N chevrons, the loop length); FADE the soft ends; SPEED spec px a second (one P a second)
+    -- its look (cp43, cp44): a light blue CONVEYOR pointing up (go on this way): going up, four gold dots then a single chevron,
+    -- repeating, scrolling upward on a loop, a dark rim under each piece; drawn on our frame, made once.
+    -- ARM: one chevron's arms in spec px from its centre, y up (12 wide, 4 tall); S the step from slot to slot; K slots a set (K - 1
+    -- dots, then the chevron), P = K * S the step from chevron to chevron; M slots in the window, SPAN = M * S; FADE the soft ends;
+    -- SPEED spec px a second; NCH / NDOT the most chevrons / dots M slots in a row can hold (the pools)
     C.PA.ARM = { { 0, 2, -6, -2 }, { 0, 2, 6, -2 } }
-    C.PA.N, C.PA.P, C.PA.SPEED, C.PA.FADE, C.PA.DOT = 3, 14, 14, 7, 4.5
-    C.PA.SPAN = C.PA.N * C.PA.P
+    C.PA.K, C.PA.S, C.PA.M, C.PA.SPEED, C.PA.FADE, C.PA.DOT = 5, 7, 7, 14, 7, 4.5
+    C.PA.P, C.PA.SPAN = C.PA.K * C.PA.S, C.PA.M * C.PA.S
+    C.PA.NCH = math.ceil(C.PA.M / C.PA.K)
+    C.PA.NDOT = C.PA.M - math.floor(C.PA.M / C.PA.K)
     C.PA.W, C.PA.RIM, C.PA.SIZE = 2.5, 4.5, 18
     C.PA.TICK = 1 / 30                                                 -- the drift's step at most (s): 30 places a second
-    -- every piece at time t: { kind = "chev" | "dot", y (spec px from the band line, up), a (0..1) }; 2N pieces, chevron k at
-    -- k * P, its dot at k * P + P / 2, all + the phase, wrapped in the window; alpha 0 at both window ends. [out]: a table to
-    -- fill in place (the draw passes its own, made once: nothing made per frame); none: a new one (the checks)
+    -- every slot at time t, bottom to top: { kind = "chev" | "dot", y (spec px from the band line, up), a (0..1) }; M slots S apart,
+    -- the lowest at -SPAN / 2 + (the drift mod S); a slot's kind from its place in the endless row (the drift's whole steps taken
+    -- off), every K-th a chevron; alpha 0 at both window ends. [out]: a table to fill in place (the draw passes its own, made once:
+    -- nothing made per frame); none: a new one (the checks)
     function C.paConveyor(t, out)
         local PA = C.PA
-        local span, half = PA.SPAN, PA.SPAN / 2
-        local phase = ((tonumber(t) or 0) * PA.SPEED) % span
+        local S, K, half = PA.S, PA.K, PA.SPAN / 2
+        local off = (tonumber(t) or 0) * PA.SPEED
+        local base = math.floor(off / S)
+        local frac = off - base * S
         out = out or {}
-        for k = 0, 2 * PA.N - 1 do
-            local y = ((k * PA.P / 2 + phase) % span) - half
+        for j = 0, PA.M - 1 do
+            local y = -half + j * S + frac
             local a = (half - math.abs(y)) / PA.FADE
             if a > 1 then a = 1 elseif a < 0 then a = 0 end
-            local p = out[k + 1]
-            if not p then p = {}; out[k + 1] = p end
-            p.kind, p.y, p.a = (k % 2 == 0) and "chev" or "dot", y, a
+            local p = out[j + 1]
+            if not p then p = {}; out[j + 1] = p end
+            p.kind, p.y, p.a = ((j - base) % K == K - 1) and "chev" or "dot", y, a
         end
         return out
     end
@@ -1755,12 +1768,12 @@ do
         local f = C.frame
         local o = { rim = {}, ln = {}, dsh = {}, dot = {}, all = {}, cv = {} }
         local R, G = C.PA.RGB, C.GOLD
-        for i = 1, C.PA.N * #C.PA.ARM do
+        for i = 1, C.PA.NCH * #C.PA.ARM do
             o.rim[i] = f:CreateLine(nil, "ARTWORK", nil, 0); o.rim[i]:SetColorTexture(0, 0, 0, 0.85)
             o.ln[i] = f:CreateLine(nil, "ARTWORK", nil, 2); o.ln[i]:SetColorTexture(R[1], R[2], R[3], 1)
             o.all[#o.all + 1] = o.rim[i]; o.all[#o.all + 1] = o.ln[i]
         end
-        for i = 1, C.PA.N do
+        for i = 1, C.PA.NDOT do
             o.dsh[i] = f:CreateTexture(nil, "ARTWORK", nil, 0); o.dsh[i]:SetTexture(C.DISC_TEX); o.dsh[i]:SetVertexColor(0, 0, 0, 0.85)
             o.dsh[i]:SetSize(C.u(C.PA.DOT + 2), C.u(C.PA.DOT + 2))
             o.dot[i] = f:CreateTexture(nil, "ARTWORK", nil, 2); o.dot[i]:SetTexture(C.DISC_TEX); o.dot[i]:SetVertexColor(G[1], G[2], G[3], 1)
@@ -1824,6 +1837,8 @@ do
                 C.paVis(sh, p.a > 0); C.paVis(d, p.a > 0)
             end
         end
+        for i = ci * #PA.ARM + 1, #o.ln do C.paVis(o.rim[i], false); C.paVis(o.ln[i], false) end      -- cp44: the pool's unused
+        for i = di + 1, #o.dot do C.paVis(o.dsh[i], false); C.paVis(o.dot[i], false) end
         C.paText(o, f, u, S, PA, m, w)
         o.shown = true
     end
