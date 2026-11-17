@@ -12,8 +12,10 @@ Proves: (0) the versions; (1) before the app's word B is exactly as before (the 
 one press = /petfollow THEN Forever's Back (its down and up edges as before); (3) the word off: B is the game's again; (4) no pet / a dead
 pet / a pet that dies before the check: no Pet Follow; a pet summoned: B follows within the check; (4b, the review) a pet with nothing
 to stop (following or Stay-parked: no live pet target): no Pet Follow, Back as before; (5) a room / a guest holding, a game
-window open: B is theirs; (6) a fight: B's fight rules (give back + stop attack, then clear the target), no Pet Follow, nothing protected
-from insecure code, and Pet Follow again after the fight; (7) the fight layout out of combat (an attack running): the first B is the give-
+window open: B is theirs; (6) a fight: the first B is the fight's give-back + stop attack; m171 (the user, 2026-11-17: our "Out of
+combat" rule, not the game's): with the bars given back (our out-of-combat layout) B runs Pet Follow even though the game is still in
+combat (an attacking pet keeps its owner in combat), then stop attack + clear target; nothing protected from insecure code, Pet Follow
+after the fight; (7) the fight layout out of combat (an attack running): the first B is the give-
 back, the next one (the rest layout) adds Pet Follow; (8) a trigger held: the layer's button, no Pet Follow; (9) Party mode: its own B;
 (10) a non-pet class: never (a Mage's / Priest's pet bar included, the review); (11) the word in a fight: kept, the binding at the fight's end; (12) no trace (no spied call, no snippet error).
 Needs lupa. Exit code 1 on any failure."""
@@ -131,12 +133,15 @@ OURS_B = "CLICK WowCompanionFaceB:LeftButton"
 BACK_PRESS = ['GPTop7+', 'GPTop7-']            # Forever's Back: its down and up edges, as the router's native press makes them
 
 # ---------------------------------------------------------------- (0) the versions
-check('local PV = "m170"' in SRC["padmap"] and 'local BV = "b66"' in SRC["book"], "PadMap m167 (m165b merged), Book b66")
+check('local PV = "m171"' in SRC["padmap"] and 'local BV = "b66"' in SRC["book"], "PadMap m171, Book b66")
 check("I want a pet class specific option where pressing B in the out of combat home menu basically stops the pet attacking" in SRC["padmap"]
       and "basically stops the pet attacking" in SRC["book"], "both header notes quote the user")
-check(SRC["padmap"].count('SecureCmdOptionParse("[nocombat,@pet,exists,nodead] 1") == "1"') == 1
+check("the pet follow on b does not work out of combat, I wonder if we made this as an actual out of combat function" in SRC["padmap"],
+      "m171: PadMap's header note quotes the user (2026-11-17)")
+check('SecureCmdOptionParse("[nocombat,@pet' not in SRC["padmap"]
+      and SRC["padmap"].count('SecureCmdOptionParse("[@pet,exists,nodead] 1") == "1"') == 1
       and SRC["padmap"].count('petf = "/petfollow\\n"') == 1,
-      "the snippet's one check: out of combat, a live pet; the game's own /petfollow")
+      "m171: the snippet's check is OUR layout rule (rest) and a live pet, never the game's [nocombat]; the game's own /petfollow")
 check(SRC["padmap"].count('SecureCmdOptionParse("[@pettarget,exists,nodead] 1") == "1" then petf') == 1,
       "m165 review: and only while the pet is at something (a live pet target)")
 
@@ -255,10 +260,29 @@ F = world(pre='UNITS.target = { name = "Kobold", alive = true, foe = true }')
 tell(F, True)
 F.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.5)')
 check(bkey(F) == OURS_B, "the pull: B carried for the fight (as before)", bkey(F))
+check(F.eval('WowCompanionFaceB.a["wc-state"]') == "fight", "the game's combat: the fight layout (the [combat] driver)",
+      F.eval('WowCompanionFaceB.a["wc-state"]'))
+n0 = nsent(F)
 r = press(F, "PAD2")
-check(lines(r) == ['/stopattack'], "in a fight the first B gives back and stops the attack (the fight's rule), no Pet Follow", lines(r))
+check(lines(r) == ['/stopattack'], "in a fight the first B (the fight layout) gives back and stops the attack (the fight's rule), no Pet Follow yet",
+      lines(r))
 r = press(F, "PAD2")
-check(lines(r) == ['/stopattack', '/cleartarget'], "the next B (given back, still in the fight): stop attack + clear target, no Pet Follow", lines(r))
+# m171 (the user, 2026-11-17: "the pet follow on b does not work out of combat ... our 'Out of combat' rule that basically changes the
+# action bar size and combat mode"): the bars given back = OUR out-of-combat layout, whatever the game's combat says (an attacking pet
+# keeps its owner in combat) -> Pet Follow, then B's own stop attack + clear target
+check(lines(r) == ['/petfollow', '/stopattack', '/cleartarget'],
+      "m171: the next B (given back = our out-of-combat layout, the game still in combat): Pet Follow, then stop attack + clear target",
+      lines(r))
+fc = [x for x in docs(F, n0, 'facecast') if x.get('pos') == 7 and x.get('down')]
+check(fc and fc[-1].get('pf') is True and fc[-1].get('fight') is True, "m171: the facecast says the press ran Pet Follow, in the game's fight", fc)
+r = press(F, "PAD2")
+check(lines(r)[:1] == ['/petfollow'], "m171: every B on the given-back layout in the fight: Pet Follow first", lines(r))
+F.execute('UNITS.pettarget = nil')
+r = press(F, "PAD2")
+check('/petfollow' not in lines(r), "m171: a pet with nothing to stop (no pet target) in the fight: left alone", lines(r))
+F.execute('UNITS.pettarget = { name = "Kobold", alive = true, foe = true }')
+check(lst(F, 'VIOL') == [] and lst(F, 'SPY') == [], "m171: the fight's presses: no protected call, no binding change in the lockdown",
+      (lst(F, 'VIOL'), lst(F, 'SPY')))
 n0 = nsent(F)
 padtab(F, 39, 36)
 padtab(F, 39, 37)
