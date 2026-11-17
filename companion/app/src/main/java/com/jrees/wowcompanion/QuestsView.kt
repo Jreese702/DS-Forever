@@ -928,6 +928,10 @@ class QuestsView(
             if (isShown) postInvalidateDelayed(REFRESH_MS)
             return
         }
+        // beautify (the user, 2026-11-17: "the background on some of the OLED themes look lifeless ... I do really like having the
+        // background image there"): the log stands on the kit's two panes like Social / Macros / Calendar, never a flat ink page
+        if (d == null || quests.isEmpty()) UiKit.pane(c, RectF(0f, bodyTop, w, h))
+        else { UiKit.pane(c, RectF(0f, bodyTop, splitX, h)); UiKit.pane(c, RectF(splitX, bodyTop, w, h), right = true) }
         if (d == null) {
             pRowSub.color = Theme.dim
             c.drawText(Tr.t("Waiting for quests. The WowCompanionQuests addon starts on the next /reload."),

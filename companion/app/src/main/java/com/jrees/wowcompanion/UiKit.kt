@@ -6500,7 +6500,7 @@ object UiKit {
             val w = minOf(b.width.toFloat(), r.width() / k)
             c.drawBitmap(b, Rect(0, 0, w.toInt(), b.height), RectF(r.left, r.top, r.left + w * k, r.bottom), pBmp)
             pFlat.color = Color.argb(((1f - light) * 255).toInt().coerceIn(0, 255), 0, 0, 0)
-        } else pFlat.color = Color.rgb(12, 10, 9)
+        } else { pane(c, r); return }       // no class picture yet (waiting for the game): the kit's pane, never a flat slab (beautify)
         c.drawRect(r, pFlat)
     }
 

@@ -127,7 +127,32 @@ class ContactSheetShotsTest {
         cast.update(JSONObject().put("hud", JSONObject().put("ok", true).put("page", 1)
             .put("pages", JSONArray().put(true).put(true).put(true)).put("L", JSONObject().put("n", n))))
         home.tick()
+        // the clock test's settle: without the preview look Home draws nothing off the device (the first sheet's black Home)
+        val look = HomeView.Companion.Look(HomeRest.DIAMONDS, false, false, false)
+        HomeView::class.java.methods.firstOrNull { it.name.startsWith("previewSettle") }?.invoke(home, look)
+        home.onFull(JSONObject().put("type", "full").put("actionbar", JSONObject().put("hud", JSONObject().put("ok", true)))
+            .put("bags", JSONObject().put("money", 1_234_567L).put("freeGeneral", 14).put("free", 14).put("total", 66)
+                .put("equipped", JSONObject().put("slots", JSONArray()))), true)
         return shot(home)
+    }
+
+    /** QuestRewardsShotsTest's three quests, so the log shows its list and detail panes */
+    private fun quests(): Bitmap {
+        val a = JSONArray()
+        a.put(JSONObject().put("id", 33).put("title", "Wolves Across the Border").put("zone", "Elwynn Forest").put("lv", 6).put("slot", 1)
+            .put("watch", 1).put("focus", true)
+            .put("obj", JSONArray().put(JSONObject().put("t", "Tough Wolf Meat: 8/8").put("have", 8).put("need", 8).put("f", true)))
+            .put("ready", true)
+            .put("desc", "Those wolves are a menace. Bring me eight pieces of Tough Wolf Meat and I'll see that you're well paid.")
+            .put("rw", JSONObject().put("m", 2575).put("xp", 450)))
+        a.put(JSONObject().put("id", 46).put("title", "Bounty on Murlocs").put("zone", "Elwynn Forest").put("lv", 8).put("slot", 2).put("watch", 1)
+            .put("obj", JSONArray().put(JSONObject().put("t", "Torn Murloc Fin: 3/8").put("have", 3).put("need", 8)))
+            .put("rw", JSONObject().put("m", 600).put("xp", 750)))
+        a.put(JSONObject().put("id", 7).put("title", "Kobold Camp Cleanup").put("zone", "Northshire").put("lv", 3).put("slot", 3)
+            .put("obj", JSONArray().put(JSONObject().put("t", "Kobold Vermin slain: 4/10").put("have", 4).put("need", 10))))
+        val v = QuestsView(app, { null }, { })
+        v.update(JSONObject().put("list", a).put("plv", 7).put("maxQ", 25).put("rwMode", "id"))
+        return shot(v)
     }
 
     @Test fun contactSheet() {
@@ -136,7 +161,7 @@ class ContactSheetShotsTest {
         val themes = (System.getenv("CONTACT_THEMES") ?: "classic,dark_silver,oled_bronze").split(",")
         val rooms = listOf<Pair<String, () -> Bitmap?>>(
             "home" to ::home,
-            "quests" to { shot(QuestsView(app, { null }, { })) },
+            "quests" to ::quests, "quests_wait" to { shot(QuestsView(app, { null }, { })) },
             "spellbook" to { shot(SpellbookView(app, onBind = { })) },
             "talents" to { shot(TalentsView(app) { _, _ -> }) },
             "worldmap" to { shot(WorldMapRoomView(app)) },
