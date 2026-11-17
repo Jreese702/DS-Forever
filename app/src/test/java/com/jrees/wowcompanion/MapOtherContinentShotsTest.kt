@@ -57,12 +57,15 @@ class MapOtherContinentShotsTest {
     private val EK_MAGENTA = Color.rgb(200, 40, 170)
     private val TILE_K = Color.rgb(0, 170, 0)
     private val TILE_EK = Color.rgb(220, 0, 0)
+    /** Zephras Isle (UiMap 2521 on map 2991, straight on the world; MapSkybornShotsTest's rect): no minimap, so no terrain, ever */
+    private val ISLE = doubleArrayOf(2991.0, 4956.25, 1247.917, 4231.25, -1331.25)
+    private val ISLE_GOLD = Color.rgb(230, 190, 40)
     /** the made-up minimap: Kalimdor's ADTs round Durotar, but NOT (40, 31); Eastern Kingdoms' over the same numbers, (40, 31) too */
     private val HOLE = 40 to 31
 
     // ---------------------------------------------------------------- the art
     private fun art(minimapK: Boolean = true) {
-        val root = File("build/tmp/moc-art-${if (realWorld != null) "r" else "m"}-${if (minimapK) "k" else "nok"}").absoluteFile
+        val root = File("build/tmp/moc-art2-${if (realWorld != null) "r" else "m"}-${if (minimapK) "k" else "nok"}").absoluteFile
         if (realWorld != null) {
             for (d in listOf("worldmap", "seamless")) if (!File(root, d).isDirectory) File(realWorld, d).takeIf { it.isDirectory }?.copyRecursively(File(root, d))
         } else madeUpWorld(File(root, "worldmap"))
@@ -72,7 +75,7 @@ class MapOtherContinentShotsTest {
         if (!minimapK) File(root, "minimap/1").deleteRecursively()
         ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, root)
         MinimapTiles.refresh(); TerrainOverview.refresh(); TerrainOverview.load()
-        TerrainOverview.dir = File("build/tmp/moc-cache-${if (realWorld != null) "r" else "m"}-${if (minimapK) "k" else "nok"}").absoluteFile
+        TerrainOverview.dir = File("build/tmp/moc-cache2-${if (realWorld != null) "r" else "m"}-${if (minimapK) "k" else "nok"}").absoluteFile
     }
 
     private fun madeUpWorld(dir: File) {
@@ -83,7 +86,8 @@ class MapOtherContinentShotsTest {
             Triple(1414, "Kalimdor", JSONObject().put("mapType", 2).put("parent", 947).put("rect", JSONArray(listOf(1, 12799.9004, -11733.2998, 17066.5996, -19733.2109)))),
             Triple(1415, "Eastern Kingdoms", JSONObject().put("mapType", 2).put("parent", 947).put("rect", JSONArray(listOf(0, 7466.6001, -16000, 16000, -19199.9004)))),
             Triple(1411, "Durotar", JSONObject().put("mapType", 3).put("parent", 1414).put("rect", JSONArray(DUROTAR.toList()))),
-            Triple(1429, "Elwynn Forest", JSONObject().put("mapType", 3).put("parent", 1415).put("rect", JSONArray(listOf(0, -7939.583, -10254.166, 1535.4166, -1935.4166)))))
+            Triple(1429, "Elwynn Forest", JSONObject().put("mapType", 3).put("parent", 1415).put("rect", JSONArray(listOf(0, -7939.583, -10254.166, 1535.4166, -1935.4166)))),
+            Triple(2521, "Zephras Isle", JSONObject().put("mapType", 3).put("parent", 947).put("rect", JSONArray(ISLE.toList()))))
         val man = JSONObject()
         for ((id, name, o) in maps) {
             man.put("$id", JSONObject().put("name", name).put("mapType", o.getInt("mapType")).put("parent", o.getInt("parent")).put("overlays", 0))
@@ -92,7 +96,7 @@ class MapOtherContinentShotsTest {
             val b = Bitmap.createBitmap(501, 334, Bitmap.Config.ARGB_8888)
             val c = Canvas(b)
             val (a, z) = when (id) { 947 -> Color.rgb(40, 70, 110) to Color.rgb(30, 50, 90); 1414 -> KAL_GREEN to KAL_GREEN
-                1415 -> EK_MAGENTA to EK_MAGENTA; else -> Color.rgb(150, 120, 70) to Color.rgb(110, 90, 50) }
+                1415 -> EK_MAGENTA to EK_MAGENTA; 2521 -> ISLE_GOLD to ISLE_GOLD; else -> Color.rgb(150, 120, 70) to Color.rgb(110, 90, 50) }
             c.drawPaint(Paint().apply { shader = LinearGradient(0f, 0f, 501f, 334f, a, z, Shader.TileMode.CLAMP) })
             File(d, "base.webp").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
@@ -125,7 +129,7 @@ class MapOtherContinentShotsTest {
     private val ELWYNN = doubleArrayOf(0.0, -7939.583, -10254.166, 1535.4166, -1935.4166)
     private var zoneId = 1411
     private fun mapDoc(): JSONObject {
-        val (name, r) = if (zoneId == 1429) "Elwynn Forest" to ELWYNN else "Durotar" to DUROTAR
+        val (name, r) = when (zoneId) { 1429 -> "Elwynn Forest" to ELWYNN; 2521 -> "Zephras Isle" to ISLE; else -> "Durotar" to DUROTAR }
         return JSONObject().put("ok", true).put("mapID", zoneId).put("zone", name).put("subzone", "")
         .put("x", 0.52).put("y", 0.44).put("facing", 2.4)
         .put("rect", JSONObject().put("c", r[0].toInt()).put("t", r[1]).put("b", r[2]).put("l", r[3]).put("r", r[4]))
@@ -250,16 +254,16 @@ class MapOtherContinentShotsTest {
 
     // ---------------------------------------------------------------- zoom out, then in on the OTHER continent
     private fun fieldStats(r: Rig, bm: Bitmap): IntArray {
-        // [dark, kalGreen, tileK, ekMagenta, tileEk, other] over the map's field right of the quest list
+        // [dark, kalGreen, tileK, ekMagenta, tileEk, other, isleGold] over the map's field right of the quest list
         val loc = IntArray(2); r.map.getLocationInWindow(loc)
         val x0 = loc[0]; val y0 = loc[1]; val w = r.map.width; val h = r.map.height
-        val s = IntArray(6)
+        val s = IntArray(7)
         for (y in y0 + 10 until y0 + h - 10 step 6) for (x in x0 + w / 3 until x0 + w - 10 step 6) {
             if (x !in 0 until bm.width || y !in 0 until bm.height) continue
             val p = bm.getPixel(x, y)
             val mx = maxOf((p shr 16) and 0xFF, (p shr 8) and 0xFF, p and 0xFF)
             when {
-                p == KAL_GREEN -> s[1]++; p == TILE_K -> s[2]++; p == EK_MAGENTA -> s[3]++; p == TILE_EK -> s[4]++
+                p == KAL_GREEN -> s[1]++; p == TILE_K -> s[2]++; p == EK_MAGENTA -> s[3]++; p == TILE_EK -> s[4]++; p == ISLE_GOLD -> s[6]++
                 mx < 32 -> s[0]++; else -> s[5]++
             }
         }
@@ -275,6 +279,7 @@ class MapOtherContinentShotsTest {
         val zp = r.room.model.placeOn(zone, 947)!!; val tp = r.room.model.placeOn(target, 947)!!
         val zw = zp[2] - zp[0]; val zh = zp[3] - zp[1]
         homeView(r, zoomTo, ((tp[0] + tp[2]) / 2f - zp[0]) / zw, ((tp[1] + tp[3]) / 2f - zp[1]) / zh)
+        mf("curU").setFloat(r.map, mf("panX").getFloat(r.map)); mf("curV").setFloat(r.map, mf("panY").getFloat(r.map))
         val bm = frames(r, 3000L)
         val s = fieldStats(r, bm)
         val dark = 100 * s[0] / s.sum().coerceAtLeast(1)
@@ -302,9 +307,18 @@ class MapOtherContinentShotsTest {
     }
 
     @Test fun eastern_kingdoms_player_zooms_in_on_durotar_painted() {
+        // zoomed out (Painted's own range): Kalimdor's painted canvas
+        val o = over("ek_painted_z0.9", false, true, 1429, 1411, 0.9f)
+        assertDrawn("painted z0.9", o)
+        assertEquals("painted z0.9: Kalimdor's own canvas", 1414, o.r.room.backdropCanvas)
+        assertEquals("painted z0.9: no Eastern Kingdoms tile on Kalimdor", 0, o.s[4])
+        tearDown()
+        // at the zone's width and closer the style is over (as on the player's own continent): Kalimdor's terrain and its own close
+        // tiles (review: Painted stayed on the upscaled painting there)
         val v = over("ek_painted_z1", false, true, 1429, 1411, 1f)
         assertDrawn("painted", v)
-        assertEquals("painted: Kalimdor's own canvas", 1414, v.r.room.backdropCanvas)
+        assertEquals("painted z1: Kalimdor's terrain", 1f, st(v.r)[6])
+        if (realArt == null) assertTrue("painted z1: Kalimdor's own tiles", v.s[2] > 0 && v.r.map.otherTiles > 0)
         assertEquals("painted: no Eastern Kingdoms tile on Kalimdor", 0, v.s[4])
     }
 
@@ -324,9 +338,14 @@ class MapOtherContinentShotsTest {
         assertDrawn("Kalimdor player, terrain", t)
         assertEquals("Kalimdor player, terrain: no Kalimdor tile on Eastern Kingdoms", 0, t.s[2])
         tearDown()
+        val o = over("k_painted_z0.9", false, true, 1411, 1429, 0.9f)
+        assertDrawn("Kalimdor player, painted z0.9", o)
+        assertEquals("Kalimdor player, painted z0.9: Eastern Kingdoms' canvas", 1415, o.r.room.backdropCanvas)
+        assertEquals("Kalimdor player, painted z0.9: no Kalimdor tile", 0, o.s[2])
+        tearDown()
         val p = over("k_painted_z1", false, true, 1411, 1429, 1f)
         assertDrawn("Kalimdor player, painted", p)
-        assertEquals("Kalimdor player, painted: Eastern Kingdoms' canvas", 1415, p.r.room.backdropCanvas)
+        assertEquals("Kalimdor player, painted z1: Eastern Kingdoms' terrain", 1f, st(p.r)[6])
         assertEquals("Kalimdor player, painted: no Kalimdor tile", 0, p.s[2])
     }
 
@@ -359,5 +378,124 @@ class MapOtherContinentShotsTest {
         assertFalse(HomeMapNote.otherShows(true, true, false))
         assertFalse(HomeMapNote.otherShows(false, false, false))
         assertFalse(HomeMapNote.otherShows(false, true, true))
+    }
+
+    // ---------------------------------------------------------------- review: the sea between, the island, the Map room
+
+    /** a point of the world (947's 0..1) in no continent's box, on the line between Kalimdor's box and Eastern Kingdoms' */
+    private fun seaBetween(r: Rig): FloatArray {
+        val m = r.room.model
+        val k = m.placeOn(1411, 947)!!; val e = m.placeOn(1429, 947)!!
+        val v = (k[1] + k[3]) / 2f
+        // the middle of the widest run of open sea on that line
+        val sea = (0..400).map { k[0] + (e[2] - k[0]) * it / 400f }.filter { u -> m.aimContinent(947, listOf(floatArrayOf(u, v)), nearest = false) == null }
+        if (sea.isEmpty()) throw AssertionError("no sea between the boxes")
+        return floatArrayOf((sea.first() + sea.last()) / 2f, v)
+    }
+    /** Home's view's MIDDLE and the controls' cursor at world point [w] at [zoom] (the quest list moves the middle left of the pan by
+     *  a sixth of the field: homesPaintedViewOverKalimdorFromEasternKingdomsDrawsKalimdor's rule) */
+    private fun viewAt(r: Rig, zoom: Float, w: FloatArray) {
+        val zp = r.room.model.placeOn(zoneId, 947)!!
+        val u = (w[0] - zp[0]) / (zp[2] - zp[0]); val v = (w[1] - zp[1]) / (zp[3] - zp[1])
+        homeView(r, zoom, u + (207f / 1240f) / zoom, v)
+        mf("curU").setFloat(r.map, u); mf("curV").setFloat(r.map, v)
+    }
+
+    @Test fun the_sea_between_the_boxes_zoomed_in_is_the_art_and_frees_nothing() {
+        for (terrain in listOf(true, false)) {
+            val r = rig(terrain = terrain, zone = 1429)
+            key(r.home, "PADDRIGHT")
+            for (i in 0 until 10) key(r.home, "PADLSHOULDER")
+            frames(r, 2000L)
+            // in over Durotar first (the other continent), then across to the sea between, at the zone's width
+            val tp = r.room.model.placeOn(1411, 947)!!
+            viewAt(r, 1f, floatArrayOf((tp[0] + tp[2]) / 2f, (tp[1] + tp[3]) / 2f))
+            frames(r, 2000L)
+            assertTrue("over Durotar first", r.map.otherContDrawn)
+            val bytes = r.room.pictureBytes
+            viewAt(r, 1f, seaBetween(r))
+            // the first frame on the sea: nothing freed (each crossing re-read every picture)
+            draw(r.home)
+            assertTrue("not freed on reaching the sea", r.room.backdropInUse)
+            val bm = frames(r, 2000L)
+            val s = fieldStats(r, bm)
+            val dark = 100 * s[0] / s.sum().coerceAtLeast(1)
+            println("MOC sea terrain=$terrain worldDrew=${st(r)[4]} terrainDrew=${st(r)[6]} other=${r.map.otherContDrawn} dark=$dark% bytes $bytes -> ${r.room.pictureBytes}")
+            shot("moc_sea_${if (terrain) "terrain" else "painted"}_z1", bm)
+            assertFalse("the sea is nobody's continent", r.map.otherContDrawn)
+            assertEquals("the art drew over the sea", 1f, st(r)[4])
+            if (terrain) assertEquals("Terrain: the terrain's sea", 1f, st(r)[6])
+            else assertTrue("Painted: the painted sea, not a black field ($dark% dark)", dark < 50)
+            assertTrue("not freed crossing the sea", r.room.backdropInUse && r.room.pictureBytes > 0L)
+            assertNull("no note", mf("artNote").get(r.map))
+            tearDown()
+        }
+    }
+
+    @Test fun an_eastern_kingdoms_player_zooms_in_on_zephras_isle() {
+        for (terrain in listOf(true, false)) {
+            val v = over("ek_isle_${if (terrain) "terrain" else "painted"}_z1", terrain, true, 1429, 2521, 1f)
+            assertDrawn("the island ($terrain)", v)
+            if (terrain) assertTrue("Terrain: the island (no terrain ever) is painted in its box", v.r.map.paintedConts > 0)
+            if (realWorld == null) assertTrue("the island's own art (${v.s.toList()})", v.s[6] > 0)
+            assertEquals("no Eastern Kingdoms tile on the island", 0, v.s[4])
+            tearDown()
+        }
+    }
+
+    @Test fun a_zephras_player_zooms_in_on_elwynn_and_durotar() {
+        for (terrain in listOf(true, false)) for (target in listOf(1429, 1411)) {
+            val v = over("isle_${target}_${if (terrain) "terrain" else "painted"}_z1", terrain, true, 2521, target, 1f)
+            assertDrawn("the island's player over $target ($terrain)", v)
+            if (target == 1411) assertEquals("no Eastern Kingdoms tile on Durotar", 0, v.s[4])
+            tearDown()
+        }
+    }
+
+    /** the Map room (no zone-width cut-off, no Home tiles): an Eastern Kingdoms player, out to the world, in on Durotar, back to Elwynn */
+    @Test fun the_map_room_zooms_from_eastern_kingdoms_onto_kalimdor_and_back() {
+        val r = rig(terrain = true, zone = 1429)
+        val room = r.room
+        room.visibility = View.VISIBLE
+        room.layout(0, 0, W, H)
+        room.onShown()
+        fun rf(n: String) = WorldMapRoomView::class.java.getDeclaredField(n).apply { isAccessible = true }
+        val jump = WorldMapRoomView::class.java.getDeclaredMethod("jumpTo", Int::class.javaPrimitiveType).apply { isAccessible = true }
+        val after = WorldMapRoomView::class.java.getDeclaredMethod("afterZoom").apply { isAccessible = true }
+        val bm = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+        fun look(name: String): Int {
+            for (i in 0 until 40) { bm.eraseColor(Color.BLACK); room.layout(0, 0, W, H); room.draw(Canvas(bm)); Thread.sleep(30); settle(2) }
+            shot("moc_room_$name", bm)
+            var d = 0; var n = 0
+            for (y in 40 until H - 40 step 6) for (x in 40 until W - 40 step 6) {
+                val p = bm.getPixel(x, y); n++
+                if (maxOf((p shr 16) and 0xFF, (p shr 8) and 0xFF, p and 0xFF) < 32) d++
+            }
+            return 100 * d / n
+        }
+        fun glide(to: Int, until: Int) {
+            jump.invoke(room, 947)
+            val t = room.model.placeOn(to, 947)!!
+            rf("zoom").setFloat(room, 1f); rf("panX").setFloat(room, 0.5f); rf("panY").setFloat(room, 0.5f)
+            rf("ccx").setFloat(room, (t[0] + t[2]) / 2f); rf("ccy").setFloat(room, (t[1] + t[3]) / 2f)
+            for (i in 0 until 200) {
+                if (rf("canvas").getInt(room) == until && rf("zoom").getFloat(room) > 6f) break
+                rf("zoom").setFloat(room, rf("zoom").getFloat(room) * 1.03f)
+                val px = rf("panX").getFloat(room); val py = rf("panY").getFloat(room)
+                rf("panX").setFloat(room, px + (rf("ccx").getFloat(room) - px) * 0.05f)
+                rf("panY").setFloat(room, py + (rf("ccy").getFloat(room) - py) * 0.05f)
+                after.invoke(room)
+            }
+        }
+        glide(1411, 1414)
+        assertEquals("in on Durotar: Kalimdor's canvas", 1414, rf("canvas").getInt(room))
+        val dk = look("ek_player_on_durotar")
+        assertTrue("Kalimdor drawn, not black ($dk% dark)", dk < 50)
+        if (realWorld == null) assertNotEquals("not Eastern Kingdoms' picture under Durotar", EK_MAGENTA, bm.getPixel(W / 2, H / 2))
+        glide(1429, 1415)
+        assertEquals("back in on Elwynn: Eastern Kingdoms' canvas", 1415, rf("canvas").getInt(room))
+        val de = look("ek_player_back_on_elwynn")
+        assertTrue("Eastern Kingdoms drawn, not black ($de% dark)", de < 50)
+        room.onHidden()
     }
 }

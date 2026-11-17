@@ -634,15 +634,16 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
 
     /** Home's map: the game continent under points [at] of map [zone]'s 0..1, by the boxes on its root (WorldMapModel.aimContinent, no
-     *  nearest: the sea between is nobody's); null = not on a world, no art set, or no box holds any */
+     *  nearest: the sea between is nobody's, [MapView.WorldArt.SEA]); null = not on a world or no art set */
     fun backdropAim(zone: Int, at: List<FloatArray>): Int? {
         if (!artReady) return null
         val (root, zp) = model.rootPlace(zone) ?: return null
         if (model.assignsOf(root).isEmpty()) return null
         val zw = zp[2] - zp[0]; val zh = zp[3] - zp[1]
         if (zw <= 0f || zh <= 0f) return null
-        val id = model.aimContinent(root, at.map { floatArrayOf(zp[0] + it[0] * zw, zp[1] + it[1] * zh) }, nearest = false) ?: return null
-        return model.maps[id]?.world?.continent
+        val id = model.aimContinent(root, at.map { floatArrayOf(zp[0] + it[0] * zw, zp[1] + it[1] * zh) }, nearest = false)
+            ?: return MapView.WorldArt.SEA
+        return model.maps[id]?.world?.continent ?: MapView.WorldArt.SEA
     }
 
     /**
