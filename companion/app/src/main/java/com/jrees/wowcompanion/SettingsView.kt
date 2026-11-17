@@ -180,7 +180,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segPausePick = Array(2) { RectF() }
     /** the user's pick 2026-11-13: Start over game windows (HomeSettings.pauseOverGame): Our wheel / Game's wheel */
     private val segPauseOver = Array(2) { RectF() }
-    /** the user, 2026-11-16: B: pet follow (HomeSettings.petFollowB, per character): Off / On; a pet class only (PetFollowB) */
+    /** the user, 2026-11-17: Smart pet (HomeSettings.smartPet, per character; it replaces B: pet follow): Off / On; a pet class only (SmartPet) */
     private val segPetB = Array(2) { RectF() }
 
     /**
@@ -379,7 +379,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.QUEST_TRACKING -> ROW_H
         SettingsTabs.Block.INDOOR -> ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
         SettingsTabs.Block.CONTROLLER -> ROW_H + 10f + ROW_H
-        SettingsTabs.Block.PET_B -> if (PetFollowB.shown(petB())) ROW_H else 0f            // a pet class only
+        SettingsTabs.Block.SMART_PET -> if (SmartPet.shown(petB())) ROW_H else 0f          // a pet class only
         SettingsTabs.Block.PAUSE_WHEEL -> ROW_H + 10f + ROW_H + 10f + ROW_H             // + Start over game windows
         SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
         SettingsTabs.Block.CLASS_LEFT, SettingsTabs.Block.CLASS_RIGHT -> ROW_H + 10f + ROW_H
@@ -481,8 +481,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segPauseOpen[1].contains(x, y) -> HomeSettings.pauseTap = false
             segPausePick[0].contains(x, y) -> HomeSettings.pausePickA = true
             segPausePick[1].contains(x, y) -> HomeSettings.pausePickA = false
-            segPetB[0].contains(x, y) -> HomeSettings.setPetFollowB(GameUi.character, false)
-            segPetB[1].contains(x, y) -> HomeSettings.setPetFollowB(GameUi.character, true)
+            segPetB[0].contains(x, y) -> HomeSettings.setSmartPet(GameUi.character, false)
+            segPetB[1].contains(x, y) -> HomeSettings.setSmartPet(GameUi.character, true)
             segPauseOver[0].contains(x, y) -> HomeSettings.pauseOverGame = false
             segPauseOver[1].contains(x, y) -> HomeSettings.pauseOverGame = true
             segOpen[0].contains(x, y) -> HomeSettings.radialTap = true
@@ -615,7 +615,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 SettingsTabs.Block.QUEST_TRACKING -> { drawQuestTrackingRow(c, y); y + ROW_H }
                 SettingsTabs.Block.INDOOR -> drawIndoor(c, y)
                 SettingsTabs.Block.CONTROLLER -> drawController(c, y)
-                SettingsTabs.Block.PET_B -> drawPetB(c, y)
+                SettingsTabs.Block.SMART_PET -> drawPetB(c, y)
                 SettingsTabs.Block.PAUSE_WHEEL -> drawWheel(c, y, "Pause menu", "Press Start to open; it stays until B.",
                     "Hold Start; letting go closes it.", HomeSettings.pauseTap, HomeSettings.pausePickA, segPauseOpen, segPausePick)
                     .let { bottom -> drawPauseOver(c, bottom + 10f) }
@@ -1118,14 +1118,14 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         return y + ROW_H
     }
 
-    /** the user, 2026-11-16 ("a pet class specific option where pressing B in the out of combat home menu basically stops the pet
-     *  attacking"): this character's B on Home's rest, Off / On (PetFollowB; drawn only for a pet class: [blockHeight]) */
+    /** the user, 2026-11-17 ("to be clear I think this should just be a smart pet feature that includes both of those settings in one"):
+     *  this character's Smart pet, Off / On (SmartPet; drawn only for a pet class: [blockHeight]) */
     private fun drawPetB(c: Canvas, top: Float): Float {
-        val on = HomeSettings.petFollowB(GameUi.character)
+        val on = HomeSettings.smartPet(GameUi.character)
         val segW = segW()
-        row(c, top, PetFollowB.ROW_ID, PetFollowB.line(on), enabled = true) { box ->
+        row(c, top, SmartPet.ROW_ID, SmartPet.line(on), enabled = true) { box ->
             val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, PetFollowB.SEGMENTS, if (on) 1 else 0, segPetB)
+            segmented(c, b, SmartPet.SEGMENTS, if (on) 1 else 0, segPetB)
             b
         }
         return top + ROW_H
