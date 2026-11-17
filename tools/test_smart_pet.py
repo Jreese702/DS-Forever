@@ -229,12 +229,13 @@ r = press(W, "PAD4", lt=True)
 check(SPET not in lines(r), "LT + Y (Healing Wave, helpful): never", lines(r))
 r = press(W, "PAD1", lt=True)
 check(SPET not in lines(r), "LT + A (the pet's Bite: the pet's own attack): never", lines(r))
-check(hdr(W, "wc-mt-29") == "#showtooltip\n" + SOFT + "\n" + SPET + "\n/cast Auto Shot",
-      "the player's harmful macro: the pet's line after #showtooltip (the text the router runs; the macro itself unchanged)", hdr(W, "wc-mt-29"))
+check(hdr(W, "wc-mt-29") == "#showtooltip\n" + SPET + "\n/cast Auto Shot",
+      "the player's harmful macro: the pet's line after #showtooltip, NO target line of ours (the text the router runs; the macro itself unchanged)",
+      hdr(W, "wc-mt-29"))
 check(W.eval('MACROS[1][2]') == "#showtooltip\n/cast Auto Shot", "  the saved macro is untouched", W.eval('MACROS[1][2]'))
 check(hdr(W, "wc-mt-30") == "/cast Healing Wave", "the player's helpful macro: as it is", hdr(W, "wc-mt-30"))
 r = press(W, "PAD3", rt=True)
-check(lines(r) == ["#showtooltip", SOFT, SPET, "/cast Auto Shot"], "RT + X (the player's macro): the pet first, then its own cast", lines(r))
+check(lines(r) == ["#showtooltip", SPET, "/cast Auto Shot"], "RT + X (the player's macro): the pet first, then its own cast", lines(r))
 r = press(W, "PAD4", rt=True)
 check(SPET not in lines(r), "RT + Y (the helpful macro, not routed: the game's own button): never", lines(r))
 check(hdr(W, "wc-mt-32") == SPET + "\n/startattack", "our Start Attack command: /petattack first", hdr(W, "wc-mt-32"))
@@ -332,7 +333,48 @@ check(pf(X).get('sp') is None and hdr(X, "wc-sa-17") == ATTACK_LINES, "a Warrior
 r = press(X, "PAD3", lt=True)
 check(SPET not in lines(r), "  its presses never send a pet", lines(r))
 
-for L in (W, F, O, H, N, X):
+# ---------------------------------------------------------------- (9) review: the player's own macros, X without a pet, a rank text late
+M = world(pre='MACROS[3] = { "MoShot", "/cast [@mouseover,harm][@focus,harm][] Auto Shot", 75 }\nACTIONINFO[31] = { "macro", 3 }\n'
+               'MACROS[4] = { "Big", "#showtooltip\\n/cast Auto Shot\\n" .. string.rep("-", 220), 75 }\nACTIONINFO[27] = { "macro", 4 }\n')
+tell(M, 37)
+check(hdr(M, "wc-mt-31") == SPET + "\n/cast [@mouseover,harm][@focus,harm][] Auto Shot",
+      "a [@mouseover] / [@focus] macro: the pet's line only, no /target of ours (no hard target taken)", hdr(M, "wc-mt-31"))
+big = M.eval('MACROS[4][2]')
+check(len(big) <= 255 and len(big) + len(SPET) + 1 > 255 and hdr(M, "wc-mt-27") == big,
+      "a macro the pet line would take past 255: runs as saved (never a text longer than the game's macro)", (len(big), hdr(M, "wc-mt-27")))
+check(clean(M) == {}, "the macros: clean", clean(M))
+# X with nothing else on its position (no harmful slot there: only Smart pet would take it) and no pet out
+P = world(pet=False, slots=False)
+r0 = press(P, "PAD3")
+tell(P, 37)
+r = press(P, "PAD3")
+check(r['how'] == r0['how'] and SPET not in lines(r), "no pet out: X is not taken for Smart pet (Interact exactly as before)",
+      (r0['how'], r['how'], lines(r)))
+P.execute('UNITS.pet = { name = "Wolf", alive = true }; fire("UNIT_PET", "player"); advance(0.5)')
+settle(P)
+r = press(P, "PAD3")
+check(r['how'] == 'click' and lines(r)[:1] == [SPET], "a pet summoned (UNIT_PET, out of combat): X carries the pet line", (r['how'], lines(r)))
+P.execute('UNITS.pet = nil; fire("UNIT_PET", "player"); advance(0.5)')
+settle(P)
+r = press(P, "PAD3")
+check(r['how'] == r0['how'] and SPET not in lines(r), "  the pet gone again: X as before", (r['how'], lines(r)))
+check(clean(P) == {}, "no pet -> pet -> none: clean", clean(P))
+# a lower rank (3043 Arcane Shot Rank 1; the top 3044) whose rank text has not loaded: the plain cell, rebuilt when the text is in
+R = world(pre='SPELLNAME[3043] = "Arcane Shot"; HARM[3043] = true\n'
+               'local gi = C_Spell.GetSpellInfo\nC_Spell.GetSpellInfo = function(s) if s == "Arcane Shot" then return { spellID = 3044, iconID = 1, name = s } end return gi(s) end\n'
+               'SUBTEXT = {}\nC_Spell.GetSpellSubtext = function(id) return SUBTEXT[id] end\n')
+tell(R, 37)
+pmR = 'WowCompanion.padMap'
+check(R.eval(pmR + '.smartPetCast(3043)') is None, "a lower rank with no rank text yet: the plain exact-rank cell (never the top by bare name)",
+      R.eval(pmR + '.smartPetCast(3043)'))
+R.execute('RESYNC_N = 0; WowCompanion.spResync = WowCompanion.spResync or {}; table.insert(WowCompanion.spResync, function() RESYNC_N = RESYNC_N + 1 end)')
+R.execute('SUBTEXT[3043] = "Rank 1"; fire("SPELL_TEXT_UPDATE", 3043); advance(1.5)')
+check(int(R.eval('RESYNC_N')) >= 1, "  the rank text arrives (SPELL_TEXT_UPDATE): the touch cells are built again (WC.spResync)", R.eval('RESYNC_N'))
+check(R.eval(pmR + '.smartPetCast(3043)') == SOFT + "\n" + SPET + "\n/cast Arcane Shot(Rank 1)", "  then its Smart pet text names the exact rank",
+      R.eval(pmR + '.smartPetCast(3043)'))
+check(clean(R) == {}, "the rank text: clean", clean(R))
+
+for L in (W, F, O, H, N, X, M, R, P):
     check(L.eval('#SPY') == 0 and L.eval('#SNIPERR') == 0, "no spied call, no snippet error", (L.eval('SPY[1]'), L.eval('SNIPERR[1]')))
 
 print("%d passed, %d failed" % (passes, fails))

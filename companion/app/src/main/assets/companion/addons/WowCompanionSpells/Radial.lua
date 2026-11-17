@@ -19,7 +19,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local RV = "r24"                -- bump on every change; r24 SMART PET (PadMap m172; the user, 2026-11-17: "to be clear I think this should just be a smart pet feature that includes both of those settings in one"): the spell radials' cells (sradial q6) cast a HARMFUL spell (not a pet's) through Smart pet's own text while this character's Smart pet is on (WC.padMap.smartPetCast: the soft enemy targeted, "/petattack [pet,harm,nodead]", then the cast), so the pet attacks your target; built out of combat, again when the word changes (WC.spResync); r23 THE 11-16 TEST BUILD MERGE: fix/party-radials and feat/class-wheel-sticks both tagged r22, both kept (r22p = the party wheels, r22c = the class wheels); r22c CLASS WHEELS AIM WITH BOTH STICKS (feat/class-wheel-sticks; the user 2026-11-16: "one other thing to note on this would be its awkward only working from the right stick. I think that either stick should work those wheels.", pick: "Both sticks aim, no walking"): while the class wheel's guest "pad:class" holds, the stick catch keeps BOTH sticks, Left / Movement too, as the item / spell / pause wheels do -- this REPLACES r15's class-only pass ("On the class radial only the right control stick should be locked"); r22p THE PARTY WHEELS (the user, 2026-11-16: "the control sticks arent working on the party inspect radials, they are still walking and looking around"): the stick catch also shows while a Party mode wheel is open (the party pad's wc-pmenu, read only; or MENU HOLD clicked, until MENU DONE), both sticks kept, at most 60 s; r21 PET SPELLS (#234, the user: "build it"): the spell radials' cells cast a PET spell by its NAME (q5); r20a (review of feat/item-cooldowns; the user 2026-11-13: "honour enable=0 (held potion: dim, no number)", "Persist the hearthstone end time per name-realm"): held only with a length (the game's duration > 0 and enable 0; an item with no cooldown never dims), the itemcd doc says whose it is (`who`, name-realm: the app never keeps one character's Hearthstone under another's name); r20: ITEM COOLDOWNS (feat/item-cooldowns; the user's picks 2026-11-13: "cooldowns on radial slices AND bag slots: dark pie sweep + seconds"; "LEARNED LENGTHS in the style of the existing facecd"; "Counts only on stackable consumables/reagents/ammo/items with charges"): the `itemcd` document (event-driven only, change-only, never collect / pad.retain / buildCells), BAG_UPDATE_COOLDOWN off the radial's rebuild list, the radial doc's items / pins carry `st` (stackable) and no `cd`; r19: SEVERAL SPELL RADIALS back (feat/multi-radial-v2): q3 = 1.0.18's q2 (6 radials x 8, 40 shared cells, the radial buttons 2..6 armed) with r17e's guard (the row rebuilt only on a change) and NO cooldown sweep (r18 / q1b: one sradialcd per cast); r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r17 (1.0.18, reverted): the spell radials (q2); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
+local RV = "r24"                -- bump on every change; r24 SMART PET (PadMap m172; the user, 2026-11-17: "to be clear I think this should just be a smart pet feature that includes both of those settings in one"): the spell radials' cells (sradial q6) cast a HARMFUL spell (not a pet's) through Smart pet's own text while this character's Smart pet is on (WC.padMap.smartPetCast: the soft enemy targeted, "/petattack [pet,harm,nodead]", then the cast), so the pet attacks your target; built out of combat, again when the word changes (WC.spResync); r24 REVIEW (same tag): a cell's Smart pet text is checked too (a lower rank's text arriving later builds the cells again); r23 THE 11-16 TEST BUILD MERGE: fix/party-radials and feat/class-wheel-sticks both tagged r22, both kept (r22p = the party wheels, r22c = the class wheels); r22c CLASS WHEELS AIM WITH BOTH STICKS (feat/class-wheel-sticks; the user 2026-11-16: "one other thing to note on this would be its awkward only working from the right stick. I think that either stick should work those wheels.", pick: "Both sticks aim, no walking"): while the class wheel's guest "pad:class" holds, the stick catch keeps BOTH sticks, Left / Movement too, as the item / spell / pause wheels do -- this REPLACES r15's class-only pass ("On the class radial only the right control stick should be locked"); r22p THE PARTY WHEELS (the user, 2026-11-16: "the control sticks arent working on the party inspect radials, they are still walking and looking around"): the stick catch also shows while a Party mode wheel is open (the party pad's wc-pmenu, read only; or MENU HOLD clicked, until MENU DONE), both sticks kept, at most 60 s; r21 PET SPELLS (#234, the user: "build it"): the spell radials' cells cast a PET spell by its NAME (q5); r20a (review of feat/item-cooldowns; the user 2026-11-13: "honour enable=0 (held potion: dim, no number)", "Persist the hearthstone end time per name-realm"): held only with a length (the game's duration > 0 and enable 0; an item with no cooldown never dims), the itemcd doc says whose it is (`who`, name-realm: the app never keeps one character's Hearthstone under another's name); r20: ITEM COOLDOWNS (feat/item-cooldowns; the user's picks 2026-11-13: "cooldowns on radial slices AND bag slots: dark pie sweep + seconds"; "LEARNED LENGTHS in the style of the existing facecd"; "Counts only on stackable consumables/reagents/ammo/items with charges"): the `itemcd` document (event-driven only, change-only, never collect / pad.retain / buildCells), BAG_UPDATE_COOLDOWN off the radial's rebuild list, the radial doc's items / pins carry `st` (stackable) and no `cd`; r19: SEVERAL SPELL RADIALS back (feat/multi-radial-v2): q3 = 1.0.18's q2 (6 radials x 8, 40 shared cells, the radial buttons 2..6 armed) with r17e's guard (the row rebuilt only on a change) and NO cooldown sweep (r18 / q1b: one sradialcd per cast); r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r17 (1.0.18, reverted): the spell radials (q2); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
 local ROW, CELLS = "radial", 24 -- the secure pad row: 24 cells = 3 pages of 8
 local PLAYER_BAGS = { 0, 1, 2, 3, 4 }
 local QUARANTINE = 30           -- seconds a freed column stays unused (as the pad's own columns)
@@ -866,6 +866,7 @@ local function spellRadial()
     local secureOk = type(pad) == "table" and type(pad.secureRow) == "function"
     local frozen = {}               -- col -> spell id as the cells were last set (what a tap really casts)
     local spBuilt = nil             -- q6: Smart pet's word when the cells were built (a change builds them again)
+    local spText = {}               -- q6 (review): col -> Smart pet's cast text as built (a rank text arriving later builds again)
     local function spOn()
         local pm = WC.padMap
         return type(pm) == "table" and type(pm.smartPetOn) == "function" and pm.smartPetOn() == true
@@ -884,6 +885,7 @@ local function spellRadial()
         btn:SetAttribute("spell", (not sp) and (pn or id) or nil)
         btn:SetAttribute("macrotext", sp)
         frozen[col] = id
+        spText[col] = sp
     end
     local function onCell(col)
         -- a cast landed (after the game's own): said, for the app and for the proof, flushed AT ONCE (the player is waiting on it)
@@ -892,6 +894,12 @@ local function spellRadial()
     end
     local function cellsStale()
         if spBuilt ~= spOn() then return true end                         -- q6
+        if spBuilt then                                                   -- q6 (review): a cell's text moved (a lower rank's text came in)
+            for col, id in pairs(frozen) do
+                local pn = type(WC.spellsPetName) == "function" and WC.spellsPetName(id) or nil
+                if spText[col] ~= ((not pn) and spCast(id) or nil) then return true end
+            end
+        end
         for id, col in pairs(colOf) do if frozen[col] ~= id then return true end end
         for col, id in pairs(frozen) do if colOf[id] ~= col then return true end end
         return false
@@ -903,7 +911,7 @@ local function spellRadial()
         spBuilt = spOn()
         local ok, row = pcall(pad.secureRow, ROW, CELLS, cellInit, function(col) onCell(col) end)
         padRow = (ok and type(row) == "number") and row or nil
-        if not padRow then for col in pairs(frozen) do frozen[col] = nil end end
+        if not padRow then for col in pairs(frozen) do frozen[col] = nil; spText[col] = nil end end
         return padRow ~= nil
     end
 

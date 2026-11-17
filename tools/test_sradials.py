@@ -257,6 +257,18 @@ check(q6cell(W7, 403) == ("macro", None, SPT), "q6: Smart pet on: the harmful sp
 check(q6cell(W7, 331) == ("spell", 331, None), "q6: a helpful spell's cell stays the plain spell", q6cell(W7, 331))
 W7.execute('WowCompanion.padMap.smartPet(false, false); runTimers(NOW + 1)')
 check(q6cell(W7, 403) == ("spell", 403, None), "q6: off again: the plain cell back", q6cell(W7, 403))
+# q6 (review): a cell's Smart pet text that moves with the word unchanged (a lower rank's text came in: PadMap gave the plain cell first,
+# then the exact rank's text) builds the cells again
+W8 = world(pre='CLASS = "HUNTER"; C_Spell.IsSpellHarmful = function(s) return s == 403 or s == "Lightning Bolt" end')
+W8.execute(SR + '.put(1, 1, 403); runTimers(NOW + 5); ' + SR + '.emit(true)')
+W8.execute('WowCompanion.padMap.smartPet(true, false); runTimers(NOW + 1)')
+W8.execute('local pm = WowCompanion.padMap; local orig = pm.smartPetCast; pm.smartPetCast = function(id, n) if id == 403 then return nil end return orig(id, n) end; '
+           + SR + '.emit(true)')
+check(q6cell(W8, 403) == ("spell", 403, None), "q6: no Smart pet text yet (a rank text loading): the plain exact-rank cell", q6cell(W8, 403))
+RK = "/target [noexists][dead] softenemy\n/petattack [pet,harm,nodead]\n/cast Lightning Bolt(Rank 2)"
+W8.execute('WowCompanion.padMap.smartPetCast = function(id) if id == 403 then return "' + RK.replace("\n", "\\n") + '" end end; '
+           + SR + '.emit(true)')
+check(q6cell(W8, 403) == ("macro", None, RK), "q6: the text in (the word unchanged): the cell is built again with it", q6cell(W8, 403))
 
 print("\n%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
