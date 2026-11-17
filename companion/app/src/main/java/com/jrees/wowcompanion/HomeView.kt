@@ -1095,12 +1095,12 @@ class HomeView(
         var top = r.top + (notice?.let { n ->
             v.postInvalidateDelayed(1_000L - (now - n.at).mod(1_000L))          // the next whole second of the game's count
             UiKit.notice(c, r, n.minutes(now), n.seconds(now), pressed = goAt >= 0 && now - goAt < GO_GUARD_MS, bang = bang,
-                focused = focused)
+                focused = focused, urgent = n.urgent(now))         // chat41: the countdown red in the last minute
         } ?: 0f)
         if (notice == null) bang.setEmpty()
-        // the Battle.net friend notices under it, each fading as the game's toast does
+        // the Battle.net notices under it (chat41: every kind the game toasts), each fading as the game's toast does
         bnet = NoticeModel.liveBnet(bnet, now)
-        for (b in bnet) top += UiKit.bnetNotice(c, RectF(r.left, top, r.right, r.bottom), b.who, b.online, b.alpha(now))
+        for (b in bnet) top += UiKit.bnetNotice(c, RectF(r.left, top, r.right, r.bottom), b, b.alpha(now))
         if (bnet.isNotEmpty()) v.postInvalidateDelayed(50L)
         return top - r.top
     }

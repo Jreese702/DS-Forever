@@ -47,26 +47,52 @@ object NoticeModel {
     const val BNET_FADE_MS = 1_500L
     const val BNET_MAX = 2
 
-    /** one friend's login ([online]) or logout; [who] = the character or the BattleTag's name, null = none readable ("A friend") */
-    data class Bnet(val id: String, val who: String?, val online: Boolean, val at: Long) {
+    // chat41 (the user's pick, 2026-11-16: "Yes, all of them"): every other Battle.net toast the game shows comes the same way, its [t]
+    // saying which: "invite" (a new friend request), "pending" ([n] requests waiting, at the login), "bcast" (a friend's broadcast: [who]
+    // and its [text] when the game gives it plain, else none: "posted a broadcast"), "club" (a community invite: [name] when plain). Each
+    // lives the game's own toast time ([holdMs]: Chat's `hold` = its toastDuration setting, seconds; none = the game's 4 s). Information
+    // only: nothing is accepted or declined here.
+    const val T_ON = "on"
+    const val T_OFF = "off"
+    const val T_INVITE = "invite"
+    const val T_PENDING = "pending"
+    const val T_BCAST = "bcast"
+    const val T_CLUB = "club"
+    private val KNOWN = setOf(T_ON, T_OFF, T_INVITE, T_PENDING, T_BCAST, T_CLUB)
+
+    /** one Battle.net toast: [t] its kind ([online] for "on"); [who] = the character or the BattleTag's name, null = none readable ("A
+     *  friend"); [text] a broadcast's words, [name] a community's, [n] the pending count */
+    data class Bnet(val id: String, val who: String?, val online: Boolean, val at: Long, val t: String = if (online) T_ON else T_OFF,
+                    val text: String? = null, val name: String? = null, val n: Int = 0, val holdMs: Long = BNET_HOLD_MS) {
         /** 1 while it holds, down to 0 over the fade; 0 = gone */
         fun alpha(now: Long): Float {
             val t = now - at
             return when {
-                t < BNET_HOLD_MS -> 1f
-                t < BNET_HOLD_MS + BNET_FADE_MS -> 1f - (t - BNET_HOLD_MS).toFloat() / BNET_FADE_MS
+                t < holdMs -> 1f
+                t < holdMs + BNET_FADE_MS -> 1f - (t - holdMs).toFloat() / BNET_FADE_MS
                 else -> 0f
             }
         }
     }
+
+    /** a player-written value from Chat: plain, never a protected |K string; blank = none */
+    private fun plain(msg: JSONObject, key: String): String? =
+        (if (msg.isNull(key)) "" else msg.optString(key, "")).takeIf { it.isNotBlank() && !it.contains("|K") }
 
     /** one `notice` document onto the BN notices on show ([cur], newest first): a new one goes on top, the oldest past [BNET_MAX] goes */
     fun applyBnet(cur: List<Bnet>, msg: JSONObject, now: Long): List<Bnet> {
         if (msg.optString("type") != "notice" || msg.optString("kind") != "bnet") return cur
         val id = msg.optString("id")
         if (id.isEmpty() || cur.any { it.id == id }) return cur
-        val who = msg.optString("who", "").takeIf { it.isNotBlank() && !it.contains("|K") }
-        return (listOf(Bnet(id, who, msg.optBoolean("on", true), now)) + cur).take(BNET_MAX)
+        val online = msg.optBoolean("on", true)
+        // chat40 documents have no t: on / off from `on`; a kind this build does not know is not drawn
+        val t = msg.optString("t", "").ifEmpty { if (online) T_ON else T_OFF }
+        if (t !in KNOWN) return cur
+        val hold = msg.optDouble("hold", Double.NaN)
+        val holdMs = if (hold.isNaN() || hold <= 0.0) BNET_HOLD_MS else (hold * 1000.0).toLong().coerceIn(1_000L, 30_000L)
+        val b = Bnet(id, plain(msg, "who"), t == T_ON, now, t, plain(msg, "text"), plain(msg, "name"),
+            msg.optInt("n", 0).coerceAtLeast(0), holdMs)
+        return (listOf(b) + cur).take(BNET_MAX)
     }
 
     /** the BN notices still on show at [now] */

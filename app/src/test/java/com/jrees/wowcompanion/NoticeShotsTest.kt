@@ -35,6 +35,9 @@ import java.time.Duration
  *  - the refresh notice's "!" is a button: a touch on it is its press (never the Chat room), a touch elsewhere on the pane still opens
  *    the Chat room; with no refresh on there is no button;
  *  - the BN notices stand under the refresh notice, so the log starts lower.
+ * chat41 (the user's picks, 2026-11-16: "Red in the last minute", "Yes, all of them"): the countdown line turns red under 60 s (the
+ * words stay blue); friend requests, broadcasts and community invites come over the chat as well, one short line each, living the
+ * game's toast time (`hold`), a protected broadcast or name never shown.
  * With NOTICE_SHOTS_DIR set Home is drawn as home_notice_<case>.png (1240 x 1080, the bar under it) and its chat pane alone as
  * chat_notice_<case>.png; NOTICE_ART_ROOT = an art root laid out like the app's. The checks run always.
  */
@@ -122,6 +125,8 @@ class NoticeShotsTest {
 
     private fun shard(left: Int, id: String = "1-1") = JSONObject().put("type", "notice").put("v", "chat40").put("kind", "shard")
         .put("id", id).put("left", left).put("urgent", left < 60).put("text", "")
+    private fun bnT(id: String, t: String) = JSONObject().put("type", "notice").put("v", "chat41").put("kind", "bnet").put("id", id)
+        .put("t", t).put("hold", 5)
     private fun bn(id: String, who: String?, on: Boolean) = JSONObject().put("type", "notice").put("v", "chat40").put("kind", "bnet")
         .put("id", id).put("on", on).apply { if (who != null) put("who", who) }
 
@@ -158,6 +163,53 @@ class NoticeShotsTest {
         assertEquals(0f, l[0].alpha(2_000L + 5_500L), 0f)
         assertEquals(listOf("b3"), NoticeModel.liveBnet(l, 1_000L + 5_600L).map { it.id })
         assertEquals(l, NoticeModel.applyBnet(l, shard(30), 3_000L))
+    }
+
+    @Test fun everyBattleNetToastKindComesOver() {
+        var l = NoticeModel.applyBnet(emptyList(), bnT("i1", "invite"), 0L)
+        assertEquals(NoticeModel.T_INVITE, l[0].t)
+        l = NoticeModel.applyBnet(l, bnT("p1", "pending").put("n", 3), 10L)
+        assertEquals(3, l[0].n)
+        assertEquals(listOf("p1", "i1"), l.map { it.id })
+        val b1 = NoticeModel.applyBnet(emptyList(), bnT("c1", "bcast").put("who", "Thrall").put("text", "LFG Deadmines"), 0L)[0]
+        assertEquals("Thrall", b1.who); assertEquals("LFG Deadmines", b1.text)
+        val b2 = NoticeModel.applyBnet(emptyList(), bnT("c2", "bcast").put("text", "|Kx9|k"), 0L)[0]
+        assertNull("a protected broadcast is never shown", b2.text); assertNull(b2.who)
+        val k1 = NoticeModel.applyBnet(emptyList(), bnT("k1", "club").put("name", "Goldshire Book Club"), 0L)[0]
+        assertEquals("Goldshire Book Club", k1.name)
+        assertFalse(k1.online)
+        // a kind this build does not know is not drawn
+        assertTrue(NoticeModel.applyBnet(emptyList(), bnT("z1", "zzz"), 0L).isEmpty())
+        // the game's toast time: hold 5 s, then the 1.5 s fade; none sent = 4 s
+        assertEquals(1f, k1.alpha(4_900L), 0f)
+        assertEquals(0.5f, k1.alpha(5_750L), 0.01f)
+        assertEquals(0f, k1.alpha(6_500L), 0f)
+        val old = NoticeModel.applyBnet(emptyList(), bn("o1", "Thrall", true), 0L)[0]
+        assertEquals(NoticeModel.T_ON, old.t); assertTrue(old.online)
+        assertEquals(NoticeModel.BNET_HOLD_MS, old.holdMs)
+    }
+
+    /** the share of red pixels (the game's error red, PAUSE_RED) in the notice's countdown line */
+    private fun redIn(minutes: Int, seconds: Int, urgent: Boolean): Int {
+        val bm = Bitmap.createBitmap(700, 100, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bm); c.drawColor(Theme.ink)
+        UiKit.notice(c, RectF(0f, 0f, 700f, 100f), minutes, seconds, urgent = urgent)
+        var n = 0
+        for (y in 46 until 90) for (x in 80 until 700) {
+            val p = bm.getPixel(x, y)
+            if (android.graphics.Color.red(p) > 180 && android.graphics.Color.green(p) < 90 && android.graphics.Color.blue(p) < 90) n++
+        }
+        bm.recycle()
+        return n
+    }
+
+    @Test fun theCountdownTurnsRedInTheLastMinute() {
+        assertEquals("4 minutes left: no red", 0, redIn(4, 0, false))
+        assertTrue("42 seconds left: the countdown is red", redIn(0, 42, true) > 20)
+        assertTrue("the seconds are red even before Chat's urgent lands", redIn(0, 42, false) > 20)
+        assertEquals("refreshing at any time: no countdown, no red", 0, redIn(0, 0, true))
+        val n = NoticeModel.apply(null, shard(42), 0L)!!
+        assertTrue(n.urgent(0L))
     }
 
     // ---------------------------------------------------------------- the chat pane
@@ -252,5 +304,23 @@ class NoticeShotsTest {
         @Suppress("UNCHECKED_CAST")
         val live = field(home, "bnet") as List<NoticeModel.Bnet>
         assertEquals("the faded ones went: only the newest shows", listOf("b3"), live.map { it.id })
+        // chat41: the countdown red in the last minute; a friend request; a broadcast and a community invite
+        ShadowSystemClock.advanceBy(Duration.ofMillis(8_000)); ShadowLooper.idleMainLooper()
+        HomeView::class.java.getDeclaredField("goAt").apply { isAccessible = true }.setLong(home, -1L)
+        home.onNotice(shard(42, "1-4")); shot(home, "refresh_seconds_red")
+        home.onNotice(bnT("r1", "invite")); shot(home, "refresh_friend_request")
+        ShadowSystemClock.advanceBy(Duration.ofMillis(8_000)); ShadowLooper.idleMainLooper()
+        home.onNotice(JSONObject().put("type", "notice").put("kind", "shard").put("id", "1-4").put("ended", true))
+        home.onNotice(bnT("r2", "pending").put("n", 3))
+        home.onNotice(bnT("r3", "invite")); shot(home, "friend_requests")
+        ShadowSystemClock.advanceBy(Duration.ofMillis(8_000)); ShadowLooper.idleMainLooper()
+        home.onNotice(bnT("r4", "bcast").put("who", "Thrall").put("text", "LFG Deadmines, need a healer"))
+        home.onNotice(bnT("r5", "club").put("name", "Goldshire Book Club")); shot(home, "broadcast_club")
+        ShadowSystemClock.advanceBy(Duration.ofMillis(8_000)); ShadowLooper.idleMainLooper()
+        home.onNotice(bnT("r6", "bcast").put("who", "Quietone"))
+        home.onNotice(bnT("r7", "club")); shot(home, "broadcast_protected_club_noname")
+        @Suppress("UNCHECKED_CAST")
+        val now = field(home, "bnet") as List<NoticeModel.Bnet>
+        assertEquals("two at most, newest first", listOf("r7", "r6"), now.map { it.id })
     }
 }

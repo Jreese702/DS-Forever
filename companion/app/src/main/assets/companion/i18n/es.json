@@ -1990,9 +1990,13 @@
 "Disenchant": "Desencantar",
 "A friend": "Un amigo",
 "has come online": "se ha conectado",
-"has gone offline": "se ha desconectado"
+"has gone offline": "se ha desconectado",
+"New friend request": "Nueva solicitud de amistad",
+"posted a broadcast": "publicó un mensaje",
+"Community invite": "Invitación a comunidad"
 },
 "templates": {
+"Friend requests: %s": "Solicitudes de amistad: %s",
 "Tell %s:": "Susurrar a %s:",
 "Region: %s (this install is %s)": "Región: %s (esta instalación es %s)",
 "%s isn't loaded yet. Restart the game from DS Forever.": "%s aún no está cargado. Reinicia el juego desde DS Forever.",

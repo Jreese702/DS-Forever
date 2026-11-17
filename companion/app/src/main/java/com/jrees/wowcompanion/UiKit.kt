@@ -5529,9 +5529,11 @@ object UiKit {
      * creatures around you may change."; a thin bronze line under it. [scale] 1 = the 1240 x 1080 bottom screen. [bang], when given, is set
      * to the button's box (its touch target). [focused] = a controller cursor on the button (the chat module / Chat room's stop,
      * ChatPad.Focus.Notice): the kit's focus round it and A on its corner. Returns its height: the log starts under it.
+     * chat41 (the user's pick, 2026-11-16: "Red in the last minute"): the words stay blue, the countdown line turns the game's error red
+     * (PAUSE_RED, the red it had before chat40) under 60 s: in the seconds, or when [urgent] (Chat's own `urgent`, NoticeModel.urgent).
      */
     fun notice(c: Canvas, rect: RectF, minutes: Int, seconds: Int, scale: Float = 1f, pressed: Boolean = false, bang: RectF? = null,
-               focused: Boolean = false): Float {
+               focused: Boolean = false, urgent: Boolean = false): Float {
         val s = scale
         val h = 78f * s
         val x0 = rect.left + 6f * s; val y0 = rect.top + 10f * s
@@ -5544,15 +5546,16 @@ object UiKit {
         }
         val tx = x0 + 78f * s; val room = rect.right - 8f * s - tx
         val anytime = minutes <= 0 && seconds <= 0
-        val urgent = !anytime && minutes <= 0
+        val inSeconds = !anytime && minutes <= 0
+        val red = !anytime && (inSeconds || urgent)
         val l1 = if (anytime) "Refreshing your world at any time." else "The world around you will refresh"
         val l2 = when {
             anytime -> "Characters and creatures around you may change."
-            urgent -> "in $seconds " + (if (seconds == 1) "Second" else "Seconds")
+            inSeconds -> "in $seconds " + (if (seconds == 1) "Second" else "Seconds")
             else -> "in $minutes " + (if (minutes == 1) "Minute" else "Minutes")
         }
         for ((i, line) in listOf(l1, l2).withIndex()) {
-            val p = bodyPaint(25f * s, Theme.battleNet)
+            val p = bodyPaint(25f * s, if (i == 1 && red) PAUSE_RED else Theme.battleNet)
             while (p.textSize > 19f * s && p.measureText(line) > room) p.textSize -= 1f
             c.drawText(Tr.t(TextUtils.ellipsize(line, TextPaint(p), room, TextUtils.TruncateAt.END).toString()), tx,
                 y0 + (4f + 32f * i) * s - p.ascent(), p)
@@ -5563,33 +5566,62 @@ object UiKit {
     }
 
     /**
-     * ONE BATTLE.NET FRIEND NOTICE at the top of [rect] (under the refresh notice: its top is [rect]'s), as the game's toast says it: the
-     * friend's status light (kit `status_online` / `status_offline`), the name ([who]; null = "A friend") in the game's Battle.net blue,
-     * then "has come online" / "has gone offline" in grey; a thin bronze line under it. [alpha] = the toast's fade. Returns its height.
+     * ONE BATTLE.NET NOTICE at the top of [rect] (under the refresh notice: its top is [rect]'s), one short line as the game's toast says
+     * it, a small icon per kind ([b].t): a friend's login / logout = their status light, the name ([NoticeModel.Bnet.who]; null = "A
+     * friend") in the game's Battle.net blue, then "has come online" / "has gone offline" in grey; chat41 (the user's pick, 2026-11-16:
+     * "Yes, all of them"): a friend request (kit `tab_friends`) "New friend request", the waiting ones "Friend requests: 3"; a broadcast
+     * (`icon_chat`) the name, then its words when the game gave them plain (a player's: never translated), else "posted a broadcast"; a
+     * community invite (`tab_guild`) "Community invite: " and the community's name. A thin bronze line under it. [alpha] = the toast's
+     * fade. Returns its height.
      */
-    fun bnetNotice(c: Canvas, rect: RectF, who: String?, online: Boolean, alpha: Float = 1f, scale: Float = 1f): Float {
+    fun bnetNotice(c: Canvas, rect: RectF, b: NoticeModel.Bnet, alpha: Float = 1f, scale: Float = 1f): Float {
         val s = scale
         val a = (alpha.coerceIn(0f, 1f) * 255f).toInt()
         val x0 = rect.left + 6f * s; val y0 = rect.top + 6f * s
-        tex(if (online) "status_online" else "status_offline")?.let {
+        val light = b.t == NoticeModel.T_ON || b.t == NoticeModel.T_OFF
+        val icon = when (b.t) {
+            NoticeModel.T_ON -> "status_online"
+            NoticeModel.T_OFF -> "status_offline"
+            NoticeModel.T_INVITE, NoticeModel.T_PENDING -> "tab_friends"
+            NoticeModel.T_BCAST -> "icon_chat"
+            else -> "tab_guild"
+        }
+        tex(icon)?.let {
             pBmp.alpha = a
-            c.drawBitmap(it, null, RectF(x0 + 16f * s, y0 + 8f * s, x0 + 44f * s, y0 + 36f * s), pBmp)
+            val box = if (light) RectF(x0 + 16f * s, y0 + 8f * s, x0 + 44f * s, y0 + 36f * s)
+                      else RectF(x0 + 10f * s, y0 + 2f * s, x0 + 50f * s, y0 + 42f * s)
+            c.drawBitmap(it, null, box, pBmp)
             pBmp.alpha = 255
         }
+        // the line's parts: (words, colour, a player's value = never translated and the part that gives way first)
+        val blue = Theme.battleNet; val grey = Theme.dim
+        val friend = b.who ?: Tr.t("A friend")
+        val parts: List<Triple<String, Int, Boolean>> = when (b.t) {
+            NoticeModel.T_ON, NoticeModel.T_OFF -> listOf(Triple(friend, blue, true),
+                Triple(" " + Tr.t(if (b.t == NoticeModel.T_ON) "has come online" else "has gone offline"), grey, false))
+            NoticeModel.T_INVITE -> listOf(Triple(Tr.t("New friend request"), blue, false))
+            NoticeModel.T_PENDING -> listOf(Triple(Tr.t("Friend requests: ${b.n}"), blue, false))
+            NoticeModel.T_BCAST -> if (b.text != null) listOf(Triple(friend, blue, true), Triple(": " + b.text, grey, true))
+                                   else listOf(Triple(friend, blue, true), Triple(" " + Tr.t("posted a broadcast"), grey, false))
+            else -> if (b.name != null) listOf(Triple(Tr.t("Community invite") + ": ", grey, false), Triple(b.name, blue, true))
+                    else listOf(Triple(Tr.t("Community invite"), blue, false))
+        }
         val tx = x0 + 78f * s; val room = rect.right - 8f * s - tx
-        val name = who ?: Tr.t("A friend")
-        val tail = " " + Tr.t(if (online) "has come online" else "has gone offline")
-        val pn = bodyPaint(25f * s, Theme.battleNet).apply { this.alpha = a }
-        val pt = bodyPaint(25f * s, Theme.dim).apply { this.alpha = a }
-        while (pn.textSize > 19f * s && pn.measureText(name) + pt.measureText(tail) > room) { pn.textSize -= 1f; pt.textSize -= 1f }
-        // the name is never translated (a player's); it gives way to the words
-        val nameRoom = (room - pt.measureText(tail)).coerceAtLeast(room * 0.4f)
-        val shown = TextUtils.ellipsize(name, TextPaint(pn), nameRoom, TextUtils.TruncateAt.END).toString()
-        val base = y0 + 6f * s - pn.ascent()
-        c.drawText(shown, tx, base, pn)
-        val tx2 = tx + pn.measureText(shown)
-        c.drawText(TextUtils.ellipsize(tail, TextPaint(pt), (rect.right - 8f * s - tx2).coerceAtLeast(0f), TextUtils.TruncateAt.END).toString(),
-            tx2, base, pt)
+        val paints = parts.map { bodyPaint(25f * s, it.second).apply { this.alpha = a } }
+        fun total() = parts.indices.sumOf { paints[it].measureText(parts[it].first).toDouble() }.toFloat()
+        while (paints[0].textSize > 19f * s && total() > room) paints.forEach { it.textSize -= 1f }
+        val base = y0 + 6f * s - paints[0].ascent()
+        var x = tx
+        for ((i, part) in parts.withIndex()) {
+            val p = paints[i]
+            val rest = (i + 1 until parts.size).sumOf { paints[it].measureText(parts[it].first).toDouble() }.toFloat()
+            // a player's value gives way to the words after it, never under 40 % of the line; the last part takes what is left
+            val left = rect.right - 8f * s - x
+            val mine = if (i == parts.size - 1) left else if (part.third) (left - rest).coerceAtLeast(room * 0.4f) else left
+            val shown = TextUtils.ellipsize(part.first, TextPaint(p), mine.coerceAtLeast(0f), TextUtils.TruncateAt.END).toString()
+            c.drawText(shown, x, base, p)
+            x += p.measureText(shown)
+        }
         pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(a, 110, 90, 50)
         c.drawRect(rect.left + 6f * s, y0 + 44f * s, rect.right - 8f * s, y0 + 46f * s, pFlat)
         return 52f * s
