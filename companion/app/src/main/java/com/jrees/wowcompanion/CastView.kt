@@ -195,6 +195,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var swingKind = -1
     private var swingStartMs = Double.NaN
     private var swingDurMs = 0.0
+    /** sw-dual (the user, 2026-11-16: "Dual weilding needs split swing timers for each weapon"): the OFF hand's swing (hudS.so, sent
+     *  only while dual wielding; hudS.sw is then the main hand's) on the same clock, NaN = none; [offFlashAt] its own restart flash */
+    private var offStartMs = Double.NaN
+    private var offDurMs = 0.0
+    private var offFlashAt = 0L
     /** the cast bar: start / end on the app clock in ms (NaN = no cast), channel = drains instead of fills */
     private var castStartMs = Double.NaN
     private var castEndMs = 0.0
@@ -1245,6 +1250,15 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             // a NEW swing while the last one had filled: the restart flash (grey)
             if (!swingStartMs.isNaN() && ns > swingStartMs + 1.0) flash(FLASH_SWING)
             swingKind = ji(sw.opt("k"), 0); swingStartMs = ns; swingDurMs = jd(sw.opt("d")) * 1000.0
+        }
+        // sw-dual: the off hand's own swing (absent = one hand: one line, as before)
+        val so = o.optJSONObject("so")
+        val os = if (so != null) toApp(jd(so.opt("s"))) else Double.NaN
+        if (so == null || os.isNaN()) offStartMs = Double.NaN
+        else {
+            val ns = os * 1000.0
+            if (!offStartMs.isNaN() && ns > offStartMs + 1.0) offFlashAt = SystemClock.elapsedRealtime()
+            offStartMs = ns; offDurMs = jd(so.opt("d")) * 1000.0
         }
         // the cast bar (hudS.cs while a cast / channel runs; hudS.ce = how it ended, 2 s)
         val wasStart = castStartMs; val wasEnd = castEndMs; val wasFlash = flashAtMs
@@ -3234,6 +3248,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private fun drawSwingLine(c: Canvas, now: Long): Long {
         val g = CastBarPlace.bar(castTop, width.toFloat(), height.toFloat())
         curBh = g[3] - g[1]; curPlate = castTop
+        if (dualShown(now)) return drawDualLines(c, now, g)
         c.save(); c.translate(g[0], g[3] - height)
         val r = drawSwingLineIn(c, now, g[2] - g[0])
         c.restore()
@@ -3241,6 +3256,42 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
     private var curBh = 0f
     private var curPlate = false
+
+    /**
+     * sw-dual (the user, 2026-11-16: "Dual weilding needs split swing timers for each weapon"): while dual wielding (hudS.so) and no cast
+     * shows, the bar's own box holds TWO swing lines - the main hand's on top, the off hand's a thinner, slightly dimmer line right under
+     * it ([SwingLine.rows]), each its own fill, spark, wait and restart flash, the same art. The box itself is unchanged, so nothing new
+     * covers a button (CastBarPlace's rule) and Home's layout never moves when the off hand comes or goes. A cast takes the whole box as
+     * before (both lines wait under it).
+     */
+    private fun dualShown(now: Long): Boolean {
+        val predicted = castStartMs.isNaN() && predOn && CastPredict.alive(predPressAt, now)
+        val fa = now - flashAtMs
+        val castFx = predicted || ((flashKind == FLASH_CAST || flashKind == FLASH_FAIL) && fa >= 0 &&
+            fa < (if (flashKind == FLASH_FAIL) CastFx.FAIL_MS else CastFx.FINISH_MS))
+        return SwingLine.dual(swingOn && !castOnly && !roomPass && !into, now.toDouble(), castStartMs, castEndMs, castFx,
+            offStartMs, offDurMs, SWING_GRACE)
+    }
+    /** true for the length of the off hand's line: [drawCastBar] draws hudS.so's swing (and its own flash), never a cast */
+    private var offPass = false
+
+    private fun drawDualLines(c: Canvas, now: Long, g: FloatArray): Long {
+        val w = g[2] - g[0]
+        val r = SwingLine.rows(g[1], g[3], width / FRAME_W)
+        val full = curBh
+        curBh = r[1] - r[0]
+        c.save(); c.translate(g[0], r[1] - height)
+        var next = try { drawCastBar(c, now, w, Double.NaN, 0.0) } finally { c.restore() }
+        curBh = r[3] - r[2]
+        val save = c.save()
+        try {
+            c.translate(g[0], r[3] - height)
+            c.saveLayerAlpha(-8f, height - curBh - 8f, w + 8f, height + 8f, SwingLine.OFF_ALPHA)
+            offPass = true
+            next = min(next, drawCastBar(c, now, w, Double.NaN, 0.0))
+        } finally { offPass = false; c.restoreToCount(save); curBh = full }
+        return next
+    }
 
     // ---------------------------------------------------------------- bags-de1: THE CAST BAR, PAINTED INTO ANOTHER ROOM
     /**
@@ -3437,10 +3488,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val bh = curBh
         val y0 = barH() - bh; val y1 = barH()
         var next = Long.MAX_VALUE
-        val fa = now - flashAtMs
-        val flashLen = when (flashKind) { FLASH_SWING -> SWING_FLASH_MS; FLASH_FAIL -> CastFx.FAIL_MS; else -> CastFx.FINISH_MS }
-        val parts = SwingLine.parts(swingOn && !castOnly && !roomPass && !into, now.toDouble(), castStartMs, castEndMs, swingStartMs, swingDurMs, SWING_GRACE,
-            flashKind != 0, flashKind == FLASH_SWING, fa, flashLen)
+        // sw-dual: the off hand's pass reads hudS.so and its own restart flash only (no cast, no cast flash)
+        val fa = if (offPass) now - offFlashAt else now - flashAtMs
+        val fk = if (!offPass) flashKind else if (offFlashAt > 0L && fa >= 0 && fa < SWING_FLASH_MS) FLASH_SWING else 0
+        val flashLen = when (fk) { FLASH_SWING -> SWING_FLASH_MS; FLASH_FAIL -> CastFx.FAIL_MS; else -> CastFx.FINISH_MS }
+        val parts = SwingLine.parts(swingOn && !castOnly && !roomPass && !into, now.toDouble(), castStartMs, castEndMs,
+            if (offPass) offStartMs else swingStartMs, if (offPass) offDurMs else swingDurMs, SWING_GRACE,
+            fk != 0, fk == FLASH_SWING, fa, flashLen)
         val flashing = parts.flash
         val casting = parts.cast
         val swingP = parts.swing
@@ -3454,11 +3508,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val cy = (y0 + y1) / 2f
         val inset = u
         // a finish fades the WHOLE bar as the game's FadeOutAnim / HoldFadeOutAnim do; an interrupt shakes it (InterruptShakeAnim)
-        val finishing = flashing && !casting && swingP < 0 && flashKind != FLASH_SWING
-        val barA = if (finishing) CastFx.barAlpha(flashKind == FLASH_FAIL, fa) else 1f
+        val finishing = flashing && !casting && swingP < 0 && fk != FLASH_SWING
+        val barA = if (finishing) CastFx.barAlpha(fk == FLASH_FAIL, fa) else 1f
         val layered = barA < 1f
         if (layered) c.saveLayerAlpha(0f, y0 - 30f * u, w, y1, (barA * 255f).toInt())
-        val shook = finishing && flashKind == FLASH_FAIL
+        val shook = finishing && fk == FLASH_FAIL
         if (shook) { val sh = CastFx.shake(fa); c.save(); c.translate(sh[0] * u, -sh[1] * u) }
         // the user (test42): "Is there any way that we could make the sides of the cast bar more rounded?": the whole bar - groove, fill,
         // spark, glows, the game's border - is cut to a pill (its ends a half-circle of the bar's own height), the art kit's pieces as before
@@ -3516,7 +3570,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             next = SWING_FRAME_MS
         }
         if (flashing) {
-            when (flashKind) {
+            when (fk) {
                 FLASH_CAST -> {
                     val ch = finishChannel
                     // the bar's FULL texture, then the Flash (the full glow, ADD) in over 0.2 s (FlashAnim)
@@ -4489,6 +4543,32 @@ internal object SwingLine {
         val wake = if (!cast && swingOn && swing < 0 && !swingStart.isNaN() && swingDur > 0.0 && now < swingStart)
             (swingStart - now).toLong().coerceAtLeast(1L) else Long.MAX_VALUE
         return Parts(cast, swing, flash, wake)
+    }
+
+    /** sw-dual: the off hand's line, a little dimmer than the main hand's (0..255) */
+    const val OFF_ALPHA = 200
+    /** sw-dual: the off hand's share of the box (after the gap) and the gap between the two lines, frame px */
+    const val OFF_SHARE = 0.4f
+    const val DUAL_GAP = 2f
+
+    /**
+     * sw-dual (the user, 2026-11-16: "Dual weilding needs split swing timers for each weapon"): two lines while an off-hand swing
+     * (hudS.so) is known and not long over, the swing line is on ([swingOn]) and no cast, its prediction or its finish / interrupt
+     * ([castFx]) shows; otherwise today's one line.
+     */
+    fun dual(swingOn: Boolean, now: Double, castStart: Double, castEnd: Double, castFx: Boolean, offStart: Double, offDur: Double,
+             grace: Double): Boolean {
+        if (!swingOn || castFx) return false
+        if (!castStart.isNaN() && now < castEnd + 100.0 && castEnd > castStart) return false
+        if (offStart.isNaN() || offDur <= 0.0) return false
+        return (now - offStart) / offDur <= 1.0 + grace
+    }
+
+    /** sw-dual: the bar's box [top]..[bottom] split in two: (main top, main bottom, off top, off bottom); [s] = view px per frame px */
+    fun rows(top: Float, bottom: Float, s: Float): FloatArray {
+        val gap = DUAL_GAP * s
+        val off = (bottom - top - gap) * OFF_SHARE
+        return floatArrayOf(top, bottom - off - gap, bottom - off, bottom)
     }
 }
 

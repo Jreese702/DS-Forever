@@ -2,6 +2,11 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar5 SPLIT SWING TIMERS (the user, 2026-11-16: "Dual weilding needs split swing timers for each weapon"): with a weapon in the off
+-- hand (UnitAttackSpeed's 2nd return, the game's own HasOffHandWeapon) hudS.sw is the MAIN hand's swing and hudS.so the OFF hand's,
+-- each from its own PLAYER_SWING (type 0 / 1); one hand = one swing as before; Auto Shot unchanged. A haste change (UNIT_ATTACK_SPEED)
+-- rescales a running swing; a hand swapped mid-fight (WEAPON_SLOT_CHANGED / PLAYER_EQUIPMENT_CHANGED 16 / 17) restarts its swing at
+-- the weapon now held, an off hand left with no weapon drops its swing. Plain reads only. At "SWING-BEGIN".
 -- nbar4 THE 11-16 TEST BUILD MERGE: the macro-GCD nbar3 (PadMap m165) and feat/big-layout's nbar3 (the bar in the layout editor) both kept.
 -- nbar3 (PadMap m165; the user, 2026-11-16: "when using show tooltip on a macro it doesn't actually show the GCD when using it"): a
 -- player's macro on the In combat layer is drawn as the spell it would cast now (its picture, its cooldown / GCD sweep by that spell's
@@ -1712,28 +1717,99 @@ local function barsUsable()
     return nil
 end
 
+-- SWING-BEGIN (nbar5; tools/test_swing_dual.py runs this block on its own: it uses only WC's readers and the game's globals)
 -- The swing timer (user, 2026-09-29): PLAYER_SWING(duration, type 0 main / 1 off / 2 ranged) is Forever's
 -- own swing signal (Blizzard_SwingTimer uses it) and carries no secret flags. The last swing of each type
 -- is kept; hudS.sw names ONE: the most recent, Auto Shot (ranged) whenever it is running (user: one line).
 -- s = GetTime() the swing started (the app maps the game clock), d = its duration. s changes every swing,
 -- so each swing is one state doc, batched in the 0.5 s window like everything else.
-local swings = {}
+-- nbar5 SPLIT SWING TIMERS (the user, 2026-11-16: "Dual weilding needs split swing timers for each weapon"): with a weapon in the off
+-- hand, hudS.sw = the MAIN hand's swing (k 0) and hudS.so = the OFF hand's (k 1), each reset by its own PLAYER_SWING with its own
+-- length. The off hand counts as held when UnitAttackSpeed("player")'s 2nd return is over 0 (Blizzard_SwingTimer's HasOffHandWeapon);
+-- when that read is not plain, an off-hand swing still running (or just due) stands in. Auto Shot running = the one ranged line, as before.
+-- Haste: a running swing is rescaled when the weapon's speed changes (UNIT_ATTACK_SPEED; its share done kept, its length times
+-- new / old speed) - the game's own bar waits for the next swing; the next PLAYER_SWING carries the hasted length either way.
+-- A hand swapped mid-fight (WEAPON_SLOT_CHANGED, as Blizzard_SwingTimer's ResetSwingTimerForEquippedWeapon; PLAYER_EQUIPMENT_CHANGED on
+-- slot 16 / 17): its RUNNING swing starts again now at the weapon now held; an off hand with no weapon now drops its swing.
+do
+    local swings = {}            -- [0 main / 1 off / 2 ranged] = { s = start (GetTime), d = its length, sp = UnitAttackSpeed's then }
 
-local function pickSwing(now)
-    local r = swings[2]
-    if r and now < r.s + r.d + 0.3 then return 2, r end
-    local best, bk
-    for k, v in pairs(swings) do
-        if not best or v.s > best.s then best, bk = v, k end
+    -- UnitAttackSpeed("player")'s [n]th return (1 main, 2 off): a number; 0 = none (absent: no off-hand weapon); nil = not plain
+    local function speed(n)
+        local v = S(function() return (select(n, UnitAttackSpeed("player"))) end)
+        if type(v) == "number" then return v end
+        if v == WC.ABSENT then return 0 end
+        return nil
     end
-    return bk, best
-end
 
-local function noteSwing(dur, kind)
-    local d, k = SN(function() return tonumber(dur) end), SN(function() return tonumber(kind) end)
-    if not d or not k or d <= 0 then return end
-    swings[k] = { s = SN(GetTime) or 0, d = d }
+    -- a weapon in the off hand now (true / false)
+    local function offHeld(now)
+        local o = speed(2)
+        if o ~= nil then return o > 0 end
+        local r = swings[1]
+        return r ~= nil and now < r.s + 2 * r.d
+    end
+
+    local function pickSwing(now)
+        local r = swings[2]
+        if r and now < r.s + r.d + 0.3 then return 2, r end
+        local best, bk
+        for k, v in pairs(swings) do
+            if not best or v.s > best.s then best, bk = v, k end
+        end
+        return bk, best
+    end
+
+    function WC.swingNote(dur, kind)
+        local d, k = SN(function() return tonumber(dur) end), SN(function() return tonumber(kind) end)
+        if not d or not k or d <= 0 then return end
+        swings[k] = { s = SN(GetTime) or 0, d = d, sp = (k == 0 or k == 1) and speed(k + 1) or nil }
+    end
+
+    -- UNIT_ATTACK_SPEED (player): a running hand's swing follows its weapon's new speed
+    function WC.swingSpeed()
+        local now = SN(GetTime) or 0
+        for k = 0, 1 do
+            local r = swings[k]
+            local sp = speed(k + 1)
+            if r and r.sp and r.sp > 0 and sp and sp > 0 and math.abs(sp - r.sp) > 0.001 and now < r.s + r.d then
+                local f = (now - r.s) / r.d
+                local d = r.d * sp / r.sp
+                swings[k] = { s = now - f * d, d = d, sp = sp }
+            end
+        end
+    end
+
+    -- a weapon swapped (WEAPON_SLOT_CHANGED, or PLAYER_EQUIPMENT_CHANGED with [slot] 16 / 17; nil = both hands)
+    function WC.swingWeapons(slot)
+        local now = SN(GetTime) or 0
+        for k = 0, 1 do
+            local r = swings[k]
+            if r and (slot == nil or slot == 16 + k) then
+                local sp = speed(k + 1)
+                if k == 1 and sp == 0 then swings[1] = nil
+                elseif sp and sp > 0 and now < r.s + r.d then swings[k] = { s = now, d = sp, sp = sp } end
+            end
+        end
+    end
+
+    local function pack(k, r)
+        return { k = k, s = math.floor(r.s * 1000 + 0.5) / 1000, d = math.floor(r.d * 100 + 0.5) / 100 }
+    end
+
+    -- hudS.sw, hudS.so (nil = none) at [now]
+    function WC.swingDoc(now)
+        local r, m, o = swings[2], swings[0], swings[1]
+        local ranged = r ~= nil and now < r.s + r.d + 0.3
+        if not ranged and (m or o) and offHeld(now) then
+            return m and pack(0, m) or nil, o and pack(1, o) or nil
+        end
+        local k, v = pickSwing(now)
+        if not v then return nil end
+        return pack(k, v), nil
+    end
 end
+-- SWING-END
 
 -- The cast bar (user 2026-09-30, LATER item 21): the player's own cast / channel, for the app's one bottom bar
 -- (grey = swing, gold = cast). UnitCastingInfo / UnitChannelInfo are secret only for units that are NOT the
@@ -1860,8 +1936,7 @@ local function buildState()
         st.ce = { x = castEnd.x, t = math.floor(castEnd.t * 1000 + 0.5) / 1000, h = castEnd.h }
     end
     if combat then
-        local sk, sv = pickSwing(SN(GetTime) or 0)
-        if sv then st.sw = { k = sk, s = math.floor(sv.s * 1000 + 0.5) / 1000, d = math.floor(sv.d * 100 + 0.5) / 100 } end
+        st.sw, st.so = WC.swingDoc(SN(GetTime) or 0)          -- nbar5: so = the off hand's swing while dual wielding
     end
     local bu = barsUsable()
     if bu ~= nil then st.bu = bit01(bu) end   -- 0 = a window owns the pad: draw collapsed, base layer only
@@ -2117,7 +2192,7 @@ end
 -- and pcall'd; without them (or refused) the button is dimmed while its NeverSecret isActive says it cools (no sweep). The route that
 -- worked rides one "cap" line (probe "nbarcd") out of a fight and one in a fight per login. A secret is never compared or computed.
 ---------------------------------------------------------------------------------------------------
-local NB = { V = "nbar4", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
+local NB = { V = "nbar5", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
              -- the button a position is, by the game's binding (bar.actionButtons order: D-pad L / U / R / D, face left / top / right / bottom)
@@ -2853,6 +2928,7 @@ local STATE_EVENTS = {
     "ACTION_RANGE_CHECK_UPDATE", "PLAYER_TARGET_CHANGED",
     "PLAYER_ENTER_COMBAT", "PLAYER_LEAVE_COMBAT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
     "BAG_UPDATE_DELAYED", "START_AUTOREPEAT_SPELL", "STOP_AUTOREPEAT_SPELL", "UPDATE_MACROS", "PLAYER_SWING",
+    "WEAPON_SLOT_CHANGED", "PLAYER_EQUIPMENT_CHANGED",                 -- nbar5: a hand swapped mid-fight
     -- b-combat-bar-states: a spell waiting for its target (selected for casting) and the In-combat spells' usable / mana
     "CURRENT_SPELL_CAST_CHANGED", "SPELL_UPDATE_USABLE",
 }
@@ -2887,6 +2963,10 @@ for _, e in ipairs(STATE_EVENTS) do IS_STATE[e] = true; reg(e) end
 for _, e in ipairs(LAYOUT_EVENTS) do IS_LAYOUT[e] = true; reg(e) end
 for _, e in ipairs(FACE_EVENTS) do IS_FACE[e] = true; reg(e) end
 for _, e in ipairs(OTHER_EVENTS) do reg(e) end
+do                                                  -- nbar5: the player's weapon speed (haste) for the swing lines
+    local ok, r = pcall(function() return ev:RegisterUnitEvent("UNIT_ATTACK_SPEED", "player") end)
+    if not ok or r == false then reg("UNIT_ATTACK_SPEED") end
+end
 for _, e in ipairs(UNIT_EVENTS) do
     IS_UNIT[e] = true
     local ok, r = pcall(function() return ev:RegisterUnitEvent(e, "player") end)
@@ -2972,8 +3052,16 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
         autoRepeat = false
         requestState()
     elseif event == "PLAYER_SWING" then
-        noteSwing(a1, a2)
+        WC.swingNote(a1, a2)
         requestState()
+    elseif event == "UNIT_ATTACK_SPEED" then            -- nbar5: a haste change rescales a running swing
+        if SV(a1) == "player" then WC.swingSpeed(); requestState() end
+    elseif event == "WEAPON_SLOT_CHANGED" then          -- nbar5: a hand swapped mid-fight
+        WC.swingWeapons(nil)
+        requestState()
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+        local slot = SN(function() return tonumber(a1) end)
+        if slot == 16 or slot == 17 then WC.swingWeapons(slot); requestState() end
     elseif event == "PLAYER_ENTER_COMBAT" then
         autoAttack = true
         requestState()
