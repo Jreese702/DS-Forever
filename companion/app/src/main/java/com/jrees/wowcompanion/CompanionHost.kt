@@ -2643,6 +2643,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (back.isNotEmpty()) restoreWatches(back)
                 }
             }
+            // Quests q63: a reward item's tooltip lines (kept by item id; a replayed one too - it is only words to show)
+            "qrtip" -> questsView.onRewardTip(msg)
             // the generic controller guests (Quests.lua q6, LATER item 5): each room's presses (CURRENT only, the room shown) and answers
             "guestpad" -> if (current) {
                 val id = msg.optString("id")

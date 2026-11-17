@@ -2281,9 +2281,10 @@ class HomeView(
             val q = homeCard()
             val folded = HomeSettings.questMin &&
                 h <= UiKit.questCardHeight(q, UiKit.CARD_HOME_SCALE, collapsed = true) + 0.5f
+            // q63: the compact reward line on the card's last line, where its words leave room (UiKit.questCard rewardLine)
             if (!cardHidden) UiKit.questCard(c, RectF(0f, 0f, w, h), q, scale = UiKit.CARD_HOME_SCALE,
                 bgAlpha = if (cardOverMap()) lerp(UiKit.CARD_OVER_MAP_ALPHA.toFloat(), 255f, plate).toInt() else 255,
-                collapsed = folded)
+                collapsed = folded, rewardLine = true)
             val n = noteText
             if (n != null && System.currentTimeMillis() < noteUntil) {
                 val p = UiKit.bodyPaint(24f, Theme.warn)
