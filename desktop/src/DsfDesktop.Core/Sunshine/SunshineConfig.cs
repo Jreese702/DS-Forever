@@ -146,6 +146,10 @@ namespace DsfDesktop.Sunshine
     public static class PortPlanner
     {
         public static readonly int[] Candidates = { 52989, 53989, 54989, 55989, 56989 };
+        /// <summary>2026-11-17 (Windows reserved 53010 at boot: WSAEACCES): when the whole candidate list is taken or excluded, bases below
+        /// Windows' dynamic range 49152-65535 (where Hyper-V / WinNAT reserve their blocks), clear of the stock block and the bridge's
+        /// 48210-48219</summary>
+        public static readonly int[] Fallbacks = { 46989, 45989, 44989, 43989, 42989, 41989 };
         public static readonly int[] TcpOffsets = { -5, 0, 1, 21 };
         public static readonly int[] UdpOffsets = { 9, 10, 11 };
         /// <summary>the stock GameStream block (base 47989: TCP 47984-48010, UDP 47998-48000)</summary>
@@ -158,14 +162,19 @@ namespace DsfDesktop.Sunshine
         /// <summary>a saved base in the stock block (Desktop 0.2.30 and older could save 47989) is dropped: 0 = none</summary>
         public static int Migrate(int saved) => InStockBlock(saved) ? 0 : saved;
 
-        public static int Pick(int sticky, Func<int, bool> tcpFree, Func<int, bool> udpFree)
+        /// <summary>[excluded] = a port inside Windows' excluded ranges (null = none known); [avoid] = a base not to pick again (the
+        /// one that just failed; 0 = none). The whole set must be free and not excluded.</summary>
+        public static int Pick(int sticky, Func<int, bool> tcpFree, Func<int, bool> udpFree, Func<int, bool> tcpExcluded = null,
+                               Func<int, bool> udpExcluded = null, int avoid = 0)
         {
             sticky = Migrate(sticky);
+            if (sticky == avoid) sticky = 0;
             var order = new List<int>();
             if (sticky > 0) order.Add(sticky);
-            order.AddRange(Candidates.Where(c => c != sticky));
+            order.AddRange(Candidates.Concat(Fallbacks).Where(c => c != sticky && c != avoid));
             foreach (var b in order)
-                if (TcpOffsets.All(o => tcpFree(b + o)) && UdpOffsets.All(o => udpFree(b + o))) return b;
+                if (!InStockBlock(b) && TcpOffsets.All(o => tcpFree(b + o) && !(tcpExcluded?.Invoke(b + o) ?? false))
+                    && UdpOffsets.All(o => udpFree(b + o) && !(udpExcluded?.Invoke(b + o) ?? false))) return b;
             return -1;
         }
 

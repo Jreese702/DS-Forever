@@ -48,8 +48,9 @@ namespace DsfDesktop.App
         public PortReport Ports { get; private set; }
         /// <summary>what is wrong with streaming on this PC, for the window and the Thor (null = nothing): the port check, or our
         /// sunshine.exe exiting on its own</summary>
-        public string HostProblem => Sunshine != null && Sunshine.Exited ? "exited" : Ports?.Problem ?? ScreenProblem;
+        public string HostProblem => Sunshine != null && Sunshine.Exited ? "exited" : HealProblem ?? Ports?.Problem ?? ScreenProblem;
         public string HostWhy => Sunshine != null && Sunshine.Exited ? "pc busy: the streaming host stopped"
+            : HealProblem == ProblemNotResponding ? WhyNotResponding : HealProblem == ProblemRestarting ? WhyRestarting
             : Ports?.Problem != null ? Ports.ThorWhy : ScreenProblem == ScreenPlan.ProblemNeedsScreen ? ScreenPlan.ThorNeedsScreen
             : ScreenProblem == ScreenPlan.ProblemNoScreen ? ScreenPlan.ThorNoScreen : "";
 
@@ -304,7 +305,10 @@ namespace DsfDesktop.App
             CheckPorts("before start");
             LogNeighbours();
             Log.I("sunshine: state file: " + SunshineDiag.StateSummaryOfFile(SunshineLayout.State));
-            int port = PortPlanner.Pick(Settings.SunshinePort, PortPlanner.TcpFree, PortPlanner.UdpFree);
+            // Windows' excluded ranges too (2026-11-17: 53010 reserved at boot, WSAEACCES): a base with a reserved port is skipped
+            var excl = HostHealth.ExcludedNow(0);
+            if (excl.tcp.Count + excl.udp.Count > 0) Log.I("sunshine: Windows' excluded ports: tcp " + string.Join(" ", excl.tcp) + "; udp " + string.Join(" ", excl.udp));
+            int port = PortPlanner.Pick(Settings.SunshinePort, PortPlanner.TcpFree, PortPlanner.UdpFree, p => excl.tcp.Any(r => r.Has(p)), p => excl.udp.Any(r => r.Has(p)));
             if (port < 0) { Log.I("sunshine: no free port set"); CheckPorts("no free port set"); return; }
             if (sticky > 0 && port != sticky) Log.I("sunshine: port " + sticky + " was busy, moving to " + port + " (a paired Thor learns it from the bridge)");
             if (port != Settings.SunshinePort) { Settings.SunshinePort = port; SaveSettings(); }
@@ -363,6 +367,124 @@ namespace DsfDesktop.App
                 Fire();
             }
             catch (Exception e) { Log.I("sunshine: port check: " + e.Message); }
+        }
+
+        // ---------------------------------------------------------------- self-healing (HostHealth, HostHealer)
+
+        public const string ProblemRestarting = "restarting", ProblemNotResponding = "not_responding";
+        public const string WhyRestarting = "PC streaming host restarting", WhyNotResponding = "PC streaming host not responding";
+        readonly HostHealer healer = new HostHealer();
+        readonly object healGate = new object();
+        /// <summary>the last whole-set check (null = not yet)</summary>
+        public HealthReport Health { get; private set; }
+        string lastHealthKey;
+
+        /// <summary>"restarting" while a heal runs on a broken set, "not_responding" once its tries are spent; null = fine</summary>
+        public string HealProblem => healer.GaveUp ? ProblemNotResponding : healer.Healing && Health != null && !Health.Healthy ? ProblemRestarting : null;
+        /// <summary>the window's lines for it</summary>
+        public string HealLine => healer.GaveUp ? "The streaming host isn't answering on port " + string.Join(", ", MissingPorts())
+            : "Restarting the streaming host (" + healer.Tries + "/" + HostHealer.MaxTries + ")";
+        public string HealHint => healer.GaveUp ? "Restart DS Forever Desktop. If it stays, restart the PC."
+            : "Port " + string.Join(", ", MissingPorts()) + " wasn't open.";
+
+        IEnumerable<int> MissingPorts()
+        {
+            var h = Health;
+            return h == null ? new int[0] : h.Missing.Concat(h.Blocked).Concat(h.Excluded).Concat(h.BindErrors.Select(b => b.Port)).Distinct().OrderBy(p => p);
+        }
+
+        /// <summary>
+        /// Our sunshine.exe on ALL its ports (the user's PC 2026-11-17: RTSP refused at boot, HTTP up, "clear" for ever): HostHealth's
+        /// check, then HostHealer's step - a restart while no stream is live, or a new base for reserved / taken ports, then the report.
+        /// Never touches another program. [rtsp] = also connect to RTSP; [wait] = wait for a check already running (the Thor's ask).
+        /// </summary>
+        void HealthTick(bool rtsp, bool wait = false)
+        {
+            if (wait) Monitor.Enter(healGate);
+            else if (!Monitor.TryEnter(healGate)) return;
+            try
+            {
+                var sh = Sunshine;
+                if (sh == null || !sh.Available || SunshinePort <= 0 || !sh.Running) return;
+                bool settled = DateTime.UtcNow - sh.StartedUtc > TimeSpan.FromSeconds(4);
+                bool streaming = Stream == StreamState.Streaming;
+                var x = HostHealth.ExcludedNow(healer.Healing ? 10 : 300);
+                bool? rtspOk = rtsp && settled && !streaming ? HostHealth.Connects(SunshinePort + HostHealth.RtspOffset) : (bool?)null;
+                var h = HostHealth.Check(SunshinePort, sh.Pid, SunshineLayout.ExeDir, PortGuard.TcpListeners(), PortGuard.UdpBound(), rtspOk,
+                    x.tcp, x.udp, HostHealth.ReadLog(SunshineLayout.LogFile), sh.StartedUtc.ToLocalTime(), PortGuard.Who);
+                Health = h;
+                var key = h.Healthy + "|" + h.Detail;
+                if (key != lastHealthKey) { lastHealthKey = key; Log.I("sunshine: health " + (h.Healthy ? "ok" : "PROBLEM") + ": " + h.Detail); }
+                var step = healer.Tick(DateTime.UtcNow, h, streaming, settled);
+                switch (step)
+                {
+                    case HealStep.Restart:
+                        Log.I("sunshine: heal " + healer.Tries + "/" + HostHealer.MaxTries + ": restarting ours (missing " + string.Join(", ", MissingPorts()) + ")");
+                        RestartSunshine();
+                        break;
+                    case HealStep.Move:
+                        if (!MoveBase(h)) RestartSunshine();
+                        break;
+                    case HealStep.GiveUp:
+                        Log.I("sunshine: heal: " + HostHealer.MaxTries + " tries and still missing " + string.Join(", ", MissingPorts()) + ": reported");
+                        Bridge?.Publish(HostResult("failed"));
+                        break;
+                    case HealStep.Healed:
+                        Log.I("sunshine: heal: every port is open again (base " + SunshinePort + ")");
+                        Bridge?.Publish(HostResult("ok"));
+                        break;
+                }
+                if (step != HealStep.None) Fire();
+                CheckPorts(null);
+            }
+            catch (Exception e) { Log.I("sunshine: health check: " + e.Message); }
+            finally { Monitor.Exit(healGate); }
+        }
+
+        Dictionary<string, object> HostResult(string state) =>
+            new Dictionary<string, object> { ["t"] = "host_check_result", ["state"] = state, ["sunshine"] = SunshineInfo() };
+
+        /// <summary>a new base whose whole set is free, outside Windows' excluded ranges and never the stock block; saved, and the Thor
+        /// told (the "sunshine" message; the welcome and mDNS carry it too). false = none found</summary>
+        bool MoveBase(HealthReport h)
+        {
+            var x = HostHealth.ExcludedNow(0);
+            int from = SunshinePort;
+            int nb = PortPlanner.Pick(0, PortPlanner.TcpFree, PortPlanner.UdpFree, p => x.tcp.Any(r => r.Has(p)), p => x.udp.Any(r => r.Has(p)), avoid: from);
+            if (nb < 0) { Log.I("sunshine: heal: no other free port set; restarting on " + from); return false; }
+            var why = h.Excluded.Count > 0 ? "excluded by Windows: " + string.Join(", ", h.Excluded)
+                : h.Taken.Count + h.Blocked.Count > 0 ? "held by another program: " + string.Join(", ", h.Taken.Concat(h.Blocked))
+                : "bind refused (WSAEACCES)";
+            Log.I("sunshine: heal " + healer.Tries + "/" + HostHealer.MaxTries + ": moving from base " + from + " to " + nb + " (" + why + ")");
+            Sunshine.Stop();
+            SunshinePort = nb;
+            Settings.SunshinePort = nb;
+            SaveSettings();
+            var old = api;
+            api = new SunshineApi(nb, Settings.SunshineUser, Pass, SunshineLayout.Cert);
+            try { old?.Dispose(); } catch (Exception) { }
+            WriteSunshineConfig();
+            Sunshine.Start();
+            displaysRead = null;
+            Bridge?.Publish(new Dictionary<string, object> { ["t"] = "sunshine", ["sunshine"] = SunshineInfo() });
+            return true;
+        }
+
+        /// <summary>
+        /// The Thor's "host_check" (its RTSP timed out twice while HTTP answered): the check at once and, when something is missing and
+        /// no stream is live, the first heal step now. "ok" = every port is open (the Thor retries), "restarting" = a host_check_result
+        /// follows ("ok" / "failed"), "failed" = nothing left to try, "streaming" = a stream is live (nothing touched).
+        /// </summary>
+        public Dictionary<string, object> HostCheck()
+        {
+            Log.I("bridge: the Thor asks for a streaming host check");
+            if (Sunshine == null || !Sunshine.Available || SunshinePort <= 0) return HostResult("failed");
+            if (Stream == StreamState.Streaming) return HostResult("streaming");
+            lock (healGate) healer.Force(DateTime.UtcNow);
+            HealthTick(true, wait: true);
+            var state = healer.GaveUp ? "failed" : healer.Healing ? "restarting" : "ok";
+            Log.I("sunshine: host check for the Thor: " + state);
+            return HostResult(state);
         }
 
         // no prep command: the portable Sunshine can't start ours (error 5, tracking 252f5ec7); the Thor's bridge "focus" covers it
@@ -799,6 +921,13 @@ namespace DsfDesktop.App
             {
                 // the streaming ports: 5 s after the start (ours has bound by then), then every 15 s
                 if (tickN == 5 || tickN % 15 == 0) CheckPorts(null);
+                // the whole port set (HostHealth): 6 s after the start, then every 15 s; every 2 s while a heal runs. RTSP is
+                // connected to once a minute when fine (each connect is a line in its log), at every look while healing
+                if (tickN == 6 || tickN % 15 == 0 || (healer.Healing && tickN % 2 == 0))
+                {
+                    bool rtsp = tickN % 60 == 0 || healer.Healing || tickN == 6;
+                    Task.Run(() => HealthTick(rtsp));
+                }
                 if (tickN++ % 2 == 0)
                 {
                     if (SunshinePort > 0 && Sunshine != null && Sunshine.Running)
@@ -1372,6 +1501,20 @@ namespace DsfDesktop.App
 
         public static string Version => typeof(AppController).Assembly.GetName().Version.ToString(3);
 
+        /// <summary>the welcome's / "sunshine" message's / host_check_result's "sunshine" object</summary>
+        Dictionary<string, object> SunshineInfo() => new Dictionary<string, object>
+        {
+            ["running"] = Sunshine?.Running ?? false,
+            ["http_port"] = SunshinePort,
+            ["https_port"] = SunshinePort > 0 ? SunshinePort - 5 : -1,
+            ["app_name"] = "WoW Forever",
+            ["uniqueid"] = SunshineId,
+            // why streaming can't work on this PC ("ports_taken" | "not_listening" | "exited" | "restarting" | "not_responding" |
+            // "needs_screen" | "no_screen"; "" = fine) and the Thor's line for it; an older Thor ignores both
+            ["problem"] = HostProblem ?? "",
+            ["why"] = HostWhy,
+        };
+
         /// <summary>/v1/info and the welcome: no secrets</summary>
         /// <summary>the PC's up, non-loopback IPv4s on its own networks (Ethernet / Wi-Fi), Tailscale's CGNAT range left out</summary>
         public static List<object> LanAddresses()
@@ -1442,18 +1585,7 @@ namespace DsfDesktop.App
             ["lan"] = LanAddresses(),
             // and its Tailscale ones, for away from home (an older Thor ignores the field)
             ["tailscale"] = TailscaleAddresses(),
-            ["sunshine"] = new Dictionary<string, object>
-            {
-                ["running"] = Sunshine?.Running ?? false,
-                ["http_port"] = SunshinePort,
-                ["https_port"] = SunshinePort > 0 ? SunshinePort - 5 : -1,
-                ["app_name"] = "WoW Forever",
-                ["uniqueid"] = SunshineId,
-                // why streaming can't work on this PC ("other_sunshine" | "other_app" | "not_listening" | "exited"; "" = fine) and
-                // the Thor's line for it ("pc busy: another Sunshine"); an older Thor ignores both
-                ["problem"] = HostProblem ?? "",
-                ["why"] = HostWhy,
-            },
+            ["sunshine"] = SunshineInfo(),
             ["stream"] = StreamWord,
             // issue #54: whether Sunshine can make the Thor's controller pad (ViGEmBus): "vigem" / "missing" / "unknown" (an older Thor ignores it)
             ["pad_driver"] = PadDriver.Now(),

@@ -103,6 +103,10 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 
 - `{"t":"status","text":"..."}` — a line for the companion's status bar.
 - `{"t":"stream","state":"started"|"stopped"|"unknown"}` — Sunshine's own state.
+- `{"t":"sunshine","sunshine":{...}}` *(Desktop 0.2.32)* — the welcome's `sunshine` object again, sent when Desktop moved its
+  Sunshine to a new base port (Windows reserved one of its ports, or another program holds one). The Thor dials the new ports.
+- `{"t":"host_check_result","state":"ok"|"restarting"|"failed"|"streaming","sunshine":{...}}` *(Desktop 0.2.32)* — the answer to
+  `host_check`; after `restarting` a second one follows with `ok` (every port open again) or `failed` (3 tries spent).
 - `{"t":"focus_result","ok":bool,"why":"..."}` — the answer to `focus`.
 - **[S3] Starting WoW.** Desktop starts WoW Forever when a stream starts (Sunshine reports a client streaming) or the Thor sends
   `focus`, and WoW isn't running, unless the user turned off "Start WoW when streaming" (default on). It uses Battle.net's own launch
@@ -144,6 +148,10 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - `{"t":"unpair"}` → `{"t":"unpaired"}`, then close: the device is removed from Desktop.
 - `{"t":"stream_mode","w":1920,"h":1080,"fps":60}` *(Desktop 0.2.31)* — the Thor's stream mode, sent after each welcome. On a PC with
   no screen on, a virtual screen Desktop makes through an installed SudoVDA takes this mode. No answer.
+- `{"t":"host_check"}` *(Desktop 0.2.32)* — the Thor's RTSP timed out twice while HTTP answered: Desktop checks its Sunshine's whole
+  port set (TCP base-5 / base / base+21 listening by our sunshine.exe, RTSP answering a connect, the UDP base+9..11 free and outside
+  Windows' excluded ranges, no "Couldn't bind" in its log) and, when no stream is live, restarts it or moves it to a new base. Never
+  touches another Sunshine or Apollo. Answer: `host_check_result`.
 - `{"t":"addons_status"}` / `{"t":"addons_install"}` → `{"t":"addons",...}` (Desktop's add-on install; not used by the Thor yet).
 
 ## 8. What the Thor tells the player

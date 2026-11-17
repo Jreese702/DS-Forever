@@ -97,6 +97,13 @@ namespace DsfDesktop.Ui
                 v.HostHint = "It restarts by itself. If it keeps stopping, restart DS Forever Desktop.";
                 v.HostDot = Theme.Bad;
             }
+            else if (c.HealProblem != null)
+            {
+                // the self-healing (HostHealer): restarting ours, or its tries spent
+                v.Host = c.HealLine;
+                v.HostHint = c.HealHint;
+                v.HostDot = c.HealProblem == AppController.ProblemNotResponding ? Theme.Bad : Theme.Warn;
+            }
             else if (pr != null && pr.Problem != null)
             {
                 v.Host = pr.Line;

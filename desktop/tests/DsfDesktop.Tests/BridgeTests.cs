@@ -26,6 +26,12 @@ namespace DsfDesktop.Tests
         public string InputWhy = "";      // the Thor's taps can't reach WoW (WowInput.ThorWhy; "" = no wow.input_why)
         public volatile int[] Mode;       // the Thor's stream_mode
         public void StreamMode(int w, int h, int fps) { Mode = new[] { w, h, fps }; }
+        public int HostChecks;
+        public Dictionary<string, object> HostCheck()
+        {
+            HostChecks++;
+            return new Dictionary<string, object> { ["t"] = "ignored", ["state"] = "restarting", ["sunshine"] = new Dictionary<string, object> { ["http_port"] = 53989 } };
+        }
         public FakeHost() { Devices = new DeviceStore(T.P("devices.json")); }
         public Dictionary<string, object> Info()
         {
@@ -535,6 +541,23 @@ namespace DsfDesktop.Tests
                 c.Send(new Dictionary<string, object> { ["t"] = "ping", ["id"] = "m" });
                 c.Until("pong");
                 A.Eq("1920,1080,120", h.Mode == null ? "none" : string.Join(",", h.Mode));
+            }
+        }
+
+        [Test]
+        public static void TheThorsHostCheckIsAnswered()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8b", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "host_check" });
+                var r = c.Until("host_check_result").Last();
+                A.Eq(1, h.HostChecks);
+                A.Eq("restarting", r.Str("state"));
+                A.True(Json.Write(r).Contains("53989"), Json.Write(r));
             }
         }
 
