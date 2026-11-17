@@ -15,6 +15,8 @@
 "Encrypted zip": "Zip chiffré",
 "Has a link": "Contient un lien",
 "Bad path": "Chemin invalide",
+"Bad name": "Nom non valide",
+"Installed, but not on the Imported list": "Installés, mais absents de la liste des importés",
 "A name twice": "Un nom en double",
 "Twice in this pick": "En double dans cette sélection",
 "Nothing to install": "Rien à installer",

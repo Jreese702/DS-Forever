@@ -23,7 +23,10 @@ import java.util.zip.ZipFile
  *    folder (.., an absolute path, a drive letter), no symlink, no encrypted entry, no name twice, at most [MAX_ENTRIES] entries and
  *    [MAX_TOTAL] bytes unpacked, no entry squeezed more than [MAX_RATIO] times (a zip bomb);
  *  - the add-on folders in it are found ([layout]): a folder holding a .toc of its own name (or its name plus a flavour, "_Forever"),
- *    at any depth (a wrapper folder, a suite of several); a zip with only a loose .toc is one add-on named after it;
+ *    at any depth (a wrapper folder, a suite of several); a zip with only a loose .toc is one add-on named after it; every folder name
+ *    is one plain segment ([validFolder]: never "..", all dots, a separator) and lands right inside AddOns ([addonDir]);
+ *  - only the entries [scan] checked are unpacked ([sameFiles]: java.util.zip's file list must be the scanned one, name and size), one
+ *    [MAX_TOTAL] cap for the whole install;
  *  - one confirm card lists them (title, version, size, "Replaces yours", "Made for another game version" when the .toc's Interface is
  *    not [GAME_INTERFACE]: a warning, the game still loads it as out of date). DS Forever's own folders and the ones it manages are
  *    REFUSED ([protectedName]), never overwritten or removed;
@@ -67,8 +70,10 @@ object ImportedAddons {
             val tail = minOf(len, 22L + 65535L).toInt()
             val buf = ByteArray(tail)
             f.seek(len - tail); f.readFully(buf)
+            // the last end record whose comment runs exactly to the file's end (as java.util.zip reads it): a fake one inside a
+            // comment never shows a different directory than the one unpacked
             var eocd = -1
-            for (i in tail - 22 downTo 0) if (le32(buf, i) == 0x06054b50L) { eocd = i; break }
+            for (i in tail - 22 downTo 0) if (le32(buf, i) == 0x06054b50L && i + 22 + le16(buf, i + 20) == tail) { eocd = i; break }
             if (eocd < 0) throw Refused("Not a zip")
             val count = le16(buf, eocd + 10)
             val cdSize = le32(buf, eocd + 12)
@@ -163,6 +168,7 @@ object ImportedAddons {
         val tops = named.filter { d -> named.none { o -> o != d && d.startsWith("$o/") } }.sorted()
         if (tops.isNotEmpty()) return tops.map { d ->
             val folder = d.substringAfterLast('/')
+            if (!validFolder(folder)) throw Refused("Bad name")
             Spot(d, folder, byDir.getValue(d).filter { baseOf(stemOf(it)).equals(folder, true) })
         }
         val depth = byDir.keys.minOf { if (it.isEmpty()) 0 else it.count { c -> c == '/' } + 1 }
@@ -170,8 +176,25 @@ object ImportedAddons {
         if (shallow.size != 1) throw Refused("No add-on in this zip")
         val d = shallow.first()
         val names = byDir.getValue(d).map { baseOf(stemOf(it)) }.distinctBy { it.lowercase() }
-        if (names.size != 1 || names[0].isEmpty() || names[0] == "." ) throw Refused("No add-on in this zip")
+        if (names.size != 1 || names[0].isEmpty()) throw Refused("No add-on in this zip")
+        if (!validFolder(names[0])) throw Refused("Bad name")
         return listOf(Spot(d, names[0], byDir.getValue(d)))
+    }
+
+    private val BAD_CHARS = Regex("""[\\/:*?"<>|\x00-\x1F]""")
+    /**
+     * an AddOns folder name the app will make: one plain segment (no '/', '\', ':', NUL or other control character), not "." / ".."
+     * or all dots (a "...toc" stem is ".."), no leading dot, no dot or space at either end, at most 100 characters
+     */
+    internal fun validFolder(n: String): Boolean = n.isNotEmpty() && n.length <= 100 && !BAD_CHARS.containsMatchIn(n) &&
+        n.trim() == n && !n.startsWith('.') && !n.endsWith('.')
+
+    /** [folder] inside [addons], or [Refused]: a valid name whose canonical parent is AddOns itself */
+    internal fun addonDir(addons: File, folder: String): File {
+        if (!validFolder(folder)) throw Refused("Bad name")
+        val d = File(addons, folder)
+        if (d.canonicalFile.parentFile != addons.canonicalFile) throw Refused("Bad name")
+        return d
     }
 
     // ---------------------------------------------------------------- the .toc
@@ -248,6 +271,7 @@ object ImportedAddons {
         val entries = scan(zip)
         val spots = layout(entries)
         return ZipFile(zip).use { z ->
+            sameFiles(z, entries)
             val byName = z.entries().asSequence().associateBy { runCatching { safeName(it.name) }.getOrDefault("") }
             spots.map { s ->
                 val prefix = if (s.src.isEmpty()) "" else "${s.src}/"
@@ -257,9 +281,25 @@ object ImportedAddons {
                     ?: Toc(null, null, emptyList())
                 val refused = if (protectedName(s.folder)) "Kept: DS Forever's own" else null
                 Found(zip, s.src, s.folder, toc.title ?: s.folder, toc.version, files.sumOf { it.usize }, files.size,
-                    tocName.substringAfterLast('/'), toc.ifaceOk, addons != null && File(addons, s.folder).exists(), refused)
+                    tocName.substringAfterLast('/'), toc.ifaceOk, addons != null && addonDir(addons, s.folder).exists(), refused)
             }
         }
+    }
+
+    /**
+     * java.util.zip's files (what is unpacked) are exactly [scanned]'s (what every guard checked): the same names, the same sizes;
+     * else [Refused] - a zip with two directories never unpacks one that was not checked
+     */
+    internal fun sameFiles(z: ZipFile, scanned: List<Entry>) {
+        val want = scanned.filter { !it.dir }.associate { it.name to it.usize }
+        var n = 0
+        for (e in z.entries()) {
+            val name = runCatching { safeName(e.name) }.getOrElse { throw Refused("Bad path") }
+            if (name.isEmpty() || name.endsWith("/")) continue
+            n++
+            if (want[name] != e.size) throw Refused("Not a zip")
+        }
+        if (n != want.size) throw Refused("Not a zip")
     }
 
     private fun readCapped(i: InputStream, max: Int): String {
@@ -322,6 +362,7 @@ object ImportedAddons {
         for (f in take) if (protectedName(f.folder)) throw Refused("Kept: DS Forever's own")      // never, whatever the card said
         val iface = File(flavorRoot, "Interface")
         val addons = File(iface, "AddOns").apply { mkdirs() }
+        for (f in take) addonDir(addons, f.folder)                                   // never a name outside AddOns
         val need = take.sumOf { it.bytes } + ThirdPartyAddons.SPACE_MARGIN
         if (freeSpace(flavorRoot) < need) throw Refused("Needs ${ThirdPartyAddons.size(((need + 999_999) / 1_000_000).toInt())} free")
         ThirdPartyAddons.applyLock.lock()
@@ -330,7 +371,14 @@ object ImportedAddons {
             if (staging.exists()) staging.deleteRecursively()                       // our own leftover only
             staging.mkdirs()
             onStep("Unpacking")
-            for ((zip, group) in take.groupBy { it.zip }) ZipFile(zip).use { z -> for (f in group) unpackOne(z, f, File(staging, f.folder)) }
+            val total = longArrayOf(0L)                                              // one cap for the whole install
+            for ((zip, group) in take.groupBy { it.zip }) {
+                val scanned = scan(zip)                                              // checked again: only these entries come out
+                ZipFile(zip).use { z ->
+                    sameFiles(z, scanned)
+                    for (f in group) unpackOne(z, f, File(staging, f.folder), total)
+                }
+            }
             // verified: every folder there, its .toc readable, every file in
             for (f in take) {
                 val d = File(staging, f.folder)
@@ -343,7 +391,7 @@ object ImportedAddons {
             val done = ArrayList<Pair<File, File?>>()
             try {
                 for (f in take) {
-                    val target = File(addons, f.folder)
+                    val target = addonDir(addons, f.folder)
                     val old = if (target.exists()) ThirdPartyAddons.backup(iface, target, stamp) else null
                     done.add(target to old)
                     ThirdPartyAddons.moveDir(File(staging, f.folder), target, "the new ${f.folder} could not be moved in")
@@ -353,8 +401,9 @@ object ImportedAddons {
             val now = System.currentTimeMillis()
             for (f in take) j.put(f.folder, JSONObject().put("title", f.title).put("version", f.version ?: "").put("bytes", f.bytes)
                 .put("iface", f.ifaceOk).put("at", now))
-            runCatching { writeStore(j) }.onFailure { log("imported add-ons: the list could not be saved: ${it.message}") }
+            val listed = runCatching { writeStore(j) }.onFailure { log("imported add-ons: the list could not be saved: ${it.message}") }.isSuccess
             log("imported add-ons: ${take.joinToString { "${it.folder} ${it.version ?: ""}".trim() }} in")
+            if (!listed) return "Installed, but not on the Imported list"
             return if (gameRunning()) "Installed. /reload or restart the game to load them" else "Installed"
         } finally {
             staging.deleteRecursively()
@@ -364,12 +413,11 @@ object ImportedAddons {
     }
 
     /** [f]'s entries out of [z] into [to]: each one's path checked, its size as declared, its CRC */
-    private fun unpackOne(z: ZipFile, f: Found, to: File) {
+    private fun unpackOne(z: ZipFile, f: Found, to: File, total: LongArray) {
         to.mkdirs()
         val root = to.canonicalFile
         val prefix = if (f.src.isEmpty()) "" else "${f.src}/"
         val buf = ByteArray(65536)
-        var total = 0L
         for (e in z.entries().asSequence()) {
             val name = safeName(e.name)
             if (name.isEmpty() || !name.startsWith(prefix) || name == prefix) continue
@@ -383,8 +431,8 @@ object ImportedAddons {
             z.getInputStream(e).use { i -> out.outputStream().use { o ->
                 while (true) {
                     val r = i.read(buf); if (r < 0) break
-                    n += r; total += r
-                    if (n > e.size || total > MAX_TOTAL) throw Refused("Too big")
+                    n += r; total[0] += r
+                    if (n > e.size || total[0] > MAX_TOTAL) throw Refused("Too big")
                     crc.update(buf, 0, r); o.write(buf, 0, r)
                 }
             } }
@@ -402,7 +450,7 @@ object ImportedAddons {
         ThirdPartyAddons.applyLock.lock()
         try {
             val iface = File(flavorRoot, "Interface")
-            val target = File(iface, "AddOns/$folder")
+            val target = addonDir(File(iface, "AddOns"), folder)
             if (target.exists()) {
                 val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
                 ThirdPartyAddons.backup(iface, target, stamp)

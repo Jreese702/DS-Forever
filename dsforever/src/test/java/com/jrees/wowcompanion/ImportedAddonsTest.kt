@@ -136,6 +136,58 @@ class ImportedAddonsTest {
     @Test fun tocsOfTwoNamesLooseAreNoAddon() {
         refused("No add-on in this zip") { spots(zip("A.toc" to toc(), "B.toc" to toc())) }
     }
+    @Test fun aFolderNameOfDotsIsRefused() {
+        // "...toc" has the stem ".." (the Interface folder): never an add-on name, nothing written anywhere
+        File(addons, "WowCompanion").mkdirs(); File(addons, "WowCompanion/WowCompanion.toc").writeText("ours")
+        refused("Bad name") { spots(zip("...toc" to toc(), "a.lua" to "x")) }
+        refused("Bad name") { spots(zip("x/.._Forever.toc" to toc())) }
+        refused("Bad name") { spots(zip(".._Forever.toc" to toc())) }
+        refused("Bad name") { spots(zip("....toc" to toc())) }                          // stem "..."
+        refused("Bad name") { spots(zip("   .toc" to toc())) }                          // all spaces
+        refused("Bad name") { spots(zip("w/.../....toc" to toc())) }                    // a folder "..." holding its own .toc
+        refused("Bad name") { ImportedAddons.plan(zip("...toc" to toc()), addons) }
+        assertTrue(File(addons, "WowCompanion/WowCompanion.toc").isFile)
+        assertFalse(File(game, "Interface/${DependencyAddons.STAGING}").exists())
+        assertFalse(backups.exists())
+    }
+    @Test fun folderNames() {
+        for (n in listOf("Bagnon", "DBM-Core", "Bagnon_Config", "My Addon", "!BugGrabber", "Leatrix_Plus"))
+            assertTrue(n, ImportedAddons.validFolder(n))
+        for (n in listOf("", ".", "..", "...", " ", "a/b", "a\\b", "C:", "a\u0000", "a\n", ".hidden", "trail.", "trail ", " lead", "x".repeat(101)))
+            assertFalse(n, ImportedAddons.validFolder(n))
+        refused("Bad name") { ImportedAddons.addonDir(addons, "..") }
+        assertEquals(File(addons, "Bagnon"), ImportedAddons.addonDir(addons, "Bagnon"))
+        // a card made by hand with such a name: refused before anything moves
+        val plan = ImportedAddons.plan(zip("Bagnon/Bagnon.toc" to toc()), addons)
+        refused("Bad name") { ImportedAddons.installNow(plan.map { it.copy(folder = "..") }, game) }
+        assertFalse(File(addons, "Bagnon").exists())
+    }
+    @Test fun aFakeEndRecordInTheCommentIsSkipped() {
+        // a comment holding an end record (no entries) whose comment length does not run to the file's end: the real one is read
+        val f = File(tmp, "fake.zip")
+        val fake = "PK\u0005\u0006" + "\u0000".repeat(18) + "tail"
+        ZipOutputStream(f.outputStream()).use { z ->
+            z.setComment(fake)
+            for ((n, t) in listOf("A/A.toc" to toc(), "A/a.lua" to "x")) { z.putNextEntry(ZipEntry(n)); z.write(t.toByteArray()); z.closeEntry() }
+        }
+        assertEquals(listOf("A/A.toc", "A/a.lua"), ImportedAddons.scan(f).map { it.name })
+    }
+    @Test fun unpackedFilesMustBeTheScannedOnes() {
+        val z = zip("A/A.toc" to toc(), "A/a.lua" to "x")
+        val s = ImportedAddons.scan(z)
+        java.util.zip.ZipFile(z).use { zf ->
+            ImportedAddons.sameFiles(zf, s)
+            refused("Not a zip") { ImportedAddons.sameFiles(zf, s.filter { it.name != "A/a.lua" }) }
+            refused("Not a zip") { ImportedAddons.sameFiles(zf, s.map { if (it.name == "A/a.lua") it.copy(usize = 99) else it }) }
+            refused("Not a zip") { ImportedAddons.sameFiles(zf, s + ImportedAddons.Entry("A/b.lua", 1, 1, 0, 0)) }
+        }
+    }
+    @Test fun aListThatCannotBeSavedIsSaid() {
+        // the store's .part is a folder: the swap is done, the line says it is not on the list
+        File(tmp, "private").mkdirs(); File(tmp, "private/${ImportedAddons.STORE}.part").mkdirs()
+        assertEquals("Installed, but not on the Imported list", ImportedAddons.installNow(ImportedAddons.plan(zip("Q/Q.toc" to toc()), addons), game))
+        assertTrue(File(addons, "Q/Q.toc").isFile)
+    }
 
     // ---------------------------------------------------------------- the guards
     @Test fun pathsOut() {
