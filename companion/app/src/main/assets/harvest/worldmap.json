@@ -1,6 +1,8 @@
 {"about": "each uiMap with art: its world rect [continent, top, bottom, left, right] (tools/harvest/map_recipes.py)",
  "assign": {"947": [[0, 0.5505, 0.0994, 0.8966, 0.8691, -16000.0, -7466.7, 6933.3, 8000.0],
-                   [1, 0.0399, 0.0855, 0.4083, 0.9234, -12800.0, -9600.0, 12266.7, 6933.3]]},
+                   [1, 0.0399, 0.0855, 0.4083, 0.9234, -12800.0, -9600.0, 12266.7, 6933.3],
+                   [2991, 0.519, 0.08, 0.659, 0.22, 1247.917, -1331.25, 4956.25, 4231.25]]},
+ "assignIsle": "947's row for map 2991 = Zephras Isle (UiMap 2521, the Skyborne's island; parent 947, mapType 3): the client's UiMapAssignment has no row placing it on Azeroth (1.60.1.70938 local and the US CDN's 70959: rows 69208 / 69852 are on 2991 itself; UiMapLink is empty; GetMapRectOnMap(2521, 947) = 0,0,0,0), so its box is the islands painted at the world art's top middle (art 2141, ~x 550..630 / y 65..135 of 1002 x 668), sized so the island in its own 3:2 picture covers them; its region is 2521's own (row 69208), so its frame is its whole picture. The user, 2026-11-17: 'upper center is where they put it in the actual game map'.",
  "assignAbout": "the world map's per-continent UiMapAssignment rows (uiMap: [map, uiMin x, uiMin y, uiMax x, uiMax y, region min x, min y, max x, max y], world yards x north / y west), read on the PC client: the world view places each continent by its own region (b-world-zoom)",
  "rects": {
   "947": [1, 14824.5254, -19900.1797, 8723.958, -12087.4941],
