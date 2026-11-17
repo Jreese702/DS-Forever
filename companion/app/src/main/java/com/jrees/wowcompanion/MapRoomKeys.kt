@@ -119,8 +119,8 @@ object MapRoomKeys {
     /**
      * pm1 (the user, 2026-11-16: "The polestar option in the map room, I want x to open the polestar menu and y to open skip options to
      * go to the next or previous step"): a press [k] on the list's Polestar row. X opens the Polestar menu while it can show ([menu]: the
-     * Quests room's Polestar tab, as an overlay), Y the skip choice while a step is there to skip or a skip to undo ([skips]; pk1's X Skip
-     * and Y Previous moved into it), A does nothing (the row's "Choose your path" A is the view's), else nothing; every other key is the
+     * Quests room's Polestar tab, as an overlay), Y the skip choice while Polestar has a guide ([skips]; pm2: Next / Previous step, Polestar's
+     * own Engine.Next / Prev; pk1's X Skip and Y "Undo my last skip" live on as the menu's own X / Y), A does nothing (the row's "Choose your path" A is the view's), else nothing; every other key is the
      * list's as on any row
      */
     fun polestarKey(k: String, menu: Boolean, skips: Boolean): PsDo = when (k) {
@@ -130,12 +130,16 @@ object MapRoomKeys {
         else -> PsDo.PASS
     }
 
-    /** pm1: the skip choice's rows, in order: Next step (pk1's Skip: Polestar's Engine.Skip) and Previous step (pk1's "Undo my last skip") */
+    /** pm2: the skip choice's rows, in order: Next step / Previous step - Polestar's own Engine.Next / Engine.Prev (framed ops 24 / 25,
+     *  /polestar next / prev): one step forward / back, a look that skips nothing. Skip for good and "Undo my last skip" (pk1) stay in the
+     *  Polestar menu (X) */
     enum class PsSkip(val word: String) { NEXT(NEXT_WORD), PREV(PolestarSkip.PREV_WORD) }
     /** "Next step" (Tr: es / fr in i18n) */
     const val NEXT_WORD = "Next step"
-    /** the row can be pressed: Next while a step is there to skip ([canSkip]), Previous while a skip is left to undo ([canPrev]) */
-    fun psSkipOn(s: PsSkip, canSkip: Boolean, canPrev: Boolean): Boolean = if (s == PsSkip.NEXT) canSkip else canPrev
+    /** the row can be pressed, from Polestar's shown step [shown] of [count] (null / 0: not known, both can): Next before the last step,
+     *  Previous after the first */
+    fun psSkipOn(s: PsSkip, shown: Int?, count: Int): Boolean =
+        if (shown == null || count <= 0) true else if (s == PsSkip.NEXT) shown < count else shown > 1
 
     /** pm1: what a press does in the skip choice */
     sealed class SkipDo {

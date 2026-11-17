@@ -170,6 +170,19 @@ Polestar = {
             PIN[gd.id] = (i ~= computed()) and i or nil
             fire("STEP_CHANGED", current())
         end,
+        -- pg2: Core/Engine.lua's Next / Prev: one step forward / back, a look (the pin), never a skip saved or undone
+        Next = function()
+            call("Next")
+            local gd = g(); local c = current(); if not (gd and c) or c >= #gd.steps then return end
+            PIN[gd.id] = (c + 1 ~= computed()) and (c + 1) or nil
+            fire("STEP_CHANGED", current())
+        end,
+        Prev = function()
+            call("Prev")
+            local gd = g(); local c = current(); if not (gd and c) or c <= 1 then return end
+            PIN[gd.id] = (c - 1 ~= computed()) and (c - 1) or nil
+            fire("STEP_CHANGED", current())
+        end,
         Skip = function()
             call("Skip")
             local gd = g(); local s = current(); if not s then return nil end
@@ -304,7 +317,7 @@ def run():
     L.execute('tick(1)')
     d = last(L, "pguide", n0)
     chk("pguide (pg1) at the first second: the guide, its stamp, zone, levels, step 4 of 12, progress 3/12",
-        d is not None and d["v"] == "pg1" and d["have"] is True and d["gs"] == hstamp(ELW) and d["t"] == "Elwynn Forest"
+        d is not None and d["v"] == "pg2" and d["have"] is True and d["gs"] == hstamp(ELW) and d["t"] == "Elwynn Forest"
         and d["z"] == "Elwynn Forest" and d["zm"] == 1429 and d["lo"] == 1 and d["hi"] == 10 and d["s"] == 4 and d["l"] == 4
         and d["n"] == 12 and d["dn"] == 3 and d["tt"] == 12)
     chk("... closed: no statuses, no tabs, no list", "st" not in d and "tabs" not in d and not docs(L, n0, "pglist"))
@@ -353,6 +366,44 @@ def run():
     tap(L, *frame(16, gs))
     settle(L)
     chk("op 16 back (not skipped): Goto(the live step 4)", calls(L) == ["Goto(4)"] and L.eval('Polestar.Engine.GetStepIndex()') == 4)
+    # ---- pg2 / pm2 (the user, 2026-11-16: "y to open skip options to go to the next or previous step"): ops 24 / 25 = Polestar's own
+    # Engine.Next / Engine.Prev, a look that skips nothing
+    sk0 = L.eval('(function() local n = 0; for _, t in pairs(PSDB.skipped) do for _ in pairs(t) do n = n + 1 end end; return n end)()')
+    L.execute('CALLS = {}')
+    n0 = nsent(L)
+    tap(L, *frame(25, gs))
+    settle(L)
+    a = last(L, "pgop", n0)
+    d = last(L, "pguide", n0)
+    chk("op 25 previous step: Prev() only, ok, shown 3 (live still 4), the summary at once", calls(L) == ["Prev()"] and a["ok"] is True
+        and a["op"] == 25 and a["i"] == 3 and d is not None and d["s"] == 3 and d["l"] == 4)
+    L.execute('CALLS = {}')
+    n0 = nsent(L)
+    tap(L, *frame(24, gs))
+    tap(L, *frame(24, gs))
+    settle(L)
+    a = last(L, "pgop", n0)
+    chk("op 24 next step twice: Next() Next(), shown 5 (past the live 4), ok", calls(L) == ["Next()", "Next()"] and a["ok"] is True
+        and a["i"] == 5 and L.eval('Polestar.Engine.GetStepIndex()') == 5)
+    sk1 = L.eval('(function() local n = 0; for _, t in pairs(PSDB.skipped) do for _ in pairs(t) do n = n + 1 end end; return n end)()')
+    chk("... nothing skipped or un-skipped (%s -> %s), no Skip / Unskip / Goto" % (sk0, sk1), sk0 == sk1)
+    L.execute('Polestar.Engine.Goto(1); CALLS = {}')
+    n0 = nsent(L)
+    tap(L, *frame(25, gs))
+    settle(L)
+    a = last(L, "pgop", n0)
+    chk("op 25 on step 1: Prev() called, answered 'nothing' (the step did not move)", calls(L) == ["Prev()"] and a["ok"] is False
+        and a["why"] == "nothing")
+    L.execute('CALLS = {}')
+    tap(L, *frame(24, hstamp(WF)))
+    settle(L)
+    chk("op 24 stamped for another guide: nothing called", calls(L) == [])
+    L.execute('Polestar.Engine.Goto(4); COMBAT = true; CALLS = {}')
+    tap(L, *frame(24, gs))
+    settle(L)
+    chk("op 24 in a fight: Next() (a look, as Look)", calls(L) == ["Next()"])
+    L.execute('COMBAT = false; Polestar.Engine.Goto(4)')
+
     L.execute('Polestar.Engine.Goto(7); Polestar.Engine.Skip(); CALLS = {}')
     L.execute('PIN[ "%s" ] = 7' % ELW)
     n0 = nsent(L)
@@ -455,7 +506,7 @@ def run():
     ld = last(L, "pglist", 0)
     tabs = last(L, "pguide", n0)["tabs"]
     plan = [(15, gs, (0, 3)), (15, gs, (1, 1)), (16, gs, ()), (17, ld["ls"], (0, 3)), (18, tabs[1]["s"], (2,)), (20, hstamp(ELW), (1,)),
-            (21, gs, ()), (22, gs, (0, 7)), (23, gs, (0, 4, 1)), (23, gs, (0, 3, 3)), (19, gs, ()), (13, OPEN_FRESH, ()), (14, OPEN_FRESH, ()), (13, OPEN_KEEP, ())]
+            (21, gs, ()), (22, gs, (0, 7)), (24, gs, ()), (25, gs, ()), (23, gs, (0, 4, 1)), (23, gs, (0, 3, 3)), (19, gs, ()), (13, OPEN_FRESH, ()), (14, OPEN_FRESH, ()), (13, OPEN_KEEP, ())]
     bad = []
     for op, st, args in plan:
         f = frame(op, st, *args)

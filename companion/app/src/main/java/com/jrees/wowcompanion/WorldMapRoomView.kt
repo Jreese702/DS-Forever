@@ -2309,6 +2309,12 @@ class WorldMapRoomView(context: Context) : View(context) {
      * over it, both nine-sliced (9 px corners of their 32), 18 px in; each prompt its button(s), 44 px (two of one prompt with the
      * game's slash between, 4 px each side, 2 px up), 7 px, its words in the game's gold (27 px, a shadow); 27 px between prompts.
      */
+    /** a legend's width (as [drawLegend] lays it out) */
+    private fun legendW(prompts: List<Prompt>): Float {
+        val tp = legendP
+        return prompts.sumOf { p -> (p.glyphs.size * LEG_ICON + (p.glyphs.size - 1) * (LEG_SLASH_W + 8f) + LEG_TEXT_GAP + tp.measureText(p.text)).toDouble() }
+            .toFloat() + LEG_GAP * (prompts.size - 1) + 2f * LEG_PAD
+    }
     private fun drawLegend(c: Canvas, prompts: List<Prompt>, cx: Float, cy: Float) {
         if (prompts.isEmpty()) { legendBox.setEmpty(); return }
         val tp = legendP
@@ -2688,8 +2694,11 @@ class WorldMapRoomView(context: Context) : View(context) {
     // ---------------------------------------------------------------- pm1: the Polestar menu and the skip choice
     /** X can open the Polestar menu: the row is there and the menu can show (Polestar the tracker, answering) */
     private fun psMenuCan(): Boolean = psMenu?.shows() == true
-    /** Y can open the skip choice: a step to skip, or a skip to undo */
-    private fun psSkipsCan(): Boolean = runCatching { polestar() }.getOrNull()?.let { it.canSkip || it.canPrev } == true
+    /** Y can open the skip choice: Polestar has a guide (pm2: Next / Previous step are Polestar's own Engine.Next / Prev) */
+    private fun psSkipsCan(): Boolean = psMenu?.canStep() == true
+    /** Polestar's shown step and the guide's step count (the skip choice's dim rows) */
+    private fun psShown(): Pair<Int?, Int> = psMenu?.book?.guide.let { g -> g?.shown to (g?.count ?: 0) }
+    private fun psStepOn(s: MapRoomKeys.PsSkip): Boolean = psShown().let { (sh, n) -> MapRoomKeys.psSkipOn(s, sh, n) }
 
     /** X: the menu over the room, on the shown step (on "Choose your path": the path choice, as Home's row opens it), the add-on told */
     private fun openPsMenu() {
@@ -2723,9 +2732,9 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     /** Y: the skip choice under the row, on Next step (on Previous when only that can be pressed) */
     private fun openSkips() {
-        val ps = runCatching { polestar() }.getOrNull() ?: return
+        if (!psSkipsCan()) return
         optQuest = 0
-        skipSel = if (!ps.canSkip && ps.canPrev) 1 else 0
+        skipSel = if (!psStepOn(MapRoomKeys.PsSkip.NEXT) && psStepOn(MapRoomKeys.PsSkip.PREV)) 1 else 0
         skipOpen = true
     }
     private fun skipKey(k: String) {
@@ -2736,13 +2745,13 @@ class WorldMapRoomView(context: Context) : View(context) {
             MapRoomKeys.SkipDo.None -> {}
         }
     }
-    /** one row pressed: a dim one says why and the choice stays; else the one pnav press (Skip / Previous), and the choice closes */
+    /** one row pressed: a dim one says why; else Polestar's own Next / Previous step (pm2: framed op 24 / 25, a look that skips
+     *  nothing). The choice stays open, so A again walks on (B or Y closes it) */
     private fun runSkip(s: MapRoomKeys.PsSkip) {
-        val ps = runCatching { polestar() }.getOrNull() ?: run { skipOpen = false; return }
-        val prev = s == MapRoomKeys.PsSkip.PREV
-        if (!MapRoomKeys.psSkipOn(s, ps.canSkip, ps.canPrev)) { say(PolestarSkip.cantLine(prev, ps.canSkip)); return }
-        skipOpen = false
-        if (onPolestarSkip?.invoke(prev) != true) say(PolestarSkip.NO_STEP_LINE)
+        val m = psMenu?.takeIf { it.canStep() } ?: run { skipOpen = false; say(PolestarSkip.NO_STEP_LINE); return }
+        if (!psStepOn(s)) { say(PolestarTab.NOTHING_LINE); return }
+        if (m.shownIn == null) m.note = { say(it) }                  // (a refusal's line here, unless a room shows the menu)
+        if (!m.step(s == MapRoomKeys.PsSkip.NEXT)) say(PolestarSkip.NO_STEP_LINE)
     }
 
     /** the Polestar menu over the whole room: its header, the Quests room's pane under it, a refusal's line in the header */
@@ -2753,10 +2762,14 @@ class WorldMapRoomView(context: Context) : View(context) {
         pFill.color = Theme.ink; c.drawRect(0f, 0f, w, h, pFill)
         UiKit.header(c, w, PolestarTab.TAB, null, TOP)
         psPane.draw(c, w, h, TOP, PolestarPane.Frame(m.book, m.cur, m.rows(), m.picks(), m.fight(), held, psPressed, waiting = false))
+        // pm2 review: the way out shows in the header (B Back: a sub-view one step, the list back to the map)
+        val back = listOf(Prompt(listOf(glyph("b")), "Back"))
+        val lw = legendW(back)
+        drawLegend(c, back, w - 20f - lw / 2f, TOP / 2f)
         note?.takeIf { System.currentTimeMillis() - noteAt < 4000L }?.let { n ->
             val tp = UiKit.bodyPaint(22f, Theme.warn)
-            val t = ellipsize(tp, Tr.t(n), w * 0.5f)
-            c.drawText(t, w - 20f - tp.measureText(t), TOP * 0.62f, tp)
+            val t = ellipsize(tp, Tr.t(n), w * 0.5f - lw)
+            c.drawText(t, w - 40f - lw - tp.measureText(t), TOP * 0.62f, tp)
         }
         postInvalidateDelayed(500L)                          // the keep-alive and the resting step's goals tick with the draws
     }
@@ -2775,7 +2788,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         UiKit.menu(c, box, solid = true)
         for ((i, s) in rows.withIndex()) {
             val r = RectF(box.left + 8f, box.top + 8f + i * OPT_ROW, box.right - 8f, box.top + 8f + (i + 1) * OPT_ROW)
-            UiKit.menuRow(c, r, s.word, i == skipSel, enabled = MapRoomKeys.psSkipOn(s, ps.canSkip, ps.canPrev), size = 28f)
+            UiKit.menuRow(c, r, s.word, i == skipSel, enabled = psStepOn(s), size = 28f)
             skipHits.add(r to i)
         }
     }

@@ -116,12 +116,13 @@ class PolestarSkipTest {
     }
 
     @Test fun theMapRoomsSkipChoiceIsNextAndPrevious() {
-        // pm1: two rows, Next step (pk1's Skip) and Previous step (pk1's Undo my last skip)
+        // pm2: two rows, Next step / Previous step = Polestar's own Engine.Next / Engine.Prev (a look): dim only at the guide's ends
         assertEquals(listOf("Next step", "Previous step"), MapRoomKeys.PsSkip.values().map { it.word })
-        assertTrue(MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.NEXT, canSkip = true, canPrev = false))
-        assertFalse("nothing to undo: Previous dim", MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.PREV, canSkip = true, canPrev = false))
-        assertTrue(MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.PREV, canSkip = true, canPrev = true))
-        assertFalse(MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.NEXT, canSkip = false, canPrev = true))
+        assertTrue(MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.NEXT, shown = 4, count = 10))
+        assertTrue("no skip needed: Previous works on any later step", MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.PREV, shown = 4, count = 10))
+        assertFalse("step 1: Previous dim", MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.PREV, shown = 1, count = 10))
+        assertFalse("the last step: Next dim", MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.NEXT, shown = 10, count = 10))
+        assertTrue("not known: both", MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.PREV, shown = null, count = 0))
         // D-pad + A, B / Y close
         assertEquals(MapRoomKeys.SkipDo.Move(1), MapRoomKeys.psSkipKey("PADDDOWN", 0))
         assertEquals(MapRoomKeys.SkipDo.Move(1), MapRoomKeys.psSkipKey("PADDDOWN", 1))                 // the last row stays
@@ -131,7 +132,12 @@ class PolestarSkipTest {
         assertEquals(MapRoomKeys.SkipDo.Close, MapRoomKeys.psSkipKey("PAD2", 0))
         assertEquals(MapRoomKeys.SkipDo.Close, MapRoomKeys.psSkipKey("PAD4", 1))
         assertEquals(MapRoomKeys.SkipDo.None, MapRoomKeys.psSkipKey("PAD3", 0))
-        // the pnav columns stay pk1's: Next = 38 then 10, Previous = 38 then 11
+        // pg2: framed ops 24 / 25 with the guide's stamp, no args (444 = 12, 12; k = 24 + 12 + 12 mod 36)
+        assertEquals(listOf(38, 12, 24, 12, 12, 12), PolestarTab.frame(PolestarTab.NEXT, 444))
+        assertEquals(listOf(38, 12, 25, 12, 12, 13), PolestarTab.frame(PolestarTab.PREV, 444))
+        assertFalse("a look: never in a fight's refusals", PolestarTab.FIGHT.contains(PolestarTab.NEXT) || PolestarTab.FIGHT.contains(PolestarTab.PREV))
+        assertFalse("a step each: never re-sent unanswered", PolestarTab.AGAIN_UNANSWERED.contains(PolestarTab.NEXT))
+        // pk1's Skip for good / Undo my last skip keep their pnav columns (the Polestar menu's X / Y, Home's row, the wheel)
         assertEquals(listOf(38, 10), PolestarSkip.cols(prev = false))
         assertEquals(listOf(38, 11), PolestarSkip.cols(prev = true))
     }

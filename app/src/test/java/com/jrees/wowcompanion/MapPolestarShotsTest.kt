@@ -81,9 +81,9 @@ class MapPolestarShotsTest {
     }
     private val titles = listOf("Northshire Abbey", "Wolves Across the Border", "Kobold Camp Cleanup", "Investigate Echo Ridge",
         "Brotherhood of Thieves", "Milly Osworth", "Skirmish at Echo Ridge", "Report to Goldshire", "Lost Necklace", "The Fargodeep Mine")
-    private fun guide(u: Int) = JSONObject().put("type", "pguide").put("v", "pg1").put("have", true).put("gid", "forever/alliance/1-10/elwynn")
+    private fun guide(u: Int, s: Int = 4) = JSONObject().put("type", "pguide").put("v", "pg2").put("have", true).put("gid", "forever/alliance/1-10/elwynn")
         .put("gs", 444).put("t", "Elwynn Forest").put("z", "Elwynn Forest").put("zm", 1429).put("lo", 1).put("hi", 10).put("n", 10).put("dn", 3)
-        .put("tt", 10).put("sk", true).put("u", u).put("tb", true).put("s", 4).put("l", 4).put("st", "dddluuuuuu")
+        .put("tt", 10).put("sk", true).put("u", u).put("tb", true).put("s", s).put("l", 4).put("st", "dddluuuuuu")
     private fun steps() = JSONObject().put("type", "pgsteps").put("gs", 444).put("n", 10).put("o", 1).put("t", JSONArray(titles))
     private fun stepDoc(i: Int) = JSONObject().put("type", "pgstep").put("gs", 444).put("i", i).put("t", titles[i - 1])
         .put("nt", "Kobolds gather around the camp's fire")
@@ -126,13 +126,14 @@ class MapPolestarShotsTest {
     /** the presses the room sent (Skip = false, Previous = true) */
     private val skips = ArrayList<Boolean>()
 
-    /** the Map room on Elwynn Forest, its quest list out, a Polestar step on its top row; [canPrev] = a skip is left to undo */
-    private fun room(canPrev: Boolean = true, polestar: Boolean = true): Pair<WorldMapRoomView, QuestsView> {
+    /** the Map room on Elwynn Forest, its quest list out, a Polestar step on its top row; [canPrev] = a skip is left to undo, [shown] =
+     *  Polestar's shown step */
+    private fun room(canPrev: Boolean = true, polestar: Boolean = true, shown: Int = 4): Pair<WorldMapRoomView, QuestsView> {
         art()
         Settings.init(app)
         Settings.polestarGuide = PolestarGuide.ON
         val q = QuestsView(app, { null }, { })
-        for (d in listOf(guide(if (canPrev) 1 else 0), steps(), list(), stepDoc(4))) q.onPolestarDoc(d)
+        for (d in listOf(guide(if (canPrev) 1 else 0, shown), steps(), list(), stepDoc(shown))) q.onPolestarDoc(d)
         val act = Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
         val v = WorldMapRoomView(act)
         act.setContentView(v)
@@ -192,7 +193,7 @@ class MapPolestarShotsTest {
 
     @Test fun yOpensTheSkipChoiceNextAndPrevious() {
         lang("en")
-        val (v, _) = room()
+        val (v, q) = room(canPrev = false)                   // no skip to undo: Previous still goes back a step
         toRow(v)
         key(v, "PAD4")
         assertTrue("Y: the skip choice", field(v, "skipOpen"))
@@ -201,27 +202,31 @@ class MapPolestarShotsTest {
         key(v, "PADDDOWN")
         assertEquals(1, field<Int>(v, "skipSel"))
         shot(v, "07_skip_choice_previous")
+        // pm2 (verifier): Polestar's own Engine.Next / Engine.Prev (framed ops 24 / 25), never pk1's Skip / Undo
         key(v, "PAD1")
-        assertEquals("Previous step: pk1's undo", listOf(true), skips)
-        assertFalse(field(v, "skipOpen"))
-        key(v, "PAD4"); key(v, "PAD1")
-        assertEquals("Next step: pk1's skip", listOf(true, false), skips)
-        key(v, "PAD4"); key(v, "PAD2")
+        assertEquals("Previous step: op 25", listOf(PolestarTab.PREV), q.psMenu.steps.toList())
+        assertTrue("the choice stays: A again walks on", field(v, "skipOpen"))
+        key(v, "PADDUP"); key(v, "PAD1"); key(v, "PAD1")
+        assertEquals("Next step twice: op 24, 24", listOf(PolestarTab.PREV, PolestarTab.NEXT, PolestarTab.NEXT), q.psMenu.steps.toList())
+        assertEquals("nothing skipped, nothing un-skipped", emptyList<Boolean>(), skips)
+        key(v, "PAD2")
         assertFalse("B closes it", field(v, "skipOpen"))
         key(v, "PAD4"); key(v, "PAD4")
         assertFalse("Y again closes it", field(v, "skipOpen"))
-        assertEquals(listOf(true, false), skips)
+        assertEquals(3, q.psMenu.steps.size)
     }
 
-    @Test fun previousIsDimWithNothingToUndo() {
+    @Test fun previousIsDimOnTheFirstStepWithNoSkips() {
         lang("en")
-        val (v, _) = room(canPrev = false)
+        val (v, q) = room(canPrev = false, shown = 1)
         toRow(v)
         key(v, "PAD4")
+        assertTrue("no skip to undo: the choice still opens", field(v, "skipOpen"))
         key(v, "PADDDOWN")
         key(v, "PAD1")
         assertTrue("a dim row: the choice stays", field(v, "skipOpen"))
-        assertEquals("nothing sent", emptyList<Boolean>(), skips)
+        assertEquals("nothing sent", 0, q.psMenu.steps.size)
+        assertEquals(emptyList<Boolean>(), skips)
         shot(v, "08_skip_choice_previous_dim")
         lang("es")
         shot(v, "09_skip_choice_es")

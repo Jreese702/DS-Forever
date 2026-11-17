@@ -12,6 +12,8 @@ import org.json.JSONObject
  * [PolestarPane]. Only the player's press sends anything (leave no trace).
  */
 class PolestarMenu(private val context: Context, private val pad: () -> JSONObject?) {
+    /** pm2: the Next / Previous presses sent ([PolestarTab.NEXT] / [PolestarTab.PREV]), newest last, at most 8 (the off-device checks) */
+    val steps = ArrayDeque<Int>()
     /** the add-on's Polestar documents, kept (the host routes pguide / pgsteps / pglist / pgstep / pgroute / pgop here) */
     val book = PolestarTab.Book()
     val cur = PolestarTab.Cursor()
@@ -99,6 +101,17 @@ class PolestarMenu(private val context: Context, private val pad: () -> JSONObje
     fun enter(now: Long = System.currentTimeMillis()) {
         cur.enter(rows()); selAt = now
         open(now, force = true)
+    }
+    /** pm2: Polestar's guide is there for Next / Previous step (the Map room's skip choice) */
+    fun canStep(): Boolean = shows() && book.guide?.let { it.have && !it.none } == true
+    /** pm2: Next ([next]) / Previous step on the player's press: Polestar's own Engine.Next / Engine.Prev (framed op 24 / 25, stamped
+     *  with the guide), a look that skips nothing; false = no guide (nothing sent) */
+    fun step(next: Boolean): Boolean {
+        val g = book.guide?.takeIf { canStep() } ?: return false
+        val op = if (next) PolestarTab.NEXT else PolestarTab.PREV
+        steps.addLast(op); while (steps.size > 8) steps.removeFirst()
+        frame(op, g.stamp)
+        return true
     }
     /** the path choice (Home's / the Map room's "Choose your path"): the view, and its options asked */
     fun openPath() { cur.openPath(book.route); book.guide?.let { frame(PolestarTab.ROUTE, it.stamp) } }
