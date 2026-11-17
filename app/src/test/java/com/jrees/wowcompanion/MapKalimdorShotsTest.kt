@@ -373,7 +373,9 @@ class MapKalimdorShotsTest {
         val world = frames(r)
         assertEquals("down to the floor", st(r)[3], st(r)[2], 0.001f)
         assertTrue(st(r)[6] == 1f)
-        assertEquals(0, r.room.backdropCanvas)
+        // fix/map-other-continent: a land with no terrain of its own (Zephras Isle: no minimap folder) is its painted picture in its box,
+        // never bare sea; Kalimdor and Eastern Kingdoms stay terrain
+        assertTrue("only the island is painted (${r.map.paintedConts})", r.map.paintedConts <= 1)
         shot("home_terrain_world", world)
         // back in to the zone: let go at once
         for (i in 0 until 12) key(r.home, "PADRSHOULDER")

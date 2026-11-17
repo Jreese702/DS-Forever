@@ -5449,6 +5449,9 @@ class MapView(context: Context) : View(context) {
         fun picture(key: String, client: View, make: () -> Bitmap?): Bitmap? = null
         /** picture [key] if the cache holds it (nothing asked) */
         fun peek(key: String): Bitmap? = null
+        /** the game continent whose box on map [zone]'s root (the world) holds the first of [at] (points in [zone]'s 0..1) that lies in
+         *  one (the smallest box wins: an island in a continent's), or null (the sea between, no art set, a root with no continents) */
+        fun aim(zone: Int, at: List<FloatArray>): Int? = null
     }
     var worldArt: WorldArt? = null
     /** a touch on the open map's field (not the list, a button or a pop-out): Home's map controls page */
@@ -5671,7 +5674,15 @@ class MapView(context: Context) : View(context) {
         val adt = MinimapTiles.ADT
         for (p in conts) {
             val cont = p[0].toInt()
-            if (!TerrainOverview.has(cont)) continue
+            if (!TerrainOverview.has(cont)) {
+                // 2026-11-17 ("zooming in on the other continent the screen goes black"): a continent with no terrain built on the
+                // phone yet is its own painted picture (the Map room's art, cut to its box), never the bare sea
+                if (p.size >= 9) {
+                    otherClip.set(maxOf(left, sxU(p[5])), maxOf(top, syV(p[6])), minOf(left + fw, sxU(p[7])), minOf(top + fh, syV(p[8])))
+                    if (otherClip.width() > 0f && otherClip.height() > 0f && wa.paint(c, mapId, worldZr, otherClip, this)) paintedConts++
+                }
+                continue
+            }
             val au = p[1]; val bu = p[2]; val av = p[3]; val bv = p[4]
             c.save()
             if (p.size >= 9) c.clipRect(sxU(p[5]), syV(p[6]), sxU(p[7]), syV(p[8]))     // its box on the world
@@ -5709,11 +5720,38 @@ class MapView(context: Context) : View(context) {
                     up++
                 }
             }
+            // ANOTHER continent seen close (past level 1's own px an ADT): its own minimap tiles over its levels, as the player's
+            // continent's close tiles (which go through this map's own rect: the loop in onDraw); from its own folder only
+            if (cont != rT.continent && adtPx > TerrainOverview.TILE / 2f && MinimapTiles.has(cont)) {
+                val tc0 = maxOf(0, floor(colA).toInt()); val tc1 = minOf(63, floor(colB).toInt())
+                val tr0 = maxOf(0, floor(rowA).toInt()); val tr1 = minOf(63, floor(rowB).toInt())
+                val nT = (tc1 - tc0 + 1) * (tr1 - tr0 + 1)
+                if (tc1 >= tc0 && tr1 >= tr0 && nT in 1..SMALL_TILES_MAX) {
+                    val sample = if (nT <= QUARTER_TILES_MAX) 4 else 8
+                    val full = 2.0 * halfX / kotlin.math.abs(bu) <= TILE_MAX_YD
+                    for (row in tr0..tr1) for (col in tc0..tc1) {
+                        terrainDst.set(sxU(au + bu * (32 - col) * adt) - 0.5f, syV(av + bv * (32 - row) * adt) - 0.5f,
+                            sxU(au + bu * (31 - col) * adt) + 0.5f, syV(av + bv * (31 - row) * adt) + 0.5f)
+                        terrainDst.sort()
+                        MinimapTiles.get(cont, col, row, sample) { invalidate() }?.let { c.drawBitmap(it, null, terrainDst, pTerrain); otherTiles++ }
+                        if (full) MinimapTiles.get(cont, col, row) { invalidate() }?.let { c.drawBitmap(it, null, terrainDst, pTerrain); otherTiles++ }
+                    }
+                }
+            }
             c.restore()
         }
         c.restore()
         return true
     }
+    private val otherClip = RectF()
+    /** the tests: this frame's continents painted for want of terrain, and another continent's close minimap tiles drawn */
+    var paintedConts = 0
+        private set
+    var otherTiles = 0
+        private set
+    /** the tests: the continent under the view is not the player's this frame (its art, not the player's close tiles) */
+    var otherContDrawn = false
+        private set
 
     /** the art's share over the minimap tiles at zoom [z]: none at the whole zone and closer, all of it from half the zone out */
     private fun worldShare(z: Float): Float { val t = ((1f - z) / 0.5f).coerceIn(0f, 1f); return t * t * (3f - 2f * t) }
@@ -7086,8 +7124,18 @@ class MapView(context: Context) : View(context) {
         // No tiles on the device yet (the harvest still building), or a continent's worth on screen: the old grid.
         // HOME'S MAP ZOOMED OUT (2026-11-17): past the zone the Map room's art lies under everything (WorldArt: the room's own renderer and
         // pictures), the zone's 0..1 on it through this projection; the tiles fade out over it down to half the zone, then are not drawn
-        worldDrew = false; terrainDrew = false
-        if (!compact && !morphOn && zoom < 0.999f && worldFull()) worldArt?.let { wa ->
+        worldDrew = false; terrainDrew = false; paintedConts = 0; otherTiles = 0
+        // THE CONTINENT UNDER THE VIEW (the user, 2026-11-17: "when zooming out and then zooming in on the other continent the screen goes
+        // black"): the close tiles below are only the PLAYER's continent's, through the player's zone rect, so zoomed back in over the
+        // other continent nothing was drawn. There the art stays on at any zoom (its terrain if built, else its painted picture and zone
+        // art), the player's tiles are not drawn, and its pictures are not freed until the view is back on the player's continent.
+        // Which continent: the one whose box holds the view's middle (what fills the field), else the controls' cursor.
+        val rA = rect
+        val aimCont = if (!compact && !morphOn && rA != null && rA.valid && worldFull()) worldArt?.aim(m.optInt("mapID", 0),
+            if (controls) listOf(floatArrayOf(cxView, cyView), floatArrayOf(curU, curV)) else listOf(floatArrayOf(cxView, cyView))) else null
+        val otherCont = aimCont != null && rA != null && aimCont != rA.continent
+        otherContDrawn = otherCont
+        if (!compact && !morphOn && (zoom < 0.999f || otherCont) && worldFull()) worldArt?.let { wa ->
             worldZr.set(sx(0.0), sy(0.0), sx(1.0), sy(1.0)); worldClip.set(left, top, left + fw, top + fh)
             worldAsked = true
             // Terrain (the default): the minimap's terrain all the way out; the painted art only where there is none for this continent
@@ -7097,15 +7145,15 @@ class MapView(context: Context) : View(context) {
                 // the minimap index is being read (a moment, once): the sea, not the painted art for a frame
                 pFill.color = TerrainOverview.SEA; c.drawRect(left, top, left + fw, top + fh, pFill)
                 terrainDrew = true; worldDrew = true
-            } else if (rt != null && tIdx[rt.continent]?.isNotEmpty() == true) {
+            } else if (rt != null && (tIdx[rt.continent]?.isNotEmpty() == true || aimCont?.let { tIdx[it] }?.isNotEmpty() == true)) {
                 terrainDrew = drawTerrainOut(c, wa, m.optInt("mapID", 0), rt, left, top, fw, fh, cxView, cyView, halfX, halfY)
                 worldDrew = terrainDrew
             }
             if (!terrainDrew) worldDrew = wa.paint(c, m.optInt("mapID", 0), worldZr, worldClip, this)
         }
         // the user's pick (2026-11-17, "Free on zoom-in"): back on the zone, the big pictures go at once (the next zoom-out reads them again)
-        else if (!compact && !morphOn && zoom >= 0.999f && worldAsked) { worldAsked = false; worldArt?.release() }
-        val tileShare = if (worldDrew && !terrainDrew) 1f - worldShare(zoom) else 1f
+        else if (!compact && !morphOn && zoom >= 0.999f && !otherCont && worldAsked) { worldAsked = false; worldArt?.release() }
+        val tileShare = if (otherCont) 0f else if (worldDrew && !terrainDrew) 1f - worldShare(zoom) else 1f
         val rT = rect
         var terrain = (worldDrew && tileShare <= 0.001f) || terrainDrew
         var drew = false; var allAbsent = true           // a tile drawn this frame; every tile here looked for and not on the device
@@ -7146,7 +7194,8 @@ class MapView(context: Context) : View(context) {
         // pictures not made yet (the background art builds them while the game is closed): said in the Map room's words, under the markers
         // (review: also over this continent's folder with no tile here yet - the step part-way - not only with no folder at all)
         val tilesShown = HomeMapNote.terrainShown(terrain, drew || worldDrew, allAbsent && !worldDrew, artNote != null)
-        artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT else null
+        artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT
+            else if (HomeMapNote.otherShows(morphOn, otherCont, worldDrew)) HomeMapNote.NOT_BUILT else null
         // (review: on the open map, in the part the quest list leaves - where the player is centred - not under the list)
         artNote?.let { drawArtNote(c, it, left + trackPx, top, fw - trackPx, fh, compact) }
         // the floorplan sits ON the terrain, under every marker -- same projection, so it

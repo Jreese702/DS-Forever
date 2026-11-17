@@ -19,6 +19,11 @@ object HomeMapNote {
     /** the room left on each side of the field */
     const val PAD = 16f
 
+    /** over ANOTHER continent than the player's with none of its art to draw (no terrain, no painted picture read: 2026-11-17's black
+     *  screen), said instead of a blank field */
+    const val NOT_BUILT = "Map not built yet"
+    fun otherShows(morphing: Boolean, other: Boolean, drew: Boolean): Boolean = !morphing && other && !drew
+
     /** the note shows: no terrain drawn this frame, Home's map pictures still to be made, and not in Home's open / close glide */
     fun shows(morphing: Boolean, terrain: Boolean, building: Boolean): Boolean = !morphing && !terrain && building
 

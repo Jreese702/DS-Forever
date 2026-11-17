@@ -630,6 +630,19 @@ class WorldMapRoomView(context: Context) : View(context) {
         override fun places(zone: Int) = continentPlaces(zone)
         override fun picture(key: String, client: View, make: () -> Bitmap?) = backdropPicture(key, client, make)
         override fun peek(key: String): Bitmap? = if (backdropPaused) null else bmps.get(key)
+        override fun aim(zone: Int, at: List<FloatArray>) = backdropAim(zone, at)
+    }
+
+    /** Home's map: the game continent under points [at] of map [zone]'s 0..1, by the boxes on its root (WorldMapModel.aimContinent, no
+     *  nearest: the sea between is nobody's); null = not on a world, no art set, or no box holds any */
+    fun backdropAim(zone: Int, at: List<FloatArray>): Int? {
+        if (!artReady) return null
+        val (root, zp) = model.rootPlace(zone) ?: return null
+        if (model.assignsOf(root).isEmpty()) return null
+        val zw = zp[2] - zp[0]; val zh = zp[3] - zp[1]
+        if (zw <= 0f || zh <= 0f) return null
+        val id = model.aimContinent(root, at.map { floatArrayOf(zp[0] + it[0] * zw, zp[1] + it[1] * zh) }, nearest = false) ?: return null
+        return model.maps[id]?.world?.continent
     }
 
     /**
