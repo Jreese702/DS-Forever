@@ -164,23 +164,23 @@ class QuestsView(
     // opens it (the cursor stays), Down enters its list, LB / RB switch from anywhere. The room opens on Quests, except from Home's
     // "Choose your path" row (D4). Model / controller: [PolestarTab]; drawing: [PolestarPane]. The add-on is told the tab is open
     // (frame op 13, again every 20 s) so it sends the statuses, the titles, the list; closed (op 14) when the tab or the room is left.
-    /** the add-on's Polestar documents, kept (CompanionHost routes pguide / pgsteps / pglist / pgstep / pgroute / pgop here) */
-    val polestar = PolestarTab.Book()
-    private val psCur = PolestarTab.Cursor()
-    private val psSend = PolestarTab.Sender()
+    /** pm1: the Polestar menu itself (its documents, cursor, frames: [PolestarMenu]); the host hands the same one to the Map room's X */
+    val psMenu = PolestarMenu(context) { pad() }
+    private val psCur get() = psMenu.cur
     private val psPane = PolestarPane { postInvalidate() }
     private var tab = 0                              // 0 Quests, 1 Polestar
     private var onTabs = false                       // the cursor is on the tab row
-    private var psOpenAt = 0L                        // when op 13 was last tapped (0 = the add-on is not told the tab is open)
     private var psOnShow: String? = null             // "path": the next showing opens on the path choice (Home's row, D4)
-    private var psSelAt = 0L                         // when the selection last moved (its goals are asked after REST_MS)
-    private var psAsked = ""                         // the step whose goals were asked last ("stamp:i")
-    private var psAskedAt = 0L
     private val tabHits = ArrayList<Pair<RectF, Int>>()
     /** in a fight (D3): the host's fight state, else the quests document's */
     var fight: () -> Boolean = { doc?.optBoolean("cb") == true }
     /** Skip ([prev] false) / Previous on Polestar's shown step: the host's one pnav tap (38 then 10 / 11); false = not sent */
     var onPolestarSkip: ((prev: Boolean) -> Boolean)? = null
+    init {
+        psMenu.fight = { fight() }
+        psMenu.onSkip = { prev -> onPolestarSkip?.invoke(prev) == true }
+        psMenu.note = { note(it, false) }
+    }
 
     // ---------------------------------------------------------------- input from MainActivity
 
@@ -240,95 +240,20 @@ class QuestsView(
         noteText = s; noteOk = ok; noteAt = System.currentTimeMillis(); postInvalidate()
     }
 
-    // ---------------------------------------------------------------- the Polestar tab: the documents, the frames
+    // ---------------------------------------------------------------- the Polestar tab: the documents, the frames (pm1: [PolestarMenu])
     /** the tab shows: Quest tracking is Polestar, Polestar loaded and answering */
-    fun psShows(): Boolean = Settings.questTracking == "polestar" && polestar.ready()
-    private fun psRows() = PolestarTab.rows(polestar.guide, psCur.foldOpen)
-    private fun psPicks() = PolestarTab.pickRows(polestar.guide, polestar.list, psCur.folders)
-    private fun psSelStep(): PolestarTab.Row.Step? = psRows().firstOrNull { it.key == psCur.sel } as? PolestarTab.Row.Step
-    private fun psDetail(): PolestarTab.StepDetail? = psSelStep()?.let { polestar.step(it.i) }
+    fun psShows(): Boolean = psMenu.shows()
 
     /** a refused Skip / Previous pressed in this room: its line here */
     fun psNote(line: String) = note(line, false)
     /** the Polestar tab is the one shown (the host: a pskip refusal's line goes here) */
     fun psTabShown(): Boolean = isShown && tab == 1
 
-    /** {"type":"pguide" / "pgsteps" / "pglist" / "pgstep" / "pgroute" / "pgop"} (current documents only) */
+    /** {"type":"pguide" / "pgsteps" / "pglist" / "pgstep" / "pgroute" / "pgop"} (current documents only): into the one menu */
     fun onPolestarDoc(d: JSONObject) {
-        val now = System.currentTimeMillis()
-        PolestarTab.answer(d)?.let { a -> psAnswer(a, now); return }
-        val before = polestar.guide?.stamp
-        val shownBefore = polestar.guide?.shown
-        val routeBefore = polestar.route?.stamp
-        if (!polestar.onDoc(d, now)) return
-        // pg1 review: the path view opened before its choice came (Home's row, a notice): it lands on the chosen / recommended option
-        // when the choice arrives, as it would have had it been there
-        if (d.optString("type") == "pgroute" && psCur.view == PolestarTab.View.PATH && routeBefore != polestar.route?.stamp) psCur.openPath(polestar.route)
-        if (d.optString("type") == "pguide") {
-            if (!psShows() && tab == 1) { tab = 0; onTabs = false; syncB() }
-            // a new guide (loaded, continued, chosen, chained on): the tab is entered afresh, on its shown step; else the cursor keeps
-            // its step (on the shown step it follows the shown step: a Skip there leaves it on the next)
-            if (before != polestar.guide?.stamp && tab == 1) psCur.enter(psRows()) else psCur.refresh(psRows(), shownBefore, polestar.guide?.shown)
-        } else psCur.refresh(psRows())
+        if (!psMenu.onDoc(d)) return
+        if (d.optString("type") == "pguide" && !psShows() && tab == 1) { tab = 0; onTabs = false; psMenu.shownIn = null; syncB() }
         postInvalidate()
-    }
-
-    private fun psAnswer(a: PolestarTab.Answer, now: Long) {
-        val after = psSend.onAnswer(a.op, a.ok, a.why, now)
-        after.next?.let { psTap(it) }
-        if (!after.done && after.next != null) return                     // (garbled: sent once more)
-        if (!a.ok && a.op != PolestarTab.OPEN && a.op != PolestarTab.CLOSE && a.op != PolestarTab.DESCRIBE) {
-            PolestarTab.refusedLine(a.why)?.let { note(it, false) }
-            if (a.why == "changed") psOpen(now, force = true)              // the docs again: the tab shows what Polestar has now
-        }
-        postInvalidate()
-    }
-
-    /** one framed command ([op], [stamp], [args]): now, or after the one in flight */
-    private fun psFrame(op: Int, stamp: Int, args: List<Int> = emptyList()) {
-        val taps = PolestarTab.frame(op, stamp, args)
-        if (taps.isEmpty()) { note(PolestarSkip.REFUSED_LINE, false); return }
-        psSend.send(op, taps, System.currentTimeMillis(), PolestarTab.frameMs(taps))?.let { psTap(it) }
-    }
-    private fun psTap(o: PolestarTab.Sender.Out) {
-        val pad = pad()
-        if (pad?.optJSONObject("rows")?.has(PolestarNav.ROW) != true) { psSend.failed(); note("The game has not published its tap pad yet", false); return }
-        val ok = TapBridge.tapsSpaced(context, pad, o.taps.map { PolestarNav.ROW to it }, PolestarTab.GAP_MS) { why ->
-            post { psSend.failed(); note(why, false) } }
-        if (!ok) psSend.failed()
-    }
-    /** the add-on told the tab is open (at once, then every KEEP_MS while it shows). pg1 review: the first say (and a forced one: the
-     *  picker, a "changed") is a fresh open, everything again; the later ones only keep it open ([PolestarTab.OPEN_KEEP]), so the
-     *  add-on's step pass runs on Polestar's own changes, not every 20 s (the design's CPU rule) */
-    private fun psOpen(now: Long, force: Boolean = false) {
-        if (!force && psOpenAt != 0L && now - psOpenAt < PolestarTab.KEEP_MS) return
-        if (psSend.busy && !force) return
-        val keep = !force && psOpenAt != 0L
-        psOpenAt = now
-        psFrame(PolestarTab.OPEN, if (keep) PolestarTab.OPEN_KEEP else PolestarTab.OPEN_FRESH)
-    }
-    private fun psClose() {
-        if (psOpenAt == 0L) return
-        psOpenAt = 0L
-        psFrame(PolestarTab.CLOSE, PolestarTab.OPEN_FRESH)
-    }
-    /** while the room shows (every draw): the answer's wait, the open's keep-alive, the resting step's goals */
-    private fun psTick(now: Long) {
-        psSend.tick(now)?.let { after ->
-            after.next?.let { psTap(it) }
-            if (after.done && after.why == "lost") note(PolestarTab.LOST_LINE, false)
-        }
-        if (tab != 1 || !isShown || !psShows()) return
-        psOpen(now)
-        val st = psSelStep() ?: return
-        val g = polestar.guide ?: return
-        if (psSend.busy || now - psSelAt < PolestarTab.REST_MS) return
-        val key = "${g.stamp}:${st.i}"
-        val have = polestar.stepAt(st.i)
-        if (have != 0L && now - have < PolestarTab.STEP_FRESH_MS) return
-        if (psAsked == key && now - psAskedAt < PolestarTab.STEP_FRESH_MS) return
-        psAsked = key; psAskedAt = now
-        psFrame(PolestarTab.DESCRIBE, g.stamp, PolestarTab.two(st.i))
     }
 
     /** Home's light blue "Choose your path" row (D4): the next showing opens this tab on the choice (now, when it shows already) */
@@ -341,7 +266,7 @@ class QuestsView(
         psOnShow = null
         if (!psShows()) return
         switchTab(1)
-        if (how == "path") { psCur.openPath(polestar.route); polestar.guide?.let { psFrame(PolestarTab.ROUTE, it.stamp) } }
+        if (how == "path") psMenu.openPath()
         syncB(); invalidate()
     }
 
@@ -352,38 +277,18 @@ class QuestsView(
         tab = t
         menuSel = -1
         if (t == 1) {
-            psCur.enter(psRows()); psSelAt = System.currentTimeMillis()
-            psOpen(System.currentTimeMillis(), force = true)
-        } else psClose()
+            psMenu.shownIn = "quests"; psMenu.note = { note(it, false) }
+            psMenu.enter()
+        } else { psMenu.close(); psMenu.shownIn = null }
         syncB(); invalidate()
     }
 
     /** one press while the Polestar tab is open (below the tab row) */
     private fun psPress(k: String, direct: Boolean) {
-        val now = System.currentTimeMillis()
-        val g = polestar.guide
-        val d = psCur.key(k, psRows(), psPicks(), polestar.route, psDetail(), g, fight())
-        when (d) {
-            PolestarTab.Do.Nothing, PolestarTab.Do.GoalsIn -> {}
-            PolestarTab.Do.ToTabs -> onTabs = true
-            PolestarTab.Do.Leave -> leave(direct)
-            is PolestarTab.Do.Sel -> psSelAt = now
-            is PolestarTab.Do.Look -> g?.let { psFrame(PolestarTab.LOOK, it.stamp, PolestarTab.two(d.i)) }
-            PolestarTab.Do.Back -> g?.let { psFrame(PolestarTab.BACK, it.stamp) }
-            PolestarTab.Do.Skip -> if (onPolestarSkip?.invoke(false) != true) note(PolestarSkip.NO_STEP_LINE, false)
-            PolestarTab.Do.Prev -> if (onPolestarSkip?.invoke(true) != true) note(PolestarSkip.NOTHING_LINE, false)
-            PolestarTab.Do.Picker -> { psCur.openPicker(psPicks()); psOpen(now, force = true) }
-            PolestarTab.Do.Path -> { psCur.openPath(polestar.route); g?.let { psFrame(PolestarTab.ROUTE, it.stamp) } }
-            PolestarTab.Do.AskReset -> psCur.openConfirm()
-            PolestarTab.Do.Reset -> { g?.let { psFrame(PolestarTab.RESET, it.stamp) }; psCur.toList() }
-            PolestarTab.Do.Fold -> { psCur.foldOpen = !psCur.foldOpen; psCur.refresh(psRows()) }
-            is PolestarTab.Do.Load -> polestar.list?.let { l -> psFrame(PolestarTab.LOAD, l.stamp, PolestarTab.two(d.k)); psCur.toList() }
-            is PolestarTab.Do.Cont -> g?.tabs?.getOrNull(d.t - 1)?.let { t -> psFrame(PolestarTab.CONTINUE, t.stamp, listOf(d.t)); psCur.toList() }
-            is PolestarTab.Do.Choose -> polestar.route?.let { r -> psFrame(PolestarTab.CHOOSE, r.stamp, listOf(d.o)); psCur.toList() }
-            is PolestarTab.Do.Tick -> g?.let { psFrame(PolestarTab.TICK, it.stamp, PolestarTab.two(d.i) + d.g) }
-            is PolestarTab.Do.ToggleFolder -> { if (!psCur.folders.add(d.f)) psCur.folders.remove(d.f) }
-            PolestarTab.Do.Out -> psCur.toList()
-            is PolestarTab.Do.Refused -> note(d.line, false)
+        when (psMenu.press(k)) {
+            PolestarMenu.Out.UP_TOP -> onTabs = true
+            PolestarMenu.Out.LEAVE -> leave(direct)
+            PolestarMenu.Out.NONE -> {}
         }
     }
 
@@ -574,12 +479,7 @@ class QuestsView(
     private fun psTouch(x: Float, y: Float) {
         for ((box, key) in psPane.btnHits) if (box.contains(x, y)) { lingerPress(key); press(key, direct = true); return }
         for ((box, key) in psPane.rowHits) if (box.contains(x, y)) {
-            when {
-                key.startsWith("p:") -> { if (psCur.view != PolestarTab.View.PICKER) return; psCur.pickSel(key.removePrefix("p:")) }
-                key.startsWith("o:") -> psCur.pathSel(key.removePrefix("o:").toIntOrNull() ?: 0)
-                key.startsWith("g:") -> { if (psCur.view == PolestarTab.View.LIST) psCur.toGoals(); psCur.goalSel(key.removePrefix("g:").toIntOrNull() ?: 0) }
-                else -> { psCur.select(key); psSelAt = System.currentTimeMillis() }
-            }
+            psMenu.touchRow(key)
             onTabs = false; syncB(); invalidate(); return
         }
     }
@@ -763,7 +663,7 @@ class QuestsView(
     }
 
     fun onHidden() {
-        if (tab == 1) psClose()
+        if (tab == 1) { psMenu.close(); psMenu.shownIn = null }
         tab = 0; onTabs = false
         holdAsk.hidden(); removeCallbacks(holdTick)
         padNow.setActive(false)
@@ -977,7 +877,7 @@ class QuestsView(
         tabHits.clear()
         val count = if (d == null) null else if (d.has("maxQ")) "${quests.size} / ${d.optInt("maxQ")}" else "${quests.size}"
         if (psShows()) drawTabs(c, w, count) else { if (tab != 0 || onTabs) { tab = 0; onTabs = false }; UiKit.header(c, w, "Quests", count, HEADER) }
-        psTick(now)
+        psMenu.tick(now, tab == 1 && isShown)
         val status: Pair<String, Int>? = when {
             noteText != null && now - noteAt < NOTE_MS -> noteText!! to (if (noteOk) Theme.ok else Theme.warn)
             else -> blocked(now)?.takeIf { d != null && pendingOp == null }?.let { it to Theme.dim }
@@ -991,7 +891,7 @@ class QuestsView(
         bodyTop = HEADER
         splitX = floor(w * 0.57f)
         if (tab == 1 && psShows()) {
-            psPane.draw(c, w, h, bodyTop, PolestarPane.Frame(polestar, psCur, psRows(), psPicks(), fight(), held && cursor.shown && !onTabs,
+            psPane.draw(c, w, h, bodyTop, PolestarPane.Frame(psMenu.book, psCur, psMenu.rows(), psMenu.picks(), fight(), held && cursor.shown && !onTabs,
                 pressed, waiting = false, quiet = onTabs))
             for ((g, key) in psPane.glyphHits) glyphHits[g] = key
             if (isShown) postInvalidateDelayed(REFRESH_MS)

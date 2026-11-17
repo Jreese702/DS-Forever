@@ -112,19 +112,44 @@ object MapRoomKeys {
     const val ZOOM_GLYPH = "gen_rstickupdown"
 
     /** the legend's lines on the map side (the game's footer; the view draws them): which prompts show for [c] */
-    /** pk1: what a press does on the list's Polestar row: Skip, Previous, nothing (the press is the row's) or PASS (the list's usual) */
-    enum class PsDo { SKIP, PREV, NOTHING, PASS }
+    /** pk1 / pm1: what a press does on the list's Polestar row: the Polestar menu, the skip choice, nothing (the press is the row's) or
+     *  PASS (the list's usual) */
+    enum class PsDo { MENU, SKIPS, NOTHING, PASS }
 
     /**
-     * pk1 (the user, 2026-11-12: "X Skip, Y Previous"; the Map room too): a press [k] on the list's Polestar row, [can] = (Skip, Previous)
-     * can be pressed (null: no step). X skips while it can, Y undoes the last skip while one is left (else nothing: never Options, there
-     * is no quest), A does nothing; every other key is the list's as on any row
+     * pm1 (the user, 2026-11-16: "The polestar option in the map room, I want x to open the polestar menu and y to open skip options to
+     * go to the next or previous step"): a press [k] on the list's Polestar row. X opens the Polestar menu while it can show ([menu]: the
+     * Quests room's Polestar tab, as an overlay), Y the skip choice while a step is there to skip or a skip to undo ([skips]; pk1's X Skip
+     * and Y Previous moved into it), A does nothing (the row's "Choose your path" A is the view's), else nothing; every other key is the
+     * list's as on any row
      */
-    fun polestarKey(k: String, can: Pair<Boolean, Boolean>?): PsDo = when (k) {
-        "PAD3" -> if (can?.first == true) PsDo.SKIP else PsDo.NOTHING
-        "PAD4" -> if (can?.second == true) PsDo.PREV else PsDo.NOTHING
+    fun polestarKey(k: String, menu: Boolean, skips: Boolean): PsDo = when (k) {
+        "PAD3" -> if (menu) PsDo.MENU else PsDo.NOTHING
+        "PAD4" -> if (skips) PsDo.SKIPS else PsDo.NOTHING
         "PAD1" -> PsDo.NOTHING
         else -> PsDo.PASS
+    }
+
+    /** pm1: the skip choice's rows, in order: Next step (pk1's Skip: Polestar's Engine.Skip) and Previous step (pk1's "Undo my last skip") */
+    enum class PsSkip(val word: String) { NEXT(NEXT_WORD), PREV(PolestarSkip.PREV_WORD) }
+    /** "Next step" (Tr: es / fr in i18n) */
+    const val NEXT_WORD = "Next step"
+    /** the row can be pressed: Next while a step is there to skip ([canSkip]), Previous while a skip is left to undo ([canPrev]) */
+    fun psSkipOn(s: PsSkip, canSkip: Boolean, canPrev: Boolean): Boolean = if (s == PsSkip.NEXT) canSkip else canPrev
+
+    /** pm1: what a press does in the skip choice */
+    sealed class SkipDo {
+        object None : SkipDo()
+        object Close : SkipDo()
+        data class Move(val sel: Int) : SkipDo()
+        data class Run(val skip: PsSkip) : SkipDo()
+    }
+    /** a press [k] in the skip choice on row [sel]: Up / Down move, A presses the row, B or Y again closes it */
+    fun psSkipKey(k: String, sel: Int): SkipDo = when (k) {
+        "PAD1" -> PsSkip.values().getOrNull(sel)?.let { SkipDo.Run(it) } ?: SkipDo.None
+        "PAD2", "PAD4" -> SkipDo.Close
+        "PADDUP", "PADDDOWN" -> SkipDo.Move(menuMove(sel, PsSkip.values().size, PsSkip.values().size, k))
+        else -> SkipDo.None
     }
 
     enum class Prompt { CHANGE_MAP, FOCUS_TRACK, FOCUS, TRACK, UNTRACK, BACK, QUESTS, OPEN, OPEN_QUEST, SHOW_QUESTS, HIDE_QUESTS, MORE, ZOOM }

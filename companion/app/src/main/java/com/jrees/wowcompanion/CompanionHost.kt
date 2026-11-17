@@ -616,6 +616,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             choose = mapView.polestarChoose()) } }
         worldMapRoom.polestarHead = { if (mapView.polestarHeadShown()) mapView.polestarHead() else null }      // pg1 / D6
         worldMapRoom.onPolestarSkip = { prev -> mapView.polestarSkip(prev) }
+        // pm1 (the user, 2026-11-16: "x to open the polestar menu"): the Map room's X opens the Quests room's own Polestar menu (one
+        // instance: one open state, one frame in flight)
+        worldMapRoom.psMenu = questsView.psMenu
         questsView.onFocusPicked = { id, on -> mapView.psRelease(); if (!on) mapView.focusCleared(id) }
         // pg1: the Polestar tab's X / Y (the one pnav Skip / Previous tap), its fight state, and Home's / the Map room's "Choose your
         // path" row (D4): the Quests room straight on the choice
@@ -2416,7 +2419,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // pg1: the Polestar tab (Map.lua WC.pg); pguide also heads Home's list and the Map room's ("Polestar · <zone>", D6)
             "pguide", "pgsteps", "pglist", "pgstep", "pgroute", "pgop" -> if (current) {
                 questsView.onPolestarDoc(msg)
-                if (msg.optString("type") == "pguide") { mapView.onPolestarGuide(msg); if (room == Room.MAP) worldMapRoom.postInvalidate() }
+                if (msg.optString("type") == "pguide") mapView.onPolestarGuide(msg)
+                if (room == Room.MAP) worldMapRoom.postInvalidate()            // pm1: the Map room's Polestar menu draws them too
                 if (msg.optString("type") == "pgop" && !msg.optBoolean("ok")) Log.i("WCMAP", "polestar tab: op ${msg.optInt("op")} refused ${msg.optString("why", "")}")
             }
             "pskip" -> if (current) {                                   // pk1: a Skip / Previous answered

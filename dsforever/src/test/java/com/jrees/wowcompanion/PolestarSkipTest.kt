@@ -104,13 +104,36 @@ class PolestarSkipTest {
         val log = listOf(MapQuestBook.Entry(7, "Elwynn Forest"))
         assertEquals(MapQuestBook.Row.Polestar, book.rows(log, polestar = true).first())
         assertFalse(book.rows(log).contains(MapQuestBook.Row.Polestar))
-        assertEquals(MapRoomKeys.PsDo.SKIP, MapRoomKeys.polestarKey("PAD3", true to true))
-        assertEquals(MapRoomKeys.PsDo.PREV, MapRoomKeys.polestarKey("PAD4", true to true))
-        assertEquals(MapRoomKeys.PsDo.NOTHING, MapRoomKeys.polestarKey("PAD4", true to false))     // nothing to undo: not Options
-        assertEquals(MapRoomKeys.PsDo.NOTHING, MapRoomKeys.polestarKey("PAD3", null))
-        assertEquals(MapRoomKeys.PsDo.NOTHING, MapRoomKeys.polestarKey("PAD1", true to true))
-        assertEquals(MapRoomKeys.PsDo.PASS, MapRoomKeys.polestarKey("PADDDOWN", true to true))      // the list still moves
-        assertEquals(MapRoomKeys.PsDo.PASS, MapRoomKeys.polestarKey("PAD2", true to true))
+        // pm1 (the user, 2026-11-16: "x to open the polestar menu and y to open skip options to go to the next or previous step")
+        assertEquals(MapRoomKeys.PsDo.MENU, MapRoomKeys.polestarKey("PAD3", menu = true, skips = true))
+        assertEquals(MapRoomKeys.PsDo.SKIPS, MapRoomKeys.polestarKey("PAD4", menu = true, skips = true))
+        assertEquals(MapRoomKeys.PsDo.NOTHING, MapRoomKeys.polestarKey("PAD3", menu = false, skips = true))   // no menu: never Track
+        assertEquals(MapRoomKeys.PsDo.NOTHING, MapRoomKeys.polestarKey("PAD4", menu = true, skips = false))   // nothing to skip: not Options
+        assertEquals(MapRoomKeys.PsDo.SKIPS, MapRoomKeys.polestarKey("PAD4", menu = false, skips = true))     // the skips without the menu
+        assertEquals(MapRoomKeys.PsDo.NOTHING, MapRoomKeys.polestarKey("PAD1", menu = true, skips = true))
+        assertEquals(MapRoomKeys.PsDo.PASS, MapRoomKeys.polestarKey("PADDDOWN", menu = true, skips = true))   // the list still moves
+        assertEquals(MapRoomKeys.PsDo.PASS, MapRoomKeys.polestarKey("PAD2", menu = true, skips = true))
+    }
+
+    @Test fun theMapRoomsSkipChoiceIsNextAndPrevious() {
+        // pm1: two rows, Next step (pk1's Skip) and Previous step (pk1's Undo my last skip)
+        assertEquals(listOf("Next step", "Previous step"), MapRoomKeys.PsSkip.values().map { it.word })
+        assertTrue(MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.NEXT, canSkip = true, canPrev = false))
+        assertFalse("nothing to undo: Previous dim", MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.PREV, canSkip = true, canPrev = false))
+        assertTrue(MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.PREV, canSkip = true, canPrev = true))
+        assertFalse(MapRoomKeys.psSkipOn(MapRoomKeys.PsSkip.NEXT, canSkip = false, canPrev = true))
+        // D-pad + A, B / Y close
+        assertEquals(MapRoomKeys.SkipDo.Move(1), MapRoomKeys.psSkipKey("PADDDOWN", 0))
+        assertEquals(MapRoomKeys.SkipDo.Move(1), MapRoomKeys.psSkipKey("PADDDOWN", 1))                 // the last row stays
+        assertEquals(MapRoomKeys.SkipDo.Move(0), MapRoomKeys.psSkipKey("PADDUP", 1))
+        assertEquals(MapRoomKeys.SkipDo.Run(MapRoomKeys.PsSkip.NEXT), MapRoomKeys.psSkipKey("PAD1", 0))
+        assertEquals(MapRoomKeys.SkipDo.Run(MapRoomKeys.PsSkip.PREV), MapRoomKeys.psSkipKey("PAD1", 1))
+        assertEquals(MapRoomKeys.SkipDo.Close, MapRoomKeys.psSkipKey("PAD2", 0))
+        assertEquals(MapRoomKeys.SkipDo.Close, MapRoomKeys.psSkipKey("PAD4", 1))
+        assertEquals(MapRoomKeys.SkipDo.None, MapRoomKeys.psSkipKey("PAD3", 0))
+        // the pnav columns stay pk1's: Next = 38 then 10, Previous = 38 then 11
+        assertEquals(listOf(38, 10), PolestarSkip.cols(prev = false))
+        assertEquals(listOf(38, 11), PolestarSkip.cols(prev = true))
     }
 
     private fun page3(skip: Boolean, prev: Boolean): HomePauseModel.Flow {

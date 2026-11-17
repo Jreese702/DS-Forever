@@ -2018,7 +2018,8 @@
 "has gone offline": "s'est déconnecté(e)",
 "New friend request": "Nouvelle demande d'ami",
 "posted a broadcast": "a publié une annonce",
-"Community invite": "Invitation à une communauté"
+"Community invite": "Invitation à une communauté",
+"Next step": "Étape suivante"
 },
 "templates": {
 "Friend requests: %s": "Demandes d'ami : %s",
