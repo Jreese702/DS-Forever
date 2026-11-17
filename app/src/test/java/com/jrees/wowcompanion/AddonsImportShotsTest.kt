@@ -134,7 +134,9 @@ class AddonsImportShotsTest {
             assertEquals("no heading over the button", View.GONE, gi.heading.visibility)
             assertEquals("the tab's first box", gi.box, r.groupBoxes.filter { it.box.visibility == View.VISIBLE }.minByOrNull { it.box.top }!!.box)
             assertTrue("open as the tab shows", SettingsTabs.Group.IMPORT in r.open && gi.parts.all { it.visibility == View.VISIBLE })
-            assertTrue("the first headed group opens with it", SettingsTabs.groups(SettingsTabs.Tab.ADDONS)[1] in r.open)
+            // the beautify pass (2026-11-17): the add-ons' picture cards come next, headless and always open
+            assertEquals(SettingsTabs.Group.CARDS, SettingsTabs.groups(SettingsTabs.Tab.ADDONS)[1])
+            assertTrue("the cards open with it", SettingsTabs.Group.CARDS in r.open)
             r.toggle(SettingsTabs.Group.IMPORT); lay(r)
             assertTrue("it never folds", SettingsTabs.Group.IMPORT in r.open)
             val s = slice(r)
@@ -147,7 +149,6 @@ class AddonsImportShotsTest {
             val f = r.pad.focusBox()!!
             val top = gi.box.top + s.top
             assertEquals("the first stop", RectF(b0.left, b0.top + top, b0.right, b0.bottom + top), f)
-            r.toggle(SettingsTabs.Group.POLESTAR)
             r.toggle(SettingsTabs.Group.IMPORTED)                    // no imports yet: nothing in it, so it is not shown
             assertEquals(View.GONE, r.groupBoxes.first { it.group == SettingsTabs.Group.IMPORTED }.box.visibility)
             shot(r, "01_addons_tab_import", top = true)
@@ -176,7 +177,7 @@ class AddonsImportShotsTest {
             // the card is under the button, before Polestar's heading
             val card = RectF(box(s, "btnImportCancel"))
             assertTrue(card.top > box(s, "btnImport").bottom)
-            assertTrue("before the next group", gi.box.bottom <= r.groupBoxes.first { it.group == SettingsTabs.Group.POLESTAR }.box.top)
+            assertTrue("before the next group", gi.box.bottom <= r.groupBoxes.first { it.group == SettingsTabs.Group.CARDS }.box.top)
             for (l in listOf("es", "fr")) { lang(l); shot(r, "02_confirm_card_$l", top = true) }
             lang("en")
 

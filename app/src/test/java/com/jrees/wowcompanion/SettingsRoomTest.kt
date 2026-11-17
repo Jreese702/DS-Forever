@@ -67,7 +67,8 @@ class SettingsRoomTest {
             assertTrue(t.label, groups.isNotEmpty())
             // General does not fold (the user, 2026-11-12): every group open. A headless group (Add-ons' Import button, the user
             // 2026-11-16) is always open, with the first group that has a heading
-            val firstHeaded = groups.first { !it.headless }
+            // (Add-ons' cards, 2026-11-17: with no Voice / Imported rows, a tab may have headless groups only)
+            val firstHeaded = groups.filter { !it.headless }.take(1)
             val want = if (t.folds) groups.filter { it.headless }.toSet() + firstHeaded else groups.toSet()
             assertEquals(t.label, want, r.open)
             for (gb in r.groupBoxes) {
@@ -226,7 +227,9 @@ class SettingsRoomTest {
     /** 3: Polestar's "choose it in" names the row's new place, in all three languages */
     @Test fun polestarPointsAtItsQuestTrackingRow() {
         assertEquals("Add-ons › Polestar › Quest tracking", ThirdPartyAddons.POLESTAR.usedIn)
-        assertEquals(SettingsTabs.Group.POLESTAR, SettingsTabs.Block.QUEST_TRACKING.group)
+        // the beautify pass (2026-11-17): Quest tracking is a line of Polestar's card's band, in the cards' group (AddonCards.lines)
+        assertEquals(SettingsTabs.Group.CARDS, SettingsTabs.Block.QUEST_TRACKING.group)
+        assertEquals(SettingsTabs.Group.CARDS, SettingsTabs.Block.ADDON_POLESTAR.group)
         val line = "Installed, not in use: choose it in ${ThirdPartyAddons.POLESTAR.usedIn}"
         for (l in listOf("es", "fr")) {
             val f = listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json")).first { it.canRead() }
@@ -278,16 +281,19 @@ class SettingsRoomTest {
         assertEquals(99, f.getInt(frames))                           // the draw path leaves the measured count alone
     }
 
-    /** 7: an add-on group that stops being shown (QuestTrail out) goes at once, heading and band, without a tab switch */
-    @Test fun questTrailGroupFollowsItsAddon() {
+    /** 7: an add-on that stops being shown (QuestTrail out) goes at once, its card and its band, without a tab switch (the beautify
+     *  pass, 2026-11-17: a card in the cards' row; it was its own group) */
+    @Test fun questTrailCardFollowsItsAddon() {
         ThirdPartyAddons::class.java.getDeclaredField("noFetch").apply { isAccessible = true }.setBoolean(null, true)   // no downloads here
         val r = room()
         ThirdPartyAddons.setCore(ThirdPartyAddons.QUESTTRAIL, true)
         r.show(SettingsTabs.Tab.ADDONS); lay(r)
-        assertEquals(View.VISIBLE, box(r, SettingsTabs.Group.QUESTTRAIL).box.visibility)
+        val cards = box(r, SettingsTabs.Group.CARDS).parts.single() as AddonTiles
+        assertEquals(View.VISIBLE, box(r, SettingsTabs.Group.CARDS).box.visibility)
+        assertEquals(ThirdPartyAddons.QUESTTRAIL.id, cards.cardIds().last())
         ThirdPartyAddons.setCore(ThirdPartyAddons.QUESTTRAIL, false)
         lay(r)
-        assertEquals(View.GONE, box(r, SettingsTabs.Group.QUESTTRAIL).box.visibility)
+        assertTrue(ThirdPartyAddons.QUESTTRAIL.id !in cards.cardIds())
         assertEquals("one stop per shown heading", r.groupBoxes.count { it.box.visibility == View.VISIBLE && !it.group.headless }, headingStops(r))
     }
 

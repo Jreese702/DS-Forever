@@ -39,6 +39,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     val ctlTiles = ArrayList<ControllerTiles>()
     /** the Smart Y list as a sub-page of the Controller tab (beautify: opened by Smart Y's "List"); GONE while closed */
     val smartYPage = SmartYPage(context, view)
+    /** Add-ons' picture cards (the beautify pass, 2026-11-17): one band open in the room, B closes it as a tile's */
+    val addonTiles = ArrayList<AddonTiles>()
     val tabBar = SettingsTabBar(context) { t -> show(t) }
     /** "What it does" (phase 2): the row's picture, right of the page, on the tabs that have pictures */
     val preview = SettingsPreviewView(context, { homeSection.dpadState()?.want }, { view.smartDoc()?.on })
@@ -84,6 +86,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
                 is GeneralTilesView -> SettingsPad.Section(p, { p.focusTargets() }, noStart = { p.isReload(it) })
                 is BottomTilesView -> SettingsPad.Section(p, { p.focusTargets() })
                 is ControllerTiles -> SettingsPad.Section(p, { p.focusTargets() })
+                is AddonTiles -> SettingsPad.Section(p, { p.focusTargets() })
                 else -> SettingsPad.Section(p, { emptyList() })
             })
         }
@@ -100,18 +103,20 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             { v, r -> rowOf(v, r.centerX(), r.centerY()) })
         // Top screen's tiles (2026-11-16): ONE band open in the room - a tile's band opening closes any other part's - and the cursor
         // and the band follow it (a tap and A alike)
-        for (gu in gameUis) gu.onOpen = { s -> gameUis.filter { it !== s }.forEach { it.closeSelection() }; pad.follow(s) }
-        pad.bands.addAll(generals)
-        for (gv in generals) gv.onOpen = { s -> generals.filter { it !== s }.forEach { it.closeSelection() }; pad.follow(s, s.selectionAnchor(), s.bandBox()) }
-        // beautify/bottom: Bottom screen's tiles, the same ONE band in the room
-        pad.bands.addAll(bottomTiles)
-        for (bt in bottomTiles) bt.onOpen = { s -> gameUis.forEach { it.closeSelection() }; bottomTiles.filter { it !== s }.forEach { it.closeSelection() }; pad.follow(s, s.selectionAnchor(), s.bandBox()) }
-        // the Controller tab's tiles (beautify): the same one band, its cursor and scroll; Smart Y's "List" opens its sub-page
+        // the beautify pass: every tiled part (General, Bottom screen, Controller, Add-ons, Performance) with Top screen's: ONE band open in
+        // the room - a band opening closes every other part's - and the cursor and the band follow it
+        pad.bands.addAll(generals); pad.bands.addAll(bottomTiles); pad.bands.addAll(ctlTiles); pad.bands.addAll(addonTiles)
+        val closeOthers: (Any) -> Unit = { keep -> gameUis.filter { it !== keep }.forEach { it.closeSelection() }
+            pad.bands.filter { it !== keep }.forEach { it.closeSelection() } }
+        for (gu in gameUis) gu.onOpen = { s -> closeOthers(s); pad.follow(s) }
+        for (gv in generals) gv.onOpen = { s -> closeOthers(s); pad.follow(s, s.selectionAnchor(), s.bandBox()) }
+        for (bt in bottomTiles) bt.onOpen = { s -> closeOthers(s); pad.follow(s, s.selectionAnchor(), s.bandBox()) }
+        for (at in addonTiles) at.onOpen = { s -> closeOthers(s); pad.follow(s, s.selectionAnchor(), s.bandBox()) }
+        // the Controller tab's tiles: Smart Y's "List" opens its sub-page
         for (ct in ctlTiles) {
-            ct.onOpen = { s -> ctlTiles.filter { it !== s }.forEach { it.closeSelection() }; pad.follow(s, s.selectionAnchor(), s.bandBox()) }
+            ct.onOpen = { s -> closeOthers(s); pad.follow(s, s.selectionAnchor(), s.bandBox()) }
             ct.onSubPage = { openSmartY() }
         }
-        pad.bands.addAll(ctlTiles)
         pad.subPageOpen = { smartYPage.visibility == View.VISIBLE }
         pad.subPageBack = { closeSmartY(anchor = true) }
         smartYPage.onBack = { closeSmartY(anchor = true) }
@@ -129,6 +134,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         val again: () -> Unit = { main.post { refreshGroups() } }
         for (gu in gameUis) gu.onContent = again
         for (bt in bottomTiles) bt.onContent = again
+        for (at in addonTiles) at.onContent = again
         view.onContent = again
         GameUi.onChange(again); ThirdPartyAddons.onChange(again); ImportedAddons.onChange(again); Settings.onChange(again); HomeAttackSwitch.onChange(again)
         CompassSwitch.onChange(again); RingsSwitch.onChange(again); TipsSwitch.onChange(again); HomeLootSwitch.onChange(again)
@@ -142,7 +148,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     /** [p] has rows to draw now */
     private fun hasContent(p: View): Boolean = when (p) {
         is SettingsView -> p.hasContent(); is GameUiSection -> p.hasContent(); is HomeSettingsSection -> p.hasContent()
-        is GeneralTilesView -> p.hasContent(); is BottomTilesView -> p.hasContent(); is ControllerTiles -> p.hasContent(); else -> true
+        is GeneralTilesView -> p.hasContent(); is BottomTilesView -> p.hasContent(); is ControllerTiles -> p.hasContent(); is AddonTiles -> p.hasContent(); else -> true
     }
     /** [g] has rows to draw now (a group without any is not shown: no heading, no cursor stop) */
     fun hasRows(g: SettingsTabs.Group): Boolean = groupBoxes.firstOrNull { it.group == g }?.parts?.any { hasContent(it) } == true
@@ -182,6 +188,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             SettingsTabs.Drawer.VIEW -> run.add(b)
             SettingsTabs.Drawer.HOME -> { flush(); out.add(when (b) {
                 SettingsTabs.Block.ATTACK_CAST -> attackSection; SettingsTabs.Block.CAST_BAR -> castBarSection; else -> homeSection }) }
+            // Add-ons' cards: ONE view for the group's blocks (its cards are the add-ons the blocks name)
+            SettingsTabs.Drawer.ADDONS -> { flush(); if (out.lastOrNull() !is AddonTiles) out.add(AddonTiles(context, view).also { addonTiles.add(it) }) }
             SettingsTabs.Drawer.GAME_UI -> {
                 flush()
                 val part = gameUiPart(b)
@@ -217,6 +225,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         bottomTiles.forEach { it.closeSelection() }
         ctlTiles.forEach { it.closeSelection() }
         closeSmartY(anchor = false)
+        addonTiles.forEach { it.closeSelection() }
         touched = false
         open.clear(); open.addAll(SettingsTabs.openOnShow(t) { hasRows(it) })
         applyGroups()
