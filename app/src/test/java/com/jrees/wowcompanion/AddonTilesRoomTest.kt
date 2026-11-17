@@ -46,6 +46,7 @@ class AddonTilesRoomTest {
     private val noFetchF = ThirdPartyAddons::class.java.getDeclaredField("noFetch").apply { isAccessible = true }
     private var savedDir: Any? = null
     private var savedState: Any? = null
+    private var savedNoFetch = false
 
     private fun art(root: String? = System.getenv("THEME_ART_ROOT")) {
         val f = ArtHarvest::class.java.getDeclaredField("rootDir"); f.isAccessible = true; f.set(null, root?.let { File(it) })
@@ -60,7 +61,8 @@ class AddonTilesRoomTest {
     @Before fun start() {
         Settings.init(app); SettingsTabs.init(app); GameUi.init(app); PolestarQol.init(app)
         ThirdPartyAddons.init(app)
-        noFetchF.setBoolean(null, true)                                 // no downloads here
+        savedNoFetch = noFetchF.getBoolean(null)
+        noFetchF.setBoolean(null, true)                                 // no downloads here (put back in forget)
         savedDir = dirF.get(ThirdPartyAddons); savedState = stateF.get(ThirdPartyAddons)
         dirF.set(ThirdPartyAddons, null)
         installed()                                                     // nothing in the game
@@ -90,6 +92,8 @@ class AddonTilesRoomTest {
         for (a in ThirdPartyAddons.ALL) for ((k, _) in a.pkgs()) live(a, k, null)
         for (a in ThirdPartyAddons.ALL) { if (!a.base) ThirdPartyAddons.setCore(a, false); a.modules.forEach { ThirdPartyAddons.setModule(a, it, false) } }
         dirF.set(ThirdPartyAddons, savedDir); stateF.set(ThirdPartyAddons, savedState)
+        noFetchF.setBoolean(null, savedNoFetch)
+        Theme.use(ThemePresets.CLASSIC.id)
         Settings.polestarGuide = null
         GameUi.character = null
         AddonTiles.kit = true
@@ -211,6 +215,11 @@ class AddonTilesRoomTest {
         live(ThirdPartyAddons.MANNERS, "core", ThirdPartyAddons.Status(ThirdPartyAddons.Kind.DOWNLOADING, "Downloading", 42))
         assertEquals(GameUiTiles.Badge.SENT, AddonCards.badge(ThirdPartyAddons.MANNERS))
         assertEquals("42%", AddonCards.value(ThirdPartyAddons.MANNERS))
+        assertTrue("on its way in: still Off, dimmed", AddonCards.dimmed(ThirdPartyAddons.MANNERS))
+        // moving out at the next start: Off, dimmed, the hourglass
+        ThirdPartyAddons.setCore(ThirdPartyAddons.SPOKEN, false)
+        assertTrue(AddonCards.dimmed(ThirdPartyAddons.SPOKEN))
+        assertEquals("Next start", AddonCards.value(ThirdPartyAddons.SPOKEN))
         // nothing to press while it downloads (its % is the status line)
         assertTrue(AddonCards.lines(ThirdPartyAddons.MANNERS, AddonCards.Env()).isEmpty())
     }
@@ -225,9 +234,13 @@ class AddonTilesRoomTest {
         // Install: one tap, the old row's write
         tap(cards(r), bandButtons(r).single()); lay(r)
         assertTrue(ThirdPartyAddons.coreWanted(ThirdPartyAddons.SPOKEN))
-        // waiting to download: Cancel
+        // waiting to download: Cancel; no word repeated (the value says Waiting, the status line nothing more)
         assertEquals(listOf("core"), cards(r).bandKeys())
-        assertEquals("Cancel", AddonCards.lines(ThirdPartyAddons.SPOKEN, AddonCards.Env()).single().words.single())
+        val l = AddonCards.lines(ThirdPartyAddons.SPOKEN, AddonCards.Env()).single()
+        assertEquals("Cancel", l.words.single())
+        assertEquals("Version", l.label)
+        assertEquals("Waiting", AddonCards.value(ThirdPartyAddons.SPOKEN))
+        assertEquals("", AddonCards.status(ThirdPartyAddons.SPOKEN, AddonCards.Env()))
         shot(r, "add_03_band_spoken_waiting")
     }
 
@@ -250,35 +263,42 @@ class AddonTilesRoomTest {
         shot(r, "add_05_band_uninstall_armed")
         tap(cards(r), bandButtons(r).first()); lay(r)
         assertFalse(ThirdPartyAddons.coreWanted(ThirdPartyAddons.SPOKEN))
-        // moving out at the next start: Keep it, the badge the hourglass, its own lines still there while it is in
+        // moving out at the next start: Keep it alone (its own lines go with it: Off = dimmed, nothing to set), the badge the hourglass
         assertEquals(GameUiTiles.Badge.SENT, AddonCards.badge(ThirdPartyAddons.SPOKEN))
         assertEquals("Keep it", AddonCards.lines(ThirdPartyAddons.SPOKEN, AddonCards.Env()).first().words.single())
-        // Books: Off -> On (one write, the old row's)
-        val books = cards(r).bandKeys().indexOf("m.books")
-        assertTrue(books > 0)
+        assertEquals(listOf("core"), cards(r).bandKeys())
     }
 
-    /** Polestar: the guide's On / Off across (its Install / Uninstall and Quest tracking in one), the QoL switches only with a character
-     *  and the guide on; Restart only while the game runs and a change waits for it */
+    /** Polestar: the same band as every card - Version + Install / Uninstall (twice), which IS the guide's choice (PolestarGuide), then
+     *  the QoL switches only with a character; Restart only while the game runs and a change waits for it */
     @Test fun polestarBand() {
         Settings.polestarGuide = PolestarGuide.ON; installed("polestar")
         GameUi.character = "Sample-Realm"
         val r = room(game = true)
         open(r, "polestar")
-        assertEquals(listOf("guide", "pq.1", "pq.2", "pq.4"), cards(r).bandKeys())
+        assertEquals(listOf("core", "pq.1", "pq.2", "pq.4"), cards(r).bandKeys())
+        assertEquals("Uninstall", AddonCards.lines(ThirdPartyAddons.POLESTAR, AddonCards.Env()).first().words.single())
         shot(r, "add_06_band_polestar")
         // Auto vendor On (per character)
         val b = bandButtons(r)
-        tap(cards(r), b[4]); lay(r)                                     // guide On, Off, quest On, Off, vendor On
+        tap(cards(r), b[3]); lay(r)                                     // Uninstall, quest On, Off, vendor On
         assertTrue(PolestarQol.on("Sample-Realm", PolestarQol.VENDOR))
         // no character: no per-character lines (no dead stops)
         GameUi.character = null; lay(r)
-        assertEquals(listOf("guide"), cards(r).bandKeys())
-        // the guide Off: it moves out at the next start, Restart game offered while the game runs
-        tap(cards(r), bandButtons(r)[1]); lay(r)
+        assertEquals(listOf("core"), cards(r).bandKeys())
+        // Uninstall twice = the guide Off: it moves out at the next start; Keep it, and Restart game while the game runs
+        tap(cards(r), bandButtons(r)[0]); lay(r)
+        assertEquals(PolestarGuide.ON, Settings.polestarGuide)
+        tap(cards(r), bandButtons(r)[0]); lay(r)
         assertEquals(PolestarGuide.OFF, Settings.polestarGuide)
-        assertEquals(listOf("guide", "restart"), cards(r).bandKeys())
+        assertEquals(listOf("core", "restart"), cards(r).bandKeys())
+        assertEquals("Keep it", AddonCards.lines(ThirdPartyAddons.POLESTAR, AddonCards.Env(gameRunning = true)).first().words.single())
+        assertTrue("Off: dimmed", AddonCards.dimmed(ThirdPartyAddons.POLESTAR))
+        assertEquals("", AddonCards.status(ThirdPartyAddons.POLESTAR, AddonCards.Env(gameRunning = true)))
         shot(r, "add_07_band_polestar_restart")
+        // Keep it: back On (one tap)
+        tap(cards(r), bandButtons(r)[0]); lay(r)
+        assertEquals(PolestarGuide.ON, Settings.polestarGuide)
     }
 
     /** QuestTrail: only while a copy is there, last (so it never leaves a hole); its band its Uninstall */
@@ -299,7 +319,7 @@ class AddonTilesRoomTest {
         val r = room()
         open(r, "manners")
         assertEquals(emptyList<String>(), cards(r).bandKeys())
-        assertTrue("Downloading (42%)" == AddonCards.status(ThirdPartyAddons.MANNERS, AddonCards.Env()))
+        assertEquals("the % is the value word; the status line only its bar", "", AddonCards.status(ThirdPartyAddons.MANNERS, AddonCards.Env()))
         shot(r, "add_09_band_manners_downloading")
     }
 
@@ -313,11 +333,13 @@ class AddonTilesRoomTest {
         var left = false
         r.pad.onLeave = { left = true }
         assertTrue(r.pad.onTabRow)
+        shot(r, "add_00_landing")                                       // the room's landing: the tab row (core's SettingsPad)
         press(r, "PADDDOWN")                                            // Import
         press(r, "PADDDOWN")                                            // the cards' row, the card nearest in x (the middle one)
         val boxes = cardBoxes(r)
         val manners = boxes.getValue("manners")
         assertEquals(manners, r.pad.focusBox())
+        shot(r, "add_14_cursor_on_card")
         press(r, "PADDLEFT"); press(r, "PADDLEFT")
         assertEquals(boxes.values.first(), r.pad.focusBox())
         press(r, "PADDLEFT")                                            // the row's end: it stays
@@ -327,6 +349,7 @@ class AddonTilesRoomTest {
         press(r, "PAD1")
         assertEquals("manners", cards(r).openCard)
         assertEquals("the cursor stays on the card", manners, r.pad.focusBox())
+        shot(r, "add_15_cursor_on_open_card")
         press(r, "PADDDOWN")
         val inBand = r.pad.focusBox()!!
         assertTrue("into the band", inBand.top > manners.bottom)
@@ -352,6 +375,21 @@ class AddonTilesRoomTest {
         open(r, "spoken")
         r.show(SettingsTabs.Tab.TOP); lay(r)
         assertNull(cards(r).openCard)
+    }
+
+    // ---------------------------------------------------------------- the themes (shots only)
+
+    /** the tab and an open band under the OLED and dark presets (there is no light preset: ThemePresets.ALL is Classic, OLED x7,
+     *  Dark x3) - the themes area's own render set: OLED Bronze, OLED Rose, Dark Silver */
+    @Test fun shotsThemes() {
+        out ?: return
+        installed("spoken", "polestar"); ThirdPartyAddons.setCore(ThirdPartyAddons.SPOKEN, true); Settings.polestarGuide = PolestarGuide.ON
+        for (t in listOf("oled_bronze", "oled_rose", "dark_silver")) {
+            Theme.use(t)
+            val r = room()
+            shot(r, "add_16_${t}_tab")
+            open(r, "spoken"); shot(r, "add_16_${t}_band")
+        }
     }
 
     // ---------------------------------------------------------------- the pictures (shots only)

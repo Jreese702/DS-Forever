@@ -21,12 +21,13 @@ import kotlin.math.abs
  * a tap or A on a card opens its band (another card's closes), B closes it with the cursor back on the card.
  *
  *  - The badge is Top's set (C2): installed = ON; on its way in or out (waiting, downloading, downloaded, moving out) = SENT; a move
- *    that failed = REFUSED; not installed = none, the well dimmed. The value word: Installed / the download's size / its % / Next start.
- *  - The band: the ONE action first (Install; Uninstall twice within 3 s, the Reload pattern; Cancel; Keep it; Try again; Restart game),
- *    then, only while installed, the add-on's own lines (Spoken's modules and stop rules; Polestar's quest guide and its QoL switches).
- *    A line that cannot act now is not drawn (C10): nothing to press while a download runs (its % is the status line), Restart only
- *    while the game runs, Polestar's per-character switches only with a character.
- *  - The status line says state only (the add-on's own status words, by-line and licence), never what a setting does.
+ *    that failed = REFUSED; not installed = none. The well is dimmed whenever the add-on is not in and staying (0.2's Off dim).
+ *    The value word, always Top's gold: Installed / the download's size / its % / Waiting / Next start / Failed.
+ *  - The band, the same shape on every card (Polestar too): "Version" + the ONE action (Install; Uninstall twice within 3 s, the
+ *    Reload pattern; Cancel; Keep it; Try again), Restart game while a change waits, then, only while installed and staying, the
+ *    add-on's own lines (Spoken's modules and stop rules; Polestar's QoL switches). A line that cannot act now is not drawn (C10).
+ *  - The status line says only state the value word does not (Restarting..., No Wi-Fi, No space), never what a setting does, and
+ *    carries a running download's bar. No by-line (design section 5).
  *
  * The writes are the old rows' own (ThirdPartyAddons.setCore / setModule / setOption / retry, PolestarGuide.set, PolestarQol.set, the
  * host's Restart and add-on settings): only where and how they are drawn changed. Voice models and Imported keep their compact rows
@@ -69,10 +70,11 @@ object AddonCards {
         else -> GameUiTiles.Badge.SENT
     }
 
-    /** the well dims while the add-on is not installed and not on its way */
-    fun dimmed(a: ThirdPartyAddons.Addon): Boolean = state(a) == State.NONE
+    /** the well dims while the add-on is not in and staying (Off: not installed, on its way in, or moving out at the next start) -
+     *  the design's 0.2 "Off = a 165-alpha ink dim over the well", the same rule on every card and in every state */
+    fun dimmed(a: ThirdPartyAddons.Addon): Boolean = !(ThirdPartyAddons.coreInstalled(a) && ThirdPartyAddons.coreWanted(a))
 
-    /** the card's value word (Tr.t'd by the drawer): Installed, its size, its download's %, Next start */
+    /** the card's value word (Tr.t'd by the drawer): Installed, its size, its download's %, Waiting, Next start, Failed */
     fun value(a: ThirdPartyAddons.Addon): String = when (state(a)) {
         State.INSTALLED -> "Installed"
         State.NONE -> ThirdPartyAddons.size(a.core.mb)
@@ -91,38 +93,32 @@ object AddonCards {
     /** something of [a] is downloaded and waits for the game to start again */
     fun waitsForStart(a: ThirdPartyAddons.Addon): Boolean =
         a.pkgs().any { (k, _) -> ThirdPartyAddons.status(a, k).kind == ThirdPartyAddons.Kind.DOWNLOADED } ||
-            (a.base && ThirdPartyAddons.status(a, "core").kind == ThirdPartyAddons.Kind.REMOVING)
+            ThirdPartyAddons.status(a, "core").kind == ThirdPartyAddons.Kind.REMOVING
 
-    /** the open card's band now: the ONE action first, then (installed) its own lines; a line that cannot act now is not there */
+    /**
+     * The open card's band now, the SAME shape on every card (Polestar too: its Install / Uninstall is ThirdPartyAddons.setCore, which
+     * for a base add-on IS PolestarGuide.set - the guide's On / Off and Quest tracking are that one choice, so it is drawn once):
+     *  1. "Version x.y" + the ONE action: Install / Uninstall (twice) / Cancel / Keep it / Try again; none while a download runs
+     *  2. Restart game, only while the game runs and a change waits for its next start (C10)
+     *  3. installed and staying: the add-on's own lines (Spoken's modules and stop rules, Polestar's per-character QoL, a settings page)
+     * The card's value word already says the state, so no line repeats it (the version is the only word beside the action).
+     */
     fun lines(a: ThirdPartyAddons.Addon, env: Env): List<Line> {
         val out = ArrayList<Line>()
         val installed = ThirdPartyAddons.coreInstalled(a)
         val wanted = ThirdPartyAddons.coreWanted(a)
-        val s = state(a)
-        if (a.base) {
-            // Polestar: part of the base install, its Install / Uninstall IS the quest guide's On / Off (PolestarGuide), Quest tracking's
-            // Vanilla / Polestar the same choice (so one line): the card's own choice, across, with Top's eye signs
-            val g = Settings.polestarGuide
-            out += Line("guide", null, null, listOf("On", "Off"), if (g == PolestarGuide.ON) 0 else if (g == PolestarGuide.OFF) 1 else -1, signs = true)
-            when {
-                wanted && ThirdPartyAddons.anyFailed(a) -> out += Line("retry", "Failed", null, listOf("Try again"), action = true)
-                env.gameRunning && !env.restarting && waitsForStart(a) -> out += Line("restart", "Next start", null, listOf("Restart game"), action = true)
-            }
-            if (installed && g == PolestarGuide.ON && env.who != null)
-                for ((bit, label) in PQ) out += Line("pq.$bit", label, null, listOf("On", "Off"), if (PolestarQol.on(env.who, bit)) 0 else 1)
-            return out
-        }
         val armedOut = env.armed == "${a.id}.uninstall"
-        when {
-            waitsForStart(a) && env.gameRunning -> if (!env.restarting) out += Line("restart", "Next start", null, listOf("Restart game"), action = true)
-            wanted && ThirdPartyAddons.anyFailed(a) -> out += Line("core", "Failed", null, listOf("Try again"), action = true)
-            s == State.DOWNLOADING -> {}                                        // its % is the status line: nothing to press
-            installed && wanted -> out += Line("core", "Version", a.version, listOf(if (armedOut) "Tap again" else "Uninstall"), action = true, armed = armedOut)
-            installed -> out += Line("core", "Next start", null, listOf("Keep it"), action = true)      // moving out at the next start
-            wanted -> out += Line("core", "Waiting", null, listOf("Cancel"), action = true)            // Wi-Fi, room, a failure
-            else -> out += Line("core", "Download", ThirdPartyAddons.size(a.core.mb), listOf("Install"), action = true)
+        val act: String? = when {
+            wanted && ThirdPartyAddons.anyFailed(a) -> "Try again"
+            state(a) == State.DOWNLOADING -> null                                   // the % is the card's value and the band's bar
+            installed && wanted -> if (armedOut) "Tap again" else "Uninstall"
+            installed -> "Keep it"                                                  // moving out at the next start
+            wanted -> "Cancel"                                                      // waiting / downloaded
+            else -> "Install"
         }
-        if (!installed) return out
+        if (act != null) out += Line("core", "Version", a.version, listOf(act), action = true, armed = armedOut && installed && wanted)
+        if (env.gameRunning && !env.restarting && waitsForStart(a)) out += Line("restart", "", null, listOf("Restart game"), action = true)
+        if (!installed || !wanted) return out
         for (m in a.modules) {
             val on = ThirdPartyAddons.moduleOn(a, m)
             val st = ThirdPartyAddons.status(a, m.id)
@@ -137,20 +133,23 @@ object AddonCards {
             out += Line("m.${m.id}", m.title, v, listOf("On", "Off"), if (on) 0 else 1)
         }
         for (o in a.options) out += Line("o.${o.id}", OPTION_LABELS[o.id] ?: o.title, null, listOf("On", "Off"), if (ThirdPartyAddons.option(a, o)) 0 else 1)
-        // its own settings view (QuestTrail's options pages, mirrored), only with the game up
+        // Polestar's per-character switches: only with a character (no dead stops)
+        if (a.id == ThirdPartyAddons.POLESTAR.id && env.who != null)
+            for ((bit, label) in PQ) out += Line("pq.$bit", label, null, listOf("On", "Off"), if (PolestarQol.on(env.who, bit)) 0 else 1)
+        // its own settings view, only with the game up
         a.settings?.let { if (env.gameRunning) out += Line("settings", it, null, listOf("Open"), action = true) }
         return out
     }
 
-    /** the band's one status line: state only - what the add-on is doing (its own words, through [tr]), else its by-line and licence
-     *  (names, never translated; the version is the action line's value) */
+    /** the band's one status line: state the card's value word does not already say, in two words at most (the terse rule, design
+     *  0.2: "used only for state, never for explanations"): Restarting..., No Wi-Fi, No space; otherwise empty (a download's % is the
+     *  card's value, its bar this line) */
     fun status(a: ThirdPartyAddons.Addon, env: Env, tr: (String) -> String = { it }): String {
         if (env.restarting) return tr("Restarting...")
-        val st = ThirdPartyAddons.status(a, "core")
-        return when (state(a)) {
-            State.INSTALLED, State.NONE -> "${a.by} · ${a.license}"
-            State.DOWNLOADING -> "${tr(st.line)} (${st.pct}%)"
-            else -> tr(st.line)
+        return when (ThirdPartyAddons.status(a, "core").kind) {
+            ThirdPartyAddons.Kind.WAITING_WIFI -> tr("No Wi-Fi")
+            ThirdPartyAddons.Kind.NO_SPACE -> tr("No space")
+            else -> ""
         }
     }
 }
@@ -308,8 +307,6 @@ class AddonTiles(context: Context, private val host: SettingsView) : View(contex
         val now = SystemClock.elapsedRealtime()
         val on = k == 0
         when {
-            line.key == "guide" -> PolestarGuide.set(on)
-            line.key == "retry" -> ThirdPartyAddons.retry(a)
             line.key == "restart" -> { restartAt = now; host.onRestart(); postDelayed({ refresh() }, RESTART_MS + 50) }
             line.key == "settings" -> host.onAddonSettings(a)
             line.key.startsWith("pq.") -> PolestarQol.set(GameUi.character, line.key.removePrefix("pq.").toInt(), on)
@@ -325,7 +322,7 @@ class AddonTiles(context: Context, private val host: SettingsView) : View(contex
                         if (armed == "${a.id}.uninstall" && now - armedAt < ARM_MS) { armed = null; ThirdPartyAddons.setCore(a, false) }
                         else { armed = "${a.id}.uninstall"; armedAt = now; postDelayed({ invalidate() }, ARM_MS + 50) }
                     }
-                    else -> ThirdPartyAddons.setCore(a, !wanted)                                       // Install / Cancel / Keep it
+                    else -> ThirdPartyAddons.setCore(a, !wanted)          // Install / Cancel / Keep it (Polestar: PolestarGuide.set)
                 }
             }
         }
@@ -381,7 +378,7 @@ class AddonTiles(context: Context, private val host: SettingsView) : View(contex
         val maxW = box.w - 2f * GameUiTiles.WELL_PAD - 4f
         pName.color = Theme.text
         c.drawText(fitText(pName, a.title, maxW, NAME_SIZE, NAME_MIN), x, box.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 34f, pName)
-        pValue.color = if (AddonCards.state(a) == AddonCards.State.INSTALLED) Theme.gold else Theme.textDim
+        pValue.color = Theme.gold                                       // Top's value word: Friz 22 in the accent, whatever it says
         c.drawText(fitText(pValue, Tr.t(AddonCards.value(a)), maxW, 22f, 18f), x, box.b - 12f, pValue)
     }
 
@@ -407,11 +404,19 @@ class AddonTiles(context: Context, private val host: SettingsView) : View(contex
         pStroke.color = Theme.gold; pStroke.strokeWidth = 2.6f
         c.drawLine(nx - 18f, rect.top + 1f, nx, rect.top - 13f, pStroke); c.drawLine(nx, rect.top - 13f, nx + 18f, rect.top + 1f, pStroke)
         picture(c, a, band.picture.rect())
+        // ONE label size for the whole band: the largest every label fits at (a long es / fr / "Stop on Accept" shrinks them all alike)
+        var labelSize = 25f
+        for ((i, lb) in band.lines.withIndex()) {
+            val lab = lb.label ?: continue
+            val words = Tr.t(l.lines.getOrNull(i)?.label ?: "")
+            pBandLabel.textSize = labelSize
+            while (pBandLabel.measureText(words) > lab.w - 6f && labelSize > LABEL_MIN) { labelSize -= 1f; pBandLabel.textSize = labelSize }
+        }
         for ((i, lb) in band.lines.withIndex()) {
             val line = l.lines.getOrNull(i) ?: continue
             lb.label?.let { lab ->
                 pBandLabel.color = Theme.text
-                val name = fitText(pBandLabel, Tr.t(line.label ?: ""), lab.w - 6f, 25f, 18f)
+                val name = fitText(pBandLabel, Tr.t(line.label ?: ""), lab.w - 6f, labelSize, labelSize)
                 if (line.value != null) {
                     c.drawText(name, lab.l + 4f, lab.cy - 6f, pBandLabel)
                     pValue.color = Theme.gold
@@ -429,12 +434,13 @@ class AddonTiles(context: Context, private val host: SettingsView) : View(contex
         }
         val st = band.status
         pSub.color = Theme.textDim
-        c.drawText(fitText(pSub, AddonCards.status(a, env()) { Tr.t(it) }, st.w - 8f, 22f, 18f), st.l + 4f, st.cy + 8f, pSub)
+        val words = AddonCards.status(a, env()) { Tr.t(it) }
+        if (words.isNotEmpty()) c.drawText(fitText(pSub, words, st.w - 8f, 22f, 18f), st.l + 4f, st.cy + 8f, pSub)
         pSub.textSize = 22f
-        // a download under way: its fill under the words (the game's gold on the ink; not a stop)
+        // a download under way: its fill on the status line (the game's gold on the ink; not a stop; the % is the card's value)
         if (AddonCards.state(a) == AddonCards.State.DOWNLOADING) {
             val pct = ThirdPartyAddons.status(a, "core").pct.coerceIn(0, 100)
-            val bar = RectF(st.l + 4f, st.b + 10f, minOf(st.r, st.l + 4f + 420f), st.b + 26f)
+            val bar = RectF(st.l + 4f, st.cy - 9f, minOf(st.r, st.l + 4f + 420f), st.cy + 9f)
             pFill.color = Theme.ink; c.drawRoundRect(bar, 6f, 6f, pFill)
             pFill.color = Theme.gold
             if (pct > 0) c.drawRoundRect(RectF(bar.left + 3f, bar.top + 3f, bar.left + 3f + (bar.width() - 6f) * pct / 100f, bar.bottom - 3f), 4f, 4f, pFill)
@@ -469,6 +475,8 @@ class AddonTiles(context: Context, private val host: SettingsView) : View(contex
         const val SLOP = 24f
         const val NAME_SIZE = 25f
         const val NAME_MIN = 18f
+        /** the band's labels shrink together no further than this */
+        const val LABEL_MIN = 18f
         /** an action's one button at most this wide */
         const val ACTION_W = 320f
         /** Uninstall's two-tap window (Reload's) */
