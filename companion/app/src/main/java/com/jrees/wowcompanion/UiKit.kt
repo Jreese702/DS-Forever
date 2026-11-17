@@ -3064,6 +3064,31 @@ object UiKit {
     }
 
     /**
+     * char-popout-current WORN, NOT A CURSOR: the slide-out's tile of what the slot wears now: a round dark badge with a gold rim inside its
+     * top-right corner holding the game's tick (kit `check_tick`, else a drawn one). No edge round the tile: the gold box is the cursor's.
+     */
+    fun wornMark(c: Canvas, r: RectF) {
+        val d = r.width() * 0.36f
+        // inside the tile's corner (a rail sliding up stands its tiles close: a badge over the edge read as the next tile's)
+        val cx = r.right - d / 2f - r.width() * 0.04f; val cy = r.top + d / 2f + r.width() * 0.04f
+        pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(230, 12, 10, 8)
+        c.drawCircle(cx, cy, d / 2f, pFlat)
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = maxOf(2f, d * 0.07f); pFlat.color = Theme.gold
+        c.drawCircle(cx, cy, d / 2f, pFlat)
+        val ts = d * 0.78f
+        val t = RectF(cx - ts / 2f, cy - ts / 2f, cx + ts / 2f, cy + ts / 2f)
+        val tick = tex("check_tick")
+        if (tick != null) c.drawBitmap(tick, null, t, pixel)
+        else {
+            pFlat.strokeWidth = ts * 0.14f; pFlat.strokeCap = Paint.Cap.ROUND
+            c.drawLine(t.left + ts * 0.2f, t.centerY(), t.centerX() - ts * 0.06f, t.bottom - ts * 0.24f, pFlat)
+            c.drawLine(t.centerX() - ts * 0.06f, t.bottom - ts * 0.24f, t.right - ts * 0.16f, t.top + ts * 0.2f, pFlat)
+            pFlat.strokeCap = Paint.Cap.BUTT
+        }
+        pFlat.style = Paint.Style.FILL
+    }
+
+    /**
      * AN ITEM IN THE HAND: it rides on the focused slot's lower right corner, the way it rides on
      * the game's cursor. [slot] is the slot the focus is on. The slot it came from is the room's
      * to grey (the game greys a locked slot).

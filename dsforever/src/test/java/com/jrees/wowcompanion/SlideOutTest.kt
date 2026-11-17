@@ -419,4 +419,66 @@ class SlideOutTest {
         val all = (0 until c3.lines.length()).joinToString("|") { c3.lines.optJSONObject(it).optString("t") }
         assertTrue("the shield goes to the bags: its losses at the foot ($all)", all.contains("Armor"))
     }
+
+    // ---------------------------------------------------------------- char-popout-current: the worn piece (the user, 2026-11-16: "the
+    // cursor should be able to go back to the currently equipped item in the swap menu")
+
+    @Test fun theWornPieceComesFirstThenTheSwapThenTheBagsThenTheBlank() {
+        val e = SlideOut.entries(listOf(pick("INVTYPE_WEAPON", 20)), 16, worn = true, swaps = listOf(17), current = true)
+        assertEquals(4, e.size)
+        assertTrue("the worn piece first, beside the slot", e[0].current)
+        assertFalse("it is not the blank", e[0].blank); assertFalse(e[0].swap); assertNull(e[0].pick)
+        assertTrue(e[1].swap); assertFalse(e[2].current); assertTrue("the blank stays, last", e[3].blank)
+        assertEquals("exactly one worn tile", 1, e.count { it.current })
+    }
+
+    @Test fun anEmptySlotHasNoWornTile() {
+        assertTrue(SlideOut.entries(emptyList(), 5, worn = false, current = true).isEmpty())
+        val e = SlideOut.entries(listOf(pick("INVTYPE_CHEST")), 5, worn = false, current = true)
+        assertEquals(1, e.size); assertFalse(e[0].current)
+    }
+
+    @Test fun theWornAmmoIsItsTileNoBlank() {
+        val e = SlideOut.entries(listOf(pick("INVTYPE_AMMO")), WornReplace.AMMO, worn = true, current = true)
+        assertEquals(2, e.size); assertTrue(e[0].current); assertFalse(e[1].blank); assertFalse(e[1].current)
+    }
+
+    @Test fun theCursorCanComeBackToTheWornPiece() {
+        val n = SlideOut.entries(listOf(pick("INVTYPE_HEAD", 18), pick("INVTYPE_HEAD", 9)), 1, worn = true, current = true).size
+        assertEquals(4, n)
+        var sel = 0
+        sel = SlideOut.key(sel, n, SlideOut.dir(1), "PADDRIGHT").first; assertEquals(1, sel)
+        sel = SlideOut.key(sel, n, SlideOut.dir(1), "PADDRIGHT").first; assertEquals(2, sel)
+        sel = SlideOut.key(sel, n, SlideOut.dir(1), "PADDLEFT").first
+        sel = SlideOut.key(sel, n, SlideOut.dir(1), "PADDLEFT").first
+        assertEquals("back on the worn piece", 0, sel)
+        assertEquals("the window shows it again", 0, SlideOut.first(sel, 6, 2))
+    }
+
+    @Test fun theWornPieceIsNeverGreyed() {
+        val cur = SlideOut.Entry(null, current = true)
+        assertNull("armour in a fight: keeping it is fine", SlideOut.why(cur, 5, true, false, 3, emptyMap(), routed = false))
+        assertNull("a game window, bags full", SlideOut.why(cur, 16, false, true, 0, emptyMap(), routed = false))
+        assertEquals("the blank in a fight still is", "In combat",
+            SlideOut.why(SlideOut.Entry(null), 5, true, false, 3, emptyMap(), routed = true))
+    }
+
+    @Test fun theWornPiecesCardIsItsTooltipNoStatChanges() {
+        val chest = wornRow(903, "INVTYPE_CHEST", arr(stat("RESISTANCE0_NAME", "Armor", 12), stat("ITEM_MOD_STAMINA_SHORT", "Stamina", 1)))
+            .put("quality", 1)
+        val short = SlideOut.card(SlideOut.Entry(null, current = true), 5, null, mapOf(5 to chest), false)
+        assertEquals("Worn 903", short.title); assertEquals(1, short.quality)
+        val t = (0 until short.lines.length()).map { short.lines.getJSONObject(it).optString("t") }
+        assertEquals("its own stats, no stat changes", listOf("12 Armor", "+1 Stamina"), t)
+        val tip = JSONArray().put(JSONObject().put("t", "Tattered Cloth Vest")).put(JSONObject().put("t", "Chest"))
+            .put(JSONObject().put("t", "12 Armor"))
+        val full = SlideOut.card(SlideOut.Entry(null, current = true), 5, null, mapOf(5 to JSONObject(chest.toString()).put("tip", tip)), false)
+        assertEquals("Tattered Cloth Vest", full.title); assertTrue(full.full)
+        val ft = (0 until full.lines.length()).map { full.lines.getJSONObject(it).optString("t") }
+        assertEquals(listOf("Chest", "12 Armor"), ft)
+        assertFalse("not the blank's card", full.title == WornMore.UNEQUIP)
+        val ammo = JSONObject().put("id", 2512).put("name", "Rough Arrow").put("quality", 1).put("count", 200)
+        assertEquals("the ammo slot's card is the worn ammo", "Rough Arrow",
+            SlideOut.card(SlideOut.Entry(null, current = true), WornReplace.AMMO, null, emptyMap(), false, ammo = ammo).title)
+    }
 }

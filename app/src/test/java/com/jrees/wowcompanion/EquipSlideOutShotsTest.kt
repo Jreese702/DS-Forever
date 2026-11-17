@@ -182,15 +182,16 @@ class EquipSlideOutShotsTest {
     @Test fun shots() {
         artRoot()
         Tr.init(RuntimeEnvironment.getApplication())
+        // char-popout-current: every worn slot's rail starts with its worn piece, so each picture's entry is one further on
         // one rail per column (D3a): the left column slides right, the right column left, the weapons up
-        rail("rail_left_head.png", 1, 0)
-        rail("rail_right_ring_fulltip.png", 11, 0)               // the Seal: its full tooltip (a Bags visit kept it), Finger 1's changes
-        rail("rail_right_ring_short.png", 11, 1)                 // the Copper Vein ring: the short card
-        rail("rail_weapons_main_bagsfull.png", 16, 0, room(free = 0))   // the maul over a worn buckler, bags full: greyed
-        rail("rail_blank_chest.png", 5, 1)                       // the blank: Unequip and the losses
-        rail("rail_fight_chest.png", 5, 0, room(combat = true))  // a fight: armour greyed, A says why
-        rail("rail_long_ring_chevron.png", 11, 4)                // six rings and the blank: four shown, the chevrons
-        rail("rail_ammo.png", 0, 0, room(ammo = true))           // the ammo slot: the bags' arrows, no blank
+        rail("rail_left_head.png", 1, 1)
+        rail("rail_right_ring_fulltip.png", 11, 1)               // the Seal: its full tooltip (a Bags visit kept it), Finger 1's changes
+        rail("rail_right_ring_short.png", 11, 2)                 // the Copper Vein ring: the short card
+        rail("rail_weapons_main_bagsfull.png", 16, 1, room(free = 0))   // the maul over a worn buckler, bags full: greyed
+        rail("rail_blank_chest.png", 5, 2)                       // the blank: Unequip and the losses
+        rail("rail_fight_chest.png", 5, 1, room(combat = true))  // a fight: armour greyed, A says why
+        rail("rail_long_ring_chevron.png", 11, 5)                // six rings and the blank: four shown, the chevrons
+        rail("rail_ammo.png", 0, 1, room(ammo = true))           // the ammo slot: the bags' arrows, no blank
         // the slide half way (D5a: 160 ms, 15 ms apart)
         room().let { v ->
             set(v, "chosenSlot", 11); call(v, "openRail", 11)
@@ -296,11 +297,11 @@ class EquipSlideOutShotsTest {
     @Test fun aFingerOnTheCardsAIsATheBIsB() {
         Tr.init(RuntimeEnvironment.getApplication())
         val a = room()
-        set(a, "chosenSlot", 1); call(a, "openRail", 1); frame(a)
+        set(a, "chosenSlot", 1); call(a, "openRail", 1); set(a, "railSel", 1); frame(a)     // char-popout-current: past the worn cap
         val ra = cardHit(a, "a")
         tap(a, ra.centerX(), ra.centerY())
         assertEquals("A on the card: the rail closed", null, get(a, "railFor"))
-        assertEquals("...with the highlighted piece flying into the slot (A, not B)", 0, chosenOfTheWayBack(a))
+        assertEquals("...with the highlighted piece flying into the slot (A, not B)", 1, chosenOfTheWayBack(a))
         assertEquals("...and its route tried (no game in a test: not taken)", "The game did not take it", get(a, "kitLine"))
 
         val b = room()
@@ -326,7 +327,7 @@ class EquipSlideOutShotsTest {
         set(v, "chosenSlot", 0); call(v, "openRail", 0); frame(v)
         @Suppress("UNCHECKED_CAST")
         val icons = (get(v, "railHits") as List<Pair<android.graphics.RectF, Int>>).map { it.first }
-        assertEquals("the two kinds of arrows in the bags (the worn kind left out)", 2, icons.size)
+        assertEquals("the worn arrows' tile, then the two kinds in the bags (the worn kind left out of them)", 3, icons.size)
         val boxes = (get(v, "focusables") as List<*>).associate { f ->
             val k = f!!.javaClass.getDeclaredField("key").also { it.isAccessible = true }.get(f) as String
             k to (f.javaClass.getDeclaredField("r").also { it.isAccessible = true }.get(f) as android.graphics.RectF)

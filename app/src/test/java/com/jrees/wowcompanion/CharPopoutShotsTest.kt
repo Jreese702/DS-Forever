@@ -35,7 +35,10 @@ import java.time.Duration
  *  - A on a slot opens the slide-out (Bags' X look); B closes it, a second B leaves the room (bLeadsHome);
  *  - a worn slot with nothing else still has its blank (the unequip), alone;
  *  - the main hand lists the off hand's one-hander first (a dual wielder), the off hand the main hand's, rings each other's;
- *  - a finger: a tap highlights and shows, a second tap opens, a long press opens (and its lift is not a tap).
+ *  - a finger: a tap highlights and shows, a second tap opens, a long press opens (and its lift is not a tap);
+ *  - char-popout-current (the user, 2026-11-16: "the cursor should be able to go back to the currently equipped item in the swap menu"):
+ *    the worn piece is the rail's first tile, the cursor starts on it, leaves it and comes back; its card is the worn piece's; A keeps
+ *    it (the rail goes in, nothing changes); a tap on it shows its card.
  * Pictures only when CHAR_POPOUT_SHOTS_DIR is set; CHAR_POPOUT_ART_ROOT = an art root laid out like the app's (ui/kit, fonts, icons.pak).
  */
 @RunWith(RobolectricTestRunner::class)
@@ -228,7 +231,7 @@ class CharPopoutShotsTest {
             press(v, "PAD1")
             assertEquals("A opens the pop-out", 1, get(v, "railFor"))
             val e = entries(v)
-            assertEquals(3, e.size); assertTrue("the blank last", e.last().blank)
+            assertEquals(4, e.size); assertTrue("the worn cap first", e[0].current); assertTrue("the blank last", e.last().blank)
             shot("popout_options_blank.png", v)
         }
         // 3. the shoulders: nothing in the bags fits; the blank alone (the user: "I should be able to select that to unequip")
@@ -237,7 +240,7 @@ class CharPopoutShotsTest {
             press(v, "PAD1")
             assertEquals(3, get(v, "railFor"))
             val e = entries(v)
-            assertEquals(1, e.size); assertTrue(e[0].blank)
+            assertEquals("the worn piece and the blank", 2, e.size); assertTrue(e[0].current); assertTrue(e[1].blank)
             shot("popout_nothing_only.png", v)
         }
         // 4. the main hand with a one-hander in the off hand: that one first, then the bags' weapons, then the blank
@@ -246,8 +249,9 @@ class CharPopoutShotsTest {
             press(v, "PAD1")
             assertEquals(16, get(v, "railFor"))
             val e = entries(v)
-            assertTrue("the off hand's weapon first", e[0].swap); assertEquals(17, e[0].from)
-            assertEquals(4, e.size); assertTrue(e.last().blank)
+            assertTrue(e[0].current)
+            assertTrue("the off hand's weapon next", e[1].swap); assertEquals(17, e[1].from)
+            assertEquals(5, e.size); assertTrue(e.last().blank)
             shot("popout_main_lists_offhand.png", v)
         }
         // 5. the off hand (a buckler) of a dual wielder: the main hand's one-hander first
@@ -255,7 +259,7 @@ class CharPopoutShotsTest {
             cursorTo(v, 17)
             press(v, "PAD1")
             val e = entries(v)
-            assertTrue(e[0].swap); assertEquals(16, e[0].from)
+            assertTrue(e[0].current); assertTrue(e[1].swap); assertEquals(16, e[1].from)
             shot("popout_off_lists_mainhand.png", v)
         }
         // 6. Finger 2 with both rings worn: Finger 1's ring first
@@ -263,7 +267,7 @@ class CharPopoutShotsTest {
             cursorTo(v, 12)
             press(v, "PAD1")
             val e = entries(v)
-            assertTrue(e[0].swap); assertEquals(11, e[0].from); assertTrue(e.last().blank)
+            assertTrue(e[0].current); assertTrue(e[1].swap); assertEquals(11, e[1].from); assertTrue(e.last().blank)
             shot("popout_ring_swap.png", v)
         }
     }
@@ -325,5 +329,66 @@ class CharPopoutShotsTest {
         val c = box(w, 7)
         touch(w, c.centerX(), c.centerY(), holdMs = 100L)
         assertNull(get(w, "railFor")); assertEquals(7, get(w, "chosenSlot"))
+    }
+
+    // ---------------------------------------------------------------- char-popout-current: the worn piece
+
+    @Suppress("UNCHECKED_CAST")
+    private fun railHit(v: CharacterView, i: Int): RectF =
+        (get(v, "railHits") as List<Pair<RectF, Int>>).first { it.second == i }.first
+
+    @Test fun theCursorStartsOnTheWornPieceAndComesBack() {
+        artRoot()
+        Tr.init(RuntimeEnvironment.getApplication())
+        val v = room()
+        cursorTo(v, 1)
+        press(v, "PAD1")
+        assertEquals(1, get(v, "railFor"))
+        assertEquals("the cursor starts on the worn cap", 0, get(v, "railSel"))
+        assertTrue(entries(v)[0].current)
+        shot("popout_worn_first.png", v)
+        press(v, "PADDRIGHT")                            // the head's rail slides right: along it
+        assertEquals("away to the first bag cap", 1, get(v, "railSel"))
+        press(v, "PADDRIGHT")
+        assertEquals(2, get(v, "railSel"))
+        shot("popout_worn_away.png", v)
+        press(v, "PADDLEFT"); press(v, "PADDLEFT")
+        assertEquals("back on the worn cap", 0, get(v, "railSel"))
+        assertEquals(1, get(v, "railFor"))
+        shot("popout_worn_back.png", v)
+        press(v, "PAD1")
+        assertNull("A on the worn piece keeps it: the pop-out goes in", get(v, "railFor"))
+        assertNull("nothing sent, nothing watched", get(v, "watch"))
+        assertEquals("the head still worn", 900, (v.javaClass.getDeclaredMethod("worn").also { it.isAccessible = true }
+            .invoke(v) as Map<*, *>).let { (it[1] as JSONObject).optInt("id") })
+        assertEquals("the head still chosen", 1, get(v, "chosenSlot"))
+    }
+
+    @Test fun theWornPiecesTileOnTheWeaponsRail() {
+        artRoot()
+        Tr.init(RuntimeEnvironment.getApplication())
+        val v = room(offWeapon = true)
+        cursorTo(v, 16)
+        press(v, "PAD1")
+        assertEquals(0, get(v, "railSel")); assertTrue(entries(v)[0].current)
+        shot("popout_worn_weapon.png", v)
+    }
+
+    @Test fun aTapOnTheWornTileShowsItsCard() {
+        artRoot()
+        Tr.init(RuntimeEnvironment.getApplication())
+        val v = room()
+        cursorTo(v, 1)
+        press(v, "PAD1")
+        press(v, "PADDRIGHT"); press(v, "PADDRIGHT")
+        assertEquals(2, get(v, "railSel"))
+        val r = railHit(v, 0)
+        touch(v, r.centerX(), r.centerY())
+        assertEquals("a tap on the worn tile shows its card", 0, get(v, "railSel"))
+        assertEquals("the pop-out stays", 1, get(v, "railFor"))
+        shot("popout_worn_tapped.png", v)
+        val r2 = railHit(v, 0)
+        touch(v, r2.centerX(), r2.centerY())
+        assertNull("a second tap keeps it (A's Keep)", get(v, "railFor"))
     }
 }
