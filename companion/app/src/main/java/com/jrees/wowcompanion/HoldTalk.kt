@@ -16,13 +16,20 @@ package com.jrees.wowcompanion
  *    button drops it, [LINE_MS] unsent = gone); "Send straight away" sends at once. Every send is the existing chat path (ChatView's
  *    stream, the add-on's rules), on the player's own press or release.
  *
+ * PUSH TO TALK (HOLD) ON ANY BUTTON (the user's pick, 2026-11-17: the bindable DS command "Push to talk (hold)", PadMap m170 / Hub hub58):
+ * the router runs the command on the press and the Hub holds the chat guest in that click; the host starts the hold at the command's word
+ * with the button the app's own reader saw go down ([pttSource]: its press time, so [HOLD_MS] counts from the press), [ptt] = true. It
+ * works with the toolbar's switch off (binding it is the opt-in), and "On release" is the same per-character setting. A TAP DOES
+ * NOTHING (the least surprising for a talk button: no room opens; the chat guest is given back). The release of THAT button ([src])
+ * stops the recording.
+ *
  * Pure: the host feeds it the clock and the events and does what each answer says.
  */
 class HoldTalk {
     enum class St { IDLE, PENDING, HELD, WORKING, LINE, SENDING, NOTE }
 
     /** what the host does after an event */
-    enum class Out { NONE, OPEN_CHAT, LISTEN, STOP, CANCEL, SHOW, SEND, DROP, NOTE, TAB_L, TAB_R }
+    enum class Out { NONE, OPEN_CHAT, LISTEN, STOP, CANCEL, SHOW, SEND, DROP, NOTE, TAB_L, TAB_R, FREE }
 
     var st = St.IDLE; private set
     /** the words heard (the line's text, the send's body) */
@@ -35,8 +42,12 @@ class HoldTalk {
     /** the line / note's start (for its fade) */
     var shownAt = 0L; private set
 
-    /** Left's press (the log says how long a tap's Chat room waited for its release: D1) */
+    /** the button's press (the log says how long a tap's Chat room waited for its release: D1) */
     var downAt = 0L; private set
+    /** the held button (the app reader's name): D-pad Left for the toolbar's Chat, the bound button for push to talk */
+    var src = LEFT_KEY; private set
+    /** this hold is the bound "Push to talk (hold)" command's (a tap does nothing), not the toolbar's Chat (a tap opens the Chat room) */
+    var ptt = false; private set
     private var leftDown = false
     private var held = false
     private var wordSeen = false
@@ -49,11 +60,12 @@ class HoldTalk {
     /** recording now */
     val listening: Boolean get() = st == St.HELD
 
-    /** Left went down where the toolbar's Chat is Left and nothing else holds (the host's gate); [now] = the setting "Send straight away" */
-    fun down(t: Long, sendNowSetting: Boolean): Boolean {
+    /** Left went down where the toolbar's Chat is Left and nothing else holds (the host's gate); [sendNowSetting] = "Send straight away".
+     *  Push to talk: [key] the bound button, [t] its press (the reader's), [isPtt] true */
+    fun down(t: Long, sendNowSetting: Boolean, key: String = LEFT_KEY, isPtt: Boolean = false): Boolean {
         if (st != St.IDLE && st != St.NOTE) return false
         st = St.PENDING; downAt = t; leftDown = true; held = false; wordSeen = false; words = ""; note = ""
-        sendNow = sendNowSetting
+        sendNow = sendNowSetting; src = key; ptt = isPtt
         return true
     }
 
@@ -71,7 +83,8 @@ class HoldTalk {
         leftDown = false
         if (held) swallowUntil = t + SWALLOW_MS
         return when (st) {
-            St.PENDING -> { st = St.IDLE; if (wordSeen) Out.OPEN_CHAT else Out.NONE }
+            // push to talk's tap: nothing (the Hub's chat hold goes back); the toolbar's tap: the Chat room (once its word came)
+            St.PENDING -> { st = St.IDLE; if (ptt) Out.FREE else if (wordSeen) Out.OPEN_CHAT else Out.NONE }
             St.HELD -> { st = St.WORKING; Out.STOP }
             else -> Out.NONE
         }
@@ -111,14 +124,16 @@ class HoldTalk {
     }
 
     /**
-     * a press while the hold has the controller (not Left's own release): [k] the capture's name. LB / RB (the user, 2026-11-17: "pop up
-     * tabs to press L or R to change what chat that its for") move the panel's chat tab while held, while the words are worked out and
-     * while they wait (the wait starts again: a choice is never cut short by the fade)
+     * a press while the hold has the controller (not the held button's own release): [k] the capture's name. LB / RB (the user, 2026-11-17:
+     * "pop up tabs to press L or R to change what chat that its for") and D-pad Up / Down (the user's pick, 2026-11-17: "L/R plus D-pad
+     * Up/Down"; Up = LB's way, Down = RB's) move the panel's chat tab while held, while the words are worked out and while they wait (the
+     * wait starts again: a choice is never cut short by the fade). The host takes them all (the "talk" registration first): none reaches
+     * the game (the chat guest the Hub held) or another Home action.
      */
     fun key(t: Long, k: String): Out = when {
-        (k == LB || k == RB) && (st == St.HELD || st == St.WORKING || st == St.LINE) -> {
+        k in TAB_KEYS && (st == St.HELD || st == St.WORKING || st == St.LINE) -> {
             if (st == St.LINE) shownAt = t
-            if (k == LB) Out.TAB_L else Out.TAB_R
+            if (k == LB || k == UP) Out.TAB_L else Out.TAB_R
         }
         else -> keyOther(k)
     }
@@ -166,6 +181,30 @@ class HoldTalk {
         /** the shoulders (DirectPadKeys.LB / RB, the app's own reader): the panel's previous / next chat */
         const val LB = DirectPadKeys.LB
         const val RB = DirectPadKeys.RB
+        /** D-pad Up / Down: the panel's previous / next chat too (the user's pick, 2026-11-17: "L/R plus D-pad Up/Down") */
+        const val UP = "PADDUP"
+        const val DOWN = "PADDDOWN"
+        val TAB_KEYS = setOf(LB, RB, UP, DOWN)
+        /** the toolbar's Chat button (D-pad Left, the app reader's name) */
+        const val LEFT_KEY = "PADDLEFT"
+
+        /**
+         * PUSH TO TALK'S BUTTON: the bound command's word comes ~0.1-0.5 s after the press, with no button in it; the button is the one
+         * the app's own reader saw go down LAST of those still held ([held]: key -> press time), pressed within [PTT_WINDOW_MS] of
+         * [now] (a modifier held first - ZL for ZL + X - is older than the button itself). null = nothing held: it was a tap (nothing).
+         */
+        fun pttSource(held: Map<String, Long>, now: Long): Pair<String, Long>? =
+            held.entries.filter { now - it.value in 0..PTT_WINDOW_MS }.maxByOrNull { it.value }?.let { it.key to it.value }
+        /** the longest the command's word may trail its button's press */
+        const val PTT_WINDOW_MS = 1500L
+
+        /** the Controller room's Y on the Chat (PadMap m170's page rows): Off -> On, Show then A sends -> On, Send now -> Off ("On
+         *  release" kept as it was when the switch goes off, as Settings keeps it); ([on], [sendNow]) now -> the next */
+        fun nextSetting(on: Boolean, sendNow: Boolean): Pair<Boolean, Boolean> = when {
+            !on -> true to false
+            !sendNow -> true to true
+            else -> false to true
+        }
         const val NOT_HEARD = "Didn't hear you"
         const val NO_VOICE = "Download a voice in Add-ons"
         const val MIC_OFF = "Microphone off"

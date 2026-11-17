@@ -620,6 +620,19 @@ object PadMapModel {
     const val ROW_PADTAB = "padtab"
     /** p35: the Home Bar command (Spells' DSHOME): drawn with the bar's own swirl everywhere */
     const val HOME_KEY = "DSHOME"
+    /** PadMap m170 (the user's picks, 2026-11-17): "Push to talk (hold)" (Hub hub58's WowCompanionPadTalk, [HoldTalk.ptt]) and "Polestar
+     *  menu" (WowCompanionPadPolestarMenu) */
+    const val PTT_KEY = "DSPTT"
+    const val PS_MENU_KEY = "DSPSMENU"
+    /** the kit picture a DS Forever command draws in the app instead of its file icon (null = its file icon): Home Bar the bar's swirl
+     *  (p35), push to talk the Chat picture with the hold's microphone ([UiKit.CMD_PTT_ART]), the Polestar menu the Quests room's
+     *  picture (the pause wheel's Polestar slices wear it too) */
+    fun kitArt(key: String?): String? = when (key) {
+        HOME_KEY -> "home_live_base"
+        PTT_KEY -> UiKit.CMD_PTT_ART
+        PS_MENU_KEY -> "ricon_quests"
+        else -> null
+    }
     /** 0-2: WoW Defaults, DS, In combat; p16 / b29: 10 = the 4th tab, the spell radial (the pad owner's YES: 11-39 stay refused) */
     fun colTab(tab: Int) = if (tab >= 5) COL_PARTY_TAB else if (tab >= 4) 10 else tab.coerceIn(1, 3) - 1
     /** PARTY MODE (Book b47, PARTY_BUILD.md 2.3): padtab 26 shows the Party mode tab (the app taps partycfg.pad.ptab.tab when it has it) */

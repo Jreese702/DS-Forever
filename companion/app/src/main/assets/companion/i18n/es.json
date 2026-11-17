@@ -2058,7 +2058,9 @@
 "Next step": "Paso siguiente",
 "Polestar: next step": "Polestar: paso siguiente",
 "Polestar: previous step": "Polestar: paso anterior",
-"Undo skip": "Deshacer salto"
+"Undo skip": "Deshacer salto",
+"Push to talk (hold)": "Pulsar para hablar (mantener)",
+"Polestar menu": "Menú de Polestar"
 },
 "templates": {
 "Friend requests: %s": "Solicitudes de amistad: %s",

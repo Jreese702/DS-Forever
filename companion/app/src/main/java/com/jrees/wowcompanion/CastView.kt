@@ -488,7 +488,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             hits += t.key to RectF(r)
         }
         talkTabBoxes = hits
-        UiKit.moveArrows(c, rects[sel], left = sel > 0, right = sel < p.tabs.size - 1, words = false)
+        UiKit.moveArrows(c, rects[sel], left = p.tabs.size > 1, right = p.tabs.size > 1, words = false)     // "Wrap around" (2026-11-17)
         talkGaps.badges(c)
         // the microphone: the toolbar's big one, in the chosen chat's colour, its halo on the voice
         val micY = box.top + 14f + 68f + 96f
@@ -732,8 +732,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private fun commandOverride(li: Int, src: Int): Btn? {
         if (li !in 0 until STATE_LAYERS) return null
         val at = li * 8 + src
-        val icon = commands?.get(at)?.takeIf { it > 0 || it == HOME_SWIRL } ?: return null
+        val icon = commands?.get(at)?.takeIf { it > 0 || it == HOME_SWIRL || it in KIT_CMDS } ?: return null
         val cached = cmdBtns[at]
+        // m170: push to talk / the Polestar menu draw their kit pictures (PadMapModel.kitArt), as the band's toolbar pictures do
+        KIT_CMDS[icon]?.let { art ->
+            return cached?.takeIf { it.kit == art } ?: Btn().apply { p = src + 1; k = "command"; e = true; kit = art }.also { cmdBtns[at] = it }
+        }
         if (icon == HOME_SWIRL) {                                          // p35: the Home Bar command, the bar Home button's own face
             return cached?.takeIf { it.kit == "home_stone_rough" } ?: Btn().apply { p = src + 1; k = "command"; e = true; kit = "home_stone_rough"; kitCut = true; kitScale = 0.95f }
                 .also { cmdBtns[at] = it }
@@ -4275,6 +4279,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private const val SP_LOOT = 5
         /** p35: [commands]' picture for the Home Bar command (HomeFightFace): the bar Home button's own face */
         const val HOME_SWIRL = -2
+        /** PadMap m170's commands: their kit pictures in [commands] (HomeFightFace.commandIcons) */
+        const val KIT_PTT = -3
+        const val KIT_PS_MENU = -4
+        val KIT_CMDS = mapOf(KIT_PTT to UiKit.CMD_PTT_ART, KIT_PS_MENU to "ricon_quests")
         private const val SP_ARROW_L = 6        // L, U, R, D must stay consecutive
         private const val SP_ARROW_U = 7
         private const val SP_ARROW_R = 8

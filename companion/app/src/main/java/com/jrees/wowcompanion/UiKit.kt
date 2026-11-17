@@ -122,11 +122,34 @@ object UiKit {
     /** a kit texture by the short name `extract_kit.py` writes, or null when it is not on the device */
     fun tex(name: String): Bitmap? {
         texCache[name]?.let { return it }
+        if (name == CMD_PTT_ART) return pttArt()?.also { texCache[name] = it }
         if (!retry(name)) return null
         val f = ArtHarvest.file("ui/kit/$name.png")          // the harvested kit (app-private), else the pushed one
         val bmp = (if (f.canRead()) BitmapFactory.decodeFile(f.path) else null)?.let { themed(name, it) }
         if (bmp != null) { texCache[name] = bmp; missing.remove(name) }
         return bmp
+    }
+
+    /**
+     * hub58 / PadMap m170 "PUSH TO TALK (HOLD)" (the user's pick, 2026-11-17: "Use fitting icons from the existing kit art"): the kit's Chat
+     * picture (ricon_chat, the toolbar's own) with the toolbar's hold-to-talk badge on its lower-left corner (the dark disc, the bronze
+     * ring, the microphone: CastView's READY badge), so the command reads "talk" wherever it is drawn - the chooser, the right page, the
+     * toolbar band, the cast bar ([PadMapModel.kitArt]). A plain [tex] name; the theme's [forget] drops it with the rest.
+     */
+    const val CMD_PTT_ART = "cmd_ptt"
+    private fun pttArt(): Bitmap? {
+        val base = tex("ricon_chat") ?: return null
+        val out = base.copy(Bitmap.Config.ARGB_8888, true) ?: return null
+        val c = Canvas(out)
+        val s = minOf(out.width, out.height).toFloat()
+        val r = s * 0.24f
+        val cx = s * 0.27f; val cy = out.height - s * 0.27f
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.argb(235, 8, 6, 4) }
+        c.drawCircle(cx, cy, r, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = maxOf(1.5f, r * 0.12f); p.color = Theme.bronze
+        c.drawCircle(cx, cy, r, p)
+        VoiceUi.mic(c, cx, cy + r * 0.06f, r * 1.25f, Theme.gold)
+        return out
     }
 
     /**

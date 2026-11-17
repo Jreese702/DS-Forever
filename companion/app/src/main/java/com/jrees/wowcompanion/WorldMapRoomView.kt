@@ -2706,6 +2706,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (runCatching { polestar() }.getOrNull()?.choose == true) m.openPath()
         psOpen = true
     }
+    /** hub58 / PadMap m170 (the user's pick, 2026-11-17): the bound "Polestar menu" command in this room - X's own open, over the room */
+    fun openPolestarMenu() { if (!psOpen) openPsMenu(); invalidate() }
     /** back to the map: the add-on told the menu closed */
     private fun closePsMenu() {
         if (!psOpen) return

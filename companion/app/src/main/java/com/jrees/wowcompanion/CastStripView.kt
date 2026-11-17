@@ -159,7 +159,7 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
                 pWell.color = Theme.ink; pWell.alpha = 230
                 c.drawRoundRect(r, 4f, 4f, pWell)
                 // the spell's icon from icons.pak ([Icons], as the Spellbook draws it); the kit's fid_ art only for what the pack lacks
-                val icon = if (s?.kind == CastStripModel.Kind.COMMAND && s.key == PadMapModel.HOME_KEY) UiKit.tex("home_live_base")
+                val icon = if (s?.kind == CastStripModel.Kind.COMMAND && PadMapModel.kitArt(s.key) != null) UiKit.tex(PadMapModel.kitArt(s.key)!!)
                     else s?.icon?.let { Icons.get(it) ?: UiKit.icon(it) }
                 if (icon != null) {
                     val inset = r.width() * 0.07f

@@ -11,8 +11,8 @@ import java.io.File
 
 /**
  * HOLD TO TALK'S CHAT TABS (the user, 2026-11-17: "on the push to talk, I want to add some pop up tabs to press L or R to change what
- * chat that its for. lets give it its own pop up UI around it."), off-device: the tabs start on the last used chat, LB / RB move one and
- * stop at the ends (the Chat room's "no cycling"), a finger picks one, a chat that went away falls back to Say; HoldTalk gives LB / RB
+ * chat that its for. lets give it its own pop up UI around it."), off-device: the tabs start on the last used chat, LB / RB and D-pad Up /
+ * Down move one and wrap round at the ends (the user's picks, 2026-11-17: "L/R plus D-pad Up/Down", "Wrap around"), a finger picks one, a chat that went away falls back to Say; HoldTalk gives LB / RB
  * as tab moves while held, while working and while the words wait (no longer dropping the words); the host's wiring (read from source).
  */
 class TalkTabsTest {
@@ -35,18 +35,22 @@ class TalkTabsTest {
         assertEquals("Mirelle", t.now()!!.whisper)
     }
 
-    @Test fun lbAndRbMoveOneTabAndStopAtTheEnds() {
+    @Test fun lbAndRbMoveOneTabAndWrapAroundAtTheEnds() {
+        // the user's pick, 2026-11-17: "Wrap around"
         val t = TalkTabs(); t.seed(all, "SAY")
-        assertFalse(t.canL); assertTrue(t.canR)
-        assertFalse("no cycling past the first", t.step(-1))
+        assertTrue("both arrows: it wraps", t.canL && t.canR)
+        assertTrue("past the first: round to the last", t.step(-1))
+        assertEquals(tell, t.now())
+        assertTrue("past the last: round to the first", t.step(1))
         assertEquals(say, t.now())
         assertTrue(t.step(1)); assertTrue(t.step(1))
         assertEquals(guild, t.now())
-        repeat(10) { t.step(1) }
-        assertEquals("stops on the last", tell, t.now())
-        assertFalse(t.canR); assertTrue(t.canL)
-        assertFalse(t.step(1))
-        assertTrue(t.step(-1)); assertEquals(trade, t.now())
+        repeat(all.size) { t.step(1) }
+        assertEquals("a whole turn comes back", guild, t.now())
+        assertTrue(t.step(-1)); assertEquals(party, t.now())
+        val one = TalkTabs(); one.seed(listOf(say), "SAY")
+        assertFalse("one tab: nothing to move to", one.step(1) || one.step(-1) || one.canL || one.canR)
+        assertEquals(say, one.now())
     }
 
     @Test fun aFingerPicksATab() {
@@ -100,6 +104,25 @@ class TalkTabsTest {
         val h = held(); h.up(2000L); h.heard(2500L, "hi")
         assertEquals(Out.DROP, h.key(2600L, HoldTalk.B))
         assertEquals(St.IDLE, h.st)
+    }
+
+    @Test fun dpadUpAndDownMoveTheTabToo() {
+        // the user's pick, 2026-11-17: "L/R plus D-pad Up/Down" (they do not replace L / R)
+        val h = held()
+        assertEquals(Out.TAB_L, h.key(1500L, HoldTalk.UP))
+        assertEquals(Out.TAB_R, h.key(1520L, HoldTalk.DOWN))
+        assertEquals(Out.TAB_L, h.key(1540L, HoldTalk.LB))
+        assertEquals(St.HELD, h.st)
+        assertEquals(Out.STOP, h.up(2000L))
+        assertEquals("while worked out", Out.TAB_R, h.key(2100L, HoldTalk.DOWN))
+        assertEquals(Out.SHOW, h.heard(2500L, "inc"))
+        // while the words wait: Up / Down change the chat, keep the words and restart the wait (before: any other button dropped them)
+        assertEquals(Out.TAB_L, h.key(2500L + HoldTalk.LINE_MS - 100L, HoldTalk.UP))
+        assertEquals(St.LINE, h.st); assertEquals("inc", h.words)
+        assertEquals(Out.NONE, h.tick(2500L + HoldTalk.LINE_MS + 200L))
+        assertEquals("D-pad Right still drops them", Out.DROP, h.key(9000L, "PADDRIGHT"))
+        assertEquals(DirectPadKeys.SLOT_KEYS[1], HoldTalk.UP)
+        assertEquals(DirectPadKeys.SLOT_KEYS[3], HoldTalk.DOWN)
     }
 
     @Test fun theShouldersAreTheAppReadersNames() {
