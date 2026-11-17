@@ -151,5 +151,15 @@ namespace DsfDesktop.Tests
             A.Eq("No answer on 192.168.x.x:53010", (string)((Dictionary<string, object>)steps[1])["line"]);
             A.True(r.Lines().Last() == PcChecks.FixRestart, string.Join(" | ", r.Lines()));
         }
+
+        [Test]
+        public static void IPv6ShortFormsAreCutToo()
+        {
+            // reviewers 2026-11-17: fe80::1 (two colons) went into the report whole
+            A.Eq("fe80:x, ::x, 2001:x, fe80:x and 192.168.x.x at 12:30:45",
+                 PcChecks.Scrub("fe80::1, ::1, 2001:db8::5, fe80::1c2:3%12 and 192.168.1.20 at 12:30:45"));
+            A.Eq("ports ok (52984, 52989)", PcChecks.Scrub("ports ok (52984, 52989)"), "port lists and times stay");
+            A.Eq("std::string", PcChecks.Scrub("std::string"), "not hex: kept");
+        }
     }
 }

@@ -388,5 +388,54 @@ namespace DsfDesktop.Tests
                 A.True(PortGuard.UdpBound().Any(r => r.Port == port && r.Pid == me), "our own socket, by our pid");
             }
         }
+
+        // ---------------------------------------------------------------- reviewers 2026-11-17: UDP false positives
+
+        static readonly TcpListenerRow[] AllTcp = Tcp(OurPid, 52984, 52989, 53010);
+
+        [Test]
+        public static void Healer_APassingUdpSocketIsNotAHeal()
+        {
+            // before: any other process on base+9..+11 at one check was Blocked, and the heal MOVED the whole set 5 s later
+            var h = new HostHealer();
+            var once = Check(AllTcp, Udp(901, 52999));
+            A.True(once.UdpOnly);
+            A.Eq(HealStep.None, h.Tick(Start, once, false, true));
+            A.False(h.Healing, "one sighting: nothing under way");
+            A.Eq(HealStep.None, h.Tick(Start.AddSeconds(5), once, false, true), "seen again 5 s on: not yet");
+            A.False(h.Healing);
+            A.Eq(HealStep.None, h.Tick(Start.AddSeconds(15), Check(AllTcp), false, true), "gone: never a step");
+            A.False(h.Healing);
+            // a different holder each time (a passing query on a random port) never adds up
+            var g = new HostHealer();
+            for (int i = 0; i < 10; i++)
+                A.Eq(HealStep.None, g.Tick(Start.AddSeconds(15 * i), Check(AllTcp, Udp(900 + i, 52999)), false, true), "holder " + i);
+            A.False(g.Healing);
+        }
+
+        [Test]
+        public static void Healer_ARepeatedUdpConflictRestartsBeforeItMoves()
+        {
+            var h = new HostHealer();
+            var held = Check(AllTcp, Udp(901, 52999));
+            var t = Start;
+            A.Eq(HealStep.None, h.Tick(t, held, false, true));
+            A.Eq(HealStep.None, h.Tick(t = t.AddSeconds(15), held, false, true), "seen twice 15 s apart: under way");
+            A.True(h.Healing);
+            A.Eq(HealStep.Restart, h.Tick(t = t.AddSeconds(5), held, false, true), "UDP only: a restart, not a move");
+            A.Eq(HealStep.Restart, h.Tick(t = t.AddSeconds(15), held, false, true));
+            A.Eq(HealStep.Move, h.Tick(t = t.AddSeconds(45), held, false, true), "still held on the last try: a new base");
+            // never while a stream is live
+            var s = new HostHealer();
+            s.Tick(Start, held, true, true);
+            for (int i = 1; i < 20; i++) A.Eq(HealStep.None, s.Tick(Start.AddSeconds(15 * i), held, true, true), "streaming " + i);
+            A.False(s.Healing);
+            // with a TCP problem too: as before (a move for a port another program holds)
+            var both = Check(Tcp(OurPid, 52984, 52989).Concat(Tcp(901, 53010)), Udp(901, 52999));
+            A.False(both.UdpOnly);
+            var b = new HostHealer();
+            b.Tick(Start, both, false, true);
+            A.Eq(HealStep.Move, b.Tick(Start.AddSeconds(5), both, false, true));
+        }
     }
 }

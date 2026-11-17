@@ -292,6 +292,7 @@
 "Refused on port": "Rechazado en el puerto",
 "RTSP handshake failed": "Falló la conexión RTSP",
 "Didn't start": "No se inició",
+"Failed at": "Falló en",
 "No video decoded": "No se decodificó vídeo",
 "Frames decoded:": "Fotogramas decodificados:",
 "ViGEmBus missing on the PC": "Falta ViGEmBus en el PC",

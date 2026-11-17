@@ -273,10 +273,8 @@ internal class TestView(ctx: Context, private val onRun: () -> Unit, private val
 
         /** the words before a line's first number or bracket translated, the rest kept ("No answer on port" + " 53010") */
         fun trHead(line: String): String {
-            val cut = line.indexOfFirst { it.isDigit() || it == '(' }
-            if (cut <= 0) return com.jrees.wowcompanion.Tr.t(line)
-            val head = line.substring(0, cut).trimEnd()
-            return com.jrees.wowcompanion.Tr.t(head) + line.substring(head.length)
+            val (head, rest) = ConnTest.splitHead(line)
+            return com.jrees.wowcompanion.Tr.t(head) + rest
         }
     }
 }

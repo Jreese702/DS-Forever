@@ -188,8 +188,20 @@ namespace DsfDesktop.Sunshine
 
         static readonly Regex Ipv4 = new Regex(@"\b(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}\b", RegexOptions.Compiled);
 
-        /// <summary>IPv4 cut to a.b.x.x (no line of ours carries a name)</summary>
-        public static string Scrub(string s) => Ipv4.Replace(s ?? "", m => m.Groups[1].Value + "." + m.Groups[2].Value + ".x.x");
+        /// <summary>IPv6 with 3+ colons (never a time)</summary>
+        static readonly Regex Ipv6 = new Regex(@"\b([0-9a-fA-F]{1,4}):(?:[0-9a-fA-F]{0,4}:){2,6}[0-9a-fA-F]{0,4}\b(?:%[0-9A-Za-z]+)?", RegexOptions.Compiled);
+        /// <summary>IPv6's short forms with "::" (fe80::1, ::1, fe80::1%12; reviewers 2026-11-17): a time never has "::"</summary>
+        static readonly Regex Ipv6Short = new Regex(@"(?<![0-9A-Za-z:.])((?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,6})?)::((?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,6})?)(?:%[0-9A-Za-z]+)?(?![0-9A-Za-z:])", RegexOptions.Compiled);
+
+        /// <summary>IPv4 cut to a.b.x.x, IPv6 to its first group (fe80:x; ::1 -> ::x); no line of ours carries a name. The same rule as
+        /// the Thor's ConnTest.scrub</summary>
+        public static string Scrub(string s)
+        {
+            var v4 = Ipv4.Replace(s ?? "", m => m.Groups[1].Value + "." + m.Groups[2].Value + ".x.x");
+            var v6 = Ipv6.Replace(v4, m => m.Groups[1].Value + ":x");
+            return Ipv6Short.Replace(v6, m =>
+                m.Groups[1].Value.Length > 0 ? m.Groups[1].Value.Split(':')[0] + ":x" : m.Groups[2].Value.Length > 0 ? "::x" : m.Value);
+        }
 
         // ---------------------------------------------------------------- the live system
 

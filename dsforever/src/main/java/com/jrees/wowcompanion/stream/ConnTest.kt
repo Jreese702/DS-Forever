@@ -130,10 +130,39 @@ object ConnTest {
     // ---------------------------------------------------------------- the report
 
     private val IPV4 = Regex("""\b(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}\b""")
-    private val IPV6 = Regex("""\b([0-9a-fA-F]{1,4}):(?:[0-9a-fA-F]{0,4}:){2,6}[0-9a-fA-F]{0,4}\b""")   // 3+ colons: never a time
+    private val IPV6 = Regex("""\b([0-9a-fA-F]{1,4}):(?:[0-9a-fA-F]{0,4}:){2,6}[0-9a-fA-F]{0,4}\b(?:%[0-9A-Za-z]+)?""")   // 3+ colons: never a time
+    /** the short forms with "::" and two colons or fewer (fe80::1, ::1, fe80::1%wlan0; reviewers 2026-11-17): a time never has "::" */
+    private val IPV6_SHORT = Regex("""(?<![0-9A-Za-z:.])((?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,6})?)::((?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,6})?)(?:%[0-9A-Za-z]+)?(?![0-9A-Za-z:])""")
 
-    /** IPv4 cut to its first two parts (a.b.x.x), IPv6 to its first group */
-    fun scrub(s: String): String = IPV6.replace(IPV4.replace(s) { "${it.groupValues[1]}.${it.groupValues[2]}.x.x" }) { "${it.groupValues[1]}:x" }
+    /** IPv4 cut to its first two parts (a.b.x.x), IPv6 to its first group (fe80:x; ::1 -> ::x) */
+    fun scrub(s: String): String {
+        val v4 = IPV4.replace(s) { "${it.groupValues[1]}.${it.groupValues[2]}.x.x" }
+        val v6 = IPV6.replace(v4) { "${it.groupValues[1]}:x" }
+        return IPV6_SHORT.replace(v6) { m ->
+            val a = m.groupValues[1]; val b = m.groupValues[2]
+            when {
+                a.isNotEmpty() -> a.substringBefore(':') + ":x"
+                b.isNotEmpty() -> "::x"
+                else -> m.value
+            }
+        }
+    }
+
+    /** lines whose words come before a variable part with no number or bracket ("Failed at" + " video stream establishment") */
+    val HEADS = listOf("Failed at")
+
+    /**
+     * A line split into the words to translate and the rest kept as it is: a known [HEADS] prefix, else the words before the first
+     * number or bracket ("No answer on port" + " 53010"), else the whole line (rest ""). Reviewers 2026-11-17: "Failed at <stage>"
+     * had no number before its bracket, so its head was never found in the translations.
+     */
+    fun splitHead(line: String): Pair<String, String> {
+        HEADS.firstOrNull { line.startsWith("$it ") }?.let { return it to line.substring(it.length) }
+        val cut = line.indexOfFirst { it.isDigit() || it == '(' }
+        if (cut <= 0) return line to ""
+        val head = line.substring(0, cut).trimEnd()
+        return head to line.substring(head.length)
+    }
 
     private fun word(s: State) = when (s) { State.PASS -> "ok"; State.FAIL -> "FAILED"; State.SKIP -> "skipped"; State.NOT_RUN -> "not run" }
 

@@ -120,4 +120,25 @@ class ConnTestTest {
         assertEquals(listOf("ports pass (All 6 ready)", "encoder FAILED (No video encoder)"), m.lines)
         assertEquals("""{"t":"pc_test"}""", BridgeProtocol.pcTest())
     }
+
+    @Test fun ipv6ShortForms_areCutToo() {
+        // reviewers 2026-11-17: fe80::1 (two colons) went into the report whole
+        assertEquals("fe80:x, ::x, 2001:x, fe80:x and 192.168.x.x at 12:30:45",
+            ConnTest.scrub("fe80::1, ::1, 2001:db8::5, fe80::1c2:3%wlan0 and 192.168.1.20 at 12:30:45"))
+        assertEquals("ports ok (52984, 52989)", ConnTest.scrub("ports ok (52984, 52989)"))
+        assertEquals("std::string", ConnTest.scrub("std::string"))
+    }
+
+    @Test fun failedAt_hasATranslatableHead() {
+        // reviewers 2026-11-17: "Failed at <stage> (error 5)" was cut at the bracket, so its head carried the stage and was never translated
+        val line = ConnTest.stream(false, 5, "video stream establishment", 0, 47989).line
+        assertEquals("Failed at" to " video stream establishment (error 5)", ConnTest.splitHead(line))
+        assertEquals("No answer on port" to " 53010", ConnTest.splitHead("No answer on port 53010"))
+        assertEquals("Didn't start" to " (error 5)", ConnTest.splitHead("Didn't start (error 5)"))
+        assertEquals("Bridge connected" to "", ConnTest.splitHead("Bridge connected"))
+    }
+
+    @Test fun retryAsksDesktopToTryItsScreenAgain() {
+        assertEquals("""{"t":"screen_retry"}""", BridgeProtocol.screenRetry())
+    }
 }

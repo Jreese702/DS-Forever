@@ -28,6 +28,11 @@ namespace DsfDesktop.Sunshine
         public List<int> Taken = new List<int>();
         /// <summary>our UDP ports another process holds (a stream would fail to bind them)</summary>
         public List<int> Blocked = new List<int>();
+        /// <summary>who holds them (port, pid)</summary>
+        public List<UdpRow> BlockedBy = new List<UdpRow>();
+        /// <summary>the only problem is another process on our UDP ports (TCP all ours, nothing excluded, no bind error): often a
+        /// passing socket (a DNS or discovery query on a random port), so the healer waits to see it again and restarts, never moves at once</summary>
+        public bool UdpOnly => Blocked.Count > 0 && Missing.Count == 0 && Taken.Count == 0 && Excluded.Count == 0 && BindErrors.Count == 0;
         /// <summary>our ports inside Windows' excluded ranges (Hyper-V / WinNAT reserve blocks at boot)</summary>
         public List<int> Excluded = new List<int>();
         /// <summary>"Couldn't bind" lines in our sunshine.log since its start</summary>
@@ -131,7 +136,7 @@ namespace DsfDesktop.Sunshine
             {
                 var others = udpRows.Where(r => r.Port == p && !Ours(r.Pid)).ToList();
                 bool mine = udpRows.Any(r => r.Port == p && Ours(r.Pid));
-                if (others.Count > 0) rep.Blocked.Add(p);
+                if (others.Count > 0) { rep.Blocked.Add(p); rep.BlockedBy.AddRange(others); }
                 if (ux.Any(r => r.Has(p))) rep.Excluded.Add(p);
                 detail.Add("udp " + p + (others.Count > 0 ? " held by pid " + others[0].Pid : mine ? " ours" : " free") + (ux.Any(r => r.Has(p)) ? " excluded" : ""));
             }
@@ -289,7 +294,9 @@ namespace DsfDesktop.Sunshine
     /// SELF-HEALING (the user's picks 2026-11-17: "Full: PC + Thor", "Yes, move"): ours missing a port is restarted - only while no stream
     /// is live - 3 tries, 5 s / 15 s / 45 s apart, then reported. A port in Windows' excluded ranges, or a bind refused with WSAEACCES
     /// twice, moves the whole set to a new base instead of restarting on the same one. The Thor's "host_check" ([Force]) starts at once.
-    /// Pure: the clock and the report are passed in.
+    /// Another process on our UDP ports alone (<see cref="HealthReport.UdpOnly"/>) counts only once the same holder is seen again
+    /// <see cref="UdpConfirm"/> later (reviewers 2026-11-17: a passing socket moved the whole set at once), and is restarted, not
+    /// moved (only the last try moves). Never anything while a stream is live. Pure: the clock and the report are passed in.
     /// </summary>
     public sealed class HostHealer
     {
@@ -299,6 +306,8 @@ namespace DsfDesktop.Sunshine
         public const int AccessMoves = 2;
         /// <summary>after the last try: the look that decides the report (no sooner than the moved host has started: [settled])</summary>
         public const int LastLookS = 10;
+        /// <summary>a UDP-only conflict counts when the same holder is still there this long after it was first seen (two checks 15 s apart)</summary>
+        public static readonly TimeSpan UdpConfirm = TimeSpan.FromSeconds(15);
 
         public int Tries { get; private set; }
         public bool GaveUp { get; private set; }
@@ -308,6 +317,9 @@ namespace DsfDesktop.Sunshine
         int denied;
         bool moved;
         DateTime? dueAt;
+        /// <summary>a UDP-only conflict: when first seen, and by whom (port, pid)</summary>
+        DateTime? udpSince;
+        HashSet<(int, int)> udpHolders;
 
         /// <summary>[settled] = ours has STARTED since its last start (<see cref="HostHealth.Started"/>: about 26 s on the user's PC) and
         /// nothing else is restarting it; nothing is judged before that, so each try (and the last look) waits for the host it
@@ -324,6 +336,14 @@ namespace DsfDesktop.Sunshine
             }
             if (!settled || GaveUp) return HealStep.None;
             if (streaming) return HealStep.None;
+            if (h.UdpOnly)
+            {
+                var holders = new HashSet<(int, int)>(h.BlockedBy.Select(r => (r.Port, r.Pid)));
+                if (!udpSince.HasValue || udpHolders == null || !udpHolders.Overlaps(holders)) { udpSince = now; udpHolders = holders; return HealStep.None; }
+                udpHolders.IntersectWith(holders);
+                if (now - udpSince.Value < UdpConfirm) return HealStep.None;
+            }
+            else { udpSince = null; udpHolders = null; }
             if (!dueAt.HasValue) { dueAt = now.AddSeconds(BackoffS[0]); return HealStep.None; }
             if (now < dueAt.Value) return HealStep.None;
             if (Tries >= MaxTries) { GaveUp = true; dueAt = null; return HealStep.GiveUp; }
@@ -333,7 +353,7 @@ namespace DsfDesktop.Sunshine
             dueAt = now.AddSeconds(Tries < MaxTries ? BackoffS[Tries] : LastLookS);
             // a restart can't win back a reserved port or one another program holds: a new base. The last try moves when none has
             // yet (a reservation the log and netsh didn't show still ends on a new base, the user's "Yes, move")
-            bool move = h.Excluded.Count > 0 || h.Taken.Count > 0 || h.Blocked.Count > 0 || denied >= AccessMoves || (Tries == MaxTries && !moved);
+            bool move = h.Excluded.Count > 0 || h.Taken.Count > 0 || (h.Blocked.Count > 0 && !h.UdpOnly) || denied >= AccessMoves || (Tries == MaxTries && !moved);
             if (move) moved = true;
             return move ? HealStep.Move : HealStep.Restart;
         }
@@ -346,6 +366,6 @@ namespace DsfDesktop.Sunshine
             if (!dueAt.HasValue || dueAt.Value > now) dueAt = now;
         }
 
-        public void Reset() { Tries = 0; GaveUp = false; denied = 0; moved = false; dueAt = null; }
+        public void Reset() { Tries = 0; GaveUp = false; denied = 0; moved = false; dueAt = null; udpSince = null; udpHolders = null; }
     }
 }
