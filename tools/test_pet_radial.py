@@ -39,7 +39,7 @@ UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { Ge
 '''
 Q = boot(["safety", "tappad", "quests"], pre=PRE)
 
-check('local QV = "q62"' in SRC["quests"], "Quests says q62")
+check('local QV = "q63"' in SRC["quests"], "Quests says q63 (q62 kept below it)")
 
 
 def read(unit, src):
