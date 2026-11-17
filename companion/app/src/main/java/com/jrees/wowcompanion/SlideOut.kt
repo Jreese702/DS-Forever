@@ -320,15 +320,44 @@ object SlideOut {
     fun opens(row: JSONObject, dualWield: Boolean, combat: Boolean, ctx: String?): Boolean =
         ctx == null && !combat && targets(row, dualWield).size > 1
 
+    /** bags-gear2: where the Bags room's slot menu and the piece's tooltip stand (left edges) and how wide the tooltip is */
+    data class Pop(val menuLeft: Float, val tipLeft: Float, val tipW: Float)
+
     /**
-     * The left edges of the Bags room's [n] target slots beside a tile ([tileLeft] .. [tileRight], slots [size] square, 12 px apart): on
-     * the tile's right when they fit inside [width], else on its left. Either way the first target is the leftmost (review: the D-pad's
-     * right is the add-on's next target, so the row must read left to right on both sides of the tile).
+     * bags-gear2 (the user, 2026-11-16: "The equip a one hand from a bag is really confusing because the tool tip is in front of the
+     * options"; "I think it just needs its own menu pop out for an easy clear fix"): the slot menu ([menuW] wide) beside the piece's tile
+     * ([tileLeft] .. [tileRight]) and the tooltip ([tipW]) beside them, never over the menu or the tile, inside [margin] .. [width] -
+     * [margin]. In order: both on the tile's right (the menu nearer), both on its left, the menu right / tooltip left, the menu left /
+     * tooltip right. Too narrow for any: the menu on the roomier side, the tooltip narrowed into the widest free span left.
      */
-    fun rowLefts(tileLeft: Float, tileRight: Float, size: Float, n: Int, width: Float): List<Float> {
-        val step = size + 12f
-        val toRight = tileRight + n * step + 16f <= width
-        return (0 until n).map { i -> if (toRight) tileRight + 12f + i * step else tileLeft - (n - i) * step }
+    fun pop(tileLeft: Float, tileRight: Float, menuW: Float, tipW: Float, width: Float, gap: Float = 14f, margin: Float = 16f): Pop {
+        val lo = margin; val hi = width - margin
+        fun fits(l: Float, w: Float) = l >= lo - 0.01f && l + w <= hi + 0.01f
+        val mRight = tileRight + gap; val mLeft = tileLeft - gap - menuW
+        val tries = listOf(
+            mRight to mRight + menuW + gap,
+            mLeft to mLeft - gap - tipW,
+            mRight to tileLeft - gap - tipW,
+            mLeft to tileRight + gap,
+        )
+        for ((m, t) in tries) if (fits(m, menuW) && fits(t, tipW)) return Pop(m, t, tipW)
+        val menu = if (hi - tileRight >= tileLeft - lo) mRight.coerceAtMost(hi - menuW) else mLeft.coerceAtLeast(lo)
+        // the free spans left of and right of what the menu and the tile cover
+        val usedL = minOf(tileLeft, menu); val usedR = maxOf(tileRight, menu + menuW)
+        val spanL = usedL - gap - lo; val spanR = hi - (usedR + gap)
+        return if (spanR >= spanL) Pop(menu, usedR + gap, minOf(tipW, maxOf(0f, spanR)))
+               else { val w = minOf(tipW, maxOf(0f, spanL)); Pop(menu, usedL - gap - w, w) }
+    }
+
+    /** bags-gear2: a worn slot's name in the slot menu: the game's word (translated by the room) and the number the game's character
+     *  frame gives the second finger / trinket ("Finger" 1 / 2), else null */
+    fun slotName(inv: Int): Pair<String, Int?> = when (inv) {
+        11, 12 -> "Finger" to inv - 10
+        13, 14 -> "Trinket" to inv - 12
+        16 -> "Main Hand" to null
+        17 -> "Off Hand" to null
+        18 -> "Ranged" to null
+        else -> "" to null
     }
 
     /** the Bags room's start (G9, the bag bar's chooser): an empty slot first, else the lower item level ([worn]: slot -> row) */

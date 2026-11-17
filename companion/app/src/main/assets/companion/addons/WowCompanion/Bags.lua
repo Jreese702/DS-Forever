@@ -4063,9 +4063,12 @@ local function onPress(key)
     elseif ctl.mode == "barmenu" then
         BAR.menuPress(key, A, B)
     elseif ctl.mode == "equip" then
-        if key == "PADDLEFT" or key == "PADDRIGHT" then
+        -- bags-gear2: a piece of gear's targets are a menu (the app's rows, one under the other): up / down walk it too
+        local gearUD = ctl.eq and ctl.eq.gear and (key == "PADDUP" or key == "PADDDOWN")
+        if key == "PADDLEFT" or key == "PADDRIGHT" or gearUD then
             local n = #((ctl.eq and ctl.eq.slots) or EQ.TARGETS)
-            ctl.eqAt = math.max(1, math.min(n, (ctl.eqAt or 1) + (key == "PADDRIGHT" and 1 or -1))); report(nil)
+            local step = (key == "PADDRIGHT" or key == "PADDDOWN") and 1 or -1
+            ctl.eqAt = math.max(1, math.min(n, (ctl.eqAt or 1) + step)); report(nil)
         elseif B then EQ.done("cancelled")
         elseif A then EQ.go() end
     elseif ctl.mode == "bindask" then

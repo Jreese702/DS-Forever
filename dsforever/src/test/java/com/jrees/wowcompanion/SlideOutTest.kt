@@ -299,17 +299,33 @@ class SlideOutTest {
         assertFalse("a vendor: Sell", SlideOut.opens(row("INVTYPE_FINGER"), false, combat = false, ctx = "merchant"))
     }
 
-    /** review: the Bags room's row reads left to right on BOTH sides of its tile (the D-pad's right = the add-on's next target) */
-    @Test fun theBagsRowReadsLeftToRightOnEitherSideOfItsTile() {
-        val right = SlideOut.rowLefts(640f, 740f, 100f, 2, 1240f)
-        assertEquals(listOf(752f, 864f), right)
-        val left = SlideOut.rowLefts(1120f, 1220f, 100f, 2, 1240f)
-        assertEquals("no room on the right: on the left", listOf(896f, 1008f), left)
-        assertTrue("the first target leftmost", left[0] < left[1])
-        assertEquals("12 px off the tile", 1120f - 12f, left[1] + 100f, 1e-3f)
-        val three = SlideOut.rowLefts(1000f, 1100f, 100f, 3, 1240f)
-        assertEquals(listOf(664f, 776f, 888f), three)
-        assertEquals("one target", listOf(1112f), SlideOut.rowLefts(1000f, 1100f, 100f, 1, 1240f))
+    /** bags-gear2 (the user, 2026-11-16: "the tool tip is in front of the options"): the slot menu and the tooltip never overlap */
+    @Test fun theSlotMenuAndTheTooltipStandApart() {
+        fun clear(p: SlideOut.Pop, tl: Float, tr: Float, mw: Float, w: Float) {
+            val m = p.menuLeft to p.menuLeft + mw; val t = p.tipLeft to p.tipLeft + p.tipW
+            assertTrue("menu $m / tooltip $t apart", m.second <= t.first || t.second <= m.first)
+            assertTrue("tooltip $t off the tile", t.second <= tl || t.first >= tr)
+            assertTrue("menu $m off the tile", m.second <= tl || m.first >= tr)
+            assertTrue("inside the room", minOf(m.first, t.first) >= 16f - 1e-3f && maxOf(m.second, t.second) <= w - 16f + 1e-3f)
+        }
+        assertEquals("room on the right: the menu, then the tooltip", SlideOut.Pop(154f, 608f, 531f), SlideOut.pop(40f, 140f, 440f, 531f, 2400f))
+        val right = SlideOut.pop(40f, 140f, 440f, 531f, 1240f)
+        assertEquals("the left edge: the menu on the right", 154f, right.menuLeft, 1e-3f)
+        val left = SlideOut.pop(1100f, 1200f, 440f, 531f, 1240f)
+        assertEquals("the right edge: the menu on the left", 1100f - 14f - 440f, left.menuLeft, 1e-3f)
+        for (x in 0..11) {
+            val tl = 20f + x * 100f
+            val p = SlideOut.pop(tl, tl + 100f, 440f, 531f, 1240f)
+            clear(p, tl, tl + 100f, 440f, 1240f)
+            assertTrue("a tooltip wide enough to read ($tl: ${p.tipW})", p.tipW >= 300f)
+        }
+    }
+
+    @Test fun theSlotMenuNamesTheGamesSlots() {
+        assertEquals("Main Hand" to null, SlideOut.slotName(16))
+        assertEquals("Off Hand" to null, SlideOut.slotName(17))
+        assertEquals("Finger" to 2, SlideOut.slotName(12))
+        assertEquals("Trinket" to 1, SlideOut.slotName(13))
     }
 
     @Test fun theBagsRowStartsOnAnEmptySlotElseTheLowerItemLevel() {
