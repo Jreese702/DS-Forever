@@ -90,6 +90,7 @@ class SettingsTabsTest {
             G.SPOKEN to ThirdPartyAddons.SPOKEN.rowWords(),
             G.QUESTTRAIL to ThirdPartyAddons.QUESTTRAIL.rowWords(),
             G.MANNERS to ThirdPartyAddons.MANNERS.rowWords(),
+            G.VOICE to listOf("Voice: English", "Voice: other languages"),
             G.FRAMES to listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game"),
             G.MEMORY to listOf("Lighter mode", "Low-memory graphics"),
             G.INDOOR to listOf("Build in the background", "Progress", "Route data"),
@@ -98,7 +99,7 @@ class SettingsTabsTest {
         // and each group's tab
         val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
             T.TOP to listOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
-            T.ADDONS to listOf(G.POLESTAR, G.SPOKEN, G.QUESTTRAIL, G.MANNERS), T.PERFORMANCE to listOf(G.FRAMES, G.MEMORY, G.INDOOR, G.STREAMING))
+            T.ADDONS to listOf(G.POLESTAR, G.SPOKEN, G.QUESTTRAIL, G.MANNERS, G.VOICE), T.PERFORMANCE to listOf(G.FRAMES, G.MEMORY, G.INDOOR, G.STREAMING))
         for ((t, gs) in tabOf) assertEquals(t.label, gs, G.values().filter { it.tab == t })
         // who draws the rows that left their old view: Home's section still draws its attack row, GameUiSection the Top screen rows
         assertEquals(SettingsTabs.Drawer.HOME, B.ATTACK_CAST.drawer)
@@ -153,7 +154,9 @@ class SettingsTabsTest {
             // attacking"): Controller > Buttons
             listOf("B: pet follow") +
             // the user's pick 2026-11-16 (voice to text): General > Look > Voice typing
-            listOf("Voice typing")
+            listOf("Voice typing") +
+            // the user, 2026-11-16 ("we could make the per languege downloads part of the addons folder"): Add-ons > Voice
+            listOf("Voice: English", "Voice: other languages")
         val now = B.values().flatMap { it.rows }
         // the layout editor (the user, 2026-11-16): HUD height and HUD scale are its page's now (its own row "Edit layout" opens it)
         assertEquals((before - setOf("HUD height", "HUD scale") + "Edit layout").toSet(), now.toSet())
@@ -219,6 +222,27 @@ class SettingsTabsTest {
         for (a in ThirdPartyAddons.ALL) assertTrue(a.title, SettingsTabs.Block.values().any { SettingsTabs.addonOf(it) == a })
         assertEquals(listOf("Spoken", "Spoken: Quests", "Spoken: Zones", "Spoken: Books", "Stop speech on B, Decline or close",
             "Stop speech on Accept"), B.ADDON_SPOKEN.rows)
+    }
+
+    /**
+     * offline voice's model files (the user, 2026-11-16: "we could make the per languege downloads part of the addons folder"): their own
+     * group on Add-ons, after Manners (Polestar's still opens first), two rows; shown only in a build with libdsfwhisper.so
+     */
+    @Test fun voiceModelsAreAnAddOnsGroupOnlyWithTheLibrary() {
+        assertEquals(T.ADDONS, G.VOICE.tab)
+        assertEquals(listOf("Voice: English", "Voice: other languages"), B.ADDON_VOICE.rows)
+        assertEquals(SettingsTabs.Drawer.VIEW, B.ADDON_VOICE.drawer)
+        val was = VoiceModels.offered
+        try {
+            VoiceModels.offered = { false }
+            assertTrue(B.ADDON_VOICE !in SettingsTabs.blocks(T.ADDONS))
+            assertTrue(G.VOICE !in SettingsTabs.groups(T.ADDONS))
+            VoiceModels.offered = { true }
+            assertEquals(B.ADDON_VOICE, SettingsTabs.blocks(T.ADDONS).last())
+            assertEquals(G.VOICE, SettingsTabs.groups(T.ADDONS).last())
+            assertEquals(setOf(SettingsTabs.groups(T.ADDONS).first()), SettingsTabs.openOnShow(T.ADDONS))
+            assertTrue(G.VOICE !in SettingsTabs.openOnShow(T.ADDONS))
+        } finally { VoiceModels.offered = was }
     }
 
     @Test fun everyRowIsInExactlyOneGroup() {

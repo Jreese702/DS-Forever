@@ -78,6 +78,56 @@ class VoiceTypingRowTest {
         assertEquals(Voice.Mode.DEVICE, Settings.voiceTyping)
     }
 
+    /**
+     * Add-ons > Voice (the user, 2026-11-16: "we could make the per languege downloads part of the addons folder"): two rows in the add-on
+     * rows' look, each a stop for the cursor; Download only on the press (a host that refuses = its one line), Ready = Delete, twice.
+     */
+    @Test fun voiceModelsRowsOnAddOns() {
+        val was = VoiceModels.offered
+        val dir = java.nio.file.Files.createTempDirectory("voice-rows").toFile()
+        try {
+            VoiceModels.offered = { true }
+            VoiceModels.start(dir, VoiceModels.Net { _, _ -> throw java.io.IOException("HTTP 503") }) {}
+            Settings.init(app); SettingsTabs.init(app)
+            val v = SettingsView(app) { }
+            val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+            val r = SettingsRoom(act, v) { null }
+            act.setContentView(r)
+            r.show(SettingsTabs.Tab.ADDONS)
+            assertTrue(SettingsTabs.Group.VOICE in SettingsTabs.groups(SettingsTabs.Tab.ADDONS))
+            r.toggle(SettingsTabs.Group.VOICE)
+            lay(r)
+            val s = r.groupBoxes.first { it.group == SettingsTabs.Group.VOICE }.parts.single() as SettingsView
+            @Suppress("UNCHECKED_CAST")
+            val btns = SettingsView::class.java.getDeclaredField("voiceModelBtn").apply { isAccessible = true }.get(s) as Map<VoiceModels.Model, RectF>
+            assertEquals(VoiceModels.Model.values().toSet(), btns.keys)
+            val targets = s.focusTargets()
+            for (b in btns.values) { assertTrue(!b.isEmpty); assertTrue(targets.any { it == b }) }
+            assertEquals(listOf("Voice: English", "Voice: other languages"),
+                btns.values.map { b -> s.rowAt(b.centerX(), b.centerY()) }.sortedBy { it != "Voice: English" })
+            // Download: on the worker; this host refuses, so the row says so in one line
+            tap(s, btns.getValue(VoiceModels.Model.EN))
+            val until = System.currentTimeMillis() + 10_000
+            while (VoiceModels.state(VoiceModels.Model.EN) !is VoiceModels.State.Failed && System.currentTimeMillis() < until) Thread.sleep(20)
+            assertEquals("Download failed: HTTP 503", VoiceModels.line(VoiceModels.Model.EN, VoiceModels.state(VoiceModels.Model.EN)))
+            // a ready file: Delete, twice
+            val f = VoiceModels.fileOf(VoiceModels.Model.MULTI)
+            assertEquals(VoiceModels.State.None, VoiceModels.state(VoiceModels.Model.MULTI))
+            java.io.RandomAccessFile(f, "rw").use { it.setLength(VoiceModels.Model.MULTI.bytes) }
+            File(dir, f.name + ".ok").writeText("${f.length()}:${f.lastModified()}")
+            assertTrue(VoiceModels.ready(VoiceModels.Model.MULTI))
+            lay(r)
+            tap(s, btns.getValue(VoiceModels.Model.MULTI))
+            assertTrue(f.exists())                                  // armed: "Tap again"
+            lay(r)
+            tap(s, btns.getValue(VoiceModels.Model.MULTI))
+            assertTrue(!f.exists())
+        } finally {
+            VoiceModels.offered = was
+            dir.deleteRecursively()
+        }
+    }
+
     @Test fun shot() {
         val out = System.getenv("VOICE_SHOTS_DIR")?.let { File(it) } ?: return
         out.mkdirs()
