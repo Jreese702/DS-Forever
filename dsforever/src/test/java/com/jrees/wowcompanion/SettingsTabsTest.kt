@@ -242,8 +242,10 @@ class SettingsTabsTest {
             assertTrue(B.ADDON_VOICE !in SettingsTabs.blocks(T.ADDONS))
             assertTrue(G.VOICE !in SettingsTabs.groups(T.ADDONS))
             VoiceModels.offered = { true }
-            assertEquals(B.ADDON_VOICE, SettingsTabs.blocks(T.ADDONS).last())
-            assertEquals(G.VOICE, SettingsTabs.groups(T.ADDONS).last())
+            // after Manners, before Imported (the player's own add-ons stay last: feat/addons-import)
+            val bs = SettingsTabs.blocks(T.ADDONS)
+            assertEquals(listOf(B.ADDON_MANNERS, B.ADDON_VOICE, B.IMPORTED), bs.takeLast(3))
+            assertEquals(listOf(G.MANNERS, G.VOICE, G.IMPORTED), SettingsTabs.groups(T.ADDONS).takeLast(3))
             assertEquals(setOf(SettingsTabs.groups(T.ADDONS).first()), SettingsTabs.openOnShow(T.ADDONS))
             assertTrue(G.VOICE !in SettingsTabs.openOnShow(T.ADDONS))
         } finally { VoiceModels.offered = was }
