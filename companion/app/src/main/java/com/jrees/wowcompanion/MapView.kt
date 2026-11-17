@@ -5437,6 +5437,8 @@ class MapView(context: Context) : View(context) {
         fun root(zone: Int): FloatArray?
         /** the map stopped asking (Home's module closed): the art's memory rules take over */
         fun done()
+        /** the map zoomed back in to its zone (the user's pick, 2026-11-17: "Free on zoom-in"): the pictures go now; a zoom-out reads them again */
+        fun release()
     }
     var worldArt: WorldArt? = null
     /** a touch on the open map's field (not the list, a button or a pop-out): Home's map controls page */
@@ -5574,7 +5576,7 @@ class MapView(context: Context) : View(context) {
     /** Home's module closed: the art is told (its memory rules), the sticks stop */
     fun worldDone() {
         controls = false
-        if (worldAsked) { worldAsked = false; worldArt?.done() }
+        worldAsked = false; worldArt?.done()               // always: a zoom-in already let the pictures go, but a low-memory pause ends here
         // the next opening starts on the module's own framing, not out on the world (its art is let go now)
         if (zoom < 0.999f) {
             zoom = 1f; autoZoomCur = 1f; autoZoom = true; followPlayer = true; recentreFrom = null; camAncX = Float.NaN
@@ -5655,7 +5657,7 @@ class MapView(context: Context) : View(context) {
         if (controls) {
             val act = if (bubbleUnderCursor() >= 0) HomeMapPages.FOCUS_WORD else null
             val hp = HomeMapPages.hints(controlsBuffs, act).map { (b, w) ->
-                (when (b) { "lstick" -> "gen_lstickupdown"; "rstick" -> MapRoomKeys.ZOOM_GLYPH; else -> glyph(b) }) to w }
+                (when (b) { "lstick" -> "gen_lstick"; "rstick" -> MapRoomKeys.ZOOM_GLYPH; else -> glyph(b) }) to w }
             UiKit.hints(c, band.right - 24f, cy, *hp.toTypedArray()); return
         }
         // only what does something on the map right now (UI Art / the user's clutter rule)
@@ -6919,6 +6921,8 @@ class MapView(context: Context) : View(context) {
             worldAsked = true
             worldDrew = wa.paint(c, m.optInt("mapID", 0), worldZr, worldClip, this)
         }
+        // the user's pick (2026-11-17, "Free on zoom-in"): back on the zone, the big pictures go at once (the next zoom-out reads them again)
+        else if (!compact && !morphOn && zoom >= 0.999f && worldAsked) { worldAsked = false; worldArt?.release() }
         val tileShare = if (worldDrew) 1f - worldShare(zoom) else 1f
         val rT = rect
         var terrain = worldDrew && tileShare <= 0.001f

@@ -86,4 +86,12 @@ class HomeMapPagesTest {
         assertFalse("Thor Base / Lite (7191 MB)", DeviceTier.homeMapFullDetail(7191))
         assertFalse("RAM not known: the lighter map", DeviceTier.homeMapFullDetail(0))
     }
+
+    /** the user, 2026-11-17: "the 'Move' glyph should just have the left stick without the up and down arrows" */
+    @Test fun moveIsThePlainLeftStick() {
+        assertEquals("gen_lstickup", Glyphs.plainStick("gen_lstick"))
+        assertEquals("gen_rstickup", Glyphs.plainStick("gen_rstick"))
+        assertNull("the zoom's up-and-down glyph is not a plain stick", Glyphs.plainStick("gen_rstickupdown"))
+        assertNull(Glyphs.plainStick("gen_lstickin"))
+    }
 }

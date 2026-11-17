@@ -146,6 +146,10 @@ object Glyphs {
     fun upDown(name: String): Pair<String, String>? =
         Regex("^gen_([lr])stickupdown$").find(name)?.let { m -> val s = m.groupValues[1]; "gen_${s}stickup" to "gen_${s}stickdown" }
 
+    /** "gen_lstick" / "gen_rstick" (the stick alone, no arrow: the user, 2026-11-17, "the 'Move' glyph should just have the left stick
+     *  without the up and down arrows"): the game's "up" glyph, its arrow cut off (UiKit.pad draws it below the arrow's 17 rows), else null */
+    fun plainStick(name: String): String? = Regex("^gen_([lr])stick$").find(name)?.let { m -> "gen_${m.groupValues[1]}stickup" }
+
     fun translate(name: String, layout: CastSettings.ButtonLayout): String {
         val us = name.indexOf('_')
         if (us <= 0) return name

@@ -124,8 +124,11 @@ class HomeMapControlsShotsTest {
         rigs.clear()
         feed(0, 0f, 0f); feed(1, 0f, 0f)
         ShadowLooper.idleMainLooper()
+        // the choreographer is one for the whole run: as it was, for the next class (DialogViewRollsTest counted on its frames)
         org.robolectric.shadows.ShadowChoreographer.setPaused(false)
+        frameDelayWas?.let { org.robolectric.shadows.ShadowChoreographer.setFrameDelay(it) }
     }
+    private var frameDelayWas: Duration? = null
 
     /** the pictures decode off the UI thread (the room's executor): wait for them to land, a few frames at a time */
     private fun waitPictures(r: Rig, ms: Long = 8_000L) {
@@ -145,6 +148,7 @@ class HomeMapControlsShotsTest {
 
     private fun rig(world: Boolean = true, buffs: Boolean = true, full: Boolean = true): Rig {
         // frames run only as the clock moves (the sticks' and the reticle's postOnAnimation loops would otherwise spin in one idle)
+        if (frameDelayWas == null) frameDelayWas = org.robolectric.shadows.ShadowChoreographer.getFrameDelay()
         org.robolectric.shadows.ShadowChoreographer.setPaused(true)
         org.robolectric.shadows.ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
         art(world)
@@ -457,7 +461,10 @@ class HomeMapControlsShotsTest {
         // the whole module walked back in
         for (i in 0 until 12) { key(r.home, "PADRSHOULDER") }
         waitPictures(r, 1500L)
-        note("back on the zone: ${mb(r.room.pictureBytes)} still held (kept for the next zoom-out until the module closes)")
+        note("back on the zone: ${mb(r.room.pictureBytes)} held (the user's pick: freed on zoom-in)")
+        for (i in 0 until 12) key(r.home, "PADLSHOULDER")
+        waitPictures(r, 3000L)
+        note("out to the world again: ${mb(r.room.pictureBytes)} (read again)")
         key(r.home, "PAD2"); key(r.home, "PAD2"); settle()
         note("module closed: ${mb(r.room.pictureBytes)} held; in use ${r.room.backdropInUse}")
         ShadowSystemClock.advanceBy(Duration.ofMillis(MapRoomLetGo.AFTER_MS + 1000L)); ShadowLooper.idleMainLooper()
@@ -473,5 +480,23 @@ class HomeMapControlsShotsTest {
         repeat(8) { r.room.onMapPad(JSONObject().put("n", 900 + it).put("k", "PADLSHOULDER")); roomDraw() }
         note("Map room zoomed out (LB x8): ${mb(r.room.pictureBytes)}")
         out?.let { d -> d.mkdirs(); File(d, "memory.txt").writeText(report.toString()) }
+    }
+
+    /** the user's pick (2026-11-17, "Free on zoom-in"): back on the zone the big pictures go at once; zooming out reads them again */
+    @Test fun zoomingBackToTheZoneFreesThePicturesAndZoomingOutReadsThemAgain() {
+        val r = rig()
+        key(r.home, "PADDRIGHT")
+        stick(r, 1, 0f, 1f, 4500)
+        waitPictures(r)
+        assertTrue("out on the world: pictures held", r.room.pictureBytes > 0L && r.room.backdropInUse)
+        stick(r, 1, 0f, -1f, 3000)
+        draw(r.home)
+        assertTrue("back on the zone (${st(r)[2]})", st(r)[2] >= 1f)
+        assertEquals("... the pictures are freed at once", 0L, r.room.pictureBytes)
+        assertFalse(r.room.backdropInUse)
+        assertEquals("the module is still open", HomeMapPages.Page.CONTROLS, r.home.mapPageNow())
+        stick(r, 1, 0f, 1f, 4500)
+        waitPictures(r)
+        assertTrue("zooming out again reads them again", r.room.pictureBytes > 0L && r.room.backdropInUse)
     }
 }

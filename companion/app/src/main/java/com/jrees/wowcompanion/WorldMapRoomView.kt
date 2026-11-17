@@ -577,6 +577,18 @@ class WorldMapRoomView(context: Context) : View(context) {
         override fun paint(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View) = paintBackdrop(c, zone, zr, clip, client)
         override fun root(zone: Int) = backdropRoot(zone)
         override fun done() = backdropDone()
+        override fun release() = backdropRelease()
+    }
+    /**
+     * Home's map zoomed back in to its zone (the user's pick, 2026-11-17: "Free on zoom-in"): the pictures go now (unless the Map room
+     * is on screen), "map pictures let go (N MB): Home's map back on its zone" in mem.log; the next zoom-out decodes what it needs again.
+     * A low-memory pause stays until the module closes.
+     */
+    fun backdropRelease() {
+        if (!backdropOn) return
+        backdropOn = false; backdropClient = null
+        letGoClock.removeCallbacks(homeLetGo)
+        if (!roomOn) letGoNow(MapRoomLetGo.zoneLine(bmps.size().toLong()))
     }
     /** Home's map asked for the art since it was last done (the tests) */
     val backdropInUse: Boolean get() = backdropOn
@@ -2967,6 +2979,7 @@ object MapRoomLetGo {
     fun line(bytes: Long): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): the Map room left ${AFTER_MS / 1000} s ago"
     /** Home's map module zoomed out on the same pictures (2026-11-17): "map pictures let go (12 MB): Home's map closed 60 s ago" /
      *  "... Home's map closed (lighter memory)" (the 8 / 12 GB models and Lighter mode: at once) */
+    fun zoneLine(bytes: Long): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): Home's map back on its zone"
     fun homeLine(bytes: Long, now: Boolean): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): Home's map closed" +
         (if (now) " (lighter memory)" else " ${AFTER_MS / 1000} s ago")
 }
