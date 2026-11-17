@@ -120,6 +120,7 @@
 "Get": "Obtenir",
 "Voice busy": "Voix occupée",
 "No sound from the mic": "Aucun son du micro",
+"Voice typing needs Android speech services": "La saisie vocale nécessite les services vocaux d'Android",
 "Tell": "Chuchoter à",
 "Android Settings > Apps > DS Forever > Permissions > Microphone": "Paramètres Android > Applications > DS Forever > Autorisations > Micro",
 "Tooltips": "Infobulles",
@@ -1963,7 +1964,21 @@
 "Window open": "Fenêtre ouverte",
 "Bags full": "Sacs pleins",
 "Binds when picked up": "Lié quand ramassé",
-"Disenchant": "Désenchanter"
+"Disenchant": "Désenchanter",
+"Download voice": "Télécharger la voix",
+"Working": "Traitement",
+"Downloading": "Téléchargement",
+"Checking": "Vérification",
+"Download": "Télécharger",
+"Voice": "Voix",
+"Voice: English": "Voix : anglais",
+"Voice: other languages": "Voix : autres langues",
+"Speech to text on this device. Whisper base by OpenAI, MIT.": "Reconnaissance vocale sur cet appareil. Whisper base d’OpenAI, MIT.",
+"Spanish, French, German and more in one file.": "Espagnol, français, allemand et plus dans un seul fichier.",
+"Download a voice in Add-ons": "Téléchargez une voix dans AddOns",
+"Not downloaded": "Non téléchargé",
+"Smaller and faster. Whisper base by OpenAI, MIT.": "Plus petit et plus rapide. Whisper base d’OpenAI, MIT.",
+"Spanish, French, German and more. Smaller and faster.": "Espagnol, français, allemand et plus. Plus petit et plus rapide."
 },
 "templates": {
 "Tell %s:": "Chuchoter à %s :",
@@ -2167,6 +2182,11 @@
 "Press %s again to clear it": "Appuyez encore sur %s pour l’effacer",
 "Cleared from": "Retiré de",
 "Keep it cleared?": "Le laisser retiré ?",
-"+%s more": "+%s de plus"
+"+%s more": "+%s de plus",
+"Not downloaded · %s": "Non téléchargé · %s",
+"Download failed: %s": "Échec du téléchargement : %s",
+"Download (%s)": "Télécharger (%s)",
+"Voice: English · %s": "Voix : anglais · %s",
+"Voice: other languages · %s": "Voix : autres langues · %s"
 }
 }

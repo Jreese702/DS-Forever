@@ -72,3 +72,8 @@
 # name and calls its static bridge* callbacks; R8 must keep the class, its names and every member (native and callbacks alike)
 -keep class com.jrees.wowcompanion.stream.MoonBridge { *; }
 -keepclasseswithmembernames,includedescriptorclasses class com.jrees.wowcompanion.stream.** { native <methods>; }
+
+# Offline voice typing (libdsfwhisper.so, whisper.cpp): the library binds WhisperNative's natives by their JNI names
+# (Java_com_jrees_wowcompanion_WhisperNative_*); R8 must keep the class and every native under its own name (apk_jni_check.py checks it)
+-keep class com.jrees.wowcompanion.WhisperNative { native <methods>; }
+-keepclasseswithmembernames,includedescriptorclasses class com.jrees.wowcompanion.WhisperNative { native <methods>; }

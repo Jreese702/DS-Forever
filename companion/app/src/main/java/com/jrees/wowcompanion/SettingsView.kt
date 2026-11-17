@@ -235,6 +235,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         Theme.onChange { postInvalidate() }
         ThirdPartyAddons.init(context)
         ThirdPartyAddons.onChange { postInvalidate() }
+        VoiceModels.init(context)
+        VoiceModels.onChange { postInvalidate() }
         Settings.onChange { postInvalidate() }
         ReportFlow.init(context)
         ReportFlow.onChange { postInvalidate() }
@@ -294,7 +296,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     /** the Add-ons tab's controls, in reading order (each module's box, then each option's two segments) */
     private fun addonFocus(): List<RectF> = segGuide.toList() + listOf(btnGuidePending, addonRestart) + addonCoreBtn.values.toList() + addonSettingsBtn.values.toList() + addonModuleBoxes.values.toList() +
-        addonOptionSegs.values.flatMap { it.toList() }
+        addonOptionSegs.values.flatMap { it.toList() } + VoiceModels.Model.values().mapNotNull { voiceModelBtn[it] }
 
     /** the rows as last drawn, with their words (the "What it does" panel follows the row under the cursor or a touch) */
     private val rowHits = ArrayList<Pair<RectF, String>>()
@@ -307,6 +309,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         rowHits.clear(); sbHits.clear()
         addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty(); addonSettingsBtn.clear()
         btnGuidePending.setEmpty(); for (r in segGuide) r.setEmpty()
+        voiceModelBtn.clear()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart, btnSwapRestart, btnWinIdRestart,
                          btnLayout)) r.setEmpty()
@@ -378,6 +381,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.CHAT -> ROW_H
         SettingsTabs.Block.FRAMES -> fgHeight()
         SettingsTabs.Block.SMART_Y -> sbLines().size.let { n -> n * ROW_H + (n - 1) * 10f } + pbHeight()
+        SettingsTabs.Block.ADDON_VOICE -> VoiceModels.Model.values().size.let { n -> n * ROW_H + (n - 1) * 10f }
         else -> SettingsTabs.addonOf(b)?.let { a -> val n = addonRows(a); n * ROW_H + (n - 1) * 10f } ?: 0f
     }
 
@@ -615,6 +619,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 SettingsTabs.Block.CHAT -> drawChat(c, y)
                 SettingsTabs.Block.FRAMES -> drawFrames(c, y)
                 SettingsTabs.Block.SMART_Y -> drawSmartY(c, y)
+                SettingsTabs.Block.ADDON_VOICE -> drawVoiceModels(c, y)
                 else -> SettingsTabs.addonOf(b)?.let { drawAddon(c, y, it) } ?: y
             }
         }
@@ -725,7 +730,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      */
     private fun drawVoice(c: Canvas, top: Float): Float {
         val segW = segW()
-        row(c, top, Tr.t("Voice typing"), Tr.t("X in a text box listens"), enabled = true) { box ->
+        // offline voice in this build but nothing can listen until a voice is downloaded: the row says where (Settings > Add-ons)
+        val sub = if (Settings.voiceTyping != Voice.Mode.OFF && voiceNeedsModel()) "Download a voice in Add-ons" else "X in a text box listens"
+        row(c, top, Tr.t("Voice typing"), Tr.t(sub), enabled = true) { box ->
             val n = Voice.Mode.values().size
             val b = RectF(box.right - 16f - segW * n, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             segmented(c, b, Voice.Mode.values().map { Tr.t(it.label) }, Settings.voiceTyping.ordinal, segVoice)
@@ -733,6 +740,19 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         }
         return top + ROW_H
     }
+
+    /** the voice sheet would offer a model's download now ([Voice.Avail.NEED_MODEL]), asked at most every 2 s (it lists the services) */
+    private fun voiceNeedsModel(): Boolean {
+        if (!VoiceModels.offered()) return false
+        val now = SystemClock.elapsedRealtime()
+        if (now - voiceAvailAt > 2000L) {
+            voiceAvailAt = now
+            voiceNeeds = runCatching { VoiceEngine.avail(context, Settings.voiceTyping) == Voice.Avail.NEED_MODEL }.getOrDefault(false)
+        }
+        return voiceNeeds
+    }
+    private var voiceAvailAt = -10_000L
+    private var voiceNeeds = false
 
     /** #232: the Restart row's state now (ScreenSwap.pending: the saved choice against the one this run uses) */
     private fun swapPending(): ScreenSwap.Pending =
@@ -1712,6 +1732,56 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     }
     private val addonDrawnRows = HashMap<String, Int>()
 
+    // ---- ADD-ONS > VOICE (the user, 2026-11-16: "we could make the per languege downloads part of the addons folder"): offline voice's
+    // model files (small and full of each kind: the user's pick "Offer both"), in the add-on rows' look - each its size, its state (Not downloaded / Downloading n% / Ready) and Download / Delete
+    // (twice, as Uninstall). App files ([VoiceModels]), never the game's AddOns folder; a download only on this press.
+    private val voiceModelBtn = HashMap<VoiceModels.Model, RectF>()
+
+    private fun drawVoiceModels(c: Canvas, top: Float): Float {
+        var y = top
+        for ((i, m) in VoiceModels.Model.values().withIndex()) {
+            if (i > 0) y += ROW_H + 10f
+            val st = VoiceModels.state(m)
+            if (st is VoiceModels.State.Downloading || st == VoiceModels.State.Checking) postInvalidateDelayed(1000)
+            val sub = "${Tr.t(VoiceModels.line(m, st))}. ${Tr.t(m.what)}"
+            voiceModelBtn[m] = row(c, y, m.label, sub, enabled = true) { box ->
+                val r = RectF(box.right - 16f - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                val armed = addonArmed == "voice.${m.id}" && SystemClock.elapsedRealtime() - addonArmedAt < ARM_MS
+                when (st) {
+                    is VoiceModels.State.Downloading -> {
+                        progressBar(c, RectF(r.left - 240f, r.top + 6f, r.left - 20f, r.bottom - 6f), st.pct)
+                        UiKit.button(c, r, "Cancel", UiKit.Button.UP); r
+                    }
+                    VoiceModels.State.Checking -> { UiKit.button(c, r, "Checking", UiKit.Button.DOWN); RectF(r.left, r.top, r.left, r.top) }
+                    VoiceModels.State.Ready -> { UiKit.button(c, r, if (armed) "Tap again" else "Delete", if (armed) UiKit.Button.DOWN else UiKit.Button.UP); r }
+                    else -> { UiKit.button(c, r, "Download", UiKit.Button.UP); r }
+                }
+            }
+        }
+        return y + ROW_H
+    }
+
+    /** a press on Add-ons > Voice: Download (the player's own), Cancel, Delete (twice); true = it was one */
+    private fun voiceModelTap(x: Float, y: Float): Boolean {
+        for (m in VoiceModels.Model.values()) {
+            val r = voiceModelBtn[m] ?: continue
+            if (r.isEmpty || !r.contains(x, y)) continue
+            when (VoiceModels.state(m)) {
+                is VoiceModels.State.Downloading -> VoiceModels.cancel(m)
+                VoiceModels.State.Checking -> {}
+                VoiceModels.State.Ready -> {
+                    val now = SystemClock.elapsedRealtime()
+                    if (addonArmed == "voice.${m.id}" && now - addonArmedAt < ARM_MS) { addonArmed = null; VoiceModels.delete(m) }
+                    else { addonArmed = "voice.${m.id}"; addonArmedAt = now; postDelayed({ invalidate() }, ARM_MS + 50) }
+                }
+                else -> { DiagLog.event("voice", "model ${m.id} download asked in Add-ons"); VoiceModels.download(m) }
+            }
+            invalidate()
+            return true
+        }
+        return false
+    }
+
     /** a download's progress, in the game's own bar art when the kit has it: [pct] 0..100 (< 0 = waiting) */
     private fun progressBar(c: Canvas, r: RectF, pct: Int) {
         pFill.color = Theme.ink; c.drawRoundRect(r, 6f, 6f, pFill)
@@ -1731,6 +1801,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     /** a press on an Add-ons control; true = it was one */
     private fun addonTap(x: Float, y: Float): Boolean {
+        if (voiceModelTap(x, y)) return true
         if (!addonRestart.isEmpty && addonRestart.contains(x, y)) { addonRestartAt = SystemClock.elapsedRealtime(); onRestart(); return true }
         // 2026-11-12: the Polestar quest guide's On / Off, and its Restart game / Try again
         segGuide.indexOfFirst { !it.isEmpty && it.contains(x, y) }.takeIf { it >= 0 }?.let { PolestarGuide.set(it == 0); invalidate(); return true }

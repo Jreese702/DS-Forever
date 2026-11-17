@@ -38,6 +38,9 @@ object SettingsTabs {
         BUTTONS(Tab.CONTROLLER, "Buttons"), WHEELS(Tab.CONTROLLER, "Wheels"), SMART_Y(Tab.CONTROLLER, "Smart Y"),
         COMBAT(Tab.CONTROLLER, "Combat helpers"),
         POLESTAR(Tab.ADDONS, "Polestar"), SPOKEN(Tab.ADDONS, "Spoken"), QUESTTRAIL(Tab.ADDONS, "QuestTrail"), MANNERS(Tab.ADDONS, "Manners"),
+        // offline voice's model files (the user, 2026-11-16: "we could make the per languege downloads part of the addons folder"): app
+        // files, never the game's AddOns; after Manners, so Polestar's group still opens first
+        VOICE(Tab.ADDONS, "Voice"),
         FRAMES(Tab.PERFORMANCE, "Frames"), MEMORY(Tab.PERFORMANCE, "Memory"), INDOOR(Tab.PERFORMANCE, "Indoor maps"),
         STREAMING(Tab.PERFORMANCE, "Streaming"),
     }
@@ -116,6 +119,9 @@ object SettingsTabs {
         ADDON_SPOKEN(Group.SPOKEN, "Spoken", ThirdPartyAddons.SPOKEN.rowWords()),
         ADDON_QUESTTRAIL(Group.QUESTTRAIL, "QuestTrail", ThirdPartyAddons.QUESTTRAIL.rowWords()),
         ADDON_MANNERS(Group.MANNERS, "Manners", ThirdPartyAddons.MANNERS.rowWords()),
+        // offline voice (VoiceModels): English, and every other language in one file, each small and full ("Voice: English · 60 MB");
+        // shown only in a build with libdsfwhisper.so
+        ADDON_VOICE(Group.VOICE, "Voice", VoiceModels.Model.values().map { it.label }),
         // ---- Performance
         FRAMES(Group.FRAMES, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game")),
@@ -150,6 +156,7 @@ object SettingsTabs {
     /** 1.0.9 (the user: "Disable the safe path, quest trail and polestar buttons for now"): with the route modes held back, the
      *  Polestar and QuestTrail blocks are not shown (Spoken stays) */
     fun shown(b: Block): Boolean = when {
+        b == Block.ADDON_VOICE -> VoiceModels.offered()
         !Settings.ROUTE_MODES_ON -> b != Block.ADDON_POLESTAR && b != Block.ADDON_QUESTTRAIL
         // 2026-11-12 (the user: "remove ... quest trail from the options"): QuestTrail is never offered; a copy a player installed keeps
         // its block (its Uninstall) while it is there or on its way in

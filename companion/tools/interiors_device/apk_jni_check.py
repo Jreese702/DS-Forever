@@ -6,7 +6,9 @@ R8 synthesized implements Source but has no read. Every source-level test passed
 
   python -I apk_jni_check.py <apk> [dexdump.exe]
 For each (interface, method, signature) the native code calls through GetMethodID: the interface declares it, and EVERY class in
-the dex that implements the interface has it. Exit 1 on any miss.
+the dex that implements the interface has it. Also: each native library in LIBS is in the APK (arm64-v8a) and exports its JNI
+names (the NDK's llvm-nm), so a release without libdsfwhisper.so, or with names that no longer match WhisperNative, fails. Exit 1 on
+any miss.
 """
 import glob
 import os
@@ -38,6 +40,18 @@ CALLBACKS = [
     ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeClConnectionTerminated", "(I)V"),
     ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeClRumble", "(SSS)V"),
     ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeClConnectionStatusUpdate", "(I)V"),
+    # offline voice typing: libdsfwhisper.so binds these natives by their JNI names (companion/tools/whisper_native/jni/whisper_jni.cpp)
+    ("Lcom/jrees/wowcompanion/WhisperNative;", "version", "()Ljava/lang/String;"),
+    ("Lcom/jrees/wowcompanion/WhisperNative;", "load", "(Ljava/lang/String;)J"),
+    ("Lcom/jrees/wowcompanion/WhisperNative;", "transcribe", "(J[SILjava/lang/String;ILjava/lang/String;)Ljava/lang/String;"),
+    ("Lcom/jrees/wowcompanion/WhisperNative;", "abort", "(J)V"),
+    ("Lcom/jrees/wowcompanion/WhisperNative;", "free", "(J)V"),
+]
+
+# native libraries the APK must carry for arm64-v8a, each with the JNI symbols it must define (llvm-nm -D --defined-only)
+LIBS = [
+    ("lib/arm64-v8a/libdsfwhisper.so", ["Java_com_jrees_wowcompanion_WhisperNative_" + n for n in
+                                        ("version", "load", "transcribe", "abort", "free")]),
 ]
 
 
@@ -48,6 +62,39 @@ def dexdump_path(arg):
     if not found:
         raise SystemExit("dexdump not found; pass its path")
     return found[-1]
+
+
+def llvm_nm():
+    sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT") or os.path.expanduser("~/AppData/Local/Android/Sdk")
+    found = sorted(glob.glob(os.path.join(sdk, "ndk", "*", "toolchains", "llvm", "prebuilt", "*", "bin", "llvm-nm*")))
+    return found[-1] if found else None
+
+
+def check_libs(apk, work):
+    """each LIBS entry is in the APK and defines its JNI symbols; the count of misses"""
+    fails = 0
+    nm = llvm_nm()
+    with zipfile.ZipFile(apk) as z:
+        names = set(z.namelist())
+        for path, syms in LIBS:
+            if path not in names:
+                print("FAIL %s is not in the APK" % path)
+                fails += 1
+                continue
+            z.extract(path, work)
+            print("PASS %s in the APK (%d bytes)" % (path, z.getinfo(path).file_size))
+            if not nm:
+                print("FAIL no llvm-nm (the NDK) to read %s's symbols" % path)
+                fails += 1
+                continue
+            out = subprocess.run([nm, "-D", "--defined-only", os.path.join(work, path)], capture_output=True, text=True,
+                                 errors="replace").stdout
+            have = {ln.split()[-1] for ln in out.splitlines() if ln.strip()}
+            for sym in syms:
+                ok = sym in have
+                print(("PASS " if ok else "FAIL ") + "  %s defines %s" % (os.path.basename(path), sym))
+                fails += not ok
+    return fails
 
 
 def classes(text):
@@ -104,6 +151,7 @@ def main():
             ok = (name, sig) in allc[c]["methods"]
             print(("PASS " if ok else "FAIL ") + "  %s implements %s%s" % (c, name, sig))
             fails += not ok
+    fails += check_libs(apk, work)
     print(("PASS" if fails == 0 else "FAIL") + " APK JNI callbacks: %d dex files, %d classes, %d misses" % (len(dexes), len(allc), fails))
     return 1 if fails else 0
 

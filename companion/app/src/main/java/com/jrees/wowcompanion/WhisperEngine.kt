@@ -1,0 +1,203 @@
+package com.jrees.wowcompanion
+
+import android.content.ComponentCallbacks2
+import android.content.Context
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.Executors
+
+/**
+ * OFFLINE VOICE TYPING for the voice sheet (the user, 2026-11-16: "could we use something like https://handy.computer/?", then "base with
+ * optional downloads per language"): the microphone through AudioRecord (16 kHz mono PCM16, only once the player allowed it in Android's
+ * own question, [VoiceMic]), [Voice.Vad]'s stop rule (1.2 s of quiet after the words, 15 s at most, A stops at once), then whisper.cpp
+ * ([WhisperNative]) on a background thread with the model the app's language wants ([Voice.whisperModel]). The sheet shows "Listening",
+ * then "Working", then the words in the box; NOTHING IS SENT by itself (the words go in only on A / Start, the sheet's rule).
+ *
+ * Every answer reaches the sink on the main thread, for the current session only: no recorder = [Voice.E_AUDIO], nothing said =
+ * [Voice.E_SPEECH_TIMEOUT], no words = [Voice.E_NO_MATCH], a model that would not load or a failed run = [Voice.E_SERVER] ("Voice
+ * busy"; the model is checked again, [VoiceModels.distrust]). The model stays loaded [IDLE_MS] after its last use (it is about 300 MB),
+ * and goes at once on Android's running-low warning while idle. Nothing heard is ever logged; the hints are the names only, never logged.
+ */
+class WhisperEngine(context: Context) : ChatKeyboard.VoiceListen {
+    private val app = context.applicationContext
+    private val ui = Handler(Looper.getMainLooper())
+
+    @Volatile private var session = 0
+    @Volatile private var stopAsked = false
+    private var recorder: Thread? = null
+
+    override fun start(online: Boolean, lang: String, hints: List<String>, sink: VoiceEngine.Sink): Boolean {
+        cancel()
+        val pick = Voice.whisperModel(Tr.lang(), on()) ?: return false
+        if (!VoiceMic.granted(app)) { ui.post { sink.error(Voice.E_PERMISSIONS) }; return true }
+        val s = ++session
+        stopAsked = false
+        val prompt = hints.take(PROMPT_NAMES).joinToString(", ").take(PROMPT_CHARS).ifBlank { null }
+        // the model loads while the player speaks
+        work.execute { if (s == session) runCatching { loaded(pick.first) } }
+        val t = Thread({ record(s, pick, prompt, sink) }, "voice-rec")
+        recorder = t
+        t.start()
+        DiagLog.event("voice", "offline listen model=${pick.first.id} lang=${pick.second}")
+        return true
+    }
+
+    /** A: the recording stops now, the words are worked out */
+    override fun stop() { stopAsked = true }
+
+    /** the session goes: the recording stops, a run in progress is aborted, nothing it says is used */
+    override fun cancel() {
+        session++
+        stopAsked = true
+        recorder = null
+        val h = synchronized(lock) { handle }
+        if (h != 0L && running) runCatching { WhisperNative.abort(h) }
+    }
+
+    /** offline voice has no language packs of Android's */
+    override fun getPack(lang: String): Boolean = false
+
+    private fun live(s: Int) = s == session
+    private fun post(s: Int, f: () -> Unit) = ui.post { if (live(s)) f() }
+
+    private fun record(s: Int, pick: Pair<VoiceModels.Model, String>, prompt: String?, sink: VoiceEngine.Sink) {
+        val frame = RATE * Voice.FRAME_MS / 1000
+        val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val rec = try {
+            AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
+                maxOf(min, frame * 2 * 8))
+        } catch (t: Throwable) { null }
+        if (rec == null || rec.state != AudioRecord.STATE_INITIALIZED) {
+            runCatching { rec?.release() }
+            post(s) { sink.error(Voice.E_AUDIO) }
+            return
+        }
+        val pcm = ShortArray(RATE * Voice.MAX_MS / 1000 + frame)
+        var n = 0
+        val vad = Voice.Vad()
+        var outcome = Voice.Vad.Step.GO
+        try {
+            rec.startRecording()
+            if (rec.recordingState != AudioRecord.RECORDSTATE_RECORDING) { post(s) { sink.error(Voice.E_AUDIO) }; return }
+            while (live(s) && !stopAsked && n + frame <= pcm.size) {
+                var got = 0
+                while (got < frame && live(s)) {
+                    val r = rec.read(pcm, n + got, frame - got)
+                    if (r <= 0) break
+                    got += r
+                }
+                if (got < frame) { if (live(s) && n == 0) { post(s) { sink.error(Voice.E_AUDIO) }; return }; break }
+                val db = Voice.dbfs(pcm, n, frame)
+                n += frame
+                val level = Voice.rmsDb(db)
+                post(s) { sink.rms(level) }
+                outcome = vad.frame(db)
+                if (outcome != Voice.Vad.Step.GO) break
+            }
+        } catch (t: Throwable) {
+            post(s) { sink.error(Voice.E_AUDIO) }
+            return
+        } finally {
+            runCatching { rec.stop() }
+            runCatching { rec.release() }
+        }
+        if (!live(s)) return
+        if (outcome == Voice.Vad.Step.NO_SPEECH) { post(s) { sink.error(Voice.E_SPEECH_TIMEOUT) }; return }
+        if (n == 0) { post(s) { sink.error(Voice.E_NO_MATCH) }; return }
+        post(s) { sink.working() }
+        val count = n
+        work.execute { transcribe(s, pick, pcm, count, prompt, sink) }
+    }
+
+    private fun transcribe(s: Int, pick: Pair<VoiceModels.Model, String>, pcm: ShortArray, n: Int, prompt: String?, sink: VoiceEngine.Sink) {
+        if (!live(s)) return
+        val h = runCatching { loaded(pick.first) }.getOrDefault(0L)
+        if (h == 0L) {
+            VoiceModels.distrust(pick.first)
+            DiagLog.event("voice", "offline model ${pick.first.id} did not load")
+            post(s) { sink.error(Voice.E_SERVER) }
+            return
+        }
+        val t0 = android.os.SystemClock.uptimeMillis()
+        running = true
+        val text = try { WhisperNative.transcribe(h, pcm, n, pick.second, THREADS, prompt) } catch (t: Throwable) { null } finally { running = false }
+        lastUsed = android.os.SystemClock.uptimeMillis()
+        idleLater()
+        if (!live(s)) return
+        val words = text?.let { Voice.whisperClean(it, 4000) }
+        DiagLog.event("voice", "offline words ms=${lastUsed - t0} audio_ms=${n * 1000L / RATE} chars=${words?.length ?: -1}")
+        when {
+            text == null -> post(s) { sink.error(Voice.E_SERVER) }
+            words.isNullOrEmpty() -> post(s) { sink.error(Voice.E_NO_MATCH) }
+            else -> post(s) { sink.final(words) }
+        }
+    }
+
+    companion object {
+        const val RATE = 16_000
+        const val THREADS = 4
+        const val PROMPT_NAMES = 30
+        const val PROMPT_CHARS = 200
+        /** the model stays loaded this long after its last use */
+        const val IDLE_MS = 60_000L
+
+        /** offline voice's state now: the library and which model files are ready */
+        fun on(): Voice.WhisperOn = Voice.WhisperOn(WhisperNative.available,
+            VoiceModels.ready(VoiceModels.Model.EN), VoiceModels.ready(VoiceModels.Model.MULTI),
+            VoiceModels.ready(VoiceModels.Model.EN_SMALL), VoiceModels.ready(VoiceModels.Model.MULTI_SMALL))
+
+        // ---- THE LOADED MODEL (one, shared by every board; only the work thread loads, runs and frees it)
+        private val lock = Any()
+        private var handle = 0L
+        private var handleModel: VoiceModels.Model? = null
+        @Volatile private var running = false
+        @Volatile private var lastUsed = 0L
+        private val work = Executors.newSingleThreadExecutor { r -> Thread(r, "voice-work").apply { isDaemon = true } }
+        private val main = Handler(Looper.getMainLooper())
+        @Volatile private var trimHooked = false
+
+        /** the model [m] loaded (the work thread), another one freed first; 0 = it would not load */
+        private fun loaded(m: VoiceModels.Model): Long {
+            synchronized(lock) { if (handle != 0L && handleModel == m) return handle }
+            freeNow()
+            if (!VoiceModels.ready(m)) return 0L
+            val h = WhisperNative.load(VoiceModels.fileOf(m).absolutePath)
+            synchronized(lock) { handle = h; handleModel = if (h != 0L) m else null }
+            lastUsed = android.os.SystemClock.uptimeMillis()
+            if (h != 0L) { hookTrim(); idleLater(); DiagLog.event("voice", "offline model ${m.id} loaded") }
+            return h
+        }
+
+        private fun freeNow(): Long {
+            val h = synchronized(lock) { handle.also { handle = 0L; handleModel = null } }
+            if (h == 0L) return 0L
+            runCatching { WhisperNative.free(h) }
+            DiagLog.event("voice", "offline model freed")
+            return MODEL_BYTES
+        }
+
+        private const val MODEL_BYTES = 300L * 1024 * 1024
+
+        private val idle = Runnable {
+            if (android.os.SystemClock.uptimeMillis() - lastUsed >= IDLE_MS && !running) work.execute { if (!running) freeNow() }
+            else idleLater()
+        }
+
+        private fun idleLater() { main.removeCallbacks(idle); main.postDelayed(idle, IDLE_MS) }
+
+        /** the model goes now (the host went away: [Voice.stopAll]'s caller; Android running low) */
+        fun release() { if (!running) work.execute { if (!running) freeNow() } }
+
+        private fun hookTrim() {
+            if (trimHooked) return
+            trimHooked = true
+            Voice.releaseOffline = { release() }
+            MemWatch.onTrim("voice") { level ->
+                if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW && !running && synchronized(lock) { handle != 0L }) { release(); MODEL_BYTES } else 0L
+            }
+        }
+    }
+}
