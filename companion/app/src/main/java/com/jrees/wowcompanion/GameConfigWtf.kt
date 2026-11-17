@@ -213,6 +213,23 @@ object GameConfigWtf {
     }
 
     /**
+     * THE REMEMBERED GAME ACCOUNT FOR THE PC (the user's pick 2026-11-17, "Yes, remember it": the PC remembers it the same way the
+     * Thor does): [lines]' accountList value when it remembers a pick (holds a "!"), without its quotes; null = none, or nothing
+     * remembered. Streaming hands it to DS Forever Desktop (login_file's account_list) only with "Game account: Remembered"; it is
+     * an account name, never logged. Pure.
+     */
+    fun rememberedAccountList(lines: List<String>): String? = lines.mapNotNull { line ->
+        val parts = line.trim().takeIf { it.startsWith("SET ", ignoreCase = true) }?.drop(4)?.trim()?.split(" ", limit = 2)
+        if (parts?.size != 2 || ACCOUNT_CHOICE_KEYS.none { it.equals(parts[0], ignoreCase = true) }) null
+        else parts[1].trim().trim('"').takeIf { v -> v.split('|').any { it.trim().startsWith("!") } }
+    }.lastOrNull()?.takeIf { it.length <= 512 && it.none { c -> c == '"' || c == '\r' || c == '\n' } }
+
+    /** [rememberedAccountList] of [root]'s Config.wtf for the client it runs ([WowProduct.of]); null when unreadable */
+    fun rememberedAccountList(root: File): String? = runCatching {
+        File(File(root, WowProduct.of(root).flavorDir), "WTF/Config.wtf").takeIf { it.isFile }?.readLines()?.let(::rememberedAccountList)
+    }.getOrNull()
+
+    /**
      * THE REPORT'S Config.wtf LINE (issue #57, 1.0.17: "no log in fields at sign in screen in game", a 47.7 GB folder named "World of
      * Warcraft" copied whole; the client sat at 0 bytes with its window up and never read login.txt - the cause is not known). It
      * says which keys the folder brings that DS Forever never sets itself, by NAME only (a value may be an account name), plus the portal

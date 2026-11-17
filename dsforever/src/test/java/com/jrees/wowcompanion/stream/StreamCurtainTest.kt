@@ -151,4 +151,33 @@ class StreamCurtainTest {
         assertEquals("a@b.c", o.getString("email"))
         assertEquals("p\"w", o.getString("password"))
     }
+
+    /** the user's pick 2026-11-17 ("Yes, remember it"): the game account rides with the login; "Ask each time" carries none (fake data) */
+    @Test fun theLoginFileCarriesTheGameAccountToRemember() {
+        val remember = JSONObject(BridgeProtocol.loginFile("a@b.c", "pw", BridgeProtocol.GameAccount(ask = false, list = "Fake1|!Fake2|")))
+        assertEquals("remember", remember.getString("game_account"))
+        assertEquals("Fake1|!Fake2|", remember.getString("account_list"))
+        val ask = JSONObject(BridgeProtocol.loginFile("a@b.c", "pw", BridgeProtocol.GameAccount(ask = true, list = "Fake1|!Fake2|")))
+        assertEquals("ask", ask.getString("game_account"))
+        assertTrue("ask each time: no account", !ask.has("account_list"))
+        val none = JSONObject(BridgeProtocol.loginFile("a@b.c", "pw", BridgeProtocol.GameAccount(ask = false)))
+        assertEquals("remember", none.getString("game_account")); assertTrue(!none.has("account_list"))
+        assertTrue(!JSONObject(BridgeProtocol.loginFile("a@b.c", "pw")).has("game_account"))
+        assertEquals(BridgeMsg.LoginAgain, BridgeProtocol.parse("""{"t":"login_again"}"""))
+    }
+
+    /** the user's pick 2026-11-17 (region): WoW's own region screen shows, with one short line, while the refused region waits */
+    @Test fun aRefusedRegionIsSaidOverWowsOwnScreen() {
+        val o = JSONObject().put("t", "wow").put("state", "running").put("screen", "login").put("focused", true).put("bnet", "signed_in")
+            .put("login_error", "309").put("region", "refused")
+        val pc = (BridgeProtocol.parse(o.toString()) as BridgeMsg.Wow).pc!!
+        assertTrue(pc.regionRefused)
+        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, pc))
+        assertEquals("Region refused: pick another region", StreamCurtain.streamLine(pc))
+        assertEquals("the stream not up yet: still connecting", "Connecting to your PC", curtain(StreamCurtain.decide(false, true, pc)).line)
+        assertEquals("", StreamCurtain.streamLine(pc.copy(regionRefused = false)))
+        assertEquals("a region taken: no line", "", StreamCurtain.streamLine(pc.copy(screen = "charselect")))
+        assertEquals("WoW closed: no line", "", StreamCurtain.streamLine(pc.copy(screen = "none")))
+        assertTrue(!PcWow.of(JSONObject().put("state", "running"))!!.regionRefused)
+    }
 }

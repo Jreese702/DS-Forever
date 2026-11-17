@@ -98,4 +98,15 @@ class GameAccountAskTest {
                 assertTrue("$l: $w", plain.has(w) && plain.getString(w) != w)
         }
     }
+
+    /** the user's pick 2026-11-17 ("Yes, remember it"): the Thor's remembered pick for the PC, only a marked list (fake names) */
+    @Test fun theRememberedListIsReadForThePc() {
+        assertEquals("$secretA|!$secretB|", GameConfigWtf.rememberedAccountList(listOf("SET portal \"us\"", "SET accountList \"$secretA|!$secretB|\"", "SET accountName \"$mail\"")))
+        assertEquals(null, GameConfigWtf.rememberedAccountList(listOf("SET accountList \"$secretA|$secretB|\"")))
+        assertEquals(null, GameConfigWtf.rememberedAccountList(listOf("SET accountName \"!$mail\"")))
+        assertEquals(null, GameConfigWtf.rememberedAccountList(emptyList()))
+        val root = seed(listOf("SET accountList \"!$secretA|\""))
+        assertEquals("!$secretA|", GameConfigWtf.rememberedAccountList(root))
+        assertEquals(null, GameConfigWtf.rememberedAccountList(Files.createTempDirectory("none").toFile()))
+    }
 }

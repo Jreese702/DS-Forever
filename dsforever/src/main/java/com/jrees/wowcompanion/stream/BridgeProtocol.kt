@@ -23,7 +23,9 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
                  val show: List<Float> = emptyList(),
                  /** issues #304 / #357: why the taps can't reach WoW on the PC: "elevated" (run as administrator) | "not_filling" (WoW's
                   *  window doesn't fill the streamed monitor); "" = fine, or an older Desktop */
-                 val input: String = "") {
+                 val input: String = "",
+                 /** Desktop 0.2.31: the game refused the region picked on its own region screen (309) and waits there for another pick */
+                 val regionRefused: Boolean = false) {
     /** signed in: at character select or in the world */
     val signedIn get() = screen == "charselect" || screen == "world"
 
@@ -31,7 +33,8 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
         fun of(o: JSONObject?): PcWow? = o?.let {
             PcWow(it.optString("state"), it.optString("why"), it.optString("screen"),
                 if (it.has("focused")) it.optBoolean("focused") else null, it.optString("bnet"), it.optBoolean("needs_you"),
-                it.optString("login_error"), it.optString("crash"), rect(it.optString("show")), it.optString("input"))
+                it.optString("login_error"), it.optString("crash"), rect(it.optString("show")), it.optString("input"),
+                it.optString("region") == "refused")
         }
 
         /** "x,y,w,h" (shares of the screen) -> 4 floats; anything else -> empty */
@@ -82,6 +85,8 @@ sealed class BridgeMsg {
     data class PairError(val error: String, val attemptsLeft: Int) : BridgeMsg()
     data class PairStream(val ok: Boolean, val error: String) : BridgeMsg()
     object Unpaired : BridgeMsg()
+    /** Desktop 0.2.31 starts WoW again after a client of the last login.txt closed itself: send the saved login once more */
+    object LoginAgain : BridgeMsg()
     data class Unknown(val t: String) : BridgeMsg()
 }
 
@@ -121,8 +126,22 @@ object BridgeProtocol {
      *  bundled add-on set into the PC game (it only did at its own start or a button); it answers {"t":"addons", ..., "result"} */
     fun addonsInstall(): String = JSONObject().put("t", "addons_install").toString()
     fun bnetReady(): String = JSONObject().put("t", "bnet_ready").toString()
-    /** the saved login for WoW's login.txt on the PC: only down the pinned wss connection, never logged */
-    fun loginFile(email: String, password: String): String = JSONObject().put("t", "login_file").put("email", email).put("password", password).toString()
+    /**
+     * The game account the PC's WoW remembers (the user's pick 2026-11-17, "Yes, remember it"): [ask] = Settings > Game account "Ask
+     * each time" (nothing is sent to remember); [list] = the Thor's Config.wtf accountList with its "!" pick
+     * ([com.jrees.wowcompanion.GameConfigWtf.rememberedAccountList]), null = none here. An account name: never logged.
+     */
+    data class GameAccount(val ask: Boolean, val list: String? = null)
+
+    /** the saved login for WoW's login.txt on the PC: only down the pinned wss connection, never logged; with the game account to
+     *  remember on the PC ([GameAccount]: "ask" never carries one) */
+    fun loginFile(email: String, password: String, account: GameAccount? = null): String =
+        JSONObject().put("t", "login_file").put("email", email).put("password", password).apply {
+            if (account != null) {
+                put("game_account", if (account.ask) "ask" else "remember")
+                if (!account.ask && !account.list.isNullOrEmpty()) put("account_list", account.list)
+            }
+        }.toString()
 
     /** "x,y" (shares) -> a point; anything else -> null */
     fun point(s: String): Pair<Float, Float>? {
@@ -172,6 +191,7 @@ object BridgeProtocol {
             "pair_error" -> BridgeMsg.PairError(o.err(), o.optInt("attempts_left", -1))
             "pair_stream" -> BridgeMsg.PairStream(o.optBoolean("ok"), o.optString("error"))
             "unpaired" -> BridgeMsg.Unpaired
+            "login_again" -> BridgeMsg.LoginAgain
             else -> BridgeMsg.Unknown(t)
         }
     }
