@@ -1190,6 +1190,9 @@ class QuestsView(
             y += 30f
         }
 
+        // q63: the rewards, ABOVE the description (the user's pick, 2026-11-17: "Above the description"): always in view without scrolling
+        val rw = QuestRewards.parse(q)
+        if (rw != null) y = drawRewards(c, rw, y, tw.toFloat(), x0 + pad, y0 + 18f - detailScroll, y0, textBottom)
         // story
         q.optString("desc", "").takeIf { it.isNotEmpty() }?.let { desc ->
             y += 14f
@@ -1201,9 +1204,6 @@ class QuestsView(
             c.save(); c.translate(inner.left, inner.top + 44f); dl2.draw(c); c.restore()
             y = box.bottom + 12f
         }
-        // q63: the rewards, after the description, as the game's quest log has them
-        val rw = QuestRewards.parse(q)
-        if (rw != null) y = drawRewards(c, rw, y, tw.toFloat(), x0 + pad, y0 + 18f - detailScroll, y0, textBottom)
         detailContentH = y + 30f
         c.restore()
         // the cursor's reward kept in view (once per move)

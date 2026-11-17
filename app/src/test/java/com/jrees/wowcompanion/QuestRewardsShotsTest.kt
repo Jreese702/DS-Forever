@@ -111,7 +111,9 @@ class QuestRewardsShotsTest {
         save(frames(v), "1_detail_rewards")
         assertEquals(-1, field<Int>(v, "rewardAt"))
         val hits: ArrayList<Pair<RectF, Int>> = field(v, "rewardHits")
-        assertTrue("the first reward rows are on screen under the description", hits.size in 1..4 && hits[0].second == 0)
+        assertTrue("the reward rows are on screen", hits.size in 2..4 && hits[0].second == 0)
+        // the user's pick (2026-11-17, "Above the description"): the rewards right under the objectives, not after the story
+        assertTrue("the first reward row near the top: ${hits[0].first}", hits[0].first.top < 500f)
 
         v.onDirect("PADDRIGHT"); frames(v, 1)
         assertEquals("Right: onto the first reward", 0, field<Int>(v, "rewardAt"))
