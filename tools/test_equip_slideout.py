@@ -463,11 +463,11 @@ except Exception as e:  # noqa: BLE001
     booted = False; print(e)
 check(booted, "part 2: the Spellbook, Bags and Character files load in the stub world")
 if W is not None:
-    check(W.eval('CH.version') == 'c19', "Character's version is c19", W.eval('CH.version'))
+    check(W.eval('CH.version') == 'c21', "Character's version is c21 (the hands' swap in a fight, on top of c20's arm)", W.eval('CH.version'))
     W.execute('NOW = NOW + 1; CH.touchOpen()')
     check(W.eval('HOLDER') == 'character' and W.eval('CH.ctl.on') is True, "the Character room holds the controller (touch)", W.eval('HOLDER'))
     e = W.eval('eqs()')
-    check(e.wb is not None and e.ba is not None and e.bb is not None and len({e.wb, e.ba, e.bb, e.uq, e.mon, e.moff, e.msb}) == 7
+    check(e.wb is not None and e.ba is not None and e.bb is not None and len({e.wb, e.ba, e.bb, e.uq, e.mon, e.moff, e.msb, e.ws}) == 8
           and e.box is False, "eqs: the c19 cells (wbind / boxa / boxb), each its own, box false", (e.wb, e.ba, e.bb))
     W.execute('CH.collect.sets()')
     check(W.eval('WowCompanion.pad.ns.eqset.byKey.wbind') is not None and W.eval('WowCompanion.pad.ns.eqset.byKey.boxb') is not None,

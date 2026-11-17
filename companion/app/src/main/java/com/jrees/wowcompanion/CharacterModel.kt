@@ -110,7 +110,10 @@ data class SetPad(val row: String, val yes: Int?, val no: Int?, val ask: SetAsk?
                   val gameAsks: Boolean = false, val bToGame: Boolean = false,
                   /** bags-gear1 (add-on c19): the worn piece's Bind arm ([bindArm]: the next bmvq column names the slot), a finger's A / B
                    *  in the Bind box this room hosts ([boxA] / [boxB]), and [box] = that box is up (every press is the box's) */
-                  val bindArm: Int? = null, val boxA: Int? = null, val boxB: Int? = null, val box: Boolean = false)
+                  val bindArm: Int? = null, val boxA: Int? = null, val boxB: Int? = null, val box: Boolean = false,
+                  /** char-popout (add-on c20): the arm of a swap between two worn slots ([swapArm]: the next two bmvq columns name the
+                   *  slot FROM, then TO) */
+                  val swapArm: Int? = null)
 
 /**
  * The pet page's left pane (the Character tab's third small tab in this client; user ruling: the hunter's pet page goes
@@ -277,7 +280,7 @@ class CharacterModel {
             fun cell(k: String) = if (j.has(k)) j.optInt(k) else null
             setPad = SetPad(j.optString("row"), cell("yes"), cell("no"), ask, ack, cell("uq"), cell("mon"), cell("moff"), j.optBoolean("more"),
                 cell("msb"), j.optBoolean("msub"), j.optBoolean("gask"), j.optBoolean("bgo"),
-                cell("wb"), cell("ba"), cell("bb"), j.optBoolean("box"))
+                cell("wb"), cell("ba"), cell("bb"), j.optBoolean("box"), cell("ws"))
             changed += "eqs"
         }
         if (c.has("petinfo")) { petInfo = c.optJSONObject("petinfo")?.let { readPet(it) }; changed += "petinfo" }

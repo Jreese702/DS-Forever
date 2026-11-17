@@ -29,6 +29,13 @@ import kotlin.math.min
  * blank entry that unequips."; "The Y text menu stays for enchant and bind (use-effect items)."): X on a slot = THE EQUIP SLIDE-OUT
  * ([SlideOut]: the bags' pieces for it, then the blank = Unequip); Y = Enchant, and Bind to a Button for a piece with a use effect (the
  * Spellbook's Bind box, hosted by this room: Character c19).
+ * char-popout (the user, 2026-11-16: "in the charactor menu, rightr now its A to select and armor but just highlighting it should show it
+ * and pressing a should open the pop out. if the only other option for something is nothing then I should be able to select that to
+ * unequip. on weapons that are both 1 hand or can actually be swapped to the offhand or vice versa then that option should be listed in
+ * the pop out options."): the cursor ON a slot shows its piece at once (the middle card, no A); A on a slot opens its slide-out (X still
+ * does too); a finger: a tap highlights and shows, a second tap or a long press opens it. The slide-out lists the other hand's / ring's /
+ * trinket's piece first when it may go here ([SlideOut.swaps]: picking it swaps the two, Character c20), and a worn slot always has its
+ * blank, even alone.
  *
  * Owned elsewhere and called here: the paper doll is Bags' (`Doll.kt`, one doll for both rooms) and so are the worn pieces'
  * data and tooltip lines (`bags.equipped`); tab 4's contents are the pvp session's ([pvpDrawer], set by the activity once
@@ -241,7 +248,14 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
                 if (WornMore.fresh(bindSentAt, android.os.SystemClock.uptimeMillis())) WornMore.say(a.ok, a.why)?.let { kitSay(it) }
             }
         }
-        if ("eqs" in changed && current) model.setPad?.ack?.takeIf { it.op != "unequip" && it.op != "bind" }?.let { a ->
+        if ("eqs" in changed && current) model.setPad?.ack?.takeIf { it.op == "swap" }?.let { a ->
+            // char-popout (Character c20): a swap between two worn slots answered; only an answer to this room's own swap is said
+            if (a.seq != ackShownSeq) {
+                ackShownSeq = a.seq
+                if (WornMore.fresh(swapSentAt, android.os.SystemClock.uptimeMillis())) WornMore.say(a.ok, a.why)?.let { kitSay(it) }
+            }
+        }
+        if ("eqs" in changed && current) model.setPad?.ack?.takeIf { it.op != "unequip" && it.op != "bind" && it.op != "swap" }?.let { a ->
             if (a.seq != ackShownSeq) {
                 ackShownSeq = a.seq; ackUntil = android.os.SystemClock.uptimeMillis() + 4000L
                 postInvalidateDelayed(4050L)
@@ -401,6 +415,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     private var moreSeen = false                    // the add-on has said `more` true for this menu (its false then closes it)
     private var unequipSentAt = 0L                  // uneq2: uptime of this room's last unequip batch (0 = none): only its answer is said
     private var bindSentAt = 0L                     // bags-gear1: uptime of this room's last Bind batch (0 = none): only its answer is said
+    private var swapSentAt = 0L                     // char-popout: uptime of this room's last swap batch (0 = none): only its answer is said
     private val moreHits = ArrayList<Pair<RectF, Int>>()
     private var subSeen = false                     // char-more: the add-on has said `msub` true for the open list (its false: back)
 
@@ -579,12 +594,16 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     /** C6: a Replace sent and not seen in the slot yet */
     private var watch: SlideOut.Watch? = null
 
-    private fun railEntries(slot: Int) = SlideOut.entries(railPicks(slot), slot, wornHas(slot))
+    private fun railEntries(slot: Int) = SlideOut.entries(railPicks(slot), slot, wornHas(slot), SlideOut.swaps(slot, worn(), dualWield()))
 
     /** why entry [e] can't go into [slot] now (null = it can): the route table, Bags full, the pad's cells */
     private fun railWhy(e: SlideOut.Entry, slot: Int): String? {
-        val routed = if (e.blank) model.setPad?.unequip != null && routePad() != null else replRoute(e.pick!!, slot) != null
-        return SlideOut.why(e, slot, model.combat, bagsCtx != null, freeGeneral, worn(), routed)
+        val routed = when {
+            e.swap -> model.setPad?.swapArm != null && routePad() != null           // char-popout: the add-on's swap arm, Bags' bmvq row
+            e.blank -> model.setPad?.unequip != null && routePad() != null
+            else -> replRoute(e.pick!!, slot) != null
+        }
+        return SlideOut.why(e, slot, model.combat, bagsCtx != null, freeGeneral, worn(), routed, dualWield())
     }
 
     /** X on a slot / the card's Swap: the rail; an empty slot with nothing for it says so (C5: a worn one always has its blank) */
@@ -630,6 +649,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val slot = railFor ?: return
         val e = railEntries(slot).getOrNull(i) ?: return
         railWhy(e, slot)?.let { kitSay(it); return }           // G4: greyed: the reason, nothing tapped
+        e.from?.let { from -> swapWorn(i, from, slot); return }
         val p = e.pick
         if (p == null) {
             // the blank: Unequip (uneq1's route: the add-on's arm, then the worn slot's column; the arm closes the menu in the add-on)
@@ -651,6 +671,25 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         Log.i(TAG, "character: replace slot $slot with ${p.bag}:${p.slot} (${if (p.exact && bagsCtx == null) "secure" else "drag"}) -> ${if (ok) "tapped" else "refused"}")
         if (!ok) { model.setPad?.moreOff?.let { setTap("more off", it) }; kitSay("The game did not take it"); return }
         val want = p.row.optInt("id", 0)
+        if (want > 0) { watch = SlideOut.Watch(slot, want, android.os.SystemClock.uptimeMillis() + SlideOut.WATCH_MS); watchTick() }
+    }
+
+    /**
+     * char-popout THE SWAP (Character c20): ONE batch, all or nothing: the add-on's swap arm, then worn [from]'s bmvq column, then [slot]'s
+     * (Bags.lua's bagsSwapWorn: the game's own pick-up and EquipCursorItem; what [slot] wore goes into [from], else into the bags). The
+     * arm closes the menu in the add-on too. Its answer is the slot itself (C6's watch) and the add-on's ack `swap`.
+     */
+    private fun swapWorn(i: Int, from: Int, slot: Int) {
+        val sp = model.setPad
+        val arm = sp?.swapArm
+        val pad = routePad()
+        if (sp == null || arm == null || pad == null) { closeRail(); kitSay("Unavailable"); return }
+        val want = worn()[from]?.optInt("id", 0) ?: 0
+        closeRail(tell = false, chosen = i)
+        val ok = TapBridge.tapsSpaced(context, pad, listOf(sp.row to arm, "bmvq" to from - 1, "bmvq" to slot - 1), 120L)
+        Log.i(TAG, "character: swap slot $from -> $slot -> ${if (ok) "tapped" else "refused"}")
+        swapSentAt = if (ok) android.os.SystemClock.uptimeMillis() else 0L
+        if (!ok) { sp.moreOff?.let { setTap("more off", it) }; kitSay("The game did not take it"); return }
         if (want > 0) { watch = SlideOut.Watch(slot, want, android.os.SystemClock.uptimeMillis() + SlideOut.WATCH_MS); watchTick() }
     }
 
@@ -678,6 +717,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val one = Doll.Layout(mapOf(slot to r), r.bottom)
         val p = e.pick
         when {
+            e.swap -> Doll.draw(c, one, mapOf(slot to (worn()[e.from!!] ?: JSONObject())))     // char-popout: the other slot's piece
             p == null -> Doll.draw(c, one, emptyMap(), relic = equipped?.optBoolean("relic") == true)
             slot == WornReplace.AMMO -> Doll.draw(c, one, emptyMap(), ammo = p.row)
             else -> Doll.draw(c, one, mapOf(slot to p.row))
@@ -784,7 +824,8 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         UiKit.tooltip(c, r.left, top, r.width(), title, colour, lines, scale = s)
         c.restore()
         val hy = r.bottom - 40f
-        val hs = UiKit.hints(c, r.right - 8f, hy, "rev_a" to (if (e.blank) WornMore.UNEQUIP else "Equip"), UiKit.backGlyph() to "Back")
+        val hs = UiKit.hints(c, r.right - 8f, hy, "rev_a" to (if (e.blank) WornMore.UNEQUIP else if (e.swap) "Swap" else "Equip"),
+            UiKit.backGlyph() to "Back")
         // review (rooms the same on every route): a finger on the card's A / B does what the pad's A / B do (it closed the rail before:
         // any touch off an icon was B, so tapping "A Equip" took the rail away)
         val mid = (hs + r.right - 8f) / 2f
@@ -879,13 +920,16 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
 
     /** a press the addon passed on: the D-pad moves the glow, A does what a tap does (SPEC 8); B is the addon's (it closes
      *  the game's window; while the More menu is open the add-on holds it and closes the menu); bags-gear1: X on a slot = its slide-out,
-     *  Y on a worn slot = Enchant / Bind (the kit list at once with Enchant alone) */
+     *  Y on a worn slot = Enchant / Bind (the kit list at once with Enchant alone); char-popout: A on a slot = its slide-out too, and
+     *  the cursor onto a slot shows its piece */
     private fun press(key: String) {
         if (railFor != null) { railKey(key); return }
         if (kitFor != null) { kitKey(key); return }
         if (moreFor != null) { moreKey(key); return }
-        if (key == "PAD3" || key == "PAD4") {
+        if (key == "PAD1" || key == "PAD3" || key == "PAD4") {
             val k = current()?.key?.takeIf { it.startsWith("slot:") }?.removePrefix("slot:")?.toIntOrNull()
+            // char-popout (the user: "just highlighting it should show it and pressing a should open the pop out"): A = the slide-out
+            if (key == "PAD1" && k != null) { chosenSlot = k; openRail(k); return }
             // bags-gear1: X = the slide-out (an empty slot too, the ammo slot too); Y = Enchant / Bind on a worn piece
             if (key == "PAD3" && k != null) { chosenSlot = k; openRail(k); return }
             if (key == "PAD4" && k != null && wornHas(k)) { chosenSlot = k; openY(k); return }
@@ -903,6 +947,11 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         }
         val next = nearest(cur, key) ?: return
         focusKey = next.key
+        // char-popout: the cursor ON a slot shows its piece at once (the middle card); off the doll the card goes (as Bags' tooltip)
+        if (model.tab == CharTab.CHARACTER) {
+            val k = next.key.takeIf { it.startsWith("slot:") }?.removePrefix("slot:")?.toIntOrNull()
+            if (k != chosenSlot) { chosenSlot = k; scroll["card"] = 0f; invalidate() }
+        }
         // b117 (the user's own words about this room: "the character tabs auto open to the tab that the cursor is on"): a sideways
         // move onto a side tab or a small tab opens it too, as up / down on the side tabs always did
         if (next.key.startsWith("tab:") || next.key.startsWith("small:")) { next.act(); invalidate(); return }
@@ -997,7 +1046,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             val bt = middle.bottom - 78f; val bb = middle.bottom - 8f
             val mid = middle.centerX()
             val xb = RectF(middle.left + 24f, bt, if (y) mid - 6f else middle.right - 24f, bb)
-            UiKit.button(c, xb, if (wornHas(slot)) "Swap" else "Equip", UiKit.xGlyph(), UiKit.Button.UP)
+            UiKit.button(c, xb, if (wornHas(slot)) "Swap" else "Equip", UiKit.okGlyph(), UiKit.Button.UP)      // char-popout: A opens it
             hit(xb) { openRail(slot) }
             if (y) {
                 val mb = RectF(mid + 6f, bt, middle.right - 24f, bb)
@@ -1008,9 +1057,19 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         Doll.draw(c, layout, worn(), eq?.optJSONObject("ammo"), eq?.optBoolean("relic") == true,
             alertColours = eq?.optJSONArray("alertc"))
         if (railFor == null) chosenSlot?.let { layout.boxes[it]?.let { box -> UiKit.slotFocus(c, box) } }
-        for ((k, box) in layout.boxes) hit(box, "slot:$k", slot = true) { chosenSlot = if (chosenSlot == k) null else k; scroll["card"] = 0f; invalidate() }
+        // char-popout: a tap on a slot highlights it and shows its piece; on the highlighted one (or a long press: [slotLift]) = its slide-out
+        slotHits.clear()
+        for ((k, box) in layout.boxes) {
+            hit(box, "slot:$k", slot = true) {
+                if (chosenSlot == k) openRail(k) else { chosenSlot = k; focusKey = "slot:$k"; scroll["card"] = 0f; invalidate() }
+            }
+            slotHits.add(RectF(box) to k)
+        }
         rail(c, layout, s, pitch, r)                    // bags-gear1: the slide-out (and its way back in) over the doll
     }
+
+    /** char-popout: the doll's slots as last drawn, for a long press */
+    private val slotHits = ArrayList<Pair<RectF, Int>>()
 
     private fun worn(): Map<Int, JSONObject> {
         val out = HashMap<Int, JSONObject>()
@@ -1542,9 +1601,16 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             MotionEvent.ACTION_DOWN -> {
                 downX = e.x; downY = e.y; lastY = e.y; moved = false
                 dragKey = drags.lastOrNull { it.first.contains(e.x, e.y) }?.second
+                // char-popout: a long press on a slot opens its slide-out (Bags' long press: LIFT_MS); the lift then eats the tap
+                liftFired = false; removeCallbacks(slotLift)
+                if (railFor == null && kitFor == null && moreFor == null && model.tab == CharTab.CHARACTER && !petShown()) {
+                    liftSlot = slotHits.lastOrNull { it.first.contains(e.x, e.y) }?.second
+                    if (liftSlot != null) postDelayed(slotLift, LIFT_MS)
+                }
             }
             MotionEvent.ACTION_MOVE -> {
                 if (!moved && abs(e.y - downY) > SLOP) moved = true
+                if (abs(e.x - downX) > SLOP || abs(e.y - downY) > SLOP) removeCallbacks(slotLift)
                 val k = dragKey
                 // issues #91 / #85 / #77 (2026-11-11): a redraw between the down and this move can drop the dragged box (a new
                 // tab, a list that emptied): drags.last { } threw NoSuchElementException. Gone = the drag ends, nothing scrolls.
@@ -1557,7 +1623,10 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
                 }
                 lastY = e.y
             }
+            MotionEvent.ACTION_CANCEL -> { removeCallbacks(slotLift); liftFired = false }
             MotionEvent.ACTION_UP -> {
+                removeCallbacks(slotLift)
+                if (liftFired) { liftFired = false; return true }      // char-popout: the long press opened the slide-out already
                 if (kitFor != null) {
                     // the list: a row applies, Close / outside closes
                     val k = kitHits.firstOrNull { it.first.contains(e.x, e.y) }?.second
@@ -1587,6 +1656,19 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         return true
     }
 
+    // char-popout: the long press on a slot
+    private var liftSlot: Int? = null
+    private var liftFired = false
+    private val slotLift = Runnable {
+        val k = liftSlot ?: return@Runnable
+        if (railFor != null || kitFor != null || moreFor != null) return@Runnable
+        liftFired = true
+        chosenSlot = k; focusKey = "slot:$k"; scroll["card"] = 0f
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        openRail(k)
+        invalidate()
+    }
+
     /** nothing to tap in x 550 .. 690 of the room's last 34 px: Home's button stands there (SPEC 2) */
     private fun underHome(x: Float, y: Float) = x in 550f..690f && y > height - 34f
 
@@ -1598,6 +1680,8 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         /** the hold unconfirmed this long (no CURRENT `win` with ctl) = asked again (Group Finder's / Social's 700 ms) */
         private const val HOLD_CHECK_MS = 700L
         private const val SLOP = 14f
+        /** char-popout: a press this long on a slot opens its slide-out (the Bags room's long press) */
+        private const val LIFT_MS = 380L
         /** a kit used from the Character room: the game's "pick an item" should start within this, else the pick is stopped */
         private const val KIT_WAIT_MS = 2_500L
         /** the kit's statLine state for a value in the game's light blue (the rested XP; UI Art's e116707) */
