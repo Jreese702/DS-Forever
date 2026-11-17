@@ -106,8 +106,16 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     private val kb = ChatKeyboard(c, swap = false, voice = true).apply { visibility = View.GONE; sendWord = "Search" }
     private val ctlLayer = CtlLayer(c, state, grid, gridScroll, bar) { search }
 
+    // the room's ground (beautify 8.4, the user 2026-11-17: "I do really like having the background image there"): the kit's rock
+    private val groundBox = RectF()
+    override fun onDraw(c: Canvas) {
+        super.onDraw(c)
+        groundBox.set(0f, 0f, width.toFloat(), height.toFloat()); RoomGround.bags(c, groundBox)
+    }
+
     init {
         ThemeLive.bg(this, Tok.INK)
+        setWillNotDraw(false)
         column.orientation = LinearLayout.VERTICAL
         super.addView(column, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
