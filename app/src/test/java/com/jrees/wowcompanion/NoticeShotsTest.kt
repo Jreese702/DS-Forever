@@ -61,12 +61,14 @@ class NoticeShotsTest {
     private fun settle() { for (i in 0 until 30) { ShadowSystemClock.advanceBy(Duration.ofMillis(16)); ShadowLooper.idleMainLooper() } }
 
     private val rooms = ArrayList<Room>()
+    private lateinit var chatV: ChatView
 
     private fun home(): HomeView {
         art()
         HomeSettings.init(app)
         val holder = FrameLayout(app)
         val map = MapView(app); val cast = CastView(app) { }; val chat = ChatView(app) { }
+        chatV = chat
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { rooms += it }
         home.borrow()
@@ -178,6 +180,62 @@ class NoticeShotsTest {
         assertTrue(bang(home).isEmpty)
         rooms.clear(); touch(pane(home), b.centerX(), b.centerY())
         assertEquals(listOf(Room.CHAT), rooms.toList())
+    }
+
+    // ---------------------------------------------------------------- the chat module / Chat room (ChatView): the "!" on the controller
+
+    private var padN = 0
+    private fun pressKey(v: ChatView, k: String) {
+        v.onPad(JSONObject().put("type", "guestpad").put("id", "chat").put("k", k).put("n", ++padN))
+        ShadowLooper.idleMainLooper(); lay(v, W, H)
+    }
+
+    private fun chatShot(v: ChatView, name: String) {
+        val d = out ?: return
+        d.mkdirs()
+        val bm = Bitmap.createBitmap(W, 1080, Bitmap.Config.ARGB_8888)
+        val strip = Strip(app) { }.apply { active = Room.CHAT }
+        for (pass in 0..1) {
+            val c = Canvas(bm); c.drawColor(Theme.ink)
+            v.draw(c)
+            lay(strip, W, Strip.HEIGHT)
+            c.save(); c.translate(0f, H.toFloat()); strip.draw(c); c.restore()
+            if (pass == 0) { ShadowLooper.idleMainLooper(); Thread.sleep(150); ShadowLooper.idleMainLooper(); lay(v, W, H) }
+        }
+        File(d, "$name.png").outputStream().use { bm.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    @Test fun theBangIsAControllerStopInTheChatModule() {
+        val home = home()
+        val v = chatV
+        (v.parent as? android.view.ViewGroup)?.removeView(v)
+        v.visibility = View.VISIBLE
+        v.update(JSONObject().put("v", "chat40").put("s", 1L).put("n", 2).put("lines", JSONArray()
+            .put(JSONObject().put("i", 1).put("ch", "say").put("who", "Brannoc").put("text", "Anyone heading to Goldshire?"))
+            .put(JSONObject().put("i", 2).put("ch", "guild").put("who", "Thalia").put("text", "Kobold candles are in the mine."))))
+        lay(v, W, H); ShadowLooper.idleMainLooper(); lay(v, W, H)
+        val real = v.world!!
+        var went = 0
+        v.world = object : ChatView.WorldNotice by real { override fun go() { went++; real.go() } }
+        home.onNotice(shard(240)); home.onNotice(bn("b1", "Thrall", true))
+        lay(v, W, H)
+        val pad = ChatView::class.java.getDeclaredField("pad").apply { isAccessible = true }.get(v) as ChatPad
+        // the bar -> the newest line -> the top line -> the "!"
+        for (i in 0 until 6) { pressKey(v, "PADDUP"); if (pad.focus == ChatPad.Focus.Notice) break }
+        assertEquals(ChatPad.Focus.Notice, pad.focus)
+        chatShot(v, "chatroom_notice_focused")
+        pressKey(v, "PAD1")
+        assertEquals("A on the ! is the game's Refresh now", 1, went)
+        // a touch on the "!" too
+        Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888).let { bm -> v.draw(Canvas(bm)); bm.recycle() }     // lays the "!" box
+        val b = RectF(ChatView::class.java.getDeclaredField("worldBang").apply { isAccessible = true }.get(v) as RectF)
+        assertFalse("the ! has its box in the chat module", b.isEmpty)
+        HomeView::class.java.getDeclaredField("goAt").apply { isAccessible = true }.setLong(home, -1L)
+        touch(v, b.centerX(), b.centerY())
+        assertEquals("a touch on the ! is its press", 2, went)
+        // the refresh ends: the cursor leaves the "!" for the top line
+        home.onNotice(JSONObject().put("type", "notice").put("kind", "shard").put("id", "1-1").put("ended", true))
+        assertFalse(pad.focus == ChatPad.Focus.Notice)
     }
 
     @Test fun theShots() {

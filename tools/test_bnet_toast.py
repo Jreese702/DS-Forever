@@ -6,7 +6,8 @@ be a button to trigger the refresh."): the REAL Chat.lua (with Safety.lua and Ta
 - the BN toast only for its online / offline toasts (toastType 1 / 2); an invite toast after one gets its looks and mouse back;
 - BN_FRIEND_ACCOUNT_ONLINE / _OFFLINE -> a `notice` {kind "bnet"} with the character name, else the BattleTag's name, never the account
   name or a |K string; a companion-app login and a toast the game's own settings turn off send nothing;
-- chcmd column 1 (the notice's "!") calls C_PlayerInteractionManager.ShardTransferConfirm only while a world refresh is on.
+- chcmd column 1 (the notice's "!") calls C_PlayerInteractionManager.ShardTransferConfirm only while a world refresh is on, on the
+  PRESS (TapPad pad6b onPress: a release-only cell can be lost after a controller press).
 """
 import json
 import os
@@ -158,7 +159,7 @@ ok(L.eval('WowCompanion.pad.rows.chcmd.cells[0]:GetAttribute("type")') == "macro
 
 
 def press():
-    L.execute('%s:Click("LeftButton", true); %s:Click("LeftButton", false)' % (cell, cell))
+    L.execute('NOW = NOW + 1; %s:Click("LeftButton", true); %s:Click("LeftButton", false)' % (cell, cell))
     return [d for d in docs(L) if d.get("type") == "notice" and d.get("op") == "go"][-1]
 
 
@@ -169,7 +170,13 @@ ok(any(d.get("kind") == "shard" and d.get("left") == 240 for d in docs(L, typ="n
 L.execute('COMBAT = true')
 g = press()
 ok(L.eval('CONFIRMED') == 1 and g.get("ok") is True, "the press is the game's Refresh now, in a fight too (not protected): %r" % g)
-L.execute('COMBAT = false')
+L.execute('COMBAT = false; NOW = NOW + 1')
+# the press alone runs it (TapPad pad6b onPress): a release lost after a controller press never loses the refresh
+L.execute('%s:Click("LeftButton", true)' % cell)
+ok(L.eval('CONFIRMED') == 2, "the refresh runs on the PRESS (no release needed)")
+L.execute('%s:Click("LeftButton", false)' % cell)
+ok(L.eval('CONFIRMED') == 2, "and the release runs nothing more")
+ok(L.eval('WowCompanion.pad.rows.chcmd.onPress') is True, "chcmd is registered with onPress")
 ok(L.eval('#VIOL') == 0, "no protected work: %s" % L.eval('table.concat(VIOL, ", ")'))
 ok(L.eval('#SPY') == 0, "no trace (SetCVar / SetBinding / macro / bar): %s" % L.eval('table.concat(SPY, ", ")'))
 ok(L.eval('#ERRS') == 0, "no Lua errors: %s" % L.eval('table.concat(ERRS, " | ")'))

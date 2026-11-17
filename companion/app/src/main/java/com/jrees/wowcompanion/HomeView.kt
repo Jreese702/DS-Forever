@@ -1081,7 +1081,37 @@ class HomeView(
             if (!took) Log.i(TAG, "world refresh: refused (${msg.optString("why")})")
         }
         chatPane.invalidate()
+        chatView.worldChanged()
     }
+
+    /**
+     * chat40: the world-refresh notice and the Battle.net notices at the top of [r] (Home's chat pane, and the chat module / Chat room's
+     * log through [chatWorld]); [bang] is set to the "!" box (empty = no refresh notice); [focused] = a controller cursor on the "!" (the
+     * kit's focus and its A). [v] is asked for the next frame of the count and the fades. Returns the height used.
+     */
+    private fun drawNotices(c: Canvas, r: RectF, bang: RectF, focused: Boolean, v: View): Float {
+        val now = android.os.SystemClock.uptimeMillis()
+        notice = NoticeModel.live(notice, now)
+        var top = r.top + (notice?.let { n ->
+            v.postInvalidateDelayed(1_000L - (now - n.at).mod(1_000L))          // the next whole second of the game's count
+            UiKit.notice(c, r, n.minutes(now), n.seconds(now), pressed = goAt >= 0 && now - goAt < GO_GUARD_MS, bang = bang,
+                focused = focused)
+        } ?: 0f)
+        if (notice == null) bang.setEmpty()
+        // the Battle.net friend notices under it, each fading as the game's toast does
+        bnet = NoticeModel.liveBnet(bnet, now)
+        for (b in bnet) top += UiKit.bnetNotice(c, RectF(r.left, top, r.right, r.bottom), b.who, b.online, b.alpha(now))
+        if (bnet.isNotEmpty()) v.postInvalidateDelayed(50L)
+        return top - r.top
+    }
+
+    /** chat40: the same notices over the ChatView's log (the chat module and the Chat room), its "!" on the controller too (ChatPad) */
+    private val chatWorld = object : ChatView.WorldNotice {
+        override fun live(): Boolean = NoticeModel.live(notice, android.os.SystemClock.uptimeMillis()) != null
+        override fun shows(): Boolean = live() || NoticeModel.liveBnet(bnet, android.os.SystemClock.uptimeMillis()).isNotEmpty()
+        override fun draw(c: Canvas, r: RectF, focused: Boolean, bang: RectF, v: View): Float = drawNotices(c, r, bang, focused, v)
+        override fun go() = noticeGo()
+    }.also { chatView.world = it }
 
     /** chat40 (the user, 2026-11-16: "the ! notice part should be a button to trigger the refresh"): the game's own Refresh now (Chat's
      *  chcmd column 1: C_PlayerInteractionManager.ShardTransferConfirm, the pop-up's button), one press at a time (2 s guard) */
@@ -1089,9 +1119,9 @@ class HomeView(
         val now = android.os.SystemClock.uptimeMillis()
         if (goAt >= 0 && now - goAt < GO_GUARD_MS) return
         goAt = now
-        chatPane.invalidate()
-        chatPane.postInvalidateDelayed(GO_GUARD_MS)
-        if (pad == null || !TapBridge.taps(context, pad, listOf("chcmd" to 1)) { why -> post { goAt = -1L; chatPane.invalidate(); Log.i(TAG, "world refresh: $why") } }) {
+        chatPane.invalidate(); chatView.invalidate()
+        chatPane.postInvalidateDelayed(GO_GUARD_MS); chatView.postInvalidateDelayed(GO_GUARD_MS)
+        if (pad == null || !TapBridge.taps(context, pad, listOf("chcmd" to 1)) { why -> post { goAt = -1L; chatPane.invalidate(); chatView.invalidate(); Log.i(TAG, "world refresh: $why") } }) {
             goAt = -1L
             Log.i(TAG, "world refresh: not sent (no tap pad)")
         }
@@ -2325,18 +2355,8 @@ class HomeView(
             // no "General" tab (user, 15:15: "remove the general tab from the chat ... just visual clutter")
             val pad = UiKit.MODULE_PAD
             // the game's world notice (the shard transfer's countdown) pinned at the top of the well; the log starts under it
-            val now = android.os.SystemClock.uptimeMillis()
-            notice = NoticeModel.live(notice, now)
-            var top = pad + (notice?.let { n ->
-                postInvalidateDelayed(1_000L - (now - n.at).mod(1_000L))          // the next whole second of the game's count
-                UiKit.notice(c, RectF(pad, pad, w - pad, h - pad), n.minutes(now), n.seconds(now),
-                    pressed = goAt >= 0 && now - goAt < GO_GUARD_MS, bang = bang)
-            } ?: 0f)
-            if (notice == null) bang.setEmpty()
-            // chat40: the Battle.net friend notices under it, each fading as the game's toast does
-            bnet = NoticeModel.liveBnet(bnet, now)
-            for (b in bnet) top += UiKit.bnetNotice(c, RectF(pad, top, w - pad, h - pad), b.who, b.online, b.alpha(now))
-            if (bnet.isNotEmpty()) postInvalidateDelayed(50L)
+            // chat40: the Battle.net friend notices under it ([drawNotices])
+            val top = pad + drawNotices(c, RectF(pad, pad, w - pad, h - pad), bang, false, this)
             tp.textSize = 27f
             val width = (w - 2f * pad).toInt().coerceAtLeast(10)
             var y = h - pad

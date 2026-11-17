@@ -5527,16 +5527,22 @@ object UiKit {
      * [pressed] = DOWN while its press waits for the game), then the game's words in its toast blue: "The world around you will refresh"
      * over "in 4 Minutes"; in the last minute "in 42 Seconds"; at 0 (both 0) "Refreshing your world at any time." over "Characters and
      * creatures around you may change."; a thin bronze line under it. [scale] 1 = the 1240 x 1080 bottom screen. [bang], when given, is set
-     * to the button's box (its touch target). Returns its height: the log starts under it.
+     * to the button's box (its touch target). [focused] = a controller cursor on the button (the chat module / Chat room's stop,
+     * ChatPad.Focus.Notice): the kit's focus round it and A on its corner. Returns its height: the log starts under it.
      */
-    fun notice(c: Canvas, rect: RectF, minutes: Int, seconds: Int, scale: Float = 1f, pressed: Boolean = false, bang: RectF? = null): Float {
+    fun notice(c: Canvas, rect: RectF, minutes: Int, seconds: Int, scale: Float = 1f, pressed: Boolean = false, bang: RectF? = null,
+               focused: Boolean = false): Float {
         val s = scale
         val h = 78f * s
         val x0 = rect.left + 6f * s; val y0 = rect.top + 10f * s
         val b = RectF(x0, y0 + 4f * s, x0 + 60f * s, y0 + 64f * s)
         iconButton(c, b, "alert", if (pressed) Button.DOWN else Button.UP)
         bang?.set(b)
-        val tx = x0 + 72f * s; val room = rect.right - 8f * s - tx
+        if (focused) {
+            focus(c, RectF(b).apply { inset(-6f * s, -6f * s) })
+            pad(c, "rev_a", b.right - 4f * s, b.bottom - 4f * s, 34f * s)            // A presses it
+        }
+        val tx = x0 + 78f * s; val room = rect.right - 8f * s - tx
         val anytime = minutes <= 0 && seconds <= 0
         val urgent = !anytime && minutes <= 0
         val l1 = if (anytime) "Refreshing your world at any time." else "The world around you will refresh"
@@ -5570,7 +5576,7 @@ object UiKit {
             c.drawBitmap(it, null, RectF(x0 + 16f * s, y0 + 8f * s, x0 + 44f * s, y0 + 36f * s), pBmp)
             pBmp.alpha = 255
         }
-        val tx = x0 + 72f * s; val room = rect.right - 8f * s - tx
+        val tx = x0 + 78f * s; val room = rect.right - 8f * s - tx
         val name = who ?: Tr.t("A friend")
         val tail = " " + Tr.t(if (online) "has come online" else "has gone offline")
         val pn = bodyPaint(25f * s, Theme.battleNet).apply { this.alpha = a }
