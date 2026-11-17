@@ -205,6 +205,7 @@ class LayoutView(context: Context) : View(context) {
             LayoutModel.Btn.GRID -> e.gridOn = !e.gridOn
             LayoutModel.Btn.REVERT -> { e.forget(); e.command(LayoutModel.C_REVERT); e.drop() }
             LayoutModel.Btn.COPY -> if (!d?.chars.isNullOrEmpty()) { e.list = true; e.listSel = 0 }
+            LayoutModel.Btn.GAME -> if (d?.gset == true) { e.forget(); e.command(LayoutModel.C_RESET_GAME); e.drop() }
             LayoutModel.Btn.SAVE -> e.command(LayoutModel.C_SAVE)
         }
     }
@@ -268,6 +269,8 @@ class LayoutView(context: Context) : View(context) {
 
     // ---------------------------------------------------------------- the page's places
     private val mini = RectF()
+    /** hub59: how far the tile column is scrolled (a long list) */
+    private var tileScroll = 0f
     private val tileBoxes = ArrayList<Pair<RectF, String>>()
     private val footBoxes = ArrayList<Pair<RectF, LayoutModel.Btn>>()
     private val promptBoxes = ArrayList<RectF>()
@@ -396,7 +399,16 @@ class LayoutView(context: Context) : View(context) {
                 pLine.pathEffect = null; pLine.strokeWidth = 1.5f; pLine.color = Color.argb(a / 2 + 60, 220, 210, 190)
                 for (i in 1..3) { val y = r.top + r.height() * (0.16f + 0.2f * i); c.drawLine(r.left + r.width() * 0.1f, y, r.right - r.width() * (0.1f + 0.12f * i), y, pLine) }
             }
-            else -> { pFill.color = Color.argb(a / 2, 120, 120, 120); c.drawRect(r, pFill) }
+            else -> {
+                pFill.color = Color.argb(a / 2, 120, 120, 120); c.drawRect(r, pFill)
+                // hub59: a game frame shows its name when its box has room for it
+                if (p.game && r.width() > 60f && r.height() > 18f) {
+                    val tp = UiKit.bodyPaint(13f, Color.argb(a, 230, 225, 210)).apply { textAlign = Paint.Align.CENTER }
+                    c.save(); c.clipRect(r)
+                    c.drawText(Tr.t(LayoutModel.labelOf(p.id)), r.centerX(), r.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+                    c.restore()
+                }
+            }
         }
     }
 
@@ -412,6 +424,26 @@ class LayoutView(context: Context) : View(context) {
             gh = GROUP_H_MIN
             th = ((r.height() - groups * gh) / tiles.size).coerceIn(TILE_H_MIN, TILE_H)
         }
+        // hub59: still longer than the column (the game's frames too): it scrolls so the highlighted / picked tile shows
+        run {
+            var yy = 0f; var gg: LayoutModel.Group? = null; var top = 0f
+            val want = editor.picked ?: editor.tilePiece()?.id
+            for (p in tiles) {
+                val g = LayoutModel.groupOf(p)
+                if (g != gg) { gg = g; yy += gh }
+                if (p.id == want) top = yy
+                yy += th
+            }
+            val total = yy
+            if (total <= r.height()) tileScroll = 0f
+            else {
+                if (top - gh < tileScroll) tileScroll = (top - gh).coerceAtLeast(0f)
+                if (top + th > tileScroll + r.height()) tileScroll = top + th - r.height()
+                tileScroll = tileScroll.coerceIn(0f, total - r.height())
+            }
+        }
+        y -= tileScroll
+        c.save(); c.clipRect(r.left - 8f, r.top, r.right + 8f, r.bottom)
         for ((i, p) in tiles.withIndex()) {
             val g = LayoutModel.groupOf(p)
             if (g != group) {
@@ -419,6 +451,7 @@ class LayoutView(context: Context) : View(context) {
                 c.drawText(Tr.t(g.label), r.left + 4f, y + gh - 8f, ph)
                 y += gh
             }
+            if (y + th < r.top || y > r.bottom) { y += th; continue }
             val box = RectF(r.left, y, r.right, y + th - 6f)
             val chosen = editor.picked == p.id
             UiKit.choice(c, box, "", chosen)
@@ -431,9 +464,10 @@ class LayoutView(context: Context) : View(context) {
                 pFill.color = Theme.gold; c.drawCircle(box.right - 16f, box.centerY(), 5f, pFill)       // moved from its default
             }
             if (editor.focus == LayoutModel.Focus.TILES && i == editor.tile && !editor.prompt && !editor.list) UiKit.focus(c, box)
-            tileBoxes.add(RectF(box) to p.id)
+            if (box.top >= r.top - 1f && box.bottom <= r.bottom + 1f) tileBoxes.add(RectF(box) to p.id)
             y += th
         }
+        c.restore()
         if (tiles.isEmpty()) {
             val p = UiKit.bodyPaint(24f, Theme.textDim)
             c.drawText(Tr.t("Waiting for the game"), r.left + 4f, r.top + 30f, p)
@@ -465,6 +499,7 @@ class LayoutView(context: Context) : View(context) {
             val box = RectF(r.left + i * (bw + gap), r.top, r.left + i * (bw + gap) + bw, r.bottom)
             val enabled = when (b) {
                 LayoutModel.Btn.COPY -> !d?.chars.isNullOrEmpty()
+                LayoutModel.Btn.GAME -> d?.gset == true
                 LayoutModel.Btn.SAVE, LayoutModel.Btn.REVERT -> d?.dirty == true
                 LayoutModel.Btn.RESET, LayoutModel.Btn.SIZE -> (editor.pickedPiece() ?: editor.tilePiece()) != null
                 else -> true
@@ -477,6 +512,10 @@ class LayoutView(context: Context) : View(context) {
             icon(c, b, RectF(box.left + 14f, box.centerY() - 14f, box.left + 42f, box.centerY() + 14f), enabled)
             val word = when (b) { LayoutModel.Btn.STEP -> "${editor.step} px"; else -> b.word }
             val tp = UiKit.bodyPaint(22f, if (enabled) Color.WHITE else Theme.dim).apply { textAlign = Paint.Align.CENTER }
+            // (a longer word in a narrower button - nine of them since hub59's Game UI - gets a smaller size, never under the icon)
+            val room = box.right - 8f - (box.left + 46f)
+            val shown = if (b == LayoutModel.Btn.STEP) word else Tr.t(word)
+            while (tp.textSize > 14f && tp.measureText(shown) > room) tp.textSize = tp.textSize - 1f
             c.drawText(if (b == LayoutModel.Btn.STEP) word else Tr.t(word), (box.left + 46f + box.right - 8f) / 2f,
                 box.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
             if (editor.focus == LayoutModel.Focus.FOOTER && i == editor.footer && !editor.prompt && !editor.list) UiKit.focus(c, box)
@@ -497,6 +536,10 @@ class LayoutView(context: Context) : View(context) {
             LayoutModel.Btn.GRID -> { for (i in -1..1) { c.drawLine(cx + i * s * 0.66f, cy - s, cx + i * s * 0.66f, cy + s, pLine); c.drawLine(cx - s, cy + i * s * 0.66f, cx + s, cy + i * s * 0.66f, pLine) } }
             LayoutModel.Btn.REVERT -> { c.drawLine(cx - s, cy, cx + s, cy, pLine); c.drawLine(cx - s, cy, cx - s * 0.4f, cy - s * 0.5f, pLine); c.drawLine(cx - s, cy, cx - s * 0.4f, cy + s * 0.5f, pLine) }
             LayoutModel.Btn.COPY -> { c.drawRect(cx - s, cy - s * 0.4f, cx + s * 0.4f, cy + s, pLine); c.drawRect(cx - s * 0.4f, cy - s, cx + s, cy + s * 0.4f, pLine) }
+            LayoutModel.Btn.GAME -> {
+                c.drawArc(RectF(cx - s, cy - s, cx + s, cy + s), 40f, 290f, false, pLine)
+                c.drawRect(cx - s * 0.4f, cy - s * 0.3f, cx + s * 0.4f, cy + s * 0.3f, pLine)
+            }
             LayoutModel.Btn.SAVE -> { c.drawLine(cx - s, cy, cx - s * 0.2f, cy + s * 0.8f, pLine); c.drawLine(cx - s * 0.2f, cy + s * 0.8f, cx + s, cy - s * 0.8f, pLine) }
         }
     }
@@ -522,14 +565,8 @@ class LayoutView(context: Context) : View(context) {
 
     /** why nothing moves now (terse) */
     private fun drawStatus(c: Canvas, d: LayoutModel.Doc?, r: RectF) {
-        val why = when {
-            d == null || !d.ready -> "Waiting for the game"
-            d.why == "editmode" && !d.open -> "Game's Edit Mode is open"
-            d.why == "norow" -> "No pad row"
-            d.combat -> "In combat"
-            else -> null
-        } ?: return
-        val p = UiKit.bodyPaint(26f, if (d?.combat == true) Theme.gold else Theme.textDim)
+        val why = LayoutModel.statusOf(d) ?: return
+        val p = UiKit.bodyPaint(26f, if (d?.combat == true || (d?.queued ?: 0) > 0) Theme.gold else Theme.textDim)
         c.drawText(Tr.t(why), r.left + 4f, r.top + 30f, p)
     }
 

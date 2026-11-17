@@ -153,7 +153,10 @@ DEFAULT_CHAT_FRAME = nil
 BLIZ = {}
 local ALLOW = { SetAlpha = true, GetAlpha = true, HookScript = true, IsShown = true, IsEnabled = true, GetID = true, GetName = true,
                 GetCurrentPage = true, GetActiveBar = true, IsBarActivelyOverridingActionBar = true, GetCenter = true,
-                GetEffectiveScale = true, GetTexture = true, GetAtlas = true, GetWidth = true, SetCurrentPage = true, IsVisible = true }
+                GetEffectiveScale = true, GetTexture = true, GetAtlas = true, GetWidth = true, SetCurrentPage = true, IsVisible = true,
+                -- Hub hub59 (the layout editor's game pieces) READS where a frame stands; it writes nothing without the player's own entry
+                GetNumPoints = true, GetPoint = true, GetLeft = true, GetTop = true, GetHeight = true, GetScale = true, IsProtected = true,
+                GetEffectiveAlpha = true, GetObjectType = true }
 local function proxy(name, t)
     t._name = name
     local mt = {}
@@ -164,7 +167,7 @@ local function proxy(name, t)
             return v
         end
         if type(k) == "string" and k:match("^[A-Z]") then
-            return function() BLIZ[#BLIZ + 1] = name .. ":" .. k end
+            return function() if not ALLOW[k] then BLIZ[#BLIZ + 1] = name .. ":" .. k end end   -- (an allowed read answers nil)
         end
         return nil
     end

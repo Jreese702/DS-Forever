@@ -146,6 +146,50 @@ class LayoutModelTest {
         assertEquals((g2.x - a2.offX).roundToInt().toDouble(), e2.want!!.first, 0.0)
     }
 
+    // ---------------------------------------------------------------- hub59: the game's own UI (the user's stage-2 picks, 2026-11-17)
+    @Test fun theGamesFramesComeAfterOursUnitFramesAndBarsFirst() {
+        val d = doc("lay_game")
+        val t = LayoutModel.tiles(d)
+        assertEquals(listOf("hud", "target", "party", "compass", "nbar", "chat", "g.PlayerFrame", "g.GamepadMainActionBarFrame",
+            "g.MinimapCluster", "g.BuffFrame", "g.DamageMeter"), t.map { it.id })
+        assertEquals(listOf("Unit frames", "Action bars", "Game UI", "Game UI", "Game UI"),
+            t.filter { it.game }.map { LayoutModel.groupOf(it).label })
+        assertEquals(listOf("Player", "Controller bar", "Minimap", "Buffs", "Damage meter"), t.filter { it.game }.map { LayoutModel.labelOf(it.id) })
+        assertEquals(listOf(8, 9, 10, 11, 12), t.filter { it.game }.map { it.col })
+        assertTrue("the player frame is protected", d.piece("g.PlayerFrame")!!.prot)
+        assertFalse(d.piece("g.MinimapCluster")!!.prot)
+        assertTrue("moved and resized like ours", d.piece("g.PlayerFrame")!!.sizable)
+        assertFalse("a hidden game frame is no tile", t.any { it.id == "g.TargetFrame" || it.id == "g.EssentialCooldownViewer" })
+        assertTrue(d.gset)
+    }
+
+    @Test fun aChangeInAFightSaysItWaits() {
+        val q = doc("lay_queued")
+        assertEquals(1, q.queued)
+        assertTrue(q.piece("g.PlayerFrame")!!.queued)
+        assertEquals("Moves after the fight", LayoutModel.statusOf(q))
+        assertEquals(null, LayoutModel.statusOf(doc("lay_game")))
+    }
+
+    @Test fun resetGameUiIsOneCell() {
+        assertEquals(29, LayoutModel.C_RESET_GAME)
+        assertEquals("the characters end before it", LayoutModel.C_RESET_GAME, LayoutModel.C_CHAR + LayoutModel.CHARS)
+        val e = LayoutModel.Editor().apply { wantOpen = true; onDoc(doc("lay_game")) }
+        e.forget(); e.command(LayoutModel.C_RESET_GAME)
+        assertEquals(LayoutModel.Send.Cell(LayoutModel.C_RESET_GAME), e.next(10_000))
+    }
+
+    @Test fun aGameFramePicksAndMovesAsOurs() {
+        val d = doc("lay_game")
+        val e = LayoutModel.Editor().apply { wantOpen = true; onDoc(d); gridOn = d.grid }
+        e.pick("g.PlayerFrame")
+        assertEquals("g.PlayerFrame", e.picked)
+        e.nudge(3, 0)
+        val p = d.piece("g.PlayerFrame")!!
+        assertEquals((p.ax + 3).roundToInt().toDouble(), e.want!!.first, 0.0)
+        assertEquals("its select column first", LayoutModel.Send.Cell(8), e.next(20_000))
+    }
+
     // ---------------------------------------------------------------- the taps
     @Test fun openThenTheSelectionThenTheSpot() {
         val e = LayoutModel.Editor().apply { wantOpen = true; onDoc(doc("lay_closed")) }
@@ -398,7 +442,8 @@ class LayoutModelTest {
         val words = listOf("Layout", "Edit layout", "Move and size the top screen's pieces.", "Bars", "HUD", "Compass", "Nintendo bar",
             "Top chat", "Unsaved", "Size", "Snap", "Grid", "Revert", "Copy", "Drop", "Step", "Game's Edit Mode is open", "Unsaved changes",
             "Discard", "Copy from", "Open", "Your HUD", "Target", "Party", "Navigation", "Target bar", "Party frames", "Waiting for the game",
-            "Reset", "Save", "Pick", "Back", "No pad row", "In combat", "Cancel", "Polestar", "Polestar arrow", "Polestar guide")
+            "Reset", "Save", "Pick", "Back", "No pad row", "In combat", "Cancel", "Polestar", "Polestar arrow", "Polestar guide",
+            "Unit frames", "Action bars", "Game UI", "Moves after the fight") + LayoutModel.GAME_LABELS.values
         val dir = listOf("../companion/app/src/main/assets/companion/i18n", "companion/app/src/main/assets/companion/i18n").map { File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) {
             val raw = File(dir, "$l.json").readBytes()
