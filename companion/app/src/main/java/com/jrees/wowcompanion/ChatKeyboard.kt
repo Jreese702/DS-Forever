@@ -257,7 +257,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
     /** the clock (the tests' own) */
     var clock: () -> Long = { android.os.SystemClock.uptimeMillis() }
 
-    /** what listens: Android's recognizer ([VoiceEngine]) */
+    /** what listens: offline voice ([WhisperEngine]) when its model is on disk, else Android's recognizer ([VoiceEngine]) */
     interface VoiceListen {
         fun start(online: Boolean, lang: String, hints: List<String>, sink: VoiceEngine.Sink): Boolean
         fun stop()
@@ -273,7 +273,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
     /** the sheet, for the renders and the tests */
     val voiceSheet: Voice.Sheet? get() = sheet
     /** the page is moving (ripples while listening): a host that draws this board itself redraws on every frame */
-    val voiceAnimating: Boolean get() = sheet?.state.let { it == Voice.State.LISTENING || it == Voice.State.STOPPING }
+    val voiceAnimating: Boolean get() = sheet?.state.let { it == Voice.State.LISTENING || it == Voice.State.STOPPING || it == Voice.State.WORKING }
 
     private val ui = android.os.Handler(android.os.Looper.getMainLooper())
     /** every page stops when the host goes (Voice.stopAll), but one waiting on Android's microphone question (it holds no microphone) */
@@ -294,9 +294,23 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
 
     private fun listen(): VoiceListen = engine ?: object : VoiceListen {
         private val e by lazy { VoiceEngine(context) }
-        override fun start(online: Boolean, lang: String, hints: List<String>, sink: VoiceEngine.Sink) = e.start(online, lang, hints, sink)
-        override fun stop() = e.stop()
-        override fun cancel() = e.cancel()
+        private val w by lazy { WhisperEngine(context) }
+        /** the one that listens now: offline voice when it can ([Voice.whisperModel], as the sheet's [Voice.avail] decided) */
+        private var cur: VoiceListen? = null
+        private fun android() = object : VoiceListen {
+            override fun start(online: Boolean, lang: String, hints: List<String>, sink: VoiceEngine.Sink) = e.start(online, lang, hints, sink)
+            override fun stop() = e.stop()
+            override fun cancel() = e.cancel()
+            override fun getPack(lang: String) = e.getPack(lang)
+        }
+        override fun start(online: Boolean, lang: String, hints: List<String>, sink: VoiceEngine.Sink): Boolean {
+            cur?.cancel()
+            val pick: VoiceListen = if (sheet?.offline == true && Voice.whisperModel(Tr.lang(), WhisperEngine.on()) != null) w else android()
+            cur = pick
+            return pick.start(online, lang, hints, sink)
+        }
+        override fun stop() { cur?.stop() }
+        override fun cancel() { cur?.cancel() }
         override fun getPack(lang: String) = e.getPack(lang)
     }.also { engine = it }
 
@@ -317,6 +331,12 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         val (perm, avail) = probe(mode)
         DiagLog.event("voice", s.logLine("open") + " perm=${perm.name.lowercase()} avail=${avail.name.lowercase()}")
         run(s.open(perm, avail))
+        // offline voice's model offered: a download already running (Settings > Add-ons, an earlier page) shows here, and listens when in
+        if (s.problem == Voice.Problem.NEED_MODEL) {
+            watchModel(s)
+            s.downloading = modelState(sheetModel()).let { it is VoiceModels.State.Downloading || it == VoiceModels.State.Checking }
+            invalidate()
+        }
         ticking()
         return true
     }
@@ -333,6 +353,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
 
     private fun endSheet() {
         sheet = null
+        modelWatch?.let { VoiceModels.offChange(it) }; modelWatch = null
         askPending = false; askHidden = false
         Voice.unregister(stopHook)
         ui.removeCallbacks(tick); ui.removeCallbacks(askLost)
@@ -349,6 +370,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         override fun partial(text: String) { sheet?.let { run(it.partial(text)) } }
         override fun final(text: String) { sheet?.let { s -> run(s.final(text)); DiagLog.event("voice", s.logLine("final")) } }
         override fun error(code: Int) { sheet?.let { s -> run(s.error(code)); DiagLog.event("voice", s.logLine("error $code")) } }
+        override fun working() { sheet?.let { s -> s.working(); ticking(); invalidate(); onVoice() } }
     }
 
     /** the recognizer's events, for the off-device renders and tests (as Android would call them) */
@@ -392,11 +414,48 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
                 Voice.Act.AskMic -> askMic(s)
                 Voice.Act.UseOnline -> { Settings.voiceTyping = Voice.Mode.ONLINE; DiagLog.event("voice", "online voice picked") }
                 Voice.Act.GetPack -> { val ok = listen().getPack(Voice.language(Tr.lang())); DiagLog.event("voice", "pack download asked ok=$ok") }
+                Voice.Act.GetModel -> getModel(s)
                 Voice.Act.Pass, Voice.Act.Glow -> {}
             }
         }
+        // a page that came to offer offline voice's model (after the microphone question too) follows its download
+        sheet?.let { if (it.state == Voice.State.PROBLEM && it.problem == Voice.Problem.NEED_MODEL) watchModel(it) }
         ticking()
         invalidate(); onVoice()
+    }
+
+    // ---- OFFLINE VOICE'S MODEL from the sheet (the player's press on "Download (148 MB)"): its download, its percentage on the page,
+    // and listening at once when it is in (unless the sheet has closed)
+    private var modelWatch: (() -> Unit)? = null
+    /** the model this sheet offers: the one the app's language wants */
+    private fun sheetModel(): VoiceModels.Model = Voice.wantedModel(Tr.lang())
+
+    private fun getModel(s: Voice.Sheet) {
+        val m = sheetModel()
+        VoiceModels.init(context)
+        watchModel(s)
+        s.downloading = true
+        DiagLog.event("voice", "model ${m.id} download asked from the voice page")
+        VoiceModels.download(m)
+    }
+
+    private fun watchModel(s: Voice.Sheet) {
+        if (modelWatch != null) return
+        val w: () -> Unit = {
+            ui.post {
+                if (sheet === s) {
+                    val m = sheetModel()
+                    val st = VoiceModels.state(m)
+                    when {
+                        st == VoiceModels.State.Ready -> { val (p, a) = probe(s.mode); run(s.modelReady(p, a)) }
+                        st is VoiceModels.State.Downloading || st == VoiceModels.State.Checking -> { s.downloading = true; invalidate(); onVoice() }
+                        else -> { s.downloading = false; invalidate(); onVoice() }
+                    }
+                }
+            }
+        }
+        modelWatch = w
+        VoiceModels.onChange(w)
     }
 
     /** A on Allow: Android's question on the bottom screen (the host's), the sheet looks again when it closes */
@@ -436,7 +495,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         ui.removeCallbacks(tick)
         val s = sheet ?: return
         val ms = when (s.state) {
-            Voice.State.LISTENING, Voice.State.STOPPING -> 33L
+            Voice.State.LISTENING, Voice.State.STOPPING, Voice.State.WORKING -> 33L
             Voice.State.RESULT -> if (!s.canAccept() || copyLeftMs() > 0L || copyTotal > 0L) 60L else 0L
             Voice.State.ASK, Voice.State.MIC_OFF -> 500L
             Voice.State.PROBLEM -> if (s.problem == Voice.Problem.MIC_OFF) 500L else 0L
@@ -484,9 +543,10 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         Voice.State.ASK, Voice.State.MIC_OFF -> if (fight) "After the fight" to false else "Allow" to true
         Voice.State.BLOCKED -> null
         Voice.State.OFFER_ONLINE -> "Online" to true
-        Voice.State.LISTENING, Voice.State.STOPPING -> sendWord to false
+        Voice.State.LISTENING, Voice.State.STOPPING, Voice.State.WORKING -> sendWord to false
         Voice.State.RESULT -> sendWord to s.canAccept()
         Voice.State.PROBLEM -> when {
+            s.problem == Voice.Problem.NEED_MODEL -> if (s.downloading) "Downloading" to false else "Download (${sheetModel().size})" to true
             s.problem == Voice.Problem.NO_SERVICE -> null           // nothing can listen: no button (Y = keyboard, B = back)
             s.problem == Voice.Problem.PACK && s.canGet -> "Get" to true
             s.problem == Voice.Problem.MIC_OFF -> if (fight) "After the fight" to false else "Allow" to true
@@ -500,9 +560,10 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         return when (s.state) {
             Voice.State.ASK, Voice.State.MIC_OFF, Voice.State.BLOCKED, Voice.State.OFFER_ONLINE -> listOf(back to "Not now")
             Voice.State.LISTENING -> listOf("rev_a" to "Stop", back to "Cancel")
-            Voice.State.STOPPING -> listOf(back to "Cancel")
+            Voice.State.STOPPING, Voice.State.WORKING -> listOf(back to "Cancel")
             Voice.State.RESULT -> listOf("rev_x" to "Say again", "rev_y" to "Edit", back to "Cancel")
-            Voice.State.PROBLEM -> (if (s.problem == Voice.Problem.NO_SERVICE || buttonOf(s, false)?.first == "Say again") emptyList()
+            Voice.State.PROBLEM -> (if (s.problem == Voice.Problem.NO_SERVICE || s.problem == Voice.Problem.NEED_MODEL ||
+                    buttonOf(s, false)?.first == "Say again") emptyList()
                 else listOf("rev_x" to "Say again")) +
                 listOf("rev_y" to "Edit", back to "Cancel")
         }
@@ -514,9 +575,14 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         Voice.State.MIC_OFF, Voice.State.BLOCKED -> "Microphone off"
         Voice.State.OFFER_ONLINE -> "Use online voice"
         Voice.State.LISTENING, Voice.State.STOPPING -> "Listening"
+        Voice.State.WORKING -> "Working"
         Voice.State.RESULT -> null
         Voice.State.PROBLEM -> s.problem?.title
     }
+
+    /** the off-device renders: offline voice's model state as given (null = VoiceModels') */
+    var modelStateProbe: ((VoiceModels.Model) -> VoiceModels.State)? = null
+    private fun modelState(m: VoiceModels.Model): VoiceModels.State = modelStateProbe?.invoke(m) ?: VoiceModels.state(m)
 
     private var onlineName: String? = null
     private var onlineAsked = false
@@ -545,7 +611,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         val bw = 270f; val bh = minOf(124f, body.height() * 0.42f)
         val bRect = RectF(body.right - bw, mcy - bh / 2f, body.right, mcy + bh / 2f)
         buttonOf(s, fight)?.let { (word, live) ->
-            val listening = s.state == Voice.State.LISTENING || s.state == Voice.State.STOPPING
+            val listening = s.state == Voice.State.LISTENING || s.state == Voice.State.STOPPING || s.state == Voice.State.WORKING
             val alpha = when { listening -> 90; !live -> 120; else -> 255 }
             val layer = if (alpha < 255) c.saveLayerAlpha(bRect.left - 4f, bRect.top - 4f, bRect.right + 4f, bRect.bottom + 8f, alpha) else -1
             val isFinish = s.state == Voice.State.RESULT || listening
@@ -587,16 +653,23 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
             }
         }
         when (s.state) {
-            Voice.State.LISTENING, Voice.State.STOPPING, Voice.State.RESULT -> drawWords(c, s, RectF(tx0, y, tx1, body.bottom), now)
+            Voice.State.LISTENING, Voice.State.STOPPING, Voice.State.WORKING, Voice.State.RESULT -> drawWords(c, s, RectF(tx0, y, tx1, body.bottom), now)
             Voice.State.BLOCKED -> sub(c, PATH, tx0, y, tx1, body.bottom)
             Voice.State.OFFER_ONLINE -> {
                 onlineApp()?.let { sub(c, it, tx0, y, tx1, body.bottom) }
+            }
+            // offline voice's model: which one, and its download's state (its percentage while it runs)
+            Voice.State.PROBLEM -> if (s.problem == Voice.Problem.NEED_MODEL) {
+                val m = sheetModel()
+                val st = modelState(m)
+                if (st is VoiceModels.State.Downloading || st == VoiceModels.State.Checking) postInvalidateDelayed(250)
+                sub(c, "${Tr.t(m.title)} · ${Tr.t(VoiceModels.line(m, st))}", tx0, y, tx1, body.bottom)
             }
             else -> {}
         }
         // ---- THE PRIVACY LINE (the design: "Online ... The privacy line names that app"): while the ONLINE recognizer listens, the app
         // that hears the voice is named at the foot's left (only that service can keep EXTRA_PREFER_OFFLINE, so nothing says "this device")
-        if (s.mode == Voice.Mode.ONLINE && (s.state == Voice.State.LISTENING || s.state == Voice.State.STOPPING)) onlineApp()?.let { name ->
+        if (s.mode == Voice.Mode.ONLINE && !s.offline && (s.state == Voice.State.LISTENING || s.state == Voice.State.STOPPING)) onlineApp()?.let { name ->
             val np = UiKit.bodyPaint(26f, Theme.dim)
             val w = (inner.width() * 0.45f).coerceAtLeast(1f)
             val line = android.text.TextUtils.ellipsize(name, android.text.TextPaint(np), w, android.text.TextUtils.TruncateAt.END).toString()
@@ -677,7 +750,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
 
     /** the kit medallion (the radial slot plate, a dark disc, the gold rim) with the microphone; its ripples follow the level */
     private fun drawMedallion(c: Canvas, cx: Float, cy: Float, r: Float, s: Voice.Sheet, now: Long) {
-        val listening = s.state == Voice.State.LISTENING || s.state == Voice.State.STOPPING
+        val listening = s.state == Voice.State.LISTENING || s.state == Voice.State.STOPPING || s.state == Voice.State.WORKING
         val noMic = s.state == Voice.State.ASK || s.state == Voice.State.MIC_OFF || s.state == Voice.State.BLOCKED ||
             (s.state == Voice.State.PROBLEM && s.problem == Voice.Problem.MIC_OFF)
         val gold = Theme.gold

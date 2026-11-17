@@ -1988,7 +1988,18 @@
 "Window open": "Ventana abierta",
 "Bags full": "Bolsas llenas",
 "Binds when picked up": "Se liga al recogerlo",
-"Disenchant": "Desencantar"
+"Disenchant": "Desencantar",
+"Download voice": "Descargar voz",
+"Working": "Procesando",
+"Downloading": "Descargando",
+"Checking": "Comprobando",
+"Download": "Descargar",
+"Voice": "Voz",
+"Voice: English": "Voz: inglés",
+"Voice: other languages": "Voz: otros idiomas",
+"Speech to text on this device. Whisper base by OpenAI, MIT.": "Voz a texto en este dispositivo. Whisper base de OpenAI, MIT.",
+"Spanish, French, German and more in one file.": "Español, francés, alemán y más en un solo archivo.",
+"Download a voice in Add-ons": "Descarga una voz en Accesorios"
 },
 "templates": {
 "Tell %s:": "Susurrar a %s:",
@@ -2189,6 +2200,9 @@
 "Press %s again to clear it": "Pulsa %s otra vez para borrarlo",
 "Cleared from": "Quitado de",
 "Keep it cleared?": "¿Dejarlo quitado?",
-"+%s more": "+%s más"
+"+%s more": "+%s más",
+"Not downloaded · %s": "No descargado · %s",
+"Download failed: %s": "Descarga fallida: %s",
+"Download (%s)": "Descargar (%s)"
 }
 }

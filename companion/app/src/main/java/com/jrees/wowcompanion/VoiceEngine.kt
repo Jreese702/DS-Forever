@@ -38,6 +38,8 @@ class VoiceEngine(context: Context) {
         fun partial(text: String)
         fun final(text: String)
         fun error(code: Int)
+        /** offline voice only ([WhisperEngine]): the recording stopped, the words are being worked out */
+        fun working() {}
     }
 
     private var rec: SpeechRecognizer? = null
@@ -54,7 +56,8 @@ class VoiceEngine(context: Context) {
             when (pick) {
                 Voice.Pick.OnDevice -> if (Build.VERSION.SDK_INT >= 31) SpeechRecognizer.createOnDeviceSpeechRecognizer(app) else null
                 is Voice.Pick.Named -> SpeechRecognizer.createSpeechRecognizer(app, ComponentName(pick.service.pkg, pick.service.cls))
-                Voice.Pick.None -> null
+                // offline voice is WhisperEngine's (never picked here: no model is given to this pick)
+                Voice.Pick.None, is Voice.Pick.Whisper -> null
             }
         }.getOrNull() ?: return false
         rec = r
@@ -142,9 +145,11 @@ class VoiceEngine(context: Context) {
             Voice.trusted(services(ctx))?.let { pm.getApplicationLabel(pm.getApplicationInfo(it.pkg, 0)).toString() }
         }.getOrNull()
 
-        /** which recognizer the sheet can use with the setting [mode] ([Voice.avail]) */
-        fun avail(ctx: Context, mode: Voice.Mode): Voice.Avail =
-            Voice.avail(mode, Build.VERSION.SDK_INT, onDeviceFlag(ctx), services(ctx))
+        /** which recognizer the sheet can use with the setting [mode] ([Voice.avail]; offline voice first when its model is on disk) */
+        fun avail(ctx: Context, mode: Voice.Mode): Voice.Avail {
+            VoiceModels.init(ctx)
+            return Voice.avail(mode, Build.VERSION.SDK_INT, onDeviceFlag(ctx), services(ctx), WhisperEngine.on(), Tr.lang())
+        }
     }
 }
 
