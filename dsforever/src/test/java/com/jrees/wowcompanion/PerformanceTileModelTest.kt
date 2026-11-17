@@ -55,8 +55,9 @@ class PerformanceTileModelTest {
     @Test fun frameGenerationLinesAreOnlyTheOnesThatAct() {
         val none = PerformanceTileModel.State(hasDll = false)
         assertEquals(listOf(M.L_DLL), keys(M.FG, none))
+        // with a copy the DLL line stays with generation Off too (the old row's: a new copy can be chosen any time)
         val off = PerformanceTileModel.State(hasDll = true, fgOn = false)
-        assertEquals(listOf(M.L_FG), keys(M.FG, off))
+        assertEquals(listOf(M.L_FG, M.L_DLL), keys(M.FG, off))
         val on = PerformanceTileModel.State(hasDll = true, fgOn = true)
         assertEquals(listOf(M.L_FG, M.L_MULT, M.L_FLOW, M.L_PERF, M.L_DLL), keys(M.FG, on))
         assertEquals("6 lines at most", 6, keys(M.FG, on.copy(fgWaits = true)).size)
@@ -71,9 +72,23 @@ class PerformanceTileModelTest {
         assertEquals("80%", lines.first { it.key == M.L_FLOW }.value)
     }
 
+    /** Flow scale: the old row's - / + as Faster / Sharper (no reset), each off at its bound, never a dead stop */
+    @Test fun flowScaleStepsAndItsBoundsAreOff() {
+        val on = PerformanceTileModel.State(hasDll = true, fgOn = true)
+        val flow = { f: Float -> M.lines(M.FG, on.copy(flow = f)).first { it.key == M.L_FLOW } }
+        assertEquals(listOf("Faster", "Sharper"), flow(0.8f).words)
+        assertEquals(PerformanceTileModel.Kind.STEPPER, flow(0.8f).kind)
+        assertTrue(flow(0.8f).off.isEmpty())
+        assertEquals(setOf(0), flow(FrameGen.FLOW_MIN).off)
+        assertEquals(setOf(1), flow(FrameGen.FLOW_MAX).off)
+    }
+
     @Test fun frameLimitRestartOnlyWhileAChangeWaits() {
         assertEquals(listOf(M.L_LIMIT), keys(M.LIMIT, PerformanceTileModel.State(limit = 40)))
         assertEquals(listOf(M.L_LIMIT, M.L_RESTART), keys(M.LIMIT, PerformanceTileModel.State(limit = 60, limitWaits = true)))
+        // terse: the Restart line and the hourglass say a change waits, no status line repeats it
+        assertEquals("", M.status(M.LIMIT, PerformanceTileModel.State(limit = 60, limitWaits = true)))
+        assertEquals("", M.status(M.FG, PerformanceTileModel.State(hasDll = true, fgOn = true, fgWaits = true, lastPick = "x")))
         assertEquals(1, M.lines(M.LIMIT, PerformanceTileModel.State(limit = 60))[0].chosen)
         assertEquals(listOf("40", "60", "Off"), M.lines(M.LIMIT, PerformanceTileModel.State())[0].words)
         // a launcher-menu value: none lit, the status line says where it came from
@@ -100,24 +115,39 @@ class PerformanceTileModelTest {
 
     @Test fun indoorDeferredListOnlyWithDeferredBuildings() {
         assertEquals(listOf(M.L_BUILD), keys(M.INDOOR, PerformanceTileModel.State()))
+        // the switch is the background build, said on its line (not the indoor maps themselves)
+        assertEquals("Build in the background", M.lines(M.INDOOR, PerformanceTileModel.State())[0].label)
         val d = PerformanceTileModel.State(deferred = 3)
         assertEquals(listOf(M.L_BUILD, M.L_DEFERRED), keys(M.INDOOR, d))
         assertEquals(listOf("List"), M.lines(M.INDOOR, d)[1].words)
         assertEquals(listOf("Hide"), M.lines(M.INDOOR, d, deferredOpen = true)[1].words)
         assertEquals("12 / 40", M.value(M.INDOOR, PerformanceTileModel.State(ready = 12, total = 40)))
         assertEquals("Off", M.value(M.INDOOR, PerformanceTileModel.State(indoorOn = false)))
-        assertEquals("1 / 2 ready · Route data 4 / 9",
-            M.status(M.INDOOR, PerformanceTileModel.State(progress = "1 / 2 ready", terrain = "Route data 4 / 9")))
+        // the status parts are translated one by one (a joined line never matches a template)
+        assertEquals(listOf("building one 40 yd from you", "Route data 4 / 9"),
+            M.statusParts(M.INDOOR, PerformanceTileModel.State(progress = "building one 40 yd from you", terrain = "Route data 4 / 9")))
+    }
+
+    /** Deferred > List: the reason first and the building's short id; the list's height carries every line and a "+ n" line */
+    @Test fun deferredListReadsAsReasons() {
+        assertEquals("no floor found" to "b3f2a1c0", M.deferredParts("b3f2a1c0d9e8f7a6b5c4d3e2f1a0b9c8: no floor found"))
+        assertEquals("timed out" to "k1", M.deferredParts("k1: timed out"))
+        assertEquals("odd" to "", M.deferredParts("odd"))
+        assertEquals(0f, M.listH(0, 0), 0.01f)
+        assertEquals(M.listH(3, 0) + M.LIST_LINE, M.listH(3, 2), 0.01f)
+        assertEquals(M.listH(20, 0) - M.listH(1, 0), 19 * M.LIST_LINE, 0.01f)
     }
 
     @Test fun badgesAreTopsSet() {
         val on = PerformanceTileModel.State(hasDll = true, fgOn = true)
-        assertEquals(GameUiTiles.Badge.ON, M.badge(M.FG, on))
-        assertEquals(GameUiTiles.Badge.OFF, M.badge(M.FG, on.copy(fgOn = false)))
+        // Top's eye means "shown in the game": none of these tiles is, so no eye; Off reads from the dimmed picture
+        assertNull(M.badge(M.FG, on))
+        assertNull(M.badge(M.FG, on.copy(fgOn = false)))
         assertEquals("the running game waits for a restart: the hourglass", GameUiTiles.Badge.SENT, M.badge(M.FG, on.copy(fgWaits = true)))
         assertEquals(GameUiTiles.Badge.SENT, M.badge(M.LIMIT, PerformanceTileModel.State(limitWaits = true)))
         assertNull(M.badge(M.LIMIT, PerformanceTileModel.State()))
-        assertEquals(GameUiTiles.Badge.OFF, M.badge(M.INDOOR, PerformanceTileModel.State(indoorOn = false)))
+        assertNull(M.badge(M.INDOOR, PerformanceTileModel.State(indoorOn = false)))
+        assertNull(M.badge(M.INDOOR, PerformanceTileModel.State(indoorOn = true)))
         assertTrue(M.dimmed(M.FG, on.copy(fgOn = false)) && !M.dimmed(M.FG, on))
         assertTrue(!M.dimmed(M.LIMIT, PerformanceTileModel.State(limit = 0)))
         assertEquals("3x", M.value(M.FG, on.copy(multiplier = 3)))

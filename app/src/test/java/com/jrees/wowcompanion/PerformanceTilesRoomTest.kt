@@ -127,6 +127,7 @@ class PerformanceTilesRoomTest {
         FrameGen::class.java.getDeclaredField("launchedLimit").apply { isAccessible = true }.set(FrameGen, null)
         for (f in listOf("prefs", "dir")) FrameGen::class.java.getDeclaredField(f).apply { isAccessible = true }.set(FrameGen, null)
         Tr.setChoice(app, "auto")
+        Theme.use("classic")
     }
 
     // ---------------------------------------------------------------- the tab
@@ -214,13 +215,27 @@ class PerformanceTilesRoomTest {
         val c = bandButtons(r).single()
         tap(r.perf, c.centerX(), c.centerY()); lay(r)
         assertEquals("the host's picker", 1, chose)
-        // with a copy: On / Off; On brings Multiplier, Flow scale, Performance mode, Lossless.dll
+        // with a copy: On / Off and Lossless.dll (a new copy with generation Off too); On brings Multiplier, Flow scale, Performance mode
         dll(true); lay(r)
-        assertEquals(2, bandButtons(r).size)
+        assertEquals(2 + 1, bandButtons(r).size)
         val on = bandButtons(r)[0]
         tap(r.perf, on.centerX(), on.centerY()); lay(r)
         assertTrue(FrameGen.enabled)
-        assertEquals(2 + 3 + 3 + 2 + 1, bandButtons(r).size)
+        assertEquals(2 + 3 + 2 + 2 + 1, bandButtons(r).size)
+        // Flow scale at its bound: Faster is no stop and a tap on it writes nothing (the old square's disabled -)
+        val flowWas = FrameGen.flowScale
+        FrameGen.flowScale = FrameGen.FLOW_MIN; lay(r)
+        assertEquals(2 + 3 + 1 + 2 + 1, bandButtons(r).size)
+        val band = r.perf.bandBox()!!
+        val flowLine = PerformanceTileModel.band(band.left, band.top, band.width(), PerformanceTileModel.lines(PerformanceTileModel.FG, r.perf.state()))
+            .lines.first { it.key == PerformanceTileModel.L_FLOW }
+        val faster = flowLine.buttons[0]
+        tap(r.perf, faster.cx, faster.cy); lay(r)
+        assertEquals(FrameGen.FLOW_MIN, FrameGen.flowScale, 1e-4f)
+        val sharper = flowLine.buttons[1]
+        tap(r.perf, sharper.cx, sharper.cy); lay(r)
+        assertEquals(FrameGen.FLOW_MIN + FrameGen.FLOW_STEP, FrameGen.flowScale, 1e-4f)
+        FrameGen.flowScale = flowWas; lay(r)
         // a tap outside the band closes it
         tap(r.perf, 600f, r.perf.height - 20f); lay(r)
         assertNull(r.perf.openTile)
@@ -270,9 +285,10 @@ class PerformanceTilesRoomTest {
         }
         fun close() { r.perf.closeSelection(); lay(r) }
         Settings.lighterMode = false; Settings.homeMapFull = true; Settings.indoorBuild = true; Settings.lowMemGraphics = false
-        prog.set(r.perf, status(JSONObject().put("phase", "BAKING").put("ready", 148).put("total", 236).put("deferred", 2)
+        prog.set(r.perf, status(JSONObject().put("phase", "BAKING").put("ready", 148).put("total", 236).put("deferred", 7)
             .put("now", "one 40 yd from you").put("list", org.json.JSONArray(listOf("b3f2a1c0d9e8f7a6b5c4d3e2f1a0b9c8: no floor found",
-                "b0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5: timed out")))))
+                "b0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5: timed out", "0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f: the group file did not read",
+                "77aa1c0d9e8f7a6b5c4d3e2f1a0b9c81: no floor found", "5e1b2c3d4e5f6a7b8c9d0e1f2a3b4c55: out of memory")))))
         dll(false)
         shot("perf_1_tab")
         open(r, PerformanceTileModel.LIMIT); shot("perf_2_band_frame_limit")
@@ -286,6 +302,10 @@ class PerformanceTilesRoomTest {
         Settings.homeMapFull = true
         open(r, PerformanceTileModel.INDOOR); shot("perf_8_band_indoor")
         val defer = bandButtons(r).last(); tap(r.perf, defer.centerX(), defer.centerY()); lay(r); shot("perf_9_band_indoor_deferred_list")
+        // Flow scale at its bound: Faster disabled
+        open(r, PerformanceTileModel.FG); FrameGen.flowScale = FrameGen.FLOW_MIN; lay(r); shot("perf_9b_band_frame_gen_flow_at_bound")
+        FrameGen.flowScale = FrameGen.FLOW_DEFAULT; FrameGen.enabled = false; lay(r); shot("perf_9c_band_frame_gen_off_with_dll")
+        FrameGen.enabled = true
         // the cursor on an open tile, then in its band
         close(); hold(r); press(r, "PADDDOWN"); press(r, "PADDRIGHT"); press(r, "PADDRIGHT"); press(r, "PAD1"); shot("perf_10_cursor_on_open_tile")
         press(r, "PADDDOWN"); shot("perf_11_cursor_in_band")
@@ -305,6 +325,14 @@ class PerformanceTilesRoomTest {
             open(r, PerformanceTileModel.MEM); shot("perf_15_${l}_band_memory")
         }
         Tr.setChoice(app, "auto")
+        // the other presets (OLED black, a dark tint): the wells, the bands and the words on each ground
+        for (theme in listOf("oled_bronze", "oled_frost", "dark_rose")) {
+            Theme.use(theme); lay(r)
+            close(); shot("perf_20_${theme}")
+            open(r, PerformanceTileModel.LIMIT); shot("perf_21_${theme}_band_frame_limit")
+            open(r, PerformanceTileModel.MEM); shot("perf_22_${theme}_band_memory")
+        }
+        Theme.use("classic"); lay(r)
         // no kit on the phone yet: the drawn pictures (no map tiles, no bar art)
         r = room(kit = false)
         prog.set(r.perf, status(JSONObject().put("phase", "BAKING").put("ready", 148).put("total", 236)))

@@ -22,9 +22,11 @@ import kotlin.math.sin
  * generation well), on the same dark stand-in of the game's world as Top's.
  *
  * - Frame limit: the game's frame lane (the kit's bar ground) with a gem per game frame in a quarter second at the limit, the mover
- *   stepping at that rate, and the heat bar under it, cooler with a lower limit.
+ *   stepping at that rate, and the heat bar under it (a thermometer at its start), cooler with a lower limit. The band's picture
+ *   ([big]) puts the three choices side by side, one lane each with its own heat, the chosen one lit: 40 / 60 / Off read as the
+ *   buttons beside them.
  * - Frame generation: a film strip; the game's frames solid, the made ones hatched in the accent at 40 %, one in every [multiplier] the
- *   game's; Off = the game's frames alone with the gaps empty.
+ *   game's; Off = the game's frames alone with the gaps empty. No copy of the DLL yet: what 2x would make (the view dims it).
  * - Memory: Home's map module at the chosen detail, from the device's own minimap tiles (MinimapTiles, the art harvest's): Full detail
  *   zoomed out over many zones with the zone framed, Zone map the zone alone; a drawn map where there are no tiles.
  * - Indoor maps: a building's floor plan being built room by room, the build's own ready / total as a ring.
@@ -42,7 +44,7 @@ object PerformancePictures {
     private val dash = DashPathEffect(floatArrayOf(4f, 3f), 0f)
 
     /** [id]'s picture into [r] (its own rounded clip), for [s] at [t] s (0 = the tile's still frame); [ready] = a map tile landed */
-    fun draw(c: Canvas, ctx: Context?, id: String, r: RectF, s: PerformanceTileModel.State, t: Float, ready: () -> Unit = {}) {
+    fun draw(c: Canvas, ctx: Context?, id: String, r: RectF, s: PerformanceTileModel.State, t: Float, big: Boolean = false, ready: () -> Unit = {}) {
         val save = c.save()
         val rad = 8f * r.height() / H
         path.reset(); path.addRoundRect(r, rad, rad, Path.Direction.CW)
@@ -54,8 +56,8 @@ object PerformancePictures {
         world(c, w)
         runCatching {
             when (id) {
-                PerformanceTileModel.LIMIT -> frameLimit(c, w, s.limit, t)
-                PerformanceTileModel.FG -> frameGen(c, w, s.generating, s.multiplier, t)
+                PerformanceTileModel.LIMIT -> if (big) frameLimits(c, w, s.limit, t) else frameLimit(c, w, s.limit, t)
+                PerformanceTileModel.FG -> if (s.hasDll) frameGen(c, w, s.generating, s.multiplier, t) else frameGen(c, w, true, 2, t)
                 PerformanceTileModel.MEM -> memory(c, w, s.mapFull, ready)
                 PerformanceTileModel.INDOOR -> indoor(c, w, s.indoorOn, if (s.total > 0) s.ready / s.total.toFloat() else 0f, t)
             }
@@ -87,19 +89,72 @@ object PerformancePictures {
         val y = 50f
         lane(c, 12f, w - 12f, y, fps, t, col)
         // the heat: the game's standing bar, lower with the limit (40 cool, 60 warm, none hot)
+        heatBar(c, RectF(12f, 80f, w - 12f, 98f), limit, 1f)
+    }
+
+    /** the heat at [limit]: the game's standing bar after a thermometer, lower with the limit (40 cool, 60 warm, none hot) */
+    private fun heatBar(c: Canvas, r: RectF, limit: Int, alpha: Float) {
         val heat = when { limit in 1..40 -> 0.42f; limit in 41..60 -> 0.68f; else -> 0.94f }
         val hc = when { heat < 0.6f -> Theme.ok; heat < 0.85f -> Theme.warn; else -> HOT }
-        UiKit.standing(c, RectF(12f, 80f, w - 12f, 98f), hc, heat, "", 1f)
+        val tw = r.height() * 0.9f
+        thermometer(c, r.left + tw / 2f, r.centerY(), r.height() * 1.3f, hc, alpha)
+        UiKit.standing(c, RectF(r.left + tw + 6f, r.top, r.right, r.bottom), withAlpha(hc, alpha), heat, "", 1f)
+    }
+
+    /** a thermometer [h] tall at ([cx], [cy]): bulb and stem in [col] */
+    private fun thermometer(c: Canvas, cx: Float, cy: Float, h: Float, col: Int, alpha: Float) {
+        val br = h * 0.24f
+        val by = cy + h / 2f - br
+        val sw = br * 0.9f
+        pF.color = withAlpha(Color.rgb(20, 20, 22), alpha)
+        c.drawRoundRect(RectF(cx - sw / 2f - 1.5f, cy - h / 2f - 1.5f, cx + sw / 2f + 1.5f, by), sw, sw, pF)
+        c.drawCircle(cx, by, br + 1.5f, pF)
+        pF.color = withAlpha(col, alpha)
+        c.drawCircle(cx, by, br - 0.5f, pF)
+        c.drawRoundRect(RectF(cx - sw / 2f + 1.2f, cy - h * 0.15f, cx + sw / 2f - 1.2f, by), sw, sw, pF)
+    }
+
+    private fun withAlpha(col: Int, a: Float): Int = Color.argb((Color.alpha(col) * a).toInt(), Color.red(col), Color.green(col), Color.blue(col))
+
+    /**
+     * the band's picture: the three choices side by side (40 / 60 / Off, the band's buttons' order), each its own lane and heat, the
+     * chosen one lit in the accent and the others dim; the number over each (the limit itself, not words)
+     */
+    private fun frameLimits(c: Canvas, w: Float, limit: Int, t: Float) {
+        val limits = FrameGen.LIMITS
+        val n = limits.size
+        val gap = 8f
+        val cw = (w - 16f - (n - 1) * gap) / n
+        val big = UiKit.numberPaint(17f, Theme.text, shadow = false).apply { textAlign = Paint.Align.CENTER }
+        for ((i, lim) in limits.withIndex()) {
+            val x0 = 8f + i * (cw + gap)
+            val lit = lim == limit
+            val a = if (lit) 1f else 0.42f
+            val col = if (lit) Theme.gold else Color.rgb(150, 140, 120)
+            if (lit) {
+                pF.color = Color.argb(36, Color.red(Theme.gold), Color.green(Theme.gold), Color.blue(Theme.gold))
+                c.drawRoundRect(RectF(x0, 4f, x0 + cw, H - 4f), 5f, 5f, pF)
+                pS.color = Theme.gold; pS.strokeWidth = 1.4f
+                c.drawRoundRect(RectF(x0, 4f, x0 + cw, H - 4f), 5f, 5f, pS)
+            }
+            big.color = withAlpha(if (lit) Theme.gold else Theme.text, if (lit) 1f else 0.6f)
+            c.drawText(Tr.t(FrameGen.limitLabel(lim)), x0 + cw / 2f, 22f, big)
+            val save = c.save()
+            c.clipRect(x0, 26f, x0 + cw, H)
+            lane(c, x0 + 4f, x0 + cw - 4f, 62f, if (lim > 0) lim else 120, t, withAlpha(col, a), win = 0.12f)
+            c.restoreToCount(save)
+            heatBar(c, RectF(x0 + 6f, 84f, x0 + cw - 6f, 96f), lim, a)
+        }
     }
 
     /**
      * one lane of frames (SettingsPreview's lane, re-framed): the last quarter second at [fps] scrolling with [t]; a game frame a gem,
      * a made one ([every] > 1: all but every [every]th) a ring; the mover above at the place each frame put it
      */
-    private fun lane(c: Canvas, x0: Float, x1: Float, y: Float, fps: Int, t: Float, col: Int, every: Int = 1) {
+    private fun lane(c: Canvas, x0: Float, x1: Float, y: Float, fps: Int, t: Float, col: Int, every: Int = 1, win: Float = 0.25f) {
         UiKit.standing(c, RectF(x0, y - 11f, x1, y + 11f), col, 0f, "", 1f)
         val a = x0 + 10f; val b = x1 - 10f
-        val win = 0.25f; val dt = 1f / fps
+        val dt = 1f / fps
         var k = floor((t - win) / dt).toInt() + 1
         val k1 = floor(t / dt).toInt()
         while (k <= k1) {
@@ -304,20 +359,6 @@ object PerformancePictures {
     private fun blend(a: Int, b: Int, k: Float): Int = Color.rgb(
         (Color.red(a) + (Color.red(b) - Color.red(a)) * k).toInt(), (Color.green(a) + (Color.green(b) - Color.green(a)) * k).toInt(),
         (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * k).toInt())
-
-    // ---------------------------------------------------------------- the deferred list (Indoor maps' band, Deferred > List)
-
-    fun list(c: Canvas, r: RectF, lines: List<String>) {
-        val inner = UiKit.parchment(c, r, 18f)
-        val p = UiKit.bodyPaint(18f, Theme.parchmentInk, shadow = false)
-        val lh = 24f
-        val n = min(lines.size, ((inner.height() - 8f) / lh).toInt().coerceAtLeast(1))
-        for (i in 0 until n) {
-            val s = lines[i]
-            val cut = p.breakText(s, true, inner.width() - 16f, null)
-            c.drawText(if (cut < s.length) s.substring(0, max(0, cut - 1)) + "…" else s, inner.left + 8f, inner.top + 6f + (i + 1) * lh - 6f, p)
-        }
-    }
 
     // ---------------------------------------------------------------- the signs on Memory's lines and its badge
 
