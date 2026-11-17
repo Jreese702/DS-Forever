@@ -92,8 +92,24 @@ namespace DsfDesktop.Wow
         /// <summary>the client only reads it as its login screen appears, so only a client not there yet gets one</summary>
         public static bool LoginFileWanted(WowScreen s) => s == WowScreen.None || s == WowScreen.Starting;
 
-        public static bool LoginFileGoes(double ageS, double? sinceSignInS, bool thorHere) =>
-            !thorHere || ageS >= LoginFileMaxS || (sinceSignInS.HasValue && sinceSignInS.Value >= LoginFileAfterS);
+        public static bool LoginFileGoes(double ageS, double? sinceSignInS, bool thorHere) => LoginFileWhy(ageS, sinceSignInS, thorHere) != null;
+
+        /// <summary>why login.txt goes now (for the log: a reason, never its contents), null = it stays</summary>
+        public static string LoginFileWhy(double ageS, double? sinceSignInS, bool thorHere) =>
+            !thorHere ? "the Thor left"
+            : sinceSignInS.HasValue && sinceSignInS.Value >= LoginFileAfterS ? "sign-in seen " + (int)LoginFileAfterS + " s ago"
+            : ageS >= LoginFileMaxS ? "not taken in " + (int)LoginFileMaxS + " s"
+            : null;
+
+        /// <summary>
+        /// THE GAME'S LOG SPEAKS FOR THIS CLIENT RUN only once its own restart was seen (the user, 2026-11-17: "the auto sign in on
+        /// streaming didnt work"). Desktop's log state lasts until the tailer notices the new client emptied its log, 0.1-1.7 s after
+        /// the new Wow.exe appears; in that gap the PREVIOUS run's lines (past the login screen) made a 0.5 s old client "CharSelect",
+        /// so login.txt's 20 s were counted from Wow.exe's start, not from the sign-in (every PC run 11-13..11-17: deleted 20.2-20.9 s
+        /// after "WoW: Starting"). [logRunAt] = when the log state was last emptied (local time, null = never since Desktop started:
+        /// its backlog may be any run's); [processStart] = the found Wow.exe's start (local time).
+        /// </summary>
+        public static bool LogIsThisRun(DateTime? logRunAt, DateTime processStart) => logRunAt.HasValue && logRunAt.Value >= processStart;
 
         /// <summary>how long WoW stays after the stream ended, and how long the PC itself must have sat untouched</summary>
         public const double StreamGoneS = 300;

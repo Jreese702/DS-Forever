@@ -166,6 +166,31 @@ namespace DsfDesktop.Tests
             A.True(WowFlow.LoginFileGoes(30, 20, true));
             A.True(WowFlow.LoginFileGoes(300, null, true), "never read");
             A.True(WowFlow.LoginFileGoes(1, null, false), "the Thor left");
+            A.Eq(null, WowFlow.LoginFileWhy(30, 19, true));
+            A.Eq("sign-in seen 20 s ago", WowFlow.LoginFileWhy(30, 20, true));
+            A.Eq("not taken in 300 s", WowFlow.LoginFileWhy(300, null, true));
+            A.Eq("the Thor left", WowFlow.LoginFileWhy(1, null, false));
+        }
+
+        /// <summary>
+        /// the user, 2026-11-17: "the auto sign in on streaming didnt work". The previous client run's log (past its login screen)
+        /// made a 0.5 s old Wow.exe "CharSelect" before the tailer saw the new client's restart, so login.txt's 20 s ran from the launch.
+        /// </summary>
+        [Test]
+        public static void AStaleLogDoesNotStartTheLoginFilesClock()
+        {
+            var start = new DateTime(2026, 11, 17, 14, 15, 19);
+            A.True(!WowFlow.LogIsThisRun(null, start), "no restart seen since Desktop started: the backlog may be any run's");
+            A.True(!WowFlow.LogIsThisRun(start.AddMinutes(-20), start), "the restart before this Wow.exe was the previous run's");
+            A.True(WowFlow.LogIsThisRun(start.AddSeconds(1.4), start), "this client emptied its log");
+            var stale = Log(LoginScreen, CharSelect);
+            A.Eq(WowScreen.CharSelect, WowFlow.Classify(true, 0.5, 0, 0, stale, null), "the old rule: a stale log reads as signed in");
+            var s = WowFlow.Classify(true, 0.5, 0, 0, WowFlow.LogIsThisRun(null, start) ? stale : null, null);
+            A.Eq(WowScreen.Starting, s, "the login file's view: still loading");
+            A.True(s != WowScreen.SigningIn && s != WowScreen.CharSelect && s != WowScreen.World, "no sign-in seen: the 20 s have not begun");
+            A.True(!WowFlow.LoginFileGoes(20.4, null, true), "14:15:39.5 (start + 20.4 s, the login screen up 6 s): the file stays");
+            A.Eq(WowScreen.SigningIn, WowFlow.Classify(true, 16, 0, 1, null, null), "this run's Battle.net 1119 still counts without the log");
+            A.Eq(WowScreen.CharSelect, WowFlow.Classify(true, 40, 1, 0, null, null), "and its realm connection");
         }
 
         [Test]

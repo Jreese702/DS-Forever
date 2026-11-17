@@ -142,7 +142,7 @@ namespace DsfDesktop.App
                 Flavor = WowLocator.ChooseFlavor(inst, DateTime.Now);
                 var path = inst != null && Flavor != null ? inst.LogPath(Flavor) : null;
                 if (tailer == null) { tailer = new LogTailer(path); tailer.RawLine = l => { lock (loginLog) loginLog.Line(l); }; }
-                else if (tailer.Path != path) { tailer.SetPath(path); lock (loginLog) loginLog.Reset(); clientDocAt = null; }
+                else if (tailer.Path != path) { tailer.SetPath(path); lock (loginLog) loginLog.Reset(); clientDocAt = null; loginLogAt = null; }
                 Notices = inst != null && Flavor != null ? ConfigCheck.Notices(inst.FlavorDir(Flavor)) : new List<string>();
             }
             Log.I(inst == null ? "WoW Forever not found" : "WoW at " + inst.Root + " (" + string.Join(", ", inst.Flavors) + "), following " + Flavor);
@@ -190,6 +190,8 @@ namespace DsfDesktop.App
                             case LogEventKind.Restart:
                                 lock (loginLog) loginLog.Reset();
                                 clientDocAt = null;
+                                loginLogAt = DateTime.Now;     // from here the log is this client run's (WowFlow.LogIsThisRun)
+                                signInSeenAt = null;           // a new client run: its own sign-in starts login.txt's 20 s
                                 Bridge?.PublishLog("restart", LogPath, Flavor);
                                 LogStatus = e.Text; Log.I(e.Text); changed = true;
                                 break;
@@ -219,6 +221,7 @@ namespace DsfDesktop.App
                 tailer.SetPath(inst.LogPath(f));
                 lock (loginLog) loginLog.Reset();
                 clientDocAt = null;
+                loginLogAt = null;
                 Notices = ConfigCheck.Notices(inst.FlavorDir(f));
             }
             Log.I("following the game's log: " + f);
@@ -759,12 +762,14 @@ namespace DsfDesktop.App
         }
 
         DateTime? loginFileAt, signInSeenAt;
+        /// <summary>when the game's log state was last emptied by a client restart (local time; null = not since Desktop or the path changed)</summary>
+        DateTime? loginLogAt;
         bool loginFileSwept;
 
         public void LoginFile(string email, string password)
         {
             var dir = FlavorDirOrNull;
-            if (dir == null || string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !WowFlow.LoginFileWanted(ScreenNow())) return;
+            if (dir == null || string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !WowFlow.LoginFileWanted(ScreenNow(thisRunOnly: true))) return;
             var why = WowLoginFile.Write(dir, email, password);
             if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; }
             Log.I("login file: " + (why ?? "written"));
@@ -778,14 +783,21 @@ namespace DsfDesktop.App
                 if (dir == null) return;
                 if (!loginFileSwept) { loginFileSwept = true; if (!loginFileAt.HasValue) WowLoginFile.Delete(dir); }   // a crash's leftover
                 if (!loginFileAt.HasValue) return;
-                var s = ScreenNow();
-                if (!signInSeenAt.HasValue && (s == WowScreen.SigningIn || SignedIn(s))) signInSeenAt = DateTime.UtcNow;
+                // only THIS client run's sign-in counts (its connections, or its log once its restart was seen): a stale log made a
+                // 0.5 s old Wow.exe "CharSelect" and the 20 s ran from the launch (the user, 2026-11-17)
+                var s = ScreenNow(thisRunOnly: true);
+                if (!signInSeenAt.HasValue && (s == WowScreen.SigningIn || SignedIn(s)))
+                {
+                    signInSeenAt = DateTime.UtcNow;
+                    Log.I("login file: sign-in seen (" + WowFlow.Word(s) + ")");
+                }
                 var now = DateTime.UtcNow;
-                if (!WowFlow.LoginFileGoes((now - loginFileAt.Value).TotalSeconds, signInSeenAt.HasValue ? (now - signInSeenAt.Value).TotalSeconds : (double?)null,
-                        Bridge != null && Bridge.Sessions().Count > 0)) return;
+                var why = WowFlow.LoginFileWhy((now - loginFileAt.Value).TotalSeconds, signInSeenAt.HasValue ? (now - signInSeenAt.Value).TotalSeconds : (double?)null,
+                        Bridge != null && Bridge.Sessions().Count > 0);
+                if (why == null) return;
                 WowLoginFile.Delete(dir);
                 loginFileAt = null;
-                Log.I("login file: deleted");
+                Log.I("login file: deleted (" + why + ")");
             }
             catch (Exception e) { Log.I("login file: " + e.GetType().Name); }
         }
@@ -942,17 +954,20 @@ namespace DsfDesktop.App
         static bool SignedIn(WowScreen s) => s == WowScreen.CharSelect || s == WowScreen.World;
 
         /// <summary>where the game is now (its process, its connections, its log, the add-on's documents)</summary>
-        public WowScreen ScreenNow()
+        /// <param name="thisRunOnly">the log and the add-on's documents count only once this client run's restart was seen
+        /// (<see cref="WowFlow.LogIsThisRun"/>; login.txt's decisions); its connections always count</param>
+        public WowScreen ScreenNow(bool thisRunOnly = false)
         {
             var p = WowWindow.FindAny(FlavorDirOrNull);
             if (p == null) return WowScreen.None;
             try
             {
                 double up = 0;
-                try { up = (DateTime.Now - p.StartTime).TotalSeconds; } catch (Exception) { }
+                bool thisRun = !thisRunOnly;
+                try { var started = p.StartTime; up = (DateTime.Now - started).TotalSeconds; if (thisRunOnly) thisRun = WowFlow.LogIsThisRun(loginLogAt, started); } catch (Exception) { }
                 var (game, auth) = WowProbe.Connections(p.Id);
-                double? docAge = clientDocAt.HasValue ? (DateTime.UtcNow - clientDocAt.Value).TotalSeconds : (double?)null;
-                lock (loginLog) return WowFlow.Classify(true, up, game, auth, loginLog, docAge);
+                double? docAge = thisRun && clientDocAt.HasValue ? (DateTime.UtcNow - clientDocAt.Value).TotalSeconds : (double?)null;
+                lock (loginLog) return WowFlow.Classify(true, up, game, auth, thisRun ? loginLog : null, docAge);
             }
             finally { p.Dispose(); }
         }
