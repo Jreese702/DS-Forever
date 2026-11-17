@@ -5167,8 +5167,13 @@ class MapView(context: Context) : View(context) {
         c.drawPath(path, pPath)
         pPath.pathEffect = null
         arrowMeasure.setPath(path, false)
+        val first = RouteArrows.firstArrow(tMs)
         do {
-            for (s in RouteArrows.arrowDistances(arrowMeasure.length, tMs)) {
+            val len = arrowMeasure.length
+            var s = first - RouteArrows.PERIOD                             // (walked in place: no array per contour per frame)
+            while (true) {
+                s += RouteArrows.PERIOD
+                if (s > len) break
                 if (!arrowMeasure.getPosTan(s, arrowPos, arrowTan)) continue
                 val fx = arrowTan[0]; val fy = arrowTan[1]                 // along the route (toward the goal)
                 val nx = -fy; val ny = fx

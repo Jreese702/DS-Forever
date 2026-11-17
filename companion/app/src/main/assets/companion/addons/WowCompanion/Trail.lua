@@ -107,7 +107,10 @@ end
 -- its window (C.PA.SPAN), so the wrap never pops. C.paConveyor(t) is the pure place/alpha of every piece at time t (GetTime(),
 -- no stored offset: no drift, any frame time); the pieces are made once and only moved vertically, so cp40's eased x (no jitter)
 -- is untouched. Still drawn from C.step (no second OnUpdate), still hidden with no route. The Home map's route dots carry the same
--- blue chevron every 5th dot (app side, RouteArrows.kt).
+-- blue chevron every 5th dot (app side, RouteArrows.kt). Cheap per frame: no table made per frame (C.paConveyor fills the marker's
+-- own reused table), the drift steps at most C.PA.TICK (30 a second), and the pieces are re-placed only when the drift stepped or
+-- the eased x / the scale moved (so a steady facing costs nothing; while turning they follow the eased x each frame, as cp36's
+-- marker did, or they would lag the letters).
 -- cp42 THE 11-16 TEST BUILD MERGE: issue #358's cp41 (the font family, WC.font) and feat/big-layout's cp41 (the compass in the
 -- layout editor) both kept; both notes below
 -- cp41 ISSUE #358 (a player: "Character names: Cyrillic characters are displayed as empty squares instead of actual letters"; the
@@ -1728,25 +1731,29 @@ do
     C.PA.N, C.PA.P, C.PA.SPEED, C.PA.FADE, C.PA.DOT = 3, 14, 14, 7, 4.5
     C.PA.SPAN = C.PA.N * C.PA.P
     C.PA.W, C.PA.RIM, C.PA.SIZE = 2.5, 4.5, 18
+    C.PA.TICK = 1 / 30                                                 -- the drift's step at most (s): 30 places a second
     -- every piece at time t: { kind = "chev" | "dot", y (spec px from the band line, up), a (0..1) }; 2N pieces, chevron k at
-    -- k * P, its dot at k * P + P / 2, all + the phase, wrapped in the window; alpha 0 at both window ends
-    function C.paConveyor(t)
+    -- k * P, its dot at k * P + P / 2, all + the phase, wrapped in the window; alpha 0 at both window ends. [out]: a table to
+    -- fill in place (the draw passes its own, made once: nothing made per frame); none: a new one (the checks)
+    function C.paConveyor(t, out)
         local PA = C.PA
         local span, half = PA.SPAN, PA.SPAN / 2
         local phase = ((tonumber(t) or 0) * PA.SPEED) % span
-        local out = {}
+        out = out or {}
         for k = 0, 2 * PA.N - 1 do
             local y = ((k * PA.P / 2 + phase) % span) - half
             local a = (half - math.abs(y)) / PA.FADE
             if a > 1 then a = 1 elseif a < 0 then a = 0 end
-            out[k + 1] = { kind = (k % 2 == 0) and "chev" or "dot", y = y, a = a }
+            local p = out[k + 1]
+            if not p then p = {}; out[k + 1] = p end
+            p.kind, p.y, p.a = (k % 2 == 0) and "chev" or "dot", y, a
         end
         return out
     end
     function C.paBuild()
         if C.pa then return C.pa end
         local f = C.frame
-        local o = { rim = {}, ln = {}, dsh = {}, dot = {}, all = {} }
+        local o = { rim = {}, ln = {}, dsh = {}, dot = {}, all = {}, cv = {} }
         local R, G = C.PA.RGB, C.GOLD
         for i = 1, C.PA.N * #C.PA.ARM do
             o.rim[i] = f:CreateLine(nil, "ARTWORK", nil, 0); o.rim[i]:SetColorTexture(0, 0, 0, 0.85)
@@ -1779,8 +1786,20 @@ do
         local o = C.paBuild()
         local cx, cy = m.x, -S.line
         local now = (type(GetTime) == "function" and GetTime()) or 0
+        -- the drift's clock steps at most every TICK (a clock that went back: re-started)
+        if not o.tt or now - o.tt >= PA.TICK or now < o.tt then o.tt = now end
+        local us = u(1)
+        -- re-placed only when the drift stepped, the eased x or the scale moved, or the pieces were hidden
+        if o.shown and o.pt == o.tt and o.px == cx and o.pu == us then
+            C.paText(o, f, u, S, PA, m, w)
+            o.shown = true
+            return
+        end
+        o.pt, o.px, o.pu = o.tt, cx, us
         local ci, di = 0, 0
-        for _, p in ipairs(C.paConveyor(now)) do
+        local cv = C.paConveyor(o.tt, o.cv)
+        for q = 1, #cv do
+            local p = cv[q]
             local py = cy + p.y
             if p.kind == "chev" then
                 ci = ci + 1
@@ -1805,6 +1824,11 @@ do
                 C.paVis(sh, p.a > 0); C.paVis(d, p.a > 0)
             end
         end
+        C.paText(o, f, u, S, PA, m, w)
+        o.shown = true
+    end
+    -- the distance text and the off-band side arrow (every frame: their own checks keep them cheap)
+    function C.paText(o, f, u, S, PA, m, w)
         -- terse: a distance only for a leg's start (where the walk ends: a flight master, a dock, a portal), under the window
         local txt = (type(w) == "table" and w.kind ~= "walk" and num(w.d)) and C.distText(w.d) or nil
         if txt then
@@ -1819,7 +1843,6 @@ do
         else
             C.paVis(o.a, false)
         end
-        o.shown = true
     end
     function C.paHide()
         local o = C.pa

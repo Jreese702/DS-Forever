@@ -222,6 +222,26 @@ def main():
     C.draw()
     y1 = [o.dot[i].point[5] for i in range(1, 4)]
     chk("cp43: drawn frame to frame: the dots move up", sum(1 for a, b in zip(y0, y1) if near(b - a, C.u(PA.SPEED * 0.25), 1e-6)) >= 2)
+    # the verifier's per-frame cost fix: no table made per frame, the drift stepped at most every TICK, nothing re-placed unchanged
+    same = L.eval("""(function(C, t)
+        local cv = C.pa.cv; local p = {}
+        for i = 1, #cv do p[i] = cv[i] end
+        local out = C.paConveyor(t, cv)
+        if not rawequal(out, cv) or #cv ~= 6 then return false end
+        for i = 1, 6 do if not rawequal(cv[i], p[i]) then return false end end
+        return true
+    end)""")(C, G.t + 3.3)
+    chk("cp43 cost: C.paConveyor fills the table it is given (the same piece tables)", same is True)
+    G.t = G.t + PA.TICK / 3
+    C.draw()
+    y2 = [o.dot[i].point[5] for i in range(1, 4)]
+    chk("cp43 cost: a frame inside one TICK: the drift holds (nothing moved)", y2 == y1 and o.pt == o.tt)
+    tt0 = o.tt
+    G.t = G.t + PA.TICK
+    C.draw()
+    y3 = [o.dot[i].point[5] for i in range(1, 4)]
+    chk("cp43 cost: past the TICK: the drift steps again (moving up)", o.tt != tt0
+        and sum(1 for a, b in zip(y2, y3) if b > a) >= 2)
     chk("smaller than the objective's disc (18 vs 28 spec px)", C.PA.SIZE < 28)
     chk("terse: no distance text on a walk", not o.d.shown)
     rk = None

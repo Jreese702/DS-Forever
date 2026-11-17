@@ -36,6 +36,18 @@ class RouteArrowsTest {
         }
     }
 
+    @Test fun theDrawsInPlaceWalkMatchesTheArrowPlaces() {
+        // MapView walks firstArrow + k * PERIOD with no per-frame array: the same places as arrowDistances
+        for (t in longArrayOf(0L, 417L, 3333L, 86_400_000L * 30 + 123L)) for (len in floatArrayOf(5f, 64f, 65f, 700f)) {
+            val walk = ArrayList<Float>()
+            var s = RouteArrows.firstArrow(t)
+            while (s <= len) { walk.add(s); s += RouteArrows.PERIOD }
+            val want = RouteArrows.arrowDistances(len, t)
+            assertEquals("count ($t, $len)", want.size, walk.size)
+            for (i in want.indices) assertEquals(want[i], walk[i], 1e-3f)
+        }
+    }
+
     @Test fun theArrowsMoveWithTheDotsTowardTheGoal() {
         val a0 = RouteArrows.arrowDistances(500f, 0L)
         val a1 = RouteArrows.arrowDistances(500f, 500L)

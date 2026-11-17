@@ -41,9 +41,13 @@ object RouteArrows {
         return out.sorted().toFloatArray()
     }
 
+    /** the first arrow's distance along any path at [tMs] (the next ones every [PERIOD] px after it; the draw walks them with no
+     *  per-frame array) */
+    fun firstArrow(tMs: Long): Float = ((EVERY - 1) * SPACING + travel(tMs)) % PERIOD
+
     /** the arrows' distances along a path [len] px long at [tMs]: the empty slot of every cycle */
     fun arrowDistances(len: Float, tMs: Long): FloatArray {
-        val first = ((EVERY - 1) * SPACING + travel(tMs)) % PERIOD
+        val first = firstArrow(tMs)
         if (len < first) return FloatArray(0)
         val n = ((len - first) / PERIOD).toInt() + 1
         return FloatArray(n) { first + it * PERIOD }
