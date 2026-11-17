@@ -158,7 +158,7 @@ class SettingsRoomTest {
         // pass: General's groups are GeneralTilesView parts, Help's status their compact row)
         for (gb in r.groupBoxes) assertTrue("${gb.group} has parts", gb.parts.isNotEmpty())
         for (gb in r.groupBoxes.filter { it.group.tab == SettingsTabs.Tab.GENERAL }) assertTrue("${gb.group}", gb.parts.single() is GeneralTilesView)
-        assertEquals(setOf(SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY,
+        assertEquals(setOf(SettingsTabs.Group.LAYOUT, SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY,
             SettingsTabs.Group.NAVIGATION, SettingsTabs.Group.WINDOWS, SettingsTabs.Group.COMBAT),
             r.groupBoxes.filter { gb -> gb.parts.any { it is GameUiSection } }.map { it.group }.toSet())
         // 2026-11-16 (the tiles): Navigation is ONE tile part (its Polestar tile was SettingsView's row); every Top screen group's part draws

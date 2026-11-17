@@ -288,14 +288,18 @@ class LayoutShotsTest {
         // (11-16 merge with the tiles: Top screen does not fold, so every group opens; Layout is the first)
         assertTrue("Layout opens", SettingsTabs.Group.LAYOUT in r.open)
         assertEquals("Layout is the first group", SettingsTabs.Group.LAYOUT, SettingsTabs.groups(SettingsTabs.Tab.TOP).first())
-        val part = layoutBox.parts.single() as SettingsView
+        // hub61 (the beautify design 7): the row is a tile now, "Edit layout" (GameUiSection's LAYOUT part): A / a tap opens the page
+        val part = layoutBox.parts.single() as GameUiSection
         assertEquals(listOf("Edit layout"), SettingsTabs.Block.LAYOUT.rows)
-        // the row's Open, pressed by a finger (the cursor's A presses it the same way)
+        assertEquals(listOf(GameUiTiles.LAYOUT_ID), part.tileIds())
+        // the tile, pressed by a finger (the cursor's A presses it the same way: a touch at its centre)
         val b = part.focusTargets().single()
-        // (a detached view is never isShown(): the tap itself, as the touch's lift calls it)
-        SettingsView::class.java.getDeclaredMethod("tap", java.lang.Float.TYPE, java.lang.Float.TYPE).apply { isAccessible = true }
-            .invoke(part, b.centerX(), b.centerY())
+        val down = android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_DOWN, b.centerX(), b.centerY(), 0)
+        part.dispatchTouchEvent(down); down.recycle()
+        val up = android.view.MotionEvent.obtain(0, 40, android.view.MotionEvent.ACTION_UP, b.centerX(), b.centerY(), 0)
+        part.dispatchTouchEvent(up); up.recycle()
         assertEquals(1, opened)
+        assertNull("no band", part.openTile)
         val d = out ?: return
         val bm = Bitmap.createBitmap(W, 1080, Bitmap.Config.ARGB_8888)
         val c = Canvas(bm); c.drawColor(Theme.ink)

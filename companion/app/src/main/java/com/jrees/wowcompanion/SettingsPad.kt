@@ -154,7 +154,9 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             SettingsTabs.Drawer.GAME_UI -> {
                 flush()
                 val part = gameUiPart(b)
-                if ((out.lastOrNull() as? GameUiSection)?.part != part) out.add(GameUiSection(context, part).also { gameUis.add(it) })
+                if ((out.lastOrNull() as? GameUiSection)?.part != part) out.add(GameUiSection(context, part).also {
+                    it.onEditLayout = { view.onEditLayout() }                  // hub61: the Edit layout tile opens the editor's page
+                    gameUis.add(it) })
             }
         }
         flush()
@@ -170,6 +172,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         SettingsTabs.Block.NAVIGATION, SettingsTabs.Block.POLESTAR_TOP -> GameUiSection.Part.NAVIGATION
         SettingsTabs.Block.COMBAT -> GameUiSection.Part.COMBAT
         SettingsTabs.Block.AUTO_SHOT -> GameUiSection.Part.AUTO_SHOT
+        SettingsTabs.Block.LAYOUT -> GameUiSection.Part.LAYOUT
         else -> GameUiSection.Part.WINDOWS
     }
 
