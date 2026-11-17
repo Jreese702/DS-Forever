@@ -106,7 +106,9 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - `{"t":"sunshine","sunshine":{...}}` *(Desktop 0.2.32)* — the welcome's `sunshine` object again, sent when Desktop moved its
   Sunshine to a new base port (Windows reserved one of its ports, or another program holds one). The Thor dials the new ports.
 - `{"t":"host_check_result","state":"ok"|"restarting"|"failed"|"streaming","sunshine":{...}}` *(Desktop 0.2.32)* — the answer to
-  `host_check`; after `restarting` a second one follows with `ok` (every port open again) or `failed` (3 tries spent).
+  `host_check`; after `restarting` a second one follows with `ok` (every port open again) or `failed` (3 tries spent; the last
+  try moves the base when none has yet). `streaming` = a stream session is up (our sunshine holds its UDP ports), not just
+  Sunshine's BUSY (an app launched). An `ok` found at once is the only answer (no second message).
 - `{"t":"pc_test_result","steps":[{"id","name","state":"pass"|"fail"|"skip"|"not_run","line","fix"}],"screen":"own"|"real"|"none","screen_line":"...","screen_hz":N,"pad":"vigem"|"missing"|"unknown"}`
   *(Desktop 0.2.32)* — the answer to `pc_test`: the PC's checks in order (ports, rtsp, encoder, screen, controller), stopped at
   the first failure; `screen` = what a stream gets, `screen_hz` its top refresh (0 = unknown). No names; IPs cut to a.b.x.x.

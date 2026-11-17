@@ -42,6 +42,9 @@ namespace DsfDesktop.Sunshine
         readonly object gate = new object();
         readonly TimeSpan grace;
         DateTime lastThorAt = DateTime.MinValue, failedAt = DateTime.MinValue;
+        /// <summary>the mode ours was made FOR (the Thor's ask). A driver may give a nearer offered one (the VDD's vdd_settings.xml list):
+        /// comparing the Thor's mode with that would remove and re-make ours on every tick. null = adopted, not known yet</summary>
+        (int w, int h, int hz)? asked;
 
         public ScreenLife(IList<IScreenDriver> drivers, TimeSpan? grace = null)
         {
@@ -59,9 +62,19 @@ namespace DsfDesktop.Sunshine
         IScreenDriver Adopt()
         {
             if (Current != null && Current.Exists) return Current;
+            var was = Current;
             Current = drivers.FirstOrDefault(d => { try { return d.Exists; } catch (Exception) { return false; } });
+            // a leftover: made for its own mode as far as we know (unknown = taken as it is)
+            if (Current != null && !ReferenceEquals(Current, was)) { var m = Current.Mode; asked = m.w > 0 ? m : ((int, int, int)?)null; }
+            if (Current == null) asked = null;
             return Current;
         }
+
+        /// <summary>the mode ours was made for (null = none, or a leftover of unknown mode)</summary>
+        public (int w, int h, int hz)? Asked { get { lock (gate) { Adopt(); return asked; } } }
+
+        /// <summary>ours was made but couldn't be used (our Sunshine didn't list it): the same 2-minute pause as a failed make</summary>
+        public void Failed(DateTime now) { lock (gate) failedAt = now; }
 
         /// <summary>a Thor is connected or streaming, or was within the grace</summary>
         public bool ThorWants(DateTime now, bool thorConnected, bool streaming)
@@ -102,7 +115,9 @@ namespace DsfDesktop.Sunshine
                         if (streaming) return (ScreenPlan.Step.Keep, "streaming");
                         return (step, !thorWants ? "no Thor for " + (int)grace.TotalSeconds + " s" : "a screen is on");
                     case ScreenPlan.Step.Keep:
-                        if (!streaming && ours.Mode != want) return (ScreenPlan.Step.RemoveOurs, "the Thor's mode changed");
+                        // a leftover of unknown mode is taken as it is (no remake loop)
+                        if (!asked.HasValue) asked = want;
+                        if (!streaming && asked.Value != want) return (ScreenPlan.Step.RemoveOurs, "the Thor's mode changed");
                         return (step, null);
                     case ScreenPlan.Step.MakeOurs:
                         // making ours restarts our Sunshine: never under a running stream that already shows a real screen
@@ -133,7 +148,7 @@ namespace DsfDesktop.Sunshine
                         if (!d.Usable()) { whys.Add(d.Name + ": in use"); continue; }
                         var why = d.Make(w, h, hz);
                         if (why == null && d.GdiName == null) { d.Remove("no display name"); why = "it didn't appear"; }
-                        if (why == null) { Current = d; return null; }
+                        if (why == null) { Current = d; asked = (w, h, hz); return null; }
                         whys.Add(d.Name + ": " + why);
                     }
                     catch (Exception e) { whys.Add(d.Name + ": " + e.Message); }
@@ -151,6 +166,7 @@ namespace DsfDesktop.Sunshine
                 if (c == null) return;
                 try { c.Remove(why); } catch (Exception e) { Log.I("virtual screen: remove: " + e.Message); }
                 Current = null;
+                asked = null;
             }
         }
     }
@@ -196,17 +212,21 @@ namespace DsfDesktop.Sunshine
     /// </summary>
     public sealed class VddScreen : IScreenDriver
     {
-        readonly Func<bool> attachedByUs, installedByUs;
+        readonly Func<bool> attachedByUs;
         readonly Action<bool> setAttached;
+        readonly Func<string> ourDevice;
+        readonly Action<string> setDevice;
         readonly object gate = new object();
 
-        /// <summary>[attachedByUs]/[setAttached] = a lasting flag (settings): we attached it and haven't detached it yet;
-        /// [installedByUs] = the player said yes to our install (its first monitor comes up on by itself: ours)</summary>
-        public VddScreen(Func<bool> attachedByUs, Action<bool> setAttached, Func<bool> installedByUs)
+        /// <summary>[attachedByUs]/[setAttached] = a lasting flag (settings): we attached it and haven't detached it yet (our install sets
+        /// it: its first monitor comes up on by itself); [ourDevice]/[setDevice] = the display name we attached (lasting), so a second
+        /// VDD monitor the player has on is never adopted or detached</summary>
+        public VddScreen(Func<bool> attachedByUs, Action<bool> setAttached, Func<string> ourDevice = null, Action<string> setDevice = null)
         {
             this.attachedByUs = attachedByUs;
             this.setAttached = setAttached;
-            this.installedByUs = installedByUs;
+            this.ourDevice = ourDevice ?? (() => null);
+            this.setDevice = setDevice ?? (_ => { });
         }
 
         public string Name => "Virtual Display Driver";
@@ -215,17 +235,31 @@ namespace DsfDesktop.Sunshine
             => d != null && ((d.Adapter ?? "").IndexOf("Virtual Display Driver", StringComparison.OrdinalIgnoreCase) >= 0
                              || (d.AdapterId ?? "").IndexOf("MttVDD", StringComparison.OrdinalIgnoreCase) >= 0);
 
-        /// <summary>the VDD's monitor to use: an inactive one first (ours to attach), else an active one we attached; null = none</summary>
-        public static WinDisplay Pick(List<WinDisplay> win, bool attachedByUs, bool installedByUs)
+        /// <summary>the VDD's monitor to use: the active one we attached (see <see cref="Ours"/>), else an inactive one (ours to
+        /// attach); null = none. Only "attached by us" counts: once we detach it, a monitor the player turns on is theirs</summary>
+        public static WinDisplay Pick(List<WinDisplay> win, bool attachedByUs, string ourDevice = null)
         {
             var vdd = (win ?? new List<WinDisplay>()).Where(IsVdd).ToList();
             if (vdd.Count == 0) return null;
-            if (attachedByUs || installedByUs) { var on = vdd.FirstOrDefault(d => d.Active); if (on != null) return on; }
+            var on = Ours(vdd, attachedByUs, ourDevice);
+            if (on != null) return on;
             return vdd.FirstOrDefault(d => !d.Active);
         }
 
+        /// <summary>
+        /// The active VDD monitor that is OURS: only while we have it attached, the one we named when we did; with no name kept (our
+        /// install's monitor, which came up on by itself) the first active one. null = none (never another active VDD monitor).
+        /// </summary>
+        public static WinDisplay Ours(List<WinDisplay> win, bool attachedByUs, string ourDevice)
+        {
+            if (!attachedByUs) return null;
+            var on = (win ?? new List<WinDisplay>()).Where(d => IsVdd(d) && d.Active).ToList();
+            return string.IsNullOrEmpty(ourDevice) ? on.FirstOrDefault()
+                : on.FirstOrDefault(d => string.Equals(d.Name, ourDevice, StringComparison.OrdinalIgnoreCase));
+        }
+
         public bool Installed() => Displays.WindowsDisplays().Any(IsVdd);
-        public bool Usable() => Pick(Displays.WindowsDisplays(), attachedByUs(), installedByUs()) != null;
+        public bool Usable() => Pick(Displays.WindowsDisplays(), attachedByUs(), ourDevice()) != null;
 
         public bool Exists
         {
@@ -236,9 +270,15 @@ namespace DsfDesktop.Sunshine
                 if (!attachedByUs()) return false;
                 var all = Displays.WindowsDisplays().Where(IsVdd).ToList();
                 if (all.Count == 0) return false;          // not installed (yet): our install's flag waits for it
-                var d = all.FirstOrDefault(x => x.Active);
-                if (d == null) { setAttached(false); return false; }
-                GdiName = d.Name;
+                var d = Ours(all, true, ourDevice());
+                if (d == null) { setAttached(false); setDevice(null); return false; }
+                if (!string.Equals(GdiName, d.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    GdiName = d.Name;
+                    // a leftover (Desktop restarted): its mode as Windows has it now
+                    Mode = Native.Current(d.Name);
+                    setDevice(d.Name);
+                }
                 return true;
             }
         }
@@ -250,7 +290,7 @@ namespace DsfDesktop.Sunshine
         {
             lock (gate)
             {
-                var d = Pick(Displays.WindowsDisplays(), attachedByUs(), installedByUs());
+                var d = Pick(Displays.WindowsDisplays(), attachedByUs(), ourDevice());
                 if (d == null) return "its monitor is one of your screens";
                 var mode = VddModes.Pick(Native.Modes(d.Name), w, h, hz);
                 // to the right of every screen on: the player's own stay where they are
@@ -258,6 +298,7 @@ namespace DsfDesktop.Sunshine
                 var err = Native.Set(d.Name, mode.w, mode.h, mode.hz, x, 0);
                 if (err != null) return err;
                 setAttached(true);
+                setDevice(d.Name);
                 string name = null;
                 for (int ms = 50; ms <= 1600 && name == null; ms *= 2)
                 {
@@ -276,11 +317,12 @@ namespace DsfDesktop.Sunshine
         {
             lock (gate)
             {
-                var name = GdiName ?? Displays.WindowsDisplays().FirstOrDefault(x => IsVdd(x) && x.Active)?.Name;
-                if (name == null) { setAttached(false); return; }
+                // only the monitor we attached: never "whichever VDD monitor is on" (a second one may be the player's)
+                var name = GdiName ?? Ours(Displays.WindowsDisplays(), attachedByUs(), ourDevice())?.Name;
+                if (name == null) { setAttached(false); setDevice(null); return; }
                 var err = Native.Detach(name);
                 Log.I("virtual screen: Virtual Display Driver's " + name + " off (" + why + ")" + (err != null ? ": " + err : ""));
-                if (err == null) setAttached(false);
+                if (err == null) { setAttached(false); setDevice(null); }
                 GdiName = null;
                 Mode = (0, 0, 0);
             }
@@ -310,6 +352,18 @@ namespace DsfDesktop.Sunshine
             [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettingsEx(string dev, IntPtr dm, IntPtr hwnd, uint flags, IntPtr param);
 
             static DEVMODE New() => new DEVMODE { dmSize = (short)Marshal.SizeOf(typeof(DEVMODE)) };
+
+            /// <summary>its mode now (ENUM_CURRENT_SETTINGS); (0,0,0) = unreadable</summary>
+            public static (int w, int h, int hz) Current(string dev)
+            {
+                try
+                {
+                    var dm = New();
+                    if (EnumDisplaySettings(dev, -1, ref dm) && dm.dmPelsWidth > 0) return (dm.dmPelsWidth, dm.dmPelsHeight, dm.dmDisplayFrequency);
+                }
+                catch (Exception) { }
+                return (0, 0, 0);
+            }
 
             public static List<(int w, int h, int hz)> Modes(string dev)
             {

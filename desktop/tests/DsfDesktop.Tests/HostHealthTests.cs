@@ -112,7 +112,7 @@ namespace DsfDesktop.Tests
             A.Eq(HealStep.None, h.Tick(t.AddSeconds(14), bad, false, true));
             A.Eq(HealStep.Restart, h.Tick(t = t.AddSeconds(15), bad, false, true), "try 2 15 s later");
             A.Eq(HealStep.None, h.Tick(t.AddSeconds(44), bad, false, true));
-            A.Eq(HealStep.Restart, h.Tick(t = t.AddSeconds(45), bad, false, true), "try 3 45 s later");
+            A.Eq(HealStep.Move, h.Tick(t = t.AddSeconds(45), bad, false, true), "try 3 45 s later: a new base (no move yet)");
             A.Eq(3, h.Tries);
             A.Eq(HealStep.GiveUp, h.Tick(t = t.AddSeconds(HostHealer.LastLookS), bad, false, true), "then the report");
             A.True(h.GaveUp);
@@ -151,6 +151,50 @@ namespace DsfDesktop.Tests
             h.Tick(t, denied, false, true);
             A.Eq(HealStep.Restart, h.Tick(t = t.AddSeconds(5), denied, false, true), "WSAEACCES once: a restart");
             A.Eq(HealStep.Move, h.Tick(t.AddSeconds(15), denied, false, true), "WSAEACCES again: move");
+        }
+
+        [Test]
+        public static void Healer_TheLastTryMovesWhenNothingSaidWhy()
+        {
+            // verifier 2026-11-17: RTSP missing with no "Couldn't bind" line and no excluded range: three restarts on the same base,
+            // then the report - never the "Yes, move". Now the last try moves; one that moved already doesn't move again for that
+            var h = new HostHealer();
+            var bad = Check(Tcp(OurPid, 52984, 52989), rtsp: false);
+            var t = Start;
+            h.Force(t);
+            A.Eq(HealStep.Restart, h.Tick(t, bad, false, true));
+            A.Eq(HealStep.Restart, h.Tick(t = t.AddSeconds(15), bad, false, true));
+            A.Eq(HealStep.Move, h.Tick(t = t.AddSeconds(45), bad, false, true), "the last try");
+            A.Eq(HealStep.GiveUp, h.Tick(t.AddSeconds(HostHealer.LastLookS), bad, false, true));
+
+            var g = new HostHealer();
+            var taken = Check(Tcp(OurPid, 52984, 52989).Concat(Tcp(901, 53010)));
+            g.Force(t);
+            A.Eq(HealStep.Move, g.Tick(t, taken, false, true), "moved on try 1");
+            A.Eq(HealStep.Restart, g.Tick(t = t.AddSeconds(15), bad, false, true));
+            A.Eq(HealStep.Restart, g.Tick(t.AddSeconds(45), bad, false, true), "moved already: the last try restarts");
+        }
+
+        [Test]
+        public static void BusyIsNotALiveStream()
+        {
+            // the user's PC 2026-11-17: serverinfo BUSY from 13:02 to 13:50 while the Thor's RTSP failed (110) every 11 s; BUSY alone
+            // switched the heal off, and HostCheck answered "streaming" (the Thor gave up with no heal)
+            A.True(HostHealth.SessionBound(52989, OurPid, Udp(OurPid, 52999)), "control port ours: a session");
+            A.False(HostHealth.SessionBound(52989, OurPid, Udp(OurPid, 5353).Concat(Udp(14216, 47999))), "nothing of ours on 52998-53000");
+            var long_ = TimeSpan.FromMinutes(43);
+            A.False(HostHealth.StreamLive(true, false, long_), "BUSY for 43 min, no session: not live");
+            A.False(HostHealth.StreamLive(true, false, TimeSpan.FromSeconds(5), thorAsked: true), "the Thor's RTSP failed: no grace");
+            A.True(HostHealth.StreamLive(true, false, TimeSpan.FromSeconds(5)), "a launch on its way to RTSP");
+            A.True(HostHealth.StreamLive(true, true, long_, thorAsked: true), "a session up: live");
+            A.True(HostHealth.StreamLive(true, null, long_, thorAsked: true), "UDP table unread: BUSY trusted");
+            A.False(HostHealth.StreamLive(false, true, long_));
+            // today replayed: the Thor asks, nothing live, so the heal starts at once
+            var h = new HostHealer();
+            var bad = Check(Tcp(OurPid, 52984, 52989, 52990), rtsp: false, log: TodaysLog);
+            bool live = HostHealth.StreamLive(true, HostHealth.SessionBound(52989, OurPid, Udp(OurPid, 5353)), long_, thorAsked: true);
+            h.Force(Start);
+            A.Eq(HealStep.Restart, h.Tick(Start, bad, live, true));
         }
 
         [Test]

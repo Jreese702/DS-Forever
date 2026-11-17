@@ -37,6 +37,8 @@ namespace DsfDesktop.App
         public bool VddAttached { get; set; }
         /// <summary>the player said yes to our Virtual Display Driver install: its monitor is ours</summary>
         public bool VddInstalledByUs { get; set; }
+        /// <summary>the Virtual Display Driver monitor we attached (its display name): the only VDD monitor we adopt or detach</summary>
+        public string VddDevice { get; set; }
         /// <summary>the Sunshine device id our own screen had last time, and the driver that made it: written as output_name before
         /// the restart, so one restart does instead of two</summary>
         public string OwnScreenDriver { get; set; }

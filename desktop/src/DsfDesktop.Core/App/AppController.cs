@@ -400,20 +400,28 @@ namespace DsfDesktop.App
         /// check, then HostHealer's step - a restart while no stream is live, or a new base for reserved / taken ports, then the report.
         /// Never touches another program. [rtsp] = also connect to RTSP; [wait] = wait for a check already running (the Thor's ask).
         /// </summary>
-        void HealthTick(bool rtsp, bool wait = false)
+        void HealthTick(bool rtsp, bool wait = false, bool thorAsked = false)
         {
             if (wait) Monitor.Enter(healGate);
             else if (!Monitor.TryEnter(healGate)) return;
             try
             {
                 var sh = Sunshine;
-                if (sh == null || !sh.Available || SunshinePort <= 0 || !sh.Running) return;
-                bool settled = DateTime.UtcNow - sh.StartedUtc > TimeSpan.FromSeconds(4);
-                bool streaming = Stream == StreamState.Streaming;
+                if (sh == null || !sh.Available || SunshinePort <= 0) return;
+                // ours exited (SunshineHost's own restart waits up to 60 s): left to it, unless a heal runs (the Thor asked, or one
+                // was under way) - then it is a host with every port missing, restarted on the heal's clock and reported
+                bool exited = !sh.Running;
+                if (exited && !healer.Healing) return;
+                // our screen being made restarts ours too (MakeOurs, the Test's screen check): the heal waits for it, never a
+                // second restart on top
+                bool settled = !screenBusy && (exited || DateTime.UtcNow - sh.StartedUtc > TimeSpan.FromSeconds(4));
+                bool streaming = !exited && StreamLive(thorAsked);
                 var x = HostHealth.ExcludedNow(healer.Healing ? 10 : 300);
-                bool? rtspOk = rtsp && settled && !streaming ? HostHealth.Connects(SunshinePort + HostHealth.RtspOffset) : (bool?)null;
-                var h = HostHealth.Check(SunshinePort, sh.Pid, SunshineLayout.ExeDir, PortGuard.TcpListeners(), PortGuard.UdpBound(), rtspOk,
-                    x.tcp, x.udp, HostHealth.ReadLog(SunshineLayout.LogFile), sh.StartedUtc.ToLocalTime(), PortGuard.Who);
+                bool? rtspOk = exited ? false : rtsp && settled && !streaming ? HostHealth.Connects(SunshinePort + HostHealth.RtspOffset) : (bool?)null;
+                var udp = PortGuard.UdpBound();
+                var h = HostHealth.Check(SunshinePort, exited ? -1 : sh.Pid, SunshineLayout.ExeDir, PortGuard.TcpListeners(), udp, rtspOk,
+                    x.tcp, x.udp, exited ? null : HostHealth.ReadLog(SunshineLayout.LogFile), sh.StartedUtc.ToLocalTime(), PortGuard.Who);
+                if (exited) h.Detail = "exited, " + h.Detail;
                 Health = h;
                 var key = h.Healthy + "|" + h.Detail;
                 if (key != lastHealthKey) { lastHealthKey = key; Log.I("sunshine: health " + (h.Healthy ? "ok" : "PROBLEM") + ": " + h.Detail); }
@@ -433,7 +441,8 @@ namespace DsfDesktop.App
                         break;
                     case HealStep.Healed:
                         Log.I("sunshine: heal: every port is open again (base " + SunshinePort + ")");
-                        Bridge?.Publish(HostResult("ok"));
+                        // the Thor's own ask found it fine: its answer is HostCheck's return, not a second message
+                        if (!thorAsked) Bridge?.Publish(HostResult("ok"));
                         break;
                 }
                 if (step != HealStep.None) Fire();
@@ -441,6 +450,23 @@ namespace DsfDesktop.App
             }
             catch (Exception e) { Log.I("sunshine: health check: " + e.Message); }
             finally { Monitor.Exit(healGate); }
+        }
+
+        DateTime busySince = DateTime.MinValue;
+
+        /// <summary>a stream is live: BUSY with a bound session (see <see cref="HostHealth.StreamLive"/>); BUSY alone is an app launched</summary>
+        public bool StreamLive(bool thorAsked = false)
+        {
+            if (Stream != StreamState.Streaming) return false;
+            bool? bound = null;
+            try
+            {
+                var sh = Sunshine;
+                var rows = PortGuard.UdpBound();
+                if (rows.Count > 0) bound = sh != null && sh.Running && HostHealth.SessionBound(SunshinePort, sh.Pid, rows);
+            }
+            catch (Exception) { }
+            return HostHealth.StreamLive(true, bound, DateTime.UtcNow - busySince, thorAsked);
         }
 
         Dictionary<string, object> HostResult(string state) =>
@@ -481,9 +507,10 @@ namespace DsfDesktop.App
         {
             Log.I("bridge: the Thor asks for a streaming host check");
             if (Sunshine == null || !Sunshine.Available || SunshinePort <= 0) return HostResult("failed");
-            if (Stream == StreamState.Streaming) return HostResult("streaming");
+            // the Thor's RTSP already failed: BUSY alone (an app launched) is no stream; only a bound session is
+            if (StreamLive(thorAsked: true)) return HostResult("streaming");
             lock (healGate) healer.Force(DateTime.UtcNow);
-            HealthTick(true, wait: true);
+            HealthTick(true, wait: true, thorAsked: true);
             var state = healer.GaveUp ? "failed" : healer.Healing ? "restarting" : "ok";
             Log.I("sunshine: host check for the Thor: " + state);
             return HostResult(state);
@@ -510,7 +537,7 @@ namespace DsfDesktop.App
                 Log.I("test: run for " + who);
                 var sh = Sunshine;
                 bool running = sh != null && sh.Available && sh.Running && SunshinePort > 0;
-                bool streaming = Stream == StreamState.Streaming;
+                bool streaming = StreamLive();
                 int rtspPort = SunshinePort + HostHealth.RtspOffset;
                 var r = new PcTestResult { At = DateTime.Now, Pad = PadDriver.Now() };
                 r.Steps = PcChecks.Run(new (string, string, Func<TestStep>)[]
@@ -619,7 +646,7 @@ namespace DsfDesktop.App
         void ApplyConfig(string why)
         {
             if (Sunshine == null || !Sunshine.Running) { if (SunshinePort > 0) WriteSunshineConfig(); return; }
-            if (Stream == StreamState.Streaming) { configStale = true; Log.I("sunshine: " + why + ": applied after the stream"); return; }
+            if (StreamLive()) { configStale = true; Log.I("sunshine: " + why + ": applied after the stream"); return; }
             configStale = false;
             WriteSunshineConfig();
             RestartSunshine();
@@ -676,8 +703,10 @@ namespace DsfDesktop.App
                     SaveSettings();
                 }
                 var sudo = new OurScreen(Guid.Parse(Settings.VirtualScreenId));
-                var vdd = new VddScreen(() => Settings.VddAttached, on => { if (Settings.VddAttached != on) { Settings.VddAttached = on; SaveSettings(); } },
-                                        () => Settings.VddInstalledByUs);
+                var vdd = new VddScreen(() => Settings.VddAttached,
+                                        on => { if (Settings.VddAttached != on) { Settings.VddAttached = on; if (!on) Settings.VddInstalledByUs = false; SaveSettings(); } },
+                                        () => Settings.VddDevice,
+                                        dev => { if (Settings.VddDevice != dev) { Settings.VddDevice = dev; SaveSettings(); } });
                 return screens = new ScreenLife(new List<IScreenDriver> { sudo, vdd });
             }
         }
@@ -746,7 +775,7 @@ namespace DsfDesktop.App
                 displaysRead = null;
                 displayCheckPending = true;
             }
-            bool streaming = Stream == StreamState.Streaming;
+            bool streaming = StreamLive();
             if (configStale && !streaming) ApplyConfig("config");
             ScreenTick(win, streaming);
             // a remembered display that has gone, or a capture target that went away: once the change has settled
@@ -837,7 +866,7 @@ namespace DsfDesktop.App
                 var drv = life.Current;
                 var gdi = life.GdiName;
                 // a stream that started meanwhile on a real screen: a restart would cut it; ours waits for the next one
-                if (hasScreen && Stream == StreamState.Streaming)
+                if (hasScreen && StreamLive())
                 {
                     Log.I("virtual screen: a stream started first: it stays on the real screen");
                     life.Remove("a stream started first");
@@ -872,6 +901,7 @@ namespace DsfDesktop.App
                     if (hasScreen)
                     {
                         life.Remove("Sunshine didn't list it");
+                        life.Failed(DateTime.UtcNow);      // the 2-minute pause, not a make/remove loop
                         if (hadOutput) { WriteSunshineConfig(); RestartSunshine(); }
                         Say(ScreenPlan.FallbackFailed, null);
                         return;
@@ -1160,6 +1190,7 @@ namespace DsfDesktop.App
             if (s == Stream) return;
             var was = Stream;
             Stream = s;
+            if (s == StreamState.Streaming) busySince = DateTime.UtcNow;
             Log.I("stream: " + s);
             if (s != StreamState.Streaming && configStale) Task.Run(() => ApplyConfig("after the stream"));
             Bridge?.Publish(new Dictionary<string, object> { ["t"] = "stream", ["state"] = StreamWord });

@@ -19,6 +19,8 @@ namespace DsfDesktop.Tests
             public string Name { get; }
             public bool installed = true, usable = true, names = true;
             public string fail;
+            /// <summary>the mode it really gives (the VDD's nearest offered one); null = as asked</summary>
+            public (int, int, int)? gives;
             public int makes, removes;
             public readonly List<string> log = new List<string>();
             public Fake(string name) { Name = name; }
@@ -30,7 +32,7 @@ namespace DsfDesktop.Tests
                 log.Add("make " + w + "x" + h + "@" + hz);
                 if (fail != null) return fail;
                 Exists = true;
-                Mode = (w, h, hz);
+                Mode = gives ?? (w, h, hz);
                 GdiName = names ? @"\\.\DISPLAY" + (20 + makes) : null;
                 return null;
             }
@@ -235,15 +237,84 @@ namespace DsfDesktop.Tests
             A.True(Displays.HasScreen(new List<WinDisplay> { realOff, vddOn }), "someone's lasting virtual screen counts");
             A.False(Displays.HasScreen(new List<WinDisplay> { realOff, vddOn }, @"\\.\DISPLAY7"), "but not when it is ours");
             A.True(Displays.HasScreen(new List<WinDisplay> { real, vddOn }, @"\\.\DISPLAY7"));
-            // the VDD's monitor to use: an off one (ours to attach); an on one only when we attached it or installed the driver
+            // the VDD's monitor to use: an off one (ours to attach); an on one only while we have it attached (our install sets that)
             var vddOff = W(@"\\.\DISPLAY8", "Virtual Display Driver", @"Root\MttVDD", false);
-            A.Eq(@"\\.\DISPLAY8", VddScreen.Pick(new List<WinDisplay> { real, vddOn, vddOff }, false, false)?.Name);
-            A.Null(VddScreen.Pick(new List<WinDisplay> { real, vddOn }, false, false), "the player's own on monitor: never ours");
-            A.Eq(@"\\.\DISPLAY7", VddScreen.Pick(new List<WinDisplay> { real, vddOn }, true, false)?.Name, "attached by us");
-            A.Eq(@"\\.\DISPLAY7", VddScreen.Pick(new List<WinDisplay> { real, vddOn }, false, true)?.Name, "installed by us");
-            A.Null(VddScreen.Pick(new List<WinDisplay> { real }, false, false), "no VDD");
+            A.Eq(@"\\.\DISPLAY8", VddScreen.Pick(new List<WinDisplay> { real, vddOn, vddOff }, false)?.Name);
+            A.Null(VddScreen.Pick(new List<WinDisplay> { real, vddOn }, false), "the player's own on monitor: never ours");
+            A.Eq(@"\\.\DISPLAY7", VddScreen.Pick(new List<WinDisplay> { real, vddOn }, true)?.Name, "attached by us");
+            A.Null(VddScreen.Pick(new List<WinDisplay> { real }, false), "no VDD");
             A.True(VddScreen.IsVdd(vddOn));
             A.False(VddScreen.IsVdd(W(@"\\.\DISPLAY9", "SudoMaker Virtual Display Adapter", @"Root\SudoMaker\SudoVDA", true)), "never Apollo's");
+        }
+
+        [Test]
+        public static void ANearerModeFromTheDriverIsNotRemadeEveryTick()
+        {
+            // verifier 2026-11-17: the VDD gives 1920x1080@60 for the Thor's 720p (not in vdd_settings.xml); comparing the Thor's mode
+            // with the given one removed and re-made ours (each a Sunshine restart) on every idle tick, for ever
+            var vdd = new Fake("Virtual Display Driver") { gives = (1920, 1080, 60) };
+            var life = new ScreenLife(new List<IScreenDriver> { vdd });
+            var want = (1280, 720, 60);
+            A.Eq(ScreenPlan.Step.MakeOurs, life.Decide(T0, true, true, true, true, false, want, false).step);
+            A.Null(life.Make(1280, 720, 60, T0));
+            A.Eq((1920, 1080, 60), life.Mode, "the nearest it offers");
+            for (int i = 1; i <= 10; i++)
+                A.Eq(ScreenPlan.Step.Keep, life.Decide(T0.AddSeconds(2 * i), true, true, true, true, false, want, false).step, "tick " + i);
+            A.Eq(1, vdd.makes);
+            A.Eq(0, vdd.removes);
+            // the Thor really changed its mode: one remake
+            A.Eq(ScreenPlan.Step.RemoveOurs, life.Decide(T0.AddMinutes(1), true, true, true, true, false, (1600, 900, 60), false).step);
+        }
+
+        [Test]
+        public static void ALeftoverOfUnknownModeIsKeptAsItIs()
+        {
+            // verifier 2026-11-17: an adopted VDD monitor had Mode (0,0,0), so it was removed and re-made at once
+            var vdd = new Fake("Virtual Display Driver") { Exists = true, GdiName = @"\\.\DISPLAY7", Mode = (0, 0, 0) };
+            var life = new ScreenLife(new List<IScreenDriver> { vdd });
+            for (int i = 0; i < 5; i++)
+                A.Eq(ScreenPlan.Step.Keep, life.Decide(T0.AddSeconds(2 * i), true, true, true, true, false, M120, false).step, "tick " + i);
+            A.Eq(0, vdd.removes);
+            // a leftover whose mode is known and differs: one remake, then it settles
+            var vdd2 = new Fake("Virtual Display Driver") { Exists = true, GdiName = @"\\.\DISPLAY7", Mode = (1920, 1080, 60) };
+            var life2 = new ScreenLife(new List<IScreenDriver> { vdd2 });
+            var d = life2.Decide(T0, true, true, true, true, false, M120, false);
+            A.Eq(ScreenPlan.Step.RemoveOurs, d.step);
+            life2.Remove(d.why);
+            A.Null(life2.Make(1920, 1080, 120, T0));
+            A.Eq(ScreenPlan.Step.Keep, life2.Decide(T0.AddSeconds(2), true, true, true, true, false, M120, false).step);
+        }
+
+        [Test]
+        public static void AScreenSunshineDidNotListWaitsTwoMinutes()
+        {
+            // verifier 2026-11-17: made, not listed by our Sunshine, removed - and made again at the next tick, for ever
+            var sudo = new Fake("SudoVDA");
+            var life = new ScreenLife(new List<IScreenDriver> { sudo });
+            A.Null(life.Make(1920, 1080, 120, T0));
+            life.Remove("Sunshine didn't list it");
+            life.Failed(T0);
+            A.Eq(ScreenPlan.Step.Fallback, life.Decide(T0.AddSeconds(2), true, true, true, true, false, M120, false).step);
+            A.Eq(ScreenPlan.Step.Fallback, life.Decide(T0.AddSeconds(119), true, true, true, true, false, M120, false).step);
+            A.Eq(ScreenPlan.Step.MakeOurs, life.Decide(T0.AddSeconds(121), true, true, true, true, false, M120, false).step);
+            A.Eq(1, sudo.makes);
+        }
+
+        [Test]
+        public static void OnlyTheVddMonitorWeAttachedIsOurs()
+        {
+            static WinDisplay W(string name, bool active)
+                => new WinDisplay { Name = name, Adapter = "Virtual Display Driver", AdapterId = @"Root\MttVDD", Active = active, Kind = Displays.KindOf("Virtual Display Driver", @"Root\MttVDD") };
+            var a = W(@"\\.\DISPLAY7", true);
+            var b = W(@"\\.\DISPLAY8", true);
+            var all = new List<WinDisplay> { a, b };
+            A.Eq(@"\\.\DISPLAY8", VddScreen.Ours(all, true, @"\\.\DISPLAY8")?.Name, "the one we named, not the first on");
+            A.Null(VddScreen.Ours(new List<WinDisplay> { a }, true, @"\\.\DISPLAY8"), "ours is off: the player's other one is never taken");
+            A.Eq(@"\\.\DISPLAY7", VddScreen.Ours(new List<WinDisplay> { a }, true, null)?.Name, "our install's monitor (no name yet)");
+            A.Null(VddScreen.Ours(all, false, @"\\.\DISPLAY7"), "detached by us: any monitor on now is the player's");
+            // after our install's monitor was detached, the player turning it on: not ours (the install no longer counts)
+            A.Null(VddScreen.Pick(new List<WinDisplay> { a }, false), "never used, sized or detached");
+            A.Eq(@"\\.\DISPLAY8", VddScreen.Pick(all, true, @"\\.\DISPLAY8")?.Name);
         }
 
         [Test]

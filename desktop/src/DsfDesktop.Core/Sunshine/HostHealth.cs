@@ -66,6 +66,31 @@ namespace DsfDesktop.Sunshine
         public const int RtspOffset = 21;
 
         public static int[] Tcp(int basePort) => TcpNeeded.Select(o => basePort + o).ToArray();
+
+        /// <summary>after Sunshine turns BUSY (an app launched): this long counts as a stream starting, before its UDP sockets bind</summary>
+        public static readonly TimeSpan StartGrace = TimeSpan.FromSeconds(20);
+
+        /// <summary>a stream session is up: our sunshine holds one of its UDP ports (video / control / audio bind only while one runs)</summary>
+        public static bool SessionBound(int basePort, int ourPid, IEnumerable<UdpRow> udp)
+        {
+            if (basePort <= 0 || ourPid <= 0 || udp == null) return false;
+            var ports = Udp(basePort);
+            return udp.Any(r => r.Pid == ourPid && ports.Contains(r.Port));
+        }
+
+        /// <summary>
+        /// A stream is LIVE (nothing may restart ours). Sunshine's serverinfo BUSY means "an app launched", not "a client streams": it
+        /// stays BUSY after a client leaves and while the Thor's RTSP fails (the user's PC 2026-11-17: BUSY 13:02-13:50, RTSP 110 every
+        /// 11 s). So BUSY counts only with a bound session, or within <see cref="StartGrace"/> of turning BUSY (a launch on its way to
+        /// RTSP). [sessionBound] null = the UDP table couldn't be read: BUSY is trusted. [thorAsked] = the Thor's host_check (its RTSP
+        /// already failed: no grace).
+        /// </summary>
+        public static bool StreamLive(bool busy, bool? sessionBound, TimeSpan busyFor, bool thorAsked = false)
+        {
+            if (!busy) return false;
+            if (!sessionBound.HasValue || sessionBound.Value) return true;
+            return !thorAsked && busyFor < StartGrace;
+        }
         public static int[] Udp(int basePort) => PortPlanner.UdpOffsets.Select(o => basePort + o).ToArray();
 
         /// <summary>
@@ -247,6 +272,7 @@ namespace DsfDesktop.Sunshine
         public bool Healing => dueAt.HasValue;
         public DateTime? DueAt => dueAt;
         int denied;
+        bool moved;
         DateTime? dueAt;
 
         /// <summary>[settled] = ours has had its few seconds to bind since its last start; [streaming] = a stream is live (never restart)</summary>
@@ -269,13 +295,16 @@ namespace DsfDesktop.Sunshine
             Tries++;
             // the next try 15 s / 45 s on; after the last one, one more look once it has settled, then the report
             dueAt = now.AddSeconds(Tries < MaxTries ? BackoffS[Tries] : LastLookS);
-            // a restart can't win back a reserved port or one another program holds: a new base
-            return h.Excluded.Count > 0 || h.Taken.Count > 0 || h.Blocked.Count > 0 || denied >= AccessMoves ? HealStep.Move : HealStep.Restart;
+            // a restart can't win back a reserved port or one another program holds: a new base. The last try moves when none has
+            // yet (a reservation the log and netsh didn't show still ends on a new base, the user's "Yes, move")
+            bool move = h.Excluded.Count > 0 || h.Taken.Count > 0 || h.Blocked.Count > 0 || denied >= AccessMoves || (Tries == MaxTries && !moved);
+            if (move) moved = true;
+            return move ? HealStep.Move : HealStep.Restart;
         }
 
         /// <summary>the Thor asked: start over, the first try due now</summary>
         public void Force(DateTime now) { Reset(); dueAt = now; }
 
-        public void Reset() { Tries = 0; GaveUp = false; denied = 0; dueAt = null; }
+        public void Reset() { Tries = 0; GaveUp = false; denied = 0; moved = false; dueAt = null; }
     }
 }
