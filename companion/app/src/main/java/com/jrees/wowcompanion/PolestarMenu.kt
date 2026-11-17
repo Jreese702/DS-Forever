@@ -32,6 +32,8 @@ class PolestarMenu(private val context: Context, private val pad: () -> JSONObje
     /** Skip ([prev] false) / Previous on Polestar's shown step: the host's one pnav tap; false = not sent */
     var onSkip: ((prev: Boolean) -> Boolean)? = null
 
+    /** hub57: a frame is in flight (the host ticks the wait itself after a bound command's press, when no room draws the menu) */
+    val busy: Boolean get() = send.busy
     /** the menu can show: Quest tracking is Polestar, Polestar loaded and answering */
     fun shows(): Boolean = Settings.questTracking == "polestar" && book.ready()
     fun rows() = PolestarTab.rows(book.guide, cur.foldOpen)

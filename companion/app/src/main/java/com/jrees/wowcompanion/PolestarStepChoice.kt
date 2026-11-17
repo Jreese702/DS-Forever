@@ -47,9 +47,8 @@ class PolestarStepChoice(private val menu: () -> PolestarMenu?, private val say:
     fun run(s: MapRoomKeys.PsSkip) {
         val m = menu()?.takeIf { it.canStep() } ?: run { close(); say(PolestarSkip.NO_STEP_LINE); return }
         if (!on(s)) { say(PolestarTab.NOTHING_LINE); return }
-        if (m.shownIn == null) m.note = { say(it) }                  // (a refusal's line here, unless a room shows the menu)
         close()
-        if (!m.step(s == MapRoomKeys.PsSkip.NEXT)) say(PolestarSkip.NO_STEP_LINE)
+        command(m, s == MapRoomKeys.PsSkip.NEXT, say)
     }
 
     /** a touch while it shows: a row presses it, anywhere else closes it */
@@ -75,6 +74,24 @@ class PolestarStepChoice(private val menu: () -> PolestarMenu?, private val say:
     }
 
     companion object {
+        /**
+         * ONE NEXT ([next]) / PREVIOUS STEP PRESS, the choice's row and the bound commands alike (hub57 / PadMap m169; the user,
+         * 2026-11-16: "The polestar previous or next options should be able to be bound to keys in the controller bindings menus"):
+         * Polestar's own Engine.Next / Engine.Prev through the one [PolestarMenu] (Map.lua pg2 op 24 / 25, stamped with the guide, one
+         * frame in flight; nothing skipped; a fight too). No Polestar or no guide: nothing sent, "No Polestar step"; the first / last
+         * step: nothing sent, "Nothing to change". A refusal's line goes to [say] unless a room shows the menu. True = the frame went.
+         */
+        fun command(menu: PolestarMenu?, next: Boolean, say: (String) -> Unit): Boolean {
+            val m = menu?.takeIf { it.canStep() } ?: run { say(PolestarSkip.NO_STEP_LINE); return false }
+            val g = m.book.guide
+            if (!MapRoomKeys.psSkipOn(if (next) MapRoomKeys.PsSkip.NEXT else MapRoomKeys.PsSkip.PREV, g?.shown, g?.count ?: 0)) {
+                say(PolestarTab.NOTHING_LINE); return false
+            }
+            if (m.shownIn == null) m.note = { say(it) }                  // (a refusal's line here, unless a room shows the menu)
+            if (!m.step(next)) { say(PolestarSkip.NO_STEP_LINE); return false }
+            return true
+        }
+
         /** a row (the Map room's quest options' row) */
         const val ROW = 50f
         /** a long press on a Polestar row opens the choice (the Map room's long press) */

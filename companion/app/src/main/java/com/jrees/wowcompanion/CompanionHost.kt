@@ -666,6 +666,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // Spells' spell radials (Hub's WowCompanionPadSpellRadial / ...<n>; hub26: "sradial:<n>", Radial.lua q2)
                 "sradial" -> radialView.toggle("sradial", 1)
                 "smartor" -> radialView.toggle("smartor")     // m62: Smart buffs' OR row (Y with none of its buffs up; Hub's WowCompanionPadSmartyOr)
+                // hub57 / PadMap m169 (the user, 2026-11-16: "The polestar previous or next options should be able to be bound to keys in
+                // the controller bindings menus"): Polestar's Next / Previous step where the player is (no room opens)
+                BarCommands.PS_NEXT, BarCommands.PS_PREV -> polestarStepCommand(k == BarCommands.PS_NEXT)
                 else -> if (k.startsWith("sradial:")) radialView.toggle("sradial", k.substringAfter(':').toIntOrNull() ?: 1)
             }
         }
@@ -4499,6 +4502,28 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (key != pinStateLast || now - pinStateAt >= 5_000L) { pinStateLast = key; pinStateAt = now; Log.i("WCMAP", "route pin: $why") }
     }
 
+    /** hub57: one bound "Polestar: next / previous step" press (Hub's WowCompanionPadPolestarNext / Prev barcmd): the Map room's own
+     *  step through the one Polestar menu ([PolestarStepChoice.command]); a refusal on the short line over the room (the pause wheel's).
+     *  No room may draw the menu (Home): the host ticks its wait until the answer, so a lost one never keeps the next press waiting */
+    private fun polestarStepCommand(next: Boolean) {
+        val m = questsView.psMenu
+        val say: (String) -> Unit = { line -> if (::pauseView.isInitialized) pauseView.note(line) }
+        Log.i("WCMAP", "polestar ${if (next) "next" else "previous"} step: the bound command")
+        if (!PolestarStepChoice.command(m, next, say)) return
+        ui.removeCallbacks(psStepTick)
+        psStepTicks = 0
+        ui.postDelayed(psStepTick, PS_STEP_TICK_MS)
+    }
+    private var psStepTicks = 0
+    private val psStepTick: Runnable = object : Runnable {
+        override fun run() {
+            if (shell.hostGone()) return
+            val m = questsView.psMenu
+            m.tick(System.currentTimeMillis(), active = false)
+            if (m.busy && ++psStepTicks < PS_STEP_TICKS) ui.postDelayed(this, PS_STEP_TICK_MS)
+        }
+    }
+
     /** pk3: when a Skip / Previous was last picked on the pause wheel (uptime ms, 0 none): its answer's refusal goes on the wheel's line */
     private var psWheelAt = 0L
 
@@ -4591,6 +4616,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         private const val WATCH_GAP_MS = 700L
         /** the router's "pause" after the app's own Start read is the same press (the doc arrives ~0.1-0.4 s later) */
         const val START_DEDUPE_MS = 800L
+        /** hub57: a bound Polestar step's wait, ticked by the host (every 0.5 s, at most 10 s: past PolestarTab.WAIT_MS's give-up) */
+        const val PS_STEP_TICK_MS = 500L
+        const val PS_STEP_TICKS = 20
         const val SWEEP_ACTION = "app.dsforever.companion.KEYSWEEP"
         @Volatile private var sweepRegistered = false
         /** a holder seen with its room hidden this long is freed (the one rule for every room; see freeHidden) */

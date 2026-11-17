@@ -187,7 +187,7 @@ for k, v in TXT.items():
     e = comp(v, k)
     check(e is None, "a. Lua 5.1 compiles %s" % FILES[k], e or '')
 check('local PADV = "pad22"' in TXT["tappad"] and 'WC.prd = { V = "prd19"' in TXT["trail"] and 'WC.compass = { V = "cp42" }' in TXT["trail"]
-      and 'local NB = { V = "nbar4"' in TXT["actionbar"] and 'local CHATV = "chat41"' in TXT["chat"] and 'local HV = "hub56"' in TXT["hub"]
+      and 'local NB = { V = "nbar4"' in TXT["actionbar"] and 'local CHATV = "chat41"' in TXT["chat"] and 'local HV = "hub57"' in TXT["hub"]
       and 'V = "uf24" }' in TXT["hub"] and 'V = "lay1"' in TXT["hub"],
       "a. the versions: TapPad pad22, Trail prd19 / cp42, ActionBar nbar4, Chat chat41, Hub hub56 (editor lay1, uf24): the 11-16 merge")
 check(all(QUOTE in TXT[k] for k in TXT), "a. each changed file's header note quotes the user", [k for k in TXT if QUOTE not in TXT[k]])
