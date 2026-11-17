@@ -25,7 +25,7 @@ import android.view.ViewConfiguration
  * it landed: a drag never presses anything. The page is drawn in screen coordinates (content y
  * minus [scroll]), so every hit box recorded by the last draw matches what the finger touches.
  */
-class SettingsView(context: Context, private val onReload: () -> Unit) : View(context) {
+class SettingsView(context: Context, val onReload: () -> Unit) : View(context) {
 
     /** the tab shown, for a view that draws a whole tab ([only] null: each block under its own heading, as before the six tabs) */
     var tab: SettingsTabs.Tab = SettingsTabs.Tab.GENERAL

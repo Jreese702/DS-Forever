@@ -38,7 +38,7 @@ class SwapScreensRowTest {
         Tr.setChoice(app, "auto")
     }
 
-    private fun room(offered: Boolean, saved: Boolean, inUse: Boolean): Pair<SettingsRoom, SettingsView> {
+    private fun room(offered: Boolean, saved: Boolean, inUse: Boolean): Pair<SettingsRoom, GeneralTilesView> {
         Settings.init(app); SettingsTabs.init(app)
         System.getenv("THEME_ART_ROOT")?.let { root ->
             val f = ArtHarvest::class.java.getDeclaredField("rootDir"); f.isAccessible = true; f.set(null, File(root))
@@ -59,7 +59,8 @@ class SwapScreensRowTest {
         return r to look(r)
     }
 
-    private fun look(r: SettingsRoom) = r.groupBoxes.first { it.group == SettingsTabs.Group.LOOK }.parts.single() as SettingsView
+    /** 2026-11-17 (the beautify pass): General > Look is ONE GeneralTilesView part, Swap screens its tile with a band */
+    private fun look(r: SettingsRoom) = r.groupBoxes.first { it.group == SettingsTabs.Group.LOOK }.parts.single() as GeneralTilesView
 
     private fun lay(r: View, w: Int = 1240, h: Int = 1080 - Strip.HEIGHT) {
         for (k in 0..2) {
@@ -70,60 +71,61 @@ class SwapScreensRowTest {
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun segs(s: SettingsView) = SettingsView::class.java.getDeclaredField("segSwap").apply { isAccessible = true }.get(s) as Array<RectF>
-    private fun restartBtn(s: SettingsView) = SettingsView::class.java.getDeclaredField("btnSwapRestart").apply { isAccessible = true }.get(s) as RectF
+    /** the band's On / Off (opened first when it is not) */
+    private fun segs(r: SettingsRoom, s: GeneralTilesView): List<RectF> {
+        if (s.openTile != GeneralTiles.SWAP) { tap(s, s.tileBox(GeneralTiles.SWAP)!!); lay(r) }
+        return s.bandButtons()[0]
+    }
+    /** the band's Restart button, or an empty box when the line is not there */
+    private fun restartBtn(s: GeneralTilesView): RectF = s.bandButtons().getOrNull(1)?.single() ?: RectF()
 
-    private fun tap(s: SettingsView, r: RectF) {
+    private fun tap(s: View, r: RectF) {
         val down = MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, r.centerX(), r.centerY(), 0)
         val up = MotionEvent.obtain(0, 40, MotionEvent.ACTION_UP, r.centerX(), r.centerY(), 0)
         s.dispatchTouchEvent(down); s.dispatchTouchEvent(up)
     }
 
-    /** a single-screen device: no row (the Look group keeps Theme and Language) */
+    /** a single-screen device: no tile (the Look row keeps Theme and Voice typing) */
     @Test fun hiddenWithoutASecondScreen() {
         val (r, single) = room(offered = false, saved = false, inUse = false)
-        val h1 = single.measuredHeight
-        assertTrue(segs(single).all { it.isEmpty })
+        assertTrue(GeneralTiles.SWAP !in single.tileIds())
         assertEquals(View.VISIBLE, r.groupBoxes.first { it.group == SettingsTabs.Group.LOOK }.box.visibility)
-        val (_, two) = room(offered = true, saved = false, inUse = false)
-        assertEquals("one row more with a second screen", 96 + 10, two.measuredHeight - h1)
-        assertTrue(segs(two).none { it.isEmpty })
-        // the cursor stops on both segments
-        val targets = two.focusTargets()
-        for (sg in segs(two)) assertTrue(targets.any { it == sg })
+        val (r2, two) = room(offered = true, saved = false, inUse = false)
+        assertTrue(GeneralTiles.SWAP in two.tileIds())
+        assertEquals("the same tile row: no taller", single.measuredHeight, two.measuredHeight)
+        // the cursor stops on the tile, then on both choices in its band
+        assertTrue(two.focusTargets().any { it == two.tileBox(GeneralTiles.SWAP) })
+        val sg = segs(r2, two)
+        for (b in sg) assertTrue(two.focusTargets().any { it == b })
     }
 
     /** the Thor: Off, no Restart; On saves, Restart comes; its button is the launcher's restart; Off again: Restart goes */
     @Test fun onSavesAndAsksForARestart() {
         val (r, s) = room(offered = true, saved = false, inUse = false)
-        val h0 = s.measuredHeight
         assertTrue(restartBtn(s).isEmpty)
-        tap(s, segs(s)[0])                                                    // On
+        tap(s, segs(r, s)[0])                                                 // On
         assertTrue(Settings.swapScreens)
         lay(r)
-        assertEquals("Restart under the row", 96 + 10, s.measuredHeight - h0)
         val b = RectF(restartBtn(s))
-        assertFalse(b.isEmpty)
+        assertFalse("Restart in the band", b.isEmpty)
         assertTrue(s.focusTargets().any { it == b })
         tap(s, b)
         assertEquals(1, restarts)
-        // Off again (the one in use): nothing waits, the row alone
+        // Off again (the one in use): nothing waits, the line goes
         lay(r)
-        tap(s, segs(s)[1])
+        tap(s, segs(r, s)[1])
         assertFalse(Settings.swapScreens)
         lay(r)
-        assertEquals(h0, s.measuredHeight)
         assertTrue(restartBtn(s).isEmpty)
     }
 
     /** the game up: "After the game closes", no button (a restart would end the game) */
     @Test fun noRestartWhileTheGameRuns() {
-        val h0 = room(offered = true, saved = false, inUse = false).second.measuredHeight
         game = true
-        val (_, s) = room(offered = true, saved = true, inUse = false)
-        assertEquals("the row says so", 96 + 10, s.measuredHeight - h0)
+        val (r, s) = room(offered = true, saved = true, inUse = false)
+        segs(r, s)
         assertTrue(restartBtn(s).isEmpty)
+        assertEquals("After the game closes", s.bandStatus())
         assertEquals(0, restarts)
     }
 
@@ -131,6 +133,7 @@ class SwapScreensRowTest {
         val out = System.getenv("SWAP_SHOTS_DIR")?.let { File(it) } ?: return
         out.mkdirs()
         fun shot(name: String, r: SettingsRoom) {
+            look(r).let { v -> if (GeneralTiles.SWAP in v.tileIds() && v.openTile == null) tap(v, v.tileBox(GeneralTiles.SWAP)!!) }
             lay(r); Thread.sleep(250); lay(r)                               // icons decode off the UI thread
             val b = Bitmap.createBitmap(1240, 1080 - Strip.HEIGHT, Bitmap.Config.ARGB_8888)
             val c = Canvas(b); c.drawColor(Theme.ink); r.draw(c)
