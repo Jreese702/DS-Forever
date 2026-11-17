@@ -43,6 +43,7 @@ class ControllerTilesRoomTest {
     private var doc: SmartYModel.Doc? = null
     private var pet: PadMapModel.PetB? = null
     private val sent = ArrayList<List<Pair<String, Int>>>()
+    private var live = true
 
     private fun art(root: String? = System.getenv("THEME_ART_ROOT")) {
         val f = ArtHarvest::class.java.getDeclaredField("rootDir"); f.isAccessible = true; f.set(null, root?.let { File(it) })
@@ -59,7 +60,7 @@ class ControllerTilesRoomTest {
         v.loginRow = true
         v.smartDoc = { doc }
         v.petB = { pet }
-        v.smartTaps = { t -> sent.add(t); true }
+        v.smartTaps = { t -> sent.add(t); live }
         return SettingsRoom(app, v) { null }.also { it.show(SettingsTabs.Tab.CONTROLLER); lay(it) }
     }
 
@@ -143,8 +144,9 @@ class ControllerTilesRoomTest {
         GameUi.character = null
         GameUi.resetSeenForTest()
         HomeAttackSwitch::class.java.getDeclaredField("state").apply { isAccessible = true }.set(HomeAttackSwitch, null)
-        doc = null; pet = null
+        doc = null; pet = null; live = true
         Tr.setChoice(app, "auto")
+        Theme.use(ThemePresets.CLASSIC.id)
     }
 
     // ---------------------------------------------------------------- the tab
@@ -226,6 +228,10 @@ class ControllerTilesRoomTest {
         val p = partOf(r, "pause")
         assertEquals(listOf(ControllerTiles.OPEN, ControllerTiles.PICK, ControllerTiles.OVER), p.lines("pause").map { it.key })
         assertEquals(listOf(ControllerTiles.OPEN, ControllerTiles.PICK), p.lines("item").map { it.key })
+        // Pick: the A glyph alone (no "A" word beside it), then the word Release (no stick glyph that reads as the R shoulder)
+        val pick = p.lines("classL")[1]
+        assertEquals(listOf("", "Release"), pick.words)
+        assertEquals(listOf("a", null), pick.glyphs)
         p.press("pause", ControllerTiles.OPEN, 1); assertFalse(HomeSettings.pauseTap)
         p.press("pause", ControllerTiles.PICK, 1); assertFalse(HomeSettings.pausePickA)
         p.press("pause", ControllerTiles.OVER, 1); assertTrue(HomeSettings.pauseOverGame)
@@ -258,9 +264,11 @@ class ControllerTilesRoomTest {
         assertEquals(2, GameUi.shotMode())
         assertNull(c.badge("attackcast"))
         assertEquals("On", c.value("attackcast"))
-        // a warrior: no Smart Res, no Auto Shot
+        // a warrior: no Smart Res; Auto Shot stays (the old row showed it for every class: a Warrior's bow, a Mage's wand)
         GameUi::class.java.getDeclaredField("playerClass").apply { isAccessible = true }.set(GameUi, "WARRIOR")
-        assertEquals(listOf(GameUi.PMODE_ID, GameUi.ATK_ID, "attackcast"), c.tileIds())
+        assertEquals(listOf(GameUi.PMODE_ID, GameUi.ATK_ID, "attackcast", GameUi.SHOT_ID), c.tileIds())
+        GameUi::class.java.getDeclaredField("playerClass").apply { isAccessible = true }.set(GameUi, "MAGE")
+        assertTrue(GameUi.SHOT_ID in c.tileIds())
     }
 
     /** Smart Y: dim "..." before the game; On / Off through Smart Y's own taps; "List" opens the list as a sub-page that lands on its
@@ -273,6 +281,13 @@ class ControllerTilesRoomTest {
         assertEquals("Off", b.value("smarty"))
         b.press("smarty", "smarty", 0)
         assertEquals(listOf(listOf("smarty" to 6)), sent)                 // the doc's On cell
+        assertNull(b.status("smarty"))
+        // the game not taking the taps: the old row's note on the band's status line
+        live = false; b.press("smarty", "smarty", 0)
+        assertEquals("Game not live", b.status("smarty"))
+        live = true; b.press("smarty", "smarty", 0)
+        assertNull(b.status("smarty"))
+        sent.clear()
         doc = smartDoc(on = true); b.refresh(); lay(r)
         // the cursor onto Smart Y, A, down to the band's List, A
         press(r, "PADDDOWN"); press(r, "PADDDOWN"); press(r, "PADDRIGHT"); press(r, "PADDRIGHT"); press(r, "PADDRIGHT")
@@ -380,8 +395,6 @@ class ControllerTilesRoomTest {
         close(); open("glyphs"); shot("ctl_6_band_glyphs")
         close(); open("petb"); shot("ctl_7_band_pet_follow")
         close(); open("smarty"); shot("ctl_8_band_smart_y")
-        partOf(r, "smarty").press("smarty", ControllerTiles.LIST, 0); lay(r); shot("ctl_9_smart_y_list_subpage")
-        r.closeSmartY(anchor = false); lay(r)
         close(); open("pause"); shot("ctl_10_band_pause")
         close(); open("item"); shot("ctl_11_band_item_wheel")
         close(); open("classL"); shot("ctl_12_band_left_class")
@@ -395,6 +408,9 @@ class ControllerTilesRoomTest {
         shot("ctl_18_cursor_on_open_tile")
         press(r, "PADDDOWN"); shot("ctl_19_cursor_in_band")
         press(r, "PAD2"); shot("ctl_20_b_back_on_tile")
+        // the Smart Y list as the pad reaches it: the cursor (gold box) on the list's first row
+        close(); scroll(0); partOf(r, "smarty").press("smarty", ControllerTiles.LIST, 0); lay(r); shot("ctl_9_smart_y_list_subpage")
+        press(r, "PAD2"); shot("ctl_9b_subpage_b_back_on_smart_y")
         // Spanish and French
         for (l in listOf("es", "fr")) {
             listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
@@ -403,6 +419,13 @@ class ControllerTilesRoomTest {
             open("pause"); shot("ctl_22_${l}_band")
         }
         Tr.setChoice(app, "auto")
+        // the themes: the tiles, the bands and the pictures in an OLED, a Dark and the Classic look (the wells are the game's world)
+        for (th in listOf("oled_bronze", "oled_rose", "dark_silver", "classic")) {
+            Theme.use(th); r.invalidate(); close(); scroll(0); shot("ctl_25_theme_$th")
+            open("smarty"); shot("ctl_26_theme_${th}_band_smart_y")
+            close(); open("pause"); shot("ctl_27_theme_${th}_band_pause")
+        }
+        Theme.use(ThemePresets.CLASSIC.id); close()
         // no kit on the phone yet: every picture our own drawing
         r = room(kit = false); game(); openAll(r); r.ctlTiles.forEach { it.refresh() }; lay(r); shot("ctl_23_no_kit")
         open("pause"); shot("ctl_24_no_kit_band")

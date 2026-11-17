@@ -39,7 +39,7 @@ interface SettingsBands {
  * ([SmartYPage]: the list moved as it is). No sub-captions (the terse rule): the picture says what it does. Wheels are app-wide;
  * the pet's B, Smart Y and the GameUi helpers are per character (their stores, unchanged). Combat helpers keep Top's game-state badges
  * (ON / OFF / SENT / REFUSED / WAITING); the app-local tiles carry none. A slot that does not apply is not drawn (B: pet follow on a
- * class without a pet, Smart Res on a class without a res, Auto Shot on a class without it).
+ * class without a pet, Smart Res on a class without a res). Auto Shot shows for every class, as its old row did (bows, guns, wands).
  *
  * The tile engine of the shared core (TileSource / TileDraw) had not landed when this was built (core and the areas ran side by side):
  * this view keeps the TileSource shape ([slots] / [name] / [value] / [lines] / [badge] / [dimmed] / [press] / the sub-page) so the
@@ -52,9 +52,10 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
     data class Slot(val id: String, val wide: Boolean = false)
 
     /** one line of a band: its choices ([words], [modes] = the On / Off eye signs, [glyphs] = a pad glyph per choice), the chosen one
-     *  ([chosen], -1 = none lit), a label column ([label]; [labelGlyph] beside it), greyed while it cannot act yet ([enabled]) */
+     *  ([chosen], -1 = none lit), a label column ([label]), greyed while it cannot act yet ([enabled]); a choice with a glyph and no
+     *  word is the glyph alone (the wheels' A) */
     class Line(val key: String, val label: String?, val words: List<String>, val chosen: Int, val enabled: Boolean = true,
-               val modes: List<UiMode>? = null, val glyphs: List<String?>? = null, val labelGlyph: String? = null)
+               val modes: List<UiMode>? = null, val glyphs: List<String?>? = null)
 
     /** the tiles this group shows now, in order (fixed per character: the add-on's word never reflows them) */
     fun slots(): List<Slot> = when (group) {
@@ -65,7 +66,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
         SettingsTabs.Group.COMBAT -> listOfNotNull(Slot(GameUi.PMODE_ID),
             Slot(GameUi.SRES_ID).takeIf { GameUi.sresClass(GameUi.playerClass) != false },
             Slot(GameUi.ATK_ID), Slot(ControllerPictures.ATTACK_CAST),
-            Slot(GameUi.SHOT_ID).takeIf { shotClass(GameUi.playerClass) })
+            Slot(GameUi.SHOT_ID))     // every class, as the old row: bows, guns and wands (a Warrior's bow, a Mage's wand)
         else -> emptyList()
     }
 
@@ -96,8 +97,8 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
             if (GameUi.shotThree()) listOf(Line(id, null, GameUi.SHOT_WORDS, if (r == null) -1 else GameUi.shotMode(), r != null))
             else listOf(onOffLine(id, r?.mode == UiMode.ON, r != null).let { if (r == null) Line(it.key, null, it.words, -1, false, it.modes) else it }) }
         in WHEEL_IDS -> listOfNotNull(
-            Line(OPEN, "Open", listOf("Tap", "Hold"), if (wheelTap(id)) 0 else 1, labelGlyph = OPENER[id]),
-            Line(PICK, "Pick", listOf(Glyphs.name("a"), "Release"), if (wheelPickA(id)) 0 else 1, glyphs = listOf("rev_a", "gen_rstick")),
+            Line(OPEN, "Open", listOf("Tap", "Hold"), if (wheelTap(id)) 0 else 1),
+            Line(PICK, "Pick", listOf("", "Release"), if (wheelPickA(id)) 0 else 1, glyphs = listOf("a", null)),
             if (id == ControllerPictures.PAUSE) Line(OVER, "Over windows", PauseOver.SEGMENTS, if (HomeSettings.pauseOverGame) 1 else 0) else null)
         else -> rowOf(id).let { r -> listOf(onOffLine(id, r?.mode == UiMode.ON, r != null).let {
             if (r == null) Line(it.key, null, it.words, -1, false, it.modes) else it }) }
@@ -130,7 +131,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
 
     /** the band's one status line: state only (sent, refused, waiting, paused), never an explanation; null = none */
     fun status(id: String): String? = when (id) {
-        ControllerPictures.SMART_Y -> if (hub.smartDoc() == null) "Waiting for the game" else null
+        ControllerPictures.SMART_Y -> if (hub.smartDoc() == null) "Waiting for the game" else smartNote
         ControllerPictures.ATTACK_CAST -> HomeAttackSwitch.state.let { s -> when {
             s == null -> "Waiting for the game"; s.paused -> "Coming back later"; s.pending -> "Sent"; else -> null } }
         in GAME_ROWS -> rowOf(id).let { r ->
@@ -155,7 +156,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
                     glideAt = SystemClock.uptimeMillis(); CastSettings.abxyLocation = it } }
                 ControllerPictures.GLYPHS -> LAYOUTS.getOrNull(k)?.let { if (CastSettings.buttonLayout != it) CastSettings.buttonLayout = it }
                 ControllerPictures.PET_B -> HomeSettings.setPetFollowB(GameUi.character, k == 0)
-                ControllerPictures.SMART_Y -> hub.smartDoc()?.let { d -> val on = k == 0; if (d.on != on) hub.smartTaps(SmartYModel.toggleTaps(d, on)) }
+                ControllerPictures.SMART_Y -> hub.smartDoc()?.let { d -> val on = k == 0; if (d.on != on) smartSend(SmartYModel.toggleTaps(d, on)) }
                 ControllerPictures.ATTACK_CAST -> HomeAttackSwitch.state?.let { s -> if (!s.paused) HomeAttackSwitch.turn(context, k == 0) }
                 GameUi.SHOT_ID -> if (GameUi.shotThree()) GameUi.setShotMode(k) else GameUi.setSwitch(GameUi.SW_SHOT, k == 0)
                 GameUi.PMODE_ID -> GameUi.setSwitch(GameUi.SW_PMODE, k == 0)
@@ -169,6 +170,16 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
     var onSubPage: ((ControllerTiles) -> Unit)? = null
     /** a tile's band opened (or moved): the room closes any other band and brings the cursor and the band in view */
     var onOpen: ((ControllerTiles) -> Unit)? = null
+
+    /** the Smart Y row's notes (SettingsView.sbSend's words): the taps not known yet, or the game not taking them; null = sent */
+    private var smartNote: String? = null
+    private fun smartSend(taps: List<Pair<String, Int>>?) {
+        smartNote = when {
+            taps == null -> "Open the Spellbook once, then again"
+            hub.smartTaps(taps) -> null
+            else -> "Game not live"
+        }
+    }
 
     private fun onOff(on: Boolean) = if (on) "On" else "Off"
     private fun onOffLine(id: String, on: Boolean, enabled: Boolean) =
@@ -231,7 +242,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
     private val pValue by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Theme.gold } }
     private val pBandLabel by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 25f; color = Theme.text } }
     private val pSub by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Theme.textDim } }
-    private val pSeg = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 27f; typeface = Typeface.DEFAULT_BOLD }
+    private val pSeg = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = SEG_SIZE; typeface = Typeface.DEFAULT_BOLD }
     private val tilePath = Path()
     private var downX = 0f
     private var downY = 0f
@@ -424,23 +435,31 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
         pStroke.color = Theme.gold; pStroke.strokeWidth = 2.6f
         c.drawLine(nx - 18f, rect.top + 1f, nx, rect.top - 13f, pStroke); c.drawLine(nx, rect.top - 13f, nx + 18f, rect.top + 1f, pStroke)
         picture(c, id, band.picture.rect(), max(t, 0.001f))
+        // ONE label size for the band: every line's label at the size the narrowest fits (a line under the picture has a narrower column)
+        val labelSize = band.lines.withIndex().mapNotNull { (i, lb) -> lb.label?.let { lab -> lines.getOrNull(i)?.label?.let { w ->
+            pBandLabel.textSize = 25f
+            while (pBandLabel.measureText(Tr.t(w)) > lab.w - 6f && pBandLabel.textSize > 18f) pBandLabel.textSize -= 1f
+            pBandLabel.textSize } } }.minOrNull() ?: 25f
         for ((i, lb) in band.lines.withIndex()) {
             val ln = lines.getOrNull(i) ?: continue
             lb.label?.let { lab ->
                 pBandLabel.color = if (ln.enabled) Theme.text else Theme.textDim
-                val g = ln.labelGlyph
-                val gx = if (g != null) 44f else 0f
-                if (g != null) UiKit.pad(c, g, lab.l + 22f, lab.cy, 40f)
-                c.drawText(fitText(pBandLabel, Tr.t(ln.label ?: ""), lab.w - 6f - gx, 25f, 18f), lab.l + 4f + gx, lab.cy + 9f, pBandLabel)
+                c.drawText(fitText(pBandLabel, Tr.t(ln.label ?: ""), lab.w - 6f, labelSize, 18f), lab.l + 4f, lab.cy + 9f, pBandLabel)
             }
+            // ONE word size per line: every button of a line at the size its longest word fits (no "Game's wheel" smaller than "Our wheel")
+            val size = lb.buttons.withIndex().minOfOrNull { (k, b) ->
+                val sign = if (ln.modes?.getOrNull(k) != null) 58f else 0f
+                wordSize(Tr.t(ln.words.getOrElse(k) { "" }), b.rect().width() - 44f - sign)
+            } ?: SEG_SIZE
             for ((k, b) in lb.buttons.withIndex()) {
                 val r = b.rect()
                 val m = ln.modes?.getOrNull(k)
                 val gl = ln.glyphs?.getOrNull(k)
+                val word = ln.words.getOrElse(k) { "" }
                 when {
-                    m != null -> modeChoice(c, r, m, ln.words.getOrElse(k) { "" }, k == ln.chosen, ln.enabled)
-                    gl != null -> glyphChoice(c, r, gl, ln.words.getOrElse(k) { "" }, k == ln.chosen, ln.enabled)
-                    else -> UiKit.choice(c, r, Tr.t(ln.words.getOrElse(k) { "" }), k == ln.chosen, ln.enabled, textSize = 27f)
+                    m != null -> modeChoice(c, r, m, word, k == ln.chosen, ln.enabled, size)
+                    gl != null -> glyphChoice(c, r, gl, k == ln.chosen, ln.enabled)
+                    else -> wordChoice(c, r, word, k == ln.chosen, ln.enabled, size)
                 }
             }
         }
@@ -451,42 +470,51 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
         }
     }
 
+    /** the size (27 down to 20) at which [w] fits [room] px */
+    private fun wordSize(w: String, room: Float): Float {
+        pSeg.textSize = SEG_SIZE
+        while (pSeg.measureText(w) > room && pSeg.textSize > 20f) pSeg.textSize -= 1f
+        return pSeg.textSize.also { pSeg.textSize = SEG_SIZE }
+    }
+
+    private fun choiceColour(on: Boolean, enabled: Boolean) = if (!enabled) Theme.dim else if (on) Theme.gold else Theme.textDim
+
     /** an On / Off choice as Top's: the game's red button, the eye sign beside the word, lit when chosen */
-    private fun modeChoice(c: Canvas, b: RectF, m: UiMode, word: String, on: Boolean, enabled: Boolean) {
+    private fun modeChoice(c: Canvas, b: RectF, m: UiMode, word: String, on: Boolean, enabled: Boolean, size: Float) {
         UiKit.choice(c, b, "", on, enabled)
-        val col = if (!enabled) Theme.dim else if (on) Theme.gold else Theme.textDim
+        val col = choiceColour(on, enabled)
         val w = Tr.t(word)
-        pSeg.textSize = 27f
-        while (pSeg.measureText(w) + 58f > b.width() - 44f && pSeg.textSize > 20f) pSeg.textSize -= 1f
+        pSeg.textSize = size
         val total = 44f + 14f + pSeg.measureText(w)
         val ix = b.centerX() - total / 2f + 22f
         pStroke.color = col; pStroke.strokeWidth = 2.4f
         TilePictures.modeSign(c, m, ix, b.centerY(), 1.6f, pStroke)
         pSeg.color = col; pSeg.textAlign = Paint.Align.LEFT
         c.drawText(w, ix + 36f, b.centerY() + 10f, pSeg)
-        pSeg.textSize = 27f
+        pSeg.textSize = SEG_SIZE
     }
 
-    /** a choice with its pad glyph before the word (the wheels' A / Release) */
-    private fun glyphChoice(c: Canvas, b: RectF, glyph: String, word: String, on: Boolean, enabled: Boolean) {
+    /** a plain choice: the game's red button, its word centred at the line's size */
+    private fun wordChoice(c: Canvas, b: RectF, word: String, on: Boolean, enabled: Boolean, size: Float) {
         UiKit.choice(c, b, "", on, enabled)
-        val col = if (!enabled) Theme.dim else if (on) Theme.gold else Theme.textDim
-        val w = Tr.t(word)
-        pSeg.textSize = 27f
-        while (pSeg.measureText(w) + 58f > b.width() - 44f && pSeg.textSize > 20f) pSeg.textSize -= 1f
-        val gs = if (glyph.contains("stick")) 60f else 40f                   // the stick art is small in its 64 px square
-        val total = gs + 12f + pSeg.measureText(w)
-        val x0 = b.centerX() - total / 2f
-        UiKit.pad(c, glyph, x0 + gs / 2f, b.centerY(), gs, if (enabled) 255 else 120)
-        pSeg.color = col; pSeg.textAlign = Paint.Align.LEFT
-        c.drawText(w, x0 + gs + 12f, b.centerY() + 10f, pSeg)
-        pSeg.textSize = 27f
+        pSeg.textSize = size; pSeg.color = choiceColour(on, enabled); pSeg.textAlign = Paint.Align.CENTER
+        c.drawText(Tr.t(word), b.centerX(), b.centerY() + size * 0.36f, pSeg)
+        pSeg.textAlign = Paint.Align.LEFT; pSeg.textSize = SEG_SIZE
+    }
+
+    /** a choice that is a face button alone (the wheels' Pick: A), in the chosen set; its letter on a disc without the kit */
+    private fun glyphChoice(c: Canvas, b: RectF, action: String, on: Boolean, enabled: Boolean) {
+        UiKit.choice(c, b, "", on, enabled)
+        val save = if (enabled) -1 else c.saveLayerAlpha(RectF(b), 120)
+        ControllerPictures.glyph(c, action, b.centerX(), b.centerY(), 48f)
+        if (save >= 0) c.restoreToCount(save)
     }
 
     companion object {
         const val SLOP = 24f
         const val NAME_SIZE = 25f
         const val NAME_MIN = 18f
+        const val SEG_SIZE = 27f
         const val WAIT = "..."
         const val LIST = "list"; const val OPEN = "open"; const val PICK = "pick"; const val OVER = "over"
 
@@ -499,9 +527,6 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
             SettingsTabs.Block.SPELL_WHEEL to ControllerPictures.SPELL, SettingsTabs.Block.CLASS_LEFT to ControllerPictures.CLASS_L,
             SettingsTabs.Block.CLASS_RIGHT to ControllerPictures.CLASS_R)
         private val WHEEL_IDS = WHEELS.values.toSet()
-        /** the button that opens each wheel, beside its band's "Open" */
-        private val OPENER = mapOf(ControllerPictures.PAUSE to "gen_forward", ControllerPictures.ITEM to "gen_up",
-            ControllerPictures.CLASS_L to "rev_ltrigger", ControllerPictures.CLASS_R to "rev_rtrigger")
         /** the add-on's switches (their badges are the game's state, as on Top screen) */
         private val GAME_ROWS = setOf(GameUi.PMODE_ID, GameUi.SRES_ID, GameUi.ATK_ID, GameUi.SHOT_ID)
         /** the band pictures that move */
@@ -513,9 +538,6 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
             ControllerPictures.SPELL to "Spell wheel", ControllerPictures.CLASS_L to "Left class wheel", ControllerPictures.CLASS_R to "Right class wheel",
             GameUi.PMODE_ID to "Party mode", GameUi.SRES_ID to "Smart Res", GameUi.ATK_ID to "Start attack",
             ControllerPictures.ATTACK_CAST to "Attack on cast", GameUi.SHOT_ID to "Auto Shot")
-
-        /** Auto Shot's tile: a hunter, or no class known yet (the slot waits); a class without Auto Shot has none */
-        fun shotClass(cls: String?): Boolean = cls.isNullOrBlank() || cls.uppercase() == "HUNTER"
 
         /** the Controller tab's part for group [g] (Smart Y's own group is gone: its tile is in Buttons), null = none */
         fun forGroup(context: Context, g: SettingsTabs.Group, hub: SettingsView): ControllerTiles? = when (g) {

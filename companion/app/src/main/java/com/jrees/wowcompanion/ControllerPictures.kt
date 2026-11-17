@@ -83,13 +83,14 @@ object ControllerPictures {
         return true
     }
 
-    /** the well's ground: the world's dark stand-in, a soft light behind the middle (fixed fills) */
+    /** the well's ground: Top screen's world (TilePictures.world, copied: TilePictures is not this area's file) - a night sky over
+     *  dark ground, the edges darker. Fixed fills on purpose: the well stands for the game's world, not the app's theme */
     private fun ground(c: Canvas, w: Float) {
-        pF.shader = LinearGradient(0f, 0f, 0f, H, intArrayOf(Color.rgb(30, 32, 38), Color.rgb(20, 21, 25), Color.rgb(14, 15, 18)),
-            floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+        pF.shader = LinearGradient(0f, 0f, 0f, H, intArrayOf(Color.rgb(36, 50, 62), Color.rgb(30, 40, 34), Color.rgb(20, 26, 18)),
+            floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
         c.drawRect(0f, 0f, w, H, pF)
-        pF.shader = RadialGradient(w / 2f, H * 0.5f, w * 0.6f, intArrayOf(Color.argb(40, 255, 220, 150), Color.argb(0, 0, 0, 0)),
-            floatArrayOf(0f, 1f), Shader.TileMode.CLAMP)
+        pF.shader = RadialGradient(w / 2f, H * 0.55f, w * 0.62f, intArrayOf(Color.argb(0, 0, 0, 0), Color.argb(120, 0, 0, 0)),
+            floatArrayOf(0.55f, 1f), Shader.TileMode.CLAMP)
         c.drawRect(0f, 0f, w, H, pF)
         pF.shader = null
     }
@@ -185,17 +186,21 @@ object ControllerPictures {
 
     /** Smart Y: the Y glyph on the left, then the list's first five entries (food, water, buffs), the ones that cannot act dimmed */
     private fun smartY(c: Canvas, w: Float, look: Look) {
-        glyph(c, "y", 32f, 54f, 40f)
-        pS.color = if (look.on) Theme.gold else Color.rgb(120, 110, 96); pS.strokeWidth = 2.2f
-        c.drawLine(58f, 54f, 74f, 54f, pS); c.drawLine(74f, 54f, 68f, 49f, pS); c.drawLine(74f, 54f, 68f, 59f, pS)
-        val ids = look.smartIcons.ifEmpty { SAMPLE_SMART }.take(if (w > W) 5 else 3)
-        val s = if (w > W) 50f else 34f
-        val gap = if (w > W) 26f else 10f
-        val x0 = 86f
+        val wide = w > W
+        // the band's picture is the 2:1 space: the glyph and arrow pulled in so the same five entries fit
+        val gx = if (wide) 32f else 26f; val ax = if (wide) 56f else 48f
+        glyph(c, "y", gx, 54f, if (wide) 40f else 34f)
+        pS.color = if (look.on) Theme.gold else Theme.bronzeDim; pS.strokeWidth = 2.2f
+        c.drawLine(ax, 54f, ax + 14f, 54f, pS); c.drawLine(ax + 14f, 54f, ax + 8f, 49f, pS); c.drawLine(ax + 14f, 54f, ax + 8f, 59f, pS)
+        // the same five entries on the wide tile and in the band (smaller icons there, no links)
+        val ids = look.smartIcons.ifEmpty { SAMPLE_SMART }.take(5)
+        val s = if (wide) 50f else 25f
+        val gap = if (wide) 26f else 3.5f
+        val x0 = if (wide) 86f else 70f
         for ((i, id) in ids.withIndex()) {
             val x = x0 + i * (s + gap)
             val dim = look.smartDim.getOrElse(i) { false } || !look.on
-            if (i > 0) { pF.color = if (look.on) Theme.gold else Color.rgb(90, 84, 74); c.drawRect(x - gap + 3f, 53f, x - 3f, 56f, pF) }
+            if (i > 0 && wide) { pF.color = if (look.on) Theme.gold else Theme.bronzeDim; c.drawRect(x - gap + 3f, 53f, x - 3f, 56f, pF) }
             slot(c, id, x, 54f - s / 2f, s, dim)
         }
     }
@@ -204,19 +209,20 @@ object ControllerPictures {
 
     private val pauseScreen = RectF(0f, 0f, 1240f, 1080f)
 
-    /** the Pause menu: the app's own pause wheel (UiKit.pauseRadial on a 1240 x 1080 screen, its wheel cut out and scaled into the well);
-     *  the Start glyph at the hub; Game's wheel = the same wheel lit gold, a small top screen over it */
+    /** the Pause menu: the app's own pause wheel (UiKit.pauseRadial on a 1240 x 1080 screen, its wheel cut out and scaled into the well)
+     *  with its slices' pictures and no labels (5 px words at tile size); the Start glyph at the hub; Game's wheel = its hub lit gold */
     private fun pauseWheel(c: Canvas, look: Look) {
         // the wheel's place on that screen (UiKit.pauseGeo's free layout: centre 620, 522; rim 270 x 1.3)
-        val sc = 104f / 620f
+        val sc = 104f / 620f * 1.45f                                          // zoomed: the slices' pictures large, the rim cropped
         val sv = c.save()
-        val drawn = runCatching {
-            c.clipRect(56f, 2f, 160f, 106f)
+        // without the kit the pause wheel has no slice pictures (only its rim): our own sketch with sample icons instead
+        val drawn = UiKit.tex("ricon_spellbook") != null && runCatching {
+            c.clipRect(0f, 0f, W, H)
             c.translate(108f - 620f * sc, 54f - 522f * sc); c.scale(sc, sc)
             val keepB = UiKit.pauseBarsBottom; val keepS = UiKit.pauseStripTop
             UiKit.pauseBarsBottom = 0f; UiKit.pauseStripTop = 0f
             try {
-                val slices = HomePauseModel.Flow().slices().map { it?.let { sl -> UiKit.PauseSlice(sl.key, sl.label, sl.enabled) } }
+                val slices = HomePauseModel.Flow().slices().map { it?.let { sl -> UiKit.PauseSlice(sl.key, "", sl.enabled) } }
                 UiKit.pauseRadial(c, pauseScreen, android.graphics.PointF(620f, 1120f), 140f, slices, 0, pointed(look, 8), glyphs = false,
                     up = null, down = null, hubGold = if (look.gameWheel) 1f else 0f)
             } finally { UiKit.pauseBarsBottom = keepB; UiKit.pauseStripTop = keepS }
@@ -224,9 +230,7 @@ object ControllerPictures {
         }.getOrDefault(false)
         c.restoreToCount(sv)
         if (!drawn) sketchWheel(c, 108f, 54f, 48f, pointed(look, 6), SAMPLE_SPELLS)
-        hub(c, 108f, 54f) { glyphOrWord(c, START, "Start", 108f, 54f, 24f) }
-        if (look.gameWheel) screens(c, top = true) else screens(c, top = false)
-        openPick(c, look)
+        hub(c, 108f, 54f, gold = look.gameWheel) { glyphOrWord(c, START, "Start", 108f, 54f, 26f) }
     }
 
     /** the item wheel ([items]) or the spell wheel: the app's own wheel at rest (UiKit.radialPreview) with the player's page 1, or
@@ -237,13 +241,12 @@ object ControllerPictures {
         radial(c, 108f, 54f, 104f, list, pointed(look, 8))
         hub(c, 108f, 54f) {
             if (items) glyphOrWord(c, "gen_up", "Up", 108f, 54f, 22f)
-            else UiKit.tex("ricon_spellbook")?.let { b -> c.drawBitmap(b, null, RectF(98f, 44f, 118f, 64f), pB) }
+            else UiKit.tex("ricon_spellbook")?.let { b -> c.drawBitmap(b, null, RectF(97f, 43f, 119f, 65f), pB) }
                 ?: glyphOrWord(c, "-", "Spells", 108f, 54f, 20f)
         }
-        openPick(c, look)
     }
 
-    /** the left / right class radial: the character's own (PreviewStage) or a sample wheel; LB + LT (RB + RT) at the hub */
+    /** the left / right class radial: the character's own (PreviewStage) or a sample wheel; its trigger (LT / RT) alone at the hub */
     private fun classWheel(c: Canvas, ctx: Context?, look: Look, left: Boolean) {
         val side = 104f
         val sv = c.save()
@@ -255,10 +258,8 @@ object ControllerPictures {
         if (!drawn) radial(c, 108f, 54f, 104f, (if (left) SAMPLE_SPELLS else SAMPLE_SPELLS.reversed()).map { UiKit.RadialItem(Icons.get(it), "", -1) },
             pointed(look, 8))
         hub(c, 108f, 54f) {
-            glyphOrWord(c, if (left) "rev_lshoulder" else "rev_rshoulder", Glyphs.name(if (left) "lshoulder" else "rshoulder"), 99f, 54f, 19f)
-            glyphOrWord(c, if (left) "rev_ltrigger" else "rev_rtrigger", Glyphs.name(if (left) "ltrigger" else "rtrigger"), 117f, 54f, 19f)
+            glyphOrWord(c, if (left) "rev_ltrigger" else "rev_rtrigger", Glyphs.name(if (left) "ltrigger" else "rtrigger"), 108f, 54f, 28f)
         }
-        openPick(c, look)
     }
 
     /** the band's lit place: every 0.8 s the next one (the open band only; a tile's still frame has none) */
@@ -273,13 +274,13 @@ object ControllerPictures {
     /** our own wheel: eight bronze slices round a dark hub, each a coloured square (or its icon) */
     private fun sketchWheel(c: Canvas, cx: Float, cy: Float, rad: Float, pick: Int, ids: List<Int>, items: List<UiKit.RadialItem?> = emptyList()) {
         pF.color = Color.argb(230, 24, 20, 16); c.drawCircle(cx, cy, rad, pF)
-        pS.color = Color.rgb(150, 126, 90); pS.strokeWidth = 2f; c.drawCircle(cx, cy, rad, pS)
+        pS.color = Theme.bronze; pS.strokeWidth = 2f; c.drawCircle(cx, cy, rad, pS)
         for (i in 0 until 8) {
             val a = (i * 45f - 90f) * (PI / 180f).toFloat()
             val sx = cx + cos(a) * rad * 0.68f; val sy = cy + sin(a) * rad * 0.68f
             val lit = i == pick
             pF.color = if (lit) Color.rgb(120, 90, 30) else Color.rgb(46, 36, 22); c.drawCircle(sx, sy, rad * 0.24f, pF)
-            pS.color = if (lit) Theme.gold else Color.rgb(150, 126, 90); pS.strokeWidth = if (lit) 2f else 1f; c.drawCircle(sx, sy, rad * 0.24f, pS)
+            pS.color = if (lit) Theme.gold else Theme.bronze; pS.strokeWidth = if (lit) 2f else 1f; c.drawCircle(sx, sy, rad * 0.24f, pS)
             val q = rad * 0.13f
             val bmp = items.getOrNull(i)?.icon ?: ids.getOrNull(i)?.let { Icons.get(it) }
             if (bmp != null) c.drawBitmap(bmp, null, RectF(sx - q, sy - q, sx + q, sy + q), pB)
@@ -287,34 +288,11 @@ object ControllerPictures {
         }
     }
 
-    /** the hub's disc and what opens the wheel on it */
-    private inline fun hub(c: Canvas, cx: Float, cy: Float, inside: () -> Unit) {
-        pF.color = Color.argb(235, 12, 12, 14); c.drawCircle(cx, cy, 17f, pF)
-        pS.color = Theme.gold; pS.strokeWidth = 1.4f; c.drawCircle(cx, cy, 17f, pS)
+    /** the hub's disc and what opens the wheel on it; [gold] = lit (the game's wheel over its windows) */
+    private inline fun hub(c: Canvas, cx: Float, cy: Float, gold: Boolean = false, inside: () -> Unit) {
+        pF.color = if (gold) Theme.gold else Color.argb(235, 12, 12, 14); c.drawCircle(cx, cy, 18f, pF)
+        pS.color = if (gold) Theme.text else Theme.gold; pS.strokeWidth = 1.4f; c.drawCircle(cx, cy, 18f, pS)
         inside()
-    }
-
-    /** the two settings beside the wheel, as signs: Tap (one press) or Hold (a long one) on the left, A or the stick on the right */
-    private fun openPick(c: Canvas, look: Look) {
-        // Open: a short or a long press bar, under a finger dot
-        val x = 22f
-        pF.color = Color.argb(200, 10, 10, 12); c.drawRoundRect(RectF(6f, 42f, 46f, 66f), 6f, 6f, pF)
-        pF.color = Theme.gold
-        if (look.tap) c.drawCircle(x, 54f, 4.5f, pF)
-        else c.drawRoundRect(RectF(x - 10f, 50f, x + 14f, 58f), 4f, 4f, pF)
-        // Pick: the A glyph, or the stick letting go
-        if (look.pickA) glyph(c, "a", 190f, 54f, 26f)
-        else glyphOrWord(c, "gen_rstick", "Stick", 190f, 58f, 46f)          // the stick art is small in its 64 px square
-    }
-
-    /** a small two-screen sign: which screen's wheel Start opens over a game window (top = the game's) */
-    private fun screens(c: Canvas, top: Boolean) {
-        val l = 176f; val w = 30f; val h = 14f
-        val a = RectF(l, 8f, l + w, 8f + h); val b = RectF(l + 2f, 26f, l + w - 2f, 26f + h)
-        pS.color = Color.rgb(150, 126, 90); pS.strokeWidth = 1.2f
-        c.drawRoundRect(a, 2f, 2f, pS); c.drawRoundRect(b, 2f, 2f, pS)
-        pF.color = Theme.gold; c.drawRoundRect(if (top) RectF(a.left + 4f, a.top + 3f, a.right - 4f, a.bottom - 3f)
-            else RectF(b.left + 4f, b.top + 3f, b.right - 4f, b.bottom - 3f), 1f, 1f, pF)
     }
 
     // ---------------------------------------------------------------- Combat helpers
@@ -384,7 +362,7 @@ object ControllerPictures {
         val press = look.t > 0f && k < 0.25f
         val s = if (press) 44f else 40f
         icon(c, ICON_HARM, 52f - s / 2f, 54f - s / 2f, s, Color.rgb(90, 140, 220), dim = false)
-        pS.color = if (lit) Theme.gold else Color.rgb(120, 110, 96); pS.strokeWidth = 2.4f
+        pS.color = if (lit) Theme.gold else Theme.bronzeDim; pS.strokeWidth = 2.4f
         c.drawLine(84f, 54f, 120f, 54f, pS); c.drawLine(120f, 54f, 112f, 47f, pS); c.drawLine(120f, 54f, 112f, 61f, pS)
         swords(c, 160f, 54f, 30f, lit)
     }
@@ -445,7 +423,8 @@ object ControllerPictures {
         pF.color = Color.rgb(28, 28, 30); c.drawCircle(cx, cy, r, pF)
         pS.color = Color.rgb(200, 200, 200); pS.strokeWidth = 1.2f; c.drawCircle(cx, cy, r, pS)
         val w = if (select) Glyphs.name("select") else word
-        val p = UiKit.bodyPaint(if (w.length > 2) size * 0.24f else size * 0.46f, Color.WHITE, shadow = false)
+        val p = UiKit.bodyPaint(size * 0.46f, Color.WHITE, shadow = false)
+        while (p.measureText(w) > r * 1.7f && p.textSize > 6f) p.textSize -= 0.5f        // a word ("Start", "Spells") fills the disc
         p.textAlign = Paint.Align.CENTER
         c.drawText(w, cx, cy - (p.ascent() + p.descent()) / 2f, p)
     }
