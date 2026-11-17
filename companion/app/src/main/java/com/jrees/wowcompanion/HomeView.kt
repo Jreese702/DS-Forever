@@ -845,6 +845,7 @@ class HomeView(
         if (was == HomeMapPages.Page.BUFFS && p != HomeMapPages.Page.BUFFS && auraPane.fullCursorOn) auraPane.leaveFull()
         mapView.controlsBuffs = auraPane.hasStop()
         mapView.controls = p == HomeMapPages.Page.CONTROLS
+        mapView.buffsPage = p == HomeMapPages.Page.BUFFS      // 2026-11-17: no quest cursor / list hints on the buffs page
         sticksCatch(p == HomeMapPages.Page.CONTROLS)
         Log.i(TAG, "map module: page ${p.name.lowercase()}")
         invalidate(); auraPane.invalidate()

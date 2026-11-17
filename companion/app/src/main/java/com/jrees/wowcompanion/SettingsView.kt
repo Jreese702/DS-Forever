@@ -121,6 +121,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segTheme = Array(Theme.presets.size) { RectF() }    // 2026-11-12: Settings > System > Theme (one tile a preset)
     private val segLight = Array(2) { RectF() }
     private val segHomeMap = Array(2) { RectF() }                     // 2026-11-17: Settings > Performance > Home map: full detail
+    private val segHomeStyle = Array(2) { RectF() }                   // 2026-11-17: Settings > Performance > Map style when zoomed out
     private val segLowGfx = Array(2) { RectF() }                      // 2026-11-08: Settings > System > Low-memory graphics                       // 1.0.17: Settings > Performance > Lighter mode
     private val segGameAcct = Array(2) { RectF() }                    // #47: Settings > General > Game account, Ask each time / Remembered
     private val segSwap = Array(2) { RectF() }                        // #232: Settings > General > Swap screens, On / Off
@@ -280,7 +281,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPq.flatMap { it.toList() } + segDanger.toList() + segFog.toList() + segChat.toList() +
-            segTheme.toList() + segLang.toList() + segVoice.toList() + segSwap.toList() + listOf(btnSwapRestart) + segGameAcct.toList() + segWinId.toList() + listOf(btnWinIdRestart) + segLight.toList() + segLowGfx.toList() + segHomeMap.toList() + segLocation.toList() + segLayout.toList() + segPetB.toList() + segPauseOpen.toList() + segPausePick.toList() + segPauseOver.toList() + segOpen.toList() + segPick.toList() +
+            segTheme.toList() + segLang.toList() + segVoice.toList() + segSwap.toList() + listOf(btnSwapRestart) + segGameAcct.toList() + segWinId.toList() + listOf(btnWinIdRestart) + segLight.toList() + segLowGfx.toList() + segHomeMap.toList() + segHomeStyle.toList() + segLocation.toList() + segLayout.toList() + segPetB.toList() + segPauseOpen.toList() + segPausePick.toList() + segPauseOver.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
             segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
@@ -318,7 +319,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart, btnSwapRestart, btnWinIdRestart,
                          btnLayout)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPetB, segPauseOpen, segPausePick, segPauseOver, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segVoice, segTheme, segLight, segLowGfx, segHomeMap, segGameAcct, segSwap, segWinId,
+                         segClassROpen, segClassRPick, segChat, segQt, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segVoice, segTheme, segLight, segLowGfx, segHomeMap, segHomeStyle, segGameAcct, segSwap, segWinId,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -365,7 +366,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         // #232: only with a second screen; Restart under it while the saved choice is not the one in use
         SettingsTabs.Block.SCREENS -> if (!ScreenSwap.offered) 0f else ROW_H + (if (swapPending() == ScreenSwap.Pending.NONE) 0f else 10f + ROW_H)
         SettingsTabs.Block.THEME -> themeGridH()
-        SettingsTabs.Block.LIGHTER -> ROW_H + 10f + ROW_H + 10f + ROW_H
+        SettingsTabs.Block.LIGHTER -> ROW_H + 10f + ROW_H + 10f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.ACCOUNT -> if (loginRow) ROW_H else 0f
         SettingsTabs.Block.GAME_ACCOUNT -> ROW_H
         SettingsTabs.Block.WINDOWS_ID -> if (winIdRestart()) ROW_H + 10f + ROW_H else ROW_H
@@ -540,6 +541,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 if (lgx >= 0) { Settings.lowMemGraphics = lgx == 0; invalidate(); return }
                 val hmi = segHomeMap.indexOfFirst { it.contains(x, y) }
                 if (hmi >= 0) { Settings.homeMapFull = hmi == 0; invalidate(); return }
+                val hsi = segHomeStyle.indexOfFirst { it.contains(x, y) }
+                if (hsi >= 0) { Settings.homeMapTerrain = hsi == 0; invalidate(); return }
                 val thi = segTheme.indexOfFirst { it.contains(x, y) }
                 if (thi >= 0) { Theme.use(Theme.presets[thi].id); invalidate(); return }
                 val vti = segVoice.indexOfFirst { it.contains(x, y) }
@@ -821,7 +824,14 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segmented(c, b, listOf(Tr.t("On"), Tr.t("Off")), if (Settings.homeMapFull) 0 else 1, segHomeMap)
             b
         }
-        return t3 + ROW_H
+        // 2026-11-17 (the user: "kept it as high fidelity there or made it an option toggle"): past the zone, the terrain or the painted map
+        val t4 = t3 + ROW_H + 10f
+        row(c, t4, Tr.t("Map style when zoomed out"), Tr.t("Home map past the zone"), enabled = true) { box ->
+            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, listOf(Tr.t("Terrain"), Tr.t("Painted")), if (Settings.homeMapTerrain) 0 else 1, segHomeStyle)
+            b
+        }
+        return t4 + ROW_H
     }
 
     /** General > Account: the saved Battle.net login (the host sets [loginRow]) */

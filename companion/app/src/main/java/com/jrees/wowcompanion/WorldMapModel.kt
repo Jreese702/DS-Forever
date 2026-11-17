@@ -125,6 +125,36 @@ class WorldMapModel {
         return continentOf(id)?.takeIf { placeOn(id, it) != null } ?: id
     }
 
+    /** world map [world]'s land for its assignment [a] (the recipe's row): the continent map (mapType 2) of that map, else a zone
+     *  straight under the world on it (an island the world places by its own row: feat/map-skyborn's Zephras Isle; the lowest id); null =
+     *  none. (feat/map-skyborn's landOf: one rule) */
+    fun continentMapOf(world: Int, a: Assign): Int? =
+        maps.values.firstOrNull { it.type == 2 && it.world?.continent == a.map && parentOf(it.id) == world }?.id
+            ?: maps.values.filter { it.type == 3 && it.world?.continent == a.map && parentOf(it.id) == world }.minByOrNull { it.id }?.id
+
+    /**
+     * THE CONTINENT A WORLD VIEW IS HEADED FOR (the user, 2026-11-17: "both maps have this problem when zooming in to Kalimdor it just
+     * changes to the ocean of the eastern kingdoms map"). A continent's frame on the world is its painting's whole sheet, mostly sea, so
+     * the frames OVERLAP: Kalimdor's runs to 0.63 of the world's width, Eastern Kingdoms' starts at 0.37. The room took "the first
+     * continent whose frame covers the view" (Eastern Kingdoms, first in the recipe) and bounded the pan by "the box nearest the view's
+     * middle", so a zoom from the world's middle toward Kalimdor was held on Eastern Kingdoms' west sea. The continent is the one whose
+     * own BOX (its assignment: where the world draws it; the smallest when they nest) holds the first point of [at] that lies in any box (the room: a glide's target,
+     * the cursor, the view's middle); when none does (the sea between), the box whose middle is nearest the first point ([nearest];
+     * false: null there). Null = [world] has no continents.
+     */
+    fun aimContinent(world: Int, at: List<FloatArray>, nearest: Boolean = true): Int? {
+        val boxes = assignsOf(world).mapNotNull { a -> continentMapOf(world, a)?.let { it to a } }
+        if (boxes.isEmpty() || at.isEmpty()) return null
+        // the smallest box that holds it (an island's box lies inside a continent's: feat/map-skyborn's rule)
+        for (p in at) boxes.filter { it.second.holds(p[0], p[1]) }.minByOrNull { (_, a) -> (a.u1 - a.u0) * (a.v1 - a.v0) }?.let { return it.first }
+        if (!nearest) return null
+        val p = at[0]
+        return boxes.minByOrNull { (_, a) ->
+            val cx = ((a.u0 + a.u1) / 2).toFloat() - p[0]; val cy = ((a.v0 + a.v1) / 2).toFloat() - p[1]
+            cx * cx + cy * cy
+        }?.first
+    }
+
     /** one finer map on a canvas: [kind] CONTINENT / ZONE / CITY, its [place], the layer it sits in ([parent]; null = the canvas) */
     class Layer(val id: Int, val kind: Int, val place: FloatArray, val parent: Int?)
 

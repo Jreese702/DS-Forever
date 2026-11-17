@@ -87,6 +87,7 @@ object MinimapTiles {
         contOk.clear()
         missing.clear()
         indexed = null
+        TerrainOverview.refresh()
     }
 
     /**

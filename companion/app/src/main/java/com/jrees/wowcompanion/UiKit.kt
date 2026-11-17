@@ -3541,6 +3541,28 @@ object UiKit {
         c.drawBitmap(mark, null, RectF(cx - m, cy - m, cx + m, cy + m), pBmp)
     }
 
+    /**
+     * AN UNTRACKED QUEST'S DISC (the user, 2026-11-17: "I want these to have the full sized circles like the others that can be touched to
+     * open them, just keep them not yellow and without a number"): the yellow quest disc's own art (MarkerArt's, the focused quest's; else
+     * the kit's) at [size], in grey (saturation 0, a little darker: Theme.questGrey's grey, the trivial quests' colour), no number and no
+     * mark. Without the art: a Theme.questGrey disc.
+     */
+    fun questDiscMuted(c: Canvas, cx: Float, cy: Float, size: Float) {
+        val r = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
+        val disc = MarkerArt.discLoaded() ?: tex("poi_disc_focus")
+        if (disc == null) {
+            pFlat.style = Paint.Style.FILL; pFlat.color = Theme.questGrey
+            c.drawCircle(cx, cy, size * 0.36f, pFlat)
+            pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2.5f; pFlat.color = Color.rgb(40, 40, 40)
+            c.drawCircle(cx, cy, size * 0.36f, pFlat)
+            return
+        }
+        c.drawBitmap(disc, null, r, pMuted)
+    }
+    private val pMuted = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f); postConcat(ColorMatrix().apply { setScale(0.85f, 0.85f, 0.85f, 1f) }) })
+    }
+
     private val pGhost = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
         colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0.35f) })
     }

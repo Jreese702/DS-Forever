@@ -11,7 +11,8 @@ class QuestLayers(private val get: (String, Boolean) -> Boolean, private val put
         AVAILABLE("q_avail", "Available quests", "givers you can take now (QuestieDB: level, class, race, quest chains)", true),
         LOW("q_low", "Low-level quests", "the grey ones, dimmed", false),
         TRACKED("q_tracked", "Tracked quests' objectives", "the game's own areas, QuestieDB where it has none", true),
-        OTHER("q_other", "Other quests' objectives", "every quest in the log, dimmer", true),
+        // the user, 2026-11-17: "instead of calling it 'Other quest objectives' call it 'untracked quest objectives'"; their discs grey
+        OTHER("q_other", "Untracked quest objectives", "every untracked quest in the log, in grey", true),
         TURN_INS("q_turnins", "Turn-ins", "every quest ready to hand in", true),
         DAILY("q_daily", "Daily & repeatable", "", true),
         SMALL("q_small", "Small map: quests nearby", "Home's small map: the ! within 200 yd, the focused quest's objectives", true),
