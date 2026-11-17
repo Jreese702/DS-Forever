@@ -3371,6 +3371,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     // ---------------------------------------------------------------- EXIT GUARD: no room ever without a working B (ExitGuard)
     private var guardUnheldSince = 0L
+    /** fix/polestar-b-home: since when the capture names nobody while Home's open map believes it holds (0 = it does not) */
+    private var mapHolderOffSince = 0L
     private var guardReader: PadInput? = null
     private var guardHeld = 0
     private var guardAskAt = 0L
@@ -3381,6 +3383,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val wheel = (::radialView.isInitialized && radialView.isOpen) || (::pauseView.isInitialized && pauseView.isOpen) || tradOpen()
         val needs = ExitGuard.needs(room == Room.HOME, homeView.homeGuestWanted(), wheel, homeView.mapGuarding())
         val now = SystemClock.uptimeMillis()
+        // fix/polestar-b-home (the user, 2026-11-17: "pressing B again doesnt do anything to return it home"): the open map module believes
+        // it holds, but the capture has named nobody for the grace: its B would be swallowed. Home's reader takes B (MapExitGuard)
+        val homeMapHolds = room == Room.HOME && homeView.mapHolds()
+        if (!homeMapHolds || capHolder.isNotEmpty()) mapHolderOffSince = 0L
+        else if (mapHolderOffSince == 0L) mapHolderOffSince = now
+        if (MapExitGuard.holdGone(homeMapHolds, homeMapHolds, capHolder, if (mapHolderOffSince == 0L) 0L else now - mapHolderOffSince)) {
+            mapHolderOffSince = 0L; homeView.mapHoldGone()
+        }
         if (!needs || capHolder.isNotEmpty()) { guardUnheldSince = 0L; guardOff(); return }
         if (guardUnheldSince == 0L) guardUnheldSince = now
         if (!ExitGuard.on(needs, capHolder, now - guardUnheldSince)) return

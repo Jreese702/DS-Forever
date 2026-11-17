@@ -249,6 +249,12 @@ class HomeView(
         watchB(false)
         mailCard(false)                                                   // another room: the mail card closes
         closeTypeTool()                                                   // f-trackpad-keyboard: another room: the tool closes, the guest freed
+        // fix/polestar-b-home (the user, 2026-11-17: "when opening the polestar menu from the map, and then pressing B to go back home, it
+        // returns to a full screen view of the map instead of the home screen. pressing B again doesnt do anything"): a room opened FROM a
+        // full-screen module (the map row's X, its A on the Calendar, a bound command) closes the module HERE, laid while its views are
+        // still lent, so its guest "home" is freed before the room takes and nothing of it (mapWanted / mapHeld, the fallback reader, the
+        // hold's re-ask, ExitGuard's mapGuarding) lives on while Home is hidden; Home comes back on its rest
+        if (flow.close()) { Log.i(TAG, "home: the full module closes (another room opens)"); apply(flow.screen, animate = false); onStateChanged?.invoke() }
         if (lent(mapView)) {
             mapView.compact = false; mapView.compactZoomButtons = false; mapView.headerRightInset = 0f; mapView.buttonTopInset = 0f
             mapView.showHeader = true
@@ -909,6 +915,21 @@ class HomeView(
     }
     /** ExitGuard (the host's): the map module guards itself */
     fun mapGuarding(): Boolean = mapWanted
+    /** fix/polestar-b-home: the module believes it holds the controller (its B then comes through the guest, never Home's own reader) */
+    fun mapHolds(): Boolean = mapWanted && mapHeld
+    /**
+     * fix/polestar-b-home (the user, 2026-11-17: "pressing B again doesnt do anything to return it home"): the capture names nobody
+     * holding (not the guest "home") while the open module still believes it holds (MapExitGuard.holdGone, the host's guard tick): no press
+     * reaches the module and its B was swallowed (onB leaves B to the guest). Not held any more: Home's own reader reads B (it closes the
+     * module) and the hold is asked again; the first press that arrives makes it held again (mapPad).
+     */
+    fun mapHoldGone() {
+        if (!mapHolds()) return
+        Log.i("WCLOG", "map module: the capture names nobody: not held, B read by Home, the hold asked again")
+        mapHeld = false; mapBSaid = null; mapView.padHints = false
+        mapFallbackOn()
+        mapAsk()
+    }
     /** ExitGuard's B: one step back out of Home's own controller layer - the aura list, the type tool, a module full screen */
     fun guardBack(): Boolean {
         if (auraPane.open != null) { auraPane.close(); changed(); return true }
