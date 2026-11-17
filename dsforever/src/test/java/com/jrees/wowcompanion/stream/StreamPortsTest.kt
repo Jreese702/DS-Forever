@@ -54,6 +54,17 @@ class StreamPortsTest {
         assertEquals(0, PairedHost.fromJson(bare)!!.httpPort)
     }
 
+    /** Desktop 0.2.31 moves a saved 47989 to 52989: the Thor follows the welcome, and never dials a stored stock port by guess */
+    @Test fun aPairingStoredOnTheStockPortFollowsDesktopsMove() {
+        // the pairing stored 47989 (Desktop 0.2.30 picked it); the bridge is late: wait, Apollo / another Sunshine answers there
+        for (t in listOf(0L, StreamPorts.WAIT_MS, StreamPorts.GIVE_UP_MS)) assertEquals(StreamPorts.Pick.Wait, StreamPorts.pick(desk, null, t))
+        // the welcome says 52989: that wins
+        val p = use(StreamPorts.pick(desk, reported, 0))
+        assertEquals(52989, p.http); assertEquals("Desktop", p.from)
+        assertTrue(StreamPorts.inStockBlock(47989)); assertTrue(StreamPorts.inStockBlock(48010))
+        assertFalse(StreamPorts.inStockBlock(52989)); assertFalse(StreamPorts.inStockBlock(0))
+    }
+
     @Test fun anOlderDesktopKeepsTodaysBehaviour() {
         val old = StreamPorts.Report(said = false, http = 0, https = 0)
         assertEquals(47989, use(StreamPorts.pick(desk, old, 0)).http)
@@ -106,12 +117,17 @@ class StreamPortsTest {
     }
 
     @Test fun theReasonsLine() {
-        assertEquals(StreamCurtain.BUSY_SUNSHINE, StreamCurtain.reason("other_sunshine", "pc busy: another Sunshine"))
-        assertEquals("PC busy: another Sunshine is running", StreamCurtain.BUSY_SUNSHINE)
-        assertEquals(StreamCurtain.BUSY_PROGRAM, StreamCurtain.reason("other_app", "pc busy: another program has the streaming ports"))
+        // the coexistence rule (2026-11-17): another host beside ours is not a reason; an older Desktop's word for it is not shown
+        assertEquals("", StreamCurtain.reason("other_sunshine", "pc busy: another Sunshine"))
+        assertEquals("", StreamCurtain.reason("other_app", "pc busy: another program has the streaming ports"))
+        assertEquals("", StreamCurtain.reason("", "pc busy: another Sunshine"))
+        assertEquals("", StreamCurtain.reason("", "pc busy: another program has the streaming ports"))
+        // Desktop 0.2.31's words
+        assertEquals("PC busy: its streaming ports are taken", StreamCurtain.reason("ports_taken", "pc busy: its streaming ports are taken"))
+        assertEquals("PC needs a virtual screen: see Desktop", StreamCurtain.reason("needs_screen", "pc needs a virtual screen: see Desktop"))
+        assertEquals("PC has no screen on", StreamCurtain.reason("no_screen", "pc has no screen on"))
         assertEquals(StreamCurtain.BUSY_LISTENING, StreamCurtain.reason("not_listening", ""))
         assertEquals(StreamCurtain.BUSY_STOPPED, StreamCurtain.reason("exited", "pc busy: the streaming host stopped"))
-        assertEquals(StreamCurtain.BUSY_SUNSHINE, StreamCurtain.reason("", "pc busy: another Sunshine"))
         assertEquals("PC busy: something new", StreamCurtain.reason("later", "pc busy: something new"))
         assertEquals("", StreamCurtain.reason("", ""))
     }
@@ -119,8 +135,8 @@ class StreamPortsTest {
     /** the curtain shows the PC's reason instead of sitting on "PC found" */
     @Test fun theCurtainShowsTheReason() {
         val pc = PcWow(state = "running", screen = "charselect", bnet = "signed_in")
-        val c = StreamCurtain.decide(false, true, pc, route = "home Wi-Fi", pcWhy = StreamCurtain.BUSY_SUNSHINE) as StreamCurtain.Shows.Curtain
-        assertEquals("PC busy: another Sunshine is running", c.line)
+        val c = StreamCurtain.decide(false, true, pc, route = "home Wi-Fi", pcWhy = StreamCurtain.BUSY_PORTS) as StreamCurtain.Shows.Curtain
+        assertEquals("PC busy: its streaming ports are taken", c.line)
         assertEquals(listOf("PC found (home Wi-Fi)"), c.rows.map { it.label })
         assertEquals(SetupFlow.Mark.OK, c.rows.single().mark)
         // waiting for Desktop's ports: says so, after the PC answered and before
@@ -129,7 +145,9 @@ class StreamPortsTest {
         // a problem reaching the PC still wins before it answered
         assertEquals("nope", (StreamCurtain.decide(false, true, null, problem = "nope", waiting = true) as StreamCurtain.Shows.Curtain).line)
         // once the stream is up the reason no longer holds it back
-        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, pc, pcWhy = StreamCurtain.BUSY_SUNSHINE))
+        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, pc, pcWhy = StreamCurtain.BUSY_PORTS))
+        // Apollo beside ours (an older Desktop said other_sunshine): the curtain goes on as normal
+        assertEquals("Connecting to your PC", (StreamCurtain.decide(false, true, pc, pcWhy = StreamCurtain.reason("other_sunshine", "pc busy: another Sunshine")) as StreamCurtain.Shows.Curtain).line)
         // nothing wrong: as before
         assertEquals("Connecting to your PC", (StreamCurtain.decide(false, true, pc) as StreamCurtain.Shows.Curtain).line)
     }

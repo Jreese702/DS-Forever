@@ -41,8 +41,15 @@ object StreamCurtain {
     const val LOGIN_SHOW_MS = 10_000L
     /** Desktop's word on Sunshine's ports hasn't come yet ([StreamPorts]: never the stock ports by guess) */
     const val WAITING = "Waiting for the PC"
+    /** Desktop 0.2.30 and older: another host on the stock ports. A false alarm while ours ran on its own ports (a player's Apollo,
+     *  2026-11-16), so no longer shown ([reason] gives ""); kept for the translations */
     const val BUSY_SUNSHINE = "PC busy: another Sunshine is running"
     const val BUSY_PROGRAM = "PC busy: another program has the streaming ports"
+    /** Desktop 0.2.31: another program holds OUR ports */
+    const val BUSY_PORTS = "PC busy: its streaming ports are taken"
+    /** Desktop 0.2.31: no screen is on at the PC and no virtual display driver is installed */
+    const val NEEDS_SCREEN = "PC needs a virtual screen: see Desktop"
+    const val NO_SCREEN = "PC has no screen on"
     const val BUSY_LISTENING = "PC busy: its streaming host isn't listening"
     const val BUSY_STOPPED = "PC busy: its streaming host stopped"
 
@@ -52,13 +59,17 @@ object StreamCurtain {
      * other why as Desktop said it.
      */
     fun reason(problem: String, why: String): String = when (problem) {
-        "other_sunshine" -> BUSY_SUNSHINE
-        "other_app" -> BUSY_PROGRAM
+        // the coexistence rule (2026-11-17): another host beside ours is fine; an older Desktop's word for it is not shown
+        "other_sunshine", "other_app" -> ""
+        "ports_taken" -> BUSY_PORTS
         "not_listening" -> BUSY_LISTENING
         "exited" -> BUSY_STOPPED
+        "needs_screen" -> NEEDS_SCREEN
+        "no_screen" -> NO_SCREEN
         else -> why.trim().let { w -> when {
             w.isEmpty() -> ""
-            w.startsWith("pc busy: another Sunshine", ignoreCase = true) -> BUSY_SUNSHINE
+            w.startsWith("pc busy: another Sunshine", ignoreCase = true) -> ""
+            w.startsWith("pc busy: another program", ignoreCase = true) -> ""
             w.startsWith("pc busy:", ignoreCase = true) -> "PC busy:" + w.substring(8)
             else -> w.replaceFirstChar { it.uppercase() }
         } }

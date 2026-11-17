@@ -71,7 +71,7 @@ class StreamCurtainShotsTest {
         shot("S5_login_error", 4.0f, true, PcWow(state = "running", screen = "login", focused = true, bnet = "signed_in", loginError = "308"))
         shot("S6_needs_you_lifted", 4.4f, true, PcWow(state = "running", screen = "login", focused = true, bnet = "signed_in", needsYou = true))
         shot("S7_signed_in_stream", 5.0f, true, PcWow(state = "running", screen = "charselect", focused = true, bnet = "signed_in"))
-        shot("S8_pc_busy", 1.0f, false, PcWow(state = "running", screen = "charselect", bnet = "signed_in"), StreamCurtain.BUSY_SUNSHINE)
+        shot("S8_pc_busy", 1.0f, false, PcWow(state = "running", screen = "charselect", bnet = "signed_in"), StreamCurtain.BUSY_PORTS)
     }
 
     /** the user, 2026-11-13: another Sunshine on the PC's stock ports; the curtain says why (es / fr too) instead of "PC found" for ever */
@@ -81,13 +81,14 @@ class StreamCurtainShotsTest {
             Tr.load(l, f.readText())
         }
         val pc = PcWow(state = "running", screen = "charselect", bnet = "signed_in")
-        val c = StreamCurtain.decide(false, true, pc, pcWhy = StreamCurtain.reason("other_sunshine", "pc busy: another Sunshine")) as StreamCurtain.Shows.Curtain
-        assertEquals("PC busy: another Sunshine is running", c.line)
+        val c = StreamCurtain.decide(false, true, pc, pcWhy = StreamCurtain.reason("ports_taken", "pc busy: its streaming ports are taken")) as StreamCurtain.Shows.Curtain
+        assertEquals("PC busy: its streaming ports are taken", c.line)
         for (line in listOf(StreamCurtain.WAITING, StreamCurtain.BUSY_SUNSHINE, StreamCurtain.BUSY_PROGRAM, StreamCurtain.BUSY_LISTENING,
-                StreamCurtain.BUSY_STOPPED, "DS Forever Desktop hasn't said its streaming port."))
+                StreamCurtain.BUSY_STOPPED, StreamCurtain.BUSY_PORTS, StreamCurtain.NEEDS_SCREEN, StreamCurtain.NO_SCREEN,
+                com.jrees.wowcompanion.stream.StreamQuality.NOTE_120, "DS Forever Desktop hasn't said its streaming port."))
             for (l in listOf("es", "fr")) assertNotEquals("$line ($l)", line, Tr.t(line, l))
-        assertEquals("PC ocupado: hay otro Sunshine en marcha", Tr.t(c.line, "es"))
-        assertEquals("PC occupé : un autre Sunshine est lancé", Tr.t(c.line, "fr"))
+        assertEquals("PC ocupado: sus puertos de streaming están ocupados", Tr.t(c.line, "es"))
+        assertEquals("PC occupé : ses ports de streaming sont pris", Tr.t(c.line, "fr"))
         // the box draws it
         val v = LoadingTopView(RuntimeEnvironment.getApplication()).apply { curtain = { c.rows to c.line } }
         v.measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY))

@@ -22,9 +22,9 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - `_dsforever._tcp` TXT (Desktop v1): `proto=1`, `id=<Desktop's host id, 32 lower-case hex>`, `pc=<PC name>`,
   `sunshine=<Sunshine's http port>`, `ver`. **[S3] Desktop also sends** `tls=1` + `fp=<sha-256 of the bridge certificate (DER), 64
   lower-case hex>` (the same port speaks wss, section 2) and `sid=<Sunshine's uniqueid>` once Sunshine is up.
-- **[S3] Sunshine's port is not always 47989.** Desktop picks the first free base port from 47989, 52989, 53989, 54989, 55989, 56989
-  (another Sunshine or Apollo may hold 47989: the development PC runs Apollo on 47989 / 48989 / 49989, so Desktop uses **52989**
-  there) and keeps it. The Thor must use `sunshine` (TXT) / `sunshine.http_port` (pair_ok, welcome) for Moonlight, and tie the right
+- **[S3] Sunshine's port is never 47989.** Desktop picks the first free base port from 52989, 53989, 54989, 55989, 56989 and keeps
+  it (0.2.31: the stock block 47984-48010 is left to a separately installed Sunshine or Apollo; a saved 47989 from 0.2.30 or older
+  moves to 52989 once, and the Thor follows the welcome's port). The Thor must use `sunshine` (TXT) / `sunshine.http_port` (pair_ok, welcome) for Moonlight, and tie the right
   `_nvstream` advert by `sid` when several share the PC's address.
 - The Thor merges the two adverts by IPv4 address; Desktop's `sunshine` port makes a PC streamable even if its `_nvstream` advert was
   missed. The Thor remembers the paired PC's address, follows it when the same `id` shows up at a new address (DHCP), and tries the
@@ -142,6 +142,8 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - `{"t":"focus"}` — bring the WoW window to the foreground (Sunshine streams the real desktop).
 - `{"t":"ping","id":"..."}` → `{"t":"pong","id":"..."}` (optional; WebSocket pings do the keep-alive).
 - `{"t":"unpair"}` → `{"t":"unpaired"}`, then close: the device is removed from Desktop.
+- `{"t":"stream_mode","w":1920,"h":1080,"fps":60}` *(Desktop 0.2.31)* — the Thor's stream mode, sent after each welcome. On a PC with
+  no screen on, a virtual screen Desktop makes through an installed SudoVDA takes this mode. No answer.
 - `{"t":"addons_status"}` / `{"t":"addons_install"}` → `{"t":"addons",...}` (Desktop's add-on install; not used by the Thor yet).
 
 ## 8. What the Thor tells the player

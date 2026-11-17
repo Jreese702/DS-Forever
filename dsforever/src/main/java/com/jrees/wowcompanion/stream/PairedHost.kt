@@ -258,10 +258,14 @@ object StreamPorts {
         if (r != null && !r.said) return storedOrStock("older Desktop")
         // Desktop said its Sunshine has no port yet: its word stands (the stored port may be another Sunshine's now)
         if (r != null) return Pick.Wait
-        // no welcome yet: wait; a saved pairing's own port after the wait (the bridge late or down)
-        if (waitedMs >= WAIT_MS && h.httpPort > 0) return stored("stored")
+        // no welcome yet: wait; a saved pairing's own port after the wait (the bridge late or down), but never a stored stock port
+        // (Desktop 0.2.31 moved off it: another Sunshine or Apollo answers there)
+        if (waitedMs >= WAIT_MS && h.httpPort > 0 && !inStockBlock(h.httpPort)) return stored("stored")
         return Pick.Wait
     }
+
+    /** the stock GameStream block (base 47989: TCP 47984-48010); Desktop 0.2.31 never uses it */
+    fun inStockBlock(http: Int) = http in 47963..48015
 }
 
 /**

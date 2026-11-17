@@ -44,6 +44,7 @@ namespace DsfDesktop.Ui
                 bool updating = ctl.UpdateLine.StartsWith("Updating to");
                 if (updating && !said) { said = true; icon.ShowBalloonTip(3000, "DS Forever Desktop", ctl.UpdateLine, ToolTipIcon.None); }
                 if (ctl.StartPendingUpdate()) { hover.Stop(); Quit(); return; }
+                if (ctl.TakeScreenOffer()) AskScreen();
                 if (!updating) said = false;
                 var t = updating ? "updating" : ctl.Stream == App.StreamState.Streaming ? "streaming to your Thor" : (ctl.Bridge?.Sessions().Count ?? 0) > 0 ? "your Thor is connected" : "ready";
                 icon.Text = "DS Forever Desktop: " + t;
@@ -60,6 +61,20 @@ namespace DsfDesktop.Ui
                 if (line == "show") ShowForm();
                 else if (line.StartsWith("event ")) ctl.OnEvent(line.Substring(6).Trim());
             }));
+        }
+
+        /// <summary>F6: a headless PC with no virtual display driver: asked once; only a yes installs (Windows asks for admin itself)</summary>
+        void AskScreen()
+        {
+            ShowForm();
+            var yes = MessageBox.Show(form,
+                "No screen is on at this PC, so there is nothing to stream.\n\n" +
+                "Install a virtual screen? (Virtual Display Driver: free, open source, MIT.) Windows asks for admin to install it.",
+                "DS Forever Desktop", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+            DsfDesktop.Log.I("virtual screen: install " + (yes ? "accepted" : "declined"));
+            if (!yes) return;
+            var err = ctl.InstallVirtualScreen();
+            if (err != null) MessageBox.Show(form, err, "DS Forever Desktop");
         }
 
         void ShowForm()

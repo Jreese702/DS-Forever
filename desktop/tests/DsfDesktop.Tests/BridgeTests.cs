@@ -24,6 +24,8 @@ namespace DsfDesktop.Tests
         public string StreamPairResult;   // null = the Sunshine side succeeds
         public string SunWhy = "";        // the PC can't stream: the Thor's reason ("pc busy: another Sunshine")
         public string InputWhy = "";      // the Thor's taps can't reach WoW (WowInput.ThorWhy; "" = no wow.input_why)
+        public volatile int[] Mode;       // the Thor's stream_mode
+        public void StreamMode(int w, int h, int fps) { Mode = new[] { w, h, fps }; }
         public FakeHost() { Devices = new DeviceStore(T.P("devices.json")); }
         public Dictionary<string, object> Info()
         {
@@ -517,6 +519,22 @@ namespace DsfDesktop.Tests
                 using (var evil = new Client(s.Port, origin: "https://evil.example")) A.True(evil.HandshakeStatus.Contains("403"), evil.HandshakeStatus);
                 using (var evil = new Client(s.Port, tls: true, origin: "https://evil.example")) A.True(evil.HandshakeStatus.Contains("403"), "over TLS too");
                 using (var ours = new Client(s.Port, origin: "http://localhost:" + s.Port)) A.True(ours.HandshakeStatus.Contains("101"), "our own test page");
+            }
+        }
+
+        [Test]
+        public static void TheThorsStreamModeReachesTheHost()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "stream_mode", ["w"] = 1920, ["h"] = 1080, ["fps"] = 120 });
+                c.Send(new Dictionary<string, object> { ["t"] = "ping", ["id"] = "m" });
+                c.Until("pong");
+                A.Eq("1920,1080,120", h.Mode == null ? "none" : string.Join(",", h.Mode));
             }
         }
 

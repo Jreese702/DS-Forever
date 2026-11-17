@@ -39,6 +39,8 @@ class BridgeLog(
     private val onBnetReady: (BnetFormAt?) -> Unit = {},
     /** the saved login (email, password), for WoW's login.txt on the PC */
     private val savedLogin: () -> Pair<String, String>? = { null },
+    /** the stream's mode (width, height, fps) for Desktop's virtual screen on a headless PC; null = not said */
+    private val streamMode: () -> Triple<Int, Int, Int>? = { null },
     /** the waits between tries (the tests pass a fake that also ends the loop) */
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
     /** the Thor's clock on the documents' `_gt` scale ([PcClock]; the tests pass a fixed one) */
@@ -124,6 +126,7 @@ class BridgeLog(
                     // the PC game gets Desktop's add-on set BEFORE it is started (never while it runs: its files are read at the start)
                     if (!m.wowRunning) c.send(BridgeProtocol.addonsInstall())
                     c.send(BridgeProtocol.focus())
+                    streamMode()?.let { (w, h, fps) -> c.send(BridgeProtocol.streamMode(w, h, fps)) }
                 }
                 is BridgeMsg.Doc -> emit(m)
                 is BridgeMsg.BacklogEnd -> clock.backlogEnd()

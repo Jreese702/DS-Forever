@@ -55,6 +55,21 @@ class BridgeLogTest {
         assertEquals("c".repeat(32), JSONObject(c.sent[0]).getString("device_id"))
         assertEquals("focus", JSONObject(c.sent[1]).getString("t"))
         assertTrue(status.any { it.contains("Den PC") })
+        assertFalse(c.sent.any { JSONObject(it).optString("t") == "stream_mode" })
+    }
+
+    /** Desktop 0.2.31 makes a virtual screen for a headless PC at the Thor's stream mode: sent after the welcome's focus */
+    @Test fun theStreamModeFollowsTheWelcome() {
+        val c = Script(listOf(welcome))
+        var log: BridgeLog? = null
+        log = BridgeLog("192.168.1.20", 48210, false, "", "t".repeat(43), "c".repeat(32),
+            dialer = { _, _, _, _ -> c }, onMessage = {}, onStatus = {}, streamMode = { Triple(1920, 1080, 120) },
+            sleeper = { log!!.stop() })
+        log.runHere()
+        val i = c.sent.indexOfFirst { JSONObject(it).optString("t") == "stream_mode" }
+        assertTrue(i > c.sent.indexOfFirst { JSONObject(it).optString("t") == "focus" })
+        val m = JSONObject(c.sent[i])
+        assertEquals(1920, m.getInt("w")); assertEquals(1080, m.getInt("h")); assertEquals(120, m.getInt("fps"))
     }
 
     @Test fun aResetDropsTheHalfDocumentAndTheSequence() {

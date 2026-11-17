@@ -11,6 +11,24 @@ namespace DsfDesktop.Wow
         public string DisplayName;  // "\\.\DISPLAY6": what Windows calls the monitor
         public string Friendly;
         public bool Primary;
+        /// <summary>Sunshine printed its "info" (origin, primary): the display is part of the desktop</summary>
+        public bool Active;
+        /// <summary>a virtual display (Apollo's SudoVDA, another IddCx driver): from Windows' adapter, else the friendly name</summary>
+        public bool Virtual;
+    }
+
+    /// <summary>what a display is: a real monitor, a virtual one that a streaming host makes per session and removes again
+    /// (SudoVDA, Parsec), or a virtual one that stays (Virtual Display Driver, usbmmidd)</summary>
+    public enum DisplayKind { Real, VirtualSession, VirtualPersistent }
+
+    /// <summary>one Windows display (EnumDisplayDevices): "\\.\DISPLAYn", its adapter's name and hardware id</summary>
+    public sealed class WinDisplay
+    {
+        public string Name, Adapter, AdapterId;
+        public bool Active, Primary;
+        public DisplayKind Kind;
+        public bool Virtual => Kind != DisplayKind.Real;
+        public override string ToString() => Name + " " + Adapter + (Active ? " (on" + (Primary ? ", primary" : "") + ")" : " (off)");
     }
 
     /// <summary>
@@ -41,9 +59,85 @@ namespace DsfDesktop.Wow
                     DisplayName = d.Str("display_name"),
                     Friendly = d.Str("friendly_name"),
                     Primary = info != null && info.Bool("primary"),
+                    Active = info != null,
+                    Virtual = KindOf(d.Str("friendly_name"), null) != DisplayKind.Real,
                 });
             }
             return res;
+        }
+
+        // ---- virtual displays (F3, 2026-11-17: Apollo's per-session SudoVDA screen was the only screen on a headless PC; ours
+        //      followed WoW onto it and lost the picture when Apollo's client left)
+
+        static readonly string[] SessionNames = { "SudoVDA", "SudoMaker", "Parsec" };
+        static readonly string[] PersistentNames = { "Virtual Display Driver", "MttVDD", "IddSampleDriver", "usbmmidd", "Amyuni", "Virtual Display" };
+
+        /// <summary>
+        /// A display adapter's kind from its name and hardware id: a session-made virtual one (SudoVDA, Parsec), a lasting virtual one
+        /// (Virtual Display Driver, usbmmidd, any other software adapter enumerated under ROOT\), else a real monitor (PCI / USB:
+        /// a DisplayLink dock is real).
+        /// </summary>
+        public static DisplayKind KindOf(string adapter, string adapterId)
+        {
+            var a = adapter ?? "";
+            var id = adapterId ?? "";
+            if (SessionNames.Any(n => a.IndexOf(n, StringComparison.OrdinalIgnoreCase) >= 0 || id.IndexOf(n, StringComparison.OrdinalIgnoreCase) >= 0))
+                return DisplayKind.VirtualSession;
+            if (PersistentNames.Any(n => a.IndexOf(n, StringComparison.OrdinalIgnoreCase) >= 0 || id.IndexOf(n, StringComparison.OrdinalIgnoreCase) >= 0))
+                return DisplayKind.VirtualPersistent;
+            if (id.StartsWith(@"ROOT\", StringComparison.OrdinalIgnoreCase)) return DisplayKind.VirtualPersistent;
+            return DisplayKind.Real;
+        }
+
+        /// <summary>Sunshine's list marked virtual from Windows' own (by "\\.\DISPLAYn"; Apollo names its screen after the client,
+        /// so the friendly name alone doesn't tell)</summary>
+        public static void MarkVirtual(List<SunshineDisplay> sun, List<WinDisplay> win)
+        {
+            foreach (var d in sun ?? new List<SunshineDisplay>())
+            {
+                var w = win?.FirstOrDefault(x => string.Equals(x.Name, d.DisplayName, StringComparison.OrdinalIgnoreCase));
+                if (w != null && w.Virtual) d.Virtual = true;
+            }
+        }
+
+        /// <summary>a screen to stream exists: a real monitor on, or a lasting virtual one on (not a session's, which goes away)</summary>
+        public static bool HasScreen(List<WinDisplay> win) => (win ?? new List<WinDisplay>()).Any(d => d.Active && d.Kind != DisplayKind.VirtualSession);
+
+        public static bool HasRealScreen(List<WinDisplay> win) => (win ?? new List<WinDisplay>()).Any(d => d.Active && d.Kind == DisplayKind.Real);
+
+        /// <summary>what changed when the display list changes: the active displays and their kinds, in one comparable line</summary>
+        public static string TopologyKey(List<WinDisplay> win)
+            => string.Join(";", (win ?? new List<WinDisplay>()).Where(d => d.Active).OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(d => d.Name + (d.Primary ? "*" : "") + ":" + d.Kind));
+
+        /// <summary>a display id may be remembered in settings only when it is a real monitor (a virtual one may go away)</summary>
+        public static bool MayRemember(SunshineDisplay d) => d != null && d.DeviceId != null && !d.Virtual;
+
+        public enum Change { None, Restart, ClearAndRestart }
+
+        /// <summary>
+        /// After Windows' displays changed (or on the 2 s check): a remembered display that has gone is cleared; our Sunshine is
+        /// restarted (it reads the displays at its start) when what it captures is gone or a screen came back while it had none.
+        /// Never during a stream (a restart cuts it). [output] = the display id written as output_name now (remembered or the
+        /// session's own virtual screen), [remembered] = the one in settings.
+        /// </summary>
+        public static Change OnChange(List<SunshineDisplay> sun, List<WinDisplay> win, string remembered, string output, bool streaming)
+        {
+            if (streaming || win == null || win.Count == 0) return Change.None;
+            bool ActiveNow(string displayName) => displayName != null && win.Any(w => w.Active && string.Equals(w.Name, displayName, StringComparison.OrdinalIgnoreCase));
+            if (remembered != null)
+            {
+                var r = sun?.FirstOrDefault(x => string.Equals(x.DeviceId, remembered, StringComparison.OrdinalIgnoreCase));
+                if (r == null || r.Virtual || !ActiveNow(r.DisplayName)) return Change.ClearAndRestart;
+            }
+            if (sun == null || sun.Count == 0) return Change.None;      // Sunshine hasn't listed yet
+            var captured = Captured(sun, output);
+            if (captured == null || !ActiveNow(captured)) return Change.Restart;
+            // a screen is on that Sunshine didn't list at its start
+            if (win.Any(w => w.Active && !sun.Any(x => x.Active && string.Equals(x.DisplayName, w.Name, StringComparison.OrdinalIgnoreCase)))
+                && !sun.Any(x => x.Active && !x.Virtual))
+                return Change.Restart;
+            return Change.None;
         }
 
         public enum Fix { None, RecaptureSunshine, MoveWow }
@@ -53,11 +147,13 @@ namespace DsfDesktop.Wow
         /// (a restart of Sunshine, harmless then, and remembered); during a stream (a restart would cut it) move the WoW window to
         /// the captured monitor instead.
         /// </summary>
-        public static Fix Decide(string wowDisplay, string capturedDisplay, bool streaming, bool canMapWowDisplay)
+        public static Fix Decide(string wowDisplay, string capturedDisplay, bool streaming, bool canMapWowDisplay, bool wowOnVirtual = false)
         {
             if (wowDisplay == null || capturedDisplay == null) return Fix.None;
             if (string.Equals(wowDisplay, capturedDisplay, StringComparison.OrdinalIgnoreCase)) return Fix.None;
             if (streaming) return Fix.MoveWow;
+            // never follow WoW onto a virtual display (another host's session screen goes away with its client): WoW comes to ours
+            if (wowOnVirtual) return Fix.MoveWow;
             return canMapWowDisplay ? Fix.RecaptureSunshine : Fix.None;
         }
 
@@ -69,7 +165,42 @@ namespace DsfDesktop.Wow
             return d?.DisplayName;
         }
 
-        // ---- Win32: the monitor a window is on, monitor rectangles, moving a window
+        // ---- Win32: Windows' display list, the monitor a window is on, monitor rectangles, moving a window
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct DISPLAY_DEVICE
+        {
+            public int cb;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DeviceName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceString;
+            public int StateFlags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceID;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceKey;
+        }
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool EnumDisplayDevices(string device, uint i, ref DISPLAY_DEVICE dd, uint flags);
+
+        /// <summary>every display output Windows knows (read-only), with its adapter and kind; empty if it can't be read</summary>
+        public static List<WinDisplay> WindowsDisplays()
+        {
+            var res = new List<WinDisplay>();
+            try
+            {
+                for (uint i = 0; i < 64; i++)
+                {
+                    var dd = new DISPLAY_DEVICE { cb = Marshal.SizeOf(typeof(DISPLAY_DEVICE)) };
+                    if (!EnumDisplayDevices(null, i, ref dd, 0)) break;
+                    if ((dd.StateFlags & 0x8 /* MIRRORING_DRIVER */) != 0) continue;
+                    res.Add(new WinDisplay
+                    {
+                        Name = dd.DeviceName, Adapter = dd.DeviceString, AdapterId = dd.DeviceID,
+                        Active = (dd.StateFlags & 0x1 /* ATTACHED_TO_DESKTOP */) != 0, Primary = (dd.StateFlags & 0x4 /* PRIMARY_DEVICE */) != 0,
+                        Kind = KindOf(dd.DeviceString, dd.DeviceID),
+                    });
+                }
+            }
+            catch (Exception) { }
+            return res;
+        }
 
         [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; public int W => Right - Left; public int H => Bottom - Top; }
 
