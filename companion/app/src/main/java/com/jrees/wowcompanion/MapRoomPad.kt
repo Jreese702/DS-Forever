@@ -47,6 +47,19 @@ object MapRoomPad {
         return d.mapIndexed { i, v -> ROW to ((if (i % 2 == 0) WP_A else WP_B) + v) }
     }
 
+    /**
+     * HOME'S MAP CONTROLS HOLD THE STICKS (Map.lua mr8; the user, 2026-11-17: "when using map controls it should function just like the
+     * map room with the sticks"): op digit 3 on lane A, then 1 = catch the sticks (the Map room's own stick catch, shown while Home's
+     * guest "home" holds), 0 = let them go. Null when the row is not published (an older Map.lua: the stick still walks, as before).
+     * The add-on lets them go by itself [HOME_STICKS_TTL_S] after the last "1", whenever Home's guest stops holding, and at logout, so
+     * a lost "0" (the app gone) never leaves the character unable to walk; the app says "1" again every [HOME_STICKS_KEEP_MS].
+     */
+    fun homeSticksCells(pad: JSONObject?, on: Boolean): List<Pair<String, Int>>? =
+        if (has(pad)) listOf(ROW to WP_A + 3, ROW to WP_B + (if (on) 1 else 0)) else null
+    const val HOME_STICKS_KEEP_MS = 4_000L
+    /** Map.lua's own let-go after the last "1" (its HOME_STICKS_TTL) */
+    const val HOME_STICKS_TTL_S = 10
+
     /** clear the game's pin: op 1, one tap */
     fun clearCells(): List<Pair<String, Int>> = listOf(ROW to WP_A + 1)
 

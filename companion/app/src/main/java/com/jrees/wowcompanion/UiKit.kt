@@ -2391,6 +2391,16 @@ object UiKit {
                 return
             }
         }
+        // a stick alone (Glyphs.plainStick: Home's map controls' Move): the game's "up" glyph below its arrow (the top 17 rows of 64)
+        Glyphs.plainStick(name)?.let { up ->
+            val u = tex("pad_$up")
+            if (u != null) {
+                pBmp.alpha = alpha
+                c.save(); c.clipRect(r.left, r.top + r.height() * 17f / 64f, r.right, r.bottom); c.drawBitmap(u, null, r, pBmp); c.restore()
+                pBmp.alpha = 255
+                return
+            }
+        }
         // f-abxy-split: every glyph in the chosen BUTTON GLYPHS set, whatever set a caller named (a missing picture: the named one)
         val b = tex("pad_" + Glyphs.translate(name, CastSettings.buttonLayout)) ?: tex("pad_$name") ?: return
         pBmp.alpha = alpha

@@ -139,6 +139,11 @@ class MailShotsTest {
 
     private var padN = 0
     private fun key(home: HomeView, k: String) { home.auraPad(JSONObject().put("k", k).put("n", ++padN)); ShadowLooper.idleMainLooper() }
+    /** 2026-11-17 (HomeMapPages): from the quest list Right is the map controls, Right again the pane (the auras, the envelope, the Calendar) */
+    private fun toPane(home: HomeView) {
+        key(home, "PADDRIGHT"); assertEquals("Right from the list: the map controls", HomeMapPages.Page.CONTROLS, home.mapPageNow())
+        key(home, "PADDRIGHT")
+    }
 
     private fun shot(home: HomeView, name: String) {
         val d = out ?: return
@@ -284,7 +289,7 @@ class MailShotsTest {
         val home = home("Elwynn Forest", mailDoc = "three")
         assertTrue(home.openMapModule())
         settle(); lay(home, W, H)
-        key(home, "PADDRIGHT"); assertEquals("mail", home.cornerFocus())
+        toPane(home); assertEquals("mail", home.cornerFocus())
         home.mail = HomeMail.parse(doc("none"))
         assertEquals("the cursor never rests on nothing", "calendar", home.cornerFocus())
         val before = calendarOpened
@@ -292,7 +297,7 @@ class MailShotsTest {
         // a card opened by a touch while the cursor is elsewhere (on the Calendar): B closes the card first, the cursor stays
         home.mail = HomeMail.parse(doc("one"))
         assertNull("A left the cursor on the map", home.cornerFocus())
-        key(home, "PADDRIGHT"); assertEquals("mail", home.cornerFocus())
+        toPane(home); assertEquals("mail", home.cornerFocus())
         key(home, "PADDRIGHT"); assertEquals("calendar", home.cornerFocus())
         val on = home.mailBoxOnHome()
         tap(home, on.centerX(), on.centerY()); assertTrue("the envelope's touch in the open map", home.mailOpen)
@@ -366,8 +371,8 @@ class MailShotsTest {
         settle(); lay(home, W, H)
         assertEquals("MAP", full(home).toString())
         assertNull(home.cornerFocus())
-        key(home, "PADDRIGHT")
-        assertEquals("Right from the map (no auras): the envelope", "mail", home.cornerFocus())
+        toPane(home)
+        assertEquals("Right from the map controls (no auras): the envelope", "mail", home.cornerFocus())
         shot(home, "map_cursor")
         key(home, "PADDRIGHT"); assertEquals("Right again: the Calendar button", "calendar", home.cornerFocus())
         key(home, "PADDLEFT"); assertEquals("Left: back onto the envelope", "mail", home.cornerFocus())
@@ -381,11 +386,12 @@ class MailShotsTest {
         assertFalse("leaving the envelope closes the card", home.mailOpen); assertEquals("calendar", home.cornerFocus())
         val before = calendarOpened
         key(home, "PAD1"); assertEquals("A on the Calendar still opens it", before + 1, calendarOpened)
-        key(home, "PADDRIGHT"); assertEquals("mail", home.cornerFocus())
+        toPane(home); assertEquals("mail", home.cornerFocus())
         key(home, "PAD2"); assertNull("B with no card: back to the map", home.cornerFocus())
+        assertEquals("... its quest list", HomeMapPages.Page.QUESTS, home.mapPageNow())
         assertEquals("MAP", full(home).toString())
         // the module closing closes the card
-        key(home, "PADDRIGHT"); key(home, "PAD1"); assertTrue(home.mailOpen)
+        toPane(home); key(home, "PAD1"); assertTrue(home.mailOpen)
         home.homeDisc(); settle()
         assertFalse(home.mailOpen)
     }
@@ -394,8 +400,9 @@ class MailShotsTest {
         val home = home("Elwynn Forest", mailDoc = "none")
         assertTrue(home.openMapModule())
         settle(); lay(home, W, H)
-        key(home, "PADDRIGHT"); assertEquals("calendar", home.cornerFocus())
+        toPane(home); assertEquals("calendar", home.cornerFocus())
         key(home, "PADDLEFT"); assertNull(home.cornerFocus())
+        assertEquals("Left off the pane: the map controls", HomeMapPages.Page.CONTROLS, home.mapPageNow())
     }
 
     @Test fun theStandInEnvelope() {

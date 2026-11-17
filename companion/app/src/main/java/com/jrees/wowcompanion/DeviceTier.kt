@@ -58,6 +58,14 @@ object DeviceTier {
     fun besideModel(mb: Long, lighter: Boolean): Boolean = mb >= BESIDE_MB && !lighter
     fun besideModel(): Boolean = besideModel(totalMb, runCatching { Settings.lighterMode }.getOrDefault(false))
 
+    /**
+     * HOME'S MAP AT FULL DETAIL (the user, 2026-11-17: "I am slightly concerned about the map turning into a memory sink, if it does we
+     * might need to evaluate how big it is and turn this into a Thor based toggle"): by default the whole-world zoom-out on the Map
+     * room's art only on the 16 GB Thor Max (Android counts 15255 MB); the 8 / 12 GB Thors and an unknown RAM keep today's lighter map
+     * (Settings > Performance > Home map: full detail). The map controls page is everywhere.
+     */
+    fun homeMapFullDetail(mb: Long): Boolean = mb >= BESIDE_MB
+
     /** the notice before Play on the 8 / 12 GB models (the user: "some kind of notice for Lower model Thors that the art will not build
      *  in the background if they proceed") */
     const val ART_NOTICE_TITLE = "The rest of the game art builds while the game is closed"
