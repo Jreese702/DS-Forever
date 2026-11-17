@@ -28,7 +28,7 @@ object SettingsTabs {
     /** a heading that folds (the user's pick: a tab opens with its FIRST group open, the rest folded). [headless] = a group with NO
      *  heading: nothing to fold, no heading stop, always open (Add-ons' Import button: the user, 2026-11-16, "Import addons should be a
      *  single button at the top of the list"); the first group that opens is then the first one WITH a heading */
-    enum class Group(val tab: Tab, val heading: String, val headless: Boolean = false) {
+    enum class Group(val tab: Tab, val heading: String, val headless: Boolean = false, val cards: Boolean = false) {
         LOOK(Tab.GENERAL, "Look"), ACCOUNT(Tab.GENERAL, "Account"), HELP(Tab.GENERAL, "Help"),
         // GitHub #43 cb3 (the user, 2026-11-13: "the tap to cast bar should get its own bottom screen section"): its own group
         HOME(Tab.BOTTOM, "Home"), CAST_BAR(Tab.BOTTOM, "Tap-to-cast bar"), MAP(Tab.BOTTOM, "Map"), CHAT(Tab.BOTTOM, "Chat"),
@@ -41,7 +41,9 @@ object SettingsTabs {
         COMBAT(Tab.CONTROLLER, "Combat helpers"),
         // the user, 2026-11-16: "Import addons should be a single button at the top of the list": first on the tab, no heading
         IMPORT(Tab.ADDONS, "Import add-ons", headless = true),
-        POLESTAR(Tab.ADDONS, "Polestar"), SPOKEN(Tab.ADDONS, "Spoken"), QUESTTRAIL(Tab.ADDONS, "QuestTrail"), MANNERS(Tab.ADDONS, "Manners"),
+        // the beautify pass (2026-11-17, the design's section 5): the third-party add-ons are ONE row of picture cards (AddonTiles), a
+        // group with no heading, always open ([cards]); it was one folding group each (Polestar, Spoken, QuestTrail, Manners)
+        CARDS(Tab.ADDONS, "Add-ons", headless = true, cards = true),
         // offline voice's model files (the user, 2026-11-16: "we could make the per languege downloads part of the addons folder"): app
         // files, never the game's AddOns; after Manners, so Polestar's group still opens first
         VOICE(Tab.ADDONS, "Voice"),
@@ -52,8 +54,8 @@ object SettingsTabs {
         STREAMING(Tab.PERFORMANCE, "Streaming"),
     }
 
-    /** who draws a block: SettingsView, Home's section (HomeSettingsSection) or a GameUiSection part */
-    enum class Drawer { VIEW, HOME, GAME_UI }
+    /** who draws a block: SettingsView, Home's section (HomeSettingsSection), a GameUiSection part, or Add-ons' cards (AddonTiles) */
+    enum class Drawer { VIEW, HOME, GAME_UI, ADDONS }
 
     /** the order within a group is this enum's order; [subHead] = the block keeps its own sub-heading inside its group (the wheels) */
     enum class Block(val group: Group, val heading: String, val rows: List<String>, val drawer: Drawer = Drawer.VIEW,
@@ -126,11 +128,13 @@ object SettingsTabs {
         // Import (a .zip through Android's picker): ONE full-width button first on the tab (so first in this enum's Add-ons part), its status line and confirm card under it
         // (the user, 2026-11-16: "Import addons should be a single button at the top of the list"; SettingsView.drawImport)
         IMPORT(Group.IMPORT, "Import add-ons", listOf("Import add-ons")),
-        ADDON_POLESTAR(Group.POLESTAR, "Polestar", ThirdPartyAddons.POLESTAR.rowWords()),
-        QUEST_TRACKING(Group.POLESTAR, "Quest tracking", listOf("Quest tracking")),
-        ADDON_SPOKEN(Group.SPOKEN, "Spoken", ThirdPartyAddons.SPOKEN.rowWords()),
-        ADDON_QUESTTRAIL(Group.QUESTTRAIL, "QuestTrail", ThirdPartyAddons.QUESTTRAIL.rowWords()),
-        ADDON_MANNERS(Group.MANNERS, "Manners", ThirdPartyAddons.MANNERS.rowWords()),
+        // the cards (2026-11-17): Polestar, Spoken, Manners, then QuestTrail (only while a copy is there: last, so it never leaves a hole);
+        // Quest tracking is Polestar's card's guide line (the same PolestarGuide choice)
+        ADDON_POLESTAR(Group.CARDS, "Polestar", ThirdPartyAddons.POLESTAR.rowWords(), Drawer.ADDONS),
+        QUEST_TRACKING(Group.CARDS, "Quest tracking", listOf("Quest tracking"), Drawer.ADDONS),
+        ADDON_SPOKEN(Group.CARDS, "Spoken", ThirdPartyAddons.SPOKEN.rowWords(), Drawer.ADDONS),
+        ADDON_MANNERS(Group.CARDS, "Manners", ThirdPartyAddons.MANNERS.rowWords(), Drawer.ADDONS),
+        ADDON_QUESTTRAIL(Group.CARDS, "QuestTrail", ThirdPartyAddons.QUESTTRAIL.rowWords(), Drawer.ADDONS),
         // offline voice (VoiceModels): English, and every other language in one file, each small and full ("Voice: English · 60 MB");
         // shown only in a build with libdsfwhisper.so
         ADDON_VOICE(Group.VOICE, "Voice", VoiceModels.Model.values().map { it.label }),
@@ -167,7 +171,9 @@ object SettingsTabs {
         // sends its first "lay" document; the tiles' groups always have their fixed slots); a folding one its headless groups (never
         // folded: Add-ons' Import button) and its first group with a heading
         if (!tab.folds) groups(tab).filter(hasRows).toSet()
-        else groups(tab).filter(hasRows).let { gs -> gs.filter { it.headless }.toSet() + gs.filter { !it.headless }.take(1) }
+        // a tab with cards (Add-ons, 2026-11-17): the cards are its content, always open; its long lists (Voice, Imported) open folded
+        else groups(tab).filter(hasRows).let { gs -> gs.filter { it.headless }.toSet() +
+            (if (gs.any { it.cards }) emptyList() else gs.filter { !it.headless }.take(1)) }
 
     /** [g] folds (a tap / A on its heading opens or folds it): a folding tab's group with a heading */
     fun folds(g: Group): Boolean = g.tab.folds && !g.headless
