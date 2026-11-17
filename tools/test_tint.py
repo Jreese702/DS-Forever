@@ -5,7 +5,7 @@ game.
 
 Checks the radius rule (shared with Map's bottom-map circles), the states by distance (none / yellow / orange / red) and their margin,
 who is tinted (aggressive, not dead, not tapped; never neutral or players; none in combat, with a fade), the frame anchored to the plate
-and the plate never read or written, the smoothing's speed limit, the setting, and the pull log (ag7). Needs lupa. Exit code 1 on any
+and the plate never read or written (at10: but its effective scale / alpha, which the tint follows as the plate grows and fades in), the smoothing's speed limit, the setting, and the pull log (ag7). Needs lupa. Exit code 1 on any
 failure."""
 import os
 import sys
@@ -15,16 +15,23 @@ import test_aggro as ta  # noqa: E402
 import test_compass as tc  # noqa: E402
 
 PLATES = r'''
-PLATE_WRITES, PLATE_READS = 0, 0
+PLATE_WRITES, PLATE_READS, EFF_READS = 0, 0, 0
 WorldFrame = setmetatable({ name = "WorldFrame" }, getmetatable(UIParent))
--- a plate: anything read or written on it is counted (the tint may only ANCHOR to it)
+-- (at10: our frame's own scale and parent, as the client's)
+local Rg = getmetatable(UIParent)
+function Rg:SetScale(s) self.scale = s end
+function Rg:GetParent() return self.parent end
+-- a plate: anything read or written on it is counted (the tint may only ANCHOR to it; at10: and read its EFFECTIVE scale / alpha,
+-- the game's distance scale and fade: u.ps / u.pa, counted apart in EFF_READS)
+local function eff(u, k) return function() EFF_READS = EFF_READS + 1; local v = u[k]; if v == nil then return 1 end; return v end end
 local function plateFor(u)
     local p = { GetCenter = function() PLATE_READS = PLATE_READS + 1; return 600, 400 end,
-                GetEffectiveScale = function() PLATE_READS = PLATE_READS + 1; return 1 end }
+                GetEffectiveScale = eff(u, "ps"), GetEffectiveAlpha = eff(u, "pa") }
     -- (at3: Forever's plate: its UnitFrame's health bar container - u.nobar: a plate without one)
     -- (at4: its UnitFrame in the plate's strata at its level; any write to it counted too)
     if not u.nobar then
-        p.UnitFrame = setmetatable({ HealthBarsContainer = { name = "bar" },
+        p.UnitFrame = setmetatable({ HealthBarsContainer = { name = "bar", GetEffectiveScale = eff(u, "ps") },
+                                     GetEffectiveAlpha = eff(u, "pa"),
                                      GetFrameStrata = function() return "LOW" end, GetFrameLevel = function() return 7 end },
                                    { __newindex = function(t, k, v) PLATE_WRITES = PLATE_WRITES + 1; rawset(t, k, v) end })
     end
@@ -33,6 +40,9 @@ end
 TARGET = nil
 function UnitIsUnit(a, b) if b == "target" then return TARGET ~= nil and a == TARGET end
     local tok = a:match("^(.-)target$"); local u = tok and UNITS[tok]; return u ~= nil and u.onMe == true and b == "player" end
+HAS_TARGET = false
+local ue = UnitExists
+function UnitExists(t) if t == "target" and HAS_TARGET then return true end return ue(t) end
 C_NamePlate = { GetNamePlateForUnit = function(t) local u = UNITS[t]; if u then u.plate = u.plate or plateFor(u); return u.plate end end }
 '''
 
@@ -122,6 +132,7 @@ def main():
         and o.f.strata == "LOW" and o.f.level == 6 and o.t.layer == "BACKGROUND")
     chk("the tint never READS or WRITES a plate (only anchors to it): %d reads, %d writes" % (tread[0], Lg.PLATE_WRITES),
         tread[0] == 0 and Lg.PLATE_WRITES == 0)
+
     # the margin: a state changes only HYST (1) yd past its line on the way out; at once on the way in
     chk("margin: 20.5 yd from 'inside' stays inside; 21.5 moves to near; 19.5 from 'near' is inside at once",
         R.state(20.5, 20, "inside") == "inside" and R.state(21.5, 20, "inside") == "near" and R.state(19.5, 20, "near") == "inside")
@@ -231,6 +242,61 @@ def main():
     lines = [Lg.SENT[i] for i in range(n0 + 1, len(Lg.SENT) + 1) if getattr(Lg.SENT[i], "probe", None) == "pull"]
     chk("ag8: a turn 2 s after is still refused as stale: %s" % [(l.ok, l.why) for l in lines],
         len(lines) == 1 and lines[0].why == "stale")
+    # at10 (the user, 2026-11-17: the plate "has a low opacity and is smaller ... I wonder if we should only show the aggro tint as the
+    # opacity of the wow plates turns up?"): the game scales / fades the plate by distance; our tint follows both
+    def alpha(o):
+        return o.f.alpha if o.f.shown else 0.0
+    unit("nameplate16", 15, pa=0.6, ps=0.8); fire("NAME_PLATE_UNIT_ADDED", "nameplate16"); run(1.0)
+    o16 = tint("nameplate16")
+    chk("at10: a far plate (alpha 0.6, scale 0.8): the tint is down (alpha %.2f, shown %s) though its state is red (%s)"
+        % (o16.f.alpha or -1, o16.f.shown, o16.state), o16.state == "inside" and o16.f.shown is False)
+    chk("at10: our frame takes the plate's scale (0.8: %s), so the outsets shrink with its bar" % o16.f.scale,
+        abs((o16.f.scale or 0) - 0.8) < 1e-6)
+    # the walk up: the plate fades 0.6 -> 1 and grows 0.8 -> 1 over 2 s; every frame the tint's alpha is 0 below 0.9, never above
+    # 0.95 x the plate's, and its scale is the plate's
+    bad, firstOn, seq = [], None, []
+    n = 60
+    for i in range(n + 1):
+        u = Lg.UNITS.nameplate16
+        u.pa, u.ps = 0.6 + 0.4 * i / n, 0.8 + 0.2 * i / n
+        run(1 / 30)
+        a = alpha(o16)
+        seq.append(round(a, 3))
+        if u.pa < 0.9 - 1e-9 and a != 0:
+            bad.append(("on early", round(u.pa, 3), a))
+        if a > 0.95 * u.pa + 1e-9:
+            bad.append(("above the plate", round(u.pa, 3), a))
+        if abs((o16.f.scale or 0) - u.ps) > 0.0021:
+            bad.append(("scale", round(u.ps, 3), o16.f.scale))
+        if a > 0 and firstOn is None:
+            firstOn = u.pa
+    chk("at10: walking up: the tint stays down below 0.9 of the plate's alpha (first on at %.3f), at most 0.95 x the plate's, its scale "
+        "the plate's every frame (%s)" % (firstOn or -1, bad[:3]), not bad and firstOn is not None and firstOn >= 0.9)
+    chk("at10: ... and rises without a step back (%s)" % seq[-12:], all(b >= a - 1e-9 for a, b in zip(seq, seq[1:])))
+    chk("at10: fully in (alpha 1, scale 1): as before (alpha %.3f, scale %s)" % (alpha(o16), o16.f.scale),
+        abs(alpha(o16) - 0.95) < 1e-6 and abs((o16.f.scale or 0) - 1) < 1e-6)
+    # half way up the gate: smoothstep, below the plain multiply
+    Lg.UNITS.nameplate16.pa = 0.935; run(1 / 30)
+    chk("at10: half way up the gate (plate 0.935): %.3f (0 < it < 0.95 x 0.935)" % alpha(o16), 0 < alpha(o16) < 0.95 * 0.935)
+    # behind a wall (nameplateOccludedAlphaMult): the plate dims, the tint goes with it
+    Lg.UNITS.nameplate16.pa = 0.4; run(1 / 30)
+    chk("at10: an occluded plate (0.4): the tint is down (%s)" % o16.f.shown, o16.f.shown is False)
+    # another unit targeted, nameplateNotSelectedAlpha 0.5: an unselected plate's full is 0.5, so a 0.5 plate is fully in
+    Lg.CV.nameplateNotSelectedAlpha = "0.5"; Lg.HAS_TARGET = True
+    Lg.UNITS.nameplate16.pa = 0.5; run(1 / 30)
+    on5 = alpha(o16)
+    Lg.HAS_TARGET = False; run(1 / 30)
+    chk("at10: with another unit targeted and nameplateNotSelectedAlpha 0.5, a 0.5 plate is fully in (tint %.3f = 0.95 x 0.5); "
+        "no target: down (%s)" % (on5, o16.f.shown), abs(on5 - 0.475) < 1e-6 and o16.f.shown is False)
+    Lg.CV.nameplateNotSelectedAlpha = None
+    # a secret alpha: as before (the tint's own alpha)
+    Lg.UNITS.nameplate16.pa = Lg.SECRET; Lg.UNITS.nameplate16.ps = Lg.SECRET; run(1 / 30)
+    chk("at10: a secret alpha / scale counts as 1 (tint %.3f, scale %s)" % (alpha(o16), o16.f.scale),
+        abs(alpha(o16) - 0.95) < 1e-6 and o16.f.scale == 1)
+    Lg.UNITS.nameplate16 = None; fire("NAME_PLATE_UNIT_REMOVED", "nameplate16"); run(0.2)
+    chk("at10: only the effective scale / alpha are read (%d reads), nothing else (%d) and nothing written (%d)"
+        % (Lg.EFF_READS, tread[0], Lg.PLATE_WRITES), Lg.EFF_READS > 0 and tread[0] == 0 and Lg.PLATE_WRITES == 0)
+
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
 

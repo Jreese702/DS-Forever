@@ -5375,7 +5375,20 @@ end
 -- Now R.barAnchor puts the art's outline ON the rim's visible edge (3 texels out on every side) and only round the health bar (the
 -- cast bar, pips and auras under it are never inside): the frame's outsets solved from the art's own geometry (its outline PAD - 3 in
 -- from the frame's sides and bottom, PAD - 4 from its top, of a 166 x 20 bar's frame), so the glow beyond it is the nameplate's.
-WC.rings = { V = "at9", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
+-- at10 (the user, 2026-11-17: "when first walking up on aggressive mobs the name plate has a low opacity and is smaller and so the aggro
+-- tint looks a little bit weird until it grows. part of it is the shape is wrong at first and then the other part is I think that the
+-- opacity clashes with the low opacity of the wow plates. I wonder if we should only show the aggro tint as the opacity of the wow
+-- plates turns up?"): the game (C++, not FrameXML: Blizzard_NamePlates only sets the plates' fixed SIZE, C_NamePlate.SetNamePlateSize)
+-- SCALES each plate's base frame by distance (nameplateMinScale .. nameplateMaxScale) and fades it (nameplateMinAlpha ..
+-- nameplateMaxAlpha; nameplateOccludedAlphaMult behind walls). Our frame is WorldFrame's child, not the plate's, so it got neither:
+--   THE SHAPE: our frame's scale is the anchor's (its health bar's) effective scale over WorldFrame's, re-read each tick (a SetScale
+--   on our own frame only when it moved), so the PAD / TOP_IN outsets and the art's outline shrink and grow with the bar itself.
+--   THE OPACITY: shown alpha = our fade (o.a, as before) x the plate's effective alpha (its UnitFrame's GetEffectiveAlpha) x a gate:
+--   0 below SHOW_LO (0.9) of the plate's full alpha (nameplateMaxAlpha, x nameplateNotSelectedAlpha while another unit is targeted:
+--   CVars READ only), a smoothstep to 1 at SHOW_HI (0.97). A plain multiply alone would still show a faint, smaller copy far out;
+--   the gate keeps it off until the plate is (nearly) fully in, as the user asked, and the multiply keeps it matched after.
+--   Plain reads only (no taint); a secret or missing value counts as 1 (as before). The plate is still never written or hooked.
+WC.rings = { V = "at10", SHOW_LO = 0.9, SHOW_HI = 0.97, BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
              ALPHA = 0.95, OUTSET = 6, PAD = 9, TOP_IN = 4, TEX_V = 53 / 64, list = {}, est = {}, react = {}, why = {}, n = 0,
              COL = { far = { 0.32, 0.86, 0.36 }, approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
              TEX = "Interface\\AddOns\\WowCompanion\\Media\\tint_glow" }
@@ -5464,8 +5477,51 @@ do
         return l, t, l, b
     end
 
+    -- at10: our frame's scale = the anchor's effective scale over our parent's (to: nil = 1, the target bar on UIParent); a SetScale
+    -- on OUR frame only, and only when it moved (the outsets are in our frame's units, so they follow the bar)
+    function R.fitScale(o, to)
+        local sc = 1
+        if to then
+            local par = o.f:GetParent()                              -- (method-form pcalls: no closure a frame)
+            local okA, a = pcall(to.GetEffectiveScale, to)
+            local okP, p = false, nil
+            if type(par) == "table" then okP, p = pcall(par.GetEffectiveScale, par) end
+            a, p = okA and num(a), okP and num(p)
+            if a and p and a > 0 and p > 0 then sc = a / p end
+        end
+        if not o.sc or math.abs(o.sc - sc) > 0.002 then o.f:SetScale(sc); o.sc = sc end
+        return sc
+    end
+    -- at10: the plate's part of the tint's alpha: its effective alpha (pa) x the gate (0 below SHOW_LO of its full, smoothstep to 1
+    -- at SHOW_HI). Its full: nameplateMaxAlpha, x nameplateNotSelectedAlpha while another unit is the target (READ only; 1 when
+    -- unreadable). A secret / missing alpha = 1 (the tint as before at9)
+    local function cvn(k)
+        local ok, v = pcall(function() return C_CVar.GetCVar(k) end)
+        v = ok and type(v) == "string" and tonumber(v) or nil
+        return (v and v > 0) and v or nil
+    end
+    function R.plateFactor(ref, isTarget)
+        if type(ref) ~= "table" then return 1 end
+        local ok, pa = pcall(ref.GetEffectiveAlpha, ref)
+        pa = ok and num(pa) or nil
+        if not pa then return 1 end
+        if pa <= 0 then return 0 end
+        local c = R.full
+        if not c then                                                -- read once a tick (R.tick clears it)
+            local okT, hasT = pcall(function() return UnitExists("target") == true end)
+            c = { max = cvn("nameplateMaxAlpha") or 1, ns = (okT and hasT) and (cvn("nameplateNotSelectedAlpha") or 1) or 1 }
+            R.full = c
+        end
+        local full = isTarget and c.max or c.max * c.ns
+        local x = (pa / math.min(1, full) - R.SHOW_LO) / (R.SHOW_HI - R.SHOW_LO)
+        if x <= 0 then return 0 end
+        if x >= 1 then return math.min(1, pa) end
+        return math.min(1, pa) * x * x * (3 - 2 * x)
+    end
+
     function R.tick(dt)
         local rec = A and A.last
+        R.full = nil
         local on = R.wanted() and rec and type(rec.m) == "table" and not A.off
         local seen = {}
         R.n = 0
@@ -5543,8 +5599,10 @@ do
                         -- user's bisect 2026-11-08 found it behind test6's ADDON_ACTION_FORBIDDEN errors; at4's layering is back)
                         o.f:SetPoint("TOPLEFT", to, "TOPLEFT", -pad, bar and (pad - R.TOP_IN) or pad)
                         o.f:SetPoint("BOTTOMRIGHT", to, "BOTTOMRIGHT", pad, -pad)
-                        o.plate, o.bar = plate, bar
+                        o.plate, o.bar, o.to = plate, bar, to
                     end
+                    -- at10: the anchor's own scale (the game's distance scale on the plate), so the outsets grow with the bar
+                    pcall(R.fitScale, o, (not o.onBar) and o.to or nil)
                     -- at4: under the plate's UnitFrame (its name, level, bar fill): its strata, one level below (re-read each
                     -- tick: a targeted plate is raised)
                     -- at7: on the target bar, under the bar's own frame (its strata, one level below)
@@ -5563,9 +5621,12 @@ do
                     local want = (m.cb ~= 1 and c and not held) and R.ALPHA or 0
                     local k = dt / R.FADE_S * R.ALPHA
                     if o.a < want then o.a = math.min(want, o.a + k) else o.a = math.max(want, o.a - k) end
-                    o.f:SetAlpha(o.a)
+                    -- at10: x the plate's own opacity, gated near its full (none on the target bar: Hub's bar is ours)
+                    o.pf = o.onBar and 1 or R.plateFactor((okU and type(uf) == "table" and uf) or plate, isT == true)
+                    local shown = o.a * o.pf
+                    if o.shownA ~= shown then o.f:SetAlpha(shown); o.shownA = shown end
                     o.state, o.d, o.r = e.st, e.d, r
-                    if o.a > 0 then
+                    if shown > 0 then
                         if not o.f:IsShown() then o.f:Show() end
                         R.n = R.n + 1
                     elseif o.f:IsShown() then o.f:Hide() end
