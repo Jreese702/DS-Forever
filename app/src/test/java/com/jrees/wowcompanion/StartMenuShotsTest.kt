@@ -18,7 +18,8 @@ import java.io.File
  * THE MENU'S REGION BUTTON (the user, 2026-11-07: "There should be a change region option in the menu when starting the app"): both
  * menus (the waiting screen's and the chooser's) drawn on the 1240 x 1080 bottom screen in the hosts' own areas; the panel must fit.
  * Since 2026-11-17 (the user: "it is closing the menu before I can even confirm and downloading a new build") Region opens a list and
- * a confirm card (Cancel focused): both drawn on both screens, in English, Spanish and French, the pad's box on the focused button.
+ * a confirm card (Cancel focused): both drawn on both screens, in English, Spanish and French, the pad's box on the focused button
+ * on the chooser (the waiting screen's Menu is touch + B: no pad cursor there).
  * PNGs saved when TRADE_SHOTS_DIR is set (TRADE_ART_ROOT = an art root laid out like the app's).
  */
 @RunWith(RobolectricTestRunner::class)
@@ -51,7 +52,8 @@ class StartMenuShotsTest {
             StartMenu.draw(c, a, -1, hits, RectF(ChooserPanel.MARGIN, footY, ChooserPanel.MARGIN + 220f, footY + ChooserPanel.BUTTON_H), game = false)
             a
         }
-        StartMenu.focusId()?.let { f -> hits.firstOrNull { it.second == f } }?.let { (r, _) ->
+        // the pad's box on the chooser only (as ChooserPanel draws it): the waiting screen's Menu is touch + B (the game hears that pad)
+        if (!game) StartMenu.focusId()?.let { f -> hits.firstOrNull { it.second == f } }?.let { (r, _) ->
             UiKit.focus(c, RectF(r.left - 6f, r.top - 6f, r.right + 6f, r.bottom + 6f))
         }
         out?.let { it.mkdirs(); File(it, "$name.png").outputStream().use { o -> b.compress(Bitmap.CompressFormat.PNG, 100, o) } }

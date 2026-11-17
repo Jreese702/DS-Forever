@@ -170,6 +170,19 @@ object SetupFlow {
     /** STOP_ART (2026-11-04, was WAIT_ART): an art run is stopped and the update goes at once (the art is built again after it) */
     enum class UpdateGate { GO, STOP_ART, WAIT_LAUNCH, BUSY, NO_STORAGE, NO_VERSION }
 
+    /**
+     * THE REGION SWITCH'S STOP (the user, 2026-11-17; verifier: a Stop during the art run's stop was wiped, a queued switch had none).
+     * NOW = nothing is running (the switch waits in the queue): stopped at once, the region put back. FLAG = something runs (the art
+     * run's stop or the download): the stop flag is set and every next step reads it, the start of the download too. NONE = no Stop.
+     */
+    enum class StopRoute { NONE, NOW, FLAG }
+    fun stopRoute(regionSwitch: Boolean, updating: Boolean, queued: Boolean, stopping: Boolean): StopRoute = when {
+        !regionSwitch || stopping -> StopRoute.NONE
+        updating -> StopRoute.FLAG
+        queued -> StopRoute.NOW
+        else -> StopRoute.NONE
+    }
+
     fun updateGate(hasVersion: Boolean, updating: Boolean, launching: Boolean, harvesting: Boolean, storage: Boolean): UpdateGate = when {
         updating -> UpdateGate.BUSY
         !hasVersion -> UpdateGate.NO_VERSION
@@ -300,8 +313,8 @@ object SetupFlow {
             i.lastCrash != null -> Prompt("lastcrash", LastRun.TITLE, LastRun.text(i.lastCrash),
                 listOf(Button("Send report", Action.CRASH_SEND), Button("Not now", Action.CRASH_DISMISS)))
             i.progress != null -> Prompt("progress", i.progress.title, i.progress.text, emptyList())
-            // a region's build downloading (the Menu's Switch): what it is, and the one way out (the old install is kept)
-            i.regionSwitch != null && i.updating -> Prompt("region", "Switching to ${i.regionSwitch}", "",
+            // a region's build downloading or queued (the Menu's Switch): what it is, and the one way out (the old install is kept)
+            i.regionSwitch != null && (i.updating || i.busy != null) -> Prompt("region", "Switching to ${i.regionSwitch}", "",
                 listOf(Button(if (i.stopping) "Stopping..." else "Stop", Action.STOP_UPDATE, !i.stopping)))
             !i.folderFound || i.wrongGame -> Prompt("folder", "Where is WoW Forever?",
                 if (i.wrongGame) "The folder ${i.path} holds ${i.product.ifEmpty { "another game" }}, not WoW Forever. Choose the WoW Forever folder: the one with .build.info and Data."

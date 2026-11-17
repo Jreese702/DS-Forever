@@ -676,7 +676,22 @@ fun WoWForeverScreen(
         }
     }
 
+    /**
+     * A STOP BEFORE ANY FILE MOVED (verifier, 2026-11-17): Stop pressed while the art run was being stopped for the update, or while the
+     * update waited in the queue. Nothing was downloaded: the queue emptied, the region before the switch put back, the art started
+     * again (the update had stopped it). The stopped build does not start by itself (autoUpdatedFor still holds it)
+     */
+    fun stopBeforeDownload() {
+        val sw = regionSwitch
+        regionSwitch = null; updateQueued = false; stopping = false; updateStop.set(false); isUpdating = false; errorMessage = null
+        setupLog("update: stopped before the download; nothing changed" + (sw?.let { "; region back to ${it.from ?: "none chosen"}" } ?: ""))
+        if (sw != null) com.jrees.wowcompanion.GameRegion.restore(context, sw.from)
+        harvestArt(retry = true)
+    }
+
     fun performUpdate() {
+        // a Stop pressed before the download began (the art run's stop, the queue) wins: never wiped by the start below
+        if (updateStop.get()) { stopBeforeDownload(); return }
         // never silent (the user, 2026-10-28: A on Update did nothing while a background art step ran): go, queue, or say why not
         val gate = com.jrees.wowcompanion.SetupFlow.updateGate(versionStatus != null, isUpdating, isLaunching, isHarvesting, files.hasStorageAccess)
         val line = com.jrees.wowcompanion.SetupFlow.updateGateLine(gate, -1)
@@ -691,7 +706,9 @@ fun WoWForeverScreen(
                 scope.launch {
                     val stopped = withContext(Dispatchers.IO) { com.jrees.wowcompanion.ArtHarvest.stopForUpdate() }
                     isUpdating = false
-                    if (stopped) { isHarvesting = false; artFailed = null; artProgress = 0f; performUpdate() }
+                    if (stopped) { isHarvesting = false; artFailed = null; artProgress = 0f }
+                    if (updateStop.get()) stopBeforeDownload()       // Stop pressed while the art run ended
+                    else if (stopped) performUpdate()
                     else { setupLog("update: the art run is still ending; queued"); updateQueued = true }
                 }
                 return
@@ -706,7 +723,7 @@ fun WoWForeverScreen(
         }
         val target = versionStatus ?: return
         isUpdating = true
-        updateStop.set(false); stopping = false
+        stopping = false
         updateStatusText = "Connecting to Blizzard CDN..."
         errorMessage = null
         scope.launch {
@@ -719,7 +736,7 @@ fun WoWForeverScreen(
                         }
                     }
                 }
-                regionSwitch = null
+                regionSwitch = null; updateStop.set(false)
                 checkFiles()
                 versionStatus = versionStatus?.copy(isOutdated = false, localVersion = target.remoteVersion)
                 isUpdating = false
@@ -734,11 +751,13 @@ fun WoWForeverScreen(
                 // Stop (the user, 2026-11-17): the old install as it was; the region before the switch put back, so the check finds
                 // the install's own build again (autoUpdatedFor keeps the stopped build from starting by itself)
                 val sw = regionSwitch
-                regionSwitch = null; stopping = false; isUpdating = false; errorMessage = null
+                regionSwitch = null; stopping = false; updateStop.set(false); isUpdating = false; errorMessage = null
                 setupLog("update: stopped (${target.remoteVersion}); the old install kept" + (sw?.let { "; region back to ${it.from ?: "none chosen"}" } ?: ""))
                 if (sw != null) com.jrees.wowcompanion.GameRegion.restore(context, sw.from)
+                // the art the update stopped (STOP_ART) starts again, for the install's own build (verifier, 2026-11-17)
+                harvestArt(retry = true)
             } catch (e: Exception) {
-                regionSwitch = null; stopping = false
+                regionSwitch = null; stopping = false; updateStop.set(false)
                 Timber.e(e, "Error updating game")
                 setupLog("update: failed: ${e.message}")
                 if (e.isPermissionDenied()) denyStorageAccess()
@@ -898,7 +917,8 @@ fun WoWForeverScreen(
         iconsLine = com.jrees.wowcompanion.AllIcons.line(com.jrees.wowcompanion.ArtHarvest.state is com.jrees.wowcompanion.ArtHarvest.State.Ready),
         maps = mapsReady,
         updating = isUpdating,
-        regionSwitch = regionSwitch?.let { sw -> com.jrees.wowcompanion.GameRegion.ALL.firstOrNull { it.code == sw.to }?.label }?.takeIf { isUpdating },
+        // while it downloads AND while it waits in the queue (a launch's end, an art run's end): Stop either way (verifier, 2026-11-17)
+        regionSwitch = regionSwitch?.let { sw -> com.jrees.wowcompanion.GameRegion.ALL.firstOrNull { it.code == sw.to }?.label }?.takeIf { isUpdating || updateQueued },
         stopping = stopping,
         busy = when {
             isUpdating -> updateStatusText
@@ -920,9 +940,15 @@ fun WoWForeverScreen(
             com.jrees.wowcompanion.SetupFlow.Action.SKIP_LOGIN -> loginSkipped = true
             com.jrees.wowcompanion.SetupFlow.Action.RETRY_ART -> harvestArt(retry = true)
             com.jrees.wowcompanion.SetupFlow.Action.UPDATE_GAME -> performUpdate()
-            com.jrees.wowcompanion.SetupFlow.Action.STOP_UPDATE -> if (isUpdating && !stopping) {
-                setupLog("update: stop pressed")
-                stopping = true; updateStop.set(true); updateStatusText = "Stopping..."
+            com.jrees.wowcompanion.SetupFlow.Action.STOP_UPDATE -> when (com.jrees.wowcompanion.SetupFlow.stopRoute(regionSwitch != null, isUpdating, updateQueued, stopping)) {
+                // queued, nothing running: stopped at once (the queue never starts it afterwards)
+                com.jrees.wowcompanion.SetupFlow.StopRoute.NOW -> { setupLog("update: stop pressed (queued)"); stopBeforeDownload() }
+                // running (the art run's stop or the download): the flag is read by both, and by performUpdate's start
+                com.jrees.wowcompanion.SetupFlow.StopRoute.FLAG -> {
+                    setupLog("update: stop pressed")
+                    stopping = true; updateStop.set(true); updateStatusText = "Stopping..."
+                }
+                com.jrees.wowcompanion.SetupFlow.StopRoute.NONE -> Unit
             }
             com.jrees.wowcompanion.SetupFlow.Action.UPDATE_APP -> performAppUpdate()
             com.jrees.wowcompanion.SetupFlow.Action.LATER_APP -> {

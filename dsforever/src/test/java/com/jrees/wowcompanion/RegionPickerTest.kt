@@ -192,4 +192,22 @@ class RegionPickerTest {
         // an update of the install's own build: no Stop (as before)
         assertEquals("client", SetupFlow.screen(base).prompt?.id)
     }
+
+    // verifier, 2026-11-17: a switch waiting in the queue (a launch, an art run) had no Stop and started by itself afterwards
+    @Test fun aQueuedRegionSwitchOffersStop() {
+        val queued = SetupFlow.Inputs(path = "/g", folderFound = true, art = SetupFlow.Art.READY, updating = false,
+            busy = SetupFlow.updateGateLine(SetupFlow.UpdateGate.WAIT_LAUNCH, -1), gameOutdated = "1.60.1.70862", loginSaved = true, regionSwitch = "EU")
+        val s = SetupFlow.screen(queued)
+        assertEquals("Switching to EU", s.prompt?.title)
+        assertEquals(listOf(SetupFlow.Button("Stop", SetupFlow.Action.STOP_UPDATE)), s.prompt?.buttons)
+    }
+
+    // verifier, 2026-11-17: Stop during the art run's stop (isUpdating) was wiped by the download's start; queued = stopped at once
+    @Test fun stopRoutes() {
+        assertEquals(SetupFlow.StopRoute.FLAG, SetupFlow.stopRoute(regionSwitch = true, updating = true, queued = false, stopping = false))
+        assertEquals(SetupFlow.StopRoute.NOW, SetupFlow.stopRoute(regionSwitch = true, updating = false, queued = true, stopping = false))
+        assertEquals(SetupFlow.StopRoute.NONE, SetupFlow.stopRoute(regionSwitch = true, updating = true, queued = false, stopping = true))
+        assertEquals(SetupFlow.StopRoute.NONE, SetupFlow.stopRoute(regionSwitch = false, updating = true, queued = true, stopping = false))
+        assertEquals(SetupFlow.StopRoute.NONE, SetupFlow.stopRoute(regionSwitch = true, updating = false, queued = false, stopping = false))
+    }
 }
