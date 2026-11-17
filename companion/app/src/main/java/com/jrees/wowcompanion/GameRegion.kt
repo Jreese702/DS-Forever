@@ -67,7 +67,10 @@ object GameRegion {
         val e = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, code)
         if (was != code) e.putString(KEY_BY, by).putLong(KEY_AT, System.currentTimeMillis())
         if (was != code) {
-            val next = nextPending(pendingRaw(ctx), was, code, by)
+            // the region IN EFFECT before this save: the choice, else what the prompt pre-fills (the folder's portal / .build.info
+            // Branch, else the device's country). A first save of the pre-filled row is no switch (reviewer, 2026-11-17)
+            val inEffect = was ?: runCatching { current(ctx, GameFiles.gameRoot(ctx)) }.getOrNull()
+            val next = nextPending(pendingRaw(ctx), was, code, by, inEffect)
             if (next == null) e.remove(KEY_PEND_FROM).remove(KEY_PEND_TO)
             else e.putString(KEY_PEND_FROM, next.from ?: "").putString(KEY_PEND_TO, next.to)
         }
@@ -127,13 +130,22 @@ object GameRegion {
     /**
      * The switch kept after a change [was] -> [code] made by [by], with [pending] the one kept before. A Stop's way back keeps none; a
      * second pick before the first settled keeps the FIRST region as the way back (US -> EU -> Korea: Stop goes back to US), and picking
-     * that first region again is no switch at all. Pure.
+     * that first region again is no switch at all. [inEffect]: the region in effect before the change, [current] (the choice, else the
+     * install's own region the prompt pre-fills; defaults to [was]): a save that keeps it is no switch, so a first-time player saving the
+     * login prompt's pre-filled row (none -> us on a US install) never labels a normal patch "Switching to US" nor restarts a stopped
+     * build (reviewer, 2026-11-17). [Change.from] stays the saved choice ([was]), what a Stop puts back ([restore]). Pure.
      */
-    fun nextPending(pending: Change?, was: String?, code: String, by: String): Change? {
+    fun nextPending(pending: Change?, was: String?, code: String, by: String, inEffect: String? = was): Change? {
         if (by == BY_STOP) return null
-        val from = if (pending != null && pending.to == was) pending.from else was
-        return if (from == code) null else Change(from, code, "")
+        if (pending != null && pending.to == was) return if (pending.from == code) null else Change(pending.from, code, "")
+        return if (code == (was ?: inEffect)) null else Change(was, code, "")
     }
+
+    /**
+     * THE LAUNCHER'S LISTENER (WoWForeverScreen): the switch a change to [code] made, kept on disk; null for a save that switched nothing
+     * (the region in effect kept), which must neither offer Stop nor restart a stopped build
+     */
+    fun switchFor(ctx: Context, code: String): Change? = pending(ctx)?.takeIf { it.to == code }
 
     /** who made the current choice and when (epoch ms; 0 = before this was kept), or null with no choice made */
     fun choiceSource(ctx: Context): Pair<String, Long>? {

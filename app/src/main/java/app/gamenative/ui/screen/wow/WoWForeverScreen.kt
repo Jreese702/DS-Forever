@@ -792,7 +792,7 @@ fun WoWForeverScreen(
         }
         val l: (String) -> Unit = { code ->
             // the switch kept on disk (none after a Stop's way back): the FIRST region before it is where Stop goes back to
-            val change = com.jrees.wowcompanion.GameRegion.pending(context)?.takeIf { it.to == code }
+            val change = com.jrees.wowcompanion.GameRegion.switchFor(context, code)
             scope.launch(Dispatchers.Main) {
                 setupLog("region: $code picked; checking its build")
                 regionSwitch = change
@@ -1046,8 +1046,7 @@ fun WoWForeverScreen(
             com.jrees.wowcompanion.SetupBridge.launcherActions = null
             com.jrees.wowcompanion.SetupBridge.launcherRefresh = null
             // the game screen's Menu asks too while the game runs (this screen is gone then): the same install, its path kept
-            val root = currentGamePath()
-            com.jrees.wowcompanion.SetupBridge.regionCheck = { code -> WowClientDownloader.regionNeedsDownload(File(root), code) }
+            com.jrees.wowcompanion.SetupBridge.regionCheck = WowClientDownloader.keptRegionCheck(currentGamePath())
         }
     }
 

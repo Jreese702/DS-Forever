@@ -181,6 +181,15 @@ object WowClientDownloader {
     }.getOrNull()
 
     /**
+     * THE MENU'S REGION CHECK AFTER THE LAUNCHER IS GONE (WoWForeverScreen's onDispose): the game screen's Menu asks while the game runs,
+     * so the check stays set, bound to the install at [path] as it was when the launcher left. [check] for tests.
+     */
+    internal fun keptRegionCheck(path: String, check: (File, String) -> Boolean? = { r, c -> regionNeedsDownload(r, c) }): (String) -> Boolean? {
+        val root = File(path)
+        return { code -> check(root, code) }
+    }
+
+    /**
      * A STOPPED UPDATE (the user, 2026-11-17: a region switched by mistake started another build's download, with no way out): thrown
      * when [updateGame]'s stop is asked. The old client is untouched (its files are only replaced at the end, all together) and the
      * downloaded parts are deleted; configs and index files already fetched stay (new files beside the old ones, used by nothing yet).

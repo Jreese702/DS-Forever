@@ -94,4 +94,14 @@ class WowRegionSwitchTest {
         WowClientDownloader.commit(moves)
         for ((t, d) in f) { assertEquals("new", d.readText()); assertFalse(t.exists()) }
     }
+
+    // WoWForeverScreen's onDispose keeps the Menu's region check set (the game screen's Menu asks while the launcher is gone), bound to
+    // the install's path as it was when the launcher left
+    @Test fun theKeptRegionCheckAsksForTheInstallItWasLeftWith() {
+        val asked = ArrayList<Pair<File, String>>()
+        val check = WowClientDownloader.keptRegionCheck(root.path) { r, c -> asked += r to c; c != "us" }
+        assertEquals(true, check("eu"))
+        assertEquals(false, check("us"))
+        assertEquals(listOf(root to "eu", root to "us"), asked)
+    }
 }
