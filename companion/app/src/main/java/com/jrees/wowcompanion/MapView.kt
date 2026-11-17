@@ -7735,7 +7735,9 @@ class MapView(context: Context) : View(context) {
                 FILTER_LIVE -> UiKit.spawnSpot(c, cx0 + 116f, cy, UiKit.Spawn.HERB, 56f)
                 FILTER_SWITCH -> UiKit.spawnSpot(c, cx0 + 116f, cy, UiKit.Spawn.ORE, 56f)
                 FILTER_SPARKLES -> drawIcon(c, Ic.SOFT_USE, cx0 + 116f, cy, 56f)
-                else -> UiKit.tex(if (key == FILTER_CHESTS) "mm_chest" else "mm_rare")?.let { bmp ->
+                // the rares' switch: the silver dragon the map's rares now wear (the user's pick "Silver dragon", 2026-11-17)
+                FILTER_RARES -> UiKit.eliteDragon(c, RectF(cx0 + 116f - 28f, cy - 28f, cx0 + 116f + 28f, cy + 28f), silver = true)
+                else -> UiKit.tex("mm_chest")?.let { bmp ->
                     val sc = 56f / max(bmp.width, bmp.height)
                     val hw = bmp.width * sc / 2f; val hh = bmp.height * sc / 2f
                     iconDst.set(cx0 + 116f - hw, cy - hh, cx0 + 116f + hw, cy + hh)

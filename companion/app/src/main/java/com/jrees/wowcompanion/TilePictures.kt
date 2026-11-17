@@ -552,20 +552,9 @@ object TilePictures {
         else -> null
     }
 
-    /** [d] centred at ([cx], [cy]), [w] square: the kit's picture, else a drawn stand-in (a disc with two wings) */
-    private fun dragon(c: Canvas, d: Dragon, cx: Float, cy: Float, w: Float) {
-        val h = w
-        UiKit.tex(d.kit)?.let { b -> c.drawBitmap(b, null, RectF(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f), pB); return }
-        val col = if (d == Dragon.GOLD) Color.rgb(232, 184, 60) else Color.rgb(200, 205, 214)
-        pF.color = Color.argb(230, 20, 14, 8)
-        tri(c, cx - w * 0.5f, cy - h * 0.38f, cx - w * 0.12f, cy - h * 0.1f, cx - w * 0.2f, cy + h * 0.3f)
-        tri(c, cx + w * 0.5f, cy - h * 0.38f, cx + w * 0.12f, cy - h * 0.1f, cx + w * 0.2f, cy + h * 0.3f)
-        pF.color = col
-        tri(c, cx - w * 0.44f, cy - h * 0.3f, cx - w * 0.14f, cy - h * 0.08f, cx - w * 0.2f, cy + h * 0.2f)
-        tri(c, cx + w * 0.44f, cy - h * 0.3f, cx + w * 0.14f, cy - h * 0.08f, cx + w * 0.2f, cy + h * 0.2f)
-        disc(c, cx, cy, w * 0.24f, Color.argb(230, 20, 14, 8))
-        disc(c, cx, cy, w * 0.19f, col)
-    }
+    /** [d] centred at ([cx], [cy]), [w] square: the kit's picture, else the drawn stand-in (UiKit.eliteDragon, the maps' one too) */
+    private fun dragon(c: Canvas, d: Dragon, cx: Float, cy: Float, w: Float) =
+        UiKit.eliteDragon(c, RectF(cx - w / 2f, cy - w / 2f, cx + w / 2f, cy + w / 2f), silver = d == Dragon.SILVER)
 
     /** a round portrait in the game's gold-metal ring; [inside] draws into the portrait's box (already clipped round) */
     private fun portrait(c: Canvas, cx: Float, cy: Float, r: Float, inside: (RectF) -> Unit) {
