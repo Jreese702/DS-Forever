@@ -1,0 +1,4 @@
+whisper.cpp v1.9.5
+commit d1be6fde11ac6e0407606b4e42fe72d34add8037
+https://github.com/ggml-org/whisper.cpp
+CPU sources only (vendor_whisper.sh); MIT, see LICENSE
