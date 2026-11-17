@@ -15,7 +15,11 @@ every region's rect resolved from its anchors, SetScale honoured) with render_ta
         child or UIParent here, under the plate's UnitFrame level), it bobs; losing the target flies the copy down and gives the plate
         back only when it lands
   uf18  the prompt: the bare Y glyph (no hudBox), the spyglass on its corner; PadMap's floating glyph gets the corner spyglass too
-  uf18  Trail's skull / '!' for the target ride on the bar; Trail hides them on the plate while Hub owns it (ag9)
+  uf18  Trail's '!' for the target rides on the bar; Trail hides its icons on the plate while Hub owns it (ag9)
+  uf25  THE CLASSIFICATION DRAGONS (the user, 2026-11-17: "the Skull above mobs is confusing, I think we need to scrap that, we do
+        however need to add the dragon Icon for an Elite and a silver one for rare spawns"): no skull rides on the bar (f.av gone); the
+        dragon behind the level box: elite / worldboss gold, rare / rareelite silver, none for a normal mob; Trail ag14 keeps the
+        target's dragon (cl) for the bar, not a skull
   uf19  the bar's own top-left snapped: every edge of the bar / its health bar on whole pixels at 720 / 900 / 1080 / 1200 / 1440 lines
   uf18  crisp: u() in whole physical pixels at K = 768 / 1080 (and at a 1440-line screen), the font shadow one pixel
   uf20  the smooth rim (the user, 2026-11-13: "The shaper bar still looks so fucking pixelated on the corners"): no texture of ours is
@@ -27,6 +31,8 @@ every region's rect resolved from its anchors, SetScale honoured) with render_ta
 Needs lupa. Exit code 1 on any failure."""
 import os
 import sys
+
+ROOT_ADDONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "companion", "app", "src", "main", "assets", "companion", "addons")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import render_target_bar as rtb  # noqa: E402
@@ -155,7 +161,7 @@ def ag12(chk):
     G.UNITS = L.table_from({})
     G.TARGET = None
     G.GAME.fight = False
-    chk("ag12: the version tag; the live layer listens for VARIABLES_LOADED", A.V == "ag13" and liveEv.events.VARIABLES_LOADED is not None)
+    chk("ag12: the version tag; the live layer listens for VARIABLES_LOADED", int(A.V[2:]) >= 13 and liveEv.events.VARIABLES_LOADED is not None)
 
     # THE LOGIN RACE (the cause): the ticker runs from the first frame of the load, before the game has put the character's saved
     # options in place; on ag11 the Off step zeroed the pre-load value, the game's load then wrote the stored 1 over it, and ag11 took
@@ -371,7 +377,7 @@ function UnitIsFriend(a, b) return true end
     A.friendsStep()
     rig.run(0.5)
     chk("ag9: a friendly target switches no plate option on (%d writes)" % len(G.CVW), len(G.CVW) == 0, list(G.CVW.values()))
-    chk("ag9: the version tag", A.V == "ag13" and G.WowCompanion.rings.V == "at9", (A.V, G.WowCompanion.rings.V))
+    chk("ag9: the version tag", int(A.V[2:]) >= 13 and G.WowCompanion.rings.V == "at9", (A.V, G.WowCompanion.rings.V))
     # a player who had them on from ag2..ag8: our values in place, the saved originals
     L.execute('''
 CV.nameplateShowFriendlyPlayers, CV.nameplateShowFriendlyNPCs, CV.nameplateNotSelectedAlpha = "1", "1", "0"
@@ -400,7 +406,7 @@ WowCompanionDB.npFriends = { orig = { nameplateShowFriendlyPlayers = "0", namepl
     UF = rig.UF
     TB = UF.tb
     WC.live.iconsStep = L.eval("function() end")
-    WC.live.tgtIcons = L.table_from({"av": True, "q": True})
+    WC.live.tgtIcons = L.table_from({"q": True})
     rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
     fly = UF.fly
     fly.tick(G.GAME.t + 10)
@@ -418,8 +424,8 @@ WowCompanionDB.npFriends = { orig = { nameplateShowFriendlyPlayers = "0", namepl
     chk("uf18: ... scaled down (%.2f), the bar itself at alpha 0, the fly 'up'" % fly.s,
         fly.s < 0.5 and TB.f.alpha == 0 and fly.dir == "up" and UF.flying() is True)
     names = [fly.host.name.text, fly.host.lvl.text]
-    chk("uf18: the copy is the whole head: the name, the level, Trail's skull and '!' (%s)" % names,
-        names[0] == "Kobold Tunneler" and str(names[1]) == "5" and fly.host.av.shown is True and fly.host.q.shown is True)
+    chk("uf18 / uf25: the copy is the whole head: the name, the level, Trail's '!', no skull (%s)" % names,
+        names[0] == "Kobold Tunneler" and str(names[1]) == "5" and fly.host.av is None and fly.host.q.shown is True)
     fly.tick(t0 + UF.FLY_S / 2)
     mid = rig.rect(fly.host.hp)
     bar = rig.rect(TB.f.hp)
@@ -462,7 +468,7 @@ WowCompanionDB.npFriends = { orig = { nameplateShowFriendlyPlayers = "0", namepl
     TB = UF.tb
     WC.tgPrompt = "Gamepad_Rev_Y_64"
     WC.live.iconsStep = L.eval("function() end")
-    WC.live.tgtIcons = L.table_from({"av": True, "q": False})
+    WC.live.tgtIcons = L.table_from({"q": True})
     G.YG.Show(G.YG)
     rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
     UF.fly.tick(G.GAME.t + 10)
@@ -484,8 +490,11 @@ WowCompanionDB.npFriends = { orig = { nameplateShowFriendlyPlayers = "0", namepl
     G.YG.Hide(G.YG)
     rig.run(0.2)
     chk("uf18: ... and goes with it", TB.glassF.shown is False)
-    chk("uf18: Trail's skull rides on the bar right of the name, no '!' when the plate has none",
-        TB.f.av.shown is True and TB.f.q.shown is False and rig.L.eval("rawequal")(TB.f.av.point[2], TB.f.name))
+    chk("uf18 / uf25: Trail's '!' rides on the bar right of the name, no skull before it",
+        TB.f.av is None and TB.f.q.shown is True and rig.L.eval("rawequal")(TB.f.q.point[2], TB.f.name))
+    WC.live.tgtIcons = L.table_from({"q": False})
+    rig.run(0.2)
+    chk("uf18: ... no '!' when the plate has none", TB.f.q.shown is False)
     chk("uf18: Hub owns the target's plate (Trail hides its icons there)", UF.ownsPlate() is True)
 
     # ------------------------------------------------------------------ ag9: Trail's plate icons for the target (Trail's own iconsStep)
@@ -502,11 +511,33 @@ C_NamePlate.GetNamePlateForUnit = function(u) if u == "nameplate1" then return P
     A3.iconsStep(L3.eval('{ { s = 0, c = "e", lv = 5, qi = 1 }, { s = 1, c = "e", lv = 5 } }'))
     ti = A3.tgtIcons
     o0, o1 = A3.icon[0], A3.icon[1]
-    chk("ag9: the target's icons kept for the bar (av %s, q %s), its plate's icons at alpha 0, another plate's at 1"
-        % (ti and ti.av, ti and ti.q), ti is not None and ti.av is True and ti.q is True and o0.f.alpha == 0 and o1.f.alpha == 1)
+    chk("ag9 / ag14: the target's icons kept for the bar (cl %s, q %s, no skull), its plate's icons at alpha 0, another plate's at 1"
+        % (ti and ti.cl, ti and ti.q), ti is not None and ti.cl == "nameplates-icon-elite-gold" and ti.av is None and ti.q is True
+        and o0.f.alpha == 0 and o1.f.alpha == 1)
     G3.WowCompanion.uf.ownsPlate = L3.eval("function() return false end")
     A3.iconsStep(L3.eval('{ { s = 0, c = "e", lv = 5, qi = 1 } }'))
     chk("ag9: ... Hub not showing it: back at 1", A3.icon[0].f.alpha == 1)
+
+    # ------------------------------------------------------------------ uf25: the classification dragon behind the bar's level box
+    for cls, want in (("elite", "nameplates-icon-elite-gold"), ("worldboss", "nameplates-icon-elite-gold"),
+                      ("rare", "nameplates-icon-elite-silver"), ("rareelite", "nameplates-icon-elite-silver"), ("normal", None)):
+        rig = rig_with({"plate": True})
+        rig.L.execute('function UnitClassification(u) if u == "target" then return "%s" end return "normal" end' % cls)
+        rig.G.WowCompanion.live.iconsStep = rig.L.eval("function() end")
+        rig.scene(dict(n=1, pet=False, mode=False, pick=None, dead=None, oor=None))
+        rig.UF.fly.tick(rig.G.GAME.t + 10)
+        rig.run(0.2)
+        f = rig.UF.tb.f
+        got = f.cls.atlas if f.cls.shown else None
+        chk("uf25: a %s target: %s behind the level box (%s)" % (cls, want or "no dragon", got), got == want)
+    chk("uf25: the tags (Hub hub58 / uf25, Trail ag14), each note quoting the user",
+        int(open(os.path.join(ROOT_ADDONS, "WowCompanionHub", "Hub.lua"), encoding="utf-8").read().split('local HV = "hub', 1)[1].split('"', 1)[0]) >= 58
+        and rig.UF.V == "uf25" and rig.G.WowCompanion.live.V == "ag14"
+        and all("the Skull above mobs is confusing, I think we need to scrap that" in open(os.path.join(ROOT_ADDONS, d, n), encoding="utf-8").read()
+                for d, n in (("WowCompanionHub", "Hub.lua"), ("WowCompanion", "Trail.lua"))))
+    chk("uf25 / ag14: no 'dungeonskull' left in Hub or Trail", all("SetAtlas(\"dungeonskull\")" not in open(os.path.join(ROOT_ADDONS, d, n), encoding="utf-8").read()
+        and 'atlas(f.av, "dungeonskull")' not in open(os.path.join(ROOT_ADDONS, d, n), encoding="utf-8").read()
+        for d, n in (("WowCompanionHub", "Hub.lua"), ("WowCompanion", "Trail.lua"))))
 
     # ------------------------------------------------------------------ uf18: crisp
     rig = rig_with()
@@ -702,7 +733,7 @@ function UnitIsFriend(a, b) return true end
     G.GAME.fight = False
     hub = WC.hub
     chk("ag10: the version tag; the switch Off by default, said in the doc (npf false, not chosen)",
-        A.V == "ag13" and A.FRIENDS_ON is False and hub.npfFlag() is False and A.friendsChosen is None, (A.V, A.FRIENDS_ON))
+        int(A.V[2:]) >= 13 and A.FRIENDS_ON is False and hub.npfFlag() is False and A.friendsChosen is None, (A.V, A.FRIENDS_ON))
     A.friendsStep()
     chk("ag10: Off: a friendly target writes nothing (ag9)", len(G.CVW) == 0, list(G.CVW.values()))
     chk("hub52: NPF_ON (column 39) reaches Trail", hub.swTap(39) is True and A.FRIENDS_ON is True and hub.npfFlag() is True

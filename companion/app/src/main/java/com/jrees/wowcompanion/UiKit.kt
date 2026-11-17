@@ -3586,7 +3586,10 @@ object UiKit {
      * A PLACE SOMETHING CAN SPAWN (QuestieDB's node / chest / rare data; the user picked "Try QuestieDB's NPC + node data first",
      * 2026-10-06): the ghost family again (UI Art's rule: what the game shows live is solid; a guess is the same thing as a ghost).
      * Pictures: the game's own (kit `mm_herb` = mobile-herbalism, `mm_ore` = mobile-mining, `mm_chest` = the minimap's vignetteloot,
-     * `mm_rare` / `mm_rare_elite` = the minimap's vignettekill / -elite).
+     * `mm_rare` / `mm_rare_elite` = the minimap's vignettekill / -elite; from 2026-11-17 a rare and a rare elite both wear the game's
+     * SILVER PLATE DRAGON instead, kit `elite_silver`, else [eliteDragon]'s drawn stand-in: the user's pick "Silver dragon" for the map,
+     * after "the Skull above mobs is confusing, I think we need to scrap that, we do however need to add the dragon Icon for an Elite and a
+     * silver one for rare spawns").
      *  - [size] < 16: a TEXTURE DOT (the zone at a glance, ~200 herb and ~170 ore spots in Westfall): a 10..14 px dot in the kind's own
      *    pale colour (herb sage, ore stone, chest gold, rares their maroon disc), see-through, no picture;
      *  - [size] >= 16: the kind's PICTURE as a ghost (see-through, its colour taken down) on a faint dark well;
@@ -3594,9 +3597,9 @@ object UiKit {
      *    gold rim and a soft glow, never a ghost.
      */
     fun spawnSpot(c: Canvas, cx: Float, cy: Float, kind: Spawn, size: Float, live: Boolean = false, glow: Boolean = false) {
-        val pic = tex(when (kind) { Spawn.HERB -> "mm_herb"; Spawn.ORE -> "mm_ore"; Spawn.CHEST -> "mm_chest"
-            Spawn.RARE -> "mm_rare"; Spawn.RARE_ELITE -> "mm_rare_elite" })
         val rare = kind == Spawn.RARE || kind == Spawn.RARE_ELITE
+        val pic = tex(when (kind) { Spawn.HERB -> "mm_herb"; Spawn.ORE -> "mm_ore"; Spawn.CHEST -> "mm_chest"
+            Spawn.RARE, Spawn.RARE_ELITE -> "elite_silver" })
         // THE TRACKING'S GOLD (the user, 2026-10-16: the herb / ore / treasure the player tracks "is hard to see sometimes blending with
         // the map, can we give those Icons a golden glow"): a soft gold halo under the spot, at least 14 px across at zone zoom
         if (glow) {
@@ -3609,7 +3612,7 @@ object UiKit {
         if (!live && size < 16f) {
             val (r0, g0, b0) = when (kind) {
                 Spawn.HERB -> Triple(150, 200, 120); Spawn.ORE -> Triple(185, 192, 205); Spawn.CHEST -> Triple(235, 205, 110)
-                else -> Triple(150, 50, 40)
+                else -> Triple(200, 205, 214)                     // a rare: the silver dragon's own silver (was a maroon disc)
             }
             val rr = size / 2f
             pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(if (rare) 150 else 105, r0, g0, b0); c.drawCircle(cx, cy, rr, pFlat)
@@ -3629,13 +3632,45 @@ object UiKit {
                 pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = maxOf(2f, size / 16f); pFlat.color = Theme.gold
                 c.drawCircle(cx, cy, size * 0.62f, pFlat); pFlat.style = Paint.Style.FILL
             }
-            if (pic != null) c.drawBitmap(pic, null, if (rare) box else RectF(cx - size * 0.42f, cy - size * 0.42f, cx + size * 0.42f, cy + size * 0.42f), pBmp)
+            if (rare) { eliteDragon(c, box, silver = true); return }
+            if (pic != null) c.drawBitmap(pic, null, RectF(cx - size * 0.42f, cy - size * 0.42f, cx + size * 0.42f, cy + size * 0.42f), pBmp)
             return
         }
         // a ghost: the picture see-through and pale, on a faint dark well
         if (!rare) { pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(70, 18, 12, 8); c.drawCircle(cx, cy, size * 0.55f, pFlat) }
-        if (pic != null) { pGhost.alpha = if (rare) 165 else 140; c.drawBitmap(pic, null, if (rare) box else RectF(cx - size * 0.45f, cy - size * 0.45f, cx + size * 0.45f, cy + size * 0.45f), pGhost); pGhost.alpha = 255 }
+        if (rare) { eliteDragon(c, box, silver = true, alpha = 165, ghost = true); return }
+        if (pic != null) { pGhost.alpha = 140; c.drawBitmap(pic, null, RectF(cx - size * 0.45f, cy - size * 0.45f, cx + size * 0.45f, cy + size * 0.45f), pGhost); pGhost.alpha = 255 }
     }
+
+    /**
+     * THE GAME'S PLATE DRAGON in [box] (square): kit `elite_gold` / `elite_silver` (nameplates-icon-elite-gold / -silver), else a drawn
+     * stand-in (two wings round a disc, in the dragon's gold or silver) so a phone without the kit rebuild still shows it. [alpha] / [ghost]
+     * (the ghost family's pale paint) for the map's ghosts. The rule (who wears which) is TilePictures.dragonOf; the add-on draws the same art over the plates (Trail.lua ag14).
+     */
+    fun eliteDragon(c: Canvas, box: RectF, silver: Boolean, alpha: Int = 255, ghost: Boolean = false) {
+        tex(if (silver) "elite_silver" else "elite_gold")?.let { b ->
+            val pp = if (ghost) pGhost else pDragonBmp
+            pp.alpha = alpha; c.drawBitmap(b, null, box, pp); pp.alpha = 255; return
+        }
+        val cx = box.centerX(); val cy = box.centerY(); val w = box.width(); val h = box.height()
+        val col = if (silver) Color.rgb(200, 205, 214) else Color.rgb(232, 184, 60)
+        val dark = Color.argb(230, 20, 14, 8)
+        fun wing(sign: Float, ox: Float, oy: Float, ix: Float, iy: Float, by: Float, colour: Int) {
+            pDragon.color = colour; pDragon.alpha = Color.alpha(colour) * alpha / 255
+            pDragonPath.reset()
+            pDragonPath.moveTo(cx + sign * w * ox, cy + h * oy); pDragonPath.lineTo(cx + sign * w * ix, cy + h * iy)
+            pDragonPath.lineTo(cx + sign * w * 0.2f, cy + h * by); pDragonPath.close()
+            c.drawPath(pDragonPath, pDragon)
+        }
+        for (sg in floatArrayOf(-1f, 1f)) wing(sg, 0.5f, -0.38f, 0.12f, -0.1f, 0.3f, dark)
+        for (sg in floatArrayOf(-1f, 1f)) wing(sg, 0.44f, -0.3f, 0.14f, -0.08f, 0.2f, col)
+        pDragon.color = dark; pDragon.alpha = Color.alpha(dark) * alpha / 255; c.drawCircle(cx, cy, w * 0.24f, pDragon)
+        pDragon.color = col; pDragon.alpha = alpha; c.drawCircle(cx, cy, w * 0.19f, pDragon)
+    }
+
+    private val pDragon = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val pDragonBmp = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private val pDragonPath = android.graphics.Path()
 
     private val pSpotGlow = Paint(Paint.ANTI_ALIAS_FLAG)
 

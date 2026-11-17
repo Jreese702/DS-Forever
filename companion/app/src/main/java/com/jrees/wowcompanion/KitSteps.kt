@@ -34,7 +34,10 @@ object KitSteps {
         override val id = "kit"
         // 4 (the user, 2026-11-16, the Macros bar icon pick "A: game's Macros keys"): ricon_macros + ricon_macros_off (the radial set's
         // own Macros keycaps) in kit.json, so phones build the kit again
-        override val version = 4
+        // 5 (the user, 2026-11-17: "the Skull above mobs is confusing, I think we need to scrap that, we do however need to add the
+        // dragon Icon for an Elite and a silver one for rare spawns"): elite_gold + elite_silver (the game's nameplates-icon-elite-gold /
+        // -silver) for the Settings room's Target bar / Enemy nameplates pictures
+        override val version = 5
         override val beforePlay = true
         override val weight = 900      // the weights are shares of the bar: on the PC kit 15 s, cast 0.5 s, icons ~5 s (4 threads, PNG for WebP); the phone unmeasured
         override fun run(job: ArtHarvest.Job) {

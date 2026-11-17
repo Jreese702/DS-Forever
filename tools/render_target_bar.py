@@ -23,7 +23,10 @@ uf22 (hub52; the user, 2026-11-13: "that main target bar should be the top most 
 be about the same size as the name plate one, the name plate one should be slightly smaller"): the stand-in floating glyph takes the
 rendered rev's PadMap.lua layer (OV.tg.LAYER, else the old HIGH) and size (Hub's UF.yPlate, else 36 UI units = 50 px), and the scene
 "overlap" puts the targeted plate right under the bar (its UnitFrame LOW, level 60: a raised targeted plate), so the arrow, the glyph and
-its spyglass overlap the bar and the drawing order (strata, level, layer) shows which is on top."""
+its spyglass overlap the bar and the drawing order (strata, level, layer) shows which is on top.
+uf25 (hub58; the user, 2026-11-17: "the Skull above mobs is confusing, I think we need to scrap that, we do however need to add the dragon
+Icon for an Elite and a silver one for rare spawns"): shots elite / rare (the target's UnitClassification), the dragon behind the level
+box; the skull no longer rides on the bar (an older --rev still draws it from tgtIcons.av)."""
 import re
 import os
 import subprocess
@@ -45,7 +48,8 @@ SCALE = 2                                      # the crop's zoom in the PNGs
 
 SHOTS = [("plain", dict(tint=False)), ("tint", dict(tint=True)), ("cast_tint", dict(tint=True, cast=True)),
          ("pips_cast_tint", dict(tint=True, cast=True, pips=True)), ("full_tint", dict(tint=True, cast=True, pips=True, auras=True)),
-         ("prompt", dict(tint=True, prompt=True)), ("icons", dict(tint=True, prompt=True, icons=True))]
+         ("prompt", dict(tint=True, prompt=True)), ("icons", dict(tint=True, prompt=True, icons=True)),
+         ("elite", dict(tint=True, prompt=True, icons=True, cls="elite")), ("rare", dict(tint=True, prompt=True, icons=True, cls="rare"))]
 SCENES = [("fly_0", dict(plate=True, icons=True, at=0.0)), ("fly_50", dict(plate=True, icons=True, at=0.5)),
           ("landed", dict(plate=True, icons=True, prompt=True, glyph=True, at=None)),
           ("overlap", dict(plate=True, icons=True, prompt=True, glyph=True, at=None, high=True)),
@@ -63,12 +67,15 @@ def glyph_layer(padmap_src):
 ARROW_TGA = os.path.join(ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanion", "Media", "target_arrow.tga")
 # placeholder looks for atlases with no art here: (label, fill, text colour, round)
 LABEL = {"Gamepad_Rev_Y_64": ("Y", (40, 40, 44), (255, 255, 255), True), "Gamepad_Ltr_Y_64": ("Y", (200, 170, 20), (20, 20, 20), True),
-         "dungeonskull": ("\u2620", (225, 220, 205), (30, 30, 30), True), "smallquestbang": ("!", (250, 205, 30), (60, 30, 0), False),
+         "dungeonskull": ("\u2620", (225, 220, 205), (30, 30, 30), True),
+         "nameplates-icon-elite-gold": ("D", (232, 184, 60), (60, 30, 0), True), "nameplates-icon-elite-silver": ("D", (200, 205, 214), (30, 30, 40), True), "smallquestbang": ("!", (250, 205, 30), (60, 30, 0), False),
          "INV_Misc_Spyglass_02": ("\u2315", (120, 85, 50), (255, 240, 200), False)}
 
 SETUP = r'''
 local baseClass = UnitClass
 SHOT = {}
+local baseClassif = UnitClassification
+function UnitClassification(u) if u == "target" and SHOT.cls then return SHOT.cls end return baseClassif(u) end
 function UnitClass(u) if u == "player" and SHOT.pips then return "Rogue", "ROGUE" end return baseClass(u) end
 function GetComboPoints() return SHOT.pips and 3 or 0 end
 local basePM = UnitPowerMax

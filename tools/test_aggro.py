@@ -300,23 +300,61 @@ def main():
     chk("log out: the player's value back", CV.nameplateShowEnemies == "0" and Lg.WowCompanionDB.npEnemies is None)
     Lg.WowCompanion.routeWp.active = False
 
-    # ag2: the plate ICONS: AVOID on the dangerous, QUEST on objectives, none on the rest, anchored above the plate
+    # ag2: the plate ICONS: QUEST on objectives, none on the rest, anchored above the plate; ag14 (the user, 2026-11-17: "the Skull above
+    # mobs is confusing, I think we need to scrap that, we do however need to add the dragon Icon for an Elite and a silver one for rare
+    # spawns"): ag2's AVOID skull is gone (its rule with it), the game's plate dragon by UnitClassification in its place
+    GOLD, SILVER = "nameplates-icon-elite-gold", "nameplates-icon-elite-silver"
     for t in list(A.byTok.keys()):
         fire("NAME_PLATE_UNIT_REMOVED", t)
     G.t = G.t + 11
+    toks = ["nameplate%d" % i for i in range(50, 59)]
     unit("nameplate50", d=15, lv=7, cls="elite")
     unit("nameplate51", d=15, lv=5, qi=True)
     unit("nameplate52", d=15, lv=5)
     unit("nameplate53", d=15, lv=9)
-    for t in ("nameplate50", "nameplate51", "nameplate52", "nameplate53"):
+    unit("nameplate54", d=15, lv=-1)
+    unit("nameplate55", d=15, lv=6, cls="rare")
+    unit("nameplate56", d=15, lv=8, cls="rareelite")
+    unit("nameplate57", d=15, lv=-1, cls="worldboss")
+    unit("nameplate58", d=15, lv=7, cls="elite", qi=True)
+    for t in toks:
         fire("NAME_PLATE_UNIT_ADDED", t)
     tick()
-    ic = {A.byTok[t]: A.icon[A.byTok[t]] for t in ("nameplate50", "nameplate51", "nameplate52", "nameplate53")}
-    s50, s51, s52, s53 = (A.byTok[t] for t in ("nameplate50", "nameplate51", "nameplate52", "nameplate53"))
-    chk("an elite: AVOID (the skull), shown", ic[s50] is not None and ic[s50].f.shown and ic[s50].av.shown is not False and ic[s50].q.shown is False)
-    chk("a quest objective: QUEST (!) only", ic[s51] is not None and ic[s51].f.shown and ic[s51].q.shown is not False and ic[s51].av.shown is False)
+    ic = {A.byTok[t]: A.icon[A.byTok[t]] for t in toks}
+    s50, s51, s52, s53, s54, s55, s56, s57, s58 = (A.byTok[t] for t in toks)
+
+    def drag(s):
+        o = ic[s]
+        cl = o and o.cl
+        return cl.atlas if (o and o.f.shown and cl is not None and cl.shown is not False) else None
+
+    def kids_atlases(s):
+        o = ic[s]
+        return [o.f.kids[i].atlas for i in range(1, len(o.f.kids) + 1)] if o and o.f.kids else []
+    chk("ag14: the version tag", A.V == "ag14")
+    chk("ag14: an elite: the gold dragon, no '!' (%s)" % drag(s50), drag(s50) == GOLD and ic[s50].q.shown is False)
+    chk("ag14: no skull on any plate's frame (dungeonskull scrapped)", all("dungeonskull" not in kids_atlases(s) for s in ic if ic[s] is not None)
+        and ic[s50].av is None)
+    chk("a quest objective: QUEST (!) only", ic[s51] is not None and ic[s51].f.shown and ic[s51].q.shown is not False and drag(s51) is None)
     chk("a plain mob 1 below us: no icon", ic[s52] is None or not ic[s52].f.shown)
-    chk("a mob 3 above us: AVOID", ic[s53] is not None and ic[s53].f.shown and ic[s53].av.shown is not False)
+    chk("ag14: a plain mob 3 above us: no icon (the AVOID skull's rule is gone)", ic[s53] is None or not ic[s53].f.shown)
+    chk("ag14: a plain '??' mob: no icon (the AVOID skull's rule is gone)", ic[s54] is None or not ic[s54].f.shown)
+    chk("ag14: a rare: the silver dragon (%s)" % drag(s55), drag(s55) == SILVER)
+    chk("ag14: a rare elite: the silver dragon (%s)" % drag(s56), drag(s56) == SILVER)
+    chk("ag14: a world boss: the gold dragon (%s)" % drag(s57), drag(s57) == GOLD)
+    chk("ag14: alone, the dragon centred on its frame", ic[s50].cl.point[1] == "CENTER" and ic[s50].cl.point[3] == "CENTER")
+    chk("ag14: an elite quest objective: the dragon and the '!' side by side (dragon left of the middle, '!' right)",
+        drag(s58) == GOLD and ic[s58].q.shown is not False and ic[s58].cl.point[1] == "RIGHT" and ic[s58].q.point[1] == "LEFT")
+    # as the game's classification frame: none while the unit wears a raid marker (the player's own mark stays the game's)
+    L.execute('function GetRaidTargetIndex(t) if t == "nameplate57" then return 8 end return nil end')
+    tick()
+    chk("ag14: a raid-marked world boss: no dragon (the game's rule), its frame hidden", ic[s57].f.shown is False)
+    L.execute('GetRaidTargetIndex = nil')
+    tick()
+    chk("ag14: ... the mark gone: the gold dragon back", drag(s57) == GOLD)
+    for t in toks[4:]:
+        fire("NAME_PLATE_UNIT_REMOVED", t)
+    tick()
     pt = ic[s50].f.point
     chk("anchored above its plate (BOTTOM to the plate's TOP), on our own frame", pt[1] == "BOTTOM" and pt[3] == "TOP"
         and L.eval("function(f) return rawequal(f.parent, UIParent) end")(ic[s50].f))

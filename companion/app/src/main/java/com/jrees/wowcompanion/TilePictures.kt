@@ -116,8 +116,8 @@ object TilePictures {
         }
     }
 
-    /** our target bar under the compass: its level box, the red bar in our rim, the name over it; the health text and the target of
-     *  target as chosen; down in the world the targeted mob under the red arrow */
+    /** our target bar under the compass: its level box (an elite's gold dragon behind it, as Hub.lua's f.cls), the red bar in our rim,
+     *  the name over it; the health text and the target of target as chosen; down in the world the targeted mob under the red arrow */
     private fun targetBar(c: Canvas, ctx: Context?, look: Look) {
         compassTicks(c, 6f, alpha = 110)
         val right = if (look.tot) 152f else 186f
@@ -125,10 +125,12 @@ object TilePictures {
         val lvl = RectF(34f, 24f, 48f, 40f)
         rim(c, ctx, bar)
         bar(c, bar, 0.7f, Color.rgb(200, 30, 24))
+        // the elite's dragon behind the level box (Hub's f.cls: 48 UI px round a box the bar's height, a little left and up)
+        dragon(c, Dragon.GOLD, lvl.centerX() - 2f, lvl.centerY() - 1f, 30f)
         pF.color = Color.rgb(12, 10, 8); c.drawRect(lvl, pF)
         pS.color = Color.rgb(120, 104, 80); pS.strokeWidth = 1f; c.drawRect(lvl, pS)
         text(c, "11", lvl.centerX(), lvl.bottom - 3.5f, 9f, Color.rgb(255, 210, 0), center = true, number = true)
-        text(c, "Kobold Tunneler", bar.centerX(), 22f, 7.5f, Color.rgb(255, 210, 0), center = true)
+        text(c, "Hogger", bar.centerX(), 22f, 7.5f, Color.rgb(255, 210, 0), center = true)
         when (look.hpText) {
             1 -> text(c, "70%", bar.centerX(), bar.bottom - 2.5f, 8.5f, Color.WHITE, center = true, number = true)
             2 -> text(c, "980 / 1400", bar.centerX(), bar.bottom - 2.5f, 8.5f, Color.WHITE, center = true, number = true)
@@ -144,7 +146,8 @@ object TilePictures {
             ?: run { pF.color = Color.rgb(210, 30, 24); tri(c, 105f, 56f, 119f, 56f, 112f, 66f) }
     }
 
-    /** hostile mobs in the world with their red plates; the aggro tint round the plates when it is on */
+    /** hostile mobs in the world with their red plates (a rare's silver dragon and an elite's gold one above theirs, as Trail.lua's plate
+     *  marks); the aggro tint round the plates when it is on */
     private fun nameplates(c: Canvas, ctx: Context?, look: Look) {
         val mobs = listOf(Triple(44f, 96f, 30f), Triple(108f, 84f, 22f), Triple(172f, 100f, 34f))
         val tints = listOf(Color.rgb(255, 210, 40), Color.rgb(255, 140, 30), Color.rgb(230, 40, 30))
@@ -161,6 +164,8 @@ object TilePictures {
             }
             bar(c, plate, listOf(1f, 0.8f, 0.55f)[i], Color.rgb(200, 30, 24))
             text(c, listOf("Kobold", "Murloc", "Defias Thug")[i], m.first, top - 2.5f, 7.5f, Color.rgb(255, 230, 220), center = true)
+            // Trail.lua's mark: its frame's bottom on the plate's top (above the name), the dragon over the plate's middle
+            listOf(null, Dragon.SILVER, Dragon.GOLD)[i]?.let { d -> dragon(c, d, m.first, top - 15.5f, 13f) }
         }
     }
 
@@ -531,6 +536,25 @@ object TilePictures {
     }
 
     private fun disc(c: Canvas, x: Float, y: Float, r: Float, col: Int) { pF.color = col; c.drawCircle(x, y, r, pF) }
+
+    /** the game's plate dragons (kit `elite_gold` / `elite_silver` = nameplates-icon-elite-gold / -silver, square: 80 x 80 in this build) */
+    enum class Dragon(val kit: String) { GOLD("elite_gold"), SILVER("elite_silver") }
+
+    /**
+     * A MOB'S CLASSIFICATION MARK (the user, 2026-11-17: "the Skull above mobs is confusing, I think we need to scrap that, we do however
+     * need to add the dragon Icon for an Elite and a silver one for rare spawns"), the same rule as the add-on (Trail.lua ag14, Hub.lua
+     * uf25): elite / worldboss the gold dragon, rare / rareelite the silver one, nothing else. [cls] = UnitClassification's word or the
+     * aggro document's code ("e" elite, "b" boss, "r" rare, "R" rare elite).
+     */
+    fun dragonOf(cls: String?): Dragon? = when (cls) {
+        "elite", "worldboss", "e", "b" -> Dragon.GOLD
+        "rare", "rareelite", "r", "R" -> Dragon.SILVER
+        else -> null
+    }
+
+    /** [d] centred at ([cx], [cy]), [w] square: the kit's picture, else the drawn stand-in (UiKit.eliteDragon, the maps' one too) */
+    private fun dragon(c: Canvas, d: Dragon, cx: Float, cy: Float, w: Float) =
+        UiKit.eliteDragon(c, RectF(cx - w / 2f, cy - w / 2f, cx + w / 2f, cy + w / 2f), silver = d == Dragon.SILVER)
 
     /** a round portrait in the game's gold-metal ring; [inside] draws into the portrait's box (already clipped round) */
     private fun portrait(c: Canvas, cx: Float, cy: Float, r: Float, inside: (RectF) -> Unit) {
