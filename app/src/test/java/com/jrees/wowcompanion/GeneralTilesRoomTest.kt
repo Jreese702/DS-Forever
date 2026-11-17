@@ -5,7 +5,6 @@ import android.graphics.Canvas
 import android.graphics.RectF
 import android.view.MotionEvent
 import android.view.View
-import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -29,8 +28,8 @@ import java.io.File
  * Restart DS Forever; Voice typing's three); the Theme tile opens the theme maker's page (its premades in the band while there is none);
  * the controller's walk (A opens, B closes the band with the cursor back on the tile, then the tab row); touch the same.
  *
- * With GENERAL_SHOTS_DIR set it renders the tab (THEME_ART_ROOT = an art root laid out like the app's): no game, the game's documents
- * (the Theme tile's live Home), each band, the cursor, Account + Help, Spanish, French, other themes, and with no kit.
+ * With GENERAL_SHOTS_DIR set it renders the tab (THEME_ART_ROOT = an art root laid out like the app's): no game, each band, the cursor (landing,
+ * a tile, a swatch), Account + Help, Spanish, French, other themes, and with no kit.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -184,8 +183,10 @@ class GeneralTilesRoomTest {
         // no page wired: the premades in its band, a press applies one at once
         tap(r, look, look.tileBox(GeneralTiles.THEME)!!)
         assertEquals(GeneralTiles.THEME, look.openTile)
-        assertEquals(listOf(4, 3, 3), look.bandButtons().map { it.size })
-        tap(r, look, look.bandButtons()[2][0])
+        assertEquals(listOf(5, 5), look.bandButtons().map { it.size })
+        // one even grid: every swatch the same size
+        assertEquals(1, look.bandButtons().flatten().map { Math.round(it.width() * 10) to Math.round(it.height() * 10) }.toSet().size)
+        tap(r, look, look.bandButtons()[1][2])
         assertEquals("oled_rose", Theme.cur.id)
         // the maker's page wired (themes' ThemeMakerPage): A opens it, no band
         var opened = 0
@@ -256,24 +257,6 @@ class GeneralTilesRoomTest {
 
     // ---------------------------------------------------------------- the renders (GENERAL_SHOTS_DIR)
 
-    /** the game's documents as the stage gets them on the device (the Theme tile's live Home) */
-    private fun feedStage() {
-        val icons = listOf(136048, 136026, 135990, 136052, 135813, 136015, 135824, 136075)
-        val nn = JSONArray()
-        for (p in 1..8) nn.put(JSONObject().put("p", p).put("k", "spell").put("id", 400 + p).put("i", icons[p - 1]))
-        PreviewStage.feedFull(JSONObject().put("type", "full")
-            .put("actionbar", JSONObject().put("hud", JSONObject().put("ok", true).put("page", 1)
-                .put("pages", JSONArray().put(true).put(true).put(true)).put("L", JSONObject().put("n", nn)))
-                .put("hudS", JSONObject().put("c", false).put("g", 1000.0)))
-            .put("map", JSONObject().put("ok", true).put("mapID", 1411).put("zone", "Durotar").put("subzone", "Razor Hill")
-                .put("rect", JSONObject().put("c", 1).put("t", 1808.33).put("b", -1716.67).put("l", -1962.5).put("r", -7250.0))
-                .put("x", 0.5177).put("y", 0.4279).put("wx", 300.0).put("wy", -4700.0).put("facing", 2.11))
-            .put("bags", JSONObject().put("money", 1_234_567L).put("freeGeneral", 14).put("free", 14).put("total", 66)))
-        PreviewStage.feedQuests(JSONObject().put("quests", JSONArray()
-            .put(JSONObject().put("id", 1).put("title", "Sample Quest").put("focus", true)
-                .put("obj", JSONArray().put(JSONObject().put("text", "Sample slain: 4/10"))))))
-    }
-
     @Test fun shots() {
         val out = System.getenv("GENERAL_SHOTS_DIR")?.let { File(it) } ?: return
         out.mkdirs()
@@ -291,7 +274,11 @@ class GeneralTilesRoomTest {
             File(out, "$name.png").outputStream().use { page.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         val look = { part(r, SettingsTabs.Group.LOOK) }
+        // the room opens on the tab row (Settings' shared landing, as Top screen's top_1); Down = the page's first stop, the Theme tile
         shot("gen_1_no_game")
+        hold(r); press(r, "PADDDOWN"); repeat(3) { lay(r) }
+        shot("gen_0_cursor_on_theme_tile")
+        r.pad.backToTabs()
         shot("gen_2_account_help", scrollTo = 10_000)
         // the Swap screens band, On with Restart waiting
         Settings.swapScreens = true
@@ -310,22 +297,22 @@ class GeneralTilesRoomTest {
         Settings.voiceTyping = Voice.Mode.DEVICE
         tap(r, look(), look().tileBox(GeneralTiles.THEME)!!)
         shot("gen_8_band_theme_premades")
+        // the cursor on a swatch: Down to the tile, A opens its band, Down into it
+        look().closeSelection()
+        hold(r); press(r, "PADDDOWN"); press(r, "PAD1"); repeat(3) { lay(r) }; press(r, "PADDDOWN"); repeat(3) { lay(r) }
+        shot("gen_8b_cursor_on_swatch")
+        r.pad.backToTabs()
         look().closeSelection()
         // the cursor on the Swap screens tile, its band open
         hold(r); press(r, "PADDDOWN"); press(r, "PADDRIGHT"); press(r, "PAD1"); repeat(3) { lay(r) }
         shot("gen_9_cursor_on_open_tile")
         look().closeSelection(); r.pad.backToTabs()
-        // the game's documents: the Theme tile shows our live Home
-        feedStage()
-        shot("gen_10_with_game")
-        PreviewStage.home(app, HomeView.Companion.Look(HomeSettings.rest, HomeSettings.combatGrow, HomeSettings.questOverMap, HomeSettings.swingTimer), false)
-            ?.let { h -> File(out, "gen_10b_stage_home.png").outputStream().use { h.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        // the Theme tile and its premades in other themes (the drawn room in each theme's colours)
         for (id in listOf("oled_rose", "dark_silver", "oled_bronze")) {
             Theme.use(id); r = room()
-            // the stage's picture is still the last theme's until it renders again: the drawn mini room meanwhile
-            shot("gen_11_theme_${id}_mini_room")
-            feedStage(); org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(4))
             shot("gen_11_theme_$id")
+            tap(r, look(), look().tileBox(GeneralTiles.THEME)!!)
+            shot("gen_11_theme_${id}_band")
         }
         Theme.use("classic")
         for (l in listOf("es", "fr")) {

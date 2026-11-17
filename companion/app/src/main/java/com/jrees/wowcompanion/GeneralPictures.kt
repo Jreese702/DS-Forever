@@ -18,9 +18,8 @@ import android.graphics.Shader
  * pictures and want to do something similar to the other menus"; the beautify design, section 2): Top screen's picture language
  * ([TilePictures]: drawn in a fixed unit space - 216 x 108, the wide Theme tile's 460 x 108 - scaled into the box given, so the band's
  * large picture is the same drawing) for the Look row's three tiles:
- *  - Theme: the theme IN USE - our own live Home's top band (PreviewStage's miniature, never the game's: the controller strip, the map's
- *    header); before the game's first document (or while the stage's picture is still the last theme's), a drawn mini room in the
- *    theme's colours (its ground, header, rows, the red cloth, the metal ring)
+ *  - Theme: the theme IN USE - a drawn mini room in its colours (its ground, header, rows, the red cloth, the metal ring); the Theme
+ *    band's premades are the same room as small swatches, each in its own colours
  *  - Swap screens: the Thor's two screens, the game (a crop of one of the game's own loading pictures, the kit's scene art) and our Home;
  *    On = they trade places
  *  - Voice typing: the microphone; This device = the Thor under it, Online = a cloud, Off = the microphone struck through
@@ -53,7 +52,7 @@ object GeneralPictures {
         c.scale(k, k)
         runCatching {
             when (id) {
-                GeneralTiles.THEME -> theme(c, ctx)
+                GeneralTiles.THEME -> theme(c)
                 GeneralTiles.SWAP -> swap(c, ctx, look.swap)
                 GeneralTiles.VOICE -> voice(c, look.voice)
             }
@@ -68,45 +67,34 @@ object GeneralPictures {
 
     // ---------------------------------------------------------------- Theme
 
-    /** the theme in use: our live Home (PreviewStage's miniature, drawn in the theme in use); the drawn mini room before the game's
-     *  first document */
-    private fun theme(c: Canvas, ctx: Context?) {
-        val home = if (ctx != null && PreviewStage.ready) runCatching {
-            PreviewStage.home(ctx, HomeView.Companion.Look(HomeSettings.rest, HomeSettings.combatGrow, HomeSettings.questOverMap,
-                HomeSettings.swingTimer), false)
-        }.getOrNull() else null
-        // the stage keeps its picture for a few seconds and while no document comes: one drawn under another theme is not shown
-        if (home != null && seenUnder.getOrPut(home) { Theme.cur.id } != Theme.cur.id) { miniRoom(c, RectF(0f, 0f, WIDE_W, H)); return }
-        if (home == null) { miniRoom(c, RectF(0f, 0f, WIDE_W, H)); return }
-        // the design's crop: Home's top band across its whole width - the controller strip, the map's header and the top of the map
-        // and the chat - in the well's shape
-        val sh = (home.width * H / WIDE_W).toInt().coerceAtMost(home.height)
-        c.drawBitmap(home, Rect(0, 0, home.width, sh), RectF(0f, 0f, WIDE_W, H), pB)
-    }
-
-    /** each stage picture's theme when it was first shown (the stage draws a new picture object when it renders again) */
-    private val seenUnder = java.util.WeakHashMap<Bitmap, String>()
+    /**
+     * The theme in use: a drawn mini room in its colours. (2026-11-17 review: a crop of our live Home showed the theme only as faint
+     * glyph tints and cut the map's header in half at 460 x 108; the drawn room shows the ground, the header, the rows, the cloth and
+     * the metal in every state, and needs no document.)
+     */
+    private fun theme(c: Canvas) = miniRoom(c, RectF(0f, 0f, WIDE_W, H), Theme.cur, kit = true)
 
     /**
-     * A ROOM IN MINIATURE, in the theme in use: its ground (ink to field), the header bar (panel) with the title in the accent and two tabs
+     * A ROOM IN MINIATURE, in [t]'s colours: its ground (ink to field), the header bar (panel) with the title in the accent and two tabs
      * (the lit one selected), two rows (raised, then selected with its accent mark), the words' strokes in the text colours, the red
-     * cloth button and a tile in the theme's metal ring. Drawn, so it costs nothing and needs no document.
+     * cloth button and a tile in the theme's metal ring. [kit] = the kit's cloth and ring (they follow the theme IN USE, so a premade's
+     * swatch draws its own red plate and an edge in its own metal colour).
      */
-    fun miniRoom(c: Canvas, b: RectF) {
+    fun miniRoom(c: Canvas, b: RectF, t: ThemeSpec = Theme.cur, kit: Boolean = t === Theme.cur) {
         val w = b.width(); val h = b.height()
-        pF.shader = LinearGradient(0f, b.top, 0f, b.bottom, Theme.ink, Theme.field, Shader.TileMode.CLAMP)
+        pF.shader = LinearGradient(0f, b.top, 0f, b.bottom, t.ink, t.field, Shader.TileMode.CLAMP)
         c.drawRect(b, pF); pF.shader = null
         // the header and its two tabs
         val hh = h * 0.24f
-        pF.color = Theme.panel; c.drawRect(b.left, b.top, b.right, b.top + hh, pF)
-        pF.color = Theme.bronze; c.drawRect(b.left, b.top + hh - 1.5f, b.right, b.top + hh, pF)
-        stroke(c, b.left + 10f, b.top + hh / 2f, minOf(64f, w * 0.26f), 5f, Theme.gold)
+        pF.color = t.panel; c.drawRect(b.left, b.top, b.right, b.top + hh, pF)
+        pF.color = t.edge; c.drawRect(b.left, b.top + hh - 1.5f, b.right, b.top + hh, pF)
+        stroke(c, b.left + 10f, b.top + hh / 2f, minOf(64f, w * 0.26f), 5f, t.accent)
         val tabW = minOf(40f, w * 0.16f)
         for (i in 0..1) {
             val tl = b.right - 10f - (2 - i) * (tabW + 6f)
             val tr = RectF(tl, b.top + 5f, tl + tabW, b.top + hh - 3f)
-            pF.color = if (i == 0) Theme.selected else Theme.raised; c.drawRoundRect(tr, 3f, 3f, pF)
-            stroke(c, tr.left + 7f, tr.centerY(), tr.width() - 14f, 3f, if (i == 0) Theme.gold else Theme.textDim)
+            pF.color = if (i == 0) t.selected else t.raised; c.drawRoundRect(tr, 3f, 3f, pF)
+            stroke(c, tr.left + 7f, tr.centerY(), tr.width() - 14f, 3f, if (i == 0) t.accent else t.textDim)
         }
         // the body: two rows on the left, the cloth and a tile on the right
         val top = b.top + hh + 8f
@@ -114,26 +102,44 @@ object GeneralPictures {
         val rowH = (b.bottom - 8f - top - 6f) / 2f
         for (i in 0..1) {
             val rr = RectF(b.left + 8f, top + i * (rowH + 6f), split - 6f, top + i * (rowH + 6f) + rowH)
-            pF.color = if (i == 1) Theme.selected else Theme.raised; c.drawRoundRect(rr, 4f, 4f, pF)
-            if (i == 1) { pF.color = Theme.gold; c.drawRect(rr.left, rr.top + 3f, rr.left + 3f, rr.bottom - 3f, pF) }
-            stroke(c, rr.left + 10f, rr.centerY() - 4f, rr.width() * 0.5f, 3.5f, Theme.text)
-            stroke(c, rr.left + 10f, rr.centerY() + 5f, rr.width() * 0.32f, 2.5f, Theme.textDim)
+            pF.color = if (i == 1) t.selected else t.raised; c.drawRoundRect(rr, 4f, 4f, pF)
+            if (i == 1) { pF.color = t.accent; c.drawRect(rr.left, rr.top + 3f, rr.left + 3f, rr.bottom - 3f, pF) }
+            stroke(c, rr.left + 10f, rr.centerY() - 4f, rr.width() * 0.5f, 3.5f, t.text)
+            stroke(c, rr.left + 10f, rr.centerY() + 5f, rr.width() * 0.32f, 2.5f, t.textDim)
         }
         // the red cloth (the kit's; a drawn red plate without it)
         val btn = RectF(split + 4f, top, b.right - 8f, top + rowH)
-        if (UiKit.tex("button_up_center") != null) UiKit.button(c, btn, "", UiKit.Button.UP)
+        if (kit && UiKit.tex("button_up_center") != null) UiKit.button(c, btn, "", UiKit.Button.UP)
         else { pF.color = Color.rgb(138, 16, 16); c.drawRoundRect(btn, 4f, 4f, pF) }
-        stroke(c, btn.centerX() - btn.width() * 0.22f, btn.centerY(), btn.width() * 0.44f, 3f, Theme.btnLabel)
+        stroke(c, btn.centerX() - btn.width() * 0.22f, btn.centerY(), btn.width() * 0.44f, 3f, t.btnLabel)
         // a tile in the theme's metal
         val tile = RectF(split + 4f, top + rowH + 6f, b.right - 8f, b.bottom - 8f)
-        pF.color = Theme.raised; c.drawRoundRect(tile, 4f, 4f, pF)
+        pF.color = t.raised; c.drawRoundRect(tile, 4f, 4f, pF)
         val ring = RectF(tile.left + 1f, tile.top + 1f, tile.right - 1f, tile.bottom - 1f)
-        if (!UiKit.ringBox(c, ring, 0.35f)) {
-            path.reset(); path.addRoundRect(RectF(ring.left + 1.5f, ring.top + 1.5f, ring.right - 1.5f, ring.bottom - 1.5f), 3f, 3f, Path.Direction.CW)
-            UiKit.ringEdge(c, path, 3f)
+        if (!kit || !UiKit.ringBox(c, ring, 0.35f)) {
+            if (kit) {
+                path.reset(); path.addRoundRect(RectF(ring.left + 1.5f, ring.top + 1.5f, ring.right - 1.5f, ring.bottom - 1.5f), 3f, 3f, Path.Direction.CW)
+                UiKit.ringEdge(c, path, 3f)
+            } else { pS.shader = null; pS.color = t.edge; pS.strokeWidth = 2.5f; c.drawRoundRect(ring, 3f, 3f, pS) }
         }
-        stroke(c, tile.left + 9f, tile.centerY(), tile.width() * 0.4f, 3f, Theme.gold)
+        stroke(c, tile.left + 9f, tile.centerY(), tile.width() * 0.4f, 3f, t.accent)
     }
+
+    /** a premade's swatch (the Theme band's chips): its mini room drawn in a fixed 240 x 132 unit space, scaled into [r] */
+    fun swatch(c: Canvas, r: RectF, t: ThemeSpec) {
+        val save = c.save()
+        val k = minOf(r.width() / SW_W, r.height() / SW_H)
+        val rad = 6f
+        path.reset(); path.addRoundRect(r, rad, rad, Path.Direction.CW)
+        c.clipPath(path)
+        c.translate(r.centerX() - SW_W * k / 2f, r.centerY() - SW_H * k / 2f)
+        c.scale(k, k)
+        runCatching { miniRoom(c, RectF(0f, 0f, SW_W, SW_H), t, kit = false) }
+        c.restoreToCount(save)
+        pF.shader = null
+    }
+    private const val SW_W = 240f
+    private const val SW_H = 132f
 
     /** a word's stand-in: a rounded stroke [len] long, [th] thick, from ([x], [cy]) */
     private fun stroke(c: Canvas, x: Float, cy: Float, len: Float, th: Float, col: Int) {
@@ -164,7 +170,7 @@ object GeneralPictures {
         c.drawRect(top, pS); c.drawRect(bottom, pS)
         // the trade's two arrows on the right (gold while they are traded)
         val col = if (swapped) Theme.gold else Theme.textDim
-        arrows(c, 156f, 34f, 86f, col)
+        arrows(c, 154f, 50f, 100f, col)          // under the badge's corner (36 px, top-right)
     }
 
     /** two curved arrows between ([x], [y0]) and ([x], [y1]): one down, one up */

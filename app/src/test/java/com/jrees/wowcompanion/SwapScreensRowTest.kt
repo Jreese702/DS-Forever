@@ -102,12 +102,16 @@ class SwapScreensRowTest {
     /** the Thor: Off, no Restart; On saves, Restart comes; its button is the launcher's restart; Off again: Restart goes */
     @Test fun onSavesAndAsksForARestart() {
         val (r, s) = room(offered = true, saved = false, inUse = false)
+        val onOff = segs(r, s)
+        val h0 = s.measuredHeight                                             // the band open, On / Off alone
         assertTrue(restartBtn(s).isEmpty)
-        tap(s, segs(r, s)[0])                                                 // On
+        tap(s, onOff[0])                                                      // On
         assertTrue(Settings.swapScreens)
         lay(r)
         val b = RectF(restartBtn(s))
         assertFalse("Restart in the band", b.isEmpty)
+        assertTrue("Restart under the On / Off line", b.top >= segs(r, s)[0].bottom)
+        assertTrue("the band one line taller", s.measuredHeight > h0)
         assertTrue(s.focusTargets().any { it == b })
         tap(s, b)
         assertEquals(1, restarts)
@@ -117,6 +121,7 @@ class SwapScreensRowTest {
         assertFalse(Settings.swapScreens)
         lay(r)
         assertTrue(restartBtn(s).isEmpty)
+        assertEquals("the band back to On / Off alone", h0, s.measuredHeight)
     }
 
     /** the game up: "After the game closes", no button (a restart would end the game) */
@@ -125,6 +130,7 @@ class SwapScreensRowTest {
         val (r, s) = room(offered = true, saved = true, inUse = false)
         segs(r, s)
         assertTrue(restartBtn(s).isEmpty)
+        assertEquals("On / Off alone: the status line says so", 1, s.bandButtons().size)
         assertEquals("After the game closes", s.bandStatus())
         assertEquals(0, restarts)
     }

@@ -71,14 +71,16 @@ object GeneralTiles {
     /** the Theme tile's page (themes' Theme maker, ThemeMakerPage): set by the room's host; null = the premade themes in its band */
     @Volatile var onOpenTheme: (() -> Boolean)? = null
 
-    /** the premades in the Theme tile's band while no maker page is wired: Classic + Dark, then the OLED two rows of three */
+    /** the most premade swatches on one band line (5 x 135 px beside the band's picture on the room's 1240 px page) */
+    const val PRESETS_PER_LINE = 5
+
+    /** the premades in the Theme tile's band while no maker page is wired: an even grid - as few lines as hold them at
+     *  [PRESETS_PER_LINE] each, the same count on every line (the last may hold fewer) - Classic and the Dark ones first, then OLED */
     fun presetLines(ids: List<String>): List<List<String>> {
-        val plain = ids.filter { !it.startsWith("oled") }
-        val oled = ids.filter { it.startsWith("oled") }
-        val out = ArrayList<List<String>>()
-        out += plain.chunked(4)
-        out += oled.chunked(3)
-        return out.filter { it.isNotEmpty() }
+        if (ids.isEmpty()) return emptyList()
+        val ordered = ids.filter { !it.startsWith("oled") } + ids.filter { it.startsWith("oled") }
+        val lines = (ordered.size + PRESETS_PER_LINE - 1) / PRESETS_PER_LINE
+        return ordered.chunked((ordered.size + lines - 1) / lines)
     }
 
     // ---------------------------------------------------------------- the geometry
@@ -257,7 +259,14 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         val open = openTile?.let { o -> ss.indexOfFirst { it.id == o } } ?: -1
         val ls = if (open >= 0) lines(ss[open].id) else emptyList()
         val gl = ls.map { GameUiTiles.Line(it.key, it.words.size, it.label != null) }
-        val bandH = if (open >= 0) GameUiTiles.band(GameUiTiles.MARGIN, 0f, w - 2f * GameUiTiles.MARGIN, gl).height else 0f
+        val full = if (open >= 0) GameUiTiles.band(GameUiTiles.MARGIN, 0f, w - 2f * GameUiTiles.MARGIN, gl) else null
+        // the Theme band never has a status line: its foot (where the band puts one under the swatches) is not kept empty
+        val bandH = when {
+            full == null -> 0f
+            ss[open].id == GeneralTiles.THEME && full.status.t >= (full.lines.flatMap { it.buttons }.maxOfOrNull { it.b } ?: 0f) ->
+                full.height - GameUiTiles.STATUS_H - GameUiTiles.LINE_GAP
+            else -> full.height
+        }
         val grid = if (ss.isEmpty()) null else GeneralTiles.grid(ss, w, open, bandH)
         val band = grid?.band?.let { GameUiTiles.band(it.l, it.t, it.w, gl) }
         var y = grid?.height ?: GameUiTiles.TOP
@@ -515,7 +524,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         val maxW = box.w - 2f * GameUiTiles.WELL_PAD - 4f
         pName.color = Theme.text
         c.drawText(fitText(pName, Tr.t(GeneralTiles.NAMES[id] ?: id), maxW, 25f, 19f), x, box.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 34f, pName)
-        pValue.color = if (dimmed(id)) Theme.textDim else Theme.gold
+        pValue.color = Theme.gold                                       // the choice's word, as Top's (Off too)
         c.drawText(fitText(pValue, Tr.t(valueOf(id)), maxW, 22f, 18f), x, box.b - 12f, pValue)
     }
 
@@ -555,11 +564,14 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         c.drawPath(tilePath, pFill)
         pStroke.color = Theme.gold; pStroke.strokeWidth = 2.6f
         c.drawLine(nx - 18f, rect.top + 1f, nx, rect.top - 13f, pStroke); c.drawLine(nx, rect.top - 13f, nx + 18f, rect.top + 1f, pStroke)
-        val pic = band.picture.rect()
-        // the wide Theme tile's picture keeps its own shape in the band (its well's 460 x 108, scaled to the picture's width)
-        val pr = if (id == GeneralTiles.THEME) RectF(pic.left, pic.centerY() - pic.width() * GameUiTiles.WELL_H / 460f / 2f,
-            pic.right, pic.centerY() + pic.width() * GameUiTiles.WELL_H / 460f / 2f) else pic
-        GeneralPictures.draw(c, context, id, pr, look(id))
+        val pr = band.picture.rect()
+        // the Theme band's picture: the theme in use's room filling the picture (beside the swatches' two lines, no empty bands)
+        if (id == GeneralTiles.THEME) {
+            val save = c.save()
+            tilePath.reset(); tilePath.addRoundRect(pr, 8f, 8f, Path.Direction.CW); c.clipPath(tilePath)
+            GeneralPictures.miniRoom(c, pr)
+            c.restoreToCount(save)
+        } else GeneralPictures.draw(c, context, id, pr, look(id))
         if (dimmed(id)) { pFill.color = Theme.ink; pFill.alpha = 165; c.drawRoundRect(pr, 8f, 8f, pFill); pFill.alpha = 255 }
         pStroke.color = android.graphics.Color.argb(200, 0, 0, 0); pStroke.strokeWidth = 2f
         c.drawRoundRect(pr, 8f, 8f, pStroke)
@@ -569,6 +581,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                 pName.color = Theme.text
                 c.drawText(fitText(pName, Tr.t(bl.label ?: ""), lb.w - 6f, 25f, 18f), lb.l + 4f, lb.cy + 9f, pName)
             }
+            if (bl.key.startsWith("theme")) { swatchLine(c, line.buttons.map { it.rect() }, bl); continue }
             for ((k, b) in line.buttons.withIndex()) {
                 if (bl.action) UiKit.button(c, b.rect(), word(bl, k), UiKit.Button.UP, textSize = 27f)
                 else UiKit.choice(c, b.rect(), Tr.t(word(bl, k)), k == bl.chosen, textSize = 27f)
@@ -580,6 +593,42 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             pStatus.color = Theme.textDim
             c.drawText(fitText(pStatus, Tr.t(say), st.w - 8f, 22f, 18f), st.l + 4f, st.cy + 8f, pStatus)
         }
+    }
+
+    /**
+     * one line of premade swatches: each chip a tile in small (its plate, the premade's own mini room, its name under it, ONE size for
+     * every name on the band); the theme in use lit (the selected plate, the lit ring, its name in the accent). The cursor's box is the
+     * room's, as on every stop.
+     */
+    private fun swatchLine(c: Canvas, boxes: List<RectF>, bl: BandLine) {
+        val names = Theme.presets.map { it.name }
+        val size = swatchTextSize(names, boxes.firstOrNull()?.width() ?: return)
+        for ((k, b) in boxes.withIndex()) {
+            val t = Theme.byId(bl.words[k]) ?: continue
+            val lit = k == bl.chosen
+            pFill.color = if (lit) Theme.selected else Theme.raised
+            c.drawRoundRect(b, 8f, 8f, pFill)
+            val sw = RectF(b.left + 7f, b.top + 7f, b.right - 7f, b.bottom - 38f)
+            GeneralPictures.swatch(c, sw, t)
+            pStroke.color = android.graphics.Color.argb(200, 0, 0, 0); pStroke.strokeWidth = 1.5f
+            c.drawRoundRect(sw, 6f, 6f, pStroke)
+            edge(c, b, lit)
+            pName.textSize = size; pName.color = if (lit) Theme.gold else Theme.text; pName.textAlign = Paint.Align.CENTER
+            c.drawText(Tr.t(t.name), b.centerX(), b.bottom - 13f, pName)
+            pName.textAlign = Paint.Align.LEFT; pName.textSize = 25f
+        }
+    }
+
+    /** the one name size the band's swatches share: the largest (22 down to 15) at which the longest name fits a chip [w] wide */
+    private fun swatchTextSize(names: List<String>, w: Float): Float {
+        var s = 22f
+        while (s > 15f) {
+            pName.textSize = s
+            if (names.all { pName.measureText(Tr.t(it)) <= w - 14f }) break
+            s -= 1f
+        }
+        pName.textSize = 25f
+        return s
     }
 
     private fun GameUiTiles.Box.rect() = RectF(l, t, r, b)

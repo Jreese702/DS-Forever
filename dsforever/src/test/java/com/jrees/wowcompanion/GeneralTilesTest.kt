@@ -96,8 +96,13 @@ class GeneralTilesTest {
 
     @Test fun premadesWhileNoMakerPage() {
         val lines = GeneralTiles.presetLines(ThemePresets.ALL.map { it.id })
-        assertEquals(listOf(listOf("classic", "dark_gold", "dark_silver", "dark_rose"), listOf("oled_bronze", "oled_gold", "oled_silver"),
-            listOf("oled_rose", "oled_rose_gold", "oled_frost")), lines)
-        assertEquals(ThemePresets.ALL.size, lines.flatten().toSet().size)
+        // an even grid of swatches (2026-11-17 review: no ragged 4 / 3 / 3), in the presets' order
+        assertEquals(listOf(listOf("classic", "dark_gold", "dark_silver", "dark_rose", "oled_bronze"),
+            listOf("oled_gold", "oled_silver", "oled_rose", "oled_rose_gold", "oled_frost")), lines)
+        assertEquals(ThemePresets.ALL.map { it.id }.toSet(), lines.flatten().toSet()); assertEquals(ThemePresets.ALL.size, lines.flatten().size)
+        // as few lines as hold them at five, the same count on each (the last may hold fewer)
+        fun sizes(n: Int) = GeneralTiles.presetLines((1..n).map { "t$it" }).map { it.size }
+        assertEquals(listOf(4, 3), sizes(7)); assertEquals(listOf(5), sizes(5)); assertEquals(listOf(4, 4, 3), sizes(11))
+        assertEquals(emptyList<Int>(), sizes(0))
     }
 }
