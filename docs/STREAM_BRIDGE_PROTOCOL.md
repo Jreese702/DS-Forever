@@ -24,6 +24,9 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - `GET /v1/info` (plain HTTP on the bridge port) answers the same JSON as the welcome's info. *(issue #414)* When the stored bridge
   port answers nowhere and mDNS is silent, the Thor asks `/v1/info` on Desktop's other ports (48210-48219) and uses one only when
   its `host_id` is the paired Desktop's; a `_dsforever` advert of the paired Desktop (its `id`) on another port is followed too.
+- *Manual IP (Thor on another subnet, where mDNS doesn't reach)*: the pairing screen's "PC's IP address" row takes an IPv4 (optionally
+  `address:port`). The Thor asks `/v1/info` on 48210-48219 (or the given port) at that address; the first answer with a `host_id` is
+  the PC (`pc_name`, `sunshine.http_port` as in the TXT above), and pairing by the code runs as for a discovered PC.
 
 ## 2. Transport
 

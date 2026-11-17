@@ -100,7 +100,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         view.addView(curtainView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         overlay = FrameLayout(activity)
         view.addView(overlay, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        pairing = PairingView(activity, onPair = { pair(it) }, onBack = { back() }, onQuality = { openQuality() }, onPcStep = { stepPc(it) })
+        pairing = PairingView(activity, onPair = { pair(it) }, onBack = { back() }, onQuality = { openQuality() }, onPcStep = { stepPc(it) }, onManualPc = { useManualPc(it) })
         status = StatusView(activity, onRetry = { retryNow() }, onPairAgain = { show(Screen.PAIRING) }, onQuality = { openQuality() }, onBack = { back() })
         overlay.centered(pairing, 640f)
         overlay.centered(status, 760f)
@@ -553,7 +553,26 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     // ---------------------------------------------------------------- pairing
-    private fun selectedPc(): FoundPc? = found.getOrNull(pcIndex.coerceIn(0, (found.size - 1).coerceAtLeast(0)))
+    /** the PC the player named by IP (another subnet): it wins over the mDNS list until LB / RB steps to a found PC */
+    private var manualPc: FoundPc? = null
+
+    private fun useManualPc(text: String) {
+        val c = ManualHost.parse(text) as? ManualHost.Check.Ok ?: return
+        pairing.busy = true
+        worker.execute {
+            val pc = NetProbe.findDesktop(c.address, if (c.port > 0) listOf(c.port) else BridgePorts.others(-1))
+            main.post {
+                pairing.busy = false
+                if (screen != Screen.PAIRING) return@post
+                if (pc == null) { pairing.setMessage(ManualHost.notFound(c.address)); return@post }
+                manualPc = pc
+                pairing.setMessage("")
+                showPc()
+            }
+        }
+    }
+
+    private fun selectedPc(): FoundPc? = manualPc ?: found.getOrNull(pcIndex.coerceIn(0, (found.size - 1).coerceAtLeast(0)))
 
     private fun onFound() {
         if (pcIndex >= found.size) pcIndex = 0
@@ -612,7 +631,12 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         })
     }
 
-    private fun stepPc(by: Int) { if (found.isNotEmpty()) { pcIndex = ((pcIndex + by) % found.size + found.size) % found.size; showPc() } }
+    private fun stepPc(by: Int) {
+        if (manualPc == null && found.isEmpty()) return
+        manualPc = null
+        if (found.isNotEmpty()) pcIndex = ((pcIndex + by) % found.size + found.size) % found.size
+        showPc()
+    }
 
     private fun pair(code: String) {
         val pc = selectedPc() ?: run { pairing.setMessage("No PC found yet: is DS Forever Desktop running, on the same Wi-Fi?"); return }

@@ -5,8 +5,13 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
 import android.view.Gravity
+import android.text.InputType
+import android.text.method.DigitsKeyListener
 import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -48,15 +53,29 @@ internal object StreamLook {
 
 /**
  * "ENTER THE CODE SHOWN IN DS FOREVER DESKTOP": six boxes, a touch number pad, the PC it pairs with. The controller: D-pad up / down
- * turns the selected digit, left / right moves, A = Pair, B = back, X = delete, LB / RB = the previous / next PC found.
+ * turns the selected digit, left / right moves, A = Pair, B = back, X = delete, LB / RB = the previous / next PC found,
+ * Start = type the PC's IP address (a PC on another subnet, which mDNS can't find).
  */
 internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, private val onBack: () -> Unit,
-                           private val onQuality: () -> Unit, private val onPcStep: (Int) -> Unit) : LinearLayout(ctx) {
+                           private val onQuality: () -> Unit, private val onPcStep: (Int) -> Unit,
+                           private val onManualPc: (String) -> Unit = {}) : LinearLayout(ctx) {
     val entry = CodeEntry()
     private val boxes = List(CodeEntry.LENGTH) { StreamLook.text(ctx, 34f, bold = true) }
     private val pcLine = StreamLook.text(ctx, 16f, StreamLook.DIM)
     private val message = StreamLook.text(ctx, 16f, StreamLook.BAD)
     private val title = StreamLook.text(ctx, 24f, StreamLook.GOLD, bold = true)
+    /** "PC's IP address": for a PC on another subnet, where mDNS can't see it (hidden until asked for) */
+    private val ipField = EditText(ctx).apply {
+        hint = "PC's IP address, e.g. 192.168.1.20"; setHintTextColor(StreamLook.DIM); setTextColor(StreamLook.INK)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f); gravity = Gravity.CENTER; setSingleLine()
+        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        keyListener = DigitsKeyListener.getInstance("0123456789.:")
+        imeOptions = EditorInfo.IME_ACTION_GO
+        background = StreamLook.rounded(StreamLook.BOX, StreamLook.dp(ctx, 10f).toFloat(), StreamLook.dp(ctx, 1f), StreamLook.DIM)
+        setPadding(StreamLook.dp(ctx, 12f), StreamLook.dp(ctx, 8f), StreamLook.dp(ctx, 12f), StreamLook.dp(ctx, 8f))
+        setOnEditorActionListener { _, action, _ -> if (action == EditorInfo.IME_ACTION_GO) { useIp(); true } else false }
+    }
+    private val ipRow = StreamLook.row(ctx, ipField, StreamLook.button(ctx, "Use this PC") { useIp() }).apply { visibility = View.GONE }
     @Volatile var busy = false
         set(v) { field = v; post { alpha = if (v) 0.6f else 1f } }
 
@@ -80,8 +99,29 @@ internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, p
         addView(StreamLook.row(ctx, StreamLook.button(ctx, "Delete") { if (!busy) { entry.backspace(); refresh() } }, digitKey(ctx, 0),
             StreamLook.button(ctx, "Pair  (A)") { submit() }))
         addView(message)
-        addView(StreamLook.row(ctx, StreamLook.button(ctx, "Stream quality (Y)") { onQuality() }, StreamLook.button(ctx, "Back (B)") { onBack() }))
+        addView(ipRow)
+        addView(StreamLook.row(ctx, StreamLook.button(ctx, "PC's IP address (Start)") { toggleIp() }, StreamLook.button(ctx, "Stream quality (Y)") { onQuality() },
+            StreamLook.button(ctx, "Back (B)") { onBack() }))
         refresh()
+    }
+
+    private fun toggleIp() {
+        if (busy) return
+        val show = ipRow.visibility != View.VISIBLE
+        ipRow.visibility = if (show) View.VISIBLE else View.GONE
+        val imm = context.getSystemService(InputMethodManager::class.java)
+        if (show) { ipField.requestFocus(); imm?.showSoftInput(ipField, InputMethodManager.SHOW_IMPLICIT) }
+        else { ipField.clearFocus(); imm?.hideSoftInputFromWindow(ipField.windowToken, 0) }
+    }
+
+    private fun useIp() {
+        if (busy) return
+        val text = ipField.text.toString()
+        val c = ManualHost.parse(text)
+        if (c !is ManualHost.Check.Ok) { message.text = ManualHost.message(c) ?: ""; return }
+        context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(ipField.windowToken, 0)
+        message.text = "Looking for DS Forever Desktop at ${c.address}…"
+        onManualPc(text)
     }
 
     private fun digitKey(ctx: Context, d: Int) = StreamLook.button(ctx, "  $d  ") { if (!busy) { entry.type(d); message.text = ""; refresh() } }
@@ -109,6 +149,7 @@ internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, p
     /** a controller key while this screen shows; true = used */
     fun pad(keyCode: Int): Boolean {
         if (busy && keyCode != android.view.KeyEvent.KEYCODE_BUTTON_B) return true
+        if (keyCode == android.view.KeyEvent.KEYCODE_BUTTON_START) { toggleIp(); return true }
         when (keyCode) {
             android.view.KeyEvent.KEYCODE_DPAD_UP -> entry.up()
             android.view.KeyEvent.KEYCODE_DPAD_DOWN -> entry.down()

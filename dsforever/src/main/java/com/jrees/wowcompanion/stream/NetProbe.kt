@@ -90,6 +90,23 @@ object NetProbe {
         } finally { pool.shutdownNow() }
     }
 
+    /**
+     * A PC typed in by IP (another subnet: no mDNS): its Desktop's bridge, found by asking /v1/info on [ports] (the first that answers
+     * as Desktop wins). Null = nothing there. A worker thread only.
+     */
+    fun findDesktop(address: String, ports: List<Int> = BridgePorts.others(-1), timeoutMs: Int = Route.PROBE_MS): FoundPc? {
+        if (ports.isEmpty()) return null
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(ports.size.coerceAtMost(BridgePorts.SPAN))
+        try {
+            val asks = ports.map { p -> pool.submit<FoundPc?> { ManualHost.fromInfo(address, p, bridgeInfo(address, p, timeoutMs)) } }
+            for (a in asks) {
+                val pc = try { a.get(timeoutMs * 3L, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: Throwable) { null }
+                if (pc != null) return pc
+            }
+            return null
+        } finally { pool.shutdownNow() }
+    }
+
     /** everything [Diagnosis.reason] needs for [host] (network calls: a worker thread) */
     fun probe(ctx: Context, host: PairedHost, seen: List<FoundPc>, notPaired: Boolean = false): Diagnosis.Probe {
         val wifi = onWifi(ctx)
