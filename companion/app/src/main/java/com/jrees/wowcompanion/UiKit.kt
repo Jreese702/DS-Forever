@@ -7338,8 +7338,35 @@ object UiKit {
         } else if (t.oled) { kk = k * 1.08f; off = -8f * k }
         else { kk = k; off = 0f }
         val scale = ColorMatrix(floatArrayOf(kk, 0f, 0f, 0f, off, 0f, kk, 0f, 0f, off, 0f, 0f, kk, 0f, off, 0f, 0f, 0f, 1f, 0f))
-        if (t.artSat != 1f) { setSaturation(t.artSat); postConcat(scale) } else set(scale)
+        reset()
+        if (t.artSat != 1f) setSaturation(t.artSat)
+        artTint(t)?.let { postConcat(it) }
+        postConcat(scale)
     }
+
+    /**
+     * THE GROUND'S TINT (review fix 2026-11-17: every theme's rooms stood on the same brown art, so the maker's Ground pick and the
+     * premade themes' grounds - Cool, Rose, Moss, Dusk - only reached the plates and could not be told apart, in the rooms or in the
+     * gallery): the art, after [ThemeSpec.artSat], pulled [ART_TINT] of the way to its own light in the theme's ground hue (its
+     * [ThemeSpec.picks]' tint; a Neutral tint = plain grey), its light kept. Classic: none, the art exactly as harvested.
+     */
+    fun artTint(t: ThemeSpec): ColorMatrix? {
+        val p = t.picks ?: return null
+        if (t.id == ThemePresets.CLASSIC.id) return null
+        val col = ThemeMaker.hsl(p.tintHue, (p.tintSat * 2.4f).coerceAtMost(0.7f), 0.5f)
+        val r = Color.red(col) / 255f; val g = Color.green(col) / 255f; val b = Color.blue(col) / 255f
+        val lum = (0.299f * r + 0.587f * g + 0.114f * b).coerceAtLeast(0.05f)
+        val f = floatArrayOf(r / lum, g / lum, b / lum)
+        val w = ART_TINT
+        val l = floatArrayOf(0.299f, 0.587f, 0.114f)
+        val m = FloatArray(20)
+        for (i in 0..2) for (j in 0..2) m[i * 5 + j] = (if (i == j) 1f - w else 0f) + w * f[i] * l[j]
+        m[18] = 1f
+        return ColorMatrix(m)
+    }
+
+    /** how far a theme's ground art is pulled to its ground hue ([artTint]) */
+    const val ART_TINT = 0.5f
 
     /** the OLED floor (out of 255, times the call's light): what a ground's median gets on top of its own light */
     const val OLED_FLOOR = 8f

@@ -27,7 +27,7 @@ object ThemeGallery {
     /**
      * A ROOM IN [spec] over [r] (review fix 2026-11-17: the drawn wireframe read as a diagram next to the Top-screen tiles' real pictures):
      * a REAL miniature - the Social room's own pieces (the header and its rule, the list and detail panes' art at the theme's pane light
-     * under its vignette, the game's friend lines, a framed class tile, a red button) drawn by UiKit itself in [spec] ([Theme.preview]:
+     * under its vignette, two friend rows, a framed class tile, a red button; pictures and bars, no words) drawn by UiKit itself in [spec] ([Theme.preview]:
      * nothing saved, no listener told) into a small picture cached per theme and size, so a gallery of a dozen costs a dozen renders
      * once. Without the kit: [drawnRoom] (strokes in the theme's colours).
      */
@@ -66,48 +66,70 @@ object ThemeGallery {
         pics[key]?.let { return it }
         val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
-        val s = w / ROOM_W
+        val lw = if (strip) STRIP_W else ROOM_W
+        val s = w / lw
         c.scale(s, s)
-        val ok = runCatching { Theme.preview(spec) { if (strip) realStrip(c, ROOM_W, h / s) else realRoom(c, ROOM_W, h / s) } }.isSuccess
+        val ok = runCatching { Theme.preview(spec) { if (strip) realStrip(c, lw, h / s) else realRoom(c, lw, h / s) } }.isSuccess
         if (!ok) return null
         pics[key] = b
         return b
     }
 
-    /** the logical width the miniature is laid out at (its words and plates at the rooms' own sizes, then scaled down) */
-    private const val ROOM_W = 600f
+    /** the logical width the miniature is laid out at (its plates and pictures at a size that still reads in a 216 px well) */
+    private const val ROOM_W = 360f
+    /** the maker's room strip's logical width (the Settings pieces at their own sizes) */
+    private const val STRIP_W = 600f
 
-    /** the Social room's pieces over [w] x [h] in the theme in use (inside [Theme.preview]) */
+    /**
+     * the Social room's pieces over [w] x [h] in the theme in use (inside [Theme.preview]), PICTURES ONLY (review fix 2026-11-17: its
+     * names and zones were 8 - 10 px words in a gallery well; the Top-screen tiles the user loves carry pictures, never small print):
+     * the header bar and its metal rule with a short accent stroke for the title, the list and detail panes' art (the theme's ground
+     * light, tint and vignette), two friend rows (a plate, then the chosen one lit) each with its class picture and two bars where the
+     * words go (the name in its class colour, the zone in the dim text), the chosen friend's class in a framed tile, and a red button
+     */
     private fun realRoom(c: Canvas, w: Float, h: Float) {
         pF.style = Paint.Style.FILL; pF.color = Theme.ink
         c.drawRect(0f, 0f, w, h, pF)
-        val split = w * 0.6f
-        UiKit.pane(c, RectF(0f, 62f, split, h))
-        UiKit.pane(c, RectF(split, 62f, w, h), right = true)
-        UiKit.paneDivider(c, split, 62f, h)
-        UiKit.header(c, w, "Social")
-        // the friend lines: one chosen, as the room shows them
-        val lines = listOf(
-            Triple("online", "Jaina", "MAGE"), Triple("online", "Thrall", "SHAMAN"), Triple("away", "Sylvanas", "HUNTER"),
-            Triple("offline", "Uther", "PALADIN"))
-        val zones = listOf("Stormwind City", "Orgrimmar", "Undercity", "")
-        var y = 74f
-        for ((i, l) in lines.withIndex()) {
-            if (y + 100f > h - 4f) break
-            val col = if (l.first == "offline") Theme.offline else Theme.classColourOf(l.third)
-            UiKit.playerLine(c, RectF(12f, y, split - 14f, y + 100f), l.first, l.second, col, zones[i], i == 1)
-            y += 104f
+        val top = 34f
+        val split = w * 0.58f
+        UiKit.pane(c, RectF(0f, top, split, h))
+        UiKit.pane(c, RectF(split, top, w, h), right = true)
+        UiKit.paneDivider(c, split, top, h)
+        UiKit.header(c, w, "", height = top)
+        bar(c, 16f, top / 2f - 5f, 96f, 10f, Theme.gold)
+        // the friend rows: a plate, then the chosen one lit as the room lights it
+        val rows = listOf("MAGE" to 0.62f, "SHAMAN" to 0.5f)
+        val rh = ((h - top - 30f) / 2f).coerceAtMost(58f)
+        var y = top + 12f
+        for ((i, row) in rows.withIndex()) {
+            val r = RectF(10f, y, split - 12f, y + rh)
+            if (i == 1) UiKit.selectedRow(c, r, Theme.gold)
+            else { pF.color = Theme.raised; if (Theme.cur.oled) pF.alpha = 209; c.drawRect(r, pF); pF.alpha = 255 }
+            val ic = rh - 14f
+            val ib = RectF(r.left + 10f, r.top + 7f, r.left + 10f + ic, r.top + 7f + ic)
+            UiKit.classIcon(row.first)?.let { c.drawBitmap(it, null, ib, pArt) }
+            val x0 = ib.right + 12f; val span = r.right - x0 - 12f
+            bar(c, x0, r.centerY() - 13f, span * row.second, 11f, Theme.classColourOf(row.first))
+            bar(c, x0, r.centerY() + 5f, span * row.second * 0.75f, 8f, Theme.textDim)
+            y += rh + 8f
         }
         // the detail: the chosen friend's class in a framed tile, and the room's red button under it
-        val ts = minOf(118f, (h - 62f) * 0.42f)
-        val tile = RectF((split + w) / 2f - ts / 2f, 84f, (split + w) / 2f + ts / 2f, 84f + ts)
+        val bh = 34f
+        val ts = minOf(78f, h - top - bh - 40f, (w - split) - 40f)
+        val cx = (split + w) / 2f
+        val tile = RectF(cx - ts / 2f, top + 12f, cx + ts / 2f, top + 12f + ts)
         pF.color = Theme.raised
-        c.drawRoundRect(tile, 10f, 10f, pF)
-        UiKit.classIcon("SHAMAN")?.let { c.drawBitmap(it, null, RectF(tile.left + 10f, tile.top + 10f, tile.right - 10f, tile.bottom - 10f), pArt) }
-        if (!UiKit.ringBox(c, tile)) metalFrame(c, tile, Theme.cur, 6f)
-        val bh = 66f
-        val bt = maxOf(tile.bottom + 18f, h - bh - 22f)
-        if (bt + bh <= h - 4f) UiKit.button(c, RectF(split + 30f, bt, w - 30f, bt + bh), "Whisper", textSize = 27f)
+        c.drawRoundRect(tile, 8f, 8f, pF)
+        UiKit.classIcon("SHAMAN")?.let { c.drawBitmap(it, null, RectF(tile.left + 8f, tile.top + 8f, tile.right - 8f, tile.bottom - 8f), pArt) }
+        if (!UiKit.ringBox(c, tile)) metalFrame(c, tile, Theme.cur, 5f)
+        val bt = maxOf(tile.bottom + 10f, h - bh - 12f)
+        UiKit.button(c, RectF(split + 16f, bt, w - 16f, bt + bh), "")
+    }
+
+    /** a rounded bar where words would go (the Top-screen pictures' "sample names as short bars") */
+    private fun bar(c: Canvas, x: Float, y: Float, len: Float, th: Float, col: Int) {
+        pF.style = Paint.Style.FILL; pF.color = col
+        c.drawRoundRect(RectF(x, y, x + len, y + th), th / 2f, th / 2f, pF)
     }
 
     /** the Settings page's pieces over [w] x [h] in the theme in use: its stone, a framed picture tile, an On / Off pair, a red button */

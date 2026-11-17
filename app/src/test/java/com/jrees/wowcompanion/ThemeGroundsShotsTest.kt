@@ -2,6 +2,8 @@ package com.jrees.wowcompanion
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
 import android.view.View
 import org.json.JSONArray
 import org.json.JSONObject
@@ -22,7 +24,9 @@ import java.io.File
  * room_<room>_<theme>.png. Uses only what the base commit already had (Theme.use, the views), so the same file renders the BEFORE.
  *
  * Runs only when GROUNDS_SHOTS_DIR is set. GROUNDS_ART_ROOT = an art root laid out like the app's (ui/kit, fonts, icons.pak);
- * GROUNDS_MACRO_DOCS = Macros' documents (grid.json); GROUNDS_SOCIAL = social_03_friends.json's folder.
+ * GROUNDS_MACRO_DOCS = Macros' documents (grid.json); GROUNDS_SOCIAL = social_03_friends.json's folder; GROUNDS_CTL_DOCS = the
+ * Controller room's sample pad map (padmap_on.json, ctl_dleft.json). The loot and group-invite pop-ups are drawn over the Social room (on
+ * the device a room is always behind them); Settings > Top screen and the Controller room stand on their RoomGround as core wires it.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -45,11 +49,12 @@ class ThemeGroundsShotsTest {
 
     private fun settle() { ShadowLooper.idleMainLooper(); Thread.sleep(200); ShadowLooper.idleMainLooper() }
 
-    private fun shot(v: View, h: Int = H): Bitmap {
+    private fun shot(v: View, h: Int = H, behind: Bitmap? = null): Bitmap {
         lay(v, W, h)
         val b = Bitmap.createBitmap(W, h, Bitmap.Config.ARGB_8888)
         for (pass in 0..1) {
             val c = Canvas(b); c.drawColor(Theme.ink)
+            behind?.let { c.drawBitmap(it, 0f, 0f, null) }
             v.draw(c)
             if (pass == 0) { settle(); lay(v, W, h) }
         }
@@ -136,7 +141,7 @@ class ThemeGroundsShotsTest {
             .put("loot", loot).put("nav", JSONObject().put("on", true).put("cur", "loot 1")).put("_gt", gn.invoke(v) as Long)
             .put("pad", JSONObject().put("rows", JSONObject().put("ibuy", 15).put("iact", 14).put("ipick", 13)))
         v.update(d, true)
-        return shot(v, 1080)
+        return shot(v, 1080, behind = social())
     }
 
     private fun layout(): Bitmap? {
@@ -155,7 +160,54 @@ class ThemeGroundsShotsTest {
             .put("text", "Brannoc invites you to a group.").put("x", false)
             .put("buttons", JSONArray().put(JSONObject().put("k", 1).put("label", "Accept")).put(JSONObject().put("k", 2).put("label", "Decline"))))), false)
         v.visibility = View.VISIBLE
-        return shot(v)
+        return shot(v, behind = social())
+    }
+
+    // ---------------------------------------------------------------- Settings and the Controller room, as core will wire them
+
+    /**
+     * a canvas on which the page's own flat ink (drawColor(Theme.ink), and an ink fill over a page-wide rectangle: the scroll's
+     * background) is NOT drawn, so the [RoomGround] drawn first shows through: what core's one-line wiring (SettingsView :588, SettingsPad
+     * :37, ControllerView :313 - each drawColor(Theme.ink) becomes the RoomGround call) gives, on the real pages and their real tiles
+     */
+    private class GroundCanvas(b: Bitmap, private val ink: Int) : Canvas(b) {
+        private fun page(p: Paint, w: Float) = p.shader == null && p.style == Paint.Style.FILL && p.color == ink && w >= 600f
+        override fun drawColor(color: Int) { if (color != ink) super.drawColor(color) }
+        override fun drawRect(r: RectF, p: Paint) { if (!page(p, r.width())) super.drawRect(r, p) }
+        override fun drawRect(r: android.graphics.Rect, p: Paint) { if (!page(p, r.width().toFloat())) super.drawRect(r, p) }
+        override fun drawRect(l: Float, t: Float, r: Float, b: Float, p: Paint) { if (!page(p, r - l)) super.drawRect(l, t, r, b, p) }
+    }
+
+    private fun grounded(v: View, ground: (Canvas, RectF) -> Unit, h: Int = H, settleView: () -> Unit = {}): Bitmap {
+        val b = Bitmap.createBitmap(W, h, Bitmap.Config.ARGB_8888)
+        for (pass in 0..1) {
+            lay(v, W, h); settleView()
+            val c = GroundCanvas(b, Theme.ink)
+            Canvas(b).drawColor(Theme.ink)
+            ground(Canvas(b), RectF(0f, 0f, W.toFloat(), h.toFloat()))
+            v.draw(c)
+            if (pass == 0) settle()
+        }
+        return b
+    }
+
+    /** Settings > Top screen (the picture tiles the user loves) standing on [RoomGround.settings] */
+    private fun settingsTop(): Bitmap {
+        Settings.init(app); SettingsTabs.init(app); GameUi.init(app)
+        val sv = SettingsView(app) { }
+        sv.loginRow = true
+        val r = SettingsRoom(app, sv) { null }
+        r.show(SettingsTabs.Tab.TOP)
+        return grounded(r, RoomGround::settings) { ShadowLooper.idleMainLooper() }
+    }
+
+    /** the Controller room (a sample pad map) standing on [RoomGround.controller] */
+    private fun controller(): Bitmap? {
+        val docs = System.getenv("GROUNDS_CTL_DOCS")?.let { File(it) }?.takeIf { File(it, "padmap_on.json").isFile } ?: return null
+        val v = ControllerView(app, { true })
+        v.onPadMap(PadMapModel.parse(JSONObject(File(docs, "padmap_on.json").readText()))!!)
+        v.onPadTabCtl(PadMapModel.parseCtl(JSONObject(File(docs, "ctl_dleft.json").readText()))!!)
+        return grounded(v, RoomGround::controller)
     }
 
     @Test fun shots() {
@@ -166,7 +218,8 @@ class ThemeGroundsShotsTest {
             "macros" to ::macros, "social" to ::social, "calendar" to { shot(CalendarView(app)) },
             "groupfinder" to { shot(GroupFinderView(app)) }, "character" to { shot(CharacterView(app)) }, "bags" to ::bags,
             "professions" to { shot(ProfessionsView(app)) }, "talents" to { shot(TalentsView(app) { _, _ -> }) }, "chat" to ::chat,
-            "vendor" to ::vendor, "loot" to ::loot, "layout" to ::layout, "dialog" to ::dialog)
+            "vendor" to ::vendor, "loot" to ::loot, "layout" to ::layout, "dialog" to ::dialog,
+            "settings" to ::settingsTop, "controller" to ::controller)
         out!!.mkdirs()
         for (id in themes) {
             Theme.use(id)

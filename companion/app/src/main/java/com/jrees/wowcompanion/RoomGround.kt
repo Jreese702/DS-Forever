@@ -36,10 +36,16 @@ object RoomGround {
 
     fun controller(c: Canvas, r: RectF) = draw(c, r, CONTROLLER_LIGHT)
 
-    /** Bags: rock at 0.6 x the stone light (design 8.4: "rock dropped" on OLED, a flat page in every theme): every theme */
+    /**
+     * Bags: rock at 0.6 x the stone light (design 8.4: "rock dropped" on OLED; it was a flat page in every theme). Classic keeps its flat
+     * page until the user rules on it (review 2026-11-17: Classic is the reference look and nobody asked for it to change; open pick,
+     * like pick 6): [BAGS_CLASSIC] = true gives Classic the rock too
+     */
     const val BAGS_LIGHT = 0.6f
+    const val BAGS_CLASSIC = false
 
     fun bags(c: Canvas, r: RectF) {
+        if (!BAGS_CLASSIC && Theme.classic) return
         UiKit.roomGround(c, r, "ground_rock", if (Theme.cur.oled) BAGS_LIGHT * OLED_LIFT else BAGS_LIGHT)
     }
 
