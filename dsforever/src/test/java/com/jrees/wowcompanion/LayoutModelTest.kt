@@ -8,6 +8,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import kotlin.math.roundToInt
 
 /**
  * THE TOP-SCREEN LAYOUT EDITOR, STAGE 1 (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top
@@ -42,8 +43,11 @@ class LayoutModelTest {
     @Test fun theDocumentAtLogin() {
         val d = doc("lay_closed")
         assertFalse(d.open); assertTrue(d.held); assertTrue("the row on the pad", d.ready)
-        assertEquals(listOf("hud", "compass", "target", "party", "nbar", "chat"), d.pieces.map { it.id })
-        assertEquals(listOf(0, 1, 2, 3, 4, 5), d.pieces.map { it.col })
+        assertEquals(listOf("hud", "compass", "target", "party", "nbar", "chat", "psarrow", "psguide"), d.pieces.map { it.id })
+        assertEquals(listOf(0, 1, 2, 3, 4, 5, 6, 7), d.pieces.map { it.col })
+        // hub58: our six listed (turned on); Polestar's two not (not loaded); the party block solo and the chat strip listed, not shown
+        assertEquals(listOf("hud", "compass", "target", "party", "nbar", "chat"), LayoutModel.listed(d).map { it.id })
+        assertFalse(d.piece("party")!!.vis); assertFalse(d.piece("chat")!!.vis); assertTrue(d.piece("compass")!!.vis)
         val hud = d.piece("hud")!!
         assertEquals(960.0, hud.ax, 0.01); assertEquals(890.0, hud.ay, 0.01); assertTrue(hud.atDefault)
         assertEquals(70, hud.smin); assertEquals(160, hud.smax); assertEquals(10, hud.sstep); assertTrue(hud.sizable)
@@ -71,6 +75,75 @@ class LayoutModelTest {
         val t = LayoutModel.tiles(doc("lay_closed"))
         assertEquals(listOf("hud", "target", "party", "compass", "nbar", "chat"), t.map { it.id })
         assertEquals(listOf("Your HUD", "Target", "Party", "Navigation", "Bars", "Bars"), t.map { LayoutModel.groupOf(it).label })
+    }
+
+    // ---------------------------------------------------------------- hub58: only the pieces that are on; Polestar in two
+    // (the user, 2026-11-17: "the edit mode should include any UI element that is currently turned on, including the wow UI and
+    // polestar. the polestar ui should be broken into 2, one for the arrow and one for the actual guide.")
+    @Test fun polestarIsTwoPieces() {
+        val d = doc("lay_polestar")
+        val t = LayoutModel.tiles(d)
+        assertEquals(listOf("hud", "target", "party", "compass", "psarrow", "psguide", "nbar", "chat"), t.map { it.id })
+        assertEquals(listOf("Polestar arrow", "Polestar guide"), t.filter { LayoutModel.groupOf(it) == LayoutModel.Group.POLESTAR }.map { LayoutModel.labelOf(it.id) })
+        val a = d.piece("psarrow")!!; val g = d.piece("psguide")!!
+        assertEquals(6, a.col); assertEquals(7, g.col)
+        assertFalse("moved only: Polestar's own scale sizes them", a.sizable || g.sizable)
+        assertTrue(a.movable && g.movable && a.atDefault && g.atDefault)
+    }
+
+    @Test fun onlyTheListedPiecesAreTiles() {
+        val d = doc("lay_off")                                         // our target bar turned off, Polestar's guide hidden
+        assertEquals(listOf("hud", "party", "compass", "psarrow", "nbar", "chat"), LayoutModel.tiles(d).map { it.id })
+        assertEquals(LayoutModel.tiles(d).map { it.id }.toSet(), LayoutModel.listed(d).map { it.id }.toSet())
+        assertTrue("a piece not shown this moment is still listed (dashed)", LayoutModel.tiles(d).any { it.id == "chat" && !it.vis })
+        // an older add-on with no `vis`: shown = listed
+        val old = LayoutModel.parsePiece(org.json.JSONObject("""{"id":"hud","on":true}"""))!!
+        assertTrue(old.vis)
+    }
+
+    @Test fun aPickedPieceTurnedOffIsLetGo() {
+        val e = LayoutModel.Editor().apply { wantOpen = true }
+        val on = doc("lay_polestar").copy(open = true)
+        e.onDoc(on)
+        e.pick("psguide")
+        assertEquals("psguide", e.picked)
+        e.nudge(5, 0)
+        assertNotNull(e.want)
+        e.onDoc(doc("lay_off"))                                        // the guide window hidden
+        assertNull("let go", e.picked)
+        assertNull("its wish gone: no tap goes for a piece that is not there", e.want)
+        assertEquals(LayoutModel.Focus.TILES, e.focus)
+        e.pick("target")                                               // turned off: never picked
+        assertNull(e.picked)
+        val sends = (0..10).mapNotNull { e.next(it * 1000L) }
+        assertTrue("no select cell for an unlisted piece", sends.none { it == LayoutModel.Send.Cell(7) || it == LayoutModel.Send.Cell(2) })
+    }
+
+    @Test fun theHighlightStaysOnItsPieceAsTheListChanges() {
+        val e = LayoutModel.Editor().apply { wantOpen = true }
+        e.onDoc(doc("lay_polestar").copy(open = true))
+        e.tile = e.tiles().indexOfFirst { it.id == "nbar" }
+        e.onDoc(doc("lay_off").copy(open = true))                      // two tiles above it gone
+        assertEquals("nbar", e.tilePiece()!!.id)
+    }
+
+    @Test fun theSnapLinesAreTheListedPiecesOnly() {
+        val d = doc("lay_off")
+        val hidden = d.piece("psguide")!!.rect
+        val e = LayoutModel.Editor().apply { wantOpen = true; onDoc(d.copy(open = true)); snapOn = true; gridOn = false }
+        e.pick("psarrow")
+        val a = d.piece("psarrow")!!
+        // carry the arrow so its left edge sits 3 px off the hidden guide's left edge: no snap onto a piece that is not there
+        val ax = hidden.x + 3 - a.offX
+        e.dragTo(ax, a.ay)
+        assertEquals(ax.roundToInt().toDouble(), e.want!!.first, 0.0)
+        // the control: with the guide listed the same drag snaps onto its edge
+        val on = doc("lay_polestar")
+        val e2 = LayoutModel.Editor().apply { wantOpen = true; onDoc(on.copy(open = true)); snapOn = true; gridOn = false }
+        e2.pick("psarrow")
+        val a2 = on.piece("psarrow")!!; val g2 = on.piece("psguide")!!.rect
+        e2.dragTo(g2.x + 3 - a2.offX, a2.ay)
+        assertEquals((g2.x - a2.offX).roundToInt().toDouble(), e2.want!!.first, 0.0)
     }
 
     // ---------------------------------------------------------------- the taps
@@ -325,7 +398,7 @@ class LayoutModelTest {
         val words = listOf("Layout", "Edit layout", "Move and size the top screen's pieces.", "Bars", "HUD", "Compass", "Nintendo bar",
             "Top chat", "Unsaved", "Size", "Snap", "Grid", "Revert", "Copy", "Drop", "Step", "Game's Edit Mode is open", "Unsaved changes",
             "Discard", "Copy from", "Open", "Your HUD", "Target", "Party", "Navigation", "Target bar", "Party frames", "Waiting for the game",
-            "Reset", "Save", "Pick", "Back", "No pad row", "In combat", "Cancel")
+            "Reset", "Save", "Pick", "Back", "No pad row", "In combat", "Cancel", "Polestar", "Polestar arrow", "Polestar guide")
         val dir = listOf("../companion/app/src/main/assets/companion/i18n", "companion/app/src/main/assets/companion/i18n").map { File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) {
             val raw = File(dir, "$l.json").readBytes()

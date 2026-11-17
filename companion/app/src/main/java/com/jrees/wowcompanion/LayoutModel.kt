@@ -17,6 +17,12 @@ import kotlin.math.roundToInt
  * goes there. Everything here is in 1080-line pixels from the top screen's top-left. [Editor] is the page's state: what the D-pad / the
  * stick / a finger asked for, and [Editor.next] decides the ONE tap to send now (the selection first, the reach switch, then the latest
  * spot; at most one spot every [SPOT_MS] - 4 a second until the device probe says TapBridge keeps up with more).
+ *
+ * Hub hub58 (the user, 2026-11-17: "the edit mode should include any UI element that is currently turned on, including the wow UI and
+ * polestar. the polestar ui should be broken into 2, one for the arrow and one for the actual guide."): the page lists ONLY the pieces
+ * the add-on says are on ([Piece.on]: turned on; [Piece.vis]: shown this moment, else drawn dashed), so a piece turned off or hidden
+ * leaves the tiles, the miniature and the snap lines as the next document comes; Polestar's arrow and guide window are two pieces of
+ * their own ("psarrow", "psguide": moved only, an offset from Polestar's own place, in the Polestar group).
  */
 object LayoutModel {
     // ---------------------------------------------------------------- the row (Hub hub55's LAY columns)
@@ -78,8 +84,10 @@ object LayoutModel {
         /** the piece it follows until moved (the target bar: the compass), or null */
         val link: String?,
         val movable: Boolean,
-        /** shown on the top screen now (off = drawn dashed) */
+        /** hub58: turned on, so LISTED (an unlisted piece is left out of the page altogether) */
         val on: Boolean,
+        /** hub58: shown on the top screen this moment (off = drawn dashed: the party block solo, the chat strip between messages) */
+        val vis: Boolean = on,
     ) {
         val sizable get() = smax > smin
         /** the rect's top-left from the anchor */
@@ -113,7 +121,8 @@ object LayoutModel {
             Rect(d(o, "x"), d(o, "y"), d(o, "w"), d(o, "h")), d(o, "ax"), d(o, "ay"),
             o.optInt("dx", 0), o.optInt("dy", 0), o.optInt("s", 100), o.optBoolean("d", true),
             o.optInt("sn", 100), o.optInt("sx", 100), o.optInt("ss", 10).coerceAtLeast(1),
-            o.optString("l", "").ifEmpty { null }, o.optBoolean("m", true), o.optBoolean("on", false))
+            o.optString("l", "").ifEmpty { null }, o.optBoolean("m", true), o.optBoolean("on", false),
+            o.optBoolean("vis", o.optBoolean("on", false)))
     }
 
     /** a "lay" document; a part document (`part`: the selected piece alone) merges into [prev] */
@@ -148,22 +157,29 @@ object LayoutModel {
     }
 
     // ---------------------------------------------------------------- the tiles (the design's groups)
-    enum class Group(val label: String) { HUD("Your HUD"), TARGET("Target"), PARTY("Party"), NAVIGATION("Navigation"), BARS("Bars"), GAME("Game") }
+    enum class Group(val label: String) {
+        HUD("Your HUD"), TARGET("Target"), PARTY("Party"), NAVIGATION("Navigation"), POLESTAR("Polestar"), BARS("Bars"), GAME("Game")
+    }
 
     fun groupOf(p: Piece): Group = if (p.game) Group.GAME else when (p.id) {
         "hud" -> Group.HUD; "target" -> Group.TARGET; "party" -> Group.PARTY; "compass" -> Group.NAVIGATION
+        "psarrow", "psguide" -> Group.POLESTAR
         "nbar", "chat" -> Group.BARS; else -> Group.GAME
     }
 
     /** the piece's name (the app's words: Tr.t at the draw) */
     fun labelOf(id: String): String = when (id) {
         "hud" -> "HUD"; "compass" -> "Compass"; "target" -> "Target bar"; "party" -> "Party frames"; "nbar" -> "Nintendo bar"
-        "chat" -> "Top chat"; else -> id
+        "chat" -> "Top chat"; "psarrow" -> "Polestar arrow"; "psguide" -> "Polestar guide"; else -> id
     }
 
-    /** the tiles in the page's order: by group, each group's pieces in the document's order */
+    /** hub58: the pieces on the page (the miniature, the snap lines, a finger's pick): only the listed ones */
+    fun listed(doc: Doc?): List<Piece> = doc?.pieces?.filter { it.on } ?: emptyList()
+
+    /** the tiles in the page's order: the LISTED pieces (hub58), by group, each group's pieces in the document's order */
     fun tiles(doc: Doc?): List<Piece> =
-        doc?.pieces?.filter { it.movable || it.game }?.sortedWith(compareBy({ groupOf(it).ordinal }, { doc.pieces.indexOf(it) })) ?: emptyList()
+        doc?.pieces?.filter { it.on && (it.movable || it.game) }?.sortedWith(compareBy({ groupOf(it).ordinal }, { doc.pieces.indexOf(it) }))
+            ?: emptyList()
 
     // ---------------------------------------------------------------- geometry
     /** where to tap for an anchor at ([x], [y]): the spot itself, or REACH lower with the reach switch (the spot inside the pad band or
@@ -278,12 +294,14 @@ object LayoutModel {
 
         fun onDoc(d: Doc) {
             val first = doc == null
+            val focusedId = tilePiece()?.id
             doc = d
             if (first) gridOn = d.gameGridOn ?: false
+            // hub58: a picked piece that is gone or no longer listed (turned off, hidden) is dropped, its wish with it
             val p = picked?.let { d.piece(it) }
-            if (picked != null && p == null) picked = null
+            if (picked != null && (p == null || !p.on)) { picked = null; sizeMode = false; if (focus == Focus.MOVING) focus = Focus.TILES }
             val q = subject()
-            if (wantId != null && q == null) clearWant()
+            if (wantId != null && (q == null || !q.on)) clearWant()
             // a spot the add-on ANSWERED (its spot counter moved past our send) but placed elsewhere (kept on the screen, whole pixels):
             // its answer is the place (never a document from before the tap: that one has the old counter)
             val w = want
@@ -293,7 +311,10 @@ object LayoutModel {
             // a dropped piece's wish fulfilled: nothing more to send for it
             if (q != null && picked != q.id && (want == null || near(q.ax, q.ay, want!!)) && (wantScale == null || wantScale == q.s)) clearWant()
             if (!d.open && !wantOpen) { picked = null; clearWant() }
-            tile = tile.coerceIn(0, (tiles(d).size - 1).coerceAtLeast(0))
+            // the highlight stays on the same piece when the list changes round it (hub58: pieces come and go live)
+            val ts = tiles(d)
+            val at = focusedId?.let { id -> ts.indexOfFirst { it.id == id } } ?: -1
+            tile = if (at >= 0) at else tile.coerceIn(0, (ts.size - 1).coerceAtLeast(0))
         }
 
         private fun near(x: Double, y: Double, w: Pair<Double, Double>) = abs(x - w.first) <= NEAR_PX && abs(y - w.second) <= NEAR_PX
@@ -321,7 +342,7 @@ object LayoutModel {
         /** A on a tile / a finger on a piece: pick it (the next moves go to it) */
         fun pick(id: String) {
             val p = doc?.piece(id) ?: return
-            if (!p.movable) return
+            if (!p.movable || !p.on) return
             if (id != wantId) clearWant()
             picked = id; focus = Focus.MOVING
             tiles().indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { tile = it }
@@ -337,7 +358,7 @@ object LayoutModel {
             var r = p.rect.moved(a.first - p.ax, a.second - p.ay)
             var x = a.first; var y = a.second
             if (snapIt && snapOn) {
-                val others = d.pieces.filter { it.id != p.id && !it.game }.map { it.rect }
+                val others = listed(d).filter { it.id != p.id && !it.game }.map { it.rect }
                 val (sx, sy) = snap(r, snapLines(d, others, if (gridOn) d.gameGridSp ?: 100.0 else null))
                 x += sx; y += sy; r = r.moved(sx, sy)
             }

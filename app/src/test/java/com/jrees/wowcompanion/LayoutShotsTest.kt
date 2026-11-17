@@ -225,6 +225,30 @@ class LayoutShotsTest {
         shot(c, "layout_opening")
     }
 
+    // ---------------------------------------------------------------- hub58: only what is on; Polestar in two
+    // (the user, 2026-11-17: "the edit mode should include any UI element that is currently turned on, including the wow UI and
+    // polestar. the polestar ui should be broken into 2, one for the arrow and one for the actual guide.")
+    @Test fun polestarsTwoPiecesAndOnlyWhatIsOn() {
+        val v = page("lay_polestar")
+        val e = v.editor
+        assertEquals(listOf("hud", "target", "party", "compass", "psarrow", "psguide", "nbar", "chat"), e.tiles().map { it.id })
+        val mini = LayoutView::class.java.getDeclaredField("mini").apply { isAccessible = true }.get(v) as android.graphics.RectF
+        for (id in e.tiles().map { it.id }) assertTrue("$id's tile inside the column (the rows fit)", tileBox(v, id).bottom <= mini.bottom + 1f)
+        shot(v, "layout_polestar")
+        e.tile = e.tiles().indexOfFirst { it.id == "psguide" }
+        v.padKey("PAD1")
+        assertEquals("A picks Polestar's guide", "psguide", e.picked)
+        v.padKey("PADDLEFT"); v.padKey("PADDLEFT")
+        assertEquals(e.doc!!.piece("psguide")!!.ax - 2.0, e.want!!.first, 0.0)
+        lay(v)
+        shot(v, "layout_polestar_guide")
+        // the guide window hidden, our target bar turned off: both leave the page at the next document, the guide let go
+        feed(v, "lay_off"); v.onDoc(); lay(v)                          // (a detached view's post never runs: its handler by hand)
+        assertEquals(listOf("hud", "party", "compass", "psarrow", "nbar", "chat"), e.tiles().map { it.id })
+        assertNull(e.picked)
+        shot(v, "layout_off")
+    }
+
     // ---------------------------------------------------------------- the Settings row
     @Test fun settingsShowsLayoutFirstOnTopScreen() {
         art()
