@@ -98,7 +98,7 @@ class SettingsTabsTest {
             G.IMPORT to listOf("Import add-ons"),
             G.IMPORTED to emptyList<String>(),
             G.FRAMES to listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game"),
-            G.MEMORY to listOf("Lighter mode", "Low-memory graphics", "Home map: full detail"),
+            G.MEMORY to listOf("Lighter mode", "Low-memory graphics", "Home map: full detail", "Map style when zoomed out"),
             G.INDOOR to listOf("Build in the background", "Progress", "Route data"),
             G.STREAMING to listOf("Stream settings"))
         for (g in G.values()) assertEquals(g.heading, want[g], B.values().filter { it.group == g }.flatMap { it.rows })
@@ -133,7 +133,7 @@ class SettingsTabsTest {
             ThirdPartyAddons.MANNERS.rowWords() +
             listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game",
                 "Build in the background", "Progress", "Route data", "Language", "Reload game UI", "Battle.net login", "Problem report",
-                "Lighter mode", "Low-memory graphics", "Home map: full detail", "Stream settings", "Status") +
+                "Lighter mode", "Low-memory graphics", "Home map: full detail", "Map style when zoomed out", "Stream settings", "Status") +
             // drawn before but in no block's list: GameUiSection's QOL Combat / Party groups, Add-ons > Polestar's top-screen row
             listOf("Start attack on hostile target", "Combat Auto Shot", "Party mode", "Polestar on the top screen") +
             // m150 / hub47 (the user, 2026-11-13): Smart Res, new under Party mode

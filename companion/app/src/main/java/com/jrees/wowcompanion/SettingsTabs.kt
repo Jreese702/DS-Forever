@@ -140,7 +140,7 @@ object SettingsTabs {
         FRAMES(Group.FRAMES, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game")),
         // 1.0.17 (the user's pick "A setting, off by default"): the lighter behaviour on any Thor
-        LIGHTER(Group.MEMORY, "Lighter mode", listOf("Lighter mode", "Low-memory graphics", "Home map: full detail")),
+        LIGHTER(Group.MEMORY, "Lighter mode", listOf("Lighter mode", "Low-memory graphics", "Home map: full detail", "Map style when zoomed out")),
         INDOOR(Group.INDOOR, "Indoor maps", listOf("Build in the background", "Progress", "Route data")),
         STREAMING(Group.STREAMING, "Streaming", listOf("Stream settings"));
 

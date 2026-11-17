@@ -95,6 +95,8 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
     /** the pictures held now, bytes (the tests; MemWatch's "worldroom") */
     val pictureBytes: Long get() = bmps.size().toLong()
+    /** pictures being read / made now (the tests) */
+    val picturesPending: Int get() = inFlight.size
     @Volatile private var artReady = false
     private var artNote: String? = null
     private fun artDir() = ArtHarvest.dir("worldmap")
@@ -238,20 +240,50 @@ class WorldMapRoomView(context: Context) : View(context) {
         var guard = 0
         while (guard++ < 3) {
             val m = model.maps[canvas] ?: return
-            if (model.isLand(m.id) && zoom < 1f) {           // a continent, or an island the world places by its row (Zephras Isle)
+            // a continent, or a land the world places by its own row (feat/map-skyborn's island, Zephras Isle: WorldMapModel.isLand)
+            if (model.isLand(m.id)) {
                 val w = model.parentOf(canvas)?.takeIf { p -> model.assignsOf(p).isNotEmpty() && model.placeOn(canvas, p) != null }
-                if (w != null) { switchCanvas(w); continue }
+                if (w != null && zoom < 1f) { switchCanvas(w); continue }
+                // 2026-11-17 (Kalimdor -> Eastern Kingdoms' sea): the view on ANOTHER continent's box (a continent's frame is mostly sea
+                // and reaches over its neighbour's coast): Home's backdrop goes to the world (it draws both there, the aimed one on top;
+                // no zoom range in a backdrop); the room hands its canvas straight to that continent where its frame covers the view
+                val pw = w?.let { model.placeOn(canvas, it) }
+                if (w != null && pw != null) {
+                    fun onW(x: Float, y: Float) = floatArrayOf(pw[0] + x * (pw[2] - pw[0]), pw[1] + y * (pw[3] - pw[1]))
+                    val at = ArrayList<FloatArray>(3)
+                    if (flying()) at.add(onW(flyX, flyY))
+                    at.add(onW(ccx, ccy)); at.add(onW(panX, panY))
+                    val aim = model.aimContinent(w, at, nearest = false)
+                    if (aim != null && aim != canvas) {
+                        if (painting) { switchCanvas(w); continue }
+                        val p = model.placeOn(aim, canvas)
+                        val h = 0.5f / zoom
+                        if (p != null && p[0] <= panX - h + EDGE_EPS && p[2] >= panX + h - EDGE_EPS && p[1] <= panY - h + EDGE_EPS &&
+                            p[3] >= panY + h - EDGE_EPS) { switchCanvas(aim); continue }
+                    }
+                }
             }
             if (model.assignsOf(canvas).isNotEmpty()) {
                 val h = 0.5f / zoom
-                // the smallest frame that covers the view (an island's frame lies inside Eastern Kingdoms')
-                val k = layers().filter { l -> l.kind == WorldMapModel.CONTINENT && zoom * l.p.width() >= 0.999f &&
+                // 2026-11-17 (Kalimdor -> Eastern Kingdoms' sea): only the continent the view is headed for, never the first frame that
+                // covers it (the frames overlap; WorldMapModel.aimContinent: the smallest box that holds the aim wins, so an island's
+                // frame, inside Eastern Kingdoms', is picked over it)
+                val k = contAim()?.takeIf { l -> zoom * l.p.width() >= 0.999f &&
                     l.p.left <= panX - h + EDGE_EPS && l.p.right >= panX + h - EDGE_EPS && l.p.top <= panY - h + EDGE_EPS && l.p.bottom >= panY + h - EDGE_EPS }
-                    .minByOrNull { it.p.width() }
                 if (k != null) { switchCanvas(k.id); continue }
             }
             return
         }
+    }
+
+    /** the continent on the world canvas the view is headed for (WorldMapModel.aimContinent): a glide's target, else the cursor, else
+     *  the view's middle, by the box that holds it (the smallest wins: an island in a continent's); none in a box: the nearest box to the first */
+    private fun contAim(): Lay? {
+        val at = ArrayList<FloatArray>(3)
+        if (flying()) at.add(floatArrayOf(flyX, flyY))
+        at.add(floatArrayOf(ccx, ccy)); at.add(floatArrayOf(panX, panY))
+        val id = model.aimContinent(canvas, at) ?: return null
+        return layers().firstOrNull { it.id == id && it.kind == WorldMapModel.CONTINENT }
     }
 
     /** the continent on the world canvas whose box (the one it is drawn in) holds ([u], [v]); an island's box lies inside a continent's
@@ -557,16 +589,23 @@ class WorldMapRoomView(context: Context) : View(context) {
             val hw = 0.5f / zoom
             panX = p[0] + hw - (zr.left - artR.left) / ux
             panY = p[1] + hw - (zr.top - artR.top) / uy
+            // 2026-11-17 (Kalimdor -> Eastern Kingdoms' sea, Home's map too): the continent is the one under Home's view (its middle)
+            ccx = panX; ccy = panY
             relayer()                                        // a continent seen whole and less: the world's canvas (as the room)
             c.save(); c.clipRect(clip)
             drawArt(c)
             c.restore()
+            backdropCanvas = canvas
         } finally {
             k.restore(this)
             painting = false
         }
         return true
     }
+
+    /** the canvas Home's last backdrop was drawn on (the tests: a continent, or the world) */
+    var backdropCanvas = 0
+        private set
 
     /** Home's map no longer asks for the art (its module closed): the pictures go after the room's wait, or at once on [lowMemory] */
     fun backdropDone(lowMemory: Boolean = DeviceTier.lowMemory()) {
@@ -588,6 +627,57 @@ class WorldMapRoomView(context: Context) : View(context) {
         override fun root(zone: Int) = backdropRoot(zone)
         override fun done() = backdropDone()
         override fun release() = backdropRelease()
+        override fun places(zone: Int) = continentPlaces(zone)
+        override fun picture(key: String, client: View, make: () -> Bitmap?) = backdropPicture(key, client, make)
+        override fun peek(key: String): Bitmap? = if (backdropPaused) null else bmps.get(key)
+    }
+
+    /**
+     * HOME'S TERRAIN ZOOM-OUT (Settings > Performance > Map style when zoomed out: Terrain; TerrainOverview): each continent of map
+     * [zone]'s root as a straight map of world yards onto [zone]'s own 0..1 - [game continent, au, bu, av, bv] with u = au + bu * worldY
+     * and v = av + bv * worldX, then (on a world) the box the world draws it in, [u0, v0, u1, v1] of [zone]'s 0..1 - by the continent's own assignment on the world (the same transform this room draws it by), else, on a
+     * root that is a continent, by that continent's world rect. Null = the art set is not read (Home's map stays on its zone).
+     */
+    fun continentPlaces(zone: Int): List<DoubleArray>? {
+        if (!artReady || backdropPaused) return null
+        val (root, zp) = model.rootPlace(zone) ?: return null
+        val zw = (zp[2] - zp[0]).toDouble(); val zh = (zp[3] - zp[1]).toDouble()
+        if (zw <= 0.0 || zh <= 0.0) return null
+        val out = ArrayList<DoubleArray>()
+        val asg = model.assignsOf(root)
+        if (asg.isNotEmpty()) for (a in asg) {
+            // u_root = u0 + (y1 - wy) / (y1 - y0) * (u1 - u0); v_root = v0 + (x1 - wx) / (x1 - x0) * (v1 - v0)
+            val ku = (a.u1 - a.u0) / (a.y1 - a.y0); val kv = (a.v1 - a.v0) / (a.x1 - a.x0)
+            // + the box the world draws it in (its terrain is cut to it: a coarse picture's sea never covers a neighbour's coast)
+            out.add(doubleArrayOf(a.map.toDouble(), (a.u0 + a.y1 * ku - zp[0]) / zw, -ku / zw, (a.v0 + a.x1 * kv - zp[1]) / zh, -kv / zh,
+                (a.u0 - zp[0]) / zw, (a.v0 - zp[1]) / zh, (a.u1 - zp[0]) / zw, (a.v1 - zp[1]) / zh))
+        } else model.world(root)?.let { w ->
+            // u_root = (left - wy) / (left - right); v_root = (top - wx) / (top - bottom)
+            val ku = 1.0 / (w.left - w.right); val kv = 1.0 / (w.top - w.bottom)
+            out.add(doubleArrayOf(w.continent.toDouble(), (w.left * ku - zp[0]) / zw, -ku / zw, (w.top * kv - zp[1]) / zh, -kv / zh))
+        }
+        return out
+    }
+
+    /** keys made and found empty (no picture there), until the pictures are let go */
+    private val noPicture = HashSet<String>()
+    /**
+     * A picture Home's map makes itself ([make], off the UI thread on this room's reader: TerrainOverview's levels) kept in THIS room's
+     * one cache as [key], with the same rules as the painted art (Home asked: they stay; zoom-in / close / Android's warning let go).
+     * Null while it is made, when there is none, or while the room is on screen / paused. Main thread.
+     */
+    fun backdropPicture(key: String, client: View, make: () -> Bitmap?): Bitmap? {
+        if (roomOn || backdropPaused) return null
+        backdropClient = client
+        if (!backdropOn) { backdropOn = true; letGoClock.removeCallbacks(letGoLater) }
+        bmps.get(key)?.let { return it }
+        if (key in inFlight || key in noPicture) return null
+        inFlight.add(key)
+        io.execute {
+            val b = try { make() } catch (t: Throwable) { null }
+            post { inFlight.remove(key); if (b != null) bmps.put(key, b) else noPicture.add(key); backdropClient?.invalidate() }
+        }
+        return null
     }
     /**
      * Home's map zoomed back in to its zone (the user's pick, 2026-11-17: "Free on zoom-in"): the pictures go now (unless the Map room
@@ -607,6 +697,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         letGoNow(MapRoomLetGo.homeLine(bmps.size().toLong(), now = false))
     }
     private fun letGoNow(line: String) {
+        noPicture.clear()
         if (bmps.size() <= 0) return
         bmps.evictAll()
         MemWatch.note(line)
@@ -1502,24 +1593,20 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     /**
      * The view inside the canvas (a glide keeps its own way). On the world the bounds close in from the world's frame to the frame of
-     * the continent nearest the middle as it fades in (with the zoom: no jump), so where it fills the view the view is on it whole and
+     * the continent the view is headed for as it fades in (with the zoom: no jump), so where it fills the view the view is on it whole and
      * the canvas becomes the continent's.
      */
     private fun clampPan() {
         if (flying()) return
         val h = 0.5f / zoom
-        val k = if (model.assignsOf(canvas).isNotEmpty()) contNear(panX, panY) else null
+        // 2026-11-17: the continent headed for (the cursor's), not the box nearest the middle (that held a zoom toward Kalimdor on
+        // Eastern Kingdoms' west sea)
+        val k = if (model.assignsOf(canvas).isNotEmpty()) contAim() else null
         val a = k?.a ?: 0f
         val l = (k?.p?.left ?: 0f) * a; val t = (k?.p?.top ?: 0f) * a
         val r = 1f + ((k?.p?.right ?: 1f) - 1f) * a; val bt = 1f + ((k?.p?.bottom ?: 1f) - 1f) * a
         panX = if (2f * h >= r - l) (l + r) / 2f else panX.coerceIn(l + h, r - h)
         panY = if (2f * h >= bt - t) (t + bt) / 2f else panY.coerceIn(t + h, bt - h)
-    }
-    /** the continent on the world canvas whose box's middle is nearest ([u], [v]) */
-    private fun contNear(u: Float, v: Float): Lay? = layers().filter { it.kind == WorldMapModel.CONTINENT }.minByOrNull { l ->
-        val b = model.maps[l.id]?.world?.continent?.let { model.assignOf(canvas, it) }
-        val cx = b?.let { ((it.u0 + it.u1) / 2).toFloat() } ?: l.p.centerX(); val cy = b?.let { ((it.v0 + it.v1) / 2).toFloat() } ?: l.p.centerY()
-        (cx - u) * (cx - u) + (cy - v) * (cy - v)
     }
 
     // the canvas's frame on the screen (sxc / syc, back by uxc / uyc), and [shown]'s through its place on it (sx / sy, ux / uy)
@@ -1616,7 +1703,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             val lit = litQuest()
             if (lit != lastLit) { prevLit = lastLit; lastLit = lit; litAt = System.currentTimeMillis() }
             val e = ease(((System.currentTimeMillis() - litAt) / SEL_EASE_MS.toFloat()).coerceIn(0f, 1f))
-            for (q in marks().sortedBy { (if (it.id == prevLit) 1 else 0) + (if (it.id == lit) 2 else 0) }) {
+            for (q in marks().filter { markShown(it) }.sortedBy { (if (it.id == prevLit) 1 else 0) + (if (it.id == lit) 2 else 0) }) {
                 val n = order.indexOf(q.id) + 1
                 val cx = sx(q.x); val cy = sy(q.y)
                 val k = when (q.id) { lit -> e; prevLit -> 1f - e; else -> 0f }
@@ -1626,7 +1713,9 @@ class WorldMapRoomView(context: Context) : View(context) {
                 val focused = q.id == focusQid
                 val size = DISC_PX * (1f + (SEL_SCALE - 1f) * k)
                 withAlpha(c, cx, cy, size, fadeA) {
-                    UiKit.questDisc(c, cx, cy, size, if (q.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
+                    // the user's pick (2026-11-17, "Grey there too"): an untracked quest's objective is Home's grey disc, no number
+                    if (untrackedObj(q)) UiKit.questDiscMuted(c, cx, cy, size)
+                    else UiKit.questDisc(c, cx, cy, size, if (q.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
                         focus = true, glow = focused, number = if (q.done || n <= 0) null else n)
                     if (focused) {
                         pRing.color = Color.argb(240, 255, 236, 140); pRing.strokeWidth = 3.5f
@@ -1818,6 +1907,16 @@ class WorldMapRoomView(context: Context) : View(context) {
     private val countHits = ArrayList<Pair<Int, FloatArray>>()
     private val COUNT_PX = 54f
     private val pRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    // UNTRACKED QUESTS, AS ON HOME'S MAP (the user's pick, 2026-11-17: "Grey there too"; replaces test62's "all quests yellow" for them):
+    // an untracked quest's objective (in the log, not tracked, not ready) is a full-size grey disc with no number, still hovered and
+    // picked as before; Home's filter "Untracked quest objectives" (QuestLayers OTHER, the same saved switch) hides it here too
+    private val layerPrefs by lazy { context.getSharedPreferences("mapfilters", Context.MODE_PRIVATE) }
+    private fun untrackedObj(m: Mark): Boolean = !m.done && logEntry(m.id)?.let { !trackedQ(it) } == true
+    private fun markShown(m: Mark): Boolean = !untrackedObj(m) ||
+        runCatching { layerPrefs.getBoolean(QuestLayers.Layer.OTHER.key, QuestLayers.Layer.OTHER.default) }.getOrDefault(true)
+    /** the tests: the shown map's untracked quests drawn grey (their ids) */
+    fun greyQuests(): List<Int> = marks().filter { markShown(it) && untrackedObj(it) }.map { it.id }
+
     /** a quest marker of a layer: its spot on the canvas, how much it shows (its map's fade) */
     private class LMark(val m: Mark, val map: Int, val u: Float, val v: Float, val a: Float)
     /** the quest markers of the shown map (a zone's, a capital's) and of every layer shown at all */
@@ -1825,13 +1924,13 @@ class WorldMapRoomView(context: Context) : View(context) {
         val out = ArrayList<LMark>()
         if (isZoneView()) {
             val a = layOf(shown)?.shown ?: 1f
-            for (m in marks()) out.add(LMark(m, shown, pl.left + m.x * pl.width(), pl.top + m.y * pl.height(), a))
+            for (m in marks()) if (markShown(m)) out.add(LMark(m, shown, pl.left + m.x * pl.width(), pl.top + m.y * pl.height(), a))
         }
         for (l in layers()) {
             if (l.kind == WorldMapModel.CONTINENT || l.id == shown) continue
             val a = l.shown
             if (a <= 0.004f) continue
-            for (m in marksOf(l.id)) out.add(LMark(m, l.id, l.p.left + m.x * l.p.width(), l.p.top + m.y * l.p.height(), a))
+            for (m in marksOf(l.id)) if (markShown(m)) out.add(LMark(m, l.id, l.p.left + m.x * l.p.width(), l.p.top + m.y * l.p.height(), a))
         }
         return out
     }
@@ -1865,7 +1964,8 @@ class WorldMapRoomView(context: Context) : View(context) {
             val x = sxc(lm.u); val y = syc(lm.v)
             if (x < canvasR.left || x > canvasR.right || y < canvasR.top || y > canvasR.bottom) continue
             withAlpha(c, x, y, DISC_PX, lm.a) {
-                UiKit.questDisc(c, x, y, DISC_PX, if (lm.m.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS, focus = true, glow = lm.m.id == focusQid)
+                if (untrackedObj(lm.m)) UiKit.questDiscMuted(c, x, y, DISC_PX)
+                else UiKit.questDisc(c, x, y, DISC_PX, if (lm.m.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS, focus = true, glow = lm.m.id == focusQid)
             }
         }
     }

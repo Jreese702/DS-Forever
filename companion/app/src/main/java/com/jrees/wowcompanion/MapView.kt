@@ -46,6 +46,8 @@ class MapView(context: Context) : View(context) {
     // SMALL_TILES_MAX on screen (a continent): none, the grid
     private val QUARTER_TILES_MAX = 80
     private val SMALL_TILES_MAX = 320
+    // Terrain style zoomed out: at most this many TerrainOverview pictures a continent per frame (the level keeps it near the screen's)
+    private val TERRAIN_TILES_MAX = 400
 
     // ZOOM. In WoW the minimap is just the world map zoomed in with the same markers on it,
     // so this is one map with a zoom level rather than two different views. zoom 1 = whole
@@ -5440,10 +5442,36 @@ class MapView(context: Context) : View(context) {
         fun done()
         /** the map zoomed back in to its zone (the user's pick, 2026-11-17: "Free on zoom-in"): the pictures go now; a zoom-out reads them again */
         fun release()
+        /** Terrain style: each continent on map [zone]'s root as [game continent, au, bu, av, bv] (u = au + bu * worldY, v = av + bv *
+         *  worldX in [zone]'s 0..1), or null (no art set read) */
+        fun places(zone: Int): List<DoubleArray>? = null
+        /** Terrain style: picture [key] from the room's one cache, else made by [make] off the UI thread ([client] redrawn); null meanwhile */
+        fun picture(key: String, client: View, make: () -> Bitmap?): Bitmap? = null
+        /** picture [key] if the cache holds it (nothing asked) */
+        fun peek(key: String): Bitmap? = null
     }
     var worldArt: WorldArt? = null
     /** a touch on the open map's field (not the list, a button or a pop-out): Home's map controls page */
     var onFieldTouch: (() -> Unit)? = null
+    /**
+     * Home's buffs page is on (HomeMapPages.BUFFS; the user, 2026-11-17: "when toggling over to buffs the cursor reappears on polestar
+     * which is misleading"): the list's cursor, its bubble's ring and its hints are not drawn, as on the controls page; the selection is
+     * kept, so the quests page shows it again where it was. The controls line says only B (back to the quests).
+     */
+    var buffsPage = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+    /** the tests: the list's selected row was drawn with its cursor this frame; which controls line was drawn ("list", "controls",
+     *  "buffs", or "" before any) */
+    var listSelDrawn = false
+        private set
+    /** the tests: untracked quests' discs drawn this frame */
+    var untrackedDrawn = 0
+        private set
+    var hintsDrawn = ""
+        private set
+    /** the list is not the page (the controls or the buffs): its cursor is not drawn */
+    private fun listAway() = controls || buffsPage
+
     /** the controls line names Right's buffs page (the aura pane has a stop) */
     var controlsBuffs = false
         set(v) { if (field != v) { field = v; invalidate() } }
@@ -5572,7 +5600,8 @@ class MapView(context: Context) : View(context) {
     private var cursorY = Float.NaN
 
     /** the tests: the cursor (zone 0..1), the zoom and its floor, the art painted this frame (1 / 0), the sticks read (1 / 0) */
-    fun controlsState(): FloatArray = floatArrayOf(curU, curV, zoom, zoomFloor, if (worldDrew) 1f else 0f, if (sticks.running) 1f else 0f)
+    fun controlsState(): FloatArray = floatArrayOf(curU, curV, zoom, zoomFloor, if (worldDrew) 1f else 0f, if (sticks.running) 1f else 0f,
+        if (terrainDrew) 1f else 0f)
 
     /** Home's module closed: the art is told (its memory rules), the sticks stop */
     fun worldDone() {
@@ -5587,6 +5616,16 @@ class MapView(context: Context) : View(context) {
 
     /** Settings > Performance > Home map: full detail (by the Thor model unless set): off = no art, no zoom past the zone */
     var worldFull: () -> Boolean = { runCatching { Settings.homeMapFull }.getOrDefault(false) }
+    /**
+     * Settings > Performance > Map style when zoomed out (the user, 2026-11-17: "on the high fidelity map, I dont think that I want the
+     * transition to the map overlay, it would be really great if we just kept it as high fidelity there or made it an option toggle"):
+     * true = Terrain (the default): past the zone the minimap's own terrain goes on all the way out, at lower levels (TerrainOverview);
+     * false = Painted (the Map room's art fades in, as 1.0.34's test build). Terrain needs the minimap step's index for this zone's
+     * continent; without it the painted art stands in. Home's map only: the Map room's parchment is the game's world map (its identity).
+     */
+    var worldTerrain: () -> Boolean = { runCatching { Settings.homeMapTerrain }.getOrDefault(true) }
+    /** the terrain was drawn this frame (the tests) */
+    private var terrainDrew = false
     /** the setting turned off while the art was in use: it is let go at once, as on a close */
     private var worldWasFull = false
     private fun worldFull(): Boolean {
@@ -5594,6 +5633,86 @@ class MapView(context: Context) : View(context) {
         if (worldWasFull && !on && worldAsked) { worldAsked = false; worldArt?.done() }
         worldWasFull = on
         return on
+    }
+
+    private val pTerrain = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val terrainDst = RectF()
+    private val terrainSrc = Rect()
+
+    /**
+     * Terrain style zoomed out past the zone: the deep sea, then each continent of the root's terrain (TerrainOverview's levels, through
+     * the Map room's one cache) at its place - this zone's continent through this map's own rect (as the close tiles: no seam), the others
+     * through their world assignments ([WorldArt.places]). A level not made yet shows the coarser one the cache holds, cut to its part.
+     * The close tiles draw over it as before. False = nothing could be placed (the painted art stands in).
+     */
+    private fun drawTerrainOut(c: Canvas, wa: WorldArt, mapId: Int, rT: PoiStore.Rect, left: Float, top: Float, fw: Float, fh: Float,
+                               cxView: Float, cyView: Float, halfX: Float, halfY: Float): Boolean {
+        val places = wa.places(mapId) ?: return false
+        if (TerrainOverview.dir == null) TerrainOverview.dir = context.cacheDir
+        val conts = ArrayList<DoubleArray>(places.size + 1)
+        // this zone's continent by its own rect: u = (left - wy) / width, v = (top - wx) / height; its box (the world's) from its place
+        val own = places.firstOrNull { it.size >= 9 && it[0].toInt() == rT.continent }
+        conts.add(doubleArrayOf(rT.continent.toDouble(), rT.left / rT.width, -1.0 / rT.width, rT.top / rT.height, -1.0 / rT.height) +
+            (own?.copyOfRange(5, 9) ?: DoubleArray(0)))
+        for (p in places) if (p.size >= 5 && p[0].toInt() != rT.continent && p[2] != 0.0 && p[4] != 0.0) conts.add(p)
+        // the largest land first, the smallest over it (an island inside a continent's frame: feat/map-skyborn's "smallest box wins"); a
+        // land's size by its yards (|1 / bu| x |1 / bv| of its map's ADT grid is the same scale for all: the world's yards)
+        val size = HashMap<Int, Int>()
+        for (p in conts) size[p[0].toInt()] = TerrainOverview.index()?.get(p[0].toInt())?.size ?: 0
+        conts.sortByDescending { size[it[0].toInt()] ?: 0 }
+        c.save()
+        c.clipRect(left, top, left + fw, top + fh)
+        pFill.color = TerrainOverview.SEA
+        c.drawRect(left, top, left + fw, top + fh, pFill)
+        val u0 = cxView - halfX; val v0 = cyView - halfY
+        val pxU = fw / (2f * halfX); val pxV = fh / (2f * halfY)
+        fun sxU(u: Double) = (left + (u - u0) * pxU).toFloat()
+        fun syV(v: Double) = (top + (v - v0) * pxV).toFloat()
+        val adt = MinimapTiles.ADT
+        for (p in conts) {
+            val cont = p[0].toInt()
+            if (!TerrainOverview.has(cont)) continue
+            val au = p[1]; val bu = p[2]; val av = p[3]; val bv = p[4]
+            c.save()
+            if (p.size >= 9) c.clipRect(sxU(p[5]), syV(p[6]), sxU(p[7]), syV(p[8]))     // its box on the world
+            // an ADT's size on the screen, the level that is sharp enough for it
+            val adtPx = (adt * kotlin.math.abs(bu) * pxU).toFloat()
+            val level = TerrainOverview.level(adtPx)
+            val n = TerrainOverview.span(level)
+            // the view in this continent's world yards (wy from u, wx from v), then the ADT columns / rows, then the level's pictures
+            val wyA = (u0 - au) / bu; val wyB = (u0 + 2.0 * halfX - au) / bu
+            val wxA = (v0 - av) / bv; val wxB = (v0 + 2.0 * halfY - av) / bv
+            val colA = 32 - maxOf(wyA, wyB) / adt; val colB = 32 - minOf(wyA, wyB) / adt
+            val rowA = 32 - maxOf(wxA, wxB) / adt; val rowB = 32 - minOf(wxA, wxB) / adt
+            val oc0 = maxOf(0, floor(colA / n).toInt()); val oc1 = minOf(64 / n - 1, floor(colB / n).toInt())
+            val or0 = maxOf(0, floor(rowA / n).toInt()); val or1 = minOf(64 / n - 1, floor(rowB / n).toInt())
+            if (oc1 < oc0 || or1 < or0 || (oc1 - oc0 + 1) * (or1 - or0 + 1) > TERRAIN_TILES_MAX) { c.restore(); continue }
+            for (oc in oc0..oc1) for (or in or0..or1) {
+                if (!TerrainOverview.has(cont, level, oc, or)) continue
+                // the picture's world edges: west wy = (32 - oc*n) * adt, north wx = (32 - or*n) * adt
+                val wyW = (32 - oc * n) * adt; val wyE = (32 - (oc + 1) * n) * adt
+                val wxN = (32 - or * n) * adt; val wxS = (32 - (or + 1) * n) * adt
+                terrainDst.set(sxU(au + bu * wyW) - 0.5f, syV(av + bv * wxN) - 0.5f, sxU(au + bu * wyE) + 0.5f, syV(av + bv * wxS) + 0.5f)
+                terrainDst.sort()
+                val b = wa.picture(TerrainOverview.key(cont, level, oc, or), this) { TerrainOverview.make(cont, level, oc, or) }
+                if (b != null) { c.drawBitmap(b, null, terrainDst, pTerrain); continue }
+                // not made yet: the nearest coarser level the cache holds, its part
+                var up = level + 1
+                while (up <= TerrainOverview.LEVEL_MAX) {
+                    val k = 1 shl (up - level)
+                    val cb = wa.peek(TerrainOverview.key(cont, up, oc / k, or / k))
+                    if (cb != null) {
+                        val part = TerrainOverview.TILE / k
+                        terrainSrc.set((oc % k) * part, (or % k) * part, (oc % k) * part + part, (or % k) * part + part)
+                        c.drawBitmap(cb, terrainSrc, terrainDst, pTerrain); break
+                    }
+                    up++
+                }
+            }
+            c.restore()
+        }
+        c.restore()
+        return true
     }
 
     /** the art's share over the minimap tiles at zoom [z]: none at the whole zone and closer, all of it from half the zone out */
@@ -5636,6 +5755,7 @@ class MapView(context: Context) : View(context) {
     }
 
     private fun drawPadHints(c: Canvas, left: Float, top: Float, fw: Float, fh: Float) {
+        hintsDrawn = "list"
         val band = RectF(left, top + fh - HINT_BAND, left + fw, top + fh)
         pFill.color = Color.argb(175, 8, 6, 4)
         c.drawRect(band, pFill)
@@ -5656,11 +5776,15 @@ class MapView(context: Context) : View(context) {
         }
         // the map controls page (HomeMapPages): the sticks, A on a bubble under the cursor, the pages either side, B back to the list
         if (controls) {
-            val act = if (bubbleUnderCursor() >= 0) HomeMapPages.FOCUS_WORD else null
+            hintsDrawn = "controls"
+            val under = bubbleUnderCursor()
+            val act = if (under < 0) null else if (trackedKnown && !trackedNo.containsKey(bubbleQ[under])) "Open" else HomeMapPages.FOCUS_WORD
             val hp = HomeMapPages.hints(controlsBuffs, act).map { (b, w) ->
                 (when (b) { "lstick" -> "gen_lstick"; "rstick" -> MapRoomKeys.ZOOM_GLYPH; else -> glyph(b) }) to w }
             UiKit.hints(c, band.right - 24f, cy, *hp.toTypedArray()); return
         }
+        // the buffs page: the list's keys are not live (its row hints would point at the Polestar row): B back to the quests only
+        if (buffsPage) { hintsDrawn = "buffs"; UiKit.hints(c, band.right - 24f, cy, glyph("b") to HomeMapPages.BACK_WORD); return }
         // only what does something on the map right now (UI Art / the user's clutter rule)
         val ids = trackedIds()
         val sel = if (cursor.shown && cursor.sel != 0 && ids.contains(cursor.sel)) cursor.sel else 0
@@ -5764,6 +5888,8 @@ class MapView(context: Context) : View(context) {
 
     /** a touch picked quest [id]: select it (highlighted at once) and focus it, as the list always did */
     private fun touchQuest(id: Int, q: JSONObject?) {
+        // an untracked quest's disc (2026-11-17): its panel, as Y on its row (focus needs it tracked: A there tracks and focuses)
+        if (trackedKnown && id > 0 && !trackedNo.containsKey(id) && questById[id] != null) { openPanel(id); invalidate(); return }
         cursor.touched(id, listKeys())
         listShow(id)
         revealSelected()
@@ -6100,12 +6226,52 @@ class MapView(context: Context) : View(context) {
     }
 
     /** one card's height (the selection's gaps and the gap under it are the layout's) */
-    private fun rowContentH(e: JSONObject): Float = UiKit.questCardHeight(cardFor(e))
+    private fun rowContentH(e: JSONObject): Float = cardH(cardFor(e))
 
-    /** one quest's card in [box] at type size [scale], [alpha] */
+    /** one quest's card in [box] at type size [scale], [alpha]; in the list ([scale] 1) the controls page's compact form at [listKNow] */
     private fun drawRow(c: Canvas, e: JSONObject, box: RectF, scale: Float = 1f) {
+        if (scale == 1f && listKNow > 0f) { compactCard(c, box, cardFor(e)); return }
         UiKit.questCard(c, box, cardFor(e), scale = scale)
     }
+
+    // ---- THE COMPACT LIST ON THE MAP CONTROLS PAGE (the user, 2026-11-17: "when using the actual map cursor on the home map, lets do a
+    // sort of soft space reduction on the quests so that we can see more of the map. like the 'Ready for turn in' text isnt necessary
+    // and it can be made a bit smaller visually"): while [controls] is on, the list eases over [LIST_EASE_MS] to narrower cards
+    // ([LIST_COMPACT_W] of the width), a smaller type ([LIST_COMPACT_SCALE]) and the title row only (no objective / "Ready for turn-in"
+    // line; a ready quest keeps its "?" disc, the focused one its gold bar); the map takes the width. Leaving the page eases it back.
+    private val LIST_EASE_MS = 200f
+    private val LIST_COMPACT_W = 0.62f
+    private val LIST_COMPACT_SCALE = 0.8f
+    /** the compact form's progress, linear (0 = full, 1 = compact), and this frame's eased value */
+    private var listK = 0f
+    private var listKAt = 0L
+    private var listKNow = 0f
+    /** one frame's step toward the page's form; its eased value */
+    private fun stepListK(): Float {
+        val to = if (controls && !compact) 1f else 0f
+        val now = android.os.SystemClock.uptimeMillis()
+        if (listK != to) {
+            val dt = if (listKAt == 0L) 16L else (now - listKAt).coerceIn(0L, 50L)
+            val d = dt / LIST_EASE_MS
+            listK = if (to > listK) min(to, listK + d) else max(to, listK - d)
+            postInvalidateOnAnimation()
+        }
+        listKAt = now
+        return listK * listK * (3f - 2f * listK)
+    }
+    /** the list's width on a field [fw] wide: full, or narrower on the controls page */
+    private fun trackerW(fw: Float): Float = min(TRACKER_W, fw * 0.34f) * (1f - (1f - LIST_COMPACT_W) * listKNow)
+    /** a card's height in the list: full, easing to the compact title row */
+    private fun cardH(q: UiKit.QuestCard): Float {
+        val full = UiKit.questCardHeight(q)
+        if (listKNow <= 0f) return full
+        return full + (UiKit.questCardHeight(q, LIST_COMPACT_SCALE, collapsed = true) - full) * listKNow
+    }
+    /** a card in the list's compact form at [listKNow] (its lines fade with the room the box leaves them) */
+    private fun compactCard(c: Canvas, box: RectF, q: UiKit.QuestCard) =
+        UiKit.questCard(c, box, q, scale = 1f + (LIST_COMPACT_SCALE - 1f) * listKNow, collapsed = listKNow >= 1f)
+    /** the tests: the compact form's eased progress (0 full .. 1 compact) */
+    fun listCompactK(): Float = listKNow
 
     private val ME_H = 92f                   // the portrait's row
     private val GROUP_H = 52f                // an untracked tab (the quest book's header, smaller)
@@ -6114,7 +6280,7 @@ class MapView(context: Context) : View(context) {
     /** one item's height in the list */
     private fun itemH(it: MapList.Item): Float = when (it) {
         is MapList.Item.Me -> ME_H
-        is MapList.Item.Polestar -> psCard()?.let { UiKit.questCardHeight(it) + PS_RIBBON_H } ?: 0f     // its ribbon over the card
+        is MapList.Item.Polestar -> psCard()?.let { cardH(it) + PS_RIBBON_H } ?: 0f     // its ribbon over the card
         is MapList.Item.Tracked -> tracked.firstOrNull { e -> e.optInt("id", 0) == it.id }?.let { e -> rowContentH(e) } ?: 0f
         is MapList.Item.Section -> SECTION_H
         is MapList.Item.PsHead -> PS_RIBBON_H + PS_RIBBON_OVER + 4f              // pg1: the header alone
@@ -6224,14 +6390,15 @@ class MapView(context: Context) : View(context) {
         if (items.isEmpty() || yMax - y0 < 60f) { rowPos.clear(); listScroll = Float.NaN; listGroundH = Float.NaN; return }
         // the same width onDraw keeps clear (trackPx); during Home's open / close, the full map's (so the top spot holds still)
         val fieldW = if (morphOn) (if (morphOpening) morphTo.width() else morphFrom.width()) else lastFieldW
-        val w = min(TRACKER_W, fieldW * 0.34f)
+        val w = trackerW(fieldW)
         val dp = UiKit.bodyPaint(23f, cDim)
         val lineO = LINE_O
         val gapC = UiKit.MODULE_GAP
         val list = items
         // the selected row stands in a gap above and below for its up / down arrows (the user: "add some buffer between current
         // selection and next quests")
-        fun isSel(it: MapList.Item) = cursor.shown && !controls && it !is MapList.Item.Section && it !is MapList.Item.PsHead && it.key == cursor.sel
+        listSelDrawn = false
+        fun isSel(it: MapList.Item) = cursor.shown && !listAway() && it !is MapList.Item.Section && it !is MapList.Item.PsHead && it.key == cursor.sel
         fun need(it: MapList.Item) = itemH(it) + gapC + (if (isSel(it)) 2f * SEL_GAP else 0f)
         // THE LAYOUT, in list space
         val n = list.size
@@ -6313,7 +6480,7 @@ class MapView(context: Context) : View(context) {
         val psOne = psMerged() > 0
         val ti = if (psOne) list.indexOfFirst { it is MapList.Item.Polestar } else list.indexOfFirst { it is MapList.Item.Tracked }
         if (ti >= listFirst && ti >= 0) {
-            val h0 = if (psOne) psCard()?.let { UiKit.questCardHeight(it) } else tracked.firstOrNull { it.optInt("id", 0) == list[ti].key }?.let { rowContentH(it) }
+            val h0 = if (psOne) psCard()?.let { cardH(it) } else tracked.firstOrNull { it.optInt("id", 0) == list[ti].key }?.let { rowContentH(it) }
             if (h0 != null && h0 > 0f) {
                 // (the light blue row's card stands under its ribbon: the card lands there, the ribbon stays with the rows)
                 val t0 = winTop + at[ti] - at[listFirst] + (if (isSel(list[ti])) SEL_GAP else 0f) + (if (psOne) PS_RIBBON_H else 0f)
@@ -6333,6 +6500,7 @@ class MapView(context: Context) : View(context) {
             val ch = itemH(it)
             val ct = winTop + pos - listScroll + (if (sel) SEL_GAP else 0f)
             if (ct + ch < winTop - SEL_GAP || ct > winBot + SEL_GAP) continue    // outside the window
+            if (sel) listSelDrawn = true
             val row = RectF(x, ct, x + w, ct + ch)
             if (fly && i == ti && front) {                   // in flight: drawFlight draws its card (the ribbon stays, with the rows)
                 if (it is MapList.Item.Polestar) drawPsRibbon(c, row)
@@ -6340,7 +6508,7 @@ class MapView(context: Context) : View(context) {
             }
             when (it) {
                 is MapList.Item.Me -> drawMe(c, row)
-                is MapList.Item.Polestar -> psCard()?.let { UiKit.questCard(c, psCardBox(row), it) }
+                is MapList.Item.Polestar -> psCard()?.let { if (listKNow > 0f) compactCard(c, psCardBox(row), it) else UiKit.questCard(c, psCardBox(row), it) }
                 is MapList.Item.Tracked -> tracked.firstOrNull { e -> e.optInt("id", 0) == it.id }?.let { e -> drawRow(c, e, row) }
                 is MapList.Item.Section -> UiKit.trackerHeader(c, row.left, row.top, row.right, "Untracked", "${it.count}")
                 is MapList.Item.PsHead -> drawPsRibbon(c, row)                     // pg1: "Polestar · No guide" (never a stop)
@@ -6875,8 +7043,9 @@ class MapView(context: Context) : View(context) {
         // THE TRACKER covers the field's left side (drawTracker): keep the view's centre in the middle
         // of the part it leaves, so nothing under the list is lost -- inside the Goldshire inn the list
         // hid the red exit (seen on UI Art's emulator). Not at whole-zone view, which must show it all.
+        listKNow = stepListK()                           // the controls page's compact list (its width this frame)
         val trackPx = if (!compact && showTracker && items.isNotEmpty() && !zoneView)
-            min(TRACKER_W, fw * 0.34f) + BTN_GAP else 0f
+            trackerW(fw) + BTN_GAP else 0f
         var cxView = cxMap - (trackPx / 2f) / fw * (2f * halfX)
         var cyView = cyMap
         // the small map: the player lower by half of what the host's card covers (compactCover), so its arrow has room above
@@ -6917,17 +7086,28 @@ class MapView(context: Context) : View(context) {
         // No tiles on the device yet (the harvest still building), or a continent's worth on screen: the old grid.
         // HOME'S MAP ZOOMED OUT (2026-11-17): past the zone the Map room's art lies under everything (WorldArt: the room's own renderer and
         // pictures), the zone's 0..1 on it through this projection; the tiles fade out over it down to half the zone, then are not drawn
-        worldDrew = false
+        worldDrew = false; terrainDrew = false
         if (!compact && !morphOn && zoom < 0.999f && worldFull()) worldArt?.let { wa ->
             worldZr.set(sx(0.0), sy(0.0), sx(1.0), sy(1.0)); worldClip.set(left, top, left + fw, top + fh)
             worldAsked = true
-            worldDrew = wa.paint(c, m.optInt("mapID", 0), worldZr, worldClip, this)
+            // Terrain (the default): the minimap's terrain all the way out; the painted art only where there is none for this continent
+            val rt = rect
+            val tIdx = if (worldTerrain() && rt != null && rt.valid) TerrainOverview.index(this) else emptyMap()
+            if (tIdx == null) {
+                // the minimap index is being read (a moment, once): the sea, not the painted art for a frame
+                pFill.color = TerrainOverview.SEA; c.drawRect(left, top, left + fw, top + fh, pFill)
+                terrainDrew = true; worldDrew = true
+            } else if (rt != null && tIdx[rt.continent]?.isNotEmpty() == true) {
+                terrainDrew = drawTerrainOut(c, wa, m.optInt("mapID", 0), rt, left, top, fw, fh, cxView, cyView, halfX, halfY)
+                worldDrew = terrainDrew
+            }
+            if (!terrainDrew) worldDrew = wa.paint(c, m.optInt("mapID", 0), worldZr, worldClip, this)
         }
         // the user's pick (2026-11-17, "Free on zoom-in"): back on the zone, the big pictures go at once (the next zoom-out reads them again)
         else if (!compact && !morphOn && zoom >= 0.999f && worldAsked) { worldAsked = false; worldArt?.release() }
-        val tileShare = if (worldDrew) 1f - worldShare(zoom) else 1f
+        val tileShare = if (worldDrew && !terrainDrew) 1f - worldShare(zoom) else 1f
         val rT = rect
-        var terrain = worldDrew && tileShare <= 0.001f
+        var terrain = (worldDrew && tileShare <= 0.001f) || terrainDrew
         var drew = false; var allAbsent = true           // a tile drawn this frame; every tile here looked for and not on the device
         if (rT != null && rT.valid && MinimapTiles.has(rT.continent) && tileShare > 0.001f) {
             val adt = MinimapTiles.ADT
@@ -7447,7 +7627,7 @@ class MapView(context: Context) : View(context) {
             turnInPx[2 * i] = if (on) tx else Float.NaN; turnInPx[2 * i + 1] = if (on) ty else Float.NaN
         }
         val sameNpc2 = (QUEST_ICON_PX / 2f) * (QUEST_ICON_PX / 2f)
-        bubbleN = 0                                    // this frame's numbered bubbles, for the tap test
+        bubbleN = 0; untrackedDrawn = 0                                    // this frame's numbered bubbles, for the tap test
         for (lp in 0..1) for (s in qdbSpots) {         // QuestieDB's objective guesses (deriveQdb), under the game's marks; leads last
             if (s.turnIn || s.lead != (lp == 1)) continue
             val gx = sx(s.x); val gy = sy(s.y)
@@ -7471,7 +7651,12 @@ class MapView(context: Context) : View(context) {
             val cxp = sx(mk.x); val cyp = sy(mk.y)
             if (!onField(cxp, cyp)) continue
             when (mk.shape) {
-                SH_OBJ_OTHER -> objDot(c, cxp, cyp, 0.5f)                // an untracked quest's objective: dimmer
+                // an untracked quest's objective (the user, 2026-11-17): on the open map a full-size grey disc, no number, tappable (its
+                // panel) and under the controls' cursor (A); Home's small map keeps the dim dot. The filter's OTHER layer still hides it
+                SH_OBJ_OTHER -> if (compact) objDot(c, cxp, cyp, 0.5f) else {
+                    UiKit.questDiscMuted(c, cxp, cyp, BUBBLE_ART)
+                    addBubble(cxp, cyp, mk.qid); untrackedDrawn++
+                }
                 SH_DUNGEON -> if (!compact) drawDungeon(c, cxp, cyp, dungeonNames[mk.qid] ?: "")
                 SH_FLIGHT -> drawIcon(c, Ic.FLIGHT, cxp, cyp, SVC_ICON_PX)
                 SH_VIGNETTE -> drawIcon(c, Ic.VIGNETTE, cxp, cyp, 22f)
@@ -7829,12 +8014,12 @@ class MapView(context: Context) : View(context) {
             else stepChoice.draw(c, RectF(), 0f, 0f, STEP_ROW)
             // the player menu beside the list, from the top (the portrait's height)
             if (pmenu.open && !morphOn) {
-                val lw = if (showTracker && items.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + 16f else 0f
+                val lw = if (showTracker && items.isNotEmpty()) trackerW(fw) + 16f else 0f
                 drawPlayerMenu(c, left + BTN_GAP + lw, top + BTN_GAP, top + fh - 64f - (if (hintsOn()) HINT_BAND else 0f), fw - lw - 2f * BTN_GAP)
             } else { pmenuHits.clear(); pmenuBox.setEmpty() }
             // the panel steps aside while its quest's areas are lit (it would cover them); Left brings it back
             if (panelId != 0 && !pmenu.open && !morphOn) {
-                val lw = if (showTracker && items.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + 16f else 0f
+                val lw = if (showTracker && items.isNotEmpty()) trackerW(fw) + 16f else 0f
                 drawPanel(c, left + BTN_GAP + lw, top + BTN_GAP, top + fh - 64f - (if (hintsOn()) HINT_BAND else 0f), fw - lw - 2f * BTN_GAP)
             } else { panelHits.clear(); panelBox.setEmpty() }
         }
@@ -7842,7 +8027,7 @@ class MapView(context: Context) : View(context) {
         // the selected quest's bubble wears the round ring (UI Art: round things get round cursors), touch or controller;
         // its list row is highlighted in drawTracker
         val ringQ = selQuest()                          // the merged light blue row rings its quest's bubble
-        if (!compact && !morphOn && cursor.shown && !controls && ringQ > 0) {
+        if (!compact && !morphOn && cursor.shown && !listAway() && ringQ > 0) {
             for (i in 0 until bubbleN) if (bubbleQ[i] == ringQ)
                 UiKit.focusRing(c, bubbleXY[2 * i], bubbleXY[2 * i + 1], BUBBLE_ART * 0.32f + 10f)
         }
