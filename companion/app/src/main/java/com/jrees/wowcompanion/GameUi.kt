@@ -403,8 +403,9 @@ object GameUi {
     }
     /** hub16: the width / scale for this character (the player's choice; the bar's own until one is made) */
     fun hudWidth(): Int? = character?.let { who -> prefs?.getInt("prdw.$who", Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE } } ?: prdW
-    /** the HUD's width as chosen, against the bar's default (1 = the default; the Top screen tile's picture follows it) */
-    fun hudWidthFactor(): Float = hudWidth()?.let { it.toFloat() / wDef.coerceAtLeast(1) } ?: 1f
+    /** the HUD's width as the game reports it, against the bar's default (1 = the default): the Top screen tile's picture follows it,
+     *  as the Width line does (hudValue); a choice the game has not taken yet is the badge's word, never the picture's (review 11-17) */
+    fun hudWidthFactor(): Float = prdW?.let { it.toFloat() / wDef.coerceAtLeast(1) } ?: 1f
     fun hudScale(): Int? = character?.let { who -> prefs?.getInt("prds.$who", Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE } } ?: prdS
     /** one step narrower / smaller ([d] -1), wider / larger (+1), or back to the default (0); the taps follow (the bar redraws live) */
     fun stepHudWidth(d: Int) {
@@ -422,8 +423,7 @@ object GameUi {
     /** the value a row shows on its right: the height in px under the centre, the width in px, the scale in % */
     fun hudValue(id: String): String = when (id) {
         HUD_H_ID -> prdY?.let { "${-it}" } ?: "-"
-        // hub61 (verifier 11-17): the width as chosen, like the tile's picture (it follows the choice at once; the badge waits)
-        HUD_W_ID -> (hudWidth() ?: prdW)?.let { "$it" } ?: "-"
+        HUD_W_ID -> prdW?.let { "$it" } ?: "-"
         HUD_S_ID -> prdS?.let { "$it%" } ?: "-"
         else -> ""
     }

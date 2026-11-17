@@ -1013,7 +1013,31 @@ cell(L6, 0)
 check(alpha(L6, "DamageMeter") == 1 and mfresh(L6).get("dset") is None, "o. editor open: column 0 is its piece select, the meters unchanged")
 cell(L6, 39)
 check(last(L6)["open"] is False, "o. (the editor closed)")
-# Damage meter Off / On
+# hub62 (the review, 11-17): a select the app sent on its last "open" document, arriving just after a close, is never a meter press
+cell(L6, 0)
+check(alpha(L6, "DamageMeter") == 1 and mfresh(L6).get("dset") is None and last(L6).get("mtDrop") == 1,
+      "o. hub62: column 0 at once after the app's Close: dropped (mtDrop), the meters unchanged", last(L6).get("mtDrop"))
+# the add-on's OWN close (the game's Edit Mode opening; the Settings room gone): the same grace
+for how, close in (("the game's Edit Mode", 'EditModeManagerFrame = mkwin("EditModeManagerFrame", true); tick(0.25)'),
+                   ("the room let go", 'local c = WowCompanion.capture; RAWSTATE6 = c.state; c.state = function() return { holder = "pad:home" } end; '
+                                       'for _ = 1, 6 do tick(0.25); advance(0.25) end')):
+    L6.execute('advance(3.1)')
+    cell(L6, 37)
+    check(last(L6)["open"] is True, "o. (open again: %s)" % how)
+    L6.execute(close)
+    check(last(L6)["open"] is False, "o. (closed by the add-on: %s)" % how, last(L6).get("why"))
+    if how == "the room let go":
+        L6.execute('WowCompanion.capture.state = RAWSTATE6')
+    else:
+        L6.execute('EditModeManagerFrame:Hide(); advance(0.01)')
+    for col in (0, 2, 3, 8 + 5):                                       # the late selects: Off, Dynamic, CDM Off, a parts mask
+        cell(L6, col)
+    d = mfresh(L6)
+    check(alpha(L6, "DamageMeter") == 1 and [alpha(L6, n) for n in VIEWERS] == [1, 0.6, 1, 1] and d.get("dset") is None
+          and d.get("cset") is None and d.get("pset") is None and L6.eval('WowCompanionDB.meters and WowCompanionDB.meters["%s"]' % WHO) is None,
+          "o. hub62: late selects after the add-on's own close (%s): all dropped, nothing saved, nothing hidden" % how, d)
+L6.execute('advance(3.1)')
+# Damage meter Off / On (the grace over: the app's tap again, GameUi.mtStep's 1.5 s)
 check(cell(L6, 0), "o. the lay row's cell 0 is on the pad while the Settings room holds")
 check(alpha(L6, "DamageMeter") == 0 and mouse(L6, "DamageMeter") is False and mouse(L6, "DamageMeterSessionWindow1") is False,
       "o. Off (0): alpha 0, the mouse off (its session window's too)", (alpha(L6, "DamageMeter"), mouse(L6, "DamageMeter")))

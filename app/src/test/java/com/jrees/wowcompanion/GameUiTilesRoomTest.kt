@@ -10,6 +10,7 @@ import android.view.View
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -363,8 +364,12 @@ class GameUiTilesRoomTest {
         val wider = buttons[4 + 2]
         tap(p, wider.centerX(), wider.centerY()); lay(r)
         assertTrue("one step wider: $before -> ${GameUi.hudWidth()}", GameUi.hudWidth()!! > before)
-        // hub61 (verifier 11-17): the Width line says the width chosen, as the picture draws it (the game has not caught up yet)
-        assertEquals("${GameUi.hudWidth()}", GameUi.hudValue(GameUi.HUD_W_ID))
+        // (review 11-17) the game has not taken it yet: the Width line and the picture both say the game's width, as the Height and
+        // Scale lines always have; the choice waits on the badge
+        val game = GameUi::class.java.getDeclaredField("prdW").apply { isAccessible = true }.get(GameUi) as Int
+        assertNotEquals(game, GameUi.hudWidth())
+        assertEquals("$game", GameUi.hudValue(GameUi.HUD_W_ID))
+        assertEquals(game / 280f, GameUi.hudWidthFactor(), 0.001f)
         // the resource bar Off: its rows go, the band shrinks to its own line
         tap(p, buttons[1].centerX(), buttons[1].centerY()); lay(r)
         assertEquals(2, p.focusTargets().drop(1).size)
@@ -769,7 +774,10 @@ class GameUiTilesRoomTest {
         CompassSwitch.note(JSONObject().put("proof", JSONObject().put("compc", JSONObject().put("show", true).put("on", 1).put("off", 2)
             .put("cam", true).put("camOn", 3).put("camOff", 4)))); lay(r)
         open(GameUiSection.COMPASS_ID); shot("top_20_band_compass_cam")
-        close(); repeat(6) { GameUi.stepHudWidth(1) }; lay(r); open(GameUi.HUD_ID); shot("top_21_band_hud_wide")
+        // (the game took the width: the picture follows the game's word, review 11-17)
+        close(); repeat(6) { GameUi.stepHudWidth(1) }
+        GameUi::class.java.getDeclaredField("prdW").apply { isAccessible = true }.set(GameUi, GameUi.hudWidth()); lay(r)
+        open(GameUi.HUD_ID); shot("top_21_band_hud_wide")
         // (verifier 11-17) the cursor: the golden box on the Damage meter tile, on the Cooldown Manager band's first part line, on Edit
         // layout (its A opens the editor's page: theEditLayoutTileOpensTheEditor proves it; the page is LayoutShotsTest's)
         fun cursorTo(id: String) {
