@@ -113,6 +113,8 @@ object HomeFightFace {
             st.slots.filter { it.kind == PadMapModel.Kind.COMMAND && st.set in 1..4 && it.pos in 1..8 }.mapNotNull { sl ->
                 // p35: Home Bar draws the bar's swirl ([CastView.HOME_SWIRL]), not its file icon
                 (if (sl.key == PadMapModel.HOME_KEY) CastView.HOME_SWIRL
+                 else if (sl.key == PadMapModel.PTT_KEY) CastView.KIT_PTT                       // m170: the kit's own pictures
+                 else if (sl.key == PadMapModel.PS_MENU_KEY) CastView.KIT_PS_MENU
                  else PadMapModel.commandOn(map, sl)?.icon?.takeIf { it != 0 } ?: sl.icon.takeIf { it != 0 })?.let { cmdKey(st.set, sl.pos) to it }
             }
         }.toMap()

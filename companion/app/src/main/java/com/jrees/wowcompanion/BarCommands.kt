@@ -13,8 +13,13 @@ object BarCommands {
      *  Polestar through the one [PolestarMenu] ([PolestarStepChoice.command]) */
     const val PS_NEXT = "psnext"
     const val PS_PREV = "psprev"
-    /** the keys the HOST opens itself (HomeBarSelect.onDpad): the map / chat rooms, the two radials, the pause wheel; Polestar's step */
-    val HOST = setOf("map", "chat", "radial", "sradial", "pause", "smartor", PS_NEXT, PS_PREV)      // + "smartor": Smart buffs' OR wheel (Hub hub12)
+    /** hub58 / PadMap m170 (the user's picks, 2026-11-17): "Push to talk (hold)" ([HoldTalk.ptt]: the host finds the held button and
+     *  runs the hold) and "Polestar menu" (the Map room's own X route: over the Map room, else the Quests room's Polestar tab) */
+    const val TALK = "talk"
+    const val PS_MENU = "psmenu"
+    /** the keys the HOST opens itself (HomeBarSelect.onDpad): the map / chat rooms, the two radials, the pause wheel; Polestar's step;
+     *  hub58: push to talk, the Polestar menu */
+    val HOST = setOf("map", "chat", "radial", "sradial", "pause", "smartor", PS_NEXT, PS_PREV, TALK, PS_MENU)      // + "smartor": Smart buffs' OR wheel (Hub hub12)
 
     enum class Route { CURSOR, OPEN, HOME, HOST, UNKNOWN }
 

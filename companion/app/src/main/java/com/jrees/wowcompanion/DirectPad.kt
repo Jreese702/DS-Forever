@@ -54,7 +54,7 @@ object DirectPad {
 
     /** the reader runs while the app is in front; [start] / [stop] follow the Activity */
     fun start() { ensure() }
-    fun shutdown() { reader?.stop(); reader = null; healthy = false; cancelRepeat() }
+    fun shutdown() { reader?.stop(); reader = null; healthy = false; cancelRepeat(); downAt.clear() }
 
     private fun ensure() {
         if (reader != null || regs.isEmpty()) return
@@ -73,7 +73,12 @@ object DirectPad {
     /** b98: a shoulder or trigger is held now (the game's router then gives the D-pad to its own override bars, not to Home's bar) */
     fun sideHeld(): Boolean = pads.any { it }
 
+    /** the keys held now and when each went down (uptime ms; main thread): push to talk finds its bound button by it (HoldTalk.pttSource) */
+    private val downAt = HashMap<String, Long>()
+    fun heldSince(): Map<String, Long> = HashMap(downAt)
+
     private fun key(k: String, down: Boolean) {
+        if (down) downAt[k] = android.os.SystemClock.uptimeMillis() else downAt.remove(k)
         val r = regs.values.firstOrNull { k in it.keys && active(it.id) } ?: run {
             if (!down) stopRepeat(k)
             if (healthy) unclaimed?.let { u -> PadSlow.timed({ "DirectPad:unclaimed" }) { u(k, down) } }

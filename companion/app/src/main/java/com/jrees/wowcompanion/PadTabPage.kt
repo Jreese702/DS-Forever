@@ -168,6 +168,7 @@ class PadTabPage(
     private fun padFirst(mask: Int) {
         val fresh = mask and padHeld.inv()
         padHeld = mask
+        if (PadInput.isHeld(fresh, PadInput.SLOT_FACE_TOP) && padButton("PAD4") == DOWN_TALK) talkY()
         if (PadInput.isHeld(fresh, PadInput.SLOT_FACE_LEFT) && padButton("PAD3") == DOWN_MOVE) localFirst(DOWN_MOVE)
         if (PadInput.isHeld(fresh, PadInput.SLOT_FACE_RIGHT) && padButton("PAD2") == DOWN_CANCEL) localFirst(DOWN_CANCEL)
     }
@@ -182,6 +183,7 @@ class PadTabPage(
         }
         if (chooserList() != null || view == "ds") return null
         if (carryNow() != null) return when (key) { "PAD1" -> DOWN_PLACE; "PAD2" -> DOWN_CANCEL; else -> null }
+        if (key == "PAD4" && k.focus == "buttons" && talkKind() != TALK_NONE) return DOWN_TALK          // m170: the talk rows (fights too)
         if (k.focus != "buttons" || m.combat) return null
         if (toolAt(shown(), pos) != null) return null                                       // p34: the toolbar's
         if (view == "radial") return when (key) { "PAD1" -> DOWN_CHANGE; "PAD3" -> if (radId(pos) != 0) DOWN_MOVE else null; else -> null }   // p16
@@ -231,15 +233,89 @@ class PadTabPage(
         c.drawText(Tr.t("On"), x0 + 8f, cy - 2f - (pOn.ascent() + pOn.descent()) / 2f, pOn)
         UiKit.padCombo(c, null, SpellsModel.combo(SpellsModel.PadSlot(0, 1, 1, pos), style()).button, x0 + 66f, cy, 56f, Theme.parchmentInk, shadow = false)
         UiKit.tex("book_divider")?.let { c.drawBitmap(it, null, RectF(x0, top + 204f, x1, top + 215f), PBMP) }
+        // the Chat's hold to talk rows (the user, 2026-11-17: "I want the push to talk settings added to the chat button inside of the
+        // controller binding room"), its help under them
+        val helpY = if (talkKind() == TALK_CHAT) drawTalkRows(c, w, top + 236f) + 18f else top + 236f
         // two sentences, each its own words (a joined line has no translation of its own)
         val help = Tr.t(t.what) + " " + Tr.t("Turn the DS WoW toolbar off (WoW Defaults) to put your own spell here; it comes back as you left it.")
         val lay = StaticLayout.Builder.obtain(Tr.span(help), 0, Tr.span(help).length, TextPaint(UiKit.inkPaint(24f)), (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
-        c.save(); c.translate(x0 + 8f, top + 236f); lay.draw(c); c.restore()
+        c.save(); c.translate(x0 + 8f, helpY); lay.draw(c); c.restore()
         flash?.takeIf { SystemClock.uptimeMillis() < flashUntil }?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
             c.drawText(Tr.t(it), actRect(w, h).centerX(), actRect(w, h).top - 64f, pw)
         }
+    }
+
+    // ---------------------------------------------------------------- m170 HOLD TO TALK ON THE CHAT BUTTON (the user, 2026-11-17: "I want the
+    // push to talk settings added to the chat button inside of the controller binding room"): where WoW Defaults' chosen button IS the
+    // Chat that holds to talk - the toolbar's Chat on the bare D-pad Left, or the DS Chat command on the bare Left (HoldTalk.leftIsChat's
+    // own places) - its right page carries the SAME per-character settings as Settings > Bottom screen > Home (HomeSettings: one store,
+    // two places; a change in either shows in both at once): "Hold to talk" Off / On and, while On, "On release". A button carrying
+    // "Push to talk (hold)" (PadMap m170) carries "On release" (its hold works whatever the switch says). A finger taps a row; the
+    // controller's Y (the add-on does nothing with Y here, PadTabCtl p54) steps Off -> On (Show, A sends) -> On (Send now) -> Off on
+    // the Chat, and flips "On release" on push to talk. App settings only: no game action, in a fight too.
+
+    /** which talk rows the chosen button carries now */
+    private fun talkKind(): Int {
+        if (view != "normal" || chooserList() != null || boxOpenNow() != null || carryNow() != null) return TALK_NONE
+        val m = map ?: return TALK_NONE
+        val s = shown()
+        toolAt(s, pos)?.let { return if (it.word == "Chat") TALK_CHAT else TALK_NONE }
+        val sl = slotOf(m, s, pos) ?: return TALK_NONE
+        if (sl.kind != PadMapModel.Kind.COMMAND) return TALK_NONE
+        return when (PadMapModel.commandOn(m, sl)?.key ?: sl.key) {
+            HoldTalk.CHAT_KEY -> if (s == 1 && pos == HoldTalk.LEFT) TALK_CHAT else TALK_NONE
+            PadMapModel.PTT_KEY -> TALK_PTT
+            else -> TALK_NONE
+        }
+    }
+    /** the character the settings are kept for (GameUi.character; the renders set their own) */
+    var talkWho: () -> String? = { GameUi.character }
+    private fun talkRow(i: Int, w: Float, y0: Float) = RectF(SPLIT + 40f, y0 + i * TALK_ROW_STEP, w - 56f, y0 + i * TALK_ROW_STEP + TALK_ROW_H)
+    /** the rows on show: (press id, rect) */
+    private fun talkRows(w: Float, y0: Float): List<Pair<Int, RectF>> = when (talkKind()) {
+        TALK_CHAT -> listOf(DOWN_TALK to talkRow(0, w, y0)) +
+            (if (HomeSettings.holdTalk(talkWho())) listOf(DOWN_TALK_REL to talkRow(1, w, y0)) else emptyList())
+        TALK_PTT -> listOf(DOWN_TALK_REL to talkRow(0, w, y0))
+        else -> emptyList()
+    }
+    /** the rows from [y0]; the bottom of the last */
+    private fun drawTalkRows(c: Canvas, w: Float, y0: Float): Float {
+        val who = talkWho()
+        val rows = talkRows(w, y0)
+        for ((i, row) in rows.withIndex()) {
+            val (id, r) = row
+            val label = if (id == DOWN_TALK) "${Tr.t(HomeSettingsSection.TALK_ROW)}: ${Tr.t(if (HomeSettings.holdTalk(who)) "On" else "Off")}"
+                else "${Tr.t(HomeSettingsSection.RELEASE_ROW)}: ${Tr.t(if (HomeSettings.talkSendNow(who)) "Send now" else "Show, A sends")}"
+            val st = when { who == null -> UiKit.Button.DISABLED; isDown(id) -> UiKit.Button.DOWN; else -> UiKit.Button.UP }
+            // Y on the first row (it steps the whole choice)
+            if (i == 0) UiKit.button(c, r, label, glyph(6), st) else UiKit.button(c, r, label, st)
+        }
+        return rows.lastOrNull()?.second?.bottom ?: y0
+    }
+    /** the rows' place on the page on show (the right page's own y; the toolbar's Chat and a command page alike) */
+    private fun talkRowsAt(w: Float): List<Pair<Int, RectF>> = talkRows(w, 188f + 236f)
+    /** a finger on row [id] */
+    private fun talkTap(id: Int) {
+        val who = talkWho() ?: return
+        when (id) {
+            DOWN_TALK -> HomeSettings.setHoldTalk(who, !HomeSettings.holdTalk(who))
+            DOWN_TALK_REL -> HomeSettings.setTalkSendNow(who, !HomeSettings.talkSendNow(who))
+        }
+        host.invalidate()
+    }
+    /** the controller's Y: the Chat's three steps, push to talk's flip */
+    private fun talkY() {
+        val who = talkWho() ?: return
+        when (talkKind()) {
+            TALK_CHAT -> {
+                val (on, now) = HoldTalk.nextSetting(HomeSettings.holdTalk(who), HomeSettings.talkSendNow(who))
+                HomeSettings.setTalkSendNow(who, now); HomeSettings.setHoldTalk(who, on)
+            }
+            TALK_PTT -> HomeSettings.setTalkSendNow(who, !HomeSettings.talkSendNow(who))
+        }
+        host.invalidate()
     }
 
     /** the tab on show, for [ControllerView] */
@@ -613,7 +689,7 @@ class PadTabPage(
     private fun commandRows(m: PadMapModel.Map, ds: Boolean) =
         m.commands.mapIndexed { i, c -> Thing.Command(PadMapModel.dress(c), i + 1) }.filter { dsCommand(it.c) == ds && !it.c.key.startsWith("DSBAR") }
     /** p35 (the user: "the Home bar button should have the normal swirl Icon"): a command's picture; Home Bar wears the bar's own swirl */
-    private fun cmdIcon(c: PadMapModel.Command?) = if (c?.key == PadMapModel.HOME_KEY) UiKit.tex("home_live_base") else c?.let { Icons.get(it.icon) }
+    private fun cmdIcon(c: PadMapModel.Command?) = PadMapModel.kitArt(c?.key)?.let { UiKit.tex(it) } ?: c?.let { Icons.get(it.icon) }     // p35 / m170: the kit's
 
     private fun rowsOf(list: String, book: SpellsModel.Book?, m: PadMapModel.Map): List<Thing> {
         // p52 (PadMap m157): a stick lists what the eight list (p49's four-bindings list is gone)
@@ -1428,10 +1504,13 @@ class PadTabPage(
             castBar() -> "Spells, items, mounts and commands"                                        // p53 (terse)
             else -> "Change puts a spell from your book, or one of the game's commands, on this button."
         }
+        if (talkKind() != TALK_NONE) drawTalkRows(c, w, top + 236f)                    // m170: the talk rows in the help's place
+        else {
         val pd = TextPaint(UiKit.inkPaint(24f))
         val lay = StaticLayout.Builder.obtain(Tr.span(help), 0, Tr.span(help).length, pd, (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         c.save(); c.translate(x0 + 8f, top + 236f); lay.draw(c); c.restore()
+        }
 
         // p9 THE VERBS: an empty button A = Choose; one that holds something A = Change and X = Move; and the macro slots (always in sight)
         val act = actRect(w, h)
@@ -1864,6 +1943,7 @@ class PadTabPage(
             return (1..4).firstOrNull { settingRect(it, w).contains(x, y) }?.let { DOWN_RSET + it } ?: DOWN_NONE
         }
         if (chooserList() == null) {
+            talkRowsAt(w).firstOrNull { it.second.contains(x, y) }?.let { return it.first }      // m170: the talk rows
             val carrying = carryNow() != null
             if (toolAt(shown(), pos) != null) {                             // p34: the toolbar's button takes nothing
                 if (actRect(w, h).contains(x, y) || moveRect(w, h).contains(x, y)) {
@@ -1937,6 +2017,7 @@ class PadTabPage(
         if (was == DOWN_MOVE && moveRect(w, h).contains(x, y) && slotOf(m, shown(), pos).let { it?.kind == PadMapModel.Kind.BIND || it?.stick != null }) {
             say("It rides the key, not the bar: clear it and choose it where you want it"); return
         }
+        if ((was == DOWN_TALK || was == DOWN_TALK_REL) && talkRowsAt(w).any { it.first == was && it.second.contains(x, y) }) { talkTap(was); return }
         if (was == DOWN_MOVE && moveRect(w, h).contains(x, y)) {
             if (m.combat) say(COMBAT) else { tap(listOf(PadMapModel.ROW_PADTAB to PadMapModel.COL_CARRY)); localFirst(DOWN_MOVE) }
             return
@@ -2164,6 +2245,14 @@ class PadTabPage(
         const val RADIAL_PREFIX = 39
         const val RADIAL_CODE = 5
         private const val DOWN_RSET = 900
+        /** m170: the talk rows (press ids), what the chosen button carries, their size */
+        private const val DOWN_TALK = 950
+        private const val DOWN_TALK_REL = 951
+        private const val TALK_NONE = 0
+        private const val TALK_CHAT = 1
+        private const val TALK_PTT = 2
+        private const val TALK_ROW_H = 76f
+        private const val TALK_ROW_STEP = 88f
         private const val DEL_ASK_MS = 3000L
         /** the spell radial command's own icon (PadMap's DSSRADIAL) */
         private const val RADIAL_ICON = 133741

@@ -422,6 +422,103 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     /** where the line was last drawn, in the drawing page's px (the tests; empty = none) */
     val talkLineBox = RectF()
 
+    /**
+     * HOLD TO TALK'S POP-UP (the user, 2026-11-17: "on the push to talk, I want to add some pop up tabs to press L or R to change what
+     * chat that its for. lets give it its own pop up UI around it."): a Home module under the D-pad while the hold lasts and its words
+     * wait - the chats usable now as tabs ([tabs], [sel] chosen; TalkTabs) with the gold arrows and L / R on the row's ends, the big
+     * microphone in the chosen chat's colour ([face]: its halo follows the voice), the words under it after the chat's header
+     * ([prefix]); [ask] = A sends / B drops; [alpha] the wait's fade. Drawn instead of [talkLine] while set.
+     */
+    data class TalkPanel(val tabs: List<TalkTabs.Tab>, val sel: Int, val face: TalkFace, val prefix: String, val words: String,
+                         val ask: Boolean = false, val alpha: Int = 255)
+    var talkPanel: TalkPanel? = null
+        set(v) {
+            if (field == v) return
+            field = v
+            if (v == null) { talkPanelBox.setEmpty(); talkTabBoxes = emptyList() }
+            var p = parent
+            while (p is View) { p.invalidate(); p = p.parent }
+        }
+    /** where the panel was last drawn, in the drawing page's px (touch, the tests; empty = none) */
+    val talkPanelBox = RectF()
+    /** the panel's tabs as last drawn (page px) with their keys: a finger picks one ([onTalkTab]) */
+    var talkTabBoxes: List<Pair<String, RectF>> = emptyList(); private set
+    /** a finger on one of the panel's tabs (the host picks it) */
+    var onTalkTab: ((String) -> Unit)? = null
+    private val talkGaps = UiKit.TabGaps(vertical = false)
+    private val pTalkWords by lazy { UiKit.bodyPaint(30f) }
+
+    /** a touch at page px ([x], [y]): true = the panel's (a tab hit picks it) */
+    fun talkPanelTouch(x: Float, y: Float): Boolean {
+        if (talkPanel == null || !talkPanelBox.contains(x, y)) return false
+        talkTabBoxes.firstOrNull { it.second.contains(x, y) }?.let { onTalkTab?.invoke(it.first) }
+        return true
+    }
+
+    /**
+     * the panel, drawn by the page this band stands in (as [drawTalkLine]): under the band's D-pad, the page's width, so it never covers
+     * the D-pad's Left being held; [host] asks for the tab gaps' next frames
+     */
+    fun drawTalkPanel(c: Canvas, ox: Float, oy: Float, maxRight: Float, host: View?) {
+        talkPanelBox.setEmpty()
+        val p = talkPanel ?: return
+        if (p.alpha <= 0 || hud == null || layout == Layout.FULL || k <= 0f || p.tabs.isEmpty()) { talkTabBoxes = emptyList(); return }
+        var bot = 0f
+        for (pos in 0 until 4) { bandSlot(pos, bandBox); bot = max(bot, oy + bandBox[1] + bandBox[2] / 2f) }
+        val box = RectF(14f, bot + 10f, maxRight - 14f, bot + 10f + TALK_PANEL_H)
+        talkPanelBox.set(box)
+        val layer = if (p.alpha < 255) c.saveLayerAlpha(RectF(box.left - 4f, box.top - 4f, box.right + 4f, box.bottom + 4f), p.alpha) else -1
+        UiKit.module(c, box)
+        // the tabs: the Chat room's row (TabGaps, the hanging tabs, one label size that fits, each in its chat's colour)
+        val sel = p.sel.coerceIn(0, p.tabs.size - 1)
+        val rects = talkGaps.row(p.tabs.size, box.left + 10f, box.right - 10f, box.top + 14f, 68f, 210f, sel, host)
+        val fitW = (rects.minOfOrNull { it.width() } ?: 0f) - 44f
+        val probe = UiKit.bodyPaint(28f, Color.WHITE)
+        val labels = p.tabs.filter { it.key != "WHISPER" }.map { Tr.t(it.label) }
+        while (labels.any { probe.measureText(it) > fitW } && probe.textSize > 18f) probe.textSize -= 1f
+        val hits = ArrayList<Pair<String, RectF>>(p.tabs.size)
+        for ((i, t) in p.tabs.withIndex()) {
+            val r = rects[i]
+            UiKit.tab(c, r, "", i == sel, onTop = false)
+            val col = if (i == sel) t.colour else Color.argb(170, Color.red(t.colour), Color.green(t.colour), Color.blue(t.colour))
+            val tp = UiKit.bodyPaint(probe.textSize, col).apply { textAlign = Paint.Align.CENTER }
+            val label = android.text.TextUtils.ellipsize(Tr.t(t.label), android.text.TextPaint(tp), fitW,
+                android.text.TextUtils.TruncateAt.END).toString()
+            c.drawText(label, r.centerX(), r.centerY() + 10f, tp)
+            hits += t.key to RectF(r)
+        }
+        talkTabBoxes = hits
+        UiKit.moveArrows(c, rects[sel], left = p.tabs.size > 1, right = p.tabs.size > 1, words = false)     // "Wrap around" (2026-11-17)
+        talkGaps.badges(c)
+        // the microphone: the toolbar's big one, in the chosen chat's colour, its halo on the voice
+        val micY = box.top + 14f + 68f + 96f
+        drawTalkBig(c, box.centerX(), micY, 210f, p.face, SystemClock.uptimeMillis())
+        // the words under it after the chat's header; A sends / B drops at the end while they wait
+        val glyph = 44f
+        val tail = if (p.ask) 2 * (glyph + 10f) + 8f else 0f
+        val pre = p.prefix
+        pTalkWords.color = p.face.colour
+        val preW = pTalkWords.measureText(pre)
+        val room = box.width() - 48f - tail - preW
+        var words = p.words
+        if (pTalkWords.measureText(words) > room) {
+            val n = pTalkWords.breakText(words, true, (room - pTalkWords.measureText("…")).coerceAtLeast(0f), null)
+            words = words.substring(0, n).trimEnd() + "…"
+        }
+        val lineW = preW + pTalkWords.measureText(words) + tail
+        val base = box.bottom - 30f
+        var tx = box.centerX() - lineW / 2f
+        c.drawText(pre, tx, base, pTalkWords); tx += preW
+        c.drawText(words, tx, base, pTalkWords); tx += pTalkWords.measureText(words)
+        if (p.ask) {
+            val gy = base - (pTalkWords.descent() - pTalkWords.ascent()) / 2f + pTalkWords.descent()
+            UiKit.pad(c, aGlyphName(), tx + 8f + glyph / 2f, gy, glyph)
+            UiKit.pad(c, UiKit.backGlyph(), tx + 8f + glyph * 1.5f + 10f, gy, glyph)
+        }
+        if (layer >= 0) c.restoreToCount(layer)
+        if (p.face.mode == TalkFace.Mode.LISTEN) host?.postInvalidateDelayed(33L)
+    }
+
     private val pTalk by lazy { UiKit.bodyPaint(26f) }
     private val pTalkDisc = Paint(Paint.ANTI_ALIAS_FLAG)
 
@@ -635,8 +732,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private fun commandOverride(li: Int, src: Int): Btn? {
         if (li !in 0 until STATE_LAYERS) return null
         val at = li * 8 + src
-        val icon = commands?.get(at)?.takeIf { it > 0 || it == HOME_SWIRL } ?: return null
+        val icon = commands?.get(at)?.takeIf { it > 0 || it == HOME_SWIRL || it in KIT_CMDS } ?: return null
         val cached = cmdBtns[at]
+        // m170: push to talk / the Polestar menu draw their kit pictures (PadMapModel.kitArt), as the band's toolbar pictures do
+        KIT_CMDS[icon]?.let { art ->
+            return cached?.takeIf { it.kit == art } ?: Btn().apply { p = src + 1; k = "command"; e = true; kit = art }.also { cmdBtns[at] = it }
+        }
         if (icon == HOME_SWIRL) {                                          // p35: the Home Bar command, the bar Home button's own face
             return cached?.takeIf { it.kit == "home_stone_rough" } ?: Btn().apply { p = src + 1; k = "command"; e = true; kit = "home_stone_rough"; kitCut = true; kitScale = 0.95f }
                 .also { cmdBtns[at] = it }
@@ -1629,6 +1730,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         // a window (NPC dialog, bags, any menu) owns the pad: the game ignores the modifiers
         // (holdbindings.lua IsLeft/RightModifierDown, targeting) and shows the base bar collapsed
         if (!barsUsable) return N
+        // hold to talk's pop-up: LB / RB are its chat tabs, not the band's shoulder layers
+        if (talkPanel != null) return N
         val swap = hud?.swapT == true
         return when {
             padLt && padRt -> LR
@@ -4176,6 +4279,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private const val SP_LOOT = 5
         /** p35: [commands]' picture for the Home Bar command (HomeFightFace): the bar Home button's own face */
         const val HOME_SWIRL = -2
+        /** PadMap m170's commands: their kit pictures in [commands] (HomeFightFace.commandIcons) */
+        const val KIT_PTT = -3
+        const val KIT_PS_MENU = -4
+        val KIT_CMDS = mapOf(KIT_PTT to UiKit.CMD_PTT_ART, KIT_PS_MENU to "ricon_quests")
         private const val SP_ARROW_L = 6        // L, U, R, D must stay consecutive
         private const val SP_ARROW_U = 7
         private const val SP_ARROW_R = 8
@@ -4192,6 +4299,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private const val STALE_MS = 20_000L
         /** hold to talk's line under the D-pad, px tall */
         const val TALK_LINE_H = 64f
+        /** hold to talk's pop-up: the tabs, the big microphone, the words */
+        const val TALK_PANEL_H = 360f
         private const val TRIG_X = 76f           // frame px (1240 wide): a chip's centre under its bumper (UI Art)
         private const val TRIG_BOTTOM = 60f      // ... and its centre this far above the band's bottom
         private const val TRIG_W = 84f; private const val TRIG_H = 56f

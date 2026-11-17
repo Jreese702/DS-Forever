@@ -1011,10 +1011,28 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
     /** a hold-to-talk send on its way: its answer goes here, not to the composer ([sent] / its notice) */
     private var talkDone: ((Boolean, String) -> Unit)? = null
     private var talkKept: Triple<String, String, String>? = null
+    /** the chat a hold-to-talk send on its way goes to (the panel's tab): kept as the last used chat once it went */
+    private var talkTo: Pair<String, String>? = null
+
+    /**
+     * HOLD TO TALK'S CHAT TABS (TalkTabs; the user, 2026-11-17: "pop up tabs to press L or R to change what chat that its for"): the
+     * room's own list (kinds(): its order, names, colours, availability) as the panel's tabs; the whisper's tab is the last whispered
+     * person (TalkKeep), else the room's whisper. Officer is not here: the room cannot send to it (no send cell), so no tab invents it.
+     */
+    fun talkTabs(): List<TalkTabs.Tab> {
+        val ks = kinds().filter { it.usable && it.key != "WHISPER" }.map { TalkTabs.Tab(it.key, it.label, it.colour) }
+        val w = TalkKeep.used.takeIf { it.type == "WHISPER" }?.whisper?.takeIf { it.isNotEmpty() } ?: whisperName
+        return if (w.isEmpty()) ks else ks + TalkTabs.Tab("WHISPER", "→ $w", colour("whisper"), w)
+    }
+
+    /** the tab the hold starts on: the last used chat as it is now */
+    fun talkStart(): String = usedNow().first
 
     /** the last used chat: its key, the game's header for it ("Party: ", "Tell Name: ") and its colour */
-    fun talkChannel(): Triple<String, String, Int> {
-        val (t, usedW) = usedNow()
+    fun talkChannel(): Triple<String, String, Int> = usedNow().let { (t, w) -> talkChannel(t, w) }
+
+    /** chat [t] (its whisper person [usedW]): its key, the game's header for it and its colour */
+    fun talkChannel(t: String, usedW: String): Triple<String, String, Int> {
         val keepW = whisperName
         if (t == "WHISPER") whisperName = usedW
         val prefix = prefixFor(t)
@@ -1030,15 +1048,17 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
     /**
      * HOLD TO TALK'S SEND (the player's press: the release, or A on its line): [text] to the last used chat through the same add-on
      * path as the composer's Send (its type, the check, the ONE send tap; the add-on's rules refuse what the game would). The composer
-     * keeps its own type and draft. [done] (main thread): sent, or the reason it was not. False = nothing went (the reason given).
+     * keeps its own type and draft. [to] = the panel's chosen tab (type, whisper person; null = the last used chat); once it went it is
+     * the last used chat (TalkKeep). [done] (main thread): sent, or the reason it was not. False = nothing went (the reason given).
      */
-    fun talkSend(text: String, done: (Boolean, String) -> Unit): Boolean {
+    fun talkSend(text: String, to: Pair<String, String>? = null, done: (Boolean, String) -> Unit): Boolean {
         val body = HoldTalk.body(text)
         if (body.isBlank()) { done(false, HoldTalk.NOT_HEARD); return false }
         if (!GameInput.live()) { done(false, "Waiting for the game"); return false }
         if (stream.sending || talkDone != null) { done(false, "Sending…"); return false }
         talkKept = Triple(type, whisperName, typed)
-        val (usedT, usedW) = usedNow()
+        val (usedT, usedW) = to ?: usedNow()
+        talkTo = usedT to usedW
         type = usedT
         if (type == "WHISPER") whisperName = usedW
         talkDone = done
@@ -1052,16 +1072,23 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
     private fun talkEnd(ok: Boolean, why: String) {
         val d = talkDone ?: return
         talkDone = null
+        talkTo = null
         talkKept?.let { (t, w, draft) -> type = t; whisperName = w; tellType(); stream.setBody(draft); head.invalidate(); showTyped() }
         talkKept = null
         d(ok, why)
     }
 
+    /** a send went to chat [t] ([w] its whisper person): kept per character (TalkKeep: the kind, the person, a channel's NAME) */
+    private fun keepUsed(t: String, w: String) {
+        val chan = if (t.startsWith("CHANNEL:")) chans.firstOrNull { it.first.toString() == t.substringAfter(":") }?.second ?: "" else ""
+        TalkKeep.went(TalkKeep.Used(t, if (t == "WHISPER") w else "", chan))
+    }
+
     private fun onStream(e: ChatStream.Event) {
         if (talkDone != null) {
-            // the hold's own send: the chat it went to stays the last used one; the composer is not touched
+            // the hold's own send: the chat it went to (the panel's tab) becomes the last used one; the composer is not touched
             when (e) {
-                ChatStream.Event.Sent -> talkEnd(true, "")
+                ChatStream.Event.Sent -> { talkTo?.let { (t, w) -> keepUsed(t, w) }; talkEnd(true, "") }
                 is ChatStream.Event.Refused -> talkEnd(false, e.why.replaceFirstChar { it.uppercase() })
                 is ChatStream.Event.QuickSent -> {}
             }
@@ -1069,10 +1096,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         }
         if (e == ChatStream.Event.Sent || e is ChatStream.Event.QuickSent) {
             // kept per character (TalkKeep: the kind, the whisper's person, a channel's name; never the words); its listener redraws
-            (sendingTo ?: (type to whisperName)).let { (t, w) ->
-                val chan = if (t.startsWith("CHANNEL:")) chans.firstOrNull { it.first.toString() == t.substringAfter(":") }?.second ?: "" else ""
-                TalkKeep.went(TalkKeep.Used(t, if (t == "WHISPER") w else "", chan))
-            }
+            (sendingTo ?: (type to whisperName)).let { (t, w) -> keepUsed(t, w) }
         }
         sendingTo = null
         when (e) {

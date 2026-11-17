@@ -68,5 +68,11 @@ class ControllerShotsTest {
         shot("ctl_combat_a_five", "padmap_combat_a", ctl("ctl_combat_a"))
         shot("ctl_tabs", "padmap_on", ctl("ctl_dleft") { it.put("focus", "tabs").put("tcur", 3).put("view", "combat") })
         shot("ctl_switch", "padmap_on", ctl("ctl_dleft") { it.put("focus", "switches") })
+        // PadMap m170 (the user's picks, 2026-11-17): "Push to talk (hold)" and "Polestar menu" in the chooser's DS tab, after the
+        // Polestar step commands - the cursor on each
+        shot("ctl_chooser_ds_ptt", "padmap_off", ctl("ctl_dstool") {
+            it.put("chooser", org.json.JSONObject().put("id", "DSPTT").put("list", "dstool").put("row", 8)) })
+        shot("ctl_chooser_ds_psmenu", "padmap_off", ctl("ctl_dstool") {
+            it.put("chooser", org.json.JSONObject().put("id", "DSPSMENU").put("list", "dstool").put("row", 9)) })
     }
 }
