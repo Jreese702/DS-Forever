@@ -141,8 +141,8 @@ namespace DsfDesktop.App
                 Wow = inst;
                 Flavor = WowLocator.ChooseFlavor(inst, DateTime.Now);
                 var path = inst != null && Flavor != null ? inst.LogPath(Flavor) : null;
-                if (tailer == null) { tailer = new LogTailer(path); tailer.RawLine = l => { lock (loginLog) loginLog.Line(l); }; }
-                else if (tailer.Path != path) { tailer.SetPath(path); lock (loginLog) loginLog.Reset(); clientDocAt = null; loginLogAt = null; }
+                if (tailer == null) { tailer = new LogTailer(path); tailer.RawLine = l => { lock (loginLog) loginLog.Line(l); }; loginLogAt = DateTime.Now; }
+                else if (tailer.Path != path) { tailer.SetPath(path); lock (loginLog) loginLog.Reset(); clientDocAt = null; loginLogAt = DateTime.Now; }
                 Notices = inst != null && Flavor != null ? ConfigCheck.Notices(inst.FlavorDir(Flavor)) : new List<string>();
             }
             Log.I(inst == null ? "WoW Forever not found" : "WoW at " + inst.Root + " (" + string.Join(", ", inst.Flavors) + "), following " + Flavor);
@@ -221,7 +221,7 @@ namespace DsfDesktop.App
                 tailer.SetPath(inst.LogPath(f));
                 lock (loginLog) loginLog.Reset();
                 clientDocAt = null;
-                loginLogAt = null;
+                loginLogAt = DateTime.Now;     // read from the file's start: a client up now wrote it (WowFlow.LogIsThisRun)
                 Notices = ConfigCheck.Notices(inst.FlavorDir(f));
             }
             Log.I("following the game's log: " + f);
@@ -762,14 +762,15 @@ namespace DsfDesktop.App
         }
 
         DateTime? loginFileAt, signInSeenAt;
-        /// <summary>when the game's log state was last emptied by a client restart (local time; null = not since Desktop or the path changed)</summary>
+        /// <summary>when the game's log state last began from the file's start or an emptied file (a client restart, the first read, a
+        /// path or flavor switch; local time)</summary>
         DateTime? loginLogAt;
         bool loginFileSwept;
 
         public void LoginFile(string email, string password)
         {
             var dir = FlavorDirOrNull;
-            if (dir == null || string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !WowFlow.LoginFileWanted(ScreenNow(thisRunOnly: true))) return;
+            if (dir == null || string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !WowFlow.LoginFileWanted(ScreenNow())) return;
             var why = WowLoginFile.Write(dir, email, password);
             if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; }
             Log.I("login file: " + (why ?? "written"));
@@ -785,7 +786,7 @@ namespace DsfDesktop.App
                 if (!loginFileAt.HasValue) return;
                 // only THIS client run's sign-in counts (its connections, or its log once its restart was seen): a stale log made a
                 // 0.5 s old Wow.exe "CharSelect" and the 20 s ran from the launch (the user, 2026-11-17)
-                var s = ScreenNow(thisRunOnly: true);
+                var s = ScreenNow();
                 if (!signInSeenAt.HasValue && (s == WowScreen.SigningIn || SignedIn(s)))
                 {
                     signInSeenAt = DateTime.UtcNow;
@@ -954,17 +955,18 @@ namespace DsfDesktop.App
         static bool SignedIn(WowScreen s) => s == WowScreen.CharSelect || s == WowScreen.World;
 
         /// <summary>where the game is now (its process, its connections, its log, the add-on's documents)</summary>
-        /// <param name="thisRunOnly">the log and the add-on's documents count only once this client run's restart was seen
-        /// (<see cref="WowFlow.LogIsThisRun"/>; login.txt's decisions); its connections always count</param>
-        public WowScreen ScreenNow(bool thisRunOnly = false)
+        /// The log and the add-on's documents count only once they are this client run's (<see cref="WowFlow.LogIsThisRun"/>): for
+        /// login.txt, the supervisor and the Thor alike, so a new Wow.exe never reads as the previous run's screen. Its connections
+        /// always count.
+        public WowScreen ScreenNow()
         {
             var p = WowWindow.FindAny(FlavorDirOrNull);
             if (p == null) return WowScreen.None;
             try
             {
                 double up = 0;
-                bool thisRun = !thisRunOnly;
-                try { var started = p.StartTime; up = (DateTime.Now - started).TotalSeconds; if (thisRunOnly) thisRun = WowFlow.LogIsThisRun(loginLogAt, started); } catch (Exception) { }
+                bool thisRun = false;
+                try { var started = p.StartTime; up = (DateTime.Now - started).TotalSeconds; thisRun = WowFlow.LogIsThisRun(loginLogAt, started); } catch (Exception) { }
                 var (game, auth) = WowProbe.Connections(p.Id);
                 double? docAge = thisRun && clientDocAt.HasValue ? (DateTime.UtcNow - clientDocAt.Value).TotalSeconds : (double?)null;
                 lock (loginLog) return WowFlow.Classify(true, up, game, auth, thisRun ? loginLog : null, docAge);

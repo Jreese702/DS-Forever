@@ -180,7 +180,7 @@ namespace DsfDesktop.Tests
         public static void AStaleLogDoesNotStartTheLoginFilesClock()
         {
             var start = new DateTime(2026, 11, 17, 14, 15, 19);
-            A.True(!WowFlow.LogIsThisRun(null, start), "no restart seen since Desktop started: the backlog may be any run's");
+            A.True(!WowFlow.LogIsThisRun(null, start), "never read: nothing is this run's");
             A.True(!WowFlow.LogIsThisRun(start.AddMinutes(-20), start), "the restart before this Wow.exe was the previous run's");
             A.True(WowFlow.LogIsThisRun(start.AddSeconds(1.4), start), "this client emptied its log");
             var stale = Log(LoginScreen, CharSelect);
@@ -191,6 +191,31 @@ namespace DsfDesktop.Tests
             A.True(!WowFlow.LoginFileGoes(20.4, null, true), "14:15:39.5 (start + 20.4 s, the login screen up 6 s): the file stays");
             A.Eq(WowScreen.SigningIn, WowFlow.Classify(true, 16, 0, 1, null, null), "this run's Battle.net 1119 still counts without the log");
             A.Eq(WowScreen.CharSelect, WowFlow.Classify(true, 40, 1, 0, null, null), "and its realm connection");
+        }
+
+        [Test]
+        public static void TheRegionPickIsStillSigningIn()
+        {
+            // the user's PC 2026-11-17 ("the auto sign in on streaming didnt work"): Battle.net's logon OK, then the region pick, then 309
+            var l = new LoginLog();
+            l.Line("11/17 14:15:33.099  [N][Lua] Switching to screen=\"AccountLogin\" (from \"none\")");
+            l.Line("11/17 14:15:35.329  [N][Connection] Glue login started loginType=\"(enum)0\"");
+            l.Line("11/17 14:15:48.516  [N][Lua] Switching to screen=\"AccountLogin\" (from \"login\")");
+            l.Line("11/17 14:15:48.916  [N][Lua] Switching to screen=\"SuperDistrictUI\" (from \"login\")");
+            A.False(l.PastLogin, "the region pick is not character select");
+            A.Eq(WowScreen.Login, WowFlow.Classify(true, 30, 0, 0, l, null), "the player picks at the login: \"login\", not \"charselect\"");
+            l.Line("11/17 14:16:07.625  [N][Connection] Fatal login error received result=\" (309)\"");
+            A.Eq("309", l.Error);
+            A.Eq(WowScreen.Login, WowFlow.Classify(true, 49, 0, 0, l, null));
+            l.Line(CharSelect); A.True(l.PastLogin, "character select after it: signed in");
+        }
+
+        [Test]
+        public static void AClientUpWhenTheLogWasReadOwnsIt()
+        {
+            var start = new DateTime(2026, 11, 17, 14, 15, 19);
+            A.True(WowFlow.LogIsThisRun(start.AddMinutes(5), start), "Desktop read the file from its start while this client was up: its own log");
+            A.True(!WowFlow.LogIsThisRun(start.AddSeconds(-0.5), start), "a Wow.exe started after that read, its restart not seen yet: stale");
         }
 
         [Test]

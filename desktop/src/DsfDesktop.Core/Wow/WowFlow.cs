@@ -18,6 +18,7 @@ namespace DsfDesktop.Wow
     /// closed). So the log is ONE signal among several (<see cref="WowFlow.Classify"/>): the game's connections and the add-on's
     /// documents carry the rest. The lines (measured on WoW Forever, the APK's HomeLogin):
     ///   [N][Lua] Switching to screen="AccountLogin" (from "none")      the login screen
+    ///   [N][Lua] Switching to screen="SuperDistrictUI"                 the region pick after Battle.net's logon: still signing in
     ///   [N][Lua] Switching to screen="..."                             any other screen: past the login screen
     ///   [N][Connection] Glue login started ...                         a sign-in began
     ///   [N][Connection] Fatal login error received result=" (308)"     it failed (308 = Battle.net wanted a verify-it's-you step)
@@ -34,6 +35,12 @@ namespace DsfDesktop.Wow
         public bool SignInStarted { get; private set; }
 
         public const string LoginScreen = "AccountLogin";
+        /// <summary>
+        /// The client's region pick (the user's PC 2026-11-17, "the auto sign in on streaming didnt work": Battle.net's logon OK, then
+        /// screen="SuperDistrictUI" for 18 s until the player picked, then "Fatal login error (309)"). Not character select: the sign-in
+        /// is not over, so the screen reads "login", not "charselect".
+        /// </summary>
+        public const string RegionScreen = "SuperDistrictUI";
 
         /// <summary>a new client run (the log was emptied): nothing is known any more</summary>
         public void Reset() { LastScreen = null; Error = null; SignInStarted = false; }
@@ -69,7 +76,7 @@ namespace DsfDesktop.Wow
         }
 
         /// <summary>the log says the client is past the login screen</summary>
-        public bool PastLogin => LastScreen != null && LastScreen != LoginScreen && Error == null;
+        public bool PastLogin => LastScreen != null && LastScreen != LoginScreen && LastScreen != RegionScreen && Error == null;
     }
 
     /// <summary>the pure rules (tested): where the game is, and what a stream that wants it should do</summary>
@@ -106,8 +113,9 @@ namespace DsfDesktop.Wow
         /// streaming didnt work"). Desktop's log state lasts until the tailer notices the new client emptied its log, 0.1-1.7 s after
         /// the new Wow.exe appears; in that gap the PREVIOUS run's lines (past the login screen) made a 0.5 s old client "CharSelect",
         /// so login.txt's 20 s were counted from Wow.exe's start, not from the sign-in (every PC run 11-13..11-17: deleted 20.2-20.9 s
-        /// after "WoW: Starting"). [logRunAt] = when the log state was last emptied (local time, null = never since Desktop started:
-        /// its backlog may be any run's); [processStart] = the found Wow.exe's start (local time).
+        /// after "WoW: Starting"). [logRunAt] = when the log state last began from an empty file or from the file's start (a client
+        /// restart, Desktop's first read, a path or flavor switch; local time; null = never); [processStart] = the found Wow.exe's start
+        /// (local time). A client already up when the file was read from its start wrote that file itself (WoW empties it at launch).
         /// </summary>
         public static bool LogIsThisRun(DateTime? logRunAt, DateTime processStart) => logRunAt.HasValue && logRunAt.Value >= processStart;
 
