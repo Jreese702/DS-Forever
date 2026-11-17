@@ -81,7 +81,7 @@ class MapView(context: Context) : View(context) {
                 autoZoom = false        // you have taken the wheel; double-tap gives it back
                 zoomEase = Float.NaN
                 focusRestoreZoom = Float.NaN
-                zoom = (zoom * d.scaleFactor).coerceIn(1.0f, ZOOM_MAX)
+                zoom = (zoom * d.scaleFactor).coerceIn(zoomFloor, ZOOM_MAX)
                 autoZoomCur = zoom
                 postInvalidate(); return true
             }
@@ -142,8 +142,8 @@ class MapView(context: Context) : View(context) {
                     // so the two halves differ)
                     val hx = if (lastHalfX > 0f) lastHalfX else 0.5f / zoom
                     val hy = if (lastHalfY > 0f) lastHalfY else 0.5f / zoom
-                    panX = (panX + dx * 2f * hx / lastFieldW).coerceIn(0f, 1f)
-                    panY = (panY + dy * 2f * hy / lastFieldH).coerceIn(0f, 1f)
+                    panX = (panX + dx * 2f * hx / lastFieldW).coerceIn(rootBounds.left, rootBounds.right)
+                    panY = (panY + dy * 2f * hy / lastFieldH).coerceIn(rootBounds.top, rootBounds.bottom)
                     postInvalidate()
                 }
                 return true
@@ -1707,7 +1707,7 @@ class MapView(context: Context) : View(context) {
                 // They used to leave the auto-framer on, which put its own zoom back within a second, so
                 // the buttons seemed to do nothing while the label said "auto" (seen on UI Art's emulator)
                 !hostZoomHidden && btnIn.contains(e.x, e.y) -> { touchOwner = OWN_CONTROL; autoZoom = false; zoomEase = Float.NaN; focusRestoreZoom = Float.NaN; zoom = (zoom * 1.6f).coerceAtMost(ZOOM_MAX); autoZoomCur = zoom; postInvalidate(); return true }
-                !hostZoomHidden && btnOut.contains(e.x, e.y) -> { touchOwner = OWN_CONTROL; autoZoom = false; zoomEase = Float.NaN; focusRestoreZoom = Float.NaN; zoom = (zoom / 1.6f).coerceAtLeast(1f); autoZoomCur = zoom; postInvalidate(); return true }
+                !hostZoomHidden && btnOut.contains(e.x, e.y) -> { touchOwner = OWN_CONTROL; autoZoom = false; zoomEase = Float.NaN; focusRestoreZoom = Float.NaN; zoom = (zoom / 1.6f).coerceAtLeast(zoomFloor); autoZoomCur = zoom; postInvalidate(); return true }
                 btnFilter.contains(e.x, e.y) -> { touchOwner = OWN_CONTROL; filterOpen = true; syncB(); postInvalidate(); return true }
                 spine.indexOfFirst { it.contains(e.x, e.y) } >= 0 -> {
                     // Tap a slab to PIN that storey; tap the pinned one again to hand control
@@ -1722,6 +1722,9 @@ class MapView(context: Context) : View(context) {
                     postInvalidate(); return true
                 }
             }
+            // the map's own field (Home's module: the map controls page, the user 2026-11-17: "tapping in the map area should also change
+            // it to the map controls"); the touch goes on as before (a pan, a pinch, a bubble's focus)
+            onFieldTouch?.invoke()
         }
         scaleDetector.onTouchEvent(e)
         tapDetector.onTouchEvent(e)
@@ -2394,6 +2397,7 @@ class MapView(context: Context) : View(context) {
      */
     private fun maybeRecentre(px: Double, py: Double) {
         if (followPlayer || recentreFrom != null || px.isNaN() || py.isNaN()) return
+        if (controls) return                                  // Home's map controls: the sticks hold the view (it recentres after)
         if (System.currentTimeMillis() - lastDragAt < DRAG_GRACE_MS) return
         val dx = px.toFloat() - panAnchorX
         val dy = py.toFloat() - panAnchorY
@@ -4255,6 +4259,8 @@ class MapView(context: Context) : View(context) {
 
     /** the open quest panel, for the host: Home's buff / debuff pane leaves this box to it (the panel lies above the buffs) */
     fun panelOpen(): Boolean = panelId != 0
+    /** the service filter is open (Select / View): its keys are its own (Home's map controls page routes them through [hostKey]) */
+    fun filterShown(): Boolean = filterOpen
     fun panelCover(): RectF? = if (panelId != 0 && !panelBox.isEmpty) RectF(panelBox) else null
 
     // ---- THE CURSOR IN THE QUEST BOX (the user's correction, 2026-10-17: "Right d pad was not literally supposed to show quest areas, I
@@ -5412,6 +5418,185 @@ class MapView(context: Context) : View(context) {
     private val pLabelBack = Paint(Paint.ANTI_ALIAS_FLAG)
     private val labelBox = RectF()
 
+    // ---- HOME'S MAP CONTROLS (the user, 2026-11-17: "when opening the map, pressing to the right should open some map controls ...
+    // tapping in the map area should also change it to the map controls. when using map controls it should function just like the map
+    // room with the sticks. we need to change the map to show a High fidelity version of the whole map in that home map, so that we can
+    // zoom out to see everything and zoom back in"). Home's open module has three pages (HomeMapPages); on the middle one, [controls],
+    // this map takes the Map room's sticks through the room's own driver (MapStickDriver): the left stick moves the game's cursor
+    // (MapReticle: the golden lines and the reticle) and the view follows it at the edges, the right stick zooms (in toward the cursor),
+    // LB / RB step the zoom; A on a quest's bubble under the cursor focuses it, as its touch does. Zoomed out past the zone the Map
+    // room's art takes over from the minimap tiles ([worldArt]: the world map, the continents' stitched pictures), down to the whole
+    // world; every mark stays on this zone's 0..1 through the one projection, so the player's arrow, the focused quest, Polestar's
+    // marks and the pins stay where they are at every zoom. Without the art (not built yet) the zoom stops at the zone, as before.
+
+    /** the Map room's art under this map when zoomed out (the host: WorldMapRoomView's paintBackdrop / backdropRoot / backdropDone) */
+    interface WorldArt {
+        /** paint the art with map [zone]'s 0..1 at [zr] inside [clip]; false = nothing painted (this map keeps its own ground) */
+        fun paint(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View): Boolean
+        /** map [zone]'s place on its root (the world, else its continent) as left, top, right, bottom of that root, or null */
+        fun root(zone: Int): FloatArray?
+        /** the map stopped asking (Home's module closed): the art's memory rules take over */
+        fun done()
+    }
+    var worldArt: WorldArt? = null
+    /** a touch on the open map's field (not the list, a button or a pop-out): Home's map controls page */
+    var onFieldTouch: (() -> Unit)? = null
+    /** the controls line names Right's buffs page (the aura pane has a stop) */
+    var controlsBuffs = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** the map controls page is on: the sticks are the map's, the list's cursor is not drawn */
+    var controls = false
+        set(v) {
+            if (field == v) return
+            field = v
+            if (v) {
+                // the cursor starts on the player's arrow while it is in view, else in the view's middle (the room's placeCursorStart)
+                val m = map
+                val px = m?.optDouble("x", Double.NaN) ?: Double.NaN
+                val py = m?.optDouble("y", Double.NaN) ?: Double.NaN
+                val inView = !px.isNaN() && !py.isNaN() && lastHalfX > 0f &&
+                    abs(px.toFloat() - lastViewCx) <= lastHalfX && abs(py.toFloat() - lastViewCy) <= lastHalfY
+                curU = if (inView) px.toFloat() else lastViewCx
+                curV = if (inView) py.toFloat() else lastViewCy
+                cursorShownAt = System.currentTimeMillis()
+                sticks.start()
+            } else {
+                sticks.stop()
+                // what the sticks left is a pan: walking recentres, as after a drag (the 10-07 ruling for this module)
+                if (!followPlayer) map?.let {
+                    panAnchorX = it.optDouble("x", panX.toDouble()).toFloat()
+                    panAnchorY = it.optDouble("y", panY.toDouble()).toFloat()
+                    lastDragAt = System.currentTimeMillis()
+                }
+            }
+            invalidate()
+        }
+    /** the cursor in this zone's 0..1 (past it when zoomed out) */
+    private var curU = 0.5f
+    private var curV = 0.5f
+    private var cursorShownAt = 0L
+    /** the zoom this frame may go down to: the whole root (world) with the art, else the zone (1) */
+    private var zoomFloor = 1f
+    /** the root's bounds in this zone's 0..1 (left, top, right, bottom): the pan's and the cursor's room */
+    private val rootBounds = RectF(0f, 0f, 1f, 1f)
+    /** the art painted this frame (the tiles then fade over it) */
+    private var worldDrew = false
+    /** the art was asked for since the module opened ([worldDone] tells the art when it closes) */
+    private var worldAsked = false
+    private val worldZr = RectF()
+    private val worldClip = RectF()
+
+    private val sticks = MapStickDriver(this, WorldMapRoomView.CURSOR_PX_S, object : MapStickDriver.Host {
+        override fun sticksLive() = controls && isShown && !compact && !morphOn && !filterOpen && panelId == 0 && !pmenu.open
+        override fun overMarker() = bubbleUnderCursor() >= 0
+        override fun moveCursor(dx: Float, dy: Float) = controlsMove(dx, dy)
+        override fun zoomBy(f: Float, dtS: Float) = controlsZoom(f, min(1f, dtS * 3f))
+    })
+
+    /** the view as it shows now becomes the pan: the sticks took the wheel (as a drag / a pinch does; double-tap gives it back) */
+    private fun takeWheel() {
+        if (followPlayer || autoZoom || recentreFrom != null) {
+            panX = lastViewCx; panY = lastViewCy
+            followPlayer = false; recentreFrom = null
+        }
+        autoZoom = false; zoomEase = Float.NaN; focusRestoreZoom = Float.NaN; autoZoomCur = zoom
+        camAncX = Float.NaN
+    }
+
+    /** one frame's cursor move ([dx], [dy] screen px): the cursor across the map, the view following it near the edges (the room's follow) */
+    internal fun controlsMove(dx: Float, dy: Float) {
+        if (lastFieldW <= 0f || lastFieldH <= 0f || lastHalfX <= 0f || lastHalfY <= 0f) return
+        takeWheel()
+        curU = (curU + dx * 2f * lastHalfX / lastFieldW).coerceIn(rootBounds.left, rootBounds.right)
+        curV = (curV + dy * 2f * lastHalfY / lastFieldH).coerceIn(rootBounds.top, rootBounds.bottom)
+        keepCursorInView()
+        invalidate()
+    }
+
+    /** the view follows the cursor: it stays inside the part of the field the list and the controls line leave, 7.5% in (the room's 85%) */
+    private fun keepCursorInView() {
+        val fw = lastFieldW; val fh = lastFieldH
+        if (fw <= 0f || fh <= 0f || lastHalfX <= 0f || lastHalfY <= 0f) return
+        val ppuX = fw / (2f * lastHalfX); val ppuY = fh / (2f * lastHalfY)
+        val visL = lastTrackPx; val visR = fw
+        val visT = 0f; val visB = fh - (if (hintsOn()) HINT_BAND else 0f)
+        val mx = (visR - visL) * 0.075f; val my = (visB - visT) * 0.075f
+        // the cursor's spot on the field: the view's middle sits half the list's strip right of the field's (onDraw's cxView)
+        val cx = fw / 2f + lastTrackPx / 2f + (curU - panX) * ppuX
+        val cy = fh / 2f + (curV - panY) * ppuY
+        if (cx < visL + mx) panX -= (visL + mx - cx) / ppuX else if (cx > visR - mx) panX += (cx - (visR - mx)) / ppuX
+        if (cy < visT + my) panY -= (visT + my - cy) / ppuY else if (cy > visB - my) panY += (cy - (visB - my)) / ppuY
+        panX = panX.coerceIn(rootBounds.left, rootBounds.right); panY = panY.coerceIn(rootBounds.top, rootBounds.bottom)
+    }
+
+    /** one frame's zoom by [f] (> 1 = in), [k] of the way toward the cursor when zooming in (the room's stick zoom) */
+    internal fun controlsZoom(f: Float, k: Float) {
+        takeWheel()
+        zoom = (zoom * f).coerceIn(zoomFloor, ZOOM_MAX); autoZoomCur = zoom
+        if (f > 1f) { panX += (curU - panX) * k; panY += (curV - panY) * k }
+        keepCursorInView()
+        invalidate()
+    }
+
+    /** a key on the controls page (Home routes the page's moves; Select / View and the filter's keys go through [hostKey]) */
+    fun controlsKey(k: String) {
+        when (k) {
+            "PADLSHOULDER", "PADRSHOULDER" -> {
+                takeWheel()
+                zoom = (if (k == "PADRSHOULDER") zoom * 1.6f else zoom / 1.6f).coerceIn(zoomFloor, ZOOM_MAX); autoZoomCur = zoom
+                keepCursorInView()
+            }
+            // A: the quest's bubble under the cursor, as its touch (select + focus); nothing else under it does anything
+            "PAD1" -> bubbleUnderCursor().takeIf { it >= 0 }?.let { touchQuest(bubbleQ[it], null) }
+        }
+        invalidate()
+    }
+
+    /** the bubble under the cursor (an index into this frame's bubbles), -1 = none */
+    private fun bubbleUnderCursor(): Int {
+        if (!controls || onFocusQuest == null || cursorX.isNaN()) return -1
+        var best = -1; var bestD = BUBBLE_HIT * BUBBLE_HIT
+        for (i in 0 until bubbleN) {
+            val dx = bubbleXY[2 * i] - cursorX; val dy = bubbleXY[2 * i + 1] - cursorY
+            val d = dx * dx + dy * dy
+            if (d <= bestD) { bestD = d; best = i }
+        }
+        return best
+    }
+    /** the cursor on the screen, this frame (onDraw) */
+    private var cursorX = Float.NaN
+    private var cursorY = Float.NaN
+
+    /** the tests: the cursor (zone 0..1), the zoom and its floor, the art painted this frame (1 / 0), the sticks read (1 / 0) */
+    fun controlsState(): FloatArray = floatArrayOf(curU, curV, zoom, zoomFloor, if (worldDrew) 1f else 0f, if (sticks.running) 1f else 0f)
+
+    /** Home's module closed: the art is told (its memory rules), the sticks stop */
+    fun worldDone() {
+        controls = false
+        if (worldAsked) { worldAsked = false; worldArt?.done() }
+        // the next opening starts on the module's own framing, not out on the world (its art is let go now)
+        if (zoom < 0.999f) {
+            zoom = 1f; autoZoomCur = 1f; autoZoom = true; followPlayer = true; recentreFrom = null; camAncX = Float.NaN
+            zoomEase = Float.NaN; focusRestoreZoom = Float.NaN
+        }
+    }
+
+    /** the art's share over the minimap tiles at zoom [z]: none at the whole zone and closer, all of it from half the zone out */
+    private fun worldShare(z: Float): Float { val t = ((1f - z) / 0.5f).coerceIn(0f, 1f); return t * t * (3f - 2f * t) }
+
+    /** this frame's zoom floor and root bounds (the full map): the whole world with the art, else the zone */
+    private fun worldFrame(mapId: Int, fw: Float, fh: Float) {
+        val r = if (mapId != 0) worldArt?.root(mapId) else null
+        val rc = rect
+        if (r == null || r[2] - r[0] <= 0f || r[3] - r[1] <= 0f || fw <= 0f || fh <= 0f) { zoomFloor = 1f; rootBounds.set(0f, 0f, 1f, 1f); return }
+        val pw = r[2] - r[0]; val ph = r[3] - r[1]
+        rootBounds.set(-r[0] / pw, -r[1] / ph, (1f - r[0]) / pw, (1f - r[1]) / ph)
+        // the zone's share of the root's width / height, in this view's own x / y extents (onDraw's halfY rule)
+        val ky = if (rc != null && rc.valid) rc.width.toFloat() / rc.height.toFloat() * (fh / fw) else (1002f / 668f) * (fh / fw)
+        zoomFloor = min(1f, min(pw, ph * ky))
+    }
+
     // ---- THE CONTROLS LINE (the user, 2026-09-30: "we still need to add the one line to the bottom with the focus controlls and
     // stuff for that screen"): the kit's hints (UiKit.hints: glyph + word, as the bar's "A Open  B Back"), on a slim band along the
     // field's bottom, while the map holds the controller (the Map room's guest, or a host that says so with [padHints]). The
@@ -5454,6 +5639,13 @@ class MapView(context: Context) : View(context) {
                 else -> arrayOf(glyph("left") to "", glyph("right") to "Select", glyph("a") to "Press", glyph("b") to "Back")
             }
             UiKit.hints(c, band.right - 24f, cy, *hp); return
+        }
+        // the map controls page (HomeMapPages): the sticks, A on a bubble under the cursor, the pages either side, B back to the list
+        if (controls) {
+            val act = if (bubbleUnderCursor() >= 0) HomeMapPages.FOCUS_WORD else null
+            val hp = HomeMapPages.hints(controlsBuffs, act).map { (b, w) ->
+                (when (b) { "lstick" -> "gen_lstickupdown"; "rstick" -> MapRoomKeys.ZOOM_GLYPH; else -> glyph(b) }) to w }
+            UiKit.hints(c, band.right - 24f, cy, *hp.toTypedArray()); return
         }
         // only what does something on the map right now (UI Art / the user's clutter rule)
         val ids = trackedIds()
@@ -5678,7 +5870,7 @@ class MapView(context: Context) : View(context) {
             }
             is MapCursor.Do.Zoom -> {
                 autoZoom = false; zoomEase = Float.NaN; focusRestoreZoom = Float.NaN
-                zoom = if (d.out) (zoom / 1.6f).coerceAtLeast(1f) else (zoom * 1.6f).coerceAtMost(ZOOM_MAX)
+                zoom = if (d.out) (zoom / 1.6f).coerceAtLeast(zoomFloor) else (zoom * 1.6f).coerceAtMost(ZOOM_MAX)
                 autoZoomCur = zoom
             }
             MapCursor.Do.CloseFilter -> filterOpen = false
@@ -6024,7 +6216,7 @@ class MapView(context: Context) : View(context) {
         val list = items
         // the selected row stands in a gap above and below for its up / down arrows (the user: "add some buffer between current
         // selection and next quests")
-        fun isSel(it: MapList.Item) = cursor.shown && it !is MapList.Item.Section && it !is MapList.Item.PsHead && it.key == cursor.sel
+        fun isSel(it: MapList.Item) = cursor.shown && !controls && it !is MapList.Item.Section && it !is MapList.Item.PsHead && it.key == cursor.sel
         fun need(it: MapList.Item) = itemH(it) + gapC + (if (isSel(it)) 2f * SEL_GAP else 0f)
         // THE LAYOUT, in list space
         val n = list.size
@@ -6621,13 +6813,17 @@ class MapView(context: Context) : View(context) {
             autoZoomCur += (frame[2] - autoZoomCur) * k
             if (abs(frame[0] - autoCx) > 1e-4f || abs(frame[1] - autoCy) > 1e-4f ||
                 abs(frame[2] - autoZoomCur) > 0.01f) postInvalidateOnAnimation()
-            zoom = autoZoomCur.coerceIn(1f, ZOOM_MAX)
+            zoom = autoZoomCur.coerceIn(zoomFloor, ZOOM_MAX)           // from out on the world it eases back in (2026-11-17)
             panX = autoCx; panY = autoCy
         } else if (!compact) {
             camAncX = Float.NaN
         }
 
-        val zoneView = !compact && zoom <= 1.001f
+        // HOME'S MAP ZOOMED OUT (2026-11-17): how far out the zoom may go this frame (the whole world with the Map room's art, else the
+        // zone), and the pan's room; a floor that rose (the art went) brings the zoom back to it
+        if (!compact) { worldFrame(m.optInt("mapID", 0), fw, fh); if (zoom < zoomFloor) { zoom = zoomFloor; autoZoomCur = zoom } } else zoomFloor = 1f
+        // the whole zone centred: at the zone's zoom, never on the controls page (its pan is the cursor's) nor zoomed out past it
+        val zoneView = !compact && !controls && zoom <= 1.001f && zoom >= 0.999f && !(frame != null && frame[2] > 1.001f)
         val cxMap = if (compact) (if (px.isNaN()) 0.5f else px.toFloat())
                     else if (zoneView) 0.5f else if (frame != null) autoCx
                     else if (followPlayer && !px.isNaN()) px.toFloat() else panX
@@ -6704,10 +6900,19 @@ class MapView(context: Context) : View(context) {
         // art harvest), the full tile over it while the view is close (user 2026-09-29 14:58: the shrunk picture was the blur).
         // World: x north, y west; an ADT's west edge is y = (32 - col) * 533.333, its north edge x = (32 - row) * 533.333.
         // No tiles on the device yet (the harvest still building), or a continent's worth on screen: the old grid.
+        // HOME'S MAP ZOOMED OUT (2026-11-17): past the zone the Map room's art lies under everything (WorldArt: the room's own renderer and
+        // pictures), the zone's 0..1 on it through this projection; the tiles fade out over it down to half the zone, then are not drawn
+        worldDrew = false
+        if (!compact && !morphOn && zoom < 0.999f) worldArt?.let { wa ->
+            worldZr.set(sx(0.0), sy(0.0), sx(1.0), sy(1.0)); worldClip.set(left, top, left + fw, top + fh)
+            worldAsked = true
+            worldDrew = wa.paint(c, m.optInt("mapID", 0), worldZr, worldClip, this)
+        }
+        val tileShare = if (worldDrew) 1f - worldShare(zoom) else 1f
         val rT = rect
-        var terrain = false
+        var terrain = worldDrew && tileShare <= 0.001f
         var drew = false; var allAbsent = true           // a tile drawn this frame; every tile here looked for and not on the device
-        if (rT != null && rT.valid && MinimapTiles.has(rT.continent)) {
+        if (rT != null && rT.valid && MinimapTiles.has(rT.continent) && tileShare > 0.001f) {
             val adt = MinimapTiles.ADT
             val wyW = rT.left - (cxView - halfX) * rT.width; val wyE = rT.left - (cxView + halfX) * rT.width
             val wxN = rT.top - (cyView - halfY) * rT.height; val wxS = rT.top - (cyView + halfY) * rT.height
@@ -6718,6 +6923,7 @@ class MapView(context: Context) : View(context) {
                 terrain = true
                 val sample = if (n <= QUARTER_TILES_MAX) 4 else 8
                 val full = 2f * halfX * rT.width.toFloat() <= TILE_MAX_YD
+                pArt.alpha = (255 * tileShare).toInt().coerceIn(0, 255)
                 c.save()
                 c.clipRect(left, top, left + fw, top + fh)
                 for (row in r0..r1) for (col in c0..c1) {
@@ -6729,6 +6935,7 @@ class MapView(context: Context) : View(context) {
                     if (full) MinimapTiles.get(rT.continent, col, row) { invalidate() }?.let { c.drawBitmap(it, null, tileDst, pArt); drew = true }
                 }
                 c.restore()
+                pArt.alpha = 255
             }
         }
         if (!terrain) {
@@ -6741,7 +6948,7 @@ class MapView(context: Context) : View(context) {
         // issues #316 #317 #284 (1.0.32, "its black with blue zones", "game art shows its finished but map is still empty"): Home's map
         // pictures not made yet (the background art builds them while the game is closed): said in the Map room's words, under the markers
         // (review: also over this continent's folder with no tile here yet - the step part-way - not only with no folder at all)
-        val tilesShown = HomeMapNote.terrainShown(terrain, drew, allAbsent, artNote != null)
+        val tilesShown = HomeMapNote.terrainShown(terrain, drew || worldDrew, allAbsent && !worldDrew, artNote != null)
         artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT else null
         // (review: on the open map, in the part the quest list leaves - where the player is centred - not under the list)
         artNote?.let { drawArtNote(c, it, left + trackPx, top, fw - trackPx, fh, compact) }
@@ -6845,6 +7052,15 @@ class MapView(context: Context) : View(context) {
 
         // the scale label is drawn in the OVERLAY pass, above the pins (a quest "!" sat on it)
         }
+
+        // HOME'S MAP CONTROLS: the game's cursor (the golden lines, the reticle) at the cursor's spot, under the marks as in the Map room
+        if (controls && !compact && !morphOn) {
+            cursorX = sx(curU.toDouble()); cursorY = sy(curV.toDouble())
+            MapReticle.lines(c, cursorX, cursorY, RectF(left + trackPx, top, left + fw, top + fh - (if (hintsOn()) HINT_BAND else 0f)))
+            val t = ((System.currentTimeMillis() - cursorShownAt) / WorldMapRoomView.INTRO_MS.toFloat()).coerceIn(0f, 1f)
+            MapReticle.reticle(c, cursorX, cursorY, t)
+            if (t < 1f) postInvalidateOnAnimation()
+        } else { cursorX = Float.NaN; cursorY = Float.NaN }
 
         // ---- QUEST AREAS, BEFORE ANY ICON (deriveQuestAreas). Shading on the terrain, so it goes
         // under every icon on the map, service pins included, and it is clipped to the field.
@@ -7547,7 +7763,7 @@ class MapView(context: Context) : View(context) {
             val fade = if (mf < 1f) c.saveLayerAlpha(left, top, left + fw, top + fh, (255 * mf).toInt()) else -1
             if (!hostZoomHidden) {
                 drawButton(c, btnInDraw, "+", zoom < ZOOM_MAX, 1f)
-                drawButton(c, btnOutDraw, "-", zoom > 1f, 1f)
+                drawButton(c, btnOutDraw, "-", zoom > zoomFloor + 0.001f, 1f)
                 // their shoulders on their lower left corners (the user, 2026-10-16: "Put the L and R button glyphs onto the + and _
                 // buttons instead of in the bottom with the glyph descriptions"): RB zooms in, LB out (MapCursor)
                 if (hintsOn()) {
@@ -7567,14 +7783,14 @@ class MapView(context: Context) : View(context) {
             } else spine.clear()
             // in yards across, the unit Settings uses, so the two can be compared at a glance
             val rz = rect
-            val zlabel = if (zoom <= 1.02f) "zone"
+            val zlabel = if (zoom <= 1.02f && zoom >= 0.98f) "zone"
                          else if (rz != null && rz.valid)
                              String.format("%.0f yd%s", rz.width / zoom, if (autoZoom) " auto" else "")
                          else String.format("%.1fx%s", zoom, if (autoZoom) " auto" else "")
             pSmall.color = cDim
             val lift = if (hintsOn()) HINT_BAND else 0f
             c.drawText(Tr.t(zlabel), left + 10f, top + fh - 12f - lift, pSmall)
-            if (!followPlayer) c.drawText(Tr.t(if (recentreFrom != null) "recentring" else "panned - walk to recentre"),
+            if (!followPlayer && !controls) c.drawText(Tr.t(if (recentreFrom != null) "recentring" else "panned - walk to recentre"),
                 left + 10f, top + fh - 34f - lift, pSmall)
             if (hintsOn()) drawPadHints(c, left, top, fw, fh)
             if (fade >= 0) c.restoreToCount(fade)
@@ -7609,7 +7825,7 @@ class MapView(context: Context) : View(context) {
         // the selected quest's bubble wears the round ring (UI Art: round things get round cursors), touch or controller;
         // its list row is highlighted in drawTracker
         val ringQ = selQuest()                          // the merged light blue row rings its quest's bubble
-        if (!compact && !morphOn && cursor.shown && ringQ > 0) {
+        if (!compact && !morphOn && cursor.shown && !controls && ringQ > 0) {
             for (i in 0 until bubbleN) if (bubbleQ[i] == ringQ)
                 UiKit.focusRing(c, bubbleXY[2 * i], bubbleXY[2 * i + 1], BUBBLE_ART * 0.32f + 10f)
         }

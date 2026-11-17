@@ -1,5 +1,9 @@
 package com.jrees.wowcompanion
 
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.sign
+
 /**
  * THE MAP ROOM'S CONTROLLER (pure: tools/map_test). The user's rulings, 2026-10-07 (via tracking, word for word in feedback memory):
  * B is Home everywhere ("B needs to be return to home for consistancy"); the quest panel is always out (not on Azeroth), every quest
@@ -205,6 +209,22 @@ object MapRoomKeys {
     }
     const val STICK_DEAD = 0.15f
     const val SLOW_OVER_MARKER = 0.35f
+
+    /**
+     * THE RIGHT STICK'S ZOOM (the user, 2026-10-17: "use the right stick to zoom in and out"): while it is pushed up or down the map
+     * zooms smoothly, exponentially (the same feel at every zoom), [ZOOM_STICK_RATE] e-folds a second at full tilt past the dead-zone.
+     * [y] the stick (down +), over [dtS] seconds: the factor the zoom is multiplied by (> 1 = in, up), 1 inside the dead-zone. The Map
+     * room's and Home's map controls' one rule (MapStickDriver).
+     */
+    fun stickZoom(y: Float, dtS: Float, dead: Float = STICK_DEAD): Float {
+        if (abs(y) <= dead) return 1f
+        val tilt = ((abs(y) - dead) / (1f - dead)).coerceIn(0f, 1f)
+        return exp(-sign(y) * tilt * ZOOM_STICK_RATE * dtS)
+    }
+    /** e-folds a second at full tilt: 1x to the zone's 3.2x in about 0.7 s */
+    const val ZOOM_STICK_RATE = 1.6f
+    /** a frame's dt (s) for the sticks' moves: one frame's worth after a gap, never a jump (the idle-first-frame trap) */
+    fun frameDt(now: Long, last: Long): Float = if (last == 0L) 1f / 60f else ((now - last) / 1000f).coerceIn(0f, 0.05f)
 
     /** the stick is pushed past the dead-zone (the cursor moves) */
     fun stickMoves(x: Float, y: Float, dead: Float = STICK_DEAD): Boolean = Math.hypot(x.toDouble(), y.toDouble()) > dead

@@ -230,6 +230,7 @@ class HomeView(
     /** Home is about to show: take the map and the bars. MainActivity calls this after its room loop. */
     fun borrow() {
         lend(mapView, mapSlot)
+        mapView.onFieldTouch = { mapFieldTouched() }                          // 2026-11-17: a touch on the open map = its map controls
         lend(castView, barsSlot)
         // B through the Cast view's OWN reader while Home holds it (see [watchB]): one getevent, never two
         castView.onPadButtons = { held -> onPadHeld(held) }
@@ -247,6 +248,7 @@ class HomeView(
     /** another room opens: everything borrowed goes back where it came from, last lent first */
     fun giveBack() {
         watchB(false)
+        setMapPage(HomeMapPages.Page.QUESTS); mapView.worldDone()                 // 2026-11-17: the map controls' sticks, the world's art
         mailCard(false)                                                   // another room: the mail card closes
         closeTypeTool()                                                   // f-trackpad-keyboard: another room: the tool closes, the guest freed
         if (lent(mapView)) {
@@ -792,30 +794,81 @@ class HomeView(
         homePadN = n
         if (!mapHeld) mapHeldNow()                                // a press arrived: held (also after a "pending" answer)
         val k = msg.optString("k")
-        // b129 (the user's pick "Right goes to buffs"): the buff / debuff list open = its keys; the cursor on an aura = the
-        // auras' keys; else Right enters the auras, Left does nothing (no D-pad pan), SELECT = the map's filter (2026-10-09: Start
-        // opens the pause wheel everywhere; Map's MapCursor takes PADBACK)
+        // THE THREE PAGES (HomeMapPages; the user, 2026-11-17: "when opening the map, pressing to the right should open some map controls,
+        // pressing right again goes to the buffs and left goes back to the quests"): Quests <-> Map controls <-> Buffs on the D-pad.
+        // b129 (the user's pick "Right goes to buffs", now the second Right): the buff / debuff list open = its keys; the cursor on an
+        // aura = the auras' keys (Left off their end: the controls); SELECT = the map's filter (2026-10-09: Start opens the pause wheel
+        // everywhere; Map's MapCursor takes PADBACK)
+        mapView.controlsBuffs = auraPane.hasStop()
         if (auraPane.open != null) { auraPane.onPad(msg); syncMapB(); return }
         if (auraPane.fullCursorOn) {
             if (k == "PADBACK" || k == "PADLSHOULDER" || k == "PADRSHOULDER") mapView.hostKey(k) else auraPane.fullKey(k)
+            setMapPage(HomeMapPages.afterBuffs(k, auraPane.fullCursorOn || auraPane.open != null))
             syncMapB(); return
         }
+        if (mapPage == HomeMapPages.Page.BUFFS) setMapPage(HomeMapPages.Page.QUESTS)     // the pane's stop went (mail read): the list
         // the quest panel open (MapView): every key is the panel's - Right lights the quest's areas, not the buffs (the user, 2026-10-16:
         // "pressing over on the dpad should highlight quest areas not the buffs"); the buff pane redraws round it
         if (mapView.panelOpen()) {
             if (!mapView.hostKey(k)) { if (flow.close()) { changed(); onBHome?.invoke() }; return }
             auraPane.invalidate(); syncMapB(); return
         }
-        if (k == "PADDRIGHT") { auraPane.enterFull(); syncMapB(); return }
-        if (k == "PADDLEFT") return
+        if (mapPage == HomeMapPages.Page.CONTROLS) {
+            // the filter (Select / View) works here as on the list: open, its keys are its own (B closes it first)
+            if (mapView.filterShown() || k == "PADBACK") { mapView.hostKey(k); syncMapB(); return }
+            val to = HomeMapPages.press(mapPage, k, auraPane.hasStop())
+            if (to == HomeMapPages.Page.BUFFS) { auraPane.enterFull(); setMapPage(if (auraPane.fullCursorOn) to else mapPage) }
+            else if (to != null) setMapPage(to)
+            else mapView.controlsKey(k)
+            syncMapB(); return
+        }
+        HomeMapPages.press(mapPage, k, auraPane.hasStop())?.let { to -> setMapPage(to); syncMapB(); return }    // Right: the controls
+        if (k == "PADDLEFT" || k == "PADDRIGHT") return
         if (!mapView.hostKey(k)) { if (flow.close()) { changed(); onBHome?.invoke() }; return }
+        syncMapB()
+    }
+
+    // ---- THE OPEN MAP'S PAGE (HomeMapPages): the list, the map controls (MapView.controls: the Map room's sticks), the buffs
+    private var mapPage = HomeMapPages.Page.QUESTS
+    /** the off-device tests: the open map module's page */
+    fun mapPageNow(): HomeMapPages.Page = mapPage
+    private fun setMapPage(p: HomeMapPages.Page) {
+        if (p == mapPage) return
+        val was = mapPage
+        mapPage = p
+        if (was == HomeMapPages.Page.BUFFS && p != HomeMapPages.Page.BUFFS && auraPane.fullCursorOn) auraPane.leaveFull()
+        mapView.controlsBuffs = auraPane.hasStop()
+        mapView.controls = p == HomeMapPages.Page.CONTROLS
+        sticksCatch(p == HomeMapPages.Page.CONTROLS)
+        Log.i(TAG, "map module: page ${p.name.lowercase()}")
+        invalidate(); auraPane.invalidate()
+    }
+    /** the map controls hold the sticks in the game (Map.lua mr8's catch: the character does not walk while they move the map) */
+    private var sticksOn = false
+    private fun sticksCatch(on: Boolean) {
+        removeCallbacks(sticksKeep)
+        if (on == sticksOn && !on) return
+        sticksOn = on
+        val cells = MapRoomPad.homeSticksCells(pad, on)
+        if (cells != null && pad != null && TapBridge.tapsSpaced(context, pad, cells, MapRoomPad.GAP_MS)) {
+            if (on != sticksSaid) Log.i(TAG, "map controls: sticks ${if (on) "held" else "let go"}")
+            sticksSaid = on
+        }
+        if (on) postDelayed(sticksKeep, MapRoomPad.HOME_STICKS_KEEP_MS)
+    }
+    private var sticksSaid: Boolean? = null
+    private val sticksKeep = Runnable { if (sticksOn && mapPage == HomeMapPages.Page.CONTROLS && mapWanted) sticksCatch(true) }
+    /** a touch on the open map's field: the map controls (the user: "tapping in the map area should also change it to the map controls") */
+    private fun mapFieldTouched() {
+        if (!mapWanted) return
+        setMapPage(HomeMapPages.touched(mapPage))
         syncMapB()
     }
 
     /** the Home button's B follows the map's own chain: "home" with nothing open, "back" while its filter is */
     private fun syncMapB() {
         // b129: B on an aura (or in its list) steps back inside the module, not Home
-        val where = if (auraPane.open != null || auraPane.fullCursorOn) "back" else mapView.hostBLeads()
+        val where = if (auraPane.open != null || auraPane.fullCursorOn) "back" else HomeMapPages.bLeads(mapPage, mapView.hostBLeads())
         if (where != mapBSaid && homeGuestTap(GuestPad.bnext(pad, home = where == "home"))) mapBSaid = where
     }
 
@@ -1700,8 +1753,11 @@ class HomeView(
         val mapFull = s.full == HomeModule.MAP && !s.takeover && lent(mapView)
         if (mapFull != mapWanted) {
             mapWanted = mapFull
-            if (mapFull) { auraPane.close(); homePadN = -1; mapAsk() }
-            else { if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))) Log.i(TAG, "map module: free"); mapHeld = false; mapBSaid = null; mapView.padHints = false; auraPane.leaveFull(); mapFallbackOff() }
+            if (mapFull) { auraPane.close(); homePadN = -1; setMapPage(HomeMapPages.Page.QUESTS); mapAsk() }
+            else {
+                setMapPage(HomeMapPages.Page.QUESTS); mapView.worldDone()          // 2026-11-17: the sticks and the world's art let go
+                if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))) Log.i(TAG, "map module: free"); mapHeld = false; mapBSaid = null; mapView.padHints = false; auraPane.leaveFull(); mapFallbackOff()
+            }
         }
         // only while Home holds it: a fight that starts in the Map room must not shrink that room's map
         // the bars: one thin row at rest, the takeover in combat, the Cast room's own layout full screen
@@ -2631,6 +2687,9 @@ class HomeView(
 
         /** the open map closed: the cursor leaves the auras */
         fun leaveFull() { fullCur = null; calCur = false; mailCur = false; mailCard(false); close(); if (lent(mapView)) mapView.hostZoomHidden = false }
+
+        /** the open map's buffs page has somewhere to land: an aura, the mail envelope or the Calendar button */
+        fun hasStop(): Boolean = auras.shownBuffs.isNotEmpty() || auras.shownDebuffs.isNotEmpty() || mailShows() || calShows()
 
         /** D-pad Right from the map: onto the buffs' leftmost icon on their first line (the debuffs' when there are no buffs) */
         fun enterFull() {

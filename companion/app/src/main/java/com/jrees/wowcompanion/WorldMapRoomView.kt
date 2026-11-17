@@ -77,7 +77,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     private val letGoClock = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var roomOn = false
     private val letGoLater = Runnable {
-        if (roomOn) return@Runnable
+        if (roomOn || backdropOn) return@Runnable
         val b = bmps.size().toLong()
         if (b <= 0L) return@Runnable
         bmps.evictAll()
@@ -125,7 +125,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         inFlight.add(key)
         io.execute {
             val b = try { BitmapFactory.decodeFile(File(artDir(), "$key.webp").path) } catch (t: Throwable) { null }
-            post { inFlight.remove(key); if (b != null) bmps.put(key, b); invalidate() }
+            post { inFlight.remove(key); if (b != null) bmps.put(key, b); invalidate(); backdropClient?.invalidate() }
         }
         return null
     }
@@ -137,7 +137,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         inFlight.add(key)
         io.execute {
             val b = try { BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample }) } catch (t: Throwable) { null }
-            post { inFlight.remove(key); if (b != null) bmps.put(key, b); invalidate() }
+            post { inFlight.remove(key); if (b != null) bmps.put(key, b); invalidate(); backdropClient?.invalidate() }
         }
         return null
     }
@@ -215,7 +215,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             ccx = p[0] + ccx * w; ccy = p[1] + ccy * h
             if (flying()) { flyZ /= w; flyX = p[0] + flyX * w; flyY = p[1] + flyY * h }
         }
-        android.util.Log.i("WCMAP", "map room: canvas $canvas -> $to at zoom ${"%.2f".format(zoom)}")
+        if (!painting) android.util.Log.i("WCMAP", "map room: canvas $canvas -> $to at zoom ${"%.2f".format(zoom)}")
         canvas = to; laysFor = -1
         pl.set(placeOf(shown)?.takeIf { it.width() > 0f && it.height() > 0f } ?: RectF(0f, 0f, 1f, 1f))
     }
@@ -488,6 +488,107 @@ class WorldMapRoomView(context: Context) : View(context) {
         fun e(t: Int): Float { val d = (min(t, n - 1 - t) / (n * 0.14f)).coerceIn(0f, 1f); return d * d * (3f - 2f * d) }
         val px = IntArray(n * n) { k -> ((255 * e(k % n) * e(k / n)).toInt() shl 24) or 0xFFFFFF }
         Bitmap.createBitmap(px, n, n, Bitmap.Config.ARGB_8888)
+    }
+
+    // ---------------------------------------------------------------- HOME'S MAP, ZOOMED OUT: THIS ROOM'S ART UNDER IT
+    // The user, 2026-11-17: "we need to change the map to show a High fidelity version of the whole map in that home map, so that we can
+    // zoom out to see everything and zoom back in." Home's map module (MapView) draws the game's minimap tiles around the player; zoomed
+    // out past its zone it asks this room to paint the SAME layered art the room draws (the world map, the continents' stitched pictures,
+    // their zones and capitals at the zoom's opacities, "World map: Explored only" honoured) under its own marks, through ONE cache (these
+    // pictures, MemWatch's "worldroom") with the room's memory rules: Android's running-low warning lets them go while the room is not on
+    // screen, and they go [MapRoomLetGo.AFTER_MS] after Home's map stops asking ([backdropDone]; at once on the 8 / 12 GB models and in
+    // Lighter mode). The room's own view (its canvas, zoom, pan, cursor) is set aside for the one draw and put back unchanged.
+    /** the view Home's draw invalidates when a picture it asked for has been decoded */
+    @Volatile private var backdropClient: View? = null
+    /** Home's map has asked for the art since it last said it was done: the pictures stay */
+    @Volatile private var backdropOn = false
+    /** inside [paintBackdrop]: the room's own frame is set aside (no canvas log lines) */
+    private var painting = false
+
+    /**
+     * Paint the art under Home's map: map [zone] (a uiMapID of the art set) has its 0..1 at [zr] on the screen (Home's px; any size,
+     * the zone a speck on the world), inside [clip] (the map's field). [client] is redrawn as pictures arrive. False = nothing painted
+     * (the art set is not built or not read yet, the zone has no place in it, the Map room itself is on screen): Home keeps its own
+     * ground. Main thread, from Home's onDraw.
+     */
+    fun paintBackdrop(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View): Boolean {
+        if (!artReady || roomOn || painting || !model.maps.containsKey(zone)) return false
+        if (zr.width() <= 0f || zr.height() <= 0f || clip.width() <= 0f || clip.height() <= 0f) return false
+        val cv = model.canvasFor(zone)
+        val p = model.placeOn(zone, cv) ?: return false
+        if (p[2] - p[0] <= 0f || p[3] - p[1] <= 0f) return false
+        backdropClient = client
+        if (!backdropOn) { backdropOn = true; letGoClock.removeCallbacks(letGoLater) }
+        val k = Kept(this)
+        painting = true
+        try {
+            canvas = cv; laysFor = -1; flyZ = Float.NaN; flyDone = null
+            shiftFrom = 0f; shiftTo = 0f; shiftAt = 0L
+            canvasR.set(clip)
+            // the canvas's px a unit on the screen (x, y), so map [zone]'s place lands on [zr]: zoom = the canvas's width in fields
+            val ux = zr.width() / (p[2] - p[0]); val uy = zr.height() / (p[3] - p[1])
+            val a = clip.width()
+            zoom = ux / a
+            val b = uy / zoom
+            artR.set(clip.centerX() - a / 2f, clip.centerY() - b / 2f, clip.centerX() + a / 2f, clip.centerY() + b / 2f)
+            val hw = 0.5f / zoom
+            panX = p[0] + hw - (zr.left - artR.left) / ux
+            panY = p[1] + hw - (zr.top - artR.top) / uy
+            relayer()                                        // a continent seen whole and less: the world's canvas (as the room)
+            c.save(); c.clipRect(clip)
+            drawArt(c)
+            c.restore()
+        } finally {
+            k.restore(this)
+            painting = false
+        }
+        return true
+    }
+
+    /** Home's map no longer asks for the art (its module closed): the pictures go after the room's wait, or at once on [lowMemory] */
+    fun backdropDone(lowMemory: Boolean = DeviceTier.lowMemory()) {
+        if (!backdropOn) return
+        backdropOn = false; backdropClient = null
+        letGoClock.removeCallbacks(letGoLater)
+        if (roomOn) return
+        if (lowMemory) letGoNow(MapRoomLetGo.homeLine(bmps.size().toLong(), now = true))
+        else letGoClock.postDelayed(homeLetGo, MapRoomLetGo.AFTER_MS)
+    }
+    /** map [zone]'s place on its root (the world, else its continent: left, top, right, bottom), once the art set is read; null = none */
+    fun backdropRoot(zone: Int): FloatArray? = if (!artReady) null else model.rootPlace(zone)?.second
+        ?.takeIf { it[2] - it[0] > 0f && it[3] - it[1] > 0f && !(it[0] == 0f && it[1] == 0f && it[2] == 1f && it[3] == 1f && model.maps[zone]?.type ?: 0 >= 3) }
+
+    /** Home's map module's way to this room's art (CompanionHost hands it to MapView) */
+    val homeArt: MapView.WorldArt = object : MapView.WorldArt {
+        override fun paint(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View) = paintBackdrop(c, zone, zr, clip, client)
+        override fun root(zone: Int) = backdropRoot(zone)
+        override fun done() = backdropDone()
+    }
+    /** Home's map asked for the art since it was last done (the tests) */
+    val backdropInUse: Boolean get() = backdropOn
+    private val homeLetGo = Runnable {
+        if (roomOn || backdropOn) return@Runnable
+        letGoNow(MapRoomLetGo.homeLine(bmps.size().toLong(), now = false))
+    }
+    private fun letGoNow(line: String) {
+        if (bmps.size() <= 0) return
+        bmps.evictAll()
+        MemWatch.note(line)
+    }
+
+    /** the room's own view, set aside while Home's backdrop is painted */
+    private class Kept(v: WorldMapRoomView) {
+        val canvas = v.canvas; val zoom = v.zoom; val panX = v.panX; val panY = v.panY; val ccx = v.ccx; val ccy = v.ccy
+        val flyZ = v.flyZ; val flyX = v.flyX; val flyY = v.flyY; val flyAt = v.flyAt; val flyDone = v.flyDone
+        val shiftFrom = v.shiftFrom; val shiftTo = v.shiftTo; val shiftAt = v.shiftAt
+        val artR = RectF(v.artR); val canvasR = RectF(v.canvasR); val pl = RectF(v.pl)
+        fun restore(v: WorldMapRoomView) {
+            v.canvas = canvas; v.zoom = zoom; v.panX = panX; v.panY = panY; v.ccx = ccx; v.ccy = ccy
+            v.flyZ = flyZ; v.flyX = flyX; v.flyY = flyY; v.flyAt = flyAt; v.flyDone = flyDone
+            v.shiftFrom = shiftFrom; v.shiftTo = shiftTo; v.shiftAt = shiftAt
+            v.artR.set(artR); v.canvasR.set(canvasR); v.pl.set(pl)
+            v.laysFor = -1                                   // the layers follow the room's own canvas again
+        }
     }
 
     // ---------------------------------------------------------------- live data
@@ -1192,32 +1293,34 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun say(t: String) { note = t; noteAt = System.currentTimeMillis(); invalidate() }
 
     // ---------------------------------------------------------------- the left stick: the game's free map cursor; a row a push in the list
-    private var reader: PadInput? = null
-    private var stickX = 0f
-    private var stickY = 0f
-    private var cursorRunning = false
-    private var cursorFrameAt = 0L
-    private val cursorFrame = Runnable { moveCursor() }
-
-    /** one frame of the cursor's move while the stick is pushed (the game's SoftCursor OnUpdate: its spot + speed x elapsed) */
-    private fun moveCursor() {
-        if (!isShown || region != MapRoomKeys.Region.MAP || modal() || !MapRoomKeys.stickMoves(stickX, stickY)) {
-            cursorRunning = false; return
+    // THE STICKS (MapStickDriver: the one driver, shared with Home's map controls since 2026-11-17): the left stick moves the cursor
+    // (the game's SoftCursor OnUpdate: its spot + speed x elapsed), the RIGHT stick zooms (the user, 2026-10-17: "use the right stick to
+    // zoom in and out"): up in, down out, by how far, smoothly - in toward the cursor, out about the view; LB / RB keep their 1.6x steps
+    private val sticks = MapStickDriver(this, CURSOR_PX_S, object : MapStickDriver.Host {
+        override fun sticksLive() = isShown && !modal()
+        override fun cursorLive() = region == MapRoomKeys.Region.MAP
+        override fun overMarker() = hoverQuest != null
+        override fun moveCursor(dx: Float, dy: Float) {
+            if (artR.width() > 0f) {
+                ccx = (ccx + dx / (artR.width() * zoom)).coerceIn(0f, 1f)        // in the canvas's frame: across every layer
+                ccy = (ccy + dy / (artR.height() * zoom)).coerceIn(0f, 1f)
+                keepOffLegend()
+                follow()
+                updateHover(prefer = hoverQuest)
+            }
+            invalidate()
         }
-        val now = SystemClock.uptimeMillis()
-        val dt = if (cursorFrameAt == 0L) 1f / 60f else ((now - cursorFrameAt) / 1000f).coerceIn(0f, 0.05f)
-        cursorFrameAt = now
-        if (artR.width() > 0f) {
-            val (dx, dy) = MapRoomKeys.cursorStep(stickX, stickY, dt, CURSOR_PX_S, overMarker = hoverQuest != null)
-            ccx = (ccx + dx / (artR.width() * zoom)).coerceIn(0f, 1f)        // in the canvas's frame: across every layer
-            ccy = (ccy + dy / (artR.height() * zoom)).coerceIn(0f, 1f)
-            keepOffLegend()
-            follow()
-            updateHover(prefer = hoverQuest)
+        override fun zoomBy(f: Float, dtS: Float) {
+            flyZ = Float.NaN; flyDone = null; hereTarget = 0
+            zoom *= f
+            if (f > 1f) { val k = min(1f, dtS * 3f); panX += (ccx - panX) * k; panY += (ccy - panY) * k }   // in: toward the cursor
+            afterZoom()
         }
-        invalidate()
-        postOnAnimation(cursorFrame)
-    }
+        override fun leftVector(x: Float, y: Float) {
+            if (steps.update(x, y)) { if (region == MapRoomKeys.Region.LIST) { stickStep(); postStickRepeat(DirectPadKeys.REPEAT_FIRST_MS) } }
+            else if (!steps.engaged) removeCallbacks(stickRepeat)
+        }
+    })
     /** the legend box overlaps the map's bottom edge: the cursor stops just above it where it spans (on the Thor it hid under it) */
     private fun keepOffLegend() {
         val lb = legendBox
@@ -1226,39 +1329,6 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (sx(curX) in (lb.left - half)..(lb.right + half) && sy(curY) > lb.top - half) ccy = max(0f, uyc(lb.top - half))
     }
     private val legendBox = RectF()
-
-    // ---- THE RIGHT STICK'S ZOOM: while it is pushed up or down, the zone map zooms smoothly (exponential: the same feel at every
-    // zoom; ZOOM_STICK_RATE per second at full tilt), in toward the cursor, out about the view; LB / RB keep their 1.6x steps
-    private var zoomY = 0f
-    private val ZOOM_STICK_RATE = 1.6f        // e-folds a second at full tilt: 1x to the 3.2x maximum in about 0.7 s
-    private var zoomRunning = false
-    private var zoomFrameAt = 0L
-    private val zoomFrame = Runnable { stepZoom() }
-    private fun startZoom() {
-        if (zoomRunning) return
-        zoomRunning = true; zoomFrameAt = 0L
-        postOnAnimation(zoomFrame)
-    }
-    private fun stepZoom() {
-        if (!isShown || modal() || abs(zoomY) <= MapRoomKeys.STICK_DEAD) { zoomRunning = false; return }
-        val now = SystemClock.uptimeMillis()
-        val dt = if (zoomFrameAt == 0L) 1f / 60f else ((now - zoomFrameAt) / 1000f).coerceIn(0f, 0.05f)
-        zoomFrameAt = now
-        // past the dead zone, scaled 0..1; up (y < 0) zooms in
-        val tilt = (abs(zoomY) - MapRoomKeys.STICK_DEAD) / (1f - MapRoomKeys.STICK_DEAD)
-        val was = zoom
-        flyZ = Float.NaN; flyDone = null; hereTarget = 0
-        zoom *= exp(-sign(zoomY) * tilt * ZOOM_STICK_RATE * dt)
-        if (zoom > was) { val k = min(1f, dt * 3f); panX += (ccx - panX) * k; panY += (ccy - panY) * k }   // in: toward the cursor
-        afterZoom()
-        postOnAnimation(zoomFrame)
-    }
-
-    private fun startCursor() {
-        if (cursorRunning) return
-        cursorRunning = true; cursorFrameAt = 0L
-        postOnAnimation(cursorFrame)
-    }
 
     // in the quest list the stick steps a row a push, then the D-pad's own hold-repeat while it stays pushed (MapRoomKeys.StickSteps)
     private val steps = MapRoomKeys.StickSteps()
@@ -1270,22 +1340,10 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (d.second != 0f && d.first == 0f) moveList(if (d.second > 0f) 1 else -1) else if (d.first < 0f) key("PADDLEFT")
         syncB(); invalidate()
     }
-    private fun startStick() {
-        if (reader != null) return
-        reader = PadInput(onPad = { _, _, _, _ -> }, onStatus = { _, _ -> },
-            onStickVector = { stick, x, y ->
-                // the RIGHT stick zooms (the user, 2026-10-17: "use the right stick to zoom in and out"): up in, down out, by how far
-                if (stick == 1) { zoomY = y; if (abs(y) > MapRoomKeys.STICK_DEAD) startZoom(); return@PadInput }
-                if (stick != 0) return@PadInput
-                stickX = x; stickY = y
-                if (region == MapRoomKeys.Region.MAP && MapRoomKeys.stickMoves(x, y)) startCursor()
-                if (steps.update(x, y)) { if (region == MapRoomKeys.Region.LIST) { stickStep(); postStickRepeat(DirectPadKeys.REPEAT_FIRST_MS) } }
-                else if (!steps.engaged) removeCallbacks(stickRepeat)
-            }).also { it.start() }
-    }
+    private fun startStick() = sticks.start()
     private fun stopStick() {
-        reader?.stop(); reader = null; steps.update(0f, 0f); stickX = 0f; stickY = 0f
-        removeCallbacks(stickRepeat); removeCallbacks(cursorFrame); cursorRunning = false
+        sticks.stop(); steps.update(0f, 0f)
+        removeCallbacks(stickRepeat)
     }
 
     /** the room opened (MainActivity): the player's zone, whole, nothing browsed yet */
@@ -1906,42 +1964,16 @@ class WorldMapRoomView(context: Context) : View(context) {
         val l = max(canvasR.left, sxc(0f)); val r = min(min(canvasR.right, sxc(1f)), drawerLeft())
         val t = max(canvasR.top, syc(0f)); val b = min(canvasR.bottom, syc(1f))
         if (r <= l || b <= t) return
-        val cx = sx(curX); val cy = sy(curY)
-        val off = RETICLE_PX / 2f - 2f
-        val h = LINE_PX / 2f
-        c.save()
-        c.clipRect(l, t, r, b)
-        c.drawRect(l, cy - h, cx - off, cy + h, pLines)
-        c.drawRect(cx + off, cy - h, r, cy + h, pLines)
-        c.drawRect(cx - h, t, cx + h, cy - off, pLines)
-        c.drawRect(cx - h, cy + off, cx + h, b, pLines)
-        c.restore()
+        MapReticle.lines(c, sx(curX), sy(curY), RectF(l, t, r, b))
     }
-    private val pLines = Paint().apply { style = Paint.Style.FILL; color = Color.rgb(255, 209, 0) }
 
-    /**
-     * THE GAME'S CURSOR (SoftCursor, MetallicSoftCursorPointerTemplate; UI Art's kit map_reticle, the game's x2 art): cropped to its
-     * TexCoords .08-.95, RETICLE_PX wide, a black copy 2 px right under it (its shadow); as the map opens it fades in from 1.5x over
-     * 250 ms (the template's IntroAnim, smoothing IN). No art: the lines alone.
-     */
+    /** the game's cursor (MapReticle, shared with Home's map controls): it fades in as the map opens (its IntroAnim) */
     private fun drawReticle(c: Canvas) {
-        val b = UiKit.tex("map_reticle") ?: return
         val t = ((System.currentTimeMillis() - cursorShownAt) / INTRO_MS.toFloat()).coerceIn(0f, 1f)
-        val e = t * t
-        val size = RETICLE_PX * (1.5f - 0.5f * e)
-        val a = (255 * e).toInt()
-        srcR.set((b.width * 0.08f).toInt(), (b.height * 0.08f).toInt(), (b.width * 0.95f).toInt(), (b.height * 0.95f).toInt())
-        val cx = sx(curX); val cy = sy(curY)
-        dst.set(cx - size / 2f + 2f, cy - size / 2f, cx + size / 2f + 2f, cy + size / 2f)
-        pReticleShadow.alpha = a; c.drawBitmap(b, srcR, dst, pReticleShadow)
-        dst.offset(-2f, 0f)
-        pBmp.alpha = a; c.drawBitmap(b, srcR, dst, pBmp); pBmp.alpha = 255
+        MapReticle.reticle(c, sx(curX), sy(curY), t)
         if (t < 1f) postInvalidateOnAnimation()
     }
     private var cursorShownAt = 0L
-    private val pReticleShadow = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
-        colorFilter = PorterDuffColorFilter(Color.BLACK, PorterDuff.Mode.SRC_IN)
-    }
 
     /** the lit marker's filled soft glow (the user: no outlines; "Use our filled soft light"), under the marker; [k] eases it in */
     private fun selectGlow(c: Canvas, cx: Float, cy: Float, r: Float, k: Float = 1f) {
@@ -2851,7 +2883,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         return t.substring(0, n).trimEnd() + "..."
     }
 
-    private companion object {
+    companion object {
         /**
          * The room's one line while the world map is not built (issues #243 #262 #263 #264: "not on this device yet" never said
          * what to do; the background art builds only while the game is closed - PlayGate, every Thor). Tr: es / fr in i18n.
@@ -2919,4 +2951,8 @@ object MapRoomLetGo {
     const val AFTER_MS = 60_000L
     /** "map pictures let go (43 MB): the Map room left 60 s ago" */
     fun line(bytes: Long): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): the Map room left ${AFTER_MS / 1000} s ago"
+    /** Home's map module zoomed out on the same pictures (2026-11-17): "map pictures let go (12 MB): Home's map closed 60 s ago" /
+     *  "... Home's map closed (lighter memory)" (the 8 / 12 GB models and Lighter mode: at once) */
+    fun homeLine(bytes: Long, now: Boolean): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): Home's map closed" +
+        (if (now) " (lighter memory)" else " ${AFTER_MS / 1000} s ago")
 }

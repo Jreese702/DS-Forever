@@ -590,6 +590,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         mapView.onLeave = { show(Room.HOME) }
         mapView.offMapSpots = { qid -> worldMapRoom.questWorldSpots(qid) }      // Map: the arrow to a quest in another zone
+        mapView.worldArt = worldMapRoom.homeArt          // 2026-11-17: Home's map zoomed out past its zone = the Map room's art, one cache
         mapView.zoneSpots = { qid -> worldMapRoom.questZoneSpots(qid) }         // Polestar's goal on its own zone map
         // the cursor line's ways out of a map (b-route-city-exits): the maps' world rectangles and names, the game's own
         mapView.worldOf = { id -> worldMapRoom.model.world(id) }

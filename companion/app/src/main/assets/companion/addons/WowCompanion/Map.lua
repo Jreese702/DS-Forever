@@ -13,6 +13,8 @@
 --   C_VignetteInfo.GetVignettes/GetVignetteInfo/GetVignettePosition
 --   C_GossipInfo.GetPoiForUiMapID/GetPoiInfo + DYNAMIC_GOSSIP_POI_UPDATED (gp1, the guard's flag; the user, 2026-11-13: "when
 --   asking a guard for directions, it does not put the arrow and flag to what I am looking for on our map") -- see THE GUARD'S FLAG
+-- mr8 (the user, 2026-11-17: "when using map controls it should function just like the map room with the sticks"): the Map room's
+--   stick catch also holds while Home's map controls page holds the controller (guest "pad:home", the app's op 3) -- see mr8 below
 --
 -- WHAT IS NOT, AND CANNOT BE REBUILT:
 --   Minimap tracking blips (herbs, ore, vendors, trainers). GetMinimapBlip,
@@ -1899,12 +1901,28 @@ mr.stickSync = function()
         local okE, en = pcall(f.IsGamePadStickEnabled, f)
         mr.stickOn = (ok and okE and en == true) and true or false
     end
-    local want = (mr.stickOn and holderNow() == MR_ID) and true or false
+    local h = holderNow()
+    -- mr8: Home's map controls' hold lapses when Home's guest no longer holds, or HOME_TTL s after the app last said so
+    if mr.homeAt and (h ~= mr.HOME_ID or now() - mr.homeAt > mr.HOME_TTL) then mr.homeAt = nil end
+    local want = (mr.stickOn and (h == MR_ID or (mr.homeAt ~= nil and h == mr.HOME_ID))) and true or false
     if want ~= (mr.stickShown and true or false) then
         if want then pcall(f.Show, f) else pcall(f.Hide, f) end
         mr.stickShown = want
         mrSend()
     end
+end
+-- mr8 HOME'S MAP CONTROLS HOLD THE STICKS (the user, 2026-11-17: "when opening the map, pressing to the right should open some map
+-- controls ... when using map controls it should function just like the map room with the sticks"). Home's open map module has a map
+-- controls page where the app reads the sticks (the cursor, the zoom), as the Map room does; without the catch the same push walked
+-- the character and the map recentred on it. The app's op 3 on the pin lanes (A: 3, then B: 1 = hold, 0 = let go) shows THIS catch
+-- (mr7's frame, nothing new) while Home's guest "pad:home" holds the controller. It lets go by itself: at "0", whenever Home's guest
+-- stops holding (stickSync runs on every holder change), and HOME_TTL s after the last "1" (the app says it again every 4 s), so a
+-- lost "0" or a gone app never leaves the character unable to walk. Show / Hide only (they work in fights); EnableGamePadStick stays
+-- mr7's one out-of-fight call; no binding, no CVar. Fields of `mr`: the main chunk is at Lua's 200-local limit.
+mr.HOME_ID, mr.HOME_TTL = "pad:home", 10
+mr.homeSticks = function(on)
+    mr.homeAt = on and now() or nil
+    pcall(mr.stickSync)
 end
 
 local function mrRefresh()
@@ -2150,6 +2168,11 @@ local function onDigit(col)
         w.buf = {}
         return WC.mmp.setOpt(b[2])
     end
+    if b[1] == 3 then                                      -- mr8: Home's map controls hold the sticks (1) or let them go (0)
+        if #b < 2 then return end
+        w.buf = {}
+        return mr.homeSticks(b[2] == 1)
+    end
     if b[1] ~= 0 then w.buf = {}; return mrAck("pin", false, "unknown pin op") end
     if #b < 8 then return end
     w.buf = {}
@@ -2200,6 +2223,7 @@ end
 
 -- the 1 s tick: a queued / pending take that was granted; the window open, nobody holding and the room not left: take it again
 local function mrTick()
+    if mr.homeAt and now() - mr.homeAt > mr.HOME_TTL then pcall(mr.stickSync) end     -- mr8: a lapsed hold lets the sticks go (fights too)
     if mr.pend and mrIsHolder() then mr.pend = false; mrNote("taken") end
     if type(InCombatLockdown) == "function" and InCombatLockdown() then return end
     -- the window is shared with the Quests room's quest log: only a map the Map room wanted is taken again
