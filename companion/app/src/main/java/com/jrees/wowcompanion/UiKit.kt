@@ -2651,7 +2651,10 @@ object UiKit {
                     val turnIn: Boolean = false, val number: Int? = null, val focused: Boolean = true,
                     /** ps4 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): an item
                      *  to use - its icon (fileDataID, 0 none) in place of the first line's mark, and a pad glyph (null none) at its end */
-                    val useIcon: Int = 0, val useGlyph: String? = null)
+                    val useIcon: Int = 0, val useGlyph: String? = null,
+                    /** Quests q63 (the user, 2026-11-17: "The quests don't show rewards at all anywhere"): the quest's rewards, compact
+                     *  ([QuestRewards.strip]); drawn only where [questCard] is asked to ([rewardLine], Home) and the line has room */
+                    val rewards: QuestRewards.Strip? = null)
 
     /** the card's measures at scale 1 (the Map room's list: 400 px wide); Home draws it at [CARD_HOME_SCALE] */
     const val CARD_PAD = 12f
@@ -2687,7 +2690,7 @@ object UiKit {
     }
 
     fun questCard(c: Canvas, box: RectF, q: QuestCard?, alpha: Int = 255, scale: Float = 1f, bgAlpha: Int = 255,
-                  collapsed: Boolean = false) {
+                  collapsed: Boolean = false, rewardLine: Boolean = false) {
         val s = scale
         val layer = alpha < 255
         if (layer) c.saveLayerAlpha(box, alpha.coerceIn(0, 255))
@@ -2731,11 +2734,17 @@ object UiKit {
             val room = (box.bottom - pad * 0.5f) - top
             return (255 * (room / (CARD_LINE * s)).coerceIn(0f, 1f)).toInt()
         }
+        // q63: the compact reward line rides the card's LAST line, right-aligned, only where that line's words leave it room (Home)
+        val strip = if (rewardLine && !collapsed) q.rewards else null
+        val stripW = strip?.let { rewardStripWidth(it, s) } ?: 0f
         if (collapsed) Unit
         else if (q.turnIn) {
             val po = bodyPaint(23f * s, Color.rgb(120, 220, 120)).apply { setAlpha(lineAlpha(y)) }
             val cy = y + CARD_LINE * s / 2f
-            c.drawText(Tr.t("Ready for turn-in"), tx, cy - (po.ascent() + po.descent()) / 2f, po)
+            val words = Tr.t("Ready for turn-in")
+            c.drawText(words, tx, cy - (po.ascent() + po.descent()) / 2f, po)
+            if (strip != null && lineAlpha(y) >= 255 && tx + po.measureText(words) + 16f * s + stripW <= box.right - pad)
+                rewardStrip(c, strip, box.right - pad, cy, s)
         } else for ((li, lp) in q.objectives.withIndex()) {
             val (line, done) = lp
             val la = lineAlpha(y)
@@ -2753,10 +2762,54 @@ object UiKit {
             val po = bodyPaint(23f * s, if (done) Theme.dim else Color.rgb(204, 204, 204)).apply { setAlpha(la) }
             c.drawText(Tr.t(TextUtils.ellipsize(line, po, box.right - pad - tx - 26f * s - gw, TextUtils.TruncateAt.END).toString()), tx + 26f * s,
                 cy - (po.ascent() + po.descent()) / 2f, po)
+            if (strip != null && li == q.objectives.size - 1 && gw == 0f && la >= 255 &&
+                tx + 26f * s + po.measureText(Tr.t(line)) + 16f * s + stripW <= box.right - pad)
+                rewardStrip(c, strip, box.right - pad, cy, s)
             y += CARD_LINE * s
         }
         c.restore()
         if (layer) c.restore()
+    }
+
+    /** q63: the compact reward line's measures at scale 1: an item icon, the gap between pieces, the money's type size */
+    private const val STRIP_ICON = 24f
+    private const val STRIP_GAP = 6f
+    private const val STRIP_MONEY = 20f
+
+    /** [rewardStrip]'s width at [s] */
+    fun rewardStripWidth(r: QuestRewards.Strip, s: Float = 1f): Float {
+        var w = 0f
+        var parts = 0
+        if (r.icons.isNotEmpty()) { w += r.icons.size * STRIP_ICON * s + (r.icons.size - 1) * 3f * s; parts++ }
+        if (r.more > 0) { w += numberPaint(STRIP_MONEY * s).measureText("+${r.more}"); parts++ }
+        if (r.money > 0) { w += moneyWidth(r.money, STRIP_MONEY * s); parts++ }
+        return w + (parts - 1).coerceAtLeast(0) * STRIP_GAP * s
+    }
+
+    /**
+     * q63 THE COMPACT REWARD LINE (Home's quest card): the first item icons in their quality's edge, "+n" for the rest, then the money
+     * in the game's coins, ending at [right], centred on [cy]. No words.
+     */
+    fun rewardStrip(c: Canvas, r: QuestRewards.Strip, right: Float, cy: Float, s: Float = 1f) {
+        var x = right
+        if (r.money > 0) { x = right - moneyWidth(r.money, STRIP_MONEY * s); money(c, r.money, x, cy, STRIP_MONEY * s); x -= STRIP_GAP * s }
+        if (r.more > 0) {
+            val p = numberPaint(STRIP_MONEY * s, Theme.textDim)
+            val t = "+${r.more}"
+            x -= p.measureText(t)
+            c.drawText(t, x, cy - (p.ascent() + p.descent()) / 2f, p)
+            x -= STRIP_GAP * s
+        }
+        val sz = STRIP_ICON * s
+        for ((k, ic) in r.icons.withIndex().reversed()) {
+            val ir = RectF(x - sz, cy - sz / 2f, x, cy + sz / 2f)
+            Icons.getOrUnknown(ic.first.takeIf { it > 0 })?.let { c.drawBitmap(it, null, ir, pBmp) }
+            if (ic.second >= 2) {
+                pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f * s; pFlat.color = Theme.quality(ic.second)
+                c.drawRect(ir, pFlat)
+            }
+            x -= sz + (if (k > 0) 3f * s else 0f)
+        }
     }
 
     /**

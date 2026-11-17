@@ -1,5 +1,7 @@
 package com.jrees.wowcompanion
 
+import kotlin.math.min
+
 /**
  * THE QUESTS ROOM'S CONTROLLER. Pure Kotlin, so tools/quests_test drives it.
  *
@@ -13,6 +15,9 @@ package com.jrees.wowcompanion
  * cancels. The cursor is shown from the moment the room holds the controller ([show]).
  * pg1 (the user, 2026-11-16: "if Polestar is active it should have its own tab at the top of the quests tab"): with the Polestar tab
  * shown ([key]'s tabs), Up from the first quest lands on the tab row ([Do.ToTabs]); the room ([QuestsView]) moves between the tabs.
+ * q63 THE REWARDS (the user, 2026-11-17: "The quests don't show rewards at all anywhere"): Right on the list steps into the selected
+ * quest's rewards ([Do.Reward] 0: the first item; its tooltip shows); up / down move along them, Left or B step back to the list
+ * ([Do.Reward] -1); A / X / Y do nothing there (no other button's glyph shows while the cursor is on a reward).
  */
 class QuestCursor {
     /** what the room must do for a press */
@@ -33,6 +38,8 @@ class QuestCursor {
         object MenuClose : Do()
         /** pg1: Up from the first quest onto the tab row ([Quests] [Polestar]; only while the Polestar tab shows) */
         object ToTabs : Do()
+        /** q63: the cursor onto reward [i] of the selected quest (-1: back to the list) */
+        data class Reward(val i: Int) : Do()
     }
 
     /** the cursor is drawn (the room holds the controller) */
@@ -50,9 +57,11 @@ class QuestCursor {
     /**
      * One press [k] (PADDUP / PADDDOWN / PADDLEFT / PADDRIGHT on the press; PAD1 = A, PAD2 = B, PAD3 = X, PAD4 = Y on the
      * release). [ids] = the list in order, [selected] = the quest the details show, [confirm] = the Abandon confirm bar is open,
-     * [menu] = the More menu's highlighted row (-1: closed), [menuRows] = its number of rows.
+     * [menu] = the More menu's highlighted row (-1: closed), [menuRows] = its number of rows. q63: [reward] = the reward the cursor is
+     * on (-1: the list), [rewards] = how many rewards the selected quest has for the cursor ([QuestRewards.pieces]).
      */
-    fun key(k: String, ids: List<Int>, selected: Int, confirm: Boolean, menu: Int = -1, menuRows: Int = 0, tabs: Boolean = false): Do {
+    fun key(k: String, ids: List<Int>, selected: Int, confirm: Boolean, menu: Int = -1, menuRows: Int = 0, tabs: Boolean = false,
+            reward: Int = -1, rewards: Int = 0): Do {
         if (confirm) return when (k) {
             "PAD1" -> Do.ConfirmAbandon
             "PAD2" -> Do.Cancel
@@ -68,6 +77,12 @@ class QuestCursor {
             "PAD2" -> Do.MenuClose
             else -> Do.Nothing
         }
+        if (reward >= 0) return when (k) {
+            "PADDUP" -> if (reward > 0 && rewards > 0) Do.Reward(min(reward, rewards) - 1) else Do.Nothing
+            "PADDDOWN" -> if (reward < rewards - 1) Do.Reward(reward + 1) else Do.Nothing
+            "PADDLEFT", "PAD2" -> Do.Reward(-1)
+            else -> Do.Nothing
+        }
         return when (k) {
             "PADDUP", "PADDDOWN" -> {
                 if (tabs && k == "PADDUP" && (ids.isEmpty() || ids.indexOf(selected) <= 0)) return Do.ToTabs
@@ -78,13 +93,14 @@ class QuestCursor {
             }
             "PAD1" -> if (selected in ids) Do.Track else Do.Nothing
             "PAD4" -> if (selected in ids) Do.More else Do.Nothing          // X (PAD3): nothing since RC4
+            "PADDRIGHT" -> if (rewards > 0 && selected in ids) Do.Reward(0) else Do.Nothing      // q63
             "PAD2" -> Do.Leave
             else -> Do.Nothing
         }
     }
 
     /** where B leads now, for the Home button's B glyph: back while the confirm bar or the More menu is open */
-    fun bLeads(confirm: Boolean, menu: Boolean = false): String = if (confirm || menu) "back" else "home"
+    fun bLeads(confirm: Boolean, menu: Boolean = false, reward: Boolean = false): String = if (confirm || menu || reward) "back" else "home"
 
     companion object {
         /** DirectPad's hold-repeat for this room (Home's PadHub reads it): only up / down */

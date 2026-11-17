@@ -64,6 +64,16 @@ class QuestsView(
     private var confirmTitle = ""       // the ADDON's name for the armed quest, not the app's
     private var confirmAt = 0L
 
+    // q63 THE REWARDS (the user, 2026-11-17: "The quests don't show rewards at all anywhere"): the selected quest's rewards in the
+    // detail pane as the game's quest log reward block; the cursor steps onto them with Right ([QuestCursor]), a finger by a touch, and
+    // the item's game tooltip shows over the list's half (Bags' / Interact's TipStack, the add-on's qrtip lines)
+    private var rewardAt = -1                       // the reward the controller's cursor is on (-1: the list)
+    private var rewardTouch = -1                    // the reward a finger picked (-1: none)
+    private var rewardFollow = false                // scroll the details to the cursor's reward on the next frame
+    private val rewardHits = ArrayList<Pair<RectF, Int>>()
+    private var rewardBox: RectF? = null            // the reward shown with its tooltip, in the view's px (this frame)
+    private val tipStack by lazy { TipStack(this) }
+
     private var listScroll = 0f
     private var detailScroll = 0f
     private var listContentH = 0f
@@ -201,6 +211,10 @@ class QuestsView(
             menuSel = -1                                    // the More menu was for the quest that left
         }
         if (confirmAbandonId != -1 && list.none { it.optInt("id") == confirmAbandonId }) confirmAbandonId = -1
+        // q63: a reward the quest no longer has (turned in, a new document): the cursor goes back up the rewards, or to the list
+        val pieces = rewardCount()
+        if (rewardAt >= pieces) rewardAt = pieces - 1
+        if (rewardTouch >= pieces) rewardTouch = -1
         if (held) cursor.show()
         postInvalidate()
     }
@@ -472,6 +486,13 @@ class QuestsView(
         }
         for ((box, act) in btnHits) if (box.contains(x, y)) { lingerPress(act); action(act); return }
         if (pressed.isNotEmpty()) { pressed = ""; invalidate() }
+        // q63: a finger on a reward shows its tooltip (again: hides it); anywhere else hides it
+        for ((box, i) in rewardHits) if (box.contains(x, y)) {
+            rewardTouch = if (rewardTouch == i) -1 else i
+            if (rewardAt >= 0) { rewardAt = -1; syncB() }
+            invalidate(); return
+        }
+        if (rewardTouch >= 0) { rewardTouch = -1; invalidate() }
         for ((box, id) in rowHits) if (box.contains(x, y)) { select(id); invalidate(); return }
     }
 
@@ -491,6 +512,7 @@ class QuestsView(
     private fun select(id: Int) {
         if (id == selectedId) return
         selectedId = id; detailScroll = 0f; confirmAbandonId = -1; menuSel = -1
+        rewardAt = -1; rewardTouch = -1
         ensureVisible(id)
     }
 
@@ -563,6 +585,13 @@ class QuestsView(
     }
 
     private fun selectedQuest(): JSONObject? = quests.firstOrNull { it.optInt("id") == selectedId }
+
+    /** q63: the selected quest's rewards, and how many stops they give the cursor */
+    private fun rewards(): QuestRewards? = QuestRewards.parse(selectedQuest())
+    private fun rewardCount(): Int = rewards()?.pieces()?.size ?: 0
+
+    /** {"type":"qrtip"} (Quests.lua q63): a reward item's tooltip lines, kept by item id */
+    fun onRewardTip(msg: JSONObject) { if (QuestRewardTips.onDoc(msg) && isShown) postInvalidate() }
     /** ps3 (the user, 2026-11-11): More > Focus ([on] true) / Remove Focus on quest id, told to the Map (MapView.psRelease / focusCleared) */
     var onFocusPicked: ((id: Int, on: Boolean) -> Unit)? = null
 
@@ -656,7 +685,7 @@ class QuestsView(
 
     fun onShown() {
         lastPadN = -1; bSaid = "home"; openTapped = false; openPending = false
-        cursor.reset()
+        cursor.reset(); rewardAt = -1; rewardTouch = -1
         tab = 0; onTabs = false; psCur.toList()                 // pg1: the room opens on Quests (Home's Choose your path row: psOnShow)
         holdAsk.shown(); askHold()
         padNow.setActive(true)
@@ -669,7 +698,7 @@ class QuestsView(
         padNow.setActive(false)
         menuSel = -1
         held = false
-        cursor.reset()
+        cursor.reset(); rewardAt = -1; rewardTouch = -1
         // q25: the game's close while its quest log shows (Quests.lua lets go on the window's OnHide); RC3: the close AND the free,
         // spaced, while the room's open may still be on its way ([QuestsWin.leavePlan]); else the free
         val free = GuestPad.cells(pad(), "quests", hold = false)
@@ -745,7 +774,7 @@ class QuestsView(
      */
     fun onPad(msg: JSONObject) {
         holdAsk.answered()                                  // a relayed press or a lost hold: the add-on has spoken
-        if (msg.has("lost")) { held = false; cursor.reset(); invalidate(); return }
+        if (msg.has("lost")) { held = false; cursor.reset(); rewardAt = -1; invalidate(); return }
         val n = msg.optInt("n", -1)
         if (n == lastPadN) return                           // the same press seen twice
         lastPadN = n
@@ -790,8 +819,10 @@ class QuestsView(
         val q = selectedQuest()
         val confirm = q != null && confirmAbandonId == q.optInt("id")
         val rows = if (menuSel >= 0 && q != null) moreItems(q, System.currentTimeMillis()).size else 0
-        when (val d = cursor.key(k, quests.map { it.optInt("id") }, selectedId, confirm, menuSel, rows, tabs = tabsOn)) {
+        when (val d = cursor.key(k, quests.map { it.optInt("id") }, selectedId, confirm, menuSel, rows, tabs = tabsOn,
+            reward = rewardAt, rewards = rewardCount())) {
             QuestCursor.Do.ToTabs -> onTabs = true
+            is QuestCursor.Do.Reward -> { rewardAt = d.i; rewardTouch = -1; rewardFollow = d.i >= 0 }
             is QuestCursor.Do.Select -> select(d.id)
             QuestCursor.Do.More -> action("more")
             is QuestCursor.Do.MenuMove -> menuSel = d.i
@@ -822,7 +853,7 @@ class QuestsView(
     private fun syncB() {
         if (!held) return
         val confirm = confirmAbandonId != -1 && confirmAbandonId == selectedId
-        val where = if (onTabs) "home" else if (tab == 1 && psShows()) psCur.bLeads() else cursor.bLeads(confirm, menuSel >= 0)
+        val where = if (onTabs) "home" else if (tab == 1 && psShows()) psCur.bLeads() else cursor.bLeads(confirm, menuSel >= 0, rewardAt >= 0)
         if (where != bSaid && guestTap(GuestPad.bnext(pad(), home = where == "home"))) bSaid = where
     }
 
@@ -864,7 +895,7 @@ class QuestsView(
         val now = System.currentTimeMillis()
         val w = width.toFloat(); val h = height.toFloat()
         c.drawColor(Theme.ink)
-        rowHits.clear(); btnHits.clear(); glyphHits.clear(); menuHits.clear()
+        rowHits.clear(); btnHits.clear(); glyphHits.clear(); menuHits.clear(); rewardHits.clear(); rewardBox = null
 
         if (pendingOp != null && now - pendingAt > PENDING_TIMEOUT_MS) {
             pendingOp = null; pendingId = -1
@@ -1159,6 +1190,9 @@ class QuestsView(
             y += 30f
         }
 
+        // q63: the rewards, ABOVE the description (the user's pick, 2026-11-17: "Above the description"): always in view without scrolling
+        val rw = QuestRewards.parse(q)
+        if (rw != null) y = drawRewards(c, rw, y, tw.toFloat(), x0 + pad, y0 + 18f - detailScroll, y0, textBottom)
         // story
         q.optString("desc", "").takeIf { it.isNotEmpty() }?.let { desc ->
             y += 14f
@@ -1172,6 +1206,14 @@ class QuestsView(
         }
         detailContentH = y + 30f
         c.restore()
+        // the cursor's reward kept in view (once per move)
+        rewardBox?.let { b ->
+            if (rewardFollow) {
+                rewardFollow = false
+                if (b.top < y0 + 8f) { detailScroll -= y0 + 8f - b.top; invalidate() }
+                else if (b.bottom > textBottom - FADE_H - 4f) { detailScroll += b.bottom - (textBottom - FADE_H - 4f); invalidate() }
+            }
+        }
 
         // MORE BELOW: the last visible line would be cut through its middle and the parchment would just stop, which reads as
         // broken rather than scrollable (UI Art, the --long shot). So the bottom FADE_H of the details fades into the ground
@@ -1184,6 +1226,8 @@ class QuestsView(
             val cue = RectF(x0, y0, x1, textBottom - 9f - 5f - 18f * 0.35f)
             UiKit.moveArrowsUpDown(c, cue, up = false, down = true, size = 18f, width = 26f, around = true)
         }
+
+        if (rw != null) rewardTip(c, rw, y0, y1) else tipStack.forget()
 
         // ---- actions, pinned to the bottom of the pane
         if (above != null) {
@@ -1220,7 +1264,7 @@ class QuestsView(
         val reachable = QuestPad.cells(padDoc, QuestPad.Act.WATCH, slot) != null
         val tracked = tracked(q)
         val menuOpen = menuSel >= 0
-        val glyphs = held && cursor.shown && !menuOpen && !onTabs
+        val glyphs = held && cursor.shown && !menuOpen && !onTabs && rewardAt < 0
         button(c, RectF(bx, bTop, bx + bw, bBot), if (tracked) "Untrack" else "Track", "track",
             enabled = block == null && reachable, glyph = if (glyphs) "rev_a" else null)
         bx += bw + gap
@@ -1228,6 +1272,101 @@ class QuestsView(
         button(c, moreBox, "More", "more", enabled = reachable, glyph = if (glyphs) "rev_y" else null, down = menuOpen)
         // the menu opens over the More button's side, right-aligned with it
         if (menuOpen) drawMore(c, q, moreBox.right, actTop, x1 - x0 - pad * 2, now)
+    }
+
+    /**
+     * q63 THE REWARDS on a parchment of their own, as the game's quest log reward block (QuestInfo's RewardsFrame): "Rewards", the
+     * choose-one items ("Choose one"), the fixed items, the spells, each in the game's item row (the icon in its slot with its
+     * quality's edge and count, the name in its quality's colour, red when the character cannot use it); then Experience and the
+     * money in the game's coins, Honor. Drawn in the details' own canvas (origin at [ox], [oy] in the view); the rows' hit boxes are
+     * kept clipped to [viewTop]..[viewBottom]. The cursor's (or the finger's) reward gets the gold focus. Returns the y under it.
+     */
+    private fun drawRewards(c: Canvas, rw: QuestRewards, top: Float, tw: Float, ox: Float, oy: Float, viewTop: Float, viewBottom: Float): Float {
+        val edge = 28f
+        val pieces = rw.pieces()
+        val head = 40f
+        fun groupH(n: Int) = if (n == 0) 0f else head + n * (REWARD_ROW_H + REWARD_GAP)
+        val lines = (if (rw.xp > 0 || rw.money > 0) 1 else 0) + (if (rw.honor > 0) 1 else 0)
+        val innerH = 44f + groupH(rw.choices.size) + groupH(rw.items.size) + groupH(rw.spells.size) + lines * REWARD_LINE_H
+        val y0 = top + 14f
+        val box = RectF(-8f, y0, tw + 8f, y0 + innerH + edge * 2.2f + 8f)
+        val inner = UiKit.parchment(c, box, edge)
+        c.drawText(Tr.t("Rewards"), inner.left, inner.top + 26f, pInkHead)
+        // Right steps onto them: the D-pad's right glyph by the heading while the list holds the cursor
+        val hint = held && cursor.shown && rewardAt < 0 && menuSel < 0 && !onTabs && confirmAbandonId == -1 && pieces.isNotEmpty()
+        if (hint) UiKit.pad(c, "gen_right", inner.left + pInkHead.measureText(Tr.t("Rewards")) + 30f, inner.top + 16f, 38f)
+        var y = inner.top + 44f
+        val ink = UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }
+        val shownAt = if (rewardAt >= 0) rewardAt else rewardTouch
+        fun header(words: String) { c.drawText(Tr.t(words), inner.left, y + 26f, ink); y += head }
+        fun row(n: Int, icon: Bitmap?, name: String, colour: Int, count: Int, unusable: Boolean, edgeCol: Int) {
+            val r = RectF(inner.left, y, inner.right, y + REWARD_ROW_H)
+            UiKit.itemPlate(c, r, icon, name, colour, count, unusable = unusable, edge = edgeCol)
+            if (n == shownAt) {
+                UiKit.focus(c, r, onPaper = true)
+                rewardBox = RectF(r.left + ox, r.top + oy, r.right + ox, r.bottom + oy)
+            }
+            val hit = RectF(r.left + ox, max(r.top + oy, viewTop), r.right + ox, min(r.bottom + oy, viewBottom))
+            if (hit.height() > 0f) rewardHits.add(hit to n)
+            y += REWARD_ROW_H + REWARD_GAP
+        }
+        // the game's item names as the game wrote them (never translated)
+        fun item(n: Int, it: QuestRewards.Item) = row(n, Icons.getOrUnknown(it.icon.takeIf { i -> i > 0 }), it.name ?: "\u2026",
+            Theme.quality(it.quality), it.count, !it.usable, if (it.quality >= 2) Theme.quality(it.quality) else 0)
+        var n = 0
+        if (rw.choices.isNotEmpty()) { header("Choose one"); for (it in rw.choices) item(n++, it) }
+        if (rw.items.isNotEmpty()) {
+            header(if (rw.choices.isNotEmpty()) "You will also receive:" else "You will receive:")
+            for (it in rw.items) item(n++, it)
+        }
+        if (rw.spells.isNotEmpty()) {
+            header("You will learn:")
+            for (sp in rw.spells) row(n++, Icons.getOrUnknown(sp.icon.takeIf { i -> i > 0 }), sp.name, Theme.text, 0, false, 0)
+        }
+        if (rw.xp > 0 || rw.money > 0) {
+            val cy = y + REWARD_LINE_H / 2f
+            if (rw.xp > 0) {
+                val lab = Tr.t("Experience:")
+                c.drawText(lab, inner.left, cy + 8f, ink)
+                c.drawText(rw.xp.toString(), inner.left + ink.measureText(lab) + 12f, cy + 9f, UiKit.numberPaint(26f, Theme.parchmentInk, false))
+            }
+            if (rw.money > 0) UiKit.money(c, rw.money, inner.right, cy, 26f, Theme.parchmentInk, fromRight = true, shadow = false)
+            y += REWARD_LINE_H
+        }
+        if (rw.honor > 0) {
+            val cy = y + REWARD_LINE_H / 2f
+            val lab = Tr.t("Honor:")
+            c.drawText(lab, inner.left, cy + 8f, ink)
+            c.drawText(rw.honor.toString(), inner.left + ink.measureText(lab) + 12f, cy + 9f, UiKit.numberPaint(26f, Theme.parchmentInk, false))
+            y += REWARD_LINE_H
+        }
+        return box.bottom + 12f
+    }
+
+    /**
+     * q63: THE TOOLTIP of the reward the cursor (or a finger) is on, over the list's half beside it (as Interact's quest window puts
+     * it over the NPC's words): the game's own lines from the add-on's qrtip once they came, else the item's name alone; after the
+     * kit's quarter-second wait and fade (TipStack). A spell shows its name. Nothing focused: nothing (and the next one waits again).
+     */
+    private fun rewardTip(c: Canvas, rw: QuestRewards, top: Float, bottom: Float) {
+        val at = if (rewardAt >= 0) rewardAt else rewardTouch
+        val p = rw.pieces().getOrNull(at)
+        val b = rewardBox
+        if (p == null || b == null) { tipStack.forget(); return }
+        val it = rw.itemOf(p)
+        val name: String; val q: Int; val tip: JSONObject
+        if (it != null) {
+            name = it.name ?: "\u2026"; q = it.quality
+            val got = QuestRewardTips.of(it.id)
+            tip = JSONObject().put("key", "qr ${p.key} ${it.id}").put("lines", got?.optJSONArray("lines") ?: org.json.JSONArray())
+        } else {
+            val sp = rw.spells.getOrNull(p.i) ?: run { tipStack.forget(); return }
+            name = sp.name; q = 1
+            tip = JSONObject().put("key", "qr ${p.key} ${sp.id}").put("lines", org.json.JSONArray())
+        }
+        val w = min(REWARD_TIP_W, splitX - 24f)
+        val x = splitX - 12f - w
+        tipStack.draw(c, x, b.top, w, name, q, tip, top + 8f, bottom - 8f, x + w + 12f, compareHeld = false, hint = false)
     }
 
     /** every action is the game's red button (user ruling 2026-09-27), with the controller's [glyph] while the room holds it */
@@ -1287,6 +1426,10 @@ class QuestsView(
         const val FADE_H = 40f          // the details fade into the ground over this, while there is more below (a line + the arrow)
         const val SEL_GAP = 28f         // the selected row's gap above and below, for the selector's arrows (UI Art's sheet)
         const val ACTIONS_H = 112f
+        const val REWARD_ROW_H = 96f    // q63: one reward item's row (the game's QuestItemTemplate; Interact's is 116)
+        const val REWARD_GAP = 6f
+        const val REWARD_LINE_H = 46f   // the Experience / money line, the Honor line
+        const val REWARD_TIP_W = 520f
 
         const val PENDING_TIMEOUT_MS = 8_000L
         const val CONFIRM_TIMEOUT_MS = 6_000L

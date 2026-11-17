@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q62"    -- bump on every change; q62 THE PET'S AUTOCAST ON ITS WHEELS (the user, 2026-11-16: "hunters need to be able to visually see when their pets abilities are active like growl, and a way to turn it off from those radials"): the pet's abilities that may cast themselves (GetPetActionInfo autoCastAllowed) join the pet's wheel (Party mode's pet slot, the target wheel on your pet) after the q56 rows, each with its state (au) and slot (as); A = its cast (pfocus 10-19, type pet = the pet bar's left-click), X / a long press = its autocast toggle (pfocus 20-29, the game's own /petautocasttoggle on OUR button = the pet bar's right-click); pfocus grows to 30 cells (no new pad row), its pet cells built again out of combat when the pet's abilities change, a toggle cell naming another pet's spell never offered; {"type":"petauto"} on PET_BAR_UPDATE / PET_BAR_UPDATE_COOLDOWN / UNIT_PET / the pet's health, only when it changes; q61 (the user on build 1462: "holding on the pet bar does not open the pet inspect"): WC.pmenu.ctx("pet") reads the game's PET menu (Party mode's pet slot, PadMap m157 col 7), not the PARTY one, and its own Dismiss is hidden (our Dismiss Pet row leads it); q60 (the user, 2026-11-13: "I dont like the res pet being in the player radial, thats silly, I just want it to be done when touching a dead pet slot in the party mode section."): Revive Pet off every wheel (WC.pmenu.PET drops it, pfocus col 7 left empty; petSeen / petLast and their pet-event frame removed, the radial alone used them); Smart Res's tap on the dead pet slot stays the one Revive Pet; q59 (review of 1.0.30 code 1454, ActionBar cb2b): WC.questsSoon, the coalesced quests document on demand, so a pad row registered mid-session (the lazy castbar row) reaches Home's pad copy at once; q58 THE 1.0.30 TEST BUILD MERGE (code 1453): feat/bags-actions's q56b next to q57, both kept; q56b: WC.questNeedItems, read only - the item ids QuestieDB's item objectives name and the game's item objectives' words for every quest in the log, for the Bags Destroy picker (the user's pick 2026-11-13: Suggested never offers "items a tracked quest objective needs"); q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6); q57: THE PET'S WHEEL, TWO HOLES (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet."): Revive Pet also on the wheel of YOURSELF as the target (UnitIsUnit target / player), and the pet's name kept from the game's pet events (UNIT_PET / PET_BAR_UPDATE / PLAYER_ENTERING_WORLD / UNIT_NAME_UPDATE), not only from a menu read, so its body offers Revive after a login with no menu opened; q56: THE PET'S WHEEL CARRIES ITS ACTIONS (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet."; the picker: Feed Pet, Dismiss Pet, Revive / Mend Pet, Train pet): the pet's menu (Party mode's pet cell, unit "pet"; the target wheel on your pet) gains our own rows first - Feed Pet (greyed in a fight), Dismiss Pet, Mend Pet (alive) or Revive Pet (dead), Beast Training - each only when the character knows the spell, each a plain /cast on our own secure pfocus cells 5-9 (set up out of combat; the game opens its own training window); Revive Pet alone on your own wheel with no pet out and on your dead pet's body (its name as last seen); each row carries its spell's icon (`ic`); the re-read after a pfocus cell says again = 1 (q54's rule: the wheel is never opened again by it); q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
+local QV = "q63"    -- bump on every change; q63 THE QUEST'S REWARDS (the user, 2026-11-17: "The quests don't show rewards at all anywhere"): each quest carries rw (money, XP, honor, the fixed items, the choose-one items, the spells; WC.questRewards, read by questID only - nothing selected), cached per quest and read again on QUEST_LOG_UPDATE / PLAYER_LEVEL_UP / a late item name (GET_ITEM_INFO_RECEIVED); rwMode "ignored" drops them when every quest answers alike; each new reward item's tooltip once in {"type":"qrtip"}, two a second, never in a fight; q62 THE PET'S AUTOCAST ON ITS WHEELS (the user, 2026-11-16: "hunters need to be able to visually see when their pets abilities are active like growl, and a way to turn it off from those radials"): the pet's abilities that may cast themselves (GetPetActionInfo autoCastAllowed) join the pet's wheel (Party mode's pet slot, the target wheel on your pet) after the q56 rows, each with its state (au) and slot (as); A = its cast (pfocus 10-19, type pet = the pet bar's left-click), X / a long press = its autocast toggle (pfocus 20-29, the game's own /petautocasttoggle on OUR button = the pet bar's right-click); pfocus grows to 30 cells (no new pad row), its pet cells built again out of combat when the pet's abilities change, a toggle cell naming another pet's spell never offered; {"type":"petauto"} on PET_BAR_UPDATE / PET_BAR_UPDATE_COOLDOWN / UNIT_PET / the pet's health, only when it changes; q61 (the user on build 1462: "holding on the pet bar does not open the pet inspect"): WC.pmenu.ctx("pet") reads the game's PET menu (Party mode's pet slot, PadMap m157 col 7), not the PARTY one, and its own Dismiss is hidden (our Dismiss Pet row leads it); q60 (the user, 2026-11-13: "I dont like the res pet being in the player radial, thats silly, I just want it to be done when touching a dead pet slot in the party mode section."): Revive Pet off every wheel (WC.pmenu.PET drops it, pfocus col 7 left empty; petSeen / petLast and their pet-event frame removed, the radial alone used them); Smart Res's tap on the dead pet slot stays the one Revive Pet; q59 (review of 1.0.30 code 1454, ActionBar cb2b): WC.questsSoon, the coalesced quests document on demand, so a pad row registered mid-session (the lazy castbar row) reaches Home's pad copy at once; q58 THE 1.0.30 TEST BUILD MERGE (code 1453): feat/bags-actions's q56b next to q57, both kept; q56b: WC.questNeedItems, read only - the item ids QuestieDB's item objectives name and the game's item objectives' words for every quest in the log, for the Bags Destroy picker (the user's pick 2026-11-13: Suggested never offers "items a tracked quest objective needs"); q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6); q57: THE PET'S WHEEL, TWO HOLES (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet."): Revive Pet also on the wheel of YOURSELF as the target (UnitIsUnit target / player), and the pet's name kept from the game's pet events (UNIT_PET / PET_BAR_UPDATE / PLAYER_ENTERING_WORLD / UNIT_NAME_UPDATE), not only from a menu read, so its body offers Revive after a login with no menu opened; q56: THE PET'S WHEEL CARRIES ITS ACTIONS (the user, 2026-11-13: "The pet inspect radial should include some of the pet actions like dismiss or feed pet."; the picker: Feed Pet, Dismiss Pet, Revive / Mend Pet, Train pet): the pet's menu (Party mode's pet cell, unit "pet"; the target wheel on your pet) gains our own rows first - Feed Pet (greyed in a fight), Dismiss Pet, Mend Pet (alive) or Revive Pet (dead), Beast Training - each only when the character knows the spell, each a plain /cast on our own secure pfocus cells 5-9 (set up out of combat; the game opens its own training window); Revive Pet alone on your own wheel with no pet out and on your dead pet's body (its name as last seen); each row carries its spell's icon (`ic`); the re-read after a pfocus cell says again = 1 (q54's rule: the wheel is never opened again by it); q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -90,6 +90,132 @@ local function objectives(qid)
     return out
 end
 
+-- ---------------------------------------------------------------- q63 THE QUEST'S REWARDS
+-- The user (2026-11-17): "The quests don't show rewards at all anywhere". Each quest of the list carries
+--   rw = { m = copper, xp = n, hon = n, ch = {item...} (choose one), it = {item...} (always given), sp = {{n, ic, id}} (spells) }
+--   item = { n = name, ic = icon fileID, c = count, q = quality, id = itemID, u = false only when the character cannot use it }
+-- or no rw at all (no rewards, or the game says not to show them). The camelot client loads the MAINLINE QuestInfo
+-- (Blizzard_UIPanels_Game.toc 100: [Family]\QuestInfo.lua), whose log reader works on the SELECTED quest (QuestInfo.lua 630-640:
+-- GetNumQuestLogRewards(), GetQuestLogRewardMoney(), ...). This reader never selects anything: it uses the forms the game's own
+-- code calls WITH A questID (QuestUtils.lua 771 GetQuestLogRewardXP(questID), 814 GetQuestLogRewardHonor(questID), 821
+-- GetQuestLogRewardMoney(questID), 1017-1028 GetNumQuestLogRewards / GetQuestLogRewardInfo(i, questID) / GetNumQuestLogChoices /
+-- GetQuestLogChoiceInfo(i, questID); QuestInfo.lua 622 / 661 C_QuestInfoSystem.GetQuestRewardSpells(questID) /
+-- GetQuestRewardSpellInfo(questID, spellID), 631 C_QuestLog.ShouldShowQuestRewards(questID)). Plain reads only: no selection, no
+-- frame, nothing the game sees; every value through S() (no tally: a cached quest would make `sec` differ between two reads).
+-- The title reward (GetQuestLogRewardTitle) takes no questID on this client (QuestInfo.lua 639), so it is left out.
+-- CACHED per questID; emptied on QUEST_LOG_UPDATE and PLAYER_LEVEL_UP (the XP shown falls with the level), in a fight only when it
+-- ends (PLAYER_REGEN_ENABLED: nothing is read again mid-fight but a quest new to the log). A read that missed an
+-- item's name (the client has not loaded the item yet) is not kept, and GET_ITEM_INFO_RECEIVED asks for the document again.
+local RW_MAX = 10           -- items per group at most (the game's log shows far fewer)
+local rwCache = {}          -- questID -> rw, or false (none)
+local rwWaiting = false     -- a read this pass missed an item's name
+local rwStale = false       -- the log changed during a fight: read again when it ends
+local function RN(fn) local v = S(fn); if type(v) == "number" then return v end end
+local function plainOf(n, ok, ...)
+    if not ok then return nil end
+    local t = {}
+    for k = 1, n do
+        local v = select(k, ...)
+        if type(v) ~= "nil" and WC.isPlain(v) then t[k] = v end
+    end
+    return t
+end
+-- GetQuestLog*Info(i, questID) -> name, texture, count, quality, isUsable, itemID
+local function rewardItem(fn)
+    local r = plainOf(6, CALL(fn))
+    if not r then return nil, false end
+    local name = type(r[1]) == "string" and r[1] ~= "" and r[1] or nil
+    local it = { n = name, ic = type(r[2]) == "number" and r[2] or nil, c = type(r[3]) == "number" and r[3] or nil,
+                 q = type(r[4]) == "number" and r[4] or nil, id = type(r[6]) == "number" and r[6] or nil }
+    if r[5] == false then it.u = false end
+    if not (it.n or it.id) then return nil, false end
+    return it, name ~= nil
+end
+function WC.questRewards(qid)
+    local hit = rwCache[qid]
+    if hit ~= nil then return hit or nil end
+    if S(function() return C_QuestLog.ShouldShowQuestRewards(qid) end) == false then rwCache[qid] = false; return nil end
+    local whole, rw = true, {}
+    local m = RN(function() return GetQuestLogRewardMoney(qid) end)
+    if m and m > 0 then rw.m = m end
+    local xp = RN(function() return (GetQuestLogRewardXP(qid)) end)
+    if xp and xp > 0 then rw.xp = xp end
+    local hon = RN(function() return GetQuestLogRewardHonor(qid) end)
+    if hon and hon > 0 then rw.hon = hon end
+    for _, g in ipairs({ { "ch", GetNumQuestLogChoices, GetQuestLogChoiceInfo }, { "it", GetNumQuestLogRewards, GetQuestLogRewardInfo } }) do
+        local count, info = g[2], g[3]
+        local n = RN(function() return count(qid) end) or 0
+        local out = {}
+        for i = 1, math.min(n, RW_MAX) do
+            local it, named = rewardItem(function() return info(i, qid) end)
+            if it then out[#out + 1] = it end
+            if not named then whole = false end
+        end
+        if #out > 0 then rw[g[1]] = out end
+    end
+    local okS, spells = CALL(function() return C_QuestInfoSystem.GetQuestRewardSpells(qid) end)
+    if okS and type(spells) == "table" then
+        local out = {}
+        for k = 1, math.min(RN(function() return #spells end) or 0, 4) do
+            local sid = RN(function() return spells[k] end)
+            if sid and sid > 0 then
+                local okI, si = CALL(function() return C_QuestInfoSystem.GetQuestRewardSpellInfo(qid, sid) end)
+                -- the game's own rule (QuestInfo.lua 665-668): only a spell the character does not know yet
+                local known = S(function() return C_SpellBook.IsSpellInSpellBook(sid, Enum.SpellBookSpellBank.Player, true) end) == true
+                if okI and type(si) == "table" and not known then
+                    local nm = S(function() return si.name end)
+                    local ic = RN(function() return si.texture end)
+                    if type(nm) == "string" and nm ~= "" then out[#out + 1] = { n = nm, ic = ic, id = sid } else whole = false end
+                end
+            end
+        end
+        if #out > 0 then rw.sp = out end
+    end
+    if next(rw) == nil then rw = false end
+    if whole then rwCache[qid] = rw else rwWaiting = true end
+    return rw or nil
+end
+WC.questRewardsReset = function() rwCache = {}; rwStale = false end
+
+-- q63: THE REWARD ITEMS' TOOLTIPS for the room's cursor: each NEW reward item's game tooltip goes out ONCE, in its own document
+-- {"type":"qrtip", id = itemID, tip = {key, lines}}, cached by the app (the chat links' way, Chat.lua's linkTips): Interact's reader
+-- (WC.tipOf "link item:<id>", read-only; nw: no worn pieces read, and the compare is dropped). TIP_PER_TICK a second, never in a fight
+-- (what a fight holds back goes after it); WC.send only, so it rides the next flush.
+local TIP_PER_TICK, TIP_KEEP = 2, 300
+local tipSeen, tipSeenN, tipWant, tipRunning = {}, 0, {}, false
+local function tipTick()
+    tipRunning = false
+    if #tipWant == 0 or type(WC.tipOf) ~= "function" then return end
+    local okC, fight = pcall(InCombatLockdown)
+    if okC and fight then tipRunning = true; C_Timer.After(2, tipTick); return end
+    for _ = 1, TIP_PER_TICK do
+        local id = table.remove(tipWant, 1)
+        if not id then break end
+        local ok, tip = pcall(WC.tipOf, "link item:" .. id, { nw = true })
+        if ok and type(tip) == "table" and not tip.none and type(tip.lines) == "table" then
+            WC.send(WC.encode({ type = "qrtip", v = QV, id = id, tip = { key = tip.key, lines = tip.lines } }))
+        end
+    end
+    if #tipWant > 0 then tipRunning = true; C_Timer.After(1, tipTick) end
+end
+local function wantRewardTips(list)
+    for _, q in ipairs(list) do
+        local rw = q.rw
+        if type(rw) == "table" then
+            for _, g in ipairs({ rw.ch or {}, rw.it or {} }) do
+                for _, it in ipairs(g) do
+                    if type(it.id) == "number" and not tipSeen[it.id] then
+                        if tipSeenN >= TIP_KEEP then tipSeen, tipSeenN = {}, 0 end
+                        tipSeen[it.id] = true; tipSeenN = tipSeenN + 1
+                        tipWant[#tipWant + 1] = it.id
+                    end
+                end
+            end
+        end
+    end
+    if #tipWant > 0 and not tipRunning then tipRunning = true; C_Timer.After(1, tipTick) end
+end
+
 -- q38: the words of the quest-log headers that are the player's own class or professions (the class's name, the professions' names)
 function WC.ownHeaders()
     local out = {}
@@ -111,6 +237,7 @@ end
 -- Returns the document and, separately, the distances (kept out of the change test).
 function WC.collectQuests()
     tally = { secret = 0, threw = 0 }
+    rwWaiting = false
     local mapID = SN(function() return C_Map.GetBestMapForUnit("player") end)
     local here = onMapPositions(mapID)
     local focus = superTracked()
@@ -146,6 +273,7 @@ function WC.collectQuests()
                             push = (TB(function() return C_QuestLog.IsPushableQuest(qid) end) == true) or nil,
                             wp = TS(function() return C_QuestLog.GetNextWaypointText(qid) end),
                             obj = objectives(qid),
+                            rw = WC.questRewards(qid),              -- q63
                         }
                         local p = here[qid]
                         if p then q.x, q.y = p[1], p[2] end
@@ -182,6 +310,25 @@ function WC.collectQuests()
         end
     end
 
+    -- q63: the same guard for the rewards: a build that ignored the questID would answer the SELECTED quest's rewards for every
+    -- quest; every quest with the same rewards = not believed (dropped, never shown on the wrong quest): three or more alike with
+    -- items in them (no two quests hand out the same items), or five or more alike with money / XP alone (a chain can pay alike)
+    local rwMode = "id"
+    do
+        local first, same, n, items = nil, true, 0, false
+        for _, q in ipairs(list) do
+            if q.rw then
+                n = n + 1
+                local k = WC.encode(q.rw)
+                if first == nil then first = k; items = (q.rw.ch or q.rw.it) ~= nil elseif k ~= first then same = false end
+            end
+        end
+        if n == #list and same and ((n >= 3 and items) or n >= 5) then
+            rwMode = "ignored"
+            for _, q in ipairs(list) do q.rw = nil end
+        end
+    end
+
     -- free the pad columns of quests that left the log (quarantined, never reused at once)
     if WC.pad then
         local present = {}
@@ -208,6 +355,7 @@ function WC.collectQuests()
         -- in a party or raid: the other half of the game's rule for Share Quest (IsPushableQuest AND IsInGroup)
         party = TB(function() return IsInGroup() end),
         descMode = descMode,
+        rwMode = rwMode,
         maxQ = SN(function() return C_QuestLog.GetMaxNumQuestsCanAccept() end),
         sec = { secret = tally.secret, threw = tally.threw },
     }
@@ -579,6 +727,7 @@ local function emitQuests(force)
     pcall(attachQdb, doc)               -- q19: QuestieDB's spots, outside the change test (they follow the player)
     WC.send(WC.encode({ type = "quests", q = doc }))
     if areasSend then pcall(areasSend, doc) end      -- q33: sent only when the map or the unfinished objectives changed
+    pcall(wantRewardTips, doc.list)                  -- q63: the new reward items' tooltips, a few a second
     return true
 end
 
@@ -597,7 +746,20 @@ end
 WC.questsSoon = soon
 
 local f = CreateFrame("Frame")
-f:SetScript("OnEvent", function() soon() end)
+f:SetScript("OnEvent", function(_, e)
+    -- q63: the rewards are read again after a log change or a new level; an item the client had not loaded yet asks once more
+    -- in a fight the rewards read before it stand (a kill's QUEST_LOG_UPDATE reads nothing again); they are read after it
+    if e == "QUEST_LOG_UPDATE" or e == "PLAYER_LEVEL_UP" then
+        local okC, fight = pcall(InCombatLockdown)
+        if okC and fight then rwStale = true else rwCache = {} end
+    end
+    if e == "PLAYER_REGEN_ENABLED" and rwStale then rwStale = false; rwCache = {} end
+    if e == "GET_ITEM_INFO_RECEIVED" then
+        if not rwWaiting then return end
+        rwWaiting = false
+    end
+    soon()
+end)
 local WANT = {
     "PLAYER_ENTERING_WORLD", "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_REMOVED",
     "QUEST_TURNED_IN", "QUEST_WATCH_LIST_CHANGED", "SUPER_TRACKING_CHANGED",
@@ -606,6 +768,8 @@ local WANT = {
     "GROUP_ROSTER_UPDATE",
     -- combat state gates the app's buttons (no injected commands in combat)
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
+    -- q63: a reward item's name the client had not loaded yet
+    "GET_ITEM_INFO_RECEIVED",
 }
 local missing = {}
 for _, e in ipairs(WANT) do
