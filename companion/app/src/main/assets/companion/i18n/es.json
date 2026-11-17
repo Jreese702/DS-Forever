@@ -2252,6 +2252,8 @@
 "Download failed: %s": "Descarga fallida: %s",
 "Download (%s)": "Descargar (%s)",
 "Voice: English · %s": "Voz: inglés · %s",
-"Voice: other languages · %s": "Voz: otros idiomas · %s"
+"Voice: other languages · %s": "Voz: otros idiomas · %s",
+"English · %s": "Inglés · %s",
+"Other languages · %s": "Otros idiomas · %s"
 }
 }

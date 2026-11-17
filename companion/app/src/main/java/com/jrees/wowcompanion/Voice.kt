@@ -116,7 +116,7 @@ object Voice {
         MIC_OFF("Microphone off"),
         /** no recognizer this app trusts (no on-device one, no Google / system speech service): X says so and opens nothing else */
         NO_SERVICE("Voice typing needs Android speech services"),
-        /** nothing can listen but offline voice, whose model is not downloaded yet: A = Download (its size), on the player's press */
+        /** nothing can listen but offline voice, whose model is not downloaded yet: the four models to pick, A = the highlighted one's download */
         NEED_MODEL("Download voice"),
     }
 
@@ -395,8 +395,8 @@ object Voice {
         object UseOnline : Act() { override fun toString() = "UseOnline" }
         /** the on-device language pack's download (Android's own) */
         object GetPack : Act() { override fun toString() = "GetPack" }
-        /** offline voice's model download (VoiceModels, the player's press): the model the app's language wants ([wantedModel]) */
-        object GetModel : Act() { override fun toString() = "GetModel" }
+        /** offline voice's model download (VoiceModels, the player's press): the [model] highlighted on the sheet's list */
+        data class GetModel(val model: VoiceModels.Model) : Act()
         /** not the sheet's button (LB / RB: the room's, the chat type) */
         object Pass : Act() { override fun toString() = "Pass" }
         object Glow : Act() { override fun toString() = "Glow" }
@@ -434,8 +434,15 @@ object Voice {
         private var workAt = 0L
         /** offline voice listens (the sheet opened on [Avail.WHISPER]): A and the quiet go to [State.WORKING]; no partial words */
         var offline = false; private set
-        /** offline voice's model is downloading now (the host says so: A waits, the line shows its percentage) */
-        var downloading = false
+        /**
+         * NEED_MODEL'S LIST (the user, 2026-11-16: "The voice menu should have all of the options not just the 60 mb"): every model, in
+         * Add-ons' order ([VoiceModels.Model]); [model] = the highlighted one (the host starts it on [wantedModel]); D-pad up / down moves
+         */
+        var model: VoiceModels.Model = VoiceModels.Model.EN_SMALL
+        /** the models downloading or being checked now (the host says so: A on one of them waits, its row shows its percentage) */
+        var busy: Set<VoiceModels.Model> = emptySet()
+        /** the highlighted model is downloading now */
+        val downloading: Boolean get() = model in busy
         /** what the box was given last ([Act.Push]) */
         var pushed = before; private set
         /** the sheet is over (B, the finish button, Edit): the recognizer's late words change nothing */
@@ -508,8 +515,9 @@ object Voice {
                 else -> listOf(Act.Glow)
             }
             State.PROBLEM -> if (problem == Problem.NEED_MODEL) when (key) {
-                // A = the model's download (its size on the button), once; Y = the keyboard, B = back to the box
-                "PAD1" -> if (downloading) listOf(Act.Glow) else listOf(Act.GetModel)
+                // up / down = the list's cursor, A = the highlighted model's download (once); Y = the keyboard, B = back to the box
+                "PADDUP", "PADDDOWN" -> { moveModel(if (key == "PADDUP") -1 else 1); listOf(Act.Glow) }
+                "PAD1" -> if (downloading) listOf(Act.Glow) else listOf(Act.GetModel(model))
                 "PAD4" -> listOf(Act.Edit(before))
                 "PAD2" -> cancel()
                 "PADLSHOULDER", "PADRSHOULDER" -> listOf(Act.Pass)
@@ -534,6 +542,12 @@ object Voice {
             }
         }
 
+        /** NEED_MODEL's cursor [by] rows, held at the list's ends */
+        private fun moveModel(by: Int) {
+            val all = VoiceModels.Model.values()
+            model = all[(all.indexOf(model) + by).coerceIn(0, all.size - 1)]
+        }
+
         /** B: the recognizer goes, the box gets its earlier text back, the sheet closes */
         fun cancel(): List<Act> {
             if (closed) return emptyList()
@@ -554,7 +568,7 @@ object Voice {
         /** offline voice's model came (its download finished): a sheet still offering it listens now ([open] with the new [avail]) */
         fun modelReady(perm: Perm, avail: Avail): List<Act> {
             if (closed || state != State.PROBLEM || problem != Problem.NEED_MODEL) return emptyList()
-            downloading = false
+            busy = emptySet()
             problem = null
             return open(perm, avail)
         }

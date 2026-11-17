@@ -2231,6 +2231,8 @@
 "Download failed: %s": "Échec du téléchargement : %s",
 "Download (%s)": "Télécharger (%s)",
 "Voice: English · %s": "Voix : anglais · %s",
-"Voice: other languages · %s": "Voix : autres langues · %s"
+"Voice: other languages · %s": "Voix : autres langues · %s",
+"English · %s": "Anglais · %s",
+"Other languages · %s": "Autres langues · %s"
 }
 }

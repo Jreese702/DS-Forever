@@ -260,9 +260,10 @@ class VoiceWhisperTest {
         assertEquals(State.PROBLEM, s.state)
         assertEquals(Problem.NEED_MODEL, s.problem)
         assertEquals("Download voice", s.problem?.title)
-        assertEquals(listOf<Act>(Act.GetModel), s.press("PAD1", fight = false))
+        assertEquals(listOf<Act>(Act.GetModel(Model.EN_SMALL)), s.press("PAD1", fight = false))
         // downloading: A waits (one download), X has no Say again here
-        s.downloading = true
+        s.busy = setOf(Model.EN_SMALL)
+        assertTrue(s.downloading)
         assertEquals(listOf<Act>(Act.Glow), s.press("PAD1", fight = false))
         assertEquals(listOf<Act>(Act.Glow), s.press("PAD3", fight = false))
         // the model came: listening at once
@@ -278,6 +279,48 @@ class VoiceWhisperTest {
         val l = sheet()
         l.open(Perm.GRANTED, Avail.DEVICE)
         assertEquals(emptyList<Act>(), l.modelReady(Perm.GRANTED, Avail.WHISPER))
+    }
+
+    /** the user, 2026-11-16: "The voice menu should have all of the options not just the 60 mb" - the sheet lists the four, as Add-ons */
+    @Test fun needModelListsAllFourInAddonsOrder() {
+        assertEquals(listOf("English · 60 MB", "English · 148 MB", "Other languages · 60 MB", "Other languages · 148 MB"),
+            Model.values().map { it.choice })
+        assertEquals(listOf(Model.EN_SMALL, Model.EN, Model.MULTI_SMALL, Model.MULTI), Model.values().toList())
+        val s = sheet()
+        s.model = Voice.wantedModel("en")
+        s.open(Perm.GRANTED, Avail.NEED_MODEL)
+        // up at the top stays; down walks the list and stops at its end
+        assertEquals(listOf<Act>(Act.Glow), s.press("PADDUP", fight = false))
+        assertEquals(Model.EN_SMALL, s.model)
+        s.press("PADDDOWN", fight = false)
+        assertEquals(Model.EN, s.model)
+        assertEquals(listOf<Act>(Act.GetModel(Model.EN)), s.press("PAD1", fight = false))
+        repeat(5) { s.press("PADDDOWN", fight = false) }
+        assertEquals(Model.MULTI, s.model)
+        s.press("PADDUP", fight = false)
+        assertEquals(listOf<Act>(Act.GetModel(Model.MULTI_SMALL)), s.press("PAD1", fight = false))
+        // one downloading: A on it waits, the others can still be picked
+        s.busy = setOf(Model.MULTI_SMALL)
+        assertEquals(listOf<Act>(Act.Glow), s.press("PAD1", fight = false))
+        s.press("PADDUP", fight = false)
+        assertFalse(s.downloading)
+        assertEquals(listOf<Act>(Act.GetModel(Model.EN)), s.press("PAD1", fight = false))
+        // B goes back to the box
+        assertEquals(listOf<Act>(Act.Close), s.press("PAD2", fight = false))
+    }
+
+    @Test fun needModelListStartsWhereTheOldRuleDid() {
+        val es = sheet(); es.model = Voice.wantedModel("es"); es.open(Perm.GRANTED, Avail.NEED_MODEL)
+        assertEquals(listOf<Act>(Act.GetModel(Model.MULTI_SMALL)), es.press("PAD1", fight = false))
+        val fr = sheet(); fr.model = Voice.wantedModel("fr"); fr.open(Perm.GRANTED, Avail.NEED_MODEL)
+        assertEquals(listOf<Act>(Act.GetModel(Model.MULTI_SMALL)), fr.press("PAD1", fight = false))
+    }
+
+    @Test fun needModelRowsAreTranslated() {
+        for ((lang, want) in listOf("es" to listOf("Inglés · 60 MB", "Otros idiomas · 148 MB"), "fr" to listOf("Anglais · 60 MB", "Autres langues · 148 MB"))) {
+            Tr.load(lang, File(repo(), "companion/app/src/main/assets/companion/i18n/$lang.json").readText())
+            assertEquals(want, listOf(Model.EN_SMALL, Model.MULTI).map { Tr.t(it.choice, lang) })
+        }
     }
 
     @Test fun needModelYIsTheKeyboard() {
