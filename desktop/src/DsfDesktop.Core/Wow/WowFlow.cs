@@ -56,6 +56,16 @@ namespace DsfDesktop.Wow
         /// <summary>when <see cref="RegionRefused"/> last turned on (<see cref="Now"/>'s clock), null = never in this Desktop run</summary>
         public DateTime? RegionRefusedAt { get; private set; }
 
+        /// <summary>
+        /// Refusals of a region the player picked on WoW's own region screen (a 309 while <see cref="RegionScreen"/> was the last
+        /// screen), counted for this Desktop run and never reset: each one lets the supervisor start the self-closed client again
+        /// without using up its one retry (WowSupervisor), so the player can always pick another region
+        /// </summary>
+        public int RegionRefusals { get; private set; }
+
+        /// <summary>the client's log is at the login or region screen (its sign-in is not over, whatever its connections say)</summary>
+        public bool AtSignInScreens => LastScreen == LoginScreen || LastScreen == RegionScreen;
+
         /// <summary>the clock for <see cref="RegionRefusedAt"/> (UTC; a test sets its own)</summary>
         public Func<DateTime> Now = () => DateTime.UtcNow;
 
@@ -93,7 +103,11 @@ namespace DsfDesktop.Wow
             if (line.IndexOf("[Connection]", StringComparison.Ordinal) < 0) return;
             if (line.IndexOf("Glue login started", StringComparison.Ordinal) >= 0) { SignInStarted = true; Error = null; return; }
             var f = Fatal.Match(line);
-            if (f.Success) { Error = Short(f.Groups[1].Value); SignInStarted = false; RegionRefused = Error == RegionRefusedCode; if (RegionRefused) RegionRefusedAt = Now(); }
+            if (f.Success)
+            {
+                Error = Short(f.Groups[1].Value); SignInStarted = false; RegionRefused = Error == RegionRefusedCode;
+                if (RegionRefused) { RegionRefusedAt = Now(); if (LastScreen == RegionScreen) RegionRefusals++; }
+            }
         }
 
         /// <summary>" (308)" -> "308"; "Status has no name. (14400)" -> "Status has no name (14400)"</summary>
@@ -156,8 +170,11 @@ namespace DsfDesktop.Wow
         public static bool LoginAgainWanted(bool fileOnDisk, bool runOver, bool thorHere) => !fileOnDisk && runOver && thorHere;
 
         /// <summary>a login.txt run that reached character select or the world signed in: its client closing later is the player
-        /// quitting (or a crash), not a refused sign-in, so it asks the Thor for nothing (<see cref="LoginAgainWanted"/>)</summary>
-        public static bool LoginRunSettled(WowScreen s) => s == WowScreen.CharSelect || s == WowScreen.World;
+        /// quitting (or a crash), not a refused sign-in, so it asks the Thor for nothing (<see cref="LoginAgainWanted"/>).
+        /// [logAtSignIn] = the client's own log is at the login or region screen (<see cref="LoginLog.AtSignInScreens"/>): a
+        /// connection held at the region screen must not read as signed in, or a 309 there would ask the Thor for nothing</summary>
+        public static bool LoginRunSettled(WowScreen s, bool logAtSignIn = false) =>
+            (s == WowScreen.CharSelect || s == WowScreen.World) && !logAtSignIn;
 
         /// <summary>how long a start waits for the Thor's answer to "login_again" (its login_file), so the new client finds login.txt
         /// at its login screen; the start goes ahead without it after that</summary>
@@ -220,19 +237,26 @@ namespace DsfDesktop.Wow
         /// No WoW = start it; WoW at its login screen = bring it to the front, the player signs in there (the user's pick 2026-10-31,
         /// as in Local; a restart would only clear what they typed); signed in = bring it to the front. [tries] = clients started
         /// during this connect (a client found at the login screen counts as the first); from 2, a client that closed itself needs
-        /// the player. Battle.net plays no part: WoW starts without it. [busy] = a start is under way.
+        /// the player. Battle.net plays no part: WoW starts without it. [busy] = a start is under way. [regionRetry] = the client
+        /// closed itself after a region the player picked was refused (309) and the region starts are not used up
+        /// (<see cref="RegionRetryMax"/>): it starts again whatever [tries] says, so the player picks another region on WoW's screen
+        /// (the user's pick 2026-11-17: the region "should be changable")
         /// </summary>
-        public static WowAction Decide(BnetState bnet, WowScreen screen, int tries, bool busy)
+        public static WowAction Decide(BnetState bnet, WowScreen screen, int tries, bool busy, bool regionRetry = false)
         {
             if (busy) return WowAction.Wait;
             switch (screen)
             {
-                case WowScreen.None: return tries < 2 ? WowAction.StartWow : WowAction.NeedsYou;
+                case WowScreen.None: return tries < 2 || regionRetry ? WowAction.StartWow : WowAction.NeedsYou;
                 case WowScreen.Starting:
                 case WowScreen.SigningIn: return WowAction.Wait;
                 default: return WowAction.Focus;   // the login screen, character select, the world
             }
         }
+
+        /// <summary>starts after refused regions per connect: each needs a new refusal of a region picked on WoW's screen; the cap
+        /// only stops a loop should WoW ever refuse without the player's pick</summary>
+        public const int RegionRetryMax = 5;
 
         public static string Word(WowScreen s)
         {

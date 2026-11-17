@@ -868,7 +868,9 @@ namespace DsfDesktop.App
                     using (var w = WowWindow.FindAny(dir)) if (w != null) pidNow = w.Id;
                 // the run signed in (character select or the world): its client closing later is the player quitting, never a reason
                 // to ask the Thor for the login again
-                if (loginRunPid.HasValue && pidNow == loginRunPid && WowFlow.LoginRunSettled(LastScreen))
+                bool logAtSignIn;
+                lock (loginLog) logAtSignIn = loginLog.AtSignInScreens;
+                if (loginRunPid.HasValue && pidNow == loginRunPid && WowFlow.LoginRunSettled(LastScreen, logAtSignIn))
                 {
                     loginRunPid = null; loginRunSettled = true;
                     Log.I("login file: its run signed in");
@@ -1224,7 +1226,8 @@ namespace DsfDesktop.App
                 startPending: () => Starter.State == WowState.Starting,
                 closeWow: CloseForRestart,
                 focusWow: () => { CheckCapture(); return FocusWow(); },
-                crash: CrashNow);
+                crash: CrashNow,
+                regionRefusals: () => { lock (loginLog) return loginLog.RegionRefusals; });
             Supervisor.Changed += (a, detail) =>
             {
                 if (a == WowAction.NeedsYou) needsYouAt = DateTime.UtcNow;
@@ -1273,7 +1276,14 @@ namespace DsfDesktop.App
             if (Supervisor.Crash != null && LastScreen != WowScreen.None)
                 using (var p = WowWindow.FindAny(FlavorDirOrNull))
                     if (p != null && p.Id != crashedPid && !WowProbe.FatalErrorShown(p.Id)) Supervisor.CrashOver();
-            if (Supervisor.Active) Supervisor.Step();
+            // WoW closed itself after a refused region pick (309), maybe after the supervisor had already put it in front and stopped:
+            // a Thor still wants it, so it starts again at WoW's own region screen (the user's pick 2026-11-17: "it should be changable")
+            bool regionRefused;
+            lock (loginLog) regionRefused = loginLog.RegionRefused;
+            if (!Supervisor.Active && LastScreen == WowScreen.None && regionRefused && Settings.StartWowOnStream
+                && Bridge != null && Bridge.Sessions().Count > 0 && Supervisor.RegionRetryPending)
+                Want("its client closed after a refused region");
+            else if (Supervisor.Active) Supervisor.Step();
             FocusRetry();
             PublishWow(force: false);
         }

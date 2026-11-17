@@ -76,6 +76,8 @@ namespace DsfDesktop.Tests
             A.Eq(WowAction.Focus, WowFlow.Decide(ok, WowScreen.Login, 1, false), "at the login screen: the player signs in, never a restart");
             A.Eq(WowAction.Focus, WowFlow.Decide(ok, WowScreen.Login, 2, false));
             A.Eq(WowAction.NeedsYou, WowFlow.Decide(ok, WowScreen.None, 2, false), "the fresh one closed itself: stop");
+            A.Eq(WowAction.StartWow, WowFlow.Decide(ok, WowScreen.None, 2, false, regionRetry: true), "it closed after a refused region: the player picks again");
+            A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.None, 2, true, regionRetry: true), "a start under way still waits");
             A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.Starting, 1, false));
             A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.SigningIn, 1, false), "Blizzard's queue: never restart it");
             A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.Login, 0, true), "a start is under way");
@@ -92,6 +94,8 @@ namespace DsfDesktop.Tests
             /// <summary>where a freshly started client goes</summary>
             public WowScreen FreshGoesTo = WowScreen.Starting;
             public string Crash;
+            /// <summary>LoginLog.RegionRefusals</summary>
+            public int Refusals;
 
             public WowSupervisor Make() => new WowSupervisor(
                 screen: () => Screen, bnet: () => Bnet,
@@ -101,7 +105,54 @@ namespace DsfDesktop.Tests
                 startPending: () => Pending,
                 closeWow: () => { Did.Add("close"); Screen = WowScreen.None; return null; },
                 focusWow: () => { Did.Add("focus"); return null; },
-                run: a => a(), crash: () => Crash);
+                run: a => a(), crash: () => Crash, regionRefusals: () => Refusals);
+        }
+
+        /// <summary>
+        /// the user's pick 2026-11-17 (region "should be changable"): WoW closes itself after every refused region (309), and every such
+        /// close starts it again at its region screen without using up the one retry, so a second or third refusal never ends in
+        /// "Sign-in needs you"; a client that closes with no refusal still does, and the region starts are capped
+        /// </summary>
+        [Test]
+        public static void ARefusedRegionNeverUsesUpTheRetry()
+        {
+            var pc = new Pc { Screen = WowScreen.None, FreshGoesTo = WowScreen.SigningIn };    // the region screen reads as signing in
+            var s = pc.Make();
+            s.Connect();
+            A.Eq("start", string.Join(",", pc.Did)); A.Eq(1, s.Tries);
+            A.False(s.RegionRetryPending);
+            pc.Refusals = 1; pc.Screen = WowScreen.None; s.Step();
+            A.Eq("start,start", string.Join(",", pc.Did), "refused, closed itself: started again");
+            A.Eq(1, s.Tries, "the one retry is still there"); A.Eq(1, s.RegionTries);
+            pc.Refusals = 2; pc.Screen = WowScreen.None; s.Step();
+            A.Eq("start,start,start", string.Join(",", pc.Did), "a second refusal: started again too");
+            A.False(s.NeedsYou); A.Eq(1, s.Tries);
+            // the third refusal comes after the supervisor put WoW in front and stopped (309 = the login screen): AppController
+            // wants WoW again for it, and the new connect keeps the count
+            pc.Screen = WowScreen.Login; s.Step(); A.False(s.Active);
+            pc.Refusals = 3; pc.Screen = WowScreen.None;
+            A.True(s.RegionRetryPending, "a refusal not answered yet");
+            s.Connect();
+            A.Eq(4, pc.Did.FindAll(d => d == "start").Count); A.Eq(3, s.RegionTries, "kept across the connect it brought");
+            A.False(s.RegionRetryPending, "answered");
+            // no refusal: the client closing is the old rule (a connect at no client has two starts, then the player)
+            pc.Screen = WowScreen.None; s.Step();
+            A.Eq(5, pc.Did.FindAll(d => d == "start").Count); A.Eq(1, s.Tries);
+            pc.Screen = WowScreen.None; s.Step();
+            A.Eq(6, pc.Did.FindAll(d => d == "start").Count); A.Eq(2, s.Tries);
+            pc.Screen = WowScreen.None; s.Step();
+            A.True(s.NeedsYou, "closed with no refusal, the retry spent: the player");
+            // the cap: refusals WoW might make on its own never loop the game
+            var pc2 = new Pc { Screen = WowScreen.None, FreshGoesTo = WowScreen.SigningIn };
+            var s2 = pc2.Make();
+            s2.Connect();
+            for (int i = 1; i <= WowFlow.RegionRetryMax + 2; i++) { pc2.Refusals = i; pc2.Screen = WowScreen.None; s2.Step(); }
+            A.Eq(WowFlow.RegionRetryMax, s2.RegionTries);
+            A.True(s2.NeedsYou, "past the cap the old rule stands");
+            A.False(s2.RegionRetryPending, "the player is asked: nothing waits");
+            // a connect with no refusal waiting starts the count over
+            pc2.Screen = WowScreen.Login; s2.Connect();
+            A.Eq(0, s2.RegionTries);
         }
 
         [Test]
@@ -486,6 +537,15 @@ namespace DsfDesktop.Tests
             l.Reset();
             A.False(l.RegionRefused, "a client started much later is a new try");
             A.Eq("Region refused: pick another region", WowFlow.RegionRefusedText);
+            // a refusal counts as the player's region pick only on WoW's region screen (the supervisor starts WoW again for it)
+            var c = new LoginLog();
+            c.Line(LoginScreen); A.True(c.AtSignInScreens);
+            c.Line(Fatal309); A.Eq(0, c.RegionRefusals, "a 309 at the login screen is no pick");
+            c.Line(Pick); A.True(c.AtSignInScreens, "the region screen is still the sign-in");
+            c.Line(Fatal309); A.Eq(1, c.RegionRefusals);
+            c.Line(Fatal308); A.Eq(1, c.RegionRefusals, "another error is no region refusal");
+            c.Reset(); A.Eq(1, c.RegionRefusals, "a new client run keeps the count");
+            c.Line(CharSelect); A.False(c.AtSignInScreens);
         }
 
         /// <summary>
@@ -513,6 +573,8 @@ namespace DsfDesktop.Tests
             A.False(WowFlow.LoginRunSettled(WowScreen.Login), "the region screen reads as the login: not settled");
             A.False(WowFlow.LoginRunSettled(WowScreen.SigningIn));
             A.False(WowFlow.LoginRunSettled(WowScreen.None));
+            A.False(WowFlow.LoginRunSettled(WowScreen.CharSelect, logAtSignIn: true), "a connection held at the region screen is no character select");
+            A.False(WowFlow.LoginRunSettled(WowScreen.World, logAtSignIn: true));
             A.True(WowFlow.LoginAgainWaitS > 0 && WowFlow.LoginAgainWaitS <= 5, "a start waits a moment, never long");
         }
 
