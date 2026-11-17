@@ -58,6 +58,8 @@ namespace DsfDesktop.Ui
         void ThorWatching(bool on);
         void OpenServices();
         bool AskForFolderOnce();
+        /// <summary>the PC's half of Test connection: its lines for the window</summary>
+        System.Collections.Generic.List<string> RunTest();
     }
 
     static class ViewBuilder
@@ -171,6 +173,7 @@ namespace DsfDesktop.Ui
         public void SetStartWow(bool on) { c.Settings.StartWowOnStream = on; c.SaveSettings(); }
         public void SetMatchStream(bool on) => c.SetMatchStream(on);
         public void SetOwnScreen(bool on) => c.SetOwnScreen(on);
+        public System.Collections.Generic.List<string> RunTest() => c.RunPcTest("the window").Lines();
         public Task<string> ThorInstall() => c.Thor.InstallLatest();
         public Task<string> ThorInstallFile(string apk) => c.Thor.InstallLocal(apk);
         public void ThorWatching(bool on) => c.ThorWatching = on;

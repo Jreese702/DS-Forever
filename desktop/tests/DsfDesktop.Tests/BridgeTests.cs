@@ -11,6 +11,7 @@ using System.Threading;
 using DsfDesktop.Bridge;
 using DsfDesktop.GameLog;
 using DsfDesktop.Pairing;
+using DsfDesktop.Sunshine;
 using DsfDesktop.Wow;
 
 namespace DsfDesktop.Tests
@@ -27,6 +28,14 @@ namespace DsfDesktop.Tests
         public volatile int[] Mode;       // the Thor's stream_mode
         public void StreamMode(int w, int h, int fps) { Mode = new[] { w, h, fps }; }
         public int HostChecks;
+        public int PcTests;
+        public Dictionary<string, object> PcTest()
+        {
+            PcTests++;
+            var r = new PcTestResult { At = DateTime.Now, Screen = "own", ScreenLine = "Own virtual screen 1920x1080@120", ScreenHz = 120, Pad = "vigem" };
+            r.Steps.Add(new TestStep { Id = "ports", Name = "Ports", State = TestState.Pass, Line = "All 6 ready (base 52989)" });
+            return r.ToMessage();
+        }
         public Dictionary<string, object> HostCheck()
         {
             HostChecks++;
@@ -558,6 +567,23 @@ namespace DsfDesktop.Tests
                 A.Eq(1, h.HostChecks);
                 A.Eq("restarting", r.Str("state"));
                 A.True(Json.Write(r).Contains("53989"), Json.Write(r));
+            }
+        }
+
+        [Test]
+        public static void TheThorsPcTestIsAnswered()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8c", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "pc_test" });
+                var r = c.Until("pc_test_result").Last();
+                A.Eq(1, h.PcTests);
+                A.Eq("own", r.Str("screen"));
+                A.True(Json.Write(r).Contains("All 6 ready"), Json.Write(r));
             }
         }
 

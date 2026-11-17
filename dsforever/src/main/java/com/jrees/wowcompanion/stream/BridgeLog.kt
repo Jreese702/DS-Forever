@@ -43,6 +43,8 @@ class BridgeLog(
     private val streamMode: () -> Triple<Int, Int, Int>? = { null },
     /** Desktop 0.2.32: its Sunshine's ports again (it moved) or its answer to [askHostCheck] */
     private val onSunshine: (BridgeMsg.Sunshine) -> Unit = {},
+    /** Desktop 0.2.32: its answer to [askPcTest] (Test connection) */
+    private val onPcTest: (BridgeMsg.PcTest) -> Unit = {},
     /** the waits between tries (the tests pass a fake that also ends the loop) */
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
     /** the Thor's clock on the documents' `_gt` scale ([PcClock]; the tests pass a fixed one) */
@@ -84,6 +86,9 @@ class BridgeLog(
 
     /** "check your streaming host" (RTSP timed out twice: [HostHeal]); false = no connection right now */
     fun askHostCheck(): Boolean = try { conn?.send(BridgeProtocol.hostCheck()); conn != null } catch (_: Throwable) { false }
+
+    /** Test connection's PC half ([ConnTest]); false = no connection right now */
+    fun askPcTest(): Boolean = try { conn?.send(BridgeProtocol.pcTest()); conn != null } catch (_: Throwable) { false }
 
     /** how a session ended */
     enum class End { DROPPED, AUTH_LOST, STOPPED }
@@ -135,6 +140,7 @@ class BridgeLog(
                 }
                 is BridgeMsg.Doc -> emit(m)
                 is BridgeMsg.Sunshine -> onSunshine(m)
+                is BridgeMsg.PcTest -> onPcTest(m)
                 is BridgeMsg.BacklogEnd -> clock.backlogEnd()
                 is BridgeMsg.Lines -> for (l in m.lines) docs.line(l)
                 is BridgeMsg.Gap -> { bridgeGaps++; onStatus("gap at seq ${m.seq} (expected ${m.expected})") }

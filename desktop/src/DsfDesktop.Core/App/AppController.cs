@@ -489,6 +489,106 @@ namespace DsfDesktop.App
             return HostResult(state);
         }
 
+        // ---------------------------------------------------------------- Test (PcTest; the user's pick 2026-11-17: "Yes, build it")
+
+        readonly object testGate = new object();
+        /// <summary>the last run (the window's Test or the Thor's Test connection); null = none since Desktop started</summary>
+        public PcTestResult LastTest { get; private set; }
+
+        /// <summary>the Thor's "pc_test": the same checks as the window's Test</summary>
+        public Dictionary<string, object> PcTest() => RunPcTest("the Thor").ToMessage();
+
+        /// <summary>
+        /// The PC's half of Test connection: our sunshine's ports bound, the RTSP connect, a video encoder in its log, the screen a stream
+        /// gets (ours made and removed when none is on and no stream is live) and ViGEmBus. Never touches another program. Written to
+        /// desktop.log and last_test.txt (no names, IPs cut) for a problem report.
+        /// </summary>
+        public PcTestResult RunPcTest(string who)
+        {
+            lock (testGate)
+            {
+                Log.I("test: run for " + who);
+                var sh = Sunshine;
+                bool running = sh != null && sh.Available && sh.Running && SunshinePort > 0;
+                bool streaming = Stream == StreamState.Streaming;
+                int rtspPort = SunshinePort + HostHealth.RtspOffset;
+                var r = new PcTestResult { At = DateTime.Now, Pad = PadDriver.Now() };
+                r.Steps = PcChecks.Run(new (string, string, Func<TestStep>)[]
+                {
+                    ("ports", "Ports", () =>
+                    {
+                        HealthReport h = null;
+                        if (running)
+                        {
+                            var x = HostHealth.ExcludedNow(10);
+                            h = HostHealth.Check(SunshinePort, sh.Pid, SunshineLayout.ExeDir, PortGuard.TcpListeners(), PortGuard.UdpBound(), null,
+                                x.tcp, x.udp, HostHealth.ReadLog(SunshineLayout.LogFile), sh.StartedUtc.ToLocalTime(), PortGuard.Who);
+                        }
+                        return PcChecks.Ports(h, SunshinePort, running);
+                    }),
+                    ("rtsp", "RTSP", () => PcChecks.Rtsp(!streaming && HostHealth.Connects(rtspPort), rtspPort, streaming)),
+                    ("encoder", "Encoder", () => PcChecks.Encoder(HostHealth.ReadLog(SunshineLayout.LogFile, 1024 * 1024), sh.StartedUtc.ToLocalTime(),
+                        DateTime.UtcNow - sh.StartedUtc > TimeSpan.FromSeconds(60))),
+                    ("screen", "Screen", () =>
+                    {
+                        var f = ScreenFactsNow(streaming);
+                        var (st, word) = PcChecks.Screen(f);
+                        r.Screen = word; r.ScreenLine = st.Line; r.ScreenHz = f.Hz;
+                        return st;
+                    }),
+                    ("controller", "Controller", () => PcChecks.Pad(r.Pad)),
+                });
+                LastTest = r;
+                var lines = r.ReportLines();
+                foreach (var l in lines) Log.I(l);
+                try { File.WriteAllLines(Path.Combine(Paths.DataDir, "last_test.txt"), lines); } catch (Exception) { }
+                return r;
+            }
+        }
+
+        /// <summary>the screen a stream gets now; ours is made at the Thor's mode and removed again when none is there and nothing streams</summary>
+        PcChecks.ScreenFacts ScreenFactsNow(bool streaming)
+        {
+            var life = Screens;
+            var win = Displays.WindowsDisplays();
+            var f = new PcChecks.ScreenFacts { OwnOn = Settings.OwnScreen, Real = Displays.HasRealScreen(win), Driver = life.Survey().usable };
+            if (life.Exists)
+            {
+                f.Ours = true;
+                f.OursMode = life.Mode;
+                f.Hz = Math.Max(PcChecks.MaxHz(life.GdiName), life.Mode.hz);
+                return f;
+            }
+            if (f.OwnOn && f.Driver)
+            {
+                if (streaming) f.NotTried = "a stream is live";
+                else if (screenBusy) f.NotTried = "it is being made";
+                else
+                {
+                    screenBusy = true;
+                    try
+                    {
+                        var why = life.Make(thorW, thorH, thorFps, DateTime.UtcNow);
+                        if (why == null)
+                        {
+                            f.Hz = Math.Max(PcChecks.MaxHz(life.GdiName), life.Mode.hz);
+                            var drv = life.Current?.Name;
+                            life.Remove("test");
+                            f.Made = "";
+                            Log.I("test: our virtual screen made and removed (" + drv + ")");
+                        }
+                        else f.Made = why;
+                    }
+                    catch (Exception e) { f.Made = e.Message; }
+                    finally { screenBusy = false; }
+                    if (f.Made == "") return f;
+                }
+            }
+            var real = win.FirstOrDefault(d => d.Active && d.Primary && !d.Virtual) ?? win.FirstOrDefault(d => d.Active && !d.Virtual);
+            if (real != null) f.Hz = PcChecks.MaxHz(real.Name);
+            return f;
+        }
+
         // no prep command: the portable Sunshine can't start ours (error 5, tracking 252f5ec7); the Thor's bridge "focus" covers it
         void WriteSunshineConfig() => SunshineConfig.Write(SunshineLayout, new SunshineOptions
         {

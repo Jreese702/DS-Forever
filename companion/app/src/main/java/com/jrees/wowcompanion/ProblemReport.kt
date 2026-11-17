@@ -49,7 +49,9 @@ object ProblemReport {
               /** the start-up diagnostics ([StartupDiag]: already sanitized and capped), "" = none */
               startup: String = "",
               /** the memory watch's history (MemWatch: mem.log), "" = none */
-              memory: String = ""): Report {
+              memory: String = "",
+              /** the last Test connection (Streaming: [ConnTestNote]; no names, IPs already cut), "" = never run */
+              connTest: String = ""): Report {
         val pattern = Redact.namePattern(names)                       // compiled once for the whole report
         val r = { s: String -> Redact.text(s, pattern) }
         val head = buildString {
@@ -65,6 +67,7 @@ object ProblemReport {
             appendLine("Recorded in detail: ${if (recorded) "yes (Record 5 minutes)" else "no"}")
             if (startup.isNotBlank()) appendLine("Diagnostics: diagnostics.txt (device, game folder, art, start-up stages, our log)")
             if (facts.settings.isNotEmpty()) { appendLine(); appendLine("Settings and state:"); facts.settings.forEach { appendLine("  ${r(it)}") } }
+            if (connTest.isNotBlank()) { appendLine(); connTest.lineSequence().forEach { appendLine(r(it)) } }
             appendLine()
             appendLine("Everything here went through DS Forever's privacy pass: logins, BattleTags, character, realm, guild and party names,")
             appendLine("chat text and IP addresses are replaced by <email>, <battletag>, <name>, <text>, <ip>.")
@@ -134,7 +137,7 @@ object ProblemReport {
             DiagLog.recording(now) || DiagLog.lines(WINDOW_MS, now).any { it.contains("report: recording started") }, Redact.names(),
             runCatching { DxvkLogs.forReport(DxvkLogs.dir(ctx.dataDir)) }.getOrDefault(""), gameCrashes(ctx, now),
             runCatching { StartupDiag.text(ctx) }.getOrElse { "(the diagnostics could not be made: ${it.message})" },
-            MemWatch.history())
+            MemWatch.history(), ConnTestNote.load(ctx))
     }
 
     /** the game's newest crash reports (the "Crash" .txt files in <game>/<flavor>/Errors, the last 7 days): issue #9 had none of them */

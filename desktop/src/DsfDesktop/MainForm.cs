@@ -36,6 +36,7 @@ namespace DsfDesktop.Ui
         readonly StatusLine host = new StatusLine("Streaming host"), stream = new StatusLine("Stream"), wow = new StatusLine("WoW on this PC"),
                             monitor = new StatusLine("Streamed monitor"), link = new StatusLine("Companion link");
         readonly GoldButton focus = new GoldButton("Focus WoW");
+        readonly GoldButton test = new GoldButton("Test");
         readonly Note hostHint = new Note("", 9.25f, Theme.Warn);
         readonly GoldButton services = new GoldButton("Open Services");
         // game + add-ons
@@ -108,6 +109,7 @@ namespace DsfDesktop.Ui
             streamCard.Add(hostHint);
             var sb = new FlowLayoutPanel { AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 8, 0, 0) };
             sb.Controls.Add(focus);
+            sb.Controls.Add(test);
             sb.Controls.Add(services);
             streamCard.Add(sb);
 
@@ -188,6 +190,19 @@ namespace DsfDesktop.Ui
             };
             services.Click += (s, e) => act?.OpenServices();
             focus.Click += (s, e) => { var why = act?.FocusWow(); if (why != null) MessageBox.Show(this, why, Text); };
+            test.Click += async (s, e) =>
+            {
+                if (act == null) return;
+                test.Enabled = false;
+                test.Text = "Testing...";
+                try
+                {
+                    var lines = await System.Threading.Tasks.Task.Run(() => act.RunTest());
+                    MessageBox.Show(this, string.Join(Environment.NewLine, lines), "Test");
+                }
+                catch (Exception ex) { MessageBox.Show(this, "The test failed: " + ex.Message, "Test"); }
+                finally { test.Text = "Test"; test.Enabled = true; }
+            };
             addonsBtn.Click += (s, e) => { if (act != null) { MessageBox.Show(this, act.InstallAddons(), Text); Pull(); } };
             folderBtn.Click += (s, e) => AskFolder();
             startWindows.CheckedChanged += (s, e) =>

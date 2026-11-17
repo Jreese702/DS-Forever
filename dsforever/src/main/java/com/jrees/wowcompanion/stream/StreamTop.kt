@@ -46,7 +46,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         fun bottom(covers: Boolean, note: String) {}
     }
 
-    enum class Screen { PAIRING, PIN, CONNECTING, STREAMING, PROBLEM, QUALITY }
+    enum class Screen { PAIRING, PIN, CONNECTING, STREAMING, PROBLEM, QUALITY, TEST }
 
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "dsf-stream-work") }
@@ -274,6 +274,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         discovery?.stop(); discovery = null
         netCallback?.let { try { activity.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(it) } catch (_: Throwable) {} }
         netCallback = null
+        testCancel = true
+        testSession?.stop(); testSession = null
         main.removeCallbacksAndMessages(null)
         portsWait = null
         retryMode = null
@@ -301,6 +303,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 onPc = { w -> main.post { pcWord(w) } },
                 onWelcome = { w -> main.post { welcomed(w) } },
                 onSunshine = { m -> main.post { sunshineSaid(m) } },
+                onPcTest = { m -> pcTestSaid(m) },
                 onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } },
                 savedLogin = { com.jrees.wowcompanion.HomeLoginStore.forAutoLogin(activity)?.let { it.email to it.password } },
                 streamMode = { playable().let { Triple(it.width, it.height, it.fps) } }).also { bridge = it }
@@ -310,6 +313,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     /** Desktop listed the PC's home-network addresses: the one on this Wi-Fi is tried first next time (Route); its Tailscale ones are
      *  remembered for away from home, and Sunshine's ports it chose (the user, 2026-11-11: streaming away fixes) */
     private fun welcomed(w: BridgeMsg.Welcome) {
+        authLostSeen = false
         // issue #54 ("on pc stream I cant use my ayn thor to play, input doesnt work"): the PC's word on its controller driver, in the report
         if (w.padDriver != padDriver) { padDriver = w.padDriver; Log.i(TAG, "PC controller driver (ViGEmBus): " + PadNote.driver(w.padDriver)) }
         // the user, 2026-11-13 (another Sunshine on the stock ports, "PC found" for ever): Desktop's ports and its reason
@@ -369,6 +373,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private fun authLost(why: String) {
         Log.w(TAG, "bridge: $why")
+        authLostSeen = true
         if (screen == Screen.STREAMING) return            // the stream itself still works; the next start asks to pair
         problem(Diagnosis.Reason.NOT_PAIRED.title, Diagnosis.Reason.NOT_PAIRED.detail, auto = false)
     }
@@ -381,6 +386,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
+        testSession?.stop()
         val wasStreaming = screen == Screen.STREAMING || session != null
         stopStream("surface gone")
         // 1.0.22 (the user: "when I press the home button while using streaming mode, going back into the game just results in a black
@@ -395,7 +401,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
      */
     private fun connect() {
         val h = host ?: return show(Screen.PAIRING)
-        if (session != null || !surfaceReady || routing) return
+        if (session != null || !surfaceReady || routing || testSession != null) return
         main.removeCallbacks(retryTick)
         main.removeCallbacks(retryRoute)
         main.removeCallbacks(portsTick); portsWait = null
@@ -498,7 +504,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             val id = store.identity()
             main.post {
                 if (session != null || !surfaceReady || !isOpen) return@post
-                val video = VideoDecoder(surface.holder.surface)
+                val video = VideoDecoder(surface.holder.surface).also { liveVideo = it }
                 session = StreamSession(h, id, q, video, AudioOut(q.audioOnThor), events, mode = mode,
                     httpPort = { host?.httpPort?.takeIf { it > 0 } ?: h.httpPort }).also { it.start() }
             }
@@ -619,6 +625,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         board(false)
         touchMouse?.cancel(); touchMouse = null
         session = null
+        liveVideo = null
         keys?.releaseAll()
         if (keys != null) { pad.clear(); try { sendPad() } catch (_: Throwable) {} }
         keys = null
@@ -774,6 +781,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         pairing.visibility = if (s == Screen.PAIRING) View.VISIBLE else View.GONE
         status.visibility = if (s == Screen.CONNECTING || s == Screen.PROBLEM || s == Screen.PIN) View.VISIBLE else View.GONE
         qualityView?.visibility = if (s == Screen.QUALITY) View.VISIBLE else View.GONE
+        testView?.visibility = if (s == Screen.TEST) View.VISIBLE else View.GONE
         if (s == Screen.PAIRING) { main.removeCallbacks(retryTick); showPc() }
         applyCurtain()
     }
@@ -783,7 +791,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         beforeQuality = screen
         qualityAtOpen = quality
         val v = qualityView ?: QualityView(activity, quality, onChange = { q -> quality = q; StreamQuality.save(activity, q) }, onClose = { qualityDone() },
-            can120 = { q -> can120(q) })
+            can120 = { q -> can120(q) }, onTest = { openTest() })
             .also { qualityView = it; overlay.centered(it, 560f) }
         show(Screen.QUALITY)
         v.bringToFront()
@@ -791,13 +799,187 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     /** a change made while streaming applies now: the stream connects again (the game on the PC keeps running) */
     private fun qualityDone() {
+        val tested = testRan
+        testRan = false
         if (beforeQuality == Screen.STREAMING && quality != qualityAtOpen && session != null) {
             stopStream("stream settings changed")
+            retryNow()
+        } else if (tested && session == null && host != null && beforeQuality != Screen.PAIRING && beforeQuality != Screen.PIN) {
+            // a test ran meanwhile: its own stream stopped, and any wait of the connect with it: connect again now (or once the test's
+            // stream has stopped: testStream's end)
+            show(Screen.CONNECTING)
             retryNow()
         } else show(beforeQuality)
     }
 
     private fun back() = shell.back()
+
+    // ---------------------------------------------------------------- Test connection ([ConnTest]; the user's pick 2026-11-17)
+    private var testView: TestView? = null
+    @Volatile private var testThread: Thread? = null
+    @Volatile private var testCancel = false
+    /** the test's own 3-second stream (none while a real one runs: that one is measured) */
+    @Volatile private var testSession: StreamSession? = null
+    /** the running stream's decoder: its frames count for the test while streaming */
+    @Volatile private var liveVideo: VideoDecoder? = null
+    /** the bridge refused our token on this connection */
+    @Volatile private var authLostSeen = false
+    /** Desktop's half of the test (pc_test_result), and when it was asked (0 = not asked) */
+    @Volatile private var pcTest: BridgeMsg.PcTest? = null
+    @Volatile private var pcAskedAt = 0L
+    private val pcTestGate = Object()
+    /** a test ran since Stream settings opened: closing them connects again */
+    private var testRan = false
+
+    private fun pcTestSaid(m: BridgeMsg.PcTest) {
+        Log.i(TAG, "PC test: " + m.lines.joinToString("; "))
+        synchronized(pcTestGate) { pcTest = m; pcTestGate.notifyAll() }
+    }
+
+    private fun openTest() {
+        val v = testView ?: TestView(activity, onRun = { runTest() }, onClose = { closeTest() }).also { testView = it; overlay.centered(it, 680f) }
+        show(Screen.TEST)
+        v.bringToFront()
+        runTest()
+    }
+
+    private fun closeTest() {
+        testCancel = true
+        testSession?.stop()
+        synchronized(pcTestGate) { pcTestGate.notifyAll() }
+        if (qualityView != null) { show(Screen.QUALITY); qualityView?.bringToFront() } else show(beforeQuality)
+    }
+
+    private fun runTest() {
+        val v = testView ?: return
+        if (testThread?.isAlive == true) return
+        testCancel = false
+        testRan = true
+        v.clear()
+        val h = host
+        val q = playable()
+        val live = session != null && liveVideo != null
+        testThread = Thread({
+            val rs = ConnTest.run({ s -> v.working(s); check(s, h, q, live) }, onStep = { v.result(it) }, cancelled = { testCancel || !isOpen })
+            rs.filter { it.state == ConnTest.State.NOT_RUN }.forEach { v.result(it) }
+            val summary = ConnTest.summary(java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date()), rs,
+                pcTest?.lines.orEmpty())
+            com.jrees.wowcompanion.ConnTestNote.save(activity, summary)
+            summary.lineSequence().forEach { Log.i(TAG, it) }
+            v.done()
+        }, "dsf-conn-test").apply { isDaemon = true; start() }
+    }
+
+    /** one step, on the test's own thread */
+    private fun check(s: ConnTest.Step, h0: PairedHost?, q: StreamQuality, live: Boolean): ConnTest.Result {
+        val h = host ?: h0 ?: return ConnTest.fail(s, "No PC paired", ConnTest.FIX_PAIR)
+        return when (s) {
+            ConnTest.Step.PC_FOUND -> {
+                if (h.hasBridge) { val until = System.currentTimeMillis() + 5_000; while (ports == null && System.currentTimeMillis() < until && !testCancel) Thread.sleep(200) }
+                val welcomed = ports != null
+                ConnTest.pcFound(h.hasBridge, welcomed, if (welcomed || !h.hasBridge) null else Diagnosis.reason(NetProbe.probe(activity, h, found)))
+            }
+            ConnTest.Step.PAIRED -> ConnTest.paired(h.hasBridge, ports != null, authLostSeen).also {
+                // Desktop's half runs meanwhile (its screen check can take a few seconds)
+                if (it.state == ConnTest.State.PASS && h.hasBridge) {
+                    synchronized(pcTestGate) { pcTest = null }
+                    pcAskedAt = if (bridge?.askPcTest() == true) System.currentTimeMillis() else 0L
+                } else pcAskedAt = 0L
+            }
+            ConnTest.Step.WEB_PORTS -> {
+                val (http, https) = testPorts(h)
+                var httpErr: String? = null
+                var httpsErr: String? = null
+                var pair: String? = null
+                val cert = try { ClientIdentity.parseCert(h.serverCertPem.toByteArray()) } catch (_: Throwable) { null }
+                    ?: return ConnTest.fail(s, "The paired PC's certificate is unreadable", ConnTest.FIX_PAIR)
+                val nv = NvHttp(h.address, http, https, store.identity(), cert)
+                if (http > 0) try { nv.serverInfo(false) } catch (t: Throwable) { httpErr = why(t) }
+                if (http > 0 && httpErr == null) try { pair = XmlFields.get(nv.serverInfo(true), "PairStatus") } catch (t: Throwable) { httpsErr = why(t) }
+                ConnTest.webPorts(http, https, httpErr, httpsErr, pair)
+            }
+            ConnTest.Step.RTSP -> {
+                val port = testPorts(h).first + RTSP_OFFSET
+                ConnTest.rtsp(port, if (live) Diagnosis.Port.NOT_TRIED else NetProbe.port(h.address, port, 2_000), live)
+            }
+            ConnTest.Step.TEST_STREAM -> testStream(h, q, live)
+            ConnTest.Step.CONTROLLER -> ConnTest.controller(pcAnswer()?.pad?.ifEmpty { null } ?: padDriver)
+            ConnTest.Step.SCREEN -> pcAnswer().let { ConnTest.screen(it?.screen.orEmpty(), it?.screenLine.orEmpty()) }
+            ConnTest.Step.FPS120 -> ConnTest.fps120(quality.fps, can120(q.copy(fps = 120)), pcAnswer()?.screenHz ?: 0)
+        }
+    }
+
+    /** the Sunshine ports a stream would dial now ([StreamPorts]: Desktop's word, never a guess) */
+    private fun testPorts(h: PairedHost): Pair<Int, Int> = when (val p = StreamPorts.pick(h, ports, StreamPorts.WAIT_MS)) {
+        is StreamPorts.Pick.Use -> p.http to p.https
+        StreamPorts.Pick.Wait -> 0 to 0
+    }
+
+    private fun why(t: Throwable): String = when (t) {
+        is HostHttpException -> if (t.code == 401) "401" else "HTTP ${t.code}"
+        is NvHttpStageException -> if (t.timedOut) "${t.stage} timed out" else "${t.stage} failed"
+        else -> t.javaClass.simpleName
+    }
+
+    /** Desktop's answer, waited for up to [PC_TEST_WAIT_MS] from the ask; null = none (an older Desktop, no bridge) */
+    private fun pcAnswer(): BridgeMsg.PcTest? {
+        if (pcAskedAt == 0L) return null
+        synchronized(pcTestGate) {
+            while (pcTest == null && !testCancel) {
+                val left = pcAskedAt + PC_TEST_WAIT_MS - System.currentTimeMillis()
+                if (left <= 0) break
+                pcTestGate.wait(minOf(left, 500L))
+            }
+            return pcTest
+        }
+    }
+
+    /** 3 s of the stream: the running one's frames, else a test stream of its own (stopped after) */
+    private fun testStream(h: PairedHost, q: StreamQuality, live: Boolean): ConnTest.Result {
+        val step = ConnTest.Step.TEST_STREAM
+        val (http, https) = testPorts(h)
+        if (live) {
+            val v = liveVideo ?: return ConnTest.fail(step, "The stream just stopped", "Run the test again.")
+            val f0 = v.framesOut
+            Thread.sleep(3_000)
+            return ConnTest.stream(true, 0, "", v.framesOut - f0, http)
+        }
+        if (!surfaceReady) return ConnTest.fail(step, "The top screen isn't ready", "Run the test again.")
+        val up = java.util.concurrent.CountDownLatch(1)
+        val started = java.util.concurrent.atomic.AtomicBoolean(false)
+        val endErr = java.util.concurrent.atomic.AtomicInteger(0)
+        val ev = object : StreamSession.Events {
+            override fun stage(text: String) {}
+            override fun started(width: Int, height: Int) { started.set(true); up.countDown() }
+            override fun ended(error: Int, notPaired: Boolean, message: String) { endErr.set(error); up.countDown() }
+        }
+        val video = java.util.concurrent.atomic.AtomicReference<VideoDecoder?>(null)
+        val made = java.util.concurrent.CountDownLatch(1)
+        main.post {
+            if (session == null && surfaceReady && isOpen && !testCancel) {
+                val vd = VideoDecoder(surface.holder.surface).also { video.set(it) }
+                testSession = StreamSession(h.copy(httpPort = http, httpsPort = https), store.identity(), q, vd, AudioOut(false), ev,
+                    mode = StreamMode.choose(h.address, NetProbe.subnet(activity), NetProbe.vpnUp(activity))).also { it.start() }
+            }
+            made.countDown()
+        }
+        made.await(2, java.util.concurrent.TimeUnit.SECONDS)
+        val ts = testSession ?: return ConnTest.fail(step, "A stream is starting", "Run the test again.")
+        Log.i(TAG, "test stream: ${q.label}")
+        try {
+            if (!up.await(TEST_START_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) return ConnTest.stream(false, -1, ts.failedStage, 0, http)
+            if (!started.get()) return ConnTest.stream(false, endErr.get(), ts.failedStage, 0, http, pcAnswer()?.failed?.line.orEmpty())
+            val f0 = video.get()?.framesOut ?: 0L
+            Thread.sleep(3_000)
+            return ConnTest.stream(true, 0, "", (video.get()?.framesOut ?: 0L) - f0, http)
+        } finally {
+            ts.stop()
+            Thread.sleep(800)          // its stop runs on its own thread
+            testSession = null
+            Log.i(TAG, "test stream stopped")
+            main.post { if (isOpen && session == null && screen == Screen.CONNECTING) connect() }
+        }
+    }
 
     // ---------------------------------------------------------------- the controller
     private fun isPad(e: KeyEvent) = (e.source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
@@ -830,6 +1012,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun overlayKey(code: Int): Boolean = when (screen) {
         Screen.PAIRING -> pairing.pad(code)
         Screen.QUALITY -> qualityView?.pad(code) == true
+        Screen.TEST -> testView?.pad(code) == true
         Screen.PROBLEM, Screen.CONNECTING, Screen.PIN -> when (code) {
             KeyEvent.KEYCODE_BUTTON_A -> { if (screen == Screen.PROBLEM) retryNow(); true }
             KeyEvent.KEYCODE_BUTTON_X -> { stopStream("pair again"); show(Screen.PAIRING); true }
@@ -925,6 +1108,12 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         /** a zoomed window fills this share of the screen at most, and is magnified at most [ZOOM_MAX] x */
         const val ZOOM_FILL = 0.92f
         const val ZOOM_MAX = 3f
+        /** Desktop's half of Test connection: its answer within this time from the ask */
+        const val PC_TEST_WAIT_MS = 25_000L
+        /** the test stream must be up by then */
+        const val TEST_START_MS = 20_000L
+        /** Sunshine's RTSP port from its base (http) port */
+        const val RTSP_OFFSET = 21
         /** Backspaces before each box is typed (the box may hold what the player started) */
         const val CLEAR_KEYS = 16
         private val SIGN_IN_LINES = setOf(StreamCurtain.SIGN_IN, StreamCurtain.NEEDS_YOU, StreamCurtain.UPDATE, StreamCurtain.CRASHED)

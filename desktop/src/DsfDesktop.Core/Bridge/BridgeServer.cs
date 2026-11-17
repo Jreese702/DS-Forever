@@ -38,6 +38,8 @@ namespace DsfDesktop.Bridge
         /// <summary>the Thor's "host_check" (its RTSP timed out while HTTP answered): check our streaming host's whole port set and
         /// heal it when no stream is live; {"state": ok | restarting | failed | streaming, "sunshine": {...}}</summary>
         Dictionary<string, object> HostCheck();
+        /// <summary>the Thor's "pc_test" (its Test connection): the PC's checks, answered as {"t":"pc_test_result", ...}</summary>
+        Dictionary<string, object> PcTest();
     }
 
     /// <summary>the documents since the current log began (what a fresh LogTail would read from the file), capped</summary>
@@ -431,6 +433,10 @@ namespace DsfDesktop.Bridge
                         case "host_check":
                             var sh = s;
                             Task.Run(() => { var r = With("host_check_result", host.HostCheck()); r["t"] = "host_check_result"; sh.Enqueue(r); });
+                            break;
+                        case "pc_test":
+                            var sp = s;
+                            Task.Run(() => { var r = host.PcTest(); r["t"] = "pc_test_result"; sp.Enqueue(r); });
                             break;
                         case "unpair":
                             host.Devices.Remove(s.DeviceId);

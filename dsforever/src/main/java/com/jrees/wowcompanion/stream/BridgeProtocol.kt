@@ -86,6 +86,15 @@ sealed class BridgeMsg {
                       val httpPort: Int, val httpsPort: Int) : BridgeMsg()
     data class PairError(val error: String, val attemptsLeft: Int) : BridgeMsg()
     data class PairStream(val ok: Boolean, val error: String) : BridgeMsg()
+    /** Desktop 0.2.32's answer to [BridgeProtocol.pcTest]: its own checks in order ([steps]: id, state pass|fail|skip|not_run, line,
+     *  fix), the screen a stream gets ([screen] own | real | none, its top rate [screenHz], 0 = unknown) and the ViGEmBus word [pad] */
+    data class PcTest(val steps: List<PcStep>, val screen: String, val screenLine: String, val screenHz: Int, val pad: String) : BridgeMsg() {
+        data class PcStep(val id: String, val state: String, val line: String, val fix: String)
+        /** the first failed step, null = none */
+        val failed get() = steps.firstOrNull { it.state == "fail" }
+        /** one line per step for the report ("ports ok (all 6 ready)") */
+        val lines get() = steps.map { "${it.id} ${if (it.state == "fail") "FAILED" else it.state}" + (if (it.line.isNotEmpty()) " (${it.line})" else "") }
+    }
     object Unpaired : BridgeMsg()
     data class Unknown(val t: String) : BridgeMsg()
 }
@@ -128,6 +137,8 @@ object BridgeProtocol {
     fun bnetReady(): String = JSONObject().put("t", "bnet_ready").toString()
     /** Desktop 0.2.32: RTSP timed out twice with HTTP fine: check (and heal) the streaming host; answered by host_check_result */
     fun hostCheck(): String = JSONObject().put("t", "host_check").toString()
+    /** Desktop 0.2.32: the PC's half of Test connection (ports, RTSP, encoder, screen, controller); answered by pc_test_result */
+    fun pcTest(): String = JSONObject().put("t", "pc_test").toString()
     /** the saved login for WoW's login.txt on the PC: only down the pinned wss connection, never logged */
     fun loginFile(email: String, password: String): String = JSONObject().put("t", "login_file").put("email", email).put("password", password).toString()
 
@@ -181,6 +192,10 @@ object BridgeProtocol {
             "pair_error" -> BridgeMsg.PairError(o.err(), o.optInt("attempts_left", -1))
             "pair_stream" -> BridgeMsg.PairStream(o.optBoolean("ok"), o.optString("error"))
             "unpaired" -> BridgeMsg.Unpaired
+            "pc_test_result" -> BridgeMsg.PcTest((o.optJSONArray("steps") ?: JSONArray()).let { a ->
+                (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map {
+                    BridgeMsg.PcTest.PcStep(it.optString("id"), it.optString("state"), it.optString("line"), it.optString("fix")) }
+            }, o.optString("screen"), o.optString("screen_line"), o.optInt("screen_hz", 0), o.optString("pad"))
             else -> BridgeMsg.Unknown(t)
         }
     }

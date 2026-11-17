@@ -153,7 +153,9 @@ internal class StatusView(ctx: Context, onRetry: () -> Unit, onPairAgain: () -> 
 internal class QualityView(ctx: Context, private var q: StreamQuality, private val onChange: (StreamQuality) -> Unit,
                            private val onClose: () -> Unit,
                            /** this Thor shows the stream's size at 120 fps ([StreamRate.can120]) */
-                           private val can120: (StreamQuality) -> Boolean = { false }) : LinearLayout(ctx) {
+                           private val can120: (StreamQuality) -> Boolean = { false },
+                           /** Test connection ([TestView]); null = not offered */
+                           private val onTest: (() -> Unit)? = null) : LinearLayout(ctx) {
     private var row = 0
     private val rows = List(5) { StreamLook.text(ctx, 20f) }
     private val note120 = StreamLook.text(ctx, 14f, StreamLook.DIM)
@@ -171,7 +173,9 @@ internal class QualityView(ctx: Context, private var q: StreamQuality, private v
         }
         addView(note120)
         addView(StreamLook.text(ctx, 14f, StreamLook.DIM).apply { text = "Defaults: HEVC, 1080p 60, 20 Mbps." })
-        addView(StreamLook.row(ctx, StreamLook.button(ctx, "Defaults") { q = StreamQuality(); onChange(q); refresh() }, StreamLook.button(ctx, "Done (B)") { onClose() }))
+        addView(StreamLook.row(ctx, *listOfNotNull(StreamLook.button(ctx, "Defaults") { q = StreamQuality(); onChange(q); refresh() },
+            onTest?.let { t -> StreamLook.button(ctx, com.jrees.wowcompanion.Tr.t(TestView.TITLE) + " (X)") { t() } },
+            StreamLook.button(ctx, "Done (B)") { onClose() }).toTypedArray()))
         refresh()
     }
 
@@ -201,9 +205,79 @@ internal class QualityView(ctx: Context, private var q: StreamQuality, private v
             android.view.KeyEvent.KEYCODE_DPAD_LEFT -> { change(-1); return true }
             android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> { change(1); return true }
             android.view.KeyEvent.KEYCODE_BUTTON_A, android.view.KeyEvent.KEYCODE_BUTTON_B -> { onClose(); return true }
+            android.view.KeyEvent.KEYCODE_BUTTON_X -> { onTest?.invoke(); return onTest != null }
             else -> return false
         }
         refresh(); return true
+    }
+}
+
+/**
+ * "Test connection": one row per [ConnTest.Step] (pass / fail / skipped / not run), the first failure's reason and fix under the rows,
+ * Run again (A) and Done (B). Words through Tr.t; a line's numbers stay as they are ([trHead]).
+ */
+internal class TestView(ctx: Context, private val onRun: () -> Unit, private val onClose: () -> Unit) : LinearLayout(ctx) {
+    private val title = StreamLook.text(ctx, 24f, StreamLook.GOLD, bold = true)
+    private val rows = ConnTest.Step.values().associateWith { StreamLook.text(ctx, 17f).apply { gravity = Gravity.START } }
+    private val reason = StreamLook.text(ctx, 17f, StreamLook.BAD)
+    private val fix = StreamLook.text(ctx, 16f)
+    private val runBtn = StreamLook.button(ctx, com.jrees.wowcompanion.Tr.t("Run again") + " (A)") { onRun() }
+    @Volatile var running = false
+        private set
+
+    init {
+        orientation = VERTICAL; gravity = Gravity.CENTER
+        background = StreamLook.rounded(StreamLook.PANEL, StreamLook.dp(ctx, 18f).toFloat())
+        val p = StreamLook.dp(ctx, 24f); setPadding(p, p, p, p)
+        title.text = com.jrees.wowcompanion.Tr.t(TITLE)
+        addView(title)
+        for (t in rows.values) addView(t, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = StreamLook.dp(ctx, 4f) })
+        addView(reason); addView(fix)
+        addView(StreamLook.row(ctx, runBtn, StreamLook.button(ctx, com.jrees.wowcompanion.Tr.t("Done") + " (B)") { onClose() }))
+        clear()
+    }
+
+    /** every row waiting, as a run starts */
+    fun clear() = post {
+        running = true
+        runBtn.isEnabled = false
+        for ((s, t) in rows) { t.text = "·  " + com.jrees.wowcompanion.Tr.t(s.label); t.setTextColor(StreamLook.DIM) }
+        reason.text = ""; fix.text = ""
+        reason.visibility = View.GONE; fix.visibility = View.GONE
+    }
+
+    /** the step under way */
+    fun working(s: ConnTest.Step) = post { rows[s]?.let { it.text = "…  " + com.jrees.wowcompanion.Tr.t(s.label); it.setTextColor(StreamLook.GOLD) } }
+
+    fun result(r: ConnTest.Result) = post {
+        val t = rows[r.step] ?: return@post
+        val mark = when (r.state) { ConnTest.State.PASS -> "✓"; ConnTest.State.FAIL -> "✗"; ConnTest.State.SKIP -> "–"; ConnTest.State.NOT_RUN -> "·" }
+        t.text = "$mark  " + com.jrees.wowcompanion.Tr.t(r.step.label) + if (r.line.isNotEmpty()) ":  " + trHead(r.line) else ""
+        t.setTextColor(when (r.state) { ConnTest.State.PASS -> StreamLook.INK; ConnTest.State.FAIL -> StreamLook.BAD; else -> StreamLook.DIM })
+        if (r.state == ConnTest.State.FAIL) {
+            reason.text = trHead(r.line); fix.text = trHead(r.fix)
+            reason.visibility = View.VISIBLE; fix.visibility = if (r.fix.isEmpty()) View.GONE else View.VISIBLE
+        }
+    }
+
+    fun done() = post { running = false; runBtn.isEnabled = true }
+
+    fun pad(keyCode: Int): Boolean = when (keyCode) {
+        android.view.KeyEvent.KEYCODE_BUTTON_A -> { if (!running) onRun(); true }
+        android.view.KeyEvent.KEYCODE_BUTTON_B, android.view.KeyEvent.KEYCODE_BACK -> { onClose(); true }
+        else -> false
+    }
+
+    companion object {
+        const val TITLE = "Test connection"
+
+        /** the words before a line's first number or bracket translated, the rest kept ("No answer on port" + " 53010") */
+        fun trHead(line: String): String {
+            val cut = line.indexOfFirst { it.isDigit() || it == '(' }
+            if (cut <= 0) return com.jrees.wowcompanion.Tr.t(line)
+            val head = line.substring(0, cut).trimEnd()
+            return com.jrees.wowcompanion.Tr.t(head) + line.substring(head.length)
+        }
     }
 }
 
