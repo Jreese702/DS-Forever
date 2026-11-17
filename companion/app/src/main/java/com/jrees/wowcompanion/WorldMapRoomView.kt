@@ -412,13 +412,37 @@ class WorldMapRoomView(context: Context) : View(context) {
             return
         }
         dst.set(sxc(p.left), syc(p.top), sxc(p.right), syc(p.bottom))
-        c.drawBitmap(base, null, dst, pBmp)
+        // A CONTINENT'S PAINTING SEEN AT A ZONE'S WIDTH (review, 2026-11-17: Home's "other continent" fallback and this room close in on
+        // Durotar showed the painting's title letters and sea hatching blown up into blocks): past [SOFT_FROM] x its own pixels the
+        // painting fades into a small smooth copy of itself (the sea's and land's colours, no letters); the zones' own art lies over it
+        val up = if (info.type == 2) dst.width() / base.width.coerceAtLeast(1) else 0f
+        val fade = ((up - SOFT_FROM) / SOFT_FROM).coerceIn(0f, 1f)
+        if (fade > 0f) softOf(id, base)?.let { c.drawBitmap(it, null, dst, pBmp) }
+        if (fade < 1f) {
+            val a = pBmp.alpha
+            pBmp.alpha = (255 * (1f - fade)).toInt()
+            c.drawBitmap(base, null, dst, pBmp)
+            pBmp.alpha = a
+        }
         for (o in if (Settings.worldMapFog == "all") info.overlays else model.paintedOverlays(id)) {
             val b = bmp("$id/ov_${o.id}") ?: continue
             overlayDst(p, info, o)
             c.drawBitmap(b, null, dst, pBmp)
         }
     }
+    /** each continent's small smooth copy of its painting (a few KB: halved with filtering down to [SOFT_W] wide) */
+    private val soft = HashMap<Int, Bitmap>()
+    private fun softOf(id: Int, base: Bitmap): Bitmap? = soft[id] ?: runCatching {
+        var b = base
+        while (b.width > SOFT_W * 2) {
+            val n = Bitmap.createScaledBitmap(b, b.width / 2, (b.height / 2).coerceAtLeast(1), true)
+            if (b !== base) b.recycle()
+            b = n
+        }
+        Bitmap.createScaledBitmap(b, SOFT_W, (SOFT_W * base.height / base.width.coerceAtLeast(1)).coerceAtLeast(1), true)
+            .also { if (b !== base && it !== b) b.recycle() }
+    }.getOrNull()?.also { soft[id] = it }
+
     /** [dst] = overlay [o] of map [info] at its place [p] on the screen */
     private fun overlayDst(p: RectF, info: WorldMapModel.MapInfo, o: WorldMapModel.Overlay) {
         dst.set(sxc(p.left + o.x / info.w.toFloat() * p.width()), syc(p.top + o.y / info.h.toFloat() * p.height()),
@@ -3036,6 +3060,9 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
 
     companion object {
+        /** a continent's painting fades into its smooth copy from this many screen px a picture px (all of it by twice that) */
+        const val SOFT_FROM = 3f
+        const val SOFT_W = 64
         /**
          * The room's one line while the world map is not built (issues #243 #262 #263 #264: "not on this device yet" never said
          * what to do; the background art builds only while the game is closed - PlayGate, every Thor). Tr: es / fr in i18n.

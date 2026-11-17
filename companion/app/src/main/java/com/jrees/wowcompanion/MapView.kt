@@ -48,6 +48,14 @@ class MapView(context: Context) : View(context) {
     private val SMALL_TILES_MAX = 320
     // Terrain style zoomed out: at most this many TerrainOverview pictures a continent per frame (the level keeps it near the screen's)
     private val TERRAIN_TILES_MAX = 400
+    // the other continent's water seen close: a deep sea colour, and the terrain's dark pixels (water: R+G+B under 40) keyed out over it,
+    // land (R+G+B 70 and up: Elwynn's darkest woods are about 94) opaque, a ramp between for the shallows
+    private val OCEAN = Color.rgb(34, 72, 88)
+    private val WATER_KEY = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
+        1f, 0f, 0f, 0f, 0f,
+        0f, 1f, 0f, 0f, 0f,
+        0f, 0f, 1f, 0f, 0f,
+        8.5f, 8.5f, 8.5f, 0f, -340f)))
 
     // ZOOM. In WoW the minimap is just the world map zoomed in with the same markers on it,
     // so this is one map with a zoom level rather than two different views. zoom 1 = whole
@@ -5651,8 +5659,11 @@ class MapView(context: Context) : View(context) {
      * The close tiles draw over it as before. False = nothing could be placed (the painted art stands in).
      */
     private fun drawTerrainOut(c: Canvas, wa: WorldArt, mapId: Int, rT: PoiStore.Rect, left: Float, top: Float, fw: Float, fh: Float,
-                               cxView: Float, cyView: Float, halfX: Float, halfY: Float): Boolean {
+                               cxView: Float, cyView: Float, halfX: Float, halfY: Float, ocean: Boolean = false): Boolean {
         val places = wa.places(mapId) ?: return false
+        // [ocean] (review 2, 2026-11-17: zoomed in just off the other continent's coast the minimap's own water - near-black, (0, 4, 8) -
+        // and the deep sea filled 92% of the field: the black screen again): the terrain's dark water is keyed out over a sea colour
+        pTerrain.colorFilter = if (ocean) WATER_KEY else null
         if (TerrainOverview.dir == null) TerrainOverview.dir = context.cacheDir
         val conts = ArrayList<DoubleArray>(places.size + 1)
         // this zone's continent by its own rect: u = (left - wy) / width, v = (top - wx) / height; its box (the world's) from its place
@@ -5667,7 +5678,7 @@ class MapView(context: Context) : View(context) {
         conts.sortByDescending { size[it[0].toInt()] ?: 0 }
         c.save()
         c.clipRect(left, top, left + fw, top + fh)
-        pFill.color = TerrainOverview.SEA
+        pFill.color = if (ocean) OCEAN else TerrainOverview.SEA
         c.drawRect(left, top, left + fw, top + fh, pFill)
         val u0 = cxView - halfX; val v0 = cyView - halfY
         val pxU = fw / (2f * halfX); val pxV = fh / (2f * halfY)
@@ -5745,6 +5756,7 @@ class MapView(context: Context) : View(context) {
             c.restore()
         }
         c.restore()
+        pTerrain.colorFilter = null
         return true
     }
     private val otherClip = RectF()
@@ -7152,7 +7164,11 @@ class MapView(context: Context) : View(context) {
             // The style is for zoomed OUT: at the zone's width and closer over another continent its own terrain and close tiles, as on
             // the player's own (review: Painted stayed on the upscaled painting there)
             val rt = rect
-            val styleT = worldTerrain() || (otherCont && zoom >= 0.999f)
+            // (review 2: over the open sea between the boxes at the zone's width and closer the terrain is only its deep sea - a dark
+            // field that looks the same as the black screen the user reported; the sea has no terrain of its own, so it is the painted
+            // world's sea there, as the per-continent rule's fallback. Zoomed out the terrain's sea stays: the lands are in view)
+            val seaPainted = aimCont == WorldArt.SEA && zoom >= 0.999f
+            val styleT = (worldTerrain() && !seaPainted) || (otherCont && zoom >= 0.999f)
             val tIdx = if (styleT && rt != null && rt.valid) TerrainOverview.index(this) else emptyMap()
             if (tIdx == null && !worldTerrain()) {
                 // Painted, the index still being read for the close view of another continent: its painting meanwhile
@@ -7160,8 +7176,10 @@ class MapView(context: Context) : View(context) {
                 // the minimap index is being read (a moment, once): the sea, not the painted art for a frame
                 pFill.color = TerrainOverview.SEA; c.drawRect(left, top, left + fw, top + fh, pFill)
                 terrainDrew = true; worldDrew = true
-            } else if (rt != null && ((worldTerrain() && tIdx[rt.continent]?.isNotEmpty() == true) || aimCont?.let { tIdx[it] }?.isNotEmpty() == true)) {
-                terrainDrew = drawTerrainOut(c, wa, m.optInt("mapID", 0), rt, left, top, fw, fh, cxView, cyView, halfX, halfY)
+            } else if (rt != null && ((worldTerrain() && !seaPainted && tIdx[rt.continent]?.isNotEmpty() == true) || aimCont?.let { tIdx[it] }?.isNotEmpty() == true)) {
+                // the other continent seen at the zone's width and closer: its water a sea colour (the player's own keeps its look)
+                terrainDrew = drawTerrainOut(c, wa, m.optInt("mapID", 0), rt, left, top, fw, fh, cxView, cyView, halfX, halfY,
+                    ocean = otherCont && zoom >= 0.999f)
                 worldDrew = terrainDrew
             }
             if (!terrainDrew) worldDrew = wa.paint(c, m.optInt("mapID", 0), worldZr, worldClip, this)

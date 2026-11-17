@@ -329,6 +329,9 @@ class MapOtherContinentShotsTest {
             assertTrue("no Kalimdor terrain z$z: painted in its box", v.r.map.paintedConts > 0)
             assertEquals("no Kalimdor terrain z$z: Kalimdor's canvas", 1414, v.r.room.backdropCanvas)
             assertEquals("no Kalimdor terrain z$z: no Eastern Kingdoms tile", 0, v.s[4])
+            // (review 2: the painting blown up to a zone's width showed its title's letters and sea hatching as blocks: there it is
+            // faded into its smooth copy, the zones' art over it)
+            if (z >= 1f) assertTrue("no Kalimdor terrain z$z: Kalimdor's painting softened", softened(v.r.room, 1414))
             tearDown()
         }
     }
@@ -424,8 +427,10 @@ class MapOtherContinentShotsTest {
             shot("moc_sea_${if (terrain) "terrain" else "painted"}_z1", bm)
             assertFalse("the sea is nobody's continent", r.map.otherContDrawn)
             assertEquals("the art drew over the sea", 1f, st(r)[4])
-            if (terrain) assertEquals("Terrain: the terrain's sea", 1f, st(r)[6])
-            else assertTrue("Painted: the painted sea, not a black field ($dark% dark)", dark < 50)
+            // (review 2: Terrain's own deep sea filled the whole field there - near-black, the same look as the black screen; the sea
+            // has no terrain, so it is the painted world's sea in both styles)
+            assertEquals("the painted sea, not the terrain's ($terrain)", 0f, st(r)[6])
+            assertTrue("the painted sea, not a black field ($terrain, $dark% dark)", dark < 50)
             assertTrue("not freed crossing the sea", r.room.backdropInUse && r.room.pictureBytes > 0L)
             assertNull("no note", mf("artNote").get(r.map))
             tearDown()
@@ -448,6 +453,36 @@ class MapOtherContinentShotsTest {
             val v = over("isle_${target}_${if (terrain) "terrain" else "painted"}_z1", terrain, true, 2521, target, 1f)
             assertDrawn("the island's player over $target ($terrain)", v)
             if (target == 1411) assertEquals("no Eastern Kingdoms tile on Durotar", 0, v.s[4])
+            tearDown()
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun softened(room: WorldMapRoomView, id: Int) =
+        (WorldMapRoomView::class.java.getDeclaredField("soft").apply { isAccessible = true }.get(room) as Map<Int, Bitmap>).containsKey(id)
+
+    /** review 2: zoomed in on Durotar's EAST COAST (mostly sea), Terrain, from Eastern Kingdoms, with and without Kalimdor's terrain:
+     *  the sea is a sea, never a dark field (no terrain: the painted Kalimdor, softened, in its box; terrain: its water keyed out) */
+    @Test fun the_other_continents_coast_zoomed_in_is_not_a_dark_field() {
+        for (k in listOf(false, true)) {
+            val r = rig(terrain = true, minimapK = k, zone = 1429)
+            key(r.home, "PADDRIGHT")
+            for (i in 0 until 10) key(r.home, "PADLSHOULDER")
+            frames(r, 2000L)
+            val tp = r.room.model.placeOn(1411, 947)!!
+            viewAt(r, 1f, floatArrayOf(tp[0] + (tp[2] - tp[0]) * 0.8f, (tp[1] + tp[3]) / 2f))
+            val bm = frames(r, 3000L)
+            val s = fieldStats(r, bm)
+            val dark = 100 * s[0] / s.sum().coerceAtLeast(1)
+            println("MOC coast terrainK=$k worldDrew=${st(r)[4]} terrainDrew=${st(r)[6]} other=${r.map.otherContDrawn} painted=${r.map.paintedConts} dark=$dark%")
+            shot("moc_coast_${if (k) "k" else "nok"}_terrain_z1", bm)
+            assertTrue("over Kalimdor ($k)", r.map.otherContDrawn)
+            assertEquals("the art drew ($k)", 1f, st(r)[4])
+            assertEquals("no Eastern Kingdoms tile on Kalimdor ($k)", 0, s[4])
+            if (!k) assertTrue("no terrain: painted in its box", r.map.paintedConts > 0)
+            else assertEquals("terrain: Kalimdor's terrain", 1f, st(r)[6])
+            // (with terrain the minimap's own water, near-black, filled 92% of the field: now keyed out over a sea colour)
+            assertTrue("the sea half is a sea, not a dark field ($k, $dark% dark)", dark < 25)
             tearDown()
         }
     }
