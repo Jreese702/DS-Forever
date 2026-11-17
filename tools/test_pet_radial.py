@@ -39,7 +39,7 @@ UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { Ge
 '''
 Q = boot(["safety", "tappad", "quests"], pre=PRE)
 
-check('local QV = "q63"' in SRC["quests"], "Quests says q63 (q62 kept below it)")
+check('local QV = "q65"' in SRC["quests"], "Quests says q65 (q64 kept below it)")
 
 
 def read(unit, src):
@@ -117,7 +117,7 @@ end''')
 got = {c: (Q.eval('CELLS[%d].type' % c), Q.eval('CELLS[%d].macrotext' % c)) for c in range(5, 10)}
 check(got == {5: ("macro", "/cast Feed Pet"), 6: ("macro", "/cast Dismiss Pet"), 7: (None, None),
               8: ("macro", "/cast Mend Pet"), 9: ("macro", "/cast Beast Training")}, "pfocus cells 5-9: the game's /cast of each spell, 7 empty (q60)", got)
-check(Q.eval('WowCompanion.pad.rows.pfocus.n') == 30, "the pfocus row has 30 cells (q62: 10-29 the pet's abilities)")
+check(Q.eval('WowCompanion.pad.rows.pfocus.n') == 31, "the pfocus row has 31 cells (q62: 10-29 the pet's abilities; q65: 30 the quest item)")
 check(Q.eval('CELLS[2].macrotext') == "/inspect" and Q.eval('CELLS[4].macrotext') == "/trade" and Q.eval('CELLS[3].type') == "focus",
       "cols 2 / 3 / 4 unchanged (/inspect, focus, /trade)")
 

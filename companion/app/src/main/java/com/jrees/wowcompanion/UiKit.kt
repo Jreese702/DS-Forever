@@ -2652,9 +2652,10 @@ object UiKit {
                     /** ps4 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): an item
                      *  to use - its icon (fileDataID, 0 none) in place of the first line's mark, and a pad glyph (null none) at its end */
                     val useIcon: Int = 0, val useGlyph: String? = null,
-                    /** Quests q63 (the user, 2026-11-17: "The quests don't show rewards at all anywhere"): the quest's rewards, compact
-                     *  ([QuestRewards.strip]); drawn only where [questCard] is asked to ([rewardLine], Home) and the line has room */
-                    val rewards: QuestRewards.Strip? = null)
+                    /** Quests q64 (the user, 2026-11-17: "one thing that does make sense though on the home screen quests is showing the
+                     *  Icon for if there is a usable quest Item that needs to be used for the quest"): the item the game's tracker shows
+                     *  beside the quest; drawn only where [questCard] is asked to ([itemButton], Home) */
+                    val item: QuestItem? = null)
 
     /** the card's measures at scale 1 (the Map room's list: 400 px wide); Home draws it at [CARD_HOME_SCALE] */
     const val CARD_PAD = 12f
@@ -2690,7 +2691,7 @@ object UiKit {
     }
 
     fun questCard(c: Canvas, box: RectF, q: QuestCard?, alpha: Int = 255, scale: Float = 1f, bgAlpha: Int = 255,
-                  collapsed: Boolean = false, rewardLine: Boolean = false) {
+                  collapsed: Boolean = false, itemButton: Boolean = false) {
         val s = scale
         val layer = alpha < 255
         if (layer) c.saveLayerAlpha(box, alpha.coerceIn(0, 255))
@@ -2725,7 +2726,11 @@ object UiKit {
             if (q.turnIn) null else q.number)
         val pt = bodyPaint(27f * s, q.colour)
         val title = q.title                             // test27 (the user: "the Level number in front of the quests text is confusing, trim that from the quests"): no "[level]"; its colour keeps the difficulty
-        c.drawText(Tr.t(TextUtils.ellipsize(title, pt, box.right - pad - tx, TextUtils.TruncateAt.END).toString()), tx,
+        // q64: the quest's item at the card's right edge on the title row (the tracker's item button beside the quest; Home)
+        val qi = if (itemButton) q.item else null
+        val iw = if (qi != null) CARD_ITEM * s + 12f * s else 0f
+        if (qi != null) questItemButton(c, questItemBox(box, s), qi)
+        c.drawText(Tr.t(TextUtils.ellipsize(title, pt, box.right - pad - tx - iw, TextUtils.TruncateAt.END).toString()), tx,
             titleMid - (pt.ascent() + pt.descent()) / 2f, pt)
         var y = box.top + pad + CARD_TITLE * s
         // [collapsed] = the title row only (the user: "Minimize the focused quest down to see more of the minimap"): no objective, no
@@ -2734,17 +2739,11 @@ object UiKit {
             val room = (box.bottom - pad * 0.5f) - top
             return (255 * (room / (CARD_LINE * s)).coerceIn(0f, 1f)).toInt()
         }
-        // q63: the compact reward line rides the card's LAST line, right-aligned, only where that line's words leave it room (Home)
-        val strip = if (rewardLine && !collapsed) q.rewards else null
-        val stripW = strip?.let { rewardStripWidth(it, s) } ?: 0f
         if (collapsed) Unit
         else if (q.turnIn) {
             val po = bodyPaint(23f * s, Color.rgb(120, 220, 120)).apply { setAlpha(lineAlpha(y)) }
             val cy = y + CARD_LINE * s / 2f
-            val words = Tr.t("Ready for turn-in")
-            c.drawText(words, tx, cy - (po.ascent() + po.descent()) / 2f, po)
-            if (strip != null && lineAlpha(y) >= 255 && tx + po.measureText(words) + 16f * s + stripW <= box.right - pad)
-                rewardStrip(c, strip, box.right - pad, cy, s)
+            c.drawText(Tr.t("Ready for turn-in"), tx, cy - (po.ascent() + po.descent()) / 2f, po)
         } else for ((li, lp) in q.objectives.withIndex()) {
             val (line, done) = lp
             val la = lineAlpha(y)
@@ -2762,53 +2761,39 @@ object UiKit {
             val po = bodyPaint(23f * s, if (done) Theme.dim else Color.rgb(204, 204, 204)).apply { setAlpha(la) }
             c.drawText(Tr.t(TextUtils.ellipsize(line, po, box.right - pad - tx - 26f * s - gw, TextUtils.TruncateAt.END).toString()), tx + 26f * s,
                 cy - (po.ascent() + po.descent()) / 2f, po)
-            if (strip != null && li == q.objectives.size - 1 && gw == 0f && la >= 255 &&
-                tx + 26f * s + po.measureText(Tr.t(line)) + 16f * s + stripW <= box.right - pad)
-                rewardStrip(c, strip, box.right - pad, cy, s)
             y += CARD_LINE * s
         }
         c.restore()
         if (layer) c.restore()
     }
 
-    /** q63: the compact reward line's measures at scale 1: an item icon, the gap between pieces, the money's type size */
-    private const val STRIP_ICON = 24f
-    private const val STRIP_GAP = 6f
-    private const val STRIP_MONEY = 20f
+    /** q64: the quest item's button on the card at scale 1 (about the title's height, as the tracker's sits beside its quest) */
+    const val CARD_ITEM = 34f
 
-    /** [rewardStrip]'s width at [s] */
-    fun rewardStripWidth(r: QuestRewards.Strip, s: Float = 1f): Float {
-        var w = 0f
-        var parts = 0
-        if (r.icons.isNotEmpty()) { w += r.icons.size * STRIP_ICON * s + (r.icons.size - 1) * 3f * s; parts++ }
-        if (r.more > 0) { w += numberPaint(STRIP_MONEY * s).measureText("+${r.more}"); parts++ }
-        if (r.money > 0) { w += moneyWidth(r.money, STRIP_MONEY * s); parts++ }
-        return w + (parts - 1).coerceAtLeast(0) * STRIP_GAP * s
+    /** q64 / q65: the quest item's icon box on a card at [box] / [s] (its draw and its touch) */
+    fun questItemBox(box: RectF, s: Float = 1f): RectF {
+        val mid = box.top + CARD_PAD * s + CARD_TITLE * s / 2f
+        return RectF(box.right - CARD_PAD * s - CARD_ITEM * s, mid - CARD_ITEM * s / 2f, box.right - CARD_PAD * s, mid + CARD_ITEM * s / 2f)
     }
 
     /**
-     * q63 THE COMPACT REWARD LINE (Home's quest card): the first item icons in their quality's edge, "+n" for the rest, then the money
-     * in the game's coins, ending at [right], centred on [cy]. No words.
+     * q64 THE QUEST'S ITEM BUTTON (the tracker's QuestObjectiveItemButtonTemplate): the item's icon in the game's slot well, its charges
+     * at the bottom right (more than one), and its cooldown as the game draws it - the dark sweep and the seconds while it runs, the
+     * icon dimmed when held (enable 0). A touch uses it out of combat ([QuestItemTap]). [r] = the icon's box.
      */
-    fun rewardStrip(c: Canvas, r: QuestRewards.Strip, right: Float, cy: Float, s: Float = 1f) {
-        var x = right
-        if (r.money > 0) { x = right - moneyWidth(r.money, STRIP_MONEY * s); money(c, r.money, x, cy, STRIP_MONEY * s); x -= STRIP_GAP * s }
-        if (r.more > 0) {
-            val p = numberPaint(STRIP_MONEY * s, Theme.textDim)
-            val t = "+${r.more}"
-            x -= p.measureText(t)
-            c.drawText(t, x, cy - (p.ascent() + p.descent()) / 2f, p)
-            x -= STRIP_GAP * s
+    fun questItemButton(c: Canvas, r: RectF, qi: QuestItem, now: Long = QuestItem.Cd.clock()) {
+        val sz = r.width()
+        val ib = Icons.getOrUnknown(qi.icon.takeIf { i -> i > 0 })
+        if (ib == null) {                                   // no icon art yet: the well's dark and its bronze edge, so the item still shows
+            pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(40, 34, 28); c.drawRect(r, pFlat)
+            pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Theme.bronzeDim; c.drawRect(r, pFlat)
         }
-        val sz = STRIP_ICON * s
-        for ((k, ic) in r.icons.withIndex().reversed()) {
-            val ir = RectF(x - sz, cy - sz / 2f, x, cy + sz / 2f)
-            Icons.getOrUnknown(ic.first.takeIf { it > 0 })?.let { c.drawBitmap(it, null, ir, pBmp) }
-            if (ic.second >= 2) {
-                pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f * s; pFlat.color = Theme.quality(ic.second)
-                c.drawRect(ir, pFlat)
-            }
-            x -= sz + (if (k > 0) 3f * s else 0f)
+        slot(c, ib, r.left, r.top, sz, count = 0, dim = QuestItem.Cd.held(qi.id))
+        val left = QuestItem.Cd.left(qi.id, now)
+        if (left > 0.0) radialCd(c, r, left.toFloat(), QuestItem.Cd.len(qi.id, now).toFloat(), 255, sz / 64f)
+        if (qi.count > 1) {
+            val p = numberPaint(sz * 0.42f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
+            c.drawText(Tr.t(qi.count.toString()), r.right - sz * 0.06f, r.bottom - sz * 0.08f, p)
         }
     }
 

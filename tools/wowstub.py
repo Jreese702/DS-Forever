@@ -256,6 +256,9 @@ function doClick(f, button, down)
     end
     if #f.clicks == 0 and f._tpl:find("SecureActionButtonTemplate") then reg = not down end
     if not reg then return end
+    -- the game runs PreClick (the script, then its hooks) before the click's own handlers (q65: Quests' quest-item cell)
+    if f.scripts.PreClick then f.scripts.PreClick(f, button, down) end
+    for _, fn in ipairs(f.hooks.PreClick or {}) do fn(f, button, down) end
     for _, w in ipairs(f.wraps.OnClick or {}) do
         local r = runSecure(w.pre, f, button, down)
         if r == false then return end

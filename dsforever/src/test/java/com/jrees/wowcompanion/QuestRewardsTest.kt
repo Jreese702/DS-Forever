@@ -40,13 +40,6 @@ class QuestRewardsTest {
         assertEquals(25, coin.honor); assertTrue(coin.pieces().isEmpty())
     }
 
-    @Test fun homesCompactLine() {
-        val s = QuestRewards.parse(wolves)!!.strip()!!
-        assertEquals("three icons, choices first", listOf(132539, 132952, 133970), s.icons.map { it.first })
-        assertEquals(1, s.more); assertEquals(350L, s.money)
-        assertNull("only XP: no line", QuestRewards.parse(JSONObject("""{"rw":{"xp":90}}"""))!!.strip())
-    }
-
     @Test fun rightStepsOntoTheRewards() {
         val c = QuestCursor().apply { show() }
         val ids = listOf(33, 46)
