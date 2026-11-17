@@ -617,7 +617,7 @@ def main():
     import render_target_bar as rtb
     _, tint, hp, cast, cp, ufv, atv = rtb.shoot(None, None, dict(tint=True, cast=True, pips=True))
     k = (hp[3] - hp[1]) / 8
-    chk("uf19: UF.V uf19 (uf18 the target plate pass, uf19 the snapped spot, uf20 the smooth rim, uf21 its old notched corner), at9 (the tint waits for the fly); uf17: UF.V uf17 (issue #195 the duration-object sweeps; uf16 issue #181), at8: rings V at8 (%s / %s)" % (ufv, atv), int(ufv[2:]) >= 22 and atv == "at9")
+    chk("uf19: UF.V uf19 (uf18 the target plate pass, uf19 the snapped spot, uf20 the smooth rim, uf21 its old notched corner), at9 (the tint waits for the fly); uf17: UF.V uf17 (issue #195 the duration-object sweeps; uf16 issue #181), at8: rings V at8 (%s / %s)" % (ufv, atv), int(ufv[2:]) >= 22 and atv == "at10")
     chk("uf15: the pips' top %.1f px under the bar (>= the lip %.0f + 4), the cast below them %.1f" % (hp[1] - cp[3], 4 * k, cp[1] - cast[3]),
         hp[1] - cp[3] >= 4 * k + 4 and cp[1] - cast[3] >= 4)
     _, _, hp2, cast2, _, _, _ = rtb.shoot(None, None, dict(cast=True))
