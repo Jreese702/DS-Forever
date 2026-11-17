@@ -2242,7 +2242,15 @@ end
 -- ag12n (the user, 2026-11-16: "Sometimes while playing the friendly name plates will turn themselves back on even though they are
 -- turned off in the menu."): Friendly plates Off stays off for the session; only the player's own change through the game's own
 -- controls stands (A.friendsOffStep below).
-WC.live = { V = "ag13", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+-- ag14 THE CLASSIFICATION DRAGONS (the user, 2026-11-17: "the Skull above mobs is confusing, I think we need to scrap that, we do however
+-- need to add the dragon Icon for an Elite and a silver one for rare spawns"): ag2's AVOID skull (dungeonskull) over a plate is gone,
+-- and with it its rule (elite, "??", ours + 3, a fight not on us). In its place the game's own plate dragons by UnitClassification
+-- (plain): elite / worldboss nameplates-icon-elite-gold, rare / rareelite nameplates-icon-elite-silver (Blizzard_NamePlates'
+-- GetClassificationAtlasElement gives a rareelite the silver dragon; a rare its star, but the Classic target frame's
+-- ShouldUseSilverUnitFrame puts every rare in silver, and the user asked for silver; this game's plates draw no rarity icon at all:
+-- camelot NameplatesOverrides.ShowRarityIconInfoDisplayOption). As the game's classification frame, none while the unit wears a raid
+-- marker (GetRaidTargetIndex). The dragon and the quest '!' side by side when both show. A.tgtIcons = { cl, q, tok }.
+WC.live = { V = "ag14", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -2979,8 +2987,7 @@ do
     -- ---------------------------------------------------------------- THE PLATE ICONS (ag2; the user: "Build now", icons only)
     -- Our own small frames on UIParent, ANCHORED above each slotted plate (never parented into it, nothing of the plate written),
     -- the game's atlases at runtime, cleared when the plate goes:
-    --   AVOID (dungeonskull): an elite / rare elite / boss, a "??" (skull) level, a level >= ours + 3, or a mob in a fight that is
-    --         not on us within 30 yd (it may turn on us);
+    --   ag14: the CLASSIFICATION DRAGON (the game's nameplates-icon-elite-gold / -silver, A.classOf) in place of ag2's AVOID skull;
     --   QUEST (smallquestbang, the signed-off F spec): a quest objective (qi);
     --   the pull picks p1 / p2 (TargetCrosshairs) come with the app's tap row, later.
     -- ---------------------------------------------------------------- THE APP'S PICKS (ag3; contract taps v2)
@@ -3076,13 +3083,13 @@ do
         f:EnableMouse(false)
         f:SetSize(u(60), u(30))
         f:Hide()
-        local av = f:CreateTexture(nil, "ARTWORK")
-        av:SetSize(u(26), u(26))
-        av:SetPoint("RIGHT", f, "CENTER", u(14), 0)
-        pcall(function() av:SetAtlas("dungeonskull") end)
+        -- ag14: the dragon (its atlas set per mob in A.iconsStep), square as the game's 20 x 20 ClassificationFrame; placed with the
+        -- '!' by A.iconsPlace
+        local cl = f:CreateTexture(nil, "ARTWORK")
+        cl:SetSize(u(28), u(28))
+        cl:Hide()
         local q = f:CreateTexture(nil, "ARTWORK")
         q:SetSize(u(30), u(30))
-        q:SetPoint("LEFT", f, "CENTER", -u(14), 0)
         pcall(function() q:SetAtlas("smallquestbang") end)
         -- ag3: the app's pull pick (the signed-off F spec: TargetCrosshairs 44 px, its step number at its top right)
         local pk = f:CreateTexture(nil, "ARTWORK", nil, 2)
@@ -3095,30 +3102,48 @@ do
         pn:SetPoint("BOTTOMLEFT", pk, "TOPRIGHT", -u(8), -u(10))
         pcall(function() pn:SetTextColor(1, 0.82, 0, 1) end)
         pn:Hide()
-        o = { f = f, av = av, q = q, pk = pk, pn = pn }
+        o = { f = f, cl = cl, q = q, pk = pk, pn = pn }
         A.icon[s] = o
         return o
     end
-    function A.avoidOf(m, plv)
-        if m.c == "e" or m.c == "R" or m.c == "b" then return true end
-        if m.lv and (m.lv < 0 or (plv and m.lv >= plv + 3)) then return true end
-        if m.cb == 1 and not (m.om and m.om >= 2) and m.b and m.b <= 30 then return true end
-        return false
+    -- ag14: the mob's dragon by its classification (m.c, from UnitClassification): elite / worldboss gold, rare / rareelite silver
+    A.DRAGON = { e = "nameplates-icon-elite-gold", b = "nameplates-icon-elite-gold", r = "nameplates-icon-elite-silver",
+                 R = "nameplates-icon-elite-silver" }
+    function A.classOf(m, tok)
+        local a = m and A.DRAGON[m.c or ""]
+        if not a then return nil end
+        -- as the game's own classification frame: none while the unit wears a raid marker
+        if tok and type(GetRaidTargetIndex) == "function" and type(pv(GetRaidTargetIndex, tok)) == "number" then return nil end
+        return a
+    end
+    -- ag14: the dragon and the '!' side by side when both show, each centred when alone (ag2's skull and '!' sat on top of each other)
+    function A.iconsPlace(o, cl, q)
+        local u = (C and C.u) or function(px) return px * 768 / 1080 end
+        local k = (cl and 1 or 0) + (q and 2 or 0)
+        if o.place == k then return end
+        o.place = k
+        o.cl:ClearAllPoints(); o.q:ClearAllPoints()
+        if k == 3 then
+            o.cl:SetPoint("RIGHT", o.f, "CENTER", -u(1), 0)
+            o.q:SetPoint("LEFT", o.f, "CENTER", u(1), 0)
+        else
+            o.cl:SetPoint("CENTER", o.f, "CENTER", 0, 0)
+            o.q:SetPoint("CENTER", o.f, "CENTER", 0, 0)
+        end
     end
     -- ag9 (the user, 2026-11-13: "the skull and !should be moving to the top as well"): what the TARGET's plate wears is kept for Hub's
-    -- target bar (A.tgtIcons = { av, q, tok }), and while Hub shows that target (WC.uf.ownsPlate: the plate itself hidden for it) the
-    -- plate's icons are at alpha 0 - they are on the bar now
+    -- target bar (A.tgtIcons = { cl, q, tok }; ag14: cl the dragon's atlas, Hub draws its own from the target's classification), and
+    -- while Hub shows that target (WC.uf.ownsPlate: the plate itself hidden for it) the plate's icons are at alpha 0 - on the bar now
     function A.iconsStep(list)
-        local plv = pv(UnitLevel, "player")
         local want = {}
         local tgt = nil
         for _, m in ipairs(list or {}) do
             if not m.dd and A.slot[m.s] then
                 local tok = A.slot[m.s].tok
-                local av, qq = A.avoidOf(m, plv), m.qi == 1 or A.qset[m.s] == tok
+                local cl, qq = A.classOf(m, tok), m.qi == 1 or A.qset[m.s] == tok
                 local pk = (A.pick[1] and A.pick[1].s == m.s and 1) or (A.pick[2] and A.pick[2].s == m.s and 2) or nil
-                if av or qq or pk then want[m.s] = { av = av and not pk, q = qq and not pk, pk = pk, tok = tok } end
-                if (av or qq) and pv(function() return UnitIsUnit(tok, "target") end) == true then tgt = { av = av, q = qq, tok = tok } end
+                if cl or qq or pk then want[m.s] = { cl = (not pk) and cl or nil, q = qq and not pk, pk = pk, tok = tok } end
+                if (cl or qq) and pv(function() return UnitIsUnit(tok, "target") end) == true then tgt = { cl = cl, q = qq, tok = tok } end
             end
         end
         A.tgtIcons = tgt
@@ -3141,8 +3166,12 @@ do
                     pcall(function() o.f:SetPoint("BOTTOM", plate, "TOP", 0, 2) end)
                     o.tok = w.tok
                 end
-                if w.av then o.av:Show() else o.av:Hide() end
+                if w.cl then
+                    if o.clA ~= w.cl then o.clA = w.cl; pcall(function() o.cl:SetAtlas(w.cl) end) end
+                    o.cl:Show()
+                else o.cl:Hide() end
                 if w.q then o.q:Show() else o.q:Hide() end
+                A.iconsPlace(o, w.cl ~= nil, w.q == true)
                 if w.pk then o.pk:Show(); o.pn:SetText(tostring(w.pk)); o.pn:Show() else o.pk:Hide(); o.pn:Hide() end
                 local a = (owned and tgt.tok == w.tok) and 0 or 1
                 if o.alpha ~= a then o.f:SetAlpha(a); o.alpha = a end
