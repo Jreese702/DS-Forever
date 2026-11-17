@@ -48,6 +48,8 @@ object GameRegion {
     /** where the choice was made: the login prompt's Region row, or the Start menu's Region button (one press steps to the next) */
     const val BY_PROMPT = "the login prompt"
     const val BY_MENU = "the Start menu"
+    /** the setup page's Stop on a region's download (the user, 2026-11-17): the region before the switch back */
+    const val BY_STOP = "Stop on the region's download"
     /** the verify pass (#248): saved with the prompt's Region row as it was pre-filled (the choice, the folder's portal or the device's
      *  country), so a report tells an untouched default from a pick */
     const val BY_PROMPT_PREFILLED = "the login prompt, row as pre-filled"
@@ -65,8 +67,30 @@ object GameRegion {
         e.apply()
         if (was != code) {
             runCatching { NativeLogin.logEvent("region: ${was ?: "none chosen"} -> $code" + if (by.isNotEmpty()) " ($by)" else "") }
+            lastChange = Change(was, code, by)
             listeners.forEach { runCatching { it(code) } }
         }
+    }
+
+    /** a change: [from] the choice before it (null = none made), [to] the new one, [by] where it was made */
+    data class Change(val from: String?, val to: String, val by: String)
+
+    /** the last change [choose] made (this run), read by the listeners: the launcher's Stop puts [Change.from] back */
+    @Volatile var lastChange: Change? = null
+        private set
+
+    /**
+     * BACK TO HOW IT WAS (the user, 2026-11-17: a region switched by mistake): [from] chosen again, or with no choice made before
+     * (null) the choice forgotten, so the install's own region stands again. The listeners hear it as any change.
+     */
+    fun restore(ctx: Context, from: String?, by: String = BY_STOP) {
+        if (from != null) return choose(ctx, from, by)
+        val was = chosen(ctx) ?: return
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).remove(KEY_BY).remove(KEY_AT).apply()
+        runCatching { NativeLogin.logEvent("region: $was -> none chosen ($by)") }
+        val back = current(ctx)
+        lastChange = Change(was, back, by)
+        listeners.forEach { runCatching { it(back) } }
     }
 
     /** who made the current choice and when (epoch ms; 0 = before this was kept), or null with no choice made */

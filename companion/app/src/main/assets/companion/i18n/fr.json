@@ -1,5 +1,9 @@
 {
 "plain": {
+"Switch": "Changer",
+"Uses this install": "Utilise cette installation",
+"Checking...": "Vérification...",
+"Stopping...": "Arrêt...",
 "Replaces at next start": "Remplacé au prochain démarrage",
 "Not replaced": "Non remplacé",
 "Cancelling": "Annulation",
@@ -2049,6 +2053,9 @@
 "Polestar menu": "Menu Polestar"
 },
 "templates": {
+"Switch to %s?": "Passer à %s ?",
+"Downloads the %s game": "Télécharge le jeu %s",
+"Switching to %s": "Passage à %s",
 "Friend requests: %s": "Demandes d'ami : %s",
 "Version %s": "Version %s",
 "Needs %s free": "Il faut %s libres",

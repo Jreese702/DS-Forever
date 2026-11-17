@@ -204,7 +204,8 @@ class StartView(context: Context) : View(context) {
             MotionEvent.ACTION_UP -> {
                 val was = pressed; pressed = -1; invalidate()
                 if (menuOpen) {
-                    if (was < 0 && hit < 0) menuOpen = false                  // a touch outside it
+                    // a touch outside it: one step back out of the region list / card (no change), else the Menu shuts
+                    if (was < 0 && hit < 0) { if (!StartMenu.back()) menuOpen = false }
                     else if (was >= 0 && was == hit) StartMenu.press(hit)
                 }
                 else if (was >= 0 && was == hit) when (hit) {

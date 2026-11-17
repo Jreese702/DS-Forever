@@ -115,8 +115,10 @@ class ChooserPanel(context: Context) : View(context) {
         val x = RectF(MARGIN, footY, MARGIN + SIDE_W, footY + BUTTON_H)
         footPanel(c, x.right + GAP, width - MARGIN, SetupFlow.status(null, SetupBridge.checksPass(), LoadingScene.now()))
         StartMenu.draw(c, RectF(MARGIN, MARGIN + 110f, width - MARGIN, footY - GAP * 2), menuPressed, menuHits, x, game = false)
-        if (menuHits.none { it.second == menuCursor }) menuCursor = menuHits.getOrNull(1)?.second ?: -1
-        menuHits.firstOrNull { it.second == menuCursor }?.let { box(c, it.first) }
+        // the region list / card has its own cursor (StartMenu.picker); the Menu's comes back on Region when it shuts
+        val pick = StartMenu.focusId()
+        if (pick == null && menuHits.none { it.second == menuCursor }) menuCursor = menuHits.getOrNull(1)?.second ?: -1
+        menuHits.firstOrNull { it.second == (pick ?: menuCursor) }?.let { box(c, it.first) }
     }
 
     /** the D-pad on the Menu */
@@ -334,7 +336,15 @@ class ChooserPanel(context: Context) : View(context) {
         if (code !in KEYS) return false
         if (!down) return true
         if (StartMenu.open && page == Page.CHOOSER) {
-            when (code) {
+            // the region list / card first: D-pad and A browse it, B one step back, nothing saved before Switch
+            if (StartMenu.picker.open) when (code) {
+                KeyEvent.KEYCODE_BUTTON_B -> StartMenu.back()
+                KeyEvent.KEYCODE_BUTTON_A -> StartMenu.pickerA()
+                KeyEvent.KEYCODE_DPAD_LEFT -> StartMenu.pickerMove(-1, 0)
+                KeyEvent.KEYCODE_DPAD_RIGHT -> StartMenu.pickerMove(1, 0)
+                KeyEvent.KEYCODE_DPAD_UP -> StartMenu.pickerMove(0, -1)
+                KeyEvent.KEYCODE_DPAD_DOWN -> StartMenu.pickerMove(0, 1)
+            } else when (code) {
                 KeyEvent.KEYCODE_BUTTON_B -> StartMenu.open = false
                 KeyEvent.KEYCODE_BUTTON_A -> StartMenu.press(menuCursor)
                 KeyEvent.KEYCODE_DPAD_LEFT -> menuMove(-1, 0)
@@ -378,7 +388,7 @@ class ChooserPanel(context: Context) : View(context) {
                 MotionEvent.ACTION_DOWN -> menuPressed = at
                 MotionEvent.ACTION_UP -> {
                     val was = menuPressed; menuPressed = -1
-                    if (was >= 0 && was == at) { menuCursor = at; StartMenu.press(at) }
+                    if (was >= 0 && was == at) { if (!StartMenu.picker.open) menuCursor = at; StartMenu.press(at) }
                 }
                 MotionEvent.ACTION_CANCEL -> menuPressed = -1
             }
