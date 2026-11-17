@@ -285,6 +285,8 @@ class BottomTilesRoomTest {
         System.getenv("BOTTOM_DEBUG_DIR")?.let { d ->
             PreviewStage.home(app, HomeView.Companion.Look(HomeSettings.rest, true, HomeSettings.questOverMap, false), false)?.let { b ->
                 File(d).mkdirs(); File(d, "home_stage.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+            PreviewStage.home(app, HomeView.Companion.Look(HomeSettings.rest, true, HomeSettings.questOverMap, true), true)?.let { b ->
+                File(d, "home_stage_fight.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
         }
         for ((i, id) in BottomTiles.ALL.withIndex()) {
             open(id)
@@ -308,8 +310,8 @@ class BottomTilesRoomTest {
         close(); scroll(0); hold(r); press(r, "PADDDOWN"); press(r, "PADDDOWN"); press(r, "PADDLEFT"); press(r, "PAD1"); reveal(BottomTiles.COMBAT); shot("bot_cursor_on_open_tile")
         press(r, "PADDDOWN"); shot("bot_cursor_in_band")
         press(r, "PAD2"); shot("bot_b_back_on_tile")
-        // the themes: an OLED one and a dark one (no light preset exists), the tab and a band each
-        for (th in listOf("oled_bronze", "dark_silver", "oled_frost")) {
+        // the themes: the default Classic Bronze, two OLED ones and a dark one (ThemePresets has no light preset), the tab and a band each
+        for (th in listOf("classic", "oled_bronze", "dark_silver", "oled_frost")) {
             Theme.use(th); close(); hold(r); r.toggle(SettingsTabs.Group.MAP); lay(r); scroll(0); shot("bot_theme_$th")
             open(BottomTiles.QUEST); shot("bot_theme_${th}_band_quest")
         }

@@ -419,27 +419,54 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         return s.substring(0, n).trimEnd() + "…"
     }
 
-    /** a band line's label in [room] px: one line at 25 (down to 21), else two or three lines (down to 15: a long Spanish or French
-     *  word set; 13 for one long word such as "Emplacements"), never cut short unless one word alone is wider than the room */
-    private fun label(c: Canvas, s: String, x: Float, cy: Float, room: Float) {
-        val p = pBandLabel
-        p.textSize = 25f
-        while (p.measureText(s) > room && p.textSize > 21f) p.textSize -= 1f
-        if (p.measureText(s) <= room) { c.drawText(s, x, cy + 9f, p); return }
-        for (n in 2..3) {
-            p.textSize = 23f
-            while (p.textSize >= 13f) {
-                val lines = wrapWords(s, room) { p.measureText(it) }
-                if (lines != null && lines.size <= n) {
-                    val lh = p.textSize * 1.1f
-                    val top = cy - lh * lines.size / 2f
-                    for ((i, l) in lines.withIndex()) c.drawText(l, x, top + lh * i + lh * 0.78f, p)
-                    return
-                }
-                p.textSize -= 1f
-            }
+    /**
+     * the band's labels' ONE size (round 3, the verifier: "'Emplacements libres' is about 12 px ... while 'Or' and 'Pierre de foyer'
+     * are full size"): the largest from 25 down to [LABEL_MIN] at which EVERY plain label of the band fits its room in up to three
+     * whole-word lines. A label whose icon leaves too little room (a long French / Spanish word beside the clock band's 40 px icon)
+     * stands UNDER its icon instead, the label box's full width; those lines' indexes come back as [LabelPlan.stacked]
+     */
+    class LabelPlan(val size: Float, val stacked: Set<Int>)
+
+    private fun labelPlan(band: GameUiTiles.Band, lines: List<BottomTiles.Line>): LabelPlan {
+        class Item(val i: Int, val s: String, val lb: GameUiTiles.Box, val icon: Boolean)
+        val items = band.lines.withIndex().mapNotNull { (i, line) ->
+            val ln = lines.getOrNull(i) ?: return@mapNotNull null
+            val lb = line.label ?: return@mapNotNull null
+            if (ln.value != null) return@mapNotNull null
+            Item(i, Tr.t(ln.label ?: ""), lb, ln.icon?.let { Icons.get(it) } != null)
         }
-        c.drawText(fitText(p, s, room, 21f, 15f), x, cy + 9f, p)
+        val p = pBandLabel
+        var size = 25f
+        while (size >= LABEL_MIN) {
+            p.textSize = size
+            val lh = size * 1.1f
+            val stacked = HashSet<Int>()
+            val ok = items.all { it ->
+                val full = it.lb.w - 8f
+                val side = wrapWords(it.s, full - (if (it.icon) ICON + 10f else 0f)) { w -> p.measureText(w) }
+                if (side != null && side.size <= 3 && side.size * lh <= it.lb.h - 6f) true
+                else if (it.icon) {
+                    val under = wrapWords(it.s, full) { w -> p.measureText(w) }
+                    (under != null && under.size <= 2 && ICON_STACK + 4f + under.size * lh <= it.lb.h - 4f).also { f -> if (f) stacked += it.i }
+                } else false
+            }
+            if (ok) return LabelPlan(size, stacked)
+            size -= 1f
+        }
+        return LabelPlan(LABEL_MIN, emptySet())
+    }
+
+    /** a band line's label at the plan's size in whole-word lines, centred on [cy] (or under [top]), never cut short unless one word alone
+     *  is wider than the room even at the floor */
+    private fun label(c: Canvas, s: String, x: Float, cy: Float, room: Float, size: Float, top: Float? = null) {
+        val p = pBandLabel
+        p.textSize = size
+        val lines = wrapWords(s, room) { p.measureText(it) }
+        if (lines == null) { c.drawText(fitText(p, s, room, size, LABEL_MIN), x, cy + size * 0.36f, p); p.textSize = 25f; return }
+        val lh = size * 1.1f
+        val t0 = top ?: (cy - lh * lines.size / 2f)
+        for ((i, l) in lines.withIndex()) c.drawText(l, x, t0 + lh * i + lh * 0.78f, p)
+        p.textSize = 25f
     }
 
     /** the open tile's band (Top's): under its row, a notch at the tile; the picture large, the lines, the one status line */
@@ -456,17 +483,26 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         c.drawLine(nx - 18f, rect.top + 1f, nx, rect.top - 13f, pStroke); c.drawLine(nx, rect.top - 13f, nx + 18f, rect.top + 1f, pStroke)
         val tMs = if (BottomTiles.animated(id)) SystemClock.uptimeMillis() - openedAt else null
         picture(c, id, band.picture.rect(), e, look, tMs, 0)
+        val plan = labelPlan(band, lines)
         for ((i, line) in band.lines.withIndex()) {
             val ln = lines.getOrNull(i) ?: continue
             line.label?.let { lb ->
                 var lx = lb.l + 4f
+                val stacked = i in plan.stacked
+                var under: Float? = null
                 ln.icon?.let { fid ->
                     Icons.get(fid)?.let { bmp ->
-                        // the design's 3.2: the icons.pak icon at 40 px left of the label
-                        val ib = RectF(lx, lb.cy - ICON / 2f, lx + ICON, lb.cy + ICON / 2f)
+                        // the design's 3.2: the icons.pak icon at 40 px left of the label (a label too long beside it: under it)
+                        val n = if (stacked) wrapWords(Tr.t(ln.label ?: ""), lb.w - 8f) { w -> pBandLabel.apply { textSize = plan.size }.measureText(w) }?.size ?: 1 else 0
+                        val ib = if (stacked) {
+                            val total = ICON_STACK + 4f + n * plan.size * 1.1f
+                            val t = lb.cy - total / 2f
+                            under = t + ICON_STACK + 4f
+                            RectF(lx, t, lx + ICON_STACK, t + ICON_STACK)
+                        } else RectF(lx, lb.cy - ICON / 2f, lx + ICON, lb.cy + ICON / 2f)
                         c.drawBitmap(bmp, null, ib, pIcon)
                         pStroke.color = Theme.bronzeDim; pStroke.strokeWidth = 1.5f; c.drawRect(ib, pStroke)
-                        lx += ICON + 10f
+                        if (!stacked) lx += ICON + 10f
                     }
                 }
                 val room = lb.r - lx - 4f
@@ -475,7 +511,7 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
                     c.drawText(fitText(pBandLabel, Tr.t(ln.label ?: ""), room, 25f, 18f), lx, lb.cy - 6f, pBandLabel)
                     pValue.color = Theme.gold
                     c.drawText(fitText(pValue, Tr.t(ln.value), room, 22f, 18f), lx, lb.cy + 26f, pValue)
-                } else label(c, Tr.t(ln.label ?: ""), lx, lb.cy, room)
+                } else label(c, Tr.t(ln.label ?: ""), lx, lb.cy, room, plan.size, under)
             }
             for ((k, b) in line.buttons.withIndex()) {
                 val m = ln.modes?.getOrNull(k)
@@ -514,6 +550,10 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         const val FRAME_MS = 33L
         /** a band line's icon (the clock band's: the design's 3.2) */
         const val ICON = 40f
+        /** a label too long beside its icon stands under it (the same 40 px icon) */
+        const val ICON_STACK = ICON
+        /** the band labels' floor (one size for the whole band) */
+        const val LABEL_MIN = 18f
 
         /** [s]'s words laid in lines no wider than [maxW] ([w] measures), null = one word alone is wider */
         fun wrapWords(s: String, maxW: Float, w: (String) -> Float): List<String>? {

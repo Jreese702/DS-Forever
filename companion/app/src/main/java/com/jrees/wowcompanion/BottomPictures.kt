@@ -23,8 +23,11 @@ import kotlin.math.min
  *  - CROPS of the real Home ([Stage]: PreviewStage's offscreen Home, at the tile's choice), never shrunk more than [MAX_SHRINK] into the
  *    well and never blown up past 1x into the band ([WIN_W] x [WIN_H] of Home's px is the window both use);
  *  - COMPOSED pictures where one crop would not read at the Thor's size (critic C5): the swing line drawn 3x thick over the controller's
- *    crop; the focused quest as two slot frames, the quest card's crop in the chosen one; the clock band drawn by Home's own UiKit.clockChip
- *    and UiKit.clockBand with sample values; the tap-to-cast bar as Home's two columns with real spell icons under the chosen one(s);
+ *    crop; the focused quest as Home's two columns, the chosen one wide with Home's own UiKit.questCard in it; the clock band drawn by
+ *    Home's own UiKit.clockChip and UiKit.clockBand with sample values; the tap-to-cast bar as Home's two columns with real spell icons
+ *    under the chosen one(s). The CHAT is always drawn (round 3: a crop of the half-size stage was soft in the band and cut lines through
+ *    the middle): sample lines laid the way Home's pane lays them ([chat]); the map from the minimap's own tiles ([terrain]), else our
+ *    drawing ([mapDrawn]), never a blown-up crop;
  *  - real art: the seamless world map's tiles (Explored only = the base painting, a sample of zones revealed), the companion's own
  *    keyboard (PreviewStage.keyboard), the kit's glyphs;
  *  - and, while none of that is on the phone (no game document yet, no kit), the old "What it does" drawing (SettingsPreview, read
@@ -184,29 +187,18 @@ object BottomPictures {
     /** the controller's groups' window: just the group (the clock band's icons and the L / R trigger boxes beside it stay out, so the
      *  miniature has clean edges); 404 of Home's px into the band's 438 */
     private const val PAD_WIN = 404f
-    /** the fight's window: the grown buttons need about the band's 438 (its edges softened: [sides]), the R trigger box just outside */
-    private fun fightFaces(b: Map<String, RectF>) = b["controller"]?.let { win(it.left + it.width() * 0.713f, it.top + FIGHT_WIN / 4f, FIGHT_WIN) }
-    private const val FIGHT_WIN = 436f
-    /** the top of a column (the focused quest's frames): [QW] x [QH] of Home at its top-left */
-    private const val QW = 236f
-    private const val QH = 220f
-    private fun colTop(b: Map<String, RectF>, key: String) = b[key]?.let { RectF(it.left, it.top, it.left + QW, it.top + QH) }
-    /** the chat's newest lines (its foot) when the card is not on it */
-    private fun colFoot(b: Map<String, RectF>, key: String) = b[key]?.let { RectF(it.left, it.bottom - QH, it.left + QW, it.bottom) }
-    /** the minimap, [k] of the window (indoors: narrower, the same map closer) */
-    private fun mapWin(b: Map<String, RectF>, k: Float) = b["map"]?.let { win(it.centerX(), it.centerY(), WIN_W * k) }
-
-    /** a window of module [key] the shape of [dw] x [dh], [k] Home px per unit, kept inside the module; [anchor] -1 its top, 0 its
-     *  middle, 1 its foot */
-    private fun modWin(b: Map<String, RectF>, key: String, dw: Float, dh: Float, k: Float, anchor: Int, left: Boolean = false): RectF? = b[key]?.let { m ->
-        var w = dw * k; var h = dh * k
-        if (w > m.width()) { h *= m.width() / w; w = m.width() }
-        if (h > m.height()) { w *= m.height() / h; h = m.height() }
-        // the chat's words start at its left: its window keeps that edge (a few px in, past the module's frame)
-        val x = if (left) m.left + 6f else m.centerX() - w / 2f
-        val y = when (anchor) { -1 -> m.top; 1 -> m.bottom - h; else -> m.centerY() - h / 2f }
-        RectF(x, y, x + w, y + h)
+    /**
+     * the fight's window (round 3, the verifier: "cut the A button in half at the right edge and the Y badge at the bottom"): the
+     * widest the 2.2x rule allows ([WIN_W]), centred on the grown diamond's middle column (X over B) so X, Y and A stand whole with
+     * their badges; B's lower half runs out of the foot, faded into the well ([sides]' foot), the swing line on that faded strip
+     */
+    private fun fightFaces(b: Map<String, RectF>) = b["controller"]?.let {
+        val x = (it.left + it.width() * FIGHT_CX - WIN_W / 2f).coerceIn(0f, max(0f, HOME_W - WIN_W))
+        RectF(x, it.top + FIGHT_TOP, x + WIN_W, it.top + FIGHT_TOP + WIN_H)
     }
+    /** the grown diamond's middle (X over B) across the controller band, and the window's top in Home's px (X's ring just inside) */
+    private const val FIGHT_CX = 0.712f
+    private const val FIGHT_TOP = 36f
 
     /** the well's ground: the game's world colour (the design's 0.2: not a theme token, it stands for the game) */
     val WORLD = Color.rgb(14, 16, 18)
@@ -321,35 +313,27 @@ object BottomPictures {
                 val k = if (tMs == null) 1f else loop(t + 4.4f * 0.45f, 4.4f)
                 blit(c, restB, r)
                 if (k > 0f) { pBmp.alpha = (255 * k).toInt(); blit(c, fightB, r); pBmp.alpha = 255 }
-                sides(c, r, 0.12f)
+                sides(c, r, FIGHT_SIDE, FOOT)
                 if (k > 0f) UiKit.combatGlow(c, r, 0.75f * k, r.height() * 0.16f)
             }
             BottomTiles.SWING -> {
                 val on = HomeSettings.swingTimer
                 val b = crop("swing|fight|$sz", shot(player(swing = false), true, null, ::fightFaces), prio)
                 if (b == null) { fallback(c, r, "Swing timer", look, tMs); return }
-                blit(c, b, r); sides(c, r, 0.12f)
+                blit(c, b, r); sides(c, r, FIGHT_SIDE, FOOT)
                 UiKit.combatGlow(c, r, 0.55f, r.height() * 0.14f)
                 if (on) swingLine(c, r, if (tMs == null) 0.62f else ((t + 0.62f * 2.6f) % 2.6f) / 2.6f)   // the band opens where the tile is
             }
-            BottomTiles.QUEST -> quest(c, ctx, r, prio, big)
+            BottomTiles.QUEST -> quest(c, r)
             BottomTiles.CLOCK -> clock(c, r)
             BottomTiles.TOOLBAR -> {
                 val on = look.env.dpad?.want == true
                 val b = crop("toolbar|$on|$sz", shot(player(), false, on, ::dpad), prio)
                 if (b != null) { blit(c, b, r); sides(c, r) } else toolbarDrawn(c, r)
             }
-            BottomTiles.TALK -> talk(c, r, look, tMs, prio, big)
-            BottomTiles.CASTBAR -> castBar(c, r, tMs, prio, big)
-            BottomTiles.ZOOM -> {
-                val out = Settings.minimapYd; val inn = Settings.minimapIndoorYd
-                if (zoom(c, r, out, inn, look.zoomIndoor)) return
-                val k = if (look.zoomIndoor) (inn.toFloat() / out.coerceAtLeast(1)).coerceIn(0.4f, 1f) else 1f
-                val lk = player(overMap = false)
-                val b = crop("zoom|${look.zoomIndoor}|$inn|$out|$sz", shot(lk, false, null, { mapWin(it, k) }), prio)
-                if (b != null) { blit(c, b, r); yards(c, r, if (look.zoomIndoor) inn else out, look.zoomIndoor) }
-                else fallback(c, r, if (look.zoomIndoor) "Minimap zoom indoors" else "Minimap zoom outdoors", look, tMs)
-            }
+            BottomTiles.TALK -> talk(c, r, look, tMs)
+            BottomTiles.CASTBAR -> castBar(c, r, tMs)
+            BottomTiles.ZOOM -> zoom(c, r, Settings.minimapYd, Settings.minimapIndoorYd, look.zoomIndoor)
             BottomTiles.WORLD -> world(c, r, Settings.worldMapFog == "all", look, tMs)
             BottomTiles.INPUT -> input(c, ctx, r, Settings.chatDefaultInput == "quick", big)
         }
@@ -366,14 +350,30 @@ object BottomPictures {
     private fun blit(c: Canvas, b: Bitmap, r: RectF) = c.drawBitmap(b, null, r, pBmp)
 
     /** the crop's left and right edges faded into the well (whatever of Home's next module reaches the window's edge goes) */
-    private fun sides(c: Canvas, r: RectF, frac: Float = 0.1f) {
+    private fun sides(c: Canvas, r: RectF, frac: Float = 0.1f, foot: Float = 0f) {
         val w = r.width() * frac
-        pF.shader = LinearGradient(r.left, 0f, r.left + w, 0f, WORLD, Color.argb(0, Color.red(WORLD), Color.green(WORLD), Color.blue(WORLD)), Shader.TileMode.CLAMP)
+        val clear = Color.argb(0, Color.red(WORLD), Color.green(WORLD), Color.blue(WORLD))
+        pF.shader = LinearGradient(r.left, 0f, r.left + w, 0f, WORLD, clear, Shader.TileMode.CLAMP)
         c.drawRect(r.left, r.top, r.left + w, r.bottom, pF)
-        pF.shader = LinearGradient(r.right - w, 0f, r.right, 0f, Color.argb(0, Color.red(WORLD), Color.green(WORLD), Color.blue(WORLD)), WORLD, Shader.TileMode.CLAMP)
+        pF.shader = LinearGradient(r.right - w, 0f, r.right, 0f, clear, WORLD, Shader.TileMode.CLAMP)
         c.drawRect(r.right - w, r.top, r.right, r.bottom, pF)
+        if (foot > 0f) {
+            // the foot: what runs out of the window's bottom fades into the well (never a hard cut through a button)
+            val h = r.height() * foot
+            pF.shader = LinearGradient(0f, r.bottom - h, 0f, r.bottom, clear, WORLD, Shader.TileMode.CLAMP)
+            c.drawRect(r.left, r.bottom - h, r.right, r.bottom, pF)
+            // the fight's top-right corner: the R trigger box's edge reaches in there (above A, which starts half way down), covered
+            pF.shader = LinearGradient(r.right - r.width() * CORNER_W, 0f, r.right - r.width() * CORNER_W * 0.55f, 0f, clear, WORLD, Shader.TileMode.CLAMP)
+            c.drawRect(r.right - r.width() * CORNER_W, r.top, r.right, r.top + r.height() * CORNER_H, pF)
+        }
         pF.shader = null
     }
+    /** the fight pictures' top-right corner covered (the R trigger box): its width and height, fractions of the picture */
+    private const val CORNER_W = 0.14f
+    private const val CORNER_H = 0.42f
+    /** the fight pictures' foot fade (B's lower half, under the swing line); their sides barely (Y and A reach the window's edges) */
+    private const val FOOT = 0.3f
+    private const val FIGHT_SIDE = 0.035f
 
     /** the space's px per unit of the 216 x 108 picture */
     private fun k(r: RectF) = r.width() / W
@@ -394,8 +394,9 @@ object BottomPictures {
 
     private fun swingLine(c: Canvas, r: RectF, fill: Float) {
         val s = k(r)
-        val y = r.bottom - 14f * s
-        val l = r.left + 30f * s; val rr = r.right - 30f * s
+        // on the faded foot, under X / Y / A and their badges (never over a badge)
+        val y = r.bottom - 9f * s
+        val l = r.left + 34f * s; val rr = r.right - 34f * s
         pF.color = Color.argb(220, 10, 8, 6); c.drawRoundRect(RectF(l - 2f * s, y - 5f * s, rr + 2f * s, y + 5f * s), 4f * s, 4f * s, pF)
         pF.shader = LinearGradient(l, 0f, rr, 0f, Color.rgb(200, 150, 40), Theme.gold, Shader.TileMode.CLAMP)
         c.drawRoundRect(RectF(l, y - 3f * s, l + (rr - l) * fill, y + 3f * s), 3f * s, 3f * s, pF)
@@ -408,46 +409,112 @@ object BottomPictures {
 
     /** the sample focused quest (sample words, the ToS ruling): Home's card object, drawn by Home's own UiKit.questCard */
     private val SAMPLE_QUEST by lazy {
-        UiKit.QuestCard("Vile Familiars", 6, Theme.questYellow, listOf("Vile Familiar slain: 4/12" to false), number = 1)
+        // short words (round 3: "Vile Familiar slain: 4/12" ran out of the card at the tile's size): Durotar's "Lazy Peons"
+        UiKit.QuestCard("Lazy Peons", 4, Theme.questGreen, listOf("Peons Awoken: 2/5" to false), number = 1)
     }
 
-    private fun quest(c: Canvas, ctx: Context, r: RectF, prio: Int, big: Boolean) {
+    /**
+     * round 3 (the verifier: "the quest card text ... is about 6 px in the tile well", "the chat column is cut mid-word"): the CHOSEN
+     * column is the wide one (70 %), Home's own card in it at 0.42 of the Map room's type (its title about 12 px in the tile, near Home's size in
+     * the band); the other column narrow and dimmed. Both columns are DRAWN (no crop): the chat as Home's pane lays it (whole wrapped
+     * lines from the foot, [chat]), the map from the minimap's own tiles ([terrain]) or our drawing ([mapDrawn])
+     */
+    private fun quest(c: Canvas, r: RectF) {
         val over = HomeSettings.questOverMap
         val s = k(r)
-        val gap = 8f * s
-        val fw = (r.width() - 3f * gap) / 2f; val fh = r.height() - 2f * gap
-        val frames = listOf(RectF(r.left + gap, r.top + gap, r.left + gap + fw, r.top + gap + fh),
-            RectF(r.right - gap - fw, r.top + gap, r.right - gap, r.top + gap + fh))
-        val lk = player(overMap = over)
-        for ((i, key) in listOf("chat", "map").withIndex()) {
-            val f = frames[i]
-            val chosen = (i == 1) == over
-            pF.color = Theme.field; c.drawRect(f, pF)
+        val gap = 6f * s
+        val wide = (r.width() - 3f * gap) * 0.7f; val narrow = r.width() - 3f * gap - wide
+        val chatF = RectF(r.left + gap, r.top + gap, r.left + gap + (if (over) narrow else wide), r.bottom - gap)
+        val mapF = RectF(chatF.right + gap, r.top + gap, r.right - gap, r.bottom - gap)
+        // the card at 0.42 of the Map room's type (UiKit.questCard's scale 1 = its 400 px rows)
+        val sc = 0.42f * s
+        for ((i, f) in listOf(chatF, mapF).withIndex()) {
+            val isMap = i == 1
+            val chosen = isMap == over
             c.save(); c.clipRect(f)
-            if (key == "map") {
-                // the minimap's own tiles (crisp at both sizes), the arrow in the open part under the card
-                if (terrain(c, f, 150f)) arrow(c, f.centerX(), f.centerY() + (if (chosen) f.height() * 0.18f else 0f), 22f * s)
-                else { pF.color = Color.rgb(52, 70, 46); c.drawCircle(f.centerX(), f.centerY() + 8f * s, min(f.width(), f.height()) * 0.36f, pF) }
+            val cardH = if (chosen) UiKit.questCardHeight(SAMPLE_QUEST, sc) else 0f
+            val card = RectF(f.left + 2f * s, f.top + 2f * s, f.right - 2f * s, f.top + 2f * s + cardH)
+            if (isMap) {
+                if (!terrain(c, f, 150f)) mapDrawn(c, f)
+                val ay = if (chosen) (card.bottom + f.bottom) / 2f else f.centerY()
+                arrow(c, f.centerX(), ay, 20f * s)
             } else {
-                // the chat's newest lines (its foot): a crop of the real Home, at most 2.2x shrunk into the well
-                val ow = f.width().toInt().coerceAtLeast(1); val oh = f.height().toInt().coerceAtLeast(1)
-                val b = crop("quest|chat|$over|${if (big) "L" else "S"}", Shot(lk, false, null,
-                    { modWin(it, "chat", f.width() / s, f.height() / s, MAX_SHRINK, 1, left = true) }, ow, oh), prio)
-                if (b != null) c.drawBitmap(b, null, f, pBmp)
-                else { pF.color = Theme.textDim; for (j in 0..2) c.drawRect(f.left + 8f * s, f.bottom - (14f + j * 12f) * s, f.right - (10f + j * 14f) * s, f.bottom - (10f + j * 12f) * s, pF) }
+                pF.color = Theme.field; c.drawRect(f, pF)
+                chat(c, RectF(f.left, if (chosen) card.bottom else f.top, f.right, f.bottom), CHAT_TILE * s)
             }
-            if (chosen) {
-                // Home's card, laid out at the Map room's 400 px and scaled to the frame
-                val sc = (f.width() - 4f * s) / 400f
-                val ch = UiKit.questCardHeight(SAMPLE_QUEST)
-                c.save(); c.translate(f.left + 2f * s, f.top + 2f * s); c.scale(sc, sc)
-                UiKit.questCard(c, RectF(0f, 0f, 400f, ch), SAMPLE_QUEST)
-                c.restore()
-            }
+            if (chosen) UiKit.questCard(c, card, SAMPLE_QUEST, scale = sc)
             c.restore()
             if (!chosen) { pF.color = Color.argb(150, 0, 0, 0); c.drawRect(f, pF) }
             pS.color = if (chosen) Theme.gold else Theme.bronzeDim; pS.strokeWidth = (if (chosen) 2.4f else 1.2f) * s
             c.drawRect(f, pS)
+        }
+    }
+
+    // ---- the chat, drawn the way Home's pane lays it (HomeView.ChatPane: wrapped whole lines from the foot, the top message cut to the
+    // ---- lines that fit with an ellipsis), sample lines in the game's channel colours (ChatView's, copied: they are private there)
+
+    private class ChatLn(val ch: String, val who: String, val text: String)
+    /** sample lines (the ToS ruling: sample values only) */
+    private val SAMPLE_CHAT = listOf(ChatLn("say", "Grukk", "anyone up for Burning Blade Coven?"), ChatLn("guild", "Zalaya", "grats on 6!"),
+        ChatLn("party", "Mogra", "I'll tank, pull on 3"), ChatLn("system", "", "You have learned a new spell: Earth Shock."),
+        ChatLn("say", "Torrik", "lfg Razor Hill quests"))
+    private val CH_COLOUR = mapOf("say" to Color.WHITE, "guild" to Color.parseColor("#40FF40"), "party" to Color.parseColor("#AAABFE"),
+        "system" to Color.parseColor("#FFFF00"))
+    /** the chat's type in the tile's 216 px space (the band's is the same, scaled) */
+    private const val CHAT_TILE = 11f
+    /** the sample player's own line (Hold to talk) and its words */
+    private const val SAMPLE_ME = "Kargath"
+    private const val SAMPLE_SAID = "on my way!"
+
+    /** [lines] into [r] at [size] px, the newest at the foot; [lit] = that line's index lit (just sent) */
+    private fun chat(c: Canvas, r: RectF, size: Float, lines: List<ChatLn> = SAMPLE_CHAT, lit: Int = -1) {
+        val tp = android.text.TextPaint(UiKit.bodyPaint(size, Theme.text, shadow = size > 14f))
+        val pad = size * 0.45f
+        val w = (r.width() - 2f * pad).toInt()
+        if (w < 10) return
+        val top = r.top + pad * 0.5f
+        var y = r.bottom - pad * 0.6f
+        fun build(l: ChatLn, max: Int): android.text.StaticLayout {
+            val s = if (l.who.isEmpty()) l.text else "${l.who}: ${l.text}"
+            val sp = android.text.SpannableString(s)
+            sp.setSpan(android.text.style.ForegroundColorSpan(CH_COLOUR[l.ch] ?: Theme.textDim), 0, s.length, 0)
+            return android.text.StaticLayout.Builder.obtain(sp, 0, s.length, tp, w).setIncludePad(false).setLineSpacing(0f, 1.12f)
+                .setMaxLines(max).setEllipsize(android.text.TextUtils.TruncateAt.END).build()
+        }
+        c.save(); c.clipRect(r)
+        for (i in lines.indices.reversed()) {
+            var lay = build(lines[i], Int.MAX_VALUE)
+            if (y - lay.height < top) {
+                // whole lines only (Home's rule: a line cut through the middle was seen on the Thor)
+                val lineH = lay.height.toFloat() / lay.lineCount.coerceAtLeast(1)
+                val n = ((y - top) / lineH).toInt()
+                if (n < 1) break
+                lay = build(lines[i], n)
+            }
+            y -= lay.height
+            if (i == lit) { val lw = (0 until lay.lineCount).maxOf { lay.getLineWidth(it) }; pF.color = Theme.focusA(80); c.drawRoundRect(RectF(r.left + pad * 0.4f, y - size * 0.1f, r.left + pad + lw + pad * 0.6f, y + lay.height + size * 0.1f), size * 0.25f, size * 0.25f, pF) }
+            c.save(); c.translate(r.left + pad, y); lay.draw(c); c.restore()
+            y -= size * 0.22f
+            if (y < top) break
+        }
+        c.restore()
+    }
+
+    /** no minimap art on the phone: our own drawing of the ground round the player (earth, a road, darker patches; no words) */
+    private fun mapDrawn(c: Canvas, r: RectF) {
+        val w = r.width(); val h = r.height()
+        pF.shader = LinearGradient(r.left, r.top, r.right, r.bottom, Color.rgb(138, 96, 58), Color.rgb(100, 66, 40), Shader.TileMode.CLAMP)
+        c.drawRect(r, pF); pF.shader = null
+        pF.color = Color.argb(60, 52, 30, 16)
+        for ((fx, fy, fr) in listOf(Triple(0.18f, 0.28f, 0.24f), Triple(0.78f, 0.72f, 0.3f), Triple(0.62f, 0.14f, 0.16f), Triple(0.3f, 0.86f, 0.18f)))
+            c.drawCircle(r.left + w * fx, r.top + h * fy, min(w, h) * fr, pF)
+        path.reset(); path.moveTo(r.left - 4f, r.top + h * 0.82f)
+        path.cubicTo(r.left + w * 0.3f, r.top + h * 0.5f, r.left + w * 0.62f, r.top + h * 0.78f, r.right + 4f, r.top + h * 0.22f)
+        pS.color = Color.rgb(182, 146, 98); pS.strokeWidth = max(2f, min(w, h) * 0.05f); c.drawPath(path, pS)
+        pF.color = Color.rgb(84, 60, 40)
+        for ((fx, fy) in listOf(0.44f to 0.42f, 0.52f to 0.36f, 0.47f to 0.3f)) {
+            val q = min(w, h) * 0.05f
+            c.drawRect(r.left + w * fx - q, r.top + h * fy - q, r.left + w * fx + q, r.top + h * fy + q, pF)
         }
     }
 
@@ -483,27 +550,24 @@ object BottomPictures {
     // ---- Hold to talk: the real chat behind, the kit's chat box with the mic, D-pad Left with Home's hold ring; the band: hold, the
     // ---- words in the box, then sent into the chat (Send now) or waiting for A (Show, A sends)
 
-    private fun talk(c: Canvas, r: RectF, look: Look, tMs: Long?, prio: Int, big: Boolean) {
+    private fun talk(c: Canvas, r: RectF, look: Look, tMs: Long?) {
         val who = look.env.who
         val on = HomeSettings.holdTalk(who)
         val now = HomeSettings.talkSendNow(who)
         val kk = r.width() / 432f
-        // the upper part: the chat's newest lines (a crop of the real Home, its left edge kept; our dim lines until the game is in)
         val chatH = 140f
-        val b = crop("talk|chat|${if (big) "L" else "S"}", Shot(player(), false, null,
-            { modWin(it, "chat", 432f, chatH, 1.1f, 1, left = true) }, r.width().toInt(), (chatH * kk).toInt().coerceAtLeast(1)), prio)
+        val t = if (tMs == null) 1.6f else (tMs / 1000f) % 4f                     // the tile: the hold done, the words in the box
+        val sent = on && now && t >= 2.1f
         c.save(); c.translate(r.left, r.top); c.scale(kk, kk)
         pF.color = WORLD; c.drawRect(0f, 0f, 432f, 216f, pF)
-        if (b != null) c.drawBitmap(b, null, RectF(0f, 0f, 432f, chatH), pBmp)
-        else {
-            pF.color = Theme.textDim
-            for (j in 0..3) c.drawRoundRect(RectF(16f, 22f + j * 28f, 300f - j * 46f, 34f + j * 28f), 4f, 4f, pF)
-        }
+        // the upper part: the chat's newest lines, drawn as Home's pane lays them (whole lines; Send now: the sample player's line
+        // lands as the newest, lit a moment)
+        val lines = if (sent) SAMPLE_CHAT + ChatLn("say", SAMPLE_ME, SAMPLE_SAID) else SAMPLE_CHAT
+        chat(c, RectF(0f, 0f, 432f, chatH - 4f), 22f, lines, lit = if (sent) lines.size - 1 else -1)
         // the lower part: the game's chat box on the frame, D-pad Left with Home's hold ring, the mic in the box
         pF.shader = LinearGradient(0f, chatH - 30f, 0f, chatH, Color.argb(0, 0, 0, 0), Color.argb(230, 10, 10, 12), Shader.TileMode.CLAMP)
         c.drawRect(0f, chatH - 30f, 432f, chatH, pF); pF.shader = null
         pF.color = Color.argb(230, 10, 10, 12); c.drawRect(0f, chatH, 432f, 216f, pF)
-        val t = if (tMs == null) 1.6f else (tMs / 1000f) % 4f                     // the tile: the hold done, the words in the box
         val hold = (t / 1.2f).coerceIn(0f, 1f)                                   // the ring fills while D-pad Left is held
         val gx = 46f; val gy = 178f
         UiKit.pad(c, "gen_left", gx, gy, 58f, if (on) 255 else 150)
@@ -512,18 +576,10 @@ object BottomPictures {
         UiKit.inputBox(c, box)
         VoiceUi.mic(c, box.right - 26f, box.centerY(), 34f, if (on) Theme.gold else Theme.dim, crossed = !on)
         if (on && t >= 1.3f) {
-            val sent = now && t >= 2.1f
+            // the words heard, in the box (sent: the box empties, the line is the chat's newest above)
             val p = UiKit.bodyPaint(24f, Theme.text, shadow = false)
-            if (!sent) c.drawText(fit(p, "lfg Razor Hill", box.width() - 110f), box.left + 14f, box.centerY() + 8f, p)
+            if (!sent) c.drawText(fit(p, SAMPLE_SAID, box.width() - 110f), box.left + 14f, box.centerY() + 8f, p)
             if (!now) UiKit.pad(c, UiKit.okGlyph(), box.right - 72f, box.centerY(), 36f)
-            if (sent) {
-                // sent: the line is the chat's newest, lit a moment
-                val q = UiKit.bodyPaint(24f, Color.rgb(255, 255, 255), shadow = true)
-                val line = RectF(0f, chatH - 38f, 432f, chatH)
-                pF.color = WORLD; c.drawRect(line, pF)                            // the line takes the newest place in the chat
-                pF.color = Theme.focusA(80); c.drawRoundRect(RectF(8f, chatH - 36f, 340f, chatH - 4f), 6f, 6f, pF)
-                c.drawText(fit(q, "${who?.substringBefore('-')?.ifEmpty { null } ?: "You"}: lfg Razor Hill", 320f), 16f, chatH - 12f, q)
-            }
         }
         c.restore()
     }
@@ -534,7 +590,7 @@ object BottomPictures {
     /** a level-6 Shaman's first spells (CastBarAsk's picture: sample icons) */
     private val SPELL_ICONS = intArrayOf(136048, 136026, 136052, 136051, 136086, 136102, 136015, 135824)
 
-    private fun castBar(c: Canvas, r: RectF, tMs: Long?, prio: Int, big: Boolean) {
+    private fun castBar(c: Canvas, r: RectF, tMs: Long?) {
         val side = HomeSettings.castBarSide
         val hide = HomeSettings.castBarCombat == CastStripModel.Combat.HIDE
         val kk = r.width() / 432f
@@ -547,34 +603,19 @@ object BottomPictures {
         val right = side == CastStripModel.Side.RIGHT || side == CastStripModel.Side.BOTH
         val room = (barH + g) * (1f - slide)
         val top = 0f
-        val chat = RectF(g, top + g, 216f - g / 2f, 216f - g - (if (left) room else 0f))
+        val chatCol = RectF(g, top + g, 216f - g / 2f, 216f - g - (if (left) room else 0f))
         val map = RectF(216f + g / 2f, top + g, 432f - g, 216f - g - (if (right) room else 0f))
-        val sz = if (big) "L" else "S"
-        // the chat column's crop: the full column's shape at rest (the columns grow over the bar's place as it goes)
-        val full = RectF(g, top + g, 216f - g / 2f, 216f - g)
-        val chatB = crop("cast|chat|$sz", Shot(player(), false, null, { modWin(it, "chat", full.width(), full.height(), 1.1f, 1, left = true) },
-            (full.width() * kk).toInt(), (full.height() * kk).toInt()), prio)
         c.save(); c.translate(r.left, r.top); c.scale(kk, kk)
         pF.color = WORLD; c.drawRect(0f, 0f, 432f, 216f, pF)
-        // the chat column (its foot: the newest lines stay at the bottom as the column grows)
-        c.save(); c.clipRect(chat)
-        if (chatB != null) c.drawBitmap(chatB, null, RectF(full.left, chat.bottom - full.height(), full.right, chat.bottom), pBmp)
-        else {
-            pF.color = Theme.raised; c.drawRect(chat, pF)
-            pF.color = Theme.textDim
-            for (j in 0..2) { val y = chat.bottom - 14f - j * 16f; if (y > chat.top + 10f) c.drawRect(chat.left + 10f, y - 5f, chat.right - 10f - j * 26f, y, pF) }
-        }
-        c.restore()
-        // the map column: the minimap's own tiles, the arrow in its middle
+        // the chat column, drawn as Home's pane lays it (its foot: the newest lines stay at the bottom as the column grows)
+        pF.color = Theme.field; c.drawRect(chatCol, pF)
+        chat(c, chatCol, 20f)
+        // the map column: the minimap's own tiles (our drawing without them), the arrow in its middle
         c.save(); c.clipRect(map)
-        if (terrain(c, map, 160f)) arrow(c, map.centerX(), map.centerY(), 26f)
-        else {
-            pF.color = Theme.raised; c.drawRect(map, pF)
-            val mr = min(map.width(), map.height()) / 2f - 8f
-            pF.color = Color.rgb(52, 70, 46); c.drawCircle(map.centerX(), map.centerY(), mr, pF)
-        }
+        if (!terrain(c, map, 160f)) mapDrawn(c, map)
+        arrow(c, map.centerX(), map.centerY(), 26f)
         c.restore()
-        for (col in listOf(chat, map)) { pS.color = Theme.bronzeDim; pS.strokeWidth = 2f; c.drawRect(col, pS) }
+        for (col in listOf(chatCol, map)) { pS.color = Theme.bronzeDim; pS.strokeWidth = 2f; c.drawRect(col, pS) }
         fun bar(l: Float, rr: Float, n: Int, first: Int) {
             val dy = (barH + g + 2f) * slide
             if (slide >= 1f) return
@@ -595,9 +636,9 @@ object BottomPictures {
             c.restore()
         }
         when (side) {
-            CastStripModel.Side.LEFT -> bar(chat.left, chat.right, 4, 0)
+            CastStripModel.Side.LEFT -> bar(chatCol.left, chatCol.right, 4, 0)
             CastStripModel.Side.RIGHT -> bar(map.left, map.right, 4, 4)
-            CastStripModel.Side.BOTH -> bar(chat.left, map.right, 8, 0)
+            CastStripModel.Side.BOTH -> bar(chatCol.left, map.right, 8, 0)
             CastStripModel.Side.OFF -> {}
         }
         if (fight > 0f) UiKit.combatGlow(c, RectF(0f, 0f, 432f, 216f), 0.8f * fight, 28f)
@@ -607,13 +648,13 @@ object BottomPictures {
     // ---- Minimap zoom: the minimap's own tiles round the player, the yards each choice shows framed (the line the cursor is on lit,
     // ---- the rest of the picture dimmed), the yards under it
 
-    /** [out] / [inn] yards across; true = drawn (false: no minimap tile on the phone, the caller crops Home instead) */
-    private fun zoom(c: Canvas, r: RectF, out: Int, inn: Int, indoor: Boolean): Boolean {
+    /** [out] / [inn] yards across, on the minimap's own tiles (our drawing while none is on the phone) */
+    private fun zoom(c: Canvas, r: RectF, out: Int, inn: Int, indoor: Boolean) {
         val s = k(r)
         // the picture's height in yards: twice the wider choice (its frame half the picture across), never closer than 120 yd (the
         // tiles' 0.96 px / yd at most about 1.8x in the band)
         val ydH = max(120f, max(out, inn) * 2f)
-        if (!terrain(c, r, ydH)) return false
+        if (!terrain(c, r, ydH)) mapDrawn(c, r)                                   // no minimap art: our drawing (never a blown-up crop)
         val k = r.height() / ydH
         // Home's minimap shape (the module's box), else square
         val aspect = PreviewStage.mapBox?.let { m -> (m.width() * HOME_W) / (m.height() * homeH()).coerceAtLeast(1f) }?.coerceIn(0.6f, 1.6f) ?: 1f
@@ -630,7 +671,6 @@ object BottomPictures {
         pS.color = Theme.gold; pS.strokeWidth = 1.8f * s; c.drawRect(lit, pS)
         arrow(c, r.centerX(), r.centerY(), 16f * s)
         yards(c, r, if (indoor) inn else out, indoor)
-        return true
     }
 
     // ---- Minimap zoom: the yards across, under the crop
