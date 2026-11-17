@@ -34,6 +34,13 @@ import java.util.zip.ZipFile
  *    beside AddOns (each entry's CRC and size checked), each folder verified (its .toc there and readable), then the old copy of each to
  *    the backup folder and the new one in; any failure puts every old copy back and deletes nothing of them. A running game needs a
  *    /reload or a restart to load them: said, never done for the player.
+ *  - NEW NOW, REPLACE NEXT START (the user's pick, 2026-11-16): with the game running only brand-new folders go in at once; a folder that
+ *    is already there is QUEUED ([QUEUE], its zip kept in the app's private "queued" folder) and replaced at the same safe point as the
+ *    app's own add-ons: the launcher's start step with the game closed (ThirdPartyAddons.applyAtStart -> [applyQueued]), on every route
+ *    (Play, a restart, the start step). Its row says "Replaces at next start" with Cancel. The game closed: replaced at once (the card's
+ *    two-tap confirm).
+ *  - each pick is copied in only with room for it ([copyCapped]: its size and [ThirdPartyAddons.SPACE_MARGIN] free, checked again as
+ *    it copies).
  *  - Remove: only a folder this list imported (its own store, [STORE]); it goes to the backup folder (never deleted).
  * Enabling stays with the game's own add-on list (the app edits AddOns.txt only for its own WowCompanion* folders).
  */
@@ -48,6 +55,8 @@ object ImportedAddons {
     const val RATIO_FLOOR = 10L * 1024 * 1024
     private const val TOC_MAX = 256 * 1024
     const val STORE = "imported.json"
+    /** the replacements waiting for a start with the game closed (folder -> its card row and its kept zip) */
+    const val QUEUE = "queued.json"
 
     /** a zip the app will not take; [message] is the card's word */
     class Refused(msg: String) : IOException(msg)
@@ -236,15 +245,17 @@ object ImportedAddons {
     /** DS Forever's own add-on folders (the app's manifest.txt; [init] reads it, the tests set it) */
     @Volatile internal var ownFolders: Set<String> = emptySet()
 
-    /** the folders DS Forever ships or manages: never imported over, never removed from here */
+    /**
+     * the folders DS Forever ships or manages: never imported over, never removed from here. "<one of them>-anything" too (the user's
+     * "Keep refusing", 2026-11-16, after the review): a backup is named "<folder>-<version>-<stamp>" and DependencyAddons' put-back takes
+     * the newest "QuestieDB-*" there, so an imported "QuestieDB-Extra" could never be put back in QuestieDB's place
+     */
     fun protectedName(name: String): Boolean {
         val n = name.lowercase()
         if (n.startsWith("wowcompanion") || n.startsWith("blizzard_")) return true
-        if (n == DependencyAddons.STAGING.lowercase() || n == DependencyAddons.BACKUP.lowercase()) return true
-        if (ownFolders.any { it.equals(name, true) }) return true
-        if (ThirdPartyAddons.ALL.any { a -> a.pkgs().any { (_, p) -> p.folders.any { it.equals(name, true) } } }) return true
-        if (DependencyAddons.DEPS.any { it.folder.equals(name, true) }) return true
-        return false
+        val managed = listOf(DependencyAddons.STAGING, DependencyAddons.BACKUP) + ownFolders +
+            ThirdPartyAddons.ALL.flatMap { a -> a.pkgs().flatMap { (_, p) -> p.folders } } + DependencyAddons.DEPS.map { it.folder }
+        return managed.any { m -> m.lowercase().let { n == it || n.startsWith("$it-") } }
     }
 
     /** the folder names in a manifest.txt text ("<md5>  <Folder>/<file>" lines) */
@@ -356,7 +367,7 @@ object ImportedAddons {
     /**
      * the taken add-ons of [found] into [flavorRoot]'s Interface/AddOns: room checked, unpacked into staging, verified, then each old
      * copy to the backup and the new one in; any failure puts every old copy back (nothing of them deleted). The store is written last.
-     * One line for the Import row.
+     * The game running: only the brand-new folders now, every replacement queued for the next start ([queue]). One line for the Import row.
      */
     fun installNow(found: List<Found>, flavorRoot: File): String {
         val take = found.filter { it.refused == null }
@@ -369,8 +380,34 @@ object ImportedAddons {
         // since): no replace without the card's second tap
         val nowThere = take.filter { !it.replaces && addonDir(addons, it.folder).exists() }.map { it.folder }
         if (nowThere.isNotEmpty()) throw NeedsConfirm(nowThere.toSet())
-        val need = take.sumOf { it.bytes } + ThirdPartyAddons.SPACE_MARGIN
-        if (freeSpace(flavorRoot) < need) throw Refused("Needs ${ThirdPartyAddons.size(((need + 999_999) / 1_000_000).toInt())} free")
+        // the user's pick (2026-11-16, "New now, replace next start"): a running game's folders are never swapped under it
+        val running = gameRunning()
+        val later = if (running) take.filter { addonDir(addons, it.folder).exists() } else emptyList()
+        val now = take.filter { f -> later.none { it === f } }
+        var listed = true
+        if (now.isNotEmpty()) {
+            val need = now.sumOf { it.bytes } + ThirdPartyAddons.SPACE_MARGIN
+            if (freeSpace(flavorRoot) < need) throw Refused("Needs ${mbWord(need)} free")
+            listed = swapIn(now, flavorRoot)
+            // a replacement queued earlier is older than this one: it never goes in over it
+            dropQueued(now.map { it.folder })
+        }
+        if (later.isNotEmpty()) queue(later)
+        if (!listed) return "Installed, but not on the Imported list"
+        return when {
+            later.isEmpty() -> if (running) "Installed. /reload or restart the game to load them" else "Installed"
+            now.isEmpty() -> "Replaces at next start"
+            else -> "New ones in: /reload. The rest replace at next start"
+        }
+    }
+
+    /** "120 MB" for [b] bytes, rounded up */
+    private fun mbWord(b: Long): String = ThirdPartyAddons.size(((b + 999_999) / 1_000_000).toInt())
+
+    /** [take] unpacked, verified and swapped in under the add-on lock; the store written last (false = it could not be) */
+    private fun swapIn(take: List<Found>, flavorRoot: File): Boolean {
+        val iface = File(flavorRoot, "Interface")
+        val addons = File(iface, "AddOns").apply { mkdirs() }
         ThirdPartyAddons.applyLock.lock()
         val staging = File(iface, "${DependencyAddons.STAGING}/import")
         try {
@@ -409,13 +446,131 @@ object ImportedAddons {
                 .put("iface", f.ifaceOk).put("at", now))
             val listed = runCatching { writeStore(j) }.onFailure { log("imported add-ons: the list could not be saved: ${it.message}") }.isSuccess
             log("imported add-ons: ${take.joinToString { "${it.folder} ${it.version ?: ""}".trim() }} in")
-            if (!listed) return "Installed, but not on the Imported list"
-            return if (gameRunning()) "Installed. /reload or restart the game to load them" else "Installed"
+            return listed
         } finally {
             ThirdPartyAddons.deleteTree(staging)
             File(iface, DependencyAddons.STAGING).delete()                         // only when empty
             ThirdPartyAddons.applyLock.unlock()
         }
+    }
+
+    // ---------------------------------------------------------------- the queue (replacements for the next start, game closed)
+    /** one replacement waiting: its card row, its kept zip's name in the "queued" folder; [failed] = the start that tried said why */
+    data class Queued(val folder: String, val title: String, val version: String?, val bytes: Long, val files: Int, val tocName: String,
+                      val ifaceOk: Boolean, val src: String, val zip: String, val at: Long, val failed: String? = null)
+
+    private fun queueDir(): File? = dir?.let { File(it, "queued") }
+    private fun queueFile(): File? = dir?.let { File(it, QUEUE) }
+    @Synchronized private fun readQueue(): JSONObject = runCatching { JSONObject(queueFile()!!.readText()) }.getOrDefault(JSONObject())
+    @Synchronized private fun writeQueue(j: JSONObject) {
+        val f = queueFile() ?: throw IOException("not started")
+        f.parentFile?.mkdirs()
+        val part = File(f.path + ".part")
+        part.writeText(j.toString())
+        if (!part.renameTo(f)) { f.delete(); if (!part.renameTo(f)) throw IOException("the list could not be saved") }
+        queueCache = null
+        // a kept zip no row names any more: its room back
+        val used = j.keys().asSequence().mapNotNull { j.optJSONObject(it)?.optString("zip") }.toSet()
+        queueDir()?.listFiles()?.filter { it.name !in used }?.forEach { it.delete() }
+    }
+
+    /** the replacements waiting, in the order they came (kept in memory between writes: the room asks on every draw) */
+    fun queued(): List<Queued> = queueCache ?: readQueued().also { queueCache = it }
+    @Volatile private var queueCache: List<Queued>? = null
+    private fun readQueued(): List<Queued> {
+        val j = readQueue()
+        return j.keys().asSequence().mapNotNull { k -> j.optJSONObject(k)?.let { o ->
+            Queued(k, o.optString("title", k), o.optString("version").ifEmpty { null }, o.optLong("bytes"), o.optInt("files"),
+                o.optString("toc"), o.optBoolean("iface", true), o.optString("src"), o.optString("zip"), o.optLong("at"),
+                o.optString("failed").ifEmpty { null }) } }.sortedBy { it.at }.toList()
+    }
+
+    /** [later] waiting for the next start: each zip kept (moved, never copied twice) in the "queued" folder, a row each (newer wins) */
+    private fun queue(later: List<Found>) {
+        val qd = queueDir() ?: throw IOException("not started")
+        qd.mkdirs()
+        ThirdPartyAddons.applyLock.lock()
+        try {
+            val j = readQueue()
+            val now = System.currentTimeMillis()
+            for ((zip, group) in later.groupBy { it.zip }) {
+                var kept = File(qd, "q$now-${zip.nameWithoutExtension}.zip")
+                var k = 2
+                while (kept.exists()) kept = File(qd, "q$now-${zip.nameWithoutExtension}~${k++}.zip")
+                if (!zip.renameTo(kept)) { zip.copyTo(kept); zip.delete() }
+                for (f in group) j.put(f.folder, JSONObject().put("title", f.title).put("version", f.version ?: "").put("bytes", f.bytes)
+                    .put("files", f.files).put("toc", f.tocName).put("iface", f.ifaceOk).put("src", f.src).put("zip", kept.name).put("at", now))
+            }
+            writeQueue(j)
+            log("imported add-ons: ${later.joinToString { it.folder }} replace at the next start")
+        } finally { ThirdPartyAddons.applyLock.unlock() }
+        changed()
+    }
+
+    /** [folders]' waiting rows gone (their zips with them when no row names them) */
+    private fun dropQueued(folders: List<String>) {
+        if (dir == null) return
+        val j = readQueue()
+        val gone = folders.filter { j.has(it) }
+        if (gone.isEmpty()) return
+        for (f in gone) j.remove(f)
+        runCatching { writeQueue(j) }.onFailure { log("imported add-ons: the queue could not be saved: ${it.message}") }
+    }
+
+    /** a waiting replacement's Cancel: its row and its zip gone, nothing in AddOns touched */
+    fun cancelQueuedNow(folder: String) {
+        ThirdPartyAddons.applyLock.lock()
+        try { dropQueued(listOf(folder)); log("imported add-ons: $folder's replacement cancelled") }
+        finally { ThirdPartyAddons.applyLock.unlock() }
+    }
+
+    /**
+     * THE SAFE POINT (ThirdPartyAddons.applyAtStart: the launcher's start step and every launch, the game closed): each waiting
+     * replacement swapped in (the zip scanned again, the same staging, backup and put-back as Install), one zip at a time; a failure
+     * stays on its row ("Not replaced") and is not tried again; no room = tried at the next start. One line, null = nothing waited.
+     */
+    fun applyQueued(flavorRoot: File, onStepLine: (String) -> Unit = {}): String? {
+        val qd = queueDir() ?: return null
+        if (queued().none { it.failed == null }) return null
+        if (gameRunning()) return null
+        ThirdPartyAddons.applyLock.lock()
+        try {
+            val lines = ArrayList<String>()
+            val j = readQueue()
+            val waiting = readQueued().filter { it.failed == null }
+            fun fail(q: Queued, why: String) {
+                j.optJSONObject(q.folder)?.put("failed", why); lines.add("${q.folder} not replaced ($why)")
+                log("imported add-ons: ${q.folder} not replaced: $why")
+            }
+            for ((zipName, group) in waiting.groupBy { it.zip }) {
+                val zip = File(qd, zipName)
+                val ok = group.filter { q ->
+                    when {
+                        protectedName(q.folder) -> { fail(q, "Kept: DS Forever's own"); false }
+                        !zip.isFile -> { fail(q, "Could not read it"); false }
+                        else -> true
+                    }
+                }
+                if (ok.isEmpty()) continue
+                val found = ok.map { q -> Found(zip, q.src, q.folder, q.title, q.version, q.bytes, q.files, q.tocName, q.ifaceOk, true) }
+                val need = found.sumOf { it.bytes } + ThirdPartyAddons.SPACE_MARGIN
+                if (freeSpace(flavorRoot) < need) {
+                    lines.add("${ok.joinToString { it.folder }} replace at the next start (needs ${mbWord(need)} free)"); continue
+                }
+                onStepLine("Installing add-ons: ${ok.joinToString { it.title }}...")
+                try {
+                    for (f in found) addonDir(File(flavorRoot, "Interface/AddOns"), f.folder)
+                    swapIn(found, flavorRoot)
+                    for (q in ok) j.remove(q.folder)
+                    lines.add("${ok.joinToString { it.folder }} replaced")
+                    log("imported add-ons: ${ok.joinToString { it.folder }} replaced at the start")
+                } catch (t: Throwable) {
+                    for (q in ok) fail(q, (t as? Refused)?.message ?: DependencyAddons.reasonOf(t))
+                }
+            }
+            writeQueue(j)
+            return lines.joinToString("; ").ifEmpty { null }
+        } finally { ThirdPartyAddons.applyLock.unlock(); changed() }
     }
 
     /** [f]'s entries out of [z] into [to]: each one's path checked, its size as declared, its CRC */
@@ -462,6 +617,7 @@ object ImportedAddons {
                 ThirdPartyAddons.backup(iface, target, stamp)
             }
             val j = readStore(); j.remove(folder); writeStore(j)
+            dropQueued(listOf(folder))                                             // its waiting replacement never brings it back
             log("imported add-ons: $folder to the backup")
             return if (gameRunning()) "Moved to the backup. /reload or restart the game" else "Moved to the backup"
         } finally { ThirdPartyAddons.applyLock.unlock() }
@@ -494,14 +650,14 @@ object ImportedAddons {
     }
     /** the off-device tests' way in: their own folder and own-folder names */
     internal fun start(folder: File, own: Set<String>) {
-        dir = folder; ownFolders = own; pending = null; status = null; busy = false; listCache = null
+        dir = folder; ownFolders = own; pending = null; status = null; busy = false; listCache = null; queueCache = null
         ThirdPartyAddons.deleteTree(File(folder, "import"))                         // a pick left from an earlier run
     }
     /** the renders: a card and a line as given */
     internal fun preview(p: Pending?, line: String?) { pending = p; status = line; changed() }
 
-    /** one picked file: its display name and a way to open it */
-    class Picked(val name: String, val open: () -> InputStream?)
+    /** one picked file: its display name, its size when the picker says it, and a way to open it */
+    class Picked(val name: String, val size: Long? = null, val open: () -> InputStream?)
 
     /** the picker's files: each copied in (capped), read, and planned; the card shows them (on the worker) */
     fun receive(picks: List<Picked>) {
@@ -514,7 +670,7 @@ object ImportedAddons {
             for ((i, p) in picks.withIndex()) {
                 val zip = File(d, "$i.zip")
                 try {
-                    copyCapped(p.open() ?: throw Refused("Could not read it"), zip)
+                    copyCapped(p.open() ?: throw Refused("Could not read it"), zip, p.size)
                     lists.add(plan(zip, addons))
                 } catch (t: Throwable) {
                     zip.delete()
@@ -526,17 +682,29 @@ object ImportedAddons {
         }
     }
 
-    /** [i] into [to], at most [MAX_ZIP] bytes */
-    internal fun copyCapped(i: InputStream, to: File) {
+    /**
+     * [i] into [to], at most [MAX_ZIP] bytes, only with room for it: [size] (the picker's, when known) and the margin free before the
+     * first byte, the margin still free every [ROOM_EVERY] bytes as it copies (a size the picker did not know)
+     */
+    internal fun copyCapped(i: InputStream, to: File, size: Long? = null) {
+        val vol = to.absoluteFile.parentFile ?: to.absoluteFile
+        if (size != null && size > MAX_ZIP) { i.close(); throw Refused("Too big") }
+        val first = (size ?: 0L) + ThirdPartyAddons.SPACE_MARGIN
+        if (freeSpace(vol) < first) { i.close(); throw Refused("Needs ${mbWord(first)} free") }
         i.use { s -> to.outputStream().use { o ->
-            val buf = ByteArray(65536); var n = 0L
+            val buf = ByteArray(65536); var n = 0L; var next = ROOM_EVERY
             while (true) {
                 val r = s.read(buf); if (r < 0) break
                 n += r; if (n > MAX_ZIP) throw Refused("Too big")
+                if (n >= next) {
+                    next += ROOM_EVERY
+                    if (freeSpace(vol) < ThirdPartyAddons.SPACE_MARGIN) throw Refused("Needs ${mbWord(n + ThirdPartyAddons.SPACE_MARGIN)} free")
+                }
                 o.write(buf, 0, r)
             }
         } }
     }
+    private const val ROOM_EVERY = 8L * 1024 * 1024
 
     /** the card's Install */
     fun install() {
@@ -553,6 +721,9 @@ object ImportedAddons {
 
     /** the card's Cancel: its zips' room back */
     fun cancel() { if (busy) return; clearPending(); status = null; changed() }
+
+    /** a waiting replacement's Cancel */
+    fun cancelQueued(folder: String) { job("Cancelling") { cancelQueuedNow(folder); null } }
 
     /** an imported add-on's Remove */
     fun remove(folder: String) {

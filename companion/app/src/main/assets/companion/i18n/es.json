@@ -1,5 +1,9 @@
 {
 "plain": {
+"Replaces at next start": "Se sustituye en el próximo inicio",
+"Not replaced": "No sustituido",
+"Cancelling": "Cancelando",
+"New ones in: /reload. The rest replace at next start": "Nuevos instalados: /reload. El resto se sustituye en el próximo inicio",
 "Import add-ons": "Importar accesorios",
 "A .zip from this device": "Un .zip de este dispositivo",
 "Import": "Importar",

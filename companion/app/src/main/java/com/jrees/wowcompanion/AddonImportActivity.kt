@@ -34,10 +34,14 @@ class AddonImportActivity : Activity() {
             if (uris.isEmpty()) data.data?.let { uris.add(it) }
             val cr = applicationContext.contentResolver
             ImportedAddons.receive(uris.map { u ->
-                val name = runCatching {
-                    cr.query(u, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null }
-                }.getOrNull() ?: u.lastPathSegment ?: "zip"
-                ImportedAddons.Picked(name) { cr.openInputStream(u) }
+                // its name and size (the room check before the copy; a provider that does not say: checked as it copies)
+                val (name0, size) = runCatching {
+                    cr.query(u, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use {
+                        if (it.moveToFirst()) it.getString(0) to (if (it.isNull(1)) null else it.getLong(1).takeIf { n -> n >= 0 }) else null
+                    }
+                }.getOrNull() ?: (null to null)
+                val name = name0 ?: u.lastPathSegment ?: "zip"
+                ImportedAddons.Picked(name, size) { cr.openInputStream(u) }
             })
         }
         finish()

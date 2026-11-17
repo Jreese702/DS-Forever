@@ -159,6 +159,7 @@ object ThirdPartyAddons {
     private var prefs: Store? = null
     @Volatile private var app: Context? = null
     fun init(c: Context) {
+        ImportedAddons.init(c)                                  // its queued replacements go in at this object's start step
         if (prefs != null) return
         Settings.init(c)                                        // the base add-ons' choice (PolestarGuide) lives in Settings
         app = c.applicationContext
@@ -532,6 +533,11 @@ object ThirdPartyAddons {
                 if (t !is Later && wanted(a, key) && !installed(a, key)) putState(a, key, state(a, key).put("failed", sig(p)).put("why", why))
             }
         }
+        // Settings > Add-ons > Import's replacements made while the game ran (the user's pick, 2026-11-16: "New now, replace next
+        // start"): this same safe point, the game closed, under this same lock
+        runCatching { ImportedAddons.applyQueued(flavorRoot, onStep) }
+            .onSuccess { it?.let { l -> lines.add(l) } }
+            .onFailure { lines.add("imported add-ons skipped (${DependencyAddons.reasonOf(it)})"); log("add-ons: imported: ${it.message}") }
         log("add-ons ($by): " + lines.joinToString("; ").ifEmpty { "nothing to do" })
         changed()
         return lines.joinToString("; ")

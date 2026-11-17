@@ -87,6 +87,13 @@ class AddonsImportShotsTest {
     @Suppress("UNCHECKED_CAST")
     private fun removeBoxes(v: SettingsView): Map<String, RectF> =
         SettingsView::class.java.getDeclaredField("importRemove").apply { isAccessible = true }.get(v) as Map<String, RectF>
+    @Suppress("UNCHECKED_CAST")
+    private fun unqueueBoxes(v: SettingsView): Map<String, RectF> =
+        SettingsView::class.java.getDeclaredField("importUnqueue").apply { isAccessible = true }.get(v) as Map<String, RectF>
+    /** ImportedAddons' game-running answer (internal to the companion module) */
+    private fun running(up: Boolean) {
+        ImportedAddons::class.java.getDeclaredField("gameRunning").apply { isAccessible = true }.set(null, { up })
+    }
     /** a press at [b]'s centre, as A on the cursor or a touch: the view's own tap */
     private fun press(v: SettingsView, b: RectF) {
         assertFalse("pressable", b.isEmpty)
@@ -171,6 +178,29 @@ class AddonsImportShotsTest {
             assertFalse(File(flavor, "Interface/AddOns/Details").exists())
             assertTrue(File(flavor, "Interface/AddOns-backup-dsforever").listFiles()!!.any { it.name.startsWith("Details-2.3.0-") })
             shot(r, "06_after_remove")
+
+            // the user's pick (2026-11-16, "New now, replace next start"): the game running, a replacement of Bagnon waits
+            running(true)
+            val newer = zip("Bagnon/Bagnon.toc" to toc("Bagnon", "11.0"), "Bagnon/core.lua" to "z")
+            ImportedAddons.receive(listOf(ImportedAddons.Picked("Bagnon-11.0.zip") { newer.inputStream() }))
+            waitIdle(r)
+            press(s, box(s, "btnImportInstall")); lay(r)
+            press(s, box(s, "btnImportInstall"))
+            waitIdle(r)
+            assertEquals("Replaces at next start", ImportedAddons.status)
+            assertEquals("## Interface: 16001\n## Title: |cff00aaffBagnon|r\n## Version: 10.2.1\n",
+                File(flavor, "Interface/AddOns/Bagnon/Bagnon.toc").readText())
+            assertEquals(listOf("Bagnon"), ImportedAddons.queued().map { it.folder })
+            assertEquals("the waiting row stands for it", setOf("OldBars"), removeBoxes(s).keys)
+            shot(r, "06b_replaces_at_next_start")
+            for (l in listOf("es", "fr")) { lang(l); shot(r, "06b_replaces_at_next_start_$l") }
+            lang("en")
+            // its Cancel: the row goes, AddOns untouched
+            press(s, RectF(unqueueBoxes(s)["Bagnon"]!!))
+            waitIdle(r)
+            assertTrue(ImportedAddons.queued().isEmpty())
+            assertEquals(setOf("Bagnon", "OldBars"), removeBoxes(s).keys)
+            running(false)
             // no game folder: Import greyed with its word
             ImportedAddons.flavorRoot = { null }
             lay(r)
@@ -180,6 +210,8 @@ class AddonsImportShotsTest {
             shot(r, "07_no_game_folder")
         } finally {
             ImportedAddons.flavorRoot = oldRoot
+            ImportedAddons::class.java.getDeclaredField("gameRunning").apply { isAccessible = true }
+                .set(null, { DependencyAddons.gameRunning() })
             Tr.setChoice(app, "auto")
             game.deleteRecursively()
         }

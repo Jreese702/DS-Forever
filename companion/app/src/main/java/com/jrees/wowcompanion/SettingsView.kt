@@ -308,7 +308,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun clearBoxes() {
         rowHits.clear(); sbHits.clear()
         addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty(); addonSettingsBtn.clear()
-        btnImport.setEmpty(); btnImportInstall.setEmpty(); btnImportCancel.setEmpty(); importRemove.clear()
+        btnImport.setEmpty(); btnImportInstall.setEmpty(); btnImportCancel.setEmpty(); importRemove.clear(); importUnqueue.clear()
         btnGuidePending.setEmpty(); for (r in segGuide) r.setEmpty()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart, btnSwapRestart, btnWinIdRestart,
@@ -1725,13 +1725,21 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private var btnImportInstall = RectF()
     private var btnImportCancel = RectF()
     private val importRemove = LinkedHashMap<String, RectF>()
-    private fun importFocus(): List<RectF> = listOf(btnImport, btnImportInstall, btnImportCancel) + importRemove.values.toList()
+    /** each waiting replacement's Cancel (ImportedAddons.queued: "Replaces at next start") */
+    private val importUnqueue = LinkedHashMap<String, RectF>()
+    private fun importFocus(): List<RectF> = listOf(btnImport, btnImportInstall, btnImportCancel) + importUnqueue.values.toList() +
+        importRemove.values.toList()
 
     /** Import, the confirm card's rows (each add-on found, each zip refused, its Install / Cancel), each imported add-on */
     private fun importedRows(): Int {
         val p = ImportedAddons.pending
-        return 1 + (if (p != null) p.found.size + p.bad.size + 1 else 0) + ImportedAddons.list().size
+        val q = ImportedAddons.queued()
+        return 1 + (if (p != null) p.found.size + p.bad.size + 1 else 0) + q.size + importedList(q).size
     }
+
+    /** the imported list less the ones with a replacement waiting (that row stands for them) */
+    private fun importedList(q: List<ImportedAddons.Queued>): List<ImportedAddons.Imported> =
+        ImportedAddons.list().filter { a -> q.none { it.folder.equals(a.folder, true) } }
 
     /** "340 KB" / "3 MB" */
     private fun bytesWord(b: Long): String =
@@ -1789,8 +1797,19 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             pStroke.color = Theme.gold
             c.drawRoundRect(RectF(10f, cardTop - 5f, width - 10f, y + ROW_H + 5f), 12f, 12f, pStroke)
         }
+        // ---- the replacements waiting for a start with the game closed (the user, 2026-11-16: "New now, replace next start")
+        val q = ImportedAddons.queued()
+        for (w in q) {
+            y += ROW_H + 10f
+            val sub = if (w.failed != null) Tr.t("Not replaced") else Tr.t("Replaces at next start")
+            importUnqueue[w.folder] = row(c, y, w.title, sub, enabled = w.failed == null, translate = false) { box ->
+                val r = RectF(box.right - 16f - 200f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                UiKit.button(c, r, "Cancel", if (busy) UiKit.Button.DISABLED else UiKit.Button.UP)
+                if (busy) RectF(r.left, r.top, r.left, r.top) else r
+            }
+        }
         // ---- the imported list: each with its Remove (twice, as Reload)
-        for (a in ImportedAddons.list()) {
+        for (a in importedList(q)) {
             y += ROW_H + 10f
             val again = armed("import.remove.${a.folder}")
             importRemove[a.folder] = row(c, y, a.title, a.version?.let { Tr.t("Version $it") } ?: a.folder, enabled = true, translate = false) { box ->
@@ -1820,6 +1839,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 addonArmed = null; ImportedAddons.install(); return true
             }
         }
+        for ((folder, r) in importUnqueue) if (hit(r)) { addonArmed = null; ImportedAddons.cancelQueued(folder); return true }
         for ((folder, r) in importRemove) if (hit(r)) {
             if (armed("import.remove.$folder")) { addonArmed = null; ImportedAddons.remove(folder) }
             else { addonArmed = "import.remove.$folder"; addonArmedAt = now; postDelayed({ invalidate() }, ARM_MS + 50) }

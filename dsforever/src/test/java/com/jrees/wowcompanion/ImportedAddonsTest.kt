@@ -455,4 +455,140 @@ class ImportedAddonsTest {
         assertFalse(File(tmp, "staging").exists())
         assertEquals("k", File(keep, "k.txt").readText())
     }
+
+    // ---------------------------------------------------------------- the user's picks, 2026-11-16
+    private fun old(name: String, ver: String = "1.0") {
+        File(addons, name).mkdirs(); File(addons, "$name/$name.toc").writeText("## Version: $ver\n"); File(addons, "$name/o.lua").writeText("old")
+    }
+    private val queuedDir get() = File(tmp, "private/queued")
+
+    @Test fun aReplaceWhileTheGameRunsWaitsForTheStart() {
+        old("Bagnon")
+        ImportedAddons.gameRunning = { true }
+        val plan = ImportedAddons.plan(zip("Bagnon/Bagnon.toc" to toc("Bagnon", "2.0"), "Bagnon/n.lua" to "new", "Fresh/Fresh.toc" to toc("Fresh")), addons)
+        assertTrue(plan.first { it.folder == "Bagnon" }.replaces)
+        assertEquals("New ones in: /reload. The rest replace at next start", ImportedAddons.installNow(plan, game))
+        // the new one is in at once; the old Bagnon is untouched under the running game
+        assertTrue(File(addons, "Fresh/Fresh.toc").isFile)
+        assertEquals("## Version: 1.0\n", File(addons, "Bagnon/Bagnon.toc").readText()); assertFalse(File(addons, "Bagnon/n.lua").exists())
+        assertFalse(backups.exists())
+        assertEquals(listOf("Fresh"), ImportedAddons.list().map { it.folder })
+        assertEquals(listOf("Bagnon"), ImportedAddons.queued().map { it.folder })
+        assertEquals("its zip kept", 1, queuedDir.listFiles()!!.size)
+        // the queue outlives the app (its own file and folder; the pick's folder is cleared at a start)
+        ImportedAddons.start(File(tmp, "private"), setOf("WowCompanion"))
+        assertEquals(listOf("Bagnon"), ImportedAddons.queued().map { it.folder })
+        // still running: nothing
+        assertNull(ImportedAddons.applyQueued(game))
+        assertFalse(File(addons, "Bagnon/n.lua").exists())
+        // the start with the game closed: swapped, the old in the backup, on the list, the queue and its zip gone
+        ImportedAddons.gameRunning = { false }
+        assertEquals("Bagnon replaced", ImportedAddons.applyQueued(game))
+        assertEquals("new", File(addons, "Bagnon/n.lua").readText()); assertFalse(File(addons, "Bagnon/o.lua").exists())
+        assertTrue(backups.listFiles()!!.single().name.startsWith("Bagnon-1.0-"))
+        assertEquals(listOf("Fresh", "Bagnon"), ImportedAddons.list().map { it.folder })
+        assertTrue(ImportedAddons.queued().isEmpty()); assertTrue(queuedDir.listFiles()!!.isEmpty())
+        assertNull("nothing waits now", ImportedAddons.applyQueued(game))
+        assertFalse(File(game, "Interface/${DependencyAddons.STAGING}").exists())
+    }
+    @Test fun onlyReplacesWhileRunningSaysSo() {
+        old("Bagnon")
+        ImportedAddons.gameRunning = { true }
+        assertEquals("Replaces at next start", ImportedAddons.installNow(ImportedAddons.plan(zip("Bagnon/Bagnon.toc" to toc()), addons), game))
+        // the game closed: a new pick replaces at once, and the older queued one is dropped (never put in over it)
+        ImportedAddons.gameRunning = { false }
+        assertEquals("Installed", ImportedAddons.installNow(ImportedAddons.plan(zip("Bagnon/Bagnon.toc" to toc(ver = "3.0"), "Bagnon/t.lua" to "3"), addons), game))
+        assertTrue(ImportedAddons.queued().isEmpty()); assertTrue(queuedDir.listFiles()!!.isEmpty())
+        assertNull(ImportedAddons.applyQueued(game))
+        assertEquals("3", File(addons, "Bagnon/t.lua").readText())
+    }
+    @Test fun aWaitingReplacementCancels() {
+        old("Bagnon")
+        ImportedAddons.gameRunning = { true }
+        ImportedAddons.installNow(ImportedAddons.plan(zip("Bagnon/Bagnon.toc" to toc(), "Bagnon/n.lua" to "new"), addons), game)
+        ImportedAddons.cancelQueuedNow("Bagnon")
+        assertTrue(ImportedAddons.queued().isEmpty()); assertTrue(queuedDir.listFiles()!!.isEmpty())
+        ImportedAddons.gameRunning = { false }
+        assertNull(ImportedAddons.applyQueued(game))
+        assertEquals("old", File(addons, "Bagnon/o.lua").readText()); assertFalse(File(addons, "Bagnon/n.lua").exists())
+    }
+    @Test fun removeDropsItsWaitingReplacement() {
+        ImportedAddons.installNow(ImportedAddons.plan(zip("Bagnon/Bagnon.toc" to toc(ver = "1.0")), addons), game)
+        ImportedAddons.gameRunning = { true }
+        ImportedAddons.installNow(ImportedAddons.plan(zip("Bagnon/Bagnon.toc" to toc(ver = "2.0")), addons), game)
+        assertEquals(1, ImportedAddons.queued().size)
+        ImportedAddons.removeNow("Bagnon", game)
+        assertTrue(ImportedAddons.queued().isEmpty())
+        ImportedAddons.gameRunning = { false }
+        assertNull(ImportedAddons.applyQueued(game))
+        assertFalse("never brought back", File(addons, "Bagnon").exists())
+    }
+    @Test fun aWaitingReplacementThatFailsStaysOnItsRowOnce() {
+        old("Bagnon")
+        ImportedAddons.gameRunning = { true }
+        ImportedAddons.installNow(ImportedAddons.plan(zip("Bagnon/Bagnon.toc" to toc(), "Bagnon/n.lua" to "new"), addons), game)
+        queuedDir.listFiles()!!.single().writeText("damaged")
+        ImportedAddons.gameRunning = { false }
+        assertEquals("Bagnon not replaced (Not a zip)", ImportedAddons.applyQueued(game))
+        assertEquals("old", File(addons, "Bagnon/o.lua").readText())
+        assertEquals("Not a zip", ImportedAddons.queued().single().failed)
+        assertNull("not tried again", ImportedAddons.applyQueued(game))
+        // no room: kept for the next start (not a failure)
+        ImportedAddons.cancelQueuedNow("Bagnon")
+        ImportedAddons.gameRunning = { true }
+        ImportedAddons.installNow(ImportedAddons.plan(zip("Bagnon/Bagnon.toc" to toc()), addons), game)
+        ImportedAddons.gameRunning = { false }; ImportedAddons.freeSpace = { 1000L }
+        assertTrue(ImportedAddons.applyQueued(game)!!.startsWith("Bagnon replace at the next start (needs "))
+        assertNull(ImportedAddons.queued().single().failed)
+    }
+    @Test fun theStartStepAppliesTheQueue() {
+        // the launcher's safe point (ThirdPartyAddons.applyAtStart, game closed) is where a waiting replacement goes in
+        old("Bagnon")
+        ImportedAddons.gameRunning = { true }
+        ImportedAddons.installNow(ImportedAddons.plan(zip("Bagnon/Bagnon.toc" to toc(), "Bagnon/n.lua" to "new"), addons), game)
+        ImportedAddons.gameRunning = { false }
+        val choices = HashMap<String, Boolean>()
+        val realBase = ThirdPartyAddons.baseChoice
+        ThirdPartyAddons.baseChoice = { false }; ThirdPartyAddons.noFetch = true; ThirdPartyAddons.settleMs = 0
+        try {
+            ThirdPartyAddons.start(object : ThirdPartyAddons.Store {
+                override fun get(k: String, d: Boolean) = choices[k] ?: d
+                override fun put(k: String, v: Boolean) { choices[k] = v }
+            }, File(tmp, "third"))
+            val line = ThirdPartyAddons.applyAtStart(game, fetchSmall = false, by = "test")
+            assertTrue(line, line.contains("Bagnon replaced"))
+            assertEquals("new", File(addons, "Bagnon/n.lua").readText())
+            assertTrue(ImportedAddons.queued().isEmpty())
+        } finally { ThirdPartyAddons.baseChoice = realBase; ThirdPartyAddons.noFetch = false; ThirdPartyAddons.settleMs = 5_000L }
+    }
+    @Test fun managedPrefixesRefused() {
+        for (n in listOf("QuestieDB-Extra", "questiedb-1.0", "Polestar-Nav2", "Polestar_Nav-x", "Spoken-Extra", "Manners-old", "QuestTrail-2",
+                "SpokenQuestsAudioHorde-x", "WowCompanion-Hub", "${DependencyAddons.BACKUP}-x"))
+            assertTrue(n, ImportedAddons.protectedName(n))
+        for (n in listOf("Questie", "QuestieDBX", "Spokenish", "Mannerless", "Bagnon-Extra")) assertFalse(n, ImportedAddons.protectedName(n))
+        val plan = ImportedAddons.plan(zip("QuestieDB-Extra/QuestieDB-Extra.toc" to toc()), addons)
+        assertEquals("Kept: DS Forever's own", plan.single().refused)
+    }
+    @Test fun aPickNeedsRoom() {
+        ImportedAddons.freeSpace = { 1000L }
+        refused("Needs 201 MB free") { ImportedAddons.copyCapped("x".byteInputStream(), File(tmp, "p.zip"), 1_000_000L) }
+        refused("Needs 200 MB free") { ImportedAddons.copyCapped("x".byteInputStream(), File(tmp, "p.zip"), null) }
+        refused("Too big") { ImportedAddons.copyCapped("x".byteInputStream(), File(tmp, "p.zip"), ImportedAddons.MAX_ZIP + 1) }
+        // room at the start, none while it copies (a size the picker did not know)
+        var calls = 0
+        ImportedAddons.freeSpace = { if (calls++ == 0) Long.MAX_VALUE else 1000L }
+        val big = object : java.io.InputStream() {
+            var left = 20L * 1024 * 1024
+            override fun read(): Int = if (left-- > 0) 0 else -1
+            override fun read(b: ByteArray, off: Int, len: Int): Int { if (left <= 0) return -1; val k = minOf(len.toLong(), left).toInt(); left -= k; return k }
+        }
+        try { ImportedAddons.copyCapped(big, File(tmp, "q.zip")); fail() } catch (r: ImportedAddons.Refused) { assertTrue(r.message, r.message!!.startsWith("Needs ")) }
+        // receive: the pick is refused on its card, nothing kept
+        ImportedAddons.freeSpace = { 1000L }
+        ImportedAddons.receive(listOf(ImportedAddons.Picked("a.zip", 5000L) { zip("A/A.toc" to toc()).inputStream() }))
+        val until = System.currentTimeMillis() + 10_000
+        while ((ImportedAddons.busy || ImportedAddons.pending == null) && System.currentTimeMillis() < until) Thread.sleep(20)
+        assertEquals(listOf(ImportedAddons.Bad("a.zip", "Needs 201 MB free")), ImportedAddons.pending!!.bad)
+        assertTrue(File(tmp, "private/import").listFiles()!!.isEmpty())
+    }
 }
