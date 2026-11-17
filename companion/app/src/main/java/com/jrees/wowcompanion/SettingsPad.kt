@@ -33,6 +33,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     val gameUis = ArrayList<GameUiSection>()
     /** General's parts (beautify: its tiles and compact rows, GeneralTilesView); B closes an open band of theirs first too */
     val generals = ArrayList<GeneralTilesView>()
+    /** beautify/bottom: Bottom screen's tile groups (BottomTilesView: Home, Map & chat) */
+    val bottomTiles = ArrayList<BottomTilesView>()
     val tabBar = SettingsTabBar(context) { t -> show(t) }
     /** "What it does" (phase 2): the row's picture, right of the page, on the tabs that have pictures */
     val preview = SettingsPreviewView(context, { homeSection.dpadState()?.want }, { view.smartDoc()?.on })
@@ -76,6 +78,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
                 is HomeSettingsSection -> SettingsPad.Section(p, { p.focusTargets() })
                 is GameUiSection -> SettingsPad.Section(p, { p.focusTargets() })
                 is GeneralTilesView -> SettingsPad.Section(p, { p.focusTargets() }, noStart = { p.isReload(it) })
+                is BottomTilesView -> SettingsPad.Section(p, { p.focusTargets() })
                 else -> SettingsPad.Section(p, { emptyList() })
             })
         }
@@ -89,8 +92,11 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         // Top screen's tiles (2026-11-16): ONE band open in the room - a tile's band opening closes any other part's - and the cursor
         // and the band follow it (a tap and A alike)
         for (gu in gameUis) gu.onOpen = { s -> gameUis.filter { it !== s }.forEach { it.closeSelection() }; pad.follow(s) }
-        pad.bands = generals
+        pad.bands.addAll(generals)
         for (gv in generals) gv.onOpen = { s -> generals.filter { it !== s }.forEach { it.closeSelection() }; pad.follow(s, s.selectionAnchor(), s.bandBox()) }
+        // beautify/bottom: Bottom screen's tiles, the same ONE band in the room
+        pad.bands.addAll(bottomTiles)
+        for (bt in bottomTiles) bt.onOpen = { s -> gameUis.forEach { it.closeSelection() }; bottomTiles.filter { it !== s }.forEach { it.closeSelection() }; pad.follow(s, s.selectionAnchor(), s.bandBox()) }
         page.addView(pad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         body.addView(page, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         body.addView(preview, LinearLayout.LayoutParams(PREVIEW_W, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -104,6 +110,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         val main = android.os.Handler(android.os.Looper.getMainLooper())
         val again: () -> Unit = { main.post { refreshGroups() } }
         for (gu in gameUis) gu.onContent = again
+        for (bt in bottomTiles) bt.onContent = again
         view.onContent = again
         GameUi.onChange(again); ThirdPartyAddons.onChange(again); ImportedAddons.onChange(again); Settings.onChange(again); HomeAttackSwitch.onChange(again)
         CompassSwitch.onChange(again); RingsSwitch.onChange(again); TipsSwitch.onChange(again); HomeLootSwitch.onChange(again)
@@ -117,7 +124,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     /** [p] has rows to draw now */
     private fun hasContent(p: View): Boolean = when (p) {
         is SettingsView -> p.hasContent(); is GameUiSection -> p.hasContent(); is HomeSettingsSection -> p.hasContent()
-        is GeneralTilesView -> p.hasContent(); else -> true
+        is GeneralTilesView -> p.hasContent(); is BottomTilesView -> p.hasContent(); else -> true
     }
     /** [g] has rows to draw now (a group without any is not shown: no heading, no cursor stop) */
     fun hasRows(g: SettingsTabs.Group): Boolean = groupBoxes.firstOrNull { it.group == g }?.parts?.any { hasContent(it) } == true
@@ -144,6 +151,9 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     private fun partsOf(g: SettingsTabs.Group): List<View> {
         // General as picture tiles and compact rows (the beautify design, section 2): ONE part per group draws all its rows
         if (g.tab == SettingsTabs.Tab.GENERAL) return listOf(GeneralTilesView(context, view, g).also { generals.add(it) })
+        // beautify/bottom: Bottom screen's groups are picture tiles (BottomTiles); the toolbar's state and switch stay Home section's
+        if (g.tab == SettingsTabs.Tab.BOTTOM)
+            return listOf(BottomTilesView(context, g, { homeSection.dpadState() }, { homeSection.onDpad(it) }).also { bottomTiles.add(it) })
         val out = ArrayList<View>()
         val run = LinkedHashSet<SettingsTabs.Block>()
         fun flush() { if (run.isNotEmpty()) { out.add(view.slice(run.toSet())); run.clear() } }
@@ -183,6 +193,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         SettingsTabs.last = t
         gameUis.forEach { it.closeSelection() }
         generals.forEach { it.closeSelection() }
+        bottomTiles.forEach { it.closeSelection() }
         touched = false
         open.clear(); open.addAll(SettingsTabs.openOnShow(t) { hasRows(it) })
         applyGroups()
@@ -191,7 +202,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         scroll.scrollTo(0, 0)
         // the panel: on the tabs with pictures, starting on the first open group's first row that has one
         val rows = SettingsTabs.blocks(t).flatMap { it.rows }
-        preview.visibility = if (rows.any { SettingsPreview.has(it) }) View.VISIBLE else View.GONE
+        // beautify/bottom: the tiled Bottom screen has no "What it does" panel (its tiles are the pictures, as on Top screen)
+        preview.visibility = if (t != SettingsTabs.Tab.BOTTOM && rows.any { SettingsPreview.has(it) }) View.VISIBLE else View.GONE
         preview.id = firstPicture(open) ?: rows.firstOrNull { SettingsPreview.has(it) }
         pad.tabChanged()
     }
@@ -205,7 +217,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             firstPicture(setOf(g))?.let { preview.id = it }            // the panel follows the group just opened
         } else {
             // a folded group's open On / Off bar closes with it (B would otherwise close a bar nobody sees)
-            groupBoxes.firstOrNull { it.group == g }?.parts?.forEach { (it as? GameUiSection)?.closeSelection() }
+            groupBoxes.firstOrNull { it.group == g }?.parts?.forEach { (it as? GameUiSection)?.closeSelection(); (it as? BottomTilesView)?.closeSelection() }
         }
         applyFolds()
         pad.invalidate()
@@ -224,6 +236,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
 
     /** the row at ([x], [y]) of section [v] (its own coordinates) shows in the panel, when it has a picture */
     private fun rowOf(v: View, x: Float, y: Float) {
+        if (v is BottomTilesView) { v.focusAt(x, y); return }
         val id = when (v) { is SettingsView -> v.rowAt(x, y); is HomeSettingsSection -> v.rowAt(x, y); is GameUiSection -> v.rowAt(x, y); else -> null }
         if (SettingsPreview.has(id)) preview.id = id
     }
@@ -295,7 +308,7 @@ class SettingsFoldHeading(context: Context, val group: SettingsTabs.Group, priva
         }
         pHead.color = Theme.gold
         pHead.alpha = if (open) 255 else 190
-        c.drawText(Tr.t(group.heading), if (folds) SIGN_X + SIGN_W + 18f else SIGN_X, cy - (pHead.ascent() + pHead.descent()) / 2f, pHead)
+        c.drawText(Tr.t(BottomTiles.heading(group)), if (folds) SIGN_X + SIGN_W + 18f else SIGN_X, cy - (pHead.ascent() + pHead.descent()) / 2f, pHead)
         pHead.alpha = 255
     }
 
@@ -347,8 +360,8 @@ class SettingsPad(
      *  starts (it was "the first N", which on a tab without Reload skipped that tab's first button: Spoken's Install, test40) */
     class Section(val view: View, val targets: () -> List<RectF>, val noStart: (RectF) -> Boolean = { false })
 
-    /** the other parts with a band (General's tiles): B closes an open one first, as it closes a GameUiSection's */
-    var bands: List<BandPart> = emptyList()
+    /** the other parts with a band (the beautify tiles: General, Bottom, Controller, Add-ons, Performance): B closes an open one first, as it closes a GameUiSection's */
+    val bands = ArrayList<BandPart>()
 
     /** B with nothing nearer to do, when the leave-with-B cell cannot be tapped: Home directly (MainActivity) */
     var onLeave: (() -> Unit)? = null

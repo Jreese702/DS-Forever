@@ -149,8 +149,9 @@ class SettingsRoomTest {
     /** every row of the data is drawn by a part of its own group (the rows a part draws now, by their words) */
     @Test fun partsDrawTheirGroupsRows() {
         val r = room()
-        val home = box(r, SettingsTabs.Group.HOME).parts.filterIsInstance<HomeSettingsSection>().single()
-        assertTrue("Start the attack when a spell is cast" !in home.rowLabels())
+        // beautify/bottom: Bottom screen > Home is ONE tile part (Home's 8 tiles; the attack row stays Controller's)
+        val home = box(r, SettingsTabs.Group.HOME).parts.single() as BottomTilesView
+        assertTrue(home.tileIds().containsAll(listOf(BottomTiles.REST, BottomTiles.QUEST, BottomTiles.CASTBAR)))
         val combat = box(r, SettingsTabs.Group.COMBAT).parts
         assertEquals(3, combat.size)                                  // GameUiSection, Home's attack row, GameUiSection
         assertTrue(combat[1] is HomeSettingsSection)
