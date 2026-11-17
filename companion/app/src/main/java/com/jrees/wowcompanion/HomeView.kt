@@ -231,6 +231,9 @@ class HomeView(
     fun borrow() {
         lend(mapView, mapSlot)
         mapView.onFieldTouch = { mapFieldTouched() }                          // 2026-11-17: a touch on the open map = its map controls
+        // an untracked quest's disc (the user, 2026-11-17: "when clicking on one, it does not open to the quest in the left menu"): the
+        // map shows it in the list, so the module goes to the Quests page (from the controls or the buffs; the list full again)
+        mapView.onListWanted = { if (mapWanted) { setMapPage(HomeMapPages.Page.QUESTS); syncMapB() } }
         lend(castView, barsSlot)
         // B through the Cast view's OWN reader while Home holds it (see [watchB]): one getevent, never two
         castView.onPadButtons = { held -> onPadHeld(held) }

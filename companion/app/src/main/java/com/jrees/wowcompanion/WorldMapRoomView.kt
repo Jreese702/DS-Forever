@@ -2218,7 +2218,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         val hs = rows.map { rowHeight(it) }
         // the cursor's row stays in view
         val total = hs.sum() + ROW_GAP * (hs.size - 1)
-        if (region == MapRoomKeys.Region.LIST && listIndex in hs.indices) {
+        if ((region == MapRoomKeys.Region.LIST || listReveal) && listIndex in hs.indices) {
+            listReveal = false
             var y0 = 0f
             for (i in 0 until listIndex) y0 += hs[i] + ROW_GAP
             val y1 = y0 + hs[listIndex]
@@ -2347,7 +2348,9 @@ class WorldMapRoomView(context: Context) : View(context) {
             UiKit.tex("qlog_quest_glow")?.let { pBmp.alpha = if (owner) 255 else LINK_ALPHA; c.drawBitmap(it, null, dst, pBmp); pBmp.alpha = 255 }
         }
         val n = numbers.indexOf(id) + 1
-        UiKit.questDisc(c, row.left + 26f, row.top + 26f, 40f, if (ready) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
+        // an untracked quest's row wears the map's grey disc, no number (the user, 2026-11-17: "its confusing on that its not tracked")
+        if (q != null && !ready && !trackedQ(q)) UiKit.questDiscMuted(c, row.left + 26f, row.top + 26f, 40f, marker = true)
+        else UiKit.questDisc(c, row.left + 26f, row.top + 26f, 40f, if (ready) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
             focus = id == focusQid, number = if (ready || n <= 0) null else n)
         val tl = titleLayout(id, titleW())
         c.save(); c.translate(row.left + 52f, row.top + 10f); tl.draw(c); c.restore()
@@ -2848,7 +2851,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             MapRoomKeys.Do.ZoomOut -> { hereTarget = 0; fly((if (flying()) flyZ else zoom) / 1.6f, if (flying()) flyX else panX, if (flying()) flyY else panY) }
             is MapRoomKeys.Do.Open -> goTo(d.zone)
             MapRoomKeys.Do.ToggleSideBar -> toggleSideBar()
-            is MapRoomKeys.Do.OpenQuest -> qp.open(d.quest)
+            is MapRoomKeys.Do.OpenQuest -> { qp.open(d.quest); showInList(d.quest) }
             is MapRoomKeys.Do.TrackFocus -> trackFocus(d.quest)
             is MapRoomKeys.Do.ToggleTrack -> toggleTrack(d.quest)
             is MapRoomKeys.Do.ListMove -> moveQuest(d.d)
@@ -2858,6 +2861,19 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
 
     private fun moveQuest(d: Int) = moveList(d)
+
+    /** A on a quest's disc (the user, 2026-11-17: "when clicking on one, it does not open to the quest in the left menu"): its group opens
+     *  and the list's selection goes onto its row, brought into view; the cursor stays on the map (no follow: the map holds still) */
+    private fun showInList(id: Int) {
+        val z = logEntry(id)?.optString("zone", "")?.ifEmpty { MapQuestBook.OTHER } ?: return
+        if (!book.isOpen(z)) book.toggle(z)
+        val i = listRows().indexOfFirst { it is MapQuestBook.Row.Quest && it.id == id }
+        if (i < 0) return
+        listIndex = i
+        setListCursor(follow = false)
+        listReveal = true
+    }
+    private var listReveal = false               // the next list draw scrolls the selected row into view (the cursor on the map)
 
     // ---------------------------------------------------------------- pm1: the Polestar menu and the skip choice
     /** X can open the Polestar menu: the row is there and the menu can show (Polestar the tracker, answering) */

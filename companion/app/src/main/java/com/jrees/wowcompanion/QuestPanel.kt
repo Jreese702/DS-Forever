@@ -149,7 +149,7 @@ class QuestPanel(private val host: Host) {
         val tl = wrap(q.optString("title", "Quest"), UiKit.bodyPaint(32f, host.colour(q)), tw); tl.draw(c); y += tl.height + 8f
         val meta = listOfNotNull(if (q.has("lv")) "Level ${q.optInt("lv")}" else null, q.optString("zone", "").ifEmpty { null },
             if (q.optInt("grp", 0) > 1) "Group ${q.optInt("grp")}" else null,
-            if (host.tracked(id)) "Tracked" else "Not tracked").joinToString("  ·  ")
+            if (host.tracked(id)) "Tracked" else "Untracked").joinToString("  ·  ")    // the list's word (the user, 2026-11-17)
         c.drawText(Tr.t(ellipsize(UiKit.bodyPaint(22f, cDim), meta, tw)), 0f, y + 22f, UiKit.bodyPaint(22f, cDim)); y += 38f
         when {
             q.optBoolean("failed") -> { c.drawText(Tr.t("Failed"), 0f, y + 24f, UiKit.bodyPaint(25f, Color.rgb(230, 70, 50))); y += 38f }

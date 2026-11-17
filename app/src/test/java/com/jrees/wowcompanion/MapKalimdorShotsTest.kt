@@ -554,6 +554,73 @@ class MapKalimdorShotsTest {
         }
     }
 
+    private fun bubbleAt(r: Rig, qid: Int): FloatArray? {
+        val xy = mf("bubbleXY").get(r.map) as FloatArray; val q = mf("bubbleQ").get(r.map) as IntArray
+        val n = mf("bubbleN").getInt(r.map)
+        for (i in 0 until n) if (q[i] == qid) return floatArrayOf(xy[2 * i], xy[2 * i + 1])
+        return null
+    }
+    private fun tap(r: Rig, x: Float, y: Float) {
+        val t = android.os.SystemClock.uptimeMillis()
+        r.map.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0))
+        r.map.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t + 60, android.view.MotionEvent.ACTION_UP, x, y, 0))
+        settle(30)                                               // the double-tap wait: the single tap confirmed
+    }
+    private fun shownInList(r: Rig, qid: Int, how: String) {
+        draw(r.home)
+        assertEquals("$how: the Quests page", HomeMapPages.Page.QUESTS, r.home.mapPageNow())
+        assertEquals("$how: the quest selected in the list", qid, r.map.listSel())
+        val at = r.map.listItemKeys().indexOf(qid)
+        assertTrue("$how: its row in the list (its tab opened: ${r.map.listItemKeys()})", at >= 0)
+        val (first, fits) = r.map.listWindow().let { it[0] to it[1] }
+        assertTrue("$how: its row in view ($at in $first..${first + fits})", at >= first && at < first + fits)
+        assertTrue("$how: its panel open", r.map.panelOpen())
+    }
+
+    @Test fun tappingAnUntrackedDiscShowsItInTheList() {
+        val r = rig(terrain = true, extra = true)
+        r.map.onFocusQuest = { }
+        r.map.update(mapDoc(), 0)
+        key(r.home, "PADDRIGHT")
+        assertEquals(HomeMapPages.Page.CONTROLS, r.home.mapPageNow())
+        frames(r, 1500L)
+        val at = bubbleAt(r, 8)
+        assertNotNull("the grey disc is a tap target", at)
+        tap(r, at!![0], at[1])
+        shownInList(r, 8, "a tap")
+        shot("home_untracked_tap_list", frames(r, 2000L))
+    }
+
+    @Test fun aOnAnUntrackedDiscShowsItInTheList() {
+        val r = rig(terrain = true, extra = true)
+        r.map.onFocusQuest = { }
+        r.map.update(mapDoc(), 0)
+        key(r.home, "PADDRIGHT")
+        mf("curU").setFloat(r.map, 0.47f); mf("curV").setFloat(r.map, 0.50f)
+        draw(r.home)
+        key(r.home, "PAD1")
+        shownInList(r, 8, "A")
+    }
+
+    @Test fun theMapRoomsAOnAGreyDiscSelectsItsRow() {
+        val r = rig(terrain = true)
+        val room = r.room
+        room.visibility = View.VISIBLE
+        room.layout(0, 0, W, H)
+        room.onShown()
+        val bm = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+        for (i in 0 until 30) { bm.eraseColor(Color.BLACK); room.layout(0, 0, W, H); room.draw(Canvas(bm)); Thread.sleep(30); settle(2) }
+        WorldMapRoomView::class.java.getDeclaredMethod("select", Int::class.javaObjectType).apply { isAccessible = true }.invoke(room, 8)
+        assertEquals("the cursor on the grey disc", 8, rf("hoverQuest").get(room))
+        room.onPad(JSONObject().put("k", "PAD1").put("n", ++padN))
+        assertEquals("A selects its row in the list", 8, rf("selQuest").getInt(room))
+        val book = rf("book").get(room) as MapQuestBook
+        assertTrue("... its group open", book.isOpen("Durotar"))
+        for (i in 0 until 10) { bm.eraseColor(Color.BLACK); room.layout(0, 0, W, H); room.draw(Canvas(bm)); settle(2) }
+        shot("room_untracked_a_row", bm)
+        room.onHidden()
+    }
+
     // ---------------------------------------------------------------- the numbers (real art only)
 
     @Test fun terrainMemoryFootprint() {

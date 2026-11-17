@@ -2655,7 +2655,10 @@ object UiKit {
                     /** Quests q64 (the user, 2026-11-17: "one thing that does make sense though on the home screen quests is showing the
                      *  Icon for if there is a usable quest Item that needs to be used for the quest"): the item the game's tracker shows
                      *  beside the quest; drawn only where [questCard] is asked to ([itemButton], Home) */
-                    val item: QuestItem? = null)
+                    val item: QuestItem? = null,
+                    /** a quest the tracker does not hold (Home's list, the user 2026-11-17: "its confusing on that its not tracked"): the
+                     *  map's grey disc in place of the number and a dim "Untracked" at the title row's end */
+                    val untracked: Boolean = false)
 
     /** the card's measures at scale 1 (the Map room's list: 400 px wide); Home draws it at [CARD_HOME_SCALE] */
     const val CARD_PAD = 12f
@@ -2722,14 +2725,22 @@ object UiKit {
             pFlat.style = Paint.Style.FILL; pFlat.color = Theme.gold
             c.drawRoundRect(RectF(box.left + 5f * s, box.top + 10f * s, box.left + 10f * s, box.bottom - 10f * s), 2.5f * s, 2.5f * s, pFlat)
         }
-        questDisc(c, box.left + pad + 26f * s, titleMid, CARD_DISC * s, if (q.turnIn) Quest.TURN_IN else Quest.PROGRESS, q.focused,
+        if (q.untracked && !q.turnIn) questDiscMuted(c, box.left + pad + 26f * s, titleMid, CARD_DISC * s, marker = false)
+        else questDisc(c, box.left + pad + 26f * s, titleMid, CARD_DISC * s, if (q.turnIn) Quest.TURN_IN else Quest.PROGRESS, q.focused,
             if (q.turnIn) null else q.number)
         val pt = bodyPaint(27f * s, q.colour)
         val title = q.title                             // test27 (the user: "the Level number in front of the quests text is confusing, trim that from the quests"): no "[level]"; its colour keeps the difficulty
         // q64: the quest's item at the card's right edge on the title row (the tracker's item button beside the quest; Home)
         val qi = if (itemButton) q.item else null
-        val iw = if (qi != null) CARD_ITEM * s + 12f * s else 0f
+        var iw = if (qi != null) CARD_ITEM * s + 12f * s else 0f
         if (qi != null) questItemButton(c, questItemBox(box, s), qi)
+        if (q.untracked) {
+            val tg = bodyPaint(20f * s, Theme.dim)
+            val word = Tr.t("Untracked")
+            val tw = tg.measureText(word)
+            c.drawText(word, box.right - pad - iw - tw, titleMid - (tg.ascent() + tg.descent()) / 2f, tg)
+            iw += tw + 12f * s
+        }
         c.drawText(Tr.t(TextUtils.ellipsize(title, pt, box.right - pad - tx - iw, TextUtils.TruncateAt.END).toString()), tx,
             titleMid - (pt.ascent() + pt.descent()) / 2f, pt)
         var y = box.top + pad + CARD_TITLE * s

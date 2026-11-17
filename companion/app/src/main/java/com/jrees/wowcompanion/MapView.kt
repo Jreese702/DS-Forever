@@ -119,6 +119,7 @@ class MapView(context: Context) : View(context) {
                 postInvalidate(); return true
             }
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
+                if (fieldTouchHeld) { fieldTouchHeld = false; onFieldTouch?.invoke() }
                 // The field is 3:2, not square, so a pixel of drag is a DIFFERENT amount of map
                 // in x than in y. Dividing both by one number made the map slide diagonally
                 // when you dragged straight.
@@ -1725,8 +1726,10 @@ class MapView(context: Context) : View(context) {
                 }
             }
             // the map's own field (Home's module: the map controls page, the user 2026-11-17: "tapping in the map area should also change
-            // it to the map controls"); the touch goes on as before (a pan, a pinch, a bubble's focus)
-            onFieldTouch?.invoke()
+            // it to the map controls"); the touch goes on as before (a pan, a pinch, a bubble's focus). A touch on an untracked quest's
+            // disc waits: its tap shows the quest in the list (the Quests page), a pan from it is the field's after all (onScroll)
+            fieldTouchHeld = untrackedUnder(e.x, e.y)
+            if (!fieldTouchHeld) onFieldTouch?.invoke()
         }
         scaleDetector.onTouchEvent(e)
         tapDetector.onTouchEvent(e)
@@ -4057,6 +4060,7 @@ class MapView(context: Context) : View(context) {
     private var portrait: JSONObject? = null                      // the quests document's `me`: name, class file, class word
     private var ownHeaders: List<String> = emptyList()         // the log headers that are the player's class or professions
     private val openTabs = HashMap<String, Boolean>()
+    private var revealRow = 0                                  // a row the next layout brings into view (its tab's header with it when that fits)
     private var revealTab = 0                                  // a tab just opened: the next layout brings its section into view          // the tabs the player opened (all closed until then)
     private var listWhere: String? = null                      // the zone and subzone the tabs were sorted for
     private fun listKeys(): List<Int> = MapList.stops(items)
@@ -4086,6 +4090,28 @@ class MapView(context: Context) : View(context) {
         // an opened tab shifts up into view (the user, 2026-10-16: "that section of quests should shift up to be visible instead of
         // expanding down off screen"): the list's next layout makes room for it (drawTracker)
         if (openTabs[z] == true) revealTab = key
+        invalidate()
+    }
+
+    /** a quest of the log the tracker does not hold (once the tracker is known) */
+    private fun untrackedQuest(id: Int): Boolean = trackedKnown && id > 0 && !trackedNo.containsKey(id) && questById[id] != null
+
+    /**
+     * AN UNTRACKED QUEST'S DISC OPENS IT IN THE LIST (the user, 2026-11-17: "when clicking on one, it does not open to the quest in the
+     * left menu so its confusing on that its not tracked"): its tab opens, the list's cursor goes onto its row (brought into view, its
+     * tab's header with it when that fits), its panel opens, and the host shows the list ([onListWanted]: Home's Quests page). The
+     * row wears the grey disc and "Untracked" ([cardFor]). Merged with the light blue row: that row.
+     */
+    private fun revealInList(id: Int) {
+        if (psMerged() == id) {
+            cursor.touched(MapList.POLESTAR, listKeys()); revealRow = MapList.POLESTAR
+        } else {
+            val z = untrackedLog.firstOrNull { it.optInt("id", 0) == id }?.optString("zone", "")?.ifEmpty { MapQuestBook.OTHER }
+            if (z != null && openTabs[z] != true) { openTabs[z] = true; rebuildItems() }
+            cursor.touched(id, listKeys()); revealRow = id
+        }
+        openPanel(id)
+        onListWanted?.invoke()
         invalidate()
     }
 
@@ -5453,6 +5479,26 @@ class MapView(context: Context) : View(context) {
     var worldArt: WorldArt? = null
     /** a touch on the open map's field (not the list, a button or a pop-out): Home's map controls page */
     var onFieldTouch: (() -> Unit)? = null
+    /** a touch went down on an untracked quest's disc: the field's touch (the controls page) waits for a pan */
+    private var fieldTouchHeld = false
+    /** the bubble nearest ([x], [y]) within its touch is an untracked quest's (the tap test's own rule) */
+    private fun untrackedUnder(x: Float, y: Float): Boolean {
+        if (compact || onFocusQuest == null) return false
+        var best = -1; var bestD = BUBBLE_HIT * BUBBLE_HIT
+        for (i in 0 until bubbleN) {
+            val dx = bubbleXY[2 * i] - x; val dy = bubbleXY[2 * i + 1] - y
+            val d = dx * dx + dy * dy
+            if (d <= bestD) { bestD = d; best = i }
+        }
+        return best >= 0 && untrackedQuest(bubbleQ[best])
+    }
+    /** an untracked quest's disc was picked: it is shown in the list (Home's module goes to its Quests page) */
+    var onListWanted: (() -> Unit)? = null
+    /** the tests: the list's first drawn row and how many fit */
+    fun listWindow(): IntArray = intArrayOf(listFirst, listFits)
+    /** the tests: the list's rows (their keys, in order) and the selection */
+    fun listItemKeys(): List<Int> = items.map { it.key }
+    fun listSel(): Int = if (cursor.shown) cursor.sel else 0
     /**
      * Home's buffs page is on (HomeMapPages.BUFFS; the user, 2026-11-17: "when toggling over to buffs the cursor reappears on polestar
      * which is misleading"): the list's cursor, its bubble's ring and its hints are not drawn, as on the controls page; the selection is
@@ -5892,8 +5938,10 @@ class MapView(context: Context) : View(context) {
 
     /** a touch picked quest [id]: select it (highlighted at once) and focus it, as the list always did */
     private fun touchQuest(id: Int, q: JSONObject?) {
-        // an untracked quest's disc (2026-11-17): its panel, as Y on its row (focus needs it tracked: A there tracks and focuses)
-        if (trackedKnown && id > 0 && !trackedNo.containsKey(id) && questById[id] != null) { openPanel(id); invalidate(); return }
+        // an untracked quest's disc (2026-11-17): its panel, as Y on its row (focus needs it tracked: A there tracks and focuses), AND its
+        // row in the list (the user, 2026-11-17 again: "when clicking on one, it does not open to the quest in the left menu so its
+        // confusing on that its not tracked")
+        if (untrackedQuest(id)) { revealInList(id); return }
         cursor.touched(id, listKeys())
         listShow(id)
         revealSelected()
@@ -6202,7 +6250,8 @@ class MapView(context: Context) : View(context) {
         if (id != 0 && id == qtFocus()) qtStep?.words?.let { w -> objs.clear(); objs.add(w to false) }
         val card = UiKit.QuestCard(e.optString("title", ""), lv ?: 0, colour, objs,
             turnIn = e.optBoolean("ready") || e.optBoolean("done"), number = trackedNo[id], focused = id != 0 && id == shownFocus(),
-            item = QuestItem.parse(e))          // q64: the quest's usable item; Home's card shows it (the list's rows do not)
+            item = QuestItem.parse(e),          // q64: the quest's usable item; Home's card shows it (the list's rows do not)
+            untracked = untrackedQuest(id))     // the grey disc and "Untracked" (the user, 2026-11-17)
         cards[id] = card
         return card
     }
@@ -6420,6 +6469,23 @@ class MapView(context: Context) : View(context) {
         listMaxFirst = maxFirst
         // AN OPENED TAB SHIFTS UP: when its section (the tab and its quests) does not all fit below the list's present first row, the
         // list scrolls so the tab stands at the top, with as many of its quests under it as fit (the rows glide there)
+        // A ROW ASKED FOR ([revealInList]): in view, its tab's header above it when both fit, else the row as low as it can stand
+        if (revealRow != 0) {
+            val ri = list.indexOfFirst { it.key == revealRow && it !is MapList.Item.Section && it !is MapList.Item.PsHead }
+            if (ri >= 0) {
+                fun fitsTo(f: Int): Boolean {
+                    var hh = if (f > 0) lineO else 0f
+                    for (i in f..ri) hh += need(list[i])
+                    if (ri < n - 1) hh += lineO
+                    return y0 + hh <= yMax
+                }
+                if (listFirst > ri || !fitsTo(listFirst)) {
+                    val hi = (ri downTo 0).firstOrNull { list[it] is MapList.Item.Group } ?: -1
+                    listFirst = if (hi >= 0 && fitsTo(hi)) hi else { var f = ri; while (f > 0 && fitsTo(f - 1)) f--; f }
+                }
+            }
+            revealRow = 0; revealTab = 0
+        }
         if (revealTab != 0) {
             val hi = list.indexOfFirst { it is MapList.Item.Group && it.key == revealTab }
             if (hi >= 0) {
