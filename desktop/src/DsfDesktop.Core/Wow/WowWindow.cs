@@ -40,16 +40,17 @@ namespace DsfDesktop.Wow
         {
             var all = Names.SelectMany(n => { try { return Process.GetProcessesByName(n); } catch (Exception) { return new Process[0]; } }).ToList();
             if (all.Count == 0) return null;
+            Process pick = null;
             if (preferDir != null)
-            {
-                var hit = all.FirstOrDefault(p =>
+                pick = all.FirstOrDefault(p =>
                 {
                     try { return string.Equals(Path.GetDirectoryName(p.MainModule.FileName), preferDir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase); }
                     catch (Exception) { return false; }
                 });
-                if (hit != null) return hit;
-            }
-            return all[0];
+            pick = pick ?? all[0];
+            // only the one returned is the caller's to dispose: the rest go now (called every tick)
+            foreach (var p in all) if (!ReferenceEquals(p, pick)) p.Dispose();
+            return pick;
         }
 
         /// <summary>a WoW process exists (it may not have a window yet while it loads)</summary>

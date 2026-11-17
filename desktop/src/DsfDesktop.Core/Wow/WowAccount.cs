@@ -12,7 +12,8 @@ namespace DsfDesktop.Wow
     /// list (its "Game account: Remembered" setting; never sent with "Ask each time") goes into the PC's Config.wtf before WoW starts.
     ///  - ONLY that key; every other line stays as it is (the region and portal are never written: a region change locks nothing in).
     ///  - The PC's own remembered pick wins: a list there that already holds a "!" is WoW's own choice and is never replaced.
-    ///  - The file is backed up beside itself first (Config.wtf.dsf-bak), replaced whole (File.Replace), never while WoW runs.
+    ///  - The file is backed up beside itself once, before Desktop's first write (Config.wtf.dsf-bak; a later write keeps that
+    ///    first backup), replaced whole (File.Replace; its temp copy never stays behind), never while WoW runs.
     ///  - The value is an account name: it is never logged; the log says the key's name and what was done.
     /// </summary>
     public static class WowAccount
@@ -62,6 +63,7 @@ namespace DsfDesktop.Wow
         /// A game never started has no file yet: nothing is made then, the client writes its own</summary>
         public static string Ensure(string path, string list)
         {
+            var tmp = path + ".dsf-tmp";
             try
             {
                 if (!Valid(list)) return "nothing to remember";
@@ -69,12 +71,19 @@ namespace DsfDesktop.Wow
                 var was = File.ReadAllText(path);
                 var now = Apply(was, list);
                 if (now == was) return "kept (the PC's own)";
-                var tmp = path + ".dsf-tmp";
                 File.WriteAllText(tmp, now);
-                File.Replace(tmp, path, path + Backup);
-                return Key + " written (backup " + Path.GetFileName(path) + Backup + ")";
+                // the backup is the file as it was BEFORE Desktop first touched it: a later write never replaces it
+                var bak = path + Backup;
+                var first = !File.Exists(bak);
+                File.Replace(tmp, path, first ? bak : null);
+                return Key + " written (" + (first ? "backup " + Path.GetFileName(bak) : "backup kept") + ")";
             }
             catch (Exception e) { return "not written (" + e.GetType().Name + ")"; }
+            finally
+            {
+                // the temp copy holds the whole file (account names): it never stays behind, e.g. when Config.wtf is read-only
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch (Exception) { }
+            }
         }
     }
 }

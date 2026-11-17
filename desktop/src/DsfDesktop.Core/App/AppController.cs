@@ -775,8 +775,10 @@ namespace DsfDesktop.App
         DateTime? loginLogAt;
         bool loginFileSwept;
         /// <summary>the client run the login.txt was written for: the first Wow.exe seen after the write (WowFlow.LoginRunOver); kept
-        /// after the file went, until the next start asked the Thor again or the Thor left</summary>
+        /// after the file went, until the next start asked the Thor again, the run signed in, or the Thor left</summary>
         int? loginRunPid;
+        /// <summary>the login.txt run reached character select or the world (WowFlow.LoginRunSettled): no run to ask again for</summary>
+        bool loginRunSettled;
         /// <summary>the Thor's remembered game account (WowAccount; never logged), for the PC's Config.wtf before WoW starts; null = none</summary>
         string gameAccountList;
         readonly object loginGate = new object();
@@ -793,7 +795,7 @@ namespace DsfDesktop.App
                 if (s == WowScreen.None && gameAccountList != null) RememberGameAccount(dir);
                 if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !WowFlow.LoginFileWanted(s)) return;
                 var why = WowLoginFile.Write(dir, email, password);
-                if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; loginRunPid = null; }
+                if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; loginRunPid = null; loginRunSettled = false; }
                 Log.I("login file: " + (why ?? "written"));
             }
         }
@@ -840,6 +842,14 @@ namespace DsfDesktop.App
             if (!ask) return;
             Log.I("login file: its client closed; asking the Thor again");
             Bridge?.Publish(new Dictionary<string, object> { ["t"] = "login_again" });
+            // the new client reads login.txt as its login screen appears: give the Thor's answer a moment to land first
+            var until = DateTime.UtcNow.AddSeconds(WowFlow.LoginAgainWaitS);
+            while (DateTime.UtcNow < until)
+            {
+                lock (loginGate) if (loginFileAt.HasValue) { Log.I("login file: back from the Thor before the start"); return; }
+                System.Threading.Thread.Sleep(100);
+            }
+            Log.I("login file: no answer from the Thor in " + (int)WowFlow.LoginAgainWaitS + " s; starting without it");
         }
 
         void LoginFileTick()
@@ -851,11 +861,20 @@ namespace DsfDesktop.App
                 if (dir == null) return;
                 if (!loginFileSwept) { loginFileSwept = true; if (!loginFileAt.HasValue) WowLoginFile.Delete(dir); }   // a crash's leftover
                 var thorHere = Bridge != null && Bridge.Sessions().Count > 0;
-                if (!thorHere) loginRunPid = null;           // nothing to ask again: the Thor left
-                if (!loginFileAt.HasValue) return;
+                // the Thor left: nothing to ask again, and its game account is not kept (an account name)
+                if (!thorHere) { loginRunPid = null; gameAccountList = null; }
                 int? pidNow = null;
-                using (var w = WowWindow.FindAny(dir)) if (w != null) pidNow = w.Id;
-                if (!loginRunPid.HasValue && pidNow.HasValue) loginRunPid = pidNow;      // the run this file is for
+                if (loginFileAt.HasValue || loginRunPid.HasValue)
+                    using (var w = WowWindow.FindAny(dir)) if (w != null) pidNow = w.Id;
+                // the run signed in (character select or the world): its client closing later is the player quitting, never a reason
+                // to ask the Thor for the login again
+                if (loginRunPid.HasValue && pidNow == loginRunPid && WowFlow.LoginRunSettled(LastScreen))
+                {
+                    loginRunPid = null; loginRunSettled = true;
+                    Log.I("login file: its run signed in");
+                }
+                if (!loginFileAt.HasValue) return;
+                if (!loginRunPid.HasValue && !loginRunSettled && pidNow.HasValue) loginRunPid = pidNow;      // the run this file is for
                 // only THIS client run's sign-in counts (its connections, or its log once its restart was seen): a stale log made a
                 // 0.5 s old Wow.exe "CharSelect" and the 20 s ran from the launch (the user, 2026-11-17)
                 var s = ScreenNow();

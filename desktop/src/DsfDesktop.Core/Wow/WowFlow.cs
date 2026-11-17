@@ -53,8 +53,26 @@ namespace DsfDesktop.Wow
         /// </summary>
         public bool RegionRefused { get; private set; }
 
-        /// <summary>a new client run (the log was emptied): nothing is known any more</summary>
-        public void Reset() { LastScreen = null; Error = null; SignInStarted = false; RegionRefused = false; }
+        /// <summary>when <see cref="RegionRefused"/> last turned on (<see cref="Now"/>'s clock), null = never in this Desktop run</summary>
+        public DateTime? RegionRefusedAt { get; private set; }
+
+        /// <summary>the clock for <see cref="RegionRefusedAt"/> (UTC; a test sets its own)</summary>
+        public Func<DateTime> Now = () => DateTime.UtcNow;
+
+        /// <summary>
+        /// How long a refused region outlasts its client: WoW closes itself after a 309 (the user's PC 2026-11-17) and Desktop starts
+        /// it once more (WowFlow.Decide), so the line belongs on the NEXT client's login and region screens too. Never longer than
+        /// this: a client started much later is a new try, not the refused one.
+        /// </summary>
+        public const double RegionCarryS = 300;
+
+        /// <summary>a new client run (the log was emptied): nothing is known any more, except a region refused within
+        /// <see cref="RegionCarryS"/> (its client closed itself; the restarted one shows the same region screen)</summary>
+        public void Reset()
+        {
+            LastScreen = null; Error = null; SignInStarted = false;
+            RegionRefused = RegionRefused && RegionRefusedAt.HasValue && (Now() - RegionRefusedAt.Value).TotalSeconds < RegionCarryS;
+        }
 
         public void Line(string line)
         {
@@ -75,7 +93,7 @@ namespace DsfDesktop.Wow
             if (line.IndexOf("[Connection]", StringComparison.Ordinal) < 0) return;
             if (line.IndexOf("Glue login started", StringComparison.Ordinal) >= 0) { SignInStarted = true; Error = null; return; }
             var f = Fatal.Match(line);
-            if (f.Success) { Error = Short(f.Groups[1].Value); SignInStarted = false; RegionRefused = Error == RegionRefusedCode; }
+            if (f.Success) { Error = Short(f.Groups[1].Value); SignInStarted = false; RegionRefused = Error == RegionRefusedCode; if (RegionRefused) RegionRefusedAt = Now(); }
         }
 
         /// <summary>" (308)" -> "308"; "Status has no name. (14400)" -> "Status has no name (14400)"</summary>
@@ -136,6 +154,14 @@ namespace DsfDesktop.Wow
         /// on; Desktop never keeps the login. [fileOnDisk] = a login.txt still waits (this start reads that one).
         /// </summary>
         public static bool LoginAgainWanted(bool fileOnDisk, bool runOver, bool thorHere) => !fileOnDisk && runOver && thorHere;
+
+        /// <summary>a login.txt run that reached character select or the world signed in: its client closing later is the player
+        /// quitting (or a crash), not a refused sign-in, so it asks the Thor for nothing (<see cref="LoginAgainWanted"/>)</summary>
+        public static bool LoginRunSettled(WowScreen s) => s == WowScreen.CharSelect || s == WowScreen.World;
+
+        /// <summary>how long a start waits for the Thor's answer to "login_again" (its login_file), so the new client finds login.txt
+        /// at its login screen; the start goes ahead without it after that</summary>
+        public const double LoginAgainWaitS = 3;
 
         /// <summary>
         /// THE GAME'S LOG SPEAKS FOR THIS CLIENT RUN only once its own restart was seen (the user, 2026-11-17: "the auto sign in on

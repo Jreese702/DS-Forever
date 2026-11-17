@@ -468,9 +468,23 @@ namespace DsfDesktop.Tests
             l.Line(Fatal309);
             l.Line(CharSelect);
             A.False(l.RegionRefused, "character select: the region was taken");
+            // WoW closes itself after a 309 and Desktop starts it once more: the restarted client's screens still say it
+            var now = new DateTime(2026, 11, 17, 14, 16, 8, DateTimeKind.Utc);
+            l.Now = () => now;
             l.Line(Fatal309);
+            now = now.AddSeconds(20);
             l.Reset();
-            A.False(l.RegionRefused, "a new client run");
+            A.True(l.RegionRefused, "the restarted client (its log emptied) still shows the refusal");
+            A.Eq(null, l.Error, "the rest of the run is forgotten");
+            l.Line(LoginScreen);
+            l.Line(Pick);
+            A.True(l.RegionRefused, "the restarted client's region screen: said");
+            l.Line(CharSelect);
+            A.False(l.RegionRefused, "another region taken: gone");
+            l.Line(Fatal309);
+            now = now.AddSeconds(LoginLog.RegionCarryS);
+            l.Reset();
+            A.False(l.RegionRefused, "a client started much later is a new try");
             A.Eq("Region refused: pick another region", WowFlow.RegionRefusedText);
         }
 
@@ -493,6 +507,13 @@ namespace DsfDesktop.Tests
             A.False(WowFlow.LoginAgainWanted(fileOnDisk: true, runOver: true, thorHere: true), "a file still waits: this start reads it");
             A.False(WowFlow.LoginAgainWanted(false, true, false), "no Thor: nothing to ask");
             A.False(WowFlow.LoginAgainWanted(false, false, true), "the first start of a connect: the Thor sent it with its welcome");
+            // a run that signed in is over with the player's quit or a crash: nothing is asked again then
+            A.True(WowFlow.LoginRunSettled(WowScreen.CharSelect));
+            A.True(WowFlow.LoginRunSettled(WowScreen.World));
+            A.False(WowFlow.LoginRunSettled(WowScreen.Login), "the region screen reads as the login: not settled");
+            A.False(WowFlow.LoginRunSettled(WowScreen.SigningIn));
+            A.False(WowFlow.LoginRunSettled(WowScreen.None));
+            A.True(WowFlow.LoginAgainWaitS > 0 && WowFlow.LoginAgainWaitS <= 5, "a start waits a moment, never long");
         }
 
         /// <summary>the user's pick 2026-11-17 ("Yes, remember it"): the PC's Config.wtf remembers the Thor's game account, only that key,
@@ -523,6 +544,20 @@ namespace DsfDesktop.Tests
                 A.Eq(cfg, File.ReadAllText(f + WowAccount.Backup), "backed up first");
                 A.False(File.Exists(f + ".dsf-tmp"));
                 A.Eq("kept (the PC's own)", WowAccount.Ensure(f, list), "the second start changes nothing");
+                // WoW later saved a list without a pick: written again, and the backup stays the file from before Desktop's first write
+                File.WriteAllText(f, unmarked);
+                A.Eq("accountList written (backup kept)", WowAccount.Ensure(f, list));
+                A.Eq(cfg, File.ReadAllText(f + WowAccount.Backup), "the first backup is kept");
+                // a read-only Config.wtf: not written, and no temp copy (it holds the whole file) stays behind
+                File.WriteAllText(f, unmarked);
+                File.SetAttributes(f, FileAttributes.ReadOnly);
+                try
+                {
+                    A.True(WowAccount.Ensure(f, list).StartsWith("not written"), "read-only");
+                    A.False(File.Exists(f + ".dsf-tmp"), "the temp copy goes");
+                    A.Eq(unmarked, File.ReadAllText(f));
+                }
+                finally { File.SetAttributes(f, FileAttributes.Normal); }
                 foreach (var said in new[] { WowAccount.Ensure(f, list), WowAccount.Ensure(f, "x") })
                     A.False(said.Contains("Fake"), "the log never names an account");
             }
