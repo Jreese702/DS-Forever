@@ -42,7 +42,10 @@ namespace DsfDesktop.Tests
             lock (Pins) Pins.Add(pin);
             ThreadPool.QueueUserWorkItem(_ => done(StreamPairResult));
         }
-        public void LoginFile(string email, string password) { }
+        /// <summary>the last login_file's game account (fake data only)</summary>
+        public volatile string AccountList = "(none)";
+        public volatile int LoginFiles;
+        public void LoginFile(string email, string password, string accountList) { AccountList = accountList; LoginFiles++; }
         public Dictionary<string, object> BnetReady() => new Dictionary<string, object> { ["ok"] = false, ["why"] = "no sign-in window" };
         public Dictionary<string, object> Focus() => new Dictionary<string, object> { ["ok"] = false, ["why"] = "WoW isn't running" };
         public Dictionary<string, object> AddonsStatus() => new Dictionary<string, object> { ["state"] = "current" };
@@ -535,6 +538,34 @@ namespace DsfDesktop.Tests
                 c.Send(new Dictionary<string, object> { ["t"] = "ping", ["id"] = "m" });
                 c.Until("pong");
                 A.Eq("1920,1080,120", h.Mode == null ? "none" : string.Join(",", h.Mode));
+            }
+        }
+
+        /// <summary>the user's pick 2026-11-17 ("Yes, remember it"): the Thor's remembered game account reaches the host only with
+        /// "remember"; "Ask each time" never hands one over (fake data only)</summary>
+        [Test]
+        public static void TheGameAccountComesOnlyWhenRemembered()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-10", stream: false);
+                c.Until("backlog_end");
+                void Login(Dictionary<string, object> extra, string want, string why)
+                {
+                    var n = h.LoginFiles;
+                    var m = new Dictionary<string, object> { ["t"] = "login_file", ["email"] = "fake@example.invalid", ["password"] = "not-a-password" };
+                    foreach (var kv in extra) m[kv.Key] = kv.Value;
+                    c.Send(m);
+                    for (int i = 0; i < 100 && h.LoginFiles == n; i++) Thread.Sleep(20);
+                    A.Eq(n + 1, h.LoginFiles, why + ": handed over");
+                    A.Eq(want, h.AccountList, why);
+                }
+                Login(new Dictionary<string, object> { ["game_account"] = "remember", ["account_list"] = "Fake1|!Fake2|" }, "Fake1|!Fake2|", "remembered");
+                Login(new Dictionary<string, object> { ["game_account"] = "ask", ["account_list"] = "Fake1|!Fake2|" }, null, "ask each time");
+                Login(new Dictionary<string, object> { ["game_account"] = "remember" }, null, "nothing remembered on the Thor");
+                Login(new Dictionary<string, object>(), null, "an older Thor");
             }
         }
 

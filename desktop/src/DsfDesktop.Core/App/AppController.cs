@@ -774,24 +774,88 @@ namespace DsfDesktop.App
         /// back after it was missing, a client restart, a path or flavor switch; local time); null while nothing of the file is read</summary>
         DateTime? loginLogAt;
         bool loginFileSwept;
+        /// <summary>the client run the login.txt was written for: the first Wow.exe seen after the write (WowFlow.LoginRunOver); kept
+        /// after the file went, until the next start asked the Thor again or the Thor left</summary>
+        int? loginRunPid;
+        /// <summary>the Thor's remembered game account (WowAccount; never logged), for the PC's Config.wtf before WoW starts; null = none</summary>
+        string gameAccountList;
+        readonly object loginGate = new object();
 
-        public void LoginFile(string email, string password)
+        public void LoginFile(string email, string password, string accountList)
         {
-            var dir = FlavorDirOrNull;
-            if (dir == null || string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !WowFlow.LoginFileWanted(ScreenNow())) return;
-            var why = WowLoginFile.Write(dir, email, password);
-            if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; }
-            Log.I("login file: " + (why ?? "written"));
+            lock (loginGate)
+            {
+                // the game account first: a login that is not wanted now still tells which game account the Thor remembers
+                gameAccountList = WowAccount.Valid(accountList) ? accountList : null;
+                var dir = FlavorDirOrNull;
+                if (dir == null) return;
+                var s = ScreenNow();
+                if (s == WowScreen.None && gameAccountList != null) RememberGameAccount(dir);
+                if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !WowFlow.LoginFileWanted(s)) return;
+                var why = WowLoginFile.Write(dir, email, password);
+                if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; loginRunPid = null; }
+                Log.I("login file: " + (why ?? "written"));
+            }
+        }
+
+        /// <summary>the Thor's remembered game account into the PC's Config.wtf (WowAccount: only that key, the PC's own pick wins); only
+        /// while no client runs (WoW writes the file when it closes)</summary>
+        void RememberGameAccount(string flavorDir)
+        {
+            var list = gameAccountList;
+            if (list == null || flavorDir == null) return;
+            Log.I("game account: " + WowAccount.Ensure(Path.Combine(flavorDir, "WTF", "Config.wtf"), list));
+        }
+
+        /// <summary>
+        /// Just before Desktop starts WoW: the remembered game account goes in, and when the client of the last login.txt run closed
+        /// itself (a refused region, 2026-11-17), its file goes (it was for that run only) and the Thor is asked for the login again
+        /// ("login_again"; the user's pick 2026-11-17: "Ask the Thor again"). Its answer is an ordinary login_file: written for the new
+        /// run, deleted by the same rule.
+        /// </summary>
+        void BeforeStart(LaunchPlan p)
+        {
+            bool ask;
+            lock (loginGate)
+            {
+                try
+                {
+                    // the started client's own folder (a start through Battle.net works in Battle.net's folder)
+                    RememberGameAccount(p?.Flavor != null && Wow != null ? Wow.FlavorDir(p.Flavor) : FlavorDirOrNull);
+                    var dir = FlavorDirOrNull;
+                    int? pidNow = null;
+                    using (var w = WowWindow.FindAny(dir)) if (w != null) pidNow = w.Id;
+                    var over = WowFlow.LoginRunOver(loginRunPid, pidNow);
+                    if (over && loginFileAt.HasValue && dir != null)
+                    {
+                        WowLoginFile.Delete(dir);
+                        loginFileAt = null;
+                        Log.I("login file: deleted (its client closed)");
+                    }
+                    ask = WowFlow.LoginAgainWanted(loginFileAt.HasValue, over, Bridge != null && Bridge.Sessions().Count > 0);
+                    if (ask) loginRunPid = null;
+                }
+                catch (Exception e) { Log.I("before start: " + e.GetType().Name); return; }
+            }
+            if (!ask) return;
+            Log.I("login file: its client closed; asking the Thor again");
+            Bridge?.Publish(new Dictionary<string, object> { ["t"] = "login_again" });
         }
 
         void LoginFileTick()
         {
+            lock (loginGate)
             try
             {
                 var dir = FlavorDirOrNull;
                 if (dir == null) return;
                 if (!loginFileSwept) { loginFileSwept = true; if (!loginFileAt.HasValue) WowLoginFile.Delete(dir); }   // a crash's leftover
+                var thorHere = Bridge != null && Bridge.Sessions().Count > 0;
+                if (!thorHere) loginRunPid = null;           // nothing to ask again: the Thor left
                 if (!loginFileAt.HasValue) return;
+                int? pidNow = null;
+                using (var w = WowWindow.FindAny(dir)) if (w != null) pidNow = w.Id;
+                if (!loginRunPid.HasValue && pidNow.HasValue) loginRunPid = pidNow;      // the run this file is for
                 // only THIS client run's sign-in counts (its connections, or its log once its restart was seen): a stale log made a
                 // 0.5 s old Wow.exe "CharSelect" and the 20 s ran from the launch (the user, 2026-11-17)
                 var s = ScreenNow();
@@ -802,7 +866,7 @@ namespace DsfDesktop.App
                 }
                 var now = DateTime.UtcNow;
                 var why = WowFlow.LoginFileWhy((now - loginFileAt.Value).TotalSeconds, signInSeenAt.HasValue ? (now - signInSeenAt.Value).TotalSeconds : (double?)null,
-                        Bridge != null && Bridge.Sessions().Count > 0);
+                        thorHere, WowFlow.LoginRunOver(loginRunPid, pidNow));
                 if (why == null) return;
                 WowLoginFile.Delete(dir);
                 loginFileAt = null;
@@ -925,7 +989,7 @@ namespace DsfDesktop.App
                 windowUp: WowUp,
                 processUp: WowWindow.ProcessRunning,
                 plan: () => WowLaunch.Plan(Wow, DateTime.Now, WowLaunch.FindBattleNet()),
-                start: WowStarter.StartProcess);
+                start: p => { BeforeStart(p); return WowStarter.StartProcess(p); });
             Starter.Changed += (state, why) =>
             {
                 if (Supervisor != null) PublishWow(force: true);
@@ -1160,7 +1224,8 @@ namespace DsfDesktop.App
         public Dictionary<string, object> WowInfo()
         {
             string err;
-            lock (loginLog) err = loginLog.Error;
+            bool regionRefused;
+            lock (loginLog) { err = loginLog.Error; regionRefused = loginLog.RegionRefused; }
             var d = new Dictionary<string, object>
             {
                 ["state"] = WowStarter.Word(WowUp() ? WowState.Running : Starter.State),
@@ -1174,6 +1239,9 @@ namespace DsfDesktop.App
             if (show != null) d["show"] = show;
             if (Starter.Why != null) d["why"] = Starter.Why;
             if (err != null) d["login_error"] = err;
+            // WoW's region screen waits after a refused region: the Thor says "Region refused: pick another region"; the player picks
+            // on WoW's own screen (Desktop never picks or saves one)
+            if (regionRefused) d["region"] = "refused";
             return WithInput(d);
         }
 

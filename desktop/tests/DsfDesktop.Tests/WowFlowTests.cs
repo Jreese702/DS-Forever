@@ -443,5 +443,89 @@ namespace DsfDesktop.Tests
             var firstV6 = all.FindIndex(a => ((string)a).Contains(":"));
             if (firstV6 >= 0) A.True(System.Linq.Enumerable.All(System.Linq.Enumerable.Skip(all, firstV6), a => ((string)a).Contains(":")), "IPv4 first");
         }
+
+        /// <summary>
+        /// the user's pick 2026-11-17 (region): a refused region (309) is said to the Thor while WoW's own region screen waits; it stays
+        /// through the screen switching back to the login or the region pick, and goes once a character select shows or a new client runs
+        /// </summary>
+        [Test]
+        public static void ARefusedRegionIsSaidUntilTheSignInGoesOn()
+        {
+            const string Pick = "11/17 14:15:48.916  [N][Lua] Switching to screen=\"SuperDistrictUI\" (from \"login\")";
+            const string Fatal309 = "11/17 14:16:07.625  [N][Connection] Fatal login error received result=\" (309)\"";
+            var l = new LoginLog();
+            l.Line(Pick);
+            A.False(l.RegionRefused, "the pick itself is not a refusal");
+            l.Line(Fatal309);
+            A.True(l.RegionRefused, "309");
+            l.Line(Pick);
+            A.True(l.RegionRefused, "back at the region screen: still said");
+            A.Eq(null, l.Error, "the error itself is cleared by the screen switch as before");
+            l.Line(LoginScreen);
+            A.True(l.RegionRefused, "the login screen: still said");
+            l.Line(Fatal308);
+            A.False(l.RegionRefused, "another refusal is not the region's");
+            l.Line(Fatal309);
+            l.Line(CharSelect);
+            A.False(l.RegionRefused, "character select: the region was taken");
+            l.Line(Fatal309);
+            l.Reset();
+            A.False(l.RegionRefused, "a new client run");
+            A.Eq("Region refused: pick another region", WowFlow.RegionRefusedText);
+        }
+
+        /// <summary>
+        /// the user's pick 2026-11-17 ("Ask the Thor again"): login.txt is for one client run. Its client closing ends it (the file goes),
+        /// and the next start asks the Thor for the login again, only while a Thor is connected and no file waits
+        /// </summary>
+        [Test]
+        public static void AClosedClientsLoginIsAskedForAgain()
+        {
+            A.False(WowFlow.LoginRunOver(null, null), "no client seen for the file yet");
+            A.False(WowFlow.LoginRunOver(null, 4242), "a client, not tied yet");
+            A.False(WowFlow.LoginRunOver(4242, 4242), "its client still runs");
+            A.True(WowFlow.LoginRunOver(4242, null), "its client closed itself (the refused region)");
+            A.True(WowFlow.LoginRunOver(4242, 5151), "another client now");
+            A.Eq("its client closed", WowFlow.LoginFileWhy(5, null, true, clientGone: true), "the file was for that run only");
+            A.Eq("the Thor left", WowFlow.LoginFileWhy(5, null, false, clientGone: true));
+            A.Eq(null, WowFlow.LoginFileWhy(5, null, true, clientGone: false), "the old rules stand");
+            A.True(WowFlow.LoginAgainWanted(fileOnDisk: false, runOver: true, thorHere: true), "ask the Thor again");
+            A.False(WowFlow.LoginAgainWanted(fileOnDisk: true, runOver: true, thorHere: true), "a file still waits: this start reads it");
+            A.False(WowFlow.LoginAgainWanted(false, true, false), "no Thor: nothing to ask");
+            A.False(WowFlow.LoginAgainWanted(false, false, true), "the first start of a connect: the Thor sent it with its welcome");
+        }
+
+        /// <summary>the user's pick 2026-11-17 ("Yes, remember it"): the PC's Config.wtf remembers the Thor's game account, only that key,
+        /// and the PC's own remembered pick wins (fake names only)</summary>
+        [Test]
+        public static void ThePcRemembersTheGameAccount()
+        {
+            const string list = "Fake1|!Fake2|";
+            var cfg = "SET portal \"eu\"\r\nSET accountName \"fake@example.invalid\"\r\nSET GamePadEnable \"1\"\r\n";
+            var added = WowAccount.Apply(cfg, list);
+            A.Eq(cfg + "SET accountList \"Fake1|!Fake2|\"\r\n", added, "added; every other line as it was (portal, accountName)");
+            var unmarked = "SET accountList \"Fake1|Fake2|\"\nSET portal \"us\"\n";
+            A.Eq("SET accountList \"Fake1|!Fake2|\"\nSET portal \"us\"\n", WowAccount.Apply(unmarked, list), "an unmarked list remembers nothing: replaced");
+            var own = "SET accountList \"!Fake1|Fake2|\"\nSET portal \"us\"\n";
+            A.Eq(own, WowAccount.Apply(own, list), "WoW's own remembered pick on the PC wins");
+            A.Eq(cfg, WowAccount.Apply(cfg, "Fake1|Fake2|"), "a list with no pick is no choice");
+            A.Eq(cfg, WowAccount.Apply(cfg, null));
+            A.Eq(cfg, WowAccount.Apply(cfg, "Fake1|!Fake2\"\r\nSET portal \"kr"), "nothing but one plain value");
+            A.Eq(cfg, WowAccount.Apply(cfg, new string('!', 600)));
+            using (var t = new Tmp())
+            {
+                var f = t.P("Config.wtf");
+                A.Eq("no Config.wtf yet", WowAccount.Ensure(f, list), "a game never started: the client writes its own");
+                A.False(File.Exists(f));
+                File.WriteAllText(f, cfg);
+                A.True(WowAccount.Ensure(f, list).StartsWith("accountList written"), "written");
+                A.Eq(added, File.ReadAllText(f));
+                A.Eq(cfg, File.ReadAllText(f + WowAccount.Backup), "backed up first");
+                A.False(File.Exists(f + ".dsf-tmp"));
+                A.Eq("kept (the PC's own)", WowAccount.Ensure(f, list), "the second start changes nothing");
+                foreach (var said in new[] { WowAccount.Ensure(f, list), WowAccount.Ensure(f, "x") })
+                    A.False(said.Contains("Fake"), "the log never names an account");
+            }
+        }
     }
 }
