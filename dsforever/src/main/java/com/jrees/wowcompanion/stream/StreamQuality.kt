@@ -39,8 +39,25 @@ data class StreamQuality(
         const val VIDEO_FORMAT_AV1_MAIN8 = 0x1000
 
         val HEIGHTS = listOf(720, 900, 1080)
-        val FPS = listOf(30, 60)
+        /** 120 only where this Thor can show it ([offeredFps]): its decoder at the stream's size and a 120 Hz top screen */
+        val FPS = listOf(30, 60, 120)
         val BITRATES_KBPS = listOf(5_000, 10_000, 15_000, 20_000, 30_000, 40_000, 50_000)
+        /** 120 fps sends twice the frames: the bit rate suggested with it */
+        const val KBPS_FOR_120 = 30_000
+        const val NOTE_120 = "120 fps: 30+ Mbps"
+
+        /** the frame rates the picker offers: 120 when [can120] */
+        fun offeredFps(can120: Boolean): List<Int> = if (can120) FPS else FPS.filter { it != 120 }
+
+        /** a stored 120 on a Thor (or at a size) that can't show it plays at 60; the stored choice is kept */
+        fun forDevice(q: StreamQuality, can120: Boolean): StreamQuality = if (q.fps == 120 && !can120) q.copy(fps = 60) else q
+
+        /** [decoderOk] = the decoder takes the stream's size at 120 fps; [displayMaxHz] = the top screen's fastest mode at its size */
+        fun can120(decoderOk: Boolean, displayMaxHz: Float): Boolean = decoderOk && displayMaxHz >= 119f
+
+        /** the picker moved the frame rate: at 120 the bit rate goes up to [KBPS_FOR_120] when it was lower */
+        fun withFps(q: StreamQuality, fps: Int): StreamQuality =
+            if (fps == 120 && q.fps != 120 && q.bitrateKbps < KBPS_FOR_120) q.copy(fps = fps, bitrateKbps = KBPS_FOR_120) else q.copy(fps = fps)
 
         /** a stored value, each field checked against what is offered (anything else falls back to the default's) */
         fun fromJson(o: JSONObject?): StreamQuality {

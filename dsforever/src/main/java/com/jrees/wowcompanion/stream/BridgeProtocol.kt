@@ -115,6 +115,8 @@ object BridgeProtocol {
     }
 
     fun focus(): String = JSONObject().put("t", "focus").toString()
+    /** the stream's mode (Desktop 0.2.31): a PC with no screen on makes its virtual screen at it */
+    fun streamMode(w: Int, h: Int, fps: Int): String = JSONObject().put("t", "stream_mode").put("w", w).put("h", h).put("fps", fps).toString()
     /** 2026-11-04 (the stream test: the PC ran add-on set 239 against the Thor's 251, "a TOOON of Lua errors"): Desktop installs its
      *  bundled add-on set into the PC game (it only did at its own start or a button); it answers {"t":"addons", ..., "result"} */
     fun addonsInstall(): String = JSONObject().put("t", "addons_install").toString()

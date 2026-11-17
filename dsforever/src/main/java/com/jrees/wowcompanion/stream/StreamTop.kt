@@ -52,7 +52,16 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "dsf-stream-work") }
     private val store by lazy { HostStore(activity) }
     private var host: PairedHost? = null
-    private var quality = StreamQuality()
+    @Volatile private var quality = StreamQuality()
+    /** 120 fps per codec and size, read once ([StreamRate.can120]) */
+    private val can120Seen = HashMap<Pair<StreamQuality.Codec, Int>, Boolean>()
+    private fun can120(q: StreamQuality): Boolean = synchronized(can120Seen) {
+        can120Seen.getOrPut(q.codec to q.height) { StreamRate.can120(activity, q).also { Log.i(TAG, "120 fps at ${q.codec.label} ${q.height}p: ${if (it) "offered" else "not offered"}") } }
+    }
+    /** what this Thor plays: a stored 120 it can't show plays at 60 */
+    private fun playable(q: StreamQuality = quality) = StreamQuality.forDevice(q, q.fps != 120 || can120(q))
+    /** the running stream's frame rate (the refresh it asked for) */
+    private var streamFps = 0
 
     private lateinit var surface: SurfaceView
     /** black round the zoomed window; a touch on the black goes nowhere */
@@ -289,7 +298,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 onPc = { w -> main.post { pcWord(w) } },
                 onWelcome = { w -> main.post { welcomed(w) } },
                 onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } },
-                savedLogin = { com.jrees.wowcompanion.HomeLoginStore.forAutoLogin(activity)?.let { it.email to it.password } }).also { bridge = it }
+                savedLogin = { com.jrees.wowcompanion.HomeLoginStore.forAutoLogin(activity)?.let { it.email to it.password } },
+                streamMode = { playable().let { Triple(it.width, it.height, it.fps) } }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
 
@@ -435,7 +445,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private var reachFails = 0
 
     private fun startSession(h: PairedHost, mode: StreamMode.Choice) {
-        val q = quality
+        val q = playable()
+        streamFps = q.fps
         worker.execute {
             val id = store.identity()
             main.post {
@@ -456,6 +467,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private fun onStarted(w: Int, h: Int) {
         policy.reset()
+        if (streamFps >= 100) StreamRate.request(activity, surface.holder.surface, streamFps)
         padSent = 0
         show(Screen.STREAMING)
         val k = StreamKeys(MoonBridge.INPUT, w, h).also { keys = it }
@@ -539,6 +551,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private fun teardown() {
         seen = false
+        if (streamFps >= 100) StreamRate.release(activity, surface.holder.surface)
+        streamFps = 0
         SetupBridge.openPcKeyboard = null
         SetupBridge.exitStream = null
         SetupBridge.openStreamSettings = null
@@ -709,7 +723,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (screen == Screen.QUALITY) return
         beforeQuality = screen
         qualityAtOpen = quality
-        val v = qualityView ?: QualityView(activity, quality, onChange = { q -> quality = q; StreamQuality.save(activity, q) }, onClose = { qualityDone() })
+        val v = qualityView ?: QualityView(activity, quality, onChange = { q -> quality = q; StreamQuality.save(activity, q) }, onClose = { qualityDone() },
+            can120 = { q -> can120(q) })
             .also { qualityView = it; overlay.centered(it, 560f) }
         show(Screen.QUALITY)
         v.bringToFront()

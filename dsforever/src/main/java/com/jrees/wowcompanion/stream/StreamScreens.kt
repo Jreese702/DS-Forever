@@ -151,11 +151,15 @@ internal class StatusView(ctx: Context, onRetry: () -> Unit, onPairAgain: () -> 
 
 /** "Stream quality": one row per setting; the controller's up / down picks a row, left / right changes it, A or B closes */
 internal class QualityView(ctx: Context, private var q: StreamQuality, private val onChange: (StreamQuality) -> Unit,
-                           private val onClose: () -> Unit) : LinearLayout(ctx) {
+                           private val onClose: () -> Unit,
+                           /** this Thor shows the stream's size at 120 fps ([StreamRate.can120]) */
+                           private val can120: (StreamQuality) -> Boolean = { false }) : LinearLayout(ctx) {
     private var row = 0
     private val rows = List(5) { StreamLook.text(ctx, 20f) }
+    private val note120 = StreamLook.text(ctx, 14f, StreamLook.DIM)
 
     init {
+        q = StreamQuality.forDevice(q, q.fps != 120 || can120(q))
         orientation = VERTICAL; gravity = Gravity.CENTER
         background = StreamLook.rounded(StreamLook.PANEL, StreamLook.dp(ctx, 18f).toFloat())
         val p = StreamLook.dp(ctx, 24f); setPadding(p, p, p, p)
@@ -165,6 +169,7 @@ internal class QualityView(ctx: Context, private var q: StreamQuality, private v
             t.setOnClickListener { row = i; change(1) }
             addView(t)
         }
+        addView(note120)
         addView(StreamLook.text(ctx, 14f, StreamLook.DIM).apply { text = "Defaults: HEVC, 1080p 60, 20 Mbps." })
         addView(StreamLook.row(ctx, StreamLook.button(ctx, "Defaults") { q = StreamQuality(); onChange(q); refresh() }, StreamLook.button(ctx, "Done (B)") { onClose() }))
         refresh()
@@ -172,9 +177,9 @@ internal class QualityView(ctx: Context, private var q: StreamQuality, private v
 
     private fun change(by: Int) {
         q = when (row) {
-            0 -> q.copy(codec = StreamQuality.step(StreamQuality.Codec.values().toList(), q.codec, by))
-            1 -> q.copy(height = StreamQuality.step(StreamQuality.HEIGHTS, q.height, by))
-            2 -> q.copy(fps = StreamQuality.step(StreamQuality.FPS, q.fps, by))
+            0 -> q.copy(codec = StreamQuality.step(StreamQuality.Codec.values().toList(), q.codec, by)).let { StreamQuality.forDevice(it, it.fps != 120 || can120(it)) }
+            1 -> q.copy(height = StreamQuality.step(StreamQuality.HEIGHTS, q.height, by)).let { StreamQuality.forDevice(it, it.fps != 120 || can120(it)) }
+            2 -> StreamQuality.withFps(q, StreamQuality.step(StreamQuality.offeredFps(can120(q)), q.fps, by))
             3 -> q.copy(bitrateKbps = StreamQuality.step(StreamQuality.BITRATES_KBPS, q.bitrateKbps, by))
             else -> q.copy(audioOnThor = !q.audioOnThor)
         }
@@ -185,6 +190,8 @@ internal class QualityView(ctx: Context, private var q: StreamQuality, private v
         val v = listOf("Video: ${q.codec.label}", "Resolution: ${q.height}p", "Frame rate: ${q.fps} fps", "Bit rate: ${q.bitrateKbps / 1000} Mbps",
             "Sound: ${if (q.audioOnThor) "on the Thor" else "on the PC"}")
         rows.forEachIndexed { i, t -> t.text = (if (i == row) "‹  " else "") + v[i] + (if (i == row) "  ›" else ""); t.setTextColor(if (i == row) StreamLook.GOLD else StreamLook.INK) }
+        note120.text = if (q.fps == 120) StreamQuality.NOTE_120 else ""
+        note120.visibility = if (q.fps == 120) View.VISIBLE else View.GONE
     }
 
     fun pad(keyCode: Int): Boolean {
