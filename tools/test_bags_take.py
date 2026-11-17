@@ -288,6 +288,19 @@ ISRC = open(os.path.join(ADDONS, 'WowCompanionInteract', 'Interact.lua'), encodi
 check('local IV = "i165"' in ISRC and 'npcOpen = N.lastOpen' not in ISRC, "bags-take4: Interact i166 taken out (IV back to i165)")
 check('bags-take4' in SRC, "Bags.lua's header note for bags-take4")
 
+# 8. bags-take5: the device log's own order. 15:49:43 a vendor (Interact holds "npc"), its window goes with no MERCHANT_CLOSED seen;
+#    53 minutes of other rooms; 16:42:50 the Controller room's leave, then Bags' open door (bag0:39) shows the game's bags. Taken, the
+#    stale state said once; three entries in a row (the log's 16:42:50 / :56 / :59) are each taken.
+L = runtime()
+L.execute('fire("MERCHANT_SHOW"); show("MerchantFrame"); HOLDER = "interact"; run(0)')
+L.execute('hide("MerchantFrame"); HOLDER = nil; NOW = NOW + 53 * 60; run(0)')
+for i in range(3):
+    L.execute('show("ContainerFrameCombinedBags"); run(0)')
+    check(on(L) and L.eval('TAKES') == i + 1, "log order, Bags entry %d after the vendor: taken (not take-skip-window)" % (i + 1), note(L))
+    L.execute('SPEC.lost("free"); hide("ContainerFrameCombinedBags"); run(0)')
+check(L.eval('doc().ctxStale') == "merchant", "the vendor's stale state is said (ctxStale = merchant)", L.eval('doc().ctxStale'))
+check('bags-take5' in SRC and 'Morg Gnarltree' in SRC, "Bags.lua's header note for bags-take5 (the traced cause)")
+
 check(L.eval('#TRACE') == 0, "read-only: no binding / macro / CVar / window call", L.eval('TRACE[1]'))
 check('"read my DS my bag is behaving weird and opening the bag on top for some reason"' in SRC,
       "Bags.lua's header note quotes the user (bags-take1)")

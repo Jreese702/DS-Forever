@@ -15,6 +15,22 @@
 -- exactly as they are, because every action works on one stack at a time. Sorting and a merged
 -- "clean" view may come later as toggles; the wire stays per-slot either way.
 --
+-- bags-take5 (the same report; the user, 2026-11-16 on 1478: "read my DS my bag is behaving weird and opening the bag on top for some
+-- reason"): THE CAUSE, traced from the device logs (no code change beyond this note; bags-take1 is the fix at the source). The last
+-- NPC window of the session was a VENDOR: 15:49:43 "doc holder=npc" at Morg Gnarltree <Armorer> (the user checking 1478's new vendor
+-- figures and sell prices), so MERCHANT_SHOW set ctx = "merchant". Interact believes the FRAME over the events (its isOpen: once the
+-- frame was seen, IsShown decides; buildDoc re-looks when they disagree, "a close event that never arrived"), so it let go of the
+-- vendor and every room worked after it (16:37 the bar held, Settings / Chat / Macros / Controller rooms). Bags believed ctx ALONE
+-- (1477 and 1478 alike), cleared only by MERCHANT_CLOSED; with that close not seen, every take after it was skipped
+-- "take-skip-window" (16:42:50, :56, :59 - the first Bags entries after the vendor): the game's Combined Backpack on top, our room
+-- with no cursor. Every other listed window is ruled out: the Interact ones (Merchant, Gossip, Quest, Bank, Mail, Trade, Auction
+-- House, Trainer) would have held the pad and shown Interact's pop-up, not the Bags room (bot3); CharacterFrame / GuildBankFrame
+-- were not on the top screen (top3), no Character room or guild bank was entered, and no 1477 -> 1478 Lua shows, keeps or alphas
+-- one (the Controller / Spellbook leave just before, Book.lua / PadTabCtl.lua, is unchanged). 1477 looked fine only because no vendor
+-- was visited on it before the bags were opened. bags-take1 makes ctx true only while its own frame is shown (CTXW.now), so the
+-- vendor's stale state is let go at the next take (said once as ctxStale) and the bags are taken; a window really shown still skips,
+-- by name. Nothing in the game is called.
+--
 -- bags-take4 (the same report; the user, 2026-11-16 on 1478: "read my DS my bag is behaving weird and opening the bag on top for some
 -- reason"): bags-take3's orphan rule is TAKEN OUT (reverted, with Interact i166). Taking anyway after 1.5 s over-took at a real guild
 -- bank (no Interact window), at the game's own Character window with the NPC-windows bit off, and at a real vendor / bank whose
