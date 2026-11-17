@@ -5,6 +5,7 @@ import com.jrees.wowcompanion.HomeMapPages.Page.CONTROLS
 import com.jrees.wowcompanion.HomeMapPages.Page.QUESTS
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -76,5 +77,13 @@ class HomeMapPagesTest {
         assertEquals(listOf("mapw" to 9, "mapw" to 23), MapRoomPad.homeSticksCells(pad, false))
         assertNull("an older Map.lua without the row: nothing", MapRoomPad.homeSticksCells(JSONObject().put("rows", JSONObject()), true))
         assertTrue("the app says it again well inside the add-on's own let-go", MapRoomPad.HOME_STICKS_KEEP_MS * 2 < MapRoomPad.HOME_STICKS_TTL_S * 1000L)
+    }
+
+    /** the user, 2026-11-17: "turn this into a Thor based toggle": Home map full detail by default only on the 16 GB Thor Max */
+    @Test fun fullDetailDefaultsByThorModel() {
+        assertTrue("Thor Max (15255 MB counted)", DeviceTier.homeMapFullDetail(15255))
+        assertFalse("Thor Pro (11265 MB)", DeviceTier.homeMapFullDetail(11265))
+        assertFalse("Thor Base / Lite (7191 MB)", DeviceTier.homeMapFullDetail(7191))
+        assertFalse("RAM not known: the lighter map", DeviceTier.homeMapFullDetail(0))
     }
 }

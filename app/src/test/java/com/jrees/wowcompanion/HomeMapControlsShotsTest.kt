@@ -124,9 +124,29 @@ class HomeMapControlsShotsTest {
         rigs.clear()
         feed(0, 0f, 0f); feed(1, 0f, 0f)
         ShadowLooper.idleMainLooper()
+        org.robolectric.shadows.ShadowChoreographer.setPaused(false)
     }
 
-    private fun rig(world: Boolean = true, buffs: Boolean = true): Rig {
+    /** the pictures decode off the UI thread (the room's executor): wait for them to land, a few frames at a time */
+    private fun waitPictures(r: Rig, ms: Long = 8_000L) {
+        val until = System.nanoTime() + ms * 1_000_000L
+        var last = -1L
+        var still = 0
+        while (System.nanoTime() < until) {
+            draw(r.home); Thread.sleep(40); settle(2)
+            val b = r.room.pictureBytes
+            if (b == last && b > 0L) { if (++still >= 5) return } else still = 0
+            last = b
+        }
+    }
+    private fun mb(b: Long) = "%.1f MB".format(b / 1048576.0)
+    private val report = StringBuilder()
+    private fun note(l: String) { println("HMC-MEM $l"); report.append(l).append('\n') }
+
+    private fun rig(world: Boolean = true, buffs: Boolean = true, full: Boolean = true): Rig {
+        // frames run only as the clock moves (the sticks' and the reticle's postOnAnimation loops would otherwise spin in one idle)
+        org.robolectric.shadows.ShadowChoreographer.setPaused(true)
+        org.robolectric.shadows.ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
         art(world)
         HomeSettings.init(app)
         Settings.init(app)
@@ -144,6 +164,7 @@ class HomeMapControlsShotsTest {
         waitArt(room)
         if (world) assertTrue("the art set read (${room.model.maps.keys})", room.backdropRoot(1429) != null)
         map.worldArt = room.homeArt
+        map.worldFull = { full }                 // Settings > Performance > Home map: full detail (the test JVM has no Thor model)
         val home = HomeView(act, map, cast, chat) { }
         top.addView(home, FrameLayout.LayoutParams(W, H))
         home.borrow()
@@ -340,7 +361,7 @@ class HomeMapControlsShotsTest {
         val r = rig()
         key(r.home, "PADDRIGHT")
         stick(r, 1, 0f, 1f, 4500)
-        draw(r.home)
+        waitPictures(r)
         assertTrue(r.room.backdropInUse && r.room.pictureBytes > 0L)
         key(r.home, "PAD2"); key(r.home, "PAD2")              // the list, then the module closes
         settle()
@@ -356,9 +377,101 @@ class HomeMapControlsShotsTest {
         val r = rig()
         key(r.home, "PADDRIGHT")
         stick(r, 1, 0f, 1f, 4500)
-        draw(r.home)
+        waitPictures(r)
         assertTrue(r.room.pictureBytes > 0L)
         r.room.backdropDone(lowMemory = true)
         assertEquals("the 8 / 12 GB models and Lighter mode: at once", 0L, r.room.pictureBytes)
+    }
+
+    // ---------------------------------------------------------------- the setting and the memory rules (the user, 2026-11-17: "I am
+    // slightly concerned about the map turning into a memory sink ... turn this into a Thor based toggle")
+
+    @Test fun withFullDetailOffTheMapIsTodaysButTheControlsStay() {
+        val r = rig(full = false)
+        key(r.home, "PADDRIGHT")
+        assertEquals("the controls page is there", HomeMapPages.Page.CONTROLS, r.home.mapPageNow())
+        settle(); draw(r.home)
+        assertEquals("off: the zone is the floor (no whole-world zoom-out)", 1f, st(r)[3], 0f)
+        stick(r, 1, 0f, 1f, 3000)
+        draw(r.home)
+        assertEquals(1f, st(r)[2], 0.001f)
+        assertFalse("no art asked for", st(r)[4] == 1f || r.room.backdropInUse)
+        assertEquals("no pictures held for Home", 0L, r.room.pictureBytes)
+        stick(r, 0, 0.9f, 0f, 300)
+        assertTrue("the sticks still move the cursor", st(r)[5] == 1f)
+    }
+
+    @Test fun androidsLowMemoryWarningFreesTheArtAndHomeFallsBackToItsZone() {
+        val r = rig()
+        key(r.home, "PADDRIGHT")
+        stick(r, 1, 0f, 1f, 4500)
+        waitPictures(r)
+        assertTrue(r.room.pictureBytes > 0L)
+        val freed = r.room.trimmed(android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
+        assertTrue("the warning frees what Home's map held ($freed)", freed > 0L && r.room.pictureBytes == 0L)
+        assertTrue("... and pauses the art for Home", r.room.backdropPaused)
+        draw(r.home); draw(r.home)
+        assertEquals("Home's map is back on its zone (today's map)", 1f, st(r)[2], 0.001f)
+        assertFalse(st(r)[4] == 1f)
+        waitPictures(r, 1500L)
+        assertEquals("nothing decoded back in while short", 0L, r.room.pictureBytes)
+        key(r.home, "PAD2"); key(r.home, "PAD2")
+        assertFalse("the module closing clears the pause", r.room.backdropPaused)
+        assertEquals("a light warning (UI hidden) is not the low-memory one", 0L, r.room.trimmed(android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN))
+    }
+
+    @Test fun turningTheSettingOffLetsTheArtGo() {
+        var on = true
+        val r = rig()
+        r.map.worldFull = { on }
+        key(r.home, "PADDRIGHT")
+        stick(r, 1, 0f, 1f, 4500)
+        waitPictures(r)
+        assertTrue(r.room.backdropInUse)
+        on = false
+        draw(r.home); draw(r.home)
+        assertFalse("off in Settings: the art is told at once", r.room.backdropInUse)
+        assertEquals("... and the zoom is back on the zone", 1f, st(r)[2], 0.001f)
+    }
+
+    /**
+     * THE NUMBERS (the coordinator's ask): the pictures Home's map holds (the Map room's cache, MemWatch's "worldroom") zoomed in on the
+     * zone, out to the continent, out to the whole world, after the module closes and a minute later, next to the Map room's own
+     * footprint on the same art. Real numbers only with HMC_WORLD_ROOT (the PC map build); the lines go to stdout and
+     * HMC_SHOTS_DIR/memory.txt.
+     */
+    @Test fun memoryFootprint() {
+        if (System.getenv("HMC_WORLD_ROOT") == null) return
+        val r = rig()
+        key(r.home, "PADDRIGHT")
+        settle(); waitPictures(r, 2000L)
+        note("zone (zoom ${"%.2f".format(st(r)[2])}): ${mb(r.room.pictureBytes)} of world-map pictures (the zone draws minimap tiles, as today)")
+        var peak = 0L
+        // out in steps, the peak held at each (LB: x1/1.6)
+        for (i in 0 until 12) {
+            key(r.home, "PADLSHOULDER"); waitPictures(r, 3000L)
+            peak = maxOf(peak, r.room.pictureBytes)
+            note("zoom ${"%.3f".format(st(r)[2])} (floor ${"%.3f".format(st(r)[3])}): ${mb(r.room.pictureBytes)} held, art painted ${st(r)[4] == 1f}")
+        }
+        note("peak zoomed out: ${mb(peak)}; the cache's cap is 72 MB (WorldMapRoomView's LruCache)")
+        // the whole module walked back in
+        for (i in 0 until 12) { key(r.home, "PADRSHOULDER") }
+        waitPictures(r, 1500L)
+        note("back on the zone: ${mb(r.room.pictureBytes)} still held (kept for the next zoom-out until the module closes)")
+        key(r.home, "PAD2"); key(r.home, "PAD2"); settle()
+        note("module closed: ${mb(r.room.pictureBytes)} held; in use ${r.room.backdropInUse}")
+        ShadowSystemClock.advanceBy(Duration.ofMillis(MapRoomLetGo.AFTER_MS + 1000L)); ShadowLooper.idleMainLooper()
+        note("61 s after the close: ${mb(r.room.pictureBytes)}")
+        // the Map room's own footprint on the same art: opened on the player's zone, then its LB out to the world
+        r.room.visibility = View.VISIBLE
+        r.room.layout(0, 0, W, H)
+        r.room.onShown()
+        val bmp = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+        fun roomDraw() { for (i in 0 until 40) { r.room.draw(Canvas(bmp)); Thread.sleep(40); settle(1) } }
+        roomDraw()
+        note("Map room on the zone: ${mb(r.room.pictureBytes)}")
+        repeat(8) { r.room.onMapPad(JSONObject().put("n", 900 + it).put("k", "PADLSHOULDER")); roomDraw() }
+        note("Map room zoomed out (LB x8): ${mb(r.room.pictureBytes)}")
+        out?.let { d -> d.mkdirs(); File(d, "memory.txt").writeText(report.toString()) }
     }
 }

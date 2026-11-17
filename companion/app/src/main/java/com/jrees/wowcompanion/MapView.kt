@@ -5582,12 +5582,23 @@ class MapView(context: Context) : View(context) {
         }
     }
 
+    /** Settings > Performance > Home map: full detail (by the Thor model unless set): off = no art, no zoom past the zone */
+    var worldFull: () -> Boolean = { runCatching { Settings.homeMapFull }.getOrDefault(false) }
+    /** the setting turned off while the art was in use: it is let go at once, as on a close */
+    private var worldWasFull = false
+    private fun worldFull(): Boolean {
+        val on = worldFull.invoke()
+        if (worldWasFull && !on && worldAsked) { worldAsked = false; worldArt?.done() }
+        worldWasFull = on
+        return on
+    }
+
     /** the art's share over the minimap tiles at zoom [z]: none at the whole zone and closer, all of it from half the zone out */
     private fun worldShare(z: Float): Float { val t = ((1f - z) / 0.5f).coerceIn(0f, 1f); return t * t * (3f - 2f * t) }
 
     /** this frame's zoom floor and root bounds (the full map): the whole world with the art, else the zone */
     private fun worldFrame(mapId: Int, fw: Float, fh: Float) {
-        val r = if (mapId != 0) worldArt?.root(mapId) else null
+        val r = if (mapId != 0 && worldFull()) worldArt?.root(mapId) else null
         val rc = rect
         if (r == null || r[2] - r[0] <= 0f || r[3] - r[1] <= 0f || fw <= 0f || fh <= 0f) { zoomFloor = 1f; rootBounds.set(0f, 0f, 1f, 1f); return }
         val pw = r[2] - r[0]; val ph = r[3] - r[1]
@@ -6903,7 +6914,7 @@ class MapView(context: Context) : View(context) {
         // HOME'S MAP ZOOMED OUT (2026-11-17): past the zone the Map room's art lies under everything (WorldArt: the room's own renderer and
         // pictures), the zone's 0..1 on it through this projection; the tiles fade out over it down to half the zone, then are not drawn
         worldDrew = false
-        if (!compact && !morphOn && zoom < 0.999f) worldArt?.let { wa ->
+        if (!compact && !morphOn && zoom < 0.999f && worldFull()) worldArt?.let { wa ->
             worldZr.set(sx(0.0), sy(0.0), sx(1.0), sy(1.0)); worldClip.set(left, top, left + fw, top + fh)
             worldAsked = true
             worldDrew = wa.paint(c, m.optInt("mapID", 0), worldZr, worldClip, this)

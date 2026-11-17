@@ -64,7 +64,17 @@ class WorldMapRoomView(context: Context) : View(context) {
     init { MemWatch.source("worldroom") { bmps.size().toLong() } }
     // 1.0.28 (the low-memory kill #173: 70 - 72 MB of this room's pictures held in the killed run's last 5 minutes, the game at
     // 3.6 GB): Android's running-low warning lets them go while the room is not on screen (they are read again when it opens)
-    init { MemWatch.onTrim("worldroom") { level -> if (MemWatch.hiddenLetsGo(level, isShown)) bmps.size().toLong().also { bmps.evictAll() } else 0L } }
+    init { MemWatch.onTrim("worldroom") { level -> trimmed(level) } }
+    /**
+     * The trim's let-go (MemWatch.onTrim's "worldroom"): what it freed, bytes. 2026-11-17: while Home's map is zoomed out on these
+     * pictures the warning also stops it asking for them ([backdropPaused]: Home's map falls back to its zone, today's map) until its
+     * module closes, so the pictures are not decoded straight back in while Android is short.
+     */
+    fun trimmed(level: Int): Long {
+        if (!MemWatch.hiddenLetsGo(level, isShown)) return 0L
+        if (backdropOn) backdropPaused = true
+        return bmps.size().toLong().also { bmps.evictAll() }
+    }
 
     /**
      * FREE MAP PICTURES (memory relief 2; the user's picks, 2026-11-14: "FREE MAP PICTURES: the World map room's pictures (43-72 MB)
@@ -502,6 +512,9 @@ class WorldMapRoomView(context: Context) : View(context) {
     @Volatile private var backdropClient: View? = null
     /** Home's map has asked for the art since it last said it was done: the pictures stay */
     @Volatile private var backdropOn = false
+    /** Android warned of low memory while Home's map used the art: no more until its module closes ([trimmed], [backdropDone]) */
+    @Volatile var backdropPaused = false
+        private set
     /** inside [paintBackdrop]: the room's own frame is set aside (no canvas log lines) */
     private var painting = false
 
@@ -512,7 +525,7 @@ class WorldMapRoomView(context: Context) : View(context) {
      * ground. Main thread, from Home's onDraw.
      */
     fun paintBackdrop(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View): Boolean {
-        if (!artReady || roomOn || painting || !model.maps.containsKey(zone)) return false
+        if (!artReady || roomOn || painting || backdropPaused || !model.maps.containsKey(zone)) return false
         if (zr.width() <= 0f || zr.height() <= 0f || clip.width() <= 0f || clip.height() <= 0f) return false
         val cv = model.canvasFor(zone)
         val p = model.placeOn(zone, cv) ?: return false
@@ -547,6 +560,7 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     /** Home's map no longer asks for the art (its module closed): the pictures go after the room's wait, or at once on [lowMemory] */
     fun backdropDone(lowMemory: Boolean = DeviceTier.lowMemory()) {
+        backdropPaused = false
         if (!backdropOn) return
         backdropOn = false; backdropClient = null
         letGoClock.removeCallbacks(letGoLater)
@@ -555,7 +569,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         else letGoClock.postDelayed(homeLetGo, MapRoomLetGo.AFTER_MS)
     }
     /** map [zone]'s place on its root (the world, else its continent: left, top, right, bottom), once the art set is read; null = none */
-    fun backdropRoot(zone: Int): FloatArray? = if (!artReady) null else model.rootPlace(zone)?.second
+    fun backdropRoot(zone: Int): FloatArray? = if (!artReady || backdropPaused) null else model.rootPlace(zone)?.second
         ?.takeIf { it[2] - it[0] > 0f && it[3] - it[1] > 0f && !(it[0] == 0f && it[1] == 0f && it[2] == 1f && it[3] == 1f && model.maps[zone]?.type ?: 0 >= 3) }
 
     /** Home's map module's way to this room's art (CompanionHost hands it to MapView) */
