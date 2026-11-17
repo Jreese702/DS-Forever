@@ -135,6 +135,16 @@ class MapKalimdorShotsTest {
             .put(JSONObject().put("questID", 8).put("x", 0.47).put("y", 0.50).put("title", "Vile Familiars")))
     }
 
+    private fun questsDoc(): JSONObject {
+        return JSONObject().put("plv", 6).put("list", JSONArray()
+            .put(JSONObject().put("id", 7).put("title", "Sarkoth").put("lv", 5).put("watch", 1).put("focus", true).put("zone", "Durotar")
+                .put("obj", JSONArray().put(JSONObject().put("t", "Sarkoth's Mangled Claw: 0/1"))))
+            .put(JSONObject().put("id", 9).put("title", "Lazy Peons").put("lv", 4).put("watch", 1).put("ready", true).put("done", true)
+                .put("zone", "Durotar"))
+            .put(JSONObject().put("id", 8).put("title", "Vile Familiars").put("lv", 3).put("zone", "Durotar")
+                .put("obj", JSONArray().put(JSONObject().put("t", "Vile Familiar slain: 2/12")))))
+    }
+
     private class Rig(val home: HomeView, val map: MapView, val room: WorldMapRoomView)
     private val rigs = ArrayList<Rig>()
     private var frameDelayWas: Duration? = null
@@ -190,14 +200,8 @@ class MapKalimdorShotsTest {
         if (buffs) home.onAuras(JSONObject().put("type", "auras").put("now", 100.0)
             .put("b", JSONArray().put(JSONObject().put("id", 1).put("n", "Lightning Shield").put("i", 136051).put("exp", 600.0)))
             .put("d", JSONArray()), true)
-        val q = JSONObject().put("plv", 6).put("list", JSONArray()
-            .put(JSONObject().put("id", 7).put("title", "Sarkoth").put("lv", 5).put("watch", 1).put("focus", true).put("zone", "Durotar")
-                .put("obj", JSONArray().put(JSONObject().put("t", "Sarkoth's Mangled Claw: 0/1"))))
-            .put(JSONObject().put("id", 9).put("title", "Lazy Peons").put("lv", 4).put("watch", 1).put("ready", true).put("done", true)
-                .put("zone", "Durotar"))
-            .put(JSONObject().put("id", 8).put("title", "Vile Familiars").put("lv", 3).put("zone", "Durotar")
-                .put("obj", JSONArray().put(JSONObject().put("t", "Vile Familiar slain: 2/12")))))
-        map.onQuests(q); home.onQuests(q, true)
+        val q = questsDoc()
+        map.onQuests(q); home.onQuests(q, true); room.onQuests(q)
         home.tick()
         ShadowLooper.idleMainLooper()
         lay(home, W, H)
@@ -489,6 +493,28 @@ class MapKalimdorShotsTest {
             assertEquals("filtered out", 0, r.map.untrackedDrawn)
             shot("home_untracked_discs_filtered", bm)
         } finally { layers.toggle(QuestLayers.Layer.OTHER) }
+    }
+
+    /** the user's pick (2026-11-17, "Grey there too"): the Map room draws untracked quests as Home's grey discs, filtered by the same switch */
+    @Test fun theMapRoomDrawsUntrackedQuestsGreyAndFiltersThem() {
+        val r = rig(terrain = true)
+        val room = r.room
+        room.visibility = View.VISIBLE
+        room.layout(0, 0, W, H)
+        room.onShown()
+        val bm = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+        fun roomFrames() { for (i in 0 until 40) { bm.eraseColor(Color.BLACK); room.layout(0, 0, W, H); room.draw(Canvas(bm)); Thread.sleep(30); settle(2) } }
+        roomFrames()
+        assertEquals("the untracked quest grey, the tracked one not", listOf(8), room.greyQuests())
+        shot("room_untracked_grey", bm)
+        val prefs = app.getSharedPreferences("mapfilters", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(QuestLayers.Layer.OTHER.key, false).commit()
+        try {
+            roomFrames()
+            assertEquals("Untracked quest objectives off: none", emptyList<Int>(), room.greyQuests())
+            shot("room_untracked_filtered", bm)
+        } finally { prefs.edit().remove(QuestLayers.Layer.OTHER.key).commit() }
+        room.onHidden()
     }
 
     // ---------------------------------------------------------------- the numbers (real art only)

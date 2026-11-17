@@ -1695,7 +1695,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             val lit = litQuest()
             if (lit != lastLit) { prevLit = lastLit; lastLit = lit; litAt = System.currentTimeMillis() }
             val e = ease(((System.currentTimeMillis() - litAt) / SEL_EASE_MS.toFloat()).coerceIn(0f, 1f))
-            for (q in marks().sortedBy { (if (it.id == prevLit) 1 else 0) + (if (it.id == lit) 2 else 0) }) {
+            for (q in marks().filter { markShown(it) }.sortedBy { (if (it.id == prevLit) 1 else 0) + (if (it.id == lit) 2 else 0) }) {
                 val n = order.indexOf(q.id) + 1
                 val cx = sx(q.x); val cy = sy(q.y)
                 val k = when (q.id) { lit -> e; prevLit -> 1f - e; else -> 0f }
@@ -1705,7 +1705,9 @@ class WorldMapRoomView(context: Context) : View(context) {
                 val focused = q.id == focusQid
                 val size = DISC_PX * (1f + (SEL_SCALE - 1f) * k)
                 withAlpha(c, cx, cy, size, fadeA) {
-                    UiKit.questDisc(c, cx, cy, size, if (q.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
+                    // the user's pick (2026-11-17, "Grey there too"): an untracked quest's objective is Home's grey disc, no number
+                    if (untrackedObj(q)) UiKit.questDiscMuted(c, cx, cy, size)
+                    else UiKit.questDisc(c, cx, cy, size, if (q.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
                         focus = true, glow = focused, number = if (q.done || n <= 0) null else n)
                     if (focused) {
                         pRing.color = Color.argb(240, 255, 236, 140); pRing.strokeWidth = 3.5f
@@ -1897,6 +1899,16 @@ class WorldMapRoomView(context: Context) : View(context) {
     private val countHits = ArrayList<Pair<Int, FloatArray>>()
     private val COUNT_PX = 54f
     private val pRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    // UNTRACKED QUESTS, AS ON HOME'S MAP (the user's pick, 2026-11-17: "Grey there too"; replaces test62's "all quests yellow" for them):
+    // an untracked quest's objective (in the log, not tracked, not ready) is a full-size grey disc with no number, still hovered and
+    // picked as before; Home's filter "Untracked quest objectives" (QuestLayers OTHER, the same saved switch) hides it here too
+    private val layerPrefs by lazy { context.getSharedPreferences("mapfilters", Context.MODE_PRIVATE) }
+    private fun untrackedObj(m: Mark): Boolean = !m.done && logEntry(m.id)?.let { !trackedQ(it) } == true
+    private fun markShown(m: Mark): Boolean = !untrackedObj(m) ||
+        runCatching { layerPrefs.getBoolean(QuestLayers.Layer.OTHER.key, QuestLayers.Layer.OTHER.default) }.getOrDefault(true)
+    /** the tests: the shown map's untracked quests drawn grey (their ids) */
+    fun greyQuests(): List<Int> = marks().filter { markShown(it) && untrackedObj(it) }.map { it.id }
+
     /** a quest marker of a layer: its spot on the canvas, how much it shows (its map's fade) */
     private class LMark(val m: Mark, val map: Int, val u: Float, val v: Float, val a: Float)
     /** the quest markers of the shown map (a zone's, a capital's) and of every layer shown at all */
@@ -1904,13 +1916,13 @@ class WorldMapRoomView(context: Context) : View(context) {
         val out = ArrayList<LMark>()
         if (isZoneView()) {
             val a = layOf(shown)?.shown ?: 1f
-            for (m in marks()) out.add(LMark(m, shown, pl.left + m.x * pl.width(), pl.top + m.y * pl.height(), a))
+            for (m in marks()) if (markShown(m)) out.add(LMark(m, shown, pl.left + m.x * pl.width(), pl.top + m.y * pl.height(), a))
         }
         for (l in layers()) {
             if (l.kind == WorldMapModel.CONTINENT || l.id == shown) continue
             val a = l.shown
             if (a <= 0.004f) continue
-            for (m in marksOf(l.id)) out.add(LMark(m, l.id, l.p.left + m.x * l.p.width(), l.p.top + m.y * l.p.height(), a))
+            for (m in marksOf(l.id)) if (markShown(m)) out.add(LMark(m, l.id, l.p.left + m.x * l.p.width(), l.p.top + m.y * l.p.height(), a))
         }
         return out
     }
@@ -1944,7 +1956,8 @@ class WorldMapRoomView(context: Context) : View(context) {
             val x = sxc(lm.u); val y = syc(lm.v)
             if (x < canvasR.left || x > canvasR.right || y < canvasR.top || y > canvasR.bottom) continue
             withAlpha(c, x, y, DISC_PX, lm.a) {
-                UiKit.questDisc(c, x, y, DISC_PX, if (lm.m.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS, focus = true, glow = lm.m.id == focusQid)
+                if (untrackedObj(lm.m)) UiKit.questDiscMuted(c, x, y, DISC_PX)
+                else UiKit.questDisc(c, x, y, DISC_PX, if (lm.m.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS, focus = true, glow = lm.m.id == focusQid)
             }
         }
     }
