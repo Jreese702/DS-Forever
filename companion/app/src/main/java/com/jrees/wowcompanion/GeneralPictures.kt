@@ -95,9 +95,9 @@ object GeneralPictures {
         pF.shader = null; pF.color = t.ink; c.drawRect(b, pF)
         val hh = h * 0.24f
         val body = RectF(b.left, b.top + hh, b.right, b.bottom)
-        // the ground: the kit's rock as the theme lights its window grounds (none on OLED: black, as its rooms are)
+        // the ground: the kit's rock as the theme lights its window grounds (OLED keeps its art now, darkened: themes' 8.1)
         val rock = rockArt()
-        if (rock != null && t.groundLight > 0f) {
+        if (rock != null && t.stoneLight > 0f) {
             val sh = BitmapShader(rock, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
             sh.setLocalMatrix(Matrix().apply { setScale(0.5f, 0.5f); postTranslate(b.left, b.top) })
             pB.shader = sh; pB.colorFilter = groundFilter(t)
@@ -225,10 +225,10 @@ object GeneralPictures {
         return b
     }
 
-    /** the rock as [t] lights its grounds (groundLight, groundSat), lifted to 0.9 so the stone reads at a tile's size (the rooms: 0.5) */
+    /** the rock as [t] lights its grounds (feat/beautify: themes' ONE ground matrix, UiKit.groundMatrix - its stoneLight, artSat, tint
+     *  and OLED floor), lifted to 0.9 so the stone reads at a tile's size (the rooms: 0.5) */
     private fun groundFilter(t: ThemeSpec): ColorMatrixColorFilter = groundFilters.getOrPut(t.id) {
-        val k = 0.9f * t.groundLight
-        ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(t.groundSat); postConcat(ColorMatrix().apply { setScale(k, k, k, 1f) }) })
+        ColorMatrixColorFilter(UiKit.groundMatrix(t, 0.9f * t.stoneLight))
     }
 
     /** the kit's ring_square in [t]'s metal (the raw art, recoloured once per theme: 64 px, 16 KB) */

@@ -545,6 +545,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         settings = SettingsRoom(this, settingsView, { questsPad })
         settings.pad.onLeave = { show(Room.HOME) }
+        // feat/beautify: General's Theme tile opens themes' Theme maker (its premade gallery a step inside it)
+        GeneralTiles.onOpenTheme = { settings.openThemeMaker() }
         settingsRoom = settings
         // the DS WoW toolbar's switch lives in Home's Settings section since 2026-10-06 (renamed from "D-pad room bar")
         // issue #136 (2026-11-11): the row shows the player's pending choice at once (it showed the add-on's old word, "On", while the

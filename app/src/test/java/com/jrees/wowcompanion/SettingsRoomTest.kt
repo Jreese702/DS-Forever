@@ -165,9 +165,9 @@ class SettingsRoomTest {
         for (gb in r.groupBoxes.filter { it.group.tab == SettingsTabs.Tab.GENERAL }) assertTrue("${gb.group}", gb.parts.single() is GeneralTilesView)
         assertEquals(setOf(SettingsTabs.Group.LAYOUT, SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY,
             SettingsTabs.Group.NAVIGATION, SettingsTabs.Group.WINDOWS),
+            r.groupBoxes.filter { gb -> gb.parts.any { it is GameUiSection } }.map { it.group }.toSet())
         // beautify: Performance's one group is ONE part, its picture tiles
         assertTrue(box(r, SettingsTabs.Group.FRAMES).parts.single() is PerformanceTiles)
-            r.groupBoxes.filter { gb -> gb.parts.any { it is GameUiSection } }.map { it.group }.toSet())
         // 2026-11-16 (the tiles): Navigation is ONE tile part (its Polestar tile was SettingsView's row); every Top screen group's part draws
         // its tiles, the rest keep their rows
         val nav = box(r, SettingsTabs.Group.NAVIGATION).parts

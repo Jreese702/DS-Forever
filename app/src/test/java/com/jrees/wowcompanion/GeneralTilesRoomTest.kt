@@ -185,14 +185,14 @@ class GeneralTilesRoomTest {
         // no page wired: the premade gallery in its band (standard tiles, 5 x 2), a press applies one at once, the gallery stays
         tap(r, look, look.tileBox(GeneralTiles.THEME)!!)
         assertEquals(GeneralTiles.THEME, look.openTile)
-        assertEquals(listOf(5, 5), look.bandButtons().map { it.size })
+        assertEquals(listOf(5, 5, 2), look.bandButtons().map { it.size })            // 12 premades since themes added Dark Violet and OLED Jade
         val sizes = look.bandButtons().flatten().map { Math.round(it.width() * 10) to Math.round(it.height() * 10) }.toSet()
         assertEquals(1, sizes.size)
         assertEquals(GameUiTiles.TILE_H, look.bandButtons()[0][0].height(), 0.01f)
         // every premade is a cursor stop
         for (b in look.bandButtons().flatten()) assertTrue(look.focusTargets().any { it == b })
         tap(r, look, look.bandButtons()[1][2])
-        assertEquals("oled_rose", Theme.cur.id)
+        assertEquals("oled_silver", Theme.cur.id)                                   // row 2, third: Dark Violet moved the OLEDs one on
         assertEquals(GeneralTiles.THEME, look.openTile)
         // the maker's page wired (themes' ThemeMakerPage): A opens it, no band
         var opened = 0

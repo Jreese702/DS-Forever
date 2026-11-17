@@ -659,7 +659,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
 
     override fun onDraw(c: Canvas) {
         fonts()
-        c.drawColor(Theme.ink)
+        // feat/beautify (themes 8.4): no page ink - the room's RoomGround.settings (the dimmed rock) shows through
         rowBoxes.clear(); segBoxes.clear(); stepBoxes.clear()
         if (tiled) { drawTiles(c); return }
         var y = 0f

@@ -348,7 +348,7 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
 
     override fun onDraw(c: Canvas) {
         UiKit.asBody(pName); UiKit.asBody(pValue); UiKit.asBody(pBandLabel); UiKit.asBody(pSub); UiKit.asBody(pSeg)
-        c.drawColor(Theme.ink)
+        // feat/beautify (themes 8.4): no page ink - the room's RoomGround.settings (the dimmed rock) shows through
         val e = env()
         val l = layout(width.toFloat())
         val look = BottomPictures.Look(e, zoomIndoor = lineFocus == "in")

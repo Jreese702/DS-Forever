@@ -541,7 +541,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
 
     override fun onDraw(c: Canvas) {
         fonts()
-        c.drawColor(Theme.ink)
+        // feat/beautify (themes 8.4): no page ink - the room's RoomGround.settings (the dimmed rock) shows through
         val l = layout()
         // one name size for the row (a long es / fr name shrinks every name with it, never one alone)
         val nameSize = M.SLOTS.withIndex().minOf { (i, slot) ->

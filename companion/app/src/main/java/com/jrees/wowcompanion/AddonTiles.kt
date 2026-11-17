@@ -353,7 +353,7 @@ class AddonTiles(context: Context, private val host: SettingsView) : View(contex
 
     override fun onDraw(c: Canvas) {
         fonts()
-        c.drawColor(Theme.ink)
+        // feat/beautify (themes 8.4): no page ink - the room's RoomGround.settings (the dimmed rock) shows through
         if (shape() != drawnShape) requestLayout()
         val l = layout(width.toFloat())
         var busy = false

@@ -460,7 +460,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
 
     override fun onDraw(c: Canvas) {
         UiKit.asBody(pName); UiKit.asBody(pValue); UiKit.asBody(pLabel); UiKit.asBody(pStatus); UiKit.asBody(pSeg)
-        c.drawColor(Theme.ink)
+        // feat/beautify (themes 8.4): no page ink - the room's RoomGround.settings (the dimmed rock) shows through
         val l = layout(width.toFloat())
         val grid = l.grid
         if (grid != null) {

@@ -39,6 +39,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     val ctlTiles = ArrayList<ControllerTiles>()
     /** the Smart Y list as a sub-page of the Controller tab (beautify: opened by Smart Y's "List"); GONE while closed */
     val smartYPage = SmartYPage(context, view)
+    /** General's Theme tile opens themes' Theme maker here, over the tab body (feat/beautify: the host until core's SubPage) */
+    val themeMaker = ThemeMakerHost(context) { pad.held }
     /** Add-ons' picture cards (the beautify pass, 2026-11-17): one band open in the room, B closes it as a tile's */
     val addonTiles = ArrayList<AddonTiles>()
     /** beautify: Settings > Performance's picture tiles (the tab's one part; its band closes with B like Top's) */
@@ -46,7 +48,13 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     val tabBar = SettingsTabBar(context) { t -> show(t) }
     /** "What it does" (phase 2): the row's picture, right of the page, on the tabs that have pictures */
     val preview = SettingsPreviewView(context, { homeSection.dpadState()?.want }, { view.smartDoc()?.on })
-    private val scroll = ScrollView(context).apply { ThemeLive.bg(this, Tok.INK) }
+    /** feat/beautify (themes 8.4, the user 2026-11-17: "the background on some of the OLED themes look lifeless"): the page stands on
+     *  RoomGround.settings, drawn once behind the scroll (it does not scroll); the scroll and its parts paint no ink */
+    private val ground = object : View(context) {
+        init { Theme.onChange { postInvalidate() } }
+        override fun onDraw(c: Canvas) = RoomGround.settings(c, android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat()))
+    }
+    private val scroll = ScrollView(context)
     private val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     val pad: SettingsPad
 
@@ -100,6 +108,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         scroll.addView(column)
         addView(tabBar, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val page = FrameLayout(context)
+        page.addView(ground, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         page.addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         val body = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         pad = SettingsPad(context, scroll, sections, gameUis, padSource, tabBar, { dir -> show(SettingsTabs.step(tab, dir)) },
@@ -121,10 +130,14 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             ct.onOpen = { s -> closeOthers(s); pad.follow(s, s.selectionAnchor(), s.bandBox()) }
             ct.onSubPage = { openSmartY() }
         }
-        pad.subPageOpen = { smartYPage.visibility == View.VISIBLE }
+        pad.subPageOpen = { smartYPage.visibility == View.VISIBLE || themeMaker.isOpen }
+        pad.subKey = { k -> themeMaker.key(k).also { if (!themeMaker.isOpen) pad.resyncB() } }
+        themeMaker.onClosed = { preview.visibility = previewWas; pad.resyncB()
+            generals.firstOrNull { GeneralTiles.THEME in it.tileIds() }?.let { t -> pad.land(t) { t.tileBox(GeneralTiles.THEME) } } }
         pad.subPageBack = { closeSmartY(anchor = true) }
         smartYPage.onBack = { closeSmartY(anchor = true) }
         page.addView(pad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        page.addView(themeMaker, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         body.addView(page, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         body.addView(preview, LinearLayout.LayoutParams(PREVIEW_W, ViewGroup.LayoutParams.MATCH_PARENT))
         addView(body, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -231,6 +244,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         bottomTiles.forEach { it.closeSelection() }
         ctlTiles.forEach { it.closeSelection() }
         closeSmartY(anchor = false)
+        themeMaker.visibility = View.GONE
         addonTiles.forEach { it.closeSelection() }
         perf.closeSelection()
         touched = false
@@ -270,6 +284,20 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             for (p in gb.parts) p.visibility = if (on) View.VISIBLE else View.GONE
         }
     }
+
+    private var previewWas = View.GONE
+    /** General's Theme tile (feat/beautify): themes' Theme maker over the tab body, the "What it does" panel hidden while it shows;
+     *  true = it opened (the tile's band stays closed) */
+    fun openThemeMaker(): Boolean {
+        bandsClose()
+        previewWas = preview.visibility
+        preview.visibility = View.GONE
+        themeMaker.open()
+        pad.resyncB()
+        return true
+    }
+
+    private fun bandsClose() { gameUis.forEach { it.closeSelection() }; pad.bands.forEach { it.closeSelection() } }
 
     /** Smart Y's "List" (beautify): the list as a sub-page of the tab body, the groups hidden, the page at its top, the cursor on the
      *  list's first stop */
@@ -358,7 +386,7 @@ class SettingsFoldHeading(context: Context, val group: SettingsTabs.Group, priva
 
     override fun onDraw(c: Canvas) {
         UiKit.asTitle(pHead)
-        c.drawColor(Theme.ink)
+        // feat/beautify (themes 8.4): no page ink - the room's RoomGround.settings (the dimmed rock) shows through
         val cy = H / 2f
         val folds = group.tab.folds
         val sign = if (folds) UiKit.tex(if (open) "list_minus" else "list_plus") else null
@@ -438,6 +466,8 @@ class SettingsPad(
 
     /** the report page over the room (board f-problem-report) takes each press while it is open: true = taken */
     var padOverride: ((String) -> Boolean)? = null
+    /** a page over the tab body that takes the pad's presses while it shows (feat/beautify: the Theme maker): true = taken */
+    var subKey: ((String) -> Boolean)? = null
     /** a page over the room that takes B itself (the layout editor): while it shows, B never leads Home in the capture */
     var overlayOpen: () -> Boolean = { false }
     /** tell the capture where B leads again (a page over the room opened or closed) */
@@ -587,6 +617,7 @@ class SettingsPad(
         held = true
         val k = msg.optString("k")
         if (padOverride?.invoke(k) == true) return
+        if (subKey?.invoke(k) == true) { post { syncB() }; invalidate(); return }
         // L / R switch the tab from anywhere; the cursor goes to the tab row (board f-settings-tabs)
         if (k == "PADLSHOULDER" || k == "PADRSHOULDER") {
             if (tabBar != null) { onTabStep(if (k == "PADLSHOULDER") -1 else 1); onTabs = true }
@@ -695,13 +726,6 @@ class SettingsPad(
     fun follow(v: View, a: RectF?, band: RectF?) {
         a ?: return
         anchor = v to a
-        anchorBand = band
-        invalidate()
-    }
-
-    /** a band of [v] opened (beautify's Controller tiles): the cursor onto [a] (its tile), the tile and [band] in view */
-    fun follow(v: View, a: RectF?, band: RectF?) {
-        anchor = v to (a ?: return)
         anchorBand = band
         invalidate()
     }

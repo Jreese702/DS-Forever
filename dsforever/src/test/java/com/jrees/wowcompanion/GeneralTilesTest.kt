@@ -97,13 +97,14 @@ class GeneralTilesTest {
     @Test fun premadeGalleryWhileNoMakerPage() {
         // Classic and the Dark ones first, then OLED (the presets' own order inside each)
         val ids = GeneralTiles.galleryOrder(ThemePresets.ALL.map { it.id })
-        assertEquals(listOf("classic", "dark_gold", "dark_silver", "dark_rose", "oled_bronze",
-            "oled_gold", "oled_silver", "oled_rose", "oled_rose_gold", "oled_frost"), ids)
+        // (feat/beautify: themes' review added Dark Violet and OLED Jade - 12 premades, three rows of five)
+        assertEquals(listOf("classic", "dark_gold", "dark_silver", "dark_rose", "dark_violet", "oled_bronze",
+            "oled_gold", "oled_silver", "oled_rose", "oled_rose_gold", "oled_frost", "oled_jade"), ids)
         // standard tiles (2026-11-17 review: no small chips): Top's height, five across the band, Top's gap
         val band = GameUiTiles.Box(16f, 300f, 1224f, 300f + GeneralTiles.galleryHeight(ids.size))
-        assertEquals(2 * GameUiTiles.TILE_H + GameUiTiles.GAP + 2 * GeneralTiles.GALLERY_PAD, band.h, 0.01f)
+        assertEquals(3 * GameUiTiles.TILE_H + 2 * GameUiTiles.GAP + 2 * GeneralTiles.GALLERY_PAD, band.h, 0.01f)
         val tiles = GeneralTiles.gallery(band, ids.size)
-        assertEquals(10, tiles.size)
+        assertEquals(12, tiles.size)
         assertTrue(tiles.all { it.h == GameUiTiles.TILE_H && Math.abs(it.w - tiles[0].w) < 0.01f })
         assertTrue("near Top's 232", tiles[0].w in 220f..232f)
         assertEquals(band.l + GeneralTiles.GALLERY_PAD, tiles[0].l, 0.01f)

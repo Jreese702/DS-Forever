@@ -47,12 +47,15 @@ class SettingsView(context: Context, val onReload: () -> Unit) : View(context) {
 
     /** the view whose wiring this slice uses (null = its own: the host's view) */
     private var hub: SettingsView? = null
+    /** feat/beautify (themes 8.4): a slice in the Settings room stands on its RoomGround - no page ink of its own */
+    var onGround = false
     /** the slices made from this view (the host's): its invalidate / requestLayout and the host's calls reach them */
     private var slices: ArrayList<SettingsView>? = null
     /** a view drawing only [blocks], wired through this one (the room's groups) */
     fun slice(blocks: Set<SettingsTabs.Block>): SettingsView = SettingsView(context, onReload).also { s ->
         s.hub = this
         s.only = blocks
+        s.onGround = true
         (slices ?: ArrayList<SettingsView>().also { slices = it }).add(s)
     }
     /** the slices made from this view (the room's) */
@@ -585,7 +588,7 @@ class SettingsView(context: Context, val onReload: () -> Unit) : View(context) {
         val w = width.toFloat()
         scroll = clampScroll(scroll)
         drawnScroll = scroll
-        c.drawColor(Theme.ink)
+        if (!onGround) c.drawColor(Theme.ink)
         clearBoxes()
         var y = topPad() - scroll      // everything below is laid out in screen coordinates
         for ((i, b) in drawnBlocks().withIndex()) {

@@ -59,7 +59,6 @@ class SubPageStrip(context: Context, private val title: String, private val onBa
 
     override fun onDraw(c: Canvas) {
         UiKit.asBody(pTitle)
-        c.drawColor(Theme.ink)
         val r = chip()
         val art = UiKit.tex("move_arrow_left")
         if (art != null) {
