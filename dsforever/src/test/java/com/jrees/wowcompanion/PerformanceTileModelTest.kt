@@ -1,0 +1,147 @@
+package com.jrees.wowcompanion
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * SETTINGS > PERFORMANCE AS PICTURE TILES, the pure model (the user, 2026-11-17: "I REALLY REALLY love what you did with the top screen
+ * settings menu with the pictures and want to do something similar to the other menus"; the beautify design's section 6, critic C6 /
+ * C10): one headless row of exactly five columns with Frame generation wide; each band's lines as they are NOW, never a line that
+ * cannot act; the tiles' words and badges.
+ */
+class PerformanceTileModelTest {
+    private val M = PerformanceTileModel
+    private fun keys(id: String, s: PerformanceTileModel.State, open: Boolean = false) = M.lines(id, s, open).map { it.key }
+
+    @Test fun oneRowOfExactlyFiveColumns() {
+        assertEquals(listOf(M.LIMIT, M.FG, M.MEM, M.INDOOR), M.SLOTS.map { it.id })
+        assertEquals(listOf(M.FG), M.SLOTS.filter { it.wide }.map { it.id })
+        assertEquals(5, M.span(M.SLOTS))
+        assertEquals(1, M.rows(M.SLOTS, 1240f))
+        val g = M.grid(M.SLOTS, 1240f, -1, 0f)
+        // the Top screen's numbers: 232 x 184 tiles, 12 apart, 16 margins; the wide one two tiles and the gap between
+        assertEquals(listOf(16f, 260f, 748f, 992f), g.tiles.map { it.l })
+        assertEquals(GameUiTiles.TILE_W, g.tiles[0].w, 0.01f)
+        assertEquals(2 * GameUiTiles.TILE_W + GameUiTiles.GAP, g.tiles[1].w, 0.01f)
+        assertEquals(1240f - 16f, g.tiles[3].r, 0.01f)
+        assertTrue(g.tiles.all { it.t == M.TOP && it.h == GameUiTiles.TILE_H })
+        assertNull(g.band)
+        assertEquals(M.TOP + GameUiTiles.TILE_H + GameUiTiles.BOTTOM, g.height, 0.01f)
+    }
+
+    @Test fun aWideSlotNeverStartsInTheLastColumn() {
+        val slots = listOf(PerformanceTileModel.Slot("a"), PerformanceTileModel.Slot("b"), PerformanceTileModel.Slot("c"), PerformanceTileModel.Slot("d"), PerformanceTileModel.Slot("w", wide = true), PerformanceTileModel.Slot("e"))
+        val g = M.grid(slots, 1240f, -1, 0f)
+        // a..d fill columns 1-4; the wide one would be cut by the row's end: it starts the next row
+        assertEquals(16f, g.tiles[4].l, 0.01f)
+        assertTrue(g.tiles[4].t > g.tiles[3].t)
+        assertEquals(g.tiles[4].r + GameUiTiles.GAP, g.tiles[5].l, 0.01f)
+    }
+
+    @Test fun theBandOpensUnderTheRow() {
+        val g = M.grid(M.SLOTS, 1240f, 2, 300f)
+        val band = g.band!!
+        assertEquals(g.tiles[2].b + GameUiTiles.GAP, band.t, 0.01f)
+        assertEquals(GameUiTiles.MARGIN, band.l, 0.01f)
+        assertEquals(300f, band.h, 0.01f)
+        assertEquals(M.TOP + GameUiTiles.TILE_H + GameUiTiles.GAP + 300f + GameUiTiles.GAP + GameUiTiles.BOTTOM,
+            g.height + GameUiTiles.GAP, 0.01f)
+    }
+
+    /** C10: no dead stops - Lossless.dll alone before a copy is set; the generation lines only while it is on; Restart only while a
+     *  change waits for it */
+    @Test fun frameGenerationLinesAreOnlyTheOnesThatAct() {
+        val none = PerformanceTileModel.State(hasDll = false)
+        assertEquals(listOf(M.L_DLL), keys(M.FG, none))
+        val off = PerformanceTileModel.State(hasDll = true, fgOn = false)
+        assertEquals(listOf(M.L_FG), keys(M.FG, off))
+        val on = PerformanceTileModel.State(hasDll = true, fgOn = true)
+        assertEquals(listOf(M.L_FG, M.L_MULT, M.L_FLOW, M.L_PERF, M.L_DLL), keys(M.FG, on))
+        assertEquals("6 lines at most", 6, keys(M.FG, on.copy(fgWaits = true)).size)
+        assertEquals(M.L_RESTART, keys(M.FG, on.copy(fgWaits = true)).last())
+        // the switch on with no copy is not generating: its lines do not show
+        assertEquals(listOf(M.L_DLL), keys(M.FG, PerformanceTileModel.State(hasDll = false, fgOn = true)))
+        // the chosen words
+        val lines = M.lines(M.FG, on.copy(multiplier = 3, perfMode = false))
+        assertEquals(0, lines[0].chosen)
+        assertEquals(1, lines.first { it.key == M.L_MULT }.chosen)
+        assertEquals(1, lines.first { it.key == M.L_PERF }.chosen)
+        assertEquals("80%", lines.first { it.key == M.L_FLOW }.value)
+    }
+
+    @Test fun frameLimitRestartOnlyWhileAChangeWaits() {
+        assertEquals(listOf(M.L_LIMIT), keys(M.LIMIT, PerformanceTileModel.State(limit = 40)))
+        assertEquals(listOf(M.L_LIMIT, M.L_RESTART), keys(M.LIMIT, PerformanceTileModel.State(limit = 60, limitWaits = true)))
+        assertEquals(1, M.lines(M.LIMIT, PerformanceTileModel.State(limit = 60))[0].chosen)
+        assertEquals(listOf("40", "60", "Off"), M.lines(M.LIMIT, PerformanceTileModel.State())[0].words)
+        // a launcher-menu value: none lit, the status line says where it came from
+        assertEquals(-1, M.lines(M.LIMIT, PerformanceTileModel.State(limit = 45))[0].chosen)
+        assertEquals("45 fps, set in the launcher's menu", M.status(M.LIMIT, PerformanceTileModel.State(limit = 45)))
+    }
+
+    @Test fun memoryIsAPackOfThreeLines() {
+        val s = PerformanceTileModel.State(lighter = true, lowGfx = false, mapFull = true)
+        val lines = M.lines(M.MEM, s)
+        // the line the picture shows first (beside the picture), then the two that do not change it
+        assertEquals(listOf(M.L_MAP, M.L_LIGHTER, M.L_LOWGFX), lines.map { it.key })
+        assertEquals(listOf(0, 0, 1), lines.map { it.chosen })
+        assertTrue(lines.all { it.label != null && it.words == listOf("On", "Off") })
+        // the 8 / 12 GB Thors: Lighter mode is the model's, its line not drawn; the status line says so
+        val fixed = s.copy(lighterFixed = true)
+        assertEquals(listOf(M.L_MAP, M.L_LOWGFX), keys(M.MEM, fixed))
+        assertEquals("Lighter mode: always on for this Thor", M.status(M.MEM, fixed))
+        assertEquals("Lighter", M.value(M.MEM, fixed))
+        assertEquals("Full map", M.value(M.MEM, PerformanceTileModel.State(mapFull = true)))
+        assertEquals("Zone map", M.value(M.MEM, PerformanceTileModel.State(mapFull = false)))
+        assertNull(M.badge(M.MEM, s))
+    }
+
+    @Test fun indoorDeferredListOnlyWithDeferredBuildings() {
+        assertEquals(listOf(M.L_BUILD), keys(M.INDOOR, PerformanceTileModel.State()))
+        val d = PerformanceTileModel.State(deferred = 3)
+        assertEquals(listOf(M.L_BUILD, M.L_DEFERRED), keys(M.INDOOR, d))
+        assertEquals(listOf("List"), M.lines(M.INDOOR, d)[1].words)
+        assertEquals(listOf("Hide"), M.lines(M.INDOOR, d, deferredOpen = true)[1].words)
+        assertEquals("12 / 40", M.value(M.INDOOR, PerformanceTileModel.State(ready = 12, total = 40)))
+        assertEquals("Off", M.value(M.INDOOR, PerformanceTileModel.State(indoorOn = false)))
+        assertEquals("1 / 2 ready · Route data 4 / 9",
+            M.status(M.INDOOR, PerformanceTileModel.State(progress = "1 / 2 ready", terrain = "Route data 4 / 9")))
+    }
+
+    @Test fun badgesAreTopsSet() {
+        val on = PerformanceTileModel.State(hasDll = true, fgOn = true)
+        assertEquals(GameUiTiles.Badge.ON, M.badge(M.FG, on))
+        assertEquals(GameUiTiles.Badge.OFF, M.badge(M.FG, on.copy(fgOn = false)))
+        assertEquals("the running game waits for a restart: the hourglass", GameUiTiles.Badge.SENT, M.badge(M.FG, on.copy(fgWaits = true)))
+        assertEquals(GameUiTiles.Badge.SENT, M.badge(M.LIMIT, PerformanceTileModel.State(limitWaits = true)))
+        assertNull(M.badge(M.LIMIT, PerformanceTileModel.State()))
+        assertEquals(GameUiTiles.Badge.OFF, M.badge(M.INDOOR, PerformanceTileModel.State(indoorOn = false)))
+        assertTrue(M.dimmed(M.FG, on.copy(fgOn = false)) && !M.dimmed(M.FG, on))
+        assertTrue(!M.dimmed(M.LIMIT, PerformanceTileModel.State(limit = 0)))
+        assertEquals("3x", M.value(M.FG, on.copy(multiplier = 3)))
+        assertEquals("Not set", M.value(M.FG, PerformanceTileModel.State()))
+        assertEquals("40 fps", M.value(M.LIMIT, PerformanceTileModel.State(limit = 40)))
+    }
+
+    /** the band's boxes: every button the 110 px touch floor; an action's one button no wider than 300 px */
+    @Test fun bandBoxes() {
+        val lines = M.lines(M.FG, PerformanceTileModel.State(hasDll = true, fgOn = true, fgWaits = true))
+        val b = M.band(16f, 0f, 1208f, lines)
+        assertEquals(lines.size, b.lines.size)
+        for ((i, lb) in b.lines.withIndex()) {
+            assertEquals(lines[i].words.size, lb.buttons.size)
+            for (x in lb.buttons) assertTrue(x.h >= 110f)
+            if (lines[i].kind == PerformanceTileModel.Kind.ACTION) assertTrue(lb.buttons.single().w <= M.ACTION_W + 0.01f)
+        }
+        assertTrue(b.lines.first().label == null && b.lines.drop(1).all { it.label != null })
+        // Memory's long labels: a wider column than Top's 26 %, the buttons still 150 px at least
+        val mem = M.band(16f, 0f, 1208f, M.lines(M.MEM, PerformanceTileModel.State()))
+        for (lb in mem.lines) {
+            assertTrue("label ${lb.key} ${lb.label!!.w}", lb.label!!.w >= 260f)
+            for (x in lb.buttons) assertTrue(x.w >= M.BTN_MIN - 0.01f)
+            assertTrue(lb.buttons.first().l > lb.label!!.r)
+        }
+    }
+}

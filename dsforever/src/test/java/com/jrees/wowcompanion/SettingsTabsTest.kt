@@ -58,7 +58,8 @@ class SettingsTabsTest {
         // QuestTrail: not installed. First the Import button's headless group (the user, 2026-11-16: "Import addons should be a single
         // button at the top of the list"; its heading is never drawn)
         assertEquals(listOf("Import add-ons", "Polestar", "Spoken", "Manners", "Imported"), SettingsTabs.groups(T.ADDONS).map { it.heading })
-        assertEquals(listOf("Frames", "Memory", "Indoor maps", "Streaming"), SettingsTabs.groups(T.PERFORMANCE).map { it.heading })
+        // beautify (critic C6): Performance is ONE headless group, its tiles and the Stream settings row
+        assertEquals(listOf("Performance"), SettingsTabs.groups(T.PERFORMANCE).map { it.heading })
         for (g in G.values()) assertTrue("${g.heading} has blocks", B.values().any { it.group == g })
     }
 
@@ -97,15 +98,14 @@ class SettingsTabsTest {
             // the top of the list": the button is its own headless group, first; Imported keeps only the list (rows named by the add-ons)
             G.IMPORT to listOf("Import add-ons"),
             G.IMPORTED to emptyList<String>(),
-            G.FRAMES to listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game"),
-            G.MEMORY to listOf("Lighter mode", "Low-memory graphics", "Home map: full detail"),
-            G.INDOOR to listOf("Build in the background", "Progress", "Route data"),
-            G.STREAMING to listOf("Stream settings"))
+            G.FRAMES to listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game",
+                "Lighter mode", "Low-memory graphics", "Home map: full detail", "Build in the background", "Progress", "Route data",
+                "Stream settings"))
         for (g in G.values()) assertEquals(g.heading, want[g], B.values().filter { it.group == g }.flatMap { it.rows })
         // and each group's tab
         val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
             T.TOP to listOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
-            T.ADDONS to listOf(G.IMPORT, G.POLESTAR, G.SPOKEN, G.QUESTTRAIL, G.MANNERS, G.VOICE, G.IMPORTED), T.PERFORMANCE to listOf(G.FRAMES, G.MEMORY, G.INDOOR, G.STREAMING))
+            T.ADDONS to listOf(G.IMPORT, G.POLESTAR, G.SPOKEN, G.QUESTTRAIL, G.MANNERS, G.VOICE, G.IMPORTED), T.PERFORMANCE to listOf(G.FRAMES))
         for ((t, gs) in tabOf) assertEquals(t.label, gs, G.values().filter { it.tab == t })
         // who draws the rows that left their old view: Home's section still draws its attack row, GameUiSection the Top screen rows
         assertEquals(SettingsTabs.Drawer.HOME, B.ATTACK_CAST.drawer)
@@ -198,7 +198,9 @@ class SettingsTabsTest {
         assertEquals(setOf(G.LOOK, G.ACCOUNT, G.HELP), SettingsTabs.openOnShow(T.GENERAL))
         // the user's pick 2026-11-16 (the design's "five headings with no folding on this tab"): Top screen's tiles never fold either
         assertEquals(false, T.TOP.folds)
-        assertEquals(T.values().filter { it != T.GENERAL && it != T.TOP }, T.values().filter { it.folds })
+        // beautify: Performance's one headless row of tiles has nothing to fold
+        assertEquals(false, T.PERFORMANCE.folds)
+        assertEquals(T.values().filter { it != T.GENERAL && it != T.TOP && it != T.PERFORMANCE }, T.values().filter { it.folds })
         // the layout editor's group first (feat/big-layout's pick), and with the tiles' no-folding tab (feat/big-uimenus) every group opens
         assertEquals(setOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), SettingsTabs.openOnShow(T.TOP))
         assertEquals(G.LAYOUT, SettingsTabs.groups(T.TOP).first())
@@ -272,7 +274,8 @@ class SettingsTabsTest {
         assertEquals(listOf(B.IMPORT), SettingsTabs.blocks(G.IMPORT))
         assertEquals(listOf("Import add-ons"), B.IMPORT.rows)
         assertEquals(SettingsTabs.Drawer.VIEW, B.IMPORT.drawer)
-        assertEquals(listOf(G.IMPORT), G.values().filter { it.headless })
+        // (beautify: Performance's one group is headless too, its tiles under no heading)
+        assertEquals(listOf(G.IMPORT, G.FRAMES), G.values().filter { it.headless })
         assertEquals(G.IMPORTED, SettingsTabs.groups(T.ADDONS).last())
         assertTrue("the old Import row is gone from Imported", B.IMPORTED.rows.isEmpty())
         val open = SettingsTabs.openOnShow(T.ADDONS)

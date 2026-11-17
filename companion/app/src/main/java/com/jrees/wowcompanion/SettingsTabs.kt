@@ -19,7 +19,9 @@ object SettingsTabs {
      *  same day: "The five headings with no folding on this tab", which changes the 11-12 fold ruling for this tab only) */
     enum class Tab(val label: String, val hidden: Boolean = false, val folds: Boolean = true) {
         GENERAL("General", folds = false), BOTTOM("Bottom screen"), TOP("Top screen", folds = false), CONTROLLER("Controller"), ADDONS("Add-ons"),
-        PERFORMANCE("Performance")
+        // beautify (the user, 2026-11-17: "I REALLY REALLY love what you did with the top screen settings menu with the pictures"): one
+        // headless row of picture tiles (the design's section 6 / critic C6), so nothing to fold
+        PERFORMANCE("Performance", folds = false)
     }
 
     /** the tabs the room shows, in order (a hidden one is never on the row, never stepped onto) */
@@ -48,12 +50,15 @@ object SettingsTabs {
         // the player's own add-ons (the user, 2026-11-16: "maybe we just do an import addons button then?"): the list, last; its Import
         // button is IMPORT's, at the top
         IMPORTED(Tab.ADDONS, "Imported"),
-        FRAMES(Tab.PERFORMANCE, "Frames"), MEMORY(Tab.PERFORMANCE, "Memory"), INDOOR(Tab.PERFORMANCE, "Indoor maps"),
-        STREAMING(Tab.PERFORMANCE, "Streaming"),
+        // beautify (the design's critic C6: "Performance one headless row of exactly 5 columns ... No group headers on this tab"): ONE
+        // headless group for the tab's tiles and its Stream settings row (Memory, Indoor maps and Streaming were groups of their own)
+        FRAMES(Tab.PERFORMANCE, "Performance", headless = true),
     }
 
     /** who draws a block: SettingsView, Home's section (HomeSettingsSection) or a GameUiSection part */
-    enum class Drawer { VIEW, HOME, GAME_UI }
+    enum class Drawer { VIEW, HOME, GAME_UI,
+        /** beautify: the Performance tab's picture tiles (PerformanceTiles), one part for the tab's every block */
+        TILES }
 
     /** the order within a group is this enum's order; [subHead] = the block keeps its own sub-heading inside its group (the wheels) */
     enum class Block(val group: Group, val heading: String, val rows: List<String>, val drawer: Drawer = Drawer.VIEW,
@@ -138,11 +143,11 @@ object SettingsTabs {
         IMPORTED(Group.IMPORTED, "Imported", emptyList()),
         // ---- Performance
         FRAMES(Group.FRAMES, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
-            "Flow scale", "Performance mode", "Restart the game")),
+            "Flow scale", "Performance mode", "Restart the game"), Drawer.TILES),
         // 1.0.17 (the user's pick "A setting, off by default"): the lighter behaviour on any Thor
-        LIGHTER(Group.MEMORY, "Lighter mode", listOf("Lighter mode", "Low-memory graphics", "Home map: full detail")),
-        INDOOR(Group.INDOOR, "Indoor maps", listOf("Build in the background", "Progress", "Route data")),
-        STREAMING(Group.STREAMING, "Streaming", listOf("Stream settings"));
+        LIGHTER(Group.FRAMES, "Lighter mode", listOf("Lighter mode", "Low-memory graphics", "Home map: full detail"), Drawer.TILES),
+        INDOOR(Group.FRAMES, "Indoor maps", listOf("Build in the background", "Progress", "Route data"), Drawer.TILES),
+        STREAMING(Group.FRAMES, "Streaming", listOf("Stream settings"), Drawer.TILES);
 
         val tab: Tab get() = group.tab
     }
