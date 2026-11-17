@@ -112,6 +112,9 @@ class StreamSession(
     }
 
     @Volatile private var started = false
+    /** the Moonlight stage that failed ("RTSP handshake"; "" = none): [HostHeal] tells an RTSP timeout from the rest */
+    @Volatile var failedStage = ""
+        private set
     @Volatile private var stopped = false
     private var thread: Thread? = null
 
@@ -179,7 +182,7 @@ class StreamSession(
     private val listener = object : MoonBridge.Listener {
         override fun stageStarting(stage: Int) { events.stage("Connecting: ${safeStage(stage)}…") }
         override fun stageComplete(stage: Int) {}
-        override fun stageFailed(stage: Int, errorCode: Int) { Log.w(TAG, "stage ${safeStage(stage)} failed $errorCode") }
+        override fun stageFailed(stage: Int, errorCode: Int) { failedStage = safeStage(stage); Log.w(TAG, "stage $failedStage failed $errorCode") }
         override fun connectionStarted() {}
         override fun connectionTerminated(errorCode: Int) {
             // Moonlight's rule: stop the connection from another thread than its callback

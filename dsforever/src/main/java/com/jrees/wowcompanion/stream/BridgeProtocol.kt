@@ -73,6 +73,11 @@ sealed class BridgeMsg {
     data class Log(val event: String) : BridgeMsg()
     data class BacklogEnd(val count: Int) : BridgeMsg()
     data class Stream(val state: String) : BridgeMsg()
+    /** Desktop 0.2.32: its Sunshine's ports and reason again ("sunshine": it moved to a new base; "host_check_result": the answer to
+     *  [BridgeProtocol.hostCheck], [state] ok | restarting | failed | streaming, "" for a plain "sunshine") */
+    data class Sunshine(val state: String, val httpPort: Int, val httpsPort: Int, val problem: String, val why: String, val answer: Boolean) : BridgeMsg() {
+        val report get() = StreamPorts.Report(true, httpPort, httpsPort)
+    }
     /** Desktop's answer to [BridgeProtocol.bnetReady]: [form] = Battle.net's sign-in in front and found; null = do not type */
     data class BnetReady(val form: BnetFormAt?, val why: String) : BridgeMsg()
     data class FocusResult(val ok: Boolean, val why: String, val state: String = "", val pc: PcWow? = null) : BridgeMsg()
@@ -121,6 +126,8 @@ object BridgeProtocol {
      *  bundled add-on set into the PC game (it only did at its own start or a button); it answers {"t":"addons", ..., "result"} */
     fun addonsInstall(): String = JSONObject().put("t", "addons_install").toString()
     fun bnetReady(): String = JSONObject().put("t", "bnet_ready").toString()
+    /** Desktop 0.2.32: RTSP timed out twice with HTTP fine: check (and heal) the streaming host; answered by host_check_result */
+    fun hostCheck(): String = JSONObject().put("t", "host_check").toString()
     /** the saved login for WoW's login.txt on the PC: only down the pinned wss connection, never logged */
     fun loginFile(email: String, password: String): String = JSONObject().put("t", "login_file").put("email", email).put("password", password).toString()
 
@@ -159,6 +166,8 @@ object BridgeProtocol {
             "reset" -> BridgeMsg.Log("restart")
             "backlog_end" -> BridgeMsg.BacklogEnd(o.optInt("count", 0))
             "stream" -> BridgeMsg.Stream(o.optString("state"))
+            "sunshine", "host_check_result" -> BridgeMsg.Sunshine(o.optString("state"), sun?.optInt("http_port", 0) ?: 0,
+                sun?.optInt("https_port", 0) ?: 0, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty(), t == "host_check_result")
             "bnet_ready_result" -> {
                 val pass = point(o.optString("password")); val button = point(o.optString("button"))
                 BridgeMsg.BnetReady(if (o.optBoolean("ok") && pass != null && button != null) BnetFormAt(point(o.optString("email")), pass, button) else null,

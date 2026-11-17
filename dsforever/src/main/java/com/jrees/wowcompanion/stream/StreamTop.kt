@@ -82,6 +82,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private var keys: StreamKeys? = null
     private val pad = StreamPad()
     private val policy = ReconnectPolicy()
+    /** RTSP timeouts: ask Desktop to heal its host, then give up with Retry ([HostHeal]) */
+    private val heal = HostHeal()
     private var surfaceReady = false
     @Volatile private var bridge: BridgeLog? = null
     private var netCallback: ConnectivityManager.NetworkCallback? = null
@@ -275,6 +277,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         main.removeCallbacksAndMessages(null)
         portsWait = null
         retryMode = null
+        heal.reset()
         PlayModes.set(PlayMode.LOCAL, null, "")
     }
 
@@ -297,6 +300,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 onWow = { state, why -> main.post { wowState(state, why) } },
                 onPc = { w -> main.post { pcWord(w) } },
                 onWelcome = { w -> main.post { welcomed(w) } },
+                onSunshine = { m -> main.post { sunshineSaid(m) } },
                 onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } },
                 savedLogin = { com.jrees.wowcompanion.HomeLoginStore.forAutoLogin(activity)?.let { it.email to it.password } },
                 streamMode = { playable().let { Triple(it.width, it.height, it.fps) } }).also { bridge = it }
@@ -318,6 +322,49 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             n = n.copy(httpPort = w.httpPort, httpsPort = StreamPorts.httpsOf(w.httpPort, w.httpsPort))
         if (n != h) { host = n; store.save(n); Log.i(TAG, "${h.name}: home address ${n.lanAddress}, Tailscale ${n.tailnet}, ports ${n.httpPort}/${n.httpsPort}") }
         if (portsWait != null) { main.removeCallbacks(portsTick); main.post(portsTick) } else applyCurtain()
+    }
+
+    /** Desktop 0.2.32: its Sunshine moved to new ports, or its answer to our host_check ([HostHeal]) */
+    private fun sunshineSaid(m: BridgeMsg.Sunshine) {
+        Log.i(TAG, "PC: streaming host ${if (m.answer) "check: ${m.state}" else "moved"}, ports ${m.httpPort}/${m.httpsPort}" +
+            if (m.problem.isNotEmpty()) " (${m.problem})" else "")
+        if (m.httpPort > 0) {
+            ports = m.report
+            host?.let { h ->
+                val n = h.copy(httpPort = m.httpPort, httpsPort = StreamPorts.httpsOf(m.httpPort, m.httpsPort))
+                if (n != h) { host = n; store.save(n) }
+            }
+        }
+        val why = StreamCurtain.reason(m.problem, m.why)
+        if (why != pcWhy) pcWhy = why
+        if (!m.answer) { applyCurtain(); return }
+        when (heal.answer(m.state)) {
+            HostHeal.Next.RETRY -> { main.removeCallbacks(healTimeout); Log.i(TAG, "PC: streaming host ready: one more try"); connect() }
+            HostHeal.Next.GIVE_UP -> hostDown("PC said ${m.state}")
+            else -> applyCurtain()
+        }
+    }
+
+    /** two RTSP timeouts with HTTP fine: Desktop checks and restarts its streaming host; we wait for its word */
+    private fun askHost() {
+        main.removeCallbacks(retryTick)
+        retryAt = 0L
+        show(Screen.PROBLEM)
+        val sent = bridge?.askHostCheck() == true
+        Log.i(TAG, "RTSP timed out ${heal.timeouts} times: asking the PC to check its streaming host" + if (sent) "" else " (no bridge connection)")
+        if (!sent) { heal.noAnswer(); hostDown("no bridge"); return }
+        status.show(com.jrees.wowcompanion.Tr.t(HostHeal.RESTARTING), "", "", withButtons = false)
+        main.removeCallbacks(healTimeout)
+        main.postDelayed(healTimeout, HostHeal.ASK_WAIT_MS)
+    }
+
+    private val healTimeout = Runnable { if (heal.noAnswer() == HostHeal.Next.GIVE_UP) hostDown("no answer in ${HostHeal.ASK_WAIT_MS / 1000} s") }
+
+    /** the user's pick: "Message + Retry button"; no more tries by itself */
+    private fun hostDown(why: String) {
+        main.removeCallbacks(healTimeout)
+        Log.i(TAG, "PC streaming host not responding ($why): Retry by hand")
+        problem(com.jrees.wowcompanion.Tr.t(HostHeal.DOWN), com.jrees.wowcompanion.Tr.t(HostHeal.DOWN_DETAIL), auto = false)
     }
 
     private fun authLost(why: String) {
@@ -467,6 +514,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private fun onStarted(w: Int, h: Int) {
         policy.reset()
+        heal.reset()
+        main.removeCallbacks(healTimeout)
         if (streamFps >= 100) StreamRate.request(activity, surface.holder.surface, streamFps)
         padSent = 0
         show(Screen.STREAMING)
@@ -488,6 +537,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun onEnded(error: Int, notPaired: Boolean, message: String) {
         val wasStreaming = screen == Screen.STREAMING
         val mode = session?.mode
+        val failedStage = session?.failedStage.orEmpty()
         teardown()
         Log.i(TAG, "stream ended ($error, paired ${!notPaired}): $message; " + PadNote.sent(padSent, padDriver))
         if (!isOpen) return
@@ -500,6 +550,15 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             connect()
             return
         }
+        // the user's PC 2026-11-17: RTSP refused for ever while HTTP answered: ask Desktop, then Retry by hand ([HostHeal])
+        if (!wasStreaming && HostHeal.isRtspTimeout(error, failedStage)) {
+            when (heal.rtspTimeout(host?.hasBridge == true)) {
+                HostHeal.Next.ASK_PC -> { askHost(); return }
+                HostHeal.Next.GIVE_UP -> { hostDown("RTSP timed out ${heal.timeouts} times"); return }
+                HostHeal.Next.WAIT -> return
+                else -> {}
+            }
+        } else heal.otherEnd()
         diagnose(message)
     }
 
@@ -542,7 +601,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         }
     }
 
-    private fun retryNow() { policy.reset(); reachFails = 0; retryAt = 0; if (host == null) show(Screen.PAIRING) else connect() }
+    private fun retryNow() { policy.reset(); heal.reset(); main.removeCallbacks(healTimeout); reachFails = 0; retryAt = 0; if (host == null) show(Screen.PAIRING) else connect() }
 
     private fun stopStream(why: String) {
         session?.let { Log.i(TAG, "stopping the stream: $why"); it.stop() }
