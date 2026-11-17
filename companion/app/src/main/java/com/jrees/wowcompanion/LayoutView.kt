@@ -24,6 +24,10 @@ import android.view.View
  *   B again (Settings' own) goes Home. LB is not used (no capture hears it). A FINGER: a tile picks, a drag on the miniature moves.
  *   Every move is the latest SPOT the piece should stand at; [LayoutModel.Editor.next] sends one tap at a time (a cell of the row "lay",
  *   or the spot itself on the top screen) - no tap while the row is not on the pad or the game is in a fight.
+ *   Hub hub58 (the user, 2026-11-17: "the edit mode should include any UI element that is currently turned on, including the wow UI and
+ *   polestar. the polestar ui should be broken into 2, one for the arrow and one for the actual guide."): only the LISTED pieces are
+ *   drawn, tiled and hit ([LayoutModel.listed]); Polestar's arrow and guide are two tiles in a Polestar group; the tiles fit the column
+ *   (smaller rows when the list is long).
  */
 class LayoutView(context: Context) : View(context) {
     var isOpen = false; private set
@@ -201,6 +205,7 @@ class LayoutView(context: Context) : View(context) {
             LayoutModel.Btn.GRID -> e.gridOn = !e.gridOn
             LayoutModel.Btn.REVERT -> { e.forget(); e.command(LayoutModel.C_REVERT); e.drop() }
             LayoutModel.Btn.COPY -> if (!d?.chars.isNullOrEmpty()) { e.list = true; e.listSel = 0 }
+            LayoutModel.Btn.GAME -> if (d?.gset == true) { e.forget(); e.command(LayoutModel.C_RESET_GAME); e.drop() }
             LayoutModel.Btn.SAVE -> e.command(LayoutModel.C_SAVE)
         }
     }
@@ -264,6 +269,8 @@ class LayoutView(context: Context) : View(context) {
 
     // ---------------------------------------------------------------- the page's places
     private val mini = RectF()
+    /** hub59: how far the tile column is scrolled (a long list) */
+    private var tileScroll = 0f
     private val tileBoxes = ArrayList<Pair<RectF, String>>()
     private val footBoxes = ArrayList<Pair<RectF, LayoutModel.Btn>>()
     private val promptBoxes = ArrayList<RectF>()
@@ -315,12 +322,12 @@ class LayoutView(context: Context) : View(context) {
             c.drawLine(mx(d.w / 2), mini.top, mx(d.w / 2), mini.bottom, pLine); c.drawLine(mini.left, my(d.h / 2), mini.right, my(d.h / 2), pLine)
         }
         val sel = editor.picked ?: if (editor.focus == LayoutModel.Focus.TILES) editor.tilePiece()?.id else null
-        for (p in d.pieces) {
+        for (p in LayoutModel.listed(d)) {
             val r = miniRect(editor.previewRect(p))
             schematic(c, p, r)
-            // Edit Mode's look: every piece highlighted (blue), the selected one gold; dashed while it is not on the top screen
+            // Edit Mode's look: every piece highlighted (blue), the selected one gold; dashed while it is not on the top screen this moment
             pLine.strokeWidth = if (p.id == sel) 3f else 2f
-            pLine.pathEffect = if (p.on) null else dash
+            pLine.pathEffect = if (p.vis) null else dash
             pLine.color = if (p.id == sel) EM_SELECTED else EM_HIGHLIGHT
             pFill.color = (if (p.id == sel) EM_SELECTED else EM_HIGHLIGHT) and 0x00FFFFFF or (if (p.id == sel) 0x38000000 else 0x1C000000)
             c.drawRect(r, pFill)
@@ -335,7 +342,7 @@ class LayoutView(context: Context) : View(context) {
 
     /** a piece drawn small inside its rect (a stand-in until the menus' pictures come: the design's item 3) */
     private fun schematic(c: Canvas, p: LayoutModel.Piece, r: RectF) {
-        val a = if (p.on) 255 else 120
+        val a = if (p.vis) 255 else 120
         when (p.id) {
             "hud" -> {
                 val gap = r.height() * 0.18f
@@ -374,7 +381,34 @@ class LayoutView(context: Context) : View(context) {
                 pLine.pathEffect = null; pLine.strokeWidth = 2f; pLine.color = Color.argb(a / 2, 220, 210, 190)
                 for (i in 1..3) { val y = r.bottom - r.height() * 0.12f * i; c.drawLine(r.left + r.width() * 0.05f, y, r.left + r.width() * (0.9f - 0.15f * i), y, pLine) }
             }
-            else -> { pFill.color = Color.argb(a / 2, 120, 120, 120); c.drawRect(r, pFill) }
+            "psarrow" -> {
+                // Polestar's arrow: a gold dart over its distance line
+                val cx = r.centerX(); val top = r.top + r.height() * 0.08f; val dh = r.height() * 0.5f
+                val path = android.graphics.Path().apply {
+                    moveTo(cx, top); lineTo(cx + dh * 0.42f, top + dh); lineTo(cx, top + dh * 0.74f); lineTo(cx - dh * 0.42f, top + dh); close()
+                }
+                pFill.color = Color.argb(a, 230, 186, 102); c.drawPath(path, pFill)
+                pLine.pathEffect = null; pLine.strokeWidth = 2f; pLine.color = Color.argb(a, 220, 210, 190)
+                val ly = r.top + r.height() * 0.8f
+                c.drawLine(r.left + r.width() * 0.3f, ly, r.right - r.width() * 0.3f, ly, pLine)
+            }
+            "psguide" -> {
+                // Polestar's guide window: a dark panel, its band on top, the step's lines
+                pFill.color = Color.argb((a * 0.85f).toInt(), 18, 20, 34); c.drawRect(r, pFill)
+                pFill.color = Color.argb(a, 60, 70, 120); c.drawRect(RectF(r.left, r.top, r.right, r.top + r.height() * 0.16f), pFill)
+                pLine.pathEffect = null; pLine.strokeWidth = 1.5f; pLine.color = Color.argb(a / 2 + 60, 220, 210, 190)
+                for (i in 1..3) { val y = r.top + r.height() * (0.16f + 0.2f * i); c.drawLine(r.left + r.width() * 0.1f, y, r.right - r.width() * (0.1f + 0.12f * i), y, pLine) }
+            }
+            else -> {
+                pFill.color = Color.argb(a / 2, 120, 120, 120); c.drawRect(r, pFill)
+                // hub59: a game frame shows its name when its box has room for it
+                if (p.game && r.width() > 60f && r.height() > 18f) {
+                    val tp = UiKit.bodyPaint(13f, Color.argb(a, 230, 225, 210)).apply { textAlign = Paint.Align.CENTER }
+                    c.save(); c.clipRect(r)
+                    c.drawText(Tr.t(LayoutModel.labelOf(p.id)), r.centerX(), r.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+                    c.restore()
+                }
+            }
         }
     }
 
@@ -383,28 +417,57 @@ class LayoutView(context: Context) : View(context) {
         var y = r.top
         var group: LayoutModel.Group? = null
         val ph = UiKit.titlePaint(24f, Theme.gold)
+        // hub58: the rows fit the column (more pieces listed: Polestar's two, later the game's)
+        val groups = tiles.map { LayoutModel.groupOf(it) }.distinct().size
+        var th = TILE_H; var gh = GROUP_H
+        if (tiles.isNotEmpty() && tiles.size * th + groups * gh > r.height()) {
+            gh = GROUP_H_MIN
+            th = ((r.height() - groups * gh) / tiles.size).coerceIn(TILE_H_MIN, TILE_H)
+        }
+        // hub59: still longer than the column (the game's frames too): it scrolls so the highlighted / picked tile shows
+        run {
+            var yy = 0f; var gg: LayoutModel.Group? = null; var top = 0f
+            val want = editor.picked ?: editor.tilePiece()?.id
+            for (p in tiles) {
+                val g = LayoutModel.groupOf(p)
+                if (g != gg) { gg = g; yy += gh }
+                if (p.id == want) top = yy
+                yy += th
+            }
+            val total = yy
+            if (total <= r.height()) tileScroll = 0f
+            else {
+                if (top - gh < tileScroll) tileScroll = (top - gh).coerceAtLeast(0f)
+                if (top + th > tileScroll + r.height()) tileScroll = top + th - r.height()
+                tileScroll = tileScroll.coerceIn(0f, total - r.height())
+            }
+        }
+        y -= tileScroll
+        c.save(); c.clipRect(r.left - 8f, r.top, r.right + 8f, r.bottom)
         for ((i, p) in tiles.withIndex()) {
             val g = LayoutModel.groupOf(p)
             if (g != group) {
                 group = g
-                c.drawText(Tr.t(g.label), r.left + 4f, y + 22f, ph)
-                y += GROUP_H
+                c.drawText(Tr.t(g.label), r.left + 4f, y + gh - 8f, ph)
+                y += gh
             }
-            val box = RectF(r.left, y, r.right, y + TILE_H - 6f)
+            if (y + th < r.top || y > r.bottom) { y += th; continue }
+            val box = RectF(r.left, y, r.right, y + th - 6f)
             val chosen = editor.picked == p.id
             UiKit.choice(c, box, "", chosen)
             // the tile's picture (the piece's schematic, small) and its name
             val pic = RectF(box.left + 12f, box.centerY() - 12f, box.left + 58f, box.centerY() + 12f)
             schematic(c, p, pic)
-            val tp = UiKit.bodyPaint(24f, if (p.on) Theme.text else Theme.textDim)
+            val tp = UiKit.bodyPaint(24f, if (p.vis) Theme.text else Theme.textDim)
             c.drawText(Tr.t(LayoutModel.labelOf(p.id)), pic.right + 12f, box.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
             if (!p.atDefault) {
                 pFill.color = Theme.gold; c.drawCircle(box.right - 16f, box.centerY(), 5f, pFill)       // moved from its default
             }
             if (editor.focus == LayoutModel.Focus.TILES && i == editor.tile && !editor.prompt && !editor.list) UiKit.focus(c, box)
-            tileBoxes.add(RectF(box) to p.id)
-            y += TILE_H
+            if (box.top >= r.top - 1f && box.bottom <= r.bottom + 1f) tileBoxes.add(RectF(box) to p.id)
+            y += th
         }
+        c.restore()
         if (tiles.isEmpty()) {
             val p = UiKit.bodyPaint(24f, Theme.textDim)
             c.drawText(Tr.t("Waiting for the game"), r.left + 4f, r.top + 30f, p)
@@ -436,6 +499,7 @@ class LayoutView(context: Context) : View(context) {
             val box = RectF(r.left + i * (bw + gap), r.top, r.left + i * (bw + gap) + bw, r.bottom)
             val enabled = when (b) {
                 LayoutModel.Btn.COPY -> !d?.chars.isNullOrEmpty()
+                LayoutModel.Btn.GAME -> d?.gset == true
                 LayoutModel.Btn.SAVE, LayoutModel.Btn.REVERT -> d?.dirty == true
                 LayoutModel.Btn.RESET, LayoutModel.Btn.SIZE -> (editor.pickedPiece() ?: editor.tilePiece()) != null
                 else -> true
@@ -448,6 +512,10 @@ class LayoutView(context: Context) : View(context) {
             icon(c, b, RectF(box.left + 14f, box.centerY() - 14f, box.left + 42f, box.centerY() + 14f), enabled)
             val word = when (b) { LayoutModel.Btn.STEP -> "${editor.step} px"; else -> b.word }
             val tp = UiKit.bodyPaint(22f, if (enabled) Color.WHITE else Theme.dim).apply { textAlign = Paint.Align.CENTER }
+            // (a longer word in a narrower button - nine of them since hub59's Game UI - gets a smaller size, never under the icon)
+            val room = box.right - 8f - (box.left + 46f)
+            val shown = if (b == LayoutModel.Btn.STEP) word else Tr.t(word)
+            while (tp.textSize > 14f && tp.measureText(shown) > room) tp.textSize = tp.textSize - 1f
             c.drawText(if (b == LayoutModel.Btn.STEP) word else Tr.t(word), (box.left + 46f + box.right - 8f) / 2f,
                 box.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
             if (editor.focus == LayoutModel.Focus.FOOTER && i == editor.footer && !editor.prompt && !editor.list) UiKit.focus(c, box)
@@ -468,6 +536,10 @@ class LayoutView(context: Context) : View(context) {
             LayoutModel.Btn.GRID -> { for (i in -1..1) { c.drawLine(cx + i * s * 0.66f, cy - s, cx + i * s * 0.66f, cy + s, pLine); c.drawLine(cx - s, cy + i * s * 0.66f, cx + s, cy + i * s * 0.66f, pLine) } }
             LayoutModel.Btn.REVERT -> { c.drawLine(cx - s, cy, cx + s, cy, pLine); c.drawLine(cx - s, cy, cx - s * 0.4f, cy - s * 0.5f, pLine); c.drawLine(cx - s, cy, cx - s * 0.4f, cy + s * 0.5f, pLine) }
             LayoutModel.Btn.COPY -> { c.drawRect(cx - s, cy - s * 0.4f, cx + s * 0.4f, cy + s, pLine); c.drawRect(cx - s * 0.4f, cy - s, cx + s, cy + s * 0.4f, pLine) }
+            LayoutModel.Btn.GAME -> {
+                c.drawArc(RectF(cx - s, cy - s, cx + s, cy + s), 40f, 290f, false, pLine)
+                c.drawRect(cx - s * 0.4f, cy - s * 0.3f, cx + s * 0.4f, cy + s * 0.3f, pLine)
+            }
             LayoutModel.Btn.SAVE -> { c.drawLine(cx - s, cy, cx - s * 0.2f, cy + s * 0.8f, pLine); c.drawLine(cx - s * 0.2f, cy + s * 0.8f, cx + s, cy - s * 0.8f, pLine) }
         }
     }
@@ -493,14 +565,8 @@ class LayoutView(context: Context) : View(context) {
 
     /** why nothing moves now (terse) */
     private fun drawStatus(c: Canvas, d: LayoutModel.Doc?, r: RectF) {
-        val why = when {
-            d == null || !d.ready -> "Waiting for the game"
-            d.why == "editmode" && !d.open -> "Game's Edit Mode is open"
-            d.why == "norow" -> "No pad row"
-            d.combat -> "In combat"
-            else -> null
-        } ?: return
-        val p = UiKit.bodyPaint(26f, if (d?.combat == true) Theme.gold else Theme.textDim)
+        val why = LayoutModel.statusOf(d) ?: return
+        val p = UiKit.bodyPaint(26f, if (d?.combat == true || (d?.queued ?: 0) > 0) Theme.gold else Theme.textDim)
         c.drawText(Tr.t(why), r.left + 4f, r.top + 30f, p)
     }
 
@@ -556,8 +622,8 @@ class LayoutView(context: Context) : View(context) {
                 if (!editor.prompt && !editor.list && mini.contains(x, y)) {
                     val d = editor.doc
                     // under the finger: the smallest piece there (the HUD inside the chat strip's area is the HUD)
-                    val hit = d?.pieces?.filter { p -> p.movable && miniRect(editor.previewRect(p)).contains(x, y) }
-                        ?.minByOrNull { it.rect.w * it.rect.h }
+                    val hit = LayoutModel.listed(d).filter { p -> p.movable && miniRect(editor.previewRect(p)).contains(x, y) }
+                        .minByOrNull { it.rect.w * it.rect.h }
                     if (hit != null) {
                         if (editor.picked != hit.id) editor.pick(hit.id)
                         val w = editor.want?.takeIf { editor.wantId == hit.id }
@@ -595,6 +661,9 @@ class LayoutView(context: Context) : View(context) {
         const val MINI_W = 872f
         const val TILE_H = 54f
         const val GROUP_H = 30f
+        /** the smallest row and group line when the list must fit (hub58) */
+        const val TILE_H_MIN = 40f
+        const val GROUP_H_MIN = 26f
         const val PUMP_MS = 50L
         const val CLOSE_WAIT_MS = 3000L
         const val SLOP = 18f

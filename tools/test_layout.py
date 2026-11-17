@@ -31,7 +31,17 @@ Proven here:
   j  THE HUD'S ONE-TIME MOVE (layV 1): every character's old height / scale becomes its layout entry with the bars' top where it was; a
      second login moves nothing; the hub document says prd.lay;
   k  the owners place themselves by the layout: the Nintendo bar, the chat strip, the party column, the compass, the target bar;
-  l  clean: no Lua error, no spied call, no lockdown breach.
+  l  clean: no Lua error, no spied call, no lockdown breach;
+  m  hub58 (the user, 2026-11-17: "the edit mode should include any UI element that is currently turned on, including the wow UI and
+     polestar. the polestar ui should be broken into 2, one for the arrow and one for the actual guide."): only the pieces that are on
+     are listed (live: a new document when the set changes; an unlisted piece never selected, let go when it goes); Polestar 0.2.5's
+     PolestarNavArrow and PolestarGuideFrame as two pieces (an offset from Polestar's own place, re-applied after its own placing calls
+     and at OnShow, a protected frame never moved in a fight, Polestar's own save of a place drops our offset, Reset, nothing of
+     PolestarDB written);
+  n  hub59 (the user's stage-2 picks: our own offsets, every one that's on, out of combat, move and resize): the game's frames as
+     pieces (fake frames of the client's shape: Edit Mode systems with their ...Base methods, the controller bar no system, a
+     protected one in a fight queued to its end, the game's layout update and Edit Mode exit re-applying ours, Reset game UI; never a
+     plain system method, never a C_EditMode call).
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -99,6 +109,9 @@ def world(pre_extra=''):
     L, errs = boot_world(files=tuple(ALL), pre=PRE + pre_extra, strict=True, login=LOGIN, expose=False)
     # with every add-on loaded Sink.lua carries the sends: every line into SENT again (the documents read below), and the editor's
     # document once more for the record
+    # hub58: the editor lists only the pieces that are turned on: the HUD (the bar's own switch) and the Nintendo bar on, as the app's
+    # defaults would have them, so all six of ours are listed (the party block by its own want, the chat strip by Hub's LAY.WANT)
+    L.execute('WowCompanion.npWant = WowCompanion.npWant or {}; WowCompanion.npWant.prd = true; pcall(WowCompanion.nbarSet, true)')
     L.execute('WowCompanion.send = function(s) SENT[#SENT + 1] = s end; WowCompanion.layEditor.emit(true)')
     return L, errs
 
@@ -229,8 +242,13 @@ fixture(L, "lay_closed")
 
 # ================================================================ c. the document's pieces
 ids = [p["id"] for p in doc["p"]]
-check(ids == ["hud", "compass", "target", "party", "nbar", "chat"], "c. six pieces, in order", ids)
-check([p["c"] for p in doc["p"]] == [0, 1, 2, 3, 4, 5], "c. their select columns 0-5", [p["c"] for p in doc["p"]])
+check(ids == ["hud", "compass", "target", "party", "nbar", "chat", "psarrow", "psguide"], "c. eight pieces, in order (hub58: Polestar's two last)", ids)
+check([p["c"] for p in doc["p"]] == [0, 1, 2, 3, 4, 5, 6, 7], "c. their select columns 0-7", [p["c"] for p in doc["p"]])
+check([p["id"] for p in doc["p"] if p["on"]] == ["hud", "compass", "target", "party", "nbar", "chat"],
+      "c. hub58: our six listed (turned on), Polestar's two not (not loaded)", [(p["id"], p["on"]) for p in doc["p"]])
+check(piece(doc, "party")["vis"] is False and piece(doc, "chat")["vis"] is False and piece(doc, "compass")["vis"] is True,
+      "c. hub58: vis = shown now (the party block solo, the chat strip between messages: listed, not shown)",
+      [(p["id"], p.get("vis")) for p in doc["p"]])
 W = doc["w"]
 hud = piece(doc, "hud")
 check(abs(hud["ax"] - W / 2) < 0.01 and abs(hud["ay"] - 890) < 0.01 and hud["d"] is True and hud["s"] == 100
@@ -529,6 +547,381 @@ gp = L3.eval('WowCompanion.prd.partyGeo()')
 check(gp is not None, "k. the HUD's party geometry still answers (prd15, with the HUD's x)")
 check(lua_errors(L3, errs3) == [], "k. clean", lua_errors(L3, errs3)[:3])
 
+# ================================================================ m. hub58: only the pieces that are on; Polestar's arrow and guide
+# The user, 2026-11-17: "the edit mode should include any UI element that is currently turned on, including the wow UI and polestar.
+# the polestar ui should be broken into 2, one for the arrow and one for the actual guide." A Polestar of Polestar 0.2.5's shape: its
+# global (Core/Init.lua:11 `Polestar = ns`), ns.Get over PolestarDB.settings (Init.lua:395), its arrow frame PolestarNavArrow placed by
+# Nav.arrow:OnSettings's applyPosition (Nav/Arrow.lua:550-558, 602-611), its guide window PolestarGuideFrame placed by
+# UI.GuideFrame.ApplyPosition (GuideFrame.lua:1667-1678), its own save of a place (ns.Set + SETTING_CHANGED's re-place).
+POLESTAR = r'''
+PolestarDB = { schema = 1, settings = {} }
+Polestar = { Nav = { arrow = {} }, UI = { GuideFrame = {} } }
+local function get(path)
+    local node = PolestarDB.settings
+    for k in path:gmatch("[^.]+") do if type(node) ~= "table" then return nil end; node = node[k] end
+    return node
+end
+Polestar.Get = get
+local function mk(name, w, h)
+    local f = CreateFrame("Frame", name, UIParent)
+    f.GetWidth = function() return w end
+    f.GetHeight = function(self) return self._hh or h end
+    f.GetPoint = function(self, i) local p = self._pts; if not p then return nil end; return p[1], p[2], p[3], p[4], p[5] end
+    return f
+end
+PSA = mk("PolestarNavArrow", 200, 116); PSA:Hide()
+PSG = mk("PolestarGuideFrame", 340, 260)
+PSG:SetScale(1.25)
+PSN = { arrow = 0, guide = 0 }
+function Polestar.Nav.arrow:OnSettings()
+    PSN.arrow = PSN.arrow + 1
+    PSA:ClearAllPoints()
+    local pos = get("nav.arrowPos")
+    if type(pos) == "table" then PSA:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, pos.x, pos.y)
+    else PSA:SetPoint("TOP", UIParent, "TOP", 0, -140) end
+end
+function Polestar.UI.GuideFrame.ApplyPosition()
+    PSN.guide = PSN.guide + 1
+    local pos = get("ui.pos")
+    PSG:ClearAllPoints()
+    if type(pos) == "table" then PSG:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", pos[1], pos[2])
+    else PSG:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -64, -240) end
+end
+function Polestar.UI.GuideFrame.ApplyScale() end
+-- Polestar's own ns.Set of a place (its drag's save) and what its SETTING_CHANGED does with it
+function PSSET(path, v)
+    local keys = {}
+    for k in path:gmatch("[^.]+") do keys[#keys + 1] = k end
+    local node = PolestarDB.settings
+    for i = 1, #keys - 1 do node[keys[i]] = node[keys[i]] or {}; node = node[keys[i]] end
+    node[keys[#keys]] = v
+    if path:sub(1, 4) == "nav." then Polestar.Nav.arrow:OnSettings() else Polestar.UI.GuideFrame.ApplyPosition() end
+end
+Polestar.Nav.arrow:OnSettings()
+Polestar.UI.GuideFrame.ApplyPosition()
+'''
+
+
+def psdb(L):
+    return L.eval('(function() local function ser(v) if type(v) ~= "table" then return tostring(v) end; local ks = {}; '
+                  'for k in pairs(v) do ks[#ks + 1] = tostring(k) end; table.sort(ks); local o = {}; for _, k in ipairs(ks) do '
+                  'local kk = tonumber(k) or k; o[#o + 1] = k .. "=" .. ser(v[kk]) end; return "{" .. table.concat(o, ",") .. "}" end; '
+                  'return ser(PolestarDB) end)()')
+
+
+def pts(L, name):
+    p = L.eval('%s._pts' % name)
+    return None if p is None else (p[1], p[3], p[4], p[5])
+
+
+L4, errs4 = world(POLESTAR)
+uh4 = L4.eval('UIParent:GetHeight()')
+k4 = 1080 / uh4
+db0 = psdb(L4)
+L4.execute('tick(1)')
+P4 = L4.eval('WowCompanion.psLay')
+check(P4.hooked.psarrow is True and P4.hooked.psguide is True and P4.fnHooked.arrow is True and P4.fnHooked.ApplyPosition is True,
+      "m. Polestar loaded: both frames found and hooked, its own placing calls post-hooked (Nav.arrow:OnSettings, GuideFrame.ApplyPosition)")
+check(pts(L4, "PSA") == ("TOP", "TOP", 0, -140) and pts(L4, "PSG") == ("TOPRIGHT", "TOPRIGHT", -64, -240),
+      "m. no entry: nothing of ours on either frame (Polestar's own places)", (pts(L4, "PSA"), pts(L4, "PSG")))
+hold(L4)
+d = fresh(L4)
+check(piece(d, "psguide")["on"] is True and piece(d, "psarrow")["on"] is False,
+      "m. the guide window shown: listed; the arrow hidden (no waypoint): not listed", (piece(d, "psguide")["on"], piece(d, "psarrow")["on"]))
+g = piece(d, "psguide")
+W4 = d["w"]
+check(abs(g["ax"] - (W4 - 64 * 1.25 * k4)) < 0.05 and abs(g["ay"] - 240 * 1.25 * k4) < 0.05 and abs(g["w"] - 340 * 1.25 * k4) < 0.05
+      and abs(g["x"] - (g["ax"] - g["w"])) < 0.05 and abs(g["y"] - g["ay"]) < 0.05 and g["sn"] == 100 and g["sx"] == 100 and g.get("ps") is True,
+      "m. the guide's piece: its pin = Polestar's own TOPRIGHT corner at its scale 1.25 (%.1f, %.1f), its rect left of it, moved only"
+      % (g["ax"], g["ay"]), g)
+L4.execute('PSA:Show(); tick(0.25)')
+d = last_full(L4)
+check(d is not None and piece(d, "psarrow")["on"] is True and piece(d, "psarrow")["vis"] is True,
+      "m. the arrow shows: a NEW document at once lists it (the list follows live)", d and piece(d, "psarrow"))
+a = piece(d, "psarrow")
+check(abs(a["ax"] - W4 / 2) < 0.05 and abs(a["ay"] - 140 * k4) < 0.05 and abs(a["x"] - (W4 / 2 - 100 * k4)) < 0.05,
+      "m. the arrow's piece: its pin Polestar's TOP 0, -140 (%.1f, %.1f), its rect centred under it" % (a["ax"], a["ay"]), a)
+fixture(L4, "lay_polestar")
+# our hide switch (hub31: Polestar's windows hidden on the top screen): neither listed
+L4.execute('WowCompanion.hub.psSet(true); tick(0.25)')
+d = last_full(L4)
+check(piece(d, "psarrow")["on"] is False and piece(d, "psguide")["on"] is False, "m. our 'hide Polestar' switch on: neither listed")
+L4.execute('WowCompanion.hub.psSet(false); tick(0.25)')
+check(piece(last_full(L4), "psguide")["on"] is True, "m. ... off again: listed again")
+cell(L4, 37)
+cell(L4, 7)
+check(last(L4)["sel"] == "psguide", "m. select the guide (7)")
+catch(L4, 400, 300)
+ease(L4)
+e = L4.eval('WowCompanion.lay.view.psguide')
+gx = pts(L4, "PSG")
+want_dx, want_dy = round(400 - g["ax"]), round(300 - g["ay"])
+check(e is not None and e.dx == want_dx and e.dy == want_dy, "m. a spot moves the guide's pin there (dx %s, dy %s)" % (e and e.dx, e and e.dy))
+check(gx is not None and gx[0] == "TOPRIGHT" and gx[1] == "TOPRIGHT" and abs(gx[2] - (-64 + want_dx / k4 / 1.25)) < 1e-6
+      and abs(gx[3] - (-240 - want_dy / k4 / 1.25)) < 1e-6,
+      "m. ... the frame keeps Polestar's own anchor point, our offset added in its own scaled units", gx)
+cell(L4, 36)
+saved = L4.eval('WowCompanionDB.lay["%s"].psguide' % WHO)
+check(saved is not None and saved.dx == want_dx and saved.dy == want_dy, "m. Save: this character's entry (our own store)")
+check(psdb(L4) == db0, "m. NOTHING of Polestar's saved variables written (PolestarDB as it was)", psdb(L4)[:120])
+cell(L4, 39)
+check(pts(L4, "PSG") == gx, "m. closed: the guide stays at the saved place")
+L4.execute('Polestar.UI.GuideFrame.ApplyPosition()')
+check(pts(L4, "PSG") == gx, "m. Polestar places it again itself (its ApplyPosition): our offset back on at once (the post-hook)",
+      (pts(L4, "PSG"), gx))
+L4.execute('PSG:Hide(); PSG:ClearAllPoints(); PSG:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -64, -240); PSG:Show()')
+check(pts(L4, "PSG") == gx, "m. re-shown: the OnShow hook puts our offset on again", pts(L4, "PSG"))
+hold(L4, False)
+L4.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true')
+L4.execute('Polestar.UI.GuideFrame.ApplyPosition()')
+check(pts(L4, "PSG") == gx and int(L4.eval('#VIOL')) == 0, "m. in a fight (a plain frame): placed again, no lockdown breach")
+L4.execute('PSG._protected = true; PSG.IsProtected = function() return true end; COMBAT = false; Polestar.UI.GuideFrame.ApplyPosition(); COMBAT = true')
+L4.execute('PSG._protected = nil; PSG:ClearAllPoints(); PSG:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -64, -240); PSG._protected = true')
+L4.execute('WowCompanion.psLay.apply("psguide")')
+check(pts(L4, "PSG") == ("TOPRIGHT", "TOPRIGHT", -64, -240) and L4.eval('WowCompanion.psLay.pending.psguide') is True
+      and int(L4.eval('#VIOL')) == 0, "m. a PROTECTED frame in a fight is never moved: the re-apply waits")
+L4.execute('COMBAT = false; PSG._protected = nil; PSG.IsProtected = function() return false end; fire("PLAYER_REGEN_ENABLED")')
+check(pts(L4, "PSG") == gx and L4.eval('WowCompanion.psLay.pending.psguide') is None, "m. ... and goes on at the fight's end")
+# Polestar saves a new place ITSELF (its drag's save: ui.pos from where the frame stood): our offset goes, the frame stays there
+L4.execute('local l = 500; PSSET("ui.pos", { l, 700 })')
+db1 = psdb(L4)
+check(L4.eval('WowCompanionDB.lay["%s"].psguide' % WHO) is None and pts(L4, "PSG") == ("TOPLEFT", "BOTTOMLEFT", 500, 700)
+      and L4.eval('WowCompanion.psLay.drops') == 1,
+      "m. Polestar's own save of a place (its drag, grip, scale, Reset): our entry dropped, the frame where Polestar has it, no fight",
+      (pts(L4, "PSG"), L4.eval('WowCompanion.psLay.drops')))
+# the arrow: moved, then RESET (34) puts Polestar's own place back
+hold(L4)
+cell(L4, 37)
+cell(L4, 6)
+catch(L4, W4 / 2 + 200, 400)
+ease(L4)
+ax_ = pts(L4, "PSA")
+check(ax_ is not None and ax_[0] == "TOP" and abs(ax_[2] - 200 / k4) < 1e-6, "m. the arrow (6) moved by a spot", ax_)
+cell(L4, 34)
+ease(L4)
+check(pts(L4, "PSA") == ("TOP", "TOP", 0, -140) and piece(fresh(L4), "psarrow")["d"] is True,
+      "m. Reset (34) for the arrow: Polestar's own place back", pts(L4, "PSA"))
+cell(L4, 39)
+# the hide switch (hub31) on: neither listed; a piece no longer listed is let go and never selected
+cell(L4, 37)
+cell(L4, 7)
+L4.execute('PSA:Hide(); tick(0.25)')
+d = last_full(L4)
+check(piece(d, "psarrow")["on"] is False, "m. the arrow hidden again: unlisted at once", piece(d, "psarrow"))
+L4.execute('PSG:Hide(); tick(0.25)')
+d = last_full(L4)
+check(piece(d, "psguide")["on"] is False and d.get("sel") is None, "m. the guide hidden while selected: unlisted and let go", (piece(d, "psguide")["on"], d.get("sel")))
+cell(L4, 7)
+check(last(L4).get("sel") is None, "m. an unlisted piece is never selected (7 refused)")
+L4.execute('PSA:Show(); WowCompanion.uf.set("target", false); tick(0.25)')
+d = last_full(L4)
+check(piece(d, "target")["on"] is False and piece(d, "psarrow")["on"] is True and piece(d, "psguide")["on"] is False,
+      "m. our target bar turned off: unlisted (its switch), the arrow back, the guide still hidden", [(p["id"], p["on"]) for p in d["p"]])
+fixture(L4, "lay_off")
+cell(L4, 39)
+check(psdb(L4) == db1, "m. after Polestar's own save: PolestarDB written by nobody but Polestar (as it left it)")
+check(lua_errors(L4, errs4) == [] and int(L4.eval('#VIOL')) == 0 and int(L4.eval('#SPY')) == 0, "m. clean",
+      (lua_errors(L4, errs4)[:3], int(L4.eval('#VIOL')), int(L4.eval('#SPY'))))
+
+# ================================================================ n. hub59: the game's own UI as pieces ("our own offsets")
+# The user's stage-2 picks, 2026-11-17: "Our own offsets" (nothing written into the game), "Every one that's on" (unit frames and bars
+# first, only what is shown), "Move them out of combat" (protected frames listed; a change in a fight queued to its end), "Move and
+# resize"; Reset per piece and Reset game UI; the damage meter and the Cooldown Manager too. Fake game frames of the client's shape: an
+# Edit Mode system keeps its original SetPoint / ClearAllPoints / SetScale as ...Base (editmodesystemtemplates.lua:9-17) and its plain
+# ones are the manager's overrides (a spy here: never called); the controller bar is no system (its plain methods); the Edit Mode
+# manager re-places every system at its layout update and at its exit (the game's own secure code: IN_SECURE).
+QUOTE2 = '"the edit mode should include any UI element that is currently turned on, including the wow UI and polestar."'
+GSRC = TXT["hub"][TXT["hub"].index("-- ==================================================================== hub59 THE GAME'S OWN UI"):
+                  TXT["hub"].index("-- ==================================================================== hub55 THE TOP-SCREEN LAYOUT EDITOR")]
+gcode = "\n".join(re.sub(r'--.*$', '', ln) for ln in GSRC.splitlines())
+gbad = [w for w in ("C_EditMode", "SaveLayouts", "SetActiveLayout", "ReloadUI", "SetCVar", "SetBinding", "ShowUIPanel", "HideUIPanel",
+                    ":SetPoint(", ":ClearAllPoints(", ":SetScale(", ":Show(", ":Hide(", "SetUserPlaced") if w in gcode]
+check(gbad == [], "n. the game-frame block never writes the game's layouts, CVars, bindings, windows; never a plain SetPoint / Show / Hide", gbad)
+check(int(re.search(r'local HV = "hub(\d+)"', TXT["hub"]).group(1)) >= 59 and QUOTE2 in TXT["hub"], "n. Hub hub59 (or later: hub60 the 11-17 merge), its note quoting the user")
+
+GAMEPRE = r'''
+C_EditMode = { SaveLayouts = function() EMSPY[#EMSPY + 1] = "SaveLayouts" end, SetActiveLayout = function() EMSPY[#EMSPY + 1] = "SetActiveLayout" end }
+EMSPY, PLAIN = {}, {}
+'''
+GAMEPOST = r'''
+local UW, UH = UIParent:GetWidth(), UIParent:GetHeight()
+local PTS = { TOPLEFT = {0, 1}, TOP = {0.5, 1}, TOPRIGHT = {1, 1}, LEFT = {0, 0.5}, CENTER = {0.5, 0.5}, RIGHT = {1, 0.5},
+              BOTTOMLEFT = {0, 0}, BOTTOM = {0.5, 0}, BOTTOMRIGHT = {1, 0} }
+GDEF = {}
+function geo(name, w, h, system, protected, def)
+    local f = rawget(_G, name)
+    if type(f) ~= "table" then f = CreateFrame("Frame", name, UIParent) end
+    if getmetatable(f) ~= Frame then setmetatable(f, Frame) end
+    f._P, f._w, f._h, f._scale, f._shown = {}, w, h, 1, true
+    f.GetWidth = function(self) return self._w end
+    f.GetHeight = function(self) return self._h end
+    f.GetNumPoints = function(self) return #self._P end
+    f.GetPoint = function(self, i) local p = self._P[i or 1]; if p then return p[1], p[2], p[3], p[4], p[5] end end
+    f.GetScale = function(self) return self._scale end
+    f.GetEffectiveScale = function(self) return self._scale end
+    f.GetObjectType = function() return "Frame" end
+    local function pos(self)
+        local p = self._P[1]; local s = self._scale; local r = PTS[p[3]]; local q = PTS[p[1]]
+        local px, py = UW * r[1] + p[4] * s, UH * r[2] + p[5] * s
+        return (px - self._w * s * q[1]) / s, (py - self._h * s * q[2] + self._h * s) / s
+    end
+    f.GetLeft = function(self) if not self._P[1] then return nil end; local l = pos(self); return l end
+    f.GetTop = function(self) if not self._P[1] then return nil end; local _, t = pos(self); return t end
+    local function guard(what) if protected then blocked(what .. " " .. name) end end
+    local function sp(self, p, rel, rp, x, y) guard("SetPoint"); self._P[#self._P + 1] = { p, rel or UIParent, rp or p, x or 0, y or 0 } end
+    local function cl(self) guard("ClearAllPoints"); self._P = {} end
+    local function sc(self, v) guard("SetScale"); self._scale = v end
+    if system then
+        f.SetPointBase, f.ClearAllPointsBase, f.SetScaleBase = sp, cl, sc
+        f.SetPoint = function(self, ...) PLAIN[#PLAIN + 1] = name; sp(self, ...) end
+        f.ClearAllPoints = function(self) PLAIN[#PLAIN + 1] = name; cl(self) end
+        f.SetScale = function(self, v) PLAIN[#PLAIN + 1] = name; sc(self, v) end
+    else
+        f.SetPoint, f.ClearAllPoints, f.SetScale = sp, cl, sc
+    end
+    f.IsProtected = function() return protected and true or false end
+    f._system = system
+    GDEF[name] = def
+    local was = IN_SECURE; IN_SECURE = true
+    sp(f, def[1], UIParent, def[2], def[3], def[4])
+    IN_SECURE = was
+    return f
+end
+geo("PlayerFrame", 232, 100, true, true, { "TOPLEFT", "TOPLEFT", 268, -850 })
+geo("TargetFrame", 232, 100, true, true, { "TOPLEFT", "TOPLEFT", 1100, -850 }):Hide()
+geo("GamepadMainActionBarFrame", 600, 140, false, true, { "BOTTOM", "BOTTOM", 0, 110 })
+geo("MinimapCluster", 200, 220, true, false, { "TOPRIGHT", "TOPRIGHT", -10, -10 })
+geo("BuffFrame", 300, 60, true, false, { "TOPRIGHT", "TOPRIGHT", -240, -14 })
+geo("DamageMeter", 400, 200, true, false, { "TOPLEFT", "TOPLEFT", 20, -300 })
+geo("EssentialCooldownViewer", 300, 50, true, false, { "BOTTOM", "BOTTOM", 0, 300 }):SetAlpha(0)
+EditModeManagerFrame = mkwin("EditModeManagerFrame", false)
+-- the game's own layout update and exit: every system back at its layout's place, at its own scale (secure code)
+function EditModeManagerFrame:UpdateLayoutInfo()
+    local was = IN_SECURE; IN_SECURE = true
+    for name, d in pairs(GDEF) do
+        local f = _G[name]
+        if f._system then f:ClearAllPointsBase(); f:SetScaleBase(1); f:SetPointBase(d[1], UIParent, d[2], d[3], d[4]) end
+    end
+    IN_SECURE = was
+end
+function EditModeManagerFrame:ExitEditMode() self:Hide(); self:UpdateLayoutInfo() end
+'''
+
+
+def gpts(L, name):
+    p = L.eval('%s._P[1]' % name)
+    return None if p is None else (p[1], p[3], round(p[4], 4), round(p[5], 4))
+
+
+L5, errs5 = world(GAMEPRE)
+L5.execute(GAMEPOST)
+L5.execute('tick(0.5); advance(0.1)')
+G5 = L5.eval('WowCompanion.gameLay')
+uh5 = L5.eval('UIParent:GetHeight()')
+k5 = 1080 / uh5
+hold(L5)
+L5.execute('tick(0.25)')
+d = fresh(L5)
+gp = [p for p in d["p"] if p.get("g")]
+listed = [(p["id"], p.get("c"), p.get("k")) for p in gp if p["on"]]
+check(listed == [("g.PlayerFrame", 8, "u"), ("g.GamepadMainActionBarFrame", 9, "b"), ("g.MinimapCluster", 10, "o"),
+                 ("g.BuffFrame", 11, "o"), ("g.DamageMeter", 12, "o")],
+      "n. the game's frames that are shown, unit frames and bars first, columns 8.. in order (the damage meter too)", listed)
+off = [p["id"] for p in gp if not p["on"]]
+check("g.TargetFrame" in off and "g.EssentialCooldownViewer" in off and piece(d, "g.TargetFrame").get("c") is None,
+      "n. a hidden frame (the target frame) and one at alpha 0 (a Cooldown Manager bar our switch hides) not listed, no column", off)
+pf = piece(d, "g.PlayerFrame")
+check(pf["pr"] is True and piece(d, "g.MinimapCluster").get("pr") in (False, None) and pf["sn"] == 50 and pf["sx"] == 200,
+      "n. the player frame says protected; the minimap not; sizes 50-200 %", (pf.get("pr"), piece(d, "g.MinimapCluster").get("pr")))
+check(abs(pf["ax"] - 268 * k5) < 0.05 and abs(pf["ay"] - 850 * k5) < 0.05 and abs(pf["w"] - 232 * k5) < 0.05,
+      "n. its pin = its own TOPLEFT point where the game put it (%.1f, %.1f)" % (pf["ax"], pf["ay"]))
+check(list(L5.eval('PLAIN').values()) == [], "n. nothing touched yet (no entry: never moved)")
+# open, the player frame (8), a spot, a size
+cell(L5, 37)
+cell(L5, 8)
+check(last(L5)["sel"] == "g.PlayerFrame", "n. select the player frame (8)")
+catch(L5, 500, 700)
+ease(L5)
+cell(L5, 33)
+ease(L5)
+dx, dy = round(500 - pf["ax"]), round(700 - pf["ay"])
+p1 = gpts(L5, "PlayerFrame")
+want = ("TOPLEFT", "TOPLEFT", round((268 + dx / k5) / 1.1, 4), round((-850 - dy / k5) / 1.1, 4))
+check(p1 == want and abs(L5.eval('PlayerFrame._scale') - 1.1) < 1e-9,
+      "n. moved and 110 %: its own point + our offset, its own scale x 1.1, through the Base methods", (p1, want))
+check(list(L5.eval('PLAIN').values()) == [] and int(L5.eval('#VIOL')) == 0,
+      "n. never the plain SetPoint / ClearAllPoints / SetScale of a system (no manager taint), no breach")
+cell(L5, 10)
+catch(L5, 1500, 200)
+ease(L5)
+cell(L5, 9)
+catch(L5, 960, 900)
+ease(L5)
+gb = gpts(L5, "GamepadMainActionBarFrame")
+check(gb is not None and gb[0] == "BOTTOM" and gb[3] != 110, "n. the controller bar (no system: its own methods) moved", gb)
+cell(L5, 36)
+saved = L5.eval('WowCompanionDB.lay["%s"]' % WHO)
+check(saved["g.PlayerFrame"].s == 110 and saved["g.MinimapCluster"] is not None and saved["g.GamepadMainActionBarFrame"] is not None,
+      "n. Save: the offsets in our own store, per character")
+fixture(L5, "lay_game")
+cell(L5, 39)
+check(gpts(L5, "PlayerFrame") == want, "n. closed: it stays")
+check(list(L5.eval('EMSPY').values()) == [], "n. nothing written into the game (no C_EditMode call)")
+# the game's own layout update re-places it: ours goes back on
+L5.execute('EditModeManagerFrame:UpdateLayoutInfo()')
+check(gpts(L5, "PlayerFrame") == ("TOPLEFT", "TOPLEFT", 268, -850), "n. (the game's layout update put it back at its place)")
+L5.execute('advance(0.01)')
+check(gpts(L5, "PlayerFrame") == want and abs(L5.eval('PlayerFrame._scale') - 1.1) < 1e-9,
+      "n. a layout update: our offset and size back on at once (post-hook, deferred a frame)", gpts(L5, "PlayerFrame"))
+# the game's Edit Mode: nothing moved while it shows; everything again when it closes
+L5.execute('EditModeManagerFrame:Show(); EditModeManagerFrame:UpdateLayoutInfo(); advance(0.01); tick(0.5)')
+check(gpts(L5, "PlayerFrame") == ("TOPLEFT", "TOPLEFT", 268, -850), "n. the game's Edit Mode shown: we leave its frames alone")
+L5.execute('EditModeManagerFrame:ExitEditMode(); advance(0.01)')
+check(gpts(L5, "PlayerFrame") == want, "n. its Edit Mode closing: ours back on")
+# a re-place by another path (a managed-frame layout): the tick finds it
+L5.execute('IN_SECURE = true; PlayerFrame:ClearAllPointsBase(); PlayerFrame:SetPointBase("TOPLEFT", UIParent, "TOPLEFT", 300, -800); IN_SECURE = false')
+L5.execute('tick(0.5)')
+want2 = ("TOPLEFT", "TOPLEFT", round((300 + dx / k5) / 1.1, 4), round((-800 - dy / k5) / 1.1, 4))
+check(gpts(L5, "PlayerFrame") == want2, "n. any other re-place: its new place read, our offset on it (the tick)", gpts(L5, "PlayerFrame"))
+# combat: a protected frame queued, a plain one at once
+viol = int(L5.eval('#VIOL'))
+L5.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true')
+L5.execute('EditModeManagerFrame:UpdateLayoutInfo(); advance(0.01); tick(0.5)')
+check(gpts(L5, "PlayerFrame") == ("TOPLEFT", "TOPLEFT", 268, -850) and int(L5.eval('#VIOL')) == viol,
+      "n. in a fight the protected player frame is NOT moved (no breach)")
+mc = gpts(L5, "MinimapCluster")
+check(mc is not None and mc[2] != -10, "n. ... the plain minimap is (ours on at once)", mc)
+L5.execute('tick(0.25)')
+dq = last_full(L5)
+check(dq["queued"] == 1 and piece(dq, "g.PlayerFrame")["q"] is True, "n. the document: one change queued (the app's line)",
+      (dq.get("queued"), piece(dq, "g.PlayerFrame").get("q")))
+fixture(L5, "lay_queued")
+L5.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.01)')
+check(gpts(L5, "PlayerFrame") == want, "n. the fight's end: the queued change goes on")
+L5.execute('tick(0.25)')
+check(last_full(L5)["queued"] == 0, "n. ... nothing queued now")
+# Reset per piece (the controller bar), then Reset game UI (29) + Save: every game entry gone, every frame at the game's place
+cell(L5, 37)
+cell(L5, 9)
+cell(L5, 34)
+ease(L5)
+check(gpts(L5, "GamepadMainActionBarFrame") == ("BOTTOM", "BOTTOM", 0, 110), "n. Reset (34): the controller bar at the game's place")
+L5.execute('WowCompanionDB.lay["%s"]["g.FocusFrame"] = { dx = 5, dy = 5, s = 100 }' % WHO)   # (a frame not shown now: still dropped)
+check(fresh(L5)["gset"] is True, "n. gset: offsets of the game's frames exist")
+cell(L5, 29)
+ease(L5)
+check(gpts(L5, "PlayerFrame") == ("TOPLEFT", "TOPLEFT", 268, -850) and L5.eval('PlayerFrame._scale') == 1
+      and gpts(L5, "MinimapCluster") == ("TOPRIGHT", "TOPRIGHT", -10, -10), "n. Reset game UI (29): every frame at the game's place (the draft)")
+check(last(L5)["dirty"] is True, "n. ... unsaved until Save")
+cell(L5, 36)
+mine = L5.eval('WowCompanionDB.lay["%s"]' % WHO)
+gk = [k for k in (mine.keys() if mine is not None else []) if str(k).startswith("g.")]
+check(gk == [] and fresh(L5)["gset"] is False, "n. Save: every game entry gone, the hidden frame's too", gk)
+cell(L5, 39)
+check(list(L5.eval('PLAIN').values()) == [] and list(L5.eval('EMSPY').values()) == [], "n. through it all: no plain system method, no C_EditMode call")
+check(lua_errors(L5, errs5) == [] and int(L5.eval('#VIOL')) == 0 and int(L5.eval('#SPY')) == 0, "n. clean",
+      (lua_errors(L5, errs5)[:3], int(L5.eval('#VIOL')), int(L5.eval('#SPY'))))
+
 # ================================================================ the fixtures (the app's LayoutModelTest / LayoutShotsTest read them)
 os.makedirs(FIXDIR, exist_ok=True)
 stale = []
@@ -540,7 +933,7 @@ for name, text in sorted(FIX.items()):
             fh.write(text)
     elif old != text:
         stale.append(name)
-check(len(FIX) == 7 and not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX),
+check(len(FIX) == 11 and not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX),
       stale[:4])
 
 print("%s (%d pass, %d fail)" % ("ALL PASS" if fails == 0 else "FAILURES", passes, fails))
