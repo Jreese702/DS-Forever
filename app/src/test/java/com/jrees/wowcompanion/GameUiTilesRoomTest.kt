@@ -33,7 +33,8 @@ import java.io.File
  *
  * hub61 (the user, 2026-11-17: "DPS meters and also the cooldown manager ... we need to make sure that its consistent with the other
  * picture options"): Game windows' Damage meter (On / Off / Dynamic) and Cooldown Manager (its four parts in its band, gone while Off),
- * the game's option off (GAME_OFF), Layout's Edit layout tile (A opens the editor's page, no band); shots top_16..20.
+ * the game's option off (GAME_OFF), Layout's Edit layout tile (A opens the editor's page, no band); shots top_16..25 (22..24 the cursor,
+ * 25 the OLED / Dark themes).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -362,6 +363,8 @@ class GameUiTilesRoomTest {
         val wider = buttons[4 + 2]
         tap(p, wider.centerX(), wider.centerY()); lay(r)
         assertTrue("one step wider: $before -> ${GameUi.hudWidth()}", GameUi.hudWidth()!! > before)
+        // hub61 (verifier 11-17): the Width line says the width chosen, as the picture draws it (the game has not caught up yet)
+        assertEquals("${GameUi.hudWidth()}", GameUi.hudValue(GameUi.HUD_W_ID))
         // the resource bar Off: its rows go, the band shrinks to its own line
         tap(p, buttons[1].centerX(), buttons[1].centerY()); lay(r)
         assertEquals(2, p.focusTargets().drop(1).size)
@@ -403,6 +406,25 @@ class GameUiTilesRoomTest {
 
     private fun rowOf(p: GameUiSection, id: String) =
         GameUiSection::class.java.getDeclaredMethod("rowOf", String::class.java).apply { isAccessible = true }.invoke(p, id) as GameUi.Row?
+
+    /** hub61 (verifier 11-17): the Damage meter's and the Cooldown Manager's pictures keep the tile's badge corner clear (the well's
+     *  top-right 36 px badge and its 4 px inset, in the picture's 216 x 108 units): only the world behind is drawn there, as on the other
+     *  tiles that keep it clear */
+    @Test fun theMetersPicturesKeepTheBadgeCornerClear() {
+        art()
+        val world = TilePictures::class.java.getDeclaredMethod("world", Canvas::class.java).apply { isAccessible = true }
+        val w = TilePictures.W.toInt(); val h = TilePictures.H.toInt()
+        val bg = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { world.invoke(TilePictures, Canvas(it)) }
+        val corner = android.graphics.Rect(w - 4 - GameUiTiles.BADGE.toInt() - 4, 4, w - 4, 4 + GameUiTiles.BADGE.toInt() + 4)
+        for (id in listOf(GameUi.DMG_ID, GameUi.CDM_ID)) for (mode in listOf(UiMode.ON, UiMode.DYNAMIC)) {
+            val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            TilePictures.draw(Canvas(b), app, id, RectF(0f, 0f, w.toFloat(), h.toFloat()), TilePictures.Look(mode = mode, cls = "SHAMAN"))
+            var differ = 0
+            for (y in corner.top until corner.bottom) for (x in corner.left until corner.right)
+                if (b.getPixel(x, y) != bg.getPixel(x, y)) differ++
+            assertEquals("$id $mode: pixels drawn in the badge corner", 0, differ)
+        }
+    }
 
     /** the 22-tile walk: every tile a stop, in reading order (Edit layout first, the meters Game windows' last row) */
     @Test fun theCursorWalksAllTwentyTwoTiles() {
@@ -748,6 +770,30 @@ class GameUiTilesRoomTest {
             .put("cam", true).put("camOn", 3).put("camOff", 4)))); lay(r)
         open(GameUiSection.COMPASS_ID); shot("top_20_band_compass_cam")
         close(); repeat(6) { GameUi.stepHudWidth(1) }; lay(r); open(GameUi.HUD_ID); shot("top_21_band_hud_wide")
+        // (verifier 11-17) the cursor: the golden box on the Damage meter tile, on the Cooldown Manager band's first part line, on Edit
+        // layout (its A opens the editor's page: theEditLayoutTileOpensTheEditor proves it; the page is LayoutShotsTest's)
+        fun cursorTo(id: String) {
+            val t = tileBoxes(r).getValue(id)
+            repeat(30) { if (r.pad.focusBox()?.top != t.top) press(r, if ((r.pad.focusBox()?.top ?: 0f) < t.top) "PADDDOWN" else "PADDUP") }
+            repeat(6) { if (r.pad.focusBox() != t) press(r, if ((r.pad.focusBox()?.left ?: 0f) < t.left) "PADDRIGHT" else "PADDLEFT") }
+            reveal(id)
+        }
+        r = room(); game(); layDoc(); r.refreshGroups(); lay(r); hold(r)
+        cursorTo(GameUi.DMG_ID); shot("top_22_cursor_on_damage_meter")
+        cursorTo(GameUi.CDM_ID); press(r, "PAD1"); press(r, "PADDDOWN"); press(r, "PADDDOWN"); reveal(GameUi.CDM_ID)
+        shot("top_23_cursor_in_cdm_parts")
+        press(r, "PAD2"); press(r, "PAD2"); scroll(0); cursorTo(GameUiTiles.LAYOUT_ID); scroll(0); shot("top_24_cursor_on_edit_layout")
+        // (verifier 11-17) the OLED and Dark themes: the meters' pictures, the GAME_OFF badge and the dimmed well on each ground
+        try {
+            for (t in listOf("oled_bronze", "oled_silver", "dark_rose")) {
+                Theme.use(t)
+                r = room(); game(); GameUi.setDmg(UiMode.DYNAMIC); lay(r)
+                open(GameUi.DMG_ID); shot("top_25_${t}_damage_meter")
+                close(); open(GameUi.CDM_ID); shot("top_25_${t}_cooldown_manager")
+                r = room(); game(mt = mtDoc(dok = false, cok = false)); lay(r)
+                open(GameUi.CDM_ID); shot("top_25_${t}_game_off")
+            }
+        } finally { Theme.use(ThemePresets.CLASSIC.id) }
         art()
         sheet(out, made)
         pictures(out)

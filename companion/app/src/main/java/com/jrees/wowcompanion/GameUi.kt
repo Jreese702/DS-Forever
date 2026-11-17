@@ -422,7 +422,8 @@ object GameUi {
     /** the value a row shows on its right: the height in px under the centre, the width in px, the scale in % */
     fun hudValue(id: String): String = when (id) {
         HUD_H_ID -> prdY?.let { "${-it}" } ?: "-"
-        HUD_W_ID -> prdW?.let { "$it" } ?: "-"
+        // hub61 (verifier 11-17): the width as chosen, like the tile's picture (it follows the choice at once; the badge waits)
+        HUD_W_ID -> (hudWidth() ?: prdW)?.let { "$it" } ?: "-"
         HUD_S_ID -> prdS?.let { "$it%" } ?: "-"
         else -> ""
     }

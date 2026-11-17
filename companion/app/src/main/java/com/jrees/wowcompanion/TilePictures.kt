@@ -73,6 +73,9 @@ object TilePictures {
 
     /** a dark stand-in of the game's world: a night sky over dark ground, the edges darker (fixed fills) */
     private fun world(c: Canvas) {
+        // (opaque: a shader paints at the paint colour's alpha, and pF keeps the last element's colour - the world came out see-through
+        // after a picture that ended on a translucent fill; found by theMetersPicturesKeepTheBadgeCornerClear, 11-17)
+        pF.color = Color.BLACK
         pF.shader = LinearGradient(0f, 0f, 0f, H, intArrayOf(Color.rgb(36, 50, 62), Color.rgb(30, 40, 34), Color.rgb(20, 26, 18)),
             floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
         c.drawRect(0f, 0f, W, H, pF)
@@ -509,8 +512,9 @@ object TilePictures {
      *  sample shares 100 / 78 / 58 / 40 %), each with its class icon and a short grey name bar; the sample numbers only at the band's
      *  size; Dynamic = the fight's crossed swords in the header (it shows in a fight and 15 s after) */
     private fun damageMeter(c: Canvas, look: Look) {
-        figure(c, 42f, 102f, 34f, Color.rgb(22, 24, 30))
-        val win = RectF(84f, 6f, 210f, 102f)
+        // (the window left of the tile's badge corner - x 172 and on, y 0..44 stays the badge's - you under the badge)
+        figure(c, 194f, 102f, 34f, Color.rgb(22, 24, 30))
+        val win = RectF(40f, 6f, 166f, 102f)
         val bg = UiKit.tex("dmg_bg")
         if (bg != null) { pB.alpha = 215; c.drawBitmap(bg, null, win, pB); pB.alpha = 255 }
         else { pF.color = Color.argb(180, 0, 0, 0); c.drawRoundRect(win, 3f, 3f, pF) }
@@ -573,9 +577,11 @@ object TilePictures {
             if (pip != null) c.drawBitmap(pip, null, RectF(fr.right - 2f, bar.top - 3f, fr.right + 2f, bar.bottom + 3f), pB)
             else { pF.color = Color.rgb(250, 240, 120); c.drawRect(fr.right - 0.8f, bar.top, fr.right + 0.8f, bar.bottom, pF) }
         }
-        if (on(2)) for (i in 0..1) { val x = 160f + i * 24f; cdmIcon(c, ids[7 + i], RectF(x, 8f, x + 20f, 28f), 7 + i) }
-        if (on(0)) for (i in 0..3) { val x = 42f + i * 34f; cdmIcon(c, ids[i], RectF(x, 38f, x + 30f, 68f), i, sweep = if (i == 2) 0.6f else 0f) }
-        if (on(1)) for (i in 0..2) { val x = 71f + i * 26f; cdmIcon(c, ids[4 + i], RectF(x, 76f, x + 22f, 98f), 4 + i) }
+        // (Buff icons right of the bars, clear of the tile's badge corner: x 172 and on)
+        if (on(2)) for (i in 0..1) { val x = 118f + i * 24f; cdmIcon(c, ids[7 + i], RectF(x, 10f, x + 20f, 30f), 7 + i) }
+        // (Essential and Utility centred on x 101, not the well's 108: the last Essential icon's overlay frame stays left of the badge corner)
+        if (on(0)) for (i in 0..3) { val x = 38f + i * 32f; cdmIcon(c, ids[i], RectF(x, 38f, x + 30f, 68f), i, sweep = if (i == 2) 0.6f else 0f) }
+        if (on(1)) for (i in 0..2) { val x = 64f + i * 26f; cdmIcon(c, ids[4 + i], RectF(x, 76f, x + 22f, 98f), 4 + i) }
     }
 
     /** one Cooldown Manager icon: the spell's icon (icons.pak) in the game's rounded mask, a cooldown's dark sweep, the kit's overlay
@@ -839,8 +845,8 @@ object TilePictures {
     // ---------------------------------------------------------------- the badge and the modes' signs
 
     private val pBadge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
-    /** the kit's art greyed and darkened (the GAME_OFF badge: the game's option is off, nothing of ours is wrong) */
-    private val DIM_ART = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f); postConcat(ColorMatrix().apply { setScale(0.62f, 0.62f, 0.62f, 1f) }) })
+    /** the kit's art greyed to a light grey (the GAME_OFF badge: the game's option is off, nothing of ours is wrong; no colour of its own) */
+    private val DIM_ART = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f); postConcat(ColorMatrix().apply { setScale(1.12f, 1.12f, 1.12f, 1f) }) })
 
     /** the tile's 36 px badge: a dark disc in a thin metal ring, the mode's sign (or the game's state) on it */
     fun badge(c: Canvas, r: RectF, b: GameUiTiles.Badge) {
@@ -881,8 +887,10 @@ object TilePictures {
                 val g = UiKit.tex("alert_gear")
                 if (g != null) {
                     pB.colorFilter = DIM_ART
-                    val h = rad * 0.72f
-                    c.drawBitmap(g, null, RectF(cx - h, cy - h, cx + h, cy + h), pB)
+                    // (verifier 11-17: at 0.62 brightness and 0.72 size it read as a grey blob, close to the hourglass; now the
+                    // triangle fills the disc in a light grey, its gear's dark centre and teeth readable - still no colour of its own)
+                    val h = rad * 0.86f
+                    c.drawBitmap(g, null, RectF(cx - h, cy - h * 0.98f, cx + h, cy + h * 1.02f), pB)
                     pB.colorFilter = null
                 } else {
                     pBadge.strokeWidth = 2f
