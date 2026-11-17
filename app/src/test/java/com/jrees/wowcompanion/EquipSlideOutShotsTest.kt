@@ -340,6 +340,29 @@ class EquipSlideOutShotsTest {
         }
     }
 
+    /** bags-gear2 (the user, 2026-11-16: "the tool tip is in front of the options"): the Character room's rail never reaches the card's
+     *  pane - every slot's rail, a dual wielder's hands (the other hand's one-hander listed) and a class that can't, every entry chosen */
+    @Test fun theRailNeverReachesTheCardsPane() {
+        Tr.init(RuntimeEnvironment.getApplication())
+        for (dw in listOf(false, true)) for (slot in Doll.SLOTS.map { it.first } + 0) {
+            val v = room(ammo = true)
+            if (dw) v.updateBags(bagsDoc(3, ammo = true).also { it.getJSONObject("equipped").put("dw", true) })
+            set(v, "chosenSlot", slot); call(v, "openRail", slot)
+            if (get(v, "railFor") == null) continue                               // nothing fits that slot: no rail
+            for (sel in 0 until 6) {
+                set(v, "railSel", sel); frame(v)
+                @Suppress("UNCHECKED_CAST")
+                val icons = (get(v, "railHits") as List<Pair<android.graphics.RectF, Int>>).map { it.first }
+                @Suppress("UNCHECKED_CAST")
+                val card = (get(v, "railCardHits") as List<Pair<android.graphics.RectF, String>>).map { it.first }
+                if (card.isEmpty()) continue
+                val cardLeft = 704f + 26f                                         // the right pane (split + its inset): the card's left
+                for (r in icons) org.junit.Assert.assertTrue("dw=$dw slot $slot sel $sel: rail icon $r clear of the card's pane",
+                    r.right <= 704f && card.none { c -> android.graphics.RectF.intersects(c, r) } && r.right < cardLeft)
+            }
+        }
+    }
+
     /** the doll's columns (Doll.SLOTS) and SlideOut's ways out agree */
     @Test fun theRailsWayFollowsTheDollsColumns() {
         for ((slot, pos) in Doll.SLOTS) {

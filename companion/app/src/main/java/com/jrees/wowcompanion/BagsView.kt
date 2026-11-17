@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.*
 import android.text.Editable
 import android.text.InputType
+import android.text.TextPaint
+import android.text.TextUtils
 import android.text.TextWatcher
 import android.view.MotionEvent
 import android.view.View
@@ -592,7 +594,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
          * tall is cut at the room's foot with its row pinned there under it, never over it, and a finger scrolls it in its box.
          */
         private fun card(c: Canvas, cur: RectF, name: String, q: Int, tip: JSONObject, changes: List<UiKit.TipLine>,
-                         acts: List<Pair<String?, String>>, what: List<Int>, top: Float, bottom: Float) {
+                         acts: List<Pair<String?, String>>, what: List<Int>, top: Float, bottom: Float,
+                         xw: Pair<Float, Float>? = null): RectF? {
             val key = tip.optString("key")
             val fade = warm.alpha(key, clock())
             if (warm.animating) postInvalidateOnAnimation()
@@ -600,7 +603,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             val first = lines?.optJSONObject(0)
             val body = TipStack.lines(lines, first != null && first.optString("t") == name) + changes
             val plateH = if (acts.isEmpty()) 0f else 62f
-            val (x, tw, _) = place(cur)
+            // bags-gear2: the gear menu places the tooltip itself (SlideOut.pop: clear of the menu), else beside the cursor
+            val (x, tw) = xw ?: place(cur).let { p -> p.first to p.second }
             val colour = Theme.quality(q)
             fun itemH(s: Float) = UiKit.tooltip(c, 0f, -9999f, tw, name, colour, body, alpha = 0, scale = s).height()
             // up over the bag bar only if it must; the item and its row decide
@@ -621,7 +625,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             val pressed = acts.isNotEmpty() &&
                 downIn(UiKit.tooltipActions(c, boxNow, acts, alpha = 0), what.map { w -> if (faintKind(w)) null else keyOf(w) }) >= 0
             val a = if (pressed) 255 else fade
-            if (a <= 0) { cut = null; return }               // the first quarter second: measured, nothing shown yet
+            if (a <= 0) { cut = null; return null }          // the first quarter second: measured, nothing shown yet
             if (f.scrollMax > 0f) {
                 c.save(); c.clipRect(x - 4f, f.y, x + tw + 4f, f.y + f.h)
                 UiKit.tooltip(c, x, f.y - scrolled, tw, name, colour, body, alpha = a, scale = s)
@@ -632,8 +636,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 UiKit.tooltip(c, x, f.y, tw, name, colour, body, alpha = a, scale = s)
                 cut = null
             }
-            plate(c, boxNow, acts, what, a)
+            val cells = plate(c, boxNow, acts, what, a)
             if (f.scrollMax > 0f) moreMark(c, boxNow, scrolled > 0f, scrolled < f.scrollMax, a)
+            return RectF(boxNow).also { b -> cells.lastOrNull()?.let { l -> b.bottom = maxOf(b.bottom, l.bottom) } }
         }
 
         /** a cut tooltip: a small gold chevron at the edge that has more (up at the top, down over its row; bags-gear1: the kit's) */
@@ -736,20 +741,44 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             }
             if (list.isEmpty()) return
             val at = if (choosing) (eq.optInt("at", 1) - 1).coerceIn(0, list.size - 1) else 0
-            UiKit.checkedGlow(c, tile, orHilite = true)                 // the piece the row is for
-            // review: on the tile's left too the slots read in their order left to right (SlideOut.rowLefts), so the D-pad's right (the
-            // add-on's next target) always moves the highlight to the right
-            val boxes = SlideOut.rowLefts(tile.left, tile.right, tile.width(), list.size, width.toFloat())
-                .map { x -> RectF(x, tile.top, x + tile.width(), tile.bottom) }
+            UiKit.checkedGlow(c, tile, orHilite = true)                 // the piece the menu is for
+            // bags-gear2 (the user, 2026-11-16: "The equip a one hand from a bag is really confusing because the tool tip is in front of
+            // the options"; "I think it just needs its own menu pop out for an easy clear fix"): the worn slots as a small menu of their
+            // own beside the piece (the room's menu look, as the bag bar's More): each row the slot's name and what is worn there (its
+            // icon and name, or Empty); the tooltip beside it, never over it (SlideOut.pop). D-pad up / down (or left / right) moves,
+            // A on the highlighted row equips, a finger on another row highlights it, on the highlighted one = A; B back
+            val rowH = 96f
+            val menuW = 440f; val menuH = 20f + list.size * rowH
+            val tipW = place(tile).second
+            val pop = SlideOut.pop(tile.left, tile.right, menuW, tipW, width.toFloat())
+            val my = tile.top.coerceIn(top - 90f, maxOf(top - 90f, bottom - menuH))
+            val menuBox = RectF(pop.menuLeft, my, pop.menuLeft + menuW, my + menuH)
+            val inner = UiKit.menu(c, menuBox, solid = true)
+            val rows = list.indices.map { i -> RectF(inner.left, inner.top + i * rowH, inner.right, inner.top + i * rowH + rowH - 4f) }
+            val down = pressedIn(rows)
             for ((i, t) in list.withIndex()) {
                 val inv = t.optInt("inv", -1)
-                val box = boxes[i]
-                Doll.draw(c, Doll.Layout(mapOf(inv to box), box.bottom), if (t.optInt("id", 0) > 0) mapOf(inv to t) else emptyMap())
-                if (!t.optBoolean("ok", true)) faint(c, box)
-                if (i == at) { UiKit.slotFocus(c, box); UiKit.carried(c, iconOf(item), box) }
-                if (choosing) hits.add(RectF(box) to (if (i == at) 31 else GEAR_PICK - inv))
-                zones.add(RectF(box))
+                val rr = rows[i]
+                val ok = t.optBoolean("ok", true)
+                UiKit.pressed(c, rr, choosing && down == i) {
+                    UiKit.menuRow(c, rr, "", i == at, enabled = ok)
+                    val icon = RectF(rr.left + 14f, rr.centerY() - 34f, rr.left + 82f, rr.centerY() + 34f)
+                    Doll.draw(c, Doll.Layout(mapOf(inv to icon), icon.bottom), if (t.optInt("id", 0) > 0) mapOf(inv to t) else emptyMap())
+                    if (!ok) faint(c, icon)
+                    val tx = icon.right + 18f; val room = rr.right - 16f - tx
+                    val (word, n) = SlideOut.slotName(inv)
+                    val slotP = UiKit.bodyPaint(30f, if (!ok) Theme.dim else if (i == at) Theme.gold else Theme.text)
+                    val label = Tr.t(word) + (n?.let { " $it" } ?: "")
+                    c.drawText(TextUtils.ellipsize(label, TextPaint(slotP), room, TextUtils.TruncateAt.END).toString(), tx, rr.centerY() - 6f, slotP)
+                    val wornName = t.optString("name").takeIf { s -> t.optInt("id", 0) > 0 && real(s) }
+                    val wornP = UiKit.bodyPaint(24f, if (wornName == null) Theme.dim else colourOf(t))
+                    val sub = wornName ?: Tr.t("Empty")                                  // the piece's name is the game's: never translated
+                    c.drawText(TextUtils.ellipsize(sub, TextPaint(wornP), room, TextUtils.TruncateAt.END).toString(), tx, rr.centerY() + 28f, wornP)
+                }
+                if (choosing) hits.add(RectF(rr) to (if (i == at) 31 else GEAR_PICK - inv))
             }
+            zones.add(RectF(menuBox))
+            val boxes = rows
             val target = list[at]
             val inv = target.optInt("inv", -1)
             val name = item.optString("name").takeIf { s -> real(s) } ?: "Loading…"
@@ -774,9 +803,12 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             val acts = if (choosing) listOf((if (glyphs) "rev_a" else null) to "Equip", (if (glyphs) UiKit.backGlyph() else null) to "Back")
                        else emptyList()
             val what = if (choosing) listOf(if (target.optBoolean("ok", true)) 31 else EQUIP_OFF, 33) else emptyList()
-            val all = RectF(minOf(tile.left, boxes.minOf { it.left }), tile.top, maxOf(tile.right, boxes.maxOf { it.right }), tile.bottom)
-            card(c, all, shown.name, shown.quality, shown.tip, extra, acts, what, top, bottom)
+            gearShown = card(c, tile, shown.name, shown.quality, shown.tip, extra, acts, what, top, bottom, pop.tipLeft to pop.tipW) to
+                (boxes.map { RectF(it) } + RectF(menuBox) + RectF(tile))
         }
+
+        /** the gear row's card (its tooltip and plate) and its options as last drawn: the off-device checks read them */
+        var gearShown: Pair<RectF?, List<RectF>>? = null
 
         private val sat2 = IntArray(2)
         /**
