@@ -42,6 +42,11 @@ Proven here:
      pieces (fake frames of the client's shape: Edit Mode systems with their ...Base methods, the controller bar no system, a
      protected one in a fight queued to its end, the game's layout update and Edit Mode exit re-applying ours, Reset game UI; never a
      plain system method, never a C_EditMode call).
+  o  hub61 (the user, 2026-11-17: "DPS meters and also the cooldown manager ... we need to make sure that its consistent with the other
+     picture options"): the game's damage meter and its four Cooldown Manager viewers hidden by alpha 0 + EnableMouse(false) only (the
+     hide switches, never Hide / Show / a CVar), the press on "lay" while the editor is closed, per character, Dynamic's 15 s linger
+     (cancelled by a new fight), a press in a fight held to its end, Edit Mode's opacity / layout update re-asserted, the game's Edit
+     Mode shown = all shown, the game's options only read (the hub document's mt), a stored choice applied at login without the app.
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -921,6 +926,177 @@ cell(L5, 39)
 check(list(L5.eval('PLAIN').values()) == [] and list(L5.eval('EMSPY').values()) == [], "n. through it all: no plain system method, no C_EditMode call")
 check(lua_errors(L5, errs5) == [] and int(L5.eval('#VIOL')) == 0 and int(L5.eval('#SPY')) == 0, "n. clean",
       (lua_errors(L5, errs5)[:3], int(L5.eval('#VIOL')), int(L5.eval('#SPY'))))
+
+# ================================================================ o. hub61: the damage meter and the Cooldown Manager (Settings > Top)
+# The user, 2026-11-17: "DPS meters and also the cooldown manager ... we need to make sure that its consistent with the other picture
+# options". The game's DamageMeter (its session window a child) and the four CooldownViewer frames, faked in the client's shape: Edit Mode
+# systems whose opacity setting puts their alpha back (UpdateSystemSettingOpacity); the viewers' mouse is protected in a fight here (the
+# strict world's rule for the secure half). Proven: alpha 0 + EnableMouse(false) only (never Hide / Show, never a CVar written); the
+# player's press on the "lay" row while the editor is closed (and NOT while it is open); per character in WowCompanionDB.meters; Dynamic
+# up in a fight and down LINGER_S after it (cancelled by a new fight); a press in a fight held to its end; Edit Mode's opacity and its
+# layout update re-asserted; the game's Edit Mode shown = everything shown; the game's options only read (the hub document's mt).
+QUOTE3 = '"DPS meters and also the cooldown manager ... we need to make sure that its consistent with the other picture options"'
+MSRC = TXT["hub"][TXT["hub"].index("-- ==================================================================== hub61 THE DAMAGE METER"):
+                  TXT["hub"].index("-- ==================================================================== hub55 THE TOP-SCREEN LAYOUT EDITOR")]
+mcode = "\n".join(re.sub(r'--.*$', '', ln) for ln in MSRC.splitlines())
+mbad = [w for w in (":Hide(", ":Show(", "SetShown", "SetCVar", "C_CVar.SetCVar", "CooldownViewerSettings", "ShowUIPanel", "HideUIPanel",
+                    "EnterEditMode", "ExitEditMode", "OpenToCategory", "Settings.Open", "C_EditMode", "SetBinding") if w in mcode]
+check(mbad == [], "o. the meters' block never hides / shows a frame, writes a CVar, opens the game's Settings, Cooldown settings or Edit Mode", mbad)
+check(int(re.search(r'local HV = "hub(\d+)"', TXT["hub"]).group(1)) >= 61 and TXT["hub"].count(QUOTE3) >= 2,
+      "o. Hub hub61+, its notes (the version line and the block) quote the user")
+
+METERPRE = r'''
+CVARS = { damageMeterEnabled = true, cooldownViewerEnabled = true }
+C_CVar = { GetCVarBool = function(n) return CVARS[n] end }
+DMAV, CDAV = true, true
+C_DamageMeter = { IsDamageMeterAvailable = function() return DMAV end }
+C_CooldownViewer = { IsCooldownViewerAvailable = function() return CDAV end }
+SHOWHIDE = {}
+function mkmeter(name, alpha, secure)
+    local f = CreateFrame("Frame", name, UIParent)
+    f._alpha, f._mouse, f._sec = alpha or 1, true, secure
+    f.IsMouseEnabled = function(self) return self._mouse end
+    f.EnableMouse = function(self, on)
+        if COMBAT and self._sec then VIOL[#VIOL + 1] = "EnableMouse " .. name; error("ADDON_ACTION_BLOCKED EnableMouse") end
+        self._mouse = on and true or false
+    end
+    f.Show = function(self) SHOWHIDE[#SHOWHIDE + 1] = "Show " .. name end
+    f.Hide = function(self) SHOWHIDE[#SHOWHIDE + 1] = "Hide " .. name end
+    f.SetShown = function(self) SHOWHIDE[#SHOWHIDE + 1] = "SetShown " .. name end
+    return f
+end
+mkmeter("DamageMeter")
+mkmeter("DamageMeterSessionWindow1")
+DamageMeter.GetChildren = function() return DamageMeterSessionWindow1 end
+for i, n in ipairs({ "EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer" }) do
+    local v = mkmeter(n, i == 2 and 0.6 or 1, true)
+    v.opacity = v._alpha
+    -- the game's own refresh (editmodesystemtemplates: self:SetAlpha(opacity / 100))
+    v.UpdateSystemSettingOpacity = function(self) self:SetAlpha(self.opacity) end
+end
+'''
+VIEWERS = ["EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer"]
+
+
+def mt(L):
+    d = [x for x in wowstub.docs(L, 0, "hub") if isinstance(x.get("hub"), dict)]
+    return d[-1]["hub"].get("mt") if d else None
+
+
+def mfresh(L):
+    L.execute('WowCompanion.meters.emit()')
+    return mt(L)
+
+
+def alpha(L, n):
+    return round(float(L.eval('%s:GetAlpha()' % n)), 3)
+
+
+def mouse(L, n):
+    return L.eval('%s._mouse' % n)
+
+
+L6, errs6 = world(METERPRE)
+L6.execute('WowCompanion.meters.emit()')
+d = mt(L6)
+check(d is not None and d.get("v") == "mt1" and d.get("d") == "on" and d.get("dset") is None and d.get("c") is True and d.get("p") == 15
+      and d.get("dok") is True and d.get("dav") is True and d.get("df") is True and d.get("cok") is True and d.get("cav") is True
+      and d.get("cf") is True and d.get("cols", {}).get("PARTS") == 8,
+      "o. the hub document's mt at login: nothing chosen (the game's own), the options and frames read", d)
+check(all(alpha(L6, n) == (0.6 if n == "UtilityCooldownViewer" else 1) for n in ["DamageMeter"] + VIEWERS) and mouse(L6, "DamageMeter") is True,
+      "o. nothing chosen: no frame touched (leave no trace)")
+# the layout editor OPEN: cell 0 selects its first piece, the meters unchanged
+hold(L6)
+cell(L6, 37)
+check(last(L6)["open"] is True, "o. (the editor open)")
+cell(L6, 0)
+check(alpha(L6, "DamageMeter") == 1 and mfresh(L6).get("dset") is None, "o. editor open: column 0 is its piece select, the meters unchanged")
+cell(L6, 39)
+check(last(L6)["open"] is False, "o. (the editor closed)")
+# Damage meter Off / On
+check(cell(L6, 0), "o. the lay row's cell 0 is on the pad while the Settings room holds")
+check(alpha(L6, "DamageMeter") == 0 and mouse(L6, "DamageMeter") is False and mouse(L6, "DamageMeterSessionWindow1") is False,
+      "o. Off (0): alpha 0, the mouse off (its session window's too)", (alpha(L6, "DamageMeter"), mouse(L6, "DamageMeter")))
+st = L6.eval('WowCompanionDB.meters["%s"]' % WHO)
+check(st is not None and st.d == "off", "o. ... kept per character in WowCompanionDB.meters[name-realm]")
+d = mfresh(L6)
+check(d.get("d") == "off" and d.get("dset") is True and d.get("n") == 1, "o. ... the document says so", d)
+cell(L6, 1)
+check(alpha(L6, "DamageMeter") == 1 and mouse(L6, "DamageMeter") is True and mouse(L6, "DamageMeterSessionWindow1") is True,
+      "o. On (1): its alpha and mouse back")
+# Dynamic: a fight and LINGER_S after it
+cell(L6, 2)
+check(alpha(L6, "DamageMeter") == 0 and mouse(L6, "DamageMeter") is False, "o. Dynamic (2) out of a fight: hidden")
+viol6 = int(L6.eval('#VIOL'))
+L6.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.1)')
+check(alpha(L6, "DamageMeter") == 1 and mouse(L6, "DamageMeter") is False, "o. a fight starts: shown (alpha), the mouse stays off")
+L6.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(14)')
+check(alpha(L6, "DamageMeter") == 1, "o. the fight's end: still shown for the read (14 s)")
+L6.execute('advance(1.5)')
+check(alpha(L6, "DamageMeter") == 0, "o. ... and hidden 15 s after it")
+L6.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(1); COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(10)')
+L6.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(10)')
+check(alpha(L6, "DamageMeter") == 1, "o. a new fight inside the 15 s: the old linger's end does not hide it")
+L6.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(10)')
+check(alpha(L6, "DamageMeter") == 1, "o. ... its own 15 s count from its own end")
+L6.execute('advance(6)')
+check(alpha(L6, "DamageMeter") == 0 and int(L6.eval('#VIOL')) == viol6, "o. ... then hidden; no breach through the fights")
+# the Cooldown Manager: off, on (each viewer's own alpha back), the parts' mask
+cell(L6, 3)
+check(all(alpha(L6, n) == 0 for n in VIEWERS) and all(mouse(L6, n) is False for n in VIEWERS), "o. Cooldown Manager Off (3): the four viewers at alpha 0, no mouse")
+cell(L6, 4)
+check([alpha(L6, n) for n in VIEWERS] == [1, 0.6, 1, 1] and all(mouse(L6, n) is True for n in VIEWERS),
+      "o. On (4): each viewer's own alpha back (Utility's 60 % opacity kept)", [alpha(L6, n) for n in VIEWERS])
+cell(L6, 8 + 1 + 4)
+check([alpha(L6, n) for n in VIEWERS] == [1, 0, 1, 0], "o. the parts (8 + 0b0101): Essential and Buff icons shown, Utility and Buff bars hidden",
+      [alpha(L6, n) for n in VIEWERS])
+d = mfresh(L6)
+check(d.get("p") == 5 and d.get("pset") is True and d.get("c") is True, "o. ... the document's p", d)
+# Edit Mode's opacity refresh and its layout update: ours back on; the opacity it set is the one given back later
+L6.execute('UtilityCooldownViewer.opacity = 0.8; UtilityCooldownViewer:UpdateSystemSettingOpacity()')
+check(alpha(L6, "UtilityCooldownViewer") == 0, "o. Edit Mode's opacity refresh on a hidden viewer: 0 again at once (post-hook)")
+L6.execute('BuffBarCooldownViewer:SetAlpha(1); fire("EDIT_MODE_LAYOUTS_UPDATED"); advance(0.01)')
+check(alpha(L6, "BuffBarCooldownViewer") == 0, "o. EDIT_MODE_LAYOUTS_UPDATED: 0 again (deferred a frame)")
+L6.execute('DamageMeter:SetAlpha(1); tick(1)')
+check(alpha(L6, "DamageMeter") == 0, "o. the 1 s look: a hidden frame given its alpha back goes to 0 again")
+# the game's own Edit Mode shown: everything shown while the player places it; hidden again when it closes
+L6.execute('EditModeManagerFrame = mkwin("EditModeManagerFrame", false); WowCompanion.meters.emHooked = false; WowCompanion.meters.hook()')
+L6.execute('EditModeManagerFrame:Show(); advance(0.01)')
+check([alpha(L6, n) for n in ["DamageMeter"] + VIEWERS] == [1, 1, 0.8, 1, 1], "o. the game's Edit Mode shown: all shown (Utility at its new 80 %)",
+      [alpha(L6, n) for n in ["DamageMeter"] + VIEWERS])
+L6.execute('EditModeManagerFrame:Hide(); advance(0.01)')
+check([alpha(L6, n) for n in ["DamageMeter"] + VIEWERS] == [0, 1, 0, 1, 0], "o. ... closed: hidden again as chosen",
+      [alpha(L6, n) for n in ["DamageMeter"] + VIEWERS])
+cell(L6, 8 + 15)
+check([alpha(L6, n) for n in VIEWERS] == [1, 0.8, 1, 1], "o. all four parts again: Utility at the opacity Edit Mode gave it")
+# a press in a fight: held to its end ("Changes when combat ends"), nothing breached
+viol6 = int(L6.eval('#VIOL'))
+L6.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.1)')
+cell(L6, 3)
+d = mfresh(L6)
+check(all(alpha(L6, n) > 0 for n in VIEWERS) and d.get("q") is True and d.get("c") is False,
+      "o. Off pressed in a fight: saved, held (q), the viewers as they were", d.get("q"))
+L6.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.1)')
+check(all(alpha(L6, n) == 0 for n in VIEWERS) and mfresh(L6).get("q") is None and int(L6.eval('#VIOL')) == viol6,
+      "o. the fight's end: it goes on; no breach")
+# the game's option off: only read and reported
+L6.execute('CVARS.damageMeterEnabled = false; DMAV = false; fire("CVAR_UPDATE")')
+d = mfresh(L6)
+check(d.get("dok") is False and d.get("dav") is False and d.get("d") == "dyn", "o. the game's option off: dok / dav false, the choice kept", d)
+check(list(L6.eval('SHOWHIDE').values()) == [] and int(L6.eval('#SPY')) == 0, "o. never a Hide / Show / SetShown of theirs, no spied call (SetCVar...)",
+      (list(L6.eval('SHOWHIDE').values())[:3], int(L6.eval('#SPY'))))
+check(lua_errors(L6, errs6) == [] and int(L6.eval('#VIOL')) == 0, "o. clean", (lua_errors(L6, errs6)[:3], int(L6.eval('#VIOL'))))
+# a login with a stored choice: applied without the app (a /reload, a login on another day)
+L7, errs7 = world(METERPRE + 'WowCompanionDB.meters = { ["%s"] = { d = "off", c = true, p = 3 } }\n' % WHO)
+check(alpha(L7, "DamageMeter") == 0 and [alpha(L7, n) for n in VIEWERS] == [1, 0.6, 0, 0],
+      "o. a login with a stored choice: the damage meter off, Buff icons / Buff bars off, at once (no app needed)",
+      (alpha(L7, "DamageMeter"), [alpha(L7, n) for n in VIEWERS]))
+L7.execute('WowCompanion.meters.emit()')
+d = mt(L7)
+check(d.get("d") == "off" and d.get("dset") is True and d.get("p") == 3, "o. ... its document", d)
+L7.execute('WHO = "Other"; WowCompanion.meters.load(); WowCompanion.meters.apply()')
+check(alpha(L7, "DamageMeter") == 1 and [alpha(L7, n) for n in VIEWERS] == [1, 0.6, 1, 1], "o. another character: its own (none: all back)")
+check(lua_errors(L7, errs7) == [] and int(L7.eval('#VIOL')) == 0, "o. clean (stored)", lua_errors(L7, errs7)[:3])
 
 # ================================================================ the fixtures (the app's LayoutModelTest / LayoutShotsTest read them)
 os.makedirs(FIXDIR, exist_ok=True)

@@ -156,7 +156,7 @@ class SettingsRoomTest {
         assertTrue(combat[1] is HomeSettingsSection)
         // every group has a part, and a GameUiSection part only in Top screen's groups, Help and Combat helpers
         for (gb in r.groupBoxes) assertTrue("${gb.group} has parts", gb.parts.isNotEmpty())
-        assertEquals(setOf(SettingsTabs.Group.HELP, SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY,
+        assertEquals(setOf(SettingsTabs.Group.HELP, SettingsTabs.Group.LAYOUT, SettingsTabs.Group.HUD, SettingsTabs.Group.TARGET, SettingsTabs.Group.PARTY,
             SettingsTabs.Group.NAVIGATION, SettingsTabs.Group.WINDOWS, SettingsTabs.Group.COMBAT),
             r.groupBoxes.filter { gb -> gb.parts.any { it is GameUiSection } }.map { it.group }.toSet())
         // 2026-11-16 (the tiles): Navigation is ONE tile part (its Polestar tile was SettingsView's row); every Top screen group's part draws

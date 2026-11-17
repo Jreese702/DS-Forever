@@ -29,7 +29,11 @@ import java.io.File
  * no reflow while the add-on's switches arrive.
  *
  * With UIMENUS_SHOTS_DIR set it also renders the tab (no game yet, every element reported, bands open, Spanish and French, no kit) and
- * a sheet of the 19 pictures; THEME_ART_ROOT = an art root laid out like the app's (ui/kit, ui/cast, fonts).
+ * a sheet of the 22 pictures; THEME_ART_ROOT = an art root laid out like the app's (ui/kit, ui/cast, fonts).
+ *
+ * hub61 (the user, 2026-11-17: "DPS meters and also the cooldown manager ... we need to make sure that its consistent with the other
+ * picture options"): Game windows' Damage meter (On / Off / Dynamic) and Cooldown Manager (its four parts in its band, gone while Off),
+ * the game's option off (GAME_OFF), Layout's Edit layout tile (A opens the editor's page, no band); shots top_16..20.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -107,7 +111,20 @@ class GameUiTilesRoomTest {
 
     // ---------------------------------------------------------------- the game's word (a full hub document and the switches)
 
-    private fun game(hudHidden: Boolean = false, chatHidden: Boolean = true, pending: Boolean = false) {
+    /** hub61: the hub document's `mt` as Hub.lua's WC.meters.doc() writes it */
+    private fun mtDoc(d: String = "on", c: Boolean = true, p: Int = 15, dok: Boolean = true, cok: Boolean = true, q: Boolean = false) =
+        JSONObject().put("v", "mt1").put("d", d).put("c", c).put("p", p).put("df", true).put("cf", true).put("dok", dok).put("dav", true)
+            .put("cok", cok).put("cav", true).put("q", q).put("n", 2)
+            .put("cols", JSONObject().put("DMG_OFF", 0).put("DMG_ON", 1).put("DMG_DYN", 2).put("CDM_OFF", 3).put("CDM_ON", 4).put("PARTS", 8))
+
+    /** the layout editor's document (tools/test_layout.py's fixture): the Layout group's tile shows */
+    private fun layDoc() {
+        val f = listOf(File("../dsforever/src/test/resources/layout-fixtures/lay_closed.json"), File("dsforever/src/test/resources/layout-fixtures/lay_closed.json"))
+            .first { it.canRead() }
+        LayoutModel.Live.note(JSONObject(f.readText()))
+    }
+
+    private fun game(hudHidden: Boolean = false, chatHidden: Boolean = true, pending: Boolean = false, mt: JSONObject? = mtDoc()) {
         GameUi.character = "Sample-Realm"
         val cols = JSONObject()
         listOf("PLAYER_SHOW", "PLAYER_HIDE", "TARGET_SHOW", "TARGET_HIDE", "NP_OFF", "NP_ON", "PRD_OFF", "PRD_ON", "WM_OFF", "WM_ON",
@@ -123,6 +140,7 @@ class GameUiTilesRoomTest {
         val hub = JSONObject().put("boot", 1).put("n", 3).put("pending", pending).put("row", "ui").put("els", els)
             .put("cb", JSONObject().put("hidden", true)).put("sw", sw)
             .put("prd", JSONObject().put("y", -350).put("w", 280).put("s", 100))
+        if (mt != null) hub.put("mt", mt)
         GameUi.onHub(JSONObject().put("hub", hub), true)
         GameUi.onVisible(true)                                          // the companion on the bottom screen (its choices hold)
         HomeLootSwitch.note(JSONObject().put("proof", JSONObject().put("lootc", JSONObject().put("top", false).put("on", 1).put("off", 2))))
@@ -136,7 +154,8 @@ class GameUiTilesRoomTest {
     @After fun forget() {
         for (o in listOf(HomeLootSwitch, CompassSwitch, TipsSwitch, RingsSwitch))
             o::class.java.getDeclaredField("state").apply { isAccessible = true }.set(o, null)
-        for (f in listOf("sw", "state", "castBarHidden", "prdY", "prdW", "prdS", "prefs"))
+        LayoutModel.Live.clearForTest()
+        for (f in listOf("sw", "state", "castBarHidden", "prdY", "prdW", "prdS", "prefs", "mt"))
             GameUi::class.java.getDeclaredField(f).apply { isAccessible = true }.set(GameUi, null)
         GameUi.character = null
         Tr.setChoice(app, "auto")
@@ -165,8 +184,13 @@ class GameUiTilesRoomTest {
         // a tap on a heading folds nothing
         r.toggle(SettingsTabs.Group.TARGET)
         assertEquals(groups.toSet(), r.open)
-        // 18 tiles with Polestar not in use (19 with it); before the game: every one a "..." tile but the elements' (their choice known)
-        assertEquals(18, tileBoxes(r).size)
+        // 20 tiles with Polestar not in use and no layout editor (hub61: + the damage meter and the Cooldown Manager); before the game:
+        // every one a "..." tile but the elements' (their choice known)
+        assertEquals(20, tileBoxes(r).size)
+        // the layout editor's document: its Layout group shows, one tile (21; 22 with Polestar)
+        layDoc(); r.refreshGroups(); lay(r)
+        assertEquals(21, tileBoxes(r).size)
+        assertEquals(GameUiTiles.LAYOUT_ID, tileBoxes(r).keys.first())
         // Controller > Combat helpers keep their rows
         assertTrue(r.gameUis.filter { it.part == GameUiSection.Part.COMBAT || it.part == GameUiSection.Part.AUTO_SHOT }.none { it.tiled })
     }
@@ -176,7 +200,9 @@ class GameUiTilesRoomTest {
         val r = room()
         val w = tileBoxes(r)
         val win = GameUiTiles.slots(SettingsTabs.Group.WINDOWS, false).map { w.getValue(it) }
-        assertEquals(10, win.size)
+        assertEquals(12, win.size)
+        // hub61: 5 + 5 + 2
+        assertEquals(3, win.map { it.top }.distinct().size)
         for (b in win) { assertEquals(GameUiTiles.TILE_W, b.width(), 0.5f); assertEquals(GameUiTiles.TILE_H, b.height(), 0.01f) }
         assertEquals(16f, win[0].left, 0.5f)
         assertEquals(W - 16f, win[4].right, 0.5f)
@@ -372,6 +398,150 @@ class GameUiTilesRoomTest {
         assertTrue(MediaArt.bytes() > 0)
     }
 
+
+    // ---------------------------------------------------------------- hub61: the damage meter, the Cooldown Manager, Edit layout
+
+    private fun rowOf(p: GameUiSection, id: String) =
+        GameUiSection::class.java.getDeclaredMethod("rowOf", String::class.java).apply { isAccessible = true }.invoke(p, id) as GameUi.Row?
+
+    /** the 22-tile walk: every tile a stop, in reading order (Edit layout first, the meters Game windows' last row) */
+    @Test fun theCursorWalksAllTwentyTwoTiles() {
+        ThirdPartyAddons::class.java.getDeclaredField("noFetch").apply { isAccessible = true }.setBoolean(null, true)
+        val dirF = ThirdPartyAddons::class.java.getDeclaredField("dir").apply { isAccessible = true }
+        val stateF = ThirdPartyAddons::class.java.getDeclaredField("stateJ").apply { isAccessible = true }
+        val savedDir = dirF.get(ThirdPartyAddons); val savedState = stateF.get(ThirdPartyAddons)
+        try {
+            dirF.set(ThirdPartyAddons, null)
+            stateF.set(ThirdPartyAddons, JSONObject().put("polestar/core", JSONObject().put("in", ThirdPartyAddons.POLESTAR.core.tag)))
+            Settings.init(app); Settings.polestarGuide = PolestarGuide.ON
+            val r = room(); game(); layDoc(); r.refreshGroups(); lay(r); hold(r)
+            val boxes = tileBoxes(r)
+            assertEquals(22, boxes.size)
+            assertEquals(GameUiTiles.ALL.toSet(), boxes.keys)
+            val seen = LinkedHashSet<String>()
+            press(r, "PADDDOWN")
+            repeat(40) {
+                boxes.entries.firstOrNull { it.value == r.pad.focusBox() }?.let { seen += it.key }
+                // along each row, then down
+                val before = r.pad.focusBox()
+                press(r, "PADDRIGHT")
+                if (r.pad.focusBox() == before) { repeat(5) { press(r, "PADDLEFT") }; press(r, "PADDDOWN") }
+            }
+            assertEquals("every tile reached", GameUiTiles.ALL.toSet(), seen)
+            assertEquals(GameUiTiles.LAYOUT_ID, seen.first())
+        } finally {
+            dirF.set(ThirdPartyAddons, savedDir); stateF.set(ThirdPartyAddons, savedState); Settings.polestarGuide = null
+        }
+    }
+
+    /** the Damage meter's band: On / Off / Dynamic; a press keeps the choice per character and the picture follows at once, the badge
+     *  waits for the add-on's word (Sent); the add-on's word in: its mode */
+    @Test fun theDamageMetersBandHasThreeModes() {
+        val r = room(); game(); lay(r)
+        val p = partOf(r, GameUi.DMG_ID)
+        val t = tileBoxes(r).getValue(GameUi.DMG_ID)
+        tap(p, t.centerX(), t.centerY() - contentTop(r, p)!!); lay(r)
+        assertEquals(GameUi.DMG_ID, p.openTile)
+        val b = p.focusTargets().drop(p.tileIds().size)
+        assertEquals("On, Off, Dynamic", 3, b.size)
+        tap(p, b[2].centerX(), b[2].centerY()); lay(r)
+        assertEquals(UiMode.DYNAMIC, GameUi.dmgMode())
+        assertEquals(GameUiTiles.Badge.SENT, GameUiTiles.badge(rowOf(p, GameUi.DMG_ID)))
+        game(mt = mtDoc(d = "dyn")); lay(r)
+        assertEquals(GameUiTiles.Badge.DYNAMIC, GameUiTiles.badge(rowOf(p, GameUi.DMG_ID)))
+        assertEquals("Hidden now", rowOf(p, GameUi.DMG_ID)!!.note)
+        // another character: its own choice (none made: the add-on's word)
+        GameUi.character = "Other-Realm"
+        game(mt = mtDoc(d = "on")); GameUi.character = "Other-Realm"
+        assertEquals(UiMode.ON, GameUi.dmgMode())
+    }
+
+    /** the Cooldown Manager's band: its On / Off, then one On / Off line per part - only while it is On (a line that cannot act is not
+     *  drawn); A on a part's Off keeps the mask; Off: the four lines go, the cursor stays on the button pressed */
+    @Test fun theCooldownManagersPartsComeAndGoWithIt() {
+        val r = room(); game(); lay(r); hold(r)
+        val p = partOf(r, GameUi.CDM_ID)
+        val t = tileBoxes(r).getValue(GameUi.CDM_ID)
+        repeat(30) { if (r.pad.focusBox() != t) press(r, "PADDDOWN") }
+        repeat(6) { if (r.pad.focusBox() != t) press(r, "PADDRIGHT") }
+        assertEquals(t, r.pad.focusBox())
+        press(r, "PAD1")
+        assertEquals(GameUi.CDM_ID, p.openTile)
+        var b = p.focusTargets().drop(p.tileIds().size)
+        assertEquals("On / Off + 4 parts x On / Off", 2 + 4 * 2, b.size)
+        // Utility Off (the second part's Off)
+        tap(p, b[2 + 2 + 1].centerX(), b[2 + 2 + 1].centerY()); lay(r)
+        assertEquals(0b1101, GameUi.cdmParts())
+        assertEquals(UiMode.OFF, rowOf(p, GameUi.CDM_UTIL_ID)!!.mode)
+        // the tile Off: the parts' lines go
+        b = p.focusTargets().drop(p.tileIds().size)
+        tap(p, b[1].centerX(), b[1].centerY()); lay(r)
+        assertEquals(false, GameUi.cdmOn())
+        assertEquals("only its own On / Off", 2, p.focusTargets().drop(p.tileIds().size).size)
+        assertNull(rowOf(p, GameUi.CDM_ESS_ID))
+        // On again: the lines back, the mask kept
+        b = p.focusTargets().drop(p.tileIds().size)
+        tap(p, b[0].centerX(), b[0].centerY()); lay(r)
+        assertEquals(10, p.focusTargets().drop(p.tileIds().size).size)
+        assertEquals(0b1101, GameUi.cdmParts())
+        // B: the band closes, the cursor back on the tile
+        press(r, "PAD2")
+        assertNull(p.openTile)
+    }
+
+    /** the game's own option off: the alert_gear badge, the picture dimmed, "Off in the game's Options"; the buttons still take the
+     *  choice (it works once the option is on) */
+    @Test fun theGamesOptionOffWaits() {
+        val r = room(); game(mt = mtDoc(dok = false, cok = false)); lay(r)
+        val p = partOf(r, GameUi.DMG_ID)
+        val d = rowOf(p, GameUi.DMG_ID)!!
+        assertEquals(GameUi.GAME_OFF_NOTE, d.note)
+        assertEquals(GameUiTiles.Badge.GAME_OFF, GameUiTiles.badge(d))
+        assertTrue(GameUiTiles.dimmed(d))
+        assertEquals(GameUiTiles.Badge.GAME_OFF, GameUiTiles.badge(rowOf(p, GameUi.CDM_ID)))
+        val t = tileBoxes(r).getValue(GameUi.DMG_ID)
+        tap(p, t.centerX(), t.centerY() - contentTop(r, p)!!); lay(r)
+        val b = p.focusTargets().drop(p.tileIds().size)
+        tap(p, b[1].centerX(), b[1].centerY()); lay(r)
+        assertEquals("the choice kept", UiMode.OFF, GameUi.dmgMode())
+    }
+
+    /** Edit layout: a tile with no band; A (or a tap) opens the editor's page; there only once the add-on set has the editor */
+    @Test fun editLayoutOpensItsPage() {
+        val r = room(); game(); lay(r)
+        assertTrue(GameUiTiles.LAYOUT_ID !in tileBoxes(r))
+        layDoc(); r.refreshGroups(); lay(r)
+        val p = partOf(r, GameUiTiles.LAYOUT_ID)
+        var opened = 0
+        p.onEditLayout = { opened++ }
+        val t = tileBoxes(r).getValue(GameUiTiles.LAYOUT_ID)
+        tap(p, t.centerX(), t.centerY() - contentTop(r, p)!!); lay(r)
+        assertEquals(1, opened)
+        assertNull("no band", p.openTile)
+        assertEquals("the tile alone is a stop", 1, p.focusTargets().size)
+        hold(r)
+        press(r, "PADDDOWN")
+        assertEquals(t, r.pad.focusBox())
+        press(r, "PAD1")
+        assertEquals(2, opened)
+        assertNull(p.openTile)
+    }
+
+    /** the Cooldown Manager's row follows the add-on's word: Sent until it says so, then its mode; a press held for the fight says so
+     *  (the column sent is GameUiTilesTest's theMetersTapOnlyWhatWasChosen, the add-on's side tools/test_layout.py's o) */
+    @Test fun theMetersRowsFollowTheAddOnsWord() {
+        GameUi.init(app)
+        game()
+        GameUi.setCdm(false)
+        assertEquals(GameUiTiles.Badge.SENT, GameUiTiles.badge(GameUi.cdmRow()))
+        game(mt = mtDoc(c = false))
+        assertEquals(GameUiTiles.Badge.OFF, GameUiTiles.badge(GameUi.cdmRow()))
+        assertNull("its parts' lines go while Off", GameUi.cdmPartRow(GameUi.CDM_ESS_ID))
+        game(mt = mtDoc(c = false, q = true))
+        assertEquals("Changes when combat ends", GameUi.cdmRow()!!.note)
+        assertEquals(GameUiTiles.Badge.SENT, GameUiTiles.badge(GameUi.cdmRow()))
+    }
+
     // ---------------------------------------------------------------- in a window, as on the device (the views' posts run)
 
     /** the room in an activity's window: a view's post runs there (the band's reveal scroll, the add-on listeners' refresh), which a
@@ -560,12 +730,30 @@ class GameUiTilesRoomTest {
         // no kit on the phone yet: every picture our own sketch
         r = room(kit = false); game(); lay(r); shot("top_14_no_kit")
         open(GameUi.UFT_ID); shot("top_15_no_kit_band")
+        // hub61: the damage meter (Dynamic, the band's numbers), the Cooldown Manager (Utility off), each without the kit too
+        fun meters(kit: Boolean, sfx: String) {
+            r = room(kit = kit); game()
+            Icons.refresh()                                              // (no kit: the spell icons' pack goes with it)
+            GameUi.setDmg(UiMode.DYNAMIC); GameUi.setCdmPart(1, false); lay(r)
+            open(GameUi.DMG_ID); shot("top_16_band_damage_meter$sfx")
+            close(); open(GameUi.CDM_ID); shot("top_17_band_cooldown_manager$sfx")
+        }
+        meters(true, ""); meters(false, "_nokit"); art(); Icons.refresh()
+        // the game's option off: the alert_gear badges, the pictures dimmed, the status line
+        r = room(); game(mt = mtDoc(dok = false, cok = false)); lay(r)
+        open(GameUi.DMG_ID); shot("top_18_game_off")
+        // Edit layout's tile (the editor's own pieces), the compass following the camera, the HUD at its widest
+        r = room(); game(); layDoc(); r.refreshGroups(); lay(r); scroll(0); shot("top_19_layout_tile")
+        CompassSwitch.note(JSONObject().put("proof", JSONObject().put("compc", JSONObject().put("show", true).put("on", 1).put("off", 2)
+            .put("cam", true).put("camOn", 3).put("camOff", 4)))); lay(r)
+        open(GameUiSection.COMPASS_ID); shot("top_20_band_compass_cam")
+        close(); repeat(6) { GameUi.stepHudWidth(1) }; lay(r); open(GameUi.HUD_ID); shot("top_21_band_hud_wide")
         art()
         sheet(out, made)
         pictures(out)
     }
 
-    /** the 19 pictures at the band's size, each with its name: the review sheet */
+    /** the 22 pictures at the band's size, each with its name: the review sheet */
     private fun pictures(out: File) {
         GameUi.init(app); game()
         val ids = GameUiTiles.ALL
@@ -576,7 +764,8 @@ class GameUiTilesRoomTest {
         val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 22f }
         for ((i, id) in ids.withIndex()) {
             val x = pad + (i % cols) * (cw + pad); val y = pad + (i / cols) * (ch + label + pad)
-            val look = TilePictures.Look(mode = if (id == "hud") UiMode.NINTENDO else UiMode.ON, pet = true, hpText = 1, tot = true, cls = "SHAMAN")
+            val look = TilePictures.Look(mode = if (id == "hud") UiMode.NINTENDO else if (id == GameUi.DMG_ID) UiMode.DYNAMIC else UiMode.ON,
+                pet = true, hpText = 1, tot = true, cls = "SHAMAN", cdm = if (id == GameUi.CDM_ID) 0b1111 else 0b1111)
             TilePictures.draw(c, app, id, RectF(x.toFloat(), y.toFloat(), (x + cw).toFloat(), (y + ch).toFloat()), look)
             c.drawText("$id  (${GameUiTiles.NAMES[id]})", x.toFloat(), (y + ch + 24).toFloat(), tp)
         }

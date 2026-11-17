@@ -82,7 +82,9 @@ class SettingsTabsTest {
             G.PARTY to listOf("DS party frames", "Party frames"),
             G.NAVIGATION to listOf("Compass bar", "Compass follows the camera", "World markers", "Polestar on the top screen"),
             G.WINDOWS to listOf("Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window", "Game tooltips", "Cast bar",
-                "Player frame", "Target frame", "Controller bars, buffs and XP"),
+                "Player frame", "Target frame", "Controller bars, buffs and XP",
+                // hub61: the damage meter, the Cooldown Manager and its four parts
+                "Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars"),
             G.BUTTONS to listOf("ABXY location", "Button glyphs", "B: pet follow"),       // the user, 2026-11-16: B on Home, a pet class only
             G.WHEELS to listOf("Pause menu: open", "Pause menu: pick", "Start over game windows", "Item wheel: open", "Item wheel: pick", "Spell wheel: open",
                 "Spell wheel: pick", "Left class radial: open", "Left class radial: pick", "Right class radial: open", "Right class radial: pick"),
@@ -166,7 +168,9 @@ class SettingsTabsTest {
             // the user, 2026-11-16 ("maybe we just do an import addons button then?"): Add-ons > Imported
             listOf("Import add-ons") +
             // the user, 2026-11-16 (hold to talk on the DS toolbar's Chat): Bottom screen > Home, under the toolbar
-            listOf("Hold to talk", "On release")
+            listOf("Hold to talk", "On release") +
+            // hub61 (the user, 2026-11-17: "DPS meters and also the cooldown manager"): Top screen > Game windows
+            listOf("Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars")
         val now = B.values().flatMap { it.rows }
         // the layout editor (the user, 2026-11-16): HUD height and HUD scale are its page's now (its own row "Edit layout" opens it)
         assertEquals((before - setOf("HUD height", "HUD scale") + "Edit layout").toSet(), now.toSet())
@@ -221,7 +225,8 @@ class SettingsTabsTest {
             CastBarPolicy.HUD_HIDE, CastBarPolicy.HUD_LOWER, CastBarPolicy.HUD_HIGHER, CastBarPolicy.HUD_HDEF, CastBarPolicy.HUD_SEL))
         assertEquals(listOf("off", "low", "high"), Settings.AVOID_DANGER)
         // Top screen > Game windows: the approved order, by the rows' own ids
-        assertEquals(listOf("minimap", "tracker", "chat", "dialogs", "loot", "hidetips", "castbar", GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud"),
+        assertEquals(listOf("minimap", "tracker", "chat", "dialogs", "loot", "hidetips", "castbar", GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud",
+            GameUi.DMG_ID, GameUi.CDM_ID),                           // hub61: the meters after the controller bars
             GameUiSection.WINDOWS_ORDER)
     }
 
@@ -297,8 +302,8 @@ class SettingsTabsTest {
         // 11-16: Voice typing under the language (the user's pick: app-wide, like Language)
         assertEquals(listOf(B.THEME, B.LANGUAGE, B.VOICE, B.SCREENS, B.ACCOUNT, B.GAME_ACCOUNT, B.WINDOWS_ID, B.HELP), SettingsTabs.viewBlocks(T.GENERAL))   // + the status (GameUiSection)
         assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.BOTTOM))                            // under Home's section
-        // the layout editor's row (its page's Open); the rest, Polestar's included: GameUiSection's tiles
-        assertEquals(listOf(B.LAYOUT), SettingsTabs.viewBlocks(T.TOP))
+        // hub61: every Top screen block is GameUiSection's tiles now (Edit layout too; Polestar's included)
+        assertEquals(emptyList<B>(), SettingsTabs.viewBlocks(T.TOP))
         assertEquals(listOf(B.CONTROLLER, B.PET_B, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT, B.SMART_Y),
             SettingsTabs.viewBlocks(T.CONTROLLER))
         // only the wheels keep a sub-heading of their own inside their group
@@ -352,13 +357,13 @@ class SettingsPreviewRowsTest {
     @Test fun everyTopTileHasAPicture() {
         val missing = GameUiTiles.ALL.filter { it !in GameUiTiles.PICTURED }
         assertTrue("Top screen tiles with no picture: $missing", missing.isEmpty())
-        assertEquals(19, GameUiTiles.ALL.size)
+        assertEquals(22, GameUiTiles.ALL.size)                       // hub61: + Damage meter, Cooldown Manager, Edit layout
         val word = TopWords.WORD
         val shown = GameUiTiles.ALL + GameUiTiles.EXTRAS.values.flatten()
         assertEquals("each once", shown.size, shown.toSet().size)
-        // (the layout editor's "Edit layout" is SettingsView's row, not a tile; HUD height / scale moved into the editor)
-        val topRows = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP && it != SettingsTabs.Block.LAYOUT }.flatMap { it.rows }
-        assertEquals(25, topRows.size)
+        // (hub61: "Edit layout" is a tile now, the meters and the Cooldown Manager's four parts rows; HUD height / scale in the editor)
+        val topRows = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP }.flatMap { it.rows }
+        assertEquals(32, topRows.size)
         assertEquals(topRows.toSet(), shown.map { word.getValue(it) }.toSet())
         // and group by group: a group's tiles and their bands' rows are that group's rows
         for ((g, ids) in GameUiTiles.TILES) {
@@ -427,7 +432,9 @@ object TopWords {
         GameUiSection.COMPASS_CAM_ID to "Compass follows the camera", GameUi.WM_ID to "World markers", GameUiTiles.PS_ID to "Polestar on the top screen",
         "minimap" to "Minimap", "tracker" to "Quest tracker", "chat" to "Chat window", "dialogs" to "NPC windows", GameUiSection.LOOT_ID to "Loot window",
         GameUiSection.TIPS_ID to "Game tooltips", GameUi.CASTBAR_ID to "Cast bar", GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame",
-        "hud" to "Controller bars, buffs and XP")
+        "hud" to "Controller bars, buffs and XP", GameUi.DMG_ID to "Damage meter", GameUi.CDM_ID to "Cooldown Manager",
+        GameUi.CDM_ESS_ID to "Essential", GameUi.CDM_UTIL_ID to "Utility", GameUi.CDM_BICON_ID to "Buff icons", GameUi.CDM_BBAR_ID to "Buff bars",
+        GameUiTiles.LAYOUT_ID to "Edit layout")
 }
 
 /** test40 ("the tabs seem way too small for the text of each one"): every tab as wide as its label, a strip that scrolls when too wide */

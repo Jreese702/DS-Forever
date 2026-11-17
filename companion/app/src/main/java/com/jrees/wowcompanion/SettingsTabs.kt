@@ -90,7 +90,8 @@ object SettingsTabs {
         CHAT(Group.CHAT, "Chat", listOf("Message input")),
         // ---- Top screen (GameUiSection's parts: the same rows, ids, taps and channels as on QOL / Top screen before)
         // the layout editor's one row: its own page (LayoutView); shown once the add-on set has the editor (a "lay" document came)
-        LAYOUT(Group.LAYOUT, "Layout", listOf("Edit layout")),
+        // hub61 (the beautify design 7): drawn as a tile by GameUiSection's LAYOUT part ("Edit layout": A opens the page, no band)
+        LAYOUT(Group.LAYOUT, "Layout", listOf("Edit layout"), Drawer.GAME_UI),
         // HUD height and HUD scale moved into the layout editor (the design's pick); the width stays a row
         HUD(Group.HUD, "Your HUD", listOf("Resource bar", "Pet bar", "HUD width"), Drawer.GAME_UI),
         TARGET(Group.TARGET, "Target", listOf("Target bar", "Target health text", "Target of target", "Aggro tint", "Enemy nameplates", "Friendly plates"),
@@ -101,7 +102,9 @@ object SettingsTabs {
         // tiles): Navigation's third tile, drawn by Navigation's GameUiSection part (it was SettingsView's row)
         POLESTAR_TOP(Group.NAVIGATION, "Polestar on the top screen", listOf("Polestar on the top screen"), Drawer.GAME_UI),
         GAME_UI(Group.WINDOWS, "Game windows", listOf("Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window",
-            "Game tooltips", "Cast bar", "Player frame", "Target frame", "Controller bars, buffs and XP"), Drawer.GAME_UI),
+            "Game tooltips", "Cast bar", "Player frame", "Target frame", "Controller bars, buffs and XP",
+            // hub61: the damage meter, the Cooldown Manager and its four parts (its band's lines)
+            "Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars"), Drawer.GAME_UI),
         // ---- Controller
         CONTROLLER(Group.BUTTONS, "Buttons", listOf("ABXY location", "Button glyphs")),
         // the user, 2026-11-16 ("a pet class specific option where pressing B in the out of combat home menu basically stops the pet

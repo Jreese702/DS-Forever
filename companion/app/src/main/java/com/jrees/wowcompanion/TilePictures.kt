@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
@@ -34,7 +36,11 @@ object TilePictures {
 
     /** the choices a picture shows beyond the element itself; [cls] = your class (the party and player frames' icon), null = a sample */
     data class Look(val mode: UiMode = UiMode.ON, val pet: Boolean = true, val hpText: Int = 0, val tot: Boolean = false,
-                    val aggro: Boolean = true, val cls: String? = null)
+                    val aggro: Boolean = true, val cls: String? = null,
+                    /** hub61 (the beautify design 7's two Look gaps): the HUD's width against its default (the resource bar's width line;
+                     *  drawn 0.8..1.2), the compass following the camera (its band line), the Cooldown Manager's parts (bit 0 Essential,
+                     *  1 Utility, 2 Buff icons, 3 Buff bars) */
+                    val width: Float = 1f, val cam: Boolean = false, val cdm: Int = 0b1111)
 
     /** [id] has a picture of its own (the registry is GameUiTiles.PICTURED; the rest: the caller's glyph) */
     fun has(id: String): Boolean = id in GameUiTiles.PICTURED
@@ -43,6 +49,8 @@ object TilePictures {
     private val pS = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     private val pB = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
+    /** the picture is drawn at the band's size (sample numbers only there: in a tile they are 6 px noise) */
+    private var big = false
 
     /** [id]'s picture into [r] (its own rounded clip; the canvas left as it was). false = no picture of its own (nothing drawn) */
     fun draw(c: Canvas, ctx: Context?, id: String, r: RectF, look: Look): Boolean {
@@ -54,6 +62,7 @@ object TilePictures {
         val k = minOf(r.width() / W, r.height() / H)
         c.translate(r.centerX() - W * k / 2f, r.centerY() - H * k / 2f)
         c.scale(k, k)
+        big = k >= 1.5f
         world(c)
         runCatching { element(c, ctx, id, look) }
         c.restoreToCount(save)
@@ -81,7 +90,7 @@ object TilePictures {
             GameUi.NPF_ID -> friendlyPlates(c)
             GameUi.UFP_ID -> dsParty(c, ctx, look)
             GameUi.PARTY_ID -> gameParty(c, look)
-            GameUiSection.COMPASS_ID -> compass(c, ctx)
+            GameUiSection.COMPASS_ID -> compass(c, ctx, look.cam)
             GameUi.WM_ID -> worldMarkers(c, ctx)
             GameUiTiles.PS_ID -> polestar(c)
             "minimap" -> minimap(c, look)
@@ -94,6 +103,9 @@ object TilePictures {
             GameUi.PLAYER_ID -> unitFrame(c, look, target = false)
             GameUi.TARGET_ID -> unitFrame(c, look, target = true)
             "hud" -> controllerBars(c, look)
+            GameUi.DMG_ID -> damageMeter(c, look)
+            GameUi.CDM_ID -> cooldownManager(c, look)
+            GameUiTiles.LAYOUT_ID -> layoutMini(c)
         }
     }
 
@@ -103,8 +115,10 @@ object TilePictures {
     private fun resourceBar(c: Canvas, ctx: Context?, look: Look) {
         figure(c, 108f, 40f, 34f, Color.rgb(22, 24, 30))
         for (i in 0..2) aura(c, 124f + i * 13f, 24f, 11f, listOf(Color.rgb(70, 130, 220), Color.rgb(230, 190, 60), Color.rgb(120, 200, 90))[i])
-        val hp = RectF(38f, 47f, 174f, 60f)
-        val pw = RectF(38f, 60f, 174f, 68f)
+        // hub61: the width line's choice (the bar's own width against its default), drawn 0.8..1.2 round the centre
+        val half = 68f * look.width.coerceIn(0.8f, 1.2f)
+        val hp = RectF(106f - half, 47f, 106f + half, 60f)
+        val pw = RectF(106f - half, 60f, 106f + half, 68f)
         rim(c, ctx, RectF(hp.left, hp.top, hp.right, pw.bottom))
         bar(c, hp, 0.78f, Color.rgb(40, 200, 60))
         bar(c, pw, 0.62f, Color.rgb(40, 100, 230))
@@ -211,11 +225,12 @@ object TilePictures {
         figure(c, 156f, 96f, 32f, Color.rgb(22, 24, 30))
     }
 
-    /** our compass along the top: its dark band, the headings and ticks, the focused quest's disc with its distance */
-    private fun compass(c: Canvas, ctx: Context?) {
+    /** our compass along the top: its dark band, the headings and ticks, the focused quest's disc with its distance; [cam] = it follows
+     *  the camera (hub61: the strip turned 25 degrees, N off the centre; else N centred, your character's heading) */
+    private fun compass(c: Canvas, ctx: Context?, cam: Boolean = false) {
         MediaArt.get(ctx, "compass_band")?.let { c.drawBitmap(it, null, RectF(-10f, 4f, W + 10f, 44f), pB) }
             ?: run { pF.color = Color.argb(140, 0, 0, 0); c.drawRect(0f, 12f, W, 36f, pF) }
-        compassTicks(c, 18f, alpha = 255, big = true)
+        compassTicks(c, 18f, alpha = 255, big = true, shift = if (cam) -25f * 50f / 45f else 0f)
         val disc = MediaArt.get(ctx, "quest_disc")
         val dr = RectF(136f, 13f, 150f, 27f)
         if (disc != null) c.drawBitmap(disc, null, dr, pB) else disc(c, dr.centerX(), dr.centerY(), 7f, Color.rgb(240, 180, 30))
@@ -473,6 +488,210 @@ object TilePictures {
         figure(c, 108f, 90f, 40f, Color.rgb(22, 24, 30))
     }
 
+    // ---------------------------------------------------------------- hub61: the damage meter, the Cooldown Manager, Edit layout
+
+    /** a sample spell icon set per class (icons.pak fileIDs: 4 Essential, 3 Utility, 2 buffs), so the picture is your class's look */
+    private val CLASS_SPELLS = mapOf(
+        "SHAMAN" to listOf(136048, 136026, 135813, 136042, 136012, 136052, 136104, 136051, 136081),
+        "MAGE" to listOf(135846, 135808, 135848, 135736, 135857, 135827, 135987, 135963, 136096),
+        "WARRIOR" to listOf(132355, 132337, 132363, 132333, 132155, 132212, 132090, 132333, 135891),
+        "PALADIN" to listOf(135891, 135920, 135928, 135963, 135907, 135953, 135987, 135963, 136104),
+        "PRIEST" to listOf(135907, 136207, 135953, 135987, 135920, 136145, 136139, 135987, 135953),
+        "ROGUE" to listOf(132292, 132090, 132155, 132115, 132212, 132222, 132363, 132333, 132292),
+        "HUNTER" to listOf(132157, 132212, 132222, 132179, 132337, 132355, 136104, 132333, 132179),
+        "WARLOCK" to listOf(136197, 136139, 136145, 135827, 136207, 135808, 135987, 135827, 136139),
+        "DRUID" to listOf(136096, 136081, 132115, 136104, 136048, 135857, 136081, 136104, 132115))
+    /** the icons' stand-in colours (no icons.pak on the phone yet): rounded squares in the icons' own hues */
+    private val ICON_HUES = listOf(Color.rgb(80, 120, 210), Color.rgb(200, 120, 50), Color.rgb(200, 70, 50), Color.rgb(90, 170, 90),
+        Color.rgb(170, 90, 200), Color.rgb(70, 160, 180), Color.rgb(120, 170, 70), Color.rgb(210, 180, 70), Color.rgb(90, 140, 200))
+
+    /** the game's damage meter on the right of the screen: its dark window and header, 4 class-coloured bars (your class first; fixed
+     *  sample shares 100 / 78 / 58 / 40 %), each with its class icon and a short grey name bar; the sample numbers only at the band's
+     *  size; Dynamic = the fight's crossed swords in the header (it shows in a fight and 15 s after) */
+    private fun damageMeter(c: Canvas, look: Look) {
+        figure(c, 42f, 102f, 34f, Color.rgb(22, 24, 30))
+        val win = RectF(84f, 6f, 210f, 102f)
+        val bg = UiKit.tex("dmg_bg")
+        if (bg != null) { pB.alpha = 215; c.drawBitmap(bg, null, win, pB); pB.alpha = 255 }
+        else { pF.color = Color.argb(180, 0, 0, 0); c.drawRoundRect(win, 3f, 3f, pF) }
+        val head = RectF(win.left, win.top, win.right, win.top + 13f)
+        val hb = UiKit.tex("dmg_header")
+        if (hb != null) c.drawBitmap(hb, null, head, pB)
+        else {
+            pF.color = Color.argb(220, 58, 42, 12); c.drawRect(head, pF)
+            pS.color = Color.rgb(200, 160, 60); pS.strokeWidth = 0.8f; c.drawLine(head.left, head.bottom, head.right, head.bottom, pS)
+        }
+        // the header's title, a short light bar (no words in a tile)
+        pF.color = Color.argb(210, 235, 215, 160); c.drawRoundRect(RectF(head.left + 6f, head.centerY() - 1.6f, head.left + 42f, head.centerY() + 1.6f), 1f, 1f, pF)
+        // (beside the title, clear of the tile's badge corner)
+        if (look.mode == UiMode.DYNAMIC) swords(c, head.left + 54f, head.centerY(), 4.4f, Color.rgb(255, 210, 0))
+        val own = (look.cls ?: "SHAMAN").uppercase()
+        val classes = (listOf(own) + listOf("WARRIOR", "MAGE", "PRIEST", "ROGUE").filter { it != own }).take(4)
+        val fills = listOf(1f, 0.78f, 0.58f, 0.40f)
+        val nums = listOf("1.2K", "948", "702", "481")
+        for (i in 0..3) {
+            val y = head.bottom + 4f + i * 20f
+            val row = RectF(win.left + 4f, y, win.right - 4f, y + 16f)
+            classIcon(c, classes[i], RectF(row.left, row.top, row.left + 16f, row.bottom))
+            val bar = RectF(row.left + 18f, row.top, row.right, row.bottom)
+            UiKit.tex("dmg_bar_bg")?.let { c.drawBitmap(it, null, bar, pB) } ?: run { pF.color = Color.argb(160, 30, 28, 40); c.drawRoundRect(bar, 2f, 2f, pF) }
+            val col = CLASS_COLOURS[classes[i]] ?: Color.rgb(160, 160, 160)
+            val fr = RectF(bar.left + 1f, bar.top + 1f, bar.left + 1f + (bar.width() - 2f) * fills[i], bar.bottom - 1f)
+            pF.shader = LinearGradient(0f, fr.top, 0f, fr.bottom, lighter(col), darker(col), Shader.TileMode.CLAMP)
+            c.drawRoundRect(fr, 1.5f, 1.5f, pF); pF.shader = null
+            UiKit.tex("dmg_bar_edge")?.let { c.drawBitmap(it, null, bar, pB) }
+            // the name: a short grey bar (sample data has no words)
+            pF.color = Color.argb(190, 245, 245, 245); c.drawRoundRect(RectF(bar.left + 4f, bar.centerY() - 1.6f, bar.left + 4f + 20f + (i % 2) * 7f, bar.centerY() + 1.6f), 1f, 1f, pF)
+            if (big) {
+                val p = UiKit.numberPaint(7.5f, Color.WHITE, shadow = false)
+                p.textAlign = Paint.Align.RIGHT
+                c.drawText(nums[i], bar.right - 3f, bar.centerY() + 2.7f, p)
+            }
+        }
+    }
+
+    /** the game's Cooldown Manager under your character: Essential (4 of your class's spells, 30 px, one cooling down: the 60 % sweep),
+     *  Utility (3 at 22 px), Buff icons (2 at 20 px, top right), Buff bars (2 bars with their pips, 10 px tall, top left); each part only
+     *  while its bit is on */
+    private fun cooldownManager(c: Canvas, look: Look) {
+        fun on(b: Int) = (look.cdm shr b) and 1 == 1
+        val ids = CLASS_SPELLS[(look.cls ?: "SHAMAN").uppercase()] ?: CLASS_SPELLS.getValue("SHAMAN")
+        figure(c, 108f, 108f, 16f, Color.rgb(22, 24, 30))
+        if (on(3)) for (i in 0..1) {
+            val y = 10f + i * 15f
+            cdmIcon(c, ids[7 + i], RectF(10f, y, 20f, y + 10f), 7 + i)
+            val bar = RectF(23f, y, 96f, y + 10f)
+            UiKit.tex("cdm_bar_bg")?.let { c.drawBitmap(it, null, RectF(bar.left - 1f, bar.top - 1f, bar.right + 1f, bar.bottom + 1f), pB) }
+                ?: run { pF.color = Color.argb(200, 30, 30, 28); c.drawRoundRect(bar, 2f, 2f, pF) }
+            val f = listOf(0.72f, 0.44f)[i]
+            val fr = RectF(bar.left + 1f, bar.top + 1.5f, bar.left + 1f + (bar.width() - 2f) * f, bar.bottom - 1.5f)
+            val tint = listOf(Color.rgb(255, 176, 40), Color.rgb(120, 190, 255))[i]
+            val fill = UiKit.tex("cdm_bar")
+            if (fill != null) { pB.colorFilter = PorterDuffColorFilter(tint, PorterDuff.Mode.MULTIPLY); c.drawBitmap(fill, null, fr, pB); pB.colorFilter = null }
+            else { pF.color = tint; c.drawRect(fr, pF) }
+            val pip = UiKit.tex("cdm_bar_pip")
+            if (pip != null) c.drawBitmap(pip, null, RectF(fr.right - 2f, bar.top - 3f, fr.right + 2f, bar.bottom + 3f), pB)
+            else { pF.color = Color.rgb(250, 240, 120); c.drawRect(fr.right - 0.8f, bar.top, fr.right + 0.8f, bar.bottom, pF) }
+        }
+        if (on(2)) for (i in 0..1) { val x = 160f + i * 24f; cdmIcon(c, ids[7 + i], RectF(x, 8f, x + 20f, 28f), 7 + i) }
+        if (on(0)) for (i in 0..3) { val x = 42f + i * 34f; cdmIcon(c, ids[i], RectF(x, 38f, x + 30f, 68f), i, sweep = if (i == 2) 0.6f else 0f) }
+        if (on(1)) for (i in 0..2) { val x = 71f + i * 26f; cdmIcon(c, ids[4 + i], RectF(x, 76f, x + 22f, 98f), 4 + i) }
+    }
+
+    /** one Cooldown Manager icon: the spell's icon (icons.pak) in the game's rounded mask, a cooldown's dark sweep, the kit's overlay
+     *  frame round it; without the pack a rounded square in the icon's hue */
+    private fun cdmIcon(c: Canvas, fid: Int, r: RectF, slot: Int, sweep: Float = 0f) {
+        val rad = r.width() * 0.14f
+        val save = c.save()
+        path.reset(); path.addRoundRect(r, rad, rad, Path.Direction.CW); c.clipPath(path)
+        val b = runCatching { Icons.get(fid) }.getOrNull() ?: UiKit.icon(fid)
+        if (b != null) {
+            val ix = b.width * 0.07f; val iy = b.height * 0.07f
+            c.drawBitmap(b, Rect(ix.toInt(), iy.toInt(), (b.width - ix).toInt(), (b.height - iy).toInt()), r, pB)
+        } else {
+            val hue = ICON_HUES[slot % ICON_HUES.size]
+            pF.shader = LinearGradient(0f, r.top, 0f, r.bottom, lighter(hue), darker(hue), Shader.TileMode.CLAMP); c.drawRect(r, pF); pF.shader = null
+        }
+        if (sweep > 0f) {
+            // the cooldown's dark pie from 12 o'clock, clockwise (a path: the same on every canvas)
+            pF.color = Color.argb(200, 0, 0, 0)
+            val e = r.width() * 0.3f
+            val pie = Path()
+            pie.moveTo(r.centerX(), r.centerY())
+            pie.arcTo(RectF(r.left - e, r.top - e, r.right + e, r.bottom + e), -90f, 360f * sweep, false)
+            pie.close()
+            c.drawPath(pie, pF)
+            // the sweep's bright edge (the game's cooldown edge), from the centre to where the dark part ends
+            val a = Math.toRadians((-90.0 + 360.0 * sweep))
+            pS.color = Color.argb(230, 255, 236, 170); pS.strokeWidth = (r.width() * 0.05f).coerceAtLeast(0.8f)
+            c.drawLine(r.centerX(), r.centerY(), r.centerX() + (r.width() * kotlin.math.cos(a)).toFloat(), r.centerY() + (r.width() * kotlin.math.sin(a)).toFloat(), pS)
+        }
+        c.restoreToCount(save)
+        val ov = UiKit.tex("cdm_icon_overlay")
+        if (ov != null) { val e = r.width() * 0.2f; c.drawBitmap(ov, null, RectF(r.left - e, r.top - e, r.right + e, r.bottom + e), pB) }
+        else { pS.color = Color.argb(230, 0, 0, 0); pS.strokeWidth = 1.2f; c.drawRoundRect(r, rad, rad, pS) }
+    }
+
+    /** two crossed swords (the fight), centred at ([cx], [cy]), [s] half their length */
+    private fun swords(c: Canvas, cx: Float, cy: Float, s: Float, col: Int) {
+        pS.color = col; pS.strokeWidth = 1.1f
+        c.drawLine(cx - s, cy + s, cx + s, cy - s, pS); c.drawLine(cx - s, cy - s, cx + s, cy + s, pS)
+        pS.strokeWidth = 0.9f
+        c.drawLine(cx - s * 0.75f, cy + s * 0.25f, cx - s * 0.25f, cy + s * 0.75f, pS)
+        c.drawLine(cx + s * 0.75f, cy + s * 0.25f, cx + s * 0.25f, cy + s * 0.75f, pS)
+    }
+
+    /** sample pieces for Edit layout's miniature before the editor's first document (1080-line px on a 1920 x 1080 top screen) */
+    private val SAMPLE_PIECES = listOf("compass" to LayoutModel.Rect(530.0, 4.0, 860.0, 76.0), "target" to LayoutModel.Rect(760.0, 90.0, 400.0, 44.0),
+        "party" to LayoutModel.Rect(24.0, 300.0, 230.0, 250.0), "chat" to LayoutModel.Rect(24.0, 790.0, 520.0, 170.0),
+        "hud" to LayoutModel.Rect(820.0, 880.0, 280.0, 44.0), "nbar" to LayoutModel.Rect(600.0, 930.0, 720.0, 140.0))
+
+    /** Edit layout: the layout editor's miniature (the top screen 16:9), the pieces that are on in Edit Mode's blue (from the editor's
+     *  own document, else a sample), the Resource bar picked in gold with the four move arrows */
+    private fun layoutMini(c: Canvas) {
+        val scr = RectF(12f, 2f, 204f, 106f)
+        pF.color = Color.argb(70, 0, 0, 0); c.drawRect(scr, pF)
+        pS.color = Color.argb(46, 220, 220, 220); pS.strokeWidth = 0.5f
+        for (i in 1..7) { val x = scr.left + scr.width() * i / 8f; c.drawLine(x, scr.top, x, scr.bottom, pS) }
+        for (i in 1..3) { val y = scr.top + scr.height() * i / 4f; c.drawLine(scr.left, y, scr.right, y, pS) }
+        pS.color = Color.argb(110, 230, 230, 230); pS.strokeWidth = 0.7f
+        c.drawLine(scr.centerX(), scr.top, scr.centerX(), scr.bottom, pS); c.drawLine(scr.left, scr.centerY(), scr.right, scr.centerY(), pS)
+        val d = LayoutModel.Live.doc
+        val pieces = d?.let { doc -> LayoutModel.listed(doc).map { it.id to it.rect } }?.takeIf { it.isNotEmpty() } ?: SAMPLE_PIECES
+        val sw = (d?.w ?: 1920.0).takeIf { it > 0 } ?: 1920.0
+        val sh = (d?.h ?: 1080.0).takeIf { it > 0 } ?: 1080.0
+        val kx = scr.width() / sw.toFloat(); val ky = scr.height() / sh.toFloat()
+        val pick = pieces.firstOrNull { it.first == "hud" }?.first ?: pieces.first().first
+        for ((id, rr) in pieces) {
+            val b = RectF(scr.left + rr.x.toFloat() * kx, scr.top + rr.y.toFloat() * ky, scr.left + rr.right.toFloat() * kx, scr.top + rr.bottom.toFloat() * ky)
+            val sel = id == pick
+            val col = if (sel) Color.rgb(255, 200, 40) else Color.rgb(70, 150, 255)
+            pF.color = (col and 0x00FFFFFF) or (if (sel) 0x50000000 else 0x34000000); c.drawRect(b, pF)
+            layoutPiece(c, id, b)
+            pS.color = col; pS.strokeWidth = if (sel) 1.4f else 1f; c.drawRect(b, pS)
+            if (sel) {
+                // the four move arrows round the picked piece
+                pF.color = col
+                val ax = b.centerX(); val ay = b.centerY(); val g = 5f
+                tri(c, ax, b.top - g - 5f, ax - 3.5f, b.top - g, ax + 3.5f, b.top - g)
+                tri(c, ax, b.bottom + g + 5f, ax - 3.5f, b.bottom + g, ax + 3.5f, b.bottom + g)
+                tri(c, b.left - g - 5f, ay, b.left - g, ay - 3.5f, b.left - g, ay + 3.5f)
+                tri(c, b.right + g + 5f, ay, b.right + g, ay - 3.5f, b.right + g, ay + 3.5f)
+            }
+        }
+        pS.color = Color.argb(200, 176, 150, 100); pS.strokeWidth = 1.2f; c.drawRect(scr, pS)
+    }
+
+    /** a piece drawn small in its box (LayoutView's schematic, at the tile's size): the HUD's two bars, the compass's ticks, the target's
+     *  red bar, the party's rows, the Nintendo bar's two diamonds, the chat's lines */
+    private fun layoutPiece(c: Canvas, id: String, r: RectF) {
+        when (id) {
+            "hud" -> {
+                pF.color = Color.rgb(40, 190, 60); c.drawRect(r.left + 1f, r.top + 1f, r.right - 1f, r.centerY(), pF)
+                pF.color = Color.rgb(40, 100, 230); c.drawRect(r.left + 1f, r.centerY() + 0.6f, r.right - 1f, r.bottom - 1f, pF)
+            }
+            "compass" -> {
+                pS.color = Color.argb(200, 210, 190, 130); pS.strokeWidth = 0.6f
+                val n = 14
+                for (i in 1 until n) { val x = r.left + r.width() * i / n; c.drawLine(x, r.centerY() - 1.4f, x, r.centerY() + 1.4f, pS) }
+            }
+            "target" -> { pF.color = Color.rgb(200, 34, 28); c.drawRect(r.left + r.height(), r.centerY() - 1.2f, r.right - 1f, r.bottom - 1f, pF) }
+            "party" -> for (i in 0 until 4) {
+                val y = r.top + r.height() * (i + 0.5f) / 4f
+                pF.color = Color.rgb(40, 190, 60); c.drawRect(r.left + r.width() * 0.3f, y - 1f, r.right - r.width() * 0.1f, y + 1f, pF)
+            }
+            "nbar" -> for (side in listOf(0.25f, 0.75f)) {
+                val cx = r.left + r.width() * side; val cy = r.centerY(); val rr = (r.height() * 0.13f).coerceAtLeast(0.8f)
+                pF.color = Color.rgb(150, 126, 90)
+                for ((ox, oy) in listOf(-1f to 0f, 1f to 0f, 0f to -1f, 0f to 1f)) c.drawCircle(cx + ox * rr * 2.2f, cy + oy * rr * 2.2f, rr, pF)
+            }
+            "chat" -> {
+                pS.color = Color.argb(170, 220, 210, 190); pS.strokeWidth = 0.7f
+                for (i in 1..3) { val y = r.bottom - r.height() * 0.2f * i; c.drawLine(r.left + 2f, y, r.left + r.width() * (0.85f - 0.15f * i), y, pS) }
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- pieces
 
     /** a character in the world, from behind: head, shoulders, body, legs; [foot] = where it stands, [h] tall */
@@ -579,13 +798,17 @@ object TilePictures {
         "ROGUE" to Color.rgb(255, 244, 104), "PRIEST" to Color.rgb(255, 255, 255), "SHAMAN" to Color.rgb(0, 112, 221), "MAGE" to Color.rgb(63, 199, 235),
         "WARLOCK" to Color.rgb(135, 136, 238), "DRUID" to Color.rgb(255, 124, 10))
 
-    /** the compass's headings and ticks across the picture at [y] */
-    private fun compassTicks(c: Canvas, y: Float, alpha: Int, big: Boolean = false) {
-        val words = listOf("W", "NW", "N", "NE", "E")
+    /** the compass's headings and ticks across the picture at [y]; [shift] = the strip moved (px; 50 px = 45 degrees), N then off the
+     *  centre (hub61: the camera); 0 = N centred, as before */
+    private fun compassTicks(c: Canvas, y: Float, alpha: Int, big: Boolean = false, shift: Float = 0f) {
+        val words = listOf("S", "SW", "W", "NW", "N", "NE", "E", "SE", "S")
         pS.color = Color.argb(alpha, 210, 210, 210); pS.strokeWidth = if (big) 0.9f else 0.6f
-        for (i in 0..16) { val x = 8f + i * 12.5f; c.drawLine(x, y - (if (big) 3f else 2f), x, y + (if (big) 3f else 2f), pS) }
-        for ((i, w) in words.withIndex()) text(c, w, 8f + i * 50f, y + (if (big) 14f else 9f), if (big) 8.5f else 6f,
-            Color.argb(alpha, 230, 230, 230), center = true)
+        for (j in -24..24) { val x = 108f + j * 12.5f + shift; if (x < 7.9f || x > 208.1f) continue; c.drawLine(x, y - (if (big) 3f else 2f), x, y + (if (big) 3f else 2f), pS) }
+        for ((i, w) in words.withIndex()) {
+            val x = 108f + (i - 4) * 50f + shift
+            if (x < 7.9f || x > 208.1f) continue
+            text(c, w, x, y + (if (big) 14f else 9f), if (big) 8.5f else 6f, Color.argb(alpha, 230, 230, 230), center = true)
+        }
     }
 
     /** a four-point star (Polestar's mark) */
@@ -616,6 +839,8 @@ object TilePictures {
     // ---------------------------------------------------------------- the badge and the modes' signs
 
     private val pBadge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    /** the kit's art greyed and darkened (the GAME_OFF badge: the game's option is off, nothing of ours is wrong) */
+    private val DIM_ART = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f); postConcat(ColorMatrix().apply { setScale(0.62f, 0.62f, 0.62f, 1f) }) })
 
     /** the tile's 36 px badge: a dark disc in a thin metal ring, the mode's sign (or the game's state) on it */
     fun badge(c: Canvas, r: RectF, b: GameUiTiles.Badge) {
@@ -624,6 +849,7 @@ object TilePictures {
         pBadge.strokeWidth = 2f; pBadge.color = Color.argb(220, 150, 126, 90); c.drawCircle(cx, cy, rad - 1f, pBadge)
         val col = when (b) {
             GameUiTiles.Badge.OFF, GameUiTiles.Badge.WAITING -> Theme.textDim
+            GameUiTiles.Badge.GAME_OFF -> Theme.dim
             GameUiTiles.Badge.REFUSED -> Color.rgb(235, 70, 50)
             GameUiTiles.Badge.SENT -> Theme.soft
             else -> Theme.gold
@@ -650,6 +876,25 @@ object TilePictures {
                 pF.color = col; c.drawCircle(cx, cy + 7f * s, 1.8f * s, pF)
             }
             GameUiTiles.Badge.WAITING -> { pF.color = col; for (i in -1..1) c.drawCircle(cx + i * 6f * s, cy, 1.9f * s, pF) }
+            GameUiTiles.Badge.GAME_OFF -> {
+                // hub61: the game's own option is off - the kit's alert_gear, greyed down to the dim colour; else a drawn gear
+                val g = UiKit.tex("alert_gear")
+                if (g != null) {
+                    pB.colorFilter = DIM_ART
+                    val h = rad * 0.72f
+                    c.drawBitmap(g, null, RectF(cx - h, cy - h, cx + h, cy + h), pB)
+                    pB.colorFilter = null
+                } else {
+                    pBadge.strokeWidth = 2f
+                    c.drawCircle(cx, cy, 5f * s, pBadge)
+                    for (k in 0 until 8) {
+                        val a = Math.toRadians(k * 45.0)
+                        c.drawLine(cx + (5f * s * kotlin.math.cos(a)).toFloat(), cy + (5f * s * kotlin.math.sin(a)).toFloat(),
+                            cx + (8f * s * kotlin.math.cos(a)).toFloat(), cy + (8f * s * kotlin.math.sin(a)).toFloat(), pBadge)
+                    }
+                    pF.color = col; c.drawCircle(cx, cy, 1.8f * s, pF)
+                }
+            }
         }
     }
 
