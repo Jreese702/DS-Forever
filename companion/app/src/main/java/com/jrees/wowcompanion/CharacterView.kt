@@ -594,10 +594,14 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     /** C6: a Replace sent and not seen in the slot yet */
     private var watch: SlideOut.Watch? = null
 
-    private fun railEntries(slot: Int) = SlideOut.entries(railPicks(slot), slot, wornHas(slot), SlideOut.swaps(slot, worn(), dualWield()))
+    // char-popout-current (the user, 2026-11-16: "the cursor should be able to go back to the currently equipped item in the swap menu"):
+    // the worn piece first, the cursor starts on it; A keeps it (the rail goes back in, nothing changes)
+    private fun railEntries(slot: Int) =
+        SlideOut.entries(railPicks(slot), slot, wornHas(slot), SlideOut.swaps(slot, worn(), dualWield()), current = true)
 
     /** why entry [e] can't go into [slot] now (null = it can): the route table, Bags full, the pad's cells */
     private fun railWhy(e: SlideOut.Entry, slot: Int): String? {
+        if (e.current) return null
         val routed = when {
             e.swap -> model.setPad?.swapArm != null && routePad() != null           // char-popout: the add-on's swap arm, Bags' bmvq row
             e.blank -> model.setPad?.unequip != null && routePad() != null
@@ -649,6 +653,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val slot = railFor ?: return
         val e = railEntries(slot).getOrNull(i) ?: return
         railWhy(e, slot)?.let { kitSay(it); return }           // G4: greyed: the reason, nothing tapped
+        if (e.current) { closeRail(); return }                  // char-popout-current: Keep: back in, no change
         e.from?.let { from -> swapWorn(i, from, slot); return }
         val p = e.pick
         if (p == null) {
@@ -717,6 +722,10 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val one = Doll.Layout(mapOf(slot to r), r.bottom)
         val p = e.pick
         when {
+            e.current -> {                                       // char-popout-current: the worn piece, marked as worn
+                Doll.draw(c, one, worn(), ammo = equipped?.optJSONObject("ammo"))
+                UiKit.wornMark(c, r)
+            }
             e.swap -> Doll.draw(c, one, mapOf(slot to (worn()[e.from!!] ?: JSONObject())))     // char-popout: the other slot's piece
             p == null -> Doll.draw(c, one, emptyMap(), relic = equipped?.optBoolean("relic") == true)
             slot == WornReplace.AMMO -> Doll.draw(c, one, emptyMap(), ammo = p.row)
@@ -811,8 +820,9 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val e = railEntries(slot).getOrNull(railSel) ?: return
         val p = e.pick
         val card = SlideOut.card(e, slot, p?.let { bagTip(it.bag, it.slot) }, worn(), dualWield(),
-            BagsCompare.Words(empty = Tr.t("Empty"), changes = Tr.t("Stat changes")))
+            BagsCompare.Words(empty = Tr.t("Empty"), changes = Tr.t("Stat changes")), ammo = equipped?.optJSONObject("ammo"))
         val lines = ArrayList(TipStack.lines(card.lines, false))
+        if (e.current) lines.add(0, UiKit.TipLine(Tr.t("Equipped"), Theme.gold))     // char-popout-current: the worn piece's card
         railWhy(e, slot)?.let { lines.add(UiKit.TipLine(Tr.t(it), Theme.unusable)) }
         val title = if (card.quality < 0) Tr.t(card.title) else card.title
         val colour = if (card.quality < 0) Theme.gold else Theme.quality(card.quality)
@@ -824,7 +834,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         UiKit.tooltip(c, r.left, top, r.width(), title, colour, lines, scale = s)
         c.restore()
         val hy = r.bottom - 40f
-        val hs = UiKit.hints(c, r.right - 8f, hy, "rev_a" to (if (e.blank) WornMore.UNEQUIP else if (e.swap) "Swap" else "Equip"),
+        val hs = UiKit.hints(c, r.right - 8f, hy, "rev_a" to (if (e.current) "Keep" else if (e.blank) WornMore.UNEQUIP else if (e.swap) "Swap" else "Equip"),
             UiKit.backGlyph() to "Back")
         // review (rooms the same on every route): a finger on the card's A / B does what the pad's A / B do (it closed the rail before:
         // any touch off an icon was B, so tapping "A Equip" took the rail away)

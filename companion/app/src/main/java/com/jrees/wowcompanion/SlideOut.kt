@@ -31,6 +31,11 @@ import org.json.JSONObject
  *    one-hander into the off hand only for a class that dual wields; main-hand-only weapons, two-handers, shields and held-in-off-hand
  *    pieces never cross; rings and trinkets always). Picking it swaps the two (Bags.lua's bagsSwapWorn, Character c20's arm), out of a
  *    fight only (char-popout2, THE USER 2026-11-16 picked "Allow it in fights": the two hands' swap in a fight too, [combatSwap]); what this slot wears goes into the other slot when it may, else into the bags ("Bags full" when there is no room).
+ *  - char-popout-current THE WORN PIECE (the user, 2026-11-16: "the cursor should be able to go back to the currently equipped item in
+ *    the swap menu"): a worn slot's rail starts with what it wears now ([Entry.current]: first, beside the slot, a gold edge and a
+ *    tick), the cursor starts on it and can come back to it; its card is the worn piece's tooltip, no stat changes, "Equipped" over it;
+ *    its A is "Keep": the rail goes back in, nothing changes. Never greyed. The blank stays last. The Bags room's target row lists worn
+ *    slots, not a slot's options, so it has no such tile.
  */
 object SlideOut {
     /** the icons a rail shows at once (C4: four fit from a side column, a fifth would cover the other column) */
@@ -52,17 +57,19 @@ object SlideOut {
         else -> Dir.UP
     }
 
-    /** one entry of a rail: a bag piece, the blank ([pick] null: what is worn comes off), or char-popout's swap ([from]: the worn slot
-     *  whose piece comes here) */
-    data class Entry(val pick: WornReplace.Pick?, val from: Int? = null) {
-        val blank get() = pick == null && from == null
+    /** one entry of a rail: a bag piece, the blank ([pick] null: what is worn comes off), char-popout's swap ([from]: the worn slot
+     *  whose piece comes here), or char-popout-current's worn piece ([current]: what the slot wears now; A keeps it) */
+    data class Entry(val pick: WornReplace.Pick?, val from: Int? = null, val current: Boolean = false) {
+        val blank get() = pick == null && from == null && !current
         val swap get() = from != null
     }
 
-    /** the rail of worn [slot]: char-popout's [swaps] first (the other slot's piece), then [picks] in their order, then the blank (G7:
-     *  last) when something is worn there; ammo has no blank */
-    fun entries(picks: List<WornReplace.Pick>, slot: Int, worn: Boolean, swaps: List<Int> = emptyList()): List<Entry> =
-        swaps.map { Entry(null, it) } + picks.map { Entry(it) } + if (worn && slot in 1..19) listOf(Entry(null)) else emptyList()
+    /** the rail of worn [slot]: char-popout-current's worn piece first when [current] and something is worn there (ammo too), then
+     *  char-popout's [swaps] (the other slot's piece), then [picks] in their order, then the blank (G7: last) when something is worn
+     *  there; ammo has no blank */
+    fun entries(picks: List<WornReplace.Pick>, slot: Int, worn: Boolean, swaps: List<Int> = emptyList(), current: Boolean = false): List<Entry> =
+        (if (current && worn) listOf(Entry(null, current = true)) else emptyList()) +
+            swaps.map { Entry(null, it) } + picks.map { Entry(it) } + if (worn && slot in 1..19) listOf(Entry(null)) else emptyList()
 
     /** char-popout: the other slot of a pair (the hands, the rings, the trinkets), or null */
     fun partner(slot: Int): Int? = when (slot) {
@@ -166,6 +173,7 @@ object SlideOut {
      */
     fun why(e: Entry, slot: Int, combat: Boolean, window: Boolean, freeGeneral: Int?, worn: Map<Int, JSONObject>, routed: Boolean,
             dualWield: Boolean = false): String? {
+        if (e.current) return null                  // char-popout-current: keeping what is worn is always allowed
         e.from?.let { from ->
             // char-popout: a swap is out of a fight, except (char-popout2, THE USER 2026-11-16 picked "Allow it in fights": "the hand
             // swap works in combat; if the game refuses, the pop-out says so") the two hands' swap, as weapon Unequip is ([combatSwap])
@@ -217,7 +225,8 @@ object SlideOut {
      * else null: the short card. [worn] = slot -> the add-on's equipped row. The blank: "Unequip", the worn piece's name, its losses.
      */
     fun card(e: Entry, slot: Int, tip: JSONObject?, worn: Map<Int, JSONObject>, dualWield: Boolean,
-             words: BagsCompare.Words = BagsCompare.Words()): Card {
+             words: BagsCompare.Words = BagsCompare.Words(), ammo: JSONObject? = null): Card {
+        if (e.current) return wornCard(if (slot == WornReplace.AMMO) ammo else worn[slot])
         e.from?.let { return swapCard(it, slot, worn, dualWield) }
         val p = e.pick
         if (p == null) {
@@ -250,7 +259,15 @@ object SlideOut {
     /** char-popout: a swap's card: the other slot's piece as the room shows a worn piece (the game's tooltip lines it keeps, `tip`; else
      *  its name and stats), and when what this slot wears goes to the bags, its losses at the foot */
     private fun swapCard(from: Int, slot: Int, worn: Map<Int, JSONObject>, dualWield: Boolean): Card {
-        val w = worn[from]
+        val c = wornCard(worn[from])
+        if (!swapNeedsRoom(slot, from, worn, dualWield)) return c
+        for (l in BagsCompare.diff(JSONArray(), listOf(worn[slot]?.optJSONArray("stats")))) c.lines.put(l)
+        return c
+    }
+
+    /** a worn piece's card ([w]: the add-on's equipped row, or the ammo row): the game's tooltip lines it keeps (`tip`), else its name
+     *  and stats; no stat changes (char-popout-current: the worn tile; char-popout: a swap's piece) */
+    private fun wornCard(w: JSONObject?): Card {
         val tip = w?.optJSONArray("tip")?.takeIf { it.length() > 0 }
         val lines = JSONArray()
         val name = w?.optString("item")?.takeIf { it.isNotEmpty() && it[0].code > 3 } ?: w?.optString("name") ?: ""
@@ -262,8 +279,6 @@ object SlideOut {
             title = name
             if (w != null) for (l in statLines(w)) lines.put(l)
         }
-        if (swapNeedsRoom(slot, from, worn, dualWield))
-            for (l in BagsCompare.diff(JSONArray(), listOf(worn[slot]?.optJSONArray("stats")))) lines.put(l)
         return Card(title, w?.optInt("quality", 1) ?: 1, lines, tip != null)
     }
 
