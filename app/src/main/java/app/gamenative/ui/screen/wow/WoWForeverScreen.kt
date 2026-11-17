@@ -256,6 +256,9 @@ fun WoWForeverScreen(
         refreshMaps()
         loginSaved = com.jrees.wowcompanion.HomeLoginStore.has(context)
         addonsInstalled = File(WowClientDownloader.flavorDir(File(gamePath)), "Interface/AddOns/WowCompanion").isDirectory
+        // Settings > Add-ons > Import (ImportedAddons): the flavour folder of the game folder checked here
+        val root = gamePath
+        com.jrees.wowcompanion.LauncherHooks.flavorRoot = { runCatching { WowClientDownloader.flavorDir(File(root)) }.getOrNull()?.takeIf { File(root).isDirectory } }
         addonsProblem = runCatching { com.jrees.wowcompanion.LauncherSetup.problem(context) }.getOrNull()
         if (files.isWrongGame) {
             errorMessage = "Incompatible game (${files.product}). DS Forever needs " +

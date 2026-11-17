@@ -38,6 +38,8 @@ object SettingsTabs {
         BUTTONS(Tab.CONTROLLER, "Buttons"), WHEELS(Tab.CONTROLLER, "Wheels"), SMART_Y(Tab.CONTROLLER, "Smart Y"),
         COMBAT(Tab.CONTROLLER, "Combat helpers"),
         POLESTAR(Tab.ADDONS, "Polestar"), SPOKEN(Tab.ADDONS, "Spoken"), QUESTTRAIL(Tab.ADDONS, "QuestTrail"), MANNERS(Tab.ADDONS, "Manners"),
+        // the player's own add-ons (the user, 2026-11-16: "maybe we just do an import addons button then?"): last, so Polestar opens first
+        IMPORTED(Tab.ADDONS, "Imported"),
         FRAMES(Tab.PERFORMANCE, "Frames"), MEMORY(Tab.PERFORMANCE, "Memory"), INDOOR(Tab.PERFORMANCE, "Indoor maps"),
         STREAMING(Tab.PERFORMANCE, "Streaming"),
     }
@@ -116,6 +118,8 @@ object SettingsTabs {
         ADDON_SPOKEN(Group.SPOKEN, "Spoken", ThirdPartyAddons.SPOKEN.rowWords()),
         ADDON_QUESTTRAIL(Group.QUESTTRAIL, "QuestTrail", ThirdPartyAddons.QUESTTRAIL.rowWords()),
         ADDON_MANNERS(Group.MANNERS, "Manners", ThirdPartyAddons.MANNERS.rowWords()),
+        // Import (a .zip through Android's picker), its confirm card and the imported list (ImportedAddons; SettingsView.drawImported)
+        IMPORTED(Group.IMPORTED, "Imported", listOf("Import add-ons")),
         // ---- Performance
         FRAMES(Group.FRAMES, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game")),

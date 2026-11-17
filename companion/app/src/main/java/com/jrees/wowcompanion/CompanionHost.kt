@@ -515,6 +515,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Log.i("WCINTERACT", "add-on settings ${a.id}: ${if (sent) "asked" else "not asked (no cell yet)"}")
         }
         settingsRest.onChooseDll = { openDllPicker() }
+        // Settings > Add-ons > Import (ImportedAddons): Android's picker for add-on zips, on this (bottom) screen as the DLL's
+        settingsRest.onImportAddons = { openOnBottom(AddonImportActivity::class.java, "AddonImport") { ImportedAddons.onPickerClosed = it } }
         // "Restart the game" when a frame-gen setting differs from the running game's start: the sign-in's restart (close, wait, Play)
         // b-addons-restart (test40, the user: "The restart button after installing addons breaks our addon because it behaves like it's
         // on home but visually appears like it's still in settings"): the restart went out with the Settings room still up and holding

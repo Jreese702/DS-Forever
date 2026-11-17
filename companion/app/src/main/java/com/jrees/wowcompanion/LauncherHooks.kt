@@ -12,6 +12,9 @@ object LauncherHooks {
     @Volatile var gameUp: () -> Boolean = { false }
     /** when that game screen came up (epoch seconds): a new value = a new client run */
     @Volatile var gameStartSec = 0L
+    /** the game's flavour folder (`_forever_` / `_classic_beta_` under the picked game folder), null = no game folder picked yet:
+     *  Settings > Add-ons > Import installs into its Interface/AddOns ([ImportedAddons]) */
+    @Volatile var flavorRoot: () -> java.io.File? = { null }
     /** the game's screen is the one in front on the top display (the sign-in types only then) */
     @Volatile var inFront: () -> Boolean = { false }
     /** A CLEAN EXIT FIRST (the user's ruling after test20, "Both"; [CleanExit]): the launcher calls it before it ends the game itself;

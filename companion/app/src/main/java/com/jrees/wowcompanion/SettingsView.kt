@@ -235,6 +235,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         Theme.onChange { postInvalidate() }
         ThirdPartyAddons.init(context)
         ThirdPartyAddons.onChange { postInvalidate() }
+        ImportedAddons.init(context)
+        ImportedAddons.onChange { post { requestLayout(); invalidate() } }   // the worker's thread: the card's rows come and go
         Settings.onChange { postInvalidate() }
         ReportFlow.init(context)
         ReportFlow.onChange { postInvalidate() }
@@ -293,7 +295,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun isReload(r: RectF): Boolean = !btnReload.isEmpty && r == btnReload
 
     /** the Add-ons tab's controls, in reading order (each module's box, then each option's two segments) */
-    private fun addonFocus(): List<RectF> = segGuide.toList() + listOf(btnGuidePending, addonRestart) + addonCoreBtn.values.toList() + addonSettingsBtn.values.toList() + addonModuleBoxes.values.toList() +
+    private fun addonFocus(): List<RectF> = importFocus() + segGuide.toList() + listOf(btnGuidePending, addonRestart) + addonCoreBtn.values.toList() + addonSettingsBtn.values.toList() + addonModuleBoxes.values.toList() +
         addonOptionSegs.values.flatMap { it.toList() }
 
     /** the rows as last drawn, with their words (the "What it does" panel follows the row under the cursor or a touch) */
@@ -306,6 +308,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun clearBoxes() {
         rowHits.clear(); sbHits.clear()
         addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty(); addonSettingsBtn.clear()
+        btnImport.setEmpty(); btnImportInstall.setEmpty(); btnImportCancel.setEmpty(); importRemove.clear()
         btnGuidePending.setEmpty(); for (r in segGuide) r.setEmpty()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart, btnSwapRestart, btnWinIdRestart,
@@ -378,6 +381,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.CHAT -> ROW_H
         SettingsTabs.Block.FRAMES -> fgHeight()
         SettingsTabs.Block.SMART_Y -> sbLines().size.let { n -> n * ROW_H + (n - 1) * 10f } + pbHeight()
+        SettingsTabs.Block.IMPORTED -> importedRows().let { n -> n * ROW_H + (n - 1) * 10f }
         else -> SettingsTabs.addonOf(b)?.let { a -> val n = addonRows(a); n * ROW_H + (n - 1) * 10f } ?: 0f
     }
 
@@ -615,6 +619,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 SettingsTabs.Block.CHAT -> drawChat(c, y)
                 SettingsTabs.Block.FRAMES -> drawFrames(c, y)
                 SettingsTabs.Block.SMART_Y -> drawSmartY(c, y)
+                SettingsTabs.Block.IMPORTED -> drawImported(c, y)
                 else -> SettingsTabs.addonOf(b)?.let { drawAddon(c, y, it) } ?: y
             }
         }
@@ -1712,6 +1717,117 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     }
     private val addonDrawnRows = HashMap<String, Int>()
 
+    // ---------------------------------------------------------------- Add-ons > Imported (ImportedAddons; the user, 2026-11-16)
+    /** Import opens Android's picker on this (bottom) screen (the host's openOnBottom, as Choose for the DLL) */
+    var onImportAddons: () -> Unit = {}
+        get() = hub?.onImportAddons ?: field
+    private var btnImport = RectF()
+    private var btnImportInstall = RectF()
+    private var btnImportCancel = RectF()
+    private val importRemove = LinkedHashMap<String, RectF>()
+    private fun importFocus(): List<RectF> = listOf(btnImport, btnImportInstall, btnImportCancel) + importRemove.values.toList()
+
+    /** Import, the confirm card's rows (each add-on found, each zip refused, its Install / Cancel), each imported add-on */
+    private fun importedRows(): Int {
+        val p = ImportedAddons.pending
+        return 1 + (if (p != null) p.found.size + p.bad.size + 1 else 0) + ImportedAddons.list().size
+    }
+
+    /** "340 KB" / "3 MB" */
+    private fun bytesWord(b: Long): String =
+        if (b < 1_000_000) "${((b + 999) / 1000).coerceAtLeast(1)} KB" else ThirdPartyAddons.size(((b + 999_999) / 1_000_000).toInt())
+
+    private fun armed(key: String) = addonArmed == key && SystemClock.elapsedRealtime() - addonArmedAt < ARM_MS
+
+    /** a control's place with nothing to press (a card row: the row is still a cursor stop) */
+    private fun none(box: RectF) = RectF(box.right - 16f, box.top, box.right - 16f, box.top)
+
+    private fun drawImported(c: Canvas, top: Float): Float {
+        var y = top
+        val root = ImportedAddons.flavorRoot()
+        val busy = ImportedAddons.busy
+        val p = ImportedAddons.pending
+        if (importedRows() != importDrawnRows) { importDrawnRows = importedRows(); requestLayout() }
+        val line = ImportedAddons.status ?: if (root == null) "Pick the game folder first" else "A .zip from this device"
+        btnImport = row(c, y, "Import add-ons", line, enabled = true) { box ->
+            val r = RectF(box.right - 16f - 220f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            val on = root != null && !busy
+            UiKit.button(c, r, "Import", if (on) UiKit.Button.UP else UiKit.Button.DISABLED)
+            if (on) r else RectF(r.left, r.top, r.left, r.top)
+        }
+        // ---- the confirm card: each add-on found, each zip that brought none, then Install / Cancel
+        if (p != null) {
+            val cardTop = y + ROW_H + 10f
+            for (f in p.found) {
+                y += ROW_H + 10f
+                val sub = if (f.refused != null) Tr.t(f.refused) else listOfNotNull(
+                    f.version?.let { Tr.t("Version $it") }, bytesWord(f.bytes),
+                    if (f.replaces) Tr.t("Replaces yours") else null,
+                    if (!f.ifaceOk) Tr.t("Made for another game version") else null).joinToString(" · ")
+                // a refused one by its folder name (the one kept), a taken one by its own title
+                row(c, y, if (f.refused != null) f.folder else f.title, sub, enabled = f.refused == null, translate = false) { box -> none(box) }
+            }
+            for (b in p.bad) {
+                y += ROW_H + 10f
+                row(c, y, b.name, Tr.t(b.why), enabled = false, translate = false) { box -> none(box) }
+            }
+            y += ROW_H + 10f
+            val n = p.taken.size
+            val can = n > 0 && !busy && root != null
+            val again = armed("import.install")
+            row(c, y, "Install these add-ons", if (n > 0) bytesWord(p.bytes) else "Nothing to install", enabled = n > 0) { box ->
+                val cancel = RectF(box.right - 16f - 200f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                val inst = RectF(cancel.left - 16f - 220f, cancel.top, cancel.left - 16f, cancel.bottom)
+                UiKit.button(c, inst, if (again) "Tap again" else "Install",
+                    if (!can) UiKit.Button.DISABLED else if (again) UiKit.Button.DOWN else UiKit.Button.UP)
+                UiKit.button(c, cancel, "Cancel", if (busy) UiKit.Button.DISABLED else UiKit.Button.UP)
+                btnImportInstall = if (can) RectF(inst) else RectF()
+                btnImportCancel = if (busy) RectF() else RectF(cancel)
+                inst
+            }
+            // the card's edge: these rows are one question
+            pStroke.color = Theme.gold
+            c.drawRoundRect(RectF(10f, cardTop - 5f, width - 10f, y + ROW_H + 5f), 12f, 12f, pStroke)
+        }
+        // ---- the imported list: each with its Remove (twice, as Reload)
+        for (a in ImportedAddons.list()) {
+            y += ROW_H + 10f
+            val again = armed("import.remove.${a.folder}")
+            importRemove[a.folder] = row(c, y, a.title, a.version?.let { Tr.t("Version $it") } ?: a.folder, enabled = true, translate = false) { box ->
+                val r = RectF(box.right - 16f - 220f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                UiKit.button(c, r, if (again) "Tap again" else "Remove",
+                    if (busy) UiKit.Button.DISABLED else if (again) UiKit.Button.DOWN else UiKit.Button.UP)
+                if (busy) RectF(r.left, r.top, r.left, r.top) else r
+            }
+        }
+        return y + ROW_H
+    }
+    private var importDrawnRows = -1
+
+    /** a press on Import, the card's Install / Cancel or a Remove; true = it was one */
+    private fun importTap(x: Float, y: Float): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        fun hit(r: RectF) = !r.isEmpty && r.contains(x, y)
+        when {
+            hit(btnImport) -> { onImportAddons(); return true }
+            hit(btnImportCancel) -> { addonArmed = null; ImportedAddons.cancel(); return true }
+            hit(btnImportInstall) -> {
+                // replacing a folder that is there: twice (the confirm the card asks for); only new folders: once
+                val p = ImportedAddons.pending ?: return true
+                if (p.replacesAny && !armed("import.install")) {
+                    addonArmed = "import.install"; addonArmedAt = now; postDelayed({ invalidate() }, ARM_MS + 50); return true
+                }
+                addonArmed = null; ImportedAddons.install(); return true
+            }
+        }
+        for ((folder, r) in importRemove) if (hit(r)) {
+            if (armed("import.remove.$folder")) { addonArmed = null; ImportedAddons.remove(folder) }
+            else { addonArmed = "import.remove.$folder"; addonArmedAt = now; postDelayed({ invalidate() }, ARM_MS + 50) }
+            return true
+        }
+        return false
+    }
+
     /** a download's progress, in the game's own bar art when the kit has it: [pct] 0..100 (< 0 = waiting) */
     private fun progressBar(c: Canvas, r: RectF, pct: Int) {
         pFill.color = Theme.ink; c.drawRoundRect(r, 6f, 6f, pFill)
@@ -1731,6 +1847,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     /** a press on an Add-ons control; true = it was one */
     private fun addonTap(x: Float, y: Float): Boolean {
+        if (importTap(x, y)) return true
         if (!addonRestart.isEmpty && addonRestart.contains(x, y)) { addonRestartAt = SystemClock.elapsedRealtime(); onRestart(); return true }
         // 2026-11-12: the Polestar quest guide's On / Off, and its Restart game / Try again
         segGuide.indexOfFirst { !it.isEmpty && it.contains(x, y) }.takeIf { it >= 0 }?.let { PolestarGuide.set(it == 0); invalidate(); return true }
@@ -1772,7 +1889,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val PB_HEAD = 88f
 
     /** a labelled row; [control] draws the right-hand control and returns its hit box */
-    private fun row(c: Canvas, top: Float, label: String, sub: String, enabled: Boolean,
+    private fun row(c: Canvas, top: Float, label: String, sub: String, enabled: Boolean, translate: Boolean = true,
                     control: (RectF) -> RectF): RectF {
         val box = RectF(16f, top, width - 16f, top + ROW_H)
         rowHits.add(RectF(box) to label)
@@ -1781,9 +1898,11 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         val hit = control(box)
         pLabel.color = if (enabled) Theme.text else Theme.dim
         pSub.color = if (enabled) Theme.textDim else Theme.dim
-        c.drawText(Tr.t(label), box.left + 22f, box.top + 41f, pLabel)
+        // [translate] false: words that are not ours (an imported add-on's own title; its line put together from translated parts)
+        val lw = hit.left - 20f - (box.left + 22f)
+        c.drawText(if (translate) Tr.t(label) else fit(pLabel, label, lw), box.left + 22f, box.top + 41f, pLabel)
         // the subtitle never runs under the control, whatever the device font measures
-        c.drawText(Tr.t(fit(pSub, sub, hit.left - 20f - (box.left + 22f))), box.left + 22f, box.top + 75f, pSub)
+        c.drawText(if (translate) Tr.t(fit(pSub, sub, lw)) else fit(pSub, sub, lw), box.left + 22f, box.top + 75f, pSub)
         return hit
     }
 

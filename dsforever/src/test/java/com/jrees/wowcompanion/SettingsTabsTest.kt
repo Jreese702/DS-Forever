@@ -55,7 +55,7 @@ class SettingsTabsTest {
         // menu"; the design's pick): a first group "Layout" on Top screen
         assertEquals(listOf("Layout", "Your HUD", "Target", "Party", "Navigation", "Game windows"), SettingsTabs.groups(T.TOP).map { it.heading })
         assertEquals(listOf("Buttons", "Wheels", "Smart Y", "Combat helpers"), SettingsTabs.groups(T.CONTROLLER).map { it.heading })
-        assertEquals(listOf("Polestar", "Spoken", "Manners"), SettingsTabs.groups(T.ADDONS).map { it.heading })   // QuestTrail: not installed
+        assertEquals(listOf("Polestar", "Spoken", "Manners", "Imported"), SettingsTabs.groups(T.ADDONS).map { it.heading })   // QuestTrail: not installed
         assertEquals(listOf("Frames", "Memory", "Indoor maps", "Streaming"), SettingsTabs.groups(T.PERFORMANCE).map { it.heading })
         for (g in G.values()) assertTrue("${g.heading} has blocks", B.values().any { it.group == g })
     }
@@ -90,6 +90,7 @@ class SettingsTabsTest {
             G.SPOKEN to ThirdPartyAddons.SPOKEN.rowWords(),
             G.QUESTTRAIL to ThirdPartyAddons.QUESTTRAIL.rowWords(),
             G.MANNERS to ThirdPartyAddons.MANNERS.rowWords(),
+            G.IMPORTED to listOf("Import add-ons"),           // the user, 2026-11-16: "maybe we just do an import addons button then?"
             G.FRAMES to listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game"),
             G.MEMORY to listOf("Lighter mode", "Low-memory graphics"),
             G.INDOOR to listOf("Build in the background", "Progress", "Route data"),
@@ -98,7 +99,7 @@ class SettingsTabsTest {
         // and each group's tab
         val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
             T.TOP to listOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
-            T.ADDONS to listOf(G.POLESTAR, G.SPOKEN, G.QUESTTRAIL, G.MANNERS), T.PERFORMANCE to listOf(G.FRAMES, G.MEMORY, G.INDOOR, G.STREAMING))
+            T.ADDONS to listOf(G.POLESTAR, G.SPOKEN, G.QUESTTRAIL, G.MANNERS, G.IMPORTED), T.PERFORMANCE to listOf(G.FRAMES, G.MEMORY, G.INDOOR, G.STREAMING))
         for ((t, gs) in tabOf) assertEquals(t.label, gs, G.values().filter { it.tab == t })
         // who draws the rows that left their old view: Home's section still draws its attack row, GameUiSection the Top screen rows
         assertEquals(SettingsTabs.Drawer.HOME, B.ATTACK_CAST.drawer)
@@ -153,7 +154,9 @@ class SettingsTabsTest {
             // attacking"): Controller > Buttons
             listOf("B: pet follow") +
             // the user's pick 2026-11-16 (voice to text): General > Look > Voice typing
-            listOf("Voice typing")
+            listOf("Voice typing") +
+            // the user, 2026-11-16 ("maybe we just do an import addons button then?"): Add-ons > Imported
+            listOf("Import add-ons")
         val now = B.values().flatMap { it.rows }
         // the layout editor (the user, 2026-11-16): HUD height and HUD scale are its page's now (its own row "Edit layout" opens it)
         assertEquals((before - setOf("HUD height", "HUD scale") + "Edit layout").toSet(), now.toSet())
@@ -212,8 +215,9 @@ class SettingsTabsTest {
 
     /** 1.0.9 Add-ons: every third-party add-on has its group there, its rows its own (title, modules, options) */
     @Test fun addOnsHaveTheirOwnGroups() {
-        val shown = if (Settings.ROUTE_MODES_ON) listOf(B.ADDON_POLESTAR, B.QUEST_TRACKING, B.ADDON_SPOKEN, B.ADDON_MANNERS)
-            else listOf(B.QUEST_TRACKING, B.ADDON_SPOKEN, B.ADDON_MANNERS)
+        val shown = (if (Settings.ROUTE_MODES_ON) listOf(B.ADDON_POLESTAR, B.QUEST_TRACKING, B.ADDON_SPOKEN, B.ADDON_MANNERS)
+            else listOf(B.QUEST_TRACKING, B.ADDON_SPOKEN, B.ADDON_MANNERS)) +
+            B.IMPORTED                                         // the player's own imports (2026-11-16), last
         assertEquals(shown, SettingsTabs.blocks(T.ADDONS))
         assertEquals(shown, SettingsTabs.viewBlocks(T.ADDONS))
         for (a in ThirdPartyAddons.ALL) assertTrue(a.title, SettingsTabs.Block.values().any { SettingsTabs.addonOf(it) == a })

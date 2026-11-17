@@ -97,7 +97,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         val again: () -> Unit = { main.post { refreshGroups() } }
         for (gu in gameUis) gu.onContent = again
         view.onContent = again
-        GameUi.onChange(again); ThirdPartyAddons.onChange(again); Settings.onChange(again); HomeAttackSwitch.onChange(again)
+        GameUi.onChange(again); ThirdPartyAddons.onChange(again); ImportedAddons.onChange(again); Settings.onChange(again); HomeAttackSwitch.onChange(again)
         CompassSwitch.onChange(again); RingsSwitch.onChange(again); TipsSwitch.onChange(again); HomeLootSwitch.onChange(again)
         FrameGen.onChange(again)
         // the layout editor's row comes with the add-on set's first "lay" document (only that change: its documents come often)

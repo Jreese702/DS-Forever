@@ -462,7 +462,8 @@ object ThirdPartyAddons {
             return applyLocked(flavorRoot, fetchSmall, by) { msg -> currentStep = msg; onStep(msg) }
         } finally { currentStep = null; applyLock.unlock() }
     }
-    private val applyLock = java.util.concurrent.locks.ReentrantLock()
+    /** one add-on move at a time: the start step, and Settings > Add-ons > Import ([ImportedAddons]) */
+    internal val applyLock = java.util.concurrent.locks.ReentrantLock()
     /** the running step's status text ("Installing add-ons: Spoken Quests..."), null between runs: a waiting caller shows it */
     @Volatile internal var currentStep: String? = null
 
@@ -646,7 +647,7 @@ object ThirdPartyAddons {
      * from the backup, so AddOns ends as it was (the old copy whole, or nothing where there was nothing), never half new. The new
      * copy is still in its download (kept on a failure).
      */
-    private fun putBack(done: List<Pair<File, File?>>) {
+    internal fun putBack(done: List<Pair<File, File?>>) {
         for ((target, old) in done.asReversed()) {
             target.deleteRecursively()
             if (old != null) runCatching { moveDir(old, target, "the old ${target.name} could not be put back") }
@@ -655,7 +656,7 @@ object ThirdPartyAddons {
         if (done.isNotEmpty()) log("add-ons: the move in failed: ${done.joinToString { it.first.name }} put back as before")
     }
 
-    private fun backup(iface: File, target: File, stamp: String): File {
+    internal fun backup(iface: File, target: File, stamp: String): File {
         val base = "${target.name}-${DependencyAddons.installedVersion(target) ?: "unknown"}-$stamp"
         var b = File(iface, "${DependencyAddons.BACKUP}/$base")
         var n = 2
