@@ -385,7 +385,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.FRAMES -> fgHeight()
         SettingsTabs.Block.SMART_Y -> sbLines().size.let { n -> n * ROW_H + (n - 1) * 10f } + pbHeight()
         SettingsTabs.Block.ADDON_VOICE -> VoiceModels.Model.values().size.let { n -> n * ROW_H + (n - 1) * 10f }
-        SettingsTabs.Block.IMPORTED -> importedRows().let { n -> n * ROW_H + (n - 1) * 10f }
+        SettingsTabs.Block.IMPORT -> importHeight()
+        SettingsTabs.Block.IMPORTED -> importedRows().let { n -> if (n == 0) 0f else n * ROW_H + (n - 1) * 10f }
         else -> SettingsTabs.addonOf(b)?.let { a -> val n = addonRows(a); n * ROW_H + (n - 1) * 10f } ?: 0f
     }
 
@@ -624,6 +625,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 SettingsTabs.Block.FRAMES -> drawFrames(c, y)
                 SettingsTabs.Block.SMART_Y -> drawSmartY(c, y)
                 SettingsTabs.Block.ADDON_VOICE -> drawVoiceModels(c, y)
+                SettingsTabs.Block.IMPORT -> drawImport(c, y)
                 SettingsTabs.Block.IMPORTED -> drawImported(c, y)
                 else -> SettingsTabs.addonOf(b)?.let { drawAddon(c, y, it) } ?: y
             }
@@ -1779,12 +1781,26 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun importFocus(): List<RectF> = listOf(btnImport, btnImportInstall, btnImportCancel) + importUnqueue.values.toList() +
         importRemove.values.toList()
 
-    /** Import, the confirm card's rows (each add-on found, each zip refused, its Install / Cancel), each imported add-on */
+    /** the imported list's rows: each replacement waiting, each imported add-on (none = the Imported group is not shown) */
     private fun importedRows(): Int {
-        val p = ImportedAddons.pending
         val q = ImportedAddons.queued()
-        return 1 + (if (p != null) p.found.size + p.bad.size + 1 else 0) + q.size + importedList(q).size
+        return q.size + importedList(q).size
     }
+
+    /** the Import button's height (one full-width button, the user 2026-11-16: "Import addons should be a single button at the top of
+     *  the list"; not a heading's height, so the room's tests tell the two apart) */
+    private val IMPORT_BTN_H = 88f
+    /** its status line under it (a step, a result, a refusal; greyed: why) */
+    private val IMPORT_LINE_H = 44f
+
+    /** the line under the button now, or null (nothing to say) */
+    private fun importLine(): String? = ImportedAddons.status ?: if (ImportedAddons.flavorRoot() == null) "Pick the game folder first" else null
+
+    /** the confirm card's rows: each add-on found, each zip that brought none, its Install / Cancel; 0 = no card */
+    private fun importCardRows(): Int = ImportedAddons.pending?.let { p -> p.found.size + p.bad.size + 1 } ?: 0
+
+    private fun importHeight(): Float = IMPORT_BTN_H + (if (importLine() != null) IMPORT_LINE_H else 0f) +
+        importCardRows() * (ROW_H + 10f)
 
     /** the imported list less the ones with a replacement waiting (that row stands for them) */
     private fun importedList(q: List<ImportedAddons.Queued>): List<ImportedAddons.Imported> =
@@ -1799,21 +1815,31 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** a control's place with nothing to press (a card row: the row is still a cursor stop) */
     private fun none(box: RectF) = RectF(box.right - 16f, box.top, box.right - 16f, box.top)
 
-    private fun drawImported(c: Canvas, top: Float): Float {
-        var y = top
+    private val pImportLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+
+    /** Add-ons' first block: ONE full-width Import button (the app's red button, no label or line beside it), the status line under it
+     *  when there is something to say, then the confirm card */
+    private fun drawImport(c: Canvas, top: Float): Float {
         val root = ImportedAddons.flavorRoot()
         val busy = ImportedAddons.busy
         val p = ImportedAddons.pending
-        if (importedRows() != importDrawnRows) { importDrawnRows = importedRows(); requestLayout() }
-        val line = ImportedAddons.status ?: if (root == null) "Pick the game folder first" else "A .zip from this device"
-        btnImport = row(c, y, "Import add-ons", line, enabled = true) { box ->
-            val r = RectF(box.right - 16f - 220f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            val on = root != null && !busy
-            UiKit.button(c, r, "Import", if (on) UiKit.Button.UP else UiKit.Button.DISABLED)
-            if (on) r else RectF(r.left, r.top, r.left, r.top)
+        val key = importHeight()
+        if (key != importDrawnH) { importDrawnH = key; requestLayout() }
+        val r = RectF(16f, top, width - 16f, top + IMPORT_BTN_H)
+        rowHits.add(RectF(r) to "Import add-ons")
+        val on = root != null && !busy
+        UiKit.button(c, r, "Import add-ons", if (on) UiKit.Button.UP else UiKit.Button.DISABLED, waiting = busy)
+        // greyed: nothing to press, the button still a cursor stop (its row)
+        btnImport = if (on) RectF(r) else RectF(r.left, r.top, r.left, r.top)
+        var y = r.bottom
+        importLine()?.let { line ->
+            pImportLine.textSize = pSub.textSize; pImportLine.typeface = pSub.typeface; pImportLine.color = Theme.textDim
+            c.drawText(Tr.t(fit(pImportLine, line, r.width() - 40f)), r.centerX(), y + 31f, pImportLine)
+            y += IMPORT_LINE_H
         }
         // ---- the confirm card: each add-on found, each zip that brought none, then Install / Cancel
         if (p != null) {
+            y -= ROW_H                                    // each row below steps ROW_H + 10 from the last one's top
             val cardTop = y + ROW_H + 10f
             for (f in p.found) {
                 y += ROW_H + 10f
@@ -1845,7 +1871,17 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             // the card's edge: these rows are one question
             pStroke.color = Theme.gold
             c.drawRoundRect(RectF(10f, cardTop - 5f, width - 10f, y + ROW_H + 5f), 12f, 12f, pStroke)
+            y += ROW_H
         }
+        return y
+    }
+
+    /** Add-ons' last block: the replacements waiting, then each imported add-on with its Remove */
+    private fun drawImported(c: Canvas, top: Float): Float {
+        val busy = ImportedAddons.busy
+        if (importedRows() != importDrawnRows) { importDrawnRows = importedRows(); requestLayout() }
+        if (importedRows() == 0) return top
+        var y = top - ROW_H - 10f                         // each row steps ROW_H + 10 from the last one's top
         // ---- the replacements waiting for a start with the game closed (the user, 2026-11-16: "New now, replace next start")
         val q = ImportedAddons.queued()
         for (w in q) {
@@ -1893,6 +1929,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     }
 
     private var importDrawnRows = -1
+    private var importDrawnH = -1f
 
     /** a press on Import, the card's Install / Cancel or a Remove; true = it was one */
     private fun importTap(x: Float, y: Float): Boolean {

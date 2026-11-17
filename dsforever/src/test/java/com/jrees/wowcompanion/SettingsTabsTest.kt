@@ -55,7 +55,9 @@ class SettingsTabsTest {
         // menu"; the design's pick): a first group "Layout" on Top screen
         assertEquals(listOf("Layout", "Your HUD", "Target", "Party", "Navigation", "Game windows"), SettingsTabs.groups(T.TOP).map { it.heading })
         assertEquals(listOf("Buttons", "Wheels", "Smart Y", "Combat helpers"), SettingsTabs.groups(T.CONTROLLER).map { it.heading })
-        assertEquals(listOf("Polestar", "Spoken", "Manners", "Imported"), SettingsTabs.groups(T.ADDONS).map { it.heading })   // QuestTrail: not installed
+        // QuestTrail: not installed. First the Import button's headless group (the user, 2026-11-16: "Import addons should be a single
+        // button at the top of the list"; its heading is never drawn)
+        assertEquals(listOf("Import add-ons", "Polestar", "Spoken", "Manners", "Imported"), SettingsTabs.groups(T.ADDONS).map { it.heading })
         assertEquals(listOf("Frames", "Memory", "Indoor maps", "Streaming"), SettingsTabs.groups(T.PERFORMANCE).map { it.heading })
         for (g in G.values()) assertTrue("${g.heading} has blocks", B.values().any { it.group == g })
     }
@@ -91,7 +93,10 @@ class SettingsTabsTest {
             G.QUESTTRAIL to ThirdPartyAddons.QUESTTRAIL.rowWords(),
             G.MANNERS to ThirdPartyAddons.MANNERS.rowWords(),
             G.VOICE to listOf("Voice: English · 60 MB", "Voice: English · 148 MB", "Voice: other languages · 60 MB", "Voice: other languages · 148 MB"),
-            G.IMPORTED to listOf("Import add-ons"),           // the user, 2026-11-16: "maybe we just do an import addons button then?"
+            // the user, 2026-11-16: "maybe we just do an import addons button then?"; then "Import addons should be a single button at
+            // the top of the list": the button is its own headless group, first; Imported keeps only the list (rows named by the add-ons)
+            G.IMPORT to listOf("Import add-ons"),
+            G.IMPORTED to emptyList<String>(),
             G.FRAMES to listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game"),
             G.MEMORY to listOf("Lighter mode", "Low-memory graphics"),
             G.INDOOR to listOf("Build in the background", "Progress", "Route data"),
@@ -100,7 +105,7 @@ class SettingsTabsTest {
         // and each group's tab
         val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
             T.TOP to listOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
-            T.ADDONS to listOf(G.POLESTAR, G.SPOKEN, G.QUESTTRAIL, G.MANNERS, G.VOICE, G.IMPORTED), T.PERFORMANCE to listOf(G.FRAMES, G.MEMORY, G.INDOOR, G.STREAMING))
+            T.ADDONS to listOf(G.IMPORT, G.POLESTAR, G.SPOKEN, G.QUESTTRAIL, G.MANNERS, G.VOICE, G.IMPORTED), T.PERFORMANCE to listOf(G.FRAMES, G.MEMORY, G.INDOOR, G.STREAMING))
         for ((t, gs) in tabOf) assertEquals(t.label, gs, G.values().filter { it.tab == t })
         // who draws the rows that left their old view: Home's section still draws its attack row, GameUiSection the Top screen rows
         assertEquals(SettingsTabs.Drawer.HOME, B.ATTACK_CAST.drawer)
@@ -183,7 +188,9 @@ class SettingsTabsTest {
 
     /** the user's pick: showing a tab opens its FIRST group, the rest folded */
     @Test fun firstGroupOpenOnShow() {
-        for (t in T.values()) if (t.folds) assertEquals(t.label, setOf(SettingsTabs.groups(t).first()), SettingsTabs.openOnShow(t))
+        // (a headless group - Add-ons' Import button - is never folded: open with the first group that has a heading)
+        for (t in T.values()) if (t.folds) assertEquals(t.label, SettingsTabs.groups(t).filter { it.headless }.toSet() +
+            SettingsTabs.groups(t).first { !it.headless }, SettingsTabs.openOnShow(t))
         // the user, 2026-11-12: "the general tab doesnt need the folding sections": every General group always open
         assertEquals(false, T.GENERAL.folds)
         assertEquals(setOf(G.LOOK, G.ACCOUNT, G.HELP), SettingsTabs.openOnShow(T.GENERAL))
@@ -218,7 +225,8 @@ class SettingsTabsTest {
 
     /** 1.0.9 Add-ons: every third-party add-on has its group there, its rows its own (title, modules, options) */
     @Test fun addOnsHaveTheirOwnGroups() {
-        val shown = (if (Settings.ROUTE_MODES_ON) listOf(B.ADDON_POLESTAR, B.QUEST_TRACKING, B.ADDON_SPOKEN, B.ADDON_MANNERS)
+        val shown = listOf(B.IMPORT) +                         // "a single button at the top of the list" (2026-11-16)
+            (if (Settings.ROUTE_MODES_ON) listOf(B.ADDON_POLESTAR, B.QUEST_TRACKING, B.ADDON_SPOKEN, B.ADDON_MANNERS)
             else listOf(B.QUEST_TRACKING, B.ADDON_SPOKEN, B.ADDON_MANNERS)) +
             B.IMPORTED                                         // the player's own imports (2026-11-16), last
         assertEquals(shown, SettingsTabs.blocks(T.ADDONS))
@@ -246,9 +254,30 @@ class SettingsTabsTest {
             val bs = SettingsTabs.blocks(T.ADDONS)
             assertEquals(listOf(B.ADDON_MANNERS, B.ADDON_VOICE, B.IMPORTED), bs.takeLast(3))
             assertEquals(listOf(G.MANNERS, G.VOICE, G.IMPORTED), SettingsTabs.groups(T.ADDONS).takeLast(3))
-            assertEquals(setOf(SettingsTabs.groups(T.ADDONS).first()), SettingsTabs.openOnShow(T.ADDONS))
+            assertEquals(setOf(G.IMPORT, SettingsTabs.groups(T.ADDONS)[1]), SettingsTabs.openOnShow(T.ADDONS))
             assertTrue(G.VOICE !in SettingsTabs.openOnShow(T.ADDONS))
         } finally { VoiceModels.offered = was }
+    }
+
+    /**
+     * the user, 2026-11-16: "Import addons should be a single button at the top of the list": Add-ons starts with ONE group with no
+     * heading (nothing to fold, no heading stop), its one block the Import button (its confirm card under it); the imported list stays
+     * the tab's last group. The only headless group in the room; it is open whenever the tab shows, the first headed group with it.
+     */
+    @Test fun importIsOneButtonAtTheTopOfAddOns() {
+        assertEquals(G.IMPORT, SettingsTabs.groups(T.ADDONS).first())
+        assertEquals(B.IMPORT, SettingsTabs.blocks(T.ADDONS).first())
+        assertEquals(listOf(B.IMPORT), SettingsTabs.blocks(G.IMPORT))
+        assertEquals(listOf("Import add-ons"), B.IMPORT.rows)
+        assertEquals(SettingsTabs.Drawer.VIEW, B.IMPORT.drawer)
+        assertEquals(listOf(G.IMPORT), G.values().filter { it.headless })
+        assertEquals(G.IMPORTED, SettingsTabs.groups(T.ADDONS).last())
+        assertTrue("the old Import row is gone from Imported", B.IMPORTED.rows.isEmpty())
+        val open = SettingsTabs.openOnShow(T.ADDONS)
+        assertTrue(G.IMPORT in open)
+        assertEquals(2, open.size)
+        // without its rows (none here) the headless group is not "the first group": the first headed group with rows opens
+        assertEquals(setOf(SettingsTabs.groups(T.ADDONS)[1]), SettingsTabs.openOnShow(T.ADDONS) { it != G.IMPORT })
     }
 
     @Test fun everyRowIsInExactlyOneGroup() {

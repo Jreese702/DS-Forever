@@ -25,8 +25,10 @@ object SettingsTabs {
     /** the tabs the room shows, in order (a hidden one is never on the row, never stepped onto) */
     val visible: List<Tab> get() = Tab.values().filter { !it.hidden }
 
-    /** a heading that folds (the user's pick: a tab opens with its FIRST group open, the rest folded) */
-    enum class Group(val tab: Tab, val heading: String) {
+    /** a heading that folds (the user's pick: a tab opens with its FIRST group open, the rest folded). [headless] = a group with NO
+     *  heading: nothing to fold, no heading stop, always open (Add-ons' Import button: the user, 2026-11-16, "Import addons should be a
+     *  single button at the top of the list"); the first group that opens is then the first one WITH a heading */
+    enum class Group(val tab: Tab, val heading: String, val headless: Boolean = false) {
         LOOK(Tab.GENERAL, "Look"), ACCOUNT(Tab.GENERAL, "Account"), HELP(Tab.GENERAL, "Help"),
         // GitHub #43 cb3 (the user, 2026-11-13: "the tap to cast bar should get its own bottom screen section"): its own group
         HOME(Tab.BOTTOM, "Home"), CAST_BAR(Tab.BOTTOM, "Tap-to-cast bar"), MAP(Tab.BOTTOM, "Map"), CHAT(Tab.BOTTOM, "Chat"),
@@ -37,11 +39,14 @@ object SettingsTabs {
         WINDOWS(Tab.TOP, "Game windows"),
         BUTTONS(Tab.CONTROLLER, "Buttons"), WHEELS(Tab.CONTROLLER, "Wheels"), SMART_Y(Tab.CONTROLLER, "Smart Y"),
         COMBAT(Tab.CONTROLLER, "Combat helpers"),
+        // the user, 2026-11-16: "Import addons should be a single button at the top of the list": first on the tab, no heading
+        IMPORT(Tab.ADDONS, "Import add-ons", headless = true),
         POLESTAR(Tab.ADDONS, "Polestar"), SPOKEN(Tab.ADDONS, "Spoken"), QUESTTRAIL(Tab.ADDONS, "QuestTrail"), MANNERS(Tab.ADDONS, "Manners"),
         // offline voice's model files (the user, 2026-11-16: "we could make the per languege downloads part of the addons folder"): app
         // files, never the game's AddOns; after Manners, so Polestar's group still opens first
         VOICE(Tab.ADDONS, "Voice"),
-        // the player's own add-ons (the user, 2026-11-16: "maybe we just do an import addons button then?"): last, so Polestar opens first
+        // the player's own add-ons (the user, 2026-11-16: "maybe we just do an import addons button then?"): the list, last; its Import
+        // button is IMPORT's, at the top
         IMPORTED(Tab.ADDONS, "Imported"),
         FRAMES(Tab.PERFORMANCE, "Frames"), MEMORY(Tab.PERFORMANCE, "Memory"), INDOOR(Tab.PERFORMANCE, "Indoor maps"),
         STREAMING(Tab.PERFORMANCE, "Streaming"),
@@ -116,6 +121,9 @@ object SettingsTabs {
         ATTACK_CAST(Group.COMBAT, "Start the attack when a spell is cast", listOf("Start the attack when a spell is cast"), Drawer.HOME),
         AUTO_SHOT(Group.COMBAT, "Combat Auto Shot", listOf("Combat Auto Shot"), Drawer.GAME_UI),
         // ---- Add-ons: one group per third-party add-on (ThirdPartyAddons); Polestar's carries Quest tracking (it was under Map)
+        // Import (a .zip through Android's picker): ONE full-width button first on the tab (so first in this enum's Add-ons part), its status line and confirm card under it
+        // (the user, 2026-11-16: "Import addons should be a single button at the top of the list"; SettingsView.drawImport)
+        IMPORT(Group.IMPORT, "Import add-ons", listOf("Import add-ons")),
         ADDON_POLESTAR(Group.POLESTAR, "Polestar", ThirdPartyAddons.POLESTAR.rowWords()),
         QUEST_TRACKING(Group.POLESTAR, "Quest tracking", listOf("Quest tracking")),
         ADDON_SPOKEN(Group.SPOKEN, "Spoken", ThirdPartyAddons.SPOKEN.rowWords()),
@@ -124,8 +132,8 @@ object SettingsTabs {
         // offline voice (VoiceModels): English, and every other language in one file, each small and full ("Voice: English · 60 MB");
         // shown only in a build with libdsfwhisper.so
         ADDON_VOICE(Group.VOICE, "Voice", VoiceModels.Model.values().map { it.label }),
-        // Import (a .zip through Android's picker), its confirm card and the imported list (ImportedAddons; SettingsView.drawImported)
-        IMPORTED(Group.IMPORTED, "Imported", listOf("Import add-ons")),
+        // the imported list and the replacements waiting (ImportedAddons; SettingsView.drawImported): rows named by the add-ons themselves
+        IMPORTED(Group.IMPORTED, "Imported", emptyList()),
         // ---- Performance
         FRAMES(Group.FRAMES, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game")),
@@ -154,8 +162,13 @@ object SettingsTabs {
     /** the groups OPEN when [tab] is shown (the user's pick, 2026-11-12: every time a tab shows, its first group open, the rest folded) */
     fun openOnShow(tab: Tab, hasRows: (Group) -> Boolean = { true }): Set<Group> =
         // a tab that does not fold opens every group WITH ROWS (11-16 merge: Top screen's Layout group has none until the add-on set
-        // sends its first "lay" document; the tiles' groups always have their fixed slots)
-        if (!tab.folds) groups(tab).filter(hasRows).toSet() else groups(tab).filter(hasRows).take(1).toSet()
+        // sends its first "lay" document; the tiles' groups always have their fixed slots); a folding one its headless groups (never
+        // folded: Add-ons' Import button) and its first group with a heading
+        if (!tab.folds) groups(tab).filter(hasRows).toSet()
+        else groups(tab).filter(hasRows).let { gs -> gs.filter { it.headless }.toSet() + gs.filter { !it.headless }.take(1) }
+
+    /** [g] folds (a tap / A on its heading opens or folds it): a folding tab's group with a heading */
+    fun folds(g: Group): Boolean = g.tab.folds && !g.headless
 
     /** 1.0.9 (the user: "Disable the safe path, quest trail and polestar buttons for now"): with the route modes held back, the
      *  Polestar and QuestTrail blocks are not shown (Spoken stays) */
