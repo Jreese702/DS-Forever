@@ -2729,8 +2729,7 @@ object UiKit {
         // q64: the quest's item at the card's right edge on the title row (the tracker's item button beside the quest; Home)
         val qi = if (itemButton) q.item else null
         val iw = if (qi != null) CARD_ITEM * s + 12f * s else 0f
-        if (qi != null) questItemButton(c, RectF(box.right - pad - CARD_ITEM * s, titleMid - CARD_ITEM * s / 2f, box.right - pad,
-            titleMid + CARD_ITEM * s / 2f), qi)
+        if (qi != null) questItemButton(c, questItemBox(box, s), qi)
         c.drawText(Tr.t(TextUtils.ellipsize(title, pt, box.right - pad - tx - iw, TextUtils.TruncateAt.END).toString()), tx,
             titleMid - (pt.ascent() + pt.descent()) / 2f, pt)
         var y = box.top + pad + CARD_TITLE * s
@@ -2771,10 +2770,16 @@ object UiKit {
     /** q64: the quest item's button on the card at scale 1 (about the title's height, as the tracker's sits beside its quest) */
     const val CARD_ITEM = 34f
 
+    /** q64 / q65: the quest item's icon box on a card at [box] / [s] (its draw and its touch) */
+    fun questItemBox(box: RectF, s: Float = 1f): RectF {
+        val mid = box.top + CARD_PAD * s + CARD_TITLE * s / 2f
+        return RectF(box.right - CARD_PAD * s - CARD_ITEM * s, mid - CARD_ITEM * s / 2f, box.right - CARD_PAD * s, mid + CARD_ITEM * s / 2f)
+    }
+
     /**
      * q64 THE QUEST'S ITEM BUTTON (the tracker's QuestObjectiveItemButtonTemplate): the item's icon in the game's slot well, its charges
      * at the bottom right (more than one), and its cooldown as the game draws it - the dark sweep and the seconds while it runs, the
-     * icon dimmed when held (enable 0). Display only. [r] = the icon's box.
+     * icon dimmed when held (enable 0). A touch uses it out of combat ([QuestItemTap]). [r] = the icon's box.
      */
     fun questItemButton(c: Canvas, r: RectF, qi: QuestItem, now: Long = QuestItem.Cd.clock()) {
         val sz = r.width()

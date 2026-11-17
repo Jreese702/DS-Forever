@@ -1010,9 +1010,13 @@ class HomeView(
 
     // ================================================================ documents (MainActivity routes them)
 
+    /** q65: the quests document's own word on a fight (its `cb`): the quest item's tap is refused in one */
+    private var questsFight = false
+
     fun onQuests(q: JSONObject, current: Boolean) {
         quests.update(q, current, System.currentTimeMillis())
         pad = q.optJSONObject("pad")
+        questsFight = q.optBoolean("cb", false)
         HomeAttackSwitch.pad = pad
         HomeCombat.fromQuests(q)?.let { grow.noteFight(it, current, System.currentTimeMillis()) }
         questPane.invalidate()
@@ -1222,6 +1226,8 @@ class HomeView(
     }
 
     fun ack(msg: JSONObject) {
+        // q65: the quest item's answer: a refusal is said on the card
+        if (msg.optString("op") == "useitem") { if (!msg.optBoolean("ok")) questPane.note(msg.optString("why", "").ifEmpty { "Refused" }); return }
         // every answer to a focus is logged (test50: 92860's refusal was only drawn, so the log could not say why it never took)
         if (msg.optString("op") == "track" && quests.wanted != null)
             Log.i(TAG, "focus ${quests.wanted}: the game answered ${if (msg.optBoolean("ok")) "ok" else "refused"} for " +
@@ -2430,6 +2436,14 @@ class HomeView(
         }
 
         private fun tap(x: Float, y: Float) {
+            // q65 (the user, 2026-11-17: "make the quest item usable by tap out of combat"): a touch on the quest's item uses it
+            val qi = if (cardHidden) null else homeCard()?.item
+            if (qi != null && UiKit.questItemBox(RectF(0f, 0f, width.toFloat(), height.toFloat()), UiKit.CARD_HOME_SCALE)
+                    .apply { inset(-14f, -14f) }.contains(x, y)) {
+                val ok = QuestItemTap.use(context, qi, pad, inFight() || questsFight) { note(it) }
+                Log.i(TAG, "quest item ${qi.id} (quest ${qi.quest}): ${if (ok) "tapped" else "refused"}")
+                return
+            }
             // b125 (the user: "instead of the focused quest going to the quests tab, I wan it to "Minimize" the focused quest down to see
             // more of the minimap. tapping it again should restore its full size"): over the map a tap folds the card to its title line
             // and back (the pane's box shrinks; the card's own clip hides the objectives). The old layout still opens the Quests room

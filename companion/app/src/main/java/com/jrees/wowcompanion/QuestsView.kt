@@ -71,6 +71,8 @@ class QuestsView(
     private var rewardTouch = -1                    // the reward a finger picked (-1: none)
     private var rewardFollow = false                // scroll the details to the cursor's reward on the next frame
     private val rewardHits = ArrayList<Pair<RectF, Int>>()
+    /** q65: the detail's quest item, on screen (null none) */
+    private var itemHit: RectF? = null
     private var rewardBox: RectF? = null            // the reward shown with its tooltip, in the view's px (this frame)
     private val tipStack by lazy { TipStack(this) }
 
@@ -245,7 +247,7 @@ class QuestsView(
         }
         note(if (ok) when (op) {
             "watch" -> "Tracked"; "unwatch" -> "Untracked"; "abandon" -> "Abandoned"; "track" -> "Focused"
-            "untrack" -> "Focus removed"; "share" -> "Shared"
+            "untrack" -> "Focus removed"; "share" -> "Shared"; "useitem" -> "Used"
             else -> "Done"
         } else "Refused: " + msg.optString("why", "no reason given"), ok)
     }
@@ -485,6 +487,8 @@ class QuestsView(
             closeMenu(); return
         }
         for ((box, act) in btnHits) if (box.contains(x, y)) { lingerPress(act); action(act); return }
+        // q65 (the user, 2026-11-17: "make the quest item usable by tap out of combat"): the detail's quest item
+        itemHit?.let { r -> if (r.contains(x, y)) { useItem(); return } }
         if (pressed.isNotEmpty()) { pressed = ""; invalidate() }
         // q63: a finger on a reward shows its tooltip (again: hides it); anywhere else hides it
         for ((box, i) in rewardHits) if (box.contains(x, y)) {
@@ -585,6 +589,15 @@ class QuestsView(
     }
 
     private fun selectedQuest(): JSONObject? = quests.firstOrNull { it.optInt("id") == selectedId }
+
+    /** q65: the selected quest's item, used through [QuestItemTap] (its answer: questack "useitem") */
+    private fun useItem() {
+        val qi = QuestItem.parse(selectedQuest()) ?: return
+        if (QuestItemTap.use(context, qi, doc?.optJSONObject("pad"), fight()) { note(it, false) }) {
+            pendingOp = "useitem"; pendingId = qi.quest; pendingAt = System.currentTimeMillis()
+        }
+        postInvalidate()
+    }
 
     /** q63: the selected quest's rewards, and how many stops they give the cursor */
     private fun rewards(): QuestRewards? = QuestRewards.parse(selectedQuest())
@@ -895,7 +908,7 @@ class QuestsView(
         val now = System.currentTimeMillis()
         val w = width.toFloat(); val h = height.toFloat()
         c.drawColor(Theme.ink)
-        rowHits.clear(); btnHits.clear(); glyphHits.clear(); menuHits.clear(); rewardHits.clear(); rewardBox = null
+        rowHits.clear(); btnHits.clear(); glyphHits.clear(); menuHits.clear(); rewardHits.clear(); rewardBox = null; itemHit = null
 
         if (pendingOp != null && now - pendingAt > PENDING_TIMEOUT_MS) {
             pendingOp = null; pendingId = -1
@@ -1088,6 +1101,8 @@ class QuestsView(
         val tl = layout(q.optString("title", "Quest"), pDTitle, if (qItem != null) tw - (ITEM_SZ + 16f).toInt() else tw)
         if (qItem != null) {
             UiKit.questItemButton(c, RectF(tw - ITEM_SZ, 2f, tw.toFloat(), 2f + ITEM_SZ), qItem)
+            val ox = x0 + pad; val oy = y0 + 18f - detailScroll
+            if (oy + 2f + ITEM_SZ > y0) itemHit = RectF(ox + tw - ITEM_SZ - 10f, oy - 8f, ox + tw + 10f, oy + ITEM_SZ + 12f)
             if (QuestItem.Cd.left(qItem.id) > 0.0) postInvalidateDelayed(250L)
         }
         tl.draw(c); y += max(tl.height.toFloat(), if (qItem != null) ITEM_SZ + 4f else 0f) + 8f
