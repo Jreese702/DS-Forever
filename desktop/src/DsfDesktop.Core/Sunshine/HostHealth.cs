@@ -336,12 +336,17 @@ namespace DsfDesktop.Sunshine
             }
             if (!settled || GaveUp) return HealStep.None;
             if (streaming) return HealStep.None;
-            if (h.UdpOnly)
+            // another process on our UDP ports: confirmed only once the same (port, pid) is still there UdpConfirm later, whatever else
+            // is wrong (verifier 2026-11-17: with a TCP port Missing too, one passing socket still moved the whole set at once)
+            bool udpConfirmed = false;
+            if (h.Blocked.Count > 0)
             {
                 var holders = new HashSet<(int, int)>(h.BlockedBy.Select(r => (r.Port, r.Pid)));
-                if (!udpSince.HasValue || udpHolders == null || !udpHolders.Overlaps(holders)) { udpSince = now; udpHolders = holders; return HealStep.None; }
-                udpHolders.IntersectWith(holders);
-                if (now - udpSince.Value < UdpConfirm) return HealStep.None;
+                if (!udpSince.HasValue || udpHolders == null || !udpHolders.Overlaps(holders)) { udpSince = now; udpHolders = holders; }
+                else udpHolders.IntersectWith(holders);
+                udpConfirmed = now - udpSince.Value >= UdpConfirm;
+                // UDP alone and not confirmed yet: nothing to heal
+                if (h.UdpOnly && !udpConfirmed) return HealStep.None;
             }
             else { udpSince = null; udpHolders = null; }
             if (!dueAt.HasValue) { dueAt = now.AddSeconds(BackoffS[0]); return HealStep.None; }
@@ -353,7 +358,7 @@ namespace DsfDesktop.Sunshine
             dueAt = now.AddSeconds(Tries < MaxTries ? BackoffS[Tries] : LastLookS);
             // a restart can't win back a reserved port or one another program holds: a new base. The last try moves when none has
             // yet (a reservation the log and netsh didn't show still ends on a new base, the user's "Yes, move")
-            bool move = h.Excluded.Count > 0 || h.Taken.Count > 0 || (h.Blocked.Count > 0 && !h.UdpOnly) || denied >= AccessMoves || (Tries == MaxTries && !moved);
+            bool move = h.Excluded.Count > 0 || h.Taken.Count > 0 || (udpConfirmed && !h.UdpOnly) || denied >= AccessMoves || (Tries == MaxTries && !moved);
             if (move) moved = true;
             return move ? HealStep.Move : HealStep.Restart;
         }

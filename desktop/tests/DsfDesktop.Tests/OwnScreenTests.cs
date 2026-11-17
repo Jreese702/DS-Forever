@@ -574,8 +574,8 @@ namespace DsfDesktop.Tests
             var sudo = new Fake("SudoVDA") { resizeFail = null };
             var l2 = new ScreenLife(new List<IScreenDriver> { sudo });
             A.Null(l2.Make(1920, 1080, 60, T0));
-            sudo.OldGdiName = @"\\.\DISPLAY21";
             A.Null(l2.Make(1920, 1080, 120, T0));
+            sudo.OldGdiName = @"\\.\DISPLAY21";      // what SudoVDA's resize leaves beside the new one
             A.Eq(@"\\.\DISPLAY21", l2.OldGdiName);
             l2.RetireOld("WoW is on the new one");
             A.Eq(1, sudo.retires);
@@ -675,7 +675,8 @@ namespace DsfDesktop.Tests
             // verifier 2026-11-17: a refused detach in the undo still cleared the record - attached, but nobody's for ever
             var w = new FakeWin { comesOn = false, detachFail = "display settings refused (-1)" };
             bool attached = false; string dev = null;
-            var vdd = new VddScreen(() => attached, v => attached = v, () => dev, v => dev = v, w);
+            var now = T0;
+            var vdd = new VddScreen(() => attached, v => attached = v, () => dev, v => dev = v, w, () => now);
             A.Eq("it didn't come on", vdd.Make(1920, 1080, 120));
             A.True(attached, "still ours");
             A.Eq(@"\\.\DISPLAY7", dev);
@@ -684,14 +685,23 @@ namespace DsfDesktop.Tests
             A.True(attached, "refused again: kept");
             w.detachFail = null;
             A.False(vdd.Exists);
+            A.True(attached, "within the pause: not tried again yet");
+            A.Eq(2, w.calls.Count(c => c == "detach"));
+            now = now + VddScreen.StaleAgain;
+            A.False(vdd.Exists);
             A.False(attached);
             A.Null(dev);
             A.Eq(3, w.calls.Count(c => c == "detach"));
             // refused every time: never a loop - after VddScreen.MaxStaleFails the record goes, said once
             var w2 = new FakeWin { detachFail = "refused" };
             bool at2 = true; string d2 = @"\\.\DISPLAY7";
-            var v2 = new VddScreen(() => at2, v => at2 = v, () => d2, v => d2 = v, w2);
-            for (int i = 0; i < VddScreen.MaxStaleFails + 2; i++) A.False(v2.Exists);
+            var t2 = T0;
+            var v2 = new VddScreen(() => at2, v => at2 = v, () => d2, v => d2 = v, w2, () => t2);
+            // verifier 2026-11-17: Exists runs several times per tick - one tick's looks are one try, not the whole cap
+            for (int i = 0; i < 5; i++) A.False(v2.Exists);
+            A.Eq(1, w2.calls.Count(c => c == "detach"), "one try per pause");
+            A.True(at2, "still ours");
+            for (int i = 0; i < VddScreen.MaxStaleFails + 2; i++) { t2 = t2 + VddScreen.StaleAgain; A.False(v2.Exists); }
             A.False(at2);
             A.Eq(VddScreen.MaxStaleFails, w2.calls.Count(c => c == "detach"));
         }
@@ -728,6 +738,33 @@ namespace DsfDesktop.Tests
             A.Eq(OldScreen.Next.Later, OldScreen.Decide(true, old.ToLowerInvariant(), old, OldScreen.MaxTries - 2));
             A.Eq(OldScreen.Next.LeaveOn, OldScreen.Decide(true, old, old, OldScreen.MaxTries - 1), "never a loop");
             A.Eq(OldScreen.Next.Retire, OldScreen.Decide(true, fresh, null, 5), "none: nothing to do");
+        }
+
+        [Test]
+        public static void ASecondModeChangeWaitsForTheOldScreen()
+        {
+            // verifier 2026-11-17: a second SudoVDA mode change removed the old screen (RetireLocked "a newer mode") while WoW was still
+            // on it. While an old one is up: ours stays at its mode, no resize, nothing removed, not a failed try
+            var sudo = new Fake("SudoVDA") { resizeFail = null };
+            var life = new ScreenLife(new List<IScreenDriver> { sudo });
+            A.Null(life.Make(1920, 1080, 60, T0));
+            A.Null(life.Make(1920, 1080, 120, T0));
+            A.Eq(1, sudo.resizes);
+            sudo.OldGdiName = @"\\.\DISPLAY21";      // WoW not seen off it yet (RetireOldScreen: Later / LeaveOn)
+            var m144 = (2560, 1440, 144);
+            A.Eq(ScreenPlan.Step.Keep, life.Decide(T0.AddSeconds(30), true, true, true, true, false, m144, false).step, "the old one is still up");
+            A.Null(life.Make(2560, 1440, 144, T0.AddSeconds(30)));
+            A.Eq(1, sudo.resizes, "no second resize while the old one is up");
+            A.Eq(0, sudo.retires);
+            A.Eq(0, sudo.removes);
+            A.Eq(0, life.Fails, "a wait, not a failed try");
+            A.Eq((1920, 1080, 120), life.Mode);
+            // the old one retired (WoW seen off it): the new mode now
+            life.RetireOld("WoW is on the new one");
+            A.Eq(ScreenPlan.Step.MakeOurs, life.Decide(T0.AddSeconds(60), true, true, true, true, false, m144, false).step);
+            A.Null(life.Make(2560, 1440, 144, T0.AddSeconds(60)));
+            A.Eq(2, sudo.resizes);
+            A.Eq((2560, 1440, 144), life.Mode);
         }
 
         [Test]

@@ -335,7 +335,8 @@ namespace DsfDesktop.Sunshine
             lock (gate)
             {
                 if (dev == null) return "not made";
-                if (old.HasValue) RetireLocked("a newer mode");
+                // verifier 2026-11-17: this removed the old screen with WoW maybe still on it. The old one goes only through RetireOld
+                if (old.HasValue) return "the old screen is still up";
                 var next = cur == id ? alt : id;
                 if (!dev.Add(next, w, h, hz, out long luid, out uint target, out string why)) return "add: " + why;
                 var name = NameOf(luid, target);

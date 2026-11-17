@@ -97,6 +97,8 @@ namespace DsfDesktop.Sunshine
             return (d, m.w > 0 ? m : ((int, int, int)?)null);
         }
 
+        static bool OldUp(IScreenDriver d) { try { return d?.OldGdiName != null; } catch (Exception) { return true; } }
+
         static bool Has(IScreenDriver d) { try { return d.Exists; } catch (Exception) { return false; } }
 
         /// <summary>a screen a driver still has from before (a VDD monitor we attached and Desktop didn't detach): ours</summary>
@@ -214,7 +216,9 @@ namespace DsfDesktop.Sunshine
                     // but said: the PC needs a virtual screen, and the Thor gets the line with its Retry
                     if (gaveUp) return (!sunshineOnOurs && !hasScreen ? ScreenPlan.Step.GaveUp : step, !sunshineOnOurs && !hasScreen ? MaxFails + " tries failed" : null);
                     if (now - failedAt < RetryAfter) return (step, null);
-                    if (askedOut.Value != want) return (ScreenPlan.Step.MakeOurs, ModeChanged);
+                    // verifier 2026-11-17: a second mode change while WoW was still on the old screen removed the screen WoW was on.
+                    // Ours stays at its mode until the old one is retired (WoW seen off it), then the new mode
+                    if (askedOut.Value != want && !OldUp(ours)) return (ScreenPlan.Step.MakeOurs, ModeChanged);
                     if (!sunshineOnOurs) return (ScreenPlan.Step.MakeOurs, NotOnOurs);
                     return (step, null);
                 case ScreenPlan.Step.MakeOurs:
@@ -244,6 +248,8 @@ namespace DsfDesktop.Sunshine
                 {
                     // there already: as it is (a leftover of unknown mode too), or at the Thor's new mode
                     if (!asked.HasValue || asked.Value == (w, h, hz)) return null;
+                    // an old screen still up (WoW maybe on it): no new mode yet - ours as it is, nothing removed, not a failed try
+                    if (OldUp(cur)) { Log.I("virtual screen: the old screen is still up: ours stays at " + cur.Mode.w + "x" + cur.Mode.h + "@" + cur.Mode.hz + " until it goes"); return null; }
                     string rs;
                     try { rs = cur.Resize(w, h, hz); } catch (Exception e) { rs = e.Message; }
                     if (rs == null) { asked = (w, h, hz); return null; }
@@ -437,8 +443,9 @@ namespace DsfDesktop.Sunshine
         /// it: its first monitor comes up on by itself); [ourDevice]/[setDevice] = the display name we attached (lasting), so a second
         /// VDD monitor the player has on is never adopted or detached; [win] = the Windows calls (null = the live ones)</summary>
         public VddScreen(Func<bool> attachedByUs, Action<bool> setAttached, Func<string> ourDevice = null, Action<string> setDevice = null,
-                         IVddWindows win = null)
+                         IVddWindows win = null, Func<DateTime> clock = null)
         {
+            this.clock = clock ?? (() => DateTime.UtcNow);
             this.attachedByUs = attachedByUs;
             this.setAttached = setAttached;
             this.ourDevice = ourDevice ?? (() => null);
@@ -504,6 +511,11 @@ namespace DsfDesktop.Sunshine
 
         /// <summary>times our recorded but inactive monitor's detach (its registry attachment) was refused</summary>
         int staleFails;
+        /// <summary>when the last of those was refused: the next try waits <see cref="StaleAgain"/> (verifier 2026-11-17: Exists runs
+        /// several times per tick, so the cap was used up within one tick)</summary>
+        DateTime staleFailedAt = DateTime.MinValue;
+        public static readonly TimeSpan StaleAgain = TimeSpan.FromMinutes(2);
+        readonly Func<DateTime> clock;
         /// <summary>a detach of our recorded inactive monitor refused this many times: the record goes anyway (said once)</summary>
         public const int MaxStaleFails = 3;
 
@@ -520,10 +532,13 @@ namespace DsfDesktop.Sunshine
             GdiName = null;
             if (!string.IsNullOrEmpty(dev) && vdd.Any(v => string.Equals(v.Name, dev, StringComparison.OrdinalIgnoreCase)))
             {
+                // refused a moment ago: the record stays, tried again after the pause (not several times in one tick)
+                if (staleFails > 0 && clock() - staleFailedAt < StaleAgain) return;
                 var err = win.Detach(dev);
                 if (err != null)
                 {
                     staleFails++;
+                    staleFailedAt = clock();
                     Log.I("virtual screen: Virtual Display Driver's " + dev + " (ours, not on) couldn't be detached (" + staleFails + "/" + MaxStaleFails + "): " + err);
                     if (staleFails < MaxStaleFails) return;
                     Log.I("virtual screen: " + MaxStaleFails + " detaches refused: " + dev + " is no longer counted as ours");

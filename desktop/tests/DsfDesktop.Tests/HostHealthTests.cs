@@ -437,5 +437,28 @@ namespace DsfDesktop.Tests
             b.Tick(Start, both, false, true);
             A.Eq(HealStep.Move, b.Tick(Start.AddSeconds(5), both, false, true));
         }
+
+        [Test]
+        public static void Healer_AMissingPortWithAPassingUdpSocketIsRestartedNotMoved()
+        {
+            // verifier 2026-11-17: ours not listening on one TCP port yet (a restart fixes it) plus one passing UDP socket: UdpOnly was
+            // false, so the unconfirmed UDP holder made the first try a Move to a new base
+            var missing = Check(Tcp(OurPid, 52984, 52989), Udp(901, 52999));
+            A.False(missing.UdpOnly);
+            A.Eq(1, missing.Missing.Count);
+            var h = new HostHealer();
+            A.Eq(HealStep.None, h.Tick(Start, missing, false, true));
+            A.Eq(HealStep.Restart, h.Tick(Start.AddSeconds(5), missing, false, true), "the UDP holder isn't confirmed: a restart");
+            // ours gone entirely (every port missing) and a passing holder: a restart too
+            var gone = Check(new TcpListenerRow[0], Udp(902, 53000));
+            var g = new HostHealer();
+            g.Tick(Start, gone, false, true);
+            A.Eq(HealStep.Restart, g.Tick(Start.AddSeconds(5), gone, false, true));
+            // the same holder still there 15 s on (confirmed) with the TCP port still missing: then a new base
+            var c = new HostHealer();
+            c.Tick(Start, missing, false, true);
+            A.Eq(HealStep.Restart, c.Tick(Start.AddSeconds(5), missing, false, true));
+            A.Eq(HealStep.Move, c.Tick(Start.AddSeconds(20), missing, false, true), "confirmed over 15 s: moved");
+        }
     }
 }
