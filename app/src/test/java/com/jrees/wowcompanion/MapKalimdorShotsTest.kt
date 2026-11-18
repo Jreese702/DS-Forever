@@ -521,6 +521,9 @@ class MapKalimdorShotsTest {
         fun roomFrames() { for (i in 0 until 40) { bm.eraseColor(Color.BLACK); room.layout(0, 0, W, H); room.draw(Canvas(bm)); Thread.sleep(30); settle(2) } }
         roomFrames()
         assertEquals("the untracked quest grey, the tracked one not", listOf(8), room.greyQuests())
+        // the 1.0.34 merge leftover: its list row wears the muted "Untracked" tag as Home's card does; the tracked one's does not
+        assertTrue("the untracked row's tag (${room.untrackedTagRows})", 8 in room.untrackedTagRows)
+        assertEquals("only the untracked row", setOf(8), room.untrackedTagRows.toSet())
         shot("room_untracked_grey", bm)
         val prefs = app.getSharedPreferences("mapfilters", android.content.Context.MODE_PRIVATE)
         prefs.edit().putBoolean(QuestLayers.Layer.OTHER.key, false).commit()

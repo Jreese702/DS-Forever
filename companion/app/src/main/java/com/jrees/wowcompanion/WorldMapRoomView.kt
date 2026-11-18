@@ -2262,6 +2262,18 @@ class WorldMapRoomView(context: Context) : View(context) {
         StaticLayout.Builder.obtain(titleOf(id), 0, titleOf(id).length, titleP, max(10f, w).toInt()).setMaxLines(2)
             .setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(0f, 0.95f).build()
     private fun titleW() = PANEL_W - 16f - 52f - CHECK_PX - 18f
+    /** an untracked quest's row (in the log, not tracked, not ready): the grey disc and the muted "Untracked" tag at the title row's
+     *  end, as Home's card (the user, 2026-11-17: "its confusing on that its not tracked"; the 1.0.34 merge leftover) */
+    private fun untrackedRow(id: Int): Boolean {
+        val q = logEntry(id) ?: return false
+        val ready = q.optBoolean("ready") || q.optBoolean("done") || marks().firstOrNull { it.id == id }?.done == true
+        return !ready && !trackedQ(q)
+    }
+    private val tagP by lazy { UiKit.bodyPaint(20f, Theme.dim) }
+    /** the title's width on [id]'s row: the "Untracked" tag's room taken off on an untracked row */
+    private fun titleWFor(id: Int): Float = if (untrackedRow(id)) titleW() - tagP.measureText(Tr.t("Untracked")) - 12f else titleW()
+    /** the tests: the rows drawn with the "Untracked" tag (their ids), the last frame's */
+    val untrackedTagRows = HashSet<Int>()
     private fun objLines(id: Int): Int {
         val q = logEntry(id) ?: return 0
         if (q.optBoolean("ready") || q.optBoolean("done")) return 1
@@ -2269,7 +2281,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
     private fun rowHeight(r: MapQuestBook.Row): Float = when (r) {
         is MapQuestBook.Row.Header -> HEAD_H
-        is MapQuestBook.Row.Quest -> 12f + max(CHECK_PX, titleLayout(r.id, titleW()).height.toFloat()) + objLines(r.id) * 26f + 8f
+        is MapQuestBook.Row.Quest -> 12f + max(CHECK_PX, titleLayout(r.id, titleWFor(r.id)).height.toFloat()) + objLines(r.id) * 26f + 8f
         MapQuestBook.Row.Polestar -> 12f + 30f + (if (runCatching { polestar() }.getOrNull()?.words != null) 26f else 0f) + 8f
     }
 
@@ -2363,10 +2375,17 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (q != null && !ready && !trackedQ(q)) UiKit.questDiscMuted(c, row.left + 26f, row.top + 26f, 40f, marker = true)
         else UiKit.questDisc(c, row.left + 26f, row.top + 26f, 40f, if (ready) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
             focus = id == focusQid, number = if (ready || n <= 0) null else n)
-        val tl = titleLayout(id, titleW())
+        val tl = titleLayout(id, titleWFor(id))
         c.save(); c.translate(row.left + 52f, row.top + 10f); tl.draw(c); c.restore()
         // THE TRACK TICK (the game's QuestLogTrackCheckboxTemplate) at the row's top right: X or a touch toggles tracking
         val box = RectF(row.right - 10f - CHECK_PX, row.top + 8f, row.right - 10f, row.top + 8f + CHECK_PX)
+        // an untracked row: the muted "Untracked" before the tick, on the title's first line (Home's card)
+        if (untrackedRow(id)) {
+            val word = Tr.t("Untracked")
+            tagP.color = Theme.dim
+            c.drawText(word, box.left - 12f - tagP.measureText(word), row.top + 10f + tl.getLineBaseline(0), tagP)
+            untrackedTagRows.add(id)
+        } else untrackedTagRows.remove(id)
         UiKit.tex("qlog_check_box")?.let { c.drawBitmap(it, null, box, pBmp) } ?: UiKit.check(c, box.centerX(), box.centerY(), CHECK_PX, false)
         if (q != null && trackedQ(q)) UiKit.tex("qlog_check_mark")?.let { m ->
             val sc = CHECK_PX / 28f
