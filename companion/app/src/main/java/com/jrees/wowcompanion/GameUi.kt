@@ -26,8 +26,10 @@ object GameUi {
     private val policy = GameUiPolicy({ tracking }) { id -> if (id == HudSplit.CONTROLLER_ID) hudBitMode() else mode(id) }
     /** hub11: the game's cast bar (its own Show / Hide, not a layout bit) */
     private val castBar = CastBarPolicy()
-    /** hub13 HUD MODE: the game's player / target frames hidden, per character; the hub document's hud.hidden (null = no row) */
-    private val hud = CastBarPolicy(CastBarPolicy.HUD_SHOW, CastBarPolicy.HUD_HIDE)
+    /** hub67 (PR #532 reworked): the ONE restore tap per load; the hub document's `rst` (null = an add-on set without it) */
+    private val restore = RestorePolicy()
+    @Volatile private var rst: HubRestore? = null
+    /** hub13 HUD MODE: the game's player / target frames hidden; the hub document's hud.hidden (hub67: its Show column is RESTORE now) */
     @Volatile private var hudHidden: Boolean? = null
     /** hub15: HUD mode's bar place now (the hub document's prd: y, its range and step, Interact's WC.prd); null = no bar */
     @Volatile private var prdY: Int? = null
@@ -150,7 +152,7 @@ object GameUi {
 
     /** when the last CURRENT hello came (a login or a reload): the first hide waits for the loading screen (GameUiPolicy.SETTLE_MS) */
     @Volatile private var helloAt = 0L
-    fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin(); hud.freshLogin(); swBack.clear(); hudBack.clear() }
+    fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin(); restore.freshLogin(); swBack.clear(); hudBack.clear() }
 
     /**
      * HUB17 THE HUD-MODE SPLIT (the user: the player frame, the target frame and the enemy nameplates on Top screen, the resource bar on
@@ -708,6 +710,8 @@ object GameUi {
         pad = h.optJSONObject("pad")
         castBarHidden = h.optJSONObject("cb")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         hudHidden = h.optJSONObject("hud")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
+        // hub67: the one-tap memory (absent from an older add-on set: no restore tap, nothing held)
+        rst = h.optJSONObject("rst")?.let { o -> if (o.has("col")) HubRestore(o.optInt("col", -1), o.optInt("n", 0), o.optBoolean("q", false)) else null }
         // hub17: the split switches (absent from an older add-on: no rows, no taps)
         sw = h.optJSONObject("sw")?.let { o ->
             val cols = HashMap<String, Int>()
@@ -774,6 +778,15 @@ object GameUi {
         val live = GameInput.live(now)
         // a state the game wrote before it went quiet says nothing about now
         val s = state?.let { if (live) it else it.copy(current = false) }
+        // hub67: this load's ONE restore tap goes before any other top-screen tap; the others wait for its answer (at most 3 s), then
+        // tap only what still differs from this character's choices
+        val r = rst
+        val rcol = restore.step(r, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
+        if (rcol != null) {
+            last = if (GameInput.tap(ctx, pad, ROW, rcol)) UiStep.Wait("Restoring this character's top screen") else UiStep.Wait("The game has not published its tap pad")
+            return
+        }
+        if (restore.holding(r, s, now)) { last = UiStep.Wait("Restoring this character's top screen"); return }
         val step = policy.step(s, room.name, visible, live, now, helloAt + GameUiPolicy.SETTLE_MS)
         if (step is UiStep.Tap && !GameInput.tap(ctx, pad, ROW, step.mask)) {
             last = UiStep.Wait("The game has not published its tap pad")
