@@ -112,11 +112,6 @@ class PetFollowBTest {
         assertEquals(SettingsTabs.Group.BUTTONS, SettingsTabs.Block.PET_B.group)
         assertEquals(listOf(PetFollowB.ROW_ID), SettingsTabs.Block.PET_B.rows)
         assertEquals(SettingsTabs.Tab.CONTROLLER, SettingsTabs.Block.PET_B.tab)
-        assertTrue(SettingsPreview.has(PetFollowB.ROW_ID) && SettingsPreview.animated(PetFollowB.ROW_ID))
-        assertEquals("B: pet follow: On", SettingsPreview.title(PetFollowB.ROW_ID, SettingsPreview.State()))
-        assertEquals("B: pet follow: Off", SettingsPreview.title(PetFollowB.ROW_ID, SettingsPreview.State(petFollowB = false)))
-        assertTrue(SettingsPreview.caption(PetFollowB.ROW_ID, SettingsPreview.State()) !=
-            SettingsPreview.caption(PetFollowB.ROW_ID, SettingsPreview.State(petFollowB = false)))
     }
 
     @Test fun theWordsTranslate() {
@@ -124,7 +119,7 @@ class PetFollowBTest {
             .map { java.io.File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) Tr.load(l, java.io.File(dir, "$l.json").readText(Charsets.UTF_8))
         val words = listOf(PetFollowB.ROW_ID, SettingsTabs.Block.PET_B.heading, PetFollowB.line(true), PetFollowB.line(false),
-            "B: pet follow: On", "B: pet follow: Off") + PetFollowB.caption(true) + PetFollowB.caption(false) +
+            "B: pet follow: On", "B: pet follow: Off") +
             listOf("you", "your pet follows", "your pet attacks", "Pet Follow", "B's own action")
         for (l in listOf("es", "fr")) for (w in words) assertTrue("$l: $w", Tr.t(w, l) != w)
         assertNotNull(PetFollowB.SEGMENTS.map { Tr.t(it, "es") })

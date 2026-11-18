@@ -80,9 +80,9 @@ class ControllerTilesRoomTest {
         r.pad.onGuestAck(JSONObject().put("op", "hold").put("ok", true)); lay(r)
     }
 
-    /** every group of the tab open (the tab still folds: the user's pick 5 is open) */
+    /** every group of the tab open (the user's pick 5, 2026-11-17: the tab does not fold, so they are) */
     private fun openAll(r: SettingsRoom) {
-        for (g in listOf(SettingsTabs.Group.WHEELS, SettingsTabs.Group.COMBAT)) if (g !in r.open) r.toggle(g)
+        assertEquals(setOf(SettingsTabs.Group.BUTTONS, SettingsTabs.Group.WHEELS, SettingsTabs.Group.COMBAT), r.open)
         lay(r)
     }
 
@@ -154,7 +154,6 @@ class ControllerTilesRoomTest {
     /** three tile rows, one part each; Smart Y's own group gone (its tile is the wide last one of Buttons); no "What it does" panel */
     @Test fun controllerTabIsThreeRowsOfTiles() {
         val r = room(); openAll(r)
-        assertEquals(View.GONE, r.preview.visibility)
         val groups = SettingsTabs.groups(SettingsTabs.Tab.CONTROLLER).filter { r.hasRows(it) }
         assertEquals(listOf(SettingsTabs.Group.BUTTONS, SettingsTabs.Group.WHEELS, SettingsTabs.Group.COMBAT), groups)
         for (gb in r.groupBoxes.filter { it.group in groups }) assertTrue("${gb.group}", gb.parts.single() is ControllerTiles)
@@ -202,8 +201,7 @@ class ControllerTilesRoomTest {
         var left = false
         r.pad.onLeave = { left = true }
         CastSettings.abxyLocation = CastSettings.AbxyLocation.NINTENDO
-        press(r, "PADDDOWN")                                             // the Buttons heading (the tab still folds: pick 5)
-        press(r, "PADDDOWN"); press(r, "PADDLEFT"); press(r, "PADDLEFT")  // the row's nearest tile, then left to its first
+        press(r, "PADDDOWN"); press(r, "PADDLEFT"); press(r, "PADDLEFT")  // the first row's nearest tile (no heading stops: pick 5), then left to its first
         val tile = tileBoxes(r).getValue("abxy")
         assertEquals(tile, r.pad.focusBox())
         press(r, "PAD1")
@@ -294,7 +292,7 @@ class ControllerTilesRoomTest {
         sent.clear()
         doc = smartDoc(on = true); b.refresh(); lay(r)
         // the cursor onto Smart Y, A, down to the band's List, A
-        press(r, "PADDDOWN"); press(r, "PADDDOWN"); press(r, "PADDRIGHT"); press(r, "PADDRIGHT"); press(r, "PADDRIGHT")
+        press(r, "PADDDOWN"); press(r, "PADDRIGHT"); press(r, "PADDRIGHT"); press(r, "PADDRIGHT")   // (pick 5: no heading stop first)
         val tile = tileBoxes(r).getValue("smarty")
         assertEquals(tile, r.pad.focusBox())
         press(r, "PAD1")

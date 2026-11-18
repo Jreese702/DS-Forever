@@ -129,15 +129,14 @@ class BottomTilesRoomTest {
      *  "What it does" panel (the tiles are the pictures, as on Top screen) */
     @Test fun bottomTabIsTwoGroupsOfTiles() {
         val r = room()
-        r.toggle(SettingsTabs.Group.MAP)                                  // (the tab folds until the core's pick 5: Map opened by hand)
-        lay(r)
+        lay(r)                                                            // (pick 5: the tab does not fold, both groups open)
+        assertEquals(setOf(SettingsTabs.Group.HOME, SettingsTabs.Group.MAP), r.open)
         val home = r.groupBoxes.single { it.group == SettingsTabs.Group.HOME }
         val map = r.groupBoxes.single { it.group == SettingsTabs.Group.MAP }
         assertEquals(BottomTiles.HOME_TILES, (home.parts.single() as BottomTilesView).tileIds())
         assertEquals(BottomTiles.MAP_TILES, (map.parts.single() as BottomTilesView).tileIds())
         for (g in listOf(SettingsTabs.Group.CAST_BAR, SettingsTabs.Group.CHAT))
             assertEquals("$g not shown", View.GONE, r.groupBoxes.single { it.group == g }.box.visibility)
-        assertEquals(View.GONE, r.preview.visibility)
         // five columns of Top's 232 x 184 tiles on the 1240 px page
         val b = tileBoxes(r)
         assertEquals(11, b.size)
@@ -161,8 +160,7 @@ class BottomTilesRoomTest {
         press(r, "PADDDOWN")
         val boxes = tileBoxes(r)
         val tile = boxes.getValue(BottomTiles.REST)
-        // (until the core's pick 5 the tab folds: Home's heading is the first stop, the first tile under it)
-        if (r.pad.focusBox() != tile) press(r, "PADDDOWN")
+        // (pick 5: no heading stops - the first stop under the tab row is a tile)
         repeat(4) { if (r.pad.focusBox() != tile) press(r, "PADDLEFT") }
         assertEquals("the first tile: top-left", tile, r.pad.focusBox())
         press(r, "PADDRIGHT")
@@ -271,7 +269,6 @@ class BottomTilesRoomTest {
         }
         fun open(id: String) { r.bottomTiles.forEach { it.closeSelection() }; lay(r); openByTouch(r, id); reveal(id) }
         fun close() { r.bottomTiles.forEach { it.closeSelection() }; lay(r) }
-        r.toggle(SettingsTabs.Group.MAP)
         shot("bot_1_no_game")
         open(BottomTiles.REST); shot("bot_1b_no_game_band_rest")
         close(); scroll(0)
@@ -283,10 +280,12 @@ class BottomTilesRoomTest {
         shot("bot_2_game")
         // (the whole tab fits the page: no "lower" view; the bands lower down scroll, below)
         System.getenv("BOTTOM_DEBUG_DIR")?.let { d ->
-            PreviewStage.home(app, HomeView.Companion.Look(HomeSettings.rest, true, HomeSettings.questOverMap, false), false)?.let { b ->
-                File(d).mkdirs(); File(d, "home_stage.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
-            PreviewStage.home(app, HomeView.Companion.Look(HomeSettings.rest, true, HomeSettings.questOverMap, true), true)?.let { b ->
-                File(d, "home_stage_fight.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+            File(d).mkdirs()
+            for ((name, fight) in listOf("home_stage" to false, "home_stage_fight" to true)) {
+                val b = Bitmap.createBitmap(PreviewStage.W, PreviewStage.H, Bitmap.Config.ARGB_8888)
+                if (PreviewStage.render(app, HomeView.Companion.Look(HomeSettings.rest, true, HomeSettings.questOverMap, fight), fight, null, b) != null)
+                    File(d, "$name.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            }
         }
         for ((i, id) in BottomTiles.ALL.withIndex()) {
             open(id)
@@ -301,7 +300,7 @@ class BottomTilesRoomTest {
         open(BottomTiles.TALK); org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(2600)); shot("bot_band_7c_talk_send_now")
         HomeSettings.setTalkSendNow("Sample-Realm", false); HomeSettings.setHoldTalk("Sample-Realm", false)
         // the zoom band with the cursor on Indoors: the picture follows it
-        close(); hold(r); r.toggle(SettingsTabs.Group.MAP); lay(r)
+        close(); hold(r); lay(r)
         open(BottomTiles.ZOOM)
         val zp = partOf(r, BottomTiles.ZOOM)
         val zb = zp.focusTargets().drop(zp.tileIds().size)
@@ -312,7 +311,7 @@ class BottomTilesRoomTest {
         press(r, "PAD2"); shot("bot_b_back_on_tile")
         // the themes: the default Classic Bronze, two OLED ones and a dark one (ThemePresets has no light preset), the tab and a band each
         for (th in listOf("classic", "oled_bronze", "dark_silver", "oled_frost")) {
-            Theme.use(th); close(); hold(r); r.toggle(SettingsTabs.Group.MAP); lay(r); scroll(0); shot("bot_theme_$th")
+            Theme.use(th); close(); hold(r); lay(r); scroll(0); shot("bot_theme_$th")
             open(BottomTiles.QUEST); shot("bot_theme_${th}_band_quest")
         }
         Theme.use("classic")
@@ -332,7 +331,7 @@ class BottomTilesRoomTest {
         // no kit on the phone yet (the stage's own pictures, made with the kit, go too: a phone without the kit never had them)
         BottomPictures.drop()
         MemWatch.room = "home"; MemWatch.trimmed(android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW); MemWatch.room = "-"
-        r = room(kit = false); r.toggle(SettingsTabs.Group.MAP); lay(r); shot("bot_nokit")
+        r = room(kit = false); lay(r); shot("bot_nokit")
         open(BottomTiles.CLOCK); shot("bot_nokit_band_clock")
         open(BottomTiles.CASTBAR); shot("bot_nokit_band_castbar")
         open(BottomTiles.WORLD); shot("bot_nokit_band_worldmap")

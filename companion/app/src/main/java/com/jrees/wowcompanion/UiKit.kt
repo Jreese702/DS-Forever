@@ -6587,7 +6587,8 @@ object UiKit {
         val pn = bodyPaint(25f, if (active) Color.WHITE else Theme.gold)
         c.drawText(Tr.t(TextUtils.ellipsize(name, pn, r.right - 12f - tx, TextUtils.TruncateAt.END).toString()), tx,
             r.centerY() - 12f - (pn.ascent() + pn.descent()) / 2f, pn)
-        val pp = bodyPaint(19f, Theme.dim)
+        // the lit tab is light on Dark Silver: dim grey points vanished on it (contact sheet 11-17), so the lit tab reads near-white
+        val pp = bodyPaint(19f, if (active) Color.rgb(236, 230, 218) else Theme.dim)
         c.drawText(Tr.t(if (points == 1) "1 point" else "$points points"), tx, r.centerY() + 16f - (pp.ascent() + pp.descent()) / 2f, pp)
     }
 

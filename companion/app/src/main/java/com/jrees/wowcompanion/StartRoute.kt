@@ -63,10 +63,6 @@ object PauseOver {
     /** the row's one line under its name */
     fun line(game: Boolean): String = if (game) "A game window open: Start opens the game's wheel." else "A game window open: Start opens Home's wheel."
 
-    /** the "What it does" picture's caption */
-    fun caption(game: Boolean): List<String> = if (game) listOf("With a game window open, Start opens", "the game's own wheel on the top screen.")
-        else listOf("With a game window open, Start opens", "Home's wheel on the bottom screen.")
-
     /** the taps that tell the add-on the value */
     fun cells(game: Boolean): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to if (game) GAME_CODE else OURS_CODE)
 

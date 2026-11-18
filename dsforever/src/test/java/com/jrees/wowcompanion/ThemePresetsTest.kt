@@ -228,4 +228,15 @@ class ThemePresetsTest {
     private fun tokens(t: ThemeSpec) = listOf("ink" to t.ink, "field" to t.field, "panel" to t.panel, "raised" to t.raised,
         "selected" to t.selected, "accent" to t.accent, "edge" to t.edge, "edgeDim" to t.edgeDim, "text" to t.text, "textDim" to t.textDim,
         "dim" to t.dim, "warn" to t.warn, "focus" to t.focus, "soft" to t.soft, "btnLabel" to t.btnLabel)
+
+    /**
+     * THE STONE GROUNDS IN EVERY THEME (the user's picks, 2026-11-17: "stone ground on Settings, Controller room and BAGS on EVERY theme
+     * incl. Classic"): every preset, Classic included, gives each of the three rooms its rock (it was flat on Classic for Bags)
+     */
+    @Test fun roomGroundsInEveryTheme() {
+        for (t in all) for (room in RoomGround.Room.values()) assertTrue("${t.id} $room", RoomGround.light(room, t) > 0f)
+        assertEquals(RoomGround.BAGS_LIGHT, RoomGround.light(RoomGround.Room.BAGS, ThemePresets.CLASSIC), 0f)
+        assertEquals(RoomGround.SETTINGS_LIGHT, RoomGround.light(RoomGround.Room.SETTINGS, ThemePresets.CLASSIC), 0f)
+        assertEquals(RoomGround.CONTROLLER_LIGHT * RoomGround.OLED_LIFT, RoomGround.light(RoomGround.Room.CONTROLLER, ThemePresets.OLED_BRONZE), 1e-6f)
+    }
 }

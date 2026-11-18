@@ -31,6 +31,50 @@ class PerformanceTileModelTest {
         assertEquals(M.TOP + GameUiTiles.TILE_H + GameUiTiles.BOTTOM, g.height, 0.01f)
     }
 
+    /**
+     * STREAM SETTINGS IS A PICTURE TILE (the user's pick, 2026-11-17: "Performance 'Stream settings' becomes a picture tile like the
+     * others"; it was a compact row): the second row's first tile; its A opens its page (no band, no
+     * lines), its word "Open" as Top's Edit layout
+     * (since the 11-17 ruling it shows in Local too: [streamSettingsShowsInLocalDimmed])
+     */
+    @Test fun streamSettingsIsATile() {
+        val on = M.slots(PerformanceTileModel.State(streamOn = true))
+        assertEquals(listOf(M.LIMIT, M.FG, M.MEM, M.INDOOR, M.STREAM), on.map { it.id })
+        val g = M.grid(on, 1240f, -1, 0f)
+        assertEquals(2, M.rows(on, 1240f))
+        assertEquals(16f, g.tiles[4].l, 0.01f)
+        assertTrue(g.tiles[4].t > g.tiles[0].t)
+        assertEquals(GameUiTiles.TILE_W, g.tiles[4].w, 0.01f)
+        assertTrue(M.opensPage(M.STREAM))
+        assertTrue(M.lines(M.STREAM, PerformanceTileModel.State(streamOn = true)).isEmpty())
+        assertEquals("Open", M.value(M.STREAM, PerformanceTileModel.State(streamOn = true)))
+        assertEquals("Stream settings", M.NAMES[M.STREAM])
+        // the part's height is the grid's: no compact row under it any more
+        assertEquals(g.height + GameUiTiles.BOTTOM, M.height(g.height), 0.01f)
+    }
+
+    /**
+     * the user's ruling, 2026-11-17: "Stream settings tile: ALWAYS show it on the Performance tab; in Local mode (streaming not set up)
+     * it is dimmed, and A opens its page, which shows one terse line on how to set streaming up": the same five slots with streaming
+     * off; dimmed, its word "Local", still a page (no band, no lines); set up, not dimmed and "Open"
+     */
+    @Test fun streamSettingsShowsInLocalDimmed() {
+        val local = PerformanceTileModel.State(streamOn = false)
+        val set = PerformanceTileModel.State(streamOn = true)
+        assertEquals(M.ALL, M.slots(local))
+        assertEquals(M.slots(set), M.slots(local))
+        assertTrue(M.dimmed(M.STREAM, local))
+        assertTrue(!M.dimmed(M.STREAM, set))
+        assertEquals("Local", M.value(M.STREAM, local))
+        assertTrue(M.opensPage(M.STREAM))
+        assertTrue(M.lines(M.STREAM, local).isEmpty())
+        assertNull(M.badge(M.STREAM, local))
+        // the page's one line: terse (one line, no full stop, no explanation)
+        assertTrue(StreamHelpHost.LINE.length <= 64)
+        assertTrue(!StreamHelpHost.LINE.endsWith("."))
+        assertTrue('\n' !in StreamHelpHost.LINE)
+    }
+
     @Test fun aWideSlotNeverStartsInTheLastColumn() {
         val slots = listOf(PerformanceTileModel.Slot("a"), PerformanceTileModel.Slot("b"), PerformanceTileModel.Slot("c"), PerformanceTileModel.Slot("d"), PerformanceTileModel.Slot("w", wide = true), PerformanceTileModel.Slot("e"))
         val g = M.grid(slots, 1240f, -1, 0f)

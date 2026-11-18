@@ -18,8 +18,9 @@ import android.os.SystemClock
  * body under a 64 px strip (the back chip, touch only, and the title); its one red cloth button top-right opens the PREMADE THEMES
  * ([ThemeGallery]) as a second step of the same page. B: the gallery back to the maker, the maker back to its tile.
  *
- *  - LEFT 460: the live mini Home in the DRAFT theme (core's PreviewStage.renderWith through [homeRender], at most once per 120 ms of
- *    input; the drawn mini room until the game's first document) and the room strip ([ThemeGallery.miniRoom]).
+ *  - LEFT 460: the live mini Home in the DRAFT theme (PreviewStage.render, the Bottom screen tiles' renderer, through [homeRender]: the
+ *    host wires it; at most once per 120 ms of input; the drawn mini room until the game's first document) and the room strip
+ *    ([ThemeGallery.miniRoom]).
  *  - RIGHT 740: one row a pick, a 140 px label then the swatches (52 px at a 60 px pitch), each swatch showing what it changes:
  *    Accent (a disc), Metal (a frame in that metal), Ground (the stone tinted, its real dark value in the middle), Shade (Deep / Mid / Lift,
  *    gone while OLED is on: no dead stops), Text ("Aa" on the draft's raised plate), OLED (On / Off), Art (Low / Mid / High). The pick is a
@@ -448,8 +449,8 @@ class ThemeMakerPage {
         const val THROTTLE_MS = 120L
 
         /**
-         * the live mini Home in a theme: core's `PreviewStage.renderWith(spec, look, scale, into)` (wired by the integrator); false / null =
-         * nothing to show yet (before the game's first document), and the drawn mini room stands in
+         * the live mini Home in a theme: PreviewStage.render at the player's look into the box's bitmap (CompanionHost wires it); false /
+         * null = nothing to show yet (before the game's first document), and the drawn mini room stands in
          */
         @Volatile var homeRender: ((ThemeSpec, Bitmap) -> Boolean)? = null
 

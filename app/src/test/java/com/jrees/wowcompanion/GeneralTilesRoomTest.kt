@@ -119,9 +119,84 @@ class GeneralTilesRoomTest {
         GeneralTiles.onOpenTheme = null
         Tr.setChoice(app, "auto")
         GeneralPictures.letGo()
+        clearStage()
+        BottomPictures.drop()
     }
 
+    /** no game document (as a fresh start): PreviewStage holds none */
+    private fun clearStage() {
+        for (f in listOf("full", "quests", "chat")) PreviewStage::class.java.getDeclaredField(f).apply { isAccessible = true }.set(PreviewStage, null)
+    }
+
+    /** the game's documents as the stage gets them on the device (BottomTilesRoomTest's): the controller's spells, Durotar's minimap, the
+     *  bags, a focused quest, a few chat lines - sample values */
+    private fun feedStage() {
+        val icons = listOf(136048, 136026, 135990, 136052, 135813, 136015, 135824, 136075)
+        val nn = org.json.JSONArray()
+        for (p in 1..8) nn.put(JSONObject().put("p", p).put("k", "spell").put("id", 400 + p).put("i", icons[p - 1]))
+        PreviewStage.feedFull(JSONObject().put("type", "full")
+            .put("actionbar", JSONObject().put("hud", JSONObject().put("ok", true).put("page", 1)
+                .put("pages", org.json.JSONArray().put(true).put(true).put(true)).put("L", JSONObject().put("n", nn)))
+                .put("hudS", JSONObject().put("c", false).put("g", 1000.0)))
+            .put("map", JSONObject().put("ok", true).put("mapID", 1411).put("zone", "Durotar").put("subzone", "Razor Hill")
+                .put("rect", JSONObject().put("c", 1).put("t", 1808.33).put("b", -1716.67).put("l", -1962.5).put("r", -7250.0))
+                .put("x", 0.5177).put("y", 0.4279).put("wx", 300.0).put("wy", -4700.0).put("facing", 2.11))
+            .put("bags", JSONObject().put("money", 1_234_567L).put("freeGeneral", 14).put("free", 14).put("total", 66)))
+        PreviewStage.feedQuests(JSONObject().put("plv", 6).put("list", org.json.JSONArray()
+            .put(JSONObject().put("id", 7).put("title", "Kobold Camp Cleanup").put("lv", 6).put("watch", 1).put("focus", true).put("zone", "Durotar")
+                .put("obj", org.json.JSONArray().put(JSONObject().put("t", "Kobold Vermin slain: 4/10"))))))
+        val lines = org.json.JSONArray()
+        for ((ch, who, text) in listOf(Triple("say", "Grukk", "anyone up for Burning Blade Coven?"), Triple("guild", "Zalaya", "grats on 6!"),
+                Triple("party", "Mogra", "I'll tank, pull on 3"), Triple("system", "", "You have learned a new spell: Earth Shock."))) {
+            lines.put(JSONObject().put("ch", ch).put("who", who).put("text", text).put("i", lines.length() + 1))
+        }
+        PreviewStage.feedChat(JSONObject().put("lines", lines).put("s", 1))
+    }
+
+    /** the Theme tile's well in the Look part's coordinates */
+    private fun themeWell(r: SettingsRoom): RectF {
+        val t = part(r, SettingsTabs.Group.LOOK).tileBox(GeneralTiles.THEME)!!
+        return GameUiTiles.well(GameUiTiles.Box(t.left, t.top, t.right, t.bottom)).rect()
+    }
+    private fun GameUiTiles.Box.rect() = RectF(l, t, r, b)
+
     // ---------------------------------------------------------------- the page
+
+    /**
+     * the user's ruling, 2026-11-17: "General's Theme tile uses the real Home miniature (the same renderer as the theme maker preview and
+     * Bottom tab tiles, with its reuse/free rules; the drawn mini room only as the before-first-data fallback)": no document = the drawn
+     * room (no crop); with one, a crop of BottomPictures' 1x stage in the theme in use; a theme change makes a new crop; General out of view
+     * frees it with the Bottom tiles' crops
+     */
+    @Test fun themeTileShowsTheRealHomeMiniature() {
+        clearStage(); BottomPictures.drop()
+        val r = room()
+        val well = themeWell(r)
+        val w = well.width().toInt(); val h = well.height().toInt()
+        repeat(2) { lay(r) }
+        assertTrue("no document: the drawn mini room", GeneralPictures.themeWaiting)
+        assertFalse(BottomPictures.themeHomeReady(w, h))
+        feedStage()
+        part(r, SettingsTabs.Group.LOOK).invalidate(); repeat(3) { lay(r) }
+        assertTrue("the real Home crop", BottomPictures.themeHomeReady(w, h))
+        assertFalse(GeneralPictures.themeWaiting)
+        // the window: Home's whole width, the tile's shape, inside Home
+        val win = BottomPictures.themeWindow(mapOf("map" to RectF(10f, 240f, 610f, 1000f)), w / h.toFloat())!!
+        assertEquals(0f, win.left, 0.01f); assertEquals(BottomPictures.HOME_W, win.right, 0.01f)
+        assertEquals(w / h.toFloat(), win.width() / win.height(), 0.01f)
+        assertEquals(240f + BottomPictures.THEME_HEAD, win.bottom, 0.5f)
+        // another theme: a new crop (the old theme's is not shown for it)
+        Theme.use("oled_bronze")
+        assertFalse(BottomPictures.themeHomeReady(w, h))
+        part(r, SettingsTabs.Group.LOOK).invalidate(); repeat(3) { lay(r) }
+        assertTrue(BottomPictures.themeHomeReady(w, h))
+        // General out of view (Android's aggregated visibility; the test room is never attached to a window, so it is called here): the
+        // crops and the stage are freed, as the Bottom tiles' are
+        part(r, SettingsTabs.Group.LOOK).onVisibilityAggregated(true)
+        assertTrue(BottomPictures.themeHomeReady(w, h))
+        part(r, SettingsTabs.Group.LOOK).onVisibilityAggregated(false)
+        assertFalse(BottomPictures.themeHomeReady(w, h))
+    }
 
     @Test fun generalIsOneTileRowThenCompactRows() {
         val r = room()
@@ -365,6 +440,23 @@ class GeneralTilesRoomTest {
             Settings.swapScreens = false
         }
         Tr.setChoice(app, "auto")
+        // the user's ruling 2026-11-17: the Theme tile's real Home miniature (a game document fed), in four themes; the Theme maker's
+        // left preview beside it uses the same renderer
+        feedStage()
+        for (id in listOf("classic", "dark_silver", "oled_bronze", "oled_rose")) {
+            Theme.use(id); BottomPictures.drop(); r = room()
+            repeat(4) { look().invalidate(); lay(r) }
+            shot("gen_16_theme_tile_live_home_$id")
+            // the tile alone at 2x (the Thor's own size reads as the page's 1x)
+            val t = look().tileBox(GeneralTiles.THEME)!!
+            // the part's top in the room (every parent's top up to the room, less the page's scroll)
+            var top = 0f; var v: View = look()
+            while (v !== r) { top += v.top - v.scrollY; v = v.parent as View }
+            val crop = Bitmap.createBitmap(page, t.left.toInt() - 8, (t.top + top).toInt() - 8, t.width().toInt() + 16, t.height().toInt() + 16)
+            File(out, "gen_16_theme_tile_live_home_${id}_2x.png").outputStream().use {
+                Bitmap.createScaledBitmap(crop, crop.width * 2, crop.height * 2, true).compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        Theme.use("classic"); clearStage(); BottomPictures.drop()
         // no kit on the device yet: every picture's own drawing
         r = room(kit = false)
         shot("gen_13_nokit")

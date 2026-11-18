@@ -211,10 +211,18 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         if (group == SettingsTabs.Group.HELP) StatusLine.onChange = { post { invalidate() } }
     }
 
-    /** the room left: the Swap screens picture's decoded crop goes (a later draw decodes it again) */
+    /** the room left: the Swap screens picture's decoded crop goes (a later draw decodes it again); the Theme tile's Home crop goes with
+     *  the Bottom tiles' when the last viewer leaves (BottomPictures.shown) */
     override fun onDetachedFromWindow() {
         GeneralPictures.letGo()
+        if (group == SettingsTabs.Group.LOOK) BottomPictures.shown(System.identityHashCode(this), false)
         super.onDetachedFromWindow()
+    }
+
+    /** the Look group (the Theme tile) in view or not: BottomPictures' viewers, so the 1x stage and the crops are freed out of view */
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(isVisible)
+        if (group == SettingsTabs.Group.LOOK) BottomPictures.shown(System.identityHashCode(this), isVisible)
     }
 
     private var shape: List<String> = emptyList()
@@ -469,6 +477,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             val open = l.slots.indexOfFirst { it.id == openTile }
             if (band != null && open >= 0) drawBand(c, grid.band!!, band, grid.tiles[open], openTile!!, l.lines)
             if (l.gallery.isNotEmpty() && open >= 0) drawGallery(c, grid.band!!, grid.tiles[open], l.gallery)
+            if (l.slots.any { it.id == GeneralTiles.THEME }) themeHome(grid.tiles[l.slots.indexOfFirst { it.id == GeneralTiles.THEME }])
         }
         val ctl = controls(l)
         for ((i, rb) in l.rows.withIndex()) {
@@ -481,6 +490,21 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             c.drawText(fitText(pLabel, label(r), lw, 28f, 20f), box.l + GeneralTiles.LABEL_X, box.cy + 10f, pLabel)
             drawControl(c, r, box, room, cs)
         }
+    }
+
+    /**
+     * the Theme tile's Home crop: ONE made per frame by BottomPictures' queue while it is wanted (the Bottom tiles' pump), drawn the next
+     * frame; before the game's first document (no render: the drawn mini room) a look again each second while the tile shows
+     */
+    private fun themeHome(tile: GameUiTiles.Box) {
+        if (!(isShown || !isAttachedToWindow)) return
+        val well = GameUiTiles.well(tile).rect()
+        val again = BottomPictures.pendingCount() > 0 && run {
+            val more = BottomPictures.pump(context)
+            more || BottomPictures.themeHomeReady(well.width().toInt(), well.height().toInt())
+        }
+        if (again) postInvalidateOnAnimation()
+        else if (GeneralPictures.themeWaiting && !PreviewStage.ready && isShown) postInvalidateDelayed(1000L)
     }
 
     private fun drawControl(c: Canvas, r: GeneralTiles.Row, box: GameUiTiles.Box, room: GameUiTiles.Box, cs: List<RectF>) {

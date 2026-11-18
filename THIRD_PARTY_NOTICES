@@ -495,6 +495,7 @@ agreement. If you redistribute this project, verify your right to redistribute t
 |---|---|---|---|
 | whisper.cpp (and its bundled ggml 0.26.0) | https://github.com/ggml-org/whisper.cpp | `v1.9.5`, `d1be6fde11ac6e0407606b4e42fe72d34add8037` | MIT (`licenses/whisper.cpp-MIT.txt`), Copyright (c) 2023-2026 The ggml authors |
 | JNI glue (`companion/tools/whisper_native/jni/whisper_jni.cpp`) | this project | - | GPL-3.0 |
+| Whisper base speech models (`ggml-base.en.bin`, `ggml-base.bin`; downloaded by the player, not in the APK) | https://github.com/openai/whisper | `base` weights, as converted by whisper.cpp (below) | MIT (`licenses/whisper-OpenAI-MIT.txt`), Copyright (c) 2022 OpenAI |
 
 - The whisper.cpp sources under `companion/tools/whisper_native/whisper.cpp/` are copied unmodified, CPU parts only
   (`vendor_whisper.sh`; `UPSTREAM` lists the revision; its `LICENSE` is kept there).

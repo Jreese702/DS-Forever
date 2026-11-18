@@ -70,25 +70,30 @@ object BottomPictures {
     interface Stage { fun frame(ctx: Context, look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?): Frame? }
 
     /**
-     * INTERIM (until the shared core's `PreviewStage.renderWith` + `boxes()` land - the design's section 1; bottom never edits
-     * PreviewStage): its half-size cached Home and the map module's box; the chat column is the map's mirror, the controller band
-     * everything above them. The integrator swaps this for the core's 1x render and its boxes.
+     * THE 1x STAGE (the design's section 3.1, critic C5: "Render at 1x into ONE reused 1240 x 1007 bitmap (about 5 MB, freed with the
+     * cache), crop, then drop"): PreviewStage.render at Home's own size into one bitmap kept for the last look asked, so the crops of one
+     * look come from one render. It replaced the half-size cached Home, whose controller crops were soft (a 202 px crop blown up into
+     * the band's 438). The bitmap goes with the crops ([drop]: a trim, Settings' Bottom screen out of view).
      */
-    object HalfStage : Stage {
+    object FullStage : Stage {
+        private var bmp: Bitmap? = null
+        private var key: String? = null
+        private var boxes: Map<String, RectF>? = null
         override fun frame(ctx: Context, look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?): Frame? {
-            val b = PreviewStage.home(ctx, look, fight, toolbar) ?: return null
-            // the stage's mapBox is its LAST render's: a picture handed back from its cache may be another look's (a cast bar on, the
-            // quest over the map), so each picture keeps the box it was drawn with (a picture seen first was just drawn)
-            val mb = boxOf.getOrPut(b) { PreviewStage.mapBox?.let { RectF(it) } ?: return null }
-            val w = HOME_W; val h = homeH()
-            val map = RectF(mb.left * w, mb.top * h, mb.right * w, mb.bottom * h)
-            val chat = RectF(w - map.right, map.top, w - map.left, map.bottom)
-            return Frame(b, b.width / w, mapOf("map" to map, "chat" to chat, "controller" to RectF(0f, 0f, w, map.top)))
+            // the theme in use too (General's Theme tile crops this render: a theme change must render Home again)
+            val k = "$look/$fight/$toolbar/${Theme.cur.id}/${Theme.cur.hashCode()}"
+            val b = bmp ?: Bitmap.createBitmap(PreviewStage.W, PreviewStage.H, Bitmap.Config.ARGB_8888).also { bmp = it }
+            if (k != key || boxes == null) {
+                key = k
+                boxes = PreviewStage.render(ctx, look, fight, toolbar, b)
+            }
+            return boxes?.let { Frame(b, 1f, it) }
         }
+        /** the render goes (the next crop renders again: the game's documents moved on) */
+        fun stale() { key = null }
+        fun drop(): Long { val n = bmp?.byteCount?.toLong() ?: 0L; bmp = null; key = null; boxes = null; return n }
     }
-    var stage: Stage = HalfStage
-    /** each stage picture's map box (HalfStage), as long as the stage keeps the picture */
-    private val boxOf = java.util.WeakHashMap<Bitmap, RectF>()
+    var stage: Stage = FullStage
 
     const val HOME_W = 1240f
     fun homeH(): Float = 1080f - Strip.HEIGHT
@@ -139,6 +144,8 @@ object BottomPictures {
         val big = shot.w > W
         val f = try { stage.frame(ctx, shot.look, shot.fight, shot.toolbar) } catch (e: Throwable) { null }
         if (f == null) { pending.clear(); return false }                         // no game yet: the drawings stand in
+        // the queue emptied: the next ask renders Home again (its documents keep coming)
+        if (pending.isEmpty()) FullStage.stale()
         val win = shot.win(f.boxes)
         if (win == null) { failed += next.key; return pending.isNotEmpty() }
         val out = Bitmap.createBitmap(shot.w, shot.h, Bitmap.Config.ARGB_8888)
@@ -164,7 +171,7 @@ object BottomPictures {
     private val redone = HashSet<String>()
 
     /** every crop goes (a trim, Settings' Bottom screen out of view); the bytes let go */
-    fun drop(): Long { pending.clear(); failed.clear(); madeAt.clear(); redone.clear(); kb = null; worldArt.clear(); spotLooked = false; spotMemo = null; return small.clear() + large.clear() }
+    fun drop(): Long { pending.clear(); failed.clear(); madeAt.clear(); redone.clear(); kb = null; worldArt.clear(); spotLooked = false; spotMemo = null; return small.clear() + large.clear() + FullStage.drop() }
 
     private val viewers = HashSet<Int>()
     /** a Bottom screen tile view came into view ([on]) or went; the last one going drops the crops */
@@ -172,6 +179,43 @@ object BottomPictures {
 
     init {
         MemWatch.onTrim("bottomTiles") { level -> if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) drop() else 0L }
+    }
+
+    // ---------------------------------------------------------------- General's Theme tile (the user's ruling, 2026-11-17)
+
+    /**
+     * General's Theme tile uses the REAL Home miniature (the user's ruling, 2026-11-17: "General's Theme tile uses the real Home miniature
+     * (the same renderer as the theme maker preview and Bottom tab tiles, with its reuse/free rules; the drawn mini room only as the
+     * before-first-data fallback)"): a crop of the 1x stage ([FullStage], PreviewStage.render in the theme in use, the player's look, no
+     * fight) made by this object's queue ([crop] / [pump]) into the large cache, so it is freed as the Bottom tiles' crops are (a
+     * running-low trim, the last viewer out of view: [shown]). The window is Home's whole width ([themeWindow]): the controller over the
+     * top of the minimap and chat panes, their header bars whole. null = not made yet (the caller pumps and draws the mini room).
+     */
+    fun themeHome(w: Int, h: Int, prio: Int = 0): Bitmap? {
+        if (w <= 0 || h <= 0) return null
+        val look = player()
+        return crop(themeKey(look, w, h), Shot(look, false, null, { b -> themeWindow(b, w / h.toFloat()) }, w, h), prio)
+    }
+
+    /** the Theme tile's crop is in the cache (the tile draws it at once) */
+    fun themeHomeReady(w: Int, h: Int): Boolean = (if (w > W) large else small)[themeKey(player(), w, h)] != null
+
+    /** the theme in use is in the key: a theme change makes a new crop (the old one ages out of the cache) */
+    private fun themeKey(look: HomeView.Companion.Look, w: Int, h: Int) = "theme|${Theme.cur.id}|${Theme.cur.hashCode()}|$look|${w}x$h"
+
+    /** the panes' header bars kept whole under the controller (Home's px below the map box's top) */
+    const val THEME_HEAD = 72f
+
+    /**
+     * the Theme tile's window ([aspect] = its width / height): Home's whole width, as tall as the aspect makes it, its foot [THEME_HEAD]
+     * under the panes' top (the 2026-11-17 review: a crop that cut the map's header in half read as no theme at all); null = no map box
+     * in the render
+     */
+    fun themeWindow(b: Map<String, RectF>, aspect: Float): RectF? {
+        val map = b["map"] ?: return null
+        val wh = HOME_W / aspect
+        val top = (map.top + THEME_HEAD - wh).coerceIn(0f, max(0f, homeH() - wh))
+        return RectF(0f, top, HOME_W, top + wh)
     }
 
     // ---------------------------------------------------------------- the windows (Home's px)

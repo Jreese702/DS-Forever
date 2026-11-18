@@ -934,8 +934,8 @@ class QuestsView(
         else { UiKit.pane(c, RectF(0f, bodyTop, splitX, h)); UiKit.pane(c, RectF(splitX, bodyTop, w, h), right = true) }
         if (d == null) {
             pRowSub.color = Theme.dim
-            c.drawText(Tr.t("Waiting for quests. The WowCompanionQuests addon starts on the next /reload."),
-                20f, HEADER + 48f, pRowSub)
+            // labels only (the user's terse-text rule: "labels and icons only"; why it waits is the spec's, not the page's)
+            c.drawText(Tr.t("Waiting for quests"), 20f, HEADER + 48f, pRowSub)
             return
         }
         if (quests.isEmpty()) {

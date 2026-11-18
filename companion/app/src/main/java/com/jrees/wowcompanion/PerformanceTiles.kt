@@ -12,8 +12,13 @@ import kotlin.math.min
  * SETTINGS > PERFORMANCE AS PICTURE TILES (the user, 2026-11-17: "I REALLY REALLY love what you did with the top screen settings menu
  * with the pictures and want to do something similar to the other menus ... an ultra code 'beautification' task"; the beautify design's
  * section 6 with critic C6 / C10): ONE HEADLESS ROW of exactly five columns - Frame limit, Frame generation (wide), Memory (a pack of
- * three On / Off lines), Indoor maps - then the Stream settings compact row. The Top screen's tile language unchanged: a tap or A on a
- * tile opens ONE band under the row (the picture large, the tile's lines, one status line); B closes it, the cursor back on the tile.
+ * three On / Off lines), Indoor maps - then Stream settings, a picture tile like the others (the user's pick, 2026-11-17: "Performance
+ * 'Stream settings' becomes a picture tile like the others"; it was a compact row). The Top screen's tile language unchanged: a tap or A
+ * on a tile opens ONE band under the row (the picture large, the tile's lines, one status line); B closes it, the cursor back on the
+ * tile. Stream settings is a tile whose A opens its page, with no band (Top's Edit layout precedent). It is ALWAYS there (the user's
+ * ruling, 2026-11-17: "ALWAYS show it on the Performance tab; in Local mode (streaming not set up) it is dimmed, and A opens its page,
+ * which shows one terse line on how to set streaming up"): while streaming is set up A opens the stream's quality page
+ * (SetupBridge.openStreamSettings), in Local it is dimmed, its value word "Local", and A opens [StreamHelpHost]'s one-line page.
  *
  * The model, pure (no android.graphics), so the off-device tests measure it: the fixed slots, the lines each band carries NOW (a line
  * that cannot act is not drawn: Restart only while a change waits, Lossless.dll only while generation is on or before a copy is set,
@@ -25,15 +30,26 @@ object PerformanceTileModel {
     const val FG = "frame_gen"
     const val MEM = "memory"
     const val INDOOR = "indoor"
+    /** Stream settings (the streaming mode's quality page): opens its page, no band */
+    const val STREAM = "stream"
 
     /** a slot: [wide] spans two columns (the design's three wide tiles: Theme, Smart Y, Frame generation) */
     data class Slot(val id: String, val wide: Boolean = false)
 
-    /** the tab's slots, fixed: 1 + 2 + 1 + 1 = the room's five columns */
+    /** the tab's first row, fixed: 1 + 2 + 1 + 1 = the room's five columns */
     val SLOTS = listOf(Slot(LIMIT), Slot(FG, wide = true), Slot(MEM), Slot(INDOOR))
+    /** every slot: the first row, then Stream settings (the second row's first tile) */
+    val ALL = SLOTS + Slot(STREAM)
+
+    /** the slots shown for [s]: every slot, always (the user's ruling 2026-11-17: Stream settings shows in Local too, dimmed) */
+    @Suppress("UNUSED_PARAMETER")
+    fun slots(s: State): List<Slot> = ALL
+
+    /** a tile whose A opens a page instead of a band */
+    fun opensPage(id: String): Boolean = id == STREAM
 
     /** a tile's name (display: Tr.t by the drawer) */
-    val NAMES = mapOf(LIMIT to "Frame limit", FG to "Frame generation", MEM to "Memory", INDOOR to "Indoor maps")
+    val NAMES = mapOf(LIMIT to "Frame limit", FG to "Frame generation", MEM to "Memory", INDOOR to "Indoor maps", STREAM to "Stream settings")
 
     /** what the tiles show and their lines offer, read once per draw from FrameGen / Settings / the bake's status */
     data class State(
@@ -114,6 +130,7 @@ object PerformanceTileModel {
         FG -> when { !s.hasDll -> "Not set"; s.fgOn -> "${s.multiplier}x"; else -> "Off" }
         MEM -> when { s.lighter || s.lighterFixed -> "Lighter"; s.mapFull -> "Full map"; else -> "Zone map" }
         INDOOR -> when { !s.indoorOn -> "Off"; s.total > 0 -> "${s.ready} / ${s.total}"; else -> "On" }
+        STREAM -> if (s.streamOn) "Open" else "Local"
         else -> ""
     }
 
@@ -127,8 +144,8 @@ object PerformanceTileModel {
         else -> null
     }
 
-    /** the picture dimmed: the choice is Off (frame generation, the indoor build) */
-    fun dimmed(id: String, s: State): Boolean = when (id) { FG -> !s.generating; INDOOR -> !s.indoorOn; else -> false }
+    /** the picture dimmed: the choice is Off (frame generation, the indoor build), Stream settings in Local (streaming not set up) */
+    fun dimmed(id: String, s: State): Boolean = when (id) { FG -> !s.generating; INDOOR -> !s.indoorOn; STREAM -> !s.streamOn; else -> false }
 
     /** the band's one status line: state only (never an explanation) */
     fun status(id: String, s: State): String = when (id) {
@@ -192,9 +209,8 @@ object PerformanceTileModel {
 
     // ---------------------------------------------------------------- the grid (the Top screen's numbers; a wide slot spans two)
 
-    /** the tiles' top on the page (the tab has no heading over its row) and the compact row's height */
+    /** the tiles' top on the page (the tab has no heading over its row) */
     const val TOP = 20f
-    const val ROW_H = 88f
 
     /**
      * [slots] across [width]: a wide slot spans two columns and the gap between; one that would start in the last column starts the next
@@ -292,8 +308,8 @@ object PerformanceTileModel {
         return GameUiTiles.Band(pic, out, status, status.b + GameUiTiles.BAND_PAD - top)
     }
 
-    /** the part's height: the grid (with the band) and the compact row under it */
-    fun height(gridH: Float): Float = gridH + ROW_H + GameUiTiles.BOTTOM
+    /** the part's height: the grid (with the band) */
+    fun height(gridH: Float): Float = gridH + GameUiTiles.BOTTOM
 
     /** the row count of [slots] across [width] (the tests) */
     fun rows(slots: List<Slot>, width: Float): Int = grid(slots, width, -1, 0f).tiles.map { it.t }.distinct().size
@@ -303,8 +319,8 @@ object PerformanceTileModel {
 }
 
 /**
- * The Performance tab's body as the room hosts it (the room's only part on the tab, under no heading): the tiles, the open band and the
- * compact Stream settings row. The host's wiring ([host]: Choose for the DLL, Restart, the game running) is the SettingsView's, as the
+ * The Performance tab's body as the room hosts it (the room's only part on the tab, under no heading): the tiles and the open band.
+ * The host's wiring ([host]: Choose for the DLL, Restart, the game running) is the SettingsView's, as the
  * old rows used it. Touches act on RELEASE and only for a finger that did not move (the page scrolls).
  */
 class PerformanceTiles(context: Context, private val host: SettingsView) : View(context), BandPart {
@@ -312,6 +328,8 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
 
     /** a tile's band opened (or moved): the room brings the cursor and the band in view */
     var onOpen: ((PerformanceTiles) -> Unit)? = null
+    /** Stream settings pressed in Local (streaming not set up): the room opens its one-line page ([StreamHelpHost]) */
+    var onStreamHelp: (() -> Unit)? = null
 
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
@@ -319,7 +337,6 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
     private val pValue by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Theme.gold } }
     private val pBandLabel by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 25f; color = Theme.text } }
     private val pSub by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Theme.textDim } }
-    private val pRow by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 31f; color = Theme.text } }
     private val tilePath = Path()
 
     /** the open tile, null = none (the session's only: never saved) */
@@ -409,26 +426,26 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
 
     // ---------------------------------------------------------------- layout
 
-    private class Layout(val grid: GameUiTiles.Grid, val band: GameUiTiles.Band?, val lines: List<PerformanceTileModel.Line>,
-                         val row: RectF, val s: PerformanceTileModel.State)
+    private class Layout(val slots: List<PerformanceTileModel.Slot>, val grid: GameUiTiles.Grid, val band: GameUiTiles.Band?,
+                         val lines: List<PerformanceTileModel.Line>, val s: PerformanceTileModel.State)
 
     private fun layout(w: Float = width.toFloat()): Layout {
         val s = state()
-        val open = selected?.let { id -> M.SLOTS.indexOfFirst { it.id == id } } ?: -1
-        val lines = if (open >= 0) M.lines(M.SLOTS[open].id, s, deferredOpen) else emptyList()
+        val slots = M.slots(s)
+        val open = selected?.let { id -> slots.indexOfFirst { it.id == id } } ?: -1
+        val lines = if (open >= 0) M.lines(slots[open].id, s, deferredOpen) else emptyList()
         val bw = w - 2f * GameUiTiles.MARGIN
-        val (shown, more) = if (open >= 0 && M.SLOTS[open].id == M.INDOOR) deferredShown() else emptyList<Pair<String, Int>>() to 0
+        val (shown, more) = if (open >= 0 && slots[open].id == M.INDOOR) deferredShown() else emptyList<Pair<String, Int>>() to 0
         val bandH = if (open >= 0) M.band(GameUiTiles.MARGIN, 0f, bw, lines).height + M.listH(shown.size, more) else 0f
-        val grid = M.grid(M.SLOTS, w, open, bandH)
+        val grid = M.grid(slots, w, open, bandH)
         val band = grid.band?.let { M.band(it.l, it.t, it.w, lines) }
-        val row = RectF(GameUiTiles.MARGIN, grid.height, w - GameUiTiles.MARGIN, grid.height + M.ROW_H)
-        return Layout(grid, band, lines, row, s)
+        return Layout(slots, grid, band, lines, s)
     }
 
-    /** what decides the height: the open tile and its lines */
+    /** what decides the height: the slots shown, the open tile and its lines */
     private var shape: List<String> = emptyList()
     private fun shapeNow(): List<String> = listOf(selected ?: "", deferredShown().let { "${it.first.size}+${it.second}" }) +
-        (selected?.let { M.lines(it, state(), deferredOpen).map { l -> l.key } } ?: emptyList())
+        state().let { s -> M.slots(s).map { it.id } + (selected?.let { M.lines(it, s, deferredOpen).map { l -> l.key } } ?: emptyList()) }
 
     private fun refresh() {
         if (shapeNow() != shape) requestLayout()
@@ -445,7 +462,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
 
     // ---------------------------------------------------------------- the room's hooks (SettingsPad)
 
-    /** the cursor's stops: the tiles in reading order, the open band's buttons, the Stream settings button (while it can act) */
+    /** the cursor's stops: the tiles in reading order, then the open band's buttons */
     fun focusTargets(): List<RectF> {
         val l = layout()
         val out = ArrayList<RectF>()
@@ -454,15 +471,17 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
             val off = l.lines.getOrNull(i)?.off.orEmpty()
             line.buttons.forEachIndexed { k, b -> if (k !in off) out.add(b.rect()) }
         }
-        if (l.s.streamOn) out.add(streamBox(l.row))
         return out
     }
 
     override val hasSelection get() = selected != null
     /** the tile open now (the tests) */
     val openTile: String? get() = selected
-    /** the tile ids in order (the tests) */
-    fun tileIds(): List<String> = M.SLOTS.map { it.id }
+    /** the tile ids in order, as shown now (the tests) */
+    fun tileIds(): List<String> = M.slots(state()).map { it.id }
+
+    /** tile [id]'s box in this view's coordinates, null = not shown (the tests) */
+    fun tileBox(id: String): RectF? = layout().let { l -> l.slots.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { l.grid.tiles[it].rect() } }
 
     /** B: the open band closes; false = none was open */
     override fun closeSelection(): Boolean {
@@ -474,8 +493,9 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
     /** the open band's tile in this view's coordinates (B puts the cursor back there) */
     override fun selectionAnchor(): RectF? {
         val id = selected ?: return null
-        val i = M.SLOTS.indexOfFirst { it.id == id }
-        return if (i < 0) null else layout().grid.tiles[i].rect()
+        val l = layout()
+        val i = l.slots.indexOfFirst { it.id == id }
+        return if (i < 0) null else l.grid.tiles[i].rect()
     }
 
     /** the open band's box (the room scrolls it into view), null = none */
@@ -502,14 +522,16 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
         }
         val i = l.grid.tiles.indexOfFirst { it.contains(x, y) }
         if (i >= 0) {
-            val id = M.SLOTS[i].id
+            val id = l.slots[i].id
+            // a tile that opens a page (Stream settings): the page, no band (an open band closes first); the stream's quality page
+            // while streaming is set up, else (Local) the one line on how to set it up
+            if (M.opensPage(id)) { closeSelection(); SetupBridge.openStreamSettings?.invoke() ?: onStreamHelp?.invoke(); return }
             selected = if (selected == id) null else id
             deferredOpen = false
             requestLayout(); invalidate()
             if (selected != null) onOpen?.invoke(this)
             return
         }
-        if (l.s.streamOn && streamBox(l.row).contains(x, y)) { SetupBridge.openStreamSettings?.invoke(); return }
         // a tap outside the band (and its tiles) closes it, as B does
         val band = l.grid.band
         if (band != null && !band.contains(x, y)) closeSelection()
@@ -536,7 +558,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
     // ---------------------------------------------------------------- drawing
 
     private fun fonts() {
-        UiKit.asBody(pName); UiKit.asBody(pValue); UiKit.asBody(pBandLabel); UiKit.asBody(pSub); UiKit.asBody(pRow)
+        UiKit.asBody(pName); UiKit.asBody(pValue); UiKit.asBody(pBandLabel); UiKit.asBody(pSub)
     }
 
     override fun onDraw(c: Canvas) {
@@ -544,17 +566,16 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
         // feat/beautify (themes 8.4): no page ink - the room's RoomGround.settings (the dimmed rock) shows through
         val l = layout()
         // one name size for the row (a long es / fr name shrinks every name with it, never one alone)
-        val nameSize = M.SLOTS.withIndex().minOf { (i, slot) ->
+        val nameSize = l.slots.withIndex().minOf { (i, slot) ->
             fitSize(pName, Tr.t(M.NAMES[slot.id] ?: slot.id), l.grid.tiles[i].w - 2f * GameUiTiles.WELL_PAD - 4f, GameUiSection.NAME_SIZE, GameUiSection.NAME_MIN) }
-        for ((i, slot) in M.SLOTS.withIndex()) drawTile(c, l.grid.tiles[i], slot.id, l.s, slot.id == selected, nameSize)
-        val open = selected?.let { id -> M.SLOTS.indexOfFirst { it.id == id } } ?: -1
+        for ((i, slot) in l.slots.withIndex()) drawTile(c, l.grid.tiles[i], slot.id, l.s, slot.id == selected, nameSize)
+        val open = selected?.let { id -> l.slots.indexOfFirst { it.id == id } } ?: -1
         val band = l.band
         if (open >= 0 && band != null) {
             drawBand(c, l.grid.band!!, band, l.grid.tiles[open], selected!!, l.lines, l.s)
             // the open band's picture moves (up to 30 fps), only while the room shows it
             if (M.animated(selected!!) && isShown) postInvalidateDelayed(FRAME_MS)
         }
-        drawRow(c, l.row, l.s)
     }
 
     private fun picture(c: Canvas, id: String, s: PerformanceTileModel.State, well: RectF, t: Float, big: Boolean = false) {
@@ -765,18 +786,6 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
         }
     }
 
-    /** the compact row: a hairline over it, the label, ONE button right-aligned */
-    private fun drawRow(c: Canvas, row: RectF, s: PerformanceTileModel.State) {
-        pFill.color = Theme.bronzeDim
-        c.drawRect(row.left, row.top, row.right, row.top + 1f, pFill)
-        pRow.color = if (s.streamOn) Theme.text else Theme.textDim
-        c.drawText(Tr.t("Stream settings"), row.left + 28f, row.centerY() + 11f, pRow)
-        val b = streamBox(row)
-        UiKit.button(c, b, "Open", if (s.streamOn) UiKit.Button.UP else UiKit.Button.DISABLED)
-    }
-
-    private fun streamBox(row: RectF) = RectF(row.right - 12f - STREAM_W, row.centerY() - 34f, row.right - 12f, row.centerY() + 34f)
-
     /** the size [s] fits [maxW] at, from [size] down to [min] */
     private fun fitSize(p: Paint, s: String, maxW: Float, size: Float, min: Float): Float {
         p.textSize = size
@@ -796,7 +805,6 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
     companion object {
         /** the open band's frame time: 30 fps at most */
         const val FRAME_MS = 33L
-        const val STREAM_W = 260f
         const val LABEL_SIZE = 25f
         const val LABEL_MIN = 17f
         const val WORD_SIZE = 27f
