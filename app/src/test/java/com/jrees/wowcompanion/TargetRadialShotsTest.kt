@@ -72,5 +72,8 @@ class TargetRadialShotsTest {
         // q60 (the user, 2026-11-13: "I dont like the res pet being in the player radial, thats silly"): a dead pet's wheel has no
         // pet rows (Revive Pet is only Smart Res's tap on the dead pet slot in Party mode)
         shot("target_pet_dead", "Wolf", npc, 0)
+        // q66 (#461, the player on 1.0.32: "when doing quest to obtain pet for hunter i cant dismiss pet or remove bear from me"): a Taming
+        // the Beast quest's beast, a hunter who has not learned Dismiss Pet - the wheel offers Dismiss Pet (the game's own /petdismiss)
+        shot("target_pet_taming_beast", "Ashmane Boar", listOf(pet("Dismiss Pet", "PetDismiss", 6, 136095)) + npc, 0)
     }
 }
