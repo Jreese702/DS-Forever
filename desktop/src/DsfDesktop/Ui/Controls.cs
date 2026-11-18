@@ -136,6 +136,9 @@ namespace DsfDesktop.Ui
     {
         public string Label, Value;
         public Color Dot = Theme.Dim;
+        int minH = 26;
+        /// <summary>a short window (near the minimum size): a 22 px line instead of 26, so every card's buttons stay in it</summary>
+        public bool Compact { set { minH = value ? 22 : 26; Height = Math.Max(minH, Height == 26 || Height == 22 ? minH : Height); } }
 
         public StatusLine(string label)
         {
@@ -157,7 +160,7 @@ namespace DsfDesktop.Ui
             {
                 var w = Math.Max(50, Width - 140);
                 var s = TextRenderer.MeasureText(g, value ?? "", Font, new Size(w, 1000), TextFormatFlags.WordBreak);
-                Height = Math.Max(26, s.Height + 8);
+                Height = Math.Max(minH, s.Height + (minH == 26 ? 8 : 4));
             }
             Invalidate();
         }
@@ -166,10 +169,10 @@ namespace DsfDesktop.Ui
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            using (var b = new SolidBrush(Dot)) g.FillEllipse(b, 1, 8, 9, 9);
+            using (var b = new SolidBrush(Dot)) g.FillEllipse(b, 1, minH == 26 ? 8 : 6, 9, 9);
             using (var lf = Theme.Body(9.5f))
-                TextRenderer.DrawText(g, Label, lf, new Rectangle(18, 4, 118, Height), Theme.TextDim, TextFormatFlags.Left | TextFormatFlags.Top);
-            TextRenderer.DrawText(g, Value ?? "", Font, new Rectangle(136, 4, Width - 136, Height), Theme.Text, TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak);
+                TextRenderer.DrawText(g, Label, lf, new Rectangle(18, minH == 26 ? 4 : 2, 118, Height), Theme.TextDim, TextFormatFlags.Left | TextFormatFlags.Top);
+            TextRenderer.DrawText(g, Value ?? "", Font, new Rectangle(136, minH == 26 ? 4 : 2, Width - 136, Height), Theme.Text, TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak);
         }
     }
 

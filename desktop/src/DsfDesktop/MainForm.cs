@@ -20,9 +20,11 @@ namespace DsfDesktop.Ui
         bool reallyClose, applying;
 
         // pairing
+        /// <summary>"paused" (too many wrong codes) in place of the boxes</summary>
         readonly Label code = new Label();
-        /// <summary>the code's address part ("100 2790", PairAddress) on its own line under the secret and New code</summary>
-        readonly Label codeTail = new Label();
+        /// <summary>the code as the Thor shows it (design B, the user's pick 2026-11-18): the 6 boxes beside New code, then, quieter,
+        /// "Other network" and the network code's boxes (PairAddress) for a Thor that can't see this PC by mDNS</summary>
+        readonly CodeBoxes codeBoxes = new CodeBoxes(), otherBoxes = new CodeBoxes();
         readonly Note codeHint = new Note();
         readonly GoldButton newCode = new GoldButton("New code");
         readonly DeviceList devices = new DeviceList();
@@ -68,32 +70,43 @@ namespace DsfDesktop.Ui
             var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Padding = new Padding(10, 6, 10, 0), BackColor = Theme.Ink };
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52));
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48));
-            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 54));
-            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 46));
+            // 57 / 43 (was 54 / 46): the pairing card's code boxes + Other network; the Streaming card had ~60 px spare
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 57));
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 43));
 
             // Pairing
             code.AutoSize = true;
-            code.Font = Theme.Head(38f);
+            code.Font = Theme.Head(24f);
             code.ForeColor = Theme.Gold;
             code.BackColor = Color.Transparent;
-            code.Margin = new Padding(0, 0, 18, 0);
+            code.Margin = new Padding(0, 8, 18, 0);
+            code.Visible = false;
+            codeBoxes.MaxBox = 38; codeBoxes.GroupsPerRow = 2; codeBoxes.Anchor = AnchorStyles.Left;
+            codeBoxes.FixedWidth = codeBoxes.Width = 270;
+            codeBoxes.Margin = new Padding(0, 2, 18, 0);
             var codeRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0) };
             codeRow.Controls.Add(code);
-            newCode.Margin = new Padding(0, 20, 0, 0);
+            codeRow.Controls.Add(codeBoxes);
+            newCode.Margin = new Padding(0, 12, 0, 0);
             codeRow.Controls.Add(newCode);
             pairCard.Add(codeRow);
-            codeTail.AutoSize = true;
-            codeTail.Font = Theme.Head(30f);
-            codeTail.ForeColor = Theme.Gold;
-            codeTail.BackColor = Color.Transparent;
-            codeTail.Margin = new Padding(0, 0, 0, 4);
-            codeTail.Visible = false;
-            pairCard.Add(codeTail);
+            otherBoxes.Quiet = true; otherBoxes.Label = "Other network"; otherBoxes.MaxBox = 24; otherBoxes.MinBox = 18; otherBoxes.GroupsPerRow = 5;
+            otherBoxes.Margin = new Padding(0, 2, 0, 2);
+            otherBoxes.Visible = false;
+            pairCard.Add(otherBoxes);
+            codeHint.Margin = new Padding(0, 2, 0, 2);
             pairCard.Add(codeHint);
-            pairCard.Add(new Note("Paired devices", 9.5f, Theme.Bronze) { Font = Theme.Head(10.5f), Margin = new Padding(0, 6, 0, 0) });
-            pairCard.Add(devices);
+            // Remove device beside the "Paired devices" heading (it was under the list, and cut off at the minimum window size)
+            var devHead = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent, Dock = DockStyle.Top,
+                                                 Margin = new Padding(0, 2, 0, 0), Padding = new Padding(0) };
+            devHead.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            devHead.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            devHead.Controls.Add(new Note("Paired devices", 9.5f, Theme.Bronze) { Font = Theme.Head(10.5f), Anchor = AnchorStyles.Left, Margin = new Padding(0, 4, 0, 0) }, 0, 0);
             remove.Enabled = false;
-            pairCard.Add(remove);
+            remove.Margin = new Padding(8, 0, 0, 0);
+            devHead.Controls.Add(remove, 1, 0);
+            pairCard.Add(devHead);
+            pairCard.Add(devices);
 
             // Thor
             thorTitle.AutoSize = true;
@@ -112,21 +125,21 @@ namespace DsfDesktop.Ui
                                   "Desktop updates in place and never uninstalls.", 8.75f, Theme.Dim) { Margin = new Padding(0, 10, 0, 0) });
 
             // Streaming
-            var streamCard = new Card("Streaming");
+            streamCard = new Card("Streaming");
             foreach (var l in new[] { host, stream, wow, monitor, link }) streamCard.Add(l);
             hostHint.Visible = services.Visible = false;
             streamCard.Add(hostHint);
-            var sb = new FlowLayoutPanel { AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 8, 0, 0) };
+            sb = new FlowLayoutPanel { AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 8, 0, 0) };
             sb.Controls.Add(focus);
             sb.Controls.Add(test);
             sb.Controls.Add(services);
             streamCard.Add(sb);
 
             // Game + add-ons
-            var gameCard = new Card("Game and add-ons");
+            gameCard = new Card("Game and add-ons");
             foreach (var l in new[] { game, gameLog, addons }) gameCard.Add(l);
             gameCard.Add(notices);
-            var gb = new FlowLayoutPanel { AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 6, 0, 0) };
+            gb = new FlowLayoutPanel { AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 6, 0, 0) };
             gb.Controls.Add(addonsBtn);
             gb.Controls.Add(folderBtn);
             gameCard.Add(gb);
@@ -255,12 +268,14 @@ namespace DsfDesktop.Ui
             if (header != null && s.Update != shownUpdate) { shownUpdate = s.Update; header.Invalidate(); }
             applying = true;
             SuspendLayout();
-            // "482 913 · 100 2790": the secret beside New code, the PC's address part on its own line under it (PairAddress)
+            // "482 913 · 100 279": the secret's boxes beside New code, the network code's under "Other network" (PairAddress)
             var cut = s.CodeLocked ? -1 : (s.Code ?? "").IndexOf(" · ", StringComparison.Ordinal);
-            code.Text = cut >= 0 ? s.Code.Substring(0, cut) : s.Code;
-            code.Font = s.CodeLocked ? Theme.Head(24f) : Theme.Head(38f);
-            codeTail.Text = cut >= 0 ? s.Code.Substring(cut + 3) : "";
-            codeTail.Visible = cut >= 0;
+            code.Text = s.CodeLocked ? s.Code : "";
+            code.Visible = s.CodeLocked;
+            codeBoxes.Visible = !s.CodeLocked;
+            codeBoxes.Digits = s.CodeLocked ? "" : (cut >= 0 ? s.Code.Substring(0, cut) : s.Code ?? "").Replace(" ", "");
+            otherBoxes.Digits = cut >= 0 ? s.Code.Substring(cut + 3).Replace(" ", "") : "";
+            otherBoxes.Visible = cut >= 0;
             codeHint.Text = s.CodeHint;
             devices.SetRows(s.Devices);
             remove.Enabled = devices.SelectedId != null;
@@ -318,6 +333,36 @@ namespace DsfDesktop.Ui
                 DwmSetWindowAttribute(Handle, 34, ref border, 4);                  // DWMWA_BORDER_COLOR
             }
             catch (Exception) { }
+        }
+
+        FlowLayoutPanel sb, gb;
+        Card streamCard, gameCard;
+        bool? compact;
+
+        /// <summary>
+        /// Near the minimum size (940 x 700) the four cards are short: the code's boxes a little smaller and the status lines 22 px
+        /// instead of 26, so the pairing card keeps its list and Remove device, and Streaming / Game keep their buttons (the pairing
+        /// card's 57 % share took ~17 px from them).
+        /// </summary>
+        void FitHeight()
+        {
+            bool c = ClientSize.Height < 730;
+            if (compact == c) return;
+            compact = c;
+            SuspendLayout();
+            codeBoxes.MaxBox = c ? 34 : 38;
+            codeBoxes.Height = codeBoxes.GetPreferredSize(Size.Empty).Height;
+            foreach (var l in new[] { host, stream, wow, monitor, link, game, gameLog, addons }) { l.Compact = c; l.Margin = new Padding(0, c ? 0 : 1, 0, c ? 0 : 1); }
+            if (sb != null) sb.Margin = new Padding(0, c ? 0 : 8, 0, 0);
+            if (gb != null) gb.Margin = new Padding(0, c ? 2 : 6, 0, 0);
+            foreach (var card in new[] { pairCard, thorCard, streamCard, gameCard }) if (card != null) card.Padding = new Padding(20, 50, 20, c ? 8 : 16);
+            ResumeLayout(true);
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            FitHeight();
         }
 
         public void ReallyClose() { reallyClose = true; tick.Stop(); Close(); }

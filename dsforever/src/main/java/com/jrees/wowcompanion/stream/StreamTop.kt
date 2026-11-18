@@ -770,10 +770,11 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun stepPc(by: Int) { if (found.isNotEmpty()) { pcIndex = ((pcIndex + by) % found.size + found.size) % found.size; showPc() } }
 
     private fun pair(code: String) {
-        // the PC's address inside the code (PairCode; the user's pick 2026-11-18): a PC mDNS can't see is dialled there
+        // the Other network code (PairCode; the user's picks 2026-11-18, design B): a PC mDNS can't see is dialled there
         val parsed = PairCode.parse(code)
         if (parsed != null && parsed.hasAddress) { pairByAddress(code, parsed); return }
-        val pc = selectedPc() ?: run { pairing.setMessage("No PC found yet: is DS Forever Desktop running, on the same Wi-Fi?"); return }
+        // no PC on this network: the Other network row opens by itself, "PC not found" under it
+        val pc = selectedPc() ?: run { pairing.notFound(); return }
         if (!pc.hasBridge) { pairPlain(pc); return }
         pairWith(pc, code)
     }
@@ -809,7 +810,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                         if (!t.pc.hasBridge) { pairing.busy = false; pairPlain(t.pc) } else pairWith(t.pc, code)
                     }
                     is PairCode.Target.NotReachable -> { pairing.busy = false; pairing.setMessage(com.jrees.wowcompanion.Tr.t(PairCode.notReachable(t.addresses))) }
-                    PairCode.Target.NoPc -> { pairing.busy = false; pairing.setMessage("No PC found yet: is DS Forever Desktop running, on the same Wi-Fi?") }
+                    PairCode.Target.NoPc -> pairing.notFound()
                 }
             }
         }
@@ -864,7 +865,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             is StreamPairing.State.ShowPin -> status.show("Pair with Sunshine", "On the PC, open Sunshine's PIN page and enter:\n\n${s.pin}",
                 "No DS Forever Desktop on this PC: the stream works, the companion's live data needs Desktop.", withButtons = false)
             is StreamPairing.State.BadCode -> { pairing.busy = false; pairing.setMessage(s.message) }
-            is StreamPairing.State.WrongCode -> { pairing.busy = false; pairing.reset()
+            is StreamPairing.State.WrongCode -> { pairing.busy = false; pairing.reset(keepOther = true)
                 pairing.setMessage("That's not the code on the PC.${if (s.triesLeft >= 0) " ${s.triesLeft} tries left." else ""}") }
             is StreamPairing.State.Failed -> { pairing.busy = false
                 if (screen == Screen.PIN) { show(Screen.PAIRING) }

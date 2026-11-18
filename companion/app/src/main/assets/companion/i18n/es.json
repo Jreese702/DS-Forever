@@ -2180,7 +2180,10 @@
 "Cooldown Manager": "Gestor de reutilización",
 "Essential": "Esencial",
 "Utility": "Utilidad",
-"Off in the game's Options": "Desactivado en las Opciones del juego"
+"Off in the game's Options": "Desactivado en las Opciones del juego",
+"Other network": "Otra red",
+"PC not found": "PC no encontrado",
+"Check the Other network code.": "Revisa el código de Otra red."
 },
 "templates": {
 "Switch to %s?": "¿Cambiar a %s?",

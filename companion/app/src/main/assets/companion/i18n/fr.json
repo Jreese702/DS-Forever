@@ -2157,7 +2157,10 @@
 "Cooldown Manager": "Gestionnaire de recharges",
 "Essential": "Essentiel",
 "Utility": "Utilitaire",
-"Off in the game's Options": "Désactivé dans les Options du jeu"
+"Off in the game's Options": "Désactivé dans les Options du jeu",
+"Other network": "Autre réseau",
+"PC not found": "PC introuvable",
+"Check the Other network code.": "Vérifiez le code Autre réseau."
 },
 "templates": {
 "Switch to %s?": "Passer à %s ?",

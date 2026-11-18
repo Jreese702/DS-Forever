@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.FrameLayout
 import com.jrees.wowcompanion.stream.PairingView
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,9 +20,9 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 /**
- * STREAMING'S PAIRING PANEL ON THE THOR'S TOP SCREEN (the PC's address inside the code, the user's pick 2026-11-18): 1920 x 1080 at the
- * Thor's 369 dpi (about 832 x 468 dp), the panel 640 dp wide as StreamTop places it. The panel must fit the screen's height with the
- * code's address line under the six boxes. PNGs when PAIRING_SHOTS_DIR is set:
+ * STREAMING'S PAIRING PANEL ON THE THOR'S TOP SCREEN (design B "Two steps", the user's picks 2026-11-18): 1920 x 1080 at the Thor's
+ * 369 dpi (about 832 x 468 dp), the panel 640 dp wide as StreamTop places it. The panel must fit the screen's height with the Other
+ * network row open under the six boxes (15 boxes, the longest real code). PNGs when PAIRING_SHOTS_DIR is set:
  *   PAIRING_SHOTS_DIR=<dir> gradlew :app:testModernDebugUnitTest --tests "*PairingShotsTest*"
  */
 @RunWith(RobolectricTestRunner::class)
@@ -72,42 +73,81 @@ class PairingShotsTest {
         walk(v)
     }
 
-    @Test fun theNotReachableLineIsTranslated() {
+    @Test fun theNewWordsAreTranslated() {
         val app = RuntimeEnvironment.getApplication()
         val line = com.jrees.wowcompanion.stream.PairCode.notReachable(listOf("192.168.1.23", "100.71.133.93"))
+        val want = mapOf(
+            "es" to listOf("PC no accesible en 192.168.1.23 / 100.71.133.93", "Otra red", "PC no encontrado", "Revisa el código de Otra red."),
+            "fr" to listOf("PC injoignable à 192.168.1.23 / 100.71.133.93", "Autre réseau", "PC introuvable", "Vérifiez le code Autre réseau."))
+        val en = listOf(line, com.jrees.wowcompanion.stream.PairCode.OTHER_NETWORK, com.jrees.wowcompanion.stream.PairCode.NOT_FOUND,
+            com.jrees.wowcompanion.stream.CodeEntry.BAD_OTHER)
         try {
-            for ((l, want) in listOf("es" to "PC no accesible en 192.168.1.23 / 100.71.133.93", "fr" to "PC injoignable à 192.168.1.23 / 100.71.133.93")) {
+            for ((l, words) in want) {
                 listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
                     .first { it.canRead() }.let { Tr.load(l, it.readText()) }
                 Tr.setChoice(app, l)
-                assertEquals(want, Tr.t(line))
+                assertEquals(words, en.map { Tr.t(it) })
             }
         } finally { Tr.setChoice(app, "en") }
         assertEquals("PC not reachable at 192.168.1.23 / 100.71.133.93", Tr.t(line))
     }
 
+    private fun keys(v: PairingView, digits: String) { for (c in digits) v.pad(KeyEvent.KEYCODE_0 + (c - '0')) }
+
     @Test fun shots() {
         val ctx = activity
-        val v = PairingView(ctx, onPair = {}, onBack = {}, onQuality = {}, onPcStep = {})
+        val v = PairingView(ctx, onPair = { paired.add(it) }, onBack = {}, onQuality = {}, onPcStep = {})
         val root = screen(v)
         v.setPc("PC: DEN (192.168.1.20)")
-        render(root, "P1_empty")
+        render(root, "T1_empty")
         assertFits(v)
-        for (k in listOf(KeyEvent.KEYCODE_4, KeyEvent.KEYCODE_8, KeyEvent.KEYCODE_2, KeyEvent.KEYCODE_9, KeyEvent.KEYCODE_1, KeyEvent.KEYCODE_3)) v.pad(k)
-        render(root, "P2_secret_only")
+        keys(v, "482")
+        render(root, "T2_typing")
         assertFits(v)
-        for (c in "1002790") v.pad(KeyEvent.KEYCODE_0 + (c - '0'))
-        assertEquals("4829131002790", v.entry.code)
-        render(root, "P3_with_address")
+        keys(v, "913")
+        render(root, "T3_filled")
         assertFits(v)
-        v.reset()
-        for (c in "482913100279404928933") v.pad(KeyEvent.KEYCODE_0 + (c - '0'))
-        assertEquals("482913100279404928933", v.entry.code)
-        v.pad(KeyEvent.KEYCODE_DPAD_LEFT); v.pad(KeyEvent.KEYCODE_DPAD_LEFT)
-        render(root, "P4_lan_and_tailscale_cursor")
+        // D-pad down past the boxes: the Other network button (gold ring); A presses it
+        v.pad(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertTrue(v.entry.onButton)
+        render(root, "T4_dpad_down_other_network")
+        assertFits(v)
+        v.pad(KeyEvent.KEYCODE_BUTTON_A)
+        assertTrue(v.entry.otherOpen); assertEquals(0, v.entry.otherCursor)
+        assertTrue("A on the button opens the row, it doesn't pair", paired.isEmpty())
+        render(root, "T5_other_network_open")
+        assertFits(v)
+        keys(v, "100279")
+        render(root, "T6_other_home_filled")
+        assertFits(v)
+        v.pad(KeyEvent.KEYCODE_BUTTON_A)
+        assertEquals(listOf("482913100279"), paired)
+        // Pair found no PC: the row opens by itself, the cursor in it, "PC not found" under it
+        v.reset(); org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        v.setPc("")
+        keys(v, "482913")
+        assertFalse(v.entry.otherOpen)
+        v.notFound()
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertTrue(v.entry.otherOpen); assertEquals(0, v.entry.otherCursor)
+        render(root, "T7_auto_open_pc_not_found")
+        assertFits(v)
+        keys(v, "70027904")
+        render(root, "T8_other_tailscale_typing")
+        assertFits(v)
+        keys(v, "9289390")
+        assertEquals("482913700279049289390", v.entry.code)
+        render(root, "T9_other_tailscale_filled")
         assertFits(v)
         v.setMessage("PC not reachable at 192.168.1.23 / 100.71.133.93")
-        render(root, "P5_not_reachable")
+        render(root, "T10_not_reachable")
         assertFits(v)
+        // a typo in the network code: refused on the screen, nothing paired
+        paired.clear()
+        v.pad(KeyEvent.KEYCODE_DPAD_UP)
+        v.pad(KeyEvent.KEYCODE_BUTTON_A)
+        assertTrue(paired.isEmpty())
     }
+
+    private val paired = ArrayList<String>()
 }
