@@ -85,11 +85,7 @@ namespace DsfDesktop.Tests
                 A.Eq(5, Directory.GetFiles(Path.Combine(sv, WowSvSync.BackupDir), "WowCompanion.lua.*.bak").Length);
                 // the settings fix (2026-11-18): the PC's own file before the FIRST sync write stays for good, never rotated or replaced
                 var first = Path.Combine(sv, WowSvSync.BackupDir, "WowCompanion.lua" + WowSvSync.PreSync);
-                A.Eq("
-WowCompanionDB = {
-[\"a\"] = 1,
-}
-", File.ReadAllText(first), "the PC's file before the first sync, kept for good");
+                A.Eq("\nWowCompanionDB = {\n[\"a\"] = 1,\n}\n", File.ReadAllText(first), "the PC's file before the first sync, kept for good");
                 A.False(File.Exists(Path.Combine(sv, WowSvSync.BackupDir, "WowCompanionSpells.lua" + WowSvSync.PreSync)), "a file that was not there: nothing to keep");
             }
         }
