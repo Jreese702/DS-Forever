@@ -94,11 +94,32 @@ bool wc_reopen_cached(HANDLE source, HANDLE * target)
     // This recovery supports loose downloads, not an entire CDN archive.
     if(CascIsValidMD5(archive.ArchiveKey))
         return false;
-    return CascOpenLocalFile(path, CASC_STRICT_DATA_CHECK, target);
+    // #472 (1.0.33 SIGSEGV in CascDecrypt, fault addr 0x8d80 = NULL->KeyMap): a local open has no storage (hs == NULL), so a loose
+    // copy with an encrypted ('E') frame read NULL's key map. The copy borrows the source's storage (its keys; one reference, which
+    // the copy's close releases) and keeps the source's encrypted-frame handling (readDb2's zero fill)
+    DWORD flags = CASC_STRICT_DATA_CHECK | (hf->bOvercomeEncrypted ? CASC_OVERCOME_ENCRYPTED : 0);
+    if(!CascOpenLocalFile(path, flags, target))
+        return false;
+    TCascFile * hc = TCascFile::IsValid(*target);
+    if(hc != NULL && hc->hs == NULL)
+        hc->hs = hf->hs->AddRef();
+    return true;
 }
 
 #ifdef CASCLIB_DEBUG
 static unsigned int table_16C57A8'''),
+])
+
+# DS Forever #472: an encrypted frame of a file with no storage (any CascOpenLocalFile handle) has no key map to look in: the read
+# answers "encrypted" (status 3) instead of reading NULL->KeyMap (SIGSEGV on the kit-pack threads, every start on that install)
+patch('CascDecrypt.cpp', [
+    ('''    // Check if we know the key
+    pbKey = hs->KeyMap.FindKey(KeyName);''', '''    // DS Forever #472: no storage, no keys (a local file's handle): encrypted, never a NULL read
+    if(hs == NULL)
+        return ERROR_FILE_ENCRYPTED;
+
+    // Check if we know the key
+    pbKey = hs->KeyMap.FindKey(KeyName);'''),
 ])
 
 patch('common/FileStream.cpp', [
