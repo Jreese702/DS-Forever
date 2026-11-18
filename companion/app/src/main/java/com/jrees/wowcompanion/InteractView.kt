@@ -328,7 +328,8 @@ class InteractView(context: Context) : View(context) {
         if (k == null) { if (docCurrent && kbField != null) hideKeyboard(); return }
         kbOff = k.optInt("off", -1)
         val name = k.optString("name")
-        if (!docCurrent || name.isEmpty() || name == kbField) return
+        // #536: a window hidden by X / the disc (the game keeping its own open) never opens the keyboard
+        if (!InteractFieldKbd.mayOpen(docCurrent, name, kbField, dismissedSig != null && dismissedSig == sig)) return
         val kb = keyboard ?: return
         kbField = name
         kbMax = k.optInt("max", ChatStream.MAX).coerceIn(1, ChatStream.MAX)
@@ -639,7 +640,6 @@ class InteractView(context: Context) : View(context) {
     /** decide whether the overlay is up, and keep checking while a window is open */
     private fun refresh() {
         removeCallbacks(ticker)
-        if (kbField != null && (kind != Kind.MAIL && kind != Kind.AUCTION)) hideKeyboard()
         val now0 = System.currentTimeMillis()
         // the user, 2026-10-07: "I dont like when the context menu stays open after making a selection": an action that got no
         // document at all for PENDING_FOLD_MS (the top screen is loading) folds the window away; the next document brings it back
@@ -652,6 +652,8 @@ class InteractView(context: Context) : View(context) {
             note("The game kept this window open: B closes it", false)
         }
         val want = (kind != Kind.NONE && sig != dismissedSig && ageMs() < STALE_MS && !silent) || lootClosing() || landing != null
+        // #536: Mail / the auction house keep the field's keyboard at a refresh, but never over a window that is not shown
+        if (kbField != null && !InteractFieldKbd.stays(kind == Kind.MAIL || kind == Kind.AUCTION, want)) hideKeyboard()
         val v = if (want) VISIBLE else GONE
         if (visibility != v) visibility = v
         padSubSync(want && (doc?.optJSONObject("nav")?.optBoolean("on") == true || doc?.optJSONObject("nav")?.optJSONObject("fight") != null))
@@ -1001,6 +1003,9 @@ class InteractView(context: Context) : View(context) {
      * game cannot be reached the overlay still goes, and it stays away for THIS window only.
      */
     private fun close() {
+        // #536 (1.0.34: "AH room keeps reopening with a price text field focused and the keyboard open"): the field being typed goes
+        // with the window (its "kbd off", tapped first), so a window the game keeps open comes back without the field focused or the keyboard up
+        if (InteractFieldKbd.closeWithWindow(kbField)) closeField()
         val d = doc
         val slot = d?.optJSONObject("act")?.let { slotOf(it, "close") } ?: -1
         if (!dryRun && slot >= 0 && ageMs() < LIVE_MS && d?.optJSONObject("pad") != null) {

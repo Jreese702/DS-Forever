@@ -625,6 +625,9 @@ class HomeView(
 
     private fun onB() {
         if (typeWanted) return                                            // the tool's B comes through the guest (it closes the tool)
+        // #540 (1.0.34: "Bar would not go back to combat mode while in combat and got stuck"): the B that closes one of the app's
+        // overlays over Home (a wheel, the pause / context radial, the bar cursor) is that overlay's, never Home's shrink or close
+        if (HomeOverlayB.owns(classOpen || overlayOpen?.invoke() == true, overlayClosedAt, android.os.SystemClock.uptimeMillis())) return
         // ClassPetKeys (the user, 2026-11-16: "B still makes a lot of sense to use here"; then "the glyph locations on this bar should
         // match where they actually are on the controller"): on a class pet wheel with an ability on B's spot (the physical button the
         // ABXY location puts B on) B is that ability's toggle - it never reaches the game and is nothing of Home's (no shrink, no close)
@@ -649,6 +652,12 @@ class HomeView(
         }
         else if (flow.close()) { changed(); onBHome?.invoke() }
     }
+
+    /** #540: the host's word that one of its overlays over Home is open now (the item / spell wheel, the pause / context radial, the bar cursor) */
+    var overlayOpen: (() -> Boolean)? = null
+    private var overlayClosedAt = 0L
+    /** #540: the host: one of those overlays closed just now (its B may reach [onB] after its own reader closed it) */
+    fun overlayClosed() { overlayClosedAt = android.os.SystemClock.uptimeMillis() }
 
     /** B took a full module or the buff list back to Home's rest while the disc showed B: the disc's press (MainActivity: strip.homePressed) */
     var onBHome: (() -> Unit)? = null

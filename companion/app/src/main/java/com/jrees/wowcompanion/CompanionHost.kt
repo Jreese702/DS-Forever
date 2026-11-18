@@ -647,7 +647,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         barSelect = HomeBarSelect(this, strip, { questsPad }) { r, go -> if (go == BarB.Go.PAUSE) openPause("the bar's swirl", byStart = false) else pickRoom(r) }
         // LATER item 23a (the user: "the buttons at the top still show their presses, and that's confusing"): quiet while the cursor is up
         // p35: while the bar holds the controller its D-pad Left / Right move it: Cast shows the bar's arrows there
-        barSelect.onOpenChanged = { open -> castView.quietPresses = open; castView.barArrows = open }
+        barSelect.onOpenChanged = { open -> castView.quietPresses = open; castView.barArrows = open; if (!open) homeView.overlayClosed() }
         // b-cast-predict-menus (the user: "the predictive cast is triggering when I am navigating menus"): the predicted bar starts only
         // for a press that goes to the game's bars - the router's own holder (the add-on's capture), Home's guests, the menus on screen
         castView.pressesReachGame = {
@@ -1021,6 +1021,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // test26 (the user: "Same thing with the top radial button exactly"): the item / spell wheel shares the pause's guest ("radial"),
         // so its close is made final the same way: B dropped, the guest's late "home" muted, the disc blue before it shows again
         radialView.onClosed = {
+            homeView.overlayClosed()                                       // #540: its B is the wheel's, not Home's shrink
             homeView.dropB("pad:radial", HomeBGlyph.WHEEL_MUTE_MS)
             discB("the wheel closed")
             strip.snapRed()
@@ -1052,11 +1053,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 (::interactView.isInitialized && interactView.visibility == View.VISIBLE) || spellsOverlay.visibility == View.VISIBLE ||
                 (room == Room.HOME && homeView.flow.screen.full.let { it == HomeModule.CHAT || it == HomeModule.MAP })
         }
+        // #540: Home's B watch leaves a B alone while one of these overlays has it (and just after it closed one: overlayClosed)
+        homeView.overlayOpen = { radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || tradOpen() || barSelect.open }
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pauseView.onSlide = { t -> pauseSlideAll(t) }
         // the open's REVERSE after the wheel has gone (the user 2026-10-09: "it needs to have a reverse animation for when the B button
         // gets pressed"): the same quick time; input is already the room's / Home's (the wheel is gone in the B frame)
         pauseView.onClose = { from ->
+            homeView.overlayClosed()                                       // #540: the pause / context radial's B is not Home's shrink
             // test26 (the user: "Now it changes blue and still goes back to red with the b button at the bottom before transitioning back
             // to blue"): the pause's own guest made B lead Home, so the bar's disc (hidden under the hub) still wore its red B look and
             // played it out after the hub landed. The close is final: that B is dropped now, the guest's late "home" says nothing for

@@ -78,4 +78,27 @@ class GameConfigOnceTest {
         assertEquals("\"2\"", conf(root)["graphicsTextureResolution"])
         assertEquals("\"0\"", conf(root)["componentTextureLevel"])
     }
+    /**
+     * #489 (1.0.33: "Resolution Scaling setting not being saved"): RenderScale was one of the keys rewritten at every start, so the
+     * game's Resolution Scaling went back to 100% each time. The user, 2026-11-18: only set it once / only when the player hasn't chosen,
+     * never overwrite the player's own value. A new file still gets the default; a file without the line gets it added; a value the
+     * player picked stays, start after start.
+     */
+    @Test fun thePlayersResolutionScaleStays() {
+        val fresh = Files.createTempDirectory("cfgscale").toFile()
+        GameConfigWtf.ensure(fresh, WowProduct.LAUNCH, row)
+        assertEquals("a new file: the default", "\"1\"", conf(fresh)["RenderScale"])
+        pick(fresh, "RenderScale", "0.75")
+        repeat(2) { GameConfigWtf.ensure(fresh, WowProduct.LAUNCH, row) }
+        assertEquals("the player's pick stays", "\"0.75\"", conf(fresh)["RenderScale"])
+        // a folder with no RenderScale line (the player never chose): the default is added once
+        val none = folder("SET gxApi \"D3D11\"")
+        GameConfigWtf.ensure(none, WowProduct.LAUNCH, row)
+        assertEquals("missing: added", "\"1\"", conf(none)["RenderScale"])
+        // the keys #305 forces are still forced
+        val win = folder("SET gxMaximize \"0\"", "SET RenderScale \"0.5\"")
+        GameConfigWtf.ensure(win, WowProduct.LAUNCH, row)
+        assertEquals("\"1\"", conf(win)["gxMaximize"])
+        assertEquals("\"0.5\"", conf(win)["RenderScale"])
+    }
 }
