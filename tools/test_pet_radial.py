@@ -39,7 +39,7 @@ UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { Ge
 '''
 Q = boot(["safety", "tappad", "quests"], pre=PRE)
 
-check('local QV = "q65"' in SRC["quests"], "Quests says q65 (q64 kept below it)")
+check('local QV = "q66"' in SRC["quests"] and "q65 THE QUEST ITEM BY TAP" in SRC["quests"], "Quests says q66 (q65 kept below it)")
 
 
 def read(unit, src):
@@ -115,8 +115,9 @@ for col = 0, 9 do
     CELLS[col] = b.a
 end''')
 got = {c: (Q.eval('CELLS[%d].type' % c), Q.eval('CELLS[%d].macrotext' % c)) for c in range(5, 10)}
-check(got == {5: ("macro", "/cast Feed Pet"), 6: ("macro", "/cast Dismiss Pet"), 7: (None, None),
-              8: ("macro", "/cast Mend Pet"), 9: ("macro", "/cast Beast Training")}, "pfocus cells 5-9: the game's /cast of each spell, 7 empty (q60)", got)
+check(got == {5: ("macro", "/cast Feed Pet"), 6: ("macro", "/petdismiss"), 7: (None, None),
+              8: ("macro", "/cast Mend Pet"), 9: ("macro", "/cast Beast Training")},
+      "pfocus cells 5-9: the game's /cast of each spell, 6 the game's own /petdismiss (q66), 7 empty (q60)", got)
 check(Q.eval('WowCompanion.pad.rows.pfocus.n') == 31, "the pfocus row has 31 cells (q62: 10-29 the pet's abilities; q65: 30 the quest item)")
 check(Q.eval('CELLS[2].macrotext') == "/inspect" and Q.eval('CELLS[4].macrotext') == "/trade" and Q.eval('CELLS[3].type') == "focus",
       "cols 2 / 3 / 4 unchanged (/inspect, focus, /trade)")
@@ -149,6 +150,22 @@ check(Q.eval('MENUWHICH') == "PARTY", "q61: a party member still reads the PARTY
 check(Q.eval('(function() local c = WowCompanion.pmenu.ctx("pet"); return c.unit .. "/" .. c.which end)()') == "pet/PET", "q61: ctx(pet) = pet / PET")
 Q.execute('''UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { GetEntries = function() return {} end } end }
 WowCompanion.pmenu.mix = nil''')
+
+# 10c. q66 (#461, the user's player: "when doing quest to obtain pet for hunter i cant dismiss pet or remove bear from me"): a Taming
+# the Beast quest's beast is a temporary pet and a low-level hunter does not know Dismiss Pet (2641) yet - the Dismiss row is offered
+# for ANY live pet out (the game's own pet frame offers Dismiss for every pet), and its cell is the game's own secure /petdismiss
+# (PetCanBeAbandoned: the Dismiss Pet spell, else PetDismiss - the game's choice, never ours); a warlock's demon too; the other rows
+# still need their spell; a dead pet still nothing (q60)
+Q.execute('KNOWN = {}; UNITS.pet = { name = "Ashmane Boar", alive = true }')
+d = read("pet", "party")
+check(rows(d) == [("Dismiss Pet", 6, 1)], "q66: a temporary (taming quest) pet, Dismiss Pet not known: the Dismiss row alone (pfocus 6)", rows(d))
+check(bool(d.get("items")) and d["items"][0].get("k") == "PetDismiss",
+      "q66: its key is PetDismiss", d['items'][0] if d.get('items') else None)
+Q.execute('UNITS.target = UNITS.pet')
+check([r[0] for r in rows(read("target", "radial"))] == ["Dismiss Pet"], "q66: the target wheel on that beast offers Dismiss too")
+Q.execute('UNITS.pet.alive = false')
+check(rows(read("pet", "party")) == [], "q66: the beast dead: still no pet rows (q60)")
+Q.execute('KNOWN = { [6991] = true, [2641] = true, [982] = true, [3111] = true, [5149] = true }; UNITS.pet = { name = "Wolf", alive = true }')
 
 # 11. no Blizzard menu code / open call in the pet rows' code
 body = SRC["quests"][SRC["quests"].index("WC.pmenu.PET = {"):SRC["quests"].index("function WC.pmenu.read(")]
