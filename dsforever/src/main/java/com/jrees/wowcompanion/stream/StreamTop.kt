@@ -105,6 +105,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         view.addView(mask, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         curtainView = com.jrees.wowcompanion.LoadingTopView(activity).apply {
             curtain = { (shows() as? StreamCurtain.Shows.Curtain)?.let { it.rows to it.line } }
+            // Desktop 0.2.36's update of the PC game: its bar under its row
+            curtainBars = { (shows() as? StreamCurtain.Shows.Curtain)?.bars.orEmpty() }
             // a tap on a stop is its Retry, as A is (the user's ruling 2026-11-18)
             setOnTouchListener { _, e -> if (e.action == MotionEvent.ACTION_UP && retryShown()) wowRetry("a tap"); true }
             contentDescription = "Starting WoW on your PC"
@@ -657,6 +659,19 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     /** the curtain shows Desktop's stop with its Retry ([StreamCurtain.stopLine]) */
     private fun retryShown(): Boolean = (screen == Screen.STREAMING || screen == Screen.CONNECTING) &&
         (shows() as? StreamCurtain.Shows.Curtain)?.retry == true
+    /** the curtain shows Desktop's update of the PC game with its Cancel (B) ([StreamCurtain.patchShows]) */
+    private fun cancelShown(): Boolean = (screen == Screen.STREAMING || screen == Screen.CONNECTING) &&
+        (shows() as? StreamCurtain.Shows.Curtain)?.cancel == true
+    private var patchCancelAt = 0L
+
+    /** the player's Cancel (B) on the update's bar: Desktop stops it (the old game stays as it was) */
+    private fun patchCancel() {
+        val now = System.currentTimeMillis()
+        if (now - patchCancelAt < WOW_RETRY_GAP_MS) return
+        patchCancelAt = now
+        Log.i(TAG, "PC: Cancel (B): the game update stops")
+        worker.execute { if (bridge?.patchCancel() != true) Log.i(TAG, "PC: Cancel not sent (no bridge connection)") }
+    }
     private var wowRetryAt = 0L
 
     /** the player's Retry after Desktop stopped: WoW once more on the PC (one press = one restart; a press within
@@ -1056,6 +1071,11 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         com.jrees.wowcompanion.PadDiag.key(e, gamepad, if (screen == Screen.STREAMING) "stream" else "stream's own screens")   // #116
         val down = e.action == KeyEvent.ACTION_DOWN
         // Desktop stopped (a server error, an outdated PC game) and the curtain says why: A is its Retry, nothing reaches the PC
+        // Desktop updates the PC game and the curtain shows its bar: B is its Cancel, nothing reaches the PC
+        if (gamepad && cancelShown()) {
+            if (down && e.repeatCount == 0 && (e.keyCode == KeyEvent.KEYCODE_BUTTON_B || e.keyCode == KeyEvent.KEYCODE_BACK)) patchCancel()
+            if (StreamPad.isPadKey(e.keyCode) || e.keyCode == KeyEvent.KEYCODE_BACK) return true
+        }
         if (gamepad && (screen == Screen.STREAMING || screen == Screen.CONNECTING) && retryShown()) {
             if (down && e.repeatCount == 0 && e.keyCode == KeyEvent.KEYCODE_BUTTON_A) wowRetry("A")
             // B still leaves the connecting screen; on the stream every pad key stays here

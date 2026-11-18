@@ -367,6 +367,20 @@
 "PC game needs an update": "Juego del PC sin actualizar",
 "Retry (A)": "Reintentar (A)",
 "PC game needs a repair": "Juego del PC por reparar",
+"Cancel (B)": "Cancelar (B)",
+"Blizzard's updater is busy, waiting...": "El actualizador de Blizzard está ocupado, esperando...",
+"Installing...": "Instalando...",
+"Loading new game data...": "Cargando los nuevos datos del juego...",
+"Update cancelled": "Actualización cancelada",
+"Update failed": "Actualización fallida",
+"Update failed: no answer": "Actualización fallida: sin respuesta",
+"Update failed: file missing": "Actualización fallida: falta un archivo",
+"Update failed: bad file": "Actualización fallida: archivo dañado",
+"Update failed: game busy": "Actualización fallida: juego en uso",
+"Blizzard's updater is busy": "El actualizador de Blizzard está ocupado",
+"Update failed: folder read-only": "Actualización fallida: carpeta de solo lectura",
+"New game didn't start": "El juego nuevo no se inició",
+"Not enough space": "No hay espacio suficiente",
 "120 fps: 30+ Mbps": "120 fps: desde 30 Mbps",
 "DS Forever Desktop hasn't said its streaming port.": "DS Forever Desktop no ha indicado su puerto de streaming.",
 "Stay": "Mantener",
@@ -2389,6 +2403,9 @@
 "%s fps, set in the launcher's menu": "%s fps, puesto en el menú del lanzador",
 "Route data %s / %s": "Datos de ruta %s / %s",
 "WoW can't reach its servers (%s)": "WoW no conecta con sus servidores (%s)",
-"PC game needs an update (%s -> %s)": "Juego del PC sin actualizar (%s -> %s)"
+"PC game needs an update (%s -> %s)": "Juego del PC sin actualizar (%s -> %s)",
+"Updating the game %s -> %s": "Actualizando el juego %s -> %s",
+"%s / %s MB": "%s / %s MB",
+"Not enough space (%s MB)": "No hay espacio suficiente (%s MB)"
 }
 }

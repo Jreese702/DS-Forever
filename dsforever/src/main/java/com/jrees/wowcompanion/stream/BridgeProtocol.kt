@@ -36,7 +36,9 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
                  /** Desktop 0.2.34: "outdated" = the PC's game is older than Blizzard's ([gameInstalled] -> [gameCurrent]); "" = fine */
                  val pcGame: String = "",
                  val gameInstalled: String = "",
-                 val gameCurrent: String = "") {
+                 val gameCurrent: String = "",
+                 /** Desktop 0.2.36: its own update of the PC game (the bar, Cancel (B), a failure with Retry (A)); null = none */
+                 val patch: PcPatch? = null) {
     /** signed in: at character select or in the world */
     val signedIn get() = screen == "charselect" || screen == "world"
 
@@ -47,13 +49,35 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
                 it.optString("login_error"), it.optString("crash"), rect(it.optString("show")), it.optString("input"),
                 it.optString("connect") == "failed" || it.optString("region") == "refused",
                 it.optBoolean("stopped"), it.optString("connect_code"), it.optString("pc_game"), it.optString("game_installed"),
-                it.optString("game_current"))
+                it.optString("game_current"), PcPatch.of(it.optJSONObject("pc_patch")))
         }
 
         /** "x,y,w,h" (shares of the screen) -> 4 floats; anything else -> empty */
         fun rect(s: String): List<Float> {
             val v = s.split(',').mapNotNull { it.trim().toFloatOrNull() }
             return if (v.size == 4 && v[2] > 0.01f && v[3] > 0.01f && v.all { it in 0f..1f }) v else emptyList()
+        }
+    }
+}
+
+/**
+ * DESKTOP 0.2.36 UPDATES THE PC GAME ITSELF (the user's ruling 2026-11-18: Blizzard's CDN, no Battle.net, starting by itself): the
+ * wow message's pc_patch. [state] = "checking" | "waiting" (Blizzard's updater busy: [code] "agent") | "downloading" | "installing" |
+ * "loading" (done, the new client starts) | "failed" ([code]) | "cancelled"; [from] / [to] = build numbers; [done] / [total] = bytes.
+ */
+data class PcPatch(val state: String, val from: String = "", val to: String = "", val done: Long = 0L, val total: Long = 0L,
+                   val code: String = "", val needMb: Long = 0L, val file: String = "", val fileNo: Int = 0, val files: Int = 0) {
+    /** under way: the bar and Cancel (B) */
+    val running get() = state == "checking" || state == "waiting" || state == "downloading" || state == "installing"
+    /** stopped: a red row and Retry (A) */
+    val stopped get() = state == "failed" || state == "cancelled"
+
+    companion object {
+        fun of(o: JSONObject?): PcPatch? = o?.let {
+            val s = it.optString("state")
+            if (s.isEmpty() || s == "idle") null
+            else PcPatch(s, it.optString("from"), it.optString("to"), it.optLong("done"), it.optLong("total"), it.optString("code"),
+                it.optLong("need_mb"), it.optString("file"), it.optInt("file_no"), it.optInt("files"))
         }
     }
 }
@@ -168,6 +192,8 @@ object BridgeProtocol {
     fun screenRetry(): String = JSONObject().put("t", "screen_retry").toString()
     /** Desktop 0.2.34: the player's Retry after Desktop stopped ([PcWow.stopped]): WoW once more (restarted at its login, or started) */
     fun wowRetry(): String = JSONObject().put("t", "wow_retry").toString()
+    /** Desktop 0.2.36: the player's Cancel (B) on the PC game's update bar ([PcPatch.running]) */
+    fun patchCancel(): String = JSONObject().put("t", "pc_patch_cancel").toString()
     /**
      * The game account the PC's WoW remembers (the user's pick 2026-11-17, "Yes, remember it"): [ask] = Settings > Game account "Ask
      * each time" (nothing is sent to remember); [list] = the Thor's Config.wtf accountList with its "!" pick

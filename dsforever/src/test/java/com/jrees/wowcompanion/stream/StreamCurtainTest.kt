@@ -287,4 +287,89 @@ class StreamCurtainTest {
         assertEquals("Réessayer (A)", t(StreamCurtain.RETRY, "fr"))
         assertEquals("WoW no puede conectar con sus servidores", t(StreamCurtain.CONNECT_FAILED, "es"))
     }
+
+    /** Desktop 0.2.36 updates the PC game itself (the user's ruling 2026-11-18): the bar, "64 / 127 MB" and Cancel (B) */
+    @Test fun thePcGameUpdateShowsItsBarAndCancel() {
+        val o = JSONObject().put("t", "wow").put("state", "start_failed").put("why", "Updating the game 70938 -> 70959 (64 / 127 MB)")
+            .put("screen", "none").put("bnet", "signed_in").put("pc_game", "outdated").put("game_installed", "1.60.1.70938")
+            .put("game_current", "1.60.1.70959").put("stopped", true)
+            .put("pc_patch", JSONObject().put("state", "downloading").put("from", "70938").put("to", "70959").put("done", 64_000_000L)
+                .put("total", 127_425_344L).put("file", "Wow.exe").put("file_no", 6).put("files", 6).put("eta_s", 40))
+        val pc = (BridgeProtocol.parse(o.toString()) as BridgeMsg.Wow).pc!!
+        assertEquals("downloading", pc.patch!!.state)
+        val c = curtain(StreamCurtain.decide(true, true, pc))
+        assertEquals("the update wins over the outdated stop", "Updating the game 70938 -> 70959", c.rows[1].label)
+        assertEquals("64 / 127 MB", c.rows[2].label)
+        assertEquals("Cancel (B)", c.line)
+        assertTrue(c.cancel)
+        assertTrue(!c.retry)
+        assertEquals(0.502f, c.bars[1]!!, 0.001f)
+        // not connected yet: the same
+        assertTrue(curtain(StreamCurtain.decide(false, true, pc)).cancel)
+        // checking: a moving bar; Blizzard's updater busy: its line and a moving bar, still Cancel
+        val checking = curtain(StreamCurtain.decide(true, true, pc.copy(patch = PcPatch("checking"))))
+        assertEquals(SetupFlow.BAR_MOVING, checking.bars[1])
+        assertEquals("Updating the game", checking.rows[1].label)
+        val waiting = curtain(StreamCurtain.decide(true, true, pc.copy(patch = PcPatch("waiting", "70938", "70959", code = "agent"))))
+        assertEquals("Blizzard's updater is busy, waiting...", waiting.rows[1].label)
+        assertTrue(waiting.cancel)
+        // installing: no Cancel (short, never half way); done: the new data loads
+        val installing = curtain(StreamCurtain.decide(true, true, pc.copy(patch = PcPatch("installing", "70938", "70959"))))
+        assertEquals("Installing...", installing.line)
+        assertTrue(!installing.cancel)
+        val loading = curtain(StreamCurtain.decide(true, true, pc.copy(stopped = false, pcGame = "", patch = PcPatch("loading", "70938", "70959"))))
+        assertEquals("Loading new game data...", loading.line)
+        assertEquals(SetupFlow.Mark.OK, loading.rows[1].mark)
+        // signed in after all: the stream, never the update
+        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, pc.copy(state = "running", screen = "charselect", focused = true)))
+        // never "on the PC"
+        for (l in listOf(c.rows[1].label, c.rows[2].label, waiting.rows[1].label, installing.line, loading.line)) assertTrue(l, !l.contains("PC"))
+    }
+
+    /** a failed or cancelled update: the reason in red and Retry (A), one more attempt per press */
+    @Test fun aFailedUpdateSaysWhyWithRetry() {
+        val pc = PcWow(state = "start_failed", screen = "none", bnet = "signed_in", stopped = true, pcGame = "outdated")
+        fun row(p: PcPatch) = curtain(StreamCurtain.decide(true, true, pc.copy(patch = p)))
+        val cases = mapOf(
+            PcPatch("failed", code = "no_answer") to "Update failed: no answer",
+            PcPatch("failed", code = "missing") to "Update failed: file missing",
+            PcPatch("failed", code = "checksum") to "Update failed: bad file",
+            PcPatch("failed", code = "space", needMb = 1153) to "Not enough space (1153 MB)",
+            PcPatch("failed", code = "busy") to "Update failed: game busy",
+            PcPatch("failed", code = "agent_busy") to "Blizzard's updater is busy",
+            PcPatch("failed", code = "no_write") to "Update failed: folder read-only",
+            PcPatch("failed", code = "new_failed") to "New game didn't start",
+            PcPatch("failed", code = "error") to "Update failed",
+            PcPatch("cancelled", code = "cancelled") to "Update cancelled")
+        for ((p, want) in cases) {
+            val c = row(p)
+            assertEquals(want, c.rows.last().label)
+            assertEquals(SetupFlow.Mark.BAD, c.rows.last().mark)
+            assertEquals("Retry (A)", c.line)
+            assertTrue(c.retry)
+            assertTrue(!c.cancel)
+        }
+        assertEquals("pc_patch_cancel", JSONObject(BridgeProtocol.patchCancel()).getString("t"))
+        // an older Desktop (no pc_patch): the 0.2.34 stop as before
+        assertEquals("PC game needs an update", curtain(StreamCurtain.decide(true, true, pc)).rows.last().label)
+    }
+
+    @Test fun theUpdateLinesAreTranslated() {
+        val dir = listOf("../companion/app/src/main/assets/companion/i18n", "companion/app/src/main/assets/companion/i18n")
+            .map { java.io.File(it) }.first { it.isDirectory }
+        com.jrees.wowcompanion.Tr.load("es", java.io.File(dir, "es.json").readText())
+        com.jrees.wowcompanion.Tr.load("fr", java.io.File(dir, "fr.json").readText())
+        val t = { s: String, l: String -> com.jrees.wowcompanion.Tr.t(s, l) }
+        assertEquals("Actualizando el juego 70938 -> 70959", t("Updating the game 70938 -> 70959", "es"))
+        assertEquals("Mise à jour du jeu 70938 -> 70959", t("Updating the game 70938 -> 70959", "fr"))
+        assertEquals("64 / 127 Mo", t("64 / 127 MB", "fr"))
+        assertEquals("Cancelar (B)", t(StreamCurtain.CANCEL, "es"))
+        assertEquals("Annuler (B)", t(StreamCurtain.CANCEL, "fr"))
+        assertEquals("No hay espacio suficiente (1153 MB)", t("Not enough space (1153 MB)", "es"))
+        for (line in listOf(StreamCurtain.PATCH_WAITING, StreamCurtain.PATCH_INSTALLING, StreamCurtain.PATCH_LOADING, StreamCurtain.PATCH_CANCELLED,
+                StreamCurtain.PATCH_FAILED, StreamCurtain.PATCH_NO_ANSWER, StreamCurtain.PATCH_MISSING, StreamCurtain.PATCH_CHECKSUM, StreamCurtain.PATCH_BUSY,
+                StreamCurtain.PATCH_AGENT_BUSY, StreamCurtain.PATCH_NO_WRITE, StreamCurtain.PATCH_NEW_FAILED, StreamCurtain.PATCH_SPACE, StreamCurtain.PATCH,
+                StreamCurtain.PATCH_CHECKING))
+            for (l in listOf("es", "fr")) assertTrue("$line ($l)", t(line, l) != line)
+    }
 }

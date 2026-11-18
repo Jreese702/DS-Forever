@@ -97,6 +97,8 @@ class BridgeLog(
 
     /** the player's Retry after Desktop stopped (a server error, an outdated PC game): WoW once more; false = no connection now */
     fun wowRetry(): Boolean = try { conn?.send(BridgeProtocol.wowRetry()); conn != null } catch (_: Throwable) { false }
+    /** the player's Cancel (B) on Desktop's update of the PC game */
+    fun patchCancel(): Boolean = try { conn?.send(BridgeProtocol.patchCancel()); conn != null } catch (_: Throwable) { false }
 
     /** how a session ended */
     enum class End { DROPPED, AUTH_LOST, STOPPED }
