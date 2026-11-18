@@ -100,6 +100,21 @@ class MacrosRoomTest {
         assertFalse(st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit"}}""").ym)
     }
 
+    /** Spells s16 X = REMOVE (the user, 2026-11-18: "in the macro menu I need a button to delete a line, maybe just on the X glyph"): the
+     *  focused line's hint (xr), the line asking (rem), More's Insert below and the line it goes under */
+    @Test fun xRemoveAndInsertBelow() {
+        val h = st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit","ef":"l2","xr":true}}""")
+        assertTrue(h.xRemove); assertNull(h.remLine)
+        val a = st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit","ef":"l2","rem":2}}""")
+        assertEquals(2, a.remLine); assertFalse(a.xRemove)
+        val m = st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit","pop":{"k":"more","cur":"r1","cols":1,"base":0,
+            "rows":[{"o":"ins","l":3},{"o":"pre"},{"o":"del"}]}}}""")
+        assertEquals("Insert below", MacrosModel.moreWord("ins"))
+        assertEquals(3, MacrosModel.insertUnder(m.pop))
+        assertNull(MacrosModel.insertUnder(m.pop!!.copy(cur = "r2")))
+        assertNull(MacrosModel.insertUnder(null))
+    }
+
     /** (s13, an older add-on's + Spell/Item list) its rows' lines, kept for a document from before s14 */
     @Test fun theOlderPickListStillReads() {
         val p = st("""{"type": "macros", "m": {"ready": true, "mode": "pick", "view": "pick", "pick": {"rows": [{"t": "s", "n": "Lightning Bolt",

@@ -25,6 +25,11 @@ import org.json.JSONObject
  * delete / replace): the editor's buttons are + Line and More ([BUTTONS]: s21, s22), the builder's Done and More; More is the add-on's
  * one-column pop-out (kind "more": [moreWord]); [State.ym] / [Builder.ym] = Y opens More now (the More button carries the Y glyph only
  * then); [State.del], [Builder.remArmed], [Preset.armed] = that ask is up (the app draws Cancel [B] / Confirm [A]).
+ *
+ * Spells s16 X = REMOVE (the user, 2026-11-18: "in the macro menu I need a button to delete a line, maybe just on the X glyph"; the pick
+ * "X = Remove"): in the editor's line list X on the focused line asks to remove it ([State.remLine] = the line asking: Cancel [B] /
+ * Remove [A]); [State.xRemove] = the focused line shows the X Remove hint (never in a fight, never on a "|" line; a tap on it is the
+ * row's `x`); the old hidden X "a line below" is More's first row "Insert below" (`o` "ins", `l` = the line it goes under).
  */
 object MacrosModel {
     /** Book b63: the padtab one-shot pick's code that makes the Macros room's row (39 then this) */
@@ -115,6 +120,9 @@ object MacrosModel {
         val builder: Builder? = null, val preset: Preset? = null,
         /** s15: in the editor, Y opens More now (not on a line: its Move) */
         val ym: Boolean = false,
+        /** s16: the editor's line asking to be removed (X on it: Cancel [B] / Remove [A]), and the focused line's X Remove hint */
+        val remLine: Int? = null,
+        val xRemove: Boolean = false,
     ) {
         val count: Count get() = if (tab == "c") char else general
     }
@@ -245,6 +253,7 @@ object MacrosModel {
             pop = pop(m.optJSONObject("pop")), presetCur = m.optInt("pcur", 1),
             builder = builder(m.optJSONObject("b")), preset = preset(m.optJSONObject("ps")),
             ym = m.optBoolean("ym", false),
+            remLine = intOrNull(m, "rem"), xRemove = m.optBoolean("xr", false),
         )
     }
 
@@ -394,9 +403,17 @@ object MacrosModel {
         b.remArmed -> "Remove?"
         else -> "Remove"
     }
-    /** s15: a row of the room's More (the add-on's pop-out "more": `o` = pre / del / text / rem, `rv` = Remove reads Revert): its word */
+    /** s15: a row of the room's More (the add-on's pop-out "more": `o` = pre / del / text / rem, `rv` = Remove reads Revert; s16 ins =
+     *  Insert below): its word */
     fun moreWord(o: String, revert: Boolean = false): String = when (o) {
-        "pre" -> "Presets"; "del" -> "Delete"; "text" -> "Aa Text"; "rem" -> if (revert) "Revert" else "Remove"; else -> o
+        "ins" -> "Insert below"; "pre" -> "Presets"; "del" -> "Delete"; "text" -> "Aa Text"; "rem" -> if (revert) "Revert" else "Remove"; else -> o
+    }
+    /** s16: the line More's Insert below goes under while the cursor is on that row (the editor marks it), or null */
+    fun insertUnder(p: Pop?): Int? {
+        if (p == null || p.kind != "more") return null
+        val r = p.cur?.removePrefix("r")?.toIntOrNull() ?: return null
+        val row = p.rows.getOrNull(r - 1) ?: return null
+        return if (row.optString("o") == "ins" && row.has("l")) row.optInt("l") else null
     }
     /** a builder chip's s-cell, as the add-on numbers it (MR.bcell): null = not on show */
     fun chipCell(b: Builder?, key: String): Int? = b?.cells?.get(key)?.takeIf { it >= 0 }

@@ -104,6 +104,10 @@ class MacrosShotsTest {
         // builder's More, a stored line's Remove asking, a focused case's "Y Remove"
         for (n in listOf("edit_more", "edit_delete", "build_more", "build_remove", "build_case_focus"))
             if (File(out, "docs/$n.json").isFile) roomShot(n)
+        // Spells s16 X = REMOVE (the user, 2026-11-18: "in the macro menu I need a button to delete a line, maybe just on the X glyph"): the
+        // focused line's X Remove hint, its ask (Cancel / Remove), More with Insert below (the line it goes under marked)
+        for (n in listOf("edit_xremove", "edit_remove_ask", "edit_more_insert"))
+            if (File(out, "docs/$n.json").isFile) roomShot(n)
         // (Spells s10 review) a bind of a name two macros share, refused ("Name taken"); the row made but not placed ("No pad row")
         for (n in listOf("taken", "norow")) if (File(out, "docs/$n.json").isFile) roomShot(n)
         // (Spells s13; the user, 2026-11-16: "also things like my pet attack are missing from the spells options.") the pick list with a

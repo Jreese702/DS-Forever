@@ -354,8 +354,8 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
         }
 
         /** what asks now (Spells s15: Delete / Remove / Replace, the add-on's): a pop-out never stands over one */
-        private fun asking(s: State): Boolean = (s.view == "edit" && s.del) || (s.view == "build" && s.builder?.remArmed == true) ||
-            (s.view == "ps" && s.preset?.armed == true)
+        private fun asking(s: State): Boolean = (s.view == "edit" && (s.del || s.remLine != null)) ||
+            (s.view == "build" && s.builder?.remArmed == true) || (s.view == "ps" && s.preset?.armed == true)
 
         // ---- the header's right end: a sub-screen's B Back (a finger's back too), then the ONE status word left of it
         private fun headerRight(c: Canvas, s: State, w: Float) {
@@ -660,6 +660,7 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
             val m = s0.mac ?: return
             // ONE gold cursor: while a pop-out is open the cursor is in it, the page under it shows none
             val s = if (s0.pop != null) s0.copy(ef = null) else s0
+            val insAt = MacrosModel.insertUnder(s0.pop)
             UiKit.pane(c, r)
             val left = r.left + PAD; val right = r.right - PAD
             // the icon chip and the name row
@@ -702,9 +703,17 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                     val moving = s.view == "move" && s.moveAt == i + 1
                     if (moving) { pFill.color = Theme.selected; c.drawRoundRect(lr, 8f, 8f, pFill) }
                     val glow = s.ef == "l${i + 1}" && s.view != "move"
-                    val moveHint = glow && st.kind != "lock"
+                    val asked = s.view == "edit" && s.remLine == i + 1          // s16: the line X asks to remove
+                    val moveHint = glow && st.kind != "lock" && !asked
+                    val xHint = moveHint && s.xRemove                            // s16: X Remove, left of Y Move (never in a fight)
                     val draft = s.draftLine == i + 1 && s.view != "move"
-                    strip(c, lr, st, m.lines.getOrElse(i) { "" }, (i + 1) in m.lock, reserve = (if (moveHint) 180f else 0f) + (if (draft) 70f else 0f))
+                    if (asked) { pFill.color = Theme.selected; c.drawRoundRect(lr, 8f, 8f, pFill) }
+                    if (insAt == i + 1) {                                        // s16: More's Insert below: under this line
+                        pFill.color = Theme.selected; c.drawRoundRect(lr, 8f, 8f, pFill)
+                        pFill.color = Theme.gold; c.drawRect(lr.left + 8f, lr.bottom - 1f, lr.right - 8f, lr.bottom + 3f, pFill)
+                    }
+                    strip(c, lr, st, m.lines.getOrElse(i) { "" }, (i + 1) in m.lock,
+                        reserve = (if (moveHint) 180f else 0f) + (if (xHint) 210f else 0f) + (if (draft) 70f else 0f))
                     if (moving) UiKit.moveArrowsUpDown(c, lr, up = i > 0, down = i < n - 1)
                     hit(lr, MacrosModel.pickCells(s, i + 2, act = true))
                     var dx = lr.right - 12f
@@ -715,6 +724,12 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                             val hx = UiKit.hints(c, lr.right - 14f, lr.centerY(), yGlyph() to "Move")
                             hit(RectF(hx - 10f, lr.top, lr.right, lr.bottom), MacrosModel.cell(s, "y"))
                             dx = hx - 14f
+                            // s16 (the user's "X = Remove"): the X glyph's Remove, its tap the row's `x` (the same ask)
+                            if (xHint) {
+                                val rx = UiKit.hints(c, hx - 24f, lr.centerY(), UiKit.xGlyph() to "Remove")
+                                hit(RectF(rx - 10f, lr.top, hx - 10f, lr.bottom), MacrosModel.cell(s, "x"))
+                                dx = rx - 14f
+                            }
                         }
                     }
                     if (draft) {
@@ -724,9 +739,10 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                 }
                 if (m.lines.isEmpty()) say(c, box, "Empty")
             }
-            // the band: + Line (A on it) and More (Y); Delete asks with Cancel / Delete
+            // the band: + Line (A on it) and More (Y); Delete asks with Cancel / Delete, s16 a line's X with Cancel / Remove
             val (a, b) = band(c, r)
             if (s.del) { askPair(c, s, a, b, "Delete"); return }
+            if (s.remLine != null && s.view == "edit") { askPair(c, s, a, b, "Remove"); return }
             val addF = s.ef == "add"
             button(c, a, if (s.draftLine == null && s.draftAt != null) "+ Line (Draft)" else "+ Line", if (s.held && addF) UiKit.okGlyph() else null)
             if (addF) UiKit.focus(c, a)
