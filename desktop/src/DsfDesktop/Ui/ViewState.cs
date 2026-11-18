@@ -38,6 +38,18 @@ namespace DsfDesktop.Ui
 
         public bool StartWithWindows, StartWow, MatchStream, OwnScreen;
         public int BridgePort;
+
+        /// <summary>the virtual screen's setup (quiet by default: Hidden unless "Stream on its own screen" is on or no screen is on)</summary>
+        public VScreenView VScreen = new VScreenView();
+    }
+
+    /// <summary>the window's Virtual screen section (DsfDesktop.Sunshine.ScreenSetup)</summary>
+    public sealed class VScreenView
+    {
+        public DsfDesktop.Sunshine.ScreenSetup.Panel Panel = DsfDesktop.Sunshine.ScreenSetup.Panel.Hidden;
+        public bool Headless, Busy;
+        /// <summary>the last Turn on / test result ("" = none)</summary>
+        public string Result = "";
     }
 
     /// <summary>what the window's buttons do (the controller; the mockups pass none)</summary>
@@ -53,6 +65,11 @@ namespace DsfDesktop.Ui
         void SetMatchStream(bool on);
         /// <summary>"Stream on its own screen" On/Off</summary>
         void SetOwnScreen(bool on);
+        /// <summary>the Virtual screen section's buttons (each only on the player's click): SudoVDA's Turn on (Windows' admin prompt),
+        /// the Virtual Display Driver's install, the one-time test of our screen; null = done, else why not</summary>
+        string TurnOnSudoVda();
+        string InstallVirtualScreen();
+        string TestOwnScreen();
         Task<string> ThorInstall();
         Task<string> ThorInstallFile(string apk);
         void ThorWatching(bool on);
@@ -118,9 +135,7 @@ namespace DsfDesktop.Ui
             else if (pr != null && pr.Info.Length > 0 && sh != null && sh.Running) v.Host += "  ·  " + pr.Info;   // Apollo beside ours: fine, said quietly
             if (c.ScreenProblem != null && pr?.Problem == null && c.HostProblem != "exited")
             {
-                v.HostHint = c.ScreenProblem == DsfDesktop.Sunshine.ScreenPlan.ProblemNeedsScreen ? "No screen is on. Install a virtual screen, or turn a monitor on."
-                    : c.ScreenProblem == DsfDesktop.Sunshine.ScreenPlan.ProblemScreenDisabled ? "No screen is on. " + DsfDesktop.Sunshine.ScreenPlan.EnableSudoVda + ", or turn a monitor on."
-                    : "No screen is on. Turn a monitor on.";
+                // the fix is the window's Virtual screen section (0.2.37), never a pop-up; the monitor line says why
                 v.HostDot = Theme.Warn;
             }
 
@@ -157,6 +172,7 @@ namespace DsfDesktop.Ui
             v.StartWow = c.Settings.StartWowOnStream;
             v.MatchStream = c.Settings.MatchStreamResolution;
             v.OwnScreen = c.Settings.OwnScreen;
+            v.VScreen = new VScreenView { Panel = c.SetupPanel, Headless = c.Headless, Busy = c.SetupBusy, Result = c.SetupResult };
             return v;
         }
     }
@@ -174,6 +190,9 @@ namespace DsfDesktop.Ui
         public void SetStartWow(bool on) { c.Settings.StartWowOnStream = on; c.SaveSettings(); }
         public void SetMatchStream(bool on) => c.SetMatchStream(on);
         public void SetOwnScreen(bool on) => c.SetOwnScreen(on);
+        public string TurnOnSudoVda() => c.TurnOnSudoVda();
+        public string InstallVirtualScreen() => c.InstallVirtualScreen();
+        public string TestOwnScreen() => c.TestOwnScreen();
         public System.Collections.Generic.List<string> RunTest() => c.RunPcTest("the window").Lines();
         public Task<string> ThorInstall() => c.Thor.InstallLatest();
         public Task<string> ThorInstallFile(string apk) => c.Thor.InstallLocal(apk);

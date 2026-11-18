@@ -218,6 +218,17 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   is on disk (a half-done `File.Replace`, a crash right after a swap); one that can't finish keeps its journal for the next try.
   A patch while an install still waits for its first login folds into it (the one backup kept). A failed or cancelled `pc_patch`
   goes once the game is current by another route.
+- **[0.2.37] The virtual screen, quiet by default (the user's ruling 2026-11-18).** "Stream on its own screen" is OFF by default
+  (a 0.2.32-0.2.36 settings file's "on" was that version's default and reads as off; the player's own pick from 0.2.37 on is kept).
+  A PC with a monitor on and the setting off streams that monitor with no question, no pop-up and nothing about drivers to the
+  Thor; no driver is even looked for. A headless PC (or the setting on) gets the setup in Desktop's own window: SudoVDA turned off
+  = "Turn on" (pnputil /enable-device with the adapter's instance id found by its hardware id, through Windows' admin prompt, on
+  the player's click only), no driver = the Virtual Display Driver's install, a driver ready = a one-time test of our screen, "Start
+  Desktop when I sign in" (the HKCU Run entry, off by default) and a note that a headless PC must sign in to Windows by itself.
+  The one-time install question box is gone. To the Thor, every headless screen problem goes as `sunshine.problem` `needs_screen`
+  with `why` "pc needs a virtual screen: set it up in Desktop" (never `screen_disabled` / `no_screen` any more; a Thor reads all
+  three as that one line); the `status` line carries only a screen being made ("Making the stream's own screen", "Virtual screen
+  ready"), never a driver's absence.
 - **[S3] The streamed monitor.** Sunshine captures one monitor (the primary unless told otherwise). When no stream is running and WoW
   is on another monitor, Desktop points Sunshine at WoW's monitor (Sunshine restarts, ~25 s, and a `status` says so); during a stream
   it moves the WoW window onto the streamed monitor instead.

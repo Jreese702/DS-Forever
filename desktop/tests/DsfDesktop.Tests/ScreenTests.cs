@@ -162,8 +162,8 @@ namespace DsfDesktop.Tests
         {
             A.Eq("No screen: making one", ScreenPlan.Making);
             A.Eq("Virtual screen ready", ScreenPlan.Ready);
-            A.Eq("Install needed", ScreenPlan.Install);
-            A.Eq("pc needs a virtual screen: see Desktop", ScreenPlan.ThorNeedsScreen);
+            A.Eq("Needs a virtual screen", ScreenPlan.Install);
+            A.Eq("pc needs a virtual screen: set it up in Desktop", ScreenPlan.ThorNeedsScreen);
             A.True(VddInstall.WingetArgs.Contains("VirtualDrivers.Virtual-Display-Driver") && VddInstall.WingetArgs.Contains("-e"), VddInstall.WingetArgs);
         }
 

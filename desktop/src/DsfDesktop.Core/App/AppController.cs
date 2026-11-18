@@ -52,9 +52,7 @@ namespace DsfDesktop.App
         public string HostProblem => Sunshine != null && Sunshine.Exited ? "exited" : HealProblem ?? Ports?.Problem ?? ScreenProblem;
         public string HostWhy => Sunshine != null && Sunshine.Exited ? "pc busy: the streaming host stopped"
             : HealProblem == ProblemNotResponding ? WhyNotResponding : HealProblem == ProblemRestarting ? WhyRestarting
-            : Ports?.Problem != null ? Ports.ThorWhy : ScreenProblem == ScreenPlan.ProblemNeedsScreen ? ScreenPlan.ThorNeedsScreen
-            : ScreenProblem == ScreenPlan.ProblemNoScreen ? ScreenPlan.ThorNoScreen
-            : ScreenProblem == ScreenPlan.ProblemScreenDisabled ? ScreenPlan.ThorScreenDisabled : "";
+            : Ports?.Problem != null ? Ports.ThorWhy : ScreenProblem != null ? ScreenPlan.ThorNeedsScreen : "";
 
         public event Action Changed;
 
@@ -386,10 +384,11 @@ namespace DsfDesktop.App
             {
                 var win = Displays.WindowsDisplays();
                 var virt = win.Where(d => d.Virtual).Select(d => d.ToString()).ToList();
-                bool sudo = SudoVda.Installed();
+                // 0.2.37: a disabled adapter has no interface; it is "installed, turned off", not "not installed"
+                var sudo = ScreenPlan.SudoVdaWord(SudoVda.Installed(), SudoVda.AdapterProblem());
                 Log.I("neighbours: hosts " + (Ports != null && Ports.Neighbours.Count > 0 ? string.Join("; ", Ports.Neighbours) : "none") +
                       "; virtual displays " + (virt.Count > 0 ? string.Join("; ", virt) : "none") +
-                      "; SudoVDA " + (sudo ? "installed" : "not installed") + "; Virtual Display Driver " + (win.Any(VddScreen.IsVdd) ? "installed" : "not installed") +
+                      "; SudoVDA " + sudo + "; Virtual Display Driver " + (win.Any(VddScreen.IsVdd) ? "installed" : "not installed") +
                       "; own screen " + (Settings.OwnScreen ? "on" : "off") +
                       "; screens " + (win.Count > 0 ? string.Join("; ", win.Where(d => !d.Virtual).Select(d => d.ToString())) : "unread"));
             }
@@ -791,7 +790,7 @@ namespace DsfDesktop.App
         string topoKey;
         List<WinDisplay> lastWin = new List<WinDisplay>();
         DateTime lastDisplayRestart = DateTime.MinValue, driversAt = DateTime.MinValue;
-        bool driverInstalled, driverUsable, displayCheckPending = true, screenOffer, screenOfferHeadless;
+        bool driverInstalled, driverUsable, driversRead, displayCheckPending = true, lookedLast;
         /// <summary>the screen worker (ScreenTick, MakeOurs, the Test's make, the start's cleanup) runs: one at a time (reviewers
         /// 2026-11-17: ScreenFactsNow and ScreenTick read and set a plain bool, so both could make ours at once)</summary>
         int screenBusyN;
@@ -837,25 +836,97 @@ namespace DsfDesktop.App
             Log.I("thor stream mode: " + thorW + "x" + thorH + "@" + thorFps);
         }
 
-        /// <summary>the install question, once: true when the window should ask it now</summary>
-        public bool TakeScreenOffer()
-        {
-            // never while a Thor is connected or streaming (ScreenPlan.AskNow): asked once it has gone
-            if (!ScreenPlan.AskNow(screenOffer, (Bridge?.Sessions().Count ?? 0) > 0, StreamLive())) return false;
-            screenOffer = false;
-            Log.I("virtual screen: asking now (no Thor connected)");
-            return true;
-        }
-
         /// <summary>SudoVDA's adapter is in Windows but disabled (SudoVda.Disabled, surveyed with the drivers)</summary>
         bool sudoVdaDisabled;
+        /// <summary>a screen is on that is not ours (the last display tick)</summary>
+        volatile bool hasScreenNow = true;
 
-        /// <summary>the install question is for a PC with no screen on (else: for the stream's own screen)</summary>
-        public bool ScreenOfferHeadless => screenOfferHeadless;
+        /// <summary>
+        /// The window's virtual-screen section (quiet by default, the user's ruling 2026-11-18): Hidden unless "Stream on its own screen"
+        /// is on or no screen is on. Never a pop-up: the 0.2.32-0.2.36 install question (a modal box, asked once) is gone.
+        /// </summary>
+        public ScreenSetup.Panel SetupPanel => ScreenSetup.For(Settings.OwnScreen, hasScreenNow, driversRead, driverInstalled, driverUsable,
+                                                               sudoVdaDisabled, Installing);
+        /// <summary>no screen is on at this PC (the last display tick)</summary>
+        public bool Headless => !hasScreenNow;
+        /// <summary>the player's install (VddInstall) is running</summary>
+        public bool Installing { get { lock (vddWatchGate) return vddWatchAt != DateTime.MinValue; } }
+        /// <summary>the section's last result (Turn on, the test): "" = none</summary>
+        public string SetupResult { get; private set; } = "";
+        /// <summary>Turn on or the test is running</summary>
+        public bool SetupBusy => Volatile.Read(ref setupBusyN) != 0;
+        int setupBusyN;
+        /// <summary>Windows' admin prompt and the adapter's id for Turn on (the tests pass fakes: never pnputil on a test PC)</summary>
+        public IElevatedRunner Elevated = new WindowsElevatedRunner();
+        public Func<string> SudoVdaId = SudoVda.AdapterInstanceId;
 
-        /// <summary>the player said yes: the driver's own installer (Windows asks for admin); null = started. Its monitor is ours.</summary>
+        /// <summary>the window's Turn on (the player's click): pnputil /enable-device through Windows' admin prompt; null = turned on</summary>
+        public string TurnOnSudoVda()
+        {
+            if (Interlocked.CompareExchange(ref setupBusyN, 1, 0) != 0) return "busy";
+            try
+            {
+                var why = SudoVdaTurnOn.Run(SudoVdaId, Elevated);
+                SetupResult = why == null ? "SudoMaker display adapter turned on"
+                    : why == SudoVdaTurnOn.Restart ? "SudoMaker display adapter " + why : "Not turned on: " + why;
+                driversAt = DateTime.MinValue;   // looked at again at the next tick
+                displaysDirty = true;
+                Fire();
+                return why == SudoVdaTurnOn.Restart ? null : why;
+            }
+            finally { Volatile.Write(ref setupBusyN, 0); }
+        }
+
+        /// <summary>the headless check's test (the player's click): our screen made at the Thor's mode and removed once; null = passed</summary>
+        public string TestOwnScreen()
+        {
+            if (Interlocked.CompareExchange(ref setupBusyN, 1, 0) != 0) return "busy";
+            try
+            {
+                string why;
+                if (StreamLive()) why = "a stream is live";
+                else
+                {
+                    bool got = false;
+                    for (int i = 0; i < 180 && !(got = TakeScreen()); i++) Thread.Sleep(250);
+                    if (!got) why = "the screen is being made";
+                    else
+                    {
+                        try
+                        {
+                            var life = Screens;
+                            // the player's click: the tries start over (as Test connection's), so one failed test never counts
+                            // towards a Thor session's give-up
+                            life.Reset(byHand: true);
+                            if (life.Exists) why = null;   // ours is up already: it works
+                            else
+                            {
+                                why = life.Make(thorW, thorH, thorFps, DateTime.UtcNow);
+                                if (why == null)
+                                {
+                                    var drv = life.Current?.Name;
+                                    life.Remove("the window's test");
+                                    Log.I("virtual screen: the window's test made and removed ours (" + drv + ")");
+                                }
+                            }
+                        }
+                        catch (Exception e) { why = e.Message; }
+                        finally { FreeScreen(); }
+                    }
+                }
+                SetupResult = ScreenSetup.TestLine(why);
+                Log.I("virtual screen: " + SetupResult);
+                Fire();
+                return why;
+            }
+            finally { Volatile.Write(ref setupBusyN, 0); }
+        }
+
+        /// <summary>the player's Install in the window: the driver's own installer (Windows asks for admin); null = started. Its monitor is ours.</summary>
         public string InstallVirtualScreen()
         {
+            if (Installing) return null;
+            Log.I("virtual screen: install (the player's click in the window)");
             // nothing is ours yet: the monitor the install brings is named when it appears (VddInstallWatch), so a declined admin
             // prompt leaves nothing marked ours
             var before = Displays.WindowsDisplays().Where(VddScreen.IsVdd).Select(d => d.Name).ToList();
@@ -898,12 +969,15 @@ namespace DsfDesktop.App
             }
         }
 
-        /// <summary>"Stream on its own screen" On/Off: the next tick makes or removes ours</summary>
+        /// <summary>"Stream on its own screen" On/Off (off by default, 0.2.37): the next tick makes or removes ours; on = drivers are
+        /// looked for and the window's setup shows. The player's own pick: kept across updates (AppSettings.OwnScreenChosen)</summary>
         public void SetOwnScreen(bool on)
         {
-            if (Settings.OwnScreen == on) return;
+            if (Settings.OwnScreen == on && Settings.OwnScreenChosen) return;
             Settings.OwnScreen = on;
+            Settings.OwnScreenChosen = true;
             SaveSettings();
+            if (on) driversAt = DateTime.MinValue;
             Log.I("own screen: " + (on ? "on" : "off"));
             displaysDirty = true;
         }
@@ -914,7 +988,10 @@ namespace DsfDesktop.App
             ScreenLine = line;
             ScreenProblem = problem;
             Log.I("screen: " + (line.Length > 0 ? line : "fine") + (problem != null ? " (" + problem + ")" : ""));
-            if (line.Length > 0) Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = line });
+            // quiet by default (0.2.37): only a screen being made goes to the Thor's status line; a driver's absence is the window's
+            // (headless: the welcome's / "sunshine"'s problem word, the Thor's one line)
+            var thor = ScreenPlan.ThorStatus(line);
+            if (thor != null) Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = thor });
             lastPortsKey = null;   // the host problem line follows
             Fire();
         }
@@ -989,21 +1066,26 @@ namespace DsfDesktop.App
             bool thorWants = life.ThorWants(now, thor, streaming);
             // an old screen WoW hadn't left yet (RetireOldScreen): tried again, never in a loop (OldScreen.MaxTries)
             if (now >= retireAt) { retireAt = DateTime.MaxValue; Task.Run(() => RetireOldScreen()); }
-            if (now - driversAt > TimeSpan.FromSeconds(30))
+            bool hasScreen = Displays.HasScreen(win, life.GdiName);
+            if (hasScreen != hasScreenNow) { hasScreenNow = hasScreen; Fire(); }
+            // quiet by default (the user's ruling 2026-11-18): a driver is looked for only with "Stream on its own screen" on or no
+            // screen on; a PC with a monitor and the setting off never hears about drivers
+            bool looks = ScreenPlan.Looks(Settings.OwnScreen, hasScreen);
+            if (looks && !lookedLast) driversAt = DateTime.MinValue;
+            lookedLast = looks;
+            if (looks && now - driversAt > TimeSpan.FromSeconds(30))
             {
                 driversAt = now;
                 (driverInstalled, driverUsable) = life.Survey();
                 // Apollo's SudoVDA disabled in Windows reads as "not installed" (no active interface): it is there, so nothing is
-                // offered and the line names the fix (read only: Desktop never enables a device)
+                // offered and the window's Turn on is the fix (read here; turned on only by the player's click)
                 bool was = sudoVdaDisabled;
                 sudoVdaDisabled = !driverUsable && SudoVda.Disabled();
                 if (sudoVdaDisabled != was) Log.I("virtual screen: SudoVDA adapter " + (sudoVdaDisabled ? "found disabled in Windows" : "no longer disabled"));
-                if (sudoVdaDisabled) screenOffer = false;
+                if (!driversRead) { driversRead = true; Fire(); }
             }
-            bool hasScreen = Displays.HasScreen(win, life.GdiName);
-            // a driver that is there but can't be used (the player's own VDD monitor): nothing to offer
-            bool offered = ScreenPlan.Offered(Settings.VirtualScreenOffered, driverInstalled, sudoVdaDisabled);
-            var (step, why) = life.Decide(now, Settings.OwnScreen, hasScreen, driverUsable, thorWants, offered, (thorW, thorH, thorFps), streaming,
+            // no question is asked any more (0.2.37: the window's setup offers the install), so never OfferInstall
+            var (step, why) = life.Decide(now, Settings.OwnScreen, hasScreen, looks && driverUsable, thorWants, offered: true, (thorW, thorH, thorFps), streaming,
                                           sunshineOnOurs: sessionOutput != null, thorHere: thor || streaming);
             switch (step)
             {
@@ -1029,15 +1111,6 @@ namespace DsfDesktop.App
                     // Thor's Retry or a Test start the tries over)
                     if (hasScreen) { if (ScreenLine != ScreenPlan.FallbackFailed) Say(ScreenPlan.FallbackFailed, null); }
                     else Say(ScreenPlan.NeedsVirtual, ScreenPlan.ProblemNeedsScreen);
-                    break;
-                case ScreenPlan.Step.OfferInstall:
-                    Settings.VirtualScreenOffered = true;
-                    SaveSettings();
-                    screenOfferHeadless = !hasScreen;
-                    screenOffer = true;
-                    Log.I("screen: no virtual display driver" + (hasScreen ? " for the stream's own screen" : " and no screen on") + ": asking once");
-                    if (hasScreen) Say(ScreenPlan.FallbackNote, null);
-                    else Say(ScreenPlan.Install, ScreenPlan.ProblemNeedsScreen);
                     break;
                 case ScreenPlan.Step.NeedsInstall:
                     { var (l, pr) = ScreenPlan.NoDriverLine(false, sudoVdaDisabled); Say(l, pr); }
@@ -2435,7 +2508,8 @@ namespace DsfDesktop.App
             ["uniqueid"] = SunshineId,
             // why streaming can't work on this PC ("ports_taken" | "not_listening" | "exited" | "restarting" | "not_responding" |
             // "needs_screen" | "no_screen"; "" = fine) and the Thor's line for it; an older Thor ignores both
-            ["problem"] = HostProblem ?? "",
+            // (0.2.37: every headless screen problem goes as "needs_screen", the Thor's one line: set it up in Desktop)
+            ["problem"] = ScreenPlan.ThorWord(HostProblem) ?? "",
             ["why"] = HostWhy,
             // the Thor holds its stream start while this is said (verifier 2026-11-17: its stream started with the bridge, before
             // ours was made, so the first stream of each session stayed on the real screen): "screen" | "starting" | "" = go
@@ -2469,11 +2543,13 @@ namespace DsfDesktop.App
         {
             var life = Screens;
             var now = DateTime.UtcNow;
-            if (driversAt == DateTime.MinValue) { driversAt = now; (driverInstalled, driverUsable) = life.Survey(); }
             var win = lastWin.Count > 0 ? lastWin : Displays.WindowsDisplays();
             bool hasScreen = Displays.HasScreen(win, life.GdiName);
+            // quiet by default (0.2.37): a monitor on and "Stream on its own screen" off = nothing is made, no driver looked for
+            if (!ScreenPlan.Looks(Settings.OwnScreen, hasScreen)) return false;
+            if (driversAt == DateTime.MinValue) { driversAt = now; (driverInstalled, driverUsable) = life.Survey(); }
             // a pure look (reviewers 2026-11-17: Decide adopted a leftover and wrote the mode ours was made for)
-            var (step, _) = life.Peek(now, Settings.OwnScreen, hasScreen, driverUsable, true, Settings.VirtualScreenOffered || driverInstalled,
+            var (step, _) = life.Peek(now, Settings.OwnScreen, hasScreen, driverUsable, true, offered: true,
                                       (thorW, thorH, thorFps), false, sunshineOnOurs: sessionOutput != null, thorHere: true);
             return step == ScreenPlan.Step.MakeOurs;
         }

@@ -55,9 +55,10 @@ object StreamCurtain {
     const val BUSY_PROGRAM = "PC busy: another program has the streaming ports"
     /** Desktop 0.2.31: another program holds OUR ports */
     const val BUSY_PORTS = "PC busy: its streaming ports are taken"
-    /** Desktop 0.2.31: no screen is on at the PC and no virtual display driver is installed */
-    const val NEEDS_SCREEN = "PC needs a virtual screen: see Desktop"
-    const val NO_SCREEN = "PC has no screen on"
+    /** Desktop 0.2.31+: no screen is on at the PC and it can't make a virtual one (no driver, SudoVDA turned off, or the make
+     *  failed). QUIET BY DEFAULT (the user's ruling 2026-11-18): the Thor's ONE terse line for every headless case; never asks for
+     *  anything that can't be done from the Thor - the setup is in Desktop's window. A PC with a monitor on gets no line at all */
+    const val NEEDS_SCREEN = "PC needs a virtual screen: set it up in Desktop"
     const val BUSY_LISTENING = "PC busy: its streaming host isn't listening"
     const val BUSY_STOPPED = "PC busy: its streaming host stopped"
     /** Desktop 0.2.32's self-healing: restarting its host, or its tries spent ([HostHeal]'s words) */
@@ -183,9 +184,6 @@ object StreamCurtain {
         return null
     }
 
-    /** Desktop 0.2.33: the PC's SudoVDA (Apollo's virtual display driver) is there but disabled in Windows: the player enables it */
-    const val SCREEN_DISABLED = "Enable SudoMaker display adapter in Device Manager"
-
     /**
      * Desktop 0.2.27's reason streaming can't work (the welcome's sunshine.problem / sunshine.why: the user's PC 2026-11-13, another
      * Sunshine on the stock ports) as the curtain's terse line; "" = none. Its known problems are fixed lines (translated); any
@@ -199,9 +197,8 @@ object StreamCurtain {
         "exited" -> BUSY_STOPPED
         "restarting" -> HOST_RESTARTING
         "not_responding" -> HOST_DOWN
-        "needs_screen" -> NEEDS_SCREEN
-        "no_screen" -> NO_SCREEN
-        "screen_disabled" -> SCREEN_DISABLED
+        // Desktop 0.2.37 sends only "needs_screen"; 0.2.31-0.2.36's other two headless words read the same one line
+        "needs_screen", "no_screen", "screen_disabled" -> NEEDS_SCREEN
         else -> why.trim().let { w -> when {
             w.isEmpty() -> ""
             w.startsWith("pc busy: another Sunshine", ignoreCase = true) -> ""
