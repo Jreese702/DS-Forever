@@ -65,8 +65,11 @@ object GameConfigWtf {
      * screen was 1542x1080 on the 1920x1080 top screen, so TapBridge refused every tap): the user's pick 2026-11-16, "force the game to
      * fill the top screen at EVERY start" - gxMaximize 1 and gxWindowedResolution the game screen's size ([ensure]'s screen). Both were
      * written only when missing before, so a folder's own windowed size stayed.
+     * #489 (1.0.33: "Resolution Scaling setting not being saved"): RenderScale is NOT forced any more - the user, 2026-11-18: "only set it
+     * once / only when the player hasn't chosen, never overwrite the player's own value". It is still a default ([CONFIG_DEFAULTS]): a
+     * new Config.wtf gets it and a file without the line gets it added; a value the player picked in the game's options stays.
      */
-    private val FORCED_CONFIG_KEYS = listOf("gxApi", "RenderScale", "ResampleQuality", "GamePadEnable", "InputDeviceInterfaceStyle",
+    private val FORCED_CONFIG_KEYS = listOf("gxApi", "ResampleQuality", "GamePadEnable", "InputDeviceInterfaceStyle",
         "gxMaximize", "gxWindowedResolution")
 
     /**
