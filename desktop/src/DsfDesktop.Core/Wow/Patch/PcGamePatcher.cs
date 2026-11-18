@@ -66,20 +66,56 @@ namespace DsfDesktop.Wow.Patch
         public long SpareBytes = 1L << 30;
         /// <summary>file moves (the tests make one fail): (from, to, backup or null)</summary>
         public Action<string, string, string> Swap = DefaultSwap;
+        /// <summary>a written temp file put in place (.build.info, the journal, the put-back of .build.info): (tmp, dest, backup or
+        /// null); the tests make it fail or "crash" half way</summary>
+        public Action<string, string, string> ReplaceFile = DefaultReplace;
+        /// <summary>the put-back's file moves (the tests crash it at each one): (from, to)</summary>
+        public Action<string, string> MoveFile = (a, b) => System.IO.File.Move(a, b);
+        /// <summary>Desktop's note of a build whose first start failed here (DataDir\patch\new_failed.json): never installed again by
+        /// itself, only by a Retry; null = kept in memory only</summary>
+        public string FailedBuildPath;
 
+        /// <summary>
+        /// One client file swapped in, its old one kept as [backup]. An existing backup is NEVER deleted before a checked new one
+        /// exists (the 0.2.36 review): one that already holds this very file is kept as it is; a stale one is replaced only by a
+        /// fresh copy (backup.dsf-new) whose MD5 is the old file's (the put-back looks for both).
+        /// </summary>
         public static void DefaultSwap(string from, string to, string backup)
         {
             if (backup != null && System.IO.File.Exists(to))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(backup));
-                if (System.IO.File.Exists(backup)) System.IO.File.Delete(backup);
-                System.IO.File.Replace(from, to, backup, true);
+                if (!System.IO.File.Exists(backup)) { System.IO.File.Replace(from, to, backup, true); return; }
+                var oldMd5 = Hex.Md5File(to);
+                if (oldMd5 != null && Hex.Md5File(backup) == oldMd5) { System.IO.File.Replace(from, to, null, true); return; }
+                var fresh = backup + ".dsf-new";
+                if (System.IO.File.Exists(fresh)) System.IO.File.Delete(fresh);
+                System.IO.File.Replace(from, to, fresh, true);
+                if (oldMd5 == null || Hex.Md5File(fresh) != oldMd5) throw new IOException("the new backup of " + Path.GetFileName(to) + " didn't check");
+                System.IO.File.Replace(fresh, backup, null, true);
             }
             else
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(to));
                 if (System.IO.File.Exists(to)) System.IO.File.Delete(to);
                 System.IO.File.Move(from, to);
+            }
+        }
+
+        public static void DefaultReplace(string tmp, string dest, string backup)
+        {
+            if (System.IO.File.Exists(dest)) System.IO.File.Replace(tmp, dest, backup, true);
+            else System.IO.File.Move(tmp, dest);
+        }
+
+        /// <summary>[bytes] written and flushed to the disk itself (FlushFileBuffers) before anything renames it: a hard reset (the PC's
+        /// Kernel-Power 41s) never leaves a renamed-in file that is empty or torn</summary>
+        public static void WriteDurable(string path, byte[] bytes)
+        {
+            using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                fs.Write(bytes, 0, bytes.Length);
+                fs.Flush(true);
             }
         }
     }
@@ -117,7 +153,14 @@ namespace DsfDesktop.Wow.Patch
         public event Action Changed;
 
         public PatchStatus Status { get { lock (gate) return st.Copy(); } }
-        public bool Busy { get { lock (gate) return st.Busy; } }
+        /// <summary>an attempt runs, or a put-back (RestoreOld / Recover) or the good login's clean-up: WoW is not started meanwhile</summary>
+        public bool Busy { get { lock (gate) return st.Busy || restoring; } }
+
+        bool restoring;
+        bool autoRun;
+
+        bool EnterRestore() { lock (gate) { if (st.Busy || restoring) return false; restoring = true; return true; } }
+        void LeaveRestore() { lock (gate) restoring = false; }
 
         string FlavorDir => Path.Combine(env.Root, env.Flavor);
         string BuildInfoPath => Path.Combine(env.Root, ".build.info");
@@ -129,13 +172,14 @@ namespace DsfDesktop.Wow.Patch
         }
 
         /// <summary>one attempt in the background; false = one is running already (a press then is that one)</summary>
-        public bool Start(string why)
+        public bool Start(string why, bool auto = false)
         {
             lock (gate)
             {
-                if (st.Busy) return false;
+                if (st.Busy || restoring) return false;
                 cts = new CancellationTokenSource();
                 st = new PatchStatus { State = PatchState.Checking };
+                autoRun = auto;
             }
             Log.I("game patch: starting (" + why + ")");
             var token = cts.Token;
@@ -145,9 +189,9 @@ namespace DsfDesktop.Wow.Patch
         }
 
         /// <summary>the same attempt on the caller's thread (the tests)</summary>
-        public PatchStatus RunNow(CancellationToken ct = default)
+        public PatchStatus RunNow(CancellationToken ct = default, bool auto = false)
         {
-            lock (gate) st = new PatchStatus { State = PatchState.Checking };
+            lock (gate) { st = new PatchStatus { State = PatchState.Checking }; autoRun = auto; }
             Run(ct);
             return Status;
         }
@@ -256,16 +300,16 @@ namespace DsfDesktop.Wow.Patch
             Set(s => s.To = target);
             Log.I("game patch: " + env.Product + " " + (from.Length > 0 ? from : "?") + " -> " + target + " (" + region + ", build config " + buildKey + ")");
 
-            // ---- preflight: WoW closed (an outdated client at its login is closed: part of the attempt, never a step for the
-            // player), the Agent quiet, the folder writable
-            CloseWowFirst();
+            // ---- preflight: the Agent quiet, the folder writable. WoW is closed only once files are known to change (the 0.2.36
+            // review: a current client missing only its wowf row is never closed for it)
             WaitForAgent(ct, PatchState.Checking);
             // an install a crash or a failed put-back left half done is undone first (the old client whole), then the patch reads
-            // the install again from the start
+            // the install again from the start. An unreadable journal stops here (LoadJournal: "busy", needs repair)
             var left = LoadJournal();
             if (left != null && left.State != "installed")
             {
                 Log.I("game patch: an install of " + left.To + " left half done: undoing it first");
+                CloseWowFirst();
                 if (!Undo(left)) throw new PatchFailed("busy", "the last install couldn't be put back yet");
                 if (depth++ > 0) throw new PatchFailed("error", "the install changed again while it was read");
                 return Patch(ct);
@@ -307,6 +351,13 @@ namespace DsfDesktop.Wow.Patch
 
             bool rowCurrent = row != null && V(row, "Version") == target && V(row, "Build Key") == buildKey && V(row, "CDN Key") == cdnKey;
             if (pending.Count == 0 && missingIdx.Count == 0 && rowCurrent) return "already " + target;
+            // WoW of the folder closed only now that client files change (an outdated client at its login is closed: part of the
+            // attempt, never a step for the player); a row or an index alone is written beside an open client
+            // a build whose first start failed here is installed again only by the player's Retry, never by itself (the 0.2.36 review:
+            // the next connect re-installed the same crashing build); a row alone is still repaired
+            if (pending.Count > 0 && autoRun && GameVersion.Build(target) > 0 && GameVersion.Build(target) == FailedBuild())
+                throw new PatchFailed("new_failed", target + " failed its first start here: only a Retry installs it again");
+            if (pending.Count > 0) CloseWowFirst();
 
             long total = pending.Sum(e => e.Size);
             int count = pending.Count;
@@ -380,9 +431,11 @@ namespace DsfDesktop.Wow.Patch
 
             // ---- Installing: no Cancel from here
             Set(s => { s.State = PatchState.Installing; s.File = ""; });
-            if (env.WowRunning()) throw new PatchFailed("busy", "WoW started meanwhile");
+            if (pending.Count > 0 && env.WowRunning()) throw new PatchFailed("busy", "WoW started meanwhile");
             // the files to replace AND the new ones (antivirus scanning a freshly written Wow.exe makes File.Replace fail half way)
             WaitForLocks(pending.Select(Dest).Where(System.IO.File.Exists).Concat(pending.Select(e => Path.Combine(staging, Rel(e.Name)))).ToList());
+            // the Agent asked once more after the lock wait (up to a minute went by): quiet, or nothing is swapped
+            if (!AgentQuiet(env.AgentWaitS)) throw new PatchFailed("agent_busy", "Blizzard's updater started on the folder while the files were waited for");
             // an install still waiting for its first good login (its backup is the ONE backup, the user's ruling) is folded in, never
             // replaced: its backup stays the backup of the client before it, files it changed already are not backed up again (their
             // backup holds the original), and a put-back still brings back the client from before both
@@ -390,7 +443,7 @@ namespace DsfDesktop.Wow.Patch
             if (prev != null && prev.State != "installed") prev = null;
             var fromBuild = GameVersion.Build(from) > 0 ? GameVersion.Build(from).ToString() : "old";
             var backupDir = prev?.BackupDir ?? Path.Combine(FlavorDir, ".dsf-backup", fromBuild);
-            KeepOneBackup(backupDir);
+            if (pending.Count > 0) KeepOneBackup(backupDir);
             var j = new Journal
             {
                 From = prev?.From ?? from, To = target, Root = env.Root, Flavor = env.Flavor, State = "installing", BackupDir = backupDir,
@@ -402,10 +455,18 @@ namespace DsfDesktop.Wow.Patch
             foreach (var e in pending)
             {
                 var dest = Dest(e); var staged = Path.Combine(staging, Rel(e.Name));
-                if (before.TryGetValue(dest, out var was))
+                // "backed up already" only when that backup is really there and is the old file (its MD5); else this file is backed
+                // up anew, as it is now
+                if (before.TryGetValue(dest, out var was) && (!was.Existed || BackupOf(was) != null))
                 {
                     before.Remove(dest);
                     swaps.Add(new JFile { Dest = dest, Staged = staged, Backup = was.Backup, Existed = was.Existed, OldMd5 = was.OldMd5, Kept = true });
+                }
+                else if (was != null)
+                {
+                    before.Remove(dest);
+                    Log.I("game patch: " + dest + "'s backup from the last install is gone or not its old file: backed up again as it is now");
+                    swaps.Add(new JFile { Dest = dest, Staged = staged, Backup = was.Backup, Existed = System.IO.File.Exists(dest), OldMd5 = Hex.Md5File(dest) ?? "" });
                 }
                 else swaps.Add(new JFile { Dest = dest, Staged = staged, Backup = Path.Combine(backupDir, Rel(e.Name)), Existed = System.IO.File.Exists(dest), OldMd5 = Hex.Md5File(dest) ?? "" });
             }
@@ -440,6 +501,8 @@ namespace DsfDesktop.Wow.Patch
                     if (!keepBak) j.BuildInfoBak = BuildInfoPath + ".dsf-bak";
                     j.BuildInfoWritten = Hex.Md5(Encoding.UTF8.GetBytes(next));
                     SaveJournal(j);
+                    // a stale .dsf-bak2 is only ever a leftover (the one to put back is .dsf-bak, which exists): never the Replace's target
+                    if (keepBak) TryDelete(BuildInfoPath + ".dsf-bak2");
                     WriteBuildInfo(now, next, keepBak ? BuildInfoPath + ".dsf-bak2" : j.BuildInfoBak);
                     if (keepBak) TryDelete(BuildInfoPath + ".dsf-bak2");
                 }
@@ -452,6 +515,16 @@ namespace DsfDesktop.Wow.Patch
                 if (e is PatchFailed) throw;
                 if (e is IOException || e is UnauthorizedAccessException) throw new PatchFailed("busy", "a game file couldn't be replaced: " + e.Message);
                 throw;
+            }
+            // the write's leftovers go; ONE .dsf-bak stays until the first good login (GoodLogin removes it)
+            TryDelete(BuildInfoPath + ".dsf-tmp");
+            TryDelete(BuildInfoPath + ".dsf-bak2");
+            TryDelete(BuildInfoPath + ".dsf-undo");
+            if (j.Files.Count == 0)
+            {
+                // the row (or an index) alone, no install waiting for its login: nothing to put back later
+                if (DropJournal()) TryDelete(j.BuildInfoBak);
+                return "the " + env.Product + " row of " + target + " repaired (no client file changed)";
             }
             j.State = "installed";
             SaveJournal(j);
@@ -682,10 +755,58 @@ namespace DsfDesktop.Wow.Patch
             using (var fs = new FileStream(BuildInfoPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                 bom = fs.Length >= 3 && fs.ReadByte() == 0xEF && fs.ReadByte() == 0xBB && fs.ReadByte() == 0xBF;
             var tmp = BuildInfoPath + ".dsf-tmp";
-            System.IO.File.WriteAllBytes(tmp, new UTF8Encoding(bom).GetPreamble().Concat(new UTF8Encoding(false).GetBytes(next)).ToArray());
+            PatchEnv.WriteDurable(tmp, new UTF8Encoding(bom).GetPreamble().Concat(new UTF8Encoding(false).GetBytes(next)).ToArray());
             if (ReadShared(BuildInfoPath) != readText) { TryDelete(tmp); throw new PatchFailed("agent_busy", ".build.info changed while it was being written"); }
-            System.IO.File.Replace(tmp, BuildInfoPath, backup, true);
+            // a Replace that fails half way (ERROR_UNABLE_TO_MOVE_REPLACEMENT_2: .build.info already the backup, the new one not in)
+            // throws into the install's catch, whose put-back brings .build.info back from that backup
+            env.ReplaceFile(tmp, BuildInfoPath, backup);
+            if (!System.IO.File.Exists(BuildInfoPath) || ReadShared(BuildInfoPath) != next) throw new IOException(".build.info didn't read back as it was written");
             AgentWatch.Mine(BuildInfoPath);
+        }
+
+        /// <summary>a .build.info the game can use: its header and at least one row</summary>
+        static bool BuildInfoValid(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            var lines = BuildInfoFile.Lines(text);
+            return lines.Count >= 2 && lines[0].Contains("!") && BuildInfoFile.Columns(lines[0]).Contains("Branch");
+        }
+
+        /// <summary>the file's text, null = missing; an unreadable one throws</summary>
+        static string ReadIfThere(string p) => p != null && System.IO.File.Exists(p) ? ReadShared(p) : null;
+
+        /// <summary>
+        /// .build.info as it was before the install (the 0.2.36 review): put back when it is the one the install wrote, OR when it is
+        /// missing or broken (a Replace that failed half way leaves no .build.info, only its backup), from .dsf-bak (the one from before
+        /// the install, or from before an earlier install still awaiting its login), else .dsf-bak2. Through a flushed temp file and an
+        /// atomic replace, then read back. true only when a valid .build.info is in place; false = the journal stays (needs repair).
+        /// </summary>
+        bool RestoreBuildInfo(Journal j)
+        {
+            if (System.IO.File.Exists(BuildInfoPath) && ReadIfThere(BuildInfoPath) is string cur)
+            {
+                bool ours = !string.IsNullOrEmpty(j.BuildInfoWritten) && Hex.Md5(Encoding.UTF8.GetBytes(cur)) == j.BuildInfoWritten;
+                if (BuildInfoValid(cur) && !ours) return true;   // the old one, or one the Agent wrote since: left as it is
+            }
+            string src = null, srcText = null;
+            foreach (var c in new[] { j.BuildInfoBak, BuildInfoPath + ".dsf-bak2" }.Where(x => !string.IsNullOrEmpty(x)).Distinct())
+            {
+                string t;
+                try { t = ReadIfThere(c); } catch (Exception) { continue; }
+                if (BuildInfoValid(t) && Hex.Md5(Encoding.UTF8.GetBytes(t)) != j.BuildInfoWritten) { src = c; srcText = t; break; }
+            }
+            if (src == null)
+            {
+                Log.I("game patch: .build.info is " + (System.IO.File.Exists(BuildInfoPath) ? "the new one or broken" : "missing") + " and no old copy is left: needs repair");
+                return false;
+            }
+            var tmp = BuildInfoPath + ".dsf-undo";
+            PatchEnv.WriteDurable(tmp, System.IO.File.ReadAllBytes(src));
+            env.ReplaceFile(tmp, BuildInfoPath, null);
+            if (!System.IO.File.Exists(BuildInfoPath) || ReadShared(BuildInfoPath) != srcText) throw new IOException(".build.info didn't read back as put back");
+            AgentWatch.Mine(BuildInfoPath);
+            Log.I("game patch: .build.info put back from " + Path.GetFileName(src));
+            return true;
         }
 
         // ---- the journal
@@ -709,17 +830,21 @@ namespace DsfDesktop.Wow.Patch
                 ["files"] = j.Files.Select(f => new Dictionary<string, object> { ["dest"] = f.Dest, ["staged"] = f.Staged, ["backup"] = f.Backup, ["existed"] = f.Existed, ["done"] = f.Done, ["old_md5"] = f.OldMd5 ?? "", ["kept"] = f.Kept }).ToList(),
             };
             Directory.CreateDirectory(Path.GetDirectoryName(env.JournalPath));
+            // a flushed temp file, then an atomic replace: a hard reset leaves the old journal or the new one, never a torn one
             var tmp = env.JournalPath + ".tmp";
-            System.IO.File.WriteAllText(tmp, Json.Write(d));
-            if (System.IO.File.Exists(env.JournalPath)) System.IO.File.Replace(tmp, env.JournalPath, null); else System.IO.File.Move(tmp, env.JournalPath);
+            PatchEnv.WriteDurable(tmp, new UTF8Encoding(false).GetBytes(Json.Write(d)));
+            env.ReplaceFile(tmp, env.JournalPath, null);
         }
 
+        /// <summary>the journal; null = none. One that is there but can't be read or parsed is NEVER taken for "none" (the 0.2.36
+        /// review): it throws "busy" (needs repair) and nothing is patched over it</summary>
         Journal LoadJournal()
         {
+            if (env.JournalPath == null || !System.IO.File.Exists(env.JournalPath)) return null;
             try
             {
-                if (env.JournalPath == null || !System.IO.File.Exists(env.JournalPath)) return null;
-                var o = Json.ReadObject(System.IO.File.ReadAllText(env.JournalPath));
+                var o = Json.ReadObject(ReadShared(env.JournalPath));
+                if (o == null || string.IsNullOrEmpty(o.Str("state")) || string.IsNullOrEmpty(o.Str("to"))) throw new FormatException("not a journal");
                 var j = new Journal
                 {
                     From = o.Str("from"), To = o.Str("to"), Root = o.Str("root"), Flavor = o.Str("flavor"), State = o.Str("state"),
@@ -731,10 +856,34 @@ namespace DsfDesktop.Wow.Patch
                             j.Files.Add(new JFile { Dest = f.Str("dest"), Staged = f.Str("staged"), Backup = f.Str("backup"), Existed = f.Bool("existed"), Done = f.Bool("done"), OldMd5 = f.Str("old_md5") ?? "", Kept = f.Bool("kept") });
                 return j;
             }
-            catch (Exception) { return null; }
+            catch (Exception e)
+            {
+                if (!System.IO.File.Exists(env.JournalPath)) return null;   // removed while it was read
+                Log.I("game patch: the install journal " + env.JournalPath + " can't be read (" + e.Message + "): nothing is patched or put back over it");
+                throw new PatchFailed("busy", "the game update's journal can't be read: needs repair (" + e.Message + ")");
+            }
         }
 
-        void DropJournal() { try { if (env.JournalPath != null && System.IO.File.Exists(env.JournalPath)) System.IO.File.Delete(env.JournalPath); } catch (Exception) { } }
+        /// <summary>true = no journal left</summary>
+        bool DropJournal()
+        {
+            try { if (env.JournalPath != null && System.IO.File.Exists(env.JournalPath)) System.IO.File.Delete(env.JournalPath); }
+            catch (Exception e) { Log.I("game patch: couldn't remove the journal: " + e.Message); }
+            return env.JournalPath == null || !System.IO.File.Exists(env.JournalPath);
+        }
+
+        /// <summary>the backup that holds [f]'s old file: its Backup, or the fresh copy a swap made beside a stale one (backup.dsf-new);
+        /// checked by the old MD5 when the journal has it. null = none</summary>
+        static string BackupOf(JFile f)
+        {
+            if (string.IsNullOrEmpty(f.Backup)) return null;
+            foreach (var c in new[] { f.Backup, f.Backup + ".dsf-new" })
+            {
+                if (string.IsNullOrEmpty(c) || !System.IO.File.Exists(c)) continue;
+                if (string.IsNullOrEmpty(f.OldMd5) || Hex.Md5File(c) == f.OldMd5) return c;
+            }
+            return null;
+        }
 
         /// <summary>
         /// The swaps undone in reverse, by what is ON DISK, not only by Done (the 0.2.36 review: File.Replace can fail half way with
@@ -755,18 +904,19 @@ namespace DsfDesktop.Wow.Patch
                     if (f.Existed)
                     {
                         var now = Hex.Md5File(f.Dest);
-                        bool old = !string.IsNullOrEmpty(f.OldMd5) ? now == f.OldMd5 : !f.Done && now != null && !System.IO.File.Exists(f.Backup);
+                        var bak = BackupOf(f);
+                        bool old = !string.IsNullOrEmpty(f.OldMd5) ? now == f.OldMd5 : !f.Done && now != null && bak == null;
                         if (old) { f.Done = false; continue; }
-                        if (System.IO.File.Exists(f.Backup))
+                        if (bak != null)
                         {
                             // the new file goes back to staging (a Retry uses it again)
                             if (now != null)
                             {
                                 Directory.CreateDirectory(Path.GetDirectoryName(f.Staged));
                                 if (System.IO.File.Exists(f.Staged)) System.IO.File.Delete(f.Staged);
-                                System.IO.File.Move(f.Dest, f.Staged);
+                                env.MoveFile(f.Dest, f.Staged);
                             }
-                            System.IO.File.Move(f.Backup, f.Dest);
+                            env.MoveFile(bak, f.Dest);
                             f.Done = false;
                             continue;
                         }
@@ -778,24 +928,27 @@ namespace DsfDesktop.Wow.Patch
                         if (System.IO.File.Exists(f.Dest) && (f.Done || !System.IO.File.Exists(f.Staged)))
                         {
                             Directory.CreateDirectory(Path.GetDirectoryName(f.Staged));
-                            if (System.IO.File.Exists(f.Staged)) System.IO.File.Delete(f.Dest); else System.IO.File.Move(f.Dest, f.Staged);
+                            if (System.IO.File.Exists(f.Staged)) System.IO.File.Delete(f.Dest); else env.MoveFile(f.Dest, f.Staged);
                         }
                         f.Done = false;
                     }
                 }
                 catch (Exception e) { ok = false; Log.I("game patch: couldn't put back " + f.Dest + ": " + e.Message); }
             }
-            try
-            {
-                if (!string.IsNullOrEmpty(j.BuildInfoWritten) && System.IO.File.Exists(BuildInfoPath) && System.IO.File.Exists(j.BuildInfoBak)
-                    && Hex.Md5(Encoding.UTF8.GetBytes(ReadShared(BuildInfoPath))) == j.BuildInfoWritten)
-                {
-                    System.IO.File.Copy(j.BuildInfoBak, BuildInfoPath, true);
-                    AgentWatch.Mine(BuildInfoPath);
-                }
-            }
+            // .build.info last: never "put back" without a valid one in place (the 0.2.36 review: a Replace that failed half way left
+            // only .dsf-bak, and the old put-back reported success with no .build.info at all)
+            try { if (!RestoreBuildInfo(j)) ok = false; }
             catch (Exception e) { ok = false; Log.I("game patch: couldn't put .build.info back: " + e.Message); }
-            if (ok) { DropJournal(); return true; }
+            if (ok && DropJournal())
+            {
+                // the journal gone first, then what only it pointed at
+                foreach (var f in j.Files) if (!string.IsNullOrEmpty(f.Backup)) TryDelete(f.Backup + ".dsf-new");
+                TryDelete(BuildInfoPath + ".dsf-tmp");
+                TryDelete(BuildInfoPath + ".dsf-bak2");
+                TryDelete(BuildInfoPath + ".dsf-undo");
+                if (!string.IsNullOrEmpty(j.BuildInfoBak)) TryDelete(j.BuildInfoBak);
+                return true;
+            }
             j.State = "undoing";
             try { SaveJournal(j); } catch (Exception e) { Log.I("game patch: couldn't save the journal: " + e.Message); }
             Log.I("game patch: the put-back is not finished: the journal stays for the next try");
@@ -814,46 +967,130 @@ namespace DsfDesktop.Wow.Patch
             return true;
         }
 
-        /// <summary>at Desktop's start: an install a crash cut short is undone (the old client whole again); one awaiting its first
-        /// login stays. The reason for the log, null = nothing to do</summary>
-        public string Recover()
+        /// <summary>Blizzard's updater quiet within [maxS] (the status left as it is: a put-back or the install's last ask)</summary>
+        bool AgentQuiet(double maxS)
         {
-            var j = LoadJournal();
-            if (j == null) return null;
-            if (j.State == "installed") return "the " + j.To + " install waits for its first good login (backup kept)";
-            if (env.WowRunning()) return "an install of " + j.To + " cut short waits for WoW to close (the next patch try undoes it)";
-            return Undo(j) ? "an install of " + j.To + " cut short was undone" : "an install of " + j.To + " cut short: not all put back yet (tried again next time)";
+            double waited = 0;
+            for (string why; (why = env.AgentBusy()) != null;)
+            {
+                if (waited == 0) Log.I("game patch: Blizzard's updater is at work (" + why + "): waiting up to " + (int)maxS + " s");
+                if (waited >= maxS) return false;
+                env.Sleep((int)(env.AgentPollS * 1000));
+                waited += env.AgentPollS;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// At Desktop's start (and after it, while one is left): an install a crash cut short is undone (the old client whole again);
+        /// one awaiting its first login stays. Busy while it runs (no WoW start, no patch beside it), and only with WoW closed and the
+        /// Agent quiet ([agentWaitS], the patch's wait by default; 0 = asked once). The reason for the log, null = nothing to do.
+        /// </summary>
+        public string Recover(double? agentWaitS = null)
+        {
+            if (!EnterRestore()) return "a game update or a put-back is under way";
+            try
+            {
+                Journal j;
+                try { j = LoadJournal(); }
+                catch (PatchFailed e) { Set(s => { s.State = PatchState.Failed; s.Code = e.Code; s.Why = e.Message; s.EtaS = -1; }); return e.Message; }
+                if (j == null) return null;
+                if (j.State == "installed") return "the " + j.To + " install waits for its first good login (backup kept)";
+                if (env.WowRunning()) return "an install of " + j.To + " cut short waits for WoW to close (the next patch try undoes it)";
+                if (!AgentQuiet(agentWaitS ?? env.AgentWaitS)) return "an install of " + j.To + " cut short waits for Blizzard's updater (tried again)";
+                return Undo(j) ? "an install of " + j.To + " cut short was undone" : "an install of " + j.To + " cut short: not all put back yet (tried again next time)";
+            }
+            finally { LeaveRestore(); }
         }
 
         /// <summary>an install of a new build waits for its first good login (its backup is kept until then)</summary>
-        public string AwaitingLogin { get { var j = LoadJournal(); return j != null && j.State == "installed" ? j.To : null; } }
+        public string AwaitingLogin { get { try { var j = LoadJournal(); return j != null && j.State == "installed" ? j.To : null; } catch (PatchFailed) { return null; } } }
 
-        /// <summary>WoW signed in on [exeVersion]: when it is the patched build, the backup and the journal go (one backup until the first
-        /// good login, the user's ruling)</summary>
+        /// <summary>an install cut short (or a put-back not finished) is left: the client may be half one build, half the other, so
+        /// WoW is not started until it is undone</summary>
+        public bool Unsettled { get { try { var j = LoadJournal(); return j != null && j.State != "installed"; } catch (PatchFailed) { return false; } } }
+
+        /// <summary>the journal is there but can't be read (needs repair: nothing is patched or put back over it)</summary>
+        public bool JournalBroken { get { try { LoadJournal(); return false; } catch (PatchFailed) { return true; } } }
+
+        /// <summary>
+        /// WoW signed in on [exeVersion]: when it is the patched build, the journal goes FIRST, then the backup and .dsf-bak (one backup
+        /// until the first good login, the user's ruling; a reset between the two leaves a stray backup, never a journal pointing at a
+        /// backup that is gone).
+        /// </summary>
         public bool GoodLogin(string exeVersion)
         {
-            var j = LoadJournal();
-            if (j == null || j.State != "installed" || GameVersion.Build(exeVersion) != GameVersion.Build(j.To)) return false;
-            try { if (Directory.Exists(j.BackupDir)) Directory.Delete(j.BackupDir, true); } catch (Exception e) { Log.I("game patch: couldn't remove the backup: " + e.Message); }
-            try { var root = Path.GetDirectoryName(j.BackupDir); if (Directory.Exists(root) && !Directory.EnumerateFileSystemEntries(root).Any()) Directory.Delete(root); } catch (Exception) { }
-            DropJournal();
-            Log.I("game patch: the first login on " + j.To + " was good: the backup of " + j.From + " is removed");
-            return true;
+            if (!EnterRestore()) return false;
+            try
+            {
+                Journal j;
+                try { j = LoadJournal(); } catch (PatchFailed) { return false; }
+                if (j == null || j.State != "installed" || GameVersion.Build(exeVersion) != GameVersion.Build(j.To)) return false;
+                if (!DropJournal()) { Log.I("game patch: the first login on " + j.To + " was good, but the journal stays: so does the backup"); return false; }
+                ClearFailedBuild();
+                try { if (Directory.Exists(j.BackupDir)) Directory.Delete(j.BackupDir, true); } catch (Exception e) { Log.I("game patch: couldn't remove the backup: " + e.Message); }
+                try { var root = Path.GetDirectoryName(j.BackupDir); if (Directory.Exists(root) && !Directory.EnumerateFileSystemEntries(root).Any()) Directory.Delete(root); } catch (Exception) { }
+                if (!string.IsNullOrEmpty(j.BuildInfoBak)) TryDelete(j.BuildInfoBak);
+                TryDelete(BuildInfoPath + ".dsf-bak");
+                TryDelete(BuildInfoPath + ".dsf-bak2");
+                TryDelete(BuildInfoPath + ".dsf-tmp");
+                Log.I("game patch: the first login on " + j.To + " was good: the backup of " + j.From + " is removed");
+                return true;
+            }
+            finally { LeaveRestore(); }
         }
 
-        /// <summary>the new build's first start failed: the old client back from the backup; the Thor shows it with a Retry</summary>
+        /// <summary>
+        /// The new build's first start failed: the old client back from the backup; the Thor shows it with a Retry, and that build is
+        /// never installed again by itself (<see cref="FailedBuild"/>). Busy while it runs; only once the crashed client is gone and
+        /// the Agent is quiet (false = not yet: asked again).
+        /// </summary>
         public bool RestoreOld(string why)
         {
-            var j = LoadJournal();
-            if (j == null || j.State != "installed") return false;
-            // the crashed client goes first (its Fatal Error window is still up when the crash is seen; Desktop kills it beside this):
-            // a move under a running WoW fails, and a put-back half done must never lose the old file
-            if (!WaitWowGone()) { Log.I("game patch: the first start of " + j.To + " failed, but WoW is still open: the old client goes back once it closed"); return false; }
-            Log.I("game patch: the first start of " + j.To + " failed (" + why + "): the old client goes back");
-            if (Undo(j)) try { Directory.Delete(Path.Combine(FlavorDir, ".dsf-patch"), true); } catch (Exception) { }
-            Set(s => { s.State = PatchState.Failed; s.Code = "new_failed"; s.Why = why; s.From = j.From; s.To = j.To; });
-            return true;
+            if (!EnterRestore()) return false;
+            try
+            {
+                Journal j;
+                try { j = LoadJournal(); } catch (PatchFailed) { return false; }
+                if (j == null || j.State != "installed") return false;
+                // the crashed client goes first (its Fatal Error window is still up when the crash is seen; Desktop kills it beside this):
+                // a move under a running WoW fails, and a put-back half done must never lose the old file
+                if (!WaitWowGone()) { Log.I("game patch: the first start of " + j.To + " failed, but WoW is still open: the old client goes back once it closed"); return false; }
+                if (!AgentQuiet(env.AgentWaitS)) { Log.I("game patch: the first start of " + j.To + " failed, but Blizzard's updater is at work: the old client goes back once it is quiet"); return false; }
+                Log.I("game patch: the first start of " + j.To + " failed (" + why + "): the old client goes back");
+                SaveFailedBuild(GameVersion.Build(j.To));
+                if (Undo(j)) try { Directory.Delete(Path.Combine(FlavorDir, ".dsf-patch"), true); } catch (Exception) { }
+                Set(s => { s.State = PatchState.Failed; s.Code = "new_failed"; s.Why = why; s.From = j.From; s.To = j.To; });
+                return true;
+            }
+            finally { LeaveRestore(); }
         }
+
+        int failedBuildMem;
+
+        /// <summary>the build whose first start failed here (0 = none): installed again only by a Retry</summary>
+        public int FailedBuild()
+        {
+            if (env.FailedBuildPath == null) return failedBuildMem;
+            try { return System.IO.File.Exists(env.FailedBuildPath) ? (int)Json.ReadObject(ReadShared(env.FailedBuildPath)).Long("build") : 0; }
+            catch (Exception) { return 0; }
+        }
+
+        void SaveFailedBuild(int build)
+        {
+            failedBuildMem = build;
+            if (env.FailedBuildPath == null) return;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(env.FailedBuildPath));
+                var tmp = env.FailedBuildPath + ".tmp";
+                PatchEnv.WriteDurable(tmp, new UTF8Encoding(false).GetBytes(Json.Write(new Dictionary<string, object> { ["build"] = build })));
+                PatchEnv.DefaultReplace(tmp, env.FailedBuildPath, null);
+            }
+            catch (Exception e) { Log.I("game patch: couldn't note the failed build: " + e.Message); }
+        }
+
+        void ClearFailedBuild() { failedBuildMem = 0; TryDelete(env.FailedBuildPath); }
     }
 
     /// <summary>a write-through stream that counts the MD5 of what passes</summary>

@@ -107,7 +107,15 @@ namespace DsfDesktop.App
             Log.I("DS Forever Desktop starting; data " + Paths.DataDir);
             LocateWow();
             // an install of the self-patcher cut short by a crash is undone before anything reads the game (0.2.36)
-            try { var r = EnsurePatcher()?.Recover(); if (r != null) Log.I("game patch: " + r); } catch (Exception e) { Log.I("game patch: recovery: " + e.Message); }
+            // (the Agent asked once here; while it is at work the put-back goes on in the background, WoW not started meanwhile)
+            try
+            {
+                var pr = EnsurePatcher();
+                var r = pr?.Recover(agentWaitS: 0);
+                if (r != null) Log.I("game patch: " + r);
+                if (pr != null && pr.Unsettled) RecoverInBackground(pr);
+            }
+            catch (Exception e) { Log.I("game patch: recovery: " + e.Message); }
             StartBridge();
             StartSunshine();
             StartMdns();
@@ -1663,16 +1671,22 @@ namespace DsfDesktop.App
         {
             var p = WowWindow.FindAny(FlavorDirOrNull);
             if (p == null) return WowScreen.None;
-            try
+            try { return ScreenOf(p, useLog: true); }
+            finally { p.Dispose(); }
+        }
+
+        /// <summary>the screen of THIS client process (the patch's close asks it of the very process it closes); [useLog] = the log
+        /// and the documents are this process's folder's (Desktop follows it), else its connections only</summary>
+        WowScreen ScreenOf(System.Diagnostics.Process p, bool useLog)
+        {
             {
                 double up = 0;
                 bool thisRun = false;
-                try { var started = p.StartTime; up = (DateTime.Now - started).TotalSeconds; thisRun = WowFlow.LogIsThisRun(loginLogAt, started); } catch (Exception) { }
+                try { var started = p.StartTime; up = (DateTime.Now - started).TotalSeconds; thisRun = useLog && WowFlow.LogIsThisRun(loginLogAt, started); } catch (Exception) { }
                 var (game, auth) = WowProbe.Connections(p.Id);
                 double? docAge = thisRun && clientDocAt.HasValue ? (DateTime.UtcNow - clientDocAt.Value).TotalSeconds : (double?)null;
                 lock (loginLog) return WowFlow.Classify(true, up, game, auth, thisRun ? loginLog : null, docAge);
             }
-            finally { p.Dispose(); }
         }
 
         public BnetState BnetNow()
@@ -1785,6 +1799,14 @@ namespace DsfDesktop.App
                         if (WowProbe.FatalErrorShown(p.Id)) { Log.I("WoW crashed: closing its crash window (pid " + p.Id + ")"); p.Kill(); p.WaitForExit(5000); }
             }
             catch (Exception) { }
+            // never Battle.net while the self-patcher puts the old client back or is about to (a first start that crashed): its Agent
+            // would work on the folder beside the put-back (the 0.2.36 review)
+            var pp = patcher;
+            if (pp != null && (pp.Busy || pp.Unsettled || pp.AwaitingLogin != null))
+            {
+                Log.I("WoW crashed: Battle.net left alone (the game update puts the old client back first)");
+                return;
+            }
             var b = WowProbe.Bnet();
             if (!b.Running) { WowProbe.StartBattleNet(WowLaunch.FindBattleNet()); return; }
             var h = b.Login != IntPtr.Zero ? b.Login : WowProbe.BnetMain();
@@ -1835,7 +1857,8 @@ namespace DsfDesktop.App
                     // the install read again right before the start (the Agent dropped the wowf row at 06:32 on 2026-11-18): a missing
                     // row is added back from Desktop's copy when it fits; still missing, or outdated = no start (the judge's Step 0)
                     // never beside the self-patcher (0.2.36): it replaces the client's files
-                    if (patcher?.Busy == true) return "the game is being updated";
+                    // nor over an install cut short that is not put back yet (half one build, half the other)
+                    if (patcher?.Busy == true || patcher?.Unsettled == true) return "the game is being updated";
                     var g = GameCheckNow(beforeStart: true);
                     if (g == GameCheck.NeedsRepair) return WowFlow.RepairText;
                     if (g == GameCheck.Outdated) return WowFlow.OutdatedText;
@@ -1997,14 +2020,17 @@ namespace DsfDesktop.App
                     },
                     WowRunning = () => WowWindow.RunningIn(forever),
                     // the outdated client open at its login (the user's 11-18 06:20 case: no servers) is closed BY THE ATTEMPT (auto or
-                    // Retry), as the supervisor's restart closes it; a signed-in one never (the 0.2.36 review: "game busy" for ever)
-                    CloseWow = () => SignedIn(ScreenNow()) ? "WoW is signed in" : CloseForRestart(),
+                    // Retry), as the supervisor's restart closes it; a signed-in one never, nor retail, nor one whose folder can't be read
+                    // (ForeverClose: the 0.2.36 review)
+                    CloseWow = () => CloseForeverForPatch(forever),
                     AgentBusy = () => AgentWatch.Busy(root, "wowf", DateTime.UtcNow, AgentWatch.DefaultAgentDir, out var why) ? why : null,
                     JournalPath = Path.Combine(Paths.DataDir, "patch", "journal.json"),
                     SavedRowPath = Path.Combine(Paths.DataDir, "patch", "wowf_row.json"),
+                    FailedBuildPath = Path.Combine(Paths.DataDir, "patch", "new_failed.json"),
                 });
                 made.Changed += () => PublishWow(force: false);
-                patchFlow = new PatchFlow(() => made.Status, why => made.Start(why), () => made.Cancel(), GameForThor, AfterPatch);
+                patchFlow = new PatchFlow(() => made.Status, why => made.Start(why), () => made.Cancel(), GameForThor, AfterPatch,
+                                          autoStart: why => made.Start(why, auto: true));
                 patcher = made;
                 return patcher;
             }
@@ -2040,6 +2066,7 @@ namespace DsfDesktop.App
             loginSeen = signedIn;
             // a crash on the first start: the old client back once the crashed one is gone (RestoreOld waits for it); asked again
             // while it stays (one at a time), so a client still closing never leaves the new build in place
+            if (p.Unsettled && !p.Busy && !WowWindow.RunningIn(Path.Combine(patcherRoot, WowFlavors.Forever))) RecoverInBackground(p);
             bool crashed = forever && Supervisor?.Crash != null;
             if (crashed && !p.Busy && p.AwaitingLogin != null && Interlocked.CompareExchange(ref restoring, 1, 0) == 0)
                 Task.Run(() =>
@@ -2050,6 +2077,54 @@ namespace DsfDesktop.App
         }
 
         int restoring;
+
+        /// <summary>an install cut short put back off the tick (it waits for Blizzard's updater); one at a time; busy meanwhile</summary>
+        void RecoverInBackground(PcGamePatcher p)
+        {
+            if (Interlocked.CompareExchange(ref restoring, 1, 0) != 0) return;
+            Task.Run(() =>
+            {
+                try { var r = p.Recover(); if (r != null) Log.I("game patch: " + r); gameCheck?.Refresh(); PublishWow(force: true); }
+                catch (Exception e) { Log.I("game patch: recovery: " + e.Message); }
+                finally { Interlocked.Exchange(ref restoring, 0); }
+            });
+        }
+
+        /// <summary>the self-patcher's close (env.CloseWow): only the client running from [foreverDir] (ForeverClose)</summary>
+        string CloseForeverForPatch(string foreverDir)
+        {
+            var procs = new Dictionary<int, System.Diagnostics.Process>();
+            try
+            {
+                return ForeverClose.Run(foreverDir,
+                    list: () =>
+                    {
+                        var l = new List<WowProc>();
+                        foreach (var n in new[] { "Wow", "WowB", "WowT", "WowClassic", "WowClassicB", "WowClassicT" })
+                        {
+                            System.Diagnostics.Process[] ps;
+                            try { ps = System.Diagnostics.Process.GetProcessesByName(n); } catch (Exception) { continue; }
+                            foreach (var x in ps)
+                            {
+                                string path = null;
+                                try { path = x.MainModule?.FileName; } catch (Exception) { }
+                                procs[x.Id] = x;
+                                l.Add(new WowProc { Pid = x.Id, Path = path });
+                            }
+                        }
+                        return l;
+                    },
+                    signedIn: pid => procs.TryGetValue(pid, out var x) && SignedIn(ScreenOf(x, useLog: Flavor == WowFlavors.Forever)),
+                    closeWindow: pid => { if (procs.TryGetValue(pid, out var x)) x.CloseMainWindow(); },
+                    waitExit: (pid, ms) => !procs.TryGetValue(pid, out var x) || x.WaitForExit(ms),
+                    kill: pid =>
+                    {
+                        if (!procs.TryGetValue(pid, out var x)) return true;
+                        try { x.Kill(); return true; } catch (Exception e) { Log.I("game patch: couldn't end WoW: " + e.Message); return false; }
+                    });
+            }
+            finally { foreach (var x in procs.Values) x.Dispose(); }
+        }
 
         /// <summary>the Thor's Cancel (B) on the game update's bar ("pc_patch_cancel")</summary>
         public void PatchCancel()

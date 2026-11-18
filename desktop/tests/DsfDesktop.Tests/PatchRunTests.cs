@@ -14,7 +14,7 @@ namespace DsfDesktop.Tests
     /// patched from a fake CDN; staging, Cancel, resume, locks, rollback, the journal after a crash, the Agent, space; and PatchFlow
     /// (by itself once per connect, one attempt per Retry, WoW started once after it).
     /// </summary>
-    public static class PatchRunTests
+    public static partial class PatchRunTests
     {
         const string Header = "Branch!STRING:0|Active!DEC:1|Build Key!HEX:16|CDN Key!HEX:16|Install Key!HEX:16|IM Size!DEC:4|CDN Path!STRING:0|CDN Hosts!STRING:0|CDN Servers!STRING:0|Tags!STRING:0|Armadillo!STRING:0|Last Activated!STRING:0|Version!STRING:0|KeyRing!HEX:16|Product!STRING:0";
         const string Retail = "us|1|505802ef9c3ac9cfbaea9006ce9e464c|4831465d4b6a7db3302338ab0f1ac231|||tpr/wow|level3.blizzard.com us.cdn.blizzard.com|http://level3.blizzard.com/?maxhosts=8|" + PatchFixtures.PcTags + "|||12.1.5.70961|3ca57fe7319a297346440e4d2a03a0cd|wow";

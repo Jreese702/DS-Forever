@@ -13,6 +13,7 @@ namespace DsfDesktop.Wow.Patch
     {
         readonly Func<PatchStatus> status;
         readonly Func<string, bool> start;
+        readonly Func<string, bool> autoStart;
         readonly Func<bool> cancel;
         readonly Func<GameCheck> game;
         readonly Action afterDone;
@@ -25,9 +26,11 @@ namespace DsfDesktop.Wow.Patch
         /// <param name="cancel">the player's Cancel (PcGamePatcher.Cancel)</param>
         /// <param name="game">the PC game against Blizzard's version (GameVersionCheck)</param>
         /// <param name="afterDone">a patch was done: the game is checked again and WoW started once</param>
-        public PatchFlow(Func<PatchStatus> status, Func<string, bool> start, Func<bool> cancel, Func<GameCheck> game, Action afterDone)
+        /// <param name="autoStart">the attempt by itself (PcGamePatcher.Start with auto: a build whose first start failed here is not
+        /// installed again by itself, only by a Retry); null = [start]</param>
+        public PatchFlow(Func<PatchStatus> status, Func<string, bool> start, Func<bool> cancel, Func<GameCheck> game, Action afterDone, Func<string, bool> autoStart = null)
         {
-            this.status = status; this.start = start; this.cancel = cancel; this.game = game; this.afterDone = afterDone;
+            this.status = status; this.start = start; this.cancel = cancel; this.game = game; this.afterDone = afterDone; this.autoStart = autoStart ?? start;
         }
 
         public static bool Needed(GameCheck g) => g == GameCheck.Outdated || g == GameCheck.NeedsRepair;
@@ -53,7 +56,7 @@ namespace DsfDesktop.Wow.Patch
                 if (tried) return;
                 tried = true;
             }
-            start("the PC game is " + (game() == GameCheck.Outdated ? "outdated" : "missing its install record") + ": by itself, once per connect");
+            autoStart("the PC game is " + (game() == GameCheck.Outdated ? "outdated" : "missing its install record") + ": by itself, once per connect");
         }
 
         /// <summary>the Thor's Retry: true = it was the patch's (one attempt started, or one runs already); false = not a patch matter</summary>
