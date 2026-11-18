@@ -146,6 +146,12 @@ sealed class BridgeMsg {
      *  whole object goes to SvSync */
     data class SvFiles(val o: JSONObject) : BridgeMsg()
     data class SvWritten(val o: JSONObject) : BridgeMsg()
+    /**
+     * feat/pause-power: Desktop's answers to "end_session": [done] false = "session_ending" (it heard, the close runs), true =
+     * "session_ended": [wow] = closed | none (no PC WoW of ours was open) | left (it would not close: [why]), [putBack] = the PC's
+     * controller mode and WoW's window keys are back
+     */
+    data class SessionEnd(val done: Boolean, val wow: String = "", val putBack: Boolean = false, val why: String = "") : BridgeMsg()
     data class Unknown(val t: String) : BridgeMsg()
 }
 
@@ -198,6 +204,9 @@ object BridgeProtocol {
     fun wowRetry(): String = JSONObject().put("t", "wow_retry").toString()
     /** Desktop 0.2.36: the player's Cancel (B) on the PC game's update bar ([PcPatch.running]) */
     fun patchCancel(): String = JSONObject().put("t", "pc_patch_cancel").toString()
+    /** feat/pause-power: the clean disconnect (the pause menu's power button, the waiting screen's Exit game): Desktop closes the PC's
+     *  WoW (waiting first for the game's own Exit Game when [quitAsked]) and puts the PC back; answered session_ending, session_ended */
+    fun endSession(quitAsked: Boolean): String = JSONObject().put("t", "end_session").put("quit_asked", quitAsked).toString()
     /**
      * The game account the PC's WoW remembers (the user's pick 2026-11-17, "Yes, remember it"): [ask] = Settings > Game account "Ask
      * each time" (nothing is sent to remember); [list] = the Thor's Config.wtf accountList with its "!" pick
@@ -273,6 +282,8 @@ object BridgeProtocol {
             "login_again" -> BridgeMsg.LoginAgain
             "sv_files" -> BridgeMsg.SvFiles(o)
             "sv_written" -> BridgeMsg.SvWritten(o)
+            "session_ending" -> BridgeMsg.SessionEnd(done = false)
+            "session_ended" -> BridgeMsg.SessionEnd(done = true, wow = o.optString("wow"), putBack = o.optBoolean("put_back"), why = o.optString("why"))
             else -> BridgeMsg.Unknown(t)
         }
     }

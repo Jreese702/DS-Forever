@@ -41,6 +41,15 @@ object SetupBridge {
     /** the waiting screen's Menu > Exit game: the stream's end while one runs, else the local game's */
     @Volatile var exitStream: (() -> Unit)? = null
     /**
+     * feat/pause-power: THE CLEAN DISCONNECT while a stream runs (StreamTop's; null = Local, or no stream): "end_session" to Desktop
+     * (the PC's WoW closes - [quitAsked] = the game's own Exit Game was tapped first - and the PC is put back), the picture stopped, the
+     * bridge disconnected once Desktop has answered; then [done] with Desktop's word. The pause menu's power button closes DS Forever
+     * after it
+     */
+    @Volatile var endSession: ((why: String, quitAsked: Boolean, done: (PausePower.Ended) -> Unit) -> Unit)? = null
+    /** feat/pause-power: the waiting screen's Menu > Exit game while streaming: the same clean disconnect, then back to the chooser */
+    @Volatile var endStream: (() -> Unit)? = null
+    /**
      * Streaming's settings while Streaming's top screen is open ([StreamSettingsLink], set by StreamTop): Settings > Performance >
      * Stream settings shows them in its band on the BOTTOM screen (the user, 2026-11-18: "the streaming settings appear on the top screen
      * and the controller inputs get all wacky, they should probably appear on the bottom screen in the stream settings box"); null = Local

@@ -118,6 +118,17 @@ class MainActivity : ComponentActivity() {
         PluviaApp.events.on<AndroidEvent.SetSystemUIVisibility, Unit>(onSetSystemUi)
         PluviaApp.events.on<AndroidEvent.SetAllowedOrientation, Unit>(onSetAllowedOrientation)
         PluviaApp.events.on<AndroidEvent.EndProcess, Unit>(onEndProcess)
+        // feat/pause-power (the user, 2026-11-18: "a power button that effectively opens a prompt to close DS forever"): the companion's
+        // Close runs the game's own Exit Game first (or Desktop's end_session while streaming), then this: the old close of the game only
+        // when it did not exit by itself ([force]), then the task goes; onDestroy shuts the environment down and ends the process
+        com.jrees.wowcompanion.LauncherHooks.quitApp = { force ->
+            runOnUiThread {
+                Timber.i("Close DS Forever (the pause menu's power button)%s", if (force) ": the old close of the game first" else "")
+                com.jrees.wowcompanion.GameLife.closer = "Close DS Forever from the pause menu"
+                if (force && PluviaApp.xEnvironment != null) PluviaApp.events.emit(AndroidEvent.ForceCloseApp)
+                window.decorView.postDelayed({ if (!isFinishing) finishAndRemoveTask() }, if (force) 1_500L else 0L)
+            }
+        }
 
         setContent {
             val snackbarController = remember { SnackbarHostController() }

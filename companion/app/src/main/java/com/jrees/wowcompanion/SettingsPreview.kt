@@ -423,13 +423,14 @@ object SettingsPreview {
         val disc = android.graphics.PointF(wheelScreen.centerX(), wheelScreen.bottom + 40f)
         when (kind) {
             "pause" -> if (f.open > 0f) {
-                val keepB = UiKit.pauseBarsBottom; val keepS = UiKit.pauseStripTop
+                val keepB = UiKit.pauseBarsBottom; val keepS = UiKit.pauseStripTop; val keepR = UiKit.pauseRoomy
                 UiKit.pauseBarsBottom = 0f; UiKit.pauseStripTop = 0f            // the preview's own layout; the live pause view's restored below
+                UiKit.pauseRoomy = true                                         // feat/pause-power: the pause menu's own (larger) layout
                 try {
                     val slices = HomePauseModel.Flow().slices().map { it?.let { sl -> UiKit.PauseSlice(sl.key, sl.label, sl.enabled) } }
                     UiKit.pauseRadial(c, wheelScreen, disc, 140f, slices, 0, f.pointed, -1, UiKit.PAUSE_OPEN_MS * f.open,
                         if (f.picked) 1f else 0f, pickGlyph = pickAOf(id, s))
-                } finally { UiKit.pauseBarsBottom = keepB; UiKit.pauseStripTop = keepS }
+                } finally { UiKit.pauseBarsBottom = keepB; UiKit.pauseStripTop = keepS; UiKit.pauseRoomy = keepR }
             }
             "item", "spell" -> if (f.open > 0f) UiKit.consumableRadial(c, wheelScreen, disc, 140f, live.wheelItems(kind == "spell"),
                 f.pointed, 0, 1, UiKit.CR_OPEN_MS * f.open, glyphs = pickAOf(id, s))

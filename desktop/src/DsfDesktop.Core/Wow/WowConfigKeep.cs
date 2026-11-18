@@ -188,7 +188,37 @@ namespace DsfDesktop.Wow
             }
         }
 
-        void PutBack(string file, DateTime t)
+        /// <summary>
+        /// feat/pause-power: THE CLEAN DISCONNECT puts back NOW (the user, 2026-11-18: "revert everything back"): the Thor ended the
+        /// session and Desktop closed the streamed WoW, so no grace and no session check (Sunshine's state can stay BUSY a while after
+        /// the client goes) - but still never while any WoW runs, and still only once Config.wtf has settled (WoW's own write as it
+        /// closed), waiting up to [waitMs] for that. True = nothing is left to put back
+        /// </summary>
+        public bool PutBackNow(int waitMs = 8000, Action<int> sleep = null)
+        {
+            sleep = sleep ?? (ms => System.Threading.Thread.Sleep(ms));
+            int waited = 0;
+            while (true)
+            {
+                lock (gate)
+                {
+                    if (!Directory.Exists(dir) || Directory.GetFiles(dir, "controller-*.json").Length == 0) return true;
+                    if (wowRunning()) { Log.I("WoW config: not put back now (a WoW runs)"); return false; }
+                    var t = now();
+                    foreach (var file in Directory.GetFiles(dir, "controller-*.json"))
+                    {
+                        if (wowRunning()) return false;
+                        try { PutBack(file, t, now: true); }
+                        catch (Exception e) { Log.I("WoW config: controller mode not put back (" + e.GetType().Name + ")"); }
+                    }
+                    if (Directory.GetFiles(dir, "controller-*.json").Length == 0) { quietSince = null; return true; }
+                }
+                if (waited >= waitMs) { Log.I("WoW config: not put back yet (Config.wtf still settling): the usual put-back follows"); return false; }
+                sleep(500); waited += 500;
+            }
+        }
+
+        void PutBack(string file, DateTime t, bool now = false)
         {
             var rec = Load(file);
             if (rec == null) { File.Delete(file); return; }
@@ -232,7 +262,7 @@ namespace DsfDesktop.Wow
                 {
                     File.WriteAllBytes(tmp, Bytes.GetBytes(back));
                     // the last look before the write: a client starting now keeps controller mode, the record waits
-                    if (wowRunning() || sessionActive()) { quietSince = null; return; }
+                    if (wowRunning() || (!now && sessionActive())) { quietSince = null; return; }
                     File.Replace(tmp, cfg, null);
                 }
                 finally { try { if (File.Exists(tmp)) File.Delete(tmp); } catch (Exception) { } }

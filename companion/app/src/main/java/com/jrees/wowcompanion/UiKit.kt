@@ -5220,10 +5220,29 @@ object UiKit {
     fun pauseCloseT(ms: Float): Float = PAUSE_OPEN_MS * (1f - (ms / PAUSE_CLOSE_MS).coerceIn(0f, 1f))
 
     /** [s] = screen px per game unit (1.38 on the 1240 x 1080 bottom screen), the wheel's middle at (620, 520) of it */
-    private class PauseGeo(val k: Float, val s: Float, val cx: Float, val cy: Float, val topY: Float = 0f, val padY: Float = 0f)
+    /** [arm] / [word] / [dpad] = the D-pad bar's words' distance from its middle, their size and the D-pad picture's size (px) */
+    private class PauseGeo(val k: Float, val s: Float, val cx: Float, val cy: Float, val topY: Float = 0f, val padY: Float = 0f,
+                           val arm: Float = P_ARM * k, val word: Float = P_WORD * k, val dpad: Float = 40f * k,
+                           val lineY: Float = 26f * k)   // the red line's middle, from the screen's top
 
     private fun pauseGeo(screen: RectF): PauseGeo {
         val k = minOf(screen.width() / 1240f, screen.height() / 1080f)
+        if (pauseRoomy) {
+            // feat/pause-power (the user, 2026-11-18: "I want the pause radial to also push the top controller bar up out of the way so
+            // that it can be a bit larger. with that I also want the text at the bottom on the Dpad to also be larger"): Home's
+            // controller slides up off the screen (HomeView.pauseSlide), the slim top row at the screen's top, the wheel as large as
+            // fits between it and the D-pad bar up to [PAUSE_ROOMY_S] (12 % over the controller-kept wheel's 1.56), the D-pad's words
+            // and picture larger
+            val bar = pauseBarH(screen)
+            val dpadTop = screen.bottom - bar
+            val topY = screen.top + P_TOP_Y * k
+            // the game's red line under the top row (it stood over the title at the screen's top), the wheel under the line
+            val lineY = (P_TOP_Y + P_TOP_H / 2f + 22f) * k          // from the screen's top
+            val below = screen.top + lineY + 18f * k
+            val s = minOf(PAUSE_ROOMY_S * k, (dpadTop - below - 12f * k) / 472f)
+            return PauseGeo(k, s, screen.centerX(), (below + dpadTop) / 2f, topY, screen.bottom - bar / 2f,
+                arm = P_ARM_ROOMY * k, word = P_WORD_ROOMY * k, dpad = 54f * k, lineY = lineY)
+        }
         if (pauseBarsBottom > 0f) {
             // f-pause-bars (1.0.9, the user: "I dont think I want the controller top part to slide off screen. I want to move the "main
             // menu" text and buttons down to the bottom half of it and then the Dpad part on the bottom is its own full bar that slides up
@@ -5264,6 +5283,14 @@ object UiKit {
      * every open); 0 = another room: the slim top row at the screen's top as before. Either way the D-pad is its own bar at the bottom
      */
     @JvmField var pauseBarsBottom = 0f
+    /**
+     * feat/pause-power: THE PAUSE MENU'S OWN ROOM (the user, 2026-11-18): set by the pause view on every open (the target radial clears
+     * it on its own): Home's controller goes up off the screen, the wheel grows into the space ([pauseGeo]), the D-pad's words grow, and
+     * the power button stands in the top-right corner ([pausePower])
+     */
+    @JvmField var pauseRoomy = false
+    private const val PAUSE_ROOMY_S = 1.75f
+    private const val P_ARM_ROOMY = 46f; private const val P_WORD_ROOMY = 31f
     /**
      * the rooms' bar's top in the pause view's px, MEASURED by the host on each open (the user on test17: "When using the radial the rooms
      * bar clips visually in the background": the D-pad bar was Strip.HEIGHT tall, the bar on the device is not); 0 = not known
@@ -5371,11 +5398,12 @@ object UiKit {
     fun pauseOptionHit(screen: RectF, x: Float, y: Float): Int {
         val g = pauseGeo(screen)
         val dx = x - g.cx; val dy = y - g.padY
+        val wk = g.word / (P_WORD * g.k)                        // the words' size over the old 23 (feat/pause-power's larger words)
         return when {
-            kotlin.math.abs(dx) < 110f * g.k && dy < -16f * g.k && dy > -(P_ARM + 26f) * g.k -> PAUSE_OPT_UP
-            kotlin.math.abs(dx) < 110f * g.k && dy > 16f * g.k && dy < (P_ARM + 26f) * g.k -> PAUSE_OPT_DOWN
-            kotlin.math.abs(dy) <= 18f * g.k && dx < -22f * g.k && dx > -240f * g.k -> PAUSE_OPT_LEFT
-            kotlin.math.abs(dy) <= 18f * g.k && dx > 22f * g.k && dx < 240f * g.k -> PAUSE_OPT_RIGHT
+            kotlin.math.abs(dx) < 110f * g.k * wk && dy < -16f * g.k && dy > -(g.arm + 26f * g.k * wk) -> PAUSE_OPT_UP
+            kotlin.math.abs(dx) < 110f * g.k * wk && dy > 16f * g.k && dy < g.arm + 26f * g.k * wk -> PAUSE_OPT_DOWN
+            kotlin.math.abs(dy) <= 18f * g.k * wk && dx < -22f * g.k && dx > -240f * g.k * wk -> PAUSE_OPT_LEFT
+            kotlin.math.abs(dy) <= 18f * g.k * wk && dx > 22f * g.k && dx < 240f * g.k * wk -> PAUSE_OPT_RIGHT
             else -> -1
         }
     }
@@ -5453,7 +5481,7 @@ object UiKit {
         val b = pSpan(tt, 440f, 600f)
         if (b > 0f) pauseBands(c, g, page, crEaseOut(b), 24f * g.k * (1f - crEaseOut(b)), title)
         if (line != null && lineAlpha > 0f)
-            crWords(c, line, g.cx, screen.top + 26f * g.k, 28f * g.k, PAUSE_RED, 2f * g.k, (255 * lineAlpha.coerceIn(0f, 1f)).toInt(),
+            crWords(c, line, g.cx, screen.top + g.lineY, 28f * g.k, PAUSE_RED, 2f * g.k, (255 * lineAlpha.coerceIn(0f, 1f)).toInt(),
                 screen.width() - 40f * g.k)
         return t < PAUSE_OPEN_MS
     }
@@ -5604,27 +5632,140 @@ object UiKit {
         pFlat.color = Color.argb(120, 0, 0, 0); c.drawRect(box.left, box.top - 6f * g.k, box.right, box.top, pFlat)
         val l = c.saveLayerAlpha(null, 255)
         val py = g.padY + bar * (1f - e)
-        val ds = 40f * g.k
+        val ds = g.dpad
         tex("rdpad")?.let { c.drawBitmap(it, null, RectF(g.cx - ds / 2f, py - ds / 2f, g.cx + ds / 2f, py + ds / 2f), pBmp) }
-        val wp = bodyPaint(P_WORD * g.k)
+        val wp = bodyPaint(g.word)
+        val lh = 15f * g.word / P_WORD                          // the lit plate's half height grows with the words
         fun lit(x: Float, y: Float, w: Float) = tex("ropt_on")?.let {
-            c.drawBitmap(it, null, RectF(x - w / 2f - 14f * g.k, y - 15f * g.k, x + w / 2f + 14f * g.k, y + 15f * g.k), pBmp)
+            c.drawBitmap(it, null, RectF(x - w / 2f - 14f * g.k, y - lh, x + w / 2f + 14f * g.k, y + lh), pBmp)
         }
         for ((word, opt) in listOf(up to PAUSE_OPT_UP, down to PAUSE_OPT_DOWN, left to PAUSE_OPT_LEFT, right to PAUSE_OPT_RIGHT)) {
             if (word == null) continue
-            val w = wp.measureText(word)
+            val w = wp.measureText(Tr.t(word))
             val (x, y) = when (opt) {
-                PAUSE_OPT_UP -> g.cx to py - P_ARM * g.k
-                PAUSE_OPT_DOWN -> g.cx to py + P_ARM * g.k
-                PAUSE_OPT_LEFT -> g.cx - P_ARM * g.k - w / 2f to py
-                else -> g.cx + P_ARM * g.k + w / 2f to py
+                PAUSE_OPT_UP -> g.cx to py - g.arm
+                PAUSE_OPT_DOWN -> g.cx to py + g.arm
+                PAUSE_OPT_LEFT -> g.cx - g.arm - w / 2f to py
+                else -> g.cx + g.arm + w / 2f to py
             }
             if (held == opt) lit(x, y, w)
-            gameWords(c, word, x, y, P_WORD * g.k, PAUSE_GOLD, 255, 260f * g.k)
+            gameWords(c, word, x, y, g.word, PAUSE_GOLD, 255, 260f * g.k * g.word / (P_WORD * g.k))
         }
         c.restoreToCount(l)
     }
 
+
+    // ---------------------------------------------------------------- feat/pause-power: THE POWER BUTTON and its prompt
+    //
+    // The user, 2026-11-18: "on the top right corner of the screen I want to add some kind of power button that effectively opens a
+    // prompt to close DS forever. When streaming this should also close wow on the PC and revert everything back and be the clean way to
+    // disconnect." The game's red button plate (the kit's `button_*`, as every red button of ours) with a gold power mark drawn on it in
+    // the colour of the red square buttons' marks, the layout's Y glyph on its lower-left corner (the pad's route, as closeX's B), the gold
+    // box while its prompt is up. The prompt: the kit's dialog over a dimmed stage, the question, one context line, Cancel (B) / Close (A).
+
+    private const val POWER_SIZE = 78f
+    private const val POWER_MARGIN = 16f
+    /** [pausePowerPromptHit]: Cancel, Close */
+    const val POWER_CANCEL = 0
+    const val POWER_CLOSE = 1
+
+    /** the Y glyph in the layout the Settings chose (the top face button's place): Nintendo's Y, Xbox's Y, PlayStation's triangle */
+    fun yGlyph(): String = when (CastSettings.buttonLayout) {
+        CastSettings.ButtonLayout.XBOX -> "ltr_y"
+        CastSettings.ButtonLayout.PLAYSTATION -> "shp_triangle"
+        else -> "rev_y"
+    }
+
+    /** the power button's box in [screen] (the pause view's canvas: the whole bottom screen), its top-right corner */
+    fun pausePowerBox(screen: RectF): RectF {
+        val k = minOf(screen.width() / 1240f, screen.height() / 1080f)
+        val sz = POWER_SIZE * k; val m = POWER_MARGIN * k
+        return RectF(screen.right - m - sz, screen.top + m, screen.right - m, screen.top + m + sz)
+    }
+
+    /** a finger on the power button: its box grown to the touch floor (96 px) and a little more */
+    fun pausePowerHit(screen: RectF, x: Float, y: Float): Boolean {
+        val b = pausePowerBox(screen)
+        val grow = maxOf(0f, (96f - b.width()) / 2f) + 8f
+        return x >= b.left - grow && x <= b.right + grow && y >= b.top - grow && y <= b.bottom + grow
+    }
+
+    /** the gold power mark (the ring open at the top, the bar through the gap) centred in [r], outlined dark as the kit's marks */
+    private fun powerMark(c: Canvas, r: RectF, colour: Int) {
+        val d = minOf(r.width(), r.height())
+        val cx = r.centerX(); val cy = r.centerY() + d * 0.03f
+        val rad = d * 0.27f
+        val ring = RectF(cx - rad, cy - rad, cx + rad, cy + rad)
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeCap = Paint.Cap.ROUND
+        for ((w, col) in listOf(d * 0.17f to Color.argb(220, 20, 6, 4), d * 0.10f to colour)) {
+            pFlat.strokeWidth = w; pFlat.color = col
+            c.drawArc(ring, -55f, 290f, false, pFlat)
+            c.drawLine(cx, cy - rad * 1.22f, cx, cy - rad * 0.12f, pFlat)
+        }
+        pFlat.strokeCap = Paint.Cap.BUTT; pFlat.style = Paint.Style.FILL
+    }
+
+    /**
+     * THE POWER BUTTON in [screen]'s top-right corner while the pause menu is open: [alpha] 0..1 (it comes in with the top row),
+     * [down] = held (the kit's press), [lit] = its prompt is up (the gold box), [glyph] = the Y glyph on its corner
+     */
+    fun pausePower(c: Canvas, screen: RectF, alpha: Float = 1f, down: Boolean = false, lit: Boolean = false, glyph: Boolean = true) {
+        if (alpha <= 0f) return
+        val r = pausePowerBox(screen)
+        val l = c.saveLayerAlpha(RectF(r.left - 40f, r.top - 20f, r.right + 20f, r.bottom + 40f), (255 * alpha.coerceIn(0f, 1f)).toInt())
+        if (lit) focus(c, r)
+        pressed(c, r, down) {
+            buttonPlate(c, r, if (down) Button.DOWN else Button.UP)
+            powerMark(c, r, POWER_GOLD)
+        }
+        if (glyph) pad(c, yGlyph(), r.left + r.width() * 0.08f, r.bottom - r.height() * 0.08f, r.width() * 0.46f)
+        c.restoreToCount(l)
+    }
+    private val POWER_GOLD = Color.rgb(255, 209, 0)           // the red square buttons' mark (square_exit's X)
+
+    /** the prompt's box, its Cancel and its Close buttons */
+    private fun powerLayout(screen: RectF): Triple<RectF, RectF, RectF> {
+        val k = minOf(screen.width() / 1240f, screen.height() / 1080f)
+        val w = 760f * k; val h = 330f * k
+        val box = RectF(screen.centerX() - w / 2f, screen.centerY() - h / 2f, screen.centerX() + w / 2f, screen.centerY() + h / 2f)
+        val bw = 270f * k; val bh = 76f * k; val gap = 36f * k
+        val by = box.bottom - 58f * k - bh
+        val cancel = RectF(box.centerX() - gap / 2f - bw, by, box.centerX() - gap / 2f, by + bh)
+        val close = RectF(box.centerX() + gap / 2f, by, box.centerX() + gap / 2f + bw, by + bh)
+        return Triple(box, cancel, close)
+    }
+
+    /**
+     * THE POWER PROMPT over the pause menu: "Close DS Forever?" and [context] ("WoW closes too" / streaming's line), Cancel (B) and
+     * Close (A); [pressed] = [POWER_CANCEL] / [POWER_CLOSE] held, -1 none. [closing] non-null = the close is under way: that line and
+     * the game's spinner instead of the buttons.
+     */
+    fun pausePowerPrompt(c: Canvas, screen: RectF, context: String, closing: String? = null, pressed: Int = -1) {
+        val k = minOf(screen.width() / 1240f, screen.height() / 1080f)
+        pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(150, 0, 0, 0)
+        c.drawRect(screen, pFlat)
+        val (box, cancel, close) = powerLayout(screen)
+        dialog(c, box)
+        val title = bodyPaint(38f * k, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
+        val line = bodyPaint(28f * k, Theme.text).apply { textAlign = Paint.Align.CENTER }
+        val tw = box.width() - 120f * k
+        c.drawText(fitEnd(Tr.t(if (closing != null) "Closing DS Forever" else "Close DS Forever?"), title, tw), box.centerX(), box.top + 96f * k, title)
+        c.drawText(fitEnd(Tr.t(closing ?: context), line, tw), box.centerX(), box.top + 146f * k, line)
+        if (closing != null) { waitSpinner(c, box.centerX(), cancel.centerY(), 70f * k); return }
+        button(c, cancel, "Cancel", backGlyph(), if (pressed == POWER_CANCEL) Button.DOWN else Button.UP)
+        button(c, close, "Close", okGlyph(), if (pressed == POWER_CLOSE) Button.DOWN else Button.UP)
+    }
+
+    /** a finger on the prompt: [POWER_CANCEL], [POWER_CLOSE], -1 elsewhere (in the box), -2 outside the box */
+    fun pausePowerPromptHit(screen: RectF, x: Float, y: Float): Int {
+        val (box, cancel, close) = powerLayout(screen)
+        return when {
+            cancel.contains(x, y) -> POWER_CANCEL
+            close.contains(x, y) -> POWER_CLOSE
+            box.contains(x, y) -> -1
+            else -> -2
+        }
+    }
 
     // ---------------------------------------------------------------- the GAME MENU and its COUNTDOWN (the pause wheel's Game Menu)
     //

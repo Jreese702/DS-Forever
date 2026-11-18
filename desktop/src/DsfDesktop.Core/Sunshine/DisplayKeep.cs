@@ -54,6 +54,13 @@ namespace DsfDesktop.Sunshine
 
         public bool Pending { get { lock (gate) return before != null; } }
 
+        /// <summary>feat/pause-power: the Thor's clean disconnect: once no stream runs, the monitor is looked at with no grace (for the
+        /// next <see cref="EndNowFor"/>; a stream starting again meanwhile keeps the usual rule)</summary>
+        public void EndNow() { lock (gate) endNowAt = now(); }
+        public TimeSpan EndNowFor = TimeSpan.FromMinutes(5);
+        DateTime? endNowAt;
+        bool Ending(DateTime t) => endNowAt.HasValue && t - endNowAt.Value < EndNowFor;
+
         Mode Read(string dev)
         {
             if (string.IsNullOrEmpty(dev)) return null;
@@ -94,8 +101,8 @@ namespace DsfDesktop.Sunshine
                     else if (t - seenAt >= Stable) stable = cur;
                     return;
                 }
-                if (quietSince == null) { quietSince = t; return; }
-                if (t - quietSince.Value < Grace) return;
+                if (quietSince == null) { quietSince = t; if (!Ending(t)) return; }
+                if (!Ending(t) && t - quietSince.Value < Grace) return;
                 var now2 = Read(before.Dev);
                 if (now2 == null) return;   // the monitor isn't on now: the record waits for it
                 if (now2.Same(before)) Log.I("display: " + before + " back");
@@ -106,7 +113,7 @@ namespace DsfDesktop.Sunshine
                     if (err != null) { quietSince = t; return; }   // tried again after another grace
                 }
                 else Log.I("display: " + now2 + " kept (not the stream's mode)");
-                before = during = null; seen = stable = null;
+                before = during = null; seen = stable = null; endNowAt = null;
                 Save();
             }
         }

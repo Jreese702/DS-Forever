@@ -53,6 +53,10 @@ namespace DsfDesktop.Bridge
         Dictionary<string, object> SvRead(string acctHash);
         /// <summary>"sv_write" -> "sv_written": the Thor's merged tables written (WowSvSync.Write's rules), one result per table</summary>
         Dictionary<string, object> SvWrite(string acctHash, List<Dictionary<string, object>> docs);
+        /// <summary>feat/pause-power: the Thor's clean disconnect ("end_session"; its pause menu's power button, its waiting screen's Exit
+        /// game): the PC's WoW closes ([quitAsked] = the game's own Exit Game was tapped over the stream first) and the PC is put back;
+        /// {"wow": closed | none | left, "put_back": bool, "why"}. Answered "session_ending" at once, then "session_ended" with this</summary>
+        Dictionary<string, object> EndSession(bool quitAsked);
     }
 
     /// <summary>the documents since the current log began (what a fresh LogTail would read from the file), capped</summary>
@@ -473,6 +477,18 @@ namespace DsfDesktop.Bridge
                         case "pc_test":
                             var sp = s;
                             Task.Run(() => { var r = host.PcTest(); r["t"] = "pc_test_result"; sp.Enqueue(r); });
+                            break;
+                        case "end_session":
+                            var se = s;
+                            var seAsked = m.TryGetValue("quit_asked", out var qa) && qa is bool qb && qb;
+                            se.Enqueue(new Dictionary<string, object> { ["t"] = "session_ending" });
+                            Task.Run(() =>
+                            {
+                                Dictionary<string, object> r;
+                                try { r = host.EndSession(seAsked); }
+                                catch (Exception e) { r = new Dictionary<string, object> { ["wow"] = "left", ["put_back"] = false, ["why"] = e.Message }; }
+                                se.Enqueue(With("session_ended", r));
+                            });
                             break;
                         case "unpair":
                             host.Devices.Remove(s.DeviceId);

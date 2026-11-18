@@ -81,6 +81,12 @@ namespace DsfDesktop.Tests
             SvWrites += docs.Count;
             return new Dictionary<string, object> { ["results"] = docs.Select(d => new Dictionary<string, object> { ["var"] = d.Str("var"), ["state"] = "written" }).ToList() };
         }
+        public volatile int EndSessions; public volatile bool EndAsked;
+        public Dictionary<string, object> EndSession(bool quitAsked)
+        {
+            EndAsked = quitAsked; EndSessions++;
+            return new Dictionary<string, object> { ["wow"] = "closed", ["put_back"] = true, ["why"] = "" };
+        }
         public void Dispose() => T.Dispose();
     }
 

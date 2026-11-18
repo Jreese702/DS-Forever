@@ -137,6 +137,7 @@ class TargetRadialView(
         Log.i("WCLOG", "context radial: OPEN ($opener, $name, ${input.name})")
         MenuIcons.prefetch()
         UiKit.pauseBarsBottom = barsBottom?.invoke() ?: 0f
+        UiKit.pauseRoomy = false                // feat/pause-power: the pause menu's larger layout is its own; this wheel keeps Home's controller
         UiKit.pauseStripTop = run {
             val a = IntArray(2); val b = IntArray(2)
             strip.getLocationOnScreen(a); getLocationOnScreen(b)
