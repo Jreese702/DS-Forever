@@ -2188,7 +2188,10 @@
 "Sound": "Sonido",
 "Defaults": "Predeterminados",
 "The stream restarts on close": "El stream se reinicia al cerrar",
-"Testing": "Probando"
+"Testing": "Probando",
+"Other network": "Otra red",
+"PC not found": "PC no encontrado",
+"Check the Other network code.": "Revisa el código de Otra red."
 },
 "templates": {
 "Switch to %s?": "¿Cambiar a %s?",
@@ -2411,6 +2414,7 @@
 "PC game needs an update (%s -> %s)": "Juego del PC sin actualizar (%s -> %s)",
 "Updating the game %s -> %s": "Actualizando el juego %s -> %s",
 "%s / %s MB": "%s / %s MB",
-"Not enough space (%s MB)": "No hay espacio suficiente (%s MB)"
+"Not enough space (%s MB)": "No hay espacio suficiente (%s MB)",
+"PC not reachable at %s": "PC no accesible en %s"
 }
 }

@@ -47,53 +47,104 @@ internal object StreamLook {
 }
 
 /**
- * "ENTER THE CODE SHOWN IN DS FOREVER DESKTOP": six boxes, a touch number pad, the PC it pairs with. The controller: D-pad up / down
- * turns the selected digit, left / right moves, A = Pair, B = back, X = delete, LB / RB = the previous / next PC found.
+ * "ENTER THE CODE SHOWN IN DS FOREVER DESKTOP", design B "Two steps" (the user's picks 2026-11-18): six boxes for the secret, a touch
+ * number pad, the PC it pairs with; beside the pad "Other network" (a globe), which opens a second, smaller row of boxes under the six for
+ * Desktop's network code ([PairCode]) - also opened by itself, cursor in it and "PC not found" under it, when Pair finds no PC
+ * ([notFound]). The same words and globe as Desktop's. The controller ([CodeEntry]): D-pad up turns the selected digit, down goes below
+ * the boxes (the button, A presses it; or the open row), left / right move, A = Pair, B = back, X = delete, LB / RB = the previous /
+ * next PC found. Stream quality and Back stand beside the pad: under it the panel was taller than the top screen (the PR #534 fix).
  */
-internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, private val onBack: () -> Unit,
-                           private val onQuality: () -> Unit, private val onPcStep: (Int) -> Unit) : LinearLayout(ctx) {
+class PairingView(ctx: Context, private val onPair: (String) -> Unit, private val onBack: () -> Unit,
+                  private val onQuality: () -> Unit, private val onPcStep: (Int) -> Unit) : LinearLayout(ctx) {
     val entry = CodeEntry()
-    private val boxes = List(CodeEntry.LENGTH) { StreamLook.text(ctx, 34f, bold = true) }
+    private val boxes = List(CodeEntry.LENGTH) { StreamLook.text(ctx, 32f, bold = true) }
     private val pcLine = StreamLook.text(ctx, 16f, StreamLook.DIM)
     private val message = StreamLook.text(ctx, 16f, StreamLook.BAD)
     private val title = StreamLook.text(ctx, 24f, StreamLook.GOLD, bold = true)
+    /** "Other network" over the row (the globe + the words, quiet) */
+    private val otherLabel = StreamLook.text(ctx, 16f, StreamLook.DIM, bold = true)
+    /** the row: groups of 3 small boxes, at most 5 groups a line */
+    private val otherRows = LinearLayout(ctx).apply { orientation = VERTICAL; gravity = Gravity.START }
+    private val otherCells = ArrayList<TextView>()
+    private val otherButton: Button
     @Volatile var busy = false
         set(v) { field = v; post { alpha = if (v) 0.6f else 1f } }
 
     init {
         orientation = VERTICAL; gravity = Gravity.CENTER
         background = StreamLook.rounded(StreamLook.PANEL, StreamLook.dp(ctx, 18f).toFloat())
-        val p = StreamLook.dp(ctx, 22f); setPadding(p, p, p, p)
+        val p = StreamLook.dp(ctx, 16f); setPadding(p, p, p, p)
         title.text = "Enter the code shown in DS Forever Desktop"
         addView(title)
         addView(pcLine)
-        val boxRow = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER }
+        // top-aligned: a vertically centred row puts a box with unequal margins half its margin gap lower, past the row's edge (the
+        // bottom stroke was cut)
+        val boxRow = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP }
         boxes.forEachIndexed { i, b ->
             b.setOnClickListener { entry.select(i); refresh() }
-            boxRow.addView(b, LayoutParams(StreamLook.dp(ctx, 52f), StreamLook.dp(ctx, 66f)).apply {
-                setMargins(StreamLook.dp(ctx, if (i == 3) 18f else 5f), StreamLook.dp(ctx, 14f), StreamLook.dp(ctx, 5f), StreamLook.dp(ctx, 10f))
+            boxRow.addView(b, LayoutParams(StreamLook.dp(ctx, 50f), StreamLook.dp(ctx, 60f)).apply {
+                setMargins(StreamLook.dp(ctx, if (i == 3) 18f else 5f), StreamLook.dp(ctx, 10f), StreamLook.dp(ctx, 5f), StreamLook.dp(ctx, 2f))
             })
         }
         addView(boxRow)
-        // the touch pad: 1-9, then delete / 0 / pair
-        for (r in 0 until 3) addView(StreamLook.row(ctx, *Array(3) { c -> digitKey(ctx, r * 3 + c + 1) }))
-        addView(StreamLook.row(ctx, StreamLook.button(ctx, "Delete") { if (!busy) { entry.backspace(); refresh() } }, digitKey(ctx, 0),
+        val glyph = StreamLook.dp(ctx, 18f)
+        otherLabel.text = com.jrees.wowcompanion.Tr.t(PairCode.OTHER_NETWORK)
+        otherLabel.setCompoundDrawablesRelativeWithIntrinsicBounds(Globe(StreamLook.DIM, glyph, StreamLook.dp(ctx, 1.4f).toFloat()), null, null, null)
+        otherLabel.compoundDrawablePadding = StreamLook.dp(ctx, 8f)
+        addView(otherLabel, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = StreamLook.dp(ctx, 6f) })
+        addView(otherRows, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = StreamLook.dp(ctx, 4f) })
+        // the touch pad: 1-9, then delete / 0 / pair; Other network, Stream quality and Back in a column beside it
+        val pad = LinearLayout(ctx).apply { orientation = VERTICAL; gravity = Gravity.CENTER }
+        for (r in 0 until 3) pad.addView(keyRow(ctx, *Array(3) { c -> digitKey(ctx, r * 3 + c + 1) }))
+        pad.addView(keyRow(ctx, StreamLook.button(ctx, "Delete") { if (!busy) { entry.backspace(); refresh() } }, digitKey(ctx, 0),
             StreamLook.button(ctx, "Pair  (A)") { submit() }))
+        otherButton = StreamLook.button(ctx, com.jrees.wowcompanion.Tr.t(PairCode.OTHER_NETWORK)) { if (!busy) { entry.openOther(); message.text = ""; refresh() } }.apply {
+            setCompoundDrawablesRelativeWithIntrinsicBounds(Globe(StreamLook.INK, glyph, StreamLook.dp(ctx, 1.6f).toFloat()), null, null, null)
+            compoundDrawablePadding = StreamLook.dp(ctx, 10f)
+        }
+        val side = LinearLayout(ctx).apply { orientation = VERTICAL; gravity = Gravity.CENTER }
+        for (b in listOf(otherButton, StreamLook.button(ctx, "Stream quality (Y)") { onQuality() }, StreamLook.button(ctx, "Back (B)") { onBack() }))
+            side.addView(b, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+                setMargins(StreamLook.dp(ctx, 8f), StreamLook.dp(ctx, 6f), StreamLook.dp(ctx, 8f), StreamLook.dp(ctx, 6f)) })
+        val body = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER }
+        body.addView(pad)
+        body.addView(side, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { leftMargin = StreamLook.dp(ctx, 16f) })
+        addView(body)
         addView(message)
-        addView(StreamLook.row(ctx, StreamLook.button(ctx, "Stream quality (Y)") { onQuality() }, StreamLook.button(ctx, "Back (B)") { onBack() }))
         refresh()
+    }
+
+    /** the pad's rows: [StreamLook.row] with tighter gaps (four rows + the code must fit the top screen's 468 dp) */
+    private fun keyRow(ctx: Context, vararg v: View) = LinearLayout(ctx).apply {
+        orientation = HORIZONTAL; gravity = Gravity.CENTER
+        for (x in v) addView(x, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+            setMargins(StreamLook.dp(ctx, 8f), StreamLook.dp(ctx, 4f), StreamLook.dp(ctx, 8f), StreamLook.dp(ctx, 4f))
+        })
     }
 
     private fun digitKey(ctx: Context, d: Int) = StreamLook.button(ctx, "  $d  ") { if (!busy) { entry.type(d); message.text = ""; refresh() } }
 
-    fun setPc(text: String) = post { pcLine.text = text }
+    fun setPc(text: String) = post { pcLine.text = text; refresh() }
     fun setMessage(text: String) = post { message.text = text }
-    fun reset() { entry.clear(); post { message.text = ""; refresh() } }
+    /** a new start; [keepOther] keeps the Other network row and its digits (a wrong secret: the address is still right) */
+    fun reset(keepOther: Boolean = false) { entry.clear(keepOther); post { message.text = ""; refresh() } }
+
+    /** Pair found no PC on this network: the Other network row opens by itself, the cursor in it, "PC not found" under it */
+    fun notFound() = post {
+        busy = false
+        if (!entry.otherOpen || entry.otherCursor < 0) entry.openOther()
+        message.text = com.jrees.wowcompanion.Tr.t(PairCode.NOT_FOUND)
+        refresh()
+    }
 
     private fun submit() {
         if (busy) return
+        val other = entry.other.joinToString("")
+        val typed = entry.digits.filter { it >= 0 }.joinToString("") + other
+        val check = CodeEntry.validate(typed)
         val code = entry.code
-        if (code == null) { message.text = CodeEntry.message(CodeEntry.validate(entry.digits.filter { it >= 0 }.joinToString(""))) ?: ""; return }
+        if (code == null) { message.text = CodeEntry.message(if (check is CodeEntry.Check.Ok || check is CodeEntry.Check.BadAddress) CodeEntry.Check.TooShort else check) ?: ""; return }
+        if (check !is CodeEntry.Check.Ok) { message.text = com.jrees.wowcompanion.Tr.t(CodeEntry.message(check) ?: ""); return }
         onPair(code)
     }
 
@@ -103,6 +154,43 @@ internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, p
             b.text = if (d < 0) "" else d.toString()
             b.background = StreamLook.rounded(StreamLook.BOX, StreamLook.dp(context, 10f).toFloat(),
                 StreamLook.dp(context, if (i == entry.cursor) 3f else 1f), if (i == entry.cursor) StreamLook.GOLD else StreamLook.DIM)
+        }
+        val open = entry.otherOpen
+        // the PC line gives way to the Other network row (the row's code says where the PC is; with both the panel is taller than
+        // the top screen)
+        pcLine.visibility = if (open || pcLine.text.isNullOrEmpty()) GONE else VISIBLE
+        otherLabel.visibility = if (open) VISIBLE else GONE
+        otherRows.visibility = if (open) VISIBLE else GONE
+        otherButton.visibility = if (open) GONE else VISIBLE
+        otherButton.background = StreamLook.rounded(StreamLook.BOX, StreamLook.dp(context, 10f).toFloat(),
+            StreamLook.dp(context, if (entry.onButton) 4f else 2f), StreamLook.GOLD)
+        if (open) drawOther()
+    }
+
+    /** the row's boxes: [CodeEntry.otherBoxes] of them, groups of 3, 5 groups a line, the lines left-aligned to each other */
+    private fun drawOther() {
+        val ctx = context
+        val n = entry.otherBoxes
+        if (otherCells.size != n) {
+            otherRows.removeAllViews(); otherCells.clear()
+            var line: LinearLayout? = null
+            for (i in 0 until n) {
+                if (i % 15 == 0) line = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.START or Gravity.TOP }.also { otherRows.addView(it) }
+                val cell = StreamLook.text(ctx, 20f, bold = true).apply { includeFontPadding = false }
+                cell.setOnClickListener { if (!busy) { entry.select(CodeEntry.LENGTH + i); refresh() } }
+                val first = i % 3 == 0 && i % 15 != 0
+                line!!.addView(cell, LayoutParams(StreamLook.dp(ctx, 30f), StreamLook.dp(ctx, 36f)).apply {
+                    setMargins(StreamLook.dp(ctx, if (first) 10f else 3f), StreamLook.dp(ctx, 3f), StreamLook.dp(ctx, 3f), StreamLook.dp(ctx, 3f))
+                })
+                otherCells.add(cell)
+            }
+        }
+        val digits = entry.other
+        otherCells.forEachIndexed { i, c ->
+            val sel = i == entry.otherCursor
+            c.text = digits.getOrNull(i)?.toString() ?: ""
+            c.background = StreamLook.rounded(StreamLook.BOX, StreamLook.dp(ctx, 7f).toFloat(), StreamLook.dp(ctx, if (sel) 3f else 1f),
+                if (sel) StreamLook.GOLD else StreamLook.DIM)
         }
     }
 
@@ -115,7 +203,8 @@ internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, p
             android.view.KeyEvent.KEYCODE_DPAD_LEFT -> entry.left()
             android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> entry.right()
             android.view.KeyEvent.KEYCODE_BUTTON_X -> entry.backspace()
-            android.view.KeyEvent.KEYCODE_BUTTON_A -> { submit(); return true }
+            // A on the Other network button presses it; anywhere else it pairs
+            android.view.KeyEvent.KEYCODE_BUTTON_A -> { if (entry.onButton) entry.openOther() else { submit(); return true } }
             android.view.KeyEvent.KEYCODE_BUTTON_B -> { onBack(); return true }
             android.view.KeyEvent.KEYCODE_BUTTON_Y -> { onQuality(); return true }
             android.view.KeyEvent.KEYCODE_BUTTON_L1 -> { onPcStep(-1); return true }
@@ -126,6 +215,27 @@ internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, p
         message.text = ""
         refresh()
         return true
+    }
+
+    /** the "Other network" mark, the same globe Desktop draws (CodeBoxes.Globe): a circle, a meridian, three parallels */
+    private class Globe(color: Int, private val sizePx: Int, private val stroke: Float) : android.graphics.drawable.Drawable() {
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE; strokeWidth = stroke; this.color = color
+        }
+        override fun draw(c: android.graphics.Canvas) {
+            val b = bounds; val i = stroke / 2
+            val r = android.graphics.RectF(b.left + i, b.top + i, b.right - i, b.bottom - i)
+            c.drawOval(r, p)
+            c.drawOval(android.graphics.RectF(r.left + r.width() * 0.28f, r.top, r.right - r.width() * 0.28f, r.bottom), p)
+            c.drawLine(r.left, r.centerY(), r.right, r.centerY(), p)
+            c.drawLine(r.left + r.width() * 0.13f, r.top + r.height() * 0.25f, r.right - r.width() * 0.13f, r.top + r.height() * 0.25f, p)
+            c.drawLine(r.left + r.width() * 0.13f, r.top + r.height() * 0.75f, r.right - r.width() * 0.13f, r.top + r.height() * 0.75f, p)
+        }
+        override fun getIntrinsicWidth() = sizePx
+        override fun getIntrinsicHeight() = sizePx
+        override fun setAlpha(a: Int) { p.alpha = a }
+        override fun setColorFilter(f: android.graphics.ColorFilter?) { p.colorFilter = f }
+        @Deprecated("Deprecated in Java") override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
     }
 }
 

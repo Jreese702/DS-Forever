@@ -22,7 +22,7 @@
 <h1>DS Forever bridge test</h1>
 <p>This PC only. Pair with the code shown in DS Forever Desktop (the test page skips the stream pairing), then watch the add-on's documents arrive live.</p>
 <div class="row">
-  <input id="code" inputmode="numeric" maxlength="7" placeholder="123 456" autocomplete="off">
+  <input id="code" inputmode="numeric" maxlength="40" placeholder="123 456" autocomplete="off">
   <button id="pair">Pair</button>
   <button id="connect" class="secondary">Connect with saved token</button>
   <button id="forget" class="secondary">Forget token</button>
@@ -69,7 +69,7 @@
       }
       log(ev.data.slice(0, 400));
       if (m.t === 'pair_challenge') {
-        const code = $('code').value.replace(/\D/g, '');
+        const code = $('code').value.replace(/\D/g, '').slice(0, 6);   // the secret: any digits after it are the PC's address
         ws.send(JSON.stringify({ t: 'pair_proof', proof: await hmac(code, 'dsf-pair-v1|' + m.nonce + '|' + deviceId) }));
       } else if (m.t === 'pair_ok') { store.set('dsf.test.token', m.token); }
       else if (m.t === 'pair_error') say('pairing refused: ' + m.error, 'bad');

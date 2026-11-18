@@ -19,7 +19,9 @@ class StreamPartsTest {
         assertEquals(CodeEntry.Check.Ok("123456"), CodeEntry.validate("123-456"))
         assertEquals(CodeEntry.Check.Empty, CodeEntry.validate("   "))
         assertEquals(CodeEntry.Check.TooShort, CodeEntry.validate("12345"))
-        assertEquals(CodeEntry.Check.TooLong, CodeEntry.validate("1234567"))
+        // digits after the first 6 are the Other network code (PairCode): one Desktop never makes is refused, never cut off
+        assertEquals(CodeEntry.Check.BadAddress, CodeEntry.validate("1234567"))
+        assertEquals(CodeEntry.Check.TooLong, CodeEntry.validate("1".repeat(PairCode.MAX + 1)))
         assertEquals(CodeEntry.Check.NotDigits, CodeEntry.validate("12a456"))
         assertEquals(CodeEntry.Check.NotDigits, CodeEntry.validate("12.456"))
         assertNull(CodeEntry.message(CodeEntry.Check.Ok("123456")))
@@ -43,15 +45,16 @@ class StreamPartsTest {
         val e = CodeEntry()
         e.up(); e.up(); e.up()                        // empty -> 0 -> 1 -> 2
         assertEquals(2, e.digits[0])
-        e.right(); e.down()                           // empty -> 9
-        assertEquals(9, e.digits[1])
-        e.down(); e.down()                            // 9 -> 8 -> 7
-        e.up(); e.up(); e.up(); e.up()                // 7 -> 8 -> 9 -> 0 -> 1 (wraps)
+        e.right(); repeat(11) { e.up() }              // empty -> 0 .. 9 -> 0 (wraps)
+        assertEquals(0, e.digits[1])
+        e.up()
         assertEquals(1, e.digits[1])
+        e.down()                                      // design B: D-pad down goes past the boxes, to Other network
+        assertTrue(e.onButton); e.up(); assertEquals(2, e.cursor)
         e.left(); e.left()                            // stops at the first box
         assertEquals(0, e.cursor)
         repeat(10) { e.right() }
-        assertEquals(5, e.cursor)
+        assertEquals(5, e.cursor)                     // the last box (the Other network row is closed)
         assertTrue(e.fill("000 111")); assertEquals("000111", e.code)
         assertFalse(e.fill("12")); assertEquals("000111", e.code)
     }

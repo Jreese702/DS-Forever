@@ -57,7 +57,9 @@ class StreamPairing(private val steps: Steps, private val onState: (State) -> Un
         if (check !is CodeEntry.Check.Ok) return emit(State.BadCode(CodeEntry.message(check) ?: "Check the code."))
         if (!pc.hasBridge) return emit(State.Failed("DS Forever Desktop isn't running on ${pc.name}.", true))
         if (!pc.hasSunshine) return emit(State.Failed("${pc.name}'s streaming service isn't answering. Restart DS Forever Desktop.", true))
-        val code = check.code
+        // the secret alone is proved (and is the old bridges' Moonlight PIN): the PC's address part of the code is only where to dial
+        // ([PairCode]); it never keys the proof
+        val code = PairCode.parse(check.code)?.secret ?: check.code.take(CodeEntry.LENGTH)
         try {
             emit(State.Working("Checking the code with ${pc.name}…"))
             val armed = when (val a = steps.armBridge(pc, code)) {

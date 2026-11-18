@@ -77,9 +77,11 @@ namespace DsfDesktop.Ui
             if (c.Codes.Locked) { v.CodeLocked = true; v.Code = "paused"; v.CodeHint = "Too many wrong codes. Press New code to start pairing again."; }
             else
             {
-                v.Code = c.Codes.Display;
+                // the secret, then " · " and the network code (PairAddress): the window draws both as boxes, the second under
+                // "Other network" (for a Thor that can't see the PC by mDNS)
+                v.Code = c.PairCodeDisplay;
                 var r = c.Codes.Remaining;
-                v.CodeHint = "On your Thor: DS Forever > Streaming > enter this code.  A new code in " + (int)r.TotalMinutes + ":" + r.Seconds.ToString("00");
+                v.CodeHint = "On your Thor: DS Forever > Streaming.  A new code in " + (int)r.TotalMinutes + ":" + r.Seconds.ToString("00");
             }
             var online = (c.Bridge?.Sessions() ?? new List<Bridge.BridgeSession>()).Select(s => s.DeviceId).ToList();
             v.Online = online.Distinct().Count();
