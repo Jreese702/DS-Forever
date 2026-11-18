@@ -85,6 +85,9 @@ class StreamTouchTest {
         assertEquals("starting", w.wowState)
         assertEquals("Starting WoW on your PC…", BridgeProtocol.wowText("starting", ""))
         assertTrue(BridgeProtocol.wowText("start_failed", "no window").startsWith("WoW didn't start: no window"))
+        // never "sign in on the PC" (the user's ruling 2026-11-18), not even for Desktop's stop or its game update
+        assertEquals("WoW didn't start: PC game needs a repair", BridgeProtocol.wowText("start_failed", "PC game needs a repair"))
+        assertFalse(BridgeProtocol.wowText("start_failed", "").contains("PC"))
         assertEquals("", BridgeProtocol.wowText("running", ""))
 
         // through BridgeLog: the welcome, a focus_result while it starts, the wow message

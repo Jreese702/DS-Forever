@@ -274,7 +274,9 @@ object BridgeProtocol {
     /** what the top screen says for WoW's state on the PC ("" = nothing to show) */
     fun wowText(state: String, why: String): String = when (state) {
         "starting" -> "Starting WoW on your PC…"
-        "start_failed" -> "WoW didn't start${if (why.isNotEmpty()) ": $why" else ""}. If Battle.net is waiting for you to sign in, sign in on the PC."
+        // never "sign in on the PC" (the user's ruling 2026-11-18: never tell the player to act on the PC; Battle.net's sign-in is
+        // shown on the Thor when it is the step, and Desktop 0.2.35+ sends start_failed for stops and its own game update too)
+        "start_failed" -> "WoW didn't start${if (why.isNotEmpty()) ": $why" else ""}"
         else -> ""
     }
 
