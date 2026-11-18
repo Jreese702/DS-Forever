@@ -2180,7 +2180,15 @@
 "Cooldown Manager": "Gestor de reutilización",
 "Essential": "Esencial",
 "Utility": "Utilidad",
-"Off in the game's Options": "Desactivado en las Opciones del juego"
+"Off in the game's Options": "Desactivado en las Opciones del juego",
+"Video": "Vídeo",
+"Resolution": "Resolución",
+"Frame rate": "Tasa de fotogramas",
+"Bit rate": "Tasa de bits",
+"Sound": "Sonido",
+"Defaults": "Predeterminados",
+"The stream restarts on close": "El stream se reinicia al cerrar",
+"Testing": "Probando"
 },
 "templates": {
 "Switch to %s?": "¿Cambiar a %s?",

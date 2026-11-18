@@ -73,7 +73,7 @@ object StartMenu {
         val armed = android.os.SystemClock.uptimeMillis() - forgetArmedAt < FORGET_ARM_MS
         put(half(false), if (armed) "Tap again" else "Forget login", FORGET, canForget())
         if (game) {
-            if (SetupBridge.openStreamSettings != null) put(half(true), "Stream settings", STREAM, true)
+            if (SetupBridge.streamSettings != null) put(half(true), "Stream settings", STREAM, true)
             else put(half(true), "Restart game", RESTART, canRestart())
             y += bh + gap
             put(half(false), "Report issue", REPORT, true)

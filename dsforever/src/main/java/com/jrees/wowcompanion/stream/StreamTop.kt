@@ -19,6 +19,8 @@ import com.jrees.wowcompanion.PlayMode
 import com.jrees.wowcompanion.PlayModes
 import com.jrees.wowcompanion.PopupHold
 import com.jrees.wowcompanion.SetupBridge
+import com.jrees.wowcompanion.StreamSettingsLink
+import com.jrees.wowcompanion.StreamTest
 import com.jrees.wowcompanion.fork.DsForeverScreen
 import java.util.concurrent.Executors
 
@@ -33,7 +35,12 @@ import java.util.concurrent.Executors
  *    Sunshine's own page instead (the first test needs no Desktop);
  *  - CONNECTING, then PROBLEM: why it failed (Diagnosis) with Retry / Pair again / Stream quality / Back, retrying by itself
  *    (ReconnectPolicy) and at once when the network changes;
- *  - QUALITY: "Stream quality".
+ *  - QUALITY: "Stream quality", only while Streaming's placeholder covers the bottom screen (no PC paired: the pairing's Y).
+ * THE STREAM'S SETTINGS ARE THE BOTTOM SCREEN'S (the user, 2026-11-18 on test 1488: "the streaming settings appear on the top screen and
+ * the controller inputs get all wacky, they should probably appear on the bottom screen in the stream settings box"): Settings >
+ * Performance > Stream settings reads and writes them through [settingsLink] (quality, Defaults, Test connection); every Y / "Stream
+ * quality" here opens that band (SetupBridge.openStreamSettings). While it is open over the waiting screen (no game in the world to
+ * hold the pad for the room) every press goes to it ([SetupBridge.streamPadHolds]), none to the PC.
  * While STREAMING every pad press goes to the PC, except while one of our pop-ups holds the pad (PopupHold, as the launcher does);
  * DS Forever's own readers get a copy of every press (PadFeed), exactly as in Local.
  */
@@ -71,6 +78,26 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private lateinit var status: StatusView
     private var qualityView: QualityView? = null
     private var qualityAtOpen = StreamQuality()
+    /** the bottom screen's Stream settings band is open */
+    @Volatile private var bandOpen = false
+    /** the test's rows for that band (null = none this visit) */
+    @Volatile private var bandTest: StreamTest? = null
+    /** the presses held for the bottom screen's band (SetupBridge.streamPadHolds) at the last press: the PC's pad let go on the change */
+    private var padForBand = false
+    private val bandPadNames = SignInPad()
+
+    /** the stream's settings as the bottom screen's band sees them ([StreamSettingsLink]): what they do is unchanged (the old page's) */
+    private val settingsLink = object : StreamSettingsLink {
+        override fun quality(): StreamQuality = playable()
+        override fun can120(q: StreamQuality): Boolean = this@StreamTop.can120(q)
+        override fun change(q: StreamQuality) { quality = q; StreamQuality.save(activity, q); SetupBridge.streamSettingsChanged() }
+        override fun opened() { bandOpen = true; qualityAtOpen = quality; bandTest = null; testRan = false; Log.i(TAG, "stream settings: open (bottom screen)") }
+        override fun closed() { bandOpen = false; bandDone() }
+        override fun test() { if (bandOpen) runTest(bandOut) }
+        override fun tested(): StreamTest? = bandTest
+        override fun restartsOnClose(): Boolean = bandOpen && screen == Screen.STREAMING && session != null && quality != qualityAtOpen
+        override fun say(line: String): String = TestView.trHead(line)
+    }
     private var screen = Screen.CONNECTING
     private var beforeQuality = Screen.CONNECTING
 
@@ -267,6 +294,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     fun opened() {
         if (isOpen) return
         isOpen = true
+        SetupBridge.streamSettings = settingsLink
         host = store.host()
         // the companion on the bottom screen, reading the PC's log through the bridge (Local is untouched: PlayModes defaults to it)
         applyMode()
@@ -280,6 +308,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     fun closed() {
         if (!isOpen) return
         isOpen = false
+        bandOpen = false; bandTest = null; padForBand = false
+        SetupBridge.streamSettings = null
         stopStream("leaving")
         discovery?.stop(); discovery = null
         netCallback?.let { try { activity.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(it) } catch (_: Throwable) {} }
@@ -567,7 +597,6 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         DsForeverScreen.current?.signInClose = { boardByHand = false; boardShut = true; applyCurtain() }
         SetupBridge.openPcKeyboard = { boardByHand = true; boardShut = false; applyCurtain() }
         SetupBridge.exitStream = { main.post { stopStream("menu"); back() } }
-        SetupBridge.openStreamSettings = { main.post { openQuality() } }
         touchMouse = StreamTouch(MoonBridge.INPUT, view.width, view.height, w, h,
             android.view.ViewConfiguration.get(activity).scaledTouchSlop.toFloat()) { ms, r -> main.postDelayed(r, ms) }
         try { MoonBridge.sendControllerArrivalEvent(0, 1, MoonBridge.LI_CTYPE_XBOX, StreamPad.SUPPORTED,
@@ -695,7 +724,6 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         streamFps = 0
         SetupBridge.openPcKeyboard = null
         SetupBridge.exitStream = null
-        SetupBridge.openStreamSettings = null
         boardByHand = false
         board(false)
         touchMouse?.cancel(); touchMouse = null
@@ -861,7 +889,78 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         applyCurtain()
     }
 
+    /** Y / "Stream quality": the bottom screen's Stream settings band (every route the same); the top screen's page only while
+     *  Streaming's placeholder covers the bottom screen (no PC paired yet: the pairing) */
     private fun openQuality() {
+        val bottom = SetupBridge.openStreamSettings
+        if (bottom != null && !com.jrees.wowcompanion.ModeBridge.streamCovers) { bottom(); return }
+        openQualityTop()
+    }
+
+    /** the band closed: a change made while streaming applies now (the stream connects again, the game on the PC keeps running); a test
+     *  still running stops; a test run meanwhile connects again (the old page's Done) */
+    private fun bandDone() {
+        if (testThread?.isAlive == true) { testCancel = true; testSession?.stop(); synchronized(pcTestGate) { pcTestGate.notifyAll() } }
+        bandTest = null
+        val tested = testRan
+        testRan = false
+        Log.i(TAG, "stream settings: closed (${if (quality != qualityAtOpen) "changed: ${quality.label}" else "no change"})")
+        if (screen == Screen.STREAMING && quality != qualityAtOpen && session != null) {
+            stopStream("stream settings changed")
+            retryNow()
+        } else if (tested && session == null && host != null && screen != Screen.PAIRING && screen != Screen.PIN && screen != Screen.QUALITY &&
+            screen != Screen.TEST) {
+            show(Screen.CONNECTING)
+            retryNow()
+        }
+    }
+
+    /** the bottom band's test rows, as TestView shows them on the top screen (built off the test's thread, read by the band's draw) */
+    private val bandOut = object : TestOut {
+        private val rows = LinkedHashMap<ConnTest.Step, StreamTest.Row>()
+        private var reason = ""
+        private var fix = ""
+        private var running = false
+        private fun publish() {
+            val t = synchronized(rows) { StreamTest(rows.values.toList(), reason, fix, running) }
+            if (!bandOpen) return
+            bandTest = t
+            SetupBridge.streamSettingsChanged()
+        }
+        override fun clear() {
+            synchronized(rows) { rows.clear(); for (s in ConnTest.Step.values()) rows[s] = StreamTest.Row(s.label, "", StreamTest.Mark.WAIT)
+                reason = ""; fix = ""; running = true }
+            publish()
+        }
+        override fun working(s: ConnTest.Step) { synchronized(rows) { rows[s] = StreamTest.Row(s.label, "", StreamTest.Mark.WORKING) }; publish() }
+        override fun result(r: ConnTest.Result) {
+            synchronized(rows) {
+                rows[r.step] = StreamTest.Row(r.step.label, r.line, when (r.state) {
+                    ConnTest.State.PASS -> StreamTest.Mark.PASS; ConnTest.State.FAIL -> StreamTest.Mark.FAIL
+                    ConnTest.State.SKIP -> StreamTest.Mark.SKIP; ConnTest.State.NOT_RUN -> StreamTest.Mark.WAIT })
+                if (r.state == ConnTest.State.FAIL) { reason = r.line; fix = r.fix }
+            }
+            publish()
+        }
+        override fun done() { synchronized(rows) { running = false }; publish() }
+    }
+
+    /** where a test's rows go: the top screen's TestView (the pairing's page) or the bottom screen's band ([bandOut]) */
+    private interface TestOut {
+        fun clear()
+        fun working(s: ConnTest.Step)
+        fun result(r: ConnTest.Result)
+        fun done()
+    }
+    private fun topOut(v: TestView) = object : TestOut {
+        override fun clear() { v.clear() }
+        override fun working(s: ConnTest.Step) { v.working(s) }
+        override fun result(r: ConnTest.Result) { v.result(r) }
+        override fun done() { v.done() }
+    }
+
+    /** the top screen's "Stream quality" page (the pairing, while the bottom screen shows Streaming's placeholder) */
+    private fun openQualityTop() {
         if (screen == Screen.QUALITY) return
         beforeQuality = screen
         qualityAtOpen = quality
@@ -912,10 +1011,11 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     private fun openTest() {
-        val v = testView ?: TestView(activity, onRun = { runTest() }, onClose = { closeTest() }).also { testView = it; overlay.centered(it, 680f) }
+        val v = testView ?: TestView(activity, onRun = { testView?.let { runTest(topOut(it)) } }, onClose = { closeTest() })
+            .also { testView = it; overlay.centered(it, 680f) }
         show(Screen.TEST)
         v.bringToFront()
-        runTest()
+        runTest(topOut(v))
     }
 
     private fun closeTest() {
@@ -925,8 +1025,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (qualityView != null) { show(Screen.QUALITY); qualityView?.bringToFront() } else show(beforeQuality)
     }
 
-    private fun runTest() {
-        val v = testView ?: return
+    private fun runTest(v: TestOut) {
         if (testThread?.isAlive == true) return
         testCancel = false
         testRan = true
@@ -1067,6 +1166,12 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) boardPad.name(e.keyCode)?.let { DsForeverScreen.current?.signInPress(it) }
             return true
         }
+        // the bottom screen's Stream settings over the waiting screen holds the pad: every press to it, none to the PC or our readers
+        if (bandHolds() && ((gamepad && StreamPad.isPadKey(e.keyCode)) || e.keyCode == KeyEvent.KEYCODE_BACK)) {
+            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0)
+                (if (e.keyCode == KeyEvent.KEYCODE_BACK) "PAD2" else bandPadNames.name(e.keyCode))?.let { SetupBridge.streamPad?.invoke(it) }
+            return true
+        }
         if (gamepad) PadFeed.key(e)                          // DS Forever's own readers: a copy of every press, as in Local
         com.jrees.wowcompanion.PadDiag.key(e, gamepad, if (screen == Screen.STREAMING) "stream" else "stream's own screens")   // #116
         val down = e.action == KeyEvent.ACTION_DOWN
@@ -1096,6 +1201,16 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         return false
     }
 
+    /** the bottom screen's Stream settings holds the pad now; on the change the PC's pad lets go (no press stays down there) */
+    private fun bandHolds(): Boolean {
+        val h = SetupBridge.streamPadHolds()
+        if (h != padForBand) {
+            padForBand = h
+            if (h && keys != null) { pad.clear(); try { sendPad() } catch (_: Throwable) {} }
+        }
+        return h
+    }
+
     private fun overlayKey(code: Int): Boolean = when (screen) {
         Screen.PAIRING -> pairing.pad(code)
         Screen.QUALITY -> qualityView?.pad(code) == true
@@ -1117,6 +1232,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (boardUp) {
             boardPad.axes(hx, hy, maxOf(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE)),
                 maxOf(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS))).forEach { DsForeverScreen.current?.signInPress(it) }
+            return true
+        }
+        if (bandHolds()) {                                   // the hat as the D-pad for the bottom screen's Stream settings
+            bandPadNames.axes(hx, hy, 0f, 0f).forEach { SetupBridge.streamPad?.invoke(it) }
             return true
         }
         PadFeed.motion(e)

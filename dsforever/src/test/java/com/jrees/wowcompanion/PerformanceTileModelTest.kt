@@ -45,7 +45,8 @@ class PerformanceTileModelTest {
         assertEquals(16f, g.tiles[4].l, 0.01f)
         assertTrue(g.tiles[4].t > g.tiles[0].t)
         assertEquals(GameUiTiles.TILE_W, g.tiles[4].w, 0.01f)
-        assertTrue(M.opensPage(M.STREAM))
+        // set up, it opens its band (the 11-18 move to the bottom screen): no page
+        assertTrue(!M.opensPage(M.STREAM, PerformanceTileModel.State(streamOn = true)))
         assertTrue(M.lines(M.STREAM, PerformanceTileModel.State(streamOn = true)).isEmpty())
         assertEquals("Open", M.value(M.STREAM, PerformanceTileModel.State(streamOn = true)))
         assertEquals("Stream settings", M.NAMES[M.STREAM])
@@ -66,13 +67,52 @@ class PerformanceTileModelTest {
         assertTrue(M.dimmed(M.STREAM, local))
         assertTrue(!M.dimmed(M.STREAM, set))
         assertEquals("Local", M.value(M.STREAM, local))
-        assertTrue(M.opensPage(M.STREAM))
+        assertTrue(M.opensPage(M.STREAM, local))
         assertTrue(M.lines(M.STREAM, local).isEmpty())
         assertNull(M.badge(M.STREAM, local))
         // the page's one line: terse (one line, no full stop, no explanation)
         assertTrue(StreamHelpHost.LINE.length <= 64)
         assertTrue(!StreamHelpHost.LINE.endsWith("."))
         assertTrue('\n' !in StreamHelpHost.LINE)
+    }
+
+    /**
+     * THE STREAM'S SETTINGS ON THE BOTTOM SCREEN (the user, 2026-11-18: "the streaming settings appear on the top screen and the
+     * controller inputs get all wacky, they should probably appear on the bottom screen in the stream settings box"): the old top page's
+     * five rows as band lines, each choice lit as stored, Bit rate a stepper disabled at its ends, Defaults / Test connection presses
+     * (Test waits while a test runs); 120 fps only where the Thor shows it; the tile's word the size and rate; the status state only
+     */
+    @Test fun streamBandCarriesTheOldPagesRows() {
+        val q = com.jrees.wowcompanion.stream.StreamQuality()
+        val s = PerformanceTileModel.State(streamOn = true, stream = PerformanceTileModel.Stream(q))
+        val lines = M.lines(M.STREAM, s)
+        assertEquals(listOf(M.L_CODEC, M.L_RES, M.L_FPS, M.L_RATE, M.L_SOUND, M.L_TOOLS), lines.map { it.key })
+        assertEquals(listOf("HEVC", "H.264", "AV1"), lines[0].words); assertEquals(0, lines[0].chosen)
+        assertEquals(listOf("720p", "900p", "1080p"), lines[1].words); assertEquals(2, lines[1].chosen)
+        assertEquals(listOf("30 fps", "60 fps"), lines[2].words); assertEquals(1, lines[2].chosen)
+        assertEquals("20 Mbps", lines[3].value); assertEquals(PerformanceTileModel.Kind.STEPPER, lines[3].kind); assertTrue(lines[3].off.isEmpty())
+        assertEquals(listOf("Thor", "PC"), lines[4].words); assertEquals(0, lines[4].chosen)
+        assertEquals(listOf("Defaults", "Test connection"), lines[5].words); assertNull(lines[5].label)
+        assertTrue(lines.drop(3).none { l -> l.kind == PerformanceTileModel.Kind.STEPPER && (0 until l.words.size).any { M.lit(l, it) } })
+        assertEquals("1080p 60", M.value(M.STREAM, s))
+        assertTrue(!M.dimmed(M.STREAM, s))
+        assertEquals("", M.status(M.STREAM, s))
+        // the bit rate's ends; 120 offered; a change waiting; a test running
+        val low = s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 5_000)))
+        assertEquals(setOf(0), M.lines(M.STREAM, low)[3].off)
+        val high = s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 50_000, fps = 120), listOf(30, 60, 120), restarts = true,
+            test = com.jrees.wowcompanion.StreamTest(emptyList(), running = true)))
+        val hl = M.lines(M.STREAM, high)
+        assertEquals(setOf(1), hl[3].off)
+        assertEquals(listOf("30 fps", "60 fps", "120 fps"), hl[2].words); assertEquals(2, hl[2].chosen)
+        assertEquals(setOf(1), hl[5].off)
+        assertEquals(listOf(com.jrees.wowcompanion.stream.StreamQuality.NOTE_120, M.RESTARTS, M.TESTING), M.statusParts(M.STREAM, high))
+        // the test's list: its rows, then the reason and the fix
+        val t = com.jrees.wowcompanion.StreamTest(listOf(com.jrees.wowcompanion.StreamTest.Row("PC found", "", com.jrees.wowcompanion.StreamTest.Mark.PASS),
+            com.jrees.wowcompanion.StreamTest.Row("Paired", "no", com.jrees.wowcompanion.StreamTest.Mark.FAIL)), "no", "Pair again")
+        assertEquals(4, M.testLines(t)); assertEquals(0, M.testLines(null))
+        // Local: no lines, a page
+        assertTrue(M.lines(M.STREAM, PerformanceTileModel.State()).isEmpty())
     }
 
     @Test fun aWideSlotNeverStartsInTheLastColumn() {

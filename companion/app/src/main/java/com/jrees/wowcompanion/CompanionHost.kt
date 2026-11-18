@@ -238,6 +238,41 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  the top screen from our UI menu"): over the Settings room (the bar below it), opened by Top screen > Layout > Edit layout */
     private lateinit var layoutPage: LayoutView
 
+    /**
+     * The Stream settings band opened where the room cannot hold the pad through the game (the waiting screen covers the rooms: the PC's
+     * WoW is not in the world yet, or no stream runs): the waiting screen steps aside while the band is open, the stream's top screen
+     * hands every press to the room ([SetupBridge.streamPadHolds]; nothing reaches the PC) and the room taps nothing in the game
+     * ([SettingsPad.direct]). The band closed (B, a tap, the tab, another room): the waiting screen and the room shown before come back.
+     */
+    private var streamLift = false
+    private var streamLiftFrom: Room? = null
+    private var streamLiftCover = false
+
+    private fun openStreamSettings() {
+        if (SetupBridge.streamSettings == null) return
+        val covered = ::startView.isInitialized && startView.visibility == View.VISIBLE
+        if (!streamLift && (covered || !LauncherHooks.gameUp())) {
+            streamLift = true; streamLiftFrom = room; streamLiftCover = covered
+            settings.pad.direct = true                    // before the room's entry: its hold tap never reaches the game
+            if (covered) { startView.menuOpen = false; startView.visibility = View.GONE }
+            DiagLog.event("stream", "settings over the waiting screen")
+        }
+        if (room != Room.SETTINGS) show(Room.SETTINGS)
+        if (!settings.openStreamSettings()) streamLiftEnd()
+    }
+
+    private fun streamLiftEnd() {
+        if (!streamLift) return
+        streamLift = false
+        val from = streamLiftFrom
+        streamLiftFrom = null
+        if (room == Room.SETTINGS && from != null && from != Room.SETTINGS) show(from)
+        settings.pad.direct = false
+        // the waiting screen again, unless the game reached the world meanwhile (its first current document cleared [streamLiftCover])
+        if (streamLiftCover && ::startView.isInitialized) startView.visibility = View.VISIBLE
+        streamLiftCover = false
+    }
+
     private fun openReport(sendNow: Boolean = false) {
         if (!::reportPage.isInitialized) return
         DiagLog.event("report", if (sendNow) "send now (from Settings, recording)" else "report page opened")
@@ -875,6 +910,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         setupPanel = SetupPanel(this)
         chooserPanel = ChooserPanel(this)
         SetupBridge.openReport = { ui.post { if (!shell.hostGone()) openReport() } }
+        // the stream's settings on THIS screen (the user, 2026-11-18: they showed on the top screen and the pad went "all wacky"): every
+        // route opens Settings > Performance with the Stream settings band; over the waiting screen the stream's top hands the presses
+        SetupBridge.openStreamSettings = { ui.post { if (!shell.hostGone()) openStreamSettings() } }
+        SetupBridge.streamPadHolds = { streamLift && room == Room.SETTINGS && settings.perf.openTile == PerformanceTileModel.STREAM }
+        SetupBridge.streamPad = { k -> ui.post { if (streamLift && !shell.hostGone()) settings.pad.directKey(k) } }
+        settings.perf.onStreamBand = { open -> if (!open) ui.post { streamLiftEnd() } }
         SetupBridge.openSavedReport = { ui.post { if (!shell.hostGone()) openSavedReport() } }
         SetupBridge.reportKey = { code, down ->
             (::reportPage.isInitialized && reportPage.key(code, down)) ||
@@ -2568,6 +2609,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (current) IndoorSchedulerStep.noteAlive(homeView.inFight() || setupLoading || startView.visibility == View.VISIBLE)
         // a reload from the Settings keeps it up until the new hello (the game writes on for a moment before it reloads)
         // (an art failure kept it up before Play only: with the game live it never holds the bottom screen; p-build-tables-blocks-keyboard)
+        if (current) streamLiftCover = false          // in the world: the waiting screen does not come back after Stream settings
         if (current && startView.visibility == View.VISIBLE && reloadAt == 0L && !setupLoading && restartNoticeAt == 0L &&
             (ArtHarvest.state !is ArtHarvest.State.Failed || LauncherHooks.gameUp())) startView.visibility = View.GONE
         // where the character stands chooses the scene behind every waiting screen (UI Art's Scene)

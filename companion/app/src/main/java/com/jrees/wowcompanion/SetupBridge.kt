@@ -40,8 +40,24 @@ object SetupBridge {
     @Volatile var seeding = false
     /** the waiting screen's Menu > Exit game: the stream's end while one runs, else the local game's */
     @Volatile var exitStream: (() -> Unit)? = null
-    /** the stream's Stream quality page on the top screen, while a stream runs */
+    /**
+     * Streaming's settings while Streaming's top screen is open ([StreamSettingsLink], set by StreamTop): Settings > Performance >
+     * Stream settings shows them in its band on the BOTTOM screen (the user, 2026-11-18: "the streaming settings appear on the top screen
+     * and the controller inputs get all wacky, they should probably appear on the bottom screen in the stream settings box"); null = Local
+     */
+    @Volatile var streamSettings: StreamSettingsLink? = null
+        set(v) { field = v; streamSettingsChanged() }
+    private val streamWatchers = CopyOnWriteArrayList<() -> Unit>()
+    /** [f] runs when the stream's settings or its test's rows change (any thread) */
+    fun onStreamSettings(f: () -> Unit) { streamWatchers += f }
+    fun streamSettingsChanged() { for (f in streamWatchers) f() }
+    /** EVERY ROUTE to the stream's settings (the Performance tile, the waiting screen's Menu, the stream's own screens' Y): the Settings
+     *  room on the Performance tab with the Stream settings band open (set by the companion's host) */
     @Volatile var openStreamSettings: (() -> Unit)? = null
+    /** the band is open where no game holds the pad for the room (over the waiting screen, before the stream): the stream's top screen
+     *  hands each press to [streamPad] and none to the PC */
+    @Volatile var streamPadHolds: () -> Boolean = { false }
+    @Volatile var streamPad: ((String) -> Unit)? = null
     @Volatile var exitGame: (() -> Unit)? = null
     /** the out-of-date folder's pop-up was OK'd: not again this run (the red check line stays) */
     @Volatile var staleOk = false
