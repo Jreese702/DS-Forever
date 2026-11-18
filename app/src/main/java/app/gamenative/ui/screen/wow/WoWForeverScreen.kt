@@ -1137,7 +1137,31 @@ private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
 private data class GpuProfile(val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String) {
     companion object {
-        fun detect(context: Context) = if (isAdreno8xxDevice(context)) {
+        /**
+         * THE PANEL'S SHAPE WINS (PR #256, KillgoreAlpha, measured on a Retroid Pocket Nova: "refused: display 1280x960 does not
+         * match the game's 1280x720").
+         *
+         * Every profile below names a 16:9 size, because every Thor is 16:9. On a 4:3 panel the container is then the wrong
+         * SHAPE, and TapBridge.gamePoint refuses every tap -- correctly: a tap arrives in the game's own pixels, and those
+         * cannot be mapped onto a differently shaped panel, so it would land somewhere else entirely. The guard is right and
+         * the container was wrong.
+         *
+         * So the profile keeps its size whenever that already matches the panel's shape (every Thor, and the add-on in
+         * swapped mode), and otherwise takes PluviaApp.getDefaultScreenSize(): the default size for display 0's (DEFAULT_DISPLAY's)
+         * shape -- 1280x960 for 4:3 (the Nova), 1280x800 for 16:10, else 16:9 -- read once and cached for the whole process. That
+         * is the display TapBridge taps (`input -d 0`), not necessarily "the display the game will be on" (the PR's comment).
+         * With Swap screens on a non-Thor the container's shape therefore follows display 0, not the screen the game is moved to.
+         * The rule itself: [PanelFit].
+         */
+        fun detect(context: Context): GpuProfile =
+            profileFor(context).let { p ->
+                val panel = runCatching { PluviaApp.getDefaultScreenSize() }.getOrNull()
+                val fit = PanelFit.fit(p.screenSize, panel)
+                if (fit != p.screenSize) Timber.i("Container screen size %s does not fit the panel: using %s", p.screenSize, fit)
+                p.copy(screenSize = fit)
+            }
+
+        private fun profileFor(context: Context) = if (isAdreno8xxDevice(context)) {
             GpuProfile(ADRENO_8XX_DRIVER, "noconform,sysmem", "1280x720", "Adreno 8xx", "Snapdragon 8 Elite / Adreno 8xx")
         } else if (isThorLite(context)) {
             // 1.0.17 (the user: "there are 4 different versions of the ayn thor"; pick "Add a Lite profile now"): the Thor Lite's

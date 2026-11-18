@@ -65,8 +65,9 @@ class DsForeverScreen(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private var running = false
     private val listener = object : DisplayManager.DisplayListener {
-        override fun onDisplayAdded(displayId: Int) = update()
-        override fun onDisplayRemoved(displayId: Int) = update()
+        // the add-on screen can arrive or go at any time (USB-C): the cached panel size is read again
+        override fun onDisplayAdded(displayId: Int) { com.jrees.wowcompanion.TapBridge.forgetPanel(); update() }
+        override fun onDisplayRemoved(displayId: Int) { com.jrees.wowcompanion.TapBridge.forgetPanel(); update() }
         override fun onDisplayChanged(displayId: Int) {}
     }
 
@@ -98,7 +99,7 @@ class DsForeverScreen(private val context: Context) {
         main.removeCallbacksAndMessages(null)
         frontLater = false                                   // #383 / #384: its waiting ask went with the queue
         try { dm?.unregisterDisplayListener(listener) } catch (_: Exception) {}
-        shown?.close(); shown = null
+        shown?.close(); shown = null; companionGone()
         if (ScreenSwap.restart === restartHook) ScreenSwap.restart = null
         Log.i(TAG, "stop")
     }
@@ -167,7 +168,7 @@ class DsForeverScreen(private val context: Context) {
     fun hide() {
         hidden = true
         if (shown != null) com.jrees.wowcompanion.DiagLog.event("app", "bottom screen hidden (the launcher went to the background)")   // #147
-        shown?.close(); shown = null
+        shown?.close(); shown = null; companionGone()
     }
     private var hidden = false
 
@@ -228,12 +229,14 @@ class DsForeverScreen(private val context: Context) {
             com.jrees.wowcompanion.DiagLog.event("app", "screens: ${ScreenSwap.last}" + if (swap) " (Swap screens)" else "")
         if (pick == null) {
             if (shown != null) com.jrees.wowcompanion.DiagLog.event("app", "bottom screen gone: no other screen than the game's ($game)")   // #147
-            shown?.close(); shown = null; Log.i(TAG, "no other screen than the game's ($game)"); return
+            shown?.close(); shown = null; companionGone(); Log.i(TAG, "no other screen than the game's ($game)"); return
         }
         if (shown?.displayId == pick.id) return
         shown?.close()
         if (pick.activity) {
             shown = openActivity(pick.id)
+            // PR #256 review: the Presentation that was up is gone; on display 0 TapBridge treats our screen as not known
+            com.jrees.wowcompanion.TapBridge.companionDisplayId = pick.id
             Log.i(TAG, "DS Forever on display ${pick.id} as an activity (game on $game, Swap screens)")
             return
         }
@@ -243,8 +246,15 @@ class DsForeverScreen(private val context: Context) {
             com.jrees.wowcompanion.DiagLog.event("app", "bottom screen failed to open on display ${target.displayId}: ${t.javaClass.simpleName}")   // #147
             null
         }
+        // TapBridge needs to know which display is OURS, so a read of display 0 that answers this
+        // screen's size can be told apart from an honest one (it used to guess by panel size)
+        com.jrees.wowcompanion.TapBridge.companionDisplayId =
+            if (shown != null) target.displayId else Display.INVALID_DISPLAY
         Log.i(TAG, "DS Forever on display ${target.displayId} (game on $game)")
     }
+
+    /** our window is down: TapBridge has no companion screen to exclude */
+    private fun companionGone() { com.jrees.wowcompanion.TapBridge.companionDisplayId = Display.INVALID_DISPLAY }
 
     /** the host asked to start over (its recreate, e.g. after a permission): a fresh Presentation (or activity) */
     internal fun rebuild() { main.post { shown?.close(); shown = null; update() } }

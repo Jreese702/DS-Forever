@@ -108,6 +108,33 @@ object TapBridge {
     private var display0: Point? = null      // only ever holds a VALIDATED size
 
     /**
+     * The display DS Forever's own window is on, written by DsForeverScreen when its Presentation
+     * opens or closes. [gameDisplay] uses it to recognise a wrong read for what it is.
+     * PR #256 review: a change of display also drops the cached size (the Presentation moved without a
+     * display being added or removed), so the next read is checked against the screen it is on now.
+     */
+    @Volatile var companionDisplayId: Int = Display.INVALID_DISPLAY
+        set(v) { if (v != field) display0 = null; field = v }
+
+    /** display 0's validated panel size, landscape, for callers outside this object (HomeLoginWatch) */
+    fun gamePanel(ctx: Context): Point? = gameDisplay(ctx)
+
+    /** drop the cached size: a display was added or removed, so it is worth reading again */
+    fun forgetPanel() { display0 = null }
+
+    /** the companion screen's own panel, landscape, or null while it is not up or cannot be read */
+    private fun companionPanel(dm: DisplayManager): Pair<Int, Int>? {
+        val id = companionDisplayId
+        if (id == Display.INVALID_DISPLAY || id == Display.DEFAULT_DISPLAY) return null
+        val m = dm.getDisplay(id)?.mode ?: return null
+        return maxOf(m.physicalWidth, m.physicalHeight) to minOf(m.physicalWidth, m.physicalHeight)
+    }
+
+    /** every screen but display 0, landscape (PR #256 review: the guard while the companion screen is not known) */
+    private fun otherPanels(dm: DisplayManager): List<Pair<Int, Int>> = dm.displays.filter { it.displayId != Display.DEFAULT_DISPLAY }
+        .mapNotNull { d -> d.mode?.let { m -> maxOf(m.physicalWidth, m.physicalHeight) to minOf(m.physicalWidth, m.physicalHeight) } }
+
+    /**
      * The top screen's size in the pixels `input -d 0 tap` uses, or null when it cannot be trusted.
      *
      * NEVER `getRealSize` / `getRealMetrics` on DEFAULT_DISPLAY. On the Thor that answer is
@@ -126,9 +153,16 @@ object TapBridge {
             val mode = dm.getDisplay(Display.DEFAULT_DISPLAY)?.mode ?: return null
             val w = maxOf(mode.physicalWidth, mode.physicalHeight)
             val h = minOf(mode.physicalWidth, mode.physicalHeight)
-            // the top screen is the Thor's largest panel: anything smaller is the wrong display
-            val largest = dm.displays.maxOfOrNull { it.mode.physicalWidth.toLong() * it.mode.physicalHeight } ?: 0L
-            if (w <= 0 || h <= 0 || w.toLong() * h < largest) null else Point(w, h)
+            // What the 2026-09-28 bug was: display 0's size came back as the COMPANION screen's. So the
+            // COMPANION SCREEN'S SIZE is what gets excluded here -- not "any panel bigger than display 0",
+            // which was the old rule and is simply false on a handheld whose second screen is a LARGER
+            // external panel. On a Retroid Pocket Nova with the Dual Screen Add-on display 0 is 1280x960
+            // and the add-on is 1920x1080, so the old rule refused every tap the app ever made.
+            // PR #256 review: while the companion screen is not known (before its Presentation opens, after hide(), Swap screens'
+            // activity on display 0) a read that equals ANY other screen's panel is refused instead - the Thor's old protection
+            // during startup, and still a pass on the Nova (1280x960 against 1920x1080). The rule itself: TapShape.panelRefusal
+            val why = TapShape.panelRefusal(w, h, companionPanel(dm), otherPanels(dm))
+            if (why != null) { Log.w(TAG, "refused: $why"); null } else Point(w, h)
         } catch (t: Throwable) {
             Log.w(TAG, "display 0 size unreadable: ${t.message}")
             null
