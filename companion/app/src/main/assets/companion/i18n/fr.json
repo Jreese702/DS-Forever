@@ -2157,7 +2157,15 @@
 "Cooldown Manager": "Gestionnaire de recharges",
 "Essential": "Essentiel",
 "Utility": "Utilitaire",
-"Off in the game's Options": "Désactivé dans les Options du jeu"
+"Off in the game's Options": "Désactivé dans les Options du jeu",
+"Video": "Vidéo",
+"Resolution": "Résolution",
+"Frame rate": "Fréquence d'images",
+"Bit rate": "Débit",
+"Sound": "Son",
+"Defaults": "Par défaut",
+"The stream restarts on close": "Le stream redémarre à la fermeture",
+"Testing": "Test en cours"
 },
 "templates": {
 "Switch to %s?": "Passer à %s ?",

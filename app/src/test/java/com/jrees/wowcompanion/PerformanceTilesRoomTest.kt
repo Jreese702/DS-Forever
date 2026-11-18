@@ -158,15 +158,36 @@ class PerformanceTilesRoomTest {
         assertNull(r.perf.openTile)
     }
 
+    /** the stream's side of the band (StreamTop's in the app): what it was told, and a test's rows on demand */
+    private class FakeLink(var q: com.jrees.wowcompanion.stream.StreamQuality = com.jrees.wowcompanion.stream.StreamQuality(),
+                           val can120: Boolean = false) : StreamSettingsLink {
+        var opens = 0; var closes = 0; var tests = 0; var test: StreamTest? = null; var restarts = false
+        val changes = ArrayList<com.jrees.wowcompanion.stream.StreamQuality>()
+        override fun quality() = q
+        override fun can120(q: com.jrees.wowcompanion.stream.StreamQuality) = can120
+        override fun change(q: com.jrees.wowcompanion.stream.StreamQuality) { this.q = q; changes += q; SetupBridge.streamSettingsChanged() }
+        override fun opened() { opens++ }
+        override fun closed() { closes++ }
+        override fun test() { tests++ }
+        override fun tested() = test
+        override fun restartsOnClose() = restarts
+    }
+
     /**
-     * the user's pick, 2026-11-17 ("Performance 'Stream settings' becomes a picture tile like the others"): with streaming set up it is
-     * the second row's first tile, a cursor stop; A on it opens the stream page and no band
+     * THE STREAM'S SETTINGS ON THE BOTTOM SCREEN (the user, 2026-11-18 on test 1488: "the streaming settings appear on the top screen and
+     * the controller inputs get all wacky, they should probably appear on the bottom screen in the stream settings box"): with streaming
+     * set up the tile (the second row's first) opens its BAND like the others - A opens it and the cursor stays on the tile, Down into
+     * its lines, each press the old page's change, B closes it (the stream told: its change applies then), B the tab row, B Home; a tap
+     * the same; the other routes (SettingsRoom.openStreamSettings: the waiting screen's Menu, the stream's own Y) open it on the tab
+     * with the cursor on the tile; the room hidden closes it
      */
-    @Test fun streamSettingsTileOpensItsPage() {
-        var opened = 0
-        SetupBridge.openStreamSettings = { opened++ }
+    @Test fun streamSettingsTileOpensItsBand() {
+        val link = FakeLink()
+        SetupBridge.streamSettings = link
         try {
             val r = room(); hold(r)
+            var left = false
+            r.pad.onLeave = { left = true }
             r.perf.requestLayout(); lay(r)
             assertEquals(listOf(PerformanceTileModel.LIMIT, PerformanceTileModel.FG, PerformanceTileModel.MEM, PerformanceTileModel.INDOOR,
                 PerformanceTileModel.STREAM), r.perf.tileIds())
@@ -174,14 +195,147 @@ class PerformanceTilesRoomTest {
             val st = t.getValue(PerformanceTileModel.STREAM)
             assertEquals(16f, st.left, 0.5f)
             assertTrue(st.top > t.getValue(PerformanceTileModel.LIMIT).bottom)
-            assertTrue("a stop", r.pad.targetBoxes().any { it == st })
+            assertEquals("1080p 60", PerformanceTileModel.value(PerformanceTileModel.STREAM, r.perf.state()))
             press(r, "PADDDOWN")
             repeat(3) { if (r.pad.focusBox() != st) press(r, "PADDDOWN") }
             assertEquals(st, r.pad.focusBox())
             press(r, "PAD1")
-            assertEquals(1, opened)
-            assertNull("no band", r.perf.openTile)
-        } finally { SetupBridge.openStreamSettings = null }
+            assertEquals(PerformanceTileModel.STREAM, r.perf.openTile)
+            assertTrue("no page", !r.streamHelp.isOpen)
+            assertEquals(1, link.opens)
+            assertEquals("the cursor stays on the tile", st, r.pad.focusBox())
+            val lines = PerformanceTileModel.lines(PerformanceTileModel.STREAM, r.perf.state())
+            assertEquals(lines.sumOf { it.words.size - it.off.size }, bandButtons(r).size)
+            // Down onto Video's buttons, Right to H.264, A: stored at once
+            press(r, "PADDDOWN")
+            val top = contentTop(r, r.perf)
+            val b = bandButtons(r).map { RectF(it).apply { offset(0f, top) } }
+            assertEquals(b[0], r.pad.focusBox())
+            press(r, "PADDRIGHT"); press(r, "PAD1")
+            assertEquals(com.jrees.wowcompanion.stream.StreamQuality.Codec.H264, link.q.codec)
+            assertEquals("the band stays open", PerformanceTileModel.STREAM, r.perf.openTile)
+            // touch: 720p, Lower (20 -> 15 Mbps), Sound on the PC, Test connection, Defaults
+            fun tapLine(key: String, k: Int) {
+                val l = PerformanceTileModel.lines(PerformanceTileModel.STREAM, r.perf.state())
+                val i = l.indexOfFirst { it.key == key }
+                val idx = l.take(i).sumOf { it.words.size - it.off.size } + k - l[i].off.count { it < k }
+                val box = bandButtons(r)[idx]
+                tap(r.perf, box.centerX(), box.centerY()); lay(r)
+            }
+            tapLine(PerformanceTileModel.L_RES, 0); assertEquals(720, link.q.height)
+            tapLine(PerformanceTileModel.L_RATE, 0); assertEquals(15_000, link.q.bitrateKbps)
+            tapLine(PerformanceTileModel.L_SOUND, 1); assertTrue(!link.q.audioOnThor)
+            tapLine(PerformanceTileModel.L_FPS, 0); assertEquals(30, link.q.fps)
+            tapLine(PerformanceTileModel.L_TOOLS, 1); assertEquals(1, link.tests)
+            // the test's rows under the lines: the band grows by its list
+            val h0 = r.perf.bandBox()!!.height()
+            link.test = StreamTest(listOf(StreamTest.Row("PC found", "", StreamTest.Mark.PASS), StreamTest.Row("Paired", "", StreamTest.Mark.WORKING)),
+                running = true)
+            SetupBridge.streamSettingsChanged(); lay(r)
+            assertTrue(r.perf.bandBox()!!.height() > h0)
+            assertTrue("Test waits while it runs", PerformanceTileModel.lines(PerformanceTileModel.STREAM, r.perf.state()).last().off == setOf(1))
+            tapLine(PerformanceTileModel.L_TOOLS, 0); assertEquals(com.jrees.wowcompanion.stream.StreamQuality(), link.q)
+            // B: the band closes (the stream told), the cursor back on the tile; then the tab row, then Home
+            press(r, "PAD2")
+            assertNull(r.perf.openTile)
+            assertEquals(1, link.closes)
+            assertEquals(st, r.pad.focusBox())
+            press(r, "PAD2"); assertTrue(r.pad.onTabRow)
+            press(r, "PAD2"); assertTrue("B on the tab row leaves (Home)", left)
+            // every other route: another tab shown, then the room's openStreamSettings - Performance, the band, the cursor on the tile
+            r.show(SettingsTabs.Tab.GENERAL); lay(r)
+            assertTrue(r.openStreamSettings()); lay(r)
+            assertEquals(SettingsTabs.Tab.PERFORMANCE, r.tab)
+            assertEquals(PerformanceTileModel.STREAM, r.perf.openTile)
+            assertEquals(2, link.opens)
+            assertTrue(!r.pad.onTabRow)
+            assertEquals(tiles(r).getValue(PerformanceTileModel.STREAM), r.pad.focusBox())
+            // a tab step closes it (and tells the stream)
+            press(r, "PADRSHOULDER")
+            assertNull(r.perf.openTile); assertEquals(2, link.closes)
+            // the stream gone (back to Local): an open band closes with it
+            r.openStreamSettings(); lay(r)
+            assertEquals(PerformanceTileModel.STREAM, r.perf.openTile)
+            SetupBridge.streamSettings = null
+            org.robolectric.shadows.ShadowLooper.idleMainLooper(); lay(r)
+            assertNull(r.perf.openTile)
+            assertTrue(!r.openStreamSettings())
+        } finally { SetupBridge.streamSettings = null }
+    }
+
+    /**
+     * the direct route (the band over the waiting screen: no game in the world holds the pad for the room): the presses come straight
+     * from the stream's top screen, the cursor shows without a hold, B closes the band
+     */
+    @Test fun streamBandByTheDirectRoute() {
+        val link = FakeLink()
+        SetupBridge.streamSettings = link
+        try {
+            val r = room()
+            r.pad.direct = true
+            r.pad.enter()
+            assertTrue(r.openStreamSettings()); lay(r)
+            assertTrue(!r.pad.held)
+            assertEquals(tiles(r).getValue(PerformanceTileModel.STREAM), r.pad.focusBox())
+            r.pad.directKey("PADDDOWN"); lay(r)
+            r.pad.directKey("PADDRIGHT"); lay(r)
+            r.pad.directKey("PAD1"); lay(r)
+            assertEquals(com.jrees.wowcompanion.stream.StreamQuality.Codec.H264, link.q.codec)
+            assertTrue("never held through the game", !r.pad.held)
+            r.pad.directKey("PAD2"); lay(r)
+            assertNull(r.perf.openTile)
+            assertEquals(1, link.closes)
+            r.pad.direct = false
+        } finally { SetupBridge.streamSettings = null }
+    }
+
+    /** the band rendered (STREAM_SET_SHOTS = the folder): streaming set up, the band, the cursor on a line, a test's rows, es / fr */
+    @Test fun streamBandShots() {
+        val out = System.getenv("STREAM_SET_SHOTS")?.let { File(it) } ?: return
+        out.mkdirs()
+        val link = FakeLink(can120 = true)
+        SetupBridge.streamSettings = link
+        try {
+            val r = room(); hold(r)
+            fun shot(name: String) {
+                repeat(2) { lay(r); Thread.sleep(200) }
+                val b = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+                val c = Canvas(b); c.drawColor(Theme.ink); r.draw(c)
+                File(out, "$name.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                b.recycle()
+            }
+            r.perf.requestLayout(); lay(r)
+            shot("stream_1_tab")
+            r.openStreamSettings(); lay(r)
+            shot("stream_2_band")
+            press(r, "PADDDOWN"); press(r, "PADDDOWN"); press(r, "PADDDOWN")
+            shot("stream_3_band_cursor_line")
+            link.q = link.q.copy(fps = 120, bitrateKbps = 30_000); link.restarts = true
+            link.test = StreamTest(listOf(
+                StreamTest.Row("PC found", "Desktop answered", StreamTest.Mark.PASS),
+                StreamTest.Row("Paired", "", StreamTest.Mark.PASS),
+                StreamTest.Row("Web ports", "47989 / 47984", StreamTest.Mark.PASS),
+                StreamTest.Row("RTSP handshake", "No answer on port 48010", StreamTest.Mark.FAIL),
+                StreamTest.Row("Test stream", "", StreamTest.Mark.SKIP),
+                StreamTest.Row("Controller", "", StreamTest.Mark.WAIT),
+                StreamTest.Row("Screen", "", StreamTest.Mark.WAIT),
+                StreamTest.Row("120 fps", "", StreamTest.Mark.WAIT)),
+                reason = "No answer on port 48010", fix = "Allow Sunshine through the PC's firewall")
+            SetupBridge.streamSettingsChanged(); org.robolectric.shadows.ShadowLooper.idleMainLooper(); r.perf.requestLayout(); lay(r)
+            val sc = SettingsRoom::class.java.getDeclaredField("scroll").apply { isAccessible = true }.get(r) as android.widget.ScrollView
+            shot("stream_4_band_test_top")
+            sc.scrollTo(0, 10_000); lay(r)
+            shot("stream_5_band_test_rows")
+            sc.scrollTo(0, 0); lay(r)
+            for (l in listOf("es", "fr")) {
+                listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
+                    .firstOrNull { it.canRead() }?.let { Tr.load(l, it.readText()) }
+                Tr.setChoice(app, l); r.perf.requestLayout(); lay(r)
+                shot("stream_6_band_$l")
+                sc.scrollTo(0, 10_000); lay(r); shot("stream_7_band_test_rows_$l"); sc.scrollTo(0, 0); lay(r)
+            }
+            Tr.setChoice(app, "auto")
+        } finally { SetupBridge.streamSettings = null }
     }
 
     /**
@@ -191,7 +345,7 @@ class PerformanceTilesRoomTest {
      * back chip closes it by touch; L / R close it and step the tab
      */
     @Test fun streamSettingsInLocalOpensTheHowToPage() {
-        SetupBridge.openStreamSettings = null
+        SetupBridge.streamSettings = null
         val r = room(); hold(r)
         assertTrue(PerformanceTileModel.dimmed(PerformanceTileModel.STREAM, r.perf.state()))
         assertEquals("Local", PerformanceTileModel.value(PerformanceTileModel.STREAM, r.perf.state()))
@@ -405,7 +559,7 @@ class PerformanceTilesRoomTest {
         }
         Theme.use("classic"); ThemeLive.repaint(r, Theme.prev, Theme.cur); lay(r)
         // the user's ruling 2026-11-17: Local (streaming not set up) - the tile dimmed, "Local"; A opens the one-line page
-        SetupBridge.openStreamSettings = null
+        SetupBridge.streamSettings = null
         r.perf.requestLayout(); close(); lay(r); shot("perf_23_stream_local")
         r.openStreamHelp(); lay(r); shot("perf_24_stream_local_page")
         for (l in listOf("es", "fr")) {
@@ -415,10 +569,12 @@ class PerformanceTilesRoomTest {
             r.openStreamHelp(); lay(r)
         }
         Tr.setChoice(app, "auto"); r.streamHelp.close()
-        // streaming set up: the Stream settings tile (the second row) lit, "Open"
-        SetupBridge.openStreamSettings = { }
+        // streaming set up: the Stream settings tile (the second row) lit, its size and rate; its band (2026-11-18: on this screen)
+        SetupBridge.streamSettings = FakeLink()
         r.perf.requestLayout(); close(); lay(r); shot("perf_25_stream_on")
-        SetupBridge.openStreamSettings = null
+        r.openStreamSettings(); lay(r); shot("perf_26_stream_band")
+        close()
+        SetupBridge.streamSettings = null
         // no kit on the phone yet: the drawn pictures (no map tiles, no bar art)
         r = room(kit = false)
         prog.set(r.perf, status(JSONObject().put("phase", "BAKING").put("ready", 148).put("total", 236)))

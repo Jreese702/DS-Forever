@@ -289,6 +289,21 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         return true
     }
 
+    /**
+     * EVERY ROUTE TO THE STREAM'S SETTINGS (SetupBridge.openStreamSettings: the waiting screen's Menu, the stream's own screens' Y; the
+     * tile's own A opens the same band): the Performance tab, the Stream settings band open, the cursor on its tile (B closes the band,
+     * then the tab row, then Home, as every band). False = streaming is not set up (Local)
+     */
+    fun openStreamSettings(): Boolean {
+        if (SetupBridge.streamSettings == null) return false
+        if (tab != SettingsTabs.Tab.PERFORMANCE) show(SettingsTabs.Tab.PERFORMANCE)
+        streamHelp.visibility = View.GONE
+        if (!perf.openStream()) return false
+        pad.focusOn(perf) { perf.tileBox(PerformanceTileModel.STREAM) }
+        pad.resyncB()
+        return true
+    }
+
     /** Performance's Stream settings pressed in Local: its one-line page over the tab body (the tile's band stays closed) */
     fun openStreamHelp() {
         bandsClose()
@@ -446,6 +461,15 @@ class SettingsPad(
     fun resyncB() { bSaid = null; post { syncB() } }
 
     var held = false; private set
+    /**
+     * the presses come straight from the stream's top screen (StreamTop, the Stream settings band over the waiting screen: no game in
+     * the world to hold the pad for the room): the cursor shows, and nothing is ever tapped in the game (its hold, free, B cells)
+     */
+    var direct = false
+        set(v) { field = v; if (!v) { focus = null; onTabs = false }; invalidate() }
+    private var directN = -1_000_000          // never -1: [lastPadN]'s "none yet" would drop the first press
+    /** one press by the direct route ([direct]) */
+    fun directKey(k: String) { onPad(JSONObject().put("type", "guestpad").put("id", ID).put("k", k).put("n", --directN)) }
     /** b112 (the rooms audit: one hold tap, never asked again): Map's HoldAsk, asked again every 0.7 s while unanswered, 4 at most */
     private val holdAsk = HoldAsk()
     /** a hold went out this visit (its answer may still come): the leave frees it even before the answer */
@@ -586,7 +610,7 @@ class SettingsPad(
         val n = msg.optInt("n", -1)
         if (n == lastPadN) return                           // the same press seen twice
         lastPadN = n
-        held = true
+        if (!direct) held = true
         val k = msg.optString("k")
         if (padOverride?.invoke(k) == true) return
         if (subKey?.invoke(k) == true) { post { syncB() }; invalidate(); return }
@@ -707,19 +731,30 @@ class SettingsPad(
     private var landing: Pair<View, () -> RectF?>? = null
     fun land(v: View, at: () -> RectF?) { landing = v to at; invalidate() }
 
+    /** the cursor ON [v]'s box from [at], off the tab row, once the page is laid out (a route that opens a band from outside the room:
+     *  the stream's settings) */
+    private var landFocus = false
+    fun focusOn(v: View, at: () -> RectF?) {
+        onTabs = false
+        if (focus == null) focus = PointF(0f, 0f)          // a hold answered before the next draw keeps it off the tab row
+        landFocus = true
+        land(v, at)
+    }
+
     /** the anchor's place now: the cursor there (when it is in the page) and the tile, with its band when that fits, in view */
     private fun resolveAnchor() {
         landing?.let { (v, at) ->
             val top = contentTop(v)
             val r = if (top != null && v.height > 0) at() else null
             if (r != null) { landing = null; anchor = v to r; anchorBand = null }
-            else if (top == null) landing = null
+            else if (top == null) { landing = null; landFocus = false }
         }
         val (v, a) = anchor ?: return
-        val top = contentTop(v) ?: run { anchor = null; return }
+        val top = contentTop(v) ?: run { anchor = null; landFocus = false; return }
         anchor = null
         val box = RectF(a.left, a.top + top, a.right, a.bottom + top)
-        if (focus != null) focus = centre(box)
+        if (focus != null || landFocus) { focus = centre(box); onTabs = false }
+        landFocus = false
         val band = anchorBand?.let { RectF(it.left, it.top + top, it.right, it.bottom + top) }
         anchorBand = null
         val want = GameUiTiles.reveal(scroll.scrollY.toFloat(), scroll.height.toFloat(), box.top - REVEAL_TOP,
@@ -749,6 +784,7 @@ class SettingsPad(
     }
 
     private fun tap(cells: List<Pair<String, Int>>?): Boolean {
+        if (direct) return false                    // no game in the world: never a tap into it
         val pad = padSource()
         return cells != null && pad != null && TapBridge.taps(context, pad, cells) { }
     }
@@ -757,7 +793,7 @@ class SettingsPad(
 
     override fun onDraw(c: Canvas) {
         resolveAnchor()
-        if (!held || onTabs) return                 // on the tabs: the tab row draws its own cursor
+        if (!(held || direct) || onTabs) return     // on the tabs: the tab row draws its own cursor
         val f = focus ?: return
         val t = nearest(targets(), f) ?: return
         val r = RectF(t.box.left, t.box.top - scroll.scrollY, t.box.right, t.box.bottom - scroll.scrollY)
