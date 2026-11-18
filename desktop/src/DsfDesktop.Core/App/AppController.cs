@@ -1909,13 +1909,28 @@ namespace DsfDesktop.App
         public static (int? w, int? h)? StreamWindowFor(bool streamSession, bool ownScreen, bool matched, int w, int h) =>
             !streamSession ? null : ownScreen ? ((int?)null, (int?)null) : matched ? ((int?)w, (int?)h) : ((int? w, int? h)?)null;
 
+        /// <summary>the Thor's UI scale from its last hello (the user's ruling 2026-11-18); null = none said</summary>
+        volatile Dictionary<string, string> thorUiScale;
+
+        /// <summary>the UI scale a stream's WoW starts with: the Thor's, only for a stream session (WoW started from the tray keeps the
+        /// PC's own), null = leave the PC's Config.wtf alone</summary>
+        IReadOnlyDictionary<string, string> StreamUiScale()
+        {
+            bool streamSession = Stream == StreamState.Streaming || (Bridge != null && Bridge.Sessions().Count > 0);
+            return StreamUiScaleFor(streamSession, thorUiScale);
+        }
+
+        /// <summary>[StreamUiScale]'s rule. Pure</summary>
+        public static IReadOnlyDictionary<string, string> StreamUiScaleFor(bool streamSession, IReadOnlyDictionary<string, string> thor) =>
+            streamSession && thor != null && thor.Count > 0 ? thor : null;
+
         void MakeStarter()
         {
             Starter = new WowStarter(
                 windowUp: WowUp,
                 processUp: WowWindow.ProcessRunning,
                 plan: () => WowLaunch.Plan(Wow, DateTime.Now, WowLaunch.FindBattleNet()),
-                start: p => { BeforeStart(p); return WowStarter.StartProcess(p, ConfigKeep, StreamWindow); });
+                start: p => { BeforeStart(p); return WowStarter.StartProcess(p, ConfigKeep, StreamWindow, StreamUiScale); });
             Starter.Changed += (state, why) =>
             {
                 if (Supervisor != null) PublishWow(force: true);
@@ -2247,6 +2262,13 @@ namespace DsfDesktop.App
         {
             // a Thor connected: the self-patcher may try once by itself again (0.2.36: one automatic attempt per connect)
             if (s != null) patchFlow?.Connect();
+            // the user's ruling 2026-11-18: the Thor's own UI scale for the stream's WoW (null = it has none: the PC is left alone)
+            if (s != null)
+            {
+                thorUiScale = s.UiScale;
+                Log.I("thor UI scale: " + (s.UiScale == null ? "none said (the PC's stays)"
+                    : string.Join(", ", DsfDesktop.Wow.WowConfigKeep.UiScaleKeys.Where(s.UiScale.ContainsKey).Select(k => k + " " + s.UiScale[k]))));
+            }
             if (s == null || s.KnowsStop || !Settings.StartWowOnStream || Supervisor == null) return;
             if (!WowFlow.LegacyReconnectRetries(Supervisor.StoppedFor != null || StopNow() != null, (DateTime.UtcNow - legacyRetryAt).TotalSeconds)) return;
             legacyRetryAt = DateTime.UtcNow;

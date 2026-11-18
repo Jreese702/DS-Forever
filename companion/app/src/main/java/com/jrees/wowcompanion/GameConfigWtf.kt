@@ -304,6 +304,32 @@ object GameConfigWtf {
         else parts[1].trim().trim('"').takeIf { v -> v.split('|').any { it.trim().startsWith("!") } }
     }.lastOrNull()?.takeIf { it.length <= 512 && it.none { c -> c == '"' || c == '\r' || c == '\n' } }
 
+    /**
+     * THE THOR'S UI SCALE FOR THE PC'S STREAM (the user's ruling 2026-11-18: "while streaming, Desktop also sets WoW's UI scale to match
+     * the Thor's and puts the PC's own back after the session"): the game's own UI scale keys in [lines] ([UI_SCALE_KEYS], the
+     * last line of each, in that spelling), plain numbers only; null when Config.wtf has neither (the game's default: the PC is left
+     * alone). Sent on the bridge's hello. Pure
+     */
+    fun uiScale(lines: List<String>): Map<String, String>? {
+        val out = LinkedHashMap<String, String>()
+        for (line in lines) {
+            val parts = line.trim().takeIf { it.startsWith("SET ", ignoreCase = true) }?.drop(4)?.trim()?.split(" ", limit = 2) ?: continue
+            if (parts.size != 2) continue
+            val key = UI_SCALE_KEYS.firstOrNull { it.equals(parts[0], ignoreCase = true) } ?: continue
+            val v = parts[1].trim().trim('"').trim()
+            if (v.length <= 16 && UI_SCALE_VALUE.matches(v)) out[key] = v
+        }
+        return out.takeIf { it.isNotEmpty() }
+    }
+    /** WoW's UI scale CVars (useUiScale turns the slider on, uiScale is its value) */
+    val UI_SCALE_KEYS = listOf("useUiScale", "uiScale")
+    private val UI_SCALE_VALUE = Regex("^[0-9]+(\\.[0-9]+)?$")
+
+    /** [uiScale] of [root]'s Config.wtf for the client it runs ([WowProduct.of]); null when unreadable or none */
+    fun uiScale(root: File): Map<String, String>? = runCatching {
+        File(File(root, WowProduct.of(root).flavorDir), "WTF/Config.wtf").takeIf { it.isFile }?.readLines()?.let(::uiScale)
+    }.getOrNull()
+
     /** [rememberedAccountList] of [root]'s Config.wtf for the client it runs ([WowProduct.of]); null when unreadable */
     fun rememberedAccountList(root: File): String? = runCatching {
         File(File(root, WowProduct.of(root).flavorDir), "WTF/Config.wtf").takeIf { it.isFile }?.readLines()?.let(::rememberedAccountList)

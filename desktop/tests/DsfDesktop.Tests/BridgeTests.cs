@@ -723,5 +723,33 @@ namespace DsfDesktop.Tests
                 A.Eq("False,True", string.Join(",", seen.OrderBy(x => x)));
             }
         }
+
+        /// <summary>the user's ruling 2026-11-18: the hello carries the Thor's own UI scale ("ui_scale"); none = the PC is left alone</summary>
+        [Test]
+        public static void TheHelloCarriesTheThorsUiScale()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            {
+                var seen = new System.Collections.Concurrent.ConcurrentQueue<string>();
+                s.ThorHello += x => seen.Enqueue(x.UiScale == null ? "none" : x.UiScale["useUiScale"] + "/" + x.UiScale["uiScale"]);
+                var token = h.Devices.Issue("thor-1", "Thor");
+                using (var c = new Client(s.Port))
+                {
+                    c.Send(Hello("thor-1", token));      // an older Thor, or one with no UI scale lines
+                    c.Until("backlog_end");
+                }
+                using (var c = new Client(s.Port))
+                {
+                    var hello = Hello("thor-1", token);
+                    hello["ui_scale"] = new Dictionary<string, object> { ["useUiScale"] = "1", ["uiScale"] = "0.64" };
+                    c.Send(hello);
+                    c.Until("backlog_end");
+                }
+                var until = DateTime.UtcNow.AddSeconds(3);
+                while (seen.Count < 2 && DateTime.UtcNow < until) Thread.Sleep(20);
+                A.Eq("1/0.64,none", string.Join(",", seen.OrderBy(x => x)));
+            }
+        }
     }
 }

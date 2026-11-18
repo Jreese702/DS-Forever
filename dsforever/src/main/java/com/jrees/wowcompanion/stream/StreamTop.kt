@@ -356,7 +356,9 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 // the Thor's add-ons for the PC (the user, 2026-11-18: "My desktop seems to be missing the required addons"): what DS Forever
                 // manages (pins + wants), the imported ones (their files: only down a pinned wss connection) and their on / off
                 addonsWant = { pcAddonsWant(h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) },
-                importedFiles = { if (h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) pcImported() else null to emptySet() }).also { bridge = it }
+                importedFiles = { if (h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) pcImported() else null to emptySet() },
+                // the user's ruling 2026-11-18: the PC's stream WoW at this Thor's own UI scale (Desktop puts the PC's back after)
+                uiScale = { thorUiScale() }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
 
@@ -386,6 +388,14 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (com.jrees.wowcompanion.Settings.gameAccountAsk) return BridgeProtocol.GameAccount(ask = true)
         val root = runCatching { com.jrees.wowcompanion.GameFiles.gameRoot(activity) }.getOrNull()
         return BridgeProtocol.GameAccount(ask = false, list = root?.let { com.jrees.wowcompanion.GameConfigWtf.rememberedAccountList(it) })
+    }
+
+    /** this Thor's own UI scale lines (Config.wtf's useUiScale / uiScale, values only in the log); null = none, the PC's stays */
+    private fun thorUiScale(): Map<String, String>? {
+        val root = runCatching { com.jrees.wowcompanion.GameFiles.gameRoot(activity) }.getOrNull() ?: return null
+        val s = com.jrees.wowcompanion.GameConfigWtf.uiScale(root)
+        Log.i(TAG, "UI scale for the PC's stream: " + (s?.entries?.joinToString(", ") { "${it.key} ${it.value}" } ?: "none in Config.wtf (the PC's stays)"))
+        return s
     }
 
     /** Desktop listed the PC's home-network addresses: the one on this Wi-Fi is tried first next time (Route); its Tailscale ones are

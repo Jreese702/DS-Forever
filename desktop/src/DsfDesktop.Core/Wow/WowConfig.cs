@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
@@ -79,6 +80,67 @@ namespace DsfDesktop.Wow
                 Log.I("WoW config: window for the stream: " + (w.HasValue ? w + "x" + h + ", " : "") + "maximized (the player's put back after the session)");
             }
             catch (Exception e) { Log.I("WoW config: window: " + e.Message); }
+        }
+
+        /// <summary>
+        /// THE THOR'S UI SCALE (the user's ruling 2026-11-18: "while streaming, Desktop also sets WoW's UI scale to match the Thor's and
+        /// puts the PC's own back after the session"): the hello's "ui_scale" object ({"useUiScale": "1", "uiScale": "0.64"}, the Thor's
+        /// own Config.wtf lines) as key -> value, only the two keys and only plain numbers; null = the Thor said none (the PC is left
+        /// alone). Pure
+        /// </summary>
+        public static Dictionary<string, string> ThorUiScale(object o)
+        {
+            if (!(o is Dictionary<string, object> d)) return null;
+            var r = new Dictionary<string, string>();
+            foreach (var k in WowConfigKeep.UiScaleKeys)
+            {
+                var kv = d.FirstOrDefault(x => string.Equals(x.Key, k, StringComparison.OrdinalIgnoreCase));
+                if (kv.Key == null || kv.Value == null) continue;
+                var v = Convert.ToString(kv.Value, System.Globalization.CultureInfo.InvariantCulture).Trim();
+                if (UiScaleValue(v)) r[k] = v;
+            }
+            return r.Count == 0 ? null : r;
+        }
+
+        /// <summary>a UI scale value safe to write into a quoted SET line: a plain number, short ("1", "0.64", "0.7111111")</summary>
+        public static bool UiScaleValue(string v) =>
+            !string.IsNullOrEmpty(v) && v.Length <= 16 && System.Text.RegularExpressions.Regex.IsMatch(v, @"^[0-9]+(\.[0-9]+)?$");
+
+        /// <summary>[text] with the Thor's UI scale lines ([scale]: key -> value; keys it lacks are left as they are). Pure</summary>
+        public static string ApplyUiScale(string text, IReadOnlyDictionary<string, string> scale)
+        {
+            if (scale == null || scale.Count == 0) return text;
+            var nl = text.Contains("\r\n") ? "\r\n" : "\n";
+            var lines = text.Split(new[] { nl }, StringSplitOptions.None).ToList();
+            if (lines.Count > 0 && lines[lines.Count - 1].Length == 0) lines.RemoveAt(lines.Count - 1);
+            foreach (var k in WowConfigKeep.UiScaleKeys)
+            {
+                if (!scale.TryGetValue(k, out var v) || !UiScaleValue(v)) continue;
+                int at = lines.FindIndex(l => l.StartsWith("SET " + k + " ", StringComparison.OrdinalIgnoreCase));
+                if (at >= 0) lines[at] = "SET " + lines[at].Substring(4, k.Length) + " \"" + v + "\"";
+                else lines.Add("SET " + k + " \"" + v + "\"");
+            }
+            return string.Join(nl, lines) + nl;
+        }
+
+        /// <summary>the Thor's UI scale into Config.wtf at [path] (<see cref="ApplyUiScale"/>) - ONLY when [keep] has recorded the PC's own
+        /// UI scale lines first (never a write that could not be put back); [scale] null = the Thor has none: nothing is touched.
+        /// Never fails the start</summary>
+        public static void EnsureUiScale(string path, WowConfigKeep keep, IReadOnlyDictionary<string, string> scale)
+        {
+            try
+            {
+                if (scale == null || scale.Count == 0 || !File.Exists(path)) return;
+                if (keep == null || !keep.RecordUiScale(path)) { Log.I("WoW config: the Thor's UI scale not set (the PC's not recorded)"); return; }
+                var latin1 = System.Text.Encoding.GetEncoding(28591);
+                var was = latin1.GetString(File.ReadAllBytes(path));
+                var now = ApplyUiScale(was, scale);
+                var said = string.Join(", ", WowConfigKeep.UiScaleKeys.Where(scale.ContainsKey).Select(k => k + " " + scale[k]));
+                if (now == was) { Log.I("WoW config: UI scale already the Thor's (" + said + ")"); return; }
+                File.WriteAllBytes(path, latin1.GetBytes(now));
+                Log.I("WoW config: UI scale for the stream: the Thor's " + said + " (the PC's put back after the session)");
+            }
+            catch (Exception e) { Log.I("WoW config: UI scale: " + e.Message); }
         }
 
         /// <summary>the UI scale lines (values only), for the log: "useUiScale 1, uiScale 0.64" / "not set in Config.wtf ..."</summary>

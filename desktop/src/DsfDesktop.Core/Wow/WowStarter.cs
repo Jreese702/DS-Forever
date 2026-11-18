@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -116,8 +117,10 @@ namespace DsfDesktop.Wow
         }
 
         /// <summary>[window] (fix/1492-feedback): the stream's screen when Desktop knows it - (w, h) with the monitor matched to the Thor's
-        /// mode, (null, null) = only maximized (our own virtual screen), null = no stream window (the player's own window stays)</summary>
-        public static string StartProcess(LaunchPlan p, WowConfigKeep keep = null, Func<(int? w, int? h)?> window = null)
+        /// mode, (null, null) = only maximized (our own virtual screen), null = no stream window (the player's own window stays).
+        /// [uiScale] (the user's ruling 2026-11-18): the Thor's UI scale lines for a stream's WoW, null = the PC's own stay</summary>
+        public static string StartProcess(LaunchPlan p, WowConfigKeep keep = null, Func<(int? w, int? h)?> window = null,
+                                          Func<IReadOnlyDictionary<string, string>> uiScale = null)
         {
             try
             {
@@ -126,6 +129,7 @@ namespace DsfDesktop.Wow
                 WowConfig.Ensure(cfg, keep);
                 var win = window?.Invoke();
                 if (win.HasValue) WowConfig.EnsureWindow(cfg, keep, win.Value.w, win.Value.h);
+                WowConfig.EnsureUiScale(cfg, keep, uiScale?.Invoke());
                 try { if (File.Exists(cfg)) Log.I("WoW config: UI scale " + WowConfig.UiScaleWord(File.ReadAllText(cfg))); } catch (Exception) { }
                 // through the shell: the game must not inherit Desktop's handles (2026-10-30: a crashed Wow.exe kept the bridge port 48210)
                 Process.Start(new ProcessStartInfo(p.Exe, p.Args) { WorkingDirectory = p.WorkDir, UseShellExecute = true })?.Dispose();

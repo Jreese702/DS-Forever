@@ -59,6 +59,8 @@ class BridgeLog(
     private val addonsWant: (() -> JSONObject?)? = null,
     /** the game's AddOns folder and the imported add-ons' names, for Desktop's "addon_file_get" (null = no game folder) */
     private val importedFiles: () -> Pair<java.io.File?, Set<String>> = { null to emptySet() },
+    /** this Thor's own UI scale lines for the hello (the user's ruling 2026-11-18; null = none: the PC's stays) */
+    private val uiScale: () -> Map<String, String>? = { null },
 ) : LogSource {
     /** issue #414: the PC's stamps onto the Thor's clock (a PC in another time zone was never "current") */
     val clock = PcClock(wall)
@@ -141,7 +143,7 @@ class BridgeLog(
 
     /** one connection: hello, then every message until it ends (internal for the tests) */
     internal fun session(c: BridgeConn): End {
-        c.send(BridgeProtocol.hello(deviceId, token))
+        c.send(BridgeProtocol.hello(deviceId, token, runCatching { uiScale() }.getOrNull()))
         sessions++
         while (running) {
             val text = c.receive() ?: break

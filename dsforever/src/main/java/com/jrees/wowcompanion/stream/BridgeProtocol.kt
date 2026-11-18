@@ -172,9 +172,12 @@ object BridgeProtocol {
 
     /** "wow_stop": this Thor shows Desktop's stop ([PcWow.stopped]) with its own Retry. Desktop 0.2.35 counts an older Thor's
      *  reconnect (none: Thor 1487, which has no Retry) as its Retry instead */
-    fun hello(deviceId: String, token: String): String =
+    /** [uiScale] (the user's ruling 2026-11-18): this Thor's own UI scale lines (GameConfigWtf.uiScale), "ui_scale" - Desktop 0.2.41
+     *  writes them into the PC's Config.wtf for the stream's WoW and puts the PC's own back after; null = none (the PC is left alone) */
+    fun hello(deviceId: String, token: String, uiScale: Map<String, String>? = null): String =
         JSONObject().put("t", "hello").put("proto", PROTO).put("device_id", deviceId).put("token", token).put("wow_stop", true)
-            .apply { if (addonSet > 0) put("addon_set", addonSet) }.toString()
+            .apply { if (addonSet > 0) put("addon_set", addonSet) }
+            .apply { if (!uiScale.isNullOrEmpty()) put("ui_scale", JSONObject().apply { uiScale.forEach { (k, v) -> put(k, v) } }) }.toString()
 
     fun pairHello(deviceId: String, name: String): String =
         JSONObject().put("t", "pair_hello").put("proto", PROTO).put("device_id", deviceId).put("name", name).put("stream", true)

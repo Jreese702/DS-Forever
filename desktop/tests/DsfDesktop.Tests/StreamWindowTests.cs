@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using DsfDesktop.App;
 using DsfDesktop.Wow;
@@ -92,6 +93,92 @@ namespace DsfDesktop.Tests
             A.True(AppController.MatchLine(false, false, 1920, 1080, 120).StartsWith("match screen: off"));
             A.Eq("useUiScale 1, uiScale 0.64", WowConfig.UiScaleWord("SET useUiScale \"1\"\r\nSET uiScale \"0.64\"\r\n"));
             A.True(WowConfig.UiScaleWord(Cfg).StartsWith("not set"));
+        }
+
+
+        // ------------------------------------------------ the user's ruling 2026-11-18: the Thor's UI scale while streaming
+
+        static Dictionary<string, string> Thor(string use, string sc)
+        {
+            var d = new Dictionary<string, string>();
+            if (use != null) d["useUiScale"] = use;
+            if (sc != null) d["uiScale"] = sc;
+            return d;
+        }
+
+        [Test]
+        public static void TheUiScaleIsTheThorsThenThePcsAgain()
+        {
+            var pc = "SET locale \"enUS\"\r\nSET accountName \"fake@example.invalid\"\r\nSET useUiScale \"1\"\r\nSET uiScale \"0.9\"\r\n";
+            using (var r = new Rig(pc))
+            {
+                WowConfig.EnsureUiScale(r.Path_, r.Keep, Thor("1", "0.64"));
+                A.True(r.Text.Contains("SET useUiScale \"1\"\r\nSET uiScale \"0.64\"\r\n"), "the Thor's scale, in place");
+                A.True(r.Text.Contains("fake@example.invalid") && r.Text.StartsWith("SET locale"), "every other line as it was");
+                A.True(r.Keep.Pending, "the PC's lines recorded first");
+                A.True(r.Keep.PutBackNow(0, _ => { }), "put back after the session");
+                A.Eq(pc, r.Text, "the PC's own 0.9");
+            }
+        }
+
+        [Test]
+        public static void UiScaleAbsentOnThePcIsRemovedAfter()
+        {
+            using (var r = new Rig(Cfg))
+            {
+                WowConfig.EnsureUiScale(r.Path_, r.Keep, Thor("1", "0.71"));
+                A.True(r.Text.EndsWith("SET useUiScale \"1\"\r\nSET uiScale \"0.71\"\r\n"), "added");
+                // a pick in the game's options during the stream: still the PC's own afterwards (the window's rule: always put back)
+                File.WriteAllBytes(r.Path_, Latin1.GetBytes(r.Text.Replace("0.71", "0.8")));
+                A.True(r.Keep.PutBackNow(0, _ => { }));
+                A.Eq(Cfg, r.Text, "both lines removed again");
+            }
+        }
+
+        [Test]
+        public static void NoThorScaleLeavesThePcAlone()
+        {
+            using (var r = new Rig(Cfg))
+            {
+                WowConfig.EnsureUiScale(r.Path_, r.Keep, null);
+                WowConfig.EnsureUiScale(r.Path_, r.Keep, new Dictionary<string, string>());
+                A.Eq(Cfg, r.Text, "untouched");
+                A.False(r.Keep.Pending, "nothing recorded");
+            }
+            using (var r = new Rig(Cfg))
+            {
+                WowConfig.EnsureUiScale(r.Path_, null, Thor("1", "0.64"));
+                A.Eq(Cfg, r.Text, "no record: nothing written");
+            }
+        }
+
+        [Test]
+        public static void OnlyTheThorsKeysAreWrittenWithTheWindowToo()
+        {
+            using (var r = new Rig(Cfg))
+            {
+                WowConfig.EnsureWindow(r.Path_, r.Keep, 1920, 1080);
+                WowConfig.EnsureUiScale(r.Path_, r.Keep, Thor(null, "0.64"));
+                A.True(r.Text.Contains("SET uiScale \"0.64\"") && !r.Text.Contains("useUiScale"), "only uiScale");
+                A.True(r.Keep.PutBackNow(0, _ => { }));
+                A.Eq(Cfg, r.Text, "window and scale both the PC's again, in one put-back");
+            }
+        }
+
+        [Test]
+        public static void TheHellosUiScaleIsCheckedAndTheRule()
+        {
+            var ok = WowConfig.ThorUiScale(new Dictionary<string, object> { ["useUiScale"] = "1", ["UISCALE"] = "0.64", ["accountName"] = "x" });
+            A.Eq(2, ok.Count); A.Eq("1", ok["useUiScale"]); A.Eq("0.64", ok["uiScale"]);
+            A.True(WowConfig.ThorUiScale(null) == null && WowConfig.ThorUiScale("0.64") == null, "none / not an object");
+            A.True(WowConfig.ThorUiScale(new Dictionary<string, object> { ["uiScale"] = "0.6\"\r\nSET x \"1" }) == null, "never a line break or quote");
+            A.True(WowConfig.ThorUiScale(new Dictionary<string, object> { ["uiScale"] = "-1" }) == null, "plain numbers only");
+            A.Eq("0.64", WowConfig.ThorUiScale(new Dictionary<string, object> { ["uiScale"] = 0.64 })["uiScale"], "a JSON number too");
+            A.Eq("SET uiscale \"0.5\"\n", WowConfig.ApplyUiScale("SET uiscale \"1\"\n", Thor(null, "0.5")), "the file's spelling kept");
+            A.Eq("SET a \"1\"\nSET uiScale \"0.5\"\n", WowConfig.ApplyUiScale("SET a \"1\"\n", Thor(null, "0.5")), "added at the end");
+            A.True(AppController.StreamUiScaleFor(false, Thor("1", "0.64")) == null, "WoW from the tray: the PC's own");
+            A.True(AppController.StreamUiScaleFor(true, null) == null, "the Thor has none: the PC's own");
+            A.Eq("0.64", AppController.StreamUiScaleFor(true, Thor("1", "0.64"))["uiScale"]);
         }
     }
 }

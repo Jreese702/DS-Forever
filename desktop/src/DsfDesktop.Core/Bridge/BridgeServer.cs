@@ -97,6 +97,9 @@ namespace DsfDesktop.Bridge
         /// <summary>the Thor shows Desktop's stop with its own Retry (its hello / pair_hello says "wow_stop": true, Thor apps from
         /// Desktop 0.2.35's branch on). false = an older Thor (1487): it never sends "wow_retry", so its reconnect counts as one</summary>
         public bool KnowsStop;
+        /// <summary>the Thor's own UI scale (its hello's "ui_scale", the user's ruling 2026-11-18): written into the PC's Config.wtf for
+        /// the stream's WoW, the PC's put back after. null = the Thor has none (or an older Thor): the PC is left alone</summary>
+        public Dictionary<string, string> UiScale;
         readonly BlockingCollection<string> queue = new BlockingCollection<string>(8192);
 
         public BridgeSession(WsConn ws, string id, string name, string peer) { Ws = ws; DeviceId = id; Name = name; Peer = peer; }
@@ -369,6 +372,7 @@ namespace DsfDesktop.Bridge
                             }
                             var dev = host.Devices.All().FirstOrDefault(d => d.Id == id);
                             s = Authenticate(ws, st, id, dev?.Name ?? id, peer, m.Bool("wow_stop"));
+                            s.UiScale = DsfDesktop.Wow.WowConfig.ThorUiScale(m.TryGetValue("ui_scale", out var uiScale) ? uiScale : null);
                             try { ThorConnected?.Invoke(); } catch (Exception) { }
                             try { ThorHello?.Invoke(s); } catch (Exception) { }
                             SawAddonSet(m);
