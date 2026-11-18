@@ -40,6 +40,10 @@ namespace DsfDesktop.Wow
         public const string Staging = "AddOns-staging-dsforever";
         public const string Backup = "AddOns-backup-dsforever";
         public const long Margin = 200L * 1000 * 1000;
+        /// <summary>the room kept free beyond a package's download and its unpacked size (the user's pick 2026-11-18: ~500 MB)</summary>
+        public const long SpaceMargin = 500L * 1000 * 1000;
+        /// <summary>a package this big (Spoken's voice packs) goes last, in the background: WoW's start never waits for it (the Thor's SMALL)</summary>
+        public const long BigPkg = 100L * 1000 * 1000;
         public const long MaxPkg = 2_000_000_000L;
         public const long MaxQuestieDb = 64L * 1024 * 1024;
         public const int MaxEntries = 40_000;
@@ -148,8 +152,8 @@ namespace DsfDesktop.Wow
             want = want ?? PcWant.QuestieOnly();
             // 1. QuestieDB (the user: "questie especially"): wanted always, as on the Thor
             if (want.QuestieDb) Guard(r, "QuestieDB", () => QuestieDb(flavorDir, r, ct));
-            // 2. the Thor's pinned packages
-            foreach (var p in want.Managed)
+            // 2. the Thor's pinned packages: the small ones now, the big voice packs last (step 5)
+            foreach (var p in want.Managed.Where(x => !Last(x)))
             {
                 if (ct.IsCancellationRequested) break;
                 Guard(r, p.Name, () => Managed(flavorDir, p, r, ct));
@@ -182,12 +186,27 @@ namespace DsfDesktop.Wow
                     }
                 }
             }
+            // 5. the big packs (Spoken Quests 1.5 GB...), after everything else, each only with the room for it
+            foreach (var p in want.Managed.Where(Last))
+            {
+                if (ct.IsCancellationRequested) break;
+                Guard(r, p.Name, () => Managed(flavorDir, p, r, ct));
+            }
+            // the enabled state again for a big pack that just went in
+            if (want.FromThor && want.Enabled.Count > 0 && want.Managed.Any(p => Last(p) && r.Of(p.Name)?.State is string st2 && (st2 == "installed" || st2 == "updated")) && !gameRunning())
+            {
+                var ours = Ours(flavorDir);
+                var map = want.Enabled.Where(kv => ours.Contains(kv.Key) && !kv.Key.StartsWith("WowCompanion", StringComparison.OrdinalIgnoreCase))
+                    .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+                if (map.Count > 0) AddonsTxt.Mirror(Path.Combine(flavorDir, "WTF"), want.AcctDir, map, gameRunning);
+            }
             return r;
         }
 
         void Guard(PcResult r, string name, Action a)
         {
             try { a(); }
+            catch (NoSpace e) { r.Add(name, "space", e.Message); Log.I("pc add-ons: " + name + " skipped: " + e.Message + " (" + e.Detail + "); tried again at the next connect"); }
             catch (Later e) { r.Add(name, "deferred", e.Message); }
             catch (Exception e) { r.Add(name, "failed", Reason(e)); }
         }
@@ -197,6 +216,40 @@ namespace DsfDesktop.Wow
             for (var x = e; x != null; x = x.InnerException)
                 if (x is WebException || x is HttpRequestException || x is System.Net.Sockets.SocketException) return "offline";
             return e.Message;
+        }
+
+        /// <summary>a wanted package too big for the room left: skipped this run (everything else carries on), tried again at the next</summary>
+        public sealed class NoSpace : Exception { public readonly string Detail; public NoSpace(string m, string detail) : base(m) { Detail = detail; } }
+
+        public static bool IsBig(PcPkg p) => p.Want && p.Bytes > BigPkg;
+        /// <summary>where a run's "big, last" starts (<see cref="BigPkg"/>; the tests set a small one)</summary>
+        public long BigAt = BigPkg;
+        bool Last(PcPkg p) => p.Want && p.Bytes > BigAt;
+
+        /// <summary>
+        /// THE DISK-SPACE GUARD (the user's pick 2026-11-18): the download left + the unpacked size + <see cref="SpaceMargin"/> free, on the
+        /// download drive and the WoW folder's drive (one sum when they are the same drive). [unpacked] = the zip's own entry sizes once it is
+        /// here, else the download's size. Short: <see cref="NoSpace"/> ("needs 3.1 GB free").
+        /// </summary>
+        public void CheckSpace(string flavorDir, long downloadLeft, long unpacked)
+        {
+            var iface = Path.Combine(flavorDir, "Interface");
+            Directory.CreateDirectory(DlDir);
+            if (SameRoot(DlDir, iface))
+            {
+                long need = downloadLeft + unpacked + SpaceMargin, free = Free(iface);
+                if (free < need) throw new NoSpace("needs " + Mb(need) + " free", Mb(free) + " free on " + Path.GetPathRoot(Path.GetFullPath(iface)));
+                return;
+            }
+            long needDl = downloadLeft + SpaceMargin, freeDl = Free(DlDir);
+            long needWow = unpacked + SpaceMargin, freeWow = Free(iface);
+            if (downloadLeft > 0 && freeDl < needDl) throw new NoSpace("needs " + Mb(needDl) + " free on " + Path.GetPathRoot(Path.GetFullPath(DlDir)), Mb(freeDl) + " free there");
+            if (freeWow < needWow) throw new NoSpace("needs " + Mb(needWow) + " free on " + Path.GetPathRoot(Path.GetFullPath(iface)), Mb(freeWow) + " free there");
+        }
+
+        static long UnpackedSize(string zip)
+        {
+            using (var z = ZipFile.OpenRead(zip)) return z.Entries.Sum(e => e.Length);
         }
 
         /// <summary>not a failure: WoW started, not enough room, the Thor gone: the next run carries on</summary>
@@ -248,7 +301,7 @@ namespace DsfDesktop.Wow
             if (size < 1 || size > MaxQuestieDb) throw new IOException("QuestieDB has an unexpected size (" + size + ")");
             if (!Regex.IsMatch(sha, "^[0-9a-f]{64}$")) throw new IOException("QuestieDB has no checksum");
             var p = new PcPkg { Id = "questiedb", Key = "core", Title = name, Tag = latest, Asset = asset.Str("name"), Bytes = size, Sha256 = sha, Url = asset.Str("browser_download_url") };
-            var zip = Fetch(p, ct);
+            var zip = Fetch(p, ct, flavorDir);
             InstallZip(flavorDir, p, zip, sk, r, have == null ? "installed" : "updated", requireFolder: "QuestieDB");
             all = LoadState();
             var e2 = Sub(Sub(all, Key(flavorDir)), sk);
@@ -281,13 +334,13 @@ namespace DsfDesktop.Wow
             // a folder of the package's own names that Desktop didn't put in: the player's, left alone
             var theirs = p.Folders.FirstOrDefault(f => Directory.Exists(Path.Combine(addons, f)) && !(mine != null && Strings(mine, "folders").Contains(f, StringComparer.OrdinalIgnoreCase)));
             if (theirs != null) { r.Add(p.Name, "yours", theirs + " of yours is there: left as it is"); return; }
-            var zip = Fetch(p, ct);
+            var zip = Fetch(p, ct, flavorDir);
             InstallZip(flavorDir, p, zip, sk, r, mine == null ? "installed" : "updated", requireFolder: null);
         }
 
         // ---------------------------------------------------------------- download (resumed, size + sha256)
 
-        string Fetch(PcPkg p, CancellationToken ct)
+        string Fetch(PcPkg p, CancellationToken ct, string flavorDir)
         {
             Directory.CreateDirectory(DlDir);
             var zip = Path.Combine(DlDir, Safe(p.Id) + "-" + Safe(p.Key) + "-" + Safe(p.Asset));
@@ -295,7 +348,7 @@ namespace DsfDesktop.Wow
             var part = zip + ".part";
             long have = File.Exists(part) ? new FileInfo(part).Length : 0;
             if (have > p.Bytes) { File.Delete(part); have = 0; }
-            if (Free(DlDir) < p.Bytes - have + Margin) throw new Later("needs " + Mb(p.Bytes - have + Margin) + " free to download");
+            CheckSpace(flavorDir, p.Bytes - have, p.Bytes);
             var url = p.Url;
             if (url == null)
             {
@@ -326,7 +379,9 @@ namespace DsfDesktop.Wow
         {
             var iface = Path.Combine(flavorDir, "Interface");
             var stage = Path.Combine(iface, Staging, Safe(p.Id) + "-" + Safe(p.Key));
-            if (Free(iface) < p.Bytes * 2 + Margin) throw new Later("needs " + Mb(p.Bytes * 2 + Margin) + " free for the game");
+            CheckSpace(flavorDir, 0, UnpackedSize(zip));
+            // a big unpack is never started under a running WoW (it could not go in anyway): kept downloaded for the next run
+            if (gameRunning()) throw new Later("WoW is running: at the next start");
             try
             {
                 if (Directory.Exists(stage)) Directory.Delete(stage, true);        // our own leftover only
@@ -805,7 +860,7 @@ namespace DsfDesktop.Wow
         public void Add(string name, string state, string why) { Items.Add(new PcItem { Name = name, State = state, Why = why ?? "" }); }
         public PcItem Of(string name) => Items.LastOrDefault(i => string.Equals(i.Name, name, StringComparison.OrdinalIgnoreCase));
         /// <summary>every one in or as it should be (ok / installed / updated / removed / skipped / yours)</summary>
-        public bool AllGood => Items.All(i => i.State != "failed" && i.State != "deferred" && i.State != "refused");
+        public bool AllGood => Items.All(i => i.State != "failed" && i.State != "deferred" && i.State != "refused" && i.State != "space");
         public string Line()
         {
             var bad = Items.Where(i => i.State != "ok" && i.State != "skipped").Select(i => i.Name + " " + i.State + (i.Why.Length > 0 ? " (" + i.Why + ")" : ""));

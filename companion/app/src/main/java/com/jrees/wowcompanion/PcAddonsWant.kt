@@ -191,11 +191,13 @@ object PcAddonsWant {
         }
         val items = o.optJSONArray("items") ?: return null
         val bad = (0 until items.length()).mapNotNull { items.optJSONObject(it) }
-            .filter { it.optString("state") in setOf("failed", "deferred", "refused", "waiting") }
+            .filter { it.optString("state") in setOf("failed", "deferred", "refused", "waiting", "space") }
             .sortedBy { if (it.optString("name") == "QuestieDB") 0 else 1 }
         if (bad.isEmpty()) return null
         val first = bad.first()
         val more = if (bad.size > 1) " (+${bad.size - 1} more)" else ""
+        // the PC's disk-space guard (the user's pick 2026-11-18): "PC add-ons: Spoken Quests needs 3.1 GB free"
+        if (first.optString("state") == "space") return "PC add-ons: ${first.optString("name")} ${first.optString("why")}$more"
         val word = when (first.optString("state")) { "deferred" -> "waits"; "waiting" -> "waits"; else -> "not installed" }
         return "PC add-ons: ${first.optString("name")} $word (${first.optString("why")})$more"
     }

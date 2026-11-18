@@ -113,6 +113,8 @@ class PcAddonsWantTest {
         assertEquals("PC add-ons: Downloading Polestar 50%",
             PcAddonsWant.statusLine(JSONObject("""{"t":"addons_pc","state":"working","line":"Downloading Polestar","done":5,"total":10}""")))
         assertNull(PcAddonsWant.statusLine(JSONObject("""{"state":"done","items":[{"name":"QuestieDB","state":"ok","why":"1.1.1"}]}""")))
+        assertEquals("PC add-ons: Spoken Quests needs 3.1 GB free",
+            PcAddonsWant.statusLine(JSONObject("""{"state":"done","items":[{"name":"Manners","state":"installed","why":""},{"name":"Spoken Quests","state":"space","why":"needs 3.1 GB free"}]}""")))
         assertEquals("PC add-ons: QuestieDB not installed (offline) (+1 more)",
             PcAddonsWant.statusLine(JSONObject("""{"state":"done","items":[{"name":"Manners","state":"deferred","why":"WoW is running"},{"name":"QuestieDB","state":"failed","why":"offline"}]}""")))
     }

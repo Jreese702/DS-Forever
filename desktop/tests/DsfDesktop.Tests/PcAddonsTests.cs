@@ -442,5 +442,91 @@ namespace DsfDesktop.Tests
                 A.True(back.FromThor); A.Eq(1, back.Managed.Count); A.Eq(w.Imported[0].Tree(), back.Imported[0].Tree());
             }
         }
+
+        // ---------------------------------------------------------------- Spoken's voice packs: the Thor's switches, the room, last
+
+        static PcPkg SpokenPack(string key, byte[] zip, bool want) => new PcPkg
+        {
+            Id = "spoken", Key = key, Title = "Spoken", Tag = key + "-audio/v2.0", Asset = "Spoken" + key + "-2.0.zip", Bytes = zip.Length, Sha256 = Sha(zip),
+            Want = want, Folders = new List<string> { "Spoken" + key + "Audio" },
+        };
+
+        static void Release(FakeHttp http, PcPkg p, byte[] zip)
+        {
+            http.Text[Api + "/repos/rusty-key/spoken-wow/releases/tags/" + Uri.EscapeDataString(p.Tag)] = Json.Write(new Dictionary<string, object>
+            { ["assets"] = new object[] { new Dictionary<string, object> { ["name"] = p.Asset, ["size"] = zip.Length, ["browser_download_url"] = "https://gh/" + p.Asset } } });
+            http.Files["https://gh/" + p.Asset] = zip;
+        }
+
+        static byte[] Pack(string key, int pad)
+        {
+            var junk = Convert.ToBase64String(RandomBytes(pad));             // incompressible: the zip is about this big
+            return Zip(("Spoken" + key + "Audio/Spoken" + key + "Audio.toc", "## Version: 2.0\n"), ("Spoken" + key + "Audio/a.ogg", junk));
+        }
+
+        static byte[] RandomBytes(int n) { var b = new byte[n]; new Random(n).NextBytes(b); return b; }
+
+        [Test]
+        public static void SpokenPacksFollowTheThorsSwitches()
+        {
+            using (var t = new Tmp())
+            {
+                var fl = Flavor(t);
+                var http = new FakeHttp();
+                var quests = Pack("Quests", 100); var zones = Pack("Zones", 100); var books = Pack("Books", 100);
+                var q = SpokenPack("quests", quests, true); var z = SpokenPack("zones", zones, true); var b = SpokenPack("books", books, false);
+                Release(http, q, quests); Release(http, z, zones); Release(http, b, books);
+                var r = Make(t, http).Run(fl, Thor(q, z, b), null);
+                A.Eq("installed", r.Of("Spoken Quests").State, r.Line());
+                A.Eq("installed", r.Of("Spoken Zones").State);
+                A.Null(r.Of("Spoken Books"), "switched off on the Thor: nothing said");
+                A.Eq(4, http.Calls, "two tag lookups and two downloads: nothing for Books");
+                A.False(Directory.Exists(AddOns(fl, "SpokenBooksAudio")));
+            }
+        }
+
+        [Test]
+        public static void ABigPackShortOfRoomIsSkippedTheRestGoesIn()
+        {
+            using (var t = new Tmp())
+            {
+                var fl = Flavor(t);
+                var http = new FakeHttp();
+                var small = Zip(("Manners/Manners.toc", "## Version: 1.11.0\n"));
+                var m = Manners(small); http.Files[m.Url] = small;
+                var quests = Pack("Quests", 30_000);
+                var q = SpokenPack("quests", quests, true); Release(http, q, quests);
+                long free = PcAddons.SpaceMargin + small.Length * 2 + 1000;            // room for Manners, not for the pack
+                var pc = Make(t, http); pc.Free = _ => free; pc.BigAt = 10_000;
+                var r = pc.Run(fl, Thor(q, m), null);
+                A.Eq("installed", r.Of("Manners").State, "everything else goes in");
+                var s = r.Of("Spoken Quests");
+                A.Eq("space", s.State, r.Line());
+                A.True(s.Why.StartsWith("needs ") && s.Why.EndsWith(" free"), s.Why);
+                A.False(Directory.Exists(AddOns(fl, "SpokenQuestsAudio")));
+                A.False(File.Exists(t.P("data", "pcaddons", "dl", "spoken-quests-" + q.Asset + ".part")), "not even started");
+                A.True(r.Items.FindIndex(i => i.Name == "Manners") < r.Items.FindIndex(i => i.Name == "Spoken Quests"), "the big pack last though listed first");
+                A.False(r.AllGood);
+                // room again: the next run (the next connect) takes it
+                free = long.MaxValue;
+                A.Eq("installed", pc.Run(fl, Thor(q, m), null).Of("Spoken Quests").State);
+                A.True(Directory.Exists(AddOns(fl, "SpokenQuestsAudio")));
+            }
+        }
+
+        [Test]
+        public static void TheRoomCountsTheDownloadTheUnpackAndTheMargin()
+        {
+            using (var t = new Tmp())
+            {
+                var fl = Flavor(t);
+                var pc = Make(t, new FakeHttp());
+                pc.Free = _ => 3_000_000_000L;
+                pc.CheckSpace(fl, 1_200_000_000L, 1_300_000_000L);                    // 2.5 GB + 0.5 GB margin = 3.0 GB: fits
+                try { pc.CheckSpace(fl, 1_300_000_000L, 1_300_000_000L); A.True(false, "3.1 GB needed"); }
+                catch (PcAddons.NoSpace e) { A.Eq("needs 3.1 GB free", e.Message); }
+                pc.CheckSpace(fl, 0, 2_400_000_000L);                                   // downloaded: only the unpack + margin
+            }
+        }
     }
 }

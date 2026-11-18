@@ -127,7 +127,8 @@ namespace DsfDesktop.App
             var addons = Path.Combine(flavorDir, "Interface", "AddOns");
             var res = new List<string>();
             if (w.QuestieDb && !Directory.Exists(Path.Combine(addons, "QuestieDB"))) res.Add("QuestieDB");
-            foreach (var p in w.Managed.Where(p => p.Want && p.Invalid() == null && p.Folders.Count > 0))
+            // a big pack (Spoken's voice packs) never holds WoW's start: it goes in at a later run
+            foreach (var p in w.Managed.Where(p => p.Want && !PcAddons.IsBig(p) && p.Invalid() == null && p.Folders.Count > 0))
                 if (!Directory.Exists(Path.Combine(addons, p.Folders[0]))) res.Add(p.Name);
             return res;
         }
