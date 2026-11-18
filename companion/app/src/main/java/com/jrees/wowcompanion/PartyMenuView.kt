@@ -25,6 +25,9 @@ class PartyMenuView(context: Context, grey: Set<String> = PlayerMenu.PARTY_GREY)
     val menu = PlayerMenu(greyKeys = grey)
     /** the member's name (the heading until the game's own title row comes) */
     var name: String = ""
+    /** q66: whom a Whisper goes to (TargetRadial.tellName: Name-Realm for another realm), else [name] */
+    var tell: String = ""
+        get() = field.ifEmpty { name }
         private set
     /** the unit index the menu is for (0 = you) */
     var unit: Int = -1
@@ -39,7 +42,7 @@ class PartyMenuView(context: Context, grey: Set<String> = PlayerMenu.PARTY_GREY)
     val isOpen: Boolean get() = menu.open
 
     fun open(unit: Int, name: String, byPad: Boolean) {
-        this.unit = unit; this.name = name; this.byPad = byPad
+        this.unit = unit; this.name = name; this.tell = ""; this.byPad = byPad
         menu.openReading()
         visibility = VISIBLE
         bringToFront()
@@ -50,6 +53,7 @@ class PartyMenuView(context: Context, grey: Set<String> = PlayerMenu.PARTY_GREY)
     fun onDoc(d: JSONObject) {
         if (!menu.open) return
         d.optString("nm", "").takeIf { it.isNotEmpty() }?.let { name = it }
+        TargetRadial.tellName(d).takeIf { it.isNotEmpty() }?.let { tell = it }
         menu.onDoc(d)
         invalidate()
     }

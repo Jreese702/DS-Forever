@@ -117,4 +117,14 @@ object TargetRadial {
 
     /** the document's name (nm), or "" */
     fun name(d: JSONObject): String = d.optString("nm", "")
+
+    /**
+     * Quests q66 (the user, 2026-11-18: "inviting other players from the wheel is not working"; Whisper the same way): the name a
+     * Whisper goes to - the game's full name (fnm: "Name-Realm" for another realm's player, the bare name finds nobody) when the Chat
+     * room can send it ([ChatNames.canWhisper]: "First Last-Realm" is refused there), else the document's nm; "" when neither
+     */
+    fun tellName(d: JSONObject): String {
+        val f = d.optString("fnm", "").trim()
+        return if (f.isNotEmpty() && ChatNames.canWhisper(f)) f else name(d)
+    }
 }

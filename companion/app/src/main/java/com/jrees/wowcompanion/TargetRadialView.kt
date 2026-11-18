@@ -65,6 +65,7 @@ class TargetRadialView(
     private var doc: JSONObject? = null
     private var items: List<PlayerMenu.Entry> = emptyList()
     private var name = ""
+    private var tell = ""          // q66: whom a Whisper goes to (TargetRadial.tellName: Name-Realm for another realm), else [name]
     private val pages = ArrayList<TargetRadial.Page>()
     private var slices: List<TargetRadial.Slice?> = emptyList()
     private var pointed = -1
@@ -106,6 +107,7 @@ class TargetRadialView(
     fun fill(d: JSONObject) {
         doc = d
         TargetRadial.name(d).takeIf { it.isNotEmpty() }?.let { name = it }
+        TargetRadial.tellName(d).takeIf { it.isNotEmpty() }?.let { tell = it }
         items = PlayerMenu.parse(d.optJSONArray("items"), if (opener == "party") PlayerMenu.PARTY_GREY else emptySet())
         // q62: the pet's abilities as the game said them when it read the menu (the live document follows)
         val now = SystemClock.uptimeMillis()
@@ -129,7 +131,7 @@ class TargetRadialView(
      */
     fun open(opener: String, input: Input, name: String, onDo: (PlayerMenu.Do, String) -> Unit, onClosed: () -> Unit) {
         if (isOpen) close("another opener")
-        this.opener = opener; this.input = input; this.name = name
+        this.opener = opener; this.input = input; this.name = name; this.tell = ""
         doAct = onDo; closed = onClosed
         doc = null; items = emptyList(); pages.clear(); slices = emptyList()
         Log.i("WCLOG", "context radial: OPEN ($opener, $name, ${input.name})")
@@ -321,7 +323,7 @@ class TargetRadialView(
         }
         if (act == null) { say("Not available here"); return }
         lastActAt = SystemClock.uptimeMillis()
-        val run = doAct; val who = name
+        val run = doAct; val who = tell.ifEmpty { name }
         close("picked ${s.label}")
         run(act, who)
     }

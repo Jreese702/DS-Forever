@@ -39,7 +39,7 @@ UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { Ge
 '''
 Q = boot(["safety", "tappad", "quests"], pre=PRE)
 
-check('local QV = "q66"' in SRC["quests"] and "q65 THE QUEST ITEM BY TAP" in SRC["quests"], "Quests says q66 (q65 kept below it)")
+check('local QV = "q67"' in SRC["quests"] and "q65 THE QUEST ITEM BY TAP" in SRC["quests"] and "q66 DISMISS FOR ANY PET" in SRC["quests"] and "q66b THE TARGET WHEEL'S INVITE BY THE FULL NAME" in SRC["quests"], "Quests says q67 (the merge: both q66 notes, q65 kept below)")
 
 
 def read(unit, src):

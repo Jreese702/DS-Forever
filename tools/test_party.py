@@ -1706,6 +1706,50 @@ check(Q.eval('ASSEMBLED.unit') == 'target' and Q.eval('ASSEMBLED.fromTargetFrame
       "q53: the context the game builds: unit, fromTargetFrame, name by UnitNameUnmodified, playerLocation",
       (Q.eval('ASSEMBLED.unit'), Q.eval('ASSEMBLED.fromTargetFrame'), Q.eval('ASSEMBLED.name')))
 Q.execute('UnitPopupManager = ORIGMGR; UnitPopupSharedUtil = nil; UnitNameUnmodified = nil')     # the fixtures below read the plain menu
+# q66 (the user, 2026-11-18: "inviting other players from the wheel is not working"; the log: "pick Invite" -> "menu run: done", no
+# invite): the target wheel's Invite / Add Friend pass the game's own full name (GetUnitName(unit, true)): "Name-Realm" for another
+# realm's player - the bare name finds nobody - and "Name" for yours; the run's answer says whom (`to`)
+Q.execute(r"""
+ORIGMGR, ORIGUN, ORIGWH = UnitPopupManager, UnitName, rawget(_G, "UnitPopupWhisperButtonMixin")
+local function mk(name, text) local m = { GetText = function() return text end, CanShow = function() return true end,
+    IsEnabled = function() return true end, OnClick = function() CLICKED[#CLICKED + 1] = name end }
+    rawset(_G, "UnitPopup" .. name .. "ButtonMixin", m); return m end
+local inv, fr, wh = mk("Invite", "Invite"), mk("AddFriend", "Add Friend"), mk("Whisper", "Whisper")
+UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { GetEntries = function() return { inv, fr, wh } end } end }
+C_PartyInfo.InviteUnit = function(...) CALLS[#CALLS + 1] = { "InviteUnit", ... } end
+C_FriendList = { AddFriend = function(...) CALLS[#CALLS + 1] = { "AddFriend", ... } end }
+TREALM = "Stormrage"
+function UnitName(u) if u == "target" then return "Kaelis", TREALM end return ORIGUN(u) end
+WowCompanion.pmenu.mix = nil     -- the mixins are read once: these are new
+""")
+for realm, want in (("Stormrage", "Kaelis-Stormrage"), (None, "Kaelis")):
+    Q.execute('TREALM = %s' % ('"%s"' % realm if realm else 'nil'))
+    n0 = nsent(Q)
+    Q.eval('WowCompanion.pmenu.read')("target", "radial")
+    pmq = docs(Q, n0, 'pmenu')[0]
+    items = {x['t']: x for x in pmq['items']}
+    check(pmq.get('nm') == 'Kaelis' and pmq.get('fnm') == want, "q66: the menu document carries the full name (fnm = %s; nm stays the name)" % want,
+          {k: pmq.get(k) for k in ('nm', 'fnm')})
+    # Whisper the same way (the coordinator's ask): the reply target is the full name, read at the pick, and the answer says it
+    Q.execute('WowCompanion.chatLastTell = nil')
+    n1 = nsent(Q)
+    check(items.get('Whisper', {}).get('ap') == 'whisper' and 'i' in items.get('Whisper', {}), "q66: Whisper runs (ap whisper)", items.get('Whisper'))
+    Q.eval('WowCompanion.pmenu.run')(items['Whisper']['i'])
+    check(Q.eval('WowCompanion.chatLastTell') == want, "q66: Whisper sets the reply target to the game's full name (realm %s): %s" % (realm, want),
+          Q.eval('WowCompanion.chatLastTell'))
+    ack = [d for d in docs(Q, n1, 'guestack') if d.get('op') == 'pmenurun']
+    check(len(ack) == 1 and ack[0].get('to') == want, "q66: Whisper's answer says whom (to = %s)" % want, ack and ack[0])
+    for t, fn in (("Invite", "InviteUnit"), ("Add Friend", "AddFriend")):
+        check(items.get(t, {}).get('en') == 1 and 'i' in items.get(t, {}), "q66: the target wheel's %s runs (%s)" % (t, realm), items.get(t))
+        c0, n1 = int(Q.eval('#CALLS')), nsent(Q)
+        Q.eval('WowCompanion.pmenu.run')(items[t]['i'])
+        got = list(Q.eval('CALLS[#CALLS]').values()) if int(Q.eval('#CALLS')) > c0 else None
+        check(got == [fn, want], "q66: %s with the game's full name (realm %s): %s(\"%s\")" % (t, realm, fn, want), got)
+        ack = [d for d in docs(Q, n1, 'guestack') if d.get('op') == 'pmenurun']
+        check(len(ack) == 1 and ack[0]['ok'] is True and ack[0].get('to') == want, "q66: the run's answer says whom (to = %s)" % want,
+              ack and ack[0])
+Q.execute('UnitPopupManager = ORIGMGR; UnitName = ORIGUN; C_PartyInfo.InviteUnit = nil; C_FriendList = nil; '
+          'rawset(_G, "UnitPopupWhisperButtonMixin", ORIGWH); WowCompanion.pmenu.mix = nil')     # the fixtures below read the plain menu
 # the party pad's Y and the party row's MENU cells read the menu for the unit, src "party"
 W11 = world()
 W11.execute('PMREADS = {}; WowCompanion.pmenu = { read = function(u, s) PMREADS[#PMREADS + 1] = { u, s } end }')
