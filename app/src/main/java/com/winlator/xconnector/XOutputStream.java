@@ -5,7 +5,9 @@ import com.winlator.xserver.XServer;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.concurrent.Executor;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BooleanSupplier;
 
 public class XOutputStream {
     private static final byte[] ZERO = new byte[64];
@@ -13,6 +15,7 @@ public class XOutputStream {
     public final ClientSocket clientSocket;
     private final ReentrantLock lock = new ReentrantLock();
     private int ancillaryFd = -1;
+    private final OutputQueue queue;    // #481: the main thread never waits on the socket (OutputQueue)
     private static final double FP3232_SCALE = 4294967296.0;
 
     public XOutputStream(int initialCapacity) {
@@ -22,6 +25,17 @@ public class XOutputStream {
     public XOutputStream(ClientSocket clientSocket, int initialCapacity) {
         this.clientSocket = clientSocket;
         buffer = ByteBuffer.allocateDirect(initialCapacity);
+        queue = clientSocket == null ? null : new OutputQueue(new OutputQueue.Sink() {
+            @Override public void write(ByteBuffer data) throws IOException { clientSocket.write(data); }
+            @Override public void sendAncillaryMsg(ByteBuffer data, int fd) throws IOException { clientSocket.sendAncillaryMsg(data, fd); }
+        });
+    }
+
+    /** tests (#481): [sink] stands in for the socket, [mustNotBlock] for "on the main thread" */
+    XOutputStream(OutputQueue.Sink sink, BooleanSupplier mustNotBlock, Executor drains, int maxQueuedBytes, int initialCapacity) {
+        this.clientSocket = null;
+        buffer = ByteBuffer.allocateDirect(initialCapacity);
+        queue = new OutputQueue(sink, mustNotBlock, drains, maxQueuedBytes);
     }
 
     public void setByteOrder(ByteOrder byteOrder) {
@@ -107,10 +121,10 @@ public class XOutputStream {
             buffer.flip();
 
             if (ancillaryFd != -1) {
-                clientSocket.sendAncillaryMsg(buffer, ancillaryFd);
+                queue.send(buffer, ancillaryFd);
                 ancillaryFd = -1;
             }
-            else clientSocket.write(buffer);
+            else queue.send(buffer, -1);
 
             buffer.clear();
         }
