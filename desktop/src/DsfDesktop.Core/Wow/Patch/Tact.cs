@@ -206,6 +206,8 @@ namespace DsfDesktop.Wow.Patch
             }
         }
 
+        readonly Dictionary<long, int> modes = new Dictionary<long, int>();
+
         public byte[] Read(long start, int length)
         {
             var o = new byte[length]; int w = 0;
@@ -215,6 +217,9 @@ namespace DsfDesktop.Wow.Patch
                 if (end <= start || c[2] >= start + length) continue;
                 long from = Math.Max(start, c[2]) - c[2];
                 int n = (int)(Math.Min(start + length, end) - c[2] - from);
+                // a plain chunk is read where the bytes are (the Thor's EncodingLookup): never its whole tens of MB for one 4 KiB page
+                if (!modes.TryGetValue(c[0], out var mode)) modes[c[0]] = mode = fetch(c[0], 1)[0];
+                if (mode == 'N') { Buffer.BlockCopy(fetch(c[0] + 1 + from, n), 0, o, w, n); w += n; continue; }
                 var data = Decoded(c);
                 Buffer.BlockCopy(data, (int)from, o, w, n);
                 w += n;

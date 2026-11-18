@@ -2024,10 +2024,12 @@ namespace DsfDesktop.App
             var p = EnsurePatcher();
             if (p == null) return;
             patchFlow.Tick(thorHere && Settings.StartWowOnStream);
-            bool signedIn = SignedIn(LastScreen);
+            // the first start watched only while Desktop follows WoW Forever (a retail login is not the patched client's)
+            bool forever = Flavor == WowFlavors.Forever;
+            bool signedIn = forever && SignedIn(LastScreen);
             if (signedIn && !loginSeen && !p.Busy && p.AwaitingLogin != null) Task.Run(() => p.GoodLogin(ForeverExeVersion()));
             loginSeen = signedIn;
-            bool crashed = Supervisor?.Crash != null;
+            bool crashed = forever && Supervisor?.Crash != null;
             if (crashed && !crashSeen && !p.Busy && p.AwaitingLogin != null)
                 Task.Run(() => { if (p.RestoreOld("WoW " + Supervisor?.Crash + " on its first start")) { gameCheck?.Refresh(); PublishWow(force: true); } });
             crashSeen = crashed;

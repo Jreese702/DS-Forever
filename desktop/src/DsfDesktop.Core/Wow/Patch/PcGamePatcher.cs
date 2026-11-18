@@ -344,6 +344,8 @@ namespace DsfDesktop.Wow.Patch
                     var need2 = pending.Select(x => x.CKey).ToList();
                     var enc = new RangedBlte((o, len) => cdn.Fetch("data", encE, o, o + len - 1, ct: ct) ?? throw new PatchFailed("missing", "the encoding table is not on the CDN"));
                     ekeys = EncodingTable.Find(enc.Read, need2);
+                    locateWanted = new HashSet<string>(ekeys.Values, StringComparer.Ordinal);
+                    located = null;
                 }
                 if (!ekeys.TryGetValue(e.CKey, out var ekey)) throw new PatchFailed("missing", e.Name + " is not in the encoding table");
                 long baseDone = done; long size = e.Size;
@@ -416,15 +418,23 @@ namespace DsfDesktop.Wow.Patch
             return count + " files, " + (total / 1000000) + " MB; the old files kept in " + backupDir.Substring(env.Root.Length).TrimStart('\\') + " until the first good login";
         }
 
+        int toldAt = Environment.TickCount;
+
+        /// <summary>the bar's bytes; the Thor is told at most every 500 ms (a read is 64 KiB: 2,000 of them for 127 MB)</summary>
         void Progress(long done)
         {
             var el = (env.Now() - startedAt).TotalSeconds;
-            Set(s =>
+            bool tell;
+            lock (gate)
             {
-                s.Done = Math.Min(done, s.Total);
-                double rate = el > 1 ? (s.Done) / el : 0;
-                s.EtaS = rate > 0 ? (s.Total - s.Done) / rate : -1;
-            });
+                st.Done = Math.Min(done, st.Total);
+                double rate = el > 1 ? st.Done / el : 0;
+                st.EtaS = rate > 0 ? (st.Total - st.Done) / rate : -1;
+                int now = Environment.TickCount;
+                tell = st.Done >= st.Total || unchecked(now - toldAt) >= 500;
+                if (tell) toldAt = now;
+            }
+            if (tell) try { Changed?.Invoke(); } catch (Exception) { }
         }
 
         static string Rel(string name) => name.Replace('/', '\\');
@@ -526,12 +536,31 @@ namespace DsfDesktop.Wow.Patch
 
         static void TryDelete(string p) { try { if (System.IO.File.Exists(p)) System.IO.File.Delete(p); } catch (Exception) { } }
 
+        /// <summary>the files' places in the archives, found in ONE pass over the archive indexes (the PC's 1,405 of them take
+        /// ~10 s to read: measured 2026-11-18, once per file was 7-16 s each)</summary>
+        Dictionary<string, Tuple<string, long, long>> located;
+        ICollection<string> locateWanted;
+
         /// <summary>the archive holding [ekey] by the install's own archive indexes (fetched when one is missing); (archive, size, offset)</summary>
         Tuple<string, long, long> Locate(CdnClient cdn, Dictionary<string, List<string>> cc, string ekey, CancellationToken ct)
         {
+            if (located == null || !located.ContainsKey(ekey) && !(locateWanted?.Contains(ekey) ?? false))
+            {
+                var want = new HashSet<string>(locateWanted ?? new string[0]) { ekey };
+                located = LocateAll(cdn, cc, want, ct);
+                locateWanted = want;
+            }
+            return located.TryGetValue(ekey, out var at) ? at : null;
+        }
+
+        Dictionary<string, Tuple<string, long, long>> LocateAll(CdnClient cdn, Dictionary<string, List<string>> cc, ICollection<string> wanted, CancellationToken ct)
+        {
+            var found = new Dictionary<string, Tuple<string, long, long>>(StringComparer.Ordinal);
+            var left = new HashSet<string>(wanted, StringComparer.Ordinal);
             var dir = Path.Combine(env.Root, "Data", "indices");
             foreach (var a in cc.TryGetValue("archives", out var l) ? l : new List<string>())
             {
+                if (left.Count == 0) break;
                 ct.ThrowIfCancellationRequested();
                 var p = Path.Combine(dir, a + ".index");
                 byte[] idx = null;
@@ -542,10 +571,9 @@ namespace DsfDesktop.Wow.Patch
                     if (b == null) continue;
                     idx = b;
                 }
-                var hit = ArchiveIndex.Find(idx, new[] { ekey });
-                if (hit.TryGetValue(ekey, out var at)) return Tuple.Create(a, at.Item1, at.Item2);
+                foreach (var kv in ArchiveIndex.Find(idx, left.ToList())) { found[kv.Key] = Tuple.Create(a, kv.Value.Item1, kv.Value.Item2); left.Remove(kv.Key); }
             }
-            return null;
+            return found;
         }
 
         static byte[] ReadAll(string p)
